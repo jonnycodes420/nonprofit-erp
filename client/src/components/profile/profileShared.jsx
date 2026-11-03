@@ -72,7 +72,22 @@ const DONOR_RELATIONSHIP_LABELS = [
   ["household","Household"],
   ["family","Family"],
   ["employer_match","Employer Match"],
+  // POLISH-4 — a person to an organization; one giving unit for the lapse rule.
+  ["owner","Owns · Gives through"],
+  ["works_at","Works at"],
 ];
+// POLISH-4 — a link as this record reads it. A person-to-organization link
+// reads from its own side: "Gives through Corman Excavating" on the person,
+// "Owner: Pat Corman" on the business.
+const SIDED = {
+  owner: { person: n => `Gives through ${n}`, organization: n => `Owner: ${n}` },
+  works_at: { person: n => `Works at ${n}`, organization: n => `Works here: ${n}` },
+};
+const relationshipLine = r => {
+  const sided = SIDED[r.relationshipType] && SIDED[r.relationshipType][r.side];
+  if (sided) return sided(r.relatedDonorName);
+  return `${r.relatedDonorName} · ${(DONOR_RELATIONSHIP_LABELS.find(([v]) => v === r.relationshipType) || [])[1] || r.relationshipType}`;
+};
 
 // BUILD-88a A.1 — the machine-written gift sentence, which used to CARRY the
 // amount ("Gift received: $5,000 (check)", "Online donation: $250 via Steward
@@ -305,4 +320,4 @@ function ComingUpMain({tasks=[],meetings=[],onTaskToggle,isReadOnly,onAddTask}){
 }
 const cap=s=>s?String(s).charAt(0).toUpperCase()+String(s).slice(1):"Not set";
 
-export { UndatedGiftDate, ContactFlag, stageTone, lateWords, WEALTH_SCORE_DEFINITION, WEALTH_SCORE_SOURCE, DONOR_RELATIONSHIP_LABELS, stripGiftAmountPrefix, giftFundName, giftTimelineLine, HEADER_CHIP_LIMIT, HeaderChips, ROLE_CHIPS, RoleLine, PROFILE_FIGURES, SUGGEST_KINDS, PROPOSAL_STAGE_LABEL, OPEN_PROPOSAL_KEYS, PROFILE_TABS, TAB_KIND, TAB_SUBCHIPS, STAGE_BAR, RailGroups, ComingUpMain, cap };
+export { UndatedGiftDate, ContactFlag, stageTone, lateWords, WEALTH_SCORE_DEFINITION, WEALTH_SCORE_SOURCE, DONOR_RELATIONSHIP_LABELS, relationshipLine, stripGiftAmountPrefix, giftFundName, giftTimelineLine, HEADER_CHIP_LIMIT, HeaderChips, ROLE_CHIPS, RoleLine, PROFILE_FIGURES, SUGGEST_KINDS, PROPOSAL_STAGE_LABEL, OPEN_PROPOSAL_KEYS, PROFILE_TABS, TAB_KIND, TAB_SUBCHIPS, STAGE_BAR, RailGroups, ComingUpMain, cap };

@@ -28,6 +28,9 @@
 //   held         FIX-60: an open pledge (on schedule, or overdue, which is its
 //                own state and not lapsed), or a pledge fulfilled that was
 //                made in the last 12 months.
+//   unit         POLISH-4: a person and the business they own or work at
+//                (rows.links) lapse together: the later last gift of the two,
+//                and either one's pledge, is the unit's.
 //   first-time   in a fiscal year: their first-ever gift falls in it.
 //   retained     in a fiscal year: they gave in it and in the one before.
 //   households   people who share a household count once in a household
@@ -127,10 +130,19 @@ function computeKey(rows, opts = {}) {
     }
   }
 
+  // POLISH-4: a person and the business they own or work at (rows.links,
+  // [a, b] pairs) are one giving unit: either one's gift or pledge holds both.
+  const peers = new Map();
+  for (const [a, b] of rows.links || []) {
+    if (!live.has(a) || !live.has(b)) continue;
+    (peers.get(a) || peers.set(a, []).get(a)).push(b);
+    (peers.get(b) || peers.set(b, []).get(b)).push(a);
+  }
   const lapsed = [], lapsing = [];
   for (const [id, dates] of given) {
-    const last = dates[dates.length - 1];
-    if (held.has(id)) continue;
+    const unit = [id, ...(peers.get(id) || [])];
+    const last = unit.map(u => (given.get(u) || []).slice(-1)[0]).filter(Boolean).sort().pop();
+    if (unit.some(u => held.has(u))) continue;
     if (last <= lapsedOnOrBefore) lapsed.push(id);
     else if (last <= lapsingTo) lapsing.push(id);
   }

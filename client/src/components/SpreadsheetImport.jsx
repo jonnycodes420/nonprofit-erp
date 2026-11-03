@@ -791,6 +791,12 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               </button>
             )}
             {!undone && result.totalsSentence && result.totalsSentence.length > 0 && <div style={{ ...small, marginTop: 4 }}>{result.totalsSentence.join(" ")}</div>}
+            {/* POLISH-4: the receipt says what the preview said about rows read as one person */}
+            {!undone && u && u.rowAccount && u.rowAccount.merged > 0 && (
+              <div data-testid="sheet-result-merged" style={{ ...small, marginTop: 4 }}>
+                {`${n(u.rowAccount.merged, "row")} ${u.rowAccount.merged === 1 ? "was" : "were"} read into a person another row already named, so ${u.rowAccount.merged === 1 ? "it is" : "they are"} not separate people.`}
+              </div>
+            )}
             {!undone && result.undatedGifts > 0 && (
               <div data-testid="sheet-undated" style={{ marginTop: 10, borderTop: "1px solid " + T.bg2, paddingTop: 10 }}>
                 <div style={{ fontSize: 13 }}>{dated || `${n(result.undatedGifts, "gift")} came in with no date. They count in Lifetime and ${result.eventName || "the event"}'s total, not in This year.`}</div>

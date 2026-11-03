@@ -186,7 +186,7 @@ carry, e.g. a calendar or a household; the test checks the profile's code still 
 | id | What | Goes to | How to find it | Now |
 |---|---|---|---|---|
 | funds-view | What they support / Restricted vs Unrestricted / Suggested Asks | text from `GET /donors/:id/fund-affinity` (no click targets) | Funds tab || giving · `text=What they support` · exists |
-| rel-link | + Link to another donor → type → pick | `POST /donors/:id/relationships` | "+ Link to another donor" || related · `button:has-text("Link to another donor")` · exists |
+| rel-link | + Link someone → type → pick | `POST /donors/:id/relationships` | "+ Link someone" || related · `button:has-text("Link someone")` · exists |
 | rel-row | a linked donor | `onSelectRelatedDonor(relatedDonorId)` | row name "→" || related · `r.relatedDonorId` · code |
 | rel-type | Relationship select | `PUT /donor-relationships/:id` | aria-label "Relationship" || related · `aria-label="Relationship"` · code |
 | rel-remove | Remove (link) | `DELETE /donor-relationships/:id` + Undo | "Remove" || related · `unlinkDonor(r.id)` · code |

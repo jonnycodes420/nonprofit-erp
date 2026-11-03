@@ -13,8 +13,33 @@ function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor
           {/* Related tab — manual household/spouse/family/employer_match
               links. No auto-detection (matching last name, address, etc.) —
               a real fast-follow idea, not built here. */}
-          {relatedOpen&&<Modal onClose={()=>setRelatedOpen(false)} width={720} title="Household and related">
+          {relatedOpen&&<Modal onClose={()=>{setRelatedOpen(false);setRelPickerOpen(false);}} width={720} title="Household and related">
           <div data-testid="dp-related" style={{display:"flex",flexDirection:"column",gap:16}}>
+            {/* POLISH-4 — "Link someone" opens here: the picker first, the household under it. */}
+            {relPickerOpen&&(
+              <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:12,display:"flex",flexDirection:"column",gap:8}}>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {DONOR_RELATIONSHIP_LABELS.map(([v,l])=>(
+                    <button key={v} aria-pressed={relType===v} onClick={()=>setRelType(v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer",...activeMark(relType===v,"bottom")}}>{l}</button>
+                  ))}
+                </div>
+                <input value={relSearch} onChange={e=>setRelSearch(e.target.value)} placeholder="Search people and organizations by name…" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",color:T.ink,fontSize:13,outline:"none"}}/>
+                {relSearch.trim()&&(
+                  <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:180,overflowY:"auto"}}>
+                    {relPickerResults.length===0
+                      ?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",padding:"6px 4px"}}>No matching donors.</div>
+                      :relPickerResults.map(d=>(
+                        <button key={d.id} disabled={relSaving} onClick={()=>linkDonor(d.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",cursor:relSaving?"not-allowed":"pointer",textAlign:"left"}}>
+                          <span style={{fontSize:12,fontWeight:600,color:T.ink}}>{d.name}</span>
+                          <span style={{fontSize:11,color:T.ink3}}>{fmtFull(d.total)} →</span>
+                        </button>
+                      ))}
+                  </div>
+                )}
+                {relErr&&<div style={{color:T.terracotta,fontSize:12}}>{relErr}</div>}
+              </div>
+            )}
+
             {/* PROFILE-1 (header) — the household, in full, moved here from the Overview. */}
             {/* Household and relationships (BUILD-14; FIX-14 Part 3: one line when there is none) */}
             <div data-testid="dp-household" style={household?{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}:{padding:"4px 2px",display:"flex",flexDirection:"column",gap:8}}>
@@ -62,37 +87,13 @@ function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor
                 summed spouse links, a second grouping; the household panel above is the one. */}
 
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Linked Donors</div>
-              {!isReadOnly&&<button onClick={()=>{setRelPickerOpen(v=>!v);setRelErr("");}} style={{background:T.greenDk,border:"none",borderRadius:7,padding:"6px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Link to another donor</button>}
+              <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Linked people</div>
+              {!isReadOnly&&<button onClick={()=>{setRelPickerOpen(v=>!v);setRelErr("");}} style={{background:T.greenDk,border:"none",borderRadius:7,padding:"6px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Link someone</button>}
             </div>
-
-            {relPickerOpen&&(
-              <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:12,display:"flex",flexDirection:"column",gap:8}}>
-                <div style={{display:"flex",gap:8}}>
-                  {DONOR_RELATIONSHIP_LABELS.map(([v,l])=>(
-                    <button key={v} aria-pressed={relType===v} onClick={()=>setRelType(v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer",...activeMark(relType===v,"bottom")}}>{l}</button>
-                  ))}
-                </div>
-                <input value={relSearch} onChange={e=>setRelSearch(e.target.value)} placeholder="Search donors by name…" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",color:T.ink,fontSize:13,outline:"none"}}/>
-                {relSearch.trim()&&(
-                  <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:180,overflowY:"auto"}}>
-                    {relPickerResults.length===0
-                      ?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",padding:"6px 4px"}}>No matching donors.</div>
-                      :relPickerResults.map(d=>(
-                        <button key={d.id} disabled={relSaving} onClick={()=>linkDonor(d.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",cursor:relSaving?"not-allowed":"pointer",textAlign:"left"}}>
-                          <span style={{fontSize:12,fontWeight:600,color:T.ink}}>{d.name}</span>
-                          <span style={{fontSize:11,color:T.ink3}}>{fmtFull(d.total)} →</span>
-                        </button>
-                      ))}
-                  </div>
-                )}
-                {relErr&&<div style={{color:T.terracotta,fontSize:12}}>{relErr}</div>}
-              </div>
-            )}
 
             {relLoading?<div style={{padding:20,textAlign:"center"}}><Spin/></div>
               :relationships.length===0
-                ?<div style={{fontSize:13,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:24}}>No linked donors yet.</div>
+                ?<div style={{fontSize:13,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:24}}>Nobody linked yet.</div>
                 :<div style={{display:"flex",flexDirection:"column",gap:8}}>
                   {relationships.map(r=>(
                     <div key={r.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 14px"}}>

@@ -91,21 +91,21 @@ app.get("/donors/lookup", requireAuth, wrap(async (req, res) => {
 //   lapsed        gave before, no gift in the last 12 months (it read a
 //                 status nothing wrote, so it was always 0)
 //   lapsing       last gift 9 to 12 months ago
-//   reengage      the Re-engage tab's badge: the lapsed who may be asked (not
-//                 deceased, do-not-contact, do-not-solicit or an imported
-//                 sustainer), or anyone an officer moved to the lapsed stage.
+//   reengage      the Re-engage tab's badge: the lapsed who may be asked
+//                 (shared/numbers/lapse.js reengageSql, POLISH-4: the list's
+//                 own rule; the stored stage is not read).
 app.get("/donors/counts", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const DS = require("../donorStatus");
   const today = await DS.todayFor(orgId);
   const st = DS.statusSql(orgId, today, await DS.cutsFor(orgId));
+  const re = require("../shared/numbers/lapse").reengageSql("donors", today);
   const [r] = await query(`WITH s AS MATERIALIZED (${st.sql})
     SELECT COUNT(*)::int AS total,
       COUNT(*) FILTER (WHERE s.lifecycle = 'lapsed')::int AS lapsed,
       COUNT(*) FILTER (WHERE s.lapsing)::int AS lapsing,
-      COUNT(*) FILTER (WHERE deceased IS NOT TRUE AND do_not_contact IS NOT TRUE AND do_not_solicit IS NOT TRUE
-        AND imported_sustainer IS NOT TRUE AND (stage = 'lapsed' OR s.lifecycle = 'lapsed'))::int AS reengage
-    FROM donors LEFT JOIN s ON s.donor_id = donors.id WHERE ${SET}`, [...st.args, orgId]);
+      COUNT(*) FILTER (WHERE ${re.sql})::int AS reengage
+    FROM donors LEFT JOIN s ON s.donor_id = donors.id WHERE ${SET}`, [...st.args, ...re.args, orgId]);
   res.json(r);
 }));
 

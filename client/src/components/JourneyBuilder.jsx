@@ -1107,7 +1107,8 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
                 )}
 
                 {/* ── AUTO-1 · STEPS THAT SEND THEMSELVES ───────────── */}
-                <MailTypeSwitches keys={["journey_steps"]} from="journeys" />
+                {/* POLISH-4: inset like the sections under it, not flush to the card's edge */}
+                <div style={{ padding: "0 16px 6px" }}><MailTypeSwitches keys={["journey_steps"]} from="journeys" /></div>
                 <AutoSendSteps journeyId={current.id} isAdmin={isAdmin && editable} onChanged={() => { setAutoTick(x => x + 1); load(); }} />
                 <SendingTomorrow journeyId={current.id} isReadOnly={!editable} refresh={autoTick} counts={current} />
 

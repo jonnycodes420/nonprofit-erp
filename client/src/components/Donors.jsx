@@ -35,10 +35,6 @@ import { MergeDuplicatesModal, parseFileToSheets } from "./DonorImport";
 import { DonorProfile, EditDonorModal, FollowUpTaskModal, LogTouchpointModal } from "./DonorProfile";
 import { PATTERN_META, TIER_META } from "./donorShared";
 import { PLAN_UNKNOWN } from "../lib/entitlement";
-// FIX-49: the one lapse rule, on the org's own calendar.
-import lapseRuleMod from "../../../lapseRule.js";
-import { orgTodayCivil } from "../lib/orgToday";
-const { isLapsed } = lapseRuleMod;
 import { useNavigate } from "react-router-dom";
 import { donorHref, donorsListHref, donorsListState } from "../lib/appUrls";
 export { DonorImport } from "./DonorImport";
@@ -313,7 +309,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     if(filters.pattern==="one-time"&&d.gifts!==1)return false;
     if(filters.pattern==="recurring"&&d.gifts<2)return false;
     if(filters.pattern==="major"&&d.lastAmount<10000)return false;
-    if(filters.pattern==="lapsed"&&!(d.stage==="lapsed"||(!d.pledgeHold&&isLapsed(d.lastGift,orgTodayCivil()))))return false;
+    if(filters.pattern==="lapsed"&&!d.reengage)return false;   // POLISH-4: lapse.js, never the stored stage
     if(filters.geo.trim()&&!`${d.notes||""} ${(d.tags||[]).join(" ")}`.toLowerCase().includes(filters.geo.toLowerCase()))return false;
     if(filters.giftFrom&&d.lastGift&&d.lastGift<filters.giftFrom)return false;
     if(filters.giftTo&&d.lastGift&&d.lastGift>filters.giftTo)return false;
@@ -799,7 +795,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         <input className="donors-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
         <div className="donors-view-toggle" style={{display:"flex",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden"}}>
           {[["directory","Directory"],...(isAdmin?[["team","Team"]]:[]),["reengage","Re-engage"],...(mapOn?[["map","Map"]]:[]),["health","Data health"]].map(([v,l])=>(
-            <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:T.ink3,fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+            <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:T.ink3,fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",flexShrink:0}}>
               {l}
               {v==="reengage"&&lapsedCount>0&&<span style={{background:T.greenDk,color:T.white,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{lapsedCount}</span>}
             </button>

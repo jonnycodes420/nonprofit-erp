@@ -77,7 +77,7 @@ async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename, extra
     const entry = await givingAccountEntry(org);
     const brand = await resolveOrgBrandTheme(org.id).catch(() => null);
     const html = await brandEmailHeaderHtml(org.id)
-      + `<p>Hi ${escapeHtml(donor.name || "there")},</p>
+      + `<p>${escapeHtml((await import("../shared/greeting.js")).greetingLine(donor, { word: "Hi" }))}</p>
       <p>Thank you for your generous gift to <strong>${escapeHtml(dfName)}</strong> your official ${snapshot.type === "year_end" ? "year-end giving statement" : "tax receipt"} is attached.</p>`
       // BUILD-54 §2 — the campaign's own org-authored copy (frozen in the
       // snapshot at issue time); absent when the campaign has no content.
@@ -543,7 +543,7 @@ async function sendCardExpiringEmail(org, donor, rs) {
   const decision = await donorMailDecision("card_expiring", donor.email, org.id);
   if (!decision.send) return { sent: false, refused: decision.reason };
   const dfName = await donorFacingOrgName(org.id, org.name);
-  const firstName = donor.name ? donor.name.trim().split(/\s+/)[0] : "";
+  const hi = (await import("../shared/greeting.js")).greetingLine(donor, { word: "Hi" });   // POLISH-4: the one opening line
   const updateUrl = buildCardUpdateUrl(rs.stripe_subscription_id, org.id);
   const last4 = rs.card_last4 ? ` ending ${escHtmlWf(String(rs.card_last4))}` : "";
   const amountStr = rs.amount != null ? `$${Number(rs.amount).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "your";
@@ -554,7 +554,7 @@ async function sendCardExpiringEmail(org, donor, rs) {
   // date, the gift it protects, and the one thing to do.
   const bodyHtml = await brandEmailHeaderHtml(org.id)
     + `<div style="padding:22px;font-family:'DM Sans',Helvetica,Arial,sans-serif;color:#0f1a12;">
-        <p>Hi ${escHtmlWf(firstName)},</p>
+        <p>${escHtmlWf(hi)}</p>
         <p>The card on your ${escHtmlWf(amountStr)} ${per} gift to ${escHtmlWf(dfName)}${last4} expires ${escHtmlWf(expLabel)}.
            Nothing has gone wrong, we wanted to let you know before your next gift, so it does not
            get interrupted.</p>

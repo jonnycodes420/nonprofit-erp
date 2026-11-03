@@ -287,7 +287,13 @@ app.delete("/households/:id", requireAuth, wrap(async (req, res) => {
 // etc.) in this pass, see CLAUDE.md. One row per pair regardless of which
 // donor is A vs B; both directions are queried here so either donor's
 // profile shows the same link.
-const DONOR_RELATIONSHIP_TYPES = ["spouse", "household", "family", "employer_match"];
+// POLISH-4: and a person to an organization: Owner (owns it, gives through it)
+// and Works at. These two are stored person first (donor_id_a) and make one
+// giving unit for the lapse rule (shared/numbers/lapse.js UNIT_LINK_TYPES).
+const DONOR_RELATIONSHIP_TYPES = ["spouse", "household", "family", "employer_match", "owner", "works_at"];
+const PERSON_TO_ORG = new Set(["owner", "works_at"]);
+const isOrgRow = d => !!d && (["organisation", "organization"].includes(String(d.kind || "").toLowerCase())
+  || (Array.isArray(d.person_types) && d.person_types.includes("organization")));
 // Only these two types pool into a shared "household total" — family and
 // employer_match are relationship context, not a shared giving pool.
 const HOUSEHOLD_RELATIONSHIP_TYPES = ["spouse", "household"];
@@ -297,12 +303,12 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const donorId = req.params.id;
   const rows = await query(
-    `SELECT dr.id, dr.relationship_type, dr.notes, dr.created_at,
+    `SELECT dr.id, dr.relationship_type, dr.notes, dr.created_at, (dr.donor_id_a = ?) AS mine_first,
             CASE WHEN dr.donor_id_a = ? THEN dr.donor_id_b ELSE dr.donor_id_a END AS related_donor_id
      FROM donor_relationships dr
      WHERE dr.org_id = ? AND (dr.donor_id_a = ? OR dr.donor_id_b = ?)
      ORDER BY dr.created_at ASC`,
-    [donorId, orgId, donorId, donorId]
+    [donorId, donorId, orgId, donorId, donorId]
   );
   if (!rows.length) return res.json({ relationships: [], householdTotal: null });
 
@@ -320,6 +326,9 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
     relatedDonorId: r.related_donor_id,
     relatedDonorName: donorMap[r.related_donor_id]?.name || "(deleted donor)",
     relatedDonorTotalGiving: Number(donorMap[r.related_donor_id]?.total_giving) || 0,
+    // POLISH-4: which end of a person-to-organization link this record is
+    // ("person": Gives through X; "organization": Owner: Y).
+    side: PERSON_TO_ORG.has(r.relationship_type) ? (r.mine_first ? "person" : "organization") : null,
   }));
 
   // FIX-49 decision 8: the household record is the only grouping. The total
@@ -345,10 +354,14 @@ app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async 
   if (relatedDonorId === donorId) return res.status(400).json({ error: "A donor can't be linked to themselves" });
 
   const bothRows = await query(
-    "SELECT id FROM donors WHERE org_id = ? AND id IN (?, ?) AND deleted_at IS NULL",
+    "SELECT id, kind, person_types FROM donors WHERE org_id = ? AND id IN (?, ?) AND deleted_at IS NULL",
     [orgId, donorId, relatedDonorId]
   );
   if (bothRows.length < 2) return res.status(404).json({ error: "Donor not found" });
+  // POLISH-4: a person-to-organization link is stored person first, from
+  // whichever profile it was made.
+  let [idA, idB] = [donorId, relatedDonorId];
+  if (PERSON_TO_ORG.has(relationshipType) && isOrgRow(bothRows.find(d => d.id === donorId)) && !isOrgRow(bothRows.find(d => d.id === relatedDonorId))) [idA, idB] = [relatedDonorId, donorId];
 
   // Order-agnostic dedup — a link already stored as (B,A) shouldn't allow a
   // second (A,B) row for the same pair.
@@ -362,7 +375,7 @@ app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async 
   const id = "drel_" + uuid().slice(0, 8);
   await run(
     "INSERT INTO donor_relationships (id, org_id, donor_id_a, donor_id_b, relationship_type, notes, created_by, created_by_name) VALUES (?,?,?,?,?,?,?,?)",
-    [id, orgId, donorId, relatedDonorId, relationshipType, notes || null, actor(req).id, actor(req).name]
+    [id, orgId, idA, idB, relationshipType, notes || null, actor(req).id, actor(req).name]
   );
   if (req.audit) {
     const [r] = await query("SELECT * FROM donor_relationships WHERE id = ?", [id]);
@@ -371,6 +384,8 @@ app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async 
   // FIX-49 decision 8: a spouse or household link puts the two in one
   // household record, the one grouping (db.js householdsFromLinks).
   if (HOUSEHOLD_RELATIONSHIP_TYPES.includes(relationshipType)) await require("../../db").householdsFromLinks(orgId).catch(e => console.error("[fix-49] household:", e.message));
+  // POLISH-4: one giving unit now; an automatic Lapsed either one outlived goes.
+  if (PERSON_TO_ORG.has(relationshipType)) await require("../../afterChange").afterChange(orgId, [idA, idB], { door: "relationship", recalc: false }).catch(e => console.error("[polish-4] link:", e.message));
   res.status(201).json({ id });
 }));
 

@@ -600,11 +600,9 @@ const hello = x => {
   const solo = u.people.length === 1 ? u.people[0] : null;
   const org = u.people.length > 0 && !isPersonUnit(u);
   const name = String(x.name || "").trim();
-  const g = GREET ? GREET.greetingName({ name, kind: org ? "organisation" : (solo && solo.kind), salutation: solo && solo.salutation,
-    contactName: solo && solo.contact_name, spouseName: solo && solo.spouse_name }) : "";
-  // no first name to use ("K Valon Lane", one word, a bare "&"): the whole name, formally
-  if (!g || /^[A-Za-z]\.?$/.test(g.split(/\s+/)[0]) || /^[&+]/.test(g) || !/\s/.test(name)) return `Dear ${g && !/^[&+]/.test(g) && /\s/.test(g) ? g : name}`;
-  return solo && solo.salutation || /^friends at /.test(g) || g === name ? `Dear ${g}` : `Hi ${g}`;
+  // POLISH-4: the one opening line (greeting.js greetingLine): never "Dear Dr.", "Hi &" or "Hi K".
+  return GREET ? GREET.greetingLine({ name, kind: org ? "organisation" : (solo && solo.kind), salutation: solo && solo.salutation,
+    contactName: solo && solo.contact_name, spouseName: solo && solo.spouse_name }, { word: "Hi", punct: "" }) : `Dear ${name}`;
 };
 const yearsLine = x => Object.keys(x.byYear).sort().map(y => `${money(x.byYear[y])} (${y})`).join(", ");
 const windowWords = (from, to) => ({ from, to, words: from === to ? `on ${longDate(from)}` : `between ${longDate(from)} and ${longDate(to)}` });

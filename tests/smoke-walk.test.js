@@ -436,8 +436,8 @@ async function greetingFirst(browser, demoAuth) {
       rail: (document.querySelector('[data-testid="home-setup-rail"]') || {}).innerText || null,
       top: !!document.querySelector('[data-testid="home-rail"] > [data-testid="home-setup-rail"]:first-child') }));
     ok(later ? "§home-4 \"I'll finish later\" moves the new org's setup card to the top of the rail, and it stays there"
-             : "§home-4 three steps done: setup is the rail's first card, with the count, the next step and Show all steps",
-       s2.first === 0 && s2.top && /Set up Steward · \d+ of \d+/.test(s2.rail || "") && /Show all steps/.test(s2.rail || "") && (later || /Next:/.test(s2.rail || "")), s2);
+             : "§home-4 three steps done: setup is the rail's first card, with the count, the next step and its steps open (Hide the steps)",
+       s2.first === 0 && s2.top && /Set up Steward · \d+ of \d+/.test(s2.rail || "") && /Hide the steps/.test(s2.rail || "") && (later || /Next:/.test(s2.rail || "")), s2);
     await ctx.close();
   }
 }

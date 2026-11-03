@@ -29,6 +29,10 @@
 //   GET  /data-health/families             FIX-59: two people of one surname who share an
 //                                          address, phone or email: a family, not a duplicate
 //   POST /data-health/families/dismiss     "Not a family", remembered
+//   GET  /data-health/businesses           POLISH-4: a person and an organization that look
+//                                          like one giving unit (dataHealth.js businessLinks)
+//   POST /data-health/businesses/link      link them as Owner; Undo deletes the link
+//   POST /data-health/businesses/dismiss   "Not linked", remembered
 //   GET  /data-health/event-pairs          FIX-59: two spellings of one person on one event's list
 //   POST /data-health/event-pairs/answer   Same person (merged) or Different (remembered)
 //   POST /data-health/pairs/undismiss      the Undo of "Different" / "Not a duplicate"
@@ -168,7 +172,7 @@ async function who(req) {
 }
 
 // ── What the page reads ─────────────────────────────────────────────────────
-const PERSON_COLS = `id, org_id, name, kind, email, email2, phone, mobile, address, address2, city, state, zip, country,
+const PERSON_COLS = `id, org_id, name, kind, person_types, email, email2, phone, mobile, address, address2, city, state, zip, country,
   employer, household_id, deceased, do_not_contact, do_not_mail, email_unreachable, email_unreachable_reason,
   address_unmailable, address_unmailable_reason, total_giving, gift_count, last_gift_date, created_at, updated_at,
   created_import_id, deleted_at, erased_at`;
@@ -355,10 +359,11 @@ async function pledgeEventDayRows(orgId, onlyIds = null) {
 // all read this, so a count and the rows it opens cannot disagree.
 async function healthCounts(orgId) {
   const people = await livePeople(orgId);
-  const [found, addresses, emails, moves, couples, names, eventPairs, pledgeDays] = await Promise.all([
+  const [found, addresses, emails, moves, couples, names, eventPairs, pledgeDays, businesses] = await Promise.all([
     pairsAndFamilies(orgId, people), addressRows(orgId, people), emailRows(orgId, people),
     query("SELECT COUNT(*)::int AS n FROM ncoa_moves WHERE org_id=? AND status='pending'", [orgId]),
     coupleRows(orgId, people), nameNoteRows(orgId, people), eventPairRows(orgId, people), pledgeEventDayRows(orgId),
+    businessRows(orgId, people),
   ]);
   const pairs = found.pairs;
   const [{ n: ncoaFiles } = { n: 0 }] = await query("SELECT COUNT(*)::int AS n FROM ncoa_batches WHERE org_id=?", [orgId]);
@@ -374,6 +379,7 @@ async function healthCounts(orgId) {
     unreachable: unreachableRows(people).length,
     couples: couples.length,
     families: found.families.length,
+    businesses: businesses.length,
     namesWithNotes: names.length,
     eventDuplicates: eventPairs.length,
     eventDuplicatesByEvent: eventPairCounts(eventPairs),
@@ -1114,6 +1120,49 @@ app.post("/data-health/families/dismiss", requireAuth, checkWriteAccess, wrap(as
   const me = await who(req);
   await run(`INSERT INTO data_health_dismissals (id, org_id, kind, key, created_by, created_by_name) VALUES (?,?,?,?,?,?) ON CONFLICT (org_id, kind, key) DO NOTHING`,
     ["dhd_" + uuid().slice(0, 12), req.user.orgId, "family", DH.pairKey(String(a), String(b)), me.id, me.name]);
+  res.status(201).json({ ok: true });
+}));
+
+// ── People and their businesses (POLISH-4) ─────────────────────────────────
+// dataHealth.js businessLinks: an organization and a person who look like one
+// giving unit. One click links them as Owner (owns it, gives through it), the
+// lapse rule's giving unit; Undo is the link's own delete (to the trash).
+async function businessRows(orgId, people) {
+  const linked = new Set((await query("SELECT donor_id_a, donor_id_b FROM donor_relationships WHERE org_id=?", [orgId])).map(r => DH.pairKey(r.donor_id_a, r.donor_id_b)));
+  return DH.businessLinks(people, { linked, dismissed: await dismissedKeys(orgId, "business") });
+}
+app.get("/data-health/businesses", requireAuth, wrap(async (req, res) => {
+  const people = await livePeople(req.user.orgId);
+  const byId = new Map(people.map(d => [d.id, d]));
+  const rows = await businessRows(req.user.orgId, people);
+  const { limit, offset } = pageOf(req);
+  res.json({ total: rows.length, offset, rows: rows.slice(offset, offset + limit).map(f => ({ ...f, person: brief(byId.get(f.a)), business: brief(byId.get(f.b)) })),
+    sentence: `${rows.length.toLocaleString("en-US")} ${rows.length === 1 ? "person looks" : "people look"} linked to an organization on file: its name carries their last name and they share an address, phone or email domain, or their work email is at its domain. A last name alone is never enough.` });
+}));
+app.post("/data-health/businesses/link", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const { a, b } = req.body || {};
+  const people = await query(`SELECT ${PERSON_COLS} FROM donors WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL`, [orgId, [String(a), String(b)]]);
+  const p = people.find(d => d.id === a), o = people.find(d => d.id === b);
+  if (!p || !o) return res.status(404).json({ error: "Donor not found" });
+  if (!DH.isOrgPerson(o) || DH.isOrgPerson(p)) return res.status(400).json({ error: "bad_pair", sentence: "Link a person to an organization." });
+  const [had] = await query(`SELECT id FROM donor_relationships WHERE org_id=? AND ((donor_id_a=? AND donor_id_b=?) OR (donor_id_a=? AND donor_id_b=?))`, [orgId, a, b, b, a]);
+  if (had) return res.status(409).json({ error: "linked", sentence: `${p.name} and ${o.name} are already linked.` });
+  const me = await who(req);
+  const id = "drel_" + uuid().slice(0, 8);
+  await run("INSERT INTO donor_relationships (id, org_id, donor_id_a, donor_id_b, relationship_type, notes, created_by, created_by_name) VALUES (?,?,?,?,?,?,?,?)",
+    [id, orgId, p.id, o.id, "owner", "Linked from Data health: people and their businesses", me.id, me.name]);
+  await require("../afterChange").afterChange(orgId, [p.id, o.id], { door: "relationship", recalc: false }).catch(e => console.error("[polish-4] link:", e.message));
+  res.status(201).json({ id, sentence: `${p.name} now gives through ${o.name}. A gift from either keeps both off Lapsed.` });
+}));
+app.post("/data-health/businesses/dismiss", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { a, b } = req.body || {};
+  if (!a || !b || a === b) return res.status(400).json({ error: "Two different people are needed." });
+  const own = await query("SELECT id FROM donors WHERE org_id=? AND id = ANY(?)", [req.user.orgId, [String(a), String(b)]]);
+  if (own.length !== 2) return res.status(404).json({ error: "Donor not found" });
+  const me = await who(req);
+  await run(`INSERT INTO data_health_dismissals (id, org_id, kind, key, created_by, created_by_name) VALUES (?,?,?,?,?,?) ON CONFLICT (org_id, kind, key) DO NOTHING`,
+    ["dhd_" + uuid().slice(0, 12), req.user.orgId, "business", DH.pairKey(String(a), String(b)), me.id, me.name]);
   res.status(201).json({ ok: true });
 }));
 

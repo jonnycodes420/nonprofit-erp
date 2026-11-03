@@ -2318,10 +2318,10 @@ async function sendRecoveredThankYouEmail(org, donor, subscriptionRow) {
   const decision = await donorMailDecision("recovered_thankyou", donor.email, org.id);
   if (!decision.send) return;
   const dfName = await donorFacingOrgName(org.id, org.name); // W-2 white-label
-  const firstName = donor.name ? donor.name.trim().split(/\s+/)[0] : "";
+  const hi = escapeHtml((await import("../shared/greeting.js")).greetingLine(donor, { word: "Hi" }));   // POLISH-4: the one opening line
   const amountStr = subscriptionRow.amount != null ? `$${Number(subscriptionRow.amount).toLocaleString()}` : "your";
   const subject = "You're all set, thank you!";
-  const bodyHtml = `<p>Hi ${firstName},</p>
+  const bodyHtml = `<p>${hi}</p>
 <p>Great news, your card on file worked, and your ${amountStr} gift to ${dfName} went through. Your recurring support is active again, and we're so grateful for it.</p>
 <p>Thank you for sticking with us.</p>
 <p>With gratitude,<br/>${dfName}</p>`

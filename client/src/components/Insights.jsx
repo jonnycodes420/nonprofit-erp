@@ -384,6 +384,7 @@ const MOVE_CHIP = { display: "inline-flex", alignItems: "center", gap: 6, backgr
 const elsewhere = (t, m) => (m.group && m.group.elsewhere) || 0;
 // PERF-2: the moves a tab carries, less those acted on here. Home's first read
 // carries a tab's first moves and says how many it carries in all (`carried`).
+const plannedLeft = t => t.left.length + Math.max(0, t.count - t.moves.length);
 const carriedLeft = (t, gone) => Math.max(0, (t.carried != null ? t.carried : t.moves.length) - t.moves.filter(m => gone.has(m.id)).length);
 function tabCountWords(t, gone) {
   const n = t.left.length + Math.max(0, t.count - t.moves.length);
@@ -410,7 +411,9 @@ function MoveChips({ deck, anyMoves, setPanel, onDrift }) {
 }
 
 // HOME-4 · an org with no donors yet: one friendly card, never empty tabs.
-function NoDonorsCard({ onNavigate, sample }) {
+// POLISH-4: while the setup card above offers the import, this card does not
+// offer it a third time; it says where the step is.
+function NoDonorsCard({ onNavigate, sample, importAbove = false }) {
   const [busy, setBusy] = useState(false);
   const load = async () => {
     setBusy(true);
@@ -418,16 +421,16 @@ function NoDonorsCard({ onNavigate, sample }) {
   };
   return (
     <div data-testid="moves-no-donors" style={{ background: T.bg, borderRadius: 18, padding: "26px 28px", display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ fontSize: 17, lineHeight: 1.5, color: T.ink }}>Bring in your donors and Steward will show you who to call first.</div>
+      <div style={{ fontSize: 17, lineHeight: 1.5, color: T.ink }}>{importAbove ? "Once your donors are in (the first step above), Steward shows you who to call first." : "Bring in your donors and Steward will show you who to call first."}</div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <button type="button" className="moves-btn" data-testid="moves-import" style={BTN_PRIMARY} onClick={() => onNavigate && onNavigate("donors", { openImport: true })}>Import a spreadsheet</button>
+        {!importAbove && <button type="button" className="moves-btn" data-testid="moves-import" style={BTN_PRIMARY} onClick={() => onNavigate && onNavigate("donors", { openImport: true })}>Import a spreadsheet</button>}
         {sample && <button type="button" className="moves-btn" data-testid="moves-sample" style={BTN_QUIET} disabled={busy} onClick={load}>{busy ? "Loading sample data…" : "Explore with sample data"}</button>}
       </div>
     </div>
   );
 }
 
-export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = false, drift = null }) {
+export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = false, drift = null, importAbove = false }) {
   // HOME-4: the deck alone; the ladder and "See all" panels read the cards when they open.
   // PERF-2: Home's first read carries each tab's first moves (deck.partial);
   // every move is read when she first reaches for the deck (a touch, a hover,
@@ -529,7 +532,7 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
         {m && m.say && !noDonors && <div data-testid="moves-never" style={{ fontSize: 13, color: T.ink3 }}>{data.sentences && data.sentences.never}</div>}
       </div>
       {data.coverage && data.coverage.stale && <div role="note" style={{ fontSize: 13.5, color: T.ink, borderLeft: "3px solid " + T.gold, paddingLeft: 10 }}>{data.coverage.sentence}</div>}
-      {noDonors && !anyMoves ? <NoDonorsCard onNavigate={onNavigate} sample={sample} /> : !anyMoves ? (
+      {noDonors && !anyMoves ? <NoDonorsCard onNavigate={onNavigate} sample={sample} importAbove={importAbove} /> : !anyMoves ? (
         <div data-testid="moves-empty" style={{ background: T.bg, borderRadius: 16, padding: "26px 24px", fontSize: 15, color: T.ink, lineHeight: 1.55 }}>
           No moves yet. Once gifts are in Steward, the people to reach out to, and what to say, show here one at a time.
         </div>
@@ -542,7 +545,8 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
               <span style={{ display: "block", fontSize: 14.5, fontWeight: 700 }}>{t.label} · {tabCountWords(t, gone)}</span>
               <span className="moves-stake" style={{ display: "block", fontSize: 12.5, marginTop: 2, opacity: 0.85 }}>
                 {/* SWEEP-1: the tab's own total (every move, not the first 150 the deck carries), less what was acted on here */}
-                {t.key === "planned" ? `${carriedLeft(t, gone).toLocaleString("en-US")} ${carriedLeft(t, gone) === 1 ? "person" : "people"}` : `${money((t.cents || 0) - t.moves.filter(x => gone.has(x.id)).reduce((n, x) => n + (x.cents || 0), 0))} at stake`}</span>
+                {/* POLISH-4: Planned says its own people, the same count as its label, never the 150 the deck carries */}
+                {t.key === "planned" ? `${plannedLeft(t).toLocaleString("en-US")} ${plannedLeft(t) === 1 ? "person" : "people"} with a signal` : `${money((t.cents || 0) - t.moves.filter(x => gone.has(x.id)).reduce((n, x) => n + (x.cents || 0), 0))} at stake`}</span>
             </button>
           ))}
         </div>

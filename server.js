@@ -1646,6 +1646,12 @@ async function greetFor(person, fallback = "there") {
   await GREET_READY;
   return GREET.greetingName(person || {}) || fallback;
 }
+// POLISH-4: the one opening line (greeting.js greetingLine): "Dear Ruth,",
+// "Hi Desmond and Ruth,", and "Hello," only when there is no name to use.
+async function openingLine(person, word = "Dear") {
+  await GREET_READY;
+  return GREET.greetingLine(person || {}, { word });
+}
 
 async function orgDonorIds(orgId, ids) {
   const list = [...new Set((ids || []).filter(Boolean).map(String))];
@@ -3469,15 +3475,16 @@ async function recordAutoMove(orgId, donorId, fromStage, toStage, description) {
 // wins). Returns the count moved. Editable afterward regardless.
 async function autoLapseOrg(orgId) {
   const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK (FIX-49: the org's day, not the server's)
-  const cutoff = lapseRule.bounds(today).lapsedOnOrBefore;
+  // POLISH-4: lapsed by the one rule (shared/numbers/lapse.js): a pledge, or
+  // a gift from someone in their giving unit, holds them.
+  const lapsedNow = require("./shared/numbers/lapse").lapsedSql("d.last_gift_date", today, "d.id");
   const rows = await query(
     `SELECT d.id, d.stage, d.last_gift_date FROM donors d
       WHERE d.org_id=? AND d.deleted_at IS NULL
         AND d.imported_sustainer IS NOT TRUE
         AND d.gift_count > 0
         AND d.last_gift_date IS NOT NULL AND d.last_gift_date <> ''
-        AND d.last_gift_date::date <= ?::date
-        AND NOT ${require("./shared/numbers/lapse").holdSql("d.id", today).sql}
+        AND ${lapsedNow.sql}
         AND d.stage NOT IN ('lapsed','solicit')
         AND NOT EXISTS (SELECT 1 FROM opportunities o
                           WHERE o.org_id=d.org_id AND o.donor_id=d.id AND o.status='open')
@@ -3486,7 +3493,7 @@ async function autoLapseOrg(orgId) {
                             AND m.officer_id IS NOT NULL AND m.to_stage <> 'lapsed'
                             AND m.created_at::date > d.last_gift_date::date)
       LIMIT 200`,
-    [orgId, cutoff, ...require("./shared/numbers/lapse").holdSql("d.id", today).args]);
+    [orgId, ...lapsedNow.args]);
   let moved = 0;
   const months = Math.round(LAPSE_DAYS / 30);
   for (const d of rows) {
@@ -3511,6 +3518,12 @@ async function autoLapseOrg(orgId) {
 // people one write touched (the after-change step); with none, the whole org.
 async function unlapseHeldByPledge(orgId, ids = null) {
   const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  // POLISH-4: the people linked to the ones this write touched are in their giving unit.
+  if (ids && ids.length) {
+    const linked = await query(`SELECT donor_id_a, donor_id_b FROM donor_relationships WHERE org_id=? AND (donor_id_a = ANY(?) OR donor_id_b = ANY(?))
+        AND relationship_type = ANY(?)`, [orgId, ids, ids, [...require("./shared/numbers/lapse").UNIT_LINK_TYPES]]);
+    ids = [...new Set([...ids, ...linked.flatMap(r => [r.donor_id_a, r.donor_id_b])])];
+  }
   const hold = require("./shared/numbers/lapse").holdSql("d.id", today);
   const rows = await query(
     `SELECT d.id FROM donors d
@@ -3520,11 +3533,24 @@ async function unlapseHeldByPledge(orgId, ids = null) {
                           AND m.officer_id IS NOT NULL AND m.to_stage='lapsed')
       LIMIT 200`,
     [orgId, ...(ids ? [ids] : []), ...hold.args]);
+  // POLISH-4: and somebody Steward placed in Lapsed whose giving unit (the
+  // business they own or work at, or its owner) has since given.
+  const lapsedNow = require("./shared/numbers/lapse").lapsedSql("d.last_gift_date", today, "d.id");
+  const unitRows = await query(
+    `SELECT d.id FROM donors d
+      WHERE d.org_id=? AND d.deleted_at IS NULL AND d.stage='lapsed'${ids ? " AND d.id = ANY(?)" : ""}
+        AND NOT ${hold.sql} AND NOT ${lapsedNow.sql}
+        AND (${require("./shared/numbers/lapse").linkedLastSql("d.id")}) IS NOT NULL
+        AND EXISTS (SELECT 1 FROM moves m WHERE m.org_id=d.org_id AND m.donor_id=d.id AND m.officer_id IS NULL AND m.to_stage='lapsed')
+        AND NOT EXISTS (SELECT 1 FROM moves m WHERE m.org_id=d.org_id AND m.donor_id=d.id
+                          AND m.officer_id IS NOT NULL AND m.to_stage='lapsed')
+      LIMIT 200`,
+    [orgId, ...(ids ? [ids] : []), ...hold.args, ...lapsedNow.args]);
   let moved = 0;
-  for (const d of rows) {
+  for (const [d, why] of [...rows.map(r => [r, "Auto: they made a pledge"]), ...unitRows.map(r => [r, "Auto: someone they give with gave"])]) {
     const upd = await query("UPDATE donors SET stage='steward', updated_at=NOW() WHERE id=? AND org_id=? AND stage='lapsed' RETURNING id", [d.id, orgId]);
     if (!upd.length) continue;
-    await recordAutoMove(orgId, d.id, "lapsed", "steward", "Auto: they made a pledge");
+    await recordAutoMove(orgId, d.id, "lapsed", "steward", why);
     moved++;
   }
   return moved;
@@ -6586,7 +6612,7 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
     : tasks.count ? L.buttonHtml(`Review ${tasks.count} ${tasks.count === 1 ? "task" : "tasks"}`, `${base}/app/tasks`)
     : L.buttonHtml("Open Steward", `${base}/dashboard`);
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
-      <div style="font-size:11.5px;letter-spacing:0.1em;text-transform:uppercase;color:${SAGE};">${digestEsc(displayNameCase(user?.name || ""))} · ${digestEsc(today)}</div>
+      <div style="font-size:11.5px;letter-spacing:0.1em;text-transform:uppercase;color:${SAGE};">${digestEsc(displayNameCase(user?.name || ""))} · ${digestEsc(orgTime.civilLocale(today, { month: "long", day: "numeric", year: "numeric" }))}</div>
       ${threadBlock}${readoutBlock}${taskBlock}${meetingBlock}${teamBlock}${button}${footer}
       ${user && user.id && user.email ? `<div style="margin-top:10px;font-size:11px;color:${SAGE};">You get this because the morning email is on in Settings, under Your email, where you choose what is in it and when it comes. <a href="${staffUnsubscribeUrl(user, org.id)}" style="color:${SAGE};text-decoration:underline;">Unsubscribe</a> from the morning email.</div>` : ""}
     </div>`;
@@ -6738,7 +6764,7 @@ async function runMeetingBriefForOrg(org, { today, send = true, skipUsers = null
     const at = iso => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz });
     const lines = b => [b && b.giving && `Giving: ${b.giving.text}`, b && b.openAsk && `Open ask: ${b.openAsk.text}`,
       b && b.lastTime && `Last time: ${b.lastTime.text}`, b && b.unthanked && b.unthanked.text].filter(Boolean);
-    const body = `<p style="color:#0f1a12;">Good morning${u.name ? ", " + escHtmlWf(u.name.split(" ")[0]) : ""}. Here ${meetings.length === 1 ? "is the meeting" : `are the ${meetings.length} meetings`} on your calendar today, with what Steward knows about each person.</p>`
+    const body = `<p style="color:#0f1a12;">Good morning${u.name && GREET && GREET.greetingName({ name: u.name }) ? ", " + escHtmlWf(GREET.greetingName({ name: u.name })) : ""}. Here ${meetings.length === 1 ? "is the meeting" : `are the ${meetings.length} meetings`} on your calendar today, with what Steward knows about each person.</p>`
       + meetings.map(m => `<div style="margin:14px 0;padding:12px 14px;background:#F0EDE6;border-radius:8px;">
 <p style="margin:0;color:#0f1a12;"><strong>${escHtmlWf(m.startsAt ? at(m.startsAt) : "Today")}</strong> · ${escHtmlWf(m.title || "Meeting")}${(m.people || []).length ? " with " + escHtmlWf(m.people.map(p => p.name).join(", ")) : ""}</p>
 ${lines(m.brief).map(l => `<p style="margin:4px 0 0;color:#3a4a3f;font-size:14px;">${escHtmlWf(l)}</p>`).join("")}</div>`).join("")
@@ -6884,7 +6910,8 @@ function renderWeeklyBody(w, org, user) {
   const list = items => `<ul style="margin:6px 0 0;padding-left:18px;">${items.map(i => `<li style="margin:4px 0;font-size:13.5px;color:${INK};">${i}</li>`).join("")}</ul>`;
   const more = (shown, total) => total > shown ? `<div style="font-size:12px;color:${SAGE};margin-top:4px;">and ${total - shown} more in Steward.</div>` : "";
   const head = t => `<div style="font-family:'DM Serif Display',Georgia,serif;font-size:17px;color:${INK};margin-top:20px;">${t}</div>`;
-  const first = displayNameCase(String(user?.name || "").split(/\s+/)[0] || "");
+  // POLISH-4: the one greeting rule (greeting.js), never "Good morning, Dr."
+  const first = displayNameCase(GREET ? GREET.greetingName({ name: String(user?.name || "") }) : String(user?.name || "").split(/\s+/)[0] || "");
   const empty = weeklyIsEmpty(w);
 
   let ahead = "";
@@ -7661,11 +7688,11 @@ async function computeNoteTalkingPoints(donorId, orgId, meta) {
 
 // FIX-27 Part 7: the template sentence a milestone draft falls back to. It
 // says only what Steward computed: the threshold crossed, or the anniversary.
-function milestoneTemplate(firstName, orgName, meta) {
+function milestoneTemplate(firstName, orgName, meta, opening = `Dear ${firstName},`) {
   const line = meta.milestone_type === "anniversary"
     ? `It has been ${meta.label || "another year"} since your first gift to ${orgName || "us"}, and we are grateful for every year of it.`
     : `Your giving to ${orgName || "us"} has now passed $${(meta.threshold || 0).toLocaleString("en-US")}, and we wanted to thank you for every gift that got it there.`;
-  return { subject: `Thank you, ${firstName}`, body: `Dear ${firstName},\n\n${line}\n\nWith gratitude,` };
+  return { subject: firstName ? `Thank you, ${firstName}` : "Thank you", body: `${opening}\n\n${line}\n\nWith gratitude,` };
 }
 
 // Generates a warm, specific, non-gamified thank-you draft for one milestone.
@@ -7733,7 +7760,7 @@ Write the email now.`,
     const chk = await DRAFT_CHECK.checkDraft(`${parsed.subject}\n${parsed.body}`, await DRAFT_CHECK.draftRecord(orgId, donor.id));
     if (!chk.ok) {
       recordAiFallback(orgId, "milestone_draft", chk.reasons.join(" · "));
-      return milestoneTemplate(firstName, orgName, meta);
+      return milestoneTemplate(firstName, orgName, meta, await openingLine(donor));
     }
     return { subject: String(parsed.subject), body: String(parsed.body) };
   } catch (e) {
@@ -7788,7 +7815,7 @@ Write the email now.`,
     if (!chk.ok) {
       recordAiFallback(orgId, "at_risk_draft", chk.reasons.join(" · "));
       return { subject: `Thinking of you, ${firstName}`,
-        body: `Dear ${firstName},\n\nWe were thinking of you and wanted to say hello from ${orgName || "all of us"}. Thank you for everything you have given; it has mattered.\n\nWarmly,` };
+        body: `${await openingLine(donor)}\n\nWe were thinking of you and wanted to say hello from ${orgName || "all of us"}. Thank you for everything you have given; it has mattered.\n\nWarmly,` };
     }
     return { subject: String(parsed.subject), body: String(parsed.body) };
   } catch (e) {
@@ -9015,13 +9042,14 @@ ${person ? L.refButtonHtml(person, base) : ""}`;
     case "draft_email": {
       if (!donor) return null;
       const orgName = displayNameCase(org.name);
+      const hi = await openingLine(donor, "Hi");   // POLISH-4
       const DRAFTS = {
         recovery: [`About your monthly gift to ${orgName}`,
-          `Hi ${firstName},\n\nYour monthly gift to ${orgName} didn't go through this time. It happens, usually because a card expired or was replaced. ${org.recurring_dunning_enabled === false ? "If you reply, I'll send you a secure link to update your card." : "We have sent you a separate email with a secure link to update your card."}\n\nThank you for giving every month. It makes a real difference, and if there's anything I can help with, just reply.\n\nWith thanks,\n${orgName}`],
+          `${hi}\n\nYour monthly gift to ${orgName} didn't go through this time. It happens, usually because a card expired or was replaced. ${org.recurring_dunning_enabled === false ? "If you reply, I'll send you a secure link to update your card." : "We have sent you a separate email with a secure link to update your card."}\n\nThank you for giving every month. It makes a real difference, and if there's anything I can help with, just reply.\n\nWith thanks,\n${orgName}`],
         thankyou: [`Thank you from ${orgName}`,
-          `Hi ${firstName},\n\nThank you for your first gift to ${orgName}, and welcome. Gifts like yours are what make our work possible, and we're so glad you're part of it.\n\nYou'll hear from a real person here soon. In the meantime, just reply if there's anything you'd like to know.\n\nWith gratitude,\n${orgName}`],
+          `${hi}\n\nThank you for your first gift to ${orgName}, and welcome. Gifts like yours are what make our work possible, and we're so glad you're part of it.\n\nYou'll hear from a real person here soon. In the meantime, just reply if there's anything you'd like to know.\n\nWith gratitude,\n${orgName}`],
         reengage: [`We've missed you at ${orgName}`,
-          `Hi ${firstName},\n\nIt's been a while, and we've missed you at ${orgName}. Your past support made a real difference, and there's more good work ahead we'd love for you to be part of.\n\nIf now's a good time to come back, we'd be grateful. And if not, thank you all the same.\n\nWarmly,\n${orgName}`],
+          `${hi}\n\nIt's been a while, and we've missed you at ${orgName}. Your past support made a real difference, and there's more good work ahead we'd love for you to be part of.\n\nIf now's a good time to come back, we'd be grateful. And if not, thank you all the same.\n\nWarmly,\n${orgName}`],
       };
       const tpl = DRAFTS[action.template];
       if (!tpl) return null;

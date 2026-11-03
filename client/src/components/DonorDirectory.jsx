@@ -23,11 +23,8 @@ import { offerUndo } from "./EditHistory";
 import { usePrivacy } from "./PrivacyPanel";
 import { displayDate, displayMonth } from "../../../shared/displayDate.js";
 import { displayName } from "../../../shared/displayName.js";
-// FIX-49: the one lapse rule, on the org's own calendar.
-import lapseRuleMod from "../../../lapseRule.js";
-import { orgTodayCivil } from "../lib/orgToday";
 import { countLabel, plural } from "../../../shared/countWords.js";
-const { isLapsed } = lapseRuleMod;
+import { MergeWithModal } from "./profile/MergeWith";
 
 // FIX-2 C — a stage is a word on a cream chip, not a green badge: emerald is
 // the one action on the screen. Lapsed alone keeps a colour, and it is brass.
@@ -101,8 +98,9 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
   // (deceased / do-not-contact / do-not-solicit) never appears here, and an
   // unlinked imported sustainer belongs to the recurring reconnect list —
   // their card stopped, they did not choose to leave.
-  const askable=d=>!d.deceased&&!d.doNotContact&&!d.doNotSolicit&&!d.importedSustainer;
-  const lapsed=[...donors].filter(d=>askable(d)&&(d.stage==="lapsed"||(!d.pledgeHold&&isLapsed(d.lastGift,orgTodayCivil())))).sort((a,b)=>b.total-a.total);
+  // POLISH-4 — who is on it is decided once, on the server (lapse.js reengageSql):
+  // the badge, this list and its tiles name the same people.
+  const lapsed=[...donors].filter(d=>d.reengage).sort((a,b)=>b.total-a.total);
   const totalValue=lapsed.reduce((s,d)=>s+d.total,0);
   // BUILD-79 Part 4 — averaged over donors with a REAL date only; a donor
   // with no dates contributes nothing rather than a today-anchored zero.
@@ -456,6 +454,8 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
   }
 
   const selFiltered=filtered.filter(d=>selIds.has(d.id));
+  const[mergePair,setMergePair]=useState(null);   // POLISH-4
+  const[filtersOpen,setFiltersOpen]=useState(false);   // POLISH-4: the phone's Filters button
   const shownRows=filtered;
   const allChecked=filtered.length>0&&filtered.every(d=>selIds.has(d.id));
   const someChecked=!allChecked&&filtered.some(d=>selIds.has(d.id));
@@ -609,6 +609,13 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
 
       {/* Filters */}
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        {/* POLISH-4 — on a phone the selects fold behind one Filters button
+            (as Team and Data health do), so the first donor is on the first screen. */}
+        <button type="button" className="dir-filters-toggle" data-testid="dir-filters-toggle" aria-expanded={filtersOpen} onClick={()=>setFiltersOpen(o=>!o)}
+          style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+          {filtersOpen?"Hide filters":"Filters"}{[statusFilter,stageFilter,assigneeFilter,designationFilter,sortBy].filter(Boolean).length?` · ${[statusFilter,stageFilter,assigneeFilter,designationFilter,sortBy].filter(Boolean).length}`:""}
+        </button>
+        <div className={"dir-filters"+(filtersOpen?" open":"")} style={{display:"contents"}}>
         {/* PARITY-1 — the tags and the closeness word, as filters. The same
             rules a Group uses (donorStatus.js). */}
         {setStatusFilter&&<select data-testid="dir-status-filter" aria-label="Tag or closeness" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={filterSel}>
@@ -649,6 +656,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
         {onPageSize&&<select data-testid="dir-page-size" aria-label="Rows per page" value={pageSize} onChange={e=>onPageSize(Number(e.target.value))} style={filterSel}>
           {PAGE_SIZES.map(n=><option key={n} value={n}>{n} per page</option>)}
         </select>}
+        </div>
         {household&&<span data-testid="dir-household" style={{fontSize:12,color:T.ink,fontWeight:700,background:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px",display:"inline-flex",gap:8,alignItems:"center"}}>
           One household
           {clearHousehold&&<button onClick={clearHousehold} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,fontSize:12,cursor:"pointer"}}>Show everyone</button>}
@@ -721,6 +729,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
         </div>
       )}
 
+      {mergePair&&<MergeWithModal donor={mergePair[0]} other={mergePair[1]} onMerged={()=>{setSelIds(new Set());if(onBulkDone)onBulkDone();}} onClose={()=>setMergePair(null)}/>}
       {/* Bulk action bar — shown when ≥1 rows selected */}
       {(selIds.size>0||matchingIds)&&(
         <div data-testid="dir-bulk-bar" style={{background:T.ink,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
@@ -759,6 +768,12 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           {canMajorGifts&&<button data-testid="dir-screening-file" onClick={()=>setScreenFor({donorIds:selFiltered.map(d=>d.id)})} disabled={busy}
             style={{background:"transparent",border:"1px solid "+T.gold500,borderRadius:8,padding:"7px 12px",color:T.gold500,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
             Prepare a screening file
+          </button>}
+
+          {/* POLISH-4 — two ticked records she knows are one person. */}
+          {!isReadOnly&&selFiltered.length===2&&<button type="button" data-testid="dir-merge-two" onClick={()=>setMergePair(selFiltered)} disabled={busy}
+            style={{background:"transparent",border:"1px solid "+T.gold500,borderRadius:8,padding:"7px 12px",color:T.gold500,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
+            Merge
           </button>}
 
           {/* PARITY-1 Part D — put the ticked people in a group kept by hand. */}
