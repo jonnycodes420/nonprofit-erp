@@ -315,6 +315,9 @@ Full before/after + break-glass: `audit/deploy-rewire.md`. The shape:
 - An unchanged schema hash skips init AND opens the server before the org_creo demo seed, which re-checks in the background (it was ~30s of every prod boot). A new or changed schema still waits for the seed.
 - Schema init runs on ONE session with `lock_timeout = 1s` and retries on `55P03` (`ddlSession` in db.js), so an ALTER never queues in front of reads the old instance is serving. Planted without the timeout, a live read blocked 7s; with it, under 1s.
 - `/health` stays behind the readiness gate on purpose: the CI poll waits for `status:ok` and the new buildSha.
+- DEPLOY-1: ready means every route can answer. `bootGate.need(name, promise)` registers a boot step (the database chain with the custom-field step, a warm pool, the shared ESM modules, the AI client, the Ask modules); `/ready` and the request gate stay 503 until every need resolves, and `/ready` names what it waits for. A new boot step that a route depends on is a `need`, never a timer.
+- DEPLOY-1: SIGTERM drains (`server/shared/lifecycle.js`): `/ready` 503, the socket closes, requests in flight finish for up to `SHUTDOWN_GRACE_MS` (25 s), a worker claims nothing more and hands back what it still holds, exit 0. Railway's draining time defaults to 0 (SIGKILL at once), so both services set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS=30`.
+- DEPLOY-1: the worker has no public address; it writes `process_heartbeats` every 30 s and the web's `/health.worker` carries the newest (role, buildSha). CI's verify step and the AI smoke wait for both builds; the smoke retries a failed Ask once after 15 s and fails on the second, saying both.
 
 ## Vercel config
 - Root directory: blank (not "client")

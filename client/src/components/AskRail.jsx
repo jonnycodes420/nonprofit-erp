@@ -48,6 +48,8 @@ const HERO_CSS = `
 .ask-hero-box:focus-within { border-color: ${T.greenDk}; box-shadow: 0 0 0 3px rgba(13,92,58,0.12); }
 .ask-doors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .ask-doors[data-count="1"] { grid-template-columns: 1fr; }
+.ask-tries { scrollbar-width: none; }
+.ask-tries::-webkit-scrollbar { display: none; }
 .ask-door { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: ${T.ground}; border: 1px solid ${T.bg2};
   border-radius: 14px; padding: 14px 18px; cursor: pointer; font: inherit; min-width: 0; transition: background .12s ease, border-color .12s ease; }
 .ask-door:hover { background: ${T.white}; border-color: ${T.greenDk}; }
@@ -207,24 +209,28 @@ export function AskHero({ isReadOnly, onStepTaken, agent, day, lead, doors: show
           style={{ ...BTN, borderRadius: 999, padding: "9px 20px", fontSize: 14, opacity: text.trim() ? 1 : 0.45, cursor: text.trim() ? "pointer" : "not-allowed" }}>
           {text.trim() && canAgent && !isQuestion(text) ? "Go" : "Ask"}</button>
       </form>
-      {tries.length > 0 && (
-        <div data-testid="ask-tries" style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 13, color: T.ink3, marginTop: -2 }}>
-          <span style={{ padding: "3px 2px", color: T.ink3 }}>Try:</span>
-          {tries.map(t => <button key={t} type="button" data-testid="ask-try" onClick={() => ask(t)}
-            style={{ border: "1px solid " + T.bg2, borderRadius: 16, padding: "3px 12px", background: T.ground, color: T.ink2, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{t}</button>)}
-        </div>
-      )}
+      {/* SHIFT-2 — THESE TWO ROWS ARE THEIR HEIGHT FROM THE FIRST FRAME. Their
+          words come from reads (Home's lead, the agent's day) that can land
+          after Home has painted, and when the suggestions did (CI's slower
+          runner), the row arrived 68 px tall on a phone, two lines of chips,
+          and pushed Your moves down (CLS 0.045). Each row is one line of a fixed
+          height, there before its words: the chips scroll sideways rather than
+          wrap, and the agent's line ends in an ellipsis. */}
+      <div data-testid="ask-tries" className="ask-tries" aria-hidden={tries.length ? undefined : true}
+        style={{ display: "flex", flexWrap: "nowrap", alignItems: "center", gap: 8, height: 26, overflowX: "auto", overflowY: "hidden", fontSize: 13, color: T.ink3, marginTop: -2 }}>
+        {tries.length > 0 && <span style={{ padding: "0 2px", color: T.ink3, flexShrink: 0, lineHeight: "18px" }}>Try:</span>}
+        {tries.map(t => <button key={t} type="button" data-testid="ask-try" onClick={() => ask(t)}
+          style={{ flexShrink: 0, whiteSpace: "nowrap", border: "1px solid " + T.bg2, borderRadius: 16, padding: "3px 12px", lineHeight: "18px", background: T.ground, color: T.ink2, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{t}</button>)}
+      </div>
       {lead}
       {doorsShown.length > 0 && <div className="ask-doors" data-count={doorsShown.length}>{doorsShown.map(door)}</div>}
-      {(agent && agent.line) || kept ? (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "baseline", fontSize: 12.5, color: T.ink3 }}>
-          {agent && agent.line && <button type="button" data-testid="agent-daily-line" onClick={agent.onOpen}
-            style={{ background: "none", border: "none", padding: 0, color: T.ink2, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>{agent.line}</button>}
-          {kept && <button type="button" data-testid="ask-kept" onClick={() => setOpen({ mode: "thread", replay: kept.turns, n: Date.now() })}
-            style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>
-            Your kept thread · {kept.turns[0].text}</button>}
-        </div>
-      ) : null}
+      <div data-testid="ask-under" style={{ display: "flex", flexWrap: "nowrap", gap: 12, alignItems: "center", height: 17, minWidth: 0, overflow: "hidden", fontSize: 12.5, color: T.ink3 }}>
+        {agent && agent.line && <button type="button" data-testid="agent-daily-line" onClick={agent.onOpen} title={agent.line}
+          style={{ background: "none", border: "none", padding: 0, color: T.ink2, fontSize: 12.5, lineHeight: "17px", cursor: "pointer", fontFamily: "inherit", textAlign: "left", minWidth: 0, flex: "0 1 auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{agent.line}</button>}
+        {kept && <button type="button" data-testid="ask-kept" onClick={() => setOpen({ mode: "thread", replay: kept.turns, n: Date.now() })}
+          style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 12.5, lineHeight: "17px", cursor: "pointer", fontFamily: "inherit", minWidth: 0, flex: "0 1 auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          Your kept thread · {kept.turns[0].text}</button>}
+      </div>
       {open && <AskRail key={open.n} mode={open.mode} replay={open.replay} isReadOnly={isReadOnly} onStepTaken={onStepTaken}
         onKept={setKept} kept={kept} onClose={() => setOpen(null)} />}
     </div>

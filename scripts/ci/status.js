@@ -61,7 +61,34 @@ function mailboxReport(mailboxSync, { now = Date.now(), backendUp = true } = {})
 }
 // The smoke verdict is the routes' alone.
 const smokeVerdict = (routesOk) => routesOk;
-module.exports = { mailboxReport, smokeVerdict };
+
+// DEPLOY-1 · the queue's oldest waiting job, by type and age: yellow past an
+// hour, red past a day (jobQueue.queueLevel, the same rule /health uses), and
+// running jobs gone silent.
+function ageWords(s) {
+  s = Number(s) || 0;
+  return s >= 2 * 86400 ? `${Math.floor(s / 86400)} days` : s >= 3600 ? `${Math.floor(s / 3600)}h` : s >= 60 ? `${Math.floor(s / 60)} min` : `${s}s`;
+}
+function queueReport(queue) {
+  if (!queue || queue.waiting == null) return { level: null, detail: queue ? "not read yet since the deploy; re-run in a minute" : "no queue on /health (older deploy)" };
+  const level = queue.level || null;
+  const o = queue.oldestWaiting;
+  const parts = [`${queue.waiting} waiting, ${queue.running} running`];
+  if (o) parts.push(`oldest waiting: ${o.name}, ${ageWords(o.seconds)}`);
+  if (queue.stuckRunning) parts.push(`${queue.stuckRunning} running with no heartbeat`);
+  if (level && level !== "ok") parts.push("scripts/sql/queue-status.sql says which; scripts/ops/queue-requeue.js clears them");
+  return { level, detail: parts.join(" · ") };
+}
+// DEPLOY-1 · the worker: its heartbeat (read through the web's /health, since
+// it has no public address) carries main's build and the role "worker".
+function workerReport(worker, mainSha) {
+  if (!worker) return { ok: false, detail: "no worker heard from in 2 minutes (no heartbeat on /health)" };
+  const okSha = !!mainSha && worker.buildSha === mainSha, okRole = worker.role === "worker";
+  return { ok: okSha && okRole,
+    detail: `build ${worker.buildSha ? String(worker.buildSha).slice(0, 7) : "none"}${okSha ? "" : mainSha ? ` (main is ${String(mainSha).slice(0, 7)})` : ""}`
+      + ` · role ${worker.role}${okRole ? "" : " (should read worker)"} · seen ${worker.seenSecondsAgo}s ago` };
+}
+module.exports = { mailboxReport, smokeVerdict, queueReport, workerReport };
 
 if (require.main === module) (async () => {
   // ── local + origin ─────────────────────────────────────────────────────────
@@ -82,8 +109,8 @@ if (require.main === module) (async () => {
 
   // ── prod surfaces ────────────────────────────────────────────────────────────
   const beRes = await fetchText(`${BACKEND}/health`);
-  let backendSha = null, backendErr = null, mailboxSync = null, guards = null, queue = null;
-  if (beRes.ok) { try { const h = JSON.parse(beRes.text); backendSha = h.buildSha; mailboxSync = h.mailboxSync || null; guards = { ok: h.guardsOk, failed: h.guardsFailed }; queue = h.queue || null; } catch { backendErr = "unparseable /health"; } }
+  let backendSha = null, backendErr = null, mailboxSync = null, guards = null, queue = null, worker = null;
+  if (beRes.ok) { try { const h = JSON.parse(beRes.text); backendSha = h.buildSha; mailboxSync = h.mailboxSync || null; guards = { ok: h.guardsOk, failed: h.guardsFailed }; queue = h.queue || null; worker = h.worker || null; } catch { backendErr = "unparseable /health"; } }
   else backendErr = beRes.error || `HTTP ${beRes.status}`;
 
   const feRes = await fetchText(FRONTEND);
@@ -172,6 +199,10 @@ if (require.main === module) (async () => {
   row("handlers", !stopped ? `${YELLOW}unverified${RESET}` : stopped.length ? `${RED}${stopped.reduce((a, s) => a + s.n, 0)} STOPPED${RESET}` : `${GREEN}ok${RESET}`,
       !stopped ? "no queue.stopped on /health (older deploy)" : stopped.length ? `${stopped.map(s => `${s.name} ×${s.n}`).join(", ")} this week · Admin → failed jobs` : `${queue.role || "?"} process answered`);
   row("prod AI smoke", aiOk === true ? `${GREEN}ok${RESET}` : aiOk === false ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, aiDetail);
+  const qr = queueReport(queue);
+  row("queue", qr.level === "ok" ? `${GREEN}ok${RESET}` : qr.level === "yellow" ? `${YELLOW}waiting over an hour${RESET}` : qr.level === "red" ? `${RED}WAITING OVER A DAY${RESET}` : `${YELLOW}unverified${RESET}`, qr.detail);
+  const wr = backendSha ? workerReport(worker, originMain) : { ok: null, detail: "backend unreachable" };
+  row("worker", wr.ok === true ? `${GREEN}ok${RESET}` : wr.ok === false ? `${RED}NOT ALIGNED${RESET}` : `${YELLOW}unverified${RESET}`, wr.detail);
 
   // ── divergence flags (loud) ───────────────────────────────────────────────────
   const flags = [];
@@ -184,6 +215,8 @@ if (require.main === module) (async () => {
   if (backendSha && frontendSha && backendSha !== frontendSha) {
     flags.push(`SPLIT-BRAIN: prod backend (${short(backendSha)}) and frontend (${short(frontendSha)}) are on DIFFERENT commits.`);
   }
+  if (wr.ok === false) flags.push(`WORKER NOT ALIGNED: ${wr.detail}. Jobs run on the worker; check its Railway deployment.`);
+  if (qr.level === "red") flags.push(`QUEUE: a job has waited over a day (${qr.detail}).`);
   if (smokeOk === false) {
     flags.push(`PROD SMOKE FAILING: the deployed commit does not WORK — ${smokeDetail}. Aligned means nothing while this is red.`);
   }

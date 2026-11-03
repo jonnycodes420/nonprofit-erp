@@ -81,6 +81,15 @@ function anthropicFor(orgId) {
   };
 }
 
+// DEPLOY-1: a boot need (bootGate). With a key set, the SDK is loaded and a
+// client is built once before the process says it is ready, so a bad or
+// missing install fails the boot's readiness, not the first person's Ask.
+// With no key there is nothing to configure: every AI route has its non-AI path.
+async function warm() {
+  if (process.env[KEYS.anthropic]) new Anthropic();
+  return true;
+}
+
 // Voice-memo transcription (OpenAI Whisper). Receives the recording and
 // nothing else: no donor name, no org name. OPENAI_BASE_URL exists for tests.
 async function transcribeAudio(orgId, { audioBuffer, mimeType, ext }) {
@@ -117,4 +126,4 @@ async function recordAiFallback(orgId, surface, err) {
   return reason;
 }
 
-module.exports = { AI_OFF_MESSAGE, AiOffError, chargeAiBudget, AI_DAILY_CALLS, aiGate, requireAi, anthropicFor, transcribeAudio, recordAiFallback, fallbackReason };
+module.exports = { warm, AI_OFF_MESSAGE, AiOffError, chargeAiBudget, AI_DAILY_CALLS, aiGate, requireAi, anthropicFor, transcribeAudio, recordAiFallback, fallbackReason };
