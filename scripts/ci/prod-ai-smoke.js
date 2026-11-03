@@ -84,8 +84,9 @@ async function runAiSmoke({ backend = BACKEND, email = EMAIL, password = PASSWOR
   if (!login.body || !login.body.token) return { ok: false, lines: [`sign-in to the demo failed (HTTP ${login.status})`] };
   const tok = login.body.token;
 
+  const askOnce = () => post(`${backend}/ask/preview`, tok, { text: QUESTION });
   let t0 = Date.now();
-  let a = await post(`${backend}/ask/preview`, tok, { text: QUESTION });
+  let a = await askOnce();
   let askOk = askPasses(a);
   const took = (r, ms) => `HTTP ${r.status} in ${(ms / 1000).toFixed(1)}s`;
   let first = null;
@@ -93,7 +94,7 @@ async function runAiSmoke({ backend = BACKEND, email = EMAIL, password = PASSWOR
     first = `${took(a, Date.now() - t0)} · ${JSON.stringify(a.body).slice(0, 160)}`;
     await sleep(retryMs);
     t0 = Date.now();
-    a = await post(`${backend}/ask/preview`, tok, { text: QUESTION });
+    a = await askOnce();
     askOk = askPasses(a);
   }
   lines.push(`ask ${askOk ? "ok" : "FAILING"}: ${took(a, Date.now() - t0)}`
