@@ -2318,7 +2318,8 @@ async function sendRecoveredThankYouEmail(org, donor, subscriptionRow) {
   const decision = await donorMailDecision("recovered_thankyou", donor.email, org.id);
   if (!decision.send) return;
   const dfName = await donorFacingOrgName(org.id, org.name); // W-2 white-label
-  const hi = escapeHtml((await import("../shared/greeting.js")).greetingLine(donor, { word: "Hi" }));   // POLISH-4: the one opening line
+  const hi = String((await import("../shared/greeting.js")).greetingLine(donor, { word: "Hi" }))   // POLISH-4: the one opening line
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const amountStr = subscriptionRow.amount != null ? `$${Number(subscriptionRow.amount).toLocaleString()}` : "your";
   const subject = "You're all set, thank you!";
   const bodyHtml = `<p>${hi}</p>

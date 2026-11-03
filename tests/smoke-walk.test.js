@@ -403,8 +403,9 @@ async function greetingFirst(browser, demoAuth) {
        && !!h.confirm && !/\n/.test(h.confirm) && h.confirm.length < 80, h);
     ok(`§home-4 Home ${what} at ${vp.width}: chips hide at zero, no Drift section, no empty Thread, no loose links, no zero tabs`,
        h.chips.every(c => !/(^|\s)0\s/.test(c)) && h.oldLinks === 0 && h.drift === 0 && h.threadEmpty === 0 && h.zeroTabs === 0 && h.setupLine === 0 && (h.never === 0 || h.say > 0), h);
-    if (what === "empty") ok(`§home-4 the empty org at ${vp.width}: Set up Steward under Ask, one friendly card with Import and sample data, no tabs, no pace`,
-       h.first === 1 && h.railSetup === 0 && /Bring in your donors/.test(h.noDonors || "") && /Import a spreadsheet/.test(h.noDonors || "") && /sample data/.test(h.noDonors || "")
+    // POLISH-4: with the setup card open above it, the moves card points to the setup card's first step and does not offer Import a third time
+    if (what === "empty") ok(`§home-4 the empty org at ${vp.width}: Set up Steward under Ask, one friendly card pointing to the first step, with sample data, no tabs, no pace`,
+       h.first === 1 && h.railSetup === 0 && /the first step above/.test(h.noDonors || "") && !/Import a spreadsheet/.test(h.noDonors || "") && /sample data/.test(h.noDonors || "")
        && h.tabs === 0 && h.pace === 0 && h.thread === 0, h);
     // HOME-5: Home doesn't open with a comparison: no pace sentence in the header, and "behind" nowhere on Home, on any tab of the deck (every match, so one can't hide another).
     const seen = () => page.evaluate(() => [...document.body.innerText.matchAll(/.{0,60}\bbehind\b.{0,60}/gi)].map(m => m[0].replace(/\s+/g, " ")));
