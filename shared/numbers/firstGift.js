@@ -26,6 +26,14 @@ const IMPORTED_FIRST = (a = "d") => `COALESCE(NULLIF(${a}.imported_first_gift_da
 // SQL aggregate over gift rows `g` already narrowed to one person: their first
 // dated gift on file (YYYY-MM-DD), or NULL.
 const FIRST_ON_FILE_AGG = (g = "g") => `MIN(LEFT(${g}.date, 10)) FILTER (WHERE ${g}.date IS NOT NULL AND ${GIFT(g)})`;
+// NUMBERS-5: which gift is the first on a day with more than one, the last
+// gift's order turned round (lastGift.js): the one recorded first, then the
+// larger, then the one higher up its file (gifts.import_row), and the id only
+// for rows the same in every way a person can see. One import writes every
+// row with one created_at, so two gifts on a first day from one file were
+// picked by a random id, run to run.
+const FIRST_GIFT_ORDER = "g.date ASC NULLS LAST, g.created_at ASC, g.amount DESC, g.import_row ASC NULLS LAST, g.id ASC";
+
 // SQL: the earlier of the first gift on file and the old system's (either may be NULL).
 const EARLIER = (onFile, imported) => `LEAST(${onFile}, LEFT(${imported}, 10))`;
 
@@ -48,4 +56,4 @@ function firstOf(rows, importedFirst = null) {
 }
 const isFirstTimeIn = (first, span) => !!first && first >= span.from && first <= span.to;
 
-module.exports = { IMPORTED_FIRST, FIRST_ON_FILE_AGG, EARLIER, FIRST_DATE, firstDates, firstOf, isFirstTimeIn };
+module.exports = { IMPORTED_FIRST, FIRST_ON_FILE_AGG, FIRST_GIFT_ORDER, EARLIER, FIRST_DATE, firstDates, firstOf, isFirstTimeIn };

@@ -26,13 +26,13 @@
 
 const { query, run } = require("./db");
 const FS = require("./figureSources");
+const NM = require("./shared/numbers/money");   // NUMBERS-5: Steward's side is money (credit rows out)
 const O = require("./oldReports");
 
 const ACTOR = { id: "system:reconcile", name: "Steward (checking an old report)" };
 const NEAR_DAYS = 45;                 // "just outside the period"
 const LIST_MAX = 50;                  // names listed per group; the count is always whole
 const PROVIDERS = ["paypal", "zeffy", "givebutter", "square", "venmo", "stripe", "benevity"];
-const CREDIT_TYPES = ["soft credit", "soft-credit", "soft_credit", "matching gift credit", "matched gift credit"];
 
 // ── small pure helpers ──────────────────────────────────────────────────
 const norm = s => String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -311,7 +311,7 @@ async function checkPeople(orgId, sheet, kind, P, people, unmapped) {
   const span = lifetime ? { from: "1900-01-01", to: "2999-12-31" } : P;
   const unm = new Set(unmapped.map(x => nameKey(x.label)));
   const ids = people.flatMap(p => p.donorIds || []);
-  const sums = ids.length ? await query(`SELECT donor_id, COALESCE(SUM(amount),0)::text AS s FROM gifts WHERE org_id=? AND donor_id = ANY(?) AND date >= ? AND date <= ? GROUP BY donor_id`,
+  const sums = ids.length ? await query(`SELECT donor_id, ${NM.MONEY_SUM("g")}::text AS s FROM gifts g WHERE org_id=? AND donor_id = ANY(?) AND ${NM.MONEY("g")} AND date >= ? AND date <= ? GROUP BY donor_id`,
     [orgId, ids, span.from, span.to]) : [];
   const by = new Map(sums.map(r => [r.donor_id, toCents(r.s)]));
   const res = { total: people.length, matched: 0, same: 0, lifetime, differing: [], missing: [], missingCents: 0, rest: [] };
@@ -399,12 +399,14 @@ async function whyDiffer(orgId, { P, pl, reportTotal, stewardTotal, people, unma
   //    counts, refunds it subtracts, when one of them is exactly what is left.
   const left = D - explained;
   if (left) {
-    const [m] = await query(`SELECT COALESCE(SUM(amount) FILTER (WHERE match_employer_id IS NOT NULL OR LOWER(COALESCE(type,'')) = ANY(?::text[])),0)::text AS credit,
-                                    COALESCE(SUM(amount) FILTER (WHERE amount < 0),0)::text AS refunds
-                               FROM gifts WHERE org_id=? AND date >= ? AND date <= ?`, [CREDIT_TYPES, orgId, P.from, P.to]);
+    // NUMBERS-5: Steward's total is money, so a credit row is in neither side
+    // of the gap; a matching gift (money, credited to the company) can be.
+    const [m] = await query(`SELECT ${NM.MONEY_SUM("g", "g.match_employer_id IS NOT NULL")}::text AS credit,
+                                    ${NM.MONEY_SUM("g", "g.amount < 0")}::text AS refunds
+                               FROM gifts g WHERE org_id=? AND date >= ? AND date <= ?`, [orgId, P.from, P.to]);
     const credit = toCents(m.credit), refunds = toCents(m.refunds);
     if (credit && -left === credit) { explained += left; causes.push({ key: "matching", cents: credit, source: { key: "gifts", params: { ...P } },
-      sentence: `Steward counts ${money(credit)} of matching gifts and credit records in ${pl}; the report leaves them out.` }); }
+      sentence: `Steward counts ${money(credit)} of matching gifts in ${pl}; the report leaves them out.` }); }
     else if (refunds && left === -refunds) { explained += left; causes.push({ key: "refund", cents: -refunds,
       sentence: `Steward subtracts ${money(-refunds)} of refunds in ${pl}; the report does not.` }); }
   }
@@ -460,10 +462,10 @@ async function checkList(orgId, sheet, kind, per, people) {
   const reasons = [];
   for (const p of onlyReport) {
     if (!p.donorId) { reasons.push({ name: p.name, email: p.email, missing: true, why: "Not in Steward at all.", action: { kind: "add_person" } }); continue; }
-    const [g] = await query(`SELECT COALESCE(SUM(amount) FILTER (WHERE date >= ? AND date <= ?),0)::text AS cur,
-                                    COALESCE(SUM(amount) FILTER (WHERE date >= ? AND date <= ?),0)::text AS prev,
-                                    COALESCE(SUM(amount) FILTER (WHERE date < ?),0)::text AS before
-                               FROM gifts WHERE org_id=? AND donor_id=?`, [cur.from, cur.to, prev.from, prev.to, cur.from, orgId, p.donorId]);
+    const SPAN = require("./shared/numbers/givingBetween").SPAN_SUM("g");
+    const [g] = await query(`SELECT ${SPAN}::text AS cur, ${SPAN}::text AS prev,
+                                    ${NM.MONEY_SUM("g", "g.date < ?")}::text AS before
+                               FROM gifts g WHERE org_id=? AND donor_id=?`, [cur.from, cur.to, prev.from, prev.to, cur.from, orgId, p.donorId]);
     const why = toCents(g.cur) > 0 && kind !== "retention" ? `Steward has ${money(toCents(g.cur))} from them in ${y}, so they are not on Steward's list.`
       : kind === "retention" && !toCents(g.prev) ? `Steward has no gift from them in ${y - 1}.`
       : kind === "retention" && !toCents(g.cur) ? `Steward has no gift from them in ${y}.`
