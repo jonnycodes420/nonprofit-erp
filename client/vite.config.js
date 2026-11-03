@@ -84,6 +84,25 @@ export default defineConfig({
         return { code: `${imports.join("\n")}\nconst module = { exports: {} }; const exports = module.exports;\n${body}\nexport default module.exports;\n`, map: null };
       },
     },
+    // PERF-3: until a typeface is in, text draws in a system font sized to it
+    // (the 'DM Sans Fallback' faces in public/fonts/app-fonts.css), so nothing
+    // moves when it swaps. The stacks are written inline across the app, so the
+    // names are added here, after the typeface, rather than in every file. The
+    // marketing site loads its own fonts and is left as written.
+    {
+      name: "font-fallbacks",
+      enforce: "pre",
+      transform(code, id) {
+        const file = id.split("?")[0];
+        if (!/[\\/]client[\\/]src[\\/].*\.(jsx?|css)$/.test(file) || /[\\/]marketing[\\/]/.test(file)) return null;
+        if (!/'DM (Sans|Serif Display)'/.test(code)) return null;
+        return {
+          code: code.replace(/'DM Sans'(?=\s*,)/g, "'DM Sans','DM Sans Fallback','DM Sans Fallback Roboto'")
+            .replace(/'DM Serif Display'(?=\s*,)/g, "'DM Serif Display','DM Serif Fallback','DM Serif Fallback Noto','DM Serif Fallback Times'"),
+          map: null,
+        };
+      },
+    },
     {
       name: "build-sha-meta",
       transformIndexHtml() {

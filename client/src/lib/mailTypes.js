@@ -2,7 +2,7 @@
 // page. Settings, every editor's switch, the top bar and Home read it, and a
 // change anywhere reloads it everywhere (the same switch, shown in many places).
 import { useEffect, useState } from "react";
-import { apiFetch } from "../api";
+import { apiFetch, takeParked } from "../api";
 
 let page = null, status = null, inflight = null;
 const subs = new Set();
@@ -17,12 +17,26 @@ export function reloadMailTypes() {
   return inflight;
 }
 
+// PERF-3: Home's rail draws once its mail types are in, and on the first
+// screen the boot has parked both reads: taken now, the rail is ready in Home's
+// first frame. True only then; otherwise the rail reloads them as it always has.
+export function mailTypesNow() {
+  if (page) return false;
+  const p = takeParked("/mail-types"), s = takeParked("/mail-types/status");
+  if (p === undefined || s === undefined) return false;
+  page = p; status = s;
+  queueMicrotask(tell);   // the top bar drew before the rail took them; it redraws in the same frame
+  return true;
+}
+
 export function useMailTypes() {
   const [, bump] = useState(0);
+  const drew = page;
   useEffect(() => {
     const f = () => bump(n => n + 1);
     subs.add(f);
-    if (!page && !inflight) reloadMailTypes();
+    if (page !== drew) f();   // PERF-3: taken in since this drew (mailTypesNow), before it listened
+    else if (!page && !inflight) reloadMailTypes();
     return () => subs.delete(f);
   }, []);
   return { page, status, types: page ? page.groups.flatMap(g => g.types) : [] };

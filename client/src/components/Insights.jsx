@@ -8,7 +8,7 @@
 // are made by her button. The facts and the words come from the server
 // (insights.js); this file draws them.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiFetch } from "../api";
+import { apiFetch, takeParked } from "../api";
 import { T } from "./shared";
 import { DonorLink } from "./RecordLink";
 import EventRaised from "./EventRaised";   // HOME-3: the first look's events
@@ -284,10 +284,13 @@ function useSeen(cards) {
 }
 
 export function useInsights(view, skip) {
-  const [data, setData] = useState(null);
+  const path = `/insights${view ? "?view=" + view : ""}`;
+  // PERF-3: Home's deck read is parked by the boot; drawn from the first frame.
+  const [data, setData] = useState(() => (skip ? null : takeParked(path) || null));
   const [err, setErr] = useState("");
-  const load = () => apiFetch(`/insights${view ? "?view=" + view : ""}`).then(r => { setData(r); setErr(""); }).catch(e => setErr(e.message || "Couldn't read the cards."));
-  useEffect(() => { if (!skip) load(); }, [view, skip]);
+  const had = useRef(data != null);
+  const load = () => apiFetch(path).then(r => { setData(r); setErr(""); }).catch(e => setErr(e.message || "Couldn't read the cards."));
+  useEffect(() => { if (had.current) { had.current = false; return; } if (!skip) load(); }, [view, skip]);
   return [data, load, err];
 }
 

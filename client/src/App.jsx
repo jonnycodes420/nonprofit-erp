@@ -18,7 +18,7 @@ import { CAPTURE_CHANGED } from "./components/CheckSnap";   // SWEEP-6: the same
 import { Dashboard } from "./components/Dashboard";
 import { confirmIfDirty } from "./lib/dirtyGuard";
 import { SkeletonPage } from "./components/Skeleton";
-import { bootRead } from "./lib/bootReads";
+import { bootRead, homeShape } from "./lib/bootReads";
 import { useStewardTold } from "./lib/stewardTold";
 import { TopBar, MobileSearch, isApplePlatform } from "./components/TopBar";
 import SupportBanner from "./components/SupportBanner";   // FIX-57
@@ -449,6 +449,7 @@ function AppShell() {
         bootRead("/board"),
         bootRead("/financials"),
       ]);
+      await homeShape();   // PERF-3: on Home, the deck's code and the reads that set its shape (lib/bootReads.js)
       const [orgR,grantsR,volunteersR,tasksR,boardR,financialsR]=results;
       if(orgR.status==="rejected")throw orgR.reason;
       const org=orgR.value;

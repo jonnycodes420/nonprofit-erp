@@ -69,8 +69,25 @@ const ResetPasswordPage  = React.lazy(() => import("./pages/ResetPasswordPage"))
 const SignedUpPage       = React.lazy(() => import("./pages/SignedUpPage"));
 const TermsPage          = React.lazy(() => import("./pages/TermsPage"));
 const PrivacyPage        = React.lazy(() => import("./pages/PrivacyPage"));
-import { Analytics } from '@vercel/analytics/react'
-import { SpeedInsights } from '@vercel/speed-insights/react'
+// PERF-3: Vercel's page-view and Speed Insights beacons add their scripts a few
+// seconds after the page has loaded. Drawn with the app, their two requests
+// queued with Home's own on a phone and held its network busy until 3.5 s.
+// Speed Insights reads the page's timings from the browser's buffer, so a late
+// start misses none of them. A chunk that will not load (offline, a deploy
+// since) draws nothing: drawn outside the error boundary, its failure would
+// otherwise take the whole screen with it.
+const VercelBeacons      = React.lazy(() => import("./lib/vercelBeacons").catch(() => ({ default: () => null })));
+const BEACONS_AFTER_LOAD_MS = 3000;
+function LaterBeacons() {
+  const [on, setOn] = React.useState(false);
+  React.useEffect(() => {
+    let t;
+    const go = () => { t = setTimeout(() => setOn(true), BEACONS_AFTER_LOAD_MS); };
+    if (document.readyState === "complete") go(); else window.addEventListener("load", go, { once: true });
+    return () => { clearTimeout(t); window.removeEventListener("load", go); };
+  }, []);
+  return on ? <React.Suspense fallback={null}><VercelBeacons /></React.Suspense> : null;
+}
 import { inSupport, leaveSupport } from "./lib/supportSession";   // FIX-57
 
 // FIX-2 C — this surface's colours, named once (it keeps its own palette;
@@ -355,8 +372,7 @@ function Root() {
         </Routes>
         </React.Suspense>
         </Sentry.ErrorBoundary>
-        <Analytics />
-        <SpeedInsights />
+        <LaterBeacons />
       </BrowserRouter>
     </AuthProvider>
   );

@@ -4,7 +4,8 @@
 // now starts them the moment the page loads on an app path with a session, in
 // parallel with the app's code, and App takes each one once. A read nobody
 // took within a minute is dropped, so a stale answer is never used.
-import { apiFetch, prefetch } from "../api";
+import { apiFetch, prefetch, landed } from "../api";
+import { retryImport } from "./lazyRetry";
 import { BOOT_READS, SHELL_READS, bootBundles } from "./homeReads";
 
 export { BOOT_READS, SHELL_READS };   // PERF-2: the lists live in lib/homeReads.js
@@ -32,6 +33,7 @@ export function startShellReads(home) {
 // On Home, its first bundle too, with the scoped reads in it (PERF-2). Its
 // answers are parked for Home.
 export function startHomeReads() {
+  startHomeCode();
   // Home's deck (Insights.jsx HomeMoves, useInsights("deck")) on its own: the
   // heaviest read on Home, so it does not hold the first bundle back.
   const [, , deck, rail, first] = bootBundles(true);
@@ -40,6 +42,30 @@ export function startHomeReads() {
   prefetch(rail, { keep: true }).catch(() => {});
   // PERF-2: the scoped reads ride in the first bundle; the server picks the scope.
   prefetch(first, { keep: true }).catch(() => {});
+}
+
+// PERF-3: Home's first look draws the moves deck, whose code is its own chunk.
+// On Home it is asked for with the reads (app.html has preloaded it: the
+// first-look mark, scripts/prerender.mjs), and App waits for it as it waits
+// for its reads, so Home draws once with the deck in it: drawn after, the deck
+// pushed the Thread down (CLS 0.49 on a phone). homeCode() is null when Home
+// was not the first screen; HomeMoves then loads it as it always did.
+let deckCode = null;
+export function startHomeCode() {
+  if (!deckCode) deckCode = retryImport(() => import(/* first-look */ "../components/Insights"));
+  return deckCode;
+}
+export const homeCode = () => deckCode;
+// And the two reads that set the first look's shape: the deck and Home's lead
+// (Ask's suggestions, the rail's order). On a second visit the code is cached
+// and the shell was ready before them. Never more than HOME_SHAPE_MS longer.
+const HOME_SHAPE_MS = 800;
+export function homeShape() {
+  if (!deckCode) return null;
+  return Promise.race([
+    Promise.all([deckCode, landed("/insights?view=deck"), landed("/home/lead")]),
+    new Promise(r => setTimeout(r, HOME_SHAPE_MS)),
+  ]);
 }
 
 export function bootRead(path) {
