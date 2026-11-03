@@ -10,6 +10,7 @@
 const express = require("express");
 const { CAMPAIGN_GIFT_MATCH, NOT_DELETED } = require("../../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // SCALE-2: org-wide figures are stored per org and served until something changes.
 const OS = require("../../orgSummary");
 const lapseRule = require("../../lapseRule");   // FIX-49: the one lapse rule
@@ -190,7 +191,7 @@ app.get("/impact-metrics", requireAuth, wrap(async (req, res) => {
 app.post("/impact-metrics", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const { name, dollarThreshold, outcomeTemplate } = req.body;
   if (!name || !dollarThreshold || !outcomeTemplate) return res.status(400).json({ error: "name, dollarThreshold, and outcomeTemplate required" });
-  const id = "im_" + uuid().slice(0, 8);
+  const id = newId("im");
   await run(
     "INSERT INTO impact_metrics (id,org_id,name,dollar_threshold,outcome_template) VALUES (?,?,?,?,?)",
     [id, req.user.orgId, name, parseFloat(dollarThreshold), outcomeTemplate]

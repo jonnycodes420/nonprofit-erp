@@ -13,6 +13,7 @@
 const mailPolicy = require("../mailPolicy");   // MAIL-1: the one mail policy
 const mailRefusal = require("../mailRefusal"); // FIX-48: refused, waiting or an outage
 const { civilLocale } = require("../orgTime"); // HARDEN-1: a stored date is its own day
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-46: what a reminder calls somebody (shared/greeting.js), loaded once.
 let GREET = null;
 const GREET_READY = import("../shared/greeting.js").then(m => { GREET = m; return m; });
@@ -834,7 +835,7 @@ async function linkAccountEmail(accountId, email) {
     const ins = await query(
       `INSERT INTO donor_account_links (id,account_id,org_id,donor_id,via_email)
        VALUES (?,?,?,?,?) ON CONFLICT (account_id, donor_id) DO NOTHING RETURNING id`,
-      ["dal_" + uuid().slice(0, 10), accountId, r.org_id, r.donor_id, em]);
+      [newId("dal"), accountId, r.org_id, r.donor_id, em]);
     if (ins.length) { linked++; await donorAudit(accountId, em, "link_created", null, { orgId: r.org_id, donorId: r.donor_id }); }
   }
   return linked;

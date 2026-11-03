@@ -20,6 +20,7 @@ const AC = require("../auctionCore");
 const ORG_KIND = require("../orgKind");   // ADMIN-CLEAN: real subscription amounts
 const TL = require("../timelineLine");   // WIRE-1 rule 2: every act lands on the timeline   // PARITY-2 Part 4: who won, and the split
 const { rateLimit } = require("../rateLimitStore");   // SCALE-1: shared by every replica
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = {
   r0: express.Router(),
@@ -218,7 +219,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
             : await withAdvisoryLock(`donor:${orgId}:${(email || "").toLowerCase()}`, async () => {
             let dr = await query("SELECT id FROM donors WHERE org_id=$1 AND email ILIKE $2", [orgId, email]);
             if (!dr.length && donorName) {
-              const newDonorId = "d_" + uuid().slice(0, 8);
+              const newDonorId = newId("d");
               await run(
                 `INSERT INTO donors (id, org_id, name, email, status, stage, total_giving, gift_count, created_by, created_by_name)
                  VALUES ($1,$2,$3,$4,'active','steward',0,0,$5,$6)`,
@@ -234,7 +235,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
             // holds attaches to that account (idempotent, fire-and-forget;
             // no-op with accounts off or no matching account).
             if (email) linkEmailToAccounts(orgId, email).catch(() => {});
-            const giftId = "g_" + uuid().slice(0, 8);
+            const giftId = newId("g");
             // ORG_TZ_SEAM_OK (BUILD-75) — the gift DATE is the org's civil date.
             // The UTC slice dated a 9pm-ET Dec-31 gift as Jan 1: the wrong TAX
             // YEAR on the row every year-end statement and receipt reads.
@@ -450,7 +451,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
                     `INSERT INTO auction_refund_flags (id,org_id,auction_id,item_id,stripe_payment_id,amount,payer_name,payer_email,donor_id,
                                                        kept_payment_id,created_by,created_by_name)
                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (org_id, stripe_payment_id) DO NOTHING`,
-                    ["arf_" + uuid().replace(/-/g, "").slice(0, 12), orgId, ai.auction_id, pi.metadata.auction_item_id, pi.id, amount,
+                    [newId("arf"), orgId, ai.auction_id, pi.metadata.auction_item_id, pi.id, amount,
                      donorName || null, email || null, donorId, claim.paid_payment_id || null, SYS_STRIPE.id, SYS_STRIPE.name]);
                   console.error(`[auction] ${pi.id} paid for item ${pi.metadata.auction_item_id}, which another payment already paid; no gift recorded, flagged for a refund in Stripe`);
                   return res.json({ received: true, auctionAlreadyPaid: true });
@@ -591,13 +592,13 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
             if (wasLapsed) {
               await run(
                 "INSERT INTO tasks (id,org_id,title,priority,done,due,created_by,created_by_name) VALUES ($1,$2,$3,'high',0,$4,$5,$6)",
-                ["t_"+uuid().slice(0,8), orgId, `Gave again after a year-long gap, follow up with ${donorName||email} within 48 hours`,
+                [newId("t"), orgId, `Gave again after a year-long gap, follow up with ${donorName||email} within 48 hours`,
                  orgToday(await orgTz(orgId), new Date(Date.now()+2*24*60*60*1000)), SYS_STRIPE.id, SYS_STRIPE.name]   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
               ).catch(()=>{});
             }
             // The ledger stamp is recordGift's — one place, BUILD-58 W-3's
             // self-healing chart included, under the BUILD-83 posting rule.
-            const taskId = "t_" + uuid().slice(0, 8);
+            const taskId = newId("t");
             await run(
               `INSERT INTO tasks (id, org_id, title, priority, done, created_at, created_by, created_by_name)
                VALUES ($1,$2,$3,$4,$5,NOW(),$6,$7)`,
@@ -652,7 +653,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
           await run(`INSERT INTO gift_starts (id, org_id, checkout_session_id, giving_page_id, form_name, amount, frequency, email, first_name, last_name,
                                               started_at, expired_at, created_by, created_by_name)
                      VALUES (?,?,?,?,?,?,?,?,?,?,to_timestamp(?),NOW(),?,?)`,
-            ["gs_" + uuid().slice(0, 12), orgId, session.id, md.giving_page_id || null, null,
+            [newId("gs"), orgId, session.id, md.giving_page_id || null, null,
              session.amount_total != null ? session.amount_total / 100 : null, md.frequency || null, email,
              first || null, rest.join(" ") || null, session.created || Math.floor(Date.now() / 1000), SYS_STRIPE.id, SYS_STRIPE.name]);
         }
@@ -690,13 +691,13 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
               }
               const dr = await query("SELECT id FROM donors WHERE org_id=$1 AND email ILIKE $2", [orgId, email]);
               if (dr.length) return dr[0].id;
-              const newId = "d_" + uuid().slice(0, 8);
+              const freshId = newId("d");
               await run(
                 `INSERT INTO donors (id, org_id, name, email, status, stage, total_giving, gift_count, created_by, created_by_name)
                  VALUES ($1,$2,$3,$4,'active','steward',0,0,$5,$6)`,
-                [newId, orgId, donorName, email.toLowerCase(), SYS_STRIPE.id, SYS_STRIPE.name]
+                [freshId, orgId, donorName, email.toLowerCase(), SYS_STRIPE.id, SYS_STRIPE.name]
               );
-              return newId;
+              return freshId;
             });
             const frequency = session.metadata?.frequency || "monthly";
             await run(
@@ -723,10 +724,10 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
                    reconnected_at = COALESCE(reconnect_sends.reconnected_at, NOW()),
                    new_subscription_id = EXCLUDED.new_subscription_id,
                    reconnected_amount = EXCLUDED.reconnected_amount`,
-                ["rcs_" + uuid().slice(0, 8), orgId, donorId, session.subscription, recurAmt77]
+                [newId("rcs"), orgId, donorId, session.subscription, recurAmt77]
               ).catch(() => {});
             }
-            const taskId = "t_" + uuid().slice(0, 8);
+            const taskId = newId("t");
             await run(
               `INSERT INTO tasks (id, org_id, title, priority, done, created_at, created_by, created_by_name) VALUES ($1,$2,$3,'high',0,NOW(),$4,$5)`,
               [taskId, orgId, `Welcome ${donorName} as a ${frequency} recurring donor: send personal thank-you`, SYS_STRIPE.id, SYS_STRIPE.name]
@@ -768,7 +769,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
                VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,$9,$10,$11)
                ON CONFLICT (stripe_subscription_id) DO NOTHING
                RETURNING id`,
-              ["rsub_" + uuid().slice(0, 8), orgId, donorId, session.subscription, session.customer || null, recurAmount, subInterval, subCampaignId, subGivingPageId, subCoverFee, subFundId]
+              [newId("rsub"), orgId, donorId, session.subscription, session.customer || null, recurAmount, subInterval, subCampaignId, subGivingPageId, subCoverFee, subFundId]
             );
             // BUILD-57 — movement ledger: log 'created' only when the row was
             // genuinely reserved (a redelivered webhook logs nothing).
@@ -998,7 +999,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
               if (g.donor_id) {
                 await recalcDonorSummary(g.donor_id, orgId);
                 await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
-                  ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Refund: $${refunded.toLocaleString()} online gift fully refunded via Stripe, gift reversed`, today]
+                  [newId("i"), orgId, g.donor_id, `Refund: $${refunded.toLocaleString()} online gift fully refunded via Stripe, gift reversed`, today]
                 ).catch(() => {});
               }
               }); // end withAdvisoryLock(gift:…) — full-refund reversal serialized per gift
@@ -1026,7 +1027,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
               if (g.donor_id) {
                 await recalcDonorSummary(g.donor_id, orgId);
                 await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
-                  ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Refund: $${refunded.toLocaleString()} of an online gift refunded via Stripe, gift adjusted to $${remaining.toLocaleString()}`, today]
+                  [newId("i"), orgId, g.donor_id, `Refund: $${refunded.toLocaleString()} of an online gift refunded via Stripe, gift adjusted to $${remaining.toLocaleString()}`, today]
                 ).catch(() => {});
               }
               }); // end withAdvisoryLock(gift:…) — partial-refund adjust serialized per gift
@@ -1078,7 +1079,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
                    VALUES ($1,$2,$3,$4,$5,$6)
                    ON CONFLICT (org_id, stripe_payment_id) DO UPDATE
                      SET gift_snapshot=EXCLUDED.gift_snapshot, receipt_id=EXCLUDED.receipt_id, dispute_id=EXCLUDED.dispute_id, created_at=NOW()`,
-                  ["drev_" + uuid().slice(0, 8), orgId, piId, dispute.id, JSON.stringify(g), rcptToVoid?.id || null]).catch(e => console.error("[stripe] reversal snapshot failed:", e.message));
+                  [newId("drev"), orgId, piId, dispute.id, JSON.stringify(g), rcptToVoid?.id || null]).catch(e => console.error("[stripe] reversal snapshot failed:", e.message));
                 await withTransaction(async (client) => {
                   await runTx(client,
                     `UPDATE receipts SET voided_at=NOW(), void_reason='Gift lost to a Stripe dispute/chargeback', gift_id=NULL
@@ -1092,7 +1093,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
                 if (g.donor_id) {
                   await recalcDonorSummary(g.donor_id, orgId);
                   await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
-                    ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute LOST: $${amt.toLocaleString()} online gift charged back via Stripe, gift reversed`, today]).catch(() => {});
+                    [newId("i"), orgId, g.donor_id, `Dispute LOST: $${amt.toLocaleString()} online gift charged back via Stripe, gift reversed`, today]).catch(() => {});
                 }
                 console.log(`[stripe] dispute LOST ${dispute.id} — gift ${g.id} reversed ($${amt})`);
               } else {
@@ -1101,17 +1102,17 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
                 await run("UPDATE gifts SET disputed_at=COALESCE(disputed_at, NOW()), dispute_status=$1 WHERE id=$2 AND org_id=$3", [uiStatus, g.id, orgId]);
                 if (won && g.donor_id) {
                   await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
-                    ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute WON: $${amt.toLocaleString()} online gift dispute resolved in your favor, funds reinstated`, today]).catch(() => {});
+                    [newId("i"), orgId, g.donor_id, `Dispute WON: $${amt.toLocaleString()} online gift dispute resolved in your favor, funds reinstated`, today]).catch(() => {});
                 } else if (firstFlag && event.type === "charge.dispute.created") {
                   // LOUD: a high-priority staff task + a donor timeline note. A
                   // dispute has a Stripe response deadline; silence loses it by
                   // default. (The day-view + Finance surface disputed gifts too.)
                   const due = orgToday(await orgTz(orgId), dispute.evidence_details?.due_by ? new Date(dispute.evidence_details.due_by * 1000) : new Date(Date.now() + 7 * 86400000));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
                   await run("INSERT INTO tasks (id,org_id,title,priority,done,due,donor_id,created_by,created_by_name) VALUES ($1,$2,$3,'high',0,$4,$5,$6,$7)",
-                    ["t_" + uuid().slice(0, 8), orgId, `Payment disputed, $${amt.toLocaleString()} charged back${dispute.reason ? " (" + String(dispute.reason).replace(/_/g, " ") + ")" : ""}. Respond in Stripe before ${due} or the funds are lost.`, due, g.donor_id || null, SYS_STRIPE.id, SYS_STRIPE.name]).catch(() => {});
+                    [newId("t"), orgId, `Payment disputed, $${amt.toLocaleString()} charged back${dispute.reason ? " (" + String(dispute.reason).replace(/_/g, " ") + ")" : ""}. Respond in Stripe before ${due} or the funds are lost.`, due, g.donor_id || null, SYS_STRIPE.id, SYS_STRIPE.name]).catch(() => {});
                   if (g.donor_id) {
                     await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
-                      ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute opened: $${amt.toLocaleString()} online gift was disputed via the donor's bank${dispute.reason ? " (" + String(dispute.reason).replace(/_/g, " ") + ")" : ""}: respond in Stripe`, today]).catch(() => {});
+                      [newId("i"), orgId, g.donor_id, `Dispute opened: $${amt.toLocaleString()} online gift was disputed via the donor's bank${dispute.reason ? " (" + String(dispute.reason).replace(/_/g, " ") + ")" : ""}: respond in Stripe`, today]).catch(() => {});
                   }
                   console.log(`[stripe] dispute CREATED ${dispute.id} — gift ${g.id} flagged + staff task ($${amt})`);
                 }
@@ -1146,7 +1147,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
               if (g.dispute_status !== "won") {
                 await run("UPDATE gifts SET dispute_status='won', disputed_at=COALESCE(disputed_at,NOW()) WHERE id=$1 AND org_id=$2", [g.id, orgId]);
                 if (g.donor_id) await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
-                  ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute WON: $${(parseFloat(g.amount) || 0).toLocaleString()} online gift dispute resolved in your favor, funds reinstated`, today]).catch(() => {});
+                  [newId("i"), orgId, g.donor_id, `Dispute WON: $${(parseFloat(g.amount) || 0).toLocaleString()} online gift dispute resolved in your favor, funds reinstated`, today]).catch(() => {});
               }
             });
             console.log(`[stripe] dispute funds_reinstated ${dispute.id} — gift ${g.id} kept, marked won`);
@@ -1169,7 +1170,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
                   const [dn] = await query("SELECT name FROM donors WHERE id=$1", [snap.donor_id]);
                   await run(
                     "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
-                    ["ft_" + uuid().slice(0, 8), orgId, snap.date, `Gift from ${dn?.name || "Donor"}`, dn?.name || "",
+                    [newId("ft"), orgId, snap.date, `Gift from ${dn?.name || "Donor"}`, dn?.name || "",
                      snap.amount, "income", ledgerG.contribAcctId, snap.fund_id || ledgerG.genFundId, snap.donor_id, "online", snap.id, SYS_STRIPE.id, SYS_STRIPE.name]);
                 } catch (e) { console.error("[stripe] reinstate ledger stamp failed:", e.message); }
                 // Un-void + re-link the receipt that was voided on the loss.
@@ -1182,7 +1183,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
                 if (snap.donor_id) {
                   await recalcDonorSummary(snap.donor_id, orgId);
                   await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
-                    ["i_" + uuid().slice(0, 8), orgId, snap.donor_id, `Dispute WON on appeal: $${(parseFloat(snap.amount) || 0).toLocaleString()} online gift reinstated: the reversed gift, ledger entry and receipt were restored`, today]).catch(() => {});
+                    [newId("i"), orgId, snap.donor_id, `Dispute WON on appeal: $${(parseFloat(snap.amount) || 0).toLocaleString()} online gift reinstated: the reversed gift, ledger entry and receipt were restored`, today]).catch(() => {});
                 }
                 await run("DELETE FROM dispute_reversals WHERE org_id=$1 AND stripe_payment_id=$2", [orgId, piId]);
                 console.log(`[stripe] dispute funds_reinstated ${dispute.id} — gift ${snap.id} RESTORED ($${snap.amount})`);
@@ -1228,7 +1229,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
               `INSERT INTO recurring_subscriptions
                  (id, org_id, donor_id, stripe_subscription_id, stripe_customer_id, amount, interval, status, failure_count, first_failed_at, last_failed_at, dunning_step, next_dunning_at)
                VALUES (?,?,?,?,?,?,?,'past_due',1,NOW(),NOW(),0,NOW())`,
-              ["rsub_" + uuid().slice(0, 8), org.id, donor.id, invSubId, inv.customer || null, amount, interval]
+              [newId("rsub"), org.id, donor.id, invSubId, inv.customer || null, amount, interval]
             );
             await TL.timelineLine({ orgId: org.id, donorId: donor.id,
               note: interval ? `Started giving ${amount != null ? TL.lineMoney(amount) + " " : ""}${TL.intervalWords(interval)}.`
@@ -1463,7 +1464,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
             { last4: card ? card.last4 : null, exp });
           if (rs.donor_id) {
             await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
-              ["int_" + uuid().slice(0, 8), rs.org_id, rs.donor_id, "note",
+              [newId("int"), rs.org_id, rs.donor_id, "note",
                `Card updated by the bank${card && card.last4 ? `, ends ${card.last4}` : ""}${exp ? `, exp ${exp}` : ""}. Their monthly gift carries on with no action needed.`,
                orgToday(await orgTz(rs.org_id)), SYS_STRIPE.id, SYS_STRIPE.name]);   // ORG_TZ_SEAM_OK
           }
@@ -1569,7 +1570,7 @@ async function markEmailEvent(orgId, email, reason, event) {
     await run(
       `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by)
        VALUES (?,?,?,'email',?,?,?)`,
-      ["i_" + uuid().slice(0, 8), orgId, d.id,
+      [newId("i"), orgId, d.id,
        reason === "bounced"
          ? `Email to ${email} hard-bounced and will not be tried again${detail ? ` ${detail}` : ""}`
          : `${email} marked this as spam: removed from every list`,
@@ -1619,7 +1620,7 @@ app.post("/resend/webhook", resendWebhookLimiter, express.raw({ type: "applicati
         // org-specific preference, so it suppresses sends from every org.
         await run(
           "INSERT INTO email_suppressions (id, org_id, email, reason, source) VALUES (?,?,?,?,?)",
-          ["sup_" + uuid().slice(0, 8), null, email, reason, "webhook"]
+          [newId("sup"), null, email, reason, "webhook"]
         );
         // sequence_enrollments only models unsubscribed|bounced (no 'complained'
         // value) — a complaint is functionally "stop sending", so map it to bounced.
@@ -1785,7 +1786,7 @@ app.post("/mailchimp/webhook/:secret", mailchimpWebhookLimiter,
     if (d) {
       await run(
         `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by) VALUES (?,?,?,?,?,?,?)`,
-        ["int_" + uuid().slice(0, 8), conn.org_id, d.id, "email",
+        [newId("int"), conn.org_id, d.id, "email",
          decision.kind === "unreachable" ? "Email stopped working in Mailchimp." : "Unsubscribed in Mailchimp.",
          orgToday(await orgTz(conn.org_id)), "system:email-marketing/mailchimp"]).catch(() => {});   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
     }
@@ -2128,7 +2129,7 @@ function verifyUnsubscribeToken(token) {
 async function recordUnsubscribe(email, orgId, source) {
   await run(
     "INSERT INTO email_suppressions (id, org_id, email, reason, source) VALUES (?,?,?,?,?)",
-    ["sup_" + uuid().slice(0, 8), orgId || null, email.toLowerCase(), "unsubscribed", source === "sequence" ? "sequence" : "campaign"]
+    [newId("sup"), orgId || null, email.toLowerCase(), "unsubscribed", source === "sequence" ? "sequence" : "campaign"]
   );
   // Org-scoped unsubscribe only stops that org's sends; a global (webhook-sourced)
   // suppression stops sends from every org — mirror that scope in enrollment status.
@@ -2530,7 +2531,7 @@ async function sendCloseWelcomeEmail({ userId, email, orgName, plan, trialEndsAt
   const token = crypto.randomBytes(32).toString("hex");
   await run(
     `INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, NOW() + INTERVAL '7 days')`,
-    ["prt_" + uuid().slice(0, 8), userId, require("../auth").resetTokenHash(token)]
+    [newId("prt"), userId, require("../auth").resetTokenHash(token)]
   );
   const link = `${publicAppUrl()}/reset-password?token=${token}`;
   // GTM-1a — a yearly plan charges the YEARLY figure, and this is the
@@ -2644,7 +2645,7 @@ async function recordPlatformPayment(orgId, inv) {
     `INSERT INTO platform_payments (id, org_id, stripe_invoice_id, amount_paid_cents, monthly_cents,
                                     period_start, period_end, paid_at, created_by, created_by_name)
      VALUES (?,?,?,?,?,?,?,COALESCE(?, NOW()),?,?) ON CONFLICT (stripe_invoice_id) DO NOTHING`,
-    ["pp_" + uuid().slice(0, 12), orgId, inv.id, paid, ORG_KIND.monthlyCentsFromInvoice(inv),
+    [newId("pp"), orgId, inv.id, paid, ORG_KIND.monthlyCentsFromInvoice(inv),
      at(period.start), at(period.end), at(inv.status_transitions?.paid_at || inv.created),
      "system:billing-webhook", "Stripe billing"]);
 }
@@ -2750,8 +2751,8 @@ async function provisionOrgFromCloseLink(session) {
     return attachToOrgId;
   }
 
-  const orgId = "org_" + uuid().slice(0, 8);
-  const userId = "user_" + uuid().slice(0, 8);
+  const orgId = newId("org");
+  const userId = newId("user");
   const orgSlug = String(link.org_name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + orgId.slice(4, 10);
 
   await run(
@@ -2867,7 +2868,7 @@ function inboundAuthOk(req) {
 async function recordInboundDrop(orgId, reason) {
   try {
     await run("INSERT INTO inbound_email_drops (id, org_id, reason) VALUES (?,?,?)",
-      ["ied_" + uuid().slice(0, 8), orgId || null, reason]);
+      [newId("ied"), orgId || null, reason]);
   } catch (e) { console.error("[inbound-email] drop count:", e.message); }
 }
 
@@ -3037,7 +3038,7 @@ app.post("/inbound-email", requireFlag(INBOUND_EMAIL_ENABLED), wrap(async (req, 
   }).catch(e => { console.error("[inbound-email] grant routing:", e.message); return null; });
 
   if (decision.action === "log") {
-    const id = "int_" + uuid().slice(0, 8);
+    const id = newId("int");
     const note = decision.subject + (decision.body ? "\n\n" + decision.body : "");
     await run(
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -3052,7 +3053,7 @@ app.post("/inbound-email", requireFlag(INBOUND_EMAIL_ENABLED), wrap(async (req, 
   }
 
   // 4 · zero or several matches → held for a human. NEVER a new donor.
-  const uid = "iem_" + uuid().slice(0, 8);
+  const uid = newId("iem");
   await run(
     `INSERT INTO inbound_email_unmatched (id,org_id,kind,from_email,to_emails,subject,body,message_date,candidates,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,

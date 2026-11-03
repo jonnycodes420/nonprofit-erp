@@ -9,6 +9,7 @@
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
 const lapseRule = require("../../lapseRule");   // FIX-49: the one lapse rule
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = {
   r1: express.Router(),
@@ -1209,7 +1210,7 @@ async function importProposals(orgId, rows, who, donorIdByIndex) {
     if (!id) {
       // A fund named in a file IS a fund (BUILD-88a A.7), created UNRESTRICTED —
       // a restriction is a board decision, not a column.
-      id = "fund_" + uuid().slice(0, 10);
+      id = newId("fund");
       await run("INSERT INTO fin_funds (id,org_id,name,restricted,description) VALUES (?,?,?,false,'Created by an import')",
         [id, orgId, nm.slice(0, 120)]);
       out.fundsCreated++;
@@ -1267,7 +1268,7 @@ async function importProposals(orgId, rows, who, donorIdByIndex) {
     const purpose = P.sanitizePurpose(r.purpose) || "Ask";
     const close = /^\d{4}-\d{2}-\d{2}$/.test(String(r.expectedClose || "")) ? String(r.expectedClose) : null;
 
-    const id = "opp_" + uuid().slice(0, 8);
+    const id = newId("opp");
     const ins = await query(
       `INSERT INTO opportunities
          (id,org_id,donor_id,name,target_amount,status,proposal_stage,probability,fund_id,notes,
@@ -1330,7 +1331,7 @@ async function importMemberships(orgId, rows, who) {
     try {
       await run(`INSERT INTO memberships (id,org_id,donor_id,level_id,joined_on,starts_on,expires_on,status,status_changed_on,source,created_by,created_by_name)
                  VALUES (?,?,?,?,?,?,?,?,?,'import',?,?)`,
-        ["mb_" + uuid().slice(0, 10), orgId, donor.id, level.id, iso(r.joined) || starts, starts, expires, status,
+        [newId("mb"), orgId, donor.id, level.id, iso(r.joined) || starts, starts, expires, status,
          status === "lapsed" ? MB.addDaysCivil(expires, graceDays + 1) : null, who.id, who.name]);
       out.written++;
     } catch (e) {

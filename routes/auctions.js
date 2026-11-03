@@ -40,6 +40,7 @@ const AC = require("../auctionCore");
 const PIC = require("../pictures");
 const figureSources = require("../figureSources");
 const orgTime = require("../orgTime");
+const { newId, randomHex } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 const COOKIE_PREFIX = "stw_auc_";
@@ -246,8 +247,8 @@ app.post("/auctions", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { out, errors } = await readAuctionBody(orgId, req.body || {});
   if (out.opensAt && out.closesAt && out.closesAt <= out.opensAt) errors.push("It has to close after it opens.");
   if (errors.length) return res.status(400).json({ error: errors.join(" "), errors });
-  const id = "auc_" + uuid().replace(/-/g, "").slice(0, 12);
-  const slug = `${AC.slugify(out.title)}-${uuid().replace(/-/g, "").slice(0, 6)}`;
+  const id = newId("auc");
+  const slug = `${AC.slugify(out.title)}-${randomHex(6)}`;
   const who = actor(req);
   await run(`INSERT INTO auctions (id,org_id,event_id,title,description,public_slug,opens_at,closes_at,created_by,created_by_name)
              VALUES (?,?,?,?,?,?,?,?,?,?)`,
@@ -370,7 +371,7 @@ app.post("/auctions/:id/items", requireAuth, checkWriteAccess, wrap(async (req, 
   if (errors.length) return res.status(400).json({ error: errors.join(" "), errors });
   const ph = await storePhotos(orgId, req.body.photos || [], out.title);
   if (ph.error) return res.status(400).json({ error: ph.error });
-  const id = "aui_" + uuid().replace(/-/g, "").slice(0, 12);
+  const id = newId("aui");
   const [pos] = await query(`SELECT COALESCE(MAX(position),0)+1 AS p FROM auction_items WHERE auction_id=? AND org_id=?`, [a.id, orgId]);
   const who = actor(req);
   await run(`INSERT INTO auction_items (id,org_id,auction_id,title,description,category,photos,donor_id,fmv,starting_bid,bid_increment,buy_now,position,created_by,created_by_name)
@@ -457,7 +458,7 @@ app.post("/auction-items/:id/winner", requireAuth, checkWriteAccess, wrap(async 
                                       ORDER BY (donor_id=?) DESC LIMIT 1`, [item.auction_id, orgId, d.id, email, d.id]);
     if (!bidder) {
       const [n] = await queryTx(c, `SELECT COALESCE(MAX(bidder_number),100)+1 AS n FROM auction_bidders WHERE auction_id=?`, [item.auction_id]);
-      bidder = { id: "aub_" + uuid().replace(/-/g, "").slice(0, 12) };
+      bidder = { id: newId("aub") };
       await runTx(c, `INSERT INTO auction_bidders (id,org_id,auction_id,donor_id,name,email,phone,bidder_number,token_hash,created_by,created_by_name)
                       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         [bidder.id, orgId, item.auction_id, d.id, d.name, email, d.phone || null, n.n, AC.hashToken(AC.randomToken()), who.id, who.name]);
@@ -531,7 +532,7 @@ async function writeDrafts(req, a, key, people, compose) {
     const { subject, body } = compose(p);
     await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
                VALUES (?,?,?,?,?,?, 'pending_review', ?, ?, ?)`,
-      ["md_" + uuid().slice(0, 8), orgId, p.donorId, key, subject, body, key.split(":")[0], who.id, who.name]);
+      [newId("md"), orgId, p.donorId, key, subject, body, key.split(":")[0], who.id, who.name]);
     made++;
   }
   return made;
@@ -842,7 +843,7 @@ app.post("/auction/:slug/register", donateLimiter, express.urlencoded({ extended
   const [known] = await query(`SELECT id FROM donors WHERE org_id=? AND LOWER(email)=? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1`, [a.org_id, email]);
   let donorId = known && known.id;
   if (!donorId) {
-    donorId = "d_" + uuid().slice(0, 10);
+    donorId = newId("d");
     await run(`INSERT INTO donors (id,org_id,name,email,phone,stage,status,tags,person_types,created_by,created_by_name)
                VALUES (?,?,?,?,?,'prospect','active','[]','["other"]'::jsonb,?,?)`,
       [donorId, a.org_id, name, email, phone, sys.id, sys.name]);
@@ -854,7 +855,7 @@ app.post("/auction/:slug/register", donateLimiter, express.urlencoded({ extended
       const [n] = await queryTx(c, `SELECT COALESCE(MAX(bidder_number),100)+1 AS n FROM auction_bidders WHERE auction_id=?`, [a.id]);
       await runTx(c, `INSERT INTO auction_bidders (id,org_id,auction_id,donor_id,name,email,phone,bidder_number,token_hash,created_by,created_by_name)
                       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-        ["aub_" + uuid().replace(/-/g, "").slice(0, 12), a.org_id, a.id, donorId, name, email, phone, n.n, AC.hashToken(token), sys.id, sys.name]);
+        [newId("aub"), a.org_id, a.id, donorId, name, email, phone, n.n, AC.hashToken(token), sys.id, sys.name]);
     });
   } catch (e) {
     if (/uq_auction_bidders_email|unique/i.test(e.message)) return back("already");
@@ -886,7 +887,7 @@ app.post("/auction/:slug/signin-link", express.urlencoded({ extended: false }), 
     const token = AC.randomToken();
     await run(`INSERT INTO portal_magic_links (id,org_id,email,token_hash,expires_at,requested_ip,purpose)
                VALUES (?,?,?,?, NOW() + INTERVAL '15 minutes', ?, ?)`,
-      ["pml_" + uuid().slice(0, 10), a.org_id, email, AC.hashToken(token), req.ip || null, purpose]);
+      [newId("pml"), a.org_id, email, AC.hashToken(token), req.ip || null, purpose]);
     const decision = await donorMailDecision("auction_signin", email, a.org_id);
     if (!decision.send) { console.log(`[auction] sign-in link refused (${decision.reason})`); return; }
     if (!process.env.RESEND_API_KEY) return;
@@ -949,7 +950,7 @@ app.post("/auction/:slug/signin", donateLimiter, express.urlencoded({ extended: 
   if (!b) return res.redirect(303, `${self}?m=link_bad#signin`);
   const device = AC.randomToken();
   await run(`INSERT INTO auction_bidder_devices (id,org_id,bidder_id,token_hash,created_by,created_by_name) VALUES (?,?,?,?,?,?)`,
-    ["abd_" + uuid().replace(/-/g, "").slice(0, 12), a.org_id, b.id, AC.hashToken(device), AC.SYS_PUBLIC.id, `Bidder #${b.bidder_number}, ${b.name}`]);
+    [newId("abd"), a.org_id, b.id, AC.hashToken(device), AC.SYS_PUBLIC.id, `Bidder #${b.bidder_number}, ${b.name}`]);
   const secure = req.secure || String(req.headers["x-forwarded-proto"] || "").includes("https");
   res.setHeader("Set-Cookie", `${COOKIE_PREFIX}${a.id}=${encodeURIComponent(device)}; Path=/auction; Max-Age=${60 * 60 * 24 * 60}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`);
   res.redirect(303, `${self}?m=signed_in`);

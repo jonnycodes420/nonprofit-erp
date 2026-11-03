@@ -44,6 +44,7 @@
 const crypto = require("crypto");
 const { query, run, uuid } = require("./db");
 const { NON_CASH_TYPES } = require("./depositsFile");
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const VENDOR = "quickbooks";
 // Intuit retired every minor version below 75 in 2025; 75 is the floor.
@@ -382,7 +383,7 @@ async function customerFor(ctx, g) {
   await run(
     `INSERT INTO bookkeeping_customers (id,org_id,vendor,realm_id,donor_id,customer_id,customer_name,matched_by,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (org_id, vendor, realm_id, donor_id) DO NOTHING`,
-    ["bkcu_" + uuid().slice(0, 10), ctx.orgId, VENDOR, ctx.realmId, g.donor_id, String(found.Id),
+    [newId("bkcu"), ctx.orgId, VENDOR, ctx.realmId, g.donor_id, String(found.Id),
      found.DisplayName || name, how, ctx.who.id, ctx.who.name]);
   return { ok: true, id: String(found.Id) };
 }
@@ -497,7 +498,7 @@ async function claim(ctx, g, landing, txnType) {
          OR (gift_bookkeeping_syncs.status = 'sending'
              AND gift_bookkeeping_syncs.updated_at < NOW() - INTERVAL '${STALE_SENDING_MINUTES} minutes')
      RETURNING id`,
-    ["gbs_" + uuid().slice(0, 12), ctx.orgId, g.id, VENDOR, ctx.connId, ctx.realmId, txnType,
+    [newId("gbs"), ctx.orgId, g.id, VENDOR, ctx.connId, ctx.realmId, txnType,
      landing ? landing.accountId : null, landing ? landing.classId : null, Number(g.cents), ctx.who.id, ctx.who.name]);
   if (!rows.length) return null;
   // The request id an unknown outcome was sent under is kept: it is the only
@@ -533,7 +534,7 @@ async function noteUnsendable(ctx, g, sentence, code) {
         SET error=EXCLUDED.error, error_code=EXCLUDED.error_code, updated_at=NOW(),
             attempts=gift_bookkeeping_syncs.attempts + 1
       WHERE gift_bookkeeping_syncs.status = 'failed'`,
-    ["gbs_" + uuid().slice(0, 12), ctx.orgId, g.id, VENDOR, ctx.connId, ctx.realmId, sentence, code,
+    [newId("gbs"), ctx.orgId, g.id, VENDOR, ctx.connId, ctx.realmId, sentence, code,
      Number(g.cents), ctx.who.id, ctx.who.name]);
 }
 const codeOf = res => res.kind === "network" || res.kind === "server" ? "outcome_unknown"

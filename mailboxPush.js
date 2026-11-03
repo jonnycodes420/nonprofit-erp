@@ -20,6 +20,7 @@
 // Off until Jonathan sets it up: with no PUSH_BASE_URL nothing here runs, no
 // channel is made, and the tick reads every 5 minutes exactly as before.
 const crypto = require("crypto");
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const PROVIDER_WORD = { google: "Google", microsoft: "Microsoft" };
 // Which channels a connection needs, by what they cover.
@@ -216,7 +217,7 @@ async function ensurePush(conn, deps, cfg = config()) {
         await deps.run(`INSERT INTO mailbox_push (id,org_id,connection_id,user_id,provider,kind,channel_id,resource_id,secret_hash,expires_at,renewed_at,
                                                   status,created_by,created_by_name)
                         VALUES (?,?,?,?,?,?,?,?,?,?,NOW(),'on',?,?) ON CONFLICT (connection_id, kind) DO NOTHING`,
-          ["mpush_" + crypto.randomUUID().slice(0, 12), conn.org_id, conn.id, conn.user_id, conn.provider, kind,
+          [newId("mpush"), conn.org_id, conn.id, conn.user_id, conn.provider, kind,
            ch.channelId, ch.resourceId, secretHash, ch.expiresAt.toISOString(), `system:push/${conn.provider}/${conn.user_id}`, "Instant updates"]);
       }
       done.push({ kind, verb, ok: true });
@@ -227,7 +228,7 @@ async function ensurePush(conn, deps, cfg = config()) {
       else await deps.run(`INSERT INTO mailbox_push (id,org_id,connection_id,user_id,provider,kind,status,paused_reason,paused_at,retry_at,last_error,
                                                      created_by,created_by_name)
                            VALUES (?,?,?,?,?,?,'paused',?,NOW(),?,?,?,?) ON CONFLICT (connection_id, kind) DO NOTHING`,
-        ["mpush_" + crypto.randomUUID().slice(0, 12), conn.org_id, conn.id, conn.user_id, conn.provider, kind, reason,
+        [newId("mpush"), conn.org_id, conn.id, conn.user_id, conn.provider, kind, reason,
          new Date(now + RETRY_PAUSED_MS).toISOString(), String(e.message).slice(0, 300), `system:push/${conn.provider}/${conn.user_id}`, "Instant updates"]);
       done.push({ kind, verb, ok: false });
     }

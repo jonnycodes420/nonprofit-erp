@@ -17,6 +17,7 @@
 "use strict";
 const { giftTypeOf } = require("../insights");   // INSIGHTS-1: a gift type from the file's words
 const express = require("express");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 const RUN_ID_RE = /^imp_[A-Za-z0-9_-]{4,40}$/;
@@ -270,7 +271,7 @@ async function writeEngagement({ orgId, u, importId, eventId, personIds, who, su
         if (have.has(id)) return;
         have.add(id);
         const memberName = (p.people[i] && p.people[i].name) || p.name;
-        rows.push(["ea_" + uuid().slice(0, 10), eventId, orgId, id, memberName, i === 0 ? p.email : null, status, at.table || null,
+        rows.push([newId("ea"), eventId, orgId, id, memberName, i === 0 ? p.email : null, status, at.table || null,
                    i === 0 && at.party ? at.party : 1, "import", at.logistics.length ? at.logistics.join(". ") : null, importId]);
       });
     }
@@ -301,7 +302,7 @@ async function writeEngagement({ orgId, u, importId, eventId, personIds, who, su
       const labels = [...seated.keys()].sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
       for (const label of labels) {
         if (idOf.has(label.toLowerCase())) continue;
-        const id = "etb_" + uuid().slice(0, 10);
+        const id = newId("etb");
         await run(`INSERT INTO event_tables (id, org_id, event_id, label, seats, sort, created_by, created_by_name) VALUES (?,?,?,?,?,?,?,?)`,
           [id, orgId, eventId, label.slice(0, 80), Math.max(1, Math.min(60, seated.get(label))), ++sort, who.id, who.name]);
         idOf.set(label.toLowerCase(), id);
@@ -319,7 +320,7 @@ async function writeEngagement({ orgId, u, importId, eventId, personIds, who, su
     const ids = personIds.get(p.key) || [];
     // FIX-59: a note typed as a row under them, or written into their name, is a note on them
     for (const n of (p.personNotes || [])) if (ids[0]) {
-      ix.push(["int_" + uuid().slice(0, 10), orgId, ids[0], "note", `From your import of ${fileName} (${n.sheet}, row ${n.line}): ${String(n.text).slice(0, 500)}`, today, who.id, who.name, importId,
+      ix.push([newId("int"), orgId, ids[0], "note", `From your import of ${fileName} (${n.sheet}, row ${n.line}): ${String(n.text).slice(0, 500)}`, today, who.id, who.name, importId,
         JSON.stringify({ source: "sheet-import", kind: n.asRow ? "note-row" : "name-note", text: n.text, sheet: n.sheet, line: n.line })]);
     }
     for (const [k, words] of Object.entries(COMM_WORDS)) {
@@ -327,17 +328,17 @@ async function writeEngagement({ orgId, u, importId, eventId, personIds, who, su
       if (!src) continue;
       const where = `${src.file}, ${src.sheet ? src.sheet + " sheet, " : ""}"${src.header}": ${String(src.value).slice(0, 120)}`
         + (eventName && /event|rsvp|guest|mailing|sign/i.test(`${src.sheet} ${src.header}`) ? ` (${eventName})` : "");
-      for (const id of ids) ix.push(["int_" + uuid().slice(0, 10), orgId, id, "note", `${words}. From your import: ${where}.`, today, who.id, who.name, importId,
+      for (const id of ids) ix.push([newId("int"), orgId, id, "note", `${words}. From your import: ${where}.`, today, who.id, who.name, importId,
         JSON.stringify({ source: "sheet-import", kind: "preference", preference: k, header: src.header, value: src.value, file: src.file })]);
     }
     // IMPORT-5 (7a): an address Steward could not split for sure is kept whole, and the timeline says to check it
-    if (p.addressCheck && ids[0]) ix.push(["int_" + uuid().slice(0, 10), orgId, ids[0], "note", `Check this address. From your import of ${fileName}: "${String(p.addressCheck).slice(0, 200)}" could not be split into street, city, state and ZIP for sure, so it is kept whole.`, today, who.id, who.name, importId,
+    if (p.addressCheck && ids[0]) ix.push([newId("int"), orgId, ids[0], "note", `Check this address. From your import of ${fileName}: "${String(p.addressCheck).slice(0, 200)}" could not be split into street, city, state and ZIP for sure, so it is kept whole.`, today, who.id, who.name, importId,
       JSON.stringify({ source: "sheet-import", kind: "check-address", value: p.addressCheck })]);
     if (p.comms && p.comms.optOut && p.email) {
       const em = p.email.toLowerCase();
       const [x] = await query("SELECT id FROM email_suppressions WHERE org_id=? AND LOWER(email)=?", [orgId, em]);
       if (!x) {
-        const sid = "sup_" + uuid().slice(0, 10);
+        const sid = newId("sup");
         await run("INSERT INTO email_suppressions (id, org_id, email, reason, source) VALUES (?,?,?,?,?)", [sid, orgId, em, "unsubscribed", `import:${importId}`]);
         summary.suppressions.push(sid);
       }
@@ -360,7 +361,7 @@ async function writeEngagement({ orgId, u, importId, eventId, personIds, who, su
       const keys = (await query("SELECT key FROM custom_field_defs WHERE org_id=? AND entity='donor'", [orgId])).map(r => r.key);
       const key = generateFieldKey(label, keys);
       const [{ mp }] = await query("SELECT COALESCE(MAX(position),0) AS mp FROM custom_field_defs WHERE org_id=? AND entity='donor'", [orgId]);
-      const id = "cfd_" + uuid().slice(0, 12);
+      const id = newId("cfd");
       await run(`INSERT INTO custom_field_defs (id,org_id,entity,key,label,type,options,position,created_by,created_by_name,created_source)
                  VALUES (?,?,'donor',?,?,'text','[]',?,?,?,?)`, [id, orgId, key, label, (mp || 0) + 1, who.id, who.name, `import:${fileName}`.slice(0, 200)]);
       summary.customFieldsCreated.push(id);
@@ -393,7 +394,7 @@ async function writeEngagement({ orgId, u, importId, eventId, personIds, who, su
         }
       }
       if (notes.length) {
-        ix.push(["int_" + uuid().slice(0, 10), orgId, id, "note", `From your import (${fileName}): ${notes.join("; ")}`.slice(0, 4000), today, who.id, who.name, importId,
+        ix.push([newId("int"), orgId, id, "note", `From your import (${fileName}): ${notes.join("; ")}`.slice(0, 4000), today, who.id, who.name, importId,
           JSON.stringify({ source: "sheet-import", kind: "kept" })]);
         summary.keptAsNotes++;
       }
@@ -442,7 +443,7 @@ async function saveMappingAfter(orgId, body, who) {
   await run(`INSERT INTO import_shape_mappings (id, org_id, shape_key, headers, mapping, kind, created_by, created_by_name)
              VALUES (?,?,?,?::jsonb,?::jsonb,'sheet',?,?)
              ON CONFLICT (org_id, shape_key) DO UPDATE SET mapping = EXCLUDED.mapping, times_used = import_shape_mappings.times_used + 1, last_used_at = NOW()`,
-    ["ism_" + uuid().replace(/-/g, "").slice(0, 12), orgId, key, JSON.stringify(Rm.fileHeaders(body.sheets)), JSON.stringify(mapping), who.id, who.name]);
+    [newId("ism"), orgId, key, JSON.stringify(Rm.fileHeaders(body.sheets)), JSON.stringify(mapping), who.id, who.name]);
 }
 
 async function buildUnderstanding(req, body) {
@@ -729,7 +730,7 @@ async function writePlan({ req, body, importId, who, report }) {
         : await query("SELECT id FROM events WHERE org_id=? AND LOWER(name)=LOWER(?) ORDER BY date DESC LIMIT 1", [orgId, evName]);
     if (ev) eventId = ev.id;
     else {
-      eventId = "evt_" + uuid().slice(0, 8);
+      eventId = newId("evt");
       const day = evDate || out.today;
       await run(`INSERT INTO events (id, org_id, name, event_type, date, date_unknown, status, notes, created_by, created_by_name, import_id)
                  VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
@@ -748,7 +749,7 @@ async function writePlan({ req, body, importId, who, report }) {
     const c = p.comms || {};
     for (const [i, x] of m.members.entries()) {
       if (x.id) { ids.push(x.id); matchedIds.add(x.id); continue; }
-      const id = "d_" + uuid().replace(/-/g, "").slice(0, 10);
+      const id = newId("d");
       const spouse = p.people[i] && p.people[i].spouse ? p.people[i].spouse : null;
       newRows.push([id, orgId, x.name || p.name, i === 0 ? p.email : null, i === 0 ? p.phone : null, p.address, p.address2, p.city, p.state, p.zip, p.country || null,
         i === 0 ? p.externalId : null, p.kind === "organization" ? "organisation" : (p.kind === "anonymous" ? "anonymous" : "person"), spouse,
@@ -781,7 +782,7 @@ async function writePlan({ req, body, importId, who, report }) {
     for (const p of hhPeople) {
       const ids = personIds.get(p.key);
       let hh = ids.map(id => cur.get(id)).find(Boolean) || null;
-      if (!hh) { hh = "hh_" + uuid().slice(0, 10); newHh.push([hh, orgId, p.household.slice(0, 200), ids[0], importId]); summary.householdsCreated.push(hh); }
+      if (!hh) { hh = newId("hh"); newHh.push([hh, orgId, p.household.slice(0, 200), ids[0], importId]); summary.householdsCreated.push(hh); }
       for (const id of ids) if (!cur.get(id)) { assign.push([id, hh]); cur.set(id, hh); if (matchedIds.has(id)) summary.householdAssigned.push(id); }
     }
     await insertRows("INSERT INTO households (id, org_id, name, primary_donor_id, import_id)", ["id", "org_id", "name", "primary_donor_id", "import_id"], newHh);
@@ -854,7 +855,7 @@ async function writePlan({ req, body, importId, who, report }) {
     const [hit] = await query("SELECT id FROM fin_funds WHERE org_id=? AND LOWER(name)=LOWER(?) LIMIT 1", [orgId, nm]);
     let id = hit ? hit.id : null;
     if (!id) {
-      id = "fund_" + uuid().slice(0, 10);
+      id = newId("fund");
       await run("INSERT INTO fin_funds (id,org_id,name,restricted,description) VALUES (?,?,?,false,'Created by an import')", [id, orgId, nm.slice(0, 120)]);
       summary.fundsCreated.push(id);
     }

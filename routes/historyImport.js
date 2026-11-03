@@ -15,6 +15,7 @@
 // date); everything else is a dated line on the person's timeline.
 "use strict";
 const express = require("express");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 const ROW_CAP = 50000;
@@ -141,7 +142,7 @@ app.post("/history-import/commit", requireAuth, checkWriteAccess, wrap(async (re
     const name = it.identity.name || it.identity.email;
     if (!name) continue;
     const key = (it.identity.email || Hm.nameKey(it.identity.name) || name).toLowerCase();
-    if (!created.has(key)) created.set(key, { id: "d_" + uuid().slice(0, 10), name: name.replace(/^([^,]+),\s*(.+)$/, "$2 $1"),
+    if (!created.has(key)) created.set(key, { id: newId("d"), name: name.replace(/^([^,]+),\s*(.+)$/, "$2 $1"),
       email: it.identity.email || "", externalId: it.identity.externalId || null });
     cleanPicks[it.index] = created.get(key).id;
   }
@@ -197,7 +198,7 @@ app.post("/history-import/commit", requireAuth, checkWriteAccess, wrap(async (re
     for (const it of write) {
       if (it.kind === "task" && it.taskOpen) {
         const owner = ownerFor(it);
-        taskRows.push(["t_" + uuid().slice(0, 10), orgId, (it.subject || it.note || "Task from your old system").split("\n")[0].slice(0, 200),
+        taskRows.push([newId("t"), orgId, (it.subject || it.note || "Task from your old system").split("\n")[0].slice(0, 200),
           it.due || it.date, "medium", "other", it.match.donorId, owner.id, owner.name, actorId, actorName, runId,
           [it.note && it.note !== it.subject ? it.note : null, it.attachment ? `${it.attachment} was attached in your old system.` : null].filter(Boolean).join("\n") || null]);
         continue;
@@ -206,7 +207,7 @@ app.post("/history-import/commit", requireAuth, checkWriteAccess, wrap(async (re
       const type = it.kind === "task" ? "note" : isVisit ? "meeting" : it.kind;
       let note = Hm.timelineNote(it);
       if (it.kind === "task") { note = `Task completed in your old system: ${note}`; completedAsHistory++; }
-      const id = "int_" + uuid().slice(0, 10);
+      const id = newId("int");
       ixRows.push([id, orgId, it.match.donorId, type, note, it.date, actorId, it.author, runId,
         JSON.stringify({ source: "history-import", kind: isVisit ? "visit" : it.kind, originalType: it.typeWord, author: it.author,
                          attachment: it.attachment, dayFirst: it.dayFirst || undefined, wasHtml: it.wasHtml || undefined, line: it.line })]);
@@ -233,7 +234,7 @@ app.post("/history-import/commit", requireAuth, checkWriteAccess, wrap(async (re
       const t = String(it.relationship || "knows").toLowerCase().replace(/[^a-z_ ]/g, "").trim().replace(/\s+/g, "_") || "knows";
       await runTx(txc, `INSERT INTO donor_relationships (id,org_id,donor_id_a,donor_id_b,relationship_type,notes,created_by,created_by_name,import_id)
                         VALUES (?,?,?,?,?,?,?,?,?)`,
-        ["rel_" + uuid().slice(0, 10), orgId, it.match.donorId, m.donorId, t, "From your old system", actorId, actorName, runId]);
+        [newId("rel"), orgId, it.match.donorId, m.donorId, t, "From your old system", actorId, actorName, runId]);
       relationships++;
     }
     // Tags, appended and remembered so the undo takes back only these.

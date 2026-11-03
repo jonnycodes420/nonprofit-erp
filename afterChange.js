@@ -25,6 +25,7 @@
 
 const { uuid } = require("./db");
 const drift = require("./drift");
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const ACTOR = { id: "system:after-change", name: "Steward (after a change)" };
 
@@ -82,7 +83,7 @@ async function groupCrossings(orgId, ids, { door, today, fire }) {
       await query(`INSERT INTO group_sweep_seen (org_id, group_id, donor_id, seen_on) VALUES (?,?,?,?)
                    ON CONFLICT (group_id, donor_id) DO NOTHING`, [orgId, g.id, id, today || ""]);
       await query(`INSERT INTO group_crossings (id, org_id, group_id, donor_id, door, created_by, created_by_name)
-                   VALUES (?,?,?,?,?,?,?)`, ["gx_" + uuid().slice(0, 12), orgId, g.id, id, door, ACTOR.id, ACTOR.name]);
+                   VALUES (?,?,?,?,?,?,?)`, [newId("gx"), orgId, g.id, id, door, ACTOR.id, ACTOR.name]);
       out.push({ groupId: g.id, groupName: g.name, donorId: id });
       if (watched.has(g.id) && typeof fire === "function") await fire(id, g.id);
     }

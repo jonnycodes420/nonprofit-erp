@@ -35,11 +35,12 @@
 const { query, run } = require("./db");
 const orgTime = require("./orgTime");
 const crypto = require("crypto");
+const { randomHex } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 // server.js points this at scheduleScores, so a booking moves the stored
 // engagement score on the next debounce rather than at the six-hour tick.
 function changed(orgId, ids) { try { if (module.exports.onChange) module.exports.onChange(orgId, ids); } catch { /* scores are best effort */ } }
-const id = p => p + crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+const id = p => p + randomHex(20);   // IDS-1: p carries its own "_"
 const NEAR_DAYS = 3;
 
 async function tzOf(orgId) {

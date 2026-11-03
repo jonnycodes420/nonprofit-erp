@@ -16,6 +16,7 @@
 // staff touch, because nobody spoke to anybody.
 const { query, run, uuid } = require("./db");
 const orgTime = require("./orgTime");
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 async function writeTimelineLine({ orgId, donorId, note, type = "activity", date = null, actorId, actorName = null, key = null, metadata = {} } = {}) {
   if (!orgId || !donorId || !note) return { written: false, reason: "missing" };
@@ -38,7 +39,7 @@ async function writeTimelineLine({ orgId, donorId, note, type = "activity", date
   // CHECK-2: a date in a line Steward writes reads "Fri, Oct 23", never
   // "2026-10-23", whoever the caller is.
   const { humanDates } = await import("./shared/displayDate.js");
-  const id = "i_" + uuid().slice(0, 10);
+  const id = newId("i");
   await run(
     `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
      VALUES (?,?,?,?,?,?,?,?,?)`,

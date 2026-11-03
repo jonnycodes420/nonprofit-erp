@@ -47,6 +47,7 @@
 const express = require("express");
 const DH = require("../dataHealth");
 const NMONEY = require("../shared/numbers/money");   // NUMBERS-5
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 
@@ -416,7 +417,7 @@ async function runDataHealth(orgId, { trigger, importId = null, actorId = "syste
     const byId = new Map(c._people.map(d => [d.id, d]));
     fresh = c._pairs.filter(p => isNew(byId.get(p.a)) || isNew(byId.get(p.b))).length;
   }
-  const id = "dhr_" + uuid().slice(0, 12);
+  const id = newId("dhr");
   await run(`INSERT INTO data_health_runs (id, org_id, trigger, import_id, counts, new_duplicates, created_by, created_by_name)
              VALUES (?,?,?,?,?::jsonb,?,?,?)`,
     [id, orgId, trigger, importId, JSON.stringify(publicCounts(c)), fresh, actorId, actorName]);
@@ -545,7 +546,7 @@ app.post("/data-health/proposals", requireAuth, checkWriteAccess, wrap(async (re
   if (own.length !== 2) return res.status(404).json({ error: "Donor not found" });
   const [x, y] = [String(a), String(b)].sort();
   const me = await who(req);
-  const id = "mp_" + uuid().slice(0, 12);
+  const id = newId("mp");
   const ins = await query(`INSERT INTO merge_proposals (id, org_id, a, b, reason, created_by, created_by_name) VALUES (?,?,?,?,?,?,?)
                            ON CONFLICT (org_id, a, b) DO NOTHING RETURNING id`,
     [id, req.user.orgId, x, y, String(req.body.reason || "").slice(0, 300) || null, me.id, me.name]);
@@ -560,7 +561,7 @@ app.post("/data-health/pairs/dismiss", requireAuth, checkWriteAccess, wrap(async
   const me = await who(req);
   await run(`INSERT INTO data_health_dismissals (id, org_id, kind, key, created_by, created_by_name) VALUES (?,?,?,?,?,?)
              ON CONFLICT (org_id, kind, key) DO NOTHING`,
-    ["dhd_" + uuid().slice(0, 12), req.user.orgId, "pair", DH.pairKey(a, b), me.id, me.name]);
+    [newId("dhd"), req.user.orgId, "pair", DH.pairKey(a, b), me.id, me.name]);
   res.status(201).json({ ok: true, key: DH.pairKey(a, b) });
 }));
 
@@ -770,13 +771,13 @@ function mergeInTx(orgId, keptId, mergedId, { choices, me, confidence, reasons, 
     // 5. One line on the kept person's timeline, and the record undo reads.
     const movedCount = moved.reduce((n, m) => n + (m.ids ? m.ids.length : m.keys.length), 0);
     const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
-    const noteId = "int_" + uuid().slice(0, 8);
+    const noteId = newId("int");
     const leftWords = leftovers.length ? ` Also on file for them: ${leftovers.join(", ")}.` : "";
     await runTx(client, "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
       [noteId, orgId, keptId, "note",
        `Merged "${other.name}"${other.email ? ` <${other.email}>` : ""} into this record: ${movedCount} linked row${movedCount === 1 ? "" : "s"} moved${setAside.length ? `, ${setAside.length} set aside because this record already had them` : ""}. Lifetime giving ${dollars(keptCentsAfter)}.${leftWords} The merge can be undone for ${UNDO_DAYS} days from Data health.`,
        today, me.id, me.name]);
-    const mergeId = "dm_" + uuid().slice(0, 12);
+    const mergeId = newId("dm");
     await runTx(client,
       `INSERT INTO donor_merges (id, org_id, kept_id, merged_id, kept_name, merged_name, kept_before, merged_before, moved, set_aside,
                                  choices, note_id, confidence, reasons, bulk, created_by, created_by_name)
@@ -968,7 +969,7 @@ app.post("/data-health/addresses/apply", requireAuth, checkWriteAccess, wrap(asy
       const t = DH.tidyAddress(d);
       if (t.status !== "tidy") { skipped.push({ donorId: d.id, why: t.status === "unreadable" ? t.why : "already tidy" }); continue; }
       await runTx(client, `INSERT INTO donor_address_history (id, org_id, donor_id, source, before, after, created_by, created_by_name) VALUES (?,?,?,?,?::jsonb,?::jsonb,?,?)`,
-        ["dah_" + uuid().slice(0, 12), orgId, d.id, "tidy", JSON.stringify(t.current), JSON.stringify(t.proposed), me.id, me.name]);
+        [newId("dah"), orgId, d.id, "tidy", JSON.stringify(t.current), JSON.stringify(t.proposed), me.id, me.name]);
       await runTx(client, "UPDATE donors SET address=?, address2=?, city=?, state=?, zip=?, updated_at=NOW() WHERE id=? AND org_id=?",
         [t.proposed.address, t.proposed.address2 || null, t.proposed.city, t.proposed.state, t.proposed.zip, d.id, orgId]);
       applied.push(d.id);
@@ -982,7 +983,7 @@ app.post("/data-health/addresses/dismiss", requireAuth, checkWriteAccess, wrap(a
   if (!d) return res.status(404).json({ error: "Donor not found" });
   const me = await who(req);
   await run(`INSERT INTO data_health_dismissals (id, org_id, kind, key, created_by, created_by_name) VALUES (?,?,?,?,?,?) ON CONFLICT (org_id, kind, key) DO NOTHING`,
-    ["dhd_" + uuid().slice(0, 12), req.user.orgId, "address", `${d.id}:${DH.oneLine(DH.tidyAddress(d).current)}`, me.id, me.name]);
+    [newId("dhd"), req.user.orgId, "address", `${d.id}:${DH.oneLine(DH.tidyAddress(d).current)}`, me.id, me.name]);
   res.status(201).json({ ok: true });
 }));
 app.get("/donors/:id/address-history", requireAuth, wrap(async (req, res) => {
@@ -1004,7 +1005,7 @@ app.post("/data-health/couples/apply", requireAuth, checkWriteAccess, wrap(async
   const orgId = req.user.orgId, me = await who(req);
   const people = await query(`SELECT ${PERSON_COLS}, stage, status, person_types, spouse_name FROM donors WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL`, [orgId, ids]);
   const props = new Map((await coupleRows(orgId, people)).map(r => [r.donorId, r]));
-  const batchId = "nfb_" + uuid().replace(/-/g, "").slice(0, 12);
+  const batchId = newId("nfb");
   const touched = [];
   let n = 0;
   await withTransaction(async (client) => {
@@ -1017,7 +1018,7 @@ app.post("/data-health/couples/apply", requireAuth, checkWriteAccess, wrap(async
       const twin = hh ? (await queryTx(client, "SELECT id FROM donors WHERE org_id=? AND household_id=? AND id<>? AND deleted_at IS NULL AND lower(name)=lower(?) LIMIT 1",
         [orgId, hh, d.id, p.people[1]]))[0] : null;
       if (!hh) {
-        hh = madeHh = "hh_" + uuid().slice(0, 10);
+        hh = madeHh = newId("hh");
         await runTx(client, "INSERT INTO households (id, org_id, name, primary_donor_id, created_by, created_by_name) VALUES (?,?,?,?,?,?)", [hh, orgId, p.after.slice(0, 200), d.id, me.id, me.name]);
       }
       if (!twin) {
@@ -1030,7 +1031,7 @@ app.post("/data-health/couples/apply", requireAuth, checkWriteAccess, wrap(async
       await runTx(client, "UPDATE donors SET name=?, spouse_name=?, household_id=?, updated_at=NOW() WHERE id=? AND org_id=?", [p.people[0], p.people[1], hh, d.id, orgId]);
       await runTx(client, `INSERT INTO name_fixes (id, org_id, batch_id, kind, donor_id, before_name, before_spouse_name, before_household_id, after_name, created_donor_id, created_household_id, created_by, created_by_name)
                            VALUES (?,?,?,'comma_couple',?,?,?,?,?,?,?,?,?)`,
-        ["nf_" + uuid().replace(/-/g, "").slice(0, 12), orgId, batchId, d.id, d.name, d.spouse_name || null, d.household_id || null, p.people[0], other, madeHh, me.id, me.name]);
+        [newId("nf"), orgId, batchId, d.id, d.name, d.spouse_name || null, d.household_id || null, p.people[0], other, madeHh, me.id, me.name]);
       touched.push(d.id, ...(other ? [other] : []));
       n++;
     }
@@ -1082,7 +1083,7 @@ app.post("/data-health/names/apply", requireAuth, checkWriteAccess, wrap(async (
   const orgId = req.user.orgId, me = await who(req);
   const people = await query(`SELECT ${PERSON_COLS}, notes FROM donors WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL`, [orgId, ids]);
   const props = new Map((await nameNoteRows(orgId, people)).map(r => [r.donorId, r]));
-  const batchId = "nfb_" + uuid().replace(/-/g, "").slice(0, 12);
+  const batchId = newId("nfb");
   const touched = [];
   await withTransaction(async (client) => {
     for (const d of people) {
@@ -1093,7 +1094,7 @@ app.post("/data-health/names/apply", requireAuth, checkWriteAccess, wrap(async (
       await runTx(client, "UPDATE donors SET name=?, notes=?, updated_at=NOW() WHERE id=? AND org_id=?", [p.after, notes, d.id, orgId]);
       await runTx(client, `INSERT INTO name_fixes (id, org_id, batch_id, kind, donor_id, before_name, before_notes, after_name, created_by, created_by_name)
                            VALUES (?,?,?,'name_notes',?,?,?,?,?,?)`,
-        ["nf_" + uuid().replace(/-/g, "").slice(0, 12), orgId, batchId, d.id, d.name, d.notes ?? null, p.after, me.id, me.name]);
+        [newId("nf"), orgId, batchId, d.id, d.name, d.notes ?? null, p.after, me.id, me.name]);
       touched.push(d.id);
     }
   });
@@ -1125,7 +1126,7 @@ app.post("/data-health/families/dismiss", requireAuth, checkWriteAccess, wrap(as
   if (own.length !== 2) return res.status(404).json({ error: "Donor not found" });
   const me = await who(req);
   await run(`INSERT INTO data_health_dismissals (id, org_id, kind, key, created_by, created_by_name) VALUES (?,?,?,?,?,?) ON CONFLICT (org_id, kind, key) DO NOTHING`,
-    ["dhd_" + uuid().slice(0, 12), req.user.orgId, "family", DH.pairKey(String(a), String(b)), me.id, me.name]);
+    [newId("dhd"), req.user.orgId, "family", DH.pairKey(String(a), String(b)), me.id, me.name]);
   res.status(201).json({ ok: true });
 }));
 
@@ -1155,7 +1156,7 @@ app.post("/data-health/businesses/link", requireAuth, checkWriteAccess, wrap(asy
   const [had] = await query(`SELECT id FROM donor_relationships WHERE org_id=? AND ((donor_id_a=? AND donor_id_b=?) OR (donor_id_a=? AND donor_id_b=?))`, [orgId, a, b, b, a]);
   if (had) return res.status(409).json({ error: "linked", sentence: `${p.name} and ${o.name} are already linked.` });
   const me = await who(req);
-  const id = "drel_" + uuid().slice(0, 8);
+  const id = newId("drel");
   await run("INSERT INTO donor_relationships (id, org_id, donor_id_a, donor_id_b, relationship_type, notes, created_by, created_by_name) VALUES (?,?,?,?,?,?,?,?)",
     [id, orgId, p.id, o.id, "owner", "Linked from Data health: people and their businesses", me.id, me.name]);
   await require("../afterChange").afterChange(orgId, [p.id, o.id], { door: "relationship", recalc: false }).catch(e => console.error("[polish-4] link:", e.message));
@@ -1168,7 +1169,7 @@ app.post("/data-health/businesses/dismiss", requireAuth, checkWriteAccess, wrap(
   if (own.length !== 2) return res.status(404).json({ error: "Donor not found" });
   const me = await who(req);
   await run(`INSERT INTO data_health_dismissals (id, org_id, kind, key, created_by, created_by_name) VALUES (?,?,?,?,?,?) ON CONFLICT (org_id, kind, key) DO NOTHING`,
-    ["dhd_" + uuid().slice(0, 12), req.user.orgId, "business", DH.pairKey(String(a), String(b)), me.id, me.name]);
+    [newId("dhd"), req.user.orgId, "business", DH.pairKey(String(a), String(b)), me.id, me.name]);
   res.status(201).json({ ok: true });
 }));
 
@@ -1191,7 +1192,7 @@ app.post("/data-health/event-pairs/answer", requireAuth, checkWriteAccess, wrap(
   if (!A || !B) return res.status(404).json({ error: "Donor not found" });
   if (answer === "different") {
     await run(`INSERT INTO data_health_dismissals (id, org_id, kind, key, created_by, created_by_name) VALUES (?,?,?,?,?,?) ON CONFLICT (org_id, kind, key) DO NOTHING`,
-      ["dhd_" + uuid().slice(0, 12), orgId, "pair", DH.pairKey(a, b), me.id, me.name]);
+      [newId("dhd"), orgId, "pair", DH.pairKey(a, b), me.id, me.name]);
     return res.status(201).json({ answer, key: DH.pairKey(a, b), sentence: `${A.name} and ${B.name} are two people. Steward won't ask again.` });
   }
   const keepA = Number(A.gift_count || 0) !== Number(B.gift_count || 0) ? Number(A.gift_count || 0) > Number(B.gift_count || 0) : new Date(A.created_at) <= new Date(B.created_at);
@@ -1224,7 +1225,7 @@ app.post("/data-health/pledge-dates/apply", requireAuth, checkWriteAccess, wrap(
   const ids = Array.isArray(req.body?.pledgeIds) ? [...new Set(req.body.pledgeIds.map(String))].slice(0, 5000) : null;
   if (ids && !ids.length) return res.status(400).json({ error: "Choose at least one pledge." });
   const orgId = req.user.orgId, me = await who(req);
-  const batchId = "pdf_" + uuid().replace(/-/g, "").slice(0, 12);
+  const batchId = newId("pdf");
   const touched = new Set();
   let n = 0;
   // one click at a time per org, so two clicks cannot move one pledge twice
@@ -1235,12 +1236,12 @@ app.post("/data-health/pledge-dates/apply", requireAuth, checkWriteAccess, wrap(
         if (i.after === i.before) continue;
         await runTx(client, "UPDATE pledge_installments SET due_date=? WHERE id=? AND org_id=? AND due_date=?", [i.after, i.id, orgId, i.before]);
         await runTx(client, `INSERT INTO pledge_date_fixes (id, org_id, batch_id, pledge_id, installment_id, before_due, after_due, created_by, created_by_name)
-                             VALUES (?,?,?,?,?,?,?,?,?)`, ["pdx_" + uuid().replace(/-/g, "").slice(0, 12), orgId, batchId, p.pledgeId, i.id, i.before, i.after, me.id, me.name]);
+                             VALUES (?,?,?,?,?,?,?,?,?)`, [newId("pdx"), orgId, batchId, p.pledgeId, i.id, i.before, i.after, me.id, me.name]);
       }
       if (p.pledgeDueAfter !== p.pledgeDueBefore) {
         await runTx(client, "UPDATE pledges SET due_date=?, updated_at=NOW() WHERE id=? AND org_id=?", [p.pledgeDueAfter, p.pledgeId, orgId]);
         await runTx(client, `INSERT INTO pledge_date_fixes (id, org_id, batch_id, pledge_id, installment_id, before_due, after_due, created_by, created_by_name)
-                             VALUES (?,?,?,?,NULL,?,?,?,?)`, ["pdx_" + uuid().replace(/-/g, "").slice(0, 12), orgId, batchId, p.pledgeId, p.pledgeDueBefore, p.pledgeDueAfter, me.id, me.name]);
+                             VALUES (?,?,?,?,NULL,?,?,?,?)`, [newId("pdx"), orgId, batchId, p.pledgeId, p.pledgeDueBefore, p.pledgeDueAfter, me.id, me.name]);
       }
       touched.add(p.donorId); n++;
     }
@@ -1296,7 +1297,7 @@ app.post("/data-health/emails/dismiss", requireAuth, checkWriteAccess, wrap(asyn
   if (!d || !d.email) return res.status(404).json({ error: "Donor not found" });
   const me = await who(req);
   await run(`INSERT INTO data_health_dismissals (id, org_id, kind, key, created_by, created_by_name) VALUES (?,?,?,?,?,?) ON CONFLICT (org_id, kind, key) DO NOTHING`,
-    ["dhd_" + uuid().slice(0, 12), req.user.orgId, "email", `${d.id}:${d.email.trim().toLowerCase()}:${kind}`, me.id, me.name]);
+    [newId("dhd"), req.user.orgId, "email", `${d.id}:${d.email.trim().toLowerCase()}:${kind}`, me.id, me.name]);
   res.status(201).json({ ok: true });
 }));
 
@@ -1329,7 +1330,7 @@ app.post("/data-health/ncoa/results", requireAuth, checkWriteAccess, wrap(async 
   const people = ids.length ? await query(`SELECT ${PERSON_COLS} FROM donors WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL`, [orgId, ids]) : [];
   const byId = new Map(people.map(d => [d.id, d]));
   const counts = { rows: read.entries.length, moves: 0, noForwarding: 0, noMove: 0, unmatched: 0 };
-  const batchId = "ncb_" + uuid().slice(0, 12);
+  const batchId = newId("ncb");
   await withTransaction(async (client) => {
     await runTx(client, `INSERT INTO ncoa_batches (id, org_id, filename, created_by, created_by_name) VALUES (?,?,?,?,?)`,
       [batchId, orgId, String(req.body?.filename || "").slice(0, 200) || null, me.id, me.name]);
@@ -1341,7 +1342,7 @@ app.post("/data-health/ncoa/results", requireAuth, checkWriteAccess, wrap(async 
       const old = { address: d.address || "", address2: d.address2 || "", city: d.city || "", state: d.state || "", zip: d.zip || "" };
       await runTx(client, `INSERT INTO ncoa_moves (id, org_id, batch_id, donor_id, kind, code, words, move_type, move_date, old_address, new_address, created_by, created_by_name)
                            VALUES (?,?,?,?,?,?,?,?,?,?::jsonb,?::jsonb,?,?)`,
-        ["ncm_" + uuid().slice(0, 12), orgId, batchId, d.id, e.kind, e.code, e.words, e.moveType, e.moveDate,
+        [newId("ncm"), orgId, batchId, d.id, e.kind, e.code, e.words, e.moveType, e.moveDate,
          JSON.stringify(old), e.newAddress ? JSON.stringify(e.newAddress) : null, me.id, me.name]);
     }
     await runTx(client, `UPDATE ncoa_batches SET rows_in=?, moves=?, no_forwarding=?, no_move=?, unmatched=? WHERE id=? AND org_id=?`,
@@ -1374,18 +1375,18 @@ app.post("/data-health/ncoa/apply", requireAuth, checkWriteAccess, wrap(async (r
       if (m.kind === "move") {
         const n = m.new_address;
         await runTx(client, `INSERT INTO donor_address_history (id, org_id, donor_id, source, before, after, ncoa_move_id, created_by, created_by_name) VALUES (?,?,?,?,?::jsonb,?::jsonb,?,?,?)`,
-          ["dah_" + uuid().slice(0, 12), orgId, d.id, "ncoa", JSON.stringify(before), JSON.stringify(n), m.id, me.id, me.name]);
+          [newId("dah"), orgId, d.id, "ncoa", JSON.stringify(before), JSON.stringify(n), m.id, me.id, me.name]);
         await runTx(client, `UPDATE donors SET address=?, address2=?, city=?, state=?, zip=?, address_unmailable=false, address_unmailable_reason=NULL, address_unmailable_at=NULL, updated_at=NOW() WHERE id=? AND org_id=?`,
           [n.address, n.address2 || null, n.city, n.state, n.zip, d.id, orgId]);
         await runTx(client, "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
-          ["int_" + uuid().slice(0, 8), orgId, d.id, "note", `Address updated from a change of address file${when}. Was: ${DH.oneLine(before)}.`, today, me.id, me.name]);
+          [newId("int"), orgId, d.id, "note", `Address updated from a change of address file${when}. Was: ${DH.oneLine(before)}.`, today, me.id, me.name]);
       } else {
         await runTx(client, `INSERT INTO donor_address_history (id, org_id, donor_id, source, before, after, ncoa_move_id, created_by, created_by_name) VALUES (?,?,?,?,?::jsonb,NULL,?,?,?)`,
-          ["dah_" + uuid().slice(0, 12), orgId, d.id, "ncoa_unmailable", JSON.stringify(before), m.id, me.id, me.name]);
+          [newId("dah"), orgId, d.id, "ncoa_unmailable", JSON.stringify(before), m.id, me.id, me.name]);
         await runTx(client, `UPDATE donors SET address_unmailable=true, address_unmailable_reason=?, address_unmailable_at=NOW(), updated_at=NOW() WHERE id=? AND org_id=?`,
           [`Change of address file: ${m.words}${when}.`, d.id, orgId]);
         await runTx(client, "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
-          ["int_" + uuid().slice(0, 8), orgId, d.id, "note", `Address marked not mailable from a change of address file: ${m.words}${when}. The address on file was kept.`, today, me.id, me.name]);
+          [newId("int"), orgId, d.id, "note", `Address marked not mailable from a change of address file: ${m.words}${when}. The address on file was kept.`, today, me.id, me.name]);
       }
       await runTx(client, "UPDATE ncoa_moves SET status='applied', decided_at=NOW(), decided_by=?, decided_by_name=? WHERE id=? AND org_id=?", [me.id, me.name, m.id, orgId]);
       applied++;

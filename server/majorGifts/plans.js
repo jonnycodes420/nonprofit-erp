@@ -8,6 +8,7 @@
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-11 Part 1 — the audit log's own vocabulary (the sentence a row reads as).
 // The WRITING of a row happens in middleware/auditTrail.js and nowhere else.
 const auditTrailMod = require("../../auditTrail");
@@ -42,7 +43,7 @@ app.post("/donors/:id/planned-gifts", requireAuth, wrap(async (req, res) => {
   if (donorCheck[0].kind === "organisation" || donorCheck[0].kind === "anonymous") {
     return res.status(400).json({ error: PERSON_ONLY_SENTENCE("be given a planned gift", donorCheck[0].name) });
   }
-  const id = "pg_" + uuid().slice(0,8);
+  const id = newId("pg");
   await run(
     "INSERT INTO planned_gifts (id,org_id,donor_id,type,estimated_value,date_indicated,notes,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?)",
     [id, req.user.orgId, req.params.id, type, estimated_value||null, date_indicated||null, notes||"", actor(req).id, actor(req).name]
@@ -57,7 +58,7 @@ app.post("/donors/:id/planned-gifts", requireAuth, wrap(async (req, res) => {
     const userName = userRow[0]?.name || "";
     await run(
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
-      ["int_"+uuid().slice(0,8), req.user.orgId, req.params.id, "planned_gift",
+      [newId("int"), req.user.orgId, req.params.id, "planned_gift",
        `Planned gift indicated: ${type.replace(/_/g," ")}${estimated_value ? " (est. $" + Number(estimated_value).toLocaleString() + ")" : ""}`,
        orgToday(await orgTz(req.user.orgId)), req.user.userId, userName]   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
     );
@@ -199,7 +200,7 @@ app.post("/donors/:id/proposals", requireAuth, requireCrm, checkWriteAccess, wra
     if (clash) return res.status(409).json(clash);
   }
 
-  const id = "opp_" + uuid().slice(0, 8);
+  const id = newId("opp");
   const status = P.statusForStage(stage);
   const prob = P.normalizeProbability(req.body.probability);
   // ONE statement, and the WHERE NOT EXISTS is the race guarantee: two officers
@@ -243,7 +244,7 @@ async function logProposalLine(orgId, donorId, req, note) {
   await run(
     `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name)
      VALUES (?,?,?,'proposal',?,?,?,?)`,
-    ["int_" + uuid().slice(0, 10), orgId, donorId, orgToday(org), note,   // ORG_TZ_SEAM_OK
+    [newId("int"), orgId, donorId, orgToday(org), note,   // ORG_TZ_SEAM_OK
      actor(req).id, actor(req).name]).catch(e => console.error("[proposal] timeline:", e.message));
 }
 
@@ -475,7 +476,7 @@ app.post("/cultivation-templates", requireAuth, requireCrm, checkWriteAccess, wr
   const PL = await planMod();
   const v = PL.validateTemplate({ name: req.body.name, steps: req.body.steps });
   if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "invalid_template", errors: v.errors });
-  const id = "ct_" + uuid().slice(0, 10);
+  const id = newId("ct");
   await run(
     `INSERT INTO cultivation_templates (id,org_id,name,steps,created_by,created_by_name) VALUES (?,?,?,?,?,?)`,
     [id, req.user.orgId, v.name, JSON.stringify(v.steps), actor(req).id, actor(req).name]);
@@ -525,7 +526,7 @@ app.post("/donors/:id/plan", requireAuth, requireCrm, checkWriteAccess, wrap(asy
   const today = orgToday(org);                                // ORG_TZ_SEAM_OK
   const steps = PL.planFromTemplate({ steps: v.steps, today }, orgTime.addDays);
 
-  const planId = "cp_" + uuid().slice(0, 10);
+  const planId = newId("cp");
   // ONE ACTIVE PLAN PER PERSON, decided by the partial unique index rather than
   // by a read-then-write — two officers applying a plan in the same second
   // cannot both land.
@@ -546,7 +547,7 @@ app.post("/donors/:id/plan", requireAuth, requireCrm, checkWriteAccess, wrap(asy
     await run(
       `INSERT INTO cultivation_plan_steps (id,org_id,plan_id,seq,step_type,label,due_date,status)
        VALUES (?,?,?,?,?,?,?,'pending')`,
-      ["cs_" + uuid().slice(0, 10), orgId, planId, s.seq, s.type, s.label, s.dueDate]);
+      [newId("cs"), orgId, planId, s.seq, s.type, s.label, s.dueDate]);
   }
   // The first step opens now — or waits, if this person already has an open
   // follow-up of their own. Both are correct; the sentence says which.
@@ -554,7 +555,7 @@ app.post("/donors/:id/plan", requireAuth, requireCrm, checkWriteAccess, wrap(asy
   await run(
     `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name)
      VALUES (?,?,?,'note',?,?,?,?)`,
-    ["int_" + uuid().slice(0, 10), orgId, donor.id, today,
+    [newId("int"), orgId, donor.id, today,
      `Cultivation plan applied: ${tpl.name} (${steps.length} ${steps.length === 1 ? "step" : "steps"})`,
      actor(req).id, actor(req).name]).catch(e => console.error("[plan] timeline:", e.message));
   res.status(201).json(await readPlan(orgId, planId));
@@ -636,7 +637,7 @@ app.post("/plan-steps/:id/done", requireAuth, requireCrm, checkWriteAccess, wrap
   // closes pointing at it. That is also what makes a completed journey step
   // count towards Last contact — a step done that left no trace would leave
   // the record saying nobody had spoken to them.
-  const intId = "int_" + uuid().slice(0, 10);
+  const intId = newId("int");
   await run(
     `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name)
      VALUES (?,?,?,?,?,?,?,?)`,
@@ -681,7 +682,7 @@ app.post("/plan-steps/:id/skip", requireAuth, requireCrm, checkWriteAccess, wrap
     await run(
       `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name)
        VALUES (?,?,?,'note',?,?,?,?)`,
-      ["int_" + uuid().slice(0, 10), orgId, s.donor_id, orgToday(await orgTz(orgId)),  // ORG_TZ_SEAM_OK
+      [newId("int"), orgId, s.donor_id, orgToday(await orgTz(orgId)),  // ORG_TZ_SEAM_OK
        `Skipped "${s.label}": ${why}`, actor(req).id, actor(req).name])
       .catch(e => console.error("[journey] skip note:", e.message));
   }

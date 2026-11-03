@@ -31,6 +31,7 @@
 const { AsyncLocalStorage } = require("node:async_hooks");
 const { query, run, uuid } = require("../db");
 const A = require("../auditTrail");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 // ── THE THIRTY-THREE CALLS THAT WERE ALREADY THERE ────────────────────────
 // Before this build, thirty-three routes called `writeAuditLog(...)` by hand.
@@ -318,7 +319,7 @@ async function resolveAuditNames(rows, orgId) {
 
 async function insertAuditRow(rawFields) {
   const fields = await personScrub(rawFields);
-  const id = "al_" + uuid().slice(0, 12);
+  const id = newId("al");
   await run(
     `INSERT INTO fin_audit_log
        (id, org_id, user_id, user_name, actor_kind, action, entity_type, entity_id, entity_label,

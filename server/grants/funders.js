@@ -10,6 +10,7 @@
 const express = require("express");
 const { requireAuth404 } = require("../../auth");   // FIX-20 Part 0: the file doors
 const { fileLimiter } = require("../shared/fileLimiter");   // one limiter, shared by the two file doors
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = {
   r1: express.Router(),
@@ -175,7 +176,7 @@ app.post("/funders/:donorId/grants", requireAuth, requireCrm, checkWriteAccess, 
   const officer = await checkGrantOfficer(orgId, req.body.officerId || null);
   if (!officer.ok) return OU.refuse(res, "officerId");
 
-  const id = "gr_" + uuid().slice(0, 8);
+  const id = newId("gr");
   await run(
     `INSERT INTO grants (id,org_id,funder,funder_donor_id,program,amount,amount_requested,status,
                          restriction,restricted_from,restricted_until,fund_id,cycle_name,officer_id,officer,
@@ -303,7 +304,7 @@ app.post("/programs", requireAuth, wrap(async (req, res) => {
   const { name, description, budget, spent, staff, participantCount, startDate, endDate, status, outcomes, metrics } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
-  const id = "prg_" + uuid().slice(0, 8);
+  const id = newId("prg");
   await run(
     `INSERT INTO programs (id,org_id,name,description,budget,spent,staff,participant_count,start_date,end_date,status,outcomes,metrics)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -358,7 +359,7 @@ app.post("/programs/:id/grants", requireAuth, requireAdmin, wrap(async (req, res
   );
   if (!grantExists.length) return res.status(404).json({ error: "Grant not found" });
 
-  const id = "pg_" + uuid().slice(0, 8);
+  const id = newId("pg");
   await run(
     `INSERT INTO program_grants (id,org_id,program_id,grant_id,allocated)
      VALUES (?,?,?,?,?)

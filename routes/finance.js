@@ -15,6 +15,7 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-12 Part 7b: the after-meeting chips reach the model only through here.
 const { anthropicFor, AiOffError, AI_OFF_MESSAGE, recordAiFallback } = require("../aiClient");
 const meetingsSrc = require("../meetings");   // FIX-14 Part 1 — meetings with a person, defined once
@@ -401,7 +402,7 @@ async function importedUndeposited(orgId, importId = null) {
 app.post("/finance/imported-deposited", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId, who = actor(req);
   const importId = req.body && req.body.importId ? String(req.body.importId) : null;
-  const batchId = "dmb_" + uuid().replace(/-/g, "").slice(0, 12);
+  const batchId = newId("dmb");
   const marked = await require("../db").withTransaction(async (client) => {
     const gifts = await client.query(
       `SELECT g.id, g.import_id, g.date, g.deposited_on, g.deposit_ref FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
@@ -853,7 +854,7 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdminUnlessMailbox, ch
        DO UPDATE SET address=EXCLUDED.address, credentials_sealed=EXCLUDED.credentials_sealed,
                      token_expires_at=EXCLUDED.token_expires_at, calendar_granted=EXCLUDED.calendar_granted,
                      status='active', last_error=NULL, last_error_at=NULL, updated_at=NOW()`,
-      ["mbx_" + uuid().slice(0, 10), req.user.orgId, req.user.userId, key, address, sealed, expiresAt,
+      [newId("mbx"), req.user.orgId, req.user.userId, key, address, sealed, expiresAt,
        calendarOk, who_.id, who_.name]);
     await writeAuditLog(req.user.orgId, who_.id, who_.name, "mailbox_connected", "mailbox", key, {}).catch(() => {});
     const ML = await mailboxMod();
@@ -906,7 +907,7 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdminUnlessMailbox, ch
                      server_prefix=EXCLUDED.server_prefix, account_name=EXCLUDED.account_name,
                      token_expires_at=EXCLUDED.token_expires_at,
                      last_error=NULL, last_error_at=NULL, updated_at=NOW()`,
-      ["emc_" + uuid().slice(0, 10), req.user.orgId, vendorKey, sealed, prefix, accountName,
+      [newId("emc"), req.user.orgId, vendorKey, sealed, prefix, accountName,
        webhookSecret, expiresAt, who.id, who.name]);
     await writeAuditLog(req.user.orgId, who.id, who.name, "oauth_connected", "connection", key, {}).catch(() => {});
     const EM = await emailMarketingMod();
@@ -935,7 +936,7 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdminUnlessMailbox, ch
        ON CONFLICT (org_id, vendor) WHERE status <> 'disconnected'
        DO UPDATE SET status='active', realm_id=EXCLUDED.realm_id, credentials_sealed=EXCLUDED.credentials_sealed,
                      token_expires_at=EXCLUDED.token_expires_at, last_error=NULL, updated_at=NOW()`,
-      ["bkc_" + uuid().slice(0, 10), req.user.orgId, vendorKey, account, sealed, expiresAt,
+      [newId("bkc"), req.user.orgId, vendorKey, account, sealed, expiresAt,
        who.id, who.name, who.id, who.name]);
   } else {
     await run(
@@ -946,7 +947,7 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdminUnlessMailbox, ch
        DO UPDATE SET status='active', credentials_sealed=EXCLUDED.credentials_sealed,
                      token_expires_at=EXCLUDED.token_expires_at,
                      provider_account_id=EXCLUDED.provider_account_id, last_error=NULL, updated_at=NOW()`,
-      ["gsrc_" + uuid().slice(0, 10), req.user.orgId, vendorKey, O.PROVIDERS[key].label, sealed, expiresAt,
+      [newId("gsrc"), req.user.orgId, vendorKey, O.PROVIDERS[key].label, sealed, expiresAt,
        account, who.id, who.name]);
   }
   await writeAuditLog(req.user.orgId, who.id, who.name, "oauth_connected", "connection", key, {}).catch(() => {});
@@ -1389,7 +1390,7 @@ app.post("/mailbox/never-log", requireAuth, checkWriteAccess, wrap(async (req, r
   await run(
     `INSERT INTO mailbox_never_log (id,user_id,org_id,pattern,kind) VALUES (?,?,?,?,?)
      ON CONFLICT (user_id, pattern) DO NOTHING`,
-    ["nvr_" + uuid().slice(0, 8), req.user.userId, req.user.orgId, v.value, v.kind]);
+    [newId("nvr"), req.user.userId, req.user.orgId, v.value, v.kind]);
   res.status(201).json({ ok: true, pattern: v.value, kind: v.kind,
     sentence: v.kind === "domain"
       ? `Nothing from anyone at ${v.value} will be logged, and nothing already logged from them is kept.`
@@ -1420,7 +1421,7 @@ app.post("/mailbox/forget", requireAuth, checkWriteAccess, wrap(async (req, res)
     await run(
       `INSERT INTO mailbox_exclusions (id,org_id,user_id,provider,message_id) VALUES (?,?,?,?,?)
        ON CONFLICT (org_id, provider, message_id) DO NOTHING`,
-      ["mex_" + uuid().slice(0, 8), req.user.orgId, req.user.userId, provider, messageId]);
+      [newId("mex"), req.user.orgId, req.user.userId, provider, messageId]);
   }
   await run(`DELETE FROM interactions WHERE id=? AND org_id=?`, [interactionId, req.user.orgId]);
   res.json({ ok: true,
@@ -1818,10 +1819,10 @@ app.post("/calendar/events/:id/log", requireAuth, checkWriteAccess, wrap(async (
   // FIX-14 Part 1 — the meeting's day in the ORG's zone. toISOString gave its
   // UTC day, so a 9pm meeting in New York was logged as the next day.
   const date = orgToday(await orgTz(req.user.orgId), new Date(c.starts_at));   // ORG_TZ_SEAM_OK
-  const firstId = "int_" + uuid().slice(0, 8);
+  const firstId = newId("int");
   let i = 0;
   for (const donorId of c.person_ids || []) {
-    const intId = i === 0 ? firstId : "int_" + uuid().slice(0, 8);
+    const intId = i === 0 ? firstId : newId("int");
     await run(
       `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by, logged_by_name, metadata)
        VALUES (?,?,?,'meeting',?,?,?,?,?)`,
@@ -1845,7 +1846,7 @@ app.post("/calendar/events/:id/log", requireAuth, checkWriteAccess, wrap(async (
       await run(
         `INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,opening_interaction_id,owner_id,owner_name,created_by,created_by_name)
          VALUES (?,?,?,'follow_up',?,?,?,?,?,?,?,?)`,
-        ["th_" + uuid().slice(0, 10), req.user.orgId, donorId, nextStep, nextStepDate, today, firstId, who.id, u?.name || null, who.id, who.name]);
+        [newId("th"), req.user.orgId, donorId, nextStep, nextStepDate, today, firstId, who.id, u?.name || null, who.id, who.name]);
     }
   }
   req.audit && (req.audit.detail = { meeting: c.id, people: (c.person_ids || []).length });
@@ -1954,7 +1955,7 @@ app.post("/donors/:id/book-visit", requireAuth, checkWriteAccess, wrap(async (re
   const made = r && r.ok ? await r.json().catch(() => null) : null;
   if (!made?.id) return res.status(502).json({ error: "calendar_refused", sentence: "Your calendar did not accept the event. Nothing was added." });
   const who = actor(req);
-  const id = "cal_" + uuid().slice(0, 12);
+  const id = newId("cal");
   await run(
     `INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,location,person_ids,booked_in_steward,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?,?,true,?,?)`,
@@ -2746,7 +2747,7 @@ async function pullOptOuts(orgId, provider, row, audienceId, touched = new Set()
     await run(
       `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by)
        VALUES (?,?,?,?,?,?,?)`,
-      ["int_" + uuid().slice(0, 8), orgId, d.id, "email",
+      [newId("int"), orgId, d.id, "email",
        `${decision.kind === "unreachable" ? "Email stopped working" : "Unsubscribed"} in ${EM.providerLabel(provider)}.`,
        String(s.at || new Date().toISOString()).slice(0, 10), `system:email-marketing/${provider}`]).catch(() => {});
     written++;
@@ -2965,7 +2966,7 @@ async function pullActivity(orgId, provider, row, campaignRowId, campaign, touch
        DO UPDATE SET opened=EXCLUDED.opened, clicked=EXCLUDED.clicked,
                      clicked_label=EXCLUDED.clicked_label, unsubscribed=EXCLUDED.unsubscribed,
                      occurred_at=EXCLUDED.occurred_at`,
-      ["emact_" + uuid().slice(0, 10), orgId, campaignRowId, donorId, email,
+      [newId("emact"), orgId, campaignRowId, donorId, email,
        opened, clicked, clickedLabel, unsubscribed, occurred]);
 
     // ONE LINE ON THE TIMELINE, and only one however many times this runs.
@@ -2981,7 +2982,7 @@ async function pullActivity(orgId, provider, row, campaignRowId, campaign, touch
     if (!dup.length) {
       await run(
         `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by) VALUES (?,?,?,?,?,?,?)`,
-        ["int_" + uuid().slice(0, 8), orgId, donorId, "email", note, date,
+        [newId("int"), orgId, donorId, "email", note, date,
          `system:email-marketing/${provider}`]).catch(() => {});
     }
     } catch (e) {
@@ -3230,7 +3231,7 @@ app.post("/bookkeeping/:id/send", requireAuth, requireAdmin, checkWriteAccess, w
        VALUES (?,?,?,?,?,?,?,'sending',?,?,?::jsonb,?,?)
        ON CONFLICT (org_id, vendor, payout_id) DO NOTHING
        RETURNING id`,
-      ["bkd_" + uuid().slice(0, 10), orgId, c.id, c.vendor, payoutId, built.deposit.sourceKey || null,
+      [newId("bkd"), orgId, c.id, c.vendor, payoutId, built.deposit.sourceKey || null,
        built.deposit.idempotencyKey, built.deposit.netCents, built.deposit.date,
        JSON.stringify(built.deposit.lines), who.id, who.name]);
     if (!claimed.length) {
@@ -3617,7 +3618,7 @@ app.post("/qbo/skip", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
        VALUES (?,?,?,?,?,?,'skipped',?,?,?)
        ON CONFLICT (org_id, gift_id, vendor, realm_id) DO UPDATE SET status='skipped', error=NULL, error_code=NULL, updated_at=NOW()
         WHERE gift_bookkeeping_syncs.status = 'failed'`,
-      ["gbs_" + uuid().slice(0, 12), orgId, g.id, QS.VENDOR, c ? c.id : null, c && c.realm_id ? String(c.realm_id) : "", Number(g.cents), who.id, who.name]);
+      [newId("gbs"), orgId, g.id, QS.VENDOR, c ? c.id : null, c && c.realm_id ? String(c.realm_id) : "", Number(g.cents), who.id, who.name]);
     n += (r && r.changes) || 0;
   }
   res.json({ ok: true, skipped: n, sentence: `${n} ${n === 1 ? "gift" : "gifts"} skipped. ${n === 1 ? "It" : "They"} will not go to QuickBooks unless you put ${n === 1 ? "it" : "them"} back.` });
@@ -4202,7 +4203,7 @@ app.post("/financials/month", requireAuth, requireAdmin, wrap(async (req, res) =
   const { month, year, individual, grants, events, otherRevenue, programs, admin, fundraising } = req.body;
   if (!month || !year) return res.status(400).json({ error: "Month and year required" });
 
-  const id = "fin_" + uuid().slice(0, 8);
+  const id = newId("fin");
   await run(
     `INSERT INTO financials (id,org_id,month,year,individual,grants,events,other_revenue,programs,admin,fundraising)
      VALUES (?,?,?,?,?,?,?,?,?,?,?)
@@ -4231,7 +4232,7 @@ app.get("/finance/accounts", requireAuth, wrap(async (req, res) => {
 app.post("/finance/accounts", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const { code, name, type, subtype } = req.body;
   if (!code || !name || !type) return res.status(400).json({ error: "code, name, and type required" });
-  const id = "acc_" + uuid().slice(0, 8);
+  const id = newId("acc");
   await run(
     "INSERT INTO accounts (id,org_id,code,name,type,subtype) VALUES (?,?,?,?,?,?)",
     [id, req.user.orgId, code, name, type, subtype || ""]
@@ -4284,7 +4285,7 @@ app.get("/finance/funds", requireAuth, wrap(async (req, res) => {
 app.post("/finance/funds", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const { name, description, restricted } = req.body;
   if (!name) return res.status(400).json({ error: "name required" });
-  const id = "ff_" + uuid().slice(0, 8);
+  const id = newId("ff");
   const publicName = String(req.body.public_name || "").trim().slice(0, 120) || null;
   await run(
     "INSERT INTO fin_funds (id,org_id,name,description,restricted,public_name) VALUES (?,?,?,?,?,?)",
@@ -4362,7 +4363,7 @@ app.post("/finance/transactions", requireAuth, checkWriteAccess, wrap(async (req
   if (!(await orgOwns("accounts", accountId, req.user.orgId))) return res.status(404).json({ error: "Account not found" });
   if (!(await orgOwns("fin_funds", fundId, req.user.orgId))) return res.status(404).json({ error: "Fund not found" });
   if (!(await orgOwns("donors", donorId, req.user.orgId))) return res.status(404).json({ error: "Donor not found" });
-  const id = "ft_" + uuid().slice(0, 8);
+  const id = newId("ft");
   await run(
     "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,notes,donor_id,source,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual',?,?)",
     [id, req.user.orgId, date, description, vendorDonor || "", parseFloat(amount), type, accountId || null, fundId || null, notes || "", donorId || null, actor(req).id, actor(req).name]
@@ -4526,7 +4527,7 @@ app.post("/finance/budgets", requireAuth, requireAdmin, checkWriteAccess, wrap(a
   const _bTz = await orgTz(req.user.orgId);                       // ORG_TZ_SEAM_OK
   const basis = budgetBasis(req.body.basis, _bTz);
   const yearName = await budgetYearName(parseInt(year), basis, _bTz);
-  const id = "bgt_" + uuid().slice(0, 8);
+  const id = newId("bgt");
   const [row] = await query(
     `INSERT INTO budgets (id,org_id,account_id,year,amount,fund_id,basis)
      VALUES (?,?,?,?,?,?,?)

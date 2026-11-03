@@ -19,6 +19,7 @@ const express = require("express");
 const SL = require("../surveyLinks");
 const GR = require("../groups");   // PARITY-1 Part D: a survey can be for a Group
 const orgTime = require("../orgTime");   // CLOCK-1: a look-back counts the org's days
+const { newId, randomHex } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 
@@ -48,7 +49,7 @@ async function uniqueSlug(orgId, title) {
     const [hit] = await query("SELECT 1 FROM surveys WHERE org_id=? AND slug=?", [orgId, s]);
     if (!hit) return s;
   }
-  return `${base}-${uuid().slice(0, 6)}`;
+  return `${base}-${randomHex(6)}`;
 }
 async function orgRow(orgId) { const [o] = await query("SELECT id, name, org_slug FROM orgs WHERE id=?", [orgId]); return o; }
 async function ownSurvey(req) {
@@ -74,7 +75,7 @@ app.post("/surveys", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   if (n.error) return res.status(400).json({ error: n.error });
   if (S.groupOfAudience(n.audience) && !(await GR.groupById(req.user.orgId, S.groupOfAudience(n.audience))))
     return res.status(404).json({ error: "group_not_found", sentence: "That group is not one of yours." });
-  const id = "sv_" + uuid().slice(0, 10), who = actor(req);
+  const id = newId("sv"), who = actor(req);
   const slug = await uniqueSlug(req.user.orgId, n.title);
   await run(`INSERT INTO surveys (id,org_id,slug,title,intro,thank_you,mode,audience,sections,created_by,created_by_name)
              VALUES (?,?,?,?,?,?,?,?,?::jsonb,?,?)`,
@@ -206,7 +207,7 @@ app.post("/surveys/:id/drafts", requireAuth, checkWriteAccess, wrap(async (req, 
       + `Thank you,\n${o.name}`;
     await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
                VALUES (?,?,?,?,?,?, 'pending_review', 'survey', ?, ?)`,
-      ["md_" + uuid().slice(0, 12), orgId, p.id, key, r.title, body, who.id, who.name]);
+      [newId("md"), orgId, p.id, key, r.title, body, who.id, who.name]);
     made++;
   }
   req.audit.label(`${made} survey drafts for "${r.title}"`);
@@ -322,7 +323,7 @@ app.post("/survey/:orgSlug/:slug", donateLimiter, express.urlencoded({ extended:
       if (d) { donorId = d.id; name = null; email = null; }
     }
   }
-  const id = "svr_" + uuid().slice(0, 12);
+  const id = newId("svr");
   await run(`INSERT INTO survey_responses (id,org_id,survey_id,anonymous,donor_id,respondent_name,respondent_email,answers,created_by,created_by_name)
              VALUES (?,?,?,?,?,?,?,?::jsonb,?,?)`,
     [id, r.org_id, r.id, anonymous, donorId, name, email, JSON.stringify(got.answers),
@@ -333,7 +334,7 @@ app.post("/survey/:orgSlug/:slug", donateLimiter, express.urlencoded({ extended:
   if (donorId) {
     await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,metadata,created_by,logged_by_name)
                VALUES (?,?,?,'survey',?, ?, ?, 'system:survey', 'Survey')`,
-      ["int_" + uuid().slice(0, 10), r.org_id, donorId, `Answered the survey "${r.title}"`,
+      [newId("int"), r.org_id, donorId, `Answered the survey "${r.title}"`,
        orgToday(await orgTz(r.org_id)), JSON.stringify({ survey_id: r.id, response_id: id })]);   // ORG_TZ_SEAM_OK
   }
   req.audit.entity("survey_response", id, r.title);

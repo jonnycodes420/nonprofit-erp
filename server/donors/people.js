@@ -10,6 +10,7 @@
 const express = require("express");
 const TL = require("../../timelineLine");
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = {
   r1: express.Router(),
@@ -217,7 +218,7 @@ app.post("/giving-pages/:id/fundraisers", requireAuth, requireAdmin, checkWriteA
   const cleanEmail = String(email).trim().toLowerCase();
   const personId = await fundraiserPerson(orgId, String(name).trim(), cleanEmail, actor(req));
   const [o] = await query("SELECT org_slug FROM orgs WHERE id=?", [orgId]);
-  const id = "pf_" + uuid().slice(0, 8);
+  const id = newId("pf");
   const editToken = generateEditToken();
   const editTokenHash = require("crypto").createHash("sha256").update(editToken).digest("hex");
   const base = slugifyGivingPage(String(name));

@@ -15,6 +15,7 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-12 Part 3: the one door to a model (asks the org's AI switch on every call).
 const { anthropicFor, AI_OFF_MESSAGE, recordAiFallback } = require("../aiClient");
 
@@ -56,7 +57,7 @@ app.post("/ai/stream", requireAuth, wrap(async (req, res) => {
 
   await run(
     "INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary) VALUES (?,?,?,?,?)",
-    ["log_" + uuid().slice(0, 8), req.user.orgId, req.user.userId, "stream", userMessage.slice(0, 100)]
+    [newId("log"), req.user.orgId, req.user.userId, "stream", userMessage.slice(0, 100)]
   );
 
   res.setHeader("Content-Type", "text/event-stream");
@@ -417,7 +418,7 @@ async function agentWhich(orgId, group) {
 // at a call site. `before` NULL means the row did not exist, which is how undo
 // knows to delete rather than restore.
 async function agentWrite(ctx, { tool, table, entityId, before, after, cites }) {
-  const id = "aw_" + uuid().slice(0, 10);
+  const id = newId("aw");
   await runTx(ctx.client,
     `INSERT INTO agent_writes (id,org_id,run_id,instruction_id,tool,entity_table,entity_id,before_row,after_row,cites)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
@@ -445,7 +446,7 @@ const AGENT_EXECUTORS = {
   async draft_note(ctx, step) {
     const donor = ctx.donorById(step.donorId);
     if (!donor) return { skipped: "unknown_donor" };
-    const id = "adr_" + uuid().slice(0, 10);
+    const id = newId("adr");
     const thanks = step.purpose === "thank_you";
     // AGENT-3: what the draft is for, said on the Thread and the timeline.
     const A3 = await agentShapeMod();
@@ -464,7 +465,7 @@ const AGENT_EXECUTORS = {
     const [open] = await require("../db").queryTx(ctx.client,
       "SELECT id, next_step_type, next_step_label FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL", [ctx.orgId, donor.id]);
     if (!open) {
-      threadId = "thr_" + uuid().slice(0, 10);
+      threadId = newId("thr");
       const r = await runTx(ctx.client,
         `INSERT INTO threads (id,org_id,donor_id,owner_id,next_step_type,next_step_label,due_date,opened_on,created_by,created_by_name)
          VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
@@ -488,7 +489,7 @@ const AGENT_EXECUTORS = {
       before: null, after: { donor_id: donor.id }, cites: step.citesRows });
     // The timeline line (timelineLine.js's shape: type 'activity', keyed), in
     // this run's transaction so an undone or failed run leaves no line.
-    const lineId = "i_" + uuid().slice(0, 10);
+    const lineId = newId("i");
     await runTx(ctx.client,
       `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
        VALUES (?,?,?,'activity',?,?,?,?,?)`,
@@ -503,7 +504,7 @@ const AGENT_EXECUTORS = {
   async create_task(ctx, step) {
     const donor = step.donorId ? ctx.donorById(step.donorId) : null;
     if (step.donorId && !donor) return { skipped: "unknown_donor" };
-    const id = "task_" + uuid().slice(0, 10);
+    const id = newId("task");
     // PARITY-1 Part F: `due` is a CIVIL DATE or nothing. The plan she read
     // carries the date it showed her; a step with only `dueDays` is resolved
     // here from the org's own today. Free text ("next Friday") is not a date
@@ -528,7 +529,7 @@ const AGENT_EXECUTORS = {
       const [open] = await require("../db").queryTx(ctx.client,
         "SELECT id FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL", [ctx.orgId, donor.id]);
       if (!open) {
-        const threadId = "thr_" + uuid().slice(0, 10);
+        const threadId = newId("thr");
         const r = await runTx(ctx.client,
           `INSERT INTO threads (id,org_id,donor_id,owner_id,next_step_type,next_step_label,due_date,opened_on,created_by,created_by_name)
            VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
@@ -536,7 +537,7 @@ const AGENT_EXECUTORS = {
            due || orgTime.addDays(ctx.today, 7), ctx.today, AGENT_ACTOR.id, AGENT_ACTOR.name]);
         if (r && r.changes !== 0) await agentWrite(ctx, { tool: "create_task", table: "threads", entityId: threadId, before: null, after: { donor_id: donor.id }, cites: step.citesRows });
       }
-      const lineId = "i_" + uuid().slice(0, 10);
+      const lineId = newId("i");
       await runTx(ctx.client,
         `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
          VALUES (?,?,?,'activity',?,?,?,?,?)`,
@@ -550,7 +551,7 @@ const AGENT_EXECUTORS = {
   async log_note(ctx, step) {
     const donor = ctx.donorById(step.donorId);
     if (!donor) return { skipped: "unknown_donor" };
-    const id = "int_" + uuid().slice(0, 10);
+    const id = newId("int");
     await runTx(ctx.client,
       `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name)
        VALUES (?,?,?,'note',?,?,?,?)`,
@@ -628,7 +629,7 @@ const AGENT_EXECUTORS = {
     const body = String(step.note || "").trim().slice(0, 2000);
     if (!body) return { skipped: "no_note" };
     const kind = ["training", "background_check", "availability"].includes(step.kind) ? step.kind : "note";
-    const id = "vn_" + uuid().slice(0, 12);
+    const id = newId("vn");
     const r = await runTx(ctx.client,
       `INSERT INTO volunteer_notes (id,org_id,person_id,kind,body,note_date,created_by,created_by_name)
        SELECT ?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL
@@ -646,7 +647,7 @@ const AGENT_EXECUTORS = {
     // ONE OPEN THREAD PER DONOR is a database guarantee (threads_one_open). A
     // conflict here is the constraint working, not an error, and the run says
     // "already open" rather than failing.
-    const id = "thr_" + uuid().slice(0, 10);
+    const id = newId("thr");
     const r = await runTx(ctx.client,
       `INSERT INTO threads (id,org_id,donor_id,owner_id,next_step_type,next_step_label,due_date,opened_on,created_by,created_by_name)
        VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
@@ -1261,7 +1262,7 @@ async function agentDraftInBatches({ A, V, words, client, orgId, userId, who, in
       out[i] = (block && block.input && Array.isArray(block.input.drafts) ? block.input.drafts : []);
       if (!dryRun) await run(`INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary,prompt_full,response_full)
                  VALUES (?,?,?,'agent_plan',?,?,?)`,
-        ["log_" + uuid().slice(0, 8), orgId, userId || null, `${String(instructionText).slice(0, 80)} (drafts ${i + 1}/${batches.length})`,
+        [newId("log"), orgId, userId || null, `${String(instructionText).slice(0, 80)} (drafts ${i + 1}/${batches.length})`,
          (system + "\n\n" + user).slice(0, 200000), JSON.stringify(out[i]).slice(0, 200000)]);
     }
   };
@@ -1446,7 +1447,7 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
         const block = (msg.content || []).find(b => b.type === "tool_use" && b.name === "plan");
         outs[i] = block && block.input ? block.input : { steps: [], sends: 0 };
         if (!dryRun) await run(`INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary,prompt_full,response_full) VALUES (?,?,?,'agent_plan',?,?,?)`,
-          ["log_" + uuid().slice(0, 8), orgId, userId || null, `${String(instructionText).slice(0, 80)} (plan ${i + 1}/${batches.length})`,
+          [newId("log"), orgId, userId || null, `${String(instructionText).slice(0, 80)} (plan ${i + 1}/${batches.length})`,
            (system + "\n\n" + u).slice(0, 200000), JSON.stringify(outs[i]).slice(0, 200000)]);
       }
     };
@@ -1481,7 +1482,7 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   if (_truncated) throw Object.assign(new Error("plan truncated"), { truncated: true, stepsReturned: (raw.steps || []).length });
   if (!dryRun) await run(`INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary,prompt_full,response_full)
              VALUES (?,?,?,'agent_plan',?,?,?)`,
-    ["log_" + uuid().slice(0, 8), orgId, userId || null, String(instructionText).slice(0, 100),
+    [newId("log"), orgId, userId || null, String(instructionText).slice(0, 100),
      (system + "\n\n" + user).slice(0, 200000), JSON.stringify(raw).slice(0, 200000)]);
   }
   const _tModel = Date.now();
@@ -1667,7 +1668,7 @@ async function agentVolunteerPlan(orgId, text, personId) {
 async function agentRunPlan(orgId, instruction, { userId, confirmed = {}, auth = null }) {
   const A = await agentShapeMod();
   const TH = await thresholdsMod();
-  const runId = "arun_" + uuid().slice(0, 10);
+  const runId = newId("arun");
   const plan = instruction.plan || {};
   const planSteps = Array.isArray(plan.steps) ? plan.steps : [];
   // READS ARE SCOPED: the run reads the people its steps name, and nobody else.
@@ -1702,7 +1703,7 @@ async function agentRunPlan(orgId, instruction, { userId, confirmed = {}, auth =
   // the plan it carried out, verbatim, and what came of each step below.
   await run(`INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary,prompt_full,response_full,run_id)
              VALUES (?,?,?,'agent',?,?,?,?)`,
-    ["log_" + uuid().slice(0, 8), orgId, userId || null, String(instruction.text).slice(0, 100),
+    [newId("log"), orgId, userId || null, String(instruction.text).slice(0, 100),
      JSON.stringify({ instruction: instruction.text, steps: planSteps }).slice(0, 200000), "", runId]);
 
   const groundedValues = [...reachable.flatMap(p => [p.total_giving, p.gift_count, p.last_gift_amount]),
@@ -1912,11 +1913,11 @@ app.post("/help/tickets", requireAuth, wrap(async (req, res) => {
   const browser = String(req.headers["user-agent"] || "").slice(0, 300);
   const [u] = await query(`SELECT id, name, email FROM users WHERE id=?`, [req.user.userId]);
   const [o] = await query(`SELECT name FROM orgs WHERE id=?`, [req.user.orgId]);
-  const id = "tkt_" + uuid().slice(0, 10), who = actor(req);
+  const id = newId("tkt"), who = actor(req);
   await run(`INSERT INTO support_tickets (id,org_id,user_id,user_email,user_name,subject,screen,browser,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [id, req.user.orgId, u.id, u.email, u.name, subject, screen, browser, who.id, who.name]);
   await run(`INSERT INTO support_ticket_messages (id,ticket_id,from_kind,body,created_by,created_by_name) VALUES (?,?,?,?,?,?)`,
-    ["tkm_" + uuid().slice(0, 10), id, "customer", body, who.id, who.name]);
+    [newId("tkm"), id, "customer", body, who.id, who.name]);
   // The ticket is stored either way, so "Sent" is true of the ticket; the
   // alert to support is what can fail, and that is logged where support looks.
   const alerted = await mailSupport(SUPPORT_EMAIL(), `[${id}] ${subject}`,
@@ -1938,7 +1939,7 @@ app.post("/admin/tickets/:id/reply", requireAuth, requireSuperAdmin, wrap(async 
   let emailed = null;   // null: no reply text, so nothing to email
   if (body) {
     await run(`INSERT INTO support_ticket_messages (id,ticket_id,from_kind,body,created_by,created_by_name) VALUES (?,?,?,?,?,?)`,
-      ["tkm_" + uuid().slice(0, 10), t.id, "support", body, who.id, who.name]);
+      [newId("tkm"), t.id, "support", body, who.id, who.name]);
     emailed = await mailSupport(t.user_email, `Re: ${t.subject}`, `${body}\n\nReply to this email and it reaches us.`);
   }
   await run(`UPDATE support_tickets SET status=?, updated_at=NOW() WHERE id=?`, [status, t.id]);
@@ -2180,7 +2181,7 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
   const check = A.validatePlan(plan, { authorization: auth });
   if (!check.ok) return res.status(422).json({ error: "plan_refused", reasons: check.errors });
 
-  const id = "ai_" + uuid().slice(0, 10);
+  const id = newId("ai");
   await run(`INSERT INTO agent_instructions (id,org_id,text,kind,trigger,status,send_authorization,persona,plan,last_count,created_by,created_by_name)
              VALUES (?,?,?,?,?,'planned',?,?,?,?,?,?)`,
     [id, req.user.orgId, text, kind, trigger, auth, persona, JSON.stringify(plan),
@@ -2581,7 +2582,7 @@ async function approveWaitingItem(req, kind, id) {
     const [d] = await query("SELECT * FROM thank_you_drafts WHERE id=? AND org_id=?", [id, orgId]);
     if (!d) return { status: 404, body: { error: "Not found" } };
     if (d.sent_at) return { status: 200, body: { ok: true, alreadyDone: true, sentence: "That thank-you was already marked as sent." } };
-    const intId = "int_" + uuid().slice(0, 8);
+    const intId = newId("int");
     await run(
       `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
@@ -2608,7 +2609,7 @@ async function approveWaitingItem(req, kind, id) {
     const [t] = await query(
       "SELECT id, donor_id, next_step_label, draft_note FROM threads WHERE id=? AND org_id=? AND closed_at IS NULL", [id, orgId]);
     if (!t) return { status: 404, body: { error: "Not found" } };
-    const intId = "int_" + uuid().slice(0, 8);
+    const intId = newId("int");
     await run(
       `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
        VALUES (?,?,?,?,?,?,?,?,?)`,
@@ -2895,7 +2896,7 @@ async function writeTrackedSequence(req, res, existingId) {
   // A sequence that cannot be turned on says so BEFORE she tries.
   if (!v.ok) return res.status(400).json({ error: "invalid_sequence", problems: v.problems });
 
-  const id = existingId || ("seq_" + uuid().slice(0, 8));
+  const id = existingId || (newId("seq"));
   const a = actor(req);
   if (existingId) {
     const r = await run(
@@ -2922,7 +2923,7 @@ async function writeTrackedSequence(req, res, existingId) {
     await run(
       `INSERT INTO sequence_steps (id, sequence_id, step_order, delay_days, subject, body, track_key, send_even_after_gift)
        VALUES (?,?,?,?,?,?,?,?)`,
-      ["sstep_" + uuid().slice(0, 8), id, order, parseInt(s2.dayOffset, 10) || 0,
+      [newId("sstep"), id, order, parseInt(s2.dayOffset, 10) || 0,
        String(s2.subject), String(s2.body), k, s2.sendEvenAfterGift === true]);
   }
   const [row] = await query(`SELECT * FROM sequences WHERE id=?`, [id]);
@@ -3085,7 +3086,7 @@ async function enrollOneManually(orgId, seq, donor, a) {
        track_key, enrolled_by, enrolled_by_name, gift_count_at_enroll)
      VALUES (?,?,?,?,0,'active', NOW() + INTERVAL '${parseInt(steps[0].delay_days, 10) || 0} days', ?,?,?,?)
      ON CONFLICT (sequence_id, donor_id) DO NOTHING`,
-    ["se_" + uuid().slice(0, 8), seq.id, orgId, donor.id, track.key, a?.id || "system:sequence", a?.name || null,
+    [newId("se"), seq.id, orgId, donor.id, track.key, a?.id || "system:sequence", a?.name || null,
      dc ? Number(dc.gift_count || 0) : null]);
 }
 
@@ -3171,7 +3172,7 @@ app.get("/sequences", requireAuth, wrap(async (req, res) => {
 app.post("/sequences", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { name, trigger, triggerStage, steps = [] } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
-  const id = "seq_" + uuid().slice(0, 8);
+  const id = newId("seq");
   await run(
     "INSERT INTO sequences (id, org_id, name, trigger, trigger_stage, created_by, created_by_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
     [id, req.user.orgId, name, trigger || "manual", triggerStage || null, actor(req).id, actor(req).name]
@@ -3180,7 +3181,7 @@ app.post("/sequences", requireAuth, requireAdmin, wrap(async (req, res) => {
     const s = steps[i];
     await run(
       "INSERT INTO sequence_steps (id, sequence_id, step_order, delay_days, subject, body) VALUES (?, ?, ?, ?, ?, ?)",
-      ["ss_" + uuid().slice(0, 8), id, i + 1, parseInt(s.delayDays || 0, 10), s.subject || "", s.body || ""]
+      [newId("ss"), id, i + 1, parseInt(s.delayDays || 0, 10), s.subject || "", s.body || ""]
     );
   }
   const created = await query("SELECT * FROM sequences WHERE id = ?", [id]);
@@ -3235,7 +3236,7 @@ app.post("/sequences/:id/enroll", requireAuth, requireCrm, wrap(async (req, res)
       [existing[0].id]
     );
   } else {
-    const enrId = "se_" + uuid().slice(0, 8);
+    const enrId = newId("se");
     await run(
       `INSERT INTO sequence_enrollments (id, sequence_id, org_id, donor_id, current_step, status, next_send_at)
        VALUES (?, ?, ?, ?, 0, 'active', NOW() + INTERVAL '${firstDelay} days')`,
@@ -3269,7 +3270,7 @@ app.put("/sequences/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
       const s = steps[i];
       await run(
         "INSERT INTO sequence_steps (id, sequence_id, step_order, delay_days, subject, body) VALUES (?, ?, ?, ?, ?, ?)",
-        ["ss_" + uuid().slice(0, 8), req.params.id, i + 1, parseInt(s.delayDays || 0, 10), s.subject || "", s.body || ""]
+        [newId("ss"), req.params.id, i + 1, parseInt(s.delayDays || 0, 10), s.subject || "", s.body || ""]
       );
     }
   }

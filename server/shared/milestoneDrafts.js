@@ -8,6 +8,7 @@
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const SEND_GATE = require("../../sendGate");   // SEND-GATE-1: a staff click is the confirm for one message
+const { newId } = require("./newId");   // IDS-1: every new row id is prefix + 20 hex
 
 function mount(ctx) {
 const {
@@ -62,7 +63,7 @@ async function sendMilestoneDraft(req, draft, opts = {}) {
     [req.user.userId, who.name, draft.id]
   );
   const today = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
-  const intId = "i_" + uuid().slice(0, 8);
+  const intId = newId("i");
   await run(
     "INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by, logged_by_name, metadata) VALUES (?, ?, ?, 'email', ?, ?, ?, ?, ?)",
     [intId, req.user.orgId, draft.donor_id, `${draft.source ? "Email" : "Milestone email"}: ${draft.subject}`, today, who.id, who.name,

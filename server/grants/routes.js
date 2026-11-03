@@ -8,6 +8,7 @@
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-12 Part 3: the one door to a model (asks the org's AI switch on every call).
 const { anthropicFor, requireAi, transcribeAudio, AiOffError, AI_OFF_MESSAGE, recordAiFallback } = require("../../aiClient");
 const TL = require("../../timelineLine");
@@ -86,7 +87,7 @@ async function stampGrantAward(orgId, grantId, funder, program, amount, by = SYS
     `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,grant_id,source,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,'income',?,?,?,'grant',?,?)
      ON CONFLICT (grant_id) WHERE grant_id IS NOT NULL DO NOTHING`,
-    ["ft_" + uuid().slice(0, 8), orgId, orgToday(await orgTz(orgId)), // ORG_TZ_SEAM_OK (BUILD-75)
+    [newId("ft"), orgId, orgToday(await orgTz(orgId)), // ORG_TZ_SEAM_OK (BUILD-75)
      `Grant awarded: ${funder} · ${program || ""}`, funder,
      parseFloat(amount) || 0, ledgerA.grantAcctId, fundId, grantId, by.id, by.name]
   ).catch(e => console.error("[ledger] grant award stamp failed:", e.message));
@@ -105,7 +106,7 @@ app.post("/grants", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     if (!camp.length) return res.status(404).json({ error: "Campaign not found" });
   }
 
-  const id = "gr_" + uuid().slice(0, 8);
+  const id = newId("gr");
   const isAwarded = (status || "prospecting") === "awarded";
   await run(
     "INSERT INTO grants (id,org_id,funder,program,amount,status,deadline,report_due,officer,notes,campaign_id,awarded_at,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -219,7 +220,7 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     const sixMonths = new Date(Date.now() + 180*24*60*60*1000).toISOString().slice(0, 10);
     await run(
       "INSERT INTO tasks (id,org_id,title,priority,done,due,created_by,created_by_name) VALUES (?,?,?,'medium',0,?,?,?)",
-      ["t_"+uuid().slice(0,8), orgId, `Follow up with ${funder} re: next cycle`, sixMonths, actor(req).id, actor(req).name]
+      [newId("t"), orgId, `Follow up with ${funder} re: next cycle`, sixMonths, actor(req).id, actor(req).name]
     ).catch(() => {});
   }
 
@@ -410,7 +411,7 @@ async function addGrantMilestone(res, { orgId, grantId, kind, due, label, notes,
       [label || null, String(notes || "").slice(0, 2000), same.id, orgId]);
     return same.id;
   }
-  const id = "gms_" + uuid().slice(0, 10);
+  const id = newId("gms");
   await run(`INSERT INTO grant_milestones (id,org_id,grant_id,kind,label,due_date,state,notes,created_by,created_by_name)
              VALUES (?,?,?,?,?,?, 'pending', ?,?,?)`,
     [id, orgId, grantId, kind, label || null, due, String(notes || "").slice(0, 2000), who.id, who.name]);
@@ -643,7 +644,7 @@ app.post("/grants/:id/documents", requireAuth, requireCrm, checkWriteAccess, wra
   const asset = await putThemeAsset({
     orgId, kind: grantDocs.DOC_ASSET_KIND, buffer, contentType: mime,
   });
-  const id = "gdoc_" + uuid().slice(0, 10);
+  const id = newId("gdoc");
   const fileName = grantDocs.sanitizeFilename(req.body.fileName, mime);
   // The SAME bytes under the SAME type on one grant is a double-click, not two
   // documents — the unique index says so and this answers it as success rather
@@ -709,7 +710,7 @@ app.post("/grants/:id/spend", requireAuth, requireCrm, checkWriteAccess, wrap(as
   const v = R.validateSpend({ amountCents: cents, spentOn: req.body.spentOn, description: req.body.description });
   if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "invalid_spend", errors: v.errors });
   const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [actor(req).id, orgId]);
-  const id = "gsp_" + uuid().slice(0, 10);
+  const id = newId("gsp");
   await run(`INSERT INTO grant_spend (id,org_id,grant_id,amount,spent_on,description,created_by,created_by_name)
              VALUES (?,?,?,?,?,?,?,?)`,
     [id, orgId, g.id, toDollars(cents), String(req.body.spentOn),
@@ -919,7 +920,7 @@ app.post("/grants/import", requireAuth, requireCrm, checkWriteAccess, wrap(async
     const resolved = new Map();
     for (const f of plan.funders) {
       if (f.donorId) { resolved.set(f.name, f.donorId); continue; }
-      const id = "dn_" + uuid().slice(0, 10);
+      const id = newId("dn");
       await trun(
         `INSERT INTO donors (id,org_id,name,kind,stage,status,total_giving,gift_count,funder_ein,
                              person_types,created_by,created_by_name)
@@ -955,7 +956,7 @@ app.post("/grants/import", requireAuth, requireCrm, checkWriteAccess, wrap(async
         g.officerName && !officerId ? `The file named "${g.officerName}" as the officer, who is not a user here.` : null,
       ].filter(Boolean);
       const notes = [g.notes, ...unmatched].filter(Boolean).join(" ").slice(0, 4000) || null;
-      const id = "gr_" + uuid().slice(0, 10);
+      const id = newId("gr");
       await trun(
         `INSERT INTO grants (id,org_id,funder,funder_donor_id,program,amount,amount_requested,amount_awarded,
                              status,deadline,restriction,fund_id,officer_id,cycle_name,decline_reason,declined_on,
@@ -984,7 +985,7 @@ app.post("/grants/import", requireAuth, requireCrm, checkWriteAccess, wrap(async
       if (g.reportDue) {
         await trun(`INSERT INTO grant_milestones (id,org_id,grant_id,kind,label,due_date,state,notes,created_by,created_by_name)
                     VALUES (?,?,?,'report_due',NULL,?,'pending','',?,?)`,
-          ["gms_" + uuid().slice(0, 10), orgId, id, g.reportDue, who.id, byName]);
+          [newId("gms"), orgId, id, g.reportDue, who.id, byName]);
       }
       written.push({ id, line: g.line, funderName: g.funderName, program: g.program, status: g.status });
     }
@@ -1219,7 +1220,7 @@ app.post("/grants/:id/report-outline", requireAuth, checkWriteAccess, wrap(async
     message: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE
       : "Not set up yet. Steward support can turn on AI drafting for this server, then an admin switches it on in Settings, Data." });
 
-  const runId = "arun_" + uuid().slice(0, 10);
+  const runId = newId("arun");
   await run(`INSERT INTO agent_runs (id,org_id,status,plan,read_summary) VALUES (?,?,?,?,?)`,
     [runId, orgId, "running", JSON.stringify({ kind: "grant_report_outline", grantId: ctx.grant.id }),
      `${ctx.refs.size} rows on the ${ctx.grant.funder_name || "funder"} grant`]);
@@ -1357,7 +1358,7 @@ app.post("/grants/:id/interactions", requireAuth, wrap(async (req, res) => {
   if (!note || !note.trim()) return res.status(400).json({ error: "Note required" });
   const rows = await query("SELECT id, program, funder, funder_donor_id FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Grant not found" });
-  const id = "gi_" + uuid().slice(0, 8);
+  const id = newId("gi");
   const giDate = date || orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   await run(
     "INSERT INTO grant_interactions (id, org_id, grant_id, type, note, date) VALUES (?,?,?,?,?,?)",

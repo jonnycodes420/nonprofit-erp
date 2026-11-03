@@ -17,6 +17,7 @@ const CT = require("../callsToMake");
 const FS = require("../figureSources");
 const DS = require("../donorStatus");
 const OS = require("../orgSummary");   // SCALE-2: stored until something changes
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 
@@ -53,7 +54,7 @@ app.post("/gifts/:id/thank-call", requireAuth, checkWriteAccess, wrap(async (req
   const today = await DS.todayFor(orgId);
   const who = actor(req);
   const [u] = await query(`SELECT name FROM users WHERE id = ? AND org_id = ?`, [req.user.userId, orgId]);
-  const id = "int_" + uuid().slice(0, 8);
+  const id = newId("int");
   // A call logged ahead of a future-dated gift would not clear it, so the
   // call is dated the later of today and the gift's own day.
   const date = g.date && g.date > today ? g.date : today;
@@ -75,7 +76,7 @@ app.post("/gifts/:id/call-snooze", requireAuth, checkWriteAccess, wrap(async (re
   await run(`INSERT INTO call_snoozes (id,org_id,gift_id,until,created_by,created_by_name) VALUES (?,?,?,?,?,?)
              ON CONFLICT (org_id, gift_id) DO UPDATE SET until = EXCLUDED.until, created_by = EXCLUDED.created_by,
                created_by_name = EXCLUDED.created_by_name, created_at = NOW()`,
-    ["csz_" + uuid().slice(0, 12), orgId, g.id, until, who.id || "system:unknown", who.name]);
+    [newId("csz"), orgId, g.id, until, who.id || "system:unknown", who.name]);
   res.json({ ok: true, giftId: g.id, until });
 }));
 

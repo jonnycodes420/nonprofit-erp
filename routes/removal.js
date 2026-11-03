@@ -17,6 +17,7 @@
 // No route here refunds, emails, charges or touches a payment.
 const express = require("express");
 const R = require("../removal");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 const VOLUNTEER_KINDS = new Set(["volunteer_role", "shift", "volunteer_signup"]);
@@ -137,7 +138,7 @@ function mount(ctx) {
   // ONE ROW OUT. Inside the caller's transaction. Returns the trash id.
   async function applyOne(tx, req, p, K) {
     const orgId = req.user.orgId, who = actor(req);
-    const trashId = "del_" + uuid().slice(0, 12);
+    const trashId = newId("del");
     const [row] = await queryTx(tx, `SELECT * FROM ${K.table} WHERE id=? AND org_id=? FOR UPDATE`, [p.id, orgId]);
     if (!row) return null;
     if (p.mode === "delete") {

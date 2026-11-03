@@ -9,6 +9,7 @@
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
 const TL = require("../../timelineLine");
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../../emailCompose");
 
@@ -155,7 +156,7 @@ async function processJourneyAutoSends({ orgId = null, now = new Date(), limit =
         }
         room--;
         const turnedOn = on.turned_on_at ? new Date(on.turned_on_at).toISOString().slice(0, 10) : "";
-        const iid = "i_" + uuid().slice(0, 10);
+        const iid = newId("i");
         await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,'email',?,?,?,?,?)`,
           [iid, oid, donor.id, `Journey: ${step.template_name}, step ${Number(send.seq) + 1}, sent automatically, turned on by ${on.turned_on_by_name || "someone here"}${turnedOn ? ` on ${turnedOn}` : ""} · ${r.subject}`,
            clock.date, AUTO_ACTOR.id, AUTO_ACTOR.name, JSON.stringify({ via: "journey_auto", send_id: send.id, step_id: step.id, plan_id: step.plan_id, sent_automatically: true, direction: "outbound" })]);
@@ -257,7 +258,7 @@ app.post("/journeys/:id/steps/:seq/auto", requireAuth, requireAdmin, checkWriteA
     if (state.on) await run(`UPDATE journey_auto_steps SET turned_off_at=NOW(), turned_off_by_name=? WHERE org_id=? AND template_id=? AND seq=? AND turned_off_at IS NULL`, [who.name, orgId, t.id, seq]);
     await run(`INSERT INTO journey_auto_steps (id,org_id,template_id,seq,email_template_id,words_hash,turned_on_by,turned_on_by_name,created_by,created_by_name)
                VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      ["jauto_" + uuid().slice(0, 10), orgId, t.id, seq, tpl.id, wordsHash(tpl), who.id, who.name, who.id, who.name]);
+      [newId("jauto"), orgId, t.id, seq, tpl.id, wordsHash(tpl), who.id, who.name, who.id, who.name]);
     if (req.audit) req.audit.summary(`Turned on automatic sending for "${t.name}" step ${seq + 1}: "${state.words.subject}". ${state.sentence}`);
   } else {
     await run(`UPDATE journey_auto_steps SET turned_off_at=NOW(), turned_off_by_name=? WHERE org_id=? AND template_id=? AND seq=? AND turned_off_at IS NULL`, [who.name, orgId, t.id, seq]);

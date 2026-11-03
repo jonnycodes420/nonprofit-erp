@@ -8,6 +8,7 @@
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-12 Part 3: the one door to a model (asks the org's AI switch on every call).
 const { anthropicFor, requireAi, transcribeAudio, AiOffError, AI_OFF_MESSAGE, recordAiFallback } = require("../../aiClient");
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
@@ -271,7 +272,7 @@ app.put("/board-pack/schedule", requireAuth, requireAdmin, checkWriteAccess, wra
       [v.value.dashboardId, v.value.frequency, v.value.dayOfMonth, v.value.enabled, existing.id]);
     return res.json({ id: existing.id });
   }
-  const id = "bps_" + uuid().slice(0, 10);
+  const id = newId("bps");
   await run(`INSERT INTO board_pack_schedules (id,org_id,dashboard_id,frequency,day_of_month,enabled,created_by,created_by_name)
              VALUES (?,?,?,?,?,?,?,?)`,
     [id, req.user.orgId, v.value.dashboardId, v.value.frequency, v.value.dayOfMonth, v.value.enabled, actor(req).id, actor(req).name]);
@@ -325,7 +326,7 @@ async function runBoardPackScheduleForOrg(org, { today, force = false } = {}) {
   const periodKey = B.periodKeyFor(s.frequency, pack.period.key);
   const reserved = await query(
     "INSERT INTO board_pack_sends (id,org_id,schedule_id,period_key,period_label,recipients) VALUES (?,?,?,?,?,?) ON CONFLICT (schedule_id, period_key) DO NOTHING RETURNING id",
-    ["bpk_" + uuid().slice(0, 10), org.id, s.id, periodKey, pack.period.label, to.length]);
+    [newId("bpk"), org.id, s.id, periodKey, pack.period.label, to.length]);
   if (!reserved.length) return { sent: 0, skipped: 1, reason: "already sent for this period" };
   const pdf = await renderBoardPackPdf(pack);
   let sent = 0;
@@ -807,7 +808,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
   console.log("[board-report] step 8: PDF OK —", pdfBuffer.length, "bytes");
 
   // Save report record
-  const reportId = "br_" + uuid().slice(0, 8);
+  const reportId = newId("br");
   await run(
     "INSERT INTO board_reports (id,org_id,quarter,year,generated_by,generated_by_name,metrics,pdf_data) VALUES (?,?,?,?,?,?,?,?)",
     [reportId, orgId, q, yr, userId, email, JSON.stringify({

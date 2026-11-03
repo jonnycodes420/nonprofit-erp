@@ -20,6 +20,7 @@
 const express = require("express");
 const figureSources = require("../figureSources");
 const money = require("../money");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 // The overview is /grant-overview, not /grants/overview: crm.js's GET
 // /grants/:id is mounted first and would take "overview" for an id.
@@ -134,7 +135,7 @@ async function planRenewal(orgId, grantId, who) {
     await c.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`grant-renewal:${orgId}:${g.id}`]);
     const ex = await c.query(`SELECT id FROM grants WHERE org_id = $1 AND renewal_of = $2 LIMIT 1`, [orgId, g.id]);
     if (ex.rows[0]) return { existingId: ex.rows[0].id };
-    const id = "gr_" + uuid().slice(0, 8);
+    const id = newId("gr");
     await c.query(
       `INSERT INTO grants (id, org_id, funder, funder_donor_id, program, amount, amount_requested, status, deadline,
                            officer_id, officer, notes, renewal_of, created_by, created_by_name)
@@ -142,7 +143,7 @@ async function planRenewal(orgId, grantId, who) {
       [id, orgId, g.fname, g.fid, g.program || "", Math.round(askC / 100), money.toDollars(askC), plan.date,
        g.officer_id || null, g.officer || "", `The renewal of the ${g.program || "grant"} grant${g.closed_on ? ` that closed ${DD.displayDate(g.closed_on)}` : ""}.`,
        g.id, actorId, actorName]);
-    const msId = "gms_" + uuid().slice(0, 10);
+    const msId = newId("gms");
     await c.query(
       `INSERT INTO grant_milestones (id, org_id, grant_id, kind, due_date, state, notes, created_by, created_by_name)
        VALUES ($1,$2,$3,$4,$5,'pending',$6,$7,$8)`,

@@ -8,6 +8,7 @@
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const { CAMPAIGN_GIFT_MATCH, NOT_DELETED } = require("../../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
+const { newId } = require("./newId");   // IDS-1: every new row id is prefix + 20 hex
 
 function mount(ctx) {
 const {
@@ -279,7 +280,7 @@ async function fundraiserPerson(orgId, name, cleanEmail, who) {
     [orgId, cleanEmail]);
   if (matched.length === 1) return matched[0].id;
   if (matched.length) return null;
-  const personId = "d_" + uuid().slice(0, 10);
+  const personId = newId("d");
   await run(
     `INSERT INTO donors (id,org_id,name,email,stage,status,tags,person_types,created_by,created_by_name)
      VALUES (?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?)`,

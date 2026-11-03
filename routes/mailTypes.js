@@ -24,6 +24,7 @@ const TYPES = require("../mailTypes");
 const SEND_GATE = require("../sendGate");
 const GOING = require("../goingOut");
 const ORG_TIME = require("../orgTime");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 const BULK_CAP = 25000;   // the same cap as GET /donors/ids (select all matching)
@@ -254,7 +255,7 @@ async function sendHeld(req, heldId, donorId) {
   if (b.donor_id) {
     const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
     await run(`INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by, logged_by_name, metadata) VALUES (?,?,?,?,?,?,?,?,?)`,
-      ["i_" + uuid().slice(0, 8), orgId, b.donor_id, "email", `Email: ${b.subject || b.what} (sent by hand; it was held)`, today, who.id, who.name,
+      [newId("i"), orgId, b.donor_id, "email", `Email: ${b.subject || b.what} (sent by hand; it was held)`, today, who.id, who.name,
        JSON.stringify({ via: "held_send", heldId: b.id })]).catch(() => {});
   }
   req.audit.action("sent a held email");

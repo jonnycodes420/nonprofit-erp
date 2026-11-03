@@ -8,6 +8,7 @@
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../../emailCompose");
 
@@ -93,7 +94,7 @@ app.post("/thank-yous/:id/sent", requireAuth, checkWriteAccess, wrap(async (req,
   // record is a person, and BUILD-87 F.3.7's rule is that a row reads as one.
   const [me] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
   const actorName = (me && me.name) || act.name;
-  const intId = "int_" + uuid().slice(0, 8);
+  const intId = newId("int");
   await run(
     `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
@@ -140,7 +141,7 @@ app.post("/thank-yous/mark-all-sent", requireAuth, checkWriteAccess, wrap(async 
     await run(
       `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      ["int_" + uuid().slice(0, 8), orgId, full.donor_id, "stewardship", "Thank-you sent.", today, act.id, actorNameAll,
+      [newId("int"), orgId, full.donor_id, "stewardship", "Thank-you sent.", today, act.id, actorNameAll,
        full.gift_id, JSON.stringify({ via: "thank_you_queue_all", draftId: d.id })]);
     await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()), thanked_at=COALESCE(thanked_at, NOW()) WHERE id=? AND org_id=?", [full.gift_id, orgId]);
     marked++;
@@ -321,7 +322,7 @@ app.post("/acknowledgments/templates", requireAuth, checkWriteAccess, wrap(async
   if (!name) return res.status(400).json({ error: "Give the letter a name." });
   const v = ACK.validateTemplate(body);
   if (!v.ok) return res.status(400).json({ error: v.errors.join(" ") });
-  const id = "alt_" + uuid().slice(0, 10);
+  const id = newId("alt");
   const makeDefault = req.body?.isDefault === true;
   if (makeDefault) await run("UPDATE ack_letter_templates SET is_default=false WHERE org_id=?", [req.user.orgId]);
   await run(`INSERT INTO ack_letter_templates (id,org_id,name,body,is_default,created_by,created_by_name) VALUES (?,?,?,?,?,?,?)`,

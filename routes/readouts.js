@@ -23,6 +23,7 @@
 // draft, and a draft waits for her.
 const express = require("express");
 const RO = require("../readout");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 
@@ -135,7 +136,7 @@ app.post("/readouts/:id/lines/:kind/act", requireAuth, checkWriteAccess, wrap(as
         `SELECT id FROM tasks WHERE org_id=? AND donor_id=? AND title=? AND COALESCE(done::text,'0') NOT IN ('1','true') AND voided_at IS NULL LIMIT 1`,
         [orgId, p.id, title]);
       if (open) { await record(p.id, open.id); made.push(open.id); continue; }
-      const id = "t_" + uuid().slice(0, 8);
+      const id = newId("t");
       await run(
         `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,created_by,created_by_name)
          VALUES (?,?,?,?,?,?,0,?,?,?,?,?)`,
@@ -268,7 +269,7 @@ app.post("/import-shapes", requireAuth, checkWriteAccess, wrap(async (req, res) 
      VALUES (?,?,?,?::jsonb,?::jsonb,?,?)
      ON CONFLICT (org_id, shape_key) DO UPDATE SET mapping = EXCLUDED.mapping, last_used_at = NOW()
      RETURNING id`,
-    ["ism_" + uuid().replace(/-/g, "").slice(0, 12), orgId, key, JSON.stringify(headers), JSON.stringify(mapping), who.id, who.name]);
+    [newId("ism"), orgId, key, JSON.stringify(headers), JSON.stringify(mapping), who.id, who.name]);
   res.json({ ok: true, id: rows[0].id });
 }));
 
@@ -290,7 +291,7 @@ app.post("/import-values", requireAuth, checkWriteAccess, wrap(async (req, res) 
        VALUES (?,?,?,?,?,?,?,?)
        ON CONFLICT (org_id, field, raw_norm) DO UPDATE SET value = EXCLUDED.value, raw = EXCLUDED.raw,
          times_used = import_value_mappings.times_used + 1, updated_at = NOW()`,
-      ["ivm_" + uuid().replace(/-/g, "").slice(0, 12), orgId, field, normHeader(rawV), rawV, value, who.id, who.name]);
+      [newId("ivm"), orgId, field, normHeader(rawV), rawV, value, who.id, who.name]);
     saved++;
   }
   res.json({ ok: true, saved });

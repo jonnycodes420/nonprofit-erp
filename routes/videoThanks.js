@@ -27,6 +27,7 @@ const express = require("express");
 const crypto = require("crypto");
 const { putThemeAsset, getThemeAsset } = require("../assetStore");
 const { publicAppUrl } = require("../publicUrl");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 
@@ -118,7 +119,7 @@ app.post("/donors/:id/video-thanks", requireAuth, checkWriteAccess, wrap(async (
   const duration = Number.isFinite(dur) && dur > 0 ? Math.min(dur, VIDEO_MAX_SECONDS) : null;
 
   const stored = await putThemeAsset({ orgId, kind: VIDEO_ASSET_KIND, buffer, contentType: mime });
-  const id = "vt_" + uuid().slice(0, 12), token = newToken(), who = actor(req);
+  const id = newId("vt"), token = newToken(), who = actor(req);
   await run(`INSERT INTO video_thanks (id,org_id,donor_id,asset_id,mime,bytes,duration_seconds,token,created_by,created_by_name)
              VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [id, orgId, d.id, stored.id, mime, buffer.length, duration, token, who.id, who.name]);
@@ -132,7 +133,7 @@ app.post("/donors/:id/video-thanks", requireAuth, checkWriteAccess, wrap(async (
   const subject = `A thank-you from ${orgName || "us"}`;
   const body = `${(await import("../shared/greeting.js")).greetingLine(d)}\n\nI recorded a short video to say thank you. You can watch it here:\n\n${videoUrl(token)}\n\n`
     + `With gratitude,${signer ? `\n${signer}` : ""}${orgName ? `\n${orgName}` : ""}`;
-  const draftId = "md_" + uuid().slice(0, 12);
+  const draftId = newId("md");
   await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
              VALUES (?,?,?,?,?,?, 'pending_review', 'video_thanks', ?, ?)`,
     [draftId, orgId, d.id, `video:${id}`, subject, body, who.id, who.name]);
@@ -236,7 +237,7 @@ app.post("/v/:token/viewed", videoLimiter, wrap(async (req, res) => {
   if (first.length) {
     await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,metadata,created_by,logged_by_name)
                VALUES (?,?,?,'note',?,?,?,?,?)`,
-      ["int_" + uuid().slice(0, 10), v.org_id, v.donor_id, "Watched your video thank-you",
+      [newId("int"), v.org_id, v.donor_id, "Watched your video thank-you",
        orgToday(await orgTz(v.org_id)), JSON.stringify({ video_thanks_id: v.id, video_event: "watched" }),   // ORG_TZ_SEAM_OK
        VIEW_ACTOR.id, VIEW_ACTOR.name]);
   } else {

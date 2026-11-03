@@ -7,6 +7,8 @@
 // not turned it on captures exactly what it did yesterday.
 "use strict";
 
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
+
 let D = null;                        // server.js hands its helpers over at boot
 function configure(deps) { D = deps; }
 
@@ -67,7 +69,7 @@ async function screenForStore(orgId, { subject, body }, privacy) {
 async function recordHold(orgId, { donorIds = [], interactionId = null, source, actorId }) {
   for (const donorId of donorIds.length ? donorIds : [null])
     await D.run(`INSERT INTO privacy_holds (id,org_id,donor_id,interaction_id,source,kind,created_by) VALUES (?,?,?,?,?,'health',?)`,
-      ["ph_" + D.uuid().slice(0, 12), orgId, donorId, interactionId, source, actorId || "system:client-safe"]);
+      [newId("ph"), orgId, donorId, interactionId, source, actorId || "system:client-safe"]);
 }
 
 /** Thirty days after a removal, its kept rows are emptied for good. */

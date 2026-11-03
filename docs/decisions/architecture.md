@@ -4,6 +4,10 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 
 ## Rules
 
+- **IDS-1 (2026-11-03): a new row id is `newId(prefix)`** from `server/shared/newId.js`: the prefix,
+  `_`, and 20 hex (80 bits). Never `uuid().slice(0, N)`: 8 hex is even odds of a duplicate key at
+  ~77,000 rows (the arch-check's `short-ids` rule is a hard 0). Old short ids stay as they are, so a
+  check on an id's shape accepts both lengths (`et_`: 12 or 20 hex, `wid_`: 8 or 20).
 - **SECURE-2 (2026-10-29): what a log may hold.** Every log line and every Sentry event goes through
   `redact.js` (console is wrapped at boot; Sentry's beforeSend, beforeSendTransaction and
   beforeBreadcrumb). Kept: request id (X-Request-Id), route, status, timing, org id, user id. Gone:

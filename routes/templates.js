@@ -13,6 +13,7 @@
 // Nothing here sends anything.
 const NUMBERS = require("../shared/numbers");   // NUMBERS-3: merge fields are the profile's numbers
 const express = require("express");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 const routers = { r0: express.Router() };
 let factsForImpl = null;
 
@@ -160,7 +161,7 @@ app.put("/templates/:kind", requireAuth, checkWriteAccess, wrap(async (req, res)
              VALUES (?,?,?,?,?,NOW(),?,?,?)
              ON CONFLICT (org_id, kind) DO UPDATE SET subject=EXCLUDED.subject, body=EXCLUDED.body, reviewed_at=NOW(),
                reviewed_by_name=EXCLUDED.reviewed_by_name, updated_at=NOW()`,
-    ["mt_" + uuid().slice(0, 10), req.user.orgId, req.params.kind, subject, body, who.name, who.id, who.name]);
+    [newId("mt"), req.user.orgId, req.params.kind, subject, body, who.name, who.id, who.name]);
   if (req.audit) { req.audit.after({ subject, body }); req.audit.entity("message_template", req.params.kind, B.kindDef(req.params.kind).label); }
   res.json(await templateOf(req.user.orgId, req.params.kind));
 }));
@@ -203,7 +204,7 @@ app.post("/templates/:kind/draft", requireAuth, checkWriteAccess, wrap(async (re
   await READY;
   const u = await usable(req, res); if (!u) return;
   if (!u.f.donor.email) return res.status(409).json({ error: "no_email", sentence: `${u.f.donor.name} has no email address on file. Print it as a letter instead.` });
-  const who = actor(req), id = "md_" + uuid().slice(0, 12);
+  const who = actor(req), id = newId("md");
   await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
              VALUES (?,?,?,?,?,?,'pending_review','template',?,?)`,
     [id, req.user.orgId, u.f.donor.id, `template:${u.t.kind}:${Date.now()}`, u.subject, u.body, who.id, who.name]);

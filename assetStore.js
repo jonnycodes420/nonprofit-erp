@@ -23,6 +23,7 @@ const crypto = require("crypto");
 const Sentry = require("@sentry/node"); // no-op if the server never init'd it
 const { query, run } = require("./db");
 const SEALED = require("./server/mail/sealedMail");
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 function s3Config(env = process.env) {
   const endpoint = env.PORTAL_ASSETS_S3_ENDPOINT;
@@ -412,7 +413,7 @@ async function purgeExpiredAssets({ orgId = null } = {}) {
         await destroyAsset(r);
         await run(
           `INSERT INTO asset_purge_log (id, asset_id, org_id, kind, bytes, storage, soft_deleted_at) VALUES (?,?,?,?,?,?,?)`,
-          ["apl_" + crypto.randomUUID().replace(/-/g, "").slice(0, 12), r.id, r.org_id, r.kind, r.bytes, r.storage, r.deleted_at]);
+          [newId("apl"), r.id, r.org_id, r.kind, r.bytes, r.storage, r.deleted_at]);
         purged++;
       } catch (e) {
         failed++;

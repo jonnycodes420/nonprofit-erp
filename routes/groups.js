@@ -18,6 +18,7 @@ const express = require("express");
 const GR = require("../groups");
 const { querySetwise } = require("../db");
 const DS = require("../donorStatus");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 const NAME_MAX = 60, DESC_MAX = 200;
@@ -114,7 +115,7 @@ app.post("/groups/starters/:key", requireAuth, checkWriteAccess, wrap(async (req
   const orgId = req.user.orgId;
   const st = GR.starterByKey(req.params.key);
   if (!st) return res.status(404).json({ error: "Not found" });
-  const id = "grp_" + uuid().slice(0, 10);
+  const id = newId("grp");
   const a = actor(req);
   const g = GR.starterGroup(st);
   const description = st.term ? `A starter group, known in the sector as ${st.term}.` : "A starter group.";
@@ -132,7 +133,7 @@ app.post("/groups/starters/:key", requireAuth, checkWriteAccess, wrap(async (req
 app.post("/groups", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const v = validate(req.body || {});
   if (!v.ok) return res.status(400).json({ error: v.errors[0], errors: v.errors });
-  const id = "grp_" + uuid().slice(0, 10);
+  const id = newId("grp");
   const a = actor(req);
   try {
     await run(`INSERT INTO audiences (id, org_id, name, description, segment, kind, rules, created_by, created_by_name)

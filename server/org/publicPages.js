@@ -10,6 +10,7 @@
 const express = require("express");
 const TL = require("../../timelineLine");
 const { CAMPAIGN_GIFT_MATCH, NOT_DELETED } = require("../../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = {
   r1: express.Router(),
@@ -303,7 +304,7 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
     if (existing) teamId = existing.id;
     else {
       startedTeam = true;
-      teamId = "pt_" + uuid().slice(0, 10);
+      teamId = newId("pt");
       await run(`INSERT INTO p2p_teams (id,org_id,giving_page_id,name,slug,goal_amount,created_by,created_by_name)
                  VALUES (?,?,?,?,?,?,'system:p2p-signup','The fundraiser, from the sign-up page')`,
         [teamId, org.id, givingPage.id, v.team.name, v.team.slug, v.team.goalCents == null ? null : v.team.goalCents / 100]);
@@ -320,7 +321,7 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
     { id: "system:p2p-signup", name: "The fundraiser, from the sign-up page" });
 
   const base = slugifyGivingPage(name);
-  const id = "pf_" + uuid().slice(0, 8);
+  const id = newId("pf");
   const editToken = generateEditToken();
   const editTokenHash = require("crypto").createHash("sha256").update(editToken).digest("hex");
 

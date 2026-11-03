@@ -8,6 +8,7 @@
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-11 Part 3 — the bookkeeper's two files. Pure: grouping, the fee line,
 // the net and the assertion that the deposits foot (depositsFile.js), and the
 // column sets each tool wants (bookkeeper.js), declared once so the screen,
@@ -146,7 +147,7 @@ app.post("/saved-reports", requireAuth, checkWriteAccess, wrap(async (req, res) 
   if (!v.ok) return res.status(400).json({ error: v.errors.join(" ") });
   const schedule = RB.SCHEDULES.includes(req.body?.schedule ?? null) ? (req.body?.schedule ?? null) : null;
   const [u] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
-  const id = "rpt_" + uuid().slice(0, 10);
+  const id = newId("rpt");
   await run(`INSERT INTO saved_reports (id,org_id,name,question,definition,shared,owner_id,owner_name,schedule,created_by,created_by_name)
              VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     [id, req.user.orgId, name, String(req.body?.question || "").slice(0, 300) || null, JSON.stringify(def),

@@ -9,6 +9,7 @@
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
 const PM = require("../../personMatch");   // WIRE-1 rule 1: one record per person   // WIRE-1 rule 2: every act lands on the timeline
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = {
   r1: express.Router(),
@@ -270,7 +271,7 @@ app.post("/e/:slug/waitlist", donateLimiter, express.urlencoded({ extended: fals
                               WHERE org_id=? AND level_id=? AND removed_at IS NULL`, [e.org_id, level.id]);
   await run(`INSERT INTO event_waitlist (id,org_id,event_id,level_id,name,email,qty,position,created_by,created_by_name)
              VALUES (?,?,?,?,?,?,1,?, 'system:event-waitlist','The waiting list, from the event page')`,
-    ["ewl_" + uuid().slice(0, 10), e.org_id, e.id, level.id, name, email, (pos?.p || 0) + 1]);
+    [newId("ewl"), e.org_id, e.id, level.id, name, email, (pos?.p || 0) + 1]);
   done();
 }));
 
@@ -310,7 +311,7 @@ app.post("/e/:slug/register", donateLimiter, express.urlencoded({ extended: fals
   // they already are.
   let donorId = await PM.findPersonId(e.org_id, { email, name });   // WIRE-1 rule 1
   if (!donorId) {
-    donorId = "d_" + uuid().slice(0, 10);
+    donorId = newId("d");
     await run(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,created_by,created_by_name)
                VALUES (?,?,?,?,'prospect','active','[]','system:event-registration','The registration page')`,
       [donorId, e.org_id, name, email]);
@@ -318,7 +319,7 @@ app.post("/e/:slug/register", donateLimiter, express.urlencoded({ extended: fals
   // A REQUEST, not money and not a seat taken. `registerForEvent` runs when
   // the office confirms it, and that is the one writer that turns a
   // registration into a gift with its deductible split.
-  const attId = "att_" + uuid().slice(0, 10);
+  const attId = newId("att");
   await run(
     `INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email,status,level_id,quantity,dietary,source,notes)
      VALUES (?,?,?,?,?,?,'registered',?,?,?,'public',?)
@@ -343,7 +344,7 @@ app.post("/e/:slug/register", donateLimiter, express.urlencoded({ extended: fals
     await run(
       `INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,status,level_id,quantity,source,guest_of,notes)
        VALUES (?,?,?,?,?,'registered',?,0,'public',?,?) ON CONFLICT (event_id, donor_id) DO NOTHING`,
-      ["att_" + uuid().slice(0, 10), e.id, e.org_id, gid, g.slice(0, 200), level.id, attId, `Guest of ${name}.`]).catch(() => {});
+      [newId("att"), e.id, e.org_id, gid, g.slice(0, 200), level.id, attId, `Guest of ${name}.`]).catch(() => {});
   }
 
   const deductible = (Number(level.price) - Number(level.fmv)) * (level.kind === "ticket" ? qty : 1);

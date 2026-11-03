@@ -8,6 +8,7 @@
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-12 Part 3: the one door to a model (asks the org's AI switch on every call).
 const { anthropicFor, requireAi, transcribeAudio, AiOffError, AI_OFF_MESSAGE, recordAiFallback } = require("../../aiClient");
 // PARITY-1 Part B — a file on a conversation or a note (types, bytes, signed door).
@@ -43,7 +44,7 @@ app.post("/donors/:id/interactions", requireAuth, wrap(async (req, res) => {
 
   const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
   const userName = userRow[0]?.name || "";
-  const id = "int_" + uuid().slice(0, 8);
+  const id = newId("int");
   await run(
     "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,?,?,?,?,?,?)",
     [id, req.user.orgId, req.params.id, type, note || "",
@@ -150,7 +151,7 @@ app.delete("/interactions/:id", requireAuth, wrap(async (req, res) => {
   if (meta?.gmail_message_id) {
     await run(
       "INSERT INTO gmail_sync_exclusions (id, org_id, gmail_message_id) VALUES (?,?,?) ON CONFLICT (org_id, gmail_message_id) DO NOTHING",
-      ["gse_" + uuid().slice(0, 8), req.user.orgId, meta.gmail_message_id]
+      [newId("gse"), req.user.orgId, meta.gmail_message_id]
     );
   }
 
@@ -330,7 +331,7 @@ app.post("/donors/:id/brief", requireAuth, requireCrm, checkWriteAccess, wrap(as
     message: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE
       : "Not set up yet. Steward support can turn on AI drafting for this server, then an admin switches it on in Settings, Data." });
 
-  const runId = "arun_" + uuid().slice(0, 10);
+  const runId = newId("arun");
   await run(`INSERT INTO agent_runs (id,org_id,status,plan,read_summary) VALUES (?,?,?,?,?)`,
     [runId, orgId, "running", JSON.stringify({ kind: "prospect_brief", donorId: ctx.donor.id }),
      `${ctx.refs.size} rows on ${ctx.donor.name}`]);
@@ -524,7 +525,7 @@ app.post("/interactions/:id/attachments", requireAuth, checkWriteAccess, wrap(as
       error: `That file does not look like a ${IXF.extensionFor(mime) || mime}. Check you attached what you meant to.` });
   }
   const asset = await putThemeAsset({ orgId, kind: IXF.FILE_ASSET_KIND, buffer, contentType: mime });
-  const id = "iatt_" + uuid().replace(/-/g, "").slice(0, 12);
+  const id = newId("iatt");
   const who = actor(req);
   const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [who.id, orgId]);
   await run(
@@ -695,7 +696,7 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   const giftIdForTimeline = giftWritten && giftWritten.gift ? giftWritten.gift.id : null;
 
   const out = await withTransaction(async (client) => {
-    const intId = "int_" + uuid().slice(0, 8);
+    const intId = newId("int");
     await runTx(client,
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata) VALUES (?,?,?,?,?,?,?,?,?,?)",
       [intId, orgId, req.params.id, touch.interactionType, line, date, userId, userName, giftIdForTimeline,
@@ -896,7 +897,7 @@ app.post("/interactions/:id/chips", requireAuth, checkWriteAccess, wrap(async (r
     await withTransaction(async client => {
       if (!spouseId) {
         // THE ONE PERSON RECORD: a spouse is a row in donors, not a field.
-        spouseId = "d_" + uuid().slice(0, 8);
+        spouseId = newId("d");
         await runTx(client,
           `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,gift_count,tags,notes,created_by,created_by_name,person_types)
            VALUES (?,?,?,'','','new','prospect',0,0,0,'[]','',?,?,?)`,
@@ -908,7 +909,7 @@ app.post("/interactions/:id/chips", requireAuth, checkWriteAccess, wrap(async (r
         hh = sp && sp.household_id;
       }
       if (!hh) {
-        hh = "hh_" + uuid().slice(0, 8);
+        hh = newId("hh");
         const ln = lastName(i.donor_name);
         await runTx(client, "INSERT INTO households (id,org_id,name,primary_donor_id,joint_acknowledgment,created_by,created_by_name) VALUES (?,?,?,?,?,?,?)",
           [hh, orgId, ln ? `The ${ln} Household` : "Household", i.donor_id, true, who.id, who.name]);
@@ -918,7 +919,7 @@ app.post("/interactions/:id/chips", requireAuth, checkWriteAccess, wrap(async (r
     sentence = `${name} is linked to ${i.donor_name}'s household.`;
   } else if (answer === "yes" && kind === "planned") {
     await run("INSERT INTO donor_designations (id,org_id,donor_id,kind) VALUES (?,?,?,?) ON CONFLICT (donor_id, kind) DO NOTHING",
-      ["dsg_" + uuid().slice(0, 8), orgId, i.donor_id, "planned_prospect"]);
+      [newId("dsg"), orgId, i.donor_id, "planned_prospect"]);
     sentence = `${i.donor_name} is marked as a planned-giving prospect.`;
   }
   await run(`UPDATE interactions SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('chips_done', ?::jsonb)
@@ -1006,7 +1007,7 @@ app.post("/voice-memos/save", requireAuth, checkWriteAccess, wrap(async (req, re
   const today = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   await run(
     "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by) VALUES (?,?,?,?,?,?,?)",
-    ["i_" + uuid().slice(0, 8), req.user.orgId, donorId, "voice_memo", transcript, today, req.user.userId]
+    [newId("i"), req.user.orgId, donorId, "voice_memo", transcript, today, req.user.userId]
   );
 
   // Both of these are opt-in — the officer explicitly confirmed each one
@@ -1019,7 +1020,7 @@ app.post("/voice-memos/save", requireAuth, checkWriteAccess, wrap(async (req, re
 
   let taskId = null;
   if (createFollowUpTask && actionText && actionText.trim()) {
-    taskId = "t_" + uuid().slice(0, 8);
+    taskId = newId("t");
     const due = new Date(); due.setDate(due.getDate() + 7);
     await run(
       "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,created_by,created_by_name) VALUES (?,?,?,?,?,?,0,?,?,?)",

@@ -10,6 +10,7 @@
 const express = require("express");
 const { CAMPAIGN_GIFT_MATCH, NOT_DELETED } = require("../../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
 const PW = require("../../pledgeWrite");   // FIX-60: the one writer of a pledge and its installments
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = {
   r1: express.Router(),
@@ -149,10 +150,10 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
     const batchIds = [];   // LIVE-1: who this batch created, for the after-change step
     const tuples = batch.map(d => {
       const a = resolveAssignee(d);
-      const newId = importId("d_");
-      batchIds.push(newId);
+      const rowId = importId("d_");
+      batchIds.push(rowId);
       params.push(
-        newId, req.user.orgId,
+        rowId, req.user.orgId,
         normalizeName(d.name),
         d.email   || "",
         d.phone   || "",
@@ -265,7 +266,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         [email, req.user.orgId]);
       if (already) continue;
       await run(`INSERT INTO email_suppressions (id, org_id, email, reason, source) VALUES (?,?,?,?,?)`,
-        ["sup_" + uuid().slice(0, 8), req.user.orgId, email, "unsubscribed", "import"]);
+        [newId("sup"), req.user.orgId, email, "unsubscribed", "import"]);
       unsubscribedImported++;
     }
   } catch (e) { console.error("[import] unsubscribe suppressions:", e.message); }

@@ -24,6 +24,7 @@
 
 const { query } = require("./db");
 const { publicAppUrl } = require("./publicUrl");
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 // Server functions this module needs but cannot require (they live in
 // server.js). server.js calls configure() once at boot.
@@ -276,7 +277,7 @@ async function campaignFromTemplate(req, res, { run, uuid, actor }) {
   let body = "";
   try { body = await templatePreviewHtml(orgId, t, name); }
   catch (e) { console.error("[campaigns] template preview:", e.message); }
-  const id = "cmp_" + uuid().slice(0, 8);
+  const id = newId("cmp");
   const who = actor(req);
   await run(
     `INSERT INTO campaigns (id,org_id,name,type,subject,preheader,body,email_blocks,template_id,status,segment,

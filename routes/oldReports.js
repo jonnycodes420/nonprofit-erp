@@ -21,6 +21,7 @@ const express = require("express");
 const F = require("../interactionFiles");
 const O = require("../oldReports");
 const R = require("../reconcile");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 const ASSET_KIND = "sheetfile";   // the same kind of kept file as SHEETS-1, kept live the same way
@@ -269,7 +270,7 @@ app.post("/old-reports/:id/add-person", requireAuth, checkWriteAccess, wrap(asyn
     [orgId, email, email, email, name]);
   if (dup) return res.status(409).json({ error: "already_here", donorId: dup.id, sentence: `${dup.name} is already in Steward.` });
   const who = await whoOf(req);
-  const id = "d_" + C.uuid().slice(0, 8);
+  const id = newId("d");
   await run(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count,notes,assigned_to,assigned_to_name,created_by,created_by_name,person_types)
              VALUES (?,?,?,?,'new','prospect',0,0,?,?,?,?,?,'["donor"]'::jsonb)`,
     [id, orgId, name || email, email, `Added from ${s.file_name}, an old report that names them.`, who.id, who.name, who.id, who.name]);
