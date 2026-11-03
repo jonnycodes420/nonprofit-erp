@@ -406,6 +406,7 @@ export function adaptDonor(d) {
     doNotEmail:    d.do_not_email === true,
     deceasedDate:  d.deceased_date ?? null,
     address:       d.address ?? null,
+    address2:      d.address2 ?? null,   // ADDRESS-1: the Edit form's apartment line
     importedSustainer: d.imported_sustainer === true,   // BUILD-77 Part 5 — the third recurring state
     importedSustainerAmount: d.imported_sustainer_amount != null ? parseFloat(d.imported_sustainer_amount) : null,
     importedSustainerLastGift: d.imported_sustainer_last_gift ?? null,

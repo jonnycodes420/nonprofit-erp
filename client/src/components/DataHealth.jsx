@@ -263,9 +263,11 @@ export function CompareModal({ pair, onClose, onMerged, undoWhere = "below" }) {
       .catch(e => setErr(e.message));
   }, [pair.a, pair.b]);
   const otherId = d && (keptId === pair.a ? pair.b : pair.a);
-  // Switching which record is kept flips every choice, so the values on
-  // screen stay the values that win.
-  const swap = () => { setChoices(c => Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v === "kept" ? "other" : "kept"]))); setKeptId(otherId); };
+  // ADDRESS-1: every field starts on the kept record's value, so keeping the
+  // other record instead starts every field on that one's (choicesFor).
+  const swap = () => { setChoices((d.choicesFor && d.choicesFor[otherId]) || Object.fromEntries(Object.entries(choices).map(([k, v]) => [k, v === "kept" ? "other" : "kept"]))); setKeptId(otherId); };
+  // The name the record will have after the merge: the Name field's pick.
+  const resultingName = () => { const K0 = d.records[keptId], O0 = d.records[otherId]; return ((choices.name === "other" ? O0 : K0).name) || K0.name; };
   const ADDR = ["address", "address2", "city", "state", "zip", "country"];
   const pick = (f, side) => setChoices(c => ADDR.includes(f) ? { ...c, ...Object.fromEntries(ADDR.map(k => [k, side])) } : { ...c, [f]: side });
   const fieldVal = (rec, f) => f === "household_id" ? (rec.household_id ? (d.households[rec.household_id] || "A household") : null) : show(rec[f]);
@@ -281,7 +283,7 @@ export function CompareModal({ pair, onClose, onMerged, undoWhere = "below" }) {
     setBusy(true); setErr(null);
     try {
       const r = await apiFetch("/data-health/merge", { method: "POST", body: JSON.stringify({ keptId, mergedId: otherId, choices }) });
-      const kept = d.records[keptId];
+      const kept = { ...d.records[keptId], name: resultingName() };
       onMerged(`Merged into ${kept.name}. Lifetime giving is now ${fmtMoney(r.lifetime.keptAfterCents)}, the two records' ${fmtMoney(r.lifetime.keptBeforeCents)} and ${fmtMoney(r.lifetime.mergedBeforeCents)}. You can undo this ${undoWhere} for 30 days.`, { ...r, keptId, keptName: kept.name });
     } catch (e) { setErr(e.sentence || e.message); setBusy(false); }
   };
@@ -304,7 +306,7 @@ export function CompareModal({ pair, onClose, onMerged, undoWhere = "below" }) {
       subtitle={d.reasons.length ? `${cap(d.reasons.join("; "))}${d.confidence ? `. ${CONF_WORD[d.confidence]} confidence.` : ""}` : "You chose these two records. Pick the one to keep and, where they differ, which value stays."}
       footer={<div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
         <button style={btn(false)} onClick={onClose}>Cancel</button>
-        <button type="button" data-commit style={btn(true, busy)} disabled={busy} onClick={merge} data-testid="dh-merge-confirm">{busy ? "Merging…" : `Merge into ${K.name}`}</button>
+        <button type="button" data-commit style={btn(true, busy)} disabled={busy} onClick={merge} data-testid="dh-merge-confirm">{busy ? "Merging…" : `Merge into ${resultingName()}`}</button>
       </div>}>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
         <div style={{ fontSize: 13, color: T.ink }}>Keeping <b>{K.name}</b> ({plural(Number(K.gift_count || 0), "gift")}, {fmtMoney(d.lifetimeCents[keptId])}); folding in <b>{O.name}</b> ({plural(Number(O.gift_count || 0), "gift")}, {fmtMoney(d.lifetimeCents[otherId])}).</div>
