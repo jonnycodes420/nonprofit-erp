@@ -76,6 +76,19 @@ const DONOR_RELATIONSHIP_LABELS = [
   ["owner","Owns · Gives through"],
   ["works_at","Works at"],
 ];
+// MENU-1 — the type list as THIS record reads it, so the picker says "Gives
+// through" on a person and "Owned by" on a business. The stored type is the
+// same either way (owner, works_at; the server stores the person first).
+const isOrgRecord = d => !!d && (["organisation", "organization"].includes(String(d.kind || "").toLowerCase())
+  || (Array.isArray(d.person_types) && d.person_types.includes("organization")));
+const SIDED_TYPE_LABELS = {
+  person: { owner: "Gives through (a business they own)", works_at: "Works at (an organization)" },
+  organization: { owner: "Owned by (a person)", works_at: "Employs (a person)" },
+};
+const relationshipLabelsFor = donor => {
+  const side = SIDED_TYPE_LABELS[isOrgRecord(donor) ? "organization" : "person"];
+  return DONOR_RELATIONSHIP_LABELS.map(([v, l]) => [v, side[v] || l]);
+};
 // POLISH-4 — a link as this record reads it. A person-to-organization link
 // reads from its own side: "Gives through Corman Excavating" on the person,
 // "Owner: Pat Corman" on the business.
@@ -320,4 +333,4 @@ function ComingUpMain({tasks=[],meetings=[],onTaskToggle,isReadOnly,onAddTask}){
 }
 const cap=s=>s?String(s).charAt(0).toUpperCase()+String(s).slice(1):"Not set";
 
-export { UndatedGiftDate, ContactFlag, stageTone, lateWords, WEALTH_SCORE_DEFINITION, WEALTH_SCORE_SOURCE, DONOR_RELATIONSHIP_LABELS, relationshipLine, stripGiftAmountPrefix, giftFundName, giftTimelineLine, HEADER_CHIP_LIMIT, HeaderChips, ROLE_CHIPS, RoleLine, PROFILE_FIGURES, SUGGEST_KINDS, PROPOSAL_STAGE_LABEL, OPEN_PROPOSAL_KEYS, PROFILE_TABS, TAB_KIND, TAB_SUBCHIPS, STAGE_BAR, RailGroups, ComingUpMain, cap };
+export { UndatedGiftDate, ContactFlag, stageTone, lateWords, WEALTH_SCORE_DEFINITION, WEALTH_SCORE_SOURCE, DONOR_RELATIONSHIP_LABELS, relationshipLabelsFor, relationshipLine, stripGiftAmountPrefix, giftFundName, giftTimelineLine, HEADER_CHIP_LIMIT, HeaderChips, ROLE_CHIPS, RoleLine, PROFILE_FIGURES, SUGGEST_KINDS, PROPOSAL_STAGE_LABEL, OPEN_PROPOSAL_KEYS, PROFILE_TABS, TAB_KIND, TAB_SUBCHIPS, STAGE_BAR, RailGroups, ComingUpMain, cap };

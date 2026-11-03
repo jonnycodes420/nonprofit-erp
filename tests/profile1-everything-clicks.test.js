@@ -33,12 +33,15 @@ const { ok, q, api, BASE } = h;
 
 const ORG = "org_p1clicks";
 const A = "d_p1c_fern", P = "d_p1c_photo", N = "d_p1c_new", B = "d_p1c_other";
+// MENU-1: a business, a lapsed donor and a staff (non-admin) user.
+const O = "d_p1c_biz", L = "d_p1c_lapsed";
+const STAFF = `staff@${ORG}.test`;
 const ADMIN = `admin@${ORG}.test`;
 const ROOT = path.join(__dirname, "..");
 
 async function fixture() {
   for (const t of ["person_photos", "gift_soft_credits", "pledges", "interactions", "threads", "donor_scores", "donor_rhythm",
-    "fin_transactions", "gifts", "tasks", "opportunities", "fin_audit_log"])
+    "fin_transactions", "gifts", "tasks", "opportunities", "donor_relationships", "fin_audit_log"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM donors WHERE org_id=$1`, [ORG]);
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,created_at)
@@ -46,6 +49,8 @@ async function fixture() {
            ON CONFLICT (id) DO NOTHING`, [ORG]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Clicks Admin','admin')
            ON CONFLICT (id) DO UPDATE SET password_hash=EXCLUDED.password_hash, role='admin'`, [`u_${ORG}`, ORG, ADMIN, bcrypt.hashSync("loadtest1234", 4)]);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Clicks Staff','staff')
+           ON CONFLICT (id) DO UPDATE SET password_hash=EXCLUDED.password_hash, role='staff'`, [`u_${ORG}_staff`, ORG, STAFF, bcrypt.hashSync("loadtest1234", 4)]);
   const who = [`u_${ORG}`, "Clicks Admin"];
   const [{ today }] = await q(`SELECT to_char((NOW() AT TIME ZONE 'America/New_York')::date, 'YYYY-MM-DD') AS today`);
   const Y = Number(today.slice(0, 4));
@@ -56,6 +61,10 @@ async function fixture() {
       [id, ORG, name, `${id}@example.org`, phone, id === N ? "prospect" : "cultivate", JSON.stringify(id === A ? ["Board"] : []),
        id === A ? "Met her at the spring showcase." : null, ...who]);
   }
+  // MENU-1: Bramble Hollow Supply (a business) and Lark Lapsed (lapsed).
+  await q(`INSERT INTO donors (id,org_id,name,kind,status,stage,person_types,created_by,created_by_name)
+           VALUES ($1,$2,'Bramble Hollow Supply','organisation','active','cultivate','["donor","organization"]'::jsonb,$3,$4),
+                  ($5,$2,'Lark Lapsed','individual','lapsed','lapsed','["donor"]'::jsonb,$3,$4)`, [O, ORG, ...who, L]);
   await q(`UPDATE donors SET birth_month=$2, birth_day=$3 WHERE id=$1`, [A, soon.getUTCMonth() + 1, soon.getUTCDate()]);
   // Rising by calendar year, net of the refund: 1,000 / 2,000 / 3,000 - 500; one gift this year, not yet thanked.
   const gifts = [[`g_${ORG}_1`, A, 1000, `${Y - 3}-03-02`], [`g_${ORG}_2`, A, 2000, `${Y - 2}-04-03`], [`g_${ORG}_3`, A, 3000, `${Y - 1}-05-04`],
@@ -86,6 +95,8 @@ async function fixture() {
   const tok = li.body && li.body.token;
   const pr = await api("POST", `/donors/${A}/proposals`, tok, { purpose: "Scholarship fund", askAmount: 5000, stage: "asked", expectedClose: `${Y + 1}-03-01` });
   ok("fixture: an open proposal on Fern", pr.status === 200 || pr.status === 201, pr.body);
+  const lk = await api("POST", `/donors/${P}/relationships`, tok, { relatedDonorId: O, relationshipType: "owner" });
+  ok("fixture: Pia gives through Bramble Hollow Supply (one link)", lk.status === 201, lk.body);
   const img = "data:image/jpeg;base64," + fs.readFileSync(path.join(ROOT, "scripts/demo-assets/demo-impact-studio.jpg")).toString("base64");
   const ph = await api("POST", `/donors/${P}/photo`, tok, { image: img });
   ok("fixture: Pia has a photo", ph.status === 200 || ph.status === 201, ph.status);
@@ -312,10 +323,170 @@ function inventory() {
       }
       await s.ctx.close();
     }
+    // §8 MENU-1 — More fits on the screen, grouped, and linking a business is findable.
+    // /org and /billing/status are answered as each case needs (Stripe, AI, read-only);
+    // everything else is the real server.
+    const menuCtx = async (email, vp, { stripe = true, ai = true, readOnly = false } = {}) => {
+      const s = await signedIn(email, vp);
+      s.page.on("pageerror", e => errors.push(String(e.message || e)));
+      // The app reads /org and /billing/status on their own or inside the boot bundle (PERF-2).
+      const patch = (path, body) => {
+        if (path === "/org" && body && body.capabilities) return { ...body, capabilities: { ...body.capabilities, stripe, ai } };
+        if (path === "/billing/status" && body && readOnly) return { ...body, accessState: "read_only" };
+        return body;
+      };
+      await s.ctx.route(/\/(org|billing\/status|home\/bundle)(\?.*)?$/, async route => {
+        const r = await route.fetch(); const j = await r.json().catch(() => null);
+        if (!j) return route.fulfill({ response: r });
+        const u = new URL(route.request().url());
+        if (u.pathname.endsWith("/home/bundle")) {
+          for (const k of Object.keys(j)) if (j[k] && "body" in j[k]) j[k] = { ...j[k], body: patch(k, j[k].body) };
+          return route.fulfill({ response: r, json: j });
+        }
+        return route.fulfill({ response: r, json: patch(u.pathname.endsWith("/org") ? "/org" : "/billing/status", j) });
+      });
+      return s;
+    };
+    const openMenu = async (pg, id) => {
+      await pg.goto(`${APP}/donors/${id}`, { waitUntil: "domcontentloaded" });
+      await pg.waitForSelector("[data-testid=dp-header-figures]", { timeout: 20000 }).catch(() => {});
+      await pg.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+      await pg.waitForTimeout(400);
+      await pg.locator("[data-testid=dp-more]").click();
+      await pg.waitForSelector("[data-testid=dp-more-menu]", { timeout: 5000 }).catch(() => {});
+      await pg.waitForTimeout(150);
+      return pg.evaluate(() => {
+        const m = document.querySelector("[data-testid=dp-more-menu]");
+        if (!m) return null;
+        const r = m.getBoundingClientRect();
+        const bar = document.querySelector(".mobile-bottom-bar");   // on a phone, the tab bar is the screen's bottom edge
+        const vh = bar && getComputedStyle(bar).display !== "none" ? Math.min(innerHeight, bar.getBoundingClientRect().top) : innerHeight;
+        const items = [...m.querySelectorAll("[role=menuitem]")];
+        // Every item, brought into view by the MENU's own scroll only (the page is not scrolled).
+        const unreachable = [];
+        const y0 = scrollY;
+        for (const el of items) {
+          const ir0 = el.getBoundingClientRect();
+          if (ir0.top < r.top) m.scrollTop -= (r.top - ir0.top); else if (ir0.bottom > r.bottom) m.scrollTop += (ir0.bottom - r.bottom);
+          const ir = el.getBoundingClientRect();
+          if (!(ir.top >= Math.max(0, r.top) - 1 && ir.bottom <= Math.min(vh, r.bottom) + 1 && ir.left >= -1 && ir.right <= innerWidth + 1)) unreachable.push(el.textContent);
+        }
+        m.scrollTop = 0;
+        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, vh, vw: innerWidth, pageMoved: scrollY !== y0, unreachable,
+          labels: items.map(e => e.textContent.trim()), headings: [...m.querySelectorAll("[data-testid=dp-more-heading]")].map(e => e.textContent.trim()),
+          emptyGroup: [...m.querySelectorAll("[role=group]")].some(g => !g.querySelector("[role=menuitem]")),
+          cols: getComputedStyle(m).gridTemplateColumns.split(" ").length, focusFirst: document.activeElement === items.find(e => !e.disabled) };
+      });
+    };
+    const onScreen = g => !!g && g.top >= -1 && g.bottom <= g.vh + 1 && g.left >= -1 && g.right <= g.vw + 1;
+    {
+      // The defect a customer hit: at 1280×720 Merge with… could not be reached.
+      const s = await menuCtx(ADMIN, { width: 1280, height: 720 });
+      const g = await openMenu(s.page, A);
+      ok("§8 at 1280×720 the More menu's bottom edge stays on the screen", onScreen(g), g && { top: g.top, bottom: g.bottom, vh: g.vh });
+      let merged = false;
+      // As a person would: the wheel over the menu, then a click where the item is drawn
+      // (Playwright's own click() scrolls whatever it must, which no person can count on).
+      try {
+        const mb = await s.page.locator("[data-testid=dp-more-menu]").boundingBox();
+        await s.page.mouse.move(mb.x + mb.width / 2, Math.min(mb.y + mb.height / 2, 700));
+        for (let k = 0; k < 6; k++) { await s.page.mouse.wheel(0, 200); await s.page.waitForTimeout(80); }
+        const at = await s.page.evaluate(() => {
+          const el = document.querySelector("[data-testid=dp-merge-with]"); if (!el) return null;
+          const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+          return y > 0 && y < innerHeight && el.contains(document.elementFromPoint(x, y)) ? { x, y } : null;
+        });
+        if (at) { await s.page.mouse.click(at.x, at.y); await s.page.waitForTimeout(400); merged = await s.page.locator('[role=dialog]:has-text("Merge")').count() > 0; }
+      } catch { merged = false; }
+      ok("§8 at 1280×720 an admin can click More → Merge with… and the merge opens", merged);
+      await s.ctx.close();
+    }
+    // 1280×560 is a 13" laptop with its toolbars showing: the two columns no longer fit, so the max height is what keeps it on screen.
+    for (const vp of [{ width: 1280, height: 720 }, { width: 1280, height: 560 }, { width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+      const s = await menuCtx(ADMIN, vp);
+      const g = await openMenu(s.page, A);
+      ok(`§8 at ${vp.width}×${vp.height}: the menu never passes the screen's edge`, onScreen(g), g && { top: g.top, bottom: g.bottom, left: g.left, right: g.right });
+      ok(`§8 at ${vp.width}×${vp.height}: every item is on screen or reachable by the menu's own scroll`, !!g && !g.unreachable.length && !g.pageMoved && g.labels.length >= 15, g && { n: g.labels.length, unreachable: g.unreachable });
+      ok(`§8 at ${vp.width}: ${vp.width >= 900 ? "two columns" : "one column"}`, !!g && g.cols === (vp.width >= 900 ? 2 : 1), g && g.cols);
+      if (vp.width === 1440) {
+        ok("§8 the groups, in order", !!g && JSON.stringify(g.headings) === JSON.stringify(["Reach out", "Plan", "Know them", "Their record"]), g && g.headings);
+        ok("§8 Add a task is not in the menu (the Task button is beside More)", !!g && !g.labels.includes("Add a task") && await s.page.locator("[data-testid=dp-task]").count() === 1);
+        ok("§8 Plan a follow-up stays in the menu while Next step has no button for it (an open ask)", !!g && g.labels.includes("Plan a follow-up") && await s.page.locator("[data-testid=dp-next-plan]").count() === 0, g && g.labels);
+        ok("§8 the first item has focus", !!g && g.focusFirst);
+        // Arrow keys walk the items in reading order, across groups; Esc closes and hands focus back.
+        const walk = [];
+        for (let k = 0; k < 6; k++) { walk.push(await s.page.evaluate(() => document.activeElement && document.activeElement.textContent.trim())); await s.page.keyboard.press("ArrowDown"); }
+        const enabled = await s.page.$$eval("[data-testid=dp-more-menu] [role=menuitem]:not([disabled])", els => els.map(e => e.textContent.trim()));
+        ok("§8 ArrowDown moves through the items in reading order, across a group", JSON.stringify(walk) === JSON.stringify(enabled.slice(0, 6)), { walk, enabled: enabled.slice(0, 6) });
+        await s.page.keyboard.press("ArrowUp");
+        ok("§8 ArrowUp moves back", await s.page.evaluate(() => document.activeElement.textContent.trim()) === enabled[5]);
+        await s.page.keyboard.press("Escape");
+        await s.page.waitForTimeout(150);
+        ok("§8 Esc closes the menu and focus returns to More", await s.page.locator("[data-testid=dp-more-menu]").count() === 0 && await s.page.evaluate(() => document.activeElement && document.activeElement.getAttribute("data-testid")) === "dp-more");
+        const gN = await openMenu(s.page, N);
+        ok("§8 Plan a follow-up leaves the menu when Next step shows its own button", !!gN && !gN.labels.includes("Plan a follow-up") && await s.page.locator("[data-testid=dp-next-plan]").count() === 1, gN && gN.labels);
+        // The menu's Link item opens the same picker as About's.
+        await s.page.locator("[data-testid=dp-link-someone]").click();
+        await s.page.waitForTimeout(400);
+        ok("§8 More → Link to a person or business opens the picker", await s.page.locator("[data-testid=dp-rel-type-owner]").count() === 1);
+        for (let k = 0; k < 3; k++) await s.page.keyboard.press("Escape");
+      }
+      await s.ctx.close();
+    }
+    {
+      // Each permission case shows and hides what it did.
+      const has = (g, l) => !!g && g.labels.some(x => x.startsWith(l));
+      const full = await menuCtx(ADMIN, { width: 1440, height: 900 });
+      const gA = await openMenu(full.page, A);
+      ok("§8 Stripe on: Request a gift; AI on: Brief me", has(gA, "Request a gift") && has(gA, "Brief me"), gA && gA.labels);
+      ok("§8 admin: Export, Erase and Delete; not lapsed: no Why did they stop?; a person: no public filing",
+        has(gA, "Export this person") && has(gA, "Erase this person") && has(gA, "Delete donor") && !has(gA, "Why did they stop?") && !has(gA, "Look up public filing"), gA && gA.labels);
+      ok("§8 no group heading is drawn without an item", !!gA && !gA.emptyGroup);
+      const gL = await openMenu(full.page, L);
+      ok("§8 a lapsed donor: Why did they stop?", has(gL, "Why did they stop?"), gL && gL.labels);
+      const gO = await openMenu(full.page, O);
+      ok("§8 an organization: Look up public filing exactly when major gifts are on (as Write a prospect brief)", !!gO && has(gO, "Look up public filing") === has(gO, "Write a prospect brief"), gO && gO.labels);
+      await full.ctx.close();
+      const bare = await menuCtx(ADMIN, { width: 1440, height: 900 }, { stripe: false, ai: false });
+      const gB = await openMenu(bare.page, A);
+      ok("§8 no Stripe: no Request a gift; no AI: no Brief me", !!gB && !has(gB, "Request a gift") && !has(gB, "Brief me") && has(gB, "Edit record"), gB && gB.labels);
+      await bare.ctx.close();
+      const st = await menuCtx(STAFF, { width: 1440, height: 900 });
+      const gS = await openMenu(st.page, A);
+      ok("§8 non-admin: no Export, Erase or Delete; Edit record and Merge with… still there", !!gS && !has(gS, "Export this person") && !has(gS, "Erase this person") && !has(gS, "Delete donor") && has(gS, "Edit record") && has(gS, "Merge with"), gS && gS.labels);
+      await st.ctx.close();
+      const ro = await menuCtx(ADMIN, { width: 1440, height: 900 }, { readOnly: true });
+      const gR = await openMenu(ro.page, A);
+      const dis = async tid => ro.page.locator(`[data-testid=${tid}]`).isDisabled().catch(() => null);
+      ok("§8 read-only: no Erase, Delete still listed, Merge and Link disabled", !!gR && !has(gR, "Erase this person") && has(gR, "Delete donor") && await dis("dp-merge-with") === true && await dis("dp-link-someone") === true, gR && gR.labels);
+      for (let k = 0; k < 3; k++) await ro.page.keyboard.press("Escape");
+      ok("§8 read-only: About draws no link button", await ro.page.locator("[data-testid=dp-about-link]").count() === 0);
+      await ro.ctx.close();
+    }
+    {
+      // A record with one link still offers another; the picker says it from the record's own side.
+      const s = await menuCtx(ADMIN, { width: 1440, height: 900 });
+      await s.page.goto(`${APP}/donors/${P}`, { waitUntil: "domcontentloaded" });
+      await s.page.waitForSelector("[data-testid=dp-about-link]", { timeout: 20000 }).catch(() => {});
+      await s.page.waitForSelector("[data-testid=dp-rail-related-row]", { timeout: 10000 }).catch(() => {});   // the links load after the record
+      ok("§8 a record with one link shows \"+ Link another\"", (await s.page.locator("[data-testid=dp-about-link]").innerText().catch(() => "")).trim() === "+ Link another");
+      await s.page.locator("[data-testid=dp-about-link]").click().catch(() => {});
+      await s.page.waitForTimeout(400);
+      ok("§8 the picker on a person says \"Gives through (a business they own)\"", (await s.page.locator("[data-testid=dp-rel-type-owner]").innerText().catch(() => "")).trim() === "Gives through (a business they own)");
+      await s.page.goto(`${APP}/donors/${N}`, { waitUntil: "domcontentloaded" });
+      await s.page.waitForSelector("[data-testid=dp-about-link]", { timeout: 20000 }).catch(() => {});
+      ok("§8 a record with no links shows \"Link someone\"", (await s.page.locator("[data-testid=dp-about-link]").innerText().catch(() => "")).trim() === "Link someone");
+      await s.page.goto(`${APP}/donors/${O}`, { waitUntil: "domcontentloaded" });
+      await s.page.waitForSelector("[data-testid=dp-about-link]", { timeout: 20000 }).catch(() => {});
+      await s.page.locator("[data-testid=dp-about-link]").click().catch(() => {});
+      await s.page.waitForTimeout(400);
+      ok("§8 the picker on an organization says \"Owned by (a person)\"", (await s.page.locator("[data-testid=dp-rel-type-owner]").innerText().catch(() => "")).trim() === "Owned by (a person)");
+      await s.ctx.close();
+    }
     ok("the profile threw no page errors", errors.length === 0, errors.slice(0, 3));
     await browser.close();
   }
-  for (const t of ["person_photos", "gift_soft_credits", "pledges", "interactions", "threads", "donor_scores", "donor_rhythm", "fin_transactions", "gifts", "tasks", "opportunities"])
+  for (const t of ["person_photos", "gift_soft_credits", "pledges", "interactions", "threads", "donor_scores", "donor_rhythm", "fin_transactions", "gifts", "tasks", "opportunities", "donor_relationships"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await h.closeDb();
   h.summary();
