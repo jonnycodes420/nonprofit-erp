@@ -82,8 +82,11 @@ function oneAsk(x) {
   // NUMBERS-5: a rising unit steps up only when Room to give is known for one of its people (the profile's rule).
   const a = ASK.askFor((x.dated || []).map(g => ({ date: g.date, amount_cents: g.amount_cents })), { roomKnown: x.roomKnown });
   if (!a) return null;
-  const why = a.sentence.replace(/: ask \$[\d,.]+(?:, [^.]*)?\.$/, "");
-  return { cents: a.askCents, words: `Ask ${money(a.askCents)}: ${why.charAt(0).toLowerCase()}${why.slice(1)}.`, rule: ASK.RULE };
+  const m = a.sentence.match(/^(.*): ask \$[\d,.]+(?:, ([^.]*))?\.$/);
+  const why = m ? m[1] : a.sentence.replace(/\.$/, "");
+  // A held ask says why, as the profile does ("held at their own level, because Room to give is not yet known").
+  const held = a.held && m && m[2] ? `; held at ${m[2]}` : "";
+  return { cents: a.askCents, words: `Ask ${money(a.askCents)}: ${why.charAt(0).toLowerCase()}${why.slice(1)}${held}.`, rule: ASK.RULE, held: !!a.held };
 }
 // ", rounded" when rounding moved the figure, so the words never claim an exact amount
 const roundedWord = (ask, raw) => (ask === raw ? "" : ", rounded");

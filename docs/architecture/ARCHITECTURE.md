@@ -93,21 +93,21 @@ rather than writing a second.
 
 | Number | Call this |
 |---|---|
-| Money in a total | `shared/numbers/money.js`: `MONEY(g)` (hard credit, refunds off), `GIFT(g)` (money above zero), `LIVE(d)` |
+| Money in a total | `shared/numbers/money.js`: `MONEY(g)` (hard credit, refunds off), `GIFT(g)` (money above zero), `LIVE(d)`; the sum itself `MONEY_SUM(g, where)` / `MONEY_CENTS(g, where)` (NUMBERS-5) |
 | The fiscal year | `shared/numbers/fiscalYear.js`: `fiscalYear`, `fiscalYearToDate` (cut at the org's today), `period` (fiscal or calendar), `thisAndLast`, `yearStarting`. It wraps `orgTime.orgPeriodBounds` |
 | Lifetime giving | stored `donors.total_giving` (`donorSummary.js`), live `shared/numbers/lifetime.js` `LIFETIME(d)`; the profile opens `donor-lifetime` |
-| Giving in a span (this year, any window) | `shared/numbers/givingBetween.js`: `IN_SPAN(g)`, `givingBetween()`; never past the org's today |
+| Giving in a span (this year, any window) | `shared/numbers/givingBetween.js`: `IN_SPAN(g)`, `SPAN_SUM(g)` / `SPAN_CENTS(g)` (a report's year column), `givingBetween()`; never past the org's today |
 | Last gift | `shared/numbers/lastGift.js`: the latest dated gift above zero, never a refund or a credit row, the imported last gift as a floor; on one day the one recorded last, then the larger, then the one further down its file (`gifts.import_row`). Stored on the person by `donorSummary.js`, live `donor-last-gift` |
-| First gift and first-time | `shared/numbers/firstGift.js`: `FIRST_DATE(d)` (the old system's first gift counts), `isFirstTimeIn` |
+| First gift and first-time | `shared/numbers/firstGift.js`: `FIRST_DATE(d)` (the old system's first gift counts), `isFirstTimeIn`; on one day `FIRST_GIFT_ORDER` (recorded first, the larger, higher up its file) |
 | Retained | `shared/numbers/retained.js`; `computeRetentionRate` (server.js) and the retention sources read it |
 | Deposited | `shared/numbers/deposited.js`: `DEPOSITED`, `NOT_DEPOSITED`, `BANKED`, `DEPOSIT_NAME` (Finance, month close, the bookkeeper's file, the deposits file, QuickBooks) |
 | A face's numbers (portal, account page, merge fields) | `shared/numbers/donorTotals.js` |
 | Lapsed, lapsing, pledge-held, pledge overdue | `shared/numbers/lapse.js` (NUMBERS-4): one SQL fragment, `stateSql` and its conditions; `lapseRule.js` keeps the pure rule (the bounds, `lapseState`) the browser bundles |
 | Major and the giving level | `shared/numbers/tags.js` (NUMBERS-4): the org's Giving levels cut on the last 12 months (`cutsOf`, `levelOf`, `LEVEL_SQL`); the tag, filters, groups and the Insights ladder read it. "Top tenth by lifetime" is `TOP_TENTH_SQL`, not major |
 | Every other computed tag (lifecycle, retained) | `donorStatus.statusSql`, which reads `firstGift.js`, `lapse.js` and `tags.js` |
-| Pledge balance and due | `numbers.pledgeSummary()` and the figure sources `pledges-open`, `pledges-due`, `pledges-overdue`, `pledge-payments` |
+| Pledge balance and due | `numbers.pledgeSummary()` and the figure sources `pledges-open`, `pledges-due`, `pledges-overdue`, `pledge-payments`; a pledge's paid `shared/numbers/pledges.js` `PAID_OF`, a grant's received `GRANT_RECEIVED` |
 | An event's guests (invited, came, gave, ...) | `shared/numbers/events.js` `eventFigures()`: parties (a household once), people beside them; `numbers.eventStory()` for the page's story |
-| Suggested ask | `shared/numbers/ask.js` (NUMBERS-4): one rule for the profile (`engagement.suggestedAsk`) and every Insights card, through `shared/smartAmounts.suggestedAskCents`, rounded by `naturalAskCents` |
+| Suggested ask | `shared/numbers/ask.js` (NUMBERS-4): one rule for the profile (`engagement.suggestedAsk`) and every Insights card, through `shared/smartAmounts.suggestedAskCents`, rounded by `naturalAskCents`; a rising donor steps up only when Room to give is known (`roomKnown`, NUMBERS-5) |
 | People and households | `shared/numbers/households.js` (NUMBERS-4): `PERSON` (not deleted, not sample), `counts()` (people, households with a live person, giving units on EVENTS-3's `PARTY`) |
 | Net and fee | `shared/giftFooting.js` |
 
