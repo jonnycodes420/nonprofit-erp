@@ -403,8 +403,8 @@ async function greetingFirst(browser, demoAuth) {
        && !!h.confirm && !/\n/.test(h.confirm) && h.confirm.length < 80, h);
     ok(`§home-4 Home ${what} at ${vp.width}: chips hide at zero, no Drift section, no empty Thread, no loose links, no zero tabs`,
        h.chips.every(c => !/(^|\s)0\s/.test(c)) && h.oldLinks === 0 && h.drift === 0 && h.threadEmpty === 0 && h.zeroTabs === 0 && h.setupLine === 0 && (h.never === 0 || h.say > 0), h);
-    if (what === "empty") ok(`§home-4 the empty org at ${vp.width}: Set up Steward under Ask, one friendly card with Import and sample data, no tabs, no pace`,
-       h.first === 1 && h.railSetup === 0 && /Bring in your donors/.test(h.noDonors || "") && /Import a spreadsheet/.test(h.noDonors || "") && /sample data/.test(h.noDonors || "")
+    if (what === "empty") ok(`§home-4 the empty org at ${vp.width}: Set up Steward under Ask, one friendly card pointing to the first step (POLISH-4: never Import a third time), with sample data, no tabs, no pace`,
+       h.first === 1 && h.railSetup === 0 && /the first step above/.test(h.noDonors || "") && !/Import a spreadsheet/.test(h.noDonors || "") && /sample data/.test(h.noDonors || "")
        && h.tabs === 0 && h.pace === 0 && h.thread === 0, h);
     // HOME-5: Home doesn't open with a comparison: no pace sentence in the header, and "behind" nowhere on Home, on any tab of the deck (every match, so one can't hide another).
     const seen = () => page.evaluate(() => [...document.body.innerText.matchAll(/.{0,60}\bbehind\b.{0,60}/gi)].map(m => m[0].replace(/\s+/g, " ")));
@@ -436,8 +436,8 @@ async function greetingFirst(browser, demoAuth) {
       rail: (document.querySelector('[data-testid="home-setup-rail"]') || {}).innerText || null,
       top: !!document.querySelector('[data-testid="home-rail"] > [data-testid="home-setup-rail"]:first-child') }));
     ok(later ? "§home-4 \"I'll finish later\" moves the new org's setup card to the top of the rail, and it stays there"
-             : "§home-4 three steps done: setup is the rail's first card, with the count, the next step and Show all steps",
-       s2.first === 0 && s2.top && /Set up Steward · \d+ of \d+/.test(s2.rail || "") && /Show all steps/.test(s2.rail || "") && (later || /Next:/.test(s2.rail || "")), s2);
+             : "§home-4 three steps done: setup is the rail's first card, with the count, the next step and its steps open (Hide the steps)",
+       s2.first === 0 && s2.top && /Set up Steward · \d+ of \d+/.test(s2.rail || "") && /Hide the steps/.test(s2.rail || "") && (later || /Next:/.test(s2.rail || "")), s2);
     await ctx.close();
   }
 }

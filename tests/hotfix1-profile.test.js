@@ -428,9 +428,13 @@ async function seed() {
     // profile that said $1,500. Here the gift lands while Re-engage is open
     // (a check confirmed in another tab, a Stripe gift); she leaves Donors and
     // comes back, and the row must carry the gift.
-    await q(`INSERT INTO donors (id,org_id,name,email,stage,total_giving,gift_count,created_by,created_by_name)
-             VALUES ('d_hf1c',$1,'Odalys Fenwright','odalys@hf1.test','lapsed',0,0,'system:test','Test')
-             ON CONFLICT (id) DO NOTHING`, [ORG]);
+    // POLISH-4: Re-engage is the lapse rule only (shared/numbers/lapse.js), so
+    // she is on it because she gave once, long ago, not because of a stored stage.
+    await q(`INSERT INTO donors (id,org_id,name,email,stage,total_giving,gift_count,last_gift_date,last_gift_amount,created_by,created_by_name)
+             VALUES ('d_hf1c',$1,'Odalys Fenwright','odalys@hf1.test','lapsed',200,1,$2,200,'system:test','Test')
+             ON CONFLICT (id) DO NOTHING`, [ORG, civilPlusDays(-800)]);
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,fund_id,created_by,created_by_name) VALUES ('g_hf1c0',$1,'d_hf1c',200,$2,$3,'system:test','Test')
+             ON CONFLICT (id) DO NOTHING`, [ORG, civilPlusDays(-800), `ff_${ORG}`]);
     const ctx9 = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
     await ctx9.addInitScript(([t, u, o]) => {
       localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
@@ -449,10 +453,10 @@ async function seed() {
     await page9.waitForSelector("input.donors-search", { timeout: 20000 }).catch(() => {});
     await reengage();
     const row0 = await odalys();
-    ok("§9 before the gift, Re-engage says no gift on file", !!row0 && /no gift on file/.test(row0) && /\$0\b/.test(row0), row0);
+    ok("§9 before the gift, Re-engage says her one old gift ($200)", !!row0 && /\$200\b/.test(row0), row0);
     await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,fund_id,created_by,created_by_name) VALUES ('g_hf1c',$1,'d_hf1c',1500,$2,$3,'system:test','Test')`,
       [ORG, civilPlusDays(-400), `ff_${ORG}`]);
-    await q(`UPDATE donors SET total_giving=1500, gift_count=1, last_gift_date=$2, last_gift_amount=1500 WHERE id='d_hf1c' AND org_id=$1`, [ORG, civilPlusDays(-400)]);
+    await q(`UPDATE donors SET total_giving=1700, gift_count=2, last_gift_date=$2, last_gift_amount=1500 WHERE id='d_hf1c' AND org_id=$1`, [ORG, civilPlusDays(-400)]);
     await page9.locator('[data-nav-id="dashboard"]:visible').first().click();
     await page9.waitForFunction(() => !document.querySelector("input.donors-search"), null, { timeout: 15000 }).catch(() => {});
     await page9.locator('[data-nav-id="donors"]:visible').first().click();
@@ -460,10 +464,10 @@ async function seed() {
     await reengage();
     await page9.waitForFunction(() => {
       const el = [...document.querySelectorAll(".reEngage-row")].find(r => r.innerText.includes("Odalys Fenwright"));
-      return el && /\$1,500/.test(el.innerText);
+      return el && /\$1,700/.test(el.innerText);
     }, null, { timeout: 15000 }).catch(() => {});
     const row1 = await odalys();
-    ok("§9 back on Re-engage, the row carries the gift the profile shows ($1,500), not $0", !!row1 && /\$1,500/.test(row1) && !/no gift on file/.test(row1), row1);
+    ok("§9 back on Re-engage, the row carries the gift the profile shows ($1,700), not the $200 it held", !!row1 && /\$1,700/.test(row1) && !/\$200\b/.test(row1), row1);
     await ctx9.close();
     await browser.close();
     if (srv) srv.close();

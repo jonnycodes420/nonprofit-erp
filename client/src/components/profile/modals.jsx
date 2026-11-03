@@ -2,6 +2,7 @@
 // from DonorProfile.jsx (Log a touchpoint, Edit, the follow-up task, the gift link).
 import { useEffect, useState } from "react";
 import { orgTodayCivil, orgTodayPlus } from "../../lib/orgToday";
+import { greetingLine } from "../../../../shared/greeting.js";
 import { Modal, SC, STAGES, Spin, T, TpField, TpYesNo, activeMark } from "../shared";
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
@@ -387,7 +388,7 @@ function GiftLinkModal({donor,orgName,onClose}){
   const[showEmail,setShowEmail]=useState(false);
   const[emailSubject,setEmailSubject]=useState(`A quick way to give to ${orgName}`);
   const[emailBody,setEmailBody]=useState(
-    `<p>Hi ${donor.name.split(" ")[0]},</p>\n<p>Thank you so much for your continued support of ${orgName}. Your generosity makes our work possible.</p>\n<p>If you'd like to make a gift online, we've made it simple:</p>\n<p><a href="PAYMENT_LINK">Give now →</a></p>\n<p>It only takes a moment, and every gift goes directly to our programs. Thank you for everything you do for our mission.</p>\n<p>With gratitude,<br>The ${orgName} Team</p>`
+    `<p>${greetingLine(donor,{word:"Hi"})}</p>\n<p>Thank you so much for your continued support of ${orgName}. Your generosity makes our work possible.</p>\n<p>If you'd like to make a gift online, we've made it simple:</p>\n<p><a href="PAYMENT_LINK">Give now →</a></p>\n<p>It only takes a moment, and every gift goes directly to our programs. Thank you for everything you do for our mission.</p>\n<p>With gratitude,<br>The ${orgName} Team</p>`
   );
   const[sending,setSending]=useState(false);
   const[sent,setSent]=useState(false);

@@ -67,7 +67,7 @@ function lastContact(F, today) {
   }
   const u = le.under;
   return { f: le, key: "profile.lastEmail", def: censusById("profile.lastEmail").sentence,
-    under: `Email ${u.direction === "replied" ? "replied" : u.direction === "sent" ? "sent" : "logged"} · ${displayDateShort(u.date, today)}` };
+    under: `Email ${u.direction === "from_them" ? "from them" : u.direction === "sent" ? "sent" : "logged"} · ${displayDateShort(u.date, today)}` };
 }
 
 export function ProfileNumbers({ figures }) {

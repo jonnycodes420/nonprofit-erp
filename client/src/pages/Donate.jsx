@@ -606,6 +606,7 @@ function TeamPage({ orgSlug, pageSlug, teamSlug, th, BASE, card, onJoin }) {
 // phone and a desktop browser draw: the markup is the same, and the width of
 // the box it sits in decides the columns.
 const G3_CSS = `
+.g3-trust-stripe .give-stripe-line{display:none}
 .g3{container-type:inline-size;width:100%;min-height:100vh;background:var(--g3-bg);color:var(--g3-ink);font-family:var(--g3-sans)}
 .g3 *{box-sizing:border-box}
 .g3 button,.g3 select{min-height:44px}
@@ -1548,7 +1549,8 @@ export default function Donate({ preview = null }) {
 
         <div style={{ textAlign: "center", fontSize: 11, color: T.ink3, lineHeight: 1.6 }}>
           {th.footerText ? <>{th.footerText}<br /></> : null}
-          Payments are processed securely by Stripe. {org.name} never stores your card details.
+          {/* POLISH-4: said once; where the trust panel says Stripe, this line does not */}
+          <span className="give-stripe-line">Payments are processed securely by Stripe. {org.name} never stores your card details.</span>
           {th.poweredBy && <><br />Powered by Steward</>}
         </div>
       </form>
@@ -1670,7 +1672,7 @@ export default function Donate({ preview = null }) {
     );
     const onText = preview && preview.onText;
     return (
-      <div className={"g3 g3-" + layout} data-testid="giving-page" data-layout={layout} style={vars} onClickCapture={pick}>
+      <div className={"g3 g3-" + layout + (trust.some(l => l.key === "stripe") ? " g3-trust-stripe" : "")} data-testid="giving-page" data-layout={layout} style={vars} onClickCapture={pick}>
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
         <style>{G3_CSS}</style>
         {onText && <style data-editor-only="">{INLINE_CSS}</style>}

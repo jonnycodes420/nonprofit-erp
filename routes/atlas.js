@@ -230,10 +230,10 @@ async function readSteps(orgId, text, { today, onPage }) {
 
 // The email's words: the model when AI is on, else the template. Never a
 // fact: the run's own check refuses a draft that states one she did not say.
-async function writeDraft(orgId, { firstName, words, month, thanks, meet }) {
+async function writeDraft(orgId, { firstName, opening, words, month, thanks, meet }) {
   const AT_ = await AT();
   const template = { subject: thanks ? `Thank you, ${firstName}` : `Hello from us, ${firstName}`,
-    body: [`Dear ${firstName},`, "", thanks ? "Thank you so much for your generosity. It means a great deal to all of us." : "I wanted to reach out.",
+    body: [opening || `Dear ${firstName},`, "", thanks ? "Thank you so much for your generosity. It means a great deal to all of us." : "I wanted to reach out.",
       ...(meet ? ["", `I would love to meet${month ? ` in ${month}` : ""} to share what your support makes possible. Would that work for you?`] : []), "", "With gratitude,"].join("\n") };
   const gate = await agentGate(orgId);
   if (!gate.ok) return template;
@@ -356,7 +356,7 @@ async function execute(req, m, steps, { today, ai }) {
   const drafts = new Map();
   for (const st of steps) if ((st.kind === "draft_email" || st.kind === "send_now") && st.donorId && !(clientSafe.on && clientSafe.clientIds.has(st.donorId))) {
     const when = AT_.whenFromWords(st.whenWords, today);
-    drafts.set(st, writeDraft(orgId, { firstName: first(nm(st.donorId)), words: st.words, month: when ? AT_.monthWord(when.date) : "",
+    drafts.set(st, writeDraft(orgId, { firstName: first(nm(st.donorId)), opening: (await import("../shared/greeting.js")).greetingLine({ name: nm(st.donorId) }), words: st.words, month: when ? AT_.monthWord(when.date) : "",
       thanks: /\bthank/i.test(st.words), meet: /\bmeet|meeting|lunch|coffee|visit|sit down\b/i.test(st.words) }));
   }
   for (const st of steps) {

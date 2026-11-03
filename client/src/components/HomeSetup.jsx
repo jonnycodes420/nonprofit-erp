@@ -100,7 +100,7 @@ export function SetupChecklist({ status, onNavigate, isAdmin, onSetCardState, ba
         const giftGap = item.key === "donors" && item.needsGiftConfirm;
         return (
           <div key={item.key}>
-            <div {...interactive(() => onNavigate(meta.nav[0], meta.nav[1]), { label: `${meta.label}: ${meta.why}` })}
+            <div {...interactive(() => onNavigate(meta.nav[0], meta.nav[1]), { label: `${meta.label}: ${meta.why}`, className: "fab-clear" })}
               style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 2px", borderTop: "1px solid " + T.bg2, borderRadius: 8 }}>
               <span aria-hidden style={{ width: 20, height: 20, borderRadius: "50%", border: "1.5px solid " + T.bg3, flexShrink: 0 }} />
               <span style={{ flex: 1, minWidth: 0 }}>
@@ -169,8 +169,13 @@ export function SetupFirstCard({ status, onNavigate, isAdmin, onSetCardState }) 
 }
 
 // The rail's card: the count, the next step, a bar, and every step in place.
+// POLISH-4 (Jonathan, 31 Oct): the steps show until she hides them, and stay
+// hidden for her after that (her browser remembers; nothing else is stored).
+const RAIL_CLOSED_KEY = "steward.setupRail.closed";
+const readClosed = () => { try { return window.localStorage.getItem(RAIL_CLOSED_KEY) === "1"; } catch { return false; } };
 export function SetupRailCard({ status, onNavigate, isAdmin, onSetCardState }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpenRaw] = useState(() => !readClosed());
+  const setOpen = f => setOpenRaw(o => { const v = typeof f === "function" ? f(o) : f; try { window.localStorage.setItem(RAIL_CLOSED_KEY, v ? "0" : "1"); } catch { /* per-viewer only */ } return v; });
   const next = nextStep(status);
   return (
     <div data-testid="home-setup-rail" style={{ border: "1px solid " + T.bg3, borderRadius: 14, padding: "12px 14px", background: T.white, display: "flex", flexDirection: "column", gap: 8 }}>

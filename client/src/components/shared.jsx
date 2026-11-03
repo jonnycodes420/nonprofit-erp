@@ -631,6 +631,11 @@ export function GlobalStyles() {
     .tell-fab{position:fixed;right:20px;bottom:24px;z-index:240;width:56px;height:56px;border-radius:14px;border:1px solid ${T.greenDk};background:${T.greenDk};color:${T.white};display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 18px rgba(15,26,18,.25);}
     .tell-fab:focus-visible{outline:3px solid ${T.gold500||"#C9A84C"};outline-offset:2px;}
     @media(max-width:768px){.tell-fab{bottom:calc(76px + env(safe-area-inset-bottom,0px));right:16px;}}
+    /* POLISH-4: the Directory's selects fold behind Filters on a phone; the view tabs scroll, never break a word */
+    .dir-filters-toggle{display:none;}
+    @media(max-width:640px){.dir-filters-toggle{display:inline-block;}.dir-filters:not(.open){display:none !important;}.donors-view-toggle{overflow-x:auto;max-width:100%;}}
+    /* POLISH-4: a row whose action sits at the right edge keeps clear of the floating button on a phone */
+    @media(max-width:768px){.fab-clear{padding-right:48px !important;}}
     @media print{.tell-fab{display:none;}}
     .mobile-bottom-bar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:150;background:${T.white};border-top:1px solid ${T.bg2};box-shadow:0 -4px 20px rgba(15,26,18,.06);padding-bottom:env(safe-area-inset-bottom,0px);}
     /* FIX-9 Part E, TITLE CASE. The bar shouted HOME DONORS GRANTS SETTINGS

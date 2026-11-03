@@ -546,9 +546,9 @@ async function sendThanks(req, m, card) {
     task = { id: t.body.id };
   }
   const [d] = await query("SELECT name FROM donors WHERE id=? AND org_id=?", [g.donor_id, orgId]);
-  const first = String((d && d.name) || "").split(/\s+/)[0];
-  const body = draft ? draft.body : `Dear ${first},\n\nThank you for your gift.`;
-  const sent = await asHer(req, "POST", `/tasks/${task.id}/thank`, { mode: "send", giftId: g.id, subject: `Thank you, ${first}`, body });
+  const first = (await import("../shared/greeting.js")).greetingName(d || {});   // POLISH-4
+  const body = draft ? draft.body : `${(await import("../shared/greeting.js")).greetingLine(d || {})}\n\nThank you for your gift.`;
+  const sent = await asHer(req, "POST", `/tasks/${task.id}/thank`, { mode: "send", giftId: g.id, subject: first ? `Thank you, ${first}` : "Thank you", body });
   if (sent.status >= 300) return { status: sent.status, error: "thanks_failed", sentence: (sent.body && (sent.body.sentence || sent.body.error)) || "The thank-you could not be sent." };
   // The thank-you went, so the receipt goes with it (never one without the other's chance).
   const [org] = await query("SELECT receipts_enabled FROM orgs WHERE id=?", [orgId]);

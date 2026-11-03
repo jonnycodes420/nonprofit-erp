@@ -536,7 +536,10 @@ async function writeDrafts(req, a, key, people, compose) {
   }
   return made;
 }
-const firstName = n => String(n || "").trim().split(/\s+/)[0] || "there";
+// POLISH-4: the one greeting rule (shared/greeting.js), never "Hi Dr." or "Hi &".
+let GREET_ = null;
+import("../shared/greeting.js").then(m => { GREET_ = m; });
+const firstName = n => (GREET_ ? GREET_.greetingName({ name: n }) : String(n || "").trim().split(/\s+/)[0]) || "there";
 
 app.post("/auctions/:id/closing-note", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;

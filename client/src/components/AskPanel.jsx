@@ -102,7 +102,8 @@ export function AskPanel({ first, scope, isReadOnly, onClose, onStepTaken }) {
           {thread.map((x, i) => (
             <div key={i} data-testid="ask-turn" ref={i === thread.length - 1 ? lastTurnRef : null} style={{ display: "flex", flexDirection: "column", gap: 10, scrollMarginTop: 8 }}>
               <div data-testid="ask-question" style={{ alignSelf: "flex-end", maxWidth: "85%", background: T.bg, borderRadius: 12, padding: "8px 12px", fontSize: 14, color: T.ink }}>{x.q}</div>
-              {i === thread.length - 1 && (x.a || x.err) && !busy && <div role="status" data-testid="ask-ready" style={{ ...LABEL, color: T.greenDk }}>Answer ready</div>}
+              {/* POLISH-4: a refusal is labelled as one, never "Answer ready" */}
+              {i === thread.length - 1 && (x.a || x.err) && !busy && <div role="status" data-testid="ask-ready" style={{ ...LABEL, color: x.a && x.a.refused || x.err ? T.ink3 : T.greenDk }}>{x.a && x.a.refused || x.err ? "No answer" : "Answer ready"}</div>}
               {x.err && <div style={{ fontSize: 14, color: T.ink2 }}>{x.err}</div>}
               {!x.a && !x.err && <div style={{ fontSize: 14, color: T.ink3 }}>Working it out from your own records…</div>}
               {x.a && <AskAnswer answer={x.a} isReadOnly={isReadOnly} onAsk={followUp} onStepTaken={onStepTaken} last={i === thread.length - 1} />}

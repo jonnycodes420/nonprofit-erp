@@ -155,7 +155,9 @@ const menuItem = { background: "transparent", border: "none", textAlign: "left",
 // FIX-39 — a subject line as she reads it in a list: merge tags filled with
 // one of her own donors, as the preview is (SWEEP-3), never braces.
 // It is rendered as text, never as HTML, so React escapes whatever it holds.
-const subjectPreview = subject => renderMergeFields(subject || "", {}, { text: true });
+// POLISH-4: a list has no donor to fill a subject with, so a merge field reads
+// as what it is ("Thank you, (first name)"), never the sample "Margaret".
+const subjectPreview = subject => String(subject || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (m, k) => `(${k.replace(/_/g, " ")})`);
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 const STATUS_META = {
@@ -449,7 +451,8 @@ function browserZone() {
 function zoneLabel(z) {
   try {
     const name = new Intl.DateTimeFormat("en-US", { timeZone: z, timeZoneName: "long" }).formatToParts(new Date()).find(p => p.type === "timeZoneName");
-    return name ? `${name.value} (${z})` : z;
+    // POLISH-4: the zone in words ("Eastern Daylight Time"), never its database name
+    return name ? name.value : z;
   } catch { return z; }
 }
 function TimezoneGateBanner({ onChosen }) {

@@ -9,7 +9,7 @@ import { offerUndo } from "./EditHistory";
 import { orgTodayPlus } from "../lib/orgToday";
 import { fmtDayShort } from "../lib/taskDue";
 import { TASK_VIEWS, TASK_KINDS, NEEDS_OUTCOME, TASK_OUTCOMES, recurPhrase, addDays, weekdayOf } from "../../../shared/taskShape.js";
-import { greetingName } from "../../../shared/greeting.js";
+import { greetingName, greetingLine } from "../../../shared/greeting.js";
 import { useStewardTold } from "../lib/stewardTold";
 import { countLabel } from "../../../shared/countWords.js";
 
@@ -620,7 +620,7 @@ function DraftSheet({ t, mode, onClose, onThanked, onEmailed }) {
   }, [t.id, thank]);
   useEffect(() => {
     if (!kind) return;
-    if (kind === "blank") { setSubject(t.title || ""); setBody(`Dear ${first},\n\n`); return; }
+    if (kind === "blank") { setSubject(t.title || ""); setBody(`${greetingLine({ name: t.donor_name, salutation: t.donor_salutation })}\n\n`); return; }
     // FIX-57: the task's assignee signs it (else whoever opened it)
     apiFetch(`/templates/${kind}/preview`, { method: "POST", body: JSON.stringify({ donorId: t.donor_id, taskId: t.id }) })
       .then(r => { setSubject(r.subject || ""); setBody(r.body || ""); })

@@ -12,6 +12,7 @@ import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
 import { countLabel } from "../../../shared/countWords.js";
 import { told } from "../lib/stewardTold";
+import { greetingLine } from "../../../shared/greeting.js";
 
 const money = n => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 });
 const longDate = iso => { if (!iso) return ""; const [y, m, d] = iso.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }); };
@@ -42,9 +43,8 @@ export default function OpenPledgeBanner({ pledges, donorName, donorId, isReadOn
   if (!open.length) return null;
   const remind = async (pl, w) => {
     setBusy(pl.id); setMsg("");
-    const first = String(donorName || "").split(/\s+/)[0] || "there";
     const part = w.next ? `${money(w.next.amount)} due ${longDate(w.next.dueDate)}` : `${money(pl.balance)} still to come`;
-    const body = `Hi ${first}, thank you again for your pledge of ${money(pl.amount)}. This is a gentle note that ${part}. Is there a way of giving that's easiest for you?`;
+    const body = `${greetingLine({name:donorName},{word:"Hi"})} thank you again for your pledge of ${money(pl.amount)}. This is a gentle note that ${part}. Is there a way of giving that's easiest for you?`;
     try {
       const t = await apiFetch("/tasks", { method: "POST", body: JSON.stringify({ title: `Send ${donorName} a pledge reminder`.slice(0, 240), due: todayIso(), type: "donor", donorId,
         priority: "medium", kind: "write", notes: `Drafted reminder (nothing was sent):\n\n${body}` }) });

@@ -137,7 +137,8 @@ function inventory() {
   ok("§2 This year is this year's gift only: $250.00", (d.figures.thisYear || {}).value === 250, d.figures.thisYear);
   ok("§2 Average is Lifetime over the 4 gifts, the soft credit and the pledge in neither", g.average && g.average.value === 1437.5, g.average);
   ok("§2 the date under Last gift is the gift's own date", (d.figures.lastGift.under || {}).date === String(d.gifts[0].date).slice(0, 10), d.figures.lastGift.under);
-  ok("§2 the line under Last email says she replied", (d.figures.lastEmail.under || {}).direction === "replied", d.figures.lastEmail.under);
+  // POLISH-4: an email from them reads "from them", never "replied" (nothing says it answered one of hers)
+  ok("§2 the line under Last email says it came from them", (d.figures.lastEmail.under || {}).direction === "from_them", d.figures.lastEmail.under);
 
   // §6 (API half) — the rail read: a card with nothing to say is null or empty.
   const railA = (await api("GET", `/donors/${A}/rail`, tok)).body || {};

@@ -1867,6 +1867,9 @@ async function runSchemaInit(pool) {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_rel_a ON donor_relationships (org_id, donor_id_a)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_rel_b ON donor_relationships (org_id, donor_id_b)`);
+  // POLISH-4: the lapse rule reads a person's links on every row (shared/numbers/lapse.js LINKED).
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_rel_a_only ON donor_relationships (donor_id_a)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_rel_b_only ON donor_relationships (donor_id_b)`);
 
   // BUILD-80 Part 6.2 — every merge the IMPORTER makes is reviewable and
   // reversible: the surviving donor, the identity variants that folded into

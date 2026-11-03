@@ -201,8 +201,7 @@ app.post("/surveys/:id/drafts", requireAuth, checkWriteAccess, wrap(async (req, 
     if (have.has(p.id)) continue;
     const link = r.mode === "named" ? SL.personalUrl(o.org_slug, r.slug, r.id, p.id) : SL.publicUrl(o.org_slug, r.slug);
     // FIX-45: the record's greeting, so a joint record reads both names.
-    const first = (await import("../shared/greeting.js")).greetingName(p) || "there";
-    const body = `Dear ${first},\n\nWe would like to know what you think. It is a short survey and takes a few minutes:\n\n${link}\n\n`
+    const body = `${(await import("../shared/greeting.js")).greetingLine(p)}\n\nWe would like to know what you think. It is a short survey and takes a few minutes:\n\n${link}\n\n`
       + (r.mode === "anonymous" ? "It is anonymous: we will see your answers but not who gave them.\n\n" : "Your answers come straight to us, with your name, so we can follow up.\n\n")
       + `Thank you,\n${o.name}`;
     await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)

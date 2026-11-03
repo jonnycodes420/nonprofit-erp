@@ -189,7 +189,7 @@ function Header({ onSignOut, flush, wide }) {
       <div className={wide ? "gd-landwrap" : "gd-headwrap"} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "baseline" }}>
           <span style={{ fontFamily: SERIF, fontSize: 26, letterSpacing: "-0.02em", color: G.cream }}>Steward</span>
-          <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", color: G.sage, marginLeft: 12, fontWeight: 600 }}>Your Giving</span>
+          <span style={{ fontSize: 12, letterSpacing: "0.02em", color: G.sage, marginLeft: 12, fontWeight: 600 }}>Your giving</span>
         </div>
         {onSignOut && (
           <button onClick={onSignOut}
