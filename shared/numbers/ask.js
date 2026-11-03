@@ -15,6 +15,12 @@
 // the level's price, a pledge is collected as promised, Planned asks nothing.
 // The rule's arithmetic is shared/smartAmounts.js suggestedAskCents (an ES
 // module, so it is loaded once: `await ask.ready`).
+//
+// NUMBERS-5: the step up is the profile's rule everywhere. A rising donor steps
+// up a rung only when Room to give is known (shared/roomToGive.js); until then
+// they are held at their own level, and the ask says so. Home's cards stepped
+// up regardless (3 of 93 moves on real-shaped asked more on Home than on the
+// profile); they read roomKnown() and askFor's roomKnown now.
 "use strict";
 const { GIFT, isMoney, centsOf } = require("./money");
 const { LAST_GIFT_ORDER } = require("./lastGift");
@@ -39,11 +45,29 @@ function inputsOf(rows) {
   const three = gifts.slice(0, 3).sort((a, b) => (b.date || "").localeCompare(a.date || "") || a.cents - b.cents);
   return { largestCents: gifts.reduce((m, g) => Math.max(m, g.cents), 0), lastThreeCents: three.map(g => g.cents) };
 }
+const HOLD_WORDS = "their own level, because Room to give is not yet known";
+
 // The ask for those rows: { askCents, sentence, largestCents, avgLastThreeCents, rising, held } or null.
-function askFor(rows, { stepUp = true, holdWords = "" } = {}) {
+// `roomKnown` false holds a rising donor at their own level.
+function askFor(rows, { roomKnown = false } = {}) {
   if (!SA) throw new Error("shared/numbers/ask: await ask.ready first");
-  return SA.suggestedAskCents({ ...inputsOf(rows), stepUp, holdWords });
+  return SA.suggestedAskCents({ ...inputsOf(rows), stepUp: !!roomKnown, holdWords: HOLD_WORDS });
+}
+// Whether the rule would step this person up (their last three rising), from their gift rows.
+function rising(rows) {
+  if (!SA) throw new Error("shared/numbers/ask: await ask.ready first");
+  const a = SA.suggestedAskCents(inputsOf(rows));
+  return !!(a && a.rising);
+}
+// The people among `ids` whose Room to give is known: Set of ids. `screenings`
+// (id -> the latest screening) only for a viewer who may see it, as the profile.
+async function roomKnown(q, orgId, ids, screenings = new Map()) {
+  if (!ids || !ids.length) return new Set();
+  const P = require("../../prospect");
+  const RT = await import("../roomToGive.js");
+  const facts = await P.loadFacts(orgId, ids, q);
+  return new Set(ids.filter(id => { const f = facts.get(id); return !!f && RT.assess({ ...f, screening: screenings.get(id) || null }).word !== "unknown"; }));
 }
 const natural = cents => { if (!SA) throw new Error("shared/numbers/ask: await ask.ready first"); return SA.naturalAskCents(cents); };
 
-module.exports = { ready, RULE, GIFTS_SQL, inputsOf, askFor, natural };
+module.exports = { ready, RULE, HOLD_WORDS, GIFTS_SQL, inputsOf, askFor, rising, roomKnown, natural };

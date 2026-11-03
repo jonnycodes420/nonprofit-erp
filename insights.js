@@ -79,7 +79,8 @@ function naturalCents(c) {
 // promised) are not suggested asks and keep their own amounts.
 const ASK = require("./shared/numbers/ask");
 function oneAsk(x) {
-  const a = ASK.askFor((x.dated || []).map(g => ({ date: g.date, amount_cents: g.amount_cents })));
+  // NUMBERS-5: a rising unit steps up only when Room to give is known for one of its people (the profile's rule).
+  const a = ASK.askFor((x.dated || []).map(g => ({ date: g.date, amount_cents: g.amount_cents })), { roomKnown: x.roomKnown });
   if (!a) return null;
   const why = a.sentence.replace(/: ask \$[\d,.]+(?:, [^.]*)?\.$/, "");
   return { cents: a.askCents, words: `Ask ${money(a.askCents)}: ${why.charAt(0).toLowerCase()}${why.slice(1)}.`, rule: ASK.RULE };
@@ -349,6 +350,7 @@ function computeInsights(input) {
     const openPledges = ps.filter(p => p.status !== "fulfilled" && p.status !== "cancelled" && p.status !== "written_off" && p.balance > 0);
     const x = {
       unit: u, key: u.key, name: u.name, ids: u.people.map(p => p.id),
+      roomKnown: u.people.some(p => input.roomKnown && input.roomKnown.has(p.id)),
       lead: (u.people.find(p => gs.some(g => g.donor_id === p.id)) || u.people[0]).id,
       owner: u.people.map(p => p.assigned_to_name).find(Boolean) || null,
       noContact: u.people.every(p => p.deceased || p.do_not_contact),

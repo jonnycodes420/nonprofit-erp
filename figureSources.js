@@ -1449,7 +1449,8 @@ const SOURCES = {
     sql: (orgId, p) => ({
       // IMPORT-4: the first gift is a dated one; with none, Donor since is unknown.
       // NUMBERS-3: a credit row is never anyone's first gift (shared/numbers/firstGift.js).
-      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 AND ${NOT_CREDIT("g")} AND g.date IS NOT NULL ORDER BY g.date ASC, g.id ASC LIMIT 1`,
+      // NUMBERS-5: on a day with two, the one order (firstGift.FIRST_GIFT_ORDER), never a random id.
+      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 AND ${NOT_CREDIT("g")} AND g.date IS NOT NULL ORDER BY ${require("./shared/numbers/firstGift").FIRST_GIFT_ORDER} LIMIT 1`,
       args: [orgId, p.donor],
     }),
   },
