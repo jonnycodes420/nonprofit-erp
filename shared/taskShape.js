@@ -55,6 +55,8 @@ export function normalizeKind(k) { return KIND_KEYS.has(String(k)) ? String(k) :
 
 // ── Civil-day arithmetic (UTC on dates, so no zone can shift a day) ────────
 const P = s => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || "")); return m ? [+m[1], +m[2], +m[3]] : null; };
+const DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+const isLeap = y => y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
 const fmt = d => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 const asDate = s => { const p = P(s); return p ? new Date(Date.UTC(p[0], p[1] - 1, p[2])) : null; };
 export function addDays(day, n) { const d = asDate(day); if (!d) return null; d.setUTCDate(d.getUTCDate() + n); return fmt(d); }
@@ -87,14 +89,37 @@ export function viewOf(task, today) {
 // ── Recurrence ─────────────────────────────────────────────────────────────
 // { every: "week" | "month" | "quarter", nth?: 1..4 | -1, weekday?: 0..6 }
 // nth+weekday is "the first Monday" of each month or quarter.
+// DATES-1 · { every: "year", month?: 1..12, day?: 1..31, birthday?: true }.
+// The month and day are the date it keeps coming back to, so a Feb 29 task
+// falls on Feb 28 in the years without one and goes back to the 29th in a
+// leap year. Without them the year repeats from the day it was due.
 export function normalizeRecur(r) {
   if (!r || typeof r !== "object") return null;
-  const every = ["week", "month", "quarter"].includes(r.every) ? r.every : null;
+  const every = ["week", "month", "quarter", "year"].includes(r.every) ? r.every : null;
   if (!every) return null;
   const out = { every };
+  if (every === "year") {
+    const m = Number(r.month), d = Number(r.day);
+    if (Number.isInteger(m) && m >= 1 && m <= 12 && Number.isInteger(d) && d >= 1 && d <= DAYS_IN_MONTH[m - 1]) {
+      out.month = m; out.day = d;
+      if (r.birthday === true) out.birthday = true;
+    }
+    return out;
+  }
   if (every !== "week" && Number.isInteger(r.nth) && (r.nth === -1 || (r.nth >= 1 && r.nth <= 4))
       && Number.isInteger(r.weekday) && r.weekday >= 0 && r.weekday <= 6) { out.nth = r.nth; out.weekday = r.weekday; }
   return out;
+}
+// One month and day in one year: Feb 29 is Feb 28 in a year without it.
+export function yearlyOn(year, month, day) {
+  const d = month === 2 && day === 29 && !isLeap(year) ? 28 : day;
+  return `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+// The next time a month and day comes round, on or after `today`.
+export function nextYearlyOn(month, day, today) {
+  const y = Number(String(today).slice(0, 4));
+  const thisYear = yearlyOn(y, month, day);
+  return thisYear >= String(today).slice(0, 10) ? thisYear : yearlyOn(y + 1, month, day);
 }
 function nthWeekday(year, month0, nth, weekday) {
   if (nth === -1) {
@@ -112,6 +137,10 @@ export function nextDue(recur, due, today) {
   if (!r) return null;
   const from = P(due) ? String(due).slice(0, 10) : today;
   if (r.every === "week") return addDays(from, 7);
+  if (r.every === "year") {
+    const p = P(from);
+    return yearlyOn(p[0] + 1, r.month || p[1], r.day || p[2]);
+  }
   const months = r.every === "month" ? 1 : 3;
   const p = P(from);
   const y = p[0], m0 = p[1] - 1 + months;
@@ -126,6 +155,7 @@ export function recurPhrase(recur) {
   const W = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const N = { 1: "first", 2: "second", 3: "third", 4: "fourth", "-1": "last" };
   if (r.every === "week") return "Every week";
+  if (r.every === "year") return r.birthday ? "Every year, on their birthday" : "Every year, same date";
   const base = r.every === "month" ? "Every month" : "Every quarter";
   return r.nth != null ? `${base}, ${N[r.nth]} ${W[r.weekday]}` : base;
 }

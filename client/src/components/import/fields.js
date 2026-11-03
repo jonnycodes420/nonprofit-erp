@@ -109,6 +109,7 @@ export const TX_ROLE_LABELS = {
   wealthRating: "Wealth screen rating", wealthCapacity: "Wealth screen capacity",
   wealthDate: "Wealth screen date",
   birthday: "Birthday (month and day; year optional)",
+  aboutThem: "About them (a short note read first)",   // DATES-1
   proposalPurpose: "Proposal: what the ask is for",
   proposalAmount: "Proposal: ask amount (NOT a gift)",
   proposalStage: "Proposal: stage",

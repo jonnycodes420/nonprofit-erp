@@ -255,6 +255,10 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO journey_sends (id,org_id,template_id,plan_id,step_id,seq,donor_id,email_template_id,auto_step_id,send_on,status,created_by,created_by_name)
            VALUES ($1,$2,$3,$4,$5,0,$6,'et_none','jauto_none',$7,'scheduled','system:test','test')`,
     [`js_${o}`, o, `ct_${o}`, `cp_${o}`, `cs_${o}`, `d_${o}`, TODAY]);
+  // DATES-1 — a batch added from the Donors list is org B's: org A may not read or undo it.
+  await q(`INSERT INTO journey_batches (id,org_id,template_id,template_name,status,asked,started,plan_ids,created_by,created_by_name)
+           VALUES ($1,$2,$3,$4,'done',1,1,$5::jsonb,'system:test','test')`,
+    [`jb_${o}`, o, `ct_${o}`, `${mark} Plan`, JSON.stringify([`cp_${o}`])]);
   await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status) VALUES ($1,$2,$3,500,$4,'open')`,
     [`pl_${o}`, o, `d_${o}`, TODAY]);
   await q(`INSERT INTO planned_gifts (id,org_id,donor_id,type,estimated_value) VALUES ($1,$2,$3,'bequest',10000)`,
@@ -470,6 +474,7 @@ function bResolver(routePath, param) {
     qid: "q1",   // PARITY-3: a question on an application
     seq: "0",    // AUTO-1: a journey step's place; the :id beside it is org B's journey
     vid: `gpv_${B}`,   // GIVE-EDIT-1: a kept version of a giving page
+    batchId: `jb_${B}`,   // DATES-1: a batch of people added to a journey at once
     donorId: `d_${B}`, subId: `rs_${B}`, attendeeId: `ea_${B}`, grantId: `gr_${B}`,
     userId: `u_${B}_staff`, recipientId: `cr_${B}`, kind: "estate",
     // BUILD-99 (major gifts) Part 2 — a portfolio is READ by officer id, so the

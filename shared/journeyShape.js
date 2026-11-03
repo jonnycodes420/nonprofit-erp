@@ -29,7 +29,7 @@
 import {
   validateTemplate, MAX_STEPS, MAX_OFFSET_DAYS, sanitizeName, sanitizeLabel,
 } from "./planShape.js";
-import { TASK_OUTCOMES, TASK_OUTCOME_KEYS, taskOutcomeLabel } from "./taskShape.js";
+import { TASK_OUTCOMES, TASK_OUTCOME_KEYS, taskOutcomeLabel, yearlyOn, nextYearlyOn } from "./taskShape.js";
 import { countLabel } from "./countWords.js";
 
 // ── THE TRIGGERS ──────────────────────────────────────────────────────────
@@ -137,6 +137,11 @@ export const TRIGGERS = [
     sentence: "Starts when somebody's last gift was 9 months ago and nothing has come since, checked every hour. Once each time." },
   { key: "by_hand",        label: "You put them in it yourself",
     sentence: "Never starts on its own, you choose who goes in it." },
+  // DATES-1 · a date on the calendar, the same one every year, for the people
+  // the org picks. Checked by the morning look in the org's own date; once a
+  // year per person (the event key holds the year).
+  { key: "yearly_date",    label: "A date every year", needsDate: true,
+    sentence: "Starts on the month and day you pick, every year, by your organization's date, for the people you pick. Once a year for each person." },
 ];
 // JOURNEYS-4 — attended_event is also read by the sweep (a check-in at the
 // door that no route announced), and so is first_event.
@@ -198,6 +203,69 @@ export function journeyState({ enabled, everEnabled, archived, everIn } = {}) {
   return "draft";
 }
 export const TRIGGER_KEYS = TRIGGERS.map(t => t.key);
+// ── DATES-1 · THE TRIGGERS AS PEOPLE THINK OF THEM ───────────────────────
+// A date on the calendar first (the three that come round every year), then
+// everything that happens. The builder lists them in this order.
+export const CALENDAR_TRIGGER_KEYS = ["yearly_date", "birthday", "giving_anniversary"];
+for (const t of TRIGGERS) if (CALENDAR_TRIGGER_KEYS.includes(t.key)) t.calendar = true;
+export const TRIGGER_GROUPS = [
+  { key: "calendar", label: "A date on the calendar", keys: CALENDAR_TRIGGER_KEYS },
+  { key: "event", label: "Something happens", keys: TRIGGERS.map(t => t.key).filter(k => !CALENDAR_TRIGGER_KEYS.includes(k)) },
+];
+// The people a yearly-date journey starts for on its day.
+export const YEARLY_AUDIENCES = [
+  { key: "everyone",    label: "Everyone",                     sentence: "Everyone in Steward who may be contacted." },
+  { key: "group",       label: "A group",                      sentence: "The people in the group you pick, on the day." },
+  { key: "stage",       label: "A stage",                      sentence: "The people in the stage you pick, on the day." },
+  { key: "open_pledge", label: "People with an open pledge",   sentence: "The people with a pledge still open on the day." },
+];
+export const YEARLY_AUDIENCE_KEYS = YEARLY_AUDIENCES.map(a => a.key);
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const MONTH_DAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+export const validMonthDay = (m, d) => Number.isInteger(m) && m >= 1 && m <= 12 && Number.isInteger(d) && d >= 1 && d <= MONTH_DAYS[m - 1];
+// The day a yearly-date journey runs in a given year: Feb 29 runs on Feb 28 in
+// the years without one.
+export function yearlyRunDay(month, day, year) { return yearlyOn(Number(year), Number(month), Number(day)); }
+// Does it run today (the org's civil date)?
+export function yearlyRunsOn(month, day, today) {
+  return yearlyRunDay(month, day, String(today).slice(0, 4)) === String(today).slice(0, 10);
+}
+const shortDate = iso => { const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number); return `${MONTH_NAMES[m - 1].slice(0, 3)} ${d}, ${y}`; };
+// "First runs Dec 1, 2026." A date already past this year runs next year.
+export function firstRunSentence(month, day, today) {
+  if (!validMonthDay(Number(month), Number(day)) || !today) return "";
+  return `First runs ${shortDate(nextYearlyOn(Number(month), Number(day), today))}.`;
+}
+export function yearlyDateLabel(month, day) {
+  return validMonthDay(Number(month), Number(day)) ? `${MONTH_NAMES[Number(month) - 1]} ${Number(day)}` : "";
+}
+// DATES-1 · a birthday journey may start some days BEFORE the birthday (the
+// card has to be in the post a week ahead). 0 is on the day.
+export const BIRTHDAY_LEAD_MAX = 60;
+
+// ── DATES-1 · WHY SOMEBODY DID NOT START, IN WORDS ───────────────────────
+// One table for the bulk preview ("4 are already in a journey that comes
+// first") and the yearly journey's skipped count, so the two say the same.
+export const SKIP_REASONS = {
+  already_in_a_journey:    { one: "is already in a journey that comes first", many: "are already in a journey that comes first" },
+  already_in_this_journey: { one: "is already in this journey", many: "are already in this journey" },
+  in_another_journey:      { one: "is in another journey, and you chose to leave people where they are", many: "are in another journey, and you chose to leave people where they are" },
+  do_not_contact:          { one: "is marked do not contact", many: "are marked do not contact" },
+  deceased:                { one: "has died", many: "have died" },
+  do_not_solicit:          { one: "is marked do not solicit, and this journey asks for money", many: "are marked do not solicit, and this journey asks for money" },
+  donor_not_found:         { one: "is no longer in Steward", many: "are no longer in Steward" },
+  already_enrolled_for_event: { one: "already started it for this date", many: "already started it for this date" },
+};
+export function skipLine(reason, n) {
+  const r = SKIP_REASONS[reason] || { one: "could not start", many: "could not start" };
+  return `${n} ${n === 1 ? r.one : r.many}`;
+}
+// One person's reason, as a sentence on their row.
+export function skipSentence(reason, currentName = "") {
+  if (reason === "already_in_a_journey" && currentName) return `Already in "${currentName}", which comes first.`;
+  const t = skipLine(reason, 1).replace(/^1 /, "");
+  return t.charAt(0).toUpperCase() + t.slice(1) + ".";
+}
 // JOURNEYS-3 — the triggers the hourly sweep looks for, and the milestones.
 export const SWEEP_TRIGGER_KEYS = TRIGGERS.filter(t => t.sweep).map(t => t.key);
 export const HOUR_MILESTONES = [10, 25, 50, 100];
@@ -500,6 +568,22 @@ PRESETS.push(
       { type: "check_in_ask", label: "Make the ask",              offsetDays: 45, draft: "the_ask" },
     ] },
 );
+// DATES-1 — the two a development director asked for, both OFF until the
+// org turns them on. Neither sends: the report step carries a draft she reads.
+PRESETS.push(
+  { key: "year_end_impact", name: "Year-end impact report", trigger: "yearly_date", priority: 45,
+    triggerFilters: { month: 12, day: 1, who: "everyone" },
+    blurb: "Every December 1, show them what this year's giving did.",
+    steps: [
+      { type: "send", label: "Send the impact report", offsetDays: 0, draft: "impact_report" },
+    ] },
+  { key: "birthday_card", name: "Birthday card", trigger: "birthday", priority: 35,
+    triggerFilters: { daysBefore: 7 },
+    blurb: "A week before their birthday, so the card arrives on time.",
+    steps: [
+      { type: "send", label: "Mail a birthday card", offsetDays: 0 },
+    ] },
+);
 export const PRESET_KEYS = PRESETS.map(p => p.key);
 export const presetByKey = k => PRESETS.find(p => p.key === k) || null;
 
@@ -677,6 +761,29 @@ export function validateJourney(input = {}) {
   if (t && t.needsGroup) {
     if (idOf(rawF.groupId)) triggerFilters.groupId = idOf(rawF.groupId);
     else errors.push({ field: "triggerFilters.groupId", message: "Pick the group this journey watches." });
+  }
+  // DATES-1 · a date every year: the month and day, and who it starts for.
+  if (t && t.needsDate) {
+    const m = Number(rawF.month), d = Number(rawF.day);
+    if (validMonthDay(m, d)) { triggerFilters.month = m; triggerFilters.day = d; }
+    else errors.push({ field: "triggerFilters.month", message: "Pick the month and day it starts on every year." });
+    const who = YEARLY_AUDIENCE_KEYS.includes(rawF.who) ? rawF.who : "everyone";
+    triggerFilters.who = who;
+    if (who === "group") {
+      if (idOf(rawF.groupId)) triggerFilters.groupId = idOf(rawF.groupId);
+      else errors.push({ field: "triggerFilters.groupId", message: "Pick the group it starts for." });
+    }
+    if (who === "stage") {
+      const st = String(rawF.stage || "").trim().slice(0, 80);
+      if (st) triggerFilters.stage = st;
+      else errors.push({ field: "triggerFilters.stage", message: "Pick the stage it starts for." });
+    }
+  }
+  // DATES-1 · a birthday journey may start some days before the birthday.
+  if (t && t.key === "birthday" && rawF.daysBefore !== undefined && rawF.daysBefore !== null && rawF.daysBefore !== "") {
+    const n = Number(rawF.daysBefore);
+    if (Number.isInteger(n) && n >= 0 && n <= BIRTHDAY_LEAD_MAX) { if (n) triggerFilters.daysBefore = n; }
+    else errors.push({ field: "triggerFilters.daysBefore", message: `Start it from 0 to ${BIRTHDAY_LEAD_MAX} days before their birthday.` });
   }
 
   let priority = input.priority === undefined || input.priority === null

@@ -13,6 +13,7 @@ import { PlanFollowUpModal } from "./PlanFollowUp";
 import { ColumnEditor, FALLBACK_SETUP, NAME_KEY, PAGE_SIZES, MIN_WIDTH, alignFor, cleanColumns, columnTrack, formatCell, gridMinWidth, moveKey } from "./DonorColumns";
 import { FilterBuilder, ViewsMenu } from "./DonorFilters";
 import { AddToGroup, SaveAsGroup } from "./Groups";
+import { BulkAddToJourney } from "./BulkJourney";
 import { DonorLink } from "./RecordLink";
 import { donorHref, rowClick } from "../lib/appUrls";
 import { PLAN_UNKNOWN } from "../lib/entitlement";
@@ -740,6 +741,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           {/* LIST-1: everyone matching the filter: a group, a tag, or the file. */}
           {matchingIds&&<>
             {!isReadOnly&&<AddToGroup donorIds={matchingIds}/>}
+            {!isReadOnly&&<BulkAddToJourney ids={matchingIds} disabled={busy} onDone={()=>{if(onBulkDone)onBulkDone();}}/>}
             {!isReadOnly&&<BulkTag ids={matchingIds} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
             {!isReadOnly&&<BulkAutoEmail ids={matchingIds} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
             <button type="button" data-testid="bulk-export" onClick={exportCsv} disabled={exporting}
@@ -752,6 +754,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
             </button>}
           </>}
           {!matchingIds&&<>
+          {!isReadOnly&&<BulkAddToJourney ids={selFiltered.map(d=>d.id)} disabled={busy} onDone={()=>{if(onBulkDone)onBulkDone();}}/>}
           {!isReadOnly&&<BulkTag ids={selFiltered.map(d=>d.id)} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
           {!isReadOnly&&<BulkAutoEmail ids={selFiltered.map(d=>d.id)} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
           {/* BUILD-85 — PLAN A FOLLOW-UP for the selection. "Call these twenty

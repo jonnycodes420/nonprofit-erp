@@ -9,6 +9,7 @@ import { errorMessage } from "../../lib/domainError";
 import { AttachFileField, uploadAttachment } from "../ProfileTimelineParts";
 import { MONTHS as BIRTH_MONTHS } from "../../../../shared/birthday.js";
 import { stageTone } from "./profileShared";
+import { nextYearlyOn, recurPhrase } from "../../../../shared/taskShape.js";
 
 // ── Follow-up Task Modal ───────────────────────────────────────────────────
 function FollowUpTaskModal({donor,onSave,onClose}){
@@ -21,11 +22,19 @@ function FollowUpTaskModal({donor,onSave,onClose}){
   const[due,setDue]=useState(()=>orgTodayPlus(7));
   const[priority,setPriority]=useState("medium");
   const[loading,setLoading]=useState(false);
+  // DATES-1 · a repeat, and on a person with a birthday, the shortcut that
+  // sets the day to their next birthday and keeps it there every year.
+  const[recur,setRecur]=useState(null);
+  const bd=donor.birthday&&donor.birthday.month&&donor.birthday.day?donor.birthday:null;
+  const pickRecur=v=>{
+    if(v==="birthday"&&bd){setRecur({every:"year",month:bd.month,day:bd.day,birthday:true});setDue(nextYearlyOn(bd.month,bd.day,orgTodayCivil()));return;}
+    setRecur(v?JSON.parse(v):null);
+  };
   const inp={width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
   const save=async()=>{
     if(!title.trim())return;setLoading(true);
     try{
-      const raw=await apiFetch("/tasks",{method:"POST",body:JSON.stringify({title,due,priority,type:"donor",donorId:donor.id})});
+      const raw=await apiFetch("/tasks",{method:"POST",body:JSON.stringify({title,due,priority,type:"donor",donorId:donor.id,recur})});
       onSave({id:raw.id,title:raw.title,due:raw.due||"",priority:raw.priority,type:raw.type,done:!!raw.done,donorId:donor.id});
     }catch(e){console.error(e);}
     setLoading(false);
@@ -43,7 +52,19 @@ function FollowUpTaskModal({donor,onSave,onClose}){
           </div>
           <div>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5}}>Due Date</div>
-            <input type="date" value={due} onChange={e=>setDue(e.target.value)} style={inp}/>
+            <input type="date" value={due} onChange={e=>{setDue(e.target.value);if(recur&&recur.birthday)setRecur({every:"year"});}} style={inp}/>
+          </div>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5}}>Repeats</div>
+            <select data-testid="followup-repeats" value={recur?(recur.birthday?"birthday":JSON.stringify({every:recur.every})):""} onChange={e=>pickRecur(e.target.value)} style={inp}>
+              <option value="">Does not repeat</option>
+              <option value={JSON.stringify({every:"week"})}>Every week</option>
+              <option value={JSON.stringify({every:"month"})}>Every month, same day</option>
+              <option value={JSON.stringify({every:"quarter"})}>Every quarter</option>
+              <option value={JSON.stringify({every:"year"})}>Every year, same date</option>
+              {bd&&<option value="birthday">Every year, on their birthday</option>}
+            </select>
+            {recur&&recur.birthday&&<div data-testid="followup-birthday-note" style={{fontSize:12,color:T.ink3,marginTop:5}}>{recurPhrase(recur)}. The first one is due on their next birthday.</div>}
           </div>
           <div>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>Priority</div>

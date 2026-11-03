@@ -397,6 +397,7 @@ export function adaptDonor(d) {
     employer:      d.employer ?? null,
     // PARITY-3 6a — month and day, year optional (shared/birthday.js).
     birthday:      d.birth_month && d.birth_day ? { month: Number(d.birth_month), day: Number(d.birth_day), year: d.birth_year == null ? null : Number(d.birth_year) } : null,
+    aboutThem:     d.about_them ?? "",   // DATES-1 · the note read first
     matchingGift:  d.matching_gift ?? null,
     householdId:   d.household_id ?? null,
     deceased:      d.deceased === true,          // BUILD-58 Part 2 — safety flags

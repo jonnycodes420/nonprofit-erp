@@ -8034,6 +8034,10 @@ async function runSchemaInit(pool) {
           AND (birth_year IS NULL OR birth_year BETWEEN 1900 AND 2100)));
   EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_birthday ON donors (org_id, birth_month, birth_day) WHERE birth_month IS NOT NULL`);
+  // DATES-1 · "About them": a short note read first on the profile (500 at most,
+  // held by the route and here), not a timeline Note.
+  // DATES-1 · "About them", yearly-date skips and journey batches (server/shared/dates1Schema.js).
+  await require("./server/shared/dates1Schema").dates1Schema(pool);
 
   // Part 4. A shift has a name, a colour, a venue and a place within it, and
   // is published or a draft (volunteers see only published shifts). Published

@@ -179,7 +179,7 @@ async function briefRowsFor(orgId, donorId) {
   const t = V.makeT(org && org.vocabulary_json);
   const [donor] = await query(
     `SELECT id, name, email, kind, stage, suggested_stage, total_giving, gift_count, first_gift_date,
-            last_gift_date, last_gift_amount, notes, assigned_to_name, household_id, deceased, do_not_contact
+            last_gift_date, last_gift_amount, notes, about_them, assigned_to_name, household_id, deceased, do_not_contact
        FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);
   if (!donor) return null;
 
@@ -273,6 +273,11 @@ async function briefRowsFor(orgId, donorId) {
   if (String(donor.notes || "").trim()) {
     refs.add(`note:${donor.id}`);
     lines.push(`note:${donor.id}: the note on their record reads: "${String(donor.notes).slice(0, 1200)}"`);
+  }
+  // DATES-1 · the short "About them" note people read first on the profile.
+  if (String(donor.about_them || "").trim()) {
+    refs.add(`note:${donor.id}`);
+    lines.push(`note:${donor.id}: what the team wrote about them, read first on their profile: "${String(donor.about_them).slice(0, 500)}"`);
   }
 
   // The grounded numeric set: every figure that genuinely appears in the rows,

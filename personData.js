@@ -31,7 +31,7 @@ const ERASED_NAME = "Erased person";
 // The donors columns that describe the person. Set to NULL, except the few
 // with NOT NULL or JSON shapes, which get an empty value.
 const DONOR_PII_NULL = ["email", "email2", "phone", "mobile", "address", "address2", "city", "state", "zip", "country",
-  "notes", "employer", "middle_name", "suffix", "salutation", "spouse_name", "contact_name", "latitude", "longitude",
+  "notes", "about_them", "employer", "middle_name", "suffix", "salutation", "spouse_name", "contact_name", "latitude", "longitude",
   "geocode_key", "geocoded_at", "geocode_status", "geocode_provider", "photo_asset_id", "photo_source_url",
   "photo_fetch_status", "photo_fetch_error", "score_rationale", "wealth_screen_source", "wealth_screen_rating",
   "wealth_screen_capacity", "wealth_screen_date", "deceased_date", "funder_ein", "external_donor_id",
