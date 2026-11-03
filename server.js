@@ -4251,8 +4251,7 @@ async function grantMoneyRows(orgId, where = "", args = []) {
     `SELECT g.id, g.restriction, g.restricted_until, g.fund_id, g.status, g.program,
             g.amount_awarded, g.award_pledge_id,
             d.name AS funder_name, f.name AS fund_name, f.restricted AS fund_restricted,
-            COALESCE((SELECT SUM(gi.amount) FROM gifts gi
-                       WHERE gi.org_id = g.org_id AND gi.pledge_id = g.award_pledge_id), 0) AS received,
+            ${require("./shared/numbers/pledges").GRANT_RECEIVED("g")} AS received,   -- NUMBERS-5: money only
             COALESCE((SELECT SUM(s.amount) FROM grant_spend s
                        WHERE s.org_id = g.org_id AND s.grant_id = g.id), 0) AS spent
        FROM grants g

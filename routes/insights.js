@@ -25,6 +25,7 @@ const express = require("express");
 const I = require("../insights");
 const D = require("../insightsData");
 const M = require("../money");
+const NMONEY = require("../shared/numbers/money");   // NUMBERS-5
 const { withAdvisoryLock } = require("../db");
 const { SOFT_CREDIT_RESIZE } = require("../donorSummary");
 
@@ -158,8 +159,9 @@ app.get("/insights/worked", requireAuth, wrap(async (req, res) => {
            COUNT(*) FILTER (WHERE f.n > 0)::int AS followed,
            COALESCE(SUM(f.cents),0)::bigint AS cents
       FROM insight_shown s
-      LEFT JOIN LATERAL (SELECT COUNT(*)::int AS n, COALESCE(SUM(ROUND(g.amount*100)),0)::bigint AS cents FROM gifts g
-                          WHERE g.org_id=s.org_id AND g.donor_id = ANY(s.donor_ids) AND g.amount > 0 AND g.date IS NOT NULL
+      -- NUMBERS-5: who gave is a gift (money above zero); how much is money, a refund off (money.js).
+      LEFT JOIN LATERAL (SELECT (COUNT(*) FILTER (WHERE g.amount > 0))::int AS n, ${NMONEY.MONEY_CENTS("g")} AS cents FROM gifts g
+                          WHERE g.org_id=s.org_id AND g.donor_id = ANY(s.donor_ids) AND ${NMONEY.MONEY("g")} AND g.date IS NOT NULL
                             AND LEFT(g.date,10) >= s.first_shown_on::text AND LEFT(g.date,10) <= (s.first_shown_on + ${I.OUTCOME_DAYS})::text) f ON true
      WHERE s.org_id=? GROUP BY s.kind ORDER BY s.kind`, [req.user.orgId]);
   res.json({ days: I.OUTCOME_DAYS, rows: rows.map(r => ({ ...r, cents: Number(r.cents) })),

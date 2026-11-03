@@ -16,4 +16,10 @@ const PAID_BY_PLEDGE = `(SELECT ppg.pledge_id, SUM(ppg.amount) AS paid FROM gift
 const PAID_OF = (p = "p") => `(SELECT COALESCE(SUM(ppg.amount), 0) FROM gifts ppg
     WHERE ppg.pledge_id = ${p}.id AND ppg.org_id = ${p}.org_id AND ${MONEY("ppg")})`;
 
-module.exports = { PAID_BY_PLEDGE, PAID_OF };
+// What grant `gr` has received (NUMBERS-5): the money paid on its award pledge,
+// correlated. grantMoneyRows (the restricted balance, the grant pages) and the
+// report builder's Received read it.
+const GRANT_RECEIVED = (gr = "gr") => `(SELECT COALESCE(SUM(ppg.amount), 0) FROM gifts ppg
+    WHERE ppg.pledge_id = ${gr}.award_pledge_id AND ppg.org_id = ${gr}.org_id AND ${MONEY("ppg")})`;
+
+module.exports = { PAID_BY_PLEDGE, PAID_OF, GRANT_RECEIVED };

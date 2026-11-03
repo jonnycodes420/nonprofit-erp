@@ -23,6 +23,13 @@
 //
 // Pure: no DB, no network, no clock, no JSX.
 
+// NUMBERS-5: the server is the only reader of this file (server.js imports it),
+// so it reads the money rules from their one home, shared/numbers (CommonJS,
+// which an ES module may import): a credit row is not money, a pledge's paid and
+// a grant's received are those modules' fragments.
+import numbersMoney from "./numbers/money.js";
+import numbersPledges from "./numbers/pledges.js";
+
 export const ENTITIES = {
   people: {
     label: "People",
@@ -57,7 +64,7 @@ export const ENTITIES = {
   gifts: {
     label: "Gifts",
     from: "gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id LEFT JOIN fin_funds f ON f.id = g.fund_id",
-    base: ["d.deleted_at IS NULL", "g.is_sample IS NOT TRUE"],
+    base: ["d.deleted_at IS NULL", "g.is_sample IS NOT TRUE", numbersMoney.MONEY("g")],
     orgCol: "g.org_id",
     person: "d.id",   // FIX-2 B: the person a row opens (never a column, never in a file)
     fields: {
@@ -97,8 +104,8 @@ export const ENTITIES = {
     fields: {
       donor:     { label: "Donor", sql: "d.name", type: "text" },
       amount:    { label: "Pledged", sql: "p.amount", type: "money", sum: true },
-      paid:      { label: "Paid", sql: "(SELECT COALESCE(SUM(pg.amount),0) FROM gifts pg WHERE pg.pledge_id = p.id AND pg.org_id = p.org_id)", type: "money", sum: true },
-      remaining: { label: "Still to come", sql: "GREATEST(p.amount - (SELECT COALESCE(SUM(pg.amount),0) FROM gifts pg WHERE pg.pledge_id = p.id AND pg.org_id = p.org_id), 0)", type: "money", sum: true },
+      paid:      { label: "Paid", sql: numbersPledges.PAID_OF("p"), type: "money", sum: true },
+      remaining: { label: "Still to come", sql: `GREATEST(p.amount - ${numbersPledges.PAID_OF("p")}, 0)`, type: "money", sum: true },
       due_date:  { label: "Due", sql: "p.due_date", type: "date" },
       status:    { label: "Status", sql: "p.status", type: "text" },
       is_match:  { label: "Expected employer match", sql: "COALESCE(p.is_match,false)", type: "bool" },
@@ -150,8 +157,7 @@ export const ENTITIES = {
       requested:    { label: "Requested", sql: "COALESCE(gr.amount_requested, gr.amount)", type: "money", sum: true },
       awarded:      { label: "Awarded", sql: "COALESCE(gr.amount_awarded, 0)", type: "money", sum: true },
       received:     { label: "Received",
-        sql: `COALESCE((SELECT SUM(gi.amount) FROM gifts gi
-                         WHERE gi.org_id = gr.org_id AND gi.pledge_id = gr.award_pledge_id), 0)`,
+        sql: numbersPledges.GRANT_RECEIVED("gr"),
         type: "money", sum: true },
       spent:        { label: "Spent",
         sql: `COALESCE((SELECT SUM(sp.amount) FROM grant_spend sp

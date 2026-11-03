@@ -390,16 +390,18 @@ async function runSourceMetric(orgId, plan, ctx, out, m, deps = {}) {
 async function firstYearRetention(orgId, today) {
   const y = Number(today.slice(0, 4)), last = y - 1;
   const prior = await query(
-    `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MIN(g.date)::text AS date, ROUND(SUM(g.amount)::numeric,2)::text AS amount, 'First gave ' || ${last} AS detail
+    // NUMBERS-5: who is chosen by their gifts (money above zero); the amount
+    // is their money, a refund taken off (money.js), not left out.
+    `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, (MIN(g.date) FILTER (WHERE g.amount > 0))::text AS date, ROUND(${NUM.money.MONEY_SUM("g")}::numeric,2)::text AS amount, 'First gave ' || ${last} AS detail
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-      WHERE g.org_id = ? AND ${NUM.money.LIVE("d")} AND ${NUM.money.GIFT("g")}
-      GROUP BY d.id, d.name HAVING MIN(g.date) >= ? AND MIN(g.date) <= ?`, [orgId, `${last}-01-01`, `${last}-12-31`]);
+      WHERE g.org_id = ? AND ${NUM.money.LIVE("d")} AND ${NUM.money.MONEY("g")}
+      GROUP BY d.id, d.name HAVING MIN(g.date) FILTER (WHERE g.amount > 0) >= ? AND MIN(g.date) FILTER (WHERE g.amount > 0) <= ?`, [orgId, `${last}-01-01`, `${last}-12-31`]);
   const ids = prior.map(p => p.id);
   const kept = ids.length ? await query(
-    `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(g.date)::text AS date, ROUND(SUM(g.amount)::numeric,2)::text AS amount, 'Gave again in ' || ${y} AS detail
+    `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, (MAX(g.date) FILTER (WHERE g.amount > 0))::text AS date, ROUND(${NUM.money.MONEY_SUM("g")}::numeric,2)::text AS amount, 'Gave again in ' || ${y} AS detail
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-      WHERE g.org_id = ? AND g.donor_id = ANY(?::text[]) AND ${NUM.money.GIFT("g")} AND g.date >= ? AND g.date <= ?
-      GROUP BY d.id, d.name`, [orgId, ids, `${y}-01-01`, today]) : [];
+      WHERE g.org_id = ? AND g.donor_id = ANY(?::text[]) AND ${NUM.money.MONEY("g")} AND g.date >= ? AND g.date <= ?
+      GROUP BY d.id, d.name HAVING bool_or(${NUM.money.GIFT("g")})`, [orgId, ids, `${y}-01-01`, today]) : [];
   return { prior, kept, lastYear: last };
 }
 

@@ -36,6 +36,7 @@
 "use strict";
 
 const { query, run, uuid } = require("./db");
+const NM = require("./shared/numbers/money");   // NUMBERS-5: what her imports brought in is money
 const AC = require("./agentCall");
 const site = require("./setupSite");
 const SF = require("./safeFetch");
@@ -656,7 +657,7 @@ async function finishReadout(orgId, r, call, today) {
   // FIX-55: the people and gifts are what her imports from the plan brought
   // in (each with its own receipt and Undo), read from the database.
   const [held] = await query(`SELECT (SELECT COUNT(*)::int FROM donors WHERE org_id=? AND deleted_at IS NULL) AS people,
-      (SELECT COUNT(*)::int FROM gifts WHERE org_id=?) AS gifts, (SELECT COALESCE(SUM(ROUND(amount*100)),0)::bigint FROM gifts WHERE org_id=?) AS cents`, [orgId, orgId, orgId]);
+      (SELECT COUNT(*)::int FROM gifts g WHERE g.org_id=? AND ${NM.GIFT("g")}) AS gifts, (SELECT ${NM.MONEY_CENTS("g")} FROM gifts g WHERE g.org_id=?) AS cents`, [orgId, orgId, orgId]);
   const imp = { donors: Number(held.people) || 0, gifts: Number(held.gifts) || 0, cents: Number(held.cents) || 0 };
   if (imp.donors) push("import", `${plural(imp.donors, "person", "people")} and ${plural(imp.gifts, "gift", "gifts")} (${dollars(imp.cents)}) are in Steward, from the files you imported. Each import has its own receipt and Undo.`, { kind: "import" });
   pushStep("profile", { kind: "settings", section: "org" });
