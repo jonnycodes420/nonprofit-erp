@@ -46,6 +46,10 @@ const GUARDED_WRITERS = [
   // and rewraps rows under a rotated key. Dry run by default; --apply writes
   // through writerDbUrl. Jonathan runs it; never at deploy.
   "seal-synced-mail",
+  // DEPLOY-1: gives back queue jobs whose lease ran out and stops the ones no
+  // worker can run. Dry run by default; --apply writes through writerDbUrl.
+  // Jonathan runs it; never at deploy.
+  "queue-requeue",
   // The demo seed (BUILD-72 Part 5; FIX-1 §11 renamed it seed-demo). Loopback
   // default via writerBase; any database name outside the scratch allowlist
   // fails closed EXCEPT the one deliberate production path (prod db + prod

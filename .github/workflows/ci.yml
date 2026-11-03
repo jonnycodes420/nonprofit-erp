@@ -570,17 +570,22 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: railway up --service "${{ vars.RAILWAY_WORKER_SERVICE }}" --ci
 
+      # DEPLOY-1: the web AND the worker. The worker has no public address;
+      # it writes a heartbeat row with its build and role, and the web's
+      # /health carries the newest one as `worker`.
       - name: Verify prod is healthy at this commit (timeout 5 min)
+        env:
+          WANT_WORKER: ${{ vars.RAILWAY_WORKER_SERVICE != '' && '1' || '' }}
         run: |
-          echo "Polling /health for status:ok + buildSha == $GITHUB_SHA …"
+          echo "Polling /health for status:ok + buildSha == $GITHUB_SHA${WANT_WORKER:+ (web and worker)} …"
           for i in $(seq 1 60); do
             body=$(curl -sf --max-time 10 https://nonprofit-erp-production.up.railway.app/health || true)
-            sha=$(printf '%s' "$body" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d);console.log(j.buildSha||'')}catch{console.log('')}})")
+            read -r sha wsha wrole <<< "$(printf '%s' "$body" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d),w=j.worker||{};console.log((j.buildSha||'-')+' '+(w.buildSha||'-')+' '+(w.role||'-'))}catch{console.log('- - -')}})")"
             ok=$(printf '%s' "$body" | grep -c '"status":"ok"' || true)
-            if [ "$ok" -ge 1 ] && [ "$sha" = "$GITHUB_SHA" ]; then
-              echo "OK: prod healthy at $sha"; exit 0
+            if [ "$ok" -ge 1 ] && [ "$sha" = "$GITHUB_SHA" ] && { [ -z "$WANT_WORKER" ] || { [ "$wsha" = "$GITHUB_SHA" ] && [ "$wrole" = "worker" ]; }; }; then
+              echo "OK: prod healthy at $sha${WANT_WORKER:+, worker at $wsha ($wrole)}"; exit 0
             fi
-            echo "  [$i/60] status-ok=$ok buildSha=${sha:-none}"
+            echo "  [$i/60] status-ok=$ok buildSha=$sha${WANT_WORKER:+ worker=$wsha ($wrole)}"
             sleep 5
           done
           echo "FAIL: prod never became healthy at $GITHUB_SHA within 5 minutes."
@@ -591,7 +596,12 @@ jobs:
       # works on prod is this one: one Ask and one Agent plan on the prod demo
       # org through the read-only preview routes (nothing is saved). A red here
       # means Ask or the Agent is broken on prod right now (FIX-29's class).
+      # DEPLOY-1: it waits for /ready and this build (web and worker) first,
+      # and asks a failed Ask once more 15 s later before it fails.
       - name: Prod AI smoke (one Ask, one Agent plan, saves nothing)
+        env:
+          PROD_AI_SMOKE_WAIT_SHA: ${{ github.sha }}
+          PROD_AI_SMOKE_WORKER: ${{ vars.RAILWAY_WORKER_SERVICE != '' && '1' || '' }}
         run: node scripts/ci/prod-ai-smoke.js
 
   # ── Deploy gate: Vercel frontend (same rules, DORMANT until activated) ────
