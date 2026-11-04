@@ -60,7 +60,9 @@ app.get("/dashboards/:key", requireAuth, wrap(async (req, res) => {
 app.get("/home/annual-goal", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const out = await fundraisingCampaignRows(orgId).then(fundraisingGoalsPortfolio).catch(() => null);
-  const g = ((out && out.goals) || []).find(x => x.isTopLevel && x.lifecycle !== "ended" && x.active !== false && x.goalCategory === "annual");
+  const g = ((out && out.goals) || []).find(x => x.isTopLevel && x.lifecycle === "active" && x.goalCategory === "annual");
+  // LEDGER-1: running today, as Fundraising's roll-up counts goals (a goal not
+  // started yet has raised nothing in its own dates and read $0 here).
   if (!g) return res.json({ goal: null });
   const fig = async source => ({ ...(await figureSources.figureValue(orgId, source, {})), source });
   res.json({ goal: await goalFigureRow(g, fig) });

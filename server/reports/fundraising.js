@@ -744,16 +744,17 @@ app.get("/fundraising/pledges", requireAuth, wrap(async (req, res) => {
     pledges: rows.map(r => {
       const list = by.get(r.id) || [];
       const balance = r2(r.balance), due = String(r.due_date || "").slice(0, 10);
-      const unpaid = list.filter(i => !i.paid_gift_id);
-      const dueThisYear = list.length ? Math.min(balance, r2(unpaid.filter(i => i.due_date <= yearEnd).reduce((n, i) => n + r2(i.amount), 0)))
-        : (!due || due <= yearEnd ? balance : 0);
-      const overdue = list.length ? Math.min(balance, r2(unpaid.filter(i => i.due_date < today).reduce((n, i) => n + r2(i.amount), 0)))
-        : (due && due < today ? balance : 0);
+      // LEDGER-1: the one rule (shared/numbers/pledges.js), the totals' own.
+      const PL = require("../../shared/numbers/pledges");
+      const pl = { amount: r.amount, paid: r.paid, dueDate: due, installments: list.map(i => ({ dueDate: i.due_date, amount: i.amount, paid: !!i.paid_gift_id })) };
+      const dueThisYear = PL.dueOf(pl, yearEnd, "<=");
+      const overdue = PL.dueOf(pl, today, "<");
+      const left = PL.installmentsLeft(pl);
       return {
         id: r.id, donorId: r.donor_id, donorName: r.donor_name, amount: r2(r.amount), paid: r2(r.paid), balance,
         dueThisYear: r2(dueThisYear), overdue: r2(overdue), dueDate: due || null,
         madeAt: r.event_name ? { kind: "event", id: r.event_id, name: r.event_name } : r.campaign_name ? { kind: "campaign", id: r.campaign_id, name: r.campaign_name } : null,
-        installments: list.map(i => ({ id: i.id, dueDate: i.due_date, amount: r2(i.amount), paid: !!i.paid_gift_id, overdue: !i.paid_gift_id && i.due_date < today })),
+        installments: list.map((i, k) => ({ id: i.id, dueDate: i.due_date, amount: r2(i.amount), left: left[k].left, paid: left[k].left <= 0, overdue: left[k].left > 0 && i.due_date < today })),
       };
     }),
   });

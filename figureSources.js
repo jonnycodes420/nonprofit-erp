@@ -339,19 +339,21 @@ const ONLINE_GIFT_SQL = "(g.stripe_payment_id IS NOT NULL OR g.giving_page_id IS
 // before (<) a day, plus what is left on a pledge with no schedule by its due
 // date. Overdue and due-this-year differ only in the day and the comparison.
 function pledgesDueSql(orgId, day, op) {
+  // LEDGER-1: what the schedule asked for by the day, less what has been
+  // paid, never more than the balance (shared/numbers/pledges.js DUE_SQL), so
+  // a part-paid installment counts only what is left on it.
+  const P = require("./shared/numbers/pledges");
   return {
-    sql: `SELECT i.id, 'pledge' AS type, p.donor_id, d.name, i.due_date AS date, ROUND(i.amount::numeric, 2) AS amount, 'Due' AS detail
-            FROM pledge_installments i JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
-            JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
-           WHERE i.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL AND i.paid_gift_id IS NULL AND i.due_date ${op} ?
+    sql: `SELECT due.id, 'pledge' AS type, due.donor_id, due.name, due.date, due.amount, 'Due' AS detail
+            FROM (${P.DUE_SQL(op)}) due
           UNION ALL
           SELECT p.id, 'pledge', p.donor_id, d.name, p.due_date, ROUND(GREATEST(p.amount - COALESCE(pp.paid, 0), 0)::numeric, 2), 'Due'
             FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
-            LEFT JOIN ${require("./shared/numbers/pledges").PAID_BY_PLEDGE} pp ON pp.pledge_id = p.id
+            LEFT JOIN ${P.PAID_BY_PLEDGE} pp ON pp.pledge_id = p.id
            WHERE p.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL
              AND NOT EXISTS (SELECT 1 FROM pledge_installments i2 WHERE i2.pledge_id = p.id)
              AND (${op === "<=" ? "p.due_date IS NULL OR p.due_date = '' OR " : ""}LEFT(p.due_date::text, 10) ${op} ?)`,
-    args: [orgId, day, orgId, orgId, day],
+    args: [orgId, day, day, orgId, orgId, orgId, orgId, day],
     order: "date ASC NULLS LAST, id",
   };
 }
@@ -559,22 +561,25 @@ const SOURCES = {
     measure: p => p.measure || "count",
     params: { kind: "word:required", from: "date:required", to: "date:required", prevFrom: "date:required", prevTo: "date:required", measure: "measure" },
     sentence: (p, dd) => p.kind === "sybunt"
-      ? `Everyone who gave before ${dd(p.from)} and has given nothing dated ${dd(p.from)} to ${dd(p.to)}. The amount is what they gave ${dd(p.prevFrom)} to ${dd(p.prevTo)}.`
+      ? `Everyone who gave before ${dd(p.from)} and has given nothing dated ${dd(p.from)} to ${dd(p.to)}. The amount is what they gave in the last year they gave, a year as this report counts years.`
       : `Everyone who gave ${dd(p.prevFrom)} to ${dd(p.prevTo)} and has given nothing dated ${dd(p.from)} to ${dd(p.to)}. The amount is what they gave in that earlier year.`,
     sql: (orgId, p) => {
       if (!["lybunt", "sybunt"].includes(p.kind)) throw new FigureParamError("kind is lybunt or sybunt.");
+      const GB = require("./shared/numbers/givingBetween");
       const before = p.kind === "lybunt"
         ? "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0 AND g.date >= ? AND g.date <= ?)"
         : "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0 AND g.date < ?)";
       return {
+        // LEDGER-1: the amount is what they gave in the last year they gave
+        // (givingBetween.LAST_YEAR_SUM, the report's own years): last year
+        // for LYBUNT, their own last year for SYBUNT, never a year they skipped.
         sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
-                     ROUND((SELECT ${require("./shared/numbers/givingBetween").SPAN_SUM("g")} FROM gifts g
-                             WHERE g.org_id = d.org_id AND g.donor_id = d.id)::numeric, 2) AS amount,
+                     ROUND(${GB.LAST_YEAR_SUM("d")}::numeric, 2) AS amount,
                      'Lifetime ' || TO_CHAR(COALESCE(d.total_giving, 0), 'FM$999,999,990.00') AS detail
-                FROM donors d
+                FROM donors d ${GB.LAST_YEAR_JOIN("d")}
                WHERE d.org_id = ? AND d.deleted_at IS NULL AND ${before}
                  AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0 AND g.date >= ? AND g.date <= ?)`,
-        args: [p.prevFrom, p.prevTo, orgId, ...(p.kind === "lybunt" ? [p.prevFrom, p.prevTo] : [p.from]), p.from, p.to],
+        args: [...GB.lastYearArgs(p.from), orgId, ...(p.kind === "lybunt" ? [p.prevFrom, p.prevTo] : [p.from]), p.from, p.to],
         order: "amount DESC, id",
       };
     },
@@ -2304,7 +2309,7 @@ const SOURCES = {
     label: "Pledged, due this year",
     measure: () => "sum",
     params: { to: "date:required" },
-    sentence: (p, dd) => `Every unpaid installment of an open pledge, from a person still on file, due on or before ${dd(p.to)} (overdue ones included). A pledge with no schedule counts what is left on it, by its due date.`,
+    sentence: (p, dd) => `What open pledges, from people still on file, were scheduled to pay by ${dd(p.to)} (overdue included), less what has been paid on them, never more than what is left on each. A pledge with no schedule counts what is left on it, by its due date.`,
     sql: (orgId, p) => pledgesDueSql(orgId, p.to, "<="),
   },
   // FUNDRAISING-2: the part of it already past due. Fundraising's Pledges,
@@ -2314,7 +2319,7 @@ const SOURCES = {
     label: "Pledged, overdue",
     measure: () => "sum",
     params: { before: "date:required" },
-    sentence: (p, dd) => `Every unpaid installment of an open pledge, from a person still on file, that fell due before ${dd(p.before)}. A pledge with no schedule counts what is left on it, by its due date.`,
+    sentence: (p, dd) => `What open pledges, from people still on file, were scheduled to pay before ${dd(p.before)}, less what has been paid on them, never more than what is left on each. A pledge with no schedule counts what is left on it, by its due date.`,
     sql: (orgId, p) => pledgesDueSql(orgId, p.before, "<"),
   },
   "goal-raised": {

@@ -611,7 +611,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
         acknowledgement_sent:!!g.acknowledgement_sent,
         // FIX-49: the gift is the full amount paid; the processor's fee and the
         // net (what Finance reconciles to the bank) show beside it.
-        fee:parseFloat(g.processor_fee_amount)||0,
+        fee:parseFloat(g.processor_fee_amount)||0,softCreditTo:Array.isArray(g.soft_credit_to)?g.soft_credit_to:[],   // LEDGER-1: "Soft credit to …"
       }));
       setGiftsFull(g);
       setGifts(g.map(x=>({amount:x.amount,date:x.date})));
@@ -819,7 +819,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
         // through the ONE seam — a refused value names its reason
         await apiFetch(`/gifts/${giftId}/custom-fields`,{method:"PUT",body:JSON.stringify({values:customFields})});
       }
-      loadGiftsFull();
+      told({donorId:donor.id,gift:true});loadPledges();   // LEDGER-1: header, rail, thank-you and pledges all re-read
       setGiftEditId(null);
     }catch(e){alert(e?.errors?.[0]?.error||errorMessage(e, "That value was refused"));}
     setGiftSaving(false);
@@ -829,7 +829,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     if(!(await askConfirm({title:"Delete this gift?",body:"It comes off this person's giving and your totals now. A receipt already sent is not taken back.",yes:"Delete gift",danger:true})))return;
     try{
       await apiFetch(`/gifts/${giftId}`,{method:"DELETE"});
-      loadGiftsFull();
+      told({donorId:donor.id,gift:true});loadPledges();   // LEDGER-1: the rail and its thank-you too
     }catch(e){console.error(e);}
   };
 
@@ -872,7 +872,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
       // (Average and Largest come from the status read, which waited on figs).
       told({donorId:donor.id,gift:true});
       setAddGiftForm({amount:"",date:orgTodayCivil(),type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
-      loadGiftsFull();
+      loadGiftsFull();refreshSoftCredit();
       if(addGiftForm.pledgeId)loadPledges();
     }catch(e){setGiftErr(errorMessage(e,"The gift could not be saved."));}
     setGiftSaving(false);

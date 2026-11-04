@@ -314,10 +314,13 @@ async function finish(req, m, ids, read) {
   if (!read.noteOnly) {
     for (const mo of read.money) {
       const what = mo.kind === "gift" ? "Record a" : mo.kind === "pledge" ? "Record a pledge of" : "Log interest in a";
-      cards.push({ id: cardId(), kind: "money", moneyKind: mo.kind, cents: mo.cents, fundId: mo.fundId, fundName: mo.fundName, donorId: primary,
+      // LEDGER-1: each amount goes to the person who gave it, when the memo
+      // names one of the people on it; otherwise the person the memo is about.
+      const giver = (mo.from && order.find(id => V.heardIsMatched(mo.from, [byId.get(id)]))) || primary;
+      cards.push({ id: cardId(), kind: "money", moneyKind: mo.kind, cents: mo.cents, fundId: mo.fundId, fundName: mo.fundName, donorId: giver,
         quote: mo.quote, state: "waiting",
-        title: mo.kind === "pledge" ? `${what} ${V.cents$(mo.cents)}${mo.fundName ? ` to the ${mo.fundName}` : ""} from ${first(primary)}?`
-          : `${what} ${V.cents$(mo.cents)} gift${mo.fundName ? ` to the ${mo.fundName}` : ""}${mo.kind === "gift" ? ` from ${first(primary)}` : ""}?` });
+        title: mo.kind === "pledge" ? `${what} ${V.cents$(mo.cents)}${mo.fundName ? ` to the ${mo.fundName}` : ""} from ${first(giver)}?`
+          : `${what} ${V.cents$(mo.cents)} gift${mo.fundName ? ` to the ${mo.fundName}` : ""}${mo.kind === "gift" ? ` from ${first(giver)}` : ""}?` });
     }
     // "then send her the receipt": its card waits beside the gift's, and goes
     // with it (it cannot go before the gift is recorded).

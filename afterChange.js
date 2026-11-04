@@ -98,7 +98,12 @@ async function groupCrossings(orgId, ids, { door, today, fire }) {
 // and one write.
 async function rhythmFor(orgId, ids, { door, today }) {
   const { query } = deps;
-  const year = Number(String(today).slice(0, 4));
+  // LEDGER-1: this year and last are the org's FISCAL years (shared/numbers/fiscalYear.js),
+  // as the profile's This fiscal year counts them; they were calendar years here.
+  const FY = require("./shared/numbers/fiscalYear");
+  const [orgRow] = await query(`SELECT vocabulary_json FROM orgs WHERE id=?`, [orgId]);
+  const sm = FY.startMonth(orgRow || {});
+  const year = FY.startYearOf(today, sm);
   const rows = await query(
     // STATUS-1: money only (no soft or matching credit row), as the profile's live read (engagement.givingRows)
     `SELECT g.donor_id, array_agg(g.date ORDER BY g.date) AS dates, array_agg(g.amount ORDER BY g.date) AS amounts
@@ -115,8 +120,8 @@ async function rhythmFor(orgId, ids, { door, today }) {
     const gifts = r ? r.dates.map((d, i) => ({ date: String(d).slice(0, 10), amount: Number(r.amounts[i]) || 0 })) : [];
     let thisYear = 0, lastYear = 0, largest = 0;
     for (const g of gifts) {
-      const y = Number(g.date.slice(0, 4));
-      if (y === year) thisYear += g.amount; else if (y === year - 1) lastYear += g.amount;
+      const day = g.date, y = FY.startYearOf(day, sm);
+      if (y === year && day <= today) thisYear += g.amount; else if (y === year - 1) lastYear += g.amount;
       if (g.amount > largest) largest = g.amount;
     }
     const a = drift.assessDrift(gifts, today);
