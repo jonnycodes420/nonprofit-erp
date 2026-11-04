@@ -109,9 +109,14 @@ export function ImportsHistory(){
               {/* FIX-58: one accounting, each part opening its rows */}
               {open.giftLine&&<ImportGiftLine line={open.giftLine} importId={open.id} style={{marginBottom:12}}/>}
               {/* HARDEN-1: a file of people is counted in people, never "0 rows in the file" */}
-              {open.peopleSentence ? <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:T.ink3,marginBottom:12}}>{open.peopleSentence}</div> :
+              {/* IMPORT-7: a spreadsheet's receipt says each sheet's rows, each count named */}
+              {open.sheetRows&&open.sheetRows.sheets.length ? <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:open.sheetRows.file.balanced?T.ink3:T.terra700,marginBottom:12}}>
+                {open.sheetRows.sheets.map(x=><div key={x.sheet} data-testid="import-receipt-sheet">{x.sentence}</div>)}
+                {open.sheetRows.file.sentence&&<div style={{fontWeight:700}}>{open.sheetRows.file.sentence}</div>}
+              </div> :
+              open.peopleSentence ? <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:T.ink3,marginBottom:12}}>{open.peopleSentence}</div> :
               <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:open.reconciled?T.ink3:T.terra700,marginBottom:12}}>
-                {fmtCount(open.rowsIn)} rows in the file = {fmtCount(open.giftsCreated)} {open.pledgesCreated?"gifts":"created"}{open.pledgesCreated?<> + {fmtCount(open.pledgesCreated)} pledges</>:null} + {fmtCount(open.rowsSetAside)} set aside + {fmtCount(open.rowsErrored)} errored {open.reconciled?"✓":"✗"}
+                {fmtCount(open.rowsIn)} gift rows in the file = {fmtCount(open.giftsCreated)} {open.pledgesCreated?"gifts":"written"}{open.pledgesCreated?<> + {fmtCount(open.pledgesCreated)} pledges</>:null} + {fmtCount(open.rowsSetAside)} set aside + {fmtCount(open.rowsErrored)} errored {open.reconciled?"✓":"✗"}
               </div>}
               {open.pledgesCreated>0&&(
                 <div style={{fontSize:12.5,color:T.ink3,marginBottom:12}}>

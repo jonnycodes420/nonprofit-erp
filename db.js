@@ -2134,6 +2134,8 @@ async function runSchemaInit(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_import ON gifts (org_id, import_id) WHERE import_id IS NOT NULL`);
   await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS reversed_by TEXT`);
+  // IMPORT-7: a big undo's progress and what it has removed so far (server/imports/routes.js)
+  await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS undo_state JSONB`);
   await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS import_id TEXT`);
   // SECURE-3: a synced email's body, sealed (server/mail/sealedMail.js). Schema only; rows are sealed by scripts/ops/seal-synced-mail.js.
   await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS body_sealed TEXT, ADD COLUMN IF NOT EXISTS body_key_id TEXT`);

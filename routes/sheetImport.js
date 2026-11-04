@@ -21,7 +21,12 @@ const { newId } = require("../server/shared/newId");   // IDS-1: every new row i
 
 const routers = { r0: express.Router() };
 const RUN_ID_RE = /^imp_[A-Za-z0-9_-]{4,40}$/;
-const MAX_ROWS = 20000, MAX_SHEETS = 40, MAX_COLS = 120;
+// IMPORT-7: a sheet is read whole. MAX_ROWS kept the first 20,000 rows of each
+// sheet and said nothing, so a 25,000-person CSV lost 5,000 people. A file past
+// MAX_FILE_ROWS (all its sheets together) is refused with its count before
+// anything is read or written; nothing is ever cut.
+const MAX_FILE_ROWS = 200000, MAX_SHEETS = 40, MAX_COLS = 120;
+const tooManyRows = n => `This file has ${n.toLocaleString("en-US")} rows. Steward reads up to ${MAX_FILE_ROWS.toLocaleString("en-US")} in one file; split it and import each part.`;
 const MAPPING_MODEL = "claude-haiku-4-5-20251001";
 
 function mount(ctx) {
@@ -61,9 +66,12 @@ const MODEL_SEEN = new Map();   // org|file|columns → the model's proposal, fo
 
 function readBody(b) {
   b = b || {};
-  const sheets = (Array.isArray(b.sheets) ? b.sheets : []).slice(0, MAX_SHEETS).map(sh => ({
+  const sent = (Array.isArray(b.sheets) ? b.sheets : []).slice(0, MAX_SHEETS);
+  const rows = sent.reduce((n, sh) => n + (Array.isArray(sh && sh.grid) ? sh.grid.length : 0), 0);
+  if (rows > MAX_FILE_ROWS) return { tooBig: { rows, limit: MAX_FILE_ROWS }, sheets: [] };
+  const sheets = sent.map(sh => ({
     name: String((sh && sh.name) || "Sheet").slice(0, 80),
-    grid: (Array.isArray(sh && sh.grid) ? sh.grid : []).slice(0, MAX_ROWS).map(r => (Array.isArray(r) ? r.slice(0, MAX_COLS) : [])
+    grid: (Array.isArray(sh && sh.grid) ? sh.grid : []).map(r => (Array.isArray(r) ? r.slice(0, MAX_COLS) : [])
       .map(c => (c == null ? null : typeof c === "number" || typeof c === "boolean" ? c : String(c).slice(0, 500)))),
   }));
   const obj = v => (v && typeof v === "object" && !Array.isArray(v) ? v : {});
@@ -582,6 +590,7 @@ function publicView({ u, matches, model, orgDonors, newPeople, matchedPeople, ev
 
 app.post("/sheet-import/understand", requireAuth, importOpen, wrap(async (req, res) => {
   let body = readBody(req.body);
+  if (body.tooBig) return res.status(413).json({ error: "too_many_rows", ...body.tooBig, message: tooManyRows(body.tooBig.rows), sentence: tooManyRows(body.tooBig.rows) });
   const fileKey = typeof (req.body && req.body.fileKey) === "string" ? req.body.fileKey.slice(0, 64) : "";
   if (!body.sheets.length && fileKey) {
     const kept = PREVIEW_FILES.get(`${req.user.orgId}|${fileKey}`);
@@ -866,6 +875,7 @@ async function writePlan({ req, body, importId, who, report }) {
   // pledges first, so a paid first year lands on its own instalment. Each
   // pledge is its own row's amount, never a total column (FIX-52).
   let giftsCreated = 0, giftCents = 0, pledgesCreated = 0, pledgeCents = 0, duplicates = 0, duplicateCents = 0, installmentGifts = 0, installmentCents = 0;
+  const dupLines = new Set();   // IMPORT-7: the rows already here, by sheet and line, for the receipt
   // FIX-55: the receipt says this year's installments, then the open total over the years
   let pledgeOpenMade = 0, pledgeDueMade = 0, pledgeYearsMade = 0, pledgeUndatedMade = 0;
   const yearEndToday = `${String(ctx.orgToday(await ctx.orgTz(orgId).catch(() => null))).slice(0, 4)}-12-31`;
@@ -890,7 +900,7 @@ async function writePlan({ req, body, importId, who, report }) {
     })), { afterChange: false });
     batch.forEach((p, n) => {
       const pid = wrote[n].id;
-      if (!wrote[n].created) { duplicates++; duplicateCents += p.pledgeCents; return; }
+      if (!wrote[n].created) { duplicates++; duplicateCents += p.pledgeCents; dupLines.add(`${p.sheet}:${p.line}`); return; }
       pledgeIdByRow.set(p.rowId, pid);
       pledgesCreated++; pledgeCents += p.pledgeCents;
       pledgeOpenMade += p.openCents; pledgeYearsMade = Math.max(pledgeYearsMade, p.years || 1);
@@ -923,7 +933,7 @@ async function writePlan({ req, body, importId, who, report }) {
       Object.assign(args, { pledgeId: pid, installmentId: inst ? inst.id : null, type: "pledge payment" });
     }
     const r = await recordGift(args);
-    if (r.duplicate) { duplicates++; if (g.kind !== "installment") duplicateCents += g.cents; continue; }
+    if (r.duplicate) { duplicates++; if (g.kind !== "installment") { duplicateCents += g.cents; dupLines.add(`${g.sheet}:${g.line}`); } continue; }
     // INSIGHTS-1: the gift type the file's method or memo names, on the row just written
     const gType = giftTypeOf([g.methodOriginal, g.note].filter(Boolean).join(" "));
     if (gType && r.gift && r.gift.id) await run("UPDATE gifts SET gift_type=? WHERE id=? AND org_id=?", [gType, r.gift.id, orgId]);
@@ -984,6 +994,7 @@ async function writePlan({ req, body, importId, who, report }) {
   summary.personRowsInFile = new Set(u.people.flatMap(p => p.lines || [])).size;
   summary.peopleMatched = u.people.reduce((n, p) => n + (matches.get(p.key) ? matches.get(p.key).members.filter(x => x.status === "matched").length : 0), 0);
   summary.columnAccount = u.columnAccount;
+  summary.sheetRows = sheetAccount(u, matches, dupLines);
   summary.button = Rm.importButtonSentence(u).text;
   summary.undatedGiftIds = (await query("SELECT id FROM gifts WHERE org_id=? AND import_id=? AND date IS NULL", [orgId, importId])).map(r => r.id);
   summary.totals = u.totals;
@@ -1008,7 +1019,49 @@ async function writePlan({ req, body, importId, who, report }) {
     undatedGifts: summary.undatedGiftIds.length, attendees: summary.attendees, eventName: evName || null,
     eventDateKnown: !!evDate, optOuts: u.counts.optOuts, doNotContact: u.counts.doNotContact,
     columnAccount: u.columnAccount, button: summary.button, reconciled: true, giftLine: summary.giftLine,
-    givenCents: summary.givenCents, pledgedOpenCents: summary.pledgedOpenCents } };
+    givenCents: summary.givenCents, pledgedOpenCents: summary.pledgedOpenCents, sheetRows: summary.sheetRows } };
+}
+
+// IMPORT-7 · EACH SHEET'S ROWS, EACH COUNT NAMED. Every row the reader read
+// has one fate, in the ledger's order (set aside first, then a gift or pledge
+// row, a note, a person): its sheet's line is "rows in the People sheet =
+// people created + already in Steward + read into a person above + gift rows
+// written + already here + notes + set aside + errored", and the file's line
+// is the sheets added up. Nothing is called "rows in the file" twice.
+function sheetAccount(u, matches, dupLines) {
+  const L = u.rowLedger || { readBySheet: {}, setAside: [] };
+  const fate = new Map();
+  for (const x of L.setAside) fate.set(`${x.sheet}:${x.line}`, "setAside");
+  const giftRow = g => { const k = `${g.sheet}:${g.line}`; if (!fate.has(k)) fate.set(k, dupLines.has(k) ? "giftRowsAlreadyHere" : "giftRowsWritten"); };
+  u.gifts.filter(g => g.kind !== "installment").forEach(giftRow); u.pledges.forEach(giftRow);
+  for (const n of u.noteRows || []) { const k = `${n.sheet}:${n.line}`; if (!fate.has(k)) fate.set(k, "notes"); }
+  for (const p of u.people) {
+    const m = matches.get(p.key), isNew = !m || m.members.some(x => !x.id);
+    (p.lines || []).forEach((l, i) => { if (!fate.has(l)) fate.set(l, i ? "merged" : isNew ? "peopleCreated" : "peopleMatched"); });
+  }
+  const PARTS = ["peopleCreated", "peopleMatched", "merged", "giftRowsWritten", "giftRowsAlreadyHere", "notes", "setAside", "errored"];
+  const blank = sheet => Object.assign({ sheet, rows: 0 }, ...PARTS.map(k => ({ [k]: 0 })));
+  const by = new Map(Object.keys(L.readBySheet || {}).map(sh => [sh, { ...blank(sh), rows: L.readBySheet[sh] }]));
+  for (const [k, f] of fate) {
+    const sh = k.slice(0, k.lastIndexOf(":"));
+    if (!by.has(sh)) by.set(sh, blank(sh));
+    by.get(sh)[f]++;
+  }
+  const n = (k, one, many) => `${k.toLocaleString("en-US")} ${k === 1 ? one : many}`;
+  const WORDS = { peopleCreated: ["person created", "people created"], peopleMatched: ["already in Steward", "already in Steward"],
+    merged: ["read into a person above", "read into a person above"], giftRowsWritten: ["gift row written", "gift rows written"],
+    giftRowsAlreadyHere: ["gift row already here", "gift rows already here"], notes: ["note on a person", "notes on a person"],
+    setAside: ["set aside", "set aside"], errored: ["errored", "errored"] };
+  const say = (x, where) => `${n(x.rows, "row", "rows")} ${where} = `
+    + PARTS.filter(k => x[k] || k === "setAside" || k === "errored").map(k => n(x[k], ...WORDS[k])).join(" + ") + (x.balanced ? " ✓" : " ✗");
+  const lone = by.size === 1 && /^sheet ?1$/i.test([...by.keys()][0] || "");   // a CSV has no "Sheet1"
+  const sheets = [...by.values()].filter(x => x.rows).map(x => {
+    const y = { ...x, balanced: x.rows === PARTS.reduce((t, k) => t + x[k], 0) };
+    return { ...y, sentence: say(y, lone ? "in this file" : `in the ${x.sheet} sheet`) };
+  });
+  const sum = Object.assign(blank(null), ...["rows", ...PARTS].map(k => ({ [k]: sheets.reduce((t, x) => t + x[k], 0) })));
+  const file = { ...sum, balanced: sheets.every(x => x.balanced) && sum.rows === PARTS.reduce((t, k) => t + sum[k], 0) };
+  return { sheets, file: { ...file, sentence: sheets.length > 1 ? say(file, `in all ${sheets.length} sheets`) : null } };
 }
 
 // FIX-58: the gift rows of an import, said once: its gifts, the paid first
@@ -1060,6 +1113,7 @@ app.post("/sheet-import/commit", requireAuth, importOpen, checkWriteAccess, wrap
   const moved = await require("../middleware/orgBound").orgChangedRefusal(req.body && req.body.previewOrgId, orgId);
   if (moved) return res.status(moved.status).json(moved.body);
   const body = readBody(req.body);
+  if (body.tooBig) return res.status(413).json({ error: "too_many_rows", ...body.tooBig, message: tooManyRows(body.tooBig.rows), sentence: tooManyRows(body.tooBig.rows) });
   const background = req.body && req.body.background === true;
   const who = actor(req);
   // HARDEN-2: a commit that carries no file starts nothing. On CI a tab

@@ -26,6 +26,7 @@
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
+const { undoAndWait } = require("./undoWait");
 
 const ROOT = path.join(__dirname, "..", "..");
 const FIXTURE = path.join(ROOT, "tests", "fixtures", "build82", "steward-messy-25k-v3.xlsx");
@@ -136,10 +137,14 @@ async function workbookImportLeg({ ok, timed, q, login, base, importWorkSettled 
   // NUMBERS-5: the one Undo on the receipt (WorkbookImport records the run, ImportUndo reverses it)
   const rec = await post(base, token, "/imports", { id: runId, name: "steward-messy-25k-v3", sourceFilename: "steward-messy-25k-v3.xlsx", shape: "workbook",
     startedAt: new Date(0).toISOString(), rowsIn: every.giftRows, giftsCreated: Number(rrows.created) || 0, donorsCreated: every.written || 0 });
-  const back = rec.status < 300 ? await post(base, token, `/imports/${runId}/reverse`, {}) : rec;
+  // IMPORT-7: the Undo runs on the queue (more than 5,000 rows) and this waits
+  // on it with its own deadline: a slow undo fails the leg, never hangs the shard
+  const back = rec.status < 300 ? await undoAndWait(base, token, runId, { timeoutMs: waitMs }) : rec;
+  console.log(`  messy-25k undone in ${back.ms} ms (${back.via || back.status}, answered in ${back.answeredMs} ms)`);
   const [left] = await q(`SELECT (SELECT COUNT(*) FROM donors WHERE org_id=$1 AND deleted_at IS NULL)::int d, (SELECT COUNT(*) FROM gifts WHERE org_id=$1)::int g, (SELECT COUNT(*) FROM pledges WHERE org_id=$1)::int p`, [ORG]);
-  ok("...and its one Undo takes the whole workbook back: no person, gift or pledge left", rec.status < 300 && back.status === 200 && left.d === 0 && left.g === 0 && left.p === 0,
-    { record: rec.status, undo: back.status, sentence: back.body && (back.body.sentence || back.body.message), left });
+  ok("...and its one Undo takes the whole workbook back on the queue, answered at once and followed to done: no person, gift or pledge left",
+    rec.status < 300 && back.status === 200 && back.via === "queue" && left.d === 0 && left.g === 0 && left.p === 0,
+    { record: rec.status, undo: back.status, via: back.via, answeredMs: back.answeredMs, ms: back.ms, error: back.error, sentence: back.body && (back.body.sentence || back.body.message), left });
   timed(`...and in under ${BUDGET_MS / 1000} s (${ms} ms; PERF-2: over 15 minutes)`, { drew: !err, ms, budget: BUDGET_MS });
   await wipe();
 }

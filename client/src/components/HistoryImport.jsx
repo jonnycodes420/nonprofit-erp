@@ -138,7 +138,7 @@ export default function HistoryImport({ onClose, onDone }) {
 
   const undo = async () => {
     setBusy("undo");
-    try { const r = await apiFetch(`/imports/${encodeURIComponent(result.importId)}/reverse`, { method: "POST", body: "{}" }); setUndone(r.sentence); onDone && onDone(); }
+    try { const r = await apiFetch(`/imports/${encodeURIComponent(result.importId)}/reverse`, { method: "POST", body: "{}" }); setUndone(r.status === "running" ? `${r.sentence} It finishes in the background; Settings, Imports says when it is done.` : r.sentence); onDone && onDone(); }
     catch (e) { setMsg(e?.body?.message || errorMessage(e, "That did not undo.")); }
     setBusy("");
   };
