@@ -94,6 +94,12 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   useEffect(()=>{if(view==="map"&&data?.org&&!mapOn)setView("directory");},[view,mapOn,data?.org]);
   const[search,setSearch]=useState(urlList.search||"");
   const[selected,setSelected]=useState(()=>initialSelectDonorId?{id:initialSelectDonorId}:null);
+  // LIST-2: the profile now mounts once its record has arrived, after the
+  // intent that opened it (a draft, a conversation, the brief) is consumed, so
+  // the intent is kept here from the first render.
+  const[openIntent]=useState(()=>({id:initialSelectDonorId,conversation:!!initialOpenConversation,compose:!!initialOpenCompose,brief:!!initialOpenBrief}));
+  const selectedRef=useRef(null);   // LIST-2: the profile's retry reads who is open now
+  selectedRef.current=selected;
   const[logTarget,setLogTarget]=useState(null);
   useEffect(()=>{
     if(!initialLogDonorId)return;
@@ -245,6 +251,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         setDirRowsFor(dirSearch.trim());
       }catch(e){
         if(cancelled)return;
+        setDirWant("");   // LIST-2: an answer came back, even if it was a refusal: no longer updating
         // LIST-1: a filter the server cannot run says why, in its own sentence.
         if(e&&e.status===400&&(e.error==="bad_filter"||e.sentence)){setFilterError(e.sentence||"That filter could not be run.");setDirRows([]);setDirTotal(0);return;}
         // LIST-2: the count line is the count of the rows shown, so a list that
@@ -585,9 +592,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // (instant render), then swaps in the full record — notes, score rationale,
   // Stripe ids — from GET /donors/:id (the summaries list deliberately omits
   // the heavy columns; see BUILD-06 Phase A).
-  const selectDonor=async(d)=>{
+  const selectDonor=async(d,attempt=0)=>{
     if(!d){setSelected(null);return;}
-    setSelected(d);
+    if(attempt===0)setSelected(d);
     try{
       const full=await apiFetch(`/donors/${d.id}`);
       setSelected(prev=>prev?.id===d.id?{
@@ -602,6 +609,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       if(e&&e.status===404){setSelected(prev=>prev?.id===d.id?{id:d.id,notFound:true}:prev);return;}
       if(e&&e.status===403){setSelected(prev=>prev?.id===d.id?{id:d.id,noAccess:true}:prev);return;}
       console.error(e);
+      // FIX-45 1.5: a failed read recovers by itself (two more tries, still
+      // "Loading this person…"); only then does it offer Try again.
+      if(attempt<2){setTimeout(()=>{const cur=selectedRef.current;if(cur?.id===d.id&&!cur.fullRecord)selectDonor(d,attempt+1);},800*(attempt+1));return;}
       setSelected(prev=>prev?.id===d.id&&!prev.name?{id:d.id,loadFailed:true}:prev);
     }
   };
@@ -816,9 +826,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask} onAddTask={()=>setFollowUpTarget(selected)}
         orgName={data.org?.name||""} org={data.org} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues} onInteractionAdded={reloadDonors}
         onNavigate={onNavigate}
-        initialOpenConversation={!!initialOpenConversation&&selected.id===initialSelectDonorId}
-        initialOpenCompose={!!initialOpenCompose&&selected.id===initialSelectDonorId}
-        initialOpenBrief={!!initialOpenBrief&&selected.id===initialSelectDonorId}
+        initialOpenConversation={openIntent.conversation&&selected.id===openIntent.id}
+        initialOpenCompose={openIntent.compose&&selected.id===openIntent.id}
+        initialOpenBrief={openIntent.brief&&selected.id===openIntent.id}
         initialAddGift={giftHandoff&&giftHandoff.donorId===selected.id?giftHandoff:null}
         isReadOnly={isReadOnly} onSelectRelatedDonor={openIfOnFile}/></ErrorBoundary>
       ) : (<>

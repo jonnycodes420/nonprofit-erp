@@ -198,7 +198,9 @@ async function main() {
   ok("§4 a last name alone is never enough", !has("sam", "qh"), sg.rows);
   ok("§4 a pair already linked is not suggested again", !has("pat", "cx"));
   const health = (await api("GET", "/data-health", tok)).body;
-  ok("§4 Data health counts the same suggestions it lists", (health.counts || health).businesses === sg.total, [health.counts && health.counts.businesses, sg.total]);
+  // LIST-2: the line counts people and organizations, each once (not pairs); the list says the same.
+  ok("§4 Data health counts the same suggestions it lists", (health.counts || health).businesses === sg.businesses && sg.businesses === sg.businessPeople + sg.businessOrgs,
+    [health.counts && health.counts.businesses, sg.businesses, sg.total]);
   const ln = await api("POST", "/data-health/businesses/link", tok, { a: P("dana"), b: P("mb") });
   const linked = await q(`SELECT relationship_type, created_by FROM donor_relationships WHERE id=$1`, [ln.body && ln.body.id]);
   ok("§4 one click links them as Owner, stamped with who did it", ln.status === 201 && linked[0] && linked[0].relationship_type === "owner" && linked[0].created_by === "u_" + ORG, [ln.body, linked]);

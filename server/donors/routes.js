@@ -35,9 +35,16 @@ let app = routers.r1;
 // when `limit` is present. Filters (search/stage/status/assignedTo/sort)
 // are honored in both modes.
 app.get("/donors", requireAuth, wrap(async (req, res) => {
+  // LIST-2: each step's time, in the Server-Timing header and in the log when
+  // the whole read passes two seconds, so a slow list says where it was slow.
+  const t0 = Date.now(), steps = [];
+  let tl = t0;
+  const lap = name => { const now = Date.now(); steps.push([name, now - tl]); tl = now; };
   // IMPORT-6 · Everyone · Donors · Contacts, each counted (groups.directoryRoles)
   const { roleCounts, role } = await GR.directoryRoles(req.user.orgId, req.query, rq => buildDonorListFilter({ ...req, query: rq }));
+  lap("roles");
   const filter = await buildDonorListFilter(role === req.query.role ? req : { ...req, query: { ...req.query, role } });
+  lap("filter");
   if (filter.badFilter) return res.status(400).json({ error: "bad_filter", sentence: filter.badFilter });   // LIST-1
   if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
   if (filter.badStatus) return res.status(400).json(UNKNOWN_STATUS);
@@ -80,19 +87,23 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
     query(`SELECT donors.*${selectCols} FROM donors WHERE ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...selectArgs, ...params, limit, offset]),
     query(`SELECT COUNT(*) AS c FROM donors WHERE ${whereSql}`, params),
   ]);
+  lap("page");
   // Touchpoints + drift only for the page's donors — not the org-wide GROUP BY
   const ids = donors.map(d => d.id);
   const [touchpoints, { map: driftMap }] = await Promise.all([
     ids.length
       ? query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? AND donor_id = ANY(?) GROUP BY donor_id", [req.user.orgId, ids])
       : Promise.resolve([]),
-    computeDriftForDonors(req.user.orgId, { donorIds: ids.length ? ids : ["_none_"] }),
+    computeDriftForDonors(req.user.orgId, { donorIds: ids.length ? ids : ["_none_"], store: false }),   // LIST-2: a GET writes nothing
   ]);
   const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
+  lap("drift");
   if (mayRoom && ids.length) roomMap = await PRm.roomToGive(req.user.orgId, ids);
+  lap("room");
   // LIST-1: the columns she chose, for this page only (donorList.js cellsFor).
   const cols = String(req.query.cols || "").split(",").map(s => s.trim()).filter(Boolean).slice(0, 40);
   const cells = cols.length ? await require("../../donorList").cellsFor(req.user.orgId, donors, cols) : null;
+  lap("cells");
   const out = donors.map(mapDonor(tpMap, driftMap));
   if (cells) for (const d of out) d.cells = cells.get(d.id) || {};
   // LIST-2: the Lifetime on each row is the profile's (shared/numbers/lifetime.js),
@@ -104,6 +115,9 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
       if (d.cells && "lifetime" in d.cells) d.cells.lifetime = d.total_giving;
     }
   }
+  lap("lifetime");
+  res.setHeader("Server-Timing", steps.map(([n, ms]) => `${n};dur=${ms}`).join(", "));
+  if (Date.now() - t0 > 2000) console.warn(`[donors-list] slow read ${Date.now() - t0}ms org=${req.user.orgId} ${steps.map(([n, ms]) => `${n}=${ms}`).join(" ")}`);
   res.json({ donors: out, total: parseInt(cnt[0].c, 10), ...(roleCounts ? { roleCounts, role: role === "donor" ? "donors" : role === "contact" ? "contacts" : "everyone" } : {}) });
 }));
 

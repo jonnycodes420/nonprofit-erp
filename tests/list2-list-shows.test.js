@@ -339,6 +339,63 @@ async function reset(org) {
   ok("§6 the filtered list's first rows come in under a second at 20 ms latency", ms6 < 1000, `${Math.round(ms6)}ms`);
   await slow.close();
 
+  // ── §7 straight after an import ──
+  // The 4 Nov prod read: GET /donors took 146 s on a fresh 6,395-person org
+  // right after its import. The list's drift step wrote its answers back
+  // (INSERT ... ON CONFLICT on donor_drift) and waited on the row locks of
+  // the post-import job's own drift transaction. (a) is that wait, made
+  // certain: one connection holds the first page's donor_drift rows, as the
+  // job does, while the list is read. (b) is the real thing: a fresh org, a
+  // 6,400-person file through the importer, and the list at once.
+  const { Client } = require("pg");
+  const holder = new Client({ connectionString: process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest" });
+  await holder.connect();
+  const first = await api("GET", "/donors?role=donor&limit=50&offset=0", tok);
+  const pageIds = (first.body.donors || []).map(d => d.id);
+  await q(`UPDATE donor_drift SET computed_for = '2000-01-01' WHERE org_id = $1 AND donor_id = ANY($2)`, [ORG, pageIds]);
+  await holder.query("BEGIN");
+  await holder.query(`SELECT 1 FROM donor_drift WHERE org_id = $1 AND donor_id = ANY($2) FOR UPDATE`, [ORG, pageIds]);
+  const t7 = performance.now();
+  const locked = await Promise.race([api("GET", "/donors?role=donor&limit=50&offset=0", tok), new Promise(r => setTimeout(() => r({ status: "timeout" }), 8000))]);
+  const ms7 = performance.now() - t7;
+  await holder.query("ROLLBACK").catch(() => {});
+  await holder.end();
+  console.log(`  the list while another transaction holds its people's drift rows: ${Math.round(ms7)}ms`);
+  ok("§7a the list never waits on another transaction's drift rows (a GET writes nothing)", locked.status === 200 && ms7 < 1000, `${locked.status} ${Math.round(ms7)}ms`);
+
+  const IMP = "org_list2_imp", impEmail = "list2-imp@example.org";
+  await reset(IMP);
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,'List Two Import','list2-imp',1,'active','team','America/New_York')`, [IMP]);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_list2imp',$1,$2,$3,'Ada Import','admin')`, [IMP, impEmail, pw]);
+  const itok = await login(impEmail);
+  const sheets = [{ name: "Gifts", grid: require("./lib/bigSheet").bigGiftRows(6400, 25000) }];
+  const und = await api("POST", "/sheet-import/understand", itok, { fileName: "gifts.csv", sheets, useModel: false });
+  const com = await api("POST", "/sheet-import/commit", itok, { fileName: "gifts.csv", sheets, useModel: false, previewOrgId: IMP, background: true });
+  let jobEnd = null;
+  for (const t0i = performance.now(); performance.now() - t0i < 240000;) {
+    const j = await api("GET", `/sheet-import/jobs/${encodeURIComponent(com.body.importId)}`, itok);
+    if (j.status === 200 && j.body.status !== "running") { jobEnd = j.body.status; break; }
+    await new Promise(z => setTimeout(z, 500));
+  }
+  const [{ n: impPeople }] = await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [IMP]);
+  ok("§7b a 6,400-person file imports", und.status === 200 && com.status === 202 && jobEnd === "done" && impPeople === 6400, `${und.status} ${com.status} ${jobEnd} ${impPeople}`);
+  const ilg = await api("POST", "/auth/login", null, { email: impEmail, password: "loadtest1234" });
+  const ictx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  await ictx.addInitScript(([tk, u, o]) => { localStorage.setItem("npe_token", tk); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+    [ilg.body.token, JSON.stringify(ilg.body.user), JSON.stringify(ilg.body.org)]);
+  const ip = await ictx.newPage();
+  await ip.route(/localhost:\d+\/(?!assets)/, async r => { await new Promise(res => setTimeout(res, 20)); await r.continue(); });
+  let listMs = null;
+  ip.on("response", r => { if (listMs === null && /\/donors\?/.test(r.url()) && r.status() === 200) listMs = r.request().timing().responseEnd; });
+  await ip.goto(`${APP}/donors`, { waitUntil: "domcontentloaded" });
+  const t7b = performance.now();
+  await ip.locator(".dir-donor-row").first().waitFor({ timeout: 180000 }).catch(() => {});
+  const rowsMs = performance.now() - t7b;
+  console.log(`  6,400 people straight after the import: the list's first rows ${Math.round(rowsMs)}ms after the page loaded (the read itself ${listMs === null ? "?" : Math.round(listMs)}ms)`);
+  ok("§7b straight after the import, the list's first rows come in under a second", rowsMs < 1000 && (await ip.locator(".dir-donor-row").count()) > 0, `${Math.round(rowsMs)}ms`);
+  await ictx.close();
+  if (process.env.LIST2_KEEP !== "1") await reset(IMP);
+
   await browser.close();
   if (process.env.LIST2_KEEP !== "1") await reset(ORG);
   await closeDb();
