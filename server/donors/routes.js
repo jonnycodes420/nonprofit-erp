@@ -95,6 +95,15 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   const cells = cols.length ? await require("../../donorList").cellsFor(req.user.orgId, donors, cols) : null;
   const out = donors.map(mapDonor(tpMap, driftMap));
   if (cells) for (const d of out) d.cells = cells.get(d.id) || {};
+  // LIST-2: the Lifetime on each row is the profile's (shared/numbers/lifetime.js),
+  // one read for the page, so the column and the Lifetime filter agree with it.
+  if (ids.length) {
+    const lt = await require("../../shared/numbers/lifetime").lifetimeCents(query, req.user.orgId, ids);
+    for (const d of out) if (lt.has(d.id)) {
+      d.total_giving = lt.get(d.id) / 100;
+      if (d.cells && "lifetime" in d.cells) d.cells.lifetime = d.total_giving;
+    }
+  }
   res.json({ donors: out, total: parseInt(cnt[0].c, 10), ...(roleCounts ? { roleCounts, role: role === "donor" ? "donors" : role === "contact" ? "contacts" : "everyone" } : {}) });
 }));
 

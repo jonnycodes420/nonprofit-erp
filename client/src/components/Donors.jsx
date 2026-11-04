@@ -166,8 +166,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[layout,setLayout]=useState(null);
   const layoutRef=useRef(null);
   layoutRef.current=layout;
-  const[dirWhere,setDirWhere]=useState(EMPTY_WHERE);
-  const[dirDir,setDirDir]=useState("");
+  // LIST-2: the chips and the sort's direction come back from the address.
+  const[dirWhere,setDirWhere]=useState(()=>{try{const w=urlList.where?JSON.parse(urlList.where):null;return w&&Array.isArray(w.conditions)?{join:w.join==="or"?"or":"and",conditions:w.conditions}:EMPTY_WHERE;}catch{return EMPTY_WHERE;}});
+  const[dirDir,setDirDir]=useState(urlList.dir==="asc"||urlList.dir==="desc"?urlList.dir:"");
   const[filterError,setFilterError]=useState("");
   const[activeViewId,setActiveViewId]=useState("");
   const DIR_PAGE_SIZE=layout&&PAGE_SIZES.includes(Number(layout.pageSize))?Number(layout.pageSize):50;
@@ -182,11 +183,16 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // words in the box, the rows already loaded narrow as she types (below).
   const[dirRowsFor,setDirRowsFor]=useState(null);
   const[dirReloadKey,setDirReloadKey]=useState(0);
+  // LIST-2: the query the rows on screen answer, and the one asked for. Until
+  // they match, the list says it is updating, so old rows never pass for the
+  // answer to a new filter.
+  const[dirWant,setDirWant]=useState("");
+  const[dirGot,setDirGot]=useState("");
   useEffect(()=>{const t=setTimeout(()=>setDirSearch(search),300);return()=>clearTimeout(t);},[search]);
   // IMPORT-2: "Bring in your notes" from a profile or the donor import's last screen.
   useEffect(()=>{const open=()=>setShowHistory(true);window.addEventListener("steward:history-import",open);return()=>window.removeEventListener("steward:history-import",open);},[]);
   // PARITY-1 — one tag or closeness filter, "level:major", "closeness:warm".
-  const[dirStatus,setDirStatus]=useState("");
+  const[dirStatus,setDirStatus]=useState(urlList.status||"");
   useEffect(()=>{setDirPage(0);},[dirSearch,dirStage,dirAssignee,dirDesignation,dirSort,dirHousehold,dirStatus,dirWhereStr,dirDir,DIR_PAGE_SIZE,dirPeople,dirImport]);
   useEffect(()=>{
     if(view!=="directory"||listSetup)return;
@@ -226,8 +232,11 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         if(dirDir)qs.set("dir",dirDir);
         if(dirCols)qs.set("cols",dirCols);
         if(dirWhereStr)qs.set("where",dirWhereStr);
-        const r=await apiFetch(`/donors?${qs.toString()}`);
+        const want=qs.toString();
+        setDirWant(want);
+        const r=await apiFetch(`/donors?${want}`);
         if(cancelled)return;
+        setDirGot(want);
         setFilterError("");
         setDirRows((r.donors||[]).map(adaptDonor));
         setDirTotal(r.total||0);
@@ -238,7 +247,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         if(cancelled)return;
         // LIST-1: a filter the server cannot run says why, in its own sentence.
         if(e&&e.status===400&&(e.error==="bad_filter"||e.sentence)){setFilterError(e.sentence||"That filter could not be run.");setDirRows([]);setDirTotal(0);return;}
-        console.error(e);setDirRows([]);
+        // LIST-2: the count line is the count of the rows shown, so a list that
+        // did not load says so instead of keeping the last total.
+        console.error(e);setDirRows([]);setDirTotal(0);setFilterError("The list didn't load. Change a filter or reload to try again.");
       }
     })();
     return()=>{cancelled=true;};
@@ -587,8 +598,11 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     }catch(e){
       // THREAD-2 · a link to somebody this person can't see (another org's
       // record, or one removed) says so, and shows nothing of it.
-      if(e&&(e.status===404||e.status===403)){setSelected(prev=>prev?.id===d.id?{id:d.id,noAccess:true}:prev);return;}
+      // LIST-2: a person who isn't on file says so, in words.
+      if(e&&e.status===404){setSelected(prev=>prev?.id===d.id?{id:d.id,notFound:true}:prev);return;}
+      if(e&&e.status===403){setSelected(prev=>prev?.id===d.id?{id:d.id,noAccess:true}:prev);return;}
       console.error(e);
+      setSelected(prev=>prev?.id===d.id&&!prev.name?{id:d.id,loadFailed:true}:prev);
     }
   };
 
@@ -596,13 +610,13 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // Opening or closing a profile is a step Back undoes; a filter or a
   // keystroke in search replaces the entry rather than piling up history.
   useEffect(()=>{
-    const href=selected?.id?donorHref(selected.id):donorsListHref({view,search,stage:dirStage,owner:dirAssignee,designation:dirDesignation,noMeeting:noMeetingOpen,warmUnasked:warmOpen,nmOwner:noMeetingOpen?nmFilter.owner:"",nmMin:noMeetingOpen?nmFilter.min:"",sort:dirSort,household:dirHousehold,people:dirPeople,fromImport:dirImport});
+    const href=selected?.id?donorHref(selected.id):donorsListHref({view,search,stage:dirStage,owner:dirAssignee,designation:dirDesignation,noMeeting:noMeetingOpen,warmUnasked:warmOpen,nmOwner:noMeetingOpen?nmFilter.owner:"",nmMin:noMeetingOpen?nmFilter.min:"",sort:dirSort,household:dirHousehold,people:dirPeople,fromImport:dirImport,status:dirStatus,dir:dirDir,where:dirWhereStr});
     const here=window.location.pathname+window.location.search;
     if(href===here)return;
     const step=selected?.id?!here.startsWith(donorHref(selected.id)):here.startsWith("/donors/");
     routerNavigate(href,{replace:!step,state:{internal:true}});
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[selected?.id,view,search,dirStage,dirAssignee,dirDesignation,noMeetingOpen,warmOpen,nmFilter.owner,nmFilter.min,dirSort,dirHousehold]);
+  },[selected?.id,view,search,dirStage,dirAssignee,dirDesignation,noMeetingOpen,warmOpen,nmFilter.owner,nmFilter.min,dirSort,dirHousehold,dirStatus,dirDir,dirWhereStr]);
 
   const handleEditSaved=(raw)=>{
     // Reuse the same single-donor adapter adaptData() uses for the initial
@@ -779,6 +793,21 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           <div style={{fontWeight:700,marginBottom:6}}>You don't have access to this.</div>
           <button onClick={()=>setSelected(null)} style={{background:T.white,border:"1px solid "+T.ink,borderRadius:8,padding:"7px 14px",fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:T.ink}}>Back to people</button>
         </div>
+      ) : selected?.notFound ? (
+        <div data-testid="person-not-found" style={{padding:"40px 24px",textAlign:"center",color:T.ink,fontSize:15}}>
+          <div style={{fontWeight:700,marginBottom:6}}>We couldn't find this person.</div>
+          <div style={{fontSize:13,color:T.ink3,marginBottom:12}}>They may have been merged into another record or deleted.</div>
+          <button onClick={()=>setSelected(null)} style={{background:T.white,border:"1px solid "+T.ink,borderRadius:8,padding:"7px 14px",fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:T.ink}}>Back to people</button>
+        </div>
+      ) : selected?.loadFailed ? (
+        <div data-testid="person-load-failed" role="alert" style={{padding:"40px 24px",textAlign:"center",color:T.ink,fontSize:15}}>
+          <div style={{fontWeight:700,marginBottom:6}}>This person's record didn't load.</div>
+          <button onClick={()=>selectDonor({id:selected.id})} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 14px",fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:T.white}}>Try again</button>
+        </div>
+      ) : selected && !selected.name && !selected.fullRecord ? (
+        // LIST-2: opened by id (Cmd+K, a link, Atlas): nothing is drawn from a
+        // record that hasn't arrived, so no "Add a photo for undefined".
+        <div data-testid="person-loading" role="status" aria-live="polite" style={{padding:"40px 24px",textAlign:"center",color:T.ink3,fontSize:14}}>Loading this person…</div>
       ) : selected ? (
       <ErrorBoundary key={selected.id}><DonorProfile donor={selected} onClose={()=>{setSelected(null);setGiftHandoff(null);}}
         onStageChange={moveToStage} onLogTouchpoint={()=>{setLogTarget(selected);}}
@@ -921,7 +950,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         </div>
       </Card>}
 
-      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null||(searchPending&&dirPageRows.length===0)} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={0} peopleView={dirPeopleShown||dirPeople||"donors"} setPeopleView={setDirPeople} roleCounts={roleCounts} fromImport={dirImport} clearFromImport={()=>setDirImport("")}
+      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null||(searchPending&&dirPageRows.length===0)} serverTotal={dirTotal} updating={!!dirWant&&dirWant!==dirGot&&dirRows!==null} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={0} peopleView={dirPeopleShown||dirPeople||"donors"} setPeopleView={setDirPeople} roleCounts={roleCounts} fromImport={dirImport} clearFromImport={()=>setDirImport("")}
         anyFilter={!!(dirSearch.trim()||dirStage||dirAssignee||dirDesignation||dirHousehold||dirStatus||dirWhereStr||dirImport)}
         exportParams={{role:(dirPeopleShown||dirPeople)==="contacts"?"contact":(dirPeopleShown||dirPeople)==="everyone"?"":"donor",...(dirImport?{fromImport:dirImport}:{}),search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,sort:dirSort,household:dirHousehold,...(dirWhereStr?{where:dirWhereStr}:{}),...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})}} statusFilter={dirStatus} setStatusFilter={setDirStatus} sortBy={dirSort} setSortBy={v=>{setDirSort(v);setDirDir("");}} sortDir={dirDir} setSort={(k,d)=>{setDirSort(k);setDirDir(d);}} household={dirHousehold} clearHousehold={()=>setDirHousehold("")} totalDonors={peopleCount?peopleCount.total:undefined} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly} listSetup={listSetup} layout={layout} setLayoutLocal={setLayout} persistLayout={persistLayout} resetLayout={resetLayout} saveOrgLayout={saveOrgLayout} where={dirWhere} setWhere={w=>{setDirWhere(w);}} filterError={filterError} views={(listSetup&&listSetup.views)||[]} activeViewId={activeViewId} onPickView={pickView} onSaveView={saveView} onDeleteView={deleteView} onPageSize={n=>persistLayout({pageSize:n}).catch(e=>console.warn("[list-layout]",e&&e.message))} includeScreening={includeScreening}/>}
 

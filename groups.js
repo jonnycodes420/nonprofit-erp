@@ -77,12 +77,14 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   if (search && String(search).trim()) {
     // WIRE-1: a phone number and an organisation's contact person find the
     // record too, the same as the name and the email.
-    const s = "%" + String(search).trim().toLowerCase() + "%";
     const digits = String(search).replace(/\D/g, "");
     const phone = digits.length >= 4
       ? " OR regexp_replace(COALESCE(phone,''), '\\D', '', 'g') LIKE ? OR regexp_replace(COALESCE(mobile,''), '\\D', '', 'g') LIKE ?" : "";
-    where.push(`(lower(name) LIKE ? OR lower(email) LIKE ? OR lower(COALESCE(contact_name,'')) LIKE ? OR lower(COALESCE(phone,'')) LIKE ?${phone})`);
-    params.push(s, s, s, s);
+    // LIST-2: the one person rule (server/donors/personMatch.js): household and
+    // linked organization names too, case and accents folded.
+    const pm = require("./server/donors/personMatch").personMatchSql(require("./server/donors/personMatch").foldedPattern(search));
+    where.push(`(${pm.sql}${phone})`);
+    params.push(...pm.args);
     if (phone) params.push("%" + digits + "%", "%" + digits + "%");
   }
   if (stage)      { where.push("stage = ?");       params.push(String(stage)); }
@@ -495,7 +497,9 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   }
   // ", id" tiebreak keeps page boundaries stable when many donors share a value
   // LIST-1: a column header sorts by that column, either way.
+  // LIST-2: Name with no direction is last name, then first, A to Z.
   let orderBy = (q.dir && require("./donorList").sortSql(String(q.sort || ""), String(q.dir)))
+    || (q.sort === "name" ? require("./donorList").sortSql("name", "asc") : null)
     || (DONOR_SORTS[q.sort] || DONOR_SORTS.total_giving) + ", id";
   // The closeness word rides on every row as a column (selectCols), its
   // arguments ahead of the WHERE's.

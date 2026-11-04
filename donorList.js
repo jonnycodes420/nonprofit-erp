@@ -349,7 +349,9 @@ async function compileOne(orgId, c, fields) {
     case "tags": return sel() ? { sql: "strpos(COALESCE(tags,''), ?) > 0", args: [JSON.stringify(sel())] } : needSel();
     case "group": return sel() ? { rules: { groupId: sel() } } : needSel();
     case "added": return dateCond("created_at", c.op, v);
-    case "lifetime": return moneyCond("COALESCE(total_giving,0)", c.op, v);
+    // LIST-2: the profile's own figure (shared/numbers/lifetime.js), not the
+    // stored copy: a stale stored total let a $19,500 donor pass "at least $20,000".
+    case "lifetime": return moneyCond(require("./shared/numbers/lifetime").LIFETIME("donors"), c.op, v);
     case "last_gift_amount": return moneyCond("COALESCE(last_gift_amount,0)", c.op, v);
     case "this_year": {
       const r = moneyCond(THIS_YEAR_SQL, c.op, v);
@@ -537,10 +539,20 @@ async function cellsFor(orgId, rows, columns) {
 }
 
 // ── SORT ───────────────────────────────────────────────────────────────────
+// LIST-2: each column sorts by its own value, either way, with a stable
+// tiebreak on id. Name is last name, then first (an organization by its whole
+// name). A giving column puts the people with no gift last in both directions.
+const LAST_NAME_SQL = `CASE WHEN lower(COALESCE(kind,'')) IN ('organization','organisation') THEN lower(trim(COALESCE(name,'')))
+  ELSE lower(regexp_replace(trim(COALESCE(name,'')), '^.*\\s', '')) || ' ' || lower(trim(COALESCE(name,''))) END`;
+const NO_GIFT_LAST = { lifetime: "COALESCE(total_giving,0) <= 0", last_gift_date: "COALESCE(last_gift_date::text,'') = ''",
+  last_gift_amount: "COALESCE(last_gift_amount,0) <= 0", first_gift_date: "COALESCE(first_gift_date::text,'') = ''", gift_count: "COALESCE(gift_count,0) <= 0" };
 function sortSql(key, dir) {
-  const f = BY_KEY.get(key);
+  const f = BY_KEY.get(key === "total_giving" ? "lifetime" : key);
   if (!f || !f.sort) return null;
-  return `${f.sort} ${dir === "asc" ? "ASC" : "DESC"} NULLS LAST, id`;
+  const d = dir === "asc" ? "ASC" : "DESC";
+  if (f.key === "name") return `${LAST_NAME_SQL} ${d}, id`;
+  if (NO_GIFT_LAST[f.key]) return `(${NO_GIFT_LAST[f.key]}) ASC, ${f.sort} ${d} NULLS LAST, id`;
+  return `${f.sort} ${d} NULLS LAST, id`;
 }
 
 // ── LAYOUTS ────────────────────────────────────────────────────────────────
@@ -572,5 +584,6 @@ async function saveLayout(orgId, userId, layout, who) {
     [orgId, userId, JSON.stringify(layout.columns), JSON.stringify(layout.widths), layout.pageSize, who.id, who.name]);
 }
 
-module.exports = { GROUPS, DEFAULT_COLUMNS, PAGE_SIZES, FIELDS, fieldsFor, publicField, parseWhere, compileWhere, whereSentence,
+module.exports = {
+  LAST_NAME_SQL, GROUPS, DEFAULT_COLUMNS, PAGE_SIZES, FIELDS, fieldsFor, publicField, parseWhere, compileWhere, whereSentence,
   cellsFor, sortSql, cleanLayout, layoutFor, saveLayout, THIS_YEAR_SQL, PLEDGE_BALANCE_SQL };
