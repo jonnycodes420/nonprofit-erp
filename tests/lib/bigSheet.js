@@ -47,4 +47,21 @@ function bigPeopleCsv(n, opts = {}) {
   return bigPeopleRows(n, opts).map(r => r.map(c => q(String(c))).join(",")).join("\n") + "\n";
 }
 
-module.exports = { bigPeopleRows, bigPeopleCsv };
+// IMPORT-7 · ONE SHEET OF GIFTS, one row per gift, `people` made-up givers
+// spread over `gifts` rows (the shape of a 1,000-donor test file: 1,005 people,
+// 5,010 gifts), with a method word on some rows so the gift type is read.
+function bigGiftRows(people, gifts) {
+  const rows = [["First Name", "Last Name", "Email", "Amount", "Date", "Payment Method", "Fund"]];
+  const METHOD = ["Check", "Credit Card", "Stock", "Cash", "ACH"];
+  for (let i = 0; i < gifts; i++) {
+    const p = i % people;
+    const f = FIRST[p % FIRST.length], l = LAST[Math.floor(p / FIRST.length) % LAST.length];
+    const tag = Math.floor(p / (FIRST.length * LAST.length));
+    const month = 1 + (i % 12), day = 1 + (i % 27), year = 2022 + (i % 4);
+    rows.push([f, tag ? `${l}-${tag}` : l, `g${p}.${f.toLowerCase()}@bigsheet.example`, String(25 + (i % 40) * 5),
+      `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`, METHOD[i % METHOD.length], i % 3 ? "General" : "Youth Program"]);
+  }
+  return rows;
+}
+
+module.exports = { bigPeopleRows, bigPeopleCsv, bigGiftRows };

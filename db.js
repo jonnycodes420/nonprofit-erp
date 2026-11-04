@@ -100,11 +100,16 @@ async function withAmbientTransaction(fn) {
     client.release();
   }
 }
+// IMPORT-7: the progress and job writes outside the transaction cross the network too
 async function queryOutside(sql, params = []) {
+  if (TEST_LATENCY_MS) await roundTrip();
+  noteTrip();
   let i = 0;
   return (await pool.query(sql.replace(/\?/g, () => `$${++i}`), params)).rows;
 }
 async function runOutside(sql, params = []) {
+  if (TEST_LATENCY_MS) await roundTrip();
+  noteTrip();
   let i = 0;
   return { changes: (await pool.query(sql.replace(/\?/g, () => `$${++i}`), params)).rowCount };
 }

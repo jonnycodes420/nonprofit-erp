@@ -30,7 +30,7 @@ const tooManyRows = n => `This file has ${n.toLocaleString("en-US")} rows. Stewa
 const MAPPING_MODEL = "claude-haiku-4-5-20251001";
 
 function mount(ctx) {
-const { query, run, requireAuth, checkWriteAccess, wrap, uuid, actor, recordGift, recalcPledgePayment,
+const { query, run, requireAuth, checkWriteAccess, wrap, uuid, actor, recordGift, recordGifts, recalcPledgePayment,
         withAdvisoryLock, aiGate, anthropicFor, recordAiFallback, getOrgAccessState } = ctx;
 const app = routers.r0;
 // IMPORT-6 · A READ-ONLY ORG CAN'T START AN IMPORT. The preview and the write
@@ -654,6 +654,7 @@ const crypto = require("crypto");
 const DB = require("../db");
 const RUNNING = new Map();          // job id → its promise, in this process
 const JOB_BATCH = 500;
+const GIFT_BATCH = 100;             // IMPORT-7: gifts a statement, and the progress written once a batch
 const STALE_MS = 3 * 60 * 1000;     // a running job nobody has touched for this long died with its server
 
 // The same cells are the same file, whatever it is called and wherever it was opened.
@@ -668,7 +669,7 @@ function jobView(j) {
   const result = typeof j.result === "string" ? JSON.parse(j.result) : j.result;
   return { id: j.id, importId: j.id, status: j.status, phase: j.phase || null, done: Number(j.done) || 0, total: Number(j.total) || 0,
            fileName: j.file_name || null, error: j.error || null, startedAt: j.started_at, finishedAt: j.finished_at || null,
-           result: result ? result.body : null, httpStatus: result ? result.status : null,
+           result: result ? result.body : null, httpStatus: result ? result.status : null, roundTrips: result ? result.roundTrips ?? null : null,
            sentence: j.status === "running" ? `${j.phase || "Starting"}…`
              : j.status === "failed" ? `Not imported. ${j.error || "The import stopped."} Nothing was written.` : null };
 }
@@ -911,10 +912,16 @@ async function writePlan({ req, body, importId, who, report }) {
     done = memberCount + Math.min(k + JOB_BATCH, u.pledges.length);
     await report(`Writing pledges ${Math.min(k + JOB_BATCH, u.pledges.length)} of ${u.pledges.length}`, done, total, true);
   }
-  // gifts: through recordGift, the one gift path, inside the same transaction
-  let gi = 0;
+  // gifts: through the one gift path, inside the same transaction. IMPORT-7:
+  // a batch at a time (recordGifts, recordGift's batch form), with the gift
+  // type in the same insert and the progress written once a batch. One gift
+  // at a time was about fifteen round trips each, and a 5,010-gift file took
+  // over an hour on prod.
+  const instPids = [...new Set(u.gifts.filter(g => g.kind === "installment").map(g => pledgeIdByRow.get(g.installmentOf)).filter(Boolean))];
+  const firstInst = new Map(instPids.length
+    ? (await query("SELECT id, pledge_id FROM pledge_installments WHERE org_id=? AND pledge_id = ANY(?) AND seq=1", [orgId, instPids])).map(r => [r.pledge_id, r.id]) : []);
+  const giftArgs = [], giftOf = [];
   for (const g of u.gifts) {
-    gi++;
     const args = {
       undated: !g.date, alreadyThanked: !g.date || undefined,
       orgId, donorId: personId.get(g.personKey), amount: g.cents / 100, date: g.date || null,
@@ -924,25 +931,34 @@ async function writePlan({ req, body, importId, who, report }) {
       actorId: who.id, actorName: who.name, applyInstallment: false,
       // the after-change step runs once for everyone, after the commit
       afterChange: false,
+      // INSIGHTS-1: the gift type the file's method or memo names
+      giftType: giftTypeOf([g.methodOriginal, g.note].filter(Boolean).join(" ")) || null,
     };
-    let inst = null;
     if (g.kind === "installment") {
       const pid = pledgeIdByRow.get(g.installmentOf);
       if (!pid) { duplicates++; continue; }   // its pledge was already here, and so is this payment
-      [inst] = await query("SELECT id FROM pledge_installments WHERE pledge_id=? AND seq=1", [pid]);
-      Object.assign(args, { pledgeId: pid, installmentId: inst ? inst.id : null, type: "pledge payment" });
+      Object.assign(args, { pledgeId: pid, installmentId: firstInst.get(pid) || null, type: "pledge payment" });
     }
-    const r = await recordGift(args);
-    if (r.duplicate) { duplicates++; if (g.kind !== "installment") { duplicateCents += g.cents; dupLines.add(`${g.sheet}:${g.line}`); } continue; }
-    // INSIGHTS-1: the gift type the file's method or memo names, on the row just written
-    const gType = giftTypeOf([g.methodOriginal, g.note].filter(Boolean).join(" "));
-    if (gType && r.gift && r.gift.id) await run("UPDATE gifts SET gift_type=? WHERE id=? AND org_id=?", [gType, r.gift.id, orgId]);
-    if (inst) {
-      await run("UPDATE pledge_installments SET paid_gift_id=?, paid_at=NOW() WHERE id=? AND org_id=? AND paid_gift_id IS NULL", [r.gift.id, inst.id, orgId]);
-      await recalcPledgePayment(args.pledgeId, orgId);
-      installmentGifts++; installmentCents += g.cents;
-    } else { giftsCreated++; giftCents += g.cents; }
-    await report(`Writing gifts ${gi} of ${u.gifts.length}`, memberCount + u.pledges.length + gi, total);
+    giftArgs.push(args); giftOf.push(g);
+  }
+  for (let k = 0; k < giftArgs.length; k += GIFT_BATCH) {
+    const out = await recordGifts(giftArgs.slice(k, k + GIFT_BATCH));
+    const paid = [];
+    out.forEach((r, n) => {
+      const g = giftOf[k + n], args = giftArgs[k + n];
+      if (r.duplicate) { duplicates++; if (g.kind !== "installment") { duplicateCents += g.cents; dupLines.add(`${g.sheet}:${g.line}`); } return; }
+      if (args.installmentId) {
+        paid.push([r.giftId, args.installmentId, args.pledgeId]);
+        installmentGifts++; installmentCents += g.cents;
+      } else { giftsCreated++; giftCents += g.cents; }
+    });
+    if (paid.length) {
+      await run(`UPDATE pledge_installments i SET paid_gift_id = v.gift, paid_at = NOW() FROM unnest(?::text[], ?::text[]) AS v(gift, inst)
+                  WHERE i.id = v.inst AND i.org_id = ? AND i.paid_gift_id IS NULL`, [paid.map(p => p[0]), paid.map(p => p[1]), orgId]);
+      for (const pid of new Set(paid.map(p => p[2]))) await recalcPledgePayment(pid, orgId);
+    }
+    const n = Math.min(k + GIFT_BATCH, giftArgs.length);
+    await report(`Writing gifts ${n.toLocaleString("en-US")} of ${giftArgs.length.toLocaleString("en-US")}`, memberCount + u.pledges.length + n, total, true);
   }
   // FIX-59 · ALREADY DEPOSITED. Yes (the default) marks the run's received
   // gifts deposited on their own dates (deposited_on only, as Finance's "They
@@ -1162,7 +1178,11 @@ app.post("/sheet-import/commit", requireAuth, importOpen, checkWriteAccess, wrap
   let job = claim.job;
   // started only once the row is committed, so its progress writes land
   if (claim.start) {
-    const p = runJob(req, body, job.id, who).finally(() => RUNNING.delete(job.id));
+    // IMPORT-7: under TEST_MODE the job says how many statements it sent, which
+    // the import budget charges at prod's round trip (tests/import7.test.js §5)
+    const p = DB.countRoundTrips(() => runJob(req, body, job.id, who))
+      .then(({ trips }) => trips != null && DB.runOutside(`UPDATE sheet_import_jobs SET result = COALESCE(result, '{}'::jsonb) || jsonb_build_object('roundTrips', ?::int) WHERE id=?`, [trips, job.id]))
+      .catch(() => {}).finally(() => RUNNING.delete(job.id));
     RUNNING.set(job.id, p);
   }
   if (!job) return res.status(409).json({ error: "busy", message: "Another import of this file is starting. Open Import again in a moment." });

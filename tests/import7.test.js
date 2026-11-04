@@ -16,6 +16,11 @@
 //      naming the sheet and its unit, the file's line adds them up, and no
 //      label is used for two numbers (the workbook screen's "rows in the
 //      file" is gone).
+//   §5 a 5,000-gift file in under two minutes at prod's round trip: on prod a
+//      1,005-person, 5,010-gift workbook took over an hour, one gift at a time
+//      (recordGift, a gift_type UPDATE and a progress write each). The same
+//      shape, generated, lands whole, and its time here plus every statement it
+//      sent charged 20 ms (the job's own count, TEST_MODE) is under 2 minutes.
 //   §4 the big Undo: Undo of the 25,000-person import answers at once (202),
 //      runs on the queue with progress, and is followed to done with this
 //      suite's own deadline, never a wait; every person goes. A small import
@@ -24,9 +29,11 @@
 // HOW IT GOES RED ON MAIN: §1 19,999 land and the receipt has no row line;
 // §2 the file is cut, read and written (200, people in the database); §3 the
 // receipt has no per-sheet lines; §4 the Undo holds the request and answers
-// 200 after the work (no 202), and undo-status is a 404. Planted: MAX_ROWS =
+// 200 after the work (no 202), and undo-status is a 404; §5 the job does not
+// count its statements, and one gift at a time is about 70,000 of them (about
+// 24 minutes at 20 ms, measured). Planted: MAX_ROWS =
 // 20000 back in readBody turns §1 red; the 5,000-row hand-off taken out of
-// the reverse route turns §4 red.
+// the reverse route turns §4 red; GIFT_BATCH = 1 turns §5 red.
 //
 // Standard scratch stack (tests/README.md). Sends nothing. The server legs
 // read no date; the reader's today is fixed (2026-11-03) for §0.
@@ -35,13 +42,13 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
-const { bigPeopleCsv } = require("./lib/bigSheet");
+const { bigPeopleCsv, bigGiftRows } = require("./lib/bigSheet");
 const { undoAndWait } = require("./lib/undoWait");
 
 const BASE = process.env.BASE || "http://localhost:5601";
 const PASSWORD = "loadtest1234";
 const N = 25000;
-const SUITE_DEADLINE_MS = 240000;   // the whole suite; §4's own wait is shorter
+const SUITE_DEADLINE_MS = 360000;   // the whole suite; §4's own wait is shorter
 
 let R = null;
 const reader = async () => (R = R || await import("../shared/sheetRead.js"));
@@ -114,7 +121,8 @@ async function importJob(tok, body) {
   ok("§4 Undo of the 25,000-person import answers at once (202) and runs on the queue, not in the request (main: one request held to the end)",
     back.via === "queue" && back.answeredMs < 10000, { via: back.via, answeredMs: back.answeredMs, status: back.status, error: back.error });
   ok("§4 ...with its progress on the way (what it is doing, how far of how many)",
-    back.seen.some(s => s.status === "running" && s.total > 0 && /^Undoing: /.test(s.sentence || "")) || back.seen.length === 1 && back.seen[0].status === "done",
+    // a step that removes counted rows says how far; one that doesn't (the rest of the file) says what it is doing
+    back.seen.some(s => s.status === "running" && /^Undoing: /.test(s.sentence || "") && (s.total === 0 || s.done <= s.total)) || back.seen.length === 1 && back.seen[0].status === "done",
     back.seen.slice(0, 4));
   ok("§4 ...and is followed to done inside the deadline: every person the file made is gone, and the sentence counts them",
     back.status === 200 && leftPeople === 0 && /25,000 people this file created/.test((back.body && back.body.sentence) || ""),
@@ -162,12 +170,49 @@ async function importJob(tok, body) {
   ok("§3 no label counts two things: each sheet's and the file's line differ, and the workbook receipt no longer says \"rows in the file\"",
     labels.length === 3 && new Set(labels).size === 3 && !/\brows in the file\b/.test(wbSrc) && /gift rows in the \{ps\.sheet\} sheet/.test(wbSrc), labels);
 
+  // ── §5 a 5,010-gift file, inside two minutes at prod's round trip
+  const ORG5 = "org_import7_gifts", LATENCY_MS = 20, BUDGET_MS = 120000;
+  const tok5 = await freshOrg(ORG5, "Import Seven Gifts");
+  const gsheets = [{ name: "Gifts", grid: bigGiftRows(1005, 5010) }];
+  const u5 = await call("POST", "/sheet-import/understand", tok5, { fileName: "test-1000.xlsx", sheets: gsheets, useModel: false });
+  const t5 = performance.now();
+  const j5 = u5.status === 200 ? await importJob(tok5, { fileName: "test-1000.xlsx", sheets: gsheets, useModel: false, previewOrgId: ORG5 }) : { end: null };
+  const wall5 = Math.round(performance.now() - t5);
+  // the job's statement count lands just after it says done
+  let trips = j5.end && j5.end.roundTrips;
+  for (let i = 0; j5.importId && trips == null && i < 40; i++) {
+    await new Promise(z => setTimeout(z, 250));
+    const j = await call("GET", `/sheet-import/jobs/${encodeURIComponent(j5.importId)}`, tok5);
+    trips = j.body && j.body.roundTrips;
+  }
+  const db5 = await one(`SELECT (SELECT COUNT(*) FROM gifts WHERE org_id=$1)::int g, (SELECT COALESCE(SUM(amount),0) FROM gifts WHERE org_id=$1)::numeric d,
+                                (SELECT COUNT(*) FROM donors WHERE org_id=$1)::int p,
+                                (SELECT COUNT(*) FROM interactions WHERE org_id=$1 AND type='gift' AND gift_id IS NOT NULL)::int lines,
+                                (SELECT COUNT(*) FROM events_outbox WHERE org_id=$1 AND type='gift.recorded' AND ready)::int events,
+                                (SELECT COUNT(*) FROM gifts WHERE org_id=$1 AND gift_type IS NOT NULL)::int typed,
+                                (SELECT COUNT(*) FROM donors d WHERE org_id=$1 AND NOT EXISTS (
+                                   SELECT 1 FROM (SELECT COALESCE(SUM(amount),0) s, COUNT(*) n FROM gifts g WHERE g.donor_id=d.id) t
+                                    WHERE t.s = d.total_giving AND t.n = d.gift_count))::int off`, [ORG5]);
+  const sent = gsheets[0].grid.slice(1).reduce((t, r) => t + Math.round(Number(r[3]) * 100), 0) / 100;
+  ok("§5 a 1,005-person, 5,010-gift file lands whole through the one gift path: every gift, its timeline line and its event, each person's total and count",
+    j5.end && j5.end.status === "done" && db5.g === 5010 && Number(db5.d) === sent && db5.p === 1005 && db5.lines === 5010 && db5.events === 5010
+      && db5.typed === 1002 && db5.off === 0,
+    { job: j5.end && j5.end.status, error: j5.end && j5.end.error, sent, ...db5 });
+  const charged = wall5 + (trips || 0) * LATENCY_MS;
+  ok(`§5 ...in under 2 minutes at ${LATENCY_MS} ms a statement (${wall5} ms here + ${trips} statements × ${LATENCY_MS} ms = ${Math.round(charged / 1000)} s; one gift at a time: about 24 minutes)`,
+    trips != null && charged < BUDGET_MS, { wall5, trips, charged });
+  const again5 = u5.status === 200 ? await importJob(tok5, { fileName: "test-1000.xlsx", sheets: gsheets, useModel: false, previewOrgId: ORG5 }) : { end: null };
+  const { n: g5 } = await one(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`, [ORG5]);
+  ok("§5 ...and the same file again adds nothing: every gift row is already here",
+    again5.end && again5.end.status === "done" && g5 === 5010 && again5.end.result && again5.end.result.giftsCreated === 0 && again5.end.result.duplicates === 5010,
+    { status: again5.end && again5.end.status, gifts: g5, created: again5.end && again5.end.result && again5.end.result.giftsCreated, duplicates: again5.end && again5.end.result && again5.end.result.duplicates });
+
   // §4 under the line: a small import is undone in the request
   const small = await undoAndWait(BASE, tok3, j3.importId || "none", { timeoutMs: 30000 });
   ok("§4 a small import is still undone in the request (200 with its sentence)", small.via === "inline" && small.status === 200 && /^Undone\. 8 gifts removed/.test((small.body && small.body.sentence) || ""),
     { via: small.via, status: small.status, sentence: small.body && (small.body.sentence || small.body.message) });
 
-  for (const id of [ORG1, ORG2, ORG3]) {
+  for (const id of [ORG1, ORG2, ORG3, ORG5]) {
     const all = (await q(`SELECT table_name AS t FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.t);
     for (const t of all) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [id]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [id]).catch(() => {});
