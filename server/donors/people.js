@@ -23,7 +23,7 @@ const {
   formConfigMod, fundraiserPerson, generateEditToken, geocode, getThemeAsset, givingPagePublicPayload,
   gpOrgSql, gpPageSql, imageBytesMatchMime, markDonorsForGeocoding, orgToday, orgTz, personPhoto,
   processGeocodeQueue, processPhotoQueue, pruneUnreferencedAssets, publicAppUrl, putThemeAsset, query,
-  recomputeScoresForOrg, recordAssetPointerHistory, requireAdmin, requireAuth, requireCrm, run,
+  recomputeScoresForOrg, recordAssetPointerHistory, requireAdmin, requireAuth, requireCrm, run, scheduleScores,
   slugifyGivingPage, staffWho, uniquePeerFundraiserSlug, uuid, wrap, writeAuditLog,
 } = ctx;
 let PT = null;
@@ -45,14 +45,21 @@ let app = routers.r1;
 // ── ENGAGE-1 — A DONOR'S TWO SCORES ────────────────────────────────────────
 // What the profile rail shows: engagement with its band and reason, generosity,
 // every part with its points (they add to the score), the explanation from the
-// one weights file, and the suggested ask from their own gifts. A donor the
-// compute has not reached yet (added a second ago) gets the org computed now.
+// one weights file, and the suggested ask from their own gifts. SCORES-1: a
+// donor the compute has not reached yet (added a second ago, or mid-import) is
+// scored on the fly, for this answer only, against the org's stored population,
+// and one recompute is asked for (folded into any already waiting). A GET never
+// writes a score row.
 app.get("/donors/:id/scores", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [d] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, orgId]);
   if (!d) return res.status(404).json({ error: "Not found" });
   let [row] = await query("SELECT * FROM donor_scores WHERE org_id=? AND donor_id=?", [orgId, d.id]);
-  if (!row) { await recomputeScoresForOrg(orgId); [row] = await query("SELECT * FROM donor_scores WHERE org_id=? AND donor_id=?", [orgId, d.id]); }
+  if (!row) {
+    const [s] = (await engagementMod.scorePeople(query, orgId, orgToday(await orgTz(orgId)), [d.id])).scores;   // ORG_TZ_SEAM_OK
+    if (s) row = { engagement: s.engagement, generosity: s.generosity, band: s.band, reason: s.reason, last_touch: s.lastTouch, parts: s.parts, computed_for: null, computed_at: null };
+    scheduleScores(orgId, [d.id]);
+  }
   const W = await engagementMod.weights();
   const parts = (typeof row?.parts === "string" ? JSON.parse(row.parts) : row?.parts) || { engagement: [], generosity: [] };
   const band0 = W.bandFor(row ? row.engagement : 0);

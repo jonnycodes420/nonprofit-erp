@@ -1558,35 +1558,30 @@ async function recordGift(o) {
 }
 
 // ── ENGAGE-1 — THE TWO SCORES ──────────────────────────────────────────────
-// engagement.js computes; this is when. After a gift or a touch, debounced per
-// org so a batch of twenty gifts is one recompute, and on the six-hour tick
-// (the nightly recompute, with room to spare). Off the request path: a score
-// that is a few seconds behind is fine, a gift that waits for one is not.
+// engagement.js computes; server/donors/handlers/scores.js is when (SCORES-1:
+// the people a change touched, folded per org; the full pass every six hours
+// and once after an import). Off the request path.
 const engagementMod = require("./engagement");
-// ARCH-1: one recompute per org at a time. The org's rows are replaced as a
-// set (delete, then insert), so two runs at once (the debounced one after an
-// import, and a profile's GET /donors/:id/scores that found no row mid-replace)
-// both inserted, and the second died on donor_scores_pkey: a 500 on the
-// profile, and import2-history §7 in CI. Runs for one org now queue behind
-// each other in this process, and the advisory lock does the same across
-// processes. Every call still runs; nothing is skipped or merged.
+const scheduleScores = (orgId, donorIds = null, opts = {}) => require("./server/donors/handlers/scores").schedule(orgId, donorIds, opts);
+// ARCH-1: one full pass per org at a time, in this process and (the advisory
+// lock) across processes. A caller that must see its own answer waits; the
+// scheduled and queued passes (`wait: false`) give up and ask again later.
 const _scoreRuns = new Map();
-async function recomputeScoresForOrg(orgId) {
+async function recomputeScoresForOrg(orgId, { wait = true } = {}) {
   if (!dbReady) await DB_READY;   // HARDEN-1: the boot race on donor_scores.pattern
   const prev = _scoreRuns.get(orgId) || Promise.resolve();
   const mine = prev.catch(() => {}).then(async () => {
     const [o] = await query("SELECT id, timezone FROM orgs WHERE id=?", [orgId]);
     if (!o) return 0;
-    return withAdvisoryLock(`donor_scores:${orgId}`, () => engagementMod.recomputeOrgScores(query, orgId, orgTime.orgToday(o)));
+    const runIt = () => engagementMod.recomputeOrgScores(query, orgId, orgTime.orgToday(o));
+    if (wait) return withAdvisoryLock(`donor_scores:${orgId}`, runIt);
+    const r = await withTryAdvisoryLock(`donor_scores:${orgId}`, runIt);
+    return r && r.skipped ? (await scheduleScores(orgId, null, { laterMs: 30000 }), null) : r;
   });
   _scoreRuns.set(orgId, mine);
   mine.catch(() => {}).then(() => { if (_scoreRuns.get(orgId) === mine) _scoreRuns.delete(orgId); });
   return mine;
 }
-// JOBS-1: a recompute is a job on the queue (server/donors/handlers/scores.js),
-// one waiting per org, a moment after the change, so a batch of twenty gifts
-// is one recompute and a failure is tried again. It used to be a timer here.
-const scheduleScores = (orgId) => require("./server/donors/handlers/scores").schedule(orgId);
 // LIVE-1 — the after-change step's helpers, handed over once at boot.
 const AFTER = require("./afterChange");
 AFTER.configure({ query, run, GR, orgToday, orgTz, scheduleScores, computeDriftForDonors, unlapseHeldByPledge });
@@ -1627,14 +1622,15 @@ require("./jobQueue").define("refreshStoredDrift", { everyMs: 6 * 60 * 60 * 1000
 require("./jobQueue").define("orgSummaryCheck", { everyMs: 24 * 60 * 60 * 1000, firstMs: 20 * 60 * 1000, run: () => ORG_SUMMARY.checkAll() });
 // FIX-33, and LIVE-1: a meeting synced from the calendar is a change to the
 // people in it, so it runs the after-change step (which schedules the scores).
+// SCORES-1: a change that names nobody waits for the six-hour pass.
 require("./meetingEffects").onChange = (orgId, ids) => {
   if (ids && ids.length) AFTER.afterChangeSoon(orgId, ids, { door: "mail_calendar_sync", recalc: false });
-  else scheduleScores(orgId);
 };
+// SCORES-1: an org with people; one another run holds is asked again later.
 async function recomputeAllScores() {
-  const orgs = await query("SELECT id FROM orgs", []);
+  const orgs = await query("SELECT o.id FROM orgs o WHERE EXISTS (SELECT 1 FROM donors d WHERE d.org_id = o.id)", []);
   for (const o of orgs) {
-    try { await recomputeScoresForOrg(o.id); } catch (e) { console.error(`[scores] ${o.id}:`, e.message); }
+    try { await recomputeScoresForOrg(o.id, { wait: false }); } catch (e) { console.error(`[scores] ${o.id}:`, e.message); }
   }
   return [];
 }
@@ -3009,12 +3005,16 @@ async function processPledgeInstallmentReminders(opts = {}) {
 }
 // ENGAGE-1 — A TOUCH MOVES THE SCORES. Any successful staff write to a person,
 // a gift, a conversation, an event, a shift, a meeting or a survey schedules
-// that org's recompute (debounced: twenty writes are one recompute). Syncs that
-// arrive without a request are picked up by the six-hour tick.
+// a recompute of the people it names (SCORES-1, handlers/scores.js), never the
+// org. Syncs that arrive without a request are picked up by the six-hour tick.
 const SCORE_TOUCH_PATHS = /^\/(donors|gifts|interactions|conversations|threads|events|volunteer|calendar|meetings|recurring|surveys)/;
 app.use((req, res, next) => {
   if (req.method !== "GET" && req.method !== "HEAD" && SCORE_TOUCH_PATHS.test(req.path)) {
-    res.on("finish", () => { if (res.statusCode < 400 && req.user && req.user.orgId) scheduleScores(req.user.orgId); });
+    res.on("finish", () => {
+      if (res.statusCode >= 400 || !req.user || !req.user.orgId) return;
+      const ids = require("./server/donors/handlers/scores").idsOfRequest(req);
+      if (ids.length) scheduleScores(req.user.orgId, ids);
+    });
   }
   next();
 });
