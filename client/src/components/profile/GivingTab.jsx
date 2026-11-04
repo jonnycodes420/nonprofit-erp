@@ -433,6 +433,7 @@ function GivingTab({acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addP
                             <td style={{padding:"9px 12px",fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>{fmtFull(g.amount)}
                               {/* FUNDRAISING-2: a gift for an event names it. */}
                               {g.event_name&&<div data-testid="dp-gift-event" style={{fontSize:11,fontWeight:400,color:T.ink3}}>{g.event_name}</div>}
+                              {(g.softCreditTo||[]).length>0&&<div data-testid="dp-gift-softcredit" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Soft credit to {g.softCreditTo.map(x=>x.name).join(", ")} (recognition, not in their Lifetime)</div>}
                               {g.fee>0&&g.amount>0&&<div data-testid="dp-gift-fee-net" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Fee {fmtFull(g.fee)}, net {fmtFull(Math.round((g.amount-g.fee)*100)/100)}</div>}</td>
                             <td style={{padding:"9px 12px",color:T.ink3,textTransform:"capitalize"}}>{g.type||"cash"}</td>
                             <td style={{padding:"9px 12px",color:T.ink3}}>{g.payment_method||"Not recorded"}</td>

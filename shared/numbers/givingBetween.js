@@ -37,4 +37,37 @@ async function givingBetween(query, orgId, { from, to, today, donorId = null }) 
   return { cents: Number(r.cents), gifts: Number(r.n), rows: Number(r.rows), givers: Number(r.givers), from: s.from, to: s.to };
 }
 
-module.exports = { capped, IN_SPAN, SPAN_SUM, SPAN_CENTS, givingBetween };
+// LEDGER-1 · THE LAST YEAR THEY GAVE. LYBUNT's and SYBUNT's amount, one rule:
+// what the person gave in the latest year, before the year that starts on
+// `yearFrom`, in which they gave anything. The years are the report's own,
+// stepped back from `yearFrom` a whole year at a time, so a fiscal report's
+// years are fiscal and a calendar report's calendar (a May 2025 gift with a
+// July year is FY2025, never "last year" because it is 2025). For somebody who
+// gave last year it is last year's total, so LYBUNT is unchanged; for a SYBUNT
+// person it is never $0, because they gave in it.
+//   yearsBefore("2026-07-01") → { froms: ["2025-07-01", ...], tos: ["2026-06-30", ...] }
+const YEARS_BACK = 80;
+function yearsBefore(yearFrom, n = YEARS_BACK) {
+  const y0 = Number(String(yearFrom).slice(0, 4)), mmdd = String(yearFrom).slice(4, 10);
+  const froms = [], tos = [];
+  let next = String(yearFrom).slice(0, 10);
+  for (let k = 1; k <= n; k++) {
+    const f = `${y0 - k}${mmdd}`;
+    const t = new Date(Date.parse(next + "T12:00:00Z") - 86400000).toISOString().slice(0, 10);
+    froms.push(f); tos.push(t); next = f;
+  }
+  return { froms, tos };
+}
+// SQL, for a person alias `d`: joins `ly` (ly.f, ly.t: the last year they
+// gave, before yearFrom) and exposes LAST_YEAR_SUM(d) beside it.
+// Placeholders, in order: yearFrom, the froms array, the tos array.
+const LAST_YEAR_JOIN = (d = "d") => `
+  LEFT JOIN LATERAL (SELECT MAX(lg.date) AS last FROM gifts lg
+     WHERE lg.org_id = ${d}.org_id AND lg.donor_id = ${d}.id AND lg.amount > 0 AND ${MONEY("lg")} AND lg.date < ?) lgd ON true
+  LEFT JOIN LATERAL (SELECT y.f, y.t FROM unnest(?::text[], ?::text[]) AS y(f, t)
+     WHERE lgd.last >= y.f AND lgd.last <= y.t LIMIT 1) ly ON true`;
+const LAST_YEAR_SUM = (d = "d") => `(SELECT COALESCE(SUM(lg.amount), 0) FROM gifts lg
+     WHERE lg.org_id = ${d}.org_id AND lg.donor_id = ${d}.id AND ${MONEY("lg")} AND lg.date >= ly.f AND lg.date <= ly.t)`;
+const lastYearArgs = (yearFrom) => { const y = yearsBefore(yearFrom); return [yearFrom, y.froms, y.tos]; };
+
+module.exports = { capped, IN_SPAN, SPAN_SUM, SPAN_CENTS, givingBetween, yearsBefore, LAST_YEAR_JOIN, LAST_YEAR_SUM, lastYearArgs };

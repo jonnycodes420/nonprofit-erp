@@ -36,7 +36,7 @@
     "routes/templates.js": 1,
     "routes/volunteerScheduling.js": 1,
     "server.js": 12,
-    "server/donors/gifts.js": 4,
+    "server/donors/gifts.js": 3,
     "server/donors/people.js": 2,
     "server/donors/routes.js": 1,
     "server/events/routes.js": 1,

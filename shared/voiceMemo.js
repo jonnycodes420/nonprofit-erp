@@ -33,7 +33,10 @@ export const MEMO_TOOL = {
     follow_ups: { type: "array", items: obj({ label: S, when: S, quote: S }) },
     interests: { type: "array", items: obj({ words: S, quote: S }) },
     email: obj({ subject: S, body: S }),
-    money: { type: "array", items: obj({ kind: { type: "string", description: "gift (already given), pledge (promised) or interest (thinking about giving)" }, fund_words: S, quote: S }) },
+    money: { type: "array", items: obj({ kind: { type: "string", description: "gift (already given), pledge (promised) or interest (thinking about giving)" }, fund_words: S, quote: S,
+      amount: { type: "string", description: "This one amount exactly as the memo says it (\"$50\"). One item per amount, even when one sentence names several." },
+      from: { type: "string", description: "Who gave or promised this amount, as the memo names them; \"\" when it is the person the memo is about." },
+      credit_to: { type: "string", description: "When the memo says to credit this amount to someone other than the giver (a soft credit), that person's name; otherwise \"\"." } }) },
     contact: { type: "array", items: obj({ field: { type: "string", description: "email, phone or address" }, value: S, quote: S }) },
     sensitive: { type: "array", items: obj({ category: { type: "string", description: "health, family, money_trouble or child" }, neutral: S, quote: S }) },
   }),
@@ -251,15 +254,29 @@ export function normalizeMemo(raw, transcript, { today, funds = [] } = {}) {
     interests.push({ words: said, quote, fundId: fund ? fund.id : null, fundName: fund ? fund.name : null });
   }
 
-  const money = [];
+  // LEDGER-1 · EACH AMOUNT IS ITS OWN. Two checks of $100 are two gifts, not
+  // one with a twin dropped, and "$100 from Ada and $50 from Ben" is two items,
+  // each with its own amount (the model's `amount`, when it is her words inside
+  // the quote) and its own giver (`from`). A soft credit is recognition, never
+  // money: Tell Steward cannot record one, so it is never offered as a gift;
+  // it becomes a follow-up to record it on the gift form.
+  const money = [], softCredits = [];
   for (const m of arr(r.money)) {
     const quote = inMemo(m && m.quote);
-    const cents = quote ? amountCentsIn(quote) : null;
+    const said = quote && inMemo(m && m.amount);
+    const cents = quote ? (said && quote.toLowerCase().includes(said.toLowerCase()) && amountCentsIn(said)) || amountCentsIn(quote) : null;
     if (!quote || !cents) continue;   // an amount not in her words is no amount
+    const creditTo = inMemo(m && m.credit_to);
+    if (creditTo || /\bsoft[- ]?credit/i.test(quote)) { softCredits.push({ cents, to: creditTo, quote }); continue; }
     const kindM = ["gift", "pledge", "interest"].includes(m.kind) ? m.kind : "interest";
+    const from = inMemo(m && m.from);
     const fund = matchFund(`${m.fund_words || ""} ${quote}`, funds) || (interests.find(i => i.fundId) ? funds.find(f => f.id === interests.find(i => i.fundId).fundId) : null);
-    if (money.some(x => x.cents === cents && x.kind === kindM)) continue;
-    money.push({ kind: kindM, cents, fundId: fund ? fund.id : null, fundName: fund ? fund.name : null, quote });
+    if (money.some(x => x.cents === cents && x.kind === kindM && x.quote === quote && x.from === from)) continue;   // the same words read twice
+    money.push({ kind: kindM, cents, fundId: fund ? fund.id : null, fundName: fund ? fund.name : null, quote, from });
+  }
+  for (const sc of softCredits) {
+    if (followUps.length >= 4) break;
+    followUps.push({ label: `Record the ${cents$(sc.cents)} soft credit${sc.to ? ` to ${sc.to}` : ""} on the gift form`, due: today || null, exact: false, quote: sc.quote });
   }
 
   const contact = [];
@@ -282,7 +299,7 @@ export function normalizeMemo(raw, transcript, { today, funds = [] } = {}) {
   const people = arr(r.people).map(n => String(n || "").trim()).filter(n => n && inMemo(n.split(/\s+/)[0])).slice(0, 6);
 
   return { kind, how, date, summary, followUps: followUps.slice(0, 4), interests: interests.slice(0, 4), email,
-           money: money.slice(0, 4), contact: contact.slice(0, 3), sensitive: sensitive.slice(0, 4), people, filedMemo };
+           money: money.slice(0, 8), softCredits, contact: contact.slice(0, 3), sensitive: sensitive.slice(0, 4), people, filedMemo };
 }
 
 // VOICE-4: how a memo reads in a list (Recent memos): its first plain words,

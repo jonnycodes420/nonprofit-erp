@@ -555,8 +555,14 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       const LIVEP = `p.org_id = $1 AND p.status = 'open' AND EXISTS (SELECT 1 FROM donors d WHERE d.id = p.donor_id AND d.org_id = p.org_id AND d.deleted_at IS NULL)`;
       const PAID = `COALESCE((SELECT SUM(g.amount) FROM gifts g WHERE g.org_id = p.org_id AND g.pledge_id = p.id), 0)`;
       const NOSCHED = `NOT EXISTS (SELECT 1 FROM pledge_installments i2 WHERE i2.pledge_id = p.id)`;
-      const dueBy = (op) => `(SELECT COALESCE(SUM(ROUND(i.amount*100)),0) FROM pledge_installments i JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
-                               WHERE ${LIVEP} AND i.paid_gift_id IS NULL AND i.due_date ${op} $2)
+      // LEDGER-1: written out here, never read from the app. What a pledge with
+      // a schedule has due by a day is what the schedule asked for by then,
+      // less what has been paid (its payments, or the installments marked
+      // paid, whichever is more), never more than what is left on it.
+      const dueBy = (op) => `(SELECT COALESCE(SUM(ROUND(LEAST(GREATEST(p.amount - ${PAID}, 0),
+                                 GREATEST((SELECT COALESCE(SUM(i.amount) FILTER (WHERE i.due_date ${op} $2), 0) FROM pledge_installments i WHERE i.pledge_id = p.id AND i.org_id = p.org_id)
+                                   - GREATEST(${PAID}, (SELECT COALESCE(SUM(i.amount) FILTER (WHERE i.paid_gift_id IS NOT NULL), 0) FROM pledge_installments i WHERE i.pledge_id = p.id AND i.org_id = p.org_id)), 0))*100)),0)
+                               FROM pledges p WHERE ${LIVEP} AND NOT ${NOSCHED})
                            + (SELECT COALESCE(SUM(ROUND(GREATEST(p.amount - ${PAID}, 0)*100)),0) FROM pledges p
                                WHERE ${LIVEP} AND ${NOSCHED} AND (${op === "<=" ? "p.due_date IS NULL OR p.due_date = '' OR " : ""}LEFT(p.due_date::text, 10) ${op} $2))`;
       const [[open], [due], [overdue]] = await Promise.all([
@@ -951,6 +957,80 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       diffs.push(...U.feeProblems(bk.rows.filter(r => r.cents != null).map(r => ({ what: `the bookkeeper's ${r.donor || r.name || r.id || "row"} (${r.date || "no date"})`,
         gross: Number(r.cents), fee: r.feeCents == null ? null : Number(r.feeCents), net: r.netCents == null ? null : Number(r.netCents) }))).map(x => `Reports › bookkeeper: ${x}`));
     }
+  }
+
+  // ── LEDGER-1 · AFTER A CHANGE, EVERY FIGURE OF EVERY PERSON IT TOUCHED ───
+  // ctx.people: the people a change (add, edit, delete, deposit) touched. For
+  // each, the key's own sums from the rows (hard credit, the fiscal year cut
+  // at today, written out here) against every place their money shows: the
+  // header and the record (/donors/:id), the rail's "this year"
+  // (/relationship), the status glance, their household, and each thank-you
+  // waiting on them (it names a gift that exists, at that gift's amount, and
+  // its text says that amount). And the fund ledger: a stamp only for a gift
+  // that exists, at its amount, and each fund's balance on Finance is the sum
+  // of its stamps.
+  if (Array.isArray(ctx.people) && ctx.people.length && !skip.has("afterChange")) {
+    const { fiscalYear: fyOf, isCreditType: credit } = require("../keys/truthKey");
+    const today = kr.opts.today, fy = fyOf(today, kr.opts.fiscalStartMonth);
+    const liveIds = new Set(kr.rows.people.filter(p => !p.deleted && !p.sample).map(p => p.id));
+    const hard = kr.rows.gifts.filter(g => !credit(g.type) && !g.sample && liveIds.has(g.person));
+    const giftById = new Map(kr.rows.gifts.map(g => [g.id, g]));
+    const dayOf = g => (g.date ? String(g.date).slice(0, 10) : "");
+    const sumOf = (id, from, to) => hard.filter(g => g.person === id && (!from || (dayOf(g) && dayOf(g) >= from && dayOf(g) <= to))).reduce((a, g) => a + g.cents, 0);
+    const at = label ? ` (${label})` : "";
+    const [tyAll, fundsDetail] = await Promise.all([get("/thank-yous"), get("/finance/funds-detail")]);
+    const drafts = (tyAll && tyAll.drafts) || [];
+    for (const id of [...new Set(ctx.people)]) {
+      if (!liveIds.has(id)) continue;
+      const [rec, relp, st, rail] = await Promise.all([get(`/donors/${id}`), get(`/donors/${id}/relationship`), get(`/donors/${id}/status`), get(`/donors/${id}/rail`)]);
+      const who = (rec && rec.name) || id;
+      const person = kr.rows.people.find(p => p.id === id) || {};
+      if (!person.imported) agree(`${who}'s lifetime${at}`, [
+        ["the key", sumOf(id)],
+        ["the header (figures.lifetime)", rec && rec.figures && rec.figures.lifetime ? Number(rec.figures.lifetime.cents) : undefined],
+        ["the record (total_giving)", rec ? cents(rec.total_giving) : undefined],
+        ["the status glance", st && st.glance && st.glance.lifetime ? Number(st.glance.lifetime.cents) : undefined],
+      ], money);
+      agree(`${who}'s this fiscal year${at}`, [
+        ["the key", sumOf(id, fy.from, today)],
+        ["the header (figures.thisYear)", rec && rec.figures && rec.figures.thisYear ? Number(rec.figures.thisYear.cents) : undefined],
+        ["the rail (relationship.thisYear)", relp && relp.thisYear && relp.thisYear.given ? cents(relp.thisYear.given.value) : undefined],
+      ], money);
+      for (const t of (rail && rail.thankYous) || []) {
+        const g = giftById.get(t.giftId);
+        if (!g) diffs.push(`${who}'s rail: a thank-you waits on gift ${t.giftId}, which no longer exists${at}`);
+        else if (cents(t.amount) !== g.cents) diffs.push(`${who}'s rail: the thank-you says ${money(cents(t.amount))}, its gift is ${money(g.cents)}${at}`);
+      }
+      for (const d of drafts.filter(x => x.donorId === id)) {
+        const g = giftById.get(d.giftId);
+        if (!g) { diffs.push(`the thank-you queue: ${who}'s draft is for a gift that no longer exists${at}`); continue; }
+        if (cents(d.amount) !== g.cents) diffs.push(`the thank-you queue: ${who}'s draft says ${money(cents(d.amount))}, its gift is ${money(g.cents)}${at}`);
+        const body = String(d.body || "");
+        const amt = (g.cents / 100).toLocaleString("en-US", { minimumFractionDigits: g.cents % 100 ? 2 : 0, maximumFractionDigits: 2 });
+        if (/\$\d/.test(body) && !body.includes(`$${amt}`)) diffs.push(`the thank-you queue: ${who}'s draft text does not say the gift's ${money(g.cents)}${at}`);
+      }
+      if (person.household) {
+        const everyone = kr.rows.people.filter(p => p.household === person.household && liveIds.has(p.id));
+        if (!everyone.some(p => p.imported)) {
+          const h = await get(`/households/${person.household}`);
+          agree(`${who}'s household combined${at}`, [["the key", everyone.reduce((a, p) => a + sumOf(p.id), 0)],
+            ["the household", h && h.combined_giving !== undefined ? cents(h.combined_giving) : undefined]], money);
+        }
+      }
+    }
+    // The ledger: a stamp for a gift that is gone, or at an amount the gift no
+    // longer has, is money in a fund that nobody gave.
+    const stamps = await q(`SELECT gift_id, ROUND(amount * 100)::bigint AS c FROM fin_transactions WHERE org_id = $1 AND gift_id IS NOT NULL`, [orgId]);
+    for (const s of stamps) {
+      const g = giftById.get(s.gift_id);
+      if (!g) diffs.push(`the fund ledger holds ${money(Number(s.c))} for gift ${s.gift_id}, which no longer exists${at}`);
+      else if (Number(s.c) !== g.cents) diffs.push(`the fund ledger holds ${money(Number(s.c))} for a gift of ${money(g.cents)}${at}`);
+    }
+    const byFund = new Map((await q(`SELECT fund_id, (COALESCE(SUM(ROUND(amount * 100)) FILTER (WHERE type = 'income'), 0)
+        - COALESCE(SUM(ROUND(amount * 100)) FILTER (WHERE type = 'expense'), 0))::bigint AS c FROM fin_transactions WHERE org_id = $1 GROUP BY fund_id`, [orgId]))
+      .map(r => [r.fund_id, Number(r.c)]));
+    for (const f of (fundsDetail && fundsDetail.funds) || [])
+      agree(`the ${f.name} fund's balance${at}`, [["its ledger stamps", byFund.get(f.id) || 0], ["Finance's fund card", Number(f.balanceCents)]], money);
   }
 
   for (const [name, b] of [["the Donors list", list], ["Home", lead], ["Fundraising", fund], ["the Board", board], ["the workbook export", workbook]]) {
