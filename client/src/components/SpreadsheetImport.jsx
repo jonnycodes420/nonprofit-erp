@@ -28,6 +28,7 @@ import { told } from "../lib/stewardTold";   // HOME-3: the pages behind the win
 const box = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px" };
 const h3 = { fontSize: 13, fontWeight: 800, color: T.ink, margin: "0 0 6px" };
 const small = { fontSize: 12, color: T.ink3, lineHeight: 1.5 };
+const SHEET_BODY_MAX = 50 * 1000 * 1000;   // server.js bigJson("50mb") on /sheet-import/*
 const field = { flex: 1, minWidth: 0, padding: "6px 8px", border: "1px solid " + T.bg3, borderRadius: 8, fontFamily: "inherit" };
 const linkBtn = { background: "none", border: "none", padding: 0, color: T.greenDk, textDecoration: "underline", cursor: "pointer", fontSize: 12, fontFamily: "inherit" };
 const chip = { display: "inline-block", fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: T.bg, color: T.ink, marginLeft: 6 };
@@ -287,7 +288,11 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
     setBusy(b => b || "think");
     setInFlight(true);
     const asked = JSON.stringify([answers, overrides]);
-    const ask = withCells => apiFetch("/sheet-import/understand", { method: "POST", body: JSON.stringify({ fileName: file.name,
+    // IMPORT-7: a file past the server's 50 MB body is refused here, with its
+    // count, before it is sent; the server refuses past its row limit the same way
+    const ask = withCells => withCells && JSON.stringify(sheets).length > SHEET_BODY_MAX
+      ? Promise.reject({ body: { message: `This file has ${sheets.reduce((t, sh) => t + sh.grid.length, 0).toLocaleString("en-US")} rows and is too big to send in one piece. Split it and import each part.` } })
+      : apiFetch("/sheet-import/understand", { method: "POST", body: JSON.stringify({ fileName: file.name,
       ...(withCells ? { sheets } : { fileKey: fileKeyRef.current }), answers: { ...answers, suggestedDate }, overrides }) });
     (async () => {
       try {
@@ -821,6 +826,13 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             <div style={h3}>{undone ? "Undone" : "Imported"}</div>
             <div style={{ fontSize: 15, fontWeight: 700 }}>{undone || result.sentence}</div>
             {!undone && result.giftLine && <ImportGiftLine line={result.giftLine} importId={result.importId} style={{ marginTop: 4 }} />}
+            {/* IMPORT-7: every row, per sheet, each count named; the file's line adds the sheets up */}
+            {!undone && result.sheetRows && result.sheetRows.sheets.length > 0 && (
+              <div data-testid="sheet-result-rows" style={{ ...small, marginTop: 4, color: result.sheetRows.file.balanced ? T.ink3 : T.terra700 }}>
+                {result.sheetRows.sheets.map(x => <div key={x.sheet} data-testid="sheet-result-rows-sheet">{x.sentence}</div>)}
+                {result.sheetRows.file.sentence && <div style={{ fontWeight: 700 }}>{result.sheetRows.file.sentence}</div>}
+              </div>
+            )}
             {/* IMPORT-6: the receipt opens the people it brought in, under Everyone */}
             {!undone && result.donorsCreated > 0 && result.importId && (
               <button type="button" data-testid="sheet-see-people" style={{ ...linkBtn, marginTop: 6, fontSize: 13 }}

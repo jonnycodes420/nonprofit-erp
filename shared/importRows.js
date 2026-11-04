@@ -50,12 +50,12 @@ export function rowLedger({ tables, usable, aside, totals, notes, people, gifts,
   for (const p of people.values()) for (const l of p.lines) written.add(l);
   for (const g of [...gifts, ...pledges, ...noteRows]) written.add(key(g.sheet, g.line));
   let read = 0, wrote = 0;
-  const missing = [], setAside = [];
+  const missing = [], setAside = [], readBySheet = {};   // IMPORT-7: each sheet's rows, for its own line on the receipt
   const used = new Set(usable);
   const leftOut = t => t.kind === "notes" ? "notes about people already on the list" : t.kind === "summary" ? "a summary of amounts with no names" : "a table with no names and no amounts";
   for (const t of tables) for (const b of t.body) {
     if (b.blank) continue;
-    read++;
+    read++; readBySheet[t.sheet] = (readBySheet[t.sheet] || 0) + 1;
     const k = key(t.sheet, b.line);
     if (b.repeatHeader) setAside.push({ sheet: t.sheet, line: b.line, reason: "the header row again (a page break)" });
     else if (!used.has(t)) setAside.push({ sheet: t.sheet, line: b.line, reason: leftOut(t) });
@@ -63,5 +63,5 @@ export function rowLedger({ tables, usable, aside, totals, notes, people, gifts,
     else if (written.has(k)) wrote++;
     else missing.push({ sheet: t.sheet, line: b.line, text: b.cells.map(s).filter(Boolean).slice(0, 6).join(" · ") });
   }
-  return { read, written: wrote, setAside, missing, balanced: !missing.length && read === wrote + setAside.length };
+  return { read, written: wrote, setAside, missing, readBySheet, balanced: !missing.length && read === wrote + setAside.length };
 }

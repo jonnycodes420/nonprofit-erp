@@ -3,7 +3,7 @@
 // (GET /imports/:id/undo-preview), then undoes and says what it did. It sends
 // nothing and starts nothing. Offered whether or not the receipt reconciles:
 // an import that went wrong is exactly when undo matters most.
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
@@ -15,11 +15,43 @@ const btn = kind => ({
   cursor: "pointer", fontFamily: "inherit",
 });
 
+// IMPORT-7: a big import is undone on the queue (POST answers 202); the screen
+// follows it (GET /imports/:id/undo-status) with its progress until it is
+// done or has stopped, and says which. It never waits on one request.
+const FOLLOW_MS = 1000;
+
 export default function ImportUndo({ importId, onUndone, disabled }) {
-  const [step, setStep] = useState("idle");   // idle · asking · confirm · undoing · done
+  const [step, setStep] = useState("idle");   // idle · asking · confirm · undoing · following · done
   const [preview, setPreview] = useState(null);
   const [done, setDone] = useState("");
   const [err, setErr] = useState("");
+  const [progress, setProgress] = useState(null);
+  const live = useRef(true);
+
+  const finish = r => { setDone(r.sentence || "Undone."); setStep("done"); if (onUndone) onUndone(r); };
+  const follow = async () => {
+    setStep("following");
+    for (;;) {
+      await new Promise(z => setTimeout(z, FOLLOW_MS));
+      if (!live.current) return;
+      const s = await apiFetch(`/imports/${encodeURIComponent(importId)}/undo-status`, { cache: "no-store" }).catch(() => null);
+      if (!live.current) return;
+      if (!s) continue;
+      if (s.status === "done") return finish({ reversed: true, ...(s.result || {}), sentence: s.sentence });
+      if (s.status === "failed") { setErr(s.sentence); setProgress(null); setStep("confirm"); return; }
+      setProgress(s);
+    }
+  };
+  // A receipt opened (or drawn again) while its undo runs on the queue
+  // follows it from where it is, never shows Undo for an undo under way.
+  useEffect(() => {
+    live.current = true;
+    apiFetch(`/imports/${encodeURIComponent(importId)}/undo-status`, { cache: "no-store" })
+      .then(s => { if (live.current && s && s.status === "running") { setProgress(s); follow(); } })
+      .catch(() => {});
+    return () => { live.current = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importId]);
 
   const ask = async () => {
     setStep("asking"); setErr("");
@@ -30,8 +62,8 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
     setStep("undoing"); setErr("");
     try {
       const r = await apiFetch(`/imports/${encodeURIComponent(importId)}/reverse`, { method: "POST", body: "{}" });
-      setDone(r.sentence || "Undone."); setStep("done");
-      if (onUndone) onUndone(r);
+      if (r && r.status === "running") { setProgress(r); return follow(); }
+      finish(r);
     } catch (e) {
       // HARDEN-1: a lost answer is not "nothing was changed". The undo may
       // have run (the network dropped on the way back, or another press got
@@ -51,6 +83,18 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
   };
 
   if (step === "done") return <div data-testid="import-undo-done" style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{done}</div>;
+  if (step === "following") {
+    const pct = progress && progress.total ? Math.min(100, Math.round((progress.done / progress.total) * 100)) : 0;
+    return (
+      <div data-testid="import-undo-progress" role="status" style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, color: T.ink }}>
+        <div>{(progress && progress.sentence) || "Undoing…"}</div>
+        <div style={{ height: 6, background: T.bg3, borderRadius: 3, overflow: "hidden" }}>
+          <div style={{ width: pct + "%", height: "100%", background: T.greenDk, transition: "width .3s" }} />
+        </div>
+        <div style={{ fontSize: 12, color: T.ink3 }}>A big import is undone in the background. You can close this; the receipt in Settings, Imports says when it is done.</div>
+      </div>
+    );
+  }
   return (
     <div data-testid="import-undo" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {step === "confirm" && preview && (

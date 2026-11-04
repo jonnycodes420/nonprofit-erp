@@ -630,17 +630,28 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
             <strong>{fmtN(linkPreview.linkable)}</strong> of these gifts link to donors already in Steward, {fmtN(linkPreview.byKey?.donorId || 0)} by Donor ID, {fmtN(linkPreview.byKey?.email || 0)} by email, {fmtN(linkPreview.byKey?.name || 0)} by name. {fmtN(linkPreview.refusedCount)} match nothing and will be refused with their rows, never invented as new donors.
           </div>
         )}
+        {/* IMPORT-7: every count says what it counts. The receipt called the
+            89,681 gift rows it wrote and set aside the rows of the file, and
+            this ledger had 92,227 (every gift row in the gift sheets): two
+            true counts under one label. Each line names its sheet and its unit, and the
+            gift sheets add up to the workbook's line. */}
         <SectionHead>Every row, one disposition, per sheet and for the workbook</SectionHead>
-        <div style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12.5, color: T.ink }}>
+        <div data-testid="wb-ledger" style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12.5, color: T.ink }}>
+          {donorsSheet && (
+            <div data-testid="wb-ledger-people" style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "2px 0" }}>
+              <span>{donorsSheet.name}</span>
+              <span>{fmtN(donorsSheet.rowCount)} rows in the {donorsSheet.name} sheet = {fmtN(s.totals.donors)} people + {fmtN(s.totals.folded)} folded into another row {donorsSheet.rowCount === s.totals.donors + s.totals.folded ? "✓" : "✗ UNBALANCED"}</span>
+            </div>
+          )}
           {s.reconciliation.perSheet.map(ps => (
             <div key={ps.sheet} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "2px 0" }}>
               <span>{ps.sheet}</span>
-              <span>{fmtN(ps.rowsInFile)} rows = {fmtN(ps.imported)} imported + {fmtN(ps.refused)} refused + {fmtN(ps.routed)} routed {ps.balanced ? "✓" : "✗ UNBALANCED"}</span>
+              <span>{fmtN(ps.rowsInFile)} gift rows in the {ps.sheet} sheet = {fmtN(ps.imported)} to import + {fmtN(ps.refused)} refused + {fmtN(ps.routed)} routed {ps.balanced ? "✓" : "✗ UNBALANCED"}</span>
             </div>
           ))}
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "4px 0 0", fontWeight: 700, borderTop: `1px solid ${T.bg3}`, marginTop: 4 }}>
             <span>Workbook</span>
-            <span data-testid="wb-invariant">{fmtN(s.reconciliation.workbook.rowsInFile)} = {fmtN(s.reconciliation.workbook.imported)} + {fmtN(s.reconciliation.workbook.refused)} + {fmtN(s.reconciliation.workbook.routed)} {s.reconciliation.workbook.balanced ? "✓ balanced" : "✗"}</span>
+            <span data-testid="wb-invariant">{fmtN(s.reconciliation.workbook.rowsInFile)} gift rows in the gift sheets = {fmtN(s.reconciliation.workbook.imported)} to import + {fmtN(s.reconciliation.workbook.refused)} refused + {fmtN(s.reconciliation.workbook.routed)} routed {s.reconciliation.workbook.balanced ? "✓ balanced" : "✗"}</span>
           </div>
         </div>
 
@@ -802,7 +813,10 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         {/* Then the balance line. */}
         {resultRecon && (
           <div data-testid="wb-result-balance" style={{ fontSize: 12.5, color: resultBalanced ? T.ink3 : T.terra700, marginBottom: 12 }}>
-            {fmtN(resultRecon.rows.inFile)} rows in the file = {fmtN(resultRecon.rows.created)} created + {fmtN(resultRecon.rows.skipped)} set aside + {fmtN(resultRecon.rows.errored)} errored {resultBalanced ? "✓" : "✗"}
+            {fmtN(resultRecon.rows.inFile)} gift rows sent from the gift sheets = {fmtN(resultRecon.rows.created)} gift rows written + {fmtN(resultRecon.rows.skipped)} set aside + {fmtN(resultRecon.rows.errored)} errored {resultBalanced ? "✓" : "✗"}
+            {submission && submission.reconciliation && submission.reconciliation.workbook.rowsInFile !== resultRecon.rows.inFile && (
+              <> · the other {fmtN(submission.reconciliation.workbook.rowsInFile - resultRecon.rows.inFile)} of the {fmtN(submission.reconciliation.workbook.rowsInFile)} gift rows in the gift sheets were refused or routed before the write, each listed below</>
+            )}
           </div>
         )}
         {/* BUILD-87 Part 1 — the run is on the record, by name. A failure to

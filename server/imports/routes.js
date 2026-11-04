@@ -821,6 +821,7 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
         state: r.reversed_at ? "undone" : "done",
         pledgesCreated: Number(summary.pledgesCreated) || 0,
         ...peopleLine(r, summary),
+        sheetRows: summary.sheetRows || null,   // IMPORT-7
       };
     })),
   });
@@ -902,6 +903,8 @@ app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
       thanks: (await recentGiftRuns(req.user.orgId, [r])).has(r.id) ? IT.answerSentence(IT.cleanAnswer(r.thanks_answer)) || null : null,
       ...peopleLine(r, summary),
       ...given, giftLine,
+      // IMPORT-7: each sheet's rows, each count named (routes/sheetImport.js sheetAccount)
+      sheetRows: summary.sheetRows || null,
       // FIX-52: the pledges it made are part of what it brought in, and every
       // receipt that reverses as a whole offers Undo for its window, whether
       // or not it reconciles: an import that went wrong is when undo matters.
@@ -1289,197 +1292,10 @@ app.get("/imports/:id/undo-preview", requireAuth, wrap(async (req, res) => {
   res.json({ ...win, reversedAt: imp.reversed_at || null, counts, sentence });
 }));
 
-// HARDEN-1: ONE UNDO. Two presses of "Yes, undo it" (a double-click, a retry
-// after the answer was lost, a second tab) both read reversed_at as empty and
-// both ran the whole undo, each answering "Undone. 40 gifts removed". The undo
-// of one run now waits for any other undo of that run, then reads
-// reversed_at again, so the second press is told it was already undone. Its
-// own key, not `import:<org>`: the recent-gift work holds that one and the
-// undo waits for that work (cancelRecentWork), which would wait forever.
-app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  await withAdvisoryLock(`import-undo:${req.user.orgId}:${req.params.id}`, () => reverseImport(req, res));
-  if (res.statusCode < 300) require("../../routes/dataHealth").recheckSoon(req.user.orgId, "undo");   // FIX-59: Data health is current
-}));
-async function reverseImport(req, res) {
-  const orgId = req.user.orgId;
-  const [imp] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [req.params.id, orgId]);
-  if (!imp) return res.status(404).json({ error: "not_found", message: "That import is not on this organization." });
-  if (!WHOLE_IMPORT_SHAPES.has(imp.shape)) {
-    return res.status(400).json({ error: "shape_not_reversible",
-      message: "A deposit, a gift file, and a file with one row per gift reverse as a whole. Any other import is undone gift by gift, on the record." });
-  }
-  if (!(await mayUndoImport(req, imp.actor_user_id)))
-    return res.status(403).json({ error: "not_yours", message: UNDO_NOT_YOURS });
-  if (imp.reversed_at) return res.status(409).json({ error: "already_reversed", reversedAt: imp.reversed_at });
-  const windowHours = SHAPE_REVERSE_HOURS[imp.shape] || DEPOSIT_REVERSE_HOURS;
-  const ageHours = (Date.now() - new Date(imp.committed_at).getTime()) / 3600e3;
-  if (ageHours > windowHours) {
-    const what = imp.shape === "deposit" ? "deposit" : "import";
-    return res.status(409).json({ error: "window_closed",
-      message: `This ${what} was recorded ${Math.round(ageHours)} hours ago. It reverses as a whole for ${Math.round(windowHours)} hours; after that, correct it gift by gift so the correction is visible on the record.` });
-  }
-
-  // FIX-37: undo while the recent-gift work runs: stop it first, so nothing
-  // is written after the undo has read what to remove.
-  await cancelRecentWork(orgId, req.params.id);
-  const gifts = await query("SELECT id, donor_id, pledge_id FROM gifts WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
-  const giftIds = gifts.map(g => g.id);
-  // LIVE-1 — the journeys this import's gifts started are stopped and taken
-  // away (an undo is as if the file never came), their open step closed; and
-  // the readout it wrote is removed.
-  const plansStopped = await stopImportJourneys(orgId, req.params.id, actor(req));
-  await run(`UPDATE readouts SET removed_at=NOW() WHERE org_id=? AND source_kind='import' AND source_id=? AND removed_at IS NULL`,
-    [orgId, req.params.id]);
-  const pledgeIds = [...new Set(gifts.map(g => g.pledge_id).filter(Boolean))];
-  const donorIds = [...new Set(gifts.map(g => g.donor_id))];
-  if (giftIds.length) {
-    await run("UPDATE pledge_installments SET paid_gift_id=NULL, paid_at=NULL WHERE org_id=? AND paid_gift_id = ANY(?)", [orgId, giftIds]);
-    await run("DELETE FROM thank_you_drafts WHERE org_id=? AND gift_id = ANY(?)", [orgId, giftIds]).catch(() => {});
-    await run("DELETE FROM fin_transactions WHERE org_id=? AND gift_id = ANY(?)", [orgId, giftIds]);
-    await run("DELETE FROM interactions WHERE org_id=? AND gift_id = ANY(?)", [orgId, giftIds]);
-    await run("DELETE FROM gifts WHERE org_id=? AND id = ANY(?)", [orgId, giftIds]);
-  }
-  // The not-a-gift payments the deposit recorded, and the people it created —
-  // a person created by a reversed deposit has no gift and no history, so
-  // leaving them behind is leaving a record nobody asked for.
-  await run("DELETE FROM interactions WHERE org_id=? AND import_id=? AND type='payment'", [orgId, req.params.id]);
-  // IMPORT-2: everything else the run wrote and tagged. The notes a donor file
-  // brought in (its Notes column) and a history file's whole timeline, its
-  // tasks, its relationships, and the attachments put on its lines.
-  const ixIds = (await query("SELECT id, donor_id FROM interactions WHERE org_id=? AND import_id=?", [orgId, req.params.id]));
-  if (ixIds.length) {
-    await run("UPDATE interaction_attachments SET deleted_at=NOW(), deleted_by=? WHERE org_id=? AND interaction_id = ANY(?) AND deleted_at IS NULL",
-      [actor(req).name || actor(req).id, orgId, ixIds.map(i => i.id)]).catch(() => {});
-    await run("DELETE FROM interactions WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
-    for (const i of ixIds) if (i.donor_id && !donorIds.includes(i.donor_id)) donorIds.push(i.donor_id);
-  }
-  // HARDEN-1: the "Review N possible duplicates from the import" task its Data
-  // health run opened is the run's too, while nobody has done it
-  const tasksRemoved = (await query(`DELETE FROM tasks WHERE org_id=? AND (import_id=? OR (created_by=? AND COALESCE(done,0)::int = 0)) RETURNING id`,
-    [orgId, req.params.id, `system:data-health/import/${req.params.id}`])).length;
-  await run("DELETE FROM donor_relationships WHERE org_id=? AND import_id=?", [orgId, req.params.id]).catch(() => {});
-  // Flags and tags are reverted only where this run turned them on and they
-  // are still on: a flag somebody set by hand afterwards is not this run's.
-  const sj = imp.summary_json ? (typeof imp.summary_json === "string" ? JSON.parse(imp.summary_json) : imp.summary_json) : {};
-  const HISTORY_FLAGS = new Set(["do_not_solicit", "do_not_contact", "do_not_mail", "do_not_email", "do_not_call"]);
-  for (const f of (sj.flagsSet || [])) {
-    if (!HISTORY_FLAGS.has(f.flag)) continue;
-    await run(`UPDATE donors SET ${f.flag}=false WHERE org_id=? AND id=?`, [orgId, f.donorId]);
-  }
-  for (const t of (sj.tagsAdded || [])) {
-    const [d] = await query("SELECT tags FROM donors WHERE org_id=? AND id=?", [orgId, t.donorId]);
-    if (!d) continue;
-    let tags = []; try { tags = JSON.parse(d.tags || "[]"); } catch { tags = []; }
-    const drop = new Set((t.tags || []).map(x => String(x).toLowerCase()));
-    await run("UPDATE donors SET tags=? WHERE org_id=? AND id=?", [JSON.stringify(tags.filter(x => !drop.has(String(x).toLowerCase()))), orgId, t.donorId]);
-  }
-  // IMPORT-3: a spreadsheet import also made pledges, households and perhaps
-  // the event its gifts were given at. Each goes, and what it changed on a
-  // person who was already here (a household, the monthly-giver flag) is put back.
-  // FIX-60: a history file's pledges (import-semantics) carry the run too, so
-  // every shape takes the pledges its run wrote, and their installments go
-  // with them (ON DELETE CASCADE): nothing is left scheduled for a pledge that
-  // no longer exists, and a payment it linked that stays is unlinked.
-  let pledgesRemoved = 0;
-  {
-    const pl = await query("SELECT id, donor_id FROM pledges WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
-    if (pl.length) {
-      await run("UPDATE gifts SET pledge_id=NULL WHERE org_id=? AND pledge_id = ANY(?)", [orgId, pl.map(p => p.id)]);
-      await run("DELETE FROM pledge_installments WHERE org_id=? AND pledge_id = ANY(?)", [orgId, pl.map(p => p.id)]);
-      await run("DELETE FROM pledges WHERE org_id=? AND id = ANY(?)", [orgId, pl.map(p => p.id)]);
-      for (const p of pl) if (!donorIds.includes(p.donor_id)) donorIds.push(p.donor_id);
-    }
-    pledgesRemoved = pl.length;
-  }
-  if (imp.shape === "sheet") {
-    for (const id of (sj.householdAssigned || [])) await run("UPDATE donors SET household_id=NULL WHERE org_id=? AND id=?", [orgId, id]);
-    for (const id of (sj.sustainerFlagged || [])) await run("UPDATE donors SET imported_sustainer=false, imported_sustainer_amount=NULL WHERE org_id=? AND id=?", [orgId, id]);
-    // IMPORT-4: attendance, communication choices, kept columns and the
-    // timeline lines that said where they came from go too, and a person who
-    // was already here is put back exactly as they were.
-    await run("DELETE FROM event_attendees WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
-    await run("DELETE FROM interactions WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
-    // FIX-59: the tables the seating chart made, once nobody sits at them
-    if ((sj.tablesCreated || []).length) await run(`DELETE FROM event_tables t WHERE t.org_id=? AND t.id = ANY(?)
-                                                      AND NOT EXISTS (SELECT 1 FROM event_attendees a WHERE a.table_id = t.id)`, [orgId, sj.tablesCreated]);
-    if ((sj.suppressions || []).length) await run("DELETE FROM email_suppressions WHERE org_id=? AND id = ANY(?)", [orgId, sj.suppressions]);
-    const SAFE_COLS = new Set(["email", "phone", "address", "address2", "city", "state", "zip", "external_donor_id", "person_types",
-      "do_not_email", "do_not_contact", "do_not_mail", "do_not_call", "deceased",
-      "phone_unreachable", "phone_unreachable_reason", "address_unmailable", "address_unmailable_reason", "address_unmailable_at"]);
-    for (const pc of (sj.personChanges || [])) {
-      const cols = Object.keys(pc.before || {}).filter(k => SAFE_COLS.has(k));
-      if (!cols.length) continue;
-      await run(`UPDATE donors SET ${cols.map(k => k === "person_types" ? `${k}=?::jsonb` : `${k}=?`).join(", ")} WHERE org_id=? AND id=?`,
-        [...cols.map(k => k === "person_types" ? JSON.stringify(pc.before[k]) : pc.before[k]), orgId, pc.id]);
-    }
-    for (const cv of (sj.customValuesSet || [])) {
-      for (const k of cv.keys || []) await run("UPDATE donors SET custom_fields = custom_fields - ? WHERE org_id=? AND id=?", [k, orgId, cv.donorId]);
-      if (cv.wasNull) await run("UPDATE donors SET custom_fields = NULL WHERE org_id=? AND id=? AND custom_fields = '{}'::jsonb", [orgId, cv.donorId]);
-    }
-  }
-  const orphans = await query(
-    `SELECT d.id, (d.deleted_at IS NOT NULL) AS was_deleted FROM donors d WHERE d.org_id=? AND d.created_import_id=?
-       AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id)
-       AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.donor_id=d.id)`, [orgId, req.params.id]);
-  // FIX-52: people this file made that were deleted by hand since are still
-  // rows (a delete is soft). Undo takes them with the rest, says how many were
-  // already deleted, and clears their trash rows so nothing points at nobody.
-  const alreadyDeleted = orphans.filter(o => o.was_deleted).length;
-  if (alreadyDeleted) await run(`DELETE FROM deleted_records WHERE org_id=? AND table_name='donors' AND record_id = ANY(?)`,
-    [orgId, orphans.filter(o => o.was_deleted).map(o => o.id)]).catch(() => {});
-  // A person the file created who is held by something else the file wrote
-  // and this undo does not reach (a membership, an open ask) stays, rather than
-  // the whole undo failing half way.
-  let orphansRemoved = orphans;
-  if (orphans.length) {
-    try { await run("DELETE FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, orphans.map(o => o.id)]); }
-    catch (e) {
-      orphansRemoved = [];
-      for (const o of orphans) {
-        try { await run("DELETE FROM donors WHERE org_id=? AND id=?", [orgId, o.id]); orphansRemoved.push(o); }
-        catch (e2) { console.error("[imports] undo kept a person another record holds:", o.id, e2.code || e2.message); }
-      }
-    }
-  }
-  if (imp.shape === "sheet") {
-    await run(`DELETE FROM households h WHERE h.org_id=? AND h.import_id=? AND NOT EXISTS (SELECT 1 FROM donors d WHERE d.household_id=h.id)`, [orgId, req.params.id]);
-    await run(`DELETE FROM events e WHERE e.org_id=? AND e.import_id=? AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.event_id=e.id)
-                 AND NOT EXISTS (SELECT 1 FROM pledges p WHERE p.event_id=e.id)
-                 AND NOT EXISTS (SELECT 1 FROM event_attendees a WHERE a.event_id=e.id)`, [orgId, req.params.id]);
-    // a custom field this import made, once no one holds a value in it
-    for (const fid of (sj.customFieldsCreated || [])) {
-      const [def] = await query("SELECT key FROM custom_field_defs WHERE org_id=? AND id=?", [orgId, fid]);
-      if (!def) continue;
-      const [held] = await query("SELECT 1 FROM donors WHERE org_id=? AND (custom_fields ->> ?) IS NOT NULL LIMIT 1", [orgId, def.key]);
-      if (!held) await run("DELETE FROM custom_field_defs WHERE org_id=? AND id=?", [orgId, fid]);
-    }
-    for (const fid of (sj.fundsCreated || [])) {
-      await run(`DELETE FROM fin_funds f WHERE f.org_id=? AND f.id=? AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.fund_id=f.id)
-                   AND NOT EXISTS (SELECT 1 FROM fin_transactions t WHERE t.fund_id=f.id)`, [orgId, fid]).catch(() => {});
-    }
-  }
-  // Totals RECOMPUTED from what remains, never decremented.
-  for (const did of donorIds) await recalcDonorSummary(did, orgId).catch(() => {});
-  for (const pid of pledgeIds) await recalcPledgePayment(pid, orgId).catch(() => {});
-  await run("UPDATE imports SET reversed_at=NOW(), reversed_by=? WHERE id=? AND org_id=?", [actor(req).name || actor(req).id, req.params.id, orgId]);
-  if (imp.shape === "history") {
-    await recomputeScoresForOrg(orgId).catch(() => {});
-    return res.json({ reversed: true, gifts: 0, interactions: ixIds.length, tasks: tasksRemoved, donorsRemoved: orphansRemoved.length,
-      sentence: `Undone. ${ixIds.length.toLocaleString()} history ${ixIds.length === 1 ? "line" : "lines"}, ${tasksRemoved} ${tasksRemoved === 1 ? "task" : "tasks"}`
-        + (orphansRemoved.length ? ` and ${orphansRemoved.length} ${orphansRemoved.length === 1 ? "person" : "people"} this file created` : "")
-        + " removed, and the preferences it set turned back off. Nothing else was touched." });
-  }
-  // LIVE-1 — the people it touched are recomputed by the one after-change step.
-  await require("../../afterChange").afterChange(orgId, donorIds.filter(d => !orphansRemoved.some(o => o.id === d)), { door: "csv_import", history: true });
-  res.json({ reversed: true, gifts: giftIds.length, donorsRemoved: orphansRemoved.length, journeysStopped: plansStopped,
-    pledgesRemoved, alreadyDeleted,
-    sentence: `Undone. ${giftIds.length} ${giftIds.length === 1 ? "gift" : "gifts"}`
-      + (pledgesRemoved ? ` and ${pledgesRemoved} ${pledgesRemoved === 1 ? "pledge" : "pledges"}` : "") + ` removed`
-      + (plansStopped ? `, ${plansStopped} ${plansStopped === 1 ? "journey" : "journeys"} it started stopped` : "")
-      + (orphansRemoved.length ? ` and ${orphansRemoved.length} ${orphansRemoved.length === 1 ? "person" : "people"} this file created` : "")
-      + (alreadyDeleted ? ` (${alreadyDeleted} of them already deleted)` : "")
-      + `. Nothing was sent. Nothing else was touched.` });
-}
+// The Undo itself (POST /imports/:id/reverse, its status, and the job that
+// runs a big one) is server/imports/undo.js; IMPORT-7 moved it, and it reads
+// these from here.
+ctx.importUndoParts = { cancelRecentWork, stopImportJourneys, WHOLE_IMPORT_SHAPES, SHAPE_REVERSE_HOURS };
 
 // Only the mapped column, and only a string. Anything else is not a URL and
 // the row is left alone rather than queued to fail.

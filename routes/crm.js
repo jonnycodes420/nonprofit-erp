@@ -66,6 +66,7 @@ const MODULES = [
   "../server/imports/gifts",
   "../server/imports/recentGifts",
   "../server/imports/routes",
+  "../server/imports/undo",
   "../server/majorGifts/plans",
   "../server/majorGifts/routes",
   "../server/memberships/routes",
@@ -103,6 +104,7 @@ routers.r1.use(require("../server/donors/routes").routers.r1);
 routers.r1.use(require("../server/donors/records").routers.r1);
 routers.r1.use(require("../server/donors/routes").routers.r1_2);
 routers.r1.use(require("../server/imports/routes").routers.r1);
+routers.r1.use(require("../server/imports/undo").routers.r1);
 routers.r1.use(require("../server/imports/combined").routers.r1);
 routers.r1.use(require("../server/donors/interactions").routers.r1);
 routers.r1.use(require("../server/tasks/routes").routers.r1);

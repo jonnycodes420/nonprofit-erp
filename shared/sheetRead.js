@@ -1098,6 +1098,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const nearWord = w => s(w).toLowerCase().replace(/[^a-z]/g, "");
   const nearIndex = { first: new Map(), last: new Map() };
   const nearAdd = (map, k, p) => { if (!k) return; if (!map.has(k)) map.set(k, []); map.get(k).push(p); };
+  // IMPORT-7: people read so far, by last name (the near-miss check asked all of them: 25k rows, 67 s)
+  const byLastName = new Map();
   // FIX-59 · NOTES ARE NOT PEOPLE. A row whose name cell is a note ("1 Celiac
   // Diet") is a note on the person on the row above it; a note in a name
   // ("Ivy (send with Harlan's) Brooks", "**Gideon Pratt") is moved off it.
@@ -1324,8 +1326,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
           if (!linkedBy && !nearAsked) {
             // a near miss: the same last name, a first name one or two letters off, nothing to confirm it
             const last = (who.name || "").split(/\s+/).pop().toLowerCase(), first = (who.name || "").split(/\s+/)[0].toLowerCase();
-            for (const o of people.values()) {
-              if (o === fresh || o.kind !== "person" || who.kind !== "person") continue;
+            for (const o of (who.kind === "person" && byLastName.get(last)) || []) {
+              if (o === fresh || o.kind !== "person") continue;
               const ol = o.name.split(/\s+/).pop().toLowerCase(), of = o.name.split(/\s+/)[0].toLowerCase();
               if (ol === last && of !== first && editDistance(of, first) <= 2 && Math.min(of.length, first.length) >= 4) {
                 nearMisses.push({ a: o.name, b: who.name, line: b.line, sheet: t.sheet, reason: "the same last name and a first name a letter or two apart, with no email or ID to confirm it, so they are kept as two people" });
@@ -1333,6 +1335,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
               }
             }
           }
+          if (fresh.kind === "person") nearAdd(byLastName, String(fresh.name || "").split(/\s+/).pop().toLowerCase(), fresh);
         }
         const person = people.get(pkey);
         // IMPORT-5 (7c): a row read into someone already on this list of people is accounted for, never silently gone
