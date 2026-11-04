@@ -221,7 +221,7 @@ function closenessSql(today, alias = "") {
   // since could have made wrong; the profile reads the same rule live
   // (engagement.patternOf), and TRUTH-1's key checks the two agree.
   const onTime = `COALESCE(${require("./shared/numbers/lapse").ON_TIME_THROUGH(`${a}id`)} >= ?, false)
-      AND EXISTS (SELECT 1 FROM gifts gt WHERE gt.org_id = ${a}org_id AND gt.donor_id = ${a}id AND gt.amount > 0 AND LEFT(gt.date, 10) > ? AND LEFT(gt.date, 10) <= ?)`;
+      AND EXISTS (SELECT 1 FROM gifts gt WHERE gt.org_id = ${a}org_id AND gt.donor_id = ${a}id AND gt.amount > 0 AND LEFT(gt.date, 10) > ? AND LEFT(gt.date, 10) <= ? AND ${require("./shared/numbers/money").MONEY("gt")})`;
   // "Arrived" is their first activity on file: a gift, a conversation or a
   // volunteer shift, and only for someone with none of those, the day their
   // record was made (an import made today is not a new relationship).

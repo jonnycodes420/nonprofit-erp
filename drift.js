@@ -97,7 +97,7 @@ const fmtAmt = n => "$" + AMT_FMT.format(Number(n || 0));
 
 // STATUS-1: the shape of an answer. server.js keeps a day's answers in
 // donor_drift; one written before the one rhythm is recomputed, not read.
-const ANSWER_V = 2;
+const ANSWER_V = 3;
 
 // ── the core assessment ─────────────────────────────────────────────────────
 //
@@ -189,7 +189,7 @@ function assessDrift(gifts, today, opts = {}) {
     cadenceDays: seasonal ? 365 : (cadence != null ? Math.round(cadence) : null),
     intervalCv: cv != null ? Math.round(cv * 100) / 100 : null,
     daysSinceLast, overdueRatio, expectedNext, driftStartDate,
-    late: R.late, daysPast: R.daysPast, onTime: R.onTime, v: ANSWER_V,
+    late: R.late, daysPast: R.daysPast, onTime: R.onTime, onTimeThrough: R.onTimeThrough, v: ANSWER_V,
     lastGiftDate: last.date, firstGiftDate: first.date,
     valueAtRisk: Math.round(valueAtRisk * 100) / 100,
     // BUILD-83 Part 3.3/4 — AT RISK IS THE NEXT GIFT, NOT THE LIFETIME. The

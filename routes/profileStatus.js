@@ -68,8 +68,8 @@ async function closeness(orgId, d, today, w) {
   // never On track. When Drift's own line is on the profile (drifting), that
   // line says it, so it is not said twice.
   if (key === "on_track" || key === "cooling") {
-    const gs = await query(`SELECT LEFT(date,10) AS date, amount::text AS amount FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 AND LEFT(date,10) <= ?`,
-      [orgId, d.id, today]);
+    const gs = await query(`SELECT LEFT(g.date,10) AS date, g.amount::text AS amount FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND g.amount > 0
+      AND LEFT(g.date,10) <= ? AND ${require("../shared/numbers/money").MONEY("g")}`, [orgId, d.id, today]);   // money only, as closenessNow
     const a = drift.assessDrift(gs.map(g => ({ date: g.date, amount: Number(g.amount) })), today);
     const rhythm = a.seasonal && a.seasonal.kind === "month" ? `every ${MONTHS[a.seasonal.month - 1]}` : drift.humanCadence(a.cadenceDays);
     const src = a.firstGiftDate ? { key: "donor-gifts-between", params: { donor: d.id, from: a.firstGiftDate, to: today } } : null;

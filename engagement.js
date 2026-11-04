@@ -299,7 +299,7 @@ function onTimeThrough(gifts, today) {
   const r = RHYTHM.rhythmFor(gifts.filter(g => g.cents > 0).map(g => ({ date: g.date, amount: g.cents / 100 })), today);
   if (!r.hasPattern) return null;
   const yearEnds = require("./orgTime").addDays(r.lastGiftDate, 364);
-  return r.expectedNext < yearEnds ? r.expectedNext : yearEnds;
+  return r.onTimeThrough < yearEnds ? r.onTimeThrough : yearEnds;
 }
 
 // FIX-34 · THE CLOSENESS WORD ON READ. The profile's closeness line and the

@@ -127,7 +127,7 @@ function rhythmFor(gifts, today) {
   const base = { events, n, lastGiftDate: last, firstGiftDate: n ? events[0].date : null, lapsed };
   if (n < 2) {
     return { ...base, hasPattern: false, cadenceDays: null, cv: null, seasonal: null, basis: null,
-      gapExpected: null, expectedNext: null, extended: false, late: false, daysPast: 0, onTime: false };
+      gapExpected: null, onTimeThrough: null, expectedNext: null, extended: false, late: false, daysPast: 0, onTime: false };
   }
   const intervals = [];
   for (let i = 1; i < n; i++) intervals.push(orgTime.daysBetween(events[i - 1].date, events[i].date));
@@ -148,16 +148,22 @@ function rhythmFor(gifts, today) {
   // once-a-year giver one gift in a year is exactly their gap, which already
   // says when the next is due: counting it here would keep every yearly giver
   // "on time" until they lapsed, which is how case 1 read On track.)
-  let expectedNext = gapExpected, extended = false;
+  // The year holds them on time only while it lasts: once it has run out,
+  // how late they are is counted from their own usual time (gapExpected).
+  // onTimeThrough is the last day they are on time, the date the lists store
+  // (it does not depend on today); expectedNext is the date a sentence says.
+  let onTimeThrough = gapExpected;
   const usual = cadenceDays > 0 ? usualPerYear(cadenceDays) : 1;
   if (usual >= 2 && n >= usual) {
     const through = orgTime.addDays(events[n - usual].date, 365);
-    if (through > expectedNext) { expectedNext = through; extended = true; }
+    if (through > onTimeThrough) onTimeThrough = through;
   }
-  const late = !!t && expectedNext < t;
+  const extended = onTimeThrough > gapExpected && (!t || t <= onTimeThrough);
+  const expectedNext = extended ? onTimeThrough : gapExpected;
+  const late = !!t && onTimeThrough < t;
   const daysPast = late ? orgTime.daysBetween(expectedNext, t) : 0;
   return { ...base, hasPattern: true, cadenceDays, cv, seasonal, basis: seasonal ? "seasonal" : "interval",
-    gapExpected, expectedNext, extended, late, daysPast, onTime: !late && !lapsed };
+    gapExpected, onTimeThrough, expectedNext, extended, late, daysPast, onTime: !late && !lapsed };
 }
 
 // ── SPANS IN SENTENCES (STATUS-1, Jonathan 3 Nov) ────────────────────────────

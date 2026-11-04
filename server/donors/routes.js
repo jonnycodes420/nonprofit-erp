@@ -470,7 +470,7 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
   let rhythm = null;
   const r = rhy[0];
   const DR = require("../../drift");
-  const gsR = await query(`SELECT LEFT(date,10) AS date, amount::text AS amount FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 AND LEFT(date,10) <= ?`, [orgId, id, today]);
+  const gsR = await query(`SELECT LEFT(g.date,10) AS date, g.amount::text AS amount FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND g.amount > 0 AND LEFT(g.date,10) <= ? AND ${require("../../shared/numbers/money").MONEY("g")}`, [orgId, id, today]);
   const aR = DR.assessDrift(gsR.map(g => ({ date: g.date, amount: Number(g.amount) })), today);
   const name = aR && aR.basis ? DR.rhythmOf(aR) : (r ? r.rhythm : "none");
   const exp = aR && aR.expectedNext ? String(aR.expectedNext).slice(0, 10) : null;
