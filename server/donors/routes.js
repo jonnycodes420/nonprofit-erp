@@ -90,6 +90,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   lap("page");
   // Touchpoints + drift only for the page's donors — not the org-wide GROUP BY
   const ids = donors.map(d => d.id);
+  const waitingAtDrift = require("../../db").poolStats().waiting;
   const [touchpoints, { map: driftMap }] = await Promise.all([
     ids.length
       ? query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? AND donor_id = ANY(?) GROUP BY donor_id", [req.user.orgId, ids])
@@ -117,7 +118,10 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   }
   lap("lifetime");
   res.setHeader("Server-Timing", steps.map(([n, ms]) => `${n};dur=${ms}`).join(", "));
-  if (Date.now() - t0 > 2000) console.warn(`[donors-list] slow read ${Date.now() - t0}ms org=${req.user.orgId} ${steps.map(([n, ms]) => `${n}=${ms}`).join(" ")}`);
+  if (Date.now() - t0 > 2000) {
+    const ps = require("../../db").poolStats();
+    console.warn(`[donors-list] slow read ${Date.now() - t0}ms org=${req.user.orgId} ${steps.map(([n, ms]) => `${n}=${ms}`).join(" ")} pool=${ps.total}/${ps.max} waiting=${ps.waiting} waitingAtDrift=${waitingAtDrift}`);
+  }
   res.json({ donors: out, total: parseInt(cnt[0].c, 10), ...(roleCounts ? { roleCounts, role: role === "donor" ? "donors" : role === "contact" ? "contacts" : "everyone" } : {}) });
 }));
 

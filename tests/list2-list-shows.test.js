@@ -396,6 +396,24 @@ async function reset(org) {
   await ictx.close();
   if (process.env.LIST2_KEEP !== "1") await reset(IMP);
 
+  // ── §8 Done on the import receipt goes to the Donors list ──
+  const csvPath = path.join(require("os").tmpdir(), `list2-done-${process.pid}.csv`);
+  fs.writeFileSync(csvPath, "First Name,Last Name,Email\nMirabel,Ostrander,mirabel.ostrander@example.org\nCosimo,Ferrante,cosimo.ferrante@example.org\n");
+  await page.goto(`${APP}/donors`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /Import & tools/ }).click();
+  await page.getByRole("menuitem", { name: /Import a spreadsheet/ }).first().click();
+  await page.locator('[data-testid="sheet-file"]').setInputFiles(csvPath);
+  await page.locator('[data-testid="sheet-import-go"]').click({ timeout: 30000 });
+  await page.locator('[data-testid="sheet-done"]').waitFor({ timeout: 60000 });
+  const before8 = new URL(page.url()).pathname + new URL(page.url()).search;
+  await page.locator('[data-testid="sheet-done"]').click();
+  await page.waitForTimeout(1500);
+  const u8 = new URL(page.url());
+  const onList = u8.pathname === "/donors" && !/view=/.test(u8.search) && (await page.locator('[data-testid="dir-table"]').count()) === 1
+    && (await page.locator('[data-testid="sheet-import"], [data-testid="sheet-result"]').count()) === 0;
+  ok("§8 Done on the import receipt goes to the Donors list", onList, `${before8} → ${u8.pathname}${u8.search}`);
+  fs.unlinkSync(csvPath);
+
   await browser.close();
   if (process.env.LIST2_KEEP !== "1") await reset(ORG);
   await closeDb();
