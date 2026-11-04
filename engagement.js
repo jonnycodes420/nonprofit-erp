@@ -289,6 +289,19 @@ function patternOf(gifts, today) {
   return r.lapsed ? "lapsed" : "late";
 }
 
+// STATUS-1: the last day they are on time, stored for the lists (donor_scores
+// .on_time_through, beside donor_rhythm.expected_next, which afterChange.js
+// writes): their expected next gift, or the day before a year with no gift,
+// whichever comes first. A date, so it never goes stale as days pass; only a
+// gift moves it, and a gift recomputes both. shared/numbers/lapse.js reads the
+// newer of the two.
+function onTimeThrough(gifts, today) {
+  const r = RHYTHM.rhythmFor(gifts.filter(g => g.cents > 0).map(g => ({ date: g.date, amount: g.cents / 100 })), today);
+  if (!r.hasPattern) return null;
+  const yearEnds = require("./orgTime").addDays(r.lastGiftDate, 364);
+  return r.expectedNext < yearEnds ? r.expectedNext : yearEnds;
+}
+
 // FIX-34 · THE CLOSENESS WORD ON READ. The profile's closeness line and the
 // score card's band word were reading donor_scores.pattern, written the night
 // the scores ran, while the drift badge is computed on read: a gift in between
@@ -326,7 +339,7 @@ async function scoreOrg(q, orgId, today) {
     for (const t of ts) { byPart[t.part].raw = round2(byPart[t.part].raw + t.points); byPart[t.part].count++; if (t.booked) byPart[t.part].booked++; }
     const engRaw = round2(ts.reduce((s, t) => s + t.points, 0));
     const gen = await generosityParts(today, gBy.get(id) || [], sBy.get(id) || []);
-    per.set(id, { byPart, engRaw, gen, lastTouch: ts[0] ? ts[0].date : null, pattern: patternOf(gBy.get(id) || [], today) });
+    per.set(id, { byPart, engRaw, gen, lastTouch: ts[0] ? ts[0].date : null, pattern: patternOf(gBy.get(id) || [], today), onTimeThrough: onTimeThrough(gBy.get(id) || [], today) });
   }
   const engPop = [...per.values()].map(p => p.engRaw).filter(v => v > 0).sort((a, b) => a - b);
   const givers = [...per.values()].filter(p => p.gen.lifetime.raw > 0);
@@ -343,7 +356,7 @@ async function scoreOrg(q, orgId, today) {
     const generosity = giver ? Math.max(1, Math.round(contrib.reduce((s, x) => s + x, 0))) : 0;
     const genPts = apportion(generosity, contrib);
     out.push({
-      donorId: id, engagement, generosity, band: w.bandFor(engagement).key, pattern: p.pattern,
+      donorId: id, engagement, generosity, band: w.bandFor(engagement).key, pattern: p.pattern, onTimeThrough: p.onTimeThrough,
       reason: reasonOf(w, p.byPart, p.lastTouch, today), lastTouch: p.lastTouch,
       parts: {
         engagement: w.ENGAGEMENT_PARTS.map((k, i) => ({ key: k, points: engPts[i], raw: p.byPart[k].raw, count: p.byPart[k].count })),
@@ -362,11 +375,11 @@ async function recomputeOrgScores(q, orgId, today) {
   for (let i = 0; i < scores.length; i += 500) {
     const chunk = scores.slice(i, i + 500);
     await q(
-      `INSERT INTO donor_scores (org_id, donor_id, engagement, generosity, band, pattern, reason, last_touch, parts, computed_for, computed_at, created_by, created_by_name)
-       SELECT ?, x.donor_id, x.engagement, x.generosity, x.band, x.pattern, x.reason, x.last_touch, x.parts::jsonb, ?, NOW(), 'system:engagement', 'Steward (scores)'
-         FROM jsonb_to_recordset(?::jsonb) AS x(donor_id text, engagement int, generosity int, band text, pattern text, reason text, last_touch text, parts text)`,
+      `INSERT INTO donor_scores (org_id, donor_id, engagement, generosity, band, pattern, on_time_through, reason, last_touch, parts, computed_for, computed_at, created_by, created_by_name)
+       SELECT ?, x.donor_id, x.engagement, x.generosity, x.band, x.pattern, x.on_time_through, x.reason, x.last_touch, x.parts::jsonb, ?, NOW(), 'system:engagement', 'Steward (scores)'
+         FROM jsonb_to_recordset(?::jsonb) AS x(donor_id text, engagement int, generosity int, band text, pattern text, on_time_through text, reason text, last_touch text, parts text)`,
       [orgId, today, JSON.stringify(chunk.map(s => ({ donor_id: s.donorId, engagement: s.engagement, generosity: s.generosity,
-        band: s.band, pattern: s.pattern, reason: s.reason, last_touch: s.lastTouch, parts: JSON.stringify(s.parts) })))]);
+        band: s.band, pattern: s.pattern, on_time_through: s.onTimeThrough, reason: s.reason, last_touch: s.lastTouch, parts: JSON.stringify(s.parts) })))]);
   }
   return scores.length;
 }
@@ -438,4 +451,4 @@ async function suggestedAsk(q, orgId, donorId, opts = {}) {
     sentence: `${own.sentence.replace(/: ask \$[\d,.]+(?:, [^.]*)?\.$/, "")}; the screening file (${s.provider}, ${s.screenedOn}) puts capacity at ${range}, so one step up: ask ${RT.dollars(up)}.` };
 }
 
-module.exports = { touchRows, givingRows, generosityParts, patternOf, closenessNow, scoreOrg, recomputeOrgScores, partRows, suggestedAsk, apportion, pctAtOrBelow, weights, reasonFor };
+module.exports = { touchRows, givingRows, generosityParts, patternOf, onTimeThrough, closenessNow, scoreOrg, recomputeOrgScores, partRows, suggestedAsk, apportion, pctAtOrBelow, weights, reasonFor };

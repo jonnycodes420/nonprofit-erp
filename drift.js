@@ -227,7 +227,8 @@ function composeReason(a, events, today) {
   // STATUS-1: the gap counts whole calendar months (rhythm.spanBetween), so it
   // never says "9 months" while the lapse rule says under 9; a person past
   // their own usual time is told by how much.
-  const late = a.late ? ` ${RHY.pastPhrase({ late: true, expectedNext: a.expectedNext }, today)}` : "";
+  // A lapsed person's gap already says it ("Nothing for over a year").
+  const late = a.late && a.state !== "lapsed" ? ` ${RHY.pastPhrase({ late: true, expectedNext: a.expectedNext }, today)}` : "";
   const gapPhrase = (a.daysSinceLast != null && a.daysSinceLast < 1 ? "The last gift was today." : `Nothing for ${RHY.spanBetween(a.lastGiftDate, today)}.`) + late;
   const firstYear = orgTime.parseCivil(a.firstGiftDate).y;
 

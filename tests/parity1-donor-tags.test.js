@@ -129,7 +129,7 @@ const id = k => `d_par1t_${k}`;
   ok("§5 a once-a-year donor who gave on pattern is On track, not Cooling",
     st.yearly.closeness && st.yearly.closeness.key === "on_track" && st.yearly.closeness.label === "On track", st.yearly.closeness);
   ok("§5 the On track line says their own rhythm and opens their gifts",
-    (st.yearly.closeness.facts || []).some(f => /^gives (every \w+|about once a year), latest gift on time$/.test(f.text) && f.source && f.source.key === "donor-gifts-between"), st.yearly.closeness.facts);
+    (st.yearly.closeness.facts || []).some(f => /^gives (every \w+|about once a year)$/.test(f.text) && f.source && f.source.key === "donor-gifts-between"), st.yearly.closeness.facts);
   ok("§5 a donor past their own usual gap is Cooling", st.drifter.closeness && st.drifter.closeness.key === "cooling", st.drifter.closeness);
   const onTrack = await api("GET", `/donors?limit=200&closeness=on_track`, tok);
   const otIds = ((onTrack.body && onTrack.body.donors) || []).map(d => d.id);

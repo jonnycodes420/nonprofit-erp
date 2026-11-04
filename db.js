@@ -7184,6 +7184,8 @@ async function runSchemaInit(pool) {
   // fewer than two gifts. The closeness word reads it, so a once-a-year donor
   // who gave on time is On track, never Cooling.
   await pool.query(`ALTER TABLE donor_scores ADD COLUMN IF NOT EXISTS pattern TEXT`);
+  // STATUS-1: the last day they are on time by the one rhythm (engagement.onTimeThrough).
+  await pool.query(`ALTER TABLE donor_scores ADD COLUMN IF NOT EXISTS on_time_through TEXT`);
 
   // ── LIVE-1 · EVERY DOOR FEEDS THE MACHINE ─────────────────────────────────
   // donor_rhythm: what the one after-change step (afterChange.js) computed for

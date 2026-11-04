@@ -13,8 +13,8 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   On track. TRUTH-1's key checks the profile, the Directory and Re-engage agree for every person.
 - **A span in a sentence never rounds up across a rule boundary (STATUS-1, Jonathan 3 Nov).** It counts
   whole calendar months (`rhythm.spanBetween`), so a sentence can't say "9 months" while the lapse rule says
-  under 9. A twice-a-year donor 8 months 26 days out is Current with "Nothing for 8 months. Now 3 months
-  past their usual time."
+  under 9. A twice-a-year donor 8 months 26 days out is Current with "Nothing for 8 months. Now 2 months
+  past their usual time." (Due about Aug 10: 2 months 24 days, never rounded up to 3.)
 - **Home doesn't open with a comparison (HOME-5).** Home's header is the org, the greeting and the date, for every
   org. Home leads with what's going well and the next step; gaps against last year live one click away, on
   Fundraising and the Board, which keep the full comparison (`numbers.vsLastYear`). Words on Home point to a

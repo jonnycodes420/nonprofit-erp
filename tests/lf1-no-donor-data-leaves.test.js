@@ -172,7 +172,7 @@ global.Image = function () { calls.push({ how: "Image", args: [] }); };
       ["Bertram Quill", "$1,200 every February since 2022. Nothing for over a year."],
       ["Cyrus Fenwick", "$1,200 every December since 2022. Nothing for over a year."],
       ["Wren Albury", "Monthly $50 since March 2024. Stopped in July."],
-      ["Leopold Danvers", "Gave about every three months for 2 years, usually around $500. Nothing for 6 months."],
+      ["Leopold Danvers", "Gave about every three months for 2 years, usually around $500. Nothing for 6 months. Now 3 months past their usual time."],
       ["Rupert Gale", "Two gifts on record, a year apart. Nothing for 3 years."],
     ]) ok(`§6 the fact for ${n} is read off the file`, fact(n) === want, fact(n));
     ok("§6 each group says it in one sentence, with its count and dollars",

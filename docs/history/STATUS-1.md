@@ -8,8 +8,12 @@ nightly `donor_scores.pattern` the lists read. The profile showed two of them si
 
 - Now one function, `shared/numbers/rhythm.js`. "On track" is "the expected date hasn't passed". It is no
   longer "not far enough past to flag": Drift keeps its own threshold for *drifting*.
-- FIX-33 ("gave their usual year") now moves the expected date to when that year runs out. It applies only to
-  *more* than the usual count: at exactly the usual count, every steady giver would be extended.
+- FIX-33 ("gave their usual year") now moves the expected date to when that year runs out, for people whose
+  usual year is two or more gifts. For a once-a-year giver one gift is exactly their gap; counting it kept every
+  yearly giver "on time" until they lapsed, which is how case 1 read On track.
+- Jonathan asked for "Now 3 months past" on case 2. Counting whole months, a twice-a-year giver due about
+  Aug 10 is 2 months 24 days past on Nov 3, so the sentence says 2. No spacing gives 3 under both FIX-33 and
+  the whole-months rule.
 - The brief expected case 2 to come out Lapsing. It is 8 months 26 days, under the 9-month line. Jonathan
   decided the sentence was wrong, not the tag: spans count whole months.
 - IDS-1's one-off numbers1-foot failure (seed 407634524, sequence 66) didn't reproduce. It was green on the

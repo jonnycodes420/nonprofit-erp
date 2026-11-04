@@ -154,7 +154,9 @@ function inventory() {
   // §6 (API half) — the rail read: a card with nothing to say is null or empty.
   const railA = (await api("GET", `/donors/${A}/rail`, tok)).body || {};
   const railN = (await api("GET", `/donors/${N}/rail`, tok)).body || {};
-  ok("§6 Fern's rail: rhythm (late), thank-yous and coming up are there", !!(railA.rhythm && railA.rhythm.late === true && (railA.thankYous || []).length === 1 && (railA.comingUp || []).length >= 1), railA);
+  // STATUS-1: the rail's rhythm is the one rhythm read from her gifts, not the
+  // stored row planted above; she gave today, so it is there and not late.
+  ok("§6 Fern's rail: rhythm (on time: she gave today), thank-yous and coming up are there", !!(railA.rhythm && railA.rhythm.expectedNext && railA.rhythm.late === false && (railA.thankYous || []).length === 1 && (railA.comingUp || []).length >= 1), railA);
   ok("§6 a new donor's rail has nothing but contact", Array.isArray(railN.thankYous) && !railN.rhythm && !railN.recurring && !railN.thankYous.length && !railN.comingUp.length && !railN.volunteering && !railN.connected.length, railN);
   const other = await api("GET", `/donors/d_b72_12/rail`, tok);
   ok("§6 the rail read is tenant-scoped", other.status === 404, other.status);

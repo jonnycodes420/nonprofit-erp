@@ -3,12 +3,13 @@
 // Seen on prod (3 Nov): a once-a-year donor six weeks past their expected gift
 // read "On track: gives about once a year, latest gift on time" under a
 // Lapsing tag, and a twice-a-year donor read "Nothing for 9 months" (268 days:
-// the rule says under 9) beside Current. The one rhythm is
+// the rule says under 9) beside Current. Whole months: due Aug 10, today Nov 3
+// is 2 months 24 days past, said "2 months". The one rhythm is
 // shared/numbers/rhythm.js; every door reads it.
 //
 //   §1 the rule, pure, on the brief's own dates (2026-11-03): case 1 is
 //      Lapsing and past their usual time; case 2 is Current, "Nothing for 8
-//      months. Now 3 months past their usual time."; a December giver is not
+//      months. Now 2 months past their usual time."; a December giver is not
 //      late in October and is in January; a span never rounds up across the
 //      9-month line; the org's today at 00:05 UTC is New York's day.
 //   §2 the same two people (made-up names) on a real server, dated from the
@@ -77,11 +78,11 @@ const idsOf = async (tok, path) => new Set((((await api("GET", `${path}&limit=20
     ok("§1 case 1: past their usual time by six weeks", r.late && r.daysPast === 44 && RHY.pastPhrase(r, T) === "Now 6 weeks past their usual time.", [r.late, r.daysPast, RHY.pastPhrase(r, T)]);
     ok("§1 case 1: the tag is Lapsing", stateOf(c1, T) === "lapsing", stateOf(c1, T));
     ok("§1 case 1: the closeness pattern is late, never on track", patternOf(c1, T) === "late", patternOf(c1, T));
-    const c2 = gifts(caseTwo("2026-02-08", 170));
+    const c2 = gifts(caseTwo("2026-02-08", 183));
     const a = drift.assessDrift(c2, T);
     ok("§1 case 2: the tag is Current (8 months 26 days is under the 9-month line)", stateOf(c2, T) === "giving", stateOf(c2, T));
     ok("§1 case 2: Cooling, past their usual time", patternOf(c2, T) === "late" && a.state === "drifting", [patternOf(c2, T), a.state]);
-    ok("§1 case 2: the sentence counts whole months", a.reason === "Gave about twice a year for 2 years, usually around $717. Nothing for 8 months. Now 3 months past their usual time.", a.reason);
+    ok("§1 case 2: the sentence counts whole months", a.reason === "Gave about twice a year for 2 years, usually around $717. Nothing for 8 months. Now 2 months past their usual time.", a.reason);
     ok("§1 a span never says 9 months while the rule says under 9", RHY.spanBetween("2026-02-08", T) === "8 months" && RHY.spanBetween("2026-02-03", T) === "9 months"
       && lapseRule.lapseState("2026-02-04", T) === "giving" && lapseRule.lapseState("2026-02-03", T) === "lapsing", [RHY.spanBetween("2026-02-08", T), RHY.spanBetween("2026-02-03", T)]);
     const dec = gifts(["2022-12-15", "2023-12-14", "2024-12-16", "2025-12-15"]);
@@ -108,7 +109,7 @@ const idsOf = async (tok, path) => new Set((((await api("GET", `${path}&limit=20
   const today = civilToday();
   const tok = await freshOrg();
   const lastTwo = add(lapseRule.shiftMonths(today, 9), 5);                  // 8 whole months ago, under the line
-  const gapTwo = orgTime.daysBetween(lastTwo, add(lapseRule.shiftMonths(today, 3), -3));   // due 3 whole months ago
+  const gapTwo = 183;                                                       // twice a year: due about 2 months 25 days ago
   await person(tok, "one", "Avery Quill", caseOne(add(today, -303)));
   await person(tok, "two", "Bea Marlow", caseTwo(lastTwo, gapTwo));
   await person(tok, "ok", "Cal Penner", [add(today, -830), add(today, -465), add(today, -100)]);
@@ -121,7 +122,7 @@ const idsOf = async (tok, path) => new Set((((await api("GET", `${path}&limit=20
   ok("§2 case 2: tagged Current, not Lapsing", tagsOf(s2).includes("current") && !tagsOf(s2).includes("lapsing"), tagsOf(s2));
   const d2 = (await api("GET", `/donors/${P("two")}`, tok)).body || {};
   ok("§2 case 2: Cooling, and Drift's line counts whole months", s2.closeness && s2.closeness.key === "cooling" && d2.drift
-    && /Nothing for 8 months\. Now 3 months past their usual time\.$/.test(d2.drift.reason), [s2.closeness && s2.closeness.key, d2.drift]);
+    && /Nothing for 8 months\. Now 2 months past their usual time\.$/.test(d2.drift.reason), [s2.closeness && s2.closeness.key, d2.drift]);
   ok("§2 an on-time once-a-year giver: On track, saying only their pattern", s3.closeness && s3.closeness.key === "on_track"
     && s3.closeness.facts[0] && /^gives (every [A-Z][a-z]+|about once a year)$/.test(s3.closeness.facts[0].text), s3.closeness);
   ok("§2 nobody's sentence says on time", ![s1, s2, s3].some(s => JSON.stringify(s.closeness || {}).includes("on time")));

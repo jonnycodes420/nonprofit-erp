@@ -14,8 +14,9 @@
 //                 usual gap, or, for a seasonal giver, the last day of their
 //                 month (or quarter) in the year after their last gift (the
 //                 year-end rule: a December giver is not late in October).
-//                 FIX-33: a person who has given more than their usual count
-//                 in a year is due when that year runs out, if that is later.
+//                 FIX-33: a person whose usual year is two or more gifts and
+//                 who has given that many in a year is due when that year runs
+//                 out, if that is later.
 //   late          today is after expectedNext; daysPast says by how much
 //   onTime        not late and not lapsed (lapseRule.js: a whole year with no gift)
 //
@@ -141,15 +142,16 @@ function rhythmFor(gifts, today) {
     gapExpected = orgTime.addDays(last, Math.round(cadence));
   }
   const cadenceDays = seasonal ? 365 : Math.round(cadence);
-  // FIX-33 · GIVING MORE THAN THEIR PATTERN IS NOT COOLING: someone who has
-  // given MORE than their usual count in a year (four gifts in February from a
-  // twice-a-year giver) is due when that year runs out, if that is later than
-  // their gap says. Exactly their usual count is their pattern, and the gap
-  // already says when the next is due (so a steady giver keeps their own gap).
+  // FIX-33 · GIVING THEIR USUAL YEAR IS NOT COOLING: someone whose usual year
+  // is two or more gifts and who has given at least that many in a year is due
+  // when that year runs out, if that is later than their gap says. (For a
+  // once-a-year giver one gift in a year is exactly their gap, which already
+  // says when the next is due: counting it here would keep every yearly giver
+  // "on time" until they lapsed, which is how case 1 read On track.)
   let expectedNext = gapExpected, extended = false;
   const usual = cadenceDays > 0 ? usualPerYear(cadenceDays) : 1;
-  if (n >= usual + 1) {
-    const through = orgTime.addDays(events[n - usual - 1].date, 365);
+  if (usual >= 2 && n >= usual) {
+    const through = orgTime.addDays(events[n - usual].date, 365);
     if (through > expectedNext) { expectedNext = through; extended = true; }
   }
   const late = !!t && expectedNext < t;

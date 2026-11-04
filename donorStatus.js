@@ -220,9 +220,8 @@ function closenessSql(today, alias = "") {
   // gift. Never donor_scores.pattern, which the nightly scores wrote and a gift
   // since could have made wrong; the profile reads the same rule live
   // (engagement.patternOf), and TRUTH-1's key checks the two agree.
-  const onTime = `EXISTS (SELECT 1 FROM donor_rhythm rr WHERE rr.org_id = ${a}org_id AND rr.donor_id = ${a}id
-      AND rr.expected_next IS NOT NULL AND LEFT(rr.expected_next::text, 10) >= ?
-      AND NULLIF(LEFT(${a}last_gift_date, 10), '') > ?)`;
+  const onTime = `COALESCE(${require("./shared/numbers/lapse").ON_TIME_THROUGH(`${a}id`)} >= ?, false)
+      AND EXISTS (SELECT 1 FROM gifts gt WHERE gt.org_id = ${a}org_id AND gt.donor_id = ${a}id AND gt.amount > 0 AND LEFT(gt.date, 10) > ? AND LEFT(gt.date, 10) <= ?)`;
   // "Arrived" is their first activity on file: a gift, a conversation or a
   // volunteer shift, and only for someone with none of those, the day their
   // record was made (an import made today is not a new relationship).
@@ -230,7 +229,7 @@ function closenessSql(today, alias = "") {
   return {
     // FIX-60: a person held by a pledge on schedule (lapseRule.js) is on track, not cooling.
     sql: `(CASE WHEN ${band} IN ('close','warm') THEN ${band} WHEN ${isNew} THEN 'new' WHEN ${onTime} THEN 'on_track' WHEN ${hold.sql} AND NOT ${late.sql} THEN 'on_track' ELSE 'cooling' END)`,
-    args: [w.newFrom, today, lapseRule.bounds(today).lapsedOnOrBefore, ...hold.args, ...late.args],
+    args: [w.newFrom, today, lapseRule.bounds(today).lapsedOnOrBefore, today, ...hold.args, ...late.args],
   };
 }
 function firstSeenSql(a) {
