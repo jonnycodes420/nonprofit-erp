@@ -554,9 +554,16 @@ function businessLinks(rows, { linked = new Set(), dismissed = new Set() } = {})
   const orgs = rows.filter(isOrgPerson), people = rows.filter(d => !isOrgPerson(d));
   const byWord = new Map(), byDomain = new Map(), byCore = new Map();
   const add = (m, k, v) => { if (k) (m.get(k) || m.set(k, []).get(k)).push(v); };
+  // LIST-2: a domain two or more organizations share (a placeholder, a shared
+  // office's or a provider's) is no one organization's own, so it proposes
+  // nobody. On one shared domain every person was proposed with every
+  // organization: 184,688 "people" on a file of 1,008.
+  const orgsAt = new Map();
+  for (const o of orgs) for (const d of new Set([o.email, o.email2].map(workDomain).filter(Boolean))) orgsAt.set(d, (orgsAt.get(d) || 0) + 1);
+  const ownDomain = e => { const d = workDomain(e); return d && orgsAt.get(d) === 1 ? d : null; };
   for (const o of orgs) {
     for (const t of new Set(normName(o.name).split(" ").filter(Boolean))) add(byWord, t, o);
-    for (const e of [o.email, o.email2]) add(byDomain, workDomain(e), o);
+    for (const e of [o.email, o.email2]) add(byDomain, ownDomain(e), o);
     const core = orgCore(o.name);
     if (core.length >= 3) add(byCore, core, o);
   }
@@ -585,7 +592,7 @@ function businessLinks(rows, { linked = new Set(), dismissed = new Set() } = {})
       const shared = [];
       if (pAddr && pAddr === addressKey(o)) shared.push("an address");
       if ([o.phone, o.mobile].map(phoneKey).some(k => k && pPhones.has(k))) shared.push("a phone number");
-      const oDomains = [o.email, o.email2].map(workDomain).filter(Boolean);
+      const oDomains = [o.email, o.email2].map(ownDomain).filter(Boolean);
       if (domains.some(d => oDomains.includes(d))) shared.push("an email domain");
       if (shared.length) propose(p, o, `${o.name} carries the name ${p.name.trim().split(/\s+/).pop()}, and they share ${joinReasons(shared)}`);
     }

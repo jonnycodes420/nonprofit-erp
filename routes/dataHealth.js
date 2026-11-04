@@ -381,7 +381,9 @@ async function healthCounts(orgId) {
     unreachable: unreachableRows(people).length,
     couples: couples.length,
     families: found.families.length,
-    businesses: businesses.length,
+    // LIST-2: people and their businesses, each person and each organization once
+    // (a person proposed with two organizations is one person, not two rows).
+    ...businessCounts(businesses),
     namesWithNotes: names.length,
     eventDuplicates: eventPairs.length,
     eventDuplicatesByEvent: eventPairCounts(eventPairs),
@@ -1134,6 +1136,10 @@ app.post("/data-health/families/dismiss", requireAuth, checkWriteAccess, wrap(as
 // dataHealth.js businessLinks: an organization and a person who look like one
 // giving unit. One click links them as Owner (owns it, gives through it), the
 // lapse rule's giving unit; Undo is the link's own delete (to the trash).
+function businessCounts(rows) {
+  const people = new Set(rows.map(r => r.a)).size, orgs = new Set(rows.map(r => r.b)).size;
+  return { businesses: people + orgs, businessPeople: people, businessOrgs: orgs };
+}
 async function businessRows(orgId, people) {
   const linked = new Set((await query("SELECT donor_id_a, donor_id_b FROM donor_relationships WHERE org_id=?", [orgId])).map(r => DH.pairKey(r.donor_id_a, r.donor_id_b)));
   return DH.businessLinks(people, { linked, dismissed: await dismissedKeys(orgId, "business") });
@@ -1143,8 +1149,9 @@ app.get("/data-health/businesses", requireAuth, wrap(async (req, res) => {
   const byId = new Map(people.map(d => [d.id, d]));
   const rows = await businessRows(req.user.orgId, people);
   const { limit, offset } = pageOf(req);
-  res.json({ total: rows.length, offset, rows: rows.slice(offset, offset + limit).map(f => ({ ...f, person: brief(byId.get(f.a)), business: brief(byId.get(f.b)) })),
-    sentence: `${rows.length.toLocaleString("en-US")} ${rows.length === 1 ? "person looks" : "people look"} linked to an organization on file: its name carries their last name and they share an address, phone or email domain, or their work email is at its domain. A last name alone is never enough.` });
+  const bc = businessCounts(rows);
+  res.json({ total: rows.length, offset, ...bc, rows: rows.slice(offset, offset + limit).map(f => ({ ...f, person: brief(byId.get(f.a)), business: brief(byId.get(f.b)) })),
+    sentence: `${bc.businessPeople.toLocaleString("en-US")} ${bc.businessPeople === 1 ? "person looks" : "people look"} linked to an organization on file: its name carries their last name and they share an address, phone or email domain, or their work email is at its domain. A last name alone is never enough.` });
 }));
 app.post("/data-health/businesses/link", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;

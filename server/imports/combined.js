@@ -929,10 +929,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // person, and a join over 25,000 people planned that way is a loop of
   // 25,000 by 25,000 (PERF-2). Two ANALYZEs (a sample, about a second) end
   // that. A role that does not own the tables gets a warning, not an error.
-  if (created >= IMPORT_ANALYZE_AT) {
-    try { await query("ANALYZE donors"); await query("ANALYZE gifts"); }
-    catch (e) { console.error("[combined-import] analyze:", e.message); }
-  }
+  // LIST-2: and the drift and scores tables the Donors list reads next, each on
+  // a guarded connection (statement and lock timeouts), so it can never block.
+  if (created >= IMPORT_ANALYZE_AT) await require("../../middleware/analyzeAfterImport").analyzeAfterImportGuarded("combined-import");
 
   // FIX-37: the recent gifts go through the one gift path BEHIND THE SCREEN
   // (runRecentWork). Totals for the file's older gifts are brought up to date

@@ -58,6 +58,10 @@ export const DONOR_LIST_KEYS = [
   ["warmUnasked", "warm"],
   // IMPORT-6: Everyone, Donors or Contacts, and the people one import brought in.
   ["people", "people"], ["fromImport", "import"],
+  // LIST-2: every filter she set is in the address, so a reload and Back keep
+  // it: the tag or closeness choice, the sort's direction, and the chips (the
+  // `where` JSON the server runs).
+  ["status", "tag"], ["dir", "dir"], ["where", "where"],
 ];
 
 export function donorsListHref(state) {
