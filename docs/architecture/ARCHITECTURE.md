@@ -141,6 +141,13 @@ Defined once. Use these words in code, copy and briefs.
 No new file over 1,500 lines. A file already over that may only shrink, and the ratchet allows it
 to grow by at most 50 lines in a build (so a fix can land while the split is still to come).
 
+## The connection budget
+
+- The pooler (Supabase → Database → Settings → Connection pooling → Pool Size) holds 40 clients across every process; `POOLER_SIZE` tells `npm run status` if it changes.
+- Each process opens at most `DB_POOL_MAX` plus the set-wise pool's `min(3, max(1, floor(DB_POOL_MAX / 3)))`: web 10 + 3 = 13 (the default), worker 5 + 1 = 6.
+- A deploy runs the old web, the new web and the worker at once.
+- The rule: **2 × web + worker ≤ pooler size** (today 2 × 13 + 6 = 32 of 40). `npm run status`'s `db pool` line checks it.
+
 ## Tests
 
 - Each domain's tests live with it (`server/<domain>/`), as files move there.

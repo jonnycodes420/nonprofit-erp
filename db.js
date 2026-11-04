@@ -5,6 +5,9 @@ const bcrypt = require("bcryptjs");
 const orgTime = require("./orgTime"); // BUILD-75 A.5 — seed dates are CIVIL dates in the default org timezone, never UTC slices of the process clock
 const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
+// POOL-1: the per-process connection budget and the set-wise pool (server/shared/pools.js).
+const pools = require("./server/shared/pools");
+const { POOL_MAX, SET_POOL_MAX, APP_NAME, isPoolFull, setPool, querySetwise } = pools;
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   // Default keeps prod behavior (Supabase requires SSL). DB_SSL=disable turns it
@@ -15,11 +18,11 @@ const pool = new Pool({
   // finishing the handshake on that client, which pg rightly warns about and
   // which would leave the odd connection unmarked. A startup option is applied
   // by the server before the connection is handed over, every time.
-  options: "-c steward.app_connection=on",
+  options: `-c steward.app_connection=on -c application_name=${APP_NAME}`,
   // SCALE-1: pg's default of 10 connections was busy 10 of 10 for the whole
   // 20-user load run. Raise it per process with DB_POOL_MAX only as far as the
   // database's own connection limit allows across every replica and the worker.
-  max: Math.max(2, Number(process.env.DB_POOL_MAX) || 10),
+  max: POOL_MAX,
 });
 
 // ── FIX-11 Part 1 — THIS CONNECTION BELONGS TO THE APPLICATION ────────────
@@ -113,41 +116,6 @@ async function query(sql, params = []) {
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
   const result = await target().query(pgSql, params);
-  return result.rows;
-}
-
-// FIX-21 · SET-WISE READS. A question about a whole set of people (a group's
-// members, their gifts, every group's count) is read on its own small pool
-// whose connections have nested loops switched off. The planner picks a
-// nested loop when its statistics say an org has one row, which is what they
-// say about every org that arrived after the last ANALYZE: on a 1,000-member
-// group that turned a 20 ms read into 35 seconds. Hash joins cost the same
-// whatever the statistics say. Only callers that read sets use this; a
-// lookup by id stays on the main pool, where an index nested loop is right.
-let _setPool = null;
-function setPool() {
-  return _setPool || (_setPool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false },
-    options: "-c steward.app_connection=on -c enable_nestloop=off",
-    max: 3,
-    // Kept open: these reads are rare, so a pool that let its connections go
-    // after a minute idle paid a fresh TLS connect to prod's database (1 to 2
-    // seconds) on most first clicks. A connection the server drops is
-    // reported here and replaced on the next read.
-    idleTimeoutMillis: 0,
-    allowExitOnIdle: true,
-  }));
-}
-function setPoolReady() {
-  const p = setPool();
-  if (!p.listenerCount("error")) p.on("error", err => console.error("[db] set-wise pool connection dropped:", err.message));
-  return p;
-}
-async function querySetwise(sql, params = []) {
-  let i = 0;
-  const pgSql = sql.replace(/\?/g, () => `$${++i}`);
-  const result = await setPoolReady().query(pgSql, params);
   return result.rows;
 }
 
@@ -7509,6 +7477,8 @@ async function runSchemaInit(pool) {
   // DEPLOY-1 · one row per process that runs jobs (jobQueue.beatProcess); the web's /health reads the worker's here.
   await pool.query(`CREATE TABLE IF NOT EXISTS process_heartbeats (id TEXT PRIMARY KEY, role TEXT NOT NULL, build_sha TEXT,
     handlers TEXT[] NOT NULL DEFAULT '{}', started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), stopped_at TIMESTAMPTZ)`);
+  // POOL-1: the process's connection budget ({ max, setMax }), for npm run status.
+  await pool.query(`ALTER TABLE process_heartbeats ADD COLUMN IF NOT EXISTS pool JSONB`);
   // SCALE-1 · rate-limit counters every web replica shares (rateLimitStore.js),
   // and the once-an-hour mark for an ops alert, so two replicas send it once.
   await pool.query(`
@@ -9773,5 +9743,5 @@ async function seedOrgData(orgId) {
   );
 }
 
-module.exports = { countRoundTrips, withClient, getDb, query, querySetwise, run, withAmbientTransaction, queryOutside, runOutside, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
+module.exports = { poolStats: () => pools.stats(pool), isPoolFull, POOL_MAX, SET_POOL_MAX, APP_NAME, setPool, countRoundTrips, withClient, getDb, query, querySetwise, run, withAmbientTransaction, queryOutside, runOutside, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
   householdsFromLinks: (orgId = null) => householdsFromLinks(pool, orgId) };

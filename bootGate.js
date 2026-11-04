@@ -34,12 +34,19 @@ function everyAfterMigrations(fn, everyMs, { unref = false } = {}) {
 // on /ready: a process that cannot serve a route must not be sent traffic.
 const needs = new Map();
 function need(name, promise) {
-  const n = { done: false, error: null };
+  const n = needs.get(name) || { done: false, error: null, retrying: null };
   needs.set(name, n);
-  Promise.resolve(promise).then(() => { n.done = true; }, e => {
+  Promise.resolve(promise).then(() => { n.done = true; n.retrying = null; }, e => {
     n.error = String(e && e.message || e).slice(0, 200);
     console.error(`[boot] CRITICAL: ${name} did not get ready:`, n.error);
   });
+}
+// POOL-1: a need still trying says why on /ready, in a word from a fixed
+// list (never an error's text, which may carry a host). null when it is not.
+function retrying(name, why) {
+  const n = needs.get(name) || { done: false, error: null, retrying: null };
+  needs.set(name, n);
+  n.retrying = why || null;
 }
 let draining = false;
 const drain = () => { draining = true; };
@@ -48,8 +55,9 @@ const isDraining = () => draining;
 const servable = () => needs.has("database") && [...needs.values()].every(n => n.done);
 // What /ready says it is waiting for: names only, never a value.
 function waitingFor() {
-  return [...needs.entries()].filter(([, n]) => !n.done).map(([k, n]) => (n.error ? `${k} (failed)` : k));
+  return [...needs.entries()].filter(([, n]) => !n.done)
+    .map(([k, n]) => (n.error ? `${k} (failed)` : n.retrying ? `${k} (retrying: ${n.retrying})` : k));
 }
 
 module.exports = { READY, markReady: () => markReady(), afterMigrations, everyAfterMigrations,
-  need, servable, waitingFor, drain, isDraining };
+  need, retrying, servable, waitingFor, drain, isDraining };

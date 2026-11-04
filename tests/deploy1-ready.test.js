@@ -22,6 +22,20 @@
 //      --apply gives back the expired lease and stops the unrunnable job
 //   §8 the worker's heartbeat: /health carries its build and role
 //
+// POOL-1 (3 Nov: the new web's boot need met a full pooler once, gave up, and
+// /ready said 503 until Railway failed the deploy):
+//   §9  a boot against a database that answers "max clients reached" for its
+//       first 3 s: /ready says "pool (retrying: max clients reached)", turns
+//       200 within one backoff step of the connections freeing, and nothing
+//       answers a 500 meanwhile (red on main: the database need exited the
+//       process and the pool need never tried again); /health has the pool
+//   §10 the set-wise pool is out of the same budget (DB_POOL_MAX=5 gives it 1),
+//       lets an idle connection go after five minutes (fake timers), and
+//       every connection carries application_name and steward.app_connection
+//   §11 a job whose query meets EMAXCONNSESSION goes back to waiting with its
+//       try not counted, never dead (red on main: its fifth try stopped it)
+//   §12 npm run status's db pool line at 70%, 90% and 110% of the pooler
+// Planted (POOL-1): the pool need back to a single try turns §9 red.
 // Planted (DEPLOY-1, by hand): the gate checking only the database, as on
 // main, turns §1 red (Ask answered 200 during the slow step); reapStale back to
 // one UPDATE turns §4 red.
@@ -245,6 +259,118 @@ const probeRuns = async (key) => (await q(`SELECT detail FROM tick_log WHERE nam
   ok("§7 --apply: the unrunnable job is stopped with its reason", (await row(orphan)).status === "dead" && /No handler for job/.test((await row(orphan)).last_error), await row(orphan));
   ok("§7 a second dry run finds nothing", /nothing stuck/.test(script([])));
   await q(`DELETE FROM process_heartbeats WHERE id = $1`, [`deploy1q-fixture-${RUN}`]);
+
+  // ── §9 · a boot that meets a full pooler waits it out ───────────────────
+  // A stand-in for the pooler in front of the suite's database: for its first
+  // 3 s every new connection gets Supavisor's "max clients reached" and is
+  // closed; after that it passes connections through.
+  const real = new URL(process.env.DATABASE_URL);
+  const fullFrame = (() => {
+    const field = (t, v) => Buffer.concat([Buffer.from(t), Buffer.from(v + "\0")]);
+    const body = Buffer.concat([field("S", "FATAL"), field("V", "FATAL"), field("C", "XX000"),
+      field("M", "(EMAXCONNSESSION) max clients reached in session mode, pool_size: 15"), Buffer.from([0])]);
+    const head = Buffer.alloc(5); head.write("E", 0); head.writeInt32BE(body.length + 4, 1);
+    return Buffer.concat([head, body]);
+  })();
+  let refuseUntil = 0, refused = 0;
+  const pooler = net.createServer(sock => {
+    sock.on("error", () => {});
+    if (performance.now() < refuseUntil) { refused++; sock.end(fullFrame); return; }
+    const up = net.connect(Number(real.port || 5432), real.hostname);
+    up.on("error", () => sock.destroy()); sock.on("close", () => up.destroy());
+    sock.pipe(up); up.pipe(sock);
+  });
+  await new Promise(r => pooler.listen(0, r));
+  const viaPooler = new URL(process.env.DATABASE_URL); viaPooler.hostname = "127.0.0.1"; viaPooler.port = String(pooler.address().port);
+  refuseUntil = performance.now() + 3000;
+  const freesAt = refuseUntil;
+  const full = await boot({ DATABASE_URL: viaPooler.toString() }, { wait: false });
+  const seen9 = [];
+  let ready9 = null, connectedAt = null;
+  while (performance.now() - freesAt < 60000) {
+    if (connectedAt == null && /\[boot\] pool: connected on try/.test(full.log())) connectedAt = performance.now() - freesAt;
+    const [r, h, a] = await Promise.all([
+      fetch(`${full.base}/ready`).then(async x => ({ status: x.status, body: await x.json().catch(() => ({})) }), () => ({ status: 0 })),
+      fetch(`${full.base}/health`).then(x => x.status, () => 0),
+      ask(full.base, tok)]);
+    seen9.push({ at: performance.now() - freesAt, ready: r.status, waiting: (r.body && r.body.waitingFor) || null, health: h, ask: a.status });
+    if (r.status === 200) { ready9 = performance.now() - freesAt; break; }
+    if (full.child.exitCode != null) break;
+    await sleep(100);
+  }
+  ok("§9 the stand-in pooler turned connections away", refused > 0, { refused });
+  ok("§9 the process kept running while the pooler was full", full.child.exitCode == null, full.log().slice(-800));
+  ok("§9 /ready said what it waited for: pool (retrying: max clients reached)",
+    seen9.some(s => (s.waiting || []).includes("pool (retrying: max clients reached)")), seen9.map(s => s.waiting).filter(Boolean).slice(0, 4));
+  ok("§9 each try was logged once", /\[boot\] pool: try 1 failed \(max clients reached\); next in 1 s/.test(full.log())
+    && (full.log().match(/\[boot\] pool: try 1 failed/g) || []).length === 1, full.log().slice(0, 1200));
+  // Tries at 0, 1, 3, 7 s from boot: the first one after 3 s is at most 4 s
+  // (the step then) after the pooler frees; the boot after it takes a moment.
+  const connectedOn = Number((full.log().match(/\[boot\] pool: connected on try (\d+)/) || [])[1]);
+  ok("§9 the pool connected on the first try after the pooler freed", connectedOn >= 2 && connectedOn <= 4, { connectedOn });
+  ok("§9 it connected within one backoff step (4 s then) of the pooler freeing", connectedAt != null && connectedAt <= 4000 + 500, { connectedAt });
+  ok("§9 /ready turned 200 once a connection was free", ready9 != null, { ready9, connectedAt, last: seen9.slice(-3) });
+  const answered9 = seen9.flatMap(s => [s.ready, s.health, s.ask]).filter(x => x !== 0);
+  ok("§9 nothing answered a 500 meanwhile (503 while waiting, never a 5xx but 503)", answered9.every(x => x < 500 || x === 503), seen9.filter(s => [s.ready, s.health, s.ask].some(x => x >= 500 && x !== 503)));
+  const h9 = await fetch(`${full.base}/health`).then(r => r.json(), () => ({}));
+  ok("§9 /health reports its own pool from pg's counters", h9.pool && h9.pool.max >= 2 && typeof h9.pool.total === "number" && typeof h9.pool.idle === "number"
+    && typeof h9.pool.waiting === "number" && h9.pool.set && h9.pool.set.max >= 1 && typeof h9.pool.set.total === "number", h9.pool);
+  full.child.kill("SIGTERM"); await exitWithin(full, 30000);
+  pooler.close();
+
+  // ── §10 · the set-wise pool's budget, its idle timeout, and the names ───
+  const probe10 = execFileSync(process.execPath, ["-e", `
+    const { mock } = require("node:test");
+    const db = require("./db");
+    (async () => {
+      const set = db.setPool();
+      const [n] = (await set.query("SELECT current_setting('application_name') AS app, current_setting('steward.app_connection') AS mark")).rows;
+      const [m] = await db.query("SELECT current_setting('application_name') AS app, current_setting('steward.app_connection') AS mark");
+      const out = { setMax: db.SET_POOL_MAX, optMax: set.options.max, idle: set.options.idleTimeoutMillis, set: n, main: m };
+      // One more read under fake timers: its idle connection is let go at five minutes, not before.
+      await set.end();
+      mock.timers.enable({ apis: ["setTimeout"] });
+      const p2 = new (require("pg").Pool)(set.options);
+      await p2.query("SELECT 1");
+      out.openAfterRead = p2.totalCount;
+      mock.timers.tick(5 * 60 * 1000 - 1000); out.openAt4m59 = p2.totalCount;
+      mock.timers.tick(2000); await new Promise(r => setImmediate(r)); out.openAt5m01 = p2.totalCount;
+      mock.timers.reset();
+      console.log(JSON.stringify(out)); process.exit(0);
+    })().catch(e => { console.log(JSON.stringify({ error: e.message })); process.exit(0); });`],
+    { cwd: ROOT, env: { ...process.env, DB_POOL_MAX: "5", STEWARD_PROCESS: "worker", BUILD_SHA: "abc1234def" }, encoding: "utf8" });
+  const r10 = JSON.parse(probe10.trim().split("\n").pop());
+  ok("§10 DB_POOL_MAX=5 gives the set-wise pool a max of 1", r10.setMax === 1 && r10.optMax === 1, r10);
+  ok("§10 its idle connections close after five minutes", r10.idle === 300000 && r10.openAfterRead === 1 && r10.openAt4m59 === 1 && r10.openAt5m01 === 0, r10);
+  ok("§10 every connection names its process and build", r10.set && r10.set.app === "steward-worker@abc1234" && r10.main.app === "steward-worker@abc1234", r10);
+  ok("§10 and still says it is the application's (the audit trigger reads it)", r10.set && r10.set.mark === "on" && r10.main.mark === "on", r10);
+  const budget = (max) => JSON.parse(execFileSync(process.execPath, ["-e", `const d = require("./db"); console.log(JSON.stringify([d.POOL_MAX, d.SET_POOL_MAX])); process.exit(0)`],
+    { cwd: ROOT, env: { ...process.env, DB_POOL_MAX: max }, encoding: "utf8" }).trim().split("\n").pop());
+  ok("§10 the set-wise share is a third of DB_POOL_MAX, one to three", JSON.stringify([budget("2"), budget("9"), budget("10"), budget("40")]) === JSON.stringify([[2, 1], [9, 3], [10, 3], [40, 3]]));
+
+  // ── §11 · a job that meets a full pooler is tried again, never dead ─────
+  const w11 = await boot(W, { script: "worker.js" });
+  const j11 = await plant({ id: `job_d1q_${RUN}_full`, key: KEY("full"), payload: { failPoolFull: true }, attempts: 4 });
+  ok("§11 the worker ran it and it went back to waiting",
+    !!await waitFor(async () => { const r = await row(j11); return r.status === "waiting" && r.last_error; }, { timeout: 20000, interval: 100 }), await row(j11));
+  const r11 = await row(j11);
+  ok("§11 on what would have been its last try, it is not dead and the try is not counted", r11.status === "waiting" && r11.attempts === 4, r11);
+  ok("§11 with the pooler's words as its last error", /EMAXCONNSESSION/.test(r11.last_error || ""), r11.last_error);
+  ok("§11 and the worker said so", /found the database pool full \(try 5, not counted\)/.test(w11.log()), w11.log().slice(-600));
+  const [hb11] = await q(`SELECT pool FROM process_heartbeats WHERE role = 'worker' AND stopped_at IS NULL ORDER BY started_at DESC LIMIT 1`);
+  ok("§11 the worker's heartbeat carries its pool budget", hb11 && hb11.pool && hb11.pool.max >= 2 && hb11.pool.setMax >= 1, hb11);
+  w11.child.kill("SIGTERM"); await exitWithin(w11, 15000);
+
+  // ── §12 · npm run status's db pool line ────────────────────────────────
+  const S12 = require("../scripts/ci/status.js");
+  const at70 = S12.poolReport({ max: 9, set: { max: 3 } }, { max: 3, setMax: 1 }, 40);
+  const at90 = S12.poolReport({ max: 10, set: { max: 3 } }, { max: 8, setMax: 2 }, 40);
+  const at110 = S12.poolReport({ max: 13, set: { max: 3 } }, { max: 9, setMax: 3 }, 40);
+  ok("§12 70% of the pooler: ok, with the sum", at70.level === "ok" && /2 × 12 \+ 4 = 28 of 40 \(70%\)/.test(at70.detail) && !/lower/.test(at70.detail), at70);
+  ok("§12 90%: yellow, and which number to lower", at90.level === "yellow" && /36 of 40 \(90%\)/.test(at90.detail) && /lower DB_POOL_MAX on the web to 8/.test(at90.detail), at90);
+  ok("§12 110%: red, and which number to lower", at110.level === "red" && /44 of 40 \(110%\)/.test(at110.detail) && /lower DB_POOL_MAX on the web to 8/.test(at110.detail)
+    && /a deploy can run out of connections/.test(at110.detail), at110);
+  ok("§12 the line says so when the worker's numbers are not in yet", S12.poolReport({ max: 10, set: { max: 3 } }, null, 40).level === null);
 })().catch(e => { ok("suite ran without throwing", false, e.stack); })
   .finally(async () => {
     for (const c of children) { try { c.kill("SIGKILL"); } catch { /* gone */ } }
