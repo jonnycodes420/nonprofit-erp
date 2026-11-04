@@ -11,9 +11,10 @@
 // `q(sql, args)` is any query function that takes `?` placeholders and returns
 // rows: db.js's `query` on the server, an adapter in scripts/ci/seed-demo.js.
 //
-// The scores are stored in donor_scores (derived data: rebuilt whole for an org
-// each time, never edited by a person), so the Donors list can sort by them and
-// the profile can show them without recomputing.
+// The scores are stored in donor_scores (derived data, never edited by a
+// person), so the Donors list can sort by them and the profile can show them
+// without recomputing. SCORES-1: a change rescores the people it touched; the
+// full pass rescores the org; both write only the rows that changed.
 
 const { meetingsSql } = require("./meetings");
 const driftEngine = require("./drift");
@@ -35,11 +36,15 @@ const round2 = x => Math.round(x * 100) / 100;
 // ── ENGAGEMENT ROWS ─────────────────────────────────────────────────────────
 // Every touch in the window, with its points. A row with zero points (older
 // than the window) is never returned: it counted nothing.
+// SCORES-1: `donorId` is one id, a list of ids (the people a change touched),
+// or null for the whole org.
+const idsOf = donorId => (donorId == null ? null : [].concat(donorId));
 async function touchRows(q, orgId, today, donorId = null) {
   const w = await weights();
   const from = addDays(today, -(w.WINDOW_DAYS - 1));
-  const dF = donorId ? " AND d.id = ?" : "";
-  const dA = donorId ? [donorId] : [];
+  const ids = idsOf(donorId);
+  const dF = ids ? " AND d.id = ANY(?)" : "";
+  const dA = ids ? [ids] : [];
   const out = [];
   const push = (part, r, base, detail) => {
     const date = civil(r.date);
@@ -175,8 +180,9 @@ async function touchRows(q, orgId, today, donorId = null) {
 // credit row is not money; a refund comes off). The parts are dated rows the
 // drawer opens, so an imported total with no rows behind it is not a part.
 async function givingRows(q, orgId, donorId = null) {
-  const dF = donorId ? " AND d.id = ?" : "";
-  const dA = donorId ? [donorId] : [];
+  const ids = idsOf(donorId);
+  const dF = ids ? " AND d.id = ANY(?)" : "";
+  const dA = ids ? [ids] : [];
   const gifts = (await q(
     `SELECT g.id, g.donor_id, LEFT(g.date, 10) AS date, g.amount::text AS amount FROM gifts g
        JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
@@ -322,11 +328,15 @@ async function closenessNow(q, orgId, donorId, today, bandKey) {
 
 // ── THE COMPUTE ─────────────────────────────────────────────────────────────
 // Every person in the org, both scores, parts that add to each score.
-async function scoreOrg(q, orgId, today) {
+// SCORES-1: in three steps, so one person can be scored by the same code as
+// the whole org: each person's raw values (rawsOf), the population they are
+// ranked in (populationOf), and the score against it (scoreAgainst).
+async function rawsOf(q, orgId, today, people, { whole = false } = {}) {
   const w = await weights();
-  const people = (await q(`SELECT id FROM donors WHERE org_id = ? AND deleted_at IS NULL`, [orgId])).map(r => r.id);
-  const touches = await touchRows(q, orgId, today);
-  const { gifts, subs } = await givingRows(q, orgId);
+  if (!people.length) return new Map();
+  const only = whole ? null : people;
+  const touches = await touchRows(q, orgId, today, only);
+  const { gifts, subs } = await givingRows(q, orgId, only);
   const tBy = new Map(), gBy = new Map(), sBy = new Map();
   for (const t of touches) (tBy.get(t.donor_id) || tBy.set(t.donor_id, []).get(t.donor_id)).push(t);
   for (const g of gifts) (gBy.get(g.donor_id) || gBy.set(g.donor_id, []).get(g.donor_id)).push(g);
@@ -341,47 +351,178 @@ async function scoreOrg(q, orgId, today) {
     const gen = await generosityParts(today, gBy.get(id) || [], sBy.get(id) || []);
     per.set(id, { byPart, engRaw, gen, lastTouch: ts[0] ? ts[0].date : null, pattern: patternOf(gBy.get(id) || [], today), onTimeThrough: onTimeThrough(gBy.get(id) || [], today) });
   }
-  const engPop = [...per.values()].map(p => p.engRaw).filter(v => v > 0).sort((a, b) => a - b);
-  const givers = [...per.values()].filter(p => p.gen.lifetime.raw > 0);
-  const genPop = Object.fromEntries(Object.keys(w.GENEROSITY_PARTS).map(k => [k, givers.map(p => p.gen[k].raw).sort((a, b) => a - b)]));
+  return per;
+}
 
+// The population a score is ranked in: the engagement of everyone with any,
+// and each generosity part's value for everyone who has given. Sorted.
+async function populationOf(values) {
+  const w = await weights();
+  const vs = [...values];
+  const eng = vs.map(p => p.eng).filter(v => v > 0).sort((a, b) => a - b);
+  const givers = vs.filter(p => p.gen.lifetime > 0);
+  const gen = Object.fromEntries(Object.keys(w.GENEROSITY_PARTS).map(k => [k, givers.map(p => p.gen[k]).sort((a, b) => a - b)]));
+  return { eng, gen };
+}
+const valuesOf = p => ({ eng: p.engRaw, gen: Object.fromEntries(Object.entries(p.gen).map(([k, x]) => [k, x.raw])) });
+
+async function scoreAgainst(id, p, pop, today) {
+  const w = await weights();
+  const engagement = p.engRaw > 0 ? Math.max(1, Math.round(pctAtOrBelow(p.engRaw, pop.eng))) : 0;
+  const engPts = apportion(engagement, w.ENGAGEMENT_PARTS.map(k => p.byPart[k].raw));
+  const genKeys = Object.keys(w.GENEROSITY_PARTS);
+  const giver = p.gen.lifetime.raw > 0;
+  const pcts = genKeys.map(k => (giver ? pctAtOrBelow(p.gen[k].raw, pop.gen[k]) : 0));
+  const contrib = genKeys.map((k, i) => w.GENEROSITY_PARTS[k].weight * pcts[i]);
+  const generosity = giver ? Math.max(1, Math.round(contrib.reduce((s, x) => s + x, 0))) : 0;
+  const genPts = apportion(generosity, contrib);
+  return {
+    donorId: id, engagement, generosity, band: w.bandFor(engagement).key, pattern: p.pattern, onTimeThrough: p.onTimeThrough,
+    reason: reasonOf(w, p.byPart, p.lastTouch, today), lastTouch: p.lastTouch,
+    parts: {
+      engagement: w.ENGAGEMENT_PARTS.map((k, i) => ({ key: k, points: engPts[i], raw: p.byPart[k].raw, count: p.byPart[k].count })),
+      generosity: genKeys.map((k, i) => ({ key: k, points: genPts[i], raw: p.gen[k].raw, pct: Math.round(pcts[i]), count: p.gen[k].rows.length })),
+    },
+  };
+}
+
+async function scoreOrg(q, orgId, today) {
+  const people = (await q(`SELECT id FROM donors WHERE org_id = ? AND deleted_at IS NULL`, [orgId])).map(r => r.id);
+  const per = await rawsOf(q, orgId, today, people, { whole: true });
+  const pop = await populationOf([...per.values()].map(valuesOf));
   const out = [];
-  for (const [id, p] of per) {
-    const engagement = p.engRaw > 0 ? Math.max(1, Math.round(pctAtOrBelow(p.engRaw, engPop))) : 0;
-    const engPts = apportion(engagement, w.ENGAGEMENT_PARTS.map(k => p.byPart[k].raw));
-    const genKeys = Object.keys(w.GENEROSITY_PARTS);
-    const giver = p.gen.lifetime.raw > 0;
-    const pcts = genKeys.map(k => (giver ? pctAtOrBelow(p.gen[k].raw, genPop[k]) : 0));
-    const contrib = genKeys.map((k, i) => w.GENEROSITY_PARTS[k].weight * pcts[i]);
-    const generosity = giver ? Math.max(1, Math.round(contrib.reduce((s, x) => s + x, 0))) : 0;
-    const genPts = apportion(generosity, contrib);
-    out.push({
-      donorId: id, engagement, generosity, band: w.bandFor(engagement).key, pattern: p.pattern, onTimeThrough: p.onTimeThrough,
-      reason: reasonOf(w, p.byPart, p.lastTouch, today), lastTouch: p.lastTouch,
-      parts: {
-        engagement: w.ENGAGEMENT_PARTS.map((k, i) => ({ key: k, points: engPts[i], raw: p.byPart[k].raw, count: p.byPart[k].count })),
-        generosity: genKeys.map((k, i) => ({ key: k, points: genPts[i], raw: p.gen[k].raw, pct: Math.round(pcts[i]), count: p.gen[k].rows.length })),
-      },
-    });
-  }
+  for (const [id, p] of per) out.push(await scoreAgainst(id, p, pop, today));
   return out;
 }
 
-// Compute and store. The org's rows are replaced as one set, so a donor's
-// number is never compared against a half-updated population.
-async function recomputeOrgScores(q, orgId, today) {
-  const scores = await scoreOrg(q, orgId, today);
-  await q(`DELETE FROM donor_scores WHERE org_id = ?`, [orgId]);
+// ── THE STORED POPULATION (SCORES-1) ────────────────────────────────────────
+// THE RULE. A percentile needs the org's population. The population is what
+// donor_scores holds: each live person's raw values as of their row's last
+// write (parts[].raw; engagement is the sum of its parts). The full pass
+// (recomputeOrgScores: the six-hour schedule, and once after an import)
+// recomputes everyone against a fresh population. Between passes, a change
+// rescores ONLY the people it touched (scorePeople), against the stored
+// population with their own old values taken out and their new ones put in,
+// so their own score is exactly what a full pass would give them if nobody
+// else had changed. Everyone else keeps their row: when a change would move
+// someone else's percentile (a cut point), that waits for the next full pass.
+async function storedPopulation(q, orgId) {
+  const rows = await q(
+    `SELECT s.donor_id,
+            (SELECT COALESCE(SUM((e->>'raw')::numeric), 0) FROM jsonb_array_elements(COALESCE(s.parts->'engagement', '[]'::jsonb)) e)::float8 AS eng,
+            (SELECT jsonb_object_agg(g->>'key', (g->>'raw')::float8) FROM jsonb_array_elements(COALESCE(s.parts->'generosity', '[]'::jsonb)) g) AS gen
+       FROM donor_scores s JOIN donors d ON d.id = s.donor_id AND d.org_id = s.org_id AND d.deleted_at IS NULL
+      WHERE s.org_id = ?`, [orgId]);
+  const w = await weights();
+  const by = new Map(rows.map(r => {
+    const g = (typeof r.gen === "string" ? JSON.parse(r.gen) : r.gen) || {};
+    return [r.donor_id, { eng: Number(r.eng) || 0, gen: Object.fromEntries(Object.keys(w.GENEROSITY_PARTS).map(k => [k, Number(g[k]) || 0])) }];
+  }));
+  return { by, pop: await populationOf(by.values()) };
+}
+// Take one value out of a sorted list (the nearest, within half a cent:
+// engagement is summed from its parts) and put one in.
+function takeOut(sorted, v) {
+  let lo = 0, hi = sorted.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m] < v) lo = m + 1; else hi = m; }
+  const near = [lo - 1, lo].filter(i => i >= 0 && i < sorted.length).sort((a, b) => Math.abs(sorted[a] - v) - Math.abs(sorted[b] - v))[0];
+  if (near != null && Math.abs(sorted[near] - v) < 0.005) sorted.splice(near, 1);
+}
+function putIn(sorted, v) {
+  let lo = 0, hi = sorted.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m] < v) lo = m + 1; else hi = m; }
+  sorted.splice(lo, 0, v);
+}
+
+// The people a change touched, scored against the stored population (the rule
+// above). Read-only: the profile uses it for a person with no row yet.
+// `gone` are the ids that are no longer live people (deleted, merged away).
+async function scorePeople(q, orgId, today, donorIds) {
+  const want = [...new Set((donorIds || []).filter(Boolean))];
+  if (!want.length) return { scores: [], gone: [] };
+  const live = (await q(`SELECT id FROM donors WHERE org_id = ? AND deleted_at IS NULL AND id = ANY(?)`, [orgId, want])).map(r => r.id);
+  const per = await rawsOf(q, orgId, today, live);
+  const { by, pop } = await storedPopulation(q, orgId);
+  const w = await weights();
+  const keys = Object.keys(w.GENEROSITY_PARTS);
+  for (const [id, p] of per) {
+    const old = by.get(id), now = valuesOf(p);
+    if (old) {
+      if (old.eng > 0) takeOut(pop.eng, old.eng);
+      if (old.gen.lifetime > 0) for (const k of keys) takeOut(pop.gen[k], old.gen[k]);
+    }
+    if (now.eng > 0) putIn(pop.eng, now.eng);
+    if (now.gen.lifetime > 0) for (const k of keys) putIn(pop.gen[k], now.gen[k]);
+  }
+  const scores = [];
+  for (const [id, p] of per) scores.push(await scoreAgainst(id, p, pop, today));
+  return { scores, gone: want.filter(id => !per.has(id)) };
+}
+
+// Who a change to these people touches: themselves, their household and the
+// person linked to them as spouse or household.
+async function pooledWith(q, orgId, donorIds) {
+  const ids = [...new Set((donorIds || []).filter(Boolean))];
+  if (!ids.length) return [];
+  const rows = await q(
+    `SELECT d2.id FROM donors d1 JOIN donors d2 ON d2.org_id = d1.org_id AND d2.household_id = d1.household_id
+      WHERE d1.org_id = ? AND d1.id = ANY(?) AND d1.household_id IS NOT NULL
+     UNION SELECT CASE WHEN r.donor_id_a = ANY(?) THEN r.donor_id_b ELSE r.donor_id_a END FROM donor_relationships r
+      WHERE r.org_id = ? AND r.relationship_type IN ('spouse', 'household') AND (r.donor_id_a = ANY(?) OR r.donor_id_b = ANY(?))`,
+    [orgId, ids, ids, orgId, ids, ids]);
+  return [...new Set([...ids, ...rows.map(r => r.id).filter(Boolean)])];
+}
+
+// ── THE WRITE (SCORES-1) ────────────────────────────────────────────────────
+// Upserts in batches of 500, and only a row whose value changed. The reason's
+// closing "the most recent touch N days ago" is said for the day it is read
+// (reasonFor), so a new day alone is not a change. A row is also rewritten
+// when the person's rhythm row (afterChange.js) is newer than it, because
+// lapse.js ON_TIME_THROUGH reads the newer of the two. computed_for is the
+// day the row's values last changed. A recompute that changes nothing writes
+// nothing. Returns the number of rows written.
+const TAIL_SQL = col => `regexp_replace(COALESCE(${col}, ''), ', the (latest|most recent touch) [^.,]*\\.$', '.')`;
+async function writeScores(q, orgId, today, scores) {
+  let written = 0;
   for (let i = 0; i < scores.length; i += 500) {
     const chunk = scores.slice(i, i + 500);
-    await q(
-      `INSERT INTO donor_scores (org_id, donor_id, engagement, generosity, band, pattern, on_time_through, reason, last_touch, parts, computed_for, computed_at, created_by, created_by_name)
+    const rows = await q(
+      `INSERT INTO donor_scores AS s (org_id, donor_id, engagement, generosity, band, pattern, on_time_through, reason, last_touch, parts, computed_for, computed_at, created_by, created_by_name)
        SELECT ?, x.donor_id, x.engagement, x.generosity, x.band, x.pattern, x.on_time_through, x.reason, x.last_touch, x.parts::jsonb, ?, NOW(), 'system:engagement', 'Steward (scores)'
-         FROM jsonb_to_recordset(?::jsonb) AS x(donor_id text, engagement int, generosity int, band text, pattern text, on_time_through text, reason text, last_touch text, parts text)`,
+         FROM jsonb_to_recordset(?::jsonb) AS x(donor_id text, engagement int, generosity int, band text, pattern text, on_time_through text, reason text, last_touch text, parts text)
+       ON CONFLICT (org_id, donor_id) DO UPDATE SET engagement = EXCLUDED.engagement, generosity = EXCLUDED.generosity, band = EXCLUDED.band,
+         pattern = EXCLUDED.pattern, on_time_through = EXCLUDED.on_time_through, reason = EXCLUDED.reason, last_touch = EXCLUDED.last_touch,
+         parts = EXCLUDED.parts, computed_for = EXCLUDED.computed_for, computed_at = NOW()
+       WHERE (s.engagement, s.generosity, s.band, s.pattern, s.on_time_through, ${TAIL_SQL("s.reason")}, s.last_touch, s.parts)
+             IS DISTINCT FROM (EXCLUDED.engagement, EXCLUDED.generosity, EXCLUDED.band, EXCLUDED.pattern, EXCLUDED.on_time_through, ${TAIL_SQL("EXCLUDED.reason")}, EXCLUDED.last_touch, EXCLUDED.parts)
+          OR s.computed_at < (SELECT rr.computed_at FROM donor_rhythm rr WHERE rr.org_id = s.org_id AND rr.donor_id = s.donor_id)
+       RETURNING s.donor_id`,
       [orgId, today, JSON.stringify(chunk.map(s => ({ donor_id: s.donorId, engagement: s.engagement, generosity: s.generosity,
         band: s.band, pattern: s.pattern, on_time_through: s.onTimeThrough, reason: s.reason, last_touch: s.lastTouch, parts: JSON.stringify(s.parts) })))]);
+    written += rows.length;
   }
+  return written;
+}
+
+// THE FULL PASS. Everyone against a fresh population; changed rows only. The
+// one delete is the rows of people who are no longer live (deleted, merged
+// away), by their ids. No org-wide delete (SCORES-1; arch-check score-deletes).
+async function recomputeOrgScores(q, orgId, today) {
+  const scores = await scoreOrg(q, orgId, today);
+  const written = await writeScores(q, orgId, today, scores);
+  await q(`DELETE FROM donor_scores s WHERE s.org_id = ? AND NOT (s.donor_id = ANY(?))`, [orgId, scores.map(s => s.donorId)]);
+  if (written) console.log(`[scores] ${orgId}: full pass, ${written} of ${scores.length} rows changed`);
   return scores.length;
+}
+
+// A CHANGE. The people it touched (and those pooled with them), scored by the
+// rule above, written if changed; a person no longer live loses their own row.
+async function recomputePeopleScores(q, orgId, today, donorIds) {
+  const ids = await pooledWith(q, orgId, donorIds);
+  const { scores, gone } = await scorePeople(q, orgId, today, ids);
+  const written = await writeScores(q, orgId, today, scores);
+  if (gone.length) await q(`DELETE FROM donor_scores WHERE org_id = ? AND donor_id = ANY(?)`, [orgId, gone]);
+  return { people: scores.length, written, removed: gone.length };
 }
 
 // One person's part rows, as figure rows (id, type, donor_id, name, date,
@@ -451,4 +592,5 @@ async function suggestedAsk(q, orgId, donorId, opts = {}) {
     sentence: `${own.sentence.replace(/: ask \$[\d,.]+(?:, [^.]*)?\.$/, "")}; the screening file (${s.provider}, ${s.screenedOn}) puts capacity at ${range}, so one step up: ask ${RT.dollars(up)}.` };
 }
 
-module.exports = { touchRows, givingRows, generosityParts, patternOf, onTimeThrough, closenessNow, scoreOrg, recomputeOrgScores, partRows, suggestedAsk, apportion, pctAtOrBelow, weights, reasonFor };
+module.exports = { touchRows, givingRows, generosityParts, patternOf, onTimeThrough, closenessNow, scoreOrg, recomputeOrgScores, partRows,
+  scorePeople, recomputePeopleScores, pooledWith, storedPopulation, writeScores, suggestedAsk, apportion, pctAtOrBelow, weights, reasonFor };

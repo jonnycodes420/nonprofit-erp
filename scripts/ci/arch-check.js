@@ -113,6 +113,13 @@ const RHYTHM_COPY = new RegExp([
   String.raw`ds\.pattern\b|\.pattern\s*===?\s*["']on_track`,
 ].join("|"));
 
+// SCORES-1 · A DELETE OF AN ORG'S SCORES. On 4 Nov prod was down ~2.5 hours
+// behind an ANALYZE of donor_scores, a table that churned because every
+// change deleted and reinserted the whole org's rows. Scores are upserted
+// (engagement.js writeScores); the only delete is a person's own row, so a
+// line that deletes from donor_scores names donor_id on that line.
+const SCORE_DELETE = /DELETE\s+FROM\s+donor_scores\b(?![^\n]*\bdonor_id\b)/i;
+
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp|tiff?|heic|avif)$/i;
 const IMAGE_OK = f => f.startsWith("client/src/assets/") || f.startsWith("assets/");
 
@@ -178,6 +185,13 @@ const CHECKS = {
     hard: true,
     measure: files => Object.fromEntries(files.filter(f => isAppCode(f) && !f.startsWith("shared/numbers/")).map(f => [f, countLines(f, RHYTHM_COPY)]).filter(([, n]) => n > 0)),
     worse: (key, now) => `${key}: ${now} line(s) working out a rhythm of its own; read rhythmFor from shared/numbers/rhythm.js`,
+  },
+  // SCORES-1: zero in the build that made it, so a hard rule.
+  "score-deletes": {
+    what: "app code that deletes donor_scores rows without naming the person (a hard rule: upsert, and delete only a person's own row)",
+    hard: true,
+    measure: files => Object.fromEntries(files.filter(isAppCode).map(f => [f, countLines(f, SCORE_DELETE)]).filter(([, n]) => n > 0)),
+    worse: (key, now) => `${key}: ${now} org-wide delete(s) of donor_scores; upsert the changed rows (engagement.js writeScores) and delete only a person's own row by donor_id`,
   },
   "big-images": {
     what: `committed images over ${IMAGE_MAX / 1024} KB outside client/src/assets/ and assets/ (a hard rule)`,
