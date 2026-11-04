@@ -27,6 +27,7 @@ const express = require("express");
 const { publicAppUrl } = require("../publicUrl");
 const { aiGate, anthropicFor, recordAiFallback } = require("../aiClient");
 const mailPolicy = require("../mailPolicy");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 
@@ -43,7 +44,7 @@ const READY = Promise.all([
 ]);
 
 const DRAFT_MODEL = "claude-opus-5";
-const ID_RE = /^et_[a-f0-9]{12}$/;
+const ID_RE = /^et_(?:[a-f0-9]{12}|[a-f0-9]{20})$/;   // IDS-1: old 12-hex ids and new 20-hex ids
 const VIDEO_ID = { youtube: /^[A-Za-z0-9_-]{6,20}$/, vimeo: /^\d{6,12}$/ };
 const clip = (v, n) => String(v == null ? "" : v).slice(0, n);
 const firstName = name => String(name || "").trim().split(/\s+/)[0] || "";
@@ -251,7 +252,7 @@ starterTemplateImpl = async function (orgId, starterKey, who = {}) {
     [orgId, s.key]);
   if (had) return had.id;
   const ectx = await buildEmailContext(orgId);
-  const id = "et_" + uuid().replace(/-/g, "").slice(0, 12);
+  const id = newId("et");
   await run(`INSERT INTO email_templates (id, org_id, starter_key, name, purpose, subject, preheader, blocks, created_by, created_by_name)
              VALUES (?,?,?,?,?,?,?,?::jsonb,?,?)`,
     [id, orgId, s.key, s.name, s.purpose, s.subject || "", s.preheader || "",
@@ -298,7 +299,7 @@ app.post("/email-templates", requireAuth, checkWriteAccess, wrap(async (req, res
   } else {
     return res.status(400).json({ error: "starter_or_copy", sentence: "Start from one of the emails, or copy one of yours." });
   }
-  const id = "et_" + uuid().replace(/-/g, "").slice(0, 12);
+  const id = newId("et");
   const who = actor(req);
   await run(`INSERT INTO email_templates (id, org_id, starter_key, name, purpose, subject, preheader, blocks, created_by, created_by_name)
              VALUES (?,?,?,?,?,?,?,?::jsonb,?,?)`,
@@ -405,7 +406,7 @@ async function saveTemplate(req, res, row, b) {
                VALUES (?,?,?,?,?,NOW(),?,?,?)
                ON CONFLICT (org_id, kind) DO UPDATE SET subject=EXCLUDED.subject, body=EXCLUDED.body, reviewed_at=NOW(),
                  reviewed_by_name=EXCLUDED.reviewed_by_name, updated_at=NOW()`,
-      ["mt_" + uuid().slice(0, 10), orgId, personKind, words.subject, words.body, who.name, who.id, who.name]);
+      [newId("mt"), orgId, personKind, words.subject, words.body, who.name, who.id, who.name]);
   }
   if (req.audit) req.audit.entity("email_template", row.id, name);
   res.json({ template: shape(await templateRow(orgId, row.id)), draft: false, usage });

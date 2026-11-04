@@ -20,6 +20,7 @@
 
 const Anthropic = require("@anthropic-ai/sdk");
 const { query } = require("./db");
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const AI_OFF_MESSAGE = "AI is turned off for your organization";
 
@@ -121,7 +122,7 @@ async function recordAiFallback(orgId, surface, err) {
   if (reason !== "ai_off") console.warn(`[ai-fallback] ${surface} org=${orgId || "none"} reason=${reason}`);
   try {
     await query("INSERT INTO ai_fallbacks (id, org_id, surface, reason) VALUES (?,?,?,?)",
-      ["aif_" + require("crypto").randomUUID().replace(/-/g, "").slice(0, 12), orgId || null, String(surface).slice(0, 80), reason]);
+      [newId("aif"), orgId || null, String(surface).slice(0, 80), reason]);
   } catch (e) { console.error("[ai-fallback] could not count it:", e.message); }
   return reason;
 }

@@ -3,6 +3,7 @@ require("dotenv").config();
 // redactor (redact.js) — no donor or staff details, tokens, cookies or bodies.
 require("./redact").install();
 const Sentry = require("@sentry/node");
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 if (process.env.SENTRY_DSN) {
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
@@ -94,7 +95,7 @@ function _logOutboundEmail(opts, result, err, statusOverride) {
   const to = Array.isArray(opts && opts.to) ? opts.to[0] : (opts && opts.to);
   const domain = String(to || "").split("@")[1] || "";
   const row = [
-    "eml_" + uuid().slice(0, 12),
+    newId("eml"),
     (opts && opts._stewardOrgId) || null,
     domain.toLowerCase().slice(0, 120),
     String((opts && opts._stewardKind) || "").slice(0, 60) || null,
@@ -1091,7 +1092,7 @@ async function ensureOrgLedger(orgId, { heal = false } = {}) {
       const partial = await probe();
       if (!partial.contribAcctId) {
         await run("INSERT INTO accounts (id, org_id, code, name, type, subtype) VALUES (?,?,?,?,?,?)",
-          ["acc_" + uuid().slice(0, 8), orgId, "4010", "Individual Contributions", "revenue", "contributions"]);
+          [newId("acc"), orgId, "4010", "Individual Contributions", "revenue", "contributions"]);
       }
       const funds = await query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false LIMIT 1", [orgId]);
       if (!funds.length) {
@@ -1099,7 +1100,7 @@ async function ensureOrgLedger(orgId, { heal = false } = {}) {
         // fifth bound value threw on every org with accounts and no
         // unrestricted fund, which is where "Undo all of setup" leaves one.
         await run("INSERT INTO fin_funds (id, org_id, name, description, restricted) VALUES (?,?,?,?,?)",
-          ["ff_" + uuid().slice(0, 8), orgId, "General Operating", "General unrestricted operating fund", false]);
+          [newId("ff"), orgId, "General Operating", "General unrestricted operating fund", false]);
       }
     }
   });
@@ -1223,7 +1224,7 @@ async function recordGift(o) {
   const undated = o.undated === true && (o.date == null || o.date === "");
   const date = undated ? null : o.date;
   if (!undated && (date == null || date === "")) throw new Error("recordGift: a gift needs a date");
-  const giftId = o.giftId || ("g_" + uuid().slice(0, 8));
+  const giftId = o.giftId || (newId("g"));
   const actorId = o.actorId || null, actorName = o.actorName || null;
   // FIX-36: a gift a HISTORY READ brought in (`o.history`: a giving source's
   // first read, QuickBooks, an import) older than historyGifts.HISTORY_DAYS is
@@ -1411,7 +1412,7 @@ async function recordGift(o) {
         await run(
           `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id,created_by,created_by_name)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING`,
-          ["ft_" + uuid().slice(0, 8), orgId, date, o.ledgerDescription || `Gift from ${dn?.name || "Donor"}`,
+          [newId("ft"), orgId, date, o.ledgerDescription || `Gift from ${dn?.name || "Donor"}`,
            dn?.name || "", amount, "income", ledgerIds.contribAcctId, fundId || ledgerIds.genFundId,
            o.donorId, o.ledgerSource || "gift", giftId, actorId, actorName]);
         posted = true;
@@ -1425,7 +1426,7 @@ async function recordGift(o) {
   // off the gift this row points at.
   let interactionId = null;
   if (o.timeline !== false) {
-    interactionId = "int_" + uuid().slice(0, 8);
+    interactionId = newId("int");
     await run(
       `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
@@ -1519,7 +1520,7 @@ async function recordGift(o) {
         await run(
           `INSERT INTO gift_soft_credits (id,org_id,gift_id,donor_id,amount,pct,role,created_by,created_by_name)
            VALUES (?,?,?,?,?,100,'peer_fundraiser',?,?) ON CONFLICT (gift_id, donor_id) DO NOTHING`,
-          ["gsc_" + uuid().slice(0, 10), orgId, gift.id, pf.person_id, amount,
+          [newId("gsc"), orgId, gift.id, pf.person_id, amount,
            actorId || SYS_AUTO.id, actorName || "Their own fundraiser page"]);
       }
     } catch (e) { console.error("[p2p] soft credit:", e.message); }
@@ -1723,7 +1724,7 @@ async function writeGiftExtras(orgId, gift, extras, { actorId = null, actorName 
     for (const s of extras.softCredits) {
       await run(`INSERT INTO gift_soft_credits (id,org_id,gift_id,donor_id,amount,pct,role,created_by,created_by_name)
                  VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id, donor_id) DO NOTHING`,
-        ["gsc_" + uuid().slice(0, 10), orgId, gift.id, s.donorId, s.cents / 100, s.pct, s.role, actorId, actorName]);
+        [newId("gsc"), orgId, gift.id, s.donorId, s.cents / 100, s.pct, s.role, actorId, actorName]);
       result.softCredits++;
     }
   }
@@ -1746,7 +1747,7 @@ async function writeGiftExtras(orgId, gift, extras, { actorId = null, actorName 
         notifyName: t.notifyName, donorName: donor?.kind === "anonymous" ? null : donor?.name,
         honoureeName: honouree, type: t.type, orgName, signer: org?.receipt_signature_name || null,
       });
-      const id = "tn_" + uuid().slice(0, 10);
+      const id = newId("tn");
       const ins = await query(
         `INSERT INTO tribute_notices (id,org_id,gift_id,donor_id,tribute_type,honouree_name,notify_name,notify_email,notify_address,body,created_by,created_by_name)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
@@ -1967,7 +1968,7 @@ async function refreshRecurringForDonors(orgId, sourceId, provider, donorIds, to
               gift_count,first_gift_on,last_gift_on,expected_next,status)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'active')
            ON CONFLICT DO NOTHING`,
-          ["gr_" + uuid().slice(0, 10), orgId, donorId, sourceId, provider, c.amountCents,
+          [newId("gr"), orgId, donorId, sourceId, provider, c.amountCents,
            c.interval, c.confidence, c.recurringRef, c.giftCount, c.firstGiftOn, c.lastGiftOn, c.expectedNext]);
         created++;
       }
@@ -2143,7 +2144,7 @@ async function ingestPosSale(orgId, sale, { sourceId = null, actorId = null, act
     // A stranger at the till becomes a GUEST. Typed guest, never donor: they
     // have not given a penny, and putting them in a donor list would be the
     // same mistake as typing a peer-to-peer fundraiser as a donor (BUILD-103).
-    personId = "d_" + uuid().slice(0, 10);
+    personId = newId("d");
     await run(
       `INSERT INTO donors (id,org_id,name,email,phone,stage,status,tags,person_types,created_by,created_by_name)
        VALUES (?,?,?,?,?,'prospect','active','[]','["guest"]'::jsonb,?,?)`,
@@ -2171,7 +2172,7 @@ async function ingestPosSale(orgId, sale, { sourceId = null, actorId = null, act
   }
 
   const eventId = classed.lines.find(l => l.eventId)?.eventId || null;
-  const id = "pos_" + uuid().slice(0, 10);
+  const id = newId("pos");
   await run(
     `INSERT INTO pos_sales (id,org_id,source_id,external_id,occurred_on,person_id,match_by,needs_confirm,
                             buyer_name,buyer_email,buyer_phone,location_name,event_id,
@@ -2630,7 +2631,7 @@ async function writeSourceRow(orgId, source, row, ctx) {
             amount_cents,occurred_at,sentence,candidate,created_by,created_by_name)
          VALUES (?,?,?,?,?,?,?,?,?,?,?::jsonb,?,?)
          ON CONFLICT (org_id, external_key) DO NOTHING`,
-        ["gdq_" + uuid().slice(0, 10), orgId, source.id, other.id, other.src_id, key, donor.id,
+        [newId("gdq"), orgId, source.id, other.id, other.src_id, key, donor.id,
          row.amountCents, row.occurredAt, sentence, JSON.stringify(row), actorId, actorName]);
       summary.duplicateQuestions++;
       return;
@@ -2720,7 +2721,7 @@ async function resolveSourceDonor(orgId, source, row, { actorId, actorName, summ
         [orgId, name, email || " never"]);
       if (clash) summary.nameCollisions.push({ name, existingDonorId: clash.id, existingEmail: clash.email || null });
     }
-    const id = "d_" + uuid().slice(0, 8);
+    const id = newId("d");
     await run(
       `INSERT INTO donors (id, org_id, name, email, status, stage, total_giving, gift_count, created_by, created_by_name)
        VALUES (?,?,?,?,'active','steward',0,0,?,?)`,
@@ -2736,7 +2737,7 @@ async function resolveSourceDonor(orgId, source, row, { actorId, actorName, summ
 // apart without a second table.
 async function recordSourceRun(orgId, source, summary, { actorId, actorName, day }) {
   const { providerLabel } = await givingSourcesMod();
-  const id = "imp_" + uuid().slice(0, 10);
+  const id = newId("imp");
   const setAside = summary.failedSkipped + summary.refundsSkipped +
     Object.values(summary.dropped || {}).reduce((a, b) => a + b, 0);
   await run(
@@ -2929,7 +2930,7 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
   const rows = await query(
     `INSERT INTO thank_you_drafts (id,org_id,donor_id,gift_id,body,voice)
      VALUES (?,?,?,?,?,?) ${conflict} RETURNING id`,
-    ["ty_" + uuid().slice(0, 10), orgId, donorId, giftId, draft.body, draft.voice]);
+    [newId("ty"), orgId, donorId, giftId, draft.body, draft.voice]);
   return rows[0] ? { id: rows[0].id, voice: draft.voice } : null;
 }
 
@@ -3289,10 +3290,10 @@ app.post("/admin/incidents", requireAuth, requireSuperAdmin, wrap(async (req, re
   const body = String(req.body?.body || "").trim().slice(0, 4000);
   const affected = (Array.isArray(req.body?.affected) ? req.body.affected : []).filter(k => STATUS_SERVICES.some(s => s.key === k));
   if (!title || !body) return res.status(400).json({ error: "Say what is affected, and what we are doing about it." });
-  const id = "inc_" + uuid().slice(0, 10);
+  const id = newId("inc");
   const who = actor(req);
   await run(`INSERT INTO status_incidents (id,title,affected,created_by,created_by_name) VALUES (?,?,?,?,?)`, [id, title, affected, who.id, who.name]);
-  await run(`INSERT INTO status_incident_updates (id,incident_id,body,state,created_by,created_by_name) VALUES (?,?,?,?,?,?)`, ["inu_" + uuid().slice(0, 10), id, body, "investigating", who.id, who.name]);
+  await run(`INSERT INTO status_incident_updates (id,incident_id,body,state,created_by,created_by_name) VALUES (?,?,?,?,?,?)`, [newId("inu"), id, body, "investigating", who.id, who.name]);
   res.status(201).json({ id });
 }));
 app.post("/admin/incidents/:id/update", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
@@ -3302,7 +3303,7 @@ app.post("/admin/incidents/:id/update", requireAuth, requireSuperAdmin, wrap(asy
   const [i] = await query(`SELECT id FROM status_incidents WHERE id=?`, [req.params.id]);
   if (!i) return res.status(404).json({ error: "No such incident." });
   const who = actor(req);
-  await run(`INSERT INTO status_incident_updates (id,incident_id,body,state,created_by,created_by_name) VALUES (?,?,?,?,?,?)`, ["inu_" + uuid().slice(0, 10), i.id, body, state, who.id, who.name]);
+  await run(`INSERT INTO status_incident_updates (id,incident_id,body,state,created_by,created_by_name) VALUES (?,?,?,?,?,?)`, [newId("inu"), i.id, body, state, who.id, who.name]);
   if (state) await run(`UPDATE status_incidents SET state=?, resolved_at=${state === "resolved" ? "NOW()" : "NULL"} WHERE id=?`, [state, i.id]);
   res.json({ ok: true });
 }));
@@ -3436,7 +3437,7 @@ const ALL_PIPELINE_STAGES = [...PIPELINE_STAGES, "lapsed"];
 // Insert one move row (system of record for the pipeline). Description is
 // required and validated at the route; this just writes.
 async function recordMove(orgId, donorId, officerId, officerName, fromStage, toStage, description) {
-  const id = "mv_" + uuid().slice(0, 8);
+  const id = newId("mv");
   await run(
     "INSERT INTO moves (id,org_id,donor_id,officer_id,officer_name,from_stage,to_stage,description) VALUES (?,?,?,?,?,?,?,?)",
     [id, orgId, donorId, officerId || null, officerName || "", fromStage || null, toStage, description]);
@@ -3475,7 +3476,7 @@ async function recordAutoMove(orgId, donorId, fromStage, toStage, description) {
   try {
     await run(
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,logged_by_name) VALUES (?,?,?,?,?,?,?)",
-      ["int_" + uuid().slice(0, 8), orgId, donorId, "stage_change",
+      [newId("int"), orgId, donorId, "stage_change",
        `Moved ${fromStage || "Not set"} → ${toStage}: ${description}`,
        orgToday(await orgTz(orgId)), AUTO_MOVE_OFFICER]);   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   } catch (e) { console.error("[smart-move] interaction log:", e.message); }
@@ -4027,7 +4028,7 @@ async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO, 
   if (require("./twoFactor").isDemoOrg(org)) snapshot.demo = true;   // WHY-1 Part 8
 
   const pdfBuffer = await renderReceiptPdf(snapshot);
-  const id = "rcpt_" + uuid().slice(0, 8);
+  const id = newId("rcpt");
   await run(
     `INSERT INTO receipts (id, org_id, donor_id, gift_id, type, receipt_number, amount, deductible_amount, snapshot, pdf_data, created_by, created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -4112,7 +4113,7 @@ async function donorByNameOrCreate(orgId, name, { create = false, kind = null, w
     [orgId, nm]);
   let id = rows.length ? rows[0].id : null;
   if (!id && create) {
-    id = "d_" + uuid().slice(0, 10);
+    id = newId("d");
     await run(
       `INSERT INTO donors (id,org_id,name,stage,status,tags,kind,person_types,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?::jsonb,?,?)`,
       [id, orgId, nm, "prospect", "active", "[]", kind || "person", '["donor"]',
@@ -4369,7 +4370,7 @@ async function makeVolunteer(orgId, personId, opts = {}, who, client = null) {
       [opts.hoursPerWeek !== undefined, f.hoursPerWeek, opts.availability !== undefined, JSON.stringify(f.availability),
        opts.roles !== undefined, JSON.stringify(f.roles), had.id, orgId]);
   } else {
-    recordId = "vap_" + uuid().slice(0, 12);
+    recordId = newId("vap");
     created = true;
     const via = opts.via === "agent" || String(who.id || "").startsWith("system:agent") ? "agent" : "staff";
     await w(`INSERT INTO volunteer_applications (id,org_id,name,email,phone,answers,availability,status,person_id,matched_existing,
@@ -4400,7 +4401,7 @@ async function insertShift(orgId, personId, shift, { via, importKey = null, who 
                                    opportunity_id,slot_id,start_time,end_time)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT (org_id, import_key) WHERE import_key IS NOT NULL DO NOTHING RETURNING id`,
-    ["vs_" + uuid().slice(0, 10), orgId, personId, shift.date, shift.hundredths / 100, shift.role, shift.note || null,
+    [newId("vs"), orgId, personId, shift.date, shift.hundredths / 100, shift.role, shift.note || null,
      via, importKey, who.id, who.name,
      // PARITY-3 — which opportunity and shift the hours were given to, and the
      // clock times when they were logged that way. All optional.
@@ -4508,7 +4509,7 @@ async function threadRankMod() { return import("./shared/threadRank.js"); }
 // when the donor already has an open thread (the one-open-thread rule — the
 // partial unique index decides under a race, not a check-then-insert).
 async function openThreadTx(client, { orgId, donorId, step, openedOn, ownerId, ownerName, actorId, actorName, openingInteractionId = null, openingGiftId = null, followon = null }) {
-  const id = "th_" + uuid().slice(0, 8);
+  const id = newId("th");
   const rows = await queryTx(client,
     `INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,due_time,opened_on,
                           opening_interaction_id,opening_gift_id,owner_id,owner_name,
@@ -4563,7 +4564,7 @@ async function openAdminTask(orgId, { title, due = null, priority = "medium", do
   const [open] = await query(
     `SELECT id FROM tasks WHERE org_id=? AND title=? AND COALESCE(done::text, '0') NOT IN ('1','true') AND voided_at IS NULL LIMIT 1`, [orgId, title]);
   if (open) return null;
-  const id = "t_" + uuid().slice(0, 8);
+  const id = newId("t");
   await run(
     `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,0,?,?,?,?,?)`,
@@ -5083,7 +5084,7 @@ async function logRecoveryEvent(orgId, donorId, subscriptionId, type, stripeEven
   await run(
     `INSERT INTO payment_recovery_events (id, org_id, donor_id, subscription_id, type, stripe_event_id, detail)
      VALUES (?,?,?,?,?,?,?)`,
-    ["pre_" + uuid().slice(0, 8), orgId, donorId || null, subscriptionId || null, type, stripeEventId || null, JSON.stringify(detail || {})]
+    [newId("pre"), orgId, donorId || null, subscriptionId || null, type, stripeEventId || null, JSON.stringify(detail || {})]
   );
 }
 
@@ -5103,7 +5104,7 @@ async function logRecurringChange(orgId, subscriptionId, donorId, kind, { oldAmo
   await run(
     `INSERT INTO recurring_change_log (id, org_id, subscription_id, donor_id, kind, old_amount, new_amount, sub_interval, actor, actor_name)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    ["rcl_" + uuid().slice(0, 8), orgId, subscriptionId || null, donorId || null, kind, oldAmount, newAmount, interval, actor, actorName]
+    [newId("rcl"), orgId, subscriptionId || null, donorId || null, kind, oldAmount, newAmount, interval, actor, actorName]
   ).catch(e => console.error("[recurring] change-log write failed:", e.message));
 }
 
@@ -5163,7 +5164,7 @@ async function recordTick(name, fn) {
     console.error("[tick] REFUSED:", msg);
     throw new Error(msg);
   }
-  const id = "tick_" + uuid().slice(0, 10);
+  const id = newId("tick");
   await run(`INSERT INTO tick_log (id,name) VALUES (?,?)`, [id, name]).catch(() => {});
   try {
     const raw = await fn();
@@ -5490,12 +5491,12 @@ async function runCampaignSend(campaign, org, donors) {
           console.log(`[campaign:${campaign.id}] skipping ${donor.id} (${decision.reason})`);
           await run(
             "INSERT INTO campaign_recipients (id,org_id,campaign_id,donor_id,email,failure_reason) VALUES (?,?,?,?,?,?)",
-            ["cr_" + uuid().slice(0, 8), org.id, campaign.id, donor.id, donor.email, `suppressed: ${decision.reason}`]
+            [newId("cr"), org.id, campaign.id, donor.id, donor.email, `suppressed: ${decision.reason}`]
           ).catch(() => {});
           continue;
         }
 
-        const recipientId = "cr_" + uuid().slice(0, 8);
+        const recipientId = newId("cr");
         await run(
           "INSERT INTO campaign_recipients (id,org_id,campaign_id,donor_id,email) VALUES (?,?,?,?,?)",
           [recipientId, org.id, campaign.id, donor.id, donor.email]
@@ -5557,7 +5558,7 @@ async function runCampaignSend(campaign, org, donors) {
           await run(
             `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
              VALUES (?,?,?,?,?,?,?,?,?)`,
-            ["int_" + uuid().slice(0, 8), org.id, donor.id, "email",
+            [newId("int"), org.id, donor.id, "email",
              `Sent "${(campaign.name || "a campaign").slice(0, 120)}".`,
              orgToday(await orgTz(org.id)),                          // ORG_TZ_SEAM_OK
              campaign.created_by || SYS_AUTO.id, campaign.created_by_name || SYS_AUTO.name,
@@ -5630,7 +5631,7 @@ async function bumpFormEvent(orgId, formId, field, { variant = null, cents = 0, 
      DO UPDATE SET ${field} = form_events.${field} + 1,
                    completed_cents = form_events.completed_cents + ?,
                    updated_at = NOW()`,
-    ["fe_" + uuid().slice(0, 10), orgId, formId, day, v, Math.max(0, Math.trunc(cents) || 0),
+    [newId("fe"), orgId, formId, day, v, Math.max(0, Math.trunc(cents) || 0),
      Math.max(0, Math.trunc(cents) || 0)]);
 }
 
@@ -5820,7 +5821,7 @@ async function runSavedReportScheduleForOrg(org, { weekKey, force = false } = {}
   for (const r of reps) {
     const reserved = await query(
       "INSERT INTO saved_report_sends (id,org_id,report_id,period_key) VALUES (?,?,?,?) ON CONFLICT (report_id, period_key) DO NOTHING RETURNING id",
-      ["rps_" + uuid().slice(0, 10), org.id, r.id, weekKey]);
+      [newId("rps"), org.id, r.id, weekKey]);
     if (!reserved.length) { skipped++; continue; }
     const [owner] = await query("SELECT email, name FROM users WHERE id=? AND org_id=?", [r.owner_id, org.id]);
     if (!owner?.email) { skipped++; continue; }
@@ -6088,7 +6089,7 @@ const digestNudgeHtml = (line, linkLabel) =>
 // Reserve one recipient's digest (idempotency choke point). Returns the row id
 // if newly reserved, or null if it was already sent this period.
 async function reserveDigest(orgId, digestType, periodKey, recipientUserId, recipientEmail, scope, meta) {
-  const id = "dg_" + uuid().slice(0, 8);
+  const id = newId("dg");
   const reserved = await query(
     `INSERT INTO digest_sends (id,org_id,digest_type,period_key,recipient_user_id,recipient_email,scope,meta)
      VALUES (?,?,?,?,?,?,?,?)
@@ -7163,7 +7164,7 @@ async function processSequences() {
                 await run(
                   `INSERT INTO note_reminders (id, org_id, donor_id, sequence_enrollment_id, milestone_key, talking_points, status)
                    VALUES (?,?,?,?,?,?,'pending')`,
-                  ["note_" + uuid().slice(0, 8), enr.org_id, enr.donor_id, enr.id, meta0.milestone_key || null, JSON.stringify(points)]
+                  [newId("note"), enr.org_id, enr.donor_id, enr.id, meta0.milestone_key || null, JSON.stringify(points)]
                 );
                 console.log(`[note-reminder] queued for donor ${enr.donor_id} (${meta0.milestone_key})`);
               }
@@ -7216,7 +7217,7 @@ async function processSequences() {
               await run(
                 `INSERT INTO milestone_drafts (id, org_id, donor_id, sequence_enrollment_id, milestone_key, subject, body, status)
                  VALUES (?,?,?,?,?,?,?,'pending_review')`,
-                ["mdraft_" + uuid().slice(0, 8), enr.org_id, enr.donor_id, enr.id, meta.milestone_key || null, draft.subject, draft.body]
+                [newId("mdraft"), enr.org_id, enr.donor_id, enr.id, meta.milestone_key || null, draft.subject, draft.body]
               );
               console.log(`[milestone] queued draft for donor ${enr.donor_id} (${meta.milestone_key}) — pending review`);
             } else {
@@ -7237,7 +7238,7 @@ async function processSequences() {
               await run(
                 `INSERT INTO milestone_drafts (id, org_id, donor_id, sequence_enrollment_id, milestone_key, subject, body, status)
                  VALUES (?,?,?,?,?,?,?,'pending_review')`,
-                ["mdraft_" + uuid().slice(0, 8), enr.org_id, enr.donor_id, enr.id, "at_risk", draft.subject, draft.body]
+                [newId("mdraft"), enr.org_id, enr.donor_id, enr.id, "at_risk", draft.subject, draft.body]
               );
               console.log(`[at-risk] queued re-engagement draft for donor ${enr.donor_id} — pending review`);
             } else {
@@ -7292,7 +7293,7 @@ async function processSequences() {
         }
         if (enr.last_error) await run(`UPDATE sequence_enrollments SET last_error = NULL, last_failed_at = NULL WHERE id = ?`, [enr.id]).catch(() => {});
         {
-          const intId = "i_" + uuid().slice(0, 8);
+          const intId = newId("i");
           const today = orgToday(await orgTz(enr.org_id));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
           await run(
             "INSERT INTO interactions (id, org_id, donor_id, type, note, date) VALUES (?, ?, ?, 'email', ?, ?)",
@@ -7595,14 +7596,14 @@ async function ensureAtRiskSequence() {
   for (const o of orgs) {
     const existing = await query("SELECT id FROM sequences WHERE org_id = ? AND trigger = 'at_risk'", [o.id]);
     if (existing.length) continue;
-    const seqId = "seq_" + uuid().slice(0, 8);
+    const seqId = newId("seq");
     await run(
       "INSERT INTO sequences (id, org_id, name, trigger, status, created_by, created_by_name) VALUES (?,?,?,?,'active',?,?)",
       [seqId, o.id, "At-Risk Re-Engagement", "at_risk", SYS_AUTO.id, SYS_AUTO.name]
     );
     await run(
       "INSERT INTO sequence_steps (id, sequence_id, step_order, delay_days, subject, body) VALUES (?,?,?,?,?,?)",
-      ["ss_" + uuid().slice(0, 8), seqId, 0, 0, "At-risk re-engagement email (AI-drafted per donor)", ""]
+      [newId("ss"), seqId, 0, 0, "At-risk re-engagement email (AI-drafted per donor)", ""]
     );
   }
 }
@@ -7616,14 +7617,14 @@ async function ensureMilestoneSequences() {
   for (const o of orgs) {
     const existing = await query("SELECT id FROM sequences WHERE org_id = ? AND trigger = 'milestone'", [o.org_id]);
     if (existing.length) continue;
-    const seqId = "seq_" + uuid().slice(0, 8);
+    const seqId = newId("seq");
     await run(
       "INSERT INTO sequences (id, org_id, name, trigger, status, created_by, created_by_name) VALUES (?,?,?,?,'active',?,?)",
       [seqId, o.org_id, "Milestone & Anniversary Emails", "milestone", SYS_AUTO.id, SYS_AUTO.name]
     );
     await run(
       "INSERT INTO sequence_steps (id, sequence_id, step_order, delay_days, subject, body) VALUES (?,?,?,?,?,?)",
-      ["ss_" + uuid().slice(0, 8), seqId, 0, 0, "Milestone email (AI-drafted per donor)", ""]
+      [newId("ss"), seqId, 0, 0, "Milestone email (AI-drafted per donor)", ""]
     );
   }
 }
@@ -7899,7 +7900,7 @@ async function autoEnroll() {
             await run(
               `INSERT INTO sequence_enrollments (id, sequence_id, org_id, donor_id, current_step, status, next_send_at, metadata)
                VALUES (?, ?, ?, ?, 0, 'active', NOW(), ?)`,
-              ["se_" + uuid().slice(0, 8), seq.id, seq.org_id, c.donorId, metaJson]
+              [newId("se"), seq.id, seq.org_id, c.donorId, metaJson]
             );
           }
         }
@@ -7916,7 +7917,7 @@ async function autoEnroll() {
           [seq.id]
         );
         const firstDelay = parseInt(steps[0]?.delay_days || 0, 10);
-        const enrId = "se_" + uuid().slice(0, 8);
+        const enrId = newId("se");
         await run(
           `INSERT INTO sequence_enrollments (id, sequence_id, org_id, donor_id, current_step, status, next_send_at)
            VALUES (?, ?, ?, ?, 0, 'active', NOW() + INTERVAL '${firstDelay} days')
@@ -8047,7 +8048,7 @@ async function enrollInSequences(orgId, donorId, triggerKey, context = {}, actor
             enrolled_by, enrolled_by_name, gift_count_at_enroll)
          VALUES (?,?,?,?,0,'active', NOW() + INTERVAL '${firstDelay} days', ?,?,?,?)
          ON CONFLICT (sequence_id, donor_id) DO NOTHING`,
-        ["se_" + uuid().slice(0, 8), seq.id, orgId, donorId, track.key,
+        [newId("se"), seq.id, orgId, donorId, track.key,
          actor?.id || "system:sequence", actor?.name || null, d ? Number(d.gift_count || 0) : null]);
       if (r.changes) enrolled++;
     } catch (e) { console.error(`[seq] enroll ${seq.id}/${donorId}:`, e.message); errors.push(`${seq.id}: ${e.message}`); }
@@ -8156,7 +8157,7 @@ async function processTrackedSequences({ orgId = null, limit = SEQ_TICK_BUDGET, 
         if (stop) { await closeEnrollment(enr.id, "stopped", stop); out.stopped++; continue; }
 
         // ── THE CLAIM. Before the provider call, never after. ─────────────
-        const claimId = "ss_" + uuid().slice(0, 12);
+        const claimId = newId("ss");
         const claim = await run(
           `INSERT INTO sequence_sends (id, org_id, sequence_id, donor_id, step_order, status, subject, attempts)
            VALUES (?,?,?,?,?, 'claimed', ?, 1)
@@ -8199,7 +8200,7 @@ async function processTrackedSequences({ orgId = null, limit = SEQ_TICK_BUDGET, 
         await run(
           `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by)
            VALUES (?,?,?,'email',?,?,?)`,
-          ["i_" + uuid().slice(0, 8), oid, enr.donor_id,
+          [newId("i"), oid, enr.donor_id,
            `${SEQ.sendActorLine({ sequenceName: enr.seq_name, stepNumber: enr.current_step + 1,
                                   turnedOnByName: enr.turned_on_by_name, turnedOnAt: civilOn })} · ${subj.text}`,
            clock.date, "system:sequence"]);
@@ -8544,7 +8545,7 @@ async function ensureWorkflows(orgId) {
       `INSERT INTO workflows (id,org_id,recipe_key,name,trigger,conditions,actions,config,enabled)
        VALUES (?,?,?,?,?,?,?,?,false)
        ON CONFLICT (org_id,recipe_key) DO NOTHING`,
-      ["wf_" + uuid().slice(0, 8), orgId, r.key, r.name, r.trigger,
+      [newId("wf"), orgId, r.key, r.name, r.trigger,
        JSON.stringify(r.conditions), JSON.stringify(r.actions), JSON.stringify(r.defaultConfig || {})]
     );
   }
@@ -8588,7 +8589,7 @@ async function notifyUserOnce({ org, userId, email, eventKey, channel, prefKind,
   // or queued, so a refusal leaves no retry behind it.
   const gate = await orgMaySendEmail(org.id, mailPolicy.CATEGORY.STAFF);
   if (!gate.send) { console.log(`[mail-policy] staff notice ${eventKey} not sent for org ${org.id} (${gate.reason})`); return { sent: false, reason: gate.reason }; }
-  const id = "ns_" + uuid().slice(0, 8);
+  const id = newId("ns");
   const reserved = await query(
     `INSERT INTO notification_sends (id,org_id,event_key,recipient_user_id,channel)
      VALUES (?,?,?,?,?)
@@ -8606,7 +8607,7 @@ async function notifyUserOnce({ org, userId, email, eventKey, channel, prefKind,
       await run(
         `INSERT INTO notification_failures (id,org_id,event_key,recipient_user_id,recipient_email,channel,subject,body_html,attempts,last_error,next_retry_at)
          VALUES (?,?,?,?,?,?,?,?,1,?,NOW())`,
-        ["nf_" + uuid().slice(0, 8), org.id, eventKey, userId, email, channel || null, subject || null, bodyHtml || null, "send_rejected"]);
+        [newId("nf"), org.id, eventKey, userId, email, channel || null, subject || null, bodyHtml || null, "send_rejected"]);
       notifyFailedPending++;
     } catch (e) { console.error("[notify] failed to queue a failed send for retry:", e.message); }
     return { sent: false, reason: "send_failed" };
@@ -8649,7 +8650,7 @@ async function sendDonorLifecycleEmail(kind, toEmail, subject, html, fromOverrid
       `INSERT INTO notification_failures (id,org_id,event_key,recipient_user_id,recipient_email,channel,subject,body_html,attempts,last_error,next_retry_at)
        VALUES (?,?,?,?,?,?,?,?,1,?,NOW())`,
       // SEND-GATE-1: the org rides in the key, so the retry is gated like the first try.
-      ["nf_" + uuid().slice(0, 8), DONOR_EMAIL_ORG, kind + (orgId ? "@" + orgId : "") + ":" + Date.now(), "donor", toEmail,
+      [newId("nf"), DONOR_EMAIL_ORG, kind + (orgId ? "@" + orgId : "") + ":" + Date.now(), "donor", toEmail,
        "donor_" + kind, subject, html, "send_rejected"]);
     notifyFailedPending++;
   } catch (e) { console.error("[donor-email] failed to queue for retry:", e.message); }
@@ -8699,7 +8700,7 @@ async function retryFailedNotifications({ force = false } = {}) {
       await run(
         `INSERT INTO notification_sends (id,org_id,event_key,recipient_user_id,channel)
          VALUES (?,?,?,?,?) ON CONFLICT (org_id,event_key,recipient_user_id) DO NOTHING`,
-        ["ns_" + uuid().slice(0, 8), f.org_id, f.event_key, f.recipient_user_id, f.channel || null]).catch(() => {});
+        [newId("ns"), f.org_id, f.event_key, f.recipient_user_id, f.channel || null]).catch(() => {});
       await run(`DELETE FROM notification_failures WHERE id=?`, [f.id]);
       delivered++;
     } else {
@@ -8966,7 +8967,7 @@ async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey })
           ? `Stewardship alert: ${donor?.name || "a major donor"} gave ${amtStr || "a major gift"}${donorCtxStr ? ` (${donorCtxStr})` : ""}`
           : "Follow up";
       const due = action.dueDays != null ? new Date(Date.now() + action.dueDays * 86400000).toISOString().slice(0, 10) : "";
-      const taskId = "t_" + uuid().slice(0, 8);
+      const taskId = newId("t");
       // FIX-10 Part C — stamped with the gift whose arrival made this task, so
       // deleting that gift can void it and leave every hand-typed task alone.
       await run(
@@ -9008,7 +9009,7 @@ async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey })
       const taskOwner = owner || recipients[0] || null;
       const title = `Thank ${donor?.name || "a donor"} · ${amtStr || "a gift"} just came in`;
       const due = new Date(Date.now() + 1 * 86400000).toISOString().slice(0, 10);
-      const taskId = "t_" + uuid().slice(0, 8);
+      const taskId = newId("t");
       // FIX-10 Part C — the "just came in" task, stamped with its gift.
       await run(
         "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name,source_gift_id) VALUES (?,?,?,?,?,'donor',0,?,?,?,NOW(),?,?,?)",
@@ -9066,7 +9067,7 @@ ${person ? L.refButtonHtml(person, base) : ""}`;
       };
       const tpl = DRAFTS[action.template];
       if (!tpl) return null;
-      const draftId = "md_" + uuid().slice(0, 8);
+      const draftId = newId("md");
       await run(
         `INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,workflow_run_id,created_by,created_by_name)
          VALUES (?,?,?,?,?,?,'pending_review',?,?,?,?)`,
@@ -9105,7 +9106,7 @@ async function fireWorkflows(orgId, trigger, ctx) {
 
     // Reserve the run row FIRST — the unique (workflow_id, dedup_key) makes a
     // redelivered event a no-op (RETURNING is empty on conflict).
-    const runId = "wfr_" + uuid().slice(0, 8);
+    const runId = newId("wfr");
     const reserved = await query(
       `INSERT INTO workflow_runs (id,org_id,workflow_id,recipe_key,trigger,dedup_key,entity_type,entity_id,donor_id,actions_taken)
        VALUES (?,?,?,?,?,?,?,?,?,'[]')
@@ -9387,7 +9388,7 @@ async function processPledgeReminders() {
         if (p.reminder_error) await run(`UPDATE pledges SET reminder_error=NULL WHERE id=?`, [p.id]);
         await run(
           "INSERT INTO interactions (id,org_id,donor_id,type,note,date,metadata) VALUES (?,?,?,?,?,?,?)",
-          ["int_" + uuid().slice(0, 8), p.org_id, p.donor_id, "pledge_reminder",
+          [newId("int"), p.org_id, p.donor_id, "pledge_reminder",
            `Pledge reminder sent · $${Number(p.amount).toLocaleString()} pledge due ${orgTime.civilLocale(p.due_date, { month: "short", day: "numeric", year: "numeric" })}`,
            orgToday(await orgTz(p.org_id)), JSON.stringify({ pledge_id: p.id, step: p.reminder_step })]   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
         );
@@ -10005,7 +10006,7 @@ async function refreshMailboxSyncHealth({ log = false } = {}) {
   return mailboxSyncHealth;
 }
 async function startSyncRun(conn, kind, trigger) {
-  const runId = "msr_" + uuid().slice(0, 12);
+  const runId = newId("msr");
   await run(`INSERT INTO mailbox_sync_runs (id,org_id,user_id,provider,kind,trigger) VALUES (?,?,?,?,?,?)`,
     [runId, conn.org_id, conn.user_id, conn.provider, kind, trigger || "tick"]).catch(() => {});
   return runId;
@@ -10204,7 +10205,7 @@ async function syncMailboxRun(conn, userId, orgId, providerKey, { progress = fal
     // SECURE-3: `note` is the one line; the body is sealed with this row's id
     // (server/mail/sealedMail.js). No key throws, and the run fails loudly.
     for (const donorId of decision.donorIds) {
-      const intId = `int_${uuid().slice(0, 8)}`;
+      const intId = newId("int");
       const sealedCols = SEALED_MAIL.sealedEmailColumns(orgId, intId, note, decision.body);
       await run(
         `INSERT INTO interactions (id, org_id, donor_id, type, note, body_sealed, body_key_id, date, created_at, created_by, logged_by_name, metadata)
@@ -10369,7 +10370,7 @@ async function syncCalendarRun(conn, userId, orgId, providerKey) {
                                        THEN calendar_events.matched_by ELSE EXCLUDED.matched_by END,
                      updated_at=NOW()
        RETURNING id`,
-      ["cal_" + uuid().slice(0, 12), orgId, userId, providerKey, String(ev.id), r.title, r.startsAt, r.endsAt,
+      [newId("cal"), orgId, userId, providerKey, String(ev.id), r.title, r.startsAt, r.endsAt,
        r.location, r.personIds, r.candidateIds || [], r.matchedBy || null, actorId, "Calendar sync"]);
     kept++;
     // FIX-33 Part 3: a meeting with somebody on file changes their record,
@@ -10471,7 +10472,7 @@ async function pushStewardDatesRun(conn, userId, orgId, providerKey) {
     if (!made || !made.id) continue;
     await run(`INSERT INTO calendar_pushes (id,org_id,user_id,provider,item_key,provider_event_id,day,title,created_by,created_by_name)
                VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (user_id, provider, item_key) DO NOTHING`,
-      ["cpush_" + uuid().slice(0, 12), orgId, userId, providerKey, it.id, String(made.id), day, it.title,
+      [newId("cpush"), orgId, userId, providerKey, it.id, String(made.id), day, it.title,
        `system:calendar-push/${providerKey}/${userId}`, "Calendar sync"]);
     pushed++;
   }
@@ -10898,7 +10899,7 @@ async function emitWebhook(orgId, event, data) {
   for (const e of endpoints) {
     const subscribed = Array.isArray(e.events) ? e.events : [];
     if (!subscribed.includes(event)) continue;
-    const id = "whd_" + uuid().slice(0, 12);
+    const id = newId("whd");
     const payload = W.eventPayload({ event, orgId, data, id, sentAt: new Date().toISOString() });
     await run(
       `INSERT INTO webhook_deliveries (id,org_id,endpoint_id,event,payload,attempt,next_attempt_at)
@@ -10993,7 +10994,7 @@ async function openWebhookThread(orgId, url, failures) {
                           owner_id,owner_name,created_by,created_by_name)
      VALUES (?,?,?,'follow_up',?,?,?,?,?,'system:webhooks','Webhook delivery')
      ON CONFLICT DO NOTHING`,
-    ["th_wh_" + uuid().slice(0, 8), orgId, d.id,
+    [newId("th_wh"), orgId, d.id,
      W.pauseSentence(url, failures).slice(0, 200), today, today, admin.id, admin.name]).catch(() => {});
 }
 
@@ -11081,7 +11082,7 @@ async function registerForEvent({ orgId, event, level, donorId, qty, paid = true
   // public page. That is the whole of what this build sells.
   if (giftId) await run("UPDATE gifts SET event_id=? WHERE id=? AND org_id=? AND event_id IS NULL", [event.id, giftId, orgId]);
   const recognition = level.kind === "sponsor" ? EV.recognitionLine({ donorName: donor.name, levelName: level.name, recognition: level.recognition }) : null;
-  const id = "att_" + uuid().slice(0, 8);
+  const id = newId("att");
   const rows = await query(
     `INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email,status,level_id,quantity,registration_gift_id,sponsor_pledge_id,recognition,gift_amount)
      VALUES (?,?,?,?,?,?,'registered',?,?,?,?,?,?)
@@ -11109,7 +11110,7 @@ async function registerForEvent({ orgId, event, level, donorId, qty, paid = true
     const gid = await require("./personMatch").findOrCreateGuest(orgId, String(g), who).catch(() => null);
     await run(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,status,level_id,quantity,source,guest_of,notes)
                VALUES (?,?,?,?,?,'registered',?,0,'public',?,?) ON CONFLICT (event_id, donor_id) DO NOTHING`,
-      ["att_" + uuid().slice(0, 10), event.id, orgId, gid, String(g).slice(0, 200), level.id, attendee.id, `Guest of ${donor.name}.`]).catch(() => {});
+      [newId("att"), event.id, orgId, gid, String(g).slice(0, 200), level.id, attendee.id, `Guest of ${donor.name}.`]).catch(() => {});
   }
   // EVENTS-2 — the confirmation, sent only when somebody paid on the public
   // page. It is transactional (they were just charged for a seat), and it
@@ -11178,7 +11179,7 @@ async function enrollMembership({ orgId, donorId, level, startsOn = null, paid =
   const today = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK
   const start = startsOn || today;
   const expires = MB.expiryFor({ term: level.term, startsOn: start });
-  const id = "mb_" + uuid().slice(0, 10);
+  const id = newId("mb");
   try {
     await run(`INSERT INTO memberships (id,org_id,donor_id,household_id,level_id,joined_on,starts_on,expires_on,status,payment_method,source,created_by,created_by_name)
                VALUES (?,?,?,?,?,?,?,?,'active',?,?,?,?)`,
@@ -11269,7 +11270,7 @@ async function renewMembership({ orgId, membershipId, levelId = null, paymentMet
     const continuing = cur.status === "active" || cur.status === "grace";
     const start = MB.renewalStart({ oldExpires: cur.expires_on, today, lapsed: !continuing });
     const expires = MB.expiryFor({ term: level.term, startsOn: start });
-    const id = "mb_" + uuid().slice(0, 10);
+    const id = newId("mb");
     if (continuing) await run(`UPDATE memberships SET status='renewed', status_changed_on=?, updated_at=NOW() WHERE id=? AND org_id=?`, [today, old.id, orgId]);
     try {
       await run(`INSERT INTO memberships (id,org_id,donor_id,household_id,level_id,joined_on,starts_on,expires_on,status,payment_method,source,renewed_from,created_by,created_by_name)
@@ -11680,7 +11681,7 @@ async function portalTimeline(orgId, donorId, note, portalEvent) {
   await run(
     `INSERT INTO interactions (id,org_id,donor_id,type,note,date,logged_by_name,metadata)
      VALUES (?,?,?,?,?,?,?,?)`,
-    ["int_" + uuid().slice(0, 8), orgId, donorId, "note", note,
+    [newId("int"), orgId, donorId, "note", note,
      orgToday(await orgTz(orgId)), "Donor portal", JSON.stringify({ portal_event: portalEvent })]   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   ).catch(e => console.error("[portal] timeline:", e.message));
 }
@@ -11831,7 +11832,7 @@ async function recordAssetPointerHistory(orgId, entity, entityId, fromVal, toVal
   await run(
     `INSERT INTO asset_pointer_history (id, org_id, entity, entity_id, from_value, to_value, actor_user_id, actor_email)
      VALUES (?,?,?,?,?,?,?,?)`,
-    ["aph_" + uuid().slice(0, 8), orgId, entity, entityId, JSON.stringify(f), JSON.stringify(t),
+    [newId("aph"), orgId, entity, entityId, JSON.stringify(f), JSON.stringify(t),
      actor?.userId || null, actor?.email || null]);
 }
 
@@ -12037,7 +12038,7 @@ const foldEmail = (e) => String(e || "").trim().toLowerCase();
 async function donorAudit(accountId, email, action, req, meta) {
   await run(
     `INSERT INTO donor_account_audit (id,account_id,email,action,ip,meta) VALUES (?,?,?,?,?,?)`,
-    ["daa_" + uuid().slice(0, 10), accountId || null, email || null, action,
+    [newId("daa"), accountId || null, email || null, action,
      (req && req.ip) || null, meta ? JSON.stringify(meta) : null]
   ).catch(e => console.error("[account] audit:", e.message));
 }
@@ -12489,14 +12490,14 @@ async function snapshotMetricsForOrg(orgId, out = null) {
     `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
      ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value
        WHERE metric_snapshots.value IS DISTINCT FROM EXCLUDED.value`,
-    ["ms_" + uuid().slice(0, 8), orgId, "stewardship_debt", debt, today]
+    [newId("ms"), orgId, "stewardship_debt", debt, today]
   );
   if (avgDays != null) {
     await run(
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
        ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value
        WHERE metric_snapshots.value IS DISTINCT FROM EXCLUDED.value`,
-      ["ms_" + uuid().slice(0, 8), orgId, "first_touch_delay", avgDays, today]
+      [newId("ms"), orgId, "first_touch_delay", avgDays, today]
     );
   }
   const { rate: recoveryRate } = recovery;
@@ -12505,7 +12506,7 @@ async function snapshotMetricsForOrg(orgId, out = null) {
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
        ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value
        WHERE metric_snapshots.value IS DISTINCT FROM EXCLUDED.value`,
-      ["ms_" + uuid().slice(0, 8), orgId, "recovery_rate", recoveryRate, today]
+      [newId("ms"), orgId, "recovery_rate", recoveryRate, today]
     );
   }
   // ── BUILD-85 — DOES THE FOLLOW-UP ENGINE RUN? ──────────────────────────
@@ -12521,7 +12522,7 @@ async function snapshotMetricsForOrg(orgId, out = null) {
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
        ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value
        WHERE metric_snapshots.value IS DISTINCT FROM EXCLUDED.value`,
-      ["ms_" + uuid().slice(0, 8), orgId, key, val, today]);
+      [newId("ms"), orgId, key, val, today]);
     await put("threads_open", th.open);
     if (th.medianDaysToClose != null) await put("thread_days_to_close", th.medianDaysToClose);
     // THIN DATA IS NEVER SNAPSHOTTED (the BUILD-76 retention rule): a rate
@@ -12538,7 +12539,7 @@ async function snapshotMetricsForOrg(orgId, out = null) {
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
        ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value
        WHERE metric_snapshots.value IS DISTINCT FROM EXCLUDED.value`,
-      ["ms_" + uuid().slice(0, 8), orgId, "retention_rate", retentionRate, today]
+      [newId("ms"), orgId, "retention_rate", retentionRate, today]
     );
   }
   // BUILD-76 Part 4 — log_capture_rate: of the drift items marked done in the
@@ -12558,7 +12559,7 @@ async function snapshotMetricsForOrg(orgId, out = null) {
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
        ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value
        WHERE metric_snapshots.value IS DISTINCT FROM EXCLUDED.value`,
-      ["ms_" + uuid().slice(0, 8), orgId, "log_capture_rate", rate, today]
+      [newId("ms"), orgId, "log_capture_rate", rate, today]
     );
   }
   return debt;
@@ -12863,7 +12864,7 @@ if (testMode() && process.env.STEWARD_TEST_PROBE === "1") {
     const t0 = new Date();
     if (p.sleepMs) await new Promise(r => setTimeout(r, p.sleepMs));
     await run(`INSERT INTO tick_log (id, name, started_at, finished_at, ok, detail) VALUES (?,?,?,NOW(),?,?)`,
-      ["tick_" + uuid().slice(0, 12), "testProbe", t0.toISOString(), !p.fail,
+      [newId("tick"), "testProbe", t0.toISOString(), !p.fail,
        JSON.stringify({ key: job.key, org: job.org_id, pid: process.pid, attempt: job.attempts })]);
     if (p.fail) throw new Error("probe told to fail");
     if (p.failPoolFull) throw Object.assign(new Error("(EMAXCONNSESSION) max clients reached in session mode, pool_size: 15"), { code: "XX000" });

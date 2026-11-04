@@ -11,6 +11,7 @@ const express = require("express");
 const DTAGS = require("../../donorTags");   // FIX-33: internal flags never reach a screen as tags
 const ItemRefs = require("../../itemRefs");   // THREAD-2: the things a sentence names
 const SEALED_MAIL = require("../mail/sealedMail");   // SECURE-3: a synced email's body opens only here
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = {
   r1: express.Router(),
@@ -594,7 +595,7 @@ app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const named = await OU.orgUser(req.user.orgId, assignedTo);
   if (!named.ok) return OU.refuse(res, "assignedTo");
 
-  const id = "d_" + uuid().slice(0, 8);
+  const id = newId("d");
   let selfName = assignedToName;
   if (!assignedTo && !selfName) {
     const uRow = await query("SELECT name FROM users WHERE id = ?", [req.user.userId]);
@@ -668,7 +669,7 @@ app.patch("/donors/:id/contact", requireAuth, checkWriteAccess, wrap(async (req,
     const was = { address: d.address, address2: d.address2, city: d.city, state: d.state, zip: d.zip };
     const now = { ...was }; for (const k of keys) if (k in now) now[k] = next[k];
     await run(`INSERT INTO donor_address_history (id, org_id, donor_id, source, before, after, created_by, created_by_name) VALUES (?,?,?,?,?::jsonb,?::jsonb,?,?)`,
-      ["dah_" + uuid().slice(0, 12), orgId, d.id, "edit", JSON.stringify(was), JSON.stringify(now), actor(req).id, actor(req).name]);
+      [newId("dah"), orgId, d.id, "edit", JSON.stringify(was), JSON.stringify(now), actor(req).id, actor(req).name]);
   }
   await run(`UPDATE donors SET ${keys.map(k => `${k}=?`).join(", ")}, updated_at=NOW() WHERE id=? AND org_id=?`, [...keys.map(k => next[k] || null), d.id, orgId]);
   if (keys.some(k => ["address", "city", "state", "zip"].includes(k))) {
@@ -739,7 +740,7 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     const now = { ...was, city: city || null, state: state || null, zip: zip || null, ...Object.fromEntries(Object.entries(street).map(([k, v]) => [k, v || null])) };
     if (ADDR.some(k => String(was[k] || "") !== String(now[k] || ""))) {
       await run(`INSERT INTO donor_address_history (id, org_id, donor_id, source, before, after, created_by, created_by_name) VALUES (?,?,?,?,?::jsonb,?::jsonb,?,?)`,
-        ["dah_" + uuid().slice(0, 12), req.user.orgId, req.params.id, "edit", JSON.stringify(was), JSON.stringify(now), actor(req).id, actor(req).name]);
+        [newId("dah"), req.user.orgId, req.params.id, "edit", JSON.stringify(was), JSON.stringify(now), actor(req).id, actor(req).name]);
     }
   }
   if (birthday !== undefined) {
@@ -815,7 +816,7 @@ app.patch("/donors/:id/stage", requireAuth, requireCrm, checkWriteAccess, wrap(a
     const userName = userRow[0]?.name || "";
     await run(
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
-      ["int_"+uuid().slice(0,8), req.user.orgId, req.params.id, "stage_change",
+      [newId("int"), req.user.orgId, req.params.id, "stage_change",
        `Stage moved from ${oldStage || "Not set"} → ${stage}`,
        orgToday(await orgTz(req.user.orgId)), req.user.userId, userName]   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
     );
@@ -839,7 +840,7 @@ app.delete("/donors/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   // FIX-22: a donor delete is already soft (deleted_at), so Undo only has to
   // clear the stamp. The trash row records that, and nothing else.
   const who = actor(req);
-  const undoId = "del_" + uuid().slice(0, 12);
+  const undoId = newId("del");
   await run(`INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
              VALUES (?, ?, 'donors', ?, '{"__soft":true}'::jsonb, ?, ?)`,
     [undoId, req.user.orgId, req.params.id, who.id, who.name]);

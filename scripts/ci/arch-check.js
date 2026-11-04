@@ -95,6 +95,11 @@ const countClock = f => read(f).split("\n").filter(l => REAL_CLOCK.test(l.replac
 // fixtures are exempt (a fixture org is supposed to have an id).
 const ORG_SPECIFIC = /["'`]org_[a-z0-9][a-z0-9_]{2,}["'`]|org_slug\s*===?\s*["'`]|\borgId\s*===?\s*["'`]org_/;
 
+// IDS-1: a row id built from a cut-down UUID ("th_" + uuid().slice(0, 8)) collides at
+// tens of thousands of rows. Server code makes ids with server/shared/newId.js (20 hex).
+// Any uuid().slice( counts, and so does uuid().replace(/-/g, "").slice(0, N) with N <= 12.
+const SHORT_ID = /(uuid|randomUUID)\(\)\.slice\(|(uuid|randomUUID)\(\)\.replace\([^)]*\)\.slice\(0,\s*([1-9]|1[0-2])\)/;
+
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp|tiff?|heic|avif)$/i;
 const IMAGE_OK = f => f.startsWith("client/src/assets/") || f.startsWith("assets/");
 
@@ -146,6 +151,13 @@ const CHECKS = {
     hard: true,
     measure: files => Object.fromEntries(files.filter(f => f === "routes/crm.js").map(f => [f, countLines(f, CRM_ROUTE)]).filter(([, n]) => n > 0)),
     worse: (key, now) => `${key} registers ${now} route(s); put each in server/<domain>/`,
+  },
+  // IDS-1: reached zero in the build that made it, so it is a hard rule.
+  "short-ids": {
+    what: "server code that builds an id from a cut-down UUID (a hard rule: use newId() from server/shared/newId.js)",
+    hard: true,
+    measure: files => Object.fromEntries(files.filter(isServerCode).map(f => [f, countLines(f, SHORT_ID)]).filter(([, n]) => n > 0)),
+    worse: (key, now) => `${key}: ${now} id(s) cut from a UUID; use newId(prefix) from server/shared/newId.js (20 hex, never collides)`,
   },
   "big-images": {
     what: `committed images over ${IMAGE_MAX / 1024} KB outside client/src/assets/ and assets/ (a hard rule)`,

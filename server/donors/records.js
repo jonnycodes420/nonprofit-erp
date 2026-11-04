@@ -10,6 +10,7 @@
 const express = require("express");
 const auditMw = require("../../middleware/auditTrail");
 const DTAGS = require("../../donorTags");   // FIX-33: internal flags never reach a screen as tags
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = {
   r1: express.Router(),
@@ -289,7 +290,7 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
       "UPDATE donors SET deleted_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL RETURNING id",
       [ids, req.user.orgId]);
     // one trash row each, written 500 at a time (a whole org is one click now)
-    const undoIds = gone.map(() => "del_" + uuid().slice(0, 12));
+    const undoIds = gone.map(() => newId("del"));
     for (let k = 0; k < gone.length; k += 500) {
       const b = gone.slice(k, k + 500);
       await runTx(client, `INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)

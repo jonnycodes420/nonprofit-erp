@@ -11,6 +11,7 @@ const express = require("express");
 const { CAMPAIGN_GIFT_MATCH, NOT_DELETED } = require("../../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
 const { NOT_CREDIT } = require("../../creditTypes");   // FIX-49: soft and matching credits are not money
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // SCALE-2: org-wide figures are stored per org and served until something changes.
 const OS = require("../../orgSummary");
 const lapseRule = require("../../lapseRule");   // FIX-49: the one lapse rule
@@ -207,7 +208,7 @@ app.post("/drift/:donorId/done", requireAuth, wrap(async (req, res) => {
         [note, existing[0].id]);
       return { id: existing[0].id, deduped: true, status: 200 };
     }
-    const id = "int_" + uuid().slice(0, 8);
+    const id = newId("int");
     await run(
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,?,?,?,?,?,?)",
       [id, orgId, req.params.donorId, type, note, todayStr, userId,
@@ -357,7 +358,7 @@ app.post("/goals", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req,
   if (!["lapsed_recovery", "total_raised"].includes(goalType)) {
     return res.status(400).json({ error: "goalType must be lapsed_recovery or total_raised" });
   }
-  const id = "goal_" + uuid().slice(0, 8);
+  const id = newId("goal");
   await run(
     "INSERT INTO fundraising_goals (id,org_id,period_start,period_end,goal_type,goal_amount,label) VALUES (?,?,?,?,?,?,?)",
     [id, req.user.orgId, periodStart, periodEnd, goalType, parseFloat(goalAmount), label]
@@ -822,7 +823,7 @@ app.post("/fundraising/campaigns", requireAuth, checkWriteAccess, wrap(async (re
   }
   const df = await parseDonorFacingCampaignFields(req.body, req.user.orgId);
   if (df.status) return res.status(df.status).json(df.body);
-  const id = "cmp_" + uuid().slice(0, 8);
+  const id = newId("cmp");
   await run(
     `INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,goal_amount,start_date,end_date,goal_category,parent_goal_id,recipient_count,open_count,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,?,?)`,
@@ -965,7 +966,7 @@ app.post("/annual-fund/goal", requireAuth, requireAdmin, wrap(async (req, res) =
   const { year, goal } = req.body;
   if (!year || goal === undefined) return res.status(400).json({ error: "year and goal required" });
 
-  const id = "afg_" + uuid().slice(0, 8);
+  const id = newId("afg");
   await run(
     `INSERT INTO annual_fund_goals (id,org_id,year,goal)
      VALUES (?,?,?,?)

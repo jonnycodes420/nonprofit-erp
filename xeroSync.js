@@ -31,6 +31,7 @@
 const crypto = require("crypto");
 const { query, run, uuid } = require("./db");
 const { NON_CASH_TYPES } = require("./depositsFile");
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const VENDOR = "xero";
 const NO_FUND = "__none";
@@ -273,7 +274,7 @@ async function claim(ctx, g, landing) {
          OR (gift_bookkeeping_syncs.status = 'sending'
              AND gift_bookkeeping_syncs.updated_at < NOW() - INTERVAL '${STALE_SENDING_MINUTES} minutes')
      RETURNING id`,
-    ["gbs_" + uuid().slice(0, 12), ctx.orgId, g.id, VENDOR, ctx.connId, ctx.tenantId, TXN_TYPE,
+    [newId("gbs"), ctx.orgId, g.id, VENDOR, ctx.connId, ctx.tenantId, TXN_TYPE,
      landing.accountCode, Number(g.cents), ctx.who.id, ctx.who.name]);
   if (!rows.length) return null;
   const keepKey = prior && prior.error_code === "outcome_unknown" && prior.request_id ? prior.request_id : null;
@@ -295,7 +296,7 @@ async function noteUnsendable(ctx, g, sentence, code) {
         SET error=EXCLUDED.error, error_code=EXCLUDED.error_code, updated_at=NOW(),
             attempts=gift_bookkeeping_syncs.attempts + 1
       WHERE gift_bookkeeping_syncs.status = 'failed'`,
-    ["gbs_" + uuid().slice(0, 12), ctx.orgId, g.id, VENDOR, ctx.connId, ctx.tenantId, sentence, code,
+    [newId("gbs"), ctx.orgId, g.id, VENDOR, ctx.connId, ctx.tenantId, sentence, code,
      Number(g.cents), ctx.who.id, ctx.who.name]);
 }
 

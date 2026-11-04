@@ -8,6 +8,7 @@
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-11 Part 1 — the audit log's own vocabulary (the sentence a row reads as).
 // The WRITING of a row happens in middleware/auditTrail.js and nowhere else.
 const auditTrailMod = require("../../auditTrail");
@@ -90,7 +91,7 @@ app.post("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
   const donorCheck = await query("SELECT id FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!donorCheck.length) return res.status(404).json({ error: "Donor not found" });
   const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
-  const id = "mat_" + uuid().slice(0,8);
+  const id = newId("mat");
   await run(
     "INSERT INTO donor_materials (id,org_id,donor_id,file_name,file_type,file_url,file_data,notes,uploaded_by) VALUES (?,?,?,?,?,?,?,?,?)",
     [id, req.user.orgId, req.params.id, file_name, file_type||"", file_url||null, file_data||null, notes||"", userRow[0]?.name||""]
@@ -101,7 +102,7 @@ app.post("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
     const ext = file_type ? file_type.split("/").pop() : "file";
     await run(
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
-      ["int_"+uuid().slice(0,8), req.user.orgId, req.params.id, "material",
+      [newId("int"), req.user.orgId, req.params.id, "material",
        `Material added: ${file_name} (${ext})`,
        orgToday(await orgTz(req.user.orgId)), req.user.userId, userRow[0]?.name||""]   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
     );
@@ -206,7 +207,7 @@ app.post("/households", requireAuth, checkWriteAccess, wrap(async (req, res) => 
     const ln = lastName(primaryRow[0]?.name);
     hhName = ln ? `The ${ln} Household` : "Household";
   }
-  const id = "hh_" + uuid().slice(0, 8);
+  const id = newId("hh");
   await withTransaction(async (client) => {
     await runTx(client, "INSERT INTO households (id,org_id,name,primary_donor_id,joint_acknowledgment,created_by,created_by_name) VALUES (?,?,?,?,?,?,?)",
       [id, req.user.orgId, hhName, v.primary, jointAcknowledgment !== false, actor(req).id, actor(req).name]);
@@ -372,7 +373,7 @@ app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async 
   );
   if (existing.length) return res.status(409).json({ error: "These donors are already linked" });
 
-  const id = "drel_" + uuid().slice(0, 8);
+  const id = newId("drel");
   await run(
     "INSERT INTO donor_relationships (id, org_id, donor_id_a, donor_id_b, relationship_type, notes, created_by, created_by_name) VALUES (?,?,?,?,?,?,?,?)",
     [id, orgId, idA, idB, relationshipType, notes || null, actor(req).id, actor(req).name]
@@ -596,7 +597,7 @@ app.post("/donors/:id/volunteer-qualifications", requireAuth, checkWriteAccess, 
   const expiresOn = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.expiresOn || "")) ? String(req.body.expiresOn) : null;
   if (!["skill", "certification", "tag"].includes(kind)) return res.status(400).json({ error: "That is a skill, a certification or a tag." });
   if (!name) return res.status(400).json({ error: "Give it a name." });
-  const id = "vq_" + uuid().slice(0, 10);
+  const id = newId("vq");
   const r = await query(`INSERT INTO volunteer_qualifications (id,org_id,person_id,kind,name,expires_on,created_by,created_by_name)
                          VALUES (?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING RETURNING id`, [id, orgId, d.id, kind, name, kind === "certification" ? expiresOn : null, who.id, who.name]);
   if (!r.length) return res.status(409).json({ error: `They already have ${name}.` });

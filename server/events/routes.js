@@ -10,6 +10,7 @@
 const express = require("express");
 const TL = require("../../timelineLine");
 const PM = require("../../personMatch");   // WIRE-1 rule 1: one record per person   // WIRE-1 rule 2: every act lands on the timeline
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = {
   r1: express.Router(),
@@ -42,7 +43,7 @@ async function eventDonorFor(orgId, body, who) {
   if (!name && !email) return null;
   const known = await PM.findPersonId(orgId, { email, name });   // WIRE-1 rule 1
   if (known) return known;
-  const id = "d_" + uuid().slice(0, 10);
+  const id = newId("d");
   await run(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,created_by,created_by_name) VALUES (?,?,?,?,'prospect','active','[]',?,?)`,
     [id, orgId, name || email, email || null, who.id, who.name]);
   return id;
@@ -65,7 +66,7 @@ app.post("/events/:id/levels", requireAuth, checkWriteAccess, wrap(async (req, r
   if (!ev) return res.status(404).json({ error: "Event not found" });
   const v = EV.validateLevel(req.body || {});
   if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
-  const L = v.level, id = "evl_" + uuid().slice(0, 8);
+  const L = v.level, id = newId("evl");
   await run(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv,member_price,capacity,recognition,benefits,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?::jsonb,?,?)`,
     [id, req.user.orgId, ev.id, L.kind, L.name, L.priceCents / 100, L.fmvCents / 100,
      L.memberPriceCents == null ? null : L.memberPriceCents / 100, L.capacity, L.recognition, JSON.stringify(L.benefits), actor(req).id, actor(req).name]);
@@ -188,7 +189,7 @@ app.post("/events/:id/tables", requireAuth, checkWriteAccess, wrap(async (req, r
   const made = [];
   for (let i = 0; i < howMany; i++) {
     const thisLabel = label || `Table ${n++}`;
-    const id = "etb_" + uuid().slice(0, 10);
+    const id = newId("etb");
     const r = await query(
       `INSERT INTO event_tables (id, org_id, event_id, label, seats, sponsor_name, sort, shape, created_by, created_by_name)
        VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (event_id, label) DO NOTHING RETURNING id, label, seats`,
@@ -477,7 +478,7 @@ async function openNoShowTask(orgId, eventId, who) {
     const values = { first_name: GR.firstNames(m), greeting: GR.greetingName(m), event_name: event.name, signature };
     await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
                VALUES (?,?,?,?,?,?,'pending_review','template',?,?)`,
-      ["md_" + uuid().slice(0, 12), orgId, m.donor_id, key,
+      [newId("md"), orgId, m.donor_id, key,
        BKit.renderTemplate(EV.MISSED_YOU.subject, values).text, BKit.renderTemplate(EV.MISSED_YOU.body, values).text,
        who.id, who.name]);
   }
@@ -487,7 +488,7 @@ async function openNoShowTask(orgId, eventId, who) {
   if (open) { await run("UPDATE tasks SET title=?, updated_at=NOW() WHERE id=? AND org_id=?", [title, open.id, orgId]); return open.id; }
   const owner = u ? { id: who.id, name: u.name } : (await query(
     `SELECT id, name, email FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL ORDER BY created_at ASC LIMIT 1`, [orgId]))[0];
-  const id = "t_" + uuid().slice(0, 8);
+  const id = newId("t");
   await run(`INSERT INTO tasks (id,org_id,title,due,priority,type,done,event_id,assigned_to,assigned_to_name,created_by,created_by_name)
              VALUES (?,?,?,?,'medium','event_no_show',0,?,?,?,?,?) ON CONFLICT DO NOTHING`,
     [id, orgId, title, orgTime.addDays(orgToday(await orgTz(orgId)), 2), event.id,   // ORG_TZ_SEAM_OK
@@ -684,7 +685,7 @@ app.post("/events/:id/sponsor-thanks", requireAuth, checkWriteAccess, wrap(async
       fundName: null, campaignName: event.name, orgName: org?.name, voice, date: g.date || null,
     });
     await run(`INSERT INTO thank_you_drafts (id,org_id,donor_id,gift_id,body,voice) VALUES (?,?,?,?,?,?)`,
-      ["ty_" + uuid().slice(0, 10), orgId, sp.donor_id, g.id, t.body, t.voice]);
+      [newId("ty"), orgId, sp.donor_id, g.id, t.body, t.voice]);
     out.drafted++;
   }
   res.json({ ...out,
@@ -932,7 +933,7 @@ app.post("/events", requireAuth, checkWriteAccess, async (req, res) => {
     const orgId = req.user.orgId;
     const { name, eventType, date, endDate, location, description, capacity, cost, goalAmount } = req.body;
     if (!name || !eventType || !date) return res.status(400).json({ error: "name, eventType, date required" });
-    const id = "evt_" + uuid().slice(0, 8);
+    const id = newId("evt");
     await run(
       `INSERT INTO events (id, org_id, name, event_type, date, end_date, location, description, capacity, cost, goal_amount, created_by, created_by_name)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
@@ -1169,7 +1170,7 @@ app.post("/events/:id/attendees", requireAuth, checkWriteAccess, async (req, res
         const dr = await query("SELECT id, name, email FROM donors WHERE id=$1 AND org_id=$2", [donorId, orgId]);
         if (!dr.length) continue;
         const d = dr[0];
-        const attId = "att_" + uuid().slice(0, 8);
+        const attId = newId("att");
         try {
           const ins = await query(
             `INSERT INTO event_attendees (id, event_id, org_id, donor_id, name, email)
@@ -1188,7 +1189,7 @@ app.post("/events/:id/attendees", requireAuth, checkWriteAccess, async (req, res
       }
     } else {
       if (!name) return res.status(400).json({ error: "name required" });
-      const attId = "att_" + uuid().slice(0, 8);
+      const attId = newId("att");
       await run(
         `INSERT INTO event_attendees (id, event_id, org_id, donor_id, name, email, notes)
          VALUES ($1,$2,$3,NULL,$4,$5,$6)`,

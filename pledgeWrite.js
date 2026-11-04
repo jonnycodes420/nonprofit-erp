@@ -26,6 +26,7 @@
 "use strict";
 const { query, run, uuid } = require("./db");
 const money = require("./money");
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const depositMod = () => import("./shared/depositSheet.js");
 const ISO = /^\d{4}-\d{2}-\d{2}/;
@@ -114,7 +115,7 @@ async function writePledges(items, opts = {}) {
     const firstDue = p.firstDue !== undefined ? p.firstDue : it.dueDate;
     const rows = await planInstallments({ amountCents, schedule: p.schedule, frequency: p.frequency, count: p.count,
                                           firstDue, undatedOk: !!p.undatedOk });
-    prepared.push({ it, id: it.id || "pl_" + uuid().slice(0, 8), amountCents, rows,
+    prepared.push({ it, id: it.id || newId("pl"), amountCents, rows,
                     frequency: p.frequency || it.frequency || null });
   }
   const BATCH = 200;
@@ -148,7 +149,7 @@ async function writePledges(items, opts = {}) {
         rows = applyPayments(pr.rows, pays.map(p => ({ id: p.id, cents: Number(p.cents), date: p.date })));
       }
     }
-    for (const r of rows) inst.push(["pli_" + uuid().slice(0, 10), pr.it.orgId, pr.id, r.seq, r.dueDate, money.toDollars(r.amountCents), r.paidGiftId]);
+    for (const r of rows) inst.push([newId("pli"), pr.it.orgId, pr.id, r.seq, r.dueDate, money.toDollars(r.amountCents), r.paidGiftId]);
     if (rows.length !== pr.rows.length) await run("UPDATE pledges SET installment_count=? WHERE id=? AND org_id=?", [rows.length, pr.id, pr.it.orgId]);
     out.push({ id: pr.id, created: true, installments: rows.length });
   }

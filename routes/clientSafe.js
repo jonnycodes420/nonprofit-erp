@@ -19,6 +19,7 @@
 "use strict";
 const express = require("express");
 const CSV = require("../clientSafe");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 const CS = () => import("../shared/clientSafe.js");
@@ -116,7 +117,7 @@ async function applyMark(req, ids, source) {
   const orgId = req.user.orgId;
   const fresh = (await query(
     "SELECT id FROM donors WHERE org_id=? AND id = ANY(?::text[]) AND deleted_at IS NULL AND is_client IS NOT TRUE", [orgId, ids])).map(r => r.id);
-  const markId = "cm_" + uuid().slice(0, 12);
+  const markId = newId("cm");
   if (fresh.length) await run("UPDATE donors SET is_client=true WHERE org_id=? AND id = ANY(?::text[])", [orgId, fresh]);
   await run("INSERT INTO client_marks (id,org_id,source,donor_ids,created_by,created_by_name) VALUES (?,?,?,?,?,?)",
     [markId, orgId, source, JSON.stringify(fresh), actor(req).id, actor(req).name]);
@@ -189,7 +190,7 @@ app.post("/donors/:id/client-email/remove", requireAuth, checkWriteAccess, wrap(
   const [d] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, orgId]);
   if (!d) return res.status(404).json({ error: "Donor not found" });
   const rows = await query(`SELECT * FROM interactions WHERE org_id=? AND donor_id=? AND type='email' AND ${LOGGED_EMAIL_SQL}`, [orgId, d.id]);
-  const id = "cer_" + uuid().slice(0, 12);
+  const id = newId("cer");
   await run(`INSERT INTO client_email_removals (id,org_id,donor_id,count,rows,created_by,created_by_name) VALUES (?,?,?,?,?,?,?)`,
     [id, orgId, d.id, rows.length, JSON.stringify(rows), actor(req).id, actor(req).name]);
   if (rows.length) {

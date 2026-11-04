@@ -45,6 +45,7 @@
 const { query, run, uuid, withTransaction, withAdvisoryLock, runTx } = require("./db");
 const QS = require("./qboSync");
 const { matchPerson } = require("./personMatch");
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const VENDOR = "quickbooks";
 const DAY_WINDOW = 3;
@@ -505,7 +506,7 @@ async function saveRun({ orgId, runId, picks = {}, who, today, deps }) {
   const [fs0] = await query(`SELECT mapping->'qbo'->'read'->>'firstSavedAt' AS f FROM bookkeeping_connections
                               WHERE org_id=? AND vendor='quickbooks' AND status <> 'disconnected' LIMIT 1`, [orgId]);
   const liveRead = !!(fs0 && fs0.f);
-  const importId = "imp_qbo" + uuid().replace(/-/g, "").slice(0, 12);
+  const importId = newId("imp_qbo", "");
   await run(`INSERT INTO imports (id,org_id,name,source_filename,shape,started_at,committed_at,actor_user_id,actor_user_name)
              VALUES (?,?,?,?,?,NOW(),NOW(),?,?)`,
     [importId, orgId, "Read from QuickBooks", null, "qbo_read", /^system:/.test(who.id) ? null : who.id, who.name]);
@@ -615,7 +616,7 @@ async function saveRun({ orgId, runId, picks = {}, who, today, deps }) {
 async function createPerson(orgId, l, facts, importId, who) {
   const name = String(facts.name || l.customer_name || "").trim().slice(0, 200);
   if (!name) return null;
-  const id = "d_" + uuid().replace(/-/g, "").slice(0, 10);
+  const id = newId("d");
   await run(
     `INSERT INTO donors (id,org_id,name,email,address,city,state,zip,kind,stage,status,tags,person_types,created_import_id,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?,'prospect','active','[]','["donor"]'::jsonb,?,?,?)`,
@@ -658,7 +659,7 @@ async function reverseGift(orgId, giftId, { cents = null, note, today, recalcDon
       await recalcDonorSummary(g.donor_id, orgId).catch(() => {});
       const m = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,'note',?,?,?,?)`,
-        ["i_" + uuid().slice(0, 8), orgId, g.donor_id,
+        [newId("i"), orgId, g.donor_id,
          full ? `${note}: the ${m(had)} gift of ${String(g.date).slice(0, 10)} was taken out of Steward.`
               : `${note}: ${m(cents)} of the ${m(had)} gift of ${String(g.date).slice(0, 10)}. The gift is now ${m(had - cents)}.`,
          today, "system:qbo/read", "Steward (QuickBooks read)"]);

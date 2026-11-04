@@ -8,6 +8,7 @@
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const TL = require("../../timelineLine");
+const { newId } = require("./newId");   // IDS-1: every new row id is prefix + 20 hex
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../../emailCompose");
 
@@ -216,7 +217,7 @@ async function startOneJourney(orgId, donor, winner, triggerKey, eventKey, opts 
     replacedId = rival.id;
   }
 
-  const planId = "cp_" + uuid().slice(0, 10);
+  const planId = newId("cp");
   let ins;
   try {
     ins = await query(
@@ -250,7 +251,7 @@ async function startOneJourney(orgId, donor, winner, triggerKey, eventKey, opts 
     await run(
       `INSERT INTO cultivation_plan_steps (id,org_id,plan_id,seq,step_type,label,due_date,status,draft_kind,owner_id,owner_name)
        VALUES (?,?,?,?,?,?,?,'pending',?,?,?)`,
-      ["cs_" + uuid().slice(0, 10), orgId, planId, s.seq, s.type, s.label, s.dueDate,
+      [newId("cs"), orgId, planId, s.seq, s.type, s.label, s.dueDate,
        src.draft || null,
        // The owner defaults to the RELATIONSHIP OWNER, which is the donor's
        // assigned officer — the brief's own answer, and the one that makes
@@ -269,7 +270,7 @@ async function startOneJourney(orgId, donor, winner, triggerKey, eventKey, opts 
   const line = reason
     ? reason
     : `Journey started: ${v.name} (${steps.length} ${steps.length === 1 ? "step" : "steps"}).`;
-  const lineId = "int_" + uuid().slice(0, 10);
+  const lineId = newId("int");
   await run(
     `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name)
      VALUES (?,?,?,'note',?,?,?,?)`,
@@ -477,7 +478,7 @@ async function journeyTemplateDraft(orgId, donorId, step) {
   const words = await emailCompose.templateTextFor(orgId, t, donor);
   if (!words.body) return null;
   const key = `journey-step:${step.id}`;
-  const id = "md_" + uuid().slice(0, 10);
+  const id = newId("md");
   await run(
     `INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,template_id,created_by,created_by_name)
      SELECT ?::text,?::text,?::text,?::text,?::text,?::text,'pending_review','journey',?::text,?::text,?::text
@@ -527,7 +528,7 @@ async function scheduleAutoSend(orgId, donorId, plan, step) {
   const on = await autoStepOn(orgId, plan.template_id, idx);
   if (!on || on.email_template_id !== tid) return false;
   const today = orgToday(await orgTz(orgId));
-  const id = "jsend_" + uuid().slice(0, 12);
+  const id = newId("jsend");
   const r = await run(
     `INSERT INTO journey_sends (id,org_id,template_id,plan_id,step_id,seq,donor_id,email_template_id,auto_step_id,send_on,status,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?,?,'scheduled',?,?) ON CONFLICT (step_id) DO NOTHING`,

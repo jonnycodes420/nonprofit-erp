@@ -10,6 +10,7 @@
 const express = require("express");
 const { orgTzSql, orgTodaySql, orgDateOfSql } = require("../../orgTime");   // CLOCK-1: the org's day, not the database's
 const DTAGS = require("../../donorTags");   // FIX-33: internal flags never reach a screen as tags
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../../emailCompose");
 
@@ -323,7 +324,7 @@ app.post("/journeys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
   const offRefusal = b.enabled === true ? await journeyCannotRun(req.user.orgId, v.trigger) : null;
   if (offRefusal) return res.status(409).json(offRefusal);
 
-  const id = "ct_" + uuid().slice(0, 10);
+  const id = newId("ct");
   await run(
     `INSERT INTO cultivation_templates (id,org_id,name,description,steps,trigger_key,trigger_amount_cents,priority,audience,preset_key,journey_enabled,created_by,created_by_name,trigger_filters,ever_enabled,exclusive)
      VALUES (?,?,?,?,?::jsonb,?,?,?,?::jsonb,?,?,?,?,?::jsonb,?,?)`,
@@ -361,7 +362,7 @@ app.post("/journeys/:id/duplicate", requireAuth, requireAdmin, checkWriteAccess,
     priority: cur.priority, amountCents: cur.trigger_amount_cents, audience: cur.audience, steps: cur.steps,
     triggerFilters: cur.trigger_filters || {} });
   if (!v.ok) return res.status(400).json({ error: "invalid_journey", errors: v.errors, message: v.errors[0].message });
-  const id = "ct_" + uuid().slice(0, 10);
+  const id = newId("ct");
   await run(
     `INSERT INTO cultivation_templates (id,org_id,name,description,steps,trigger_key,trigger_amount_cents,priority,audience,preset_key,journey_enabled,created_by,created_by_name,trigger_filters,exclusive)
      VALUES (?,?,?,?,?::jsonb,?,?,?,?::jsonb,?,false,?,?,?::jsonb,?)`,

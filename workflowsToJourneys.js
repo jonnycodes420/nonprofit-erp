@@ -32,6 +32,7 @@
 // has a running journey on the same trigger keeps it (the recipe joins it
 // rather than starting a twin beside it).
 const { query, withTransaction, queryTx, runTx, withTryAdvisoryLock, uuid } = require("./db");
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const ACTOR = { id: "system:fix49-workflows", name: "Steward (workflows moved to journeys)" };
 const asJson = (v, fb) => v == null ? fb : (typeof v === "object" ? v : (() => { try { return JSON.parse(v); } catch { return fb; } })());
@@ -109,7 +110,7 @@ async function convertOne(wf, J) {
       [wf.org_id, v.trigger, v.amountCents]);
     let journeyId = twin && twin.id, outcome = "joined";
     if (!journeyId) {
-      journeyId = "ct_" + uuid().slice(0, 10);
+      journeyId = newId("ct");
       outcome = "converted";
       await runTx(client,
         `INSERT INTO cultivation_templates (id,org_id,name,description,steps,trigger_key,trigger_amount_cents,priority,audience,preset_key,journey_enabled,created_by,created_by_name,trigger_filters,ever_enabled,exclusive)
@@ -120,7 +121,7 @@ async function convertOne(wf, J) {
     await runTx(client,
       `UPDATE workflows SET enabled=false, config = COALESCE(config,'{}'::jsonb) || jsonb_build_object('became_journey', ?::text), updated_at=NOW()
         WHERE id=? AND org_id=?`, [journeyId, wf.id, wf.org_id]);
-    const row = { id: "wfc_" + uuid().slice(0, 10), org_id: wf.org_id, workflow_id: wf.id, recipe_key: wf.recipe_key, journey_id: journeyId, outcome,
+    const row = { id: newId("wfc"), org_id: wf.org_id, workflow_id: wf.id, recipe_key: wf.recipe_key, journey_id: journeyId, outcome,
       reason: outcome === "joined" ? "A running journey already starts on the same event, so the recipe now runs as that journey." : `Now the journey "${v.name}".` };
     await runTx(client,
       `INSERT INTO workflow_conversions (id,org_id,workflow_id,recipe_key,journey_id,outcome,reason,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?)`,
@@ -133,7 +134,7 @@ async function convertOne(wf, J) {
 async function keep(wf, reason) {
   const [seen] = await query(`SELECT id FROM workflow_conversions WHERE org_id=? AND workflow_id=? AND outcome='kept'`, [wf.org_id, wf.id]);
   if (seen) return null;
-  const row = { id: "wfc_" + uuid().slice(0, 10), org_id: wf.org_id, workflow_id: wf.id, recipe_key: wf.recipe_key, journey_id: null, outcome: "kept", reason };
+  const row = { id: newId("wfc"), org_id: wf.org_id, workflow_id: wf.id, recipe_key: wf.recipe_key, journey_id: null, outcome: "kept", reason };
   await query(`INSERT INTO workflow_conversions (id,org_id,workflow_id,recipe_key,journey_id,outcome,reason,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?)`,
     [row.id, row.org_id, row.workflow_id, row.recipe_key, null, "kept", reason, ACTOR.id, ACTOR.name]);
   return row;

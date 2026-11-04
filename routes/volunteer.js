@@ -16,6 +16,7 @@
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
 const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person
+const { newId, randomHex } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = {
   r0: express.Router(),
@@ -154,7 +155,7 @@ app.post("/volunteer-hours/import", requireAuth, checkWriteAccess, wrap(async (r
     if (!pid) {
       pid = await PM.findPersonId(orgId, { email, name });   // WIRE-1 rule 1
       if (!pid) {
-        pid = "d_" + uuid().slice(0, 10);
+        pid = newId("d");
         await run(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,person_types,created_by,created_by_name) VALUES (?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?)`,
           [pid, orgId, name || email, email || null, who.id, who.name]);
         out.peopleCreated++;
@@ -253,7 +254,7 @@ app.post("/volunteer-hub/people", requireAuth, checkWriteAccess, wrap(async (req
   // FIX-24: the record's fields are checked before anybody is made.
   const chk = await checkVolunteerFields(b);
   if (chk.errors.length) return res.status(400).json({ error: "bad_fields", message: chk.errors[0] });
-  const id = "d_" + uuid().slice(0, 10);
+  const id = newId("d");
   await run(
     `INSERT INTO donors (id,org_id,name,email,phone,stage,status,tags,person_types,created_by,created_by_name)
      VALUES (?,?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?)`,
@@ -398,7 +399,7 @@ app.post("/volunteer-hub/import", requireAuth, checkWriteAccess, wrap(async (req
       if (p.phone) await run("UPDATE donors SET phone=? WHERE id=? AND org_id=? AND COALESCE(phone,'')=''", [p.phone, pid, orgId]);
       await markVolunteer(orgId, pid);
     } else {
-      pid = "d_" + uuid().slice(0, 10);
+      pid = newId("d");
       await run(
         `INSERT INTO donors (id,org_id,name,email,phone,stage,status,tags,person_types,volunteer_import_id,created_by,created_by_name)
          VALUES (?,?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?,?)`,
@@ -426,7 +427,7 @@ app.post("/volunteer-hub/import", requireAuth, checkWriteAccess, wrap(async (req
       await run(
         `INSERT INTO volunteer_credentials (id,org_id,person_id,kind,signed_on,expires_on,import_id,created_by,created_by_name)
          VALUES (?,?,?,?,?,?,?,?,?)`,
-        ["vc_" + uuid().slice(0, 12), orgId, pid, c.kind, c.signedOn, c.expiresOn, importId, who.id, who.name]);
+        [newId("vc"), orgId, pid, c.kind, c.signedOn, c.expiresOn, importId, who.id, who.name]);
       out.credentials++;
     }
   }
@@ -577,7 +578,7 @@ app.post("/volunteers", requireAuth, checkWriteAccess, wrap(async (req, res) => 
   const { name, email, hours, skills, employer, notes, convertPotential } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
-  const id = "v_" + uuid().slice(0, 8);
+  const id = newId("v");
   await run(
     "INSERT INTO volunteers (id,org_id,name,email,hours,skills,employer,notes,convert_potential,last_active,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
     [id, req.user.orgId, name, email || "", hours || 0,
@@ -609,18 +610,18 @@ app.put("/volunteers/:id", requireAuth, checkWriteAccess, wrap(async (req, res) 
     const orgId = req.user.orgId;
     const existing = await query("SELECT id FROM donors WHERE org_id=? AND email ILIKE ?", [orgId, email]);
     if (!existing.length) {
-      const donorId = "d_" + uuid().slice(0, 8);
+      const donorId = newId("d");
       await run(
         "INSERT INTO donors (id,org_id,name,email,stage,notes,gift_count,total_giving,created_by,created_by_name) VALUES (?,?,?,?,'prospect',?,0,0,?,?)",
         [donorId, orgId, name, email.toLowerCase(), "Auto-created from volunteer record. 20+ hours logged.", SYS_AUTO.id, SYS_AUTO.name]
       ).catch(() => {});
       const today = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK (BUILD-75)
       await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES (?,?,?,'note',?,?)",
-        ["i_"+uuid().slice(0,8), orgId, donorId, "Volunteer prospect: 20+ hours logged", today]).catch(() => {});
+        [newId("i"), orgId, donorId, "Volunteer prospect: 20+ hours logged", today]).catch(() => {});
     }
     const dueDate = orgToday(await orgTz(orgId), new Date(Date.now() + 7*24*60*60*1000));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
     await run("INSERT INTO tasks (id,org_id,title,priority,done,due,created_by,created_by_name) VALUES (?,?,?,'high',0,?,?,?)",
-      ["t_"+uuid().slice(0,8), orgId, `Cultivate volunteer ${name} as donor prospect: 20+ hours logged`, dueDate, SYS_AUTO.id, SYS_AUTO.name]).catch(() => {});
+      [newId("t"), orgId, `Cultivate volunteer ${name} as donor prospect: 20+ hours logged`, dueDate, SYS_AUTO.id, SYS_AUTO.name]).catch(() => {});
   }
 
   const rows = await query("SELECT * FROM volunteers WHERE id = ?", [req.params.id]);
@@ -798,7 +799,7 @@ app.post("/volunteer-hub/bulk/draft", requireAuth, checkWriteAccess, wrap(async 
   const subject = String(req.body?.subject || "").trim().slice(0, 200), body = String(req.body?.body || "").trim().slice(0, 8000);
   if (!subject || !body) return res.status(400).json({ error: "A message needs a subject and some words." });
   const people = await ownPeople(orgId, req.body?.personIds);
-  const batch = uuid().slice(0, 8);
+  const batch = randomHex(20);   // IDS-1: a batch key, long enough never to repeat
   let drafted = 0, noEmail = 0;
   for (const p of people) {
     if (!p.email) { noEmail++; continue; }
@@ -806,7 +807,7 @@ app.post("/volunteer-hub/bulk/draft", requireAuth, checkWriteAccess, wrap(async 
     const first = GR.firstNames(p) || "there";
     await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
                VALUES (?,?,?,?,?,?,'pending_review','volunteer_message',?,?) ON CONFLICT DO NOTHING`,
-      ["md_" + uuid().slice(0, 12), orgId, p.id, `vol:msg:${batch}:${p.id}`, subject, GR.greetMerge(body, GR.greetingName(p)).replace(/\{\{\s*first_name\s*\}\}/gi, first), who.id, who.name]);
+      [newId("md"), orgId, p.id, `vol:msg:${batch}:${p.id}`, subject, GR.greetMerge(body, GR.greetingName(p)).replace(/\{\{\s*first_name\s*\}\}/gi, first), who.id, who.name]);
     drafted++;
   }
   res.json({ drafted, message: `${drafted} ${drafted === 1 ? "draft" : "drafts"} written${noEmail ? `; ${noEmail} with no email were left out` : ""}. Nothing is sent until you press Send in Schedule, To send.` });
@@ -822,7 +823,7 @@ app.post("/volunteer-hub/bulk/tag", requireAuth, checkWriteAccess, wrap(async (r
   for (const p of people) {
     if (req.body?.remove === true) n += (await run(`DELETE FROM volunteer_qualifications WHERE org_id=? AND person_id=? AND kind='tag' AND lower(name)=lower(?)`, [orgId, p.id, name])).changes;
     else n += (await query(`INSERT INTO volunteer_qualifications (id,org_id,person_id,kind,name,created_by,created_by_name) VALUES (?,?,?,'tag',?,?,?)
-                             ON CONFLICT DO NOTHING RETURNING id`, ["vq_" + uuid().slice(0, 10), orgId, p.id, name, who.id, who.name])).length;
+                             ON CONFLICT DO NOTHING RETURNING id`, [newId("vq"), orgId, p.id, name, who.id, who.name])).length;
   }
   res.json({ changed: n, message: req.body?.remove === true ? `${name} taken off ${n} ${n === 1 ? "person" : "people"}.` : `${name} added to ${n} ${n === 1 ? "person" : "people"}.` });
 }));
@@ -840,7 +841,7 @@ app.post("/volunteer-hub/volunteers-group", requireAuth, wrap(async (req, res) =
   if (!g && req.user.role !== COORD) {
     await run(`INSERT INTO audiences (id, org_id, name, description, segment, kind, rules, created_by, created_by_name)
                VALUES (?,?,?,?,?::jsonb,'dynamic',?::jsonb,?,?) ON CONFLICT DO NOTHING`,
-      ["grp_" + uuid().slice(0, 10), orgId, VOLUNTEERS_GROUP, "Everyone with a logged volunteer hour or an approved application. Kept by Steward.",
+      [newId("grp"), orgId, VOLUNTEERS_GROUP, "Everyone with a logged volunteer hour or an approved application. Kept by Steward.",
        JSON.stringify({ mode: "group" }), JSON.stringify({ volunteer: "1" }), who.id || "system:volunteers-group", who.name || "Steward"]).catch(() => {});
     [g] = await find();
   }
@@ -902,7 +903,7 @@ app.post("/volunteer-hub/notes", requireAuth, checkWriteAccess, wrap(async (req,
   const noteDate = /^\d{4}-\d{2}-\d{2}$/.test(nd) ? nd : null;
   const who = actor(req);
   const [me] = await query(`SELECT name FROM users WHERE id=? AND org_id=?`, [req.user.userId, req.user.orgId]);
-  const id = "vn_" + uuid().slice(0, 12);
+  const id = newId("vn");
   // PARITY-3 — internal unless she says the volunteer may see it.
   const visibility = req.body?.visibility === "volunteer" ? "volunteer" : "internal";
   await run(`INSERT INTO volunteer_notes (id,org_id,person_id,kind,body,note_date,created_by,created_by_name,visibility) VALUES (?,?,?,?,?,?,?,?,?)`,
@@ -1033,7 +1034,7 @@ app.post("/volunteer/join", donateLimiter, express.urlencoded({ extended: false 
     : [];
   await run(`INSERT INTO volunteer_applications (id,org_id,name,email,phone,answers,availability,created_by,created_by_name)
              VALUES (?,?,?,?,?,?::jsonb,'[]'::jsonb,?,?)`,
-    ["vap_" + uuid().slice(0, 12), o.id, name, email, phone || null, JSON.stringify(answers), SIGNUP_ACTOR.id, SIGNUP_ACTOR.name]);
+    [newId("vap"), o.id, name, email, phone || null, JSON.stringify(answers), SIGNUP_ACTOR.id, SIGNUP_ACTOR.name]);
   res.send(thanks);
 }));
 }

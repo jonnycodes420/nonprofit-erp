@@ -19,6 +19,7 @@
 const express = require("express");
 const inProcess = require("../inProcess");
 const { NOT_DELETED } = require("../campaignMatch");   // FIX-52: a deleted person's money is nobody's
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 
@@ -273,7 +274,7 @@ app.post("/home/lead/dismiss", requireAuth, checkWriteAccess, wrap(async (req, r
   if (!HL.KINDS.includes(kind) || kind === "quiet" || !key) return res.status(400).json({ error: "bad_card", message: "That card can't be set aside." });
   const a = actor(req);
   await run(`INSERT INTO home_lead_dismissals (id, org_id, user_id, kind, card_key, created_by, created_by_name) VALUES (?,?,?,?,?,?,?)`,
-    ["hld_" + uuid().slice(0, 12), req.user.orgId, req.user.userId, kind, key, a.id, a.name]);
+    [newId("hld"), req.user.orgId, req.user.userId, kind, key, a.id, a.name]);
   res.json({ ok: true });
 }));
 

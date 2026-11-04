@@ -8,6 +8,7 @@
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-11 Part 1 — the audit log's own vocabulary (the sentence a row reads as).
 // The WRITING of a row happens in middleware/auditTrail.js and nowhere else.
 const auditTrailMod = require("../../auditTrail");
@@ -144,7 +145,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     else campaignName = camp[0].name;
   }
 
-  const giftId = "g_" + uuid().slice(0, 8);
+  const giftId = newId("g");
   const giftDate = normalizeGiftDate(date);              // enforce ISO YYYY-MM-DD
   if (!giftDate) return res.status(400).json({ error: "A valid gift date (YYYY-MM-DD) is required, an unparseable date is an error, never today's date." });
   // BUILD-73 Part 2 — the money seam. The comment that used to sit here said
@@ -413,7 +414,7 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
     const _a = actor(req);
     await run(
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,'note',?,?,?,?)",
-      ["i_" + uuid().slice(0, 8), req.user.orgId, g.donor_id,
+      [newId("i"), req.user.orgId, g.donor_id,
        `Gift removed, thank-you cancelled. ${voidedTaskCount === 1 ? "One task" : `${voidedTaskCount} tasks`} Steward had created for this gift ${voidedTaskCount === 1 ? "was" : "were"} voided.`,
        orgToday(await orgTz(req.user.orgId)), _a.id, _a.name]
     ).catch(e => console.error("[gift-delete] timeline note:", e.message));
@@ -531,7 +532,7 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
   // stated cadence (frequency + count) generates one, the remainder on the
   // first installment so it SUMS to the pledge; neither is one installment of
   // the whole on its due date.
-  const id = "pl_" + uuid().slice(0, 8);
+  const id = newId("pl");
   let wrote;
   try {
     wrote = await PW.writePledge({ id, orgId: req.user.orgId, donorId: req.params.id, amountCents: parseMoneyOrThrow(pledgeAmt, "amount"),
@@ -577,7 +578,7 @@ async function writePledgeInstallments(orgId, pledgeId, opts) {
     await run(
       `INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount)
        VALUES (?,?,?,?,?,?) ON CONFLICT (pledge_id, seq) DO NOTHING`,
-      ["pli_" + uuid().slice(0, 10), orgId, pledgeId, r.seq, r.dueDate, money.toDollars(r.amountCents)]);
+      [newId("pli"), orgId, pledgeId, r.seq, r.dueDate, money.toDollars(r.amountCents)]);
   }
   await run("UPDATE pledges SET frequency=COALESCE(?,frequency), installment_count=? WHERE id=? AND org_id=?",
     [frequency || null, rows.length, pledgeId, orgId]);
@@ -816,7 +817,7 @@ async function issueYearEndStatement(org, donor, year, { send = true, by = SYS_A
   // snapshot; we no longer set snapshot.givingAccountUrl at all.)
   if (TF.isDemoOrg(org)) snapshot.demo = true;   // WHY-1 Part 8: a demo statement says so on every page
   const pdfBuffer = await renderReceiptPdf(snapshot);
-  const id = "rcpt_" + uuid().slice(0, 8);
+  const id = newId("rcpt");
   await run(
     `INSERT INTO receipts (id, org_id, donor_id, gift_id, type, tax_year, receipt_number, amount, deductible_amount, snapshot, pdf_data, created_by, created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -1140,7 +1141,7 @@ app.post("/donors/:id/designations", requireAuth, checkWriteAccess, wrap(async (
   if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" });
   await run(
     "INSERT INTO donor_designations (id,org_id,donor_id,kind) VALUES (?,?,?,?) ON CONFLICT (donor_id, kind) DO NOTHING",
-    ["dsg_" + uuid().slice(0, 8), req.user.orgId, req.params.id, kind]);
+    [newId("dsg"), req.user.orgId, req.params.id, kind]);
   res.status(201).json({ ok: true, kind, label: DESIGNATION_KINDS[kind] });
 }));
 

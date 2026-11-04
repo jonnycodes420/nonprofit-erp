@@ -10,6 +10,7 @@
 const express = require("express");
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
 const lapseRule = require("../../lapseRule");   // FIX-49: the one lapse rule
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = {
   r1: express.Router(),
@@ -318,7 +319,7 @@ app.post("/pipeline/:donorId/move", requireAuth, requireCrm, checkWriteAccess, w
   try {
     await run(
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
-      ["int_" + uuid().slice(0, 8), req.user.orgId, req.params.donorId, "stage_change",
+      [newId("int"), req.user.orgId, req.params.donorId, "stage_change",
        `Moved ${fromStage || "Not set"} → ${toStage}: ${String(description).trim()}`,
        orgToday(await orgTz(req.user.orgId)), req.user.userId, officerName]);   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
   } catch (e) { console.error("move interaction log:", e.message); }
@@ -380,7 +381,7 @@ app.post("/donors/:id/opportunities", requireAuth, requireCrm, checkWriteAccess,
   const P99 = await proposalMod();
   const clash = await openProposalConflict(req.user.orgId, req.params.id, null, null);
   if (clash) return res.status(409).json(clash);
-  const id = "opp_" + uuid().slice(0, 8);
+  const id = newId("opp");
   await run(
     "INSERT INTO opportunities (id,org_id,donor_id,name,target_amount,status,proposal_stage,officer_id,officer_name,expected_close,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
     [id, req.user.orgId, req.params.id, (name || "").trim() || "Ask", amt,
@@ -637,7 +638,7 @@ app.put("/portfolio/:officerId/target", requireAuth, requireCrm, checkWriteAcces
      VALUES (?,?,?,?,?,?,?,?,NOW())
      ON CONFLICT (org_id, user_id, fiscal_year) DO UPDATE
        SET target_amount=EXCLUDED.target_amount, count_cap=EXCLUDED.count_cap, updated_at=NOW()`,
-    ["pt_" + uuid().slice(0, 10), orgId, id, fyYear,
+    [newId("pt"), orgId, id, fyYear,
      targetCents == null ? null : toDollars(targetCents), cap, actor(req).id, actor(req).name]);
   const [row] = await query("SELECT * FROM portfolio_targets WHERE org_id=? AND user_id=? AND fiscal_year=?", [orgId, id, fyYear]);
   res.json({

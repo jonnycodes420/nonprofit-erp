@@ -20,6 +20,7 @@
 "use strict";
 const express = require("express");
 const P = require("../prospect");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 
@@ -27,7 +28,6 @@ function mount(ctx) {
 const { query, run, wrap, requireAuth, requireAdmin, checkWriteAccess, uuid } = ctx;
 const app = routers.r0;
 const mg = P.requireMajorGifts(wrap);
-const newId = p => `${p}_${uuid().replace(/-/g, "").slice(0, 16)}`;
 async function actor(req) {
   const [u] = await query(`SELECT name FROM users WHERE id = ?`, [req.user.userId]);
   return { id: req.user.userId, name: (u && u.name) || null };
@@ -207,7 +207,7 @@ app.post("/donors/:id/prospect-brief", requireAuth, checkWriteAccess, mg, wrap(a
   const B = require("../prospectBrief");
   const brief = await B.build(orgId, d.id);
   const who = await actor(req);
-  const id = "mat_" + uuid().replace(/-/g, "").slice(0, 12);
+  const id = newId("mat");
   const text = B.toText(brief);
   await run(`INSERT INTO donor_materials (id, org_id, donor_id, file_name, file_type, file_data, notes, uploaded_by, major_gifts_only)
              VALUES (?,?,?,?,?,?,?,?,true)`,

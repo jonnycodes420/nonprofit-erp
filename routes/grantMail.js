@@ -33,6 +33,7 @@ const express = require("express");
 const crypto = require("crypto");
 const grantDocs = require("../grantDocs");
 const SEALED_MAIL = require("../server/mail/sealedMail");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 // r0 is mounted with the other grant modules; r1 is mounted AHEAD of
 // routes/crm.js, because crm's GET /grants/:id answers 404 for any id and a
@@ -158,7 +159,7 @@ async function routeToFunderGrant(o) {
         WHERE org_id = ? AND donor_id = ? AND metadata->>'message_id' = ? RETURNING id`,
       [JSON.stringify(meta), orgId, f.funder_id, messageId]);
     if (!upd.length) {
-      const intId = "int_" + C.uuid().slice(0, 8);
+      const intId = newId("int");
       const cols = o.body ? SEALED_MAIL.sealedEmailColumns(orgId, intId, o.note || subject, o.body)
         : { note: o.note || subject, body_sealed: null, body_key_id: null };
       await C.run(
@@ -173,7 +174,7 @@ async function routeToFunderGrant(o) {
     if (!grantId) { out.push(result); continue; }
 
     // 2 · what went to (or came from) the funder, on the grant.
-    const sendId = "gsend_" + C.uuid().slice(0, 10);
+    const sendId = newId("gsend");
     const ins = await C.query(
       `INSERT INTO grant_sends (id, org_id, grant_id, funder_donor_id, what, subject, sent_on, sent_to_name, sent_to_email,
                                 direction, source, message_id, created_by, created_by_name)
@@ -221,7 +222,7 @@ async function storeAttachment({ orgId, grantId, messageId, attachment: a, conta
   if (!grantDocs.bytesMatchMime(buffer, mime)) return { ok: false, reason: "type_mismatch" };
 
   const asset = await C.putThemeAsset({ orgId, kind: grantDocs.DOC_ASSET_KIND, buffer, contentType: mime, seal });
-  const id = "gdoc_" + C.uuid().slice(0, 10);
+  const id = newId("gdoc");
   const way = direction === "out" ? "Sent to" : "Received from";
   const ins = await C.query(
     `INSERT INTO grant_documents (id,org_id,grant_id,doc_type,asset_id,file_name,content_type,bytes,notes,uploaded_by,uploaded_by_name,

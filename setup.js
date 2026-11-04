@@ -40,6 +40,7 @@ const NM = require("./shared/numbers/money");   // NUMBERS-5: what her imports b
 const AC = require("./agentCall");
 const site = require("./setupSite");
 const SF = require("./safeFetch");
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const ACTOR = { id: "system:setup", name: "Steward (setup)" };
 // FIX-55: no import step and no funds step. A spreadsheet is imported from the
@@ -308,7 +309,7 @@ function chosenSteps(plan, ticked) {
 
 // ── THE LEDGER ──────────────────────────────────────────────────────────────
 async function ledger(ctx, { tool, table, entityId, before, after, cites }) {
-  const id = "aw_" + uuid().slice(0, 10);
+  const id = newId("aw");
   await run(`INSERT INTO agent_writes (id,org_id,run_id,instruction_id,tool,entity_table,entity_id,before_row,after_row,cites)
              VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [id, ctx.orgId, ctx.agentRunId, ctx.instructionId, tool, table, String(entityId),
@@ -481,7 +482,7 @@ const STEPS = {
       if (users.has(p.name.toLowerCase())) { already++; continue; }
       const [dup] = await query(`SELECT id FROM setup_invites WHERE org_id=? AND lower(name)=lower(?) AND status<>'dismissed'`, [ctx.orgId, p.name]);
       if (dup) continue;
-      const id = "si_" + uuid().slice(0, 10);
+      const id = newId("si");
       await run(`INSERT INTO setup_invites (id,org_id,run_id,name,title,role,source_url,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?)`,
         [id, ctx.orgId, ctx.runId, p.name, p.title || null, /director|president|ceo|founder/i.test(p.title || "") ? "admin" : "staff", p.url || null, ACTOR.id, ACTOR.name]);
       await ledger(ctx, { tool: "setup_invites", table: "setup_invites", entityId: id, before: null });
@@ -680,7 +681,7 @@ async function finishReadout(orgId, r, call, today) {
   const headline = imp.donors ? `${plural(imp.donors, "person", "people")} and ${plural(imp.gifts, "gift", "gifts")} are in Steward.` : "Steward is set up.";
   // The same readout, as the LIVE-1 row on Home's Thread. Home's layout does
   // not change: this is one more readout row, shaped the way they all are.
-  const rid = "ro_" + uuid().slice(0, 10);
+  const rid = newId("ro");
   const lines = [
     { kind: "setup_did", count: did.length, cents: imp.cents || 0, sentence: headline.replace(/\.$/, ""), why: "What setup did, each step from its own result.", rows: did },
     { kind: "setup_waiting", count: waiting.length, cents: 0, sentence: `${plural(waiting.length, "thing is", "things are")} waiting on you`, why: "Questions and clicks only a person can make.", rows: waiting },
@@ -690,7 +691,7 @@ async function finishReadout(orgId, r, call, today) {
              VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [rid, orgId, "setup", r.id, "Steward is ready", headline, JSON.stringify(lines), today, ACTOR.id, ACTOR.name]);
   await run(`INSERT INTO agent_writes (id,org_id,run_id,instruction_id,tool,entity_table,entity_id,before_row,after_row,cites) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    ["aw_" + uuid().slice(0, 10), orgId, r.agent_run_id, r.instruction_id, "setup_finish", "readouts", rid, null, null, JSON.stringify([{ kind: "setup_run", id: r.id }])]);
+    [newId("aw"), orgId, r.agent_run_id, r.instruction_id, "setup_finish", "readouts", rid, null, null, JSON.stringify([{ kind: "setup_run", id: r.id }])]);
   return { headline, did, waiting, calls, minutes: minutes == null ? null : Math.round(minutes * 100) / 100,
     minutesSentence: minutes == null ? null : minutes < 1 ? `Setup took ${plural(Math.max(1, Math.round(minutes * 60)), "second", "seconds")} from Start to ready.` : `Setup took ${Math.round(minutes)} minutes from Start to ready.`,
     readoutId: rid };

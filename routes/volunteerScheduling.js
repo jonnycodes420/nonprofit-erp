@@ -30,6 +30,7 @@ const SL = require("../surveyLinks");   // SURVEY-1: the volunteer follow-up lin
 const orgTime = require("../orgTime");   // CAL-1: weekly repeat of a shift (civil days)
 const express = require("express");
 const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person
+const { newId, randomHex } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 const routers = { r0: express.Router() };
 
 function mount(ctx) {
@@ -139,7 +140,7 @@ app.post("/volunteer-hub/opportunities", requireAuth, checkWriteAccess, wrap(asy
   await READY;
   const v = VS.validateOpportunity(req.body || {});
   if (!v.ok) return res.status(400).json({ error: "invalid", errors: v.errors, message: v.errors[0].message });
-  const who = actor(req), id = "vo_" + uuid().slice(0, 10);
+  const who = actor(req), id = newId("vo");
   // The slug is what the public URL reads. A collision gets a suffix rather
   // than a refusal: two "Saturday clean-up" opportunities is a real thing an
   // org does, and making somebody rename one is making them do paperwork.
@@ -198,14 +199,14 @@ app.post("/volunteer-hub/slots", requireAuth, checkWriteAccess, wrap(async (req,
   if (!opp) return res.status(404).json({ error: "Not found", message: "That opportunity does not exist." });
   const v = VS.validateSlot(req.body || {});
   if (!v.ok) return res.status(400).json({ error: "invalid", errors: v.errors, message: v.errors[0].message });
-  const who = actor(req), id = "vsl_" + uuid().slice(0, 10);
+  const who = actor(req), id = newId("vsl");
   // CAL-1: "repeat weekly until" makes one shift per week on the same day,
   // each its own record (signing up for one is not signing up for all).
   const until = req.body && req.body.repeat && /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.repeat.weeklyUntil || "")) ? String(req.body.repeat.weeklyUntil) : null;
   if (until && until < v.slot.date) return res.status(400).json({ error: "invalid", message: "The repeat ends after the first shift." });
   const dates = [v.slot.date];
   if (until) for (let d = orgTime.addDays(v.slot.date, 7); d <= until && dates.length < 53; d = orgTime.addDays(d, 7)) dates.push(d);
-  const ids = dates.map((_, i) => (i ? "vsl_" + uuid().slice(0, 10) : id));
+  const ids = dates.map((_, i) => (i ? newId("vsl") : id));
   // PARITY-3 — its name, colour, venue, place, published flag and roles.
   await withTransaction(async tx => {
     for (let i = 0; i < dates.length; i++) {
@@ -347,7 +348,7 @@ app.post("/volunteer-hub/credentials", requireAuth, checkWriteAccess, wrap(async
   // renewal is not a reason to lose the previous date.
   await run(`UPDATE volunteer_credentials SET superseded_at=NOW()
               WHERE org_id=? AND person_id=? AND kind=? AND superseded_at IS NULL`, [orgId, p.id, v.credential.kind]);
-  const id = "vc_" + uuid().slice(0, 12);
+  const id = newId("vc");
   await run(
     `INSERT INTO volunteer_credentials (id,org_id,person_id,kind,signed_on,expires_on,reference,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?)`,
@@ -497,7 +498,7 @@ app.post("/volunteer-hub/groups/:id/members", requireAuth, checkWriteAccess, wra
     if (!name && !email) return res.status(400).json({ error: "name_or_email_required" });
     personId = await PM.findPersonId(orgId, { email, name });   // WIRE-1 rule 1
     if (!personId) {
-      personId = "d_" + uuid().slice(0, 10);
+      personId = newId("d");
       await run(
         `INSERT INTO donors (id,org_id,name,email,stage,status,tags,person_types,created_by,created_by_name)
          VALUES (?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?)`,
@@ -509,7 +510,7 @@ app.post("/volunteer-hub/groups/:id/members", requireAuth, checkWriteAccess, wra
   await run(
     `INSERT INTO volunteer_group_members (id,org_id,group_id,person_id,created_by,created_by_name)
      VALUES (?,?,?,?,?,?) ON CONFLICT (org_id, group_id, person_id) DO NOTHING`,
-    ["vgm_" + uuid().slice(0, 10), orgId, g.id, personId, who.id, who.name]);
+    [newId("vgm"), orgId, g.id, personId, who.id, who.name]);
   res.json({ ok: true, personId, sentence: `Added to ${g.name}. They keep their own record and their own hours.` });
 }));
 
@@ -530,7 +531,7 @@ app.post("/volunteer-hub/groups/signup", requireAuth, checkWriteAccess, wrap(asy
 
   let [group] = await query("SELECT id FROM volunteer_groups WHERE org_id=? AND lower(name)=lower(?)", [orgId, groupName]);
   if (!group) {
-    const gid = "vg_" + uuid().slice(0, 10);
+    const gid = newId("vg");
     await run(`INSERT INTO volunteer_groups (id,org_id,name,kind,created_by,created_by_name) VALUES (?,?,?,?,?,?)`,
       [gid, orgId, groupName, kind, who.id, who.name]);
     group = { id: gid };
@@ -558,7 +559,7 @@ async function findOrCreatePerson(orgId, { name, email }, who, out) {
   // WIRE-1 rule 1: the one match every door uses (personMatch.js).
   const known = await PM.findPersonId(orgId, { email, name });
   if (known) { await markVolunteer(orgId, known); return known; }
-  const pid = "d_" + uuid().slice(0, 10);
+  const pid = newId("d");
   await run(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,person_types,created_by,created_by_name)
              VALUES (?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?)`,
     [pid, orgId, name || email, email || null, who.id, who.name]);
@@ -622,7 +623,7 @@ async function signUp(orgId, slotId, personId, { source, groupId = null, who, no
     if (st.closed) return { status: null, error: "closed" };
     const status = st.nextStatus;
     const position = status === "waitlisted" ? counts.waitlisted + 1 : null;
-    const id = "vsu_" + uuid().slice(0, 12);
+    const id = newId("vsu");
     await runTx(tx,
       `INSERT INTO volunteer_signups (id,org_id,slot_id,person_id,group_id,status,position,source,note,created_by,created_by_name,role_id)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -846,7 +847,7 @@ async function issueMagicLink(orgId, personId) {
   await run(
     `INSERT INTO volunteer_magic_links (id,org_id,person_id,token_hash,expires_at)
      VALUES (?,?,?,?, NOW() + (? || ' days')::interval)`,
-    ["vml_" + uuid().slice(0, 10), orgId, personId, hashTok(token), String(VOL_LINK_DAYS)]);
+    [newId("vml"), orgId, personId, hashTok(token), String(VOL_LINK_DAYS)]);
   return `${publicAppUrl()}/volunteer/me?t=${token}`;
 }
 
@@ -1054,7 +1055,7 @@ app.post("/volunteer/me/waiver", donateLimiter, express.urlencoded({ extended: f
   await run(
     `INSERT INTO volunteer_credentials (id,org_id,person_id,kind,signed_on,expires_on,signature_name,signature_ip,waiver_text_sha256,created_by,created_by_name)
      VALUES (?,?,?,'waiver',?,?,?,?,?,?,?)`,
-    ["vc_" + uuid().slice(0, 12), link.org_id, link.person_id, today, expires, signature,
+    [newId("vc"), link.org_id, link.person_id, today, expires, signature,
      String(req.ip || "").slice(0, 60), crypto.createHash("sha256").update(text).digest("hex"),
      "system:volunteer-waiver", "The volunteer, from their own page"]);
   res.redirect(303, `/volunteer/me?t=${encodeURIComponent(String(req.body.t))}&done=1`);
@@ -1298,7 +1299,7 @@ async function noteMilestone(orgId, personId, previousHundredths) {
     await run(
       `INSERT INTO milestone_drafts (id, org_id, donor_id, milestone_key, subject, body, status)
        VALUES (?,?,?,?,?,?, 'pending_review')`,
-      ["md_" + uuid().slice(0, 12), orgId, personId, `volunteer_hours_${crossed}`,
+      [newId("md"), orgId, personId, `volunteer_hours_${crossed}`,
        `Thank you for ${crossed} hours`, body])
       .catch(e => console.error("[volunteer] milestone draft:", e.message));
     console.log(`[volunteer] ${personId} crossed ${crossed} hours on ${today} — draft written for the coordinator`);
@@ -1731,7 +1732,7 @@ async function saveRolesTx(tx, orgId, slotId, roles, who) {
       promoted.push(...await fillRoleTx(tx, slotId, r.id, r.needed));
     } else {
       await runTx(tx, `INSERT INTO volunteer_slot_roles (id,org_id,slot_id,name,needed,sort,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?)`,
-        ["vsr_" + uuid().slice(0, 10), orgId, slotId, r.name, r.needed, sort++, who.id, who.name]);
+        [newId("vsr"), orgId, slotId, r.name, r.needed, sort++, who.id, who.name]);
     }
   }
   return { promoted };
@@ -1800,13 +1801,13 @@ app.post("/volunteer-hub/slots/bulk", requireAuth, checkWriteAccess, wrap(async 
       const dates = VS.copyDates(s.date, { weeks: b.weeks, dates: b.dates });
       const roles = await query("SELECT name, needed, sort FROM volunteer_slot_roles WHERE slot_id=? ORDER BY sort", [s.id]);
       for (const d of dates) {
-        const id = "vsl_" + uuid().slice(0, 10);
+        const id = newId("vsl");
         await run(`INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time,capacity,notes,name,color,venue,location_detail,published,created_by,created_by_name)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [id, orgId, s.opportunity_id, d, s.start_time, s.end_time, s.capacity, s.notes, s.name, s.color, s.venue, s.location_detail,
            b.published === undefined ? s.published : b.published === true, who.id, who.name]);
         for (const r of roles) await run(`INSERT INTO volunteer_slot_roles (id,org_id,slot_id,name,needed,sort,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?)`,
-          ["vsr_" + uuid().slice(0, 10), orgId, id, r.name, r.needed, r.sort, who.id, who.name]);
+          [newId("vsr"), orgId, id, r.name, r.needed, r.sort, who.id, who.name]);
         made++;
       }
     }
@@ -1848,7 +1849,7 @@ app.post("/volunteer-hub/slots/bulk", requireAuth, checkWriteAccess, wrap(async 
          JOIN donors d ON d.id=su.person_id AND d.org_id=su.org_id AND d.deleted_at IS NULL
         WHERE su.org_id=? AND su.slot_id = ANY(?) AND su.status IN ('confirmed','waitlisted','completed')
         ORDER BY su.person_id, su.created_at`, [orgId, slots.map(s => s.id)]);
-    const batch = uuid().slice(0, 8);
+    const batch = randomHex(20);   // IDS-1: a batch key, long enough never to repeat
     let drafted = 0, noEmail = 0;
     for (const r of rows) {
       if (!r.email) { noEmail++; continue; }
@@ -1856,7 +1857,7 @@ app.post("/volunteer-hub/slots/bulk", requireAuth, checkWriteAccess, wrap(async 
       const first = GR.firstNames(r) || "there";
       await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,slot_id,created_by,created_by_name)
                  VALUES (?,?,?,?,?,?,'pending_review','volunteer_message',?,?,?) ON CONFLICT DO NOTHING`,
-        ["md_" + uuid().slice(0, 12), orgId, r.person_id, `vol:msg:${batch}:${r.person_id}`, subject,
+        [newId("md"), orgId, r.person_id, `vol:msg:${batch}:${r.person_id}`, subject,
          GR.greetMerge(body, GR.greetingName(r)).replace(/\{\{\s*first_name\s*\}\}/gi, first), r.slot_id, who.id, who.name]);
       drafted++;
     }
@@ -2028,7 +2029,7 @@ async function draftThanksFor(orgId, signupId) {
     `INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,slot_id,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,'pending_review','volunteer_thanks',?,?,?)
      ON CONFLICT (org_id, milestone_key) WHERE milestone_key LIKE 'vol:%' DO NOTHING RETURNING id`,
-    ["md_" + uuid().slice(0, 12), orgId, r.person_id, `vol:thanks:${r.id}`, subject, body, r.slot_id,
+    [newId("md"), orgId, r.person_id, `vol:thanks:${r.id}`, subject, body, r.slot_id,
      "system:volunteer-checkin", "Steward, after check-in"]);
   return ins.length ? ins[0].id : null;
 }
@@ -2229,7 +2230,7 @@ app.post("/volunteer-with/:orgSlug/apply", donateLimiter, express.urlencoded({ e
   const phone = String(b.phone || "").trim().slice(0, 40) || null;
   const again = error => res.status(400).send(publicPage({ title: "Check the form", brand, body: applyForm(o, rec, { values: { ...b, availability: [].concat(b.availability || []) }, error }) }));
   if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return again("Please give your name and an email address.");
-  const id = "vap_" + uuid().slice(0, 12);
+  const id = newId("vap");
   const files = {};
   for (const q of rec.questions.filter(x => x.type === "file")) {
     if (!b[`f_${q.id}`]) continue;
@@ -2308,7 +2309,7 @@ app.post("/volunteer-hub/applications/:id/approve", requireAuth, checkWriteAcces
     } else if (matches.length === 1) { personId = matches[0].id; matched = true; }
     else if (matches.length > 1) return { choose: matches };
     else {
-      personId = "d_" + uuid().slice(0, 10);
+      personId = newId("d");
       await run(`INSERT INTO donors (id,org_id,name,email,phone,stage,status,tags,person_types,created_by,created_by_name)
                  VALUES (?,?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?)`,
         [personId, orgId, a.name, email, a.phone || null, who.id, who.name]);
@@ -2375,7 +2376,7 @@ async function draftVolunteerEmail(orgId, kind, { personId, name, slotId = null,
     `INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,slot_id,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,'pending_review',?,?,?,?)
      ON CONFLICT (org_id, milestone_key) WHERE milestone_key LIKE 'vol:%' DO NOTHING RETURNING id`,
-    ["md_" + uuid().slice(0, 12), orgId, personId, key, subject, body, kind, slotId, by.id, by.name]);
+    [newId("md"), orgId, personId, key, subject, body, kind, slotId, by.id, by.name]);
   return ins.length ? ins[0].id : null;
 }
 
@@ -2417,7 +2418,7 @@ app.post("/org/:orgSlug/volunteer-page/:pageSlug/signup", donateLimiter, wrap(as
   // A group is a label on sign-ups (VOL-1), led by the person who signed it up.
   let groupId = null;
   if (b.group) {
-    groupId = "vg_" + uuid().slice(0, 10);
+    groupId = newId("vg");
     await run(`INSERT INTO volunteer_groups (id,org_id,name,kind,contact_person_id,created_by,created_by_name) VALUES (?,?,?,?,?,?,?)`,
       [groupId, orgId, b.group.name, b.group.kind, pid, SYS_VOLPAGE.id, SYS_VOLPAGE.name]);
   }
@@ -2426,7 +2427,7 @@ app.post("/org/:orgSlug/volunteer-page/:pageSlug/signup", donateLimiter, wrap(as
     r = await signUp(orgId, slot.id, pid, { source: "public", groupId, who: SYS_VOLPAGE, note: b.availability || null, roleId: b.roleId });
     if (r.error) return res.status(409).json({ error: "closed", message: "That shift has just closed. Pick another one." });
   }
-  const psId = "vps_" + uuid().slice(0, 12);
+  const psId = newId("vps");
   await run(`INSERT INTO volunteer_page_signups (id,org_id,page_id,person_id,signup_id,group_id,group_size,availability,interests,answers,matched,created_by,created_by_name)
              VALUES (?,?,?,?,?,?,?,?,?::jsonb,?::jsonb,?,?,?)`,
     [psId, orgId, page.id, pid, r.already ? null : (r.signupId || null), groupId, b.group ? b.group.size : null, b.availability || null,
@@ -2445,7 +2446,7 @@ app.post("/org/:orgSlug/volunteer-page/:pageSlug/signup", donateLimiter, wrap(as
     const today = orgToday(await orgTz(orgId));                   // ORG_TZ_SEAM_OK
     await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
                VALUES (?,?,?,'note',?,?,?,?,?)`,
-      ["int_" + uuid().slice(0, 12), orgId, pid, lines.join("\n"), today, SYS_VOLPAGE.id, SYS_VOLPAGE.name,
+      [newId("int"), orgId, pid, lines.join("\n"), today, SYS_VOLPAGE.id, SYS_VOLPAGE.name,
        JSON.stringify({ volunteerPageId: page.id, volunteerPageSignupId: psId })]);
   }
   // Drafts, never sends: the confirmation for a booked place, and the group

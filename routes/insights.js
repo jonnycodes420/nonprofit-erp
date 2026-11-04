@@ -28,6 +28,7 @@ const M = require("../money");
 const NMONEY = require("../shared/numbers/money");   // NUMBERS-5
 const { withAdvisoryLock } = require("../db");
 const { SOFT_CREDIT_RESIZE } = require("../donorSummary");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -200,7 +201,7 @@ app.post("/insights/outcome", requireAuth, checkWriteAccess, wrap(async (req, re
   const a = actor(req);
   for (const k of keys) {
     await run(`INSERT INTO insight_outcomes (id, org_id, kind, item_key, donor_ids, state, until, reason, created_by, created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      ["io_" + uuid().slice(0, 12), req.user.orgId, String(b.kind).slice(0, 40), String(k).slice(0, 300), [...own], b.state,
+      [newId("io"), req.user.orgId, String(b.kind).slice(0, 40), String(k).slice(0, 300), [...own], b.state,
        b.state === "snoozed" ? b.until : null, b.reason ? String(b.reason).slice(0, 500) : null, a.id, a.name]);
   }
   res.json({ ok: true, recorded: keys.length });
@@ -258,7 +259,7 @@ app.post("/insights/review/:giftId", requireAuth, checkWriteAccess, wrap(async (
         await runTx(client, `UPDATE fin_transactions SET gift_id=NULL, account_id=COALESCE(?, account_id), description=?, donor_id=?, source='not_a_gift' WHERE id=?`,
           [acct ? acct.id : null, description, g.donor_id, stamp.id]);
       } else {
-        finId = "ft_" + uuid().slice(0, 12);
+        finId = newId("ft");
         await runTx(client, `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,created_by,created_by_name)
                              VALUES (?,?,?,?,?,?,'income',?,?,?,'not_a_gift',?,?)`,
           [finId, orgId, g.date || null, description, d ? d.name : null, g.amount, acct ? acct.id : null, g.fund_id || null, g.donor_id, a.id, a.name]);
@@ -318,7 +319,7 @@ async function partlyAGift(req, res, g) {
   const [acct] = await query("SELECT id FROM accounts WHERE org_id=? AND code=? LIMIT 1", [orgId, ACCOUNT_FOR[type]]);
   const [d] = await query("SELECT name FROM donors WHERE id=? AND org_id=?", [g.donor_id, orgId]);
   const description = `${TYPE_LABEL[type]}, the part that was not a gift${memo ? `: ${memo}` : ""}`.slice(0, 500);
-  const finId = "ft_" + uuid().slice(0, 12);
+  const finId = newId("ft");
   const done = await withAdvisoryLock(`gift:${giftId}`, () => withTransaction(async client => {
     const [now] = await queryTx(client, "SELECT * FROM gifts WHERE id=? AND org_id=? FOR UPDATE", [giftId, orgId]);
     if (!now || M.toCents(now.amount) !== amountCents || (now.quid_pro_quo_value != null && Number(now.quid_pro_quo_value) > 0)) return false;
@@ -411,7 +412,7 @@ app.post("/insights/link", requireAuth, checkWriteAccess, wrap(async (req, res) 
     for (const other of rest) {
       const [have] = await query(`SELECT id FROM donor_relationships WHERE org_id=? AND ((donor_id_a=? AND donor_id_b=?) OR (donor_id_a=? AND donor_id_b=?))`, [orgId, first, other, other, first]);
       if (have) continue;
-      const id = "rel_" + uuid().slice(0, 12);
+      const id = newId("rel");
       await run(`INSERT INTO donor_relationships (id, org_id, donor_id_a, donor_id_b, relationship_type, notes) VALUES (?,?,?,?,?,?)`,
         [id, orgId, first, other, "family", "Linked from a Steward suggestion"]);
       relIds.push(id);

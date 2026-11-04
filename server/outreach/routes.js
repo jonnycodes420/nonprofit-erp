@@ -9,6 +9,7 @@
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
 const { CAMPAIGN_GIFT_MATCH, NOT_DELETED } = require("../../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../../emailCompose");
 const lapseRule = require("../../lapseRule");   // FIX-49: the one lapse rule
@@ -579,7 +580,7 @@ app.post("/campaigns", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     blocks = v.blocks;
   }
 
-  const id = "cmp_" + uuid().slice(0, 8);
+  const id = newId("cmp");
   await run(
     `INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,scheduled_at,recipient_count,open_count,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?,0,0,?,?)`,
@@ -809,7 +810,7 @@ app.post("/audiences", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const v = A.validateAudience(req.body || {});
   if (!v.ok) return res.status(400).json({ error: v.errors[0], errors: v.errors });
   const seg = A.segmentFor({ mode: v.mode, stages: req.body.stages, tiers: req.body.tiers });
-  const id = "aud_" + uuid().slice(0, 8);
+  const id = newId("aud");
   try {
     await run(`INSERT INTO audiences (id, org_id, name, description, segment, created_by, created_by_name)
                VALUES (?,?,?,?,?,?,?)`,

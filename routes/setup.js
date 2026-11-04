@@ -16,6 +16,7 @@
 "use strict";
 const express = require("express");
 const S = require("../setup");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 const MAX_FILES = 12;
@@ -71,8 +72,8 @@ async function createRun(orgId, who, b, call) {
     if (body.length > MAX_FILE_CHARS) return { status: 413, body: { error: "file_too_big", sentence: `${String(f.name).slice(0, 80)} is larger than setup reads at once. Use Import for it.` } };
   }
   const tools = (Array.isArray(b.tools) ? b.tools : []).map(String).filter(t => S.TOOL_KEYS.includes(t));
-  const id = "sr_" + uuid().replace(/-/g, "").slice(0, 12);
-  const instr = "ai_" + uuid().replace(/-/g, "").slice(0, 12);
+  const id = newId("sr");
+  const instr = newId("ai");
   // The plan-then-confirm pipeline: her instruction is a row, in her words.
   await run(`INSERT INTO agent_instructions (id, org_id, text, kind, status, persona, created_by, created_by_name)
              VALUES (?,?,?,?,?,?,?,?)`, [instr, orgId, "Set up Steward for me", "task", "planned", "setup", who.id, who.name]);
@@ -81,7 +82,7 @@ async function createRun(orgId, who, b, call) {
   for (const f of files) {
     const body = storedBody(f);
     await run(`INSERT INTO setup_files (id, org_id, run_id, name, body, bytes, created_by, created_by_name) VALUES (?,?,?,?,?,?,?,?)`,
-      ["sf_" + uuid().replace(/-/g, "").slice(0, 12), orgId, id, String(f.name).slice(0, 200), body, body.length, who.id, who.name]);
+      [newId("sf"), orgId, id, String(f.name).slice(0, 200), body, body.length, who.id, who.name]);
   }
   const plan = await S.planRun(orgId, id, { today: orgToday(await orgTz(orgId)), call });   // ORG_TZ_SEAM_OK
   await run(`UPDATE agent_instructions SET plan=? WHERE id=? AND org_id=?`, [JSON.stringify(plan), instr, orgId]);
@@ -145,7 +146,7 @@ app.post("/setup/runs/:id/start", requireAuth, requireAdmin, checkWriteAccess, w
   if (!r) return res.status(404).json({ error: "not_found" });
   if (r.status !== "planned") return res.status(409).json({ error: "already_started", run: await runOut(orgId, r) });
   const who = await whoOf(req);
-  const agentRun = "ar_" + uuid().replace(/-/g, "").slice(0, 12);
+  const agentRun = newId("ar");
   await run(`INSERT INTO agent_runs (id, org_id, instruction_id, status, plan) VALUES (?,?,?,?,?)`, [agentRun, orgId, r.instruction_id, "running", JSON.stringify(r.plan)]);
   await run(`UPDATE agent_instructions SET status='active', turned_on_by=?, turned_on_by_name=?, turned_on_at=NOW(), updated_at=NOW() WHERE id=? AND org_id=?`,
     [who.id, who.name, r.instruction_id, orgId]);

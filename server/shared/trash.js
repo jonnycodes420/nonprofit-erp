@@ -8,6 +8,8 @@
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 
+const { newId } = require("./newId");   // IDS-1: every new row id is prefix + 20 hex
+
 function mount(ctx) {
 const {
   actor, query, queryTx, runTx, uuid, withTransaction,
@@ -70,7 +72,7 @@ async function trashRow(table, id, req) {
   return withTransaction(async client => {
     const rows = await queryTx(client, `SELECT * FROM ${table} WHERE id = ? AND org_id = ? FOR UPDATE`, [id, req.user.orgId]);
     if (!rows.length) return null;
-    const trashId = "del_" + uuid().slice(0, 12);
+    const trashId = newId("del");
     const withRow = TRASH_WITH[table] ? await TRASH_WITH[table](client, id, req.user.orgId) : null;
     // `__with` is not a column, so jsonb_populate_record ignores it on Undo.
     await runTx(client,

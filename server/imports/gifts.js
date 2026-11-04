@@ -8,6 +8,7 @@
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-12 Part 3: the one door to a model (asks the org's AI switch on every call).
 const { anthropicFor, requireAi, transcribeAudio, AiOffError, AI_OFF_MESSAGE, recordAiFallback } = require("../../aiClient");
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
@@ -83,7 +84,7 @@ app.post("/statement-mappings", requireAuth, checkWriteAccess, wrap(async (req, 
   if (missing.length) return res.status(400).json({ error: "missing_columns", missing });
 
   const a = actor(req);
-  const id = "sm_" + uuid().slice(0, 10);
+  const id = newId("sm");
   const rows = await query(
     `INSERT INTO statement_mappings (id,org_id,name,preset_key,mapping,drop_negative,payment_method,created_by,created_by_name)
      VALUES (?,?,?,?,?::jsonb,?,?,?,?)
@@ -470,7 +471,7 @@ app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res
   }
 
   const actorInfo = actor(req);
-  const importId2 = "imp_" + uuid().slice(0, 8);
+  const importId2 = newId("imp");
   const created = { gifts: 0, donors: 0, payments: 0, giftCents: 0, installments: 0 };
   const written = [];
 
@@ -482,7 +483,7 @@ app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res
     if (l.state !== "placed_new_donor") continue;
     const key = String(l.donorName || "").toLowerCase().trim();
     if (newDonorIds.has(key)) continue;
-    const did = "d_" + uuid().slice(0, 8);
+    const did = newId("d");
     await run(
       `INSERT INTO donors (id,org_id,name,stage,status,tags,notes,created_by,created_by_name,created_import_id)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
@@ -502,7 +503,7 @@ app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res
         await run(
           `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,import_id,metadata)
            VALUES (?,?,?,?,?,?,?,?,?,?)`,
-          ["int_" + uuid().slice(0, 8), orgId, l.donorId, "payment",
+          [newId("int"), orgId, l.donorId, "payment",
            `Payment, not a gift: ${money.formatCents(l.cents)}${l.memo ? ` ${l.memo}` : ""} (${l.reason.replace(/_/g, " ")})`,
            depositDate, actorInfo.id, actorInfo.name, importId2,
            JSON.stringify({ via: "deposit", kind: l.reason, cents: l.cents, check: l.check || null })]);

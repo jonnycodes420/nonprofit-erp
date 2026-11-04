@@ -15,6 +15,7 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-4 5 — the price→plan lookup, so the reconcile below names the plan the
 // live subscription is actually on rather than trusting a stale column.
 const { planFromSubscription } = require("../billingPlans");
@@ -247,8 +248,8 @@ app.post("/auth/register", registerLimiter, legacyRegisterGate, wrap(async (req,
   const existing = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [email]);
   if (existing.length) return res.status(409).json({ error: "Email already registered" });
 
-  const orgId = "org_" + uuid().slice(0, 8);
-  const userId = "user_" + uuid().slice(0, 8);
+  const orgId = newId("org");
+  const userId = newId("user");
   const orgSlug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + orgId.slice(4, 10);
   // BUILD-90: thirty days from signing, and for a self-serve path signing is
   // the moment the org row is written. `signed_at` is stamped here with the
@@ -292,7 +293,7 @@ app.post("/auth/forgot-password", passwordResetLimiter, wrap(async (req, res) =>
 
   const user = users[0];
   const token = crypto.randomBytes(32).toString("hex");
-  const id = "prt_" + uuid().slice(0, 8);
+  const id = newId("prt");
   await run(
     `INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, NOW() + INTERVAL '1 hour')`,
     [id, user.id, require("../auth").resetTokenHash(token)]
@@ -436,8 +437,8 @@ app.post("/auth/register-org", registerLimiter, legacyRegisterGate, wrap(async (
   const existing = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [email]);
   if (existing.length) return res.status(409).json({ error: "An account with that email already exists" });
 
-  const orgId  = "org_"  + uuid().slice(0, 8);
-  const userId = "user_" + uuid().slice(0, 8);
+  const orgId  = newId("org");
+  const userId = newId("user");
   const orgSlug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + orgId.slice(4, 10);
   // BUILD-90: thirty days from signing, full stop (trialEnd.js). This legacy
   // self-serve route is no longer reachable from the UI — /signup redirects to
@@ -551,7 +552,7 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
   }
 
   const token = uuid().replace(/-/g, "") + uuid().replace(/-/g, "");
-  const id = "inv_" + uuid().slice(0, 8);
+  const id = newId("inv");
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
   await run(
@@ -624,7 +625,7 @@ app.post("/auth/invite/accept", wrap(async (req, res) => {
   const existing = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [invite.email]);
   if (existing.length) return res.status(409).json({ error: "An account with this email already exists" });
 
-  const userId = "user_" + uuid().slice(0, 8);
+  const userId = newId("user");
   const hash = bcrypt.hashSync(password, 12);
   await run(
     "INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,?)",
@@ -1241,7 +1242,7 @@ app.post("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, 
     throw err;
   }
 
-  const closeLinkId = "cl_" + uuid().slice(0, 8);
+  const closeLinkId = newId("cl");
   const signin = mintSigninKey();
   const params = checkoutSessionParams({
     plan, orgName, contactEmail, closeLinkId, priceId,
@@ -1526,7 +1527,7 @@ app.post("/public/checkout-signin/email", passwordResetLimiter, wrap(async (req,
 async function sendSigninLinkEmail(user) {
   const token = crypto.randomBytes(32).toString("hex");
   await run(`INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, NOW() + INTERVAL '1 hour')`,
-    ["prt_" + uuid().slice(0, 8), user.id, require("../auth").resetTokenHash(token)]);
+    [newId("prt"), user.id, require("../auth").resetTokenHash(token)]);
   const link = `${publicAppUrl()}/reset-password?token=${token}`;
   if (!process.env.RESEND_API_KEY) {
     console.error(`[checkout-signin] MAIL IS NOT CONFIGURED (RESEND_API_KEY unset): the sign-in link for ${user.email} was NOT sent.`);
@@ -1682,7 +1683,7 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
     return sameAnswer();
   }
 
-  const closeLinkId = "cl_" + uuid().slice(0, 8);
+  const closeLinkId = newId("cl");
   // FIX-32: after Checkout she lands signed in, on onboarding. This used to
   // be /login?welcome=1: she paid and was handed a password form for an
   // account whose password she had never set.
@@ -1716,7 +1717,7 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
   await run(
     `INSERT INTO terms_acceptances (id, close_link_id, email, name, doc_version, doc_sha256, ip, user_agent)
      VALUES (?,?,?,?,?,?,?,?)`,
-    ["ta_" + uuid().slice(0, 10), closeLinkId, contactEmail, contactName, agr.version, agr.sha256,
+    [newId("ta"), closeLinkId, contactEmail, contactName, agr.version, agr.sha256,
      String(req.ip || "").slice(0, 60), String(req.get("user-agent") || "").slice(0, 300)]
   );
 
@@ -1913,7 +1914,7 @@ app.post("/lost-and-found/lead", registerLimiter, wrap(async (req, res) => {
   if (!LF_EMAIL.test(email)) return res.status(400).json({ error: "email_invalid", message: "A working email address, so we can send the report." });
   if (!organization) return res.status(400).json({ error: "org_required", message: "Your organization's name." });
 
-  const id = "lf_" + uuid().slice(0, 12);
+  const id = newId("lf");
   await run(
     `INSERT INTO lost_and_found_leads (id, name, email, organization, ref, org_size, current_system, user_agent, ip)
      VALUES (?,?,?,?,?,?,?,?,?)`,
@@ -1973,7 +1974,7 @@ app.post("/lost-and-found/benchmark", registerLimiter, wrap(async (req, res) => 
     const n = Number(v);
     return Number.isInteger(n) && n >= 0 && n <= 100 ? n : null;
   };
-  const id = "lfb_" + uuid().slice(0, 12);
+  const id = newId("lfb");
   await run(
     `INSERT INTO lost_and_found_benchmarks (id, donor_band, retention_pct, share_lapsed_pct, share_drifting_pct)
      VALUES (?,?,?,?,?)`,
@@ -2996,7 +2997,7 @@ async function auditSampleData(orgId, action, actor, counts, detail) {
     await run(
       `INSERT INTO sample_data_audit (id, org_id, action, actor_user_id, actor_email, counts, detail)
        VALUES (?,?,?,?,?,?,?)`,
-      ["sda_" + uuid().slice(0, 8), orgId, action, actor?.userId || null, actor?.email || null,
+      [newId("sda"), orgId, action, actor?.userId || null, actor?.email || null,
        JSON.stringify(counts || {}), detail ? JSON.stringify(detail) : null]);
   } catch (err) {
     console.error("[sample-data] audit write failed (action continues):", err.message);

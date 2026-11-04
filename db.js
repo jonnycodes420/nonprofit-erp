@@ -3,6 +3,7 @@ const { Pool } = require("pg");
 const { randomUUID: uuid } = require("crypto");
 const bcrypt = require("bcryptjs");
 const orgTime = require("./orgTime"); // BUILD-75 A.5 — seed dates are CIVIL dates in the default org timezone, never UTC slices of the process clock
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 // POOL-1: the per-process connection budget and the set-wise pool (server/shared/pools.js).
 const pools = require("./server/shared/pools");
@@ -8995,7 +8996,7 @@ async function householdsFromLinks(pool, orgId = null) {
     if (A.household_id && B.household_id) { apart++; continue; }
     let hh = A.household_id || B.household_id;
     if (!hh) {
-      hh = "hh_" + require("crypto").randomBytes(4).toString("hex");
+      hh = newId("hh");
       const last = String(A.name || "").trim().split(/\s+/).pop();
       await q(`INSERT INTO households (id, org_id, name, primary_donor_id, joint_acknowledgment, created_by, created_by_name)
                VALUES ($1, $2, $3, $4, true, 'system:fix49-households', 'Steward (one household grouping)')`,
@@ -9725,7 +9726,7 @@ async function seedOrgData(orgId) {
   for (const [code, name, type, subtype] of chartOfAccounts) {
     await pool.query(
       `INSERT INTO accounts (id, org_id, code, name, type, subtype) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [`acc_${uuid().slice(0, 8)}`, orgId, code, name, type, subtype]
+      [newId("acc"), orgId, code, name, type, subtype]
     );
   }
 
@@ -9738,7 +9739,7 @@ async function seedOrgData(orgId) {
   await pool.query(
     `INSERT INTO fin_funds (id, org_id, name, description, restricted)
      SELECT $1, $2, $3, $4, $5 WHERE NOT EXISTS (SELECT 1 FROM fin_funds WHERE org_id = $2 AND restricted = false)`,
-    [`ff_${uuid().slice(0, 8)}`, orgId, "General Operating", "General unrestricted operating fund", false]
+    [newId("ff"), orgId, "General Operating", "General unrestricted operating fund", false]
   );
 }
 

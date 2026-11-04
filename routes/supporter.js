@@ -30,6 +30,7 @@
 // Stripe calls live. There is no second money path here and there is not
 // going to be one.
 const express = require("express");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = {
   r0: express.Router(),
@@ -441,7 +442,7 @@ async function issueAndSend(org, person, { who }) {
   await run(
     `INSERT INTO supporter_links (id,org_id,person_id,email,token_hash,expires_at,created_by,created_by_name)
      VALUES (?,?,?,?,?, NOW() + (? || ' minutes')::interval, ?,?)`,
-    ["sl_" + uuid().slice(0, 12), org.id, person.id, person.email || null, sha256hex(token),
+    [newId("sl"), org.id, person.id, person.email || null, sha256hex(token),
      String(LINK_MINUTES), who.id, who.name]);
   const brand = await brandOf(org.id, org.name);
   // The fragment, not the query string: a fragment is never sent in a Referer
@@ -545,7 +546,7 @@ async function mintSupporterSession(orgId, personId) {
   await run(
     `INSERT INTO supporter_sessions (id,org_id,person_id,token_hash,expires_at)
      VALUES (?,?,?,?, NOW() + (? || ' days')::interval)`,
-    ["ss_" + uuid().slice(0, 12), orgId, personId, sha256hex(token), String(SESSION_DAYS)]);
+    [newId("ss"), orgId, personId, sha256hex(token), String(SESSION_DAYS)]);
   return token;
 }
 ctx.registerSupporterSession({ mint: mintSupporterSession, setCookie: setYouCookie });

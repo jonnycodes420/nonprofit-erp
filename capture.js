@@ -25,6 +25,7 @@ const crypto = require("crypto");
 const personPhoto = require("./personPhoto");
 const { matchPerson } = require("./personMatch");
 const DM = require("./donorMatch");
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 let D = null;                        // server.js hands its helpers over at boot
 function configure(deps) { D = deps; }
@@ -615,7 +616,7 @@ async function applyLow(orgId, cardId, who) {
     await D.run("UPDATE donors SET email=?, updated_at=NOW() WHERE id=? AND org_id=?", [lc(r.email), donorId, orgId]);
     summary = `Updated ${d.name}'s email to ${lc(r.email)}.`;
   } else if (c.kind === "note") {
-    const intId = "int_" + crypto.randomUUID().slice(0, 8);
+    const intId = newId("int");
     await D.run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
                  VALUES (?,?,?,?,?,?,?,?,?::jsonb)`,
       [intId, orgId, donorId, "note", scrubBank(c.sentence || "A note arrived."), new Date().toISOString().slice(0, 10), who.id, who.name || null,

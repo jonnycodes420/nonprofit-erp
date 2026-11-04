@@ -30,7 +30,7 @@ const isOrg = d => d && (d.kind === "organisation" || (Array.isArray(d.person_ty
 function mount(ctx) {
 const { actor, checkWriteAccess, query, run, requireAuth, uuid, wrap, orgTz, orgToday } = ctx;
 const app = routers.r0;
-const newId = p => `${p}_${uuid().replace(/-/g, "").slice(0, 12)}`;
+const { newId } = require("../server/shared/newId");   // IDS-1: prefix + "_" + 20 hex
 
 async function funderRow(orgId, id) {
   const [d] = await query(`SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [id, orgId]);

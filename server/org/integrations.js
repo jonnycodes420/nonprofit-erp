@@ -10,6 +10,7 @@
 const express = require("express");
 const auditMw = require("../../middleware/auditTrail");
 const SEALED_MAIL = require("../mail/sealedMail");   // SECURE-3: a synced email's body opens only here
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = {
   r1: express.Router(),
@@ -49,7 +50,7 @@ function logApiCall(req, res, { keyId, orgId, scope }) {
   res.on("finish", () => {
     run(`INSERT INTO api_call_log (id,org_id,key_id,method,path,status,scope_required,entity_id,ms)
          VALUES (?,?,?,?,?,?,?,?,?)`,
-      ["acl_" + uuid().slice(0, 12), orgId, keyId || null, req.method,
+      [newId("acl"), orgId, keyId || null, req.method,
        // The ROUTE, not the filled path: a log of "/api/v1/people/d_abc123"
        // is a list of donor ids in a table nobody guards. The id, when it
        // matters, is its own column.
@@ -124,7 +125,7 @@ app.post("/api-keys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
   const prefix = secret.slice(0, 10);
   const who = actor(req);
   const [me] = await query(`SELECT name FROM users WHERE id=? AND org_id=?`, [req.user.userId, req.user.orgId]);
-  const id = "ak_" + uuid().slice(0, 12);
+  const id = newId("ak");
   await run(`INSERT INTO api_keys (id,org_id,name,prefix,key_hash,scopes,created_by,created_by_name) VALUES (?,?,?,?,?,?::jsonb,?,?)`,
     [id, req.user.orgId, name, prefix, hashApiKey(secret), JSON.stringify(v.value), who.id, me?.name || who.name]);
   await writeAuditLog(req.user.orgId, who.id, me?.name || who.name, "api_key_created", "api_key", id,
@@ -336,7 +337,7 @@ app.post("/webhooks", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
   const W = await webhookMod();
   const v = W.validateEndpoint(req.body || {});
   if (!v.ok) return res.status(400).json({ error: v.errors[0], errors: v.errors });
-  const id = "whe_" + uuid().slice(0, 12);
+  const id = newId("whe");
   const secret = "whsec_" + crypto.randomBytes(24).toString("base64url");
   const who = actor(req);
   await run(
@@ -394,7 +395,7 @@ app.post("/webhooks/deliveries/:id/resend", requireAuth, requireAdmin, checkWrit
     `SELECT id, endpoint_id, event, payload FROM webhook_deliveries WHERE id=? AND org_id=?`,
     [req.params.id, req.user.orgId]);
   if (!d) return res.status(404).json({ error: "Not found" });
-  const id = "whd_" + uuid().slice(0, 12);
+  const id = newId("whd");
   await run(
     `INSERT INTO webhook_deliveries (id,org_id,endpoint_id,event,payload,attempt,next_attempt_at)
      VALUES (?,?,?,?,?::jsonb,0,NOW())`,
@@ -435,7 +436,7 @@ app.post("/api/v1/people", apiLimiter, requireApiKey, requireScope("write:people
       return res.status(200).json({ data: apiPerson(row), created: false });
     }
   }
-  const id = "d_" + uuid().slice(0, 12);
+  const id = newId("d");
   await run(
     `INSERT INTO donors (id,org_id,name,email,phone,city,state,zip,stage,person_types,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,?,?, 'prospect', '["donor"]'::jsonb, ?, ?)`,
@@ -493,7 +494,7 @@ app.post("/api/v1/notes", apiLimiter, requireApiKey, requireScope("write:notes")
   const [d] = await query(`SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [personId, orgId]);
   if (!d) return res.status(404).json({ error: "not_found", message: "Steward has no such person for this organization." });
   const type = ["call", "meeting", "email", "note"].includes(String(req.body?.type)) ? req.body.type : "note";
-  const id = "int_" + uuid().slice(0, 8);
+  const id = newId("int");
   await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by) VALUES (?,?,?,?,?,?,?)`,
     [id, orgId, personId, type, note,
      String(req.body?.date || "").slice(0, 10) || orgToday(await orgTz(orgId)),   // ORG_TZ_SEAM_OK
@@ -588,7 +589,7 @@ app.post("/custom-fields", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
   const existingKeys = (await query(`SELECT key FROM custom_field_defs WHERE org_id=? AND entity=?`, [req.user.orgId, entity])).map(r => r.key);
   const key = generateFieldKey(label, existingKeys);   // immutable forever from here
   const maxPos = await query(`SELECT COALESCE(MAX(position),0) AS mp FROM custom_field_defs WHERE org_id=? AND entity=?`, [req.user.orgId, entity]);
-  const id = "cfd_" + uuid().slice(0, 12);
+  const id = newId("cfd");
   const source = req.body.source ? String(req.body.source).slice(0, 200) : null;
   await run(
     `INSERT INTO custom_field_defs (id,org_id,entity,key,label,type,options,position,created_by,created_by_name,created_source)
@@ -866,7 +867,7 @@ app.post("/settings/inbound-email/assign", requireAuth, checkWriteAccess, wrap(a
   const donors = await query("SELECT id FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL", [String(donorId || ""), req.user.orgId]);
   if (!donors.length) return res.status(404).json({ error: "Not found" });
   const m = rows[0];
-  const iid = "int_" + uuid().slice(0, 8);
+  const iid = newId("int");
   const note = (m.subject || "") + (m.body ? "\n\n" + m.body : "");
   const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
   await run(

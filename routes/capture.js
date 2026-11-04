@@ -3,6 +3,7 @@
 "use strict";
 const express = require("express");
 const K = require("../capture");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 
@@ -113,7 +114,7 @@ app.post("/capture/upload", requireAuth, checkWriteAccess, wrap(async (req, res)
     const [b] = await query("SELECT id FROM capture_batches WHERE id=? AND org_id=?", [batchId, orgId]);
     if (!b) return res.status(404).json({ error: "not_found" });
   } else if (req.body.batch || slipIndex != null) {
-    batchId = "capb_" + ctx.uuid().replace(/-/g, "").slice(0, 12);
+    batchId = newId("capb");
     await run("INSERT INTO capture_batches (id,org_id,created_by,created_by_name) VALUES (?,?,?,?)", [batchId, orgId, who.id, who.name]);
   }
   const cardIds = [], refused = [];
@@ -229,7 +230,7 @@ const METHOD = { check: "Check", daf_grant: "DAF grant", stock_gift: "Stock", ma
 async function newPerson(orgId, p, who) {
   const name = String((p && p.name) || "").trim().slice(0, 200);
   if (!name) return null;
-  const id = "d_" + ctx.uuid().slice(0, 8);
+  const id = newId("d");
   await run(`INSERT INTO donors (id,org_id,name,email,address,city,state,zip,created_by,created_by_name)
              VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [id, orgId, name, String(p.email || "").trim().toLowerCase() || null, p.line1 || null, p.city || null, p.state || null, p.postal || null,

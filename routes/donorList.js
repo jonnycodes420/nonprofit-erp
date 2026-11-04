@@ -16,6 +16,7 @@
 "use strict";
 const express = require("express");
 const DL = require("../donorList");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 const IDS_CAP = 25000;
@@ -92,7 +93,7 @@ app.post("/donors/list-views", requireAuth, requireCrm, wrap(async (req, res) =>
     if (p.error) return res.status(400).json({ error: "bad_filter", sentence: p.error });
     filters = p.where;
   }
-  const id = `lv_${uuid().slice(0, 12)}`;
+  const id = newId("lv");
   const who = actor(req);
   await run(`INSERT INTO donor_list_views (id, org_id, user_id, name, columns, widths, filters, page_size, created_by, created_by_name)
              VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?)`,

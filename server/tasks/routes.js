@@ -9,6 +9,7 @@
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
 const ItemRefs = require("../../itemRefs");   // THREAD-2: the things a sentence names
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = {
   r1: express.Router(),
@@ -102,7 +103,7 @@ async function linkedTaskChange(req, taskId, { done, due }) {
     await run(`UPDATE threads SET due_date=?, original_due_date=COALESCE(original_due_date, due_date) WHERE id=? AND org_id=?`, [due, th.id, orgId]);
   }
   if (done === 1 && !th.closed_at) {
-    const intId = "int_" + uuid().slice(0, 10);
+    const intId = newId("int");
     const today = orgToday(await orgTz(orgId));                   // ORG_TZ_SEAM_OK
     await withTransaction(async client => {
       await runTx(client, `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name,metadata)
@@ -322,7 +323,7 @@ app.post("/tasks", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const x = await taskExtras(req.user.orgId, req.body || {});
   if (x.refused) return res.status(x.status || 400).json(x.refused);
   if (due && !/^\d{4}-\d{2}-\d{2}$/.test(String(due))) return res.status(400).json({ error: "bad_due_date", sentence: "The date must be a day." });
-  const id = "t_" + uuid().slice(0, 8);
+  const id = newId("t");
   await run(
     `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name,
                         kind,due_time,notes,checklist,recur,household_id,grant_id,event_id,campaign_id,recur_parent_id)
@@ -640,7 +641,7 @@ app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, 
     const [have] = await query("SELECT id FROM tasks WHERE recur_parent_id=? AND org_id=?", [t.id, orgId]);
     if (!have) {
       const { today } = await taskDays(orgId);
-      const nid = "t_" + uuid().slice(0, 8);
+      const nid = newId("t");
       await run(
         `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name,
                             kind,due_time,notes,checklist,recur,household_id,grant_id,event_id,campaign_id,recur_parent_id)
@@ -692,7 +693,7 @@ app.post("/tasks/:id/thank", requireAuth, checkWriteAccess, wrap(async (req, res
     const subject = String((req.body && req.body.subject) || "").trim().slice(0, 200);
     const body = String((req.body && req.body.body) || "").trim().slice(0, 8000);
     if (!subject || !body) return res.status(400).json({ error: "A thank-you needs a subject and words." });
-    const who = actor(req), mdId = "md_" + uuid().slice(0, 12);
+    const who = actor(req), mdId = newId("md");
     await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
                VALUES (?,?,?,?,?,?,'pending_review','task',?,?)`,
       [mdId, orgId, t.donor_id, `task-thanks:${t.id}:${Date.now()}`, subject, body, who.id, who.name]);
@@ -745,7 +746,7 @@ app.post("/tasks/:id/email", requireAuth, checkWriteAccess, wrap(async (req, res
   const subject = String((req.body && req.body.subject) || "").trim().slice(0, 200);
   const body = String((req.body && req.body.body) || "").trim().slice(0, 8000);
   if (!subject || !body) return res.status(400).json({ error: "An email needs a subject and words." });
-  const who = actor(req), mdId = "md_" + uuid().slice(0, 12);
+  const who = actor(req), mdId = newId("md");
   await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
              VALUES (?,?,?,?,?,?,'pending_review','task',?,?)`,
     [mdId, orgId, t.donor_id, `task-email:${t.id}:${Date.now()}`, subject, body, who.id, who.name]);
@@ -1426,7 +1427,7 @@ app.post("/note-reminders/:id/send", requireAuth, wrap(async (req, res) => {
   const today = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   await run(
     "INSERT INTO interactions (id, org_id, donor_id, type, note, date, metadata) VALUES (?, ?, ?, 'stewardship', ?, ?, ?)",
-    ["i_" + uuid().slice(0, 8), req.user.orgId, reminder.donor_id, "Personal note sent", today,
+    [newId("i"), req.user.orgId, reminder.donor_id, "Personal note sent", today,
      JSON.stringify({ stewardship_type: "personal_note", detail: (points || []).join(" · ") })]
   ).catch(() => {});
 

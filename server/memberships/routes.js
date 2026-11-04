@@ -9,6 +9,7 @@
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
 const TL = require("../../timelineLine");
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = {
   r1: express.Router(),
@@ -38,7 +39,7 @@ app.post("/membership-levels", requireAuth, requireAdmin, checkWriteAccess, wrap
   await MB_READY;
   const v = MB.validateLevel(req.body || {});
   if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
-  const L = v.level, id = "mbl_" + uuid().slice(0, 8), who = actor(req);
+  const L = v.level, id = newId("mbl"), who = actor(req);
   // A new level sorts last on the public page until somebody moves it.
   const [last] = await query(`SELECT COALESCE(MAX(position), 0)::int AS p FROM membership_levels WHERE org_id=?`, [req.user.orgId]);
   await run(`INSERT INTO membership_levels (id,org_id,name,price,fmv,term,scope,benefits,description,hidden,position,created_by,created_by_name)

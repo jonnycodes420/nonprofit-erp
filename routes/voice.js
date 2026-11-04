@@ -23,6 +23,7 @@ const express = require("express");
 const { anthropicFor, recordAiFallback } = require("../aiClient");
 const orgTime = require("../orgTime");
 const ItemRefs = require("../itemRefs");   // THREAD-2: every name in a result is a link
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 const MEMO_MIN = 4, MEMO_MAX = 4000;
@@ -288,7 +289,7 @@ async function finish(req, m, ids, read) {
   const check = A.validatePlan(plan, { authorization: A.AUTH_DRAFT });
   if (!check.ok) return { error: 422, body: { error: "plan_refused", reasons: check.errors } };
 
-  const insId = "ai_" + uuid().slice(0, 10);
+  const insId = newId("ai");
   await run(`INSERT INTO agent_instructions (id,org_id,text,kind,trigger,status,send_authorization,persona,plan,last_count,created_by,created_by_name,turned_on_by,turned_on_by_name,turned_on_at)
              VALUES (?,?,?,?,NULL,'done',?,?,?,?,?,?,?,?,NOW())`,
     [insId, orgId, m.text, A.KIND_TASK, A.AUTH_DRAFT, NOTES, JSON.stringify(plan), plan.expectedCount || 0,
@@ -306,7 +307,7 @@ async function finish(req, m, ids, read) {
 
   // The yes column.
   const cards = [];
-  const cardId = () => "vc_" + uuid().slice(0, 8);
+  const cardId = () => newId("vc");
   const draftStep = (result.steps || []).find(s => s.tool === "draft_note");
   if (draftStep && draftStep.entityId) cards.push({ id: cardId(), kind: "draft", draftId: draftStep.entityId, donorId: primary,
     title: `Email to ${first(primary)}`, subject: read.email.subject, body: read.email.body, state: "waiting" });
@@ -397,7 +398,7 @@ async function fileMemo(req, res, { text, source, donorId = null, picks = null }
   const gate = await agentGate(orgId);
   const today = orgToday(await orgTz(orgId));
   const save = async (status, read, aiState) => {
-    const id = "vm_" + uuid().slice(0, 10);
+    const id = newId("vm");
     await run(`INSERT INTO voice_memos (id,org_id,text,source,status,ai,donor_ids,read,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?)`,
       [id, orgId, read.filedMemo || read.note || text, source, status, aiState, JSON.stringify(ids), JSON.stringify(read), actor(req).id, actor(req).name]);
     return memoRow(orgId, id);
@@ -521,7 +522,7 @@ async function giftFollowOn(req, m, card, gift, today) {
   const ready = { giftId: gift.id, donorId: card.donorId, cents, title: `Send ${first} the receipt and thank-you`,
     detail: `${V.cents$(cents)} gift, ${dayWords(gift.date || today)}`, closedTaskIds: chores, taskIds: receiptTasks };
   if (waitingFor) Object.assign(waitingFor, ready);
-  else cards.push({ id: "vc_" + uuid().slice(0, 8), kind: "thanks", state: "waiting", ...ready });
+  else cards.push({ id: newId("vc"), kind: "thanks", state: "waiting", ...ready });
   await run("UPDATE voice_memos SET cards=? WHERE id=? AND org_id=?", [JSON.stringify(cards), m.id, orgId]);
 }
 
@@ -817,7 +818,7 @@ async function modelSplit(orgId, text, T) {
 // one Undo like everything else Tell Steward does.
 async function memoFor(req, memo, text, source, person, instructionId = null) {
   if (memo && memo.id) return memo.id;
-  const id = "vm_" + uuid().slice(0, 10);
+  const id = newId("vm");
   await run(`INSERT INTO voice_memos (id,org_id,text,source,status,ai,donor_ids,read,cards,run_ids,instruction_id,created_by,created_by_name)
              VALUES (?,?,?,?,'done','on',?,?,'[]','[]',?,?,?)`,
     [id, req.user.orgId, text, source, JSON.stringify(person ? [person.id] : []), JSON.stringify({ kind: "do" }), instructionId, actor(req).id, actor(req).name]);
@@ -831,8 +832,8 @@ function directCard(d, person) {
   const first = String(person.name || "").split(/\s+/)[0];
   const usd = c => "$" + (c / 100).toLocaleString("en-US");
   return d.kind === "flag"
-    ? { id: "vc_" + uuid().slice(0, 8), kind: "flag", field: d.field, value: d.value, donorId: person.id, state: "waiting", title: `Mark ${first} as do not email?` }
-    : { id: "vc_" + uuid().slice(0, 8), kind: "ask", cents: d.cents, donorId: person.id, state: "waiting", title: `Change ${first}'s ask to ${usd(d.cents)}?` };
+    ? { id: newId("vc"), kind: "flag", field: d.field, value: d.value, donorId: person.id, state: "waiting", title: `Mark ${first} as do not email?` }
+    : { id: newId("vc"), kind: "ask", cents: d.cents, donorId: person.id, state: "waiting", title: `Change ${first}'s ask to ${usd(d.cents)}?` };
 }
 async function markReceiptAsked(orgId, memoId) {
   const m = await memoRow(orgId, memoId);

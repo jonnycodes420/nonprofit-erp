@@ -25,6 +25,7 @@
 const express = require("express");
 const { anthropicFor, recordAiFallback } = require("../aiClient");
 const DM = require("../donorMatch");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 // Set by mount(); the after-change step settles waiting lines through it.
@@ -159,7 +160,7 @@ async function resolveTarget(orgId, kind, heard, today, ahead = false) {
 
 // ── THE ACTIVITY LOG: WHO, WHAT, WHERE, UNDO ────────────────────────────────
 async function logAction(req, a) {
-  const id = "aa_" + uuid().slice(0, 12);
+  const id = newId("aa");
   const who = actor(req);
   await run(`INSERT INTO atlas_actions (id,org_id,request_id,card_id,run_id,kind,state,line,donor_id,place,place_id,link,waits,undoable,actor_id,actor_name,created_by,created_by_name)
              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -330,12 +331,12 @@ async function execute(req, m, steps, { today, ai }) {
   const names = new Map((await query("SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?::text[])",
     [orgId, [...new Set(steps.flatMap(s => [s.donorId, s.otherId]).filter(Boolean))]])).map(r => [r.id, r.name]));
   const nm = id => names.get(id) || "them";
-  const insId = "ai_" + uuid().slice(0, 10);
+  const insId = newId("ai");
   await run(`INSERT INTO agent_instructions (id,org_id,text,kind,status,send_authorization,persona,created_by,created_by_name,turned_on_by,turned_on_by_name,turned_on_at)
              VALUES (?,?,?,'task','done','draft','atlas',?,?,?,?,NOW())`, [insId, orgId, m.text, actor(req).id, actor(req).name, actor(req).id, actor(req).name]);
   await run("UPDATE voice_memos SET instruction_id=? WHERE id=? AND org_id=?", [insId, m.id, orgId]);
   const base = { requestId: m.id };
-  const cardId = () => "vc_" + uuid().slice(0, 8);
+  const cardId = () => newId("vc");
   const log = a => logAction(req, { ...base, ...a });
   const refusedClients = new Set();
   const missing = new Set();
@@ -553,7 +554,7 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const read = await readSteps(orgId, text, { today, onPage: onPage ? onPage.name : null });
   const t1 = Date.now();
   const { steps, questions } = await resolveAll(orgId, read.steps, { today, onPage });
-  const id = "vm_" + uuid().slice(0, 10);
+  const id = newId("vm");
   const source = req.body.source === "speech" ? "atlas_speech" : "atlas";
   const spoke = questions.length ? (questions.length === 1 ? "One question first, then I'll do all of it." : `${questions.length} questions first, then I'll do all of it.`) : null;
   await run(`INSERT INTO voice_memos (id,org_id,text,source,status,ai,donor_ids,read,cards,run_ids,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,'[]','[]',?,?)`,

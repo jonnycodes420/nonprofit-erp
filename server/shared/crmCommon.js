@@ -95,6 +95,7 @@ function portfolioMembership({ orgId, userId, scope = "mine", assignedTo = null,
 // OWNER, which take an admin and a teammate in the same organisation. Every
 // one is audited by the trail above every router; the verbs are named here.
 const TF = require("../../twoFactor");
+const { newId } = require("./newId");   // IDS-1: every new row id is prefix + 20 hex
 
 // THE ORG'S STEWARD START DATE — 0.6's answer depends on it. A thank-you is not
 // owed for a gift that arrived before the product did: an imported file is
@@ -309,7 +310,7 @@ async function cfEvent(req, orgId, entity, event, { fieldId, entityId, detail } 
   await run(
     `INSERT INTO custom_field_events (id,org_id,entity,field_id,entity_id,event,detail,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?)`,
-    ["cfe_" + uuid().slice(0, 12), orgId, entity, fieldId || null, entityId || null, event,
+    [newId("cfe"), orgId, entity, fieldId || null, entityId || null, event,
      JSON.stringify(detail || {}), actor(req).id, actor(req).name]
   );
 }

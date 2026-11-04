@@ -13,6 +13,7 @@
 //      has no email or the same one. A different address under the same name
 //      is somebody else: two Maria Lopezes are two people.
 const { query } = require("./db");
+const { newId } = require("./server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 async function findPersonId(orgId, { email, name } = {}, q = query) {
   const e = String(email || "").trim().toLowerCase();
@@ -43,7 +44,7 @@ async function findOrCreateGuest(orgId, name, who, q = query) {
   if (!n) return null;
   const known = await findPersonId(orgId, { name: n }, q);
   if (known) return known;
-  const id = "d_" + require("crypto").randomUUID().replace(/-/g, "").slice(0, 10);
+  const id = newId("d");
   await q(`INSERT INTO donors (id,org_id,name,stage,status,tags,person_types,created_by,created_by_name)
            VALUES (?,?,?,'prospect','active','[]','["other"]'::jsonb,?,?)`,
     [id, orgId, n, who.id, who.name]);

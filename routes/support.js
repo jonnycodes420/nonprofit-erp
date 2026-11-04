@@ -18,6 +18,7 @@
 "use strict";
 const express = require("express");
 const E = require("../support/engine");
+const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
 
@@ -156,11 +157,11 @@ app.post("/support/handoff", requireAuth, wrap(async (req, res) => {
   const mail = E.handoffEmail({ messages, org: o, user: u, screen, reason });
   // The hand-off is a ticket in the super-admin list, so Jonathan's reply
   // reaches them from there, and the email tells him it arrived.
-  const id = "tkt_" + uuid().slice(0, 10), who = actor(req);
+  const id = newId("tkt"), who = actor(req);
   await run(`INSERT INTO support_tickets (id,org_id,user_id,user_email,user_name,subject,screen,browser,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [id, o.id, u.id, u.email, u.name, mail.subject.replace(/^\[Support\] [^:]*: /, "").slice(0, 140), screen, String(req.headers["user-agent"] || "").slice(0, 300), who.id, who.name]);
   await run(`INSERT INTO support_ticket_messages (id,ticket_id,from_kind,body,created_by,created_by_name) VALUES (?,?,?,?,?,?)`,
-    ["tkm_" + uuid().slice(0, 10), id, "customer", mail.text.slice(0, 6000), who.id, who.name]);
+    [newId("tkm"), id, "customer", mail.text.slice(0, 6000), who.id, who.name]);
   const emailed = await mailJonathan(`[${id}] ${mail.subject}`, mail.text, u.email);
   if (!emailed) console.error(`[support] hand-off ${id} stored, but the email to Jonathan was not delivered`);
   res.status(201).json({ id, emailed, sentence: `Sent to Jonathan, with this whole conversation. He is a person, not this assistant, and he will reply to ${u.email} ${REPLY_PROMISE()}.` });

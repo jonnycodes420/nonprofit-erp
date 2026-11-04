@@ -9,6 +9,7 @@
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
+const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // SCALE-2: org-wide figures are stored per org and served until something changes.
 const OS = require("../../orgSummary");
 const SEALED_MAIL = require("../mail/sealedMail");   // SECURE-3: a synced email's body opens only here
@@ -231,7 +232,7 @@ app.post("/saved-dashboards", requireAuth, checkWriteAccess, wrap(async (req, re
   const v = B.validateDashboard(req.body || {});
   if (!v.ok) return res.status(400).json({ error: v.errors.join(" "), errors: v.errors });
   const [u] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
-  const id = "dash_" + uuid().slice(0, 10);
+  const id = newId("dash");
   await run(`INSERT INTO saved_dashboards (id,org_id,name,tiles,filters,shared,owner_id,owner_name,created_by,created_by_name)
              VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [id, req.user.orgId, v.value.name, JSON.stringify(v.value.tiles), JSON.stringify(v.value.filters),
@@ -284,7 +285,7 @@ app.post("/board", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { name, role, employer, term, givingLevel, committees, attendance } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
-  const id = "b_" + uuid().slice(0, 8);
+  const id = newId("b");
   await run(
     "INSERT INTO board_members (id,org_id,name,role,employer,term,giving_level,committees,attendance,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
     [id, req.user.orgId, name, role || "Member", employer || "", term || "",
