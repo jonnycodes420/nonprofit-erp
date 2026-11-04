@@ -283,6 +283,9 @@ function preloaderAllowed() {
 (async () => {
   await previewLeg();
   await workbookImportLeg({ ok, timed, q, login: require("./helpers").login, base: BASE, importWorkSettled });   // the helper (a `login` below shadows it)
+  // SCORES-1: an import's one full score pass runs on the queue a moment after
+  // its last chunk; the 25k org's pass is done before Home is timed.
+  await require("./helpers").drainQueue({ scores: true, timeout: 300000 });
   if (fs.existsSync(path.join(DIST, "app.html"))) preloaderAllowed();
   const why = (() => {
     if (!fs.existsSync(path.join(DIST, "index.html"))) return "client/dist not built (bash scripts/ops/build-local-dist.sh)";

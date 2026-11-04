@@ -176,7 +176,9 @@ async function afterChangeNow(orgId, donorIds, { door, history = false, fire = n
     const r = await rhythmFor(orgId, ids, { door: stamp, today });
     result.becameLate = r.becameLate;
     result.crossings = await groupCrossings(orgId, ids, { door: stamp, today, fire: history ? null : fire });
-    deps.scheduleScores(orgId);
+    // SCORES-1: the people it touched are rescored; history (an import, a
+    // first read) asks for the one full pass, folded to the import's end.
+    await deps.scheduleScores(orgId, history ? null : ids);
     // SCALE-2: the org's stored Home figures are recomputed off the request path.
     require("./orgSummary").scheduleRefresh(orgId);
     // RECONCILE-1: a door that writes gifts re-checks the org's old reports

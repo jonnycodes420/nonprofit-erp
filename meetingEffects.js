@@ -257,7 +257,7 @@ async function revertOne(e, why, actorId, actorName) {
 async function revertMeeting(eventId, { actorId = "system:meetings", actorName = "Meetings", why = "cancelled" } = {}) {
   const rows = await query(`SELECT * FROM meeting_effects WHERE calendar_event_id=?`, [eventId]);
   for (const e of rows) await revertOne(e, why, actorId, actorName);
-  if (rows.length) changed(rows[0].org_id);
+  if (rows.length) changed(rows[0].org_id, rows.map(e => e.donor_id));   // SCORES-1: the people it touched
   return { reverted: rows.length };
 }
 
