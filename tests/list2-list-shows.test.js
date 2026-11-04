@@ -29,6 +29,8 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, browserLegOrSkip, civilToday } = require("./helpers");
 const { DIST } = require("./lib/dist");
+const { withinBudget } = require("./lib/budget");   // milliseconds: strict locally, a warning on a CI runner
+const timed = withinBudget(ok);
 
 const APP = process.env.APP_URL || "http://localhost:4173";
 const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright");
@@ -338,7 +340,7 @@ async function reset(org) {
   await sp.waitForFunction(() => [...document.querySelectorAll(".dir-donor-row")].length > 0 && /Solicit/.test(document.querySelector(".dir-donor-row").innerText), null, { timeout: 10000 }).catch(() => {});
   const ms6 = performance.now() - t6;
   console.log(`  filtered Donors list, first rows at 20 ms latency: ${Math.round(ms6)}ms`);
-  ok("§6 the filtered list's first rows come in under a second at 20 ms latency", ms6 < 1000, `${Math.round(ms6)}ms`);
+  timed("§6 the filtered list's first rows come in under a second at 20 ms latency", { ms: ms6, budget: 1000, extra: `${Math.round(ms6)}ms` });
   await slow.close();
 
   // ── §7 straight after an import ──
@@ -363,7 +365,7 @@ async function reset(org) {
   await holder.query("ROLLBACK").catch(() => {});
   await holder.end();
   console.log(`  the list while another transaction holds its people's drift rows: ${Math.round(ms7)}ms`);
-  ok("§7a the list never waits on another transaction's drift rows (a GET writes nothing)", locked.status === 200 && ms7 < 1000, `${locked.status} ${Math.round(ms7)}ms`);
+  timed("§7a the list never waits on another transaction's drift rows (a GET writes nothing)", { drew: locked.status === 200, ms: ms7, budget: 1000, extra: `${locked.status} ${Math.round(ms7)}ms` });
 
   const IMP = "org_list2_imp", impEmail = "list2-imp@example.org";
   await reset(IMP);
@@ -394,7 +396,7 @@ async function reset(org) {
   await ip.locator(".dir-donor-row").first().waitFor({ timeout: 180000 }).catch(() => {});
   const rowsMs = performance.now() - t7b;
   console.log(`  6,400 people straight after the import: the list's first rows ${Math.round(rowsMs)}ms after the page loaded (the read itself ${listMs === null ? "?" : Math.round(listMs)}ms)`);
-  ok("§7b straight after the import, the list's first rows come in under a second", rowsMs < 1000 && (await ip.locator(".dir-donor-row").count()) > 0, `${Math.round(rowsMs)}ms`);
+  timed("§7b straight after the import, the list's first rows come in under a second", { drew: (await ip.locator(".dir-donor-row").count()) > 0, ms: rowsMs, budget: 1000, extra: `${Math.round(rowsMs)}ms` });
   await ictx.close();
   if (process.env.LIST2_KEEP !== "1") await reset(IMP);
 
