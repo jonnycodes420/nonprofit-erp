@@ -1727,8 +1727,10 @@ async function agentRunPlan(orgId, instruction, { userId, confirmed = {}, auth =
     // its own undo, because the steps now write through the screens' routes
     // (on the pool) and a transaction held around them would lock the rows
     // those routes wait for. A step that fails is said, and the ones before it
-    // stay done and undoable.
-    await require("../db").withClient(async (txClient) => {
+    // stay done and undoable. LOAD-1: and no connection held across the run
+    // either: a step calls the routes over HTTP (agentCall.js), each of which
+    // needs a connection of its own, so a held one starved the pool.
+    await require("../db").onThePool(async (txClient) => {
       const ctx = { client: txClient, orgId, runId, instructionId: instruction.id, userId, today,
                     auth, instructionText: String(instruction.text || "").slice(0, 240),
                     donorById: id => byId.get(id) || null };

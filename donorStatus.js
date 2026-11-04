@@ -149,7 +149,7 @@ function statusSql(orgId, today, cuts, { donorId = null } = {}) {
            ${held.sql} AS pledge_held,
            (a.this_cy AND a.last_cy) AS retained
       FROM (
-        SELECT g.donor_id,
+        SELECT g.donor_id, g.org_id,
                ROUND(COALESCE(SUM(g.amount) FILTER (WHERE LEFT(g.date,10) BETWEEN ? AND ?), 0)::numeric, 2) AS last12,
                ${FG.FIRST_ON_FILE_AGG("g")} AS first_date,
                MAX(LEFT(g.date,10)) FILTER (WHERE g.amount > 0) AS last_date,
@@ -169,7 +169,7 @@ function statusSql(orgId, today, cuts, { donorId = null } = {}) {
          -- TRUTH-1: a soft or matching credit row is recognition, never a
          -- gift: it neither keeps someone off Lapsed nor counts toward a level.
          WHERE g.org_id = ? AND LEFT(g.date,10) <= ? AND ${NOT_CREDIT("g")}${donorId ? " AND g.donor_id = ?" : ""}
-         GROUP BY g.donor_id
+         GROUP BY g.donor_id, g.org_id
         HAVING BOOL_OR(g.amount > 0)
       ) a`;
   return { sql, args };

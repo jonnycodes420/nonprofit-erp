@@ -120,7 +120,34 @@ function poolReport(webPool, workerPool, poolerSize = POOLER_SIZE()) {
   }
   return { level, detail, worst, poolerSize };
 }
-module.exports = { mailboxReport, smokeVerdict, queueReport, workerReport, poolReport };
+// LOAD-1 · the last nightly load run (.github/workflows/load-nightly.yml):
+// when it ran, pass or fail, and the slowest route, from the run and its
+// load-summary artifact. `run` is gh's { conclusion, createdAt, url }.
+function loadReport(run, summary, now = Date.now()) {
+  if (!run) return { level: null, detail: "no nightly load run yet (gh workflow run load-nightly.yml)" };
+  if (!run.conclusion) return { level: null, detail: `running since ${agoWords(run.createdAt, now)}` };
+  const pass = run.conclusion === "success";
+  const top = summary && Array.isArray(summary.rows) && summary.rows[0];
+  const slowest = top ? `slowest ${top.route} p95 ${top.p95} ms` : "no summary kept";
+  const profile = summary && summary.profile ? ` · profile open p95 ${summary.profile.p95} ms` : "";
+  const misses = !pass && summary && summary.misses && summary.misses.length ? ` · misses: ${summary.misses.slice(0, 3).join("; ")}` : "";
+  return { level: pass ? "ok" : "red", detail: `last run ${agoWords(run.createdAt, now)} · ${slowest}${profile}${misses}` };
+}
+function lastLoadRun() {
+  const { execFileSync } = require("child_process");
+  const gh = (args) => { try { return execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 20000 }); } catch { return null; } };
+  const runs = gh(["run", "list", "--workflow", "load-nightly.yml", "--limit", "1", "--json", "databaseId,conclusion,createdAt,url"]);
+  const run = runs ? (JSON.parse(runs)[0] || null) : undefined;
+  if (!run) return { run: run === undefined ? undefined : null, summary: null };
+  const dir = require("fs").mkdtempSync(require("path").join(require("os").tmpdir(), "steward-load-"));
+  let summary = null;
+  if (gh(["run", "download", String(run.databaseId), "-n", "load-summary", "-D", dir]) !== null) {
+    try { summary = JSON.parse(require("fs").readFileSync(require("path").join(dir, "load-summary.json"), "utf8")); } catch { /* no summary kept */ }
+  }
+  require("fs").rmSync(dir, { recursive: true, force: true });
+  return { run, summary };
+}
+module.exports = { mailboxReport, smokeVerdict, queueReport, workerReport, poolReport, loadReport };
 
 if (require.main === module) (async () => {
   // ── local + origin ─────────────────────────────────────────────────────────
@@ -236,6 +263,8 @@ if (require.main === module) (async () => {
   const wr = backendSha ? workerReport(worker, originMain) : { ok: null, detail: "backend unreachable" };
   row("worker", wr.ok === true ? `${GREEN}ok${RESET}` : wr.ok === false ? `${RED}NOT ALIGNED${RESET}` : `${YELLOW}unverified${RESET}`, wr.detail);
   const pr = backendSha ? poolReport(webPool, worker && worker.pool) : { level: null, detail: "backend unreachable" };
+  const lr = (() => { const { run, summary } = lastLoadRun(); return run === undefined ? { level: null, detail: "gh could not list the runs" } : loadReport(run, summary); })();
+  row("load", lr.level === "ok" ? `${GREEN}ok${RESET}` : lr.level === "red" ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, lr.detail);
   row("db pool", pr.level === "ok" ? `${GREEN}ok${RESET}` : pr.level === "yellow" ? `${YELLOW}over 80% of the pooler${RESET}` : pr.level === "red" ? `${RED}OVER THE POOLER${RESET}` : `${YELLOW}unverified${RESET}`, pr.detail);
 
   // ── divergence flags (loud) ───────────────────────────────────────────────────

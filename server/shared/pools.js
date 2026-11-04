@@ -2,6 +2,7 @@
 // pool (moved here from db.js, which requires this file and re-exports it).
 "use strict";
 const { Pool } = require("pg");
+const LIMITS = require("./requestLimits");
 
 // POOL-1 · ONE CONNECTION BUDGET PER PROCESS. Prod reaches its database
 // through Supabase's pooler in session mode, which holds a fixed number of
@@ -56,11 +57,14 @@ function setPoolReady() {
   if (!p.listenerCount("error")) p.on("error", err => console.error("[db] set-wise pool connection dropped:", err.message));
   return p;
 }
+// LOAD-1: under a web request's limit and cancel, like every main-pool read.
 async function querySetwise(sql, params = []) {
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
-  const result = await setPoolReady().query(pgSql, params);
-  return result.rows;
+  const client = await LIMITS.checkout(setPoolReady());
+  try { return (await client.query(pgSql, params)).rows; }
+  catch (e) { throw LIMITS.translate(e); }
+  finally { LIMITS.release(client); }
 }
 
 // What /health says about this process's connections, from pg's own counters
@@ -68,7 +72,9 @@ async function querySetwise(sql, params = []) {
 // first read).
 function stats(main) {
   return { max: POOL_MAX, total: main.totalCount, idle: main.idleCount, waiting: main.waitingCount,
-    set: { max: SET_POOL_MAX, total: _setPool ? _setPool.totalCount : 0 }, name: PROCESS_NAME };
+    set: { max: SET_POOL_MAX, total: _setPool ? _setPool.totalCount : 0 }, name: PROCESS_NAME,
+    // LOAD-1: waits for a connection that gave up, statements stopped at their limit, reads cancelled.
+    limits: LIMITS.stats() };
 }
 
 module.exports = { POOL_MAX, SET_POOL_MAX, PROCESS_NAME, APP_NAME, isPoolFull, setPool, setPoolReady, querySetwise, stats };
