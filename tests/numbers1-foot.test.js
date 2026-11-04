@@ -300,6 +300,13 @@ async function runSequence(seq, today, log) {
     try { did = await step(o, s); }
     catch (e) { return { at: i, error: e.message }; }
     if (log) log.push(did);
+    // STATUS-1: what a step leaves behind the screen (an import's recent
+    // gifts, the after-change step that writes each person's rhythm) is done
+    // before the checker reads, or it reads the tags and the rhythm a moment
+    // apart and calls a half-written answer a disagreement (IDS-1's seed
+    // 407634524, sequence 66).
+    await require("./helpers").importWorkSettled(o.org);
+    await require("./lib/drainQueue").drainQueue(q, { orgId: o.org });
     const res = await checkOrg(o.org, { screens: NUM.screens });
     if (res.problems.length) return { at: i, problems: res.problems };
   }
@@ -386,7 +393,14 @@ async function shrink(seq, today) {
     for (let i = 0; i <= n; i++) seq = Array.from({ length: int(t, 1, 7) }, () => ({ kind: pick(t, KINDS), seed: Math.floor(t() * 1e9) }));
     return seq;
   };
-  for (const [seed, n, what] of [[695574508, 146, "a matching gift credit dated before an imported first gift"]]) {
+  // STATUS-1: seed 407634524, sequence 66 failed IDS-1's battery once (a lapse
+  // disagreement, the run crossing midnight UTC). Replayed at 02:11 UTC and
+  // pinned at 00:00:30 UTC (database shifted) it was green both times; its
+  // steps leave work behind the screen (the import, the after-change step), and
+  // the checker could read the tags and the rhythm a moment apart. Every step
+  // now waits for that work before the checker reads.
+  for (const [seed, n, what] of [[695574508, 146, "a matching gift credit dated before an imported first gift"],
+    [407634524, 66, "an undated gift, then a person gone quiet, read after midnight UTC"]]) {
     const log = [];
     const why = await runSequence(sequenceOf(seed, n), today, log);
     ok(`§3a seed ${seed} sequence ${n} (${what}) keeps every rule`, !why, { steps: log, why });

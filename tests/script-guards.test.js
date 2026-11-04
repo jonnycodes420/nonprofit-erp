@@ -64,6 +64,9 @@ const GUARDED_WRITERS = [
   // NUMBERS-1: moves gifts credited outside their campaign's dates to no campaign.
   // Dry run by default; --apply writes through writerDbUrl, one audit row per gift.
   "numbers1-campaign-window",
+  // STATUS-1: puts stored donor_rhythm rows on the one rhythm. Dry run by
+  // default; --apply writes through writerDbUrl (derived rows, no journeys).
+  "status1-rhythm-recompute",
   // HARDEN-2: closes the deletion records of people already back, one org
   // (--org required). Dry run by default; --apply writes through writerDbUrl.
   "close-stale-deletions",

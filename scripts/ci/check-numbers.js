@@ -250,7 +250,8 @@ async function checkOrg(orgId, opts = {}) {
     // FIX-51: the Communications segment's people are the tags' Lapsing and Lapsed.
     const quiet = await DS.quietIds(orgId, today);
     // INSIGHTS-1: lapsing respects the person's rhythm (lapseRule.js), so the check reads it too
-    const rhythms = new Map((await query(`SELECT donor_id, rhythm, expected_next FROM donor_rhythm WHERE org_id = ?`, [orgId])).map(r => [r.donor_id, r]));
+    // STATUS-1: the stored answer the tags read (shared/numbers/lapse.js ON_TIME_THROUGH), the same fragment
+    const rhythms = new Map((await query(`SELECT d.id AS donor_id, ${require("../../shared/numbers/lapse").ON_TIME_THROUGH("d.id")} AS expected_next FROM donors d WHERE d.org_id = ?`, [orgId])).map(r => [r.donor_id, r]));
     // FIX-60: a pledge is giving activity (lapseRule.js pledgeHold), so the check reads pledges too
     const pledgesOf = await require("../../shared/numbers/lapse").pledgesFor(query, orgId, null, today);
     for (const [donorId, gs] of byDonor) {

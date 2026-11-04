@@ -49,13 +49,18 @@ function bounds(today) {
 }
 
 // INSIGHTS-1 (Jonathan, 27 Oct): lapsing respects rhythm, the way Drift
-// does. A person whose rhythm (donor_rhythm, afterChange.js) is yearly or
-// year-end and whose expected next gift has not come yet is not lapsing:
+// does. A person whose expected next gift has not come yet is not lapsing:
 // their usual time is still ahead. Lapsed (a whole year with no gift) is
-// unchanged.
-const YEARLY = ["yearly", "year_end"];
-const usualTimeAhead = (rhythm, today) => !!(rhythm && YEARLY.includes(rhythm.rhythm) && rhythm.expected_next
-  && String(rhythm.expected_next).slice(0, 10) >= String(today).slice(0, 10));
+// unchanged. STATUS-1: the expected date is the one rhythm's
+// (shared/numbers/rhythm.js), stored by afterChange.js as
+// donor_rhythm.expected_next or passed as its answer ({ expectedNext }), so
+// "not lapsing" here and "on time" in the profile's sentence are one test. It
+// was yearly and year-end rhythms only, so a person whose usual time was still
+// ahead could read Lapsing beside a sentence that said they were on time.
+const usualTimeAhead = (rhythm, today) => {
+  const exp = rhythm && (rhythm.expectedNext || rhythm.expected_next);
+  return !!exp && String(exp).slice(0, 10) >= String(today).slice(0, 10);
+};
 
 // FIX-60 · A FRESH PLEDGE IS ACTIVITY. Somebody who pledged $15,000 at the
 // dinner twelve days ago read Lapsed: the rule read gifts only. Now:

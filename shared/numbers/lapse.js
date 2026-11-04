@@ -81,10 +81,20 @@ function holdSql(idExpr, today) {
   return { sql: `EXISTS (SELECT 1 FROM pledges pp WHERE (pp.donor_id = ${idExpr} OR pp.donor_id IN ${LINKED(idExpr)})
       AND (pp.status = 'open' OR (pp.status = 'fulfilled' AND ${PLEDGE_MADE} >= ?)))`, args: [bounds(today).lapsingFrom] };
 }
-// Their usual time to give is still ahead (a yearly or year-end rhythm).
+// STATUS-1 · THE STORED ANSWER TO "UNTIL WHEN ARE THEY ON TIME?". The one
+// rhythm (shared/numbers/rhythm.js) is stored twice, each time from the gifts:
+// donor_rhythm.expected_next by the after-change step (every change to a
+// person) and donor_scores.on_time_through by the scores (nightly, and after
+// every gift or touch). The newer of the two is the answer, so a list never
+// reads one that a later write has replaced. NULL: no pattern stored.
+const ON_TIME_THROUGH = idExpr => `(SELECT x.d FROM (
+      SELECT LEFT(rr.expected_next::text, 10) AS d, rr.computed_at AS t FROM donor_rhythm rr WHERE rr.donor_id = ${idExpr}
+      UNION ALL SELECT ds.on_time_through, ds.computed_at FROM donor_scores ds WHERE ds.donor_id = ${idExpr}) x
+    ORDER BY x.t DESC NULLS LAST LIMIT 1)`;
+// Their usual time to give is still ahead: that day is today or later.
+// STATUS-1: any rhythm, not only yearly and year-end (lapseRule.usualTimeAhead).
 function rhythmAheadSql(idExpr, today) {
-  return { sql: `EXISTS (SELECT 1 FROM donor_rhythm rr WHERE rr.donor_id = ${idExpr} AND rr.rhythm IN ('yearly','year_end')
-                  AND rr.expected_next IS NOT NULL AND LEFT(rr.expected_next::text, 10) >= ?)`, args: [day(today)] };
+  return { sql: `COALESCE(${ON_TIME_THROUGH(idExpr)} >= ?, false)`, args: [day(today)] };
 }
 
 // The three states as conditions. Without `idExpr` there is no person to hold
@@ -148,4 +158,4 @@ async function pledgesFor(query, orgId, donorId, today) {
   return by;
 }
 
-module.exports = { LAST_ON_RECORD, reengageSql, UNIT_LINK_TYPES, LINKED, linkedLastSql, PLEDGE_MADE, overdueSql, holdSql, rhythmAheadSql, lapsedSql, lapsingSql, pledgeHeldSql, stateSql, sql, pledgesFor };
+module.exports = { ON_TIME_THROUGH, LAST_ON_RECORD, reengageSql, UNIT_LINK_TYPES, LINKED, linkedLastSql, PLEDGE_MADE, overdueSql, holdSql, rhythmAheadSql, lapsedSql, lapsingSql, pledgeHeldSql, stateSql, sql, pledgesFor };

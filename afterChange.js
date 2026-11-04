@@ -100,8 +100,9 @@ async function rhythmFor(orgId, ids, { door, today }) {
   const { query } = deps;
   const year = Number(String(today).slice(0, 4));
   const rows = await query(
-    `SELECT donor_id, array_agg(date ORDER BY date) AS dates, array_agg(amount ORDER BY date) AS amounts
-       FROM gifts WHERE org_id=? AND donor_id = ANY(?) AND amount > 0 GROUP BY donor_id`, [orgId, ids]);
+    // STATUS-1: money only (no soft or matching credit row), as the profile's live read (engagement.givingRows)
+    `SELECT g.donor_id, array_agg(g.date ORDER BY g.date) AS dates, array_agg(g.amount ORDER BY g.date) AS amounts
+       FROM gifts g WHERE g.org_id=? AND g.donor_id = ANY(?) AND g.amount > 0 AND ${require("./shared/numbers/money").MONEY("g")} GROUP BY g.donor_id`, [orgId, ids]);
   const byDonor = new Map(rows.map(r => [r.donor_id, r]));
   const { map: driftMap } = await deps.computeDriftForDonors(orgId, { donorIds: ids });
   const prior = new Map((await query(
@@ -123,7 +124,8 @@ async function rhythmFor(orgId, ids, { door, today }) {
     const d = driftMap.get(id);
     const state = d ? d.state : a.state;
     if (state === "drifting" && prior.get(id) !== "drifting") becameLate.push(id);
-    vals.push(orgId, id, rhythm, a.cadenceDays || null, a.expectedNext || null, state,
+    // STATUS-1: the stored date is the last day they are on time (rhythm.js onTimeThrough), which today cannot move
+    vals.push(orgId, id, rhythm, a.cadenceDays || null, a.onTimeThrough || a.expectedNext || null, state,
               Math.round(thisYear * 100) / 100, Math.round(lastYear * 100) / 100, largest, door, today,
               ACTOR.id, ACTOR.name);
     tuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?)");
