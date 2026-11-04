@@ -169,6 +169,9 @@ async function step(o, s) {
       await recordGift({ orgId: o.org, donorId: donor, amount, date: null, undated: true, history: true, alreadyThanked: true, post: false,
                          campaignId: campaignId || null, type: "cash", paymentMethod: "Check", actorId: "system:test", actorName: "test", timeline: false });
       await require("../afterChange").afterChange(o.org, [donor], { door: "test", history: true });
+      // STATUS-1: the step's rhythm is written by the queue's handler; the
+      // checker reads it, so wait for it (the api() steps already do).
+      await require("./lib/drainQueue").drainQueue(q, { orgId: o.org });
       return `undated gift $${amount} to ${donor.slice(-1)}${campaignId ? ` for ${campaignId.split("_").pop()}` : ""}`;
     }
     case "dateUndated": {
@@ -386,7 +389,13 @@ async function shrink(seq, today) {
     for (let i = 0; i <= n; i++) seq = Array.from({ length: int(t, 1, 7) }, () => ({ kind: pick(t, KINDS), seed: Math.floor(t() * 1e9) }));
     return seq;
   };
-  for (const [seed, n, what] of [[695574508, 146, "a matching gift credit dated before an imported first gift"]]) {
+  // STATUS-1: seed 407634524, sequence 66 failed IDS-1's battery once (a lapse
+  // disagreement, the run crossing midnight UTC). Replayed at 02:11 UTC and
+  // pinned at 00:00:30 UTC (database shifted) it was green both times; its
+  // "undated" step wrote the rhythm through the queue without waiting, so the
+  // checker could read a half-written answer. That step now drains the queue.
+  for (const [seed, n, what] of [[695574508, 146, "a matching gift credit dated before an imported first gift"],
+    [407634524, 66, "an undated gift, then a person gone quiet, read after midnight UTC"]]) {
     const log = [];
     const why = await runSequence(sequenceOf(seed, n), today, log);
     ok(`§3a seed ${seed} sequence ${n} (${what}) keeps every rule`, !why, { steps: log, why });

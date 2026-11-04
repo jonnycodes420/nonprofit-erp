@@ -81,9 +81,11 @@ function holdSql(idExpr, today) {
   return { sql: `EXISTS (SELECT 1 FROM pledges pp WHERE (pp.donor_id = ${idExpr} OR pp.donor_id IN ${LINKED(idExpr)})
       AND (pp.status = 'open' OR (pp.status = 'fulfilled' AND ${PLEDGE_MADE} >= ?)))`, args: [bounds(today).lapsingFrom] };
 }
-// Their usual time to give is still ahead (a yearly or year-end rhythm).
+// Their usual time to give is still ahead: the one rhythm's expected next
+// gift (shared/numbers/rhythm.js, stored by afterChange.js) is today or later.
+// STATUS-1: any rhythm, not only yearly and year-end (lapseRule.usualTimeAhead).
 function rhythmAheadSql(idExpr, today) {
-  return { sql: `EXISTS (SELECT 1 FROM donor_rhythm rr WHERE rr.donor_id = ${idExpr} AND rr.rhythm IN ('yearly','year_end')
+  return { sql: `EXISTS (SELECT 1 FROM donor_rhythm rr WHERE rr.donor_id = ${idExpr}
                   AND rr.expected_next IS NOT NULL AND LEFT(rr.expected_next::text, 10) >= ?)`, args: [day(today)] };
 }
 

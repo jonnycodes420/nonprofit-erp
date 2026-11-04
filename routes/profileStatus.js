@@ -14,6 +14,7 @@ const DS = require("../donorStatus");
 const FS = require("../figureSources");
 const money = require("../money");
 const drift = require("../drift");
+const RHY = require("../shared/numbers/rhythm");   // STATUS-1: the one rhythm
 const E = require("../engagement");
 const DT = require("../donorTags");
 const refusedLine = n => (n === 1 ? "One row from your import couldn't be read." : `${n} rows from your import couldn't be read.`);
@@ -58,15 +59,23 @@ async function closeness(orgId, d, today, w) {
   const [ytdRows] = await query(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 AND LEFT(date,10) BETWEEN ? AND ?`,
     [orgId, d.id, w.cyFrom, today]);
   if (ytdRows.n > 0) facts.push({ text: `gave ${times(ytdRows.n)} this fiscal year`, source: ytd });
-  // WIRE-1 addendum: their own rhythm, said by drift.js's rule, so "gave once
-  // this year" reads as the pattern it is for a once-a-year donor.
-  if (key === "on_track") {
+  // WIRE-1 addendum: their own rhythm, said by the one rhythm's rule
+  // (shared/numbers/rhythm.js), so "gave once this year" reads as the pattern
+  // it is for a once-a-year donor. STATUS-1: the sentence and the word read
+  // the same answer. On track says the pattern only ("latest gift on time" is
+  // cut: it read as a promise about the next one); a person whose expected
+  // gift has passed is told by how much, in whole weeks or months, and is
+  // never On track. When Drift's own line is on the profile (drifting), that
+  // line says it, so it is not said twice.
+  if (key === "on_track" || key === "cooling") {
     const gs = await query(`SELECT LEFT(date,10) AS date, amount::text AS amount FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 AND LEFT(date,10) <= ?`,
       [orgId, d.id, today]);
     const a = drift.assessDrift(gs.map(g => ({ date: g.date, amount: Number(g.amount) })), today);
     const rhythm = a.seasonal && a.seasonal.kind === "month" ? `every ${MONTHS[a.seasonal.month - 1]}` : drift.humanCadence(a.cadenceDays);
-    if (a.state === "ok" && rhythm && a.firstGiftDate) {
-      facts.unshift({ text: `gives ${rhythm}, latest gift on time`, source: { key: "donor-gifts-between", params: { donor: d.id, from: a.firstGiftDate, to: today } } });
+    const src = a.firstGiftDate ? { key: "donor-gifts-between", params: { donor: d.id, from: a.firstGiftDate, to: today } } : null;
+    if (key === "on_track" && a.onTime && rhythm && src) facts.unshift({ text: `gives ${rhythm}`, source: src });
+    else if (key === "cooling" && a.late && a.state === "ok" && rhythm && src) {
+      facts.unshift({ text: `gives ${rhythm}, now ${RHY.spanBetween(a.expectedNext, today)} past their usual time`, source: src });
     }
   }
   await add({ key: "volunteer-hours", params: { from: w.w0From, to: today, donor: d.id } },
@@ -91,8 +100,8 @@ async function closeness(orgId, d, today, w) {
   const why = {
     close: "Close and Warm are the engagement score's own bands: 67 and above is Close, 34 to 66 is Warm.",
     warm: "Close and Warm are the engagement score's own bands: 67 and above is Close, 34 to 66 is Warm.",
-    on_track: "Their engagement score is 33 or below, but their latest gift came inside their own usual gap between gifts, so their giving is on its own pattern.",
-    cooling: "Their engagement score is 33 or below, their first gift, conversation or shift was more than 90 days ago, and their giving is past their own usual gap (or they have given once and not since).",
+    on_track: "Their engagement score is 33 or below, but their next gift is not due yet by their own usual gap between gifts, so their giving is on its own pattern.",
+    cooling: "Their engagement score is 33 or below, their first gift, conversation or shift was more than 90 days ago, and their giving is past their own usual time (or they have given once and not since).",
     new: "Their engagement score is 33 or below, and their first gift, conversation or shift was in the last 90 days.",
   }[key];
   return { key, label, engagement: score ? Number(score.engagement) : null, sentence: why, facts };

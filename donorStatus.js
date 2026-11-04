@@ -204,8 +204,8 @@ function tagCondition(key, orgId, today, cuts, alias = "") {
 
 // Closeness in SQL: the stored ENGAGE-1 band, said as a word. A person whose
 // band is Distant is New when they arrived (record or first gift) in the last
-// 90 days, On track when their giving is inside their own usual gap (the
-// stored pattern, drift.js's rule), and Cooling otherwise. The profile says the same through
+// 90 days, On track when their expected next gift has not passed (the one
+// rhythm, shared/numbers/rhythm.js, stored in donor_rhythm), and Cooling otherwise. The profile says the same through
 // shared/engagementWeights.js closenessFor. One expression feeds the list
 // column and the filter, so a row and the filter that found it agree.
 function closenessSql(today, alias = "") {
@@ -214,15 +214,23 @@ function closenessSql(today, alias = "") {
   const hold = require("./shared/numbers/lapse").holdSql(`${a}id`, today);
   const late = require("./shared/numbers/lapse").overdueSql(`${a}id`, today);   // a pledge past due is not on track
   const band = `COALESCE((SELECT ds.band FROM donor_scores ds WHERE ds.org_id = ${a}org_id AND ds.donor_id = ${a}id), 'distant')`;
-  const pattern = `(SELECT ds.pattern FROM donor_scores ds WHERE ds.org_id = ${a}org_id AND ds.donor_id = ${a}id)`;
+  // STATUS-1: on track is the one rhythm's on time (shared/numbers/rhythm.js),
+  // as afterChange.js stored it on the person's last change: their expected
+  // next gift is today or later, and they have not gone a whole year without a
+  // gift. Never donor_scores.pattern, which the nightly scores wrote and a gift
+  // since could have made wrong; the profile reads the same rule live
+  // (engagement.patternOf), and TRUTH-1's key checks the two agree.
+  const onTime = `EXISTS (SELECT 1 FROM donor_rhythm rr WHERE rr.org_id = ${a}org_id AND rr.donor_id = ${a}id
+      AND rr.expected_next IS NOT NULL AND LEFT(rr.expected_next::text, 10) >= ?
+      AND NULLIF(LEFT(${a}last_gift_date, 10), '') > ?)`;
   // "Arrived" is their first activity on file: a gift, a conversation or a
   // volunteer shift, and only for someone with none of those, the day their
   // record was made (an import made today is not a new relationship).
   const isNew = `(${firstSeenSql(a)} >= ?)`;
   return {
     // FIX-60: a person held by a pledge on schedule (lapseRule.js) is on track, not cooling.
-    sql: `(CASE WHEN ${band} IN ('close','warm') THEN ${band} WHEN ${isNew} THEN 'new' WHEN ${pattern} = 'on_track' THEN 'on_track' WHEN ${hold.sql} AND NOT ${late.sql} THEN 'on_track' ELSE 'cooling' END)`,
-    args: [w.newFrom, ...hold.args, ...late.args],
+    sql: `(CASE WHEN ${band} IN ('close','warm') THEN ${band} WHEN ${isNew} THEN 'new' WHEN ${onTime} THEN 'on_track' WHEN ${hold.sql} AND NOT ${late.sql} THEN 'on_track' ELSE 'cooling' END)`,
+    args: [w.newFrom, today, lapseRule.bounds(today).lapsedOnOrBefore, ...hold.args, ...late.args],
   };
 }
 function firstSeenSql(a) {

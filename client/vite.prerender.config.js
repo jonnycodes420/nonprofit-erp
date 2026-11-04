@@ -29,7 +29,7 @@ export default defineConfig({
     // FIX-49: the marketing Lost & Found reads Steward's one lapse rule
     // (lapseRule.js, CommonJS at the repo root, with orgTime.js), as the
     // browser build does.
-    commonjsOptions: { include: [/node_modules/, /[\\/]lapseRule\.js$/, /[\\/]orgTime\.js$/] },
+    commonjsOptions: { include: [/node_modules/, /[\\/]lapseRule\.js$/, /[\\/]orgTime\.js$/, /[\\/]shared[\\/]numbers[\\/]rhythm\.js$/] },
     rollupOptions: { output: { format: "esm", entryFileNames: "prerender.mjs" } },
   },
 });

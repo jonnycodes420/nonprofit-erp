@@ -17,6 +17,7 @@
 
 const { meetingsSql } = require("./meetings");
 const driftEngine = require("./drift");
+const RHYTHM = require("./shared/numbers/rhythm");   // STATUS-1: the one rhythm
 
 let W = null;
 async function weights() { if (!W) W = await import("./shared/engagementWeights.js"); return W; }
@@ -275,15 +276,17 @@ function reasonFor(row, today) {
 // rule (assessDrift: their median gap, or their giving season). 'on_track' is
 // inside it, 'drifting' and 'lapsed' are past it, null is fewer than two gifts
 // (no rhythm to judge against). Refunds are not gifts here.
+// STATUS-1: on track is the one rhythm's on time (shared/numbers/rhythm.js:
+// their expected next gift has not passed, and they have not lapsed), never
+// drift's "not yet far enough past to flag". FIX-33's "already gave their
+// usual year" is in that expected date. A person past it is 'late' (or
+// 'lapsed'), so the sentence can never say on track while the date has gone.
 function patternOf(gifts, today) {
   const gs = gifts.filter(g => g.cents > 0).map(g => ({ date: g.date, amount: g.cents / 100 }));
-  const a = driftEngine.assessDrift(gs, today);
-  if (a.state === "ok") return "on_track";
-  // FIX-33: more gifts in the last year than their own usual year is not
-  // cooling, however long the gap since the latest one.
-  if (driftEngine.aboveOwnPattern(gs, today, a)) return "on_track";
-  if (a.state === "drifting" || a.state === "lapsed") return a.state;
-  return null;
+  const r = RHYTHM.rhythmFor(gs, today);
+  if (!r.hasPattern) return null;
+  if (r.onTime) return "on_track";
+  return r.lapsed ? "lapsed" : "late";
 }
 
 // FIX-34 · THE CLOSENESS WORD ON READ. The profile's closeness line and the

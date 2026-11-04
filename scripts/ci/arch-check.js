@@ -100,6 +100,19 @@ const ORG_SPECIFIC = /["'`]org_[a-z0-9][a-z0-9_]{2,}["'`]|org_slug\s*===?\s*["'`
 // Any uuid().slice( counts, and so does uuid().replace(/-/g, "").slice(0, N) with N <= 12.
 const SHORT_ID = /(uuid|randomUUID)\(\)\.slice\(|(uuid|randomUUID)\(\)\.replace\([^)]*\)\.slice\(0,\s*([1-9]|1[0-2])\)/;
 
+// STATUS-1 · A SECOND RHYTHM. "When is this person's next gift due, and has
+// it passed?" is shared/numbers/rhythm.js, once. The shapes a second answer
+// takes: an expected date built from a cadence, a copy of the median /
+// variability / season helpers, the old yearly-only "usual time ahead", and
+// the closeness word read from the stored nightly pattern.
+const RHYTHM_COPY = new RegExp([
+  String.raw`addDays\(\s*[\w.]*last[\w.]*\s*,[^)]*\bcadence`,
+  String.raw`\bfunction\s+(intervalCv|detectSeasonalCluster)\b`,
+  String.raw`rhythm\s+IN\s*\(\s*'yearly'`,
+  String.raw`YEARLY\.includes\(`,
+  String.raw`ds\.pattern\b|\.pattern\s*===?\s*["']on_track`,
+].join("|"));
+
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp|tiff?|heic|avif)$/i;
 const IMAGE_OK = f => f.startsWith("client/src/assets/") || f.startsWith("assets/");
 
@@ -158,6 +171,13 @@ const CHECKS = {
     hard: true,
     measure: files => Object.fromEntries(files.filter(isServerCode).map(f => [f, countLines(f, SHORT_ID)]).filter(([, n]) => n > 0)),
     worse: (key, now) => `${key}: ${now} id(s) cut from a UUID; use newId(prefix) from server/shared/newId.js (20 hex, never collides)`,
+  },
+  // STATUS-1: zero in the build that made it, so a hard rule.
+  "rhythm-copies": {
+    what: "a second rhythm (an expected next gift or an on-time test) outside shared/numbers/rhythm.js (a hard rule)",
+    hard: true,
+    measure: files => Object.fromEntries(files.filter(f => isAppCode(f) && !f.startsWith("shared/numbers/")).map(f => [f, countLines(f, RHYTHM_COPY)]).filter(([, n]) => n > 0)),
+    worse: (key, now) => `${key}: ${now} line(s) working out a rhythm of its own; read rhythmFor from shared/numbers/rhythm.js`,
   },
   "big-images": {
     what: `committed images over ${IMAGE_MAX / 1024} KB outside client/src/assets/ and assets/ (a hard rule)`,
