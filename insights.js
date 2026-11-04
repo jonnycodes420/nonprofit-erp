@@ -42,6 +42,7 @@ const STATUS_LABEL = { steady: "Steady", slipping: "Slipping", up: "Moving up" }
 // Cards rank by rung first, in this order, then by dollars at stake.
 const RANK_ORDER = ["retain", "second", "upgrade", "major", "planned"];
 const TAGS = require("./shared/numbers/tags");   // NUMBERS-4: one major rule
+const RHY = require("./shared/numbers/rhythm");   // STATUS-1: the one rhythm
 const SECOND_BEST_DAYS = 90, SECOND_MAX_DAYS = 365;
 const OUTCOME_DAYS = 60;
 const LAPSING_MAX_DAYS = 548;   // 18 months
@@ -234,10 +235,10 @@ function rhythmOf(dated, asOf) {
   } else if (cadence != null && cadence >= 600 && cadence < 850) {
     kind = "biennial"; words = "Gives about every other year";
   }
-  if (!next && cadence != null && kind !== "none") {
-    const at = addDays(last, cadence);
-    next = { from: addDays(at, -Math.round(cadence * 0.15)), to: addDays(at, Math.max(30, Math.round(cadence * 0.25))) };
-  }
+  // STATUS-1: the day the window is centred on is the one rhythm's expected
+  // next gift (shared/numbers/rhythm.js), the date the profile and Drift say.
+  const at = !next && cadence != null && kind !== "none" ? RHY.rhythmFor(days.map(date => ({ date, amount: 1 })), asOf).expectedNext : null;
+  if (at) next = { from: addDays(at, -Math.round(cadence * 0.15)), to: addDays(at, Math.max(30, Math.round(cadence * 0.25))) };
   return { kind, words, next, cadence, usual, last };
 }
 

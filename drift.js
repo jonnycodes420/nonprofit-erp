@@ -20,6 +20,10 @@ const orgTime = require("./orgTime");
 // last 12 months after giving before). Drift still judges "drifting" by the
 // person's own rhythm; it no longer has a lapse line of its own.
 const lapseRule = require("./lapseRule");
+// STATUS-1: the cadence, the season, the expected next gift and whether it has
+// passed are shared/numbers/rhythm.js's, once. Drift judges how FAR past it a
+// person is; it no longer works out when they were due.
+const RHY = require("./shared/numbers/rhythm");
 
 // All thresholds in ONE place. Each is overridable via a DRIFT_<NAME> env var
 // — that seam exists for tuning without a code change AND for the
@@ -46,34 +50,9 @@ const MONTHS_LONG = ["January", "February", "March", "April", "May", "June",
 
 // ── small pure helpers ──────────────────────────────────────────────────────
 
-function median(nums) {
-  if (!nums.length) return null;
-  const s = [...nums].sort((a, b) => a - b);
-  const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-}
-
-// ROBUST interval variability: median absolute deviation over the median
-// interval, not a mean-based CV. Deliberate: the variance that decides
-// confidence is the variability of the donor's NORMAL rhythm — a steady
-// quarterly giver whose final interval blew out (the declining donor, the
-// exact shape this feature exists to catch) still has a crystal-clear
-// cadence, and a mean-based CV would let the drift itself destroy the
-// confidence in flagging it. The genuinely erratic donor (no repeated
-// rhythm) is additionally caught by MAX_CADENCE_FOR_HIGH. Null when fewer
-// than 2 intervals.
-function intervalCv(intervals) {
-  if (intervals.length < 2) return null;
-  const med = median(intervals);
-  if (!med || med <= 0) return null;
-  const mad = median(intervals.map(x => Math.abs(x - med)));
-  return mad / med;
-}
-
-function lastDayOfMonth(y, m) { // m 1-based; the day before the 1st of the next month
-  const ny = m === 12 ? y + 1 : y, nm = m === 12 ? 1 : m + 1;
-  return orgTime.addDays(`${ny}-${String(nm).padStart(2, "0")}-01`, -1);
-}
+// STATUS-1: median, the interval variability and the month's last day are
+// shared/numbers/rhythm.js's (one rhythm), re-exported here for old callers.
+const { median, intervalCv, lastDayOfMonth } = RHY;
 
 // Human phrasing for a day count — a fundraiser says "seven months", never "213 days".
 // FIX-57: under two weeks the span is said in days ("4 days", "1 day"), so two
@@ -116,6 +95,10 @@ function humanCadence(days) {
 const AMT_FMT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const fmtAmt = n => "$" + AMT_FMT.format(Number(n || 0));
 
+// STATUS-1: the shape of an answer. server.js keeps a day's answers in
+// donor_drift; one written before the one rhythm is recomputed, not read.
+const ANSWER_V = 3;
+
 // ── the core assessment ─────────────────────────────────────────────────────
 //
 // gifts: [{ date: "YYYY-MM-DD", amount: Number }] in any order (bad/missing
@@ -132,16 +115,10 @@ const fmtAmt = n => "$" + AMT_FMT.format(Number(n || 0));
 // a year" with full confidence. Any donor with a refused row is capped at
 // MEDIUM until the refusal is resolved, and the sentence says why.
 function assessDrift(gifts, today, opts = {}) {
-  // Collapse same-day gifts into one giving EVENT (two receipts on one
-  // occasion are one act of giving; zero-length intervals poison the median).
-  const byDay = new Map();
-  for (const g of gifts || []) {
-    const c = orgTime.parseCivil(g.date);
-    if (!c) continue;
-    const key = String(g.date || "").slice(0, 10);
-    byDay.set(key, (byDay.get(key) || 0) + (Number(g.amount) || 0));
-  }
-  const events = [...byDay.keys()].sort().map(date => ({ date, amount: byDay.get(date) }));
+  // STATUS-1 · THE ONE RHYTHM: same-day gifts are one giving event, and the
+  // cadence, the season and the expected next gift are rhythm.js's.
+  const R = RHY.rhythmFor(gifts, today);
+  const events = R.events;
   const n = events.length;
   if (n < 2) return { state: "not_eligible", confidence: null, events: n };
 
@@ -162,41 +139,30 @@ function assessDrift(gifts, today, opts = {}) {
   const valueAtRisk = events.filter(e => orgTime.compareCivil(e.date, cutoff24) >= 0)
     .reduce((a, e) => a + e.amount, 0);
 
-  // ── seasonal cluster: month first, then calendar quarter ────────────────
-  const seasonal = detectSeasonalCluster(events);
-
-  let state, overdueRatio, expectedNext, basis, driftStartDate = null;
-  const lapsed = lapseRule.isLapsed(last.date, today);
+  const seasonal = R.seasonal;
+  const expectedNext = R.expectedNext;
+  let state, overdueRatio, basis, driftStartDate = null;
+  const lapsed = R.lapsed;
 
   if (seasonal) {
     basis = "seasonal";
-    // The expected window is the cluster month/quarter in the year after the
-    // last giving event; drift is measured from that window CLOSING (its last
-    // day + grace), not from an elapsed interval. March-every-year Margaret is
-    // not drifting on March 20; she is by June 20.
-    const lastC = orgTime.parseCivil(last.date);
-    const windowClose = seasonal.kind === "month"
-      ? lastDayOfMonth(lastC.y + 1, seasonal.month)
-      : lastDayOfMonth(lastC.y + 1, seasonal.quarterEndMonth);
-    expectedNext = windowClose;
-    const daysPastWindow = orgTime.daysBetween(windowClose, today);
+    // The expected window closes at the end of their month/quarter in the year
+    // after the last gift (rhythm.js); drift is measured from that close plus
+    // grace. March-every-year Margaret is not drifting on March 20; she is by June 20.
     overdueRatio = Math.round((daysSinceLast / 365) * 100) / 100;
     if (lapsed) state = "lapsed";
-    else if (daysPastWindow != null && daysPastWindow > DRIFT.SEASONAL_GRACE_DAYS) state = "drifting";
+    else if (R.late && R.daysPast > DRIFT.SEASONAL_GRACE_DAYS) state = "drifting";
     else state = "ok";
-    // The first civil day the state became (or becomes) drifting — the
-    // quiet_past_pattern sweep's live-transition guard reads this.
-    driftStartDate = orgTime.addDays(windowClose, DRIFT.SEASONAL_GRACE_DAYS + 1);
+    driftStartDate = orgTime.addDays(expectedNext, DRIFT.SEASONAL_GRACE_DAYS + 1);
   } else {
     basis = "interval";
-    expectedNext = orgTime.addDays(last.date, Math.round(cadence));
     overdueRatio = Math.round((daysSinceLast / cadence) * 100) / 100;
-    const pastExpected = daysSinceLast - cadence;
     if (lapsed) state = "lapsed";
-    else if (overdueRatio > DRIFT.DRIFT_THRESHOLD && pastExpected >= DRIFT.MIN_OVERDUE_DAYS) state = "drifting";
+    else if (R.late && overdueRatio > DRIFT.DRIFT_THRESHOLD && R.daysPast >= DRIFT.MIN_OVERDUE_DAYS) state = "drifting";
     else state = "ok";
     driftStartDate = orgTime.addDays(last.date,
       Math.max(Math.floor(cadence * DRIFT.DRIFT_THRESHOLD) + 1, Math.ceil(cadence) + DRIFT.MIN_OVERDUE_DAYS));
+    if (R.extended) driftStartDate = [driftStartDate, orgTime.addDays(expectedNext, DRIFT.MIN_OVERDUE_DAYS)].sort().pop();
   }
 
   // ── confidence — a bad flag costs more than a missed one ────────────────
@@ -213,16 +179,17 @@ function assessDrift(gifts, today, opts = {}) {
   // which the badge and the reason line read, still said drifting, so Emily
   // Jackson read "On track" in green beside "DRIFTING · UNSURE". The rule
   // lives here now, in the one computation every drift surface reads.
-  let aboveOwn = false;
-  if (state === "drifting" && aboveOwnPattern(events, today, { cadenceDays: seasonal ? 365 : cadence })) {
-    state = "ok"; aboveOwn = true;
-  }
+  // STATUS-1: rhythm.js moves their expected date to the end of the year
+  // they have already given in full, so the flip above is no longer a second
+  // rule here; aboveOwnPattern says when that is why they read on time.
+  const aboveOwn = !!(R.extended && !R.late && R.gapExpected < String(today).slice(0, 10));
 
   const out = {
     state, confidence, basis, events: n, aboveOwnPattern: aboveOwn,
     cadenceDays: seasonal ? 365 : (cadence != null ? Math.round(cadence) : null),
     intervalCv: cv != null ? Math.round(cv * 100) / 100 : null,
     daysSinceLast, overdueRatio, expectedNext, driftStartDate,
+    late: R.late, daysPast: R.daysPast, onTime: R.onTime, onTimeThrough: R.onTimeThrough, v: ANSWER_V,
     lastGiftDate: last.date, firstGiftDate: first.date,
     valueAtRisk: Math.round(valueAtRisk * 100) / 100,
     // BUILD-83 Part 3.3/4 — AT RISK IS THE NEXT GIFT, NOT THE LIFETIME. The
@@ -250,50 +217,19 @@ function assessDrift(gifts, today, opts = {}) {
   return out;
 }
 
-// A month (or calendar quarter) qualifies as the donor's giving season when
-// their events land there across SEASONAL_MIN_YEARS distinct years AND the
-// window holds SEASONAL_SHARE of all their events — the share test is what
-// keeps a quarterly giver (whose January recurs three years too) from being
-// misread as seasonal.
-function detectSeasonalCluster(events) {
-  if (events.length < DRIFT.SEASONAL_MIN_YEARS) return null;
-  const months = events.map(e => orgTime.parseCivil(e.date)).filter(Boolean);
-  const total = months.length;
-
-  const byMonth = new Map();
-  for (const c of months) {
-    if (!byMonth.has(c.m)) byMonth.set(c.m, { count: 0, years: new Set() });
-    const b = byMonth.get(c.m);
-    b.count++; b.years.add(c.y);
-  }
-  let best = null;
-  for (const [m, b] of byMonth) {
-    if (b.years.size >= DRIFT.SEASONAL_MIN_YEARS && b.count / total >= DRIFT.SEASONAL_SHARE) {
-      if (!best || b.count > best.countIn) best = { kind: "month", month: m, years: b.years.size, countIn: b.count };
-    }
-  }
-  if (best) return best;
-
-  const byQuarter = new Map();
-  for (const c of months) {
-    const q = Math.floor((c.m - 1) / 3) + 1;
-    if (!byQuarter.has(q)) byQuarter.set(q, { count: 0, years: new Set() });
-    const b = byQuarter.get(q);
-    b.count++; b.years.add(c.y);
-  }
-  for (const [q, b] of byQuarter) {
-    if (b.years.size >= DRIFT.SEASONAL_MIN_YEARS && b.count / total >= DRIFT.SEASONAL_SHARE) {
-      if (!best || b.count > best.countIn) best = { kind: "quarter", quarter: q, quarterEndMonth: q * 3, years: b.years.size, countIn: b.count };
-    }
-  }
-  return best;
-}
+// STATUS-1: the giving season is shared/numbers/rhythm.js's.
+const detectSeasonalCluster = RHY.detectSeasonalCluster;
 
 // The reason is written in the donor's own pattern, not in system language:
 // "$2,000 every March since 2019. Nothing for 14 months." — a sentence a
 // fundraiser would say out loud. Never a ratio, never a day count.
 function composeReason(a, events, today) {
-  const gapPhrase = a.daysSinceLast != null && a.daysSinceLast < 1 ? "The last gift was today." : `Nothing for ${humanSpan(a.daysSinceLast)}.`;
+  // STATUS-1: the gap counts whole calendar months (rhythm.spanBetween), so it
+  // never says "9 months" while the lapse rule says under 9; a person past
+  // their own usual time is told by how much.
+  // A lapsed person's gap already says it ("Nothing for over a year").
+  const late = a.late && a.state !== "lapsed" ? ` ${RHY.pastPhrase({ late: true, expectedNext: a.expectedNext }, today)}` : "";
+  const gapPhrase = (a.daysSinceLast != null && a.daysSinceLast < 1 ? "The last gift was today." : `Nothing for ${RHY.spanBetween(a.lastGiftDate, today)}.`) + late;
   const firstYear = orgTime.parseCivil(a.firstGiftDate).y;
 
   if (a.seasonal && a.seasonal.kind === "month") {
@@ -390,4 +326,4 @@ function rhythmOf(a) {
   return "none";
 }
 
-module.exports = { DRIFT, RHYTHM_WORDS, rhythmOf, assessDrift, aboveOwnPattern, detectSeasonalCluster, humanSpan, humanCadence, median, intervalCv };
+module.exports = { ANSWER_V, DRIFT, RHYTHM_WORDS, rhythmOf, assessDrift, aboveOwnPattern, detectSeasonalCluster, humanSpan, humanCadence, median, intervalCv };

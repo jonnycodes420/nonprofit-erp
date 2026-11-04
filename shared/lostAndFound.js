@@ -37,6 +37,10 @@ import { normalizeDate, normalizeMoney, normalizeName, normalizeEmail } from "./
 // FIX-49 decision 6: lapsed and lapsing are Steward's one rule (lapseRule.js,
 // pure, bundled into the worker beside drift.js), judged from `today`.
 import lapseRuleMod from "../lapseRule.js";
+// STATUS-1: lapsing respects the person's own rhythm here as in Steward (the
+// one rhythm, shared/numbers/rhythm.js): a person whose next gift is not due
+// yet is not lapsing.
+import rhythmMod from "./numbers/rhythm.js";
 const { lapseState } = lapseRuleMod;
 
 // ── THE THRESHOLDS, AND WHY THEY ARE THESE ───────────────────────────────
@@ -168,7 +172,8 @@ export function audit(gifts, { today }) {
   // FIX-49: LAPSED and LAPSING are the one rule, from each person's latest
   // gift above zero. QUIET is both together: everybody the rule names.
   const lastPositive = d => d.gifts.filter(g => g.cents > 0).reduce((m, g) => (!m || g.date > m ? g.date : m), null);
-  const stateOf = new Map(donors.map(d => [d, lapseState(lastPositive(d), today)]));
+  const rhythmOf = d => rhythmMod.rhythmFor(d.gifts.filter(g => g.cents > 0).map(g => ({ date: g.date, amount: g.cents / 100 })), today);
+  const stateOf = new Map(donors.map(d => [d, lapseState(lastPositive(d), today, rhythmOf(d))]));
   const lapsed = donors.filter(d => stateOf.get(d) === "lapsed");
   const lapsing = donors.filter(d => stateOf.get(d) === "lapsing");
   const quiet = [...lapsed, ...lapsing];

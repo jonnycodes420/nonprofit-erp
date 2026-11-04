@@ -21,7 +21,7 @@ export default defineConfig({
     // AUDIT-2 · Lost & Found's worker bundles Drift (drift.js + orgTime.js,
     // CommonJS at the repo root) so the free audit judges donors the way
     // Steward does. Rollup converts only what this names.
-    commonjsOptions: { include: [/node_modules/, /[\\/]drift\.js$/, /[\\/]orgTime\.js$/, /[\\/]lapseRule\.js$/] },
+    commonjsOptions: { include: [/node_modules/, /[\\/]drift\.js$/, /[\\/]orgTime\.js$/, /[\\/]lapseRule\.js$/, /[\\/]shared[\\/]numbers[\\/]rhythm\.js$/] },
     // Gated on the same token that drives the Sentry plugin below, not just
     // "true" — if SENTRY_AUTH_TOKEN is unset (local dev, a PR preview build
     // missing the secret), no maps are generated at all, so there's never a
@@ -73,10 +73,12 @@ export default defineConfig({
       apply: "serve",
       transform(code, id) {
         const file = id.split("?")[0];
-        if (!/[\\/](drift|orgTime|lapseRule)\.js$/.test(file) || /node_modules/.test(file)) return null;
-        if (new URL("../", import.meta.url).pathname !== file.replace(/[^\\/]+$/, "")) return null;
+        if (!/[\\/](drift|orgTime|lapseRule|rhythm)\.js$/.test(file) || /node_modules/.test(file)) return null;
+        // STATUS-1: shared/numbers/rhythm.js (the one rhythm) is the same kind of file.
+        const root = new URL("../", import.meta.url).pathname, dir = file.replace(/[^\\/]+$/, "");
+        if (dir !== root && dir !== root + "shared/numbers/") return null;
         const imports = [];
-        const body = code.replace(/require\((["'])(\.\/[^"']+)\1\)/g, (m, q, p) => {
+        const body = code.replace(/require\((["'])(\.\.?\/[^"']+)\1\)/g, (m, q, p) => {
           const name = `__cjs${imports.length}`;
           imports.push(`import ${name} from "${/\.js$/.test(p) ? p : p + ".js"}";`);
           return name;

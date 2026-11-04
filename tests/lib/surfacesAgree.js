@@ -455,6 +455,59 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     if (drift.evaluated > key.people) diffs.push(`Drift evaluated ${drift.evaluated} people, the org holds ${key.people}`);
   }
 
+  // ── STATUS-1: ONE ANSWER TO "ARE THEY ON TIME?" ─────────────────────────
+  // For every person who gave: the profile's tags, the profile's sentence, the
+  // Directory (its Lapsing and On track filters) and the Re-engage list agree
+  // on on-time / late / lapsing. The rules, written out from the brief:
+  //   · a sentence that says "past their usual time" is never On track;
+  //   · a person tagged Lapsing (or Lapsed) is never On track;
+  //   · the profile's Lapsing tag and the Directory's Lapsing filter name the
+  //     same people, and so do the profile's On track and the Directory's;
+  //   · nobody on Re-engage is On track, and everybody on it is tagged Lapsed.
+  if (!skip.has("timeliness")) {
+    const givers = (await q(`SELECT d.id, d.name FROM donors d WHERE ${LIVE}
+        AND EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0) ORDER BY d.id`, [orgId]));
+    const idsOf = async path => {
+      const out = new Set();
+      for (let off = 0; ; off += 200) {
+        const pg = await get(`${path}${path.includes("?") ? "&" : "?"}limit=200&offset=${off}`);
+        const rows = (pg && pg.donors) || [];
+        rows.forEach(d => out.add(d.id));
+        if (rows.length < 200 || off > 20000) break;
+      }
+      return out;
+    };
+    const [dirLapsing, dirOnTrack] = await Promise.all([idsOf("/donors?lapsing=1"), idsOf("/donors?closeness=on_track")]);
+    const reengage = new Set();
+    for (let off = 0; ; off += 500) {
+      const pg = await get(`/donors/summaries?limit=500&offset=${off}`);
+      (Array.isArray(pg) ? pg : []).filter(d => d.reengage).forEach(d => reengage.add(d.id));
+      if (!Array.isArray(pg) || pg.length < 500) break;
+    }
+    const bad = [];
+    for (let i = 0; i < givers.length; i += 8) {
+      await Promise.all(givers.slice(i, i + 8).map(async p => {
+        const st = await get(`/donors/${encodeURIComponent(p.id)}/status`);
+        if (!st || st.error) return;
+        const tags = (st.tags || []).map(t => t.key);
+        const c = st.closeness || {};
+        const said = [c.label, ...(c.facts || []).map(f => f.text)].join(" ");
+        const onTrack = c.key === "on_track", late = /past their usual time/i.test(said);
+        const lapsing = tags.includes("lapsing"), lapsed = tags.includes("lapsed");
+        const who = p.name || p.id;
+        if (onTrack && late) bad.push(`${who}: the profile says On track and "past their usual time"`);
+        if (onTrack && (lapsing || lapsed)) bad.push(`${who}: the profile is tagged ${lapsing ? "Lapsing" : "Lapsed"} and says On track`);
+        if (/\bon time\b/i.test(said) && late) bad.push(`${who}: the sentence says on time and past their usual time`);
+        if (lapsing !== dirLapsing.has(p.id)) bad.push(`${who}: the profile ${lapsing ? "is" : "is not"} tagged Lapsing, the Directory's Lapsing filter ${dirLapsing.has(p.id) ? "lists them" : "leaves them out"}`);
+        if (onTrack !== dirOnTrack.has(p.id)) bad.push(`${who}: the profile ${onTrack ? "says" : "does not say"} On track, the Directory's On track filter ${dirOnTrack.has(p.id) ? "lists them" : "leaves them out"}`);
+        if (reengage.has(p.id) && (onTrack || !lapsed)) bad.push(`${who}: Re-engage lists them, the profile says ${onTrack ? "On track" : "not Lapsed"}`);
+      }));
+    }
+    facts.timeliness = { people: givers.length, lapsing: dirLapsing.size, onTrack: dirOnTrack.size, reengage: reengage.size };
+    for (const b of bad.slice(0, 20)) diffs.push(`on time: ${b}`);
+    if (bad.length > 20) diffs.push(`on time: ${bad.length - 20} more people disagree`);
+  }
+
   // ── GROUPS, EVENTS, CAMPAIGNS ────────────────────────────────────────────
   if (!skip.has("groups") && groups && Array.isArray(groups.groups)) {
     for (const g of groupRows) {

@@ -7451,8 +7451,8 @@ async function driftGiftAnswers(orgId, today, ids, refusedById) {
     [orgId, today, ...(ids ? [ids] : [])]);
   const out = new Map();
   for (const r of stored) {
-    if ((refusedById.get(r.donor_id) || 0) !== r.refused_rows) continue;
-    out.set(r.donor_id, { a: JSON.parse(r.assessment), wasDriftingHigh: r.yesterday_high, pledgeRecent: r.pledge_recent });
+    const a = JSON.parse(r.assessment);   // STATUS-1: an answer from before the one rhythm (no v) is recomputed, not read
+    if ((refusedById.get(r.donor_id) || 0) !== r.refused_rows || (a && a.basis && a.v !== driftEngine.ANSWER_V)) continue; out.set(r.donor_id, { a, wasDriftingHigh: r.yesterday_high, pledgeRecent: r.pledge_recent });
   }
   const need = [...refusedById.keys()].filter(id => !out.has(id));
   if (!need.length) return out;
