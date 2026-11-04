@@ -376,6 +376,15 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   A number in a column is the profile's (stored totals the NUMBERS-1 checker guards, or the same figure source
   set-wise), never a new computation. Layouts are per person; only an admin sets the org default. A filter
   Steward cannot run is refused with a sentence, never dropped.
+- **The Donors list shows what she asked for (LIST-2).** The address holds every filter (stage, owner, tag,
+  chips, sort and its direction), so a reload and Back keep them. A money filter and the Lifetime cell read
+  `shared/numbers/` (the profile's sum), never the stored copy. A column sorts by its own value with `id` as the
+  tiebreak; Name is last name then first; people with no gift sort last either way (`donorList.sortSql`). While
+  a new filter's answer is coming, the list says "Updating…". A person search (top bar and the list's box) is
+  one rule, `server/donors/personMatch.js`: name, email, phone, contact person, household and linked
+  organization, case and accents folded. A profile opened by id shows "Loading this person…", or "We couldn't
+  find this person", never a record drawn from a bare id. Data health's "People and their businesses" counts
+  each person and organization once, and a domain two organizations share proposes nobody.
 
 - **An open pledge sits at the top of the profile (IMPORT-5).** `OpenPledgeBanner.jsx`: "Open pledge: $20,000 · $0
   received · next due Dec 31, 2026 · 2 more installments", each installment with its state, Record a payment (the gift

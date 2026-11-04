@@ -7446,7 +7446,7 @@ function driftJsonExact(v) {
 }
 // The gift-derived answer for `ids` (all of the org's donors when null), from
 // the store where it is current and from the gifts where it is not.
-async function driftGiftAnswers(orgId, today, ids, refusedById) {
+async function driftGiftAnswers(orgId, today, ids, refusedById, { store = true } = {}) {
   const idFilter = ids ? " AND d.id = ANY(?)" : "";
   const stored = DRIFT_STORE_OFF() ? [] : await query(
     `SELECT s.donor_id, s.assessment, s.yesterday_high, s.pledge_recent, s.refused_rows
@@ -7491,7 +7491,7 @@ async function driftGiftAnswers(orgId, today, ids, refusedById) {
       tuples.push("(?,?,?,?,?,?,?)");
     }
   }
-  if (!DRIFT_STORE_OFF()) {
+  if (!DRIFT_STORE_OFF() && store) {
     for (let i = 0; i < tuples.length; i += 2000) {
       const t = tuples.slice(i, i + 2000);
       await run(`INSERT INTO donor_drift (org_id, donor_id, assessment, yesterday_high, pledge_recent, refused_rows, computed_for)
@@ -7505,7 +7505,7 @@ async function driftGiftAnswers(orgId, today, ids, refusedById) {
   return out;
 }
 
-async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
+async function computeDriftForDonors(orgId, { donorIds = null, store = true } = {}) {   // LIST-2: store:false for a GET (its upsert waited on the drift job's row locks: 146 s)
   const org = await orgTz(orgId);
   const today = orgToday(org);                              // ORG_TZ_SEAM_OK
   const idFilter = donorIds ? " AND d.id = ANY(?)" : "";
@@ -7552,7 +7552,7 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
     } catch { /* unreadable tags never break drift */ }
     refusedById.set(d.id, refusedRows);
   }
-  const answers = await driftGiftAnswers(orgId, today, donorIds, refusedById);
+  const answers = await driftGiftAnswers(orgId, today, donorIds, refusedById, { store });
 
   const map = new Map();
   for (const d of donors) {

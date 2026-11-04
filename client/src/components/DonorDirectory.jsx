@@ -317,7 +317,7 @@ function BulkAutoEmail({ids,disabled,onDone}){
     </select>
   );
 }
-function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",onPickView,onSaveView,onDeleteView,onPageSize,includeScreening=false,peopleView="donors",setPeopleView,roleCounts=null,fromImport="",clearFromImport,anyFilter=false}){
+function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",onPickView,onSaveView,onDeleteView,onPageSize,includeScreening=false,peopleView="donors",setPeopleView,roleCounts=null,fromImport="",clearFromImport,anyFilter=false}){
   // WIRE-1: the server-side filters on screen, as a Group rule, offered once
   // a filter beyond "donors" is set. The sort is not a filter.
   const groupRules=(()=>{const r={};Object.entries(exportParams||{}).forEach(([k,v])=>{if(v&&k!=="sort")r[k]=String(v);});return Object.keys(r).filter(k=>k!=="role").length>0?r:null;})();
@@ -668,8 +668,8 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
             (the BUILD-86 rule — the no-op path is byte-identical), and the
             moment there is a volunteer on the page the word is "people",
             because a count of 40 that says "donors" is a lie about 28 of them. */}
-        <span style={{fontSize:12,color:T.ink3}}>
-          {donorsOnlyPage
+        <span style={{fontSize:12,color:T.ink3}} data-testid="dir-count">
+          {updating?"Updating…":donorsOnlyPage
             ? `${Number(serverTotal).toLocaleString("en-US")} ${plural(serverTotal, "donor")}`
             : `${Number(serverTotal).toLocaleString("en-US")} ${serverTotal!==1?"people":"person"}`}
         </span>
@@ -878,7 +878,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
         </div>
         :filtered.length===0
         ?emptyList
-        :<div data-testid="dir-table" style={{background:T.white,borderRadius:14,overflowX:"auto",overflowY:"hidden",border:"1px solid "+T.bg3}}>
+        :<div data-testid="dir-table" aria-busy={updating||undefined} style={{background:T.white,borderRadius:14,overflowX:"auto",overflowY:"hidden",border:"1px solid "+T.bg3,opacity:updating?0.5:1,transition:"opacity 0.12s"}}>
           {/* Header — light treatment (not a solid green fill) so Directory
               reads as its own surface instead of blurring into the Kanban
               stage headers and Home hero banner, which are both solid dark
