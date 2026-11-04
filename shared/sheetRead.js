@@ -1098,9 +1098,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const nearWord = w => s(w).toLowerCase().replace(/[^a-z]/g, "");
   const nearIndex = { first: new Map(), last: new Map() };
   const nearAdd = (map, k, p) => { if (!k) return; if (!map.has(k)) map.set(k, []); map.get(k).push(p); };
-  // IMPORT-7: the people read so far, by last name, in the order they were read.
-  // The near-miss check asked every person before this one, so a 25,000-row
-  // sheet took 67 s to preview; it asks only those with the same last name.
+  // IMPORT-7: people read so far, by last name (the near-miss check asked all of them: 25k rows, 67 s)
   const byLastName = new Map();
   // FIX-59 · NOTES ARE NOT PEOPLE. A row whose name cell is a note ("1 Celiac
   // Diet") is a note on the person on the row above it; a note in a name
