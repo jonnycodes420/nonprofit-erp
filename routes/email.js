@@ -14,6 +14,7 @@ const mailPolicy = require("../mailPolicy");   // MAIL-1: the one mail policy
 const mailRefusal = require("../mailRefusal"); // FIX-48: refused, waiting or an outage
 const { civilLocale } = require("../orgTime"); // HARDEN-1: a stored date is its own day
 const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
+const MAIL_TYPES = require("../mailTypes");   // TRUST-1: a campaign follows its type's rule
 // FIX-46: what a reminder calls somebody (shared/greeting.js), loaded once.
 let GREET = null;
 const GREET_READY = import("../shared/greeting.js").then(m => { GREET = m; return m; });
@@ -359,7 +360,7 @@ async function donorMailDecision(kind, email, orgId, pre = null) {
   const [flags] = pre ? [pre.flags] : await query(
     `SELECT bool_or(deceased) AS deceased, bool_or(do_not_contact) AS dnc,
             bool_or(do_not_email) AS dne, bool_or(email_unreachable) AS unreachable,
-            bool_or(is_sample) AS sample, bool_or(auto_email) AS auto
+            bool_or(is_sample) AS sample, bool_or(auto_email) AS auto, bool_or(auto_email_never) AS never_
        FROM donors WHERE org_id = ? AND LOWER(email) = LOWER(?) AND deleted_at IS NULL`,
     [orgId, email]
   ).catch(() => [null]);
@@ -387,15 +388,25 @@ async function donorMailDecision(kind, email, orgId, pre = null) {
   // An address that hard-bounced cannot receive anything, transactional
   // included — a receipt to a dead mailbox is not a receipt, it is a bounce.
   if (flags?.unreachable) return { send: false, reason: "bounced" };
-  // SEND-GATE-1: a campaign is automatic mail, so it reaches only people whose
-  // automatic emails are on. Decided here, for the whole list, so the builder's
-  // count and the send agree (the gate at the client would refuse each one).
-  if (kind === "campaign" && flags?.auto !== true) return { send: false, reason: "auto_email_off" };
   const suppressReason = pre ? pre.suppressReason : await getSuppressionReason(email, orgId);
   if (cls === "marketing") {
     if (flags?.dnc) return { send: false, reason: "do_not_contact" };
     if (flags?.dne) return { send: false, reason: "unsubscribed" };
     if (suppressReason) return { send: false, reason: suppressReason };
+    // TRUST-1 (Jonathan, 27 Oct): a campaign is a send someone clicks, not
+    // automatic mail, so the "automatic email" switch (auto_email) does not
+    // govern it. It follows SEND-GATE-2's rule for its type, the same
+    // mailTypes.holdReason the client's send gate (sendGate.decide) asks:
+    // Campaign emails on, and for Everyone anyone not set to Never; for Only
+    // donors I choose, those set to Always include. Decided here, for the whole
+    // list, so the builder's count and the send are one answer.
+    if (kind === "campaign") {
+      const type = pre && "campaignType" in pre ? pre.campaignType : await campaignTypeRow(orgId);
+      const mode = MAIL_TYPES.modeOf({ auto_email: flags?.auto === true, auto_email_never: flags?.never_ === true });
+      const skipped = pre && "skipped" in pre ? pre.skipped : await campaignSkipped(orgId, email);
+      const held = MAIL_TYPES.holdReason({ mailOn: true, type, mode, skipped });
+      if (held) return { send: false, reason: held };
+    }
   } else {
     // Transactional ignores the donor's marketing OPT-OUT ("unsubscribed") —
     // that's the W-4 rule — but still honors DELIVERABILITY suppressions:
@@ -404,6 +415,19 @@ async function donorMailDecision(kind, email, orgId, pre = null) {
     if (suppressReason === "bounced" || suppressReason === "complained") return { send: false, reason: suppressReason };
   }
   return { send: true, reason: null };
+}
+
+// TRUST-1: the org's Campaign emails switch (org_mail_types), as sendGate reads it.
+async function campaignTypeRow(orgId) {
+  const [r] = await query(`SELECT is_on, audience FROM org_mail_types WHERE org_id = ? AND type_key = 'campaign'`, [orgId]);
+  return r ? { on: r.is_on === true, audience: r.audience } : null;
+}
+async function campaignSkipped(orgId, email) {
+  const [r] = await query(
+    `SELECT 1 FROM mail_skips s JOIN donors d ON d.id = s.donor_id AND d.org_id = s.org_id
+      WHERE s.org_id = ? AND s.type_key = 'campaign' AND s.until > NOW() AND LOWER(d.email) = LOWER(?) AND d.deleted_at IS NULL LIMIT 1`,
+    [orgId, email]);
+  return !!r;
 }
 
 // FIX-26: THE DECISION FOR A WHOLE LIST. A campaign's builder shows how many
@@ -416,18 +440,31 @@ async function donorMailDecisions(kind, people, orgId, { personOnly = false } = 
   const flagRows = emails.length ? await query(
     `SELECT LOWER(email) AS e, bool_or(deceased) AS deceased, bool_or(do_not_contact) AS dnc,
             bool_or(do_not_email) AS dne, bool_or(email_unreachable) AS unreachable,
-            bool_or(is_sample) AS sample, bool_or(auto_email) AS auto
+            bool_or(is_sample) AS sample, bool_or(auto_email) AS auto, bool_or(auto_email_never) AS never_,
+            array_agg(id) AS ids
        FROM donors WHERE org_id = ? AND LOWER(email) = ANY(?::text[]) AND deleted_at IS NULL
       GROUP BY LOWER(email)`,
     [orgId, emails]
   ) : [];
   const flagsBy = new Map(flagRows.map(r => [r.e, r]));
   const supBy = await suppressionReasonsFor(emails, orgId);
+  // TRUST-1: a campaign's type switch and skips, read once for the list.
+  const campaignExtra = {};
+  let skippedIds = null;
+  if (kind === "campaign") {
+    campaignExtra.campaignType = await campaignTypeRow(orgId);
+    const allIds = flagRows.flatMap(r => r.ids || []);
+    skippedIds = new Set(allIds.length ? (await query(
+      `SELECT donor_id FROM mail_skips WHERE org_id = ? AND type_key = 'campaign' AND until > NOW() AND donor_id = ANY(?::text[])`,
+      [orgId, allIds])).map(r => r.donor_id) : []);
+  }
   const out = new Map();
   for (const p of people) {
     const e = p.email ? String(p.email).toLowerCase() : "";
+    const f = flagsBy.get(e) || null;
+    const extra = skippedIds ? { ...campaignExtra, skipped: !!(f && (f.ids || []).some(id => skippedIds.has(id))) } : {};
     out.set(p.id, await donorMailDecision(kind, p.email, orgId,
-      { flags: flagsBy.get(e) || null, suppressReason: supBy.get(e) || null, personOnly }));
+      { flags: f, suppressReason: supBy.get(e) || null, personOnly, ...extra }));
   }
   return out;
 }
