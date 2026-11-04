@@ -1,0 +1,1 @@
+- Once on prod, in a quiet hour: `VACUUM (ANALYZE) donor_scores;` to clear the dead tuples the old whole-org rewrites left (read-only to the data; takes no lock that blocks reads or writes).
