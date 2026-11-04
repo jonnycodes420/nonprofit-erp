@@ -63,11 +63,21 @@ function fiscalMonths(fyStart, DD, back = 2) {
 // ONE GOAL, AS FIGURES: what has been raised (opening its gifts), the target
 // and the share. The Fundraising dashboard's goal rows and Home's annual goal
 // bar are both this, so the two screens cannot show the goal two ways.
+// LEDGER-1: a goal with goals under it counts their gifts too (the portfolio's
+// own `sources`, goal-rollup-raised), as its Fundraising card does; reading the
+// leaf source here is how Home said $0 of $180,000 for an umbrella goal whose
+// gifts all sit on its children.
+const goalSourcesOf = g => (g.sources && g.sources.raised && g.sources.percent) ? g.sources : {
+  raised: { key: "goal-raised", params: { campaign: g.id } },
+  goal: { key: "campaign-goal", params: { campaign: g.id } },
+  percent: { key: "goal-progress", params: { campaign: g.id } },
+};
 async function goalFigureRow(g, fig) {
+  const S = goalSourcesOf(g);
   const [raised, target, pct] = await Promise.all([
-    fig({ key: "goal-raised", params: { campaign: g.id } }),
-    fig({ key: "campaign-goal", params: { campaign: g.id } }),
-    fig({ key: "goal-progress", params: { campaign: g.id } }),
+    fig(S.raised),
+    fig(S.goal || { key: "campaign-goal", params: { campaign: g.id } }),
+    fig(S.percent),
   ]);
   // FIX-7 Part 5 — the badge carries the reason it is a badge.
   return { id: g.id, label: g.name, kind: "money", value: raised.value, source: raised.source, pace: g.paceState || null,
@@ -471,10 +481,11 @@ async function packGoalRows(orgId, deps) {
   const goals = ((out && out.goals) || []).filter(g => g.active !== false);
   const fig = async source => ({ ...(await figureSources.figure(orgId, source, deps, { rows: false })), source });
   return Promise.all(goals.map(async g => {
+    const S = goalSourcesOf(g);   // LEDGER-1: an umbrella goal counts its children's gifts
     const [raised, target, pct] = await Promise.all([
-      fig({ key: "goal-raised", params: { campaign: g.id } }),
-      fig({ key: "campaign-goal", params: { campaign: g.id } }),
-      fig({ key: "goal-progress", params: { campaign: g.id } }),
+      fig(S.raised),
+      fig(S.goal || { key: "campaign-goal", params: { campaign: g.id } }),
+      fig(S.percent),
     ]);
     return { label: g.name, raised: { value: raised.value, cents: raised.cents, source: raised.source, sentence: raised.sentence },
              target: { value: target.value, cents: target.cents, source: target.source, sentence: target.sentence },

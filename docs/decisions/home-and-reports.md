@@ -203,6 +203,10 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
 - **Count "Gifts not yet thanked" only from the org's first import.** An imported file is history. (BUILD-86 C.3)
 - **Reports aggregate in SQL, exclude soft-deleted donors, include `is_sample` rows and use the same period
   predicate as Fundraising.** Prove them against hand-computed literals (`report-truth`). (BUILD-02, BUILD-33 P1)
+- **LYBUNT's and SYBUNT's amount is what each person gave in the last year they gave**, in the report's own
+  years (`givingBetween.LAST_YEAR_SUM`): last year for LYBUNT, their own last year for SYBUNT, so nobody on
+  SYBUNT reads $0. Home's annual goal and the board pack read a goal's portfolio sources, so an umbrella goal
+  counts its children's gifts as its Fundraising card does. (LEDGER-1)
 - **LYBUNT and SYBUNT live only in `reportBuntList`.** Retention on an empty prior year is null. A win rate
   is won/(won+lost), and open asks are never losses. (BUILD-33 P1, BUILD-46)
 - **Read the fiscal year from the org (`orgPeriodBounds`/`orgReportYear`), never a hardcoded July.**

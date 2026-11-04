@@ -542,7 +542,9 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         {active === "lybunt" && atStake > 0 && <>: <strong><RF f={d.figures?.atStake} kind="money" label="Last year's giving at stake" /></strong> of last year's giving is at stake</>}. This is a call list, not a chart.</>;
       table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
         { key: "name", label: "Donor", type: "text", person: true },
-        { key: "priorYearTotal", label: active === "lybunt" ? `Gave ${priorLabel}` : "Gave prior year", type: "money" },
+        // LEDGER-1: SYBUNT's amount is the last year each person gave, named on the row
+        { key: "priorYearTotal", label: active === "lybunt" ? `Gave ${priorLabel}` : "Gave in their last year", type: "money",
+          ...(active === "sybunt" ? { render: r => `${fmtFull(r.priorYearTotal)}${r.lastYear ? ` · ${yearMode === "fiscal" ? fyLabelFromEnd(Number(String(r.lastYear.to).slice(0, 4)), fsm) : String(r.lastYear.from).slice(0, 4)}` : ""}` } : {}) },
         { key: "lastGiftDate", label: "Last gift", type: "date", render: r => `${displayDate(r.lastGiftDate) || "No date"}${r.lastGiftAmount ? ` · ${fmtFull(r.lastGiftAmount)}` : ""}` },
         { key: "lifetimeGiving", label: "Lifetime", type: "money" },
         { key: "assignedTo", label: "Assigned to", type: "text", render: r => r.assignedTo || <span style={{ color: T.ink3 }}>Nobody</span>, hideWhenEmpty: true },

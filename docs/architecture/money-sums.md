@@ -519,3 +519,12 @@ These are (b) by the definitions above, but each has something a reviewer may wa
 - Giving-page and peer-to-peer raised are written about twenty times (`routes/give.js`, `routes/crm.js`, `routes/supporter.js`, `routes/agent.js`, `engagement.js`, `figureSources.js`) with three different rules: `amount > 0` (`P2P_RAISED`), every row (`raised_amount`), and `MONEY()` (the Fundraising overview). `routes/supporter.js` has no org scope on its gifts subquery.
 - `server.js` and `routes/give.js` copy `numbers.publicBarRaised`'s SQL for the public and portal thermometers instead of calling it; they are on the rule today.
 - `routes/homeLead.js` registration gifts promised at the next event read `event_attendees.gift_amount`, not `shared/numbers/events.js`.
+
+## LEDGER-1 (2026-11-04)
+
+- `server/donors/gifts.js` profile pledges: its own `due_this_year` (unpaid installments, then capped) is gone; it reads `shared/numbers/pledges.js` `dueOf`.
+- `server/reports/fundraising.js` `/fundraising/pledges` rows: their own due and overdue are gone; `dueOf`.
+- `figureSources.js` `pledgesDueSql` (pledges-due, pledges-overdue): whole unpaid installments → `pledges.js` `DUE_SQL`.
+- `server/reports/handlers.js` `reportBuntList` and `figureSources.js` `bunt`: last year's `SPAN_SUM` → `givingBetween.js` `LAST_YEAR_SUM` (the last year they gave).
+- `afterChange.js` `rhythmFor`: calendar this/last year → the fiscal year (`fiscalYear.js` `startYearOf`).
+- `route-gift-sql` baseline lowered by one.

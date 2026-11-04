@@ -319,13 +319,15 @@ async function reportBuntList(orgId, p, kind) {
   const rows = await query(
     `SELECT d.id, d.name, d.email, d.assigned_to_name,
             COALESCE(d.total_giving, 0) AS total_giving, d.last_gift_date, d.last_gift_amount,
-            (SELECT ${NUMBERS.givingBetween.SPAN_SUM("g")} FROM gifts g
-              WHERE g.org_id = d.org_id AND g.donor_id = d.id) AS prior_year_total
-     FROM donors d
+            ${NUMBERS.givingBetween.LAST_YEAR_SUM("d")} AS prior_year_total, ly.f AS last_year_from, ly.t AS last_year_to
+     FROM donors d ${NUMBERS.givingBetween.LAST_YEAR_JOIN("d")}
      WHERE d.org_id = ? AND d.deleted_at IS NULL
        AND ${bp0.sql}
      ORDER BY COALESCE(d.total_giving, 0) DESC`,
-    [prior.from, prior.to, orgId, ...bp0.args]);
+    // LEDGER-1: each person's amount is what they gave in the last year they
+    // gave (givingBetween.LAST_YEAR_SUM): last year for LYBUNT, and for SYBUNT
+    // their own last year, never the prior year they did not give in.
+    [...NUMBERS.givingBetween.lastYearArgs(cur.from), orgId, ...bp0.args]);
   // REPORTS-4: the count and the prior-year giving at stake, through the
   // `bunt` source (the same predicates, moved there).
   const bp = { kind, from: cur.from, to: cur.to, prevFrom: prior.from, prevTo: prior.to };
@@ -337,6 +339,7 @@ async function reportBuntList(orgId, p, kind) {
       id: r.id, name: r.name, email: r.email, assignedTo: r.assigned_to_name,
       lifetimeGiving: Number(r.total_giving), lastGiftDate: r.last_gift_date,
       lastGiftAmount: Number(r.last_gift_amount || 0), priorYearTotal: Number(r.prior_year_total),
+      lastYear: r.last_year_from ? { from: r.last_year_from, to: r.last_year_to } : null,
     })),
   };
 }
@@ -935,10 +938,15 @@ function reportToCsv(key, data, opts = {}) {
         headers: ["Name", "Total", "Gifts", "Unique donors", "% of total"],
         rows: data.rows.map(r => [r.name, r.total, r.giftCount, r.uniqueDonors, r.pct]),
       };
-    case "lybunt": case "sybunt":
+    case "lybunt":
       return {
         headers: ["Name", "Email", "Assigned to", "Last gift date", "Last gift amount", `Gave ${data.yearMode === "fiscal" ? "FY" + (data.year - 1) : data.year - 1}`, "Lifetime giving"],
         rows: data.rows.map(r => [r.name, r.email, r.assignedTo, r.lastGiftDate, r.lastGiftAmount, r.priorYearTotal, r.lifetimeGiving]),
+      };
+    case "sybunt":   // LEDGER-1: the last year each person gave, and what they gave in it
+      return {
+        headers: ["Name", "Email", "Assigned to", "Last gift date", "Last gift amount", "Last year they gave (from)", "Last year they gave (to)", "Gave in their last year", "Lifetime giving"],
+        rows: data.rows.map(r => [r.name, r.email, r.assignedTo, r.lastGiftDate, r.lastGiftAmount, r.lastYear ? r.lastYear.from : "", r.lastYear ? r.lastYear.to : "", r.priorYearTotal, r.lifetimeGiving]),
       };
     case "retention":
       return {

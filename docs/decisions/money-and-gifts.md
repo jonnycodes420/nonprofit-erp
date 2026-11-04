@@ -178,6 +178,12 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 - **Xero does not send yet, and says so.** Its old send posted to an endpoint Xero does not have. The route
   refuses (409) and every Xero surface reads "Sending to Xero is not available yet." A real send is the
   QuickBooks shape again (accounts and tracking categories from the org's own Xero, Pending, sent once). (FIX-20)
+- **What a pledge has due is one rule.** Due by a day = what the schedule asked for by then, less what has
+  been paid (its payments or its installments marked paid, whichever is more), never more than the
+  balance. `shared/numbers/pledges.js` `dueOf` (rows) and `DUE_SQL` (the figure sources); Due, Overdue and
+  still to come cannot contradict each other or the row. (LEDGER-1)
+- **A change moves every figure in the same step.** Gift edit and delete re-read the whole profile
+  (`told()`), redraft an unsent thank-you, and run the after-change step. (LEDGER-1)
 - **The bookkeeper export must foot in cents before a byte is written.** Mismatch is a 409, nothing
   repaired; the database sum is asked for exactly, not pre-rounded (`bookkeeper.js`). (BUILD-87)
 

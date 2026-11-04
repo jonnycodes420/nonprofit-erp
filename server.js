@@ -12806,7 +12806,7 @@ require("./routes/crm").mount({
   registerDraftSender: fn => { _sendDraft = fn; },
   // INT-5 — queueing a webhook. It never posts inline: a gift must not fail
   // because somebody's endpoint is down.
-  emitWebhook,
+  emitWebhook, queueThankYouDraft,   // LEDGER-1: an edited gift's unsent thank-you is redrafted
   ACK_READY, ACTIVITY_DEFINITIONS, FISCAL_READY, AGENT_MODEL, ALL_PIPELINE_STAGES, API_KEY_PREFIX, ASSET_ID_RE,
   CAL_READY, EV_READY, GC_READY, GEOCODE_TICK_BUDGET, GIVE_THEME_COLS,
   IMPORT_DONOR_BATCH, IMPORT_GIFT_BATCH, INBOUND_EMAIL_DOMAIN, INBOUND_EMAIL_ENABLED, LAPSE_DAYS,

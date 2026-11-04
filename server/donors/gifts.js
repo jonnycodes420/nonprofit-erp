@@ -32,7 +32,7 @@ const {
   recordAssetPointerHistory, recordAutoMove, recordGift, renderReceiptPdf, requireAdmin, requireAuth,
   resolveOrgBrandTheme, resolvePdfLogo, round2, run, runTx, sendPledgeReminderEmail, sendReceiptEmail,
   staffWho, storeChequeImage, toDollars, trashRow, uuid, withAdvisoryLock, withTransaction, wrap,
-  writeGiftExtras, giftHooks,
+  writeGiftExtras, giftHooks, queueThankYouDraft,
 } = ctx;
 let app = routers.r0;
 
@@ -322,6 +322,21 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
     if (g.pledge_id) await recalcPledgePayment(g.pledge_id, req.user.orgId);
     return query("SELECT * FROM gifts WHERE id=?", [req.params.id]);
   });
+  // LEDGER-1 · AN EDIT MOVES EVERY FIGURE. The thank-you waiting on this gift
+  // was written about the old amount, fund and date: an unsent, unskipped
+  // draft is written again from the gift as it now stands (a sent letter is
+  // never touched). Then the one after-change step, as every gift door runs
+  // it: this year, the household, the rhythm, groups and the stored Home figures.
+  const after = rows[0] || {};
+  const [draft] = await query(
+    "SELECT id FROM thank_you_drafts WHERE org_id=? AND gift_id=? AND sent_at IS NULL AND skipped_at IS NULL", [req.user.orgId, req.params.id]);
+  if (draft && queueThankYouDraft) {
+    await queueThankYouDraft(req.user.orgId, { giftId: req.params.id, donorId: after.donor_id, cents: money.toCents(after.amount) ?? 0,
+      fundId: after.fund_id || null, type: after.type || "cash", force: true, replace: true })
+      .catch(e => console.error("[gift-edit] redraft:", e.message));
+  }
+  await require("../../afterChange").afterChange(req.user.orgId, [g.donor_id], { door: "gift_form", recalc: false })
+    .catch(e => console.error("[gift-edit] after-change:", e.message));
   res.json(rows[0]);
 }));
 
@@ -405,6 +420,10 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
   // (reopens only if remaining payments no longer cover the pledge amount).
   if (g.pledge_id) await recalcPledgePayment(g.pledge_id, req.user.orgId);
   }); // end withAdvisoryLock(gift:…) — delete + recalc serialized per gift
+  // LEDGER-1: the one after-change step, as every gift door runs it (the
+  // totals were just written above, so recalc is off).
+  if (g.donor_id) await require("../../afterChange").afterChange(req.user.orgId, [g.donor_id], { door: "gift_form", recalc: false })
+    .catch(e => console.error("[gift-delete] after-change:", e.message));
   // FIX-10 Part C — the timeline says what happened, in one line, on the
   // donor's own record. A task that vanishes without a trace is how a director
   // comes to believe she already thanked someone she never thanked. Written
@@ -449,9 +468,8 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
   // Fundraising's Pledges count to (numbers.pledgeSummary).
   const yearEnd = orgTime.orgPeriodBounds(await orgForYears(req.user.orgId), "fiscal_year", 0).end;   // ORG_TZ_SEAM_OK
   const inst = rows.length ? await query(
-    `SELECT pledge_id, COUNT(*)::int AS n, MIN(LEFT(due_date,4)) AS y0, MAX(LEFT(due_date,4)) AS y1,
-            COALESCE(SUM(amount) FILTER (WHERE paid_gift_id IS NULL AND due_date <= ?),0) AS due_this_year
-       FROM pledge_installments WHERE org_id=? AND pledge_id = ANY(?) GROUP BY pledge_id`, [yearEnd, req.user.orgId, rows.map(r => r.id)]) : [];
+    `SELECT pledge_id, COUNT(*)::int AS n, MIN(LEFT(due_date,4)) AS y0, MAX(LEFT(due_date,4)) AS y1
+       FROM pledge_installments WHERE org_id=? AND pledge_id = ANY(?) GROUP BY pledge_id`, [req.user.orgId, rows.map(r => r.id)]) : [];
   const instBy = new Map(inst.map(x => [x.pledge_id, x]));
   // IMPORT-5: each installment with its state, for the open pledge up top
   const instRows = rows.length ? await query(
@@ -467,15 +485,18 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
     const balance = round2(parseFloat(r.balance) || 0);
     const ix = instBy.get(r.id);
     const years = ix ? Number(ix.y1) - Number(ix.y0) + 1 : 1;
-    const dueThisYear = r.status !== "open" ? 0 : ix ? Math.min(balance, round2(parseFloat(ix.due_this_year) || 0))
-      : (String(r.due_date || "").slice(0, 10) <= yearEnd ? balance : 0);
+    // LEDGER-1: the one rule (shared/numbers/pledges.js), Fundraising's own.
+    const PL = require("../../shared/numbers/pledges");
+    const pl = { amount, paid, dueDate: r.due_date ? String(r.due_date).slice(0, 10) : "", installments: listBy.get(r.id) || [] };
+    const dueThisYear = r.status !== "open" ? 0 : PL.dueOf(pl, yearEnd, "<=");
+    const left = PL.installmentsLeft(pl);
     return {
       ...r,
       paid, balance,
       surplus, overpaid: surplus > 0,
       displayStatus: pledgeDisplayStatus(paid, amount, r.status),
       installmentCount: ix ? ix.n : 1, years, dueThisYear,
-      installments: listBy.get(r.id) || [],
+      installments: left.map(i => ({ ...i, paid: i.left <= 0 })),
       // the open-pledge figure opens Fundraising's own rows for this person
       openSource: { key: "pledges-open", params: { donor: r.donor_id } },
     };
