@@ -38,6 +38,7 @@
 const express = require("express");
 const { readSearch } = require("../searchTerms");
 const { meetingsSql } = require("../meetings");
+const PM = require("../server/donors/personMatch");   // LIST-2: who a search for a person finds
 
 const routers = { r0: express.Router() };
 const PER_KIND = 5;      // shown in a group: three; one more says "see all"
@@ -67,6 +68,7 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const userId = req.user.userId;
   const p = likePattern(q);
+  const fp = PM.foldedPattern(q);   // LIST-2
   const digits = q.replace(/\D/g, "");
   const L = (want ? SEE_ALL : PER_KIND) + 1;
   const E = "ESCAPE '\\'";
@@ -92,12 +94,14 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
       sql: `SELECT id, name, email, phone, kind, person_types, total_giving, contact_name
          FROM donors
         WHERE org_id = ? AND deleted_at IS NULL
-          AND (name ILIKE ? ${E} OR email ILIKE ? ${E} OR contact_name ILIKE ? ${E} OR phone ILIKE ? ${E} OR mobile ILIKE ? ${E}
+          AND (${PM.personMatchSql(fp).sql} OR mobile ILIKE ? ${E}
                ${digits.length >= 4 && !amt?.explicit ? "OR regexp_replace(COALESCE(phone,''), '\\D', '', 'g') LIKE ? OR regexp_replace(COALESCE(mobile,''), '\\D', '', 'g') LIKE ?" : ""})
-        ORDER BY (lower(name) LIKE lower(?) ${E}) DESC, total_giving DESC NULLS LAST, id
+        ORDER BY (${PM.FOLD("name")} LIKE ? ${E}) DESC, total_giving DESC NULLS LAST, id
         LIMIT ${L}`,
-      args: [orgId, p, p, p, p, p, ...(digits.length >= 4 && !amt?.explicit ? ["%" + digits + "%", "%" + digits + "%"] : []),
-        String(q).replace(/[\\%_]/g, ch => "\\" + ch) + "%"] },
+      // LIST-2: the one person rule (server/donors/personMatch.js): name, email,
+      // phone, contact person, household and linked organization, accents folded.
+      args: [orgId, ...PM.personMatchSql(fp).args, p, ...(digits.length >= 4 && !amt?.explicit ? ["%" + digits + "%", "%" + digits + "%"] : []),
+        PM.fold(String(q).trim()).replace(/[\\%_]/g, ch => "\\" + ch) + "%"] },
     // "Rafael gift": the person, opened on their gifts.
     personGifts: read.personGifts ? {
       sql: `SELECT id, name, kind, total_giving FROM donors

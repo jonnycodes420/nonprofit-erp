@@ -184,7 +184,8 @@ function DonorPhotoControl({donor,isReadOnly,photoUrl,onChanged,size=46}){
     setBusy(false);
   };
 
-  const label=photoUrl?`Change ${donor.name}'s photo`:`Add a photo for ${donor.name}`;
+  const who=donor.name||"this person";   // LIST-2: never "undefined"
+  const label=photoUrl?`Change ${who}'s photo`:`Add a photo for ${who}`;
   return (
     <div style={{position:"relative",flexShrink:0}}
       onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}>

@@ -128,7 +128,9 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
       action: "Review" }] : []),
     // POLISH-4: only when there is something to link
     ...(c.businesses ? [{ id: "businesses", label: "People and their businesses", count: c.businesses,
-      sentence: `${c.businesses === 1 ? "1 person looks" : `${c.businesses.toLocaleString("en-US")} people look`} linked to an organization on file. Linked, a gift from either keeps both off Lapsed.`,
+      sentence: c.businessPeople != null
+        ? `${plural(c.businessPeople, "person", "people")} and ${plural(c.businessOrgs, "organization")} on file look like one giving unit, each counted once. Linked, a gift from either keeps both off Lapsed.`
+        : `${c.businesses === 1 ? "1 person looks" : `${c.businesses.toLocaleString("en-US")} people look`} linked to an organization on file. Linked, a gift from either keeps both off Lapsed.`,
       action: "Review" }] : []),
     { id: "unreachable", label: "No way to reach", count: c.unreachable,
       sentence: `${plural(c.unreachable, "person", "people")} with no email, no phone and no mailable address.`,
@@ -180,8 +182,21 @@ function DuplicatesPanel({ onDone, onOpenDonor, isReadOnly, tick }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   // SWEEP-2: the pairs come a page at a time; Show more asks for the next page.
-  const load = (limit = shown) => apiFetch(`/data-health/duplicates?limit=${limit}`)
-    .then(r => { setPairs(r.pairs); setTotal(r.total ?? r.pairs.length); }).catch(e => setErr(e.message));
+  // LIST-2: Review pairs finishes, or says it failed. It never spins: a read
+  // that takes over 20 seconds is stopped, and an answer with no pairs in it
+  // is a failure in words, not an endless "Finding pairs…".
+  const load = (limit = shown) => {
+    const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), 20000) : null;
+    setErr(null);
+    return apiFetch(`/data-health/duplicates?limit=${limit}`, ctl ? { signal: ctl.signal } : {})
+      .then(r => {
+        if (!r || !Array.isArray(r.pairs)) throw new Error("Steward couldn't read the pairs.");
+        setPairs(r.pairs); setTotal(r.total ?? r.pairs.length);
+      })
+      .catch(e => setErr(e && e.name === "AbortError" ? "Finding pairs took too long. Try again in a minute." : (e && (e.sentence || e.message)) || "Steward couldn't find the pairs."))
+      .finally(() => { if (timer) clearTimeout(timer); });
+  };
   useEffect(() => { load(); }, [tick]);   // eslint-disable-line react-hooks/exhaustive-deps
   const more = () => { const n = shown + PAGE; setShown(n); load(n); };
   const notDup = async p => {
@@ -198,7 +213,8 @@ function DuplicatesPanel({ onDone, onOpenDonor, isReadOnly, tick }) {
     } catch (e) { setErr(e.sentence || e.message); }
     finally { setBusy(false); }
   };
-  if (!pairs) return <Card>{err ? `Couldn't load the pairs. ${err}` : "Finding pairs…"}</Card>;
+  if (!pairs) return <Card data-testid={err ? "dh-pairs-failed" : "dh-pairs-loading"}>{err ? <>Couldn't load the pairs. {err} <button style={linkBtn} onClick={() => load()}>Try again</button></> : "Finding pairs…"}</Card>;
+  if (!pairs.length && !total) return <Card data-testid="dh-duplicates"><div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>No likely duplicates</div></Card>;
   const highs = pairs.filter(p => p.confidence === "high" && !p.crossHousehold).length;
   return (
     <Card data-testid="dh-duplicates">

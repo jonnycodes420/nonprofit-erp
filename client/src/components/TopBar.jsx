@@ -141,6 +141,10 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
   const rootRef = useRef(null);
   const seqRef = useRef(0);
   const movedRef = useRef(false);
+  // LIST-2: the words the results on screen answer, and an Enter pressed
+  // before they arrived (it opens the top match when they do).
+  const [resultsFor,setResultsFor] = useState(null);
+  const enterRef = useRef(null);
 
   useEffect(()=>{
     const onDown = e => { if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false); };
@@ -163,9 +167,9 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
         if (seq !== seqRef.current) return; // stale response — a newer query is in flight
         setResults(Array.isArray(r?.results) ? r.results : []);
         setMore(r?.more || {}); setExpanded(null);
-        setSel(0);
-      } catch { if (seq === seqRef.current) { setResults([]); setMore({}); setExpanded(null); } }
-    }, 220);
+        setSel(0); setResultsFor(term);
+      } catch { if (seq === seqRef.current) { setResults([]); setMore({}); setExpanded(null); setResultsFor(term); } }
+    }, enterRef.current === term ? 0 : 220);
     return ()=>clearTimeout(t);
   },[q,open]);
 
@@ -233,6 +237,17 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
     return out;
   },[results,more,expanded,navMatches,onNavigate]);
 
+  // LIST-2: Enter pressed while the answer was on its way opens the top match
+  // (a record, never the first "Go to" link) the moment it lands.
+  useEffect(()=>{
+    const term = enterRef.current;
+    if (!term || resultsFor !== term) return;
+    enterRef.current = null;
+    const top = flat.find(x=>x.group!=="Go to"&&!x.seeAll) || flat[0];
+    if (top) pick(top);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[resultsFor,flat]);
+
   const empty = q.trim().length===0;
   const showDrop = open && (empty || flat.length>0 || (q.trim().length>=2 && results!==null));
 
@@ -248,11 +263,16 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
 
   const onKeyDown = e => {
     if (e.key==="Escape") { setOpen(false); inputRef.current?.blur(); return; }
+    const typed = q.trim();
+    if (e.key==="Enter" && typed.length>=2 && !movedRef.current && resultsFor!==typed) {
+      e.preventDefault(); enterRef.current = typed; setOpen(true);
+      return;
+    }
     if (!flat.length) return;
     if (e.key==="ArrowDown") { e.preventDefault(); movedRef.current = true; setSel(s=>(s+1)%flat.length); setOpen(true); }
     else if (e.key==="ArrowUp") { movedRef.current = true; e.preventDefault(); setSel(s=>(s-1+flat.length)%flat.length); }
     // An empty box only goes somewhere once she has arrowed to a row.
-    else if (e.key==="Enter") { e.preventDefault(); if (q.trim() || movedRef.current) pick(flat[sel]||flat[0]); }
+    else if (e.key==="Enter") { e.preventDefault(); if (movedRef.current) pick(flat[sel]||flat[0]); else if (q.trim()) pick(flat.find(x=>x.group!=="Go to"&&!x.seeAll)||flat[0]); }
   };
 
   // Grouped render preserving flat indices
