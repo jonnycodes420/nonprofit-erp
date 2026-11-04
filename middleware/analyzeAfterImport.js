@@ -32,6 +32,30 @@ async function analyzeImportTables() {
   return running;
 }
 
+// LIST-2 · THE TABLES THE NEXT SCREEN READS, AT THE END OF AN IMPORT. A big
+// file is most of a new org the planner has never seen; the Donors list read
+// right after it planned the drift read as if the org had one person (8 to 54 s
+// locally, 146 s on prod). The background sheet import and the combined import
+// call this when their writing is done. Each ANALYZE runs on its own
+// connection with a statement and lock timeout, so it can never block the
+// import, a screen or autovacuum: one that can't run now is skipped, in words.
+const AFTER_IMPORT_TABLES = ["gifts", "donors", "donor_drift", "donor_scores"];
+async function analyzeAfterImportGuarded(tag, tables = AFTER_IMPORT_TABLES) {
+  const { withClient } = require("../db");
+  return withClient(async c => {
+    await c.query("SET statement_timeout = '20s'");
+    await c.query("SET lock_timeout = '2s'");
+    try {
+      for (const t of tables) {
+        try { await c.query(`ANALYZE ${t}`); } catch (e) { console.warn(`[analyze] ${tag}: ${t} skipped (${e.message})`); }
+      }
+    } finally {
+      await c.query("RESET statement_timeout").catch(() => {});
+      await c.query("RESET lock_timeout").catch(() => {});
+    }
+  }).catch(e => console.warn(`[analyze] ${tag}:`, e.message));
+}
+
 function analyzeAfterImport() {
   return (req, res, next) => {
     if (req.method === "POST" && IMPORT_WRITE.test(req.path)) {
@@ -43,4 +67,4 @@ function analyzeAfterImport() {
   };
 }
 
-module.exports = { analyzeAfterImport, analyzeImportTables, TABLES, IMPORT_WRITE };
+module.exports = { analyzeAfterImport, analyzeImportTables, analyzeAfterImportGuarded, AFTER_IMPORT_TABLES, TABLES, IMPORT_WRITE };

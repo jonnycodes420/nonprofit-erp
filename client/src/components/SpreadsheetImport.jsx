@@ -228,10 +228,6 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
     if (running && !result) sayAfterClose("It keeps going. Open Settings, Imports to see it.");
     if (result && onImported) onImported(); else if (onClose) onClose();
   };
-  // LIST-2: Done on the receipt goes to the Donors list, from wherever the
-  // import was opened (it closed the window and left her on the import screen).
-  const toList = () => { window.dispatchEvent(new CustomEvent("steward:directory", { detail: { fromImport: "" } })); navigate(donorsListHref({})); };
-  const doneToList = () => { finish(); toList(); };
   // FIX-54: the last delete's Undo comes down while a file is imported
   useEffect(() => { dismissUndo(); }, []);
   // Reopened while an import is running (a refresh, a closed tab): follow it.
@@ -404,7 +400,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
         <div data-testid="sheet-import-workbook" style={{ color: T.ink }}>
           <WorkbookImport workbook={workbook} fileName={file && file.name}
             onClose={() => { setWorkbook(null); setFile(null); }}
-            onImported={() => { told({ import: "workbook" }); if (onImported) onImported(); else if (onClose) onClose(); toList(); }} />
+            onImported={() => { told({ import: "workbook" }); if (onImported) onImported(); else if (onClose) onClose(); }} />
         </div>
       </Modal>
     );
@@ -867,7 +863,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             )}
             <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
               {!undone && result.importId && <div style={{ flex: "1 1 260px" }}><ImportUndo importId={result.importId} onUndone={r => setUndone(r.sentence || "Undone.")} /></div>}
-              <button type="button" data-testid="sheet-done" style={btn(true)} onClick={doneToList}>Done</button>
+              <button type="button" data-testid="sheet-done" style={btn(true)} onClick={finish}>Done</button>
             </div>
             {/* INSIGHTS-1: what the file says, before Home */}
             {/* IMPORT-6: a file with no gifts gets one line and the next step, never a ladder of zeros */}

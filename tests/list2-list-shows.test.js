@@ -256,8 +256,10 @@ async function reset(org) {
   ok("§3 and lowest-lifetime-first too", (r3b.body.donors || []).slice(-Math.min(noGift, 100)).every(d => !lastGift.has(d.id)), (r3b.body.donors || []).slice(-3).map(d => d.name));
   await header("name").click(); await settle();
   const names = await rowNames();
-  const key = nm => { const p = byName.get(nm) || { last: nm, first: "" }; return (p.org ? p.name : `${p.last} ${p.first}`).toLowerCase(); };
-  const sortedNames = [...names].sort((a, b) => key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0);
+  // The expected order from the fixture's own last names, collated by Postgres
+  // (CI's collation is not the scratch database's C, and not JavaScript's).
+  const key = nm => { const p = byName.get(nm) || { last: nm, name: nm }; return (p.org ? p.name : `${p.last} ${p.name}`).toLowerCase(); };
+  const sortedNames = (await q(`SELECT n FROM unnest($1::text[], $2::text[]) WITH ORDINALITY AS t(n, k, o) ORDER BY k, o`, [names, names.map(key)])).map(r => r.n);
   ok("§3 Name sorts by last name, then first", names.length > 50 && JSON.stringify(names) === JSON.stringify(sortedNames), names.slice(0, 6));
   const p1 = await api("GET", `/donors?role=donor&limit=50&offset=0&sort=name&dir=asc`, tok), p2 = await api("GET", `/donors?role=donor&limit=50&offset=50&sort=name&dir=asc`, tok);
   const both = [...(p1.body.donors || []), ...(p2.body.donors || [])].map(d => d.id);
