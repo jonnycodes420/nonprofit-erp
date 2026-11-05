@@ -17,10 +17,16 @@ const orgTime = require("./orgTime");
 
 const LAPSED_DAYS = 365;       // last gift on or before today - 365: lapsed
 const LAPSING_MONTHS = 9;      // last gift on or before today - 9 months: lapsing
+// COUNTS-1: Lapsed has two windows that every screen names. Lapsed 12 to 24
+// months (Re-engage's first list) and Lost, over 24 months (Lost & Found and the
+// "Lost: over 24 months" report): a last gift before today less 24 months.
+const LOST_MONTHS = 24;
 
 const WORDS = Object.freeze({
   lapsed: "Lapsed: they have given before, but not in the last 12 months.",
   lapsing: "Lapsing: their last gift was 9 to 12 months ago, and their usual time to give has passed.",
+  lapsedRecent: "Lapsed: no gift in 12 to 24 months, after giving before.",
+  lost: "Lost: no gift in over 24 months, after giving before.",
   pledge_overdue: "Pledge payment overdue: they have an open pledge with an installment past its due date and not yet paid.",
 });
 
@@ -45,6 +51,7 @@ function bounds(today) {
     lapsedOnOrBefore: orgTime.addDays(t, -LAPSED_DAYS),
     lapsingFrom: orgTime.addDays(t, -(LAPSED_DAYS - 1)),
     lapsingOnOrBefore: shiftMonths(t, LAPSING_MONTHS),
+    lostBefore: shiftMonths(t, LOST_MONTHS),   // COUNTS-1: a last gift before this day is Lost
   };
 }
 
@@ -106,5 +113,5 @@ const isLapsed = (last, today) => lapseState(last, today) === "lapsed";
 const isLapsing = (last, today) => lapseState(last, today) === "lapsing";
 
 
-module.exports = { LAPSED_DAYS, LAPSING_MONTHS, WORDS, shiftMonths, bounds, lapseState, usualTimeAhead,
+module.exports = { LAPSED_DAYS, LAPSING_MONTHS, LOST_MONTHS, WORDS, shiftMonths, bounds, lapseState, usualTimeAhead,
   pledgeHold, isLapsed, isLapsing };

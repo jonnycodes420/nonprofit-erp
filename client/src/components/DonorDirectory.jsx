@@ -101,7 +101,13 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
   // their card stopped, they did not choose to leave.
   // POLISH-4 — who is on it is decided once, on the server (lapse.js reengageSql):
   // the badge, this list and its tiles name the same people.
-  const lapsed=[...donors].filter(d=>d.reengage).sort((a,b)=>b.total-a.total);
+  // COUNTS-1 — two windows, each said plainly (lapseRule.js WORDS.lapsedRecent and
+  // WORDS.lost): Lapsed 12 to 24 months, and Lost & Found, over 24 months, the
+  // same people the "Lost: over 24 months" report lists (lapse.js lostSql).
+  const[win,setWin]=useState("recent");
+  const everyone=[...donors].filter(d=>d.reengage).sort((a,b)=>b.total-a.total);
+  const lostList=everyone.filter(d=>d.lost),recentList=everyone.filter(d=>!d.lost);
+  const lapsed=win==="lost"?lostList:recentList;
   const totalValue=lapsed.reduce((s,d)=>s+d.total,0);
   // BUILD-79 Part 4 — averaged over donors with a REAL date only; a donor
   // with no dates contributes nothing rather than a today-anchored zero.
@@ -123,7 +129,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
   };
 
   // SWEEP-2: an org with no givers is not "all active"
-  if(!lapsed.length)return donors.some(d=>d.lastGift||d.total>0)
+  if(!everyone.length)return donors.some(d=>d.lastGift||d.total>0)
     ?<EmptyState title="No lapsed donors" message="Nobody on file has gone a year without giving. Anyone who does shows here, ready to call."/>
     :<EmptyState title="No givers yet" message="Re-engage lists people whose last gift was over a year ago. Import your gift history from Import & tools, and anyone who has gone quiet shows here."/>;
 
@@ -135,11 +141,20 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
   const cols=["Donor","Lifetime giving","Last gift","Since last gift",GIVING_STRENGTH_LABEL,""];
   const colWidths="2fr 130px 130px 120px 80px 130px";
 
+  const WINDOWS=[["recent","Lapsed 12 to 24 months",recentList.length,"Lapsed: no gift in 12 to 24 months, after giving before."],
+    ["lost","Lost & Found: over 24 months",lostList.length,"Lost: no gift in over 24 months, after giving before. The same people as the report Lost: over 24 months."]];
   return(
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div data-testid="reengage-windows" style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        {WINDOWS.map(([k,label,n])=>(
+          <button key={k} type="button" data-testid={"reengage-win-"+k} data-count={n} aria-pressed={win===k} onClick={()=>setWin(k)}
+            style={{background:T.white,border:"1px solid "+(win===k?T.ink:T.bg3),borderRadius:8,padding:"7px 14px",cursor:"pointer",color:T.ink,fontSize:12.5,fontWeight:win===k?700:400}}>
+            {label} · {n.toLocaleString("en-US")}</button>))}
+        <span style={{fontSize:12.5,color:T.ink3}}>{(WINDOWS.find(w=>w[0]===win)||WINDOWS[0])[3]}</span>
+      </div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         {[
-          ["Lapsed donors",lapsed.length,T.ink],
+          [win==="lost"?"Lost donors":"Lapsed donors",lapsed.length,T.ink],
           ["Total lapsed value",fmtFull(totalValue),T.ink],
           // SWEEP-2: the days are since the last gift, and the tile is ink (the four colours)
           ["Avg days since last gift",`${avgDays.toLocaleString("en-US")} days`,T.ink],
