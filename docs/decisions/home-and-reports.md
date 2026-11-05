@@ -579,3 +579,16 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 - Gave is each person with their own gift or pledge for the event, and each guest who came whose household gave
   (`event-gave`; `came=yes|no` splits it). So Came = came and gave + came and didn't, and Gave = came and gave + gave
   and didn't come; the story says so in one sentence (`numbers.eventStory` `addsUp`), and the truth check holds both.
+
+## Counts (COUNTS-1)
+
+- Every count on a screen comes from the same query or shared function as the list it labels. A badge is
+  the count of the list it opens; a deliberate subset says so in its label or tooltip, and the page shows
+  the same number.
+- The Tasks badge is GET /tasks/counts?scope=mine, today + overdue ("due today or overdue"), re-read after
+  every write (`client/src/lib/taskBadge.js`); the Tasks page shows the same line.
+- A profile, its tab counts and Engagement re-read after any write that touches the person
+  (`client/src/lib/profileRefresh.js`, fed by api.js `onWrite` with the write's path).
+- Lapsed is 12 to 24 months; Lost is over 24 months (`lapseRule.LOST_MONTHS`, `shared/numbers/lapse.js`
+  `lostSql`). Re-engage's Lost & Found tab and the "Lost: over 24 months" report count the same people.
+- The truth check's `counts` pass (`tests/lib/countsKey.js`, `tests/lib/counts1Item3.js`) holds these.
