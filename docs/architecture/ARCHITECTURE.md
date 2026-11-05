@@ -230,6 +230,7 @@ each one matches:
 | `org-specific` | per app file, lines naming one org | a quoted `org_<id>` literal, `org_slug === "…"`, or `orgId === "org_…"`, in app code (not tests, scripts, docs or audit) |
 | `crm-routes` | none (a hard rule, SPLIT-1) | a line of `routes/crm.js` that registers a route (`app.get(` … `routers.x.post(`) |
 | `short-ids` | none (a hard rule, IDS-1) | a line of server code with `uuid().slice(` or `randomUUID().slice(`, or a UUID with its dashes stripped cut to 12 hex or fewer. A new row id is `newId(prefix)` from `server/shared/newId.js` |
+| `split-shells` | `db.js` and `client/src/components/DonorProfile.jsx`, each with the length SPLIT-2 left it | count `\n`; a shell may not grow past its baseline. New code goes in its parts: `server/db/` (pool, query helpers, schema, `ddl/partN.js`, seed) and `components/profile/` (the `useProfile*` hooks, the tabs, the rail) |
 | `big-images` | none (it is a hard rule, not a ratchet) | any committed image over 500 KB outside `client/src/assets/` and `assets/` |
 
 A pattern match will miss things and catch some innocent lines. That is the trade: it is a

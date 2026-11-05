@@ -193,7 +193,11 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 
 ## Where the code is
 - `server.js` — Express app, nearly every route, `orgOwns`, `checkWriteAccess`, `requireApiKey`
-- `db.js` — pg pool (SSL hardcoded), `initSchema` (order matters), `seedData`, `withAdvisoryLock`
+- `db.js` — the one export list and `getDb`; the rest is under `server/db/` (SPLIT-2): `pool.js` (pg pool, SSL
+  hardcoded, request limits), `query.js` (`query`, `run`, transactions, `withAdvisoryLock`), `schema.js` (`initSchema`,
+  which runs `ddl/part1.js` … `part7.js` in order: order matters), `seed.js` (`seedData`, the backfills). A new
+  migration goes at the end of the last part; when that part nears 1,500 lines, add the next part and its line in
+  `schema.js`. The schema hash covers db.js and every file under `server/db/` (`schemaSources.js`).
 - `auth.js` — `requireAuth`, `requireAdmin` (and the MFA setup-only session)
 - `shared/` — pure ESM modules for client, server and suites (`shared/package.json` marks ESM)
 - `assetStore.js` — asset put/prune/purge and the one `destroyAsset` seam; `scripts/ops/restore-asset.js`

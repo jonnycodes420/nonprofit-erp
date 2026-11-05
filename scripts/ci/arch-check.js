@@ -120,6 +120,10 @@ const RHYTHM_COPY = new RegExp([
 // line that deletes from donor_scores names donor_id on that line.
 const SCORE_DELETE = /DELETE\s+FROM\s+donor_scores\b(?![^\n]*\bdonor_id\b)/i;
 
+// SPLIT-2: the files cut down to a shell. Each is capped at the size the split
+// left it; new code goes in its parts (server/db/, components/profile/).
+const SHELLS = new Set(["db.js", "client/src/components/DonorProfile.jsx"]);
+
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp|tiff?|heic|avif)$/i;
 const IMAGE_OK = f => f.startsWith("client/src/assets/") || f.startsWith("assets/");
 
@@ -192,6 +196,12 @@ const CHECKS = {
     hard: true,
     measure: files => Object.fromEntries(files.filter(isAppCode).map(f => [f, countLines(f, SCORE_DELETE)]).filter(([, n]) => n > 0)),
     worse: (key, now) => `${key}: ${now} org-wide delete(s) of donor_scores; upsert the changed rows (engagement.js writeScores) and delete only a person's own row by donor_id`,
+  },
+  "split-shells": {
+    what: "the files SPLIT-2 cut down to a shell (each capped at the size the split left it)",
+    measure: files => Object.fromEntries(files.filter(f => SHELLS.has(f)).map(f => [f, lineCount(f)])),
+    worse: (key, now, base) => base == null ? `${key} has no cap in the baseline`
+      : now > base ? `${key} grew to ${now} lines (cap ${base}); put the new code in its parts` : null,
   },
   "big-images": {
     what: `committed images over ${IMAGE_MAX / 1024} KB outside client/src/assets/ and assets/ (a hard rule)`,
