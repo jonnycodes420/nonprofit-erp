@@ -102,14 +102,20 @@ const DB_PARTS = (() => {
   return out;
 })();
 FILES["db.js"] = ["db.js", ...DB_PARTS];
-const DB_PIECE = /^\/\/ SPLIT-2 db\.js piece (\d+)\n([\s\S]*?)^\/\/ SPLIT-2 end\n/gm;
-function dbSource() {
+// SPLIT-2: server.js's statements moved to server/boot/ the same way, marked
+// "// SPLIT-2 server.js piece N". The wiring added inside a moved function (a
+// write followed by " __share({ x });") is dropped, so the text is server.js's.
+const SERVER_BOOT = (() => { try { return fs.readdirSync(path.join(ROOT, "server", "boot")).filter(f => f.endsWith(".js")).sort().map(f => "server/boot/" + f); } catch { return []; } })();
+FILES["server.js"].push(...SERVER_BOOT);
+const pieceRe = target => new RegExp("^\\/\\/ SPLIT-2 " + target.replace(/\./g, "\\.") + " piece (\\d+)\\n([\\s\\S]*?)^\\/\\/ SPLIT-2 end\\n", "gm");
+function dbSource() { return splitSource("db.js", FILES["db.js"]); }
+function splitSource(target, files) {
   const pieces = [];
-  for (const rel of FILES["db.js"]) {
+  for (const rel of files) {
     const src = fs.readFileSync(path.join(ROOT, rel), "utf8");
     const dir = path.posix.dirname(rel);
-    for (const m of src.matchAll(DB_PIECE)) {
-      const text = m[2].replace(/\b(require|import)\((\s*)(["'`])(\.\.?\/[^"'`]*)/g, (x, kw, sp, q, spec) => {
+    for (const m of src.matchAll(pieceRe(target))) {
+      const text = m[2].replace(/ __share\(\{ [\w$]+(?:, [\w$]+)* \}\);/g, "").replace(/\b(require|import)\((\s*)(["'`])(\.\.?\/[^"'`]*)/g, (x, kw, sp, q, spec) => {
         let r = path.posix.normalize(path.posix.join(dir, spec));
         if (!r.startsWith(".")) r = "./" + r;
         return kw + "(" + sp + q + r;
@@ -258,9 +264,11 @@ function piecesOf(target) {
   for (const rel of FILES[target]) {
     const src = fs.readFileSync(path.join(ROOT, rel), "utf8");
     if (target === "server.js") {
+      if (SERVER_BOOT.includes(rel)) continue;   // SPLIT-2: read below, as server.js
       if (rel === "server.js") {
-        const ast = parse(src, false);
-        for (const c of tile(src, ast.body, 0)) if (!isServerWiring(c.node)) out.push({ ...c, file: rel });
+        const whole = SERVER_BOOT.length ? splitSource("server.js", ["server.js", ...SERVER_BOOT]) : src;
+        const ast = parse(whole, false);
+        for (const c of tile(whole, ast.body, 0)) if (!isServerWiring(c.node)) out.push({ ...c, file: rel });
       } else {
         const p = modulePieces(rel, src);
         const group = rel === "routes/crm.js" || SPLIT1_PARTS.includes(rel);
@@ -345,4 +353,16 @@ function moduleOrderOf(rel, src) {
   return modulePieces(rel, src).map(p => ({ h: hash(p.text), k: keyOf(p.node) || "text:" + hash(p.stmt) }));
 }
 
-module.exports = { readSource, FILES, orderOf, moduleOrderOf, splitParts };
+// SPLIT-2: a file's OWN text as it was before it was split into pieces (db.js,
+// server.js), not the stitched whole. A suite that read the raw file reads this.
+// For any other file, the file.
+function splitText(rel) {
+  if (rel === "db.js") return dbSource();
+  if (rel === "server.js" && SERVER_BOOT.length) return splitSource("server.js", ["server.js", ...SERVER_BOOT]);
+  return fs.readFileSync(path.join(ROOT, rel), "utf8");
+}
+// SPLIT-2: the files that hold another file's pieces; a suite that walks the
+// tree reads the whole file through splitText and skips these.
+const isSplitPiece = f => /^server\/boot\//.test(f) || /^server\/db\//.test(f);
+
+module.exports = { readSource, FILES, orderOf, moduleOrderOf, splitParts, splitText, isSplitPiece };
