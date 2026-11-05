@@ -68,7 +68,7 @@ export function SecurityPanel({ isAdmin }) {
   const [team, setTeam] = useState(null);
   const [pw, setPw] = useState({ current: "", next: "" });
   const load = () => {
-    apiFetch("/me/mfa").then(setSt).catch(e => setMsg(errorMessage(e, "Could not read your sign-in settings.")));
+    apiFetch("/me/mfa").then(setSt).catch(e => { setSt(false); setMsg(errorMessage(e, "Could not read your sign-in settings.")); });
     apiFetch("/me/sessions").then(r => setSessions(r)).catch(() => setSessions({ sessions: [] }));
     if (isAdmin) apiFetch("/org/team").then(r => setTeam(Array.isArray(r) ? r : [])).catch(() => setTeam([]));
   };
@@ -126,9 +126,11 @@ export function SecurityPanel({ isAdmin }) {
         <SectionLabel>Two-factor sign-in</SectionLabel>
         {st?.demo && <div data-testid="security-demo" style={{ ...small, color: T.ink, background: T.bg, borderLeft: "3px solid " + T.gold, borderRadius: 8, padding: "10px 12px", marginBottom: 10 }}>{st.demoSentence}</div>}
         <div style={{ fontSize: 14, color: T.ink, marginBottom: 8 }}>
-          Two-factor is <strong>{st ? (st.enabled ? "on" : "off") : "…"}</strong> for you
-          {st?.enabled ? `, with ${st.method === "email" ? "a code by email" : "an authenticator app"}. ${countLabel(st.recoveryCodesLeft, "recovery code")} left.` : "."}
-          {st?.orgRequires ? " Your organization requires it for everyone." : st?.orgRequiresForAdmins ? " Your organization requires it for administrators." : ""}
+          {/* POLISH-5: no status word until the status is read ("Two-factor is … for you") */}
+          {st === false ? null : !st ? <span data-testid="security-2fa-loading" style={{ color: T.ink3 }}>Checking two-factor sign-in…</span> : <>
+          {"Two-factor is "}<strong data-testid="security-2fa-state">{st.enabled ? "on" : "off"}</strong>
+          {st.enabled ? ` for you, with ${st.method === "email" ? "a code by email" : "an authenticator app"}. ${countLabel(st.recoveryCodesLeft, "recovery code")} left.` : " for you."}
+          {st.orgRequires ? " Your organization requires it for everyone." : st.orgRequiresForAdmins ? " Your organization requires it for administrators." : ""}</>}
         </div>
         {st && !st.enabled && !setup && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -201,7 +203,7 @@ export function SecurityPanel({ isAdmin }) {
         {(sessions?.sessions || []).map(s => (
           <div key={s.id} data-testid="session-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 0", borderTop: "1px solid " + T.bg2, flexWrap: "wrap" }}>
             <span style={{ fontSize: 14, color: T.ink }}>
-              <strong>{s.browser} on {s.os}</strong>{s.thisBrowser ? " · this browser" : ""}
+              <strong>{`${s.browser} on ${s.os}`}</strong>{s.thisBrowser ? " · this browser" : ""}
               <span style={{ color: T.ink3 }}> · {ago(s.lastActiveAt)}{s.ipPrefix ? ` · ${s.ipPrefix}` : ""}</span>
             </span>
             {!s.thisBrowser && !st?.demo && <button type="button" onClick={() => signOut(s.id)} disabled={busy} style={btn}>Sign out</button>}

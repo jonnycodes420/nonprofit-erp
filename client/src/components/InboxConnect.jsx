@@ -106,7 +106,7 @@ export function InboxNudge({ firstName, onNavigate }) {
     <div data-testid="inbox-nudge" style={{ fontSize: 12.5, color: T.ink3, padding: "8px 2px", lineHeight: 1.5 }}>
       <button onClick={go} style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700,
         cursor: "pointer", fontSize: 12.5, fontFamily: "inherit", textDecoration: "underline" }}>Connect your inbox</button>
-      {" "}and emails with {firstName || "this person"} show up here.
+      {` and emails with ${firstName || "this person"} show up here.`}
     </div>
   );
 }

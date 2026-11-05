@@ -458,7 +458,7 @@ export function BoardPackPanel({ onNavigate, onOpenSettings }) {
         <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${T.bg2}` }}>
           <Eyebrow>What each number means</Eyebrow>
           {pack.definitions.map((d, i) => <div key={i} style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.6, marginBottom: 7 }}>
-            <strong style={{ color: T.ink }}>{d.label}.</strong> {d.definition}
+            <strong style={{ color: T.ink }}>{`${d.label}.`}</strong>{` ${d.definition}`}
           </div>)}
         </div>
       </>}

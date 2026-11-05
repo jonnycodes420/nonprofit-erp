@@ -20,6 +20,7 @@ import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { isPlainLeftClick } from "../lib/appUrls";
 import PhotoField from "./PhotoField";
+import { displayOrgDate } from "../lib/orgDay";
 
 const STATUS_LABEL = { active: "Active", grace: "Grace", lapsed: "Lapsed", cancelled: "Cancelled", renewed: "Renewed" };
 const STATUS_COLOR = { active: T.greenDk, grace: T.gold500, lapsed: T.ink3, cancelled: T.ink3, renewed: T.ink3 };
@@ -389,8 +390,8 @@ export function MembersView({ isReadOnly, isAdmin = false, onNavigate, orgSlug =
                   <td style={{ padding: "8px", color: T.ink3 }}>{displayDate(m.joined_on)}</td>
                   <td style={{ padding: "8px", color: T.ink3 }}>{m.expires_on ? displayDate(m.expires_on) : "Lifetime"}</td>
                   <td style={{ padding: "8px", color: T.ink3 }} data-testid="member-page-state">
-                    {m.yourPageOpenedAt ? `Opened ${displayDate(String(m.yourPageOpenedAt).slice(0, 10))}`
-                      : m.yourPageSentAt ? `Sent ${displayDate(String(m.yourPageSentAt).slice(0, 10))}, not opened`
+                    {m.yourPageOpenedAt ? `Opened ${displayOrgDate(m.yourPageOpenedAt)}`
+                      : m.yourPageSentAt ? `Sent ${displayOrgDate(m.yourPageSentAt)}, not opened`
                       : "Not sent"}
                   </td>
                 </tr>))}</tbody>

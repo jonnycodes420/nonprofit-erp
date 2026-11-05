@@ -7,6 +7,7 @@ import { ThankYouDrafts } from "../ThankYouDrafts";
 import { EmailsReceived } from "../EmailAsSent";
 import { ProfileTimeline } from "../ProfileTimeline";
 import { HistoryList } from "../EditHistory";
+import { shownTags, shownNote } from "../../lib/internalLabels";
 
 function ListTabs({deleteMaterial,donor,dpTab,giftsFull,inboxConnected,intActions,isReadOnly,loadDpThread,loadGiftsFull,loadRel,localInts,matLoading,matUploading,materials,onInteractionAdded,onLogTouchpoint,onNavigate,rel,saveStewardship,setLogMeeting,setStwForm,setStwOpen,stwForm,stwOpen,stwSaving,tlExtras,tlSearch,uploadMaterial,viewMaterial}){
   return <>
@@ -35,7 +36,7 @@ function ListTabs({deleteMaterial,donor,dpTab,giftsFull,inboxConnected,intAction
                   <button onClick={()=>setStwOpen(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
                 </div>
               </div>}
-            {dpTab==="notes"&&donor.notes&&<div data-testid="dp-record-notes" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{donor.notes}</div>}
+            {dpTab==="notes"&&shownNote(donor.notes)&&<div data-testid="dp-record-notes" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{shownNote(donor.notes)}</div>}
             {dpTab==="files"&&<>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Files</div>

@@ -11,6 +11,7 @@ import { T, Modal, Phone } from "./shared";
 import { AVAILABILITY } from "../../../shared/volunteerApply.js";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
+import { displayOrgDate } from "../lib/orgDay";
 
 const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 
@@ -171,7 +172,7 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
                   <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>{displayDate(s.date)}</td>
                   <td>{s.opportunityName || s.role || ""}</td>
                   <td style={{ textAlign: "right", paddingRight: 10, fontWeight: 700 }}>{s.hours}{s.startTime ? <span style={{ fontWeight: 400, color: T.ink3 }}> ({s.startTime} to {s.endTime})</span> : null}</td>
-                  <td style={{ whiteSpace: "nowrap", color: T.ink3 }}>{s.enteredAt ? displayDate(String(s.enteredAt).slice(0, 10)) : ""}</td>
+                  <td style={{ whiteSpace: "nowrap", color: T.ink3 }}>{s.enteredAt ? displayOrgDate(s.enteredAt) : ""}</td>
                   <td style={{ color: T.ink3, whiteSpace: "nowrap" }}>{s.enteredBy}</td>
                   <td style={{ color: T.ink3, maxWidth: 200 }}>{s.note || ""}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{!isReadOnly && <>
@@ -229,8 +230,8 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
           {prof.applications.slice(0, 1).map(a => (
             <div key={a.id} style={{ fontSize: 12.5, color: T.ink, display: "flex", flexDirection: "column", gap: 3 }}>
               <div style={{ color: T.ink3 }}>{a.via !== "page"
-                ? `Made a volunteer${a.decidedBy ? " by " + a.decidedBy : ""} on ${displayDate(String(a.decidedAt || a.submittedAt).slice(0, 10))}.`
-                : `${a.status === "approved" ? `Approved${a.decidedBy ? " by " + a.decidedBy : ""}` : a.status === "declined" ? "Declined" : "Waiting for a decision"}, sent ${displayDate(String(a.submittedAt).slice(0, 10))}.`}</div>
+                ? `Made a volunteer${a.decidedBy ? " by " + a.decidedBy : ""} on ${displayOrgDate(a.decidedAt || a.submittedAt)}.`
+                : `${a.status === "approved" ? `Approved${a.decidedBy ? " by " + a.decidedBy : ""}` : a.status === "declined" ? "Declined" : "Waiting for a decision"}, sent ${displayOrgDate(a.submittedAt)}.`}</div>
               {a.answers.map((x, i) => <div key={i}><strong>{x.question}</strong> {x.answerText || String(x.answer ?? "")}</div>)}
               {a.hoursPerWeek != null && <div data-testid="volunteer-hours-week"><strong>Hours a week:</strong> {a.hoursPerWeek}</div>}
               {a.availability.length > 0 && <div><strong>Available:</strong> {a.availability.join(", ")}</div>}
@@ -247,7 +248,7 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
               <div key={vis}>
                 <span style={eyebrow}>{title}</span> <span style={{ fontSize: 11.5, color: T.ink3 }}>{sub}</span>
                 {!list.length && <div style={{ fontSize: 12.5, color: T.ink3 }}>None.</div>}
-                {list.map(n => <div key={n.id} style={{ fontSize: 12.5, color: T.ink, padding: "3px 0" }}>{n.body} <span style={{ color: T.ink3 }}>· {n.by}, {displayDate(String(n.at).slice(0, 10))}</span></div>)}
+                {list.map(n => <div key={n.id} style={{ fontSize: 12.5, color: T.ink, padding: "3px 0" }}>{n.body} <span style={{ color: T.ink3 }}>· {n.by}, {displayOrgDate(n.at)}</span></div>)}
               </div>);
           })}
           {!isReadOnly && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>

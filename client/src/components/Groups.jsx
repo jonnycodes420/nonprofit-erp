@@ -253,14 +253,14 @@ function Starters({ onAdded, onOpenGroup, isReadOnly }) {
   return (
     <div style={{ ...card, marginBottom: 16 }} data-testid="group-starters">
       <div style={{ fontSize: 15, fontWeight: 600, color: T.ink, marginBottom: 2 }}>Start from a list Steward already sees</div>
-      <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginBottom: 8 }}>{data.countSentence} {data.leftOutSentence}</div>
+      <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginBottom: 8 }}>{`${data.countSentence} ${data.leftOutSentence}`}</div>
       {err && <div role="alert" style={{ fontSize: 13, color: T.ink, marginBottom: 6 }}>{err}</div>}
       {data.starters.map(st => (
         <div key={st.key} data-testid={`starter-${st.key}`} style={{ borderTop: "1px solid " + T.bg2, padding: "8px 0" }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", minHeight: 44 }}>
             <button type="button" aria-expanded={!!(preview && preview.key === st.key)} onClick={() => open(st.key)}
               style={{ background: "none", border: "none", padding: "6px 0", font: "inherit", textAlign: "left", cursor: "pointer", color: T.ink, fontSize: 14, fontWeight: 600, flex: "1 1 220px", minWidth: 0 }}>
-              {st.name}{st.term && <span style={{ fontSize: 11.5, fontWeight: 400, color: T.ink3, marginLeft: 6 }}>{st.term}</span>}
+              {st.name}{st.term && <span style={{ fontSize: 11.5, fontWeight: 400, color: T.ink3 }}>{` · ${st.term}`}</span>}
             </button>
             <span data-testid="starter-count" style={{ fontSize: 13, color: T.ink2, whiteSpace: "nowrap" }}>{st.count.toLocaleString("en-US")} {st.count === 1 ? "person" : "people"}</span>
             {st.addedGroupId
@@ -378,7 +378,7 @@ export function GroupPage({ groupId, onBack, onOpenPerson, isReadOnly, onNavigat
               <span style={{ color: T.ink, fontWeight: 600, flex: "1 1 180px", minWidth: 0 }}>{m.name}</span>
               <span style={{ fontSize: 12, color: T.ink3, width: 64 }}>{m.level ? m.level.charAt(0).toUpperCase() + m.level.slice(1) : "Not given"}</span>
               <span style={{ fontSize: 12.5, color: T.ink2, width: 110, textAlign: "right" }}>
-                ${Math.round(m.last12).toLocaleString("en-US")} <span style={{ color: T.ink3 }}>this 12 mo.</span>
+                {`$${Math.round(m.last12).toLocaleString("en-US")} `}<span style={{ color: T.ink3 }}>this 12 mo.</span>
               </span>
               {g.kind === "static" && !isReadOnly && (
                 <button type="button" style={{ ...quiet, padding: "4px 9px", fontSize: 12 }} onClick={() => remove(m.id)} aria-label={`Take ${m.name} out of ${g.name}`}>Take out</button>

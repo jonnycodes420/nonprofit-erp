@@ -767,7 +767,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                         u.rowAccount && <span key="rows" data-testid="sheet-row-account">{u.rowAccount.sentence}
                           {u.rowAccount.merged > 0 && <> <button type="button" data-testid="sheet-merged-see" style={{ ...linkBtn }} onClick={() => setMergedOpen(o => !o)}>{mergedOpen ? "(hide them)" : "(see them)"}</button></>}
                           {mergedOpen && <span style={{ display: "block", marginTop: 4 }} data-testid="sheet-merged-list">
-                            {(u.merged || []).slice(0, 50).map(m => <span key={m.sheet + m.line} style={{ display: "block" }}>Row {m.line}: {m.name}, read into {m.into} (row {String(m.intoLine || "").split(":")[1] || m.intoLine}) by {m.by === "name" ? "the same name" : m.by}.</span>)}
+                            {(u.merged || []).slice(0, 50).map(m => <span key={m.sheet + m.line} style={{ display: "block" }}>{`Row ${m.line}: ${m.name}, read into ${m.into} (row ${String(m.intoLine || "").split(":")[1] || m.intoLine}) by ${m.by === "name" ? "the same name" : m.by}.`}</span>)}
                           </span>}
                         </span>,
                         u.householdLine && <span key="hh" data-testid="sheet-household-line">{u.householdLine.sentence}.</span>,
