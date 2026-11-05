@@ -167,7 +167,7 @@ const writes = async () => n(`SELECT ((SELECT COUNT(*) FROM tasks WHERE org_id=$
   const cal = await api("GET", `/calendar/items?from=${today}&to=${plus(2)}`, tok);
   const calItem = (cal.body.items || []).find(i => i.type === "meeting" && i.ref && i.ref.calendarEventId === "ce_v3_tom");
   ok("§2 the calendar's lunch carries the id the card matches on", !!calItem && calItem.donorId === "d_v3_mchen", (cal.body.items || []).map(i => [i.type, i.ref && i.ref.calendarEventId]));
-  const prof = fs.readFileSync(path.join(ROOT, "client/src/components/DonorProfile.jsx"), "utf8");
+  const prof = require("../scripts/lib/readSource").readSource("client/src/components/DonorProfile.jsx");   // SPLIT-2: read whole
   const calJsx = fs.readFileSync(path.join(ROOT, "client/src/components/Calendar.jsx"), "utf8");
   ok("§2 the profile and the calendar both draw the one card", /useBeforeMeeting\(donor\?\.id(, toldNonce)?\)/.test(prof) && /<BeforeYourMeeting data=\{briefHere\}/.test(calJsx), null);
 

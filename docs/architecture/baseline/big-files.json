@@ -10,7 +10,6 @@
     "client/src/components/VolunteersHub.jsx": 1507,
     "client/src/pages/AdminDashboard.jsx": 2007,
     "client/src/pages/Donate.jsx": 2043,
-    "db.js": 9728,
     "figureSources.js": 3267,
     "routes/agent.js": 3401,
     "routes/billing.js": 3243,
@@ -19,7 +18,6 @@
     "routes/volunteerScheduling.js": 2496,
     "routes/webhooks.js": 3078,
     "scripts/ci/seed-demo.js": 4191,
-    "server.js": 12861,
     "shared/importShape.js": 4569,
     "shared/sheetRead.js": 1906,
     "tests/smoke-walk.test.js": 1955

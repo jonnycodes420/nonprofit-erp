@@ -297,7 +297,8 @@ async function reset() {
 
   // ── §7 THE SCREEN RE-READS ───────────────────────────────────────────────
   console.log("\n§7 the screen keeps up");
-  const src = p => fs.readFileSync(path.join(ROOT, "client/src/components", p), "utf8");
+  // SPLIT-2: the profile's state lives in profile/useProfile*.jsx; it is read whole through readSource.
+  const src = p => p === "DonorProfile.jsx" ? require("../scripts/lib/readSource").readSource("client/src/components/DonorProfile.jsx") : fs.readFileSync(path.join(ROOT, "client/src/components", p), "utf8");
   const listeners = ["DonorProfile.jsx", "Tasks.jsx", "Calendar.jsx", "Dashboard.jsx"]   // Home's Thread is in Dashboard.jsx
    // COUNTS-1: the profile listens through useProfileRefresh (lib/profileRefresh.js), which is useStewardTold plus its own writes.
    .filter(p => fs.existsSync(path.join(ROOT, "client/src/components", p)) && /useStewardTold\(|useProfileRefresh\(/.test(src(p)));
