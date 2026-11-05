@@ -308,6 +308,8 @@ async function donorProfileFigures(orgId, donorId, today) {
     lastMet: r => ({ date: String(r.date || "").slice(0, 10) || null, what: meetingPhrase(r.name) }),
     // POLISH-4: an email from them is "from them", not "replied": nothing says
     // it answered one of hers ("Email replied Oct 30" for a first message).
+    // COUNTS-1: Last contact is the one rule (meetings.js conversationsWith); its line says which kind.
+    contact: r => ({ date: String(r.date || "").slice(0, 10) || null, what: String(r.detail || "").split(" · ")[0] || null }),
     lastEmail: r => ({ date: String(r.date || "").slice(0, 10) || null, direction: /^From them/.test(r.detail || "") ? "from_them" : /^To them/.test(r.detail || "") ? "sent" : null }),
   };
   const got = await Promise.all(wanted.map(async ([k, source]) => {

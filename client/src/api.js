@@ -228,7 +228,9 @@ export function prefetch(paths, { keep = false, bundle: bundleUrl = bundlePath, 
 // the server, said $1,500. Anything that holds a list registers here.
 const writeHooks = new Set();
 export function onWrite(fn) { writeHooks.add(fn); return () => writeHooks.delete(fn); }
-const forgetLists = () => { for (const fn of writeHooks) { try { fn(); } catch { /* one list's hook never stops a write */ } } };
+// COUNTS-1: each hook is told which write ({ path, method, phase: "before" | "after" }),
+// so a screen can re-read only for the writes that touch what it shows.
+const forgetLists = (w) => { for (const fn of writeHooks) { try { fn(w || {}); } catch { /* one list's hook never stops a write */ } } };
 
 export async function apiFetch(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
@@ -237,7 +239,7 @@ export async function apiFetch(path, options = {}) {
   // list re-read after "Approve all" comes back as it was before the approval.
   // FIX-46: and the lists held for the session, before and after the write.
   if (method !== "GET" && SEEN_ONLY.some(r => r.test(path))) return apiFetchNow(path, options);
-  if (method !== "GET") { kept.clear(); parked.clear(); inFlight.clear(); forgetLists(); return apiFetchNow(path, options).finally(forgetLists); }
+  if (method !== "GET") { kept.clear(); parked.clear(); inFlight.clear(); forgetLists({ path, method, phase: "before" }); return apiFetchNow(path, options).finally(() => forgetLists({ path, method, phase: "after" })); }
   if (options.body || options.signal) return apiFetchNow(path, options);
   const key = getToken() + " " + path;
   const hit = kept.get(key);

@@ -1040,7 +1040,7 @@ const SOURCES = {
     measure: () => "sum",
     amountKind: "days",
     params: { donor: "id:required", today: "date:required" },
-    sentence: (p, dd) => `Every conversation with this person, most recent first: a meeting (logged, or on a connected calendar and held), a call, an email, an ask or a stewardship touch. A note is not a conversation, whoever wrote it, the Agent included, and a newsletter is not one either. The figure is the whole days from the most recent one to ${dd(p.today)}; only that conversation carries the count, so the rows still add to it.`,
+    sentence: (p, dd) => `Every contact with this person, most recent first: a meeting (logged, or on a connected calendar and held), a call, an email sent or received, an ask, a stewardship touch, a note marked as a conversation, or an event they came to. A plain note is not a contact, whoever wrote it, the Agent included, and a newsletter is not one either. The figure is the whole days from the most recent one to ${dd(p.today)}; only that conversation carries the count, so the rows still add to it.`,
     js: async (orgId, p) => {
       // FIX-24 2b: the one rule (meetings.js conversationsWith).
       const rows = await meetings.conversationsWith(orgId, p.donor, { limit: CONTACT_ROWS_MAX });

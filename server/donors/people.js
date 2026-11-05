@@ -77,7 +77,8 @@ app.get("/donors/:id/scores", requireAuth, wrap(async (req, res) => {
     // knows nothing about cold.
     noHistory: !(await hasHistory(orgId, d.id)),
     // FIX-24 2b: "the most recent touch N days ago" said for today, not for the day the scores ran.
-    band: band.key, bandLabel: band.label, reason: row ? engagementMod.reasonFor(row, orgToday(await orgTz(orgId))) : null,   // ORG_TZ_SEAM_OK
+    band: band.key, bandLabel: band.label, reason: row ? engagementMod.reasonFor(row, orgToday(await orgTz(orgId)),   // ORG_TZ_SEAM_OK
+      ((await require("../../meetings").lastContactWith(orgId, d.id)) || {}).date || null) : null,   // COUNTS-1: the one Last contact
     computedFor: row ? row.computed_for : null, computedAt: row ? row.computed_at : null,
     parts: {
       engagement: parts.engagement.map(x => ({ ...x, label: W.TOUCH_POINTS[x.key].label, how: W.TOUCH_POINTS[x.key].how, one: W.TOUCH_POINTS[x.key].one, many: W.TOUCH_POINTS[x.key].many,

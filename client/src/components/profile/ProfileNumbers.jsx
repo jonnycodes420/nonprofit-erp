@@ -15,11 +15,10 @@ import { T } from "../shared";
 import { Figure } from "../Figure";
 import { censusById } from "../../../../shared/numberCensus.js";
 import { displayDate, displayDateShort } from "../../../../shared/displayDate";
-import { UndatedNote, fiscalYearWords } from "../ProfileHeaderFigures";
+import { UndatedNote, fiscalYearWords, lastContactOf } from "../ProfileHeaderFigures";
 
 const INK60 = "rgba(15,26,18,0.6)";
 const INK40 = "rgba(15,26,18,0.4)";
-const timeOf = d => (d ? new Date(String(d).length <= 10 ? d + "T12:00:00" : d).getTime() : -Infinity);
 const has = f => !!(f && f.value !== null && f.value !== undefined);
 
 // The label is the definition's door: hover, focus or tap.
@@ -55,26 +54,11 @@ function Tile({ label, def, testid, f, kind, figureKey, suffix = "", under = nul
   );
 }
 
-// Last contact: the more recent of the meeting and the email, saying which.
-function lastContact(F, today) {
-  const lm = has(F.lastMet) && F.lastMet.under && F.lastMet.under.date ? F.lastMet : null;
-  const le = has(F.lastEmail) && F.lastEmail.under && F.lastEmail.under.date ? F.lastEmail : null;
-  if (!lm && !le) return { f: null, key: "profile.lastMet", def: censusById("profile.lastMet").sentence, under: null };
-  if (lm && (!le || timeOf(lm.under.date) >= timeOf(le.under.date))) {
-    const u = lm.under;
-    return { f: lm, key: "profile.lastMet", def: censusById("profile.lastMet").sentence,
-      under: `Met${u.what ? `: ${u.what.replace(/\.$/, "")}` : ""} · ${displayDateShort(u.date, today)}` };
-  }
-  const u = le.under;
-  return { f: le, key: "profile.lastEmail", def: censusById("profile.lastEmail").sentence,
-    under: `Email ${u.direction === "from_them" ? "from them" : u.direction === "sent" ? "sent" : "logged"} · ${displayDateShort(u.date, today)}` };
-}
-
 export function ProfileNumbers({ figures }) {
   const F = figures || {};
   const today = new Date();
   const lg = F.lastGift && F.lastGift.under;
-  const lc = lastContact(F, today);
+  const lc = lastContactOf(F, today, " · ");
   const fy = fiscalYearWords(F.thisYear && F.thisYear.source && F.thisYear.source.params && F.thisYear.source.params.from);
   const lifeUnder = (F.imported || has(F.softCredit)) ? <>
     {F.imported && <span data-testid="dp-fig-lifetime-imported" title={`From ${F.imported.source}${F.imported.on ? `, imported ${displayDate(F.imported.on)}` : ""}. Gifts in Steward dated after it are added to it; gifts dated before are already inside it.`}>{F.imported.words}</span>}

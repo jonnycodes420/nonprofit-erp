@@ -270,9 +270,17 @@ function latestWords(lastDate, today) {
   const ago = ageDays(today, lastDate);
   return `, the most recent touch ${ago <= 0 ? "today" : ago === 1 ? "yesterday" : `${ago} days ago`}`;
 }
-function reasonFor(row, today) {
+// COUNTS-1: given `lastContact` (meetings.js lastContactWith's date, or null),
+// the sentence ends on the one Last contact, the same day the header and
+// About say, instead of the score pass's widest "touch".
+function reasonFor(row, today, lastContact) {
   const r = row && row.reason;
   if (!r) return null;
+  if (lastContact !== undefined && !/^No /.test(r)) {
+    const ago = lastContact ? ageDays(today, civil(lastContact)) : null;
+    const words = ago == null ? ", no contact logged yet" : `, the last contact ${ago <= 0 ? "today" : ago === 1 ? "yesterday" : `${ago} days ago`}`;
+    return r.replace(/, the (?:latest|most recent touch) [^.,]*\.$/, ".").replace(/\.$/, `${words}.`);
+  }
   const last = row.last_touch ? civil(row.last_touch) : null;
   return r.replace(/, the (?:latest|most recent touch) [^.,]*\.$/, `${latestWords(last, today)}.`);
 }
