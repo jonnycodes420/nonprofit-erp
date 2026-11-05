@@ -18,4 +18,5 @@ module.exports = {
   households: require("./households"),
   ask: require("./ask"),
   pledges: require("./pledges"),
+  fundSplit: require("./fundSplit"),   // LEDGER-2
 };

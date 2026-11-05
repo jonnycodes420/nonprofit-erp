@@ -29,9 +29,13 @@ export function fyLabelFromStart(startYear, fiscalStartMonth = 7) {
 
 // Reports names a fiscal year by the year it ENDS in (that is the number its
 // year picker holds). Same label, one conversion.
+// LEDGER-2: for a year that starts in January too. The server's year number is
+// the year its boundary falls in (reportYearBounds: 2027 is Jan to Dec 2026,
+// and Reports' own range label already said so), so "FY 2027" sat over 2026's
+// money on a calendar-year org. One conversion for every start month.
 export function fyLabelFromEnd(endYear, fiscalStartMonth = 7) {
   const y = Number(endYear);
-  return fyLabelFromStart(Number(fiscalStartMonth) === 1 ? y : y - 1, fiscalStartMonth);
+  return fyLabelFromStart(y - 1, fiscalStartMonth);
 }
 
 // Just the years, for a chip that already says "FY": "2026–27".
@@ -50,4 +54,16 @@ export function periodChipLabel(kind, { fy, cy, fiscalStartMonth = 7 } = {}) {
     case "lastCY": return `Last CY · ${cy - 1}`;
     default: return "Custom";
   }
+}
+
+// LEDGER-2 · ONE "TODAY". Which fiscal and calendar year are "this" one is the
+// server's answer (the giving summary's `fiscalYear` and `calendarYear`, on the
+// org's own calendar). Reports used to fall back to the browser's calendar year
+// until the server answered, or for good when the request failed, and read it
+// as the year a fiscal year ENDS in: on 5 Nov 2026 that is "This FY 2025–26",
+// a year behind the server's "2026–27". Null until both years are known, and
+// a screen with null shows no year at all rather than a guessed one.
+export function reportYearsFrom(summary) {
+  const fy = Number(summary && summary.fiscalYear), cy = Number(summary && summary.calendarYear);
+  return fy && cy ? { fy, cy } : null;
 }

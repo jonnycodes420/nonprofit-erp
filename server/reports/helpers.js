@@ -739,13 +739,14 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
   // living in Dashboard.jsx, which is how two screens said different things
   // about the same money. No start or no deadline: no pace at all — the caller
   // shows raised against goal, which is the honest thing to show.
-  let paceState = null, expected = null, paceSentence = null, paceRaisedPct = null, paceElapsedPct = null;
+  let paceState = null, expected = null, paceSentence = null, paceRaisedPct = null, paceElapsedPct = null, paceMath = null;
   const p = PACE && PACE.paceOf({ raised: r, goal: g, start: startDate, end: endDate, today: now.toISOString().slice(0, 10) });
   if (p) {
     paceState = p.state === "on_pace" ? "on_track" : p.state;   // the wire word the screens already read
     paceSentence = p.sentence;
     paceRaisedPct = p.raisedPct;
     paceElapsedPct = p.elapsedPct;
+    paceMath = p.math ? p.math.sentence : null;   // LEDGER-2: the projection, with its inputs
     const total = new Date(endDate) - new Date(startDate);
     const elapsed = Math.max(0, Math.min(total, now - new Date(startDate)));
     expected = total > 0 ? g * (elapsed / total) : null;
@@ -757,9 +758,9 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
   if (r <= 0 && (paceState === "on_track" || paceState === "ahead")) { paceState = null; paceSentence = null; }
   // FUNDRAISING-2: a goal that has not started has no pace. It says when it
   // starts, and the card shows what was pledged or given early.
-  if (lifecycle === "upcoming") { paceState = null; paceSentence = null; expected = null; paceRaisedPct = null; paceElapsedPct = null; }
+  if (lifecycle === "upcoming") { paceState = null; paceSentence = null; expected = null; paceRaisedPct = null; paceElapsedPct = null; paceMath = null; }
   return { percent, rawPercent, over, daysLeft, lifecycle, paceState, expected,
-           paceSentence, paceRaisedPct, paceElapsedPct, startsOn: lifecycle === "upcoming" ? civilDay(startDate) : null };
+           paceSentence, paceMath, paceRaisedPct, paceElapsedPct, startsOn: lifecycle === "upcoming" ? civilDay(startDate) : null };
 }
 
 // Live totals for a set of campaigns, matched the same way

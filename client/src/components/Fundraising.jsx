@@ -46,7 +46,7 @@ const fundHref = id => tabHref("finance", { subtab: "funds", fundId: id });
 
 // Horizontal thermometer. Gold fill; the fill goes celebratory (deeper gold)
 // at 100%. No goal → caller renders totals instead of this.
-function Thermometer({ raised, goal, percent, rawPercent, over, paceState, paceSentence, big, raisedSource, raisedLabel }) {
+function Thermometer({ raised, goal, percent, rawPercent, over, paceState, paceSentence, paceMath, big, raisedSource, raisedLabel }) {
   const pct = percent == null ? 0 : percent;         // bar width — capped at 100
   const shown = rawPercent == null ? pct : rawPercent; // number — true, uncapped
   const met = pct >= 100;
@@ -71,7 +71,7 @@ function Thermometer({ raised, goal, percent, rawPercent, over, paceState, paceS
       {paceState && PACE_META[paceState] && (
         <div data-testid="pace-badge" style={{ marginTop: big ? 10 : 8, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: PACE_META[paceState].color, background: PACE_META[paceState].bg, borderRadius: 99, padding: "3px 11px" }}>
           {paceState === "met" ? "✦" : paceState === "behind" ? "↘" : "↗"} {paceLabel}
-          {paceSentence && paceState !== "met" && <span style={{ fontWeight: 400, color: T.ink3 }}>· {paceSentence}</span>}
+          {paceSentence && paceState !== "met" && <span title={paceMath || undefined} data-pace-math={paceMath || undefined} style={{ fontWeight: 400, color: T.ink3 }}>· {paceSentence}</span>}
         </div>
       )}
     </div>
@@ -393,7 +393,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           {orgGoal.label && <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 12 }}>{orgGoal.label}</div>}
           <Thermometer raised={orgGoal.currentAmount} goal={orgGoal.goalAmount} percent={orgGoal.percent}
             rawPercent={orgGoal.rawPercent} over={orgGoal.over}
-            paceState={orgGoal.paceState} paceSentence={orgGoal.paceSentence} big />
+            paceState={orgGoal.paceState} paceSentence={orgGoal.paceSentence} paceMath={orgGoal.paceMath} big />
           {orgGoal.sourceNote && (
             <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 10, lineHeight: 1.5 }}>{orgGoal.sourceNote}</div>
           )}
@@ -562,7 +562,7 @@ function LeadCampaign({ top, onOpen, onNavigate, card, label }) {
         <button onClick={onOpen} style={{ background: "none", border: "none", padding: 0, fontSize: 12, color: T.greenDk, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Open →</button>
       </div>
       <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 12 }}>{top.name}</div>
-      <Thermometer raised={top.raised} goal={top.goalAmount} percent={top.percent} rawPercent={top.rawPercent} over={top.over} paceState={top.paceState} paceSentence={top.paceSentence} />
+      <Thermometer raised={top.raised} goal={top.goalAmount} percent={top.percent} rawPercent={top.rawPercent} over={top.over} paceState={top.paceState} paceSentence={top.paceSentence} paceMath={top.paceMath} />
       <div style={{ marginTop: 12, fontSize: 13, color: T.ink2, lineHeight: 1.6 }}>
         {l.left > 0
           ? <>{fmtTotal(l.left)} to go{daysLeftText(top.daysLeft) ? `, ${daysLeftText(top.daysLeft)}` : ""}{l.perWeek ? `: about ${fmtTotal(l.perWeek)} a week to finish on time.` : "."}</>
