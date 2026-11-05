@@ -177,10 +177,12 @@ const SITES = [
   ["server/tasks/routes.js", /inOrgDays\("x\.fin"/g, 1, "the done count's thirty days"],
   ["routes/billing.js", /orgTime\.orgToday\(STEWARD_CAL/g, 1, "Admin metrics' month"],
 ];
+// SPLIT-2: db.js and server.js are split under server/; each is read whole.
+const srcOf = file => require("../scripts/lib/readSource").splitText(file);   // SPLIT-2: db.js and server.js are read as their own text
 function sourceChecks() {
   console.log("\n§4 · every window in the ARCH-1 defect goes through orgTime");
   for (const [file, re, n, what] of SITES) {
-    const src = fs.readFileSync(path.join(ROOT, file), "utf8");
+    const src = srcOf(file);
     const code = src.split("\n").filter(l => !/^\s*(\/\/|\*|--)/.test(l)).join("\n");
     const got = (code.match(re) || []).length;
     ok(`§4 ${file}: ${what} (${got} through the seam)`, got >= n, { got, want: n });
@@ -189,7 +191,7 @@ function sourceChecks() {
   const STILL = /CURRENT_DATE/;
   const ALLOWED = new Set();   // none
   for (const [file] of SITES) {
-    const lines = fs.readFileSync(path.join(ROOT, file), "utf8").split("\n")
+    const lines = srcOf(file).split("\n")
       .map((l, i) => ({ l, i: i + 1 })).filter(({ l }) => STILL.test(l.replace(/\/\/.*$/, "").replace(/--.*$/, "")));
     const bad = lines.filter(({ i }) => !ALLOWED.has(`${file}:${i}`));
     ok(`§4 ${file}: no CURRENT_DATE`, bad.length === 0, bad.map(({ i, l }) => `${i}: ${l.trim().slice(0, 120)}`));

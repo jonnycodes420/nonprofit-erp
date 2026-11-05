@@ -64,7 +64,7 @@ async function wipe(orgId) {
   // Read out of the source that schedules them, so the list cannot drift from
   // what actually runs.
   const jobsSrc = fs.readFileSync(path.join(__dirname, "..", "routes", "jobs.js"), "utf8");
-  const serverSrc = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const serverSrc = require("../scripts/lib/readSource").splitText("server.js");   // SPLIT-2: server.js is split under server/boot/
   const scheduled = [...new Set(
     [...(jobsSrc + serverSrc).matchAll(/recordTick\(\s*"([A-Za-z0-9_]+)"/g)].map(m => m[1]))].sort();
   ok("§1 the tick runner schedules jobs to classify", scheduled.length >= 15, { count: scheduled.length });

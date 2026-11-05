@@ -53,7 +53,7 @@ const ME = "u_c1m";
 
 // ── §1 source: every person pointer in db.js ────────────────────────────────
 function personColumnsInDbJs() {
-  const src = fs.readFileSync(path.join(__dirname, "..", "db.js"), "utf8");
+  const src = require("../scripts/lib/readSource").readSource("db.js");   // SPLIT-2: db.js is split under server/db/
   const out = new Set();
   let cur = null;
   // WIRE-1: an array of people (person_ids TEXT[]) and a generic entity_id

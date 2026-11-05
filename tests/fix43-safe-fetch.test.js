@@ -177,7 +177,7 @@ const SECRET = { body: "the metadata secret", headers: { "content-type": "text/p
 
   console.log("\n§5 every place Steward fetches a typed address is on it");
   {
-    const read = f => fs.readFileSync(path.join(__dirname, "..", f), "utf8");
+    const read = f => require("../scripts/lib/readSource").splitText(f);   // SPLIT-2: server.js is read whole
     const site = read("setupSite.js"), setup = read("setup.js"), server = read("server.js");
     const fn = (src, name) => { const i = src.indexOf(`async function ${name}(`); return i < 0 ? "" : src.slice(i, src.indexOf("\n}\n", i)); };
     const callers = {

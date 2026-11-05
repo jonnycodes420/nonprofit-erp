@@ -76,9 +76,12 @@ const UNTAGGED_OK = new Set([
 ]);
 function staticGuard() {
   const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
-  const files = require("child_process").execSync("git ls-files -- '*.js' ':!tests' ':!scripts' ':!client' ':!zapier' ':!node_modules'", { cwd: ROOT })
+  let files = require("child_process").execSync("git ls-files -- '*.js' ':!tests' ':!scripts' ':!client' ':!zapier' ':!node_modules'", { cwd: ROOT })
     .toString().trim().split("\n").filter(Boolean);
-  const src = Object.fromEntries(files.map(f => [f, strip(fs.readFileSync(path.join(ROOT, f), "utf8"))]));
+  // SPLIT-2: server.js and db.js are read whole (their own text), and their pieces under server/boot/ and server/db/ are not read twice.
+  const { splitText, isSplitPiece } = require("../scripts/lib/readSource");
+  files = files.filter(f => !isSplitPiece(f));
+  const src = Object.fromEntries(files.map(f => [f, strip(splitText(f))]));
   ok("§1 the gate exists (sendGate.js exports sendToDonor)", fs.existsSync(path.join(ROOT, "sendGate.js")) && typeof require("../sendGate").sendToDonor === "function");
   const resendFiles = files.filter(f => /new Resend\(/.test(src[f])).sort().join();
   ok("§1 only server.js and routes/migc.js construct a Resend client", resendFiles === "routes/migc.js,server.js", resendFiles);
