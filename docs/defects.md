@@ -4,6 +4,10 @@ One line each: where, what, severity (P1 wrong number, data loss, sends or break
 looks wrong; P3 polish), which build found it, and the build it belongs in. A build that fixes
 one deletes its line.
 
+## The campaign audience (TRUST-1, 4 Nov 2026)
+
+- **P1 · A campaign from the Thank-you or Year-end starter can't be sent from the editor.** The six campaign starters (`shared/emailTemplates.js`) write `{{gift_amount}}` and `{{total_giving}}`; opened in the block editor (`campaignBlocksFromHtml`), neither is a block field (`EMAIL_MERGE_FIELDS` has `{{last_gift_amount}}` and no lifetime total), so "Checked against" says "{{gift_amount}} is not a field Steward can fill" and Send stays shut. Same on main. The legacy send fills both. Suggested: the next editor build maps `gift_amount` to `last_gift_amount` in `campaignBlocksFromHtml` and adds a lifetime-total block field, with a test that every starter passes preflight.
+
 ## The P3 sweep's walk (POLISH-4, 2 Nov 2026)
 
 - **P3 · A person whose earlier gift has no date reads "Donor since 2026 · New" after one dated gift.** Noren Pemland (Insights fixture): a $5,000 gift with no date, then $250 today, and About says "New: gave once this fiscal year". The undated gift counts in Lifetime but not as giving before (the undated rule), so the lifecycle reads New. Suggested: NUMBERS-5 decides whether an undated gift is "giving before" for New and Donor since.

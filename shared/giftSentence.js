@@ -28,7 +28,7 @@ export function withoutMissingGift(text, { hasGift = true, hasTotal = true } = {
   const re = new RegExp(`(\\s*)[^.!?<>\\n]*${tokenRe(keys)}[^.!?<>\\n]*[.!?]?`, "g");
   out = out.replace(re, (whole, gap) => `${gap}${NO_GIFT_SENTENCE}`);
   // Two gift sentences in a row become one thank-you, not two.
-  const dup = NO_GIFT_SENTENCE.replace(/[.?]/g, "\\$&");
+  const dup = NO_GIFT_SENTENCE.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
   return out.replace(new RegExp(`(${dup})(\\s*${dup})+`, "g"), "$1");
 }
 
