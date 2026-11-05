@@ -154,6 +154,9 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
 const AUDIENCE_WORDS = {
   no_email: n => `${n === 1 ? "has" : "have"} no email address`,
   auto_email_off: n => `${n === 1 ? "has" : "have"} automatic email off`,
+  // TRUST-1: SEND-GATE-2's reasons, as a campaign now reads them.
+  donor_never: () => "set to Never", not_chosen: () => "not chosen for campaign emails",
+  type_off: () => "wait until Campaign emails are on", skipped: () => "skipped for campaign emails",
   deceased: () => "deceased", do_not_contact: () => "marked do not contact",
   unsubscribed: n => `${n === 1 ? "has" : "have"} unsubscribed`, unsubscribe: n => `${n === 1 ? "has" : "have"} unsubscribed`,
   bounced: n => `${n === 1 ? "has an address that bounced" : "have addresses that bounced"}`,
@@ -180,10 +183,11 @@ async function audienceLine(orgId, aud, noun) {
   const blocked = off ? (offReason === "demo_org" ? "Nothing is sent from the demonstration organization."
       : offReason === "not_onboarded" ? `Email turns on once ${orgs} donor file is in.`
       : `Donor mail is off for ${orgName}, so nothing is sent until it is turned on.`)
+    : sendable === 0 && groups.some(g => g.reason === "type_off") ? "Campaign emails are off, so this campaign waits until they are turned on in Settings, Automatic email."
     : sendable === 0 ? (total ? "Nobody in this group can get this email." : "Nobody is in this group yet.") : null;
   return {
     total, sendable, wouldReach, blocked, groups, noun,
-    line: `${total.toLocaleString()} ${noun} \u00b7 ${sendable.toLocaleString()} can get this email${groups.length ? ": " + groups.map(g => g.sentence).join(", ") : ""}.`,
+    line: `${total.toLocaleString()} ${noun} \u00b7 ${sendable.toLocaleString()} can get this email${groups.length ? ": " + groups.map(g => g.sentence).join(" \u00b7 ") : ""}.`,
   };
 }
 

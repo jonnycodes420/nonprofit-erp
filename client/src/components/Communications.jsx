@@ -324,10 +324,21 @@ function SegmentPicker({ seg, onChange, allDonors }) {
       )}
       {mode === "audience" && (
         <select aria-label="Which group" data-testid="segment-group" value={seg.audienceId || ""}
-          onChange={e => { const g = (groups || []).find(x => x.id === e.target.value); upd({ audienceId: e.target.value || undefined, audienceName: g ? g.name : undefined }); }}
+          onChange={e => {
+            const v = e.target.value;
+            if (v.startsWith("mode:")) { onChange({ mode: v.slice(5) }); return; }
+            const g = (groups || []).find(x => x.id === v); upd({ audienceId: v || undefined, audienceName: g ? g.name : undefined }); }}
           style={{ border: "1px solid " + T.bg3, borderRadius: 7, padding: "6px 10px", fontSize: 12.5, color: T.ink, background: T.white, maxWidth: 320 }}>
           <option value="">{groups === null ? "Loading your groups…" : groups.length ? "Choose a group" : "No groups yet"}</option>
-          {(groups || []).map(g => <option key={g.id} value={g.id}>{g.name}{g.kind === "dynamic" ? " (by rule)" : ""}</option>)}
+          {/* TRUST-1: the picker offers the org's donors, not only its groups
+              (a walk org whose one group was Volunteers saw nothing else). */}
+          <optgroup label="Your donors">
+            {SEG_MODES.filter(m => ["all", "everyone", "lapsed", "major"].includes(m.id)).map(m =>
+              <option key={"mode:" + m.id} value={"mode:" + m.id}>{m.label}</option>)}
+          </optgroup>
+          {(groups || []).length > 0 && <optgroup label="Your groups">
+            {(groups || []).map(g => <option key={g.id} value={g.id}>{g.name}{g.kind === "dynamic" ? " (by rule)" : ""}{typeof g.count === "number" ? ` · ${g.count.toLocaleString()}` : ""}</option>)}
+          </optgroup>}
         </select>
       )}
       {mode === "manual" && (
@@ -1693,8 +1704,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     org_name: previewOrgName,
     // SWEEP-3: the sample donor's own gift and total, so a preview never reads
     // "your gift of your last gift" or "comes to $0" for somebody who gave.
-    ...(previewFirst?.giftAmount ? { gift_amount: previewFirst.giftAmount } : {}),
-    ...(previewFirst?.totalGiving ? { total_giving: previewFirst.totalGiving } : {}),
+    // TRUST-1: a real person with no gift is named as such (""), so the
+    // preview shows the thank-you sentence the send will write.
+    ...(previewFirst ? { gift_amount: previewFirst.giftAmount || "", total_giving: previewFirst.totalGiving || "" } : {}),
   }, opts);
 
   // ── THE SIX — full screen, in the org's own colours ─────────────────────────

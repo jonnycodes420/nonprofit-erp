@@ -76,6 +76,9 @@ const GUARDED_WRITERS = [
   // NUMBERS-3: recomputes stored first and last gifts to the one rule.
   // Dry run by default; --apply writes through writerDbUrl. org_creo skipped.
   "numbers3-recompute-totals",
+  // TRUST-1: turns off the at-risk and milestone sequences Steward made and
+  // left on. Dry run by default; --apply writes through writerDbUrl.
+  "trust1-turn-off-steward-sequences",
   "backfill-campaign-attribution",                    "dedupe-finance-gift-stamps",
    "fix-build54-demo-photos",
   "fix-demo-finance-ledger",  "load-irs-ein-registry",

@@ -5399,7 +5399,7 @@ async function resolveCampaignRecipients(campaign, orgId) {
 // `orgGate` is reported apart from the people: when the organisation itself
 // sends no mail (the demonstration org, or mail switched off) nobody gets it,
 // and the screen says that once instead of listing every person as left out.
-const AUDIENCE_REASON_ORDER = ["no_email", "deceased", "do_not_contact", "unsubscribed", "bounced", "complained", "blocked_address", "sample_donor"];
+const AUDIENCE_REASON_ORDER = ["no_email", "deceased", "do_not_contact", "unsubscribed", "bounced", "complained", "blocked_address", "sample_donor", "donor_never", "skipped", "not_chosen", "type_off"];
 async function campaignAudience(campaign, orgId) {
   const raw = typeof campaign.segment === "string"
     ? JSON.parse(campaign.segment || "{}")
@@ -5450,8 +5450,8 @@ async function legacyCampaignBody(body, donor, orgName, year, { text = false } =
   const lastName    = e(donor.name.split(" ").slice(1).join(" "));
   const totalGiving = donor.total_giving ? `$${Number(donor.total_giving).toLocaleString()}` : "$0";
   const giftRows    = await query("SELECT amount FROM gifts WHERE donor_id=? ORDER BY date DESC NULLS LAST LIMIT 1", [donor.id]);
-  const giftAmount  = giftRows[0] ? `$${Number(giftRows[0].amount).toLocaleString()}` : "your previous gift";
-  return (await GREET_READY).greetMerge(body || "", e(GREET.greetingName(donor)))
+  const giftAmount  = giftRows[0] ? `$${Number(giftRows[0].amount).toLocaleString()}` : "";   // TRUST-1: no gift, no gift sentence (shared/giftSentence.js)
+  return (await GREET_READY).greetMerge((await import("./shared/giftSentence.js")).withoutMissingGift(body || "", { hasGift: !!giftRows[0], hasTotal: Number(donor.total_giving) > 0 }), e(GREET.greetingName(donor)))
     .replace(/{{first_name}}/g,   firstName)
     .replace(/{{last_name}}/g,    lastName)
     .replace(/{{donor_name}}/g,   e(donor.name))
@@ -5488,7 +5488,7 @@ async function runCampaignSend(campaign, org, donors) {
 
       for (const donor of donors) {
         const decision = await donorMailDecision("campaign", donor.email, org.id);
-        if (!decision.send) {
+        if (!decision.send && decision.reason !== "type_off") {   // TRUST-1: Campaign emails off, so it waits: the send gate holds it (Going out's Held)
           console.log(`[campaign:${campaign.id}] skipping ${donor.id} (${decision.reason})`);
           await run(
             "INSERT INTO campaign_recipients (id,org_id,campaign_id,donor_id,email,failure_reason) VALUES (?,?,?,?,?,?)",
@@ -7119,7 +7119,7 @@ function formatOrgStepTime(hhmm) {
   return `${h % 12 === 0 ? 12 : h % 12}:${String(mi).padStart(2, "0")} ${ampm}`;
 }
 
-async function processSequences() {
+async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request passes its org; only the hourly job runs all orgs
   try {
     const enrollments = await query(
       `SELECT se.*, s.name AS seq_name, s.org_id, s.trigger AS seq_trigger
@@ -7127,8 +7127,8 @@ async function processSequences() {
        JOIN sequences s ON se.sequence_id = s.id
        JOIN orgs o ON o.id = s.org_id
        WHERE se.status = 'active' AND se.next_send_at <= NOW()
-         AND ${mailPolicy.orgSendsSql("o")}`,
-      []
+         AND ${mailPolicy.orgSendsSql("o")}${orgId ? " AND s.org_id = ?" : ""}`,
+      orgId ? [orgId] : []
     );
     for (const enr of enrollments) {
       try {
@@ -7592,14 +7592,14 @@ async function computeDriftForDonors(orgId, { donorIds = null, store = true } = 
 // Lazily provisions one "at_risk" sequence per org — unlike milestone
 // sequences, this isn't gated on any org-level config (impact_metrics),
 // since detecting a donor who's quietly drifted needs no configured content.
-async function ensureAtRiskSequence() {
-  const orgs = await query("SELECT id FROM orgs", []);
+async function ensureAtRiskSequence({ orgId = null } = {}) {   // TRUST-1: made OFF ('paused'); with an orgId, that org only
+  const orgs = orgId ? [{ id: orgId }] : await query("SELECT id FROM orgs", []);
   for (const o of orgs) {
     const existing = await query("SELECT id FROM sequences WHERE org_id = ? AND trigger = 'at_risk'", [o.id]);
     if (existing.length) continue;
     const seqId = newId("seq");
     await run(
-      "INSERT INTO sequences (id, org_id, name, trigger, status, created_by, created_by_name) VALUES (?,?,?,?,'active',?,?)",
+      "INSERT INTO sequences (id, org_id, name, trigger, status, created_by, created_by_name) VALUES (?,?,?,?,'paused',?,?)",
       [seqId, o.id, "At-Risk Re-Engagement", "at_risk", SYS_AUTO.id, SYS_AUTO.name]
     );
     await run(
@@ -7613,14 +7613,14 @@ async function ensureAtRiskSequence() {
 // configuring at least one active impact_metrics row. A single dummy step is
 // enough — milestone content is generated per-donor by generateMilestoneDraft(),
 // not from sequence_steps.body like other trigger types.
-async function ensureMilestoneSequences() {
-  const orgs = await query("SELECT DISTINCT org_id FROM impact_metrics WHERE active = true", []);
+async function ensureMilestoneSequences({ orgId = null } = {}) {
+  const orgs = await query(`SELECT DISTINCT org_id FROM impact_metrics WHERE active = true${orgId ? " AND org_id = ?" : ""}`, orgId ? [orgId] : []);
   for (const o of orgs) {
     const existing = await query("SELECT id FROM sequences WHERE org_id = ? AND trigger = 'milestone'", [o.org_id]);
     if (existing.length) continue;
     const seqId = newId("seq");
     await run(
-      "INSERT INTO sequences (id, org_id, name, trigger, status, created_by, created_by_name) VALUES (?,?,?,?,'active',?,?)",
+      "INSERT INTO sequences (id, org_id, name, trigger, status, created_by, created_by_name) VALUES (?,?,?,?,'paused',?,?)",
       [seqId, o.org_id, "Milestone & Anniversary Emails", "milestone", SYS_AUTO.id, SYS_AUTO.name]
     );
     await run(
@@ -7839,13 +7839,13 @@ Write the email now.`,
   }
 }
 
-async function autoEnroll() {
+async function autoEnroll({ orgId = null } = {}) {
   try {
-    await ensureMilestoneSequences();
-    await ensureAtRiskSequence();
+    await ensureMilestoneSequences({ orgId });
+    await ensureAtRiskSequence({ orgId });
     const seqs = await query(
-      "SELECT * FROM sequences WHERE status = 'active' AND trigger NOT IN ('manual', 'stage_change', 'onboarding')",
-      []
+      `SELECT * FROM sequences WHERE status = 'active' AND trigger NOT IN ('manual', 'stage_change', 'onboarding')${orgId ? " AND org_id = ?" : ""}`,
+      orgId ? [orgId] : []
     );
     for (const seq of seqs) {
       let donors = [];
@@ -8236,7 +8236,7 @@ async function closeEnrollment(id, status, reason) {
 // Follows the same shape as processSequences()/autoEnroll() above: a
 // module-level async function run on startup and on an interval, also
 // exposed as an admin-only manual-trigger route.
-async function processDunning() {
+async function processDunning({ orgId = null } = {}) {   // TRUST-1: a request passes its org; only the hourly job runs all orgs
   const picked = [];
   try {
     // FIX-45: never a demo org's or a sample person's card (orgSendsSql).
@@ -8246,8 +8246,8 @@ async function processDunning() {
        JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id
        JOIN orgs o ON o.id = rs.org_id
        WHERE rs.status IN ('past_due','recovering') AND rs.next_dunning_at <= NOW()
-         AND d.is_sample IS NOT TRUE AND ${mailPolicy.orgSendsSql("o")}`,
-      []
+         AND d.is_sample IS NOT TRUE AND ${mailPolicy.orgSendsSql("o")}${orgId ? " AND rs.org_id = ?" : ""}`,
+      orgId ? [orgId] : []
     );
     picked.push(...rows.map(r => ({ orgId: r.org_id, subscriptionId: r.id })));
     for (const rs of rows) {
@@ -9311,7 +9311,7 @@ async function sustainerFileFacts(orgId, today) {
 // its own minimal table first.
 const PLEDGE_REMINDER_SCHEDULE_DAYS = [0, 3, 7, 14];
 
-async function processPledgeReminders() {
+async function processPledgeReminders({ orgId = null } = {}) {   // TRUST-1: a request passes its org; only the hourly job runs all orgs
   const picked = [];
   try {
     // Step 1 — the trigger. Recurring dunning's cadence is initialized by a
@@ -9323,7 +9323,7 @@ async function processPledgeReminders() {
     // DATES in the org's own calendar. CURRENT_DATE is the Postgres session
     // zone, so a pledge in a western org used to start its dunning cadence
     // hours early — a reminder email about money, sent on the wrong day.
-    const _overdueOrgs = await query("SELECT id, timezone FROM orgs", []);
+    const _overdueOrgs = await query(`SELECT id, timezone FROM orgs${orgId ? " WHERE id = ?" : ""}`, orgId ? [orgId] : []);
     for (const _o of _overdueOrgs) {
       await run(
         `UPDATE pledges SET first_overdue_at=NOW(), next_reminder_at=NOW(), updated_at=NOW()
@@ -9345,7 +9345,7 @@ async function processPledgeReminders() {
          AND COALESCE(p.is_match,false) = false
          AND p.import_id IS NULL   -- SEND-GATE-1: an imported pledge is never reminded
          AND d.is_sample IS NOT TRUE AND d.deleted_at IS NULL
-         AND ${mailPolicy.orgSendsSql("o")}`
+         AND ${mailPolicy.orgSendsSql("o")}${orgId ? " AND p.org_id = ?" : ""}`, orgId ? [orgId] : []
     );
     picked.push(...rows.map(p => ({ orgId: p.org_id, pledgeId: p.id })));
     for (const p of rows) {
