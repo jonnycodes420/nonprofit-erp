@@ -270,6 +270,7 @@ function Starters({ onAdded, onOpenGroup, isReadOnly }) {
           {st.asking && st.leftOut > 0 && (
             <div data-testid="starter-left-out" style={{ fontSize: 12, color: T.ink3 }}>Leaves out {st.leftOut.toLocaleString("en-US")} marked do not solicit, do not contact or deceased.</div>
           )}
+          {st.report && st.report.count !== st.count && <div data-testid="starter-report" data-count={st.report.count} style={{ fontSize: 12, color: T.ink3 }}>{st.report.sentence}</div>}
           {preview && preview.key === st.key && (
             <div data-testid="starter-preview" style={{ background: T.bg, borderRadius: 8, padding: "10px 12px", marginTop: 6 }}>
               {preview.loading && <div style={{ fontSize: 13, color: T.ink3 }}>Reading who fits…</div>}

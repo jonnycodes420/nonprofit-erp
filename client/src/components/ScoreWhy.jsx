@@ -10,6 +10,7 @@ import { useState, useEffect, lazy, Suspense } from "react";
 import { apiFetch } from "../api";
 import { T, Modal, fmtFull } from "./shared";
 import { retryImport } from "../lib/lazyRetry";
+import { useWriteStamp } from "../lib/profileRefresh";
 // PERF-2: the panel opens from the modal, so Home (SuggestedAskLine) does not load it.
 const MetricBreakdownPanel = lazy(() => retryImport(() => import("./MetricBreakdownPanel")));
 
@@ -17,12 +18,15 @@ const BAND_COLOUR = { close: T.greenDk, warm: T.ink, distant: T.gold700, on_trac
 
 export function useScores(donorId) {
   const [s, setS] = useState(null);
+  // COUNTS-1: Engagement's sentence ends on the one Last contact, so it re-reads
+  // with the header after a conversation is logged (lib/profileRefresh.js).
+  const stamp = useWriteStamp(donorId);
+  useEffect(() => { setS(null); }, [donorId]);
   useEffect(() => {
     let live = true;
-    setS(null);
-    apiFetch(`/donors/${donorId}/scores`).then(r => { if (live) setS(r); }).catch(() => { if (live) setS(false); });
+    apiFetch(`/donors/${donorId}/scores`).then(r => { if (live) setS(r); }).catch(() => { if (live) setS(s0 => s0 || false); });
     return () => { live = false; };
-  }, [donorId]);
+  }, [donorId, stamp]);
   return s;
 }
 

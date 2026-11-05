@@ -797,11 +797,17 @@ async function audienceRoster(orgId) {
     };
   });
 
+  // COUNTS-1: each audience's number is the campaign builder's count (audienceReach.js).
+  const list = [...builtins, ...custom];
+  const reach = await require("./audienceReach").audienceReach(orgId, list.map(x => x.segment || { mode: x.mode }), { query, resolveSegmentSpec, filterBySegment });
   return {
-    audiences: [...builtins, ...custom],
+    audiences: list.map((x, i) => ({ ...x, withEmail: x.count, count: reach[i].reach, inSegment: reach[i].inSegment })),
     // The reach line. DISTINCT people, not the sum of the audiences — a
     // volunteer who gives is in two of them and must be one person here.
-    reach: donors.length,
+    // COUNTS-1: it is "Everyone with an email"'s builder count, the same number
+    // its card shows; withEmail is everyone on file with an address.
+    reach: (() => { const i = list.findIndex(x => x.mode === "everyone"); return i >= 0 ? reach[i].reach : donors.length; })(),
+    withEmail: (() => { const i = list.findIndex(x => x.mode === "everyone"); return i >= 0 && reach[i].inSegment != null ? reach[i].inSegment : donors.length; })(),
   };
 }
 
@@ -935,16 +941,18 @@ app.get("/communications/hub", requireAuth, wrap(async (req, res) => {
        FROM campaigns WHERE org_id=?`, [orgId]);
   const cs = CK.campaignStats(every);
   const totalSent = cs.totalSent;
+  const mail = await hubMailState(orgId);
   const totalOpen = cs.totalSentRows.reduce((n, c) => n + (Number(c.open_count) || 0), 0);
   res.json({
     ...roster,
-    mail: await hubMailState(orgId),
+    mail,
     campaigns: await require("../../campaignDelivery").withDelivery(orgId, campaigns),
     sequences: seqs.map(s => ({ ...s, active: parseInt(s.active, 10) || 0 })),
     stats: {
       totalSent,
       openRate: totalSent > 0 ? Math.round(totalOpen / totalSent * 100) : null,
-      activeSequences: seqs.filter(s => s.status === "active").length,
+      // COUNTS-1: running is turned on AND able to send, every sequence, never the newest five.
+      ...await require("./sequenceCounts").sequencesRunning(query, orgId, { mailSends: mail.sends }).then(r => ({ activeSequences: r.running, sequencesSentence: r.sentence })),
     },
   });
 }));

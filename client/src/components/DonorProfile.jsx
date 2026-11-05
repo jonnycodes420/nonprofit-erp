@@ -40,7 +40,7 @@ import { useDonorStatus, useDonorGone, statusTagItems } from "./ProfileStatus";
 import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
 import { MicGlyph, openTellSteward } from "./TellStewardOpen";   // VOICE-1
 import BeforeYourMeeting, { useBeforeMeeting } from "./BeforeYourMeeting";   // VOICE-3
-import { told, useStewardTold } from "../lib/stewardTold";
+import { told } from "../lib/stewardTold"; import { useProfileRefresh } from "../lib/profileRefresh";   // COUNTS-1
 import { ComingUpMain, OPEN_PROPOSAL_KEYS, PROFILE_TABS, PROPOSAL_STAGE_LABEL, SUGGEST_KINDS, TAB_KIND, lateWords } from "./profile/profileShared";
 import { EditDonorModal, FollowUpTaskModal, GiftLinkModal, LogTouchpointModal } from "./profile/modals";
 import { DonorPhotoControl } from "./profile/ProfilePhoto";
@@ -961,9 +961,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // VOICE-1 — a memo filed from the sheet shows on this profile at once.
   // VOICE-4: and everything on it re-reads: the figures and gifts, Average
   // and Largest, the rail's step, the meeting card, the asks.
-  useStewardTold(()=>{
-    setToldNonce(n=>n+1); loadGiftsFull(); loadRel(); loadDpThread(); if(reloadProps)reloadProps();
-    if(onInteractionAdded)onInteractionAdded();
+  useProfileRefresh(donor.id,e=>{   // COUNTS-1: and after any write to this person, its tasks, notes or files
+    setToldNonce(n=>n+1); loadGiftsFull(); loadRel(); loadDpThread(); if(reloadProps&&!e.fromWrite)reloadProps();   // proposals reload through their own forms
+    if(onInteractionAdded&&!e.fromWrite)onInteractionAdded();
   });
   // MEMBERS-2 — one click sends this person the link to their own page. The
   // email goes out through the normal path and the token never comes back to

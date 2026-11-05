@@ -95,18 +95,8 @@ app.get("/donors/lookup", requireAuth, wrap(async (req, res) => {
 //                 (shared/numbers/lapse.js reengageSql, POLISH-4: the list's
 //                 own rule; the stored stage is not read).
 app.get("/donors/counts", requireAuth, wrap(async (req, res) => {
-  const orgId = req.user.orgId;
-  const DS = require("../donorStatus");
-  const today = await DS.todayFor(orgId);
-  const st = DS.statusSql(orgId, today, await DS.cutsFor(orgId));
-  const re = require("../shared/numbers/lapse").reengageSql("donors", today);
-  const [r] = await query(`WITH s AS MATERIALIZED (${st.sql})
-    SELECT COUNT(*)::int AS total,
-      COUNT(*) FILTER (WHERE s.lifecycle = 'lapsed')::int AS lapsed,
-      COUNT(*) FILTER (WHERE s.lapsing)::int AS lapsing,
-      COUNT(*) FILTER (WHERE ${re.sql})::int AS reengage
-    FROM donors LEFT JOIN s ON s.donor_id = donors.id WHERE ${SET}`, [...st.args, ...re.args, orgId]);
-  res.json(r);
+  // COUNTS-1: one narrow pass (server/donors/peopleCounts.js), same rules.
+  res.json(await require("../server/donors/peopleCounts").peopleCounts(req.user.orgId));
 }));
 
 // Birthdays from yesterday to seven days out, on the org's calendar. A wider

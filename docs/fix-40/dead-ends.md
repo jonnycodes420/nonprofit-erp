@@ -11,7 +11,7 @@ reads (`tab · selector · how`). `how` is `link` (a real link to a profile), `r
 | Overview | Open rate | plain | the sent campaigns, each with its rate | hub · `[data-testid=hub-stat-rate]` · tab |
 | Overview | Sequences running | plain | Sequences | hub · `[data-testid=hub-stat-sequences]` · tab |
 | Overview | Recent sends rows | plain | a sent campaign opens its page; a draft opens Campaigns | hub · `[data-testid=hub-recent]` · page |
-| Overview | Audience counts in the rail (1,158, 55, 569 …) | plain | a group's count opens its members (`group-members`); the others open the screen their people live on | hub · `[data-testid=hub-audience-count] button` · rows |
+| Overview | Audience counts in the rail (1,158, 55, 569 …) | plain | COUNTS-1: each count is the campaign builder's reach and opens the builder on that audience ("Who it goes to") | hub · `[data-testid=hub-audience-count] button` · rows |
 | Campaigns | Sent (180) | plain | that campaign's emails, one row per person (`emails-sent` with `campaign`) | campaigns · `[data-testid=camp-sent-open]` · rows |
 | Campaigns | Opened (80, 44%) | plain | the campaign's page | campaigns · `[data-testid=camp-rate-open]` · page |
 | Campaigns | Names in an expanded campaign's recipient list | plain | the profile | campaigns · expanded row · link |

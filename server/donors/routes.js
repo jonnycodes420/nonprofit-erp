@@ -141,6 +141,7 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
   const _sumHold = require("../../shared/numbers/lapse").holdSql("donors.id", _sumToday);
   // POLISH-4: who Re-engage names, decided once (shared/numbers/lapse.js).
   const _sumRe = require("../../shared/numbers/lapse").reengageSql("donors", _sumToday);
+  const _sumLost = require("../../shared/numbers/lapse").lostSql("donors", _sumToday);   // COUNTS-1: Re-engage's Lost & Found
   const [donors, touchpoints, { map: driftMap }] = await Promise.all([
     query(`SELECT id, name, email, phone, stage, status, total_giving, last_gift_date,
                   last_gift_amount, gift_count, assigned_to, assigned_to_name,
@@ -151,8 +152,8 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
                   employer, stripe_subscription_status,
                   deceased, do_not_contact, do_not_solicit, do_not_mail, do_not_email,
                   imported_sustainer, imported_sustainer_amount, imported_sustainer_last_gift,
-                  birth_month, birth_day, birth_year, ${_sumHold.sql} AS pledge_hold, ${_sumRe.sql} AS reengage
-           FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`, [..._sumHold.args, ..._sumRe.args, req.user.orgId, limit, offset]),
+                  birth_month, birth_day, birth_year, ${_sumHold.sql} AS pledge_hold, ${_sumRe.sql} AS reengage, ${_sumLost.sql} AS lost
+           FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`, [..._sumHold.args, ..._sumRe.args, ..._sumLost.args, req.user.orgId, limit, offset]),
     query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
     computeDriftForDonors(req.user.orgId),   // BUILD-76 — the shared-state views badge from the same computation
   ]);
@@ -308,6 +309,8 @@ async function donorProfileFigures(orgId, donorId, today) {
     lastMet: r => ({ date: String(r.date || "").slice(0, 10) || null, what: meetingPhrase(r.name) }),
     // POLISH-4: an email from them is "from them", not "replied": nothing says
     // it answered one of hers ("Email replied Oct 30" for a first message).
+    // COUNTS-1: Last contact is the one rule (meetings.js conversationsWith); its line says which kind.
+    contact: r => ({ date: String(r.date || "").slice(0, 10) || null, what: String(r.detail || "").split(" · ")[0] || null }),
     lastEmail: r => ({ date: String(r.date || "").slice(0, 10) || null, direction: /^From them/.test(r.detail || "") ? "from_them" : /^To them/.test(r.detail || "") ? "sent" : null }),
   };
   const got = await Promise.all(wanted.map(async ([k, source]) => {

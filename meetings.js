@@ -95,28 +95,50 @@ async function lastMeetingWith(orgId, donorId, { before = null } = {}) {
 }
 
 // ── FIX-24 2b · LAST CONVERSATION, DEFINED ONCE ────────────────────────────
-// THE RULE: a conversation with somebody is a meeting (above: a held calendar
-// meeting, or one logged by hand), or a call, email, ask or stewardship touch
-// logged on their record, dated on or before the org's today. A NOTE IS NOT A
-// CONVERSATION, whoever wrote it, so nothing the Agent writes as a note moves
-// it; and a newsletter line (system:email-marketing) is not one either.
+// THE RULE (COUNTS-1): a conversation with somebody, and so their LAST
+// CONTACT, is the latest of
+//   · a meeting (above: a held calendar meeting, or one logged by hand);
+//   · a call, an email sent or received, an ask or a stewardship touch logged
+//     on their record;
+//   · a note somebody marked as a conversation (metadata.conversation);
+//   · an event they came to (shared/numbers/events.js EVENT_CAME), on its day;
+// dated on or before the org's today. A PLAIN NOTE IS NOT A CONVERSATION,
+// whoever wrote it, so nothing the Agent writes as a note moves it; and a
+// newsletter line (system:email-marketing) is not one either.
 // The LAST MEETING is lastMeetingWith above, and since every meeting is a
 // conversation, the last conversation is never older than the last meeting.
-// Read by the header's closeness line and the Last contact figure
-// (figureSources donor-contact-gap), so they cannot disagree with Last met.
+// Read by the header's Last contact (figureSources donor-contact-gap), the
+// About sentence (routes/profileStatus.js) and Engagement's sentence
+// (lastContactWith, GET /donors/:id/scores), so the three cannot disagree.
+// It used to leave out events and marked notes, and the header read only Last
+// met and Last email, so a call logged today left it at "none yet".
 const CONVERSATION_TYPES = ["call", "email", "ask", "stewardship"];
 async function conversationsWith(orgId, donorId, { limit = 500 } = {}) {
   const lim = Math.max(1, Math.min(1000, Number(limit) || 500));
-  const talk = await query(
+  const { EVENT_CAME } = require("./shared/numbers/events");
+  const [talk, came] = await Promise.all([query(
     `SELECT i.id, 'logged' AS kind, i.donor_id, i.type, i.note, LEFT(i.date, 10) AS date, i.logged_by_name AS who
        FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
-      WHERE i.org_id = ? AND i.donor_id = ? AND d.deleted_at IS NULL AND i.type = ANY(?)
+      WHERE i.org_id = ? AND i.donor_id = ? AND d.deleted_at IS NULL
+        AND (i.type = ANY(?) OR (i.type = 'note' AND COALESCE(i.metadata->>'conversation', '') = 'true'))
         AND COALESCE(i.created_by, '') NOT LIKE 'system:email-marketing%'
         AND i.date IS NOT NULL AND i.date <> '' AND LEFT(i.date, 10) <= ${ORG_TODAY("i")}
-      ORDER BY i.date DESC NULLS LAST, i.id DESC LIMIT ${lim}`, [orgId, donorId, CONVERSATION_TYPES]);
+      ORDER BY i.date DESC NULLS LAST, i.id DESC LIMIT ${lim}`, [orgId, donorId, CONVERSATION_TYPES]),
+    query(
+    `SELECT * FROM (SELECT DISTINCT ON (e.id) a.id, 'event' AS kind, a.donor_id, 'event' AS type, e.name AS note, LEFT(e.date::text, 10) AS date, NULL AS who
+       FROM event_attendees a JOIN events e ON e.id = a.event_id AND e.org_id = a.org_id
+       JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
+      WHERE a.org_id = ? AND a.donor_id = ? AND d.deleted_at IS NULL AND ${EVENT_CAME("a")}
+        AND e.date IS NOT NULL AND LEFT(e.date::text, 10) <= ${ORG_TODAY("a")}
+      ORDER BY e.id, a.id) x ORDER BY x.date DESC, x.id DESC LIMIT ${lim}`, [orgId, donorId])]);
   const met = (await meetingsWith(orgId, donorId, { held: true, limit: lim }))
     .map(m => ({ id: m.id, kind: m.kind, donor_id: m.donor_id, type: "meeting", note: m.kind === "calendar" ? (m.title || "Meeting") : m.note, date: m.date, who: m.who }));
-  return [...talk, ...met].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.id).localeCompare(String(a.id))).slice(0, lim);
+  return [...talk, ...came, ...met].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.id).localeCompare(String(a.id))).slice(0, lim);
+}
+// The one Last contact: { date, type, kind, note } of the newest conversation, or null.
+async function lastContactWith(orgId, donorId) {
+  const [r] = await conversationsWith(orgId, donorId, { limit: 1 });
+  return r ? { date: String(r.date).slice(0, 10), type: r.type, kind: r.kind, note: r.note || null } : null;
 }
 
-module.exports = { meetingsSql, meetingsWith, lastMeetingWith, conversationsWith, CONVERSATION_TYPES, CAL_DATE };
+module.exports = { meetingsSql, meetingsWith, lastMeetingWith, conversationsWith, lastContactWith, CONVERSATION_TYPES, CAL_DATE };

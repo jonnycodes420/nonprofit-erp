@@ -383,8 +383,8 @@ export const STANDARD_REPORTS = [
     def: { entity: "pledges", columns: ["donor", "amount", "paid", "remaining", "due_date", "is_match"], filter: { op: "and", rules: [{ field: "status", cmp: "eq", value: "open" }] }, sort: { field: "due_date", dir: "asc" } } },
   { key: "by-month", name: "Gifts by month vs last year", question: "How does each month this year compare with the same month last year?", kind: "handler", handler: "by-month-vs-last-year", params: { yearMode: "fiscal" } },
   { key: "retention", name: "Retention by cohort", question: "Of last year's donors, how many gave again?", kind: "handler", handler: "retention", params: { yearMode: "fiscal" } },
-  { key: "lapsed-24", name: "Lapsed over 24 months", question: "Who has not given in more than two years?", kind: "builder",
-    def: { entity: "people", columns: ["name", "last_gift_date", "last_gift_amount", "lifetime", "email"], filter: { op: "and", rules: [{ field: "last_gift_date", cmp: "before", value: "{{twoYearsAgo}}" }, { field: "deceased", cmp: "eq", value: false }] }, sort: { field: "lifetime", dir: "desc" } } },
+  // COUNTS-1: the one Lost rule (shared/numbers/lapse.js lostSql), Re-engage's Lost & Found.
+  { key: "lapsed-24", name: "Lost: over 24 months", question: "Who has not given in more than two years?", kind: "handler", handler: "lost", params: {} },
   { key: "ack-backlog", name: "Acknowledgment backlog", question: "Which gifts has nobody thanked yet?", kind: "builder",
     def: { entity: "gifts", columns: ["donor", "date", "amount", "fund"], filter: { op: "and", rules: [{ field: "acknowledged", cmp: "eq", value: false }] }, sort: { field: "date", dir: "asc" } } },
   // BUILD-98 (switch) Part 5 — volunteer-to-donor conversion.
