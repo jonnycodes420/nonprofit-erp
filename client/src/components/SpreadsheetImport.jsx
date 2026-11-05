@@ -401,7 +401,14 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
         <div data-testid="sheet-import-workbook" style={{ color: T.ink }}>
           <WorkbookImport workbook={workbook} fileName={file && file.name}
             onClose={() => { setWorkbook(null); setFile(null); }}
-            onImported={() => { told({ import: "workbook" }); if (onImported) onImported(); else if (onClose) onClose(); }} />
+            onImported={() => {
+              // FLOWS-1 item 5: Done ends the import here: the file is cleared, the
+              // wizard closes and she lands on Donors, whoever opened it (it came
+              // back to "This workbook is one import" with the same file loaded).
+              told({ import: "workbook" }); setWorkbook(null); setFile(null);
+              if (onImported) onImported(); else if (onClose) onClose();
+              if (!/^\/(app\/)?donors\/?$/.test(window.location.pathname)) navigate("/donors");
+            }} />
         </div>
       </Modal>
     );

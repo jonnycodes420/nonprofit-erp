@@ -783,6 +783,8 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     await run(`UPDATE donors SET birth_month=?, birth_day=?, birth_year=? WHERE id=? AND org_id=?`,
       [birthday ? birthday.month : null, birthday ? birthday.day : null, birthday ? birthday.year : null,
        req.params.id, req.user.orgId]);
+    // FLOWS-1 item 8: their open birthday tasks move to the new day
+    await require("./birthdayTasks").followBirthday({ query, run }, req.user.orgId, req.params.id, birthday, orgToday(await orgTz(req.user.orgId)));
   }
 
   // BUILD-94 Part 2 — the person's type(s). Only touched when the request

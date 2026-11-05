@@ -225,7 +225,12 @@ async function nextAction(orgId, d, today, status, glanceLast, viewerMaySee = fa
 app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [d] = await query(`SELECT id, name, created_at FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [req.params.id, orgId]);
-  if (!d) return res.status(404).json({ error: "Donor not found" });
+  if (!d) {
+    // FLOWS-1 item 6: say where the person went, so the open profile stops
+    // reading this id and shows the kept record (a merge) instead.
+    const [m] = await query(`SELECT kept_id, kept_name FROM donor_merges WHERE org_id=? AND merged_id=? AND undone_at IS NULL ORDER BY created_at DESC LIMIT 1`, [orgId, req.params.id]).catch(() => []);
+    return res.status(404).json({ error: "Donor not found", gone: m ? "merged" : "deleted", keptId: m ? m.kept_id : null, keptName: m ? m.kept_name : null });
+  }
   const today = await DS.todayFor(orgId);
   // PROFILE-2 Part 4: the org's fiscal year, the year the header's "This
   // fiscal year" number counts. Without the cuts windowsFor fell back to the
