@@ -13,12 +13,14 @@
 //             edges are its column's, so every card in a column lines up
 //
 // shared.jsx keeps the panel's older rules; these come after them and win.
+// The work column is `.home-shell-top > :first-child` (the main column's own
+// class name stays in Dashboard.jsx, where home2-living reads the order).
 import { T } from "../shared";
 
 export const HOME_GRID_CSS = `
 .home-shell { --h-1: 8px; --h-2: 12px; --h-3: 16px; --h-4: 24px; --h-5: 32px; --h-6: 40px;
   --h-radius: 14px; --h-pad: 20px; --h-pad-tight: 12px 16px; }
-.home-shell-main { padding: var(--h-6); gap: var(--h-5); }
+.home-shell-top > :first-child { padding: var(--h-6); gap: var(--h-5); }
 .home-head-wide { gap: var(--h-4); margin-bottom: 0; }
 .home-rail { padding: var(--h-5) var(--h-4); }
 .home-rail [data-testid="home-rail"] { gap: var(--h-2) !important; }
@@ -33,7 +35,7 @@ export const HOME_GRID_CSS = `
   .home-rail { width: auto; }
 }
 @media (max-width: 768px) {
-  .home-shell-main { padding: var(--h-3) !important; gap: var(--h-4); }
+  .home-shell-top > :first-child { padding: var(--h-3) !important; gap: var(--h-4); }
   .home-head-narrow { padding: var(--h-4) var(--h-3) var(--h-1) !important; gap: var(--h-4); }
   .home-rail { padding: var(--h-3) !important; }
   .home-shell .moves-card { padding: var(--h-3); }

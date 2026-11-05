@@ -1323,7 +1323,7 @@ async function homeSaysNothingWrong(browser) {
       ok(`§sweep1 ${where} has no ALL-CAPS label`, r.caps.length === 0, r.caps);
       ok(`§sweep1 ${where} has no console error, dialog or API 4xx/5xx`, trouble.length === 0, trouble.slice(0, 4));
       if (width === 1440 && deck) for (const t of deck.tabs.filter(x => x.count > 0 && x.key !== "planned"))
-        ok(`§sweep1 ${where}: ${t.label}'s "at stake" is every move's (${t.atStake}), not the first ${t.moves.length}`, cents(r.stakes[t.key]) === Math.round(t.cents / 100) * 100, {   // HOME-6: whole dollars shown: r.stakes[t.key], server: t.atStake, count: t.count, carried: t.moves.length });
+        ok(`§sweep1 ${where}: ${t.label}'s "at stake" is every move's (${t.atStake}), not the first ${t.moves.length}`, cents(r.stakes[t.key]) === Math.round(t.cents / 100) * 100 /* HOME-6: whole dollars */, { shown: r.stakes[t.key], server: t.atStake, count: t.count, carried: t.moves.length });
       if (width === 1440 && what !== "empty") {
         trouble.length = 0;
         await page.getByPlaceholder(/Ask a question/).fill("Who should I call this week?");
