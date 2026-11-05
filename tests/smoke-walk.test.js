@@ -436,8 +436,8 @@ async function greetingFirst(browser, demoAuth) {
       rail: (document.querySelector('[data-testid="home-setup-rail"]') || {}).innerText || null,
       top: !!document.querySelector('[data-testid="home-rail"] > [data-testid="home-setup-rail"]:first-child') }));
     ok(later ? "§home-4 \"I'll finish later\" moves the new org's setup card to the top of the rail, and it stays there"
-             : "§home-4 three steps done: setup is the rail's first card, with the count, the next step and its steps open (Hide the steps)",
-       s2.first === 0 && s2.top && /Set up Steward · \d+ of \d+/.test(s2.rail || "") && /Hide the steps/.test(s2.rail || "") && (later || /Next:/.test(s2.rail || "")), s2);
+             : "§home-4 three steps done: setup is the rail's first card, with the count, the next step and its steps folded (Show the steps, HOME-6)",
+       s2.first === 0 && s2.top && /Set up Steward · \d+ of \d+/.test(s2.rail || "") && /Show the steps/.test(s2.rail || "") && (later || /Next:/.test(s2.rail || "")), s2);
     await ctx.close();
   }
 }
@@ -1323,7 +1323,7 @@ async function homeSaysNothingWrong(browser) {
       ok(`§sweep1 ${where} has no ALL-CAPS label`, r.caps.length === 0, r.caps);
       ok(`§sweep1 ${where} has no console error, dialog or API 4xx/5xx`, trouble.length === 0, trouble.slice(0, 4));
       if (width === 1440 && deck) for (const t of deck.tabs.filter(x => x.count > 0 && x.key !== "planned"))
-        ok(`§sweep1 ${where}: ${t.label}'s "at stake" is every move's (${t.atStake}), not the first ${t.moves.length}`, cents(r.stakes[t.key]) === t.cents, { shown: r.stakes[t.key], server: t.atStake, count: t.count, carried: t.moves.length });
+        ok(`§sweep1 ${where}: ${t.label}'s "at stake" is every move's (${t.atStake}), not the first ${t.moves.length}`, cents(r.stakes[t.key]) === Math.round(t.cents / 100) * 100 /* HOME-6: whole dollars */, { shown: r.stakes[t.key], server: t.atStake, count: t.count, carried: t.moves.length });
       if (width === 1440 && what !== "empty") {
         trouble.length = 0;
         await page.getByPlaceholder(/Ask a question/).fill("Who should I call this week?");

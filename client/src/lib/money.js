@@ -31,6 +31,14 @@ export const fmt = n => {
   return `${sign}$${a.toLocaleString("en-US")}`;
 };
 
+// HOME-6: whole dollars, rounded to the nearest dollar ($152,468.81 reads
+// "$152,469"). Home's figures are totals and stakes; cents are for one gift.
+export const fmtWhole = n => {
+  const v = Math.round(Number(n));
+  if (!Number.isFinite(v)) return "$0";
+  return (v < 0 ? "-$" : "$") + Math.abs(v).toLocaleString("en-US");
+};
+
 // Full: whole dollars stay clean ($1,200); cents-carrying amounts render as
 // money ($140.50, never "$140.5"). Non-finite → $0.
 // FIX-1 E: negatives are SIGN-FIRST, the way money is written ("-$1.33"). It

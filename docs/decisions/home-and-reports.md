@@ -508,6 +508,19 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 - Home reads `/insights?view=deck` (the deck, no cards); panels read the cards when they open.
 
 
+## HOME-6 · one grid, and every name and number opens (2026-11-05)
+
+- Home's layout is `home/homeGrid.js`: work and rail 7 : 3 from 1100 px, one spacing scale
+  (8 · 12 · 16 · 24 · 32 · 40), one card radius and padding. A new Home card uses `.home-card`.
+- Home's figures are whole dollars (`fmtWhole`); cents only on a single gift.
+- The moves tiles are one row of equal widths, two by two in a narrow column, never three and one.
+- A name on Home opens the profile. A count on Home opens a list of exactly that many.
+- The drifting list reads Drift's own list through the deck (`server/insights/driftPeople.js`);
+  no second rule for who is drifting. Each row leads with the usual gift (what is at stake, and
+  what the list is sorted by), the last gift under it; an early sign is never called "at risk" (FIX-10).
+- The setup steps are folded by default, remembered per person (reverses POLISH-4).
+- The automatic email setting is in Settings only; there is no top-bar pill.
+
 ## EVENTS-3 · an event counts the way the guest list does (2026-11-01)
 
 - An event's figures count **parties**, grouped by `COALESCE(household_id, donor id)` (a walk-in with no record by

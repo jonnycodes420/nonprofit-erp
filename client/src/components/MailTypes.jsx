@@ -5,7 +5,6 @@
 //                      that uses the email (giving pages, events, auctions…).
 //   MailTypesSettings  Settings, "What Steward sends automatically".
 //   GoingOut           Settings, "Going out": next 7 days, Sent, Held.
-//   MailStatusChip     the quiet chip in the top bar, on every page.
 //   HomeMailLine       the one line at the top of Home.
 //
 // Off is the normal, safe state: it reads calm, never as a warning. The server
@@ -299,26 +298,6 @@ export function GoingOut({ onNavigate, isReadOnly, data: given, orgPath = "" }) 
       </div>
       {preview && <PreviewSheet preview={preview} onClose={() => setPreview(null)} />}
     </div>
-  );
-}
-
-// ── The top bar's chip ──────────────────────────────────────────────────
-// Muted when off, the brand green with a small dot when on, never a badge.
-// At phone width it shrinks to the dot and a short word.
-export function MailStatusChip({ onNavigate, narrow = false }) {
-  const { status } = useMailTypes();
-  if (!status) return null;
-  const on = status.state === "on";
-  const waiting = status.state === "waiting";
-  return (
-    <button type="button" data-testid="topbar-mail-status" data-state={status.state} title={status.chip + (status.mailSentence ? ". " + status.mailSentence : "")}
-      onClick={() => onNavigate && onNavigate("settings", { section: "automatic" })}
-      style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid " + T.green650,
-        borderRadius: 999, padding: narrow ? "3px 8px" : "4px 10px", cursor: "pointer", fontFamily: "inherit", flexShrink: 0, whiteSpace: "nowrap",
-        color: on ? T.inkInverse : "rgba(240,237,230,0.6)", fontSize: 12, fontWeight: 600 }}>
-      {(on || waiting) && <span aria-hidden style={{ width: 6, height: 6, borderRadius: 3, background: on ? T.green500 : T.gold500 }} />}
-      <span>{narrow ? (on ? status.short : waiting ? "Waiting" : "Auto email off") : status.chip}</span>
-    </button>
   );
 }
 
