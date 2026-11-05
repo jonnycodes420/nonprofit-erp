@@ -4040,7 +4040,7 @@ async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO, 
   if (send && donor.email) {
     // W-4: a receipt is TRANSACTIONAL — the marketing suppression list does
     // not apply (deceased still blocks, via the one policy).
-    const decision = await donorMailDecision("receipt", donor.email, org.id);
+    const decision = await donorMailDecision("receipt", donor.email, org.id, { donorId: donor.id });
     // SEND-GATE-2: with the org's email off, the receipt still goes to the
     // client, which refuses it there (nothing reaches the provider) and keeps
     // it as a held line, so Going out shows it was not sent and why.
@@ -5487,7 +5487,7 @@ async function runCampaignSend(campaign, org, donors) {
       const campaignFrom = smtpFrom ? fromWithDisplayName((await resolveOrgBrandTheme(org.id).catch(() => null))?.displayName, smtpFrom) : smtpFrom; // BUILD-64: org name in the inbox, resolved once
 
       for (const donor of donors) {
-        const decision = await donorMailDecision("campaign", donor.email, org.id);
+        const decision = await donorMailDecision("campaign", donor.email, org.id, { donorId: donor.id });
         if (!decision.send && decision.reason !== "type_off") {   // TRUST-1: Campaign emails off, so it waits: the send gate holds it (Going out's Held)
           console.log(`[campaign:${campaign.id}] skipping ${donor.id} (${decision.reason})`);
           await run(
@@ -7186,7 +7186,7 @@ async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request
           }
           continue;
         }
-        const seqDecision = await donorMailDecision("sequence", recipient.email, enr.org_id);
+        const seqDecision = await donorMailDecision("sequence", recipient.email, enr.org_id, { donorId: recipient.id });
         if (!seqDecision.send) {
           console.log(`[seq] skipping recipient ${recipient.email} (${seqDecision.reason}) — enrollment ${enr.id}`);
           await run(
@@ -7988,7 +7988,7 @@ async function sequenceStopFor(enr, donor, step) {
   if (!donor) return "removed";
   if (donor.deceased === true) return "deceased";
   if (donor.do_not_email === true) return "do_not_email";
-  const decision = await donorMailDecision("sequence", donor.email, enr.org_id);
+  const decision = await donorMailDecision("sequence", donor.email, enr.org_id, { donorId: donor.id || enr.donor_id });
   if (!decision.send) return decision.reason === "bounced" ? "bounced" : "unsubscribed";
   // A SECOND GIFT DURING A FIRST-GIFT SEQUENCE skips what is left — a welcome
   // series must not ask for a gift the week after one arrived. A step marked

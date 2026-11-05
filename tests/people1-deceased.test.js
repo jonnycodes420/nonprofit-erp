@@ -12,6 +12,8 @@
 //      "Harold Lee (died March 2026)"; the anniversary reminder is a task.
 //   §2 "Undo: they're not deceased" puts them back in the lists and reopens
 //      the ask; the journey that ended stays ended, and the answer says so.
+//   §4 a couple who share one email: Pat is marked deceased; every kind of mail
+//      addressed to Lou still goes, to Pat never, and a campaign reaches Lou.
 //   §3 a Partner link pools like a spouse: one household with both in its
 //      total, and a gift from one keeps the other off Lapsed and Re-engage.
 //
@@ -203,6 +205,38 @@ const MAIL_KINDS = (() => {
   ok("§3 the household's total includes both ($550)", Number(r3.body.householdTotal) === 550, r3.body);
   const truth3 = await assertSurfacesAgree(ORG, { token: tok, soft: true, label: "after the partner link" });
   ok("§3 every surface agrees with the gifts", truth3.ok, truth3.diffs.join(" | "));
+
+  // ── §4 A SHARED ADDRESS ──────────────────────────────────────────────────
+  // Deceased is a person, not an address: Pat and Lou Moss share one email;
+  // Pat is marked deceased. Mail addressed to Lou still goes; to Pat, never.
+  console.log("\n§4 a couple who share one email: deceased is the person, not the address");
+  const SHARED = "moss.home@people1.test";
+  await person("pat", "Pat Moss", SHARED);
+  await person("lou", "Lou Moss", SHARED);
+  await gift(tok, "pat", 200, day(60));
+  await gift(tok, "lou", 120, day(50));
+  await api("POST", `/donors/${P("pat")}/relationships`, tok, { relatedDonorId: P("lou"), relationshipType: "spouse" });
+  const mkPat = await api("POST", `/donors/${P("pat")}/deceased`, tok, { diedOn: "2026-09" });
+  ok("§4 Pat is marked deceased", mkPat.status === 200, mkPat.body);
+  const louWrong = [], patWrong = [];
+  for (const kind of MAIL_KINDS) {
+    if (kind === "onboarding" || /onboard/.test(kind)) continue;   // off for good for everyone (MAIL-1)
+    const lou = await EM.donorMailDecision(kind, SHARED, ORG, { donorId: P("lou") }).catch(e => ({ send: false, reason: e.message }));
+    if (lou.reason === "deceased") louWrong.push([kind, lou]);
+    const pat = await EM.donorMailDecision(kind, SHARED, ORG, { donorId: P("pat") }).catch(e => ({ send: true, reason: e.message }));
+    if (pat.send !== false || pat.reason !== "deceased") patWrong.push([kind, pat]);
+  }
+  ok("§4 no kind of mail addressed to Lou is refused as deceased", louWrong.length === 0, louWrong.slice(0, 4));
+  ok("§4 every kind of mail addressed to Pat is refused as deceased", patWrong.length === 0, patWrong.slice(0, 4));
+  const louReceipt = await EM.donorMailDecision("receipt", SHARED, ORG, { donorId: P("lou") });
+  ok("§4 Lou's receipt sends", louReceipt.send === true, louReceipt);
+  const many = await EM.donorMailDecisions("campaign", [{ id: P("pat"), email: SHARED }, { id: P("lou"), email: SHARED }], ORG);
+  ok("§4 a campaign's list: Lou in, Pat out as deceased", many.get(P("lou")).send === true && many.get(P("pat")).reason === "deceased",
+    [many.get(P("lou")), many.get(P("pat"))]);
+  const aud4 = await audienceIds(tok);
+  ok("§4 the campaign audience reaches Lou and leaves out Pat", aud4.has(P("lou")) && !aud4.has(P("pat")), [...aud4]);
+  const noOne = await EM.donorMailDecision("receipt", SHARED, ORG, null);
+  ok("§4 mail to the address with no person named still goes (someone living reads it)", noOne.send === true, noOne);
 
   await closeDb();
   summary();

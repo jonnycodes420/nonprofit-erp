@@ -1534,7 +1534,7 @@ async function sendRecurringDonorEmail(org, donor, subject, bodyText, { actionUr
   // W-4: TRANSACTIONAL via the one policy — the suppression list, prefs, and
   // do_not_contact never block it (the unsuppressible rule, unchanged); only
   // the policy's hard block (deceased) refuses.
-  const decision = await donorMailDecision("recurring_change", donor.email, org.id);
+  const decision = await donorMailDecision("recurring_change", donor.email, org.id, { donorId: donor.id });
   if (!decision.send) { console.log(`[recurring] donor notification refused (${decision.reason})`); return false; }
   const orgName = await donorFacingOrgName(org.id, org.name);
   const psRows = await query("SELECT enabled FROM portal_settings WHERE org_id=?", [org.id]).catch(() => []);
@@ -5877,7 +5877,7 @@ app.post("/express/:orgSlug/request-link", portalLinkIpLimiter, portalLinkEmailL
 // the API. (INT-OAUTH learned this the hard way in the other direction.)
 async function sendExpressLinkEmail(org, donor, token) {
   if (!process.env.RESEND_API_KEY) return false;
-  const decision = await donorMailDecision("express_link", donor.email, org.id);
+  const decision = await donorMailDecision("express_link", donor.email, org.id, { donorId: donor.id });
   if (!decision.send) { console.log(`[give] express link refused (${decision.reason})`); return false; }
   const orgName = await donorFacingOrgName(org.id, org.name);
   const url = `${publicAppUrl()}/give/${encodeURIComponent(org.org_slug)}?express=${encodeURIComponent(token)}`;

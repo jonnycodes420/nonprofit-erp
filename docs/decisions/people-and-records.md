@@ -8,6 +8,8 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   Home move, thank-you queue, lapse and Re-engage list, journey, sequence, campaign and send. A new list of people to
   ask, suggest or mail filters `deceased IS NOT TRUE` (`LIVING(d)`). Their gifts, totals, receipts, tributes and
   household are never touched; marking closes asks and journeys, and Undo reopens what it closed except journeys.
+  Deceased is the person, never the address: a send passes `donorId` to `donorMailDecision`, so a living
+  spouse who shares an email still gets mail addressed to them.
 - **PEOPLE-1: Partner pools exactly as Spouse does.** One household, one giving unit for the lapse rule
   (`lapse.js UNIT_LINK_TYPES`: owner, works_at, spouse, partner), family not duplicates in Data health.
 - **PROFILE-2 (2026-10-29): the profile is a page, not a panel.** It sits in the content area and the window

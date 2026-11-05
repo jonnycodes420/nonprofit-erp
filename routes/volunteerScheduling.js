@@ -1081,7 +1081,7 @@ app.post("/volunteer-hub/magic-link", requireAuth, checkWriteAccess, wrap(async 
     if (!p.email) return res.json({ url, sent: false, message: "Here is the link. There is no email address on this record." });
     // FIX-14 Part 4: the same per-person check as donor mail (deceased,
     // bounced, complained, unreachable, the block list).
-    const person = await donorMailDecision("volunteer_link", p.email, orgId);
+    const person = await donorMailDecision("volunteer_link", p.email, orgId, { donorId: p.id });
     if (!person.send) {
       return res.json({ url, sent: false,
         message: `Here is the link. Steward did not email it: ${person.reason}.` });

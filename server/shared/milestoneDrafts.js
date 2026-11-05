@@ -32,7 +32,7 @@ async function sendMilestoneDraft(req, draft, opts = {}) {
   // still refuses it, and the auction screen offers its Copy link instead.
   const kind = draft.source === "volunteer_reminder" ? "volunteer_reminder"
     : String(draft.milestone_key || "").startsWith("auction-winner:") ? "auction_winner" : "milestone";
-  const decision = await donorMailDecision(kind, donor.email, req.user.orgId);
+  const decision = await donorMailDecision(kind, donor.email, req.user.orgId, { donorId: donor.id });
   if (!decision.send) return { status: 400, error: `Cannot send: ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : (mailPolicy.REASON_SENTENCE[decision.reason] || `this donor is suppressed (${String(decision.reason).replace(/_/g, " ")})`)}` };
 
   if (process.env.RESEND_API_KEY) {
