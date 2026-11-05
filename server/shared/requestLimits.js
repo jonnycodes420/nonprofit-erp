@@ -25,10 +25,13 @@ const DEFAULT_MS = Math.max(1000, Number(process.env.REQUEST_STATEMENT_TIMEOUT_M
 // statement, so a route that runs many quick statements (a PDF, a page of
 // reports) needs none of these; only one statement that reads or writes a
 // whole org at once does.
-const NAMED = Object.freeze({ default: DEFAULT_MS, export: 120000, bulk: 120000 });
+const NAMED = Object.freeze({ default: DEFAULT_MS, report: 30000, export: 120000, bulk: 120000 });
 const LONGER = [
   // A whole org's records, written out (Settings → Export, a figure's rows, one person's file).
   [/^\/(org\/export|donors\/export\/|figures\/[^/]+\/export\.csv$|donors\/[^/]+\/export-data$)/, "export"],
+  // One statement that counts every starter group over the whole org (groups.js memberCounts):
+  // about 2 s on 25,000 people, past 10 s on CI's shared runners.
+  [/^\/groups\/starters(\/|$)/, "report"],
   // A spreadsheet in, or a big set changed at once (import, undo, merge, bulk edit, recompute).
   [/^\/(donors\/import|gifts\/import|grants\/import|history-import\/|sheet-import\/|imports(\/|$)|deposits\/commit|setup\/runs|admin\/orgs\/[^/]+\/setup|data-health\/(bulk-|merge)|donors\/(bulk-|merge)|import-merges|scores\/recompute|journeys\/batches\/|old-reports\/batches\/|photos\/bulk|finance\/imported-deposited)/, "bulk"],
 ];
