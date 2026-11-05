@@ -24,9 +24,17 @@
 // line says 3 people above 8.
 //
 // Standard scratch stack (tests/README.md). Sends nothing.
+//
+// FLAKE-1: it runs on a clock of its own, noon in New York, on a server and
+// database of its own (tests/lib/pinnedStack.js), so the Jan 1 / Dec 31
+// fixtures and "today" are one day for the whole run, never CI's real hour
+// (house.md: tests set their clock). A proof run that pins its own instant
+// (STEWARD_TEST_NOW) keeps that instant. Its red runs on CI (4 Nov 22:07 and
+// 5 Nov 23:10 New York) were not the hour: see agrees() below.
 "use strict";
+if (!require("./lib/pinnedStack").runPinnedOrContinue(__filename)) return;
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb, civilToday } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, civilToday, drainQueue } = require("./helpers");
 const { assertSurfacesAgree } = require("./lib/surfacesAgree");
 const orgTime = require("../orgTime");
 
@@ -41,7 +49,17 @@ async function freshOrg(id) {
   return login(email, PASSWORD);
 }
 // One check, reported as a PASS or the precise list of disagreements.
+// FLAKE-1: asked once the org's work has settled (the import's score pass
+// runs on the queue seconds after the import answers, and the lists read
+// whichever of donor_rhythm and donor_scores was computed last). This does
+// NOT cure "Pia January: the profile is tagged Lapsing and says On track":
+// it still shows about once in ten local runs at a pinned noon with the
+// queue drained. That is the product disagreeing with itself for a Jan 1
+// yearly giver, a finding for the next brief (FLAKE-1 report), and this
+// check is right to go red on it.
 async function agrees(name, orgId, tok, extra = {}) {
+  const settled = await drainQueue({ orgId, scores: true, timeout: 120000 });
+  if (!settled.drained) console.log(`        (${orgId}: ${settled.waiting} queued job(s) still waiting after 120 s; checking anyway)`);
   const r = await assertSurfacesAgree(orgId, { token: tok, soft: true, ...extra });
   ok(`${name} (${r.ms}ms)`, r.ok, r.diffs.length);
   for (const d of r.diffs) console.log("        " + d);
