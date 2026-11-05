@@ -144,6 +144,8 @@ async function erasePerson(orgId, donorId) {
     // recomputes on its next read.
     await step(`DELETE FROM donor_drift WHERE org_id=$1 AND donor_id=$2`, [orgId, donorId]);
     await step(`DELETE FROM org_summary WHERE org_key=$1`, [orgId]);
+    // INSIGHTS-2: the org's stored Insights carry names too; the worker rebuilds them.
+    await step(`DELETE FROM stored_insights WHERE org_id=$1`, [orgId]);
     return { erased: true, rowsTouched: n };
   });
 }

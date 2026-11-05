@@ -92,7 +92,9 @@ const TABLES = ["event_attendees", "email_suppressions", "pledge_installments", 
 // every org gets with its first gift (setup, like the unrestricted fund).
 const NOT_STATE = new Set(["accounts", "imports", "sheet_import_jobs", "fin_audit_log", "ai_log", "ai_usage", "ai_fallbacks", "api_call_log", "job_queue", "events_outbox", "user_sessions",
   "users", "question_log", "import_recent_jobs", "import_recent_work", "donor_scores", "donor_drift", "donor_rhythm", "metric_snapshots", "readouts",
-  "readout_events", "deleted_records", "org_record_months", "agent_runs", "data_health_runs", "notification_sends", "notification_failures"]);
+  "readout_events", "deleted_records", "org_record_months", "agent_runs", "data_health_runs", "notification_sends", "notification_failures",
+  // INSIGHTS-2: the org's stored Insights, rebuilt from the rows on the worker
+  "stored_insights"]);
 const SNAP_SKIP = new Set(["updated_at", "last_scored_at", "score_updated_at", "engagement_updated_at"]);
 let ORG_TABLES = null;
 async function snapshot(org) {

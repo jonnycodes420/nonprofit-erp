@@ -83,11 +83,11 @@ async function untilUp(base, what, log) {
     const ORGS = [{ n: 0, slug: `i2big${RUN}`, donors: BIG_N }, { n: 1, slug: `i2small${RUN}`, donors: 300 }].map(o => ({
       ...o, tier: "ten", id: `org_${o.slug}`, name: `Insights Two ${o.n}`, gifts: o.donors * 6, interactions: o.donors * 3,
       tasks: Math.round(o.donors / 25), subs: Math.round(o.donors / 100), users: 1 }));
-    const t0 = Date.now();
+    const t0 = performance.now();
     for (const o of ORGS) await seedOrg(o, hash);
     await pool.query("ANALYZE");
     await pool.end();
-    console.log(`  seeded ${BIG_N} + 300 people in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+    console.log(`  seeded ${BIG_N} + 300 people in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
     const login = async (slug) => (await (await fetch(`${BASE}/auth/login`, { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: `admin@${slug}.load`, password: PW }) })).json()).token;
     const [big, small] = await Promise.all(ORGS.map(o => login(o.slug)));
@@ -119,7 +119,7 @@ async function untilUp(base, what, log) {
     // ── §2 · a gift, then the profile at once ───────────────────────────────
     console.log("\n§2 a gift, then the profile opens at once");
     const before = built && built.unit ? built.unit.lifetimeCents : null;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = built && built.asOf;   // the org's own today, as the server reads it
     const gift = await call(big, "POST", `/donors/${person}/gifts`, { amount: 125, date: today, type: "cash", payment_method: "check" });
     ok("the gift is recorded", gift.status === 200 || gift.status === 201, gift.body);
     const times = [];
