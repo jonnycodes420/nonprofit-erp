@@ -18,9 +18,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { T, activeMark, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { addCivilDays, sanitizeStepLabel, NEXT_STEP_LABEL_MAX } from "../../../shared/threadShape";
 
-const todayLocal = () => new Date().toISOString().split("T")[0];
+const todayLocal = () => orgTodayCivil();
 
 // A plan needs a verb and a date. These are the three a fundraiser reaches for
 // most; the field stays free text, because a plan nobody can phrase is a plan

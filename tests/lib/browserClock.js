@@ -36,4 +36,19 @@ async function pinBrowserClock(ctx) {
   return true;
 }
 
-module.exports = { pinBrowserClock, offsetMs };
+// MOPUP-1: a page pinned to one instant of the run's clock (9 PM Eastern on
+// the run's day), ticking from there. `atMs` is on the run's clock.
+async function pinBrowserClockAt(ctx, atMs, runNowMs) {
+  const off = atMs - (runNowMs - offsetMs());
+  await ctx.addInitScript(o => {
+    const RealDate = Date;
+    const now = () => RealDate.now() + o;
+    class PinnedDate extends RealDate {
+      constructor(...args) { if (args.length === 0) super(now()); else super(...args); }
+      static now() { return now(); }
+    }
+    window.Date = new Proxy(PinnedDate, { apply() { return new RealDate(now()).toString(); } });
+  }, off);
+}
+
+module.exports = { pinBrowserClock, pinBrowserClockAt, offsetMs };

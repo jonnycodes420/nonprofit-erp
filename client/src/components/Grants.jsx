@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { fmtDayLong, daysToDue } from "../lib/taskDue";
 import { apiFetch, adaptGrant } from "../api";
 import { errorMessage } from "../lib/domainError";
+import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { useAuth } from "../main";
 import { DeadlinesView, GrantDeadlinesPanel } from "./GrantDeadlines";
 import { GrantDocuments } from "./GrantDocuments";
@@ -24,7 +25,7 @@ import SheetImport from "./SheetImport";
 // ── Grant Log Modal ────────────────────────────────────────────────────────
 function GrantLogModal({grant,onSave,onClose}){
   const[type,setType]=useState("call");
-  const[date,setDate]=useState(new Date().toISOString().split("T")[0]);
+  const[date,setDate]=useState(orgTodayCivil());
   const[note,setNote]=useState("");
   const[loading,setLoading]=useState(false);
   const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit"};

@@ -20,6 +20,7 @@
 // does not foot. Nothing here sends anything.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../api";
+import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { T, Modal, fmtFull } from "./shared";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { countLabel, plural } from "../../../shared/countWords.js";
@@ -35,7 +36,7 @@ const cents = c => fmtFull((Number(c) || 0) / 100);
 
 export function DepositSheetModal({ onClose, onRecorded, today }) {
   const [paste, setPaste] = useState("");
-  const [depositDate, setDepositDate] = useState(today || new Date().toISOString().slice(0, 10));
+  const [depositDate, setDepositDate] = useState(today || orgTodayCivil());
   const [slipTotal, setSlipTotal] = useState("");
   const [plan, setPlan] = useState(null);
   const [resolutions, setResolutions] = useState({});

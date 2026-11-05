@@ -17,6 +17,8 @@ import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit
 import { countLabel } from "../../../shared/countWords.js";
 import { eventRowsChanged, useEventRowsRev } from "../lib/eventRows";   // COUNTS-1: every panel re-reads the guest rows
 import RecordGiftDialog from "./gifts/RecordGiftDialog";   // GIFTS-1: a gift for this event, from its page
+import { eventStatus } from "../../../shared/eventStatus.js";
+import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: the org's day
 
 // PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
 const CHAIR = 44;
@@ -31,7 +33,7 @@ const EVENT_TYPES = {
   other:         { label: "Other",          icon: "•", color: T.ink3 },
 };
 
-const STATUS_COLORS = { upcoming: T.greenDk, completed: T.greenDk, cancelled: T.ink3 };
+const STATUS_COLORS = { upcoming: T.greenDk, today: T.greenDk, past: T.ink3, canceled: T.ink3 };
 // FIX-59: a guest is in when the door checked them in OR somebody marked them
 // as attending (an import, by hand): the same people the event's Came counts.
 const isIn = g => !!(g && (g.in || g.status === "attended" || g.checked_in_at));
@@ -50,8 +52,11 @@ function fmtDate(d) {
   return displayDate(d) || "No date"; // FIX-2 finding 10 — the one formatter
 }
 
-function StatusBadge({ status, small, onDark }) {
-  const color = STATUS_COLORS[status] || T.ink3;
+// MOPUP-1: the badge reads the event's date (shared/eventStatus.js), not the
+// status stored when it was made: a gala held last month says Past.
+function StatusBadge({ event, small, onDark }) {
+  const st = eventStatus(event, orgTodayCivil());
+  const color = STATUS_COLORS[st.key] || T.ink3;
   // SWEEP-4: emerald on the dark header was a whisper; on dark it is cream
   const look = onDark ? { background: "rgba(240,237,230,0.14)", color: T.inkInverse, border: "1px solid rgba(240,237,230,0.4)" }
     : { background: color + "22", color, border: `1px solid ${color}44` };
@@ -60,8 +65,7 @@ function StatusBadge({ status, small, onDark }) {
       ...look,
       borderRadius: 99, padding: small ? "2px 8px" : "3px 10px",
       fontSize: small ? 10 : 11, fontWeight: 700, letterSpacing: "0.04em",
-      textTransform: "capitalize",
-    }}>{status}</span>
+    }} data-testid="event-status" data-status={st.key}>{st.label}</span>
   );
 }
 
@@ -187,7 +191,7 @@ function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
               </div>
             </div>
           </div>
-          <StatusBadge status={event.status} small />
+          <StatusBadge event={event} small />
         </div>
 
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
@@ -565,7 +569,7 @@ function EventSeating({ eventId }) {
   const tableRows = data.tables || [];
   // SWEEP-4: once the day has passed the chart is who came, and seating
   // anyone still unseated is not the job any more
-  const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+  const today = orgTodayCivil();
   const past = !!(data.event && data.event.date && String(data.event.date).slice(0, 10) < today);
   const chart = seatingChart(data.guests || [], { tables: tableRows, cameOnly: past });
   const tags = nameTags(data.guests || []);
@@ -1528,7 +1532,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <div style={{ fontSize: 20, fontWeight: 700, color: T.inkInverse, fontFamily: "'DM Serif Display',serif", lineHeight: 1.2 }}>{event.name}</div>
             <TypeBadge type={event.event_type} />
-            <StatusBadge status={event.status} small onDark />
+            <StatusBadge event={event} small onDark />
           </div>
           <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", marginTop: 3 }}>
             {event.date_unknown ? "Date not known: the import's file did not give it" : fmtDate(event.date)}{event.end_date ? ` – ${fmtDate(event.end_date)}` : ""}{event.location ? ` · ${event.location}` : ""}
@@ -1889,12 +1893,12 @@ export function Events({ data, isReadOnly }) {
 
   useEffect(() => { reload(); }, []);
 
-  // SWEEP-4: today where she is, not in London: at 8pm in New York an event
+  // SWEEP-4, MOPUP-1: today is the org's day, not London's: at 8pm in New York an event
   // tonight moved to Past.
-  const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+  const today = orgTodayCivil();
   const filtered = events.filter(e => {
     // one or the other, never both: an event left "upcoming" after its day is past
-    const isPast = e.status === "completed" || e.status === "cancelled" || (!!e.date && String(e.date).slice(0, 10) < today);
+    const isPast = e.status === "completed" || e.status === "cancelled" || eventStatus(e, today).key === "past";
     if (filter === "upcoming") return !isPast;
     if (filter === "past") return isPast;
     return true;

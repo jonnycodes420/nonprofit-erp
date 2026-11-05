@@ -29,6 +29,7 @@ import { EditedMarker } from "../EditHistory";
 import { stepAgainstProposals } from "../../../../shared/nextStepAgree.js";
 import { displayOrgDateShort } from "../../lib/orgDay";
 import EventField from "../gifts/EventField";   // GIFTS-1: a gift can belong to an event
+import { lifetimeShareWords, sharePercent } from "../../../../shared/lifetimeShare.js";   // MOPUP-1: "under 1% of lifetime"
 import PledgeSchedule, { emptySchedule, scheduleBody } from "../gifts/PledgeSchedule";   // GIFTS-1: one payment or installments
 
 // GIFTS-1: a pledge's schedule as the edit opens it, read from its installments.
@@ -600,7 +601,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                             </div>
                             <div style={{textAlign:"right"}}>
                               <div style={{fontSize:14,fontWeight:800,color:T.ink}}>{fmtFull(f.total)}</div>
-                              <div style={{fontSize:10,color:T.ink3}}>{f.pct}% of lifetime</div>
+                              <div style={{fontSize:10,color:T.ink3}} data-testid="fund-share">{lifetimeShareWords(Math.round((Number(f.total)||0)*100),Math.round((Number(totalGiving)||0)*100),f.pct)}</div>
                             </div>
                           </div>
                           <div style={{background:T.bg3,borderRadius:99,height:6,overflow:"hidden",marginBottom:6}}>
@@ -624,8 +625,8 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                         <div style={{flex:1,background:T.greenDk}}/>
                       </div>
                       <div style={{display:"flex",gap:16,fontSize:12}}>
-                        <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:T.gold500,display:"inline-block"}}/>Restricted: {fmtFull(restrictedTotal)} ({rPct}%)</div>
-                        <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:T.greenDk,display:"inline-block"}}/>Unrestricted: {fmtFull(unrestrictedTotal)} ({uPct}%)</div>
+                        <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:T.gold500,display:"inline-block"}}/>Restricted: {fmtFull(restrictedTotal)} ({sharePercent(Math.round((Number(restrictedTotal)||0)*100),Math.round((Number(totalGiving)||0)*100),rPct)})</div>
+                        <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:T.greenDk,display:"inline-block"}}/>Unrestricted: {fmtFull(unrestrictedTotal)} ({sharePercent(Math.round((Number(unrestrictedTotal)||0)*100),Math.round((Number(totalGiving)||0)*100),uPct)})</div>
                       </div>
                       {definition&&<div style={{fontSize:11,color:T.ink3,marginTop:8}}>{definition}</div>}
                     </>);

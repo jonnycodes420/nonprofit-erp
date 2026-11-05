@@ -9,6 +9,7 @@ import { GivingSourcesManager } from "../components/settings/GivingSourcesManage
 import { USERS_SENTENCE, SEAT_REFUSED_SENTENCE } from "../../../shared/seats";
 import { T } from "../components/shared";
 import { errorMessage } from "../lib/domainError";
+import { orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { countLabel } from "../../../shared/countWords.js";
 
 // The onboarding flow is a KEYED sequence, not a fixed numeric ladder, so a
@@ -83,10 +84,7 @@ function defaultOutcomeTemplate(orgName) {
 }
 
 function defaultPeriod() {
-  const start = new Date();
-  const end = new Date(start);
-  end.setDate(end.getDate() + 90);
-  return { periodStart: start.toISOString().split("T")[0], periodEnd: end.toISOString().split("T")[0] };
+  return { periodStart: orgTodayPlus(0), periodEnd: orgTodayPlus(90) };
 }
 
 export default function WelcomePage() {

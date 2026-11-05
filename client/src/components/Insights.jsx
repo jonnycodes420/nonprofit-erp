@@ -17,6 +17,7 @@ import EventRaised from "./EventRaised";   // HOME-3: the first look's events
 import { countLabel } from "../../../shared/countWords.js";
 import { displayDate } from "../../../shared/displayDate.js";   // SWEEP-1: a written date, never "2025-12-19"
 import { moveSentence } from "../lib/moveSentence";
+import { orgTodayCivil, orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 
 const SERIF = "'DM Serif Display', Georgia, serif";
 const money = c => {
@@ -30,8 +31,10 @@ const LNK = { background: "none", border: "none", padding: 0, color: T.greenDk, 
 const CARD = { background: T.white, border: "1px solid " + T.bg2, borderRadius: 14, padding: "16px 18px", marginBottom: 12 };
 const CHIP = { display: "inline-block", fontSize: 11, fontWeight: 700, borderRadius: 99, padding: "2px 9px", marginRight: 6, border: "1px solid " + T.bg3, color: T.ink, background: T.bg };
 const STATUS_CHIP = { slipping: { ...CHIP, background: T.gold, borderColor: T.gold, color: T.ink }, up: { ...CHIP, background: T.greenDk, borderColor: T.greenDk, color: T.white }, steady: CHIP };
-const today = () => new Date().toISOString().slice(0, 10);
-const plusDays = k => new Date(Date.now() + k * 86400000).toISOString().slice(0, 10);
+const today = () => orgTodayCivil();
+const plusDays = k => orgTodayPlus(k);
+// MOPUP-1: an ask that already reads "Ask $20,000" gets no "Ask" label over it.
+const SAYS_ASK = /^Ask\b/;
 
 export function RungChips({ unit }) {
   if (!unit) return null;
@@ -79,7 +82,7 @@ function When({ how }) {
     <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.55 }}>
       <div><b>Who:</b> {how.who}{how.channel ? ` · ${how.channel}` : ""}{how.when ? ` · ${how.when.words}` : ""}</div>
       {how.say && <div style={{ margin: "6px 0", padding: "8px 10px", background: T.bg, borderRadius: 8, fontStyle: "italic" }}>“{how.say}”</div>}
-      {how.ask && <div><b>Ask:</b> {how.ask.words} <span style={{ color: T.ink3 }}>({how.ask.rule})</span></div>}
+      {how.ask && <div>{!SAYS_ASK.test(how.ask.words) && <b>Ask: </b>}{how.ask.words} <span style={{ color: T.ink3 }}>({how.ask.rule})</span></div>}
     </div>
   );
 }
@@ -514,7 +517,7 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
     setBusy(true); setMsg(null);
     try {
       const due = m.whenFrom && m.whenFrom > today() ? m.whenFrom : today();
-      const notes = [m.what, m.say ? `Say: "${m.say}"` : null, m.ask ? `Ask: ${m.ask.words} (${m.ask.rule})` : null, m.why ? `Why: ${m.why}` : null].filter(Boolean).join("\n\n");
+      const notes = [m.what, m.say ? `Say: "${m.say}"` : null, m.ask ? `${SAYS_ASK.test(m.ask.words) ? "" : "Ask: "}${m.ask.words} (${m.ask.rule})` : null, m.why ? `Why: ${m.why}` : null].filter(Boolean).join("\n\n");
       await apiFetch("/tasks", { method: "POST", body: JSON.stringify({ title: TASK_TITLE[m.action.key](m).slice(0, 240), due, type: "donor", donorId: m.lead, priority: "medium", kind: m.action.taskKind, notes }) });
       await outcome("done");
       advance();
@@ -587,7 +590,7 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
             <div className="moves-facts">
               {m.who && <div><span style={{ color: T.ink3 }}>Who</span><br /><b>{m.who}{m.channel ? ` · ${m.channel.toLowerCase()}` : ""}</b></div>}
               {m.when && <div><span style={{ color: T.ink3 }}>When</span><br /><b>{whenWords(m.when)}</b></div>}
-              {m.ask && <div style={{ flex: "1 1 260px" }}><span style={{ color: T.ink3 }}>Ask</span><br /><b data-testid="move-ask">{m.ask.words}</b><div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>{m.ask.rule}</div></div>}
+              {m.ask && <div style={{ flex: "1 1 260px" }}>{!SAYS_ASK.test(m.ask.words) && <><span style={{ color: T.ink3 }}>Ask</span><br /></>}<b data-testid="move-ask">{m.ask.words}</b><div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>{m.ask.rule}</div></div>}
             </div>
             {(m.also || []).length > 0 && (
               <div data-testid="move-also" style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.5 }}>

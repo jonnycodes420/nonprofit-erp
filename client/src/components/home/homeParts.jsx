@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState, useEffect } from "react";
 import { retryImport } from "../../lib/lazyRetry";
 import { homeCode, startHomeCode } from "../../lib/bootReads";
+import { orgTodayCivil } from "../../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { T, interactive, fmt } from "../shared";
 import { apiFetch } from "../../api";
 import { plural, countLabel } from "../../../../shared/countWords";
@@ -37,7 +38,7 @@ export function PinsIfAny({ isReadOnly }) {
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
 // a step proposed from a drift row and one proposed in the modal never differ.
-export const todayCivil=()=>new Date().toISOString().split("T")[0];
+export const todayCivil=()=>orgTodayCivil();
 // SCALE-2: what Home reads when it opens, and what it reads once it knows the
 // scope, live in lib/homeReads.js since HARDEN-2 (main.jsx asks for them too).
 // "Next: send the proposal." keeps names and acronyms (shared/stepCase.js).
