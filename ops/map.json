@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "about": "DEVBOARD-2 · every part of Steward, and the checks a person can do in under a minute in the demo org. A walk's check id lands in the area whose prefixes hold its letters (Prof4 → Profile); an unknown prefix lands in Unsorted. Map check ids are letters (Gift-A) so a walk's numbered check is never mistaken for one. `open` is a path in the app; `person` is a demo person's name, looked up in the demo org only.",
+  "demo": { "org": "org_b72demo", "givingSlug": "harborlight", "signIn": "director@harborlight.demo", "never": ["org_creo"] },
+  "areas": [
+    { "id": "home", "name": "Home", "prefixes": ["Home"], "open": "/dashboard", "checks": [
+      { "id": "Home-A", "says": "Home opens on one decision: a name, a reason and a step.", "open": "/dashboard" },
+      { "id": "Home-B", "says": "Click any figure on Home; the rows behind it open and add up to the figure.", "open": "/dashboard" },
+      { "id": "Home-C", "says": "Today's tasks on Home match the open tasks due today in Tasks.", "open": "/dashboard" },
+      { "id": "Home-D", "says": "Overdue things are brass, never red.", "open": "/dashboard" }
+    ]},
+    { "id": "donors", "name": "Donors list", "prefixes": ["Dir", "List", "Donors"], "open": "/donors", "checks": [
+      { "id": "Dir-A", "says": "Search Margaret; Margaret Chen is the first row.", "open": "/donors?q=Margaret" },
+      { "id": "Dir-B", "says": "Sort by total giving; the biggest giver is on top and the sort survives a reload.", "open": "/donors" },
+      { "id": "Dir-C", "says": "Move and resize a column; the table stays clean and readable.", "open": "/donors" },
+      { "id": "Dir-D", "says": "The count over the table matches the rows when you scroll to the end.", "open": "/donors" }
+    ]},
+    { "id": "profile", "name": "Profile", "prefixes": ["Prof", "Profile"], "open": "/donors", "checks": [
+      { "id": "Prof-A", "says": "Activity tab: Margaret Chen's timeline opens, newest first, and the right rail is on a contrasting ground.", "person": "Margaret Chen" },
+      { "id": "Prof-B", "says": "Giving tab: lifetime on the rail equals the sum of the gifts listed.", "person": "Margaret Chen", "tab": "giving" },
+      { "id": "Prof-C", "says": "Conversations tab: log a call; it shows at the top of the tab.", "person": "Verity Underhill" },
+      { "id": "Prof-D", "says": "Emails tab: the tab opens and says plainly when no mailbox is connected.", "person": "Verity Underhill" },
+      { "id": "Prof-E", "says": "Tasks tab: add a task due tomorrow; it shows here and in Tasks.", "person": "Henrietta Stonebridge" },
+      { "id": "Prof-F", "says": "Notes tab: add a note; it is there after a reload.", "person": "Henrietta Stonebridge" },
+      { "id": "Prof-G", "says": "Files tab: upload a small PDF; it lists with its name and size.", "person": "Araminta Wexford" }
+    ]},
+    { "id": "gifts", "name": "Gifts and deposits", "prefixes": ["Gift", "Gifts", "Dep"], "open": "/app/fundraising?fr=deposits", "checks": [
+      { "id": "Gift-A", "says": "Record a $250 gift with an event on Isolde Fennimore; the event's Raised goes up by $250.", "person": "Isolde Fennimore", "tab": "giving" },
+      { "id": "Gift-B", "says": "Double-click Save on a gift; exactly one gift is recorded.", "person": "Isolde Fennimore", "tab": "giving" },
+      { "id": "Gift-C", "says": "Deposits: the open deposit's total equals the gifts in it.", "open": "/app/fundraising?fr=deposits" },
+      { "id": "Gift-D", "says": "To confirm: each gift waiting shows who, how much and why it waits.", "open": "/app/fundraising?fr=toconfirm" }
+    ]},
+    { "id": "pledges", "name": "Pledges", "prefixes": ["Pledge", "Pl"], "open": "/app/fundraising?fr=pledges", "checks": [
+      { "id": "Pledge-A", "says": "Pledges lists each open pledge with what is still owed.", "open": "/app/fundraising?fr=pledges" },
+      { "id": "Pledge-B", "says": "Record a payment on a pledge; its balance drops by that amount.", "open": "/app/fundraising?fr=pledges" },
+      { "id": "Pledge-C", "says": "A pledge past due reads overdue in brass.", "open": "/app/fundraising?fr=pledges" }
+    ]},
+    { "id": "grants", "name": "Grants", "prefixes": ["Grants", "Grant"], "open": "/app/grants", "checks": [
+      { "id": "Grants-A", "says": "Every grant links to its funder's record.", "open": "/app/grants" },
+      { "id": "Grants-B", "says": "An awarded grant counts as money promised; the total matches the awarded rows.", "open": "/app/grants" },
+      { "id": "Grants-C", "says": "The next report deadline shows with its date and the grant it is for.", "open": "/app/grants" }
+    ]},
+    { "id": "events", "name": "Events", "prefixes": ["Event", "Ev"], "open": "/app/events", "checks": [
+      { "id": "Event-A", "says": "The gala opens with its date, its goal and what it has raised.", "open": "/app/events" },
+      { "id": "Event-B", "says": "Raised on the gala equals the gifts attributed to it.", "open": "/app/events" },
+      { "id": "Event-C", "says": "Add a guest; the guest count goes up by one.", "open": "/app/events" }
+    ]},
+    { "id": "volunteers", "name": "Volunteers", "prefixes": ["Vol"], "open": "/app/volunteers", "checks": [
+      { "id": "Vol-A", "says": "Saturday clean-up shows its roles and how many are still needed.", "open": "/app/volunteers" },
+      { "id": "Vol-B", "says": "Sign a volunteer up for a shift; the needed count drops by one.", "open": "/app/volunteers" },
+      { "id": "Vol-C", "says": "A volunteer's hours on their record match their shifts.", "open": "/app/volunteers" }
+    ]},
+    { "id": "campaigns", "name": "Campaigns and journeys", "prefixes": ["Camp", "Comm", "Jour", "Journey"], "open": "/app/fundraising?fr=campaigns", "checks": [
+      { "id": "Camp-A", "says": "The Annual Fund shows its goal and raised; raised opens the gifts behind it.", "open": "/app/fundraising?fr=campaigns" },
+      { "id": "Camp-B", "says": "Journeys: each journey says who is on it and what the next step is.", "open": "/app/journeys" },
+      { "id": "Camp-C", "says": "Communications: a draft appeal opens and nothing sends without a person pressing Send.", "open": "/app/communications" },
+      { "id": "Camp-D", "says": "Communications says plainly that the demo sends no mail.", "open": "/app/communications" }
+    ]},
+    { "id": "tasks", "name": "Tasks and calendar", "prefixes": ["Task", "Tasks", "Cal"], "open": "/app/tasks", "checks": [
+      { "id": "Task-A", "says": "Add a task due today; it shows in Tasks and on Home.", "open": "/app/tasks" },
+      { "id": "Task-B", "says": "Tick a task done; it leaves the open list and the count drops by one.", "open": "/app/tasks" },
+      { "id": "Task-C", "says": "Calendar shows the gala and this week's shifts on their days.", "open": "/app/calendar" }
+    ]},
+    { "id": "reports", "name": "Reports", "prefixes": ["Rep", "Report"], "open": "/app/reports", "checks": [
+      { "id": "Rep-A", "says": "Open a report; each figure has its one sentence and opens its rows.", "open": "/app/reports" },
+      { "id": "Rep-B", "says": "This year's total in Reports equals Home's for the same year.", "open": "/app/reports" },
+      { "id": "Rep-C", "says": "Download the board report as a PDF; it opens and its totals match the screen.", "open": "/app/reports" }
+    ]},
+    { "id": "finance", "name": "Finance", "prefixes": ["Fin"], "open": "/app/finance", "checks": [
+      { "id": "Fin-A", "says": "Finance opens and its income equals the gifts for the same dates.", "open": "/app/finance" },
+      { "id": "Fin-B", "says": "Restricted money is shown apart from unrestricted.", "open": "/app/finance" },
+      { "id": "Fin-C", "says": "Each figure opens the rows behind it.", "open": "/app/finance" }
+    ]},
+    { "id": "data", "name": "Data health and imports", "prefixes": ["Data", "Health", "Imp", "Import"], "open": "/donors?view=health", "checks": [
+      { "id": "Data-A", "says": "Data health lists possible duplicates, each with why it thinks so.", "open": "/donors?view=health" },
+      { "id": "Data-B", "says": "Merging a duplicate pair keeps one person with both gift histories.", "open": "/donors?view=health" },
+      { "id": "Data-C", "says": "Imports lists past imports with their row counts and an undo.", "open": "/app/settings?section=imports" }
+    ]},
+    { "id": "atlas", "name": "Atlas", "prefixes": ["Atlas"], "open": "/dashboard", "checks": [
+      { "id": "Atlas-A", "says": "Atlas opens over any page and closes back to it.", "open": "/dashboard" },
+      { "id": "Atlas-B", "says": "Ask Atlas who has lapsed; it answers with names that open their records.", "open": "/dashboard" },
+      { "id": "Atlas-C", "says": "Atlas drafts and proposes; it never sends or saves money on its own.", "open": "/dashboard" }
+    ]},
+    { "id": "settings", "name": "Settings", "prefixes": ["Set", "Settings"], "open": "/app/settings?section=org", "checks": [
+      { "id": "Set-A", "says": "Settings opens on the organization, with its name and timezone.", "open": "/app/settings?section=org" },
+      { "id": "Set-B", "says": "Team lists the director and the staff with their roles.", "open": "/app/settings?section=team" },
+      { "id": "Set-C", "says": "Connections says which are connected and which are not.", "open": "/app/settings?section=connections" },
+      { "id": "Set-D", "says": "Change a setting and reload; the change stayed.", "open": "/app/settings?section=org" }
+    ]},
+    { "id": "giving", "name": "Giving page", "prefixes": ["Give", "Page", "Form"], "open": "/give/harborlight", "checks": [
+      { "id": "Give-A", "says": "The giving page loads with the org's name and its amounts. Do not complete a payment.", "open": "/give/harborlight", "public": true },
+      { "id": "Give-B", "says": "Pick an amount and monthly; the button says the amount and how often.", "open": "/give/harborlight", "public": true },
+      { "id": "Give-C", "says": "Giving pages in Fundraising lists the page and its raised total.", "open": "/app/fundraising?fr=pages" }
+    ]},
+    { "id": "receipts", "name": "Receipts", "prefixes": ["Rcpt", "Receipt", "Ack"], "open": "/app/settings?section=receipts", "checks": [
+      { "id": "Rcpt-A", "says": "Receipt settings show the legal name and the tax sentence.", "open": "/app/settings?section=receipts" },
+      { "id": "Rcpt-B", "says": "A gift's receipt previews with the right amount and date.", "person": "Barnaby Thistlewood", "tab": "giving" },
+      { "id": "Rcpt-C", "says": "Acknowledgments lists the gifts waiting for a thank-you.", "open": "/app/fundraising?fr=acknowledgments" }
+    ]},
+    { "id": "ops", "name": "Ops", "prefixes": ["Ops"], "open": null, "checks": [
+      { "id": "Ops-A", "says": "/ops loads for a super-admin with every section, and says which source is down." },
+      { "id": "Ops-B", "says": "The Map tab lists every area and each check's last result." },
+      { "id": "Ops-C", "says": "A Fail here shows on the board within one reload." }
+    ]}
+  ]
+}

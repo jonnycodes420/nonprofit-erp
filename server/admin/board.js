@@ -7,6 +7,8 @@
 //         or reopened (a fixed or verified check failed again).
 // walks:  one row per imported walk report, { date, pass, fail, skip, file },
 //         which the /ops walk trend draws.
+// results: (DEVBOARD-2) the last verdict per check, { [key]: { check, verdict,
+//         date, words } }, which the Map tab shows in the check's area.
 //
 // Pure functions only: the import script (scripts/ops/board-import-walk.js),
 // the board script (scripts/ops/board.js) and the /ops route all read this,
@@ -36,6 +38,7 @@ function writeBoard(board, file = BOARD_PATH) {
 function validate(b) {
   const out = [];
   if (!b || !Array.isArray(b.items) || !Array.isArray(b.walks)) return ["needs items[] and walks[]"];
+  if (b.results != null && (typeof b.results !== "object" || Array.isArray(b.results))) return ["results must be an object of check → last verdict"];
   const seen = new Set();
   for (const it of b.items) {
     if (!it.id || seen.has(it.id)) out.push(`id ${it.id || "(none)"} missing or repeated`);
@@ -110,6 +113,14 @@ function applyWalk(board, verdicts, { date, file = null }) {
       it.state = "verified"; note(it, date, "verified", by); changes.verified.push(it.id);
     }
   }
+  // DEVBOARD-2: the last verdict per check, which the Map tab shows in its area.
+  // An older walk imported after a newer one never overwrites the newer verdict.
+  next.results = next.results || {};
+  for (const v of verdicts) {
+    const k = v.check.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const was = next.results[k];
+    if (!was || was.date <= date) next.results[k] = { check: v.check, verdict: v.verdict, date, words: v.words || "" };
+  }
   const count = k => verdicts.filter(v => v.verdict === k).length;
   next.walks = next.walks.filter(w => w.date !== date);
   next.walks.push({ date, pass: count("PASS"), fail: count("FAIL"), skip: count("SKIP"), file });
@@ -146,7 +157,8 @@ function summarize(board) {
     const k = it.build || "";
     if (!groups.has(k)) groups.set(k, { build: it.build || null, counts: Object.fromEntries(STATES.map(s => [s, 0])), items: [] });
     const g = groups.get(k); g.counts[it.state]++;
-    g.items.push({ id: it.id, source: it.source, words: it.words, state: it.state, customer: it.customer || null, opened: it.opened || null, fixedBy: it.fixedBy || null });
+    g.items.push({ id: it.id, source: it.source, words: it.words, state: it.state, customer: it.customer || null, opened: it.opened || null, fixedBy: it.fixedBy || null,
+      check: it.check || null, area: it.area || null, shot: it.shot || null, verifiedBy: it.verifiedBy || null });   // DEVBOARD-2
   }
   const live = g => g.counts.open + g.counts.reopened;
   const builds = [...groups.values()].sort((a, b) => live(b) - live(a) || String(a.build || "~").localeCompare(String(b.build || "~")));
