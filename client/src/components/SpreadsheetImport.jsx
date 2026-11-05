@@ -368,10 +368,11 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const giftsQ = eventGiftsQ || (typeof answers.useEventDate === "boolean" && answers.eventDate ? giftsAsked : null);
   const pledgeQ = pledgeDueQ || (answers.pledgeDue ? pledgeAsked : null);
   useEffect(() => { const q = u && u.questions.find(x => x.id === "date"); if (q && !dateAsked) setDateAsked(q); }, [u, dateAsked]);
-  const otherQs = u ? u.questions.filter(q => !["date", "event", "eventGifts", "pledgeDue", "nearDuplicates", "giftsDeposited"].includes(q.id) && q.kind !== "column" && q.kind !== "deletedPerson") : [];
+  const otherQs = u ? u.questions.filter(q => !["date", "event", "eventGifts", "pledgeDue", "nearDuplicates", "giftsDeposited", "spouseLinks"].includes(q.id) && q.kind !== "column" && q.kind !== "deletedPerson") : [];
   // FIX-59: two defaulted questions, each answered once for the file
   const nearQ = u ? u.questions.find(q => q.id === "nearDuplicates") : null;
   const depositQ = u ? u.questions.find(q => q.id === "giftsDeposited") : null;
+  const spouseQ = u ? u.questions.find(q => q.id === "spouseLinks") : null;   // IMPORT-8
   const setNear = patch => setAnswers(a => ({ ...a, nearDuplicates: { ...(a.nearDuplicates || {}), ...patch } }));
   const deletedQs = u ? u.questions.filter(q => q.kind === "deletedPerson") : [];
   const colQs = u ? u.questions.filter(q => q.kind === "column") : [];
@@ -507,8 +508,11 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                   onClick={bringBack}>Bring them all back</button>
               </div>
             )}
+            {/* IMPORT-8: 30 separate questions collapse under the two bulk choices; one by one opens them */}
             {deletedQs.length > 0 && (
-              <div style={{ ...box, borderColor: T.gold500 }} data-testid="sheet-deleted-questions">
+              <details open={deletedQs.length === 1 || undefined} style={{ ...box, borderColor: T.gold500 }} data-testid="sheet-deleted-questions">
+                {deletedQs.length > 1 && <summary style={{ fontSize: 12.5, fontWeight: 700, cursor: "pointer" }} data-testid="sheet-deleted-one-by-one">
+                  Decide one by one ({deletedQs.length.toLocaleString("en-US")} matched by name only{Object.keys(answers.deletedPeople || {}).length ? `, ${Object.keys(answers.deletedPeople || {}).length.toLocaleString("en-US")} answered` : ""})</summary>}
                 {deletedQs.map(q => {
                   const chosen = (answers.deletedPeople || {})[q.key];
                   return (
@@ -527,7 +531,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                       </div>
                     </div>);
                 })}
-              </div>
+              </details>
             )}
             {(u.deletedMatches || []).length > 0 && (
               <div style={{ ...box, borderColor: T.gold500 }} data-testid="sheet-deleted-matches">
@@ -653,6 +657,23 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               </div>
             )}
 
+            {/* IMPORT-8: a partner named in the file is offered as a link, Link unless she says no */}
+            {spouseQ && (
+              <div style={box} data-testid="sheet-question-spouses">
+                <div style={h3}>{spouseQ.text}</div>
+                <div style={small}>{spouseQ.hint}</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
+                  {(spouseQ.options || []).map(o => {
+                    const chosen = answers.spouseLinks, suggested = !chosen && o.key === spouseQ.default;
+                    return <button type="button" key={o.key} aria-pressed={chosen === o.key} data-suggested={suggested ? "1" : undefined}
+                      style={{ ...btn(chosen === o.key), padding: "6px 12px", fontSize: 12.5, ...(suggested ? { border: "1px dashed " + T.greenDk } : {}) }}
+                      onClick={() => setAnswer({ spouseLinks: o.key })}>{o.label}</button>;
+                  })}
+                  {!answers.spouseLinks && <span style={small}>Steward suggests Link them; it stands unless you choose.</span>}
+                </div>
+              </div>
+            )}
+
             {dateQ && (
               <div style={box} data-testid="sheet-question-date">
                 <div style={h3}>{dateQ.text}</div>
@@ -742,13 +763,20 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                             {(u.merged || []).slice(0, 50).map(m => <span key={m.sheet + m.line} style={{ display: "block" }}>Row {m.line}: {m.name}, read into {m.into} (row {String(m.intoLine || "").split(":")[1] || m.intoLine}) by {m.by === "name" ? "the same name" : m.by}.</span>)}
                           </span>}
                         </span>,
+                        u.householdLine && <span key="hh" data-testid="sheet-household-line">{u.householdLine.sentence}.</span>,
+                        // IMPORT-8: on a workbook, the rows combined into a person above, named
+                        ...(!u.rowAccount ? (u.mergedLines || []).map(x => <span key={"m" + x.by} data-testid="sheet-merged-line">{x.sentence}.</span>) : []),
                         // IMPORT-5 (7a): one address split, shown as it will land
                         u.addressExample && <span key="addr" data-testid="sheet-address-example">{n(c.addressesSplit || 0, "address", "addresses")} split into street, city, state and ZIP, for example "{u.addressExample.from}" → {[u.addressExample.address, u.addressExample.address2, u.addressExample.city, u.addressExample.state, u.addressExample.zip].filter(Boolean).join(" · ")}.</span>,
                         c.addressesToCheck ? `${n(c.addressesToCheck, "address", "addresses")} kept whole and marked "Check this address": Steward could not split ${c.addressesToCheck === 1 ? "it" : "them"} for sure.` : null,
                         // IMPORT-5 (7d): notes that say the contact info is bad
                         c.phonesMarkedWrong ? <span key="ph" data-testid="sheet-phones-wrong">{n(c.phonesMarkedWrong, "phone")} marked wrong from your notes: kept, struck through, and never dialed or texted from Steward.</span> : null,
                         c.addressesMarkedReturned ? `${n(c.addressesMarkedReturned, "address", "addresses")} marked as returned mail from your notes: kept, and left off mailings.` : null,
-                        ...(u.placeholders || []).map(p => `The ${p.kind} ${p.value} is on ${p.people} different people, so it is treated as your own ${p.kind} and copied onto nobody.`),
+                        // IMPORT-8: the first few and a count (IMPORT-7's walk: thousands of lines)
+                        ...(u.placeholders || []).slice(0, 5).map(p => p.kind === "phone"
+                          ? (p.why === "own" ? `The phone ${p.value} is your organization's own, so it is copied onto nobody.` : `The phone ${p.value} is on ${p.people} different people, more than 10, so it is treated as an office number and copied onto nobody.`)
+                          : `The email ${p.value} is on ${p.people} different people, so it is treated as a shared inbox and copied onto nobody.`),
+                        (u.placeholders || []).length > 5 ? `And ${((u.placeholders || []).length - 5).toLocaleString("en-US")} more shared ${(u.placeholders || []).every(p => p.kind === "phone") ? "phones" : "phones or emails"}, copied onto nobody.` : null,
                         ...(u.nearMisses || []).slice(0, 5).map(x => `${x.a} and ${x.b} (row ${x.line}): ${x.reason}.`)].filter(Boolean)} />
               <Layer title="Roles" testId="layer-roles"
                 main={[c.donors && n(c.donors, "donor"), c.pledgers && n(c.pledgers, "pledger"), c.guests && n(c.guests, "event guest"), c.volunteers && n(c.volunteers, "volunteer"),
@@ -758,18 +786,28 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 <Layer title="Money" testId="layer-money"
                   main={`${n(c.gifts, "gift")} ${money(c.giftCents)}${c.undatedGifts ? ` (${c.undatedGifts.toLocaleString("en-US")} with no date)` : ""}${c.pledges ? ` · ${n(c.pledges, "pledge")}: ${pledgeMoneyWords({ dueThisYearCents: c.pledgeDueThisYearCents, openCents: c.pledgeOpenCents, years: c.pledgeYears, undatedCents: c.pledgeUndatedCents }, money)}` : ""}`}
                   sub={c.undatedGifts ? "A gift with no date still lands on its person, marked No date. It counts in Lifetime and the event's total, and not in This year, a goal or retention until it has a date." : "Every gift on its person, through the one gift path."}
-                  notes={[c.monthly ? `${n(c.monthly, "monthly giver")} flagged for you to confirm, never charged.` : null,
+                  notes={[...(u.totalOfChecks || []).map(x => x.sentence).filter(Boolean),
+                          u.peopleSheetGifts ? u.peopleSheetGifts.sentence : null,
+                          c.monthly ? `${n(c.monthly, "monthly giver")} flagged for you to confirm, never charged.` : null,
                           ...u.pledges.slice(0, 3).map(p => `Row ${p.line}: ${p.who}, ${money(p.pledgeCents)}${p.openCents !== p.pledgeCents ? `, ${money(p.openCents)} to go` : ""}. ${p.why}.`)].filter(Boolean)} />
               )}
-              {(u.event || c.optOuts || c.doNotContact || c.doNotMail || c.doNotCall) ? (
+              {(u.event || (u.commsLines || []).length || u.prefNotes) ? (
                 <Layer title="Engagement" testId="layer-engagement"
                   main={[u.event && `${eventName || u.event.name || "The event"}: ${(c.invitedRecords ?? c.invited).toLocaleString("en-US")} invited, ${(c.rsvpRecords ?? c.rsvp).toLocaleString("en-US")} RSVP'd, ${(c.attendedRecords ?? c.attended).toLocaleString("en-US")} attended${c.invited !== c.invitedRecords && c.invitedRecords != null ? ` (rows; ${c.invited.toLocaleString("en-US")} invited people, a couple's row is two)` : ""}`,
-                         c.optOuts && n(c.optOuts, "opt-out"), c.doNotContact && `${c.doNotContact} do not contact`, c.doNotMail && `${c.doNotMail} do not mail`, c.doNotCall && `${c.doNotCall} do not call`].filter(Boolean).join(" · ")}
-                  sub="Attendance, table and party size go on each person's event. Every communication choice keeps where it came from." />
+                         ...(u.commsLines || []).filter(x => x.kind !== "optIn").map(x => x.sentence)].filter(Boolean).join(" · ") || "No communication choices in this file"}
+                  sub="Attendance, table and party size go on each person's event. A communication choice comes only from a column that names one, and keeps where it came from."
+                  notes={[u.prefNotes ? `${u.prefNotes.sentence}.` : null,
+                          ...(u.prefNotes ? u.prefNotes.people.slice(0, 5).map(x => `${x.name}: "${x.value}" (${x.header}, line ${x.line})`) : [])].filter(Boolean)} />
               ) : null}
               <Layer title="Everything else" testId="layer-kept"
                 main={(u.keptHeaders || []).length ? `${n(u.keptHeaders.length, "column")} kept on each person: ${u.keptHeaders.map(k => k.header).join(", ")}` : "Nothing left over"}
                 sub="A column Steward has no field for is kept under its own header, as a custom field on the person. Nothing is lost." />
+              {(u.countLines || []).length > 0 && (
+                <div data-testid="sheet-count-lines" style={{ ...small, marginTop: 8 }}>
+                  <div style={{ fontWeight: 700, color: T.ink }}>How the counts add up</div>
+                  {u.countLines.map(x => <div key={x.kind} data-testid="sheet-count-line">{x.sentence}.</div>)}
+                </div>
+              )}
               {setAside.length > 0 && (
                 <details data-testid="sheet-aside" style={{ marginTop: 10 }} open={asideOpen} onToggle={e => setAsideOpen(e.currentTarget.open)}>
                   <summary style={{ fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Set aside ({setAside.length.toLocaleString("en-US")}), each with its line and reason</summary>
@@ -824,13 +862,15 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
         {result && (
           <div style={box} data-testid="sheet-result">
             <div style={h3}>{undone ? "Undone" : "Imported"}</div>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>{undone || result.sentence}</div>
+            {/* IMPORT-8: once undone, Undo's own sentence (who stayed, and Remove them too) is the receipt */}
+            {!undone && <div style={{ fontSize: 15, fontWeight: 700 }}>{result.sentence}</div>}
             {!undone && result.giftLine && <ImportGiftLine line={result.giftLine} importId={result.importId} style={{ marginTop: 4 }} />}
             {/* IMPORT-7: every row, per sheet, each count named; the file's line adds the sheets up */}
             {!undone && result.sheetRows && result.sheetRows.sheets.length > 0 && (
               <div data-testid="sheet-result-rows" style={{ ...small, marginTop: 4, color: result.sheetRows.file.balanced ? T.ink3 : T.terra700 }}>
                 {result.sheetRows.sheets.map(x => <div key={x.sheet} data-testid="sheet-result-rows-sheet">{x.sentence}</div>)}
                 {result.sheetRows.file.sentence && <div style={{ fontWeight: 700 }}>{result.sheetRows.file.sentence}</div>}
+                {(result.sheetRows.mergedLines || []).map(x => <div key={x.by} data-testid="sheet-result-merged">{x.sentence}.</div>)}
               </div>
             )}
             {/* IMPORT-6: the receipt opens the people it brought in, under Everyone */}
@@ -862,7 +902,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               </div>
             )}
             <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-              {!undone && result.importId && <div style={{ flex: "1 1 260px" }}><ImportUndo importId={result.importId} onUndone={r => setUndone(r.sentence || "Undone.")} /></div>}
+              {result.importId && <div style={{ flex: "1 1 260px" }}><ImportUndo importId={result.importId} onUndone={r => setUndone(r.sentence || "Undone.")} /></div>}
               <button type="button" data-testid="sheet-done" style={btn(true)} onClick={finish}>Done</button>
             </div>
             {/* INSIGHTS-1: what the file says, before Home */}

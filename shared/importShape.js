@@ -2387,11 +2387,14 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
 
     const noteText = txMap.notes ? String(row[txMap.notes] || "") : "";
     const markers = detectNoteMarkers(noteText);
-    if (markers.deceased) { donor.deceased = true; if (markers.deceasedDate) donor.deceasedDate = markers.deceasedDate; }
-    if (markers.doNotSolicit) donor.doNotSolicit = true;
-    if (markers.doNotContact) donor.doNotContact = true;
-    if (markers.doNotMail) donor.doNotMail = true;
-    if (markers.doNotEmail) donor.doNotEmail = true;
+    // IMPORT-8: listed below (flaggedRows); set only when she said so
+    if (opts.noteFlags === "apply") {
+      if (markers.deceased) { donor.deceased = true; if (markers.deceasedDate) donor.deceasedDate = markers.deceasedDate; }
+      if (markers.doNotSolicit) donor.doNotSolicit = true;
+      if (markers.doNotContact) donor.doNotContact = true;
+      if (markers.doNotMail) donor.doNotMail = true;
+      if (markers.doNotEmail) donor.doNotEmail = true;
+    }
     if (markers.matched.length) flaggedRows.push({ line, name: donor.name, matched: markers.matched, note: noteText,
       flags: { deceased: !!markers.deceased, doNotSolicit: !!markers.doNotSolicit, doNotContact: !!markers.doNotContact, doNotMail: !!markers.doNotMail, doNotEmail: !!markers.doNotEmail } });
 
@@ -4120,6 +4123,8 @@ export function buildWorkbookDonors(sheet, mapping, opts = {}) {
 
   const col = key => Object.keys(mapping).find(h => mapping[h] === key) || "";
   const donors = [], skippedByChoice = [], warnings = [];
+  const noteMentions = [];
+  const applyNoteFlags = opts.noteFlags === "apply";
   const excl = { deceased: 0, doNotMail: 0, doNotSolicit: 0, doNotEmail: 0, doNotContact: 0,
                  fromHidden: 0, fromFill: 0, fromComments: 0, fromNotes: 0, rows: new Set() };
 
@@ -4199,13 +4204,21 @@ export function buildWorkbookDonors(sheet, mapping, opts = {}) {
       if (pe.flags.doNotSolicit) mark("doNotSolicit");
       if (pe.flags.doNotContact) mark("doNotContact");
     }
+    // IMPORT-8 · FREE TEXT NEVER SETS A FLAG ON ITS OWN. A note that reads
+    // like one is listed ("12 notes mention deceased or do not contact;
+    // nothing was changed") and applied only when she says so (noteFlags:
+    // "apply", the summary's checkbox).
     if (d.notes) {
       const nm = detectNoteMarkers(d.notes);
-      if (nm.deceased) { mark("deceased", "fromNotes"); if (nm.deceasedDate && !d.deceasedDate) d.deceasedDateText = nm.deceasedDate; }
-      if (nm.doNotSolicit) mark("doNotSolicit", "fromNotes");
-      if (nm.doNotContact) mark("doNotContact", "fromNotes");
-      if (nm.doNotMail) mark("doNotMail", "fromNotes");
-      if (nm.doNotEmail) mark("doNotEmail", "fromNotes");
+      const says = ["deceased", "doNotSolicit", "doNotContact", "doNotMail", "doNotEmail"].filter(k => nm[k]);
+      if (says.length) noteMentions.push({ line, name: d.name, note: String(d.notes).slice(0, 200), flags: says, from: "notes" });
+      if (applyNoteFlags) {
+        if (nm.deceased) { mark("deceased", "fromNotes"); if (nm.deceasedDate && !d.deceasedDate) d.deceasedDateText = nm.deceasedDate; }
+        if (nm.doNotSolicit) mark("doNotSolicit", "fromNotes");
+        if (nm.doNotContact) mark("doNotContact", "fromNotes");
+        if (nm.doNotMail) mark("doNotMail", "fromNotes");
+        if (nm.doNotEmail) mark("doNotEmail", "fromNotes");
+      }
     }
     // Part 3.5 — only as answered, never silently
     if (deceasedFromHidden.has(line)) mark("deceased", "fromHidden");
@@ -4218,8 +4231,10 @@ export function buildWorkbookDonors(sheet, mapping, opts = {}) {
     }
     if (commentsRouted && commentByRow.has(line)) {
       const txt = commentByRow.get(line);
-      if (/deceas|passed away|\bd\.\s*\d{4}/i.test(txt)) { mark("deceased", "fromComments"); }
-      else if (/do not (call|contact|mail|solicit)/i.test(txt)) { mark("doNotContact", "fromComments"); }
+      const dec = /deceas|passed away|\bd\.\s*\d{4}/i.test(txt), dnc = !dec && /do not (call|contact|mail|solicit)/i.test(txt);
+      if (dec || dnc) noteMentions.push({ line, name: d.name, note: String(txt).slice(0, 200), flags: [dec ? "deceased" : "doNotContact"], from: "comment" });
+      if (applyNoteFlags && dec) { mark("deceased", "fromComments"); }
+      else if (applyNoteFlags && dnc) { mark("doNotContact", "fromComments"); }
       d.notes = [d.notes, `[cell comment] ${txt}`].filter(Boolean).join(" · ");
     }
     if (get("board") && parseBoolFlag(get("board"))) d.board = true;
@@ -4230,8 +4245,8 @@ export function buildWorkbookDonors(sheet, mapping, opts = {}) {
     donors.push(d);
   });
   const { rows: exclRowSet, ...exclCounts } = excl;
-  return { donors, skippedByChoice, warnings,
-           exclusionSummary: { ...exclCounts, total: exclRowSet.size } };
+  return { donors, skippedByChoice, warnings, noteMentions,
+           exclusionSummary: { ...exclCounts, total: exclRowSet.size, noteMentions: noteMentions.length, noteFlagsApplied: applyNoteFlags } };
 }
 
 // ── BUILD-83 FIX (item 2) — THE PROMISE, AS A FIELD LIST. ─────────────────
@@ -4303,13 +4318,13 @@ export function buildWorkbookSubmission(roled = [], opts = {}) {
   // BUILD-83 Part 1 — signals are computed ONCE, over data rows only, one per
   // (sheet, kind, colour); the caller's answers are keyed by signal id.
   const signals = opts.signals || buildWorkbookSignals(roled, legend);
-  let donors = [], skippedByChoice = [], exclusionSummary = null, donorMapping = {};
+  let donors = [], skippedByChoice = [], exclusionSummary = null, donorMapping = {}, noteMentions = [];
   if (donorsSheet) {
     const auto = buildStandardMapping(donorsSheet.headers, donorsSheet.rows, "donor");
     donorMapping = { ...auto.mapping, ...((opts.mappingOverrides || {})[donorsSheet.name] || {}) };
     for (const [h, k] of Object.entries(donorMapping)) if (!k) delete donorMapping[h];
-    const built = buildWorkbookDonors(donorsSheet, donorMapping, { signals, signalAnswers: opts.signalAnswers, legend, currentYear: opts.currentYear });
-    donors = built.donors; skippedByChoice = built.skippedByChoice; exclusionSummary = built.exclusionSummary;
+    const built = buildWorkbookDonors(donorsSheet, donorMapping, { signals, signalAnswers: opts.signalAnswers, legend, currentYear: opts.currentYear, noteFlags: opts.noteFlags });
+    donors = built.donors; skippedByChoice = built.skippedByChoice; exclusionSummary = built.exclusionSummary; noteMentions = built.noteMentions;
     // custom-field raw values decided in the mapper ride each donor row
     const assigns = (opts.customAssignments || {})[donorsSheet.name] || {};
     const entries = Object.entries(assigns).filter(([, a]) => a && a.entity === "donor" && a.key);
@@ -4559,7 +4574,7 @@ export function buildWorkbookSubmission(roled = [], opts = {}) {
     reconciliation,
     largestGifts,
     totalRows,
-    exclusionSummary,
+    exclusionSummary, noteMentions,
     decoyOverlap,
     donorMapping,
     giftMappings: Object.fromEntries(builds.map(b => [b.name, b.mapping])),

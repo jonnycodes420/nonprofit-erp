@@ -236,11 +236,22 @@ const { testNow } = require("./clock");
   // ── THE SUBMISSION BUILDER — what the summary shows IS what the write sends ─
   const answersBy = pick => Object.fromEntries(signals.filter(s => s.kind !== "hidden_column").map(s => [s.id, pick(s)]));
   const legendAnswers = answersBy(s => s.kind === "comments" ? "route" : "legend");
+  // IMPORT-8: a flag read from a note or a cell comment is applied only when
+  // she ticks "Mark them as the notes say" (noteFlags: "apply"); this leg is
+  // that answer. Unanswered, the notes are listed and nothing is set (below).
   const sub = IS.buildWorkbookSubmission(roled, {
-    signals, signalAnswers: legendAnswers,
+    signals, signalAnswers: legendAnswers, noteFlags: "apply",
     anchorDate: "2026-09-06", currentYear: 2026,
     customAssignments: { Donors: { "Internal Score": { entity: "donor", key: "internal_score" } } },
   });
+  {
+    const subAsk = IS.buildWorkbookSubmission(roled, { signals, signalAnswers: legendAnswers, anchorDate: "2026-09-06", currentYear: 2026 });
+    ok("IMPORT-8: unanswered, a note or comment sets no flag; each is listed for review",
+       subAsk.exclusionSummary.fromNotes === 0 && subAsk.exclusionSummary.fromComments === 0
+       && subAsk.noteMentions.length > 0 && subAsk.noteMentions.every(m => m.flags.length > 0)
+       && subAsk.exclusionSummary.rowsFound < sub.exclusionSummary.rowsFound,
+       { ask: subAsk.exclusionSummary, mentions: subAsk.noteMentions.length, applied: sub.exclusionSummary });
+  }
   // BUILD-83 Part 2.1 — the summary promises what the DATABASE will hold: 800
   // ROWS carry an exclusion, 8 of them fold into a surviving duplicate, so 792
   // PEOPLE end up excluded. Both numbers are said, and the read-back compares

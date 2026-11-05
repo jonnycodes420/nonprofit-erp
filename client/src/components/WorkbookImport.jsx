@@ -76,6 +76,10 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
   const [cfDefs, setCfDefs] = useState({ donor: [], gift: [] });
   const [submission, setSubmission] = useState(null);
   const [linkPreview, setLinkPreview] = useState(null);            // gift-alone pre-write link counts (server dryRun)
+  // IMPORT-8: who on the people sheet is already in the org (server dryRun,
+  // the write's own rule), and whether a flag a note reads like is applied
+  const [peopleMatch, setPeopleMatch] = useState(null);
+  const [noteFlags, setNoteFlags] = useState("list");
   const [building, setBuilding] = useState(false);
   const [progressText, setProgressText] = useState("");
   // NUMBERS-4: the write's one progress bar, by its three steps (the people
@@ -184,7 +188,8 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
   // it. That flow lives in ColumnTargetSelect now (one copy, every mapper).
 
   // ── build the ONE submission (summary + write share it) ──────────────────
-  const buildNow = async () => {
+  const buildNow = async (opts = {}) => {
+    const noteFlagsNow = opts.noteFlags || noteFlags;
     setBuilding(true); setErr("");
     setProgressText(`Reading ${fmtN(roled.filter(s => s.role === "gifts").reduce((a, s) => a + s.rowCount, 0))} gift rows across ${countLabel(giftSheets.length, "sheet")}…`);
     await new Promise(r => setTimeout(r, 60));   // let the status paint before the sync build
@@ -199,9 +204,16 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
       const sub = buildWorkbookSubmission(roled, {
         signals, signalAnswers, legend, includeDecoy,
         currentYear: new Date().getFullYear(),
-        mappingOverrides, customAssignments,
+        mappingOverrides, customAssignments, noteFlags: noteFlagsNow,
       });
       setSubmission(sub);
+      // IMPORT-8 · "1,481 already in Steward, 4,914 new", before anything is written
+      if (!giftAlone && sub.donors && sub.donors.length) {
+        setProgressText(`Checking ${fmtN(sub.donors.length)} people against the people already in Steward…`);
+        const people = sub.donors.map(d => ({ name: d.name || "", email: d.email || "", externalDonorId: d.externalDonorId || "", _line: d._line }));
+        const pm = await apiFetch("/donors/import-combined", { method: "POST", body: JSON.stringify({ donors: people, gifts: [], dryRun: true, matchPeople: true, identityResolved: true }) }).catch(() => null);
+        setPeopleMatch(pm && pm.matchPeople ? pm : null);
+      }
       setTiming(t => ({ ...(t || {}), toSummary: (Date.now() - tBuild0) / 1000 }));
       // gift-alone: ask the server how the link would land BEFORE the write —
       // the pre-write summary never guesses ("map a name or email" is dead;
@@ -618,6 +630,23 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
             {s.pledges.pledges.length > 0 && <> · {fmtN(s.pledges.pledges.length)} pledges as commitments ({fmt$(s.pledges.totalPledged)}, $0 in cash)</>}
             {s.recurring.claims.length > 0 && <> · {fmtN(s.recurring.recovery.length)} failed sustainers to the recovery list · {fmtN(s.recurring.stale.length)} stale “Active” flags</>}
           </div>
+          {peopleMatch && (
+            <div data-testid="wb-people-match" style={{ fontSize: 12.5, color: T.ink, marginTop: 6 }}>
+              <strong>{fmtN(peopleMatch.matched)}</strong> already in Steward, <strong>{fmtN(peopleMatch.new)}</strong> new.
+              {peopleMatch.matched > 0 && <> Their gifts go on the person already here ({[peopleMatch.byKey.externalId && `${fmtN(peopleMatch.byKey.externalId)} by the ID in your file`, peopleMatch.byKey.email && `${fmtN(peopleMatch.byKey.email)} by email`, peopleMatch.byKey.name && `${fmtN(peopleMatch.byKey.name)} by a name only one person here has`].filter(Boolean).join(", ")}); nobody is added twice.</>}
+            </div>
+          )}
+          {(s.noteMentions || []).length > 0 && (
+            <div data-testid="wb-note-mentions" style={{ fontSize: 12.5, color: T.ink, marginTop: 6 }}>
+              {countLabel(s.noteMentions.length, "note")} {s.noteMentions.length === 1 ? "reads" : "read"} like {[...new Set(s.noteMentions.flatMap(m => m.flags))].map(f => ({ deceased: "deceased", doNotSolicit: "do not solicit", doNotContact: "do not contact", doNotMail: "do not mail", doNotEmail: "do not email" })[f] || f).join(", ")}; {noteFlags === "apply" ? "you chose to mark them as the notes say." : "nothing was changed."}
+              {" "}<label style={{ whiteSpace: "nowrap" }}><input type="checkbox" data-testid="wb-note-flags" checked={noteFlags === "apply"} disabled={building}
+                onChange={e => { const v = e.target.checked ? "apply" : "list"; setNoteFlags(v); buildNow({ noteFlags: v }); }} /> Mark them as the notes say</label>
+              <details style={{ marginTop: 4 }}><summary style={{ cursor: "pointer" }}>See the notes</summary>
+                {s.noteMentions.slice(0, 100).map(m => <div key={m.line} style={{ fontSize: 12 }}>Row {m.line}: {m.name}: "{m.note}"{m.from === "comment" ? " (a cell comment)" : ""}</div>)}
+                {s.noteMentions.length > 100 && <div style={{ fontSize: 12 }}>and {fmtN(s.noteMentions.length - 100)} more.</div>}
+              </details>
+            </div>
+          )}
           {s.exclusionSummary && s.exclusionSummary.total > 0 && (
             <div style={{ fontSize: 12.5, color: T.ink, marginTop: 6 }}>
               <strong>{fmtN(s.exclusionSummary.total)}</strong> people carry an exclusion (deceased / do-not-contact family) and stay off every ask surface, from {fmtN(s.exclusionSummary.rowsFound || s.exclusionSummary.total)} rows{(s.exclusionSummary.foldedIntoSurvivors || 0) > 0 ? ` (${fmtN(s.exclusionSummary.foldedIntoSurvivors)} of them fold into a duplicate)` : ""}, including {s.exclusionSummary.fromHidden} hidden rows, {s.exclusionSummary.fromFill} highlighted, {s.exclusionSummary.fromComments} from comments.

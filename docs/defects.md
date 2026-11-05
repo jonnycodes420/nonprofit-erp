@@ -19,10 +19,13 @@ one deletes its line.
 - **P3 · The old import wizard is code nobody can open.** `DonorImport` and `GiftHistoryImport` (now `components/DonorImport.jsx` and `components/import/`, about 3,300 lines) are rendered by no screen: every door opens the one reader (`SpreadsheetImport`), and real-shaped §9 asserts no door renders them. Only `MergeDuplicatesModal`, `parseFileToSheets` and the label helpers (`plainFieldLabel`, `txRoleLabel`, `anyFieldLabel`) are still imported. SCREENS-1 moved them verbatim, as the brief said. Suggested: a PRUNE build deletes the wizard and its steps, keeping those five exports, after a search for any caller.
 - **P3 · `components/home/` keeps parts nothing draws.** PERF-3 took out what Dashboard.jsx computed every render and drew nowhere (`goalCardsSection`, `driftSection` and its empty state, `goalDriverHint`, the briefing, the old queue's actions and their state), so App's chunk is 4 KB smaller. The parts themselves (`goalCardsSection` in goalSections.jsx, `driftSection`, `driftEmptyState`, `submitDriftDone` in driftSection.jsx, `MiniEmpty`) are still in their files, with their SCREENS-1 render cases, and nothing calls them; four unused values remain in Dashboard (`queueLoading`, `setDriftSort`, `thankClockLow`, `paceColor`). Suggested: a PRUNE build deletes the parts and their render cases, or a Home build places the goal cards if they were meant to show.
 
+## IMPORT-8's walk (4 Nov 2026)
+
+- **P3 · "Remove them too" can be offered again for people already removed.** After an undo that kept people, reopening the same receipt in the same session reads the stored result and shows the button again; a second press is refused ("One or more donors not found") and changes nothing. Suggested: the next imports build reads who is still there before offering it.
+- **P3 · A partner named in the Spouse/Partner column who is already in the org, not the file, is not offered as a link.** It is kept on the person as their partner's name. Suggested: the next imports build matches it by the existing-people rule and asks.
+
 ## The 25,000-row sheet walk (IMPORT-7, 3 Nov 2026)
 
-- **P2 · The preview lists every shared phone or email, one line each, with no cap.** "Import a spreadsheet" (`SpreadsheetImport.jsx`, the People layer's notes from `u.placeholders`) printed thousands of "The phone … is on 3 different people" lines for a generated 25,000-row file whose phones repeat. A real file with a shared office number on many rows reads the same way. Suggested: the next imports build shows the first few and a count.
-- **P3 · A big Undo's sentence says "0 gifts removed".** On a file of people only, the receipt's Undo reads "Undone. 0 gifts removed and 25,000 people this file created." Suggested: the next imports build leads with what was there.
 - **P3 · Settings, Imports dates an evening undo the next day.** An undo at 21:10 EST on 3 Nov reads "Undone Nov 4, 2026" under "Recorded Nov 3, 2026, 9:07 PM": the undone date is read in UTC. Suggested: the next imports build reads it in the org's zone.
 
 ## The last money sums (NUMBERS-5, 3 Nov 2026)

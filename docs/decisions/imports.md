@@ -422,3 +422,17 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
   $104,050 pledged"); it is never the file's net. The gift history read $566,183.93 (its 287 rows with the refunds
   set aside) while its 278 gifts are $571,129.93. The truth check holds a spreadsheet import's "given" to its gifts.
 - An undone import says Undone, never a finding; Who is the person's current name; the date reads "Oct 28, 2026".
+
+## IMPORT-8 · choices from columns, a gift once, an Undo that says who stayed (2026-11-04)
+
+- **A communication choice, deceased or do-not-contact flag comes only from a column that names it.** Free text never
+  sets or clears one: a note that reads like a preference is listed for review, and on the workbook screen applied only
+  when she ticks "Mark them as the notes say". A Mailing list column's own cell ("please remove me") is the column's word.
+- **When a workbook has a gift sheet, an amount on the people sheet is a check, never a gift.** The preview says both
+  sums and flags the people who differ. A people-only file keeps reading the amount as one gift, and says so.
+- **The workbook preview and the write match people by one rule** (`existingFor`, server/imports/combined.js): the old
+  system's ID, then email, then a name only one person in the org has when no email says otherwise.
+- **Undo names everyone it keeps, with why, and offers to remove them too.** It never says "Undone." alone when anyone stayed.
+- **A file name never makes an event or a date.** A phone is dropped only when it is the org's own or on more than 10
+  people. A source system is named only when one of its own columns is in the file.
+

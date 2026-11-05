@@ -126,7 +126,16 @@ async function reset() {
 
   // ── §2 · the accounted builder: every row, exactly one disposition ───────
   console.log("\n— §2 · dispositions by count AND by dollars —");
-  const built = lib.buildTransactionRows({ rows: bodyRows }, txMap, { today: TODAY });
+  // IMPORT-8: a flag read from a note is set only when she says so (noteFlags:
+  // "apply", her confirming the flagged list); this leg is that answer.
+  const built = lib.buildTransactionRows({ rows: bodyRows }, txMap, { today: TODAY, noteFlags: "apply" });
+  {
+    const asked = lib.buildTransactionRows({ rows: bodyRows }, txMap, { today: TODAY });
+    const fromNotes = asked.flaggedRows.filter(r => r.matched.length && !/:/.test(r.matched[0]));
+    ok("IMPORT-8: unanswered, a note sets no flag; each one it reads like is still listed",
+      fromNotes.length > 0 && asked.donors.filter(d => d.deceased).length < built.donors.filter(d => d.deceased).length,
+      { listed: fromNotes.length, deceasedAsked: asked.donors.filter(d => d.deceased).length, deceasedApplied: built.donors.filter(d => d.deceased).length });
+  }
   ok("every physical row received exactly one disposition (the test fails if any row lacks one)",
     built.dispositions.length === KEY.file.physicalRows
     && new Set(built.dispositions.map(d => d.line)).size === KEY.file.physicalRows,
@@ -385,7 +394,7 @@ async function reset() {
     const flagColumns = {};
     for (const c of plan33.columns) if (c.status === "flag" && c.flag !== "exclusion" && c.flag !== "frequency") flagColumns[c.flag] = c.field;
     const built33 = lib.buildTransactionRows({ headers: a33.headers, rows: a33.rows }, tx33,
-      { rowLines: a33.rowLines, today: K33.anchorDate, dateConvention: "mdy", flagColumns,
+      { rowLines: a33.rowLines, today: K33.anchorDate, dateConvention: "mdy", flagColumns, noteFlags: "apply",
         coerceCustomValue: cfs.coerceCustomValue, parseBoolValue: cfs.parseBoolValue, parseExclusionValue: cfs.parseExclusionValue });
     const usdErr = built33.dispositions.filter(d => d.reason === "unparseable_amount" && /[A-Za-z]{3}$/.test(String(d.raw["Gift Amount"]).trim()));
     ok("no '125.00 USD'-style amount is refused (a trailing currency code is money)", usdErr.length === 0, { refused: usdErr.length });
