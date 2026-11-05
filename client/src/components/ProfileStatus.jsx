@@ -27,13 +27,25 @@ import { countLabel } from "../../../shared/countWords.js";
 // never read again, by this profile or the next one opened on it. It kept
 // polling every 2 s after a merge, and each read was a 404.
 const GONE = new Map();   // donorId -> { gone, keptId, keptName }
-export function useDonorStatus(donorId, refreshKey, stepKey, onGone) {
+// It says so with a window event, and useDonorGone below is how a screen hears it.
+const GONE_EVENT = "steward:donor-gone";
+const sayGone = (donorId, g) => { try { window.dispatchEvent(new CustomEvent(GONE_EVENT, { detail: { donorId, ...g } })); } catch { /* no window */ } };
+export function useDonorGone(donorId, onGone) {
+  const cb = useRef(onGone); cb.current = onGone;
+  useEffect(() => {
+    if (!donorId) return undefined;
+    const on = e => { if (e.detail && e.detail.donorId === donorId && cb.current) cb.current(e.detail); };
+    window.addEventListener(GONE_EVENT, on);
+    if (GONE.has(donorId) && cb.current) cb.current({ donorId, ...GONE.get(donorId) });
+    return () => window.removeEventListener(GONE_EVENT, on);
+  }, [donorId]);
+}
+export function useDonorStatus(donorId, refreshKey, stepKey) {
   const [status, setStatus] = useState(null);
-  const goneCb = useRef(onGone); goneCb.current = onGone;
   useEffect(() => {
     let live = true, timer = null, tries = 0;
     if (!donorId) return undefined;
-    if (GONE.has(donorId)) { setStatus(null); if (goneCb.current) goneCb.current(GONE.get(donorId)); return undefined; }
+    if (GONE.has(donorId)) { setStatus(null); return undefined; }
     const read = () => apiFetch(`/donors/${donorId}/status`).then(s => {
       if (!live) return;
       setStatus(s || null);
@@ -43,7 +55,8 @@ export function useDonorStatus(donorId, refreshKey, stepKey, onGone) {
         const b = (e && e.body) || e || {};
         const g = { gone: b.gone || "deleted", keptId: b.keptId || null, keptName: b.keptName || null };
         GONE.set(donorId, g);
-        if (live) { setStatus(null); if (goneCb.current) goneCb.current(g); }
+        if (live) setStatus(null);
+        sayGone(donorId, g);
         return;
       }
       if (live) setStatus(null);

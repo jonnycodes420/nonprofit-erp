@@ -36,7 +36,7 @@ import { displayName } from "../../../shared/displayName.js";
 import { orgTodayCivil, orgTodayPlus, civilDaysAgo } from "../lib/orgToday";   // FIX-14 Part 1 — the org's today, never the UTC day
 import OpenPledgeBanner from "./OpenPledgeBanner";   // IMPORT-5: the open pledge up front
 import { WhyPanel } from "./WhyAnswer";
-import { useDonorStatus, statusTagItems } from "./ProfileStatus";
+import { useDonorStatus, useDonorGone, statusTagItems } from "./ProfileStatus";
 import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
 import { MicGlyph, openTellSteward } from "./TellStewardOpen";   // VOICE-1
 import BeforeYourMeeting, { useBeforeMeeting } from "./BeforeYourMeeting";   // VOICE-3
@@ -90,8 +90,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [prospectBriefOpen,setProspectBriefOpen]=useState(false);
   // PARITY-1 — tags, closeness, at a glance, highlights and the next action, one read.
   const [stepNonce,setStepNonce]=useState(0);
+  const status=useDonorStatus(donor.id, figs, `${stepNonce}:${toldNonce}`);
   // FLOWS-1: merged away while open, so the kept record is shown (the status poll stops itself)
-  const status=useDonorStatus(donor.id, figs, `${stepNonce}:${toldNonce}`, g=>{if(g.gone==="merged"&&g.keptId&&g.keptId!==donor.id&&onSelectRelatedDonor)onSelectRelatedDonor(g.keptId);});
+  useDonorGone(donor.id, g=>{if(g.gone==="merged"&&g.keptId&&g.keptId!==donor.id&&onSelectRelatedDonor)onSelectRelatedDonor(g.keptId);});
   const [logMeeting,setLogMeeting]=useState(null);
   // TRUST-2 — export and erase.
   const [eraseOpen,setEraseOpen]=useState(false);
