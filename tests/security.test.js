@@ -326,7 +326,25 @@ async function fixtures() {
     await q(`DELETE FROM close_links WHERE contact_email LIKE '%@secure2.example.org' OR contact_email=$1`, [STAFF_EMAIL]).catch(() => {});
     const signup = async email => { const t0 = performance.now(); const r = await api("POST", "/public/signup", null, { orgName: "Secure Two Pantry", contactName: "Avery Lund",
       contactEmail: email, estimatedRecords: 300, interval: "monthly", acceptTerms: true, termsVersion: agr.version }); return { ...r, ms: performance.now() - t0 }; };
-    const taken = await signup(STAFF_EMAIL), fresh = await signup(NEW);
+    // FLAKE-1: the bar is unchanged (400 ms); what it is measured against
+    // is not the runner. CI saw 941 against 1,610 ms and 1,633 against 907
+    // on changes that touched neither path: the first sign-up of a run pays
+    // for warming the route (the agreement, the price lookups, the mail
+    // client), and a shared runner stalls for half a second at random. So
+    // one untimed sign-up warms the route first, and a pair outside the bar
+    // is measured once more, with the reason logged. A real difference
+    // between the two paths is there on both tries and still fails.
+    await signup(`warm-${crypto.randomBytes(6).toString("hex")}@secure2.example.org`);
+    const timedPair = async (name, bar, a, b) => {
+      let x = await a(), y = await b();
+      if (Math.abs(x.ms - y.ms) >= bar) {
+        console.log(`  ${name}: ${Math.round(x.ms)} against ${Math.round(y.ms)} ms, ${Math.round(Math.abs(x.ms - y.ms))} apart (bar ${bar} ms): the runner or the path? measuring once more`);
+        [x, y] = [await a(), await b()];
+      }
+      return [x, y];
+    };
+    const [taken, fresh] = await timedPair("sign-up", 400, () => signup(STAFF_EMAIL),
+      (() => { let n = 0; return () => signup(n++ ? `again-${crypto.randomBytes(6).toString("hex")}@secure2.example.org` : NEW); })());   // a retry is a new address, so NEW keeps its one checkout
     mock.close();
     const shape = r => JSON.stringify({ status: r.status, keys: Object.keys(r.body || {}).sort(), message: r.body && r.body.message, sent: r.body && r.body.sent });
     ok("sign-up: an address with an account and a new one get the same status, sentence and shape",
@@ -338,7 +356,7 @@ async function fixtures() {
     ok("…a checkout was started only for the new address", links.length === 1 && links[0].contact_email === NEW, links);
 
     const forgot = async email => { const t0 = performance.now(); const r = await api("POST", "/auth/forgot-password", null, { email }); return { ...r, ms: performance.now() - t0 }; };
-    const fa = await forgot(STAFF_EMAIL), fb = await forgot("nobody-" + crypto.randomBytes(6).toString("hex") + "@secure2.example.org");
+    const [fa, fb] = await timedPair("reset", 250, () => forgot(STAFF_EMAIL), () => forgot("nobody-" + crypto.randomBytes(6).toString("hex") + "@secure2.example.org"));
     ok("reset: the same answer either way", JSON.stringify([fa.status, fa.body]) === JSON.stringify([fb.status, fb.body]), { fa: fa.body, fb: fb.body });
     ok("…in a similar time (within 250 ms)", Math.abs(fa.ms - fb.ms) < 250, { known: fa.ms, unknown: fb.ms });
 

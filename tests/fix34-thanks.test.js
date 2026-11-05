@@ -36,10 +36,17 @@ function ciHasCeilings() {
   const jobs = [...yml.matchAll(/^  ([a-z][a-z-]*):\n((?:    .*\n|\n)+)/gm)].map(m => ({ name: m[1], body: m[2] }));
   const bare = jobs.filter(j => /runs-on:/.test(j.body) && !/^    timeout-minutes: \d+/m.test(j.body)).map(j => j.name);
   ok("§F every CI job has a timeout-minutes", jobs.length >= 4 && bare.length === 0, bare);
-  const step = /- name: Install Playwright \+ Chromium\n\s+timeout-minutes: \d+\n\s+run: \|([\s\S]*?)\n\s+- name:/.exec(yml);
+  // FLAKE-1: the step runs scripts/ci/install-playwright.sh, which caps every
+  // attempt (the system packages under `sudo timeout`, so a hung apt-get dies
+  // with it) and tries three times; the browsers AND their .debs are cached.
+  const step = /- name: Install Playwright \+ Chromium\n\s+timeout-minutes: \d+\n(?:\s+env:\n(?:\s{10}.*\n)+)?\s+run: bash scripts\/ci\/install-playwright\.sh \d+\.\d+\.\d+\n/.exec(yml);
   ok("§F the Playwright install has its own ceiling", !!step);
-  ok("§F each install attempt is capped and retried once", !!step && /timeout \d+ npx playwright install/.test(step[1]) && /\|\| \{[^}]*retrying once[^}]*install_pw; \}/.test(step[1]));
-  ok("§F the Playwright browsers are cached", /actions\/cache@v4[\s\S]{0,200}\.playwright-browsers/.test(yml));
+  const inst = fs.readFileSync(path.join(__dirname, "..", "scripts", "ci", "install-playwright.sh"), "utf8");
+  ok("§F each install attempt is capped and retried up to three times", !!step && /ATTEMPTS="\$\{PW_INSTALL_ATTEMPTS:-3\}"/.test(inst)
+     && /sudo env "PATH=\$PATH" timeout -k \d+ \d+ "\$DIR\/node_modules\/\.bin\/playwright" install-deps/.test(inst)
+     && /timeout -k \d+ \d+ \.\/node_modules\/\.bin\/playwright install "/.test(inst) && /for i in \$\(seq 1 "\$ATTEMPTS"\)/.test(inst));
+  ok("§F the Playwright browsers and their system packages are cached", /actions\/cache\/restore@v4[\s\S]{0,200}\.playwright-browsers/.test(yml)
+     && /actions\/cache\/restore@v4[\s\S]{0,120}\.playwright-debs/.test(yml));
 }
 
 (async () => {
