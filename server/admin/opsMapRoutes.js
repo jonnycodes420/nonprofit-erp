@@ -38,7 +38,7 @@ async function readChecks(query) {
 }
 // Demo people by name, in the demo org only. Anything not found there gets no id.
 async function demoPeople(query, names) {
-  if (!names.length || MAP.NEVER.includes(MAP.DEMO_ORG)) return {};
+  if (!names.length || !MAP.DEMO_ORG || MAP.NEVER.includes(MAP.DEMO_ORG)) return {};
   const rows = await query(`SELECT d.id, d.name FROM donors d JOIN orgs o ON o.id = d.org_id
       WHERE d.org_id = ? AND o.is_demo_org = true AND d.deleted_at IS NULL AND d.name = ANY(?)
       ORDER BY d.id`, [MAP.DEMO_ORG, names]);

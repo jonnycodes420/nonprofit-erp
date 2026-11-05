@@ -1,6 +1,7 @@
 {
   "version": 1,
   "about": "DEVBOARD-2 · every part of Steward, and the checks a person can do in under a minute in the demo org. A walk's check id lands in the area whose prefixes hold its letters (Prof4 → Profile); an unknown prefix lands in Unsorted. Map check ids are letters (Gift-A) so a walk's numbered check is never mistaken for one. `open` is a path in the app; `person` is a demo person's name, looked up in the demo org only.",
+  "demo": { "org": "org_b72demo", "givingSlug": "harborlight", "signIn": "director@harborlight.demo", "never": ["org_creo"] },
   "areas": [
     { "id": "home", "name": "Home", "prefixes": ["Home"], "open": "/dashboard", "checks": [
       { "id": "Home-A", "says": "Home opens on one decision: a name, a reason and a step.", "open": "/dashboard" },

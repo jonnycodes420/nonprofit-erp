@@ -14,7 +14,7 @@
 
 `seq` orders the rows, because two marks can land in the same millisecond. The board merges both sources (`mergeBoard`): an open walk item shows as verified once Jonathan passes its check on or after its last walk FAIL.
 
-**Open in demo** is built only by `opsMap.demoHref`:
+**Open in demo** is built only by `opsMap.demoHref`. The demo itself is data, in map.json's `demo` block, because arch-check refuses app code that names one org.
 - It goes through `/login?next=`, so the tab signs in as the demo director.
 - Its path must be on a short allowed list and must not name an org.
 - A person is looked up by name in the demo org only (`demoPeople`: org id = the demo's, and `is_demo_org`).

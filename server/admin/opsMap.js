@@ -20,12 +20,16 @@ const fs = require("fs");
 const path = require("path");
 
 const MAP_PATH = path.join(__dirname, "..", "..", "ops", "map.json");
-const DEMO_ORG = "org_b72demo";                     // = scripts/ci/seed-demo.js ORG (the test checks)
-const DEMO_SLUG = "harborlight";                    // its public giving page
-const DEMO_DIRECTOR = "director@harborlight.demo";
-const NEVER = ["org_creo"];
-// The only app paths a demo link may open. /give/ only for the demo's own page.
-const APP_PATHS = [/^\/dashboard(?:[?#]|$)/, /^\/donors(?:[/?#]|$)/, /^\/app\/[a-z0-9-]+(?:[?#]|$)/, new RegExp(`^/give/${DEMO_SLUG}(?:[/?#]|$)`)];
+// The demo is data, not code (arch-check: no app code names one org). map.json's
+// `demo` block names it; demoPeople also requires the orgs row to be a demo org,
+// so a map naming a customer's org links to nobody.
+const DEMO = (JSON.parse(fs.readFileSync(MAP_PATH, "utf8")).demo) || {};
+const DEMO_ORG = DEMO.org || null;                  // = scripts/ci/seed-demo.js ORG (the test checks)
+const DEMO_SLUG = DEMO.givingSlug || null;          // its public giving page
+const DEMO_DIRECTOR = DEMO.signIn || null;
+const NEVER = DEMO.never || [];
+const APP_PATHS = [/^\/dashboard(?:[?#]|$)/, /^\/donors(?:[/?#]|$)/, /^\/app\/[a-z0-9-]+(?:[?#]|$)/,
+  ...(DEMO_SLUG && /^[a-z0-9-]+$/.test(DEMO_SLUG) ? [new RegExp(`^/give/${DEMO_SLUG}(?:[/?#]|$)`)] : [])];
 const RECORD_ID = /^[A-Za-z0-9_-]{1,80}$/;
 
 const norm = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
