@@ -11,6 +11,7 @@ import { fmtDayShort } from "../lib/taskDue";
 import { TASK_VIEWS, TASK_KINDS, NEEDS_OUTCOME, TASK_OUTCOMES, recurPhrase, addDays, weekdayOf } from "../../../shared/taskShape.js";
 import { greetingName, greetingLine } from "../../../shared/greeting.js";
 import { useStewardTold } from "../lib/stewardTold";
+import { dueNowWords } from "../lib/taskBadge";
 import { countLabel } from "../../../shared/countWords.js";
 
 // TASKS-2 — Tasks, the place a development director runs her week from.
@@ -196,6 +197,8 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
       {!isReadOnly && <QuickAdd onSaved={async (row) => { await load(); offerUndo({ message: `Added: ${row.title}${row.due ? `, ${fmtDayShort(row.due)}` : ""}.`,
         undoAction: async () => { await apiFetch(`/tasks/${row.id}`, { method: "DELETE" }); await load(); } }, row.title); }} today={today} />}
 
+      {/* COUNTS-1: the rail badge's number, said here with what it counts. */}
+      {counts && scope === "mine" && !staff && <div data-testid="tasks-due-now" style={{ fontSize: 13, color: T.ink3 }}>{dueNowWords(counts)}</div>}
       <div role="tablist" aria-label="Task views" style={{ display: "flex", gap: 4, flexWrap: "wrap", borderBottom: `1px solid ${T.bg2}` }}>
         {VIEW_ORDER.map(k => {
           const v = TASK_VIEWS.find(x => x.key === k);

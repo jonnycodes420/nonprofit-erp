@@ -510,3 +510,12 @@ Backend, Whisper transcription, and extraction logic are fully built and functio
 - **Archive** (`donors.archived_at`, `POST /donors/:id/archive` and `/unarchive`) takes a person off the Donors list and
   every Group and changes nothing else: the plan keeps charging, gifts keep counting in every figure, search and links
   still open the record. `/donors?archived=1` lists only archived people. Unarchive is the Undo.
+
+## Last contact (COUNTS-1)
+
+- Last contact is the latest of a call, a meeting (logged, or a held calendar meeting), an email sent or
+  received, an ask, a stewardship touch, a note marked as a conversation, or an event they came to, on or
+  before the org's today. A plain note, a newsletter line or a gift on its own is not one.
+- One function: `meetings.js` `conversationsWith` / `lastContactWith`. The header (figure source
+  `donor-contact-gap`), About's sentence and Engagement's sentence read it; the conversation log returns it.
+- A follow-up set while logging a conversation belongs to the person who set it, not the person's officer.

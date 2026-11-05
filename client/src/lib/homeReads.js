@@ -36,7 +36,8 @@ export const BOOT_READS=["/org","/grants","/volunteers","/tasks","/board","/fina
 export const SHELL_READS=["/billing/donor-band","/atlas/status","/me/nav-layout","/people/photos","/capture/count",
   "/status/summary","/org/sample-data-status","/org/welcome","/atlas/activity","/changelog/hidden","/thank-yous/clock",
   "/volunteer-hub/crossover",
-  "/me/mfa"];   // PERF-2: the idle guard's read, which left on its own after Home drew
+  "/me/mfa",   // PERF-2: the idle guard's read, which left on its own after Home drew
+  "/tasks/counts?scope=mine"];   // COUNTS-1: the rail's Tasks badge, on every page
 // One bundle's address (GET /home/bundle), the one way it is written.
 export const bundlePath=paths=>"/home/bundle?"+paths.map(p=>"p="+encodeURIComponent(p)).join("&");
 // The bundles the app asks for as it boots, in the order it asks (main.jsx:

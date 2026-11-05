@@ -34,6 +34,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
   // FIX-14 Part 1: where, for a meeting or a visit (filled in when editing)
   const [place, setPlace] = useState(editing ? (() => { try { const m = typeof editing.metadata === "string" ? JSON.parse(editing.metadata || "{}") : (editing.metadata || {}); return m.location || ""; } catch { return ""; } })() : "");
   const [date, setDate] = useState(editing ? String(editing.date || "").slice(0, 10) : todayLocal());
+  const [wasTalk, setWasTalk] = useState(false);   // COUNTS-1: a note marked as a conversation is a contact
   const [nsLabel, setNsLabel] = useState("Follow up");
   const [nsDue, setNsDue] = useState(addCivilDays(todayLocal(), 5));
   // BUILD-84 — the OPTIONAL time. Empty is the whole existing behaviour:
@@ -115,7 +116,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
       const r = await apiFetch(`/donors/${donor.id}/conversations`, {
         method: "POST",
         body: JSON.stringify({
-          touch, line: line.trim(), date,
+          touch, line: line.trim(), date, ...(touch === "note_only" && wasTalk ? { conversation: true } : {}),
           ...((touch === "meeting" || touch === "visit") && place.trim() ? { place: place.trim() } : {}),
           ...(outcome && ["call_reached", "call_no_answer", "meeting", "visit"].includes(touch) ? { outcome } : {}),
           ...(amountTyped ? { gift: { amount: String(amount).trim(),
@@ -185,6 +186,12 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
               ))}
             </div>
           </div>
+        )}
+        {touch === "note_only" && !editing && (
+          <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, fontSize: 13, color: T.ink }}>
+            <input type="checkbox" checked={wasTalk} onChange={e => setWasTalk(e.target.checked)} data-testid="conv-note-was-talk" />
+            This was a conversation (it counts as their last contact)
+          </label>
         )}
         {(touch === "meeting" || touch === "visit") && (
           <div style={{ marginBottom: 12 }}>
