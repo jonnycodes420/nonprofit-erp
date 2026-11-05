@@ -139,6 +139,9 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
   const [sel,setSel] = useState(0);
   const rootRef = useRef(null);
   const seqRef = useRef(0);
+  const shownSeqRef = useRef(0);                 // LIST-3: the question the answer on screen answers
+  const [pending,setPending] = useState(false);  // LIST-3: the latest question is still on its way
+  const qRef = useRef(""); qRef.current = q;
   const movedRef = useRef(false);
   // LIST-2: the words the results on screen answer, and an Enter pressed
   // before they arrived (it opens the top match when they do).
@@ -155,19 +158,33 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
   // record by its name, five of each. Debounced; a stale answer is dropped.
   // FIX-46: and again each time the box opens, so a person's figures are
   // today's, not the ones from before a gift was logged elsewhere.
+  // LIST-3: an answer is dropped only when a NEWER one is already on screen.
+  // It used to be dropped whenever a newer question had been asked, so on a
+  // slow connection (prod, ~0.9 s) every answer was thrown away while she was
+  // still typing and Cmd+K showed nothing until she stopped. Now the latest
+  // answer to land stays up until a newer one replaces it, and "Searching…"
+  // shows while the first is on its way.
   useEffect(()=>{
     const term = q.trim();
-    if (term.length < 2) { setResults(null); return; }
+    if (term.length < 2) { setResults(null); setResultsFor(null); setPending(false); shownSeqRef.current = ++seqRef.current; return; }
     if (!open) return;
     const seq = ++seqRef.current;
+    setPending(true);
     const t = setTimeout(async ()=>{
+      const land = (list, moreOf) => {
+        if (seq < shownSeqRef.current) return; // a newer answer is already on screen
+        // An older answer shows only while it is for the start of what she has typed now.
+        if (seq !== seqRef.current && !qRef.current.trim().toLowerCase().startsWith(term.toLowerCase())) return;
+        shownSeqRef.current = seq;
+        setResults(list); setMore(moreOf); setExpanded(null);
+        if (!movedRef.current) setSel(0);
+        setResultsFor(term);
+        if (seq === seqRef.current) setPending(false);
+      };
       try {
         const r = await apiFetch(`/search?q=${encodeURIComponent(term)}`);
-        if (seq !== seqRef.current) return; // stale response — a newer query is in flight
-        setResults(Array.isArray(r?.results) ? r.results : []);
-        setMore(r?.more || {}); setExpanded(null);
-        setSel(0); setResultsFor(term);
-      } catch { if (seq === seqRef.current) { setResults([]); setMore({}); setExpanded(null); setResultsFor(term); } }
+        land(Array.isArray(r?.results) ? r.results : [], r?.more || {});
+      } catch { land([], {}); }
     }, enterRef.current === term ? 0 : 220);
     return ()=>clearTimeout(t);
   },[q,open]);
@@ -248,7 +265,8 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
   },[resultsFor,flat]);
 
   const empty = q.trim().length===0;
-  const showDrop = open && (empty || flat.length>0 || (q.trim().length>=2 && results!==null));
+  const searching = pending && q.trim().length>=2 && results===null;
+  const showDrop = open && (empty || flat.length>0 || searching || (q.trim().length>=2 && results!==null));
 
   // POLISH-1 — ⌘K / Ctrl K opens the list even when the box already has the
   // focus (focusing a focused field fires no focus event).
@@ -301,8 +319,9 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
         style={{width:"100%",boxSizing:"border-box",background:T.bgElevated,border:"1px solid "+T.green650,borderRadius:10,padding:"7px 12px 7px 30px",color:T.inkInverse,fontSize:13,outline:"none",fontFamily:"inherit"}}
       />
       {showDrop && <div data-testid="search-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,background:T.ink,border:"1px solid "+T.green650,borderRadius:12,boxShadow:"0 12px 40px rgba(0,0,0,0.45)",padding:"6px 0",maxHeight:420,overflowY:"auto",zIndex:130}}>
+        {searching && !flat.length && <div data-testid="search-searching" style={{padding:"8px 14px 4px",fontSize:12.5,color:"rgba(240,237,230,0.7)"}}>Searching…</div>}
         {empty && <div data-testid="search-hint" style={{padding:"8px 14px 4px",fontSize:12.5,color:"rgba(240,237,230,0.7)"}}>Type a name, a gift, a note or a meeting.</div>}
-        {!empty && flat.length===0 && <div style={{padding:"10px 14px",fontSize:12.5,color:"rgba(240,237,230,0.55)"}}>No matches for “{q.trim()}”</div>}
+        {!empty && !searching && flat.length===0 && <div style={{padding:"10px 14px",fontSize:12.5,color:"rgba(240,237,230,0.55)"}}>No matches for “{q.trim()}”</div>}
         {groups.map(gr=><div key={gr.name}>
           <div className="eyebrow" style={{padding:"6px 14px 3px",color:"rgba(240,237,230,0.55)"}}>{gr.name}</div>
           {gr.items.map(item=>{

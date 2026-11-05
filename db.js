@@ -8962,6 +8962,7 @@ async function runSchemaInit(pool) {
       created_by TEXT NOT NULL, created_by_name TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW())`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_list_views_user ON donor_list_views (org_id, user_id)`);
+  await require("./server/donors/listViewsSchema").listViewsSchema(pool);   // LIST-3: a saved view keeps its sort
 
   // FIX-49 decision 8 · ONE HOUSEHOLD GROUPING. Spouses and household links
   // become household records (the only grouping); the links themselves stay.
