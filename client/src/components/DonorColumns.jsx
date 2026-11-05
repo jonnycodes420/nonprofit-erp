@@ -9,6 +9,7 @@
 import { useState, useMemo } from "react";
 import { T, Modal, fmtFull } from "./shared";
 import { displayDate } from "../../../shared/displayDate.js";
+import { phoneDisplay } from "../../../shared/phone.js";
 
 // ── Shared consts (TDZ rule: declared above every reader) ──────────────────
 export const PAGE_SIZES = [25, 50, 100];
@@ -32,32 +33,58 @@ export const FALLBACK_SETUP = {
   canSetOrgDefault: false,
   hasGeocoding: false,
 };
-// The widths the list had before LIST-1, so the default layout looks the same.
-const DEFAULT_TRACKS = {
-  name: "minmax(180px,2fr)", stage: "minmax(110px,1fr)", owner: "minmax(120px,1fr)",
-  lifetime: "120px", last_gift_date: "110px", engagement: "104px", generosity: "88px",
-  room_to_give: "104px", room: "104px",
+// TABLE-1: every column says how wide it starts, how narrow it may go, and
+// where its words sit: text left, money and counts right (tabular figures),
+// short badges centred. A column the list has no rule for takes its format's.
+// `lines: 2` is a column that draws two lines on every row (name over email,
+// date over amount); every other cell is one line, cut with an ellipsis.
+const COLUMN_SPEC = {
+  name: { width: 240, min: 200, align: "left", lines: 2 },
+  stage: { width: 120, min: 104, align: "left" },
+  owner: { width: 156, min: 120, align: "left" },
+  lifetime: { width: 116, min: 96, align: "right" },
+  last_gift_date: { width: 112, min: 104, align: "right", lines: 2 },
+  engagement: { width: 128, min: 120, align: "left" },
+  generosity: { width: 140, min: 120, align: "center" },
+  room_to_give: { width: 132, min: 108, align: "center" },
+  room: { width: 132, min: 108, align: "center" },
+  phone: { width: 148, min: 132, align: "left" },
+  email: { width: 220, min: 140, align: "left" },
+  address: { width: 220, min: 140, align: "left" },
+  tags: { width: 180, min: 110, align: "left" },
 };
-const RIGHT_FORMATS = new Set(["money", "number", "date"]);
+const FORMAT_SPEC = {
+  money: { width: 124, min: 96, align: "right" },
+  number: { width: 112, min: 88, align: "right" },
+  date: { width: 120, min: 104, align: "right" },
+  bool: { width: 112, min: 88, align: "center" },
+  list: { width: 180, min: 110, align: "left" },
+  phone: { width: 160, min: 132, align: "left" },
+};
+const TEXT_SPEC = { width: 160, min: 100, align: "left" };
+// Room inside every cell, header and row alike, so two columns never touch.
+export const CELL_PAD = 14;
+// The checkbox column; the Donor column pins beside it when the list scrolls sideways.
+export const CHECK_W = 52;
 export const MIN_WIDTH = 60;
 
-// One grid track per column: her width when she has set one.
-export function columnTrack(key, widths) {
+export function columnSpec(key, field) {
+  return COLUMN_SPEC[key] || (field && FORMAT_SPEC[field.format]) || TEXT_SPEC;
+}
+// A column's width in px: her width when she has set one, never below the column's min.
+export function columnWidth(key, widths, field) {
+  const spec = columnSpec(key, field);
   const w = widths && Number(widths[key]);
-  if (w && w >= MIN_WIDTH) return `${Math.round(w)}px`;
-  return DEFAULT_TRACKS[key] || "130px";
+  return Math.max(spec.min, w && w >= MIN_WIDTH ? Math.round(w) : spec.width);
 }
-// The grid's minimum width, so many columns scroll sideways instead of crushing the names.
-export function gridMinWidth(columns, widths) {
-  return columns.reduce((s, k) => {
-    const w = widths && Number(widths[k]);
-    if (w) return s + w;
-    const t = DEFAULT_TRACKS[k] || "130px";
-    const m = /(\d+)px/.exec(t);
-    return s + (m ? Number(m[1]) : 130);
-  }, 0);
+export function columnTrack(key, widths, field) {
+  return `${columnWidth(key, widths, field)}px`;
 }
-export const alignFor = field => (field && RIGHT_FORMATS.has(field.format) ? "right" : "left");
+// The grid's width, so many columns scroll sideways instead of crushing each other.
+export function gridMinWidth(columns, widths, fieldByKey) {
+  return columns.reduce((s, k) => s + columnWidth(k, widths, fieldByKey && fieldByKey[k]), 0);
+}
+export const alignFor = (field, key) => columnSpec(key || (field && field.key), field).align;
 
 // A cell's words, by the field's format.
 export function formatCell(field, v) {
@@ -66,6 +93,7 @@ export function formatCell(field, v) {
   if (f === "money") { const n = Number(v); return Number.isFinite(n) ? fmtFull(n) : String(v); }
   if (f === "date") return displayDate(v) || String(v);
   if (f === "number") { const n = Number(v); return Number.isFinite(n) ? n.toLocaleString("en-US") : String(v); }
+  if (f === "phone" || (field && field.key === "phone")) return phoneDisplay(v);
   if (f === "list") return Array.isArray(v) ? v.join(", ") : String(v);
   if (f === "bool") return v === true || v === "true" || v === 1 ? "Yes" : "No";
   if (Array.isArray(v)) return v.join(", ");
@@ -176,7 +204,7 @@ export function ColumnEditor({ setup, layout, onSave, onReset, onSaveOrg, onClos
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 18 }}>
         <button type="button" data-testid="col-editor-reset" disabled={busy} style={btn}
           onClick={() => act(onReset, r => { if (r && r.columns) setChosen(cleanColumns(r.columns, setup.fields)); })}>
-          Reset to default
+          Reset columns
         </button>
         {setup.canSetOrgDefault && <button type="button" data-testid="col-editor-org" disabled={busy} style={btn}
           onClick={() => act(() => onSaveOrg(chosen), () => setMsg("This is now the starting layout for everyone in your organization."))}>

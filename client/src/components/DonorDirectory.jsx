@@ -10,7 +10,7 @@ import { errorMessage } from "../lib/domainError";
 import { censusById } from "../../../shared/numberCensus.js";
 import { T, interactive, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, donorScoreParts, AIBtn, AIPanel, EmptyState, DriftBadge, Modal, PersonMark } from "./shared";
 import { PlanFollowUpModal } from "./PlanFollowUp";
-import { ColumnEditor, FALLBACK_SETUP, NAME_KEY, PAGE_SIZES, MIN_WIDTH, alignFor, cleanColumns, columnTrack, formatCell, gridMinWidth, moveKey } from "./DonorColumns";
+import { ColumnEditor, FALLBACK_SETUP, NAME_KEY, PAGE_SIZES, CELL_PAD, CHECK_W, alignFor, cleanColumns, columnSpec, columnTrack, formatCell, gridMinWidth, moveKey } from "./DonorColumns";
 import { FilterBuilder, ViewsMenu } from "./DonorFilters";
 import { AddToGroup, SaveAsGroup } from "./Groups";
 import { BulkAddToJourney } from "./BulkJourney";
@@ -89,7 +89,7 @@ function ColDef({ text, testid, dark }) {
                border: `1px solid ${dark ? "rgba(240,237,230,0.35)" : T.bg3}`,
                borderRadius: 99, width: 13, height: 13, display: "inline-flex",
                alignItems: "center", justifyContent: "center", cursor: "help",
-               verticalAlign: "middle" }}>?</span>
+               verticalAlign: "middle", flexShrink: 0 }}>?</span>
   );
 }
 
@@ -385,7 +385,8 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
       const startW=cell.getBoundingClientRect().width;
       const startX=e.clientX;
       let latest=colWidths;
-      function move(ev){const w=Math.max(MIN_WIDTH,Math.round(startW+ev.clientX-startX));latest={...colWidths,[k]:w};if(setLayoutLocal)setLayoutLocal(l=>({...(l||lay),widths:latest}));}
+      const min=columnSpec(k,fieldByKey[k]).min;
+      function move(ev){const w=Math.max(min,Math.round(startW+ev.clientX-startX));latest={...colWidths,[k]:w};if(setLayoutLocal)setLayoutLocal(l=>({...(l||lay),widths:latest}));}
       function up(){window.removeEventListener("mousemove",move);window.removeEventListener("mouseup",up);
         if(persistLayout)persistLayout({widths:latest}).catch(err=>console.warn("[list-layout]",err&&err.message));}
       window.addEventListener("mousemove",move);window.addEventListener("mouseup",up);
@@ -551,8 +552,17 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
 
   const filterSel={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"};
   // LIST-1: one track per chosen column, her widths where she has set them.
-  const colGrid="36px "+visCols.map(k=>columnTrack(k,colWidths)).join(" ")+(isAdmin?" 80px":"");
-  const gridMin=72+gridMinWidth(visCols,colWidths)+(isAdmin?80:0);
+  // TABLE-1: every track is a fixed width from the column's spec, and the
+  // last track takes what is left, so Donor is never "whatever is left" and
+  // a column too many scrolls sideways instead of squeezing its neighbours.
+  const colGrid=`${CHECK_W}px `+visCols.map(k=>columnTrack(k,colWidths,fieldByKey[k])).join(" ")+" minmax(18px,1fr)";
+  const gridMin=CHECK_W+18+gridMinWidth(visCols,colWidths,fieldByKey);
+  // The checkbox and Donor stay on the left while the rest scrolls under them.
+  const pinned=left=>({position:"sticky",left,zIndex:1,background:"inherit"});
+  const cellBox=k=>{const sp=columnSpec(k,fieldByKey[k]);return{padding:`0 ${CELL_PAD}px`,boxSizing:"border-box",minWidth:0,overflow:"hidden",textAlign:sp.align,
+    display:"flex",flexDirection:"column",alignItems:sp.align==="right"?"flex-end":sp.align==="center"?"center":"flex-start",justifyContent:"center",fontVariantNumeric:"tabular-nums",
+    ...(k===NAME_KEY?{...pinned(CHECK_W),boxShadow:"inset -1px 0 0 "+T.bg3}:null)};};
+  const oneLine={display:"block",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"};
   const dropItem={display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"9px 14px",fontSize:13,color:T.ink,cursor:"pointer",borderBottom:"1px solid "+T.bg2,fontFamily:"'DM Sans',system-ui,sans-serif"};
 
   if(totalDonors===0&&!hasSampleData){
@@ -883,8 +893,8 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
               reads as its own surface instead of blurring into the Kanban
               stage headers and Home hero banner, which are both solid dark
               green. Green identity stays via text color + underline accent. */}
-          <div className="dir-header-row" style={{display:"grid",gridTemplateColumns:colGrid,minWidth:gridMin,gap:0,padding:"10px 18px",background:T.ground,borderBottom:"2px solid "+T.bg3,alignItems:"center"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div className="dir-header-row" style={{display:"grid",gridTemplateColumns:colGrid,minWidth:gridMin,gap:0,padding:"10px 0",background:T.ground,borderBottom:"2px solid "+T.bg3,alignItems:"stretch"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",...pinned(0)}}>
               <input type="checkbox" checked={allChecked} ref={el=>{if(el)el.indeterminate=someChecked;}} onChange={toggleAll}
                 style={{width:15,height:15,cursor:"pointer",accentColor:T.greenDk}}/>
             </div>
@@ -892,10 +902,10 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
               const f=fieldByKey[k]||{key:k,label:k};
               const room=isRoomKey(k);
               const label=k===NAME_KEY?"Donor":k==="generosity"?GIVING_STRENGTH_LABEL:k==="engagement"?ENGAGEMENT_LABEL:room?ROOM_HEAD:f.label;
-              const align=k===NAME_KEY||k==="stage"||k==="owner"?"left":["engagement","generosity","lifetime","last_gift_date"].includes(k)||room?"right":alignFor(f);
+              const align=alignFor(f,k);
               const sortable=room||(f.sortable&&!!setSort);
               return(
-                <div key={k} data-testid={`dir-col-head-${k}`} role="columnheader"
+                <div key={k} data-col={k} data-testid={`dir-col-head-${k}`} role="columnheader"
                   draggable={k!==NAME_KEY} aria-sort={sortMark(k)?(sortMark(k)===" ↑"?"ascending":"descending"):undefined}
                   onDragStart={e=>{setDragCol(k);e.dataTransfer.effectAllowed="move";try{e.dataTransfer.setData("text/plain",k);}catch{/* old browsers */}}}
                   onDragOver={e=>{if(dragCol&&k!==NAME_KEY)e.preventDefault();}}
@@ -904,20 +914,23 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
                   onClick={()=>{if(room){setSortBy&&setSortBy(roomSort?"":"room_to_give");return;}if(sortable)headerSort(k);}}
                   title={room?(roomSort?"Back to the list's own order":"Strong first, then Some, then Not yet known"):sortable?"Sort by this column. Drag to move it.":"Drag to move this column."}
                   className={k==="stage"?"dir-col-stage":k==="owner"?"dir-col-owner":""}
-                  style={{...HEAD,position:"relative",color:(room&&roomSort)||sortMark(k)?T.greenDk:T.ink3,textAlign:align,cursor:sortable?"pointer":k===NAME_KEY?"default":"grab",userSelect:"none",padding:"0 10px 0 0",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",
-                    // SWEEP-2: the two score headings wrap to two lines, so their "?" stays in reach without taking the names' room
-                    whiteSpace:k==="engagement"||k==="generosity"?"normal":"nowrap",lineHeight:k==="engagement"||k==="generosity"?1.3:undefined,background:dragCol===k?T.bg2:"transparent"}}>
-                  {label}{room?(roomSort?" ↓":""):sortMark(k)}
+                  style={{...HEAD,...cellBox(k),position:k===NAME_KEY?"sticky":"relative",flexDirection:"row",alignItems:"center",
+                    justifyContent:align==="right"?"flex-end":align==="center"?"center":"flex-start",
+                    color:(room&&roomSort)||sortMark(k)?T.greenDk:T.ink3,cursor:sortable?"pointer":k===NAME_KEY?"default":"grab",userSelect:"none",whiteSpace:"nowrap",
+                    background:dragCol===k?T.bg2:k===NAME_KEY?T.ground:"transparent"}}>
+                  {/* TABLE-1: a heading is one line; cut short with its full name on hover, never wrapped. */}
+                  <span title={label} style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>{label}{room?(roomSort?" ↓":""):sortMark(k)}</span>
                   {k==="generosity"&&<ColDef text={GIVING_STRENGTH_DEF} testid="dir-def-giving-strength"/>}
                   {k==="engagement"&&<ColDef text={ENGAGEMENT_EXPLANATION.engagement} testid="dir-def-engagement"/>}
                   {k==="stage"&&<ColDef text={STAGE_DEF} testid="dir-def-stage"/>}
+                  {/* The divider is the column's right edge, top to bottom of the heading. */}
                   <span role="separator" aria-orientation="vertical" aria-label={`Resize ${label}`} data-testid={`dir-col-resize-${k}`}
                     onMouseDown={startResize(k)} onClick={e=>e.stopPropagation()} draggable={false}
-                    style={{position:"absolute",right:0,top:-6,bottom:-6,width:7,cursor:"col-resize",borderRight:"2px solid "+T.bg3}}/>
+                    style={{position:"absolute",right:0,top:-10,bottom:-10,width:7,cursor:"col-resize",borderRight:"1px solid "+T.bg3}}/>
                 </div>
               );
             })}
-            {isAdmin&&<div className="dir-col-assign"/>}
+            <div/>
           </div>
           {/* Rows */}
           {shownRows.map((d,idx)=>{
@@ -928,113 +941,100 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
             const rowBg=checked?T.green100:idx%2===0?T.white:T.ground;
             return[
               <div key={d.id} {...interactive(()=>onSelectDonor(d),{row:true,href:donorHref(d.id),role:"link"})} className="dir-donor-row click-row-focus"
-                style={{display:"grid",gridTemplateColumns:colGrid,minWidth:gridMin,gap:0,padding:compact?"4px 18px":"11px 18px",background:rowBg,borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",alignItems:"center",transition:"background 0.1s, padding 0.12s"}}
+                style={{display:"grid",gridTemplateColumns:colGrid,minWidth:gridMin,gap:0,padding:compact?"4px 0":"11px 0",background:rowBg,borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",alignItems:"stretch",transition:"background 0.1s, padding 0.12s"}}
                 onMouseEnter={e=>e.currentTarget.style.background=checked?T.green100:T.bg}
                 onMouseLeave={e=>e.currentTarget.style.background=rowBg}>
-                <div onClick={e=>toggleOne(d.id,e)} style={{display:"flex",alignItems:"center",justifyContent:"center",padding:"4px"}}>
+                <div onClick={e=>toggleOne(d.id,e)} style={{display:"flex",alignItems:"center",justifyContent:"center",padding:"4px",...pinned(0)}}>
                   <input type="checkbox" checked={checked} onChange={e=>{e.stopPropagation();toggleOne(d.id,e);}}
                     style={{width:15,height:15,cursor:"pointer",accentColor:T.greenDk}} onClick={e=>e.stopPropagation()}/>
                 </div>
                 {(()=>{
                   // LIST-1: the cells the list always drew keep their own
                   // drawing; any other column is the server's value, by key.
+                  // TABLE-1: each special cell draws only its content; the wrapper
+                  // below gives every cell the same padding, width and alignment.
                   const special={
-                  name:()=>(<>
-                <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+                  name:()=>(
+                <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0,maxWidth:"100%"}}>
                   {/* BUILD-98 — her face, on the list she reads every day.
-                      The photo was on the profile and nowhere else, which is
-                      the one place she already knows who she is looking at.
                       The stage tint survives as the initials fallback. */}
                   <PersonMark id={d.id} name={d.name} kind={d.kind} size={compact?22:32}
                     tint={T.bg2} tintFg={T.ink}
-                    style={{transition:"width 0.12s,height 0.12s"}}/>
+                    style={{transition:"width 0.12s,height 0.12s",flexShrink:0}}/>
                   <div style={{minWidth:0}}>
-                    <div style={{fontSize:compact?12:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
-                      <DonorLink id={d.id} onOpen={()=>onSelectDonor(d)} style={{overflow:"hidden",textOverflow:"ellipsis"}}>{displayName(d.name,{isOrg:d.kind==="org"||d.kind==="organization"})}</DonorLink>
+                    <div style={{fontSize:compact?12:13,fontWeight:700,color:T.ink,overflow:"hidden",display:"flex",alignItems:"center",gap:6,minWidth:0}}>
+                      <DonorLink id={d.id} onOpen={()=>onSelectDonor(d)} title={displayName(d.name,{isOrg:d.kind==="org"||d.kind==="organization"})} style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{displayName(d.name,{isOrg:d.kind==="org"||d.kind==="organization"})}</DonorLink>
                       <DriftBadge drift={d.drift}/>
                     </div>
-                    {!compact&&d.email&&<div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>}
+                    {/* Two lines on every row: the email, or a quiet dash when there is none. */}
+                    {!compact&&<div title={d.email||""} style={{...oneLine,fontSize:11,color:T.ink3,marginTop:1}}>{d.email||"—"}</div>}
                     <span className="dir-stage-mobile" style={{...stageChip(stage),borderRadius:99,padding:"2px 7px",fontSize:10,fontWeight:800,marginTop:3}}>{stage.label}</span>
                   </div>
-                </div>
-                  </>),
-                  stage:()=>(<>
-                <div className="dir-col-stage">
-                  <span style={{...stageChip(stage),borderRadius:99,padding:compact?"2px 8px":"4px 10px",fontSize:10,fontWeight:800}}>{stage.label}</span>
-                </div>
-                  </>),
-                  owner:()=>(<>
-                <div className="dir-col-owner" style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
-                  {(()=>{
+                </div>),
+                  stage:()=>(
+                  <span title={stage.label} style={{...stageChip(stage),...oneLine,borderRadius:99,padding:compact?"2px 8px":"4px 10px",fontSize:10,fontWeight:800}}>{stage.label}</span>),
+                  owner:()=>{
                     // A donor assigned to an invited-but-not-yet-accepted officer
-                    // shows their name with a "· pending" tag — clearly held, not
-                    // lost, not silently unassigned. Resolves on acceptance.
+                    // shows their name with a "· pending" tag. Resolves on acceptance.
+                    // TABLE-1: the Owner column is the one place to assign: a face and
+                    // a name, or a quiet Assign link. An admin on Team changes an owner
+                    // by clicking the name (the server refuses Core).
                     const pending = !d.assignedTo && d.pendingAssigneeName;
                     const label = d.assignedToName || d.pendingAssigneeName || "";
                     const oc=officerColorMap[d.assignedTo];
-                    // FIX-33: nobody assigned reads "No owner" (it was a "?"
-                    // circle and "Not set"), with Assign right beside it.
-                    if(!label)return(<>
-                      <span data-testid="dir-no-owner" style={{fontSize:12,color:T.ink3,whiteSpace:"nowrap"}}>{d.ownerLabel||"No owner"}</span>
-                      {isAdmin&&!isReadOnly&&onAssign&&<button type="button" data-testid="dir-owner-assign" onClick={e=>{e.stopPropagation();onAssign(d);}}
-                        style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer",textDecoration:"underline"}}>Assign</button>}
-                    </>);
-                    return(<>
-                      <div title={label} style={{width:22,height:22,borderRadius:"50%",background:pending?(T.gold500+"33"):(oc?oc:T.bg2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:pending?T.gold600:(oc?T.white:T.ink3),flexShrink:0,boxShadow:oc&&!pending?"0 0 0 2px "+oc+"33":"none"}}>{label[0]}</div>
-                      <span style={{fontSize:12,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}{pending&&<span style={{color:T.gold600,fontWeight:600}}> · pending</span>}</span>
-                    </>);
-                  })()}
-                </div>
-                  </>),
-                  lifetime:()=>(<>
-                <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:T.ink}}>{fmtFull(d.total)}</div>
-                  </>),
-                  last_gift_date:()=>(<>
-                <div style={{textAlign:"right"}}>
-                  {d.lastGift
-                    ?<><div style={{fontSize:12,color:T.ink}}>{displayMonth(d.lastGift)}</div>{!compact&&<div style={{fontSize:11,color:T.ink3}}>{d.lastAmount>0?fmtFull(d.lastAmount):""}</div>}</>
-                    :<div style={{fontSize:11,color:T.ink3}}>no gift on file</div>}
-                </div>
-                  </>),
-                  engagement:()=>(<>
-                <div data-testid="dir-engagement" style={{textAlign:"right",fontSize:12}}>
-                  {d.engagement===0
-                    // FIX-58: nothing logged is not "0 On track" or "0 Cooling".
+                    const canAssign=isAdmin&&!isReadOnly&&!!onAssign;
+                    const assign=e=>{e.stopPropagation();onAssign(d);};
+                    if(!label)return canAssign
+                      ?<button type="button" data-testid="dir-owner-assign" onClick={assign} title="Give this person an owner"
+                        style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:600,cursor:"pointer",textDecoration:"underline",textUnderlineOffset:2,fontFamily:"inherit"}}>Assign</button>
+                      :<span data-testid="dir-no-owner" style={{...oneLine,fontSize:12,color:T.ink3}}>{d.ownerLabel||"No owner"}</span>;
+                    const name=<span style={{...oneLine,fontSize:12,color:T.ink}}>{label}{pending&&<span style={{color:T.gold600,fontWeight:600}}> · pending</span>}</span>;
+                    return(<div data-testid="dir-owner" title={label+(pending?" (invite pending)":"")} style={{display:"flex",alignItems:"center",gap:6,minWidth:0,maxWidth:"100%"}}>
+                      <div style={{width:22,height:22,borderRadius:"50%",background:pending?(T.gold500+"33"):(oc?oc:T.bg2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:pending?T.gold600:(oc?T.white:T.ink3),flexShrink:0,boxShadow:oc&&!pending?"0 0 0 2px "+oc+"33":"none"}}>{label[0]}</div>
+                      {canAssign&&teamPortfolios
+                        ?<button type="button" data-testid="dir-owner-change" onClick={assign} title={`${label}. Click to change the owner.`}
+                          style={{background:"transparent",border:"none",padding:0,minWidth:0,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>{name}</button>
+                        :name}
+                    </div>);
+                  },
+                  lifetime:()=>(
+                <span style={{...oneLine,fontSize:13,fontWeight:700,color:T.ink}}>{fmtFull(d.total)}</span>),
+                  last_gift_date:()=>(d.lastGift
+                    ?<><span style={{...oneLine,fontSize:12,color:T.ink}}>{displayMonth(d.lastGift)}</span>{!compact&&<span style={{...oneLine,fontSize:11,color:T.ink3}}>{d.lastAmount>0?fmtFull(d.lastAmount):"—"}</span>}</>
+                    :<><span style={{...oneLine,fontSize:12,color:T.ink3}}>No gift</span>{!compact&&<span style={{...oneLine,fontSize:11,color:T.ink3}}>—</span>}</>),
+                  engagement:()=>{
+                    // TABLE-1: one shape on every row, a score and a word. Nothing
+                    // logged reads "— Quiet", and the tooltip says what that means.
                     // SWEEP-2: Engagement counts calls, meetings and events, not gifts, so
                     // a giver from last month reads "Nothing logged", never "Nothing in 24 months".
-                    ?<span data-testid="dir-closeness" style={{color:T.ink3,fontSize:11}}>{d.lastTouchpoint?"Nothing logged in 24 months":"Nothing logged yet"}</span>
-                    :d.engagement!=null
-                    ?<><span style={{fontWeight:800,color:T.ink}}>{d.engagement}</span> <span data-testid="dir-closeness" style={{color:d.engagementBand==="close"?T.greenDk:d.engagementBand==="distant"&&d.closeness!=="on_track"?T.gold700:T.ink3}}>{d.closeness?(d.closeness==="on_track"?"On track":d.closeness.charAt(0).toUpperCase()+d.closeness.slice(1)):(bandFor(d.engagement)||{}).label}</span></>
-                    :<span title="Worked out overnight and after each gift or touch" style={{color:T.ink3,fontSize:11}}>Not scored yet</span>}
-                </div>
-                  </>),
-                  generosity:()=>(<>
-                <div style={{textAlign:"right"}}>
-                  {sc!=null
+                    const quiet=d.engagement===0, unscored=d.engagement==null;
+                    const word=quiet?"Quiet":unscored?"Not scored":d.closeness?(d.closeness==="on_track"?"On track":d.closeness.charAt(0).toUpperCase()+d.closeness.slice(1)):((bandFor(d.engagement)||{}).label||"");
+                    const tip=quiet?(d.lastTouchpoint?"Nothing logged in 24 months":"Nothing logged yet"):unscored?"Worked out overnight and after each gift or touch":`${d.engagement} out of 100: ${word}`;
+                    const color=quiet||unscored?T.ink3:d.engagementBand==="close"?T.greenDk:d.engagementBand==="distant"&&d.closeness!=="on_track"?T.gold700:T.ink3;
+                    return(<span data-testid="dir-engagement" title={tip} style={{...oneLine,fontSize:12}}>
+                      <span style={{display:"inline-block",minWidth:"2.2em",fontWeight:800,color:quiet||unscored?T.ink3:T.ink}}>{quiet||unscored?"—":d.engagement}</span>{" "}
+                      <span data-testid="dir-closeness" style={{color}}>{word}</span>
+                    </span>);
+                  },
+                  generosity:()=>(sc!=null
                     ?<span data-testid="dir-giving-strength" title={donorScoreParts(d).sentence} aria-label={donorScoreParts(d).sentence} style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800,cursor:"help"}}>{sc}</span>
-                    :<span title="Giving strength comes from gifts, and there are none on file" style={{color:T.ink3,fontSize:11}}>No gifts yet</span>}
-                </div>
-                  </>),
-                  room_to_give:()=>(<>
-                {/* FIX-33: the word rides on the row (GET /donors), from the same
-                    prospect.roomToGive the profile reads; never a map loaded once. */}
-                <div data-testid="dir-room" data-room-word={(d.room||{}).word||""} style={{textAlign:"right",fontSize:12,fontWeight:700,color:T.ink}}>
+                    :<span title="Giving strength comes from gifts, and there are none on file" aria-label="No gifts yet" style={{color:T.ink3,fontSize:12}}>—</span>),
+                  room_to_give:()=>(
+                /* FIX-33: the word rides on the row (GET /donors), from the same
+                   prospect.roomToGive the profile reads; never a map loaded once. */
+                <span data-testid="dir-room" data-room-word={(d.room||{}).word||""} style={{...oneLine,fontSize:12,fontWeight:700,color:T.ink}}>
                   {(d.room||{}).label||ROOM_LABEL.unknown}
-                </div>
-                  </>),
+                </span>),
                   };
                   special.room=special.room_to_give;
                   return visCols.map(k=>{
-                    if(special[k])return <Fragment key={k}>{special[k]()}</Fragment>;
+                    if(special[k])return <div key={k} data-col={k} className={k==="stage"?"dir-col-stage":k==="owner"?"dir-col-owner":undefined} style={cellBox(k)}>{special[k]()}</div>;
                     const f=fieldByKey[k];
                     const txt=formatCell(f,d.cells?d.cells[k]:undefined);
-                    return <div key={k} data-testid={`dir-cell-${k}`} title={txt} style={{textAlign:alignFor(f),fontSize:12.5,color:txt?T.ink:T.ink3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:10,minWidth:0}}>{txt}</div>;
+                    return <div key={k} data-col={k} data-testid={`dir-cell-${k}`} title={txt} style={{...cellBox(k),fontSize:12.5,color:txt?T.ink:T.ink3}}><span style={oneLine}>{txt}</span></div>;
                   });
                 })()}
-                {isAdmin&&<div className="dir-col-assign dir-assign-cell" style={{textAlign:"right"}}>
-                  {/* Reassigning the owner is Team (server 403s for Core). */}
-                  {teamPortfolios&&(d.assignedToName||d.pendingAssigneeName)&&<button onClick={e=>{e.stopPropagation();onAssign(d);}} className="dir-assign-btn" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>Assign</button>}
-                </div>}
+                <div/>
               </div>,
               /* BUILD-41: the phone row (shown <768px; the grid row above is
                  hidden there). Full name at 17px that WRAPS — a donor list
