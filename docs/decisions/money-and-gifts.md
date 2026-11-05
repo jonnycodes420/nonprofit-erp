@@ -4,6 +4,9 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 
 ## Rules
 
+- **Restricted + Unrestricted = Lifetime (LEDGER-2).** A person's split is `shared/numbers/fundSplit.js`: Lifetime
+  cut by fund, each gift in exactly one bucket by its fund's restriction. A gift on an unrestricted fund, a gift
+  with no fund and the imported total are Unrestricted. A portfolio total is its donors' Lifetime, read live.
 - **Every pledge has its installments (SWEEP-4, FIX-60).** A pledge is written only by `writePledges` /
   `writePledge` (`pledgeWrite.js`), with its installments, from every door: the profile (and API), file import,
   history import (`import-semantics`), To confirm, proposals, grants, event sponsorships and recordGift's
@@ -71,8 +74,9 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   (`hasUnledgeredGiving`), never a bare $0. (BUILD-26, BUILD-89S)
 - **Money from a person, foundation or grant enters through the gift or grant paths.** Finance's manual
   money-in is for non-donor revenue; the form routes a recognised donor or open grant to its flow. (FIX entity-routing)
-- **A grant award books the ledger at most once and never creates a gift.** `stampGrantAward` +
-  `uq_fin_txns_grant`; un-award deletes the auto stamp and unlinks (never deletes) an adopted manual row. (FIX entity-routing)
+- **A grant award writes nothing to the ledger and never creates a gift (LEDGER-2).** Like any pledge, its income is
+  its payments, each a gift `recordGift` stamps. `stampGrantAward` is gone; un-award still deletes an old auto stamp
+  (`source='grant'`) and unlinks (never deletes) an adopted manual row. (FIX entity-routing, LEDGER-2)
 - **Count a gift once, on the person whose money it was.** Soft credit is a row pointing at a gift
   (`gift_soft_credits`); no total, ledger or bookkeeper export reads it; reports add it only via `?credit=soft`. (BUILD-98)
 - **A soft or matching credit is in no "own giving" figure.** Lifetime, This year and the census's "Their own

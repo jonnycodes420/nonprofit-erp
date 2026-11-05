@@ -15,6 +15,7 @@ const TL = require("../../timelineLine");
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
 const PW = require("../../pledgeWrite");   // FIX-60: the one writer of a pledge and its installments
 const FL = require("./funderLink");   // GRANTS-FIX: the one resolver of a grant's funder
+const { withAmbientTransaction } = require("../../db");
 
 const routers = {
   r1: express.Router(),
@@ -22,7 +23,7 @@ const routers = {
 
 function mount(ctx) {
 const {
-  AGENT_MODEL, NOT_YOURS, OU, SYS_AUTO, actor, agentGate, checkWriteAccess, ensureOrgLedger, grantBalanceFrom,
+  AGENT_MODEL, NOT_YOURS, OU, actor, agentGate, checkWriteAccess, grantBalanceFrom,
   grantDocRow, grantDocs, grantImportMod, grantMoneyRows, grantMsMod, grantRow, grantShapeMod,
   markMilestoneDone, mayEditLogged, milestoneRow, money, orgFundNamesG, orgLeadDays, orgOfficerNames,
   orgToday, orgTz, parseMoneyOrThrow, processGrantMilestones, putThemeAsset, query, queryTx,
@@ -73,32 +74,12 @@ app.get("/grants", requireAuth, wrap(async (req, res) => {
   res.json(grants.map(g => ({ ...g, history: JSON.parse(g.history || "[]") })));
 }));
 
-// Finance entity-routing FIX (2026-08-04) — the ONE grant-award → ledger stamp.
-// source='grant' (badged in the unified ledger), grant_id + the partial-unique
-// uq_fin_txns_grant (db.js) make it idempotent BY CONSTRUCTION: re-award after
-// un-award, a redundant awarded→awarded PUT, or a manual row already adopted as
-// this grant's stamp (grant_id taken) can never double-insert. Fund matching is
-// the original BUILD-09 heuristic (funder/program-named fund, else the first
-// unrestricted fund).
-async function stampGrantAward(orgId, grantId, funder, program, amount, by = SYS_AUTO) {
-  const matchFund = await query(
-    "SELECT id FROM fin_funds WHERE org_id=? AND (name ILIKE ? OR name ILIKE ?) LIMIT 1",
-    [orgId, `%${funder}%`, `%${program || ""}%`]
-  );
-  // BUILD-58 W-3: the award stamp resolves its accounts through the ONE
-  // ledger helper (grants revenue account, contributions fallback) — a
-  // chartless org is provisioned loudly, never a null-account booking.
-  const ledgerA = await ensureOrgLedger(orgId, { heal: true });
-  const fundId = matchFund[0]?.id || ledgerA.genFundId;
-  await run(
-    `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,grant_id,source,created_by,created_by_name)
-     VALUES (?,?,?,?,?,?,'income',?,?,?,'grant',?,?)
-     ON CONFLICT (grant_id) WHERE grant_id IS NOT NULL DO NOTHING`,
-    [newId("ft"), orgId, orgToday(await orgTz(orgId)), // ORG_TZ_SEAM_OK (BUILD-75)
-     `Grant awarded: ${funder} · ${program || ""}`, funder,
-     parseFloat(amount) || 0, ledgerA.grantAcctId, fundId, grantId, by.id, by.name]
-  ).catch(e => console.error("[ledger] grant award stamp failed:", e.message));
-}
+// LEDGER-2: an award writes nothing to the ledger, exactly as an ordinary
+// pledge writes nothing. The income is booked by each payment, the gift on the
+// award pledge that recordGift stamps (GIFTS-1's Record a payment received).
+// The award stamp that used to be written here (stampGrantAward, on Awarded)
+// counted the money a second time once a payment was recorded on it: a $15,000
+// award with $10,000 received read $25,000 of income.
 
 app.post("/grants", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { funder, program, amount, status, deadline, reportDue, officer, notes } = req.body;
@@ -133,9 +114,6 @@ app.post("/grants", requireAuth, checkWriteAccess, wrap(async (req, res) => {
      status || "prospecting", deadline || "", reportDue || "", officer || "", notes || "",
      campaignId, isAwarded ? new Date().toISOString() : null, actor(req).id, actor(req).name]
   );
-  // A grant created directly IN 'awarded' books its income too (this path
-  // previously never stamped the ledger — only the PUT transition did).
-  if (isAwarded) await stampGrantAward(req.user.orgId, id, funder, program, amount, actor(req));
   const rows = await query("SELECT * FROM grants WHERE id = ?", [id]);
   res.status(201).json({ ...rows[0], funderLink: { how: fl.how, why: fl.why || null } });
 }));
@@ -220,11 +198,10 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   );
   if (!affected.changes) return res.status(404).json({ error: "Grant not found" });
 
-  // Grant awarded → the ledger income books EXACTLY ONCE (uq_fin_txns_grant).
-  // Either by adopting the caller-named manual row as the stamp (the money was
-  // already logged — link it, don't double-book) or by inserting the auto
-  // stamp. Adoption keeps the treasurer's own date/fund/account and re-badges
-  // the row source='grant'.
+  // Grant awarded → nothing new is booked (LEDGER-2: the payments book the
+  // income). A caller-named manual income row the treasurer already entered for
+  // this award is linked to it (grant_id, uq_fin_txns_grant) so it is marked as
+  // the award's money; it keeps its own date, fund and account.
   if (status === 'awarded' && prevStatus !== 'awarded') {
     let adopted = false;
     if (adoptTxnId) {
@@ -242,7 +219,6 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
         new: { grant_id: req.params.id },
       }).catch(() => {});
     }
-    if (!adopted) await stampGrantAward(orgId, req.params.id, funder, program, amount, actor(req));
   }
 
   // Un-award (awarded_at cleared — the grant moved BACK to a pursuing or
@@ -309,7 +285,10 @@ app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(asy
   // ALREADY AWARDED WRITES NOTHING NEW. A second press must not produce a second
   // pledge — the commitment exists, and a duplicate would double it in every
   // total the funder appears in.
+  // LEDGER-2: the pledge and the grant's award are one transaction: both exist,
+  // or neither does. No ledger row: the payments book the income.
   let pledgeId = g.award_pledge_id || null;
+  const refused = await withAmbientTransaction(async () => {
   if (!pledgeId) {
     const due = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.firstDue || "")) ? String(req.body.firstDue) : today;
     // THE ONE PLEDGE WRITER (FIX-60), with its schedule. A frequency and a
@@ -322,7 +301,7 @@ app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(asy
         plan: { schedule: req.body.installments, frequency: req.body.frequency, count: req.body.installmentCount, firstDue: due } },
         { door: "pledge" }));
     } catch (e) {
-      if (e.code === "schedule_does_not_sum" || e.code === "bad_amount") return res.status(400).json({ error: e.message, code: e.code });
+      if (e.code === "schedule_does_not_sum" || e.code === "bad_amount") return { status: 400, body: { error: e.message, code: e.code } };
       throw e;
     }
   }
@@ -336,6 +315,9 @@ app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(asy
     [toDollars(awardedCents), pledgeId,
      req.body.restriction || null, req.body.restrictedFrom || null, req.body.restrictedUntil || null,
      g.id, orgId]);
+  return null;
+  });
+  if (refused) return res.status(refused.status).json(refused.body);
 
   // WIRE-1: the award is on the funder's timeline, once (the board drag that
   // first awards it writes the same key).

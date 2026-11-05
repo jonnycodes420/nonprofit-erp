@@ -112,52 +112,20 @@ app.post("/donors/:id/score", requireAuth, requireCrm, checkWriteAccess, wrap(as
 
 app.get("/donors/:id/fund-affinity", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
-  const donorCheck = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [req.params.id, orgId]);
-  if (!donorCheck.length) return res.status(404).json({ error: "Donor not found" });
-  const totalGiving = donorCheck[0].total_giving || 0;
-
-  // Gifts with a fund_id
-  const fundGifts = await query(
-    `SELECT g.fund_id, COALESCE(f.name,'Unknown Fund') as fund_name,
-            COALESCE(f.restricted,false) as restricted,
-            COUNT(*) as gift_count, SUM(g.amount) as total,
-            MAX(g.date) as last_date
-     FROM gifts g
-     LEFT JOIN fin_funds f ON f.id=g.fund_id
-     WHERE g.donor_id=? AND g.org_id=? AND g.fund_id IS NOT NULL AND g.fund_id != '' AND ${NUMBERS.money.MONEY("g")}
-     GROUP BY g.fund_id, f.name, f.restricted
-     ORDER BY total DESC`,
-    [req.params.id, orgId]
-  );
-
-  // Unrestricted (no fund_id)
-  const unrestrictedGifts = await query(
-    // NUMBERS-4: the fund split is money (shared/numbers/money.js), as Lifetime
-    // is, so a soft or matching credit row no longer sits in a fund's share.
-    `SELECT COALESCE(SUM(g.amount),0) as total, COUNT(*) as gift_count FROM gifts g WHERE g.donor_id=? AND g.org_id=? AND (g.fund_id IS NULL OR g.fund_id='') AND ${NUMBERS.money.MONEY("g")}`,
-    [req.params.id, orgId]
-  );
-  const unrestrictedTotal = parseFloat(unrestrictedGifts[0]?.total || 0);
-  const restrictedTotal = fundGifts.filter(f => f.restricted).reduce((s, f) => s + parseFloat(f.total), 0);
-
-  // Active fin_funds for suggested asks
-  const activeFunds = await query("SELECT id, name FROM fin_funds WHERE org_id=? ORDER BY name ASC", [orgId]);
-
-  const affinityRows = fundGifts.map(f => ({
-    fundId: f.fund_id,
-    fundName: f.fund_name,
-    restricted: f.restricted,
-    total: parseFloat(f.total),
-    giftCount: parseInt(f.gift_count),
-    lastDate: f.last_date,
-    pct: totalGiving > 0 ? Math.round(parseFloat(f.total) / totalGiving * 100) : 0,
-  }));
-
+  // LEDGER-2: the split is Lifetime cut by fund (shared/numbers/fundSplit.js):
+  // every gift in exactly one bucket, the two buckets summing to Lifetime.
+  const s = await NUMBERS.fundSplit.fundSplit(query, orgId, req.params.id);
+  if (!s) return res.status(404).json({ error: "Donor not found" });
+  const activeFunds = await query("SELECT id, name FROM fin_funds WHERE org_id=? AND retired_at IS NULL ORDER BY name ASC", [orgId]);
+  const $ = c => Number(c) / 100;
   res.json({
-    affinity: affinityRows,
-    unrestrictedTotal,
-    restrictedTotal,
-    totalGiving,
+    affinity: s.funds.map(f => ({ fundId: f.fundId, fundName: f.fundName, restricted: f.restricted, imported: !!f.imported,
+                                  total: $(f.cents), giftCount: f.giftCount, lastDate: f.lastDate, pct: f.pct })),
+    unrestrictedTotal: $(s.unrestrictedCents),
+    restrictedTotal: $(s.restrictedCents),
+    restrictedPct: s.restrictedPct, unrestrictedPct: s.unrestrictedPct,
+    totalGiving: $(s.lifetimeCents),
+    definition: "Restricted is money given to a restricted fund. Everything else is unrestricted: gifts to an unrestricted fund, gifts with no fund, and the total from your old system. The two add up to Lifetime.",
     activeFunds,
   });
 }));
@@ -369,8 +337,11 @@ app.get("/people", requireAuth, wrap(async (req, res) => {
 
 app.get("/people/:id", requireAuth, wrap(async (req, res) => {
   const [row] = await query(
-    `SELECT id, name, email, kind, person_types, gift_count, first_gift_date
-       FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`,
+    // LEDGER-2: "Donor since" is the first gift on record, read live through the
+    // one rule (shared/numbers/firstGift.js), never the stored column, which a
+    // write that skipped the summary left on a later year.
+    `SELECT d.id, d.name, d.email, d.kind, d.person_types, d.gift_count, ${NUMBERS.firstGift.FIRST_DATE("d")} AS first_gift_date
+       FROM donors d WHERE d.id=? AND d.org_id=? AND d.deleted_at IS NULL`,
     [req.params.id, req.user.orgId]);
   if (!row) return res.status(404).json({ error: "Person not found" });
   // FIX-8 Part B.2 — the roles line reads "Donor since 2021", and the year is
