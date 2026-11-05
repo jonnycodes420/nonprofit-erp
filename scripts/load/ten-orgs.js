@@ -8,7 +8,7 @@
 // tasks, journeys, scores and rhythms, every value a hash of the row number
 // (scripts/load/seed-many.js seedOrg, the same generator SCALE-1 uses).
 // run: USERS (20) simulated staff, two per org, for DURATION seconds (300),
-// each doing a realistic mix with no think time: open Home, open Donors,
+// each doing a realistic mix with THINK_MS (3 s) to read each screen: open Home, open Donors,
 // filter, search, open a profile, log a call, record a gift, open
 // Fundraising, run one report. It prints a table per route (count, p50, p95,
 // max) and the pass bar, writes OUT (JSON) and GITHUB_STEP_SUMMARY (markdown)
@@ -96,7 +96,9 @@ async function extras(pool, o) {
 // ── run ─────────────────────────────────────────────────────────────────────
 // What each screen asks for, as the browser asks it. PROFILE is every request
 // opening one person fires (counted in a browser; LOAD-1 item 4 changes it).
-const PROFILE = (id) => (process.env.PROFILE_SHAPE === "bundle" ? PROFILE_BUNDLE : PROFILE_MANY)(id);
+// Waves of requests: each wave at once, the next when it has answered.
+// PROFILE_SHAPE=many is the shape before LOAD-1 (every read at once).
+const PROFILE = (id) => process.env.PROFILE_SHAPE === "many" ? [PROFILE_MANY(id)] : PROFILE_BUNDLE(id);
 // The 37 a profile fired on main (scripts/load/profile-requests.js, 4 Nov).
 const PROFILE_MANY = (id) => [
   `/donors/${id}`, `/insights/donor/${id}`, `/atlas/notes?place=person&id=${id}`, `/people/${id}`, `/donors/${id}/groups`,
@@ -108,13 +110,30 @@ const PROFILE_MANY = (id) => [
   `/donors/${id}/designations`, `/donors/${id}/receipts`, "/org", `/donors/${id}/plan`, `/donors/${id}/journeys`, "/journeys",
   `/donors/${id}/journey-suggestion`, `/donors/${id}/planned-gifts`, `/donors/${id}/pledges`, "/fundraising/campaigns",
 ];
-const PROFILE_BUNDLE = (id) => [`/donors/${id}/bundle`];
+// LOAD-1 item 4: the header's own read and the above-the-fold bundle at once,
+// then the below-the-fold bundle once that has answered (client/src/lib/profileReads.js).
+const bundleOf = (id, paths) => `/donors/${id}/bundle?` + paths.map(p => "p=" + encodeURIComponent(p)).join("&");
+const PROFILE_BUNDLE = (id) => {
+  const { top, below } = profileLists(id);
+  return [[`/donors/${id}`, bundleOf(id, top.filter(p => p !== `/donors/${id}`))], [bundleOf(id, below)]];
+};
+// The two lists, as the client spells them (PROFILE_MANY, split at the fold).
+const profileLists = (id) => {
+  const top = [`/donors/${id}`, `/donors/${id}/status`, `/donors/${id}/scores`, `/donors/${id}/rail`, `/donors/${id}/relationship`,
+    `/threads?donorId=${id}`, `/insights/donor/${id}`, `/donors/${id}/before-meeting`, `/donors/${id}/blocked-mail`,
+    `/people/${id}`, `/atlas/notes?place=person&id=${id}`, `/donors/${id}/plan`, `/donors/${id}/journeys`];
+  return { top, below: PROFILE_MANY(id).filter(p => !top.includes(p)) };
+};
 const pick = (arr, r) => arr[Math.floor(r() * arr.length)];
-const routeOf = (path) => path.split("?")[0].replace(/\/org_ten\d+_[a-z]+\d+/g, "/:id").replace(/\/(d|g|i|t)_[0-9a-f]{8,}/g, "/:id");
+const routeOf = (path) => (/\/bundle\?/.test(path) ? path.split("?")[0] + (path.includes(encodeURIComponent("/status")) ? " (above the fold)" : " (below the fold)") : path.split("?")[0]).replace(/\/org_ten\d+_[a-z]+\d+/g, "/:id").replace(/\/(d|g|i|t)_[0-9a-f]{8,}/g, "/:id");
 
 async function run() {
   const USERS = Number(process.env.USERS || 20);
   const DURATION = Number(process.env.DURATION || 300) * 1000;
+  // A person reads a screen before the next click: THINK_MS on average (half
+  // to one and a half of it). 0 is SCALE-2's zero-think run, which measures
+  // how much one process can take rather than what twenty people see.
+  const THINK_MS = Number(process.env.THINK_MS ?? 3000);
   const stats = new Map();   // route -> [ms]
   const fivexx = new Map(), slowest = { ms: 0 };
   const profileOpens = [];
@@ -135,14 +154,20 @@ async function run() {
     return status;
   };
   const health0 = await (await fetch(`${BASE}/health`)).json();
+  // One sign-in per org, shared by its users: the real sign-in limiter allows
+  // 20 an IP in 15 minutes, and every simulated user signs in from loopback.
+  const signedIn = new Map();
   const tokens = [];
   for (let u = 0; u < USERS; u++) {
     const o = ORGS[u % ORGS.length];
-    const r = await fetch(`${BASE}/auth/login`, { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: `admin@${o.slug}.load`, password: "loadtest1234" }) });
-    const j = await r.json();
-    if (!j.token) throw new Error(`sign-in failed for ${o.slug}: ${JSON.stringify(j).slice(0, 200)}`);
-    tokens.push({ tok: j.token, o });
+    if (!signedIn.has(o.id)) {
+      const r = await fetch(`${BASE}/auth/login`, { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: `admin@${o.slug}.load`, password: "loadtest1234" }) });
+      const j = await r.json();
+      if (!j.token) throw new Error(`sign-in failed for ${o.slug}: ${JSON.stringify(j).slice(0, 200)}`);
+      signedIn.set(o.id, j.token);
+    }
+    tokens.push({ tok: signedIn.get(o.id), o });
   }
   const today = new Date().toISOString().slice(0, 10);
   const until = Date.now() + DURATION;
@@ -153,6 +178,7 @@ async function run() {
     const r = () => { seedN = (seedN * 48271) % 2147483647; return seedN / 2147483647; };
     const person = () => `${o.id}_d${1 + Math.floor(r() * o.donors)}`;
     while (Date.now() < until) {
+      if (THINK_MS) await new Promise(res => setTimeout(res, THINK_MS * (0.5 + r())));
       const what = pick(bag, r);
       if (what === "home") await call(tok, "GET", "/home/bundle");
       else if (what === "donors") await Promise.all([call(tok, "GET", "/donors?limit=50"), call(tok, "GET", "/donors/counts")]);
@@ -160,7 +186,7 @@ async function run() {
       else if (what === "search") await call(tok, "GET", `/donors?limit=50&q=${pick(["smith", "garcia", "landry", "mary", "d12"], r)}`);
       else if (what === "profile") {
         const id = person(), t0 = performance.now();
-        await Promise.all(PROFILE(id).map(p => call(tok, "GET", p)));
+        for (const wave of PROFILE(id)) await Promise.all(wave.map(p => call(tok, "GET", p)));
         profileOpens.push(performance.now() - t0);
       } else if (what === "call") await call(tok, "POST", `/donors/${person()}/interactions`, { type: "call", date: today, note: "Load test call" });
       else if (what === "gift") await call(tok, "POST", `/donors/${person()}/gifts`, { amount: 25 + Math.floor(r() * 200), date: today, type: "cash", payment_method: "check" });
@@ -171,11 +197,11 @@ async function run() {
   const health1 = await (await fetch(`${BASE}/health`)).json();
   const lim = (h) => (h.pool && h.pool.limits) || {};
   const checkoutTimeouts = (lim(health1).checkoutTimeouts || 0) - (lim(health0).checkoutTimeouts || 0);
-  return report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS, DURATION });
+  return report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS, DURATION, THINK_MS });
 }
 
 const pct = (arr, p) => { if (!arr.length) return 0; const s = arr.slice().sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.ceil(p / 100 * s.length) - 1)]; };
-function report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS, DURATION }) {
+function report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS, DURATION, THINK_MS = 0 }) {
   const rows = [...stats].map(([route, ms]) => ({ route, count: ms.length, p50: Math.round(pct(ms, 50)), p95: Math.round(pct(ms, 95)), max: Math.round(Math.max(...ms)), fivexx: fivexx.get(route) || 0 }))
     .sort((a, b) => b.p95 - a.p95);
   const profile = { count: profileOpens.length, p50: Math.round(pct(profileOpens, 50)), p95: Math.round(pct(profileOpens, 95)), max: Math.round(Math.max(0, ...profileOpens)) };
@@ -189,7 +215,7 @@ function report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS,
   if (checkoutTimeouts) misses.push(`${checkoutTimeouts} waits for a connection gave up`);
   const pass = misses.length === 0;
   const lines = [
-    `### Load test: ${USERS} users, 10 orgs, ${Math.round(DURATION / 1000)} s · ${pass ? "PASS" : "FAIL"}`, "",
+    `### Load test: ${USERS} users, 10 orgs, ${Math.round(DURATION / 1000)} s, ${THINK_MS / 1000} s to read each screen · ${pass ? "PASS" : "FAIL"}`, "",
     "| route | count | p50 ms | p95 ms | max ms | 5xx |", "|---|---:|---:|---:|---:|---:|",
     ...rows.map(r => `| ${r.route} | ${r.count} | ${r.p50} | ${r.p95} | ${r.max} | ${r.fivexx} |`),
     `| **profile open (all its requests)** | ${profile.count} | ${profile.p50} | ${profile.p95} | ${profile.max} | |`, "",
@@ -198,7 +224,7 @@ function report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS,
   ];
   const md = lines.join("\n");
   console.log(md);
-  const out = { at: new Date().toISOString(), pass, users: USERS, seconds: Math.round(DURATION / 1000), rows, profile, checkoutTimeouts,
+  const out = { at: new Date().toISOString(), pass, users: USERS, seconds: Math.round(DURATION / 1000), thinkMs: THINK_MS, rows, profile, checkoutTimeouts,
     slowest: { route: slowest.route, ms: Math.round(slowest.ms) }, misses };
   if (process.env.OUT) fs.writeFileSync(process.env.OUT, JSON.stringify(out, null, 2));
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md + "\n");

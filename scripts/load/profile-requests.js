@@ -22,16 +22,18 @@ const EMAIL = process.env.EMAIL || "admin@ten10.load";
   const seen = [];
   let painted = null;
   page.on("request", r => { if (r.url().startsWith(BASE)) seen.push({ at: Date.now(), path: r.method() + " " + r.url().slice(BASE.length) }); });
+  // First paint: the profile's header has the person's figures, which come
+  // from its first answers. Before LOAD-1 that is when /donors/:id/status has
+  // answered; after, when the above-the-fold bundle has.
+  page.on("response", r => { if (!painted && /\/donors\/[^/?]+\/(status|bundle)(\?|$)/.test(r.url())) painted = Date.now(); });
   const t0 = Date.now();
   const row = page.locator('[data-donor-id], a[href*="/donors/"], tr[role="row"], tbody tr').first();
   await row.click({ timeout: 20000 });
   await page.waitForURL(/\/donors\/[^/?]+/, { timeout: 20000 });
-  const name = await page.locator("h1, h2").first().textContent({ timeout: 20000 }).catch(() => null);
-  painted = Date.now();
-  await page.waitForLoadState("networkidle", { timeout: 60000 }).catch(() => {});
-  const settled = Date.now();
-  const first = seen.filter(s => s.at <= painted);
-  console.log(JSON.stringify({ url: page.url().replace(APP, ""), name, total: seen.length, firstPaint: first.length,
-    paintMs: painted - t0, settleMs: settled - t0, requests: seen.map(s => s.path) }, null, 1));
+  await page.waitForTimeout(Number(process.env.WAIT_MS || 4000));
+  const first = seen.filter(s => painted && s.at <= painted);
+  console.log(JSON.stringify({ url: page.url().replace(APP, ""), total: seen.length, firstPaint: first.length,
+    paintMs: painted ? painted - t0 : null, refetchesList: seen.some(s => /^GET \/donors(\?|\/counts|$)/.test(s.path)),
+    requests: seen.map(s => s.path.length > 110 ? s.path.slice(0, 110) + "…" : s.path) }, null, 1));
   await browser.close();
 })().catch(e => { console.error(e.stack); process.exit(1); });

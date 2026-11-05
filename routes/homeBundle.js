@@ -48,16 +48,33 @@ const MAX_READS = 40;
 const LANES = 6;
 // PERF-2: the placeholder for Home's scope in a scoped read (see below).
 const SCOPE = "{scope}";
+// LOAD-1 · A PROFILE OPENS IN TWO REQUESTS. Opening one person fired 37 reads
+// at once; each was quick, but together they queued for the web's ten
+// connections and a profile took 2 to 4 s under load. The profile now asks
+// for what shows above the fold in one request, and for the rest in a second
+// once the first has answered (client/src/lib/profileReads.js). Each answer is
+// the route's own, as /home/bundle's are. A read must be one of the profile's
+// (PROFILE_READS, with this person's id where it names one), so this is not a
+// general proxy either.
+const PROFILE_READS = [
+  "/donors/:id", "/donors/:id/status", "/donors/:id/scores", "/donors/:id/rail", "/donors/:id/relationship",
+  "/threads?donorId=:id", "/insights/donor/:id", "/donors/:id/before-meeting", "/donors/:id/blocked-mail", "/people/:id",
+  "/atlas/notes?place=person&id=:id", "/donors/:id/plan", "/donors/:id/journeys", "/donors/:id/journey-suggestion",
+  "/donors/:id/groups", "/donors/:id/proposals", "/donors/:id/relationships", "/donors/:id/custom-fields", "/donors/:id/events",
+  "/donors/:id/attachments", "/donors/:id/tasks", "/donors/:id/volunteer-hours", "/donors/:id/recurring-subscription",
+  "/donors/:id/soft-credit", "/donors/:id/moves", "/donors/:id/opportunities", "/donors/:id/move-suggestions",
+  "/donors/:id/designations", "/donors/:id/receipts", "/donors/:id/planned-gifts", "/donors/:id/pledges",
+  "/mailbox", "/sequences", "/org", "/journeys", "/fundraising/campaigns", "/custom-fields?entity=gift",
+];
 
 function mount(ctx) {
 const { requireAuth, testMode, wrap } = ctx;
 const app = routers.r0;
 
-app.get("/home/bundle", requireAuth, wrap(async (req, res) => {
-  const asked = [].concat(req.query.p || []).map(String);
-  const paths = [...new Set(asked)].slice(0, MAX_READS);
-  const refused = paths.filter(p => !p.startsWith("/") || !HOME_READS.has(p.split("?")[0]));
-  if (refused.length) return res.status(400).json({ error: "not_a_home_read", message: "That read is not part of Home.", paths: refused });
+// Each named read, answered by its own route inside this process as the person
+// asking, at most LANES at once. The answer is one JSON object keyed by path:
+// { "<path>": { status, body } }, each body the route's own text.
+async function answer(req, res, paths) {
   const out = new Array(paths.length);
   const timing = [];   // Server-Timing: how long each read took, for the load harness
   const read = async (i, path) => {
@@ -103,6 +120,23 @@ app.get("/home/bundle", requireAuth, wrap(async (req, res) => {
   if (trips != null) timing.push(`trips;desc="${trips}"`);
   res.set("Server-Timing", timing.join(", "));
   res.type("application/json").send("{" + out.join(",") + "}");
+}
+
+app.get("/home/bundle", requireAuth, wrap(async (req, res) => {
+  const asked = [].concat(req.query.p || []).map(String);
+  const paths = [...new Set(asked)].slice(0, MAX_READS);
+  const refused = paths.filter(p => !p.startsWith("/") || !HOME_READS.has(p.split("?")[0]));
+  if (refused.length) return res.status(400).json({ error: "not_a_home_read", message: "That read is not part of Home.", paths: refused });
+  await answer(req, res, paths);
+}));
+
+app.get("/donors/:id/bundle", requireAuth, wrap(async (req, res) => {
+  const id = String(req.params.id);
+  const allowed = new Set(PROFILE_READS.map(p => p.split(":id").join(encodeURIComponent(id))));
+  const paths = [...new Set([].concat(req.query.p || []).map(String))].slice(0, MAX_READS);
+  const refused = paths.filter(p => !allowed.has(p));
+  if (refused.length) return res.status(400).json({ error: "not_a_profile_read", message: "That read is not part of this profile.", paths: refused });
+  await answer(req, res, paths);
 }));
 
 // TEST_MODE only: run the nightly comparison now, for the caller's org, so the
@@ -116,4 +150,4 @@ app.post("/org-summary/check", requireAuth, wrap(async (req, res) => {
 }));
 }
 
-module.exports = { routers, mount, HOME_READS };
+module.exports = { routers, mount, HOME_READS, PROFILE_READS };

@@ -232,6 +232,29 @@ async function lateHeader(page) {
   });
 }
 
+// LOAD-1 · A PROFILE OPENS IN TWO REQUESTS. Donors drawn and quiet, then one
+// click on the first person: every API request from the click on, and how
+// many left before the profile's first answers came back (its status, or the
+// above-the-fold bundle). On main it was 46, all before.
+const PROFILE_OPEN_WAIT_MS = 4000;
+async function profileOpen(browser, auth) {
+  const ctx = await browser.newContext({ ...DESKTOP.ctx, serviceWorkers: "block", timezoneId: "UTC" });
+  await ctx.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+    [auth.token, JSON.stringify(auth.user), JSON.stringify(auth.org)]);
+  const page = await ctx.newPage();
+  await page.goto(`${APP}/donors`, { waitUntil: "networkidle", timeout: 60000 });
+  await page.locator('[data-testid="dir-table"] [data-testid="person-mark"]').first().waitFor({ timeout: 30000 });
+  const seen = [];
+  let painted = null;
+  page.on("request", r => { if (r.url().startsWith(BASE)) seen.push({ at: Date.now(), path: r.method() + " " + r.url().slice(BASE.length) }); });
+  page.on("response", r => { if (!painted && /\/donors\/[^/?]+\/(status|bundle)(\?|$)/.test(r.url())) painted = Date.now(); });
+  await page.locator('[data-testid="dir-table"] [data-testid="person-mark"]').first().click();
+  await page.waitForTimeout(PROFILE_OPEN_WAIT_MS);
+  await ctx.close();
+  const first = seen.filter(x => painted && x.at <= painted).map(x => x.path.split("?")[0]);
+  return { painted: !!painted, firstPaint: first.length, first, all: seen.map(x => x.path.split("?")[0]) };
+}
+
 async function measureN(browser, machine, auth, url, ready, rows, opts) {
   const runs = [];
   for (let i = 0; i < RUNS; i++) runs.push(await measure(browser, machine, auth, url, ready, rows, opts));
@@ -323,6 +346,7 @@ function preloaderAllowed() {
   console.log(`  Home, phone, its header's reads late: CLS ${homeL.cls}`);
   const list = await measureN(browser, DESKTOP, auth, "/donors", '[data-testid="dir-table"] [data-testid="person-mark"]', 100);
   const prof = await measureN(browser, DESKTOP, auth, `/donors/${top.id}`, '[data-testid="dp-right-rail"]');
+  const open = await profileOpen(browser, auth);   // LOAD-1
   await browser.close();
 
   // The list's own request, replayed from here: the server's time alone.
@@ -361,6 +385,12 @@ function preloaderAllowed() {
   timed(`the Donors list's 100 rows in under 1 s on the server (${listServer} ms)`, { ms: listServer, budget: BUDGET.listServer, extra: { listServer, listUrl } });
   timed(`the Donors list draws 100 rows in under 2 s (${list.readyAt} ms)`, { drew: list.ready, ms: list.readyAt, budget: BUDGET.listDraw });
   timed(`a donor profile draws in under 2 s (${prof.usable} ms)`, { ms: prof.usable, budget: BUDGET.profile });
+  // LOAD-1: on main a profile opened from the list fired 46 reads at once.
+  console.log(`  profile opened from the list: ${open.firstPaint} request(s) before its first answers, ${open.all.length} in ${PROFILE_OPEN_WAIT_MS / 1000} s`);
+  ok(`opening a profile from the list asks for at most 3 things before it paints (${open.firstPaint}: ${open.first.join(", ").slice(0, 300)})`,
+     open.painted && open.firstPaint <= 3, open.all.slice(0, 12));
+  ok(`and at most 8 in all (${open.all.length})`, open.all.length <= 8, open.all);
+  ok("and never asks for the Donors list or its counts again", !open.all.some(p => /^GET \/donors(\?|\/counts|$)/.test(p)), open.all.filter(p => /^GET \/donors(\?|\/counts|$)/.test(p)));
   summary();
   await closeDb();
 })().catch(async e => { console.error(e); ok("perf-app ran", false, String(e && e.stack || e)); summary(); await closeDb().catch(() => {}); });

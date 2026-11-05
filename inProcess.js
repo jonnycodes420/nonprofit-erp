@@ -34,6 +34,9 @@ function get(path, { headers = {}, remoteAddress = "127.0.0.1", mark = null } = 
     req.headers = {};
     for (const [k, v] of Object.entries(headers)) if (!DROP.has(k.toLowerCase())) req.headers[k.toLowerCase()] = v;
     if (mark) req[mark] = true;
+    // LOAD-1: it runs under the outer request's time limit and cancel, or,
+    // called off a request (orgSummary), under none (requestLimits.middleware).
+    req.__stewardInProcess = true;
     req.push(null);
     const res = new http.ServerResponse(req);
     const chunks = [];

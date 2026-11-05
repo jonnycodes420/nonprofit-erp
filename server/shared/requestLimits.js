@@ -72,6 +72,9 @@ function close(sc, cancelBackend) {
 // backend is cancelled.
 function middleware(cancelBackend) {
   return (req, res, next) => {
+    // A route called inside the process (a bundle's reads) is part of the
+    // request that called it, and keeps that request's scope as it is.
+    if (req.__stewardInProcess) return next();
     const name = limitFor(req.path);
     const sc = { limitMs: NAMED[name], limitName: name, read: req.method === "GET" || req.method === "HEAD",
       closed: false, done: false, timedOut: false, held: new Set(), waiting: new Set(), cancelling: null };
@@ -93,14 +96,16 @@ async function checkout(pool) {
   if (!sc) return align(await pool.connect(), 0, null);
   if (sc.closed) throw abandoned();
   const client = await new Promise((resolve, reject) => {
-    let settled = false;
-    const fail = (e) => { if (!settled) { settled = true; clearTimeout(timer); sc.waiting.delete(fail); reject(e); } };
-    const timer = setTimeout(() => { counters.checkoutTimeouts++; sc.timedOut = true; fail(tooLong()); }, sc.limitMs);
-    sc.waiting.add(fail);
+    // One wait: it ends once, by a connection, the limit, or an abandon (close()).
+    const wait = { settled: false, timer: null, fail: null };
+    const end = () => { wait.settled = true; clearTimeout(wait.timer); sc.waiting.delete(wait.fail); };
+    wait.fail = (e) => { if (!wait.settled) { end(); reject(e); } };
+    wait.timer = setTimeout(() => { counters.checkoutTimeouts++; sc.timedOut = true; wait.fail(tooLong()); }, sc.limitMs);
+    sc.waiting.add(wait.fail);
     pool.connect().then(c => {
-      if (settled) return c.release();
-      settled = true; clearTimeout(timer); sc.waiting.delete(fail); resolve(c);
-    }, fail);
+      if (wait.settled) return c.release();
+      end(); resolve(c);
+    }, wait.fail);
   });
   return align(client, sc.limitMs, sc);
 }
@@ -135,11 +140,21 @@ function translate(e) {
 // A held client's next statement after an abandon is never started.
 function guard() { const sc = live(); if (sc && sc.closed) throw abandoned(); }
 
+// Work several requests wait on together (one org's Insights): it keeps the
+// default limit but is no one request's, so one caller's abandon never
+// cancels it for the others.
+function shared(fn) {
+  if (!scopes.getStore()) return fn();
+  const sc = { limitMs: DEFAULT_MS, limitName: "default", read: false, closed: false, done: false, timedOut: false,
+    held: new Set(), waiting: new Set(), cancelling: null };
+  return scopes.run(sc, fn);
+}
+
 // A route that needs a named longer limit from here on (LONGER covers most).
 function useLimit(name) {
   if (!NAMED[name]) throw new Error(`requestLimits: no limit named ${name}`);
   return (req, res, next) => { const sc = live(); if (sc) { sc.limitMs = NAMED[name]; sc.limitName = name; } next(); };
 }
 
-module.exports = { DEFAULT_MS, NAMED, LONGER, limitFor, TOO_LONG, middleware, checkout, release, translate, guard, useLimit,
+module.exports = { DEFAULT_MS, NAMED, LONGER, limitFor, TOO_LONG, middleware, checkout, release, translate, guard, useLimit, shared,
   cancelPool, live, stats: () => ({ ...counters }), isCancel };

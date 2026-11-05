@@ -255,12 +255,12 @@ export function monthlyAskCents({ usualGiftCents = 0, giftsPerYear = 0, cadenceW
 
 // `en-US`, named. Whole dollars when the amount is whole, which every friendly
 // rung is — a suggested ask of "$2,500.00" reads like an invoice.
+// LOAD-1: the two formatters made once. A new Intl.NumberFormat per call was
+// the most expensive line on the web under load (Insights reads every gift).
+const USD_WHOLE = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const USD_CENTS = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export function dollars(cents) {
   const c = Math.round(Number(cents) || 0);
-  const whole = c % 100 === 0;
-  return new Intl.NumberFormat("en-US", {
-    style: "currency", currency: "USD",
-    minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : 2,
-  }).format(c / 100);
+  return (c % 100 === 0 ? USD_WHOLE : USD_CENTS).format(c / 100);
 }
 

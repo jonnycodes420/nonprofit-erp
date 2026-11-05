@@ -79,15 +79,19 @@ jobs:
       - name: Install server deps (locked)
         run: npm ci
 
-      - name: Boot the server and wait for /ready
+      # As prod runs: the web serves and enqueues (STEWARD_PROCESS=web), and a
+      # worker of its own runs the queue (what follows each gift and call).
+      - name: Boot the web and the worker, and wait for /ready
         run: |
           mkdir -p load
-          nohup node server.js > load/server.log 2>&1 &
+          STEWARD_PROCESS=web nohup node server.js > load/server.log 2>&1 &
           for i in $(seq 1 90); do
-            curl -sf http://localhost:5601/ready >/dev/null && { echo "server up"; exit 0; }
+            curl -sf http://localhost:5601/ready >/dev/null && break
             sleep 2
           done
-          echo "The server never became ready."; tail -80 load/server.log; exit 1
+          curl -sf http://localhost:5601/ready >/dev/null || { echo "The web never became ready."; tail -80 load/server.log; exit 1; }
+          PORT=5605 DB_POOL_MAX=5 nohup node worker.js > load/worker.log 2>&1 &
+          echo "web and worker up"
 
       - name: Seed ten orgs of made-up people
         run: node scripts/load/ten-orgs.js seed

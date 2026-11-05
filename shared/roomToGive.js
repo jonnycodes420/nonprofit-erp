@@ -32,9 +32,12 @@ export const RANK = { strong: 2, some: 1, unknown: 0 };
 export const STRONG_CAPACITY_MULTIPLE = 5;
 export const BIG_GIFT_MULTIPLE = 3;
 
+// LOAD-1: made once; toLocaleString builds a formatter on every call.
+const FMT_WHOLE = new Intl.NumberFormat("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const FMT_CENTS = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export function dollars(cents) {
   const c = Math.abs(Math.round(Number(cents) || 0));
-  return "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
+  return "$" + (c % 100 ? FMT_CENTS : FMT_WHOLE).format(c / 100);
 }
 export function rangeText(lo, hi) {
   if (lo == null && hi == null) return null;
