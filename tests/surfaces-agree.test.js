@@ -30,7 +30,7 @@
 // fixtures and "today" are one day for the whole run, never CI's real hour
 // (house.md: tests set their clock). A proof run that pins its own instant
 // (STEWARD_TEST_NOW) keeps that instant. Its red runs on CI (4 Nov 22:07 and
-// 5 Nov 23:10 New York) were the queue, not the hour: see agrees() below.
+// 5 Nov 23:10 New York) were not the hour: see agrees() below.
 "use strict";
 if (!require("./lib/pinnedStack").runPinnedOrContinue(__filename)) return;
 const bcrypt = require("bcryptjs");
@@ -49,13 +49,14 @@ async function freshOrg(id) {
   return login(email, PASSWORD);
 }
 // One check, reported as a PASS or the precise list of disagreements.
-// FLAKE-1: asked once the org's work has settled. An import's score pass
-// runs on the queue a few seconds after the import answers, and the lists
-// read whichever of donor_rhythm and donor_scores was computed last
-// (lapse.ON_TIME_THROUGH), so a check that ran while it was mid-way saw
-// "Pia January: the profile is tagged Lapsing and says On track" (CI, 5 Nov
-// 04:10 UTC; and here, once in ten, at a pinned noon). Every surface must
-// agree once the work a change queued has run; that is what is checked.
+// FLAKE-1: asked once the org's work has settled (the import's score pass
+// runs on the queue seconds after the import answers, and the lists read
+// whichever of donor_rhythm and donor_scores was computed last). This does
+// NOT cure "Pia January: the profile is tagged Lapsing and says On track":
+// it still shows about once in ten local runs at a pinned noon with the
+// queue drained. That is the product disagreeing with itself for a Jan 1
+// yearly giver, a finding for the next brief (FLAKE-1 report), and this
+// check is right to go red on it.
 async function agrees(name, orgId, tok, extra = {}) {
   const settled = await drainQueue({ orgId, scores: true, timeout: 120000 });
   if (!settled.drained) console.log(`        (${orgId}: ${settled.waiting} queued job(s) still waiting after 120 s; checking anyway)`);
