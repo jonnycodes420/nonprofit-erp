@@ -27,7 +27,7 @@ const fs = require("fs");
 const net = require("net");
 const os = require("os");
 const path = require("path");
-const { nyNoon, civilDay, RealDate } = require("../clock");
+const { nyNoon, civilDay, dayOffset, testNow, RealDate } = require("../clock");
 
 const ROOT = path.join(__dirname, "..", "..");
 const CLOCK = path.join(ROOT, "tests", "clock.js");
@@ -35,14 +35,10 @@ const freePort = () => new Promise(res => { const s = net.createServer(); s.list
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // The next noon in New York at least a minute from now.
-function nextNoon(now = RealDate.now()) {
-  const today = civilDay(now);
-  let t = nyNoon(today);
-  if (t < now + 60000) {
-    const [y, m, d] = today.split("-").map(Number);
-    t = nyNoon(new RealDate(RealDate.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10));
-  }
-  return t;
+// (Only an unpinned run gets here, so testNow() is the machine's own now.)
+function nextNoon(now = testNow()) {
+  const t = nyNoon(civilDay(now));
+  return t >= now + 60000 ? t : nyNoon(dayOffset(1, now));
 }
 
 async function pg(url, sqls) {
@@ -71,7 +67,7 @@ async function main(file) {
   const dbName = `${u.pathname.slice(1).slice(0, 40)}_pin${process.pid}`.replace(/[^a-z0-9_]/gi, "_");
   const pinUrl = new URL(baseUrl); pinUrl.pathname = "/" + dbName;
   const at = nextNoon();
-  const offset = at - RealDate.now();
+  const offset = at - testNow();
   console.log(`  pinned clock: ${new RealDate(at).toISOString()} (noon in New York), a stack of its own on database ${dbName}`);
 
   // Created and dropped from the server's maintenance database, so the drop
