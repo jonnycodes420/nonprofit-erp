@@ -24,24 +24,33 @@ A walk on 5 Nov and our own checks found seven money figures that did not hold. 
    `donors.total_giving`, a cache any later recompute moves with no gift change (the boot's `keepEarlierTotals`
    repair counts credit rows; a recompute after an unrelated write snaps a stale value). Both read Lifetime live
    (`shared/numbers/lifetime.js`). The exact +$160 row is in prod data this build does not read.
-4. **The award books nothing.** GRANTS-FIX made `PUT /grants/:id/award` the only way into Awarded and it wrote
-   the pledge only; the general PUT's ledger stamp never ran again. `server/grants/awardLedger.js` is that row
-   (amount awarded, the funder- or program-named fund else the first unrestricted fund, the grants revenue
-   account, the org's today), written inside one transaction with the pledge and the grant's update
-   (`withAmbientTransaction`). The general PUT's stamp calls the same writer. `scripts/ops/ledger2-award-rows.js`
-   backfills the awards recorded since GRANTS-FIX with no row (dry run first).
+4. **The award and the ledger.** GRANTS-FIX made `PUT /grants/:id/award` the only way into Awarded and it wrote
+   the pledge only, while the general PUT still stamped the whole award as income on a move back into Awarded.
+   This build first made the award write that income row too, with a backfill. Then GIFTS-1 (#342) landed
+   Record a payment received: a gift on the award pledge through `recordGift`, which books its own income. The
+   award row would have counted the money twice ($15,000 award + $10,000 payment = $25,000 of income). Jonathan
+   ruled the award books exactly as an ordinary pledge, and an ordinary pledge writes nothing to the ledger
+   (`pledgeWrite.js`). So the award writes no ledger row, the general PUT's stamp (`stampGrantAward`) is gone,
+   and there is no backfill: `server/grants/awardLedger.js` and `scripts/ops/ledger2-award-rows.js` were
+   removed before merging. The award route keeps its one transaction for the pledge and the grant's award.
 5. **"Gives through".** The rule already pooled `owner`/`works_at` (POLISH-4) and the tag read Current. What stayed
    Lapsed was the stored stage that Home's "my stats", its Lapsed list and the work list read: the after-change
    step un-lapses a person whose unit gave only when an AUTOMATIC Lapsed move was on record, and an import or a
    merge writes the stage with no move. Now anyone an officer did not move to Lapsed by hand is un-lapsed.
    **Donor since** read the stored `first_gift_date`; `/people/:id` reads the first gift live (`FIRST_DATE`).
 
-Tests: `tests/ledger2-money-figures.test.js`, 19 checks. Run against origin/main before the last two were added:
+Tests: `tests/ledger2-money-figures.test.js`. §4 is the award: $15,000 awarded writes nothing, a $10,000
+payment grows Finance income by $10,000 (never $25,000), Reporting → Awarded on the edit books nothing, and the
+grant shows $5,000 remaining. Red on the code before the change (the award's row: $25,000). Run against origin/main before the last two were added:
 15 of 17 red (the two green: the file import and the link being written). Added after, not run on main: the
 calendar-year chip and the truth-check pass. TRUTH-1's check
 (`tests/lib/surfacesAgree.js`) adds: each touched person's Restricted + Unrestricted is their Lifetime, and the
 key's fiscal year is the Board's, Fundraising's and the giving summary's. Planted: `fiscalYear.fiscalYear` from
 the UTC date (§1 red, "FY 2027–28"); the split dropping no-fund gifts (§2 red, $250 short).
+
+Found, not fixed (next brief): award stamps written before GRANTS-FIX by the old general-PUT stamp
+(`source='grant'`, no `gift_id`) may still be on prod ledgers. For such a grant, a payment recorded now (or
+`scripts/ops/gifts1-grant-received.js --apply`) books the money a second time. Not read here (prod data).
 
 Not done: the Home goal banner, GoalRow and the Dashboards goal card still say the pace without the hover
 arithmetic; `computeFundraisingPace` reads UTC today for the pace; Home's "my stats" pipeline total still sums

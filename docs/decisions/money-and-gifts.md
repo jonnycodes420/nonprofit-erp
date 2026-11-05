@@ -74,8 +74,9 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   (`hasUnledgeredGiving`), never a bare $0. (BUILD-26, BUILD-89S)
 - **Money from a person, foundation or grant enters through the gift or grant paths.** Finance's manual
   money-in is for non-donor revenue; the form routes a recognised donor or open grant to its flow. (FIX entity-routing)
-- **A grant award books the ledger at most once and never creates a gift.** `stampGrantAward` +
-  `uq_fin_txns_grant`; un-award deletes the auto stamp and unlinks (never deletes) an adopted manual row. (FIX entity-routing)
+- **A grant award writes nothing to the ledger and never creates a gift (LEDGER-2).** Like any pledge, its income is
+  its payments, each a gift `recordGift` stamps. `stampGrantAward` is gone; un-award still deletes an old auto stamp
+  (`source='grant'`) and unlinks (never deletes) an adopted manual row. (FIX entity-routing, LEDGER-2)
 - **Count a gift once, on the person whose money it was.** Soft credit is a row pointing at a gift
   (`gift_soft_credits`); no total, ledger or bookkeeper export reads it; reports add it only via `?credit=soft`. (BUILD-98)
 - **A soft or matching credit is in no "own giving" figure.** Lifetime, This year and the census's "Their own
@@ -234,6 +235,18 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   breakdown, fund balances) comes second. When nothing has ever posted (`/finance/summary` `ledgerEmpty`)
   the ledger is ONE card that says why and what fills it, never a row of $0s. Spending is never drawn in
   an error colour: expenses read ink, a negative surplus or cash on hand reads brass.
+- **A gift can belong to an event (GIFTS-1).** `gifts.event_id`, set from the gift form, a gift's edit,
+  Snap a check's confirm, each deposit line and the event page's Record a gift (attendee menu or the page),
+  validated in the org (`server/events/eventGifts.js`). The importer links a gift whose Event or Campaign
+  column names one event exactly; a name two events share links nothing. The event's Raised, the
+  attendee's Gift and the profile all read it through `EVENT_GIFT_MATCH`; nothing sums it again.
+- **A pledge's schedule is one generator (GIFTS-1).** `shared/depositSheet.js` `generateInstallments`:
+  weekly, monthly, quarterly, semiannual or yearly; each installment the even share to the cent, the
+  remainder on the LAST. The pledge form, its edit and the grant award step show `scheduleWords` of the
+  same rows before saving (`client/src/components/gifts/PledgeSchedule.jsx`). An edit re-plans through
+  PUT /pledges/:id/installments, which lays the new plan and re-applies every payment on the pledge
+  oldest first (`pledgeWrite.applyPayments`): a payment is never lost to a new schedule. A payment
+  against a named pledge auto-applies only to that pledge's oldest unpaid installment.
 - **A month-close tick is never vacuous (SWEEP-5).** A gift with no payment method ("Needs you") may be
   a check, so it counts against "Every check is on a deposit", as it does in the bookkeeper's file.
 

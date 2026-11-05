@@ -271,6 +271,9 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
     }
     if (!donorId) { await release(); return res.status(400).json({ error: "who", sentence: "Choose who this is from, or add them as a new person." }); }
     if (fundId && !fRows[0]) { await release(); return res.status(404).json({ error: "fund_not_found" }); }
+    // GIFTS-1: the event the check was given at, org-scoped like the fund.
+    const giftEvent = b.eventId ? await require("../server/events/eventGifts").eventOf(query, orgId, b.eventId) : null;
+    if (b.eventId && !giftEvent) { await release(); return res.status(404).json({ error: "event_not_found" }); }
 
     let giftId = null, pledgeId = null, duplicateOf = null, sentence = "", later = null, eventId = null;
     if (kind === "pledge") {
@@ -333,6 +336,7 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
           type: kind === "stock_gift" ? "stock" : "cash",
           checkNumber: kind === "check" ? (c.read && c.read.chequeNumber) || null : null,
           chequeAssetId: c.asset_id || null, receivedAt: c.received_at,
+          eventId: giftEvent ? giftEvent.id : null,
           // As written, less what the bank-number scrub took out.
           memo: String((c.read && c.read.memo) || "").replace(/\s*\[bank number not kept\]/g, "").replace(/\s{2,}/g, " ").trim() || null,
           ...(pl ? { pledgeId: pl.pledgeId, ...(pl.installmentId ? { applyToInstallmentId: pl.installmentId } : { applyInstallment: false }) } : {}),

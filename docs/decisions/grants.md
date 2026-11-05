@@ -3,9 +3,10 @@
 Read this when you touch funders, grant deadlines, documents, restricted money, grant reports or grant import.
 
 ## Rules
-- **Recording an award books its income (LEDGER-2).** `PUT /grants/:id/award` writes the pledge, the grant's award
-  and its one ledger income row (`server/grants/awardLedger.js`, `uq_fin_txns_grant`) in one transaction. Any new
-  path into Awarded calls the same writer; awards recorded without it are booked by `scripts/ops/ledger2-award-rows.js`.
+- **An award books as a pledge does: nothing on the ledger (LEDGER-2).** `PUT /grants/:id/award` writes the pledge
+  and the grant's award in one transaction and no `fin_transactions` row; no path into Awarded writes one. The
+  income is each payment, the gift on the award pledge that `recordGift` stamps (GIFTS-1). A $15,000 award with
+  $10,000 received is $10,000 of income, never $25,000. Adopting a manual income row only links it (`grant_id`).
 - **Every grant deadline is one task, kept in step by the database (FIX-31).** `trg_milestone_task_sync` writes a
   `link_kind='deadline'` task ("[Funder]: [kind] due", the officer's, on the date, linking the grant) and, for a
   proposal, LOI or report, one `deadline_start` heads-up `orgs.grant_headsup_days` ahead (default 14, 0 = off).
@@ -101,6 +102,11 @@ Read this when you touch funders, grant deadlines, documents, restricted money, 
   file; figures are stored at draft time, not recomputed. (BUILD-100 grants)
 - **Import grants as a preset on the one mapper (shared/grantImport.js), never a second importer.** A name
   match may not land on a person: that row is refused by line with nothing written. (BUILD-100 grants)
+- **Received is the payments, never a typed number (GIFTS-1).** "Record a payment received" on an awarded
+  grant writes a gift from the funder through POST /donors/:id/gifts with the award pledge, so it is on
+  the ledger, receipted and waits for its deposit like any pledge payment. Received is
+  `GRANT_RECEIVED`, Remaining the award less it. `grants.received` is no longer written by the edit;
+  `scripts/ops/gifts1-grant-received.js` turns an old typed value into the one payment it stood for.
 - **Match funders by EIN before name, and keep the entity type in the name key.** `donors.funder_ein`
   has a partial unique index; "Sunrise Foundation" and "Sunrise Trust" are two funders. A 409
   `ein_already_on_file` is a merge and is said as one. (BUILD-100 grants)

@@ -14,16 +14,18 @@
 //      Reserve is listed, the no-fund money is Unrestricted.
 //   §3 goal pace equals its stated arithmetic; an officer's portfolio is the
 //      sum of their donors' Lifetime, and a stale stored total does not move it.
-//   §4 recording an award writes its ledger income row (amount, grant, date);
-//      the backfill's dry run lists a pre-fix award, --apply writes it once,
-//      a second run writes nothing.
+//   §4 an award books as an ordinary pledge does: nothing on the ledger. A
+//      $15,000 award, then a $10,000 payment recorded on it (GIFTS-1's Record
+//      a payment received): Finance income grows by $10,000, never $25,000;
+//      the grant shows $5,000 remaining; moving it Reporting → Awarded on the
+//      edit books nothing either.
 //   §5 a person marked Lapsed with no move (as an import writes it), linked
 //      "gives through" a business that gives today, is not Lapsed on the tag,
 //      Re-engage or Home; "Donor since" is the first gift's year.
 // HOW IT GOES RED ON MAIN: no calendarYear / reportYearsFrom and a browser
 // clock in Reports (§1); General Operating and Gala Reserve gifts in neither
 // bucket (§2); no paceMath, and the portfolio reads the stored total (§3); the
-// award writes no ledger row and there is no backfill (§4); the person stays
+// edit's move into Awarded stamps the full award as income (§4); the person stays
 // Lapsed, and "Donor since" reads the stored first gift date (§5).
 // PLANTED: fiscalYear.fiscalYear reading the UTC date (§1 red); the split
 // dropping no-fund gifts (§2 red). Standard scratch stack (tests/README.md).
@@ -32,7 +34,6 @@
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
-const { Client } = require("pg");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
 const { civilDay, dayOffset } = require("./clock");
 const { assertSurfacesAgree } = require("./lib/surfacesAgree");
@@ -43,7 +44,6 @@ const ORG = "org_ldg2money";
 const PASSWORD = "loadtest1234";
 const C = v => Math.round(Number(v || 0) * 100);
 const TODAY = civilDay(undefined, "America/New_York");
-const DB_URL = process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest";
 const NY = { timezone: "America/New_York", vocabulary_json: '{"fiscal_year_start_month":7}' };
 
 async function freshOrg(id, name) {
@@ -164,40 +164,34 @@ async function main() {
     ok("§3 an officer's portfolio is the sum of their donors' Lifetime, and a stale stored total does not move it", o0 === sum0 && o1 === sum0, JSON.stringify({ sum0, o0, o1 }));
   }
 
-  // ── §4 the award books income ───────────────────────────────────────────
+  // ── §4 an award books as a pledge does: the payments are the income ─────
   {
     const funder = await person("Juniper Ridge Foundation (test)", { kind: "organization" });
-    const cg = await api("POST", "/grants", tok, { funder: "Juniper Ridge Foundation (test)", program: "Reading Year (test)", amount: 40000, status: "applied" });
+    const cg = await api("POST", "/grants", tok, { funder: "Juniper Ridge Foundation (test)", program: "Reading Year (test)", amount: 15000, status: "applied" });
     const gid = (cg.body && (cg.body.id || (cg.body.grant && cg.body.grant.id)));
     await q(`UPDATE grants SET funder_donor_id=$1 WHERE id=$2 AND org_id=$3`, [funder, gid, ORG]);
-    const aw = await api("PUT", `/grants/${gid}/award`, tok, { amountAwarded: 35000 });
-    const rows = await q(`SELECT amount, date, type, source, created_by FROM fin_transactions WHERE org_id=$1 AND grant_id=$2`, [ORG, gid]);
-    ok("§4 recording an award writes its ledger income row: the awarded amount, today, the actor", aw.status === 200 && rows.length === 1
-       && C(rows[0].amount) === 3500000 && String(rows[0].date).slice(0, 10) === TODAY && rows[0].type === "income" && rows[0].source === "grant" && rows[0].created_by === "u_" + ORG,
-       JSON.stringify({ status: aw.status, rows }));
-    const aw2 = await api("PUT", `/grants/${gid}/award`, tok, { amountAwarded: 35000 });
-    const rows2 = await q(`SELECT id FROM fin_transactions WHERE org_id=$1 AND grant_id=$2`, [ORG, gid]);
-    ok("§4 pressing it twice books it once", aw2.status === 200 && rows2.length === 1, rows2.length);
-    // An award recorded before the fix: a pledge, an awarded date, no ledger row.
-    const g2 = await api("POST", "/grants", tok, { funder: "Juniper Ridge Foundation (test)", program: "Summer Bridge (test)", amount: 12000, status: "applied" });
-    const gid2 = g2.body && (g2.body.id || (g2.body.grant && g2.body.grant.id));
-    await q(`UPDATE grants SET funder_donor_id=$1 WHERE id=$2 AND org_id=$3`, [funder, gid2, ORG]);
-    await api("PUT", `/grants/${gid2}/award`, tok, { amountAwarded: 12000 });
-    await q(`DELETE FROM fin_transactions WHERE org_id=$1 AND grant_id=$2`, [ORG, gid2]);
-    let S = null;
-    try { S = require("../scripts/ops/ledger2-award-rows"); } catch (e) { S = { run: async () => ({ booked: -1, orgs: {}, missing: e.code }) }; }
-    const c = new Client({ connectionString: DB_URL }); await c.connect();
-    const lines = [], log = l => lines.push(l);
-    const dry = await S.run({ client: c, orgId: ORG, log });
-    const afterDry = await q(`SELECT id FROM fin_transactions WHERE org_id=$1 AND grant_id=$2`, [ORG, gid2]);
-    const ap = await S.run({ client: c, apply: true, orgId: ORG, log });
-    const booked = await q(`SELECT amount, created_by FROM fin_transactions WHERE org_id=$1 AND grant_id=$2`, [ORG, gid2]);
-    const again = await S.run({ client: c, apply: true, orgId: ORG, log });
-    await c.end();
-    ok("§4 the backfill's dry run lists the pre-fix award and writes nothing; --apply books it once with its actor; a second run finds nothing",
-       dry.booked === 1 && (dry.orgs[ORG] || {}).booked?.[0] === gid2 && afterDry.length === 0 && ap.booked === 1
-       && booked.length === 1 && C(booked[0].amount) === 1200000 && booked[0].created_by === "system:scripts/ops/ledger2-award-rows" && again.booked === 0,
-       JSON.stringify({ dry: dry.booked, ap: ap.booked, again: again.booked, booked, lines: lines.slice(0, 6) }));
+    const income = async () => C(((await api("GET", "/finance/summary?yearMode=fiscal", tok)).body || {}).ytdRevenue);
+    const grantRows = async () => (await q(`SELECT amount FROM fin_transactions WHERE org_id=$1 AND grant_id=$2`, [ORG, gid])).length;
+    const i0 = await income();
+    const aw = await api("PUT", `/grants/${gid}/award`, tok, { amountAwarded: "15000.00" });
+    const i1 = await income();
+    ok("§4 recording a $15,000 award writes nothing to the ledger, as a pledge writes nothing", aw.status === 200 && i1 === i0 && (await grantRows()) === 0,
+       JSON.stringify({ status: aw.status, i0, i1, rows: await grantRows() }));
+    const plan = (await api("GET", `/grants/${gid}/award-plan`, tok)).body || {};
+    const pay = await api("POST", `/donors/${funder}/gifts`, tok, { amount: "10000.00", date: TODAY, payment_method: "ACH / bank transfer", pledgeId: plan.pledge && plan.pledge.id });
+    // The edit's move back into Awarded is the other door the old stamp used.
+    const base = { funder: "Juniper Ridge Foundation (test)", program: "Reading Year (test)", amount: 15000 };
+    const toRep = await api("PUT", `/grants/${gid}`, tok, { ...base, status: "reporting" });
+    const toAw = await api("PUT", `/grants/${gid}`, tok, { ...base, status: "awarded" });
+    const i2 = await income();
+    const g = (await api("GET", `/grants/${gid}`, tok)).body || {};
+    const plan2 = (await api("GET", `/grants/${gid}/award-plan`, tok)).body || {};
+    ok("§4 a $10,000 payment on it: Finance income grows by $10,000 (never $25,000), and Reporting → Awarded books nothing",
+       pay.status < 300 && toRep.status === 200 && toAw.status === 200 && i2 - i0 === 1000000 && (await grantRows()) === 0,
+       JSON.stringify({ pay: pay.status, toRep: toRep.status, toAw: toAw.status, grew: i2 - i0, rows: await grantRows() }));
+    ok("§4 the grant shows $5,000 remaining of $15,000, with $10,000 received",
+       C(g.remaining) === 500000 && C(g.received) === 1000000 && plan2.outstandingCents === 500000 && plan2.receivedCents === 1000000,
+       JSON.stringify({ remaining: g.remaining, received: g.received, outstanding: plan2.outstandingCents, rec: plan2.receivedCents }));
   }
 
   // ── §5 "gives through" keeps both off Lapsed; Donor since ───────────────

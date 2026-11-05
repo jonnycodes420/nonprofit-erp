@@ -15,7 +15,6 @@ const TL = require("../../timelineLine");
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
 const PW = require("../../pledgeWrite");   // FIX-60: the one writer of a pledge and its installments
 const FL = require("./funderLink");   // GRANTS-FIX: the one resolver of a grant's funder
-const AL = require("./awardLedger");   // LEDGER-2: an award books its income
 const { withAmbientTransaction } = require("../../db");
 
 const routers = {
@@ -24,7 +23,7 @@ const routers = {
 
 function mount(ctx) {
 const {
-  AGENT_MODEL, NOT_YOURS, OU, SYS_AUTO, actor, agentGate, checkWriteAccess, ensureOrgLedger, grantBalanceFrom,
+  AGENT_MODEL, NOT_YOURS, OU, actor, agentGate, checkWriteAccess, grantBalanceFrom,
   grantDocRow, grantDocs, grantImportMod, grantMoneyRows, grantMsMod, grantRow, grantShapeMod,
   markMilestoneDone, mayEditLogged, milestoneRow, money, orgFundNamesG, orgLeadDays, orgOfficerNames,
   orgToday, orgTz, parseMoneyOrThrow, processGrantMilestones, putThemeAsset, query, queryTx,
@@ -45,11 +44,17 @@ const {
 async function withGrantReceived(orgId, grants) {
   const pledged = grants.filter(g => g && g.award_pledge_id);
   if (!pledged.length) return grants;
+  // GIFTS-1: the one received (shared/numbers/pledges GRANT_RECEIVED), and
+  // what the funder still owes beside it.
   const sums = await query(
-    `SELECT pledge_id, COALESCE(SUM(amount),0) AS s FROM gifts g WHERE org_id=? AND pledge_id = ANY(?::text[]) AND ${NUMBERS.money.MONEY("g")} GROUP BY pledge_id`,
-    [orgId, pledged.map(g => g.award_pledge_id)]);
-  const by = new Map(sums.map(r => [r.pledge_id, money.toDollars(money.toCents(r.s) || 0)]));
-  for (const g of pledged) g.received = (by.get(g.award_pledge_id) || 0).toFixed(2);
+    `SELECT gr.id, ${NUMBERS.pledges.GRANT_RECEIVED("gr")} AS s FROM grants gr WHERE gr.org_id=? AND gr.id = ANY(?::text[])`,
+    [orgId, pledged.map(g => g.id)]);
+  const by = new Map(sums.map(r => [r.id, money.toCents(r.s) || 0]));
+  for (const g of pledged) {
+    const rc = by.get(g.id) || 0, ac = money.toCents(g.amount_awarded) || 0;
+    g.received = money.toDollars(rc).toFixed(2);
+    g.remaining = money.toDollars(Math.max(0, ac - rc)).toFixed(2);
+  }
   return grants;
 }
 let app = routers.r1;
@@ -69,23 +74,12 @@ app.get("/grants", requireAuth, wrap(async (req, res) => {
   res.json(grants.map(g => ({ ...g, history: JSON.parse(g.history || "[]") })));
 }));
 
-// Finance entity-routing FIX (2026-08-04) — the ONE grant-award → ledger stamp.
-// source='grant' (badged in the unified ledger), grant_id + the partial-unique
-// uq_fin_txns_grant (db.js) make it idempotent BY CONSTRUCTION: re-award after
-// un-award, a redundant awarded→awarded PUT, or a manual row already adopted as
-// this grant's stamp (grant_id taken) can never double-insert. Fund matching is
-// the original BUILD-09 heuristic (funder/program-named fund, else the first
-// unrestricted fund).
-async function stampGrantAward(orgId, grantId, funder, program, amount, by = SYS_AUTO) {
-  // BUILD-58 W-3: the award stamp resolves its accounts through the ONE
-  // ledger helper (grants revenue account, contributions fallback) — a
-  // chartless org is provisioned loudly, never a null-account booking.
-  // LEDGER-2: the row itself is server/grants/awardLedger.js, which the award route writes too.
-  const ledgerA = await ensureOrgLedger(orgId, { heal: true });
-  await AL.bookAwardIncome(query, { orgId, grantId, funder, program, amount, ledger: ledgerA, by,
-    date: orgToday(await orgTz(orgId)) })   // ORG_TZ_SEAM_OK (BUILD-75)
-    .catch(e => console.error("[ledger] grant award stamp failed:", e.message));
-}
+// LEDGER-2: an award writes nothing to the ledger, exactly as an ordinary
+// pledge writes nothing. The income is booked by each payment, the gift on the
+// award pledge that recordGift stamps (GIFTS-1's Record a payment received).
+// The award stamp that used to be written here (stampGrantAward, on Awarded)
+// counted the money a second time once a payment was recorded on it: a $15,000
+// award with $10,000 received read $25,000 of income.
 
 app.post("/grants", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { funder, program, amount, status, deadline, reportDue, officer, notes } = req.body;
@@ -120,15 +114,12 @@ app.post("/grants", requireAuth, checkWriteAccess, wrap(async (req, res) => {
      status || "prospecting", deadline || "", reportDue || "", officer || "", notes || "",
      campaignId, isAwarded ? new Date().toISOString() : null, actor(req).id, actor(req).name]
   );
-  // A grant created directly IN 'awarded' books its income too (this path
-  // previously never stamped the ledger — only the PUT transition did).
-  if (isAwarded) await stampGrantAward(req.user.orgId, id, funder, program, amount, actor(req));
   const rows = await query("SELECT * FROM grants WHERE id = ?", [id]);
   res.status(201).json({ ...rows[0], funderLink: { how: fl.how, why: fl.why || null } });
 }));
 
 app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { funder, program, amount, received, status, deadline, reportDue, officer, notes, description, requirements, adoptTxnId } = req.body;
+  const { funder, program, amount, status, deadline, reportDue, officer, notes, description, requirements, adoptTxnId } = req.body;
   if (!funder) return res.status(400).json({ error: "Funder required" });
   const orgId = req.user.orgId;
 
@@ -195,20 +186,22 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
 
   const affected = await run(
     `UPDATE grants
-     SET funder=?,program=?,amount=?,received=?,status=?,deadline=?,report_due=?,officer=?,notes=?,description=?,requirements=?,campaign_id=?,awarded_at=?,updated_at=NOW()
+     SET funder=?,program=?,amount=?,status=?,deadline=?,report_due=?,officer=?,notes=?,description=?,requirements=?,campaign_id=?,awarded_at=?,updated_at=NOW()
      WHERE id=? AND org_id=?`,
-    [funder, program || "", amount || 0, received || 0, status, deadline || "",
+    // GIFTS-1: Received is not typed any more. It is the payments recorded on
+    // the award (Record a payment received); the old typed column is kept as
+    // it was, for scripts/ops/gifts1-grant-received.js to reconcile.
+    [funder, program || "", amount || 0, status, deadline || "",
      reportDue || "", officer || "", notes || "", description || "", requirements || "",
      newCampaignId, newAwardedAt,
      req.params.id, orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Grant not found" });
 
-  // Grant awarded → the ledger income books EXACTLY ONCE (uq_fin_txns_grant).
-  // Either by adopting the caller-named manual row as the stamp (the money was
-  // already logged — link it, don't double-book) or by inserting the auto
-  // stamp. Adoption keeps the treasurer's own date/fund/account and re-badges
-  // the row source='grant'.
+  // Grant awarded → nothing new is booked (LEDGER-2: the payments book the
+  // income). A caller-named manual income row the treasurer already entered for
+  // this award is linked to it (grant_id, uq_fin_txns_grant) so it is marked as
+  // the award's money; it keeps its own date, fund and account.
   if (status === 'awarded' && prevStatus !== 'awarded') {
     let adopted = false;
     if (adoptTxnId) {
@@ -226,7 +219,6 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
         new: { grant_id: req.params.id },
       }).catch(() => {});
     }
-    if (!adopted) await stampGrantAward(orgId, req.params.id, funder, program, amount, actor(req));
   }
 
   // Un-award (awarded_at cleared — the grant moved BACK to a pursuing or
@@ -293,10 +285,8 @@ app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(asy
   // ALREADY AWARDED WRITES NOTHING NEW. A second press must not produce a second
   // pledge — the commitment exists, and a duplicate would double it in every
   // total the funder appears in.
-  // LEDGER-2: the pledge, the grant's award and its ledger income row are one
-  // transaction: all three exist, or none does.
-  const ledgerA = await ensureOrgLedger(orgId, { heal: true });
-  const by = actor(req);
+  // LEDGER-2: the pledge and the grant's award are one transaction: both exist,
+  // or neither does. No ledger row: the payments book the income.
   let pledgeId = g.award_pledge_id || null;
   const refused = await withAmbientTransaction(async () => {
   if (!pledgeId) {
@@ -325,8 +315,6 @@ app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(asy
     [toDollars(awardedCents), pledgeId,
      req.body.restriction || null, req.body.restrictedFrom || null, req.body.restrictedUntil || null,
      g.id, orgId]);
-  await AL.bookAwardIncome(query, { orgId, grantId: g.id, funder: g.funder_name || g.funder, program: g.program,
-    amount: toDollars(awardedCents), date: today, ledger: ledgerA, by });
   return null;
   });
   if (refused) return res.status(refused.status).json(refused.body);

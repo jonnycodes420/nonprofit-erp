@@ -355,7 +355,8 @@ app.put("/grants/checklist/:taskId", requireAuth, checkWriteAccess, wrap(async (
 // gives every other screen, so it foots to the cent.
 app.get("/grants/:id/award-plan", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
-  const [g] = await query(`SELECT id, funder, funder_donor_id, award_pledge_id, amount_awarded, status FROM grants WHERE id=? AND org_id=?`, [req.params.id, orgId]);
+  const [g] = await query(`SELECT gr.id, gr.funder, gr.funder_donor_id, gr.award_pledge_id, gr.amount_awarded, gr.status, d.name AS funder_name
+    FROM grants gr LEFT JOIN donors d ON d.id = gr.funder_donor_id AND d.org_id = gr.org_id WHERE gr.id=? AND gr.org_id=?`, [req.params.id, orgId]);
   if (!g) return res.status(404).json({ error: "Grant not found" });
   if (!g.award_pledge_id) return res.json({ pledge: null, installments: [], receivedCents: 0, awardedCents: cents(g.amount_awarded), canRecord: !!g.funder_donor_id,
     sentence: g.funder_donor_id ? "No award is recorded yet. Record it with its installments and each payment links itself when it arrives." : "Link this grant to its funder on file before recording the award." });
@@ -364,16 +365,28 @@ app.get("/grants/:id/award-plan", requireAuth, wrap(async (req, res) => {
     `SELECT pi.id, pi.seq, pi.due_date, pi.amount, pi.paid_gift_id, pi.paid_at, gf.date AS gift_date, gf.amount AS gift_amount
        FROM pledge_installments pi LEFT JOIN gifts gf ON gf.id=pi.paid_gift_id AND gf.org_id=pi.org_id
       WHERE pi.org_id=? AND pi.pledge_id=? ORDER BY pi.seq`, [orgId, g.award_pledge_id]);
-  const [rec] = await query(`SELECT COALESCE(SUM(amount),0) AS s FROM gifts g WHERE org_id=? AND pledge_id=? AND ${require("../shared/numbers/money").MONEY("g")}`, [orgId, g.award_pledge_id]);
+  // GIFTS-1: received is the one GRANT_RECEIVED (shared/numbers/pledges).
+  const [rec] = await query(`SELECT ${require("../shared/numbers/pledges").GRANT_RECEIVED("gr")} AS s FROM grants gr WHERE gr.id=? AND gr.org_id=?`, [g.id, orgId]);
   const receivedCents = cents(rec.s), awardedCents = cents(g.amount_awarded != null ? g.amount_awarded : (pl && pl.amount));
-  const paid = inst.filter(i => i.paid_gift_id).length;
+  // GIFTS-1: what is left on each installment, payments applied earliest
+  // first (shared/numbers/pledges installmentsLeft, the profile's own rule),
+  // so a part payment reads as one and never as "0 of 1 paid".
+  const PLN = require("../shared/numbers/pledges");
+  const left = PLN.installmentsLeft({ amount: awardedCents / 100, paid: receivedCents / 100,
+    installments: inst.map(i => ({ amount: Number(i.amount), paid: !!i.paid_gift_id })) });
+  const full = left.filter(i => i.left <= 0).length;
+  const outstandingCents = Math.max(0, awardedCents - receivedCents);
   const fmt = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   res.json({
     pledge: pl ? { id: pl.id, status: pl.status } : null,
-    installments: inst.map(i => ({ id: i.id, seq: i.seq, dueDate: i.due_date, amountCents: cents(i.amount),
+    funderId: g.funder_donor_id || null, funderName: g.funder_name || g.funder || "",   // GIFTS-1: who "Record a payment received" writes the gift from
+    installments: inst.map((i, k) => ({ id: i.id, seq: i.seq, dueDate: i.due_date, amountCents: cents(i.amount),
+      leftCents: Math.round((left[k] ? left[k].left : Number(i.amount)) * 100),
       gift: i.paid_gift_id ? { id: i.paid_gift_id, date: String(i.gift_date || "").slice(0, 10), amountCents: cents(i.gift_amount) } : null })),
-    receivedCents, awardedCents, outstandingCents: Math.max(0, awardedCents - receivedCents),
-    sentence: `${fmt(receivedCents)} received of ${fmt(awardedCents)} awarded: ${paid} of ${inst.length} ${inst.length === 1 ? "instalment" : "instalments"} paid, each by the gift shown.`,
+    receivedCents, awardedCents, outstandingCents,
+    sentence: outstandingCents === 0 && receivedCents > 0 ? `${fmt(receivedCents)} received of ${fmt(awardedCents)} awarded: paid in full.`
+      : `${fmt(receivedCents)} received of ${fmt(awardedCents)} awarded, ${fmt(outstandingCents)} still to come`
+        + (inst.length > 1 ? `: ${full} of ${inst.length} installments paid in full.` : "."),
   });
 }));
 }

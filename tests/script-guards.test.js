@@ -85,9 +85,9 @@ const GUARDED_WRITERS = [
   // GRANTS-FIX: links grants that carry only a typed funder name. Dry run by
   // default; --apply writes through writerDbUrl, links only, one audit row each.
   "grants-link-funders",
-  // LEDGER-2: books the ledger income of awards recorded without it. Dry run by
-  // default; --apply writes through writerDbUrl, one ledger and audit row each.
-  "ledger2-award-rows",
+  // GIFTS-1: one payment gift per grant for its typed Received less its recorded
+  // payments, through recordGift. Dry run by default; --apply writes through writerDbUrl.
+  "gifts1-grant-received",
   "backfill-campaign-attribution",                    "dedupe-finance-gift-stamps",
    "fix-build54-demo-photos",
   "fix-demo-finance-ledger",  "load-irs-ein-registry",

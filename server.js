@@ -1462,8 +1462,11 @@ async function recordGift(o) {
            JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
           WHERE i.org_id=? AND p.donor_id=? AND i.paid_gift_id IS NULL
             AND p.status='open' AND round(i.amount::numeric * 100)::bigint = ?
+            AND (?::text IS NULL OR p.id = ?)
           ORDER BY i.due_date ASC, i.seq ASC LIMIT 1`,
-        [orgId, o.donorId, Math.round(amount * 100)]).catch(() => []);
+        // GIFTS-1: a payment made against one pledge is applied to that
+        // pledge's oldest unpaid installment, never another pledge's.
+        [orgId, o.donorId, Math.round(amount * 100), o.pledgeId || null, o.pledgeId || null]).catch(() => []);
       if (inst) {
         const upd = await query(
           `UPDATE pledge_installments SET paid_gift_id=?, paid_at=NOW()
@@ -12897,4 +12900,5 @@ require("./routes/email").mount({
 // IMPORT-4: the in-process suites (numbers1-foot) record an undated gift
 // through the one gift path, as the spreadsheet import does.
 app.locals.recordGift = recordGift;
+app.locals.recalcPledgePayment = recalcPledgePayment;   // GIFTS-1: scripts/ops/gifts1-grant-received.js applies its payment
 module.exports = app;

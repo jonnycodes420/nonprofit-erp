@@ -9,6 +9,7 @@ import { T } from "./shared";
 import { apiFetch } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
+import EventField from "./gifts/EventField";   // GIFTS-1: the event a check was given at
 
 const KIND_LABEL = {
   check: "check", pledge: "pledge", daf_grant: "donor-advised fund grant", matching_gift: "matching gift",
@@ -172,6 +173,7 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
   const [date, setDate] = useState(isoDate(r.date) || isoDate(card.receivedAt) || new Date().toISOString().slice(0, 10));
   const [fundId, setFundId] = useState((card.fund && card.fund.id) || "");
   const [fundTouched, setFundTouched] = useState(false);
+  const [eventId, setEventId] = useState("");
   const [donor, setDonor] = useState(() => initialDonor(card));
   const [frequency, setFrequency] = useState(() => {
     const f = String(r.frequency || "").toLowerCase();
@@ -208,6 +210,7 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
   const confirm = async () => {
     setBusy(true); setErr("");
     const body = { kind: card.kind, amountCents: cents, date, fundId: fundId || null };
+    if (eventId && card.kind !== "pledge" && card.kind !== "matching_gift") body.eventId = eventId;
     if (payeeOff && logAnyway) body.logAnyway = true;
     if (card.tribute && !tributeOn) body.tribute = null;
     if (card.pledge && !pledgeOn) body.applyPledge = false;
@@ -290,6 +293,11 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
                   {!fundId && <option value="">Choose a fund</option>}
                   {(funds || []).filter(f => !f.retired_at || f.id === fundId).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                 </select>
+              </Field>
+            )}
+            {isMoney && card.kind !== "pledge" && card.kind !== "matching_gift" && (
+              <Field title="Event" wide>
+                <EventField value={eventId} onChange={setEventId} disabled={isReadOnly} testid="capture-event" />
               </Field>
             )}
           </div>
