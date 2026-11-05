@@ -3151,8 +3151,9 @@ app.post("/sequences/tracked/run", requireAuth, requireAdmin, wrap(async (req, r
 }));
 
 app.post("/sequences/process", requireAuth, requireAdmin, wrap(async (req, res) => {
-  await processSequences();
-  await autoEnroll();
+  // TRUST-1: the caller's org only. The all-org pass is the hourly job's.
+  await processSequences({ orgId: req.user.orgId });
+  await autoEnroll({ orgId: req.user.orgId });
   res.json({ success: true });
 }));
 

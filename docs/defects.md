@@ -4,6 +4,10 @@ One line each: where, what, severity (P1 wrong number, data loss, sends or break
 looks wrong; P3 polish), which build found it, and the build it belongs in. A build that fixes
 one deletes its line.
 
+## The campaign audience (TRUST-1, 4 Nov 2026)
+
+- **P1 · A campaign from the Thank-you or Year-end starter can't be sent from the editor.** The six campaign starters (`shared/emailTemplates.js`) write `{{gift_amount}}` and `{{total_giving}}`; opened in the block editor (`campaignBlocksFromHtml`), neither is a block field (`EMAIL_MERGE_FIELDS` has `{{last_gift_amount}}` and no lifetime total), so "Checked against" says "{{gift_amount}} is not a field Steward can fill" and Send stays shut. Same on main. The legacy send fills both. Suggested: the next editor build maps `gift_amount` to `last_gift_amount` in `campaignBlocksFromHtml` and adds a lifetime-total block field, with a test that every starter passes preflight.
+
 ## The P3 sweep's walk (POLISH-4, 2 Nov 2026)
 
 - **P3 · A person whose earlier gift has no date reads "Donor since 2026 · New" after one dated gift.** Noren Pemland (Insights fixture): a $5,000 gift with no date, then $250 today, and About says "New: gave once this fiscal year". The undated gift counts in Lifetime but not as giving before (the undated rule), so the lifecycle reads New. Suggested: NUMBERS-5 decides whether an undated gift is "giving before" for New and Donor since.
@@ -35,7 +39,7 @@ one deletes its line.
 
 ## The battery as parallel jobs (CI-2, 1 Nov 2026)
 
-- **P1? · Any org's admin running `POST /sequences/process` makes an active "at risk" sequence in every org.** `autoEnroll` (server.js) calls `ensureAtRiskSequence`, which loops over `SELECT id FROM orgs` and inserts an `active` at_risk sequence in each org that has none, demo orgs included. A write in other orgs from one org's request, and an active sending sequence nobody in that org turned on. Found by CI-2's shuffled battery: mail-suppression (which calls the route) ran before fix39-campaigns in one shard, the demo org got the sequence, and fix39's browser leg read "⏸ Pause" on Sequences (an emoji in product copy, `Communications.jsx` legacy sequence row). The severity needs Jonathan's read: whether that sequence can reach a donor. Suggested: a SEND-GATE or tenant build scopes the sweep to the caller's org (the hourly job keeps the all-org pass) and creates the sequence off, and the editor build drops the ⏸/▶ glyphs.
+- **P3 · Emoji glyphs in a legacy sequence row.** The Sequences row in `Communications.jsx` reads "⏸ Pause" / "▶" (product copy with emoji). Found by CI-2; the P1 it came with was fixed by TRUST-1. Suggested: the next editor build drops the glyphs.
 
 ## One home for every giving number (NUMBERS-3, 1 Nov 2026)
 
@@ -53,8 +57,6 @@ one deletes its line.
 
 ## Communications (SWEEP-3, 30 Oct 2026; walk in docs/sweeps/sweep-3/walk.md)
 
-- **P1 · A campaign reaches only people set to Always include, even with Campaign emails on for Everyone.** `donorMailDecision` (routes/email.js) refuses kind `campaign` unless `donors.auto_email` is true (SEND-GATE-1), while SEND-GATE-2's rule for a type set to Everyone is "anyone not set to Never". On the walk org with Donor mail and Campaign emails on for Everyone the builder still said "315 donors · 0 can get this email: 247 have no email address, 68 have automatic email off". Who a campaign reaches is a sending rule, so it needs Jonathan's word on which rule is meant, then the real-shaped check and the truth check. Suggested: SEND-GATE-3.
-- **P2 · A campaign merge with no gift reads "your gift of your previous gift".** `legacyCampaignBody` (server.js) fills `{{gift_amount}}` with "your previous gift" for someone with no gift, and the Thank-you starter says "Thank you for your gift of {{gift_amount}}". The preview now shows a real giver's gift; the send's fallback is a send change. Suggested: SEND-GATE-3, with the starter's sentence.
 - **P3 · Thank-yous and welcomes sign differently.** The one-person thank-yous sign with the org's name when nobody has a signature in My profile or Brand; the designed welcomes sign with the sender's account name. Suggested: the next editor build picks one rule.
 - **P3 · Quick edit and print previews the top giver; the email editor previews the newest giver.** Same template, two people. Suggested: the next editor build.
 

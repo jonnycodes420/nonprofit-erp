@@ -59,7 +59,7 @@
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, mailTypesOn } = require("./helpers");
 
 const XLSX = require(path.join(__dirname, "..", "client", "node_modules", "xlsx"));
 const FX = path.join(__dirname, "fixtures", "import", "real-shaped");
@@ -139,6 +139,9 @@ async function freshOrg(id, name) {
     if (await q(`DELETE FROM orgs WHERE id=$1`, [id]).then(() => true).catch(() => false)) break;
   }
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,$2,$3,1,'active','team')`, [id, name, id.replace(/_/g, "-")]);
+  // TRUST-1: Campaign emails on for Everyone, so the truth check's campaign
+  // reach (tests/lib/surfacesAgree.js) counts real people, not zero. Nothing is sent.
+  await mailTypesOn(id, "everyone", ["campaign"]);
   const email = `${id}@test.local`;
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Allie Test','admin')`, ["u_" + id, id, email, bcrypt.hashSync(PASSWORD, 4)]);
   return login(email, PASSWORD);
