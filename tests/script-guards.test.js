@@ -244,6 +244,7 @@ const EXEMPT = {
   "restore-drill": "SECURE-3 item 4 — Jonathan's restore drill. Boots server.js (so the copy's schema is migrated) against RESTORE_DATABASE_URL only after its own refusals: a non-loopback target needs --i-am-jonathan, a --project starting steward-restore-, a Supabase host whose ref is not prod's, and never a .env or a Railway shell; dry run by default. Its refusals are driven below",
   "board-import-walk": "DEVBOARD-1 — reads a local walk report (markdown) and, with --write, rewrites ops/board.json in the checkout. No BASE, no DB, no network",
   "board": "DEVBOARD-1 — adds, assigns or closes items in ops/board.json (dry run unless --write), reading a local build report for close. No BASE, no DB, no network",
+  "deploy-turnstile": "FLAKE-1 — before a deploy job deploys, waits for older push-to-main runs' deploy job of the same name (GitHub Actions API, read-only) and compares this commit with the live one (git, and the live site's public build stamp). No BASE, no DB, no app call, no secret; writes only $GITHUB_OUTPUT and the step summary",
   "tree-already-passed": "CHORE-2 — asks the GitHub Actions API whether this exact git TREE already passed, and writes two job outputs. Read-only against GitHub, no BASE, no DB, no app writes; every failure mode falls back to running the battery",
 };
 
