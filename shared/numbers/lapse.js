@@ -48,8 +48,8 @@ const LAST_ON_RECORD = (d = "d") => `GREATEST(NULLIF(LEFT(${d}.last_gift_date, 1
 // do-not-solicit, or an imported sustainer, whose card stopped; BUILD-77).
 // The stored stage is not read: an officer's Lapsed is their note, and a
 // pledge or a gift in the giving unit still keeps the person off the list.
-function reengageSql(d, today) {
-  const l = lapsedSql(LAST_ON_RECORD(d), today, `${d}.id`);
+function reengageSql(d, today, unit = null) {
+  const l = lapsedSql(LAST_ON_RECORD(d), today, `${d}.id`, unit);
   return { sql: `(${d}.deceased IS NOT TRUE AND ${d}.do_not_contact IS NOT TRUE AND ${d}.do_not_solicit IS NOT TRUE
       AND ${d}.imported_sustainer IS NOT TRUE AND COALESCE(${l.sql}, false))`, args: l.args };
 }
@@ -66,8 +66,10 @@ const linkedLastSql = idExpr => `(SELECT MAX(GREATEST(NULLIF(LEFT(lk.last_gift_d
 // The unit's last gift: the person's own, or a linked person's when later.
 // Only for someone with a last gift of their own: a person who never gave (or
 // whose gifts carry no date) has not "given before", whoever they are linked to.
-const unitLast = (lastExpr, idExpr) => idExpr
-  ? `(CASE WHEN (${lastExpr}) IS NULL THEN NULL ELSE GREATEST((${lastExpr})::date, (${linkedLastSql(idExpr)})::date) END)` : `(${lastExpr})::date`;
+// COUNTS-1: `unit` (from unitSetsSql below) hands in the linked people's last
+// gift as a column already read for the whole org, instead of a read per person.
+const unitLast = (lastExpr, idExpr, unit = null) => idExpr
+  ? `(CASE WHEN (${lastExpr}) IS NULL THEN NULL ELSE GREATEST((${lastExpr})::date, (${unit ? unit.linkedLast : linkedLastSql(idExpr)})::date) END)` : `(${lastExpr})::date`;
 
 // COUNTS-1 · LOST, AND LAPSED 12 TO 24 MONTHS. Re-engage's people split in
 // two by the unit's last gift (lapseRule.LOST_MONTHS): Lost is a last gift
@@ -117,16 +119,20 @@ function rhythmAheadSql(idExpr, today) {
 
 // The three states as conditions. Without `idExpr` there is no person to hold
 // (a gap between two gifts, a stored date with no pledge to read): the bounds alone.
-function lapsedSql(lastExpr, today, idExpr = null) {
-  const d = unitLast(lastExpr, idExpr), b = bounds(today);
+// COUNTS-1: `unit` = { linkedLast, held }, two columns of unitSetsSql's rows
+// joined beside the person, so a whole-org count reads each once (set-wise)
+// with the same rule; without it, each person's are read where they stand.
+const holdOf = (idExpr, today, unit) => (unit ? { sql: `COALESCE(${unit.held}, false)`, args: [] } : holdSql(idExpr, today));
+function lapsedSql(lastExpr, today, idExpr = null, unit = null) {
+  const d = unitLast(lastExpr, idExpr, unit), b = bounds(today);
   if (!idExpr) return { sql: `${d} <= ?::date`, args: [b.lapsedOnOrBefore] };
-  const p = holdSql(idExpr, today);
+  const p = holdOf(idExpr, today, unit);
   return { sql: `(${d} <= ?::date AND NOT ${p.sql})`, args: [b.lapsedOnOrBefore, ...p.args] };
 }
-function lapsingSql(lastExpr, today, idExpr = null) {
-  const d = unitLast(lastExpr, idExpr), b = bounds(today);
+function lapsingSql(lastExpr, today, idExpr = null, unit = null) {
+  const d = unitLast(lastExpr, idExpr, unit), b = bounds(today);
   if (!idExpr) return { sql: `${d} BETWEEN ?::date AND ?::date`, args: [b.lapsingFrom, b.lapsingOnOrBefore] };
-  const r = rhythmAheadSql(idExpr, today), p = holdSql(idExpr, today);
+  const r = rhythmAheadSql(idExpr, today), p = holdOf(idExpr, today, unit);
   return { sql: `(${d} BETWEEN ?::date AND ?::date AND NOT ${r.sql} AND NOT ${p.sql})`, args: [b.lapsingFrom, b.lapsingOnOrBefore, ...r.args, ...p.args] };
 }
 // No gift in the last 12 months, and a pledge holds them (they read Current,
@@ -159,6 +165,39 @@ function sql(state, lastExpr, today, idExpr = null) {
   throw new Error(`lapse.sql: unknown state ${state}`);
 }
 
+// COUNTS-1 · THE GIVING UNIT, FOR A WHOLE ORG AT ONCE. linkedLastSql and
+// holdSql above, read set-wise: one row per person of the org who has a
+// linked person (POLISH-4's LINKED: the same link types, either side) or a
+// pledge that holds (holdSql's: open, or fulfilled and made in the last 12
+// months), with
+//   linked_last  the latest last gift among their live linked people (NULL: none)
+//   held         a pledge holds them: their own, or a linked person's (deleted
+//                or not, as holdSql's LINKED reads it)
+// A person with no row has neither, which is what the per-person reads say
+// for them. Pass { linkedLast: "<alias>.linked_last", held: "<alias>.held" }
+// as `unit` to lapsedSql, lapsingSql or reengageSql, with this LEFT JOINed on
+// the person's id. tests/lib/counts1Perf.js holds it to the per-person form.
+function unitSetsSql(orgId, today) {
+  const sql = `
+    SELECT u.me AS donor_id, MAX(u.linked_last) AS linked_last, BOOL_OR(u.held) AS held FROM (
+      SELECT lr.me, GREATEST(NULLIF(LEFT(lk.last_gift_date, 10), ''), NULLIF(LEFT(lk.imported_last_gift_date, 10), ''))::date AS linked_last,
+             (lr.other IN (SELECT hp.donor_id FROM hp)) AS held
+        FROM (SELECT r.donor_id_a AS me, r.donor_id_b AS other FROM donor_relationships r
+               WHERE r.org_id = ? AND r.relationship_type IN ('owner','works_at','spouse','partner')
+              UNION ALL
+              SELECT r.donor_id_b, r.donor_id_a FROM donor_relationships r
+               WHERE r.org_id = ? AND r.relationship_type IN ('owner','works_at','spouse','partner')) lr
+        -- linkedLastSql reads live linked people only; holdSql's LINKED reads every link.
+        LEFT JOIN donors lk ON lk.id = lr.other AND lk.deleted_at IS NULL
+      UNION ALL
+      SELECT hp.donor_id, NULL::date, true FROM hp) u
+    GROUP BY u.me`;
+  // hp: the people a pledge of their own holds (holdSql's pledge condition).
+  const hp = `SELECT DISTINCT pp.donor_id FROM pledges pp WHERE pp.org_id = ?
+      AND (pp.status = 'open' OR (pp.status = 'fulfilled' AND ${PLEDGE_MADE} >= ?))`;
+  return { with: `hp AS MATERIALIZED (${hp}), unit AS MATERIALIZED (${sql})`, args: [orgId, bounds(today).lapsingFrom, orgId, orgId] };
+}
+
 // One person's pledges as lapseRule.pledgeHold reads them, from the database;
 // or, with no donorId, a Map of every person's in the org.
 // POLISH-4: one person's are their giving unit's (their own and their linked
@@ -176,4 +215,4 @@ async function pledgesFor(query, orgId, donorId, today) {
   return by;
 }
 
-module.exports = { ON_TIME_THROUGH, LAST_ON_RECORD, reengageSql, lostSql, UNIT_LINK_TYPES, LINKED, linkedLastSql, PLEDGE_MADE, overdueSql, holdSql, rhythmAheadSql, lapsedSql, lapsingSql, pledgeHeldSql, stateSql, sql, pledgesFor };
+module.exports = { ON_TIME_THROUGH, LAST_ON_RECORD, reengageSql, lostSql, UNIT_LINK_TYPES, LINKED, linkedLastSql, PLEDGE_MADE, overdueSql, holdSql, rhythmAheadSql, lapsedSql, lapsingSql, pledgeHeldSql, stateSql, sql, pledgesFor, unitSetsSql };
