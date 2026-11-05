@@ -1,4 +1,5 @@
 import { NoRecentMeetingPanel, WarmNotAskedPanel } from "./MovesPanels";
+import { useProfileReads } from "../lib/profileReads";   // LOAD-1
 import { useState, useEffect, useMemo, useRef, Component } from "react";
 import { GrantImport } from "./GrantImport";
 import OldReportsImport from "./OldReportsImport";
@@ -100,6 +101,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[openIntent]=useState(()=>({id:initialSelectDonorId,conversation:!!initialOpenConversation,compose:!!initialOpenCompose,brief:!!initialOpenBrief}));
   const selectedRef=useRef(null);   // LIST-2: the profile's retry reads who is open now
   selectedRef.current=selected;
+  useProfileReads(selected?.id);   // LOAD-1: the profile's reads in two requests (lib/profileReads.js)
   const[logTarget,setLogTarget]=useState(null);
   useEffect(()=>{
     if(!initialLogDonorId)return;

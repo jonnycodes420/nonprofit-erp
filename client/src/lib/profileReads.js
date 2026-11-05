@@ -10,6 +10,7 @@
 // (api.js prefetch), so no panel changed, and every figure is the route's own.
 // A path here must be one the server's PROFILE_READS allows, spelled exactly
 // as the panel asks for it.
+import { useRef } from "react";
 import { prefetch } from "../api";
 
 const enc = encodeURIComponent;
@@ -28,10 +29,17 @@ export const PROFILE_BELOW = id => [
 ];
 const bundleFor = id => paths => `/donors/${enc(id)}/bundle?` + paths.map(p => "p=" + enc(p)).join("&");
 
-// Called while the profile renders, before any panel's effect runs (a child's
-// effect runs before its parent's), so every panel finds its read in flight.
+// Called before any panel's effect runs (a child's effect runs before its
+// parent's), so every panel finds its read in flight.
 export function openProfileReads(id) {
   if (!id) return;
   const top = prefetch(PROFILE_TOP(id), { keep: true, bundle: bundleFor(id) });
   prefetch(PROFILE_BELOW(id), { keep: true, bundle: bundleFor(id), after: top });
+}
+
+// For the screen that opens the profile (Donors.jsx): asks while that screen
+// renders, each time a different person is opened, before the profile mounts.
+export function useProfileReads(id) {
+  const asked = useRef(null);
+  if (id && asked.current !== id) { asked.current = id; openProfileReads(id); }
 }

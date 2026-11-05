@@ -156,5 +156,22 @@ function useLimit(name) {
   return (req, res, next) => { const sc = live(); if (sc) { sc.limitMs = NAMED[name]; sc.limitName = name; } next(); };
 }
 
-module.exports = { DEFAULT_MS, NAMED, LONGER, limitFor, TOO_LONG, middleware, checkout, release, translate, guard, useLimit, shared,
+// The app's error handler asks here first: a statement or a wait past its
+// limit is a 503 with the plain sentence; an abandoned read has nobody to answer.
+function answerError(err, req, res, route) {
+  if (err && err.code === "request_timeout") {
+    console.warn(`[503] ${req.method} ${route} rid=${req.id || "-"} too long`);
+    res.status(503).json({ error: err.message, code: err.code });
+    return true;
+  }
+  if (err && err.code === "request_abandoned") { if (!res.headersSent && !res.destroyed) res.status(499).end(); return true; }
+  return false;
+}
+
+// db.js's cancel: pg_cancel_backend for each pid, on the side pool.
+function cancelWith(Pool, options) {
+  return (pids) => cancelPool(Pool, options).query("SELECT pg_cancel_backend(p) FROM unnest($1::int[]) p", [pids]);
+}
+
+module.exports = { answerError, cancelWith, DEFAULT_MS, NAMED, LONGER, limitFor, TOO_LONG, middleware, checkout, release, translate, guard, useLimit, shared,
   cancelPool, live, stats: () => ({ ...counters }), isCancel };

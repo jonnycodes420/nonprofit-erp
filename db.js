@@ -24,22 +24,15 @@ const pool = new Pool({
   // database's own connection limit allows across every replica and the worker.
   max: POOL_MAX,
 });
-// LOAD-1: every connection handed out below goes through LIMITS.checkout, so a
-// web request's statements stop at its limit and an abandoned read is
-// cancelled (server/shared/requestLimits.js).
+// LOAD-1: every connection handed out below goes through LIMITS.checkout, so a web request's
+// statements stop at its limit and an abandoned read is cancelled (server/shared/requestLimits.js).
 const LIMITS = require("./server/shared/requestLimits");
-const cancelBackends = (pids) => LIMITS.cancelPool(Pool, {
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false },
-  options: `-c steward.app_connection=on -c application_name=${APP_NAME}`,
-}).query("SELECT pg_cancel_backend(p) FROM unnest($1::int[]) p", [pids]);
-const requestLimits = () => LIMITS.middleware(cancelBackends);
+const requestLimits = () => LIMITS.middleware(LIMITS.cancelWith(Pool, { connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false }, options: `-c steward.app_connection=on -c application_name=${APP_NAME}` }));
 // One statement on its own connection, the way pool.query did it.
 async function once(p, text, params) {
   const client = await LIMITS.checkout(p);
-  try { return await client.query(text, params); }
-  catch (e) { throw LIMITS.translate(e); }
-  finally { LIMITS.release(client); }
+  try { return await client.query(text, params); } catch (e) { throw LIMITS.translate(e); } finally { LIMITS.release(client); }
 }
 
 // ── FIX-11 Part 1 — THIS CONNECTION BELONGS TO THE APPLICATION ────────────
@@ -164,10 +157,8 @@ async function withClient(fn) {
   try { return await fn(client); } catch (e) { throw LIMITS.translate(e); } finally { LIMITS.release(client); }
 }
 
-// LOAD-1: a client-shaped handle whose every statement takes its own
-// connection from the pool and gives it straight back, for code written
-// against a client (queryTx/runTx) that must not hold one while it waits on
-// something else, as the Agent's run waits on the screens' own routes.
+// LOAD-1: a client-shaped handle (for queryTx/runTx) that takes a connection per statement, for code that
+// must not hold one while it waits on something else, as the Agent's run waits on the screens' own routes.
 function onThePool(fn) {
   return fn({ query: (text, params) => once(pool, text, params) });
 }

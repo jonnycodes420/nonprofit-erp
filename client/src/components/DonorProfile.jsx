@@ -53,13 +53,8 @@ import { RelatedModal } from "./profile/RelatedModal";
 import { MergeWithModal } from "./profile/MergeWith";
 import { GivingTab } from "./profile/GivingTab";
 import { ProfileHeader } from "./profile/ProfileHeader";
-import { openProfileReads } from "../lib/profileReads";   // LOAD-1
 
 function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialOpenCompose=false,initialOpenBrief=false,initialAddGift=null,org=null}){
-  // LOAD-1: this person's reads go out in two requests, asked for while the
-  // profile renders so every panel's own read finds its answer on the way.
-  const readsFor=useRef(null);
-  if(readsFor.current!==donor.id){ readsFor.current=donor.id; openProfileReads(donor.id); }
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   // FIX-45 1.5: the record's one read (GET /donors/:id) carries the gifts and

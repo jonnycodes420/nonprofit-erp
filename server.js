@@ -379,10 +379,7 @@ app.use((req, res, next) => {
   if (process.env.SENTRY_DSN) { try { Sentry.getIsolationScope().setTag("request_id", req.id); } catch { /* tagging never fails a request */ } }
   next();
 });
-// LOAD-1: every request's statements stop at its limit (10 s, or a named
-// longer one), and a read the browser abandons is cancelled
-// (server/shared/requestLimits.js). Above every route, so /me waits for nothing.
-app.use(require("./db").requestLimits());
+app.use(require("./db").requestLimits());   // LOAD-1: limits and cancel, above every route (server/shared/requestLimits.js)
 
 
 // MIGC — Mission Increase Gulf Coast client-website API (routes/migc.js).
@@ -12180,16 +12177,7 @@ const INBOUND_EMAIL_ENABLED = process.env.INBOUND_EMAIL_ENABLED === "1";
 const INBOUND_EMAIL_DOMAIN = (process.env.INBOUND_EMAIL_DOMAIN || "").trim().toLowerCase();
 async function inboundMod() { return import("./shared/inboundEmail.js"); }
 
-// LOAD-1 · the planted slow route tests/load1-no-jam.test.js abandons: one
-// statement that sleeps `s` seconds. TEST_MODE only, and only in a process
-// that suite started (STEWARD_TEST_SLOW_SQL=1).
-if (testMode() && process.env.STEWARD_TEST_SLOW_SQL === "1") {
-  app.get("/test/slow-sql", requireAuth, wrap(async (req, res) => {
-    await query(`SELECT pg_sleep(?) AS slept`, [Math.min(120, Number(req.query.s) || 60)]);
-    res.json({ ok: true });
-  }));
-}
-
+require("./server/shared/testPlants").plant(app, { testMode, requireAuth, wrap, query, run, newId });   // TEST_MODE only
 // ── 404 ────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ error: "Not found" });
@@ -12207,13 +12195,7 @@ app.use((err, req, res, next) => {
   const route = (req.baseUrl || "") + ((req.route && req.route.path) || req.path || "");
   // FIX-58: an upload S3 refused every try is a 503 with its sentence, never a
   // 500 (and never a copy in Postgres; assetStore.putThemeAsset).
-  // LOAD-1: a statement past its limit, or a wait for a connection past it, is
-  // a 503 with the plain sentence; an abandoned read has nobody to answer.
-  if (err && err.code === "request_timeout") {
-    console.warn(`[503] ${req.method} ${route} rid=${req.id || "-"} too long`);
-    return res.status(503).json({ error: err.message, code: err.code });
-  }
-  if (err && err.code === "request_abandoned") return res.headersSent || res.destroyed ? undefined : res.status(499).end();
+  if (require("./server/shared/requestLimits").answerError(err, req, res, route)) return;   // LOAD-1: too long, or abandoned
   if (err && err.code === "asset_store_unavailable") {
     console.error(`[503] ${req.method} ${route} asset store unavailable`);
     return res.status(503).json({ error: err.message, code: err.code });
@@ -12875,22 +12857,6 @@ require("./routes/crm").mount({
 // ticks, so a test boot (DISABLE_BACKGROUND_TICKS=1) enqueues nothing on a
 // timer; the worker lanes still run, because an import's recent gifts are
 // queued work, not a tick. STEWARD_PROCESS=web runs no lanes at all.
-// The probe job scale1-queue drives: it records which process ran it and when,
-// and can be told to take a while or to fail. TEST_MODE only, and only in a
-// process that suite started (STEWARD_TEST_PROBE=1): the battery's shard server
-// shares the suite's database and runs lanes, and with this handler it raced
-// the suite's worker for the probes (FIX-58, red at 12:02 AM).
-if (testMode() && process.env.STEWARD_TEST_PROBE === "1") {
-  require("./jobQueue").handle("testProbe", async (p, job) => {
-    const t0 = new Date();
-    if (p.sleepMs) await new Promise(r => setTimeout(r, p.sleepMs));
-    await run(`INSERT INTO tick_log (id, name, started_at, finished_at, ok, detail) VALUES (?,?,?,NOW(),?,?)`,
-      [newId("tick"), "testProbe", t0.toISOString(), !p.fail,
-       JSON.stringify({ key: job.key, org: job.org_id, pid: process.pid, attempt: job.attempts })]);
-    if (p.fail) throw new Error("probe told to fail");
-    if (p.failPoolFull) throw Object.assign(new Error("(EMAXCONNSESSION) max clients reached in session mode, pool_size: 15"), { code: "XX000" });
-  });
-}
 DB_READY.then(() => {
   const JQ = require("./jobQueue");
   JQ.start({ scheduler: !backgroundTicksDisabled(), build: BUILD_SHA });
