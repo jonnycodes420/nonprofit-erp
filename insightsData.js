@@ -6,9 +6,9 @@
 // a gift row (it sits in the trash, insight_reviews says why), so it counts
 // nowhere, here included.
 //
-// A short in-process memo keeps the Donors list's rung column and filter from
-// re-reading the org on every page: it is keyed by the org's gift and pledge
-// fingerprint, so any write that changes them changes the key.
+// INSIGHTS-2: computeFor runs on the worker (server/insights/store.js stores
+// its answer with the fingerprint it was built from); insightsFor and
+// ladderMap read the stored answer and never compute.
 "use strict";
 const { query } = require("./db");
 const insights = require("./insights");
@@ -66,44 +66,29 @@ async function roomKnownFor(orgId, rows) {
   return ASK.roomKnown(query, orgId, ids);
 }
 
-const MEMO = new Map();   // orgId -> { key, asOf, result, at }
-const MEMO_MS = 60 * 1000;
-async function fingerprint(orgId) {
-  const [f] = await query(`SELECT
-      (SELECT COUNT(*)::text || ':' || COALESCE(SUM(amount),0)::text || ':' || COALESCE(MAX(created_at)::text,'') FROM gifts WHERE org_id=?) AS g,
-      (SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text,'') FROM pledges WHERE org_id=?) AS p,
-      (SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text,'') FROM donors WHERE org_id=?) AS d,
-      (SELECT COUNT(*)::text FROM insight_outcomes WHERE org_id=?) || ':' || (SELECT COUNT(*)::text FROM insight_reviews WHERE org_id=?)
-        || ':' || (SELECT COUNT(*)::text FROM insight_links WHERE org_id=?) AS i`, [orgId, orgId, orgId, orgId, orgId, orgId]);
-  return `${f.g}|${f.p}|${f.d}|${f.i}`;
+// INSIGHTS-2: the whole-org computation, run by the worker's build
+// (server/insights/store.js), never by a request.
+async function computeFor(orgId, asOf) {
+  const rows = await rowsFor(orgId);
+  await insights.ready;   // SWEEP-1: the greeting (shared/greeting.js) and the one ask rounding (shared/smartAmounts.js)
+  const roomKnown = await roomKnownFor(orgId, rows);
+  return insights.computeInsights({ ...rows, asOf, roomKnown });
 }
-// LOAD-1: one computation per org and answer at a time. Every profile opened
-// while the memo was stale (a gift had just been recorded) started its own
-// read of the whole org, and twenty at once held the web's one CPU.
-const COMPUTING = new Map();   // orgId|key|asOf -> Promise<result>
-async function insightsFor(orgId, asOf) {
-  const key = await fingerprint(orgId);
-  const m = MEMO.get(orgId);
-  if (m && m.key === key && m.asOf === asOf && Date.now() - m.at < MEMO_MS) return m.result;
-  const job = `${orgId}|${key}|${asOf}`;
-  if (COMPUTING.has(job)) return COMPUTING.get(job);
-  const p = require("./server/shared/requestLimits").shared(async () => {
-    const rows = await rowsFor(orgId);
-    await insights.ready;   // SWEEP-1: the greeting (shared/greeting.js) and the one ask rounding (shared/smartAmounts.js)
-    const roomKnown = await roomKnownFor(orgId, rows);
-    const result = insights.computeInsights({ ...rows, asOf, roomKnown });
-    MEMO.set(orgId, { key, asOf, result, at: Date.now() });
-    return result;
-  }).finally(() => COMPUTING.delete(job));
-  COMPUTING.set(job, p);
-  return p;
+// INSIGHTS-2: a request reads the stored answer (store.read: { result, stale,
+// preparing }). TEST_MODE reads wait for the queued build, so a suite reads
+// what it just wrote; a production read never waits.
+async function insightsFor(orgId, asOf, { explicitDay = false } = {}) {
+  const STORE = require("./server/insights/store");
+  const wait = String(process.env.TEST_MODE || "") === "1" ? STORE.TEST_WAIT_MS() : 0;
+  return STORE.read(orgId, asOf, { waitMs: wait, explicitDay });
 }
 // donorId -> { rung, status, planned, signals } for the list and the profile
+// (empty while the org's first Insights are being prepared)
 async function ladderMap(orgId, asOf) {
-  const r = await insightsFor(orgId, asOf);
+  const r = (await insightsFor(orgId, asOf)).result;
   const out = new Map();
-  for (const u of r.units) for (const id of u.ids) out.set(id, u);
+  if (r) for (const u of r.units) for (const id of u.ids) out.set(id, u);
   return out;
 }
 
-module.exports = { rowsFor, insightsFor, ladderMap };
+module.exports = { rowsFor, computeFor, insightsFor, ladderMap };

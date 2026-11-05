@@ -1590,7 +1590,7 @@ AFTER.configure({ query, run, GR, orgToday, orgTz, scheduleScores, computeDriftF
 OUTBOX.configure({ query, queueThankYouDraft, enrollInSequences, maybeStartJourneyFromServer, recomputeScoresForOrg, openGiftThread,
   afterChangeNow: AFTER.afterChangeNow });
 for (const h of ["outreach/handlers/thankYouDraft", "outreach/handlers/sequences", "outreach/handlers/journeys",
-                 "donors/handlers/afterChange", "donors/handlers/scores"]) require(`./server/${h}`);
+                 "donors/handlers/afterChange", "donors/handlers/scores", "insights/store"]) require(`./server/${h}`);
 // SCALE-2: the per-org summary (orgSummary.js) and the in-process door the
 // Home bundle and the summary's refresh use (inProcess.js). An internal token
 // is signed for one stored answer's recompute and never leaves this process.

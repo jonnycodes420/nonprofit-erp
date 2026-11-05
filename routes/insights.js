@@ -46,6 +46,25 @@ function mount(ctx) {
 const { query, run, wrap, requireAuth, checkWriteAccess, actor, orgTz, orgToday, testMode, uuid, withTransaction, queryTx, runTx, recalcDonorSummary } = ctx;
 const app = routers.r0;
 
+// INSIGHTS-2: a day a TEST_MODE read named is built for that day (its own job key).
+const explicitDay = req => testMode() && DAY.test(String(req.query.asOf || req.body?.asOf || ""));
+// INSIGHTS-2: after an Insights button (Done, Not now, Doesn't fit, a Review or
+// a Link), the answer waits for the worker's build of the org's Insights
+// (bounded, store.refreshAndWait), so the panel she reloads no longer shows
+// what she just closed. The request computes nothing itself.
+const STORE = require("../server/insights/store");
+app.use(["/insights/outcome", "/insights/review", "/insights/link"], (req, res, next) => {
+  if (req.method !== "POST") return next();
+  const json = res.json.bind(res);
+  res.json = (body) => {
+    if (res.statusCode >= 300 || !req.user || !req.user.orgId) return json(body);
+    asOfFor(req).then(day => STORE.refreshAndWait(req.user.orgId, day, { explicitDay: explicitDay(req) }))
+      .catch(e => console.error("[insights] after a button:", e.message)).then(() => json(body));
+    return res;
+  };
+  next();
+});
+
 async function asOfFor(req) {
   if (testMode() && DAY.test(String(req.query.asOf || req.body?.asOf || ""))) return String(req.query.asOf || req.body.asOf);
   return orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
@@ -87,7 +106,11 @@ async function deckWithDrift(req, deck, asOf) {
 
 app.get("/insights", requireAuth, wrap(async (req, res) => {
   const asOf = await asOfFor(req);
-  const r = await D.insightsFor(req.user.orgId, asOf);
+  const got = await D.insightsFor(req.user.orgId, asOf, { explicitDay: explicitDay(req) });
+  // INSIGHTS-2: none stored yet: the panel says so; nothing else waits.
+  if (got.preparing) return res.json({ asOf, preparing: true, stale: false, sentence: got.sentence, cards: [],
+    ladder: [], stats: {}, deck: req.query.view === "first" ? undefined : { tabs: [], preparing: true } });
+  const r = got.result;
   const first = req.query.view === "first";
   // HOME-4: ?view=deck is Home's: the deck without the cards (the cards are
   // most of the bytes, and Home reads them only when a panel opens).
@@ -112,7 +135,7 @@ app.get("/insights", requireAuth, wrap(async (req, res) => {
     seen: deck.tabs.flatMap(t => t.moves.slice(0, 50).map(m => ({ kind: m.kind, itemKey: m.itemKey, donorIds: m.ids }))),
     tabs: deck.tabs.map(t => ({ ...t, carried: t.moves.length, moves: t.moves.slice(0, DECK_FIRST) })),
   };
-  res.json({ events,
+  res.json({ events, stale: got.stale,
     asOf, coverage: r.coverage, majorLine: r.majorLine, ladder: deckOnly ? undefined : r.ladder, centsSentence: r.centsSentence,
     stats: r.stats, cards: deckOnly ? [] : cards.map(cardOut), deck,
     sentences: {
@@ -126,7 +149,11 @@ app.get("/insights/donor/:id", requireAuth, wrap(async (req, res) => {
   const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
   if (!d) return res.status(404).json({ error: "Not found" });
   const asOf = await asOfFor(req);
-  const r = await D.insightsFor(req.user.orgId, asOf);
+  const got = await D.insightsFor(req.user.orgId, asOf, { explicitDay: explicitDay(req) });
+  // INSIGHTS-2: the first build for this org is queued; this panel says so and
+  // the rest of the profile is unaffected.
+  if (got.preparing) return res.json({ asOf, preparing: true, stale: false, sentence: got.sentence, unit: null, notGifts: [], move: null, combined: null, rungSentence: null });
+  const r = got.result;
   const unit = r.units.find(u => u.ids.includes(d.id)) || null;
   const move = I.nextMoveFor(r, d.id);
   // linked records (a family or network she linked) show what they give together
@@ -146,7 +173,7 @@ app.get("/insights/donor/:id", requireAuth, wrap(async (req, res) => {
                                         row_data->>'date' AS date FROM insight_reviews
                                   WHERE org_id=? AND decision IN ('not_gift','partly') AND donor_id = ANY(?) ORDER BY row_data->>'date' DESC NULLS LAST`, [req.user.orgId, ids]))
     .map(x => ({ giftId: x.gift_id, as: x.as_type, label: TYPE_LABEL[x.as_type] || x.as_type, partly: x.decision === "partly", cents: Math.round(Number(x.amount) * 100), date: x.date }));
-  res.json({ asOf, coverage: r.coverage, majorLine: r.majorLine, unit, notGifts, move: move ? { ...move, item: cardOut({ ...move, items: [move.item], words: move.words, facts: [], does: [] }).items[0] } : null, combined,
+  res.json({ asOf, stale: got.stale, coverage: r.coverage, majorLine: r.majorLine, unit, notGifts, move: move ? { ...move, item: cardOut({ ...move, items: [move.item], words: move.words, facts: [], does: [] }).items[0] } : null, combined,
     rungSentence: unit ? I.RUNG_SENTENCE[unit.rung] : null });
 }));
 
