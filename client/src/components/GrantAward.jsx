@@ -16,11 +16,11 @@ import { apiFetch } from "../api";
 import { T, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { RESTRICTIONS, statusLabel } from "../../../shared/grantShape";
+import PledgeSchedule, { scheduleBody } from "./gifts/PledgeSchedule";   // GIFTS-1: the pledge form's own schedule
 
 const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: T.ink, background: T.white, fontFamily: "inherit", width: "100%", boxSizing: "border-box" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" });
 const lbl = { fontSize: 11.5, fontWeight: 700, color: T.ink3, marginBottom: 4, display: "block" };
-const FREQS = [["monthly", "Monthly"], ["quarterly", "Quarterly"], ["semiannual", "Every six months"], ["annual", "Yearly"]];
 const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
 // The picker, on its own (the grant page's "Link to funder") or as the first
@@ -85,7 +85,7 @@ export function AwardStep({ grant, target = "awarded", onDone, onClose }) {
     try {
       const body = { amountAwarded: a.amount, firstDue: a.firstDue, restriction: a.restriction || undefined,
         restrictedUntil: a.restriction === "time_restricted" ? a.restrictedUntil : undefined };
-      if (a.plan === "many") { body.installmentCount = Number(a.count) || 2; body.frequency = a.frequency; }
+      if (a.plan === "many") { const sb = scheduleBody(a); body.installmentCount = sb.installmentCount; body.frequency = sb.frequency; }
       const award = await apiFetch(`/grants/${grant.id}/award`, { method: "PUT", body: JSON.stringify(body) });
       let moved = null;
       if (target !== "awarded") moved = await apiFetch(`/grants/${grant.id}/stage`, { method: "PATCH", body: JSON.stringify({ status: target }) });
@@ -116,19 +116,9 @@ export function AwardStep({ grant, target = "awarded", onDone, onClose }) {
             <input aria-label="Amount awarded" inputMode="decimal" value={a.amount} onChange={e => set("amount", e.target.value)} style={inp} /></label>
           <div>
             <span style={lbl}>Payment schedule</span>
-            <div style={{ display: "flex", gap: 14, fontSize: 13, color: T.ink }}>
-              <label><input type="radio" name="plan" checked={a.plan === "one"} onChange={() => set("plan", "one")} /> One payment</label>
-              <label><input type="radio" name="plan" checked={a.plan === "many"} onChange={() => set("plan", "many")} /> Installments</label>
-            </div>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: a.plan === "many" ? "1fr 1fr 1fr" : "1fr", gap: 8 }}>
-            {a.plan === "many" && <label><span style={lbl}>How many</span>
-              <input aria-label="Installments" type="number" min={2} max={60} value={a.count} onChange={e => set("count", e.target.value)} style={inp} /></label>}
-            {a.plan === "many" && <label><span style={lbl}>How often</span>
-              <select aria-label="How often" value={a.frequency} onChange={e => set("frequency", e.target.value)} style={inp}>
-                {FREQS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>}
-            <label><span style={lbl}>{a.plan === "many" ? "First payment" : "Payment due"}</span>
-              <input aria-label="First payment" type="date" value={a.firstDue} onChange={e => set("firstDue", e.target.value)} style={inp} /></label>
+            <PledgeSchedule testid="award-schedule" amount={a.amount} firstLabel={a.plan === "many" ? "First payment" : "Payment due"}
+              value={{ plan: a.plan, count: a.count, frequency: a.frequency, firstDue: a.firstDue }}
+              onChange={sc => setA(p => ({ ...p, plan: sc.plan, count: sc.count, frequency: sc.frequency, firstDue: sc.firstDue }))} />
           </div>
           <label><span style={lbl}>Restriction</span>
             <select aria-label="Restriction" value={a.restriction} onChange={e => set("restriction", e.target.value)} style={inp}>

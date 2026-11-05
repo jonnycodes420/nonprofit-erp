@@ -16,6 +16,7 @@ import EventRaised, { EventStory, peopleLine } from "./EventRaised";   // HOME-3
 import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit, EVENT_FIGURES } from "../../../shared/eventShape";
 import { countLabel } from "../../../shared/countWords.js";
 import { eventRowsChanged, useEventRowsRev } from "../lib/eventRows";   // COUNTS-1: every panel re-reads the guest rows
+import RecordGiftDialog from "./gifts/RecordGiftDialog";   // GIFTS-1: a gift for this event, from its page
 
 // PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
 const CHAIR = 44;
@@ -1400,6 +1401,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
   const [editSaving, setEditSaving] = useState(false);
   // EVENTS-1 — the rows behind a report figure, opened over the detail.
   const [detailRows, setDetailRows] = useState(null);
+  const [giftFor, setGiftFor] = useState(null);   // GIFTS-1: { person } for Record a gift
 
   const reload = async () => {
     try {
@@ -1540,6 +1542,8 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
           }} style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "7px 14px", color: T.white, fontSize: 12, fontWeight: 700, cursor: "pointer", minHeight: 36 }}>
             Check-in
           </button>
+          <button data-testid="ev-record-gift" onClick={() => setGiftFor({ person: null })}
+            style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 8, padding: "7px 14px", color: T.inkInverse, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Record a gift</button>
           <button onClick={() => { setEditing(true); setEditForm({ name: event.name, eventType: event.event_type, date: event.date, endDate: event.end_date || "", location: event.location || "", description: event.description || "", capacity: event.capacity || "", status: event.status, revenue: event.revenue || 0, cost: event.cost || 0, notes: event.notes || "" }); }}
             style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 8, padding: "7px 14px", color: T.inkInverse, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
             Edit event
@@ -1684,12 +1688,14 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
                     <div>
                       {/* FIX-59: what they gave for this event or pledged at it
                           (event-gave, per person), not an amount typed on the row. */}
+                      {/* GIFTS-1: a guest who came says whether they gave ("Came, gave $250"). */}
                       <span data-testid="ev-att-given" title={event.givenSentence}
                         style={{ fontSize: 11, color: a.event_given ? T.greenDk : "rgba(240,237,230,0.7)", fontWeight: a.event_given ? 700 : 400 }}>
-                        {a.event_given ? fmtFull(a.event_given) : "None"}
+                        {a.status === "attended" || a.checked_in_at ? (a.event_given ? `Came, gave ${fmtFull(a.event_given)}` : "Came, didn't give") : a.event_given ? fmtFull(a.event_given) : "None"}
                       </span>
                     </div>
-                    <RemoveMenu kind="guest" id={a.id} label="⋯" onDone={reload} />
+                    <RemoveMenu kind="guest" id={a.id} label="⋯" onDone={reload}
+                      items={[a.donor_id && { label: "Record a gift", onClick: () => setGiftFor({ person: { id: a.donor_id, name: a.name } }) }]} />
                   </div>
                 ))}
               </div>
@@ -1826,6 +1832,8 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
       )}
 
       {/* The rows behind a report figure. Same SQL as the figure. */}
+      {giftFor && <RecordGiftDialog person={giftFor.person} eventId={eventId} title={giftFor.person ? `Record a gift from ${giftFor.person.name}` : "Record a gift"}
+        onClose={() => setGiftFor(null)} onSaved={() => eventRowsChanged(eventId)} testid="ev-gift" />}
       {detailRows && (
         <Modal onClose={() => setDetailRows(null)} width={620}
           title={`${detailRows.label} · ${detailRows.count}`}>

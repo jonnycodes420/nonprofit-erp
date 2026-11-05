@@ -27,6 +27,13 @@ import { MailTypeSwitches } from "../MailTypes";
 import { pledgeMoneyWords } from "../../../../shared/pledgeWords.js";
 import { EditedMarker } from "../EditHistory";
 import { stepAgainstProposals } from "../../../../shared/nextStepAgree.js";
+import EventField from "../gifts/EventField";   // GIFTS-1: a gift can belong to an event
+import PledgeSchedule, { emptySchedule, scheduleBody } from "../gifts/PledgeSchedule";   // GIFTS-1: one payment or installments
+
+// GIFTS-1: a pledge's schedule as the edit opens it, read from its installments.
+const FREQ_IN={annual:"yearly"};
+const pledgeSched=pl=>{const ins=pl.installments||[],first=String((ins[0]&&ins[0].dueDate)||pl.due_date||"").slice(0,10);
+  return ins.length>1?{plan:"many",count:ins.length,frequency:FREQ_IN[pl.frequency]||pl.frequency||"monthly",firstDue:first}:emptySchedule(first);};
 
 function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addPgOpen,addPlannedGift,addPledge,addPledgeOpen,addToPipeline,askAmt,askName,askOpen,campaigns,closeAsk,deleteGift,deletePlannedGift,deletePledge,dismissSuggestion,dismissedSug,donor,downloadReceiptPdf,dpItems,dpTab,exportGiftsCSV,figs,fundAffinity,fundLoading,giftCfDefs,giftCfEditStr,giftCountReal,giftEditForm,giftEditId,giftErr,giftLoading,giftMoreOpen,giftPeopleQ,giftReadErr,giftSaving,gifts,giftsFull,hasDesignation,household,isAdmin,isReadOnly,isTeam,loadGiftsFull,lockMajor,moveSuggestions,moves,onNavigate,onStageChange,openProposals,opps,pgForm,pgOpen,pgSaving,pipelineAdded,plannedGifts,pledgeEdit,pledgeForm,pledgeResendBusyId,pledgeResentIds,pledgeSaving,pledges,propData,proposalsKnown,receiptBusyId,receiptForGift,receiptsEnabled,recurResendBusy,recurResendSent,recurringSub,refundRows,reloadProps,resendPledgeReminder,resendRecurringLink,saveGiftEdit,savePledgeEdit,sc,scores,sendReceipt,sendYearEndStatement,seqId,seqLoading,seqOpen,seqToast,sequences,setAddGiftForm,setAddGiftOpen,setAddPgOpen,setAddPledgeOpen,setAskAmt,setAskName,setAskOpen,setDpTab,setGiftEditForm,setGiftEditId,setGiftLoading,setGiftMoreOpen,setHhModalOpen,setPgForm,setPgOpen,setPledgeEdit,setPledgeForm,setPledgeStatus,setRelatedOpen,setSeqId,setSeqLoading,setSeqOpen,setSeqToast,setShowYearEnd,setYearDrill,setYearEndYear,showYearEnd,softCredit,status,toggleDesignation,yearDrill,yearEndBusy,yearEndErr,yearEndYear}){
   return <>
@@ -312,6 +319,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                   return <option key={c.id} value={c.id} disabled={!!out}>{c.name}{out?(s&&d<s?` (starts ${displayDate(s)})`:` (ended ${displayDate(e)})`):""}</option>;})}
               </select>
               <div style={{fontSize:11,color:T.ink3,marginBottom:8,lineHeight:1.4}}>Which goal this counts toward. It updates that campaign's thermometer live.</div></>}
+              <EventField value={addGiftForm.eventId||""} onChange={id=>setAddGiftForm(p=>({...p,eventId:id}))} style={{marginBottom:8}}/>
               {pledges.filter(p=>p.status==="open").length>0&&(
                 <select value={addGiftForm.pledgeId} onChange={e=>setAddGiftForm(p=>({...p,pledgeId:e.target.value}))} style={{width:"100%",background:T.bg,border:"1px solid "+T.terracotta+"50",borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}>
                   <option value="">Not fulfilling a pledge</option>
@@ -394,6 +402,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                               </select>
                               <input value={giftEditForm.payment_method} onChange={e=>setGiftEditForm(p=>({...p,payment_method:e.target.value}))} placeholder="Method" style={{width:100,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
                               <input value={giftEditForm.notes} onChange={e=>setGiftEditForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{flex:1,minWidth:80,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
+                              <EventField value={giftEditForm.eventId||""} onChange={id=>setGiftEditForm(p=>({...p,eventId:id}))} testid="gift-edit-event" style={{flex:"1 1 260px"}}/>
                               {giftCfDefs.map(d=>(
                                 d.type==="select"?(
                                   <select key={d.key} value={giftEditForm.customFields?.[d.key]||""} onChange={e=>setGiftEditForm(p=>({...p,customFields:{...p.customFields,[d.key]:e.target.value}}))}
@@ -432,7 +441,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                               title={[g.notes,...giftCfDefs.map(d=>{const v=(g.custom_fields||{})[d.key];return (v!==null&&v!==undefined&&v!=="")?`${d.label}: ${renderCustomValue(d,v)}`:null;}).filter(Boolean)].filter(Boolean).join(" · ")}>
                               {[g.notes,...giftCfDefs.map(d=>{const v=(g.custom_fields||{})[d.key];return (v!==null&&v!==undefined&&v!=="")?`${d.label}: ${renderCustomValue(d,v)}`:null;}).filter(Boolean)].filter(Boolean).join(" · ")}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
-                              <button onClick={()=>{setGiftEditId(g.id);setGiftEditForm({amount:g.amount,date:g.date,type:g.type,payment_method:g.payment_method||"",notes:g.notes||"",fund_id:g.fund_id||"",acknowledgement_sent:g.acknowledgement_sent,customFields:Object.fromEntries(giftCfDefs.map(d=>[d.key,giftCfEditStr(d,(g.custom_fields||{})[d.key])]))});}} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Edit</button>
+                              <button onClick={()=>{setGiftEditId(g.id);setGiftEditForm({amount:g.amount,date:g.date,type:g.type,payment_method:g.payment_method||"",notes:g.notes||"",fund_id:g.fund_id||"",eventId:g.event_id||"",acknowledgement_sent:g.acknowledgement_sent,customFields:Object.fromEntries(giftCfDefs.map(d=>[d.key,giftCfEditStr(d,(g.custom_fields||{})[d.key])]))});}} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Edit</button>
                               <button onClick={()=>deleteGift(g.id)} style={{background:"none",border:"none",color:T.terracotta,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Delete</button>
                             </td>
                           </>
@@ -459,8 +468,9 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
               {addPledgeOpen&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"14px",marginBottom:10}}>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
                   <input value={pledgeForm.amount} onChange={e=>setPledgeForm(p=>({...p,amount:e.target.value}))} placeholder="Pledged amount ($)" type="number" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
-                  <input value={pledgeForm.dueDate} onChange={e=>setPledgeForm(p=>({...p,dueDate:e.target.value}))} type="date" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
                 </div>
+                <PledgeSchedule value={pledgeForm.sched||emptySchedule(pledgeForm.dueDate)} amount={pledgeForm.amount}
+                  onChange={sc=>setPledgeForm(p=>({...p,sched:sc,...scheduleBody(sc)}))}/>
                 {/* Attribution FIX — a pledge attributes at pledge time (capital
                     campaigns are mostly pledges). Payments against it inherit the
                     campaign; the campaign shows this as "pledged" until paid. */}
@@ -494,11 +504,13 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                             <span style={{background:meta.color+"15",color:meta.color,border:"1px solid "+meta.color+"40",borderRadius:99,padding:"2px 8px",fontSize:10,fontWeight:800}}>{meta.label}</span>
                             {isOverdue&&<span style={{fontSize:10,fontWeight:800,color:T.gold700}}>{daysOver}d overdue · reminder {Math.min(pl.reminder_step+1,4)}/4 sent</span>}
                           </div>
-                          <div style={{fontSize:11,color:T.ink3,marginTop:2}}>Due {displayDate(pl.due_date)}{pl.campaign_id?(()=>{const c=campaigns.find(x=>x.id===pl.campaign_id);return c?` · counts toward ${c.name}`:"";})():""}</div>
+                          <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{(()=>{const ins=pl.installments||[],nx=ins.length>1&&pl.status==="open"?ins.find(i=>!i.paid):null;   /* GIFTS-1: the next installment, not the first */
+                            return nx?`Next due ${displayDate(nx.dueDate)} · ${ins.length} installments`:`Due ${displayDate(pl.due_date)}`;})()}{pl.campaign_id?(()=>{const c=campaigns.find(x=>x.id===pl.campaign_id);return c?` · counts toward ${c.name}`:"";})():""}</div>
                           {pl.notes&&<div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.4}}>{pl.notes}</div>}
                           {pledgeEdit&&pledgeEdit.id===pl.id&&<div data-testid="pledge-edit" style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
                             <input aria-label="Amount" value={pledgeEdit.amount} onChange={e=>setPledgeEdit({...pledgeEdit,amount:e.target.value})} style={{width:100,border:"1px solid "+T.bg3,borderRadius:7,padding:"6px 8px",fontSize:12}}/>
-                            <input aria-label="Due" type="date" value={pledgeEdit.dueDate} onChange={e=>setPledgeEdit({...pledgeEdit,dueDate:e.target.value})} style={{border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 8px",fontSize:12}}/>
+                            <div style={{flexBasis:"100%"}}><PledgeSchedule testid="pledge-edit-schedule" value={pledgeEdit.sched} amount={pledgeEdit.amount}
+                              onChange={sc=>setPledgeEdit({...pledgeEdit,sched:sc,dueDate:sc.firstDue})}/></div>
                             <input aria-label="Note" value={pledgeEdit.notes} onChange={e=>setPledgeEdit({...pledgeEdit,notes:e.target.value})} placeholder="Note" style={{flex:"1 1 140px",border:"1px solid "+T.bg3,borderRadius:7,padding:"6px 8px",fontSize:12}}/>
                             <button onClick={savePledgeEdit} style={{background:T.greenDk,border:"none",borderRadius:7,padding:"6px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>Save</button>
                             <button onClick={()=>setPledgeEdit(null)} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
@@ -514,7 +526,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                             <button onClick={()=>setPledgeStatus(pl.id,"written_off")} disabled={isReadOnly} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink3,fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Write Off</button>
                           </>}
                           <EditedMarker item={pl}/>
-                          {!isReadOnly&&<button onClick={()=>setPledgeEdit({id:pl.id,amount:String(pl.amount),dueDate:String(pl.due_date||"").slice(0,10),notes:pl.notes||""})} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink2,fontSize:11,fontWeight:600,cursor:"pointer"}}>Edit</button>}
+                          {!isReadOnly&&<button onClick={()=>setPledgeEdit({id:pl.id,amount:String(pl.amount),dueDate:String(pl.due_date||"").slice(0,10),notes:pl.notes||"",sched:pledgeSched(pl)})} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink2,fontSize:11,fontWeight:600,cursor:"pointer"}}>Edit</button>}
                           <button onClick={()=>deletePledge(pl.id)} aria-label="Delete this pledge" style={{background:"none",border:"none",color:T.terracotta,fontSize:14,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
                         </div>
                       </div>

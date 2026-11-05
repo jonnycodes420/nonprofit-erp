@@ -961,12 +961,15 @@ async function writePlan({ req, body, importId, who, report }) {
   const firstInst = new Map(instPids.length
     ? (await query("SELECT id, pledge_id FROM pledge_installments WHERE org_id=? AND pledge_id = ANY(?) AND seq=1", [orgId, instPids])).map(r => [r.pledge_id, r.id]) : []);
   const giftArgs = [], giftOf = [];
+  const eventIdOf = eventId ? () => null : await require("../server/events/eventGifts").eventIdsByName(query, orgId);
   for (const g of u.gifts) {
     const args = {
       undated: !g.date, alreadyThanked: !g.date || undefined,
       orgId, donorId: personId.get(g.personKey), amount: g.cents / 100, date: g.date || null,
       paymentMethod: g.method || undefined, notes: g.note || "", campaign: g.campaign || "",
-      fundId: await fundIdFor(g.fund), importId, eventId, history: true, post: false,
+      // GIFTS-1: with no event for the whole file, a gift whose Event or
+      // Campaign column names an existing event exactly is that event's.
+      fundId: await fundIdFor(g.fund), importId, eventId: eventId || eventIdOf(g.campaign), history: true, post: false,
       idempotencyKey: "sheet:" + g.rowId, conflict: "idempotency", source: "sheet_import",
       actorId: who.id, actorName: who.name, applyInstallment: false,
       // the after-change step runs once for everyone, after the commit

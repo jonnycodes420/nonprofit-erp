@@ -23,6 +23,7 @@ import { apiFetch } from "../api";
 import { T, Modal, fmtFull } from "./shared";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { countLabel, plural } from "../../../shared/countWords.js";
+import EventField from "./gifts/EventField";   // GIFTS-1: each line's gift can belong to an event
 
 const STATE_META = {
   placed:           { label: "Placed",     colour: T.ink,      note: "" },
@@ -77,6 +78,7 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
   // until the deposit commits: a picture of a cheque that was never recorded
   // is an image of somebody's bank details with nothing to attach it to.
   const [cheques, setCheques] = useState({});
+  const [lineEvents, setLineEvents] = useState({});   // GIFTS-1: { line: eventId }
 
   // BUILD-95 — PHOTOGRAPH THE STACK, AND IT READS THEM.
   //
@@ -188,7 +190,8 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
       // BUILD-95 — the cheque photographs ride the commit, keyed by line. The
       // server re-plans from `paste` and will not trust a client's line object,
       // so the line NUMBER is the only thing both sides agree on.
-      const lines = Object.entries(cheques).map(([line, chequeImage]) => ({ line: Number(line), chequeImage }));
+      const keys = [...new Set([...Object.keys(cheques), ...Object.keys(lineEvents).filter(k => lineEvents[k])])];
+      const lines = keys.map(line => ({ line: Number(line), chequeImage: cheques[line] || undefined, eventId: lineEvents[line] || undefined }));
       const r = await apiFetch("/deposits/commit", { method: "POST", body: JSON.stringify({
         paste, depositDate, slipTotal, resolutions, lines }) });
       setDone(r);
@@ -350,6 +353,9 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
                             onChange={e => { readCheque(l.line, e.target.files && e.target.files[0]); e.target.value = ""; }} />
                           {cheques[l.line] ? "◫ photographed" : "◫ photograph the check"}
                         </label>
+                        {(l.state === "placed" || l.state === "placed_new_donor") && (
+                          <EventField value={lineEvents[l.line] || ""} onChange={id => setLineEvents(x => ({ ...x, [l.line]: id }))}
+                            testid={`deposit-event-${l.line}`} style={{ marginTop: 6, maxWidth: 420 }} />)}
                         {l.state === "needs_you" && (
                           <div style={{ marginTop: 6 }}>
                             <div style={{ color: STATE_META.needs_you.colour, fontWeight: 600, marginBottom: 6 }}>{l.needs}</div>

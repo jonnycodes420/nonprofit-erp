@@ -35,6 +35,7 @@ import { displayDateShort } from "../../../shared/displayDate";
 import { displayName } from "../../../shared/displayName.js";
 import { orgTodayCivil, orgTodayPlus, civilDaysAgo } from "../lib/orgToday";   // FIX-14 Part 1 — the org's today, never the UTC day
 import OpenPledgeBanner from "./OpenPledgeBanner";   // IMPORT-5: the open pledge up front
+import { savePledgeSchedule } from "./gifts/PledgeSchedule";   // GIFTS-1
 import { WhyPanel } from "./WhyAnswer";
 import { useDonorStatus, useDonorGone, statusTagItems } from "./ProfileStatus";
 import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
@@ -822,7 +823,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
         campaignId:addGiftForm.campaign_id||undefined,notes:addGiftForm.notes,
         fund_id:addGiftForm.fund_id,payment_method:addGiftForm.payment_method,
         acknowledgement_sent:addGiftForm.acknowledgement_sent,
-        pledgeId:addGiftForm.pledgeId||undefined,
+        pledgeId:addGiftForm.pledgeId||undefined,eventId:addGiftForm.eventId||undefined,
         idempotencyKey:addGiftIdemRef.current,
       })});
       addGiftIdemRef.current=null;
@@ -874,6 +875,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     if(!pledgeEdit)return;
     try{
       await apiFetch(`/pledges/${pledgeEdit.id}`,{method:"PUT",body:JSON.stringify({amount:Number(pledgeEdit.amount),dueDate:pledgeEdit.dueDate,notes:pledgeEdit.notes})});
+      if(pledgeEdit.sched)await savePledgeSchedule(pledgeEdit.id,pledgeEdit.sched);   // GIFTS-1: the schedule, its payments kept
       setPledgeEdit(null);loadPledges();
     }catch(e){alert(errorMessage(e,"The pledge could not be saved."));}
   };
