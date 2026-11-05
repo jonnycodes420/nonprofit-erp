@@ -13,6 +13,7 @@ import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
 import { RecordLink } from "./RecordLink";
 import { tabHref } from "../lib/appUrls";
+import { AwardStep, FunderPicker } from "./GrantAward";   // GRANTS-FIX: Awarded goes through the award
 
 const money = c => "$" + Math.round((Number(c) || 0) / 100).toLocaleString("en-US");
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -20,6 +21,7 @@ const day = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")
 const chip = on => ({ background: on ? T.ink : T.white, color: on ? T.white : T.ink, border: "1px solid " + T.bg3, borderRadius: 999, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" });
 const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", fontSize: 13, color: T.ink, background: T.white, fontFamily: "inherit" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" });
+const AWD = ["awarded", "reporting", "closed"];   // GRANTS-FIX: the stages that hold an award
 const askCents = g => (["awarded", "reporting", "closed"].includes(g.status) && g.amountAwardedCents ? g.amountAwardedCents : g.amountRequestedCents) || 0;
 
 export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey }) {
@@ -30,6 +32,9 @@ export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey 
   const [over, setOver] = useState("");
   const [declining, setDeclining] = useState(null);
   const [msg, setMsg] = useState("");
+  const [awarding, setAwarding] = useState(null);   // { g, target }: the award step is open
+  const [linking, setLinking] = useState(null);     // { g, then }: the funder picker is open
+  const [linkAsk, setLinkAsk] = useState(null);     // a note that says "link…" carries the action
   const narrow = typeof window !== "undefined" && window.innerWidth < 760;
 
   const load = () => {
@@ -52,6 +57,8 @@ export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey 
       const r = await apiFetch(`/grants/${g.id}/stage`, { method: "PATCH", body: JSON.stringify({ status, ...extra }) });
       load();
       const renewal = r.renewal && r.renewal.renewalGrantId ? r.renewal : null;
+      // The renewal could not be planned for want of a funder record: say so, with the link.
+      if (r.renewal && r.renewal.action === "link_funder") setLinkAsk({ g, sentence: r.renewal.sentence, then: "renewal" });
       offerUndo({
         message: renewal ? `${r.sentence} ${r.renewal.sentence}` : (r.renewal && r.renewal.sentence ? `${r.sentence} ${r.renewal.sentence}` : r.sentence),
         undoAction: async () => {
@@ -61,11 +68,14 @@ export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey 
         },
       }, "stage");
     } catch (e) {
+      if (e && e.code === "award_required") { setAwarding({ g, target: e.target || status }); return; }
       if (e && e.error === "decline_reason" || (e && /decline/i.test(String(e.code || e.error || "")))) { setDeclining({ g, reasons: (data && data.declineReasons) || [] }); return; }
       setMsg((e && e.sentence) || errorMessage(e, "That grant did not move."));
     }
   };
-  const tryMove = (g, status) => (status === "declined" ? setDeclining({ g, reasons: (data && data.declineReasons) || [] }) : move(g, status));
+  // GRANTS-FIX: into a stage that holds an award, from one that does not, with no award recorded: the award step first.
+  const tryMove = (g, status) => (status === "declined" ? setDeclining({ g, reasons: (data && data.declineReasons) || [] })
+    : AWD.includes(status) && !AWD.includes(g.status) && !g.awardPledgeId ? setAwarding({ g, target: status }) : move(g, status));
 
   if (!data) return <div style={{ padding: 30, color: T.ink3, fontSize: 13 }}>{msg || "Loading the pipeline…"}</div>;
   const stages = data.statuses || [];
@@ -115,6 +125,11 @@ export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey 
             onClick={() => setF({ ...f, stages: f.stages.includes(s.key) ? f.stages.filter(x => x !== s.key) : [...f.stages, s.key] })}>{s.label}</button>)}
         </div>)}
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink }}>{msg}</div>}
+      {linkAsk && <div role="status" data-testid="grant-link-ask" style={{ fontSize: 13, color: T.ink, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <span>{linkAsk.sentence}</span>
+        {!isReadOnly && <button type="button" style={btn(true)} onClick={() => { setLinking({ g: linkAsk.g, then: linkAsk.then }); setLinkAsk(null); }}>Link to funder</button>}
+        <button type="button" style={btn(false)} onClick={() => setLinkAsk(null)}>Dismiss</button>
+      </div>}
 
       {view === "board" ? (
         <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 }}>
@@ -161,6 +176,26 @@ export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey 
           </table>
         </div>)}
 
+      {awarding && <AwardStep target={awarding.target} onClose={() => setAwarding(null)}
+        grant={{ id: awarding.g.id, funderName: awarding.g.funderName, funderLinked: !!awarding.g.funderId, askCents: awarding.g.amountRequestedCents,
+                 restriction: awarding.g.restriction, restrictedUntil: awarding.g.restrictedUntil }}
+        onDone={({ award, moved }) => {
+          const g = awarding.g; setAwarding(null); load();
+          const ren = moved && moved.renewal;
+          setMsg([`Recorded the award from ${award.funderName || g.funderName}: a pledge of ${money(award.amountAwardedCents)} on their record, in ${award.installments} ${award.installments === 1 ? "payment" : "installments"}.`,
+            moved && moved.sentence, ren && ren.sentence].filter(Boolean).join(" "));
+        }} />}
+      {linking && <FunderPicker grantId={linking.g.id} typedName={linking.g.funderName} onClose={() => setLinking(null)}
+        onLinked={async x => {
+          const l = linking; setLinking(null);
+          let extra = "";
+          // The action that asked for the link completes without being redone.
+          if (l.then === "renewal") {
+            const r = await apiFetch(`/grants/${l.g.id}/plan-renewal`, { method: "POST", body: "{}" }).catch(e => ({ sentence: errorMessage(e, "The renewal was not planned.") }));
+            extra = (r && r.sentence) || "";
+          }
+          load(); setMsg([x.sentence, extra].filter(Boolean).join(" "));
+        }} />}
       {declining && <DeclineAsk g={declining.g} reasons={declining.reasons} onClose={() => setDeclining(null)}
         onPick={reason => { const g = declining.g; setDeclining(null); move(g, "declined", { declineReason: reason }); }} />}
     </div>

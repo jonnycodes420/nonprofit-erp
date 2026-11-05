@@ -82,6 +82,9 @@ const GUARDED_WRITERS = [
   // TRUST-1: turns off the at-risk and milestone sequences Steward made and
   // left on. Dry run by default; --apply writes through writerDbUrl.
   "trust1-turn-off-steward-sequences",
+  // GRANTS-FIX: links grants that carry only a typed funder name. Dry run by
+  // default; --apply writes through writerDbUrl, links only, one audit row each.
+  "grants-link-funders",
   "backfill-campaign-attribution",                    "dedupe-finance-gift-stamps",
    "fix-build54-demo-photos",
   "fix-demo-finance-ledger",  "load-irs-ein-registry",

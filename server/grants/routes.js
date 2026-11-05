@@ -14,6 +14,7 @@ const { anthropicFor, requireAi, transcribeAudio, AiOffError, AI_OFF_MESSAGE, re
 const TL = require("../../timelineLine");
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
 const PW = require("../../pledgeWrite");   // FIX-60: the one writer of a pledge and its installments
+const FL = require("./funderLink");   // GRANTS-FIX: the one resolver of a grant's funder
 
 const routers = {
   r1: express.Router(),
@@ -106,11 +107,23 @@ app.post("/grants", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     if (!camp.length) return res.status(404).json({ error: "Campaign not found" });
   }
 
+  // GRANTS-FIX: a grant is never born Awarded. Awarded means money promised,
+  // and the promise is written by the award (PUT /grants/:id/award), which
+  // puts the pledge on the funder. Add it at the stage before, then award it.
+  const GS = await grantShapeMod();
+  if (GS.AWARDED_STATUS_KEYS.includes(GS.normalizeStatus(status))) {
+    return res.status(400).json({ code: "award_required", error: "award_required",
+      sentence: "Add the grant at the stage it was in before the yes, then record the award, so the pledge goes on the funder." });
+  }
+  // GRANTS-FIX: the funder is resolved through the one resolver (funderLink.js):
+  // the organization with exactly that name, else a new one.
+  const fl = await FL.resolveGrantFunder({ q: query, r: run }, req.user.orgId, funder, actor(req));
+
   const id = newId("gr");
-  const isAwarded = (status || "prospecting") === "awarded";
+  const isAwarded = false;
   await run(
-    "INSERT INTO grants (id,org_id,funder,program,amount,status,deadline,report_due,officer,notes,campaign_id,awarded_at,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-    [id, req.user.orgId, funder, program || "", amount || 0,
+    "INSERT INTO grants (id,org_id,funder,funder_donor_id,program,amount,status,deadline,report_due,officer,notes,campaign_id,awarded_at,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    [id, req.user.orgId, funder, fl.donorId, program || "", amount || 0,
      status || "prospecting", deadline || "", reportDue || "", officer || "", notes || "",
      campaignId, isAwarded ? new Date().toISOString() : null, actor(req).id, actor(req).name]
   );
@@ -118,7 +131,7 @@ app.post("/grants", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   // previously never stamped the ledger — only the PUT transition did).
   if (isAwarded) await stampGrantAward(req.user.orgId, id, funder, program, amount, actor(req));
   const rows = await query("SELECT * FROM grants WHERE id = ?", [id]);
-  res.status(201).json(rows[0]);
+  res.status(201).json({ ...rows[0], funderLink: { how: fl.how, why: fl.why || null } });
 }));
 
 app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -127,9 +140,27 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
 
   // Capture previous status/attribution before update
-  const prevRows = await query("SELECT status, campaign_id, awarded_at FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  const prevRows = await query("SELECT status, campaign_id, awarded_at, funder_donor_id, award_pledge_id FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!prevRows.length) return res.status(404).json({ error: "Grant not found" });
   const prevStatus = prevRows[0]?.status;
+
+  // GRANTS-FIX: no status change into an award-holding stage without the award.
+  // From a never-awarded stage, Awarded (and Reporting or Closed) is reached
+  // only through PUT /grants/:id/award, which writes the pledge on the funder.
+  { const GS = await grantShapeMod();
+    const to = GS.normalizeStatus(status), from = GS.normalizeStatus(prevStatus);
+    if (GS.AWARDED_STATUS_KEYS.includes(to) && !GS.AWARDED_STATUS_KEYS.includes(from) && !prevRows[0].award_pledge_id) {
+      return res.status(409).json({ code: "award_required", error: "award_required", target: to,
+        funderLinked: !!prevRows[0].funder_donor_id,
+        sentence: "Record the award to move this grant to " + GS.statusLabel(to) + ": the amount, the payment schedule and the restriction. That writes the pledge on the funder." });
+    }
+  }
+  // GRANTS-FIX: an unlinked grant is linked through the one resolver when saved.
+  // A linked grant keeps its link; editing the typed name never relinks it.
+  if (!prevRows[0].funder_donor_id) {
+    const fl = await FL.resolveGrantFunder({ q: query, r: run }, orgId, funder, actor(req));
+    if (fl.donorId) await FL.linkGrant({ q: query, r: run }, orgId, req.params.id, fl.donorId);
+  }
 
   // Finance entity-routing FIX — the award-side double-count guard's "link,
   // don't double-book" arm. `adoptTxnId` names an EXISTING manual money-in row
@@ -251,7 +282,7 @@ app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(asy
       WHERE g.id=? AND g.org_id=?`, [req.params.id, orgId]);
   if (!g) return res.status(404).json({ error: "Grant not found" });
   if (!g.funder_donor_id) {
-    return res.status(400).json({ code: "funder_not_linked",
+    return res.status(400).json({ code: "funder_not_linked", action: "link_funder", grantId: g.id, typedName: g.funder || "",
       error: "Link this grant to the funder's organization record before awarding it, the pledge has to belong to somebody." });
   }
   let awardedCents;

@@ -71,7 +71,7 @@ export function GrantChecklist({ grantId, isReadOnly }) {
     </div>);
 }
 
-export function GrantAwardPlan({ grantId, isReadOnly, onChanged }) {
+export function GrantAwardPlan({ grantId, isReadOnly, onChanged, onLink }) {
   const [d, setD] = useState(null);
   const [form, setForm] = useState(null);
   const [msg, setMsg] = useState("");
@@ -98,6 +98,9 @@ export function GrantAwardPlan({ grantId, isReadOnly, onChanged }) {
               <span style={{ color: i.gift ? T.greenDk : T.ink3 }}>{i.gift ? `Paid by the gift of ${day(i.gift.date)}, ${money2(i.gift.amountCents)}` : "Not paid yet. The gift links itself when it arrives."}</span>
             </div>))}
         </div>)}
+      {/* GRANTS-FIX: the sentence that asks for the link carries the action. */}
+      {!d.pledge && !d.canRecord && !isReadOnly && onLink && (
+        <button type="button" data-testid="grant-award-link" onClick={onLink} style={{ marginTop: 8, background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "7px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Link to funder</button>)}
       {!d.pledge && d.canRecord && !isReadOnly && (form ? (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
           <input aria-label="Amount awarded" type="number" placeholder="Awarded $" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} style={{ ...inp, width: 130 }} />
