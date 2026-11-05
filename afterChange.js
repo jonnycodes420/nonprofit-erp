@@ -186,6 +186,8 @@ async function afterChangeNow(orgId, donorIds, { door, history = false, fire = n
     await deps.scheduleScores(orgId, history ? null : ids);
     // SCALE-2: the org's stored Home figures are recomputed off the request path.
     require("./orgSummary").scheduleRefresh(orgId);
+    // INSIGHTS-2: and the org's Insights are rebuilt on the worker, folded per org.
+    await require("./server/insights/store").schedule(orgId);
     // RECONCILE-1: a door that writes gifts re-checks the org's old reports
     // against Steward, once, a moment later ("Checked Oct 14, 2026").
     if (GIFT_DOORS.has(door)) require("./reconcile").scheduleRecheck(orgId);

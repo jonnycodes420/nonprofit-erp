@@ -351,10 +351,11 @@ async function reportRetention(orgId, p) {
   // same, restricted to donors whose first-ever gift was in Y-1.
   const lastCompleted = reportCurrentYear(p.yearMode, p.org) - 1;
   const years = [lastCompleted - 2, lastCompleted - 1, lastCompleted];
-  const rows = [];
-  for (const y of years) {
-    const cur = reportYearBounds(y, p.yearMode, p.fiscalStartMonth);
-    const prior = reportYearBounds(y - 1, p.yearMode, p.fiscalStartMonth);
+  // INSIGHTS-2: the three years at once, and their figures in one read (server/reports/retentionFigures.js).
+  const bounds = years.map(y => ({ y, cur: reportYearBounds(y, p.yearMode, p.fiscalStartMonth), prior: reportYearBounds(y - 1, p.yearMode, p.fiscalStartMonth) }));
+  const figs = require("./retentionFigures").retentionFigures(orgId, bounds.map(({ cur, prior }) => ({ from1: prior.from, to1: prior.to, from0: cur.from, to0: cur.to })));
+  figs.catch(() => {});   // awaited per row below; never an unhandled rejection meanwhile
+  const rows = await Promise.all(bounds.map(async ({ y, cur, prior }, j) => {
     const [r] = await query(
       // NUMBERS-5: a donor in a year gave a gift in it (a refund alone is not
       // giving), and their dollars are money (credit rows out, refunds off).
@@ -372,7 +373,7 @@ async function reportRetention(orgId, p) {
                 WHERE f.fg >= ? AND f.fg <= ? AND EXISTS (SELECT 1 FROM cur c WHERE c.donor_id = pr.donor_id))::int AS first_year_retained`,
       [orgId, prior.from, prior.to, orgId, cur.from, cur.to, orgId, prior.from, prior.to, prior.from, prior.to]);
     const pct = (a, b) => b > 0 ? Math.round(a / b * 1000) / 10 : null;
-    rows.push({
+    const row = {
       year: y, label: reportYearLabel(y, p),
       priorDonors: r.prior_donors, retainedDonors: r.retained_donors,
       retentionRate: pct(r.retained_donors, r.prior_donors),
@@ -380,24 +381,15 @@ async function reportRetention(orgId, p) {
       dollarRetentionRate: r.prior_dollars > 0 ? Math.round(Number(r.retained_dollars) / Number(r.prior_dollars) * 1000) / 10 : null,
       firstYearDonors: r.first_year_donors, firstYearRetained: r.first_year_retained,
       firstYearRetentionRate: pct(r.first_year_retained, r.first_year_donors),
-    });
+    };
     // REPORTS-4: the row's figures through their sources, and the row shows
     // THEIR values. A person counts as having given when a gift above zero is
     // dated in the year, as on the Board; a refund alone is not giving.
-    const w = { from1: prior.from, to1: prior.to, from0: cur.from, to0: cur.to };
-    const f = await reportFigures(orgId, {
-      retentionRate: { key: "retention-window", params: w },
-      dollarRetentionRate: { key: "retention-dollars", params: w },
-      firstYearRetentionRate: { key: "retention-first", params: w },
-      priorDonors: { key: "retention-window-prior", params: { from1: prior.from, to1: prior.to } },
-      retainedDonors: { key: "retention-window-kept", params: w },
-      priorDollars: { key: "retention-window-prior", params: { from1: prior.from, to1: prior.to, measure: "sum" } },
-      firstYearDonors: { key: "retention-window-prior", params: { from1: prior.from, to1: prior.to, firstYear: true } },
-    });
-    const row = rows[rows.length - 1];
+    const f = (await figs)[j];
     for (const k of Object.keys(f)) row[k] = f[k].value;
     row.figures = f;
-  }
+    return row;
+  }));
   return { yearMode: p.yearMode, rows };
 }
 

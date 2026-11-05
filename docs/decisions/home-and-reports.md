@@ -24,8 +24,10 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
 - **The ladder and the cards are one engine (INSIGHTS-1).** `insights.js` is pure (every input, `asOf`
   included, is a parameter); `insightsData.js` reads; `routes/insights.js` serves Home, the first look, the
   profile, the Donors list's rung column and filter, and Ask (through the list's `rung`, `ladder_status` and
-  `planned` fields). Nothing is stored: a rung is computed from the gifts each time (an in-process memo keyed
-  by the org's gift fingerprint). A household is one giver. Every number in a card's words must be in its
+  `planned` fields). INSIGHTS-2: the worker builds them (`server/insights/store.js`, job `handler:insights`,
+  folded per org) and stores them with the fingerprint they were built from; a request only reads the stored
+  answer (`stale: true` when the fingerprint moved, `preparing: true` before the first build) and never runs
+  `computeInsights`. The Insights buttons wait (bounded) for the rebuild. A household is one giver. Every number in a card's words must be in its
   facts (`numbersOk`); a GET writes nothing (the page POSTs `/insights/seen`). Review leads the first look and
   follows the people cards on Home. A person with an undated gift is never in Drift or "Gone quiet"
   (`excludedReason: undated_gift`).
