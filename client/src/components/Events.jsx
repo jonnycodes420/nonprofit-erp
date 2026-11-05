@@ -15,6 +15,7 @@ import { Figure } from "./Figure";
 import EventRaised, { EventStory, peopleLine } from "./EventRaised";   // HOME-3 · FUNDRAISING-2 · EVENTS-3
 import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit, EVENT_FIGURES } from "../../../shared/eventShape";
 import { countLabel } from "../../../shared/countWords.js";
+import { eventRowsChanged, useEventRowsRev } from "../lib/eventRows";   // COUNTS-1: every panel re-reads the guest rows
 
 // PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
 const CHAIR = 44;
@@ -363,7 +364,8 @@ function EventReport({ eventId, onOpenRows }) {
   const [r, setR] = useState(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => { apiFetch(`/events/${eventId}/report`).then(setR).catch(() => setR(null)); }, [eventId]);
+  const rowsRev = useEventRowsRev(eventId);
+  useEffect(() => { apiFetch(`/events/${eventId}/report`).then(setR).catch(() => setR(null)); }, [eventId, rowsRev]);
   const thanks = async () => {
     setBusy(true); setMsg("");
     try { const out = await apiFetch(`/events/${eventId}/sponsor-thanks`, { method: "POST", body: "{}" }); setMsg(out.sentence); }
@@ -460,7 +462,8 @@ function EventSeating({ eventId }) {
   const [printing, setPrinting] = useState(null);  // PARITY-4: "chart" | "list", the sheet print media shows
 
   const load = () => apiFetch(`/events/${eventId}/guests`).then(setData).catch(() => setData(null));
-  useEffect(() => { load(); }, [eventId]);
+  const rowsRev = useEventRowsRev(eventId);
+  useEffect(() => { load(); }, [eventId, rowsRev]);
 
   // Every write lands here, so one place clears the message, keeps the undo
   // the server handed back, and refreshes from the response rather than
@@ -471,6 +474,7 @@ function EventSeating({ eventId }) {
       const r = await apiFetch(path, opts);
       if (r && r.guests) setData(d => ({ ...(d || {}), guests: r.guests, tables: r.tables || (d && d.tables) || [] }));
       else await load();
+      eventRowsChanged(eventId);
       if (r && r.sentence) setMsg(r.sentence);
       if (undoLabel && r && Array.isArray(r.undo) && r.undo.length) setUndo({ label: undoLabel, moves: r.undo });
       setBusy(false);
@@ -1085,7 +1089,8 @@ export function EventKiosk({ eventId }) {
   const codeBoxRef = useRef(null);
 
   const load = () => apiFetch(`/events/${eventId}/kiosk`).then(setData).catch(() => setData(null));
-  useEffect(() => { load(); }, [eventId]);
+  const rowsRev = useEventRowsRev(eventId);
+  useEffect(() => { load(); }, [eventId, rowsRev]);
 
   const show = (r, fallback) => {
     if (r && r.ok) {
@@ -1111,7 +1116,7 @@ export function EventKiosk({ eventId }) {
     try {
       const r = await apiFetch(`/events/${eventId}/scan`, { method: "POST", body: JSON.stringify({ code: c }) });
       show(r, "In.");
-      if (r && r.ok) load();
+      if (r && r.ok) eventRowsChanged(eventId);
     } catch (e) { setResult({ tone: "no", title: "Not checked in", sentence: errorMessage(e, "That code did not read.") }); }
   };
   handleRef.current = handleCode;
@@ -1183,13 +1188,13 @@ export function EventKiosk({ eventId }) {
     try {
       const r = await apiFetch(`/events/${eventId}/check-in`, { method: "POST", body: JSON.stringify({ attendeeId: g.id }) });
       show(r, `${g.name} is in.`);
-      if (r && r.ok) load();
+      if (r && r.ok) eventRowsChanged(eventId);
     } catch (e) { setMsg(errorMessage(e, "That did not go through.")); }
   };
   const undoIn = async (g) => {
     try {
       const r = await apiFetch(`/events/${eventId}/check-in`, { method: "POST", body: JSON.stringify({ attendeeId: g.id, undo: true }) });
-      setResult(null); setMsg(r.sentence); load();
+      setResult(null); setMsg(r.sentence); eventRowsChanged(eventId);
     } catch (e) { setMsg(errorMessage(e, "That did not go through.")); }
   };
 
@@ -1218,7 +1223,7 @@ export function EventKiosk({ eventId }) {
       const c = await apiFetch(`/events/${eventId}/check-in`, { method: "POST", body: JSON.stringify({ attendeeId: id }) });
       show(c, "In.");
       setTerm("");
-      load();
+      eventRowsChanged(eventId);
     } catch (e) { setMsg(errorMessage(e, "That did not go through.")); }
   };
 
@@ -1405,7 +1410,8 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
     setLoading(false);
   };
 
-  useEffect(() => { reload(); }, [eventId]);
+  const rowsRev = useEventRowsRev(eventId);
+  useEffect(() => { reload(); }, [eventId, rowsRev]);
 
   const patchAttendee = async (attId, patch) => {
     setSavingAtt(attId);
@@ -1417,6 +1423,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
         ...ev,
         attendees: ev.attendees.map(a => a.id === attId ? { ...a, ...updated } : a),
       }));
+      eventRowsChanged(eventId);
     } catch(e) { setActErr(errorMessage(e, "That did not save.")); }
     setSavingAtt(null);
   };
@@ -1444,7 +1451,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
       });
       setSelectedIds(new Set());
       setDonorSearch("");
-      await reload();
+      eventRowsChanged(eventId);
       if (onEventUpdated) onEventUpdated();
     } catch(e) { setActErr(errorMessage(e, "That did not save.")); }
     setAddingDonors(false);
@@ -1458,7 +1465,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
         method: "POST", body: JSON.stringify(guestForm),
       });
       setGuestForm({ name: "", email: "" });
-      await reload();
+      eventRowsChanged(eventId);
       if (onEventUpdated) onEventUpdated();
     } catch(e) { setActErr(errorMessage(e, "That did not save.")); }
     setAddingGuest(false);

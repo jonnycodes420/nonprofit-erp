@@ -701,6 +701,8 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata) VALUES (?,?,?,?,?,?,?,?,?,?)",
       [intId, orgId, req.params.id, touch.interactionType, line, date, userId, userName, giftIdForTimeline,
        JSON.stringify({ via: "thread_log", touch: touch.key, next_step: nsSkipped ? "skipped" : "set", ...(place ? { location: place } : {}),
+                        // COUNTS-1: a note she marks as a conversation is a contact (meetings.js).
+                        ...(touch.interactionType === "note" && req.body?.conversation === true ? { conversation: true } : {}),
                         ...(step ? { next_step_label: step.label } : {}), ...(nsSource ? { next_step_source: nsSource } : {}),
                         ...(outcome ? { outcome } : {}) })]);
 
@@ -722,7 +724,11 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
         : null;
       thread = await openThreadTx(client, {
         orgId, donorId: req.params.id, step, openedOn: today,
-        ownerId: donor.assigned_to || userId, ownerName: donor.assigned_to ? donor.assigned_to_name : userName,
+        // COUNTS-1: the follow-up she set while logging is HERS, so it is in
+        // her Tasks and on her Thread, not only on the person's rail. It went
+        // to the person's officer, and a director who logged a call on Priya's
+        // donor saw "Follow up · Due Nov 9" in the rail and nowhere else.
+        ownerId: userId, ownerName: userName,
         actorId: userId, actorName: userName, openingInteractionId: intId, followon,
       });
     }
@@ -763,7 +769,9 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   // person: the after-change step. A gift written above ran it already with
   // the gift form's name; this is the touch's own call.
   await require("../../afterChange").afterChange(orgId, [req.params.id], { door: "logged_touch", recalc: false });
-  res.status(201).json({ ...out, skipped: nsSkipped, gift: giftOut });
+  // COUNTS-1: the one Last contact, in the same response as the log.
+  const lastContact = await require("../../meetings").lastContactWith(orgId, req.params.id);
+  res.status(201).json({ ...out, skipped: nsSkipped, gift: giftOut, lastContact });
 }));
 
 // ── FIX-14 Part 1 — WHAT STEWARD HEARD IN A LOGGED CONVERSATION ────────────

@@ -7,16 +7,38 @@
 // It stops the click from reaching an enclosing clickable row, so a row whose
 // name is the link never opens twice (or opens in place on a Cmd-click).
 import { useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { isPlainLeftClick, donorHref } from "../lib/appUrls";
+import { Link, useNavigate, useInRouterContext } from "react-router-dom";
+import { isPlainLeftClick, donorHref, parseAppUrl } from "../lib/appUrls";
 
 // A link looks like the thing it replaced: no underline, and the colour of
 // its surroundings unless a className (the nav's CSS) decides the colour.
 const BARE = { color: "inherit", textDecoration: "none" };
 const BARE_CLASSED = { textDecoration: "none" };
 
+// HOTFIX-RHYTHM: a panel drawn in its own root (the readout, Recent changes)
+// has no router, and <Link> there threw, taking the whole panel with it.
+// Outside the router a record link is a plain <a href>, and a plain click
+// asks the app to open it ("steward:go"), the way a router push would.
+function PlainRecordLink({ to, onOpen, children, ...rest }) {
+  return (
+    <a href={to} {...rest}
+      onClick={e => {
+        e.stopPropagation();
+        if (!isPlainLeftClick(e)) return;
+        e.preventDefault();
+        if (onOpen) { onOpen(e); return; }
+        const u = new URL(to, window.location.origin);
+        const r = parseAppUrl(u.pathname, u.search, u.hash);
+        if (r) window.dispatchEvent(new CustomEvent("steward:go", { detail: { tab: r.tab, opts: r.opts } }));
+      }}>
+      {children}
+    </a>
+  );
+}
+
 export function RecordLink({ to, onOpen, style, children, ...rest }) {
   const base = rest.className ? BARE_CLASSED : BARE;
+  if (!useInRouterContext()) return <PlainRecordLink to={to} onOpen={onOpen} {...rest} style={style ? { ...base, ...style } : base}>{children}</PlainRecordLink>;
   return (
     <Link to={to} {...rest} style={style ? { ...base, ...style } : base}
       onClick={e => {

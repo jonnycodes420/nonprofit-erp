@@ -411,16 +411,11 @@ function healthExamples(c) {
 
 // After an import, once a night, or by hand. Stores the counts as they stood
 // and how many possible duplicates involve people the import created.
+// HOTFIX-RHYTHM: the import's pairs, and the Home notice counted with today's rule.
+const { importPairs, noticeCount } = require("../server/dataHealth/noticeCount")({ query, livePeople: (...a) => livePeople(...a), pairsAndFamilies: (...a) => pairsAndFamilies(...a) });
 async function runDataHealth(orgId, { trigger, importId = null, actorId = "system:data-health", actorName = "Steward (data health)" }) {
   const c = await healthCounts(orgId);
-  let fresh = 0;
-  if (importId) {
-    const [imp] = await query("SELECT started_at, committed_at FROM imports WHERE id=? AND org_id=?", [importId, orgId]);
-    const since = imp && (imp.started_at || imp.committed_at);
-    const isNew = d => d.created_import_id === importId || (since && new Date(d.created_at) >= new Date(since));
-    const byId = new Map(c._people.map(d => [d.id, d]));
-    fresh = c._pairs.filter(p => isNew(byId.get(p.a)) || isNew(byId.get(p.b))).length;
-  }
+  const fresh = importId ? await importPairs(orgId, importId, c._people, c._pairs) : 0;
   const id = newId("dhr");
   await run(`INSERT INTO data_health_runs (id, org_id, trigger, import_id, counts, new_duplicates, created_by, created_by_name)
              VALUES (?,?,?,?,?::jsonb,?,?,?)`,
@@ -502,13 +497,15 @@ app.post("/data-health/run", requireAuth, checkWriteAccess, wrap(async (req, res
 const NOTICE_THRESHOLD = 10;
 app.get("/data-health/notice", requireAuth, wrap(async (req, res) => {
   const [r] = await query(
-    `SELECT r.id, r.new_duplicates, r.created_at, i.name AS import_name
+    `SELECT r.id, r.import_id, r.new_duplicates, r.created_at, i.name AS import_name
        FROM data_health_runs r LEFT JOIN imports i ON i.id = r.import_id AND i.org_id = r.org_id
       WHERE r.org_id=? AND r.trigger='import' AND r.dismissed_at IS NULL AND r.created_at > NOW() - INTERVAL '14 days'
       ORDER BY r.created_at DESC LIMIT 1`, [req.user.orgId]);
   if (!r || r.new_duplicates <= NOTICE_THRESHOLD) return res.json({ notice: null });
-  res.json({ notice: { id: r.id, count: r.new_duplicates,
-    sentence: `Your last import${r.import_name ? `, ${r.import_name},` : ""} left ${r.new_duplicates} possible duplicates.`,
+  const n = await noticeCount(req.user.orgId, r);
+  if (n <= NOTICE_THRESHOLD) return res.json({ notice: null });
+  res.json({ notice: { id: r.id, count: n,
+    sentence: `Your last import${r.import_name ? `, ${r.import_name},` : ""} left ${n} possible duplicates.`,
     step: "Review them in Data health" } });
 }));
 app.post("/data-health/notice/:id/dismiss", requireAuth, checkWriteAccess, wrap(async (req, res) => {

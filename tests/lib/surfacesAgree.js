@@ -45,7 +45,11 @@
 //             campaignReach (TRUST-1: the builder's "N can get this email"
 //             is the number the send would reach, by SEND-GATE-2's rule), units
 //             (FIX-60: a report's money figure is money, its count a count,
-//             each foots to its rows; a fee is less than its gift)
+//             each foots to its rows; a fee is less than its gift),
+//             counts (COUNTS-1: open tasks and the Tasks badge, each person's
+//             Last contact, against tests/lib/countsKey.js; volunteers card =
+//             roster = list, an audience's number = the builder's, SYBUNT
+//             starter vs report, Re-engage vs Lost, tests/lib/counts1Item3.js)
 //   plantEvent (eventId, { rep, kiosk }) => { rep, kiosk }: change an event's
 //             bodies before its checks, to prove they can go red (FIX-59)
 //
@@ -882,6 +886,10 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   // Donors' households view, Ask and Atlas asked how many households, and
   // Reports' top donors by household (each row a household or a person in
   // none; its members the people who gave). Every count says which it is.
+  // ── COUNTS-1 · every count matches the list it counts (tests/lib/countsKey.js):
+  // open tasks and the badge's "due now", and each person's Last contact.
+  if (!skip.has("counts")) diffs.push(...await require("./countsKey").countsDiffs({ q, orgId, get, asOf: key.asOf }));
+
   if (!skip.has("households")) {
     const ASK_H = "How many households do we have?";
     const yy = key.asOf.slice(0, 4);
@@ -1071,6 +1079,13 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       .map(r => [r.fund_id, Number(r.c)]));
     for (const f of (fundsDetail && fundsDetail.funds) || [])
       agree(`the ${f.name} fund's balance${at}`, [["its ledger stamps", byFund.get(f.id) || 0], ["Finance's fund card", Number(f.balanceCents)]], money);
+  }
+
+  // COUNTS-1 item 3: each count is the count of the list it labels (volunteers,
+  // an audience against the campaign builder, SYBUNT, Re-engage against Lost).
+  if (!skip.has("counts")) {
+    const { countsItem3Diffs } = require("./counts1Item3");
+    for (const d of await countsItem3Diffs(token, { only: ["volunteers", "audiences", "sybunt", "lapsed"], maxPeople: 3000 })) diffs.push(`${d}${label ? ` (${label})` : ""}`);
   }
 
   for (const [name, b] of [["the Donors list", list], ["Home", lead], ["Fundraising", fund], ["the Board", board], ["the workbook export", workbook]]) {

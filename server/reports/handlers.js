@@ -1361,6 +1361,7 @@ const STD_PERSON = {
 
 async function runStandardReport(orgId, std) {
   if (std.kind === "builder") return runBuilderDef(orgId, std.def);
+  if (std.handler === "lost") return require("./lostReport").lostReport(orgId);   // COUNTS-1: lapse.js lostSql, Re-engage's Lost & Found
   const p = parseReportParams({ ...std.params }, await orgForYears(orgId));   // ORG_TZ_SEAM_OK
   if (std.handler === "by-month-vs-last-year") {
     const d = await reportByMonthVsLastYear(orgId, p);

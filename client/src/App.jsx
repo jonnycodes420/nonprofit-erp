@@ -19,6 +19,7 @@ import { confirmIfDirty } from "./lib/dirtyGuard";
 import { SkeletonPage } from "./components/Skeleton";
 import { bootRead, homeShape } from "./lib/bootReads";
 import { useStewardTold } from "./lib/stewardTold";
+import { useTaskBadge } from "./lib/taskBadge";
 import { TopBar, MobileSearch, isApplePlatform } from "./components/TopBar";
 import SupportBanner from "./components/SupportBanner";   // FIX-57
 import { errorMessage } from "./lib/domainError";
@@ -500,6 +501,7 @@ function AppShell() {
   // that opened the window.
   useStewardTold(d=>{if(d&&d.import)loadData({quiet:true});});
   useStewardTold(d=>{if(d&&d.task)loadData({quiet:true});});   // SWEEP-4: a task drafted from a profile counts at once
+  const taskBadge=useTaskBadge(!!data);   // COUNTS-1: the server's count of the list it opens
 
   // HOME-4: clip, not hidden, where the browser has it. Both stop a sideways
   // bleed; hidden also makes this a scroll container that never scrolls, which
@@ -539,9 +541,8 @@ function AppShell() {
     <button onClick={()=>window.location.reload()} style={{marginTop:4,background:T.green,border:"none",borderRadius:10,padding:"9px 20px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>Retry</button>
   </div>;
 
-  // Badge = tasks needing attention now: open + overdue-or-due-today.
-  const _todayISO=new Date().toISOString().slice(0,10);
-  const tasksDue=data.tasks.filter(t=>!t.done&&t.due&&Math.floor((new Date(t.due)-new Date(_todayISO))/86400000)<=0).length;
+  // COUNTS-1: her open tasks due today or overdue, as GET /tasks/counts says (lib/taskBadge.js).
+  const tasksDue=taskBadge.n;
   const orgName=auth?.org?.name||data.org?.name||"Steward";
 
   const accessState=billing?.accessState||"full";
@@ -697,8 +698,8 @@ function AppShell() {
       {!sidebarCollapsed&&t.label}
       {!sidebarCollapsed&&t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
       {t.id==="tasks"&&tasksDue>0&&(sidebarCollapsed
-        ? <span aria-label={`${tasksDue} due`} style={{position:"absolute",top:4,right:10,width:7,height:7,borderRadius:"50%",background:T.terracotta}}/>
-        : <span style={{...DUE_BADGE,marginLeft:"auto"}}>{tasksDue}</span>)}
+        ? <span aria-label={taskBadge.title} title={taskBadge.title} style={{position:"absolute",top:4,right:10,width:7,height:7,borderRadius:"50%",background:T.terracotta}}/>
+        : <span data-testid="tasks-rail-badge" title={taskBadge.title} style={{...DUE_BADGE,marginLeft:"auto"}}>{tasksDue}</span>)}
       {t.id==="fundraising"&&toConfirm>0&&(sidebarCollapsed
         ? <span aria-label={`${toConfirm} to confirm`} style={{position:"absolute",top:4,right:10,width:7,height:7,borderRadius:"50%",background:T.gold}}/>
         : <span data-testid="toconfirm-rail-badge" title={`${toConfirm} to confirm`} style={{...CONFIRM_BADGE,marginLeft:"auto"}}>{toConfirm}</span>)}
@@ -1112,7 +1113,7 @@ function AppShell() {
                 <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon id={t.id} size={18}/></span>
                 <span style={{flex:1}}>{t.label}</span>
                 {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"2px 7px"}}>Early Access</span>}
-                {t.id==="tasks"&&tasksDue>0&&<span style={{background:T.terracotta,color:T.white,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 6px"}}>{tasksDue}</span>}
+                {t.id==="tasks"&&tasksDue>0&&<span title={taskBadge.title} style={{background:T.terracotta,color:T.white,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 6px"}}>{tasksDue}</span>}
                 {t.id==="fundraising"&&toConfirm>0&&<span style={{...CONFIRM_BADGE,fontSize:10}}>{toConfirm}</span>}
               </RecordLink>
             );
