@@ -9,7 +9,7 @@
 //
 // Everything comes from GET /donors/:id/status (routes/profileStatus.js), and
 // every number and tag carries the source its rows come from.
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { T, Modal, fmtFull } from "./shared";
 import { Figure, FigureContext } from "./Figure";
@@ -23,16 +23,44 @@ import { countLabel } from "../../../shared/countWords.js";
 // JOBS-1: while what follows a change is still running on the queue
 // (`updating`), the summary is read again a moment later, a few times, until
 // it is current.
+// FLOWS-1 item 6: an id the server says is gone (merged away or deleted) is
+// never read again, by this profile or the next one opened on it. It kept
+// polling every 2 s after a merge, and each read was a 404.
+const GONE = new Map();   // donorId -> { gone, keptId, keptName }
+// It says so with a window event, and useDonorGone below is how a screen hears it.
+const GONE_EVENT = "steward:donor-gone";
+const sayGone = (donorId, g) => { try { window.dispatchEvent(new CustomEvent(GONE_EVENT, { detail: { donorId, ...g } })); } catch { /* no window */ } };
+export function useDonorGone(donorId, onGone) {
+  const cb = useRef(onGone); cb.current = onGone;
+  useEffect(() => {
+    if (!donorId) return undefined;
+    const on = e => { if (e.detail && e.detail.donorId === donorId && cb.current) cb.current(e.detail); };
+    window.addEventListener(GONE_EVENT, on);
+    if (GONE.has(donorId) && cb.current) cb.current({ donorId, ...GONE.get(donorId) });
+    return () => window.removeEventListener(GONE_EVENT, on);
+  }, [donorId]);
+}
 export function useDonorStatus(donorId, refreshKey, stepKey) {
   const [status, setStatus] = useState(null);
   useEffect(() => {
     let live = true, timer = null, tries = 0;
     if (!donorId) return undefined;
+    if (GONE.has(donorId)) { setStatus(null); return undefined; }
     const read = () => apiFetch(`/donors/${donorId}/status`).then(s => {
       if (!live) return;
       setStatus(s || null);
-      if (s && s.updating && tries++ < 15) timer = setTimeout(read, 2000);
-    }).catch(() => { if (live) setStatus(null); });
+      if (s && s.updating && tries++ < 15 && !GONE.has(donorId)) timer = setTimeout(read, 2000);
+    }).catch(e => {
+      if (e && e.status === 404) {
+        const b = (e && e.body) || e || {};
+        const g = { gone: b.gone || "deleted", keptId: b.keptId || null, keptName: b.keptName || null };
+        GONE.set(donorId, g);
+        if (live) setStatus(null);
+        sayGone(donorId, g);
+        return;
+      }
+      if (live) setStatus(null);
+    });
     read();
     return () => { live = false; clearTimeout(timer); };
   }, [donorId, refreshKey, stepKey]);

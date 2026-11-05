@@ -128,15 +128,25 @@ function readAsDataUrl(file) {
 
 // The one upload. Refuses an oversize file before sending it; the server
 // checks the size, the type and the first bytes again, and its sentence wins.
+const UPLOAD_WAIT_MS = 25000;
 export async function uploadAttachment(interactionId, file) {
   if (!interactionId || !file) throw new Error("Nothing to attach.");
   if (file.size > FILE_MAX_BYTES) {
     throw new Error(`That file is ${fileSize(file.size)}. The limit is 10 MB.`);
   }
   const dataUrl = await readAsDataUrl(file);
-  const row = await apiFetch(`/interactions/${interactionId}/attachments`, {
-    method: "POST", body: JSON.stringify({ file: dataUrl, fileName: file.name }),
-  });
+  // FLOWS-1 item 7: Save sat on "Saving…" for 30+ seconds while the file was
+  // stored. It now has a limit, and says what happened when it is passed.
+  let row;
+  try {
+    row = await apiFetch(`/interactions/${interactionId}/attachments`, {
+      method: "POST", body: JSON.stringify({ file: dataUrl, fileName: file.name }), signal: AbortSignal.timeout(UPLOAD_WAIT_MS),
+    });
+  } catch (e) {
+    if (e && (e.name === "TimeoutError" || e.name === "AbortError"))
+      throw new Error(`storing it took over ${UPLOAD_WAIT_MS / 1000} seconds. If it finishes it appears on the entry; if not, attach it again there`);
+    throw e;
+  }
   try { window.dispatchEvent(new CustomEvent(ATTACHMENTS_CHANGED, { detail: { interactionId } })); } catch { /* old browser */ }
   return row;
 }

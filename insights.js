@@ -615,7 +615,10 @@ const hello = x => {
     contactName: solo && solo.contact_name, spouseName: solo && solo.spouse_name }, { word: "Hi", punct: "" }) : `Dear ${name}`;
 };
 const yearsLine = x => Object.keys(x.byYear).sort().map(y => `${money(x.byYear[y])} (${y})`).join(", ");
-const windowWords = (from, to) => ({ from, to, words: from === to ? `on ${longDate(from)}` : `between ${longDate(from)} and ${longDate(to)}` });
+// FLOWS-1 item 9: a window runs forward. One whose end is already behind its
+// start ("between Nov 3, 2026 and Nov 29, 2024") is "now", starting today.
+const windowWords = (from, to) => (from && to && to < from) ? { from, to: from, words: "now" }
+  : ({ from, to, words: from === to ? `on ${longDate(from)}` : `between ${longDate(from)} and ${longDate(to)}` });
 const reachable = x => !x.noContact;
 
 // ── THE INSIGHT LIBRARY ────────────────────────────────────────────────────

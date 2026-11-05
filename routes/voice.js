@@ -208,6 +208,7 @@ async function closeMeeting(req, { donorId, date, how, today, interactionId }) {
   const taskIds = openTasks.filter(t => t.calendar_event_id === ev.id || threadIds.includes(t.thread_id) || (near(t.due) && namesIt(t.title))).map(t => t.id);
   if (taskIds.length) await run(`UPDATE tasks SET done=1, completed_at=COALESCE(completed_at,NOW()), completed_by_name=?, updated_at=NOW() WHERE org_id=? AND id = ANY(?::text[])`,
     [who.name, orgId, taskIds]);
+  if (taskIds.length) await require("../server/tasks/repeat").afterDoneMany({ query, run }, orgId, taskIds, orgToday(await orgTz(orgId)));   // FLOWS-1: a repeat comes back
   return { eventId: ev.id, title: ev.title, day: ev.day, interactionId, threadIds, taskIds,
     effects: effects.map(e => e.id) };
 }
@@ -514,6 +515,7 @@ async function giftFollowOn(req, m, card, gift, today) {
   const chores = open.filter(t => T.isMoneyChore(t.title)).map(t => t.id);
   if (chores.length) await run(`UPDATE tasks SET done=1, completed_at=COALESCE(completed_at,NOW()), completed_by_name=?, updated_at=NOW() WHERE org_id=? AND id = ANY(?::text[])`,
     [actor(req).name, orgId, chores]);
+  if (chores.length) await require("../server/tasks/repeat").afterDoneMany({ query, run }, orgId, chores, orgToday(await orgTz(orgId)));   // FLOWS-1: a repeat comes back
   const receiptTasks = open.filter(t => !t.source_gift_id && T.isReceiptChore(t.title) && new Date(t.created_at) >= new Date(m.created_at)).map(t => t.id);
   if (receiptTasks.length) await run(`UPDATE tasks SET source_gift_id=? WHERE org_id=? AND id = ANY(?::text[])`, [gift.id, orgId, receiptTasks]);
   const cards = j(m.cards) || [];

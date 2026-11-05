@@ -152,6 +152,10 @@ function DonorPhotoControl({donor,isReadOnly,photoUrl,onChanged,size=46}){
   const [dragOver,setDragOver]=useState(false);
   const [err,setErr]=useState("");
   const [hover,setHover]=useState(false);
+  // FLOWS-1 item 13: the avatar opens a picker on the page. It only opened the
+  // system's file dialog, which some browsers and every automated walk never
+  // show, so the click read as "opens nothing" and the photo was unreachable.
+  const [picker,setPicker]=useState(false);
 
   // BUILD-95 — a picked or dropped file opens the ADJUSTER rather than
   // uploading. Nothing reaches the server until she has said where the face
@@ -162,6 +166,7 @@ function DonorPhotoControl({donor,isReadOnly,photoUrl,onChanged,size=46}){
     setErr("");
     if(!file)return;
     if(!/^image\//.test(file.type||"")){setErr("That file isn't an image.");return;}
+    setPicker(false);
     setPending(file);
   };
   const send=async(dataUri)=>{
@@ -191,7 +196,7 @@ function DonorPhotoControl({donor,isReadOnly,photoUrl,onChanged,size=46}){
       onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}>
       <button type="button" data-testid="donor-photo-drop" aria-label={label} title={isReadOnly?donor.name:label}
         disabled={isReadOnly||busy}
-        onClick={()=>!isReadOnly&&fileRef.current&&fileRef.current.click()}
+        onClick={()=>!isReadOnly&&setPicker(true)}
         onDragOver={e=>{if(isReadOnly)return;e.preventDefault();setDragOver(true);}}
         onDragLeave={()=>setDragOver(false)}
         onDrop={e=>{if(isReadOnly)return;e.preventDefault();setDragOver(false);pick(e.dataTransfer.files&&e.dataTransfer.files[0]);}}
@@ -201,6 +206,24 @@ function DonorPhotoControl({donor,isReadOnly,photoUrl,onChanged,size=46}){
       </button>
       <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" style={{display:"none"}}
         onChange={e=>{pick(e.target.files&&e.target.files[0]);e.target.value="";}}/>
+      {picker&&!pending&&(
+        <Modal onClose={()=>setPicker(false)} title={photoUrl?`${who}'s photo`:`A photo for ${who}`} width={400} ariaLabel={label}>
+          <div data-testid="photo-picker" style={{display:"flex",flexDirection:"column",gap:12,alignItems:"center"}}
+            onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)}
+            onDrop={e=>{e.preventDefault();setDragOver(false);pick(e.dataTransfer.files&&e.dataTransfer.files[0]);}}>
+            <div style={{border:dragOver?`2px dashed ${T.gold500}`:`2px dashed ${T.bg3}`,borderRadius:"50%",padding:6,lineHeight:0}}>
+              <PersonMark id={donor.id} name={donor.name} kind={donor.kind} url={photoUrl} size={96}/>
+            </div>
+            <div style={{fontSize:12.5,color:T.ink3,textAlign:"center"}}>Drop a picture here, or choose one. You frame it before anything is saved.</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center"}}>
+              <button type="button" data-testid="photo-picker-choose" onClick={()=>fileRef.current&&fileRef.current.click()}
+                style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{photoUrl?"Choose a new photo":"Choose a photo"}</button>
+              {photoUrl&&<button type="button" data-testid="photo-picker-remove" onClick={()=>{setPicker(false);remove();}} disabled={busy}
+                style={{background:T.white,border:`1px solid ${T.bg3}`,borderRadius:8,padding:"9px 14px",color:T.ink,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Remove the photo</button>}
+            </div>
+          </div>
+        </Modal>
+      )}
       {pending&&<PhotoAdjuster file={pending} onCancel={()=>setPending(null)} onSet={send}/>}
       {photoUrl&&!isReadOnly&&(hover||busy)&&(
         <button type="button" onClick={remove} disabled={busy} data-testid="donor-photo-remove"

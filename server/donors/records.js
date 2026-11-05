@@ -50,7 +50,7 @@ let app = routers.r1;
 app.get("/donors/duplicates", requireAuth, wrap(async (req, res) => {
   const rows = await query(
     `SELECT id, name, email, phone, stage, status, total_giving, gift_count,
-            last_gift_date, city, state, created_at
+            last_gift_date, address, address2, city, state, zip, created_at
      FROM donors WHERE org_id = ? AND deleted_at IS NULL`,
     [req.user.orgId]
   );

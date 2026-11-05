@@ -13,6 +13,7 @@ const DTAGS = require("../../donorTags");   // FIX-33: internal flags never reac
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../../emailCompose");
+const JBO = require("./journeyBatchOptions");   // FLOWS-1: who of the checked people can start each journey
 
 const routers = {
   r1: express.Router(),
@@ -1093,34 +1094,11 @@ const JQ = require("../../jobQueue");
 
 // Who the batch would start and who it would not, by the start path's own
 // rules, in one read of the people and one of the journeys they are in.
+// FLOWS-1: the split itself lives in journeyBatchOptions.js, so the dialog's
+// per-journey rows and this preview and start use one set of rules.
 async function batchSplit(orgId, t, ids, joinOthers = true) {
   const J = await journeyMod();
-  const asks = J.journeyAsks(t.steps);
-  const out = { asked: ids.length, willStart: [], skips: {} };
-  const skip = (reason, id) => (out.skips[reason] = out.skips[reason] || []).push(id);
-  if (!ids.length) return out;
-  const [people, plans] = await Promise.all([
-    query(`SELECT id, deceased, do_not_contact, do_not_solicit FROM donors WHERE org_id=? AND id = ANY(?::text[]) AND deleted_at IS NULL`, [orgId, ids]),
-    query(`SELECT p.donor_id, p.template_id, p.priority, COALESCE(ct.exclusive, false) AS exclusive
-             FROM cultivation_plans p LEFT JOIN cultivation_templates ct ON ct.id = p.template_id AND ct.org_id = p.org_id
-            WHERE p.org_id=? AND p.status='active' AND p.donor_id = ANY(?::text[])`, [orgId, ids]),
-  ]);
-  const flags = new Map(people.map(d => [d.id, d]));
-  const byDonor = new Map();
-  for (const p of plans) (byDonor.get(p.donor_id) || byDonor.set(p.donor_id, []).get(p.donor_id)).push(p);
-  for (const id of ids) {
-    const f = flags.get(id);
-    if (!f) { skip("donor_not_found", id); continue; }
-    if (f.deceased === true) { skip("deceased", id); continue; }
-    if (f.do_not_contact === true) { skip("do_not_contact", id); continue; }
-    if (asks && f.do_not_solicit === true) { skip("do_not_solicit", id); continue; }
-    const mine = byDonor.get(id) || [];
-    if (mine.some(p => p.template_id === t.id)) { skip("already_in_this_journey", id); continue; }
-    if (t.exclusive && mine.some(p => p.exclusive && Number(p.priority) >= Number(t.priority))) { skip("already_in_a_journey", id); continue; }
-    if (!joinOthers && mine.length) { skip("in_another_journey", id); continue; }
-    out.willStart.push(id);
-  }
-  return out;
+  return JBO.splitFor(J, t, ids, await JBO.loadFacts(query, orgId, ids), joinOthers);
 }
 // The lines under the count, largest first, in the shared words.
 async function batchLines(skipCounts) {
@@ -1136,6 +1114,7 @@ const batchIdsFrom = body => {
   const raw = Array.isArray(body && body.donorIds) ? body.donorIds : [];
   return [...new Set(raw.map(x => String(x || "").trim()).filter(x => /^[A-Za-z0-9_-]{1,64}$/.test(x)))];
 };
+JBO.register(app, { query, journeyMod, requireAuth, wrap, batchIdsFrom, BATCH_MAX });   // FLOWS-1 item 1
 async function batchJourney(orgId, id) {
   const [t] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL", [id, orgId]);
   return t || null;

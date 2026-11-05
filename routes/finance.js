@@ -18,6 +18,7 @@ const express = require("express");
 const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-12 Part 7b: the after-meeting chips reach the model only through here.
 const { anthropicFor, AiOffError, AI_OFF_MESSAGE, recordAiFallback } = require("../aiClient");
+const SM = require("../server/tasks/stewardMeetings");   // FLOWS-1: a meeting with no calendar connected
 const meetingsSrc = require("../meetings");   // FIX-14 Part 1 — meetings with a person, defined once
 const NUM = require("../shared/numbers");   // NUMBERS-3 — one home for every giving number
 const orgTime = require("../orgTime");
@@ -1942,10 +1943,12 @@ app.post("/donors/:id/book-visit", requireAuth, checkWriteAccess, wrap(async (re
   const invite = req.body?.inviteDonor === true;
   if (invite && !d.email) return res.status(400).json({ error: "no_email", sentence: `${d.name} has no email on file, so there is nobody to invite.` });
   const chosen = ["google", "microsoft"].includes(req.body?.provider) ? req.body.provider : null;
-  const got = await myCalendarConn(req, res, { provider: chosen }); if (!got) return;
-  const CL = await calendarMod();
   const title = String(req.body?.title || `Visit with ${d.name}`).trim().slice(0, 200);
   const location = String(req.body?.location || "").trim().slice(0, 200) || null;
+  // FLOWS-1 item 3: no calendar connected, so the meeting is kept in Steward (it was refused, and nothing saved)
+  if (!chosen && !invite && !(await bookingCalendars(req.user.userId, orgId)).list.length) return SM.book({ query, run, actor }, req, res, { donor: d, title, startsAt, endsAt, location });
+  const got = await myCalendarConn(req, res, { provider: chosen }); if (!got) return;
+  const CL = await calendarMod();
   const timeZone = (await orgTz(orgId)).timezone || "America/New_York";
   const body = CL.bookingBody(got.conn.provider, { title, startsAt, endsAt, location, inviteEmail: invite ? d.email : null, timeZone });
   const url = got.conn.provider === "google"
@@ -1976,6 +1979,7 @@ app.post("/calendar/events/:id/move", requireAuth, checkWriteAccess, wrap(async 
   if (c.owner_user_id !== req.user.userId) return res.status(403).json({ error: "not_yours", sentence: "Only the person whose calendar it is can move it." });
   const startsAt = validInstant(req.body?.startsAt), endsAt = validInstant(req.body?.endsAt);
   if (!startsAt || !endsAt || endsAt <= startsAt) return res.status(400).json({ error: "bad_time", sentence: "Choose a start and an end, with the end after the start." });
+  if (c.provider === SM.PROVIDER) return SM.move({ query, run, actor }, req, res, c, { startsAt, endsAt });   // FLOWS-1: kept in Steward
   const got = await myCalendarConn(req, res, { provider: c.provider }); if (!got) return;
   const google = c.provider === "google";
   const url = google
@@ -1998,6 +2002,7 @@ app.post("/calendar/events/:id/cancel", requireAuth, checkWriteAccess, wrap(asyn
   const c = await ownMeeting(req, res); if (!c) return;
   if (c.owner_user_id !== req.user.userId) return res.status(403).json({ error: "not_yours", sentence: "Only the person whose calendar it is can cancel it." });
   if (c.logged_at) return res.status(409).json({ error: "already_logged", sentence: "This meeting has a note, so it happened. It stays on the record." });
+  if (c.provider === SM.PROVIDER) return SM.cancel({ query, run, actor }, req, res, c);   // FLOWS-1: kept in Steward
   const got = await myCalendarConn(req, res, { provider: c.provider }); if (!got) return;
   const url = c.provider === "google"
     ? `${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events/${encodeURIComponent(c.provider_event_id)}?sendUpdates=all`
