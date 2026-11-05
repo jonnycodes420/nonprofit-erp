@@ -8,7 +8,7 @@ import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TW
 import StoredReports from "./StoredReports";
 import OldReportsImport from "./OldReportsImport";
 import { displayDate } from "../../../shared/displayDate";
-import { periodChipLabel, fyLabelFromEnd } from "../../../shared/fiscalPeriod";
+import { periodChipLabel, fyLabelFromEnd, reportYearsFrom } from "../../../shared/fiscalPeriod";
 import { bookkeeperCell } from "../lib/bookkeeperCell";
 import { Figure, FigureContext } from "./Figure";
 import { Dashboards } from "./Dashboards";
@@ -65,8 +65,6 @@ const YEAR_SELECT_REPORTS = ["lybunt", "sybunt", "three-year", "annual"];
 const YEARMODE_TOGGLE_REPORTS = ["lybunt", "sybunt", "retention", "three-year", "annual", "solicitations"];
 const DIGEST_REPORTS = ["week-in-review"]; // fetched from /digests/preview, not /reports/:key
 
-const now = new Date();
-const CUR_CY = now.getFullYear();
 // FIX-3 E — the fiscal year is the ORG's (its start month comes back on the
 // giving summary, from the vocabulary the Board reads), labelled by the year
 // it ends in, as the server labels it. July until the server has said.
@@ -83,13 +81,15 @@ const fyRangeLabel = (y, start) => `${MON[start - 1]} ${y - 1} – ${fyLastMonth
 // come from shared/fiscalPeriod.js, the same function the server's
 // finPeriodBounds uses for "FY 2026–27", so Reports and Fundraising cannot
 // name the same year two ways.
-const presetsFor = (fy, fiscalStartMonth = 7) => [
-  { id: "thisFY", label: periodChipLabel("thisFY", { fy, cy: CUR_CY, fiscalStartMonth }), year: fy, yearMode: "fiscal" },
-  { id: "lastFY", label: periodChipLabel("lastFY", { fy, cy: CUR_CY, fiscalStartMonth }), year: fy - 1, yearMode: "fiscal" },
-  { id: "thisCY", label: periodChipLabel("thisCY", { fy, cy: CUR_CY, fiscalStartMonth }), year: CUR_CY, yearMode: "calendar" },
-  { id: "lastCY", label: periodChipLabel("lastCY", { fy, cy: CUR_CY, fiscalStartMonth }), year: CUR_CY - 1, yearMode: "calendar" },
+// LEDGER-2: both years are the server's (reportYearsFrom); the browser's clock
+// never names one. Until the server has answered there are no chips.
+const presetsFor = (years, fiscalStartMonth = 7) => years ? [
+  { id: "thisFY", label: periodChipLabel("thisFY", { fy: years.fy, cy: years.cy, fiscalStartMonth }), year: years.fy, yearMode: "fiscal" },
+  { id: "lastFY", label: periodChipLabel("lastFY", { fy: years.fy, cy: years.cy, fiscalStartMonth }), year: years.fy - 1, yearMode: "fiscal" },
+  { id: "thisCY", label: periodChipLabel("thisCY", { fy: years.fy, cy: years.cy, fiscalStartMonth }), year: years.cy, yearMode: "calendar" },
+  { id: "lastCY", label: periodChipLabel("lastCY", { fy: years.fy, cy: years.cy, fiscalStartMonth }), year: years.cy - 1, yearMode: "calendar" },
   { id: "custom", label: "Custom" },
-];
+] : [];
 const pctStr = v => v === null || v === undefined ? "None yet" : `${v}%`;
 // REPORTS-4 · A REPORT'S FIGURE. Every number a report states is one of its
 // `figures` (the server computed it through the source that opens it), drawn
@@ -288,7 +288,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   const [digestType, setDigestType] = useState("weekly"); // week-in-review: weekly | monthly
   const [downloading, setDownloading] = useState(false);
   const [fiscalStart, setFiscalStart] = useState(null); // the org's first fiscal month; null until the server says
-  const [serverFy, setServerFy] = useState(null); // NUMBERS-4: this fiscal year, as the server names it
+  const [serverYears, setServerYears] = useState(null); // NUMBERS-4, LEDGER-2: { fy, cy }, as the server names them
 
   // The default period resolves from data, not the calendar: early in a new
   // fiscal year "This FY" is nearly empty (e.g. two weeks in), which makes a
@@ -324,13 +324,14 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   const onStored = active === STORED_REPORTS_ID;
   const onWorked = active === WHAT_WORKED_ID;   // INSIGHTS-1
   const fsm = fiscalStart || 7;
-  const CUR_FY = serverFy || CUR_CY;
-  const PRESETS = presetsFor(CUR_FY, fsm);
+  const CUR_FY = serverYears ? serverYears.fy : null;
+  const CUR_CY = serverYears ? serverYears.cy : null;
+  const PRESETS = presetsFor(serverYears, fsm);
   const effPreset = preset || autoDefault;
   const effYear = year || (yearMode === "fiscal" ? CUR_FY : CUR_CY);
   const isPeriodReport = PERIOD_REPORTS.includes(active) && !(active === "top-donors" && scope === "lifetime");
   const showFilters = PERIOD_REPORTS.includes(active) && active !== "bookkeeper" && !(active === "top-donors" && scope === "lifetime");
-  const presetPending = (isPeriodReport && !effPreset) || (isTab && fiscalStart === null);
+  const presetPending = (isPeriodReport && !effPreset) || (isTab && (fiscalStart === null || !serverYears));
 
   // Every pick goes through the resolver too: an alias (std:top-50) brings the
   // controls the standard version fixes.
@@ -355,14 +356,17 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
     const thisId = fiscal ? "thisFY" : "thisCY", lastId = fiscal ? "lastFY" : "lastCY";
     // No year: the server answers for its current one, in the org's own
     // fiscal year, and says which month that year starts in.
-    apiFetch(`/reports/giving-summary?yearMode=${yearMode}`)
+    // LEDGER-2: a failed answer is asked again (a few times, further apart),
+    // never replaced by the browser's own year.
+    const ask = n => apiFetch(`/reports/giving-summary?yearMode=${yearMode}`)
       .then(d => {
         setFiscalStart(Number(d.fiscalStartMonth) || 7);
-        if (Number(d.fiscalYear)) setServerFy(Number(d.fiscalYear));
+        setServerYears(reportYearsFrom(d));
         const lowVolume = d.prior.total > 0 && d.giftCount < 10 && d.total < d.prior.total * 0.01;
         setAutoDefault(lowVolume ? lastId : thisId);
       })
-      .catch(() => { setFiscalStart(7); setAutoDefault(thisId); });
+      .catch(() => { if (n < 4) setTimeout(() => ask(n + 1), 1500 * (n + 1)); });
+    ask(0);
   }, []);
 
   function buildParams() {
@@ -453,7 +457,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
     </button>)}
   </div>;
 
-  const yearOptions = Array.from({ length: 6 }, (_, i) => (yearMode === "fiscal" ? CUR_FY : CUR_CY) - i);
+  const yearOptions = serverYears ? Array.from({ length: 6 }, (_, i) => (yearMode === "fiscal" ? CUR_FY : CUR_CY) - i) : [];
   const subhead = t => <div style={{ fontSize: 12, fontWeight: 800, color: T.ink3, margin: "22px 0 8px" }}>{t}</div>;
 
   // ── Narrative + table per report ──────────────────────────────────────────

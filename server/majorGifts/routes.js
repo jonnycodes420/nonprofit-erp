@@ -65,9 +65,12 @@ app.get("/portfolio/officers", requireAuth, wrap(async (req, res) => {
   // portfolio_count/giving use the SAME definition as Home's cards + the board
   // (BUILD-30): assigned donors in a pipeline stage. The stage guard lives in the
   // JOIN so a non-pipeline-stage donor can't inflate the legend past the board.
+  // LEDGER-2: the giving is each donor's Lifetime computed live (shared/numbers/
+  // lifetime.js), never the stored donors.total_giving, which a recompute with
+  // no gift change (a boot repair, another write) could move under the chip.
   const officers = await query(
     `SELECT u.id, u.name, u.email, u.role, u.portfolio_color,
-            COUNT(d.id)::int AS portfolio_count, COALESCE(SUM(d.total_giving),0) AS portfolio_giving
+            COUNT(d.id)::int AS portfolio_count, COALESCE(SUM(${NUMBERS.lifetime.LIFETIME("d")}),0) AS portfolio_giving
      FROM users u
      LEFT JOIN donors d ON d.assigned_to = u.id AND d.org_id = u.org_id AND d.deleted_at IS NULL AND COALESCE(d.stage, d.suggested_stage) = ANY(?)
      WHERE u.org_id=? GROUP BY u.id ORDER BY portfolio_giving DESC, u.name`, [ALL_PIPELINE_STAGES, req.user.orgId]);

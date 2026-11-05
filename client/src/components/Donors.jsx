@@ -283,7 +283,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   };
   const saveView=async name=>{
     const cur=layoutRef.current||FALLBACK_SETUP.layout;
-    const r=await apiFetch("/donors/list-views",{method:"POST",body:JSON.stringify({name,columns:cur.columns,widths:cur.widths||{},filters:dirWhere,pageSize:cur.pageSize})});
+    const r=await apiFetch("/donors/list-views",{method:"POST",body:JSON.stringify({name,columns:cur.columns,widths:cur.widths||{},filters:dirWhere,pageSize:cur.pageSize,sort:dirSort,sortDir:dirDir})});
     const v=r&&r.view;
     if(v){setListSetup(s=>({...s,views:[...((s&&s.views)||[]).filter(x=>x.id!==v.id),{mine:true,...v}]}));setActiveViewId(v.id);}
     return v;
@@ -294,6 +294,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     const cur=layoutRef.current||FALLBACK_SETUP.layout;
     persistLayout({columns:cleanColumns(v.columns||cur.columns,(listSetup||FALLBACK_SETUP).fields),widths:v.widths||cur.widths||{},pageSize:v.pageSize||cur.pageSize}).catch(e=>console.warn("[list-layout]",e&&e.message));
     setDirWhere(v.filters&&Array.isArray(v.filters.conditions)?{join:v.filters.join==="or"?"or":"and",conditions:v.filters.conditions}:EMPTY_WHERE);
+    // LIST-3: and the sort it was saved with (none saved: the list's own order).
+    setDirSort(v.sort||"");setDirDir(v.sort?(v.sortDir||""):"");
   };
   const deleteView=async v=>{
     try{await apiFetch(`/donors/list-views/${encodeURIComponent(v.id)}`,{method:"DELETE"});

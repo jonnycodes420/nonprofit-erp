@@ -4,7 +4,7 @@
 //   PUT    /donors/list-layout        save this person's columns, widths, page size
 //   DELETE /donors/list-layout        back to the org's default (or Steward's)
 //   PUT    /donors/list-layout/org    an admin sets the org's default
-//   POST   /donors/list-views         name the current columns plus filter
+//   POST   /donors/list-views         name the current columns, filter and sort
 //   DELETE /donors/list-views/:id     one of your own views
 //   GET    /donors/ids                every id the list's filter matches (select all)
 //   POST   /donors/bulk-tag           add one tag to the people picked
@@ -36,7 +36,13 @@ const app = routers.r0;
 const isAdmin = req => req.user && req.user.role === "admin";
 const knownCols = async orgId => new Set((await DL.fieldsFor(orgId)).filter(f => f.col).map(f => f.key));
 const viewOut = (v, userId) => ({ id: v.id, name: v.name, columns: v.columns, widths: v.widths || {}, filters: v.filters || null,
-  pageSize: v.page_size, mine: v.user_id === userId });
+  pageSize: v.page_size, sort: v.sort_by || "", sortDir: v.sort_dir || "", mine: v.user_id === userId });
+// LIST-3: the list's sort as the address carries it (GET /donors checks the key itself).
+const cleanSort = b => {
+  const sort = String((b && b.sort) || "").trim();
+  const dir = String((b && b.sortDir) || "").trim().toLowerCase();
+  return { sort: /^[a-z0-9_]{1,60}$/i.test(sort) ? sort : null, dir: sort && (dir === "asc" || dir === "desc") ? dir : null };
+};
 
 app.get("/donors/list-setup", requireAuth, requireCrm, wrap(async (req, res) => {
   const { orgId, userId } = req.user;
@@ -95,10 +101,11 @@ app.post("/donors/list-views", requireAuth, requireCrm, wrap(async (req, res) =>
   }
   const id = newId("lv");
   const who = actor(req);
-  await run(`INSERT INTO donor_list_views (id, org_id, user_id, name, columns, widths, filters, page_size, created_by, created_by_name)
-             VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?)`,
+  const sort = cleanSort(req.body);
+  await run(`INSERT INTO donor_list_views (id, org_id, user_id, name, columns, widths, filters, page_size, sort_by, sort_dir, created_by, created_by_name)
+             VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?)`,
     [id, orgId, userId, name, JSON.stringify(layout.columns), JSON.stringify(layout.widths), filters ? JSON.stringify(filters) : null,
-     layout.pageSize, who.id, who.name]);
+     layout.pageSize, sort.sort, sort.dir, who.id, who.name]);
   const [v] = await query(`SELECT * FROM donor_list_views WHERE id = ? AND org_id = ?`, [id, orgId]);
   res.json({ view: viewOut(v, userId) });
 }));

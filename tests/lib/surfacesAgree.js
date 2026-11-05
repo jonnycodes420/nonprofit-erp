@@ -1024,7 +1024,8 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     const drafts = (tyAll && tyAll.drafts) || [];
     for (const id of [...new Set(ctx.people)]) {
       if (!liveIds.has(id)) continue;
-      const [rec, relp, st, rail] = await Promise.all([get(`/donors/${id}`), get(`/donors/${id}/relationship`), get(`/donors/${id}/status`), get(`/donors/${id}/rail`)]);
+      const [rec, relp, st, rail, aff] = await Promise.all([get(`/donors/${id}`), get(`/donors/${id}/relationship`), get(`/donors/${id}/status`), get(`/donors/${id}/rail`),
+        skip.has("split") ? null : get(`/donors/${id}/fund-affinity`)]);
       const who = (rec && rec.name) || id;
       const person = kr.rows.people.find(p => p.id === id) || {};
       if (!person.imported) agree(`${who}'s lifetime${at}`, [
@@ -1037,6 +1038,11 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         ["the key", sumOf(id, fy.from, today)],
         ["the header (figures.thisYear)", rec && rec.figures && rec.figures.thisYear ? Number(rec.figures.thisYear.cents) : undefined],
         ["the rail (relationship.thisYear)", relp && relp.thisYear && relp.thisYear.given ? cents(relp.thisYear.given.value) : undefined],
+      ], money);
+      // LEDGER-2: the profile's Restricted + Unrestricted is their Lifetime, every gift in one bucket.
+      if (aff && !aff.__error && rec && rec.figures && rec.figures.lifetime) agree(`${who}'s restricted + unrestricted${at}`, [
+        ["the header (figures.lifetime)", Number(rec.figures.lifetime.cents)],
+        ["What they support (restricted + unrestricted)", cents(aff.restrictedTotal) + cents(aff.unrestrictedTotal)],
       ], money);
       for (const t of (rail && rail.thankYous) || []) {
         const g = giftById.get(t.giftId);
@@ -1085,6 +1091,25 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   for (const [name, b] of [["the Donors list", list], ["Home", lead], ["Fundraising", fund], ["the Board", board], ["the workbook export", workbook]]) {
     if (b && b.__error) diffs.push(`${name} did not answer: ${b.__error}`);
     else if (b && b.error) diffs.push(`${name} answered an error: ${JSON.stringify(b).slice(0, 200)}`);
+  }
+
+  // LEDGER-2: one fiscal year. The key's year (from the org's today and start
+  // month, written out in tests/keys/truthKey.js) is the year the Board, the
+  // Fundraising header and the giving summary (which names Reports' chips) say.
+  if (!skip.has("fyLabel")) {
+    const { fiscalYear: fyOf } = require("../keys/truthKey");
+    const kfy = fyOf(kr.opts.today, kr.opts.fiscalStartMonth);
+    const startY = Number(kfy.from.slice(0, 4));
+    const gs = await get("/reports/giving-summary?yearMode=fiscal").catch(() => null);
+    const sm = Number(kr.opts.fiscalStartMonth) || 7;
+    const chart = sm === 1 ? `FY ${startY}` : `FY ${startY}–${String(startY + 1).slice(2)}`;
+    const said = [
+      ["the Board (fiscalYear.start)", board && board.fiscalYear ? String(board.fiscalYear.start).slice(0, 10) === kfy.from : undefined],
+      ["Fundraising (periodLabel)", fund && fund.periodLabel ? fund.periodLabel === chart : undefined],
+      // The server numbers a year by the year its boundary falls in (reportYearBounds), for every start month.
+      ["the giving summary (fiscalYear, Reports' chips)", gs && gs.fiscalYear ? Number(gs.fiscalYear) === startY + 1 && String(gs.from).slice(0, 10) === kfy.from : undefined],
+    ];
+    for (const [where, same] of said) if (same === false) diffs.push(`fiscal year: the key says ${chart}; ${where} names another year${label ? ` (${label})` : ""}`);
   }
 
   // TRUTH-1: a disagreement logged in docs/defects.md (tests/lib/knownDefects.js),

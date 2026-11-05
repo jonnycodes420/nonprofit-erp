@@ -669,6 +669,28 @@ async function main() {
     const { subId, start, amount } = newMonthly(id, { minDays: 120, maxDays: 1000 });
     monthlySeries(id, subId, amount, start);
   }
+  // LIST-3: and one who stopped. Nine monthly gifts, then she canceled three
+  // months ago (her subscription is written canceled below), so the recurring
+  // screens have a canceled donor beside the active ones.
+  const canceledMonthly = (() => {
+    // A literal name and her own ids, so no other demo person's draw or id moves.
+    const name = "Rosamund Pellwether";
+    if (!takeName(name)) throw new Error(`[seed] two people would be called "${name}".`);
+    const donorId = "d_b72_canceled";
+    donors.push({ id: donorId, name, email: "rosamund.pellwether@example.demo", status: "new", stage: "steward" });
+    const subId = "rs_b72m_canceled";
+    const s = orgTime.addDays(TODAY, -365);
+    const start = dateIn(Number(s.slice(0, 4)), Number(s.slice(5, 7)), 12);
+    const amount = 25;
+    let [y, m] = [Number(start.slice(0, 4)), Number(start.slice(5, 7))];
+    let last = start;
+    for (let n = 0; n < 9; n++) {
+      last = dateIn(y, m, 12);
+      gifts.push({ id: `g_b72_c${n + 1}`, donorId, amount, date: last, online: true, sub: subId, notes: "Monthly gift via the giving page" });
+      if (++m > 12) { m = 1; y++; }
+    }
+    return { subId, donorId, amount, start, canceledOn: orgTime.addDays(last, 20) };
+  })();
   const switched = new Set();
   tail.filter(t => t.giving).forEach((t, k) => {
     if (k % 11 !== 5) return;
@@ -915,6 +937,10 @@ async function main() {
             [m.subId, ORG, m.donorId, m.amount, `sub_demo_b72_${pad(k + 1)}`, `cus_demo_b72_${pad(k + 1)}`, m.start, next,
              BRANDS[k % BRANDS.length], String(1000 + ((k * 7919) % 9000)).slice(-4), 1 + (k * 5) % 12, YEAR + 1 + (k % 4)]);
   }
+  await q(`INSERT INTO recurring_subscriptions
+             (id,org_id,donor_id,amount,interval,status,stripe_subscription_id,stripe_customer_id,fund_id,created_at,updated_at,canceled_at,card_brand,card_last4)
+           VALUES ($1,$2,$3,$4,'month','canceled','sub_demo_b72_canceled','cus_demo_b72_canceled','fund_b72demo_gen',$5::date,$6::date,$6::date,'visa','4417')`,
+          [canceledMonthly.subId, ORG, canceledMonthly.donorId, canceledMonthly.amount, canceledMonthly.start, canceledMonthly.canceledOn]);
   await seedCardUpdates(q, monthly);
   await seedGiftStarts(q);
   await q(`INSERT INTO campaigns (id,org_id,name,type,status,goal_amount,start_date,end_date)

@@ -583,7 +583,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
           {dpTab==="giving"&&<div className="dp3-gutter" style={{padding:"0 var(--dp-gutter,40px) 24px",display:"flex",flexDirection:"column",gap:16}}>
             {fundLoading&&<div style={{textAlign:"center",color:T.ink3,fontSize:12,padding:24}}><Spin/></div>}
             {!fundLoading&&fundAffinity&&(()=>{
-              const {affinity,unrestrictedTotal,restrictedTotal,totalGiving,activeFunds}=fundAffinity;
+              const {affinity,unrestrictedTotal,restrictedTotal,totalGiving,activeFunds,restrictedPct,unrestrictedPct,definition}=fundAffinity;
               const maxFund=affinity.length>0?affinity[0].total:1;
               return(<>
                 <div>
@@ -592,7 +592,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                     ?<div style={{fontSize:13,color:T.ink3,fontStyle:"italic"}}>No fund-attributed gifts yet. Assign funds when logging gifts.</div>
                     :<div style={{display:"flex",flexDirection:"column",gap:10}}>
                       {affinity.map(f=>(
-                        <div key={f.fundId} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px"}}>
+                        <div key={f.fundId||f.fundName} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px"}}>
                           <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:6}}>
                             <div>
                               <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{f.fundName}</span>
@@ -616,8 +616,8 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                 <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px"}}>
                   <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:10}}>Restricted vs Unrestricted</div>
                   {totalGiving>0?(()=>{
-                    const rPct=Math.round(restrictedTotal/totalGiving*100);
-                    const uPct=100-rPct;
+                    // LEDGER-2: both percents are the server's, and add to 100.
+                    const rPct=restrictedPct||0,uPct=unrestrictedPct||0;
                     return(<>
                       <div style={{height:10,borderRadius:99,overflow:"hidden",display:"flex",marginBottom:8}}>
                         <div style={{width:`${rPct}%`,background:T.gold500,transition:"width 0.4s"}}/>
@@ -627,14 +627,15 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                         <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:T.gold500,display:"inline-block"}}/>Restricted: {fmtFull(restrictedTotal)} ({rPct}%)</div>
                         <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:T.greenDk,display:"inline-block"}}/>Unrestricted: {fmtFull(unrestrictedTotal)} ({uPct}%)</div>
                       </div>
+                      {definition&&<div style={{fontSize:11,color:T.ink3,marginTop:8}}>{definition}</div>}
                     </>);
                   })():<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No giving data yet</div>}
                 </div>
 
-                {affinity.length>0&&(
+                {affinity.some(f=>f.fundId)&&(
                   <div style={{background:T.gold500+"10",border:"1px solid "+T.gold500+"40",borderRadius:12,padding:"14px 16px"}}>
                     <div style={{fontSize:12,fontWeight:700,color:T.gold500,marginBottom:8}}>Suggested Asks</div>
-                    {affinity.slice(0,2).map(f=>(
+                    {affinity.filter(f=>f.fundId).slice(0,2).map(f=>(
                       <div key={f.fundId} style={{fontSize:12,color:T.ink,marginBottom:4}}>
                         This donor has given {fmtFull(f.total)} to <strong>{f.fundName}</strong>. Consider them for {f.fundName} campaign appeals.
                       </div>

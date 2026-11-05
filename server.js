@@ -3554,13 +3554,15 @@ async function unlapseHeldByPledge(orgId, ids = null) {
     [orgId, ...(ids ? [ids] : []), ...hold.args]);
   // POLISH-4: and somebody Steward placed in Lapsed whose giving unit (the
   // business they own or work at, or its owner) has since given.
+  // LEDGER-2: "Steward placed" is anyone an officer did not: an import or a
+  // merge writes the stage with no move, and asking for an automatic move kept
+  // them Lapsed beside a business that gave today.
   const lapsedNow = require("./shared/numbers/lapse").lapsedSql("d.last_gift_date", today, "d.id");
   const unitRows = await query(
     `SELECT d.id FROM donors d
       WHERE d.org_id=? AND d.deleted_at IS NULL AND d.stage='lapsed'${ids ? " AND d.id = ANY(?)" : ""}
         AND NOT ${hold.sql} AND NOT ${lapsedNow.sql}
         AND (${require("./shared/numbers/lapse").linkedLastSql("d.id")}) IS NOT NULL
-        AND EXISTS (SELECT 1 FROM moves m WHERE m.org_id=d.org_id AND m.donor_id=d.id AND m.officer_id IS NULL AND m.to_stage='lapsed')
         AND NOT EXISTS (SELECT 1 FROM moves m WHERE m.org_id=d.org_id AND m.donor_id=d.id
                           AND m.officer_id IS NOT NULL AND m.to_stage='lapsed')
       LIMIT 200`,
@@ -11644,9 +11646,11 @@ function giveThemePayload(org) {
 }
 
 // The theme columns every public /give endpoint selects from portal_settings.
-// Aliased to the names portalCardTheme + giveThemePayload read.
+// Aliased to the names portalCardTheme + giveThemePayload read. LIST-3: the
+// logo falls back to Settings → Branding's (orgs.logo_data), so a logo saved
+// there reaches the giving page; every query here joins orgs as `o`.
 const GIVE_THEME_COLS = `ps.display_name,
-  COALESCE(ps.logo_url, ps.logo_data) AS give_logo,
+  COALESCE(ps.logo_url, ps.logo_data, o.logo_data) AS give_logo,
   COALESCE(ps.header_image_url, ps.header_image_data) AS give_header_image,
   ps.header_focal_x, ps.header_focal_y, ps.header_crop,
   ps.primary_color, ps.accent_color, ps.button_color, ps.background_tint,
