@@ -363,18 +363,20 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null 
   }
   // LIVE-1 — the people it touched are recomputed by the one after-change step.
   await require("../../afterChange").afterChange(orgId, recompute, { door: "csv_import", history: true });
-  const parts = [removed.gifts && n(removed.gifts, "gift", "gifts"), removed.pledges && n(removed.pledges, "pledge", "pledges"),
-    removed.people && `${n(removed.people, "person", "people")} this file created`
-      + (removed.alreadyDeleted ? ` (${removed.alreadyDeleted.toLocaleString("en-US")} of them already deleted)` : "")].filter(Boolean);
+  // what was there leads (a file of people only says its people, never "0 gifts removed")
+  const money = [removed.gifts && n(removed.gifts, "gift", "gifts"), removed.pledges && n(removed.pledges, "pledge", "pledges")].filter(Boolean).join(" and ");
+  const ppl = removed.people ? `${n(removed.people, "person", "people")} this file created`
+    + (removed.alreadyDeleted ? ` (${removed.alreadyDeleted.toLocaleString("en-US")} of them already deleted)` : "") : "";
+  const what = money ? ` ${money} removed${ppl ? ` and ${ppl}` : ""}` : ppl ? ` ${ppl} removed` : " Nothing it wrote was left to remove";
   const list = (xs, k) => xs.slice(0, k).map(x => `${x.name} (${x.why})`).join("; ") + (xs.length > k ? `; and ${(xs.length - k).toLocaleString("en-US")} more` : "");
   const lead = stayed.length ? `Undone, except for ${n(stayed.length, "person", "people")}.` : "Undone.";
   return done({ reversed: true, gifts: removed.gifts, donorsRemoved: removed.people, journeysStopped: removed.journeys,
     pledgesRemoved: removed.pledges, alreadyDeleted: removed.alreadyDeleted,
     stayed: stayed.slice(0, 500), stayedCount: stayed.length,
     sentence: lead
-      + (parts.length ? ` ${parts.length > 1 ? parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1] : parts[0]} removed` : " Nothing it wrote was left to remove")
+      + what
       + (removed.journeys ? `, ${n(removed.journeys, "journey", "journeys")} it started stopped` : "") + "."
-      + (stayed.length ? ` ${n(stayed.length, "person", "people")} stayed because ${stayed.length === 1 ? "they have" : "they have"} activity since the import: ${list(stayed, 20)}.` : "")
+      + (stayed.length ? ` ${n(stayed.length, "person", "people")} stayed because they have activity since the import: ${list(stayed, 20)}.` : "")
       + ` Nothing was sent.${stayed.length ? "" : " Nothing else was touched."}` });
 }
 }
