@@ -297,7 +297,7 @@ export function AskRail({ mode: startMode, replay, scope, isReadOnly, onStepTake
 
   // On document.body, so no stacking context on the page can sit above it.
   return createPortal(
-    <aside className="ask-rail" role="dialog" aria-label={scope && scope.donor ? `Ask about ${scope.donor.name}` : "Why and What"} data-testid="ask-rail">
+    <aside className="ask-rail" role="dialog" aria-label={scope && scope.donor && scope.donor.name ? `Ask about ${scope.donor.name}` : "Why and What"} data-testid="ask-rail">
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 18px", borderBottom: "1px solid " + T.bg2 }}>
         <div role="tablist" style={{ display: "flex", gap: 6, flex: 1, minWidth: 0, flexWrap: "wrap" }}>
           {tab("why", "Why")}{tab("what", "What")}{turns.length > 0 && tab("thread", `Thread · ${turns.length}`)}

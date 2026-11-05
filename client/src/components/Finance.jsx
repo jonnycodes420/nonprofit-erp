@@ -3,7 +3,7 @@ import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switc
 import RemoveMenu from "./RemoveMenu"; // FIX-41: a fund's Remove, on the funds list only
 import { RestrictedView } from "./RestrictedView";
 import { DepositSheetModal } from "./DepositSheet";
-import { T, activeMark, fmt, fmtFull, Card, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive, Modal } from "./shared";
+import { T, activeMark, fmt, fmtFull, fmtWhole, Card, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive, Modal } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
 import { apiFetch, API, getToken } from "../api";
 import { usePeopleById } from "../lib/people";
@@ -22,6 +22,8 @@ const BEHIND = T.gold700;
 import { orgTodayCivil } from "../lib/orgToday";
 
 // ── Constants ──────────────────────────────────────────────────────────────
+// POLISH-5: the empty ledger's second sentence, one text node with its first.
+const FIN_CONNECT = "Connect Stripe and online gifts post here on their own, or log a transaction by hand.";
 // Account-type accents for the ledger's account badge, palette tokens only.
 const TYPE_COLOR = { asset:T.ink, liability:T.gold700, net_asset:T.ink, revenue:T.ink, expense:T.ink3 };   // FIX-2 C: a category is a word, not a green or a red
 
@@ -1157,9 +1159,8 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
               <div style={{ fontSize:14, fontWeight:700, color:T.ink }}>Nothing is in the ledger yet</div>
               <div style={{ fontSize:13, color:T.ink2, lineHeight:1.6, marginTop:4, maxWidth:720 }}>
                 {summary.giftHistoryTotal > 0
-                  ? <>Your {fmtFull(summary.giftHistoryTotal)} of giving across {countLabel(summary.giftHistoryCount, "gift")} is giving history, so cash on hand, revenue, expenses and fund balances start at zero and fill as money moves through Steward. </>
-                  : <>Cash on hand, revenue, expenses and fund balances fill as money moves through Steward. </>}
-                Connect Stripe and online gifts post here on their own, or log a transaction by hand.
+                  ? `Your ${fmtWhole(summary.giftHistoryTotal)} of giving across ${countLabel(summary.giftHistoryCount, "gift")} is giving history, so cash on hand, revenue, expenses and fund balances start at zero and fill as money moves through Steward. ${FIN_CONNECT}`
+                  : `Cash on hand, revenue, expenses and fund balances fill as money moves through Steward. ${FIN_CONNECT}`}
               </div>
               <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginTop:12 }}>
                 {!isReadOnly && <button type="button" data-testid="fin-ledger-log" onClick={() => setShowTxnModal(true)}
@@ -2009,7 +2010,7 @@ function Definitions4({ items }) {
   if (!rows.length) return null;
   return (
     <div data-testid="fin-definitions" style={{ fontSize:12, color:T.ink3, lineHeight:1.6, display:"flex", flexDirection:"column", gap:3 }}>
-      {rows.map(([k, s]) => <div key={k}><strong style={{ color:T.ink2, fontWeight:700 }}>{k}.</strong> {s}</div>)}
+      {rows.map(([k, s]) => <div key={k}><strong style={{ color:T.ink2, fontWeight:700 }}>{`${k}.`}</strong>{` ${s}`}</div>)}
     </div>
   );
 }

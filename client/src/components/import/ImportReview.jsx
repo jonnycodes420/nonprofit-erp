@@ -126,7 +126,7 @@ export function ImportReview({ cfDecisions, cfDefs, cfUndecided, donorCount, eff
                     const discarded = cfDecisions[c.index]?.action==="discard";
                     return <div key={c.index} style={{marginBottom:6,color:T.ink2}}>
                       <strong style={{color:T.ink}}>{String(c.header).trim()}</strong>{" → your existing "}{c.entity}{" field "}<strong>{c.def.label}</strong>
-                      {c.via==="saved-mapping"?" (remembered from your last import)":""}.{" "}
+                      {c.via==="saved-mapping"?" (remembered from your last import)":""}{". "}
                       <button onClick={()=>discarded?clearDecision(c.index):setDecision(c.index,{action:"discard"})}
                         style={{background:"none",border:"none",padding:0,color:discarded?T.greenDk:T.ink3,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>
                         {discarded?"Un-discard":"Discard instead"}
@@ -149,7 +149,7 @@ export function ImportReview({ cfDecisions, cfDefs, cfUndecided, donorCount, eff
                         data-cf-via-preset={d.viaPreset}
                         style={{borderTop:`1px solid ${T.bg3}`,paddingTop:8,marginTop:8,color:T.ink2}}>
                         <strong style={{color:T.ink}}>{String(c.header).trim()}</strong>
-                        {" → "}<strong>Set aside, from your {d.viaPreset} preset</strong>.{" "}
+                        {" → "}<strong>Set aside, from your {d.viaPreset} preset</strong>{". "}
                         <button onClick={()=>clearDecision(c.index)}
                           style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>
                           Change

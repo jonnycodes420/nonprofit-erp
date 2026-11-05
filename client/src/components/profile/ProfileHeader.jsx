@@ -134,7 +134,7 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
           {donor.email&&!donor.deceased&&!donor.doNotContact&&<a href={`mailto:${donor.email}`} data-testid="dp-email" className="dph-act" aria-label="Email them" title="Email them" style={ACT}><ActIcon kind="mail"/><span className="dph-act-label">Email</span></a>}
           {onAddTask&&<button type="button" onClick={onAddTask} disabled={isReadOnly} data-testid="dp-task" className="dph-act" aria-label="Add a task" title="Add a task" style={ACT}><ActIcon kind="task"/><span className="dph-act-label">Task</span></button>}
             {/* VOICE-1 — Tell Steward about this person: the memo is about them by default. */}
-            <button onClick={()=>openTellSteward(donor)} disabled={isReadOnly} data-testid="dp-tell-steward" className="dph-act dph-atlas" aria-label={`Tell ${atlasName()} about ${donor.name}`} title={atlasName()}
+            <button onClick={()=>openTellSteward(donor)} disabled={isReadOnly} data-testid="dp-tell-steward" className="dph-act dph-atlas" aria-label={`Tell ${atlasName()} about ${donor.name || "this person"}`} title={atlasName()}
               style={{background:T.white,border:"1px solid "+T.greenDk,borderRadius:9,padding:"0 14px",minHeight:40,boxSizing:"border-box",color:T.greenDk,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1,display:"inline-flex",alignItems:"center",gap:7,whiteSpace:"nowrap"}}>
               <MicGlyph size={15}/><span className="dph-act-label">{atlasName()}</span>
             </button>

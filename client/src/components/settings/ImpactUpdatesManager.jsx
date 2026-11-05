@@ -8,6 +8,7 @@ import { PortalBannerCrop, PORTAL_IMPACT_PHOTO_RATIO } from "../PortalBanner";
 import { countLabel } from "../../../../shared/countWords.js";
 import { displayDate } from "../../../../shared/displayDate";
 import { askConfirm } from "../ConfirmDialog";
+import { displayOrgDate } from "../../lib/orgDay";
 
 // Impact Updates (§6.1) — what donors see in "What your giving made possible".
 // Attached to funds/campaigns; matching is deterministic on gift attribution.
@@ -128,7 +129,7 @@ export function ImpactUpdatesManager({isAdmin,isReadOnly}){
           <div>
             <div style={{fontSize:14,fontWeight:700,color:T.ink}}>{u.title}</div>
             <div style={{fontSize:12,color:T.ink3}}>
-              {u.org_wide?"Org-wide":countLabel(Array.isArray(u.targets)?u.targets.length:0,"target")} · {displayDate(u.created_at)}
+              {u.org_wide?"Org-wide":countLabel(Array.isArray(u.targets)?u.targets.length:0,"target")} · {displayOrgDate(u.created_at)}
             </div>
           </div>
           {isAdmin&&<div style={{display:"flex",gap:8}}>

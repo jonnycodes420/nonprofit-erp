@@ -284,7 +284,7 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
             </div>
             {readNote && (
               <div data-testid="deposit-read-note" style={{ marginBottom: 10, fontSize: 12.5, lineHeight: 1.55, color: T.ink2 }}>
-                Read {countLabel(readNote.total, "check")};{" "}
+                Read {countLabel(readNote.total, "check")}{"; "}
                 {countLabel(readNote.settled, "amount")} agreed on both the figures and the words.
                 {/* A cheque carries its amount twice and Steward checks the two
                     against each other. Where they did not settle it says what

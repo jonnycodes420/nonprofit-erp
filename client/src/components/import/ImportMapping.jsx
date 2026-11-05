@@ -105,7 +105,7 @@ export function ImportMapping({ TX_ROLES, aiLoading, cfDefs, dateConvEvidence, d
                     This looks like a Salesforce export{npsp.object===NPSP_OBJECT_OPPORTUNITY?" the gift report":" the contact report"}.
                   </div>
                   <div style={{marginBottom:npsp.warnings.length||npsp.ignored.length?8:0,color:T.ink2}}>
-                    The columns are mapped.{" "}
+                    The columns are mapped{". "}
                     {npsp.object===NPSP_OBJECT_OPPORTUNITY
                       ? NPSP_PRESET.cashRule
                       : "An account named like a household is a PERSON; only an organization account becomes an organization."}

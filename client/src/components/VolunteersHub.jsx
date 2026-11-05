@@ -460,7 +460,7 @@ function SignupView() {
       {link && <div style={{ fontSize: 12, color: T.ink3, marginTop: 6, lineHeight: 1.6 }}>{link.sentence}{link.kind === "page" ? "" : " What they write about when they can help lands in their internal notes."}</div>}
       {link && link.kind === "page" && link.standingUrl && (
         <div style={{ fontSize: 12, color: T.ink3, marginTop: 12, lineHeight: 1.6 }}>
-          No recruitment page? A standing link skips the application and puts people straight on your roster:{" "}
+          No recruitment page? A standing link skips the application and puts people straight on your roster{": "}
           <span style={{ wordBreak: "break-all", color: T.ink2 }}>{link.standingUrl}</span>
         </div>
       )}

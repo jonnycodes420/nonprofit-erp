@@ -33,6 +33,7 @@ import { EmailAsSentPanel } from "./EmailAsSent";
 import { ThankYouDrafts } from "./ThankYouDrafts";
 import { countLabel } from "../../../shared/countWords.js";
 import { allPages } from "../lib/pages";
+import { displayOrgDate } from "../lib/orgDay";
 
 // WIRE-1-ADDENDUM: "Templates" and "Email templates" were one thing twice, so
 // they are one Templates tab now. An old link to either (?subtab=templates,
@@ -1119,7 +1120,7 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
                 {d.reviewed_at ? <strong style={{ color: T.greenMid }}> · Reviewed</strong> : null}
               </div>
             </div>
-            <div style={{ fontSize: 11, color: T.ink3 }}>{displayDate(new Date(d.created_at))}</div>
+            <div style={{ fontSize: 11, color: T.ink3 }}>{displayOrgDate(d.created_at)}</div>
           </div>
 
           {editingId === d.id ? (
@@ -2130,7 +2131,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                       <div style={{ fontSize: 13.5, fontWeight: 600, color: T.ink }}>{c.name}</div>
                       <div style={{ fontSize: 12, color: T.ink3, marginTop: 2 }}>
                         {sentWord(c)}{Number(c.recipient_count) > 0 ? ` · ${openRateWord(c)} opened` : ""}
-                        {c.sent_at ? ` · ${displayDate(new Date(c.sent_at))}` : c.scheduled_at ? ` · scheduled ${displayDateTime(new Date(c.scheduled_at))}` : ""}
+                        {c.sent_at ? ` · ${displayOrgDate(c.sent_at)}` : c.scheduled_at ? ` · scheduled ${displayDateTime(new Date(c.scheduled_at))}` : ""}
                       </div>
                     </div>
                   ))}
@@ -2243,7 +2244,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                             : "Not yet"}
                         </div>
                         <div className="fx39-cell" data-label="Date" data-testid="camp-row-date" style={{ fontSize: 12.5 }}>
-                          {c.sent_at ? displayDate(new Date(c.sent_at))
+                          {c.sent_at ? displayOrgDate(c.sent_at)
                             : c.scheduled_at ? <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
                                 <CalendarDays size={14} strokeWidth={1.75} aria-label="Scheduled for" />{displayDateTime(new Date(c.scheduled_at))}</span>
                             : "Not set"}
@@ -2415,7 +2416,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                     <span style={{ fontSize: 11, color: T.ink3, width: 16, textAlign: "right" }}>{i + 1}</span>
                     <span style={{ flex: 1 }}>
                       <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: T.ink, textDecoration: "underline" }}>{c.name}</span>
-                      <span style={{ display: "block", fontSize: 11.5, color: T.ink3 }}>{Number(c.recipient_count).toLocaleString("en-US")} sent, {displayDate(new Date(c.sent_at))}</span>
+                      <span style={{ display: "block", fontSize: 11.5, color: T.ink3 }}>{Number(c.recipient_count).toLocaleString("en-US")} sent, {displayOrgDate(c.sent_at)}</span>
                     </span>
                     <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{c.rate}%</span>
                   </button>

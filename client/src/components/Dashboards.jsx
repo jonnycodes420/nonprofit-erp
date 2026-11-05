@@ -476,7 +476,7 @@ export function Dashboards({ data, onNavigate, dashKey }) {
           {!loading && board?.key === "recurring" && <RecurringBody get={get} />}
           {!loading && board?.key === "people" && (
             <div style={{ fontSize: 12, color: T.ink3, marginTop: 12, lineHeight: 1.6 }}>
-              Drift watches every {t("giver", 1)}’s own giving pattern.{" "}
+              Drift watches every {t("giver", 1)}’s own giving pattern{". "}
               <button onClick={() => onNavigate && onNavigate("dashboard")}
                 style={{ background: "none", border: "none", color: T.greenDk, fontSize: 12, cursor: "pointer", textDecoration: "underline", padding: 0 }}>
                 See who is drifting today

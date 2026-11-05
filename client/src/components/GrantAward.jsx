@@ -16,6 +16,7 @@ import { apiFetch } from "../api";
 import { T, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { RESTRICTIONS, statusLabel } from "../../../shared/grantShape";
+import { toAmountInput, fromAmountInput } from "../lib/amountInput";
 
 const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: T.ink, background: T.white, fontFamily: "inherit", width: "100%", boxSizing: "border-box" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" });
@@ -75,7 +76,7 @@ export function FunderPicker({ grantId, typedName, onLinked, onClose, embedded =
 export function AwardStep({ grant, target = "awarded", onDone, onClose }) {
   const [linked, setLinked] = useState(!!grant.funderLinked);
   const [funderName, setFunderName] = useState(grant.funderName || "");
-  const [a, setA] = useState({ amount: grant.askCents ? (grant.askCents / 100).toFixed(2) : "", plan: "one", count: 2, frequency: "semiannual",
+  const [a, setA] = useState({ amount: grant.askCents ? toAmountInput(grant.askCents) : "", plan: "one", count: 2, frequency: "semiannual",
     firstDue: todayIso(), restriction: grant.restriction || "", restrictedUntil: grant.restrictedUntil || "" });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -83,7 +84,7 @@ export function AwardStep({ grant, target = "awarded", onDone, onClose }) {
   const confirm = async () => {
     setBusy(true); setMsg("");
     try {
-      const body = { amountAwarded: a.amount, firstDue: a.firstDue, restriction: a.restriction || undefined,
+      const body = { amountAwarded: fromAmountInput(a.amount), firstDue: a.firstDue, restriction: a.restriction || undefined,
         restrictedUntil: a.restriction === "time_restricted" ? a.restrictedUntil : undefined };
       if (a.plan === "many") { body.installmentCount = Number(a.count) || 2; body.frequency = a.frequency; }
       const award = await apiFetch(`/grants/${grant.id}/award`, { method: "PUT", body: JSON.stringify(body) });
