@@ -6,7 +6,10 @@
 // come from, routes/insights.js deckWithDrift), less the people she has done,
 // set aside or snoozed past today there. Nothing here decides who is drifting.
 //
-//   stakeCents  Drift's value at risk for the person
+//   stakeCents  the person's usual gift, what Drift is waiting for (BUILD-83:
+//               the figure shown for a drifting donor is the usual gift, never
+//               the 24-month total in valueAtRisk). It is what each drift move
+//               adds to Keep's "at stake", and the list is sorted by it
 //   lastCents   the person's last gift (stored by donorSummary.js, the one
 //   lastDate    home of the last gift), with its date
 //   short       "Gave Dec 2025, nothing since": the last gift's month, said
@@ -35,7 +38,7 @@ function driftPeople(list, { gone = new Set(), last = new Map(), asOf } = {}) {
       return {
         id: r.donorId, name: r.donorName || "Someone", reason: r.reason || "Past their own giving rhythm.",
         short: shortReason(lastDate, asOf), early: r.confidence === "medium",
-        stakeCents: Math.round((Number(r.valueAtRisk) || 0) * 100),
+        stakeCents: Math.round((Number(r.usualGift) || 0) * 100),
         lastCents: l.amount != null ? Math.round(Number(l.amount) * 100) : null, lastDate,
       };
     })

@@ -142,7 +142,7 @@ export const CASES = [
   // HOME-6 hotfix: Home's moves deck while the org's Insights are still being built (deck.tabs is empty) says so, never the error screen.
   ["Insights/HomeMoves preparing", () => <Insights.HomeMoves onNavigate={noop} isReadOnly={false}/>, /Your moves[\s\S]*Insights are being prepared/],
   // HOME-6: the drifting list, the readout panel and Home's grid.
-  ["home/DriftList", () => <DriftList.DriftList drift={{ count: 6, people: [{ id: "d1", name: "Odessa Penwright", short: "Gave Dec 2025, nothing since", reason: "Past their usual time.", stakeCents: 50000, lastCents: 25000, lastDate: "2025-12-03" }] }} onNavigate={noop}/>, /Drifting · 6[\s\S]*Odessa Penwright[\s\S]*\$250[\s\S]*Show all 6/],
+  ["home/DriftList", () => <DriftList.DriftList drift={{ count: 6, people: [{ id: "d1", name: "Odessa Penwright", short: "Gave Dec 2025, nothing since", reason: "Past their usual time.", stakeCents: 50000, lastCents: 25000, lastDate: "2025-12-03" }] }} onNavigate={noop}/>, /Drifting · 6[\s\S]*Odessa Penwright[\s\S]*\$500[\s\S]*Last \$250[\s\S]*Show all 6/],
   ["home/ReadoutPanel", () => <ReadoutPanel.ReadoutPanel id="ro1" title="What your history shows" onClose={noop}/>, /What your history shows/],
   ["home/homeGrid", () => <div>{/grid-template-columns: minmax\(0, 7fr\) minmax\(300px, 3fr\)/.test(homeGrid.HOME_GRID_CSS) ? "seven to three" : "no grid"}</div>, /seven to three/],
   ["home/HomeLater", () => <div>{["threadSection", "driftSection", "sectionStack", "homeOverlays", "cardsBlock"].filter(k => typeof HomeLater[k] === "function").join(" ")}</div>, /threadSection driftSection sectionStack homeOverlays cardsBlock/],

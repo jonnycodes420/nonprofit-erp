@@ -125,7 +125,8 @@ async function seed() {
       const figures = [...document.querySelectorAll('.moves-tab .moves-stake, [data-testid="drift-amt"], [data-testid="home-today"]')].map(e => e.innerText);
       const rows = [...document.querySelectorAll('[data-testid="drift-row"]')];
       const amts = rows.map(r => box(r.querySelector('[data-testid="drift-amt"]')));
-      return { tiles, cards, figures, rows: rows.length, amts, scrollW: document.documentElement.scrollWidth, innerW: window.innerWidth,
+      const stakes = rows.map(r => Number((r.querySelector('[data-testid="drift-stake"]') || {}).textContent?.replace(/[^\d]/g, "") || NaN));
+      return { tiles, cards, figures, rows: rows.length, amts, stakes, scrollW: document.documentElement.scrollWidth, innerW: window.innerWidth,
         pill: !!document.querySelector('[data-testid="topbar-mail-status"]') || /Auto(matic)? email/i.test((document.querySelector(".app-header, header, [data-testid=topbar]") || {}).innerText || ""),
         setup: (document.querySelector('[data-testid="home-setup-rail"]') || {}).innerText || null, stepsOpen: !!document.querySelector('[data-testid="home-setup-rail"] [data-testid="setup-steps"]') };
     });
@@ -138,6 +139,8 @@ async function seed() {
       m.cards.length >= 4 && Math.max(...lefts) - Math.min(...lefts) <= 1 && Math.max(...rights) - Math.min(...rights) <= 1, m.cards);
     ok(`§money ${where}: no Home figure renders cents`, m.figures.length > 0 && !m.figures.some(f => CENTS.test(f)), m.figures.filter(f => CENTS.test(f)).slice(0, 4));
     ok(`§drift ${where}: 5 rows, the amounts in one column`, m.rows === 5 && new Set(m.amts.map(a => width < 600 ? a.x : a.r)).size === 1, m.amts);
+    ok(`§drift ${where}: each row leads with what is at stake, and the amounts read top-down`,
+      m.stakes.length === 5 && m.stakes.every((v, i, a) => Number.isFinite(v) && (!i || a[i - 1] >= v)) && m.stakes[0] === Math.round(first[0].stakeCents / 100), m.stakes);
     ok(`§setup ${where}: the setup card is one line with the next step, its steps folded`, !!m.setup && /Set up Steward · \d+ of \d+/.test(m.setup) && /Show the steps/.test(m.setup) && !m.stepsOpen, m.setup);
     ok(`§email ${where}: the top bar has no Automatic email pill`, !m.pill);
     ok(`§grid ${where}: no sideways scroll`, m.scrollW <= m.innerW, { scrollW: m.scrollW, innerW: m.innerW });

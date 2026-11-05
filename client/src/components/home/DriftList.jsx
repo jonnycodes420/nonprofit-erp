@@ -15,7 +15,7 @@ import { displayDateShort } from "../../../../shared/displayDate.js";
 const FIRST = 5;
 const CSS = `
 .drift-list { list-style: none; margin: 0; padding: 0; }
-.drift-row { display: grid; grid-template-columns: minmax(0, 1fr) 112px 132px; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid ${T.bg2}; }
+.drift-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px 132px; align-items: center; gap: 16px; padding: 12px 0; border-top: 1px solid ${T.bg2}; }
 .drift-row:first-child { border-top: none; }
 .drift-name { font-size: 15px; font-weight: 700; color: ${T.ink}; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
 .drift-name:hover { text-decoration: underline; }
@@ -53,9 +53,11 @@ export function DriftList({ drift, onNavigate, onShowAll, loadingAll }) {
               <DonorLink id={p.id} onOpen={() => profile(p.id)} className="drift-name" data-testid="drift-name">{p.name}</DonorLink>
               <div className="drift-why" title={p.reason}>{p.short}{p.early ? " · an early sign" : ""}</div>
             </div>
+            {/* Jonathan, 5 Nov: the money at stake leads, the figure the list is sorted by, so the amounts read top-down; the last gift is the line under it. */}
             <div className="drift-amt" data-testid="drift-amt">
-              <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{p.lastCents != null ? fmtWhole(p.lastCents / 100) : "—"}</div>
-              <div style={{ fontSize: 12, color: T.ink3 }}>{p.lastDate ? displayDateShort(p.lastDate) : "No date"}</div>
+              <div data-testid="drift-stake" style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{fmtWhole(p.stakeCents / 100)}</div>
+              <div data-testid="drift-last" style={{ fontSize: 12, color: T.ink3, whiteSpace: "nowrap" }}>
+                {p.lastCents != null ? `Last ${fmtWhole(p.lastCents / 100)}` : "No gift amount"}{p.lastDate ? ` · ${displayDateShort(p.lastDate)}` : ""}</div>
             </div>
             <button type="button" className="drift-act" data-testid="drift-open" onClick={() => profile(p.id)}>Open</button>
           </li>
@@ -67,7 +69,7 @@ export function DriftList({ drift, onNavigate, onShowAll, loadingAll }) {
           {open ? (loadingAll && people.length < count ? "Reading the rest…" : "Show fewer") : `Show all ${count.toLocaleString("en-US")}`}</button>
       )}
       <div style={{ fontSize: 12.5, color: T.ink3 }}>
-        The last gift and its date. <button type="button" data-testid="drift-open-all" onClick={() => onNavigate && onNavigate("donors", { view: "drift" })}
+        At stake is each person's usual gift, the one Drift is waiting for. Under it, their last gift. <button type="button" data-testid="drift-open-all" onClick={() => onNavigate && onNavigate("donors", { view: "drift" })}
           style={{ background: "none", border: "none", padding: 0, fontFamily: "inherit", fontSize: 12.5, color: T.greenDk, fontWeight: 700, cursor: "pointer" }}>Open Drift</button>
       </div>
     </section>

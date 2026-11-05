@@ -516,7 +516,8 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 - The moves tiles are one row of equal widths, two by two in a narrow column, never three and one.
 - A name on Home opens the profile. A count on Home opens a list of exactly that many.
 - The drifting list reads Drift's own list through the deck (`server/insights/driftPeople.js`);
-  no second rule for who is drifting.
+  no second rule for who is drifting. Each row leads with the usual gift (what is at stake, and
+  what the list is sorted by), the last gift under it; an early sign is never called "at risk" (FIX-10).
 - The setup steps are folded by default, remembered per person (reverses POLISH-4).
 - The automatic email setting is in Settings only; there is no top-bar pill.
 

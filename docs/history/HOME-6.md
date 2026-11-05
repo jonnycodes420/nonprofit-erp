@@ -20,8 +20,9 @@ reads again every 4 s.
   figure in whole dollars (`lib/money.js` `fmtWhole`, rounded). Grow's split moved to its title.
   Planned reads "246 with a signal" (it was cut off at 1440).
 - **Drifting** (`home/DriftList.jsx`, `server/insights/driftPeople.js`). The deck's answer carries
-  Drift's own people (GET /drift's list, less the drift moves she has acted on), sorted by Drift's
-  value at risk, each with the stored last gift; the first read carries 5, every move's read all of
+  Drift's own people (GET /drift's list, less the drift moves she has acted on), sorted by the
+  usual gift (BUILD-83's at-stake figure; Jonathan asked for it to lead each row so the amounts read
+  top-down), with the stored last gift and date as the line under it; the first read carries 5, every move's read all of
   them, so Show all opens in place. It replaces the Drift chip (its count is the list's).
 - **Setup.** One line and the next step; the steps fold behind "Show the steps", remembered per
   person (`steward.setupRail.open.<user id>`). This reverses POLISH-4's open-by-default, on
