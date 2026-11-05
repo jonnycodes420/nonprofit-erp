@@ -507,6 +507,18 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         if (lapsing !== dirLapsing.has(p.id)) bad.push(`${who}: the profile ${lapsing ? "is" : "is not"} tagged Lapsing, the Directory's Lapsing filter ${dirLapsing.has(p.id) ? "lists them" : "leaves them out"}`);
         if (onTrack !== dirOnTrack.has(p.id)) bad.push(`${who}: the profile ${onTrack ? "says" : "does not say"} On track, the Directory's On track filter ${dirOnTrack.has(p.id) ? "lists them" : "leaves them out"}`);
         if (reengage.has(p.id) && (onTrack || !lapsed)) bad.push(`${who}: Re-engage lists them, the profile says ${onTrack ? "On track" : "not Lapsed"}`);
+        // MONEY-3 (ctx.storedRhythm): every surface above reads the one stored
+        // on-time date (lapse.js ON_TIME_THROUGH), so a stale one is seen only
+        // against the gifts: it must be rhythm.js storedThrough of their gifts.
+        // Off unless asked: a suite that writes gifts by SQL has no after-change step.
+        if (ctx.storedRhythm && st.today) {
+          const [sr] = await q(`SELECT ${require("../../shared/numbers/lapse").ON_TIME_THROUGH("d.id")} AS d FROM donors d WHERE d.org_id = $1 AND d.id = $2`, [orgId, p.id]);
+          const gs = await q(`SELECT LEFT(g.date, 10) AS date, g.amount::float8 AS amount FROM gifts g WHERE g.org_id = $1 AND g.donor_id = $2 AND g.amount > 0
+                                AND ${require("../../shared/numbers/money").MONEY("g")}`, [orgId, p.id]);
+          const RHY = require("../../shared/numbers/rhythm");
+          const want = RHY.storedThrough(RHY.rhythmFor(gs, st.today)), have = sr && sr.d ? String(sr.d).slice(0, 10) : null;
+          if (have !== want) bad.push(`${who}: the stored on-time date is ${have || "none"}, their gifts say ${want || "none"}`);
+        }
       }));
     }
     facts.timeliness = { people: givers.length, lapsing: dirLapsing.size, onTrack: dirOnTrack.size, reengage: reengage.size };
@@ -846,7 +858,13 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         const profC = (Array.isArray(prof) ? prof : []).filter(x => x.status === "open").reduce((n, x) => n + cents(x.balance), 0);
         const fr = await get(`/figures/pledges-open/rows?donor=${encodeURIComponent(o.donor_id)}&page=1&pageSize=200`);
         const m = moves.find(x => (x.ids || []).includes(o.donor_id));
-        const homeC = m ? (m.facts || []).filter(f => f[0] === "still to come").reduce((n, f) => n + cents(num(f[1])), 0) : undefined;
+        // MONEY-3: a household's card carries each member's pledges (the lead
+        // and its "also" moves), each with its own pledge id and still to come
+        // (shared/numbers/pledges.js); Home's figure for this person is theirs
+        // alone, by pledge. Summing the card's "still to come" facts read a
+        // spouse's $400 as Finley's (CI run 42110734392).
+        const mine = m ? new Set((await q(`SELECT id FROM pledges WHERE org_id = $1 AND donor_id = $2 AND status = 'open'`, [orgId, o.donor_id])).map(r => r.id)) : null;
+        const homeC = m ? [m, ...(m.also || [])].filter(x => x.pledgeId && mine.has(x.pledgeId)).reduce((n, x) => n + Number(x.still || 0), 0) : undefined;
         const shown = [["the database", Number(o.c)], ["the profile's open pledge", profC], ["Fundraising's open pledges for them", fr ? cents(fr.value) : undefined],
           ...(m ? [["Home's move", homeC]] : [])];
         for (const [name, v] of shown.slice(1)) if (v !== Number(o.c)) diffs.push(`open pledge for ${o.name}: the database says ${money(Number(o.c))}, ${name} says ${v === undefined ? "nothing" : money(v)}`);

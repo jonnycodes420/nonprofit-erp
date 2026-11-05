@@ -81,6 +81,7 @@ const READS = [
     step({ kind: "note", who: "Undine Fairweather", words: "Prefers phone calls" }),
   ] }],
   [/^Undine Ashgrove gave/, { steps: [step({ kind: "gift", who: "Undine Ashgrove", amount_words: "$2,500", words: "Undine Ashgrove gave $2,500" })] }],
+  [/^How many people gave this year/, { steps: [step({ kind: "question", target: "How many people gave this year?", words: "How many people gave this year?" })] }],
 ];
 const mock = http.createServer((req, res) => {
   let body = "";
@@ -242,6 +243,16 @@ async function reset() {
   const y9 = await api("POST", `/atlas/actions/${g9 && g9.id}/yes`, tok, {});
   const n9 = (await q(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1 AND donor_id='d_a5_ua'`, [ORG]))[0].n;
   ok("§9 a late tap records nothing a second time", y9.status === 409 && n9 === 2, { status: y9.status, n9 });
+
+  // ── §10 MONEY-3: THE HEADER SAYS WHAT HAPPENED ─────────────────────────────
+  // "Done." sat over an answer to a question. A question answered starts
+  // "Here's what I found."; "Done." is only for an action (§9's gift above).
+  console.log("\n§10 the header over a question and over an action");
+  const t10 = await api("POST", "/atlas", tok, { text: "How many people gave this year?" });
+  const r10 = t10.body.request || {};
+  ok("§10 a question is answered, and the header says \"Here's what I found.\"", t10.status < 300 && (r10.lines || []).length === 1
+     && r10.lines[0].kind === "answer" && r10.spoke === "Here's what I found.", { status: t10.status, spoke: r10.spoke, lines: (r10.lines || []).map(l => [l.kind, l.line]) });
+  ok("§10 an action's header is \"Done.\"", /^Done\./.test((t9.body.request || {}).spoke || ""), (t9.body.request || {}).spoke);
 
   ok("§8 nothing was sent to anyone", MAIL.length === 0, MAIL.map(m => m.to));
   mock.close(); sink.close();

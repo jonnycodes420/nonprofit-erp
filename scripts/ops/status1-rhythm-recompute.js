@@ -51,7 +51,7 @@ async function main() {
       for (const s of stored) {
         rows++;
         const a = drift.assessDrift(s.gifts || [], today);
-        const want = { rhythm: drift.rhythmOf(a), cadence: a.cadenceDays || null, next: a.onTimeThrough || a.expectedNext || null };
+        const want = { rhythm: drift.rhythmOf(a), cadence: a.cadenceDays || null, next: require("../../shared/numbers/rhythm").storedThrough(require("../../shared/numbers/rhythm").rhythmFor(s.gifts || [], today)) };   // MONEY-3: the one stored date
         const had = s.expected_next ? String(s.expected_next).slice(0, 10) : null;
         if (had !== want.next || s.rhythm !== want.rhythm || (s.cadence_days || null) !== want.cadence) fixes.push({ id: s.donor_id, had, ...want });
       }

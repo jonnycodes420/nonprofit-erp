@@ -129,8 +129,10 @@ async function rhythmFor(orgId, ids, { door, today }) {
     const d = driftMap.get(id);
     const state = d ? d.state : a.state;
     if (state === "drifting" && prior.get(id) !== "drifting") becameLate.push(id);
-    // STATUS-1: the stored date is the last day they are on time (rhythm.js onTimeThrough), which today cannot move
-    vals.push(orgId, id, rhythm, a.cadenceDays || null, a.onTimeThrough || a.expectedNext || null, state,
+    // STATUS-1: the stored date is the last day they are on time, which today cannot move.
+    // MONEY-3: rhythm.js storedThrough, the one calculation the scores store too.
+    const RHY = require("./shared/numbers/rhythm");
+    vals.push(orgId, id, rhythm, a.cadenceDays || null, RHY.storedThrough(RHY.rhythmFor(gifts, today)), state,
               Math.round(thisYear * 100) / 100, Math.round(lastYear * 100) / 100, largest, door, today,
               ACTOR.id, ACTOR.name);
     tuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?)");

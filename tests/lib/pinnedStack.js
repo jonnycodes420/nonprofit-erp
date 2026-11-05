@@ -66,9 +66,13 @@ async function main(file) {
   if (!/^(localhost|127\.0\.0\.1)$/.test(u.hostname)) throw new Error(`refusing a non-loopback database: ${u.hostname}`);
   const dbName = `${u.pathname.slice(1).slice(0, 40)}_pin${process.pid}`.replace(/[^a-z0-9_]/gi, "_");
   const pinUrl = new URL(baseUrl); pinUrl.pathname = "/" + dbName;
-  const at = nextNoon();
+  // MONEY-3: PINNED_STACK_AT=<ISO instant> pins another instant (the 11:30 PM
+  // New York proof runs); never earlier than the real clock, as above.
+  const asked = process.env.PINNED_STACK_AT ? RealDate.parse(process.env.PINNED_STACK_AT) : null;
+  if (asked !== null && !(Number.isFinite(asked) && asked >= testNow() + 60000)) throw new Error(`pinnedStack: PINNED_STACK_AT must be an instant at least a minute ahead: ${process.env.PINNED_STACK_AT}`);
+  const at = asked !== null ? asked : nextNoon();
   const offset = at - testNow();
-  console.log(`  pinned clock: ${new RealDate(at).toISOString()} (noon in New York), a stack of its own on database ${dbName}`);
+  console.log(`  pinned clock: ${new RealDate(at).toISOString()} (${asked !== null ? "PINNED_STACK_AT" : "noon in New York"}), a stack of its own on database ${dbName}`);
 
   // Created and dropped from the server's maintenance database, so the drop
   // works even when the shard's own database has gone first.

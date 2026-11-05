@@ -145,7 +145,7 @@ const idsOf = async (tok, path) => new Set((((await api("GET", `${path}&limit=20
   // ── §4 TRUTH-1's key ─────────────────────────────────────────────────────
   console.log("\n§4 TRUTH-1's key");
   const only = ["homeLine", "drift", "groups", "events", "campaigns", "exports", "ask", "atlas", "moveReport", "search"];
-  const r = await assertSurfacesAgree(ORG, { token: tok, soft: true, label: "STATUS-1", skip: only });
+  const r = await assertSurfacesAgree(ORG, { token: tok, soft: true, label: "STATUS-1", skip: only, storedRhythm: true });
   const onTime = r.diffs.filter(x => x.startsWith("on time:"));
   ok(`§4 the profile, the Directory and Re-engage agree on time for every person (${r.facts.timeliness && r.facts.timeliness.people} people)`,
     !onTime.length && r.facts.timeliness && r.facts.timeliness.people === 3, onTime);
@@ -163,8 +163,11 @@ const idsOf = async (tok, path) => new Set((((await api("GET", `${path}&limit=20
   const settled = await drainQueue({ orgId: ORG, scores: true, timeout: 120000 });
   ok("§4 the org's queued work has all run before the plant", settled.drained, settled);
   await q(`UPDATE donor_rhythm SET expected_next = $1, computed_at = clock_timestamp() WHERE org_id = $2 AND donor_id = $3`, [add(today, 200), ORG, P("two")]);
-  const planted = await assertSurfacesAgree(ORG, { token: tok, soft: true, label: "STATUS-1 planted", skip: only });
-  ok("§4 planted: a stale stored rhythm behind a list is caught (the key can fail)", planted.diffs.some(x => x.startsWith("on time:") && x.includes("Bea Marlow")), planted.diffs);
+  // MONEY-3: the profile's On track reads the same stored date as the lists
+  // now (one answer), so the stale row moves every surface together; the key
+  // sees it against her gifts (storedRhythm).
+  const planted = await assertSurfacesAgree(ORG, { token: tok, soft: true, label: "STATUS-1 planted", skip: only, storedRhythm: true });
+  ok("§4 planted: a stale stored rhythm behind a list is caught (the key can fail)", planted.diffs.some(x => x.startsWith("on time:") && x.includes("Bea Marlow") && /stored on-time date/.test(x)), planted.diffs);
 
   await summary();
   await closeDb();
