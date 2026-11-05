@@ -11,6 +11,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, takeParked } from "../api";
 import { T } from "./shared";
 import { DonorLink } from "./RecordLink";
+import { fmtWhole } from "../lib/money";   // HOME-6: whole dollars on Home
+import { DriftList } from "./home/DriftList";   // HOME-6
 import EventRaised from "./EventRaised";   // HOME-3: the first look's events
 import { countLabel } from "../../../shared/countWords.js";
 import { displayDate } from "../../../shared/displayDate.js";   // SWEEP-1: a written date, never "2025-12-19"
@@ -334,9 +336,12 @@ export function HomeInsights({ onNavigate, isReadOnly, data: given, onChanged, o
 // work while the deck has focus, and a phone swipes. All the moves arrive in
 // one read, so the next card is already here when she advances.
 const DECK_CSS = `
-.moves-tabs { display: flex; gap: 10px; flex-wrap: wrap; }
-.moves-tab { text-align: left; border-radius: 14px; padding: 11px 16px; min-width: 132px; min-height: 44px; cursor: pointer; font-family: inherit;
-  background: ${T.white}; color: ${T.ink}; border: 1px solid ${T.bg3}; }
+.moves-deck { container-type: inline-size; }
+.moves-tabs { display: grid; grid-template-columns: repeat(var(--tiles, 4), minmax(0, 1fr)); gap: 12px; }
+.moves-tab { text-align: left; border-radius: 14px; padding: 12px 16px; min-width: 0; min-height: 68px; cursor: pointer; font-family: inherit;
+  background: ${T.white}; color: ${T.ink}; border: 1px solid ${T.bg3}; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+.moves-tab > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@container (max-width: 560px) { .moves-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .moves-tab[aria-selected="true"] { background: ${T.greenDk}; color: ${T.white}; border-color: ${T.greenDk}; }
 .moves-tab:focus-visible, .moves-deck:focus-visible, .moves-btn:focus-visible { outline: 2px solid ${T.greenDk}; outline-offset: 2px; }
 .moves-card { background: ${T.bg}; border-radius: 18px; padding: 28px 30px; display: flex; flex-direction: column; gap: 14px; touch-action: pan-y; }
@@ -350,9 +355,7 @@ const DECK_CSS = `
 .moves-btn { border-radius: 12px; padding: 12px 20px; font-size: 14.5px; font-weight: 700; cursor: pointer; font-family: inherit; min-height: 44px; }
 .moves-round { width: 44px; height: 44px; border-radius: 999px; border: 1px solid ${T.bg3}; background: ${T.white}; color: ${T.ink}; font-size: 20px; cursor: pointer; line-height: 1; }
 @media (max-width: 640px) {
-  .moves-tabs { flex-wrap: nowrap; overflow-x: auto; margin: 0 -2px; padding-bottom: 2px; }
-  .moves-tab { min-width: 0; flex: none; padding: 9px 14px; border-radius: 999px; }
-  .moves-tab .moves-stake { display: none !important; }
+  .moves-tab { padding: 10px 12px; min-height: 60px; }
   .moves-acts { display: grid !important; grid-template-columns: 1fr 1fr; }
   .moves-acts .moves-spacer { display: none; }
   .moves-swipe { display: inline !important; }
@@ -529,6 +532,8 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
   };
   const pick = k => { rest(); setTab(k); setMode(null); setMsg(null); setSlide(null); };
   const anyMoves = tabs.some(t => t.count > 0);
+  const tiles = tabs.filter(t => t.count > 0 || t.key === cur.key);
+  const driftPeople = deck.drift && deck.drift.count > 0;
 
   return (
     <section aria-label="Your moves" data-testid="home-moves" className="moves-deck" tabIndex={0} onKeyDown={onKey} onPointerEnter={rest} onTouchStart={rest} onFocus={rest}
@@ -545,16 +550,19 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
           {preparing ? data.sentence : "No moves yet. Once gifts are in Steward, the people to reach out to, and what to say, show here one at a time."}
         </div>
       ) : <>
-        <div role="tablist" aria-label="Your moves by rung" className="moves-tabs">
+        {/* HOME-6: one row of equal tiles (two by two in a narrow column, never
+            three and one). Each tile is its name and count, then one figure in
+            whole dollars; Grow's split is in its title. */}
+        <div role="tablist" aria-label="Your moves by rung" className="moves-tabs" style={{ "--tiles": tiles.length }}>
           {/* HOME-4: a tab with no moves is not drawn (no zeros as headlines) */}
-          {tabs.filter(t => t.count > 0 || t.key === cur.key).map(t => (
+          {tiles.map(t => (
             <button key={t.key} type="button" role="tab" className="moves-tab" data-testid={`moves-tab-${t.key}`} data-count={t.left.length + Math.max(0, t.count - t.moves.length)}
-              aria-selected={t.key === cur.key} onClick={() => pick(t.key)} title={deck.sentence}>
-              <span style={{ display: "block", fontSize: 14.5, fontWeight: 700 }}>{t.label} · {tabCountWords(t, gone)}</span>
-              <span className="moves-stake" style={{ display: "block", fontSize: 12.5, marginTop: 2, opacity: 0.85 }}>
+              aria-selected={t.key === cur.key} onClick={() => pick(t.key)} title={t.split ? `${tabCountWords(t, gone)}. ${deck.sentence || ""}` : deck.sentence}>
+              <span style={{ fontSize: 14.5, fontWeight: 700 }}>{t.label} · {(t.left.length + Math.max(0, t.count - t.moves.length)).toLocaleString("en-US")}</span>
+              <span className="moves-stake" data-testid="moves-stake" style={{ fontSize: 12.5, opacity: 0.85 }}>
                 {/* SWEEP-1: the tab's own total (every move, not the first 150 the deck carries), less what was acted on here */}
                 {/* POLISH-4: Planned says its own people, the same count as its label, never the 150 the deck carries */}
-                {t.key === "planned" ? `${plannedLeft(t).toLocaleString("en-US")} ${plannedLeft(t) === 1 ? "person" : "people"} with a signal` : `${money((t.cents || 0) - t.moves.filter(x => gone.has(x.id)).reduce((n, x) => n + (x.cents || 0), 0))} at stake`}</span>
+                {t.key === "planned" ? `${plannedLeft(t).toLocaleString("en-US")} with a signal` : `${fmtWhole(((t.cents || 0) - t.moves.filter(x => gone.has(x.id)).reduce((n, x) => n + (x.cents || 0), 0)) / 100)} at stake`}</span>
             </button>
           ))}
         </div>
@@ -621,7 +629,9 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
         {msg && <div role="status" style={{ fontSize: 13.5, color: T.ink, ...(msg.err ? { borderLeft: "3px solid " + T.gold, paddingLeft: 8 } : {}) }}>
           {msg.text}{msg.tasks && onNavigate && <> <button type="button" style={LNK} onClick={() => onNavigate("tasks")}>Open Tasks</button></>}</div>}
       </>}
-      {!noDonors && <MoveChips deck={deck} anyMoves={anyMoves} setPanel={setPanel} onDrift={drift} />}
+      {/* HOME-6: the drifting people as a list (home/DriftList.jsx); its count is the chip's, so the chip gives way to it */}
+      {!noDonors && driftPeople && <DriftList drift={deck.drift} onNavigate={onNavigate} onShowAll={rest} loadingAll={full && deck.partial} />}
+      {!noDonors && <MoveChips deck={deck} anyMoves={anyMoves} setPanel={setPanel} onDrift={driftPeople ? null : drift} />}
       {panel && (
         <div role="dialog" aria-modal="true" aria-label={panel === "ladder" ? "Your donor ladder" : "Every move of this kind"} onClick={e => { if (e.target === e.currentTarget) setPanel(null); }}
           onKeyDown={e => { if (e.key === "Escape") setPanel(null); e.stopPropagation(); }}

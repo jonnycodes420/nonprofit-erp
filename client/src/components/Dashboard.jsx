@@ -28,6 +28,7 @@ import { openTellSteward } from "./TellStewardOpen";   // AGENT-5: one input, At
 import { SetupFirstCard, SetupRailCard, setupStage } from "./HomeSetup";   // HOME-4
 import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads, HomeRailColumn, OwnersCard } from "./HomeRail";   // HOME-4, PROFILE-2
 import { plural } from "../../../shared/countWords";
+import { HOME_GRID_CSS } from "./home/homeGrid";   // HOME-6
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="home"}) {
@@ -289,6 +290,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const loadTaskCounts=()=>apiFetch("/tasks/counts?scope=mine").then(setTaskCounts).catch(()=>setTaskCounts(c=>c||{failed:true}));
   // HOME-4: no mount effect of its own; loadThreads (on mount) asks for the counts once.
   const loadThreads=(sc=threadScope)=>{loadTaskCounts();return apiFetch(`/threads?scope=${sc}`).then(r=>setThreadsData(r)).catch(()=>setThreadsData(d=>d||{failed:true,bands:[],list:[]}));};
+  // HOME-6: "40 follow-ups" opens all 40, not the Thread's first page of 12.
+  const [railOpenAll,setRailOpenAll]=useState(null);
+  useEffect(()=>{
+    if(railView.kind!=="list"||railView.key!=="open"){setRailOpenAll(null);return;}
+    let alive=true;
+    apiFetch(`/threads?scope=${threadScope}&cap=200`).then(r=>{if(alive)setRailOpenAll(r&&r.list||null);}).catch(()=>{});
+    return ()=>{alive=false;};
+  },[railView.kind,railView.key,threadScope]);
   useEffect(()=>{apiFetch("/threads/health").then(setThreadHealth).catch(()=>{});},[]);
   useStewardTold(()=>{loadThreads();});   // VOICE-4: the Thread re-reads when Tell Steward acts
 
@@ -928,6 +937,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // Newest first among what she logged today, then threadRank's own order.
   // SCREENS-1: declared above the Thread's rows, which pass it to their late render functions.
   const openRailDonor=(donorId,threadId)=>setRailView({kind:"donor",donorId,threadId});
+  // HOME-6: a name on Home opens that person's profile.
+  const openProfile=id=>onNavigate&&onNavigate("donors",{selectDonorId:id});
   const rowSource = homeCalm
     ? [...threadList.filter(t=>t.daysOpen===0),...threadList.filter(t=>t.daysOpen!==0&&t.band!=="ahead")]
     : threadList;
@@ -1170,24 +1181,25 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const railListFor=(key)=>{
     if(key==="birthdays") return {
       title:"Birthdays this week",
-      rows:birthdaysThisWeek.map(r=>({id:r.id,label:r.name,meta:r.label,onOpen:()=>openRailDonor(r.id,null)})),
+      rows:birthdaysThisWeek.map(r=>({id:r.id,label:r.name,meta:r.label,onOpen:()=>openProfile(r.id)})),
       empty:"No birthdays this week.",
     };
     if(key==="failed") return {
       title:"Cards that failed this week",
       rows:(recurringHealth?.atRisk||[]).filter(r=>r.first_failed_at&&(Date.now()-new Date(r.first_failed_at).getTime())<=7*86400000)
-        .map(r=>({id:r.donor_id,label:r.donor_name,meta:fmtFull(parseFloat(r.amount)||0),onOpen:()=>openRailDonor(r.donor_id,null)})),
+        .map(r=>({id:r.donor_id,label:r.donor_name,meta:fmtFull(parseFloat(r.amount)||0),onOpen:()=>openProfile(r.donor_id)})),
       empty:"No card has failed this week.",
     };
-    const list=key==="today"?threadList.filter(x=>x.band==="today"):threadList;
+    const list=key==="today"?threadList.filter(x=>x.band==="today"):(railOpenAll||threadList);
     return {
-      title:key==="today"?"Due today":"Open follow-ups",
+      title:key==="today"?"Due today":`Open follow-ups · ${(threadStat?.open??list.length).toLocaleString("en-US")}`,
+      loading:key==="open"&&!railOpenAll&&(threadStat?.open||0)>list.length,
       // BUILD-86's rule: never "day 0". A thread planned this morning against
       // a date already past is genuinely overdue and genuinely zero days old,
       // so the meta says how LATE it is, or the day it is due.
       rows:list.map(x=>({id:x.id,label:x.donorName,
         meta:x.overdue?`${rowFigure(x)>(x.overdueDays||0)?"waiting":"overdue"} ${rowFigure(x)}d`:(x.band==="today"?"today":displayDateShort(x.nextStep?.due,new Date())),
-        onOpen:()=>openRailDonor(x.donorId,x.id)})),
+        onOpen:()=>openProfile(x.donorId)})),
       empty:key==="today"?"Nothing is due today.":"Nothing is waiting.",
     };
   };
@@ -1303,6 +1315,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       {/* HOME-3 — nothing renders above the greeting: the moves deck sits
           under Ask, inside the header (homeHead). */}
       <div className={surface==="home"?"home-shell":""}>
+      {surface==="home"&&<style>{HOME_GRID_CSS}</style>}{/* HOME-6: Home's one grid (home/homeGrid.js) */}
       {surface==="home"&&!homeWide&&<div className="home-head-narrow">{homeHead}</div>}
       <div className={surface==="home"?"home-shell-top":""}>
       <div className={surface==="home"?"home-shell-main":""}>

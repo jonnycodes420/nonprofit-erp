@@ -145,9 +145,27 @@ const bar = (done, total) => (
 );
 const go = (onNavigate, item) => { const m = SETUP_ITEM_META[item.key]; onNavigate && onNavigate(m.nav[0], m.nav[1]); };
 
-// The new org's card: every step, and the next one as the button.
+// HOME-6: whether her steps are open, remembered per person in her browser;
+// the rail's card and this one share it.
+const railOpenKey = () => {
+  let id = "";
+  try { id = (JSON.parse(window.localStorage.getItem("npe_user") || "{}") || {}).id || ""; } catch { /* no user yet */ }
+  return "steward.setupRail.open." + id;
+};
+const readOpen = (fallback = false) => { try { const v = window.localStorage.getItem(railOpenKey()); return v == null ? fallback : v === "1"; } catch { return fallback; } };
+const useStepsOpen = fallback => {
+  const [open, setOpenRaw] = useState(() => readOpen(fallback));
+  const setOpen = f => setOpenRaw(o => { const v = typeof f === "function" ? f(o) : f; try { window.localStorage.setItem(railOpenKey(), v ? "1" : "0"); } catch { /* per-viewer only */ } return v; });
+  return [open, setOpen];
+};
+
+// The new org's card: the next step as the button, and every step. HOME-6:
+// once donors are in, the steps fold behind "Show the steps" like the rail's
+// (the moves are the work then); with no donors yet they are the page, open.
 export function SetupFirstCard({ status, onNavigate, isAdmin, onSetCardState }) {
   const next = nextStep(status);
+  const donors = (status.items || []).find(i => i.key === "donors");
+  const [open, setOpen] = useStepsOpen(!(donors && donors.count > 0));
   return (
     <section data-testid="home-setup-first" aria-label="Set up Steward"
       style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -163,7 +181,10 @@ export function SetupFirstCard({ status, onNavigate, isAdmin, onSetCardState }) 
       {next && <button type="button" data-testid="setup-next" onClick={() => go(onNavigate, next)}
         style={{ alignSelf: "flex-start", background: T.greenDk, color: T.white, border: "none", borderRadius: 10, padding: "10px 16px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
         Next: {nextLabel(next)}</button>}
-      <SetupChecklist status={{ ...status, cardState: null }} onNavigate={onNavigate} isAdmin={false} onSetCardState={onSetCardState} bare />
+      <button type="button" data-testid="setup-first-all" aria-expanded={open} onClick={() => setOpen(o => !o)}
+        style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, fontFamily: "inherit", fontSize: 13, color: T.greenDk, fontWeight: 700, cursor: "pointer" }}>
+        {open ? "Hide the steps" : "Show the steps"}</button>
+      {open && <SetupChecklist status={{ ...status, cardState: null }} onNavigate={onNavigate} isAdmin={false} onSetCardState={onSetCardState} bare />}
     </section>
   );
 }
@@ -171,29 +192,52 @@ export function SetupFirstCard({ status, onNavigate, isAdmin, onSetCardState }) 
 // The rail's card: the count, the next step, a bar, and every step in place.
 // POLISH-4 (Jonathan, 31 Oct): the steps show until she hides them, and stay
 // hidden for her after that (her browser remembers; nothing else is stored).
-const RAIL_CLOSED_KEY = "steward.setupRail.closed";
-const readClosed = () => { try { return window.localStorage.getItem(RAIL_CLOSED_KEY) === "1"; } catch { return false; } };
+// HOME-6 (Jonathan, 5 Nov): the rail stays quiet. The card is one line, "Set
+// up Steward · 1 of 7", and the next step; the steps are folded behind "Show
+// the steps" until she opens them, and that is remembered for her (per person,
+// in her browser). Open, each step is one line and its action; the done ones
+// fold into a single line.
+const RAIL_LINK = { background: "none", border: "none", padding: 0, fontFamily: "inherit", fontSize: 13, color: T.greenDk, fontWeight: 700, cursor: "pointer", textAlign: "left", whiteSpace: "nowrap" };
 export function SetupRailCard({ status, onNavigate, isAdmin, onSetCardState }) {
-  const [open, setOpenRaw] = useState(() => !readClosed());
-  const setOpen = f => setOpenRaw(o => { const v = typeof f === "function" ? f(o) : f; try { window.localStorage.setItem(RAIL_CLOSED_KEY, v ? "0" : "1"); } catch { /* per-viewer only */ } return v; });
+  const [open, setOpen] = useStepsOpen(false);
   const next = nextStep(status);
+  const items = (status.items || []).filter(i => SETUP_ITEM_META[i.key]);
+  const done = items.filter(i => i.done), todo = items.filter(i => !i.done);
   return (
-    <div data-testid="home-setup-rail" style={{ border: "1px solid " + T.bg3, borderRadius: 14, padding: "12px 14px", background: T.white, display: "flex", flexDirection: "column", gap: 8 }}>
+    <div data-testid="home-setup-rail" className="home-card home-card-tight" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-        <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: T.ink, lineHeight: 1.45 }}>
-          <b>Set up Steward</b> · {status.doneCount} of {status.totalCount}
-          {next && <> · Next: <button type="button" data-testid="setup-rail-next" onClick={() => go(onNavigate, next)}
-            style={{ background: "none", border: "none", padding: 0, fontFamily: "inherit", fontSize: 13.5, color: T.greenDk, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>
-            {SETUP_ITEM_META[next.key].label}</button></>}
-        </span>
+        <span data-testid="setup-rail-head" style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: T.ink, lineHeight: 1.45, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <b>Set up Steward</b> · {status.doneCount} of {status.totalCount}</span>
         {isAdmin && <button type="button" onClick={() => onSetCardState("hidden")} aria-label="Don't show the setup checklist on Home again" title="Don't show this on Home again"
           style={{ background: "none", border: "none", color: T.ink3, fontSize: 15, cursor: "pointer", padding: 2, lineHeight: 1 }}>×</button>}
       </div>
       {bar(status.doneCount, status.totalCount)}
+      {next && <div style={{ display: "flex", alignItems: "baseline", gap: 6, fontSize: 13, color: T.ink3, minWidth: 0 }}>
+        <span style={{ flexShrink: 0 }}>Next:</span>
+        <button type="button" data-testid="setup-rail-next" onClick={() => go(onNavigate, next)} style={{ ...RAIL_LINK, overflow: "hidden", textOverflow: "ellipsis" }}>
+          {SETUP_ITEM_META[next.key].label}</button>
+      </div>}
       <button type="button" data-testid="setup-rail-all" aria-expanded={open} onClick={() => setOpen(o => !o)}
-        style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, fontFamily: "inherit", fontSize: 12.5, color: T.greenDk, fontWeight: 700, cursor: "pointer" }}>
-        {open ? "Hide the steps" : "Show all steps"}</button>
-      {open && <SetupChecklist status={{ ...status, cardState: null }} onNavigate={onNavigate} isAdmin={false} onSetCardState={onSetCardState} bare />}
+        style={{ ...RAIL_LINK, alignSelf: "flex-start", fontSize: 12.5 }}>
+        {open ? "Hide the steps" : "Show the steps"}</button>
+      {open && <div data-testid="setup-steps" style={{ display: "flex", flexDirection: "column" }}>
+        {done.length > 0 && <div data-testid="setup-rail-done" title={done.map(i => SETUP_ITEM_META[i.key].label).join(", ")}
+          style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderTop: "1px solid " + T.bg2, fontSize: 12.5, color: T.ink3 }}>
+          <span aria-hidden style={{ width: 16, height: 16, borderRadius: "50%", background: T.green600, color: T.white, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9, flexShrink: 0 }}>✓</span>
+          {done.length} done</div>}
+        {todo.map(item => {
+          const meta = SETUP_ITEM_META[item.key];
+          return (
+            <div key={item.key} data-testid="setup-rail-step" title={meta.why}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderTop: "1px solid " + T.bg2, minWidth: 0 }}>
+              <span aria-hidden style={{ width: 16, height: 16, borderRadius: "50%", border: "1.5px solid " + T.bg3, flexShrink: 0 }} />
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{meta.label}</span>
+              <button type="button" onClick={() => go(onNavigate, item)} aria-label={`${meta.label}: ${meta.why}`} style={{ ...RAIL_LINK, fontSize: 12.5 }}>
+                {item.key === "donors" && item.needsGiftConfirm ? "Re-import" : meta.cta} →</button>
+            </div>
+          );
+        })}
+      </div>}
     </div>
   );
 }
