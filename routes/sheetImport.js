@@ -463,11 +463,13 @@ async function buildUnderstanding(req, body) {
   // model is asked only about what they leave unplaced; her answers here win
   const saved = await savedMappingFor(orgId, body, Rm);
   const savedOv = saved ? saved.overrides : {};
-  let u = Rm.understand({ sheets: body.sheets, fileName: body.fileName, today, overrides: { ...savedOv, ...body.overrides }, answers: body.answers });
+  // IMPORT-8: the organization's own phone (its people's signature phones) is never copied onto a person
+  const ownPhones = (await query("SELECT sign_phone FROM users WHERE org_id=? AND sign_phone IS NOT NULL AND sign_phone <> ''", [orgId]).catch(() => [])).map(r => r.sign_phone);
+  let u = Rm.understand({ sheets: body.sheets, fileName: body.fileName, today, overrides: { ...savedOv, ...body.overrides }, answers: body.answers, ownPhones });
   let model = { used: false };
   if (body.useModel) {
     model = await modelOverrides(orgId, body.sheets, u, Rm);
-    if (model.used) u = Rm.understand({ sheets: body.sheets, fileName: body.fileName, today, overrides: { ...savedOv, ...model.overrides, ...body.overrides }, answers: body.answers });
+    if (model.used) u = Rm.understand({ sheets: body.sheets, fileName: body.fileName, today, overrides: { ...savedOv, ...model.overrides, ...body.overrides }, answers: body.answers, ownPhones });
   }
   u.savedMapping = saved ? { id: saved.id, savedAt: saved.savedAt, columns: Object.keys(savedOv).length } : null;
   const privacy = await require("../clientSafe").privacyFor(orgId).catch(() => ({ on: false, clientIds: new Set(), clientEmails: new Set() }));
@@ -533,6 +535,19 @@ async function buildUnderstanding(req, body) {
     u.pledges = u.pledges.filter(g => !deletedKeys.has(g.personKey));
     u.people = u.people.filter(p => !deletedKeys.has(p.key));
   }
+  // IMPORT-8: the set-aside list and the deposit question read the plan that
+  // will be written, so the counts on one screen agree (or say why)
+  if (deletedKeys.size) {
+    const L = u.rowLedger || (u.rowLedger = { setAside: [] });
+    const listed = new Set((L.setAside || []).map(x => `${x.sheet}:${x.line}`));
+    for (const a of u.aside) if (/matches someone you deleted/.test(a.reason) && !listed.has(`${a.sheet}:${a.line}`)) { L.setAside.push(a); listed.add(`${a.sheet}:${a.line}`); }
+    const depQ = u.questions.find(q => q.id === "giftsDeposited");
+    if (depQ) {
+      depQ.count = u.gifts.length; depQ.cents = u.gifts.reduce((n, g) => n + (g.cents || 0), 0);
+      depQ.text = depQ.text.replace(/[\d,]+ gifts?/, `${u.gifts.length.toLocaleString("en-US")} ${u.gifts.length === 1 ? "gift" : "gifts"}`);
+    }
+  }
+  u.countLines = Rm.countLines(u);
   const nDel = new Set(deletedMatches.map(x => x.id)).size;
   u.deletedMatches = deletedMatches;
   u.deletedSentence = nDel ? `${nDel.toLocaleString("en-US")} ${nDel === 1 ? "person matches someone" : "people match someone"} you deleted. Not imported.` : null;
@@ -760,14 +775,15 @@ async function writePlan({ req, body, importId, who, report }) {
     for (const [i, x] of m.members.entries()) {
       if (x.id) { ids.push(x.id); matchedIds.add(x.id); continue; }
       const id = newId("d");
-      const spouse = p.people[i] && p.people[i].spouse ? p.people[i].spouse : null;
+      const spouse = p.people[i] && p.people[i].spouse ? p.people[i].spouse : (i === 0 && p.spouseName ? p.spouseName : null);
       newRows.push([id, orgId, x.name || p.name, i === 0 ? p.email : null, i === 0 ? p.phone : null, p.address, p.address2, p.city, p.state, p.zip, p.country || null,
         i === 0 ? p.externalId : null, p.kind === "organization" ? "organisation" : (p.kind === "anonymous" ? "anonymous" : "person"), spouse,
-        stageForRoles(p.roles), "active", "[]", JSON.stringify(p.personTypes || ["other"]), !!(c.optOut || c.doNotEmail), !!c.doNotContact, !!c.doNotMail,
+        stageForRoles(p.roles), "active", JSON.stringify(p.tags || []), JSON.stringify(p.personTypes || ["other"]), !!(c.optOut || c.doNotEmail), !!c.doNotContact, !!c.doNotMail,
         !!c.doNotCall, !!c.deceased, who.id, who.name, importId,
         // IMPORT-5 (7d): a note on the row said the phone is wrong, or the mail came back
         !!(p.phoneBad && (i === 0 ? p.phone : null)), p.phoneBad && i === 0 && p.phone ? badWhy(p.phoneBad, body.fileName) : null,
-        !!(p.addressBad && p.address), p.addressBad && p.address ? badWhy(p.addressBad, body.fileName) : null, p.addressBad && p.address ? new Date().toISOString() : null]);
+        !!(p.addressBad && p.address), p.addressBad && p.address ? badWhy(p.addressBad, body.fileName) : null, p.addressBad && p.address ? new Date().toISOString() : null,
+        p.aboutThem || null]);
       ids.push(id);
     }
     personId.set(p.key, ids[0]);
@@ -776,7 +792,7 @@ async function writePlan({ req, body, importId, who, report }) {
   }
   const DCOLS = ["id", "org_id", "name", "email", "phone", "address", "address2", "city", "state", "zip", "country", "external_donor_id", "kind", "spouse_name",
     "stage", "status", "tags", "person_types", "do_not_email", "do_not_contact", "do_not_mail", "do_not_call", "deceased", "created_by", "created_by_name", "created_import_id",
-    "phone_unreachable", "phone_unreachable_reason", "address_unmailable", "address_unmailable_reason", "address_unmailable_at"];
+    "phone_unreachable", "phone_unreachable_reason", "address_unmailable", "address_unmailable_reason", "address_unmailable_at", "about_them"];
   for (let k = 0; k < newRows.length; k += JOB_BATCH) {
     await insertRows(`INSERT INTO donors (${DCOLS.join(",")})`, DCOLS, newRows.slice(k, k + JOB_BATCH), { person_types: "::jsonb" });
     done = Math.min(k + JOB_BATCH, newRows.length);
@@ -784,15 +800,21 @@ async function writePlan({ req, body, importId, who, report }) {
   }
   const donorsCreated = newRows.length;
   // households: one query for who already has one, one insert, one update
+  // IMPORT-8: a Household column or a linked partner names the household its people share
+  const groupName = new Map((u.householdGroups || []).map(g => [g.key, g.name]));
+  for (const p of u.people) if (p.householdGroup && groupName.has(p.householdGroup)) p.household = groupName.get(p.householdGroup);
+  // the group's members in one run, so the first one makes it and the rest join
   const hhPeople = u.people.filter(p => p.household && (personIds.get(p.key) || []).length);
   if (hhPeople.length) {
     const allIds = hhPeople.flatMap(p => personIds.get(p.key));
     const cur = new Map((await query("SELECT id, household_id FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, allIds])).map(r => [r.id, r.household_id]));
     const newHh = [], assign = [];
+    const byGroup = new Map();   // IMPORT-8: one household per Household name, or per linked pair
     for (const p of hhPeople) {
       const ids = personIds.get(p.key);
-      let hh = ids.map(id => cur.get(id)).find(Boolean) || null;
+      let hh = ids.map(id => cur.get(id)).find(Boolean) || (p.householdGroup && byGroup.get(p.householdGroup)) || null;
       if (!hh) { hh = newId("hh"); newHh.push([hh, orgId, p.household.slice(0, 200), ids[0], importId]); summary.householdsCreated.push(hh); }
+      if (p.householdGroup && !byGroup.has(p.householdGroup)) byGroup.set(p.householdGroup, hh);
       for (const id of ids) if (!cur.get(id)) { assign.push([id, hh]); cur.set(id, hh); if (matchedIds.has(id)) summary.householdAssigned.push(id); }
     }
     await insertRows("INSERT INTO households (id, org_id, name, primary_donor_id, import_id)", ["id", "org_id", "name", "primary_donor_id", "import_id"], newHh);
@@ -809,7 +831,14 @@ async function writePlan({ req, body, importId, who, report }) {
     const ids = personIds.get(p.key) || [];
     const c = p.comms || {};
     for (const id of ids.filter(d => matchedIds.has(d))) {
-      const [before] = await query(`SELECT email, phone, address, address2, city, state, zip, external_donor_id, person_types,
+      // IMPORT-8: the file's tags are added (Undo takes back only these)
+      if (first && (p.tags || []).length) {
+        const [tg] = await query("SELECT tags FROM donors WHERE id=? AND org_id=?", [id, orgId]);
+        let have = []; try { have = JSON.parse((tg && tg.tags) || "[]"); } catch { have = []; }
+        const add = p.tags.filter(x => !have.some(y => String(y).toLowerCase() === x.toLowerCase()));
+        if (add.length) { await run("UPDATE donors SET tags=? WHERE id=? AND org_id=?", [JSON.stringify([...have, ...add]), id, orgId]); (summary.tagsAdded = summary.tagsAdded || []).push({ donorId: id, tags: add }); }
+      }
+      const [before] = await query(`SELECT email, phone, address, address2, city, state, zip, external_donor_id, person_types, about_them,
                                            do_not_email, do_not_contact, do_not_mail, do_not_call, deceased,
                                            phone_unreachable, phone_unreachable_reason, address_unmailable, address_unmailable_reason, address_unmailable_at
                                       FROM donors WHERE id=? AND org_id=?`, [id, orgId]);
@@ -826,6 +855,7 @@ async function writePlan({ req, body, importId, who, report }) {
         address: takeAddr ? p.address || null : before.address, address2: takeAddr ? p.address2 || null : before.address2 || null,
         city: takeAddr ? p.city || null : before.city || null, state: takeAddr ? p.state || null : before.state || null, zip: takeAddr ? p.zip || null : before.zip || null,
         external_donor_id: before.external_donor_id || (first ? p.externalId : null) || null,
+        about_them: before.about_them || (first ? p.aboutThem : null) || null,
         person_types: nextTypes, do_not_email: before.do_not_email || !!(c.optOut || c.doNotEmail), do_not_contact: before.do_not_contact || !!c.doNotContact,
         do_not_mail: before.do_not_mail || !!c.doNotMail, do_not_call: before.do_not_call || !!c.doNotCall, deceased: before.deceased || !!c.deceased,
         phone_unreachable: before.phone_unreachable ?? null, phone_unreachable_reason: before.phone_unreachable_reason ?? null,
@@ -841,11 +871,11 @@ async function writePlan({ req, body, importId, who, report }) {
       }
       const changed = Object.keys(after).filter(k => JSON.stringify(after[k] ?? null) !== JSON.stringify(before[k] ?? null));
       if (!changed.length) continue;
-      await run(`UPDATE donors SET email=?, phone=?, address=?, address2=?, city=?, state=?, zip=?, external_donor_id=?, person_types=?::jsonb,
+      await run(`UPDATE donors SET email=?, phone=?, address=?, address2=?, city=?, state=?, zip=?, external_donor_id=?, about_them=?, person_types=?::jsonb,
                                    do_not_email=?, do_not_contact=?, do_not_mail=?, do_not_call=?, deceased=?,
                                    phone_unreachable=?, phone_unreachable_reason=?, address_unmailable=?, address_unmailable_reason=?, address_unmailable_at=?, updated_at=NOW()
                   WHERE id=? AND org_id=?`,
-        [after.email, after.phone, after.address, after.address2, after.city, after.state, after.zip, after.external_donor_id, JSON.stringify(after.person_types),
+        [after.email, after.phone, after.address, after.address2, after.city, after.state, after.zip, after.external_donor_id, after.about_them, JSON.stringify(after.person_types),
          after.do_not_email, after.do_not_contact, after.do_not_mail, after.do_not_call, after.deceased,
          after.phone_unreachable, after.phone_unreachable_reason, after.address_unmailable, after.address_unmailable_reason, after.address_unmailable_at, id, orgId]);
       summary.personChanges.push({ id, before: Object.fromEntries(changed.map(k => [k, before[k] ?? null])) });
@@ -1077,7 +1107,8 @@ function sheetAccount(u, matches, dupLines) {
   });
   const sum = Object.assign(blank(null), ...["rows", ...PARTS].map(k => ({ [k]: sheets.reduce((t, x) => t + x[k], 0) })));
   const file = { ...sum, balanced: sheets.every(x => x.balanced) && sum.rows === PARTS.reduce((t, k) => t + sum[k], 0) };
-  return { sheets, file: { ...file, sentence: sheets.length > 1 ? say(file, `in all ${sheets.length} sheets`) : null } };
+  // IMPORT-8: the rows read into a person above, each named with why
+  return { sheets, file: { ...file, sentence: sheets.length > 1 ? say(file, `in all ${sheets.length} sheets`) : null }, mergedLines: u.mergedLines || [] };
 }
 
 // FIX-58: the gift rows of an import, said once: its gifts, the paid first

@@ -64,6 +64,9 @@ const GUARDED_WRITERS = [
   // NUMBERS-1: moves gifts credited outside their campaign's dates to no campaign.
   // Dry run by default; --apply writes through writerDbUrl, one audit row per gift.
   "numbers1-campaign-window",
+  // IMPORT-8: turns email back on for people an import blocked because of a
+  // note. Dry run by default; --apply writes through writerDbUrl, one audit row each.
+  "import8-note-optouts",
   // STATUS-1: puts stored donor_rhythm rows on the one rhythm. Dry run by
   // default; --apply writes through writerDbUrl (derived rows, no journeys).
   "status1-rhythm-recompute",

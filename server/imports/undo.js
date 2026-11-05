@@ -262,7 +262,7 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null 
     if ((sj.tablesCreated || []).length) await run(`DELETE FROM event_tables t WHERE t.org_id=? AND t.id = ANY(?)
                                                       AND NOT EXISTS (SELECT 1 FROM event_attendees a WHERE a.table_id = t.id)`, [orgId, sj.tablesCreated]);
     if ((sj.suppressions || []).length) await run("DELETE FROM email_suppressions WHERE org_id=? AND id = ANY(?)", [orgId, sj.suppressions]);
-    const SAFE_COLS = new Set(["email", "phone", "address", "address2", "city", "state", "zip", "external_donor_id", "person_types",
+    const SAFE_COLS = new Set(["email", "phone", "address", "address2", "city", "state", "zip", "external_donor_id", "person_types", "about_them",
       "do_not_email", "do_not_contact", "do_not_mail", "do_not_call", "deceased",
       "phone_unreachable", "phone_unreachable_reason", "address_unmailable", "address_unmailable_reason", "address_unmailable_at"]);
     for (const pc of (sj.personChanges || [])) {
@@ -305,6 +305,25 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null 
     await keep();
   }
   const goneIds = new Set([...gone].map(o => o.id));
+  // IMPORT-8 · UNDO NEVER QUIETLY KEEPS PEOPLE. Someone this file made who
+  // has a gift, note, call or task added since (or whom another record holds)
+  // stays; the result names each one and why, and the receipt offers to
+  // remove them too (the ordinary delete, to the trash).
+  const stayed = (await query(
+    `SELECT d.id, d.name,
+            (SELECT COUNT(*) FROM gifts g WHERE g.org_id=d.org_id AND g.donor_id=d.id)::int AS gifts,
+            (SELECT COUNT(*) FROM interactions i WHERE i.org_id=d.org_id AND i.donor_id=d.id AND i.type='note')::int AS notes,
+            (SELECT COUNT(*) FROM interactions i WHERE i.org_id=d.org_id AND i.donor_id=d.id AND i.type='call')::int AS calls,
+            (SELECT COUNT(*) FROM interactions i WHERE i.org_id=d.org_id AND i.donor_id=d.id AND i.type NOT IN ('note','call'))::int AS other,
+            (SELECT COUNT(*) FROM tasks t WHERE t.org_id=d.org_id AND t.donor_id=d.id)::int AS tasks
+       FROM donors d WHERE d.org_id=? AND d.created_import_id=? AND d.deleted_at IS NULL ORDER BY d.name, d.id`, [orgId, id]))
+    .filter(r => !goneIds.has(r.id))
+    .map(r => {
+      const why = [r.gifts && (r.gifts === 1 ? "a gift" : `${r.gifts} gifts`), r.notes && (r.notes === 1 ? "a note" : `${r.notes} notes`),
+        r.calls && (r.calls === 1 ? "a call" : `${r.calls} calls`), r.tasks && (r.tasks === 1 ? "a task" : `${r.tasks} tasks`),
+        r.other && (r.other === 1 ? "a line on their timeline" : `${r.other} lines on their timeline`)].filter(Boolean);
+      return { id: r.id, name: r.name, why: why.length ? why.join(", ") : "another record holds them" };
+    });
   if (imp.shape === "sheet") {
     await run(`DELETE FROM households h WHERE h.org_id=? AND h.import_id=? AND NOT EXISTS (SELECT 1 FROM donors d WHERE d.household_id=h.id)`, [orgId, id]);
     await run(`DELETE FROM events e WHERE e.org_id=? AND e.import_id=? AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.event_id=e.id)
@@ -344,14 +363,19 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null 
   }
   // LIVE-1 — the people it touched are recomputed by the one after-change step.
   await require("../../afterChange").afterChange(orgId, recompute, { door: "csv_import", history: true });
+  const parts = [removed.gifts && n(removed.gifts, "gift", "gifts"), removed.pledges && n(removed.pledges, "pledge", "pledges"),
+    removed.people && `${n(removed.people, "person", "people")} this file created`
+      + (removed.alreadyDeleted ? ` (${removed.alreadyDeleted.toLocaleString("en-US")} of them already deleted)` : "")].filter(Boolean);
+  const list = (xs, k) => xs.slice(0, k).map(x => `${x.name} (${x.why})`).join("; ") + (xs.length > k ? `; and ${(xs.length - k).toLocaleString("en-US")} more` : "");
+  const lead = stayed.length ? `Undone, except for ${n(stayed.length, "person", "people")}.` : "Undone.";
   return done({ reversed: true, gifts: removed.gifts, donorsRemoved: removed.people, journeysStopped: removed.journeys,
     pledgesRemoved: removed.pledges, alreadyDeleted: removed.alreadyDeleted,
-    sentence: `Undone. ${n(removed.gifts, "gift", "gifts")}`
-      + (removed.pledges ? ` and ${n(removed.pledges, "pledge", "pledges")}` : "") + ` removed`
-      + (removed.journeys ? `, ${n(removed.journeys, "journey", "journeys")} it started stopped` : "")
-      + (removed.people ? ` and ${n(removed.people, "person", "people")} this file created` : "")
-      + (removed.alreadyDeleted ? ` (${removed.alreadyDeleted.toLocaleString("en-US")} of them already deleted)` : "")
-      + `. Nothing was sent. Nothing else was touched.` });
+    stayed: stayed.slice(0, 500), stayedCount: stayed.length,
+    sentence: lead
+      + (parts.length ? ` ${parts.length > 1 ? parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1] : parts[0]} removed` : " Nothing it wrote was left to remove")
+      + (removed.journeys ? `, ${n(removed.journeys, "journey", "journeys")} it started stopped` : "") + "."
+      + (stayed.length ? ` ${n(stayed.length, "person", "people")} stayed because ${stayed.length === 1 ? "they have" : "they have"} activity since the import: ${list(stayed, 20)}.` : "")
+      + ` Nothing was sent.${stayed.length ? "" : " Nothing else was touched."}` });
 }
 }
 

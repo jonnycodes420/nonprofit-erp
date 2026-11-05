@@ -26,9 +26,25 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
   const [done, setDone] = useState("");
   const [err, setErr] = useState("");
   const [progress, setProgress] = useState(null);
+  // IMPORT-8: the people who stayed (activity since the import), and her
+  // choice to remove them too: the ordinary delete, to the trash
+  const [stayed, setStayed] = useState(null);
+  const [removing, setRemoving] = useState("");
   const live = useRef(true);
 
-  const finish = r => { setDone(r.sentence || "Undone."); setStep("done"); if (onUndone) onUndone(r); };
+  const finish = r => {
+    setDone(r.sentence || (r.stayedCount ? `Undone, except for ${r.stayedCount} people.` : "Undone."));
+    setStayed(r.stayedCount ? { count: r.stayedCount, people: r.stayed || [] } : null);
+    setStep("done"); if (onUndone) onUndone(r);
+  };
+  const removeStayed = async () => {
+    const ids = (stayed.people || []).map(p => p.id);
+    setRemoving("working"); setErr("");
+    try {
+      await apiFetch("/donors/bulk-delete", { method: "POST", body: JSON.stringify({ ids, count: ids.length }) });
+      setRemoving(`${ids.length.toLocaleString("en-US")} ${ids.length === 1 ? "person" : "people"} removed too, with what was added to them since. They are in the trash for 30 days.`);
+    } catch (e) { setRemoving(""); setErr(e?.body?.sentence || errorMessage(e, "They were not removed. Nothing was changed.")); }
+  };
   const follow = async () => {
     setStep("following");
     for (;;) {
@@ -47,7 +63,14 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
   useEffect(() => {
     live.current = true;
     apiFetch(`/imports/${encodeURIComponent(importId)}/undo-status`, { cache: "no-store" })
-      .then(s => { if (live.current && s && s.status === "running") { setProgress(s); follow(); } })
+      .then(s => {
+        if (!live.current || !s) return;
+        if (s.status === "running") { setProgress(s); follow(); }
+        // IMPORT-8: an undo that kept people says so wherever it is opened again, with Remove them too
+        else if (s.status === "done" && s.result && s.result.stayedCount) {
+          setDone(s.sentence || s.result.sentence); setStayed({ count: s.result.stayedCount, people: s.result.stayed || [] }); setStep("done");
+        }
+      })
       .catch(() => {});
     return () => { live.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -82,7 +105,21 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
     }
   };
 
-  if (step === "done") return <div data-testid="import-undo-done" style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{done}</div>;
+  if (step === "done") return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div data-testid="import-undo-done" style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{done}</div>
+      {stayed && stayed.people.length > 0 && !/removed too/.test(removing) && (
+        <div data-testid="import-undo-stayed" style={{ fontSize: 13, color: T.ink }}>
+          <button type="button" data-testid="import-undo-remove-stayed" style={btn(null)} disabled={removing === "working"} onClick={removeStayed}>
+            {removing === "working" ? "Removing…" : `Remove ${stayed.people.length === 1 ? "them" : `these ${stayed.people.length.toLocaleString("en-US")}`} too`}
+          </button>
+          <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>What was added to them since goes with them, to the trash, where it can be brought back for 30 days.{stayed.count > stayed.people.length ? ` The first ${stayed.people.length.toLocaleString("en-US")} of ${stayed.count.toLocaleString("en-US")}; the rest are on the Donors list.` : ""}</div>
+        </div>
+      )}
+      {/removed too/.test(removing) && <div data-testid="import-undo-stayed-removed" style={{ fontSize: 13, color: T.ink }}>{removing}</div>}
+      {err && <div role="alert" style={{ fontSize: 12.5, color: T.terra700 }}>{err}</div>}
+    </div>
+  );
   if (step === "following") {
     const pct = progress && progress.total ? Math.min(100, Math.round((progress.done / progress.total) * 100)) : 0;
     return (

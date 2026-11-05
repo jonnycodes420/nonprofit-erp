@@ -39,8 +39,9 @@ export const EXPORT_SHAPES = [
     // only Salesforce's own columns make it Salesforce
     signature: ["contact id", "account name", "contact owner"],
     columns: {
-      "contact id": "externalId", "account name": { role: "ignore", skipWhen: /\bhousehold$/i, else: "keep",
-        reason: "the household account Salesforce makes for each person; Steward makes households from the people" },
+      // IMPORT-8: the household account Salesforce puts its contacts on is their household in Steward
+      "contact id": "externalId", "account name": { role: "ignore", skipWhen: /\bhousehold$/i, whenRole: "householdName", else: "keep",
+        reason: "the household Salesforce puts these contacts on; Steward links them into one household" },
       "contact owner": "keep", "mobile": "phone", "mobile phone": "phone", "mailing country": "country", "birthdate": "keep",
     },
   },
@@ -158,11 +159,19 @@ export const EXPORT_SHAPES = [
 // cells. Two of a shape's own signals (an id that reads as the system's own
 // record id counts as one), and a tie is null. A shape with a `signature`
 // claims a table only when one of those headers is there (NUMBERS-5).
+// IMPORT-8 · A SOURCE IS NAMED ONLY WHEN ITS OWN COLUMNS SAY SO. "Donor ID"
+// and "Gift ID" are on any gift file; on 3 Nov they made a generic file "Read
+// as a DonorPerfect gifts export". These headers count toward a shape's score
+// but never name it alone: a shape needs one column only that system writes.
+const GENERIC_HEADERS = new Set(["donor id", "gift id", "account number", "account id", "appeal", "email address", "gift amount", "payment type",
+  "constituent id", "constituent name", "donation id", "donation amount", "purpose", "received", "net amount", "processing fee",
+  "recurring donation", "num", "balance", "customer", "memo/description", "close date", "stage", "gl code", "transaction type", "fee covered"]);
 export function shapeOfTable(header = [], rows = []) {
   const hs = new Set(header.map(hnorm).filter(Boolean));
   const scored = [];
   for (const sh of EXPORT_SHAPES) {
     if (sh.signature && !sh.signature.some(x => hs.has(x))) continue;
+    if (!sh.signals.some(x => hs.has(x) && !GENERIC_HEADERS.has(x))) continue;
     let score = sh.signals.filter(x => hs.has(x)).length;
     if (sh.idSignal && hs.has(sh.idSignal.header)) {
       const i = header.findIndex(h => hnorm(h) === sh.idSignal.header);
@@ -184,7 +193,7 @@ export function shapeColumn(shape, header, cells = []) {
   if (spec.skipWhen) {
     const vals = cells.map(s).filter(Boolean);
     const hit = vals.length && vals.filter(v => spec.skipWhen.test(v)).length >= vals.length * 0.8;
-    return hit ? { role: "ignore", reason: spec.reason } : { role: spec.else || "keep" };
+    return hit ? { role: spec.whenRole || "ignore", reason: spec.reason } : { role: spec.else || "keep" };
   }
   return { role: spec.role, reason: spec.reason || null, values: spec.values || null };
 }
