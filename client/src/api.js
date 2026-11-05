@@ -383,6 +383,7 @@ export function adaptDonor(d) {
     pledgeHold:     !!d.pledge_hold,
     // POLISH-4 — on Re-engage, by the one rule (shared/numbers/lapse.js reengageSql).
     reengage:       !!d.reengage,
+    lost:           !!d.lost,   // COUNTS-1: on Re-engage's Lost & Found (lapse.js lostSql)
     lastAmount:     parseFloat(d.last_gift_amount) || 0,
     gifts:          d.gift_count || 0,
     status:         d.status,

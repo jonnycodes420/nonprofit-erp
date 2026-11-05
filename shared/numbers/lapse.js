@@ -53,7 +53,6 @@ function reengageSql(d, today) {
   return { sql: `(${d}.deceased IS NOT TRUE AND ${d}.do_not_contact IS NOT TRUE AND ${d}.do_not_solicit IS NOT TRUE
       AND ${d}.imported_sustainer IS NOT TRUE AND COALESCE(${l.sql}, false))`, args: l.args };
 }
-
 // The relationship types that make one giving unit, and SQL for the people
 // linked to `idExpr` by one of them (either side of the link).
 // PEOPLE-1: and two people linked as spouse or partner: a gift from either keeps both off Lapsed.
@@ -69,6 +68,16 @@ const linkedLastSql = idExpr => `(SELECT MAX(GREATEST(NULLIF(LEFT(lk.last_gift_d
 // whose gifts carry no date) has not "given before", whoever they are linked to.
 const unitLast = (lastExpr, idExpr) => idExpr
   ? `(CASE WHEN (${lastExpr}) IS NULL THEN NULL ELSE GREATEST((${lastExpr})::date, (${linkedLastSql(idExpr)})::date) END)` : `(${lastExpr})::date`;
+
+// COUNTS-1 · LOST, AND LAPSED 12 TO 24 MONTHS. Re-engage's people split in
+// two by the unit's last gift (lapseRule.LOST_MONTHS): Lost is a last gift
+// before today less 24 months; the rest of Re-engage is Lapsed 12 to 24
+// months. Re-engage's Lost & Found list, the "Lost: over 24 months" report and
+// TRUTH-1's counts pass read lostSql; nothing else draws the line.
+function lostSql(d, today) {
+  const re = reengageSql(d, today);
+  return { sql: `(${re.sql} AND ${unitLast(LAST_ON_RECORD(d), `${d}.id`)} < ?::date)`, args: [...re.args, bounds(today).lostBefore] };
+}
 
 // The person has an open pledge past due.
 function overdueSql(idExpr, today) {
@@ -167,4 +176,4 @@ async function pledgesFor(query, orgId, donorId, today) {
   return by;
 }
 
-module.exports = { ON_TIME_THROUGH, LAST_ON_RECORD, reengageSql, UNIT_LINK_TYPES, LINKED, linkedLastSql, PLEDGE_MADE, overdueSql, holdSql, rhythmAheadSql, lapsedSql, lapsingSql, pledgeHeldSql, stateSql, sql, pledgesFor };
+module.exports = { ON_TIME_THROUGH, LAST_ON_RECORD, reengageSql, lostSql, UNIT_LINK_TYPES, LINKED, linkedLastSql, PLEDGE_MADE, overdueSql, holdSql, rhythmAheadSql, lapsedSql, lapsingSql, pledgeHeldSql, stateSql, sql, pledgesFor };

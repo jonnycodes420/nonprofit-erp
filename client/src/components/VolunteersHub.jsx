@@ -169,7 +169,10 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
     window.addEventListener("steward:vol-checkin", on);
     return () => window.removeEventListener("steward:vol-checkin", on);
   }, []);
+  // COUNTS-1: the card, the roster sentence and the list re-read together, so
+  // "Two volunteers on the roster" never sits over a card that says 1.
   const loadRoster = useCallback(() => {
+    setCountsKey(n => n + 1); setListKey(n => n + 1);
     apiFetch("/volunteer-hub/roster").then(r => { setRoster(r); setErr(""); })
       .catch(e => setErr(errorMessage(e, "The roster did not load.")));
   }, []);
