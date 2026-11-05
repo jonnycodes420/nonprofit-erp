@@ -71,7 +71,7 @@ async function clear() { await q(`DELETE FROM portal_assets WHERE org_id=$1`, [O
   // The same refusal through a real upload route answers 503 with its sentence.
   // (The server under test has no bucket; this module's env does, so the route
   // half is the error handler's mapping, checked on its source.)
-  const srvSrc = require("fs").readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8");
+  const srvSrc = require("../scripts/lib/readSource").splitText("server.js");   // SPLIT-2: read whole
   ok("§2 the error handler answers an asset-store refusal with a 503", /asset_store_unavailable[\s\S]{0,200}status\(503\)/.test(srvSrc));
 
   // ── §3 · THE FAILING GUARD BY NAME ─────────────────────────────────────

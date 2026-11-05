@@ -50,7 +50,7 @@ const inScope = (f) => {
   if (f.startsWith("tests/")) return false;          // this guard + suites describe ranges numerically
   if (f.startsWith("node_modules/")) return false;
   if (f.startsWith("scripts/")) return false;         // internal tooling, not user-facing
-  if (f.startsWith("client/src/") || f === "server.js" || f === "db.js" ||
+  if (f.startsWith("client/src/") || f === "server.js" || f === "db.js" || f.startsWith("server/db/") ||   // SPLIT-2: db.js's parts
       f === "auth.js" || f === "branding.js" || f === "index.html" || f === "client/index.html") return true;
   return false;
 };
