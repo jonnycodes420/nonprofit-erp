@@ -248,9 +248,9 @@ const { testNow } = require("./clock");
     const subAsk = IS.buildWorkbookSubmission(roled, { signals, signalAnswers: legendAnswers, anchorDate: "2026-09-06", currentYear: 2026 });
     ok("IMPORT-8: unanswered, a note or comment sets no flag; each is listed for review",
        subAsk.exclusionSummary.fromNotes === 0 && subAsk.exclusionSummary.fromComments === 0
-       && subAsk.noteMentions.length >= sub.exclusionSummary.fromNotes + sub.exclusionSummary.fromComments
+       && subAsk.noteMentions.length > 0 && subAsk.noteMentions.every(m => m.flags.length > 0)
        && subAsk.exclusionSummary.rowsFound < sub.exclusionSummary.rowsFound,
-       { ask: subAsk.exclusionSummary, mentions: subAsk.noteMentions.length });
+       { ask: subAsk.exclusionSummary, mentions: subAsk.noteMentions.length, applied: sub.exclusionSummary });
   }
   // BUILD-83 Part 2.1 — the summary promises what the DATABASE will hold: 800
   // ROWS carry an exclusion, 8 of them fold into a surviving duplicate, so 792

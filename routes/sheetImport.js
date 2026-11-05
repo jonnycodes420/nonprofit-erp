@@ -832,7 +832,7 @@ async function writePlan({ req, body, importId, who, report }) {
     const c = p.comms || {};
     for (const id of ids.filter(d => matchedIds.has(d))) {
       // IMPORT-8: the file's tags are added (Undo takes back only these)
-      if (first && (p.tags || []).length) {
+      if (id === ids[0] && (p.tags || []).length) {
         const [tg] = await query("SELECT tags FROM donors WHERE id=? AND org_id=?", [id, orgId]);
         let have = []; try { have = JSON.parse((tg && tg.tags) || "[]"); } catch { have = []; }
         const add = p.tags.filter(x => !have.some(y => String(y).toLowerCase() === x.toLowerCase()));
