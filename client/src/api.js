@@ -132,6 +132,8 @@ const SHARED_READS = [
   /^\/org\/sample-data-status$/, /^\/portfolio\/officers$/, /^\/custom-fields(\?|$)/, /^\/org\/team$/,
   /^\/me\/nav-layout$/, /^\/billing\/donor-band$/, /^\/status\/summary$/, /^\/changelog\/hidden$/,
   /^\/org\/welcome$/, /^\/billing\/status$/,
+  // COUNTS-1: the Tasks badge and Home's rail read one answer; a write forgets it.
+  /^\/tasks\/counts\?scope=mine$/,
 ];
 const SHARED_TTL_MS = 60000;
 const inFlight = new Map();
