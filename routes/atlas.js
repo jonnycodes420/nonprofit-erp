@@ -30,6 +30,8 @@ const AN = require("../server/atlas/answers");   // ATLAS-3: lists, people, an u
 const PG = require("../server/atlas/progress");   // ATLAS-3: the status line, one step at a time
 
 const routers = { r0: express.Router() };
+// ATLAS-3: the profile's Call script rides on Atlas's router (server.js is at its size ceiling).
+routers.r0.use(require("./atlasMore").routers.r0);
 // Set by mount(); the after-change step settles waiting lines through it.
 let settleForDonors = async () => 0;
 const TEXT_MIN = 3, TEXT_MAX = 4000;
@@ -39,6 +41,7 @@ const ATLAS_MODEL = () => process.env.ATLAS_MODEL || "claude-sonnet-4-6";
 
 function mount(ctx) {
 const { query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate } = ctx;
+require("./atlasMore").mount({ query, wrap, requireAuth, agentGate });   // ATLAS-3
 const app = routers.r0;
 const AT = () => import("../shared/atlas.js");
 const VM = () => import("../shared/voiceMemo.js");
