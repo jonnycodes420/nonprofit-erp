@@ -316,7 +316,7 @@ global.Image = function () { calls.push({ how: "Image", args: [] }); };
     // The lead route takes only the four it names; anything else is dropped
     // rather than stored, which the table itself enforces (it has no column
     // that could hold a donor).
-    const db = fs.readFileSync(path.join(ROOT, "db.js"), "utf8");
+    const db = require("../scripts/lib/readSource").readSource("db.js");   // SPLIT-2: db.js is split under server/db/
     const leadTable = (/CREATE TABLE IF NOT EXISTS lost_and_found_leads \(([\s\S]*?)\)`/.exec(db) || [])[1] || "";
     ok("§4 the leads table has no column that could hold a donor",
        !/donor|gift|amount|audit|rows/i.test(leadTable), leadTable.replace(/\s+/g, " ").slice(0, 200));

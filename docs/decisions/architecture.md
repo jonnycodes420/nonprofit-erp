@@ -192,8 +192,18 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
   grep there first. (MIGC)
 
 ## Where the code is
-- `server.js` — Express app, nearly every route, `orgOwns`, `checkWriteAccess`, `requireApiKey`
-- `db.js` — pg pool (SSL hardcoded), `initSchema` (order matters), `seedData`, `withAdvisoryLock`
+- `server.js` — the entry (SPLIT-2): it requires `server/boot/helpers-1…9.js` (server.js's functions: `orgOwns`,
+  `checkWriteAccess`, `requireApiKey`, `recordGift` …) and then `server/boot/steps-1…4.js` (every other statement,
+  middleware and route mounts, in the order server.js ran them). A module reads another's names through its own
+  copy, which `server/boot/share.js` refreshes after each declaration and each later write: a new top-level `let`
+  that a function reassigns needs ` __share({ name });` after the write, or other modules keep the old value.
+  New code goes in the module it belongs to, not in server.js (capped by `split-shells`). Tests read the whole as
+  `readSource("server.js")`, or the file's own text as `splitText("server.js")`.
+- `db.js` — the one export list and `getDb`; the rest is under `server/db/` (SPLIT-2): `pool.js` (pg pool, SSL
+  hardcoded, request limits), `query.js` (`query`, `run`, transactions, `withAdvisoryLock`), `schema.js` (`initSchema`,
+  which runs `ddl/part1.js` … `part7.js` in order: order matters), `seed.js` (`seedData`, the backfills). A new
+  migration goes at the end of the last part; when that part nears 1,500 lines, add the next part and its line in
+  `schema.js`. The schema hash covers db.js and every file under `server/db/` (`schemaSources.js`).
 - `auth.js` — `requireAuth`, `requireAdmin` (and the MFA setup-only session)
 - `shared/` — pure ESM modules for client, server and suites (`shared/package.json` marks ESM)
 - `assetStore.js` — asset put/prune/purge and the one `destroyAsset` seam; `scripts/ops/restore-asset.js`
