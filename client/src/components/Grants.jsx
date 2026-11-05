@@ -9,7 +9,8 @@ import { T, activeMark, fmt, fmtFull, daysUntil, SC, askClaude, Spin, Pill, Card
 import { askConfirm } from "./ConfirmDialog";
 import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, rowClick } from "../lib/appUrls";
-import { GRANT_STATUSES, statusLabel, normalizeStatus } from "../../../shared/grantShape";
+import { GRANT_STATUSES, statusLabel, normalizeStatus, AWARDED_STATUS_KEYS } from "../../../shared/grantShape";
+import { AwardStep, FunderPicker } from "./GrantAward";   // GRANTS-FIX: Awarded goes through the award
 import { offerUndo } from "./EditHistory";
 import GrantBoard from "./GrantBoard";
 import GrantFunders from "./GrantFunders";
@@ -79,6 +80,8 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
   const[fundCampaigns,setFundCampaigns]=useState([]);
   useEffect(()=>{apiFetch("/fundraising/campaigns").then(r=>setFundCampaigns(Array.isArray(r)?r:[])).catch(()=>{});},[]);
   const[logOpen,setLogOpen]=useState(false);
+  // GRANTS-FIX: the award step, the funder picker, and a note that asks for the link.
+  const[awarding,setAwarding]=useState(null);const[linking,setLinking]=useState(null);const[note,setNote]=useState(null);
 
   useEffect(()=>{
     apiFetch(`/grants/${grant.id}`).then(r=>{
@@ -115,6 +118,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
     try{
       const r=await apiFetch(`/grants/${g.id}/stage`,{method:"PATCH",body:JSON.stringify({status})});
       onUpdate({...g,status:r.status});
+      if(r.renewal&&r.renewal.action==="link_funder")setNote({sentence:r.renewal.sentence,then:"renewal"});
       const renewal=r.renewal&&r.renewal.renewalGrantId?r.renewal:null;
       offerUndo({message:[r.sentence,r.renewal&&r.renewal.sentence].filter(Boolean).join(" "),undoAction:async()=>{
         if(renewal)await apiFetch(`/grants/${g.id}/renewal/undo`,{method:"POST",body:"{}"}).catch(()=>{});
@@ -122,6 +126,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
         onUpdate({...g,status:x.status});return x;
       }},"stage");
     }catch(e){
+      if(e&&e.code==="award_required"){setAwarding({target:e.target||status});return;}
       if(e&&(e.error==="decline_reason"||e.code==="decline_reason")){alert("Move it to Declined from the pipeline board, where Steward asks why they declined.");return;}
       alert((e&&e.sentence)||errorMessage(e,"That grant did not move."));
     }
@@ -134,10 +139,18 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
   };
 
   const saveEdit=async()=>{
+    // GRANTS-FIX: a stage into Awarded from the edit form is the award step first; the rest saves after it.
+    const to=normalizeStatus(ef.status)||ef.status,from=normalizeStatus(grant.status)||grant.status;
+    if(AWARDED_STATUS_KEYS.includes(to)&&!AWARDED_STATUS_KEYS.includes(from)&&!grant.awardPledgeId){setAwarding({target:to,thenSave:true});return;}
     const adoptTxnId=await resolveAwardAdoption(grant.id,grant.status,ef.status);
     const raw=await apiFetch(`/grants/${grant.id}`,{method:"PUT",body:JSON.stringify({funder:ef.funder,program:ef.program,amount:Number(ef.amount)||0,received:Number(ef.received)||0,status:ef.status,deadline:ef.deadline||"",reportDue:ef.reportDue||"",officer:ef.officer,notes:grant.notes,description:ef.description||"",requirements:ef.requirements||"",campaignId:ef.campaignId||"",adoptTxnId})});
     const adapted={id:raw.id,funder:raw.funder,program:raw.program||"",amount:raw.amount||0,received:raw.received||0,status:raw.status,deadline:raw.deadline||"",reportDue:raw.report_due||null,officer:raw.officer||"",notes:raw.notes||"",description:raw.description||"",requirements:raw.requirements||"",campaignId:raw.campaign_id||null,history:Array.isArray(raw.history)?raw.history:JSON.parse(raw.history||"[]")};
     onUpdate(adapted);setEditing(false);
+  };
+
+  const saveEditAfterAward=async(g)=>{
+    const raw=await apiFetch(`/grants/${grant.id}`,{method:"PUT",body:JSON.stringify({funder:ef.funder,program:ef.program,amount:Number(ef.amount)||0,received:Number(ef.received)||0,status:ef.status,deadline:ef.deadline||"",reportDue:ef.reportDue||"",officer:ef.officer,notes:grant.notes,description:ef.description||"",requirements:ef.requirements||"",campaignId:ef.campaignId||""})});
+    onUpdate({...g,...adaptGrant(raw)});setEditing(false);
   };
 
   const handleLogged=(interaction)=>{
@@ -151,6 +164,22 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
   return(
     <div className="fade-in page-takeover" data-testid="grant-profile" style={{position:"relative",background:T.bg,display:"flex",flexDirection:"column"}}>
       {logOpen&&<GrantLogModal grant={grant} onSave={handleLogged} onClose={()=>setLogOpen(false)}/>}
+      {awarding&&<AwardStep target={awarding.target} onClose={()=>setAwarding(null)}
+        grant={{id:grant.id,funderName:grant.funder,funderLinked:!!grant.funderId,askCents:Math.round((Number(awarding.thenSave?ef.amount:grant.amount)||0)*100)}}
+        onDone={async({award,moved})=>{
+          const a=awarding;setAwarding(null);
+          const next={...grant,status:(moved&&moved.status)||"awarded",awardPledgeId:award.awardPledgeId||award.pledgeId,funderId:award.funderId};
+          onUpdate(next);
+          setNote({sentence:[`Recorded the award: a pledge on ${award.funderName}'s record, in ${award.installments} ${award.installments===1?"payment":"installments"}.`,moved&&moved.renewal&&moved.renewal.sentence].filter(Boolean).join(" ")});
+          if(a.thenSave){try{await saveEditAfterAward(next);}catch(e){alert(errorMessage(e,"The rest of the edit did not save."));}}
+        }}/>}
+      {linking&&<FunderPicker grantId={grant.id} typedName={grant.funder} onClose={()=>setLinking(null)}
+        onLinked={async x=>{
+          const l=linking;setLinking(null);onUpdate({...grant,funderId:x.funderId});
+          let extra="";
+          if(l.then==="renewal"){const r=await apiFetch(`/grants/${grant.id}/plan-renewal`,{method:"POST",body:"{}"}).catch(e=>({sentence:errorMessage(e,"The renewal was not planned.")}));extra=(r&&r.sentence)||"";}
+          setNote({sentence:[x.sentence,extra].filter(Boolean).join(" ")});
+        }}/>}
 
       <div style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
         <button onClick={onClose} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>← Back</button>
@@ -160,6 +189,13 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
             <Pill label={statusLabel(grant.status)||grant.status} color={SC[curStatus]||SC[grant.status]}/>
           </div>
           <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{grant.program} · {fmtFull(grant.amount)} ask</div>
+          <div data-testid="grant-funder-line" style={{fontSize:12,color:T.ink2,marginTop:4,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            {grant.funderId
+              ?<span>Funder: {onOpenFunder?<button type="button" onClick={()=>onOpenFunder(grant.funderId)} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,cursor:"pointer",fontSize:12}}>{grant.funder}</button>:grant.funder}</span>
+              :<span>Not linked to a funder record{!isReadOnly&&<> · <button type="button" data-testid="grant-link-funder" onClick={()=>setLinking({})} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,cursor:"pointer",fontSize:12}}>Link to funder</button></>}</span>}
+            {normalizeStatus(grant.status)==="awarded"&&!grant.awardPledgeId&&<span data-testid="grant-award-missing">· Awarded, but no award recorded{!isReadOnly&&<> · <button type="button" onClick={()=>setAwarding({target:"awarded"})} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,cursor:"pointer",fontSize:12}}>Record the award</button></>}</span>}
+          </div>
+          {note&&<div role="status" style={{fontSize:12,color:T.ink,marginTop:4}}>{note.sentence}{!isReadOnly&&!grant.funderId&&<> <button type="button" onClick={()=>{setLinking({then:note.then});setNote(null);}} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,cursor:"pointer",fontSize:12}}>Link to funder</button></>}</div>}
         </div>
         <div style={{display:"flex",gap:6,flexShrink:0}}>
           {grant.funderId&&onOpenFunder&&<button onClick={()=>onOpenFunder(grant.funderId)} data-testid="grant-open-funder" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:13,cursor:"pointer"}}>Funder</button>}
@@ -273,7 +309,8 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
           {/* BUILD-100 Part 7 — the deadlines Steward watches, and the grant's documents. */}
           <GrantDeadlinesPanel grantId={grant.id} isReadOnly={isReadOnly}/>
           <GrantChecklist grantId={grant.id} isReadOnly={isReadOnly}/>
-          <GrantAwardPlan grantId={grant.id} isReadOnly={isReadOnly}/>
+          <GrantAwardPlan key={`${grant.funderId||""}:${grant.awardPledgeId||""}`} grantId={grant.id} isReadOnly={isReadOnly} onLink={()=>setLinking({})}
+            onChanged={()=>apiFetch(`/grants/${grant.id}`).then(r=>onUpdate({...grant,...adaptGrant(r)})).catch(()=>{})}/>
           <GrantReportsPanel grantId={grant.id} funderId={grant.funderId} isReadOnly={isReadOnly}/>
           <GrantDocuments grantId={grant.id} isReadOnly={isReadOnly}/>
 

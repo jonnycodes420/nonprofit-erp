@@ -230,6 +230,14 @@ app.patch("/grants/:id/stage", requireAuth, checkWriteAccess, wrap(async (req, r
   const status = G.normalizeStatus(req.body?.status);
   if (!status) return res.status(400).json({ error: "bad_stage", sentence: "That is not one of the eight stages." });
   const prev = G.normalizeStatus(g.status) || g.status;
+  // GRANTS-FIX: the drag never awards. Into Awarded (or Reporting or Closed)
+  // from a never-awarded stage goes through PUT /grants/:id/award first, which
+  // writes the pledge on the funder; the board opens that step on this answer.
+  if (G.AWARDED_STATUS_KEYS.includes(status) && !G.AWARDED_STATUS_KEYS.includes(prev) && !g.award_pledge_id) {
+    return res.status(409).json({ error: "award_required", code: "award_required", target: status,
+      funderLinked: !!g.funder_donor_id, typedName: g.funder || "",
+      sentence: `Record the award to move ${g.funder || "this grant"} to ${G.statusLabel(status)}: the amount, the payment schedule and the restriction. That writes the pledge on the funder.` });
+  }
   let declineReason = g.decline_reason || null, declinedOn = g.declined_on || null;
   const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
   if (status === "declined") {

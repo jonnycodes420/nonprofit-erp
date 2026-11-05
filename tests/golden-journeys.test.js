@@ -359,12 +359,13 @@ async function agentLeg(H) {
   const gr = await api("POST", `/funders/${H.funder}/grants`, dana, { program: "Saturday studio", amountRequested: "6000.00", status: "submitted" });
   H.grant = gr.body && (gr.body.id || (gr.body.grant && gr.body.grant.id));
   ok("J6 a $6,000 request, submitted", gr.status === 201 && H.grant, gr.body);
+  // GRANTS-FIX: the drag never awards on its own; it asks for the award, and the award moves it.
   const mv = await api("PATCH", `/grants/${H.grant}/stage`, dana, { status: "awarded" });
-  ok("J6 moved to Awarded", mv.status === 200 && mv.body.status === "awarded", mv.body);
-  const [gst] = await q(`SELECT status, awarded_at FROM grants WHERE id=$1 AND org_id=$2`, [H.grant, ORG]);
-  ok("J6 the grant reads Awarded, with the day it was won", gst.status === "awarded" && gst.awarded_at, gst);
+  ok("J6 the drag to Awarded asks for the award", mv.status === 409 && mv.body.code === "award_required", mv.body);
   const aw = await api("PUT", `/grants/${H.grant}/award`, dana, { amountAwarded: "6000.00", installmentCount: 2, frequency: "semiannual", firstDue: today });
   ok("J6 awarded in two instalments", aw.status === 200, aw.body);
+  const [gst] = await q(`SELECT status, awarded_at FROM grants WHERE id=$1 AND org_id=$2`, [H.grant, ORG]);
+  ok("J6 the grant reads Awarded, with the day it was won", gst.status === "awarded" && gst.awarded_at, gst);
   let ap = (await api("GET", `/grants/${H.grant}/award-plan`, dana)).body;
   const inst = ap.installments || [];
   ok("J6 two instalments that foot to the award", inst.length === 2 && inst.reduce((s, i) => s + i.amountCents, 0) === 600000 && ap.awardedCents === 600000, ap);

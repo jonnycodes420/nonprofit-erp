@@ -112,7 +112,8 @@ async function planRenewal(orgId, grantId, who) {
       WHERE g.id = ? AND g.org_id = ?`, [grantId, orgId]);
   if (!g) return { notFound: true, sentence: "That grant is not on file." };
   if (!g.fid) {
-    return { skipped: true, sentence: `This grant is not linked to a funder record, so there is no renewal to plan. Link ${g.funder || "the funder"} to their record first.` };
+    return { skipped: true, code: "funder_not_linked", action: "link_funder", grantId: g.id, typedName: g.funder || "",
+             sentence: `This grant is not linked to a funder record, so there is no renewal to plan. Link ${g.funder || "the funder"} to their record first.` };
   }
   const already = await existingRenewal(orgId, g.id);
   if (already) return { ...already, existing: true, sentence: `The renewal with ${g.fname} is already planned${already.dueDate ? `: ${GM.milestoneLabel(already.kind) || "the first deadline"} ${DD.displayDate(already.dueDate)}` : ""}.` };
