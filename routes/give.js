@@ -4122,7 +4122,7 @@ app.post("/recurring/check-cards", requireAuth, requireAdmin, wrap(async (req, r
 }));
 
 app.post("/recurring/process-dunning", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const out = await processDunning();
+  const out = await processDunning({ orgId: req.user.orgId });   // TRUST-1: this org only
   // FIX-45: how many of THIS org's cards the sweep picked (never another org's ids).
   res.json({ success: true, picked: ((out && out.picked) || []).filter(r => r.orgId === req.user.orgId).length });
 }));

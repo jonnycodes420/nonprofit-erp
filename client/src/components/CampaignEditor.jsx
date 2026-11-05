@@ -45,7 +45,7 @@ export function AudienceLine({ audience, testid = "audience-line" }) {
               onClick={() => setOpen(o => (o === x.reason ? null : x.reason))}
               style={{ background: "none", border: "none", padding: 0, color: T.green, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: 13, textDecoration: "underline", textUnderlineOffset: 2 }}>
               {x.sentence}
-            </button>{k < audience.groups.length - 1 ? ", " : "."}
+            </button>{k < audience.groups.length - 1 ? " · " : "."}
           </span>
         ))}
       </div>

@@ -44,7 +44,7 @@
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
-const { BASE, ok, summary, api, q, closeDb, browserLegOrSkip } = require("./helpers");
+const { BASE, ok, summary, api, q, closeDb, browserLegOrSkip, mailTypesOn } = require("./helpers");
 const S = require("./lib/stockPhotosCheck");
 
 const ORG = "org_editor1", ORG2 = "org_editor1_other";
@@ -73,12 +73,15 @@ async function fixture(org, slug, name, mission) {
   const a = await fixture(ORG, "editor1-riders", "Editor One Riders", "Therapeutic riding for kids with disabilities, with our horses and volunteers.");
   const TOK = a.token;
   ok("fixture org signs in", !!TOK, a);
-  // Six people: three who can get email, two with no address, one whose automatic email is off.
+  // Six people: three who can get email, two with no address, one set to Never.
+  // TRUST-1: a campaign follows its type (Campaign emails on, for Everyone),
+  // not the automatic-email switch, so the one left out is the Never.
   const people = [["d_e1_maria", "Maria Lopez", "maria@example.org", true], ["d_e1_ben", "Ben Ortiz", "ben@example.org", true], ["d_e1_ada", "Ada Kim", "ada@example.org", true],
     ["d_e1_noel", "Noel Park", null, true], ["d_e1_iris", "Iris Wu", null, true], ["d_e1_sam", "Sam Reyes", "sam@example.org", false]];
   for (const [id, name, email, auto] of people) {
-    await q(`INSERT INTO donors (id,org_id,name,email,auto_email,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,'system:test','test')`, [id, ORG, name, email, auto]);
+    await q(`INSERT INTO donors (id,org_id,name,email,auto_email_never,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,'system:test','test')`, [id, ORG, name, email, !auto]);
   }
+  await mailTypesOn(ORG, "everyone", ["campaign"]);
   await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name) VALUES ('g_e1_maria',$1,'d_e1_maria',125,'2026-09-14','system:test','test')`, [ORG]).catch(e => ok("seed gift", false, e.message));
 
   // ── §1 · the receipt's tax block is locked ───────────────────────────────
@@ -239,7 +242,7 @@ async function fixture(org, slug, name, mission) {
       reason: (document.querySelector('[data-testid="editor-primary-reason"]') || {}).innerText, line: (document.querySelector('[data-testid="audience-line"]') || {}).innerText,
       when: (document.querySelector('[data-testid="campaign-schedule-at"]') || {}).value }));
     ok("§4 in the editor, Send to 3 is disabled with the Donor mail sentence", c.send === true && /Send to 3/.test(c.label || "") && /Donor mail is off/.test(c.reason || ""), c);
-    ok("§4 the line on screen adds up", /^6 donors · 0 can get this email: 2 have no email address, 1 has automatic email off, 3 can't get email while Donor mail is off for Editor One Riders\.$/.test((c.line || "").trim()), c.line);
+    ok("§4 the line on screen adds up", /^6 donors · 0 can get this email: 2 have no email address · 1 set to Never · 3 can't get email while Donor mail is off for Editor One Riders\.$/.test((c.line || "").trim()), c.line);
     ok("§5 Send it later starts empty", c.when === "", c.when);
     ok("§3 nothing threw", errors.length === 0, errors.slice(0, 3));
     await browser.close();

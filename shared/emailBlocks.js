@@ -32,6 +32,7 @@
 // inbox may ignore without harm: the phone stack and the dark scheme.
 
 import { greetMerge } from "./greeting.js";
+import { withoutMissingGift, hasValue } from "./giftSentence.js";
 
 export const FOOTER_SLOT = "<!--steward:footer-->";
 
@@ -103,7 +104,11 @@ function chip(name, value) {
 }
 function mergeText(raw, fields, problems, where, defs = EMAIL_MERGE_FIELDS, chips = false) {
   // FIX-46: a name field after "Dear" is the greeting (fields.greeting).
-  const source = chips ? String(raw == null ? "" : raw) : greetMerge(raw, fields && fields.greeting);
+  // TRUST-1: for a person with no gift, a sentence naming one is a thank-you instead.
+  const source = chips ? String(raw == null ? "" : raw) : greetMerge(withoutMissingGift(raw == null ? "" : raw, {
+    hasGift: hasValue(fields && (fields.last_gift_amount || fields.gift_amount)),
+    hasTotal: !(fields && ("lifetime_total" in fields || "total_giving" in fields)) || hasValue(fields.lifetime_total || fields.total_giving),
+  }), fields && fields.greeting);
   const escaped = esc(source);
   const keys = keysOf(defs);
   return escaped.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (whole, name, at) => {

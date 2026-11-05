@@ -286,7 +286,18 @@ async function main() {
     if (j.status === 200 && j.body.status !== "running") { job = j.body; break; }
     await new Promise(res => setTimeout(res, 150));
   }
-  const run1 = await waitRun("import", run0 && run0.created_at);
+  // TRUST-1: the import's OWN run, found by its import id. The newest run is
+  // not it when §5's merge-undo re-check (debounced) lands after it on a busy
+  // server: CI read "merge_undo" twice, in a shard plan that ran fix59 late.
+  const importRun = async importId => {
+    for (let i = 0; i < 60 && importId; i++) {
+      const [r] = await q(`SELECT trigger, import_id, created_at FROM data_health_runs WHERE org_id=$1 AND import_id=$2 ORDER BY created_at DESC LIMIT 1`, [ORG, importId]);
+      if (r) return r;
+      await new Promise(res => setTimeout(res, 250));
+    }
+    return null;
+  };
+  const run1 = await importRun(start.body && start.body.importId);
   ok("§7 after an import, Data health checks again and says so",
      job && job.status === "done" && run1 && run1.trigger === "import" && (!run0 || new Date(run1.created_at) > new Date(run0.created_at)), [start.status, job && job.status, run0, run1]);
   const undo = await api("POST", `/imports/${encodeURIComponent(start.body.importId)}/reverse`, tok, {});

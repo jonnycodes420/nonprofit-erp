@@ -97,6 +97,14 @@ the morning email unless the person turned on its own reminder, so no step goes 
   carries any of it. A campaign keeps its own blocks (`campaigns.email_blocks`, written by PUT/POST
   `emailBlocks`), and an older HTML campaign is converted to blocks when it is opened (`htmlToBlocks`), never in
   the database. Unsaved blocks preview through `POST /email-preview`.
+- **A campaign follows its type, not the automatic-email switch (TRUST-1, Jonathan 27 Oct).** A campaign is a send
+  someone clicks. `donorMailDecision("campaign")` asks `mailTypes.holdReason` like `sendGate.decide`: Campaign emails
+  on; Everyone and not Never, or Only donors I choose and Always include; plus the marketing refusals. `auto_email`
+  governs automatic kinds only. With Campaign emails off the people "wait" and a pressed campaign is held at the gate.
+- **A request sweeps its own org only (TRUST-1).** A route that triggers a sweep passes `req.user.orgId`; the
+  all-org pass is the hourly job's. A sequence Steward makes on its own is made off (`paused`).
+- **No gift, no gift sentence (TRUST-1).** `shared/giftSentence.js`: every renderer turns a sentence naming a gift
+  field into "Thank you for being part of this." for a person with no gift.
 - **A campaign says who it can reach in one line that adds up (EDITOR-1).** `segment-preview` answers `audience`:
   total = can get it + one group per reason, and while Donor mail is off (or the demonstration org, or not
   onboarded) the people it would reach are one group and `sendable` is 0. "Send to N" names who it would reach

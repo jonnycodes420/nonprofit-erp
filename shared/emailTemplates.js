@@ -23,6 +23,7 @@
 // calls its monthly givers "monthly donors" has no sponsors to update.
 
 import { greetMerge } from "./greeting.js";
+import { withoutMissingGift, hasValue } from "./giftSentence.js";
 
 export const MERGE_FIELDS = [
   { token: "{{first_name}}", label: "First name", sample: "Margaret" },
@@ -65,7 +66,14 @@ export function renderMergeFields(html, values = {}, { text = false } = {}) {
   };
   // FIX-46: "Dear {{donor_name}}" greets (values.greeting, shared/greeting.js).
   const greeting = values.greeting || values.first_name;
-  return greetMerge(normalizeMergeFields(html), greeting ? e(greeting) : greeting)
+  // TRUST-1: a person named as having no gift (gift_amount given, and empty)
+  // reads no sentence about one. A sample preview (no gift_amount) keeps it.
+  const named = Object.prototype.hasOwnProperty.call(values, "gift_amount");
+  const source = named ? withoutMissingGift(normalizeMergeFields(html), {
+    hasGift: hasValue(values.gift_amount),
+    hasTotal: !Object.prototype.hasOwnProperty.call(values, "total_giving") || hasValue(values.total_giving),
+  }) : normalizeMergeFields(html);
+  return greetMerge(source, greeting ? e(greeting) : greeting)
     .replace(/{{first_name}}/g, v.first_name)
     .replace(/{{donor_name}}/g, v.donor_name)
     .replace(/{{org_name}}/g, v.org_name)
@@ -120,7 +128,8 @@ export function emailTemplates({ orgName = "your organization", t = (k) => DEFAU
       subject: `Thank you, {{first_name}}`,
       body: [
         p("Hello {{first_name}},"),
-        p(`Thank you for your gift of {{gift_amount}} to ${org}. It arrived safely and it is already at work.`),
+        // TRUST-1: one sentence, so a person with no gift reads "Thank you for being part of this." instead.
+        p(`Thank you for your gift of {{gift_amount}} to ${org}, which arrived safely and is already at work.`),
         p("I know you have a choice about where this goes, and I am grateful you chose us."),
         p("If you ever want to know exactly what your giving has paid for, write back and ask. I will tell you."),
       ].join("\n"),
@@ -134,7 +143,7 @@ export function emailTemplates({ orgName = "your organization", t = (k) => DEFAU
         p("Hello {{first_name}},"),
         p(`This is the last thing you will hear from ${org} this year.`),
         p("A gift before the 31st counts for this tax year, and it lands with us while the year's work is still in front of us rather than behind."),
-        p("Your giving so far comes to {{total_giving}}. Thank you for every part of it."),
+        p("Your giving so far comes to {{total_giving}}, and I am grateful for every part of it."),
         p("Whatever you decide, I hope the end of the year is a kind one."),
       ].join("\n"),
     },

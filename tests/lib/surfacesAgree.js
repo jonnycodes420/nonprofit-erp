@@ -41,7 +41,9 @@
 //             vsLastYear, homeLine, drift, groups, events, campaigns,
 //             moveReport, search, ask, atlas, exports, deleted, finance, pledges,
 //             mailCampaigns (SECURE-2: a sent email campaign says what it did,
-//             the same on every surface, from campaign_recipients), units
+//             the same on every surface, from campaign_recipients),
+//             campaignReach (TRUST-1: the builder's "N can get this email"
+//             is the number the send would reach, by SEND-GATE-2's rule), units
 //             (FIX-60: a report's money figure is money, its count a count,
 //             each foots to its rows; a fee is less than its gift)
 //   plantEvent (eventId, { rep, kiosk }) => { rep, kiosk }: change an event's
@@ -775,6 +777,38 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
           if (got !== want) diffs.push(`campaign "${t.name}": the database says ${t.n} of ${t.m} went ("${want}"), ${name} says "${got}"`);
         }
       }
+    }
+  }
+
+  // ── TRUST-1 · THE BUILDER'S COUNT IS WHO THE SEND WOULD REACH ───────────
+  // Every live person with an address, as one hand-picked list. The database,
+  // read here by the rule itself (SEND-GATE-2 for Campaign emails: on, and
+  // Everyone but Never, or Only donors I choose and Always include; never the
+  // deceased, do not contact, unsubscribed, bounced, suppressed, sample or a
+  // blocked address), must say the number the builder shows.
+  if (!skip.has("campaignReach")) {
+    const people = await q(`SELECT d.id FROM donors d WHERE d.org_id = $1 AND d.deleted_at IS NULL AND COALESCE(btrim(d.email), '') <> '' ORDER BY d.id LIMIT 3000`, [orgId]);
+    if (people.length) {
+      const ids = people.map(r => r.id);
+      const per = await q(
+        `WITH e AS (
+           SELECT LOWER(d.email) AS e, bool_or(d.deceased) AS dec, bool_or(d.do_not_contact) AS dnc, bool_or(d.do_not_email) AS dne,
+                  bool_or(d.email_unreachable) AS bounced, bool_or(d.is_sample) AS sample, bool_or(d.auto_email) AS always_,
+                  bool_or(d.auto_email_never) AS never_, array_agg(d.id) AS ids
+             FROM donors d WHERE d.org_id = $1 AND d.deleted_at IS NULL AND LOWER(d.email) IN (SELECT LOWER(email) FROM donors WHERE id = ANY($2::text[]))
+            GROUP BY LOWER(d.email))
+         SELECT d.id, LOWER(d.email) AS email,
+                NOT (e.dec OR e.dnc OR e.dne OR e.bounced OR e.sample OR e.never_)
+                AND NOT EXISTS (SELECT 1 FROM email_suppressions s WHERE LOWER(s.email) = e.e AND (s.org_id IS NULL OR s.org_id = $1))
+                AND NOT EXISTS (SELECT 1 FROM mail_skips k WHERE k.org_id = $1 AND k.type_key = 'campaign' AND k.until > NOW() AND k.donor_id = ANY(e.ids))
+                AND COALESCE((SELECT t.is_on AND (t.audience IS DISTINCT FROM 'chosen' OR e.always_) FROM org_mail_types t WHERE t.org_id = $1 AND t.type_key = 'campaign'), false) AS reach
+           FROM donors d JOIN e ON e.e = LOWER(d.email) WHERE d.id = ANY($2::text[])`, [orgId, ids]);
+      const { isBlockedAddress } = require("../../mailBlock");
+      const truth = per.filter(r => r.reach && !isBlockedAddress(r.email)).length;
+      const pv = await H.api("POST", "/campaigns/segment-preview", token, { segment: { mode: "manual", donorIds: ids } }).then(r => r.body).catch(() => null);
+      const shown = pv && pv.audience ? pv.audience.wouldReach : undefined;
+      agree("people a campaign to everyone with an address would reach", [["the database, by the send's rule", truth], ["the campaign builder's count", shown]], String);
+      if (shown === undefined) diffs.push(`the campaign builder gave no count for ${ids.length} people`);
     }
   }
 
