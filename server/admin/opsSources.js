@@ -172,7 +172,7 @@ async function collectCustomers(query) {
   const [orgs, users, pays, real, logins] = await Promise.all([
     query(`SELECT id, name, org_slug, org_kind, is_demo_org, subscription_status, archived_at, created_at FROM orgs`, []),
     query(`SELECT org_id, email FROM users WHERE deactivated_at IS NULL`, []),
-    query(`SELECT org_id, COUNT(*) AS c, COALESCE(SUM(amount_paid_cents),0) AS cents FROM platform_payments GROUP BY org_id`, []),
+    query(`SELECT org_id, COUNT(*) AS c FROM platform_payments GROUP BY org_id`, []),
     query(`SELECT org_id, COUNT(*) AS c FROM donors WHERE deleted_at IS NULL AND COALESCE(is_sample,false) = false GROUP BY org_id`, []),
     query(`SELECT s.org_id, MAX(s.created_at) AS t FROM user_sessions s JOIN users u ON u.id = s.user_id AND u.org_id = s.org_id GROUP BY s.org_id`, []),
   ]);
@@ -181,7 +181,7 @@ async function collectCustomers(query) {
   const pay = new Map(pays.map(r => [r.org_id, r])), realN = new Map(real.map(r => [r.org_id, Number(r.c)]));
   const last = new Map(logins.map(r => [r.org_id, r.t]));
   return orgs.filter(o => !o.archived_at).filter(o => ORG_KIND.inferKind(o, {
-    users: group.get(o.id) || [], payments: Number(pay.get(o.id)?.c || 0), paidCents: Number(pay.get(o.id)?.cents || 0), realDonors: realN.get(o.id) || 0,
+    users: group.get(o.id) || [], payments: Number(pay.get(o.id)?.c || 0), realDonors: realN.get(o.id) || 0,
   }).kind === "customer").map(o => ({ name: o.name, slug: o.org_slug, lastLogin: last.get(o.id) ? new Date(last.get(o.id)).toISOString() : null }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
