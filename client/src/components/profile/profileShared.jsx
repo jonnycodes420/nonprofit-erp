@@ -69,6 +69,7 @@ const WEALTH_SCORE_SOURCE = null;
 // auto-detection in this pass.
 const DONOR_RELATIONSHIP_LABELS = [
   ["spouse","Spouse"],
+  ["partner","Partner"],   // PEOPLE-1: reciprocal, pools like a spouse
   ["household","Household"],
   ["family","Family"],
   ["employer_match","Employer Match"],

@@ -56,10 +56,11 @@ function reengageSql(d, today) {
 
 // The relationship types that make one giving unit, and SQL for the people
 // linked to `idExpr` by one of them (either side of the link).
-const UNIT_LINK_TYPES = Object.freeze(["owner", "works_at"]);
+// PEOPLE-1: and two people linked as spouse or partner: a gift from either keeps both off Lapsed.
+const UNIT_LINK_TYPES = Object.freeze(["owner", "works_at", "spouse", "partner"]);
 const LINKED = idExpr => `(SELECT CASE WHEN lr.donor_id_a = ${idExpr} THEN lr.donor_id_b ELSE lr.donor_id_a END
     FROM donor_relationships lr WHERE (lr.donor_id_a = ${idExpr} OR lr.donor_id_b = ${idExpr})
-     AND lr.relationship_type IN ('owner','works_at'))`;
+     AND lr.relationship_type IN ('owner','works_at','spouse','partner'))`;
 // The latest last gift among the people linked to `idExpr` (NULL when none).
 const linkedLastSql = idExpr => `(SELECT MAX(GREATEST(NULLIF(LEFT(lk.last_gift_date, 10), ''), NULLIF(LEFT(lk.imported_last_gift_date, 10), '')))
     FROM donors lk WHERE lk.id IN ${LINKED(idExpr)} AND lk.deleted_at IS NULL)`;

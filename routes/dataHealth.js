@@ -194,7 +194,9 @@ const NN = () => import("../shared/nearNames.js");
 async function pairsAndFamilies(orgId, people) {
   const { nearDuplicate } = await NN();
   return DH.findPairs(people || await livePeople(orgId), { orgId, near: nearDuplicate,
-    dismissed: await dismissedKeys(orgId, "pair"), familiesDismissed: await dismissedKeys(orgId, "family") });
+    dismissed: await dismissedKeys(orgId, "pair"), familiesDismissed: await dismissedKeys(orgId, "family"),
+    linked: new Set((await query(`SELECT donor_id_a, donor_id_b FROM donor_relationships WHERE org_id = ? AND relationship_type IN ('spouse', 'partner')`, [orgId]))
+      .map(r => (r.donor_id_a < r.donor_id_b ? `${r.donor_id_a}|${r.donor_id_b}` : `${r.donor_id_b}|${r.donor_id_a}`))) });
 }
 async function duplicatePairs(orgId, people) {
   return (await pairsAndFamilies(orgId, people)).pairs;

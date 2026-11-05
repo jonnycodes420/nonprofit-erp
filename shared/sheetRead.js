@@ -1378,6 +1378,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
         if (fresh.addressBad && person.address === fresh.address && !person.addressBad) person.addressBad = fresh.addressBad;
         for (const fl of fresh.flags) if (!person.flags.includes(fl)) person.flags.push(fl);
         personFields(person, r => s(get(b, r)));   // IMPORT-8: tags, About them, a partner, a household
+        // PEOPLE-1: a column headed Partner (not Spouse) links the pair as partners.
+        if (person.spouseName && !person.spouseWord) { const h = String((role("spouse") || {}).header || ""); person.spouseWord = /partner/i.test(h) && !/spouse/i.test(h) ? "partner" : "spouse"; }
         person.lines.push(`${t.sheet}:${b.line}`);
         if (person.externalId) byId.set(person.externalId.toLowerCase(), pkey);
         if (person.email) byEmail.set(person.email, pkey);

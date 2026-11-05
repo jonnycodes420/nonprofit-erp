@@ -17,8 +17,11 @@ const TL = require("../../timelineLine");
 const routers = {
   r1: express.Router(),
 };
+// PEOPLE-1: Mark as deceased (server/donors/deceased.js) sits beside the person's links.
+routers.r1.use(require("./deceased").routers.r1);
 
 function mount(ctx) {
+require("./deceased").mount(ctx);
 const {
   NOT_YOURS, PERSON_ONLY_SENTENCE, UNDO_SECONDS, VH_READY, actor, auditShape, checkWriteAccess, crypto,
   donorPhotoUrl, editStamp, figureSources, insertShift, lastName, mayEditLogged, orgOwns, orgToday, orgTz,
@@ -127,7 +130,7 @@ async function householdView(householdId, orgId) {
   if (!hh.length) return null;
   const members = await query(
     `SELECT id, name, email, phone, total_giving, gift_count, last_gift_date, last_gift_amount,
-            stage, status, assigned_to, assigned_to_name
+            stage, status, assigned_to, assigned_to_name, deceased, deceased_date
      FROM donors WHERE household_id=? AND org_id=? AND deleted_at IS NULL
      ORDER BY total_giving DESC, id`, [householdId, orgId]);
   // REPORTS-4: combined giving is the `household-giving` source's value (the
@@ -143,6 +146,8 @@ async function householdView(householdId, orgId) {
       last_gift_amount: parseFloat(m.last_gift_amount) || 0,
       gift_count: parseInt(m.gift_count, 10) || 0,
       is_primary: m.id === hh[0].primary_donor_id,
+      // PEOPLE-1: the household stays; someone in it who has died reads "(died March 2026)"
+      deceased: m.deceased === true, died_words: m.deceased === true ? (require("./deceased").diedWords(m.deceased_date) || "") : null,
       // per-member soft credit = combined − own hard credit = other members' gifts
       soft_credit: (Math.round(combinedGiving * 100) - Math.round((parseFloat(m.total_giving) || 0) * 100)) / 100,
       source: { key: "household-giving", params: { household: householdId, only: m.id } },
@@ -291,13 +296,13 @@ app.delete("/households/:id", requireAuth, wrap(async (req, res) => {
 // POLISH-4: and a person to an organization: Owner (owns it, gives through it)
 // and Works at. These two are stored person first (donor_id_a) and make one
 // giving unit for the lapse rule (shared/numbers/lapse.js UNIT_LINK_TYPES).
-const DONOR_RELATIONSHIP_TYPES = ["spouse", "household", "family", "employer_match", "owner", "works_at"];
+const DONOR_RELATIONSHIP_TYPES = ["spouse", "partner", "household", "family", "employer_match", "owner", "works_at"];
 const PERSON_TO_ORG = new Set(["owner", "works_at"]);
 const isOrgRow = d => !!d && (["organisation", "organization"].includes(String(d.kind || "").toLowerCase())
   || (Array.isArray(d.person_types) && d.person_types.includes("organization")));
 // Only these two types pool into a shared "household total" — family and
 // employer_match are relationship context, not a shared giving pool.
-const HOUSEHOLD_RELATIONSHIP_TYPES = ["spouse", "household"];
+const HOUSEHOLD_RELATIONSHIP_TYPES = ["spouse", "partner", "household"];   // PEOPLE-1: a partner pools exactly as a spouse does
 
 app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
   if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B: the parent must be YOURS before children are answered — even an empty list confirms nothing about another tenant
@@ -315,7 +320,7 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
 
   const relatedIds = rows.map(r => r.related_donor_id);
   const relatedDonors = await query(
-    `SELECT id, name, total_giving FROM donors WHERE org_id = ? AND id = ANY(?)`,
+    `SELECT id, name, total_giving, deceased, deceased_date FROM donors WHERE org_id = ? AND id = ANY(?)`,
     [orgId, relatedIds]
   );
   const donorMap = Object.fromEntries(relatedDonors.map(d => [d.id, d]));
@@ -325,7 +330,9 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
     relationshipType: r.relationship_type,
     notes: r.notes,
     relatedDonorId: r.related_donor_id,
-    relatedDonorName: donorMap[r.related_donor_id]?.name || "(deleted donor)",
+    // PEOPLE-1: someone who has died reads "Harold Lee (died March 2026)"; the link and the household stay.
+    relatedDonorName: (n => { const x = donorMap[r.related_donor_id]; if (!x || !x.deceased) return n; const w = require("./deceased").diedWords(x.deceased_date); return `${n} (${w ? `died ${w}` : "died"})`; })(donorMap[r.related_donor_id]?.name || "(deleted donor)"),
+    relatedDonorDeceased: donorMap[r.related_donor_id]?.deceased === true,
     relatedDonorTotalGiving: Number(donorMap[r.related_donor_id]?.total_giving) || 0,
     // POLISH-4: which end of a person-to-organization link this record is
     // ("person": Gives through X; "organization": Owner: Y).
@@ -386,7 +393,7 @@ app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async 
   // household record, the one grouping (db.js householdsFromLinks).
   if (HOUSEHOLD_RELATIONSHIP_TYPES.includes(relationshipType)) await require("../../db").householdsFromLinks(orgId).catch(e => console.error("[fix-49] household:", e.message));
   // POLISH-4: one giving unit now; an automatic Lapsed either one outlived goes.
-  if (PERSON_TO_ORG.has(relationshipType)) await require("../../afterChange").afterChange(orgId, [idA, idB], { door: "relationship", recalc: false }).catch(e => console.error("[polish-4] link:", e.message));
+  if (PERSON_TO_ORG.has(relationshipType) || HOUSEHOLD_RELATIONSHIP_TYPES.includes(relationshipType)) await require("../../afterChange").afterChange(orgId, [idA, idB], { door: "relationship", recalc: false }).catch(e => console.error("[polish-4] link:", e.message));
   res.status(201).json({ id });
 }));
 

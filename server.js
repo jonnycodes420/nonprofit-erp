@@ -6841,7 +6841,7 @@ async function composeWeeklyOrgPart(orgId, monday) {
   const st = DS.statusSql(orgId, monday, await DS.cutsFor(orgId));
   const lapsed = await query(
     `SELECT d.id, d.name, d.email, s.last_date FROM (${st.sql}) s JOIN donors d ON d.id = s.donor_id AND d.org_id = ?
-      WHERE ${DS.tagColumn("lapsed")} AND s.last_date::date BETWEEN ?::date AND ?::date
+      WHERE ${DS.tagColumn("lapsed")} AND d.deceased IS NOT TRUE AND s.last_date::date BETWEEN ?::date AND ?::date
       ORDER BY s.last12 DESC NULLS LAST, d.name`,
     [...st.args, orgId, "lapsed", orgTime.addDays(lastMon, -lapseRule.LAPSED_DAYS), orgTime.addDays(lastSun, -lapseRule.LAPSED_DAYS)]);
   const pledges = await query(
@@ -8025,8 +8025,8 @@ async function enrollInSequences(orgId, donorId, triggerKey, context = {}, actor
   const gate = await sequenceTimezoneGate(orgId);
   if (!gate.ok) return { enrolled: 0, reason: gate.reason };
   const seqs = await query(
-    `SELECT * FROM sequences WHERE org_id = ? AND status = 'active' AND trigger = ? AND tracks IS NOT NULL`,
-    [orgId, triggerKey]);
+    `SELECT * FROM sequences WHERE org_id = ? AND status = 'active' AND trigger = ? AND tracks IS NOT NULL AND NOT EXISTS (SELECT 1 FROM donors x WHERE x.id = ? AND x.org_id = ? AND x.deceased IS TRUE)`,   // PEOPLE-1: none start for the deceased
+    [orgId, triggerKey, donorId, orgId]);
   let enrolled = 0;
   const errors = [];   // JOBS-1: the handler tries again on these
   for (const seq of seqs) {

@@ -54,7 +54,7 @@ import { MergeWithModal } from "./profile/MergeWith";
 import { GivingTab } from "./profile/GivingTab";
 import { ProfileHeader } from "./profile/ProfileHeader";
 
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialOpenCompose=false,initialOpenBrief=false,initialAddGift=null,org=null}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,onRecordChanged,isReadOnly=false,onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialOpenCompose=false,initialOpenBrief=false,initialAddGift=null,org=null}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   // FIX-45 1.5: the record's one read (GET /donors/:id) carries the gifts and
@@ -1169,7 +1169,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const flagEl=(donor.deceased||donor.doNotContact||donor.doNotSolicit)?<span data-testid="dp-head-flag" style={{display:"contents"}}><>{donor.deceased&&<span title="No mail of any kind is sent to this donor" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.terra100,color:T.terra700,border:`1px solid ${T.terra200}`}}>Deceased</span>}
                 {!donor.deceased&&donor.doNotContact&&<span title="Excluded from campaigns, sequences, and workflow emails" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not contact</span>}
                 {!donor.deceased&&!donor.doNotContact&&donor.doNotSolicit&&<span title="No asks. Excluded from the drift list, re-engage, suggested outreach and ask automations. Stewardship thank-yous continue." style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not solicit</span>}</></span>:null;
-  const secondKey=stTags.some(t=>t.key==="lapsing")?"lapsing":monthlyOn?"monthly":lifeKey;
+  const secondKey=donor.deceased?null:stTags.some(t=>t.key==="lapsing")?"lapsing":monthlyOn?"monthly":lifeKey;   // PEOPLE-1: no Lapsing or Current for someone who has died
   const headTagList=[flagEl?{key:"flag",el:flagEl}:null,levelKey?{key:levelKey,el:tagEl(levelKey)}:null,
     secondKey==="monthly"?{key:"monthly",el:<span key="monthly" data-testid="dp-tag-monthly" style={{fontSize:10.5,fontWeight:700,padding:"3px 10px",borderRadius:99,background:T.white,color:T.greenDk,border:"1px solid "+T.green200,whiteSpace:"nowrap"}}>Monthly</span>}
       :secondKey?{key:secondKey,el:tagEl(secondKey)}:null].filter(x=>x&&x.el).slice(0,2);
@@ -1178,7 +1178,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // and never two that read against each other: Current beside Lapsing, or
   // Retained beside New, says the second one only.
   const hasTag=k=>stTags.some(t=>t.key===k);
-  const aboutStatusTags={tags:stTags.filter(t=>!headTagKeys.has(t.key)&&!(t.key==="current"&&hasTag("lapsing"))&&!(t.key==="retained"&&hasTag("new")))};
+  const aboutStatusTags={tags:stTags.filter(t=>!headTagKeys.has(t.key)&&!(donor.deceased&&["lapsed","lapsing","current","at_risk"].includes(t.key))&&!(t.key==="current"&&hasTag("lapsing"))&&!(t.key==="retained"&&hasTag("new")))};
 
   // ── PROFILE-2 Part 3 · three nodes that move on a phone: the next move and
   // the rail's Next step and Open pledge sit above the tabs at 390.
@@ -1347,7 +1347,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             name: at most two tags here, the rest are in About on the rail. The
             roles line, closeness, drift and recurring sentences moved to the rail
             (About and Engagement), so the header is the person and what to do. */}
-        <ProfileHeader {...{setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg}}/>
+        <ProfileHeader {...{onRecordChanged,setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg}}/>
         {(figs||donor.figures)&&<ProfileNumbers figures={figs||donor.figures}/>}
           </div>
           {/* ── PROFILE-1 (header) · ONE ROW OF TABS ──────────────────────

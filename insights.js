@@ -356,9 +356,10 @@ function computeInsights(input) {
     const ps = pledgesOfUnit.get(u) || [];
     const openPledges = ps.filter(p => p.status !== "fulfilled" && p.status !== "cancelled" && p.status !== "written_off" && p.balance > 0);
     const x = {
-      unit: u, key: u.key, name: u.name, ids: u.people.map(p => p.id),
+      // PEOPLE-1: a move names and leads with the living (a widow's household is "Ruth Lee", not "Ruth & Harold").
+      unit: u, key: u.key, name: u.people.some(p => p.deceased) && u.people.some(p => !p.deceased) ? u.people.filter(p => !p.deceased).map(p => p.name).join(" & ") : u.name, ids: u.people.map(p => p.id),
       roomKnown: u.people.some(p => input.roomKnown && input.roomKnown.has(p.id)),
-      lead: (u.people.find(p => gs.some(g => g.donor_id === p.id)) || u.people[0]).id,
+      lead: (u.people.find(p => !p.deceased && gs.some(g => g.donor_id === p.id)) || u.people.find(p => !p.deceased) || u.people[0]).id,
       owner: u.people.map(p => p.assigned_to_name).find(Boolean) || null,
       noContact: u.people.every(p => p.deceased || p.do_not_contact),
       noAsk: u.people.some(p => p.do_not_solicit),
@@ -831,6 +832,7 @@ const LIBRARY = [
   function pledges(U, ctx) {
     const y = ctx.thisYear, items = [];
     for (const x of U) {
+      if (x.unit.people.every(p => p.deceased)) continue;   // PEOPLE-1: no one collects a pledge from someone marked deceased
       for (const p of x.openPledges) {
         const inst = p.installments.slice().sort((a, b) => (a.due_date < b.due_date ? -1 : 1));
         const multi = inst.length > 1;

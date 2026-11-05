@@ -468,7 +468,7 @@ async function pooledWith(q, orgId, donorIds) {
     `SELECT d2.id FROM donors d1 JOIN donors d2 ON d2.org_id = d1.org_id AND d2.household_id = d1.household_id
       WHERE d1.org_id = ? AND d1.id = ANY(?) AND d1.household_id IS NOT NULL
      UNION SELECT CASE WHEN r.donor_id_a = ANY(?) THEN r.donor_id_b ELSE r.donor_id_a END FROM donor_relationships r
-      WHERE r.org_id = ? AND r.relationship_type IN ('spouse', 'household') AND (r.donor_id_a = ANY(?) OR r.donor_id_b = ANY(?))`,
+      WHERE r.org_id = ? AND r.relationship_type IN ('spouse', 'partner', 'household') AND (r.donor_id_a = ANY(?) OR r.donor_id_b = ANY(?))`,
     [orgId, ids, ids, orgId, ids, ids]);
   return [...new Set([...ids, ...rows.map(r => r.id).filter(Boolean)])];
 }
@@ -560,6 +560,9 @@ async function suggestedAsk(q, orgId, donorId, opts = {}) {
   // NUMBERS-4: the one rule's gifts and inputs (shared/numbers/ask.js): a
   // refund or a credit row never sets "largest".
   const ASK = require("./shared/numbers/ask");
+  // PEOPLE-1: nobody is asked for a gift once they are marked deceased.
+  const [dead] = await q(`SELECT 1 FROM donors WHERE id = ? AND org_id = ? AND deceased IS TRUE`, [donorId, orgId]);
+  if (dead) return null;
   const rows = await q(ASK.GIFTS_SQL, [orgId, donorId]);
   if (!rows.length) return null;
   const { largestCents, lastThreeCents } = ASK.inputsOf(rows);

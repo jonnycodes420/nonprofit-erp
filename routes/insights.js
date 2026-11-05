@@ -123,12 +123,12 @@ app.get("/insights", requireAuth, wrap(async (req, res) => {
 }));
 
 app.get("/insights/donor/:id", requireAuth, wrap(async (req, res) => {
-  const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
+  const [d] = await query("SELECT id, deceased FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
   if (!d) return res.status(404).json({ error: "Not found" });
-  const asOf = await asOfFor(req);
+  const asOf = await asOfFor(req);   // PEOPLE-1: no next move is suggested for someone marked deceased (below)
   const r = await D.insightsFor(req.user.orgId, asOf);
   const unit = r.units.find(u => u.ids.includes(d.id)) || null;
-  const move = I.nextMoveFor(r, d.id);
+  const move = d.deceased === true ? null : I.nextMoveFor(r, d.id);
   // linked records (a family or network she linked) show what they give together
   const rel = await query(`SELECT donor_id_a, donor_id_b FROM donor_relationships WHERE org_id=? AND (donor_id_a=? OR donor_id_b=?) AND relationship_type IN ('family','network')`,
     [req.user.orgId, d.id, d.id]);

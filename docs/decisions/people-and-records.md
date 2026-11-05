@@ -3,6 +3,13 @@
 Read this when you touch the person record: donors, organisations, non-donors, households, photos, merge and duplicates, deletion, the timeline, the profile, volunteers or events.
 
 ## Rules
+- **PEOPLE-1 (2026-11-04): deceased is one flag, and every list reads it.** `donors.deceased` (the importer's field,
+  or the profile's More → Mark as deceased, `server/donors/deceased.js`) keeps a person out of every ask, next move,
+  Home move, thank-you queue, lapse and Re-engage list, journey, sequence, campaign and send. A new list of people to
+  ask, suggest or mail filters `deceased IS NOT TRUE` (`LIVING(d)`). Their gifts, totals, receipts, tributes and
+  household are never touched; marking closes asks and journeys, and Undo reopens what it closed except journeys.
+- **PEOPLE-1: Partner pools exactly as Spouse does.** One household, one giving unit for the lapse rule
+  (`lapse.js UNIT_LINK_TYPES`: owner, works_at, spouse, partner), family not duplicates in Data health.
 - **PROFILE-2 (2026-10-29): the profile is a page, not a panel.** It sits in the content area and the window
   scrolls it; only the rail sticks, without a scrollbar of its own (`lib/stickyRail.js`). The header holds at most
   two tags from the one tag set (`donorStatus.js`), never the ladder's rung chips; "this year" on the profile is

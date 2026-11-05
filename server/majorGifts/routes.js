@@ -333,7 +333,7 @@ app.get("/donors/:id/move-suggestions", requireAuth, wrap(async (req, res) => {
   const rows = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Donor not found" });
   const _msToday = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
-  res.json({ suggestions: computeMoveSuggestions(rows[0], { today: _msToday, pledges: await require("../../shared/numbers/lapse").pledgesFor(query, req.user.orgId, rows[0].id, _msToday) }) });
+  res.json({ suggestions: rows[0].deceased === true ? [] : computeMoveSuggestions(rows[0], { today: _msToday, pledges: await require("../../shared/numbers/lapse").pledgesFor(query, req.user.orgId, rows[0].id, _msToday) }) });
 }));
 
 // POST /pipeline/run-auto-lapse — run the auto-lapse sweep for the caller's org

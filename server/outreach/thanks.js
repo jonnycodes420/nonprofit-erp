@@ -44,7 +44,7 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
        JOIN gifts g ON g.id = t.gift_id AND g.org_id = t.org_id
        LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = t.org_id
       WHERE t.org_id = ? AND t.sent_at IS NULL AND t.skipped_at IS NULL
-        AND d.deleted_at IS NULL
+        AND d.deleted_at IS NULL AND d.deceased IS NOT TRUE   -- PEOPLE-1: kept, not offered (Undo brings them back)
       ORDER BY g.amount DESC, t.created_at ASC`, [orgId]);
   const [org] = await query("SELECT name, voice_samples FROM orgs WHERE id=?", [orgId]);
   const BKq = await import("../../shared/brandKit.js");
