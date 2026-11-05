@@ -331,6 +331,11 @@ async function demoMailNote(orgId, { what, to }) {
 // answers "would this PERSON get it" when the organisation itself is not
 // sending (the demonstration org); the org gate is still read, and its refusal
 // is reported separately by the caller, never hidden.
+// PEOPLE-1 · DECEASED IS A PERSON, NOT AN ADDRESS. `pre.donorId` names the
+// person the mail is addressed to: they are refused when THEY are deceased,
+// whoever else shares the address. With no person on record (a sign-in link, an
+// unfinished gift), the address is refused only when everyone at it is deceased.
+// The other flags stay the address's (do not contact, unsubscribed, bounced).
 async function donorMailDecision(kind, email, orgId, pre = null) {
   // MAIL-1: the onboarding sequence is off for good, for every org.
   if (mailPolicy.categoryOf(kind) === mailPolicy.CATEGORY.ONBOARDING) {
@@ -357,13 +362,19 @@ async function donorMailDecision(kind, email, orgId, pre = null) {
   // it: an import that carried a DNE column wrote a flag that changed nothing,
   // which is worse than not having it. `email_unreachable` is the other half
   // — a hard bounce is a fact about the address, not a preference.
-  const [flags] = pre ? [pre.flags] : await query(
-    `SELECT bool_or(deceased) AS deceased, bool_or(do_not_contact) AS dnc,
+  const donorId = pre && pre.donorId ? String(pre.donorId) : null;
+  const [flags] = pre && "flags" in pre ? [pre.flags] : await query(
+    `SELECT ${donorId ? "bool_or(deceased) FILTER (WHERE id = ?)" : "bool_and(deceased)"} AS deceased, bool_or(do_not_contact) AS dnc,
             bool_or(do_not_email) AS dne, bool_or(email_unreachable) AS unreachable,
             bool_or(is_sample) AS sample, bool_or(auto_email) AS auto, bool_or(auto_email_never) AS never_
        FROM donors WHERE org_id = ? AND LOWER(email) = LOWER(?) AND deleted_at IS NULL`,
-    [orgId, email]
+    donorId ? [donorId, orgId, email] : [orgId, email]
   ).catch(() => [null]);
+  // The person by id, when the address has no row for them (an address typed on the gift, an old address).
+  if (donorId && flags && flags.deceased == null) {
+    const [me] = await query(`SELECT deceased FROM donors WHERE id = ? AND org_id = ?`, [donorId, orgId]).catch(() => []);
+    if (me && me.deceased === true) flags.deceased = true;
+  }
 
   // ── INCIDENT 2026-09-22 — A MADE-UP PERSON HAS NO MAILBOX ────────────────
   // On 22 September a seeded donor received a real pledge reminder at a real
@@ -388,7 +399,7 @@ async function donorMailDecision(kind, email, orgId, pre = null) {
   // An address that hard-bounced cannot receive anything, transactional
   // included — a receipt to a dead mailbox is not a receipt, it is a bounce.
   if (flags?.unreachable) return { send: false, reason: "bounced" };
-  const suppressReason = pre ? pre.suppressReason : await getSuppressionReason(email, orgId);
+  const suppressReason = pre && "suppressReason" in pre ? pre.suppressReason : await getSuppressionReason(email, orgId);
   if (cls === "marketing") {
     if (flags?.dnc) return { send: false, reason: "do_not_contact" };
     if (flags?.dne) return { send: false, reason: "unsubscribed" };
@@ -438,7 +449,7 @@ async function campaignSkipped(orgId, email) {
 async function donorMailDecisions(kind, people, orgId, { personOnly = false } = {}) {
   const emails = [...new Set(people.map(p => p.email).filter(Boolean).map(e => String(e).toLowerCase()))];
   const flagRows = emails.length ? await query(
-    `SELECT LOWER(email) AS e, bool_or(deceased) AS deceased, bool_or(do_not_contact) AS dnc,
+    `SELECT LOWER(email) AS e, array_agg(id) FILTER (WHERE deceased) AS dead_ids, bool_or(do_not_contact) AS dnc,
             bool_or(do_not_email) AS dne, bool_or(email_unreachable) AS unreachable,
             bool_or(is_sample) AS sample, bool_or(auto_email) AS auto, bool_or(auto_email_never) AS never_,
             array_agg(id) AS ids
@@ -463,8 +474,10 @@ async function donorMailDecisions(kind, people, orgId, { personOnly = false } = 
     const e = p.email ? String(p.email).toLowerCase() : "";
     const f = flagsBy.get(e) || null;
     const extra = skippedIds ? { ...campaignExtra, skipped: !!(f && (f.ids || []).some(id => skippedIds.has(id))) } : {};
+    // PEOPLE-1: deceased is this person's own flag, never a housemate's.
+    const pf = f ? { ...f, deceased: (f.dead_ids || []).includes(p.id) } : null;
     out.set(p.id, await donorMailDecision(kind, p.email, orgId,
-      { flags: f, suppressReason: supBy.get(e) || null, personOnly, ...extra }));
+      { flags: pf, suppressReason: supBy.get(e) || null, personOnly, donorId: p.id, ...extra }));
   }
   return out;
 }
@@ -503,7 +516,7 @@ function applyDunningTokens(str, { donor, org, amount, updateUrl }) {
 // Callers log `dunning_sent` ONLY when sent is true — the log never lies.
 async function sendDunningEmail(org, donor, subscriptionRow, extra = {}) {   // SEND-GATE-1: `extra` = a staff confirm
   await GREET_READY;
-  const decision = await donorMailDecision("dunning", donor.email, org.id);
+  const decision = await donorMailDecision("dunning", donor.email, org.id, { donorId: donor.id || (subscriptionRow && subscriptionRow.donor_id) });
   if (!decision.send) {
     console.log(`[dunning] refused for ${donor.email} (${decision.reason})`);
     return { sent: false, refused: decision.reason };
@@ -578,7 +591,7 @@ async function sendDigestEmail(org, toEmail, subject, bodyHtml) {
 // The notice itself. TRANSACTIONAL, like dunning: it is about the payment
 // instrument on an agreement the donor already made, not a new ask.
 async function sendCardExpiringEmail(org, donor, rs) {
-  const decision = await donorMailDecision("card_expiring", donor.email, org.id);
+  const decision = await donorMailDecision("card_expiring", donor.email, org.id, { donorId: donor.id || (rs && rs.donor_id) });
   if (!decision.send) return { sent: false, refused: decision.reason };
   const dfName = await donorFacingOrgName(org.id, org.name);
   const hi = (await import("../shared/greeting.js")).greetingLine(donor, { word: "Hi" });   // POLISH-4: the one opening line
@@ -622,7 +635,7 @@ async function sendWorkflowEmail(org, donor, subject, bodyHtml) {
   if (!donor?.email) return false;
   // W-4: workflow recipe mail is MARKETING — suppression + donor flags apply
   // through the one policy.
-  const decision = await donorMailDecision("workflow", donor.email, org.id);
+  const decision = await donorMailDecision("workflow", donor.email, org.id, { donorId: donor.id });
   if (!decision.send) return false;
   const html = await brandEmailHeaderHtml(org.id) + bodyHtml + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
   const from = await donorFromAddress(org.id); // BUILD-64: the org's name in the inbox
@@ -786,7 +799,7 @@ function applyPledgeReminderTokens(str, { donor, org, amount, dueDate, giveUrl }
 async function sendPledgeReminderEmail(org, donor, pledgeRow, extra = {}) {   // SEND-GATE-1: `extra` = a staff confirm
   await GREET_READY;
   // W-4: a reminder to give is solicitation — MARKETING in the policy.
-  const decision = await donorMailDecision("pledge_reminder", donor.email, org.id);
+  const decision = await donorMailDecision("pledge_reminder", donor.email, org.id, { donorId: donor.id || (pledgeRow && pledgeRow.donor_id) });
   if (!decision.send) {
     console.log(`[pledge-reminder] skipping ${donor.email} (${decision.reason})`);
     return { sent: false, refused: decision.reason, error: null };

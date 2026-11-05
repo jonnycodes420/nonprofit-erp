@@ -354,7 +354,7 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
   const pAtRiskDonors = query(
     `SELECT x.id, x.name, x.amount, x.last_gift_date FROM (
        SELECT d.id, d.org_id, d.name, COALESCE(d.total_giving, 0) AS amount, LEFT(${NUMBERS.lastGift.LAST_DATE("d")}, 10) AS last_gift_date
-         FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.total_giving > 0) x
+         FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.total_giving > 0 AND d.deceased IS NOT TRUE) x
       WHERE x.last_gift_date IS NOT NULL AND (${_quietLapsed.sql} OR ${_quietLapsing.sql})
       ORDER BY x.amount DESC
       LIMIT 50`,

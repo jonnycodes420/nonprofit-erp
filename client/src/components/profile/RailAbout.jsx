@@ -66,7 +66,7 @@ function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatus
               {(household||relationships.length>0)&&<RailSection title="Household and related" testid="dp-rail-related"
                 actionNode={<button type="button" data-testid="dp-rail-related-manage" onClick={()=>setRelatedOpen(true)} style={{background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,fontWeight:600,letterSpacing:0,textTransform:"none",cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>{household||relationships.length?"Manage":"Add"}</button>}>
                 {household&&<div style={{fontSize:13,marginBottom:6}}><RecordLink to={householdHref(household.id)} data-record-link="household" style={{color:RAIL.text,fontWeight:700,textDecoration:"underline dotted"}}>{household.name}</RecordLink></div>}
-                {household&&(household.members||[]).filter(m=>m.id!==donor.id).map(m=><button key={"hh:"+m.id} type="button" onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"block",background:"none",border:"none",padding:"4px 0",color:RAIL.text,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>{m.name} <span style={{color:RAIL.dim}}>· household</span></button>)}
+                {household&&(household.members||[]).filter(m=>m.id!==donor.id).map(m=><button key={"hh:"+m.id} type="button" onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"block",background:"none",border:"none",padding:"4px 0",color:RAIL.text,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>{m.name}{m.deceased?(m.died_words?` (died ${m.died_words})`:" (died)"):""} <span style={{color:RAIL.dim}}>· household</span></button>)}
                 {relationships.filter(r=>!(household&&(household.members||[]).some(m=>m.id===r.relatedDonorId))).map(r=><button key={r.id} type="button" data-testid="dp-rail-related-row" onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(r.relatedDonorId)} style={{display:"block",background:"none",border:"none",padding:"4px 0",color:RAIL.text,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>{relationshipLine(r)}{r.side&&<span style={{color:RAIL.dim}}> · {fmtFull(r.relatedDonorTotalGiving)}</span>}</button>)}
               </RailSection>}
               {/* PROFILE-2 · 5 ABOUT: donor since and roles, the owner, the giving
@@ -100,7 +100,7 @@ function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatus
                   {!isReadOnly&&<ProfileGroups donorId={donor.id} isReadOnly={isReadOnly}>{(chips,addCtl)=>!chips.length&&addCtl?<div data-testid="dp-about-group" style={{fontSize:12.5}}>{addCtl}</div>:null}</ProfileGroups>}
                 </div>
               </RailSection>
-              <RhythmCard rhythm={R.rhythm}/>
+              <RhythmCard rhythm={R.rhythm} deceased={donor.deceased}/>
           {(donor.assignedToName||(isAdmin&&isTeam))&&<RailSection title="Relationship owner" testid="dp-rail-owner"
             actionNode={isAdmin&&isTeam&&donor.assignedToName&&<button onClick={()=>setShowReassign(v=>!v)}
               style={{background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,fontWeight:600,letterSpacing:0,textTransform:"none",cursor:"pointer",fontFamily:"inherit"}}>{showReassign?"Cancel":(donor.assignedToName?"Reassign":"Assign")}</button>}>

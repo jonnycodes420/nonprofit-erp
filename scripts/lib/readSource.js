@@ -71,7 +71,7 @@ const FILES = {
   // MEMBERS-2's supporter surface, were outside the security battery while
   // reading as covered. Found when FIX-9 added three group routes and §1
   // passed without probing them.
-  "server.js": ["server.js", "routes/webhooks.js", "routes/billing.js", "routes/finance.js", "routes/volunteer.js", "routes/volunteerScheduling.js", "routes/supporter.js", "routes/agent.js", "routes/give.js", "routes/crm.js", "routes/jobs.js", "routes/email.js", ...SPLIT1_PARTS],
+  "server.js": ["server.js", "routes/webhooks.js", "routes/billing.js", "routes/finance.js", "routes/volunteer.js", "routes/volunteerScheduling.js", "routes/supporter.js", "routes/agent.js", "routes/give.js", "routes/crm.js", "routes/jobs.js", "routes/email.js", ...SPLIT1_PARTS, "server/donors/deceased.js"],   // PEOPLE-1: mounted from relationships.js
   "client/src/App.jsx": ["client/src/App.jsx", "client/src/lib/tabRegistry.js"],
   "client/src/components/Donors.jsx": ["client/src/components/Donors.jsx", "client/src/components/donorShared.jsx",
     "client/src/components/DonorImport.jsx", ...IMPORT_PARTS, "client/src/components/DonorProfile.jsx", ...PROFILE_PARTS, "client/src/components/DonorDirectory.jsx"],

@@ -190,7 +190,7 @@ function joinReasons(reasons) {
 // a row from another org is refused here as well, so a mistake upstream can
 // never pair two organisations' people.
 function findDuplicatePairs(rows, opts = {}) { return findPairs(rows, opts).pairs; }
-function findPairs(rows, { orgId, dismissed = new Set(), near = null, familiesDismissed = new Set() } = {}) {
+function findPairs(rows, { orgId, dismissed = new Set(), near = null, familiesDismissed = new Set(), linked = new Set() } = {}) {
   const live = rows.filter(d => !d.deleted_at && !d.erased_at && (!orgId || d.org_id === orgId));
   if (orgId && live.length !== rows.filter(d => !d.deleted_at && !d.erased_at).length) {
     throw new Error("findDuplicatePairs: rows from another org");
@@ -228,6 +228,8 @@ function findPairs(rows, { orgId, dismissed = new Set(), near = null, familiesDi
     const a = byId.get(x), b = byId.get(y);
     const j = judgePair(a, b, { near });
     if (!j) continue;
+    // PEOPLE-1: two people linked as spouse or partner are family, never a duplicate.
+    if (linked.has(key)) { if (!familiesDismissed.has(key)) families.push({ key, a: a.id, b: b.id, reasons: ["Linked as spouse or partner"] }); continue; }
     if (j.family) { if (!familiesDismissed.has(key)) families.push({ key, a: a.id, b: b.id, reasons: j.reasons }); continue; }
     const crossHousehold = !!a.household_id && !!b.household_id && a.household_id !== b.household_id;
     pairs.push({ key, a: a.id, b: b.id, confidence: j.confidence, reasons: j.reasons, crossHousehold });

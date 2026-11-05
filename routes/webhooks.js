@@ -2316,7 +2316,7 @@ async function resolveOrgAndDonorForSubscription(accountId, stripeSubscriptionId
 // Short "you're all set" note — a warm confirmation, not another ask.
 // TRANSACTIONAL (W-4): rides the same policy as dunning.
 async function sendRecoveredThankYouEmail(org, donor, subscriptionRow) {
-  const decision = await donorMailDecision("recovered_thankyou", donor.email, org.id);
+  const decision = await donorMailDecision("recovered_thankyou", donor.email, org.id, { donorId: donor.id });
   if (!decision.send) return;
   const dfName = await donorFacingOrgName(org.id, org.name); // W-2 white-label
   const hi = String((await import("../shared/greeting.js")).greetingLine(donor, { word: "Hi" }))   // POLISH-4: the one opening line

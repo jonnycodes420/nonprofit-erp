@@ -14,6 +14,7 @@ import { LogConversationModal } from "../LogConversation";
 import { LogTouchpointModal } from "./modals";
 import { BriefPanel } from "../MajorGifts";
 import { PlanFollowUpModal } from "../PlanFollowUp";
+import { MarkDeceasedModal, UndoDeceasedModal, DeceasedBanner } from "./DeceasedDialog";   // PEOPLE-1
 
 // MENU-1 — More's menu. Its max height is the room between the button and the
 // screen's edge (or the phone's tab bar), less 12 px, and it scrolls inside; with more room above than
@@ -83,7 +84,8 @@ function MoreMenu({groups,onPick,onClose}){
   );
 }
 
-function ProfileHeader({setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg}){
+function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg}){
+  const [deceasedOpen,setDeceasedOpen]=useState(null);   // PEOPLE-1: "mark" or "undo"
   return <>
         <div className="donor-profile-header dp2-head dp3-head" data-testid="dp-head" style={{padding:"16px 0 0",display:"grid",gridTemplateColumns:"72px minmax(0,1fr) auto",columnGap:20,rowGap:0,alignItems:"start"}}>
           <div className="dph-backrow" style={{gridColumn:"1 / -1",gridRow:1,marginBottom:16}}>
@@ -102,6 +104,7 @@ function ProfileHeader({setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap
             {headTags[1]&&<div className="dph-tag2" data-testid="dp-head-tag-2" style={{whiteSpace:"nowrap"}}>{headTags[1]}</div>}
           </div>}
           <ContactLine donor={donor} isReadOnly={isReadOnly} onAdd={onEdit}/>
+          <DeceasedBanner donor={donor}/>
           {/* PROFILE-1 — THREE BUTTONS AND A MENU, AT EVERY WIDTH. The header
               carried five actions across the top of the record, which is four
               more than anybody presses in a row; at 390 the overflow already
@@ -194,6 +197,8 @@ function ProfileHeader({setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap
                     :["Make a volunteer",()=>setMakeVolOpen(true),isReadOnly,"dp-make-volunteer"],
                   // POLISH-4 — two records she knows are one person, merged by hand.
                   ...(setMergeOpen?[["Merge with…",()=>setMergeOpen(true),isReadOnly,"dp-merge-with"]]:[]),
+                  // PEOPLE-1 — marked with care, and undone from the same place.
+                  ...(donor.kind==="organisation"?[]:[donor.deceased?["Undo: they're not deceased",()=>setDeceasedOpen("undo"),isReadOnly,"dp-not-deceased"]:["Mark as deceased",()=>setDeceasedOpen("mark"),isReadOnly,"dp-mark-deceased"]]),
                   // TRUST-2 — a person's own data, in one file, when they ask.
                   ...(isAdmin?[["Export this person's data",exportPersonData,false]]:[]),
                   // FIX-14 Part 3 — Erase and Delete, at the bottom of More, under a rule, never on the page.
@@ -270,6 +275,8 @@ function ProfileHeader({setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap
             {briefOpen&&<Modal onClose={()=>setBriefOpen(false)} width={640} title="Brief me">
               <div>{lockMajor(<BriefPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam}/>,{minHeight:120})}</div>
             </Modal>}
+            {deceasedOpen==="mark"&&<MarkDeceasedModal donor={donor} onClose={()=>setDeceasedOpen(null)} onDone={()=>{loadDpThread();loadRel();if(onInteractionAdded)onInteractionAdded();}} onClosed={onRecordChanged}/>}
+            {deceasedOpen==="undo"&&<UndoDeceasedModal donor={donor} onClose={()=>setDeceasedOpen(null)} onDone={()=>{loadDpThread();loadRel();if(onInteractionAdded)onInteractionAdded();}} onClosed={onRecordChanged}/>}
             {planOpen&&<PlanFollowUpModal donor={{id:donor.id,name:donor.name}}
               onSaved={()=>loadDpThread()} onClose={()=>setPlanOpen(false)}/>}
           </div>

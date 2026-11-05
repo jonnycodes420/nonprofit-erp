@@ -280,7 +280,7 @@ async function checkOrg(orgId, opts = {}) {
       `SELECT dr.id FROM donor_relationships dr
          JOIN donors a ON a.id = dr.donor_id_a AND a.org_id = dr.org_id AND a.deleted_at IS NULL
          JOIN donors b ON b.id = dr.donor_id_b AND b.org_id = dr.org_id AND b.deleted_at IS NULL
-        WHERE dr.org_id = ? AND dr.relationship_type IN ('spouse','household')
+        WHERE dr.org_id = ? AND dr.relationship_type IN ('spouse','partner','household')
           AND COALESCE(a.kind,'person') NOT IN ('organisation','anonymous') AND COALESCE(b.kind,'person') NOT IN ('organisation','anonymous')
           AND (a.household_id IS NULL OR b.household_id IS NULL)`, [orgId]);
     for (const r of apart) add("household-one", { relationship: r.id });

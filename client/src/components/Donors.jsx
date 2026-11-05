@@ -821,7 +821,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         // record that hasn't arrived, so no "Add a photo for undefined".
         <div data-testid="person-loading" role="status" aria-live="polite" style={{padding:"40px 24px",textAlign:"center",color:T.ink3,fontSize:14}}>Loading this person…</div>
       ) : selected ? (
-      <ErrorBoundary key={selected.id}><DonorProfile donor={selected} onClose={()=>{setSelected(null);setGiftHandoff(null);}}
+      <ErrorBoundary key={selected.id+(selected.deceased?":in-memory":"")}><DonorProfile donor={selected} onRecordChanged={()=>{selectDonor(selected,1);apiFetch("/tasks").then(t=>{if(Array.isArray(t))setData(prev=>({...prev,tasks:t}));}).catch(()=>{});}} onClose={()=>{setSelected(null);setGiftHandoff(null);}}
         onStageChange={moveToStage} onLogTouchpoint={()=>{setLogTarget(selected);}}
         aiMap={aiMap} aiErr={aiErr} loadingKey={loadingKey} getAI={getAI}
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
