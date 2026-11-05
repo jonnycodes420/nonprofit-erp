@@ -807,9 +807,20 @@ app.put("/orgs/branding", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
     sets.push("logo_data=?"); params.push(logoData);
   }
 
+  const [before] = removeLogo ? await query("SELECT logo_data FROM orgs WHERE id=?", [req.user.orgId]) : [null];
   if (sets.length) {
     params.push(req.user.orgId);
     await run(`UPDATE orgs SET ${sets.join(", ")} WHERE id=?`, params);
+  }
+  // LIST-3 · ONE LOGO. The giving page, receipts and emails read the giving
+  // page's logo first (portal_settings), so a logo saved here is that logo
+  // too; otherwise an older one there kept showing. Removing takes away only
+  // the logo this screen put there, never one set on the giving page itself.
+  if (removeLogo) {
+    if (before && before.logo_data)
+      await run(`UPDATE portal_settings SET logo_data = NULL WHERE org_id = ? AND logo_url IS NULL AND logo_data = ?`, [req.user.orgId, before.logo_data]);
+  } else if (typeof logoData === "string") {
+    await run(`UPDATE portal_settings SET logo_data = ?, logo_url = NULL WHERE org_id = ?`, [logoData, req.user.orgId]);
   }
   const orgs = await query("SELECT id, name, logo_data, brand_accent, brand_accent_fg FROM orgs WHERE id=?", [req.user.orgId]);
   res.json({ ...orgs[0], adjusted: !!(normalized && normalized.adjusted) });
