@@ -23,6 +23,7 @@ export function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
   const [msg,setMsg]=useState("");
   const [err,setErr]=useState("");
   const [dirty,setDirty]=useState(false);   // BUILD-54 §6
+  const [logoChanged,setLogoChanged]=useState(false);   // LIST-3
   useDirtyGuard(dirty);
   useEffect(()=>{
     apiFetch("/org").then(o=>{setLogo(o.logo_data||"");setAccent(o.brand_accent||"");setLoaded(true);}).catch(()=>setLoaded(true));
@@ -33,10 +34,11 @@ export function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
     if(disabled||saving)return;
     setSaving(true);setErr("");setMsg("");
     try{
-      const body={brandAccent:accent||"",logoData:logo||undefined,removeLogo:!logo};
+      // LIST-3: the logo goes only when she changed it; saving a colour never removes one.
+      const body={brandAccent:accent||"",...(logoChanged?(logo?{logoData:logo}:{removeLogo:true}):{})};
       const res=await apiFetch("/orgs/branding",{method:"PUT",body:JSON.stringify(body)});
       setAccent(res.brand_accent||"");
-      setDirty(false);
+      setDirty(false);setLogoChanged(false);
       setMsg(res.adjusted?"Saved, your color was deepened slightly so text stays readable.":"Branding saved.");
       onSaved&&onSaved();
     }catch(e){setErr(errorMessage(e, "Could not save branding."));}
@@ -57,8 +59,8 @@ export function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
             <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
               shape="square" preview={logo||null}
               disabled={disabled} label={logo?"Replace logo":"Drag your logo here, or browse"}
-              onFile={({dataUrl})=>{setDirty(true);setLogo(dataUrl);}}
-              onRemove={disabled?null:()=>{setDirty(true);setLogo("");}}/>
+              onFile={({dataUrl})=>{setDirty(true);setLogoChanged(true);setLogo(dataUrl);}}
+              onRemove={disabled?null:()=>{setDirty(true);setLogoChanged(true);setLogo("");}}/>
           </div>
           <div>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>Accent color</div>
