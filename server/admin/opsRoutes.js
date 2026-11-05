@@ -14,7 +14,14 @@ const BOARD = require("./board");
 const SOURCES = require("./opsSources");
 const STATUS = require("../../scripts/ci/status");
 
+const { rateLimit } = require("../../rateLimitStore");   // shared by every replica
+
 const routers = { r0: express.Router() };
+// The page reads once and then every two minutes; this is per IP, before the door.
+const opsLimiter = rateLimit("opsLimiter", {
+  windowMs: 15 * 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false,
+  skip: () => process.env.TEST_MODE === "1" || process.env.DISABLE_RATE_LIMIT === "1",
+});
 const STALE_MS = 15 * 60 * 1000;
 
 function mount(ctx) {
@@ -33,7 +40,7 @@ function mount(ctx) {
       .then(rows => (rows.length && rows[0].is_super_admin === true ? next() : notFound(res)), next);
   });
 
-  app.get("/ops", opsOnly, wrap(async (req, res) => {
+  app.get("/ops", opsLimiter, opsOnly, wrap(async (req, res) => {
     const now = Date.now();
     const h = healthBody();
     const snap = await SOURCES.readSnapshot(query).catch(() => null);
