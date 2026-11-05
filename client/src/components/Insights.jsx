@@ -461,12 +461,16 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
     const items = deck.seen || deck.tabs.flatMap(t => t.moves.slice(0, 50).map(m => ({ kind: m.kind, itemKey: m.itemKey, donorIds: m.ids })));
     if (items.length) apiFetch("/insights/seen", { method: "POST", body: JSON.stringify({ items }) }).catch(() => {});
   }, [seenKey]);
+  // INSIGHTS-2: before an org's first Insights are built the deck has no tabs
+  // and says so; it reads again until they are in.
+  const preparing = !!(deck && deck.preparing);
+  useEffect(() => { if (!preparing) return; const t = setTimeout(load, 4000); return () => clearTimeout(t); }, [data]);
   if (err) return null;
   if (!deck) return <section aria-label="Your moves" data-testid="home-moves" style={{ ...CARD, color: T.ink3, fontSize: 14 }}>Reading your donors…</section>;
 
   const live = t => t.moves.filter(m => !gone.has(m.id));
   const tabs = deck.tabs.map(t => ({ ...t, left: live(t) }));
-  const cur = tabs.find(t => t.key === (tab || deck.open)) || tabs[0];
+  const cur = tabs.find(t => t.key === (tab || deck.open)) || tabs[0] || { key: null, moves: [], left: [], count: 0 };
   const moves = cur.left;
   const i = Math.min(pos[cur.key] || 0, Math.max(moves.length - 1, 0));
   const m = moves[i] || null;
@@ -538,7 +542,7 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
       {data.coverage && data.coverage.stale && <div role="note" style={{ fontSize: 13.5, color: T.ink, borderLeft: "3px solid " + T.gold, paddingLeft: 10 }}>{data.coverage.sentence}</div>}
       {noDonors && !anyMoves ? <NoDonorsCard onNavigate={onNavigate} sample={sample} importAbove={importAbove} /> : !anyMoves ? (
         <div data-testid="moves-empty" style={{ background: T.bg, borderRadius: 16, padding: "26px 24px", fontSize: 15, color: T.ink, lineHeight: 1.55 }}>
-          No moves yet. Once gifts are in Steward, the people to reach out to, and what to say, show here one at a time.
+          {preparing ? data.sentence : "No moves yet. Once gifts are in Steward, the people to reach out to, and what to say, show here one at a time."}
         </div>
       ) : <>
         <div role="tablist" aria-label="Your moves by rung" className="moves-tabs">
