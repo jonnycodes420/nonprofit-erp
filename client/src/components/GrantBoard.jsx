@@ -21,6 +21,7 @@ const day = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")
 const chip = on => ({ background: on ? T.ink : T.white, color: on ? T.white : T.ink, border: "1px solid " + T.bg3, borderRadius: 999, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" });
 const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", fontSize: 13, color: T.ink, background: T.white, fontFamily: "inherit" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" });
+const AWD = ["awarded", "reporting", "closed"];   // GRANTS-FIX: the stages that hold an award
 const askCents = g => (["awarded", "reporting", "closed"].includes(g.status) && g.amountAwardedCents ? g.amountAwardedCents : g.amountRequestedCents) || 0;
 
 export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey }) {
@@ -72,7 +73,9 @@ export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey 
       setMsg((e && e.sentence) || errorMessage(e, "That grant did not move."));
     }
   };
-  const tryMove = (g, status) => (status === "declined" ? setDeclining({ g, reasons: (data && data.declineReasons) || [] }) : move(g, status));
+  // GRANTS-FIX: into a stage that holds an award, from one that does not, with no award recorded: the award step first.
+  const tryMove = (g, status) => (status === "declined" ? setDeclining({ g, reasons: (data && data.declineReasons) || [] })
+    : AWD.includes(status) && !AWD.includes(g.status) && !g.awardPledgeId ? setAwarding({ g, target: status }) : move(g, status));
 
   if (!data) return <div style={{ padding: 30, color: T.ink3, fontSize: 13 }}>{msg || "Loading the pipeline…"}</div>;
   const stages = data.statuses || [];

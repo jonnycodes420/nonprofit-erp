@@ -115,6 +115,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
   // GRANTS-1: a stage move is PATCH /grants/:id/stage, the board's own route, with Undo.
   const changeStatus=async(status)=>{
     const g=grant;
+    if(AWARDED_STATUS_KEYS.includes(status)&&!AWARDED_STATUS_KEYS.includes(curStatus)&&!g.awardPledgeId){setAwarding({target:status});return;}
     try{
       const r=await apiFetch(`/grants/${g.id}/stage`,{method:"PATCH",body:JSON.stringify({status})});
       onUpdate({...g,status:r.status});
