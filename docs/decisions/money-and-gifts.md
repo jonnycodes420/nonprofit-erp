@@ -231,6 +231,18 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   breakdown, fund balances) comes second. When nothing has ever posted (`/finance/summary` `ledgerEmpty`)
   the ledger is ONE card that says why and what fills it, never a row of $0s. Spending is never drawn in
   an error colour: expenses read ink, a negative surplus or cash on hand reads brass.
+- **A gift can belong to an event (GIFTS-1).** `gifts.event_id`, set from the gift form, a gift's edit,
+  Snap a check's confirm, each deposit line and the event page's Record a gift (attendee menu or the page),
+  validated in the org (`server/events/eventGifts.js`). The importer links a gift whose Event or Campaign
+  column names one event exactly; a name two events share links nothing. The event's Raised, the
+  attendee's Gift and the profile all read it through `EVENT_GIFT_MATCH`; nothing sums it again.
+- **A pledge's schedule is one generator (GIFTS-1).** `shared/depositSheet.js` `generateInstallments`:
+  weekly, monthly, quarterly, semiannual or yearly; each installment the even share to the cent, the
+  remainder on the LAST. The pledge form, its edit and the grant award step show `scheduleWords` of the
+  same rows before saving (`client/src/components/gifts/PledgeSchedule.jsx`). An edit re-plans through
+  PUT /pledges/:id/installments, which lays the new plan and re-applies every payment on the pledge
+  oldest first (`pledgeWrite.applyPayments`): a payment is never lost to a new schedule. A payment
+  against a named pledge auto-applies only to that pledge's oldest unpaid installment.
 - **A month-close tick is never vacuous (SWEEP-5).** A gift with no payment method ("Needs you") may be
   a check, so it counts against "Every check is on a deposit", as it does in the bookkeeper's file.
 

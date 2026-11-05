@@ -20,8 +20,16 @@ const TOTAL_KEYS = ["total_giving", "lifetime_total"];
 
 const tokenRe = keys => `\\{\\{\\s*(?:${keys.join("|")})\\s*\\}\\}`;
 
+// LIST-3: sentences that say who she is asking. They name no merge field, so
+// the rule above cannot see them; for a person with no gift each is swapped
+// for its no-gift variant. {{org_name}} is filled after, by the renderer.
+const GIVEN_BEFORE = [
+  [/\bwe are asking the people who have given before to go first\b/gi, "we're asking friends of {{org_name}} to join us"],
+];
+
 export function withoutMissingGift(text, { hasGift = true, hasTotal = true } = {}) {
   let out = String(text == null ? "" : text);
+  if (!hasGift) for (const [re, variant] of GIVEN_BEFORE) out = out.replace(re, variant);
   const keys = [...(hasGift ? [] : GIFT_KEYS), ...(hasTotal ? [] : TOTAL_KEYS)];
   if (!keys.length) return out;
   // The leading space (after the sentence before it) is kept as it was.

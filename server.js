@@ -1462,8 +1462,11 @@ async function recordGift(o) {
            JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
           WHERE i.org_id=? AND p.donor_id=? AND i.paid_gift_id IS NULL
             AND p.status='open' AND round(i.amount::numeric * 100)::bigint = ?
+            AND (?::text IS NULL OR p.id = ?)
           ORDER BY i.due_date ASC, i.seq ASC LIMIT 1`,
-        [orgId, o.donorId, Math.round(amount * 100)]).catch(() => []);
+        // GIFTS-1: a payment made against one pledge is applied to that
+        // pledge's oldest unpaid installment, never another pledge's.
+        [orgId, o.donorId, Math.round(amount * 100), o.pledgeId || null, o.pledgeId || null]).catch(() => []);
       if (inst) {
         const upd = await query(
           `UPDATE pledge_installments SET paid_gift_id=?, paid_at=NOW()
@@ -11642,9 +11645,11 @@ function giveThemePayload(org) {
 }
 
 // The theme columns every public /give endpoint selects from portal_settings.
-// Aliased to the names portalCardTheme + giveThemePayload read.
+// Aliased to the names portalCardTheme + giveThemePayload read. LIST-3: the
+// logo falls back to Settings → Branding's (orgs.logo_data), so a logo saved
+// there reaches the giving page; every query here joins orgs as `o`.
 const GIVE_THEME_COLS = `ps.display_name,
-  COALESCE(ps.logo_url, ps.logo_data) AS give_logo,
+  COALESCE(ps.logo_url, ps.logo_data, o.logo_data) AS give_logo,
   COALESCE(ps.header_image_url, ps.header_image_data) AS give_header_image,
   ps.header_focal_x, ps.header_focal_y, ps.header_crop,
   ps.primary_color, ps.accent_color, ps.button_color, ps.background_tint,
@@ -12897,4 +12902,5 @@ require("./routes/email").mount({
 // IMPORT-4: the in-process suites (numbers1-foot) record an undated gift
 // through the one gift path, as the spreadsheet import does.
 app.locals.recordGift = recordGift;
+app.locals.recalcPledgePayment = recalcPledgePayment;   // GIFTS-1: scripts/ops/gifts1-grant-received.js applies its payment
 module.exports = app;

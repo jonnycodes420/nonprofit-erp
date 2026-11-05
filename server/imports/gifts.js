@@ -12,6 +12,7 @@ const { newId } = require("../shared/newId");   // IDS-1: every new row id is pr
 // FIX-12 Part 3: the one door to a model (asks the org's AI switch on every call).
 const { anthropicFor, requireAi, transcribeAudio, AiOffError, AI_OFF_MESSAGE, recordAiFallback } = require("../../aiClient");
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
+const EG = require("../events/eventGifts");   // GIFTS-1: a gift's event, by id or by its exact name
 const lapseRule = require("../../lapseRule");   // FIX-49: the one lapse rule
 
 const routers = {
@@ -454,6 +455,16 @@ app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res
     chequeByLine.set(Number(l.line), r.assetId);
   }
 
+  // GIFTS-1: the event each line's gift was given at, keyed by line like the
+  // photograph; an event not in this org is refused before anything is written.
+  const eventByLine = new Map();
+  for (const l of (Array.isArray(body.lines) ? body.lines : [])) {
+    if (!l || !l.eventId) continue;
+    const ev = await EG.eventOf(query, orgId, l.eventId);
+    if (!ev) return res.status(404).json({ error: "Event not found", line: Number(l.line) });
+    eventByLine.set(Number(l.line), ev.id);
+  }
+
   // THE GATE, RE-EVALUATED HERE. The screen disables the button; the server
   // refuses the write. A client that has drifted from the plan (a stale tab, a
   // replayed request) cannot commit a slip that does not foot.
@@ -531,6 +542,7 @@ app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res
       // line. Stored before the gift so the gift is never written referring
       // to bytes that failed to save.
       chequeAssetId: chequeByLine.get(Number(l.line)) || null,
+      eventId: eventByLine.get(Number(l.line)) || null,
       actorId: actorInfo.id, actorName: actorInfo.name,
       timelineNote: l.memo || `Deposited ${depositDate}`,
       source: "deposit",
@@ -772,6 +784,8 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
   // it), so Undo import reaches these gifts, and the campaign by id.
   const runId = IMPORT_RUN_ID_RE.test(String(req.body.importId || "")) ? String(req.body.importId) : null;
   const campaignIdOf = await campaignIdResolver(orgId);
+  // GIFTS-1: an Event or Campaign column that names an event exactly links the gift.
+  const eventIdOf = await EG.eventIdsByName(query, orgId);
   let inserted = 0, financeSynced = 0;
   const affectedDonorIds = new Set();
   const batchErrors = [];
@@ -807,11 +821,11 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
           // conflicted (already-imported) row inserts nothing, and its
           // interaction + ledger stamp are skipped with it.
           const kept = await queryTx(client,
-            `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,fund_id,notes,external_id,payment_method,import_id,created_by,created_by_name)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,fund_id,notes,external_id,payment_method,import_id,created_by,created_by_name,event_id)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
              ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING RETURNING id`,
             [id, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, campaignIdOf(g.campaign), g.fund_id, g.notes, g.externalId || null,
-             g.paymentMethod, runId, actor(req).id, actor(req).name]
+             g.paymentMethod, runId, actor(req).id, actor(req).name, eventIdOf(g.campaign)]
           );
           if (!kept.length) { g._conflicted = true; continue; }
           keptInBatch++; keptRows.push(g);
@@ -863,7 +877,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
   // same transaction (see import-combined).
   await queueRecentWork((sql, params) => queryTx(txc, sql, params), orgId, jobRunId,
     recentToRecord.map(g => ({ donorId: g.donorId, amount: g.amount, date: g.date, type: g.type, campaign: g.campaign,
-      campaignId: campaignIdOf(g.campaign), notes: g.notes, fundId: g.fund_id, paymentMethod: g.paymentMethod,
+      campaignId: campaignIdOf(g.campaign), eventId: eventIdOf(g.campaign), notes: g.notes, fundId: g.fund_id, paymentMethod: g.paymentMethod,
       externalId: g.externalId || null })),
     { actorId: importerId, actorName: importerName, thanks: thanksAnswer, touched: [...affectedDonorIds] });
   recentQueued = recentToRecord.length;

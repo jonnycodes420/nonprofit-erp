@@ -58,6 +58,7 @@ const MODULES = [
   "../server/donors/records",
   "../server/donors/relationships",
   "../server/donors/routes",
+  "../server/events/eventGifts",
   "../server/events/publicPage",
   "../server/events/routes",
   "../server/grants/funders",
@@ -125,6 +126,7 @@ routers.r1.use(require("../server/reports/fundraising").routers.r1);
 routers.r1.use(require("../server/org/publicPages").routers.r1);
 routers.r1.use(require("../server/reports/impact").routers.r1);
 routers.r1.use(require("../server/memberships/routes").routers.r1);
+routers.r1.use(require("../server/events/eventGifts").routers.r1);   // GIFTS-1
 routers.r1.use(require("../server/events/routes").routers.r1);
 routers.r1.use(require("../server/events/publicPage").routers.r1);
 
