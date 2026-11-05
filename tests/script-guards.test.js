@@ -88,6 +88,9 @@ const GUARDED_WRITERS = [
   // GIFTS-1: one payment gift per grant for its typed Received less its recorded
   // payments, through recordGift. Dry run by default; --apply writes through writerDbUrl.
   "gifts1-grant-received",
+  // MOPUP-1: removes the old whole-award income rows (source='grant', no
+  // gift_id). Dry run by default; --apply writes through writerDbUrl, one audit row per org.
+  "mopup1-award-stamps",
   "backfill-campaign-attribution",                    "dedupe-finance-gift-stamps",
    "fix-build54-demo-photos",
   "fix-demo-finance-ledger",  "load-irs-ein-registry",

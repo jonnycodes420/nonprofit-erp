@@ -115,7 +115,7 @@ function FundModal({ fund, onSave, onClose }) {
 // once). Free text stays for true vendors. Declining a prompt logs the manual
 // row as typed.
 function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
-  const today = new Date().toISOString().split("T")[0];
+  const today = orgTodayCivil();   // MOPUP-1: the org's day, not the UTC day
   const [form, setForm] = useState({ date:today, description:"", vendorDonor:"", amount:"", type:"income", accountId:"", fundId:"", notes:"" });
   const [linked, setLinked] = useState(null);           // { kind:'donor'|'grant', entity }
   const [sugs, setSugs] = useState(null);               // { donors, grants } | null

@@ -565,9 +565,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
 
 
   const openSetGoal=()=>{
-    const today=new Date();
-    const in90=new Date(today);in90.setDate(in90.getDate()+90);
-    setGoalForm({label:"",goalAmount:"",goalType:"total_raised",periodStart:today.toISOString().split("T")[0],periodEnd:in90.toISOString().split("T")[0]});
+    setGoalForm({label:"",goalAmount:"",goalType:"total_raised",periodStart:orgTodayPlus(0),periodEnd:orgTodayPlus(90)});
     setGoalModalMode("create");
     setShowSetGoal(true);
   };
@@ -735,7 +733,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       // two ways. The sub-line is now the reason, not a restatement.
       const p=paceOf({raised:goal.currentAmount,goal:goal.goalAmount,
                       start:goal.periodStart,end:goal.periodEnd,
-                      today:new Date().toISOString().slice(0,10)});
+                      today:orgTodayPlus(0)});
       if(!p){paceLabel=null;paceSub=null;}
       else{
         paceLabel=p.label;

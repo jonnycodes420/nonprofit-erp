@@ -8,6 +8,7 @@ import { useState } from "react";
 import { T } from "./shared";
 import { apiFetch } from "../api";
 import { errorMessage } from "../lib/domainError";
+import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { offerUndo } from "./EditHistory";
 import EventField from "./gifts/EventField";   // GIFTS-1: the event a check was given at
 
@@ -170,7 +171,7 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
   const r = card.read || {};
   const isMoney = card.stakes === "money";
   const [amount, setAmount] = useState(centsToInput(card.amount && card.amount.cents));
-  const [date, setDate] = useState(isoDate(r.date) || isoDate(card.receivedAt) || new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(isoDate(r.date) || isoDate(card.receivedAt) || orgTodayCivil());
   const [fundId, setFundId] = useState((card.fund && card.fund.id) || "");
   const [fundTouched, setFundTouched] = useState(false);
   const [eventId, setEventId] = useState("");
