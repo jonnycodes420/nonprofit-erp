@@ -199,7 +199,9 @@ jobs:
   # shard; only `test` reads them all.)
   shard:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # FLAKE-1: 45, not 25, so the Playwright step's three attempts fit inside
+    # the job; a shard that installs on the first try takes what it always did.
+    timeout-minutes: 45
     needs: [tree-check, guards, plan]
     if: needs.tree-check.outputs.skip != 'true' && needs.tree-check.outputs.docs_only != 'true'
     strategy:
@@ -329,54 +331,61 @@ jobs:
           git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
           node scripts/ci/route-diff.js --against FETCH_HEAD ${{ startsWith(github.head_ref, 'split-') && '--strict' || '' }}
 
-      # ── Playwright + Chromium, cached ────────────────────────────────────
+      # ── Playwright + Chromium + WebKit, and their system packages, cached ──
       # Pinned to the same version Jonathan's ~/steward-qa runs, so a suite
       # that passes on the laptop and fails here is a real difference and not
-      # a browser version. The cache key carries the version, so a bump
-      # invalidates it on its own; the browser download is ~140MB and the
-      # install is the slowest step in this job without it.
-      - name: Cache Playwright (package + Chromium)
+      # a browser version. FLAKE-1: the system packages (181 .debs, 114 MB) are
+      # cached too. On 5 Nov the Azure mirror sent them at a few KB/s and every
+      # build lost shards here, apt exit 100, before a test ran. With the .debs
+      # restored apt downloads nothing. The caches are RESTORED here and SAVED
+      # right after the install (not at the end of the job, which actions/cache
+      # skips when a suite fails), and `playwright-cache` below fills them from
+      # main, where every PR can read them.
+      - name: Playwright cache keys
+        id: pw-keys
+        run: echo "debs=pw-debs-${ImageOS:-ubuntu}-${ImageVersion:-unknown}-1.61.1-webkit" >> "$GITHUB_OUTPUT"
+      - name: Restore Playwright (package + browsers)
         id: pw-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             .playwright
             .playwright-browsers
           # PROFILE-2: WebKit too (smoke-walk §scroll drives Safari's engine), so the key names it.
           key: playwright-${{ runner.os }}-1.61.1-webkit
-      # FIX-34: PR #170's job sat on this step for five hours on 7 Oct. The
-      # step now has its own ceiling, each attempt is capped at six minutes
-      # by `timeout`, and a failed or hung attempt is retried once before the
-      # step fails. The job itself also has a ceiling (timeout-minutes above).
+      - name: Restore Playwright's system packages (.deb)
+        id: pw-debs
+        uses: actions/cache/restore@v4
+        with:
+          path: .playwright-debs
+          key: ${{ steps.pw-keys.outputs.debs }}
+          restore-keys: pw-debs-
+      # FIX-34 gave this step its own ceiling; FIX-48 made apt wait for its
+      # lock. FLAKE-1: scripts/ci/install-playwright.sh caps every attempt
+      # (the system packages under `sudo timeout`, so a hung apt-get dies with
+      # it), repairs dpkg between attempts, launches both browsers to prove
+      # them, and tries three times before the step fails.
       - name: Install Playwright + Chromium
-        timeout-minutes: 20
-        run: |
-          mkdir -p .playwright
-          # The package.json is WRITTEN, not `npm init -y`-ed: npm derives the
-          # name from the directory and refuses a leading dot ("Invalid name:
-          # '.playwright'"), which failed the whole job. `private` keeps npm
-          # from ever treating it as publishable.
-          if [ ! -f .playwright/package.json ]; then
-            printf '{"name":"steward-ci-playwright","version":"1.0.0","private":true}\n' > .playwright/package.json
-          fi
-          install_pw() {
-            if [ ! -d .playwright/node_modules/playwright ]; then
-              (cd .playwright && timeout 360 npm i --no-audit --no-fund playwright@1.61.1) || return 1
-            fi
-            # --with-deps installs the shared libraries Chromium needs on the
-            # runner image; it is a no-op when they are already present, and it
-            # is NOT covered by the cache (it writes outside the workspace).
-            (cd .playwright && timeout 360 npx playwright install --with-deps chromium webkit)
-          }
-          # FIX-48: on 23 Oct the first attempt's apt-get (from --with-deps) hung
-          # on a slow mirror. `timeout` killed npx but not the sudo apt-get it
-          # had started, so the retry died at once on "Could not get lock
-          # /var/lib/dpkg/lock-frontend". apt now waits up to five minutes for
-          # that lock, and the retry first waits for the orphan to finish.
-          echo 'DPkg::Lock::Timeout "300";' | sudo tee /etc/apt/apt.conf.d/99steward-lock-wait >/dev/null
-          wait_dpkg() { for i in $(seq 1 60); do sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || return 0; sleep 5; done; }
-          install_pw || { echo "Playwright install failed or hung; retrying once"; wait_dpkg; install_pw; }
-          node -e "console.log('playwright', require('$GITHUB_WORKSPACE/.playwright/node_modules/playwright/package.json').version)"
+        timeout-minutes: 35
+        env:
+          PW_DEB_CACHE: ${{ github.workspace }}/.playwright-debs
+        run: bash scripts/ci/install-playwright.sh 1.61.1
+      - name: Save Playwright (package + browsers)
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .playwright
+            .playwright-browsers
+          key: playwright-${{ runner.os }}-1.61.1-webkit
+      - name: Save Playwright's system packages (.deb)
+        if: steps.pw-debs.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .playwright-debs
+          key: ${{ steps.pw-keys.outputs.debs }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -512,36 +521,117 @@ jobs:
           path: .generated/suite-timings.json
           key: suite-timings-${{ github.run_id }}-${{ github.run_attempt }}
 
+  # ── FLAKE-1 · THE PLAYWRIGHT CACHES LIVE ON MAIN ──────────────────────────
+  # A cache saved by a PR is visible to that PR alone; main's is visible to
+  # every PR. A push to main almost never runs the battery (tree-check skips a
+  # tree that already passed), so without this job the browsers and the
+  # system packages were cached nowhere a new PR could read, and every PR's
+  # first run fetched 114 MB from the Ubuntu mirror. This job only LOOKS when
+  # both caches are there, installs and saves when one is missing, and gates
+  # nothing: no job needs it.
+  playwright-cache:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      PLAYWRIGHT_DIR: ${{ github.workspace }}/.playwright
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+      PW_DEB_CACHE: ${{ github.workspace }}/.playwright-debs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Playwright cache keys
+        id: pw-keys
+        run: echo "debs=pw-debs-${ImageOS:-ubuntu}-${ImageVersion:-unknown}-1.61.1-webkit" >> "$GITHUB_OUTPUT"
+      - name: Is the browser cache there?
+        id: pw-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .playwright
+            .playwright-browsers
+          key: playwright-${{ runner.os }}-1.61.1-webkit
+          lookup-only: true
+      - name: Are the system packages there?
+        id: pw-debs
+        uses: actions/cache/restore@v4
+        with:
+          path: .playwright-debs
+          key: ${{ steps.pw-keys.outputs.debs }}
+          lookup-only: true
+      - name: Install Playwright + Chromium + WebKit
+        if: steps.pw-cache.outputs.cache-hit != 'true' || steps.pw-debs.outputs.cache-hit != 'true'
+        timeout-minutes: 35
+        run: bash scripts/ci/install-playwright.sh 1.61.1
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .playwright
+            .playwright-browsers
+          key: playwright-${{ runner.os }}-1.61.1-webkit
+      - if: steps.pw-debs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .playwright-debs
+          key: ${{ steps.pw-keys.outputs.debs }}
+
   # ── Deploy gate: Railway backend (deploy rewire, 2026-08-11) ──────────────
-  # Runs ONLY on push to main, ONLY after a green test job. The shared
-  # "deploy-main" concurrency group with cancel-in-progress:false means
-  # deploys queue and never overlap (a superseded queued deploy is dropped in
-  # favor of the newest — deploys always converge on the latest green main).
+  # Runs ONLY on push to main, ONLY after a green test job.
+  #
+  # FLAKE-1 · NO DEPLOY IS EVER DROPPED. Both deploy jobs used to share ONE
+  # concurrency group, "deploy-main", with cancel-in-progress: false. GitHub
+  # holds at most one running and ONE pending job per group, and a newer
+  # pending job cancels the older pending one, whatever cancel-in-progress
+  # says. With two merges close together: A's Railway deploy runs, A's Vercel
+  # deploy waits, B's Railway deploy arrives and cancels A's Vercel deploy,
+  # then B's Vercel deploy cancels B's Railway deploy. B's backend never
+  # shipped. Now:
+  #   · each deploy job's group is its own AND per commit
+  #     (deploy-railway-<sha>): no other merge's job is ever in it, so no
+  #     other merge can cancel it, and a re-run of the same commit waits for
+  #     the first instead of overlapping it;
+  #   · scripts/ci/deploy-turnstile.js is the queue: the job waits until every
+  #     OLDER push-to-main run has finished its own deploy-railway, so deploys
+  #     go out one at a time in merge order, every one of them; and
+  #   · it refuses to put back an OLDER commit than the one live (a re-run of
+  #     an old run), so the latest merge is always the one left live.
   # RAILWAY_TOKEN is a project-scoped token ("github-actions-deploy") in
   # Actions secrets. Break-glass if Actions is down: manual `railway up` from
   # a local checkout — see audit/deploy-rewire.md.
   deploy-railway:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # FLAKE-1: 80, not 25: up to 50 minutes waiting its turn, then the deploy.
+    timeout-minutes: 80
     needs: [tree-check, combine]
     # `always()` because the battery is SKIPPED when this exact tree already
     # passed, and a skipped job would otherwise take the deploy down with it.
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
       && (needs.combine.result == 'success' || needs.tree-check.outputs.skip == 'true')
     concurrency:
-      group: deploy-main
+      group: deploy-railway-${{ github.sha }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # the turnstile compares this commit with the live one
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
 
+      - name: Wait for the merges before this one to deploy (FLAKE-1)
+        id: turn
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/deploy-turnstile.js --job deploy-railway --live-health https://nonprofit-erp-production.up.railway.app/health
+
       # Retried: the postinstall downloads a binary from GitHub releases and a
       # runner-side TLS/network blip failed a whole deploy once (2026-08-12,
       # run 31558654336) — three attempts with a pause absorbs that class.
       - name: Install Railway CLI
+        if: steps.turn.outputs.deploy == 'true'
         run: |
           for i in 1 2 3; do
             npm install -g @railway/cli && break
@@ -553,9 +643,11 @@ jobs:
       # server.js reads .build-sha at boot and reports it on /health — the
       # verify step below asserts prod is actually serving THIS commit.
       - name: Stamp build SHA
+        if: steps.turn.outputs.deploy == 'true'
         run: printf '%s' "$GITHUB_SHA" > .build-sha
 
       - name: Deploy to Railway
+        if: steps.turn.outputs.deploy == 'true'
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: railway up --service nonprofit-erp --ci
@@ -565,7 +657,7 @@ jobs:
       # (NEEDS-JONATHAN 0-SCALE-1), this step is skipped and the web service
       # keeps running the jobs itself.
       - name: Deploy the worker to Railway
-        if: ${{ vars.RAILWAY_WORKER_SERVICE != '' }}
+        if: ${{ steps.turn.outputs.deploy == 'true' && vars.RAILWAY_WORKER_SERVICE != '' }}
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: railway up --service "${{ vars.RAILWAY_WORKER_SERVICE }}" --ci
@@ -574,6 +666,7 @@ jobs:
       # it writes a heartbeat row with its build and role, and the web's
       # /health carries the newest one as `worker`.
       - name: Verify prod is healthy at this commit (timeout 5 min)
+        if: steps.turn.outputs.deploy == 'true'
         env:
           WANT_WORKER: ${{ vars.RAILWAY_WORKER_SERVICE != '' && '1' || '' }}
         run: |
@@ -599,6 +692,7 @@ jobs:
       # DEPLOY-1: it waits for /ready and this build (web and worker) first,
       # and asks a failed Ask once more 15 s later before it fails.
       - name: Prod AI smoke (one Ask, one Agent plan, saves nothing)
+        if: steps.turn.outputs.deploy == 'true'
         env:
           PROD_AI_SMOKE_WAIT_SHA: ${{ github.sha }}
           PROD_AI_SMOKE_WORKER: ${{ vars.RAILWAY_WORKER_SERVICE != '' && '1' || '' }}
@@ -617,14 +711,14 @@ jobs:
   # deploy. Enabled-but-no-token is a misconfiguration and fails loudly.
   deploy-vercel:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 80   # FLAKE-1: waiting its turn, then the deploy
     needs: [tree-check, combine]
     # `always()` because the battery is SKIPPED when this exact tree already
     # passed, and a skipped job would otherwise take the deploy down with it.
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
       && (needs.combine.result == 'success' || needs.tree-check.outputs.skip == 'true') && vars.VERCEL_DEPLOY_ENABLED == 'true'
     concurrency:
-      group: deploy-main
+      group: deploy-vercel-${{ github.sha }}   # FLAKE-1: see deploy-railway
       cancel-in-progress: false
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -632,8 +726,20 @@ jobs:
       VERCEL_PROJECT_ID: prj_OCO0p927wc7CszoQS9PEEnDg7mIy
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Wait for the merges before this one to deploy (FLAKE-1)
+        id: turn
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/deploy-turnstile.js --job deploy-vercel --live-meta https://www.stewardapp.dev/
 
       - name: Deploy to Vercel
+        if: steps.turn.outputs.deploy == 'true'
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
             echo "::error::VERCEL_DEPLOY_ENABLED is true but the VERCEL_TOKEN secret is not set — refusing."
@@ -645,6 +751,7 @@ jobs:
           npx vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN" --build-env BUILD_SHA="$GITHUB_SHA"
 
       - name: Verify live site serves this commit (timeout 5 min)
+        if: steps.turn.outputs.deploy == 'true'
         run: |
           echo "Polling https://www.stewardapp.dev for build-sha == $GITHUB_SHA …"
           for i in $(seq 1 60); do
