@@ -808,12 +808,13 @@ function starterGroup(st, { withAll = false } = {}) {
 }
 // Every starter with its count (and, for an asking one, how many it leaves
 // out), all in one statement; a starter at 0 is hidden and counted as hidden.
+// INSIGHTS-2: the counts come from one pass over the org
+// (server/groups/starterCounts.js), the same rules as each starter's group.
 async function starterList(orgId, groups = []) {
-  const asking = STARTERS.filter(st => st.asking);
-  const counts = await memberCounts(orgId, [...STARTERS.map(st => starterGroup(st)), ...asking.map(st => starterGroup(st, { withAll: true }))]);
-  const all = STARTERS.map((st, i) => {
-    const count = counts[i];
-    const leftOut = st.asking ? Math.max(0, counts[STARTERS.length + asking.indexOf(st)] - count) : 0;
+  const counts = await require("./server/groups/starterCounts").starterCounts(orgId, STARTERS);
+  const all = STARTERS.map((st) => {
+    const count = counts[st.key].count;
+    const leftOut = st.asking ? Math.max(0, counts[st.key].all - count) : 0;
     const added = groups.find(g => g.kind === "dynamic" && sameRules(g.rules || {}, st.rules));
     return { key: st.key, name: st.name, term: st.term || null, asking: !!st.asking, count, leftOut,
       sentence: rulesSentence(starterGroup(st).rules), addedGroupId: added ? added.id : null };

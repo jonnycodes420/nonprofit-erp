@@ -52,6 +52,8 @@ const UNWATCHED = new Set([
   "org_changes", "org_summary",
   // Each person's stored Drift answer: derived from gifts, which are watched.
   "donor_drift",
+  // INSIGHTS-2: the org's stored Insights, derived from watched rows too.
+  "stored_insights",
 ]);
 
 function schemaSql() {

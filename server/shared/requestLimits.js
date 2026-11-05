@@ -29,9 +29,7 @@ const NAMED = Object.freeze({ default: DEFAULT_MS, report: 30000, export: 120000
 const LONGER = [
   // A whole org's records, written out (Settings → Export, a figure's rows, one person's file).
   [/^\/(org\/export|donors\/export\/|figures\/[^/]+\/export\.csv$|donors\/[^/]+\/export-data$)/, "export"],
-  // One statement that counts every starter group over the whole org (groups.js memberCounts):
-  // about 2 s on 25,000 people, past 10 s on CI's shared runners.
-  [/^\/groups\/starters(\/|$)/, "report"],
+  // (INSIGHTS-2: /groups/starters left this list; its counts are one pass, server/groups/starterCounts.js.)
   // A spreadsheet in, or a big set changed at once (import, undo, merge, bulk edit, recompute).
   [/^\/(donors\/import|gifts\/import|grants\/import|history-import\/|sheet-import\/|imports(\/|$)|deposits\/commit|setup\/runs|admin\/orgs\/[^/]+\/setup|data-health\/(bulk-|merge)|donors\/(bulk-|merge)|import-merges|scores\/recompute|journeys\/batches\/|old-reports\/batches\/|photos\/bulk|finance\/imported-deposited)/, "bulk"],
 ];

@@ -14,8 +14,12 @@
 // db is required when the first ANALYZE runs, not at load, so the demo seed
 // can read TABLES without opening the server's pool.
 
+// INSIGHTS-2: and every table donorStatus.statusSql reads (the status tags,
+// Lapsing and Lapsed): its per-person lookups into donor_rhythm, the linked
+// records and the pledges are planned from these statistics too.
+const STATUS_TABLES = ["donor_rhythm", "donor_relationships", "pledges", "pledge_installments"];
 const TABLES = ["donors", "gifts", "interactions", "donor_scores", "volunteer_shifts",
-  "volunteer_credentials", "grants", "pledges"];
+  "volunteer_credentials", "grants", "pledges", ...STATUS_TABLES.filter(t => t !== "pledges")];
 const IMPORT_WRITE = /^\/(donors\/import|donors\/import-combined|donors\/import-semantics|imports|gifts\/import-history|grants\/import|volunteer-hours\/import|volunteer-hub\/import)\/?$/;
 
 let running = null;
@@ -39,7 +43,7 @@ async function analyzeImportTables() {
 // call this when their writing is done. Each ANALYZE runs on its own
 // connection with a statement and lock timeout, so it can never block the
 // import, a screen or autovacuum: one that can't run now is skipped, in words.
-const AFTER_IMPORT_TABLES = ["gifts", "donors", "donor_drift", "donor_scores"];
+const AFTER_IMPORT_TABLES = ["gifts", "donors", "donor_drift", "donor_scores", ...STATUS_TABLES];
 async function analyzeAfterImportGuarded(tag, tables = AFTER_IMPORT_TABLES) {
   const { withClient } = require("../db");
   return withClient(async c => {

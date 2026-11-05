@@ -308,6 +308,7 @@ export function HomeInsights({ onNavigate, isReadOnly, data: given, onChanged, o
   const cards = (data.cards || []).filter(c => !only || c.kind === only);
   return (
     <section data-testid="home-insights" style={{ marginBottom: 18 }}>
+      {data.preparing && <div role="note" data-testid="insights-preparing" style={{ ...CARD, fontSize: 14, color: T.ink3 }}>{data.sentence}</div>}
       {!only && data.coverage && data.coverage.stale && (
         <div role="note" style={{ ...CARD, borderLeft: "4px solid " + T.gold, fontSize: 14, color: T.ink }}>{data.coverage.sentence}</div>
       )}
@@ -696,6 +697,8 @@ export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn,
   const load = () => apiFetch(`/insights/donor/${encodeURIComponent(donorId)}`).then(setD).catch(() => setD(null));
   useEffect(() => { if (donorId) { setD(undefined); load(); } }, [donorId]);
   if (d === undefined) return <div data-testid="dp-next-move-loading" style={{ height: 22 }} />;
+  // INSIGHTS-2: the org's first Insights are still being built on the worker.
+  if (d && d.preparing) return <div data-testid="dp-next-move-preparing" style={{ fontSize: 14, color: T.ink3, padding: "2px 0" }}>{d.sentence}</div>;
   const m = d && d.move;
   if (!m || !m.item) {
     // PROFILE-3: a person with nothing logged gets the start card instead of this line.
