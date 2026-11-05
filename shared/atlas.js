@@ -28,6 +28,8 @@ export const STEP_KINDS = [
   "came_to_event", "register_for_event", "gift", "pledge", "add_to_journey", "remove_from_journey",
   "add_to_group", "remove_from_group", "draft_email", "reminder", "log_conversation", "note",
   "send_receipt", "send_now", "merge", "recurring_change", "personal_detail", "question", "find", "undo", "other",
+  // ATLAS-3: "tell me about Marlowe" reads their record; "link Stephen and Margaret" links two people.
+  "about", "link",
 ];
 export const RUNS = new Set(["came_to_event", "register_for_event", "add_to_journey", "remove_from_journey", "add_to_group",
   "remove_from_group", "draft_email", "reminder", "log_conversation", "note"]);
@@ -77,7 +79,8 @@ export const ATLAS_SYSTEM = [
   "add_to_journey / remove_from_journey, add_to_group / remove_from_group, draft_email (write an email or thank-you for her to review),",
   "reminder (remind her, follow up, a task with a time), log_conversation (a lunch, call, coffee, meeting that happened), note (a fact to keep on a record),",
   "send_receipt (send the receipt or thank-you for a gift she just told you about), send_now (send an email right now without her reviewing it),",
-  "merge (two records are the same person), recurring_change (change, pause or cancel a monthly or recurring gift),",
+  "merge (two records are the same person and should become one record; only when she says merge, combine or duplicate), link (two different people are related: spouses, partners, family, works at; target is the second person),",
+  "about (she asks about one person: tell me about X, what do we know about X, who is X, brief me on X), recurring_change (change, pause or cancel a monthly or recurring gift),",
   "personal_detail (health, illness, a death, divorce, a child, money trouble: put the whole sentence in words), question (she asks something), find (show or open someone),",
   "undo (undo that, take that back), other (anything else; put her words in words).",
   "\"Scratch that\", \"no wait\", \"actually\": they take back only the words just before them, and only when she says something in their place. A conversation she says happened (\"lunch with Margaret went well\") is still a log_conversation when \"scratch that\" follows it. Filler (\"OK yeah\", \"um\") is not a step.",
@@ -101,9 +104,11 @@ export const DRAFT_TOOL = {
 export const DRAFT_SYSTEM = "You write a short email for a nonprofit fundraiser to send one person. Use only what she said: no amount, date, event or fact she did not say, and no em dashes. If she asked to meet, ask for the meeting in the month given.";
 // DATES-1 · the team's "About them" note rides along as background for the
 // tone, never as something to quote or state as a fact in the email.
-export function buildDraftPrompt({ firstName, words, month, aboutThem = "" }) {
+export function buildDraftPrompt({ firstName, words, month, aboutThem = "", signoff = "" }) {
   const about = String(aboutThem || "").trim().slice(0, 500);
-  return { system: DRAFT_SYSTEM, messages: [{ role: "user", content: `To: ${firstName}\nWhat she asked for: ${words}${month ? `\nThe meeting would be in ${month}.` : ""}${about ? `\nBackground the team keeps about them (for tone only; do not quote it or state any of it in the email): ${about}` : ""}` }] };
+  // ATLAS-3: the org's own sign-off, from the writing samples it gave Steward.
+  const voice = String(signoff || "").trim() ? `\nEnd with her usual sign-off, "${String(signoff).trim().slice(0, 60)},", instead of "With gratitude,".` : "";
+  return { system: DRAFT_SYSTEM, messages: [{ role: "user", content: `To: ${firstName}\nWhat she asked for: ${words}${month ? `\nThe meeting would be in ${month}.` : ""}${about ? `\nBackground the team keeps about them (for tone only; do not quote it or state any of it in the email): ${about}` : ""}${voice}` }] };
 }
 export function buildAtlasPrompt(text, { today, onPage = null } = {}) {
   const lines = [`Today is ${today}.`];
@@ -279,6 +284,11 @@ function readClauseRaw(c) {
   const t = c.trim();
   const blank = { who: "", target: "", amountWords: "", whenWords: "", how: "", words: t };
   if (/^(undo|take back|reverse)\b.*\b(that|it|last)\b|^undo$/i.test(t)) return { ...blank, kind: "undo" };
+  // ATLAS-3: two people linked is not a merge. "Link Stephen and Margaret (as spouses)".
+  { const m = t.match(new RegExp(`^(?:[Ll]ink|[Cc]onnect)\\s+${NAME}\\s+(?:and|with|to)\\s+${NAME}`)); if (m) return { ...blank, kind: "link", who: m[1], target: m[2] }; }
+  { const m = t.match(new RegExp(`^(?:tell me about|what do (?:we|i) know about|brief me on|who is)\\s+${NAME}\\s*$`, "i")); if (m) return { ...blank, kind: "about", who: m[1] }; }
+  // ATLAS-3: the profile's "Draft an email" asks in these words, AI on or off.
+  { const m = t.match(new RegExp(`^(?:[Dd]raft|[Ww]rite)\\s+(?:an?\\s+)?(?:email|note|thank-you|thank you)(?:\\s+note)?\\s+(?:to|for)\\s+${NAME}`)); if (m) return { ...blank, kind: "draft_email", who: m[1] }; }
   if (/\bmerge\b/i.test(t)) { const m = t.match(new RegExp(`merge\\s+${NAME}\\s+(?:and|with|into)\\s+${NAME}`)); return { ...blank, kind: "merge", who: m ? m[1] : "", target: m ? m[2] : "" }; }
   if (/\b(monthly|recurring|subscription)\b/i.test(t) && /\b(change|cancel|pause|stop|raise|lower|bump|increase|decrease|move)\b/i.test(t)) {
     const m = t.match(new RegExp(NAME)); return { ...blank, kind: "recurring_change", who: m ? m[1].replace(/'s$/, "") : "" };
@@ -314,7 +324,7 @@ const PREVIEW = { came_to_event: "Marking attendance", register_for_event: "Addi
   pledge: "Getting the pledge ready for your tap", add_to_journey: "Adding to the journey", remove_from_journey: "Taking out of the journey",
   add_to_group: "Adding to the group", remove_from_group: "Taking out of the group", draft_email: "Drafting the email", reminder: "Setting the reminder",
   log_conversation: "Logging the conversation", note: "Saving the note", send_receipt: "Getting the receipt ready", question: "Looking it up",
-  find: "Finding them", undo: "Undoing", merge: "Checking", recurring_change: "Checking", send_now: "Drafting", personal_detail: "Holding a detail back", other: "Working on it" };
+  find: "Finding them", undo: "Undoing", about: "Reading their record", link: "Linking the two of them", merge: "Checking", recurring_change: "Checking", send_now: "Drafting", personal_detail: "Holding a detail back", other: "Working on it" };
 export function previewLines(text) {
   const out = [];
   for (const c of clauses(text)) {

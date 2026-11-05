@@ -26,6 +26,8 @@ const express = require("express");
 const { anthropicFor, recordAiFallback } = require("../aiClient");
 const DM = require("../donorMatch");
 const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
+const AN = require("../server/atlas/answers");   // ATLAS-3: lists, people, an unrecorded gift, a link
+const PG = require("../server/atlas/progress");   // ATLAS-3: the status line, one step at a time
 
 const routers = { r0: express.Router() };
 // Set by mount(); the after-change step settles waiting lines through it.
@@ -179,18 +181,19 @@ async function requestOut(orgId, id) {
   if (!m) return null;
   const rows = await query("SELECT * FROM atlas_actions WHERE org_id=? AND request_id=? ORDER BY created_at, id", [orgId, id]);
   const read = j(m.read) || {};
-  const lines = rows.map(actionOut);
+  const saved = read.answers || {};
+  const lines = rows.map(r => ({ ...actionOut(r), ...(saved[r.id] ? { answer: AN.publicAnswer(saved[r.id]) } : {}) }));
   const waiting = lines.filter(l => l.waits).length;
   const AT_ = await AT();
   return { id: m.id, text: m.text, status: m.status, ai: m.ai, questions: m.status === "needs_answers" ? (read.atlas && read.atlas.questions) || [] : [],
     lines, waiting, spoke: m.status === "needs_answers" ? (read.atlas && read.atlas.spoke) || "" : (read.atlas && read.atlas.spoke) || (waiting ? `${AT_.SPOKE.done} ${AT_.SPOKE.waiting(waiting)}` : AT_.SPOKE.done),
-    timings: read.atlas && read.atlas.timings, undoneAt: m.undone_at };
+    timings: read.atlas && read.atlas.timings, undoneAt: m.undone_at, follows: (read.atlas && read.atlas.follows) || null };
 }
 
 // ── READ, RESOLVE, ASK ──────────────────────────────────────────────────────
 const PRONOUN = /^(she|her|he|him|they|them|hers|his|their)$/i;
 const NEEDS_PERSON = new Set(["came_to_event", "register_for_event", "gift", "pledge", "add_to_journey", "remove_from_journey", "add_to_group",
-  "remove_from_group", "draft_email", "log_conversation", "note", "send_receipt", "send_now", "recurring_change", "personal_detail", "find", "merge"]);
+  "remove_from_group", "draft_email", "log_conversation", "note", "send_receipt", "send_now", "recurring_change", "personal_detail", "find", "merge", "about", "link"]);
 // A reminder may name someone or nobody ("remind me to call Ingrid", "remind me to order shirts").
 const MAY_PERSON = new Set(["reminder"]);
 const TARGET_KIND = { came_to_event: "event", register_for_event: "event", add_to_journey: "journey", remove_from_journey: "journey", add_to_group: "group", remove_from_group: "group" };
@@ -233,13 +236,14 @@ async function readSteps(orgId, text, { today, onPage }) {
 // fact: the run's own check refuses a draft that states one she did not say.
 async function writeDraft(orgId, { firstName, opening, words, month, thanks, meet, aboutThem = "" }) {
   const AT_ = await AT();
+  const voice = await orgVoice(orgId);   // ATLAS-3: in the org's voice
   const template = { subject: thanks ? `Thank you, ${firstName}` : `Hello from us, ${firstName}`,
     body: [opening || `Dear ${firstName},`, "", thanks ? "Thank you so much for your generosity. It means a great deal to all of us." : "I wanted to reach out.",
-      ...(meet ? ["", `I would love to meet${month ? ` in ${month}` : ""} to share what your support makes possible. Would that work for you?`] : []), "", "With gratitude,"].join("\n") };
+      ...(meet ? ["", `I would love to meet${month ? ` in ${month}` : ""} to share what your support makes possible. Would that work for you?`] : []), "", `${voice.signoff || "With gratitude"},`, ...(voice.signature ? [voice.signature] : [])].join("\n") };
   const gate = await agentGate(orgId);
   if (!gate.ok) return template;
   try {
-    const prompt = AT_.buildDraftPrompt({ firstName, words, month, aboutThem });
+    const prompt = AT_.buildDraftPrompt({ firstName, words, month, aboutThem, signoff: voice.signoff || "" });
     const msg = await anthropicFor(orgId).messages.create({ model: ATLAS_MODEL(), max_tokens: 400, thinking: { type: "disabled" }, system: prompt.system, messages: prompt.messages,
       tools: [{ name: AT_.DRAFT_TOOL.name, description: AT_.DRAFT_TOOL.description, strict: true, input_schema: AT_.DRAFT_TOOL.input_schema }],
       tool_choice: { type: "tool", name: AT_.DRAFT_TOOL.name } });
@@ -254,6 +258,17 @@ async function writeDraft(orgId, { firstName, opening, words, month, thanks, mee
   return template;
 }
 
+// ATLAS-3: the greeting and sign-off the org taught Steward (Settings, its
+// writing samples; shared/draftNote.js voiceFrom). Not ready: none.
+async function orgVoice(orgId) {
+  const [o] = await query("SELECT voice_samples FROM orgs WHERE id=?", [orgId]);
+  let s = o && o.voice_samples;
+  if (typeof s === "string") { try { s = JSON.parse(s || "[]"); } catch { s = []; } }
+  const D = await import("../shared/draftNote.js");
+  const v = D.voiceFrom(Array.isArray(s) ? s : []);
+  return v.ready ? v : { signoff: null, signature: null };
+}
+
 // Every name and place in the steps, resolved; the questions it leaves.
 async function resolveAll(orgId, steps, { today, onPage, answers = {} }) {
   const all = await people(orgId);
@@ -262,6 +277,11 @@ async function resolveAll(orgId, steps, { today, onPage, answers = {} }) {
   const questions = [];
   const ask = (q) => { if (!questions.some(x => x.id === q.id)) questions.push(q); };
   for (const [i, st] of steps.entries()) {
+    // ATLAS-3: "link Stephen and Margaret" is two people related, never a merge,
+    // whatever the read said. A merge is only ever her word for one.
+    if (st.kind === "merge" && !/\b(merge|combine|duplicates?|same person)\b/i.test(st.words) && /\b(link|connect|related|married|spouses?|partners?)\b/i.test(st.words)) st.kind = "link";
+    // ATLAS-3: "remind me to call her" names the person she was just talking about.
+    if (MAY_PERSON.has(st.kind) && !st.who && lastWho && /\b(her|him|them|she|he|they)\b/i.test(st.words)) st.who = lastWho;
     if (NEEDS_PERSON.has(st.kind) || (MAY_PERSON.has(st.kind) && st.who)) {
       if (!st.who || PRONOUN.test(st.who)) st.who = lastWho || st.who;
       if (st.who && !PRONOUN.test(st.who)) lastWho = st.who;
@@ -282,9 +302,23 @@ async function resolveAll(orgId, steps, { today, onPage, answers = {} }) {
             more: Math.max(0, r.options.length - 8), nearMiss: !!r.near });
         } else st.notFound = true;
       } else st.noWho = true;
-      if (st.kind === "merge" && st.target) {
+      if ((st.kind === "merge" || st.kind === "link") && st.target) {
         const r2 = await resolvePerson(orgId, st.target, all);
         if (r2.state === "matched") st.otherId = r2.id;
+        // ATLAS-3: "which Margaret?" for the second person of a link, asked like the first.
+        else if (st.kind === "link" && r2.state === "choices") {
+          const q2 = `p:${String(st.target).toLowerCase()}`;
+          if (answers[q2] && r2.options.some(o => o.id === answers[q2])) st.otherId = answers[q2];
+          else ask({ id: q2, kind: "person", said: st.target, sentence: `Which ${st.target}?`, options: await personOptions(orgId, r2.options, today), more: Math.max(0, r2.options.length - 8), nearMiss: !!r2.near });
+        }
+      }
+      // ATLAS-3: the relation, from her words; when they don't say, one click.
+      if (st.kind === "link") {
+        st.relation = AN.linkKind(st.words);
+        const q3 = `rel:${String(st.who).toLowerCase()}:${String(st.target).toLowerCase()}`;
+        if (!st.relation && answers[q3] && AN.LINK_WORD[answers[q3]]) st.relation = answers[q3];
+        else if (!st.relation && st.target) ask({ id: q3, kind: "relation", said: st.words, sentence: `How are ${st.who} and ${st.target} related?`,
+          options: AN.LINK_CHOICES.map(([id, name, detail]) => ({ id, name, detail })) });
       }
     }
     const tk = TARGET_KIND[st.kind];
@@ -323,7 +357,15 @@ async function addCard(orgId, memoId, card) {
   return card;
 }
 
-async function execute(req, m, steps, { today, ai }) {
+// ATLAS-3: what a line answered (a list, a person), kept with the request.
+async function saveAnswer(orgId, memoId, actionId, answer) {
+  const [x] = await query("SELECT read FROM voice_memos WHERE id=? AND org_id=?", [memoId, orgId]);
+  const read = j(x && x.read) || {};
+  read.answers = { ...(read.answers || {}), [actionId]: answer };
+  await run("UPDATE voice_memos SET read=? WHERE id=? AND org_id=?", [JSON.stringify(read), memoId, orgId]);
+}
+
+async function execute(req, m, steps, { today, ai, prior = null }) {
   const orgId = req.user.orgId;
   const AT_ = await AT(), V = await VM();
   const clientSafe = await require("../clientSafe").privacyFor(orgId);
@@ -353,9 +395,15 @@ async function execute(req, m, steps, { today, ai }) {
     await log({ kind: "held_back", state: "waiting", waits: true, cardId: c.id, line: `I held back a personal detail about ${first(nm(id))}. Keep it as a note?`, ...person(id), place: "person", placeId: id });
   };
 
+  // ATLAS-3: a thank-you for an amount she named that is not on record (and
+  // not in this request) waits for the gift first; no email is written for it.
+  for (const st of steps) if ((st.kind === "draft_email" || st.kind === "send_now") && st.donorId && !steps.some(x => ["gift", "pledge"].includes(x.kind) && x.donorId === st.donorId)) {
+    st.unrecorded = await AN.unrecordedAmount({ query, orgId, donorId: st.donorId, words: st.words, amountFromWords: AT_.amountFromWords });
+  }
+  const say = PG.sayer(req, steps.length);
   // Every email starts writing at once, beside the other steps.
   const drafts = new Map();
-  for (const st of steps) if ((st.kind === "draft_email" || st.kind === "send_now") && st.donorId && !(clientSafe.on && clientSafe.clientIds.has(st.donorId))) {
+  for (const st of steps) if ((st.kind === "draft_email" || st.kind === "send_now") && st.donorId && !st.unrecorded && !(clientSafe.on && clientSafe.clientIds.has(st.donorId))) {
     const when = AT_.whenFromWords(st.whenWords, today);
     const [ab] = await query("SELECT about_them FROM donors WHERE id=? AND org_id=?", [st.donorId, orgId]);
     drafts.set(st, writeDraft(orgId, { aboutThem: (ab && ab.about_them) || "", firstName: first(nm(st.donorId)), opening: (await import("../shared/greeting.js")).greetingLine({ name: nm(st.donorId) }), words: st.words, month: when ? AT_.monthWord(when.date) : "",
@@ -382,6 +430,7 @@ async function execute(req, m, steps, { today, ai }) {
       await log({ kind: "not_found", state: "refused", line: `I couldn't find a ${TARGET_KIND[st.kind]} called "${st.target}", so I left that out.` });
       continue;
     }
+    say(st, id ? nm(id) : "");
     const held = V.sensitiveCategory(st.words) && ["note", "log_conversation", "other", "personal_detail"].includes(st.kind);
     if (st.kind === "personal_detail" || (held && st.kind === "note")) { await holdBack(id, st.words); continue; }
     switch (st.kind) {
@@ -428,6 +477,14 @@ async function execute(req, m, steps, { today, ai }) {
         const thanks = /\bthank/i.test(st.words);
         const month = when ? AT_.monthWord(when.date) : "";
         const fn = first(nm(id));
+        if (st.unrecorded) {
+          const c = await addCard(orgId, m.id, { id: cardId(), kind: "money", moneyKind: "gift", cents: st.unrecorded, fundId: null, fundName: null, donorId: id, quote: st.words, state: "waiting",
+            title: `Record a ${AT_.usd(st.unrecorded)} gift from ${fn}?` });
+          giftCard = c;
+          await log({ kind: "gift", state: "waiting", waits: true, cardId: c.id, line: AN.recordFirstLine(AT_.usd(st.unrecorded), nm(id)), donorId: id,
+            place: "gifts", placeId: id, link: { tab: "donor", donorId: id, section: "giving" } });
+          break;
+        }
         const { subject, body } = await drafts.get(st);
         const r = await runStep(req, m, insId, { tool: "draft_note", donorId: id, subject, body, purpose: thanks ? "thank_you" : undefined, citesRows: [id] });
         const what = thanks ? "a thank-you" : "an email";
@@ -505,10 +562,29 @@ async function execute(req, m, steps, { today, ai }) {
       case "find":
         await log({ kind: "found", state: "done", line: `Here's ${nm(id)}.`, ...person(id) });
         break;
+      case "about": {
+        // ATLAS-3: what Steward knows about them, not only their numbers.
+        const pa = await AN.personAnswer({ query, orgId, donorId: id, today });
+        const aid = await log({ kind: "answer", state: "done", line: pa ? pa.spoke : `I couldn't read ${nm(id)}'s record just now.`, ...person(id) });
+        if (pa) await saveAnswer(orgId, m.id, aid, { type: "person", ...pa });
+        break;
+      }
+      case "link": {
+        if (!st.otherId) { await log({ kind: "not_found", state: "refused", line: st.target ? AT_.REFUSE.not_found(st.target) : "Who should I link them to? Say both names." }); break; }
+        const r = await asHer(req, "POST", `/donors/${id}/relationships`, { relatedDonorId: st.otherId, relationshipType: st.relation });
+        const ok2 = r.status === 201 || r.status === 409;
+        await log({ kind: "linked", state: ok2 ? "done" : "failed", donorId: id, place: "person", placeId: id, link: { tab: "donor", donorId: id },
+          line: r.status === 201 ? `Linked ${nm(id)} and ${nm(st.otherId)} (${AN.LINK_WORD[st.relation]}).` : r.status === 409 ? `${nm(id)} and ${nm(st.otherId)} are already linked.`
+            : `I couldn't link ${first(nm(id))} and ${first(nm(st.otherId))}: ${(r.body && r.body.error) || "it did not go through"}.` });
+        break;
+      }
       case "question": {
-        const r = await asHer(req, "POST", "/ask", { text: st.target || st.words });
+        const r = await asHer(req, "POST", "/ask", { text: st.target || st.words, ...(prior && prior.context ? { context: prior.context } : {}) });
         const said = r.status < 300 && r.body && (r.body.sentence || (r.body.answer && r.body.answer.sentence) || r.body.headline);
-        await log({ kind: "answer", state: "done", line: said ? String(said) : "I couldn't answer that just now.", link: { tab: "ask", text: st.target || st.words } });
+        // ATLAS-3: a set of people comes back as the people, with the count and why each matched.
+        const list = r.status < 300 ? await AN.listAnswer({ ask: r.body, query, orgId, asHer, req }).catch(e => { console.error("[atlas] list:", e.message); return null; }) : null;
+        const aid = await log({ kind: "answer", state: "done", line: said ? String(said) : "I couldn't answer that just now.", link: { tab: "ask", text: st.target || st.words } });
+        if (list) await saveAnswer(orgId, m.id, aid, { type: "list", question: st.target || st.words, ...list });
         break;
       }
       case "undo": {
@@ -551,6 +627,10 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const today = orgToday(await orgTz(orgId));
   let onPage = null;
   if (req.body.donorId) [onPage] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [String(req.body.donorId), orgId]);
+  // ATLAS-3 · Tell me more: the request before this one carries who it was about.
+  const prior = await AN.priorContext({ query, orgId, userId: actor(req).id, followsId: req.body.followsId, parse: j });
+  if (!onPage && prior && prior.onPage) onPage = prior.onPage;
+  PG.set(req, "Reading what you asked");
   const read = await readSteps(orgId, text, { today, onPage: onPage ? onPage.name : null });
   const t1 = Date.now();
   const { steps, questions } = await resolveAll(orgId, read.steps, { today, onPage });
@@ -560,10 +640,10 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   await run(`INSERT INTO voice_memos (id,org_id,text,source,status,ai,donor_ids,read,cards,run_ids,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,'[]','[]',?,?)`,
     [id, orgId, text, source, questions.length ? "needs_answers" : "planned", read.ai === "on" ? "on" : "off",
      JSON.stringify([...new Set(steps.map(s => s.donorId).filter(Boolean))]),
-     JSON.stringify({ atlas: { steps, questions, spoke, onPage: onPage ? onPage.id : null, timings: { readMs: t1 - t0 } } }), actor(req).id, actor(req).name]);
+     JSON.stringify({ atlas: { steps, questions, spoke, onPage: onPage ? onPage.id : null, follows: prior ? prior.id : null, timings: { readMs: t1 - t0 } } }), actor(req).id, actor(req).name]);
   if (questions.length) return res.json({ request: await requestOut(orgId, id) });
   const [m] = await query("SELECT * FROM voice_memos WHERE id=? AND org_id=?", [id, orgId]);
-  await execute(req, m, steps, { today, ai: read.ai });
+  await execute(req, m, steps, { today, ai: read.ai, prior });
   await finishRequest(orgId, id, steps, { readMs: t1 - t0, totalMs: Date.now() - t0 });
   if (req.audit) req.audit.summary(`${atlasName()}: ${steps.length} steps`, { count: steps.length });
   res.status(201).json({ request: await requestOut(orgId, id) });
@@ -596,13 +676,51 @@ app.post("/atlas/:id/answer", requireAuth, checkWriteAccess, wrap(async (req, re
   }
   const took = await run("UPDATE voice_memos SET status='planned' WHERE id=? AND org_id=? AND status='needs_answers'", [m.id, orgId]);
   if (!took || took.changes === 0) return res.status(409).json({ error: "already_done" });
-  await execute(req, { ...m, status: "planned" }, steps, { today, ai: m.ai });
+  const prior = await AN.priorContext({ query, orgId, userId: actor(req).id, followsId: read.atlas.follows, parse: j });
+  await execute(req, { ...m, status: "planned" }, steps, { today, ai: m.ai, prior });
   await finishRequest(orgId, m.id, steps, { ...(read.atlas.timings || {}), answerMs: Date.now() - t0 });
   res.status(201).json({ request: await requestOut(orgId, m.id) });
 }));
 
+// ATLAS-3 · the status line while she waits: what Atlas is doing right now.
+app.get("/atlas/progress/:key", requireAuth, wrap(async (req, res) => {
+  res.json({ progress: PG.get(req.user.orgId, req.user.userId, req.params.key) });
+}));
+
+// ATLAS-3 · OPEN LIST: the same people, every time. The first click keeps
+// this answer's people as a group (POST /groups and its members route, so the
+// actor stamp and the audit row are theirs); every click after opens it.
+app.post("/atlas/actions/:id/list", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const a = await actionRow(orgId, req.params.id);
+  if (!a || !a.request_id) return res.status(404).json({ error: "Not found" });
+  const [m] = await query("SELECT read FROM voice_memos WHERE id=? AND org_id=?", [a.request_id, orgId]);
+  const read = j(m && m.read) || {};
+  const ans = (read.answers || {})[a.id];
+  if (!ans || ans.type !== "list" || !Array.isArray(ans.ids) || !ans.ids.length) return res.status(409).json({ error: "no_list", sentence: "That answer has no list of people to open." });
+  if (ans.groupId) {
+    const [g] = await query("SELECT id, name FROM audiences WHERE id=? AND org_id=?", [ans.groupId, orgId]);
+    if (g) return res.json({ groupId: g.id, name: g.name, count: ans.ids.length, made: false });
+  }
+  const today = orgToday(await orgTz(orgId));
+  let made = null;
+  for (let n = 0; n < 4 && !made; n++) {
+    const name = AN.groupName(ans.question, today) + (n ? ` ${n + 1}` : "");
+    const r = await asHer(req, "POST", "/groups", { name, kind: "static", description: `The people Atlas found for "${String(ans.question).slice(0, 200)}".` });
+    if (r.status === 201 && r.body && r.body.id) made = r.body;
+    else if (r.status !== 409) return res.status(r.status || 500).json(r.body || { error: "group_failed" });
+  }
+  if (!made) return res.status(409).json({ error: "group_name_taken" });
+  for (let i = 0; i < ans.ids.length; i += 500) {
+    const r = await asHer(req, "POST", `/groups/${made.id}/members`, { donorIds: ans.ids.slice(i, i + 500) });
+    if (r.status >= 300) return res.status(r.status).json(r.body || { error: "members_failed" });
+  }
+  await saveAnswer(orgId, a.request_id, a.id, { ...ans, groupId: made.id });
+  res.status(201).json({ groupId: made.id, name: made.name, count: ans.ids.length, made: true });
+}));
+
 app.get("/atlas/:id", requireAuth, wrap(async (req, res, next) => {
-  if (["activity", "notes", "status"].includes(req.params.id)) return next();
+  if (["activity", "notes", "status", "progress"].includes(req.params.id)) return next();
   const out = await requestOut(req.user.orgId, req.params.id);
   if (!out) return res.status(404).json({ error: "Not found" });
   res.json({ request: out });
