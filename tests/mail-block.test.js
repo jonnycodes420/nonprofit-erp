@@ -84,7 +84,9 @@ async function reset() {
   ok("§3 the MiGulfCoast router checks it", /isBlockedAddress\(to\)/.test(migc));
   ok("§3 no other file constructs its own Resend client",
     ["server.js", "routes/migc.js"].every(f => fs.existsSync(path.join(__dirname, "..", f))) &&
-    require("child_process").execSync("git grep -l \"new Resend(\" -- '*.js' ':!tests' ':!scripts' ':!client'", { cwd: path.join(__dirname, "..") }).toString().trim().split("\n").sort().join() === "routes/migc.js,server.js");
+    require("child_process").execSync("git grep -l \"new Resend(\" -- '*.js' ':!tests' ':!scripts' ':!client'", { cwd: path.join(__dirname, "..") }).toString().trim().split("\n")
+      .map(f => f.startsWith("server/boot/") ? "server.js" : f)   // SPLIT-2: server.js's pieces are server.js
+      .filter((f, i, a) => a.indexOf(f) === i).sort().join() === "routes/migc.js,server.js");
 
   // ── live legs ────────────────────────────────────────────────────────────
   const sink = await startSink();

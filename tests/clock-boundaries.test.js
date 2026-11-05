@@ -177,8 +177,8 @@ const SITES = [
   ["server/tasks/routes.js", /inOrgDays\("x\.fin"/g, 1, "the done count's thirty days"],
   ["routes/billing.js", /orgTime\.orgToday\(STEWARD_CAL/g, 1, "Admin metrics' month"],
 ];
-// SPLIT-2: db.js is split under server/db/; it is read whole through readSource.
-const srcOf = file => file === "db.js" ? require("../scripts/lib/readSource").readSource("db.js") : fs.readFileSync(path.join(ROOT, file), "utf8");
+// SPLIT-2: db.js and server.js are split under server/; each is read whole.
+const srcOf = file => require("../scripts/lib/readSource").splitText(file);   // SPLIT-2: db.js and server.js are read as their own text
 function sourceChecks() {
   console.log("\n§4 · every window in the ARCH-1 defect goes through orgTime");
   for (const [file, re, n, what] of SITES) {
