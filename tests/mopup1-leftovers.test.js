@@ -27,7 +27,8 @@ const { ok, summary, login, api, q, closeDb, browserLegOrSkip, BASE } = require(
 const { civilDay, testNow } = require("./clock");
 
 const APP = process.env.APP_URL || "http://localhost:4173";
-const DIST = path.join(__dirname, "..", "client", "dist");
+const { DIST } = require("./lib/dist");
+const { pinBrowserClockAt } = require("./lib/browserClock");
 const ORG = "org_mopup1money", DECOY = "org_mopup1decoy";
 const SEED = { id: "org_mopup1walk", slug: "mopup1walk", name: "Fernhollow Reading Circle (test)", tier: "small", n: 1, donors: 500, gifts: 2500, interactions: 300, tasks: 10, subs: 2, users: 1 };
 const PASSWORD = "loadtest1234";
@@ -191,15 +192,7 @@ async function walk(chromium) {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
   // The page's clock: 9 PM Eastern on the run's day, ticking.
-  await ctx.addInitScript(o => {
-    const RealDate = Date;
-    const now = () => RealDate.now() + o;
-    class PinnedDate extends RealDate {
-      constructor(...args) { if (args.length === 0) super(now()); else super(...args); }
-      static now() { return now(); }
-    }
-    window.Date = new Proxy(PinnedDate, { apply() { return new RealDate(now()).toString(); } });
-  }, at - Date.now());
+  await pinBrowserClockAt(ctx, at, testNow());
   await ctx.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
     [tok, JSON.stringify(auth.user), JSON.stringify(auth.org || {})]);
   const page = await ctx.newPage();
@@ -207,7 +200,7 @@ async function walk(chromium) {
     // §2 Finance: Add transaction, then the Deposit sheet.
     await page.goto(APP + "/app/finance", { waitUntil: "networkidle", timeout: 30000 }).catch(() => {});
     await page.waitForTimeout(800);
-    const clock = await page.evaluate(() => new Date().toISOString()).catch(() => null);
+    const clock = await page.evaluate(() => Date().toString()).catch(() => null);
     await page.getByText("Transactions", { exact: true }).first().click({ timeout: 15000 }).catch(() => {});
     await page.getByRole("button", { name: /\+ Add transaction/ }).first().click({ timeout: 15000 }).catch(() => {});
     const fin = await page.locator('input[type="date"]').first().inputValue({ timeout: 8000 }).catch(() => null);
