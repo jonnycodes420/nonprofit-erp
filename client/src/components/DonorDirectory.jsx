@@ -104,9 +104,10 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
   // COUNTS-1 — two windows, each said plainly (lapseRule.js WORDS.lapsedRecent and
   // WORDS.lost): Lapsed 12 to 24 months, and Lost & Found, over 24 months, the
   // same people the "Lost: over 24 months" report lists (lapse.js lostSql).
-  const[win,setWin]=useState("recent");
+  const[winPicked,setWin]=useState(null);
   const everyone=[...donors].filter(d=>d.reengage).sort((a,b)=>b.total-a.total);
   const lostList=everyone.filter(d=>d.lost),recentList=everyone.filter(d=>!d.lost);
+  const win=winPicked||(recentList.length||!lostList.length?"recent":"lost");   // opens on a list with people in it
   const lapsed=win==="lost"?lostList:recentList;
   const totalValue=lapsed.reduce((s,d)=>s+d.total,0);
   // BUILD-79 Part 4 — averaged over donors with a REAL date only; a donor

@@ -2032,9 +2032,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                         {onNavigate && (
                           <button onClick={() => onNavigate(a.livesOn.tab, a.livesOn.filter ? { personType: a.livesOn.filter } : {})}
                             style={{ marginTop: 6, marginLeft: 15, background: "transparent", border: "none", padding: 0,
-                                     fontSize: 11.5, fontWeight: 700, color: a.count > 0 ? T.greenMid : T.ink3,
+                                     fontSize: 11.5, fontWeight: 700, color: (a.inSegment ?? a.count) > 0 ? T.greenMid : T.ink3,
                                      cursor: "pointer", textAlign: "left" }}>
-                            {a.count > 0 ? `${a.livesOn.label} →` : `None yet. They are kept in ${a.livesOn.label} →`}
+                            {(a.inSegment ?? a.count) > 0 ? `${a.livesOn.label} →` : `None yet. They are kept in ${a.livesOn.label} →`}
                           </button>
                         )}
                       </li>
