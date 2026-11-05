@@ -41,9 +41,15 @@ let child = null;
   const BASE = `http://localhost:${port}`;
   child = spawn(process.execPath, ["server.js"], { cwd: ROOT, stdio: ["ignore", "ignore", "pipe"],
     env: { ...process.env, PORT: String(port), TEST_MODE: "1", STEWARD_TEST_SLOW_SQL: "1", DB_POOL_MAX: "10",
-      REQUEST_STATEMENT_TIMEOUT_MS: String(LIMIT_MS), DISABLE_BACKGROUND_TICKS: "1", STEWARD_PROCESS: "web" } });
+      REQUEST_STATEMENT_TIMEOUT_MS: String(LIMIT_MS), DISABLE_BACKGROUND_TICKS: "1", STEWARD_PROCESS: "web",
+      // What any boot needs, as deploy1-ready's server has it, when the battery's env is not there.
+      JWT_SECRET: process.env.JWT_SECRET || "local-test-secret", RESEND_API_KEY: process.env.RESEND_API_KEY || "re_dummy_local",
+      RESEND_BASE_URL: "http://localhost:9", DB_SSL: process.env.DB_SSL || "disable" } });
   let err = ""; child.stderr.on("data", d => { err = (err + d).slice(-2000); });
-  for (let i = 0; i < 120; i++) { if ((await fetch(`${BASE}/ready`).catch(() => null))?.status === 200) break; await sleep(500); }
+  // A shard's machine is busy: the boot gets three minutes, and says so if it never came up.
+  let up = false;
+  for (let i = 0; i < 360 && !up; i++) { up = (await fetch(`${BASE}/ready`).catch(() => null))?.status === 200; if (!up) await sleep(500); }
+  if (!up) throw new Error("the suite's server never became ready: " + (err.split("\n").filter(l => /Error|EADDR|refus/i.test(l)).slice(0, 4).join(" | ") || err.slice(-300)));
   const login = async (email) => (await (await fetch(`${BASE}/auth/login`, { method: "POST",
     headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password: PW }) })).json()).token;
   const [ta, tb, tc] = await Promise.all(ORGS.map(o => login(o.email)));
@@ -61,8 +67,8 @@ let child = null;
   await sleep(150);
   const peak = await sleeping();
   const times = [];
-  const until = Date.now() + 8000;
-  while (Date.now() < until) {
+  const until = performance.now() + 8000;
+  while (performance.now() < until) {
     const t0 = performance.now();
     const r = await fetch(`${BASE}/me`, { headers: auth(tc), signal: AbortSignal.timeout(20000) }).catch(() => null);
     times.push({ ms: Math.round(performance.now() - t0), status: r && r.status });

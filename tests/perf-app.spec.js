@@ -246,8 +246,8 @@ async function profileOpen(browser, auth) {
   await page.locator('[data-testid="dir-table"] [data-testid="person-mark"]').first().waitFor({ timeout: 30000 });
   const seen = [];
   let painted = null;
-  page.on("request", r => { if (r.url().startsWith(BASE)) seen.push({ at: Date.now(), path: r.method() + " " + r.url().slice(BASE.length) }); });
-  page.on("response", r => { if (!painted && /\/donors\/[^/?]+\/(status|bundle)(\?|$)/.test(r.url())) painted = Date.now(); });
+  page.on("request", r => { if (r.url().startsWith(BASE)) seen.push({ at: performance.now(), path: r.method() + " " + r.url().slice(BASE.length) }); });
+  page.on("response", r => { if (!painted && /\/donors\/[^/?]+\/(status|bundle)(\?|$)/.test(r.url())) painted = performance.now(); });
   await page.locator('[data-testid="dir-table"] [data-testid="person-mark"]').first().click();
   await page.waitForTimeout(PROFILE_OPEN_WAIT_MS);
   await ctx.close();
