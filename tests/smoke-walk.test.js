@@ -1389,7 +1389,9 @@ async function donorScreensSayNothingWrong(browser) {
       await gift("lapsed", "lapsed", 500, `${y - 2}${today.slice(4)}`);
       await person("pledge", "Pledge Only", { email: "pledge@example.org", address: "7 Pine Street", city: "Lexington", zip: "40502", stage: "solicit" });
       await q(`INSERT INTO pledges (id,org_id,donor_id,amount,created_by,created_by_name) VALUES ($1,$2,$3,1000,'system:test','test')`, [`pl_${org}`, org, `d_${org}_pledge`]);
-      for (const [id, name, email] of [["wilin", "Wilin Stangate", "wilin@example.org"], ["milin", "Milin Stangate", "milin@example.net"]]) {
+      // HOTFIX-RHYTHM: a letter left out (Wilin/Willin) is one person; Wilin and
+      // Milin, one letter swapped at the front, are two names, and no longer a pair.
+      for (const [id, name, email] of [["wilin", "Wilin Stangate", "wilin@example.org"], ["milin", "Willin Stangate", "milin@example.net"]]) {
         await person(id, name, { email, address: "12 Willow Road", city: "Lexington", zip: "40502", household: `hh_${org}` });
       }
       await gift("wilin", "wilin", 300, today);
