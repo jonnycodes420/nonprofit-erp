@@ -783,6 +783,8 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
       ORDER BY i.committed_at DESC, i.id DESC LIMIT 200`,
     [await orgTzName(req.user.orgId), req.user.orgId]);
   const given = await importGivenParts(req.user.orgId, rows);
+  // POLISH-5: a running job's day is the org's, like the committed rows' (TO_CHAR above).
+  const tzOrg = await orgTz(req.user.orgId);
   // FIX-52: a spreadsheet import still being written, or one that failed and
   // was rolled back, is on the list too, read from its job, never guessed.
   const jobs = await query(`SELECT j.id, j.file_name, j.status, j.phase, j.done, j.total, j.error, j.started_at, j.created_by_name
@@ -792,7 +794,7 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
   const recent = await recentGiftRuns(req.user.orgId, rows);
   res.json({
     imports: jobs.map(j => ({ id: j.id, name: j.file_name || "Spreadsheet", sourceFilename: j.file_name, shape: "sheet",
-      committedOn: new Date(j.started_at).toISOString().slice(0, 10), committedAt: j.started_at, by: j.created_by_name || null,
+      committedOn: orgToday(tzOrg, new Date(j.started_at)), committedAt: j.started_at, by: j.created_by_name || null,   // ORG_TZ_SEAM_OK
       state: j.status === "running" ? "in_progress" : "failed", phase: j.phase, done: Number(j.done) || 0, total: Number(j.total) || 0,
       sentence: j.status === "running" ? `In progress: ${j.phase || "starting"}.` : `Not imported. ${j.error || ""} Nothing was written.`,
       rowsIn: 0, giftsCreated: 0, donorsCreated: 0, donorsMerged: 0, rowsSetAside: 0, rowsErrored: 0, dollarsIn: 0, dollarsCreated: 0,

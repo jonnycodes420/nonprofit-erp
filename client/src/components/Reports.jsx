@@ -758,7 +758,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
 
   return <FigureContext.Provider value={{ openPerson }}><div className="fade-in">
     <style>{REPORTS_CSS}</style>
-    <PageTitle main="Your" accent="Reports" />
+    <PageTitle main="Your" accent="reports." />
 
     {/* First-visit signpost (BUILD-08 Phase D) — shown until "Got it". */}
     {orgHasGifts !== false && <div style={{ marginBottom: 14 }}>

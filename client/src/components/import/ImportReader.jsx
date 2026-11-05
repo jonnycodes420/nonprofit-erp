@@ -17,7 +17,7 @@ export function ImportReader({ applyParsed, bothMode, bothPayload, bothStagePrev
             <div style={{fontSize:11,color:T.ink3,marginTop:5}}>A donor list or a gift export. We read your file and build your donors and their giving history. .csv, .tsv, .xlsx, .xls.</div>
             {moveSource && (
               <div data-testid="move-source-line" style={{fontSize:11.5,color:T.ink3,marginTop:6}}>
-                Set up for your export from <strong style={{color:T.ink2}}>{moveLabel || moveSource}</strong>.{" "}
+                Set up for your export from <strong style={{color:T.ink2}}>{moveLabel || moveSource}</strong>{". "}
                 <button onClick={()=>setMoveAsked(false)}
                   style={{background:"none",border:"none",color:T.greenDk,fontSize:11.5,
                           textDecoration:"underline",cursor:"pointer",padding:0}}>Change</button>

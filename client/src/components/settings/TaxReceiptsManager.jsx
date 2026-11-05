@@ -5,6 +5,8 @@ import { askConfirm } from "../ConfirmDialog";
 import { T, SectionLabel } from "../shared";
 import { MailTypeSwitches } from "../MailTypes";
 import { plural } from "../../../../shared/countWords.js";
+import { receiptBadge } from "../../lib/receiptBadge";
+import { useMailTypes } from "../../lib/mailTypes";
 
 export function fmtDollars(n){
   return "$"+Math.round(n||0).toLocaleString();
@@ -20,6 +22,7 @@ export function fmtDollars(n){
 export function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
   const [form,setForm]=useState({legalName:"",ein:"",receiptAddress:"",receiptSignatureName:"",receiptSignatureTitle:"",receiptCustomMessage:"",receiptsEnabled:false});
   const [loaded,setLoaded]=useState(false);
+  const { page: mailPage, types: mailTypes } = useMailTypes();   // POLISH-5: the badge reads the switches
   const [saving,setSaving]=useState(false);
   const [saveErr,setSaveErr]=useState("");
   const [saveMsg,setSaveMsg]=useState("");
@@ -101,6 +104,8 @@ export function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
   const inp={width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 12px",fontSize:13,color:T.ink,background:T.bg,outline:"none",marginBottom:12,fontFamily:"inherit"};
   const lbl={fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4};
 
+  // POLISH-5: the badge says what is sent, read from the two switches below it.
+  const badge=receiptBadge(form.receiptsEnabled, mailPage?mailTypes:null);
   if(!loaded) return <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",fontSize:13,color:T.ink3}}>Loading…</div>;
 
   return(
@@ -108,8 +113,8 @@ export function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
       <div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
           <SectionLabel>Tax Receipts</SectionLabel>
-          <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:form.receiptsEnabled?T.green100:T.bg2,color:form.receiptsEnabled?T.greenDk:T.ink3,border:"1px solid "+(form.receiptsEnabled?T.greenDk:T.bg3)}}>
-            {form.receiptsEnabled?"Enabled":"Not enabled"}
+          <span data-testid="tax-receipts-badge" style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:badge.on?T.green100:T.bg2,color:badge.on?T.greenDk:T.ink3,border:"1px solid "+(badge.on?T.greenDk:T.bg3)}}>
+            {badge.words}
           </span>
         </div>
         <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.6}}>

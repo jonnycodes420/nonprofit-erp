@@ -20,6 +20,7 @@ import { SaveAsGroup } from "./Groups";
 import RemoveMenu, { removeMany } from "./RemoveMenu";
 import PhotoField from "./PhotoField";
 import Picture from "./Picture";
+import { displayOrgDate } from "../lib/orgDay";
 
 // FIX-41: a ticket type's or sponsorship level's optional small picture. The
 // thumbnail (or "Add a picture") opens the one picture control; it saves at once.
@@ -167,7 +168,7 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
           <div key={w.id} data-testid="event-waitlist-row" style={{ display: "flex", gap: 10, alignItems: "baseline", fontSize: 13, color: T.ink, padding: "6px 0", borderBottom: "1px solid " + T.bg3, flexWrap: "wrap" }}>
             <strong style={{ minWidth: 160 }}>{w.name}</strong>
             <span style={{ color: T.ink3 }}>{w.level_name}</span>
-            <span style={{ color: T.ink3 }}>{w.offered_at ? `offered ${displayDate(String(w.offered_at).slice(0, 10))}` : `number ${w.position}`}</span>
+            <span style={{ color: T.ink3 }}>{w.offered_at ? `offered ${displayOrgDate(w.offered_at)}` : `number ${w.position}`}</span>
             {!isReadOnly && !w.taken_at && <button onClick={() => offer(w)} style={{ ...btn(false), marginLeft: "auto" }} data-testid="event-waitlist-offer">
               {w.offered_at ? "Offer again" : "Offer a place"}</button>}
             <RemoveMenu kind="waitlist" id={w.id} disabled={isReadOnly} onDone={load} />

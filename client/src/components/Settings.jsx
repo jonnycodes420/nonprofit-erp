@@ -47,6 +47,8 @@ import { BccAddressCard } from "./settings/BccAddressCard";
 import { AuditLog } from "./settings/AuditLog";
 import { StaffBoardList } from "./settings/StaffBoardList";
 import { SETTINGS_TABS, SECTION_ALIAS, BILLING_STATUS_META } from "./settings/settingsTabs";
+import { displayOrgDate } from "../lib/orgDay";
+import { impactExample } from "../lib/impactExample";
 export { PortalWebsiteSnippet, PortalWebsiteSnippetCard } from "./settings/PortalWebsiteSnippet";
 export { ImpactUpdatesManager } from "./settings/ImpactUpdatesManager";
 export { GivingSourcesManager } from "./settings/GivingSourcesManager";
@@ -662,7 +664,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                 <div style={{fontSize:11,color:T.greenDk,marginTop:1}}>Account: {stripe.accountId}</div>
               </div>
             </div>
-            <div style={{fontSize:12,color:T.ink3}}>Connected {stripe.connectedAt?displayDate(new Date(stripe.connectedAt)):""}</div>
+            <div style={{fontSize:12,color:T.ink3}}>Connected {stripe.connectedAt?displayOrgDate(stripe.connectedAt):""}</div>
           </div>
         ):stripe?.onboardingStarted?(
           <div data-testid="stripe-unfinished" style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
@@ -670,7 +672,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:4}}>{stripe.checked?"Stripe setup isn't finished":"Steward couldn't check with Stripe just now"}</div>
               <div style={{fontSize:13,color:T.ink2}}>{stripe.checked
                 ?"Your Stripe account exists, but Stripe can't take donations on it until onboarding is complete. Finish it on Stripe's site; it picks up where you left off."
-                :"Your Stripe account was set up on "+(stripe.connectedAt?displayDate(new Date(stripe.connectedAt)):"an earlier day")+". Reload this page to check again whether it can take donations."}</div>
+                :"Your Stripe account was set up on "+(stripe.connectedAt?displayOrgDate(stripe.connectedAt):"an earlier day")+". Reload this page to check again whether it can take donations."}</div>
             </div>
             {isAdmin&&stripe.checked&&<button onClick={connectStripe} disabled={stripeLoading}
               style={{background:T.green,border:"none",borderRadius:10,padding:"10px 20px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",opacity:stripeLoading?0.7:1,flexShrink:0}}>
@@ -848,7 +850,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             onMouseLeave={e=>e.currentTarget.style.borderLeftColor=T.bg3}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{m.name}{m.active===false&&<span style={{marginLeft:5,fontSize:10,color:T.ink3,fontWeight:400}}>inactive</span>}</div>
-              <div style={{fontSize:11,color:T.ink3,marginTop:2}}>${Number(m.dollar_threshold).toLocaleString()}: {m.outcome_template}</div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{`Every $${Number(m.dollar_threshold).toLocaleString("en-US")}. A donor at that amount reads: “${impactExample(m.outcome_template, m.dollar_threshold)}”`}</div>
             </div>
             {isAdmin&&<div style={{display:"flex",gap:6,flexShrink:0}}>
               <button onClick={()=>openEditMetric(m)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
@@ -1218,7 +1220,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                   <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{sd.fromEmail}</span>
                   {sd.verified
                     ?<span data-testid="sd-verified" style={{fontSize:11,fontWeight:800,background:T.bg2,color:T.ink3,border:"1px solid "+T.bg3,borderRadius:99,padding:"2px 9px"}}>
-                       Verified {displayDate(sd.verifiedAt)}</span>
+                       Verified {displayOrgDate(sd.verifiedAt)}</span>
                     :<span style={{fontSize:11,fontWeight:800,background:T.gold100,color:T.gold700,border:"1px solid "+T.gold300,borderRadius:99,padding:"2px 9px"}}>
                        Waiting for DNS</span>}
                   {!sd.verified&&(

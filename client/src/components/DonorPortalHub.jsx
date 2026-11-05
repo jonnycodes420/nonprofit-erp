@@ -20,6 +20,7 @@ import { PortalWebsiteSnippetCard } from "./settings/PortalWebsiteSnippet";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { countLabel } from "../../../shared/countWords.js";
+import { displayOrgDate } from "../lib/orgDay";
 
 const btnPrimary = { display: "inline-block", background: T.gold500, border: "none", borderRadius: 9, padding: "10px 18px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer", textDecoration: "none" };
 const btnSecondary = { ...btnPrimary, background: T.bg2, border: "1px solid " + T.bg3 };
@@ -57,7 +58,7 @@ function EngagementCard() {
           {d.recent.slice(0, 6).map((r, i) => (
             <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: T.ink2, padding: "4px 0" }}>
               <span>{r.donorName || r.email || "A donor"} · {String(r.action).replace(/_/g, " ")}</span>
-              <span style={{ color: T.ink3 }}>{displayDate(r.createdAt)}</span>
+              <span style={{ color: T.ink3 }}>{displayOrgDate(r.createdAt)}</span>
             </div>
           ))}
         </div>

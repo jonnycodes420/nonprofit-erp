@@ -15,7 +15,7 @@ export function ImportDetection({ aggregateCollapse, effectiveShape, parseReport
             <div style={{background:T.bg,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"11px 14px",marginBottom:10,fontSize:12.5,color:T.ink,lineHeight:1.6}}>
               <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginBottom:4}}>This looks like a report export, here's what we set aside</div>
               {parseReport.chromeAbove?.length > 0 && (
-                <div>We skipped {countLabel(parseReport.chromeAbove.length, "line")} above your column headers (found on line {parseReport.headerLine?.line}):{" "}
+                <div>We skipped {countLabel(parseReport.chromeAbove.length, "line")} above your column headers (found on line {parseReport.headerLine?.line}){": "}
                   {parseReport.chromeAbove.map(c => c.text ? `“${c.text}”` : "(blank)").join(", ")}.</div>
               )}
               {parseReport.chromeRows?.length > 0 && (

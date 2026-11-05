@@ -157,12 +157,12 @@ export function interactive(onClick, opts = {}) {
 // module's scope — shared.jsx itself calls fmt()/fmtFull() (GivingHistoryChart,
 // buildContext). A re-export alone left them undefined here and crashed the
 // donor profile with "Can't find variable: fmt" (the BUILD-21 fmt regression).
-import { fmt, fmtFull, fmtTotal, quietPhrase } from "../lib/money";
+import { fmt, fmtFull, fmtTotal, fmtWhole, quietPhrase } from "../lib/money";
 import { errorMessage } from "../lib/domainError";
 import { rowOpenProps } from "../lib/rowOpen";
 import { civilDaysAgo } from "../lib/orgToday";
 import { usePeoplePicker, peopleCounts, pickPeople } from "../lib/people";
-export { fmt, fmtFull, fmtTotal, quietPhrase };
+export { fmt, fmtFull, fmtTotal, fmtWhole, quietPhrase };
 // FIX-14 Part 1 — a civil date ("2026-10-01") is counted on the ORG's calendar.
 // `new Date("2026-10-02")` is UTC midnight, which is 8pm the day before in New
 // York, so a meeting stored a day ahead read "(Today)" at 11pm.
@@ -1251,7 +1251,7 @@ export function PageTitle({main,accent,sub}) {
   return (
     <div style={{marginBottom:16}}>
       <h1 style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:32,fontWeight:400,letterSpacing:"-0.02em",margin:0,lineHeight:1.15}}>
-        <span style={{color:T.ink}}>{main}{" "}</span><span style={{color:T.ink,borderBottom:"3px solid "+T.gold500,paddingBottom:2}}>{accent}</span>
+        <span style={{color:T.ink}}>{`${main} `}</span><span style={{color:T.ink,borderBottom:"3px solid "+T.gold500,paddingBottom:2}}>{accent}</span>
       </h1>
       {sub&&<div style={{fontSize:14,color:T.ink3,marginTop:12,fontFamily:"'DM Sans',sans-serif"}}>{sub}</div>}
     </div>

@@ -16,6 +16,7 @@ import { T, Modal, Phone } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { sanitizeRichText, embedFor } from "../../../shared/richText.js";
+import { displayOrgDate } from "../lib/orgDay";
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: T.ink, fontFamily: "inherit", boxSizing: "border-box" };
 const btnPrimary = { background: T.green, border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13, fontWeight: 700, color: T.white, cursor: "pointer", fontFamily: "inherit" };
@@ -183,7 +184,7 @@ export function ApplicationsView({ isReadOnly, onOpenPerson, onCount }) {
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
             <div>
               <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{a.name}</div>
-              <div style={{ fontSize: 12.5, color: T.ink3, overflowWrap: "anywhere" }}>{a.email}{a.phone ? <> · <Phone value={a.phone} /></> : ""} · applied {displayDate(String(a.submittedAt).slice(0, 10))}</div>
+              <div style={{ fontSize: 12.5, color: T.ink3, overflowWrap: "anywhere" }}>{a.email}{a.phone ? <> · <Phone value={a.phone} /></> : ""} · applied {displayOrgDate(a.submittedAt)}</div>
             </div>
             {a.status === "pending" && !isReadOnly && <div style={{ display: "flex", gap: 6 }}>
               <button style={btnPrimary} disabled={busy === a.id} data-testid="app-approve" onClick={() => approve(a)}>Approve</button>

@@ -130,7 +130,7 @@ export function InvitationSection({ headline }) {
           locked for as long as they stay, and my direct line.
         </p>
         <p style={{ fontSize: 13.5, color: C.sage, marginBottom: 40, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
-          Founding partner rate <strong style={{ color: C.cream }}>$199 a month</strong> below both published plans, and locked for as long as you stay.{" "}
+          Founding partner rate <strong style={{ color: C.cream }}>$199 a month</strong> below both published plans, and locked for as long as you stay{". "}
           <a href="/pricing" style={{ color: C.cream, textDecoration: "underline", textUnderlineOffset: 3 }}>See pricing</a>
         </p>
 
