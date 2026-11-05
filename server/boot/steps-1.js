@@ -1,4 +1,4 @@
-// SPLIT-2: moved VERBATIM from server.js (the statements from lines 1-1051, in order). server.js requires the boot modules in
+// SPLIT-2: moved VERBATIM from server.js (the statements from lines 1-910, in order). server.js requires the boot modules in
 // order: every helpers-N first (a function existed from the start, as hoisting made it), then
 // steps-1, steps-2 … in the order the statements ran. Each "SPLIT-2 server.js piece N" block is
 // server.js's own text; tests read server.js through readSource("server.js"), which puts the
@@ -9,10 +9,9 @@
 var __dirname = require("path").join(__dirname, "..", "..");   // server.js's folder, as the moved code expects
 const __boot = require("./share");
 const __share = __boot.share;
-let _logOutboundEmail, noteServerError, orgMaySendEmail, rateLimitHandler, syncCalendar, syncMailbox;
+let _logOutboundEmail, orgMaySendEmail, rateLimitHandler, syncCalendar, syncMailbox;
 __boot.register(c => {
   if ("_logOutboundEmail" in c) _logOutboundEmail = c._logOutboundEmail;
-  if ("noteServerError" in c) noteServerError = c.noteServerError;
   if ("orgMaySendEmail" in c) orgMaySendEmail = c.orgMaySendEmail;
   if ("rateLimitHandler" in c) rateLimitHandler = c.rateLimitHandler;
   if ("syncCalendar" in c) syncCalendar = c.syncCalendar;
@@ -21,9 +20,6 @@ __boot.register(c => {
   if ("PT" in c) PT = c.PT;
   if ("dbReady" in c) dbReady = c.dbReady;
   if ("DB_NAME" in c) DB_NAME = c.DB_NAME;
-  if ("ledgerChartSelfHeals" in c) ledgerChartSelfHeals = c.ledgerChartSelfHeals;
-  if ("reconciliation" in c) reconciliation = c.reconciliation;
-  if ("reconcileAccountsWithStripe" in c) reconcileAccountsWithStripe = c.reconcileAccountsWithStripe;
 });
 
 // SPLIT-2 server.js piece 1
@@ -1247,150 +1243,3 @@ bootGate.need("database", require("../shared/lifecycle").poolReady().then(() => 
 // SPLIT-2 server.js piece 161
 require("../shared/lifecycle").bootNeeds({ testMode });   // DEPLOY-1: a warm pool, the AI client
 // SPLIT-2 end
-// SPLIT-2 server.js piece 162
-
-// FIX-20 Part 10: THE READINESS CHECK Railway's healthcheck points at
-// (a service setting; see docs/decisions/tests-and-ci.md). It answers 200 only
-// once schema init has finished and the database answers, so during a deploy the OLD instance keeps
-// serving until this one is ready, and nobody sees "Database initializing".
-// It sits above the gate on purpose: it is the one route that must answer
-// while the gate is shut.
-// DEPLOY-1: 200 only when every boot need has resolved (bootGate.js), 503
-// again from SIGTERM on; it names the needs it waits for.
-app.get("/ready", async (req, res) => {
-  if (bootGate.isDraining()) return res.status(503).json({ ready: false, draining: true });
-  if (!bootGate.servable()) return res.status(503).json({ ready: false, waitingFor: bootGate.waitingFor() });
-  try { await query("SELECT 1"); res.json({ ready: true }); }
-  catch { res.status(503).json({ ready: false, waitingFor: ["database"] }); }
-});
-// SPLIT-2 end
-// SPLIT-2 server.js piece 163
-
-// The gate (DEPLOY-1): until every need resolves, a 503 to retry, never a half-booted 500.
-app.use((req, res, next) => {
-  if (!bootGate.servable()) return res.status(503).json({ error: "Steward is starting up", retry: true });
-  next();
-});
-// SPLIT-2 end
-// SPLIT-2 server.js piece 164
-
-// ── Async error wrapper ────────────────────────────────────────────────────
-const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(err => {
-  // BUILD-97 Part 5 — every route's failure already passes through here, so
-  // this is where a 5xx burst is countable without an APM and without missing
-  // a route. It only NOTES; noteServerError rate-limits the alert itself.
-  try { noteServerError(); } catch (_) { /* never let telemetry break an error path */ }
-  next(err);
-});
-// SPLIT-2 end
-__share({ wrap });
-// SPLIT-2 server.js piece 165
-
-// ── Admin guard ────────────────────────────────────────────────────────────
-// Revalidates the caller's role against the DB, NOT the (stateless, 7-day) JWT.
-// The token bakes `role` in at login, so a demoted or removed user would keep
-// admin power until the token expired — up to a week. Re-reading the live row
-// makes a role revocation or account removal take effect on the next request.
-// (Audit BUILD-37 §A5/§C4 — stale-JWT privilege retention; proven exploitable.)
-// Admin routes are low-frequency, so the extra indexed lookup is not on the
-// read hot path.
-const requireAdmin = wrap(async (req, res, next) => {
-  // FIX-57: a support session acts as an admin of the org it was opened for
-  // (its own users row is in another org); requireAuth already decided it.
-  if (req.user && req.user.support) return next();
-  const rows = await query("SELECT role FROM users WHERE id = ?", [req.user.userId]);
-  if (!rows.length) return res.status(401).json({ error: "user_not_found", message: "Your account no longer exists" });
-  if (rows[0].role !== "admin") return res.status(403).json({ error: "Admin access required" });
-  next();
-});
-// SPLIT-2 end
-__share({ requireAdmin });
-// SPLIT-2 server.js piece 166
-
-// ── Super-admin guard ──────────────────────────────────────────────────────
-// Same reasoning as requireAdmin, but the blast radius is worse: is_super_admin
-// is baked into the JWT and grants CROSS-ORG access to every tenant. A revoked
-// super-admin must lose that on the next request, not in up to 7 days. The JWT
-// check runs first (cheap reject), then the live `is_super_admin` flag is
-// re-read. (Audit BUILD-37 §A5/§B10.) All /admin/* usages call this wrapper.
-const requireSuperAdmin = [requireSuperAdminJwt, wrap(async (req, res, next) => {
-  const rows = await query("SELECT is_super_admin FROM users WHERE id = ?", [req.user.userId]);
-  if (!rows.length || rows[0].is_super_admin !== true) return res.status(403).json({ error: "Forbidden" });
-  next();
-})];
-// SPLIT-2 end
-__share({ requireSuperAdmin });
-// SPLIT-2 server.js piece 167
-
-// ── Health ─────────────────────────────────────────────────────────────────
-// `sentry` is a non-secret boolean (is SENTRY_DSN configured?) so ops checks
-// can confirm error monitoring is wired without dashboard access.
-// `buildSha` (deploy rewire, 2026-08-11): the exact commit this build came
-// from, resolved once at boot. The Actions deploy job writes .build-sha into
-// the upload before `railway up`; a git-triggered Railway build carries
-// RAILWAY_GIT_COMMIT_SHA instead. null = an unstamped local/dev boot.
-const BUILD_SHA = (() => {
-  try {
-    const stamped = require("fs").readFileSync(__dirname + "/.build-sha", "utf8").trim();
-    if (stamped) return stamped;
-  } catch { /* no stamp file — fall through to env */ }
-  return process.env.RAILWAY_GIT_COMMIT_SHA || process.env.BUILD_SHA || null;
-})();
-// SPLIT-2 end
-__share({ BUILD_SHA });
-// SPLIT-2 server.js piece 168
-// ── BUILD-58 W-3 — the ONE ledger-provisioning helper ──────────────────────
-// Every org-creation path calls this at creation, and every gift/grant ledger
-// stamp resolves its target accounts through it. If the chart of accounts is
-// missing (a legacy org, or a creation path that somehow skipped provisioning)
-// it SELF-HEALS — provisioning the chart on the spot — and says so loudly
-// (CRITICAL log + Sentry + /health.ledger.chartSelfHeals). The class rule this
-// pins: a financial write must never land nowhere and return success. The
-// '4010' probe below is the only one in the codebase — stamp sites must go
-// through here, never re-probe (pinned by tests/ledger-provisioning.test.js).
-let ledgerChartSelfHeals = 0;
-// SPLIT-2 end
-__share({ ledgerChartSelfHeals });
-// SPLIT-2 server.js piece 169
-
-// ── BUILD-62 Part 3 — RECONCILIATION GUARD state ────────────────────────────
-// The instance (BUILD-62) was a webhook race; the CLASS is "money can move at
-// Stripe and leave no trace in Steward, and nothing notices." That has now
-// happened twice, in two modes, and both times a human reading a page was the
-// only thing that caught it. This state holds the last reconciliation result —
-// SURFACED as counts on /health so UptimeRobot's keyword watch pages on it,
-// exactly like themeAssets.dbFallbackRows. A donor charged with no record is
-// the single worst thing this product can do; it should page within the hour,
-// not wait for someone to open a portal. See reconcileStripeVsGifts() below.
-// BUILD-65 Part 6 — the counters are NULL until the sweep has actually run.
-// A `0` for a check that never happened is a "clean" zero that means "I didn't
-// look" — the exact failure accountsErrored was added to prevent, left open one
-// door down (right after a deploy, unrecordedCharges read 0 with checkedAt:null).
-// null = unchecked; a number = a real result. guardsOk (below) treats null as
-// NOT fresh.
-let reconciliation = {
-  unrecordedCharges: null, orphanGifts: null, checkedAt: null, oldestUnrecordedAgeMin: null,
-  accountsChecked: null, accountsErrored: null, divergences: [],
-};
-// SPLIT-2 end
-__share({ reconciliation });
-// SPLIT-2 server.js piece 170
-// BUILD-65 Part 6 — the DENOMINATOR for accountsChecked: how many orgs have a
-// connected Stripe account at all (the count the sweep SHOULD be reading). When
-// Brian's orgs connect and it should read 6, a stuck accountsChecked:1 then
-// looks wrong instead of looking fine. Cached (refreshed on boot + each sweep)
-// so /health stays synchronous.
-let reconcileAccountsWithStripe = null;
-// SPLIT-2 end
-__share({ reconcileAccountsWithStripe });
-// SPLIT-2 server.js piece 173
-
-// BUILD-65 Part 6 — a single field that is true ONLY when every guard is both
-// clean AND fresh. Nothing may report a clean zero for a check that has not
-// run. Small-fix #1: a boot grace so a not-yet-run check doesn't read false the
-// instant after a deploy (which opened a UptimeRobot incident on every deploy).
-// The decision logic is the pure computeGuardsOk (guards.js), unit-tested for
-// the boot-grace and dead-tick cases in tests/guards.test.js.
-const guardBootAt = Date.now();
-// SPLIT-2 end
-__share({ guardBootAt });

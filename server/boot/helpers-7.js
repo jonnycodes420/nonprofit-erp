@@ -1,4 +1,4 @@
-// SPLIT-2: moved VERBATIM from server.js (its functions from lines 9319-10773). server.js requires the boot modules in
+// SPLIT-2: moved VERBATIM from server.js (its functions from lines 9322-10776). server.js requires the boot modules in
 // order: every helpers-N first (a function existed from the start, as hoisting made it), then
 // steps-1, steps-2 … in the order the statements ran. Each "SPLIT-2 server.js piece N" block is
 // server.js's own text; tests read server.js through readSource("server.js"), which puts the
@@ -71,7 +71,7 @@ __boot.register(c => {
   if ("withTryAdvisoryLock" in c) withTryAdvisoryLock = c.withTryAdvisoryLock;
 });
 
-// SPLIT-2 server.js piece 578
+// SPLIT-2 server.js piece 580
 
 async function processPledgeReminders({ orgId = null } = {}) {   // TRUST-1: a request passes its org; only the hourly job runs all orgs
   const picked = [];
@@ -171,7 +171,7 @@ async function processPledgeReminders({ orgId = null } = {}) {   // TRUST-1: a r
   return { picked };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 579
+// SPLIT-2 server.js piece 581
 
 // ── Billing helpers ────────────────────────────────────────────────────────
 function trialCanceled(org) {
@@ -181,7 +181,7 @@ function trialCanceled(org) {
   return !!end && end > Date.now();
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 580
+// SPLIT-2 server.js piece 582
 function getOrgAccessState(org) {
   const status = org.subscription_status || "trialing";
   const now = Date.now();
@@ -198,7 +198,7 @@ function getOrgAccessState(org) {
   return "full";
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 581
+// SPLIT-2 server.js piece 583
 
 async function checkWriteAccess(req, res, next) {
   try {
@@ -210,7 +210,7 @@ async function checkWriteAccess(req, res, next) {
   next();
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 582
+// SPLIT-2 server.js piece 584
 
 // ── Billing ────────────────────────────────────────────────────────────────
 
@@ -223,7 +223,7 @@ function billingCustomerColumn() {
   return billingStripeMode() === "test" ? "stripe_customer_id_test" : "stripe_customer_id";
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 584
+// SPLIT-2 server.js piece 586
 
 async function checkBillingPriceModes() {
   const mode = billingStripeMode();
@@ -250,7 +250,7 @@ async function checkBillingPriceModes() {
   return status;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 585
+// SPLIT-2 server.js piece 587
 
 // Run the check once shortly after boot (non-blocking) and log loudly on a mismatch.
 function scheduleBillingModeCheck() {
@@ -275,14 +275,14 @@ function scheduleBillingModeCheck() {
   }, 8000);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 590
+// SPLIT-2 server.js piece 592
 function signCancelToken(orgId, now = Date.now()) {
   const payload = Buffer.from(JSON.stringify({ cancelOrgId: orgId, exp: now + CANCEL_LINK_DAYS * 86400000 })).toString("base64url");
   const sig = crypto.createHmac("sha256", RECOVERY_SECRET).update("cancel:" + payload).digest("base64url");
   return `${payload}.${sig}`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 592
+// SPLIT-2 server.js piece 594
 
 async function agentTrialAllowance(orgId) {
   const [org] = await query("SELECT subscription_status FROM orgs WHERE id=?", [orgId]);
@@ -299,7 +299,7 @@ async function agentTrialAllowance(orgId) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 593
+// SPLIT-2 server.js piece 595
 
 // ── PRICING-1 · RECORDS, AND THE BAND THEY PUT YOU IN ─────────────────────
 //
@@ -317,7 +317,7 @@ async function countRecords(orgId) {
   return Number(row && row.c) || 0;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 594
+// SPLIT-2 server.js piece 596
 
 // The band an org is PAYING for, read off its plan. A legacy plan (core, team,
 // founding, and the GTM-1a t-bands) has no band in this catalogue and is never
@@ -328,7 +328,7 @@ function bandOfPlan(plan) {
   return PRICING.tierById(id.split("_")[0]);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 597
+// SPLIT-2 server.js piece 599
 
 // "2026-10" for an instant, in the org's own zone.
 function monthKey(now, tz) {
@@ -339,14 +339,14 @@ function monthKey(now, tz) {
   } catch { return new Date(now).toISOString().slice(0, 7); }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 598
+// SPLIT-2 server.js piece 600
 function prevMonthKey(key, back = 1) {
   let [y, m] = key.split("-").map(Number);
   m -= back; while (m < 1) { m += 12; y -= 1; }
   return `${y}-${String(m).padStart(2, "0")}`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 599
+// SPLIT-2 server.js piece 601
 
 // Count, record this month, compare, and, only when the org has been over its
 // band for MONTHS_OVER_BEFORE_NOTE months running, record ONE open notice and
@@ -427,7 +427,7 @@ async function checkRecordBand(orgId, { send = true, now = Date.now() } = {}) {
            nextBand: nextBandId, noted: true, effectiveAt: effectiveAt.toISOString(), mailed };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 600
+// SPLIT-2 server.js piece 602
 
 // Every priced org, once a day. Cheap: one COUNT per org with a band plan.
 async function checkAllRecordBands({ now = Date.now() } = {}) {
@@ -443,7 +443,7 @@ async function checkAllRecordBands({ now = Date.now() } = {}) {
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 601
+// SPLIT-2 server.js piece 603
 
 // The daily job: measure every banded org, then apply only the moves an owner
 // agreed to (up, after the notice) or asked for (down, at renewal).
@@ -454,7 +454,7 @@ async function processRecordBands({ now = Date.now() } = {}) {
   return { orgs, detail: `${checked.checked} measured, ${checked.noted} noted, ${moved.up.length} up, ${moved.down.length} down, ${moved.skipped.length} skipped` };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 602
+// SPLIT-2 server.js piece 604
 
 // THE ONLY PLACE A BAND PRICE MOVES. Up: the notice period has passed AND the
 // owner said yes. Down: the owner asked AND the subscription has reached its
@@ -498,7 +498,7 @@ async function applyAgreedBandMoves({ now = Date.now(), orgId = null } = {}) {
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 603
+// SPLIT-2 server.js piece 605
 
 // The email. To the org's own admin, through the org mail gate like every
 // other org-addressed send — a new org has mail off until a super-admin turns
@@ -543,7 +543,7 @@ async function sendTierNoticeEmail({ orgId, orgName, count, band, nextBandId, ef
   return { sent, to, error: error ? error.name : null };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 604
+// SPLIT-2 server.js piece 606
 
 async function processTrialReminders({ now = Date.now(), send = true } = {}) {
   const out = { considered: 0, sent: [], skipped: [] };
@@ -605,7 +605,7 @@ async function processTrialReminders({ now = Date.now(), send = true } = {}) {
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 612
+// SPLIT-2 server.js piece 614
 
 // Returns the limits actually in effect for an org, accounting for trial state
 function effectivePlanLimits(org) {
@@ -614,7 +614,7 @@ function effectivePlanLimits(org) {
   return PLAN_LIMITS[org.plan] || PLAN_LIMITS.core;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 613
+// SPLIT-2 server.js piece 615
 
 async function checkPlanLimit(org, dimension) {
   const limits = effectivePlanLimits(org);
@@ -634,7 +634,7 @@ async function checkPlanLimit(org, dimension) {
   return { allowed: current < limit, current, limit, isTrial };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 616
+// SPLIT-2 server.js piece 618
 // Refreshed after every mail read and on the 15-minute tick. A stale
 // connection is also one ERROR line, which is what puts it in the daily
 // error digest (HARDEN-1's error-digest.yml reads the Railway error lines).
@@ -659,7 +659,7 @@ async function refreshMailboxSyncHealth({ log = false } = {}) {
   return mailboxSyncHealth;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 617
+// SPLIT-2 server.js piece 619
 async function startSyncRun(conn, kind, trigger) {
   const runId = newId("msr");
   await run(`INSERT INTO mailbox_sync_runs (id,org_id,user_id,provider,kind,trigger) VALUES (?,?,?,?,?,?)`,
@@ -667,13 +667,13 @@ async function startSyncRun(conn, kind, trigger) {
   return runId;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 618
+// SPLIT-2 server.js piece 620
 async function finishSyncRun(runId, { ok, found = null, logged = null, error = null }) {
   await run(`UPDATE mailbox_sync_runs SET finished_at=NOW(), ok=?, found=?, logged=?, error=? WHERE id=?`,
     [!!ok, found, logged, error ? String(error).slice(0, 300) : null, runId]).catch(() => {});
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 619
+// SPLIT-2 server.js piece 621
 // The sentence a person reads. Never a status code, never a stack.
 // FIX-34: "did not answer" is said ONLY for a timeout; a refusal says it was
 // refused and why (apiCheck.js holds the wording).
@@ -684,12 +684,12 @@ function syncErrorSentence(providerKey, what, e) {
   return `Steward could not finish reading your ${what}. It tries again in 5 minutes.`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 626
+// SPLIT-2 server.js piece 628
 async function noteRetryAfter(conn, e) {
   if (e && e.retryAfter) await run(`UPDATE mailbox_connections SET retry_after=? WHERE id=?`, [e.retryAfter.toISOString(), conn.id]).catch(() => {});
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 629
+// SPLIT-2 server.js piece 631
 
 async function syncMailbox(userId, orgId, providerKey, { trigger = "tick" } = {}) {
   const [conn] = await query(
@@ -702,7 +702,7 @@ async function syncMailbox(userId, orgId, providerKey, { trigger = "tick" } = {}
   return locked && locked.skipped ? { logged: 0, reason: "running" } : locked;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 630
+// SPLIT-2 server.js piece 632
 async function syncMailboxLocked(conn, userId, orgId, providerKey, trigger) {
   const runId = await startSyncRun(conn, "mail", trigger);
   await run(`UPDATE mailbox_connections SET last_tried_at=NOW() WHERE id=?`, [conn.id]).catch(() => {});
@@ -722,7 +722,7 @@ async function syncMailboxLocked(conn, userId, orgId, providerKey, trigger) {
   }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 631
+// SPLIT-2 server.js piece 633
 
 // FIX-34 · A GMAIL RUN WITH NOTHING NEW IS ONE SMALL CALL. Gmail's history
 // list from the last read's history id says whether anything arrived, was sent
@@ -734,7 +734,7 @@ async function gmailHistoryNow(token) {
   return b && b.historyId ? String(b.historyId) : null;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 632
+// SPLIT-2 server.js piece 634
 async function gmailUnchanged(conn, token) {
   if (!conn.gmail_history_id) return null;
   const r = await providerFetch(`${GMAIL_BASE()}/gmail/v1/users/me/history?` + new URLSearchParams({ startHistoryId: conn.gmail_history_id, maxResults: "1" }),
@@ -752,7 +752,7 @@ async function gmailUnchanged(conn, token) {
   return b.history && b.history.length ? { changed: true } : { unchanged: true, historyId: String(b.historyId) };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 633
+// SPLIT-2 server.js piece 635
 
 async function syncMailboxRun(conn, userId, orgId, providerKey, { progress = false } = {}) {
   const ML = await import("../../shared/mailboxLog.js");
@@ -926,7 +926,7 @@ async function syncMailboxRun(conn, userId, orgId, providerKey, { progress = fal
   return { logged, found: messages.length, dropped, replySteps: replies ? replies.opened + replies.tasks : 0, gatedChange };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 634
+// SPLIT-2 server.js piece 636
 
 // ── INT-BUILD-1 Part 1 · THE CALENDAR, ON THE SAME CONNECTION ──────────────
 //
@@ -944,7 +944,7 @@ async function syncCalendar(userId, orgId, providerKey, { trigger = "tick" } = {
   return locked && locked.skipped ? { kept: 0, reason: "running" } : locked;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 635
+// SPLIT-2 server.js piece 637
 async function syncCalendarLocked(conn, userId, orgId, providerKey, trigger) {
   const runId = await startSyncRun(conn, "calendar", trigger);
   await run(`UPDATE mailbox_connections SET calendar_tried_at=NOW() WHERE id=?`, [conn.id]).catch(() => {});
@@ -963,7 +963,7 @@ async function syncCalendarLocked(conn, userId, orgId, providerKey, trigger) {
   }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 636
+// SPLIT-2 server.js piece 638
 
 async function syncCalendarRun(conn, userId, orgId, providerKey) {
   const CL = await import("../../shared/calendarLog.js");
@@ -1064,7 +1064,7 @@ async function syncCalendarRun(conn, userId, orgId, providerKey) {
   return { kept, found: kept, gatedChange };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 639
+// SPLIT-2 server.js piece 641
 async function pushStewardDates(userId, orgId, providerKey, { trigger = "tick" } = {}) {
   const [conn] = await query(
     `SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND provider=? AND status='active'`,
@@ -1084,7 +1084,7 @@ async function pushStewardDates(userId, orgId, providerKey, { trigger = "tick" }
   }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 640
+// SPLIT-2 server.js piece 642
 async function pushStewardDatesRun(conn, userId, orgId, providerKey) {
   // Turned off: whatever Steward put there comes off, and nothing goes on.
   const on = conn.push_dates === true;
@@ -1144,7 +1144,7 @@ async function pushStewardDatesRun(conn, userId, orgId, providerKey) {
   return { pushed };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 641
+// SPLIT-2 server.js piece 643
 
 // The provider is asked for the window, with the description masked out.
 // Returns null when the provider refuses, so a revoked calendar never reads
@@ -1185,13 +1185,13 @@ async function fetchCalendarEvents(providerKey, token, from, to) {
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 642
+// SPLIT-2 server.js piece 644
 async function calRefusal(r, providerKey) {
   const body = await r.json().catch(() => null);
   return APIC.providerError(providerKey, "calendar", r.status, body, r.status === 429 ? APIC.retryAfterDate(r.headers.get("retry-after")) || new Date(Date.now() + 5 * 60e3) : null);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 646
+// SPLIT-2 server.js piece 648
 async function graphDeltaWalk(url, token, pages, what = "mail") {
   let changed = 0;
   for (let i = 0; i < pages && url; i++) {
@@ -1211,7 +1211,7 @@ async function graphDeltaWalk(url, token, pages, what = "mail") {
   return null;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 647
+// SPLIT-2 server.js piece 649
 async function graphDeltaGate(conn, key, token) {
   const stored = (conn.graph_delta || {})[key];
   if (stored && stored.link && Date.now() - new Date(stored.at).getTime() < GRAPH_DELTA_FULL_MS) {
@@ -1224,7 +1224,7 @@ async function graphDeltaGate(conn, key, token) {
   return { unchanged: false, link: fresh ? fresh.link : null, at: new Date().toISOString() };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 648
+// SPLIT-2 server.js piece 650
 async function saveGraphDelta(conn, parts) {
   const cur = { ...(conn.graph_delta || {}) };
   for (const [k, v] of Object.entries(parts)) cur[k] = v && v.link ? { link: v.link, at: v.at } : null;
@@ -1232,7 +1232,7 @@ async function saveGraphDelta(conn, parts) {
   await run(`UPDATE mailbox_connections SET graph_delta=? WHERE id=?`, [JSON.stringify(cur), conn.id]).catch(() => {});
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 649
+// SPLIT-2 server.js piece 651
 
 async function calendarUnchanged(conn, providerKey, token) {
   if (providerKey !== "google" || !conn.calendar_read_from) return false;
@@ -1248,7 +1248,7 @@ async function calendarUnchanged(conn, providerKey, token) {
   return !!body && body.kind === "calendar#events" && Array.isArray(body.items) && body.items.length === 0;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 650
+// SPLIT-2 server.js piece 652
 // PUSH-1 · GOOGLE CALENDAR'S INCREMENTAL SYNC TOKEN. Asked with the stored
 // token, Google lists only what changed since (deletions included), and hands
 // back the next token. Recurring events are asked for as series
@@ -1276,7 +1276,7 @@ async function gcalTokenWalk(params, token, pages) {
   return null;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 651
+// SPLIT-2 server.js piece 653
 async function googleCalendarGate(conn, token) {
   const recent = conn.calendar_read_from && Date.now() - new Date(conn.calendar_read_from).getTime() <= CAL_FULL_EVERY_MS;
   if (conn.gcal_sync_token) {
@@ -1288,7 +1288,7 @@ async function googleCalendarGate(conn, token) {
   return { unchanged: false, gated: false, syncToken: made ? made.syncToken : null };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 652
+// SPLIT-2 server.js piece 654
 
 // A mailbox token, refreshed through the same seam every other connection
 // uses. Returns null rather than throwing so one broken mailbox never stops
@@ -1331,7 +1331,7 @@ async function mailboxAccessToken(conn, orgId, providerKey) {
   }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 655
+// SPLIT-2 server.js piece 657
 async function fetchMailboxMessages(providerKey, token, donorEmails, { onProgress = null, clients = null } = {}) {
   const out = [];
   const seen = new Set();

@@ -1,4 +1,4 @@
-// SPLIT-2: moved VERBATIM from server.js (its functions from lines 7847-9305). server.js requires the boot modules in
+// SPLIT-2: moved VERBATIM from server.js (its functions from lines 7850-9308). server.js requires the boot modules in
 // order: every helpers-N first (a function existed from the start, as hoisting made it), then
 // steps-1, steps-2 … in the order the statements ran. Each "SPLIT-2 server.js piece N" block is
 // server.js's own text; tests read server.js through readSource("server.js"), which puts the
@@ -70,7 +70,7 @@ __boot.register(c => {
   if ("webhookSubStatus" in c) webhookSubStatus = c.webhookSubStatus;
 });
 
-// SPLIT-2 server.js piece 530
+// SPLIT-2 server.js piece 532
 
 async function autoEnroll({ orgId = null } = {}) {
   try {
@@ -163,7 +163,7 @@ async function autoEnroll({ orgId = null } = {}) {
   } catch (e) { console.error("[seq] autoEnroll:", e.message); }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 533
+// SPLIT-2 server.js piece 535
 
 // The values a step's merge fields render from: the person's OWN data, the
 // org's OWN words (BUILD-86 vocabulary), and every custom field on the record.
@@ -198,7 +198,7 @@ async function sequenceMergeValues(donor, orgId) {
   return values;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 535
+// SPLIT-2 server.js piece 537
 
 // The closed STOP set, evaluated for one enrollment at send time. Returns a
 // stop key or null. A LOGGED CONVERSATION IS NOT HERE, deliberately — see
@@ -220,7 +220,7 @@ async function sequenceStopFor(enr, donor, step) {
   return null;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 536
+// SPLIT-2 server.js piece 538
 
 // Is this org allowed to run sequences at all? BUILD-84's timezone rule: the
 // column has a default, so what this needs is a zone A HUMAN CHOSE.
@@ -230,7 +230,7 @@ async function sequenceTimezoneGate(orgId) {
   return { ...SEQ.timezoneGate(tz), timezone: tz.timezone };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 537
+// SPLIT-2 server.js piece 539
 
 // The org's local clock as { weekday, hour, date } — the send window's input.
 async function orgSendClock(orgId, at = new Date()) {
@@ -241,7 +241,7 @@ async function orgSendClock(orgId, at = new Date()) {
   return { ...c, weekday, timezone: tz.timezone };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 538
+// SPLIT-2 server.js piece 540
 
 // ── ENROLLMENT ─────────────────────────────────────────────────────────────
 // ENROLLMENT IS NEVER RETROACTIVE. Every call site passes the event that just
@@ -283,7 +283,7 @@ async function enrollInSequences(orgId, donorId, triggerKey, context = {}, actor
   return { enrolled, errors };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 541
+// SPLIT-2 server.js piece 543
 
 // AUTO-1 · THE ONE SENDER for words a person on staff wrote and turned on:
 // a tracked sequence's step and a journey's automatic email step. Merge, the
@@ -310,14 +310,14 @@ async function sendStaffWrittenEmail(orgId, donor, subjectTpl, bodyTpl, source) 
   return { delivered, errText, subject: subj.text, missing: [...new Set([...(subj.missing || []), ...(body.missing || [])])] };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 542
+// SPLIT-2 server.js piece 544
 // The merge, without sending: which fields this person cannot fill.
 async function staffWrittenMissing(orgId, donor, subjectTpl, bodyTpl) {
   const values = await sequenceMergeValues(donor, orgId);
   return [...new Set([...(SEQ.renderMerge(subjectTpl, values).missing || []), ...(SEQ.renderMerge(bodyTpl, values).missing || [])])];
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 543
+// SPLIT-2 server.js piece 545
 
 async function processTrackedSequences({ orgId = null, limit = SEQ_TICK_BUDGET, now = new Date() } = {}) {
   await SEQ_READY;
@@ -438,7 +438,7 @@ async function processTrackedSequences({ orgId = null, limit = SEQ_TICK_BUDGET, 
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 544
+// SPLIT-2 server.js piece 546
 
 async function advanceEnrollment(enr, steps) {
   const next = steps[enr.current_step + 1];
@@ -455,13 +455,13 @@ async function advanceEnrollment(enr, steps) {
             next_send_at = enrolled_at + INTERVAL '${offset} days' WHERE id = ?`, [enr.id]);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 545
+// SPLIT-2 server.js piece 547
 async function closeEnrollment(id, status, reason) {
   await run(`UPDATE sequence_enrollments SET status=?, stop_reason=?, completed_at=NOW() WHERE id=?`,
     [status, reason || null, id]);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 546
+// SPLIT-2 server.js piece 548
 
 // ── Recurring gift recovery: dunning engine ─────────────────────────────────
 // Follows the same shape as processSequences()/autoEnroll() above: a
@@ -530,7 +530,7 @@ async function processDunning({ orgId = null } = {}) {   // TRUST-1: a request p
   return { picked };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 550
+// SPLIT-2 server.js piece 552
 
 // refreshCardsOnFile — pull brand/last4/expiry for live subscriptions whose
 // stored copy is missing or stale. Returns a job budget the way the import and
@@ -588,7 +588,7 @@ async function refreshCardsOnFile({ limit = CARD_CHECK_BUDGET, orgId = null } = 
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 551
+// SPLIT-2 server.js piece 553
 
 // The subscriptions whose card dies this month or next, that have not already
 // been told about THIS expiry. Two months of warning is the window that still
@@ -609,7 +609,7 @@ async function expiringCardRows(orgId, { today = new Date() } = {}) {
     [orgId, periods]);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 552
+// SPLIT-2 server.js piece 554
 
 // notifyExpiringCards — one notice per subscription per expiry month. The
 // stamp is the EXPIRY period, not a date: a card re-read, a network update, or
@@ -645,7 +645,7 @@ async function notifyExpiringCards(org, { send = true, today = new Date() } = {}
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 555
+// SPLIT-2 server.js piece 557
 
 // Lazily provision the recipe rows for an org (disabled by default — nothing
 // auto-runs until a human toggles it on). Idempotent via the org+recipe unique.
@@ -661,7 +661,7 @@ async function ensureWorkflows(orgId) {
   }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 557
+// SPLIT-2 server.js piece 559
 
 // Evaluate a workflow's conditions against the event ctx, honoring config
 // overrides (e.g. the major-gift threshold slider maps onto the amount>=X
@@ -678,7 +678,7 @@ function workflowConditionsPass(conditions, config, ctx) {
   return true;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 559
+// SPLIT-2 server.js piece 561
 
 // Send AT MOST ONE internal email to (org, eventKey, userId). Reserves the
 // notification_sends row FIRST (the cross-recipe, per-event dedup — so
@@ -725,7 +725,7 @@ async function notifyUserOnce({ org, userId, email, eventKey, channel, prefKind,
   return { sent: true };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 561
+// SPLIT-2 server.js piece 563
 // Send-or-queue: every donor-account lifecycle email goes through here. A
 // failed send lands in notification_failures (retried on the 5-min tick,
 // surfaced on /health.notifications.failedPending) — never fire-and-forget:
@@ -755,13 +755,13 @@ async function sendDonorLifecycleEmail(kind, toEmail, subject, html, fromOverrid
   return false;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 564
+// SPLIT-2 server.js piece 566
 async function refreshNotifyFailedCount() {
   try { notifyFailedPending = Number((await query(`SELECT COUNT(*) c FROM notification_failures`))[0]?.c || 0); __share({ notifyFailedPending }); }
   catch { /* table not ready yet — leave the last known value */ }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 565
+// SPLIT-2 server.js piece 567
 async function retryFailedNotifications({ force = false } = {}) {
   const due = await query(
     `SELECT * FROM notification_failures
@@ -811,7 +811,7 @@ async function retryFailedNotifications({ force = false } = {}) {
   return { delivered, stillFailing, considered: due.length };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 568
+// SPLIT-2 server.js piece 570
 async function reconcileStripeVsGifts() {
   if (!stripe) return reconciliation;
   const nowSec = Math.floor(Date.now() / 1000);
@@ -921,7 +921,7 @@ async function reconcileStripeVsGifts() {
   return reconciliation;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 569
+// SPLIT-2 server.js piece 571
 
 // ── BUILD-63 Part 2 — refresh the manifest-vs-live-subscription diff ─────────
 // Lists the platform's webhook endpoints, finds the donation (/stripe/webhook)
@@ -958,7 +958,7 @@ async function checkWebhookSubscriptions() {
   return webhookSubStatus;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 570
+// SPLIT-2 server.js piece 572
 
 // BUILD-36 A2 — email a task's assignee when someone ELSE (or a workflow)
 // assigned it. NO email for a self-assigned task. Deduped/idempotent via
@@ -1004,7 +1004,7 @@ ${person ? L.refButtonHtml(person, base) : L.refButtonHtml(taskRef, base, "Open 
   });
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 571
+// SPLIT-2 server.js piece 573
 
 // BUILD-36 A1 — provision a NEW org's workflow recipes with instant_gift_thanks
 // ON by default (ED & assigned officer). Hearing about a gift is the product
@@ -1017,7 +1017,7 @@ async function provisionNewOrgWorkflows(orgId) {
     [JSON.stringify({ notify: "both", threshold: 0 }), orgId]);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 572
+// SPLIT-2 server.js piece 574
 
 // Execute one action. Returns a summary object for the run log, or null.
 async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey }) {
@@ -1172,7 +1172,7 @@ ${person ? L.refButtonHtml(person, base) : ""}`;
   }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 573
+// SPLIT-2 server.js piece 575
 
 // Fire all enabled workflows for (org, trigger). ctx: { dedupKey, donorId,
 // giftId, amount, isFirstGift, subscriptionRow, entityType, entityId,
@@ -1221,7 +1221,7 @@ async function fireWorkflows(orgId, trigger, ctx) {
   return { ran };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 574
+// SPLIT-2 server.js piece 576
 
 // Scheduled sweep for the donor_lapsed trigger (no webhook fires it). Runs on
 // the existing 5-min tick. Only touches orgs that have the recipe enabled;
@@ -1334,7 +1334,7 @@ async function processWorkflowSweeps(onlyOrgId = null) {
   }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 576
+// SPLIT-2 server.js piece 578
 
 // ── Recurring gift recovery: staff-facing routes ────────────────────────────
 // ── BUILD-83 Part 5.1 — ONE DEFINITION OF THE FILE'S OWN SUSTAINER FACTS. ──

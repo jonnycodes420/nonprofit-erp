@@ -1,4 +1,4 @@
-// SPLIT-2: moved VERBATIM from server.js (its functions from lines 2287-3766). server.js requires the boot modules in
+// SPLIT-2: moved VERBATIM from server.js (its functions from lines 2287-3768). server.js requires the boot modules in
 // order: every helpers-N first (a function existed from the start, as hoisting made it), then
 // steps-1, steps-2 … in the order the statements ran. Each "SPLIT-2 server.js piece N" block is
 // server.js's own text; tests read server.js through readSource("server.js"), which puts the
@@ -9,15 +9,18 @@
 var __dirname = require("path").join(__dirname, "..", "..");   // server.js's folder, as the moved code expects
 const __boot = require("./share");
 const __share = __boot.share;
-let AFTER, AUTO_MOVE_OFFICER, CROSS_SOURCE_DAY_WINDOW, DONOR_SUMMARY_UPDATE, GREET, HISTORY, LAPSE_DAYS, SKIPPED_KEPT, SKIP_LISTED_REASONS, SOURCE_AUTH_SENTENCE, SOURCE_PERMISSION_SENTENCE, SOURCE_SYNC_MAX_PAGES, SOURCE_SYNC_RESYNC_DAYS, SYS_AUTO, SYS_SOURCE, THANK_YOU_PLEDGE_FLOOR_CENTS, TOTP, _ROMAN_SUFFIX, givingSourcesMod, maybeStartJourneyFromServer, money, newId, openSourceCredentials, openThreadTx, orgTime, orgToday, orgTz, query, raiseToldFailures, reconciliationHealth, recordGift, refreshRecurringForDonors, run, signToken, sourceAdapters, sourceConfig, sweepMissedRecurring, withAdvisoryLock, withTransaction;
+let AFTER, AUTO_MOVE_OFFICER, BUILD_SHA, CROSS_SOURCE_DAY_WINDOW, DB_NAME, DONOR_SUMMARY_UPDATE, GREET, HISTORY, LAPSE_DAYS, PRODUCT_ID, SKIPPED_KEPT, SKIP_LISTED_REASONS, SOURCE_AUTH_SENTENCE, SOURCE_PERMISSION_SENTENCE, SOURCE_SYNC_MAX_PAGES, SOURCE_SYNC_RESYNC_DAYS, SYS_AUTO, SYS_SOURCE, THANK_YOU_PLEDGE_FLOOR_CENTS, TOTP, _ROMAN_SUFFIX, assetHealth, billingModeStatus, dbReady, givingSourcesMod, guardFailures, guardState, guardsOk, ledgerChartSelfHeals, mailboxSyncHealth, maybeStartJourneyFromServer, money, newId, notifyFailedPending, openSourceCredentials, openThreadTx, orgTime, orgToday, orgTz, query, raiseToldFailures, reconciliationHealth, recordGift, refreshRecurringForDonors, resolvePublicAppUrl, run, signToken, sourceAdapters, sourceConfig, sweepMissedRecurring, webhookSubHealth, withAdvisoryLock, withTransaction;
 __boot.register(c => {
   if ("AFTER" in c) AFTER = c.AFTER;
   if ("AUTO_MOVE_OFFICER" in c) AUTO_MOVE_OFFICER = c.AUTO_MOVE_OFFICER;
+  if ("BUILD_SHA" in c) BUILD_SHA = c.BUILD_SHA;
   if ("CROSS_SOURCE_DAY_WINDOW" in c) CROSS_SOURCE_DAY_WINDOW = c.CROSS_SOURCE_DAY_WINDOW;
+  if ("DB_NAME" in c) DB_NAME = c.DB_NAME;
   if ("DONOR_SUMMARY_UPDATE" in c) DONOR_SUMMARY_UPDATE = c.DONOR_SUMMARY_UPDATE;
   if ("GREET" in c) GREET = c.GREET;
   if ("HISTORY" in c) HISTORY = c.HISTORY;
   if ("LAPSE_DAYS" in c) LAPSE_DAYS = c.LAPSE_DAYS;
+  if ("PRODUCT_ID" in c) PRODUCT_ID = c.PRODUCT_ID;
   if ("SKIPPED_KEPT" in c) SKIPPED_KEPT = c.SKIPPED_KEPT;
   if ("SKIP_LISTED_REASONS" in c) SKIP_LISTED_REASONS = c.SKIP_LISTED_REASONS;
   if ("SOURCE_AUTH_SENTENCE" in c) SOURCE_AUTH_SENTENCE = c.SOURCE_AUTH_SENTENCE;
@@ -29,10 +32,19 @@ __boot.register(c => {
   if ("THANK_YOU_PLEDGE_FLOOR_CENTS" in c) THANK_YOU_PLEDGE_FLOOR_CENTS = c.THANK_YOU_PLEDGE_FLOOR_CENTS;
   if ("TOTP" in c) TOTP = c.TOTP;
   if ("_ROMAN_SUFFIX" in c) _ROMAN_SUFFIX = c._ROMAN_SUFFIX;
+  if ("assetHealth" in c) assetHealth = c.assetHealth;
+  if ("billingModeStatus" in c) billingModeStatus = c.billingModeStatus;
+  if ("dbReady" in c) dbReady = c.dbReady;
   if ("givingSourcesMod" in c) givingSourcesMod = c.givingSourcesMod;
+  if ("guardFailures" in c) guardFailures = c.guardFailures;
+  if ("guardState" in c) guardState = c.guardState;
+  if ("guardsOk" in c) guardsOk = c.guardsOk;
+  if ("ledgerChartSelfHeals" in c) ledgerChartSelfHeals = c.ledgerChartSelfHeals;
+  if ("mailboxSyncHealth" in c) mailboxSyncHealth = c.mailboxSyncHealth;
   if ("maybeStartJourneyFromServer" in c) maybeStartJourneyFromServer = c.maybeStartJourneyFromServer;
   if ("money" in c) money = c.money;
   if ("newId" in c) newId = c.newId;
+  if ("notifyFailedPending" in c) notifyFailedPending = c.notifyFailedPending;
   if ("openSourceCredentials" in c) openSourceCredentials = c.openSourceCredentials;
   if ("openThreadTx" in c) openThreadTx = c.openThreadTx;
   if ("orgTime" in c) orgTime = c.orgTime;
@@ -43,11 +55,13 @@ __boot.register(c => {
   if ("reconciliationHealth" in c) reconciliationHealth = c.reconciliationHealth;
   if ("recordGift" in c) recordGift = c.recordGift;
   if ("refreshRecurringForDonors" in c) refreshRecurringForDonors = c.refreshRecurringForDonors;
+  if ("resolvePublicAppUrl" in c) resolvePublicAppUrl = c.resolvePublicAppUrl;
   if ("run" in c) run = c.run;
   if ("signToken" in c) signToken = c.signToken;
   if ("sourceAdapters" in c) sourceAdapters = c.sourceAdapters;
   if ("sourceConfig" in c) sourceConfig = c.sourceConfig;
   if ("sweepMissedRecurring" in c) sweepMissedRecurring = c.sweepMissedRecurring;
+  if ("webhookSubHealth" in c) webhookSubHealth = c.webhookSubHealth;
   if ("withAdvisoryLock" in c) withAdvisoryLock = c.withAdvisoryLock;
   if ("withTransaction" in c) withTransaction = c.withTransaction;
 });
@@ -758,7 +772,76 @@ async function onPledgeSettled(orgId, pledgeId) {
   return { pledgeId, closed: true, thankYou: upgraded?.id || null };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 262
+// SPLIT-2 server.js piece 261
+// DEVBOARD-1: /ops reads the same object in-process, so the page and /health never differ.
+function healthBody() {
+  // billing.ok is the cached mode-consistency result (booleans/mode only — no
+  // secrets): true = all configured prices resolve under the billing key's mode,
+  // false = a test/live mismatch (loud warning already logged), null = not yet
+  // checked or nothing to check. Full detail is at /admin/billing-diagnostic.
+  // publicUrl: the resolved base every outbound email link uses (non-secret).
+  // fromEnv:false means FRONTEND_URL is unset or was rejected as a deployment
+  // host and links are riding the canonical fallback — post-deploy this is the
+  // one-glance check that reset/invite links carry stewardapp.dev.
+  const pu = resolvePublicAppUrl();
+  return {
+    // product + database are the IDENTITY guard: a write script asserts both
+    // against what it intended before writing, so it can never write to a
+    // different product or database that merely shares a loopback host/port.
+    product: PRODUCT_ID, database: DB_NAME,
+    status: "ok", version: "1.1.0", buildSha: BUILD_SHA, db: dbReady, sentry: !!process.env.SENTRY_DSN,
+    billing: { mode: billingModeStatus.mode, ok: billingModeStatus.ok, checked: billingModeStatus.checked },
+    publicUrl: { url: pu.url, fromEnv: pu.fromEnv },
+    // BUILD-45 (F-2): non-secret count of internal notifications the email
+    // provider rejected and that are pending retry (or exhausted). A non-zero
+    // value that stays high = a delivery problem to look at — this figure is
+    // the SURFACING that F-2 was missing. Cached (refreshed by the retry sweep),
+    // so /health stays a cheap synchronous check.
+    notifications: { failedPending: notifyFailedPending },
+    // BUILD-58 W-3: how many times a ledger stamp found no usable chart of
+    // accounts and had to provision one on the spot. Non-zero = an
+    // org-creation path is skipping provisioning — investigate, don't ignore.
+    ledger: { chartSelfHeals: ledgerChartSelfHeals },
+    // BUILD-51: which theme-asset driver is live — s3:true means uploads go to
+    // the bucket; s3:false (env unset) means bytes land in Postgres.
+    // BUILD-51b: dbFallbackRows counts assets sitting in Postgres WHILE S3 is
+    // configured — every one is a failed S3 put (also Sentry-reported). A
+    // non-zero value that grows = the silent-fallback failure mode; null when
+    // S3 isn't configured (DB storage is then by design).
+    themeAssets: assetHealth(),
+    // BUILD-62 Part 3: the reconciliation guard. unrecordedCharges > 0 means a
+    // real charge settled at Stripe with NO gift row behind it — a donor was
+    // charged and Steward has no record. This is the paging signal (watch it in
+    // UptimeRobot alongside themeAssets.dbFallbackRows). orphanGifts is the
+    // reverse (a gift with no succeeded charge). checkedAt null = not yet run.
+    reconciliation: reconciliationHealth(),
+    // BUILD-63 Part 2: manifest-vs-subscription diff. missingCount > 0 means the
+    // handler processes event types the live endpoint does NOT subscribe — code
+    // wired to nothing. Watch alongside reconciliation. null = not yet checked.
+    webhookSubscriptions: webhookSubHealth(),
+    // BUILD-65 Part 6: the aggregate. true ONLY when every guard above is both
+    // clean AND fresh (a null/stale counter fails it). One field to page on.
+    guardsOk: guardsOk(),
+    // INT-PROD-1: which guard failed, by name only (never a value), so a
+    // false guardsOk never needs a hunt again. [] when guardsOk is true.
+    guardsFailed: guardFailures(guardState()),
+    // FIX-33: every live mailbox connection, and how many have not read
+    // successfully in two hours. Counts only, no address, no org. The prod
+    // smoke fails on stale > 0; checkedAt null = no sync run since boot.
+    mailboxSync: mailboxSyncHealth,
+    // SCALE-1: the background queue (jobQueue.js) and the last five-minute
+    // round of per-org syncs: how long it took and its slowest org, by id only.
+    // Cached (refreshed every 15s), so /health stays a synchronous read.
+    // DEPLOY-1: queue.oldestWaiting and queue.level; `worker` is the newest worker's heartbeat.
+    queue: require("../../jobQueue").healthNow().queue,
+    tick: require("../../jobQueue").healthNow().tick,
+    worker: require("../../jobQueue").healthNow().worker || null,
+    // POOL-1: this process's connections, from pg's own counters (server/shared/pools.js).
+    pool: require("../../db").poolStats(),
+  };
+}
+// SPLIT-2 end
+// SPLIT-2 server.js piece 263
 async function statusCheckOnce() {
   const results = [];
   const put = (service, state, detail) => results.push({ service, state, detail: detail || null });
@@ -810,7 +893,7 @@ async function statusCheckOnce() {
   return results;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 271
+// SPLIT-2 server.js piece 272
 async function dpaViewer(req) {
   const h = String(req.headers.authorization || "");
   if (!h.startsWith("Bearer ")) return false;
@@ -821,13 +904,13 @@ async function dpaViewer(req) {
   } catch { return false; }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 280
+// SPLIT-2 server.js piece 281
 function _titleCaseWord(w) {
   if (_ROMAN_SUFFIX.test(w)) return w.toUpperCase();               // III, IV, VIII…
   return w.toLowerCase().replace(/(^|[’'\-.])([a-zà-ÿ])/g, (m, sep, ch) => sep + ch.toUpperCase());
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 281
+// SPLIT-2 server.js piece 282
 
 // Display-name casing for EMAIL headers/subjects (BUILD-35 Part 2). The
 // conservative HALF of normalizeName: re-case ONLY a wholly-lower/upper string
@@ -848,7 +931,7 @@ function displayNameCase(raw) {
   return s;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 282
+// SPLIT-2 server.js piece 283
 
 // ── Donor summary recalculation ────────────────────────────────────────────
 // Recomputes total_giving, gift_count, last_gift_date, last_gift_amount
@@ -870,7 +953,7 @@ async function orgOwns(table, id, orgId) {
   return rows.length > 0;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 283
+// SPLIT-2 server.js piece 284
 
 // ── One plan, everything included (FIX-32) ──────────────────────────────
 // There used to be a Core tier and a Team tier, and `orgPlanTier` decided
@@ -890,7 +973,7 @@ function orgPlanTier(org) {
   return "team";
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 284
+// SPLIT-2 server.js piece 285
 // The one plan check left: a Portal-tier org has no CRM. Every other org has
 // every route. (Was requireCrm, which 403'd a Core org.)
 async function requireCrm(req, res, next) {
@@ -904,7 +987,7 @@ async function requireCrm(req, res, next) {
   next();
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 290
+// SPLIT-2 server.js piece 291
 
 // Insert one move row (system of record for the pipeline). Description is
 // required and validated at the route; this just writes.
@@ -927,7 +1010,7 @@ async function recordMove(orgId, donorId, officerId, officerName, fromStage, toS
   return id;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 294
+// SPLIT-2 server.js piece 295
 
 // Log an auto-move: a moves row (transparent history) + a stage_change
 // interaction (donor timeline), never a silent stage change.
@@ -942,7 +1025,7 @@ async function recordAutoMove(orgId, donorId, fromStage, toStage, description) {
   } catch (e) { console.error("[smart-move] interaction log:", e.message); }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 295
+// SPLIT-2 server.js piece 296
 
 // Auto-lapse sweep for ONE org. Automatic (no suggestion) — Lapsed is a fact.
 // Guards make it safe: only donors with PRIOR GIVING (a no-gift prospect is a
@@ -987,7 +1070,7 @@ async function autoLapseOrg(orgId) {
   return moved;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 296
+// SPLIT-2 server.js piece 297
 
 // FIX-60 · A PLEDGE UN-LAPSES. Somebody placed in Lapsed automatically who has
 // since pledged (an open pledge, or one made in the last 12 months: lapseRule.js
@@ -1037,7 +1120,7 @@ async function unlapseHeldByPledge(orgId, ids = null) {
   return moved;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 297
+// SPLIT-2 server.js piece 298
 
 async function recalcDonorSummary(donorId, orgId) {
   // NUMBERS-1: the one statement (donorSummary.js). It counts gifts above zero
@@ -1045,7 +1128,7 @@ async function recalcDonorSummary(donorId, orgId) {
   await run(DONOR_SUMMARY_UPDATE("AND d.id = $2"), [orgId, donorId]);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 298
+// SPLIT-2 server.js piece 299
 
 // ── The audit log helper the hand-placed calls still use ───────────────────
 // FIX-11 Part 1 — it no longer inserts a row while a request is in flight.
@@ -1075,7 +1158,7 @@ async function writeAuditLog(orgId, userId, userName, action, entityType, entity
   } catch(e) { console.error("Audit log write:", e.message); }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 301
+// SPLIT-2 server.js piece 302
 async function mfaVerifyForUser(user, code) {
   if (!user.mfa_secret_sealed) return null;
   const { open } = await import("../../shared/secretBox.js");
@@ -1089,7 +1172,7 @@ async function mfaVerifyForUser(user, code) {
   return r.length ? ctr : null;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 303
+// SPLIT-2 server.js piece 304
 
 // Display name for a pending invitee (no users row yet) — derived from the
 // invite email's local-part ("jonathan.atkinson@x" → "Jonathan Atkinson") so the
@@ -1103,13 +1186,13 @@ function inviteeDisplayName(email) {
   return words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 304
+// SPLIT-2 server.js piece 305
 // Money here is dollars-and-cents, so every accumulation rounds to 2dp rather
 // than letting binary floating point drift the equation off by 1e-13 and abort
 // a perfectly good import.
 function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 307
+// SPLIT-2 server.js piece 308
 
 // ── Gifts ──────────────────────────────────────────────────────────────────
 // §1.2 F-5 — the ONE pledge-payment reconciler. Paid = Σ gifts linked by
@@ -1137,7 +1220,7 @@ function pledgeStatusFor(paid, amount, currentStatus) {
   return "open";
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 308
+// SPLIT-2 server.js piece 309
 // `partially_fulfilled` is a DISPLAY state, not a stored one: storing it would
 // give the drift a second place to hide. Anything reading a pledge derives it.
 function pledgeDisplayStatus(paid, amount, storedStatus) {
@@ -1147,7 +1230,7 @@ function pledgeDisplayStatus(paid, amount, storedStatus) {
   return "open";
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 309
+// SPLIT-2 server.js piece 310
 
 async function recalcPledgePayment(pledgeId, orgId) {
   const rows = await query("SELECT * FROM pledges WHERE id=? AND org_id=?", [pledgeId, orgId]);
@@ -1184,7 +1267,7 @@ async function recalcPledgePayment(pledgeId, orgId) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 311
+// SPLIT-2 server.js piece 312
 
 // Atomic — UPDATE...RETURNING, never SELECT MAX(n)+1, so two concurrent
 // receipt issues for the same org can never allocate the same number.
@@ -1206,7 +1289,7 @@ async function allocateReceiptNumber(orgId) {
   return `${year}-${String(n).padStart(5, "0")}`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 312
+// SPLIT-2 server.js piece 313
 
 function applyReceiptTokens(str, org, donor) {
   if (!str) return "";
@@ -1216,4 +1299,4 @@ function applyReceiptTokens(str, org, donor) {
 }
 // SPLIT-2 end
 
-__share({ syncSource, noteSkippedRow, sourcesRideTogether, findCrossSourceGift, crossSourceSentence, writeSourceRow, resolveSourceDonor, recordSourceRun, classifySourceError, sourceErrorSentence, queueThankYouDraft, processPledgeInstallmentReminders, onPledgeSettled, statusCheckOnce, dpaViewer, _titleCaseWord, displayNameCase, orgOwns, orgPlanTier, requireCrm, recordMove, recordAutoMove, autoLapseOrg, unlapseHeldByPledge, recalcDonorSummary, writeAuditLog, mfaVerifyForUser, inviteeDisplayName, round2, pledgeStatusFor, pledgeDisplayStatus, recalcPledgePayment, allocateReceiptNumber, applyReceiptTokens });
+__share({ syncSource, noteSkippedRow, sourcesRideTogether, findCrossSourceGift, crossSourceSentence, writeSourceRow, resolveSourceDonor, recordSourceRun, classifySourceError, sourceErrorSentence, queueThankYouDraft, processPledgeInstallmentReminders, onPledgeSettled, healthBody, statusCheckOnce, dpaViewer, _titleCaseWord, displayNameCase, orgOwns, orgPlanTier, requireCrm, recordMove, recordAutoMove, autoLapseOrg, unlapseHeldByPledge, recalcDonorSummary, writeAuditLog, mfaVerifyForUser, inviteeDisplayName, round2, pledgeStatusFor, pledgeDisplayStatus, recalcPledgePayment, allocateReceiptNumber, applyReceiptTokens });

@@ -1,4 +1,4 @@
-// SPLIT-2: moved VERBATIM from server.js (its functions from lines 5216-6547). server.js requires the boot modules in
+// SPLIT-2: moved VERBATIM from server.js (its functions from lines 5219-6550). server.js requires the boot modules in
 // order: every helpers-N first (a function existed from the start, as hoisting made it), then
 // steps-1, steps-2 … in the order the statements ran. Each "SPLIT-2 server.js piece N" block is
 // server.js's own text; tests read server.js through readSource("server.js"), which puts the
@@ -71,7 +71,7 @@ __boot.register(c => {
   if ("userWantsEmail" in c) userWantsEmail = c.userWantsEmail;
 });
 
-// SPLIT-2 server.js piece 423
+// SPLIT-2 server.js piece 425
 async function opsAlert(kind, subject, body) {
   const to = process.env.FOUNDER_EMAIL;
   if (!to) return { skipped: "no_founder_email" };
@@ -97,7 +97,7 @@ async function opsAlert(kind, subject, body) {
   } catch (e) { return { failed: String(e && e.message || e) }; }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 425
+// SPLIT-2 server.js piece 427
 function noteServerError() {
   const now = Date.now();
   _fiveXXWindow = _fiveXXWindow.filter(t => now - t < 10 * 60000); __share({ _fiveXXWindow });
@@ -109,10 +109,10 @@ function noteServerError() {
   }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 426
+// SPLIT-2 server.js piece 428
 async function thresholdsMod() { return import("../../shared/thresholds.js"); }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 427
+// SPLIT-2 server.js piece 429
 
 // ── BUILD-96 Part 3 — THE ONE GATE IN FRONT OF ANTHROPIC ───────────────────
 // Two features send an organisation's own data to a third party: cheque
@@ -142,7 +142,7 @@ async function agentGate(orgId) {
   return { ok: true, reason: null };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 428
+// SPLIT-2 server.js piece 430
 
 // BUILD-97 — a SAVED audience is a name over one of these same segments, so
 // it is resolved to its stored segment here and then filtered by the one
@@ -170,7 +170,7 @@ async function resolveSegmentSpec(segment, orgId) {
   return r;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 429
+// SPLIT-2 server.js piece 431
 async function resolveSegmentSpecInner(segment, orgId) {
   if (segment && segment.mode === "audience") {
     const [row] = await query("SELECT segment, kind FROM audiences WHERE id=? AND org_id=?",
@@ -188,7 +188,7 @@ async function resolveSegmentSpecInner(segment, orgId) {
   return segment;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 430
+// SPLIT-2 server.js piece 432
 
 // PURE. Extracted from resolveCampaignRecipients so the hub can count every
 // audience from ONE donor query instead of one query per audience — on a
@@ -246,7 +246,7 @@ function filterBySegment(allDonors, segment) {
   return donors;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 431
+// SPLIT-2 server.js piece 433
 
 async function resolveCampaignRecipients(campaign, orgId) {
   const raw = typeof campaign.segment === "string"
@@ -260,7 +260,7 @@ async function resolveCampaignRecipients(campaign, orgId) {
   return filterBySegment(donors, segment);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 433
+// SPLIT-2 server.js piece 435
 async function campaignAudience(campaign, orgId) {
   const raw = typeof campaign.segment === "string"
     ? JSON.parse(campaign.segment || "{}")
@@ -290,7 +290,7 @@ async function campaignAudience(campaign, orgId) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 436
+// SPLIT-2 server.js piece 438
 
 // FIX-40 · A LEGACY (non-block) CAMPAIGN'S MERGE FIELDS, FILLED FOR ONE
 // PERSON. The send and the "as sent" page (routes/emailsSent.js) both call
@@ -314,7 +314,7 @@ async function legacyCampaignBody(body, donor, orgName, year, { text = false } =
     .replace(/{{year}}/g,         year);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 437
+// SPLIT-2 server.js piece 439
 
 async function runCampaignSend(campaign, org, donors) {
   const BACKEND_URL = process.env.BACKEND_URL || "https://nonprofit-erp-production.up.railway.app";
@@ -458,7 +458,7 @@ async function runCampaignSend(campaign, org, donors) {
   }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 438
+// SPLIT-2 server.js piece 440
 
 // ── Giving Pages ────────────────────────────────────────────────────────────
 // Campaign-specific donation pages, e.g. /give/:orgSlug/:pageSlug — distinct
@@ -468,7 +468,7 @@ function slugifyGivingPage(s) {
   return (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "page";
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 439
+// SPLIT-2 server.js piece 441
 
 // ── BUILD-102 (Steward Give) Part 6 — THE FUNNEL, COUNTED NOT TRACKED ──────
 // Views, starts and completions per form per day. NOTHING about who: no person id,
@@ -495,7 +495,7 @@ async function bumpFormEvent(orgId, formId, field, { variant = null, cents = 0, 
      Math.max(0, Math.trunc(cents) || 0)]);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 440
+// SPLIT-2 server.js piece 442
 
 // ── BUILD-102 (Steward Give) Part 1 — A FORM IS A GIVING PAGE WITH A CONFIG ──
 // shared/formConfig.js is the ONE validator and the ONE spec builder. The editor
@@ -504,7 +504,7 @@ async function bumpFormEvent(orgId, formId, field, { variant = null, cents = 0, 
 // field the donor will not get.
 async function formConfigMod() { return import("../../shared/formConfig.js"); }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 441
+// SPLIT-2 server.js piece 443
 
 // GIVE-2 — the three pure money modules the giving layer reads, loaded the same
 // way, so there is one place each rule lives:
@@ -514,21 +514,21 @@ async function formConfigMod() { return import("../../shared/formConfig.js"); }
 //   employerMatch    the employer list and the (unsigned, unnamed) lookup shape
 async function ratesMod() { return import("../../shared/processingRates.js"); }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 442
+// SPLIT-2 server.js piece 444
 async function footingMod() { return import("../../shared/giftFooting.js"); }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 443
+// SPLIT-2 server.js piece 445
 async function smartAmountsMod() { return import("../../shared/smartAmounts.js"); }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 444
+// SPLIT-2 server.js piece 446
 async function employerMatchMod() { return import("../../shared/employerMatch.js"); }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 445
+// SPLIT-2 server.js piece 447
 // CAMPAIGN-2 — the campaign page's templates, plan, countdown, match and the
 // ONE function that turns a gift row into a line a stranger may read.
 async function campaignPageMod() { return import("../../shared/campaignPage.js"); }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 446
+// SPLIT-2 server.js piece 448
 
 // ── GIVE-2 §5 — THE RATE THE PUBLIC FORM SHOWS ────────────────────────────
 // Every public giving payload carries it, so the sentence under the
@@ -556,7 +556,7 @@ async function coverFeePayload(org) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 447
+// SPLIT-2 server.js piece 449
 
 // Caller-supplied name/story/org/page title get interpolated into a raw
 // HTML email body below — escape them so a submitted name like
@@ -565,7 +565,7 @@ function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 450
+// SPLIT-2 server.js piece 452
 
 // Fiscal year N = Jul 1 (N-1) through Jun 30 N — same July-1 boundary as
 // /dashboard/my-stats and /finance/summary. A gift on 2025-12-15 is FY2026
@@ -581,7 +581,7 @@ function reportYearBounds(year, yearMode, startMonth = 7) {
   return { from: `${year - 1}-${mm}-01`, to: orgTime.addDays(`${year}-${mm}-01`, -1) };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 451
+// SPLIT-2 server.js piece 453
 // The year currently in progress (fiscal label year is the June-30 end year).
 // ORG_TZ_SEAM_OK — which year a report calls "current" is a civil-calendar
 // question, answered in the ORG's timezone. On Dec 31 at 8pm in New York the
@@ -591,13 +591,13 @@ function reportCurrentYear(yearMode, org = null) {
   return orgReportYear(org || {}, yearMode);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 454
+// SPLIT-2 server.js piece 456
 
 async function rbCustomDefs(orgId) {
   return query("SELECT key, label, type, entity FROM custom_field_defs WHERE org_id=? AND archived_at IS NULL", [orgId]).catch(() => []);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 455
+// SPLIT-2 server.js piece 457
 
 // The date words a stored definition may use, resolved on the org's own
 // calendar every time it runs — a saved "this year" is this year.
@@ -608,7 +608,7 @@ async function rbTokens(orgId) {
   return { today, fyStart: fy.from, fyEnd: fy.to, twoYearsAgo: orgTime.addDays(today, -730) };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 457
+// SPLIT-2 server.js piece 459
 
 // Run a builder definition for one org. Returns {columns, rows, totals, groups}.
 // The compiled SQL carries its own $n placeholders and contains no `?`, so it
@@ -650,7 +650,7 @@ async function runBuilderDef(orgId, def) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 458
+// SPLIT-2 server.js piece 460
 
 function rbFormatCell(v, type) {
   if (v === null || v === undefined) return "";
@@ -659,7 +659,7 @@ function rbFormatCell(v, type) {
   return String(v);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 459
+// SPLIT-2 server.js piece 461
 
 // ── THE WEEKLY EMAIL ───────────────────────────────────────────────────────
 // Monday morning, org-local, ONCE per report per week: saved_report_sends is
@@ -694,7 +694,7 @@ async function runSavedReportScheduleForOrg(org, { weekKey, force = false } = {}
   return { sent, skipped, force };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 460
+// SPLIT-2 server.js piece 462
 
 // ══ Development reporting cadence — digests (BUILD-17) ══════════════════════
 // The oversight rhythm that runs a development office. Two scheduled emails —
@@ -720,12 +720,12 @@ function weekBounds(offset = 0, org = null, atInstant = new Date()) {
   return orgPeriodBounds(org || {}, "week", offset, atInstant);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 461
+// SPLIT-2 server.js piece 463
 function monthBounds(offset = 0, org = null, atInstant = new Date()) {
   return orgPeriodBounds(org || {}, "month", offset, atInstant);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 462
+// SPLIT-2 server.js piece 464
 
 // ── BUILD-88a A.5 — THE WEEK IN REVIEW IS THE ACTIVITY REPORT ──────────────
 // The weekly email listed gifts, asks, moves and past-due tasks: what the money
@@ -777,7 +777,7 @@ async function composeActivityReport(orgId, win, userId = null) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 464
+// SPLIT-2 server.js piece 466
 
 // Compose the Week-in-Review sections for a window. officerId != null scopes
 // every section to that officer's portfolio (their assigned donors + their
@@ -826,7 +826,7 @@ async function composeWeekInReview(orgId, win, officerId = null) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 465
+// SPLIT-2 server.js piece 467
 
 // Compose one officer's monthly report: asks made, moves made, gifts closed,
 // portfolio progress — the management-oversight artifact.
@@ -853,7 +853,7 @@ async function composeOfficerMonthly(orgId, win, officer) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 468
+// SPLIT-2 server.js piece 470
 function digestSectionHtml(title, rowsHtml, emptyLine) {
   return `<div style="margin:22px 0 0;">
     <div style="font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#1a6b4a;margin-bottom:8px;">${digestEsc(title)}</div>
@@ -861,7 +861,7 @@ function digestSectionHtml(title, rowsHtml, emptyLine) {
   </div>`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 469
+// SPLIT-2 server.js piece 471
 function renderWeekInReviewBody(sec, win, headingName) {
   // BUILD-88a A.5 — WHAT ANYBODY ACTUALLY DID. Every figure carries the
   // sentence it answers to, from the same constant the People dashboard reads.
@@ -903,7 +903,7 @@ function renderWeekInReviewBody(sec, win, headingName) {
   </div>`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 470
+// SPLIT-2 server.js piece 472
 function renderOfficerMonthlyBody(rep, win) {
   const stat = (l, v) => `<div style="display:inline-block;min-width:130px;margin:6px 14px 6px 0;"><div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#6b7d70;">${l}</div><div style="font-size:20px;font-weight:800;color:#0f1a12;">${v}</div></div>`;
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
@@ -918,7 +918,7 @@ function renderOfficerMonthlyBody(rep, win) {
   </div>`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 471
+// SPLIT-2 server.js piece 473
 
 // "Due for a touch" — the real-data nudge behind an otherwise-empty digest
 // (BUILD-35 Part 2): assigned (or org-wide) donors with no interaction in the
@@ -936,7 +936,7 @@ async function countDonorsDueForTouch(orgId, officerId = null) {
   return row.n;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 473
+// SPLIT-2 server.js piece 475
 
 // Reserve one recipient's digest (idempotency choke point). Returns the row id
 // if newly reserved, or null if it was already sent this period.
@@ -951,7 +951,7 @@ async function reserveDigest(orgId, digestType, periodKey, recipientUserId, reci
   return reserved.length ? id : null;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 474
+// SPLIT-2 server.js piece 476
 
 // Run both digests for one org for the given windows. send=false → compose
 // only (preview/dry-run), reserving nothing. Returns what was sent + skipped.
@@ -1043,7 +1043,7 @@ async function runDigestsForOrg(org, { wk, mo, types = ["weekly", "monthly"], se
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 475
+// SPLIT-2 server.js piece 477
 
 async function composeDailyTaskReminder(orgId, userId, today) {
   const rows = await query(
@@ -1063,7 +1063,7 @@ async function composeDailyTaskReminder(orgId, userId, today) {
   return { rows, overdue, dueToday, count: rows.length };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 476
+// SPLIT-2 server.js piece 478
 
 function renderDailyTaskReminderBody(digest, org, user, today) {
   const li = t => {
@@ -1085,7 +1085,7 @@ function renderDailyTaskReminderBody(digest, org, user, today) {
     </div>`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 477
+// SPLIT-2 server.js piece 479
 
 // Run the daily reminder for one org. send=false → compose only (preview),
 // reserving nothing. Non-empty is required to send. Returns sent/skipped.
@@ -1095,7 +1095,7 @@ function renderDailyTaskReminderBody(digest, org, user, today) {
 // here, and the digest_sends reservations make the second one a no-op.
 async function runDailyTaskRemindersForOrg(org, opts) { return runMorningBriefForOrg(org, opts); }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 479
+// SPLIT-2 server.js piece 481
 
 // processGeocodeQueue(opts) — drain `pending`, oldest org first, up to the
 // tick's budget. Batched: one provider request per 1,000 addresses on Geocodio.
@@ -1157,7 +1157,7 @@ async function processGeocodeQueue({ limit = GEOCODE_TICK_BUDGET, orgId = null }
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 482
+// SPLIT-2 server.js piece 484
 
 // Fetch ONE remote image under the BUILD-37 G5 rules. Returns
 // { buffer, contentType } or { error }. Never throws.
@@ -1184,7 +1184,7 @@ async function fetchRemoteImage(rawUrl) {
   return { buffer: buf, contentType: ct };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 483
+// SPLIT-2 server.js piece 485
 
 async function processPhotoQueue({ limit = PHOTO_FETCH_BUDGET, orgId = null } = {}) {
   const scope = orgId ? " AND org_id = ?" : "";
@@ -1234,7 +1234,7 @@ async function processPhotoQueue({ limit = PHOTO_FETCH_BUDGET, orgId = null } = 
   return { fetched, failed, scanned: rows.length };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 484
+// SPLIT-2 server.js piece 486
 
 // ── BUILD-81 Part 2 — THE NUDGE LEAVES THE APP ──────────────────────────────
 // A reminder in a dashboard nobody opens is not a reminder. ONE email per
@@ -1256,7 +1256,7 @@ function threadNudgeDayOk(org, todayStr) {
   return dow < 5 || !!org.thread_nudge_weekends;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 485
+// SPLIT-2 server.js piece 487
 
 // BUILD-85 — Every open thread due or overdue on `today` THAT THIS PERSON
 // OWNS. BUILD-81 selected the whole org and handed the identical list to
@@ -1332,7 +1332,7 @@ async function composeThreadNudge(orgId, today, { userId = null, isAdmin = false
   }));
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 486
+// SPLIT-2 server.js piece 488
 
 // The same list plus what the cap left behind, for the email's "and N more".
 async function composeThreadNudgeQueue(orgId, today, opts) {
@@ -1350,7 +1350,7 @@ async function composeThreadNudgeQueue(orgId, today, opts) {
   return { list, total: n, more: Math.max(0, n - list.length), cap: rank.EMAIL_CAP };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 487
+// SPLIT-2 server.js piece 489
 
 // BUILD-85 — ONE subject for ONE email. The count is everything waiting on
 // this person (threads AND tasks); the escalation is still the oldest thread,

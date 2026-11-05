@@ -1,4 +1,4 @@
-// SPLIT-2: moved VERBATIM from server.js (the statements from lines 1070-6883, in order). server.js requires the boot modules in
+// SPLIT-2: moved VERBATIM from server.js (the statements from lines 920-4971, in order). server.js requires the boot modules in
 // order: every helpers-N first (a function existed from the start, as hoisting made it), then
 // steps-1, steps-2 … in the order the statements ran. Each "SPLIT-2 server.js piece N" block is
 // server.js's own text; tests read server.js through readSource("server.js"), which puts the
@@ -9,56 +9,43 @@
 var __dirname = require("path").join(__dirname, "..", "..");   // server.js's folder, as the moved code expects
 const __boot = require("./share");
 const __share = __boot.share;
-let BUILD_SHA, DB_NAME, GR, OUTBOX, PRODUCT_ID, actor, app, assetHealth, backgroundTicksDisabled, billingModeStatus, bootGate, computeDriftForDonors, crypto, dbReady, displayNameCase, dpaViewer, enrollInSequences, guardFailures, guardState, guardsOk, ipKeyGenerator, ledgerChartSelfHeals, mailboxSyncHealth, maybeStartJourneyFromServer, newId, notifyFailedPending, openGiftThread, orgToday, orgTz, publicAppUrl, query, queueThankYouDraft, rateLimit, rateLimitDisabled, rateLimitHandler, recomputeScoresForOrg, reconciliationHealth, refreshStoredDrift, requireAuth, requireSuperAdmin, resolvePublicAppUrl, run, runVolunteerRemindersTick, signInternalToken, statusCheckOnce, unlapseHeldByPledge, webhookSubHealth, wrap;
+let GR, OUTBOX, actor, app, backgroundTicksDisabled, bootGate, computeDriftForDonors, crypto, dpaViewer, enrollInSequences, healthBody, ipKeyGenerator, maybeStartJourneyFromServer, newId, noteServerError, openGiftThread, orgToday, orgTz, query, queueThankYouDraft, rateLimit, rateLimitDisabled, rateLimitHandler, recomputeScoresForOrg, refreshStoredDrift, requireAuth, requireSuperAdminJwt, run, runVolunteerRemindersTick, signInternalToken, statusCheckOnce, unlapseHeldByPledge;
 __boot.register(c => {
-  if ("BUILD_SHA" in c) BUILD_SHA = c.BUILD_SHA;
-  if ("DB_NAME" in c) DB_NAME = c.DB_NAME;
   if ("GR" in c) GR = c.GR;
   if ("OUTBOX" in c) OUTBOX = c.OUTBOX;
-  if ("PRODUCT_ID" in c) PRODUCT_ID = c.PRODUCT_ID;
   if ("actor" in c) actor = c.actor;
   if ("app" in c) app = c.app;
-  if ("assetHealth" in c) assetHealth = c.assetHealth;
   if ("backgroundTicksDisabled" in c) backgroundTicksDisabled = c.backgroundTicksDisabled;
-  if ("billingModeStatus" in c) billingModeStatus = c.billingModeStatus;
   if ("bootGate" in c) bootGate = c.bootGate;
   if ("computeDriftForDonors" in c) computeDriftForDonors = c.computeDriftForDonors;
   if ("crypto" in c) crypto = c.crypto;
-  if ("dbReady" in c) dbReady = c.dbReady;
-  if ("displayNameCase" in c) displayNameCase = c.displayNameCase;
   if ("dpaViewer" in c) dpaViewer = c.dpaViewer;
   if ("enrollInSequences" in c) enrollInSequences = c.enrollInSequences;
-  if ("guardFailures" in c) guardFailures = c.guardFailures;
-  if ("guardState" in c) guardState = c.guardState;
-  if ("guardsOk" in c) guardsOk = c.guardsOk;
+  if ("healthBody" in c) healthBody = c.healthBody;
   if ("ipKeyGenerator" in c) ipKeyGenerator = c.ipKeyGenerator;
-  if ("ledgerChartSelfHeals" in c) ledgerChartSelfHeals = c.ledgerChartSelfHeals;
-  if ("mailboxSyncHealth" in c) mailboxSyncHealth = c.mailboxSyncHealth;
   if ("maybeStartJourneyFromServer" in c) maybeStartJourneyFromServer = c.maybeStartJourneyFromServer;
   if ("newId" in c) newId = c.newId;
-  if ("notifyFailedPending" in c) notifyFailedPending = c.notifyFailedPending;
+  if ("noteServerError" in c) noteServerError = c.noteServerError;
   if ("openGiftThread" in c) openGiftThread = c.openGiftThread;
   if ("orgToday" in c) orgToday = c.orgToday;
   if ("orgTz" in c) orgTz = c.orgTz;
-  if ("publicAppUrl" in c) publicAppUrl = c.publicAppUrl;
   if ("query" in c) query = c.query;
   if ("queueThankYouDraft" in c) queueThankYouDraft = c.queueThankYouDraft;
   if ("rateLimit" in c) rateLimit = c.rateLimit;
   if ("rateLimitDisabled" in c) rateLimitDisabled = c.rateLimitDisabled;
   if ("rateLimitHandler" in c) rateLimitHandler = c.rateLimitHandler;
   if ("recomputeScoresForOrg" in c) recomputeScoresForOrg = c.recomputeScoresForOrg;
-  if ("reconciliationHealth" in c) reconciliationHealth = c.reconciliationHealth;
   if ("refreshStoredDrift" in c) refreshStoredDrift = c.refreshStoredDrift;
   if ("requireAuth" in c) requireAuth = c.requireAuth;
-  if ("requireSuperAdmin" in c) requireSuperAdmin = c.requireSuperAdmin;
-  if ("resolvePublicAppUrl" in c) resolvePublicAppUrl = c.resolvePublicAppUrl;
+  if ("requireSuperAdminJwt" in c) requireSuperAdminJwt = c.requireSuperAdminJwt;
   if ("run" in c) run = c.run;
   if ("runVolunteerRemindersTick" in c) runVolunteerRemindersTick = c.runVolunteerRemindersTick;
   if ("signInternalToken" in c) signInternalToken = c.signInternalToken;
   if ("statusCheckOnce" in c) statusCheckOnce = c.statusCheckOnce;
   if ("unlapseHeldByPledge" in c) unlapseHeldByPledge = c.unlapseHeldByPledge;
-  if ("webhookSubHealth" in c) webhookSubHealth = c.webhookSubHealth;
-  if ("wrap" in c) wrap = c.wrap;
+  if ("ledgerChartSelfHeals" in c) ledgerChartSelfHeals = c.ledgerChartSelfHeals;
+  if ("reconciliation" in c) reconciliation = c.reconciliation;
+  if ("reconcileAccountsWithStripe" in c) reconcileAccountsWithStripe = c.reconcileAccountsWithStripe;
   if ("webhookSubStatus" in c) webhookSubStatus = c.webhookSubStatus;
   if ("_journeyEngine" in c) _journeyEngine = c._journeyEngine;
   if ("_volunteerReminders" in c) _volunteerReminders = c._volunteerReminders;
@@ -70,10 +57,155 @@ __boot.register(c => {
   if ("VH" in c) VH = c.VH;
   if ("VOL_DAYS" in c) VOL_DAYS = c.VOL_DAYS;
   if ("CAL" in c) CAL = c.CAL;
-  if ("_fiveXXWindow" in c) _fiveXXWindow = c._fiveXXWindow;
-  if ("RB" in c) RB = c.RB;
 });
 
+// SPLIT-2 server.js piece 162
+
+// FIX-20 Part 10: THE READINESS CHECK Railway's healthcheck points at
+// (a service setting; see docs/decisions/tests-and-ci.md). It answers 200 only
+// once schema init has finished and the database answers, so during a deploy the OLD instance keeps
+// serving until this one is ready, and nobody sees "Database initializing".
+// It sits above the gate on purpose: it is the one route that must answer
+// while the gate is shut.
+// DEPLOY-1: 200 only when every boot need has resolved (bootGate.js), 503
+// again from SIGTERM on; it names the needs it waits for.
+app.get("/ready", async (req, res) => {
+  if (bootGate.isDraining()) return res.status(503).json({ ready: false, draining: true });
+  if (!bootGate.servable()) return res.status(503).json({ ready: false, waitingFor: bootGate.waitingFor() });
+  try { await query("SELECT 1"); res.json({ ready: true }); }
+  catch { res.status(503).json({ ready: false, waitingFor: ["database"] }); }
+});
+// SPLIT-2 end
+// SPLIT-2 server.js piece 163
+
+// The gate (DEPLOY-1): until every need resolves, a 503 to retry, never a half-booted 500.
+app.use((req, res, next) => {
+  if (!bootGate.servable()) return res.status(503).json({ error: "Steward is starting up", retry: true });
+  next();
+});
+// SPLIT-2 end
+// SPLIT-2 server.js piece 164
+
+// ── Async error wrapper ────────────────────────────────────────────────────
+const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(err => {
+  // BUILD-97 Part 5 — every route's failure already passes through here, so
+  // this is where a 5xx burst is countable without an APM and without missing
+  // a route. It only NOTES; noteServerError rate-limits the alert itself.
+  try { noteServerError(); } catch (_) { /* never let telemetry break an error path */ }
+  next(err);
+});
+// SPLIT-2 end
+__share({ wrap });
+// SPLIT-2 server.js piece 165
+
+// ── Admin guard ────────────────────────────────────────────────────────────
+// Revalidates the caller's role against the DB, NOT the (stateless, 7-day) JWT.
+// The token bakes `role` in at login, so a demoted or removed user would keep
+// admin power until the token expired — up to a week. Re-reading the live row
+// makes a role revocation or account removal take effect on the next request.
+// (Audit BUILD-37 §A5/§C4 — stale-JWT privilege retention; proven exploitable.)
+// Admin routes are low-frequency, so the extra indexed lookup is not on the
+// read hot path.
+const requireAdmin = wrap(async (req, res, next) => {
+  // FIX-57: a support session acts as an admin of the org it was opened for
+  // (its own users row is in another org); requireAuth already decided it.
+  if (req.user && req.user.support) return next();
+  const rows = await query("SELECT role FROM users WHERE id = ?", [req.user.userId]);
+  if (!rows.length) return res.status(401).json({ error: "user_not_found", message: "Your account no longer exists" });
+  if (rows[0].role !== "admin") return res.status(403).json({ error: "Admin access required" });
+  next();
+});
+// SPLIT-2 end
+__share({ requireAdmin });
+// SPLIT-2 server.js piece 166
+
+// ── Super-admin guard ──────────────────────────────────────────────────────
+// Same reasoning as requireAdmin, but the blast radius is worse: is_super_admin
+// is baked into the JWT and grants CROSS-ORG access to every tenant. A revoked
+// super-admin must lose that on the next request, not in up to 7 days. The JWT
+// check runs first (cheap reject), then the live `is_super_admin` flag is
+// re-read. (Audit BUILD-37 §A5/§B10.) All /admin/* usages call this wrapper.
+const requireSuperAdmin = [requireSuperAdminJwt, wrap(async (req, res, next) => {
+  const rows = await query("SELECT is_super_admin FROM users WHERE id = ?", [req.user.userId]);
+  if (!rows.length || rows[0].is_super_admin !== true) return res.status(403).json({ error: "Forbidden" });
+  next();
+})];
+// SPLIT-2 end
+__share({ requireSuperAdmin });
+// SPLIT-2 server.js piece 167
+
+// ── Health ─────────────────────────────────────────────────────────────────
+// `sentry` is a non-secret boolean (is SENTRY_DSN configured?) so ops checks
+// can confirm error monitoring is wired without dashboard access.
+// `buildSha` (deploy rewire, 2026-08-11): the exact commit this build came
+// from, resolved once at boot. The Actions deploy job writes .build-sha into
+// the upload before `railway up`; a git-triggered Railway build carries
+// RAILWAY_GIT_COMMIT_SHA instead. null = an unstamped local/dev boot.
+const BUILD_SHA = (() => {
+  try {
+    const stamped = require("fs").readFileSync(__dirname + "/.build-sha", "utf8").trim();
+    if (stamped) return stamped;
+  } catch { /* no stamp file — fall through to env */ }
+  return process.env.RAILWAY_GIT_COMMIT_SHA || process.env.BUILD_SHA || null;
+})();
+// SPLIT-2 end
+__share({ BUILD_SHA });
+// SPLIT-2 server.js piece 168
+// ── BUILD-58 W-3 — the ONE ledger-provisioning helper ──────────────────────
+// Every org-creation path calls this at creation, and every gift/grant ledger
+// stamp resolves its target accounts through it. If the chart of accounts is
+// missing (a legacy org, or a creation path that somehow skipped provisioning)
+// it SELF-HEALS — provisioning the chart on the spot — and says so loudly
+// (CRITICAL log + Sentry + /health.ledger.chartSelfHeals). The class rule this
+// pins: a financial write must never land nowhere and return success. The
+// '4010' probe below is the only one in the codebase — stamp sites must go
+// through here, never re-probe (pinned by tests/ledger-provisioning.test.js).
+let ledgerChartSelfHeals = 0;
+// SPLIT-2 end
+__share({ ledgerChartSelfHeals });
+// SPLIT-2 server.js piece 169
+
+// ── BUILD-62 Part 3 — RECONCILIATION GUARD state ────────────────────────────
+// The instance (BUILD-62) was a webhook race; the CLASS is "money can move at
+// Stripe and leave no trace in Steward, and nothing notices." That has now
+// happened twice, in two modes, and both times a human reading a page was the
+// only thing that caught it. This state holds the last reconciliation result —
+// SURFACED as counts on /health so UptimeRobot's keyword watch pages on it,
+// exactly like themeAssets.dbFallbackRows. A donor charged with no record is
+// the single worst thing this product can do; it should page within the hour,
+// not wait for someone to open a portal. See reconcileStripeVsGifts() below.
+// BUILD-65 Part 6 — the counters are NULL until the sweep has actually run.
+// A `0` for a check that never happened is a "clean" zero that means "I didn't
+// look" — the exact failure accountsErrored was added to prevent, left open one
+// door down (right after a deploy, unrecordedCharges read 0 with checkedAt:null).
+// null = unchecked; a number = a real result. guardsOk (below) treats null as
+// NOT fresh.
+let reconciliation = {
+  unrecordedCharges: null, orphanGifts: null, checkedAt: null, oldestUnrecordedAgeMin: null,
+  accountsChecked: null, accountsErrored: null, divergences: [],
+};
+// SPLIT-2 end
+__share({ reconciliation });
+// SPLIT-2 server.js piece 170
+// BUILD-65 Part 6 — the DENOMINATOR for accountsChecked: how many orgs have a
+// connected Stripe account at all (the count the sweep SHOULD be reading). When
+// Brian's orgs connect and it should read 6, a stuck accountsChecked:1 then
+// looks wrong instead of looking fine. Cached (refreshed on boot + each sweep)
+// so /health stays synchronous.
+let reconcileAccountsWithStripe = null;
+// SPLIT-2 end
+__share({ reconcileAccountsWithStripe });
+// SPLIT-2 server.js piece 173
+
+// BUILD-65 Part 6 — a single field that is true ONLY when every guard is both
+// clean AND fresh. Nothing may report a clean zero for a check that has not
+// run. Small-fix #1: a boot grace so a not-yet-run check doesn't read false the
+// instant after a deploy (which opened a UptimeRobot incident on every deploy).
+// The decision logic is the pure computeGuardsOk (guards.js), unit-tested for
+// the boot-grace and dead-tick cases in tests/guards.test.js.
+const guardBootAt = Date.now();
+// SPLIT-2 end
+__share({ guardBootAt });
 // SPLIT-2 server.js piece 176
 
 // ── BUILD-63 Part 2 — the event-manifest vs live-subscription diff ───────────
@@ -468,74 +600,9 @@ app.use(require("../../routes/crm").routers.r0);
 // SPLIT-2 end
 // SPLIT-2 server.js piece 260
 
-app.get("/health", (req, res) => {
-  // billing.ok is the cached mode-consistency result (booleans/mode only — no
-  // secrets): true = all configured prices resolve under the billing key's mode,
-  // false = a test/live mismatch (loud warning already logged), null = not yet
-  // checked or nothing to check. Full detail is at /admin/billing-diagnostic.
-  // publicUrl: the resolved base every outbound email link uses (non-secret).
-  // fromEnv:false means FRONTEND_URL is unset or was rejected as a deployment
-  // host and links are riding the canonical fallback — post-deploy this is the
-  // one-glance check that reset/invite links carry stewardapp.dev.
-  const pu = resolvePublicAppUrl();
-  res.json({
-    // product + database are the IDENTITY guard: a write script asserts both
-    // against what it intended before writing, so it can never write to a
-    // different product or database that merely shares a loopback host/port.
-    product: PRODUCT_ID, database: DB_NAME,
-    status: "ok", version: "1.1.0", buildSha: BUILD_SHA, db: dbReady, sentry: !!process.env.SENTRY_DSN,
-    billing: { mode: billingModeStatus.mode, ok: billingModeStatus.ok, checked: billingModeStatus.checked },
-    publicUrl: { url: pu.url, fromEnv: pu.fromEnv },
-    // BUILD-45 (F-2): non-secret count of internal notifications the email
-    // provider rejected and that are pending retry (or exhausted). A non-zero
-    // value that stays high = a delivery problem to look at — this figure is
-    // the SURFACING that F-2 was missing. Cached (refreshed by the retry sweep),
-    // so /health stays a cheap synchronous check.
-    notifications: { failedPending: notifyFailedPending },
-    // BUILD-58 W-3: how many times a ledger stamp found no usable chart of
-    // accounts and had to provision one on the spot. Non-zero = an
-    // org-creation path is skipping provisioning — investigate, don't ignore.
-    ledger: { chartSelfHeals: ledgerChartSelfHeals },
-    // BUILD-51: which theme-asset driver is live — s3:true means uploads go to
-    // the bucket; s3:false (env unset) means bytes land in Postgres.
-    // BUILD-51b: dbFallbackRows counts assets sitting in Postgres WHILE S3 is
-    // configured — every one is a failed S3 put (also Sentry-reported). A
-    // non-zero value that grows = the silent-fallback failure mode; null when
-    // S3 isn't configured (DB storage is then by design).
-    themeAssets: assetHealth(),
-    // BUILD-62 Part 3: the reconciliation guard. unrecordedCharges > 0 means a
-    // real charge settled at Stripe with NO gift row behind it — a donor was
-    // charged and Steward has no record. This is the paging signal (watch it in
-    // UptimeRobot alongside themeAssets.dbFallbackRows). orphanGifts is the
-    // reverse (a gift with no succeeded charge). checkedAt null = not yet run.
-    reconciliation: reconciliationHealth(),
-    // BUILD-63 Part 2: manifest-vs-subscription diff. missingCount > 0 means the
-    // handler processes event types the live endpoint does NOT subscribe — code
-    // wired to nothing. Watch alongside reconciliation. null = not yet checked.
-    webhookSubscriptions: webhookSubHealth(),
-    // BUILD-65 Part 6: the aggregate. true ONLY when every guard above is both
-    // clean AND fresh (a null/stale counter fails it). One field to page on.
-    guardsOk: guardsOk(),
-    // INT-PROD-1: which guard failed, by name only (never a value), so a
-    // false guardsOk never needs a hunt again. [] when guardsOk is true.
-    guardsFailed: guardFailures(guardState()),
-    // FIX-33: every live mailbox connection, and how many have not read
-    // successfully in two hours. Counts only, no address, no org. The prod
-    // smoke fails on stale > 0; checkedAt null = no sync run since boot.
-    mailboxSync: mailboxSyncHealth,
-    // SCALE-1: the background queue (jobQueue.js) and the last five-minute
-    // round of per-org syncs: how long it took and its slowest org, by id only.
-    // Cached (refreshed every 15s), so /health stays a synchronous read.
-    // DEPLOY-1: queue.oldestWaiting and queue.level; `worker` is the newest worker's heartbeat.
-    queue: require("../../jobQueue").healthNow().queue,
-    tick: require("../../jobQueue").healthNow().tick,
-    worker: require("../../jobQueue").healthNow().worker || null,
-    // POOL-1: this process's connections, from pg's own counters (server/shared/pools.js).
-    pool: require("../../db").poolStats(),
-  });
-});
+app.get("/health", (req, res) => res.json(healthBody()));
 // SPLIT-2 end
-// SPLIT-2 server.js piece 261
+// SPLIT-2 server.js piece 262
 // ═══ TRUST-2 Part 1 · THE STATUS PAGE ═══════════════════════════════════════
 // Six services, each with a check that measures something real. A service is
 // only on the page because it is checked; a check with nothing to read yet
@@ -552,13 +619,13 @@ const STATUS_SERVICES = [
 ];
 // SPLIT-2 end
 __share({ STATUS_SERVICES });
-// SPLIT-2 server.js piece 263
+// SPLIT-2 server.js piece 264
 if (!backgroundTicksDisabled()) {
   bootGate.afterMigrations(() => statusCheckOnce().catch(e => console.error("[status]", e.message)), 20000);
   bootGate.everyAfterMigrations(() => statusCheckOnce().catch(e => console.error("[status]", e.message)), 60 * 1000);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 264
+// SPLIT-2 server.js piece 265
 
 // NUMBERS-1 · every number checked every night, counts only (numberCheck.js).
 // The tick looks hourly and runs once a day after 05:00 UTC, before the Error
@@ -568,18 +635,18 @@ if (!backgroundTicksDisabled()) {
   bootGate.everyAfterMigrations(() => require("../../numberCheck").nightlyTick(require("../../numbers").screens).catch(e => console.error("[numbers]", e.message)), 60 * 60 * 1000);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 265
+// SPLIT-2 server.js piece 266
 app.get("/admin/number-checks", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   res.json({ rows: await require("../../numberCheck").latest() });
 }));
 // SPLIT-2 end
-// SPLIT-2 server.js piece 266
+// SPLIT-2 server.js piece 267
 app.post("/admin/number-checks/run", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const out = await require("../../numberCheck").runAll({ screens: require("../../numbers").screens });
   res.json({ ranOn: out.ranOn, orgs: out.orgs, problems: out.problems, lines: out.lines });
 }));
 // SPLIT-2 end
-// SPLIT-2 server.js piece 267
+// SPLIT-2 server.js piece 268
 
 // PUBLIC. Current state, the last 90 days by day, the percentage computed from
 // stored checks (and the date it starts from), and the incidents.
@@ -607,7 +674,7 @@ app.get("/status/summary", wrap(async (req, res) => {
     sentence: "Each bar is one day. The percentage is the share of checks that found the service working, counted from the first stored check; a check with nothing to measure is left out rather than counted as up." });
 }));
 // SPLIT-2 end
-// SPLIT-2 server.js piece 268
+// SPLIT-2 server.js piece 269
 
 // ═══ TRUST-2 Parts 2 and 3 · WHAT'S NEW AND THE DPA ═════════════════════════
 // The entries themselves are files in docs/changelog/ the client bundles;
@@ -617,7 +684,7 @@ app.get("/changelog/hidden", wrap(async (req, res) => {
   res.json({ hidden: (await query(`SELECT entry_id FROM changelog_hidden`)).map(r => r.entry_id) });
 }));
 // SPLIT-2 end
-// SPLIT-2 server.js piece 269
+// SPLIT-2 server.js piece 270
 app.post("/admin/changelog/:id/hide", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const id = String(req.params.id || "").replace(/[^a-z0-9-]/gi, "").slice(0, 120);
   if (req.body?.hidden === false) await run(`DELETE FROM changelog_hidden WHERE entry_id=?`, [id]);
@@ -625,13 +692,13 @@ app.post("/admin/changelog/:id/hide", requireAuth, requireSuperAdmin, wrap(async
   res.json({ ok: true, hidden: req.body?.hidden !== false });
 }));
 // SPLIT-2 end
-// SPLIT-2 server.js piece 270
+// SPLIT-2 server.js piece 271
 // THE DPA. Published only when DPA_PUBLISHED=1, which is Jonathan's to set once
 // an attorney has read it. Before that, only a super-admin reads the draft.
 const dpaPublished = () => process.env.DPA_PUBLISHED === "1";
 // SPLIT-2 end
 __share({ dpaPublished });
-// SPLIT-2 server.js piece 272
+// SPLIT-2 server.js piece 273
 app.get("/legal/dpa", wrap(async (req, res) => {
   const D = await import("../../shared/dpa.js");
   const preview = !dpaPublished() && await dpaViewer(req);
@@ -640,7 +707,7 @@ app.get("/legal/dpa", wrap(async (req, res) => {
   res.json({ published: dpaPublished(), draft: !dpaPublished(), label: dpaPublished() ? null : D.DPA_DRAFT_LABEL, version: D.DPA_VERSION, sections: D.dpaSections() });
 }));
 // SPLIT-2 end
-// SPLIT-2 server.js piece 273
+// SPLIT-2 server.js piece 274
 app.get("/legal/dpa.pdf", wrap(async (req, res) => {
   const preview = !dpaPublished() && (await dpaViewer(req));
   if (!dpaPublished() && !preview) return res.status(404).json({ error: "The data processing agreement is not published yet." });
@@ -662,7 +729,7 @@ app.get("/legal/dpa.pdf", wrap(async (req, res) => {
   doc.end();
 }));
 // SPLIT-2 end
-// SPLIT-2 server.js piece 274
+// SPLIT-2 server.js piece 275
 
 // SUPER-ADMIN: incidents in plain language, updates, and resolve. And a way to
 // run the checks now, for a deploy with the background ticks off.
@@ -671,7 +738,7 @@ app.post("/admin/status/run-checks", requireAuth, requireSuperAdmin, wrap(async 
   res.json({ results: await statusCheckOnce() });
 }));
 // SPLIT-2 end
-// SPLIT-2 server.js piece 275
+// SPLIT-2 server.js piece 276
 app.post("/admin/incidents", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const title = String(req.body?.title || "").trim().slice(0, 200);
   const body = String(req.body?.body || "").trim().slice(0, 4000);
@@ -684,7 +751,7 @@ app.post("/admin/incidents", requireAuth, requireSuperAdmin, wrap(async (req, re
   res.status(201).json({ id });
 }));
 // SPLIT-2 end
-// SPLIT-2 server.js piece 276
+// SPLIT-2 server.js piece 277
 app.post("/admin/incidents/:id/update", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const body = String(req.body?.body || "").trim().slice(0, 4000);
   const state = ["investigating", "identified", "monitoring", "resolved"].includes(req.body?.state) ? req.body.state : null;
@@ -697,14 +764,14 @@ app.post("/admin/incidents/:id/update", requireAuth, requireSuperAdmin, wrap(asy
   res.json({ ok: true });
 }));
 // SPLIT-2 end
-// SPLIT-2 server.js piece 277
+// SPLIT-2 server.js piece 278
 
 app.use(require("../../routes/give").routers.r0);
 // SPLIT-2 end
-// SPLIT-2 server.js piece 278
+// SPLIT-2 server.js piece 279
 app.use(require("../../routes/billing").routers.r0);
 // SPLIT-2 end
-// SPLIT-2 server.js piece 279
+// SPLIT-2 server.js piece 280
 
 // B2 (BUILD-26) — tidy a name arriving from a messy spreadsheet WITHOUT destroying
 // signal. Three safe, reversible transforms: (1) collapse runs of whitespace +
@@ -718,7 +785,7 @@ app.use(require("../../routes/billing").routers.r0);
 const _ROMAN_SUFFIX = /^(?:i{1,3}|iv|vi{0,3}|ix|xi{0,3}|x)$/i;
 // SPLIT-2 end
 __share({ _ROMAN_SUFFIX });
-// SPLIT-2 server.js piece 285
+// SPLIT-2 server.js piece 286
 
 // ── BUILD-46 §3.1 — the Portal tier is NOT the CRM ─────────────────────────
 // A plan='portal' org gets: its donor portal, gift recording, receipts, and
@@ -735,11 +802,11 @@ const PORTAL_TIER_BLOCKED_PREFIXES = [
 ];
 // SPLIT-2 end
 __share({ PORTAL_TIER_BLOCKED_PREFIXES });
-// SPLIT-2 server.js piece 286
+// SPLIT-2 server.js piece 287
 const jwt46 = require("jsonwebtoken");
 // SPLIT-2 end
 __share({ jwt46 });
-// SPLIT-2 server.js piece 287
+// SPLIT-2 server.js piece 288
 app.use(PORTAL_TIER_BLOCKED_PREFIXES, wrap(async (req, res, next) => {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith("Bearer ")) return next(); // route's own auth 401s
@@ -755,7 +822,7 @@ app.use(PORTAL_TIER_BLOCKED_PREFIXES, wrap(async (req, res, next) => {
   });
 }));
 // SPLIT-2 end
-// SPLIT-2 server.js piece 288
+// SPLIT-2 server.js piece 289
 
 // ── Moves management & prospect pipeline (BUILD-15) ────────────────────────
 // The pipeline reuses the canonical donor-stage set (no second stage field).
@@ -767,11 +834,11 @@ app.use(PORTAL_TIER_BLOCKED_PREFIXES, wrap(async (req, res, next) => {
 const PIPELINE_STAGES = ["prospect", "qualify", "cultivate", "solicit", "steward"];
 // SPLIT-2 end
 __share({ PIPELINE_STAGES });
-// SPLIT-2 server.js piece 289
+// SPLIT-2 server.js piece 290
 const ALL_PIPELINE_STAGES = [...PIPELINE_STAGES, "lapsed"];
 // SPLIT-2 end
 __share({ ALL_PIPELINE_STAGES });
-// SPLIT-2 server.js piece 291
+// SPLIT-2 server.js piece 292
 
 // ── Smart moves (BUILD-22) ─────────────────────────────────────────────────
 // Jonathan's rule: the officer owns stage. The software SUGGESTS every stage
@@ -783,30 +850,30 @@ __share({ ALL_PIPELINE_STAGES });
 const lapseRule = require("../../lapseRule");
 // SPLIT-2 end
 __share({ lapseRule });
-// SPLIT-2 server.js piece 292
+// SPLIT-2 server.js piece 293
 const LAPSE_DAYS = lapseRule.LAPSED_DAYS;
 // SPLIT-2 end
 __share({ LAPSE_DAYS });
-// SPLIT-2 server.js piece 293
+// SPLIT-2 server.js piece 294
 // System-authored moves (auto-lapse / auto-unlapse) carry a null officer_id and
 // this name, so they're visibly automatic in the timeline and distinguishable
 // from human moves (the override-wins guard keys off officer_id IS NOT NULL).
 const AUTO_MOVE_OFFICER = "Steward (automatic)";
 // SPLIT-2 end
 __share({ AUTO_MOVE_OFFICER });
-// SPLIT-2 server.js piece 299
+// SPLIT-2 server.js piece 300
 app.use(require("../../routes/billing").routers.r1);
 // SPLIT-2 end
-// SPLIT-2 server.js piece 300
+// SPLIT-2 server.js piece 301
 
 // ── BUILD-98 (switch) Part 8 — TWO-STEP SIGN-IN: THE ROUTES ─────────────────
 const TOTP = require("../../totp");
 // SPLIT-2 end
 __share({ TOTP });
-// SPLIT-2 server.js piece 302
+// SPLIT-2 server.js piece 303
 app.use(require("../../routes/crm").routers.r1);
 // SPLIT-2 end
-// SPLIT-2 server.js piece 305
+// SPLIT-2 server.js piece 306
 
 // ── Combined import: new donors + their year-column gift history in one pass ─
 // Donor IDs are generated in JS before any DB write so gift rows can reference
@@ -826,11 +893,11 @@ app.use(require("../../routes/crm").routers.r1);
 const IMPORT_DONOR_BATCH = Number(process.env.IMPORT_DONOR_BATCH) || 1000;
 // SPLIT-2 end
 __share({ IMPORT_DONOR_BATCH });
-// SPLIT-2 server.js piece 306
+// SPLIT-2 server.js piece 307
 const IMPORT_GIFT_BATCH = Number(process.env.IMPORT_GIFT_BATCH) || 2000;
 // SPLIT-2 end
 __share({ IMPORT_GIFT_BATCH });
-// SPLIT-2 server.js piece 310
+// SPLIT-2 server.js piece 311
 
 // Reusable "open pledges with honest remaining balances" aggregate — remaining
 // = amount − paid, so a partially-paid pledge counts only what is still
@@ -840,7 +907,7 @@ const OPEN_PLEDGE_REMAINING_JOIN = `
     ON pledge_paid.pledge_id = pledges.id`;
 // SPLIT-2 end
 __share({ OPEN_PLEDGE_REMAINING_JOIN });
-// SPLIT-2 server.js piece 315
+// SPLIT-2 server.js piece 316
 const {
   brandEmailHeaderHtml, consumerEmailHtml, donorFromAddress, donorMailDecision, linkAccountEmail,
   demoMailNote, donorMailDecisions,
@@ -851,10 +918,10 @@ const {
 } = require("../../routes/email");
 // SPLIT-2 end
 __share({ brandEmailHeaderHtml, consumerEmailHtml, donorFromAddress, donorMailDecision, linkAccountEmail, demoMailNote, donorMailDecisions, linkEmailToAccounts, orgMaySendEmail, sendCardExpiringEmail, sendDigestEmail, sendDunningEmail, staffUnsubscribeUrl, sendBoardPackEmail, sendGiftAlertEmail, sendPledgeReminderEmail, sendRawEmail, sendReceiptEmail, sendWorkflowEmail, trialReminderEmailHtml, unsubscribeEmailFooterHtml, unsubscribeHeaders, userWantsEmail, briefSettings });
-// SPLIT-2 server.js piece 317
+// SPLIT-2 server.js piece 318
 app.use(require("../../routes/give").routers.r1);
 // SPLIT-2 end
-// SPLIT-2 server.js piece 321
+// SPLIT-2 server.js piece 322
 
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -868,11 +935,11 @@ app.use(require("../../routes/give").routers.r1);
 let ACK = null;
 // SPLIT-2 end
 __share({ ACK });
-// SPLIT-2 server.js piece 322
+// SPLIT-2 server.js piece 323
 const ACK_READY = import("../../shared/ackLetter.js").then(m => { ACK = m; __share({ ACK }); return m; });
 // SPLIT-2 end
 __share({ ACK_READY });
-// SPLIT-2 server.js piece 323
+// SPLIT-2 server.js piece 324
 // FIX-10 Part B — the one fiscal-year label, shared with Reports so the server
 // and the client cannot name the same year two ways. (NUMBERS-3: a server
 // year's short name is shared/numbers/fiscalYear.js chartLabel, held equal to
@@ -880,7 +947,7 @@ __share({ ACK_READY });
 const FISCAL_READY = import("../../shared/fiscalPeriod.js");
 // SPLIT-2 end
 __share({ FISCAL_READY });
-// SPLIT-2 server.js piece 328
+// SPLIT-2 server.js piece 329
 
 
 // ── BUILD-100 (grants) Part 3 — THE FILES A GRANT CARRIES ──────────────────
@@ -888,10 +955,10 @@ __share({ FISCAL_READY });
 const grantDocs = require("../../grantDocs.js");
 // SPLIT-2 end
 __share({ grantDocs });
-// SPLIT-2 server.js piece 332
+// SPLIT-2 server.js piece 333
 app.use(require("../../routes/finance").routers.r0);
 // SPLIT-2 end
-// SPLIT-2 server.js piece 333
+// SPLIT-2 server.js piece 334
 
 // ── Volunteers ─────────────────────────────────────────────────────────────
 
@@ -904,11 +971,11 @@ app.use(require("../../routes/finance").routers.r0);
 let VH = null;
 // SPLIT-2 end
 __share({ VH });
-// SPLIT-2 server.js piece 334
+// SPLIT-2 server.js piece 335
 const VH_READY = import("../../shared/volunteerHours.js").then(m => { VH = m; __share({ VH }); return m; });
 // SPLIT-2 end
 __share({ VH_READY });
-// SPLIT-2 server.js piece 336
+// SPLIT-2 server.js piece 337
 
 // ── FIX-24 Part 1 · MAKE A PERSON A VOLUNTEER ─────────────────────────────
 // The ONE server function behind "Make a volunteer" (the profile's More menu),
@@ -924,11 +991,11 @@ __share({ VH_READY });
 let VOL_DAYS = null;
 // SPLIT-2 end
 __share({ VOL_DAYS });
-// SPLIT-2 server.js piece 337
+// SPLIT-2 server.js piece 338
 const VOL_DAYS_READY = import("../../shared/volunteerApply.js").then(m => { VOL_DAYS = m.AVAILABILITY; __share({ VOL_DAYS }); return m; });
 // SPLIT-2 end
 __share({ VOL_DAYS_READY });
-// SPLIT-2 server.js piece 344
+// SPLIT-2 server.js piece 345
 // MEMBERS-2 — "Your page". Mounted BEFORE the volunteer routers on purpose:
 // it intercepts a live /volunteer/me?t=<token> and exchanges that token for a
 // session on the new page, so every volunteer link already in somebody's
@@ -936,124 +1003,127 @@ __share({ VOL_DAYS_READY });
 // and the old page answers it with the words it always did.
 app.use(require("../../routes/supporter").routers.r0);
 // SPLIT-2 end
-// SPLIT-2 server.js piece 345
+// SPLIT-2 server.js piece 346
 app.use(require("../../routes/volunteer").routers.r0);
 // SPLIT-2 end
-// SPLIT-2 server.js piece 346
+// SPLIT-2 server.js piece 347
 // VOL-1 — scheduling, capacity, waitlists, check-in and credentials. Mounted
 // AFTER routes/volunteer so /volunteer/join and /volunteer/log keep their
 // place; the catch-all /volunteer/:slug there defers to them by name.
 app.use(require("../../routes/volunteerScheduling").routers.r0);
 // SPLIT-2 end
-// SPLIT-2 server.js piece 347
+// SPLIT-2 server.js piece 348
 app.use(require("../../routes/surveys").routers.r0);   // SURVEY-1
 // SPLIT-2 end
-// SPLIT-2 server.js piece 348
+// SPLIT-2 server.js piece 349
 app.use(require("../../pictures").routers.r0);   // FIX-41: the one picture upload and save doors
 // SPLIT-2 end
-// SPLIT-2 server.js piece 349
+// SPLIT-2 server.js piece 350
 app.use(require("../../routes/videoThanks").routers.r0);   // PARITY-1 Part F
 // SPLIT-2 end
-// SPLIT-2 server.js piece 350
+// SPLIT-2 server.js piece 351
 app.use(require("../../routes/templates").routers.r0);   // COMMS-2
 // SPLIT-2 end
-// SPLIT-2 server.js piece 351
+// SPLIT-2 server.js piece 352
 app.use(require("../../routes/why").routers.r0);         // WHY-1
 // SPLIT-2 end
-// SPLIT-2 server.js piece 352
+// SPLIT-2 server.js piece 353
 app.use(require("../../routes/profileStatus").routers.r0); // PARITY-1
 // SPLIT-2 end
-// SPLIT-2 server.js piece 353
+// SPLIT-2 server.js piece 354
 app.use(require("../../routes/dataHealth").routers.r0);    // CLEAN-1
 // SPLIT-2 end
-// SPLIT-2 server.js piece 354
+// SPLIT-2 server.js piece 355
 app.use(require("../../routes/prospect").routers.r0);      // PROSPECT-1
 // SPLIT-2 end
-// SPLIT-2 server.js piece 355
+// SPLIT-2 server.js piece 356
 app.use(require("../../routes/grantSystem").routers.r0);   // GRANTS-1 funders, pipeline, checklist, renewals
 // SPLIT-2 end
-// SPLIT-2 server.js piece 356
+// SPLIT-2 server.js piece 357
 app.use(require("../../routes/grantLibrary").routers.r0);  // GRANTS-1 library, documents, reports, drafting
 // SPLIT-2 end
-// SPLIT-2 server.js piece 357
+// SPLIT-2 server.js piece 358
 app.use(require("../../routes/grantMail").routers.r0);     // GRANTS-1 email in
 // SPLIT-2 end
-// SPLIT-2 server.js piece 358
+// SPLIT-2 server.js piece 359
 app.use(require("../../routes/grantReports").routers.r0);
 // SPLIT-2 end
-// SPLIT-2 server.js piece 359
+// SPLIT-2 server.js piece 360
 app.use(require("../../routes/sheets").routers.r0);        // SHEETS-1 old spreadsheets
 // SPLIT-2 end
-// SPLIT-2 server.js piece 360
+// SPLIT-2 server.js piece 361
 app.use(require("../../routes/emailsSent").routers.r0);    // FIX-40 every email as sent, and who it went to
 // SPLIT-2 end
-// SPLIT-2 server.js piece 361
+// SPLIT-2 server.js piece 362
 app.use(require("../../routes/oldReports").routers.r0);    // REPORTS-5 old reports
 // SPLIT-2 end
-// SPLIT-2 server.js piece 362
+// SPLIT-2 server.js piece 363
 app.use(require("../../routes/capture").routers.r0);       // CAPTURE-1 To confirm
 // SPLIT-2 end
-// SPLIT-2 server.js piece 363
+// SPLIT-2 server.js piece 364
 app.use(require("../../routes/setup").routers.r0);         // ONBOARD-1 Set up Steward for me
 // SPLIT-2 end
-// SPLIT-2 server.js piece 364
+// SPLIT-2 server.js piece 365
 app.use(require("../../routes/voice").routers.r0);         // VOICE-1 Tell Steward
 // SPLIT-2 end
-// SPLIT-2 server.js piece 365
+// SPLIT-2 server.js piece 366
 app.use(require("../../routes/atlas").routers.r0);         // AGENT-5 Atlas
 // SPLIT-2 end
-// SPLIT-2 server.js piece 366
+// SPLIT-2 server.js piece 367
 app.use(require("../../routes/clientSafe").routers.r0);    // CLIENT-SAFE-1 privacy mode
 // SPLIT-2 end
-// SPLIT-2 server.js piece 367
+// SPLIT-2 server.js piece 368
 app.use(require("../../routes/support").routers.r0);      // SUPPORT-1 the support agent
 // SPLIT-2 end
-// SPLIT-2 server.js piece 368
+// SPLIT-2 server.js piece 369
 app.use(require("../../routes/supportAccess").routers.r0);   // FIX-57 open as support, and the org's off switch
 // SPLIT-2 end
-// SPLIT-2 server.js piece 369
-app.use(require("../../routes/media").routers.r0);         // EMAIL-1 the media library
-// SPLIT-2 end
 // SPLIT-2 server.js piece 370
-app.use(require("../../routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
+app.use(require("../admin/opsRoutes").routers.r0);   // DEVBOARD-1 /ops: super-admins only, 404 to anyone else
 // SPLIT-2 end
 // SPLIT-2 server.js piece 371
-app.use(require("../../routes/stockPhotos").routers.r0);   // EDITOR-1 the bundled stock photos
+app.use(require("../../routes/media").routers.r0);         // EMAIL-1 the media library
 // SPLIT-2 end
 // SPLIT-2 server.js piece 372
-app.use(require("../../routes/homeLead").routers.r0);      // HOME-2 the lead slot at the top of Home
+app.use(require("../../routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
 // SPLIT-2 end
 // SPLIT-2 server.js piece 373
-app.use(require("../../routes/insights").routers.r0);      // INSIGHTS-1 the ladder and the cards
+app.use(require("../../routes/stockPhotos").routers.r0);   // EDITOR-1 the bundled stock photos
 // SPLIT-2 end
 // SPLIT-2 server.js piece 374
-app.use(require("../../routes/homeBundle").routers.r0);    // SCALE-2 Home's first reads in one request
+app.use(require("../../routes/homeLead").routers.r0);      // HOME-2 the lead slot at the top of Home
 // SPLIT-2 end
 // SPLIT-2 server.js piece 375
-app.use(require("../../routes/homeCalls").routers.r0);     // PARITY-1 Part C
+app.use(require("../../routes/insights").routers.r0);      // INSIGHTS-1 the ladder and the cards
 // SPLIT-2 end
 // SPLIT-2 server.js piece 376
-app.use(require("../../routes/readouts").routers.r0);     // LIVE-1: what this told us
+app.use(require("../../routes/homeBundle").routers.r0);    // SCALE-2 Home's first reads in one request
 // SPLIT-2 end
 // SPLIT-2 server.js piece 377
-app.use(require("../../routes/groups").routers.r0);        // PARITY-1 Part D
+app.use(require("../../routes/homeCalls").routers.r0);     // PARITY-1 Part C
 // SPLIT-2 end
 // SPLIT-2 server.js piece 378
-app.use(require("../../routes/search").routers.r0);        // WIRE-1 the one search
+app.use(require("../../routes/readouts").routers.r0);     // LIVE-1: what this told us
 // SPLIT-2 end
 // SPLIT-2 server.js piece 379
-app.use(require("../../routes/historyImport").routers.r0); // IMPORT-2 notes and history
+app.use(require("../../routes/groups").routers.r0);        // PARITY-1 Part D
 // SPLIT-2 end
 // SPLIT-2 server.js piece 380
-app.use(require("../../routes/sheetImport").routers.r0);   // IMPORT-3 any spreadsheet
+app.use(require("../../routes/search").routers.r0);        // WIRE-1 the one search
 // SPLIT-2 end
 // SPLIT-2 server.js piece 381
-app.use(require("../../routes/auctions").routers.r0);      // PARITY-2 Part 4
+app.use(require("../../routes/historyImport").routers.r0); // IMPORT-2 notes and history
 // SPLIT-2 end
 // SPLIT-2 server.js piece 382
-app.use(require("../../routes/removal").routers.r0);       // FIX-41 the one remove
+app.use(require("../../routes/sheetImport").routers.r0);   // IMPORT-3 any spreadsheet
 // SPLIT-2 end
 // SPLIT-2 server.js piece 383
+app.use(require("../../routes/auctions").routers.r0);      // PARITY-2 Part 4
+// SPLIT-2 end
+// SPLIT-2 server.js piece 384
+app.use(require("../../routes/removal").routers.r0);       // FIX-41 the one remove
+// SPLIT-2 end
+// SPLIT-2 server.js piece 385
 
 // ── BUILD-98 (switch) Part 6 — THE PUBLIC API: A KEY THAT OPENS ONE ORG ────
 // Read scopes first. The rules:
@@ -1067,11 +1137,11 @@ app.use(require("../../routes/removal").routers.r0);       // FIX-41 the one rem
 const API_KEY_PREFIX = "stw_";
 // SPLIT-2 end
 __share({ API_KEY_PREFIX });
-// SPLIT-2 server.js piece 384
+// SPLIT-2 server.js piece 386
 const hashApiKey = k => crypto.createHash("sha256").update(String(k)).digest("hex");
 // SPLIT-2 end
 __share({ hashApiKey });
-// SPLIT-2 server.js piece 385
+// SPLIT-2 server.js piece 387
 const apiLimiter = rateLimit("apiLimiter", {
   windowMs: 15 * 60 * 1000, limit: 600, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: rateLimitDisabled,
@@ -1082,7 +1152,7 @@ const apiLimiter = rateLimit("apiLimiter", {
 });
 // SPLIT-2 end
 __share({ apiLimiter });
-// SPLIT-2 server.js piece 393
+// SPLIT-2 server.js piece 395
 
 
 // ══ BUILD-94 Part 5 — PUT IT ON MY CALENDAR ════════════════════════════════
@@ -1097,14 +1167,14 @@ __share({ apiLimiter });
 let CAL = null;
 // SPLIT-2 end
 __share({ CAL });
-// SPLIT-2 server.js piece 394
+// SPLIT-2 server.js piece 396
 const CAL_READY = import("../../shared/calendarLinks.js").then(m => { CAL = m; __share({ CAL }); return m; });
 // SPLIT-2 end
 __share({ CAL_READY });
-// SPLIT-2 server.js piece 396
+// SPLIT-2 server.js piece 398
 app.use(require("../../routes/agent").routers.r0);
 // SPLIT-2 end
-// SPLIT-2 server.js piece 397
+// SPLIT-2 server.js piece 399
 
 // ── AI — donor propensity scoring ──────────────────────────────────────────
 // (route deleted, BUILD-75 B.4 — zero references anywhere: client, tests, scripts, docs. See audit/BUILD-75-FINDINGS.md B.1 orphan verdicts.)
@@ -1124,7 +1194,7 @@ app.use(require("../../routes/agent").routers.r0);
 const UNSUB_SECRET = process.env.JWT_SECRET || "nonprofit_erp_secret_dev";
 // SPLIT-2 end
 __share({ UNSUB_SECRET });
-// SPLIT-2 server.js piece 401
+// SPLIT-2 server.js piece 403
 
 // The donor-facing "From" — the org's name in the inbox, so a receipt reads as
 // coming from "CREO Arts", not a bare unfamiliar domain (BUILD-64 Part 2, the
@@ -1134,14 +1204,14 @@ __share({ UNSUB_SECRET });
 const DONOR_MAIL_ADDR = () => process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
 // SPLIT-2 end
 __share({ DONOR_MAIL_ADDR });
-// SPLIT-2 server.js piece 406
+// SPLIT-2 server.js piece 408
 const orgMailGateCache = new Map();
 // SPLIT-2 end
 __share({ orgMailGateCache });
-// SPLIT-2 server.js piece 407
+// SPLIT-2 server.js piece 409
 app.use(require("../../routes/webhooks").routers.r1);
 // SPLIT-2 end
-// SPLIT-2 server.js piece 408
+// SPLIT-2 server.js piece 410
 
 // ── Recurring gift recovery (failed-payment dunning) — shared helpers ──────
 // Nonprofits lose 20-30% of recurring giving to involuntary churn (expired/
@@ -1157,7 +1227,7 @@ app.use(require("../../routes/webhooks").routers.r1);
 const RECOVERY_SECRET = process.env.RECOVERY_SECRET || UNSUB_SECRET;
 // SPLIT-2 end
 __share({ RECOVERY_SECRET });
-// SPLIT-2 server.js piece 409
+// SPLIT-2 server.js piece 411
 
 // Dunning cadence: days since the subscription's FIRST failure at which to
 // send the next reminder — fixed checkpoints, not "N days after the last
@@ -1167,255 +1237,3 @@ __share({ RECOVERY_SECRET });
 const DUNNING_SCHEDULE_DAYS = [0, 3, 7, 14];
 // SPLIT-2 end
 __share({ DUNNING_SCHEDULE_DAYS });
-// SPLIT-2 server.js piece 410
-
-// Trailing window for recovered/lost recovery-rate math (see GET /recurring/health).
-const RECOVERY_RATE_WINDOW_DAYS = 90;
-// SPLIT-2 end
-__share({ RECOVERY_RATE_WINDOW_DAYS });
-// SPLIT-2 server.js piece 418
-
-// ── BUILD-57 — recurring movement ledger + staff-change notifications ──────
-// One writer for the append-only recurring_change_log (the MRR waterfall's
-// source of truth). KINDS: created · amount_up · amount_down · paused ·
-// resumed · canceled_voluntary · canceled_involuntary · recovered ·
-// fund_changed. The voluntary/involuntary split is decided HERE, at write
-// time, when the caller knows why — a sustainer manager needs the two never
-// collapsed (one is a technical problem, the other a relationship problem).
-const RECURRING_CHANGE_KINDS = new Set([
-  "created", "amount_up", "amount_down", "paused", "resumed",
-  "canceled_voluntary", "canceled_involuntary", "recovered", "fund_changed",
-]);
-// SPLIT-2 end
-__share({ RECURRING_CHANGE_KINDS });
-// SPLIT-2 server.js piece 422
-
-// ── THE ONE PLACE STEWARD MAILS JONATHAN ───────────────────────────────────
-// Deliberately narrow. Three triggers, named in the brief: a send to a real
-// mailbox provider from a demo org, a tick failure, a 5xx burst. It rides the
-// RAW client, not the wrapped one, because an alert about mail must not depend
-// on the thing it is alerting about — and it is de-duplicated per hour per
-// kind, because an alert that arrives forty times is an alert nobody reads.
-const _opsAlertSent = new Map();
-// SPLIT-2 end
-__share({ _opsAlertSent });
-// SPLIT-2 server.js piece 424
-
-// A 5xx burst. Counted from the tick log's failures plus the process's own
-// counter, so it does not need an APM.
-let _fiveXXWindow = [];
-// SPLIT-2 end
-__share({ _fiveXXWindow });
-// SPLIT-2 server.js piece 432
-
-// FIX-26: WHO A CAMPAIGN REACHES, AND WHO IT LEAVES OUT, ANSWERED ONCE.
-// The builder used to count the segment in the browser from /donors/summaries,
-// which carries no person_types, so every volunteer and event guest with an
-// email counted as a donor (1,198 against the server's 1,158 on the demo). And
-// the server's own count stopped at "has an email", while the send then
-// skipped the unsubscribed, the bounced, the deceased and do-not-contact one
-// by one. Now the count is the send's own decision for every person in the
-// segment (donorMailDecisions -> donorMailDecision), so the number on the
-// button is the number of messages the send creates.
-//
-// `orgGate` is reported apart from the people: when the organisation itself
-// sends no mail (the demonstration org, or mail switched off) nobody gets it,
-// and the screen says that once instead of listing every person as left out.
-const AUDIENCE_REASON_ORDER = ["no_email", "deceased", "do_not_contact", "unsubscribed", "bounced", "complained", "blocked_address", "sample_donor", "donor_never", "skipped", "not_chosen", "type_off"];
-// SPLIT-2 end
-__share({ AUDIENCE_REASON_ORDER });
-// SPLIT-2 server.js piece 434
-
-// The background send loop — one recipient at a time: suppression check,
-// token replacement, tracking pixel, unsubscribe footer/headers, per-row
-// campaign_recipients bookkeeping, then finalize the campaign row. Extracted
-// from the send route (BUILD-06 Phase C) so processScheduledCampaigns() can
-// use the identical path — before that job existed, a scheduled campaign
-// sat in status='scheduled' forever and never sent.
-// EMAIL-1: the seam that renders a template for one person (emailCompose.js).
-const emailCompose = require("../../emailCompose");
-// SPLIT-2 end
-__share({ emailCompose });
-// SPLIT-2 server.js piece 435
-emailCompose.configure({ displayNameCase });
-// SPLIT-2 end
-// SPLIT-2 server.js piece 448
-
-// Same dollar-figure rate-limit budget as donateLimiter (public, unauth,
-// abuse surface) but its own instance — a fundraiser owner editing their
-// own page shouldn't be able to get rate-limited out of it just because
-// other donors on the same shared/NAT'd IP have been actively giving
-// through POST /donate/:orgSlug, which would exhaust a shared limiter.
-const fundraiserManageLimiter = rateLimit("fundraiserManageLimiter", {
-  windowMs: 15 * 60 * 1000,
-  limit: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: rateLimitHandler,
-});
-// SPLIT-2 end
-__share({ fundraiserManageLimiter });
-// SPLIT-2 server.js piece 449
-// NUMBERS-3: finPeriodBounds (a third copy of the fiscal-year boundary) is
-// gone; a fiscal or calendar year is NUMBERS.fiscalYear.period(org, yearMode, offset).
-
-// ── Reports (BUILD-02) ──────────────────────────────────────────────────────
-// Six fixed, parameterized, table-first reports — deliberately NOT an
-// Analytics revival (no charts, no custom builder). All aggregation happens
-// in SQL, org-scoped on every query; every report also serves ?format=csv.
-// Declared AFTER the /reports/board routes above so Express matches "board"
-// there first and this :key route never shadows it.
-
-const REPORT_KEYS = ["giving-summary", "by-group", "lybunt", "sybunt", "retention", "top-donors"];
-// SPLIT-2 end
-__share({ REPORT_KEYS });
-// SPLIT-2 server.js piece 452
-
-// ════════════════════════════════════════════════════════════════════════════
-// BUILD-98 (switch) Part 3 — REPORTS PEOPLE CAN BUILD
-// ════════════════════════════════════════════════════════════════════════════
-// shared/reportBuilder.js is the catalogue and the compiler: a field is a NAME
-// looked up there, never a string of SQL, and every value is a bound
-// parameter. This block adds the org scope, runs it, and keeps what she saved.
-// The twelve standard reports that Reports already answers CALL Reports' own
-// handler through reportToCsv's own shaping, so a saved LYBUNT and the Reports
-// tab's LYBUNT are one computation.
-let RB = null;
-// SPLIT-2 end
-__share({ RB });
-// SPLIT-2 server.js piece 453
-const RB_READY = import("../../shared/reportBuilder.js").then(m => { RB = m; __share({ RB }); return m; });
-// SPLIT-2 end
-__share({ RB_READY });
-// SPLIT-2 server.js piece 456
-
-const rbCents = v => Math.round(Number(v) * 100);
-// SPLIT-2 end
-__share({ rbCents });
-// SPLIT-2 server.js piece 463
-
-// The sentence each figure answers to. ONE string, read by the email and by the
-// People dashboard — the BUILD-86 C.3 rule, applied to the activity report.
-const ACTIVITY_DEFINITIONS = {
-  conversationsLogged: "Calls, meetings, emails, asks and notes somebody logged in this window. A timeline entry Steward wrote itself is not one.",
-  giftsReceived: "Gifts dated inside this window, counted and summed. Imported history counts on the date the file gave it.",
-  thankYousMarkedSent: "Gifts marked acknowledged inside this window. A gift acknowledged before Steward began stamping the moment carries no date and is counted in no week.",
-  threadsClosedByOutcome: "Follow-ups closed because the conversation happened.",
-  threadsDismissed: "Follow-ups closed without one, with the reason recorded.",
-};
-// SPLIT-2 end
-__share({ ACTIVITY_DEFINITIONS });
-// SPLIT-2 server.js piece 466
-
-// ── Digest HTML rendering (branded header + Steward frame) ──────────────────
-const digestEsc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-// SPLIT-2 end
-__share({ digestEsc });
-// SPLIT-2 server.js piece 467
-const digestMoney = n => "$" + Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
-// SPLIT-2 end
-__share({ digestMoney });
-// SPLIT-2 server.js piece 472
-
-const digestNudgeHtml = (line, linkLabel) =>
-  `<div style="margin-top:16px;padding:16px;background:#fff;border-radius:12px;border:1px solid #e5e0d5;font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:14px;color:#0f1a12;line-height:1.6;">
-    ${line}
-    <div style="margin-top:10px;"><a href="${publicAppUrl()}/dashboard" style="color:#0d5c3a;font-weight:700;text-decoration:underline;">${linkLabel} →</a></div>
-  </div>`;
-// SPLIT-2 end
-__share({ digestNudgeHtml });
-// SPLIT-2 server.js piece 478
-
-// ── BUILD-84 P0-4 — GEOCODING IS A WRITE-TIME JOB ───────────────────────────
-// The map used to geocode at render, in the browser, one address per request,
-// storing nothing (geocode.js's header has the full account). Coordinates are
-// donor data now: written once, re-read forever, re-computed only when the
-// address itself changes.
-//
-// Three entry points and no others:
-//   markDonorsForGeocoding()  — a write said an address may have changed
-//   processGeocodeQueue()     — the 5-minute tick drains `pending`
-//   POST /geocode/run         — the ops/test hook that drives it NOW
-// Nothing on a read path may call any of them.
-
-// A DONOR-SIDED job budget. Every tick states how many provider requests it
-// spent for how many addresses, the same way the import states its write
-// round trips — a cost you cannot see is a cost nobody manages.
-const GEOCODE_TICK_BUDGET = Number(process.env.GEOCODE_TICK_BUDGET) || 500;
-// SPLIT-2 end
-__share({ GEOCODE_TICK_BUDGET });
-// SPLIT-2 server.js piece 480
-
-
-// ── BUILD-94 Part 1 — THE IMPORT PHOTO QUEUE ───────────────────────────────
-// Same shape as the BUILD-84 geocode queue, for the same reason: the network
-// does not belong inside an import transaction. A mapped photo column lands as
-// photo_source_url + photo_fetch_status='pending'; this drains it.
-//
-// EVERY row leaves with a terminal status and, on failure, a reason ON THE ROW
-// — "it just has no photo" is the outcome nobody can debug, and BUILD-84's
-// rule stands: a catch may not blame the data for a bug.
-
-// The one place a spreadsheet's URL becomes an outbound request.
-const PHOTO_FETCH_BUDGET = 200;   // rows per tick
-// SPLIT-2 end
-__share({ PHOTO_FETCH_BUDGET });
-// SPLIT-2 server.js piece 481
-const PHOTO_FETCH_CONCURRENCY = 4;
-// SPLIT-2 end
-__share({ PHOTO_FETCH_CONCURRENCY });
-// SPLIT-2 server.js piece 490
-
-// STAFF-MAIL-1 · EACH PERSON'S OWN MORNING. The person picks what goes in it
-// (briefSettings: steps, tasks, meetings, readouts, and the team roll-up for an
-// admin), the hour it comes, and weekdays or every day. `nowHour` is the org's
-// wall-clock hour, passed by the tick: a person is sent to from their hour
-// until six hours after it, and the day's ledger makes it once. Called without
-// `nowHour` (the ops hook and the suites) the hour is not checked; `force`
-// also skips the day check, as the hook always did for the weekday rule.
-const BRIEF_CATCH_UP_HOURS = 6;
-// SPLIT-2 end
-__share({ BRIEF_CATCH_UP_HOURS });
-// SPLIT-2 server.js piece 495
-
-// ── STAFF-MAIL-2 — YOUR WEEK: THE ONE STAFF EMAIL A NEW PERSON STARTS WITH ──
-// Jonathan, 31 Oct 2026: everyone new starts with this ON and every other
-// staff email off, the daily morning email included (`notify_weekly` defaults
-// to true; people who existed before keep NULL, which reads off). Monday at
-// 7 AM in the org's time zone: the week ahead, then last week in a few lines.
-//
-// BUILT FROM PARTS THAT ALREADY ANSWER ELSEWHERE, so its numbers cannot drift:
-//   steps due        the morning email's ranked queue, run to Sunday
-//   follow-ups due   the morning email's task list, run to Sunday
-//   pledge payments  unpaid pledge installments due this week
-//   events           events dated this week
-//   gifts in         the `gifts` figure (Home, Atlas and every report read it)
-//   thank-yous owed  the `unthanked` figure, from Home's own start date
-//   who lapsed       donorStatus's lapsed rule (the Directory's), whose lapse
-//                    day (last gift + 365) fell last week
-// A week with nothing in it still sends: one line, and the link to Home.
-const WEEKLY_HOUR = 7;
-// SPLIT-2 end
-__share({ WEEKLY_HOUR });
-// SPLIT-2 server.js piece 496
-const WEEKLY_CATCH_UP_HOURS = 6;
-// SPLIT-2 end
-__share({ WEEKLY_CATCH_UP_HOURS });
-// SPLIT-2 server.js piece 497
-const WEEKLY_LIST_CAP = 5;
-// SPLIT-2 end
-__share({ WEEKLY_LIST_CAP });
-// SPLIT-2 server.js piece 501
-
-// The same kind of follow-up is one line with its count. A task Steward opened
-// itself carries its kind in its actor (`system:<path>/<id>`); its path is the
-// kind. A kind that counts something says its total; any other shows its first
-// title and how many more. A task a person wrote is its own line.
-const WEEKLY_TASK_KINDS = {
-  "system:data-health/import": {
-    count: t => Number((String(t.title).match(/\d+/) || [1])[0]) || 1,
-    line: n => `Review ${n} possible ${n === 1 ? "duplicate" : "duplicates"} from the import in Data health`,
-  },
-};
-// SPLIT-2 end
-__share({ WEEKLY_TASK_KINDS });

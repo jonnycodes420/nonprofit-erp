@@ -17,6 +17,6 @@ require("./server/boot/steps-2.js");
 require("./server/boot/steps-3.js");
 require("./server/boot/steps-4.js");
 const { app } = __boot.ctx;
-// SPLIT-2 server.js piece 806
+// SPLIT-2 server.js piece 809
 module.exports = app;
 // SPLIT-2 end

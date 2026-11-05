@@ -1,4 +1,4 @@
-// SPLIT-2: moved VERBATIM from server.js (the statements from lines 6914-12645, in order). server.js requires the boot modules in
+// SPLIT-2: moved VERBATIM from server.js (the statements from lines 4974-11789, in order). server.js requires the boot modules in
 // order: every helpers-N first (a function existed from the start, as hoisting made it), then
 // steps-1, steps-2 … in the order the statements ran. Each "SPLIT-2 server.js piece N" block is
 // server.js's own text; tests read server.js through readSource("server.js"), which puts the
@@ -9,181 +9,290 @@
 var __dirname = require("path").join(__dirname, "..", "..");   // server.js's folder, as the moved code expects
 const __boot = require("./share");
 const __share = __boot.share;
-let ACK_READY, AGENT_MODEL, AiOffError, BILLING_PLAN_VALUES, CAL_READY, CANONICAL_APP_URL, CLOSE_PLANS, DUNNING_SCHEDULE_DAYS, FISCAL_READY, GC_READY, GREET_READY, PRICING, PT_READY, RB_READY, RECOVERY_SECRET, SYS_AUTO, Sentry, SvixWebhook, UNSUB_SECRET, VH_READY, VOL_DAYS_READY, actor, app, applyAgreedBandMoves, backgroundTicksDisabled, bcrypt, billingConfigError, billingCustomerColumn, billingStripe, billingStripeMode, bootGate, bumpFormEvent, checkAllRecordBands, checkBillingPriceModes, checkGiftExtras, checkPlanLimit, checkRecordBand, checkVolunteerFields, checkWebhookSubscriptions, checkWriteAccess, checkoutSessionParams, closePlan, closeThreadStepForContact, computeTrialEnd, countRecords, crypto, displayNameCase, donateLimiter, donorByNameOrCreate, donorFacingOrgName, donorFromAddress, donorMailDecision, donorSendOpts, effectivePlanLimits, einLookup, enrollMembership, ensureOrgLedger, escapeHtml, express, filterBySegment, fireWorkflows, firstChargeSentence, formatChargeDate, getOrgAccessState, grantBalanceFrom, grantMoneyRows, inboundMod, insertShift, inviteeDisplayName, ipKeyGenerator, issueGiftReceipt, linkEmailToAccounts, logRecoveryEvent, logRecurringChange, loginAccountLimiter, loginIpLimiter, mailboxAccessToken, makeVolunteer, markVolunteer, maybeStartJourneyFromServer, mfaVerifyForUser, money, newId, openGiftThread, openSustainerLapseThread, opsAlert, orgMailGateCache, orgMaySendEmail, orgOwns, orgPlanTier, orgSendingIdentity, orgTime, orgToday, orgTz, orgTzName, orgUnrestrictedFundId, otherBillingMode, parseMoneyOrThrow, passwordResetLimiter, planAmountUsd, planFromSubscription, portalTimeline, processNetworkGate, processRecordBands, processTrialReminders, provisionNewOrgWorkflows, publicAppUrl, purgeExpiredAssets, pushStewardDates, query, rateLimit, rateLimitDisabled, rateLimitHandler, recalcDonorSummary, recalcPledgePayment, reconcileStripeVsGifts, recordAutoMove, recordGift, recordTick, refreshAssetFallbackCount, refreshRetentionCounts, registerForEvent, registerLimiter, renewMembership, requireAdmin, requireAuth, requireSuperAdmin, resend, resolvePublicAppUrl, resolveSegmentSpec, restrictedMod, retryFailedNotifications, run, runTx, sampleDataMod, scheduleBillingModeCheck, sessionCache, signToken, stripe, stripeChargesEnabled, syncCalendar, syncMailbox, testMode, toCents, toDollars, unsubscribeEmailFooterHtml, unsubscribeHeaders, uuid, validateCloseLink, validateOrgClose, volunteerRecordSentence, volunteerSummary, withAdvisoryLock, withTransaction, wrap, writeAuditLog, writeGiftExtras;
+let PRICING, backgroundTicksDisabled, billingStripeMode, bootGate, displayNameCase, ipKeyGenerator, publicAppUrl, purgeExpiredAssets, rateLimit, rateLimitDisabled, rateLimitHandler, refreshAssetFallbackCount, refreshRetentionCounts;
 __boot.register(c => {
-  if ("ACK_READY" in c) ACK_READY = c.ACK_READY;
-  if ("AGENT_MODEL" in c) AGENT_MODEL = c.AGENT_MODEL;
-  if ("AiOffError" in c) AiOffError = c.AiOffError;
-  if ("BILLING_PLAN_VALUES" in c) BILLING_PLAN_VALUES = c.BILLING_PLAN_VALUES;
-  if ("CAL_READY" in c) CAL_READY = c.CAL_READY;
-  if ("CANONICAL_APP_URL" in c) CANONICAL_APP_URL = c.CANONICAL_APP_URL;
-  if ("CLOSE_PLANS" in c) CLOSE_PLANS = c.CLOSE_PLANS;
-  if ("DUNNING_SCHEDULE_DAYS" in c) DUNNING_SCHEDULE_DAYS = c.DUNNING_SCHEDULE_DAYS;
-  if ("FISCAL_READY" in c) FISCAL_READY = c.FISCAL_READY;
-  if ("GC_READY" in c) GC_READY = c.GC_READY;
-  if ("GREET_READY" in c) GREET_READY = c.GREET_READY;
   if ("PRICING" in c) PRICING = c.PRICING;
-  if ("PT_READY" in c) PT_READY = c.PT_READY;
-  if ("RB_READY" in c) RB_READY = c.RB_READY;
-  if ("RECOVERY_SECRET" in c) RECOVERY_SECRET = c.RECOVERY_SECRET;
-  if ("SYS_AUTO" in c) SYS_AUTO = c.SYS_AUTO;
-  if ("Sentry" in c) Sentry = c.Sentry;
-  if ("SvixWebhook" in c) SvixWebhook = c.SvixWebhook;
-  if ("UNSUB_SECRET" in c) UNSUB_SECRET = c.UNSUB_SECRET;
-  if ("VH_READY" in c) VH_READY = c.VH_READY;
-  if ("VOL_DAYS_READY" in c) VOL_DAYS_READY = c.VOL_DAYS_READY;
-  if ("actor" in c) actor = c.actor;
-  if ("app" in c) app = c.app;
-  if ("applyAgreedBandMoves" in c) applyAgreedBandMoves = c.applyAgreedBandMoves;
   if ("backgroundTicksDisabled" in c) backgroundTicksDisabled = c.backgroundTicksDisabled;
-  if ("bcrypt" in c) bcrypt = c.bcrypt;
-  if ("billingConfigError" in c) billingConfigError = c.billingConfigError;
-  if ("billingCustomerColumn" in c) billingCustomerColumn = c.billingCustomerColumn;
-  if ("billingStripe" in c) billingStripe = c.billingStripe;
   if ("billingStripeMode" in c) billingStripeMode = c.billingStripeMode;
   if ("bootGate" in c) bootGate = c.bootGate;
-  if ("bumpFormEvent" in c) bumpFormEvent = c.bumpFormEvent;
-  if ("checkAllRecordBands" in c) checkAllRecordBands = c.checkAllRecordBands;
-  if ("checkBillingPriceModes" in c) checkBillingPriceModes = c.checkBillingPriceModes;
-  if ("checkGiftExtras" in c) checkGiftExtras = c.checkGiftExtras;
-  if ("checkPlanLimit" in c) checkPlanLimit = c.checkPlanLimit;
-  if ("checkRecordBand" in c) checkRecordBand = c.checkRecordBand;
-  if ("checkVolunteerFields" in c) checkVolunteerFields = c.checkVolunteerFields;
-  if ("checkWebhookSubscriptions" in c) checkWebhookSubscriptions = c.checkWebhookSubscriptions;
-  if ("checkWriteAccess" in c) checkWriteAccess = c.checkWriteAccess;
-  if ("checkoutSessionParams" in c) checkoutSessionParams = c.checkoutSessionParams;
-  if ("closePlan" in c) closePlan = c.closePlan;
-  if ("closeThreadStepForContact" in c) closeThreadStepForContact = c.closeThreadStepForContact;
-  if ("computeTrialEnd" in c) computeTrialEnd = c.computeTrialEnd;
-  if ("countRecords" in c) countRecords = c.countRecords;
-  if ("crypto" in c) crypto = c.crypto;
   if ("displayNameCase" in c) displayNameCase = c.displayNameCase;
-  if ("donateLimiter" in c) donateLimiter = c.donateLimiter;
-  if ("donorByNameOrCreate" in c) donorByNameOrCreate = c.donorByNameOrCreate;
-  if ("donorFacingOrgName" in c) donorFacingOrgName = c.donorFacingOrgName;
-  if ("donorFromAddress" in c) donorFromAddress = c.donorFromAddress;
-  if ("donorMailDecision" in c) donorMailDecision = c.donorMailDecision;
-  if ("donorSendOpts" in c) donorSendOpts = c.donorSendOpts;
-  if ("effectivePlanLimits" in c) effectivePlanLimits = c.effectivePlanLimits;
-  if ("einLookup" in c) einLookup = c.einLookup;
-  if ("enrollMembership" in c) enrollMembership = c.enrollMembership;
-  if ("ensureOrgLedger" in c) ensureOrgLedger = c.ensureOrgLedger;
-  if ("escapeHtml" in c) escapeHtml = c.escapeHtml;
-  if ("express" in c) express = c.express;
-  if ("filterBySegment" in c) filterBySegment = c.filterBySegment;
-  if ("fireWorkflows" in c) fireWorkflows = c.fireWorkflows;
-  if ("firstChargeSentence" in c) firstChargeSentence = c.firstChargeSentence;
-  if ("formatChargeDate" in c) formatChargeDate = c.formatChargeDate;
-  if ("getOrgAccessState" in c) getOrgAccessState = c.getOrgAccessState;
-  if ("grantBalanceFrom" in c) grantBalanceFrom = c.grantBalanceFrom;
-  if ("grantMoneyRows" in c) grantMoneyRows = c.grantMoneyRows;
-  if ("inboundMod" in c) inboundMod = c.inboundMod;
-  if ("insertShift" in c) insertShift = c.insertShift;
-  if ("inviteeDisplayName" in c) inviteeDisplayName = c.inviteeDisplayName;
   if ("ipKeyGenerator" in c) ipKeyGenerator = c.ipKeyGenerator;
-  if ("issueGiftReceipt" in c) issueGiftReceipt = c.issueGiftReceipt;
-  if ("linkEmailToAccounts" in c) linkEmailToAccounts = c.linkEmailToAccounts;
-  if ("logRecoveryEvent" in c) logRecoveryEvent = c.logRecoveryEvent;
-  if ("logRecurringChange" in c) logRecurringChange = c.logRecurringChange;
-  if ("loginAccountLimiter" in c) loginAccountLimiter = c.loginAccountLimiter;
-  if ("loginIpLimiter" in c) loginIpLimiter = c.loginIpLimiter;
-  if ("mailboxAccessToken" in c) mailboxAccessToken = c.mailboxAccessToken;
-  if ("makeVolunteer" in c) makeVolunteer = c.makeVolunteer;
-  if ("markVolunteer" in c) markVolunteer = c.markVolunteer;
-  if ("maybeStartJourneyFromServer" in c) maybeStartJourneyFromServer = c.maybeStartJourneyFromServer;
-  if ("mfaVerifyForUser" in c) mfaVerifyForUser = c.mfaVerifyForUser;
-  if ("money" in c) money = c.money;
-  if ("newId" in c) newId = c.newId;
-  if ("openGiftThread" in c) openGiftThread = c.openGiftThread;
-  if ("openSustainerLapseThread" in c) openSustainerLapseThread = c.openSustainerLapseThread;
-  if ("opsAlert" in c) opsAlert = c.opsAlert;
-  if ("orgMailGateCache" in c) orgMailGateCache = c.orgMailGateCache;
-  if ("orgMaySendEmail" in c) orgMaySendEmail = c.orgMaySendEmail;
-  if ("orgOwns" in c) orgOwns = c.orgOwns;
-  if ("orgPlanTier" in c) orgPlanTier = c.orgPlanTier;
-  if ("orgSendingIdentity" in c) orgSendingIdentity = c.orgSendingIdentity;
-  if ("orgTime" in c) orgTime = c.orgTime;
-  if ("orgToday" in c) orgToday = c.orgToday;
-  if ("orgTz" in c) orgTz = c.orgTz;
-  if ("orgTzName" in c) orgTzName = c.orgTzName;
-  if ("orgUnrestrictedFundId" in c) orgUnrestrictedFundId = c.orgUnrestrictedFundId;
-  if ("otherBillingMode" in c) otherBillingMode = c.otherBillingMode;
-  if ("parseMoneyOrThrow" in c) parseMoneyOrThrow = c.parseMoneyOrThrow;
-  if ("passwordResetLimiter" in c) passwordResetLimiter = c.passwordResetLimiter;
-  if ("planAmountUsd" in c) planAmountUsd = c.planAmountUsd;
-  if ("planFromSubscription" in c) planFromSubscription = c.planFromSubscription;
-  if ("portalTimeline" in c) portalTimeline = c.portalTimeline;
-  if ("processNetworkGate" in c) processNetworkGate = c.processNetworkGate;
-  if ("processRecordBands" in c) processRecordBands = c.processRecordBands;
-  if ("processTrialReminders" in c) processTrialReminders = c.processTrialReminders;
-  if ("provisionNewOrgWorkflows" in c) provisionNewOrgWorkflows = c.provisionNewOrgWorkflows;
   if ("publicAppUrl" in c) publicAppUrl = c.publicAppUrl;
   if ("purgeExpiredAssets" in c) purgeExpiredAssets = c.purgeExpiredAssets;
-  if ("pushStewardDates" in c) pushStewardDates = c.pushStewardDates;
-  if ("query" in c) query = c.query;
   if ("rateLimit" in c) rateLimit = c.rateLimit;
   if ("rateLimitDisabled" in c) rateLimitDisabled = c.rateLimitDisabled;
   if ("rateLimitHandler" in c) rateLimitHandler = c.rateLimitHandler;
-  if ("recalcDonorSummary" in c) recalcDonorSummary = c.recalcDonorSummary;
-  if ("recalcPledgePayment" in c) recalcPledgePayment = c.recalcPledgePayment;
-  if ("reconcileStripeVsGifts" in c) reconcileStripeVsGifts = c.reconcileStripeVsGifts;
-  if ("recordAutoMove" in c) recordAutoMove = c.recordAutoMove;
-  if ("recordGift" in c) recordGift = c.recordGift;
-  if ("recordTick" in c) recordTick = c.recordTick;
   if ("refreshAssetFallbackCount" in c) refreshAssetFallbackCount = c.refreshAssetFallbackCount;
   if ("refreshRetentionCounts" in c) refreshRetentionCounts = c.refreshRetentionCounts;
-  if ("registerForEvent" in c) registerForEvent = c.registerForEvent;
-  if ("registerLimiter" in c) registerLimiter = c.registerLimiter;
-  if ("renewMembership" in c) renewMembership = c.renewMembership;
-  if ("requireAdmin" in c) requireAdmin = c.requireAdmin;
-  if ("requireAuth" in c) requireAuth = c.requireAuth;
-  if ("requireSuperAdmin" in c) requireSuperAdmin = c.requireSuperAdmin;
-  if ("resend" in c) resend = c.resend;
-  if ("resolvePublicAppUrl" in c) resolvePublicAppUrl = c.resolvePublicAppUrl;
-  if ("resolveSegmentSpec" in c) resolveSegmentSpec = c.resolveSegmentSpec;
-  if ("restrictedMod" in c) restrictedMod = c.restrictedMod;
-  if ("retryFailedNotifications" in c) retryFailedNotifications = c.retryFailedNotifications;
-  if ("run" in c) run = c.run;
-  if ("runTx" in c) runTx = c.runTx;
-  if ("sampleDataMod" in c) sampleDataMod = c.sampleDataMod;
-  if ("scheduleBillingModeCheck" in c) scheduleBillingModeCheck = c.scheduleBillingModeCheck;
-  if ("sessionCache" in c) sessionCache = c.sessionCache;
-  if ("signToken" in c) signToken = c.signToken;
-  if ("stripe" in c) stripe = c.stripe;
-  if ("stripeChargesEnabled" in c) stripeChargesEnabled = c.stripeChargesEnabled;
-  if ("syncCalendar" in c) syncCalendar = c.syncCalendar;
-  if ("syncMailbox" in c) syncMailbox = c.syncMailbox;
-  if ("testMode" in c) testMode = c.testMode;
-  if ("toCents" in c) toCents = c.toCents;
-  if ("toDollars" in c) toDollars = c.toDollars;
-  if ("unsubscribeEmailFooterHtml" in c) unsubscribeEmailFooterHtml = c.unsubscribeEmailFooterHtml;
-  if ("unsubscribeHeaders" in c) unsubscribeHeaders = c.unsubscribeHeaders;
-  if ("uuid" in c) uuid = c.uuid;
-  if ("validateCloseLink" in c) validateCloseLink = c.validateCloseLink;
-  if ("validateOrgClose" in c) validateOrgClose = c.validateOrgClose;
-  if ("volunteerRecordSentence" in c) volunteerRecordSentence = c.volunteerRecordSentence;
-  if ("volunteerSummary" in c) volunteerSummary = c.volunteerSummary;
-  if ("withAdvisoryLock" in c) withAdvisoryLock = c.withAdvisoryLock;
-  if ("withTransaction" in c) withTransaction = c.withTransaction;
-  if ("wrap" in c) wrap = c.wrap;
-  if ("writeAuditLog" in c) writeAuditLog = c.writeAuditLog;
-  if ("writeGiftExtras" in c) writeGiftExtras = c.writeGiftExtras;
+  if ("_fiveXXWindow" in c) _fiveXXWindow = c._fiveXXWindow;
+  if ("RB" in c) RB = c.RB;
   if ("SEQ" in c) SEQ = c.SEQ;
   if ("notifyFailedPending" in c) notifyFailedPending = c.notifyFailedPending;
   if ("billingModeStatus" in c) billingModeStatus = c.billingModeStatus;
   if ("mailboxSyncHealth" in c) mailboxSyncHealth = c.mailboxSyncHealth;
   if ("EV" in c) EV = c.EV;
   if ("MB" in c) MB = c.MB;
-  if ("_supporterSession" in c) _supporterSession = c._supporterSession;
 });
 
-// SPLIT-2 server.js piece 505
+// SPLIT-2 server.js piece 412
+
+// Trailing window for recovered/lost recovery-rate math (see GET /recurring/health).
+const RECOVERY_RATE_WINDOW_DAYS = 90;
+// SPLIT-2 end
+__share({ RECOVERY_RATE_WINDOW_DAYS });
+// SPLIT-2 server.js piece 420
+
+// ── BUILD-57 — recurring movement ledger + staff-change notifications ──────
+// One writer for the append-only recurring_change_log (the MRR waterfall's
+// source of truth). KINDS: created · amount_up · amount_down · paused ·
+// resumed · canceled_voluntary · canceled_involuntary · recovered ·
+// fund_changed. The voluntary/involuntary split is decided HERE, at write
+// time, when the caller knows why — a sustainer manager needs the two never
+// collapsed (one is a technical problem, the other a relationship problem).
+const RECURRING_CHANGE_KINDS = new Set([
+  "created", "amount_up", "amount_down", "paused", "resumed",
+  "canceled_voluntary", "canceled_involuntary", "recovered", "fund_changed",
+]);
+// SPLIT-2 end
+__share({ RECURRING_CHANGE_KINDS });
+// SPLIT-2 server.js piece 424
+
+// ── THE ONE PLACE STEWARD MAILS JONATHAN ───────────────────────────────────
+// Deliberately narrow. Three triggers, named in the brief: a send to a real
+// mailbox provider from a demo org, a tick failure, a 5xx burst. It rides the
+// RAW client, not the wrapped one, because an alert about mail must not depend
+// on the thing it is alerting about — and it is de-duplicated per hour per
+// kind, because an alert that arrives forty times is an alert nobody reads.
+const _opsAlertSent = new Map();
+// SPLIT-2 end
+__share({ _opsAlertSent });
+// SPLIT-2 server.js piece 426
+
+// A 5xx burst. Counted from the tick log's failures plus the process's own
+// counter, so it does not need an APM.
+let _fiveXXWindow = [];
+// SPLIT-2 end
+__share({ _fiveXXWindow });
+// SPLIT-2 server.js piece 434
+
+// FIX-26: WHO A CAMPAIGN REACHES, AND WHO IT LEAVES OUT, ANSWERED ONCE.
+// The builder used to count the segment in the browser from /donors/summaries,
+// which carries no person_types, so every volunteer and event guest with an
+// email counted as a donor (1,198 against the server's 1,158 on the demo). And
+// the server's own count stopped at "has an email", while the send then
+// skipped the unsubscribed, the bounced, the deceased and do-not-contact one
+// by one. Now the count is the send's own decision for every person in the
+// segment (donorMailDecisions -> donorMailDecision), so the number on the
+// button is the number of messages the send creates.
+//
+// `orgGate` is reported apart from the people: when the organisation itself
+// sends no mail (the demonstration org, or mail switched off) nobody gets it,
+// and the screen says that once instead of listing every person as left out.
+const AUDIENCE_REASON_ORDER = ["no_email", "deceased", "do_not_contact", "unsubscribed", "bounced", "complained", "blocked_address", "sample_donor", "donor_never", "skipped", "not_chosen", "type_off"];
+// SPLIT-2 end
+__share({ AUDIENCE_REASON_ORDER });
+// SPLIT-2 server.js piece 436
+
+// The background send loop — one recipient at a time: suppression check,
+// token replacement, tracking pixel, unsubscribe footer/headers, per-row
+// campaign_recipients bookkeeping, then finalize the campaign row. Extracted
+// from the send route (BUILD-06 Phase C) so processScheduledCampaigns() can
+// use the identical path — before that job existed, a scheduled campaign
+// sat in status='scheduled' forever and never sent.
+// EMAIL-1: the seam that renders a template for one person (emailCompose.js).
+const emailCompose = require("../../emailCompose");
+// SPLIT-2 end
+__share({ emailCompose });
+// SPLIT-2 server.js piece 437
+emailCompose.configure({ displayNameCase });
+// SPLIT-2 end
+// SPLIT-2 server.js piece 450
+
+// Same dollar-figure rate-limit budget as donateLimiter (public, unauth,
+// abuse surface) but its own instance — a fundraiser owner editing their
+// own page shouldn't be able to get rate-limited out of it just because
+// other donors on the same shared/NAT'd IP have been actively giving
+// through POST /donate/:orgSlug, which would exhaust a shared limiter.
+const fundraiserManageLimiter = rateLimit("fundraiserManageLimiter", {
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+});
+// SPLIT-2 end
+__share({ fundraiserManageLimiter });
+// SPLIT-2 server.js piece 451
+// NUMBERS-3: finPeriodBounds (a third copy of the fiscal-year boundary) is
+// gone; a fiscal or calendar year is NUMBERS.fiscalYear.period(org, yearMode, offset).
+
+// ── Reports (BUILD-02) ──────────────────────────────────────────────────────
+// Six fixed, parameterized, table-first reports — deliberately NOT an
+// Analytics revival (no charts, no custom builder). All aggregation happens
+// in SQL, org-scoped on every query; every report also serves ?format=csv.
+// Declared AFTER the /reports/board routes above so Express matches "board"
+// there first and this :key route never shadows it.
+
+const REPORT_KEYS = ["giving-summary", "by-group", "lybunt", "sybunt", "retention", "top-donors"];
+// SPLIT-2 end
+__share({ REPORT_KEYS });
+// SPLIT-2 server.js piece 454
+
+// ════════════════════════════════════════════════════════════════════════════
+// BUILD-98 (switch) Part 3 — REPORTS PEOPLE CAN BUILD
+// ════════════════════════════════════════════════════════════════════════════
+// shared/reportBuilder.js is the catalogue and the compiler: a field is a NAME
+// looked up there, never a string of SQL, and every value is a bound
+// parameter. This block adds the org scope, runs it, and keeps what she saved.
+// The twelve standard reports that Reports already answers CALL Reports' own
+// handler through reportToCsv's own shaping, so a saved LYBUNT and the Reports
+// tab's LYBUNT are one computation.
+let RB = null;
+// SPLIT-2 end
+__share({ RB });
+// SPLIT-2 server.js piece 455
+const RB_READY = import("../../shared/reportBuilder.js").then(m => { RB = m; __share({ RB }); return m; });
+// SPLIT-2 end
+__share({ RB_READY });
+// SPLIT-2 server.js piece 458
+
+const rbCents = v => Math.round(Number(v) * 100);
+// SPLIT-2 end
+__share({ rbCents });
+// SPLIT-2 server.js piece 465
+
+// The sentence each figure answers to. ONE string, read by the email and by the
+// People dashboard — the BUILD-86 C.3 rule, applied to the activity report.
+const ACTIVITY_DEFINITIONS = {
+  conversationsLogged: "Calls, meetings, emails, asks and notes somebody logged in this window. A timeline entry Steward wrote itself is not one.",
+  giftsReceived: "Gifts dated inside this window, counted and summed. Imported history counts on the date the file gave it.",
+  thankYousMarkedSent: "Gifts marked acknowledged inside this window. A gift acknowledged before Steward began stamping the moment carries no date and is counted in no week.",
+  threadsClosedByOutcome: "Follow-ups closed because the conversation happened.",
+  threadsDismissed: "Follow-ups closed without one, with the reason recorded.",
+};
+// SPLIT-2 end
+__share({ ACTIVITY_DEFINITIONS });
+// SPLIT-2 server.js piece 468
+
+// ── Digest HTML rendering (branded header + Steward frame) ──────────────────
+const digestEsc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+// SPLIT-2 end
+__share({ digestEsc });
+// SPLIT-2 server.js piece 469
+const digestMoney = n => "$" + Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+// SPLIT-2 end
+__share({ digestMoney });
+// SPLIT-2 server.js piece 474
+
+const digestNudgeHtml = (line, linkLabel) =>
+  `<div style="margin-top:16px;padding:16px;background:#fff;border-radius:12px;border:1px solid #e5e0d5;font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:14px;color:#0f1a12;line-height:1.6;">
+    ${line}
+    <div style="margin-top:10px;"><a href="${publicAppUrl()}/dashboard" style="color:#0d5c3a;font-weight:700;text-decoration:underline;">${linkLabel} →</a></div>
+  </div>`;
+// SPLIT-2 end
+__share({ digestNudgeHtml });
+// SPLIT-2 server.js piece 480
+
+// ── BUILD-84 P0-4 — GEOCODING IS A WRITE-TIME JOB ───────────────────────────
+// The map used to geocode at render, in the browser, one address per request,
+// storing nothing (geocode.js's header has the full account). Coordinates are
+// donor data now: written once, re-read forever, re-computed only when the
+// address itself changes.
+//
+// Three entry points and no others:
+//   markDonorsForGeocoding()  — a write said an address may have changed
+//   processGeocodeQueue()     — the 5-minute tick drains `pending`
+//   POST /geocode/run         — the ops/test hook that drives it NOW
+// Nothing on a read path may call any of them.
+
+// A DONOR-SIDED job budget. Every tick states how many provider requests it
+// spent for how many addresses, the same way the import states its write
+// round trips — a cost you cannot see is a cost nobody manages.
+const GEOCODE_TICK_BUDGET = Number(process.env.GEOCODE_TICK_BUDGET) || 500;
+// SPLIT-2 end
+__share({ GEOCODE_TICK_BUDGET });
+// SPLIT-2 server.js piece 482
+
+
+// ── BUILD-94 Part 1 — THE IMPORT PHOTO QUEUE ───────────────────────────────
+// Same shape as the BUILD-84 geocode queue, for the same reason: the network
+// does not belong inside an import transaction. A mapped photo column lands as
+// photo_source_url + photo_fetch_status='pending'; this drains it.
+//
+// EVERY row leaves with a terminal status and, on failure, a reason ON THE ROW
+// — "it just has no photo" is the outcome nobody can debug, and BUILD-84's
+// rule stands: a catch may not blame the data for a bug.
+
+// The one place a spreadsheet's URL becomes an outbound request.
+const PHOTO_FETCH_BUDGET = 200;   // rows per tick
+// SPLIT-2 end
+__share({ PHOTO_FETCH_BUDGET });
+// SPLIT-2 server.js piece 483
+const PHOTO_FETCH_CONCURRENCY = 4;
+// SPLIT-2 end
+__share({ PHOTO_FETCH_CONCURRENCY });
+// SPLIT-2 server.js piece 492
+
+// STAFF-MAIL-1 · EACH PERSON'S OWN MORNING. The person picks what goes in it
+// (briefSettings: steps, tasks, meetings, readouts, and the team roll-up for an
+// admin), the hour it comes, and weekdays or every day. `nowHour` is the org's
+// wall-clock hour, passed by the tick: a person is sent to from their hour
+// until six hours after it, and the day's ledger makes it once. Called without
+// `nowHour` (the ops hook and the suites) the hour is not checked; `force`
+// also skips the day check, as the hook always did for the weekday rule.
+const BRIEF_CATCH_UP_HOURS = 6;
+// SPLIT-2 end
+__share({ BRIEF_CATCH_UP_HOURS });
+// SPLIT-2 server.js piece 497
+
+// ── STAFF-MAIL-2 — YOUR WEEK: THE ONE STAFF EMAIL A NEW PERSON STARTS WITH ──
+// Jonathan, 31 Oct 2026: everyone new starts with this ON and every other
+// staff email off, the daily morning email included (`notify_weekly` defaults
+// to true; people who existed before keep NULL, which reads off). Monday at
+// 7 AM in the org's time zone: the week ahead, then last week in a few lines.
+//
+// BUILT FROM PARTS THAT ALREADY ANSWER ELSEWHERE, so its numbers cannot drift:
+//   steps due        the morning email's ranked queue, run to Sunday
+//   follow-ups due   the morning email's task list, run to Sunday
+//   pledge payments  unpaid pledge installments due this week
+//   events           events dated this week
+//   gifts in         the `gifts` figure (Home, Atlas and every report read it)
+//   thank-yous owed  the `unthanked` figure, from Home's own start date
+//   who lapsed       donorStatus's lapsed rule (the Directory's), whose lapse
+//                    day (last gift + 365) fell last week
+// A week with nothing in it still sends: one line, and the link to Home.
+const WEEKLY_HOUR = 7;
+// SPLIT-2 end
+__share({ WEEKLY_HOUR });
+// SPLIT-2 server.js piece 498
+const WEEKLY_CATCH_UP_HOURS = 6;
+// SPLIT-2 end
+__share({ WEEKLY_CATCH_UP_HOURS });
+// SPLIT-2 server.js piece 499
+const WEEKLY_LIST_CAP = 5;
+// SPLIT-2 end
+__share({ WEEKLY_LIST_CAP });
+// SPLIT-2 server.js piece 503
+
+// The same kind of follow-up is one line with its count. A task Steward opened
+// itself carries its kind in its actor (`system:<path>/<id>`); its path is the
+// kind. A kind that counts something says its total; any other shows its first
+// title and how many more. A task a person wrote is its own line.
+const WEEKLY_TASK_KINDS = {
+  "system:data-health/import": {
+    count: t => Number((String(t.title).match(/\d+/) || [1])[0]) || 1,
+    line: n => `Review ${n} possible ${n === 1 ? "duplicate" : "duplicates"} from the import in Data health`,
+  },
+};
+// SPLIT-2 end
+__share({ WEEKLY_TASK_KINDS });
+// SPLIT-2 server.js piece 507
 
 const weeklyIsEmpty = w => !w.stepCount && !w.taskCount && !w.pledges.length && !w.events.length
   && !w.giftCount && !w.unthanked && !w.lapsed.length;
 // SPLIT-2 end
 __share({ weeklyIsEmpty });
-// SPLIT-2 server.js piece 515
+// SPLIT-2 server.js piece 517
 
 // ── Stewardship: milestone & anniversary detection ──────────────────────────
 // Fixed checkpoints for "just crossed a round-number cumulative giving total"
@@ -192,7 +301,7 @@ __share({ weeklyIsEmpty });
 const MILESTONE_THRESHOLDS = [10000, 5000, 2500, 1000, 500];
 // SPLIT-2 end
 __share({ MILESTONE_THRESHOLDS });
-// SPLIT-2 server.js piece 518
+// SPLIT-2 server.js piece 520
 
 // ── BUILD-76 Part 1 — drift, computed for real ──────────────────────────────
 // The ONE integration point over the pure engine in drift.js. Computed on
@@ -222,7 +331,7 @@ __share({ MILESTONE_THRESHOLDS });
 const DRIFT_STORE_OFF = () => process.env.DRIFT_STORE_OFF === "1";
 // SPLIT-2 end
 __share({ DRIFT_STORE_OFF });
-// SPLIT-2 server.js piece 524
+// SPLIT-2 server.js piece 526
 
 // Which milestones get a human-written "write a note" nudge instead of an
 // AI-drafted email: the two highest dollar thresholds (real major-gift
@@ -235,7 +344,7 @@ __share({ DRIFT_STORE_OFF });
 const NOTE_MILESTONE_KEYS = new Set(["threshold_10000", "threshold_5000"]);
 // SPLIT-2 end
 __share({ NOTE_MILESTONE_KEYS });
-// SPLIT-2 server.js piece 531
+// SPLIT-2 server.js piece 533
 
 
 // ══ BUILD-94 Part 3 — SEQUENCES ════════════════════════════════════════════
@@ -253,15 +362,15 @@ __share({ NOTE_MILESTONE_KEYS });
 let SEQ = null;
 // SPLIT-2 end
 __share({ SEQ });
-// SPLIT-2 server.js piece 532
+// SPLIT-2 server.js piece 534
 const SEQ_READY = import("../../shared/sequenceShape.js").then(m => { SEQ = m; __share({ SEQ }); return m; });
 // SPLIT-2 end
 __share({ SEQ_READY });
-// SPLIT-2 server.js piece 534
+// SPLIT-2 server.js piece 536
 const fmtMoneyPlain = (n) => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 });
 // SPLIT-2 end
 __share({ fmtMoneyPlain });
-// SPLIT-2 server.js piece 539
+// SPLIT-2 server.js piece 541
 
 // ── THE SEND ───────────────────────────────────────────────────────────────
 // Batched under Resend's rate limit, idempotent on (person, sequence, step)
@@ -270,11 +379,11 @@ __share({ fmtMoneyPlain });
 const SEQ_RATE_PER_SECOND = 8;     // Resend's documented floor, with headroom
 // SPLIT-2 end
 __share({ SEQ_RATE_PER_SECOND });
-// SPLIT-2 server.js piece 540
+// SPLIT-2 server.js piece 542
 const SEQ_TICK_BUDGET = 200;
 // SPLIT-2 end
 __share({ SEQ_TICK_BUDGET });
-// SPLIT-2 server.js piece 547
+// SPLIT-2 server.js piece 549
 
 // ── THE CARD THAT IS GOING TO DIE, BEFORE IT DIES (2026-09-11) ─────────────
 //
@@ -299,18 +408,18 @@ __share({ SEQ_TICK_BUDGET });
 const CARD_RECHECK_DAYS = Number(process.env.CARD_RECHECK_DAYS) || 7;
 // SPLIT-2 end
 __share({ CARD_RECHECK_DAYS });
-// SPLIT-2 server.js piece 548
+// SPLIT-2 server.js piece 550
 const CARD_CHECK_BUDGET = Number(process.env.CARD_CHECK_BUDGET) || 200;
 // SPLIT-2 end
 __share({ CARD_CHECK_BUDGET });
-// SPLIT-2 server.js piece 549
+// SPLIT-2 server.js piece 551
 
 // The expiry period is 'YYYY-MM' — a card is dead after the LAST day of its
 // expiry month, so the month is the whole unit and the notice is keyed to it.
 const cardPeriod = (y, m) => (y && m) ? `${y}-${String(m).padStart(2, "0")}` : null;
 // SPLIT-2 end
 __share({ cardPeriod });
-// SPLIT-2 server.js piece 553
+// SPLIT-2 server.js piece 555
 
 // ════════════════════════════════════════════════════════════════════════════
 // Workflows engine (BUILD-13 Part 3) — retention recipes on a builder-ready
@@ -415,21 +524,21 @@ const WORKFLOW_RECIPES = [
 ];
 // SPLIT-2 end
 __share({ WORKFLOW_RECIPES });
-// SPLIT-2 server.js piece 554
+// SPLIT-2 server.js piece 556
 const WORKFLOW_RECIPE_MAP = Object.fromEntries(WORKFLOW_RECIPES.map(r => [r.key, r]));
 // SPLIT-2 end
 __share({ WORKFLOW_RECIPE_MAP });
-// SPLIT-2 server.js piece 556
+// SPLIT-2 server.js piece 558
 
 const asJson = (v, fb) => v == null ? fb : (typeof v === "object" ? v : (() => { try { return JSON.parse(v); } catch { return fb; } })());
 // SPLIT-2 end
 __share({ asJson });
-// SPLIT-2 server.js piece 558
+// SPLIT-2 server.js piece 560
 
 const escHtmlWf = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 // SPLIT-2 end
 __share({ escHtmlWf });
-// SPLIT-2 server.js piece 560
+// SPLIT-2 server.js piece 562
 
 // BUILD-45 (F-2) — retry queued notification sends. Runs on the existing 5-min
 // tick (NOT a second scheduler) and via POST /admin/notifications/retry (ops/
@@ -446,19 +555,19 @@ __share({ escHtmlWf });
 const DONOR_EMAIL_ORG = "donor-network";
 // SPLIT-2 end
 __share({ DONOR_EMAIL_ORG });
-// SPLIT-2 server.js piece 562
+// SPLIT-2 server.js piece 564
 
 const MAX_NOTIFY_ATTEMPTS = 5;
 // SPLIT-2 end
 __share({ MAX_NOTIFY_ATTEMPTS });
-// SPLIT-2 server.js piece 563
+// SPLIT-2 server.js piece 565
 // Cached count of pending/exhausted failed notifications, surfaced on /health
 // so the read path stays synchronous. Refreshed by every retry sweep (incl.
 // the 50s-after-boot one) and bumped when a new failure is queued.
 let notifyFailedPending = 0;
 // SPLIT-2 end
 __share({ notifyFailedPending });
-// SPLIT-2 server.js piece 566
+// SPLIT-2 server.js piece 568
 
 // ── BUILD-62 Part 3 — the reconciliation SWEEP ──────────────────────────────
 // Donations settle in each org's OWN connected Stripe account (never the
@@ -474,11 +583,11 @@ __share({ notifyFailedPending });
 const RECONCILE_WINDOW_HOURS = Math.max(1, parseInt(process.env.RECONCILE_WINDOW_HOURS || "72", 10) || 72);
 // SPLIT-2 end
 __share({ RECONCILE_WINDOW_HOURS });
-// SPLIT-2 server.js piece 567
+// SPLIT-2 server.js piece 569
 const RECONCILE_INTERVAL_MIN = Math.max(5, parseInt(process.env.RECONCILE_INTERVAL_MIN || "20", 10) || 20);
 // SPLIT-2 end
 __share({ RECONCILE_INTERVAL_MIN });
-// SPLIT-2 server.js piece 575
+// SPLIT-2 server.js piece 577
 // BUILD-51b — keep /health's themeAssets.dbFallbackRows fresh (failed-S3-put
 // visibility); same 5-min cadence, never a second scheduler. BUILD-56 adds
 // the softDeleted (restorable) count on the same tick.
@@ -503,7 +612,7 @@ if (!backgroundTicksDisabled()) {
   bootGate.afterMigrations(() => refreshRetentionCounts().catch(console.error));
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 577
+// SPLIT-2 server.js piece 579
 
 // ── Pledge fulfillment reminders ────────────────────────────────────────────
 // A pledge (donor promises $X by a future date) going unfulfilled past its
@@ -518,7 +627,7 @@ if (!backgroundTicksDisabled()) {
 const PLEDGE_REMINDER_SCHEDULE_DAYS = [0, 3, 7, 14];
 // SPLIT-2 end
 __share({ PLEDGE_REMINDER_SCHEDULE_DAYS });
-// SPLIT-2 server.js piece 583
+// SPLIT-2 server.js piece 585
 
 // ── Billing mode-consistency self-diagnosis ─────────────────────────────────
 // This class (billing key in one Stripe mode + STRIPE_PRICE_* ids from the
@@ -533,7 +642,7 @@ __share({ PLEDGE_REMINDER_SCHEDULE_DAYS });
 let billingModeStatus = { mode: billingStripeMode(), checked: false, ok: null, prices: [], checkedAt: null };
 // SPLIT-2 end
 __share({ billingModeStatus });
-// SPLIT-2 server.js piece 586
+// SPLIT-2 server.js piece 588
 
 // Which STRIPE_PRICE_* env var backs each plan — used only for a precise server
 // log ("billing key is TEST but STRIPE_PRICE_TEAM is a LIVE price").
@@ -543,7 +652,7 @@ const PLAN_PRICE_ENV = {
 };
 // SPLIT-2 end
 __share({ PLAN_PRICE_ENV });
-// SPLIT-2 server.js piece 587
+// SPLIT-2 server.js piece 589
 // GTM-1a — the tier prices join the mode check, so `/health.billing` reports a
 // live price id sitting behind a test key (or the reverse) for the bands that
 // are actually on sale, not only for the three legacy plans.
@@ -555,10 +664,10 @@ for (const t of [...PRICING.TIERS, ...PRICING.LEGACY_TIERS]) {
   if (t.envSetup) PLAN_PRICE_ENV[`${t.id}_setup`] = t.envSetup;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 588
+// SPLIT-2 server.js piece 590
 PLAN_PRICE_ENV[PRICING.INTERNAL_TEST.id] = PRICING.INTERNAL_TEST.env;
 // SPLIT-2 end
-// SPLIT-2 server.js piece 589
+// SPLIT-2 server.js piece 591
 
 // ── BUILD-90 90b · THE REMINDER AND THE CANCEL BUTTON ──────────────────────
 // NOTHING MOVES THE TRIAL END. Not an import, not a second import, not a
@@ -581,7 +690,7 @@ PLAN_PRICE_ENV[PRICING.INTERNAL_TEST.id] = PRICING.INTERNAL_TEST.env;
 const CANCEL_LINK_DAYS = 30;
 // SPLIT-2 end
 __share({ CANCEL_LINK_DAYS });
-// SPLIT-2 server.js piece 591
+// SPLIT-2 server.js piece 593
 
 // Find every org whose charge is seven days out and warn it once.
 // `now` is injectable so the suite can stand on day 23 without waiting.
@@ -604,18 +713,18 @@ __share({ CANCEL_LINK_DAYS });
 const AGENT_TRIAL_PLAN_ALLOWANCE = 25;
 // SPLIT-2 end
 __share({ AGENT_TRIAL_PLAN_ALLOWANCE });
-// SPLIT-2 server.js piece 595
+// SPLIT-2 server.js piece 597
 
 // THIRTY DAYS, from pricing.json. The agreement says a new price does not
 // take effect for at least this long after the owner is told.
 const TIER_NOTICE_DAYS = PRICING.BAND_MOVE.noticeDays;
 // SPLIT-2 end
 __share({ TIER_NOTICE_DAYS });
-// SPLIT-2 server.js piece 596
+// SPLIT-2 server.js piece 598
 const MONTHS_OVER_BEFORE_NOTE = PRICING.BAND_MOVE.monthsOverBeforeNote;
 // SPLIT-2 end
 __share({ MONTHS_OVER_BEFORE_NOTE });
-// SPLIT-2 server.js piece 605
+// SPLIT-2 server.js piece 607
 
 // FIX-10 F — UNLIMITED IS ONE NUMBER, AND shared/seats.js IS WHERE IT LIVES.
 // This file is CommonJS and shared/ is ESM, so the value is written once here
@@ -624,13 +733,13 @@ __share({ MONTHS_OVER_BEFORE_NOTE });
 const SEATS_UNLIMITED = 999999999;
 // SPLIT-2 end
 __share({ SEATS_UNLIMITED });
-// SPLIT-2 server.js piece 606
+// SPLIT-2 server.js piece 608
 import("../../shared/seats.js").then(m => {
   if (m.SEATS_UNLIMITED !== SEATS_UNLIMITED)
     console.error(`[plans] SEATS_UNLIMITED drift: server.js ${SEATS_UNLIMITED} vs shared/seats.js ${m.SEATS_UNLIMITED}`);
 }).catch(() => {});
 // SPLIT-2 end
-// SPLIT-2 server.js piece 607
+// SPLIT-2 server.js piece 609
 // SEATS_UNLIMITED used for "unlimited" — Infinity serializes to null in JSON
 // trial gets Team limits: limits only engage once trial converts to paid.
 // Core/Team bands (BUILD-24) are INFORMATIONAL for launch — the numbers shown
@@ -651,7 +760,7 @@ const PLAN_LIMITS = {
 };
 // SPLIT-2 end
 __share({ PLAN_LIMITS });
-// SPLIT-2 server.js piece 608
+// SPLIT-2 server.js piece 610
 
 // GTM-1a — UNLIMITED USERS, on every tier, because that is what the page
 // sells. The record band is the tier's own donor band and it is INFORMATIONAL
@@ -664,10 +773,10 @@ for (const p of require("../../closeLink").CLOSE_PLANS.filter(c => c.tierId)) {
   PLAN_LIMITS[p.id] = { seats: SEATS_UNLIMITED, records: tier ? tier.maxRecords : 999999999, extraSeatPrice: null };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 609
+// SPLIT-2 server.js piece 611
 PLAN_LIMITS.internal_test = { seats: SEATS_UNLIMITED, records: 999999999, extraSeatPrice: null };
 // SPLIT-2 end
-// SPLIT-2 server.js piece 610
+// SPLIT-2 server.js piece 612
 
 // Core/Team/founding bands are kept SOFT for launch — informational only, never
 // a hard 403. Legacy seed/growth/impact keep their existing hard enforcement so
@@ -675,11 +784,11 @@ PLAN_LIMITS.internal_test = { seats: SEATS_UNLIMITED, records: 999999999, extraS
 const TIER_PLAN_IDS = require("../../closeLink").CLOSE_PLANS.filter(c => c.tierId).map(p => p.id);
 // SPLIT-2 end
 __share({ TIER_PLAN_IDS });
-// SPLIT-2 server.js piece 611
+// SPLIT-2 server.js piece 613
 const SOFT_BAND_PLANS = new Set(["core", "team", "founding", "portal", "internal_test", ...TIER_PLAN_IDS]);
 // SPLIT-2 end
 __share({ SOFT_BAND_PLANS });
-// SPLIT-2 server.js piece 614
+// SPLIT-2 server.js piece 616
 
 // ── Gmail integration ──────────────────────────────────────────────────────
 
@@ -712,45 +821,45 @@ __share({ SOFT_BAND_PLANS });
 const SYNC_STALE_MS = 2 * 3600e3;
 // SPLIT-2 end
 __share({ SYNC_STALE_MS });
-// SPLIT-2 server.js piece 615
+// SPLIT-2 server.js piece 617
 let mailboxSyncHealth = { connections: null, stale: null, checkedAt: null };
 // SPLIT-2 end
 __share({ mailboxSyncHealth });
-// SPLIT-2 server.js piece 620
+// SPLIT-2 server.js piece 622
 // FIX-34 · ONE RUN PER CONNECTION AT A TIME, and a 429 is honoured. The lock
 // is a Postgres advisory lock, so it also holds across two instances.
 const APIC = require("../../apiCheck");
 // SPLIT-2 end
 __share({ APIC });
-// SPLIT-2 server.js piece 621
+// SPLIT-2 server.js piece 623
 const MBF = require("../../mailboxFetch");
 // SPLIT-2 end
 __share({ MBF });
-// SPLIT-2 server.js piece 622
+// SPLIT-2 server.js piece 624
 const CLIENT_SAFE = require("../../clientSafe");
 // SPLIT-2 end
 __share({ CLIENT_SAFE });
-// SPLIT-2 server.js piece 623
+// SPLIT-2 server.js piece 625
 const SEALED_MAIL = require("../mail/sealedMail");
 // SPLIT-2 end
 __share({ SEALED_MAIL });
-// SPLIT-2 server.js piece 624
+// SPLIT-2 server.js piece 626
 const syncLockKey = (kind, conn) => `mailboxsync:${kind}:${conn.id}`;
 // SPLIT-2 end
 __share({ syncLockKey });
-// SPLIT-2 server.js piece 625
+// SPLIT-2 server.js piece 627
 const backedOff = conn => conn.retry_after && new Date(conn.retry_after).getTime() > Date.now();
 // SPLIT-2 end
 __share({ backedOff });
-// SPLIT-2 server.js piece 627
+// SPLIT-2 server.js piece 629
 const PROVIDER_TIMEOUT_MS = 20000;
 // SPLIT-2 end
 __share({ PROVIDER_TIMEOUT_MS });
-// SPLIT-2 server.js piece 628
+// SPLIT-2 server.js piece 630
 const providerFetch = (url, opts = {}) => fetch(url, { ...opts, signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) });
 // SPLIT-2 end
 __share({ providerFetch });
-// SPLIT-2 server.js piece 637
+// SPLIT-2 server.js piece 639
 
 // ── FIX-28 · STEWARD'S DATES ON HER OWN CALENDAR ───────────────────────────
 // One way, and only when she turned it on (mailbox_connections.push_dates).
@@ -764,11 +873,11 @@ __share({ providerFetch });
 const PUSH_TYPES = ["step", "deadline", "journey"];
 // SPLIT-2 end
 __share({ PUSH_TYPES });
-// SPLIT-2 server.js piece 638
+// SPLIT-2 server.js piece 640
 const PUSH_AHEAD_DAYS = 60;
 // SPLIT-2 end
 __share({ PUSH_AHEAD_DAYS });
-// SPLIT-2 server.js piece 643
+// SPLIT-2 server.js piece 645
 // FIX-34 · A CALENDAR RUN WITH NOTHING NEW IS ONE SMALL CALL. Google is asked
 // whether anything changed (deletions included) since the last full read; if
 // nothing did, the run stops there. A full read still happens at least every
@@ -776,7 +885,7 @@ __share({ PUSH_AHEAD_DAYS });
 const CAL_FULL_EVERY_MS = 6 * 3600e3;
 // SPLIT-2 end
 __share({ CAL_FULL_EVERY_MS });
-// SPLIT-2 server.js piece 644
+// SPLIT-2 server.js piece 646
 // FIX-34 · GRAPH DELTA AS THE "ANYTHING NEW?" QUESTION. Each folder keeps its
 // deltaLink on the connection (graph_delta: { inbox, sent, calendar } each
 // { link, at }). A stored link younger than 6 hours is asked once: no changes
@@ -786,7 +895,7 @@ __share({ CAL_FULL_EVERY_MS });
 const GRAPH_DELTA_FULL_MS = 6 * 3600e3;
 // SPLIT-2 end
 __share({ GRAPH_DELTA_FULL_MS });
-// SPLIT-2 server.js piece 645
+// SPLIT-2 server.js piece 647
 const graphDeltaStart = (key) => {
   const g = GRAPH_BASE() + "/v1.0/me";
   if (key === "calendar") {
@@ -800,7 +909,7 @@ const graphDeltaStart = (key) => {
 };
 // SPLIT-2 end
 __share({ graphDeltaStart });
-// SPLIT-2 server.js piece 653
+// SPLIT-2 server.js piece 655
 
 /**
  * ONLY MESSAGES THAT ALREADY INVOLVE SOMEBODY ON FILE ARE ASKED FOR.
@@ -812,23 +921,23 @@ __share({ graphDeltaStart });
 const GMAIL_BASE = () => process.env.GMAIL_API_BASE || "https://gmail.googleapis.com";
 // SPLIT-2 end
 __share({ GMAIL_BASE });
-// SPLIT-2 server.js piece 654
+// SPLIT-2 server.js piece 656
 const GRAPH_BASE = () => process.env.GRAPH_API_BASE || "https://graph.microsoft.com";
 // SPLIT-2 end
 __share({ GRAPH_BASE });
-// SPLIT-2 server.js piece 656
+// SPLIT-2 server.js piece 658
 
 const addrOf = s => { const m = String(s || "").match(/<([^>]+)>/); return (m ? m[1] : String(s || "")).trim().toLowerCase(); };
 // SPLIT-2 end
 __share({ addrOf });
-// SPLIT-2 server.js piece 657
+// SPLIT-2 server.js piece 659
 // THREAD-3: the few headers that tell a person's email from a newsletter, a
 // receipt or an automatic reply (shared/mailboxLog.js mailKind). Read, used to
 // decide, and kept only as the one word the decision produced.
 const MAIL_KIND_HEADERS = ["auto-submitted", "x-autoreply", "x-autorespond", "precedence", "list-unsubscribe", "list-id"];
 // SPLIT-2 end
 __share({ MAIL_KIND_HEADERS });
-// SPLIT-2 server.js piece 667
+// SPLIT-2 server.js piece 669
 
 // ── Events ────────────────────────────────────────────────────────────────────
 
@@ -844,15 +953,15 @@ __share({ MAIL_KIND_HEADERS });
 let EV = null;
 // SPLIT-2 end
 __share({ EV });
-// SPLIT-2 server.js piece 668
+// SPLIT-2 server.js piece 670
 const EV_READY = import("../../shared/eventShape.js").then(m => { EV = m; __share({ EV }); return m; });
 // SPLIT-2 end
 __share({ EV_READY });
-// SPLIT-2 server.js piece 669
+// SPLIT-2 server.js piece 671
 const rbCentsEv = v => Math.round(Number(v) * 100);
 // SPLIT-2 end
 __share({ rbCentsEv });
-// SPLIT-2 server.js piece 673
+// SPLIT-2 server.js piece 675
 
 // ── BUILD-101 — MEMBERSHIPS ───────────────────────────────────────────────
 // A membership is one person on one level. Its payment is a GIFT through
@@ -863,15 +972,15 @@ __share({ rbCentsEv });
 let MB = null;
 // SPLIT-2 end
 __share({ MB });
-// SPLIT-2 server.js piece 674
+// SPLIT-2 server.js piece 676
 const MB_READY = import("../../shared/membership.js").then(m => { MB = m; __share({ MB }); return m; });
 // SPLIT-2 end
 __share({ MB_READY });
-// SPLIT-2 server.js piece 675
+// SPLIT-2 server.js piece 677
 const mbCents = v => Math.round(Number(v) * 100);
 // SPLIT-2 end
 __share({ mbCents });
-// SPLIT-2 server.js piece 683
+// SPLIT-2 server.js piece 685
 
 // §5 — the theme a donor's browser receives. Colors are normalized to WCAG-
 // legible values at SAVE time (normalizeAccent, the one contrast impl shared
@@ -880,7 +989,7 @@ __share({ mbCents });
 const PORTAL_DEFAULT_THEME = { primary: "#1a6b4a", primaryFg: "#ffffff", accent: "#c9a84c", accentFg: "#0f1a12" };
 // SPLIT-2 end
 __share({ PORTAL_DEFAULT_THEME });
-// SPLIT-2 server.js piece 684
+// SPLIT-2 server.js piece 686
 
 // BUILD-48 theme-depth ENUMS. Type pairing keys resolve to font stacks in
 // client/src/lib/portalTheme.js (fixed client code — the org supplies only a
@@ -890,11 +999,11 @@ __share({ PORTAL_DEFAULT_THEME });
 const PORTAL_TYPE_PAIRINGS = ["dm", "classic", "editorial", "literary", "modern"];
 // SPLIT-2 end
 __share({ PORTAL_TYPE_PAIRINGS });
-// SPLIT-2 server.js piece 685
+// SPLIT-2 server.js piece 687
 const PORTAL_CARD_STYLES = ["rounded", "square", "soft-shadow"];
 // SPLIT-2 end
 __share({ PORTAL_CARD_STYLES });
-// SPLIT-2 server.js piece 687
+// SPLIT-2 server.js piece 689
 
 // ── BUILD-60 — the giving page is the ORG's page ────────────────────────────
 // The public /give flow must be indistinguishable from the org's own site:
@@ -908,11 +1017,11 @@ __share({ PORTAL_CARD_STYLES });
 const GIVE_ONETIME_DEFAULT = [25, 50, 100, 250, 500];
 // SPLIT-2 end
 __share({ GIVE_ONETIME_DEFAULT });
-// SPLIT-2 server.js piece 688
+// SPLIT-2 server.js piece 690
 const GIVE_MONTHLY_DEFAULT = [10, 25, 50, 100, 250];
 // SPLIT-2 end
 __share({ GIVE_MONTHLY_DEFAULT });
-// SPLIT-2 server.js piece 692
+// SPLIT-2 server.js piece 694
 
 // The theme columns every public /give endpoint selects from portal_settings.
 // Aliased to the names portalCardTheme + giveThemePayload read. LIST-3: the
@@ -929,7 +1038,7 @@ const GIVE_THEME_COLS = `ps.display_name,
   ps.enabled AS portal_enabled`;
 // SPLIT-2 end
 __share({ GIVE_THEME_COLS });
-// SPLIT-2 server.js piece 693
+// SPLIT-2 server.js piece 695
 
 // ── Rate limits (P-3/S-5) ──────────────────────────────────────────────────
 // The x-test-* headers are honored ONLY under DISABLE_RATE_LIMIT=1 (the local
@@ -938,13 +1047,13 @@ __share({ GIVE_THEME_COLS });
 const portalLimiterSkip = (req) => rateLimitDisabled() && !req.headers["x-test-enforce-limits"];
 // SPLIT-2 end
 __share({ portalLimiterSkip });
-// SPLIT-2 server.js piece 694
+// SPLIT-2 server.js piece 696
 const portalLimiterIpKey = (req) =>
   (rateLimitDisabled() && req.headers["x-test-limit-bucket"])
     ? String(req.headers["x-test-limit-bucket"]) : ipKeyGenerator(req.ip);
 // SPLIT-2 end
 __share({ portalLimiterIpKey });
-// SPLIT-2 server.js piece 695
+// SPLIT-2 server.js piece 697
 const portalLinkIpLimiter = rateLimit("portalLinkIpLimiter", {
   windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
@@ -952,7 +1061,7 @@ const portalLinkIpLimiter = rateLimit("portalLinkIpLimiter", {
 });
 // SPLIT-2 end
 __share({ portalLinkIpLimiter });
-// SPLIT-2 server.js piece 696
+// SPLIT-2 server.js piece 698
 const portalLinkEmailLimiter = rateLimit("portalLinkEmailLimiter", {
   windowMs: 15 * 60 * 1000, max: 6, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
@@ -960,7 +1069,7 @@ const portalLinkEmailLimiter = rateLimit("portalLinkEmailLimiter", {
 });
 // SPLIT-2 end
 __share({ portalLinkEmailLimiter });
-// SPLIT-2 server.js piece 697
+// SPLIT-2 server.js piece 699
 const portalMutationLimiter = rateLimit("portalMutationLimiter", {
   windowMs: 10 * 60 * 1000, max: 40, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
@@ -968,7 +1077,7 @@ const portalMutationLimiter = rateLimit("portalMutationLimiter", {
 });
 // SPLIT-2 end
 __share({ portalMutationLimiter });
-// SPLIT-2 server.js piece 699
+// SPLIT-2 server.js piece 701
 
 // SECURE-1 · no SVG. An SVG is a document that can carry script, and these
 // bytes are served from the app's own domain, so a logo could have read a
@@ -977,7 +1086,7 @@ __share({ portalMutationLimiter });
 const PORTAL_IMG_MIMES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 // SPLIT-2 end
 __share({ PORTAL_IMG_MIMES });
-// SPLIT-2 server.js piece 700
+// SPLIT-2 server.js piece 702
 
 // BUILD-51 — server-side dimension validation for theme images. SVGs are
 // vectors (scale losslessly) and skip the raster rules; rasters must parse.
@@ -1007,7 +1116,7 @@ const IMAGE_MAGIC = {
 };
 // SPLIT-2 end
 __share({ IMAGE_MAGIC });
-// SPLIT-2 server.js piece 704
+// SPLIT-2 server.js piece 706
 
 // ── BUILD-65 Part 1 — uploads should not make anyone think about bytes ──────
 // The 350KB cap (validPortalImage's old 500000-char limit) was vestigial from
@@ -1025,400 +1134,14 @@ __share({ IMAGE_MAGIC });
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;                 // ~15MB of decoded image
 // SPLIT-2 end
 __share({ MAX_UPLOAD_BYTES });
-// SPLIT-2 server.js piece 705
+// SPLIT-2 server.js piece 707
 const MAX_UPLOAD_STR = Math.ceil(MAX_UPLOAD_BYTES * 4 / 3) + 1024; // its base64 length + slack
 // SPLIT-2 end
 __share({ MAX_UPLOAD_STR });
-// SPLIT-2 server.js piece 706
+// SPLIT-2 server.js piece 708
 // The largest each slot actually renders at. We cap the LONG edge here so the
 // stored master is never bigger than the biggest place it's shown; the ?w=
 // route still serves smaller responsive variants on demand (each cached once).
 const UPLOAD_LONG_EDGE = { header: 2560, campaign: 2560, widget: 2560, impact: 2000, logo: 1200 };
 // SPLIT-2 end
 __share({ UPLOAD_LONG_EDGE });
-// SPLIT-2 server.js piece 710
-
-// ── BUILD-54 §2 — donor-facing campaign content helpers ────────────────────
-// The campaign STORY is sanitized structured text — a validated block array,
-// never HTML/CSS/JS and never paste-in embed code. Unknown block types,
-// oversized content, or non-string leaves reject the whole payload (400), so
-// nothing unvalidated can ever reach a donor's browser. React renders the
-// strings as text nodes (escaped by construction).
-const STORY_BLOCK_TYPES = ["p", "h2", "ul"];
-// SPLIT-2 end
-__share({ STORY_BLOCK_TYPES });
-// SPLIT-2 server.js piece 712
-
-// ═══ BUILD-54 §4 — the portal page: typed widget system ═════════════════════
-// Widgets are TYPED FIELDS AND DESIGNED VARIANTS — never raw HTML, CSS, JS,
-// or paste-in embed code. Every widget payload is validated field-by-field;
-// hostile strings are inert data (React renders text nodes); images ride the
-// BUILD-51 asset seam (kind 'widget'); video is stored as {provider, videoId}
-// parsed server-side from an allowlist — a stored page can never contain a
-// caller-supplied URL, tag, or script.
-// BUILD-95 §5B — READ FROM THE ONE REGISTRY, never re-declared here. The list
-// used to live in three files nothing kept in step; `tests/page-widgets.test.js`
-// now walks all three back to `shared/pageWidgets.js`.
-const widgetMod = () => import("../../shared/pageWidgets.js");
-// SPLIT-2 end
-__share({ widgetMod });
-// SPLIT-2 server.js piece 714
-
-// ═══════════════════════════════════════════════════════════════════════════
-// BUILD-46 — GLOBAL DONOR ACCOUNTS & THE GIVING NETWORK
-//
-// THE WALL (the whole build's safety invariant): a donor may see across orgs;
-// an org may never see across orgs. Nothing in this section may ever be
-// reachable from an org-side (requireAuth) code path, and no org-side route
-// may read donor_accounts / aliases / links / resets / donor_account_audit.
-// Enforced by tests/org-blindness.test.js (S-13 byte-equality).
-//
-// FEATURE FLAGS (mid-run rule, 2026-08-12): everything donor-visible or
-// signup-visible in this build is OFF in prod by default — built ≠ launched.
-//   DONOR_ACCOUNTS_ENABLED=1  → /account/* routes + account-stamped sessions
-//   NETWORK_SIGNUP_ENABLED=1  → POST /network/signup (the §3 surface)
-// With both unset, prod behavior is byte-identical to BUILD-45.
-// ═══════════════════════════════════════════════════════════════════════════
-const DONOR_ACCOUNTS_ENABLED = process.env.DONOR_ACCOUNTS_ENABLED === "1";
-// SPLIT-2 end
-__share({ DONOR_ACCOUNTS_ENABLED });
-// SPLIT-2 server.js piece 715
-const NETWORK_SIGNUP_ENABLED = process.env.NETWORK_SIGNUP_ENABLED === "1";
-// SPLIT-2 end
-__share({ NETWORK_SIGNUP_ENABLED });
-// SPLIT-2 server.js piece 716
-// A disabled surface is INVISIBLE, not "403 coming soon" — same body as the
-// global 404 so the routes' existence leaks nothing pre-launch.
-const requireFlag = (on) => (req, res, next) => on ? next() : res.status(404).json({ error: "Not found" });
-// SPLIT-2 end
-__share({ requireFlag });
-// SPLIT-2 server.js piece 717
-const foldEmail = (e) => String(e || "").trim().toLowerCase();
-// SPLIT-2 end
-__share({ foldEmail });
-// SPLIT-2 server.js piece 719
-
-// ── §1.1 rate limits (same x-test seam discipline as the portal limiters) ──
-const accountIpLimiter = rateLimit("accountIpLimiter", {
-  windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
-  handler: rateLimitHandler, skip: portalLimiterSkip,
-  keyGenerator: (req) => "acct-ip:" + portalLimiterIpKey(req),
-});
-// SPLIT-2 end
-__share({ accountIpLimiter });
-// SPLIT-2 server.js piece 720
-const accountEmailLimiter = rateLimit("accountEmailLimiter", {
-  windowMs: 15 * 60 * 1000, max: 8, standardHeaders: true, legacyHeaders: false,
-  handler: rateLimitHandler, skip: portalLimiterSkip,
-  keyGenerator: (req) => "acct-em:" + foldEmail(req.body?.email).slice(0, 200),
-});
-// SPLIT-2 end
-__share({ accountEmailLimiter });
-// SPLIT-2 server.js piece 721
-
-// ═══ BUILD-47 — find your nonprofits: directory + follows ══════════════════
-// The directory reveals ONE fact: that a LISTED org is on the network — which
-// listing opted into. Never anything about any donor, and never an unlisted,
-// pending, or delisted org (all three fail the enabled+network_listed
-// predicate by construction: pending applications ship disabled+unlisted,
-// the delist sweep clears network_listed).
-//
-// Adding an org must never, by itself, reveal or imply giving history. The
-// add flow runs ONE code path for every outcome and returns ONE response
-// shape; what the donor sees comes from the dashboard refetch, which renders
-// only what the verified-email link machinery entitles them to.
-
-const directorySearchLimiter = rateLimit("directorySearchLimiter", {
-  windowMs: 15 * 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false,
-  handler: rateLimitHandler, skip: portalLimiterSkip,
-  keyGenerator: (req) => "dir:" + ((rateLimitDisabled() && req.headers["x-test-limit-bucket"])
-    ? String(req.headers["x-test-limit-bucket"]) : (req.donorAccount?.id || portalLimiterIpKey(req))),
-});
-// SPLIT-2 end
-__share({ directorySearchLimiter });
-// SPLIT-2 server.js piece 722
-const addOrgLimiter = rateLimit("addOrgLimiter", {
-  windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
-  handler: rateLimitHandler, skip: portalLimiterSkip,
-  keyGenerator: (req) => "diradd:" + ((rateLimitDisabled() && req.headers["x-test-limit-bucket"])
-    ? String(req.headers["x-test-limit-bucket"]) : (req.donorAccount?.id || portalLimiterIpKey(req))),
-});
-// SPLIT-2 end
-__share({ addOrgLimiter });
-// SPLIT-2 server.js piece 724
-const networkSignupLimiter = rateLimit("networkSignupLimiter", {
-  windowMs: 60 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false,
-  handler: rateLimitHandler, skip: portalLimiterSkip,
-  keyGenerator: (req) => "netsignup:" + portalLimiterIpKey(req),
-});
-// SPLIT-2 end
-__share({ networkSignupLimiter });
-// SPLIT-2 server.js piece 727
-
-// ═══════════════════════════════════════════════════════════════════════════
-// BUILD-87 PART 3 — EMAIL LOGGING BY BCC
-//
-// One logging address per org: log+<org_slug>@<INBOUND_EMAIL_DOMAIN>. BCC it
-// on any email to a donor and the message lands on that donor's record.
-//
-// THE WHOLE SURFACE IS FLAGGED OFF (INBOUND_EMAIL_ENABLED=1 to turn it on), and
-// off means 404 — the requireFlag convention: a disabled surface is invisible,
-// not "403 coming soon". With the flag unset, production behaviour is
-// byte-identical to the commit before this one.
-//
-// NO PROVIDER IS CHOSEN HERE, DELIBERATELY. Picking who receives the mail is a
-// new subprocessor and a DNS change — a decision about what leaves the system
-// — so the webhook takes a NORMALIZED payload any provider can be adapted to
-// and the provider is decided (Resend) but not switched on — NEEDS-JONATHAN.md §9. All the
-// parsing, matching and stripping is in shared/inboundEmail.js, pure, so this
-// path is provable with no mail provider in existence.
-//
-// THE TENANT WALL, stated once: the org is the plus-address and NOTHING else,
-// and the sender must be a user of that org. Both refusals are counted, not
-// guessed at, and neither can be talked around by a From header — the shared
-// secret below is what stops anyone who has seen a BCC line from writing into
-// somebody's CRM.
-// ═══════════════════════════════════════════════════════════════════════════
-const INBOUND_EMAIL_ENABLED = process.env.INBOUND_EMAIL_ENABLED === "1";
-// SPLIT-2 end
-__share({ INBOUND_EMAIL_ENABLED });
-// SPLIT-2 server.js piece 728
-const INBOUND_EMAIL_DOMAIN = (process.env.INBOUND_EMAIL_DOMAIN || "").trim().toLowerCase();
-// SPLIT-2 end
-__share({ INBOUND_EMAIL_DOMAIN });
-// SPLIT-2 server.js piece 730
-
-require("../shared/testPlants").plant(app, { testMode, requireAuth, wrap, query, run, newId });   // TEST_MODE only
-// SPLIT-2 end
-// SPLIT-2 server.js piece 731
-// ── 404 ────────────────────────────────────────────────────────────────────
-app.use((req, res) => {
-  res.status(404).json({ error: "Not found" });
-});
-// SPLIT-2 end
-// SPLIT-2 server.js piece 732
-
-// ── Global error handler ───────────────────────────────────────────────────
-if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
-// SPLIT-2 end
-// SPLIT-2 server.js piece 733
-// eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => {
-  // FIX-12 Part 3: a model call the org's AI switch refused is the org's
-  // choice, not a crash. A route with a non-AI path catches it before here.
-  if (err instanceof AiOffError) return res.status(err.reason === "ai_disabled" ? 403 : err.reason === "ai_budget" ? 429 : 503).json({ error: err.message, message: err.message, code: err.code, reason: err.reason });
-  // HARDEN-1: the route PATTERN (not the URL, which carries ids) on the line,
-  // so scripts/ci/error-digest.js can group a day of these by type and route.
-  const route = (req.baseUrl || "") + ((req.route && req.route.path) || req.path || "");
-  // FIX-58: an upload S3 refused every try is a 503 with its sentence, never a
-  // 500 (and never a copy in Postgres; assetStore.putThemeAsset).
-  if (require("../shared/requestLimits").answerError(err, req, res, route)) return;   // LOAD-1: too long, or abandoned
-  if (err && err.code === "asset_store_unavailable") {
-    console.error(`[503] ${req.method} ${route} asset store unavailable`);
-    return res.status(503).json({ error: err.message, code: err.code });
-  }
-  // FIX-44: a body parser's own refusal (a body too large, JSON that does not
-  // parse, a charset it cannot read) is the sender's mistake, answered with its
-  // own 4xx, never a 500.
-  if (err && typeof err.type === "string" && Number(err.status) >= 400 && Number(err.status) < 500) {
-    console.warn(`[4xx] ${req.method} ${route} ${err.status} ${err.type}`);
-    return res.status(Number(err.status)).json({ error: err.status === 413 ? "That request body is too large." : "That request body could not be read." });
-  }
-  // SECURE-2: the line keeps the request id, route and org; the error itself
-  // goes through the redactor (redact.js) like every other log line.
-  console.error("[500] %s %s rid=%s org=%s", req.method, route, req.id || "-", (req.user && req.user.orgId) || "-", err);
-  res.status(500).json({ error: "Internal server error" });
-});
-// SPLIT-2 end
-// SPLIT-2 server.js piece 734
-
-// ── Start ──────────────────────────────────────────────────────────────────
-const PORT = parseInt(process.env.PORT || "3001", 10);
-// SPLIT-2 end
-__share({ PORT });
-// SPLIT-2 server.js piece 735
-// DEPLOY-1: the shared modules routes bind on import are a boot need too.
-bootGate.need("modules", Promise.all([PT_READY, GC_READY, GREET_READY, ACK_READY, FISCAL_READY, VH_READY, VOL_DAYS_READY,
-  CAL_READY, RB_READY, SEQ_READY, EV_READY, MB_READY]));
-// SPLIT-2 end
-// SPLIT-2 server.js piece 736
-const httpServer = app.listen(PORT, () => {
-  console.log(`Steward backend running on port ${PORT}`);
-  // FIX-49 Part 5 · the Workflows recipes still running become journeys, once,
-  // on the first boot that has this code (idempotent; one replica does it).
-  // Not on a test boot (ticks off): suites turn recipes on by hand and fire them.
-  // FIX-51: four seconds after the migrations, never after listen alone.
-  if (!backgroundTicksDisabled()) bootGate.afterMigrations(() => require("../../workflowsToJourneys").convertWorkflows().catch(e => console.error("[workflows-to-journeys]", e.message)), 4000);
-  if (backgroundTicksDisabled()) {
-    console.log("[boot] background ticks DISABLED (DISABLE_BACKGROUND_TICKS=1 — test boot)");
-  }
-  if (!process.env.RESEND_DOMAIN_VERIFIED) {
-    console.warn("[email] WARNING: RESEND_DOMAIN_VERIFIED not set — emails may land in spam");
-  }
-  // Boot check for the canonical public URL every email link derives from.
-  // Deliberately loud-but-not-fatal: the code-level fallback IS the canonical
-  // domain, so links are correct even unset — crashing the API (donations,
-  // webhooks) over a missing env var would be worse than the warning. The
-  // same state is exposed at /health.publicUrl for post-deploy verification.
-  {
-    const pu = resolvePublicAppUrl();
-    if (pu.rejected) {
-      console.error(`[public-url] CRITICAL: FRONTEND_URL is set to a deployment host ("${pu.rejected}") — REJECTED. Email links use ${pu.url}. Set FRONTEND_URL=${CANONICAL_APP_URL}.`);
-    } else if (!pu.fromEnv) {
-      console.error(`[public-url] WARNING: FRONTEND_URL is unset — email links fall back to ${pu.url}. Set FRONTEND_URL=${CANONICAL_APP_URL} explicitly in production.`);
-    } else {
-      console.log(`[public-url] email/link base: ${pu.url}`);
-    }
-  }
-  // Self-diagnose a billing key/price Stripe-mode mismatch on boot (non-blocking).
-  scheduleBillingModeCheck();
-});
-// SPLIT-2 end
-__share({ httpServer });
-// SPLIT-2 server.js piece 737
-// DEPLOY-1: SIGTERM drains (server/shared/lifecycle.js).
-require("../shared/lifecycle").install(httpServer, { jobs: require("../../jobQueue") });
-// SPLIT-2 end
-// SPLIT-2 server.js piece 738
-
-// ── "Name the vague anxiety as a number" metrics ────────────────────────────
-// Design pattern (see CLAUDE.md): a fuzzy staff worry gets computed into one
-// trackable, trending number instead of staying a vibe. Two examples so far,
-// sharing the same metric_snapshots storage/trend mechanism rather than each
-// getting a bespoke history table:
-//   - stewardship_debt: donors weighted by (days since last meaningful
-//     contact) x (giving significance), summed across the portfolio. Up =
-//     donors are going quiet relative to what they've given; down = staff
-//     are keeping pace with their most significant relationships.
-//   - first_touch_delay: average days between a donor's first gift and the
-//     first personal (non-gift) touch they received. Up = new donors are
-//     waiting longer for a human response to their first gift, which donor
-//     research consistently ties to weaker retention.
-// "Meaningful contact" = call/meeting/email/stewardship interactions —
-// deliberately excludes passive rows like email_open or gift/note/
-// stage_change, which aren't a human reaching out.
-const MEANINGFUL_CONTACT_TYPES = "('call','meeting','email','stewardship')";
-// SPLIT-2 end
-__share({ MEANINGFUL_CONTACT_TYPES });
-// SPLIT-2 server.js piece 739
-// BUILD-77 Part 1f — THE ASK GATE, one predicate for every surface with an
-// action button. deceased blocks everything; do_not_contact blocks all
-// outreach; do_not_solicit blocks ASKS (drift, re-engage, at-risk,
-// suggested outreach, ask-automations) while stewardship thank-yous and
-// transactional mail may continue. One excluded donor reaching one
-// actionable surface is a bug (tests/import-messy.test.js §4).
-const solicitableSql = (a = "d") => `${a}.deceased IS NOT TRUE AND ${a}.do_not_contact IS NOT TRUE AND ${a}.do_not_solicit IS NOT TRUE`;
-// SPLIT-2 end
-__share({ solicitableSql });
-// SPLIT-2 server.js piece 743
-
-// Sector benchmark line already used in the onboarding drip email (see
-// sendOnboardingSequence's step-0 body) — pulled out as a named constant so
-// both places read from one source instead of a second hardcoded "43".
-// BUILD-80 Part 9 — the sector-average constant is GONE from every surface
-// (BUILD-73's ban: no benchmarking an org on first contact, no unsourced
-// sector statistics). Nothing reads it any more; removed rather than left
-// as a temptation.
-
-// BUILD-76 follow-up — THE RETENTION CONFIDENCE FLOOR. Below these, the card
-// says "not enough history yet" instead of a percentage and drops the sector
-// comparison entirely; the daily snapshot also skips, so thin-data artifacts
-// never pollute the trend. "100% · 57pt above the sector average" on 16
-// donors is arithmetically true and completely meaningless — a development
-// director reads 100% as fake and then doubts everything else on the screen
-// (the same failure family as the retired "$2M re-engaged" headline:
-// presenting a thin-data artifact as an achievement). Same one-place,
-// env-overridable pattern as drift.js's DRIFT constants; thresholds
-// reasoning in audit/BUILD-76-FINDINGS.md.
-const RETENTION_FLOOR = {
-  MIN_PRIOR_YEAR_DONORS: 20,   // below ~20, each donor moves the rate ≥5pt — noise, not a rate
-  MIN_HISTORY_DAYS: 548,       // ~18 months: a full prior year plus enough current year to compare
-};
-// SPLIT-2 end
-__share({ RETENTION_FLOOR });
-// SPLIT-2 server.js piece 744
-for (const k of Object.keys(RETENTION_FLOOR)) {
-  const env = process.env["RETENTION_" + k];
-  if (env !== undefined && env !== "" && Number.isFinite(Number(env))) RETENTION_FLOOR[k] = Number(env);
-}
-// SPLIT-2 end
-// SPLIT-2 server.js piece 747
-
-// ── FIX-1 split: register the moved routes (every binding exists by now) ──
-require("../../routes/webhooks").mount({
-  BILLING_PLAN_VALUES, DUNNING_SCHEDULE_DAYS, EV_READY, GC_READY, INBOUND_EMAIL_DOMAIN,
-  INBOUND_EMAIL_ENABLED, MB_READY, Sentry, SvixWebhook, UNSUB_SECRET, bcrypt, billingCustomerColumn,
-  billingStripe, bumpFormEvent, checkGiftExtras, closePlan, computeTrialEnd, crypto,
-  displayNameCase, donorByNameOrCreate, donorFacingOrgName, donorFromAddress, donorMailDecision,
-  donorSendOpts, enrollMembership, ensureOrgLedger, express, fireWorkflows, firstChargeSentence, planAmountUsd,
-  inboundMod, inviteeDisplayName, issueGiftReceipt, linkEmailToAccounts, logRecoveryEvent,
-  logRecurringChange, mbCents, money, openGiftThread, openSustainerLapseThread, orgToday, orgTz,
-  orgTzName, planFromSubscription, portalTimeline, provisionNewOrgWorkflows, publicAppUrl, query,
-  recalcDonorSummary, recalcPledgePayment, recordAutoMove, recordGift, registerForEvent,
-  renewMembership, requireAdmin, requireAuth, requireFlag, resend, run, runTx, stripe, toCents,
-  unsubscribeEmailFooterHtml, uuid, withAdvisoryLock, withTransaction, wrap, writeGiftExtras,
-  rateLimitHandler, rateLimitDisabled,
-});
-// SPLIT-2 end
-// SPLIT-2 server.js piece 748
-require("../../routes/billing").mount({
-  CLOSE_PLANS, PLAN_LIMITS, PLAN_PRICE_ENV, RECOVERY_SECRET, SYS_AUTO, bcrypt, billingConfigError,
-  billingCustomerColumn, billingStripe, billingStripeMode, checkBillingPriceModes, checkPlanLimit,
-  checkWebhookSubscriptions, checkoutSessionParams, closePlan, computeTrialEnd, crypto,
-  displayNameCase, donorMailDecision, effectivePlanLimits, einLookup, ensureOrgLedger,
-  firstChargeSentence, formatChargeDate, getOrgAccessState, inviteeDisplayName, linkEmailToAccounts,
-  loginAccountLimiter, loginIpLimiter, mfaVerifyForUser, opsAlert, orgMailGateCache,
-  orgMaySendEmail, orgPlanTier, orgTzName, otherBillingMode, passwordResetLimiter,
-  processNetworkGate, processTrialReminders, provisionNewOrgWorkflows, publicAppUrl, query,
-  reconcileStripeVsGifts, recordTick, registerLimiter, requireAdmin, requireAuth, requireSuperAdmin,
-  resend, retryFailedNotifications, run, sampleDataMod, sessionCache, signToken,
-  stripeChargesEnabled, unsubscribeEmailFooterHtml, unsubscribeHeaders, uuid, validateCloseLink,
-  validateOrgClose, wrap, orgSendingIdentity,
-  // GTM-1a — the pricing catalogue, the amount/cadence helpers for a plan that
-  // may be yearly, and the click-through agreement.
-  PRICING,
-  planAmountUsd: require("../../closeLink").planAmountUsd,
-  planInterval: require("../../closeLink").planInterval,
-  SELLABLE_CLOSE_PLANS: require("../../closeLink").SELLABLE_CLOSE_PLANS,
-  customerAgreement: require("../../customerAgreement"),
-  checkRecordBand, countRecords, checkAllRecordBands, applyAgreedBandMoves, processRecordBands,
-});
-// SPLIT-2 end
-// SPLIT-2 server.js piece 749
-require("../../routes/finance").mount({
-  AGENT_MODEL,
-  recordGift, recalcDonorSummary, recalcPledgePayment,   // QBO-IN — the QuickBooks read   // FIX-12 Part 7b — the after-meeting chips use the Agent engine's model
-  // INT-BUILD-1 — the first sync after a connect, and the calendar.
-  syncMailbox, syncCalendar, pushStewardDates, mailboxAccessToken, closeThreadStepForContact,
-  actor, checkWriteAccess, crypto, grantBalanceFrom, grantMoneyRows, money, orgOwns,
-  orgTime, orgToday, orgTz, orgUnrestrictedFundId, parseMoneyOrThrow, query, requireAdmin,
-  requireAuth, restrictedMod, run, stripe, toDollars, uuid, wrap, writeAuditLog,
-  // INT-3 — the audience resolver the campaign sender already uses. Passed in
-  // rather than reimplemented, because a second definition of "all donors"
-  // would eventually disagree with the one that decides who gets a campaign,
-  // and the half that lost would push somebody who asked to stop.
-  resolveSegmentSpec, filterBySegment,
-  // The ONE unsubscribe write. BUILD-94 put it in routes/webhooks.js; INT-3
-  // calls that same function rather than writing `email_suppressions` a second
-  // time, so an unsubscribe from Mailchimp and an unsubscribe from a Resend
-  // complaint land identically.
-  recordUnsubscribe: require("../../routes/webhooks").recordUnsubscribe,
-});
-// SPLIT-2 end
-// SPLIT-2 server.js piece 750
-require("../../routes/volunteer").mount({
-  SYS_AUTO, VH_READY, actor, checkWriteAccess, crypto, donateLimiter, donorFacingOrgName,
-  escapeHtml, express, insertShift, orgToday, orgTz, query, requireAuth, run, uuid,
-  volunteerSummary, wrap, markVolunteer, publicAppUrl, writeAuditLog, maybeStartJourneyFromServer,
-  makeVolunteer, volunteerRecordSentence, checkVolunteerFields,
-});
-// SPLIT-2 end
-// SPLIT-2 server.js piece 751
-// MEMBERS-2 — "Your page" owns the supporter session, and VOL-1's
-// /volunteer/me exchanges an old volunteer link for one. It hands the minter
-// out here rather than registering a second /volunteer/me of its own: two
-// handlers on one path is a route the inventory counts once and the matrix
-// probes once, and the one it does not probe is the one that leaks.
-let _supporterSession = null;
-// SPLIT-2 end
-__share({ _supporterSession });

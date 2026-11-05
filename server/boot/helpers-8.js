@@ -1,4 +1,4 @@
-// SPLIT-2: moved VERBATIM from server.js (its functions from lines 10780-12372). server.js requires the boot modules in
+// SPLIT-2: moved VERBATIM from server.js (its functions from lines 10783-12375). server.js requires the boot modules in
 // order: every helpers-N first (a function existed from the start, as hoisting made it), then
 // steps-1, steps-2 … in the order the statements ran. Each "SPLIT-2 server.js piece N" block is
 // server.js's own text; tests read server.js through readSource("server.js"), which puts the
@@ -71,14 +71,14 @@ __boot.register(c => {
   if ("withTransaction" in c) withTransaction = c.withTransaction;
 });
 
-// SPLIT-2 server.js piece 658
+// SPLIT-2 server.js piece 660
 function mailKindHeaders(get) {
   const out = {};
   for (const n of MAIL_KIND_HEADERS) { const v = get(n); if (v) out[n] = String(v).slice(0, 200); }
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 659
+// SPLIT-2 server.js piece 661
 
 function gmailToMessage(full) {
   const headers = full.payload?.headers || [];
@@ -116,7 +116,7 @@ function gmailToMessage(full) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 660
+// SPLIT-2 server.js piece 662
 
 /**
  * GRANTS-1 · THE ATTACHMENTS OF ONE MESSAGE, fetched only once the message is
@@ -146,7 +146,7 @@ async function fetchMailboxAttachments(providerKey, token, m) {
                  buffer: a.contentBytes && !(Number(a.size) > MAX) ? Buffer.from(String(a.contentBytes), "base64") : null }));
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 661
+// SPLIT-2 server.js piece 663
 
 function graphToMessage(m) {
   const html = m.body?.contentType === "html";
@@ -168,7 +168,7 @@ function graphToMessage(m) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 662
+// SPLIT-2 server.js piece 664
 
 /**
  * A logged conversation closes an open Thread that asked for exactly this
@@ -194,7 +194,7 @@ async function closeThreadStepForContact(orgId, donorId, date, interactionId) {
     [interactionId, orgId, donorId, ML.CONTACT_STEP_TYPES, String(date || "9999-12-31")]).catch(() => {});
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 663
+// SPLIT-2 server.js piece 665
 
 // ── INT-5 · EMITTING A WEBHOOK, AND DELIVERING IT ──────────────────────────
 //
@@ -221,7 +221,7 @@ async function emitWebhook(orgId, event, data) {
   return queued;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 664
+// SPLIT-2 server.js piece 666
 
 /**
  * THE DELIVERY PASS. Everything due, signed and posted, with the outcome and
@@ -293,7 +293,7 @@ async function deliverWebhooks() {
   return { sent, failed };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 665
+// SPLIT-2 server.js piece 667
 
 // The admin's Thread step when an endpoint is paused. It uses the Thread that
 // already exists rather than a second notification system.
@@ -313,19 +313,19 @@ async function openWebhookThread(orgId, url, failures) {
      W.pauseSentence(url, failures).slice(0, 200), today, today, admin.id, admin.name]).catch(() => {});
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 666
+// SPLIT-2 server.js piece 668
 
 // The old name, kept so the job tick and the manual button keep working.
 async function syncGmail(userId, orgId) { return syncMailbox(userId, orgId, "google"); }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 670
+// SPLIT-2 server.js piece 672
 
 async function levelTaken(levelId) {
   const [r] = await query("SELECT COALESCE(SUM(quantity),0)::int AS n FROM event_attendees WHERE level_id=? AND status <> 'cancelled'", [levelId]);
   return r?.n || 0;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 671
+// SPLIT-2 server.js piece 673
 
 // The one registration writer. `giftId` is passed when the money already
 // exists (the Stripe webhook wrote it); otherwise this writes the gift, or the
@@ -429,7 +429,7 @@ async function registerForEvent({ orgId, event, level, donorId, qty, paid = true
   return { attendee, giftId, pledgeId, split };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 672
+// SPLIT-2 server.js piece 674
 
 // The ticket in an inbox: what they bought, when and where it is, the code
 // the door reads, and the one page that holds it afterwards.
@@ -462,7 +462,7 @@ async function sendEventTicketEmail({ orgId, event, level, attendee, split, gues
     `Your ticket for ${event.name}`, html, fromWithDisplayName(display, DONOR_MAIL_ADDR()), event.org_id);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 676
+// SPLIT-2 server.js piece 678
 
 // Put a person on a level. The membership row is CLAIMED FIRST, so the
 // one-current-membership index — not an if-statement — refuses a second one
@@ -531,7 +531,7 @@ async function enrollMembership({ orgId, donorId, level, startsOn = null, paid =
   return { membership: m, giftId };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 677
+// SPLIT-2 server.js piece 679
 
 // ── BUILD-101 Part 2 — RENEWALS THAT COME AROUND ──────────────────────────
 // Expiry drives everything. The org's two numbers (how early the renewal
@@ -544,7 +544,7 @@ async function membershipSettings(orgId) {
   return { renewalDays: n(o?.membership_renewal_days, MB.DEFAULT_RENEWAL_DAYS), graceDays: n(o?.membership_grace_days, MB.DEFAULT_GRACE_DAYS) };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 678
+// SPLIT-2 server.js piece 680
 
 // THE ONE PLACE A MEMBERSHIP IS RENEWED. The old row becomes 'renewed' and a
 // new term begins the day after the OLD expiry while it is still current or in
@@ -629,7 +629,7 @@ async function renewMembership({ orgId, membershipId, levelId = null, paymentMet
   });
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 679
+// SPLIT-2 server.js piece 681
 
 // Called from recordGift, the door every payment passes through: a gift of
 // EXACTLY a level's price from a person whose membership at that level is due
@@ -654,7 +654,7 @@ async function applyGiftAsMembershipRenewal({ orgId, donorId, giftId, amount, ac
                            who: { id: actorId || SYS_AUTO.id, name: actorName || SYS_AUTO.name } });
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 680
+// SPLIT-2 server.js piece 682
 
 // The sweep. Two jobs, both idempotent by construction:
 //   1. write down each membership's status from its dates (active → grace →
@@ -703,7 +703,7 @@ async function processAuctionUnpaid(onlyOrgId = null) {
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 681
+// SPLIT-2 server.js piece 683
 
 // THREAD-3 · A DONOR'S EMAIL THAT NEEDS A REPLY BECOMES A STEP.
 // An email logged from a connected mailbox, from a person on file, of kind
@@ -773,7 +773,7 @@ async function processUnansweredMail(onlyOrgId = null, { now = new Date() } = {}
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 682
+// SPLIT-2 server.js piece 684
 
 async function processMembershipRenewals(opts = {}) {
   await MB_READY;
@@ -853,7 +853,7 @@ async function processMembershipRenewals(opts = {}) {
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 686
+// SPLIT-2 server.js piece 688
 
 // The theme fragment shared by the portal config payload and the donor
 // dashboard's per-org cards (BUILD-48 takeover). Colors are normalized at
@@ -880,7 +880,7 @@ function portalCardTheme(row) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 689
+// SPLIT-2 server.js piece 691
 function parseAmountLadder(raw, fallback) {
   if (raw == null) return fallback.slice();
   let arr = raw;
@@ -890,7 +890,7 @@ function parseAmountLadder(raw, fallback) {
   return (clean.length >= 3 && clean.length <= 6) ? clean : fallback.slice();
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 690
+// SPLIT-2 server.js piece 692
 
 // A normalized crop rectangle {x,y,w,h} (each 0..1) or null. Non-destructive:
 // it only ever describes which part of the original asset a slot shows. Shared
@@ -908,7 +908,7 @@ function parseCrop(raw) {
   return { x, y, w, h };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 691
+// SPLIT-2 server.js piece 693
 
 function giveThemePayload(org) {
   const clean = (v, cap) => (typeof v === "string" ? v.slice(0, cap) : null);
@@ -933,7 +933,7 @@ function giveThemePayload(org) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 698
+// SPLIT-2 server.js piece 700
 
 // CRM timeline event for every portal action that matters (low-priority
 // signal — recorded, never alerted, per §6.3).
@@ -946,14 +946,14 @@ async function portalTimeline(orgId, donorId, note, portalEvent) {
   ).catch(e => console.error("[portal] timeline:", e.message));
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 701
+// SPLIT-2 server.js piece 703
 function imageBytesMatchMime(contentType, buffer) {
   const check = IMAGE_MAGIC[contentType];
   if (!check) return false;                 // an unlisted mime never gets in
   try { return !!check(buffer); } catch { return false; }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 702
+// SPLIT-2 server.js piece 704
 
 function checkThemeImageDimensions(kind, contentType, buffer) {
   if (!imageBytesMatchMime(contentType, buffer)) {
@@ -981,7 +981,7 @@ function checkThemeImageDimensions(kind, contentType, buffer) {
   return { ok: true, width: d.width, height: d.height };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 703
+// SPLIT-2 server.js piece 705
 
 function validPortalImage(dataUri, capBytes) {
   if (dataUri == null || dataUri === "") return true;
@@ -990,7 +990,7 @@ function validPortalImage(dataUri, capBytes) {
   return !!m && PORTAL_IMG_MIMES.includes(m[1]);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 707
+// SPLIT-2 server.js piece 709
 
 // Returns an actionable message if this data URI can't be accepted, else null.
 // (Call sites already handle ""/null as "clear" before reaching here.)
@@ -1002,7 +1002,7 @@ function uploadImageError(dataUri) {
   return null;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 708
+// SPLIT-2 server.js piece 710
 
 // Resize + compress a validated raster on ingest. SVG (vector) and GIF
 // (possibly animated → sharp would flatten it) pass through untouched; a raster
@@ -1037,7 +1037,7 @@ async function normalizeUploadImage(kind, contentType, buffer) {
   }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 709
+// SPLIT-2 server.js piece 711
 
 // ── BUILD-56 Part 1 — pointer history ───────────────────────────────────────
 // Retained bytes are useless if nothing records which hash WAS the banner.
@@ -1055,7 +1055,7 @@ async function recordAssetPointerHistory(orgId, entity, entityId, fromVal, toVal
      actor?.userId || null, actor?.email || null]);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 711
+// SPLIT-2 server.js piece 713
 function validateStoryBlocks(raw) {
   if (raw == null) return { blocks: null };                 // field not being set
   if (raw === "" || (Array.isArray(raw) && raw.length === 0)) return { blocks: [] }; // explicit clear
@@ -1076,7 +1076,7 @@ function validateStoryBlocks(raw) {
   return { blocks: out };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 713
+// SPLIT-2 server.js piece 715
 
 // BUILD-95 §5B — the per-widget resolution, shared by the portal page and
 // every giving page. ONE pipeline: a widget that resolves differently on two
@@ -1216,7 +1216,7 @@ async function resolveWidgetsPublic(org, widgets, ctx = {}) {
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 718
+// SPLIT-2 server.js piece 720
 
 async function donorAudit(accountId, email, action, req, meta) {
   await run(
@@ -1226,14 +1226,14 @@ async function donorAudit(accountId, email, action, req, meta) {
   ).catch(e => console.error("[account] audit:", e.message));
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 723
+// SPLIT-2 server.js piece 725
 async function einLookup(ein) {
   const rows = await query(`SELECT ein, name, status FROM ein_registry WHERE ein = ?`, [ein]);
   if (!rows.length) return { found: false };
   return { found: true, name: rows[0].name, status: rows[0].status };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 725
+// SPLIT-2 server.js piece 727
 
 // BUILD-58 (W-1) — "Stripe onboarding complete" is a fact we ask STRIPE for,
 // never our own flag: /stripe/connect sets stripe_connected=true at LINK
@@ -1253,7 +1253,7 @@ async function stripeChargesEnabled(accountId) {
   }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 726
+// SPLIT-2 server.js piece 728
 
 // ── §3.2(5) auto-delist sweep — EIN dropped/revoked or Stripe gone ─────────
 // Portal stays up for existing donors; the listing and NEW gifts stop; the
@@ -1295,10 +1295,10 @@ async function processNetworkGate() {
   return { checked: approved.length, delisted };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 729
+// SPLIT-2 server.js piece 731
 async function inboundMod() { return import("../../shared/inboundEmail.js"); }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 740
+// SPLIT-2 server.js piece 742
 
 // Per-donor breakdown behind the stewardship_debt headline number — every
 // donor's exact contribution to the aggregate, sorted by who's driving it
@@ -1341,14 +1341,14 @@ async function computeStewardshipDebtBreakdown(orgId, { userId } = {}) {
   return breakdown;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 741
+// SPLIT-2 server.js piece 743
 
 async function computeStewardshipDebt(orgId, opts = {}) {
   const breakdown = await computeStewardshipDebtBreakdown(orgId, opts);
   return Math.round(breakdown.reduce((sum, d) => sum + d.contribution, 0));
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 742
+// SPLIT-2 server.js piece 744
 
 async function computeFirstTouchDelay(orgId) {
   // Same correlated-subquery → LEFT JOIN + GROUP BY rewrite as

@@ -1,4 +1,4 @@
-// SPLIT-2: moved VERBATIM from server.js (its functions from lines 6556-7845). server.js requires the boot modules in
+// SPLIT-2: moved VERBATIM from server.js (its functions from lines 6559-7848). server.js requires the boot modules in
 // order: every helpers-N first (a function existed from the start, as hoisting made it), then
 // steps-1, steps-2 … in the order the statements ran. Each "SPLIT-2 server.js piece N" block is
 // server.js's own text; tests read server.js through readSource("server.js"), which puts the
@@ -66,7 +66,7 @@ __boot.register(c => {
   if ("weeklyIsEmpty" in c) weeklyIsEmpty = c.weeklyIsEmpty;
 });
 
-// SPLIT-2 server.js piece 488
+// SPLIT-2 server.js piece 490
 
 // BUILD-85 — the brief's body. Threads first (the spine), then the tasks that
 // were a second email until today, then — for an admin at a multi-officer shop
@@ -160,7 +160,7 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
     </div>`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 489
+// SPLIT-2 server.js piece 491
 
 // ── BUILD-85 — THE MORNING BRIEF: ONE EMAIL ────────────────────────────────
 // Before this, `processDailyTaskReminders` and `processThreadNudges` shared
@@ -185,7 +185,7 @@ async function yesterdaysReadouts(orgId, today) {
                   AND for_date >= ? AND for_date < ? ORDER BY created_at DESC LIMIT 5`, [orgId, from, today]).catch(() => []);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 491
+// SPLIT-2 server.js piece 493
 function briefDueNow(b, today, nowHour, force) {
   if (force) return null;
   const dow = orgTime.dayOfWeek(today);   // 0=Mon … 6=Sun
@@ -194,7 +194,7 @@ function briefDueNow(b, today, nowHour, force) {
   return null;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 492
+// SPLIT-2 server.js piece 494
 
 async function runMorningBriefForOrg(org, { today, send = true, nowHour = null, force = false }) {
   await ItemRefs.links();   // THREAD-2: the email's links are ready before it renders
@@ -275,12 +275,12 @@ async function runMorningBriefForOrg(org, { today, send = true, nowHour = null, 
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 493
+// SPLIT-2 server.js piece 495
 
 // Kept as the name the ops route and the suites call. One sender underneath.
 async function runThreadNudgesForOrg(org, opts) { return runMorningBriefForOrg(org, opts); }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 494
+// SPLIT-2 server.js piece 496
 
 // ── FIX-12 Part 7a — "YOUR MEETINGS TODAY", BY EMAIL, IF SHE ASKS ──────────
 // The same meetings and the same briefs Home shows (routes/finance.js
@@ -318,7 +318,7 @@ ${lines(m.brief).map(l => `<p style="margin:4px 0 0;color:#3a4a3f;font-size:14px
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 498
+// SPLIT-2 server.js piece 500
 function weeklyDay(civil) {
   const c = orgTime.parseCivil(String(civil || "").slice(0, 10));
   if (!c) return "";
@@ -327,7 +327,7 @@ function weeklyDay(civil) {
   return `${DOW[orgTime.dayOfWeek(String(civil).slice(0, 10))]} ${MON[c.m - 1]} ${c.d}`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 499
+// SPLIT-2 server.js piece 501
 // "Not this week" until the org's Monday, from 7 AM until six hours after.
 function weeklyDueNow(today, nowHour, force) {
   if (force) return null;
@@ -336,7 +336,7 @@ function weeklyDueNow(today, nowHour, force) {
   return null;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 500
+// SPLIT-2 server.js piece 502
 
 // The org-wide half (last week, pledges, events) is the same for everyone, so
 // it is composed once per org; the person's own steps and follow-ups per person.
@@ -380,13 +380,13 @@ async function composeWeeklyOrgPart(orgId, monday) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 502
+// SPLIT-2 server.js piece 504
 function weeklyTaskKind(t) {
   const by = String(t.created_by || "");
   return by.startsWith("system:") ? by.replace(/\/[^/]*$/, "") : null;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 503
+// SPLIT-2 server.js piece 505
 function groupWeeklyTasks(rows) {
   const out = [], byKind = new Map();
   for (const t of rows) {
@@ -406,7 +406,7 @@ function groupWeeklyTasks(rows) {
   });
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 504
+// SPLIT-2 server.js piece 506
 
 async function composeWeeklyEmail(org, u, monday, orgPart) {
   const isAdmin = u.role === "admin";
@@ -415,7 +415,7 @@ async function composeWeeklyEmail(org, u, monday, orgPart) {
   return { ...orgPart, steps: steps.list, stepCount: steps.total, tasks, taskCount: tasks.length };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 506
+// SPLIT-2 server.js piece 508
 
 function weeklySubject(w, org) {
   const n = w.stepCount + w.taskCount;
@@ -424,7 +424,7 @@ function weeklySubject(w, org) {
   return n ? `Your week · ${n} ${n === 1 ? "thing needs" : "things need"} you · ${name}` : `Your week · ${name}`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 507
+// SPLIT-2 server.js piece 509
 
 function renderWeeklyBody(w, org, user) {
   const INK = "#0f1a12", SAGE = "#6b7d70", EMERALD = "#0d5c3a", BRASS = "#c9a84c";
@@ -483,7 +483,7 @@ function renderWeeklyBody(w, org, user) {
     </div>`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 508
+// SPLIT-2 server.js piece 510
 
 // One per person per week (the `weekly_email` ledger). The org's Staff mail
 // switch is read before anything is reserved, exactly as the digests do, so a
@@ -521,7 +521,7 @@ async function runWeeklyEmailForOrg(org, { today, send = true, nowHour = null, f
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 509
+// SPLIT-2 server.js piece 511
 
 // ── BUILD-84 FEATURE — A TASK WITH A TIME ON IT EMAILS AT THAT TIME ─────────
 //
@@ -566,13 +566,13 @@ async function composeStepReminders(orgId, today) {
     [orgId, today, today]);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 510
+// SPLIT-2 server.js piece 512
 
 function stepReminderSubject(t, timeLabel) {
   return `${timeLabel} · ${t.next_step_label} · ${staffLinks().nameOrFallback(displayNameCase(t.donor_name || ""), t.donor_email)}`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 511
+// SPLIT-2 server.js piece 513
 
 function renderStepReminderBody(t, org, timeLabel) {
   // The one button: the donor's LOG-ONE-LINE screen, prefilled with the task —
@@ -592,7 +592,7 @@ function renderStepReminderBody(t, org, timeLabel) {
     </div>`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 512
+// SPLIT-2 server.js piece 514
 
 // Run the timed reminders for one org at `nowHHMM` (the org's wall clock).
 // send=false → compose only, reserving nothing.
@@ -631,7 +631,7 @@ async function runStepRemindersForOrg(org, { today, nowHHMM, send = true, force 
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 513
+// SPLIT-2 server.js piece 515
 
 function formatOrgStepTime(hhmm) {
   const m = /^(\d{2}):(\d{2})$/.exec(String(hhmm || ""));
@@ -641,7 +641,7 @@ function formatOrgStepTime(hhmm) {
   return `${h % 12 === 0 ? 12 : h % 12}:${String(mi).padStart(2, "0")} ${ampm}`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 514
+// SPLIT-2 server.js piece 516
 
 async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request passes its org; only the hourly job runs all orgs
   try {
@@ -839,7 +839,7 @@ async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request
   } catch (e) { console.error("[seq] processSequences:", e.message); }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 516
+// SPLIT-2 server.js piece 518
 
 // Finds donors who just crossed a threshold (via their most recent gift) or
 // just hit a giving anniversary. Each candidate carries a milestoneKey that
@@ -898,7 +898,7 @@ async function computeMilestoneCandidates(orgId) {
   return candidates;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 517
+// SPLIT-2 server.js piece 519
 
 // Donors still in an active stage who've drifted past the earliest,
 // most-recoverable risk window — the exact rule that used to live only as
@@ -928,7 +928,7 @@ async function computeAtRiskCandidates(orgId) {
   );
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 519
+// SPLIT-2 server.js piece 521
 // Only an answer JSON can carry exactly is stored (a NaN or an undefined would
 // come back as something else); anything else is computed every time.
 function driftJsonExact(v) {
@@ -939,7 +939,7 @@ function driftJsonExact(v) {
   return true;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 520
+// SPLIT-2 server.js piece 522
 // The gift-derived answer for `ids` (all of the org's donors when null), from
 // the store where it is current and from the gifts where it is not.
 async function driftGiftAnswers(orgId, today, ids, refusedById, { store = true } = {}) {
@@ -1001,7 +1001,7 @@ async function driftGiftAnswers(orgId, today, ids, refusedById, { store = true }
   return out;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 521
+// SPLIT-2 server.js piece 523
 
 async function computeDriftForDonors(orgId, { donorIds = null, store = true } = {}) {   // LIST-2: store:false for a GET (its upsert waited on the drift job's row locks: 146 s)
   const org = await orgTz(orgId);
@@ -1090,7 +1090,7 @@ async function computeDriftForDonors(orgId, { donorIds = null, store = true } = 
   return { map, today };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 522
+// SPLIT-2 server.js piece 524
 
 // Lazily provisions one "at_risk" sequence per org — unlike milestone
 // sequences, this isn't gated on any org-level config (impact_metrics),
@@ -1112,7 +1112,7 @@ async function ensureAtRiskSequence({ orgId = null } = {}) {   // TRUST-1: made 
   }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 523
+// SPLIT-2 server.js piece 525
 
 // Lazily provisions one "milestone" sequence per org that has opted in by
 // configuring at least one active impact_metrics row. A single dummy step is
@@ -1135,13 +1135,13 @@ async function ensureMilestoneSequences({ orgId = null } = {}) {
   }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 525
+// SPLIT-2 server.js piece 527
 function isNoteMoment(milestoneKey) {
   if (!milestoneKey) return false;
   return NOTE_MILESTONE_KEYS.has(milestoneKey) || milestoneKey.startsWith("anniversary_");
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 526
+// SPLIT-2 server.js piece 528
 
 // Computes exactly 3 short, specific, real-data talking points for a
 // "write a note" reminder. Deliberately NOT an AI call — no note content is
@@ -1200,7 +1200,7 @@ async function computeNoteTalkingPoints(donorId, orgId, meta) {
   return points.slice(0, 3);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 527
+// SPLIT-2 server.js piece 529
 
 // FIX-27 Part 7: the template sentence a milestone draft falls back to. It
 // says only what Steward computed: the threshold crossed, or the anniversary.
@@ -1211,7 +1211,7 @@ function milestoneTemplate(firstName, orgName, meta, opening = `Dear ${firstName
   return { subject: firstName ? `Thank you, ${firstName}` : "Thank you", body: `${opening}\n\n${line}\n\nWith gratitude,` };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 528
+// SPLIT-2 server.js piece 530
 
 // Generates a warm, specific, non-gamified thank-you draft for one milestone.
 // The dollar math ({n} = floor(total / dollar_threshold)) is computed here in
@@ -1287,7 +1287,7 @@ Write the email now.`,
   }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 529
+// SPLIT-2 server.js piece 531
 
 // Generates a warm "thinking of you" re-engagement draft for a donor who
 // just crossed into the earliest at-risk window (see

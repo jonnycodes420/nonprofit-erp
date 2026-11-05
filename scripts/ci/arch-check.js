@@ -257,7 +257,7 @@ for (const [name, c] of Object.entries(CHECKS)) {
   let base = c.hard ? {} : (fs.existsSync(bPath) ? JSON.parse(fs.readFileSync(bPath, "utf8")).counts : null);
   if (base == null && INIT) base = { ...now };   // the first baseline is today, once
   if (base == null) { out.push(`  ✗ ${name}: no baseline at ${path.relative(ROOT, bPath)}`); failed++; continue; }
-  if (MOVED && UPDATE && !c.hard && name !== "big-files" && base[MOVED]) {
+  if (MOVED && UPDATE && !c.hard && name !== "big-files" && name !== "split-shells" && base[MOVED]) {
     // what left the moved file is exactly what the new files hold, or nothing moves
     const left = base[MOVED] - (now[MOVED] || 0);
     const fresh = Object.keys(now).filter(k => !(k in base));

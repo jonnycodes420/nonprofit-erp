@@ -1,4 +1,4 @@
-// SPLIT-2: moved VERBATIM from server.js (its functions from lines 12415-12743). server.js requires the boot modules in
+// SPLIT-2: moved VERBATIM from server.js (its functions from lines 12418-12746). server.js requires the boot modules in
 // order: every helpers-N first (a function existed from the start, as hoisting made it), then
 // steps-1, steps-2 … in the order the statements ran. Each "SPLIT-2 server.js piece N" block is
 // server.js's own text; tests read server.js through readSource("server.js"), which puts the
@@ -30,7 +30,7 @@ __boot.register(c => {
   if ("uploadImageError" in c) uploadImageError = c.uploadImageError;
 });
 
-// SPLIT-2 server.js piece 745
+// SPLIT-2 server.js piece 747
 
 // Cohort year-over-year donor retention: what % of last year's donors gave
 // again this year. This is a real, correct metric fundraisers already
@@ -115,7 +115,7 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId, startMo
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 746
+// SPLIT-2 server.js piece 748
 
 // SCALE-1: the reads are independent, so they run in one parallel batch and
 // the writes follow. `out` (optional) receives the full first-touch and
@@ -211,7 +211,7 @@ async function snapshotMetricsForOrg(orgId, out = null) {
   return debt;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 786
+// SPLIT-2 server.js piece 788
 // PARITY-2 Part 4: an auction item's photo, on the BUILD-51 asset seam
 // (kind 'auction', the campaign-photo rules). A stored /portal-assets/ path
 // echoes through unchanged; a data URI is checked, normalised and stored.

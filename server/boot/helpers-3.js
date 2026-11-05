@@ -1,4 +1,4 @@
-// SPLIT-2: moved VERBATIM from server.js (its functions from lines 3776-5207). server.js requires the boot modules in
+// SPLIT-2: moved VERBATIM from server.js (its functions from lines 3778-5210). server.js requires the boot modules in
 // order: every helpers-N first (a function existed from the start, as hoisting made it), then
 // steps-1, steps-2 … in the order the statements ran. Each "SPLIT-2 server.js piece N" block is
 // server.js's own text; tests read server.js through readSource("server.js"), which puts the
@@ -52,7 +52,7 @@ __boot.register(c => {
   if ("withTransaction" in c) withTransaction = c.withTransaction;
 });
 
-// SPLIT-2 server.js piece 313
+// SPLIT-2 server.js piece 314
 
 // One PDF renderer for both a single-gift receipt and a year-end statement
 // (snapshot.type distinguishes them) rather than two near-duplicate layouts
@@ -216,7 +216,7 @@ async function renderReceiptPdf(snapshot) {
   });
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 314
+// SPLIT-2 server.js piece 315
 
 // ── BUILD-49 — the donor front door's entry-point gate ─────────────────────
 // One predicate for every donor-touching surface that may mention the /giving
@@ -231,7 +231,7 @@ async function givingAccountEntry(org) {
   return rows.length ? { slug: org.org_slug } : null;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 316
+// SPLIT-2 server.js piece 317
 
 // Single choke point for issuing a per-gift receipt — used by both the
 // webhook (fire-and-forget) and the manual "Send receipt" route, so
@@ -353,7 +353,7 @@ async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO, 
   return { receipt: rows[0], created: true, emailSent };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 318
+// SPLIT-2 server.js piece 319
 
 async function processGivingSources({ orgId = null } = {}) {
   try {
@@ -381,7 +381,7 @@ async function processGivingSources({ orgId = null } = {}) {
   } catch (e) { console.error("[giving-source] processGivingSources:", e.message); return { sources: 0, threadsOpened: 0 }; }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 319
+// SPLIT-2 server.js piece 320
 
 async function donorIsOrganisation(donorId, orgId) {
   const rows = await query("SELECT id, name, kind FROM donors WHERE id=? AND org_id=?", [donorId, orgId]);
@@ -389,7 +389,7 @@ async function donorIsOrganisation(donorId, orgId) {
   return { ...rows[0], isOrg: rows[0].kind === "organisation" || rows[0].kind === "anonymous" };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 320
+// SPLIT-2 server.js piece 321
 
 // ── ONE RESOLVE-OR-CREATE BY NAME ──────────────────────────────────────────
 // Extracted from importGiftExtras in BUILD-102 Part 3 so the donation form and
@@ -420,7 +420,7 @@ async function donorByNameOrCreate(orgId, name, { create = false, kind = null, w
   return id;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 324
+// SPLIT-2 server.js piece 325
 
 
 // ── BUILD-100 (grants) Part 2 — DEADLINES THAT COME AND FIND YOU ───────────
@@ -429,7 +429,7 @@ async function donorByNameOrCreate(orgId, name, { create = false, kind = null, w
 // middle state exists; these routes are its writers and the sweep.
 async function grantMsMod() { return import("../../shared/grantMilestones.js"); }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 325
+// SPLIT-2 server.js piece 326
 
 async function orgLeadDays(orgId) {
   const M = await grantMsMod();
@@ -437,7 +437,7 @@ async function orgLeadDays(orgId) {
   return M.normalizeLeadDays(o && o.grant_lead_days);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 326
+// SPLIT-2 server.js piece 327
 
 // THE ONE PLACE A MILESTONE BECOMES A THREAD.
 // Returns "raised" | "waiting" | null, and the WAITING answer is not a
@@ -497,7 +497,7 @@ async function raiseGrantMilestone(orgId, ms, { today }) {
   }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 327
+// SPLIT-2 server.js piece 328
 
 // THE SWEEP. Idempotent and self-healing, in the BUILD-99 shape: it re-reads
 // `pending` AND `waiting` every pass, so a funder whose thread closed today
@@ -533,7 +533,7 @@ async function processGrantMilestones(onlyOrgId = null, { today: pinnedToday = n
   return summary;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 329
+// SPLIT-2 server.js piece 330
 
 
 // ── BUILD-100 (grants) Part 4 — WHERE RESTRICTED MONEY ACTUALLY IS ─────────
@@ -541,7 +541,7 @@ async function processGrantMilestones(onlyOrgId = null, { today: pinnedToday = n
 // reason "remaining" excludes what the funder still owes.
 async function restrictedMod() { return import("../../shared/restrictedMoney.js"); }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 330
+// SPLIT-2 server.js piece 331
 
 // ONE query for a grant's money, so the balance can never be assembled two
 // ways. `received` is the payments APPLIED TO THE AWARD PLEDGE — not every gift
@@ -561,7 +561,7 @@ async function grantMoneyRows(orgId, where = "", args = []) {
       WHERE g.org_id = ? AND g.is_sample IS NOT TRUE ${where}`, [orgId, ...args]);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 331
+// SPLIT-2 server.js piece 332
 
 function grantBalanceFrom(R, r, today) {
   const b = R.grantBalance({
@@ -582,7 +582,7 @@ function grantBalanceFrom(R, r, today) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 335
+// SPLIT-2 server.js piece 336
 
 // A person who logged a shift IS a volunteer, on the same record — the
 // recordGift rule for "donor", applied to hours. "other" means "we do not know"
@@ -599,7 +599,7 @@ async function markVolunteer(orgId, personId, client = null) {
   else await run(sql, [personId, orgId]);
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 338
+// SPLIT-2 server.js piece 339
 function volunteerRecordFields(opts = {}) {
   const errors = [];
   let hoursPerWeek = null;
@@ -614,7 +614,7 @@ function volunteerRecordFields(opts = {}) {
   return { errors, hoursPerWeek, availability, roles };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 339
+// SPLIT-2 server.js piece 340
 async function makeVolunteer(orgId, personId, opts = {}, who, client = null) {
   await VOL_DAYS_READY;
   const q = (sql, p) => client ? queryTx(client, sql, p) : query(sql, p);
@@ -654,10 +654,10 @@ async function makeVolunteer(orgId, personId, opts = {}, who, client = null) {
     availability: parse(now && now.availability), roles: parse(now && now.roles) };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 340
+// SPLIT-2 server.js piece 341
 async function checkVolunteerFields(opts) { await VOL_DAYS_READY; return volunteerRecordFields(opts); }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 341
+// SPLIT-2 server.js piece 342
 // The sentence a screen (or the Agent's step) says after makeVolunteer.
 function volunteerRecordSentence(r) {
   const bits = [];
@@ -667,7 +667,7 @@ function volunteerRecordSentence(r) {
   return `${r.name} ${r.created ? "is now a volunteer, on the record they already had" : "was already a volunteer; their record is updated"}${bits.length ? ": " + bits.join(" · ") : ""}.`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 342
+// SPLIT-2 server.js piece 343
 
 async function insertShift(orgId, personId, shift, { via, importKey = null, who }) {
   const rows = await query(
@@ -686,7 +686,7 @@ async function insertShift(orgId, personId, shift, { via, importKey = null, who 
   return rows[0]?.id || null;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 343
+// SPLIT-2 server.js piece 344
 
 async function volunteerSummary(orgId, personId) {
   const [t] = await query(`SELECT COALESCE(SUM(round(hours*100)),0)::bigint AS h, COUNT(*)::int AS n, MIN(date) AS first, MAX(date) AS last
@@ -694,7 +694,7 @@ async function volunteerSummary(orgId, personId) {
   return { hundredths: Number(t?.h || 0), totalHours: Number(t?.h || 0) / 100, shiftCount: t?.n || 0, firstShift: t?.first || null, lastShift: t?.last || null };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 386
+// SPLIT-2 server.js piece 388
 
 // ── BUILD-81 — THE THREAD ───────────────────────────────────────────────────
 // A thread is a donor plus an open next step: the last touch, the next step
@@ -714,11 +714,11 @@ async function volunteerSummary(orgId, personId) {
 // landing (webhook / manual entry), whose next step is "Thank".
 async function threadShapeMod() { return import("../../shared/threadShape.js"); }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 387
+// SPLIT-2 server.js piece 389
 // BUILD-85 — the ordering. Pure module, same ESM-from-CJS door as above.
 async function threadRankMod() { return import("../../shared/threadRank.js"); }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 388
+// SPLIT-2 server.js piece 390
 
 // Open a thread inside a caller-held transaction. Returns the row, or null
 // when the donor already has an open thread (the one-open-thread rule — the
@@ -739,7 +739,7 @@ async function openThreadTx(client, { orgId, donorId, step, openedOn, ownerId, o
   return rows[0] || null;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 389
+// SPLIT-2 server.js piece 391
 
 // A LIVE gift opens a thread whose next step is "Thank" (+2 days) — the
 // "gift received" row of the defaults table, applied on the server so a gift
@@ -769,7 +769,7 @@ async function openGiftThread(orgId, donorId, { giftId, giftDate, actorId, actor
   } catch (e) { console.error("[thread] gift thread:", e.message); return null; }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 390
+// SPLIT-2 server.js piece 392
 
 // WIRE-1 · AN ORG-LEVEL THING THAT NEEDS A HUMAN IS A TASK FOR AN ADMIN.
 // One open task per title (a second sweep finds the first and opens none),
@@ -792,7 +792,7 @@ async function openAdminTask(orgId, { title, due = null, priority = "medium", do
   return id;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 391
+// SPLIT-2 server.js piece 393
 
 // WIRE-1 · A THING THAT NEEDS A HUMAN OPENS A STEP ON THE THREAD.
 // One opener for the automatic care steps (a membership that lapsed, a missed
@@ -818,7 +818,7 @@ async function openCareThread(orgId, donorId, { type = "follow_up", label, dueIn
   } catch (e) { console.error(`[thread] ${path}:`, e.message); return null; }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 392
+// SPLIT-2 server.js piece 394
 
 // ── A SUSTAINER THE AUTOMATION COULD NOT SAVE BECOMES A PERSON'S JOB ───────
 // (2026-09-11) The dunning cadence is four emails over fourteen days. When it
@@ -873,7 +873,7 @@ async function openSustainerLapseThread(orgId, donorId, { amount = null, interva
   } catch (e) { console.error("[thread] sustainer lapse thread:", e.message); return null; }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 395
+// SPLIT-2 server.js piece 397
 
 // ── BUILD-85 — DOES THE ENGINE RUN? ────────────────────────────────────────
 // Drift snapshots log_capture_rate. The Thread snapshotted NOTHING, so the
@@ -922,7 +922,7 @@ async function computeThreadHealth(orgId, { days = 30 } = {}) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 398
+// SPLIT-2 server.js piece 400
 
 // CAN-SPAM requires the sender's physical postal address in commercial email,
 // so the footer carries it alongside the unsubscribe link. Sourced live from
@@ -955,7 +955,7 @@ async function bulkSendAddressGate(orgId) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 399
+// SPLIT-2 server.js piece 401
 
 // ── BUILD-64 — ONE theme resolver for every donor-facing artifact ──────────
 // The give page and the portal read the org's identity from portal_settings
@@ -994,7 +994,7 @@ async function resolveOrgBrandTheme(orgId) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 400
+// SPLIT-2 server.js piece 402
 
 // ── BUILD-65 Part 2 — a PDF-embeddable logo, from OBJECT STORAGE ────────────
 // renderReceiptPdf can only embed PNG/JPEG bytes (pdfkit's constraint). Since
@@ -1029,13 +1029,13 @@ async function resolvePdfLogo(brand) {
   } catch (e) { console.error("[pdf-logo] convert failed:", e.message); return null; }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 402
+// SPLIT-2 server.js piece 404
 function fromWithDisplayName(displayName, addr) {
   const clean = String(displayName || "").replace(/[\r\n"<>]/g, "").trim().slice(0, 78);
   return clean ? `${clean} <${addr}>` : addr;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 403
+// SPLIT-2 server.js piece 405
 
 // ── BUILD-88c C.1 — THE ONE PLACE A SENDING IDENTITY IS DECIDED ───────────
 // Every donor-facing send asks this, and nothing else decides it. Two answers:
@@ -1090,7 +1090,7 @@ async function orgSendingIdentity(orgId, { replyTo = null } = {}) {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 404
+// SPLIT-2 server.js piece 406
 
 // The three headers every donor-facing send needs, resolved together so they
 // cannot disagree about which identity is in force. ONE call site per send.
@@ -1111,7 +1111,7 @@ async function donorSendOpts(orgId, donorEmail, source = "campaign") {
   };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 405
+// SPLIT-2 server.js piece 407
 
 // ── BUILD-58 W-4 — ONE place decides suppressibility ───────────────────────
 // Every donor-facing message kind is classified transactional | marketing.
@@ -1140,7 +1140,7 @@ async function donorFacingOrgName(orgId, fallbackName) {
   return dn || displayNameCase(fallbackName || "");
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 411
+// SPLIT-2 server.js piece 413
 
 function signRecoveryToken(subscriptionId, orgId) {
   const payload = Buffer.from(JSON.stringify({ subscriptionId, orgId })).toString("base64url");
@@ -1148,7 +1148,7 @@ function signRecoveryToken(subscriptionId, orgId) {
   return `${payload}.${sig}`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 412
+// SPLIT-2 server.js piece 414
 
 // BUILD-77 Part 6 — the reconnect token binds a giving-page prefill to the
 // EXISTING donor so the new subscription stitches back to their record
@@ -1159,7 +1159,7 @@ function signReconnectToken(donorId, orgId) {
   return `${payload}.${sig}`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 413
+// SPLIT-2 server.js piece 415
 function verifyReconnectToken(token) {
   if (!token || typeof token !== "string" || !token.includes(".")) return null;
   const [payload, sig] = token.split(".");
@@ -1171,7 +1171,7 @@ function verifyReconnectToken(token) {
   catch { return null; }
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 414
+// SPLIT-2 server.js piece 416
 
 // ── GIVE-2 §3 · WHICH AMOUNTS A FORM OFFERS ────────────────────────────────
 // Two questions, in this order, and the org wins both:
@@ -1239,7 +1239,7 @@ async function smartAmountsFor(spec, { orgId, givingPageId, personalToken }) {
   return { ...dist, scope };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 415
+// SPLIT-2 server.js piece 417
 
 // The one place a computed ladder replaces a typed one, so the public form and
 // the editor's preview cannot disagree about which answer the donor is reading.
@@ -1259,7 +1259,7 @@ async function withSmartAmounts(spec, ctx) {
   } };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 416
+// SPLIT-2 server.js piece 418
 
 function buildCardUpdateUrl(subscriptionId, orgId) {
   // Canonical domain via the vercel.json /recurring/update-card proxy rewrite
@@ -1268,7 +1268,7 @@ function buildCardUpdateUrl(subscriptionId, orgId) {
   return `${publicAppUrl()}/recurring/update-card?token=${signRecoveryToken(subscriptionId, orgId)}`;
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 417
+// SPLIT-2 server.js piece 419
 
 async function logRecoveryEvent(orgId, donorId, subscriptionId, type, stripeEventId, detail) {
   await run(
@@ -1278,7 +1278,7 @@ async function logRecoveryEvent(orgId, donorId, subscriptionId, type, stripeEven
   );
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 419
+// SPLIT-2 server.js piece 421
 async function logRecurringChange(orgId, subscriptionId, donorId, kind, { oldAmount = null, newAmount = null, interval = null, actor = "system", actorName = null } = {}) {
   if (!RECURRING_CHANGE_KINDS.has(kind)) return;
   await run(
@@ -1288,7 +1288,7 @@ async function logRecurringChange(orgId, subscriptionId, donorId, kind, { oldAmo
   ).catch(e => console.error("[recurring] change-log write failed:", e.message));
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 420
+// SPLIT-2 server.js piece 422
 
 // Recovered / (recovered + lost) over a trailing window, computed from the
 // append-only payment_recovery_events log — shared by GET /recurring/health
@@ -1307,7 +1307,7 @@ async function computeRecoveryRate(orgId) {
   return { rate, recoveredCount, lostCount };
 }
 // SPLIT-2 end
-// SPLIT-2 server.js piece 421
+// SPLIT-2 server.js piece 423
 
 // ── BUILD-97 Part 5 — OBSERVABILITY, BECAUSE YOU CANNOT RUN WHAT YOU CANNOT
 // SEE ──────────────────────────────────────────────────────────────────────
