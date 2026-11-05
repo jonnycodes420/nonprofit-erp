@@ -2,6 +2,7 @@
 // fetches nothing, so tests/devboard1-ops.test.js can render it with a source
 // down. Each section says so when its source could not be read.
 import { useState } from "react";
+import { countLabel } from "../../../../shared/countWords.js";
 
 const INK = "#0F1A12", WHITE = "#FFFFFF", CREAM = "#F0EDE6", EMERALD = "#0D5C3A", BRASS = "#C9A84C";
 const STATES = ["open", "reopened", "fixed", "verified"];
@@ -112,7 +113,7 @@ function Builds({ builds, now }) {
           <td style={{ ...cell, width: 170 }}>{b.state === "merged" || b.state === "live" ? `merged ${ago(b.since, now)} ago` : b.state === "parked" ? `no push or CI for ${ago(b.since, now)}` : `${ago(b.since, now)} in this state`}{b.quietMinutes ? <div style={{ ...pill(false), marginTop: 3 }}>quiet {ago(new Date(now - b.quietMinutes * 60000).toISOString(), now)}</div> : null}</td>
         </tr>)}
       </tbody></table>}
-    {builds.ok && builds.bots ? <p style={{ ...says, marginTop: 8 }}>{builds.bots} pull request{builds.bots === 1 ? "" : "s"} from bots (dependency bumps) not shown.</p> : null}
+    {builds.ok && builds.bots ? <p style={{ ...says, marginTop: 8 }}>{countLabel(builds.bots, "pull request")} from bots (dependency bumps) not shown.</p> : null}
   </section>;
 }
 
@@ -146,7 +147,7 @@ function Customers({ customers, now }) {
       <table style={{ borderCollapse: "collapse", width: "100%" }}><tbody>
         {customers.rows.map(c => <tr key={c.name}><td style={{ ...cell, fontWeight: 600 }}>{c.name}</td>
           <td style={cell}>{c.lastLogin ? `signed in ${ago(c.lastLogin, now)} ago` : "never signed in"}</td>
-          <td style={cell}>{c.open} open item{c.open === 1 ? "" : "s"}</td></tr>)}
+          <td style={cell}>{countLabel(c.open, "open item")}</td></tr>)}
       </tbody></table>}
   </section>;
 }
