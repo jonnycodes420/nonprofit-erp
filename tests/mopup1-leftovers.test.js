@@ -238,8 +238,9 @@ async function walk(chromium) {
     await page.locator('[role="tab"][data-tab="giving"]').first().click({ timeout: 15000 }).catch(() => {});
     await page.waitForSelector('text=What they support', { timeout: 20000 }).catch(() => {});
     const shares = await page.locator("text=/of lifetime/").allTextContents().catch(() => []);
-    ok("§3 $250 of a $30,250 lifetime reads \"under 1% of lifetime\", never \"0% of lifetime\"",
-       shares.some(s => /under 1% of lifetime/.test(s)) && !shares.some(s => /^\s*0% of lifetime/.test(s)), shares);
+    const split = await page.locator("text=/^Restricted: /").first().textContent().catch(() => null);
+    ok("§3 $250 of a $30,250 lifetime reads \"under 1% of lifetime\", never \"0% of lifetime\", and the split says the same",
+       shares.some(s => /under 1% of lifetime/.test(s)) && !shares.some(s => /^\s*0% of lifetime/.test(s)) && /\(under 1%\)/.test(split || ""), { shares, split });
 
     // §3 the event list and an event's own page.
     await page.goto(APP + "/app/events", { waitUntil: "networkidle", timeout: 30000 }).catch(() => {});

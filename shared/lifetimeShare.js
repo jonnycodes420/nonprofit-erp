@@ -7,8 +7,13 @@
 // cents: the fund's total; lifetimeCents: the person's Lifetime; pct: the
 // whole percent the split gave it (fundSplit.wholePercents).
 export function lifetimeShareWords(cents, lifetimeCents, pct) {
-  const c = Math.round(Number(cents) || 0), life = Math.round(Number(lifetimeCents) || 0);
-  if (c <= 0) return "0% of lifetime";
-  if (life > 0 && c * 100 < life) return "under 1% of lifetime";
-  return `${Math.max(1, Math.round(Number(pct) || 0))}% of lifetime`;
+  return `${sharePercent(cents, lifetimeCents, pct)} of lifetime`;
+}
+
+// The percent alone, by the same rule ("Restricted: $250 (under 1%)").
+export function sharePercent(cents, wholeCents, pct) {
+  const c = Math.round(Number(cents) || 0), whole = Math.round(Number(wholeCents) || 0);
+  if (c <= 0) return "0%";
+  if (whole > 0 && c * 100 < whole) return "under 1%";
+  return `${Math.max(1, Math.round(Number(pct) || 0))}%`;
 }
