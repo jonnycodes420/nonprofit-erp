@@ -74,7 +74,29 @@ export function paceOf({ raised, goal, start, end, today }) {
 
   return { state, label, met, raisedPct, elapsedPct, deltaPts,
            // The reason, in the badge, every time: the two shares it compared.
-           sentence: `${raisedPct}% raised, ${elapsedPct}% of the time gone` };
+           sentence: `${raisedPct}% raised, ${elapsedPct}% of the time gone`,
+           // LEDGER-2: the arithmetic behind it, for the hover.
+           math: paceMath({ raised: r, start: s, end: e, today: t }) };
 }
 
-export default { paceOf, PACE_BAND_PTS, PACE_STATES };
+// LEDGER-2 · THE PROJECTION IS ITS OWN ARITHMETIC. "On pace for $X" is the
+// money raised so far, carried at the same daily rate to the window's last
+// day: raised × (days in the window) ÷ (days gone, today counted). The hover
+// states every input, so a reader can redo it: "$225,151 raised by day 128 of
+// 365, on pace for $642,032". A board figure that cannot be redone from what
+// is on screen was how "projects $1,062,700" beside $225,151 read as a riddle.
+const dollars = n => "$" + Math.round(n).toLocaleString("en-US");
+export function paceMath({ raised, start, end, today }) {
+  const s = civil(start), e = civil(end), t = civil(today);
+  if (!s || !e || !t) return null;
+  const total = days(s, e) + 1;
+  if (!(total > 0)) return null;
+  const day = Math.max(0, Math.min(total, days(s, t) + 1));
+  if (!(day > 0)) return null;
+  const r = Number(raised) || 0;
+  const projected = Math.round(r * total / day);
+  return { day, days: total, raised: r, projected,
+           sentence: `${dollars(r)} raised by day ${day} of ${total}, on pace for ${dollars(projected)}` };
+}
+
+export default { paceOf, paceMath, PACE_BAND_PTS, PACE_STATES };

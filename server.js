@@ -3551,13 +3551,15 @@ async function unlapseHeldByPledge(orgId, ids = null) {
     [orgId, ...(ids ? [ids] : []), ...hold.args]);
   // POLISH-4: and somebody Steward placed in Lapsed whose giving unit (the
   // business they own or work at, or its owner) has since given.
+  // LEDGER-2: "Steward placed" is anyone an officer did not: an import or a
+  // merge writes the stage with no move, and asking for an automatic move kept
+  // them Lapsed beside a business that gave today.
   const lapsedNow = require("./shared/numbers/lapse").lapsedSql("d.last_gift_date", today, "d.id");
   const unitRows = await query(
     `SELECT d.id FROM donors d
       WHERE d.org_id=? AND d.deleted_at IS NULL AND d.stage='lapsed'${ids ? " AND d.id = ANY(?)" : ""}
         AND NOT ${hold.sql} AND NOT ${lapsedNow.sql}
         AND (${require("./shared/numbers/lapse").linkedLastSql("d.id")}) IS NOT NULL
-        AND EXISTS (SELECT 1 FROM moves m WHERE m.org_id=d.org_id AND m.donor_id=d.id AND m.officer_id IS NULL AND m.to_stage='lapsed')
         AND NOT EXISTS (SELECT 1 FROM moves m WHERE m.org_id=d.org_id AND m.donor_id=d.id
                           AND m.officer_id IS NOT NULL AND m.to_stage='lapsed')
       LIMIT 200`,

@@ -3,6 +3,9 @@
 Read this when you touch funders, grant deadlines, documents, restricted money, grant reports or grant import.
 
 ## Rules
+- **Recording an award books its income (LEDGER-2).** `PUT /grants/:id/award` writes the pledge, the grant's award
+  and its one ledger income row (`server/grants/awardLedger.js`, `uq_fin_txns_grant`) in one transaction. Any new
+  path into Awarded calls the same writer; awards recorded without it are booked by `scripts/ops/ledger2-award-rows.js`.
 - **Every grant deadline is one task, kept in step by the database (FIX-31).** `trg_milestone_task_sync` writes a
   `link_kind='deadline'` task ("[Funder]: [kind] due", the officer's, on the date, linking the grant) and, for a
   proposal, LOI or report, one `deadline_start` heads-up `orgs.grant_headsup_days` ahead (default 14, 0 = off).

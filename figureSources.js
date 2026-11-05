@@ -1198,7 +1198,7 @@ const SOURCES = {
     sentence: () => "Every donor assigned to this person who is in a pipeline stage (prospect through ongoing care, or lapsed), with what each has given in total.",
     sql: (orgId, p) => ({
       sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
-                   ROUND(COALESCE(d.total_giving, 0)::numeric, 2) AS amount, 'Given in total' AS detail
+                   ROUND(${require("./shared/numbers/lifetime").LIFETIME("d")}::numeric, 2) AS amount, 'Given in total' AS detail
               FROM donors d
              WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.assigned_to = ?
                AND COALESCE(d.stage, d.suggested_stage) IN ('prospect','qualify','cultivate','solicit','steward','lapsed')`,

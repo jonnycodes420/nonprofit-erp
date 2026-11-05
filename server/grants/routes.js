@@ -15,6 +15,8 @@ const TL = require("../../timelineLine");
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
 const PW = require("../../pledgeWrite");   // FIX-60: the one writer of a pledge and its installments
 const FL = require("./funderLink");   // GRANTS-FIX: the one resolver of a grant's funder
+const AL = require("./awardLedger");   // LEDGER-2: an award books its income
+const { withAmbientTransaction } = require("../../db");
 
 const routers = {
   r1: express.Router(),
@@ -75,23 +77,14 @@ app.get("/grants", requireAuth, wrap(async (req, res) => {
 // the original BUILD-09 heuristic (funder/program-named fund, else the first
 // unrestricted fund).
 async function stampGrantAward(orgId, grantId, funder, program, amount, by = SYS_AUTO) {
-  const matchFund = await query(
-    "SELECT id FROM fin_funds WHERE org_id=? AND (name ILIKE ? OR name ILIKE ?) LIMIT 1",
-    [orgId, `%${funder}%`, `%${program || ""}%`]
-  );
   // BUILD-58 W-3: the award stamp resolves its accounts through the ONE
   // ledger helper (grants revenue account, contributions fallback) — a
   // chartless org is provisioned loudly, never a null-account booking.
+  // LEDGER-2: the row itself is server/grants/awardLedger.js, which the award route writes too.
   const ledgerA = await ensureOrgLedger(orgId, { heal: true });
-  const fundId = matchFund[0]?.id || ledgerA.genFundId;
-  await run(
-    `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,grant_id,source,created_by,created_by_name)
-     VALUES (?,?,?,?,?,?,'income',?,?,?,'grant',?,?)
-     ON CONFLICT (grant_id) WHERE grant_id IS NOT NULL DO NOTHING`,
-    [newId("ft"), orgId, orgToday(await orgTz(orgId)), // ORG_TZ_SEAM_OK (BUILD-75)
-     `Grant awarded: ${funder} · ${program || ""}`, funder,
-     parseFloat(amount) || 0, ledgerA.grantAcctId, fundId, grantId, by.id, by.name]
-  ).catch(e => console.error("[ledger] grant award stamp failed:", e.message));
+  await AL.bookAwardIncome(query, { orgId, grantId, funder, program, amount, ledger: ledgerA, by,
+    date: orgToday(await orgTz(orgId)) })   // ORG_TZ_SEAM_OK (BUILD-75)
+    .catch(e => console.error("[ledger] grant award stamp failed:", e.message));
 }
 
 app.post("/grants", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -300,7 +293,12 @@ app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(asy
   // ALREADY AWARDED WRITES NOTHING NEW. A second press must not produce a second
   // pledge — the commitment exists, and a duplicate would double it in every
   // total the funder appears in.
+  // LEDGER-2: the pledge, the grant's award and its ledger income row are one
+  // transaction: all three exist, or none does.
+  const ledgerA = await ensureOrgLedger(orgId, { heal: true });
+  const by = actor(req);
   let pledgeId = g.award_pledge_id || null;
+  const refused = await withAmbientTransaction(async () => {
   if (!pledgeId) {
     const due = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.firstDue || "")) ? String(req.body.firstDue) : today;
     // THE ONE PLEDGE WRITER (FIX-60), with its schedule. A frequency and a
@@ -313,7 +311,7 @@ app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(asy
         plan: { schedule: req.body.installments, frequency: req.body.frequency, count: req.body.installmentCount, firstDue: due } },
         { door: "pledge" }));
     } catch (e) {
-      if (e.code === "schedule_does_not_sum" || e.code === "bad_amount") return res.status(400).json({ error: e.message, code: e.code });
+      if (e.code === "schedule_does_not_sum" || e.code === "bad_amount") return { status: 400, body: { error: e.message, code: e.code } };
       throw e;
     }
   }
@@ -327,6 +325,11 @@ app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(asy
     [toDollars(awardedCents), pledgeId,
      req.body.restriction || null, req.body.restrictedFrom || null, req.body.restrictedUntil || null,
      g.id, orgId]);
+  await AL.bookAwardIncome(query, { orgId, grantId: g.id, funder: g.funder_name || g.funder, program: g.program,
+    amount: toDollars(awardedCents), date: today, ledger: ledgerA, by });
+  return null;
+  });
+  if (refused) return res.status(refused.status).json(refused.body);
 
   // WIRE-1: the award is on the funder's timeline, once (the board drag that
   // first awards it writes the same key).

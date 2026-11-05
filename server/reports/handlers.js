@@ -240,6 +240,7 @@ async function reportGivingSummary(orgId, p) {
     // NUMBERS-4: this fiscal year, named as Reports names it (the year it ends
     // in), on the org's calendar, so the browser never works it out.
     fiscalYear: reportCurrentYear("fiscal", p.org),
+    calendarYear: reportCurrentYear("calendar", p.org),   // LEDGER-2: the chips name no year the browser worked out
     // The total opens too: the same gifts, through the same source.
     totalSource: { key: "gifts", params: { from: p.from, to: p.to, ...(p.fundId ? { fund: p.fundId } : {}), ...(p.campaignId ? { campaign: p.campaignId } : {}) } },
     comparison,
