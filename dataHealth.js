@@ -18,6 +18,8 @@
 "use strict";
 
 const parseAddress = require("parse-address");
+// HOTFIX-RHYTHM: only a real, personal email or phone matches two people.
+const RV = require("./server/dataHealth/realValues");
 
 // ── Names ──────────────────────────────────────────────────────────────────
 const NICKNAMES = [
@@ -119,8 +121,14 @@ const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 //           { family: true } for the Possible families line · a shared phone
 //           and nothing else
 const RANK = { high: 3, medium: 2, low: 1 };
-function judgePair(a, b, { near = null } = {}) {
+function judgePair(a, b, { near = null, shared = null } = {}) {
   let rel = nameRelation(a.name, b.name);
+  // HOTFIX-RHYTHM: "Gary Clark" and "Mary Clark" are a letter apart, and two
+  // people: a first name that differs in its first letter is not a typo.
+  if (rel === "spelling") {
+    const ta = nameTokens(a.name), tb = nameTokens(b.name);
+    if (ta.length >= 2 && tb.length >= 2 && ta[ta.length - 1] === tb[tb.length - 1] && ta[0][0] !== tb[0][0]) rel = null;
+  }
   const nd = near ? near(a.name, b.name) : null;
   let family = false;
   if (near) {
@@ -134,11 +142,13 @@ function judgePair(a, b, { near = null } = {}) {
         && (rel === "spelling" || rel === null)) { family = true; rel = null; }
     else if (!rel && nd && (nd.why === "nickname" || nd.why === "spelling")) rel = nd.why;
   }
-  const emailsA = [lowerEmail(a.email), lowerEmail(a.email2)].filter(Boolean);
-  const emailsB = new Set([lowerEmail(b.email), lowerEmail(b.email2)].filter(Boolean));
+  // HOTFIX-RHYTHM: a blank, a placeholder ("n/a", 000-000-0000) or a value
+  // many different names share (an office line) is no one's, and matches no one.
+  const emailsA = RV.ownEmails(a, shared);
+  const emailsB = new Set(RV.ownEmails(b, shared));
   const sameEmail = emailsA.some(e => emailsB.has(e));
-  const phonesA = [phoneKey(a.phone), phoneKey(a.mobile)].filter(Boolean);
-  const phonesB = new Set([phoneKey(b.phone), phoneKey(b.mobile)].filter(Boolean));
+  const phonesA = RV.ownPhones(a, shared);
+  const phonesB = new Set(RV.ownPhones(b, shared));
   const samePhone = phonesA.some(p => phonesB.has(p));
   const ak = addressKey(a), bk = addressKey(b);
   const sameAddress = !!ak && ak === bk;
@@ -154,7 +164,9 @@ function judgePair(a, b, { near = null } = {}) {
   if (samePhone && rel) meet("high", `same phone, ${nameWords}`);
   if (sameAddress && rel === "same") meet("high", "same address, same name");
   if (sameEmail && !rel) meet("medium", "same email, different names");
-  if (sameAddress && rel && rel !== "same") meet("medium", `same address, ${nameWords}`);
+  // one address and two names a letter apart, each with their own email or
+  // phone, is a household (HOTFIX-RHYTHM): a shared address alone is not a duplicate
+  if (sameAddress && rel && rel !== "same" && !RV.contradicts(a, b, { shared })) meet("medium", `same address, ${nameWords}`);
   if (sameHousehold && rel) meet("medium", `same household, ${nameWords}`);
   if (sameEmployer && rel) meet("low", `same employer, ${nameWords}`);
   if (family) {
@@ -164,7 +176,9 @@ function judgePair(a, b, { near = null } = {}) {
     return { family: true, reasons: [sameAddress && "same address", sameEmail && "same email", samePhone && "same phone"].filter(Boolean).map(w => `${w}, two different first names`) };
   }
   if (samePhone && !rel && !near) meet("low", "same phone, different names");
-  if (!confidence && nd && rel) meet("low", `name only: ${nd.sentence}; no address, phone or email in common`);
+  // HOTFIX-RHYTHM: a name alone is a pair only when nothing says two people:
+  // "Mary Wilson" and "Mark Wilson" at two addresses, with two emails, are two.
+  if (!confidence && nd && rel && !RV.contradicts(a, b, { shared, addressKey })) meet("low", `name only: ${nd.sentence}; no address, phone or email in common`);
   if (!confidence) return null;
   return { confidence, reasons: joinReasons(reasons) };
 }
@@ -195,6 +209,7 @@ function findPairs(rows, { orgId, dismissed = new Set(), near = null, familiesDi
   if (orgId && live.length !== rows.filter(d => !d.deleted_at && !d.erased_at).length) {
     throw new Error("findDuplicatePairs: rows from another org");
   }
+  const shared = RV.sharedValues(live);
   const candidates = new Set();
   const block = (keyFn) => {
     const m = new Map();
@@ -208,8 +223,8 @@ function findPairs(rows, { orgId, dismissed = new Set(), near = null, familiesDi
       for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) candidates.add(pairKey(list[i].id, list[j].id));
     }
   };
-  block(d => [lowerEmail(d.email), lowerEmail(d.email2)].filter(Boolean).map(e => "e:" + e));
-  block(d => [phoneKey(d.phone), phoneKey(d.mobile)].filter(Boolean).map(p => "p:" + p));
+  block(d => RV.ownEmails(d, shared).map(e => "e:" + e));
+  block(d => RV.ownPhones(d, shared).map(p => "p:" + p));
   block(d => { const k = addressKey(d); return k ? "a:" + k : null; });
   block(d => d.household_id ? "h:" + d.household_id : null);
   block(d => normName(d.employer) ? "w:" + normName(d.employer) : null);
@@ -226,7 +241,7 @@ function findPairs(rows, { orgId, dismissed = new Set(), near = null, familiesDi
     if (dismissed.has(key)) continue;
     const [x, y] = key.split("|");
     const a = byId.get(x), b = byId.get(y);
-    const j = judgePair(a, b, { near });
+    const j = judgePair(a, b, { near, shared });
     if (!j) continue;
     // PEOPLE-1: two people linked as spouse or partner are family, never a duplicate.
     if (linked.has(key)) { if (!familiesDismissed.has(key)) families.push({ key, a: a.id, b: b.id, reasons: ["Linked as spouse or partner"] }); continue; }

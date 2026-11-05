@@ -18,7 +18,7 @@ export function threadReadoutRow({ ro }) {
   return (
       <li key={"readout-"+ro.id} className="attn-row" data-testid="home-readout-row"
         style={{display:"flex",alignItems:"stretch",borderBottom:"1px solid "+T.bg2,borderLeft:"3px solid "+T.greenDk}}>
-        <a href="/app" className="attn-row-main"
+        <a href={"/dashboard#readout-"+encodeURIComponent(ro.id)} className="attn-row-main"
           style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"14px 16px 14px 13px",textDecoration:"none",color:"inherit"}}
           onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();openReadout(ro.id,ro.title);}}>
           <div style={{flex:1,minWidth:0}}>

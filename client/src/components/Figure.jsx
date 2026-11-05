@@ -27,7 +27,8 @@ import { retryImport } from "../lib/lazyRetry";
 const MetricBreakdownPanel = lazy(() => retryImport(() => import("./MetricBreakdownPanel")));
 
 // The screen that draws figures says how a person row opens that person, once.
-export const FigureContext = createContext({ openPerson: null });
+// HOTFIX-RHYTHM: `panelZ` lifts the rows above a modal the figure sits in (the readout).
+export const FigureContext = createContext({ openPerson: null, panelZ: null });
 
 const centsOf = v => Math.round((Number(v) || 0) * 100);
 
@@ -67,7 +68,7 @@ export function FigureWhy({ definition, label, source, tile = false }) {
 export function Figure({ value, kind = "count", label, definition, source, blank, blankShort, variant = "tile",
                          figureKey, abs = false, suffix = "", unit, sub, cx, cy, r = 5, color, why = true, whole = false }) {
   const [open, setOpen] = useState(false);
-  const { openPerson } = useContext(FigureContext);
+  const { openPerson, panelZ } = useContext(FigureContext);
   const isBlank = value === null || value === undefined;
   const shown = abs && !isBlank ? Math.abs(Number(value)) : value;
   const openable = !!(source && source.key);
@@ -88,7 +89,7 @@ export function Figure({ value, kind = "count", label, definition, source, blank
   const aria = `${label || "Figure"}. ${definition || ""} Opens the rows behind it.`.trim();
   const panel = open && (
     <Suspense fallback={null}><MetricBreakdownPanel open onClose={() => setOpen(false)} title={label} explanation={definition}
-      source={source} figure={{ value, kind, blank }} onSelectDonor={openPerson ? row => { setOpen(false); openPerson(row.donorId); } : undefined} /></Suspense>
+      source={source} figure={{ value, kind, blank }} zIndex={panelZ || undefined} onSelectDonor={openPerson ? row => { setOpen(false); openPerson(row.donorId); } : undefined} /></Suspense>
   );
 
   if (variant === "point") {

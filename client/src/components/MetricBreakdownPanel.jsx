@@ -85,7 +85,7 @@ export function SourceRows({ source, initial, onSelectDonor, heading }) {
   const amount = r => r.amount === null || r.amount === undefined ? ""
     : unit ? unitAmount(r.amount, unit) : fmtFull(r.amount);
   return (
-    <div data-figure-part={heading ? heading.role : undefined}>
+    <div data-figure-part={heading ? heading.role : undefined} data-testid="figure-rows" data-total={loading ? undefined : total}>
       {heading && (
         <div style={{ padding: "14px 24px 6px", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline",
                       borderTop: "1px solid " + T.bg2, background: T.bg }}>
@@ -299,14 +299,14 @@ export function SourcePanel({ source, figure, onSelectDonor, title }) {
   );
 }
 
-export default function MetricBreakdownPanel({ open, onClose, title, explanation, total, totalLabel, totalCount, rows = [], loading = false, onSelectDonor, source, figure }) {
+export default function MetricBreakdownPanel({ open, onClose, title, explanation, total, totalLabel, totalCount, rows = [], loading = false, onSelectDonor, source, figure, zIndex }) {
   if (!open) return null;
   const isSource = !!(source && source.key);
   const shownFigure = isSource && figure && figure.value !== null && figure.value !== undefined
     ? (figure.kind === "money" ? fmtFull(figure.value) : figure.kind === "percent" ? `${figure.value}%` : Number(figure.value).toLocaleString("en-US"))
     : null;
   return (
-    <Modal onClose={onClose} width={660} ariaLabel={title || "Details"}
+    <Modal onClose={onClose} width={660} ariaLabel={title || "Details"} {...(zIndex ? { zIndex } : {})}
       backdrop="rgba(15,26,18,0.5)" blur={false} padding={0}
       dialogStyle={{ borderRadius: T.radiusLg, maxHeight: "86vh" }}
       header={(
