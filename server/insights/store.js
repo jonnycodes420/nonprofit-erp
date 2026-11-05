@@ -57,17 +57,9 @@ function ensure() {
   })().catch(e => { ready = null; throw e; }));
 }
 
-// The org's Insights inputs as one string: any write to a gift, pledge, person
-// or an Insights decision changes it (moved from insightsData.js, unchanged).
-async function fingerprint(orgId) {
-  const [f] = await query(`SELECT
-      (SELECT COUNT(*)::text || ':' || COALESCE(SUM(amount),0)::text || ':' || COALESCE(MAX(created_at)::text,'') FROM gifts WHERE org_id=?) AS g,
-      (SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text,'') FROM pledges WHERE org_id=?) AS p,
-      (SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text,'') FROM donors WHERE org_id=?) AS d,
-      (SELECT COUNT(*)::text FROM insight_outcomes WHERE org_id=?) || ':' || (SELECT COUNT(*)::text FROM insight_reviews WHERE org_id=?)
-        || ':' || (SELECT COUNT(*)::text FROM insight_links WHERE org_id=?) AS i`, [orgId, orgId, orgId, orgId, orgId, orgId]);
-  return `${f.g}|${f.p}|${f.d}|${f.i}`;
-}
+// The org's Insights inputs as one string (insightsData.fingerprint): any
+// write to a gift, pledge, person or an Insights decision changes it.
+const fingerprint = (orgId) => require("../../insightsData").fingerprint(orgId);
 
 async function orgTodayOf(orgId) {
   const [o] = await query("SELECT id, timezone FROM orgs WHERE id=?", [orgId]);

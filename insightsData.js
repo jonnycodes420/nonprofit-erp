@@ -66,6 +66,19 @@ async function roomKnownFor(orgId, rows) {
   return ASK.roomKnown(query, orgId, ids);
 }
 
+// The org's Insights inputs as one string: any write to a gift, pledge, person
+// or an Insights decision changes it. INSIGHTS-2: server/insights/store.js
+// stores each build with the fingerprint read before its rows.
+async function fingerprint(orgId) {
+  const [f] = await query(`SELECT
+      (SELECT COUNT(*)::text || ':' || COALESCE(SUM(amount),0)::text || ':' || COALESCE(MAX(created_at)::text,'') FROM gifts WHERE org_id=?) AS g,
+      (SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text,'') FROM pledges WHERE org_id=?) AS p,
+      (SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text,'') FROM donors WHERE org_id=?) AS d,
+      (SELECT COUNT(*)::text FROM insight_outcomes WHERE org_id=?) || ':' || (SELECT COUNT(*)::text FROM insight_reviews WHERE org_id=?)
+        || ':' || (SELECT COUNT(*)::text FROM insight_links WHERE org_id=?) AS i`, [orgId, orgId, orgId, orgId, orgId, orgId]);
+  return `${f.g}|${f.p}|${f.d}|${f.i}`;
+}
+
 // INSIGHTS-2: the whole-org computation, run by the worker's build
 // (server/insights/store.js), never by a request.
 async function computeFor(orgId, asOf) {
@@ -91,4 +104,4 @@ async function ladderMap(orgId, asOf) {
   return out;
 }
 
-module.exports = { rowsFor, computeFor, insightsFor, ladderMap };
+module.exports = { rowsFor, fingerprint, computeFor, insightsFor, ladderMap };
