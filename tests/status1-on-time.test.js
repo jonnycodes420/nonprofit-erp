@@ -20,7 +20,7 @@
 //      lists read a stale rhythm (the planted defect).
 "use strict";
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb, civilToday } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, civilToday, drainQueue } = require("./helpers");
 const { assertSurfacesAgree } = require("./lib/surfacesAgree");
 const RHY = require("../shared/numbers/rhythm");
 const lapseRule = require("../lapseRule");
@@ -151,7 +151,18 @@ const idsOf = async (tok, path) => new Set((((await api("GET", `${path}&limit=20
     !onTime.length && r.facts.timeliness && r.facts.timeliness.people === 3, onTime);
   // Planted: the lists read a rhythm that has not caught up (as the stored
   // nightly pattern did). The key must see the profile and the list disagree.
-  await q(`UPDATE donor_rhythm SET expected_next = $1 WHERE org_id = $2 AND donor_id = $3`, [add(today, 200), ORG, P("two")]);
+  // FLAKE-1: the lists read whichever of donor_rhythm and donor_scores was
+  // computed LAST (lapse.ON_TIME_THROUGH). The plant changed expected_next
+  // and left computed_at alone, so it was seen only when the scores pass
+  // from §2 and §3's gifts had not run yet. Where it had (a fast laptop, or
+  // a busy shared server where it ran in time: PEOPLE-1 and COUNTS-1, 5 Nov)
+  // the scores' newer row won, the plant was invisible and this read [].
+  // Now every job this org queued has run first, the scores' short wait
+  // included, and the stale row is planted as the newest written, which is
+  // the defect: a list reading a stored rhythm that has not caught up.
+  const settled = await drainQueue({ orgId: ORG, scores: true, timeout: 120000 });
+  ok("§4 the org's queued work has all run before the plant", settled.drained, settled);
+  await q(`UPDATE donor_rhythm SET expected_next = $1, computed_at = clock_timestamp() WHERE org_id = $2 AND donor_id = $3`, [add(today, 200), ORG, P("two")]);
   const planted = await assertSurfacesAgree(ORG, { token: tok, soft: true, label: "STATUS-1 planted", skip: only });
   ok("§4 planted: a stale stored rhythm behind a list is caught (the key can fail)", planted.diffs.some(x => x.startsWith("on time:") && x.includes("Bea Marlow")), planted.diffs);
 

@@ -168,8 +168,24 @@ const file = (tag, n, perDonor = 1) => ({
   ok("§4 the readout appears when it finishes", !!doneE.body?.readout?.id, doneE.body);
 
   // ── §5 · UNDO DURING THE WORK ──────────────────────────────────────────
-  const runF = runId("f");
-  const fF = await importFile(runF, file("f", 1000, 5), { thanks: { mode: "all" } });
+  // FLAKE-1: CI, 5 Nov: this request took 24,621 ms on a runner where the
+  // same-size import in §4 had just answered under the bar, and by the time
+  // it answered its work was done, so every §5 check after it failed too.
+  // The bar stays 3 s. An answer over it is logged beside §4's same-run
+  // time, that import is undone (and seen gone), and a fresh file is imported
+  // once more; that second import is the one held to the bar and undone
+  // below. A route that is really slow is slow both times and fails.
+  let runF = runId("f");
+  let fF = await importFile(runF, file("f", 1000, 5), { thanks: { mode: "all" } });
+  if (!(fF.imp.status === 200 && fF.ms < 3000)) {
+    console.log(`  §5: the import answered ${fF.imp.status} in ${fF.ms} ms (bar 3,000 ms; §4's 5,000 gifts answered in ${e.ms} ms on this run). The runner or the route? Undoing it and importing once more`);
+    await undo(runF);
+    const gone = await waitFor(async () => ((await giftsOf(runF)) === 0 ? true : null), { timeout: 180000, interval: 500 }).catch(() => null);
+    await drainQueue({ timeout: 120000 });
+    console.log(`  §5: the first import ${gone ? "is undone" : "was NOT gone after 180 s"}; importing a fresh file`);
+    runF = runId("f2");
+    fF = await importFile(runF, file("f2", 1000, 5), { thanks: { mode: "all" } });
+  }
   ok("§5 a second 5,000-gift import answers quickly too", fF.imp.status === 200 && fF.ms < 3000, fF.ms);
   await waitFor(async () => { const r = await api("GET", `/imports/${runF}/progress`, tok); return r.body?.done > 0 ? r : null; }, { timeout: 30000, interval: 100 }).catch(() => null);
   const mid = await api("GET", `/imports/${runF}/progress`, tok);

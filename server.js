@@ -3054,7 +3054,9 @@ async function onPledgeSettled(orgId, pledgeId) {
   return { pledgeId, closed: true, thankYou: upgraded?.id || null };
 }
 
-app.get("/health", (req, res) => {
+app.get("/health", (req, res) => res.json(healthBody()));
+// DEVBOARD-1: /ops reads the same object in-process, so the page and /health never differ.
+function healthBody() {
   // billing.ok is the cached mode-consistency result (booleans/mode only — no
   // secrets): true = all configured prices resolve under the billing key's mode,
   // false = a test/live mismatch (loud warning already logged), null = not yet
@@ -3064,7 +3066,7 @@ app.get("/health", (req, res) => {
   // host and links are riding the canonical fallback — post-deploy this is the
   // one-glance check that reset/invite links carry stewardapp.dev.
   const pu = resolvePublicAppUrl();
-  res.json({
+  return {
     // product + database are the IDENTITY guard: a write script asserts both
     // against what it intended before writing, so it can never write to a
     // different product or database that merely shares a loopback host/port.
@@ -3118,8 +3120,8 @@ app.get("/health", (req, res) => {
     worker: require("./jobQueue").healthNow().worker || null,
     // POOL-1: this process's connections, from pg's own counters (server/shared/pools.js).
     pool: require("./db").poolStats(),
-  });
-});
+  };
+}
 // ═══ TRUST-2 Part 1 · THE STATUS PAGE ═══════════════════════════════════════
 // Six services, each with a check that measures something real. A service is
 // only on the page because it is checked; a check with nothing to read yet
@@ -4457,6 +4459,7 @@ app.use(require("./routes/atlasMore").routers.r0);     // ATLAS-3 the profile's 
 app.use(require("./routes/clientSafe").routers.r0);    // CLIENT-SAFE-1 privacy mode
 app.use(require("./routes/support").routers.r0);      // SUPPORT-1 the support agent
 app.use(require("./routes/supportAccess").routers.r0);   // FIX-57 open as support, and the org's off switch
+app.use(require("./server/admin/opsRoutes").routers.r0);   // DEVBOARD-1 /ops: super-admins only, 404 to anyone else
 app.use(require("./routes/media").routers.r0);         // EMAIL-1 the media library
 app.use(require("./routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
 app.use(require("./routes/stockPhotos").routers.r0);   // EDITOR-1 the bundled stock photos
@@ -12784,6 +12787,7 @@ require("./routes/agent").mount({
 require("./clientSafe").configure({ query, run, uuid, aiGate, anthropicFor, recordAiFallback });
 require("./routes/clientSafe").mount({ query, run, wrap, requireAuth, requireAdmin, requireSuperAdmin, checkWriteAccess, actor, uuid, aiGate });
 require("./routes/supportAccess").mount({ query, run, wrap, requireAuth, requireAdmin, requireSuperAdmin, uuid });   // FIX-57
+require("./server/admin/opsRoutes").mount({ query, run, wrap, healthBody, buildSha: BUILD_SHA });   // DEVBOARD-1
 require("./routes/support").mount({ query, run, wrap, requireAuth, requireSuperAdmin, aiGate, anthropicFor, recordAiFallback, resend, uuid, actor, AGENT_MODEL });
 require("./routes/voice").mount({ query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate, recordGift, AGENT_MODEL });
 require("./routes/atlas").mount({ query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate, AGENT_MODEL });   // AGENT-5

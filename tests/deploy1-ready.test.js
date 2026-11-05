@@ -122,8 +122,19 @@ const probeRuns = async (key) => (await q(`SELECT detail FROM tick_log WHERE nam
 
   // ── §1 · the gate holds every route behind every boot step ──────────────
   // One process to sign in on, then stopped; the next one boots with a boot
-  // step that takes 4 s (STEWARD_TEST_SLOW_BOOT_MS), and Ask is asked from its
+  // step that takes 8 s (STEWARD_TEST_SLOW_BOOT_MS), and Ask is asked from its
   // first second.
+  //
+  // FLAKE-1: each sample asks Ask FIRST and /ready only once Ask has answered.
+  // They used to go out together, so a sample could hold a /ready read just
+  // before the step finished and an Ask served just after it (CI, 5 Nov:
+  // {"ready":503,"waiting":["test-slow-step"],"ask":200}): two moments, not a
+  // half-booted answer. The gate only opens, never closes, while a process
+  // boots, so a /ready of 503 read AFTER Ask answered proves the gate was shut
+  // when Ask was served. The planted defect (the gate checks the database
+  // only) still answers Ask 200 under a 503 here. And the step is 8 s, not 4:
+  // the step starts while server.js loads, before it listens, and a slow
+  // runner's load ate most of a 4 s step before the first sample.
   const first = await boot();
   const tok = (await (await fetch(`${first.base}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: EMAIL, password: PW }) })).json()).token;
@@ -131,14 +142,13 @@ const probeRuns = async (key) => (await q(`SELECT detail FROM tick_log WHERE nam
   first.child.kill("SIGTERM");
   ok("§1 the first process exits on SIGTERM", await exitWithin(first, 30000) === 0);
 
-  const slow = await boot({ STEWARD_TEST_SLOW_BOOT_MS: "4000" }, { wait: false });
+  const slow = await boot({ STEWARD_TEST_SLOW_BOOT_MS: "8000" }, { wait: false });
   const seen = [];
   let readyAt = null;
   const t0 = performance.now();
   while (performance.now() - t0 < 60000) {
-    const [r, a] = await Promise.all([
-      fetch(`${slow.base}/ready`).then(async x => ({ status: x.status, body: await x.json().catch(() => ({})) }), () => ({ status: 0 })),
-      ask(slow.base, tok)]);
+    const a = await ask(slow.base, tok);
+    const r = await fetch(`${slow.base}/ready`).then(async x => ({ status: x.status, body: await x.json().catch(() => ({})) }), () => ({ status: 0 }));
     seen.push({ ready: r.status, waiting: (r.body && r.body.waitingFor) || null, ask: a.status, answered: a.body && a.body.answered });
     if (r.status === 200 && a.status === 200) { readyAt = performance.now() - t0; break; }
     await sleep(100);
@@ -149,7 +159,7 @@ const probeRuns = async (key) => (await q(`SELECT detail FROM tick_log WHERE nam
   ok("§1 while /ready said 503, Ask said 503 too (no answer from a half-booted process)",
     answered.filter(s => s.ready === 503).every(s => s.ask === 503), answered.filter(s => s.ready === 503 && s.ask !== 503));
   ok("§1 /ready named the slow step while it ran", seen.some(s => (s.waiting || []).includes("test-slow-step")), seen.map(s => s.waiting).filter(Boolean).slice(0, 4));
-  ok("§1 /ready held for the slow step (over 3.5 s after the process started)", readyAt != null && readyAt > 3500, { readyAt });
+  ok("§1 /ready held for the slow step (over 7.5 s after the process started)", readyAt != null && readyAt > 7500, { readyAt });
   ok("§1 then Ask answered", seen.length && seen[seen.length - 1].answered === true, seen[seen.length - 1]);
   slow.child.kill("SIGTERM"); await exitWithin(slow, 30000);
 
