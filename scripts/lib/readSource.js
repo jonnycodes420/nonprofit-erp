@@ -107,7 +107,7 @@ FILES["db.js"] = ["db.js", ...DB_PARTS];
 // write followed by " __share({ x });") is dropped, so the text is server.js's.
 const SERVER_BOOT = (() => { try { return fs.readdirSync(path.join(ROOT, "server", "boot")).filter(f => f.endsWith(".js")).sort().map(f => "server/boot/" + f); } catch { return []; } })();
 FILES["server.js"].push(...SERVER_BOOT);
-const pieceRe = target => new RegExp("^\\/\\/ SPLIT-2 " + target.replace(/\./g, "\\.") + " piece (\\d+)\\n([\\s\\S]*?)^\\/\\/ SPLIT-2 end\\n", "gm");
+const pieceRe = target => new RegExp("^\\/\\/ SPLIT-2 " + target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " piece (\\d+)\\n([\\s\\S]*?)^\\/\\/ SPLIT-2 end\\n", "gm");
 function dbSource() { return splitSource("db.js", FILES["db.js"]); }
 function splitSource(target, files) {
   const pieces = [];
