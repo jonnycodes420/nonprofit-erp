@@ -15,6 +15,96 @@ const routers = {
   r1: express.Router(),
 };
 
+// IMPORT-8 · THE PEOPLE ALREADY IN THE ORG, read once for the write and for
+// the workbook screen's preview ("1,481 already in Steward, 4,914 new"), so
+// the two can never disagree. Moved out of the route verbatim; the name key
+// (existingByName) is new: a row with no email and no ID, or one whose only
+// namesake here has no email, is that person when exactly one person in the
+// org has the name (on 4 Nov a 6,424-row workbook would have duplicated 1,701).
+async function loadExistingPeople(q, orgId) {
+  const { donorIdKey } = await import("../../shared/importShape.js");
+  const existingEmailRows = await q(
+    "SELECT id, name, LOWER(email) AS e, external_donor_id FROM donors WHERE org_id=? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL ORDER BY created_at, id",
+    [orgId]
+  );
+  const existingByEmail = new Map();
+  for (const r of existingEmailRows) if (!existingByEmail.has(r.e)) existingByEmail.set(r.e, r.id);
+  // BUILD-88a A.7 — a shared email is a HOUSEHOLD, not a person. Two people
+  // behind kanefamily59@gmail.com are two records; matching the second import
+  // of Marilyn to Gerald because they share an inbox is the same merge this
+  // part exists to stop, one run later. When the caller has already resolved
+  // identity, an existing donor is claimed by email AND a compatible name
+  // (the ONE name-matching seam, shared/importShape.js).
+  const { matchNameKey, matchNamesCompatible } = await import("../../shared/importShape.js");
+  const existingHouseholds = new Map();   // email → [{ id, mk }]
+  for (const r of existingEmailRows) {
+    if (!existingHouseholds.has(r.e)) existingHouseholds.set(r.e, []);
+    existingHouseholds.get(r.e).push({ id: r.id, mk: matchNameKey(r.name), extKey: donorIdKey(r.external_donor_id) });
+  }
+  // ── TRANS-1 Part 4 — THE OLD SYSTEM'S OWN ID MATCHES FIRST ──────────────
+  // An import used to match a person by email and nothing else, while
+  // `external_donor_id` was written on the way in and never read again. That
+  // is the whole re-import story: a director who fixes a typo'd address in
+  // DonorPerfect and exports again got a SECOND record, because the only key
+  // Steward matched on was the one she had just changed. Her own system's id
+  // is the stable key and it is now the first one tried — email, then name,
+  // stay exactly as they were behind it.
+  const existingByExtId = new Map();
+  const extIdRows = await q(
+    `SELECT id, external_donor_id, external_donor_ids FROM donors
+       WHERE org_id=? AND deleted_at IS NULL
+         AND (external_donor_id IS NOT NULL OR external_donor_ids IS NOT NULL)
+       ORDER BY created_at, id`, [orgId]);
+  for (const r of extIdRows) {
+    const ids = [r.external_donor_id, ...(Array.isArray(r.external_donor_ids) ? r.external_donor_ids : [])];
+    for (const one of ids) {
+      const k = donorIdKey(one);
+      if (k && !existingByExtId.has(k)) existingByExtId.set(k, r.id);
+    }
+  }
+  const existingMatch = (emailLower, name, extKey) => {
+    const list = existingHouseholds.get(emailLower);
+    if (!list || !list.length) return undefined;
+    // FIX-33: two DIFFERENT ids from the old system are two records there.
+    // An email alone does not join them; only an email AND a compatible name
+    // does. Without this, which of a file's twins merged depended on whether
+    // they fell in the same 500-donor chunk: "Sam Sanchez" (D20001) was folded
+    // into "Samantha Sanchez" (D10610) only because chunk one had committed
+    // her first. The pair stays two records and waits in Data health.
+    if (list.length === 1) {
+      const only = list[0];
+      if (extKey && only.extKey && only.extKey !== extKey && !matchNamesCompatible(only.mk, matchNameKey(name))) return undefined;
+      return only.id;
+    }
+    const mk = matchNameKey(name);
+    const hit = list.find(x => matchNamesCompatible(x.mk, mk));
+    return hit ? hit.id : undefined;   // a name nobody at that address answers to is a NEW member of the household
+  };
+  const existingByName = new Map();   // name key → [{ id, hasEmail, extKey }]
+  for (const r of await q("SELECT id, name, email, external_donor_id FROM donors WHERE org_id=? AND deleted_at IS NULL", [orgId])) {
+    const k = (matchNameKey(r.name) || {}).key; if (!k) continue;
+    if (!existingByName.has(k)) existingByName.set(k, []);
+    existingByName.get(k).push({ id: r.id, hasEmail: !!String(r.email || "").trim(), extKey: donorIdKey(r.external_donor_id) });
+  }
+  return { existingByEmail, existingByExtId, existingMatch, existingByName, matchNameKey };
+}
+// One rule for "this row is someone already here", in the order the write
+// tries it: the old system's ID, the email (with a compatible name when the
+// file's identity was resolved), then a name only one person here has.
+function existingFor(E, d, { identityResolved, donorIdKey }) {
+  const extKey = donorIdKey(d.externalDonorId);
+  if (extKey && E.existingByExtId.has(extKey)) return { id: E.existingByExtId.get(extKey), how: "externalId" };
+  const emailLower = String(d.email || "").toLowerCase().trim();
+  if (emailLower) {
+    const id = identityResolved ? E.existingMatch(emailLower, d.name, extKey) : E.existingByEmail.get(emailLower);
+    if (id) return { id, how: "email" };
+  }
+  const nk = (E.matchNameKey(d.name) || {}).key;
+  const list = (nk && E.existingByName.get(nk)) || [];
+  if (list.length === 1 && (!emailLower || !list[0].hasEmail) && !(extKey && list[0].extKey && list[0].extKey !== extKey)) return { id: list[0].id, how: "name" };
+  return null;
+}
+
 function mount(ctx) {
 const {
   IMPORT_DONOR_BATCH, IMPORT_GIFT_BATCH, IMPORT_RUN_ID_RE, IT, MB_READY, PT_READY, actor, birthdayMod,
@@ -74,6 +164,25 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     };
   };
 
+  // IMPORT-8 · THE WORKBOOK SCREEN'S PREVIEW SAYS WHO IS ALREADY HERE. The
+  // same rule the write uses (existingFor), before anything is written:
+  // "1,481 already in Steward, 4,914 new". Reads only.
+  if (req.body.dryRun === true && req.body.matchPeople === true) {
+    const E = await loadExistingPeople(query, req.user.orgId);
+    const byKey = { externalId: 0, email: 0, name: 0 };
+    const ids = new Set();
+    let matched = 0;
+    const sample = [];
+    for (const d of donors) {
+      if (!d || !String(d.name || "").trim()) continue;
+      const hit = existingFor(E, d, { identityResolved: req.body.identityResolved === true, donorIdKey });
+      if (!hit) continue;
+      matched++; byKey[hit.how]++; ids.add(hit.id);
+      if (sample.length < 20) sample.push({ line: d._line || null, name: d.name, how: hit.how });
+    }
+    const named = donors.filter(d => d && String(d.name || "").trim()).length;
+    return res.json({ dryRun: true, matchPeople: true, rows: named, matched, people: ids.size, new: named - matched, byKey, sample });
+  }
   // Dry run: resolve and report BEFORE anything is written — the pre-write
   // summary for a gift-sheet-alone import states its link counts honestly.
   if (linkToExisting && req.body.dryRun === true) {
@@ -142,7 +251,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // TRANS-1 Part 4 — how each person was matched, so a re-import's own small
   // report can say it. Counted here rather than derived, because "matched by
   // the old system's id" is the claim the move is sold on.
-  let matchedByExternalId = 0, matchedByEmail = 0;
+  let matchedByExternalId = 0, matchedByEmail = 0, matchedByName = 0;
   const matchedExtIdFills = [];   // matched donors whose source id we did not hold yet
   const matchedBirthdayFills = []; // PARITY-3 6a: matched people with no birthday on file yet
   const matchedAboutFills = [];    // DATES-1: matched people with no "About them" yet
@@ -267,63 +376,10 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // that only ever mentioned donors. A second file with two known donors and
   // $1,800 of new gifts landed $0. Matching a donor is not a reason to lose
   // their money; it is the reason to attach it to the right record.
-  const existingEmailRows = await queryTx(txc,
-    "SELECT id, name, LOWER(email) AS e, external_donor_id FROM donors WHERE org_id=? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL ORDER BY created_at, id",
-    [orgId]
-  );
-  const existingByEmail = new Map();
-  for (const r of existingEmailRows) if (!existingByEmail.has(r.e)) existingByEmail.set(r.e, r.id);
-  // BUILD-88a A.7 — a shared email is a HOUSEHOLD, not a person. Two people
-  // behind kanefamily59@gmail.com are two records; matching the second import
-  // of Marilyn to Gerald because they share an inbox is the same merge this
-  // part exists to stop, one run later. When the caller has already resolved
-  // identity, an existing donor is claimed by email AND a compatible name
-  // (the ONE name-matching seam, shared/importShape.js).
-  const { matchNameKey, matchNamesCompatible } = await import("../../shared/importShape.js");
-  const existingHouseholds = new Map();   // email → [{ id, mk }]
-  for (const r of existingEmailRows) {
-    if (!existingHouseholds.has(r.e)) existingHouseholds.set(r.e, []);
-    existingHouseholds.get(r.e).push({ id: r.id, mk: matchNameKey(r.name), extKey: donorIdKey(r.external_donor_id) });
-  }
-  // ── TRANS-1 Part 4 — THE OLD SYSTEM'S OWN ID MATCHES FIRST ──────────────
-  // An import used to match a person by email and nothing else, while
-  // `external_donor_id` was written on the way in and never read again. That
-  // is the whole re-import story: a director who fixes a typo'd address in
-  // DonorPerfect and exports again got a SECOND record, because the only key
-  // Steward matched on was the one she had just changed. Her own system's id
-  // is the stable key and it is now the first one tried — email, then name,
-  // stay exactly as they were behind it.
-  const existingByExtId = new Map();
-  const extIdRows = await queryTx(txc,
-    `SELECT id, external_donor_id, external_donor_ids FROM donors
-       WHERE org_id=? AND deleted_at IS NULL
-         AND (external_donor_id IS NOT NULL OR external_donor_ids IS NOT NULL)
-       ORDER BY created_at, id`, [orgId]);
-  for (const r of extIdRows) {
-    const ids = [r.external_donor_id, ...(Array.isArray(r.external_donor_ids) ? r.external_donor_ids : [])];
-    for (const one of ids) {
-      const k = donorIdKey(one);
-      if (k && !existingByExtId.has(k)) existingByExtId.set(k, r.id);
-    }
-  }
-  const existingMatch = (emailLower, name, extKey) => {
-    const list = existingHouseholds.get(emailLower);
-    if (!list || !list.length) return undefined;
-    // FIX-33: two DIFFERENT ids from the old system are two records there.
-    // An email alone does not join them; only an email AND a compatible name
-    // does. Without this, which of a file's twins merged depended on whether
-    // they fell in the same 500-donor chunk: "Sam Sanchez" (D20001) was folded
-    // into "Samantha Sanchez" (D10610) only because chunk one had committed
-    // her first. The pair stays two records and waits in Data health.
-    if (list.length === 1) {
-      const only = list[0];
-      if (extKey && only.extKey && only.extKey !== extKey && !matchNamesCompatible(only.mk, matchNameKey(name))) return undefined;
-      return only.id;
-    }
-    const mk = matchNameKey(name);
-    const hit = list.find(x => matchNamesCompatible(x.mk, mk));
-    return hit ? hit.id : undefined;   // a name nobody at that address answers to is a NEW member of the household
-  };
+  // IMPORT-8: who in the file is already in the org, read by one helper that
+  // the workbook screen's preview (dryRun + matchPeople) asks too.
+  const E = await loadExistingPeople((sql, params) => queryTx(txc, sql, params), orgId);
+  const { existingByEmail, existingByExtId, existingMatch } = E;
   // BUILD-82 Part 2.5 — the existing-record resolver for a gift-sheet-alone
   // import, built INSIDE the transaction so it sees a consistent snapshot.
   const resolveExisting = linkToExisting ? await buildExistingResolver((sql, params) => queryTx(txc, sql, params)) : null;
@@ -382,6 +438,12 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       const priorId = (identityResolved ? existingMatch(emailLower, d.name, extKey) : existingByEmail.get(emailLower))
         || (identityResolved ? undefined : seenEmails.get(emailLower));
       if (priorId) { claimMatch(idx, d, priorId, "email"); return; }
+    }
+    // 3. IMPORT-8: a name only one person in the org has, when no email or ID
+    //    on either side says they are two people (existingFor, the preview's rule)
+    {
+      const hit = existingFor(E, d, { identityResolved, donorIdKey });
+      if (hit && hit.how === "name") { matchedByName++; claimMatch(idx, d, hit.id, "name"); return; }
     }
     const id = importId("d_");
     if (emailLower && !identityResolved) seenEmails.set(emailLower, id);
@@ -1149,7 +1211,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
              // report leads on "matched by your system's own id", because
              // that is the claim the move is sold on, so it is counted at the
              // point of matching rather than guessed afterwards.
-             matchedByExternalId, matchedByEmail,
+             matchedByExternalId, matchedByEmail, matchedByName,
              externalIdsLearned: matchedExtIdFills.length,
              // The equations, for the summary screen. The user sees the
              // arithmetic, not a reassurance that it worked.

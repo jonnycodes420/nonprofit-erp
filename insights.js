@@ -60,10 +60,13 @@ const longDate = s => `${MON[+s.slice(5, 7) - 1]} ${+s.slice(8, 10)}, ${s.slice(
 const monthYear = s => `${MONTHS[+s.slice(5, 7) - 1]} ${s.slice(0, 4)}`;
 
 // ── money ──────────────────────────────────────────────────────────────────
+// LOAD-1: the formatters made once; toLocaleString builds one on every call,
+// and this runs for every gift in the org.
+const FMT_PLAIN = new Intl.NumberFormat("en-US");
+const FMT_CENTS = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const money = c => {
   const neg = c < 0, v = Math.abs(c);
-  const s = v % 100 ? (v / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                    : (v / 100).toLocaleString("en-US");
+  const s = v % 100 ? FMT_CENTS.format(v / 100) : FMT_PLAIN.format(v / 100);
   return (neg ? "-$" : "$") + s;
 };
 // A natural ask ($24,000, not $24,422) is shared/smartAmounts.js's

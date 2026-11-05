@@ -24,6 +24,16 @@ const pool = new Pool({
   // database's own connection limit allows across every replica and the worker.
   max: POOL_MAX,
 });
+// LOAD-1: every connection handed out below goes through LIMITS.checkout, so a web request's
+// statements stop at its limit and an abandoned read is cancelled (server/shared/requestLimits.js).
+const LIMITS = require("./server/shared/requestLimits");
+const requestLimits = () => LIMITS.middleware(LIMITS.cancelWith(Pool, { connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false }, options: `-c steward.app_connection=on -c application_name=${APP_NAME}` }));
+// One statement on its own connection, the way pool.query did it.
+async function once(p, text, params) {
+  const client = await LIMITS.checkout(p);
+  try { return await client.query(text, params); } catch (e) { throw LIMITS.translate(e); } finally { LIMITS.release(client); }
+}
 
 // ── FIX-11 Part 1 — THIS CONNECTION BELONGS TO THE APPLICATION ────────────
 // Every connection the application takes out of the pool says so, once, when
@@ -65,7 +75,7 @@ async function getDb() {
 // write past it, for progress a reader must see before the commit.
 const { AsyncLocalStorage } = require("async_hooks");
 const ambientTx = new AsyncLocalStorage();
-function target() { const st = ambientTx.getStore(); return st && st.open ? st.client : pool; }
+function ambient() { const st = ambientTx.getStore(); return st && st.open ? st.client : null; }
 // FIX-55 · A ROUND TRIP AS PROD PAYS IT. On prod every statement crosses the
 // network to the database (about 17 ms on 27 Oct); on the scratch stack it is
 // free, so a preview that asks one question per person looked fast here. With
@@ -83,7 +93,7 @@ function countRoundTrips(fn) {
 }
 const noteTrip = () => { const st = tripCount.getStore(); if (st) st.n++; };
 async function withAmbientTransaction(fn) {
-  const client = await pool.connect();
+  const client = await LIMITS.checkout(pool);
   const st = { client, open: true };
   try {
     await client.query("BEGIN");
@@ -94,10 +104,10 @@ async function withAmbientTransaction(fn) {
   } catch (e) {
     st.open = false;
     await client.query("ROLLBACK").catch(() => {});
-    throw e;
+    throw LIMITS.translate(e);
   } finally {
     st.open = false;
-    client.release();
+    LIMITS.release(client);
   }
 }
 // IMPORT-7: the progress and job writes outside the transaction cross the network too
@@ -105,13 +115,13 @@ async function queryOutside(sql, params = []) {
   if (TEST_LATENCY_MS) await roundTrip();
   noteTrip();
   let i = 0;
-  return (await pool.query(sql.replace(/\?/g, () => `$${++i}`), params)).rows;
+  return (await once(pool, sql.replace(/\?/g, () => `$${++i}`), params)).rows;
 }
 async function runOutside(sql, params = []) {
   if (TEST_LATENCY_MS) await roundTrip();
   noteTrip();
   let i = 0;
-  return { changes: (await pool.query(sql.replace(/\?/g, () => `$${++i}`), params)).rowCount };
+  return { changes: (await once(pool, sql.replace(/\?/g, () => `$${++i}`), params)).rowCount };
 }
 
 // Convert SQLite ? placeholders to PostgreSQL $1, $2, ... positional params
@@ -120,8 +130,10 @@ async function query(sql, params = []) {
   noteTrip();
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
-  const result = await target().query(pgSql, params);
-  return result.rows;
+  const tx = ambient();
+  if (!tx) return (await once(pool, pgSql, params)).rows;
+  LIMITS.guard();
+  try { return (await tx.query(pgSql, params)).rows; } catch (e) { throw LIMITS.translate(e); }
 }
 
 async function run(sql, params = []) {
@@ -129,8 +141,10 @@ async function run(sql, params = []) {
   noteTrip();
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
-  const result = await target().query(pgSql, params);
-  return { changes: result.rowCount };
+  const tx = ambient();
+  if (!tx) return { changes: (await once(pool, pgSql, params)).rowCount };
+  LIMITS.guard();
+  try { return { changes: (await tx.query(pgSql, params)).rowCount }; } catch (e) { throw LIMITS.translate(e); }
 }
 
 // Transaction helper — acquire a dedicated client, run fn(client) inside BEGIN/COMMIT
@@ -139,22 +153,28 @@ async function run(sql, params = []) {
 // the pool; holding a transaction open around them would lock the rows those
 // routes then wait for.
 async function withClient(fn) {
-  const client = await pool.connect();
-  try { return await fn(client); } finally { client.release(); }
+  const client = await LIMITS.checkout(pool);
+  try { return await fn(client); } catch (e) { throw LIMITS.translate(e); } finally { LIMITS.release(client); }
+}
+
+// LOAD-1: a client-shaped handle (for queryTx/runTx) that takes a connection per statement, for code that
+// must not hold one while it waits on something else, as the Agent's run waits on the screens' own routes.
+function onThePool(fn) {
+  return fn({ query: (text, params) => once(pool, text, params) });
 }
 
 async function withTransaction(fn) {
-  const client = await pool.connect();
+  const client = await LIMITS.checkout(pool);
   try {
     await client.query("BEGIN");
     const result = await fn(client);
     await client.query("COMMIT");
     return result;
   } catch (e) {
-    await client.query("ROLLBACK");
-    throw e;
+    await client.query("ROLLBACK").catch(() => {});
+    throw LIMITS.translate(e);
   } finally {
-    client.release();
+    LIMITS.release(client);
   }
 }
 
@@ -168,13 +188,13 @@ async function withTransaction(fn) {
 // wrong primitive; an advisory lock closes the race without forbidding dupes or
 // risking boot failure on already-duplicated data.
 async function withAdvisoryLock(key, fn) {
-  const client = await pool.connect();
+  const client = await LIMITS.checkout(pool);
   try {
     await client.query("SELECT pg_advisory_lock(hashtext($1))", [String(key)]);
     return await fn();
   } finally {
     try { await client.query("SELECT pg_advisory_unlock(hashtext($1))", [String(key)]); } catch {}
-    client.release();
+    LIMITS.release(client);
   }
 }
 
@@ -182,7 +202,7 @@ async function withAdvisoryLock(key, fn) {
 // wait: when another run (this instance or another one on the same database)
 // holds the key, fn is not called and { skipped: true } comes back.
 async function withTryAdvisoryLock(key, fn) {
-  const client = await pool.connect();
+  const client = await LIMITS.checkout(pool);
   let got = false;
   try {
     const r = await client.query("SELECT pg_try_advisory_lock(hashtext($1)) AS ok", [String(key)]);
@@ -191,7 +211,7 @@ async function withTryAdvisoryLock(key, fn) {
     return await fn();
   } finally {
     if (got) { try { await client.query("SELECT pg_advisory_unlock(hashtext($1))", [String(key)]); } catch {} }
-    client.release();
+    LIMITS.release(client);
   }
 }
 
@@ -9752,5 +9772,5 @@ async function seedOrgData(orgId) {
   );
 }
 
-module.exports = { poolStats: () => pools.stats(pool), isPoolFull, POOL_MAX, SET_POOL_MAX, APP_NAME, setPool, countRoundTrips, withClient, getDb, query, querySetwise, run, withAmbientTransaction, queryOutside, runOutside, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
+module.exports = { poolStats: () => pools.stats(pool), requestLimits, isPoolFull, POOL_MAX, SET_POOL_MAX, APP_NAME, setPool, countRoundTrips, withClient, onThePool, getDb, query, querySetwise, run, withAmbientTransaction, queryOutside, runOutside, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
   householdsFromLinks: (orgId = null) => householdsFromLinks(pool, orgId) };

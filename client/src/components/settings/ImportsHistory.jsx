@@ -136,11 +136,14 @@ export function ImportsHistory(){
               {/* FIX-52: every receipt that undoes as a whole offers Undo for its
                   window, whether or not it reconciles. */}
               <div style={{marginTop:14,borderTop:"1px solid "+T.bg3,paddingTop:12}}>
-                {open.reversedAt
+                {/* IMPORT-8: just undone here, Undo stays on screen: who stayed, and Remove them too */}
+                {open.justUndone
+                  ? <ImportUndo importId={open.id} />
+                  : open.reversedAt
                   ? <div data-testid="import-receipt-undone" style={{fontSize:12.5,color:open.undoneSentence?T.ink:T.ink3,fontWeight:open.undoneSentence?700:400}}>{open.undoneSentence||`Undone ${displayDate(open.reversedAt)}.`}</div>
                   : open.canUndo
                     ? <>
-                        <ImportUndo importId={open.id} onUndone={r=>{ setOpen(o=>o?{...o,reversedAt:new Date().toISOString(),canUndo:false,undoneSentence:(r&&r.sentence)||null}:o); apiFetch("/imports").then(r=>setRows(Array.isArray(r.imports)?r.imports:[])).catch(()=>{}); }}/>
+                        <ImportUndo importId={open.id} onUndone={r=>{ setOpen(o=>o?{...o,reversedAt:new Date().toISOString(),canUndo:false,undoneSentence:(r&&r.sentence)||null,justUndone:!!(r&&r.stayedCount)}:o); apiFetch("/imports").then(r=>setRows(Array.isArray(r.imports)?r.imports:[])).catch(()=>{}); }}/>
                         {open.undoUntil&&<div style={{fontSize:11.5,color:T.ink3,marginTop:6}}>Undo is open until {displayDate(open.undoUntil)}.</div>}
                       </>
                     : null}

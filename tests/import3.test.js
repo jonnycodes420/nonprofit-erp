@@ -94,7 +94,10 @@ async function eventSheet() {
   // FIX-59: a defaulted question (already deposited? Yes) is shown but never asked of her
   const qs = (U.questions || []).filter(x => !x.defaulted).map(x => x.id);
   const evQ = (U.questions || []).find(x => x.id === "event") || {};
-  ok("§1 it asks when (no date column), naming the event by the file's name (IMPORT-5: required)", evQ.required === true && evQ.suggestedEventName === "Finding Joy Dinner", JSON.stringify(evQ));
+  // IMPORT-8: a file name never makes an event; her answer names it (answers.eventName + linkEvent below)
+  const dQ = (U.questions || []).find(x => x.id === "date") || {};
+  ok("§1 the file's name names no event: no event question, and the undated gifts are one optional question with no event suggested",
+     !evQ.id && dQ.optional === true && !dQ.suggestedEventName && !U.event, JSON.stringify({ evQ, dQ: { id: dQ.id, optional: dQ.optional, s: dQ.suggestedEventName } }));
   ok("§1 and the one blank Completed, by row number, the pledges' due date, and nothing else", qs.length === 3 && qs.includes("row:Sheet1:26") && qs.includes("pledgeDue"), JSON.stringify(qs));
   ok("§1 the stray note in column K is a note, not a column", (U.notes || []).some(n => /matching gift/.test(n.text)) && !(U.tables[0].columns || []).some(c => c.index === 10), JSON.stringify(U.notes));
 

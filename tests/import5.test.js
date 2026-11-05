@@ -91,8 +91,13 @@ async function dinner() {
   ok("§1 the key, from the cells: 106 rows, 63 gifts, 43 pledges, 7 over three years", rows.length === 106 && gave.length === 63 && owes.length === 43 && multi.length === 7,
      [rows.length, gave.length, owes.length, multi.length]);
 
-  const base = { fileName: "jp-dinner-gifts-106.xlsx", sheets };
-  // §1a no answers: the date is asked and Import waits
+  // IMPORT-8: a file name never makes an event; the dinner is the event because she names it
+  const NAMED = { eventName: "Finding Joy Dinner", linkEvent: true };
+  const bare = (await api("POST", "/sheet-import/understand", tok, { fileName: "jp-dinner-gifts-106.xlsx", sheets })).body || {};
+  ok("§1 IMPORT-8: the file name alone asks no event question and makes no event",
+     !(bare.questions || []).some(x => x.id === "event") && !bare.event, JSON.stringify((bare.questions || []).map(x => x.id)));
+  const base = { fileName: "jp-dinner-gifts-106.xlsx", sheets, answers: NAMED };
+  // §1a the event named, no date: the date is asked and Import waits
   const u0 = (await api("POST", "/sheet-import/understand", tok, base)).body || {};
   const evQ = (u0.questions || []).find(x => x.id === "event") || {};
   ok("§1 a file that names a dinner and holds no dates: the event's date is required, and the preview is not ready",
@@ -103,7 +108,7 @@ async function dinner() {
   ok("§1 the write refuses an unanswered date and writes nothing", refused.end && refused.end.status === "failed" && /question/.test(refused.end.error || "") && wrote.n === 0,
      JSON.stringify([refused.end && refused.end.status, refused.end && refused.end.error, wrote.n]));
   // §1b the date alone: the gifts and the pledges are still asked
-  const u1 = (await api("POST", "/sheet-import/understand", tok, { ...base, answers: { eventDate: EVENT_DAY } })).body || {};
+  const u1 = (await api("POST", "/sheet-import/understand", tok, { ...base, answers: { ...NAMED, eventDate: EVENT_DAY } })).body || {};
   const q1 = (u1.questions || []).map(x => x.id);
   const gq = (u1.questions || []).find(x => x.id === "eventGifts") || {};
   ok("§1 with the date, two questions remain: the 63 gifts (Yes or No) and the 43 pledges' due dates",
@@ -113,7 +118,7 @@ async function dinner() {
      JSON.stringify((pq.options || []).map(o => o.key)) === JSON.stringify(["event", "choose", "none"]) && pq.count === 43, JSON.stringify(pq));
 
   // §1c Yes, and due from the event's date
-  const A = { eventDate: EVENT_DAY, useEventDate: true, pledgeDue: "event", eventName: "Finding Joy Dinner" };
+  const A = { ...NAMED, eventDate: EVENT_DAY, useEventDate: true, pledgeDue: "event" };
   const u2 = (await api("POST", "/sheet-import/understand", tok, { ...base, answers: A })).body || {};
   ok("§1 answered, the preview is ready and no gift is undated", u2.ready === true && u2.counts.undatedGifts === 0 && !/undated/.test(u2.button.text), u2.button && u2.button.text);
   const j1 = await importJob(tok, { ...base, answers: A });
@@ -186,7 +191,7 @@ async function dinner() {
   ok("§1 Undo restores everything: no gift, pledge or event left", un1.status === 200 && left.g === 0 && left.p === 0 && left.e === 0, JSON.stringify([un1.status, left]));
 
   // §1d No, and No set due date
-  const B = { eventDate: EVENT_DAY, useEventDate: false, pledgeDue: "none" };
+  const B = { ...NAMED, eventDate: EVENT_DAY, useEventDate: false, pledgeDue: "none" };
   const j2 = await importJob(tok, { ...base, answers: B });
   const g2 = await one("SELECT COUNT(*) FILTER (WHERE date IS NULL)::int AS undated FROM gifts WHERE org_id=$1 AND import_id=$2", [ORG, j2.importId]);
   const p2 = await one(`SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE i.due_date IS NOT NULL)::int AS dated FROM pledges p JOIN pledge_installments i ON i.pledge_id=p.id
@@ -203,7 +208,7 @@ async function dinner() {
   await undo(tok, j2.importId);
 
   // §1e a date she chooses: that day, then yearly
-  const C = { eventDate: EVENT_DAY, useEventDate: false, pledgeDue: "choose", pledgeDueDate: "2027-01-15" };
+  const C = { ...NAMED, eventDate: EVENT_DAY, useEventDate: false, pledgeDue: "choose", pledgeDueDate: "2027-01-15" };
   const j3 = await importJob(tok, { ...base, answers: C });
   const d3 = await q(`SELECT p.id, array_agg(i.due_date ORDER BY i.seq) AS d FROM pledges p JOIN pledge_installments i ON i.pledge_id=p.id WHERE p.org_id=$1 AND p.import_id=$2 GROUP BY p.id`, [ORG, j3.importId]);
   ok("§1 A date I choose: a one-year pledge is due that day, a three-year one that day and yearly after",

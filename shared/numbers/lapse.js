@@ -87,9 +87,17 @@ function holdSql(idExpr, today) {
 // person) and donor_scores.on_time_through by the scores (nightly, and after
 // every gift or touch). The newer of the two is the answer, so a list never
 // reads one that a later write has replaced. NULL: no pattern stored.
-const ON_TIME_THROUGH = idExpr => `(SELECT x.d FROM (
-      SELECT LEFT(rr.expected_next::text, 10) AS d, rr.computed_at AS t FROM donor_rhythm rr WHERE rr.donor_id = ${idExpr}
-      UNION ALL SELECT ds.on_time_through, ds.computed_at FROM donor_scores ds WHERE ds.donor_id = ${idExpr}) x
+// LOAD-1: both tables are keyed (org_id, donor_id), so the lookup names the
+// org too, or no index serves it and every row of each is read per person.
+// The org is the id's own row's: `d.id` and `a.donor_id` read `d.org_id` and `a.org_id`.
+const orgOf = (idExpr) => {
+  const m = /^(.*?)(?:donor_)?id$/.exec(String(idExpr));
+  if (!m) throw new Error(`lapse.ON_TIME_THROUGH: no org column beside ${idExpr}`);
+  return `${m[1]}org_id`;
+};
+const ON_TIME_THROUGH = (idExpr, orgExpr = orgOf(idExpr)) => `(SELECT x.d FROM (
+      SELECT LEFT(rr.expected_next::text, 10) AS d, rr.computed_at AS t FROM donor_rhythm rr WHERE rr.org_id = ${orgExpr} AND rr.donor_id = ${idExpr}
+      UNION ALL SELECT ds.on_time_through, ds.computed_at FROM donor_scores ds WHERE ds.org_id = ${orgExpr} AND ds.donor_id = ${idExpr}) x
     ORDER BY x.t DESC NULLS LAST LIMIT 1)`;
 // Their usual time to give is still ahead: that day is today or later.
 // STATUS-1: any rhythm, not only yearly and year-end (lapseRule.usualTimeAhead).

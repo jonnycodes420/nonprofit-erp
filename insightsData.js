@@ -77,16 +77,26 @@ async function fingerprint(orgId) {
         || ':' || (SELECT COUNT(*)::text FROM insight_links WHERE org_id=?) AS i`, [orgId, orgId, orgId, orgId, orgId, orgId]);
   return `${f.g}|${f.p}|${f.d}|${f.i}`;
 }
+// LOAD-1: one computation per org and answer at a time. Every profile opened
+// while the memo was stale (a gift had just been recorded) started its own
+// read of the whole org, and twenty at once held the web's one CPU.
+const COMPUTING = new Map();   // orgId|key|asOf -> Promise<result>
 async function insightsFor(orgId, asOf) {
   const key = await fingerprint(orgId);
   const m = MEMO.get(orgId);
   if (m && m.key === key && m.asOf === asOf && Date.now() - m.at < MEMO_MS) return m.result;
-  const rows = await rowsFor(orgId);
-  await insights.ready;   // SWEEP-1: the greeting (shared/greeting.js) and the one ask rounding (shared/smartAmounts.js)
-  const roomKnown = await roomKnownFor(orgId, rows);
-  const result = insights.computeInsights({ ...rows, asOf, roomKnown });
-  MEMO.set(orgId, { key, asOf, result, at: Date.now() });
-  return result;
+  const job = `${orgId}|${key}|${asOf}`;
+  if (COMPUTING.has(job)) return COMPUTING.get(job);
+  const p = require("./server/shared/requestLimits").shared(async () => {
+    const rows = await rowsFor(orgId);
+    await insights.ready;   // SWEEP-1: the greeting (shared/greeting.js) and the one ask rounding (shared/smartAmounts.js)
+    const roomKnown = await roomKnownFor(orgId, rows);
+    const result = insights.computeInsights({ ...rows, asOf, roomKnown });
+    MEMO.set(orgId, { key, asOf, result, at: Date.now() });
+    return result;
+  }).finally(() => COMPUTING.delete(job));
+  COMPUTING.set(job, p);
+  return p;
 }
 // donorId -> { rung, status, planned, signals } for the list and the profile
 async function ladderMap(orgId, asOf) {

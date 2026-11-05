@@ -231,7 +231,9 @@ ugly("u05-please-remove-anywhere.csv", f => fs.writeFileSync(f, toCsv([["Name", 
   ["Odette Underhill", "odette@example.org", 60, "2026-06-01", null, "please remove me from your list"],
   ["Barnaby Valdivia", "barnaby@example.org", 70, "2026-06-02", "Yes", null],
   ["Leonie Whitlock", "leonie@example.org", 80, "2026-06-03", null, "Lovely evening"]])),
-{ persons: 3, gifts: 3, giftCents: c(210), undatedGifts: 0, asideCents: 0, fileCents: c(210), optOuts: 1, doNotMail: 1,
+// IMPORT-8: a note is never a choice. "please remove me from your list" in Notes is listed for
+// review, not an opt-out; the Do not mail column's Yes is the one choice here.
+{ persons: 3, gifts: 3, giftCents: c(210), undatedGifts: 0, asideCents: 0, fileCents: c(210), optOuts: 0, doNotMail: 1,
   columns: { total: 6, mapped: 6, kept: 0, skipped: 0 } });
 
 ugly("u06-zips-and-phones.csv", f => fs.writeFileSync(f, toCsv([["First Name", "Last Name", "Zip", "Phone", "Amount", "Date"],
