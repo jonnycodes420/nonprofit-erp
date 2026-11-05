@@ -69,6 +69,9 @@ const money = c => {
   const s = v % 100 ? FMT_CENTS.format(v / 100) : FMT_PLAIN.format(v / 100);
   return (neg ? "-$" : "$") + s;
 };
+// POLISH-5: a total inside a sentence reads in whole dollars; `money` keeps
+// the cents for one gift and for the facts the number check reads.
+const wholeMoney = c => money(Math.round(c / 100) * 100);
 // A natural ask ($24,000, not $24,422) is shared/smartAmounts.js's
 // naturalAskCents, the one rounding every suggested ask reads (SWEEP-1). It is
 // an ES module, loaded with the greeting (`ready`, awaited by insightsData).
@@ -669,15 +672,15 @@ const LIBRARY = [
         how: { who: whoFor(x, x.rung), channel: dec >= 100000 ? "Call" : "Note", when,
           say: `${hello(x)}, thank you for your gift last December. It mattered. We're planning this year's year-end and hoped we could count on you again.`,
           ask: x.noAsk || !one ? null : fy > 0
-            ? { cents: ask, words: `Ask ${money(ask)}: the suggested ${money(one.cents)} (${one.words.replace(/^Ask \$[\d,.]+: /, "").replace(/\.$/, "")}), less the ${money(fy)} given since ${since}${roundedWord(ask, one.cents - fy)}.`, rule: `${ASK.RULE} Retain takes off what they have given this fiscal year.` }
+            ? { cents: ask, words: `Ask ${money(ask)}: the suggested ${money(one.cents)} (${one.words.replace(/^Ask \$[\d,.]+: /, "").replace(/\.$/, "")}), less the ${wholeMoney(fy)} given since ${since}${roundedWord(ask, one.cents - fy)}.`, rule: `${ASK.RULE} Retain takes off what they have given this fiscal year.` }
             : one } };
     }).filter(Boolean);
     if (!items.length) return null;
     return {
       kind: "year_end", rung: "retain", title: "Year-end givers due",
       what: c => `${plural(c.items.length, "giver")} gave ${money(c.items.reduce((n, i) => n + i.cents, 0))} in December ${y1} and haven't given this year-end yet.`,
-      why: `In your own data, ${plural(ctx.stats.december.count, "donor")} gave ${money(ctx.stats.december.cents)} in December ${y1}. December givers do best when asked in early November.`,
-      cardFacts: [["December givers", String(ctx.stats.december.count)], ["December dollars", money(ctx.stats.december.cents)], ["year", String(y1)]],
+      why: `In your own data, ${plural(ctx.stats.december.count, "donor")} gave ${wholeMoney(ctx.stats.december.cents)} in December ${y1}. December givers do best when asked in early November.`,
+      cardFacts: [["December givers", String(ctx.stats.december.count)], ["December dollars", money(ctx.stats.december.cents)], ["December dollars, rounded", wholeMoney(ctx.stats.december.cents)], ["year", String(y1)]],
       items, does: [{ action: "call_list", label: "Make a call list" }, { action: "task", label: "Create tasks for Nov 1" }, { action: "group", label: "Make a group" }],
     };
   },
@@ -789,13 +792,17 @@ const LIBRARY = [
       const facts = [["12 months before", money(x.P12)], ["last 12 months", money(x.L12)]];
       if (before) facts.push(["earlier gift", `${money(before.amount_cents)} (${monthYear(before.date)})`]);
       if (after) facts.push(["recent gift", `${money(after.amount_cents)} (${monthYear(after.date)})`]);
+      // POLISH-5: the thank-you names the gift the profile's header shows as Last
+      // gift (the newest one), not the biggest day of the year, which the header never shows.
+      const lastOne = (x.days || []).slice(-1)[0] || null;   // a day's gifts are one gift (INSIGHTS §9)
+      if (lastOne) facts.push(["last gift", `${money(lastOne.amount_cents)} (${monthYear(lastOne.date)})`]);
       if (fdnName) facts.push(["through", fdnName]);
       if (x.designated.length) facts.push(["designated", x.designated[0]]);
       return { key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: x.L12,
         what: `${money(x.P12)} in the 12 months before, then ${money(x.L12)} in the last 12 months${after ? `, including ${money(after.amount_cents)} in ${monthYear(after.date)}` : ""}${fdnName ? ` through ${fdnName}` : ""}${x.designated.length ? ` for ${x.designated[0]}` : ""}.`,
         facts,
         how: { who: whoFor(x, "upgrade"), channel: "Visit", when: windowWords(ctx.asOf, addDays(ctx.asOf, 30)),
-          say: `${hello(x)}, thank you. Your gift${after ? ` of ${money(after.amount_cents)}` : ""}${fdnName ? ` through ${fdnName}` : ""}${x.designated.length ? ` for ${x.designated[0]}` : ""} went further than you might know. Could we show you what it did, in person?`,
+          say: `${hello(x)}, thank you. Your gift${lastOne ? ` of ${money(lastOne.amount_cents)}` : ""}${fdnName ? ` through ${fdnName}` : ""}${x.designated.length ? ` for ${x.designated[0]}` : ""} went further than you might know. Could we show you what it did, in person?`,
           ask: x.noAsk ? null : oneAsk(x) } };
     });
     return {

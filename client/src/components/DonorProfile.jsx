@@ -55,6 +55,7 @@ import { RelatedModal } from "./profile/RelatedModal";
 import { MergeWithModal } from "./profile/MergeWith";
 import { GivingTab } from "./profile/GivingTab";
 import { ProfileHeader } from "./profile/ProfileHeader";
+import { displayOrgDateShort } from "../lib/orgDay";
 
 function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,onRecordChanged,isReadOnly=false,onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialOpenCompose=false,initialOpenBrief=false,initialAddGift=null,org=null}){
   const [gifts,setGifts]=useState([]);
@@ -1250,7 +1251,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 <div data-testid="dp-next-empty" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"16px 18px",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
                   <div style={{flex:"1 1 240px",fontSize:13.5,color:T.ink3,lineHeight:1.6}}>
                     {/* FIX-57: a sentence that needs a name waits for it ("Nothing is open for ." while the record loaded) */}
-                    {String(donor.name||"").trim()?<>Nothing is open for {callName}.</>
+                    {String(donor.name||"").trim()?`Nothing is open for ${callName}.`
                       :<span data-testid="dp-name-wait" aria-label="Loading" style={{display:"inline-block",width:"min(320px,80%)",height:12,borderRadius:6,background:T.bg2,verticalAlign:"middle"}}/>}
                   </div>
                   {!isReadOnly&&<button type="button" data-testid="dp-next-plan" onClick={()=>setPlanOpen(true)} style={{background:T.greenDk,color:T.white,border:"none",borderRadius:9,padding:"9px 14px",fontSize:13,fontWeight:700,cursor:"pointer",minHeight:40}}>Plan a follow-up</button>}
@@ -1360,7 +1361,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               const due=(rel?.past||[]).find(m=>!m.loggedAt&&m.startsAt&&Date.now()-new Date(m.endsAt||m.startsAt).getTime()<7*864e5);
               if(!due||isReadOnly)return null;
               return <section data-testid="dp-how-did-it-go" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 18px",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",justifyContent:"space-between"}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.ink}}>How did it go? {due.title}, {displayDateShort(String(due.date||due.startsAt).slice(0,10),new Date())}</div>
+                <div style={{fontSize:14,fontWeight:700,color:T.ink}}>How did it go? {due.title}, {displayOrgDateShort(due.date||due.startsAt,new Date())}</div>
                 <button type="button" onClick={()=>setLogMeeting(due)} style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:9,padding:"8px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>Write it down</button>
               </section>;
             })()}

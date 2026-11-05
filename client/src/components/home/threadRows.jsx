@@ -26,7 +26,7 @@ export function threadReadoutRow({ ro }) {
                 is how the smoke walk finds the names that must open a profile. */}
             <div className="attn-readout-title" style={{fontSize:15,fontWeight:700,color:T.ink}}>{ro.title}</div>
             <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
-              {ro.lines.filter(l=>l.kind!=="data_problems").slice(0,2).map(l=>l.sentence).join(", ")}.{" "}
+              {ro.lines.filter(l=>l.kind!=="data_problems").slice(0,2).map(l=>l.sentence).join(", ")}{". "}
               <span style={{color:T.ink,fontWeight:600}}>Next: see who, and what to do about each.</span>
             </div>
           </div>
@@ -61,8 +61,8 @@ export function threadStoppedRow({ age, f, failedOn, onNavigate, openRailDonor }
               </div>
               <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
                 <RefLink refItem={{kind:"plan",id:f.subId,donorId:f.donorId}}>{f.amount?`Their $${f.amount.toLocaleString()} ${f.interval==="year"?"yearly":"monthly"} gift`:"Their recurring gift"}</RefLink>{" stopped"}
-                {failedOn?` ${agoPhrase(age)}`:""} when the card was declined.{" "}
-                <span style={{color:T.gold700,fontWeight:600}}>Next: send her a link to update it.</span>
+                {`${failedOn?` ${agoPhrase(age)}`:""} when the card was declined. `}
+                <span style={{color:T.gold700,fontWeight:600}}>Next: send them a link to update it.</span>
               </div>
             </div>
             <div className="attn-row-next" style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2,flexShrink:0,minWidth:78}}>
@@ -119,7 +119,7 @@ export function threadRow({ TOUCH_WORD, finishRow, i, isReadOnly, loadThreads, m
               columns saying one thing between them; a person says it in a
               breath, so the row does too. */}
           <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
-            {t.lastTouch?.ref?<RefLink refItem={t.lastTouch.ref}>{threadClause(t).replace(/\.$/,"")}</RefLink>:<Linked text={threadClause(t).replace(/\.$/,"")} refs={t.refs}/>}{"."}{" "}
+            {t.lastTouch?.ref?<RefLink refItem={t.lastTouch.ref}>{threadClause(t).replace(/\.$/,"")}</RefLink>:<Linked text={threadClause(t).replace(/\.$/,"")} refs={t.refs}/>}{". "}
             <span style={{color:t.overdue?T.gold700:T.ink,fontWeight:600}}>Next: {t.stepRef
               ?<RefLink refItem={t.stepRef} data-testid="thread-step-link">{stepInSentence(t.nextStep.label,[t.donorName])}</RefLink>
               :<Linked text={stepInSentence(t.nextStep.label,[t.donorName])} refs={t.refs}/>}{/[.?!]$/.test(String(t.nextStep.label||"").trim())?"":"."}</span>

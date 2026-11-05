@@ -8,6 +8,7 @@ import { displayDate, displayDateTime } from "../../../../shared/displayDate";
 import ImportGiftLine from "../ImportGiftLine";
 import ImportUndo from "../ImportUndo";
 import { fmtCount, fmtMoney } from "./importsWords";
+import { displayOrgDate } from "../../lib/orgDay";
 
 export function ImportsHistory(){
   const [rows,setRows]=useState(null);
@@ -140,7 +141,7 @@ export function ImportsHistory(){
                 {open.justUndone
                   ? <ImportUndo importId={open.id} />
                   : open.reversedAt
-                  ? <div data-testid="import-receipt-undone" style={{fontSize:12.5,color:open.undoneSentence?T.ink:T.ink3,fontWeight:open.undoneSentence?700:400}}>{open.undoneSentence||`Undone ${displayDate(open.reversedAt)}.`}</div>
+                  ? <div data-testid="import-receipt-undone" style={{fontSize:12.5,color:open.undoneSentence?T.ink:T.ink3,fontWeight:open.undoneSentence?700:400}}>{open.undoneSentence||`Undone ${displayOrgDate(open.reversedAt)}.`}</div>
                   : open.canUndo
                     ? <>
                         <ImportUndo importId={open.id} onUndone={r=>{ setOpen(o=>o?{...o,reversedAt:new Date().toISOString(),canUndo:false,undoneSentence:(r&&r.sentence)||null,justUndone:!!(r&&r.stayedCount)}:o); apiFetch("/imports").then(r=>setRows(Array.isArray(r.imports)?r.imports:[])).catch(()=>{}); }}/>

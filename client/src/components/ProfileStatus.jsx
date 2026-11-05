@@ -183,11 +183,13 @@ export function ClosenessLine({ status, onOpenDonor }) {
       {c.facts.map((f, i) => (
         <span key={i}>
           {i ? ", " : ""}
-          <Opens source={f.source} title={f.text.charAt(0).toUpperCase() + f.text.slice(1)} explanation={c.sentence} testid={`dp-closeness-fact-${i}`} onSelectDonor={onOpenDonor}
-            style={{ textDecoration: "underline dotted", textUnderlineOffset: 3, color: T.ink2 }}>{f.text}</Opens>
+          {/* POLISH-5: the sentence's period rides with its last fact, so it never wraps onto a line alone */}
+          <span data-testid={i === c.facts.length - 1 ? "dp-closeness-last" : undefined} style={i === c.facts.length - 1 ? { whiteSpace: "nowrap" } : undefined}>
+            <Opens source={f.source} title={f.text.charAt(0).toUpperCase() + f.text.slice(1)} explanation={c.sentence} testid={`dp-closeness-fact-${i}`} onSelectDonor={onOpenDonor}
+              style={{ textDecoration: "underline dotted", textUnderlineOffset: 3, color: T.ink2, whiteSpace: "normal" }}>{f.text}</Opens>{i === c.facts.length - 1 ? "." : ""}
+          </span>
         </span>
       ))}
-      {c.facts.length ? "." : ""}
       {status.meetingSet && <span data-testid="dp-meeting-set" style={{ fontWeight: 700, color: T.greenDk }}> {status.meetingSet.sentence}.</span>}
     </div>
   );

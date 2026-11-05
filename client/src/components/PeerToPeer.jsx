@@ -547,7 +547,7 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
           </div>
           {addingF && <AddFundraiserForm pageId={pageId} teams={d.teams} onMade={fundraiserMade} onCancel={() => setAddingF(false)} />}
           <div style={{ fontSize: 12, color: T.ink3, marginBottom: 10, lineHeight: 1.5 }}>
-            In the order the public leaderboard shows them. Raised is a live sum over the gifts each one brought in, in cents; click it for the gifts. Open a name for their gifts, their page and words to coach them with.
+            In the order the public leaderboard shows them. Raised is a live sum of the gifts each one brought in; click it to see them. Open a name for their gifts, their page and words to coach them with.
           </div>
           {!d.fundraisers.length && <div style={{ fontSize: 13, color: T.ink3 }}>
             Nobody has signed up yet. The button is on the public page, or add somebody here.

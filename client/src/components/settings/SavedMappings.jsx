@@ -3,6 +3,7 @@ import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { T, SectionLabel } from "../shared";
 import { displayDate } from "../../../../shared/displayDate";
+import { displayOrgDate } from "../../lib/orgDay";
 
 // IMPORT-5: the answers she gave about a file's columns, saved against its
 // headers so the next export from the same system asks nothing. Each column's
@@ -35,7 +36,7 @@ export function SavedMappings({isReadOnly}){
       {data.mappings.map(m=>(
         <div key={m.id} data-testid="saved-mapping" style={{borderTop:"1px solid "+T.bg3,padding:"12px 0"}}>
           <div style={{fontSize:13,color:T.ink,fontWeight:700}}>{m.sentence}</div>
-          <div style={{fontSize:11.5,color:T.ink3,marginTop:2}}>Saved {displayDate(String(m.savedAt||"").slice(0,10))}{m.by?` by ${m.by}`:""}</div>
+          <div style={{fontSize:11.5,color:T.ink3,marginTop:2}}>Saved {displayOrgDate(m.savedAt||"")}{m.by?` by ${m.by}`:""}</div>
           {m.columns.map(c=>(
             <div key={c.key} style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginTop:6,fontSize:13}}>
               <span style={{minWidth:140,color:T.ink}}>{c.header}</span>

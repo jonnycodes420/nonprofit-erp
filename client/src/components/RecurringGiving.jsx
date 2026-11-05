@@ -570,7 +570,7 @@ function RecoveryPanel({ onNavigate }) {
       {au.count > 0 && (
         <FigureContext.Provider value={{ openPerson: id => onNavigate && onNavigate("donors", { selectDonorId: id }) }}>
           <div data-testid="cards-auto-updated" style={{ fontSize: 14, color: T.ink, lineHeight: 1.6, marginBottom: 12 }}>
-            Cards updated automatically this year:{" "}
+            Cards updated automatically this year{": "}
             <Figure variant="inline" kind="count" value={au.count} label="Cards updated automatically" definition={au.definition}
               source={{ key: "cards-auto-updated", params: { since: au.since, measure: "count" } }} />
             , keeping{" "}

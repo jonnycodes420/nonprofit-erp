@@ -221,7 +221,7 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
               <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{it.title}{it.category ? <span style={{ fontWeight: 400, color: T.ink3 }}> · {it.category}</span> : null}{it.retired ? <span data-testid="auction-item-retired" style={{ fontWeight: 400, color: T.ink3 }}> · Retired, off the public page</span> : null}</div>
               <div style={{ fontSize: 12.5, color: T.ink3 }}>
                 {it.donorId ? <>Donated by <DonorLink id={it.donorId} onOpen={() => openPerson(it.donorId)}>{it.donorName}</DonorLink> · </> : "No donor named · "}
-                worth {money(it.fmv)} · starts {money(it.startingBid)}, +{money(it.bidIncrement)}{it.buyNow != null ? ` · buy now ${money(it.buyNow)}` : ""}
+                {`worth ${money(it.fmv)} · starts ${money(it.startingBid)}, +${money(it.bidIncrement)}${it.buyNow != null ? ` · buy now ${money(it.buyNow)}` : ""}`}
               </div>
               <div style={{ fontSize: 12.5, color: T.ink, marginTop: 2 }}>
                 {it.highBid == null ? (it.closed ? "Closed with no bids." : "No bids yet.")

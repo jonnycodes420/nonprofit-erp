@@ -9,6 +9,7 @@ import { apiFetch, API, getToken } from "../api";
 import { T, Card, Modal } from "./shared";
 import { displayDate } from "../../../shared/displayDate.js";
 import { countLabel } from "../../../shared/countWords.js";
+import { displayOrgDate } from "../lib/orgDay";
 
 const fmtMoney = c => "$" + (Number(c || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const plural = countLabel;
@@ -52,7 +53,7 @@ function checkedWords(run) {
   if (isNaN(at)) return null;
   const time = at.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   const sameDay = at.toDateString() === new Date().toDateString();
-  return `Checked ${sameDay ? time : `${displayDate(at.toISOString().slice(0, 10)) || at.toLocaleDateString()} at ${time}`}, ${RUN_WORDS[run.trigger] || "by hand"}.`;
+  return `Checked ${sameDay ? time : `${displayOrgDate(at) || at.toLocaleDateString()} at ${time}`}, ${RUN_WORDS[run.trigger] || "by hand"}.`;
 }
 
 function Line({ label, count, sentence, action, onOpen, onAction, open, testid, first }) {
@@ -293,7 +294,8 @@ export function CompareModal({ pair, onClose, onMerged, undoWhere = "below" }) {
     const total = Object.values(m).reduce((a, b) => a + b, 0);
     const names = Object.entries(m).filter(([k]) => !HIDDEN_TABLES.has(k.split(".")[0]))
       .map(([k, n]) => { const [one, many] = TABLE_WORDS[k.split(".")[0]] || ["linked record", "linked records"]; return plural(n, one, many); });
-    return total ? `Moves to the kept record: ${names.join(", ")}.` : "Nothing else points at the other record.";
+    // POLISH-5: only rows she can't see (scores, logs) is not "Moves to the kept record: ."
+    return names.length ? `Moves to the kept record: ${names.join(", ")}.` : "Nothing else points at the other record.";
   }, [d, otherId]);
   const merge = async () => {
     setBusy(true); setErr(null);
@@ -368,7 +370,7 @@ function MergesPanel({ onDone, isReadOnly }) {
         <div key={m.id} style={rowStyle}>
           <div style={{ flex: "1 1 240px", fontSize: 13, color: T.ink }}>
             <b>{m.merged_name}</b> into <b>{m.kept_name}</b>
-            <div style={{ fontSize: 12, color: T.ink3 }}>{displayDate(new Date(m.created_at))} by {m.created_by_name || "staff"}{m.bulk ? ", in a bulk merge" : ""}</div>
+            <div style={{ fontSize: 12, color: T.ink3 }}>{displayOrgDate(m.created_at)} by {m.created_by_name || "staff"}{m.bulk ? ", in a bulk merge" : ""}</div>
           </div>
           <button style={btn(false, isReadOnly)} disabled={isReadOnly} onClick={() => undo(m)}>Undo</button>
         </div>

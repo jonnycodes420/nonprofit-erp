@@ -36,7 +36,7 @@ export function savePledgeSchedule(pledgeId, s) {
 }
 // The rows the server will write, for the preview and the edit's schedule PUT.
 export function schedulePlan(s, amount) {
-  const cents = Math.round((Number(amount) || 0) * 100);
+  const cents = Math.round((Number(String(amount == null ? "" : amount).replace(/[$,\s]/g, "")) || 0) * 100);   // "15,000.00" reads as money (POLISH-5)
   if (!s || !(cents > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String(s.firstDue || ""))) return [];
   if (s.plan !== "many") return [{ seq: 1, dueDate: s.firstDue, amountCents: cents }];
   return generateInstallments({ amountCents: cents, frequency: s.frequency, count: Math.max(2, Number(s.count) || 2), firstDue: s.firstDue });

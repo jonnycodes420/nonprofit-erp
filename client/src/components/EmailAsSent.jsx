@@ -113,10 +113,10 @@ export function EmailsReceived({ donorId, firstName }) {
   return (
     <section data-testid="dp-emails-received" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
       <h2 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600, color: T.ink }}>
-        Emails sent to {firstName || "them"}
+        {`Emails sent to ${firstName || "them"}`}
       </h2>
       {rows.length === 0
-        ? <div style={{ fontSize: 13, color: T.ink3 }}>No campaign, sequence, journey email or thank-you on file for {firstName || "this person"} yet.</div>
+        ? <div style={{ fontSize: 13, color: T.ink3 }}>{`No campaign, sequence, journey email or thank-you on file for ${firstName || "this person"} yet.`}</div>
         : rows.map(e => (
           <button key={e.kind + e.ref} type="button" data-testid="dp-email-received-row" data-kind={e.kind} onClick={() => setOpen(e.open.path)}
             style={{ display: "flex", flexWrap: "wrap", width: "100%", columnGap: 12, rowGap: 2, alignItems: "baseline", textAlign: "left", background: "none", border: "none", borderTop: "1px solid " + T.bg3, padding: "8px 0", cursor: "pointer", font: "inherit" }}>

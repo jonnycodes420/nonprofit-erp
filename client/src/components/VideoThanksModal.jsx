@@ -14,6 +14,7 @@ import { errorMessage } from "../lib/domainError";
 import { displayDateShort } from "../../../shared/displayDate";
 
 import { T, Modal } from "./shared";
+import { displayOrgDateShort } from "../lib/orgDay";
 
 // ── Shared consts (above every reader) ─────────────────────────────────────
 const MAX_SECONDS = 120;
@@ -197,8 +198,8 @@ export default function VideoThanksModal({ donor, onClose, onSaved }) {
             <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, marginBottom: 6 }}>Recorded before</div>
             {past.slice(0, 5).map(v => (
               <div key={v.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13, color: T.ink, padding: "4px 0", flexWrap: "wrap" }}>
-                <span>{displayDateShort(String(v.createdAt || "").slice(0, 10))}{v.createdByName ? `, ${v.createdByName}` : ""}</span>
-                <span style={{ color: T.ink3 }}>{v.firstViewedAt ? `Watched ${displayDateShort(String(v.firstViewedAt).slice(0, 10))}` : "Not watched yet"}</span>
+                <span>{displayOrgDateShort(v.createdAt || "")}{v.createdByName ? `, ${v.createdByName}` : ""}</span>
+                <span style={{ color: T.ink3 }}>{v.firstViewedAt ? `Watched ${displayOrgDateShort(v.firstViewedAt)}` : "Not watched yet"}</span>
                 <a href={v.previewUrl} target="_blank" rel="noreferrer" style={{ color: T.greenDk, fontWeight: 600 }}>Open</a>
               </div>
             ))}

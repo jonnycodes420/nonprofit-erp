@@ -57,7 +57,7 @@ export default function SupportBanner({ support: initial, orgName }) {
       style={{ background: BRASS, color: INK, borderBottom: "2px solid " + INK, padding: "10px 24px",
                display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", fontSize: 13.5, lineHeight: 1.45 }}>
       <span style={{ flex: "1 1 260px", minWidth: 0 }}>
-        <strong>{name}</strong> is viewing <strong>{org}</strong>.{" "}
+        <strong>{name}</strong> is viewing <strong>{org}</strong>{". "}
         {writable
           ? "Changes are on. Each change is logged in their Activity as Steward support."
           : "Read-only: nothing you do here changes their account. This visit is in their Activity."}

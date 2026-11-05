@@ -66,7 +66,7 @@ export function EventStory({ s, style, noGiftShownBelow }) {
       {/* FIX-58 + EVENTS-3: each count is parties, once, and the line shows they add up */}
       {s.addsUp ? (
         <div data-testid="event-story-adds-up" style={{ gridColumn: "1 / -1", fontSize: 13, color: T.ink, lineHeight: 1.6 }}>
-          {inline("attended", "Came")} came: {inline("cameGave", "Came and gave")} gave and {inline("cameDidntGive", "Came, didn't give")} didn't.{" "}
+          {inline("attended", "Came")} came: {inline("cameGave", "Came and gave")} gave and {inline("cameDidntGive", "Came, didn't give")} didn't{". "}
           {inline("gave", "Gave")} gave or pledged: {inline("cameGave", "Came and gave")} who came and {inline("gaveNotCame", "Gave, didn't come")} who didn't.
         </div>
       ) : null}

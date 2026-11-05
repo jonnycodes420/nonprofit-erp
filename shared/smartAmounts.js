@@ -219,7 +219,7 @@ export function suggestedAskCents({ largestCents = 0, lastThreeCents = [], stepU
   const ask = rising && stepUp ? (rungAbove(rung, 1) ?? base) : base;
   const bits = [];
   if (largest) bits.push(`Largest gift ${dollars(largest)}`);
-  if (avgThree) bits.push(`last ${three.length === 1 ? "gift was" : `${three.length} averaged`} ${dollars(avgThree)}${rising ? " and rising" : ""}`);
+  if (avgThree) bits.push(`last ${three.length === 1 ? "gift was" : `${three.length} averaged`} ${three.length === 1 ? dollars(avgThree) : wholeDollars(avgThree)}${rising ? " and rising" : ""}`);
   return {
     askCents: ask,
     // THE MATH IN ONE LINE, which is the brief's own requirement and the
@@ -259,6 +259,11 @@ export function monthlyAskCents({ usualGiftCents = 0, giftsPerYear = 0, cadenceW
 // the most expensive line on the web under load (Insights reads every gift).
 const USD_WHOLE = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const USD_CENTS = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// POLISH-5 · whole dollars for a sentence or a summary ("last 3 averaged
+// $10,833"). Cents belong to one gift or one receipt, which is `dollars`.
+export function wholeDollars(cents) {
+  return USD_WHOLE.format(Math.round((Number(cents) || 0) / 100));
+}
 export function dollars(cents) {
   const c = Math.round(Number(cents) || 0);
   return (c % 100 === 0 ? USD_WHOLE : USD_CENTS).format(c / 100);

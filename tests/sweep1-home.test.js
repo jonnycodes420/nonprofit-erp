@@ -79,7 +79,7 @@ const gift = (k, amount, date) => q(`INSERT INTO gifts (id,org_id,donor_id,amoun
     const item = name => ye.items.find(i => i.name === name);
     const found = item("Marrow Family Foundation");
     ok("§1 the foundation that gave $25,577.60 this fiscal year is asked last December's $50,000 less it, not $50,000",
-      !!found && found.how.ask && found.how.ask.cents < 5000000 && /less the \$25,577\.60 given since/.test(found.how.ask.words), found && found.how.ask);
+      !!found && found.how.ask && found.how.ask.cents < 5000000 && /less the \$25,578 given since/.test(found.how.ask.words), found && found.how.ask);
     ok("§1 its card says what it gave this fiscal year", !!found && /\$25,577\.60 since/.test(found.what || found.facts.map(f => f.join(" ")).join(" ")), found && (found.what || found.facts));
     ok("§6 $50,000 less $25,577.60 ($24,422.40) asks $24,000, and says it was rounded",
       !!found && found.how.ask.cents === 2400000 && /^Ask \$24,000: .*, rounded\.$/.test(found.how.ask.words), found && found.how.ask);

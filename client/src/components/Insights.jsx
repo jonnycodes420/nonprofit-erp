@@ -16,6 +16,7 @@ import { DriftList } from "./home/DriftList";   // HOME-6
 import EventRaised from "./EventRaised";   // HOME-3: the first look's events
 import { countLabel } from "../../../shared/countWords.js";
 import { displayDate } from "../../../shared/displayDate.js";   // SWEEP-1: a written date, never "2025-12-19"
+import { moveSentence } from "../lib/moveSentence";
 
 const SERIF = "'DM Serif Display', Georgia, serif";
 const money = c => {
@@ -725,9 +726,7 @@ export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn,
       {firstName ? `Nothing due for ${firstName} right now.` : "Nothing due right now."}</div>;
   }
   const how = m.item.how || {};
-  const sentence = [how.channel, how.when && how.when.words].filter(Boolean).length
-    ? `${m.title}: ${String(how.channel || "reach out").toLowerCase()}${how.when && how.when.words ? `, ${how.when.words}` : ""}.`
-    : `${m.title}.`;
+  const sentence = moveSentence(how, firstName, m.title);
   const copy = () => { try { navigator.clipboard.writeText(how.say || ""); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* clipboard refused */ } };
   return (
     <section data-testid="profile-next-move" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "18px 22px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -742,7 +741,7 @@ export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn,
             : how.say ? <button type="button" data-testid="dp-next-move-copy" onClick={copy} style={{ background: T.greenDk, color: T.white, border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", minHeight: 40 }}>{copied ? "Copied" : "Copy the words"}</button> : null)}
           <OutcomeButtons card={{ kind: m.kind }} items={[m.item]} onChanged={load} isReadOnly={isReadOnly} />
         </div>
-        {how.ask && <div data-testid="dp-next-move-ask" style={{ fontSize: 13.5, color: T.ink, fontWeight: 700 }} title={how.ask.rule}>Ask: {how.ask.words}</div>}
+        {how.ask && <div data-testid="dp-next-move-ask" style={{ fontSize: 13.5, color: T.ink, fontWeight: 700 }} title={how.ask.rule}>{/^Ask\b/.test(how.ask.words) ? how.ask.words : `Ask: ${how.ask.words}`}</div>}
       </div>
     </section>
   );

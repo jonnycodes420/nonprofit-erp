@@ -28,12 +28,14 @@ import BeforeYourMeeting from "./BeforeYourMeeting";   // VOICE-3
 import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
 import { civilDayOf, orgTodayPlus, orgTodayCivil } from "../lib/orgToday";
+import { orgDayOf } from "../lib/orgDay";
 import { noteFields } from "../../../shared/meetingNote.js";
 import { TIMELINE_FILTERS, loadTimelinePrefs, saveTimelinePrefs, isMassEmail, interactionBucket,
   TimelineListView, AttachmentChips, AttachButton, stageMoveOf } from "./ProfileTimelineParts";
 import { countLabel, plural } from "../../../shared/countWords.js";
 // PERF-2: Home's meetings card and the small pieces it shares with these panels.
 import { DARK_BRASS, SERIF, btnPrimary, btnOutline, input, dayKey, relDay, meetingNoun } from "./MorningBrief";
+import { shownNote } from "../lib/internalLabels";
 export { relDay, meetingNoun, AddToRecord, MorningBrief } from "./MorningBrief";
 
 const CHIP_EDGE = T.bg3;           // the artboards draw a hairline one shade off bg3; bg3 is the token
@@ -217,7 +219,7 @@ export function buildTimelineItems({ rel, gifts = [], pledges = [], interactions
       else items.push({ kind: "meeting", bucket: "conversation", id: "i:" + m.id, date: m.date, logged: { ...m, ...(byId[m.id] || {}), date: m.date } });
     }
   } else {
-    for (const m of rel.past || []) items.push({ kind: "meeting", bucket: "conversation", id: "c:" + m.id, date: m.date || String(new Date(m.startsAt).toISOString()).slice(0, 10), m });
+    for (const m of rel.past || []) items.push({ kind: "meeting", bucket: "conversation", id: "c:" + m.id, date: m.date || orgDayOf(m.startsAt), m });   // POLISH-5: the org's day, never the UTC one
     for (const i of interactions || []) {
       if (i.type !== "meeting" || calendarMeetingIds.has(i.id)) continue;
       let meta = {}; try { meta = typeof i.metadata === "string" ? JSON.parse(i.metadata || "{}") : (i.metadata || {}); } catch {}
@@ -446,7 +448,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], int
           </div>;
         } else if (it.kind === "gift") {
           const g = it.g;
-          if (isOpen) extra = <div style={{ fontSize: 14, color: T.ink3, marginTop: 8 }}>{g.type ? `${g.type} · ` : ""}{displayDate(g.date)}{g.notes ? ` · ${g.notes}` : ""}</div>;
+          if (isOpen) extra = <div style={{ fontSize: 14, color: T.ink3, marginTop: 8 }}>{g.type ? `${g.type} · ` : ""}{displayDate(g.date)}{shownNote(g.notes) ? ` · ${shownNote(g.notes)}` : ""}</div>;
         } else if (it.kind === "file" && it.f) {
           extra = <AttachmentChips files={[it.f]} canRemove={canWrite}/>;
         }

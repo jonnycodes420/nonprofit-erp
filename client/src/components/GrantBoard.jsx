@@ -149,7 +149,7 @@ export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey 
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {items.map(card)}
-                  {!items.length && <div style={{ fontSize: 12, color: T.ink3, padding: "4px 2px" }}>Nothing at {s.label}.</div>}
+                  {!items.length && <div style={{ fontSize: 12, color: T.ink3, padding: "4px 2px" }}>{`Nothing at ${s.label}.`}</div>}
                 </div>
               </div>);
           })}
