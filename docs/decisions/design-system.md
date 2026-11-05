@@ -105,6 +105,14 @@ Read this when you touch anything that reaches a screen: colours, tokens, modals
   reaches a screen, and LYBUNT/SYBUNT appear only beside their plain meaning. An all-caps imported
   surname displays in title case (`shared/displayName.js`, display only). `tests/polish2-voice.test.js`
   guards all of it.
+- **A table's columns (TABLE-1).** Every column of the Donors table declares a default width, a min
+  width and an alignment in `COLUMN_SPEC` (`client/src/components/DonorColumns.jsx`): text left,
+  money and counts right in tabular figures, short badges centred. Header and cells share one cell
+  box (14 px each side), a heading is one line (cut short with its name on hover), a cell is one
+  line unless its column says two (Donor, Last gift), and then every row uses two. Widths are fixed
+  tracks: resizing stops at the min, the table scrolls sideways with Donor pinned, it never
+  squeezes a neighbour. Assigning lives only in the Owner column. `tests/table1-columns-clean.test.js`
+  guards it at 1440, 1280 and 1024.
 
 ## Gotchas
 - **Capture the dialog's opener during render, not in `useEffect`.** React applies a child's `autoFocus` at
