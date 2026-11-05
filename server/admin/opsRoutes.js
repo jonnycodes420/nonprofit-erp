@@ -2,8 +2,9 @@
 //
 //   GET /ops           what the page reads: prod health, the board, builds, the
 //                      walk trend and customers, in one answer
+//   /ops/map, /ops/checks   DEVBOARD-2, the Map tab (opsMapRoutes.js)
 //
-// Read-only. It never writes a row (the worker's opsBoardRefresh writes the one
+// GET /ops is read-only. It never writes a row (the worker's opsBoardRefresh writes the one
 // cached snapshot), never shows a donor, a secret, an address or a connection
 // string. Anyone who is not a live super-admin gets 404, not 403: the page does
 // not exist for them. Each section carries its own ok/error, so a source that
@@ -67,7 +68,9 @@ function mount(ctx) {
     };
 
     let board;
-    try { board = { ok: true, ...BOARD.summarize(BOARD.readBoard()) }; }
+    // DEVBOARD-2: Jonathan's own checks (ops_checks) are merged into the walk's board.
+    const checks = await require("./opsMapRoutes").readChecks(query).catch(() => []);
+    try { board = { ok: true, ...BOARD.summarize(require("./opsMap").mergeBoard(BOARD.readBoard(), checks)) }; }
     catch (e) { board = { ok: false, error: `The board file could not be read: ${e.message}` }; }
     const builds = gh.builds || none;
     if (board.ok && builds.ok) {
@@ -93,6 +96,9 @@ function mount(ctx) {
       health, board, builds, customers,
     });
   }));
+
+  // DEVBOARD-2: the Map tab and Jonathan's checks, behind this same door.
+  require("./opsMapRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter });
 
   // The worker's job: refresh the cached snapshot every five minutes. Queued,
   // so it runs on the worker (or the one process locally), never in a request.
