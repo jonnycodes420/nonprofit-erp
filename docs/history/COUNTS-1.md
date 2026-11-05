@@ -29,3 +29,11 @@ Two strict walks on a demo org (4–5 Nov) found counts that disagreed with the 
 
 Tests: `tests/counts1.test.js` (with a browser leg) and a `counts` pass in TRUTH-1's truth check
 (`tests/lib/countsKey.js`, `tests/lib/counts1Item3.js`).
+- **GET /donors/counts 17.6 s p95 under load.** It built the whole `donorStatus.statusSql` result to read two
+  columns, and ran the per-person lapse lookups for every row three times. Now one pass over each giver's
+  latest gift, with the linked-person and pledge lookups set-wise (`server/donors/peopleCounts.js`,
+  `lapse.js unitSetsSql`); numbers identical on 17 orgs. LOAD-1 run locally: p95 422 → 315 ms; 25k org idle
+  370–640 → 131–150 ms.
+
+Found on the walk: Communications said "You can reach 1,210" beside audiences that each said 0 can get a
+campaign email (the demo never sends). The header is now the "Everyone with an email" audience's own numbers.

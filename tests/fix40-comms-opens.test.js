@@ -263,7 +263,9 @@ async function main() {
           if (p.how === "rows" && p.tab === "audience" && /audience-seg"?\]$/.test(p.sel)) {
             ok(`§dead ${p.tab}: ${p.what} shows every person in it`, await page.locator("[data-testid=audience-row]").count() > 0);
           } else if (p.how === "rows") {
-            const opened = await page.locator('[data-figure-row], [data-person-row], [role=dialog]').count();
+            // COUNTS-1: an audience's number is the builder's count and opens the
+            // builder on that audience, whose "Who it goes to" names who is left out.
+            const opened = await page.locator('[data-figure-row], [data-person-row], [role=dialog], [data-testid=builder-who]').count();
             const moved = !/subtab=(hub|audience)/.test(page.url()) || opened > 0;
             ok(`§dead ${p.tab}: ${p.what} opens its rows`, opened > 0 || moved, [page.url(), opened]);
           } else if (p.how === "page") {

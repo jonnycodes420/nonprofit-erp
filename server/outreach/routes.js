@@ -804,7 +804,10 @@ async function audienceRoster(orgId) {
     audiences: list.map((x, i) => ({ ...x, withEmail: x.count, count: reach[i].reach, inSegment: reach[i].inSegment })),
     // The reach line. DISTINCT people, not the sum of the audiences — a
     // volunteer who gives is in two of them and must be one person here.
-    reach: donors.length,
+    // COUNTS-1: it is "Everyone with an email"'s builder count, the same number
+    // its card shows; withEmail is everyone on file with an address.
+    reach: (() => { const i = list.findIndex(x => x.mode === "everyone"); return i >= 0 ? reach[i].reach : donors.length; })(),
+    withEmail: (() => { const i = list.findIndex(x => x.mode === "everyone"); return i >= 0 && reach[i].inSegment != null ? reach[i].inSegment : donors.length; })(),
   };
 }
 

@@ -89,7 +89,7 @@ function pick(F, G) {
 // received, a note marked as a conversation, an event they came to), the same
 // rule About's sentence and Engagement's read. It was the newer of Last met
 // and Last email, so a call logged today still read "none yet".
-const CONTACT_WORD = { Call: "Call", Meeting: "Met", "Meeting, from a calendar": "Met", Email: "Email", Ask: "Ask", Stewardship: "Stewardship touch", Note: "Note", Event: "Came to an event" };
+const CONTACT_WORD = { Call: "Call", Meeting: "Met", "Meeting, from a calendar": "Met", Email: "Email", Ask: "Ask", Stewardship: "Stewardship touch", Note: "Talked (noted)", Event: "Came to an event" };
 export function lastContactOf(F, today, sep = ". ") {
   const f = F.contact || null;
   const u = f && f.value != null && f.under && f.under.date ? f.under : null;

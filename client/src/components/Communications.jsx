@@ -1906,7 +1906,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   {hub === null && !hubErr ? "Counting who you can reach…"
                     : hubErr ? "Could not load who you can reach, " + hubErr
                     : hub.reach === 0
-                      ? "Nobody on file has an email address yet. Add one to a person and they become reachable here."
+                      ? (hub.withEmail ? `${hub.withEmail.toLocaleString()} ${hub.withEmail === 1 ? "person has" : "people have"} an email address; none can get a campaign email yet.`
+                        : "Nobody on file has an email address yet. Add one to a person and they become reachable here.")
                       : <>You can reach <strong style={{ color: T.ink }}>{hub.reach.toLocaleString()}</strong>{" "}
                          {hub.reach === 1 ? "person" : "people"} across{" "}
                          <strong style={{ color: T.ink }}>{hub.audiences.length}</strong>{" "}
