@@ -15,6 +15,7 @@ import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { VolunteerPanel } from "../VolunteerPanel";
 import { FunderPanel } from "../FunderPanel";
+import { ReceiptCell, YearEndPanel } from "./ReceiptsAndStatements";
 import { ProfileMoreNumbers } from "../ProfileHeaderFigures";
 import MetricBreakdownPanel from "../MetricBreakdownPanel";
 import { censusById } from "../../../../shared/numberCensus.js";
@@ -27,7 +28,7 @@ import { pledgeMoneyWords } from "../../../../shared/pledgeWords.js";
 import { EditedMarker } from "../EditHistory";
 import { stepAgainstProposals } from "../../../../shared/nextStepAgree.js";
 
-function GivingTab({acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addPgOpen,addPlannedGift,addPledge,addPledgeOpen,addToPipeline,askAmt,askName,askOpen,campaigns,closeAsk,deleteGift,deletePlannedGift,deletePledge,dismissSuggestion,dismissedSug,donor,downloadReceiptPdf,dpItems,dpTab,exportGiftsCSV,figs,fundAffinity,fundLoading,giftCfDefs,giftCfEditStr,giftCountReal,giftEditForm,giftEditId,giftErr,giftLoading,giftMoreOpen,giftPeopleQ,giftReadErr,giftSaving,gifts,giftsFull,hasDesignation,household,isAdmin,isReadOnly,isTeam,loadGiftsFull,lockMajor,moveSuggestions,moves,onNavigate,onStageChange,openProposals,opps,pgForm,pgOpen,pgSaving,pipelineAdded,plannedGifts,pledgeEdit,pledgeForm,pledgeResendBusyId,pledgeResentIds,pledgeSaving,pledges,propData,proposalsKnown,receiptBusyId,receiptForGift,receiptsEnabled,recurResendBusy,recurResendSent,recurringSub,refundRows,reloadProps,resendPledgeReminder,resendRecurringLink,saveGiftEdit,savePledgeEdit,sc,scores,sendReceipt,sendYearEndStatement,seqId,seqLoading,seqOpen,seqToast,sequences,setAddGiftForm,setAddGiftOpen,setAddPgOpen,setAddPledgeOpen,setAskAmt,setAskName,setAskOpen,setDpTab,setGiftEditForm,setGiftEditId,setGiftLoading,setGiftMoreOpen,setHhModalOpen,setPgForm,setPgOpen,setPledgeEdit,setPledgeForm,setPledgeStatus,setRelatedOpen,setSeqId,setSeqLoading,setSeqOpen,setSeqToast,setShowYearEnd,setYearDrill,setYearEndYear,showYearEnd,softCredit,status,toggleDesignation,yearDrill,yearEndBusy,yearEndErr,yearEndYear}){
+function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addPgOpen,addPlannedGift,addPledge,addPledgeOpen,addToPipeline,askAmt,askName,askOpen,campaigns,closeAsk,deleteGift,deletePlannedGift,deletePledge,dismissSuggestion,dismissedSug,donor,downloadReceiptPdf,dpItems,dpTab,exportGiftsCSV,figs,fundAffinity,fundLoading,giftCfDefs,giftCfEditStr,giftCountReal,giftEditForm,giftEditId,giftErr,giftLoading,giftMoreOpen,giftPeopleQ,giftReadErr,giftSaving,gifts,giftsFull,hasDesignation,household,isAdmin,isReadOnly,isTeam,loadGiftsFull,lockMajor,moveSuggestions,moves,onNavigate,onStageChange,openProposals,opps,pgForm,pgOpen,pgSaving,pipelineAdded,plannedGifts,pledgeEdit,pledgeForm,pledgeResendBusyId,pledgeResentIds,pledgeSaving,pledges,propData,proposalsKnown,receiptBusyId,receiptForGift,receiptsEnabled,recurResendBusy,recurResendSent,recurringSub,refundRows,reloadProps,resendPledgeReminder,resendRecurringLink,saveGiftEdit,savePledgeEdit,sc,scores,sendReceipt,sendYearEndStatement,seqId,seqLoading,seqOpen,seqToast,sequences,setAddGiftForm,setAddGiftOpen,setAddPgOpen,setAddPledgeOpen,setAskAmt,setAskName,setAskOpen,setDpTab,setGiftEditForm,setGiftEditId,setGiftLoading,setGiftMoreOpen,setHhModalOpen,setPgForm,setPgOpen,setPledgeEdit,setPledgeForm,setPledgeStatus,setRelatedOpen,setSeqId,setSeqLoading,setSeqOpen,setSeqToast,setShowYearEnd,setYearDrill,setYearEndYear,showYearEnd,softCredit,status,toggleDesignation,yearDrill,yearEndBusy,yearEndErr,yearEndYear}){
   return <>
           {/* ── PROFILE-2 · GIVING: the ask, then gifts and pledges, Funds, and
               Asks & pipeline, one tab. */}
@@ -257,21 +258,7 @@ function GivingTab({acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addP
               </div>
             )}
 
-            {showYearEnd&&receiptsEnabled&&(
-              <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px"}}>
-                <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:10}}>Year-End Giving Statement</div>
-                <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                  <span style={{fontSize:11,color:T.ink3}}>Tax year</span>
-                  <input type="number" value={yearEndYear} onChange={e=>setYearEndYear(e.target.value)} style={{width:100,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"6px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
-                  <button onClick={sendYearEndStatement} disabled={yearEndBusy} style={{background:T.greenDk,border:"none",borderRadius:6,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:yearEndBusy?"not-allowed":"pointer"}}>
-                    {yearEndBusy?"Generating…":"Generate & email"}
-                  </button>
-                  <button onClick={()=>setShowYearEnd(false)} style={{background:T.bg,border:"none",borderRadius:6,padding:"7px 10px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
-                </div>
-                {yearEndErr&&<div style={{fontSize:11,color:T.terra700,marginTop:8}}>{yearEndErr}</div>}
-                <div style={{fontSize:11,color:T.ink3,marginTop:8,lineHeight:1.5}}>Consolidates every {yearEndYear} gift into one statement, emailed to the donor and superseding any prior statement for that year.</div>
-              </div>
-            )}
+            {showYearEnd&&receiptsEnabled&&<YearEndPanel rc={rc} donor={donor} isReadOnly={isReadOnly}/>}
 
             {/* Recurring gift health — failed-payment recovery status */}
             {recurringSub&&(()=>{
@@ -439,15 +426,7 @@ function GivingTab({acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addP
                             <td style={{padding:"9px 12px",color:T.ink3}}>{g.payment_method||"Not recorded"}</td>
                             <td style={{padding:"9px 12px",textAlign:"center"}}>{g.acknowledgement_sent?<span style={{color:T.greenDk,fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:12}}>Not yet</span>}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
-                              {(()=>{
-                                const r=receiptForGift(g.id);
-                                // FIX-15 Part 3: a tick means EMAILED. A receipt the provider refused is
-                                // issued (it has a number and a PDF) but not sent, and says so in brass.
-                                if(r) return <button onClick={()=>downloadReceiptPdf(r.id,`receipt-${r.receipt_number}.pdf`)} title={r.sent_at?undefined:"Issued, but the email did not go. Download the PDF to send it yourself."} style={{background:"none",border:"none",color:r.sent_at?T.greenDk:T.gold700,fontSize:11,fontWeight:700,cursor:"pointer",padding:"2px 4px"}}>{r.sent_at?`Receipt ✓ #${r.receipt_number}`:`Receipt #${r.receipt_number}, not emailed`}</button>;
-                                if(!receiptsEnabled) return <span style={{color:T.ink3,fontSize:12}}>Off</span>;
-                                const busy=receiptBusyId===g.id;
-                                return <button onClick={()=>sendReceipt(g.id)} disabled={busy||isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":""} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:6,color:isReadOnly?T.ink3:T.greenDk,fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",padding:"3px 8px",opacity:busy?0.6:1}}>{busy?"Sending…":"Send receipt"}</button>;
-                              })()}
+                              <ReceiptCell g={g} rc={rc} isReadOnly={isReadOnly}/>
                             </td>
                             <td style={{padding:"9px 12px",color:T.ink3,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
                               title={[g.notes,...giftCfDefs.map(d=>{const v=(g.custom_fields||{})[d.key];return (v!==null&&v!==undefined&&v!=="")?`${d.label}: ${renderCustomValue(d,v)}`:null;}).filter(Boolean)].filter(Boolean).join(" · ")}>

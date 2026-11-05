@@ -305,7 +305,13 @@ export function CompareModal({ pair, onClose, onMerged, undoWhere = "below" }) {
   };
   if (!d) return <Modal onClose={onClose} title="Compare">{err || "Loading both records…"}</Modal>;
   const K = d.records[keptId], O = d.records[otherId];
-  const differing = d.fields.filter(f => show(K[f.key]) !== show(O[f.key]) && (show(K[f.key]) || show(O[f.key])));
+  // FLOWS-1 item 10: the address is one block (ADDRESS-1), shown whole (Street,
+  // Apt, City, State, ZIP) whenever either record has one, even where the two
+  // agree, so every compare, from a profile or the Donors list, shows the
+  // street that will be kept. Other fields show where they differ.
+  const hasAddr = ADDR.some(k => show(K[k]) || show(O[k]));
+  const differing = d.fields.filter(f => (hasAddr && ADDR.includes(f.key) && (f.key !== "country" || show(K[f.key]) || show(O[f.key])))
+    || (show(K[f.key]) !== show(O[f.key]) && (show(K[f.key]) || show(O[f.key]))));
   const opt = (f, side, rec) => {
     const v = fieldVal(rec, f.key);
     const on = (choices[f.key] || "kept") === side;

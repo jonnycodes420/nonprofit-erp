@@ -45,7 +45,8 @@ export function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
     ["Email",d=>d.email||"Not set"],["Phone",d=>d.phone||"Not set"],
     ["Total giving",d=>fmtMoney(d.total_giving)],["Gifts",d=>d.gift_count||0],
     ["Last gift",d=>d.last_gift_date||"Not set"],["Stage",d=>d.stage||"Not set"],
-    ["Location",d=>[d.city,d.state].filter(Boolean).join(", ")||"Not set"],
+    // FLOWS-1 item 10: the same address fields as the profile's merge compare (it showed no street)
+    ["Street",d=>d.address||"Not set"],["Apt",d=>d.address2||"Not set"],["City",d=>d.city||"Not set"],["State",d=>d.state||"Not set"],["ZIP",d=>d.zip||"Not set"],
     ["Added",d=>(d.created_at||"").split("T")[0]||"Not set"],
   ];
 

@@ -122,14 +122,18 @@ function Does({ card, items, onNavigate, isReadOnly, onDone }) {
         return;
       }
       if (d.action === "task") {
-        let n = 0;
+        // FLOWS-1 item 9: one open task of this kind per person, however many
+        // times this is pressed or however often they appear in the list.
+        let n = 0, had = 0;
+        const seen = new Set();
         for (const it of items.slice(0, 50)) {
-          if (!it.lead) continue;
+          if (!it.lead || seen.has(it.lead)) continue;
+          seen.add(it.lead);
           const due = (it.how && it.how.when && it.how.when.from) || today();
-          await apiFetch("/tasks", { method: "POST", body: JSON.stringify({ title: `${card.title}: ${it.name}${it.how && it.how.ask && it.how.ask.words ? ". " + it.how.ask.words : ""}`.slice(0, 240), due, type: "donor", donorId: it.lead, priority: "medium" }) });
-          n++;
+          const r = await apiFetch("/tasks", { method: "POST", body: JSON.stringify({ kindKey: card.title, title: `${card.title}: ${it.name}${it.how && it.how.ask && it.how.ask.words ? ". " + it.how.ask.words : ""}`.slice(0, 240), due, type: "donor", donorId: it.lead, priority: "medium" }) });
+          if (r && r.existing) had++; else n++;
         }
-        setMsg(`${countLabel(n, "task")} made, each dated for when to reach out.`);
+        setMsg(`${countLabel(n, "task")} made, each dated for when to reach out.${had ? ` ${countLabel(had, "person", "people")} already had one open, so nothing was added for them.` : ""}`);
         return;
       }
       if (d.action === "group" || d.action === "call_list") {
