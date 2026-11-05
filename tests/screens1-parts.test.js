@@ -45,6 +45,8 @@ const FAKE = {
   "/legal/dpa": { published: true },
   "/settings/giving-levels": { midCents: 100000, majorCents: 500000 },
   "/settings/inbound-email": { address: "log-wrenfield@log.stewardapp.dev", unmatched: [] },
+  // HOME-6 hotfix: a new org's first Home read, before its Insights are built (INSIGHTS-2's answer).
+  "/insights": { asOf: "2026-11-05", preparing: true, stale: false, sentence: "Insights are being prepared. They will be here in a moment.", cards: [], ladder: [], stats: {}, deck: { tabs: [], preparing: true } },
   "/import-mappings": { mappings: [{ id: "m1", name: "Wrenfield gift export", columns: [{ key: "gift date", header: "Gift Date", role: "date" }, { key: "amount", header: "Amount", role: "amount" }] }], roles: [{ key: "date", label: "Gift date" }, { key: "amount", label: "Amount" }] },
 };
 
