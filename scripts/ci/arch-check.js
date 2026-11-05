@@ -120,6 +120,40 @@ const RHYTHM_COPY = new RegExp([
 // line that deletes from donor_scores names donor_id on that line.
 const SCORE_DELETE = /DELETE\s+FROM\s+donor_scores\b(?![^\n]*\bdonor_id\b)/i;
 
+// SPLIT-2: the files cut down to a shell. Each is capped at the size the split
+// left it; new code goes in its parts (server/db/, components/profile/).
+const SHELLS = new Set(["server.js", "db.js", "client/src/components/DonorProfile.jsx"]);
+
+// SPLIT-2 · A WRITE NOBODY ELSE SEES. server.js's statements live in
+// server/boot/, and each module reads another's names through its own copy,
+// refreshed by __boot.share(). A write to a module-scope name that is not
+// followed at once by `__share({ name })` leaves every other module reading
+// the old value: no error, just a stale status or an import that never landed.
+const isBootModule = f => /^server\/boot\/(helpers|steps)-\d+\.js$/.test(f);
+function unsharedWrites(f) {
+  const ROOTDIR = ROOT;
+  const espree = require(path.join(ROOTDIR, "client", "node_modules", "espree"));
+  const es = require(path.join(ROOTDIR, "client", "node_modules", "eslint-scope"));
+  const ast = espree.parse(read(f), { ecmaVersion: "latest", sourceType: "script", range: true });
+  const sm = es.analyze(ast, { ecmaVersion: 2022, sourceType: "script", nodejsScope: true, childVisitorKeys: null });
+  const parents = new Map();
+  (function mark(n, p) { if (!n || typeof n.type !== "string") return; parents.set(n, p);
+    for (const k of Object.keys(n)) { const v = n[k]; if (Array.isArray(v)) v.forEach(c => mark(c, n)); else if (v && typeof v.type === "string") mark(v, n); } })(ast, null);
+  // the bind callbacks write every copy on purpose
+  const inRegister = n => { for (let p = n; p; p = parents.get(p)) if (p.type === "CallExpression" && p.callee.type === "MemberExpression" && p.callee.object.name === "__boot" && p.callee.property.name === "register") return true; return false; };
+  const shares = (stmt, name) => stmt && stmt.type === "ExpressionStatement" && stmt.expression.type === "CallExpression" && stmt.expression.callee.name === "__share"
+    && stmt.expression.arguments[0] && stmt.expression.arguments[0].properties.some(p => p.key.name === name);
+  let bad = 0;
+  for (const v of sm.scopes[1].variables) for (const r of v.references) {
+    if (!r.isWrite() || r.init || inRegister(r.identifier)) continue;
+    let n = r.identifier;
+    while (parents.get(n) && !["Program", "BlockStatement", "SwitchCase"].includes(parents.get(n).type)) n = parents.get(n);
+    const list = parents.get(n); const body = list && (list.body || list.consequent);
+    if (!shares(body && body[body.indexOf(n) + 1], v.name)) bad++;
+  }
+  return bad;
+}
+
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp|tiff?|heic|avif)$/i;
 const IMAGE_OK = f => f.startsWith("client/src/assets/") || f.startsWith("assets/");
 
@@ -193,6 +227,18 @@ const CHECKS = {
     measure: files => Object.fromEntries(files.filter(isAppCode).map(f => [f, countLines(f, SCORE_DELETE)]).filter(([, n]) => n > 0)),
     worse: (key, now) => `${key}: ${now} org-wide delete(s) of donor_scores; upsert the changed rows (engagement.js writeScores) and delete only a person's own row by donor_id`,
   },
+  "boot-shares": {
+    what: "a write in server/boot/ to a name other modules read, with no __share({ name }) after it (a hard rule)",
+    hard: true,
+    measure: files => Object.fromEntries(files.filter(isBootModule).map(f => [f, unsharedWrites(f)]).filter(([, n]) => n > 0)),
+    worse: (key, now) => `${key}: ${now} write(s) not followed by __share({ name }); every other module keeps the old value (see server/boot/share.js)`,
+  },
+  "split-shells": {
+    what: "the files SPLIT-2 cut down to a shell (each capped at the size the split left it)",
+    measure: files => Object.fromEntries(files.filter(f => SHELLS.has(f)).map(f => [f, lineCount(f)])),
+    worse: (key, now, base) => base == null ? `${key} has no cap in the baseline`
+      : now > base ? `${key} grew to ${now} lines (cap ${base}); put the new code in its parts` : null,
+  },
   "big-images": {
     what: `committed images over ${IMAGE_MAX / 1024} KB outside client/src/assets/ and assets/ (a hard rule)`,
     hard: true,
@@ -211,7 +257,7 @@ for (const [name, c] of Object.entries(CHECKS)) {
   let base = c.hard ? {} : (fs.existsSync(bPath) ? JSON.parse(fs.readFileSync(bPath, "utf8")).counts : null);
   if (base == null && INIT) base = { ...now };   // the first baseline is today, once
   if (base == null) { out.push(`  ✗ ${name}: no baseline at ${path.relative(ROOT, bPath)}`); failed++; continue; }
-  if (MOVED && UPDATE && !c.hard && name !== "big-files" && base[MOVED]) {
+  if (MOVED && UPDATE && !c.hard && name !== "big-files" && name !== "split-shells" && base[MOVED]) {
     // what left the moved file is exactly what the new files hold, or nothing moves
     const left = base[MOVED] - (now[MOVED] || 0);
     const fresh = Object.keys(now).filter(k => !(k in base));

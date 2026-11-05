@@ -36,6 +36,10 @@ Read this when you touch the person record: donors, organisations, non-donors, h
 - **PROFILE-3: the profile is parts.** `DonorProfile.jsx` holds the state and the frame; the header, numbers, tabs,
   dialogs, start card and each rail section are files in `components/profile/`, none over 1,500 lines. A suite that
   reads the profile's source reads every part (`scripts/lib/readSource.js`).
+- **SPLIT-2: the profile's state is hooks.** `DonorProfile.jsx` is the shell: its imports, six `useProfile*` calls in
+  `components/profile/` (record, actions, pipeline, giving, files, rail), in the order the state was written, and
+  the frame. A hook reads only what earlier hooks return, so hooks run in the same order every render. New state
+  goes in the hook it belongs to; the shell is capped at its size (`split-shells` in the arch-check).
 - **SECURE-2 (2026-10-29): a form's email and phone.** Forms refuse an email that is not one
   (`shared/contactCheck.js`, with a "did you mean") and store a phone in one format (`phoneNormal.js`).
   An import never refuses a row for this: it keeps the value, and the profile and the preview say

@@ -91,9 +91,12 @@ function staticChecks() {
   // not swallow the code after it, so only a comment that starts a line or
   // follows a space, with a space after it, is a comment here.
   const strip = s => s.replace(/(^|[ \t])\/\*[\s*][\s\S]*?\*\//g, "$1").replace(/(^|[ \t])\/\/[ \t].*$/gm, "$1");
-  const files = require("child_process").execSync("git ls-files -- '*.js' ':!tests' ':!client' ':!zapier' ':!node_modules'", { cwd: ROOT })
+  let files = require("child_process").execSync("git ls-files -- '*.js' ':!tests' ':!client' ':!zapier' ':!node_modules'", { cwd: ROOT })
     .toString().trim().split("\n").filter(Boolean).filter(f => fs.existsSync(path.join(ROOT, f)));
-  const src = Object.fromEntries(files.map(f => [f, strip(fs.readFileSync(path.join(ROOT, f), "utf8"))]));
+  // SPLIT-2: server.js and db.js are read whole (their own text), and their pieces under server/boot/ and server/db/ are not read twice.
+  const { splitText, isSplitPiece } = require("../scripts/lib/readSource");
+  files = files.filter(f => !isSplitPiece(f));
+  const src = Object.fromEntries(files.map(f => [f, strip(splitText(f))]));
   const mailPolicy = require("../mailPolicy");
   const used = new Map();   // kind -> first place
   const note = (k, where) => { if (mailPolicy.categoryOf(k) === "donor" && !used.has(k)) used.set(k, where); };

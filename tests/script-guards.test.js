@@ -592,7 +592,7 @@ ok(nulFiles.length === 0,
   // recompute must await the readiness promise before touching a table.
   // Fails on the code before HARDEN-1, where neither waited.
   {
-    const srv = fs.readFileSync(path.join(root, "server.js"), "utf8");
+    const srv = require("../scripts/lib/readSource").splitText("server.js");   // SPLIT-2: server.js is split under server/boot/
     const bodyOf = name => { const i = srv.indexOf(`async function ${name}(`); return i < 0 ? "" : srv.slice(i, i + 400); };
     // FIX-51: the promise lives in bootGate.js, so a boot timer in any module waits too.
     const gate = fs.readFileSync(path.join(root, "bootGate.js"), "utf8");

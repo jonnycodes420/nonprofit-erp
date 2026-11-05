@@ -699,7 +699,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     ok("§13a a new invitee: the weekly email on, the daily email and everything else off", acc.status === 201 && wantNew(iNotes), { inv: inv.status, acc: acc.status, iNotes });
 
     // People who exist today keep exactly what they have: no row is written at deploy.
-    const dbSrc = require("fs").readFileSync(require("path").join(__dirname, "..", "db.js"), "utf8");
+    const dbSrc = readSource("db.js");   // SPLIT-2: db.js is split under server/db/
     ok("§13b the build writes no person's email settings: schema only",
       !/UPDATE\s+users\s+SET[^`;]*notify_(weekly|thread_nudge)/i.test(dbSrc.split("STAFF-MAIL-2")[1] || dbSrc), null);
 
@@ -756,7 +756,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
         && /Call the bank about the deposit/.test(grouped.html) && /2 things need you/.test(grouped.subject), grouped && { subject: grouped.subject, tasks: grouped.tasks });
     ok("§13h with no mailing address on file, the weekly email has no line about it",
       !String(noAddr?.receipt_address || "").trim() && !!grouped && !/mailing address/i.test(grouped.html), noAddr);
-    const srvSrc = require("fs").readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8");
+    const srvSrc = require("../scripts/lib/readSource").splitText("server.js");   // SPLIT-2: read whole
     ok("§13h no staff email can say the org has no mailing address", !/no mailing address on file for/.test(srvSrc), null);
 
     // The org's Staff mail switch still stops everything, the weekly email included.
