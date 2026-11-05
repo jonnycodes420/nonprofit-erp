@@ -280,9 +280,9 @@ async function dropped() {
   // locally by delaying the commit route 600 ms. Wait (bounded) until the job's
   // row is there, then ask the same two doors as before: a list that leaves a
   // running job out still goes red.
-  const t0 = Date.now();
+  const t0 = performance.now();   // elapsed only: the suite's clock is tests/clock.js
   for (let i = 0; i < 200 && !(await one(`SELECT 1 AS x FROM sheet_import_jobs WHERE id=$1 AND org_id=$2`, [RUN, ORG])); i++) await new Promise(res => setTimeout(res, 50));
-  if (Date.now() - t0 > 100) console.log(`        (§5: the server claimed the job ${Date.now() - t0} ms after the abort)`);
+  if (performance.now() - t0 > 100) console.log(`        (§5: the server claimed the job ${Math.round(performance.now() - t0)} ms after the abort)`);
   const seen = await api("GET", "/sheet-import/jobs?running=1", tok);
   const listed = (await api("GET", "/imports", tok)).body.imports || [];
   ok("§5 reopening Import or the Imports list shows the job, never an empty screen",
