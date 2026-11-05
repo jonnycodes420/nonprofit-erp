@@ -245,7 +245,7 @@ function RailJourneys({addErr,addPick,addPreview,allJourneys,confirmAddToJourney
               )}
               {journeyList.length===0?(
                 <div style={{fontSize:12.5,color:RAIL.dim,lineHeight:1.55}}>
-                  There are no journeys yet.{" "}
+                  There are no journeys yet{". "}
                   <button type="button" data-testid="dp-journey-setup"
                     onClick={()=>onNavigate&&onNavigate("journeys")}
                     style={{background:"none",border:"none",padding:0,color:RAIL.strong,fontWeight:700,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>

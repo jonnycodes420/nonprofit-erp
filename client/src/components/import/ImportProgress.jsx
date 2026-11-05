@@ -32,7 +32,7 @@ export function ImportReadout({ readout }) {
   return (
     <div data-testid="import-readout" style={{textAlign:"left",border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.greenDk,borderRadius:10,padding:"10px 14px",margin:"0 0 14px",fontSize:13.5,color:T.ink,lineHeight:1.6}}>
       <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:2}}>What this told us</div>
-      {readout.headline}.{" "}
+      {readout.headline}{". "}
       <RecordLink to={tabHref("agent", { agentView: "changed" })} style={{color:T.greenDk,fontWeight:700,textDecoration:"underline"}}>See who, and what to do</RecordLink>
     </div>
   );

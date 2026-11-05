@@ -86,6 +86,12 @@ const parts = x => {
   return { first: w[0] || "", last: w[w.length - 1] || "", n: w.length };
 };
 
+// POLISH-5 · AN ORGANISATION HAS A NAME, NOT A FIRST NAME. Data health told a
+// church its pair's "first names are a letter apart". The match is
+// HOTFIX-RHYTHM's; this is only the words, for a name with an organisation's word in it.
+const ORG_NAME = /\b(?:foundation|trust|fund|inc|llc|ltd|company|co|corp|corporation|church|chapel|parish|cathedral|temple|synagogue|mosque|congregation|ministries|ministry|society|association|club|group|partners|charities|charity|school|academy|college|university|bank|council|institute|center|centre|farms?|services)\b/i;
+const orgWords = (sentence, a, b) => (ORG_NAME.test(s(a)) || ORG_NAME.test(s(b)) ? "the two names are a letter apart" : sentence);
+
 export function nearDuplicate(a, b) {
   const A = norm(nameAndNotes(a).name), B = norm(nameAndNotes(b).name);
   if (!A || !B || A === B) return null;
@@ -104,13 +110,13 @@ export function nearDuplicate(a, b) {
     if (isNickname(p.first, q.first)) return { why: "nickname", sentence: `${cap(p.first)} and ${cap(q.first)} are often one name` };
     // one or two letters apart, and long enough that it is a spelling, not a sibling ("Jay"/"Jami" are two people)
     if (Math.min(p.first.length, q.first.length) >= 4 && editDistance(p.first, q.first) <= (Math.min(p.first.length, q.first.length) >= 6 ? 2 : 1)
-        && p.first[0] === q.first[0]) return { why: "spelling", sentence: `the first names are a letter apart` };
+        && p.first[0] === q.first[0]) return { why: "spelling", sentence: orgWords(`the first names are a letter apart`, a, b) };
     return null;
   }
   const sameFirst = p.first === q.first || isNickname(p.first, q.first);
   const L = Math.min(p.last.length, q.last.length);
   if (sameFirst && L >= 5 && editDistance(p.last, q.last) <= (L >= 8 ? 2 : 1) && p.last[0] === q.last[0]) {
-    return { why: "spelling", sentence: `the last names are a letter apart` };
+    return { why: "spelling", sentence: orgWords(`the last names are a letter apart`, a, b) };
   }
   return null;
 }

@@ -202,7 +202,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
   const asking = request && request.status === "needs_answers";
   const lines = (request && request.lines) || [];
   const taps = lines.filter(l => l.waits && ALL_KINDS.has(l.kind));
-  const sub = request || pending ? null : donor ? `Tell me what happened with ${donor.name}, what to do, or what you want to know.` : "Tell me what happened, what to do, or what you want to know.";
+  const sub = request || pending ? null : donor && donor.name ? `Tell me what happened with ${donor.name}, what to do, or what you want to know.` : "Tell me what happened, what to do, or what you want to know.";
 
   return (
     <Modal onClose={onClose} title={name} subtitle={sub} width={560} align={phone ? "top" : "center"} ariaLabel={name}>
@@ -250,7 +250,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
             <textarea data-testid="tell-text" value={text + (interim ? (text ? " " : "") + interim : "")} rows={phone ? 6 : 4}
               onChange={e => { setText(e.target.value); setInterim(""); finalText.current = e.target.value; }}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-              placeholder={donor ? `Lunch with ${String(donor.name).split(/\s+/)[0]} went well. Put her in the major donor journey and remind me to call in March.` : "Undine came to the Harbor Run and gave $10,000. Thank her and ask to meet in January."}
+              placeholder={donor && donor.name ? `Lunch with ${String(donor.name).split(/\s+/)[0]} went well. Put them in the major donor journey and remind me to call in March.` : "Undine came to the Harbor Run and gave $10,000. Thank her and ask to meet in January."}
               style={{ width: "100%", boxSizing: "border-box", border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 12px", fontSize: 16, lineHeight: 1.45, fontFamily: "inherit", color: T.ink, resize: "vertical" }} />
             {!speech && <span data-testid="tell-no-listen" style={{ fontSize: 12, color: T.ink3 }}>{phone ? NO_LISTEN_PHONE_LINE : NO_LISTEN_LINE}</span>}
           </label>

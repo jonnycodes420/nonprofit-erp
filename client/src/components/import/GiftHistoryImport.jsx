@@ -705,7 +705,7 @@ export function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org
           {dateRefused.length > 0 && (
             <div style={{background:T.terra100,border:`1px solid ${T.terra200}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12.5,color:T.terra700,lineHeight:1.6}}>
               <strong>{countLabel(dateRefused.length, "gift row")} refused, because the gift date could not be read.</strong>{" "}
-              Nothing is ever stamped with today's date. Examples:{" "}
+              Nothing is ever stamped with today's date. Examples{": "}
               {dateRefused.slice(0,3).map(r=>`row ${r.row} (“${r.rawDate||"blank"}”)`).join(" · ")}{dateRefused.length>3?" · …":""}
             </div>
           )}

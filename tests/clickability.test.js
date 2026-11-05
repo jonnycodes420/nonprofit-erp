@@ -97,7 +97,7 @@ ok(!has(reports, "How much did we raise this period, and from whom?"), "Reports 
 ok(!has(fin, "sub={narrative}") && !has(fin, "You're operating on ${fmtFull"), "Finance headline blurb removed");
 // PageTitle for these three renders title only (no sub= prop)
 ok(/<PageTitle main="Your" accent="fundraising." \/>/.test(fund), "Fundraising PageTitle = title only");
-ok(/<PageTitle main="Your" accent="Reports" \/>/.test(reports), "Reports PageTitle = title only");
+ok(/<PageTitle main="Your" accent="reports\." \/>/.test(reports), "Reports PageTitle = title only");
 // FIN-1 — Finance is "Your money." now. The assertion is the same one it
 // always was (a title with no `sub=` blurb); only the word changed, because
 // "finances" is what an accountant calls it and "money" is what everybody

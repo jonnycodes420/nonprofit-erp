@@ -12,6 +12,7 @@ import { PublicFilingBlock, RoomToGiveBlock } from "../RoomToGive";
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
+import { shownTags, shownNote } from "../../lib/internalLabels";
 
 const ABOUT_MAX=500;
 const QUIET={background:"none",border:"none",padding:0,font:"inherit",color:RAIL.dim,textDecoration:"underline",textUnderlineOffset:3,cursor:"pointer"};
@@ -84,7 +85,7 @@ function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatus
                 </div>
               )}
                   {donor.importedSustainer&&<span title={`Sustainer history from import, with no payment authorization here yet${donor.importedSustainerAmount?` (was $${donor.importedSustainerAmount}/mo)`:""}. Send a reconnect link from Fundraising → Recurring.`} style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.green100,color:T.greenDk,border:`1px solid ${T.green200}`}}>Sustainer · not reconnected</span>}
-                  {(aboutStatusTags.tags.length>0||(donor.tags||[]).length>0)&&<div data-testid="dp-about-tags" style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>{statusTagItems(aboutStatusTags)}{(donor.tags||[]).map(t=><Pill key={"t:"+t} label={t}/>)}</div>}
+                  {(aboutStatusTags.tags.length>0||shownTags(donor.tags).length>0)&&<div data-testid="dp-about-tags" style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>{statusTagItems(aboutStatusTags)}{shownTags(donor.tags).map(t=><Pill key={"t:"+t} label={t}/>)}</div>}
                   {/* the giving pattern, in plain words, each fact opening its rows (was the Giving rhythm card, which could say "No pattern yet" beside it) */}
                   {status&&(status.closeness||status.meetingSet)&&!(nothingLogged&&!status.meetingSet)&&<div data-testid="dp-about-pattern"><ClosenessLine status={status}/></div>}
                   {donor.drift&&<div style={{fontSize:11.5,color:T.gold600,fontWeight:600,marginTop:3,lineHeight:1.4}}>{donor.drift.reason}</div>}

@@ -254,7 +254,7 @@ export default function SignupPage() {
                 <div style={{ fontSize: 19, fontWeight: 700, color: INK, marginBottom: 2, fontFamily: "'DM Serif Display',Georgia,serif" }}>{TALK_TO_US.name}</div>
                 <div style={{ fontSize: 13, color: SAGE_GREY, marginBottom: 6 }}>{TALK_TO_US.band}</div>
                 <div style={{ fontSize: 13, color: SAGE_GREY, lineHeight: 1.55 }}>
-                  That is a conversation rather than a checkout: at your size the import and the setup matter more than the price.{" "}
+                  That is a conversation rather than a checkout: at your size the import and the setup matter more than the price{". "}
                   <Link to="/demo" data-testid="signup-talk-demo" style={{ color: EMERALD, fontWeight: 700 }}>{TALK_TO_US.cta}</Link> and we will size it with you.
                 </div>
               </div>

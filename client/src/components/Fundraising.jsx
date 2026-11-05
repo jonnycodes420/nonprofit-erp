@@ -371,7 +371,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
               Nothing yet in {overview.periodLabel}.
             </div>
             <div style={{ fontSize: 12, color: T.ink2, lineHeight: 1.5 }}>
-              Your last 12 months:{" "}
+              Your last 12 months{": "}
               <button onClick={openRows(last12.start, last12.end)}
                 style={{ background: "none", border: "none", padding: 0, font: "inherit", fontWeight: 700, color: T.greenDk, textDecoration: "underline", cursor: "pointer" }}>
                 {fmtTotal(last12.raised)} across {countLabel(last12.giftCount, "gift")}
@@ -760,7 +760,7 @@ function CampaignTemplates({ data, reload, isReadOnly, onCreated, onOpenCampaign
             </div>
             {t.existingCampaignId ? (
               <div className="camp-tpl-done" style={{ fontSize: 12.5, color: T.ink2, marginTop: 8 }}>
-                You started {t.campaign.name}.{" "}
+                You started {t.campaign.name}{". "}
                 <a href={campaignHref(t.existingCampaignId)} data-testid="camp-tpl-open"
                   onClick={e => { if (onOpenCampaign && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onOpenCampaign(t.existingCampaignId); } }}
                   style={{ color: T.greenDk, fontWeight: 700 }}>Open it</a>
@@ -1416,7 +1416,7 @@ function ThankClock() {
   if (!c) return null;
   return (
     <div data-testid="thank-clock" style={{ fontSize: 14, color: T.ink, lineHeight: 1.5 }}>
-      Average time from gift to thank-you, last 30 days:{" "}
+      Average time from gift to thank-you, last 30 days{": "}
       {c.days == null ? <span style={{ color: T.ink3 }}>no gifts thanked yet</span> : (
         <strong>
           <Figure variant="inline" kind="count" value={Number(c.days)} suffix={Number(c.days) === 1 ? " day" : " days"}

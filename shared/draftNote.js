@@ -152,7 +152,7 @@ export function thankYouDraft({
     // somebody who never left is the failure this guards against.
     middle = `Thank you for your gift of ${amtOn}${to}. It has been a while since we last heard from you, and it is good to have you back.`;
   } else if (before !== null && before >= 5) {
-    middle = `Thank you for your gift of ${amtOn}${to}. That is ${before + 1} now, and giving again and again is its own kind of message.`;
+    middle = `Thank you for your gift of ${amtOn}${to}. That makes ${before + 1} gifts from you, and giving again and again is its own kind of message.`;   // POLISH-5: not "That is 7 now"
   } else if (tier === "major") {
     middle = `Thank you for your gift of ${amtOn}${to}. A gift this size changes what we can plan for, not only what we can pay for, and we do not take it lightly.`;
   } else if (tier === "large") {

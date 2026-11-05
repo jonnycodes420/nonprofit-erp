@@ -27,6 +27,7 @@ import { MailTypeSwitches } from "../MailTypes";
 import { pledgeMoneyWords } from "../../../../shared/pledgeWords.js";
 import { EditedMarker } from "../EditHistory";
 import { stepAgainstProposals } from "../../../../shared/nextStepAgree.js";
+import { displayOrgDateShort } from "../../lib/orgDay";
 
 function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addPgOpen,addPlannedGift,addPledge,addPledgeOpen,addToPipeline,askAmt,askName,askOpen,campaigns,closeAsk,deleteGift,deletePlannedGift,deletePledge,dismissSuggestion,dismissedSug,donor,downloadReceiptPdf,dpItems,dpTab,exportGiftsCSV,figs,fundAffinity,fundLoading,giftCfDefs,giftCfEditStr,giftCountReal,giftEditForm,giftEditId,giftErr,giftLoading,giftMoreOpen,giftPeopleQ,giftReadErr,giftSaving,gifts,giftsFull,hasDesignation,household,isAdmin,isReadOnly,isTeam,loadGiftsFull,lockMajor,moveSuggestions,moves,onNavigate,onStageChange,openProposals,opps,pgForm,pgOpen,pgSaving,pipelineAdded,plannedGifts,pledgeEdit,pledgeForm,pledgeResendBusyId,pledgeResentIds,pledgeSaving,pledges,propData,proposalsKnown,receiptBusyId,receiptForGift,receiptsEnabled,recurResendBusy,recurResendSent,recurringSub,refundRows,reloadProps,resendPledgeReminder,resendRecurringLink,saveGiftEdit,savePledgeEdit,sc,scores,sendReceipt,sendYearEndStatement,seqId,seqLoading,seqOpen,seqToast,sequences,setAddGiftForm,setAddGiftOpen,setAddPgOpen,setAddPledgeOpen,setAskAmt,setAskName,setAskOpen,setDpTab,setGiftEditForm,setGiftEditId,setGiftLoading,setGiftMoreOpen,setHhModalOpen,setPgForm,setPgOpen,setPledgeEdit,setPledgeForm,setPledgeStatus,setRelatedOpen,setSeqId,setSeqLoading,setSeqOpen,setSeqToast,setShowYearEnd,setYearDrill,setYearEndYear,showYearEnd,softCredit,status,toggleDesignation,yearDrill,yearEndBusy,yearEndErr,yearEndYear}){
   return <>
@@ -54,7 +55,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                 </div>
                 {cur?<div data-testid="dp-ask-open" style={{fontSize:13.5,color:T.ink,lineHeight:1.5}}>
                   <strong><Figure variant="cell" kind="money" value={Number(cur.askAmount)||0} label="The open ask" source={{key:"donor-open-ask",params:{donor:donor.id}}}/></strong>{cur.purpose?<> for {cur.purpose}</>:null}
-                  <span style={{color:T.ink3}}> · {PROPOSAL_STAGE_LABEL[cur.stage]||cur.stage}{cur.createdAt?`, opened ${displayDateShort(String(cur.createdAt).slice(0,10),new Date())}`:""}</span>
+                  <span style={{color:T.ink3}}> · {PROPOSAL_STAGE_LABEL[cur.stage]||cur.stage}{cur.createdAt?`, opened ${displayOrgDateShort(cur.createdAt,new Date())}`:""}</span>
                   {openProposals.length>1&&<span style={{color:T.ink3}}> · and {openProposals.length-1} more</span>}
                 </div>:<div data-testid="dp-ask-none" style={{fontSize:13,color:T.ink3}}>No open ask.</div>}
                 <NextLine status={status}/>
@@ -357,7 +358,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,overflow:"hidden"}}>
               {giftLoading?<div style={{padding:24,textAlign:"center",color:T.ink3,fontSize:12}}><Spin/></div>:giftReadErr?(
                 <div data-testid="dp-gifts-error" style={{padding:"28px 24px",textAlign:"center",fontSize:13,color:T.ink2,lineHeight:1.6}}>
-                  Steward could not load the gifts on this record.{" "}
+                  Steward could not load the gifts on this record{". "}
                   <button type="button" onClick={()=>{setGiftLoading(true);loadGiftsFull();}} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Try again</button>
                 </div>
               ):giftsFull.length===0?(

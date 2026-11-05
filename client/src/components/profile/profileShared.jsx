@@ -14,6 +14,8 @@ import { censusById } from "../../../../shared/numberCensus.js";
 import { PROPOSAL_STAGES } from "../../../../shared/proposalShape.js";
 import { RailSection } from "../ProfileRail";
 import { displayDateShort } from "../../../../shared/displayDate";
+import { displayOrgDateShort } from "../../lib/orgDay";
+import { shownTags, shownNote } from "../../lib/internalLabels";
 
 // IMPORT-4 · A GIFT WITH NO DATE. An import that gave no day keeps the gift
 // undated: it counts in Lifetime and its event, never in This year. "Set date"
@@ -159,7 +161,7 @@ function HeaderChips({status,donor,isReadOnly}){
   const limit=narrow?3:HEADER_CHIP_LIMIT;
   return <ProfileGroups donorId={donor.id} isReadOnly={isReadOnly}>{(groupChips,addCtl)=>{
     const st=statusTagItems(status).map(el=>({kind:"status",el}));
-    const rec=(donor.tags||[]).map(t=>({kind:"record",el:<Pill key={"t:"+t} label={t}/>}));
+    const rec=shownTags(donor.tags).map(t=>({kind:"record",el:<Pill key={"t:"+t} label={t}/>}));
     const items=[...st,...rec,...groupChips.map(el=>({kind:"group",el}))];
     const shown=all?items:items.slice(0,limit);
     const more=items.length-shown.length;
@@ -323,7 +325,7 @@ function ComingUpMain({tasks=[],meetings=[],onTaskToggle,isReadOnly,onAddTask}){
     <h2 style={{margin:0,fontSize:11,fontWeight:700,color:T.ink3}}>Coming up</h2>
     {ahead.map(m=><div key={"m:"+m.id} data-testid="dp-coming-meeting" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 16px",display:"flex",justifyContent:"space-between",gap:12,alignItems:"center"}}>
       <span style={{fontSize:14,fontWeight:600,color:T.ink}}>{m.title||"Meeting"}</span>
-      <span style={{fontSize:13,color:T.ink3,whiteSpace:"nowrap"}}>{displayDateShort(String(m.date||m.startsAt||"").slice(0,10),today)}</span>
+      <span style={{fontSize:13,color:T.ink3,whiteSpace:"nowrap"}}>{displayOrgDateShort(m.date||m.startsAt||"",today)}</span>
     </div>)}
     {open.slice(0,5).map(t=><div key={"t:"+t.id} data-testid="dp-coming-task" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"10px 16px",display:"flex",justifyContent:"space-between",gap:12,alignItems:"center"}}>
       <span style={{minWidth:0}}><span style={{fontSize:14,fontWeight:600,color:T.ink}}>{t.title||t.text||"A task"}</span>

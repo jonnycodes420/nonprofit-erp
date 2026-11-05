@@ -49,7 +49,7 @@ export function RoomToGiveBlock({ donorId, isReadOnly }) {
         </ul>
       )}
       {s && <div data-testid="dp-room-screening" style={{ fontSize: 12, color: T.ink3, marginTop: 6, lineHeight: 1.5 }}>
-        From {s.provider}'s screening file, {dateWords(s.screenedOn)}.{" "}
+        From {s.provider}'s screening file, {dateWords(s.screenedOn)}{". "}
         {!isReadOnly && <button type="button" data-testid="dp-room-delete" onClick={() => setConfirm(true)} style={{ ...LINK, color: T.ink3, fontWeight: 600 }}>Delete screening results</button>}
       </div>}
       {confirm && (

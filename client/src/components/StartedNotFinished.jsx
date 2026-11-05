@@ -12,6 +12,7 @@ import { T, Modal } from "./shared";
 import { Figure, FigureContext } from "./Figure";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
+import { displayOrgDate } from "../lib/orgDay";
 
 const money = n => `$${Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
 const btn = (primary, disabled) => ({
@@ -100,7 +101,7 @@ export function StartedNotFinished({ isReadOnly = false, isAdmin = false, onNavi
                   {r.donorId ? <button type="button" onClick={() => openPerson(r.donorId)} style={{ background: "none", border: "none", padding: 0, font: "inherit", color: T.ink, textDecoration: "underline", cursor: "pointer" }}>{r.name || r.email}</button> : (r.name || r.email)}
                   {r.amount ? <span style={{ fontWeight: 400, color: T.ink3 }}> · {money(r.amount)}{r.frequency === "monthly" ? " a month" : ""}</span> : null}
                 </div>
-                <div style={{ fontSize: 12.5, color: T.ink3, overflowWrap: "anywhere" }}>{r.form} · {r.email} · started {displayDate(String(r.startedAt).slice(0, 10))}{r.expired ? " · payment page closed" : ""}</div>
+                <div style={{ fontSize: 12.5, color: T.ink3, overflowWrap: "anywhere" }}>{r.form} · {r.email} · started {displayOrgDate(r.startedAt)}{r.expired ? " · payment page closed" : ""}</div>
                 {r.noted && <div style={{ fontSize: 12.5, color: T.ink }}>Note sent{r.noteSentBy ? ` by ${r.noteSentBy.split(" ")[0]}` : ""}. Steward sends one at most.</div>}
               </div>
               <div style={{ display: "flex", gap: 8 }}>

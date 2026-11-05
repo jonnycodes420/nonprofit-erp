@@ -276,7 +276,7 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
         <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
           <div style={h}>Pending</div>
           <span style={{ fontSize: 13.5, color: T.ink }}>
-            {p.count} {p.count === 1 ? "gift" : "gifts"},{" "}
+            {p.count} {p.count === 1 ? "gift" : "gifts"}{", "}
             <Figure variant="inline" figureKey="qbo-pending" value={p.total.value} kind="money" label={p.total.label}
               definition={p.total.definition} source={p.total.source} />
           </span>
