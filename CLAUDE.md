@@ -85,7 +85,7 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
   in `tests/lib/surfacesAgree.js`. (HARDEN-1)
 - **Affected suites while you build; the full battery once, at the end.** A red run during
   edits tells you nothing, and a full run after every edit is the slowest way to learn that.
-  Nothing is done until that final battery is green, with no silent skips. It is 192 suites
+  Nothing is done until that final battery is green, with no silent skips. It is 193 suites
   (`bash tests/run-all.sh`, three shards; `SHARDS=1` for the serial run).
 - **Never email a prospect, and never create calendar events.** Tests send to the local
   Resend sink. Addresses in `mailBlock.js` are never mailed, from
