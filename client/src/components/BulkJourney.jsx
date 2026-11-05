@@ -50,9 +50,12 @@ function BulkJourneyModal({ ids: idsAtOpen, onClose, onDone }) {
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
   useEffect(() => {
-    apiFetch("/journeys").then(r => { if (alive.current) setJourneys(((r && r.journeys) || []).filter(j => j.state !== "archived")); })
-      .catch(e => { if (alive.current) { setJourneys([]); setErr(errorMessage(e, "Steward could not load your journeys.")); } });
-  }, []);
+    // FLOWS-1 item 1: each journey with, for these people, who can start it
+    // and why not, so a row is either choosable or says why on itself.
+    apiFetch("/journeys/batch-options", { method: "POST", body: JSON.stringify({ donorIds: ids }) })
+      .then(r => { if (alive.current) setJourneys((r && r.journeys) || []); })
+      .catch(e => { if (alive.current) { setJourneys([]); setErr((e && e.sentence) || errorMessage(e, "Steward could not load your journeys.")); } });
+  }, [ids]);
   useEffect(() => {
     if (!pick) { setPreview(null); return; }
     setPreview(null); setErr("");
@@ -106,14 +109,23 @@ function BulkJourneyModal({ ids: idsAtOpen, onClose, onDone }) {
     <Modal onClose={running ? () => {} : onClose} title="Add to a journey" subtitle={`${fmt(ids.length)} ${ids.length === 1 ? "person" : "people"} checked`} width={520} footer={footer} ariaLabel="Add to a journey">
       <div data-testid="bulk-journey" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {!batch && <>
-          <label style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12, fontWeight: 700, color: T.ink3 }}>
-            Which journey
-            <select data-testid="bulk-journey-pick" value={pick} onChange={e => setPick(e.target.value)} disabled={!journeys}
-              style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 10px", fontSize: 13, color: T.ink, fontFamily: "inherit" }}>
-              <option value="">{journeys ? (journeys.length ? "Pick a journey" : "No journeys yet") : "Loading…"}</option>
-              {(journeys || []).map(j => <option key={j.id} value={j.id}>{j.name}</option>)}
-            </select>
-          </label>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3 }}>Which journey</div>
+          {!journeys && <div style={{ fontSize: 13, color: T.ink3 }}>Loading your journeys…</div>}
+          {journeys && journeys.length > 0 && <div role="radiogroup" aria-label="Which journey" data-testid="bulk-journey-rows" style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 280, overflowY: "auto" }}>
+            {journeys.map(j => {
+              const on = pick === j.id;
+              return (
+                <button key={j.id} type="button" role="radio" aria-checked={on} aria-disabled={!j.canPick}
+                  data-testid="bulk-journey-row" data-journey={j.id} data-can-pick={j.canPick ? "1" : "0"}
+                  onClick={() => { if (j.canPick) setPick(j.id); }}
+                  style={{ textAlign: "left", background: on ? T.bg : T.white, border: "1px solid " + (on ? T.greenDk : T.bg3), borderRadius: 9,
+                    padding: "9px 12px", cursor: j.canPick ? "pointer" : "default", fontFamily: "inherit", display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 700, color: j.canPick ? T.ink : T.ink3 }}>{j.name}{j.stateNote && j.state !== "running" ? <span style={{ fontWeight: 400, color: T.ink3 }}> · {j.stateNote}</span> : null}</span>
+                  <span data-testid="bulk-journey-row-why" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.4 }}>{j.why}</span>
+                </button>
+              );
+            })}
+          </div>}
           {journeys && !journeys.length && <div style={{ fontSize: 13, color: T.ink3 }}>Make a journey first, in Journeys. Then come back and add these people to it.</div>}
           {pick && !preview && !err && <div style={{ fontSize: 13, color: T.ink3 }}>Working out who would start…</div>}
           {preview && <div data-testid="bulk-journey-preview" style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px" }}>

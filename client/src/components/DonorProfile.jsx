@@ -8,6 +8,7 @@ import { usePublicFiling, PublicFilingLookupModal, ProspectBriefModal } from "./
 import { useCanMajorGifts } from "../lib/majorGifts";
 import { VolunteerPanel, AddVolunteerModal } from "./VolunteerPanel";
 import { apiFetch, API, getToken } from "../api";
+import { useReceipts } from "./profile/ReceiptsAndStatements";
 import { usePeoplePicker, peopleNamed } from "../lib/people";
 import { rethrowProgrammerError, errorMessage } from "../lib/domainError";
 import { stepAgainstProposals } from "../../../shared/nextStepAgree.js";   // FIX-24 2c
@@ -89,7 +90,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [prospectBriefOpen,setProspectBriefOpen]=useState(false);
   // PARITY-1 — tags, closeness, at a glance, highlights and the next action, one read.
   const [stepNonce,setStepNonce]=useState(0);
-  const status=useDonorStatus(donor.id, figs, `${stepNonce}:${toldNonce}`);
+  // FLOWS-1: merged away while open, so the kept record is shown (the status poll stops itself)
+  const status=useDonorStatus(donor.id, figs, `${stepNonce}:${toldNonce}`, g=>{if(g.gone==="merged"&&g.keptId&&g.keptId!==donor.id&&onSelectRelatedDonor)onSelectRelatedDonor(g.keptId);});
   const [logMeeting,setLogMeeting]=useState(null);
   // TRUST-2 — export and erase.
   const [eraseOpen,setEraseOpen]=useState(false);
@@ -531,53 +533,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     }catch(e){alert(errorMessage(e, "Could not update household"));}
   };
 
-  // Tax receipts — per-gift status + whether the org has receipts enabled
-  // at all (governs whether "Send receipt" is even offered, vs. a setup
-  // nudge). See CLAUDE.md "Tax receipting."
-  const [donorReceipts,setDonorReceipts]=useState([]);
-  const [receiptsEnabled,setReceiptsEnabled]=useState(false);
-  const [receiptBusyId,setReceiptBusyId]=useState(null);
-  const loadDonorReceipts=()=>apiFetch(`/donors/${donor.id}/receipts`).then(r=>setDonorReceipts(r||[])).catch(()=>setDonorReceipts([]));
-  useEffect(()=>{
-    loadDonorReceipts();
-    apiFetch("/org").then(o=>setReceiptsEnabled(!!o.receipts_enabled)).catch(()=>{});
-  },[donor.id]);
-
-  const receiptForGift=giftId=>donorReceipts.find(r=>r.gift_id===giftId&&!r.voided_at);
-
-  const sendReceipt=async giftId=>{
-    setReceiptBusyId(giftId);
-    try{
-      await apiFetch(`/gifts/${giftId}/receipt`,{method:"POST"});
-      await loadDonorReceipts();
-    }catch(e){alert(errorMessage(e, "Could not send receipt"));}
-    setReceiptBusyId(null);
-  };
-
-  const downloadReceiptPdf=async(receiptId,filenameHint)=>{
-    try{
-      const resp=await fetch(`${API}/receipts/${receiptId}/pdf`,{headers:{Authorization:`Bearer ${getToken()}`}});
-      if(!resp.ok)throw new Error("Could not download receipt");
-      const blob=await resp.blob();
-      const url=URL.createObjectURL(blob);
-      const a=document.createElement("a");a.href=url;a.download=`${filenameHint}.pdf`;
-      document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
-    }catch(e){alert(errorMessage(e, "Could not download receipt"));}
-  };
-
-  const [showYearEnd,setShowYearEnd]=useState(false);
-  const [yearEndYear,setYearEndYear]=useState(String(new Date().getFullYear()-1));
-  const [yearEndBusy,setYearEndBusy]=useState(false);
-  const [yearEndErr,setYearEndErr]=useState("");
-  const sendYearEndStatement=async()=>{
-    setYearEndBusy(true); setYearEndErr("");
-    try{
-      await apiFetch(`/donors/${donor.id}/year-end-statement`,{method:"POST",body:JSON.stringify({year:parseInt(yearEndYear,10),send:true})});
-      await loadDonorReceipts();
-      setShowYearEnd(false);
-    }catch(e){setYearEndErr(errorMessage(e, "Could not generate statement"));}
-    setYearEndBusy(false);
-  };
+  // Tax receipts and the year-end statement: made, shown, then Download or Email (FLOWS-1, profile/ReceiptsAndStatements.jsx)
+  const rc=useReceipts(donor,gifts);
+  const {receiptsEnabled,receiptBusyId,receiptForGift,sendReceipt,downloadReceiptPdf,showYearEnd,setShowYearEnd,yearEndYear,setYearEndYear,yearEndBusy,yearEndErr,sendYearEndStatement}=rc;
 
   // FIX-11 Part 1 — "+ LOG → GIFT" WHEN THIS PROFILE IS ALREADY OPEN.
   //
@@ -952,17 +910,15 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     setMatUploading(true);
     try{
       let file_data=null,file_url=null;
-      if(file.size<1024*1024){
-        const buf=await file.arrayBuffer();
-        file_data=btoa(String.fromCharCode(...new Uint8Array(buf)));
-      }
+      // FLOWS-1: read as a data URL (spreading a file's bytes into one call overflowed past ~100 KB, and nothing saved)
+      if(file.size<1024*1024)file_data=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result||"").replace(/^data:[^,]*,/,""));r.onerror=()=>no(new Error("That file could not be read."));r.readAsDataURL(file);});
       await apiFetch(`/donors/${donor.id}/materials`,{method:"POST",body:JSON.stringify({
         file_name:file.name,file_type:file.type||"application/octet-stream",
         file_data,file_url,notes:matNote,
       })});
       setMatNote("");
       loadMaterials();
-    }catch(e){console.error(e);}
+    }catch(e){window.alert(errorMessage(e,"That file did not save."));}
     setMatUploading(false);
   };
 
@@ -1437,7 +1393,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             </Modal>}
           </div>}
 
-          <GivingTab {...{acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addPgOpen,addPlannedGift,addPledge,addPledgeOpen,addToPipeline,askAmt,askName,askOpen,campaigns,closeAsk,deleteGift,deletePlannedGift,deletePledge,dismissSuggestion,dismissedSug,donor,downloadReceiptPdf,dpItems,dpTab,exportGiftsCSV,figs,fundAffinity,fundLoading,giftCfDefs,giftCfEditStr,giftCountReal,giftEditForm,giftEditId,giftErr,giftLoading,giftMoreOpen,giftPeopleQ,giftReadErr,giftSaving,gifts,giftsFull,hasDesignation,household,isAdmin,isReadOnly,isTeam,loadGiftsFull,lockMajor,moveSuggestions,moves,onNavigate,onStageChange,openProposals,opps,pgForm,pgOpen,pgSaving,pipelineAdded,plannedGifts,pledgeEdit,pledgeForm,pledgeResendBusyId,pledgeResentIds,pledgeSaving,pledges,propData,proposalsKnown,receiptBusyId,receiptForGift,receiptsEnabled,recurResendBusy,recurResendSent,recurringSub,refundRows,reloadProps,resendPledgeReminder,resendRecurringLink,saveGiftEdit,savePledgeEdit,sc,scores,sendReceipt,sendYearEndStatement,seqId,seqLoading,seqOpen,seqToast,sequences,setAddGiftForm,setAddGiftOpen,setAddPgOpen,setAddPledgeOpen,setAskAmt,setAskName,setAskOpen,setDpTab,setGiftEditForm,setGiftEditId,setGiftLoading,setGiftMoreOpen,setHhModalOpen,setPgForm,setPgOpen,setPledgeEdit,setPledgeForm,setPledgeStatus,setRelatedOpen,setSeqId,setSeqLoading,setSeqOpen,setSeqToast,setShowYearEnd,setYearDrill,setYearEndYear,showYearEnd,softCredit,status,toggleDesignation,yearDrill,yearEndBusy,yearEndErr,yearEndYear}}/>
+          <GivingTab {...{rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addPgOpen,addPlannedGift,addPledge,addPledgeOpen,addToPipeline,askAmt,askName,askOpen,campaigns,closeAsk,deleteGift,deletePlannedGift,deletePledge,dismissSuggestion,dismissedSug,donor,downloadReceiptPdf,dpItems,dpTab,exportGiftsCSV,figs,fundAffinity,fundLoading,giftCfDefs,giftCfEditStr,giftCountReal,giftEditForm,giftEditId,giftErr,giftLoading,giftMoreOpen,giftPeopleQ,giftReadErr,giftSaving,gifts,giftsFull,hasDesignation,household,isAdmin,isReadOnly,isTeam,loadGiftsFull,lockMajor,moveSuggestions,moves,onNavigate,onStageChange,openProposals,opps,pgForm,pgOpen,pgSaving,pipelineAdded,plannedGifts,pledgeEdit,pledgeForm,pledgeResendBusyId,pledgeResentIds,pledgeSaving,pledges,propData,proposalsKnown,receiptBusyId,receiptForGift,receiptsEnabled,recurResendBusy,recurResendSent,recurringSub,refundRows,reloadProps,resendPledgeReminder,resendRecurringLink,saveGiftEdit,savePledgeEdit,sc,scores,sendReceipt,sendYearEndStatement,seqId,seqLoading,seqOpen,seqToast,sequences,setAddGiftForm,setAddGiftOpen,setAddPgOpen,setAddPledgeOpen,setAskAmt,setAskName,setAskOpen,setDpTab,setGiftEditForm,setGiftEditId,setGiftLoading,setGiftMoreOpen,setHhModalOpen,setPgForm,setPgOpen,setPledgeEdit,setPledgeForm,setPledgeStatus,setRelatedOpen,setSeqId,setSeqLoading,setSeqOpen,setSeqToast,setShowYearEnd,setYearDrill,setYearEndYear,showYearEnd,softCredit,status,toggleDesignation,yearDrill,yearEndBusy,yearEndErr,yearEndYear}}/>
 
           {mergeOpen&&<MergeWithModal donor={donor} onMerged={id=>{mergeKeptRef.current=id;}}
             onClose={()=>{setMergeOpen(false);const k=mergeKeptRef.current;mergeKeptRef.current=null;if(k&&onSelectRelatedDonor)onSelectRelatedDonor(k);}}/>}

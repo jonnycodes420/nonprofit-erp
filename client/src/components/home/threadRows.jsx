@@ -176,8 +176,10 @@ export function threadRow({ TOUCH_WORD, finishRow, i, isReadOnly, loadThreads, m
       </div>
       <div className="attn-row-actions" style={{display:"flex",gap:8,flexShrink:0,alignItems:"center",padding:"8px 16px 8px 8px"}}>
         <button className="attn-row-action" onClick={()=>finishRow(t)} disabled={isReadOnly}
-          title={isReadOnly?"Reactivate your subscription to make changes.":"Log what happened and the next step comes back"}
-          style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>Done</button>
+          data-testid="thread-row-done" title={isReadOnly?"Reactivate your subscription to make changes.":"Marks this step done"}
+          style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>Mark done</button>
+        {!isReadOnly&&t.kind!=="task"&&finishRow.logCall&&<button type="button" data-testid="thread-row-log" onClick={()=>finishRow.logCall(t)}
+          style={{background:"none",border:"none",padding:"4px 2px",color:T.ink3,fontSize:11.5,textDecoration:"underline",textUnderlineOffset:2,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>Log a call too</button>}
         {/* BUILD-94 Part 5 — a next step is an appointment somebody has to
             keep, and hers lives in Outlook. Three links and a file; nothing
             syncs, and the menu says so. */}
@@ -205,12 +207,22 @@ export function threadClause({ TOUCH_WORD }) {
 export function finishRow({ loadThreads, setConvoFor }) {
   const finishRow=async t=>{
     const convo=()=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t});
-    if(t.kind!=="task"||!t.doneRoute) return convo();
+    // FLOWS-1 item 12: Done marks the step done (it opened Log a call every
+    // time); logging a call is the optional link beside it.
+    if(t.kind!=="task"||!t.doneRoute){
+      try{
+        await apiFetch(`/threads/${encodeURIComponent(t.id)}/done`,{method:"POST",body:JSON.stringify({})});
+        loadThreads();
+        offerUndo({message:`Done: ${t.nextStep.label}`,undoAction:async()=>{const r=await apiFetch(`/threads/${encodeURIComponent(t.id)}/done`,{method:"POST",body:JSON.stringify({done:false})});loadThreads();return r;}},t.nextStep.label);
+      }catch(e){ console.warn("[thread done]",(e&&e.sentence)||(e&&e.message)); loadThreads(); }
+      return;
+    }
     try{
       await apiFetch(t.doneRoute,{method:"POST",body:JSON.stringify({done:true})});
       loadThreads();
       offerUndo({message:`Done: ${t.nextStep.label}`,undoAction:async()=>{const r=await apiFetch(t.doneRoute,{method:"POST",body:JSON.stringify({done:false})});loadThreads();return r;}},t.nextStep.label);
     }catch(e){ if(e&&e.error==="needs_outcome") convo(); }
   };
+  finishRow.logCall=t=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t});
   return finishRow;
 }

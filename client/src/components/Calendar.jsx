@@ -211,6 +211,9 @@ export default function CalendarPage({ isReadOnly, onNavigate, isAdmin }) {
           <button type="button" aria-label="Back" style={chip} onClick={() => setAnchor(a => step(view, a, -1))}>‹</button>
           <button type="button" aria-label="Forward" style={chip} onClick={() => setAnchor(a => step(view, a, 1))}>›</button>
           <span data-testid="cal-title" style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginLeft: 4 }}>{title}</span>
+          {/* FLOWS-1 item 3: a clear way to add a meeting (clicking an empty slot adds one there too) */}
+          {!isReadOnly && !narrow && <button type="button" data-testid="cal-add-meeting" onClick={() => setForm({ kind: "meeting", date: today >= range.from && today <= range.to ? today : range.from, time: null })}
+            style={{ ...btn, marginLeft: 8 }}>Add meeting</button>}
         </div>
       </div>
       {/* Part 4: ask from the calendar, scoped to the dates on screen. */}
@@ -238,7 +241,7 @@ export default function CalendarPage({ isReadOnly, onNavigate, isAdmin }) {
       {card && <ItemCard card={card} today={today} onMove={move} isReadOnly={isReadOnly} onClose={() => setCard(null)} onNavigate={onNavigate} onChanged={m => { setCard(null); setNote(m || ""); load(); }}
         onEditShift={it => { setCard(null); setForm({ kind: "shift", item: it }); }} />}
       {adding && <AddMenu at={adding} onClose={() => setAdding(null)} onPick={kind => { setForm({ kind, date: adding.date, time: adding.time }); setAdding(null); }} />}
-      {form && <AddForm form={form} onClose={() => setForm(null)} onSaved={m => { setForm(null); setNote(m || ""); load(); }} />}
+      {form && <AddForm form={form} calendar={push} onClose={() => setForm(null)} onSaved={m => { setForm(null); setNote(m || ""); load(); }} />}
     </div>
   );
 }
@@ -304,7 +307,8 @@ function TimeGrid({ days, items, today, isReadOnly, onOpen, onAdd, onMove }) {
         if (d && d.moved) {
           justDragged.current = true; setTimeout(() => { justDragged.current = false; }, 50);
           const days = d.mode === "move" ? Math.round(d.dx / colW()) : 0;
-          const mins = Math.round(((d.dy / HOUR_PX) * 60) / SNAP) * SNAP;
+          // FLOWS-1 item 3: an all-day item (a task, a step with no time) moves by whole days only
+          const mins = d.allDay ? 0 : Math.round(((d.dy / HOUR_PX) * 60) / SNAP) * SNAP;
           if (days || mins) onMove(d.item, d.mode === "move" ? { days, minutes: mins } : { endMinutes: mins });
         }
         return null;
@@ -313,10 +317,10 @@ function TimeGrid({ days, items, today, isReadOnly, onOpen, onAdd, onMove }) {
     window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up);
     return () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); };
   }, [drag && drag.item && drag.item.id]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const start = (e, item, mode) => {
+  const start = (e, item, mode, allDayRow = false) => {
     if (isReadOnly || !(item.editable && item.editable[mode === "move" ? "move" : "resize"])) return;
     e.stopPropagation(); e.preventDefault();
-    setDrag({ item, mode, x0: e.clientX, y0: e.clientY, dx: 0, dy: 0, moved: false });
+    setDrag({ item, mode, allDay: allDayRow, x0: e.clientX, y0: e.clientY, dx: 0, dy: 0, moved: false });
   };
   return (
     <div data-testid="cal-grid" style={{ border: "1px solid " + T.bg3, borderRadius: 12, background: T.white, overflow: "hidden" }}>
@@ -331,8 +335,15 @@ function TimeGrid({ days, items, today, isReadOnly, onOpen, onAdd, onMove }) {
       <div data-testid="cal-allday" style={{ display: "grid", gridTemplateColumns: `52px repeat(${days.length}, minmax(0,1fr))`, borderBottom: "1px solid " + T.bg2, minHeight: 28 }}>
         <div style={{ fontSize: 10, color: T.ink3, padding: "6px 4px", textAlign: "right" }}>All day</div>
         {days.map(d => (
-          <div key={d} onClick={() => onAdd(d, null)} style={{ borderLeft: "1px solid " + T.bg2, padding: 3, display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-            {allDay(d).slice(0, 4).map(it => <Block key={it.id + d} item={it} onOpen={onOpen} compact />)}
+          <div key={d} data-testid="cal-allday-day" data-day={d} onClick={() => { if (!justDragged.current) onAdd(d, null); }} style={{ borderLeft: "1px solid " + T.bg2, padding: 3, display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+            {allDay(d).slice(0, 4).map(it => {
+              // FLOWS-1 item 3: a task dragged from Wednesday to Thursday moves (it stayed put: this row had no drag)
+              const dragging = drag && drag.item.id === it.id && drag.moved;
+              return <div key={it.id + d} onPointerDown={e => start(e, it, "move", true)}
+                style={{ transform: dragging ? `translate(${drag.dx}px, ${drag.dy}px)` : undefined, position: "relative", zIndex: dragging ? 5 : 1, touchAction: "none", opacity: dragging ? 0.85 : 1 }}>
+                <Block item={it} onOpen={(x, e) => { if (!justDragged.current && !(drag && drag.moved)) onOpen(x, e); }} compact />
+              </div>;
+            })}
             {allDay(d).length > 4 && <button type="button" data-testid="cal-allday-more" onClick={e => { e.stopPropagation(); setMoreDay(d); }}
               style={{ background: "none", border: "none", padding: 0, fontSize: 11, color: T.greenDk, textAlign: "left", cursor: "pointer" }}>{allDay(d).length - 4} more</button>}
           </div>))}
@@ -620,13 +631,13 @@ function AddMenu({ at, onClose, onPick }) {
 // booked on her connected calendar (POST /donors/:id/book-visit), a call or a
 // next step is a Thread step (POST /donors/:id/threads), a shift is the shift
 // form, an event is the events form's own route (POST /events).
-function AddForm({ form, onClose, onSaved }) {
+function AddForm({ form, calendar, onClose, onSaved }) {
   if (form.kind === "shift") {
     const it = form.item;
     if (it) return <ShiftFromCalendar slotId={it.ref.slotId} date={it.start.slice(0, 10)} onClose={onClose} onSaved={onSaved} />;
     return <ShiftEditor date={form.date} startTime={form.time || "09:00"} endTime={form.time ? `${pad(Math.min(23, +form.time.slice(0, 2) + 3))}:00` : "12:00"} onClose={onClose} onSaved={onSaved} />;
   }
-  return <QuickForm form={form} onClose={onClose} onSaved={onSaved} />;
+  return <QuickForm form={form} calendar={calendar} onClose={onClose} onSaved={onSaved} />;
 }
 function ShiftFromCalendar({ slotId, date, onClose, onSaved }) {
   const [shift, setShift] = useState(null);
@@ -635,7 +646,8 @@ function ShiftFromCalendar({ slotId, date, onClose, onSaved }) {
   if (!shift) { onClose(); return null; }
   return <ShiftEditor shift={shift} onClose={onClose} onSaved={onSaved} />;
 }
-function QuickForm({ form, onClose, onSaved }) {
+function QuickForm({ form, calendar, onClose, onSaved }) {
+  const saving = useRef(false);   // FLOWS-1: a second press while the first is saving is not a second save
   const [q, setQ] = useState("");
   const [hits, setHits] = useState([]);
   const [who, setWho] = useState(null);
@@ -653,6 +665,8 @@ function QuickForm({ form, onClose, onSaved }) {
     return () => clearTimeout(t);
   }, [q]);   // eslint-disable-line react-hooks/exhaustive-deps
   const save = async () => {
+    if (saving.current) return;
+    saving.current = true;
     setBusy(true); setErr("");
     try {
       if (form.kind === "event") {
@@ -668,6 +682,7 @@ function QuickForm({ form, onClose, onSaved }) {
         onSaved(`${label || "The step"} with ${who.name} is on the calendar.`);
       }
     } catch (e) { setErr((e && e.sentence) || errorMessage(e, "That was not added.")); }
+    saving.current = false;
     setBusy(false);
   };
   const title = { meeting: "Meeting", call: "Call", step: "Next step", event: "Event" }[form.kind];
@@ -690,7 +705,10 @@ function QuickForm({ form, onClose, onSaved }) {
           <input aria-label="Time" type="time" value={time} onChange={e => setTime(e.target.value)} style={{ ...inp, flex: "0 1 120px" }} />
           {form.kind === "meeting" && <select aria-label="How long" value={mins} onChange={e => setMins(e.target.value)} style={inp}>{["30", "45", "60", "90"].map(m => <option key={m} value={m}>{m} minutes</option>)}</select>}
         </div>
-        {form.kind === "meeting" && <div style={{ fontSize: 12.5, color: T.ink3 }}>Booked on your connected calendar. Nobody is invited unless you invite them from there.</div>}
+        {/* FLOWS-1: one sentence, true either way: her calendar when one is connected, Steward's when not */}
+        {form.kind === "meeting" && <div data-testid="cal-meeting-where" style={{ fontSize: 12.5, color: T.ink3 }}>{calendar && calendar.connected
+          ? `It goes on your ${calendar.provider === "microsoft" ? "Outlook" : "Google"} calendar, and nobody is invited.`
+          : "It goes on Steward's calendar, and nobody is invited."}</div>}
         {err && <div role="alert" style={{ fontSize: 13 }}>{err}</div>}
         <div style={{ display: "flex", gap: 8 }}>
           <button type="button" data-testid="cal-quick-save" style={{ ...btn, opacity: ready ? 1 : 0.5 }} disabled={!ready || busy} onClick={save}>{busy ? "Saving…" : "Add"}</button>

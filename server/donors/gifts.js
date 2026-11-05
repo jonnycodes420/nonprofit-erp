@@ -15,6 +15,7 @@ const auditTrailMod = require("../../auditTrail");
 const SEND_GATE = require("../../sendGate");   // SEND-GATE-1: a staff click is the confirm for one message
 const TL = require("../../timelineLine");
 const NUM = require("../../campaignMatch");
+const RCE = require("./receiptEmail");   // FLOWS-1: a receipt or statement emailed only on its own click
 const PW = require("../../pledgeWrite");   // FIX-60: the one writer of a pledge and its installments
 
 const routers = {
@@ -995,7 +996,8 @@ app.post("/gifts/:id/receipt", requireAuth, checkWriteAccess, wrap(async (req, r
     return res.status(409).json({ error: "This gift already has an active receipt.", receipt: existingRows[0] });
   }
 
-  const result = await issueGiftReceipt(gift, org, donor, { send: true, by: actor(req), manual: true });
+  // FLOWS-1: the profile makes the receipt (send:false) and emails it only on its own click (/receipts/:id/email)
+  const result = await issueGiftReceipt(gift, org, donor, { send: !(req.body && req.body.send === false), by: actor(req), manual: true });
   if (result.skipped === "undated_gift") return res.status(409).json({ error: "undated_gift",
     message: "This gift has no date, and a tax receipt names the day a gift was given. Set the date on the gift, then send the receipt." });
   if (result.skipped) return res.status(400).json({ error: `Could not issue receipt: ${result.skipped}` });
@@ -1005,6 +1007,7 @@ app.post("/gifts/:id/receipt", requireAuth, checkWriteAccess, wrap(async (req, r
 // List for DonorProfile's Gifts & Pledges tab — no pdf_data in the list
 // response (board_reports pattern), fetched separately via
 // GET /receipts/:id/pdf only when actually downloading one.
+RCE.register(app, { query, requireAuth, checkWriteAccess, wrap, actor, resendReceiptEmail });   // FLOWS-1 item 4: "Email it", one click
 app.get("/donors/:id/receipts", requireAuth, wrap(async (req, res) => {
   if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B: the parent must be YOURS before children are answered — even an empty list confirms nothing about another tenant
   const rows = await query(

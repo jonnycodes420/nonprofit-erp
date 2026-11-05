@@ -551,16 +551,20 @@ function StepEditor({ step, index, total, data, editable, onSet, onAdd, onDuplic
         </label>
         <label style={{ display: "block" }}>
           <span style={LBL}>Counted from</span>
-          <select data-testid="jb-timing-from" value={index === 0 ? "trigger" : (timing.from || "trigger")}
-            disabled={!editable || index === 0} style={INP}
-            onChange={e => setTiming({ from: e.target.value })}>
-            {(data.timingFrom || []).map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
-          </select>
+          {/* FLOWS-1 item 2: step 1 is always counted from when they join, so
+              it says so in words instead of showing a dropdown that can't move. */}
+          {index === 0
+            ? <div data-testid="jb-timing-from-fixed" style={{ fontSize: 13, color: T.ink, padding: "9px 0", lineHeight: 1.4 }}>when they join</div>
+            : <select data-testid="jb-timing-from" value={timing.from || "trigger"}
+                disabled={!editable} style={INP}
+                onChange={e => setTiming({ from: e.target.value })}>
+                {(data.timingFrom || []).map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+              </select>}
         </label>
       </div>
       {index === 0 && (
         <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 6, lineHeight: 1.5 }}>
-          The first step is counted from the trigger. There is no step before it to follow.
+          The first step is counted from when they join the journey. There is no step before it to follow.
         </div>
       )}
 

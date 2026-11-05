@@ -252,7 +252,7 @@ export function buildTimelineItems({ rel, gifts = [], pledges = [], interactions
   // mailbox they came to: listed here too, each opening that message there.
   const mailFiles = (rel.emailThreads || []).flatMap(t => t.mailFiles || []);
   const fileItems = (attachments || []).map(f => ({ kind: "file", bucket: "file", id: "f:" + f.id,
-    date: String(f.createdAt || "").slice(0, 10), f }))
+    date: f.createdAt ? civilDayOf(new Date(f.createdAt)) : "", f }))   // FLOWS-1: the org's day, not the UTC one ("Tomorrow" after 7 pm ET)
     .concat(mailFiles.map(mf => ({ kind: "file", bucket: "file", id: "mf:" + mf.interactionId,
       date: String(mf.date || "").slice(0, 10), mf })))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));

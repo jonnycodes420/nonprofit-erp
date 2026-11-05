@@ -8,6 +8,8 @@
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const REPEAT = require("./repeat");
+const TDONE = require("./threadDone");   // FLOWS-1: every way a repeating task is finished makes its next one
 const ItemRefs = require("../../itemRefs");   // THREAD-2: the things a sentence names
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
@@ -291,6 +293,8 @@ app.post("/tasks", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   // Tenant guard: a linked donor must belong to the caller's org.
   if (!(await orgOwns("donors", donorId, req.user.orgId)))
     return res.status(404).json({ error: "Donor not found" });
+  const ofKind = await require("./kindOnce").openOfKind({ query }, req.user.orgId, donorId, req.body);   // FLOWS-1 item 9
+  if (ofKind) return res.status(200).json(ofKind);
 
   // Owner defaults to the creator; may target a teammate (validated to the org).
   if (!(await OU.orgUser(req.user.orgId, assignedTo)).ok) return OU.refuse(res, "assignedTo");
@@ -456,7 +460,7 @@ app.post("/tasks/bulk", requireAuth, checkWriteAccess, wrap(async (req, res) => 
   const action = String(b.action || "");
   if (!ids.length || !["reassign", "move", "done", "undone", "delete", "restore"].includes(action))
     return res.status(400).json({ error: "bad_bulk", sentence: "Pick some tasks and one thing to do to them." });
-  const rows = await query(`SELECT id, title, due, done, assigned_to, assigned_to_name, link_kind, thread_id FROM tasks WHERE org_id=? AND id IN (${ids.map(() => "?").join(",")})`, [orgId, ...ids]);
+  const rows = await query(`SELECT id, title, due, done, recur, assigned_to, assigned_to_name, link_kind, thread_id FROM tasks WHERE org_id=? AND id IN (${ids.map(() => "?").join(",")})`, [orgId, ...ids]);
   let owner = null;
   if (action === "reassign") {
     const { ok, user: u } = await OU.orgUser(orgId, b.assignedTo);
@@ -483,6 +487,7 @@ app.post("/tasks/bulk", requireAuth, checkWriteAccess, wrap(async (req, res) => 
       if (linked && linked.refused) { skipped.push({ id: t.id, title: t.title, sentence: linked.refused.sentence }); continue; }
       if (!linked) await run(`UPDATE tasks SET done=?, completed_at=${done ? "NOW()" : "NULL"}, completed_by_name=?, updated_at=NOW() WHERE id=? AND org_id=?`,
         [done, done ? actor(req).name : null, t.id, orgId]);
+      if (done) await REPEAT.afterDone({ query, run }, orgId, t, (await taskDays(orgId)).today); else await REPEAT.afterUndone({ run }, orgId, t);   // FLOWS-1
     } else if (action === "delete") {
       if (t.link_kind === "next_step" || t.link_kind === "deadline") {
         skipped.push({ id: t.id, title: t.title, sentence: t.link_kind === "deadline" ? "A grant deadline goes when it is taken off the grant." : "A next step goes when it is dismissed on the Thread." });
@@ -519,7 +524,7 @@ app.put("/tasks/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
 
   // Reassignment (BUILD-36 A2): validate a new assignee to the org, capture the
   // prior owner so we only notify on a genuine change to a NEW person.
-  const priorRows = await query("SELECT assigned_to FROM tasks WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const priorRows = await query("SELECT id, assigned_to, done, recur, due FROM tasks WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!priorRows.length) return res.status(404).json({ error: "Task not found" });
   const priorAssignee = priorRows[0].assigned_to;
   let newAssignee, newAssigneeName;
@@ -544,6 +549,11 @@ app.put("/tasks/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const affected = await run(
     `UPDATE tasks SET ${sets.join(",")} WHERE id=? AND org_id=?`, params);
   if (!affected.changes) return res.status(404).json({ error: "Task not found" });
+  // FLOWS-1: a repeating task ticked here comes back, as it does from Tasks
+  if (done !== undefined && !!done !== (priorRows[0].done === 1)) {
+    if (done) await REPEAT.afterDone({ query, run }, req.user.orgId, priorRows[0], (await taskDays(req.user.orgId)).today);
+    else await REPEAT.afterUndone({ run }, req.user.orgId, priorRows[0]);
+  }
   const rows = await query(
     `SELECT t.*, d.name AS donor_name FROM tasks t
        LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id WHERE t.id = ?`, [req.params.id]);
@@ -635,25 +645,10 @@ app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, 
     [done ? actor(req).name : null, t.id, orgId]);
   // TASKS-2 · A REPEAT. Finishing a repeating task makes the next one, once;
   // taking the tick back takes the untouched next one away again.
+  // FLOWS-1: the one place a next repeat is made (repeat.js), for every way a task is finished.
   let next = null;
-  const recur = ts.normalizeRecur(t.recur);
-  if (recur && done === 1) {
-    const [have] = await query("SELECT id FROM tasks WHERE recur_parent_id=? AND org_id=?", [t.id, orgId]);
-    if (!have) {
-      const { today } = await taskDays(orgId);
-      const nid = newId("t");
-      await run(
-        `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name,
-                            kind,due_time,notes,checklist,recur,household_id,grant_id,event_id,campaign_id,recur_parent_id)
-         SELECT ?,org_id,title,?,priority,type,0,donor_id,assigned_to,assigned_to_name,NOW(),?,?,
-                kind,due_time,notes,(SELECT COALESCE(jsonb_agg(jsonb_set(e,'{done}','false'::jsonb)),'[]'::jsonb) FROM jsonb_array_elements(COALESCE(checklist,'[]'::jsonb)) e),
-                recur,household_id,grant_id,event_id,campaign_id,id
-           FROM tasks WHERE id=? AND org_id=?`,
-        [nid, ts.nextDue(recur, t.due, today), "system:task-repeat", "Steward", t.id, orgId]);
-      next = await readTask(orgId, nid);
-    }
-  }
-  if (recur && done === 0) await run("DELETE FROM tasks WHERE recur_parent_id=? AND org_id=? AND done=0 AND link_kind IS NULL", [t.id, orgId]);
+  if (done === 1) { const nid = await REPEAT.afterDone({ query, run }, orgId, t, (await taskDays(orgId)).today); if (nid) next = await readTask(orgId, nid); }
+  else await REPEAT.afterUndone({ run }, orgId, t);
   res.json({ ...(await readTask(orgId, t.id)), next });
 }));
 
@@ -715,6 +710,7 @@ app.post("/tasks/:id/thank", requireAuth, checkWriteAccess, wrap(async (req, res
   if (linked && linked.refused) return res.status(409).json(linked.refused);
   if (!linked) await run("UPDATE tasks SET done=1, updated_at=NOW() WHERE id=? AND org_id=?", [t.id, orgId]);
   await run("UPDATE tasks SET completed_at=COALESCE(completed_at, NOW()), completed_by_name=? WHERE id=? AND org_id=?", [actor(req).name, t.id, orgId]);
+  await REPEAT.afterDone({ query, run }, orgId, t, (await taskDays(orgId)).today);   // FLOWS-1
   if (req.audit) { req.audit.entity("gift", g.id); req.audit.before(before); req.audit.after({ acknowledgement_sent: true, task_done: true, mode }); }
   res.json({ ok: true, mode, giftId: g.id, before, draftIds: drafts.map(d => d.id), task: await readTask(orgId, t.id) });
 }));
@@ -1147,6 +1143,7 @@ app.get("/threads", requireAuth, wrap(async (req, res) => {
 // POST /threads/:id/dismiss — the other way out. reason ∈ the short fixed
 // list; "revisit" is a snooze (the thread stays open, resurfaces on the
 // date), the other two close the thread with the reason on the row.
+TDONE.register(app, { query, run, wrap, requireAuth, checkWriteAccess, actor, advanceCultivationPlan });   // FLOWS-1 item 12: Mark done marks it done
 app.post("/threads/:id/dismiss", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const [t] = await query("SELECT * FROM threads WHERE id = ? AND org_id = ?", [req.params.id, orgId]);

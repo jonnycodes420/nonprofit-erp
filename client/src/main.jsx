@@ -151,12 +151,16 @@ function AuthProvider({ children }) {
     }
     // SEC-1 — end this session on the server too, so the token is dead and the
     // session leaves the list. Best effort: signing out never waits on it.
-    if (localStorage.getItem("npe_token")) apiFetch("/auth/logout", { method: "POST", body: "{}" }).catch(() => {});
+    const ended = localStorage.getItem("npe_token") ? apiFetch("/auth/logout", { method: "POST", body: "{}" }).catch(() => {}) : Promise.resolve();
     localStorage.removeItem("npe_token");
     localStorage.removeItem("npe_user");
     localStorage.removeItem("npe_org");
     setPageOrg(null);
-    setAuth(null);
+    // FLOWS-1 item 6: sign-out landed on a solid blank page (the ink body with
+    // nothing drawn on it). It now ends on a fresh load of the sign-in page,
+    // carrying nothing of the signed-in app; the server's logout gets at most
+    // a second and a half before it goes (the token is already gone here).
+    Promise.race([ended, new Promise(r => setTimeout(r, 1500))]).finally(() => window.location.assign("/login"));
   };
   const refreshOrg = async () => {
     try {
