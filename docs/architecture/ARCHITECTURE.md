@@ -147,6 +147,13 @@ to grow by at most 50 lines in a build (so a fix can land while the split is sti
 - Each process opens at most `DB_POOL_MAX` plus the set-wise pool's `min(3, max(1, floor(DB_POOL_MAX / 3)))`: web 10 + 3 = 13 (the default), worker 5 + 1 = 6.
 - A deploy runs the old web, the new web and the worker at once.
 - The rule: **2 × web + worker ≤ pooler size** (today 2 × 13 + 6 = 32 of 40). `npm run status`'s `db pool` line checks it.
+- LOAD-1: a process may also open one connection to cancel an abandoned read (`requestLimits.cancelPool`), only while it cancels, closed after 10 s idle. Keep one spare per process under the pooler for it.
+
+## Request limits (LOAD-1)
+
+- Every web request's statements stop at 10 s (`REQUEST_STATEMENT_TIMEOUT_MS`), and so does its wait for a connection; the answer is a 503 with "This took too long; try again or narrow it." A route whose single statements are big by nature takes a named longer limit from `LONGER` in `server/shared/requestLimits.js`, never an ad hoc `SET`.
+- A read the browser abandons is cancelled. A write is never cancelled half way.
+- No connection is held across an await on anything but the database (an AI call, Stripe, S3, mail, an HTTP call to the app itself). The places that still do are listed in `docs/history/LOAD-1.md`.
 
 ## Tests
 

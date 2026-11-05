@@ -147,7 +147,10 @@ const PARKED_TTL_MS = 30000;
 // marked seen the moment they drew, and that threw away Home's own reads
 // still parked for it, which then went out again. A seen-write whose own read
 // is kept or re-read (/org/welcome/seen, /gift-starts/notice/seen) is NOT here.
-const SEEN_ONLY = [/^\/insights\/seen$/, /^\/atlas\/notes\/seen$/];
+// LOAD-1: a conversation's suggested next steps are a POST only because they
+// carry a body; the route reads the note and writes nothing. Opening a profile
+// asks for them, and that threw away the profile's own reads still parked.
+const SEEN_ONLY = [/^\/insights\/seen$/, /^\/atlas\/notes\/seen$/, /^\/interactions\/[^/]+\/suggest$/];
 
 // ── SCALE-2: A SCREEN'S FIRST READS IN ONE REQUEST ─────────────────────────
 // Home opened with 25 requests. prefetch(paths) asks for them in ONE
@@ -168,7 +171,11 @@ function takeEarly(url) {
   delete e.reads[url];
   return p;
 }
-export function prefetch(paths, { keep = false } = {}) {
+// LOAD-1: `bundle` names the request that answers them (a profile's is
+// /donors/:id/bundle, lib/profileReads.js), and `after` holds it back until
+// that promise settles, so a profile's second request starts once its first
+// has answered and the two never queue against each other.
+export function prefetch(paths, { keep = false, bundle: bundleUrl = bundlePath, after = null } = {}) {
   const token = getToken();
   if (!token) return Promise.resolve(null);
   const have = p => {
@@ -179,13 +186,14 @@ export function prefetch(paths, { keep = false } = {}) {
   // PERF-2: a {scope} read is had when it is in flight, or its answer is parked under either scope.
   const want = [...new Set(paths)].filter(p => !have(p) && !(p.includes("{scope}") && ["mine", "all"].some(s => have(p.split("{scope}").join(s)))));
   if (!want.length) return Promise.resolve(null);
-  const url = bundlePath(want);
+  const url = bundleUrl(want);
   // PERF-2: app.html's preloader asks for the boot's bundles the moment the
   // page arrives (scripts/prerender.mjs), before this code has downloaded. Its
   // answer is taken once, for the same address; when it did not answer, the
   // bundle is asked for here as it always was.
   const early = takeEarly(url);
-  const bundle = (early ? early.then(b => b || apiFetchNow(url)) : apiFetchNow(url)).catch(() => null);
+  const ask = () => (early ? early.then(b => b || apiFetchNow(url)) : apiFetchNow(url));
+  const bundle = (after ? Promise.resolve(after).catch(() => null).then(ask) : ask()).catch(() => null);
   // PERF-2: a read written with {scope} comes back under the path the server
   // resolved it to (routes/homeBundle.js), so it is parked under that path for
   // Home, and only when it answered; otherwise Home asks for it as it always did.

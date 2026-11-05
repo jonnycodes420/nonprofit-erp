@@ -353,7 +353,7 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
   const _quietLapsing = NUMBERS.lapse.lapsingSql("x.last_gift_date", _quietBounds.today, "x.id");
   const pAtRiskDonors = query(
     `SELECT x.id, x.name, x.amount, x.last_gift_date FROM (
-       SELECT d.id, d.name, COALESCE(d.total_giving, 0) AS amount, LEFT(${NUMBERS.lastGift.LAST_DATE("d")}, 10) AS last_gift_date
+       SELECT d.id, d.org_id, d.name, COALESCE(d.total_giving, 0) AS amount, LEFT(${NUMBERS.lastGift.LAST_DATE("d")}, 10) AS last_gift_date
          FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.total_giving > 0) x
       WHERE x.last_gift_date IS NOT NULL AND (${_quietLapsed.sql} OR ${_quietLapsing.sql})
       ORDER BY x.amount DESC

@@ -1,0 +1,108 @@
+# LOAD-1 · TEN ORGS AT ONCE, EVERY NIGHT.
+#
+# Boots a throwaway Postgres and the server the way ci.yml's battery does,
+# seeds ten orgs of made-up people (1k to 25k, scripts/load/ten-orgs.js seed)
+# into that throwaway database, and runs 20 simulated staff for 5 minutes
+# against it. The table per route goes to the run summary and the JSON is kept
+# as the "load-summary" artifact, which `npm run status` reads for its load
+# line. A missed bar fails the run:
+#   p95 under 1 s for every API route · a whole profile open under 1.5 s ·
+#   nothing over 10 s · no wait for a connection that gave up · no 5xx
+# Never prod: every address here is localhost, and ten-orgs.js refuses
+# anything else. Nothing sends (the mail address is a port nothing listens on).
+name: Nightly load
+
+on:
+  schedule:
+    - cron: "17 7 * * *"   # 07:17 UTC, 2:17 or 3:17 AM in New York
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: load-nightly
+  cancel-in-progress: false
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: steward
+          POSTGRES_PASSWORD: steward
+          POSTGRES_DB: steward_load
+        ports:
+          - 5544:5432
+        options: >-
+          --health-cmd "pg_isready -U steward"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://steward:steward@localhost:5544/steward_load
+      DB_SSL: disable
+      JWT_SECRET: load-nightly-throwaway-secret
+      PORT: "5601"
+      # Production-shaped: no TEST_MODE, the real limiters and timers; only the
+      # per-person ceiling is lifted, since zero-think users outrun it.
+      SIGNED_IN_LIMIT: "1000000"
+      SESSION_CACHE_TTL_MS: "30000"
+      RESEND_API_KEY: re_dummy_local
+      RESEND_BASE_URL: http://localhost:5602   # nothing listens: no mail can leave
+      DEMO_SMTP_FROM: noreply@stewardapp.dev
+      STRIPE_SECRET_KEY: sk_test_dummy
+      STRIPE_WEBHOOK_SECRET: whsec_localtest
+      STRIPE_API_BASE: http://localhost:5603
+      STEWARD_CREDENTIAL_KEY: ci-only-throwaway-credential-key-0123456789
+      STRIPE_BILLING_SECRET_KEY: sk_test_dummy
+      STRIPE_BILLING_API_BASE: http://localhost:5604
+      FOUNDER_EMAIL: jonathan@stewardapp.dev
+      DISABLE_BACKGROUND_TICKS: "1"
+      BASE: http://localhost:5601
+      OUT: load/load-summary.json
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install server deps (locked)
+        run: npm ci
+
+      # As prod runs: the web serves and enqueues (STEWARD_PROCESS=web), and a
+      # worker of its own runs the queue (what follows each gift and call).
+      - name: Boot the web and the worker, and wait for /ready
+        run: |
+          mkdir -p load
+          STEWARD_PROCESS=web nohup node server.js > load/server.log 2>&1 &
+          for i in $(seq 1 90); do
+            curl -sf http://localhost:5601/ready >/dev/null && break
+            sleep 2
+          done
+          curl -sf http://localhost:5601/ready >/dev/null || { echo "The web never became ready."; tail -80 load/server.log; exit 1; }
+          PORT=5605 DB_POOL_MAX=5 nohup node worker.js > load/worker.log 2>&1 &
+          echo "web and worker up"
+
+      - name: Seed ten orgs of made-up people
+        run: node scripts/load/ten-orgs.js seed
+
+      - name: Twenty users, five minutes
+        run: node scripts/load/ten-orgs.js run
+
+      - name: Keep the summary and the log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-summary
+          path: load/
+          if-no-files-found: ignore
