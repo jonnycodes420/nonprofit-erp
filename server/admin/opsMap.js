@@ -107,7 +107,7 @@ function itemsFromChecks(rows) {
   }
   return items;
 }
-const iso = t => (t instanceof Date ? t.toISOString() : new Date(t).toISOString());
+const iso = t => new Date(t).toISOString();   // created_at, a timestamp (never a stored day)
 const isoDay = t => iso(t).slice(0, 10);
 const note = r => ({ on: iso(r.created_at), words: r.note, shot: r.has_shot ? r.id : null, by: r.created_by_name || null });
 

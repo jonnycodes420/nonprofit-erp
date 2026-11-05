@@ -120,7 +120,7 @@ function renderMapView(props) {
   ok("an unknown prefix lands in Unsorted, never nowhere", wc("unsorted", "Zed4").verdict === "FAIL" && (m.find(a => a.id === "unsorted").items || []).some(i => i.check === "Zed4"));
   ok("each area shows its open walk items", (m.find(a => a.id === "donors").items || []).some(i => i.id === "W-1104-List9") && (m.find(a => a.id === "grants").items || []).some(i => i.id === "W-1104-Grants-3"));
   const mhtml = renderMapView({ data: { ok: true, areas: m, lastWalk: "2026-11-05", demo: { signIn: MAP.DEMO_DIRECTOR, missing: [] } }, onMark: () => {} });
-  ok("the page shows a walk check's result in its area", /data-area="profile"[\s\S]*data-check="Prof4"[\s\S]*walk pass · 11-05[\s\S]*data-area="gifts"/.test(mhtml));
+  ok("the page shows a walk check's result in its area", /data-area="profile"[\s\S]*data-check="Prof4"[\s\S]*walk pass · Nov 5[\s\S]*data-area="gifts"/.test(mhtml));
 
   console.log("\n§4 · Fail with a note makes a board item; Pass verifies it");
   const noNote = await api("POST", "/ops/checks", sup, { area: "gifts", check: "Gift-A", verdict: "fail", note: "  " });

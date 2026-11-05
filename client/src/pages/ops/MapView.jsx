@@ -17,13 +17,17 @@ const btn = primary => ({ fontSize: 12, padding: "4px 10px", borderRadius: 6, cu
 const link = { color: EMERALD, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" };
 
 const verdictGood = v => (v === "PASS" || v === "pass" ? true : v === "FAIL" || v === "fail" ? false : null);
-const day = s => (s ? String(s).slice(0, 10) : "");
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// "Nov 5": the day a walk or a mark is for, read from its own YYYY-MM-DD (no time zone moves it).
+const when = s => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || "")); return m ? `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}` : ""; };
+// A mark is an instant, so it reads in this browser's own day.
+const markedOn = at => (at ? new Date(at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "");
 
 function Result({ walk, mark }) {
   return <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-    <span title="The last walk's result">{walk ? <span style={pill(verdictGood(walk.verdict))}>walk {walk.verdict.toLowerCase()} · {day(walk.date).slice(5)}</span>
+    <span title="The last walk's result">{walk ? <span style={pill(verdictGood(walk.verdict))}>walk {walk.verdict.toLowerCase()} · {when(walk.date)}</span>
       : <span style={{ ...pill(null), opacity: 0.8 }}>not walked</span>}</span>
-    {mark ? <span title="Your last mark"><span style={pill(verdictGood(mark.verdict))}>you {mark.verdict} · {day(mark.at).slice(5)}</span></span> : null}
+    {mark ? <span title="Your last mark"><span style={pill(verdictGood(mark.verdict))}>you {mark.verdict} · {markedOn(mark.at)}</span></span> : null}
   </div>;
 }
 
@@ -117,7 +121,7 @@ function Area({ a, onMark, onShot }) {
       <div style={{ fontSize: 12, fontWeight: 700, margin: "4px 0" }}>Open on the board</div>
       {a.items.map(it => <div key={it.id} style={{ fontSize: 13, padding: "3px 0" }}>
         <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12 }}>{it.id}</span> <span style={pill(false)}>{it.state}</span>{" "}
-        {it.words} <span style={{ opacity: 0.7 }}>· {it.source}{it.opened ? `, ${it.opened}` : ""}</span>
+        {it.words} <span style={{ opacity: 0.7 }}>· {it.source}{it.opened ? `, ${when(it.opened)}` : ""}</span>
         {it.shot && onShot ? <> · <button type="button" onClick={() => onShot(it.shot)} style={{ ...link, background: "none", border: 0, padding: 0, cursor: "pointer" }}>screenshot</button></> : null}
       </div>)}
     </div> : null}
@@ -133,7 +137,7 @@ export default function MapView({ data, error, onMark, onShot }) {
   return <div>
     <p style={{ ...says, opacity: 0.85 }}>
       Every part of Steward, {countLabel(checks, "check")} you can do in under a minute, and {countLabel(open, "open item")}.
-      {" "}Each check shows the last walk's result{data.lastWalk ? ` (last walk ${data.lastWalk})` : " (no walk imported yet)"} and your last mark.
+      {" "}Each check shows the last walk's result{data.lastWalk ? ` (last walk ${when(data.lastWalk)})` : " (no walk imported yet)"} and your last mark.
       {" "}Open in demo opens the screen in a new tab: sign in there as {data.demo.signIn}, in a private window so this one stays yours.
       {" "}Fail opens a board item; Pass verifies the open one.
     </p>
