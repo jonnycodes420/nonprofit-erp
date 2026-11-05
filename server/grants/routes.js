@@ -43,11 +43,17 @@ const {
 async function withGrantReceived(orgId, grants) {
   const pledged = grants.filter(g => g && g.award_pledge_id);
   if (!pledged.length) return grants;
+  // GIFTS-1: the one received (shared/numbers/pledges GRANT_RECEIVED), and
+  // what the funder still owes beside it.
   const sums = await query(
-    `SELECT pledge_id, COALESCE(SUM(amount),0) AS s FROM gifts g WHERE org_id=? AND pledge_id = ANY(?::text[]) AND ${NUMBERS.money.MONEY("g")} GROUP BY pledge_id`,
-    [orgId, pledged.map(g => g.award_pledge_id)]);
-  const by = new Map(sums.map(r => [r.pledge_id, money.toDollars(money.toCents(r.s) || 0)]));
-  for (const g of pledged) g.received = (by.get(g.award_pledge_id) || 0).toFixed(2);
+    `SELECT gr.id, ${NUMBERS.pledges.GRANT_RECEIVED("gr")} AS s FROM grants gr WHERE gr.org_id=? AND gr.id = ANY(?::text[])`,
+    [orgId, pledged.map(g => g.id)]);
+  const by = new Map(sums.map(r => [r.id, money.toCents(r.s) || 0]));
+  for (const g of pledged) {
+    const rc = by.get(g.id) || 0, ac = money.toCents(g.amount_awarded) || 0;
+    g.received = money.toDollars(rc).toFixed(2);
+    g.remaining = money.toDollars(Math.max(0, ac - rc)).toFixed(2);
+  }
   return grants;
 }
 let app = routers.r1;
@@ -135,7 +141,7 @@ app.post("/grants", requireAuth, checkWriteAccess, wrap(async (req, res) => {
 }));
 
 app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { funder, program, amount, received, status, deadline, reportDue, officer, notes, description, requirements, adoptTxnId } = req.body;
+  const { funder, program, amount, status, deadline, reportDue, officer, notes, description, requirements, adoptTxnId } = req.body;
   if (!funder) return res.status(400).json({ error: "Funder required" });
   const orgId = req.user.orgId;
 
@@ -202,9 +208,12 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
 
   const affected = await run(
     `UPDATE grants
-     SET funder=?,program=?,amount=?,received=?,status=?,deadline=?,report_due=?,officer=?,notes=?,description=?,requirements=?,campaign_id=?,awarded_at=?,updated_at=NOW()
+     SET funder=?,program=?,amount=?,status=?,deadline=?,report_due=?,officer=?,notes=?,description=?,requirements=?,campaign_id=?,awarded_at=?,updated_at=NOW()
      WHERE id=? AND org_id=?`,
-    [funder, program || "", amount || 0, received || 0, status, deadline || "",
+    // GIFTS-1: Received is not typed any more. It is the payments recorded on
+    // the award (Record a payment received); the old typed column is kept as
+    // it was, for scripts/ops/gifts1-grant-received.js to reconcile.
+    [funder, program || "", amount || 0, status, deadline || "",
      reportDue || "", officer || "", notes || "", description || "", requirements || "",
      newCampaignId, newAwardedAt,
      req.params.id, orgId]

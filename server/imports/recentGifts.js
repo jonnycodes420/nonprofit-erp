@@ -108,7 +108,7 @@ async function runRecentWork(orgId, runId, job) {
         const isNew = IT.treatAsNew(thanks, g.amount);
         const w = await recordGift({
           orgId, donorId: g.donorId, amount: g.amount, date: g.date, type: g.type, campaign: g.campaign,
-          campaignId: g.campaignId, notes: g.notes, fundId: g.fundId, paymentMethod: g.paymentMethod,
+          campaignId: g.campaignId, eventId: g.eventId || null, notes: g.notes, fundId: g.fundId, paymentMethod: g.paymentMethod,
           externalId: g.externalId || null, conflict: g.externalId ? "external" : undefined,
           importId: runId, history: true, today, alreadyThanked: !isNew,
           post: false,             // BUILD-83 Part 6: an import never posts to the ledger

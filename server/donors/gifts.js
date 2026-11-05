@@ -17,6 +17,7 @@ const TL = require("../../timelineLine");
 const NUM = require("../../campaignMatch");
 const RCE = require("./receiptEmail");   // FLOWS-1: a receipt or statement emailed only on its own click
 const PW = require("../../pledgeWrite");   // FIX-60: the one writer of a pledge and its installments
+const EG = require("../events/eventGifts");   // GIFTS-1: the event a gift was given at
 
 const routers = {
   r0: express.Router(),
@@ -146,6 +147,11 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     else campaignName = camp[0].name;
   }
 
+  // GIFTS-1: the event this gift was given at, org-scoped like the fund.
+  const eventIn = req.body.eventId || req.body.event_id || null;
+  const giftEvent = eventIn ? await EG.eventOf(query, req.user.orgId, eventIn) : null;
+  if (eventIn && !giftEvent) return res.status(404).json({ error: "Event not found" });
+
   const giftId = newId("g");
   const giftDate = normalizeGiftDate(date);              // enforce ISO YYYY-MM-DD
   if (!giftDate) return res.status(400).json({ error: "A valid gift date (YYYY-MM-DD) is required, an unparseable date is an error, never today's date." });
@@ -184,6 +190,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     type: type || "cash", campaign: campaignName || "", campaignId: effectiveCampaignId || null,
     notes: notes || "", fundId: fundId || null, paymentMethod: paymentMethodIn,
     pledgeId: pledgeRow ? pledgeRow.id : null, idempotencyKey: idemKey, conflict: "idempotency",
+    eventId: giftEvent ? giftEvent.id : null,
     actorId: actor(req).id, actorName: actor(req).name, source: "gift_form",
     extras: giftExtras, thread: { id: req.user.userId, name: actor(req).name },
   });
@@ -276,6 +283,14 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
     try { newAmt = toDollars(parseMoneyOrThrow(amount, "amount")); }
     catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
   }
+  // GIFTS-1: the event is editable; "" or null clears it, undefined keeps it.
+  const eventIn = req.body.eventId !== undefined ? req.body.eventId : req.body.event_id;
+  let newEventId = g.event_id || null;
+  if (eventIn !== undefined) {
+    const ev = eventIn ? await EG.eventOf(query, req.user.orgId, eventIn) : null;
+    if (eventIn && !ev) return res.status(404).json({ error: "Event not found" });
+    newEventId = ev ? ev.id : null;
+  }
   const newDate = date ? normalizeGiftDate(date) : g.date;                       // enforce ISO
   if (date && !newDate) return res.status(400).json({ error: "A valid gift date (YYYY-MM-DD) is required, an unparseable date is an error, never today's date." });
   // BUILD-27 concurrency (concurrency2 "torn write" fix): serialize this gift's
@@ -291,10 +306,10 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
   // editors — a P1 coherence race, not P0 single-user corruption.
   const rows = await withAdvisoryLock(`gift:${req.params.id}`, async () => {
     await run(
-      `UPDATE gifts SET amount=?,date=?,type=?,campaign=?,campaign_id=?,notes=?,fund_id=?,payment_method=?,acknowledgement_sent=?,
+      `UPDATE gifts SET amount=?,date=?,type=?,campaign=?,campaign_id=?,event_id=?,notes=?,fund_id=?,payment_method=?,acknowledgement_sent=?,
               acknowledgement_sent_at = CASE WHEN ? IS TRUE THEN COALESCE(acknowledgement_sent_at, NOW()) ELSE NULL END
         WHERE id=? AND org_id=?`,
-      [newAmt, newDate, type||g.type, newCampaign, newCampaignId,
+      [newAmt, newDate, type||g.type, newCampaign, newCampaignId, newEventId,
        notes!==undefined?notes:g.notes, fund_id!==undefined?fund_id:g.fund_id,
        payment_method!==undefined?payment_method:g.payment_method,
        acknowledgement_sent!==undefined?acknowledgement_sent:g.acknowledgement_sent,
@@ -586,25 +601,35 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
 // A pledge's schedule, REWRITTEN: a schedule edit and the shell-pledge repair
 // in B.2. A new pledge is written with its schedule by pledgeWrite.js (FIX-60);
 // both plan through the same planner, so "what a schedule is" is decided
-// once. Never rewrites an instalment that has already been PAID: a payment is
-// a fact and a new schedule is a plan.
+// once. GIFTS-1: an edit keeps the payments already applied. The new plan is
+// laid down and every payment on the pledge is applied to it oldest first
+// (pledgeWrite.applyPayments, the rule a new pledge's linked payments use), so
+// a $300 payment on a $1,200 pledge re-planned as 4 monthly is the first
+// installment, paid, whatever the schedule said before.
 async function writePledgeInstallments(orgId, pledgeId, opts) {
   const rows = await PW.planInstallments(opts);
   if (!rows.length) return { installments: 0 };
   const { frequency } = opts;
-  const paid = await query("SELECT seq FROM pledge_installments WHERE pledge_id=? AND paid_gift_id IS NOT NULL", [pledgeId]);
-  const paidSeqs = new Set(paid.map(p => p.seq));
-  await run("DELETE FROM pledge_installments WHERE org_id=? AND pledge_id=? AND paid_gift_id IS NULL", [orgId, pledgeId]);
-  for (const r of rows) {
-    if (paidSeqs.has(r.seq)) continue;
-    await run(
-      `INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount)
-       VALUES (?,?,?,?,?,?) ON CONFLICT (pledge_id, seq) DO NOTHING`,
-      [newId("pli"), orgId, pledgeId, r.seq, r.dueDate, money.toDollars(r.amountCents)]);
-  }
-  await run("UPDATE pledges SET frequency=COALESCE(?,frequency), installment_count=? WHERE id=? AND org_id=?",
-    [frequency || null, rows.length, pledgeId, orgId]);
-  return { installments: rows.length };
+  const pays = await query(
+    `SELECT g.id, ROUND(g.amount::numeric * 100)::bigint AS cents, LEFT(g.date::text, 10) AS date FROM gifts g
+      WHERE g.org_id=? AND g.pledge_id=? AND ${require("../../shared/numbers/money").MONEY("g")}`, [orgId, pledgeId]);
+  const was = new Map((await query("SELECT paid_gift_id, paid_at FROM pledge_installments WHERE org_id=? AND pledge_id=? AND paid_gift_id IS NOT NULL",
+    [orgId, pledgeId])).map(r => [r.paid_gift_id, r.paid_at]));
+  const laid = pays.length ? PW.applyPayments(rows, pays.map(p => ({ id: p.id, cents: Number(p.cents), date: p.date })))
+    : rows.map(r => ({ ...r, paidGiftId: null }));
+  await withTransaction(async (client) => {
+    await runTx(client, "DELETE FROM pledge_installments WHERE org_id=? AND pledge_id=?", [orgId, pledgeId]);
+    for (const r of laid) {
+      await runTx(client, 
+        `INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount,paid_gift_id,paid_at)
+         VALUES (?,?,?,?,?,?,?,?)`,
+        [newId("pli"), orgId, pledgeId, r.seq, r.dueDate, money.toDollars(r.amountCents), r.paidGiftId || null,
+         r.paidGiftId ? (was.get(r.paidGiftId) || new Date().toISOString()) : null]);
+    }
+    await runTx(client, "UPDATE pledges SET frequency=COALESCE(?,frequency), installment_count=? WHERE id=? AND org_id=?",
+      [frequency || null, laid.length, pledgeId, orgId]);
+  });
+  return { installments: laid.length };
 }
 // GET /pledges/:id/installments — the schedule, with what has paid each one.
 app.get("/pledges/:id/installments", requireAuth, wrap(async (req, res) => {

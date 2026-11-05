@@ -9,6 +9,7 @@ import { apiFetch } from "../api";
 import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
+import RecordGiftDialog from "./gifts/RecordGiftDialog";   // GIFTS-1: a payment received is a gift from the funder
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const day = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${+m[3]} ${MONTHS[+m[2] - 1]} ${m[1]}` : ""; };
@@ -75,6 +76,7 @@ export function GrantAwardPlan({ grantId, isReadOnly, onChanged, onLink }) {
   const [d, setD] = useState(null);
   const [form, setForm] = useState(null);
   const [msg, setMsg] = useState("");
+  const [paying, setPaying] = useState(false);
   const load = () => apiFetch(`/grants/${grantId}/award-plan`).then(setD).catch(e => setMsg(errorMessage(e, "The award did not load.")));
   useEffect(() => { load(); }, [grantId]);   // eslint-disable-line react-hooks/exhaustive-deps
   const record = async () => {
@@ -89,13 +91,23 @@ export function GrantAwardPlan({ grantId, isReadOnly, onChanged, onLink }) {
     <div data-testid="grant-award" style={card}>
       <div style={eyebrow}>The award, paid in installments</div>
       <div data-testid="grant-award-sentence" style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>{d.sentence}</div>
+      {/* GIFTS-1: what has come in and what the funder still owes, from the payments recorded on the award. */}
+      {d.pledge && <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+        <span data-testid="grant-received" title="Every payment recorded on this award, a refund off." style={{ fontSize: 13, color: T.ink }}>Received <strong>{money2(d.receivedCents)}</strong></span>
+        <span data-testid="grant-remaining" title="The award less what has been received." style={{ fontSize: 13, color: T.ink }}>Remaining <strong>{money2(d.outstandingCents)}</strong></span>
+        {!isReadOnly && d.funderId && <button type="button" data-testid="grant-record-payment" onClick={() => setPaying(true)} style={btn(true)}>Record a payment received</button>}
+      </div>}
+      {paying && <RecordGiftDialog person={{ id: d.funderId, name: d.funderName || "The funder" }} fixedPerson pledgeId={d.pledge.id} title="Record a payment received"
+        testid="grant-payment" onClose={() => setPaying(false)} onSaved={() => { load(); onChanged && onChanged(); }} />}
       {d.installments.length > 0 && (
         <div style={{ marginTop: 8 }}>
           {d.installments.map(i => (
             <div key={i.id} data-testid="grant-installment" style={{ display: "flex", gap: 10, padding: "6px 0", borderTop: "1px solid " + T.bg3, fontSize: 13, flexWrap: "wrap" }}>
               <span style={{ minWidth: 92, color: T.ink2 }}>{day(i.dueDate)}</span>
               <span style={{ minWidth: 92, fontWeight: 700 }}>{money2(i.amountCents)}</span>
-              <span style={{ color: i.gift ? T.greenDk : T.ink3 }}>{i.gift ? `Paid by the gift of ${day(i.gift.date)}, ${money2(i.gift.amountCents)}` : "Not paid yet. The gift links itself when it arrives."}</span>
+              <span style={{ color: i.gift || i.leftCents < i.amountCents ? T.greenDk : T.ink3 }}>{i.gift ? `Paid by the gift of ${day(i.gift.date)}, ${money2(i.gift.amountCents)}`
+                : i.leftCents <= 0 ? "Paid." : i.leftCents < i.amountCents ? `Part paid: ${money2(i.amountCents - i.leftCents)} in, ${money2(i.leftCents)} still to come.`
+                : "Not paid yet. The gift links itself when it arrives."}</span>
             </div>))}
         </div>)}
       {/* GRANTS-FIX: the sentence that asks for the link carries the action. */}

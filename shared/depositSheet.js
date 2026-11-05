@@ -327,29 +327,49 @@ export function buildDepositPlan({ rows = [], refused = [], donors = [], funds =
 
 // ── The instalment schedule ────────────────────────────────────────────────
 // A pledge that states a cadence but no schedule can generate one. Cents are
-// split so the instalments SUM to the pledge: the remainder rides the first,
-// never a rounding error that leaves a balance nobody can clear.
-export const PLEDGE_FREQUENCIES = { monthly: 1, quarterly: 3, semiannual: 6, annual: 12, yearly: 12 };
+// split so the instalments SUM to the pledge: each is the even share rounded
+// down to the cent, and the remainder rides the LAST (GIFTS-1: "4 × $300", or
+// $1,000 in 3 is $333.33, $333.33, $333.34), never a rounding error that
+// leaves a balance nobody can clear. Weekly steps in days; the rest in months.
+export const PLEDGE_FREQUENCIES = { weekly: "1w", monthly: 1, quarterly: 3, semiannual: 6, annual: 12, yearly: 12 };
 
 export function generateInstallments({ amountCents, frequency, count, firstDue }) {
   const step = PLEDGE_FREQUENCIES[String(frequency || "").toLowerCase()];
   const n = Number(count) || 0;
-  if (!step || n < 1 || !amountCents || !/^\d{4}-\d{2}-\d{2}$/.test(String(firstDue || ""))) return [];
+  if (!step || n < 1 || n > 520 || !amountCents || !/^\d{4}-\d{2}-\d{2}$/.test(String(firstDue || ""))) return [];
   const each = Math.floor(amountCents / n);
   const remainder = amountCents - each * n;
   const [y, m, d] = String(firstDue).split("-").map(Number);
+  const iso = dt => dt.toISOString().slice(0, 10);
   const out = [];
   for (let i = 0; i < n; i++) {
-    const mo = m - 1 + i * step;
-    const yy = y + Math.floor(mo / 12);
-    const mm = (mo % 12 + 12) % 12;
-    // The last day of the target month, so the 31st of a 30-day month is the
-    // 30th rather than the 1st of the month after.
-    const last = new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate();
-    const day = Math.min(d, last);
-    out.push({ seq: i + 1,
-               dueDate: `${yy}-${String(mm + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
-               amountCents: each + (i === 0 ? remainder : 0) });
+    let dueDate;
+    if (step === "1w") dueDate = iso(new Date(Date.UTC(y, m - 1, d + 7 * i)));
+    else {
+      const mo = m - 1 + i * step;
+      const yy = y + Math.floor(mo / 12);
+      const mm = (mo % 12 + 12) % 12;
+      // The last day of the target month, so the 31st of a 30-day month is the
+      // 30th rather than the 1st of the month after.
+      const last = new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate();
+      dueDate = `${yy}-${String(mm + 1).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`;
+    }
+    out.push({ seq: i + 1, dueDate, amountCents: each + (i === n - 1 ? remainder : 0) });
   }
   return out;
+}
+
+// The schedule in one line, the way the form shows it before saving:
+// "4 × $300, Dec 1, Jan 1, Feb 1, Mar 1", or with an uneven last one
+// "3 × $333.33 (the last $333.34), ...". Dates as "Mon D"; with the year on
+// each when the schedule runs past a year from its first date.
+export function scheduleWords(rows) {
+  if (!rows || !rows.length) return "";
+  const usd = c => "$" + (c / 100).toLocaleString("en-US", c % 100 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : {});
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const long = String(rows[rows.length - 1].dueDate) >= String(Number(String(rows[0].dueDate).slice(0, 4)) + 1) + String(rows[0].dueDate).slice(4, 10);
+  const day = s => { const [yy, mm, dd] = String(s).split("-").map(Number); return `${MON[mm - 1]} ${dd}${long ? " " + yy : ""}`; };
+  const first = rows[0].amountCents, last = rows[rows.length - 1].amountCents;
+  const head = last === first ? `${rows.length} × ${usd(first)}` : `${rows.length} × ${usd(first)} (the last ${usd(last)})`;
+  return `${head}, ${rows.map(r => day(r.dueDate)).join(", ")}`;
 }

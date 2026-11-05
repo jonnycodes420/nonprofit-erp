@@ -831,6 +831,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // inside it — and takes the trip count from ~1,800 to ~185.
   const GIFT_BATCH = IMPORT_GIFT_BATCH;   // 16 params/row (WIRE-1 added campaign_id) → 32,000 of the 65,535 cap
   const campaignIdOf = await campaignIdResolver(orgId);
+  // GIFTS-1: an Event or Campaign column that names an event exactly links the gift.
+  const eventIdOf = await require("../events/eventGifts").eventIdsByName(query, orgId);
 
   // ── LIVE-1 · A CSV GIFT BEHAVES LIKE EVERY OTHER GIFT ───────────────────
   // A gift from the last HISTORY_DAYS days is new to the donor: it is written
@@ -846,7 +848,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     const g = giftsToInsert[i];
     if (!HG.isOldHistory(g.date, importToday)) {
       recentGiftsToRecord.unshift({ ...g, fundId: (g.fund && fundIdByKey.get(fundKey(g.fund))) || null,
-                                    campaignId: campaignIdOf(g.campaign) });
+                                    campaignId: campaignIdOf(g.campaign), eventId: eventIdOf(g.campaign) });
       giftsToInsert.splice(i, 1);
       ledger.created(g.amount);
     }
@@ -864,8 +866,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         (g.fund && fundIdByKey.get(fundKey(g.fund))) || null,
         g.notes, g.externalId || null, actor(req).id, actor(req).name,
         g.customFields && Object.keys(g.customFields).length ? JSON.stringify(g.customFields) : null,
-        g.paymentMethod || null, runId, bi + gi);   // NUMBERS-4: its place in the file (lastGift.js)
-      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+        g.paymentMethod || null, runId, bi + gi,   // NUMBERS-4: its place in the file (lastGift.js)
+        eventIdOf(g.campaign));
+      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
       affectedDonorIds.add(g.donorId);
     });
     let keptCount = 0, ftCount = 0;
@@ -879,7 +882,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // landed so interactions + ledger stamps are only written for those
       // (a skipped gift must not orphan an interaction or a ledger row).
       const kept = await queryTx(txc,
-        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,fund_id,notes,external_id,created_by,created_by_name,custom_fields,payment_method,import_id,import_row)
+        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,fund_id,notes,external_id,created_by,created_by_name,custom_fields,payment_method,import_id,import_row,event_id)
          VALUES ${giftTuples.join(",")}
          ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
          RETURNING id`,
