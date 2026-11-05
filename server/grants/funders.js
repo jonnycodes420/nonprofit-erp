@@ -11,6 +11,7 @@ const express = require("express");
 const { requireAuth404 } = require("../../auth");   // FIX-20 Part 0: the file doors
 const { fileLimiter } = require("../shared/fileLimiter");   // one limiter, shared by the two file doors
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
+const FL = require("./funderLink");   // GRANTS-FIX: the one resolver of a grant's funder
 
 const routers = {
   r1: express.Router(),
@@ -164,6 +165,10 @@ app.post("/funders/:donorId/grants", requireAuth, requireCrm, checkWriteAccess, 
   catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
 
   const status = G.normalizeStatus(req.body.status || "researching") || String(req.body.status || "");
+  if (G.AWARDED_STATUS_KEYS.includes(status)) {
+    return res.status(400).json({ code: "award_required", error: "award_required",
+      sentence: "Add the grant at the stage it was in before the yes, then record the award, so the pledge goes on the funder." });
+  }
   const v = G.validateGrant({
     program: req.body.program, amountRequestedCents: reqCents, status,
     restriction: req.body.restriction, restrictedFrom: req.body.restrictedFrom,
@@ -192,6 +197,55 @@ app.post("/funders/:donorId/grants", requireAuth, requireCrm, checkWriteAccess, 
        JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id WHERE g.id=?`, [id]);
   res.status(201).json(grantRow({ ...row, status_canonical: G.normalizeStatus(row.status) },
     { funds: await orgFundNamesG(orgId), officers: await orgOfficerNames(orgId) }));
+}));
+
+// ── GRANTS-FIX · LINK A GRANT TO ITS FUNDER ─────────────────────────────────
+// GET /grants/:id/funder-search?q= — the picker: the org's organizations by
+// name, then EIN, the exact-name match first. With no q it searches the
+// grant's own typed name, so the likely record is the first thing shown.
+app.get("/grants/:id/funder-search", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT id, funder, funder_donor_id FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Grant not found" });
+  const text = req.query.q !== undefined ? String(req.query.q).slice(0, 200) : (g.funder || "");
+  const results = await FL.searchFunderOrgs({ q: query, r: run }, orgId, text);
+  const typed = text.trim().replace(/\s+/g, " ");
+  res.json({ grantId: g.id, typedName: g.funder || "", linkedId: g.funder_donor_id || null, q: text, results,
+    canCreate: !!typed && !results.some(x => x.exact), createName: typed });
+}));
+
+// POST /grants/:id/funder-link { donorId } | { createName } — set the grant's
+// funder record. Picking keeps the typed name on the grant and never renames
+// the record; createName adds an organization (funder type unset) first.
+app.post("/grants/:id/funder-link", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT id, funder, funder_donor_id FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Grant not found" });
+  const db = { q: query, r: run };
+  let donorId = req.body && req.body.donorId ? String(req.body.donorId) : null, created = false;
+  if (!donorId) {
+    const name = String((req.body && req.body.createName) || "").trim().replace(/\s+/g, " ").slice(0, 200);
+    if (!name) return res.status(400).json({ error: "Choose a funder, or type the name of a new one." });
+    const p = await FL.planFunder(db, orgId, name);
+    if (p.action === "link") donorId = p.donorId;     // already on file: link it, never a second record
+    else {
+      donorId = await FL.createFunderOrg(db, orgId, name, actor(req));
+      created = true;
+    }
+  }
+  const fr = await resolveFunder(orgId, donorId);
+  if (!fr.ok) {
+    const code = fr.problem.code === "funder_not_found" ? 404 : 400;
+    return res.status(code).json({ error: fr.problem.message, code: fr.problem.code });
+  }
+  await FL.linkGrant(db, orgId, g.id, fr.funder.id);
+  if (req.audit) {
+    req.audit.entity("grant", g.id); req.audit.action("linked funder");
+    req.audit.before({ funder_donor_id: g.funder_donor_id || null });
+    req.audit.summary(`Linked the ${g.funder || "grant"} grant to the funder record ${fr.funder.name}${created ? " (added as a new funder)" : ""}.`);
+  }
+  res.json({ ok: true, grantId: g.id, funderId: fr.funder.id, funderName: fr.funder.name, created,
+    sentence: created ? `Added ${fr.funder.name} as a funder and linked this grant to it.` : `Linked this grant to ${fr.funder.name}.` });
 }));
 
 async function checkGrantFund(orgId, fundId) {

@@ -29,6 +29,7 @@ export function adaptGrant(g) {
     campaignId: g.campaign_id || null,   // attribution FIX — awarded amount counts toward this campaign
     history:   Array.isArray(g.history) ? g.history : JSON.parse(g.history || "[]"),
     funderId:  g.funder_donor_id || null,
+    awardPledgeId: g.award_pledge_id || null,   // GRANTS-FIX: the award is recorded
     description: g.description || "",
     requirements: g.requirements || "",
   };
