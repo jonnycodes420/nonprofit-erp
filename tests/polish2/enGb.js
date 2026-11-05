@@ -88,6 +88,8 @@ function walk(abs, out) {
   if (st.isDirectory()) {
     const base = path.basename(abs);
     if (base === "node_modules" || base === "dist" || base.startsWith(".")) return;
+    // SPLIT-2: server/db/ is db.js, split; db.js (the schema) was never in this scan.
+    if (/[\\/]server[\\/]db$/.test(abs)) return;
     for (const f of fs.readdirSync(abs)) walk(path.join(abs, f), out);
   } else if (/\.(jsx?|mjs|cjs)$/.test(abs)) out.push(abs);
 }
