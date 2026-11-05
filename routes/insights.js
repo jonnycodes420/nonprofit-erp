@@ -36,6 +36,8 @@ const STATES = new Set(["done", "snoozed", "dismissed"]);
 // PERF-2: how many moves a tab carries in Home's first read of the deck: the
 // card she sees, and the next, so Next is there before the rest arrives.
 const DECK_FIRST = 2;
+const DRIFT_FIRST = 5;   // HOME-6: drifting people on Home before "Show all"
+const DRIFT_PEOPLE = require("../server/insights/driftPeople");
 // Review: what a row that was not a gift was, its words, and its revenue account.
 const AS_TYPE = { tickets: "ticket", ticket: "ticket", raffle: "ticket", auction: "purchase", purchase: "purchase", reimbursement: "reimbursement", refund: "reimbursement" };
 const TYPE_WORD = { purchase: "a purchase", ticket: "tickets", reimbursement: "a reimbursement" };
@@ -100,8 +102,13 @@ async function deckWithDrift(req, deck, asOf) {
                              WHERE org_id=? AND kind='drift' ORDER BY item_key, created_at DESC`, [req.user.orgId]);
   const gone = new Set(outs.filter(o => o.state !== "snoozed" || (o.until && o.until > asOf)).map(o => o.item_key));
   const c = drift.counts || {};
+  // HOME-6: Home lists the same people (server/insights/driftPeople.js), with
+  // each one's last gift from the person record.
+  const ids = (drift.list || []).map(r => r && r.donorId).filter(Boolean);
+  const lastRows = ids.length ? await query(`SELECT id, last_gift_amount AS amount, last_gift_date::text AS date FROM donors WHERE org_id=? AND id = ANY(?)`, [req.user.orgId, ids]) : [];
+  const people = DRIFT_PEOPLE.driftPeople(drift.list, { gone, asOf, last: new Map(lastRows.map(r => [r.id, r])) });
   return { ...I.withDrift(deck, drift.list || [], { asOf, gone }),
-    drift: { high: Number(c.driftingHigh) || 0, medium: Number(c.driftingMedium) || 0 } };
+    drift: { high: Number(c.driftingHigh) || 0, medium: Number(c.driftingMedium) || 0, count: people.length, people } };
 }
 
 app.get("/insights", requireAuth, wrap(async (req, res) => {
@@ -134,6 +141,8 @@ app.get("/insights", requireAuth, wrap(async (req, res) => {
     ...deck, partial: true,
     seen: deck.tabs.flatMap(t => t.moves.slice(0, 50).map(m => ({ kind: m.kind, itemKey: m.itemKey, donorIds: m.ids }))),
     tabs: deck.tabs.map(t => ({ ...t, carried: t.moves.length, moves: t.moves.slice(0, DECK_FIRST) })),
+    // HOME-6: the first five drifting people; "Show all" reads the rest with every move
+    ...(deck.drift && deck.drift.people ? { drift: { ...deck.drift, people: deck.drift.people.slice(0, DRIFT_FIRST) } } : {}),
   };
   res.json({ events, stale: got.stale,
     asOf, coverage: r.coverage, majorLine: r.majorLine, ladder: deckOnly ? undefined : r.ladder, centsSentence: r.centsSentence,
@@ -146,16 +155,16 @@ app.get("/insights", requireAuth, wrap(async (req, res) => {
 }));
 
 app.get("/insights/donor/:id", requireAuth, wrap(async (req, res) => {
-  const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
+  const [d] = await query("SELECT id, deceased FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
   if (!d) return res.status(404).json({ error: "Not found" });
-  const asOf = await asOfFor(req);
+  const asOf = await asOfFor(req);   // PEOPLE-1: no next move is suggested for someone marked deceased (below)
   const got = await D.insightsFor(req.user.orgId, asOf, { explicitDay: explicitDay(req) });
   // INSIGHTS-2: the first build for this org is queued; this panel says so and
   // the rest of the profile is unaffected.
   if (got.preparing) return res.json({ asOf, preparing: true, stale: false, sentence: got.sentence, unit: null, notGifts: [], move: null, combined: null, rungSentence: null });
   const r = got.result;
   const unit = r.units.find(u => u.ids.includes(d.id)) || null;
-  const move = I.nextMoveFor(r, d.id);
+  const move = d.deceased === true ? null : I.nextMoveFor(r, d.id);
   // linked records (a family or network she linked) show what they give together
   const rel = await query(`SELECT donor_id_a, donor_id_b FROM donor_relationships WHERE org_id=? AND (donor_id_a=? OR donor_id_b=?) AND relationship_type IN ('family','network')`,
     [req.user.orgId, d.id, d.id]);

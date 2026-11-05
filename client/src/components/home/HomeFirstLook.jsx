@@ -19,8 +19,14 @@ export function homeHead({ agentDaily, cancelEdit, data, editMode, enterEdit, fi
           the name of the place she already works. The org mark and the greeting
           are now ONE small line (the BUILD-13 "this is OUR system" payoff is
           kept, just demoted), and the note is the headline. */}
-      <div style={{display:"flex",alignItems:"flex-start",gap:11,padding:"0 2px"}}>
-        {data.org?.logo&&<img src={data.org.logo} alt={data.org.name} style={{height:22,maxWidth:100,objectFit:"contain",borderRadius:4,marginTop:1}}/>}
+      {/* HOME-6 — ONE LEFT EDGE. The logo, the org's name and the greeting
+          are one row, with Edit in its fixed slot at the right of the same
+          row; the date sits directly under them, starting where the logo
+          does. (The logo used to stand beside a column of its own, so the
+          name and the date started 33 px right of it.) */}
+      <div className="home-head" style={{display:"flex",flexDirection:"column",padding:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0,minHeight:22}}>
+        {data.org?.logo&&<img src={data.org.logo} alt={data.org.name} style={{height:22,maxWidth:100,objectFit:"contain",borderRadius:4,flexShrink:0}}/>}
         <div style={{flex:1,minWidth:0}}>
           {/* BUILD-88d — ONE GREETING LINE, 14px, warm grey. The org's name
               keeps its place and loses its accent: on this line the brand
@@ -37,6 +43,29 @@ export function homeHead({ agentDaily, cancelEdit, data, editMode, enterEdit, fi
             {data.org?.name&&<span title={data.org.name} style={{fontWeight:600,letterSpacing:"-0.01em",minWidth:0,flex:"0 1 auto",overflow:"hidden",textOverflow:"ellipsis"}}>{data.org.name}</span>}
             <span style={{fontWeight:400,flexShrink:0}}>{greeting}{firstName?`, ${firstName}`:""}</span>
           </div>
+        </div>
+        {/* BUILD-34 edit affordance — a quiet on-palette text button by the
+            greeting, not a floating pencil. Done saves optimistically
+            (rollback on error); Esc cancels; Reset restores the default. */}
+        {/* SHIFT-1 — the Edit slot is there from the first paint, hidden until
+            her layout has loaded, so its arrival never narrows the column
+            beside it (that narrowing is what wrapped the greeting and the date). */}
+        {(
+          <div aria-hidden={layout===undefined||undefined} style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:16,flexShrink:0,marginTop:1,visibility:layout===undefined?"hidden":undefined}}>
+            {editMode?(
+              <>
+                <button onClick={resetLayout} style={{background:"transparent",border:"none",padding:0,color:T.ink3,fontSize:12,fontWeight:700,cursor:"pointer"}}>Reset to default</button>
+                <button onClick={cancelEdit} style={{background:"transparent",border:"none",padding:0,color:T.ink3,fontSize:12,fontWeight:700,cursor:"pointer"}}>Cancel</button>
+                <button onClick={saveEdit} style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:800,cursor:"pointer"}}>Done</button>
+              </>
+            ):(
+              <button onClick={enterEdit} aria-label="Edit Home layout, reorder or hide sections"
+                disabled={layout===undefined}
+                style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"}}>Edit</button>
+            )}
+          </div>
+        )}
+        </div>
           {/* ── BUILD-89 — THE HEADER IS WARM ─────────────────────────────
               The morning sentence used to be a 34px serif headline, so the
               first thing anybody read after logging in was what they had not
@@ -65,35 +94,13 @@ export function homeHead({ agentDaily, cancelEdit, data, editMode, enterEdit, fi
               As of {todayStr}. Numbers a board can read.
             </div>
           )}
-        </div>
-        {/* BUILD-34 edit affordance — a quiet on-palette text button by the
-            greeting, not a floating pencil. Done saves optimistically
-            (rollback on error); Esc cancels; Reset restores the default. */}
-        {/* SHIFT-1 — the Edit slot is there from the first paint, hidden until
-            her layout has loaded, so its arrival never narrows the column
-            beside it (that narrowing is what wrapped the greeting and the date). */}
-        {(
-          <div aria-hidden={layout===undefined||undefined} style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:16,flexShrink:0,marginTop:1,visibility:layout===undefined?"hidden":undefined}}>
-            {editMode?(
-              <>
-                <button onClick={resetLayout} style={{background:"transparent",border:"none",padding:0,color:T.ink3,fontSize:12,fontWeight:700,cursor:"pointer"}}>Reset to default</button>
-                <button onClick={cancelEdit} style={{background:"transparent",border:"none",padding:0,color:T.ink3,fontSize:12,fontWeight:700,cursor:"pointer"}}>Cancel</button>
-                <button onClick={saveEdit} style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:800,cursor:"pointer"}}>Done</button>
-              </>
-            ):(
-              <button onClick={enterEdit} aria-label="Edit Home layout, reorder or hide sections"
-                disabled={layout===undefined}
-                style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"}}>Edit</button>
-            )}
-          </div>
-        )}
       </div>
 
       {/* HOME-TIDY 2 — THE CALL TO ACTION, UNDER THE GREETING. One box to ask
           a question or tell Steward what to do (the Agent's input moved here),
           over the two doors, Why and What, each saying what it is. */}
       {surface==="home"&&!editMode&&(
-        <div style={{padding:"0 2px"}}>
+        <div style={{padding:0}}>
           {/* HOME-3 — the old "For you today" card and the Why and What doors
               are gone: pace is the sentence above, the moves are the deck below. */}
           <AskHero isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)} day={homeDay} doors={false}
@@ -103,7 +110,7 @@ export function homeHead({ agentDaily, cancelEdit, data, editMode, enterEdit, fi
         </div>
       )}
       {surface==="home"&&!editMode&&(
-        <div style={{padding:"0 2px",marginTop:6}}>
+        <div style={{padding:0,marginTop:6}}>
           {setupFirst&&<div style={{marginBottom:18}}>{setupFirst}</div>}
           <Suspense fallback={MOVES_WAIT}><HomeMoves onNavigate={onNavigate} isReadOnly={isReadOnly} noDonors={noDonorsYet} importAbove={!!setupFirst}
             sample={sampleStatus&&!sampleStatus.hasSampleData&&!isReadOnly} drift={()=>onNavigate&&onNavigate("donors",{view:"drift"})}/></Suspense>

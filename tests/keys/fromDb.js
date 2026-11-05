@@ -41,7 +41,7 @@ async function orgRows(q, orgId, { today } = {}) {
     q(`SELECT pledge_id, due_date, ROUND(amount * 100)::bigint AS cents, paid_gift_id FROM pledge_installments WHERE org_id = $1`, [orgId]),
     q(`SELECT id, event_id, donor_id, status, checked_in_at IS NOT NULL AS checked_in FROM event_attendees WHERE org_id = $1`, [orgId]),
     // POLISH-4: a person and their business are one giving unit for lapse.
-    q(`SELECT donor_id_a, donor_id_b FROM donor_relationships WHERE org_id = $1 AND relationship_type IN ('owner','works_at')`, [orgId]),
+    q(`SELECT donor_id_a, donor_id_b FROM donor_relationships WHERE org_id = $1 AND relationship_type IN ('owner','works_at','spouse','partner')`, [orgId]),   // PEOPLE-1: spouse and partner too
   ]);
   const byPledge = new Map();
   for (const i of inst) (byPledge.get(i.pledge_id) || byPledge.set(i.pledge_id, []).get(i.pledge_id))

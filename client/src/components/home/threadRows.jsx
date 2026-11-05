@@ -1,5 +1,5 @@
 import { T, PersonMark, firstNameOf, fmtFull, daysDiff } from "../shared";
-import { openRecentChanges } from "../RecentChanges";
+import { openReadout } from "./ReadoutPanel";   // HOME-6: a readout row opens its readout
 import { displayDateShort } from "../../../../shared/displayDate";
 import { rowClick } from "../../lib/appUrls";
 import { DonorLink } from "../RecordLink";
@@ -20,7 +20,7 @@ export function threadReadoutRow({ ro }) {
         style={{display:"flex",alignItems:"stretch",borderBottom:"1px solid "+T.bg2,borderLeft:"3px solid "+T.greenDk}}>
         <a href="/app" className="attn-row-main"
           style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"14px 16px 14px 13px",textDecoration:"none",color:"inherit"}}
-          onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();openRecentChanges();}}>
+          onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();openReadout(ro.id,ro.title);}}>
           <div style={{flex:1,minWidth:0}}>
             {/* Not attn-donor-name: a readout is not a person, and that class
                 is how the smoke walk finds the names that must open a profile. */}
@@ -36,7 +36,7 @@ export function threadReadoutRow({ ro }) {
           </div>
         </a>
         <div className="attn-row-actions" style={{display:"flex",gap:8,flexShrink:0,alignItems:"center",padding:"8px 16px 8px 8px"}}>
-          <button className="attn-row-action" data-testid="home-readout-open" onClick={()=>openRecentChanges()}
+          <button className="attn-row-action" data-testid="home-readout-open" onClick={()=>openReadout(ro.id,ro.title)}
             style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>See who</button>
         </div>
       </li>
@@ -57,7 +57,7 @@ export function threadStoppedRow({ age, f, failedOn, onNavigate, openRailDonor }
             <PersonMark id={f.donorId} name={f.donorName} size={38}/>
             <div style={{flex:1,minWidth:0}}>
               <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>
-                <DonorLink id={f.donorId} onOpen={()=>openRailDonor(f.donorId)}>{displayName(f.donorName)}</DonorLink>
+                <DonorLink id={f.donorId} onOpen={()=>onNavigate("donors",{selectDonorId:f.donorId})}>{displayName(f.donorName)}</DonorLink>
               </div>
               <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
                 <RefLink refItem={{kind:"plan",id:f.subId,donorId:f.donorId}}>{f.amount?`Their $${f.amount.toLocaleString()} ${f.interval==="year"?"yearly":"monthly"} gift`:"Their recurring gift"}</RefLink>{" stopped"}
@@ -112,7 +112,8 @@ export function threadRow({ TOUCH_WORD, finishRow, i, isReadOnly, loadThreads, m
         <PersonMark id={t.donorId} name={t.donorName} size={38}/>
         <div style={{flex:1,minWidth:0}}>
           <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>
-            <DonorLink id={t.donorId} onOpen={()=>{if(surface==="home")openRailDonor(t.donorId,t.id);else onNavigate("donors",{selectDonorId:t.donorId});}}>{displayName(t.donorName)}</DonorLink>
+            {/* HOME-6: the name opens the profile (the rest of the row still opens the rail beside the list). */}
+            <DonorLink id={t.donorId} data-testid="thread-name" onOpen={()=>onNavigate("donors",{selectDonorId:t.donorId})}>{displayName(t.donorName)}</DonorLink>
           </div>
           {/* ONE SENTENCE, AND IT WRAPS. The clause and the step were two
               columns saying one thing between them; a person says it in a

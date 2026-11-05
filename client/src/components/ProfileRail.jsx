@@ -69,14 +69,14 @@ function Opens({ source, title, explanation, children, testid }) {
   );
 }
 
-export function RhythmCard({ rhythm }) {
+export function RhythmCard({ rhythm, deceased = false }) {
   if (!rhythm) return null;
   return (
     <RailSection title="Giving rhythm" testid="dp-rail-rhythm">
       <div style={{ fontSize: 14, fontWeight: 700, color: RAIL.strong }}>
         <Opens source={rhythm.source} title="Their gifts" explanation={rhythm.sentence} testid="dp-rail-rhythm-open">{rhythm.sentence}</Opens>
       </div>
-      {rhythm.expectedNext && <div style={{ ...ROW, marginTop: 6 }}>
+      {rhythm.expectedNext && !deceased && <div style={{ ...ROW, marginTop: 6 }}>   {/* PEOPLE-1: no next gift is expected from someone who has died */}
         <span style={DIM}>Next gift expected</span>
         <span data-testid="dp-rail-rhythm-next" style={{ color: rhythm.late ? T.gold500 : RAIL.text, fontWeight: rhythm.late ? 700 : 400 }}>
           {displayDate(rhythm.expectedNext)}{rhythm.late ? " · Late" : ""}

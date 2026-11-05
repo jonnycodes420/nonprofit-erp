@@ -756,7 +756,7 @@ app.delete("/pledges/:id", requireAuth, wrap(async (req, res) => {
 // SEND-GATE-1: a resend is a person's click, the confirm for this one receipt.
 async function resendReceiptEmail(receipt, org, donor, by) {
   if (!donor.email) return false;
-  const decision = await donorMailDecision("receipt", donor.email, org.id);
+  const decision = await donorMailDecision("receipt", donor.email, org.id, { donorId: donor.id });
   if (!decision.send) return false;
   const pdfBuffer = Buffer.from(receipt.pdf_data, "base64");
   const filename = receipt.type === "year_end" ? `${receipt.tax_year}-giving-statement.pdf` : `receipt-${receipt.receipt_number}.pdf`;
@@ -849,7 +849,7 @@ async function issueYearEndStatement(org, donor, year, { send = true, by = SYS_A
   let emailSent = false;
   if (send && donor.email) {
     // W-4: year-end statements are TRANSACTIONAL (tax paperwork, not outreach).
-    const decision = await donorMailDecision("year_end", donor.email, org.id);
+    const decision = await donorMailDecision("year_end", donor.email, org.id, { donorId: donor.id });
     if (decision.send) {
       emailSent = await sendReceiptEmail(org, donor, snapshot, pdfBuffer, `${year}-giving-statement.pdf`);
       if (emailSent) await run("UPDATE receipts SET sent_to=?, sent_at=NOW() WHERE id=?", [donor.email, id]);
@@ -1210,7 +1210,7 @@ app.post("/pledges/:id/resend", requireAuth, wrap(async (req, res) => {
   const p = rows[0];
   if (!p.donor_email) return res.status(400).json({ error: "This donor has no email on file." });
 
-  const decision = await donorMailDecision("pledge_reminder", p.donor_email, req.user.orgId);
+  const decision = await donorMailDecision("pledge_reminder", p.donor_email, req.user.orgId, { donorId: p.donor_id });
   if (!decision.send) return res.status(400).json({ error: `Cannot send, ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : `this donor's email is suppressed (${decision.reason})`}.` });
 
   const orgRows = await query(

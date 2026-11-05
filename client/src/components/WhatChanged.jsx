@@ -87,7 +87,9 @@ function ReadoutLine({ ro, line, isReadOnly, onDone, onNavigate }) {
   );
 }
 
-export function WhatChanged({ isReadOnly, onNavigate, wide }) {
+// HOME-6: `only` is one readout's id. Home's readout row opens just that one
+// (home/ReadoutPanel.jsx): its lines, each opening its people.
+export function WhatChanged({ isReadOnly, onNavigate, wide, only = null }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
   const load = useCallback(() => {
@@ -98,14 +100,15 @@ export function WhatChanged({ isReadOnly, onNavigate, wide }) {
 
   if (err) return <div data-testid="what-changed-error" style={{ color: T.gold700, fontSize: 14 }}>{err}</div>;
   if (!data) return <div style={{ color: T.ink3, fontSize: 14 }}>Loading what changed…</div>;
-  const { readouts = [], whatWorked, learned = {} } = data;
+  const { whatWorked, learned = {} } = data;
+  const readouts = only ? (data.readouts || []).filter(ro => ro.id === only) : (data.readouts || []);
   return (
     <div data-testid="agent-view-changed" style={{ maxWidth: 860 }}>
-      <div style={{ fontSize: 14, color: T.ink2, lineHeight: 1.55, margin: "0 0 18px" }}>
+      {!only && <div style={{ fontSize: 14, color: T.ink2, lineHeight: 1.55, margin: "0 0 18px" }}>
         Every import and every read from a giving source or your books leaves a readout here: what it told us, each line counted from your own records and opening the people behind it.
-      </div>
+      </div>}
 
-      {whatWorked && whatWorked.sentence && (
+      {!only && whatWorked && whatWorked.sentence && (
         <section style={{ ...CARD, borderLeft: "3px solid " + T.greenDk }} data-testid="what-worked">
           <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3 }}>What worked</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", alignItems: "baseline", marginTop: 6 }}>
@@ -136,7 +139,7 @@ export function WhatChanged({ isReadOnly, onNavigate, wide }) {
         </section>
       ))}
 
-      <section style={CARD} data-testid="what-steward-learned">
+      {!only && <section style={CARD} data-testid="what-steward-learned">
         <div style={{ fontFamily: SERIF, fontSize: 19, color: T.ink, marginBottom: 4 }}>What Steward has learned</div>
         <div style={{ fontSize: 13, color: T.ink3, marginBottom: 8 }}>Rules and counts only. Each one says where it came from.</div>
         {!(learned.fileMappings || []).length && !(learned.values || []).length && !(learned.demoted || []).length && (
@@ -163,7 +166,7 @@ export function WhatChanged({ isReadOnly, onNavigate, wide }) {
             </li>
           ))}
         </ul>
-      </section>
+      </section>}
     </div>
   );
 }

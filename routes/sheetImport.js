@@ -818,6 +818,16 @@ async function writePlan({ req, body, importId, who, report }) {
       for (const id of ids) if (!cur.get(id)) { assign.push([id, hh]); cur.set(id, hh); if (matchedIds.has(id)) summary.householdAssigned.push(id); }
     }
     await insertRows("INSERT INTO households (id, org_id, name, primary_donor_id, import_id)", ["id", "org_id", "name", "primary_donor_id", "import_id"], newHh);
+    // PEOPLE-1: a linked pair is also a Spouse or Partner link (as the column's header says), which Undo removes with the import.
+    const pk = new Map(u.people.map(p => [p.key, p]));
+    const links = (u.householdGroups || []).filter(g => String(g.key).startsWith("sp:") && g.keys.length === 2)
+      .map(g => [(personIds.get(g.keys[0]) || [])[0], (personIds.get(g.keys[1]) || [])[0], (pk.get(g.keys[0]) || {}).spouseWord === "partner" || (pk.get(g.keys[1]) || {}).spouseWord === "partner" ? "partner" : "spouse"])
+      .filter(([a, b]) => a && b && a !== b);
+    const had = links.length ? new Set((await query(`SELECT donor_id_a, donor_id_b FROM donor_relationships WHERE org_id=? AND (donor_id_a = ANY(?) OR donor_id_b = ANY(?))`,
+      [orgId, links.flatMap(l => l.slice(0, 2)), links.flatMap(l => l.slice(0, 2))])).flatMap(r => [`${r.donor_id_a}|${r.donor_id_b}`, `${r.donor_id_b}|${r.donor_id_a}`])) : new Set();
+    await insertRows("INSERT INTO donor_relationships (id, org_id, donor_id_a, donor_id_b, relationship_type, created_by, created_by_name, import_id)",
+      ["id", "org_id", "donor_id_a", "donor_id_b", "relationship_type", "created_by", "created_by_name", "import_id"],
+      links.filter(([a, b]) => !had.has(`${a}|${b}`)).map(([a, b, t]) => [newId("drel"), orgId, a, b, t, who.id, who.name, importId]));
     for (let k = 0; k < assign.length; k += JOB_BATCH) {
       const b = assign.slice(k, k + JOB_BATCH);
       await run(`UPDATE donors d SET household_id = v.hh FROM (VALUES ${b.map(() => "(?,?)").join(",")}) AS v(id, hh)

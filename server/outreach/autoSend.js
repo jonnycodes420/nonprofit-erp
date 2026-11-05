@@ -53,7 +53,7 @@ async function autoSkipReason(orgId, donor, priv, today) {
   if (donor.do_not_contact === true) return "do_not_contact";
   if (donor.do_not_email === true) return "do_not_email";
   if (!donor.email) return "no_email";
-  const d = await donorMailDecision("sequence", donor.email, orgId);
+  const d = await donorMailDecision("sequence", donor.email, orgId, { donorId: donor.id });
   if (!d.send) {
     // The org's own mail being off is not this person's answer: it waits.
     if (AUTO_ORG_REASONS.has(d.reason)) return "org_wait";

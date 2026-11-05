@@ -57,10 +57,11 @@ export function railListView({ L, railBack, railRow, sSerif }) {
         <>
           {railBack("Today")}
           <span style={{...sSerif,display:"inline-block",marginBottom:16}}>{L.title}</span>
+          {/* HOME-6: the list is everyone its count counts; each name opens the profile. */}
           {L.rows.length===0
             ?<div style={{fontSize:13.5,color:T.ink3,lineHeight:1.5}}>{L.empty}</div>
-            :<div>{L.rows.slice(0,12).map(r=>railRow(r.id,r.label,r.meta,r.onOpen))}</div>}
-          {L.rows.length>12&&<div style={{marginTop:10,fontSize:12,color:T.ink3}}>and {L.rows.length-12} more</div>}
+            :<div data-testid="rail-list" data-rows={L.rows.length}>{L.rows.map(r=>railRow(r.id,r.label,r.meta,r.onOpen))}</div>}
+          {L.loading&&<div style={{marginTop:10,fontSize:12,color:T.ink3}}>Reading the rest…</div>}
         </>
   );
 }

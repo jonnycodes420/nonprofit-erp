@@ -8041,6 +8041,7 @@ async function runSchemaInit(pool) {
   // held by the route and here), not a timeline Note.
   // DATES-1 · "About them", yearly-date skips and journey batches (server/shared/dates1Schema.js).
   await require("./server/shared/dates1Schema").dates1Schema(pool);
+  await require("./server/donors/deceasedSchema").deceasedSchema(pool);   // PEOPLE-1
 
   // Part 4. A shift has a name, a colour, a venue and a place within it, and
   // is published or a draft (volunteers see only published shifts). Published
@@ -9013,7 +9014,7 @@ async function householdsFromLinks(pool, orgId = null) {
        FROM donor_relationships dr
        JOIN donors da ON da.id = dr.donor_id_a AND da.org_id = dr.org_id AND da.deleted_at IS NULL
        JOIN donors db ON db.id = dr.donor_id_b AND db.org_id = dr.org_id AND db.deleted_at IS NULL
-      WHERE dr.relationship_type IN ('spouse', 'household')
+      WHERE dr.relationship_type IN ('spouse', 'partner', 'household')
         AND COALESCE(da.kind, 'person') NOT IN ('organisation', 'anonymous') AND COALESCE(db.kind, 'person') NOT IN ('organisation', 'anonymous')
         AND (da.household_id IS NULL OR db.household_id IS NULL OR da.household_id <> db.household_id)${orgId ? " AND dr.org_id = $1" : ""}
       ORDER BY dr.created_at, dr.id`, orgId ? [orgId] : []);

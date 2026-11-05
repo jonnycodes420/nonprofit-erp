@@ -376,6 +376,17 @@ async function advanceCultivationPlan(orgId, donorId, { actorId, actorName, toda
     `SELECT * FROM cultivation_plans WHERE org_id=? AND donor_id=? AND status='active'
       ORDER BY priority DESC, applied_on, id`, [orgId, donorId]);
   if (!plans.length) return null;
+  // PEOPLE-1: someone marked deceased (by an import or by hand) takes no next
+  // step. Their active journeys end here, reason 'deceased', and nothing opens.
+  const [who] = await query("SELECT deceased, name FROM donors WHERE id=? AND org_id=?", [donorId, orgId]);
+  if (who && who.deceased === true) {
+    const ids = plans.map(p => p.id);
+    await run(`UPDATE cultivation_plan_steps SET status='skipped', closed_at=NOW(), closed_by=?, closed_by_name=?, skip_reason='Marked deceased'
+                WHERE org_id=? AND plan_id = ANY(?::text[]) AND status IN ('open','pending')`, [JOURNEY_ACTOR.id, JOURNEY_ACTOR.name, orgId, ids]);
+    await run(`UPDATE cultivation_plans SET status='abandoned', closed_at=NOW(), end_reason='deceased', replaced_reason=?
+                WHERE org_id=? AND id = ANY(?::text[]) AND status='active'`, [`Ended: ${who.name || "they"} ${who.name ? "was" : "were"} marked deceased.`, orgId, ids]);
+    return null;
+  }
   const all = await query(
     `SELECT * FROM cultivation_plan_steps WHERE org_id=? AND plan_id = ANY(?::text[]) ORDER BY seq`,
     [orgId, plans.map(p => p.id)]);
