@@ -402,6 +402,12 @@ const draw = () => ReactDOM.createRoot(document.getElementById("root")).render(
       </p>
     : <React.StrictMode><Root /></React.StrictMode>
 );
+// LIST-3: /app is Home. It had no route of its own, so it went through "*"
+// to "/" and then to /dashboard, mounting the shell twice, and Home's reads
+// started late: on a phone the page jumped as it landed (CLS 0.31). With a
+// session the address is /dashboard before anything draws.
+if (/^\/app\/?$/.test(window.location.pathname) && localStorage.getItem("npe_token"))
+  window.history.replaceState(window.history.state, "", "/dashboard" + window.location.search + window.location.hash);
 const here = window.location.pathname.replace(/(.)\/+$/, "$1");
 if (MARKETING_PATHS.includes(here)) loadMarketing().then(draw, draw);
 else {

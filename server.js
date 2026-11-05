@@ -11647,9 +11647,11 @@ function giveThemePayload(org) {
 }
 
 // The theme columns every public /give endpoint selects from portal_settings.
-// Aliased to the names portalCardTheme + giveThemePayload read.
+// Aliased to the names portalCardTheme + giveThemePayload read. LIST-3: the
+// logo falls back to Settings → Branding's (orgs.logo_data), so a logo saved
+// there reaches the giving page; every query here joins orgs as `o`.
 const GIVE_THEME_COLS = `ps.display_name,
-  COALESCE(ps.logo_url, ps.logo_data) AS give_logo,
+  COALESCE(ps.logo_url, ps.logo_data, o.logo_data) AS give_logo,
   COALESCE(ps.header_image_url, ps.header_image_data) AS give_header_image,
   ps.header_focal_x, ps.header_focal_y, ps.header_crop,
   ps.primary_color, ps.accent_color, ps.button_color, ps.background_tint,
