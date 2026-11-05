@@ -5449,11 +5449,8 @@ async function legacyCampaignBody(body, donor, orgName, year, { text = false } =
   const lastName    = e(donor.name.split(" ").slice(1).join(" "));
   const totalGiving = donor.total_giving ? `$${Number(donor.total_giving).toLocaleString()}` : "$0";
   const giftRows    = await query("SELECT amount FROM gifts WHERE donor_id=? ORDER BY date DESC NULLS LAST LIMIT 1", [donor.id]);
-  // TRUST-1: no gift, no sentence about one ("your gift of your previous gift").
-  const giftAmount  = giftRows[0] ? `$${Number(giftRows[0].amount).toLocaleString()}` : "";
-  const GS = await import("./shared/giftSentence.js");
-  const merged = GS.withoutMissingGift(body || "", { hasGift: !!giftRows[0], hasTotal: Number(donor.total_giving) > 0 });
-  return (await GREET_READY).greetMerge(merged, e(GREET.greetingName(donor)))
+  const giftAmount  = giftRows[0] ? `$${Number(giftRows[0].amount).toLocaleString()}` : "";   // TRUST-1: no gift, no gift sentence (shared/giftSentence.js)
+  return (await GREET_READY).greetMerge((await import("./shared/giftSentence.js")).withoutMissingGift(body || "", { hasGift: !!giftRows[0], hasTotal: Number(donor.total_giving) > 0 }), e(GREET.greetingName(donor)))
     .replace(/{{first_name}}/g,   firstName)
     .replace(/{{last_name}}/g,    lastName)
     .replace(/{{donor_name}}/g,   e(donor.name))
@@ -5490,10 +5487,7 @@ async function runCampaignSend(campaign, org, donors) {
 
       for (const donor of donors) {
         const decision = await donorMailDecision("campaign", donor.email, org.id);
-        // TRUST-1: with Campaign emails off the campaign WAITS (mailTypes'
-        // offLine): it goes on to the send gate, which holds the exact message
-        // in Going out's Held list, as before. Every other refusal is final.
-        if (!decision.send && decision.reason !== "type_off") {
+        if (!decision.send && decision.reason !== "type_off") {   // TRUST-1: Campaign emails off, so it waits: the send gate holds it (Going out's Held)
           console.log(`[campaign:${campaign.id}] skipping ${donor.id} (${decision.reason})`);
           await run(
             "INSERT INTO campaign_recipients (id,org_id,campaign_id,donor_id,email,failure_reason) VALUES (?,?,?,?,?,?)",
@@ -7124,9 +7118,7 @@ function formatOrgStepTime(hhmm) {
   return `${h % 12 === 0 ? 12 : h % 12}:${String(mi).padStart(2, "0")} ${ampm}`;
 }
 
-// TRUST-1: a request passes its own org and touches nothing else. Only the
-// hourly job (routes/jobs.js), running as the system, calls these with no org.
-async function processSequences({ orgId = null } = {}) {
+async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request passes its org; only the hourly job runs all orgs
   try {
     const enrollments = await query(
       `SELECT se.*, s.name AS seq_name, s.org_id, s.trigger AS seq_trigger
@@ -7599,9 +7591,7 @@ async function computeDriftForDonors(orgId, { donorIds = null, store = true } = 
 // Lazily provisions one "at_risk" sequence per org — unlike milestone
 // sequences, this isn't gated on any org-level config (impact_metrics),
 // since detecting a donor who's quietly drifted needs no configured content.
-// TRUST-1: created OFF ('paused'). Nobody's sequence turns on until someone in
-// that org turns it on. With an orgId it touches that org only.
-async function ensureAtRiskSequence({ orgId = null } = {}) {
+async function ensureAtRiskSequence({ orgId = null } = {}) {   // TRUST-1: made OFF ('paused'); with an orgId, that org only
   const orgs = orgId ? [{ id: orgId }] : await query("SELECT id FROM orgs", []);
   for (const o of orgs) {
     const existing = await query("SELECT id FROM sequences WHERE org_id = ? AND trigger = 'at_risk'", [o.id]);
@@ -8245,8 +8235,7 @@ async function closeEnrollment(id, status, reason) {
 // Follows the same shape as processSequences()/autoEnroll() above: a
 // module-level async function run on startup and on an interval, also
 // exposed as an admin-only manual-trigger route.
-// TRUST-1: a request passes its own org; only the hourly job runs all orgs.
-async function processDunning({ orgId = null } = {}) {
+async function processDunning({ orgId = null } = {}) {   // TRUST-1: a request passes its org; only the hourly job runs all orgs
   const picked = [];
   try {
     // FIX-45: never a demo org's or a sample person's card (orgSendsSql).
@@ -9321,8 +9310,7 @@ async function sustainerFileFacts(orgId, today) {
 // its own minimal table first.
 const PLEDGE_REMINDER_SCHEDULE_DAYS = [0, 3, 7, 14];
 
-// TRUST-1: a request passes its own org; only the hourly job runs all orgs.
-async function processPledgeReminders({ orgId = null } = {}) {
+async function processPledgeReminders({ orgId = null } = {}) {   // TRUST-1: a request passes its org; only the hourly job runs all orgs
   const picked = [];
   try {
     // Step 1 — the trigger. Recurring dunning's cadence is initialized by a
@@ -9334,9 +9322,7 @@ async function processPledgeReminders({ orgId = null } = {}) {
     // DATES in the org's own calendar. CURRENT_DATE is the Postgres session
     // zone, so a pledge in a western org used to start its dunning cadence
     // hours early — a reminder email about money, sent on the wrong day.
-    const _overdueOrgs = orgId
-      ? await query("SELECT id, timezone FROM orgs WHERE id = ?", [orgId])
-      : await query("SELECT id, timezone FROM orgs", []);
+    const _overdueOrgs = await query(`SELECT id, timezone FROM orgs${orgId ? " WHERE id = ?" : ""}`, orgId ? [orgId] : []);
     for (const _o of _overdueOrgs) {
       await run(
         `UPDATE pledges SET first_overdue_at=NOW(), next_reminder_at=NOW(), updated_at=NOW()
@@ -9358,8 +9344,7 @@ async function processPledgeReminders({ orgId = null } = {}) {
          AND COALESCE(p.is_match,false) = false
          AND p.import_id IS NULL   -- SEND-GATE-1: an imported pledge is never reminded
          AND d.is_sample IS NOT TRUE AND d.deleted_at IS NULL
-         AND ${mailPolicy.orgSendsSql("o")}${orgId ? " AND p.org_id = ?" : ""}`,
-      orgId ? [orgId] : []
+         AND ${mailPolicy.orgSendsSql("o")}${orgId ? " AND p.org_id = ?" : ""}`, orgId ? [orgId] : []
     );
     picked.push(...rows.map(p => ({ orgId: p.org_id, pledgeId: p.id })));
     for (const p of rows) {
