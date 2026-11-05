@@ -84,6 +84,42 @@ const FILES = {
   "client/src/components/Dashboard.jsx": ["client/src/components/Dashboard.jsx", ...HOME_PARTS],
 };
 const ORDER_FILE = path.join(__dirname, "splitOrder.json");
+// SPLIT-2: db.js is split by concern under server/db/. Every moved block is
+// marked "// SPLIT-2 db.js piece N" … "// SPLIT-2 end" and is db.js's own text
+// (a relative require is written from its new folder and read back from the
+// root). readSource("db.js") puts the pieces back in N order, which is db.js as
+// it was before the split, plus whatever has been edited in place since.
+const DB_PARTS = (() => {
+  const out = [];
+  const walk = d => {
+    let es; try { es = fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }); } catch { return; }
+    for (const e of es.sort((a, b) => a.name.localeCompare(b.name))) {
+      const rel = d + "/" + e.name;
+      if (e.isDirectory()) walk(rel); else if (e.name.endsWith(".js")) out.push(rel);
+    }
+  };
+  walk("server/db");
+  return out;
+})();
+FILES["db.js"] = ["db.js", ...DB_PARTS];
+const DB_PIECE = /^\/\/ SPLIT-2 db\.js piece (\d+)\n([\s\S]*?)^\/\/ SPLIT-2 end\n/gm;
+function dbSource() {
+  const pieces = [];
+  for (const rel of FILES["db.js"]) {
+    const src = fs.readFileSync(path.join(ROOT, rel), "utf8");
+    const dir = path.posix.dirname(rel);
+    for (const m of src.matchAll(DB_PIECE)) {
+      const text = m[2].replace(/\b(require|import)\((\s*)(["'`])(\.\.?\/[^"'`]*)/g, (x, kw, sp, q, spec) => {
+        let r = path.posix.normalize(path.posix.join(dir, spec));
+        if (!r.startsWith(".")) r = "./" + r;
+        return kw + "(" + sp + q + r;
+      });
+      pieces.push({ n: Number(m[1]), text });
+    }
+  }
+  return pieces.sort((a, b) => a.n - b.n).map(p => p.text).join("");
+}
+
 
 let espree = null;
 function parser() {
@@ -282,6 +318,7 @@ function readSource(rel) {
   const abs = path.isAbsolute(rel) ? rel : path.join(ROOT, rel);
   const key = path.relative(ROOT, abs).split(path.sep).join("/");
   if (!FILES[key] || FILES[key].length === 1) return fs.readFileSync(abs, "utf8");
+  if (key === "db.js") return dbSource();
   const stamp = FILES[key].map(f => { try { return fs.statSync(path.join(ROOT, f)).mtimeMs; } catch { return 0; } }).join();
   const hit = cache.get(key);
   if (hit && hit.stamp === stamp) return hit.text;

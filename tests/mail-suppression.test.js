@@ -699,7 +699,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     ok("§13a a new invitee: the weekly email on, the daily email and everything else off", acc.status === 201 && wantNew(iNotes), { inv: inv.status, acc: acc.status, iNotes });
 
     // People who exist today keep exactly what they have: no row is written at deploy.
-    const dbSrc = require("fs").readFileSync(require("path").join(__dirname, "..", "db.js"), "utf8");
+    const dbSrc = readSource("db.js");   // SPLIT-2: db.js is split under server/db/
     ok("§13b the build writes no person's email settings: schema only",
       !/UPDATE\s+users\s+SET[^`;]*notify_(weekly|thread_nudge)/i.test(dbSrc.split("STAFF-MAIL-2")[1] || dbSrc), null);
 
