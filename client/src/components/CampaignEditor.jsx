@@ -187,7 +187,7 @@ export default function CampaignEditor({
   const right = (
     <div style={{ padding: "14px 16px 30px", display: "flex", flexDirection: "column", gap: 14 }}>
       <div>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Who it goes to</div>
+        <div data-testid="builder-who" style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Who it goes to</div>
         <AudienceLine audience={aud} />
         {aud && aud.blocked && <div data-testid="audience-blocked" style={{ ...NOTE_BOX, marginTop: 8 }}>{aud.blocked}</div>}
       </div>

@@ -273,7 +273,7 @@ async function seed() {
   ok("§7 the Agent note does not count as a conversation: last conversation is the meeting, 23 days", Number(gap.value) === 23, { value: gap.value, rows: (gap.rows || []).map(r => r.id) });
   ok("§7 …and Last met says the same 23 days", Number(met.value) === 23, met.value);
   const st7 = (await api("GET", "/donors/d_hf1/status", tok7)).body;
-  const fact = ((st7.closeness || {}).facts || []).find(f => /last conversation/.test(f.text));
+  const fact = ((st7.closeness || {}).facts || []).find(f => /last contact/.test(f.text));   // COUNTS-1: one word, the header's
   ok("§7 the header's closeness line reads the same conversation, not today", fact && /3 weeks ago/.test(fact.text) && fact.source.key === "donor-contact-gap", fact);
   const mv = await api("PATCH", "/donors/d_hf1/stage", tok7, { stage: "steward" });
   const [sc] = await q(`SELECT type, note FROM interactions WHERE org_id=$1 AND donor_id='d_hf1' AND type='stage_change' ORDER BY created_at DESC LIMIT 1`, [ORG]);

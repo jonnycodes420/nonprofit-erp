@@ -95,7 +95,7 @@ async function closeness(orgId, d, today, w) {
   if (em && em.totalRows > 0) facts.push({ text: `opened or clicked ${em.totalRows === 1 ? "an email" : `${em.totalRows} emails`}`, source: emailSrc });
   const gapSrc = { key: "donor-contact-gap", params: { donor: d.id, today } };
   const gap = await FS.figureValue(orgId, gapSrc);
-  if (gap.totalRows > 0) facts.push({ text: `last conversation ${ago(Number(gap.value))}`, source: gapSrc });
+  if (gap.totalRows > 0) facts.push({ text: `last contact ${ago(Number(gap.value))}`, source: gapSrc });   // COUNTS-1: the header's word and rule
   const label = DS.CLOSENESS[key].label;
   const why = {
     close: "Close and Warm are the engagement score's own bands: 67 and above is Close, 34 to 66 is Warm.",

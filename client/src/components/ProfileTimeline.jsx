@@ -9,11 +9,15 @@ import { apiFetch } from "../api";
 import { RelationshipTimeline } from "./MeetingPanels";
 import { ATTACHMENTS_CHANGED } from "./ProfileTimelineParts";
 import { VOLUNTEER_HOURS_CHANGED } from "./VolunteerPanel";
+import { useWriteStamp } from "../lib/profileRefresh";
 
 // PROFILE-1 (header) — the tasks, files and volunteer shifts beside the
 // timeline, read ONCE per profile: the tab row's counts and every tab's list
 // come from the same three reads.
 export function useTimelineExtras(donorId, ints) {
+  // COUNTS-1: and again after any write to this person, a task, a note or a file,
+  // so the tab row's counts move with the change (lib/profileRefresh.js).
+  const stamp = useWriteStamp(donorId);
   const [tasks, setTasks] = useState([]);
   const [attachments, setAttachments] = useState([]);
   // PARITY-3 Part 1 — every logged shift is on the timeline as Volunteer service.
@@ -31,7 +35,7 @@ export function useTimelineExtras(donorId, ints) {
     const on = () => loadFiles();
     window.addEventListener(ATTACHMENTS_CHANGED, on);
     return () => { alive = false; window.removeEventListener(ATTACHMENTS_CHANGED, on); };
-  }, [donorId, ints]);
+  }, [donorId, ints, stamp]);
   useEffect(() => {
     if (!donorId) return undefined;
     let alive = true;
@@ -44,7 +48,7 @@ export function useTimelineExtras(donorId, ints) {
     loadService();
     window.addEventListener(VOLUNTEER_HOURS_CHANGED, loadService);
     return () => { alive = false; window.removeEventListener(VOLUNTEER_HOURS_CHANGED, loadService); };
-  }, [donorId]);
+  }, [donorId, stamp]);
   return { tasks, attachments, service };
 }
 

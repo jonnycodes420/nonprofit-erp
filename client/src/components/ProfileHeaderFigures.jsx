@@ -83,22 +83,18 @@ const src = f => (f && f.source) || null;
 function pick(F, G) {
   return { first: F.first || G.first, largest: F.largest || G.largest, average: F.average || G.average };
 }
-const timeOf = d => (d ? new Date(String(d).length <= 10 ? d + "T12:00:00" : d).getTime() : -Infinity);
 
-// Last contact: the more recent of the meeting and the email, saying which.
-function lastContact(F, today) {
-  const lm = F.lastMet && F.lastMet.value != null && F.lastMet.under && F.lastMet.under.date ? F.lastMet : null;
-  const le = F.lastEmail && F.lastEmail.value != null && F.lastEmail.under && F.lastEmail.under.date ? F.lastEmail : null;
-  if (!lm && !le) return { f: F.lastMet || F.lastEmail || null, key: "profile.lastMet", def: censusById("profile.lastMet").sentence, under: null };
-  const met = lm && (!le || timeOf(lm.under.date) >= timeOf(le.under.date));
-  if (met) {
-    const u = lm.under;
-    return { f: lm, key: "profile.lastMet", def: censusById("profile.lastMet").sentence,
-      under: `Met${u.what ? `: ${u.what.replace(/\.$/, "")}` : ""}. ${displayDateShort(u.date, today)}` };
-  }
-  const u = le.under;
-  return { f: le, key: "profile.lastEmail", def: censusById("profile.lastEmail").sentence,
-    under: `Email ${u.direction === "from_them" ? "from them" : u.direction === "sent" ? "sent" : "logged"} ${displayDateShort(u.date, today)}` };
+// COUNTS-1 · LAST CONTACT IS ONE RULE: the server's donor-contact-gap
+// (meetings.js conversationsWith: a call, a meeting, an email sent or
+// received, a note marked as a conversation, an event they came to), the same
+// rule About's sentence and Engagement's read. It was the newer of Last met
+// and Last email, so a call logged today still read "none yet".
+const CONTACT_WORD = { Call: "Call", Meeting: "Met", "Meeting, from a calendar": "Met", Email: "Email", Ask: "Ask", Stewardship: "Stewardship touch", Note: "Talked (noted)", Event: "Came to an event" };
+export function lastContactOf(F, today, sep = ". ") {
+  const f = F.contact || null;
+  const u = f && f.value != null && f.under && f.under.date ? f.under : null;
+  return { f, key: "profile.contact", def: censusById("profile.contact").sentence,
+    under: u ? `${CONTACT_WORD[u.what] || u.what || "Contact"}${sep}${displayDateShort(u.date, today)}` : null };
 }
 
 // PROFILE-2 · the fiscal year the number counts, said with its dates:
@@ -117,7 +113,7 @@ export function ProfileHeaderFigures({ figures }) {
   const F = figures || {};
   const today = new Date();
   const lg = F.lastGift && F.lastGift.under;
-  const lc = lastContact(F, today);
+  const lc = lastContactOf(F, today);
   const fy = fiscalYearWords(F.thisYear && F.thisYear.source && F.thisYear.source.params && F.thisYear.source.params.from);
   return (
     <div className="dph-figures" data-testid="dp-header-figures" style={{ flexBasis: "100%", display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))",

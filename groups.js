@@ -820,6 +820,9 @@ async function starterList(orgId, groups = []) {
       sentence: rulesSentence(starterGroup(st).rules), addedGroupId: added ? added.id : null };
   });
   const shown = all.filter(s => s.count > 0);
+  // COUNTS-1: the SYBUNT starter carries the SYBUNT report's count and why they differ.
+  const syb = shown.find(s => s.key === "sybunt");
+  if (syb) syb.report = await require("./server/groups/starterReport").sybuntReportLine(orgId);
   return { starters: shown, hidden: all.length - shown.length };
 }
 const starterByKey = key => STARTERS.find(st => st.key === key) || null;

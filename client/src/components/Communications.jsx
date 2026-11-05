@@ -1906,7 +1906,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   {hub === null && !hubErr ? "Counting who you can reach…"
                     : hubErr ? "Could not load who you can reach, " + hubErr
                     : hub.reach === 0
-                      ? "Nobody on file has an email address yet. Add one to a person and they become reachable here."
+                      ? (hub.withEmail ? `${hub.withEmail.toLocaleString()} ${hub.withEmail === 1 ? "person has" : "people have"} an email address; none can get a campaign email yet.`
+                        : "Nobody on file has an email address yet. Add one to a person and they become reachable here.")
                       : <>You can reach <strong style={{ color: T.ink }}>{hub.reach.toLocaleString()}</strong>{" "}
                          {hub.reach === 1 ? "person" : "people"} across{" "}
                          <strong style={{ color: T.ink }}>{hub.audiences.length}</strong>{" "}
@@ -1930,8 +1931,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   {[
                     { label: "Emails sent", id: "sent", value: (hub.stats.totalSent || 0).toLocaleString(), source: { key: "emails-sent", params: {} }, n: hub.stats.totalSent || 0 },
                     { label: "Open rate", id: "rate", value: hub.stats.openRate === null ? "Not sent yet" : hub.stats.openRate + "%", go: () => { setCampFilter("sent"); setNav("campaigns"); } },
-                    { label: "Sequences running", id: "sequences", value: hub.stats.activeSequences, go: () => setNav("sequences") },
-                  ].map(({ label, id, value, source, n, go }) => {
+                    { label: "Sequences running", id: "sequences", value: hub.stats.activeSequences, go: () => setNav("sequences"), title: hub.stats.sequencesSentence },
+                  ].map(({ label, id, value, source, n, go, title }) => {
                     const inner = (
                       <>
                         <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: T.ink3 }}>{label}</span>
@@ -1941,7 +1942,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                     const box = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 16px", minWidth: 132, textAlign: "left" };
                     return source
                       ? <OpenRows key={label} testid={"hub-stat-" + id} source={source} title={label} value={n} style={box}>{inner}</OpenRows>
-                      : <button key={label} type="button" data-testid={"hub-stat-" + id} onClick={go} style={{ ...box, font: "inherit", cursor: "pointer" }}>{inner}</button>;
+                      : <button key={label} type="button" data-testid={"hub-stat-" + id} onClick={go} title={title || undefined} style={{ ...box, font: "inherit", cursor: "pointer" }}>{inner}</button>;
                   })}
                 </div>
               )}
@@ -2011,20 +2012,17 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                             background: T[a.tone] || T.greenMid, transform: "translateY(-1px)" }} />
                           <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: T.ink }}>{a.name}</span>
                           <span data-testid="hub-audience-count" style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',Georgia,serif" }}>
-                            {/* FIX-40 · a group's count opens its members; the
-                                others open the screen their people live on,
-                                the same place the link under them goes. */}
-                            {a.kind === "group"
-                              ? <Figure variant="cell" value={a.count} label={a.name} source={{ key: "group-members", params: { group: a.id } }} />
-                              : onNavigate
-                                ? <button type="button" onClick={() => onNavigate(a.livesOn.tab, a.livesOn.filter ? { personType: a.livesOn.filter } : {})}
-                                    aria-label={`${a.name}: ${a.count}. Opens ${a.livesOn.label}.`} className="figure-inline"
-                                    style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "inherit", cursor: "pointer" }}>{a.count.toLocaleString()}</button>
-                                : a.count.toLocaleString()}
+                            {/* COUNTS-1 · the number is the campaign builder's count (who a
+                                campaign to this audience would reach), and it opens
+                                the builder on it, where who is left out is named. */}
+                            <button type="button" data-testid="hub-audience-reach" onClick={() => { setNav("campaigns"); openBuilder({ name: a.name, segment: a.segment || { mode: a.mode } }); }}
+                              aria-label={`${a.name}: ${a.count} can get a campaign email. Opens a campaign to them.`} className="figure-inline"
+                              title="How many a campaign email to this audience would reach today, counted the way the campaign builder counts."
+                              style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "inherit", cursor: "pointer" }}>{a.count.toLocaleString()}</button>
                           </span>
                         </div>
                         <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 4, lineHeight: 1.45, paddingLeft: 15 }}>
-                          {a.description}
+                          {a.description}{a.inSegment !== undefined && a.inSegment !== a.count ? ` ${countLabel(a.inSegment, "person", "people")} in it; ${a.count.toLocaleString()} can get a campaign email.` : ""}
                         </div>
                         {/* WHERE THEY LIVE — the sentence this rail exists for,
                             and it is shown at a count of ZERO too. An empty
@@ -2035,9 +2033,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                         {onNavigate && (
                           <button onClick={() => onNavigate(a.livesOn.tab, a.livesOn.filter ? { personType: a.livesOn.filter } : {})}
                             style={{ marginTop: 6, marginLeft: 15, background: "transparent", border: "none", padding: 0,
-                                     fontSize: 11.5, fontWeight: 700, color: a.count > 0 ? T.greenMid : T.ink3,
+                                     fontSize: 11.5, fontWeight: 700, color: (a.inSegment ?? a.count) > 0 ? T.greenMid : T.ink3,
                                      cursor: "pointer", textAlign: "left" }}>
-                            {a.count > 0 ? `${a.livesOn.label} →` : `None yet. They are kept in ${a.livesOn.label} →`}
+                            {(a.inSegment ?? a.count) > 0 ? `${a.livesOn.label} →` : `None yet. They are kept in ${a.livesOn.label} →`}
                           </button>
                         )}
                       </li>

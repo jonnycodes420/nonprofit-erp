@@ -299,7 +299,8 @@ async function reset() {
   console.log("\n§7 the screen keeps up");
   const src = p => fs.readFileSync(path.join(ROOT, "client/src/components", p), "utf8");
   const listeners = ["DonorProfile.jsx", "Tasks.jsx", "Calendar.jsx", "Dashboard.jsx"]   // Home's Thread is in Dashboard.jsx
-   .filter(p => fs.existsSync(path.join(ROOT, "client/src/components", p)) && /useStewardTold\(/.test(src(p)));
+   // COUNTS-1: the profile listens through useProfileRefresh (lib/profileRefresh.js), which is useStewardTold plus its own writes.
+   .filter(p => fs.existsSync(path.join(ROOT, "client/src/components", p)) && /useStewardTold\(|useProfileRefresh\(/.test(src(p)));
   ok("§7 the profile, Thread, Tasks and Calendar re-read when Tell Steward acts", listeners.length === 4, listeners);
   ok("§7 the sheet says so after every change, not only on close", (src("TellSteward.jsx").match(/told\(/g) || []).length >= 3, null);
   ok("§7 the profile's status re-reads with it", /useDonorStatus\(donor\.id,\s*figs,\s*`\$\{stepNonce\}:\$\{toldNonce\}`\)/.test(src("DonorProfile.jsx")), null);
