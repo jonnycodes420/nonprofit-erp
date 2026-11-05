@@ -28,9 +28,11 @@ at two addresses with two emails were "name only". After (`server/dataHealth/rea
 a real email (an address, not a placeholder) or a real US phone (not one digit repeated, not a 0/1
 area code or exchange, not 555-5555) matches; a value carried by more than 3 different names is
 shared (an office line) and matches no one; a name-only pair needs nothing to contradict it (two
-real emails, two phones or two addresses that differ); a first name differing in its first letter
-is not a spelling slip (Gary/Mary); one address with two near names, each with their own email or
-phone, is a household. The fixture now gives exactly the 24 planted. Home's notice counts again
+real emails, two phones or two addresses that differ); a first name differing in its first letter,
+or a short one (five letters or fewer) with one letter swapped, is a different name, not a slip
+(Gary/Mary, Mark/Mary), while a letter added or left out is still a spelling (CLEAN-1's
+Theresa/Teresa at one address stays medium; the first push dropped it and seed-demo's own check
+went red in CI). The fixture now gives exactly the 24 planted. Home's notice counts again
 with the current rule on read (`server/dataHealth/noticeCount.js`, cached ten minutes); the stored
 run and the "Review N possible duplicates" task already written are left as they are.
 

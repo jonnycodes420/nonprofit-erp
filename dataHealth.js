@@ -123,12 +123,18 @@ const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 const RANK = { high: 3, medium: 2, low: 1 };
 function judgePair(a, b, { near = null, shared = null } = {}) {
   let rel = nameRelation(a.name, b.name);
-  // HOTFIX-RHYTHM: "Gary Clark" and "Mary Clark" are a letter apart, and two
-  // people: a first name that differs in its first letter is not a typo.
-  if (rel === "spelling") {
+  // HOTFIX-RHYTHM: "Gary Clark" and "Mary Clark", "Mark White" and "Mary
+  // White", are a letter apart and two people. A first name that differs in
+  // its first letter, or a short one with one letter swapped for another, is
+  // a different name, not a typo. A letter left out or added (Theresa and
+  // Teresa, CLEAN-1's medium pair) is still a spelling.
+  const twoNames = (() => {
     const ta = nameTokens(a.name), tb = nameTokens(b.name);
-    if (ta.length >= 2 && tb.length >= 2 && ta[ta.length - 1] === tb[tb.length - 1] && ta[0][0] !== tb[0][0]) rel = null;
-  }
+    const fa = ta[0] || "", fb = tb[0] || "";
+    const swapped = fa.length === fb.length && fa.length <= 5 && [...fa].filter((ch, i) => ch !== fb[i]).length === 1;
+    return ta.length >= 2 && tb.length >= 2 && ta[ta.length - 1] === tb[tb.length - 1] && fa !== fb && (fa[0] !== fb[0] || swapped);
+  })();
+  if (rel === "spelling" && twoNames) rel = null;
   const nd = near ? near(a.name, b.name) : null;
   let family = false;
   if (near) {
@@ -140,7 +146,7 @@ function judgePair(a, b, { near = null, shared = null } = {}) {
     const cut = fa.length < fb.length ? fb.startsWith(fa) : fa.startsWith(fb);
     if (sameLast && fa !== fb && fa.length >= 2 && fb.length >= 2 && !cut && editDistance(fa, fb, 2) >= 2 && !nd
         && (rel === "spelling" || rel === null)) { family = true; rel = null; }
-    else if (!rel && nd && (nd.why === "nickname" || nd.why === "spelling")) rel = nd.why;
+    else if (!rel && nd && (nd.why === "nickname" || (nd.why === "spelling" && !twoNames))) rel = nd.why;
   }
   // HOTFIX-RHYTHM: a blank, a placeholder ("n/a", 000-000-0000) or a value
   // many different names share (an office line) is no one's, and matches no one.
@@ -164,9 +170,7 @@ function judgePair(a, b, { near = null, shared = null } = {}) {
   if (samePhone && rel) meet("high", `same phone, ${nameWords}`);
   if (sameAddress && rel === "same") meet("high", "same address, same name");
   if (sameEmail && !rel) meet("medium", "same email, different names");
-  // one address and two names a letter apart, each with their own email or
-  // phone, is a household (HOTFIX-RHYTHM): a shared address alone is not a duplicate
-  if (sameAddress && rel && rel !== "same" && !RV.contradicts(a, b, { shared })) meet("medium", `same address, ${nameWords}`);
+  if (sameAddress && rel && rel !== "same") meet("medium", `same address, ${nameWords}`);
   if (sameHousehold && rel) meet("medium", `same household, ${nameWords}`);
   if (sameEmployer && rel) meet("low", `same employer, ${nameWords}`);
   if (family) {
