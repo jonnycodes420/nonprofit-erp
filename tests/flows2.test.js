@@ -367,6 +367,7 @@ async function seed() {
     await page.locator('[data-testid="settings-org-name-text"]', { hasText: "Larkspur Tide Collective" }).waitFor({ timeout: 15000 }).catch(() => {});
     const [o] = await q(`SELECT name FROM orgs WHERE id=$1`, [ORG]);
     await page.reload({ waitUntil: "load" });
+    await page.locator('[data-testid="settings-org-name-text"]', { hasText: "Larkspur Tide Collective" }).waitFor({ timeout: 15000 }).catch(() => {});
     const shown = await page.locator('[data-testid="settings-org-name-text"]').innerText({ timeout: 20000 }).catch(() => "");
     ok("§5 the org name is editable, its field stays, and it saves", stillThere && o.name === "Larkspur Tide Collective" && shown === "Larkspur Tide Collective", { stillThere, saved: o.name, shown });
   });
