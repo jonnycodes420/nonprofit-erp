@@ -79,9 +79,9 @@ async function onePage(browser, { app, base, api, email, password, url, log: opt
   await cdp.send("Network.emulateNetworkConditions", DESKTOP.net);
   if (DESKTOP.cpu > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: DESKTOP.cpu });
   const sent = [];
-  const t0 = Date.now();
-  page.on("request", r => { if (r.url().startsWith(base) && opts_log) sent.push([Date.now() - t0, r.method(), r.url().slice(base.length, base.length + 110)]); });
-  page.on("requestfinished", r => { if (r.url().startsWith(base) && opts_log) { const x = sent.find(s => s[2] === r.url().slice(base.length, base.length + 110) && s.length === 3); if (x) x.push(Date.now() - t0); } });
+  const t0 = performance.now();
+  page.on("request", r => { if (r.url().startsWith(base) && opts_log) sent.push([Math.round(performance.now() - t0), r.method(), r.url().slice(base.length, base.length + 110)]); });
+  page.on("requestfinished", r => { if (r.url().startsWith(base) && opts_log) { const x = sent.find(s => s[2] === r.url().slice(base.length, base.length + 110) && s.length === 3); if (x) x.push(Math.round(performance.now() - t0)); } });
   const read = async () => {
     await page.waitForFunction(() => !!window.__stewardReady, null, { timeout: 30000 }).catch(() => {});
     return page.evaluate(() => window.__stewardReady || null);
