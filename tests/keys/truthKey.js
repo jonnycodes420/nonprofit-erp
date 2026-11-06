@@ -17,6 +17,16 @@
 //                is recognition. Refunds (negative rows) come off a total.
 //   live person  not deleted and not a sample row. A deleted person's gifts
 //                count toward nothing.
+//   erased       TRUTH-2: an erased person (anonymized) is counted nowhere a
+//                person is counted (people, givers, lapsed, LYBUNT, SYBUNT);
+//                their gifts stay in every money total, as anonymous gifts.
+//   donors       TRUTH-2: in a span, the people with a hard-credit gift above
+//                zero dated in it. A $0 row or a refund makes nobody a donor.
+//   LYBUNT       TRUTH-2: a person with a hard-credit gift above zero dated in
+//                last fiscal year and none dated anywhere in this one.
+//   SYBUNT       a person with such a gift dated before this fiscal year and
+//                none dated anywhere in this one (LYBUNT people included). Both
+//                read gifts on file: an imported total has no year to fall in.
 //   gave         a hard-credit gift above zero, dated on or before today, or
 //                an imported last gift (the old system's history is giving).
 //   this year    the org's fiscal year, from its start month, labelled with
@@ -85,8 +95,11 @@ function computeKey(rows, opts = {}) {
   const lapsingTo = monthsBack(today, 9);
   const ninetyAgo = addDays(today, -90);
 
-  const people = (rows.people || []).filter(p => !p.deleted && !p.sample);
-  const live = new Map(people.map(p => [p.id, p]));
+  // `live` holds whose gifts are money (an erased person's too); `people` is
+  // who is counted as a person (TRUTH-2: never an erased one).
+  const live = new Map((rows.people || []).filter(p => !p.deleted && !p.sample).map(p => [p.id, p]));
+  const people = [...live.values()].filter(p => !p.erased);
+  const counted = new Set(people.map(p => p.id));
   // A gift counts when its person is live; a gift on nobody is in no screen's total.
   const gifts = (rows.gifts || []).filter(g => live.has(g.person) && !g.sample)
     .map(g => ({ ...g, c: g.cents != null ? Number(g.cents) : cents(g.amount), d: day(g.date), credit: isCreditType(g.type) }));
@@ -106,7 +119,7 @@ function computeKey(rows, opts = {}) {
 
   // ── gave: each person's dates of giving (hard, above zero, on or before today) ──
   const given = new Map();   // id -> sorted dates
-  for (const g of hard) if (g.c > 0 && g.d && g.d <= today) (given.get(g.person) || given.set(g.person, []).get(g.person)).push(g.d);
+  for (const g of hard) if (g.c > 0 && g.d && g.d <= today && counted.has(g.person)) (given.get(g.person) || given.set(g.person, []).get(g.person)).push(g.d);
   for (const p of people) {
     for (const k of ["importedLastGift", "importedFirstGift"]) {
       const d = day(p[k]);
@@ -151,6 +164,13 @@ function computeKey(rows, opts = {}) {
   const gaveIn = (id, span) => (given.get(id) || []).some(d => d >= span.from && d <= span.to);
   const firstIn = span => sortIds([...given].filter(([, ds]) => ds[0] >= span.from && ds[0] <= span.to).map(([id]) => id));
   const retainedIn = (span, prior) => sortIds([...given.keys()].filter(id => gaveIn(id, span) && gaveIn(id, prior)));
+
+  // ── TRUTH-2 · LYBUNT and SYBUNT, over gifts on file, the whole year ──
+  const giftDays = new Map();   // counted person -> dates of hard gifts above zero (any date)
+  for (const g of hard) if (g.c > 0 && g.d && counted.has(g.person)) (giftDays.get(g.person) || giftDays.set(g.person, []).get(g.person)).push(g.d);
+  const noneThisYear = ds => !ds.some(d => d >= fy.from && d <= fy.to);
+  const lybunt = sortIds([...giftDays].filter(([, ds]) => noneThisYear(ds) && ds.some(d => d >= lastFy.from && d <= lastFy.to)).map(([id]) => id));
+  const sybunt = sortIds([...giftDays].filter(([, ds]) => noneThisYear(ds) && ds.some(d => d < fy.from)).map(([id]) => id));
 
   // ── deposits ──
   const banked = hard.filter(g => BANKED.has(String(g.method || "").trim().toLowerCase()));
@@ -197,6 +217,7 @@ function computeKey(rows, opts = {}) {
     households: households.size,
     peopleInHouseholds: people.filter(p => p.household).length,
     importedIds: sortIds(people.filter(p => p.imported).map(p => p.id)),
+    erasedIds: sortIds([...live.values()].filter(p => p.erased).map(p => p.id)),   // TRUTH-2
     units: new Set(people.map(p => unitOf(p.id))).size,
     gifts: { count: hard.length, cents: sumC(hard), undated: hard.filter(g => !g.d).length },
     creditIds: sortIds(credits.map(g => g.id)),
@@ -206,6 +227,9 @@ function computeKey(rows, opts = {}) {
     lifetimeById: Object.fromEntries([...live.keys()].map(id => [id, sumC(hard.filter(g => g.person === id))])),
     lapsed: sortIds(lapsed),
     lapsing: sortIds(lapsing),
+    // TRUTH-2: the donor count this fiscal year so far, and LYBUNT and SYBUNT
+    donorsThisYear: new Set(hard.filter(g => g.c > 0 && g.d && g.d >= fy.from && g.d <= today && counted.has(g.person)).map(g => g.person)).size,
+    lybunt, sybunt,
     pledgeOverdue: sortIds(overdue),
     firstTime: { [fy.label]: firstIn(fy), [lastFy.label]: firstIn(lastFy) },
     retained: { [fy.label]: retainedIn(fy, lastFy) },
@@ -217,6 +241,8 @@ function computeKey(rows, opts = {}) {
     between: (from, to) => { const a = hard.filter(g => g.d && g.d >= from && g.d <= to); return { cents: sumC(a), count: a.length }; },
     // credit rows dated from..to (recognition: in no money total)
     creditsBetween: (from, to) => { const a = credits.filter(g => g.d && g.d >= from && g.d <= to); return { cents: sumC(a), count: a.length }; },
+    // TRUTH-2: hard money from..to given by people a list shows (not an erased record's)
+    peopleMoneyBetween: (from, to) => sumC(hard.filter(g => g.d && g.d >= from && g.d <= to && counted.has(g.person))),
     // every gift row dated from..to, whatever its type or sign: what a screen
     // shows if it sums rows without asking what they are (the known defects)
     rowsBetween: (from, to) => {
@@ -229,13 +255,13 @@ function computeKey(rows, opts = {}) {
     depositRefOf: id => { const g = gifts.find(x => x.id === id); return g ? String(g.depositRef || "").trim() : null; },
     // who gave (hard, above zero) from..to: people, and units (a household once)
     giversBetween: (from, to) => {
-      const ids = new Set(hard.filter(g => g.c > 0 && g.d && g.d >= from && g.d <= to).map(g => g.person));
+      const ids = new Set(hard.filter(g => g.c > 0 && g.d && g.d >= from && g.d <= to && counted.has(g.person)).map(g => g.person));
       return { people: ids.size, units: new Set([...ids].map(unitOf)).size };
     },
   };
 }
 
 // The key as JSON (no functions), for a committed file.
-const toJson = k => { const { unitOf, between, giversBetween, creditsBetween, rowsBetween, depositRefOf, sumHard, ...rest } = k; return rest; };
+const toJson = k => { const { unitOf, between, peopleMoneyBetween, giversBetween, creditsBetween, rowsBetween, depositRefOf, sumHard, ...rest } = k; return rest; };
 
 module.exports = { computeKey, toJson, isCreditType, fiscalYear, addDays, monthsBack };

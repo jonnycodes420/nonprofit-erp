@@ -46,6 +46,8 @@
 //             is the number the send would reach, by SEND-GATE-2's rule), units
 //             (FIX-60: a report's money figure is money, its count a count,
 //             each foots to its rows; a fee is less than its gift),
+//             bunt (TRUTH-2: the donor count this year, LYBUNT and SYBUNT
+//             against the key: header, rows, group page, money),
 //             counts (COUNTS-1: open tasks and the Tasks badge, each person's
 //             Last contact, against tests/lib/countsKey.js; volunteers card =
 //             roster = list, an audience's number = the builder's, SYBUNT
@@ -160,7 +162,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   };
 
   // ── THE GROUND TRUTH, from the database ──────────────────────────────────
-  const LIVE = `d.org_id = $1 AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE`;
+  const LIVE = `d.org_id = $1 AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE AND d.erased_at IS NULL`;   // TRUTH-2: an erased person is nobody
   // TRUTH-1: people, gifts and money come from the key below, not from SQL here.
   const [deleted, imports, groupRows, eventRows, campaignRows, [org]] = await Promise.all([
     q(`SELECT id, name, email FROM donors WHERE org_id = $1 AND deleted_at IS NOT NULL`, [orgId]),
@@ -282,6 +284,12 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       ["the onboarding card", setupDonors.count],
       ["Home's file line", homeLinePeople ? num(homeLinePeople[1]) : undefined],
       ["the CSV export", csvRows ? csvRows.length : undefined],
+    ]);
+    // TRUTH-2: the org's whole-data exports keep an erased record (it is what
+    // holds their gifts, as anonymous gifts, so the books foot); no screen
+    // counts it as a person.
+    agree("records in the org's exports", [
+      ["the key (live, not sample, an erased record too)", key.people + key.erasedIds.length],
       ["the workbook export (/org/export)", workbook && Array.isArray(workbook.donors) ? workbook.donors.length : undefined],
       ["the export zip's donors.csv", zipDonors ? parseCsv(zipDonors[1]).length : undefined],
     ]);
@@ -309,7 +317,13 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       ["the key (live people's hard-credit gifts)", key.gifts.cents],
       ["Fundraising, all time", fund && fund.allTime ? cents(fund.allTime.raised) : undefined],
       ["the workbook export", wbGifts ? wbGifts.reduce((a, g) => a + cents(g.amount), 0) : undefined],
-      // A person's lifetime folds in an imported total; only comparable when no one carries one.
+    ], money);
+    // TRUTH-2: an erased person is on no list, so a list's lifetimes add up to
+    // the money less theirs (their gifts are still money, as anonymous gifts).
+    // A person's lifetime folds in an imported total; only comparable when no one carries one.
+    const erasedCents = key.erasedIds.reduce((a, id) => a + (key.lifetimeById[id] || 0), 0);
+    agree("total given by the people on the lists", [
+      ["the key (hard credit, less erased records' gifts)", key.gifts.cents - erasedCents],
       ["the Donors list (sum of lifetime)", listed && !summarised ? listed.reduce((a, d) => a + cents(d.total_giving), 0) : undefined],
       ["the CSV export (sum of Total giving)", csvRows && !summarised ? csvRows.reduce((a, r) => a + cents(r["Total giving"]), 0) : undefined],
     ], money);
@@ -936,7 +950,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     if (topH && Array.isArray(topH.rows) && (topH.rows.length < 100 || g.units < 100)) {
       agree(`gave from ${yy}-01-01 to ${key.asOf}, a household once`, [["the key", g.units], ["Reports' top donors by household (rows)", topH.rows.length]]);
       agree(`gave from ${yy}-01-01 to ${key.asOf}, each person`, [["the key", g.people], ["Reports' top donors by household (members)", topH.rows.reduce((n, r) => n + Number(r.memberCount || 0), 0)]]);
-      agree(`given from ${yy}-01-01 to ${key.asOf}, by household`, [["the key (hard credit)", key.between(`${yy}-01-01`, key.asOf).cents],
+      agree(`given from ${yy}-01-01 to ${key.asOf}, by household`, [["the key (hard credit, by the people a list shows)", key.peopleMoneyBetween(`${yy}-01-01`, key.asOf)],
         ["Reports' top donors by household (sum)", topH.rows.reduce((n, r) => n + cents(r.total), 0)]], money);
     }
   }
@@ -1128,6 +1142,31 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       ["the giving summary (fiscalYear, Reports' chips)", gs && gs.fiscalYear ? Number(gs.fiscalYear) === startY + 1 && String(gs.from).slice(0, 10) === kfy.from : undefined],
     ];
     for (const [where, same] of said) if (same === false) diffs.push(`fiscal year: the key says ${chart}; ${where} names another year${label ? ` (${label})` : ""}`);
+  }
+
+  // ── TRUTH-2 · ONE DONOR COUNT, ONE LYBUNT, ONE SYBUNT, TO THE LAST PERSON ──
+  // Walk A (5 Nov): Fundraising 363 against the Giving summary's 362, SYBUNT's
+  // report 555 against its group 554, LYBUNT's header $428,081 against its
+  // rows' $425,422. Each is the key's number (tests/keys/truthKey.js), on
+  // every surface that shows it, and the report's money is its rows' money.
+  if (!skip.has("bunt")) {
+    if (fund && fund.yearMode === "fiscal" && fund.period && fund.period.donorCount !== undefined) {
+      agree("donors this fiscal year so far", [["the key (a gift above $0, not erased)", key.donorsThisYear], ["Fundraising's donor count", Number(fund.period.donorCount)]]);
+    }
+    const [ly, sy, gly, gsy] = await Promise.all(["/reports/lybunt", "/reports/sybunt", "/donors?bunt=lybunt&limit=1&offset=0", "/donors?bunt=sybunt&limit=1&offset=0"]
+      .map(p => get(p).catch(() => null)));
+    for (const [kind, rep, grp, want] of [["LYBUNT", ly, gly, key.lybunt], ["SYBUNT", sy, gsy, key.sybunt]]) {
+      if (!rep || !rep.currentPeriod || rep.currentPeriod.from !== key.fiscalYear.from) continue;   // only the key's own year
+      const ids = (rep.rows || []).map(r => r.id);
+      const grpN = grp && grp.total !== undefined ? Number(grp.total) + (kind === "SYBUNT" ? key.lybunt.length : 0) : undefined;
+      agree(kind, [["the key", want.length], ["the report's header", rep.figures && rep.figures.people ? Number(rep.figures.people.value) : undefined],
+        ["the report's rows", ids.length], [kind === "SYBUNT" ? "the group page (the usual SYBUNT, plus LYBUNT)" : "the group page", grpN]]);
+      const w = new Set(want), got = new Set(ids);
+      const missing = want.filter(id => !got.has(id)), extra = ids.filter(id => !w.has(id));
+      if (missing.length || extra.length) diffs.push(`${kind}: the report ${missing.length ? `leaves out ${missing.length} the key names (${missing.slice(0, 3).join(", ")})` : ""}${missing.length && extra.length ? " and " : ""}${extra.length ? `lists ${extra.length} the key does not (${extra.slice(0, 3).join(", ")})` : ""}`);
+      const foot = (rep.rows || []).reduce((n, r) => n + cents(r.priorYearTotal), 0);
+      if (rep.figures && rep.figures.atStake) agree(`${kind} money`, [["the report's header", cents(rep.figures.atStake.value)], ["the report's rows, added up", foot]], money);
+    }
   }
 
   // TRUTH-1: a disagreement logged in docs/defects.md (tests/lib/knownDefects.js),

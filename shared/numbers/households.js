@@ -4,8 +4,10 @@
 // and 13 household counts with no shared function. The words are
 // ARCHITECTURE.md's: a household is counted once where the screen says
 // households, and its people are counted where it says people.
-//   A person     a row in `donors` that is not deleted and not sample data
-//                (TRUTH-1's people). Organisations and non-donor people are
+//   A person     a row in `donors` that is not deleted, not sample data and
+//                not erased (TRUTH-1's people; TRUTH-2: an erased person is
+//                counted nowhere, while their gifts stay in the money as
+//                anonymous gifts). Organisations and non-donor people are
 //                people too (one person record).
 //   A household  a `households` row with at least one such person in it. A
 //                household whose people are all deleted is not one.
@@ -16,7 +18,7 @@
 const { LIVE } = require("./money");
 
 // SQL: `d` is a person who counts.
-const PERSON = (d = "d") => `(${LIVE(d)} AND ${d}.is_sample IS NOT TRUE)`;
+const PERSON = (d = "d") => `(${LIVE(d)} AND ${d}.is_sample IS NOT TRUE AND ${d}.erased_at IS NULL)`;
 // SQL: the giving unit `d` belongs to (EVENTS-3: a household once).
 const UNIT = (d = "d") => `COALESCE(${d}.household_id, ${d}.id)`;
 
@@ -33,7 +35,7 @@ async function counts(query, orgId, { where = "", args = [] } = {}) {
 
 // The same over rows already read ([{ id, household_id, deleted_at?, is_sample? }]).
 function countsOf(rows) {
-  const live = (rows || []).filter(d => !d.deleted_at && d.is_sample !== true);
+  const live = (rows || []).filter(d => !d.deleted_at && d.is_sample !== true && !d.erased_at);
   return {
     people: live.length,
     households: new Set(live.map(d => d.household_id).filter(Boolean)).size,
@@ -43,7 +45,7 @@ function countsOf(rows) {
 
 // The words a screen prints beside the counts.
 const WORDS = Object.freeze({
-  people: "People are everyone in your records who is not deleted and not sample data: donors, organizations and other people.",
+  people: "People are everyone in your records who is not deleted, not erased and not sample data: donors, organizations and other people.",
   households: "Households are counted once, however many of their people are here; a household whose people are all deleted is not counted.",
 });
 

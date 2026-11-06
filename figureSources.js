@@ -542,7 +542,7 @@ const SOURCES = {
                    COUNT(*) || CASE WHEN COUNT(*) = 1 THEN ' gift' ELSE ' gifts' END AS detail
               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
               LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
-             WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?${where}
+             WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?${where} AND d.erased_at IS NULL   -- TRUTH-2: an erased person is no giver (shared/numbers/money GIVERS)
              GROUP BY d.id, d.name HAVING COUNT(*) FILTER (WHERE g.amount > 0) > 0`;
       return {
         sql: p.top ? `SELECT * FROM (${inner}) t ORDER BY amount DESC, id LIMIT ${p.top}` : inner,
@@ -566,9 +566,8 @@ const SOURCES = {
     sql: (orgId, p) => {
       if (!["lybunt", "sybunt"].includes(p.kind)) throw new FigureParamError("kind is lybunt or sybunt.");
       const GB = require("./shared/numbers/givingBetween");
-      const before = p.kind === "lybunt"
-        ? "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0 AND g.date >= ? AND g.date <= ?)"
-        : "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0 AND g.date < ?)";
+      // TRUTH-2: the one rule (shared/numbers/bunt.js), the report's rows and the group page's too.
+      const B = require("./shared/numbers/bunt").buntSql(p.kind, { from: p.from, to: p.to }, { from: p.prevFrom, to: p.prevTo }, "d");
       return {
         // LEDGER-1: the amount is what they gave in the last year they gave
         // (givingBetween.LAST_YEAR_SUM, the report's own years): last year
@@ -577,9 +576,8 @@ const SOURCES = {
                      ROUND(${GB.LAST_YEAR_SUM("d")}::numeric, 2) AS amount,
                      'Lifetime ' || TO_CHAR(COALESCE(d.total_giving, 0), 'FM$999,999,990.00') AS detail
                 FROM donors d ${GB.LAST_YEAR_JOIN("d")}
-               WHERE d.org_id = ? AND d.deleted_at IS NULL AND ${before}
-                 AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0 AND g.date >= ? AND g.date <= ?)`,
-        args: [...GB.lastYearArgs(p.from), orgId, ...(p.kind === "lybunt" ? [p.prevFrom, p.prevTo] : [p.from]), p.from, p.to],
+               WHERE d.org_id = ? AND d.deleted_at IS NULL AND ${B.sql}`,
+        args: [...GB.lastYearArgs(p.from), orgId, ...B.args],
         order: "amount DESC, id",
       };
     },

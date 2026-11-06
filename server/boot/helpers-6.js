@@ -176,12 +176,14 @@ async function sequenceMergeValues(donor, orgId) {
   try { vocab = org?.vocabulary_json ? JSON.parse(org.vocabulary_json) : null; } catch { /* default words */ }
   const t = V.makeT(vocab);
   const words = String(donor.name || "").trim().split(/\s+/).filter(Boolean);
+  // TRUTH-2: the last gift a step states is the one rule (shared/numbers/lastGift), read now.
+  const lg = donor.id ? (await require("../../shared/numbers/lastGift").lastGifts(query, orgId, [donor.id])).get(donor.id) : null;
   const values = {
     first: words[0] || "",
     last: words.length > 1 ? words[words.length - 1] : "",
     name: donor.name || "",
-    last_gift_amount: Number(donor.last_gift_amount) > 0 ? fmtMoneyPlain(donor.last_gift_amount) : "",
-    last_gift_date: donor.last_gift_date || "",
+    last_gift_amount: lg && lg.cents > 0 ? fmtMoneyPlain(lg.cents / 100) : "",
+    last_gift_date: lg ? lg.date : "",
     fund: donor.__fund || "",
     // BUILD-86 Part B — a shop that says "sponsors" gets "sponsor" here. The
     // brief's {{sponsor_name}} is THAT word, not a second person's name.

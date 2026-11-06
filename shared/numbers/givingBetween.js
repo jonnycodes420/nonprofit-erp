@@ -6,7 +6,7 @@
 // future is not money received yet, so "this fiscal year" is its first day to
 // today (fiscalYear.fiscalYearToDate). An undated gift is in no span.
 "use strict";
-const { MONEY, LIVE } = require("./money");
+const { MONEY, LIVE, GIVERS } = require("./money");
 
 // The span, cut at today. `to` empty means today.
 function capped({ from, to }, today) {
@@ -31,7 +31,7 @@ async function givingBetween(query, orgId, { from, to, today, donorId = null }) 
   if (donorId) args.push(donorId);
   const [r] = await query(
     `SELECT COALESCE(SUM(ROUND(g.amount * 100)), 0)::bigint AS cents, COUNT(*) FILTER (WHERE g.amount > 0)::int AS n,
-            COUNT(*)::int AS rows, COUNT(DISTINCT g.donor_id)::int AS givers
+            COUNT(*)::int AS rows, ${GIVERS("g", "d")}::int AS givers
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id = ? AND ${LIVE("d")} AND ${IN_SPAN("g")}${donorId ? " AND g.donor_id = ?" : ""}`, args);
   return { cents: Number(r.cents), gifts: Number(r.n), rows: Number(r.rows), givers: Number(r.givers), from: s.from, to: s.to };

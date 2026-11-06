@@ -609,14 +609,22 @@ async function seedData() {
   // widget with real content on first load instead of another empty state.
   // Mirrors what generateMilestoneDraft() would actually produce: warm,
   // specific, no gamification language.
+  // TRUTH-2: every figure in a seeded draft is the person's lifetime read
+  // from their gifts by the one rule (shared/numbers/lifetime), never a
+  // number typed into the words: the old "$3,200" stayed in the draft while
+  // the person's giving moved on.
+  const { LIFETIME } = require("../../shared/numbers/lifetime");
+  const lifeOf = async id => Number((await pool.query(`SELECT ${LIFETIME("d")} AS v FROM donors d WHERE d.org_id = $1 AND d.id = $2`, [orgId, id])).rows[0]?.v || 0);
+  const usd = v => "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
+  const [camille, nathaniel, elena] = [await lifeOf("dseed_07"), await lifeOf("dseed_08"), await lifeOf("dseed_09")];
   const milestoneDrafts = [
     ["mdseed_01", orgId, "dseed_07", null, "threshold_2500",
      "Camille, a quick thank you",
-     "Camille, I wanted to pause and let you know you've now given $3,200 with us. That total has now covered a full year of scholarship support for one of our students. It's donors like you, giving steadily and thoughtfully, who make that kind of continuity possible. Thank you for sticking with us.",
+     `Camille, I wanted to pause and let you know you've now given ${usd(camille)} with us. That total has now covered a full year of scholarship support for one of our students. It's donors like you, giving steadily and thoughtfully, who make that kind of continuity possible. Thank you for sticking with us.`,
      "pending_review"],
     ["mdseed_02", orgId, "dseed_08", null, "threshold_1000",
      "Nathaniel: a thank you at $1,000",
-     "Nathaniel, you've now given $1,050 total, and that's enough to fund three after-school arts workshops for our students. I don't think we've properly thanked you for how consistent you've been. It matters more than you probably realize. Thank you.",
+     `Nathaniel, you've now given ${usd(nathaniel)} total, and that's enough to fund three after-school arts workshops for our students. I don't think we've properly thanked you for how consistent you've been. It matters more than you probably realize. Thank you.`,
      "pending_review"],
     // Elena's $10,000 crossing is NOT here — per the Phase 2 note/email split
     // (isNoteMoment() in server.js), $10k+ thresholds get a "write a note"
@@ -638,7 +646,7 @@ async function seedData() {
   const julianLastGift = seedAgo(150);
   const noteReminders = [
     ["notereminder_01", orgId, "dseed_09", null, "threshold_10000", JSON.stringify([
-      "Just crossed $10,000 in total lifetime giving ($12,500 total).",
+      `Just crossed $10,000 in total lifetime giving (${usd(elena)} total).`,
       'From their file: "Just crossed $10,000 lifetime giving. High-touch relationship, board-adjacent."',
       `They've been giving for ${elenaYears} years, since ${orgTime.formatCivil(elenaFirst).replace(/ \d+,/, "")}.`,
     ]), "pending"],

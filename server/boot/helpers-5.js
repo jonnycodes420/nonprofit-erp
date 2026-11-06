@@ -846,19 +846,29 @@ async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request
 // uniquely identifies THIS specific milestone (e.g. "threshold_1000",
 // "anniversary_year_3") so autoEnroll can tell a genuinely new milestone
 // apart from one it already handled, without needing a separate table.
+// TRUTH-2: every figure a draft states is read from shared/numbers when the
+// draft is made (draftFigures.js), never the stored donors.total_giving.
+async function figuresForDraft(orgId, donorId) {
+  const N = require("../../shared/numbers");
+  return N.draftFigures.draftFigures(query, orgId, donorId, N.fiscalYear.fiscalYearToDate(await orgTz(orgId)));
+}
 async function computeMilestoneCandidates(orgId) {
   const candidates = [];
+  const { LIFETIME } = require("../../shared/numbers/lifetime");
+  const { lastGifts } = require("../../shared/numbers/lastGift");
 
   const recentGiftDonors = await query(
-    `SELECT id, total_giving, last_gift_amount FROM donors
+    `SELECT d.id, ${LIFETIME("d")} AS total_giving FROM donors d
      WHERE org_id = ? AND deleted_at IS NULL AND email IS NOT NULL AND email != ''
        AND deceased IS NOT TRUE AND do_not_contact IS NOT TRUE
        AND last_gift_date IS NOT NULL AND last_gift_date::date >= NOW() - INTERVAL '2 days'`,
     [orgId]
   );
+  const lastById = await lastGifts(query, orgId, recentGiftDonors.map(d => d.id));
   for (const d of recentGiftDonors) {
     const total = Number(d.total_giving) || 0;
-    const lastAmt = Number(d.last_gift_amount) || 0;
+    const lg = lastById.get(d.id);
+    const lastAmt = lg ? lg.cents / 100 : 0;
     const priorTotal = total - lastAmt;
     for (const t of MILESTONE_THRESHOLDS) {
       if (priorTotal < t && total >= t) {
@@ -1013,7 +1023,7 @@ async function computeDriftForDonors(orgId, { donorIds = null, store = true } = 
                   d.imported_sustainer, d.tags, d.kind,
                   d.assigned_to, d.assigned_to_name, d.stripe_subscription_status,
                   d.created_at::date::text AS created_date
-             FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL
+             FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.erased_at IS NULL   -- TRUTH-2: an erased person has no rhythm to read
                                 AND ${donorOnly("d")}${idFilter}`, [orgId, ...idParams]),
     // Every status that means "this donor is ON a subscription": active,
     // failing (past_due/recovering — the failed-payment path owns those),
@@ -1151,7 +1161,9 @@ async function computeNoteTalkingPoints(donorId, orgId, meta) {
   const donorRows = await query("SELECT * FROM donors WHERE id = ? AND org_id = ?", [donorId, orgId]);
   const donor = donorRows[0];
   if (!donor) return null;
-  const totalGiving = Number(donor.total_giving) || 0;
+  const F = await figuresForDraft(orgId, donorId);   // TRUTH-2
+  const totalGiving = F.lifetime;
+  const lastLine = F.lastGift ? `$${F.lastGift.amount.toLocaleString()} on ${orgTime.civilLocale(F.lastGift.date, { month: "long", day: "numeric", year: "numeric" })}` : null;
   const points = [];
 
   // 1. The milestone itself
@@ -1179,9 +1191,7 @@ async function computeNoteTalkingPoints(donorId, orgId, meta) {
   // anniversary (point 1), use recency of their last gift here instead so
   // this point doesn't just repeat "X years" a second time.
   if (meta.milestone_type === "anniversary") {
-    points.push(donor.last_gift_date
-      ? `Most recent gift: $${(Number(donor.last_gift_amount) || 0).toLocaleString()} on ${orgTime.civilLocale(donor.last_gift_date, { month: "long", day: "numeric", year: "numeric" })}.`
-      : `${donor.gift_count || 0} gift(s) total.`);
+    points.push(lastLine ? `Most recent gift: ${lastLine}.` : `${F.giftCount} gift(s) total.`);
   } else if (donor.first_gift_date) {
     const first = new Date(donor.first_gift_date);
     if (!isNaN(first.getTime())) {
@@ -1192,9 +1202,7 @@ async function computeNoteTalkingPoints(donorId, orgId, meta) {
     }
   }
   if (points.length < 3) {
-    points.push(donor.last_gift_date
-      ? `Last gift: $${(Number(donor.last_gift_amount) || 0).toLocaleString()} on ${orgTime.civilLocale(donor.last_gift_date, { month: "long", day: "numeric", year: "numeric" })}.`
-      : `${donor.gift_count || 0} gift(s) total.`);
+    points.push(lastLine ? `Last gift: ${lastLine}.` : `${F.giftCount} gift(s) total.`);
   }
 
   return points.slice(0, 3);
@@ -1204,10 +1212,14 @@ async function computeNoteTalkingPoints(donorId, orgId, meta) {
 
 // FIX-27 Part 7: the template sentence a milestone draft falls back to. It
 // says only what Steward computed: the threshold crossed, or the anniversary.
-function milestoneTemplate(firstName, orgName, meta, opening = `Dear ${firstName},`) {
+// TRUTH-2: with the lifetime read from shared/numbers, it says that figure.
+function milestoneTemplate(firstName, orgName, meta, opening = `Dear ${firstName},`, figures = null) {
+  const D = require("../../shared/numbers/draftFigures");
   const line = meta.milestone_type === "anniversary"
     ? `It has been ${meta.label || "another year"} since your first gift to ${orgName || "us"}, and we are grateful for every year of it.`
-    : `Your giving to ${orgName || "us"} has now passed $${(meta.threshold || 0).toLocaleString("en-US")}, and we wanted to thank you for every gift that got it there.`;
+    : figures && figures.lifetimeCents > 0
+      ? `Your giving to ${orgName || "us"} has now reached ${D.dollars(figures.lifetime)}, and we wanted to thank you for every gift that got it there.`
+      : `Your giving to ${orgName || "us"} has now passed $${(meta.threshold || 0).toLocaleString("en-US")}, and we wanted to thank you for every gift that got it there.`;
   return { subject: firstName ? `Thank you, ${firstName}` : "Thank you", body: `${opening}\n\n${line}\n\nWith gratitude,` };
 }
 // SPLIT-2 end
@@ -1223,7 +1235,8 @@ async function generateMilestoneDraft(recipient, orgId, meta) {
   if (!donor) return null;
   const orgRows = await query("SELECT name FROM orgs WHERE id = ?", [orgId]);
   const orgName = displayNameCase(orgRows[0]?.name) || "";
-  const totalGiving = Number(donor.total_giving) || 0;
+  const F = await figuresForDraft(orgId, donor.id);   // TRUTH-2: never donors.total_giving
+  const totalGiving = F.lifetime;
 
   const metricRows = await query(
     "SELECT * FROM impact_metrics WHERE org_id = ? AND active = true AND dollar_threshold <= ? ORDER BY dollar_threshold DESC LIMIT 1",
@@ -1276,11 +1289,19 @@ Write the email now.`,
     const chk = await DRAFT_CHECK.checkDraft(`${parsed.subject}\n${parsed.body}`, await DRAFT_CHECK.draftRecord(orgId, donor.id));
     if (!chk.ok) {
       recordAiFallback(orgId, "milestone_draft", chk.reasons.join(" · "));
-      return milestoneTemplate(firstName, orgName, meta, await openingLine(donor));
+      return milestoneTemplate(firstName, orgName, meta, await openingLine(donor), F);
+    }
+    // TRUTH-2: a figure that claims a total is the lifetime or this year's giving.
+    const wrong = require("../drafts/figureCheck").wrongTotals(`${parsed.subject}\n${parsed.body}`, F);
+    if (wrong.length) {
+      recordAiFallback(orgId, "milestone_draft", `total not theirs: ${wrong.join(", ")}`);
+      return milestoneTemplate(firstName, orgName, meta, await openingLine(donor), F);
     }
     return { subject: String(parsed.subject), body: String(parsed.body) };
   } catch (e) {
     recordAiFallback(orgId, "milestone_draft", e);
+    // WHY-1: with AI off, the same answer in a template sentence.
+    if (e && e.name === "AiOffError") return milestoneTemplate(firstName, orgName, meta, await openingLine(donor), F);
     return null;
   }
 }
@@ -1300,9 +1321,10 @@ async function generateAtRiskDraft(recipient, orgId) {
   if (!donor) return null;
   const orgRows = await query("SELECT name FROM orgs WHERE id = ?", [orgId]);
   const orgName = displayNameCase(orgRows[0]?.name) || "";
-  const totalGiving = Number(donor.total_giving) || 0;
-  const daysSinceGift = donor.last_gift_date
-    ? Math.floor((Date.now() - new Date(donor.last_gift_date).getTime()) / 86400000) : null;
+  const F = await figuresForDraft(orgId, donor.id);   // TRUTH-2
+  const totalGiving = F.lifetime;
+  const daysSinceGift = F.lastGift
+    ? Math.floor((Date.now() - new Date(F.lastGift.date).getTime()) / 86400000) : null;
   const firstName = await greetFor(donor);
 
   try {

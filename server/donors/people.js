@@ -317,9 +317,9 @@ app.get("/people", requireAuth, wrap(async (req, res) => {
   const rows = await query(
     `SELECT d.id, d.name, d.email, d.phone, d.kind, d.person_types, d.gift_count, d.total_giving, d.last_gift_date
        FROM donors d
-      WHERE d.org_id=? AND d.deleted_at IS NULL AND ${PT.typeSql(role, "d")}
+      WHERE d.org_id=? AND d.deleted_at IS NULL AND d.erased_at IS NULL AND ${PT.typeSql(role, "d")}
       ORDER BY lower(d.name), d.id
-      LIMIT 5000`, [req.user.orgId]);
+      LIMIT 5000`, [req.user.orgId]);   // TRUTH-2: an erased person is on no list
   res.json({
     role,
     people: rows.map(r => ({

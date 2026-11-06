@@ -23,6 +23,12 @@ async function draftRecord(orgId, donorId = null) {
     `SELECT id, name, email, total_giving, gift_count, last_gift_amount, last_gift_date, first_gift_date
        FROM donors WHERE id = ? AND org_id = ?`, [donorId, orgId]);
   if (!donor) return base;
+  // TRUTH-2: the figures a draft is checked against are the live ones
+  // (shared/numbers/draftFigures.js), so a stale stored total is "not one of
+  // their amounts" instead of the amount that grounds the claim.
+  const F = await require("./shared/numbers/draftFigures").draftFigures(query, orgId, donorId);
+  if (F) Object.assign(donor, { total_giving: F.lifetime, gift_count: F.giftCount,
+    last_gift_amount: F.lastGift ? F.lastGift.amount : null, last_gift_date: F.lastGift ? F.lastGift.date : null });
   const [gifts, video, meetings] = await Promise.all([
     query(`SELECT id, amount, date FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 ORDER BY date DESC NULLS LAST LIMIT 200`, [orgId, donorId]),
     query(`SELECT token FROM video_thanks WHERE org_id = ? AND donor_id = ? AND asset_id IS NOT NULL ORDER BY created_at DESC LIMIT 1`, [orgId, donorId]).catch(() => []),

@@ -676,7 +676,7 @@ async function rosterRows(orgId, { onlyGivers = false } = {}) {
                          SUM(CASE WHEN date >= ? THEN round(hours*100) ELSE 0 END) AS hy,
                          COUNT(*) AS n, MAX(date) AS last
                     FROM volunteer_shifts WHERE org_id = ? GROUP BY person_id) s ON s.person_id = d.id
-      WHERE d.org_id = ? AND d.deleted_at IS NULL AND ${VOLUNTEER_ROLE}
+      WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.erased_at IS NULL AND ${VOLUNTEER_ROLE}   -- TRUTH-2: an erased person is on no roster
       ORDER BY COALESCE(s.hy, 0) DESC, lower(d.name), d.id`, [yearStart, orgId, orgId]);
   const people = rows.map(r => ({
     id: r.id, name: r.name, email: r.email || null,
