@@ -28,6 +28,7 @@ const DM = require("../donorMatch");
 const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 const AN = require("../server/atlas/answers");   // ATLAS-3: lists, people, an unrecorded gift, a link
 const PG = require("../server/atlas/progress");   // ATLAS-3: the status line, one step at a time
+const DS = require("../server/atlas/draftStream");   // SPEED-3: a draft's words as they are written
 
 const routers = { r0: express.Router() };
 // ATLAS-3: the profile's Call script rides on Atlas's router (server.js is at its size ceiling).
@@ -245,19 +246,22 @@ async function readSteps(orgId, text, { today, onPage }) {
 
 // The email's words: the model when AI is on, else the template. Never a
 // fact: the run's own check refuses a draft that states one she did not say.
-async function writeDraft(orgId, { firstName, opening, words, month, thanks, meet, aboutThem = "" }) {
-  const AT_ = await AT();
-  const voice = await orgVoice(orgId);   // ATLAS-3: in the org's voice
+async function writeDraft(orgId, { firstName, opening, words, month, thanks, meet, aboutThem = "", onWords = null }) {
+  // SPEED-3: the voice, the switch and the module are read at once, not in turn.
+  const [AT_, voice, gate] = await Promise.all([AT(), orgVoice(orgId), agentGate(orgId)]);   // ATLAS-3: in the org's voice
   const template = { subject: thanks ? `Thank you, ${firstName}` : `Hello from us, ${firstName}`,
     body: [opening || `Dear ${firstName},`, "", thanks ? "Thank you so much for your generosity. It means a great deal to all of us." : "I wanted to reach out.",
       ...(meet ? ["", `I would love to meet${month ? ` in ${month}` : ""} to share what your support makes possible. Would that work for you?`] : []), "", `${voice.signoff || "With gratitude"},`, ...(voice.signature ? [voice.signature] : [])].join("\n") };
-  const gate = await agentGate(orgId);
   if (!gate.ok) return template;
   try {
     const prompt = AT_.buildDraftPrompt({ firstName, words, month, aboutThem, signoff: voice.signoff || "" });
-    const msg = await anthropicFor(orgId).messages.create({ model: ATLAS_MODEL(), max_tokens: 400, thinking: { type: "disabled" }, system: prompt.system, messages: prompt.messages,
+    const args = { model: ATLAS_MODEL(), max_tokens: 400, thinking: { type: "disabled" }, system: prompt.system, messages: prompt.messages,
       tools: [{ name: AT_.DRAFT_TOOL.name, description: AT_.DRAFT_TOOL.description, strict: true, input_schema: AT_.DRAFT_TOOL.input_schema }],
-      tool_choice: { type: "tool", name: AT_.DRAFT_TOOL.name } }, { timeout: Math.max(5000, ATLAS_ANSWER_MS() - 5000), maxRetries: 0 });   // ATLAS-4: the template past 15 s
+      tool_choice: { type: "tool", name: AT_.DRAFT_TOOL.name } };
+    const timeout = Math.max(5000, ATLAS_ANSWER_MS() - 5000);   // ATLAS-4: the template past 15 s
+    // SPEED-3: streamed, so her first words show while the rest is written. The same call and answer.
+    const msg = onWords ? await DS.streamTool(anthropicFor(orgId), args, { timeout, onWords })
+      : await anthropicFor(orgId).messages.create(args, { timeout, maxRetries: 0 });
     const use = (msg.content || []).find(b => b.type === "tool_use" && b.name === AT_.DRAFT_TOOL.name);
     const out = use && use.input;
     // The month she asked to meet in must be in it; otherwise the template is.
@@ -281,8 +285,8 @@ async function orgVoice(orgId) {
 }
 
 // Every name and place in the steps, resolved; the questions it leaves.
-async function resolveAll(orgId, steps, { today, onPage, answers = {} }) {
-  const all = await people(orgId);
+async function resolveAll(orgId, steps, { today, onPage, answers = {}, all: allP = null }) {
+  const all = await (allP || people(orgId));   // SPEED-3: POST /atlas reads them beside the model
   let lastWho = onPage ? onPage.name : "";
   const whoCache = new Map();
   const questions = [];
@@ -378,21 +382,17 @@ async function saveAnswer(orgId, memoId, actionId, answer) {
 
 async function execute(req, m, steps, { today, ai, prior = null }) {
   const orgId = req.user.orgId;
-  const AT_ = await AT(), V = await VM();
+  // SPEED-3: what execute needs before its first step is read at once, not in turn.
+  const [AT_, V, AN4, clientSafe, CS, nameRows] = await Promise.all([AT(), VM(), import("../shared/atlasNote.js"), require("../clientSafe").privacyFor(orgId),
+    import("../shared/clientSafe.js"), query("SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?::text[])",
+      [orgId, [...new Set(steps.flatMap(s => [s.donorId, s.otherId]).filter(Boolean))]])]);
   { // ATLAS-4: a labelled line kept in a conversation's note ("Notes: …") is not a step of its own.
-    const AN4 = await import("../shared/atlasNote.js");
     const notes = steps.filter(x => x.kind === "log_conversation").map(x => AN4.conversationNote(m.text, x).toLowerCase());
     steps = steps.filter(x => !(x.kind === "other" && x.words && notes.some(n => n.includes(String(x.words).toLowerCase()))));
   }
-  const clientSafe = await require("../clientSafe").privacyFor(orgId);
-  const CS = await import("../shared/clientSafe.js");
-  const names = new Map((await query("SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?::text[])",
-    [orgId, [...new Set(steps.flatMap(s => [s.donorId, s.otherId]).filter(Boolean))]])).map(r => [r.id, r.name]));
+  const names = new Map(nameRows.map(r => [r.id, r.name]));
   const nm = id => names.get(id) || "them";
   const insId = newId("ai");
-  await run(`INSERT INTO agent_instructions (id,org_id,text,kind,status,send_authorization,persona,created_by,created_by_name,turned_on_by,turned_on_by_name,turned_on_at)
-             VALUES (?,?,?,'task','done','draft','atlas',?,?,?,?,NOW())`, [insId, orgId, m.text, actor(req).id, actor(req).name, actor(req).id, actor(req).name]);
-  await run("UPDATE voice_memos SET instruction_id=? WHERE id=? AND org_id=?", [insId, m.id, orgId]);
   const base = { requestId: m.id };
   const cardId = () => newId("vc");
   const log = a => logAction(req, { ...base, ...a });
@@ -413,18 +413,33 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
 
   // ATLAS-3: a thank-you for an amount she named that is not on record (and
   // not in this request) waits for the gift first; no email is written for it.
-  for (const st of steps) if ((st.kind === "draft_email" || st.kind === "send_now") && st.donorId && !steps.some(x => ["gift", "pledge"].includes(x.kind) && x.donorId === st.donorId)) {
-    st.unrecorded = await AN.unrecordedAmount({ query, orgId, donorId: st.donorId, words: st.words, amountFromWords: AT_.amountFromWords });
-  }
+  // SPEED-3: each person's check at once.
+  await Promise.all(steps.filter(st => (st.kind === "draft_email" || st.kind === "send_now") && st.donorId && !steps.some(x => ["gift", "pledge"].includes(x.kind) && x.donorId === st.donorId))
+    .map(async st => { st.unrecorded = await AN.unrecordedAmount({ query, orgId, donorId: st.donorId, words: st.words, amountFromWords: AT_.amountFromWords }); }));
   const say = PG.sayer(req, steps.length);
-  // Every email starts writing at once, beside the other steps.
+  // Every email starts writing at once, beside the other steps, before
+  // anything else is written (SPEED-3: the draft is the slowest call Atlas makes).
+  // Its words show on the status line as they come, the first unfinished email's.
   const drafts = new Map();
+  const shown = [];
+  const showNext = () => { const nx = shown.find(x => !x.done); if (nx && nx.words) PG.words(req, nx.words); };
   for (const st of steps) if ((st.kind === "draft_email" || st.kind === "send_now") && st.donorId && !st.unrecorded && !(clientSafe.on && clientSafe.clientIds.has(st.donorId))) {
     const when = AT_.whenFromWords(st.whenWords, today);
-    const [ab] = await query("SELECT about_them FROM donors WHERE id=? AND org_id=?", [st.donorId, orgId]);
-    drafts.set(st, writeDraft(orgId, { aboutThem: (ab && ab.about_them) || "", firstName: first(nm(st.donorId)), opening: (await import("../shared/greeting.js")).greetingLine({ name: nm(st.donorId) }), words: st.words, month: when ? AT_.monthWord(when.date) : "",
-      thanks: /\bthank/i.test(st.words), meet: /\bmeet|meeting|lunch|coffee|visit|sit down\b/i.test(st.words) }));
+    const me = { done: false, words: "" };
+    shown.push(me);
+    const onWords = w => { me.words = w; if (shown.find(x => !x.done) === me) PG.words(req, w); };
+    drafts.set(st, (async () => {
+      const [[ab], G] = await Promise.all([query("SELECT about_them FROM donors WHERE id=? AND org_id=?", [st.donorId, orgId]), import("../shared/greeting.js")]);
+      return writeDraft(orgId, { aboutThem: (ab && ab.about_them) || "", firstName: first(nm(st.donorId)), opening: G.greetingLine({ name: nm(st.donorId) }), words: st.words, month: when ? AT_.monthWord(when.date) : "",
+        thanks: /\bthank/i.test(st.words), meet: /\bmeet|meeting|lunch|coffee|visit|sit down\b/i.test(st.words), onWords });
+    })().finally(() => { me.done = true; showNext(); }));
+    drafts.get(st).catch(() => {});   // awaited at its step; never an unhandled rejection before then
   }
+  await Promise.all([
+    run(`INSERT INTO agent_instructions (id,org_id,text,kind,status,send_authorization,persona,created_by,created_by_name,turned_on_by,turned_on_by_name,turned_on_at)
+             VALUES (?,?,?,'task','done','draft','atlas',?,?,?,?,NOW())`, [insId, orgId, m.text, actor(req).id, actor(req).name, actor(req).id, actor(req).name]),
+    run("UPDATE voice_memos SET instruction_id=? WHERE id=? AND org_id=?", [insId, m.id, orgId]),
+  ]);
   for (const st of steps) {
     const id = st.donorId;
     // A client in privacy mode: nothing about them is written, kept or read.
@@ -607,6 +622,7 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
           break;
         }
         const said = r.status < 300 && r.body && (r.body.sentence || (r.body.answer && r.body.answer.sentence) || r.body.headline);
+        if (said) PG.words(req, String(said));   // SPEED-3: the answer's sentence shows while the list is read
         // ATLAS-3: a set of people comes back as the people, with the count and why each matched.
         const list = r.status < 300 ? await AN.listAnswer({ ask: r.body, query, orgId, asHer, req, today }).catch(e => { console.error("[atlas] list:", e.message); return null; }) : null;
         const aid = await log({ kind: "answer", state: "done", line: said ? String(said) : "I couldn't answer that just now.", link: { tab: "ask", text: st.target || st.words } });
@@ -644,22 +660,33 @@ app.get("/atlas/status", requireAuth, wrap(async (req, res) => {
 
 app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const t0 = Date.now();
+  req.atlasT0 = t0;
   const orgId = req.user.orgId;
   const text = String((req.body && req.body.text) || "").replace(/\s+/g, " ").trim();
   if (text.length < TEXT_MIN) return res.status(400).json({ error: "empty", sentence: "Tell me what happened, what to do, or what you want to know." });
   if (text.length > TEXT_MAX) return res.status(400).json({ error: "too_long", sentence: "That's too long for me. Say it in a few sentences." });
-  const [org] = await query("SELECT agent_paused_at FROM orgs WHERE id=?", [orgId]);
-  if (org && org.agent_paused_at) return res.status(503).json({ error: "paused", sentence: `${atlasName()} is paused for this organization, so I did nothing.` });
-  const today = orgToday(await orgTz(orgId));
-  let onPage = null;
-  if (req.body.donorId) [onPage] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [String(req.body.donorId), orgId]);
-  // ATLAS-3 · Tell me more: the request before this one carries who it was about.
-  const prior = await AN.priorContext({ query, orgId, userId: actor(req).id, followsId: req.body.followsId, parse: j });
-  if (!onPage && prior && prior.onPage) onPage = prior.onPage;
   PG.set(req, "Reading what you asked");
+  // SPEED-3: the four reads before the model are independent, so they go at once.
+  const [[org], tz, onPage0, prior] = await Promise.all([
+    query("SELECT agent_paused_at FROM orgs WHERE id=?", [orgId]),
+    orgTz(orgId),
+    req.body.donorId ? query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [String(req.body.donorId), orgId]).then(r => r[0] || null) : null,
+    // ATLAS-3 · Tell me more: the request before this one carries who it was about.
+    AN.priorContext({ query, orgId, userId: actor(req).id, followsId: req.body.followsId, parse: j }),
+  ]);
+  if (org && org.agent_paused_at) return res.status(503).json({ error: "paused", sentence: `${atlasName()} is paused for this organization, so I did nothing.` });
+  const today = orgToday(tz);
+  let onPage = onPage0;
+  if (!onPage && prior && prior.onPage) onPage = prior.onPage;
+  PG.lap(req, "setup");
+  // SPEED-3: everyone a name could match is read while the model reads her words.
+  const all = people(orgId);
+  all.catch(() => {});
   const read = await readSteps(orgId, text, { today, onPage: onPage ? onPage.name : null });
   const t1 = Date.now();
-  const { steps, questions } = await resolveAll(orgId, read.steps, { today, onPage });
+  PG.lap(req, "read");
+  const { steps, questions } = await resolveAll(orgId, read.steps, { today, onPage, all });
+  PG.lap(req, "resolve");
   const id = newId("vm");
   const source = req.body.source === "speech" ? "atlas_speech" : "atlas";
   const spoke = questions.length ? (questions.length === 1 ? "One question first, then I'll do all of it." : `${questions.length} questions first, then I'll do all of it.`) : null;
@@ -670,7 +697,8 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   if (questions.length) return res.json({ request: await requestOut(orgId, id) });
   const [m] = await query("SELECT * FROM voice_memos WHERE id=? AND org_id=?", [id, orgId]);
   await execute(req, m, steps, { today, ai: read.ai, prior });
-  await finishRequest(orgId, id, steps, { readMs: t1 - t0, totalMs: Date.now() - t0 });
+  PG.lap(req, "run");
+  await finishRequest(orgId, id, steps, { readMs: t1 - t0, totalMs: Date.now() - t0, laps: req.atlasLaps || [] });
   if (req.audit) req.audit.summary(`${atlasName()}: ${steps.length} steps`, { count: steps.length });
   res.status(201).json({ request: await requestOut(orgId, id) });
 }));
