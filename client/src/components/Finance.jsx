@@ -1,4 +1,5 @@
 import { useState, useEffect, Fragment } from "react";
+import { useChanged } from "../lib/changes";   // FEEL-1: fund totals re-read on a gift change
 import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import RemoveMenu from "./RemoveMenu"; // FIX-41: a fund's Remove, on the funds list only
 import { RestrictedView } from "./RestrictedView";
@@ -874,6 +875,9 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   };
 
   useEffect(() => { loadAll(); }, []);
+  // FEEL-1: a gift, a pledge or a fund change made anywhere (a profile, Atlas,
+  // the worker) moves these totals; they are read again, never left stale.
+  useChanged(["gift", "pledge", "fund", "totals"], () => loadAll());
 
   const reloadTxns = (yr) => apiFetch(`/finance/transactions?year=${yr}`).then(setTransactions);
   const reloadBudgets = (yr, ym = yearMode) => apiFetch(budgetsUrl(yr, ym)).then(takeBudgets);
@@ -1869,6 +1873,11 @@ function FinFundCards() {
   const [open, setOpen] = useState(null);
   const goUrl = useUrlWriter();
   const fundHref = id => tabHref("finance", { subtab: "funds", fundId: id || null });
+  // FEEL-1: the cards read again on STALE-1's announcement of a gift, pledge or
+  // fund change, so a total never sits on the figure from before the change.
+  useChanged(["gift", "pledge", "fund", "totals"], () => {
+    apiFetch("/finance/funds-detail").then(r => setD(r)).catch(() => {});
+  });
   useEffect(() => {
     let alive = true;
     const want = urlParam("finance", "fund");

@@ -275,9 +275,8 @@ async function eventStory(orgId, eventId) {
   };
   // the one sentence that shows the figures add up, in parties
   const n = v => Number(v || 0).toLocaleString("en-US");
-  out.addsUp = out.attended || out.gave
-    ? `${n(out.attended)} came: ${n(out.cameGave)} gave and ${n(out.cameDidntGive)} didn't. ${n(out.gave)} gave or pledged: ${n(out.cameGave)} who came and ${n(out.gaveNotCame)} who didn't.`
-    : null;
+  // FEEL-1: said the way a person says it ("1 came, and nobody gave yet."), shared/giftWords.js
+  out.addsUp = require("./shared/giftWords.js").eventStoryText(out);
   // FIX-59: the list's own sentence: who was asked, and what they answered
   // EVENTS-3: a clause whose count is 0 is left out ("203 declined", never ", 0 didn't reply")
   const said = parts => { const p = parts.filter(Boolean); return p.length > 1 ? `${p.slice(0, -1).join(", ")} and ${p[p.length - 1]}` : p.join(""); };

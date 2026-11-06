@@ -22,6 +22,11 @@ export const dueNowWords = c => {
   return `${n} ${n === 1 ? "task" : "tasks"} due today or overdue (Today ${Number(c && c.today) || 0}, Overdue ${Number(c && c.overdue) || 0})`;
 };
 
+// FEEL-1: Home's "follow-ups" is a different list, and the badge says how, so
+// 13 on Home beside 14 here is never read as one number disagreeing.
+export const BADGE_VS_FOLLOWUPS = "Home's follow-ups count something else: each person with a next step planned, whenever it is due. This counts your tasks due today or overdue, with or without a person.";
+export const badgeTitle = c => `${dueNowWords(c)}. ${BADGE_VS_FOLLOWUPS}`;
+
 export function useTaskBadge(enabled = true) {
   const [counts, setCounts] = useState(null);
   const load = useCallback(() => {
@@ -32,5 +37,5 @@ export function useTaskBadge(enabled = true) {
   // STALE-1: a change that touches tasks (a write, Tell Steward, Atlas, the
   // worker), and no other: a gift no longer re-reads the badge.
   useChanged(["task"], () => load(), null, 150);
-  return { n: dueNowOf(counts), counts, title: counts ? dueNowWords(counts) : "" };
+  return { n: dueNowOf(counts), counts, title: counts ? badgeTitle(counts) : "" };
 }

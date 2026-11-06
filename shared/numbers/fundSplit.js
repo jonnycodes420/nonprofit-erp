@@ -17,7 +17,7 @@
 const { MONEY } = require("./money");
 const { AFTER_IMPORT } = require("./lifetime");
 
-const NO_FUND = "No fund named";
+const NO_FUND = require("../giftWords.js").NO_FUND_LABEL;   // FEEL-1: "Unrestricted (no fund)", one name everywhere
 const IMPORTED = "From your old system";
 
 // One person's lifetime by fund, in cents. Rows: { fundId, fundName, restricted,

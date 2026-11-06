@@ -43,7 +43,7 @@ const asJson = (v, fb) => v == null ? fb : (typeof v === "object" ? v : (() => {
 const JOURNEY_FOR = {
   failed_recurring_recovery: {
     name: "Monthly gift failed", trigger: "recurring_failed", priority: 80, exclusive: true, preset: "recurring_failed",
-    description: "A card did not go through. Help them fix it, kindly, and call if it stays stuck. (Was the Workflows recipe of the same kind.)",
+    description: "A card did not go through. Help them fix it, kindly, and call if it stays stuck.",
     steps: () => [
       { type: "send", label: "Send the update-your-card note", offsetDays: 0, starter: "failed_card" },
       { type: "follow_up", label: "Call about the monthly gift that failed", offsetDays: 2 },
@@ -51,7 +51,7 @@ const JOURNEY_FOR = {
   },
   new_donor_welcome: {
     name: "First gift welcome", trigger: "first_gift", priority: 50,
-    description: "Someone gave for the first time. Thank them, then call to say welcome. (Was the Workflows recipe of the same kind.)",
+    description: "Someone gave for the first time. Thank them, then call to say welcome.",
     steps: () => [
       { type: "send", label: "Send the thank-you", offsetDays: 0, draft: "thank_you" },
       { type: "thank", label: "Personal welcome call", offsetDays: 5 },
@@ -59,7 +59,7 @@ const JOURNEY_FOR = {
   },
   major_gift_alert: {
     name: "Major gift", trigger: "gift_over", priority: 90,
-    description: "A gift over your major-gift amount came in. Their officer calls the same week. (Was the Workflows recipe of the same kind.)",
+    description: "A gift over your major-gift amount came in. Their officer calls the same week.",
     amountCents: config => Math.max(1, Math.round((Number(config.threshold) > 0 ? Number(config.threshold) : 1000) * 100)),
     steps: () => [
       { type: "thank", label: "Steward the major gift: call them", offsetDays: 2 },
@@ -67,7 +67,7 @@ const JOURNEY_FOR = {
   },
   lapsing_reengage: {
     name: "Stopped giving", trigger: "lapsed", priority: 60,
-    description: "Someone who gave before has given nothing in the last 12 months. Call before asking again. (Was the Workflows recipe of the same kind.)",
+    description: "Someone who gave before has given nothing in the last 12 months. Call before asking again.",
     steps: config => [
       ...(config.sendEmail ? [{ type: "send", label: "Send the we've-missed-you note", offsetDays: 0, draft: "impact_report" }] : []),
       { type: "follow_up", label: "Re-engage: call them", offsetDays: 7 },

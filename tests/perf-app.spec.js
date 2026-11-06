@@ -106,7 +106,7 @@ async function seed() {
 
 // One screen in one fresh browser. `ready` is the element that means this
 // screen is on the page; `rows` (optional) how many of it must be there.
-async function measure(browser, machine, auth, url, ready, rows = 1, { warm = false, hour = 14, late = false } = {}) {
+async function measure(browser, machine, auth, url, ready, rows = 1, { warm = false, hour = 14, late = false, lateDeck = false } = {}) {
   const ctx = await browser.newContext({ ...machine.ctx, serviceWorkers: "block", timezoneId: "UTC" });
   // SHIFT-1: the page's clock starts at the pinned hour and keeps ticking. Not
   // Playwright's clock.setFixedTime: a Date that never moves slowed the warm
@@ -176,6 +176,7 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
   const errors = [];
   page.on("pageerror", e => errors.push(String(e.message || e)));
   if (late) await lateHeader(page);
+  if (lateDeck) await lateMovesDeck(page);
   await page.goto(APP + url, { waitUntil: "load", timeout: 60000 });
   await page.waitForFunction(([sel, n]) => document.querySelectorAll(sel).length >= n, [ready, rows], { timeout: 45000 }).catch(() => {});
   await page.waitForLoadState("networkidle", { timeout: 45000 }).catch(() => {});
@@ -213,6 +214,16 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
 // row on a phone and pushed Your moves down (CLS 0.045, CI's own number).
 // The rail's checklist is a new org's, so the setup card is tested too.
 const LATE_MS = 1500;
+// FEEL-1: the moves deck's own read (/insights?view=deck) answering late, as a
+// cold server or CI's runner makes it. On main the deck landed 1,200 px tall
+// above the Thread and pushed it out of view (desktop CLS 0.201 at ~1.5 s).
+const DESKTOP_LATE_RUNS = 10;
+async function lateMovesDeck(page) {
+  await page.route(u => u.href.startsWith(BASE) && /insights\?view=deck/.test(decodeURIComponent(u.href)), async r => {
+    await new Promise(x => setTimeout(x, 1300));
+    await r.continue();
+  });
+}
 const LATE_LINE = "Steward did 3 things for you yesterday, and 2 drafts are waiting for you.";
 async function lateHeader(page) {
   await page.route(u => u.href.startsWith(BASE + "/home/bundle") && u.searchParams.getAll("p").includes("/home/lead"), async r => {
@@ -339,6 +350,8 @@ function preloaderAllowed() {
   // HOME-4: Home is usable when the rail is drawn whole, not before.
   const HOME_READY = process.env.PERF_HOME_READY || '[data-testid="home-rail"][data-ready="1"]';
   const homeD = await measureN(browser, DESKTOP, auth, "/dashboard", HOME_READY);
+  const homeDL = [];
+  for (let i = 0; i < DESKTOP_LATE_RUNS; i++) homeDL.push(await measure(browser, DESKTOP, auth, "/dashboard", HOME_READY, 1, { lateDeck: true }));
   // SHIFT-1: the phone at each pinned hour; its times are the morning's, its CLS the worst hour's.
   const byHour = [];
   for (const hour of HOURS) byHour.push({ hour, ...(await measureN(browser, PHONE, auth, "/dashboard", HOME_READY, 1, { hour: hour })) });
@@ -401,6 +414,9 @@ function preloaderAllowed() {
   // PERF-4: and on a desktop (CI read 0.201 once with main at 0; never measured until now).
   ok(`nothing on Home moves as it loads on a desktop (CLS ${homeD.cls}; under ${CLS_DESKTOP_MAX}; worst of ${RUNS})`,
      homeD.cls < CLS_DESKTOP_MAX, { cls: homeD.cls, moved: homeD.shifts });
+  const lateBad = homeDL.filter(r => r.cls >= CLS_DESKTOP_MAX);
+  ok(`nothing on Home moves on a desktop when the moves deck answers late, ${DESKTOP_LATE_RUNS} runs out of ${DESKTOP_LATE_RUNS} (worst CLS ${Math.max(...homeDL.map(r => r.cls))}; under ${CLS_DESKTOP_MAX})`,
+     lateBad.length === 0, lateBad.map(r => ({ cls: r.cls, moved: r.shifts })));
   ok("Home asks for none of its bundled reads twice (desktop and phone)", !homeD.twice.length && !homeP.twice.length && !homeW.twice.length, [...homeD.twice, ...homeP.twice, ...homeW.twice].slice(0, 3));
   ok(`Home: no read the rail needs starts after the first paint (${RAIL_READS.length} reads, desktop and phone)`,
      RAIL_READS.length > 5 && !homeD.lateRail.length && !homeP.lateRail.length, [...homeD.lateRail, ...homeP.lateRail].slice(0, 6));

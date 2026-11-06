@@ -31,6 +31,7 @@ import { displayOrgDateShort } from "../../lib/orgDay";
 import EventField from "../gifts/EventField";   // GIFTS-1: a gift can belong to an event
 import { lifetimeShareWords, sharePercent } from "../../../../shared/lifetimeShare.js";   // MOPUP-1: "under 1% of lifetime"
 import PledgeSchedule, { emptySchedule, scheduleBody } from "../gifts/PledgeSchedule";   // GIFTS-1: one payment or installments
+import { giftTypeLabel } from "../../../../shared/giftWords.js";   // FEEL-1: "Pledge payment", never "Pledge_payment"
 
 // GIFTS-1: a pledge's schedule as the edit opens it, read from its installments.
 const FREQ_IN={annual:"yearly"};
@@ -306,7 +307,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                 <input value={addGiftForm.amount} onChange={e=>setAddGiftForm(p=>({...p,amount:e.target.value}))} placeholder="Amount ($)" type="number" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
                 <input value={addGiftForm.date} onChange={e=>setAddGiftForm(p=>({...p,date:e.target.value}))} type="date" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
                 <select value={addGiftForm.type} onChange={e=>setAddGiftForm(p=>({...p,type:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}>
-                  {["cash","check","credit_card","stock","in_kind","matching","other"].map(t=><option key={t}>{t}</option>)}
+                  {["cash","check","credit_card","stock","in_kind","matching","other"].map(t=><option key={t} value={t}>{giftTypeLabel(t)}</option>)}
                 </select>
                 <input value={addGiftForm.payment_method} onChange={e=>setAddGiftForm(p=>({...p,payment_method:e.target.value}))} placeholder="Payment method" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
               </div>
@@ -400,7 +401,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                               <input value={giftEditForm.amount} onChange={e=>setGiftEditForm(p=>({...p,amount:e.target.value}))} placeholder="Amount" type="number" style={{width:80,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
                               <input value={giftEditForm.date} onChange={e=>setGiftEditForm(p=>({...p,date:e.target.value}))} type="date" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
                               <select value={giftEditForm.type} onChange={e=>setGiftEditForm(p=>({...p,type:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}>
-                                {["cash","check","credit_card","stock","in_kind","matching","other"].map(t=><option key={t}>{t}</option>)}
+                                {["cash","check","credit_card","stock","in_kind","matching","other"].map(t=><option key={t} value={t}>{giftTypeLabel(t)}</option>)}
                               </select>
                               <input value={giftEditForm.payment_method} onChange={e=>setGiftEditForm(p=>({...p,payment_method:e.target.value}))} placeholder="Method" style={{width:100,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
                               <input value={giftEditForm.notes} onChange={e=>setGiftEditForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{flex:1,minWidth:80,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
@@ -433,7 +434,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                               {g.event_name&&<div data-testid="dp-gift-event" style={{fontSize:11,fontWeight:400,color:T.ink3}}>{g.event_name}</div>}
                               {(g.softCreditTo||[]).length>0&&<div data-testid="dp-gift-softcredit" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Soft credit to {g.softCreditTo.map(x=>x.name).join(", ")} (recognition, not in their Lifetime)</div>}
                               {g.fee>0&&g.amount>0&&<div data-testid="dp-gift-fee-net" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Fee {fmtFull(g.fee)}, net {fmtFull(Math.round((g.amount-g.fee)*100)/100)}</div>}</td>
-                            <td style={{padding:"9px 12px",color:T.ink3,textTransform:"capitalize"}}>{g.type||"cash"}</td>
+                            <td style={{padding:"9px 12px",color:T.ink3}}>{giftTypeLabel(g.type)}</td>
                             <td style={{padding:"9px 12px",color:T.ink3}}>{g.payment_method||"Not recorded"}</td>
                             <td style={{padding:"9px 12px",textAlign:"center"}}>{g.acknowledgement_sent?<span style={{color:T.greenDk,fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:12}}>Not yet</span>}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>

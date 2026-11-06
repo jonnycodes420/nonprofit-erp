@@ -651,6 +651,7 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
 
   const ns = req.body?.nextStep;
   const nsSkipped = !!(ns && ns.skipped === true);
+  const onThreadId = typeof req.body?.threadId === "string" && req.body.threadId ? req.body.threadId : null;   // FEEL-1
   let step = null;
   if (!nsSkipped) {
     const typeLabel = shape.nextStepLabelFor(ns?.type);
@@ -721,10 +722,18 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
                         ...(outcome ? { outcome } : {}) })]);
 
     // An open thread on this donor closes on this conversation — the outcome.
-    const closedRows = await queryTx(client,
-      `UPDATE threads SET closed_at = NOW(), close_kind = 'outcome', closing_interaction_id = ?
-        WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL RETURNING id`,
-      [intId, orgId, req.params.id]);
+    // FEEL-1: a skip applies only to the step this dialog offers. Skipped, the
+    // conversation closes the one follow-up the dialog was opened on (threadId),
+    // or nothing: it never marks another open follow-up done.
+    const closedRows = nsSkipped
+      ? (onThreadId ? await queryTx(client,
+          `UPDATE threads SET closed_at = NOW(), close_kind = 'outcome', closing_interaction_id = ?
+            WHERE org_id = ? AND donor_id = ? AND id = ? AND closed_at IS NULL RETURNING id`,
+          [intId, orgId, req.params.id, onThreadId]) : [])
+      : await queryTx(client,
+          `UPDATE threads SET closed_at = NOW(), close_kind = 'outcome', closing_interaction_id = ?
+            WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL RETURNING id`,
+          [intId, orgId, req.params.id]);
 
     let thread = null;
     if (step) {

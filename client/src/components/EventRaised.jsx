@@ -10,6 +10,9 @@
 // own (each has its sentence on hover and in its drawer); the line has one.
 import { Figure, FigureWhy } from "./Figure";
 import { T } from "./shared";
+import { eventStoryParts } from "../../../shared/giftWords";
+
+const STORY_LABELS = { attended: "Came", cameGave: "Came and gave", cameDidntGive: "Came, didn't give", gaveNotCame: "Gave, didn't come", gave: "Gave" };
 
 export default function EventRaised({ e, showName = true, style }) {
   if (!e) return null;
@@ -66,8 +69,8 @@ export function EventStory({ s, style, noGiftShownBelow }) {
       {/* FIX-58 + EVENTS-3: each count is parties, once, and the line shows they add up */}
       {s.addsUp ? (
         <div data-testid="event-story-adds-up" style={{ gridColumn: "1 / -1", fontSize: 13, color: T.ink, lineHeight: 1.6 }}>
-          {inline("attended", "Came")} came: {inline("cameGave", "Came and gave")} gave and {inline("cameDidntGive", "Came, didn't give")} didn't{". "}
-          {inline("gave", "Gave")} gave or pledged: {inline("cameGave", "Came and gave")} who came and {inline("gaveNotCame", "Gave, didn't come")} who didn't.
+          {/* FEEL-1: "1 came, and nobody gave yet." (shared/giftWords.js); each count opens its rows */}
+          {(eventStoryParts(s) || []).map((p, i) => typeof p === "string" ? <span key={i}>{p}</span> : <span key={i}>{inline(p.k, STORY_LABELS[p.k])}</span>)}
         </div>
       ) : null}
       {/* FIX-59: the list adds up too: invited = said yes or came + declined + no reply */}
