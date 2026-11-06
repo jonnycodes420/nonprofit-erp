@@ -23,6 +23,7 @@ import { pageOrgName } from "../lib/orgBinding";
 import { decodeSpreadsheetBytesDetailed, extractWorkbookFromSheetJS, analyzeWorkbookSheet, classifyWorkbookSheets } from "../../../shared/importShape";
 import { gridsFromWorkbook, gridFromText, SHEET_ROLES, pledgeMoneyWords, readsAsWorkbook } from "../../../shared/sheetRead";
 import { WorkbookImport } from "./WorkbookImport";
+import { DateOrderQuestions, GuessNotes } from "./import/SheetGuesses";   // IMPORT-9
 import { told } from "../lib/stewardTold";   // HOME-3: the pages behind the window re-read
 import { droppedSpreadsheet, filesAsOne, isFileDrag, SheetDropTarget } from "./SheetDropTarget";   // PERF-4
 
@@ -329,7 +330,8 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const giftsQ = eventGiftsQ || (typeof answers.useEventDate === "boolean" && answers.eventDate ? giftsAsked : null);
   const pledgeQ = pledgeDueQ || (answers.pledgeDue ? pledgeAsked : null);
   useEffect(() => { const q = u && u.questions.find(x => x.id === "date"); if (q && !dateAsked) setDateAsked(q); }, [u, dateAsked]);
-  const otherQs = u ? u.questions.filter(q => !["date", "event", "eventGifts", "pledgeDue", "nearDuplicates", "giftsDeposited", "spouseLinks"].includes(q.id) && q.kind !== "column" && q.kind !== "deletedPerson") : [];
+  const otherQs = u ? u.questions.filter(q => !["date", "event", "eventGifts", "pledgeDue", "nearDuplicates", "giftsDeposited", "spouseLinks"].includes(q.id) && q.kind !== "column" && q.kind !== "deletedPerson" && q.kind !== "dateOrder") : [];
+  const dateOrderQs = u ? u.questions.filter(q => q.kind === "dateOrder") : [];   // IMPORT-9
   // FIX-59: two defaulted questions, each answered once for the file
   const nearQ = u ? u.questions.find(q => q.id === "nearDuplicates") : null;
   const depositQ = u ? u.questions.find(q => q.id === "giftsDeposited") : null;
@@ -463,13 +465,15 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 </div>))}
               {u.modelUsed && <div style={{ ...small, marginTop: 4 }}>Steward's assistant suggested what some columns are; each suggestion was checked against every row.</div>}
             </div>
+            <GuessNotes u={u} />
 
             {/* FIX-54: people she deleted stay deleted unless she brings them back */}
             {/* HARDEN-1: a match by the name alone is hers to answer; Same person by default */}
             {/* FIX-55: many people she deleted, answered all at once; the per-person buttons stay for exceptions */}
             {(deletedQs.length + deletedIds.length > 1) && (
               <div style={{ ...box, borderColor: T.gold500, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }} data-testid="sheet-deleted-all">
-                <span style={{ fontSize: 13, flex: "1 1 220px" }}>{n(deletedIds.length, "person", "people")} in this file {deletedIds.length === 1 ? "matches someone" : "match people"} you deleted.</span>
+                <span style={{ fontSize: 13, flex: "1 1 220px" }}>{n(deletedIds.length, "person", "people")} in this file {deletedIds.length === 1 ? "matches someone" : "match people"} you deleted.
+                  {" "}<span data-testid="sheet-bring-back-says">Bring them all back restores {n(deletedIds.length, "person", "people")} from the trash; if you undo this import, {deletedIds.length === 1 ? "they go" : "they all go"} back to the trash.</span></span>
                 {deletedQs.length > 0 && <button type="button" data-testid="sheet-deleted-all-same" disabled={rereading} style={{ ...btn(false), padding: "6px 10px", fontSize: 12 }}
                   onClick={() => setAnswers(a => ({ ...a, deletedPeople: Object.fromEntries(deletedQs.map(q => [q.key, "same"])) }))}>Same people for all (keep them out)</button>}
                 <button type="button" data-commit data-testid="sheet-bring-all-back" disabled={!!busy || rereading} style={{ ...btn(false), padding: "6px 10px", fontSize: 12 }}
@@ -508,6 +512,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                   {[...new Map(u.deletedMatches.map(x => [x.id, x])).values()].slice(0, 8).map(x => `${x.deletedName || x.name} (row ${String(x.line).split(":")[1] || x.line}, by ${x.by})`).join(", ")}
                   {new Set(u.deletedMatches.map(x => x.id)).size > 8 ? `, and ${new Set(u.deletedMatches.map(x => x.id)).size - 8} more` : ""}.
                   {" "}Their rows are set aside. Bring them back only if you meant to keep them; their gifts in this file are then imported with the rest.
+                  {" "}Bringing them back restores {n(deletedIds.length, "person", "people")}, and undoing this import puts {deletedIds.length === 1 ? "them" : "all of them"} back in the trash.
                 </div>
                 {deletedQs.length + deletedIds.length <= 1 && (
                   <button type="button" data-commit data-testid="sheet-bring-back" disabled={!!busy || rereading} style={{ ...btn(false), marginTop: 8 }} onClick={bringBack}>
@@ -679,6 +684,8 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               </div>
             )}
 
+            <DateOrderQuestions questions={dateOrderQs} answers={answers} disabled={rereading}
+              onAnswer={(key, v) => setAnswers(a => ({ ...a, dateOrder: { ...(a.dateOrder || {}), [key]: v } }))} />
             {otherQs.length > 0 && (
               <div style={{ ...box, borderColor: T.gold500 }} data-testid="sheet-questions">
                 <div style={h3}>{otherQs.length === 1 ? "One thing Steward can't tell" : `${otherQs.length} things Steward can't tell`}</div>

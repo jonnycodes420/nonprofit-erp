@@ -21,13 +21,15 @@
 // counted, never trusted. A column nobody can place is a question, never a
 // silent drop. Nothing here writes; routes/sheetImport.js does, through
 // recordGift.
-import { normalizeMoney, normalizeDate, resolveDonorIdentity } from "./importShape.js";
+import { normalizeDate, resolveDonorIdentity } from "./importShape.js";
 import { pledgeMoneyWords } from "./pledgeWords.js";
 import { EXPORT_SHAPES, shapeOfTable, shapeColumn, knownShapeSentence, reshapeKnownGrid } from "./exportShapes.js";
 import { isGivenName } from "./givenNames.js";
 import { splitAddress, contactNoteFlags } from "./addressSplit.js";
 import { nearDuplicate, nameAndNotes } from "./nearNames.js";
 import { countLabel } from "./countWords.js";
+import { guessDates, amountTidier } from "./sheetGuesses.js";   // IMPORT-9
+import { moneyOf, looksMoney, hasCurrencyMark, serialToIso } from "./sheetCells.js";
 import { SECTION_LABEL_RE, noteLine as NOTE_LINE, fixZip, rowLedger as ledgerOf } from "./importRows.js";
 import { RESTRICTION_CODES, MAILING_REMOVE_RE, SHARED_PHONE_MAX, countLines,
   demotePeopleSheetAmounts, mergedLinesOf, partnersAndHouseholds, spouseQuestion, choiceLines, amountChecks, importButtonSentence,
@@ -299,34 +301,6 @@ const cents = v => Math.round(v * 100);
 const fmt$ = c => (c < 0 ? "-$" : "$") + (Math.abs(Math.round(c)) / 100).toLocaleString("en-US", { minimumFractionDigits: (c % 100) ? 2 : 0, maximumFractionDigits: 2 });
 const plural = countLabel;
 
-function moneyOf(v) {
-  if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  let t = s(v);
-  if (!t) return null;
-  // "1.5k", "2K"
-  const k = t.match(/^\$?\s*(\d+(?:\.\d+)?)\s*[kK]$/);
-  if (k) return Number(k[1]) * 1000;
-  t = t.replace(/\s*(usd|dollars)$/i, "").replace(/^(in[- ]?kind|ik)[:\s]+/i, "");
-  const m = normalizeMoney(t);
-  return m.value == null ? null : m.value;
-}
-function looksMoney(v) {
-  if (typeof v === "number") return true;
-  const t = s(v).replace(/^(in[- ]?kind|ik)[:\s]+/i, "").replace(/^usd\s+/i, "");
-  if (!t) return false;
-  if (/^[+-]?\s*\$?\s*\(?[+-]?\$?\s*\d[\d,]*(\.\d{1,2})?\)?\s*(usd)?$/i.test(t)) return true;
-  if (/^\$?\d+(\.\d+)?[kK]$/.test(t)) return true;
-  return false;
-}
-function hasCurrencyMark(v) { return /[$€£]|usd/i.test(s(v)); }
-
-// Excel serial day → ISO. 1900 system, with Excel's phantom Feb 29 1900.
-function serialToIso(n) {
-  if (!(n > 20000 && n < 80000)) return null;
-  const ms = Math.round((n - 25569) * 86400 * 1000);
-  const d = new Date(ms);
-  return isNaN(d) ? null : d.toISOString().slice(0, 10);
-}
 // A date cell → ISO, or null. `ctx.year` fills a missing year ("Oct 22"),
 // stepping back a year when that would put the gift in the future.
 function dateOf(v, ctx = {}) {
@@ -1013,6 +987,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const pledgeDueBase = answers.pledgeDue === "event" ? eventDateAnswer : answers.pledgeDue === "choose" ? pledgeDueDate : null;
   const singleDue = base => !base ? null : answers.pledgeDue === "choose" && base === pledgeDueDate ? base : yearEnd(base);
   const questions = [];
+  const dateGuesses = [], tidier = amountTidier();   // IMPORT-9
   const help = [];
   const hasEngagement = usable.some(t => t.cols.some(c => ENGAGE_ROLES.has(c.role)));
 
@@ -1141,7 +1116,9 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
     const role = r => roleOf(t, r);
     const get = (b, r) => { const c = role(r); return c ? cellOf(t, b, c) : null; };
     const dateCol = role("date");
-    const dctx = dateCol ? { serials: true, dayFirst: dateCol.profile.dayFirst, today: T } : null;
+    const dg = dateCol ? guessDates({ t, dateCol, rows: dataRows(t), cellOf, dateOf, T, answers }) : null;   // IMPORT-9: never a silent guess
+    if (dg) { if (dg.question) questions.push(dg.question); dateGuesses.push(dg.guess); }
+    const dctx = dateCol ? { serials: true, dayFirst: dg.dayFirst, today: T } : null;
     const nameCols = ["name", "first", "last", "lastFirst", "org", "email"].map(role).filter(Boolean);
     const moneyCols = t.cols.filter(c => c.role === "amount" || c.role === "pledgeTotal");
     // IMPORT-5 (7a): the whole address in one column, with no city, state or ZIP column beside it
@@ -1394,6 +1371,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       // ── layer 3: money
       const amtRaw = get(b, "amount");
       const amt = moneyOf(amtRaw);
+      tidier.note(t.sheet, b.line, amtRaw, amt);
       for (const m of moneyCols) { const v = moneyOf(cellOf(t, b, m)); if (v != null) { tableSums[m.index] += cents(v); sinceSubtotal[m.index] += cents(v); } }
       if (amt == null) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: isBlank(amtRaw) ? "no amount on this row" : `the amount "${s(amtRaw)}" is not a number` }); continue; }
       if (amt === 0) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: "the amount is $0", cents: 0 }); continue; }
@@ -1785,6 +1763,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       invitedRecords: recordCounts.invited, rsvpRecords: recordCounts.rsvp, attendedRecords: recordCounts.attended,
     },
     totalsSentence, needsDate: undatedCount > 0,
+    dateGuesses, tidiedAmounts: tidier.result(new Set([...gifts, ...pledges].map(g => `${g.sheet}:${g.line}`))),
   };
   result.countLines = countLines(result);
   return result;
