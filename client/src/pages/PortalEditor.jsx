@@ -34,6 +34,7 @@ import { safeBack } from "../lib/appUrls";
 // drawn from the draft's payload, so the two cannot drift apart again.
 import Donate from "./Donate";
 import { LAYOUTS, TRUST_KEYS, TRUST_LABELS, normalizeDesign, wayNeeds } from "../../../shared/givingPageDesign.js";
+import { hintsLeft, FILL_IN_NOTE } from "../../../shared/placeholderCopy.js";
 // EDITOR-1 — the one editor shell every donor-facing thing opens in.
 import StewardEditor, { RailSection, DeviceFrame, RailPhoto, PhotoTools, useNarrow, stockPhotoForBlock } from "../components/StewardEditor";
 import InlineText, { INLINE_CSS } from "../components/InlineText";
@@ -581,7 +582,7 @@ export default function PortalEditor() {
     if (w.type === "richtext") return (
       <div style={{ fontFamily: "var(--pt-sans, inherit)", fontSize: 16, lineHeight: 1.6, color: E.body, padding: "6px 4px" }}>
         <InlineText as="div" multiline field="richtext" testid="inline-richtext" value={storyToText(w.blocks)} label="The block's words"
-          placeholder="Write something in your own words." onChange={t => updateWidget(w.id, { blocks: textToStory(t) })} />
+          placeholder={w.hint || "Write something in your own words."} onChange={t => updateWidget(w.id, { blocks: textToStory(t), hint: "" })} />
         <div style={{ fontSize: 11.5, color: E.muted, marginTop: 6 }}>A blank line starts a new paragraph, "## " a heading, "- " a list.</div>
       </div>
     );
@@ -701,8 +702,18 @@ ${INLINE_CSS}`;
 
   // GIVE-3 — a giving page's preview is the page: Donate.jsx from the draft's payload.
   const useRealPage = (surface === "give" || surface === "orgform") && !!livePayload;
+  // WALKB-1 · A HINT IS THE EDITOR'S. Whatever is still Steward's prompt is named
+  // here, and the public page leaves it out until she writes over it.
+  // The story field shows only on a page with no text block, so only then is its hint on the page.
+  const hintsOnPage = surface === "give" ? hintsLeft({ story: (widgets || []).some(w => w && w.type === "richtext") ? "" : ds?.story, widgets }) : [];
   const realPage = useRealPage ? (
     <div data-testid="real-preview">
+      {hintsOnPage.length > 0 && (
+        <div data-testid="fill-in-note" style={{ background: E.cream, borderLeft: "4px solid " + E.gold, color: E.ink, padding: "10px 14px", margin: "0 0 10px", fontSize: 13.5, lineHeight: 1.5, borderRadius: 6 }}>
+          <strong>{FILL_IN_NOTE}</strong>
+          {hintsOnPage.map((h, i) => <div key={i} style={{ marginTop: 4, color: E.muted }}>{h}</div>)}
+        </div>
+      )}
       <Donate preview={{ payload: livePayload, orgSlug: ps.org_slug, pageSlug: meta?.pageSlug, onPick: pickField,
         ...(surface === "give" ? { onText: onPreviewText, photoTools, decorate: decorateWidget, afterBlocks: addBlockRow } : {}) }} />
     </div>

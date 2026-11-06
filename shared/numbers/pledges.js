@@ -57,6 +57,19 @@ function installmentsLeft(pl) {
   let covered = Math.max(c(pl.paid), list.filter(i => i.paid).reduce((n, i) => n + c(i.amount), 0));
   return list.map(i => { const a = c(i.amount), use = Math.min(a, covered); covered -= use; return { ...i, left: (a - use) / 100 }; });
 }
+// WALKB-2 · HOW MANY INSTALLMENTS ARE STILL OPEN: the ones with something left
+// on them once the payments are applied earliest first. The profile's open
+// pledge said "1 more installment" with two unpaid (it counted the ones after
+// the next); it says this count now.
+const unpaidCount = pl => installmentsLeft(pl).filter(i => i.left > 0).length;
+// WALKB-2 · "DUE THIS YEAR" IS THE FISCAL YEAR, SAID AS ONE. What falls due by
+// the end of the org's fiscal year, less what has been applied (dueOf, to the
+// day Home and Fundraising count to), never the balance. Its words name the
+// year: "due in FY 2026–27", or "due in FY 2026" for a calendar-year org.
+// `label` is shared/fiscalPeriod.js's fyLabelFromStart for the year.
+function dueThisFiscalYear(pl, bounds, label) {
+  return { amount: dueOf(pl, bounds.end, "<="), label: label || "", yearEnd: bounds.end };
+}
 // The same rule in SQL, one row per open pledge with a schedule that has
 // something due: (id, donor_id, name, date, amount). `op` is "<=" or "<".
 // Placeholders, in order: org, day, day, org, org.
@@ -73,4 +86,4 @@ const DUE_SQL = (op) => `SELECT x.id, x.donor_id, x.name, x.date, x.amount FROM 
      WHERE p.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL) x
    WHERE x.amount > 0`;
 
-module.exports = { PAID_BY_PLEDGE, PAID_OF, GRANT_RECEIVED, balanceCents, dueOf, installmentsLeft, DUE_SQL };
+module.exports = { PAID_BY_PLEDGE, PAID_OF, GRANT_RECEIVED, balanceCents, dueOf, installmentsLeft, unpaidCount, dueThisFiscalYear, DUE_SQL };

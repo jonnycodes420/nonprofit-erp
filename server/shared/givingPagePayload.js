@@ -44,7 +44,7 @@ const gpPageSql = where => `SELECT gp.*, f.name AS fund_name, c.name AS campaign
      LEFT JOIN campaigns c ON c.id = gp.campaign_id AND c.org_id = gp.org_id
      WHERE ${where}`;
 
-async function givingPagePublicPayload(org, page, reqQuery) {
+async function givingPagePublicPayload(org, page, reqQuery, { editing = false } = {}) {
   const req = { query: reqQuery || {}, params: { orgSlug: org.org_slug } };
   org.donor_facing_name = String(org.display_name || "").trim() || org.name; // W-2 white-label
   const funds = await query("SELECT id, name, restricted FROM fin_funds WHERE org_id = ? ORDER BY name ASC", [org.id]);
@@ -65,6 +65,8 @@ async function givingPagePublicPayload(org, page, reqQuery) {
     } else page.campaign_id = null;
   }
   const GD = await import("../../shared/givingPageDesign.js");
+  // WALKB-1: a hint is never published, and a placeholder EIN never reaches a stranger.
+  const PH = await import("../../shared/placeholderCopy.js");
   const pageToday = orgToday(await orgTz(org.id));   // ORG_TZ_SEAM_OK: days left is the org's own day
   const daysLeft = page.campaign_end_date
     ? Math.max(0, Math.round((Date.parse(page.campaign_end_date + "T00:00:00Z") - Date.parse(pageToday + "T00:00:00Z")) / 86400000)) : null;
@@ -75,8 +77,10 @@ async function givingPagePublicPayload(org, page, reqQuery) {
   // CAMPAIGN-2 — the page's own id and its campaign's end date travel with the
   // widgets, so a countdown, a match and a recent-gifts list resolve against the
   // campaign this page IS rather than against a date somebody typed twice.
-  const builtWidgets = Array.isArray(page.published) && page.published.length
-    ? await resolveWidgetsPublic(org, page.published, {
+  const publishedWidgets = editing ? page.published : PH.widgetsWithoutHints(page.published);
+  const builtWidgets = Array.isArray(publishedWidgets) && publishedWidgets.length
+    ? await resolveWidgetsPublic(org, publishedWidgets, {
+        keepHints: editing,
         pageId: page.id,
         campaignId: page.campaign_id || null,
         campaignEndDate: page.campaign_end_date || null,
@@ -111,10 +115,10 @@ async function givingPagePublicPayload(org, page, reqQuery) {
     org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })), theme: giveThemePayload(org), portalSignIn: org.portal_enabled === true,
       // GIVE-3: the org's own facts the trust panel and "other ways to give"
       // may state (shared/givingPageDesign.js decides which lines show).
-      facts: { orgName: org.donor_facing_name, legalName: org.legal_name || "", ein: org.ein || "",
+      facts: { orgName: org.donor_facing_name, legalName: org.legal_name || "", ein: PH.publicEin(org.ein),
                contactEmail: org.give_contact || "", address: org.receipt_address || "", stripe: !!org.stripe_account_id } },
     givingPage: {
-      id: page.id, slug: page.slug, title: page.title, story: page.story, imageUrl: page.image_url,
+      id: page.id, slug: page.slug, title: page.title, story: editing ? page.story : PH.storyWithoutHints(page.story), imageUrl: page.image_url,
       // FIX-41: the cover with its words and focal point (pictures.js).
       cover: page.image_url ? { url: page.image_url, ...(page.image_meta || {}) } : null,
       goalAmount: page.goal_amount != null ? parseFloat(page.goal_amount) : null,

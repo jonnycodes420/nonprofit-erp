@@ -76,6 +76,8 @@ const MODULES = [
   "../server/org/me",
   "../server/org/publicPages",
   "../server/org/routes",
+  "../server/org/invites",   // WALKB-2
+  "../server/events/eventRemoval",   // WALKB-2
   "../server/outreach/autoSend",
   "../server/outreach/journeys",
   "../server/outreach/routes",
@@ -97,6 +99,7 @@ routers.r0.use(require("../server/outreach/thanks").routers.r0);
 routers.r0.use(require("../server/donors/gifts").routers.r0);
 routers.r1.use(require("../server/org/me").routers.r1);
 routers.r1.use(require("../server/org/routes").routers.r1);
+routers.r1.use(require("../server/org/invites").routers.r1);   // WALKB-2: pending invites
 routers.r1.use(require("../server/reports/dashboard").routers.r1);
 routers.r1.use(require("../server/reports/boardPack").routers.r1);
 routers.r1.use(require("../server/reports/routes").routers.r1);
@@ -127,6 +130,7 @@ routers.r1.use(require("../server/org/publicPages").routers.r1);
 routers.r1.use(require("../server/reports/impact").routers.r1);
 routers.r1.use(require("../server/memberships/routes").routers.r1);
 routers.r1.use(require("../server/events/eventGifts").routers.r1);   // GIFTS-1
+routers.r1.use(require("../server/events/eventRemoval").routers.r1);   // WALKB-2: delete or archive, above the event routes
 routers.r1.use(require("../server/events/routes").routers.r1);
 routers.r1.use(require("../server/events/publicPage").routers.r1);
 

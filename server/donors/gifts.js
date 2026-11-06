@@ -482,7 +482,9 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
   // open total, so the profile never shows one number without saying which
   // FUNDRAISING-2: "this year" is the fiscal year, to the day Home and
   // Fundraising's Pledges count to (numbers.pledgeSummary).
-  const yearEnd = orgTime.orgPeriodBounds(await orgForYears(req.user.orgId), "fiscal_year", 0).end;   // ORG_TZ_SEAM_OK
+  const fyBounds = orgTime.orgPeriodBounds(await orgForYears(req.user.orgId), "fiscal_year", 0);   // ORG_TZ_SEAM_OK
+  // WALKB-2: the year is said by its own name (shared/fiscalPeriod.js), so "due this year" is never read as the calendar year.
+  const yearLabel = (await import("../../shared/fiscalPeriod.js")).fyLabelFromStart(Number(String(fyBounds.start).slice(0, 4)), Number(String(fyBounds.start).slice(5, 7)));
   const inst = rows.length ? await query(
     `SELECT pledge_id, COUNT(*)::int AS n, MIN(LEFT(due_date,4)) AS y0, MAX(LEFT(due_date,4)) AS y1
        FROM pledge_installments WHERE org_id=? AND pledge_id = ANY(?) GROUP BY pledge_id`, [req.user.orgId, rows.map(r => r.id)]) : [];
@@ -504,14 +506,14 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
     // LEDGER-1: the one rule (shared/numbers/pledges.js), Fundraising's own.
     const PL = require("../../shared/numbers/pledges");
     const pl = { amount, paid, dueDate: r.due_date ? String(r.due_date).slice(0, 10) : "", installments: listBy.get(r.id) || [] };
-    const dueThisYear = r.status !== "open" ? 0 : PL.dueOf(pl, yearEnd, "<=");
+    const dueThisYear = r.status !== "open" ? 0 : PL.dueThisFiscalYear(pl, fyBounds, yearLabel).amount;
     const left = PL.installmentsLeft(pl);
     return {
       ...r,
       paid, balance,
       surplus, overpaid: surplus > 0,
       displayStatus: pledgeDisplayStatus(paid, amount, r.status),
-      installmentCount: ix ? ix.n : 1, years, dueThisYear,
+      installmentCount: ix ? ix.n : 1, years, dueThisYear, dueYearLabel: yearLabel, unpaidCount: PL.unpaidCount(pl),
       installments: left.map(i => ({ ...i, paid: i.left <= 0 })),
       // the open-pledge figure opens Fundraising's own rows for this person
       openSource: { key: "pledges-open", params: { donor: r.donor_id } },
@@ -842,7 +844,7 @@ async function issueYearEndStatement(org, donor, year, { send = true, by = SYS_A
     orgAccent: brand ? brand.band : null,      // BUILD-64: portal primary, never Steward green
     orgAccentFg: brand ? brand.bandFg : null,
     orgLogo: await resolvePdfLogo(brand),      // BUILD-65: from object storage, not base64-only
-    orgEin: org.ein || "",
+    orgEin: (await import("../../shared/placeholderCopy.js")).publicEin(org.ein),   // WALKB-1: never a placeholder EIN
     orgAddress: org.receipt_address || "",
     signatureName: org.receipt_signature_name || "",
     signatureTitle: org.receipt_signature_title || "",
@@ -906,7 +908,7 @@ app.get("/receipts/preview", requireAuth, requireAdmin, wrap(async (req, res) =>
     orgAccent: brand ? brand.band : null,
     orgAccentFg: brand ? brand.bandFg : null,
     orgLogo: await resolvePdfLogo(brand),
-    orgEin: org.ein || "XX-XXXXXXX",
+    orgEin: (await import("../../shared/placeholderCopy.js")).publicEin(org.ein) || "XX-XXXXXXX",
     orgAddress: org.receipt_address || "123 Main St, Anytown, ST 00000",
     signatureName: org.receipt_signature_name || "",
     signatureTitle: org.receipt_signature_title || "",

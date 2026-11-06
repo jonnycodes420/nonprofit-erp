@@ -19,6 +19,8 @@ import { eventRowsChanged, useEventRowsRev } from "../lib/eventRows";
 import { useChangeRev } from "../lib/changes";   // STALE-1   // COUNTS-1: every panel re-reads the guest rows
 import RecordGiftDialog from "./gifts/RecordGiftDialog";   // GIFTS-1: a gift for this event, from its page
 import { eventStatus } from "../../../shared/eventStatus.js";
+import { eventEditForm } from "../lib/eventEditForm.js";   // WALKB-2: the dialog opens with the date
+import EventRemoveButton, { AttendeeLabel } from "./events/EventRemoveButton.jsx";   // WALKB-2
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: the org's day
 
 // PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
@@ -1549,10 +1551,12 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
           </button>
           <button data-testid="ev-record-gift" onClick={() => setGiftFor({ person: null })}
             style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 8, padding: "7px 14px", color: T.inkInverse, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Record a gift</button>
-          <button onClick={() => { setEditing(true); setEditForm({ name: event.name, eventType: event.event_type, date: event.date, endDate: event.end_date || "", location: event.location || "", description: event.description || "", capacity: event.capacity || "", status: event.status, revenue: event.revenue || 0, cost: event.cost || 0, notes: event.notes || "" }); }}
+          <button data-testid="ev-edit" onClick={() => { setEditing(true); setEditForm(eventEditForm(event)); }}
             style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 8, padding: "7px 14px", color: T.inkInverse, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
             Edit event
           </button>
+          <EventRemoveButton event={event} onArchived={a => { setEvent(ev => ({ ...ev, archived_at: a })); if (onEventUpdated) onEventUpdated(); }}
+            onDeleted={() => { if (onEventUpdated) onEventUpdated(); onClose(); }} />
         </div>
       </div>
 
@@ -1667,7 +1671,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
                   <div key={a.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr) 80px 90px 80px 32px", gap: 6, padding: "8px 10px", borderRadius: 8, background: T.bgElevated, border: "1px solid "+T.green650, alignItems: "center" }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: T.inkInverse, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
                     <div style={{ fontSize: 11, color: "rgba(240,237,230,0.7)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.email || "No email"}</div>
-                    <div>{a.stage ? <Pill label={stageName(a.stage)} color={SC[a.stage] || T.ink3} /> : <span style={{ fontSize: 11, color: "rgba(240,237,230,0.7)" }}>Not a donor yet</span>}</div>
+                    <div data-testid="ev-att-label"><AttendeeLabel a={a} /></div>
                     <div>
                       {savingAtt === a.id ? (
                         <span style={{ fontSize: 11, color: "rgba(240,237,230,0.7)" }}>Saving…</span>
@@ -1796,7 +1800,9 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
             {[
               ["name", "Event Name", "text"],
               ["date", "Date", "date"],
+              ["startTime", "Starts at", "time"],
               ["endDate", "End Date", "date"],
+              ["endTime", "Ends at", "time"],
               ["location", "Location", "text"],
               ["capacity", "Capacity", "number"],
               ["cost", "Cost ($)", "number"],
@@ -1901,6 +1907,8 @@ export function Events({ data, isReadOnly }) {
   const filtered = events.filter(e => {
     // one or the other, never both: an event left "upcoming" after its day is past
     const isPast = e.status === "completed" || e.status === "cancelled" || eventStatus(e, today).key === "past";
+    if (filter === "archived") return !!e.archived_at;   // WALKB-2: archived events sit apart, their gifts still counted
+    if (e.archived_at) return false;
     if (filter === "upcoming") return !isPast;
     if (filter === "past") return isPast;
     return true;
@@ -1966,7 +1974,7 @@ export function Events({ data, isReadOnly }) {
       {/* Toolbar */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 4, background: T.bg2, borderRadius: 10, padding: 3 }}>
-          {[["upcoming", "Upcoming"], ["past", "Past"], ["all", "All"]].map(([v, l]) => (
+          {[["upcoming", "Upcoming"], ["past", "Past"], ["all", "All"], ...(events.some(e => e.archived_at) ? [["archived", "Archived"]] : [])].map(([v, l]) => (
             <button key={v} onClick={() => setFilter(v)} style={{ background: filter === v ? T.white : "transparent", border: filter === v ? "1px solid " + T.bg3 : "none", borderRadius: 7, padding: "6px 16px", color: filter === v ? T.ink : T.ink3, fontSize: 13, fontWeight: filter === v ? 700 : 400, cursor: "pointer", boxShadow: filter === v ? T.shadow : "none" }}>
               {l}
             </button>

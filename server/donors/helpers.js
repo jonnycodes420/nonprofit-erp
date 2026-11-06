@@ -138,6 +138,9 @@ async function buildDonorListFilter(req) {
   // THREAD-3: archived people leave the list; ?archived=1 shows only them.
   if (String(q.archived || "") === "1") return GR.buildDonorFilter(req.user.orgId, q, opts)
     .then(f => ({ ...f, whereSql: `${f.whereSql} AND archived_at IS NOT NULL` }));
+  // WALKB-1: a search finds archived people too (each row says so): Home still
+  // names them wherever money is counted, and every name it shows can be found.
+  if (String(q.search || "").trim()) return GR.buildDonorFilter(req.user.orgId, q, opts);
   return GR.buildDonorFilter(req.user.orgId, q, { ...opts, hideArchived: true });
 }
 

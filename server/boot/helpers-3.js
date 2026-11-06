@@ -268,7 +268,7 @@ async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO, 
     orgAccent: brand ? brand.band : null,      // BUILD-64: portal primary, never Steward green
     orgAccentFg: brand ? brand.bandFg : null,
     orgLogo: await resolvePdfLogo(brand),      // BUILD-65: from object storage, not base64-only
-    orgEin: org.ein || "",
+    orgEin: (await import("../../shared/placeholderCopy.js")).publicEin(org.ein),   // WALKB-1: never a placeholder EIN
     orgAddress: org.receipt_address || "",
     signatureName: org.receipt_signature_name || "",
     signatureTitle: org.receipt_signature_title || "",

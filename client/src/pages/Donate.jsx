@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 // GIVE-2 §5 — the one place the gross-up arithmetic lives, shared with the
 // server (`routes/give.js` reads the same module for the charge).
 import * as RATES from "../../../shared/processingRates.js";
+import { emailStepSentence } from "../../../shared/giftStartWords.js";
 import { useParams } from "react-router-dom";
 import { API } from "../api";
 import { T, fmtMoney } from "./publicTheme";
@@ -1512,7 +1513,7 @@ export default function Donate({ preview = null }) {
           </div>
           <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} style={inp} required />
           <div className="give-email-kept" style={{ fontSize: 12, color: T.ink3, marginTop: 6, lineHeight: 1.5 }}>
-            Your email is saved when you press Give, so {th.displayName || org?.name || "this organization"} can let you know if your gift does not go through.
+            {emailStepSentence(th.displayName || org?.name)}
           </div>
         </div>
 

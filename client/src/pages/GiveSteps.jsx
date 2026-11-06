@@ -28,6 +28,7 @@
 // request cannot buy anything this screen would not have offered.
 
 import { useState, useMemo, useEffect, useRef } from "react";
+import { emailStepSentence } from "../../../shared/giftStartWords.js";
 import { upsellFor, upsellSentence, utmFrom } from "../../../shared/formConfig.js";
 // The PUBLIC page's own tokens (BUILD-60: this page is the org's, and the tokens
 // are the audited public set). No raw hex here — the palette census RATCHETS DOWN
@@ -494,7 +495,7 @@ export default function GiveSteps({
           <label style={{ display: "block", marginBottom: 10 }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>Email</span>
             <input className="give-email" type="email" value={email} onChange={e => setEmail(e.target.value)} style={{ ...inp, marginTop: 4 }} />
-            <span className="give-email-kept" style={{ fontSize: 12, color: MUTED }}>Your receipt goes here. It is saved when you continue, so {spec.orgName || "this organization"} can let you know if your gift does not go through.</span>
+            <span className="give-email-kept" style={{ fontSize: 12, color: MUTED }}>{emailStepSentence(spec.orgName)}</span>
           </label>
 
           {spec.details.employerMatch ? (

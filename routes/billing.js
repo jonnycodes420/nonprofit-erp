@@ -528,8 +528,9 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
   const validRole = ["admin", "volunteer_coordinator"].includes(role) ? role : "staff";
   const normalizedEmail = email.trim().toLowerCase();
 
-  const existing = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [email]);
-  if (existing.length) return res.status(409).json({ error: "A user with that email already exists" });
+  // WALKB-2: a member, or an address with an invite already waiting, is refused in one sentence.
+  const refused = await require("../server/org/invites").inviteRefusal(query, req.user.orgId, normalizedEmail);
+  if (refused) return res.status(409).json(refused);
 
   // Seat limit: count active users + pending unexpired invites
   const orgForLimit = await query("SELECT * FROM orgs WHERE id=?", [req.user.orgId]);
@@ -566,25 +567,8 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
   const org = orgs[0];
 
-  // Send invite via Resend HTTP API
-  let emailSent = false;
-  if (process.env.RESEND_API_KEY) {
-    try {
-      const from = process.env.DEMO_SMTP_FROM || "onboarding@resend.dev";
-      const { error } = await resend.emails.send({
-        from,
-        to: normalizedEmail,
-        subject: `You've been invited to join ${displayNameCase(org.name)} on Steward`,
-        html: `<p>You've been invited to join <strong>${displayNameCase(org.name)}</strong> on Steward as a <strong>${validRole}</strong>.</p>
-               <p><a href="${inviteLink}" style="background:#c9a84c;color:#0f1a12;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:16px 0">Accept Invitation</a></p>
-               <p>This link expires in 7 days.</p>`,
-      });
-      if (error) throw new Error(error.message);
-      emailSent = true;
-    } catch (err) {
-      console.error("Invite email send failed:", err.message);
-    }
-  }
+  // WALKB-2: the one invitation email (server/org/invites.js), shared with Resend.
+  const emailSent = await require("../server/org/invites").sendStaffInvite({ resend, orgName: displayNameCase(org.name), email: normalizedEmail, role: validRole, link: inviteLink });
 
   // Return the invite id/email/derived name so the caller (e.g. the import
   // officer-mapping screen) can make the newly-invited officer immediately
@@ -602,6 +586,7 @@ app.get("/auth/invite/:token", wrap(async (req, res) => {
   if (!rows.length) return res.status(404).json({ error: "Invite not found or already used" });
   const invite = rows[0];
   if (invite.accepted_at) return res.status(410).json({ error: "This invite has already been accepted" });
+  if (invite.revoked_at) return res.status(410).json({ error: "This invite was withdrawn. Ask your admin for a new one." });   // WALKB-2
   if (new Date(invite.expires_at) < new Date()) return res.status(410).json({ error: "This invite has expired" });
   res.json({ email: invite.email, orgName: invite.org_name, role: invite.role });
 }));
@@ -620,7 +605,7 @@ app.post("/auth/invite/accept", wrap(async (req, res) => {
   if (!rows.length) return res.status(404).json({ error: "Invite not found" });
   const invite = rows[0];
   if (invite.accepted_at) return res.status(410).json({ error: "This invite has already been accepted" });
-  if (new Date(invite.expires_at) < new Date()) return res.status(410).json({ error: "This invite has expired" });
+  if (invite.revoked_at || new Date(invite.expires_at) < new Date()) return res.status(410).json({ error: invite.revoked_at ? "This invite was withdrawn." : "This invite has expired" });
 
   const existing = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [invite.email]);
   if (existing.length) return res.status(409).json({ error: "An account with this email already exists" });
