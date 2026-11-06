@@ -25,6 +25,7 @@ import * as GivingPagesManager from "../../client/src/components/settings/Giving
 import * as GivingSourcesManager from "../../client/src/components/settings/GivingSourcesManager.jsx";
 import * as ImpactUpdatesManager from "../../client/src/components/settings/ImpactUpdatesManager.jsx";
 import * as ImportsDrop from "../../client/src/components/settings/ImportsDrop.jsx";
+import * as InvitedList from "../../client/src/components/settings/InvitedList.jsx";   // WALKB-2
 import * as ImportsHistory from "../../client/src/components/settings/ImportsHistory.jsx";
 import * as importsWords from "../../client/src/components/settings/importsWords.js";
 import * as InboundEmailCard from "../../client/src/components/settings/InboundEmailCard.jsx";
@@ -98,6 +99,7 @@ export const CASES = [
   ["settings/GivingPagesManager", () => <GivingPagesManager.GivingPagesManager orgSlug="fake-org" isAdmin isReadOnly={false}/>, /Giving Pages[\s\S]*New Giving Page/],
   ["settings/GivingSourcesManager", () => <GivingSourcesManager.GivingSourcesManager isReadOnly={false} isAdmin onChanged={noop}/>, /Where giving comes in/],
   ["settings/ImpactUpdatesManager", () => <ImpactUpdatesManager.ImpactUpdatesManager isAdmin isReadOnly={false}/>, /Impact Updates/],
+  ["settings/InvitedList", () => <InvitedList.InvitedList isAdmin/>, /Invited[\s\S]*wren\.halloway@example\.org[\s\S]*Revoke/],
   ["settings/ImportsDrop", () => <ImportsDrop.ImportsDrop isReadOnly={false}><div>Bring in a spreadsheet</div></ImportsDrop.ImportsDrop>, /Bring in a spreadsheet/],
   ["settings/ImportsHistory", () => <ImportsHistory.ImportsHistory/>, /Every file you have loaded, newest first/],
   ["settings/importsWords", () => <div>{importsWords.fmtMoney(1234.5)} · {importsWords.fmtCount(1200)}</div>, /\$1,234\.50 · 1,200/],

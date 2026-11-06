@@ -44,6 +44,8 @@ const PAGE = "http://screens1-parts.test", FAKE_API = "http://127.0.0.1:9";
 const FAKE = {
   "/legal/dpa": { published: true },
   "/settings/giving-levels": { midCents: 100000, majorCents: 500000 },
+  // WALKB-2: one pending invite under Team
+  "/org/invites": { invites: [{ id: "inv_fake", email: "wren.halloway@example.org", role: "staff", createdAt: "2026-11-05T15:00:00Z", expiresAt: "2026-11-12T15:00:00Z", expired: false, invitedBy: "Allie Test", link: "http://localhost/invite/fake" }] },
   "/settings/inbound-email": { address: "log-wrenfield@log.stewardapp.dev", unmatched: [] },
   // HOME-6 hotfix: a new org's first Home read, before its Insights are built (INSIGHTS-2's answer).
   "/insights": { asOf: "2026-11-05", preparing: true, stale: false, sentence: "Insights are being prepared. They will be here in a moment.", cards: [], ladder: [], stats: {}, deck: { tabs: [], preparing: true } },
