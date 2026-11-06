@@ -34,6 +34,7 @@ import { ThankYouDrafts } from "./ThankYouDrafts";
 import { countLabel } from "../../../shared/countWords.js";
 import { allPages } from "../lib/pages";
 import { displayOrgDate } from "../lib/orgDay";
+import { sequencesEmptyLine } from "../lib/sequencesEmpty";   // ATLAS-4
 
 // WIRE-1-ADDENDUM: "Templates" and "Email templates" were one thing twice, so
 // they are one Templates tab now. An old link to either (?subtab=templates,
@@ -502,8 +503,10 @@ function TrackedSequences() {
   const [preview, setPreview] = useState(null);
   const [turnOn, setTurnOn] = useState(null);     // the confirm screen's payload
 
+  const [earlier, setEarlier] = useState([]);      // ATLAS-4: the Earlier list below, so "none" is said only when there are none
   const reload = () => apiFetch("/sequences/home").then(r => { setList(r.sequences || []); }).catch(() => setList([]));
-  useEffect(() => { apiFetch("/sequences/builder").then(setBuilder).catch(() => setBuilder(null)); reload(); }, []);
+  useEffect(() => { apiFetch("/sequences/builder").then(setBuilder).catch(() => setBuilder(null)); reload();
+    apiFetch("/sequences").then(r => setEarlier(Array.isArray(r) ? r : [])).catch(() => setEarlier([])); }, []);
 
   const blank = () => ({
     name: "", trigger: "first_gift",
@@ -677,7 +680,7 @@ function TrackedSequences() {
       </div>
 
       {list.length === 0
-        ? <div style={{ fontSize: 13, color: T.ink3 }}>No sequences yet.</div>
+        ? <div data-testid="seq-empty" style={{ fontSize: 13, color: T.ink3 }}>{sequencesEmptyLine(list, earlier)}</div>
         : list.map(s => (
           <div key={s.id} data-testid="seq-row" {...interactive(() => open(s.id), { row: true, label: `Edit ${s.line}` })} style={{ border: `1px solid ${T.bg3}`, borderRadius: 12, padding: "13px 16px", background: T.white, display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ flex: 1, minWidth: 0 }}>

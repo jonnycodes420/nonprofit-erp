@@ -91,6 +91,7 @@ export function useProfilePipeline({ donor, setDesignations, refreshSoftCredit, 
         // FIX-49: the gift is the full amount paid; the processor's fee and the
         // net (what Finance reconciles to the bank) show beside it.
         fee:parseFloat(g.processor_fee_amount)||0,softCreditTo:Array.isArray(g.soft_credit_to)?g.soft_credit_to:[],   // LEDGER-1: "Soft credit to …"
+        fund_lines:Array.isArray(g.fund_lines)?g.fund_lines:[],event_id:g.event_id||"",   // GIFTS-2: a split gift's lines; the edit keeps its event
       }));
       setGiftsFull(g);
       setGifts(g.map(x=>({amount:x.amount,date:x.date})));

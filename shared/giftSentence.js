@@ -23,9 +23,20 @@ const tokenRe = keys => `\\{\\{\\s*(?:${keys.join("|")})\\s*\\}\\}`;
 // LIST-3: sentences that say who she is asking. They name no merge field, so
 // the rule above cannot see them; for a person with no gift each is swapped
 // for its no-gift variant. {{org_name}} is filled after, by the renderer.
+// ATLAS-4: every wording of it (we are / we're, people / those / supporters,
+// have / 've), and withoutGivenBefore for the paths that fill their own fields
+// (a tracked sequence's or journey's step, the older sequence send), so a
+// send, a draft and a preview all say the same thing to a never-giver.
 const GIVEN_BEFORE = [
-  [/\bwe are asking the people who have given before to go first\b/gi, "we're asking friends of {{org_name}} to join us"],
+  [/\bwe(?: are|['\u2019]re) asking (?:the )?(?:people|those|friends|supporters|donors) who(?: have|['\u2019]ve) given before to go first\b/gi, "we're asking friends of {{org_name}} to join us"],
 ];
+export function withoutGivenBefore(text, { hasGift = true, orgName = null } = {}) {
+  let out = String(text == null ? "" : text);
+  if (hasGift) return out;
+  for (const [re, variant] of GIVEN_BEFORE) out = out.replace(re, orgName == null ? variant : variant.replace("{{org_name}}", orgName));
+  return out;
+}
+export const GIVEN_BEFORE_RE = /\bgiven before\b/i;
 
 export function withoutMissingGift(text, { hasGift = true, hasTotal = true } = {}) {
   let out = String(text == null ? "" : text);

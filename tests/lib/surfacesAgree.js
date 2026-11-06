@@ -1125,6 +1125,17 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     else if (b && b.error) diffs.push(`${name} answered an error: ${JSON.stringify(b).slice(0, 200)}`);
   }
 
+  // GIFTS-2: a gift split across funds. Its fund lines sum to the gift, to the
+  // cent, every one of them, so no fund total holds money the gift does not.
+  if (!skip.has("fundLines")) {
+    const off = await q(
+      `SELECT g.id, ROUND(g.amount * 100)::bigint AS gift, SUM(ROUND(l.amount * 100))::bigint AS lines
+         FROM gift_fund_lines l JOIN gifts g ON g.id = l.gift_id AND g.org_id = l.org_id
+        WHERE l.org_id = $1 GROUP BY g.id, g.amount
+       HAVING SUM(ROUND(l.amount * 100)) <> ROUND(g.amount * 100)`, [orgId]).catch(e => [{ id: "(read failed: " + e.message + ")", gift: 0, lines: 0 }]);
+    for (const r of off.slice(0, 10)) diffs.push(`fund lines: gift ${r.id} is ${money(Number(r.gift))}, its fund lines sum to ${money(Number(r.lines))}${label ? ` (${label})` : ""}`);
+  }
+
   // LEDGER-2: one fiscal year. The key's year (from the org's today and start
   // month, written out in tests/keys/truthKey.js) is the year the Board, the
   // Fundraising header and the giving summary (which names Reports' chips) say.

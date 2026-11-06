@@ -15,7 +15,7 @@ import { LogTouchpointModal } from "./modals";
 import { BriefPanel } from "../MajorGifts";
 import { PlanFollowUpModal } from "../PlanFollowUp";
 import { MarkDeceasedModal, UndoDeceasedModal, DeceasedBanner } from "./DeceasedDialog";   // PEOPLE-1
-import { CallScriptModal, ImpactSummaryModal } from "./MoreActions";   // ATLAS-3
+import { CallScriptModal, ImpactSummaryModal, ExportDoneModal, openJourneyPicker, downloadPersonData } from "./MoreActions";   // ATLAS-3, ATLAS-4
 
 // MENU-1 — More's menu. Its max height is the room between the button and the
 // screen's edge (or the phone's tab bar), less 12 px, and it scrolls inside; with more room above than
@@ -85,9 +85,11 @@ function MoreMenu({groups,onPick,onClose}){
   );
 }
 
-function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg}){
+function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg,setAddPledgeOpen}){
   const [deceasedOpen,setDeceasedOpen]=useState(null);   // PEOPLE-1: "mark" or "undo"
   const [moreOpen,setMoreOpen]=useState(null);   // ATLAS-3: "call" or "impact"
+  const [exported,setExported]=useState(null);   // ATLAS-4: what the export downloaded, said on screen
+  const exportData=async()=>{ try{ setExported(await downloadPersonData(donor)); }catch(e){ setExported({error:e?.message||"The export did not download. Try again."}); } };
   return <>
         <div className="donor-profile-header dp2-head dp3-head" data-testid="dp-head" style={{padding:"16px 0 0",display:"grid",gridTemplateColumns:"72px minmax(0,1fr) auto",columnGap:20,rowGap:0,alignItems:"start"}}>
           <div className="dph-backrow" style={{gridColumn:"1 / -1",gridRow:1,marginBottom:16}}>
@@ -163,8 +165,11 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
               const planOnScreen=typeof document!=="undefined"&&!!document.querySelector("[data-testid=dp-next-plan]");
               const groups=[
                 ["reach","Reach out",[
-                  // FIX-55 item 6: Request a gift needs card payments set up.
-                  ...(org?.capabilities?.stripe?[["Request a gift",()=>setShowGiftModal(true),false]]:[]),
+                  // FIX-55 item 6: a payment link needs card payments set up.
+                  // GIFTS-2: it is a payment link, so it says so ("Request a gift"
+                  // read as a pledge, Muse 6 Nov); a pledge is its own item.
+                  ...(org?.capabilities?.stripe?[["Send a payment link",()=>setShowGiftModal(true),false,"dp-payment-link"]]:[]),
+                  ...(setAddPledgeOpen?[["Record a pledge",()=>{setDpTab("giving");setAddPledgeOpen(true);},isReadOnly,"dp-record-pledge"]]:[]),
                   // FIX-14 Part 3 — the quick drafts live here.
                   // ATLAS-3: an email is a draft for this person (Atlas writes it, she reviews and sends); a call script is a script.
                   ...(isTeam?[["Draft an email",()=>openTellSteward(donor,{text:`Draft an email to ${donor.name}`,send:true}),isReadOnly||!donor.email,"dp-draft-email"],
@@ -176,6 +181,8 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
                   ["Record a video thank-you",()=>setVideoThanksOpen(true),isReadOnly||!donor.email||!!donor.deceased||!!donor.doNotContact,"dp-video-thanks"],
                 ]],
                 ["plan","Plan",[
+                  // ATLAS-4 — the rail's own journey picker, brought to her.
+                  ["Add to a journey",()=>openJourneyPicker(onNavigate),isReadOnly,"dp-add-journey"],
                   // BUILD-85 — only when there is no open thread, and only when the Next step's button is not already showing.
                   ...(!dpThread&&!planOnScreen?[["Plan a follow-up",()=>setPlanOpen(true),isReadOnly,"dp-plan-followup"]]:[]),
                   ...(isTeam?[["Draft the next move",()=>{setSuggestOpen(true);getAI(donor,"nextmove",openForNextMove);},false]]:[]),
@@ -203,7 +210,7 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
                   // PEOPLE-1 — marked with care, and undone from the same place.
                   ...(donor.kind==="organisation"?[]:[donor.deceased?["Undo: they're not deceased",()=>setDeceasedOpen("undo"),isReadOnly,"dp-not-deceased"]:["Mark as deceased",()=>setDeceasedOpen("mark"),isReadOnly,"dp-mark-deceased"]]),
                   // TRUST-2 — a person's own data, in one file, when they ask.
-                  ...(isAdmin?[["Export this person's data",exportPersonData,false]]:[]),
+                  ...(isAdmin?[["Export this person's data",exportData,false,"dp-export-data"]]:[]),
                   // FIX-14 Part 3 — Erase and Delete, at the bottom of More, under a rule, never on the page.
                   ...(isAdmin&&!isReadOnly?[["Erase this person",()=>{setEraseOpen(true);setEraseMsg("");setEraseWord("");},false,"dp-erase",true]]:[]),
                   ...(isAdmin?[["Delete donor",()=>onDelete(donor.id),false,"dp-delete",isReadOnly]]:[]),
@@ -276,6 +283,7 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
               </div>
             </Modal>}
             {moreOpen==="call"&&<CallScriptModal donor={donor} onClose={()=>setMoreOpen(null)}/>}
+            {exported&&<ExportDoneModal donor={donor} result={exported} onClose={()=>setExported(null)}/>}
             {moreOpen==="impact"&&<ImpactSummaryModal donor={donor} onClose={()=>setMoreOpen(null)} onDownload={downloadImpactSummary} downloading={impactPdfLoading}/>}
             {briefOpen&&<Modal onClose={()=>setBriefOpen(false)} width={640} title="Brief me">
               <div>{lockMajor(<BriefPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam}/>,{minHeight:120})}</div>

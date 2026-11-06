@@ -6,9 +6,13 @@
 // Impact summary (GET /donors/:id/impact-summary): the summary on screen,
 // read from their gifts, with the PDF to download beside it. It used to
 // download silently, or fail silently, and look as if it did nothing.
+// ATLAS-4 · Add to a journey opens the rail's own journey picker (the same
+// one, not a second); Export this person's data downloads their record, gifts
+// and notes as a file and says so on screen (the download is a disclosure, so
+// the audit trail writes its row: middleware/auditTrail.js, item 5).
 import { useEffect, useState } from "react";
 import { Modal, T, fmtFull } from "../shared";
-import { apiFetch } from "../../api";
+import { apiFetch, API, getToken } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 
 const H = { fontSize: 11, fontWeight: 800, color: T.ink3, letterSpacing: ".04em", textTransform: "uppercase", margin: "14px 0 4px" };
@@ -68,6 +72,44 @@ export function ImpactSummaryModal({ donor, onClose, onDownload, downloading }) 
           <div style={{ fontSize: 12, color: T.ink3, margin: "12px 0" }}>{d.sentence}</div>
           <button type="button" data-testid="impact-download" style={btn} disabled={downloading} onClick={onDownload}>{downloading ? "Making the PDF…" : "Download the PDF"}</button>
         </>}
+      </div>
+    </Modal>
+  );
+}
+
+// ATLAS-4 · the rail's picker, brought to her: scrolled to, focused and opened.
+// With no picker on the page (no journeys yet, or read-only), Journeys opens.
+export function openJourneyPicker(onNavigate) {
+  const el = typeof document !== "undefined" && document.querySelector("[data-testid=dp-journey-pick]");
+  if (!el) { if (onNavigate) onNavigate("journeys"); return false; }
+  el.scrollIntoView({ block: "center", behavior: "smooth" });
+  el.focus({ preventScroll: true });
+  try { if (typeof el.showPicker === "function") el.showPicker(); } catch { /* the focus is enough where showPicker is refused */ }
+  return true;
+}
+
+// ATLAS-4 · the export, as a file, with what is in it.
+export async function downloadPersonData(donor) {
+  const r = await fetch(`${API}/donors/${encodeURIComponent(donor.id)}/export-data`, { headers: { Authorization: `Bearer ${getToken()}` } });
+  if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.message || b.error || "The export did not download. Try again."); }
+  const text = await r.text();
+  let data = {}; try { data = JSON.parse(text); } catch { /* still a file */ }
+  const fileName = `${String(donor.name || "person").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "person"}-data.json`;
+  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = fileName; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const n = k => (Array.isArray(data[k]) ? data[k].length : 0);
+  return { fileName, gifts: n("gifts"), notes: n("notesEmailsAndMeetingsLogged") };
+}
+
+export function ExportDoneModal({ donor, result, onClose }) {
+  const plural = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  return (
+    <Modal onClose={onClose} width={520} title={result.error ? "The export did not download" : "Export downloaded"}>
+      <div data-testid="export-done" role="status" style={P}>
+        {result.error ? result.error
+          : `${result.fileName} is in your downloads: ${donor.name}'s record, ${plural(result.gifts, "gift", "gifts")} and ${plural(result.notes, "note or conversation", "notes and conversations")}. The download is recorded in their History.`}
       </div>
     </Modal>
   );

@@ -42,7 +42,6 @@ export const FR_SECTIONS = [
       // peer-to-peer campaign IS a giving page with the switch on, and the
       // person running a walk is in this room for six weeks.
       { id: "p2p", label: "Peer-to-peer" },
-      { id: "recurring", label: "Recurring" },
       // FIX-25: named as the rail names it. The id stays `members`.
       { id: "members", label: "Memberships" },
     ],
@@ -67,6 +66,9 @@ export const FR_SECTIONS = [
       { id: "toconfirm", label: "To confirm" },
       // FUNDRAISING-2: every open pledge, what is due this year and overdue.
       { id: "pledges", label: "Pledges" },
+      // GIFTS-2: monthly and yearly plans are money coming in. Under Campaigns
+      // & pages nobody found them (Muse, 6 Nov); Finance shows the same view.
+      { id: "recurring", label: "Recurring giving" },
       { id: "deposits", label: "Deposits" },
       { id: "acknowledgments", label: "Acknowledgments" },
       { id: "funds", label: "Funds" },
@@ -91,7 +93,7 @@ export const FR_LEGACY = {
   plans:           { section: "majorgifts", part: "plans",           label: "Plans" },
   campaigns:       { section: "campaigns",  part: "campaigns",       label: "Campaigns" },
   pages:           { section: "campaigns",  part: "pages",           label: "Giving Pages" },
-  recurring:       { section: "campaigns",  part: "recurring",       label: "Recurring Giving" },
+  recurring:       { section: "moneyin",    part: "recurring",       label: "Recurring Giving" },
   members:         { section: "campaigns",  part: "members",         label: "Members" },
   funds:           { section: "moneyin",    part: "funds",           label: "Funds" },
   pipeline:        { section: "majorgifts", part: "pipeline",        label: "Pipeline" },
