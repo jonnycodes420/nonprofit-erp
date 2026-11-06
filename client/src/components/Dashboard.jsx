@@ -209,9 +209,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const toggleFold=k=>setHomeFold(f=>{const n={...f,[k]:!f[k]};try{localStorage.setItem("steward_home_fold",JSON.stringify(n));}catch{/* kept for this visit only */}return n;});
   // HOME-TIDY 2: where the header goes depends on the width (one copy only).
   const foldBtn=HL.foldBtn({ homeFold, toggleFold });
-  // FEEL-1: under the moves deck, Home waits for the deck's size (lib/movesGate.js).
-  const [movesSettled,onMovesSettled]=useMovesGate();
   const [homeWide,setHomeWide]=useState(()=>typeof window==="undefined"||!window.matchMedia||window.matchMedia("(min-width:1100px)").matches);
+  // FEEL-1: under the moves deck, a wide Home waits for the deck's size (lib/movesGate.js).
+  const [movesSettled,onMovesSettled]=useMovesGate(homeWide);
   useEffect(()=>{
     if(typeof window==="undefined"||!window.matchMedia)return;
     const mq=window.matchMedia("(min-width:1100px)"); const on=()=>setHomeWide(mq.matches);
@@ -1306,7 +1306,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // FEEL-1: only while the deck is drawn (Home, not editing) and has not settled,
   // and only on a wide screen: on a phone, holding the rail cost 150 ms of its
   // 3.58 s budget (perf-app), so a phone draws as before.
-  const holdUnderDeck=surface==="home"&&homeWide&&!editMode&&!movesSettled;
+  const holdUnderDeck=surface==="home"&&!editMode&&!movesSettled;
   const homeHead=FL.homeHead({ onMovesSettled, agentDaily, cancelEdit, data, editMode, enterEdit, firstName, greeting, homeDay, isReadOnly, layout, loadThreads, noDonorsYet, onNavigate, resetLayout, sampleStatus, saveEdit, setupFirst, surface, threadScope, todayLongStr, todayStr });
   return(
     <div className="dash-root dash-bleed" style={{background:surface==="home"?T.ground:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>

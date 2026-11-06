@@ -14,13 +14,16 @@ import { useState, useEffect, useCallback } from "react";
 
 export const SAFETY_MS = 6000;
 
-export function useMovesGate() {
-  const [settled, setSettled] = useState(false);
+// Off (a phone): settled from the start, no timer and no callback, so nothing
+// re-renders Home when the deck lands: on a phone that re-render cost ~150 ms
+// of the 3.58 s budget (perf-app), and a phone keeps its own order.
+export function useMovesGate(enabled = true) {
+  const [settled, setSettled] = useState(!enabled);
   const settle = useCallback(() => setSettled(true), []);
   useEffect(() => {
-    if (settled) return undefined;
+    if (settled || !enabled) return undefined;
     const t = setTimeout(settle, SAFETY_MS);
     return () => clearTimeout(t);
-  }, [settled, settle]);
-  return [settled, settle];
+  }, [settled, settle, enabled]);
+  return [settled || !enabled, enabled ? settle : null];
 }
