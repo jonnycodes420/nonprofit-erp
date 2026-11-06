@@ -33,6 +33,9 @@ const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person
 const { newId, randomHex } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 const routers = { r0: express.Router() };
 
+// FEEL-1: the one count of a shift's people (scheduleRows' footer), for the
+// Calendar too; set when the routes mount.
+const SCHEDULE = { rows: null };
 function mount(ctx) {
 const {
   actor, checkWriteAccess, crypto, donateLimiter, escapeHtml, insertShift, markVolunteer, requireAdmin,
@@ -1616,6 +1619,7 @@ async function scheduleRows(orgId, { from = null, to = null, slotIds = null, opp
   });
   return { shifts, conflicts };
 }
+SCHEDULE.rows = scheduleRows;
 
 // The two numbers the Volunteers screen leads with: shifts short of people
 // this week, and the conflicts in them. One function, so the count and the
@@ -2494,4 +2498,4 @@ ctx.registerVolunteerReminders && ctx.registerVolunteerReminders(runVolunteerRem
 ctx.registerVolunteerSignUp && ctx.registerVolunteerSignUp(signUp);
 }
 
-module.exports = { routers, mount };
+module.exports = { routers, mount, scheduleRows: (...a) => SCHEDULE.rows(...a) };

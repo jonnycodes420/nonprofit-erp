@@ -19,7 +19,7 @@ const { AFTER_IMPORT } = require("./lifetime");
 // GIFTS-2: a gift split across funds is cut by its lines, each in its own fund's bucket.
 const { GIFT_FUND_ROWS } = require("./fundLines");
 
-const NO_FUND = "No fund named";
+const NO_FUND = require("../giftWords.js").NO_FUND_LABEL;   // FEEL-1: "Unrestricted (no fund)", one name everywhere
 const IMPORTED = "From your old system";
 
 // One person's lifetime by fund, in cents. Rows: { fundId, fundName, restricted,

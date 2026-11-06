@@ -122,6 +122,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
           ...(amountTyped ? { gift: { amount: String(amount).trim(),
                                       fundId: fundId || (defaultFund ? defaultFund.id : null),
                                       paymentMethod: method || undefined } } : {}),
+          ...(thread && thread.id ? { threadId: thread.id } : {}),   // FEEL-1: a skip closes only this one
           nextStep: skipped ? { skipped: true }
             : { type: nextStepTypeForLabel(nsLabel), label: sanitizeStepLabel(nsLabel), due: nsDue,
                 time: sanitizeStepTime(nsTime) || undefined,

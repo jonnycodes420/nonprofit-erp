@@ -9,6 +9,7 @@ import { displayDate } from "../../../shared/displayDate";
 import { DonorLink } from "./RecordLink";
 import { Figure, FigureContext } from "./Figure";
 import { countLabel, plural } from "../../../shared/countWords";
+import { fundLabel } from "../../../shared/giftWords.js";   // FEEL-1: one name for "no fund"
 
 // FIX-15 Part 3 — "notified" only when the email provider took the message.
 const notified = (r, name) => (r && r.donorNotified === false
@@ -816,7 +817,7 @@ export function RecurringView({ onNavigate, isReadOnly }) {
                   <td style={{ padding: "10px 10px", textAlign: "right", fontSize: 13, fontWeight: 700, color: T.ink, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
                     {money(s.amount)}<span style={{ color: T.ink3, fontWeight: 500 }}>{per(s.interval)}</span>
                   </td>
-                  <td style={{ padding: "10px 10px", fontSize: 12.5, color: s.fundName ? T.ink2 : T.ink3 }}>{s.fundName || "General"}</td>
+                  <td style={{ padding: "10px 10px", fontSize: 12.5, color: s.fundName ? T.ink2 : T.ink3 }}>{fundLabel(s.fundName)}</td>
                   <td style={{ padding: "10px 10px" }}><StatusPill status={s.displayStatus} /></td>
                   <td style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>{s.displayStatus === "canceled" ? "Stopped" : s.displayStatus === "paused" ? "Paused" : fmtDate(s.nextChargeAt)}</td>
                   <td style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>{fmtDate(s.startedAt)}</td>

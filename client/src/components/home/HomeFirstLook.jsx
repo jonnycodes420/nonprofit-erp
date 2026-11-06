@@ -4,7 +4,7 @@ import { openTellSteward } from "../TellStewardOpen";
 import { Suspense } from "react";
 import { MOVES_WAIT, HomeMoves } from "./homeParts";
 
-export function homeHead({ agentDaily, cancelEdit, data, editMode, enterEdit, firstName, greeting, homeDay, isReadOnly, layout, loadThreads, noDonorsYet, onNavigate, resetLayout, sampleStatus, saveEdit, setupFirst, surface, threadScope, todayLongStr, todayStr }) {
+export function homeHead({ onMovesSettled, agentDaily, cancelEdit, data, editMode, enterEdit, firstName, greeting, homeDay, isReadOnly, layout, loadThreads, noDonorsYet, onNavigate, resetLayout, sampleStatus, saveEdit, setupFirst, surface, threadScope, todayLongStr, todayStr }) {
   return (
       <>
       {/* Greeting lives on the page's own cream background, between the nav
@@ -112,7 +112,7 @@ export function homeHead({ agentDaily, cancelEdit, data, editMode, enterEdit, fi
       {surface==="home"&&!editMode&&(
         <div style={{padding:0,marginTop:6}}>
           {setupFirst&&<div style={{marginBottom:18}}>{setupFirst}</div>}
-          <Suspense fallback={MOVES_WAIT}><HomeMoves onNavigate={onNavigate} isReadOnly={isReadOnly} noDonors={noDonorsYet} importAbove={!!setupFirst}
+          <Suspense fallback={MOVES_WAIT}><HomeMoves onNavigate={onNavigate} isReadOnly={isReadOnly} noDonors={noDonorsYet} importAbove={!!setupFirst} onSettled={onMovesSettled}
             sample={sampleStatus&&!sampleStatus.hasSampleData&&!isReadOnly} drift={()=>onNavigate&&onNavigate("donors",{view:"drift"})}/></Suspense>
         </div>
       )}

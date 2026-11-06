@@ -1330,7 +1330,7 @@ function giftSections({ ds, onSet, onSetForm, errors, funds, camps, saveState, f
     <RailSection key="where" id="where" title="Where the gift goes" focus={at("where")} defaultOpen={false}>
       <div style={{ ...lbl, marginTop: 0 }}>Fund</div>
       <select style={inp} value={ds.fundId || ""} onChange={e => setFund(e.target.value)} disabled={choosing}>
-        <option value="">No fund named</option>
+        <option value="">Unrestricted (no fund)</option>
         {funds.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
       </select>
       <label style={checkRow}><input data-testid="details-donor-chooses" type="checkbox" checked={choosing} onChange={e => setChoosing(e.target.checked)} style={{ marginTop: 2 }} />Let the donor choose the fund</label>

@@ -979,7 +979,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // NUMBERS-2: before the recompute below, a stated total the file's gifts do
   // not reach is kept as its own figure, in this same transaction.
   await keepImportedTotals((sql, params) => queryTx(txc, sql, params), orgId,
-    donorsToInsert.map(d => d._id).filter(id => !failedIds.has(id)), req.body.sourceName);
+    donorsToInsert.map(d => d._id).filter(id => !failedIds.has(id)), req.body.sourceName, runId);   // FEEL-1
 
   // ── THE ASSERTION. Before this transaction commits, the equations must hold.
   // A throw here rolls the whole import back (db.js withTransaction) and the
