@@ -70,6 +70,7 @@ const PHONE_MS = 3580;   // PERF-3 measured 3,480 ms + 0.1 s, so it cannot regre
 const JS_FIRST_KB = 239;   // PERF-3 measured 227 KB + 5%: the moves deck's code (15 KB) is on the first look now, preloaded (PERF-2: 214)
 const WARM_MS = 1446;   // PERF-3: Home on a phone a second time, measured 1,314 ms + 10% (main: 1,528)
 const FIRST_KB = 309;   // PERF-3: every byte of Home's first look, measured 294 KB + 5% (main: 314)
+const CLS_DESKTOP_MAX = 0.05;   // PERF-4: Home on a desktop, worst of the runs (main: 0)
 const CLS_MAX = 0.02;   // PERF-3: main moved 0.49 of the phone's screen (the deck after its stand-in); now 0
 // SHIFT-1: a made-up name that, with "Good morning, Load", fits Home's greeting
 // line on a 412 px phone at first paint (312 of 326 px) but not once the Edit
@@ -397,6 +398,9 @@ function preloaderAllowed() {
   ok(`nothing on Home moves as it loads on a phone, at ${HOURS.map(h => `${h}:00`).join(", ")} UTC, and when its header's reads land late (CLS ${homeP.cls} cold at ${homeP.clsHour}:00, ${homeW.cls} warm, ${homeL.cls} late; under ${CLS_MAX}; worst of ${RUNS} each)`,
      homeP.cls < CLS_MAX && homeW.cls < CLS_MAX && homeL.cls < CLS_MAX,
      { cold: homeP.cls, coldHour: homeP.clsHour, warm: homeW.cls, late: homeL.cls, coldMoved: homeP.shifts, warmMoved: homeW.shifts, lateMoved: homeL.shifts });
+  // PERF-4: and on a desktop (CI read 0.201 once with main at 0; never measured until now).
+  ok(`nothing on Home moves as it loads on a desktop (CLS ${homeD.cls}; under ${CLS_DESKTOP_MAX}; worst of ${RUNS})`,
+     homeD.cls < CLS_DESKTOP_MAX, { cls: homeD.cls, moved: homeD.shifts });
   ok("Home asks for none of its bundled reads twice (desktop and phone)", !homeD.twice.length && !homeP.twice.length && !homeW.twice.length, [...homeD.twice, ...homeP.twice, ...homeW.twice].slice(0, 3));
   ok(`Home: no read the rail needs starts after the first paint (${RAIL_READS.length} reads, desktop and phone)`,
      RAIL_READS.length > 5 && !homeD.lateRail.length && !homeP.lateRail.length, [...homeD.lateRail, ...homeP.lateRail].slice(0, 6));
