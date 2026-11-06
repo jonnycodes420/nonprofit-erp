@@ -8,6 +8,7 @@ import { planDisplayName, planDisplayBand } from "../lib/planNames";
 import { CHANGELOG as CHANGELOG_ADMIN } from "../lib/changelog";
 import { enterSupport } from "../lib/supportSession";   // FIX-57
 import { countLabel } from "../../../shared/countWords.js";
+import AdminOpsNav from "./ops/AdminOpsNav";
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
 
@@ -2006,6 +2007,7 @@ export default function AdminDashboard() {
 
       {/* Main */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <AdminOpsNav />{/* DEVBOARD-3: Ops, Map and Journey, at the top */}
         {/* Top bar */}
         <div style={{ background: A.sidebar, borderBottom: `1px solid ${A.border}`, padding: "0 28px", height: 52, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>

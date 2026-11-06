@@ -3,6 +3,7 @@
 //   GET /ops           what the page reads: prod health, the board, builds, the
 //                      walk trend, page timing (PERF-4) and customers, in one answer
 //   /ops/map, /ops/checks   DEVBOARD-2, the Map tab (opsMapRoutes.js)
+//   /ops/journey, /ops/flow DEVBOARD-3, the Journey and How-it-works tabs (opsJourneyRoutes.js)
 //
 // GET /ops is read-only. It never writes a row (the worker's opsBoardRefresh writes the one
 // cached snapshot), never shows a donor, a secret, an address or a connection
@@ -103,6 +104,8 @@ function mount(ctx) {
   require("./opsMapRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter });
   // STAGE-1: the Ship to customers card, behind this same door.
   require("./shipRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter, buildSha });
+  // DEVBOARD-3: the Journey and How-it-works tabs, behind this same door.
+  require("./opsJourneyRoutes").mount(app, { query, wrap, opsOnly, opsLimiter, healthBody });
 
   // The worker's job: refresh the cached snapshot every five minutes. Queued,
   // so it runs on the worker (or the one process locally), never in a request.

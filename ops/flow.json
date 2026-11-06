@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "about": "DEVBOARD-3 · How a gift flows through Steward, drawn on /ops?tab=flow. Each box names the modules it lives in (tests/devboard3-journey.test.js fails if one stops existing), the queue jobs it runs on, and its area on the Map (ops/map.json).",
+  "stages": ["A gift comes in", "It is recorded", "It is counted", "The worker scores", "Steward notices", "A person reaches out", "It is closed out"],
+  "boxes": [
+    { "id": "import", "stage": 0, "title": "Import", "says": "A file of people and gifts: the one reader, a preview, then Done, with Undo.",
+      "modules": ["server/imports/routes.js", "server/imports/gifts.js", "recordGifts.js", "shared/importShape.js"], "jobs": [], "area": "data" },
+    { "id": "addGift", "stage": 0, "title": "Add gift", "says": "A person records a gift by hand on a profile or a deposit.",
+      "modules": ["server/donors/gifts.js"], "jobs": [], "area": "gifts" },
+    { "id": "givingPage", "stage": 0, "title": "Giving page", "says": "A donor gives on the public page; Stripe Connect confirms it and the webhook records it.",
+      "modules": ["routes/give.js", "stripeEvents.js"], "jobs": [], "area": "giving" },
+    { "id": "people", "stage": 1, "title": "People and gifts", "says": "recordGift writes the gift (the one gift path); the after-change step updates the person and writes the event to the outbox.",
+      "modules": ["server/boot/helpers-1.js", "afterChange.js", "donorSummary.js", "server/shared/outbox.js"], "jobs": ["handler:afterChange"], "area": "profile" },
+    { "id": "numbers", "stage": 2, "title": "shared/numbers", "says": "One home per number: money, lifetime, last gift, lapse, the fiscal year. Every screen reads these.",
+      "modules": ["shared/numbers/index.js", "shared/numbers/money.js", "shared/numbers/lifetime.js", "shared/numbers/lapse.js"], "jobs": [], "area": "reports" },
+    { "id": "scores", "stage": 3, "title": "Scores and rhythm", "says": "The worker rescores the people a change touched, and reads each giver's rhythm.",
+      "modules": ["server/donors/handlers/scores.js", "engagement.js", "shared/numbers/rhythm.js"], "jobs": ["handler:scores"], "area": "donors" },
+    { "id": "home", "stage": 4, "title": "Home moves", "says": "Home opens on one decision: a name, a reason and a step.",
+      "modules": ["routes/homeBundle.js", "shared/nextMove.js", "shared/homeLead.js"], "jobs": [], "area": "home" },
+    { "id": "insights", "stage": 4, "title": "Insights", "says": "Patterns ranked by dollars, each reason a computed fact that opens its rows.",
+      "modules": ["insights.js", "server/insights/store.js"], "jobs": [], "area": "reports" },
+    { "id": "reengage", "stage": 4, "title": "Re-engage", "says": "Who is drifting or lapsed, and the step that would bring them back.",
+      "modules": ["drift.js", "server/insights/driftPeople.js"], "jobs": ["refreshStoredDrift"], "area": "donors" },
+    { "id": "journeys", "stage": 5, "title": "Journeys and emails", "says": "Drafts and journeys. A person wrote every word and turned it on; each send is theirs.",
+      "modules": ["server/outreach/handlers/journeys.js", "server/outreach/handlers/thankYouDraft.js", "server/outreach/autoSend.js", "mailBlock.js"],
+      "jobs": ["handler:journeys", "handler:thankYouDraft", "processJourneyAutoSends", "runJourneySweep"], "area": "campaigns" },
+    { "id": "receipts", "stage": 6, "title": "Receipts", "says": "A receipt per gift and the year-end statement, from the org's legal entity.",
+      "modules": ["server/donors/receiptEmail.js", "shared/legalEntity.js"], "jobs": [], "area": "receipts" },
+    { "id": "reports", "stage": 6, "title": "Reports and Finance", "says": "Every figure opens its rows, footing to the cent; deposits and month close.",
+      "modules": ["server/reports/routes.js", "routes/finance.js", "figureSources.js"], "jobs": [], "area": "finance" }
+  ],
+  "edges": [
+    ["import", "people"], ["addGift", "people"], ["givingPage", "people"],
+    ["people", "numbers"], ["numbers", "scores"],
+    ["scores", "home"], ["scores", "insights"], ["scores", "reengage"],
+    ["home", "journeys"], ["insights", "journeys"], ["reengage", "journeys"],
+    ["journeys", "receipts"], ["journeys", "reports"]
+  ]
+}

@@ -103,7 +103,7 @@ function CheckRow({ area, c, onMark, walkOnly }) {
 function Area({ a, onMark, onShot }) {
   const openCount = a.items.length;
   const empty = a.id === "unsorted" && !a.walkChecks.length && !a.items.length;
-  return <section style={card} data-area={a.id}>
+  return <section style={card} data-area={a.id} id={`area-${a.id}`}>
     <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
       <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>{a.name}</h2>
       <span style={{ fontSize: 12, opacity: 0.7 }}>
