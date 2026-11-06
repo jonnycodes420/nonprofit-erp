@@ -641,12 +641,14 @@ app.post("/sheet-import/bring-back", requireAuth, checkWriteAccess, wrap(async (
   // HARDEN-2: the one door back (personTrash.js): deleted_at and every open
   // deletion record of theirs, in one transaction.
   const backIds = await require("../personTrash").bringPeopleBack(orgId, ids, { exceptMerged: true, touch: true });
+  // IMPORT-9: each trash row it closed says so, so the import that follows can list them and its Undo put them back
+  await require("../server/imports/restoredPeople").markBroughtBack(require("../db"), orgId, backIds, actor(req));
   if (backIds.length) {
     await require("../afterChange").afterChange(orgId, backIds, { door: "sheet_import_bring_back" }).catch(e => console.error("[sheet-import] bring back:", e.message));
   }
   if (req.audit) req.audit.after({ broughtBack: backIds });
   const n = backIds.length;
-  res.json({ restored: n, ids: backIds, sentence: n ? `${n.toLocaleString("en-US")} ${n === 1 ? "person is" : "people are"} back. Their rows will be imported with the file.` : "Nobody was brought back." });
+  res.json({ restored: n, ids: backIds, sentence: n ? `${n.toLocaleString("en-US")} ${n === 1 ? "person is" : "people are"} back. Their rows will be imported with the file; if you undo the import, ${n === 1 ? "they go" : "they all go"} back to the trash.` : "Nobody was brought back." });
 }));
 
 // FIX-52 · IMPORT IS A JOB, AND THE SCREEN TELLS THE TRUTH. On 27 Oct a real
@@ -891,6 +893,8 @@ async function writePlan({ req, body, importId, who, report }) {
       summary.personChanges.push({ id, before: Object.fromEntries(changed.map(k => [k, before[k] ?? null])) });
     }
   }
+  // IMPORT-9: who this run matched because she brought them back from the trash, for its Undo
+  summary.restoredFromTrash = await require("../server/imports/restoredPeople").claimForImport(DB, orgId, [...matchedIds], importId);
   done = memberCount;
   await report("Writing attendance and notes", done, total, true);
   await writeEngagement({ orgId, u, importId, eventId, personIds, who, summary, fileName: body.fileName || "your file", eventName: evName });
