@@ -921,7 +921,8 @@ app.get("/atlas/activity", requireAuth, wrap(async (req, res) => {
   const rows = await query(`SELECT * FROM atlas_actions WHERE org_id=? ORDER BY created_at DESC, id DESC LIMIT 60`, [orgId]);
   const waitingRows = await query(`SELECT * FROM atlas_actions WHERE org_id=? AND waits=true AND state='waiting'`, [orgId]);
   const settled = await settledElsewhere(orgId, waitingRows);
-  res.json({ name: atlasName(), waiting: waitingRows.length - settled.size, items: rows.map(r => actionOut(asSettled(r, settled.get(r.id)))) });
+  res.json({ name: atlasName(), waiting: waitingRows.length - settled.size, items: rows.map(r => actionOut(asSettled(r, settled.get(r.id)))),
+    changes: await require("../server/shared/changeMarks").changeMarks(query, orgId) });
 }));
 // The notes on one page: what Atlas did there that nobody has seen yet, and
 // anything still waiting there. Reading never marks them seen (a GET changes

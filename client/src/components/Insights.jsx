@@ -9,6 +9,7 @@
 // (insights.js); this file draws them.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, takeParked } from "../api";
+import { useChanged } from "../lib/changes";   // STALE-1
 import { T } from "./shared";
 import { DonorLink } from "./RecordLink";
 import { fmtWhole } from "../lib/money";   // HOME-6: whole dollars on Home
@@ -301,6 +302,8 @@ export function useInsights(view, skip) {
   const had = useRef(data != null);
   const load = () => apiFetch(path).then(r => { setData(r); setErr(""); }).catch(e => setErr(e.message || "Couldn't read the cards."));
   useEffect(() => { if (had.current) { had.current = false; return; } if (!skip) load(); }, [view, skip]);
+  // STALE-1: a gift, a pledge payment or a task made anywhere moves the deck.
+  useChanged(["gift", "pledge", "task"], () => { if (!skip) load(); });
   return [data, load, err];
 }
 

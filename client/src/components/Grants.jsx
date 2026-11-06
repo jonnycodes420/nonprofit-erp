@@ -443,6 +443,10 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
     }
     if(g){setOpenMiss("");setSelected(g);} else setOpenMiss("That grant could not be found. It may have been deleted.");
   };
+  // STALE-1: the open grant follows the app's list, which re-reads after a
+  // payment, an award or a stage change made anywhere (lib/bootSlices.js), so
+  // its Received and % Funded never keep the figure from when it opened.
+  useEffect(()=>{setSelectedRaw(s=>{if(!s)return s;const g=(data.grants||[]).find(x=>x.id===s.id);return g&&(g.received!==s.received||g.amount!==s.amount||g.status!==s.status)?{...s,...g}:s;});},[data.grants]);
   const openFunder=id=>{setSelectedRaw(null);setOpenFunderId(id);setSubTab("funders");goUrl(sectionHref("funders"));};
   useEffect(()=>{
     if(selected||!/^\/app\/grants\/?$/.test(window.location.pathname))return;

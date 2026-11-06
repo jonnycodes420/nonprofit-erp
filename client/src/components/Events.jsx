@@ -15,7 +15,8 @@ import { Figure } from "./Figure";
 import EventRaised, { EventStory, peopleLine } from "./EventRaised";   // HOME-3 · FUNDRAISING-2 · EVENTS-3
 import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit, EVENT_FIGURES } from "../../../shared/eventShape";
 import { countLabel } from "../../../shared/countWords.js";
-import { eventRowsChanged, useEventRowsRev } from "../lib/eventRows";   // COUNTS-1: every panel re-reads the guest rows
+import { eventRowsChanged, useEventRowsRev } from "../lib/eventRows";
+import { useChangeRev } from "../lib/changes";   // STALE-1   // COUNTS-1: every panel re-reads the guest rows
 import RecordGiftDialog from "./gifts/RecordGiftDialog";   // GIFTS-1: a gift for this event, from its page
 import { eventStatus } from "../../../shared/eventStatus.js";
 import { eventEditForm } from "../lib/eventEditForm.js";   // WALKB-2: the dialog opens with the date
@@ -1843,7 +1844,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
 
       {/* The rows behind a report figure. Same SQL as the figure. */}
       {giftFor && <RecordGiftDialog person={giftFor.person} eventId={eventId} title={giftFor.person ? `Record a gift from ${giftFor.person.name}` : "Record a gift"}
-        onClose={() => setGiftFor(null)} onSaved={() => eventRowsChanged(eventId)} testid="ev-gift" />}
+        onClose={() => setGiftFor(null)} testid="ev-gift" />}{/* STALE-1: the gift's write names this event, and every panel hears it (lib/changes.js) */}
       {detailRows && (
         <Modal onClose={() => setDetailRows(null)} width={620}
           title={`${detailRows.label} · ${detailRows.count}`}>
@@ -1897,7 +1898,8 @@ export function Events({ data, isReadOnly }) {
     setLoading(false);
   };
 
-  useEffect(() => { reload(); }, []);
+  const listRev = useChangeRev(["event"]);   // STALE-1: a gift for any event, made anywhere, moves its card's Raised
+  useEffect(() => { reload(); }, [listRev]);
 
   // SWEEP-4, MOPUP-1: today is the org's day, not London's: at 8pm in New York an event
   // tonight moved to Past.

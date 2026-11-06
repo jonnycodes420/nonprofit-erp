@@ -8,6 +8,7 @@
 // both back. The list view reads the same rows with the same filters.
 import { useState, useEffect, useMemo } from "react";
 import { apiFetch } from "../api";
+import { useChangeRev } from "../lib/changes";   // STALE-1
 import { T, Modal, interactive } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
@@ -44,7 +45,8 @@ export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey 
     if (f.program) qs.set("program", f.program);
     apiFetch(`/grants/pipeline?${qs}`).then(setData).catch(e => setMsg(errorMessage(e, "The pipeline did not load.")));
   };
-  useEffect(() => { load(); }, [f.officerId, f.cycle, f.program, refreshKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const changeRev = useChangeRev(["grant", "pledge"]);   // STALE-1: a grant payment made anywhere moves its card
+  useEffect(() => { load(); }, [f.officerId, f.cycle, f.program, refreshKey, changeRev]);   // eslint-disable-line react-hooks/exhaustive-deps
   const setViewKeep = v => { setView(v); try { window.localStorage.setItem("steward_grant_view", v); } catch { /* private mode */ } };
 
   const rows = useMemo(() => (data ? data.grants : []).filter(g =>

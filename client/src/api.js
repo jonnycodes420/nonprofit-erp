@@ -3,6 +3,7 @@ import { setOrgTimezone } from "./lib/orgToday";
 import { saveDrafts } from "./lib/idleDraft";
 import { inSupport, leaveSupport } from "./lib/supportSession";   // FIX-57
 import { bundlePath } from "./lib/homeReads";   // PERF-2
+import { announce, kindsOfWrite, onAnyChange } from "./lib/changes";   // STALE-1: one refresh, everywhere
 
 // GRANTS-1: one adapter for a legacy grant row, used by the first load and by
 // the Grants screen when it opens a grant created since (a planned renewal).
@@ -242,6 +243,12 @@ export function onWrite(fn) { writeHooks.add(fn); return () => writeHooks.delete
 // so a screen can re-read only for the writes that touch what it shows.
 const forgetLists = (w) => { for (const fn of writeHooks) { try { fn(w || {}); } catch { /* one list's hook never stops a write */ } } };
 
+// STALE-1: a change this screen did not make (Atlas or Tell Steward's told(),
+// the worker's marks on the bell's read) forgets what is held exactly as a
+// write does, so the views that re-read for it are not handed the old answer
+// (the Tasks badge's kept count did that for 60 seconds after Atlas added one).
+onAnyChange(c => { if (c.source !== "write") { kept.clear(); parked.clear(); forgetLists({ path: null, method: "TOLD", phase: "after" }); } });
+
 export async function apiFetch(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
   // FIX-25: a write also forgets the reads in flight. A read asked for after a
@@ -249,7 +256,13 @@ export async function apiFetch(path, options = {}) {
   // list re-read after "Approve all" comes back as it was before the approval.
   // FIX-46: and the lists held for the session, before and after the write.
   if (method !== "GET" && SEEN_ONLY.some(r => r.test(path))) return apiFetchNow(path, options);
-  if (method !== "GET") { kept.clear(); parked.clear(); handed.clear(); inFlight.clear(); forgetLists({ path, method, phase: "before" }); return apiFetchNow(path, options).finally(() => forgetLists({ path, method, phase: "after" })); }
+  // STALE-1: and once it has landed, it says what it touched (lib/changes.js),
+  // so every view on screen that shows one of those kinds re-reads it.
+  if (method !== "GET") {
+    kept.clear(); parked.clear(); handed.clear(); inFlight.clear(); forgetLists({ path, method, phase: "before" });
+    const after = () => forgetLists({ path, method, phase: "after" });
+    return apiFetchNow(path, options).then(v => { after(); announce(kindsOfWrite(path, method, options.body)); return v; }, e => { after(); throw e; });
+  }
   if (options.body || options.signal) return apiFetchNow(path, options);
   const key = getToken() + " " + path;
   const hit = kept.get(key);
@@ -482,6 +495,50 @@ export function adaptDonor(d) {
   };
 }
 
+// STALE-1: one slice of the app's first load, re-read on its own after a
+// change of its kind (lib/bootSlices.js), shaped exactly as adaptData shapes it.
+export const adaptVolunteer = v => ({
+  id:              v.id,
+  name:            v.name,
+  email:           v.email || "",
+  hours:           v.hours || 0,
+  skills:          Array.isArray(v.skills) ? v.skills : JSON.parse(v.skills || "[]"),
+  lastActive:      v.last_active || "",
+  donorId:         v.donor_id || null,
+  convertPotential: v.convert_potential || "medium",
+  employer:        v.employer || "",
+  notes:           v.notes || "",
+});
+export const adaptTask = t => ({
+  id:       t.id,
+  title:    t.title,
+  due:      t.due || "",
+  priority: t.priority,
+  type:     t.type,
+  done:     !!t.done,
+  donorId:  t.donor_id || null,
+});
+export const adaptFinancials = financials => ({
+    revenue: financials.months.map(m => ({
+      month:      m.month,
+      individual: m.individual || 0,
+      grants:     m.grants || 0,
+      events:     m.events || 0,
+      other:      m.other_revenue || 0,
+    })),
+    expenses: financials.months.map(m => ({
+      month:       m.month,
+      programs:    m.programs || 0,
+      admin:       m.admin || 0,
+      fundraising: m.fundraising || 0,
+    })),
+    funds: financials.funds.map(f => ({
+      name:       f.name,
+      balance:    f.balance || 0,
+      restricted: !!f.restricted,
+    })),
+});
+
 export function adaptData({ org, donors, grants, volunteers, tasks, board, financials }) {
   // FIX-14 Part 1 — the org's zone, for every client "today" (lib/orgToday.js).
   setOrgTimezone(org && org.timezone);
@@ -532,27 +589,8 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
     },
     donors: donors.map(adaptDonor),
     grants: grants.map(adaptGrant),
-    volunteers: volunteers.map(v => ({
-      id:              v.id,
-      name:            v.name,
-      email:           v.email || "",
-      hours:           v.hours || 0,
-      skills:          Array.isArray(v.skills) ? v.skills : JSON.parse(v.skills || "[]"),
-      lastActive:      v.last_active || "",
-      donorId:         v.donor_id || null,
-      convertPotential: v.convert_potential || "medium",
-      employer:        v.employer || "",
-      notes:           v.notes || "",
-    })),
-    tasks: tasks.map(t => ({
-      id:       t.id,
-      title:    t.title,
-      due:      t.due || "",
-      priority: t.priority,
-      type:     t.type,
-      done:     !!t.done,
-      donorId:  t.donor_id || null,
-    })),
+    volunteers: volunteers.map(adaptVolunteer),
+    tasks: tasks.map(adaptTask),
     board: board.map(b => ({
       id:          b.id,
       name:        b.name,
@@ -563,25 +601,7 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
       committees:  Array.isArray(b.committees) ? b.committees : JSON.parse(b.committees || "[]"),
       attendance:  b.attendance ?? 100,
     })),
-    financials: {
-      revenue: financials.months.map(m => ({
-        month:      m.month,
-        individual: m.individual || 0,
-        grants:     m.grants || 0,
-        events:     m.events || 0,
-        other:      m.other_revenue || 0,
-      })),
-      expenses: financials.months.map(m => ({
-        month:       m.month,
-        programs:    m.programs || 0,
-        admin:       m.admin || 0,
-        fundraising: m.fundraising || 0,
-      })),
-      funds: financials.funds.map(f => ({
-        name:       f.name,
-        balance:    f.balance || 0,
-        restricted: !!f.restricted,
-      })),
-    },
+    financials: adaptFinancials(financials),
   };
 }
+
