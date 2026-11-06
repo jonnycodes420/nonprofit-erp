@@ -20,3 +20,4 @@ docs/**/*.txt
 # generated now, into .generated/.
 audit/route-inventory.json
 audit/suite-timings.json
+vercel.staging.json
