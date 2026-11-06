@@ -23,7 +23,7 @@
 // SPEED-3: Settings says which section (`part`, from ?section=, "org" when
 // none), and a move between sections is timed like a move between pages. The
 // giving page editor (/portal-editor) is a page of its own; it draws outside
-// the app's content column, so its root is the app's #root.
+// the app's content column, so it is timed from its own root.
 const QUIET_MS = 150;
 const GIVE_UP_MS = 30000;
 const SPINNER = '[data-testid^="skeleton"],[data-testid$="-loading"],[aria-busy="true"],[role="progressbar"]';
@@ -62,7 +62,8 @@ export function pagePart(pathname, search = "") {
   if (!/^\/app\/settings\/?$/.test(pathname)) return null;
   return new URLSearchParams(search).get("section") || "org";
 }
-const ROOT = { "giving-page-editor": "#root" };
+// The editor draws outside the content column: its own root, drawn once it has loaded.
+const ROOT = { "giving-page-editor": '[data-page-root="giving-page-editor"]' };
 
 function spinnerShowing(root) {
   if (root.querySelector(SPINNER)) return true;
@@ -138,19 +139,18 @@ export function installPageReady(send) {
   // A move inside the app: from the moment the address changed.
   const keyNow = () => location.pathname + "|" + pageName(location.pathname, location.search) + "|" + pagePart(location.pathname, location.search);
   let last = keyNow();
-  const moved = (how) => {
+  // A section clicked while the last one still loads starts a new wait, so a
+  // mark is always the section it names. (An old section name in a link,
+  // which Settings rewrites as it opens, is counted as a move to the section.)
+  const moved = () => {
     const key = keyNow();
     if (key === last) return;
     last = key;
-    const page = pageName(location.pathname, location.search), part = pagePart(location.pathname, location.search);
-    // The first page still loading, and only its address tidied (Settings
-    // spelling an old section name as the one it shows): the same wait, renamed.
-    if (how === "replaceState" && page === "settings" && watch && watch.fresh && watch.page === page) { watch.part = part; return; }
-    start(page, performance.now(), firstOfLoad, part);
+    start(pageName(location.pathname, location.search), performance.now(), firstOfLoad, pagePart(location.pathname, location.search));
   };
   for (const k of ["pushState", "replaceState"]) {
     const orig = history[k];
-    history[k] = function () { const r = orig.apply(this, arguments); moved(k); return r; };
+    history[k] = function () { const r = orig.apply(this, arguments); moved(); return r; };
   }
-  window.addEventListener("popstate", () => moved("popstate"));
+  window.addEventListener("popstate", moved);
 }
