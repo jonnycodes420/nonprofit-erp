@@ -25,6 +25,7 @@ import { gridsFromWorkbook, gridFromText, SHEET_ROLES, pledgeMoneyWords, readsAs
 import { WorkbookImport } from "./WorkbookImport";
 import { DateOrderQuestions, GuessNotes } from "./import/SheetGuesses";   // IMPORT-9
 import { told } from "../lib/stewardTold";   // HOME-3: the pages behind the window re-read
+import { droppedSpreadsheet, filesAsOne, isFileDrag, SheetDropTarget } from "./SheetDropTarget";   // PERF-4
 
 const box = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px" };
 const h3 = { fontSize: 13, fontWeight: 800, color: T.ink, margin: "0 0 6px" };
@@ -41,49 +42,9 @@ const money = c => (c < 0 ? "-$" : "$") + (Math.abs(Math.round(c)) / 100).toLoca
 const n = (k, one, many) => `${Number(k).toLocaleString("en-US")} ${k === 1 ? one : (many || one + "s")}`;
 const longDate = iso => { if (!iso) return ""; const [y, m, d] = iso.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }); };
 const localIso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-const SHEET_FILE_RE = /\.(csv|tsv|txt|xlsx|xlsm|xls|ods)$/i;
+// PERF-4: the drop target and its readers live in SheetDropTarget.jsx, re-exported here.
+export { droppedSpreadsheet, filesAsOne, isFileDrag, SheetDropTarget };
 // NUMBERS-5: a workbook of people and their gifts is read by the workbook screen
-
-// FIX-55: a spreadsheet dropped on a page (Donors, Settings, Imports) opens
-// this same reader with that file. Anything else dropped is not ours.
-export function droppedSpreadsheet(e) {
-  const fs = Array.from((e && e.dataTransfer && e.dataTransfer.files) || []).filter(f => SHEET_FILE_RE.test(f.name || ""));
-  return filesAsOne(fs);
-}
-// IMPORT-5: two files from one system (a Salesforce Contacts export and its
-// Donations export) are one import: read together, people linked by their ID.
-// More than one file is one file-like thing whose sheets are every file's.
-export function filesAsOne(list) {
-  const fs = Array.from(list || []).filter(Boolean);
-  if (fs.length <= 1) return fs[0] || null;
-  return { name: fs.map(f => f.name).join(" + "), lastModified: Math.max(...fs.map(f => f.lastModified || 0)) || undefined, files: fs };
-}
-export function isFileDrag(e) {
-  return !!(e && e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files"));
-}
-
-// FIX-55: a page that takes a dropped spreadsheet. While a file is dragged
-// over it, it says so; the dropped file opens the one reader (onFile).
-export function SheetDropTarget({ onFile, disabled, children, style, testId = "sheet-drop-page" }) {
-  const [over, setOver] = useState(false);
-  const depth = useRef(0);
-  if (disabled) return <div style={style}>{children}</div>;
-  return (
-    <div data-testid={testId} style={{ position: "relative", ...style }}
-      onDragEnter={e => { if (isFileDrag(e)) { depth.current++; setOver(true); } }}
-      onDragOver={e => { if (isFileDrag(e)) e.preventDefault(); }}
-      onDragLeave={() => { depth.current = Math.max(0, depth.current - 1); if (!depth.current) setOver(false); }}
-      onDrop={e => { if (!isFileDrag(e)) return; e.preventDefault(); depth.current = 0; setOver(false); const f = droppedSpreadsheet(e); if (f) onFile(f); }}>
-      {children}
-      {over && (
-        <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: 50, borderRadius: 16, border: "2px dashed " + T.greenDk, background: T.white + "e6",
-          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: T.greenDk, pointerEvents: "none" }}>
-          Drop the spreadsheet to read it. Nothing is saved until you press Import.
-        </div>
-      )}
-    </div>
-  );
-}
 
 // Said after the window closes on a running import: the window is gone, the
 // import is not. A plain node on the page, gone after a few seconds.

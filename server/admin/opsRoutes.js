@@ -1,7 +1,7 @@
 // DEVBOARD-1 · /ops: ONE PAGE THAT SHOWS THE WHOLE MACHINE (super-admins only).
 //
 //   GET /ops           what the page reads: prod health, the board, builds, the
-//                      walk trend and customers, in one answer
+//                      walk trend, page timing (PERF-4) and customers, in one answer
 //   /ops/map, /ops/checks   DEVBOARD-2, the Map tab (opsMapRoutes.js)
 //
 // GET /ops is read-only. It never writes a row (the worker's opsBoardRefresh writes the one
@@ -94,6 +94,8 @@ function mount(ctx) {
       stale: snap ? now - new Date(snap.refreshedAt).getTime() > STALE_MS : true,
       githubAt: gh.collectedAt || null,
       health, board, builds, customers,
+      // PERF-4: the page-ready marks this web process has had (time only)
+      pageTiming: require("../perf/pageTiming").summary(now),
     });
   }));
 

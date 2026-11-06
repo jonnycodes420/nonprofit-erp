@@ -46,11 +46,17 @@ const { GLOSSARY } = await import(pathToFileURL(path.join(CLIENT, "src", "market
 // added at once, they sometimes took the connections first and the entry waited.
 // PERF-3: on Home it also preloads the lazy parts Home's first look draws
 // (data-home-need), so the deck's code is in before Home draws.
+// PERF-4: and on any other main page, that page's own chunk and the chunks it
+// imports (data-page-need: [address pattern, files] pairs, PAGE_CHUNKS below),
+// so they download beside App's instead of after App has run. Preloaded, not
+// imported: importing them from main.jsx split App's shared code into a dozen
+// small chunks and grew Home's first look by 21 KB.
 const PRELOAD_JS = `(function(){try{var s=document.currentScript;if(!s||!/^\\/(app|dashboard|donors)(\\/|$)/.test(location.pathname)||!localStorage.getItem("npe_token"))return;` +
   `var t=localStorage.getItem("npe_token"),api=s.getAttribute("data-api"),here=location.pathname.replace(/(.)\\/+$/,"$1"),e=window.__stewardEarly={at:Date.now(),reads:{}};` +
   `JSON.parse(s.getAttribute(here==="/dashboard"?"data-home-reads":"data-reads")||"[]").forEach(function(u){e.reads[u]=fetch(api+u,{headers:{"Content-Type":"application/json",Authorization:"Bearer "+t}}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});});` +
   `var add=function(rel,h){var l=document.createElement("link");l.rel=rel;l.href=h;document.head.appendChild(l);};` +
-  `setTimeout(function(){try{JSON.parse(s.getAttribute("data-need")||"[]").concat(here==="/dashboard"?JSON.parse(s.getAttribute("data-home-need")||"[]"):[]).forEach(function(h){add("modulepreload",h);});` +
+  `setTimeout(function(){try{var pn=JSON.parse(s.getAttribute("data-page-need")||"[]"),pg=[];pn.forEach(function(x){if(!pg.length&&new RegExp(x[0]).test(here))pg=x[1];});` +
+  `JSON.parse(s.getAttribute("data-need")||"[]").concat(here==="/dashboard"?JSON.parse(s.getAttribute("data-home-need")||"[]"):[],pg).forEach(function(h){add("modulepreload",h);});` +
   `(s.getAttribute("data-font-files")||"").split(" ").forEach(function(h){if(!h)return;var l=document.createElement("link");l.rel="preload";l.as="font";l.type="font/woff2";l.crossOrigin="anonymous";l.href=h;document.head.appendChild(l);});}catch(e){}},0);}catch(e){}})();`;
 const attr = v => String(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 const SHELL = path.join(DIST, "app.html");
@@ -99,6 +105,19 @@ function appPreload() {
       const into = new Set(); walk(key, into);
       for (const f of into) if (!have.has(f) && !want.has(f) && !homeNeed.includes("/" + f)) homeNeed.push("/" + f);
     }
+  // PERF-4: each main page's chunk with what it imports that App has not.
+  const PAGE_CHUNKS = [
+    ["^/donors(/|$)", "src/components/Donors.jsx"], ["^/app/fundraising/?$", "src/components/Fundraising.jsx"],
+    ["^/app/reports/?$", "src/components/Reports.jsx"], ["^/app/settings/?$", "src/components/Settings.jsx"],
+    ["^/app/journeys/?$", "src/components/JourneyBuilder.jsx"], ["^/app/tasks/?$", "src/components/Tasks.jsx"],
+    ["^/app/communications/?$", "src/components/Communications.jsx"], ["^/app/grants/?$", "src/components/Grants.jsx"],
+    ["^/app/finance/?$", "src/components/Finance.jsx"],
+  ];
+  const pageNeed = PAGE_CHUNKS.map(([re, key]) => {
+    if (!man[key]) throw new Error(`prerender: PAGE_CHUNKS names ${key}, and the manifest has no chunk for it`);
+    const into = new Set(); walk(key, into);
+    return [re, [...into].filter(f => !have.has(f) && !want.has(f)).map(f => "/" + f)];
+  });
   // And the app's fonts (App.jsx's own stylesheet URL, so it is fetched once):
   // asked for now, they are in before Home draws, instead of arriving after it
   // and making a slow phone lay the whole page out again. Added by script, so
@@ -139,7 +158,7 @@ function appPreload() {
   // PERF-3: the boot's reads leave as the preloader runs; a preconnect first in
   // the block opens their connection while the parser is still in the head.
   const pre = apiBase ? `<link rel="preconnect" href="${attr(new URL(apiBase).origin)}" crossorigin>` : "";
-  return `<!-- app-preload -->${pre}${faces ? `<style data-app-fonts>${faces}</style>` : ""}<script data-need="${attr(JSON.stringify(need))}"${homeNeed.length ? ` data-home-need="${attr(JSON.stringify(homeNeed))}"` : ""}${apiBase ? ` data-api="${attr(apiBase)}" data-reads="${attr(reads(false))}" data-home-reads="${attr(reads(true))}"` : ""}${files.length ? ` data-font-files="${attr(files.join(" "))}"` : ""}>${PRELOAD_JS}</script><!-- /app-preload -->\n`;
+  return `<!-- app-preload -->${pre}${faces ? `<style data-app-fonts>${faces}</style>` : ""}<script data-need="${attr(JSON.stringify(need))}"${homeNeed.length ? ` data-home-need="${attr(JSON.stringify(homeNeed))}"` : ""} data-page-need="${attr(JSON.stringify(pageNeed))}"${apiBase ? ` data-api="${attr(apiBase)}" data-reads="${attr(reads(false))}" data-home-reads="${attr(reads(true))}"` : ""}${files.length ? ` data-font-files="${attr(files.join(" "))}"` : ""}>${PRELOAD_JS}</script><!-- /app-preload -->\n`;
 }
 
 const base = seo.pageShell(shell);

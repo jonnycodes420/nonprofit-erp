@@ -146,6 +146,14 @@ const copy = v => (v && typeof v === "object" ? structuredClone(v) : v);
 // gets a fresh answer. A write forgets them like `kept`.
 const parked = new Map();
 const PARKED_TTL_MS = 30000;
+// PERF-4: an answer just handed over from `parked` is shared, for a moment,
+// with a second reader of the same path, as an answer still in flight is: a
+// profile reads its record, its rail and its journeys from two panels each,
+// and the second asked the network again a few milliseconds after the first
+// was handed the bundle's answer (a second wave of seven reads before the
+// profile was ready). A write forgets it with the rest.
+const handed = new Map();
+const HANDED_SHARE_MS = 1500;
 // HARDEN-2: writes that only record that something was looked at, and change
 // no answer any read here is holding, so they forget nothing. Home's cards
 // marked seen the moment they drew, and that threw away Home's own reads
@@ -251,7 +259,7 @@ export async function apiFetch(path, options = {}) {
   // STALE-1: and once it has landed, it says what it touched (lib/changes.js),
   // so every view on screen that shows one of those kinds re-reads it.
   if (method !== "GET") {
-    kept.clear(); parked.clear(); inFlight.clear(); forgetLists({ path, method, phase: "before" });
+    kept.clear(); parked.clear(); handed.clear(); inFlight.clear(); forgetLists({ path, method, phase: "before" });
     const after = () => forgetLists({ path, method, phase: "after" });
     return apiFetchNow(path, options).then(v => { after(); announce(kindsOfWrite(path, method, options.body)); return v; }, e => { after(); throw e; });
   }
@@ -260,7 +268,9 @@ export async function apiFetch(path, options = {}) {
   const hit = kept.get(key);
   if (hit && Date.now() - hit.at < SHARED_TTL_MS) return copy(hit.value);
   const held = parked.get(key);
-  if (held) { parked.delete(key); if (Date.now() - held.at < PARKED_TTL_MS) return copy(held.value); }
+  if (held) { parked.delete(key); if (Date.now() - held.at < PARKED_TTL_MS) { handed.set(key, { at: Date.now(), value: held.value }); return copy(held.value); } }
+  const just = handed.get(key);
+  if (just) { if (Date.now() - just.at < HANDED_SHARE_MS) return copy(just.value); handed.delete(key); }
   if (!inFlight.has(key)) {
     inFlight.set(key, apiFetchNow(path, options)
       .then(v => { if (SHARED_READS.some(r => r.test(path))) kept.set(key, { at: Date.now(), value: v }); return v; })
@@ -278,7 +288,9 @@ export function takeParked(path) {
   const held = parked.get(key);
   if (!held) return undefined;
   parked.delete(key);
-  return Date.now() - held.at < PARKED_TTL_MS ? copy(held.value) : undefined;
+  if (Date.now() - held.at >= PARKED_TTL_MS) return undefined;
+  handed.set(key, { at: Date.now(), value: held.value });
+  return copy(held.value);
 }
 
 // PERF-3: settles when a read already asked for is in (taking nothing), or at

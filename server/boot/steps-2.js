@@ -1081,6 +1081,8 @@ app.use(require("../../routes/supportAccess").routers.r0);   // FIX-57 open as s
 // SPLIT-2 server.js piece 370
 app.use(require("../admin/opsRoutes").routers.r0);   // DEVBOARD-1 /ops: super-admins only, 404 to anyone else
 // SPLIT-2 end
+// PERF-4: the page-ready mark, time only (server/perf/pageTiming.js)
+app.use(require("../perf/pageTiming").routers.r0);
 // SPLIT-2 server.js piece 371
 app.use(require("../../routes/media").routers.r0);         // EMAIL-1 the media library
 // SPLIT-2 end

@@ -231,7 +231,7 @@ function report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS,
   return out;
 }
 
-module.exports = { ORGS, routeOf, report };
+module.exports = { ORGS, routeOf, report, extras };
 if (require.main === module) {
   (MODE === "seed" ? seed() : MODE === "run" ? run().then(o => process.exit(o.pass ? 0 : 1)) : Promise.reject(new Error("usage: ten-orgs.js seed|run")))
     .catch(e => { console.error(e.stack || e.message); process.exit(1); });

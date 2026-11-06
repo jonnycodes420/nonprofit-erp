@@ -142,6 +142,24 @@ function Trend({ walks }) {
   </section>;
 }
 
+// PERF-4: the page-ready mark (client/src/lib/pageReady.js) as browsers report
+// it to this web process: time only, kept a day in memory, so a deploy starts it again.
+function PageTiming({ t }) {
+  const ms = v => (v == null ? "–" : `${(v / 1000).toFixed(1)} s`);
+  const NAMES = { home: "Home", donors: "Donors", profile: "A profile", fundraising: "Fundraising", "giving-report": "Giving report", journeys: "Journeys", settings: "Settings", other: "Other pages" };
+  return <section style={card} data-testid="ops-page-timing">
+    <h2 style={h2}>Page timing</h2>
+    <p style={says}>How long each page took to be ready (drawn, its numbers in, no spinner), as people's browsers reported it to this web process since {t && t.since ? t.since.slice(0, 16).replace("T", " ") + " UTC" : "its last deploy"}. First is the first page after signing in or a reload; Moved is a page opened from inside the app. Median and the slowest one in twenty; the bar is 2 s.</p>
+    {!t ? <p style={says}>Not reported yet.</p> :
+      <table style={{ borderCollapse: "collapse", width: "100%" }}><tbody>
+        <tr><td style={cell} /><td style={{ ...cell, fontWeight: 600 }}>First</td><td style={{ ...cell, fontWeight: 600 }}>Moved</td></tr>
+        {t.pages.map(r => <tr key={r.page}><td style={{ ...cell, fontWeight: 600 }}>{NAMES[r.page] || r.page}</td>
+          <td style={cell}>{r.first.n ? `${ms(r.first.p50)} · ${ms(r.first.p95)} (${r.first.n})` : "none yet"}</td>
+          <td style={cell}>{r.moved.n ? `${ms(r.moved.p50)} · ${ms(r.moved.p95)} (${r.moved.n})` : "none yet"}</td></tr>)}
+      </tbody></table>}
+  </section>;
+}
+
 function Customers({ customers, now }) {
   return <section style={card}>
     <h2 style={h2}>Customers</h2>
@@ -167,6 +185,7 @@ export default function OpsView({ data, error, now = Date.now(), tabs = null, on
     <Board board={data.board} onShot={onShot} />
     <Builds builds={data.builds} now={now} />
     <Trend walks={data.board.ok ? data.board.walks : []} />
+    <PageTiming t={data.pageTiming} />
     <Customers customers={data.customers} now={now} />
   </div></div>;
 }
