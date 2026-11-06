@@ -436,3 +436,18 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 - **A file name never makes an event or a date.** A phone is dropped only when it is the org's own or on more than 10
   people. A source system is named only when one of its own columns is in the file.
 
+
+## IMPORT-9 · Undo puts back the people it brought back, and the reader says what it guessed (2026-11-05)
+
+- **An import's Undo reverses every person it touched.** Created people are removed; people it brought back from the
+  trash ("Bring them back") go back to the trash with a trash row of their own; people it changed get their pre-import
+  fields back (`personChanges`). Someone with a gift, note, call or task added since stays and is named. The trail is in
+  the trash rows (`deleted_records.row_data.__bringBack`, claimed by the import as `summary_json.restoredFromTrash`),
+  never a new table (`server/imports/restoredPeople.js`).
+- **A date column that could be month first or day first is a question, once per column, that blocks Import**
+  (`answers.dateOrder[<table>|<column>]`, `shared/sheetGuesses.js`). A column that settles it (a 13/3/25, or a 3/13/25)
+  or a known US export (Bloomerang, DonorPerfect…) is read that way and says so. A column that writes its dates more
+  than one way lists the rows written differently.
+- **Every amount the reader tidied is counted in the preview** ("We tidied 6 amounts. See them."). Plain is a number,
+  `75`, `75.50`, `$75`, `$75.50`, `$1,250.00`; anything else (a comma, one decimal, a word, a k) was tidied.
+- Leftovers from undos before this build: `scripts/ops/import9-undo-leftovers.js` (dry run first; `--apply`; `--undo=<audit id>`).
