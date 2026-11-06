@@ -6,8 +6,9 @@ Muse already made Railway's `staging` environment in project `nonprofit-erp`, wi
 
 ### 1. Railway, project nonprofit-erp, environment staging: the services (no cost of its own)
 
-1. **`web` and `worker`, Settings, Source: Disconnect the repo.** Both are connected to `main` right now, so every merge would auto-deploy them before CI has run. CI deploys them with `railway up` (Git auto-deploy stays off, as on prod).
-2. **`Postgres`, Settings, Region: move it to US East (Virginia)**, where `web` and `worker` run. It is in `sfo` now, which puts about 70 ms on every query. It is empty, so moving it loses nothing.
+1. ~~**`web` and `worker`, Settings, Source: Disconnect the repo.**~~ **Done (Muse, 2026-11-06; checked: both have no source).** CI deploys them with `railway up` (Git auto-deploy stays off, as on prod).
+2. ~~**`Postgres`: move it to US East (Virginia)**, where `web` and `worker` run.~~ **Done (Muse recreated it in us-east4, 2026-11-06; checked).**
+   - **Left over:** the old `sfo` volume, `postgres-volume` (5 GB, mounted on nothing), is still in the staging environment and is likely still billed. Delete it: staging, the volume, Settings, **Delete volume**. Keep `postgres-volume-QYxT` (the new database's).
 3. **`web`, Settings, Deploy:** start command `node server.js`, healthcheck path `/ready`, replicas 1 (the same as prod). **Networking: Generate Domain.** That `https://…up.railway.app` address is **STAGING_API_URL** in steps 5 to 8.
 4. **`worker`, Settings, Deploy:** start command `node server.js`, healthcheck path `/health`, replicas 1. **No domain.**
 
