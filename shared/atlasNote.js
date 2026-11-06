@@ -28,8 +28,11 @@ export function conversationNote(text, step) {
   if (!all.length) return words;
   // Where the conversation starts: the sentence naming the person, with the
   // kind of conversation if there is one.
+  const own = s => OWN_REQUEST.has(readClause(s.replace(/[.!?;]+$/, "")).kind) && readClause(s.replace(/[.!?;]+$/, "")).kind !== "log_conversation";
   let at = all.findIndex(s => who && lower(s).includes(who) && (!how || lower(s).includes(how)));
-  if (at < 0) at = all.findIndex(s => who && lower(s).includes(who));
+  // "Add Marlowe to the journey. Had lunch with her.": the call's sentence, not the request before it.
+  if (at < 0 && how) at = all.findIndex(s => lower(s).includes(how) && !own(s));
+  if (at < 0) at = all.findIndex(s => who && lower(s).includes(who) && !own(s));
   if (at < 0 && words) at = all.findIndex(s => lower(s).includes(lower(words).slice(0, 24)));
   if (at < 0) return words;
   const out = [all[at]];
