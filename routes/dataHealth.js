@@ -47,6 +47,7 @@
 const express = require("express");
 const DH = require("../dataHealth");
 const NMONEY = require("../shared/numbers/money");   // NUMBERS-5
+const MOVES = require("../server/donors/mergeMoves");   // SPEED-2: the merge's moves, set-based
 const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
@@ -568,26 +569,29 @@ app.post("/data-health/pairs/dismiss", requireAuth, checkWriteAccess, wrap(async
 
 // What a merge would move, per table, so the side-by-side screen can say it.
 async function movingCounts(orgId, personId) {
-  const out = {};
-  for (const [t, c] of MERGE_REFS) {
-    const [{ n }] = await query(`SELECT COUNT(*)::int AS n FROM ${t} WHERE org_id=? AND ${refMatch(t, c).sql}`, [orgId, personId]);
-    if (n) out[`${t}.${c}`] = n;
-  }
-  return out;
+  return MOVES.countRefs(query, orgId, personId, MERGE_REFS, refMatch);   // SPEED-2: one statement, not one per table
 }
 app.get("/data-health/pair", requireAuth, wrap(async (req, res) => {
+  const { result: body, trips } = await require("../db").countRoundTrips(() => pairBody(req));
+  if (trips != null) res.set("X-Steward-Round-Trips", String(trips));
+  if (body.status) return res.status(body.status).json(body.json);
+  res.json(body);
+}));
+async function pairBody(req) {
   const { a, b } = req.query;
   const rows = await query("SELECT * FROM donors WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL", [req.user.orgId, [String(a), String(b)]]);
   const A = rows.find(d => d.id === a), B = rows.find(d => d.id === b);
-  if (!A || !B) return res.status(404).json({ error: "Donor not found" });
+  if (!A || !B) return { status: 404, json: { error: "Donor not found" } };
   // The default kept record: the one with more gifts, then the older one.
   const keepA = Number(A.gift_count || 0) !== Number(B.gift_count || 0)
     ? Number(A.gift_count || 0) > Number(B.gift_count || 0)
     : new Date(A.created_at) <= new Date(B.created_at);
   const kept = keepA ? A : B, other = keepA ? B : A;
-  const households = await query("SELECT id, name FROM households WHERE org_id=? AND id = ANY(?)", [req.user.orgId, [A.household_id, B.household_id].filter(Boolean)]).catch(() => []);
-  const judged = await judge(A, B);
-  res.json({
+  // SPEED-2: the four reads leave together
+  const [households, judged, movingA, movingB] = await Promise.all([
+    query("SELECT id, name FROM households WHERE org_id=? AND id = ANY(?)", [req.user.orgId, [A.household_id, B.household_id].filter(Boolean)]).catch(() => []),
+    judge(A, B), movingCounts(req.user.orgId, A.id), movingCounts(req.user.orgId, B.id)]);
+  return {
     keptId: kept.id, otherId: other.id,
     records: { [A.id]: A, [B.id]: B },
     fields: DH.MERGE_FIELDS.map(([key, label]) => ({ key, label })),
@@ -598,10 +602,10 @@ app.get("/data-health/pair", requireAuth, wrap(async (req, res) => {
     households: Object.fromEntries(households.map(h => [h.id, h.name])),
     reasons: judged ? judged.reasons : [], confidence: judged ? judged.confidence : null,
     crossHousehold: !!A.household_id && !!B.household_id && A.household_id !== B.household_id,
-    moving: { [A.id]: await movingCounts(req.user.orgId, A.id), [B.id]: await movingCounts(req.user.orgId, B.id) },
+    moving: { [A.id]: movingA, [B.id]: movingB },
     lifetimeCents: { [A.id]: cents(A.total_giving), [B.id]: cents(B.total_giving) },
-  });
-}));
+  };
+}
 
 class MergeRefused extends Error { constructor(sentence) { super(sentence); this.sentence = sentence; } }
 let donorColsCache = null;
@@ -611,10 +615,6 @@ async function donorCols() {
     donorColsCache = rows.map(r => r.column_name);
   }
   return donorColsCache;
-}
-async function hasIdCol(client, table) {
-  const r = await queryTx(client, `SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=? AND column_name='id'`, [table]);
-  return r.length > 0;
 }
 const giftCentsTx = async (client, orgId, id) => {
   const [r] = await queryTx(client, "SELECT COALESCE(SUM(round(amount*100)),0)::bigint AS c FROM gifts WHERE org_id=? AND donor_id=?", [orgId, id]);
@@ -633,12 +633,15 @@ async function mergePeople(orgId, keptId, mergedId, { choices = null, me, confid
   return merged;
 }
 function mergeInTx(orgId, keptId, mergedId, { choices, me, confidence, reasons, bulk }) {
-  return withAdvisoryLock(`merge:${orgId}`, () => withTransaction(async (client) => {
+  return withAdvisoryLock(`merge:${orgId}`, () => withTransaction(async (raw) => {
+    const client = require("../db").countedClient(raw);   // SPEED-2: TEST_MODE counts each statement; prod: the same client
     const snap = await queryTx(client, `SELECT id, to_jsonb(d.*) AS j FROM donors d WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL FOR UPDATE`, [orgId, [keptId, mergedId]]);
     const keptJ = snap.find(r => r.id === keptId)?.j, mergedJ = snap.find(r => r.id === mergedId)?.j;
     if (!keptJ || !mergedJ) { const e = new MergeRefused("One of these people is no longer on file."); e.status = 404; throw e; }
-    const keptCentsBefore = await giftCentsTx(client, orgId, keptId);
-    const mergedCentsBefore = await giftCentsTx(client, orgId, mergedId);
+    // SPEED-2: both people's money before, in one statement
+    const sums = await queryTx(client, "SELECT donor_id, COALESCE(SUM(round(amount*100)),0)::bigint AS c FROM gifts WHERE org_id=? AND donor_id = ANY(?) GROUP BY donor_id", [orgId, [keptId, mergedId]]);
+    const centsOf = id => Number((sums.find(r => r.donor_id === id) || { c: 0 }).c);
+    const keptCentsBefore = centsOf(keptId), mergedCentsBefore = centsOf(mergedId);
     const moved = [], setAside = [];
     const pick = choices && typeof choices === "object" ? { ...DH.defaultChoices(keptJ, mergedJ), ...choices } : DH.defaultChoices(keptJ, mergedJ);
     for (const k of Object.keys(pick)) if (pick[k] !== "kept" && pick[k] !== "other") pick[k] = "kept";
@@ -655,54 +658,13 @@ function mergeInTx(orgId, keptId, mergedId, { choices, me, confidence, reasons, 
     for (const r of selfRel) { await runTx(client, "DELETE FROM donor_relationships WHERE id=? AND org_id=?", [r.j.id, orgId]); setAside.push({ table: "donor_relationships", why: "would relate the person to themselves", row: r.j }); }
     for (const r of selfCredit) { await runTx(client, "DELETE FROM gift_soft_credits WHERE id=? AND org_id=?", [r.j.id, orgId]); setAside.push({ table: "gift_soft_credits", why: "would soft-credit the person on their own gift", row: r.j }); }
 
-    // 2. Every pointer, table by table. A bulk UPDATE first; if a unique key
-    //    objects, row by row, and the merged person's twin is set aside.
-    for (const [t, c, mode] of MERGE_REFS) {
-      const withId = await hasIdCol(client, t);
-      const keyCols = KEY_COLS[t] || [];
-      const ref = refMatch(t, c);
-      const rows = await queryTx(client, `SELECT to_jsonb(x.*) AS j FROM ${t} x WHERE org_id=? AND ${ref.sql}`, [orgId, mergedId]);
-      if (!rows.length) continue;
-      if (ref.array) {
-        // Each row's array before the merge is kept on the merge record, so
-        // undo restores it exactly (order and all), not by a reverse guess.
-        await runTx(client,
-          `UPDATE ${t} SET ${c} = CASE WHEN ?=ANY(${c}) THEN array_remove(${c}, ?) ELSE array_replace(${c}, ?, ?) END
-            WHERE org_id=? AND ?=ANY(${c})`, [keptId, mergedId, mergedId, keptId, orgId, mergedId]);
-        moved.push({ table: t, column: c, ids: rows.map(r => r.j.id), arrays: rows.map(r => ({ id: r.j.id, before: r.j[c] })) });
-        continue;
-      }
-      const match = j => withId
-        ? { sql: "id=?", vals: [j.id] }
-        : { sql: [`org_id=?`, ...keyCols.map(k => `${k}=?`)].join(" AND "), vals: [orgId, ...keyCols.map(k => j[k])] };
-      await client.query("SAVEPOINT dh_bulk");
-      try {
-        await runTx(client, `UPDATE ${t} SET ${c}=? WHERE org_id=? AND ${ref.sql}`, [keptId, orgId, mergedId]);
-        await client.query("RELEASE SAVEPOINT dh_bulk");
-        moved.push({ table: t, column: c, ids: withId ? rows.map(r => r.j.id) : null, keys: withId ? null : rows.map(r => Object.fromEntries(keyCols.map(k => [k, r.j[k]]))) });
-        continue;
-      } catch (e) {
-        await client.query("ROLLBACK TO SAVEPOINT dh_bulk");
-        if (e.code !== "23505") throw e;
-      }
-      const ids = [], keys = [];
-      for (const r of rows) {
-        const m = match(r.j);
-        await client.query("SAVEPOINT dh_row");
-        try {
-          await runTx(client, `UPDATE ${t} SET ${c}=? WHERE ${m.sql} AND ${c}=?`, [keptId, ...m.vals, mergedId]);
-          await client.query("RELEASE SAVEPOINT dh_row");
-          if (withId) ids.push(r.j.id); else keys.push(Object.fromEntries(keyCols.map(k => [k, r.j[k]])));
-        } catch (e) {
-          await client.query("ROLLBACK TO SAVEPOINT dh_row");
-          if (e.code !== "23505") throw e;
-          if (mode === "refuse") throw new MergeRefused(REFUSE_WORDS[t] || `Both people have a record in ${t} that only one person may hold.`);
-          await runTx(client, `DELETE FROM ${t} WHERE ${m.sql} AND ${c}=?`, [...m.vals, mergedId]);
-          setAside.push({ table: t, column: c, why: "the kept person already has this one", row: r.j });
-        }
-      }
-      moved.push({ table: t, column: c, ids: withId ? ids : null, keys: withId ? null : keys });
-    }
+    // 2. Every pointer. SPEED-2: every table's rows read in one statement and
+    //    the columns no unique key covers moved in one more
+    //    (server/donors/mergeMoves.js); a keyed column whose key objects is
+    //    done row by row, and the merged person's twin is set aside.
+    const mv = await MOVES.moveRefs(client, { orgId, keptId, mergedId, refs: MERGE_REFS, refMatch, keyCols: KEY_COLS,
+      refuse: t => new MergeRefused(REFUSE_WORDS[t] || `Both people have a record in ${t} that only one person may hold.`) });
+    moved.push(...mv.moved); setAside.push(...mv.setAside);
 
     // 3. The kept record's values. Chosen fields, both emails and phones kept,
     //    system ids filled where empty, every restriction OR'd, tags, person
@@ -803,10 +765,16 @@ app.post("/data-health/merge", requireAuth, checkWriteAccess, wrap(async (req, r
   const { keptId, mergedId, choices } = req.body || {};
   const me = await who(req);
   try {
-    const [a, b] = await Promise.all([keptId, mergedId].map(id => query("SELECT * FROM donors WHERE id=? AND org_id=?", [id, req.user.orgId]).then(r => r[0])));
-    const judged = a && b ? await judge(a, b) : null;
-    const out = await mergePeople(req.user.orgId, keptId, mergedId, { choices, me, confidence: judged?.confidence || null, reasons: judged?.reasons || null });
-    await afterMerge(req.user.orgId, keptId);
+    // SPEED-2: under TEST_MODE the answer says how many statements the merge
+    // sent (X-Steward-Round-Trips); the merge budget charges each at prod's round trip.
+    const { result: out, trips } = await require("../db").countRoundTrips(async () => {
+      const [a, b] = await Promise.all([keptId, mergedId].map(id => query("SELECT * FROM donors WHERE id=? AND org_id=?", [id, req.user.orgId]).then(r => r[0])));
+      const judged = a && b ? await judge(a, b) : null;
+      const merged = await mergePeople(req.user.orgId, keptId, mergedId, { choices, me, confidence: judged?.confidence || null, reasons: judged?.reasons || null });
+      await afterMerge(req.user.orgId, keptId);
+      return merged;
+    });
+    if (trips != null) res.set("X-Steward-Round-Trips", String(trips));
     req.audit = { ...(req.audit || {}), record: { donor_id: keptId, merged_id: mergedId, merge_id: out.mergeId } };
     res.status(201).json(out);
   } catch (e) { sendRefusal(res, e); }
