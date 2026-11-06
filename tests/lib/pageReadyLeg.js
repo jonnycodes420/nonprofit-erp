@@ -54,10 +54,17 @@ async function seedOrg(q, o) {
   for (const t of tabs) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [o.id]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [o.id]);
   await q("SET session_replication_role = origin");
-  const seedMany = require("../../scripts/load/seed-many.js");
-  await seedMany.seedOrg(o, bcrypt.hashSync("loadtest1234", 8));
-  await require("../../scripts/load/ten-orgs.js").extras(seedMany.pool, o);
-  await seedMany.pool.query("ANALYZE donors; ANALYZE gifts; ANALYZE interactions; ANALYZE tasks; ANALYZE donor_scores; ANALYZE donor_rhythm");
+  // A copy of the seeder of its own: its pool is module-level, and a caller
+  // (perf-app's own seed) may already have ended the shared one.
+  const SEED = require.resolve("../../scripts/load/seed-many.js");
+  delete require.cache[SEED];
+  const seedMany = require(SEED);
+  delete require.cache[SEED];
+  try {
+    await seedMany.seedOrg(o, bcrypt.hashSync("loadtest1234", 8));
+    await require("../../scripts/load/ten-orgs.js").extras(seedMany.pool, o);
+    await seedMany.pool.query("ANALYZE donors; ANALYZE gifts; ANALYZE interactions; ANALYZE tasks; ANALYZE donor_scores; ANALYZE donor_rhythm");
+  } finally { await seedMany.pool.end().catch(() => {}); }
   const [top] = await q(`SELECT id FROM donors WHERE org_id=$1 ORDER BY gift_count DESC, id LIMIT 1`, [o.id]);
   return { email: `admin@${o.slug}.load`, password: "loadtest1234", top: top.id };
 }
