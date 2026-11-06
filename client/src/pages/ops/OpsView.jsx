@@ -146,7 +146,7 @@ function Trend({ walks }) {
 // it to this web process: time only, kept a day in memory, so a deploy starts it again.
 function PageTiming({ t }) {
   const ms = v => (v == null ? "–" : `${(v / 1000).toFixed(1)} s`);
-  const NAMES = { home: "Home", donors: "Donors", profile: "A profile", fundraising: "Fundraising", "giving-report": "Giving report", journeys: "Journeys", settings: "Settings" };
+  const NAMES = { home: "Home", donors: "Donors", profile: "A profile", fundraising: "Fundraising", "giving-report": "Giving report", journeys: "Journeys", settings: "Settings", other: "Other pages" };
   return <section style={card} data-testid="ops-page-timing">
     <h2 style={h2}>Page timing</h2>
     <p style={says}>How long each page took to be ready (drawn, its numbers in, no spinner), as people's browsers reported it to this web process since {t && t.since ? t.since.slice(0, 16).replace("T", " ") + " UTC" : "its last deploy"}. First is the first page after signing in or a reload; Moved is a page opened from inside the app. Median and the slowest one in twenty; the bar is 2 s.</p>
