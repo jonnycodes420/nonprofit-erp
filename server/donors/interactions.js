@@ -192,7 +192,7 @@ async function briefRowsFor(orgId, donorId) {
   lines.push(`person:${donor.id} · ${donor.name}${donor.kind === "organisation" ? " (an organization)" : ""}, `
     + `${money.formatCentsPlain(toCents(donor.total_giving) || 0)} given in total across ${Number(donor.gift_count) || 0} gifts, `
     + `first on ${donor.first_gift_date || "no recorded date"}, most recently on ${donor.last_gift_date || "no recorded date"}`
-    + `${donor.stage ? `, at the stage "${donor.stage}"` : ""}. This organization calls somebody like this a ${givingWord}.`);
+    + `${donor.stage ? `, at the stage "${donor.stage}"` : ""}.`);   // ATLAS-3: the org's word is an instruction (briefFast.vocabularyRule), not a row
 
   // GIFTS — the last twelve, each its own row, with its fund and how it came in.
   const gifts = await query(
@@ -293,7 +293,7 @@ async function briefRowsFor(orgId, donorId) {
   { const c = toCents(donor.total_giving); if (c != null) grounded.push(toDollars(c), c); }
   for (const l of lines) for (const m of String(l).matchAll(/\d+(?:\.\d+)?/g)) grounded.push(Number(m[0]));
 
-  return { donor, org, t, refs, lines, grounded: [...new Set(grounded)], giftCount: gifts.length };
+  return { donor, org, t, refs, lines, grounded: [...new Set(grounded)], giftCount: gifts.length, givingWord };
 }
 
 // GET /donors/:id/brief-rows — EXACTLY what the model would be handed, and
@@ -331,9 +331,21 @@ app.post("/donors/:id/brief", requireAuth, requireCrm, checkWriteAccess, wrap(as
     message: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE
       : "Not set up yet. Steward support can turn on AI drafting for this server, then an admin switches it on in Settings, Data." });
 
+  // ATLAS-3 · first words at once, the last brief kept until a row changes.
+  const BF = require("./briefFast");
+  const fp = BF.fingerprint(ctx.lines);
+  const write = BF.wantsStream(req) ? BF.startStream(res) : null;
+  if (write) write({ type: "start", donorName: ctx.donor.name, opening: BF.openingLines(ctx, require("../../money"), toCents) });
+  const finish = (status, out) => { if (write) { write(status < 300 ? { type: "brief", brief: out } : { type: "error", ...out }); return res.end(); } return res.status(status).json(out); };
+  if (!(req.query && req.query.fresh === "1")) {
+    const hit = await BF.cachedBrief(query, orgId, ctx.donor.id, fp);
+    if (hit) return finish(200, { runId: hit.runId, donorId: ctx.donor.id, donorName: ctx.donor.name, headline: hit.brief.headline, sections: hit.brief.sections,
+      dropped: hit.brief.dropped || [], droppedSentence: B.droppedSentence(hit.brief.dropped || []), rowsRead: ctx.refs.size, footer: B.BRIEF_FOOTER, cached: true, writtenAt: hit.writtenAt });
+  }
+
   const runId = newId("arun");
   await run(`INSERT INTO agent_runs (id,org_id,status,plan,read_summary) VALUES (?,?,?,?,?)`,
-    [runId, orgId, "running", JSON.stringify({ kind: "prospect_brief", donorId: ctx.donor.id }),
+    [runId, orgId, "running", JSON.stringify({ kind: "prospect_brief", donorId: ctx.donor.id, fingerprint: fp }),
      `${ctx.refs.size} rows on ${ctx.donor.name}`]);
 
   const system = [
@@ -349,6 +361,8 @@ app.post("/donors/:id/brief", requireAuth, requireCrm, checkWriteAccess, wrap(as
     "- Quote a conversation rather than summarizing away the words the officer chose.",
     "- Leave a section out if the rows say nothing about it. Do not pad.",
     "- Use this organization's own vocabulary where the rows give it.",
+    ...[BF.vocabularyRule(ctx.givingWord)].filter(Boolean),
+    "- Plain sentences a person would say out loud. Never write about the rows, references or records themselves.",
     "- The headline names who this is and why she is reading it, and contains no figure.",
   ].join("\n");
   const user = [`The rows, on ${ctx.donor.name}:`, "", ...ctx.lines, "", "Write the brief."].join("\n");
@@ -357,7 +371,7 @@ app.post("/donors/:id/brief", requireAuth, requireCrm, checkWriteAccess, wrap(as
   try {
     const client = anthropicFor(orgId);
     const msg = await client.messages.create({
-      model: AGENT_MODEL, max_tokens: 2000, system,
+      model: BF.BRIEF_MODEL(), max_tokens: 1500, system,
       tools: [{ name: "brief", description: "The one-page brief she reads in the car.", strict: true, input_schema: B.BRIEF_SCHEMA }],
       tool_choice: { type: "tool", name: "brief" },
       messages: [{ role: "user", content: user }],
@@ -367,20 +381,20 @@ app.post("/donors/:id/brief", requireAuth, requireCrm, checkWriteAccess, wrap(as
 
   if (!raw) {
     await run("UPDATE agent_runs SET status='failed', finished_at=NOW(), error=? WHERE id=?", [err || "no brief returned", runId]);
-    return res.status(502).json({ error: "The brief could not be written just now.", runId });
+    return finish(502, { error: "The brief could not be written just now.", runId });
   }
 
-  const checked = B.validateBrief(raw, {
+  const checked = BF.scrub(B.validateBrief(raw, {
     rows: ctx.refs,
     ungrounded: (text, opts) => TH.ungroundedClaims(text, opts),
     groundedValues: ctx.grounded,
-  });
+  }));
   await run(
     `UPDATE agent_runs SET status='done', finished_at=NOW(), actions=?, declined=?, withheld=?, withheld_reason=? WHERE id=?`,
     [JSON.stringify({ brief: checked, donorId: ctx.donor.id }), checked.dropped.length, checked.dropped.length,
      checked.dropped.length ? B.droppedSentence(checked.dropped) : null, runId]);
 
-  res.json({
+  finish(200, {
     runId, donorId: ctx.donor.id, donorName: ctx.donor.name,
     headline: checked.headline, sections: checked.sections,
     dropped: checked.dropped, droppedSentence: B.droppedSentence(checked.dropped),
