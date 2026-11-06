@@ -10,6 +10,7 @@ import { fmtFull } from "../shared";
 import { told } from "../../lib/stewardTold";
 import { peopleNamed } from "../../lib/people";
 import { orgTodayCivil } from "../../lib/orgToday";
+import { fundBody, fundLinesProblem } from "../gifts/FundField";   // GIFTS-2: a gift split across funds
 import { offerUndo } from "../EditHistory";
 import { savePledgeSchedule } from "../gifts/PledgeSchedule";
 
@@ -78,8 +79,10 @@ export function useProfileGiving({ donor, journey, setJourneyList, setJourneySug
       &&!(await askConfirm({title:"A receipt already went out",body:`A receipt already went out for this gift${rcpt.receipt_number?` (${rcpt.receipt_number})`:""}, for ${fmtFull(Number(rcpt.amount||was.amount))}. Changing the amount here does not change that receipt; void it and issue a new one from Tax receipts if it needs correcting. Save the new amount?`,yes:"Change the amount"})))return;
     setGiftSaving(true);
     try{
-      const {customFields,...core}=giftEditForm;
-      await apiFetch(`/gifts/${giftId}`,{method:"PUT",body:JSON.stringify(core)});
+      const {customFields,fund,fund_id:_oldFund,...core}=giftEditForm;
+      const fundProblem=fundLinesProblem(core.amount,fund);
+      if(fundProblem){setGiftSaving(false);alert(fundProblem);return;}
+      await apiFetch(`/gifts/${giftId}`,{method:"PUT",body:JSON.stringify({...core,...(fund?fundBody(fund,{editing:true}):{})})});
       if(customFields&&giftCfDefs.length){
         // through the ONE seam — a refused value names its reason
         await apiFetch(`/gifts/${giftId}/custom-fields`,{method:"PUT",body:JSON.stringify({values:customFields})});
@@ -117,6 +120,8 @@ export function useProfileGiving({ donor, journey, setJourneyList, setJourneySug
   };
   const addGift=async()=>{
     if(!addGiftForm.amount||isNaN(Number(addGiftForm.amount)))return;
+    const fundProblem=fundLinesProblem(addGiftForm.amount,addGiftForm.fund);
+    if(fundProblem){setGiftErr(fundProblem);return;}
     let extras;
     try{extras=await giftExtrasBody();}catch(e){setGiftErr(e.message);return;}
     setGiftErr("");
@@ -127,7 +132,7 @@ export function useProfileGiving({ donor, journey, setJourneyList, setJourneySug
         ...extras,
         amount:Number(addGiftForm.amount),date:addGiftForm.date,type:addGiftForm.type,
         campaignId:addGiftForm.campaign_id||undefined,notes:addGiftForm.notes,
-        fund_id:addGiftForm.fund_id,payment_method:addGiftForm.payment_method,
+        ...(addGiftForm.fund?fundBody(addGiftForm.fund):{fund_id:addGiftForm.fund_id}),payment_method:addGiftForm.payment_method,
         acknowledgement_sent:addGiftForm.acknowledgement_sent,
         pledgeId:addGiftForm.pledgeId||undefined,eventId:addGiftForm.eventId||undefined,
         idempotencyKey:addGiftIdemRef.current,

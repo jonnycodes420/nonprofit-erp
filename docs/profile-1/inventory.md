@@ -34,7 +34,7 @@ carry, e.g. a calendar or a household; the test checks the profile's code still 
 | hdr-log-call | Log a call | `LogConversationModal` (LogConversation.jsx) | `[data-testid=dp-primary]` || header · `[data-testid=dp-primary]` · dialog |
 | hdr-plan-followup | Plan a follow-up (when no open thread) | `PlanFollowUpModal` | `[data-testid=dp-plan-followup]` || header · `dp-plan-followup` · code |
 | hdr-more | More ▾ | opens `dp-more-menu` | `[data-testid=dp-more]` || header · `[data-testid=dp-more]` · exists |
-| more-request-gift | Request a gift | `GiftLinkModal` → `POST /stripe/donation-page` | menuitem "Request a gift" || more · `[role=menuitem]:has-text("Request a gift")` · exists |
+| more-request-gift | Send a payment link (was "Request a gift", GIFTS-2) | `GiftLinkModal` → `POST /stripe/donation-page` | menuitem "Send a payment link" || more · `[role=menuitem]:has-text("Send a payment link")` · exists |
 | more-draft-next | Draft the next move (team) | `getAI(donor,"nextmove")` + Suggested modal | menuitem "Draft the next move" || more · `[role=menuitem]:has-text("Draft the next move")` · exists |
 | more-draft-outreach | Draft outreach (team) | `getAI(donor,"outreach")` + Suggested modal | menuitem "Draft outreach" || more · `[role=menuitem]:has-text("Draft outreach")` · exists |
 | more-draft-email | Draft an email (team) | `getAI(donor,"email")` + Suggested modal (Copy the draft `dp-copy-draft`) | menuitem "Draft an email" || more · `[role=menuitem]:has-text("Draft an email")` · exists |

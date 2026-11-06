@@ -23,7 +23,7 @@ const routers = {
 function mount(ctx) {
 const {
   FISCAL_READY, GOAL_CATEGORIES, actor, checkThemeImageDimensions, checkWriteAccess, computeDriftForDonors,
-  computeFirstTouchDelay, computeFundraisingPace, computeRetentionRate, computeStewardshipDebt, driftEngine,
+  computeFirstTouchDelay, computeFundraisingPace, paceWithCommitment, computeRetentionRate, computeStewardshipDebt, driftEngine,
   figureSources, fundraisingCampaignRows, fundraisingGoalsPortfolio, importHealth, normalizeUploadImage,
   openThreadTx, orgForYears, orgTakesGifts, orgTime, orgToday, orgTz, parseCrop, pruneCampaignAssets,
   putThemeAsset, query, recordAssetPointerHistory, requireAdmin, requireAuth, run, snapshotMetricsForOrg,
@@ -282,6 +282,14 @@ async function goalGiftsBetween(orgId, goal, from, to) {
 async function orgGoalRaised(orgId, goal) {
   return (await goalGiftsBetween(orgId, goal, goal.period_start, goal.period_end)).total;
 }
+// GIFTS-2: raised, pledged and committed for the org's goal, by its own switch.
+// A recovery goal counts people coming back, so pledges never count toward it.
+async function goalCommitted(orgId, goal, raised) {
+  const GP = NUMBERS.goalPledges;
+  const pledged = goal.goal_type === "lapsed_recovery" ? 0 : await GP.orgPledgedThrough(query, orgId, goal.period_end);
+  const on = goal.goal_type !== "lapsed_recovery" && GP.countsPledges("org", goal.count_pledges);
+  return { ...GP.committedOf({ raised, pledged, countPledges: on }), goalId: goal.id, kind: "goal", canCount: goal.goal_type !== "lapsed_recovery" };
+}
 
 // The checker reads the goal period rule through the function that draws it.
 require("../../numbers").screens.orgGoalRaised = orgGoalRaised;
@@ -347,6 +355,7 @@ app.get("/goals/active", requireAuth, wrap(async (req, res) => {
     label: goal.label, goalType: goal.goal_type, goalAmount, currentAmount, percent, rawPercent, over,
     periodStart: goal.period_start, periodEnd: goal.period_end,
     recentAmount, recentDonorCount, lastYear,
+    commitment: await goalCommitted(req.user.orgId, goal, currentAmount),   // GIFTS-2
   });
 }));
 
@@ -359,11 +368,23 @@ app.post("/goals", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req,
     return res.status(400).json({ error: "goalType must be lapsed_recovery or total_raised" });
   }
   const id = newId("goal");
+  const countPledges = typeof req.body.countPledges === "boolean" ? req.body.countPledges : null;   // GIFTS-2
   await run(
-    "INSERT INTO fundraising_goals (id,org_id,period_start,period_end,goal_type,goal_amount,label) VALUES (?,?,?,?,?,?,?)",
-    [id, req.user.orgId, periodStart, periodEnd, goalType, parseFloat(goalAmount), label]
+    "INSERT INTO fundraising_goals (id,org_id,period_start,period_end,goal_type,goal_amount,label,count_pledges) VALUES (?,?,?,?,?,?,?,?)",
+    [id, req.user.orgId, periodStart, periodEnd, goalType, parseFloat(goalAmount), label, countPledges]
   );
   res.status(201).json({ id });
+}));
+
+// GIFTS-2 · "Count pledges toward this goal", for the org's goal or a campaign.
+// A setting on the goal, changed by an admin; the audit row is the middleware's.
+app.put("/goals/:kind/:id/count-pledges", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const table = { goal: "fundraising_goals", campaign: "campaigns" }[req.params.kind];
+  if (!table) return res.status(404).json({ error: "Not found" });
+  if (typeof req.body.on !== "boolean") return res.status(400).json({ error: "on must be true or false" });
+  const r = await query(`UPDATE ${table} SET count_pledges = ? WHERE id = ? AND org_id = ? RETURNING id`, [req.body.on, req.params.id, req.user.orgId]);
+  if (!r.length) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true, countPledges: req.body.on });
 }));
 
 // Computes both metrics live (so the number shown is never stale), persists
@@ -546,13 +567,15 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-3"
     // read orgGoalRaised over the goal's own start and end.
     const currentAmount = await orgGoalRaised(orgId, gr);
     const pStart = gr.period_start, pEnd = gr.period_end;
-    const pace = computeFundraisingPace(currentAmount, goalAmount, pStart, pEnd);
+    // GIFTS-2: the goal says whether pledges count; pace reads committed when they do.
+    const commit = await goalCommitted(orgId, gr, currentAmount);
+    const pace = paceWithCommitment(currentAmount, commit, goalAmount, pStart, pEnd);
     // A label that is only the amount again ("25,000") is not a name.
     const label = /^[\s$£€\d,.]*$/.test(String(gr.label || "")) ? null : gr.label;
     goal = {
       id: gr.id, label, goalType: gr.goal_type, goalAmount, currentAmount,
-      periodStart: pStart, periodEnd: pEnd, source: "goal", ...pace,
-      sourceNote: `Counts every gift dated ${pStart} to ${pEnd}, this goal's own dates.`,
+      periodStart: pStart, periodEnd: pEnd, source: "goal", ...pace, commitment: commit,
+      sourceNote: `Counts every gift dated ${pStart} to ${pEnd}, this goal's own dates${commit.countPledges ? ", and what is still owed on open pledges due by then" : ""}.`,
     };
   }
 
