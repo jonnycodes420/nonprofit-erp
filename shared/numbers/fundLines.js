@@ -93,6 +93,9 @@ const LEDGER_FUND_ROWS = (orgParam = "?") => `(
      WHERE ft.org_id = ${orgParam} AND ft.gift_id IS NOT NULL
   )`;
 
+// The cents of the fund rows above, summed (alias of GIFT_FUND_ROWS's table).
+const LINES_CENTS = (gf = "gf") => `COALESCE(SUM(ROUND(${gf}.amount * 100)), 0)::bigint`;
+
 // Lines for a set of gifts, for the screens: Map giftId → [{ fundId, fundName, amount }].
 async function linesFor(query, orgId, giftIds) {
   const ids = [...new Set((giftIds || []).filter(Boolean))];
@@ -110,4 +113,4 @@ async function linesFor(query, orgId, giftIds) {
   return out;
 }
 
-module.exports = { linesRefusal, normalLines, GIFT_FUND_ROWS, LEDGER_FUND_ROWS, linesFor, MAX_LINES, cents };
+module.exports = { linesRefusal, normalLines, GIFT_FUND_ROWS, LINES_CENTS, LEDGER_FUND_ROWS, linesFor, MAX_LINES, cents };

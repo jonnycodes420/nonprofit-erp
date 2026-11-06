@@ -488,7 +488,7 @@ app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
       WHERE ft.org_id=? AND ft.fund_id IS NOT NULL AND ft.type='income'
       GROUP BY 1,2,3
       UNION ALL
-     SELECT gf.fund_id, 'donor', d.name, COALESCE(SUM(ROUND(gf.amount*100)),0)::bigint
+     SELECT gf.fund_id, 'donor', d.name, ${NUM.fundLines.LINES_CENTS("gf")}
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
        JOIN ${NUM.fundLines.GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id   -- GIFTS-2
       WHERE g.org_id=? AND gf.fund_id IS NOT NULL AND d.deleted_at IS NULL AND ${NUM.money.MONEY("g")}
@@ -497,7 +497,7 @@ app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
      SELECT ft.fund_id, 'ledger', ft.vendor_donor, COALESCE(SUM(ROUND(ft.amount*100)),0)::bigint
        FROM ${NUM.fundLines.LEDGER_FUND_ROWS()} ft
       WHERE ft.org_id=? AND ft.fund_id IS NOT NULL AND ft.type='income'
-        AND ft.grant_id IS NULL AND COALESCE(ft.vendor_donor,'') <> ''
+        AND ft.grant_id IS NULL AND ft.gift_id IS NULL AND COALESCE(ft.vendor_donor,'') <> ''   -- GIFTS-2: a gift is the donor line above, never named twice
       GROUP BY 1,2,3
       ORDER BY 4 DESC`, [orgId, orgId, orgId, orgId, orgId]);
   const byFund = new Map();
