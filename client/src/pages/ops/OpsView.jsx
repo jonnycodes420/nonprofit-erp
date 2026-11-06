@@ -6,7 +6,7 @@ import { countLabel } from "../../../../shared/countWords.js";
 
 const INK = "#0F1A12", WHITE = "#FFFFFF", CREAM = "#F0EDE6", EMERALD = "#0D5C3A", BRASS = "#C9A84C";
 const STATES = ["open", "reopened", "fixed", "verified"];
-const SOURCES = ["walk", "customer", "build follow-up"];
+const SOURCES = ["walk", "jonathan", "customer", "build follow-up"];   // DEVBOARD-2: "jonathan" is a Fail marked on the Map tab
 
 const page = { background: CREAM, minHeight: "100vh", color: INK, fontFamily: "Inter, system-ui, sans-serif", padding: "24px 16px 48px" };
 const sheet = { maxWidth: 1100, margin: "0 auto" };
@@ -65,7 +65,7 @@ function Health({ h, now }) {
   </section>;
 }
 
-function Board({ board }) {
+function Board({ board, onShot }) {
   const [source, setSource] = useState("");
   const [state, setState] = useState("live");
   if (!board.ok) return <section style={card}><h2 style={h2}>The board</h2><Down error={board.error} /></section>;
@@ -74,7 +74,7 @@ function Board({ board }) {
   const sel = { fontSize: 13, padding: "4px 6px", marginRight: 8, border: `1px solid ${INK}33`, borderRadius: 6, background: WHITE, color: INK };
   return <section style={card}>
     <h2 style={h2}>The board</h2>
-    <p style={says}>Every finding, from a walk, a customer or a build. Open → fixed when its build merges → verified when the next walk passes it.
+    <p style={says}>Every finding, from a walk, your checks on the Map, a customer or a build. Open → fixed when its build merges → verified when the next walk passes it.
       {" "}{STATES.map(s => `${board.counts[s]} ${s}`).join(" · ")}.</p>
     <div style={{ marginBottom: 10 }}>
       <select aria-label="Source" style={sel} value={source} onChange={e => setSource(e.target.value)}>
@@ -91,7 +91,10 @@ function Board({ board }) {
       <table style={{ borderCollapse: "collapse", width: "100%" }}><tbody>
         {g.shown.map(it => <tr key={it.id}>
           <td style={{ ...cell, width: 190, fontFamily: "ui-monospace, monospace", fontSize: 12 }}>{it.id}</td>
-          <td style={cell}>{it.words}{it.customer ? <span style={{ opacity: 0.7 }}> · from {it.customer}</span> : null}</td>
+          <td style={cell}>{it.words}{it.customer ? <span style={{ opacity: 0.7 }}> · from {it.customer}</span> : null}
+            {it.check && it.source === "jonathan" ? <span style={{ opacity: 0.7 }}> · {it.check}</span> : null}
+            {it.verifiedBy === "jonathan" ? <span style={{ opacity: 0.7 }}> · you passed it on the Map</span> : null}
+            {it.shot && onShot ? <> · <button type="button" onClick={() => onShot(it.shot)} style={{ color: EMERALD, background: "none", border: 0, padding: 0, cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>screenshot</button></> : null}</td>
           <td style={{ ...cell, width: 110 }}>{it.source}</td>
           <td style={{ ...cell, width: 90 }}><span style={pill(it.state === "verified" ? true : it.state === "open" || it.state === "reopened" ? false : null)}>{it.state}</span></td>
         </tr>)}
@@ -152,15 +155,16 @@ function Customers({ customers, now }) {
   </section>;
 }
 
-export default function OpsView({ data, error, now = Date.now() }) {
-  if (error) return <div style={page}><div style={sheet}><h1 style={{ fontSize: 24 }}>Ops</h1><Down error={error} /></div></div>;
-  if (!data) return <div style={page}><div style={sheet}><h1 style={{ fontSize: 24 }}>Ops</h1><p style={says}>Loading…</p></div></div>;
+export default function OpsView({ data, error, now = Date.now(), tabs = null, onShot = null }) {
+  if (error) return <div style={page}><div style={sheet}><h1 style={{ fontSize: 24 }}>Ops</h1>{tabs}<Down error={error} /></div></div>;
+  if (!data) return <div style={page}><div style={sheet}><h1 style={{ fontSize: 24 }}>Ops</h1>{tabs}<p style={says}>Loading…</p></div></div>;
   return <div style={page}><div style={sheet}>
     <h1 style={{ fontSize: 24, margin: "0 0 4px" }}>Ops</h1>
+    {tabs}
     <p style={says}>{data.refreshedAt ? `Summaries refreshed ${ago(data.refreshedAt, now)} ago by the worker${data.stale ? ", which is late: it should refresh every five minutes" : ""}.` : "The worker has not refreshed the summaries yet."}
       {data.githubAt ? ` GitHub read ${ago(data.githubAt, now)} ago.` : ""}</p>
     <Health h={data.health} now={now} />
-    <Board board={data.board} />
+    <Board board={data.board} onShot={onShot} />
     <Builds builds={data.builds} now={now} />
     <Trend walks={data.board.ok ? data.board.walks : []} />
     <Customers customers={data.customers} now={now} />

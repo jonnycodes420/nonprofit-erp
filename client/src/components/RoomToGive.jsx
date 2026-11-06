@@ -12,6 +12,7 @@ import { apiFetch } from "../api";
 import { T, Modal } from "./shared";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import { errorMessage } from "../lib/domainError";
+import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { postDownload, rangeOf, dollarsOf, dateWords, ROOM_LABEL } from "../lib/majorGifts";
 
 const LABEL = { fontSize: 11, fontWeight: 700, color: T.ink3 };
@@ -236,7 +237,7 @@ export function ScreeningFileModal({ who: given, onClose }) {
 export function ScreeningImportModal({ onClose, onDone }) {
   const [file, setFile] = useState(null);       // { name, text }
   const [provider, setProvider] = useState("");
-  const [screenedOn, setScreenedOn] = useState(new Date().toISOString().slice(0, 10));
+  const [screenedOn, setScreenedOn] = useState(orgTodayCivil());
   const [pre, setPre] = useState(null);
   const [mapping, setMapping] = useState({});
   const [result, setResult] = useState(null);

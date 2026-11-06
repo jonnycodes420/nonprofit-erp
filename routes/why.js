@@ -539,7 +539,10 @@ async function runQueryPlan(req, plan, typed, source) {
   const r = await AQ.runQuery(req.user.orgId, plan, today);
   if (source !== "replay") await logQuestion(req.user.orgId, typed || "(query)", `query: ${plan.entity}`, true);
   const a = queryAnswerShape(plan, r);
-  return { ...a, question: { text: typed }, planSource: source, followUps: queryFollowUps(plan) };
+  // MONEY-3: why these people, in plain words ("gave last December, nothing
+  // since Jan 1"), for the header over a list (Atlas's list reads it).
+  const reasonWords = require("../server/shared/reasonWords").reasonWords(plan, today, AQ.queryWords);
+  return { ...a, reasonWords, question: { text: typed }, planSource: source, followUps: queryFollowUps(plan) };
 }
 async function tryQuery(req, typed, previousQuery = null) {
   if (!typed) return null;

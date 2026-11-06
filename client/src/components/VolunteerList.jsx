@@ -17,6 +17,7 @@ import { WhyPanel } from "./WhyAnswer";
 import { GroupPage } from "./Groups";
 import { RecordLink } from "./RecordLink";
 import { tabHref } from "../lib/appUrls";
+import { orgTodayCivil, orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 12.5, color: T.ink, fontFamily: "inherit", boxSizing: "border-box", maxWidth: "100%" };
 // On a phone the filters fold behind one button, so the people come first.
@@ -226,8 +227,8 @@ function BulkModal({ kind, people, rules, opps, onClose, onDone }) {
   useEffect(() => { if (kind === "addgroup") apiFetch("/groups").then(d => setGroups((d.groups || []).filter(g => g.kind === "static"))).catch(() => {}); }, [kind]);
   useEffect(() => {
     if (kind !== "shift" || !v.opp) return;
-    const t = new Date().toISOString().slice(0, 10);
-    apiFetch(`/volunteer-hub/schedule?from=${t}&to=${new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10)}&opportunityId=${v.opp}`).then(d => setShifts(d.shifts || [])).catch(() => setShifts([]));
+    const t = orgTodayCivil();
+    apiFetch(`/volunteer-hub/schedule?from=${t}&to=${orgTodayPlus(60)}&opportunityId=${v.opp}`).then(d => setShifts(d.shifts || [])).catch(() => setShifts([]));
   }, [kind, v.opp]);
   const set = k => e => setV(p => ({ ...p, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
   const ids = people.map(p => p.id);

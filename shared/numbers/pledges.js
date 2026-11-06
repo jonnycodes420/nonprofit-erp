@@ -35,8 +35,12 @@ const GRANT_RECEIVED = (gr = "gr") => `(SELECT COALESCE(SUM(ppg.amount), 0) FROM
 // due by `day` (op "<=") or before it (op "<"). Dollars in, dollars out.
 const c = v => Math.round((Number(v) || 0) * 100);
 const cmp = (d, day, op) => !!d && (op === "<" ? String(d).slice(0, 10) < day : String(d).slice(0, 10) <= day);
+// MONEY-3 · WHAT IS STILL TO COME on one pledge, in cents: its amount less
+// what has been paid on it (PAID_OF), never below zero. Home's pledge move
+// (insights.js) and dueOf read it; the profile's balance is the same sum.
+const balanceCents = pl => Math.max(0, c(pl.amount) - c(pl.paid));
 function dueOf(pl, day, op = "<=") {
-  const balance = Math.max(0, c(pl.amount) - c(pl.paid));
+  const balance = balanceCents(pl);
   const list = pl.installments || [];
   if (!list.length) {
     const d = pl.dueDate ? String(pl.dueDate).slice(0, 10) : "";
@@ -69,4 +73,4 @@ const DUE_SQL = (op) => `SELECT x.id, x.donor_id, x.name, x.date, x.amount FROM 
      WHERE p.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL) x
    WHERE x.amount > 0`;
 
-module.exports = { PAID_BY_PLEDGE, PAID_OF, GRANT_RECEIVED, dueOf, installmentsLeft, DUE_SQL };
+module.exports = { PAID_BY_PLEDGE, PAID_OF, GRANT_RECEIVED, balanceCents, dueOf, installmentsLeft, DUE_SQL };

@@ -85,6 +85,7 @@ function naturalCents(c) {
 // the person's. A sponsorship renewal (the level's price) and a pledge (as
 // promised) are not suggested asks and keep their own amounts.
 const ASK = require("./shared/numbers/ask");
+const PLEDGES = require("./shared/numbers/pledges");   // MONEY-3: a pledge's still to come
 function oneAsk(x) {
   // NUMBERS-5: a rising unit steps up only when Room to give is known for one of its people (the profile's rule).
   const a = ASK.askFor((x.dated || []).map(g => ({ date: g.date, amount_cents: g.amount_cents })), { roomKnown: x.roomKnown });
@@ -323,7 +324,8 @@ function computeInsights(input) {
     if (!u) continue;
     const cents = Math.round(Number(p.amount || 0) * 100);
     const paid = Math.round(Number(p.paid || 0) * 100);
-    pledges.push({ ...p, cents, paid, balance: Math.max(0, cents - paid), unit: u,
+    // MONEY-3: still to come is shared/numbers/pledges.js's, as the profile's and Fundraising's
+    pledges.push({ ...p, cents, paid, balance: PLEDGES.balanceCents(p), unit: u,
       giftType: p.gift_type || giftTypeOf(String(p.notes || "").match(/Method in your file: ([^.]+)/)?.[1] || p.notes || ""),
       installments: (p.installments || []).map(i => ({ ...i, due_date: ymd(i.due_date), cents: Math.round(Number(i.amount || 0) * 100) })) });
   }
@@ -852,7 +854,7 @@ const LIBRARY = [
         const facts = [["pledged", money(p.cents)], ["paid", money(p.paid)], ["still to come", money(p.balance)]];
         if (multi) for (const i of inst) facts.push([`${i.due_date ? i.due_date.slice(0, 4) : "Undated"} installment`, `${money(i.cents)}${i.paid_gift_id ? " (paid)" : ""}`]);
         const due = (dueNow[0] && dueNow[0].due_date) || p.due_date && ymd(p.due_date);
-        items.push({ key: x.key + ":" + p.id, unit: x.key, pledgeId: p.id, name: x.name, ids: x.ids, lead: x.lead, cents: nowCents || p.balance, multi,
+        items.push({ key: x.key + ":" + p.id, unit: x.key, pledgeId: p.id, still: p.balance, name: x.name, ids: x.ids, lead: x.lead, cents: nowCents || p.balance, multi,
           what: `Pledged ${money(p.cents)}: ${money(p.paid)} received, ${money(p.balance)} still to come.${multi && nowCents ? ` ${money(nowCents)} is due this year.` : ""}`,
           installments: inst.map(i => ({ year: i.due_date ? i.due_date.slice(0, 4) : null, due: i.due_date, cents: i.cents, paid: !!i.paid_gift_id })),
           facts,
@@ -1020,7 +1022,7 @@ function buildDeck(cards) {
       const how = it.how || {};
       const act = actionFor(c.kind, how);
       const m = {
-        id: `${c.kind}:${it.key}`, kind: c.kind, itemKey: it.key, tab, label: `${tab === "keep" ? "Keep" : tab === "grow" ? "Grow" : tab === "major" ? "Major" : "Planned"} · ${MOVE_LABEL[c.kind]}`,
+        id: `${c.kind}:${it.key}`, kind: c.kind, itemKey: it.key, tab, ...(it.pledgeId ? { pledgeId: it.pledgeId, still: it.still } : {}), label: `${tab === "keep" ? "Keep" : tab === "grow" ? "Grow" : tab === "major" ? "Major" : "Planned"} · ${MOVE_LABEL[c.kind]}`,
         name: it.name, lead: it.lead, ids: it.ids, cents: it.cents, value: c.kind === "planned" ? -1 : it.cents, n: order++,
         what: it.what || "", why: c.words.why, say: how.say || null, who: how.who || null, channel: how.channel || null,
         when: how.when ? how.when.words : null, whenFrom: how.when ? how.when.from : null,
@@ -1037,8 +1039,12 @@ function buildDeck(cards) {
   for (const ms of byUnit.values()) {
     ms.sort((a, b) => b.value - a.value || a.n - b.n);
     const [m, ...rest] = ms;
-    m.also = rest.map(r => ({ kind: r.kind, label: MOVE_LABEL[r.kind], line: r.what }));
-    for (const r of rest) m.facts.push(...r.facts);
+    // MONEY-3: a unit's other moves ride under its lead, each with its own
+    // pledge and still to come, and their facts say they are the other move's.
+    // (A couple's two pledges read as one $20,400 "still to come" for the
+    // $20,000 pledge: fundraising2-screens, run 42110734392.)
+    m.also = rest.map(r => ({ kind: r.kind, label: MOVE_LABEL[r.kind], line: r.what, ...(r.pledgeId ? { pledgeId: r.pledgeId, still: r.still } : {}) }));
+    for (const r of rest) m.facts.push(...r.facts.map(([k, v]) => [`also, ${MOVE_LABEL[r.kind].toLowerCase()}: ${k}`, v]));
     tabs.get(m.tab).moves.push(m);
   }
   // SWEEP-1: how many of each group lead with this move; the rest are under a

@@ -166,6 +166,22 @@ function rhythmFor(gifts, today) {
     gapExpected, onTimeThrough, expectedNext, extended, late, daysPast, onTime: !late && !lapsed };
 }
 
+// MONEY-3 · THE ONE STORED DATE. The last day a person is on time, as the
+// lists store it: their own usual time (onTimeThrough), or the last day before
+// a year with no gift (lapseRule: lapsed at LAPSED_DAYS), whichever comes
+// first. So "stored date >= today" is exactly rhythmFor's onTime, which the
+// profile's On track reads live. Null with no pattern. afterChange.js writes it
+// to donor_rhythm.expected_next, and the scores pass to donor_scores
+// .on_time_through; shared/numbers/lapse.js ON_TIME_THROUGH reads the rhythm
+// row (the scores row only for someone with none). They used to be two
+// calculations a day apart, read by whichever was written last: Pia January,
+// a Jan 1 yearly giver, read Lapsing and On track at once (surfaces-agree).
+function storedThrough(r) {
+  if (!r || !r.hasPattern || !r.onTimeThrough) return null;
+  const yearEnds = orgTime.addDays(r.lastGiftDate, lapseRule.LAPSED_DAYS - 1);
+  return r.onTimeThrough < yearEnds ? r.onTimeThrough : yearEnds;
+}
+
 // ── SPANS IN SENTENCES (STATUS-1, Jonathan 3 Nov) ────────────────────────────
 // A span said in a sentence never rounds up across a rule boundary: it counts
 // whole calendar months, so a sentence can never say "9 months" when the rule
@@ -197,4 +213,4 @@ function spanBetween(from, to) {
 const pastPhrase = (r, today) => (r && r.late ? `Now ${spanBetween(r.expectedNext, today)} past their usual time.` : "");
 
 module.exports = { SEASON, median, intervalCv, lastDayOfMonth, eventsOf, detectSeasonalCluster, usualPerYear,
-  rhythmFor, wholeMonths, spanBetween, pastPhrase };
+  rhythmFor, storedThrough, wholeMonths, spanBetween, pastPhrase };

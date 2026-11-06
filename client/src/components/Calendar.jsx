@@ -21,6 +21,7 @@ import { AskBox } from "./AskPanel";
 import { useStewardTold } from "../lib/stewardTold";
 import { ShiftEditor } from "./VolunteerSchedule";
 import { errorMessage } from "../lib/domainError";
+import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { tabHref, urlParam } from "../lib/appUrls";
 import { moveRequest, movedWords, addDaysCivil } from "../../../shared/calendarMoves.js";
 import { displayDay } from "../../../shared/displayDate.js";
@@ -117,7 +118,7 @@ export default function CalendarPage({ isReadOnly, onNavigate, isAdmin }) {
       // SEARCH-2: ⌘K opens the calendar on a meeting's day (?day=YYYY-MM-DD).
       const asked = urlParam("calendar", "day");
       setAnchor(/^\d{4}-\d{2}-\d{2}$/.test(asked || "") ? asked : d.today); setTypes(loadTypes(d.defaultOn));
-    }).catch(() => { const t = new Date().toISOString().slice(0, 10); setAnchor(t); setTypes(loadTypes(["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge"])); });
+    }).catch(() => { const t = orgTodayCivil(); setAnchor(t); setTypes(loadTypes(["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge"])); });
   }, []);
   useEffect(() => { load(); }, [load]);
   // FIX-28: her own dates on her own connected calendar, when she turns it on.

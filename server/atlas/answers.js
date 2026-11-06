@@ -40,6 +40,8 @@ const answerSource = ask => (ask && (ask.peopleSource || ask.countSource)) || nu
 // What every one of them has in common, in Steward's own words for the filter.
 function sharedReason(ask) {
   if (!ask) return "";
+  // MONEY-3's plain words ("gave last December, nothing since Jan 1"), the one Ask shows.
+  if (ask.reasonWords) return String(ask.reasonWords);
   if (ask.planWords) return String(ask.planWords).split(" · ").slice(1).join(" · ") || String(ask.planWords);
   if (Array.isArray(ask.words) && ask.words.length) return ask.words.join(" · ");
   return "";

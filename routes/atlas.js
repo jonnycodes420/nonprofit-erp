@@ -189,8 +189,8 @@ async function requestOut(orgId, id) {
   const waiting = lines.filter(l => l.waits).length;
   const AT_ = await AT();
   return { id: m.id, text: m.text, status: m.status, ai: m.ai, questions: m.status === "needs_answers" ? (read.atlas && read.atlas.questions) || [] : [],
-    lines, waiting, spoke: m.status === "needs_answers" ? (read.atlas && read.atlas.spoke) || "" : (read.atlas && read.atlas.spoke) || (waiting ? `${AT_.SPOKE.done} ${AT_.SPOKE.waiting(waiting)}` : AT_.SPOKE.done),
-    timings: read.atlas && read.atlas.timings, undoneAt: m.undone_at, follows: (read.atlas && read.atlas.follows) || null };
+    lines, waiting, spoke: m.status === "needs_answers" ? (read.atlas && read.atlas.spoke) || "" : (read.atlas && read.atlas.spoke) || AT_.spokeFor(lines, waiting),   // MONEY-3: "Here's what I found." over an answer
+    timings: read.atlas && read.atlas.timings, undoneAt: m.undone_at, follows: (read.atlas && read.atlas.follows) || null };   // ATLAS-3: the request this one followed
 }
 
 // ── READ, RESOLVE, ASK ──────────────────────────────────────────────────────

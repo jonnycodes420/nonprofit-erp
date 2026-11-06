@@ -18,6 +18,7 @@ import { Figure } from "./Figure";
 import { DonorLink, RecordLink } from "./RecordLink";
 import { WhyAnswerBody } from "./WhyAnswer";
 import { errorMessage } from "../lib/domainError";
+import { orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 
 const LABEL = { fontSize: 11, fontWeight: 700, color: T.ink3 };
 const CHIP = { background: T.white, color: T.greenDk, border: "1px solid " + T.bg3, borderRadius: 999, padding: "6px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", textAlign: "left" };
@@ -25,7 +26,7 @@ const BTN = { background: T.greenDk, color: T.white, border: "none", borderRadiu
 const INPUT = { flex: 1, minWidth: 0, border: "1px solid " + T.bg3, borderRadius: 999, padding: "8px 14px", fontSize: 14, fontFamily: "inherit", background: T.white, color: T.ink };
 const WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
 const spell = n => (n >= 0 && n < 10 ? WORDS[n] : String(n));
-function addDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+function addDays(n) { return orgTodayPlus(n); }
 
 export function ask(body) {
   return apiFetch("/ask", { method: "POST", body: JSON.stringify(body) });
