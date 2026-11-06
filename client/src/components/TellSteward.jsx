@@ -36,6 +36,8 @@ import { atlasStatus, atlasName, linkTarget } from "../lib/atlas";
 import { Camera } from "lucide-react";
 import { openCheckSnap } from "./CheckSnap";   // CHECK-2
 import { MicGlyph } from "./TellStewardOpen";   // SWEEP-6
+import AtlasAnswer from "./atlas/AtlasAnswer";   // ATLAS-3: a list is a list, a person is what we know
+import { continueThread, askBody, newProgressKey } from "../lib/atlasThread";   // ATLAS-3: Tell me more keeps the thread
 
 const SR = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition || null) : null;
 // VOICE-4: ONE recognizer for the page. A new one per press (and per opening
@@ -82,6 +84,9 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
   const [answers, setAnswers] = useState({});
   const [source, setSource] = useState("typed");
   const [name, setName] = useState(atlasName());
+  const [thread, setThread] = useState([]);       // ATLAS-3: the answers so far, oldest first
+  const [progress, setProgress] = useState("");   // ATLAS-3: what Atlas is doing right now
+  const poll = useRef(null);
   const rec = useRef(null);
   const wantOn = useRef(false);
   const downAt = useRef(0);
@@ -98,6 +103,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
       try { r && r.abort(); } catch { /* already stopped */ }
       // The recognizer outlives this window; its answers stop coming here.
       if (r) { r.onresult = null; r.onerror = null; r.onend = null; }
+      if (poll.current) clearInterval(poll.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -150,6 +156,18 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
   const onUp = () => { if (!startedNow.current || Date.now() - downAt.current > HOLD_MS) stop(); };
   const snapCheck = () => { if (listening) stop(); openCheckSnap({ donor: donor ? { id: donor.id, name: donor.name } : null, camera: true }); onClose(); };
 
+  // ATLAS-3 · the status line: the server says which step it is on.
+  function watch() {
+    const key = newProgressKey();
+    setProgress("");
+    if (poll.current) clearInterval(poll.current);
+    poll.current = setInterval(() => {
+      apiFetch(`/atlas/progress/${key}`).then(r => { if (r && r.progress && r.progress.line) setProgress(r.progress.line); }).catch(() => {});
+    }, 700);
+    return key;
+  }
+  function unwatch() { if (poll.current) clearInterval(poll.current); poll.current = null; setProgress(""); }
+
   // ── ASKING ATLAS ──────────────────────────────────────────────────────────
   // The spinners go up before the request leaves, so the first thing she sees
   // comes in well under two seconds whatever the model takes.
@@ -162,10 +180,11 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
     setPending({ text: words, lines: previewLines(words) });
     setRequest(null); setAnswers({}); setBusy(true); setErr("");
     try {
-      const r = await apiFetch("/atlas", { method: "POST", body: JSON.stringify({ text: words, source, donorId: donor ? donor.id : undefined }) });
+      const r = await apiFetch("/atlas", { method: "POST", body: JSON.stringify(askBody(words, { source, donorId: donor ? donor.id : undefined, thread, progressKey: watch() })) });
       setRequest(r.request);
       if (r.request && r.request.status === "done") told({ memoId: r.request.id });   // the page behind shows it at once
     } catch (e) { setErr(said(e)); }
+    unwatch();
     setPending(null);
     setBusy(false);
   }
@@ -173,10 +192,11 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
     setBusy(true); setErr("");
     setPending({ text: request.text, lines: previewLines(request.text) });
     try {
-      const r = await apiFetch(`/atlas/${request.id}/answer`, { method: "POST", body: JSON.stringify({ answers: next }) });
+      const r = await apiFetch(`/atlas/${request.id}/answer`, { method: "POST", body: JSON.stringify({ answers: next, progressKey: watch() }) });
       setRequest(r.request);
       told({ memoId: r.request.id });
     } catch (e) { setErr(said(e)); if (e && e.request) setRequest(e.request); }
+    unwatch();
     setPending(null);
     setBusy(false);
   }
@@ -197,7 +217,8 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
     setBusy(false);
   }
   const go = link => { const t = linkTarget(link); if (!t || !onNavigate) return; onClose(); onNavigate(t[0], t[1]); };
-  const another = () => { setRequest(null); setPending(null); setText(""); finalText.current = ""; setSource("typed"); };
+  // ATLAS-3: Tell me more keeps what was said; the next ask follows on from it.
+  const another = () => { setThread(t => continueThread(t, request)); setRequest(null); setPending(null); setText(""); finalText.current = ""; setSource("typed"); };
 
   const asking = request && request.status === "needs_answers";
   const lines = (request && request.lines) || [];
@@ -210,10 +231,18 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
         {err && <div role="alert" style={{ background: T.cream || "#F0EDE6", color: T.ink, borderRadius: 10, padding: "10px 12px", fontSize: 13.5, lineHeight: 1.45 }}>{err}</div>}
         {micTip && !request && <div data-testid="tell-mic-tip" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.45 }}>{SAFARI_MIC_TIP}</div>}
 
+        {thread.length > 0 && <section data-testid="atlas-thread" aria-label="Earlier in this conversation" style={{ display: "flex", flexDirection: "column", gap: 10, borderBottom: "1px solid " + T.bg3, paddingBottom: 10 }}>
+          {thread.map(r => <div key={r.id} data-testid="atlas-thread-item" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ fontSize: 13, color: T.ink2 }}>"{r.text}"</div>
+            {(r.lines || []).map(l => <div key={l.id} style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.45 }}>{l.line}<AtlasAnswer line={l} onGo={go} busy={busy} /></div>)}
+          </div>)}
+        </section>}
+
         {(request || pending) && <div data-testid="atlas-said" style={{ fontSize: 13.5, color: T.ink2, background: "#F0EDE6", borderRadius: 10, padding: "10px 12px", lineHeight: 1.5 }}>"{(request && request.text) || pending.text}"</div>}
 
+        {/* ATLAS-3: one line, the step Atlas is on now (GET /atlas/progress), not every guess at once. */}
         {pending && <ul data-testid="atlas-pending" aria-live="polite" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-          {pending.lines.map(l => <li key={l} style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 14, color: T.ink }}>
+          {[progress || (pending.lines.length > 1 ? "Reading what you asked" : pending.lines[0])].map(l => <li key={l} data-testid="atlas-status" style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 14, color: T.ink }}>
             <span aria-hidden className="atlas-spin" style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid " + T.bg3, borderTopColor: T.greenDk, animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
             {l}</li>)}
           <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
@@ -291,6 +320,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
                 {linkTarget(l.link) ? <button type="button" data-testid="atlas-line-link" onClick={() => go(l.link)}
                   style={{ background: "none", border: "none", padding: 0, textAlign: "left", font: "inherit", color: l.state === "undone" ? T.ink3 : T.ink, textDecoration: l.state === "undone" ? "line-through" : "underline", textDecorationColor: T.bg3, textUnderlineOffset: 3, cursor: "pointer" }}>{l.line}</button>
                   : <span style={{ color: l.state === "refused" ? T.ink2 : T.ink }}>{l.line}</span>}
+                <AtlasAnswer line={l} onGo={go} busy={busy} />
               </span>
               <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                 {l.undoable && <button type="button" data-testid="atlas-undo" disabled={busy} onClick={() => act(`/atlas/actions/${l.id}/undo`)} style={{ ...btn(false), minHeight: 32, padding: "4px 10px", fontSize: 12.5 }}>Undo</button>}
@@ -305,7 +335,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
           <div style={{ display: "flex", gap: 10, justifyContent: "space-between", flexWrap: "wrap", borderTop: "1px solid " + T.bg3, paddingTop: 12 }}>
             {!request.undoneAt && lines.some(l => l.undoable) ? <button data-testid="tell-undo" disabled={busy} onClick={() => act(`/atlas/${request.id}/undo`)} style={btn(false)}>Undo all of it</button> : <span />}
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={another} style={btn(false)}>Tell me more</button>
+              <button data-testid="atlas-tell-more" onClick={another} style={btn(false)}>Tell me more</button>
               <button data-testid="tell-done" onClick={onClose} style={btn(true)}>Done</button>
             </div>
           </div>

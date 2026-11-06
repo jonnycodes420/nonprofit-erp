@@ -5,6 +5,8 @@ import { errorMessage } from "../lib/domainError";
 import { OPEN_STAGE_KEYS as OPEN_PROPOSAL_STAGES } from "../../../shared/proposalShape.js";
 import { DonorLink } from "./RecordLink";
 import { ItemMenu, EditedMarker, offerUndo } from "./EditHistory";
+import { streamBrief } from "../lib/briefStream";   // ATLAS-3: first words at once
+import { citeWords } from "../../../shared/briefCite.js";   // ATLAS-3: "from 3 gifts", not "(1 row)"
 
 // ── Major gifts (BUILD-99) ──────────────────────────────────────────────────
 // Moves management on top of the stages Steward already has, for the
@@ -862,13 +864,16 @@ export function BriefPanel({ donorId, donorName, isReadOnly, canWrite }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [showDropped, setShowDropped] = useState(false);
+  const [opening, setOpening] = useState(null);   // ATLAS-3: the first words, from the record, while the rest is written
 
-  const write = async () => {
-    setBusy(true); setErr("");
-    try { setBrief(await apiFetch(`/donors/${donorId}/brief`, { method: "POST", body: "{}" })); }
+  const write = async (fresh = false) => {
+    setBusy(true); setErr(""); setOpening(null);
+    try { setBrief(await streamBrief(donorId, { fresh, onStart: x => setOpening(x.opening || []) })); }
     catch (e) { setErr(errorMessage(e, "The brief could not be written just now.")); }
     setBusy(false);
   };
+  // ATLAS-3: opening Brief me writes it (or shows the one kept for them).
+  useEffect(() => { if (canWrite && !isReadOnly) write(false); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [donorId]);
 
   return (
     <div data-testid="donor-brief-panel" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px" }}>
@@ -880,14 +885,20 @@ export function BriefPanel({ donorId, donorName, isReadOnly, canWrite }) {
           belongs to the section, not to what is inside it. */}
       {canWrite && !isReadOnly && (
         <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
-          <button onClick={write} disabled={busy}
+          <button onClick={() => write(!!brief)} disabled={busy}
             style={{ background: T.gold, border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: busy ? "wait" : "pointer" }}>
             {busy ? "Reading the file…" : brief ? "Write it again" : "Brief me"}
           </button>
         </div>
       )}
       {err && <div style={{ fontSize: 12, color: T.terra700, marginBottom: 8 }}>{err}</div>}
-      {!brief && !err && (
+      {!brief && opening && opening.length > 0 && (
+        <div data-testid="brief-opening" style={{ fontSize: 13, color: T.ink, lineHeight: 1.65, marginBottom: 6 }}>
+          {opening.map((o, i) => <div key={i}>{o}</div>)}
+          <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>Writing the rest from their record…</div>
+        </div>
+      )}
+      {!brief && !err && !opening && (
         <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>
           {/* PROFILE-1 — the em dash went. The profile's voice guard
               (tests/build88a-profile §6) bans them on this screen, and moving
@@ -907,7 +918,7 @@ export function BriefPanel({ donorId, donorName, isReadOnly, canWrite }) {
               <div style={{ fontSize: 10, fontWeight: 800, color: T.gold700, marginBottom: 4 }}>{sec.title}</div>
               {sec.sentences.map((s, i) => (
                 <div key={i} style={{ fontSize: 13, color: T.ink, lineHeight: 1.65, marginBottom: 3 }}>
-                  {s.text} <span title={`From ${s.cites.join(", ")}`} style={{ fontSize: 10, color: T.ink3 }}>({s.cites.length} {s.cites.length === 1 ? "row" : "rows"})</span>
+                  {s.text} {citeWords(s.cites) && <span data-testid="brief-cite" style={{ fontSize: 11, color: T.ink3 }}>({citeWords(s.cites)})</span>}
                 </div>
               ))}
             </div>

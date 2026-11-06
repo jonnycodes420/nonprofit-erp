@@ -30,17 +30,11 @@ let app = routers.r1;
 // giving, milestones reached, and org-configured impact translations. Reuses
 // the pdfkit pattern from POST /reports/board (same require, buffer-to-Promise
 // approach, page-footer loop) rather than a new rendering system.
-app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => {
-  let PDFDocument;
-  try {
-    PDFDocument = require("pdfkit");
-  } catch (e) {
-    return res.status(500).json({ error: "pdfkit module missing: " + e.message });
-  }
-
-  const { orgId } = req.user;
-  const [donor] = await query("SELECT * FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL", [req.params.id, orgId]);
-  if (!donor) return res.status(404).json({ error: "Donor not found" });
+// ATLAS-3: what the Impact summary says, read once for the PDF and for the
+// summary the profile's More menu shows on screen (GET /donors/:id/impact-summary).
+async function impactData(orgId, donorId) {
+  const [donor] = await query("SELECT * FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL", [donorId, orgId]);
+  if (!donor) return null;
   // BUILD-64: a donor-facing document (printable/mailable) — carries the org's
   // OWN identity from the shared resolver, never a hardcoded Steward-green band
   // and never the staff-side "(Demo)" name (white-label).
@@ -81,6 +75,39 @@ app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => 
     "SELECT amount, date, campaign FROM gifts WHERE donor_id = ? AND org_id = ? ORDER BY date DESC NULLS LAST LIMIT 5",
     [donor.id, orgId]
   );
+  const milestoneLabels = [
+    ...thresholdsReached.map(t => `Crossed $${t.toLocaleString()} in lifetime giving`),
+    ...(yearsGiving != null && yearsGiving >= 1 ? [`${yearsGiving} year${yearsGiving === 1 ? "" : "s"} of continuous giving`] : []),
+  ];
+  return { donor, brand, org, totalGiving, giftCount, now, thresholdsReached, yearsGiving, firstGiftLabel, impactLines, recentGifts, milestoneLabels };
+}
+
+app.get("/donors/:id/impact-summary", requireAuth, wrap(async (req, res) => {
+  const D = await impactData(req.user.orgId, req.params.id);
+  if (!D) return res.status(404).json({ error: "Donor not found" });
+  const day = d => (d ? orgTime.civilLocale(d, { month: "short", day: "numeric", year: "numeric" }) : "Not set");
+  res.json({
+    donorId: D.donor.id, name: D.donor.name, orgName: D.org.name,
+    totalCents: require("../../money").toCents(D.donor.total_giving) || 0, giftCount: D.giftCount,
+    donorSince: D.firstGiftLabel, yearsGiving: D.yearsGiving != null ? Math.max(D.yearsGiving, 0) : null,
+    milestones: D.milestoneLabels, impactLines: D.impactLines,
+    recentGifts: D.recentGifts.map(g => ({ date: day(g.date), campaign: g.campaign || "General", cents: require("../../money").toCents(g.amount) || 0 })),
+    sentence: "Every figure is read from their gifts on record; the impact lines are the ones your organization set in Settings.",
+  });
+}));
+
+app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => {
+  let PDFDocument;
+  try {
+    PDFDocument = require("pdfkit");
+  } catch (e) {
+    return res.status(500).json({ error: "pdfkit module missing: " + e.message });
+  }
+
+  const { orgId } = req.user;
+  const D = await impactData(orgId, req.params.id);
+  if (!D) return res.status(404).json({ error: "Donor not found" });
+  const { donor, brand, org, totalGiving, giftCount, now, thresholdsReached, yearsGiving, firstGiftLabel, impactLines, recentGifts } = D;
 
   const doc = new PDFDocument({ margin: 50, size: "LETTER", bufferPages: true });
   const pdfBuffer = await new Promise((resolve, reject) => {
