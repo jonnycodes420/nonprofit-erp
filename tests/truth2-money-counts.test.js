@@ -28,7 +28,7 @@ const orgTime = require("../orgTime");
 const { assertSurfacesAgree } = require("./lib/surfacesAgree");
 
 // One org per run (its own id, its own owner), so a rerun never meets the last run's rows.
-const RUN = Date.now().toString(36);
+const RUN = require("crypto").randomBytes(4).toString("hex");
 const ORG = `org_truth2_${RUN}`;
 const OWNER = `owner-${RUN}@truth2.local`;
 const MD = `md_t2_${RUN}`, RCP = `rcp_t2_${RUN}`;
