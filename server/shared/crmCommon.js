@@ -159,12 +159,12 @@ async function orgRow(orgId) { const [o] = await query("SELECT * FROM orgs WHERE
 
 // NUMBERS-2 · a total the file stated, with no gifts behind it, is kept as
 // its own figure (donorSummary.js KEEP_IMPORTED_TOTAL) under the file's name.
-async function keepImportedTotals(q, orgId, ids, sourceName) {
+async function keepImportedTotals(q, orgId, ids, sourceName, importId = null) {
   if (!ids || !ids.length) return;
   const words = String(sourceName || "").replace(/\s+/g, " ").trim().slice(0, 80) || "your old system";
   // NUMBERS-4: in batches (donorSummary.js), so a 25,000-person file is linear.
   const DS = require("../../donorSummary");
-  await DS.keepImportedTotalsFor(q, orgId, ids, words, orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
+  await DS.keepImportedTotalsFor(q, orgId, ids, words, orgToday(await orgTz(orgId)), importId);   // ORG_TZ_SEAM_OK
   // FIX-49: and the one statement, so first_gift_date reads the old system's
   // first (or last) gift the moment the file is in, not at the next gift.
   await DS.recomputeSummaries(q, orgId, ids);

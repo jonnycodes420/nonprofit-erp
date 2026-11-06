@@ -911,6 +911,10 @@ async function run7(pool) {
   // column added in a file outside them would never run on a database already at
   // the old hash.
   await pool.query(`ALTER TABLE donor_list_views ADD COLUMN IF NOT EXISTS chips JSONB`);
+  // FEEL-1: the import whose stated total is donors.imported_total. Its own
+  // undated gifts are inside that total (shared/numbers/lifetime.js AFTER_IMPORT).
+  // Null on every existing row, so no lifetime moves when this runs.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS imported_import_id TEXT`);
 
   // FIX-49 decision 8 · ONE HOUSEHOLD GROUPING. Spouses and household links
   // become household records (the only grouping); the links themselves stay.

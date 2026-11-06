@@ -439,7 +439,9 @@ app.post("/events/:id/attendance", requireAuth, checkWriteAccess, wrap(async (re
   const rows = await query("SELECT * FROM event_attendees WHERE event_id=? AND org_id=? AND id = ANY(?)", [event.id, orgId, ids]);
   const who = actor(req);
   const [u] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
-  const day = String(event.date).slice(0, 10) || orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  // FEEL-1: events.date is a DATE, which pg hands back as a Date; String() of it
+  // sliced was "Fri Nov 06", stored on the timeline and read back as 2001.
+  const day = orgTime.civilOf(event.date) || orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
   let logged = 0;
   for (const a of rows) {
     const status = came.has(a.id) ? "attended" : "no_show";
@@ -508,7 +510,7 @@ async function logEventAttendance(orgId, attendee, event, status, who, day) {
   if (!attendee || !attendee.donor_id || !event) return false;
   const claimed = await query("UPDATE event_attendees SET attendance_logged_at=NOW() WHERE id=? AND org_id=? AND attendance_logged_at IS NULL RETURNING id", [attendee.id, orgId]);
   if (!claimed.length) return false;
-  const date = day || String(event.date || "").slice(0, 10) || orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  const date = orgTime.civilOf(day) || orgTime.civilOf(event.date) || orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK — FEEL-1: always YYYY-MM-DD
   await TL.writeTimelineLine({ orgId, donorId: attendee.donor_id, type: "event",
     note: status === "attended" ? `Came to ${event.name}.` : `Registered for ${event.name} and did not come.`,
     date, actorId: who.id, actorName: who.name,

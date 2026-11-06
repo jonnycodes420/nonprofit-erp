@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { API, apiFetch, getToken } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { T, fmtFull } from "../shared";
+import { receiptOffered } from "../../../../shared/giftWords.js";   // FEEL-1
 
 const linkBtn = { background: "none", border: "none", padding: "2px 4px", color: T.greenDk, fontSize: 11.5, fontWeight: 700, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2, fontFamily: "inherit" };
 const yearOf = d => (d ? String(d).slice(0, 4) : "");
@@ -126,6 +127,8 @@ export function ReceiptCell({ g, rc, isReadOnly }) {
       {note && <span role="status" style={{ color: T.ink3, whiteSpace: "normal", maxWidth: 220 }}>{note}</span>}
     </span>);
   if (!rc.receiptsEnabled) return <span style={{ color: T.ink3, fontSize: 12 }}>Off</span>;
+  // FEEL-1: a $0 gift has nothing to receipt, so nothing is offered.
+  if (!receiptOffered(g)) return <span data-testid="dp-receipt-none" style={{ color: T.ink3, fontSize: 12 }} title="A tax receipt is for money given; this gift is $0.">No receipt for $0</span>;
   const busy = rc.receiptBusyId === g.id;
   return <span style={{ display: "inline-flex", flexDirection: "column", gap: 2 }}>
     <button type="button" data-testid="dp-receipt-make" onClick={() => rc.sendReceipt(g.id)} disabled={busy || isReadOnly} title={isReadOnly ? "Reactivate your subscription to make changes." : "Makes the receipt. You choose to download or email it next."}

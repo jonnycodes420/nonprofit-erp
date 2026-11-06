@@ -26,7 +26,9 @@ async function writeTimelineLine({ orgId, donorId, note, type = "activity", date
       [orgId, donorId, String(key)]);
     if (had) return { written: false, id: had.id, reason: "already" };
   }
-  let day = date ? String(date).slice(0, 10) : "";
+  // FEEL-1: the stored day is always YYYY-MM-DD. A pg Date sliced as text was
+  // "Fri Nov 06": the timeline read it as 2001 under an "Invalid Date" group.
+  let day = date ? (orgTime.civilOf(date) || "") : "";
   if (!day) {
     const [o] = await query("SELECT timezone FROM orgs WHERE id=?", [orgId]).catch(() => []);
     day = orgTime.orgToday({ timezone: o && o.timezone });   // ORG_TZ_SEAM_OK (the org's civil today)

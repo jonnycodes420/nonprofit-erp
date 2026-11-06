@@ -30,6 +30,7 @@ import { SetupFirstCard, SetupRailCard, setupStage } from "./HomeSetup";   // HO
 import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads, HomeRailColumn, OwnersCard } from "./HomeRail";   // HOME-4, PROFILE-2
 import { plural } from "../../../shared/countWords";
 import { HOME_GRID_CSS } from "./home/homeGrid";   // HOME-6
+import { useMovesGate } from "../lib/movesGate";   // FEEL-1
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="home"}) {
@@ -209,6 +210,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // HOME-TIDY 2: where the header goes depends on the width (one copy only).
   const foldBtn=HL.foldBtn({ homeFold, toggleFold });
   const [homeWide,setHomeWide]=useState(()=>typeof window==="undefined"||!window.matchMedia||window.matchMedia("(min-width:1100px)").matches);
+  // FEEL-1: under the moves deck, a wide Home waits for the deck's size (lib/movesGate.js).
+  const [movesSettled,onMovesSettled]=useMovesGate(homeWide);
   useEffect(()=>{
     if(typeof window==="undefined"||!window.matchMedia)return;
     const mq=window.matchMedia("(min-width:1100px)"); const on=()=>setHomeWide(mq.matches);
@@ -1300,7 +1303,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   })();
   const setupDonors=(setupStatus?.items||[]).find(i=>i.key==="donors");
   const noDonorsYet=!!setupDonors&&!(setupDonors.count>0);
-  const homeHead=FL.homeHead({ agentDaily, cancelEdit, data, editMode, enterEdit, firstName, greeting, homeDay, isReadOnly, layout, loadThreads, noDonorsYet, onNavigate, resetLayout, sampleStatus, saveEdit, setupFirst, surface, threadScope, todayLongStr, todayStr });
+  // FEEL-1: only while the deck is drawn (Home, not editing) and has not settled,
+  // and only on a wide screen: on a phone, holding the rail cost 150 ms of its
+  // 3.58 s budget (perf-app), so a phone draws as before.
+  const holdUnderDeck=surface==="home"&&!editMode&&!movesSettled;
+  const homeHead=FL.homeHead({ onMovesSettled, agentDaily, cancelEdit, data, editMode, enterEdit, firstName, greeting, homeDay, isReadOnly, layout, loadThreads, noDonorsYet, onNavigate, resetLayout, sampleStatus, saveEdit, setupFirst, surface, threadScope, todayLongStr, todayStr });
   return(
     <div className="dash-root dash-bleed" style={{background:surface==="home"?T.ground:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
       {/* BUILD-87 F.3.1 — ONE CONTENT COLUMN. Home was as wide as the window,
@@ -1352,14 +1359,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       const cardsBlock=HL.cardsBlock({ goal, goalForm, goalModalMode, inp, layoutError, recurringHealth, saveGoal, savingGoal, sectionStack, setGoalForm, setShowSetGoal, showSetGoal });
       // BUILD-89 — the shell owns the two columns now (see ONE PANEL above),
       // so the stack renders straight into it.
-      return cardsBlock;
+      return holdUnderDeck?null:cardsBlock;
       })()}
       </div>{/* /home-shell-main */}
       {surface==="home"&&todayRail}
       </div>{/* /home-shell-top */}
       {/* FIX-3 A (finding 1) — the lower half runs the full width of the
           panel, below the Thread and the rail (see sectionStack). */}
-      {HL.homeLower({ editMode, homeCrossoverCard, sectionStack, setWordsDone, setWordsOpen, surface, wordsOffer })}
+      {!holdUnderDeck&&HL.homeLower({ editMode, homeCrossoverCard, sectionStack, setWordsDone, setWordsOpen, surface, wordsOffer })}
       </div>{/* /home-shell */}
       </div>{/* /dash-col */}
 

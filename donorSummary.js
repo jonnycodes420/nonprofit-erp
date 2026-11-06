@@ -45,7 +45,10 @@ const { IMPORTED_FIRST, FIRST_ON_FILE_AGG } = require("./shared/numbers/firstGif
 // A gift on file that the imported total does not already cover.
 // IMPORT-4: an undated gift (date IS NULL) is never inside the old system's
 // period, because nobody knows its day: it is always counted.
-const AFTER_IMPORT = (dd = "dd") => `(${dd}.imported_through IS NULL OR g.date IS NULL OR g.date > ${dd}.imported_through)`;
+// FEEL-1: an undated gift is after the import, unless it came in with the very
+// import that stated the total (imported_import_id): that file's own gifts are
+// inside the total it stated, dated or not, so dating them later moves nothing.
+const AFTER_IMPORT = (dd = "dd") => `(${dd}.imported_through IS NULL OR (g.date IS NULL AND (${dd}.imported_import_id IS NULL OR g.import_id IS DISTINCT FROM ${dd}.imported_import_id)) OR g.date > ${dd}.imported_through)`;
 
 // One person's figures, read beside them (`dd` is their row): the imported
 // columns plus one pass over their own gifts, through the (org, person) index.
@@ -130,7 +133,8 @@ const KEEP_IMPORTED_TOTAL = `
     imported_last_gift_amount = CASE WHEN NULLIF(d.last_gift_date, '') IS NOT NULL THEN d.last_gift_amount END,
     imported_through = COALESCE(NULLIF(d.last_gift_date, ''), $4),
     imported_source = $3,
-    imported_on = $4
+    imported_on = $4,
+    imported_import_id = $5::text
   WHERE d.org_id = $1 AND d.id = ANY($2)
     AND d.imported_total IS NULL AND d.total_giving > COALESCE(${GIFTS_ON_FILE("SUM(g.amount)")}, 0)`;
 
@@ -162,6 +166,6 @@ async function inBatches(ids, fn) {
   for (let i = 0; i < all.length; i += BATCH) await fn(all.slice(i, i + BATCH));
 }
 const recomputeSummaries = (run, orgId, ids) => inBatches(ids, part => run(DONOR_SUMMARY_UPDATE("AND d.id = ANY($2)"), [orgId, part]));
-const keepImportedTotalsFor = (run, orgId, ids, words, today) => inBatches(ids, part => run(KEEP_IMPORTED_TOTAL, [orgId, part, words, today]));
+const keepImportedTotalsFor = (run, orgId, ids, words, today, importId = null) => inBatches(ids, part => run(KEEP_IMPORTED_TOTAL, [orgId, part, words, today, importId || null]));
 
 module.exports = { BATCH, recomputeSummaries, keepImportedTotalsFor, DONOR_SUMMARY_UPDATE, DONOR_SUMMARY_DIFF, KEEP_IMPORTED_TOTAL, LAST_GIFT_ORDER, SOFT_CREDIT_RESIZE, IMPORTED_FIRST };

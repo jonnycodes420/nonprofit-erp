@@ -13,6 +13,7 @@ const DTAGS = require("../../donorTags");   // FIX-33: internal flags never reac
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../../emailCompose");
+const { withoutInternalNotes } = require("../../shared/giftWords.js");   // FEEL-1: no build's note in her copy
 const JBO = require("./journeyBatchOptions");   // FLOWS-1: who of the checked people can start each journey
 
 const routers = {
@@ -176,7 +177,7 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
     // always falling to the relationship owner.
     team: teamRows.map(u => ({ id: u.id, name: u.name })),
     journeys: rows.map(t => ({
-      id: t.id, name: t.name, description: t.description || "", steps: t.steps, trigger: t.trigger_key,
+      id: t.id, name: t.name, description: withoutInternalNotes(t.description || ""), steps: t.steps, trigger: t.trigger_key,
       amountCents: t.trigger_amount_cents, priority: t.priority,
       audience: t.audience || {},
       audienceSentence: J.audienceSentence(t.audience || {}),
@@ -282,7 +283,7 @@ app.post("/journeys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
         ORDER BY created_at ASC, id ASC LIMIT 1`, [req.user.orgId, preset.key]);
     if (already) {
       return res.json({
-        id: already.id, name: already.name, description: already.description,
+        id: already.id, name: already.name, description: withoutInternalNotes(already.description),
         trigger: already.trigger_key, priority: already.priority,
         steps: already.steps, amountCents: already.trigger_amount_cents,
         audience: already.audience || {}, presetKey: already.preset_key,
@@ -447,7 +448,7 @@ app.patch("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
   const b = req.body || {};
   const v = J.validateJourney({
     name: b.name !== undefined ? b.name : cur.name,
-    description: b.description !== undefined ? b.description : cur.description,
+    description: withoutInternalNotes(b.description !== undefined ? b.description : cur.description),
     trigger: b.trigger !== undefined ? b.trigger : cur.trigger_key,
     priority: b.priority !== undefined ? b.priority : cur.priority,
     amountCents: b.amountCents !== undefined ? b.amountCents : cur.trigger_amount_cents,

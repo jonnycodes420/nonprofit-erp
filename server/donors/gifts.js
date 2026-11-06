@@ -1052,6 +1052,9 @@ app.post("/gifts/:id/receipt", requireAuth, checkWriteAccess, wrap(async (req, r
   if (!donor) return res.status(404).json({ error: "Donor not found" });
 
   const existingRows = await query("SELECT * FROM receipts WHERE gift_id=? AND voided_at IS NULL AND type='gift'", [gift.id]);
+  // FEEL-1: a $0 gift has nothing to receipt (the profile no longer offers it either).
+  if (!existingRows.length && !(Number(gift.amount) > 0)) return res.status(409).json({ error: "zero_gift",
+    message: "This gift is $0, and a tax receipt is for money given. Nothing was made." });
   if (existingRows.length) {
     if (req.query.resend !== undefined) {
       const emailSent = await resendReceiptEmail(existingRows[0], org, donor, actor(req));

@@ -448,7 +448,7 @@ function NoDonorsCard({ onNavigate, sample, importAbove = false }) {
   );
 }
 
-export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = false, drift = null, importAbove = false }) {
+export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = false, drift = null, importAbove = false, onSettled = null }) {
   // HOME-4: the deck alone; the ladder and "See all" panels read the cards when they open.
   // PERF-2: Home's first read carries each tab's first moves (deck.partial);
   // every move is read when she first reaches for the deck (a touch, a hover,
@@ -479,6 +479,10 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
   // and says so; it reads again until they are in.
   const preparing = !!(deck && deck.preparing);
   useEffect(() => { if (!preparing) return; const t = setTimeout(load, 4000); return () => clearTimeout(t); }, [data]);
+  // FEEL-1: Home draws what sits under the deck once the deck has its size
+  // (drawn or failed), so a late deck never pushes the Thread down.
+  const settled = !!(deck || err);
+  useEffect(() => { if (settled && onSettled) onSettled(); }, [settled]);
   if (err) return null;
   if (!deck) return <section aria-label="Your moves" data-testid="home-moves" style={{ ...CARD, color: T.ink3, fontSize: 14 }}>Reading your donors…</section>;
 

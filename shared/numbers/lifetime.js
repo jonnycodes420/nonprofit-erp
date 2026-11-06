@@ -12,7 +12,9 @@
 const { MONEY } = require("./money");
 
 // A gift on file the imported total does not already cover (donorSummary.js).
-const AFTER_IMPORT = (g = "g", d = "d") => `(${d}.imported_through IS NULL OR ${g}.date IS NULL OR ${g}.date > ${d}.imported_through)`;
+// FEEL-1: an undated gift from the import that stated the total is inside it
+// (donorSummary.js has the same rule): dating it later never moves Lifetime.
+const AFTER_IMPORT = (g = "g", d = "d") => `(${d}.imported_through IS NULL OR (${g}.date IS NULL AND (${d}.imported_import_id IS NULL OR ${g}.import_id IS DISTINCT FROM ${d}.imported_import_id)) OR ${g}.date > ${d}.imported_through)`;
 
 // SQL: person `d`'s lifetime giving, in dollars (numeric).
 const LIFETIME = (d = "d") => `(COALESCE(${d}.imported_total, 0) + COALESCE((SELECT SUM(lg.amount) FROM gifts lg
