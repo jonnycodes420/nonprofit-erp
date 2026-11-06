@@ -146,16 +146,23 @@ function Trend({ walks }) {
 // it to this web process: time only, kept a day in memory, so a deploy starts it again.
 function PageTiming({ t }) {
   const ms = v => (v == null ? "–" : `${(v / 1000).toFixed(1)} s`);
-  const NAMES = { home: "Home", donors: "Donors", profile: "A profile", fundraising: "Fundraising", "giving-report": "Giving report", journeys: "Journeys", settings: "Settings", other: "Other pages" };
+  const NAMES = { home: "Home", donors: "Donors", profile: "A profile", fundraising: "Fundraising", "giving-report": "Giving report", journeys: "Journeys", settings: "Settings", "giving-page-editor": "Giving page editor", other: "Other pages" };
+  // SPEED-3: Settings, section by section (the tab ids, in the tab bar's words).
+  const PARTS = { org: "Organization", team: "Team", connections: "Connections", giving: "Giving Pages", customization: "Customization", words: "Your words",
+    journeys: "Journeys", portal: "Donor Portal", automatic: "Automatic email", "going-out": "Going out", receipts: "Tax Receipts", brandkit: "Brand kit",
+    imports: "Imports", atlas: "Atlas", audit: "Audit log", privacy: "Privacy", data: "Your Data", profile: "My profile", account: "Account", myemail: "Your email", security: "Security" };
+  const line = (r, label, indent) => <tr key={r.page + "|" + (r.part || "")} data-testid={r.part ? `ops-page-timing-settings-${r.part}` : undefined}>
+    <td style={{ ...cell, fontWeight: indent ? 400 : 600, ...(indent ? { padding: "6px 10px 6px 22px" } : {}) }}>{label}</td>
+    <td style={cell}>{r.first.n ? `${ms(r.first.p50)} · ${ms(r.first.p95)} (${r.first.n})` : "none yet"}</td>
+    <td style={cell}>{r.moved.n ? `${ms(r.moved.p50)} · ${ms(r.moved.p95)} (${r.moved.n})` : "none yet"}</td></tr>;
   return <section style={card} data-testid="ops-page-timing">
     <h2 style={h2}>Page timing</h2>
-    <p style={says}>How long each page took to be ready (drawn, its numbers in, no spinner), as people's browsers reported it to this web process since {t && t.since ? t.since.slice(0, 16).replace("T", " ") + " UTC" : "its last deploy"}. First is the first page after signing in or a reload; Moved is a page opened from inside the app. Median and the slowest one in twenty; the bar is 2 s.</p>
+    <p style={says}>How long each page took to be ready (drawn, its numbers in, no spinner), as people's browsers reported it to this web process since {t && t.since ? t.since.slice(0, 16).replace("T", " ") + " UTC" : "its last deploy"}. First is the first page after signing in or a reload; Moved is a page opened from inside the app. Settings is also shown section by section, a move between sections counted as Moved. Median and the slowest one in twenty; the bar is 2 s.</p>
     {!t ? <p style={says}>Not reported yet.</p> :
       <table style={{ borderCollapse: "collapse", width: "100%" }}><tbody>
         <tr><td style={cell} /><td style={{ ...cell, fontWeight: 600 }}>First</td><td style={{ ...cell, fontWeight: 600 }}>Moved</td></tr>
-        {t.pages.map(r => <tr key={r.page}><td style={{ ...cell, fontWeight: 600 }}>{NAMES[r.page] || r.page}</td>
-          <td style={cell}>{r.first.n ? `${ms(r.first.p50)} · ${ms(r.first.p95)} (${r.first.n})` : "none yet"}</td>
-          <td style={cell}>{r.moved.n ? `${ms(r.moved.p50)} · ${ms(r.moved.p95)} (${r.moved.n})` : "none yet"}</td></tr>)}
+        {t.pages.flatMap(r => [line(r, NAMES[r.page] || r.page, false),
+          ...(r.page === "settings" ? (t.parts || []).map(x => line(x, PARTS[x.part] || x.part, true)) : [])])}
       </tbody></table>}
   </section>;
 }

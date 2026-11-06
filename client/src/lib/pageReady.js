@@ -19,11 +19,17 @@
 // from the page. /ops shows them beside the walk trend.
 //
 // Behaviour-neutral: it watches, it never holds anything back.
+//
+// SPEED-3: Settings says which section (`part`, from ?section=, "org" when
+// none), and a move between sections is timed like a move between pages. The
+// giving page editor (/portal-editor) is a page of its own; it draws outside
+// the app's content column, so its root is the app's #root.
 const QUIET_MS = 150;
 const GIVE_UP_MS = 30000;
 const SPINNER = '[data-testid^="skeleton"],[data-testid$="-loading"],[aria-busy="true"],[role="progressbar"]';
 const SPINNER_TEXT = /^(Loading|Reading)\b[^.]{0,60}…$/;
 const PAGES = [
+  [/^\/portal-editor\/?$/, () => "giving-page-editor"],
   [/^\/dashboard\/?$/, () => "home"],
   [/^\/donors\/?$/, () => "donors"],
   [/^\/donors\/[^/]+$/, () => "profile"],
@@ -51,6 +57,13 @@ function counts(input, init) {
   } catch { return false; }
 }
 
+// Settings' section, as the address names it; null on every other page.
+export function pagePart(pathname, search = "") {
+  if (!/^\/app\/settings\/?$/.test(pathname)) return null;
+  return new URLSearchParams(search).get("section") || "org";
+}
+const ROOT = { "giving-page-editor": "#root" };
+
 function spinnerShowing(root) {
   if (root.querySelector(SPINNER)) return true;
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -61,36 +74,36 @@ function spinnerShowing(root) {
   return false;
 }
 
-function readyNow() {
+function readyNow(page) {
   if (inFlight > 0) return false;
-  const root = document.querySelector(".app-content");
+  const root = document.querySelector(ROOT[page] || ".app-content");
   if (!root || !(root.textContent || "").trim()) return false;
   return !spinnerShowing(root);
 }
 
 function finish(w, ms) {
   w.stop();
-  const out = { page: w.page, ms: Math.round(ms), fresh: w.fresh };
+  const out = { page: w.page, ms: Math.round(ms), fresh: w.fresh, ...(w.part ? { part: w.part } : {}) };
   try { performance.mark("steward:page-ready", { detail: out }); } catch { /* an old browser */ }
   window.__stewardReady = out;
   (window.__stewardReadyLog = window.__stewardReadyLog || []).push(out);
   if (sink) { try { sink(out); } catch { /* a beacon never breaks the page */ } }
 }
 
-function start(page, t0, fresh) {
+function start(page, t0, fresh, part = null) {
   if (watch) watch.stop();
   if (!page) { watch = null; return; }
   let since = null, timer = null, frame = 0, stopped = false;
-  const w = { page, fresh, t0 };
+  const w = { page, fresh, t0, part };
   const check = () => {
     frame = 0;
     if (stopped) return;
     const now = performance.now();
     if (now - t0 > GIVE_UP_MS) return w.stop();
-    if (!readyNow()) { since = null; clearTimeout(timer); timer = null; return; }
+    if (!readyNow(page)) { since = null; clearTimeout(timer); timer = null; return; }
     if (since != null) return;   // already quiet: the timer is running
     since = now;
-    timer = setTimeout(() => { timer = null; if (!stopped && since != null && readyNow()) finish(w, since - t0); else { since = null; schedule(); } }, QUIET_MS);
+    timer = setTimeout(() => { timer = null; if (!stopped && since != null && readyNow(page)) finish(w, since - t0); else { since = null; schedule(); } }, QUIET_MS);
   };
   const schedule = () => { if (!frame && !stopped) frame = requestAnimationFrame(check); };
   const mo = new MutationObserver(schedule);
@@ -120,19 +133,24 @@ export function installPageReady(send) {
     return p;
   };
   // The page load: from the navigation's start.
-  start(pageName(location.pathname, location.search), 0, true);
+  start(pageName(location.pathname, location.search), 0, true, pagePart(location.pathname, location.search));
   firstOfLoad = false;
   // A move inside the app: from the moment the address changed.
-  let last = location.pathname + "|" + pageName(location.pathname, location.search);
-  const moved = () => {
-    const key = location.pathname + "|" + pageName(location.pathname, location.search);
+  const keyNow = () => location.pathname + "|" + pageName(location.pathname, location.search) + "|" + pagePart(location.pathname, location.search);
+  let last = keyNow();
+  const moved = (how) => {
+    const key = keyNow();
     if (key === last) return;
     last = key;
-    start(pageName(location.pathname, location.search), performance.now(), firstOfLoad);
+    const page = pageName(location.pathname, location.search), part = pagePart(location.pathname, location.search);
+    // The first page still loading, and only its address tidied (Settings
+    // spelling an old section name as the one it shows): the same wait, renamed.
+    if (how === "replaceState" && page === "settings" && watch && watch.fresh && watch.page === page) { watch.part = part; return; }
+    start(page, performance.now(), firstOfLoad, part);
   };
   for (const k of ["pushState", "replaceState"]) {
     const orig = history[k];
-    history[k] = function () { const r = orig.apply(this, arguments); moved(); return r; };
+    history[k] = function () { const r = orig.apply(this, arguments); moved(k); return r; };
   }
-  window.addEventListener("popstate", moved);
+  window.addEventListener("popstate", () => moved("popstate"));
 }

@@ -49,53 +49,57 @@ async function closeness(orgId, d, today, w) {
   // drift.js's rule), never the stored nightly column, so this word and the
   // drift badge computed on read cannot disagree.
   const { key } = await E.closenessNow(query, orgId, d.id, today, score ? score.band : "distant");
-  const facts = [];
-  const add = async (source, text) => {
-    const v = await FS.figureValue(orgId, source);
-    const t = text(v);
-    if (t) facts.push({ text: t, source, value: v.value });
-  };
+  // SPEED-3: the figures below don't depend on each other, so they are asked
+  // at once and the facts are put in the order they always had (the rhythm,
+  // this fiscal year, volunteer hours, events, member, fundraiser, survey,
+  // email, last contact). One after another, three of them each read the
+  // person's touches again in turn, and this was the profile's slowest read.
   const ytd = { key: "donor-gifts-between", params: { donor: d.id, from: w.cyFrom, to: today } };
-  const [ytdRows] = await query(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 AND LEFT(date,10) BETWEEN ? AND ?`,
-    [orgId, d.id, w.cyFrom, today]);
-  if (ytdRows.n > 0) facts.push({ text: `gave ${times(ytdRows.n)} this fiscal year`, source: ytd });
-  // WIRE-1 addendum: their own rhythm, said by the one rhythm's rule
-  // (shared/numbers/rhythm.js), so "gave once this year" reads as the pattern
-  // it is for a once-a-year donor. STATUS-1: the sentence and the word read
-  // the same answer. On track says the pattern only ("latest gift on time" is
-  // cut: it read as a promise about the next one); a person whose expected
-  // gift has passed is told by how much, in whole weeks or months, and is
-  // never On track. When Drift's own line is on the profile (drifting), that
-  // line says it, so it is not said twice.
-  if (key === "on_track" || key === "cooling") {
+  const evSrc = { key: "donor-engagement-part", params: { donor: d.id, part: "events" } };
+  const emailSrc = { key: "donor-engagement-part", params: { donor: d.id, part: "email" } };
+  const gapSrc = { key: "donor-contact-gap", params: { donor: d.id, today } };
+  const valueFact = async (source, text) => { const v = await FS.figureValue(orgId, source); const t = text(v); return t ? { text: t, source, value: v.value } : null; };
+  const rhythmFact = async () => {
+    if (key !== "on_track" && key !== "cooling") return null;
     const gs = await query(`SELECT LEFT(g.date,10) AS date, g.amount::text AS amount FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND g.amount > 0
       AND LEFT(g.date,10) <= ? AND ${require("../shared/numbers/money").MONEY("g")}`, [orgId, d.id, today]);   // money only, as closenessNow
     const a = drift.assessDrift(gs.map(g => ({ date: g.date, amount: Number(g.amount) })), today);
     const rhythm = a.seasonal && a.seasonal.kind === "month" ? `every ${MONTHS[a.seasonal.month - 1]}` : drift.humanCadence(a.cadenceDays);
     const src = a.firstGiftDate ? { key: "donor-gifts-between", params: { donor: d.id, from: a.firstGiftDate, to: today } } : null;
-    if (key === "on_track" && a.onTime && rhythm && src) facts.unshift({ text: `gives ${rhythm}`, source: src });
-    else if (key === "cooling" && a.late && a.state === "ok" && rhythm && src) {
-      facts.unshift({ text: `gives ${rhythm}, now ${RHY.spanBetween(a.expectedNext, today)} past their usual time`, source: src });
+    if (key === "on_track" && a.onTime && rhythm && src) return { text: `gives ${rhythm}`, source: src };
+    if (key === "cooling" && a.late && a.state === "ok" && rhythm && src) return { text: `gives ${rhythm}, now ${RHY.spanBetween(a.expectedNext, today)} past their usual time`, source: src };
+    return null;
+  };
+  const eventFact = async () => {
+    const ev = await FS.figure(orgId, evSrc, {}, { pageSize: 5 });
+    if (ev && ev.totalRows === 1) {
+      const [e] = await query(`SELECT e.name FROM event_attendees a JOIN events e ON e.id = a.event_id AND e.org_id = a.org_id
+         WHERE a.org_id = ? AND a.donor_id = ? ORDER BY e.date DESC NULLS LAST LIMIT 1`, [orgId, d.id]).catch(() => []);
+      return { text: e && e.name ? `came to ${e.name}` : "came to an event", source: evSrc };
     }
-  }
-  await add({ key: "volunteer-hours", params: { from: w.w0From, to: today, donor: d.id } },
-    v => (v.value > 0 ? `${Number(v.value).toLocaleString("en-US")} volunteer hours in the last 12 months` : null));
-  const evSrc = { key: "donor-engagement-part", params: { donor: d.id, part: "events" } };
-  const ev = await FS.figure(orgId, evSrc, {}, { pageSize: 5 });
-  if (ev && ev.totalRows === 1) {
-    const [e] = await query(`SELECT e.name FROM event_attendees a JOIN events e ON e.id = a.event_id AND e.org_id = a.org_id
-       WHERE a.org_id = ? AND a.donor_id = ? ORDER BY e.date DESC NULLS LAST LIMIT 1`, [orgId, d.id]).catch(() => []);
-    facts.push({ text: e && e.name ? `came to ${e.name}` : "came to an event", source: evSrc });
-  } else if (ev && ev.totalRows > 1) facts.push({ text: `came to ${ev.totalRows} events`, source: evSrc });
-  await add({ key: "donor-membership", params: { donor: d.id } }, v => (v.value > 0 ? "a member" : null));
-  await add({ key: "donor-fundraising", params: { donor: d.id } }, v => (v.value > 0 ? `raised ${fmt(v.value)} as a fundraiser` : null));
-  await add({ key: "donor-engagement-part", params: { donor: d.id, part: "surveys" } }, v => (v.value > 0 ? "answered a survey" : null));
-  const emailSrc = { key: "donor-engagement-part", params: { donor: d.id, part: "email" } };
-  const em = await FS.figure(orgId, emailSrc, {}, { pageSize: 1 });
-  if (em && em.totalRows > 0) facts.push({ text: `opened or clicked ${em.totalRows === 1 ? "an email" : `${em.totalRows} emails`}`, source: emailSrc });
-  const gapSrc = { key: "donor-contact-gap", params: { donor: d.id, today } };
-  const gap = await FS.figureValue(orgId, gapSrc);
-  if (gap.totalRows > 0) facts.push({ text: `last contact ${ago(Number(gap.value))}`, source: gapSrc });   // COUNTS-1: the header's word and rule
+    return ev && ev.totalRows > 1 ? { text: `came to ${ev.totalRows} events`, source: evSrc } : null;
+  };
+  const emailFact = async () => {
+    const em = await FS.figure(orgId, emailSrc, {}, { pageSize: 1 });
+    return em && em.totalRows > 0 ? { text: `opened or clicked ${em.totalRows === 1 ? "an email" : `${em.totalRows} emails`}`, source: emailSrc } : null;
+  };
+  const gapFact = async () => {
+    const gap = await FS.figureValue(orgId, gapSrc);
+    return gap.totalRows > 0 ? { text: `last contact ${ago(Number(gap.value))}`, source: gapSrc } : null;   // COUNTS-1: the header's word and rule
+  };
+  const [rhythmF, [ytdRows], ...rest] = await Promise.all([
+    rhythmFact(),
+    query(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 AND LEFT(date,10) BETWEEN ? AND ?`, [orgId, d.id, w.cyFrom, today]),
+    valueFact({ key: "volunteer-hours", params: { from: w.w0From, to: today, donor: d.id } },
+      v => (v.value > 0 ? `${Number(v.value).toLocaleString("en-US")} volunteer hours in the last 12 months` : null)),
+    eventFact(),
+    valueFact({ key: "donor-membership", params: { donor: d.id } }, v => (v.value > 0 ? "a member" : null)),
+    valueFact({ key: "donor-fundraising", params: { donor: d.id } }, v => (v.value > 0 ? `raised ${fmt(v.value)} as a fundraiser` : null)),
+    valueFact({ key: "donor-engagement-part", params: { donor: d.id, part: "surveys" } }, v => (v.value > 0 ? "answered a survey" : null)),
+    emailFact(),
+    gapFact(),
+  ]);
+  const facts = [rhythmF, ytdRows.n > 0 ? { text: `gave ${times(ytdRows.n)} this fiscal year`, source: ytd } : null, ...rest].filter(Boolean);
   const label = DS.CLOSENESS[key].label;
   const why = {
     close: "Close and Warm are the engagement score's own bands: 67 and above is Close, 34 to 66 is Warm.",

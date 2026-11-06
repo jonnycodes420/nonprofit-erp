@@ -415,11 +415,13 @@ if (MARKETING_PATHS.includes(here)) loadMarketing().then(draw, draw);
 else {
   // HARDEN-2: on the app with a session, its code and its boot reads start
   // now, side by side, instead of one after the other (lib/bootReads.js).
-  if (APP_PATHS.test(here) && localStorage.getItem("npe_token")) {
-    // PERF-4: the page-ready mark (lib/pageReady.js), time only, to /ops.
+  // PERF-4: the page-ready mark (lib/pageReady.js), time only, to /ops;
+  // SPEED-3: the giving page editor, opened on its own address, too.
+  if ((APP_PATHS.test(here) || here === "/portal-editor") && localStorage.getItem("npe_token"))
     installPageReady(m => fetch(`${API}/perf/page-ready`, { method: "POST", keepalive: true,
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("npe_token")}` },
       body: JSON.stringify(m) }).catch(() => {}));
+  if (APP_PATHS.test(here) && localStorage.getItem("npe_token")) {
     startBootReads();
     startShellReads(here === "/dashboard");
     if (here === "/dashboard") startHomeReads();
