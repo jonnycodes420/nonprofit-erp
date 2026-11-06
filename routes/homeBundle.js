@@ -17,7 +17,7 @@ const inProcess = require("../inProcess");
 const routers = { r0: express.Router() };
 
 // The reads Home makes when it opens (Dashboard.jsx and the panels inside it),
-// by path. A query string is allowed; the path must be one of these.
+// and since PERF-4 the other main pages' first reads, by path. A query string is allowed; the path must be one of these.
 const HOME_READS = new Set([
   "/data-health/notice", "/gift-starts/notice", "/journey-sends/notice", "/recurring/exceptions", "/readouts/latest", "/move",
   "/sequences/home", "/agent/daily-line", "/threads/health", "/org/setup-status", "/me/home-layout",
@@ -41,6 +41,15 @@ const HOME_READS = new Set([
   "/insights",
   // HOME-4: the right rail's reads (client/src/lib/homeReads.js RAIL_READS), in their own bundle.
   "/mail-types", "/mail-types/status",
+  // PERF-4: the other main pages' first reads (client/src/lib/pageReads.js
+  // PAGE_READS), asked for at the boot and parked for the page. All plain GETs;
+  // none asks a third party.
+  "/privacy", "/me", "/donors/list-setup", "/org/team", "/portfolio/officers", "/custom-fields", "/donors/custom-field-values/all",
+  "/giving-pages", "/fundraising/campaigns",
+  "/ask/suggestions", "/meetings/by-staff", "/saved-reports", "/dashboards", "/saved-dashboards", "/finance/funds",
+  "/reports/top-donors", "/campaigns", "/reports/giving-summary",
+  "/journeys", "/auto-send/settings",
+  "/people", "/custom-fields/kept-raw", "/org/sending-domain", "/org/voice-samples", "/impact-metrics", "/org/ai-status",
 ]);
 const MAX_READS = 40;
 // At most this many run at once for one bundle, so one person's Home cannot

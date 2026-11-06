@@ -1,10 +1,9 @@
 import { NoRecentMeetingPanel, WarmNotAskedPanel } from "./MovesPanels";
 import { useProfileReads } from "../lib/profileReads";   // LOAD-1
-import { useState, useEffect, useMemo, useRef, Component } from "react";
+import { useState, useEffect, useMemo, useRef, Component, lazy, Suspense } from "react";
 import { GrantImport } from "./GrantImport";
-import OldReportsImport from "./OldReportsImport";
 import HistoryImport from "./HistoryImport";
-import SpreadsheetImport, { SheetDropTarget } from "./SpreadsheetImport";
+import { SheetDropTarget } from "./SheetDropTarget";   // PERF-4: the reader itself loads when a window opens (below)
 import Papa from "papaparse";
 import { HoursImportModal } from "./VolunteerPanel";
 import * as HOURS_PRESETS_MOD from "../../../shared/volunteerHours.js";
@@ -32,13 +31,26 @@ import { ScreeningFileModal, ScreeningImportModal } from "./RoomToGive";
 import { useCanMajorGifts } from "../lib/majorGifts";
 import { FALLBACK_SETUP, PAGE_SIZES, cleanColumns } from "./DonorColumns";
 import { EMPTY_WHERE, whereParam } from "./DonorFilters";
-import { MergeDuplicatesModal, parseFileToSheets } from "./DonorImport";
+// PERF-4: from their own modules, not through DonorImport.jsx, whose import screens
+// (and the spreadsheet reader they open) then stay off Donors' first look.
+import { MergeDuplicatesModal } from "./import/MergeDuplicatesModal";
 import { DonorProfile, EditDonorModal, FollowUpTaskModal, LogTouchpointModal } from "./DonorProfile";
 import { PATTERN_META, TIER_META } from "./donorShared";
 import { PLAN_UNKNOWN } from "../lib/entitlement";
 import { useNavigate } from "react-router-dom";
 import { donorHref, donorsListHref, donorsListState } from "../lib/appUrls";
-export { DonorImport } from "./DonorImport";
+import { retryImport } from "../lib/lazyRetry";
+
+// PERF-4: the spreadsheet reader (113 KB) and the old-reports wizard are their
+// own chunks, loaded when one of their windows opens, so the Donors list and a
+// profile no longer download them first. Same names and props as before; the
+// window draws a frame later on its first open, and nothing else changes.
+const SpreadsheetImportCode = lazy(() => retryImport(() => import("./SpreadsheetImport")));
+const OldReportsImportCode = lazy(() => retryImport(() => import("./OldReportsImport")));
+function SpreadsheetImport(props) { return <Suspense fallback={null}><SpreadsheetImportCode {...props}/></Suspense>; }
+function OldReportsImport(props) { return <Suspense fallback={null}><OldReportsImportCode {...props}/></Suspense>; }
+// The grant import's file reader, loaded when a file is picked (it reads the file asynchronously anyway).
+const parseFileToSheets = (...a) => import("./import/reader").then(m => m.parseFileToSheets(...a));
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }

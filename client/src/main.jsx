@@ -31,6 +31,7 @@ import MARKETING_PATHS from "virtual:marketing-paths";
 import { MarketingRoute, loadMarketing } from "./marketing/lazySite";
 import { startBootReads, startShellReads, startHomeReads } from "./lib/bootReads";
 import { installPageReady } from "./lib/pageReady";
+import { startPageReads } from "./lib/pageReads";
 import "./marketing/site.css";
 import "./marketing/content.css";
 const LoginPage          = React.lazy(() => import("./pages/LoginPage"));
@@ -423,6 +424,7 @@ else {
     startShellReads(here === "/dashboard");
     if (here === "/dashboard") startHomeReads();
     import("./App").catch(() => {});
+    startPageReads(here, window.location.search);   // PERF-4: and its first reads, parked for it
   }
   draw();
 }
