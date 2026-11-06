@@ -11,9 +11,9 @@
 // (today + overdue). It says so in its tooltip, and the Tasks page shows the
 // same number ("13 due today or overdue"). It re-reads after every write the
 // app makes (api.js onWrite), and when Tell Steward changes something.
-import { useCallback, useEffect, useRef, useState } from "react";
-import { apiFetch, onWrite } from "../api";
-import { useStewardTold } from "./stewardTold";
+import { useCallback, useEffect, useState } from "react";
+import { apiFetch } from "../api";
+import { useChanged } from "./changes";   // STALE-1: the one channel; told() is in it
 
 export const TASK_BADGE_READ = "/tasks/counts?scope=mine";
 export const dueNowOf = c => (c && !c.failed ? (Number(c.today) || 0) + (Number(c.overdue) || 0) : 0);
@@ -24,22 +24,13 @@ export const dueNowWords = c => {
 
 export function useTaskBadge(enabled = true) {
   const [counts, setCounts] = useState(null);
-  const timer = useRef(null);
   const load = useCallback(() => {
     if (!enabled) return;
     apiFetch(TASK_BADGE_READ).then(setCounts).catch(() => {});
   }, [enabled]);
-  // A write tells this before it leaves and again when it lands; the read
-  // that counts is the one after it lands.
-  const soon = useCallback(() => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(load, 150);
-  }, [load]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    const off = onWrite(w => { if (!w || w.phase !== "before") soon(); });
-    return () => { off(); if (timer.current) clearTimeout(timer.current); };
-  }, [soon]);
-  useStewardTold(() => soon());
+  // STALE-1: a change that touches tasks (a write, Tell Steward, Atlas, the
+  // worker), and no other: a gift no longer re-reads the badge.
+  useChanged(["task"], () => load(), null, 150);
   return { n: dueNowOf(counts), counts, title: counts ? dueNowWords(counts) : "" };
 }

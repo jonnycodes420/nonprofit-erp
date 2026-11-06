@@ -5,6 +5,7 @@
 // an import that went wrong is exactly when undo matters most.
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../api";
+import { told } from "../lib/stewardTold";
 import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
 
@@ -36,6 +37,7 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
     setDone(r.sentence || (r.stayedCount ? `Undone, except for ${r.stayedCount} people.` : "Undone."));
     setStayed(r.stayedCount ? { count: r.stayedCount, people: r.stayed || [] } : null);
     setStep("done"); if (onUndone) onUndone(r);
+    told({ import: importId });   // STALE-1: an undo that finished on the queue is a change every screen hears
   };
   const removeStayed = async () => {
     const ids = (stayed.people || []).map(p => p.id);

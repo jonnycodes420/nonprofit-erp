@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { useStewardTold, told } from "../lib/stewardTold";
+import { noteServerChanges } from "../lib/changes";   // STALE-1
 import { linkTarget, useAtlasName } from "../lib/atlas";
 
 const TAP = { gift: "Record", pledge: "Record", receipt: "Send both", held_back: "Keep as a note" };
@@ -75,7 +76,9 @@ export function AtlasNote({ place, id = null, onNavigate, style }) {
 // hidden by CSS), and the read Home parks for them is handed over once. They
 // share the read that is in flight, so a phone does not wait on a second.
 let bellRead = null;
-const readBell = () => bellRead || (bellRead = apiFetch("/atlas/activity").finally(() => { bellRead = null; }));
+// STALE-1: its answer carries the org's latest change marks, and a table the
+// worker (or anyone) moved since the last answer is announced (lib/changes.js).
+const readBell = () => bellRead || (bellRead = apiFetch("/atlas/activity").then(r => { noteServerChanges(r && r.changes); return r; }).finally(() => { bellRead = null; }));
 export function AtlasBell({ onNavigate }) {
   const name = useAtlasName();
   const [data, setData] = useState({ waiting: 0, items: [] });

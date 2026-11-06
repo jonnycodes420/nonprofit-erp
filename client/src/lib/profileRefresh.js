@@ -10,32 +10,26 @@
 // Now every write the app makes (api.js onWrite, after it lands) that touches
 // this person, or a task, note, conversation, next step, file or volunteer
 // shift, re-reads them, and so does Tell Steward (VOICE-4's told()).
-import { useEffect, useRef, useState } from "react";
-import { onWrite } from "../api";
+//
+// STALE-1: the same behaviour, heard through the one channel (lib/changes.js):
+// a change that names this person, or any task, note, conversation, file,
+// volunteer shift or event guest row. `money` is true when it moved a gift or
+// a pledge of theirs (the header's figures re-read too).
+import { useState } from "react";
 import { useStewardTold } from "./stewardTold";
+import { useChanged } from "./changes";
 
-const TOUCHES = /^\/(tasks|interactions|threads|attachments|volunteer|notes|conversations|events\/[^/]+\/(attendees|guests))/;
-export function writeTouches(donorId, w) {
-  if (!w || w.phase !== "after" || !w.path) return false;
-  const path = String(w.path).split("?")[0];
-  return (!!donorId && path.includes("/" + donorId)) || TOUCHES.test(path);
-}
+export const PROFILE_KINDS = ["person", "task", "note", "volunteer", "event"];
 
-// fn({ fromWrite }) runs on Tell Steward (fromWrite false) and, shortly
-// after, on any write that touches this record (fromWrite true).
+// fn({ fromWrite, money }) runs on Tell Steward (fromWrite false) and, shortly
+// after, on any other change that reaches this record (fromWrite true).
 export function useProfileRefresh(donorId, fn) {
-  const ref = useRef(fn);
-  ref.current = fn;
-  useStewardTold(d => { if (ref.current) ref.current({ ...(d || {}), fromWrite: false }); });
-  useEffect(() => {
-    let t = null;
-    const off = onWrite(w => {
-      if (!writeTouches(donorId, w)) return;
-      if (t) clearTimeout(t);
-      t = setTimeout(() => { if (ref.current) ref.current({ fromWrite: true }); }, 120);
-    });
-    return () => { off(); if (t) clearTimeout(t); };
-  }, [donorId]);
+  useStewardTold(d => { if (fn) fn({ ...(d || {}), fromWrite: false }); });
+  useChanged(PROFILE_KINDS, c => {
+    if (c.source === "told" || !fn) return;   // told() is heard above, at once
+    const mine = c.kinds.has("person") && (!c.ids.person || c.ids.person.has(String(donorId)));
+    fn({ fromWrite: true, money: mine && (c.kinds.has("gift") || c.kinds.has("pledge")) });
+  }, donorId ? { person: donorId } : null);
 }
 
 // The same signal as a number, for a hook's dependency list.
