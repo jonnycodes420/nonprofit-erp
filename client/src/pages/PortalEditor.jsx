@@ -704,7 +704,8 @@ ${INLINE_CSS}`;
   const useRealPage = (surface === "give" || surface === "orgform") && !!livePayload;
   // WALKB-1 · A HINT IS THE EDITOR'S. Whatever is still Steward's prompt is named
   // here, and the public page leaves it out until she writes over it.
-  const hintsOnPage = surface === "give" ? hintsLeft({ story: ds?.story, widgets }) : [];
+  // The story field shows only on a page with no text block, so only then is its hint on the page.
+  const hintsOnPage = surface === "give" ? hintsLeft({ story: (widgets || []).some(w => w && w.type === "richtext") ? "" : ds?.story, widgets }) : [];
   const realPage = useRealPage ? (
     <div data-testid="real-preview">
       {hintsOnPage.length > 0 && (

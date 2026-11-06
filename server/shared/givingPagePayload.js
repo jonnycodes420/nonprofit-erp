@@ -117,8 +117,6 @@ async function givingPagePublicPayload(org, page, reqQuery, { editing = false } 
       // may state (shared/givingPageDesign.js decides which lines show).
       facts: { orgName: org.donor_facing_name, legalName: org.legal_name || "", ein: PH.publicEin(org.ein),
                contactEmail: org.give_contact || "", address: org.receipt_address || "", stripe: !!org.stripe_account_id } },
-    // WALKB-1: the editor's preview says which parts are still Steward's hint.
-    ...(editing ? { hintsLeft: PH.hintsLeft({ story: page.story, widgets: page.published }) } : {}),
     givingPage: {
       id: page.id, slug: page.slug, title: page.title, story: editing ? page.story : PH.storyWithoutHints(page.story), imageUrl: page.image_url,
       // FIX-41: the cover with its words and focal point (pictures.js).

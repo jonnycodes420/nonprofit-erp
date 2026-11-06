@@ -67,6 +67,7 @@ const person = (id, name, f = {}) => q(
   ok("§0 signed in", !!tok);
 
   // ── §1 a hint is never published ─────────────────────────────────────────
+  const PH = await imp("shared", "placeholderCopy.js");
   const made = await api("POST", "/campaigns/from-template", tok, { template: "yearend" });
   ok("§1 the year-end template stands up its page", made.status === 201 && made.body.slug, made.body);
   const pub = await api("GET", `/org/${SLUG}/giving-page/${made.body.slug}/public`, null);
@@ -89,10 +90,11 @@ const person = (id, name, f = {}) => q(
   const blocks = ((old.body && old.body.givingPage && old.body.givingPage.page) || []).filter(w => w.type === "richtext");
   ok("§1 a block that is only the hint is left off; the other keeps its real words", blocks.length === 1 && blocks[0].blocks.length === 1 && /Forty children/.test(blocks[0].blocks[0].text), blocks);
   const pv = await api("GET", `/giving-pages/${P("gp_old")}/page/preview`, tok);
-  ok("§1 the editor's preview names what is still a hint", pv.status === 200 && Array.isArray(pv.body.hintsLeft) && pv.body.hintsLeft.length === 3, pv.body.hintsLeft);
+  // The editor draws the preview's blocks and names what is still a hint (PortalEditor: hintsLeft, "Fill this in before you share").
+  const pvHints = call(PH.hintsLeft, { story: pv.body && pv.body.givingPage && pv.body.givingPage.story, widgets: pv.body && pv.body.givingPage && pv.body.givingPage.page });
+  ok("§1 the editor's preview keeps the hints, so it can name them and she can write over them", pv.status === 200 && Array.isArray(pvHints) && pvHints.length === 3, pvHints);
 
   // ── §2 a placeholder EIN never reaches a stranger ───────────────────────
-  const PH = await imp("shared", "placeholderCopy.js");
   ok("§2 the placeholder shapes are caught, a real EIN is not", ["47-1234567", "12-3456789", "00-0000000", "99-9999999", "123456789"].every(e => call(PH.isPlaceholderEin, e) === true)
     && call(PH.isPlaceholderEin, "83-2741956") === false && call(PH.isPlaceholderEin, "") === false);
   const facts = b => (b && b.org && b.org.facts) || {};
