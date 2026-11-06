@@ -616,9 +616,12 @@ async function donorCols() {
   }
   return donorColsCache;
 }
+// One person's gift cents, or several people's at once (SPEED-2: one statement for both).
 const giftCentsTx = async (client, orgId, id) => {
-  const [r] = await queryTx(client, "SELECT COALESCE(SUM(round(amount*100)),0)::bigint AS c FROM gifts WHERE org_id=? AND donor_id=?", [orgId, id]);
-  return Number(r.c);
+  const ids = Array.isArray(id) ? id : [id];
+  const rows = await queryTx(client, "SELECT donor_id, COALESCE(SUM(round(amount*100)),0)::bigint AS c FROM gifts WHERE org_id=? AND donor_id = ANY(?) GROUP BY donor_id", [orgId, ids]);
+  const of = x => Number((rows.find(r => r.donor_id === x) || { c: 0 }).c);
+  return Array.isArray(id) ? ids.map(of) : of(id);
 };
 
 // THE MERGE. One transaction: snapshot both people, set aside the rows that
@@ -638,10 +641,7 @@ function mergeInTx(orgId, keptId, mergedId, { choices, me, confidence, reasons, 
     const snap = await queryTx(client, `SELECT id, to_jsonb(d.*) AS j FROM donors d WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL FOR UPDATE`, [orgId, [keptId, mergedId]]);
     const keptJ = snap.find(r => r.id === keptId)?.j, mergedJ = snap.find(r => r.id === mergedId)?.j;
     if (!keptJ || !mergedJ) { const e = new MergeRefused("One of these people is no longer on file."); e.status = 404; throw e; }
-    // SPEED-2: both people's money before, in one statement
-    const sums = await queryTx(client, "SELECT donor_id, COALESCE(SUM(round(amount*100)),0)::bigint AS c FROM gifts WHERE org_id=? AND donor_id = ANY(?) GROUP BY donor_id", [orgId, [keptId, mergedId]]);
-    const centsOf = id => Number((sums.find(r => r.donor_id === id) || { c: 0 }).c);
-    const keptCentsBefore = centsOf(keptId), mergedCentsBefore = centsOf(mergedId);
+    const [keptCentsBefore, mergedCentsBefore] = await giftCentsTx(client, orgId, [keptId, mergedId]);   // SPEED-2: one statement for both
     const moved = [], setAside = [];
     const pick = choices && typeof choices === "object" ? { ...DH.defaultChoices(keptJ, mergedJ), ...choices } : DH.defaultChoices(keptJ, mergedJ);
     for (const k of Object.keys(pick)) if (pick[k] !== "kept" && pick[k] !== "other") pick[k] = "kept";
