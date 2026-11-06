@@ -4,6 +4,11 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 
 ## Rules
 
+- **STALE-1 (2026-11-05): one refresh, everywhere.** A view that shows a figure re-reads it through
+  `client/src/lib/changes.js`: `useChanged(kinds, fn, ids)` or `useChangeRev(kinds, ids)`, never its
+  own window event or a write-path regex. A new write route gets a rule in `kindsOfWrite` if no rule
+  names it (a write no rule names is "other" and re-reads nothing). Server-side changes reach the
+  screen through the bell's change marks, so no view polls on its own.
 - **IDS-1 (2026-11-03): a new row id is `newId(prefix)`** from `server/shared/newId.js`: the prefix,
   `_`, and 20 hex (80 bits). Never `uuid().slice(0, N)`: 8 hex is even odds of a duplicate key at
   ~77,000 rows (the arch-check's `short-ids` rule is a hard 0). Old short ids stay as they are, so a
