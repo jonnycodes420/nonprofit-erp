@@ -87,6 +87,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
   const [name, setName] = useState(atlasName());
   const [thread, setThread] = useState([]);       // ATLAS-3: the answers so far, oldest first
   const [progress, setProgress] = useState("");   // ATLAS-3: what Atlas is doing right now
+  const [words, setWords] = useState("");         // SPEED-3: the words written so far (a draft as it streams)
   const poll = useRef(null);
   const [slow, setSlow] = useState(false);        // ATLAS-4: past SLOW_MS, "Still working: <step>"
   const slowAt = useRef(null);
@@ -162,16 +163,16 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
   // ATLAS-3 · the status line: the server says which step it is on.
   function watch() {
     const key = newProgressKey();
-    setProgress(""); setSlow(false);
+    setProgress(""); setWords(""); setSlow(false);
     if (slowAt.current) clearTimeout(slowAt.current);
     slowAt.current = setTimeout(() => setSlow(true), SLOW_MS);   // ATLAS-4: past 15 s, say it is still working and on what
     if (poll.current) clearInterval(poll.current);
     poll.current = setInterval(() => {
-      apiFetch(`/atlas/progress/${key}`).then(r => { if (r && r.progress && r.progress.line) setProgress(r.progress.line); }).catch(() => {});
-    }, 700);
+      apiFetch(`/atlas/progress/${key}`).then(r => { if (r && r.progress && r.progress.line) setProgress(r.progress.line); if (r && r.progress && r.progress.words) setWords(r.progress.words); }).catch(() => {});
+    }, 400);   // SPEED-3: 400 ms, so a draft's first words show inside 3 s
     return key;
   }
-  function unwatch() { if (poll.current) clearInterval(poll.current); poll.current = null; setProgress(""); if (slowAt.current) clearTimeout(slowAt.current); slowAt.current = null; setSlow(false); }
+  function unwatch() { if (poll.current) clearInterval(poll.current); poll.current = null; setProgress(""); setWords(""); if (slowAt.current) clearTimeout(slowAt.current); slowAt.current = null; setSlow(false); }
 
   // ── ASKING ATLAS ──────────────────────────────────────────────────────────
   // The spinners go up before the request leaves, so the first thing she sees
@@ -250,6 +251,8 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
           {[progress || (pending.lines.length > 1 ? "Reading what you asked" : pending.lines[0])].map(l => <li key={l} data-testid="atlas-status" style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 14, color: T.ink }}>
             <span aria-hidden className="atlas-spin" style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid " + T.bg3, borderTopColor: T.greenDk, animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
             {slow ? `Still working: ${l}` : l}</li>)}
+          {/* SPEED-3: the words so far, as Atlas writes them; the finished request replaces them. */}
+          {words && <li data-testid="atlas-words" style={{ fontSize: 13.5, color: T.ink2, whiteSpace: "pre-wrap", lineHeight: 1.5, maxHeight: 220, overflowY: "auto" }}>{words}</li>}
           <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
         </ul>}
 

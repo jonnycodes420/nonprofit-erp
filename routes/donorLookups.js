@@ -94,7 +94,12 @@ app.get("/donors/lookup", requireAuth, wrap(async (req, res) => {
 //   reengage      the Re-engage tab's badge: the lapsed who may be asked
 //                 (shared/numbers/lapse.js reengageSql, POLISH-4: the list's
 //                 own rule; the stored stage is not read).
-app.get("/donors/counts", requireAuth, wrap(async (req, res) => {
+// SPEED-3: the answer is the org's, not the person's, and it is kept in the
+// per-org store (orgSummary.js): served until any write to the org's rows, or
+// the org's day turning, and the nightly check compares it with a fresh one.
+// Under the nightly load test it was a whole-org pass on every Donors and Home
+// visit (1.6 s at p95).
+app.get("/donors/counts", requireAuth, require("../orgSummary").cached("people-counts", { perUser: false }), wrap(async (req, res) => {
   // COUNTS-1: one narrow pass (server/donors/peopleCounts.js), same rules.
   res.json(await require("../server/donors/peopleCounts").peopleCounts(req.user.orgId));
 }));

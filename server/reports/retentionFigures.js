@@ -26,7 +26,7 @@ const NOTHING = "There is nothing yet to measure this against, so there is no pe
 const ratio = (a, b) => { const v = b > 0 ? Math.round((a / b) * 100) : null; return { value: v, cents: null, blank: v === null ? NOTHING : null }; };
 
 // windows: [{ from1, to1, from0, to0 }] (the earlier window, then the later).
-// Returns, per window, the seven specs reportRetention shows, each
+// Returns, per window, the nine specs reportRetention shows, each
 // { value, cents, blank, source, definition } as reportFigures returns them.
 async function retentionFigures(orgId, windows) {
   const { sql, args } = require("../../shared/numbers/retentionFigures").retentionSql(orgId, windows);
@@ -44,6 +44,10 @@ async function retentionFigures(orgId, windows) {
       retainedDonors: [{ key: "retention-window-kept", params: w }, { value: keptN, cents: null, blank: null }],
       priorDollars: [{ key: "retention-window-prior", params: { from1: w.from1, to1: w.to1, measure: "sum" } }, { ...priorS, blank: null }],
       firstYearDonors: [{ key: "retention-window-prior", params: { from1: w.from1, to1: w.to1, firstYear: true } }, { value: n("prior_first_n"), cents: null, blank: null }],
+      // SPEED-3: the row's last two through their sources too, so the report
+      // reads the gifts once (it also ran a per-year statement for these).
+      retainedDollars: [{ key: "retention-window-kept", params: { ...w, measure: "sum" } }, { ...keptS, blank: null }],
+      firstYearRetained: [{ key: "retention-window-kept", params: { ...w, firstYear: true } }, { value: n("kept_first_n"), cents: null, blank: null }],
     };
     const keys = Object.keys(vals);
     const defs = await Promise.all(keys.map(k => FS.figureSentence(vals[k][0])));

@@ -782,7 +782,7 @@ ${INLINE_CSS}`;
   const status = saveState === "saving" || dsSave === "saving" ? "Saving draft…" : saveState === "dirty" || dsSave === "dirty" ? "Unsaved edits…"
     : saveState === "error" || dsSave === "error" ? "Save failed" : meta?.publishedAt ? "Draft autosaves · publish when ready" : "Draft autosaves";
   return (
-    <div style={{ height: "100vh" }}>
+    <div data-page-root="giving-page-editor" style={{ height: "100vh" }}>{/* SPEED-3: the page-ready mark times the editor from here (lib/pageReady.js) */}
       <style>{`
         .pe-wrap { max-width: 860px; margin: 0 auto; padding: 18px 20px 64px; }
         @media (min-width: 1280px) {
