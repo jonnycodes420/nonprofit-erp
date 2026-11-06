@@ -91,17 +91,18 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
 
   const reads = {
     people: {
-      sql: `SELECT id, name, email, phone, kind, person_types, total_giving, contact_name
+      sql: `SELECT id, name, email, phone, kind, person_types, total_giving, contact_name,
+              ${PM.personMatchReasonSql(fp).sql} AS match_reason
          FROM donors
         WHERE org_id = ? AND deleted_at IS NULL
           AND (${PM.personMatchSql(fp).sql} OR mobile ILIKE ? ${E}
                ${digits.length >= 4 && !amt?.explicit ? "OR regexp_replace(COALESCE(phone,''), '\\D', '', 'g') LIKE ? OR regexp_replace(COALESCE(mobile,''), '\\D', '', 'g') LIKE ?" : ""})
-        ORDER BY (${PM.FOLD("name")} LIKE ? ${E}) DESC, total_giving DESC NULLS LAST, id
+        ORDER BY (${PM.FOLD("name")} LIKE ? ${E}) DESC, (${PM.FOLD("name")} LIKE ? ${E}) DESC, total_giving DESC NULLS LAST, id
         LIMIT ${L}`,
       // LIST-2: the one person rule (server/donors/personMatch.js): name, email,
       // phone, contact person, household and linked organization, accents folded.
-      args: [orgId, ...PM.personMatchSql(fp).args, p, ...(digits.length >= 4 && !amt?.explicit ? ["%" + digits + "%", "%" + digits + "%"] : []),
-        PM.fold(String(q).trim()).replace(/[\\%_]/g, ch => "\\" + ch) + "%"] },
+      args: [...PM.personMatchReasonSql(fp).args, orgId, ...PM.personMatchSql(fp).args, p, ...(digits.length >= 4 && !amt?.explicit ? ["%" + digits + "%", "%" + digits + "%"] : []),
+        fp, PM.fold(String(q).trim()).replace(/[\\%_]/g, ch => "\\" + ch) + "%"] },   // WALKB-1: a name match ranks first
     // "Rafael gift": the person, opened on their gifts.
     personGifts: read.personGifts ? {
       sql: `SELECT id, name, kind, total_giving FROM donors
@@ -295,7 +296,9 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
   for (const d of r.people) {
     results.push({ kind: "person", id: d.id, title: d.name, email: d.email || "", phone: d.phone || "",
       contactName: d.contact_name || "", organization: isOrg(d.kind), personKind: d.kind || null,
-      person_types: d.person_types || null, totalGiving: Number(d.total_giving) || 0 });
+      person_types: d.person_types || null, totalGiving: Number(d.total_giving) || 0,
+      // WALKB-1: why this person matched, in words ("household: The Marlowe Hart household").
+      why: PM.matchReasonWords(d.match_reason) });
   }
   for (const h of r.households) {
     results.push({ kind: "household", id: h.id, title: h.name, members: h.members || 0,

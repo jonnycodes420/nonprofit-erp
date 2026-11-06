@@ -11,6 +11,7 @@ import { askConfirm } from "./ConfirmDialog";
 import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, rowClick } from "../lib/appUrls";
 import { GRANT_STATUSES, statusLabel, normalizeStatus, AWARDED_STATUS_KEYS } from "../../../shared/grantShape";
+import { grantAwardLine } from "../../../shared/grantAwardLine.js";   // WALKB-2
 import { AwardStep, FunderPicker } from "./GrantAward";   // GRANTS-FIX: Awarded goes through the award
 import { offerUndo } from "./EditHistory";
 import GrantBoard from "./GrantBoard";
@@ -99,6 +100,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
   const reportDays=grant.reportDue?daysUntil(grant.reportDue):null;
   const statuses=GRANT_STATUSES.map(x=>x.key);
   const curStatus=normalizeStatus(grant.status)||grant.status;
+  const awardLine=grantAwardLine(grant);   // WALKB-2: never "no award recorded" beside 100% funded
 
   const getAI=async(type)=>{
     const key=`${grant.id}_${type}`;setLoadingKey(key);setAiMap(p=>({...p,[key]:""}));
@@ -195,7 +197,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
             {grant.funderId
               ?<span>Funder: {onOpenFunder?<button type="button" onClick={()=>onOpenFunder(grant.funderId)} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,cursor:"pointer",fontSize:12}}>{grant.funder}</button>:grant.funder}</span>
               :<span>Not linked to a funder record{!isReadOnly&&<> · <button type="button" data-testid="grant-link-funder" onClick={()=>setLinking({})} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,cursor:"pointer",fontSize:12}}>Link to funder</button></>}</span>}
-            {normalizeStatus(grant.status)==="awarded"&&!grant.awardPledgeId&&<span data-testid="grant-award-missing">· Awarded, but no award recorded{!isReadOnly&&<> · <button type="button" onClick={()=>setAwarding({target:"awarded"})} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,cursor:"pointer",fontSize:12}}>Record the award</button></>}</span>}
+            {awardLine&&<span data-testid="grant-award-missing">· {awardLine.text}{!isReadOnly&&<> <button type="button" onClick={()=>setAwarding({target:"awarded"})} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,cursor:"pointer",fontSize:12}}>{awardLine.action}</button></>}</span>}
           </div>
           {note&&<div role="status" style={{fontSize:12,color:T.ink,marginTop:4}}>{note.sentence}{!isReadOnly&&!grant.funderId&&<> <button type="button" onClick={()=>{setLinking({then:note.then});setNote(null);}} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,cursor:"pointer",fontSize:12}}>Link to funder</button></>}</div>}
         </div>

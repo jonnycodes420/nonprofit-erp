@@ -36,7 +36,10 @@ export function BrandKitManager({ isAdmin, isReadOnly }) {
   const [k, setK] = useState(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => { apiFetch("/brand-kit").then(setK).catch(() => setK(false)); }, []);
+  // WALKB-1: with no signer saved, the boxes start with the signed-in person's own name and title.
+  const withDefault = r => (r && !r.signatureSaved && r.signatureDefault
+    ? { ...r, signatureName: r.signatureDefault.name, signatureTitle: r.signatureTitle || r.signatureDefault.title } : r);
+  useEffect(() => { apiFetch("/brand-kit").then(r => setK(withDefault(r))).catch(() => setK(false)); }, []);
   if (k === null) return <div style={{ padding: 30 }}><Spin /></div>;
   if (!k) return <div style={card}>The brand kit could not be loaded.</div>;
   const can = isAdmin && !isReadOnly;
@@ -46,7 +49,7 @@ export function BrandKitManager({ isAdmin, isReadOnly }) {
       const r = await apiFetch("/brand-kit", { method: "PUT", body: JSON.stringify({ primary: k.primary, secondary: k.secondary,
         signatureName: k.signatureName, signatureTitle: k.signatureTitle, signatureExtra: k.signatureExtra, address: k.address,
         taxLanguage: k.taxLanguage, statementYourYear: k.statementYourYear }) });
-      setK(r); setMsg("Saved. Every template, printed letter and receipt uses it from now on.");
+      setK(withDefault(r)); setMsg("Saved. Every template, printed letter and receipt uses it from now on.");
     } catch (e) { setMsg(errorMessage(e, "The brand kit could not be saved.")); }
     setBusy(false);
   };
@@ -76,7 +79,10 @@ export function BrandKitManager({ isAdmin, isReadOnly }) {
         <input aria-label="Signer name" placeholder="Name, for example Dana Reyes" value={k.signatureName} disabled={!can} onChange={e => set("signatureName", e.target.value)} style={field} />
         <input aria-label="Signer title" placeholder="Title, for example Executive Director" value={k.signatureTitle} disabled={!can} onChange={e => set("signatureTitle", e.target.value)} style={field} />
         <input aria-label="Another signature line" placeholder="One more line (optional): a phone number or a P.S." value={k.signatureExtra} disabled={!can} onChange={e => set("signatureExtra", e.target.value)} style={{ ...field, gridColumn: "1 / -1" }} />
-        <div style={{ gridColumn: "1 / -1", fontSize: 12, color: T.ink3 }}>The same signer your receipts carry.</div>
+        <div data-testid="signer-source" style={{ gridColumn: "1 / -1", fontSize: 12, color: T.ink3 }}>
+          {k.signatureSaved ? "From Settings: the signer saved for your organization, the same one your receipts carry."
+            : "Your name, from your profile. Nothing is saved yet: save to make it the signer your receipts carry."}
+        </div>
       </div>
       <div style={{ ...card, display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={LABEL}>Your address</div>

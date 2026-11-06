@@ -26,6 +26,10 @@ import { displayDate, displayMonth } from "../../../shared/displayDate.js";
 import { displayName } from "../../../shared/displayName.js";
 import { countLabel, plural } from "../../../shared/countWords.js";
 import { MergeWithModal } from "./profile/MergeWith";
+// WALKB-1 · A SEARCH RESULT SAYS WHY IT IS THERE. A name match needs no words;
+// anything else does ("Matched household: The Marlowe Hart household"), and an
+// archived person a search found says so.
+const searchWhy = d => [d.matchWhy && d.matchWhy !== "name" ? "Matched " + d.matchWhy : null, d.archived ? "Archived" : null].filter(Boolean).join(" · ");
 
 // FIX-2 C — a stage is a word on a cream chip, not a green badge: emerald is
 // the one action on the screen. Lapsed alone keeps a colour, and it is brass.
@@ -983,7 +987,10 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
                       <DriftBadge drift={d.drift}/>
                     </div>
                     {/* Two lines on every row: the email, or a quiet dash when there is none. */}
-                    {!compact&&<div title={d.email||""} style={{...oneLine,fontSize:11,color:T.ink3,marginTop:1}}>{d.email||"—"}</div>}
+                    {/* WALKB-1: a search that matched something other than the name says what it matched. */}
+                    {!compact&&(searchWhy(d)
+                      ?<div data-testid="match-why" title={searchWhy(d)} style={{...oneLine,fontSize:11,color:T.ink2,marginTop:1}}>{searchWhy(d)}</div>
+                      :<div title={d.email||""} style={{...oneLine,fontSize:11,color:T.ink3,marginTop:1}}>{d.email||"—"}</div>)}
                     <span className="dir-stage-mobile" style={{...stageChip(stage),borderRadius:99,padding:"2px 7px",fontSize:10,fontWeight:800,marginTop:3}}>{stage.label}</span>
                   </div>
                 </div>),
@@ -1070,6 +1077,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
                     <span style={{...stageChip(stage),borderRadius:99,padding:"2px 8px",fontSize:9.5,fontWeight:800,marginLeft:8,verticalAlign:"2px",whiteSpace:"nowrap"}}>{stage.label}</span>
                     <DriftBadge drift={d.drift} style={{marginLeft:6,verticalAlign:"2px"}}/>
                   </div>
+                  {searchWhy(d)&&<div data-testid="match-why" style={{fontSize:13,color:T.ink2,marginTop:2,overflowWrap:"anywhere"}}>{searchWhy(d)}</div>}
                   <div style={{fontSize:14,color:T.ink3,marginTop:3}}>
                     {fmtFull(d.total)}
                     {d.lastGift?<>{" · "}{d.lastAmount>0?fmtFull(d.lastAmount)+" ":""}{displayMonth(d.lastGift)}</>:" · no gifts yet"}

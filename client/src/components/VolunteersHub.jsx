@@ -32,6 +32,7 @@ import { ScheduleView, RosterModeView, ToSendView } from "./VolunteerSchedule"; 
 import { RecruitmentView, ApplicationsView } from "./VolunteerRecruit";          // PARITY-3 Part 2
 import { VolunteerCounts, VolunteerListView, VolunteersGroupView } from "./VolunteerList";   // PARITY-3 Parts 3 and 5
 import { countLabel } from "../../../shared/countWords.js";
+import { useWriteRev, VOLUNTEER_WRITES } from "../lib/writeRev";
 
 // ── VOL-1 · THE SAME SHAPE FUNDRAISING GOT ────────────────────────────────
 // Four sections, each one a question a coordinator actually asks, with the
@@ -176,7 +177,10 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
     apiFetch("/volunteer-hub/roster").then(r => { setRoster(r); setErr(""); })
       .catch(e => setErr(errorMessage(e, "The roster did not load.")));
   }, []);
-  useEffect(() => { loadRoster(); }, [loadRoster]);
+  // WALKB-1: any write that touches volunteers (a shift logged here, on a
+  // record, at the kiosk, by Atlas) re-reads the header and the counts.
+  const volRev = useWriteRev(VOLUNTEER_WRITES);
+  useEffect(() => { loadRoster(); }, [loadRoster, volRev]);
   // A link from another tab names the volunteer; the panel needs their name,
   // which the roster has. Someone off the roster still opens, by id.
   useEffect(() => {
@@ -347,7 +351,8 @@ function ShiftsView({ roster, narrow, isReadOnly, onChanged, onOpen }) {
   const [msg, setMsg] = useState("");
   const [importing, setImporting] = useState(false);
   const load = useCallback(() => { apiFetch("/volunteer-hub/shifts?limit=50").then(setData).catch(() => setData({ shifts: [] })); }, []);
-  useEffect(() => { load(); }, [load]);
+  const shiftRev = useWriteRev(VOLUNTEER_WRITES);   // WALKB-1: Recent shifts re-reads after any hours write
+  useEffect(() => { load(); }, [load, shiftRev]);
   // FIX-27 Part 8: the picker is the roster, read fresh when this part opens
   // (the hub kept the copy it read first, so a picker could show names the
   // roster no longer had), and in name order like the roster's own list.

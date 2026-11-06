@@ -49,7 +49,19 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
   if (filter.badStatus) return res.status(400).json(UNKNOWN_STATUS);
   if (!(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
-  const { whereSql, params, orderBy, selectCols, selectArgs } = filter;
+  let { whereSql, params, orderBy, selectCols, selectArgs } = filter;
+  // WALKB-1 · A SEARCH SAYS WHY EACH PERSON MATCHED, NAMES FIRST
+  // (server/donors/personMatch.js personMatchReasonSql).
+  const searchQ = String(req.query.search || "").trim();
+  if (searchQ) {
+    const PM = require("./personMatch");
+    const why = PM.personMatchReasonSql(PM.foldedPattern(searchQ));
+    selectCols = `${selectCols}, ${why.sql} AS match_reason`;
+    selectArgs = [...selectArgs, ...why.args];
+    // the ORDER BY's argument goes after the WHERE's (orderArgs, below)
+    if (!req.query.dir) orderBy = `(${PM.FOLD("donors.name")} LIKE ? ESCAPE '\\') DESC, ${orderBy}`;
+  }
+  const orderArgs = searchQ && !req.query.dir ? [require("./personMatch").foldedPattern(searchQ)] : [];
   const PRm = require("../../prospect");
   const roomWord = a => (a ? { word: a.word, label: a.label, rank: a.rank } : { word: "unknown", label: "Not yet known", rank: 0 });
   const mayRoom = await PRm.canSee(req.user.userId);
@@ -77,6 +89,9 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
     // read "?"; they read "No owner", beside an Assign that uses the one
     // assign route (PATCH /donors/:id/assign).
     owner_label: d.assigned_to_name || d.pending_assignee_name || "No owner",
+    // WALKB-1: why a search found them, in words ("email: marlowe@…"); null with no search.
+    match_why: d.match_reason ? require("./personMatch").matchReasonWords(d.match_reason) : null,
+    archived: !!d.archived_at,
   });
 
   // SECURE-2 item 3: this list always pages (default 100, at most 500). The
@@ -84,7 +99,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   const limit  = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
   const [donors, cnt] = await Promise.all([
-    query(`SELECT donors.*${selectCols} FROM donors WHERE ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...selectArgs, ...params, limit, offset]),
+    query(`SELECT donors.*${selectCols} FROM donors WHERE ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...selectArgs, ...params, ...orderArgs, limit, offset]),
     query(`SELECT COUNT(*) AS c FROM donors WHERE ${whereSql}`, params),
   ]);
   lap("page");

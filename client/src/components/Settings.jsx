@@ -38,6 +38,7 @@ import { AddPhotos } from "./settings/AddPhotos";
 import { DpaDownload } from "./settings/DpaDownload";
 import { BringInAFile } from "./settings/BringInAFile";
 import { ImportsDrop } from "./settings/ImportsDrop";
+import { InvitedList } from "./settings/InvitedList";   // WALKB-2: pending invites under Team
 import { EmptyTrash } from "./settings/EmptyTrash";
 import { SavedMappings } from "./settings/SavedMappings";
 import { ImportsHistory } from "./settings/ImportsHistory";
@@ -86,6 +87,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   const [invRole,setInvRole]=useState("staff");
   const [inviting,setInviting]=useState(false);
   const [inviteResult,setInviteResult]=useState(null);
+  const [invVer,setInvVer]=useState(0);   // WALKB-2: the Invited list reloads after an invite
   const [invErr,setInvErr]=useState("");
   const [copied,setCopied]=useState(false);
 
@@ -375,7 +377,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
     setInviting(true);setInvErr("");
     try{
       const r=await apiFetch("/auth/invite",{method:"POST",body:JSON.stringify({email:invEmail.trim(),role:invRole})});
-      setInviteResult({link:r.inviteLink,emailSent:r.emailSent});
+      setInviteResult({link:r.inviteLink,emailSent:r.emailSent});setInvVer(v=>v+1);
     }catch(e){
       if(e.error==="seat_limit"){
         closeInvite();
@@ -643,6 +645,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           </div>
         ))}
         {team.length===0&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
+        <InvitedList isAdmin={isAdmin} version={invVer}/>
       </div>}
 
       {/* ── FIX-13 Part 5 · Connections, the one page ─────────────────────────
