@@ -30,6 +30,7 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, civilToday, civilPlusDays, browserLegOrSkip, drainQueue } = require("./helpers");
 const { DIST } = require("./lib/dist");
+const { testNow } = require("./clock");
 const fs = require("fs");
 
 const PASSWORD = "loadtest1234";
@@ -86,7 +87,7 @@ const money = s => Number(String(s || "").replace(/[^0-9.]/g, "")) || 0;
   await api("POST", `/grants/${GR}/funder-link`, tok, { donorId: P("fund") });
   await api("PUT", `/grants/${GR}/award`, tok, { amountAwarded: "6000.00", installmentCount: 2, frequency: "semiannual", firstDue: today });
   // The import that will be undone: three people.
-  const IMP = "imp_stale1" + Date.now().toString(36);
+  const IMP = "imp_stale1" + testNow().toString(36);
   await api("POST", "/donors/import-combined", tok, { importId: IMP, gifts: [],
     donors: [1, 2, 3].map(i => ({ name: `Imported Person${i} Okafor`, email: `imp${i}@stale1.example.org` })) });
   await api("POST", "/imports", tok, { id: IMP, name: "stale-walk.csv", sourceFilename: "stale-walk.csv", shape: "gift_file_with_donors", donorsCreated: 3, giftsCreated: 0, dollars: 0 });
