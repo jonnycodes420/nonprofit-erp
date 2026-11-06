@@ -65,7 +65,7 @@ async function orgPagePublicPayload(org, orgSlug, { draftForm = null } = {}) {
   }
   return { org: { name: org.donor_facing_name, mission: org.mission, slug: orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!gaEntry, theme, portalSignIn: org.portal_enabled === true, ways,
     // GIVE-3's trust panel, on the org's own page too (shared/givingPageDesign.js decides which lines show).
-    facts: { orgName: org.donor_facing_name, legalName: org.legal_name || "", ein: org.ein || "",
+    facts: { orgName: org.donor_facing_name, legalName: org.legal_name || "", ein: (await import("../../shared/placeholderCopy.js")).publicEin(org.ein),
              contactEmail: org.give_contact || "", address: org.receipt_address || "", stripe: !!org.stripe_account_id } }, funds };
 }
 app.get("/org/:orgSlug/public", wrap(async (req, res) => {

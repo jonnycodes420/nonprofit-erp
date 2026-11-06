@@ -215,7 +215,7 @@ async function copyList(auth) {
     && /receiptBadge\(form\.receiptsEnabled/.test(SRC("client/src/components/settings/TaxReceiptsManager.jsx")), off);
   const IE = await lib("client/src/lib/impactExample.js");
   const ex = IE.impactExample && IE.impactExample("Your ${amount} has covered {n} full-year scholarships", 2500);
-  ok("§4 Settings' impact text has no raw placeholder", ex === "Your $2,500 has covered 1 full-year scholarships" && !/\{m\.outcome_template\}/.test(SRC("client/src/components/Settings.jsx")), ex);
+  ok("§4 Settings' impact text has no raw placeholder", ex === "Your $2,500 has covered 1 full-year scholarship" && !/\{m\.outcome_template\}/.test(SRC("client/src/components/Settings.jsx")), ex);
   ok("§4 Peer-to-peer never says \"in cents\" on screen", !/[^/*]\bin cents;/.test(SRC("client/src/components/PeerToPeer.jsx").split("\n").filter(l => !/^\s*(\/\/|\*)/.test(l)).join("\n")), "");
   const IL = await lib("client/src/lib/internalLabels.js");
   ok("§4 a profile shows no \"demo-file\" tag and no BUILD-89 note", IL.shownTags && JSON.stringify(IL.shownTags(["demo-file", "board", "BUILD-89"])) === '["board"]'

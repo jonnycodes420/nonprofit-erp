@@ -1233,9 +1233,7 @@ async function generateMilestoneDraft(recipient, orgId, meta) {
   if (metricRows.length) {
     const m = metricRows[0];
     const n = Math.max(1, Math.floor(totalGiving / Number(m.dollar_threshold)));
-    impactLine = String(m.outcome_template || "")
-      .replace(/\{amount\}/g, totalGiving.toLocaleString())
-      .replace(/\{n\}/g, n);
+    impactLine = (await import("../../shared/countWords.js")).impactSentence(m.outcome_template, { n, amount: totalGiving });   // WALKB-1
   }
 
   const firstName = await greetFor(donor);

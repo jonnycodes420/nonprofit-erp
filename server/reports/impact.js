@@ -70,11 +70,11 @@ app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => 
     "SELECT * FROM impact_metrics WHERE org_id = ? AND active = true AND dollar_threshold <= ? ORDER BY dollar_threshold ASC",
     [orgId, totalGiving]
   );
+  // WALKB-1: "1 student", not "1 students" (shared/countWords.js impactSentence).
+  const { impactSentence } = await import("../../shared/countWords.js");
   const impactLines = metricRows.map(m => {
     const n = Math.max(1, Math.floor(totalGiving / Number(m.dollar_threshold)));
-    return String(m.outcome_template || "")
-      .replace(/\{amount\}/g, totalGiving.toLocaleString())
-      .replace(/\{n\}/g, n);
+    return impactSentence(m.outcome_template, { n, amount: totalGiving });
   });
 
   const recentGifts = await query(

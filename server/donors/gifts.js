@@ -842,7 +842,7 @@ async function issueYearEndStatement(org, donor, year, { send = true, by = SYS_A
     orgAccent: brand ? brand.band : null,      // BUILD-64: portal primary, never Steward green
     orgAccentFg: brand ? brand.bandFg : null,
     orgLogo: await resolvePdfLogo(brand),      // BUILD-65: from object storage, not base64-only
-    orgEin: org.ein || "",
+    orgEin: (await import("../../shared/placeholderCopy.js")).publicEin(org.ein),   // WALKB-1: never a placeholder EIN
     orgAddress: org.receipt_address || "",
     signatureName: org.receipt_signature_name || "",
     signatureTitle: org.receipt_signature_title || "",
@@ -906,7 +906,7 @@ app.get("/receipts/preview", requireAuth, requireAdmin, wrap(async (req, res) =>
     orgAccent: brand ? brand.band : null,
     orgAccentFg: brand ? brand.bandFg : null,
     orgLogo: await resolvePdfLogo(brand),
-    orgEin: org.ein || "XX-XXXXXXX",
+    orgEin: (await import("../../shared/placeholderCopy.js")).publicEin(org.ein) || "XX-XXXXXXX",
     orgAddress: org.receipt_address || "123 Main St, Anytown, ST 00000",
     signatureName: org.receipt_signature_name || "",
     signatureTitle: org.receipt_signature_title || "",

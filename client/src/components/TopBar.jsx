@@ -60,8 +60,9 @@ const SEARCH_KINDS = [
       personId:d.id, personName:d.title, personKind:d.personKind||null,
       tab:"donors", opts:{selectDonorId:d.id, anchor:"gifts"} }) },
   { kind:"person", group:"People", row:d=>({
-      sub:[d.organization?"Organization":typeLabels(d).join(" · "), d.contactName?"Contact "+d.contactName:null,
-           d.email||d.phone||(personIsDonor(d)?fmtMoney(d.totalGiving)+" lifetime":null)].filter(Boolean).join(" · "),
+      // WALKB-1: a match that is not the name says what matched ("household: The Marlowe Hart household").
+      sub:[d.why&&d.why!=="name"?"Matched "+d.why:null, d.organization?"Organization":typeLabels(d).join(" · "), d.contactName&&!/^contact person/.test(d.why||"")?"Contact "+d.contactName:null,
+           (/^(email|phone)/.test(d.why||"")?null:d.email||d.phone)||(personIsDonor(d)?fmtMoney(d.totalGiving)+" lifetime":null)].filter(Boolean).join(" · "),
       personId:d.id, personName:d.title, personKind:d.personKind||null,
       tab:"donors", opts:{selectDonorId:d.id} }) },
   { kind:"household", group:"Households", row:h=>({

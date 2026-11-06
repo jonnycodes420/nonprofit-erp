@@ -25,7 +25,8 @@ export default function MyProfile({ isReadOnly }) {
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-  const load = d => { setP(d); setF({ signName: d.signName, title: d.title, phone: d.phone, block: d.block, photoId: undefined, photo: d.photo }); };
+  // WALKB-1: with nothing saved, she starts from her own name, never another person's.
+  const load = d => { setP(d); setF({ signName: d.signName || (d.block ? "" : d.name || ""), title: d.title, phone: d.phone, block: d.block, photoId: undefined, photo: d.photo }); };
   useEffect(() => { apiFetch("/me/profile").then(load).catch(e => setMsg(errorMessage(e, "Your profile could not be opened."))); }, []);
   const set = patch => { setF(x => ({ ...x, ...patch })); setMsg(""); };
   const save = async () => {
@@ -72,7 +73,9 @@ export default function MyProfile({ isReadOnly }) {
         <div data-testid="profile-preview" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "14px 16px", fontSize: 13.5, color: T.ink, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
           {preview ? `With thanks,\n${preview}` : `With thanks,\n${p.signature}`}
         </div>
-        <div style={{ fontSize: 12, color: T.ink2, marginTop: 6 }}>{preview ? FROM.person : FROM[p.from] || FROM.org}</div>
+        <div data-testid="profile-preview-source" style={{ fontSize: 12, color: T.ink2, marginTop: 6 }}>{p.from !== "person" && preview
+          ? `Your name, from your account. Save to sign your drafts with it; until then they are signed with ${p.from === "brand" ? "your organization's signature, from Settings" : "your organization's name"}.`
+          : preview ? FROM.person : FROM[p.from] || FROM.org}</div>
       </div>
       {!isReadOnly && <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
         <button type="button" data-testid="profile-save" style={{ ...btn, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={save}>{busy ? "Saving…" : "Save"}</button>

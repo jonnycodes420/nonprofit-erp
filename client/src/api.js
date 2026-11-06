@@ -386,6 +386,8 @@ export function adaptDonor(d) {
     // POLISH-4 — on Re-engage, by the one rule (shared/numbers/lapse.js reengageSql).
     reengage:       !!d.reengage,
     lost:           !!d.lost,   // COUNTS-1: on Re-engage's Lost & Found (lapse.js lostSql)
+    matchWhy:       d.match_why || null,   // WALKB-1: why a search found them ("email: marlowe@…")
+    archived:       !!d.archived,
     lastAmount:     parseFloat(d.last_gift_amount) || 0,
     gifts:          d.gift_count || 0,
     status:         d.status,
