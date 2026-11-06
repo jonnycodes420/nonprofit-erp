@@ -381,9 +381,12 @@ app.post("/goals", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req,
 app.put("/goals/:kind/:id/count-pledges", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const table = { goal: "fundraising_goals", campaign: "campaigns" }[req.params.kind];
   if (!table) return res.status(404).json({ error: "Not found" });
-  if (typeof req.body.on !== "boolean") return res.status(400).json({ error: "on must be true or false" });
-  const r = await query(`UPDATE ${table} SET count_pledges = ? WHERE id = ? AND org_id = ? RETURNING id`, [req.body.on, req.params.id, req.user.orgId]);
-  if (!r.length) return res.status(404).json({ error: "Not found" });
+  // The goal is this org's before the body is read, so another org's id and an
+  // id that does not exist get the same 404 (tenant-matrix: no existence oracle).
+  const [own] = await query(`SELECT id FROM ${table} WHERE id = ? AND org_id = ?`, [req.params.id, req.user.orgId]);
+  if (!own) return res.status(404).json({ error: "Not found" });
+  if (typeof (req.body && req.body.on) !== "boolean") return res.status(400).json({ error: "on must be true or false" });
+  await run(`UPDATE ${table} SET count_pledges = ? WHERE id = ? AND org_id = ?`, [req.body.on, req.params.id, req.user.orgId]);
   res.json({ ok: true, countPledges: req.body.on });
 }));
 
