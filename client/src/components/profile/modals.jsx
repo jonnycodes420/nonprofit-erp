@@ -453,13 +453,13 @@ function GiftLinkModal({donor,orgName,onClose}){
 
   return(
     <Modal onClose={onClose} width={480} zIndex={500} blur={false} padding={24}
-      ariaLabel="Request a gift" dialogStyle={{border:"1px solid "+T.bg3}}>
+      ariaLabel="Send a payment link" dialogStyle={{border:"1px solid "+T.bg3}}>
       <div>
         {!showEmail?(
           <>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
               <div>
-                <div style={{fontSize:16,fontWeight:800,color:T.ink}}>Request Gift</div>
+                <div style={{fontSize:16,fontWeight:800,color:T.ink}}>Send a payment link</div>
                 <div style={{fontSize:12,color:T.ink3,marginTop:2}}>For {donor.name}</div>
               </div>
               <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:T.ink3}}>×</button>

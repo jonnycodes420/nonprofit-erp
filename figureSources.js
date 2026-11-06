@@ -47,6 +47,7 @@ const auctionCore = require("./auctionCore");   // PARITY-2 Part 4: the one winn
 // EVENTS-3: an event's guest predicates and its lists by party live in shared/numbers/events.js.
 const EVF = require("./shared/numbers/events");
 const NMONEY = require("./shared/numbers/money");   // NUMBERS-5: money in a total, and its sums
+const FUND_LINES = require("./shared/numbers/fundLines");   // GIFTS-2: a gift split across funds
 const { EVENT_GIFT_MATCH, EVENT_GUEST_GAVE, EVENT_REGISTERED, EVENT_REGISTERED_STATUSES, EVENT_GUEST_LIVE, EVENT_INVITED,
         EVENT_DECLINED, EVENT_CAME, EVENT_NO_REPLY, EVENT_GUEST_WORDS } = EVF;
 // One event's lists, or every event dated in a window, read once per figure.
@@ -507,11 +508,15 @@ const SOURCES = {
         const m = await GR.memberSql(orgId, await GR.groupById(orgId, p.group));
         where += ` AND g.donor_id IN (${m.sql})`; args.push(...m.args);
       }
+      // GIFTS-2: asked by fund (or restriction), a gift split across funds is
+      // its line in that fund, so a fund's total opens rows that foot to it.
+      const byFund = !!p.fund || p.restricted !== undefined;
       return {
-        sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount,
+        sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(${byFund ? "gf" : "g"}.amount::numeric, 2) AS amount,
                      COALESCE(f.name, 'Unrestricted') AS detail
                 FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-                LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+                ${byFund ? `JOIN ${FUND_LINES.GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id` : ""}
+                LEFT JOIN fin_funds f ON f.id = ${byFund ? "gf" : "g"}.fund_id AND f.org_id = g.org_id
                WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}${where}`,
         args,
         order: p.order === "amount" ? "amount DESC NULLS LAST, id DESC" : undefined,
@@ -538,10 +543,12 @@ const SOURCES = {
       // gave, as the New tag (donorStatus.js) has always read it.
       // NUMBERS-4: the one rule, shared/numbers/firstGift.js.
       if (p.first) { where += ` AND ${require("./shared/numbers/firstGift").FIRST_DATE("d")} ${p.first === "new" ? ">=" : "<"} ?`; args.push(p.from); }
-      const inner = `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(g.date) AS date, ROUND(SUM(g.amount)::numeric, 2) AS amount,
+      const byFund = !!p.fund;   // GIFTS-2: a split gift counts its line in this fund
+      const inner = `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(g.date) AS date, ROUND(SUM(${byFund ? "gf" : "g"}.amount)::numeric, 2) AS amount,
                    COUNT(*) || CASE WHEN COUNT(*) = 1 THEN ' gift' ELSE ' gifts' END AS detail
               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-              LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+              ${byFund ? `JOIN ${FUND_LINES.GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id` : ""}
+              LEFT JOIN fin_funds f ON f.id = ${byFund ? "gf" : "g"}.fund_id AND f.org_id = g.org_id
              WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?${where} AND d.erased_at IS NULL   -- TRUTH-2: an erased person is no giver (shared/numbers/money GIVERS)
              GROUP BY d.id, d.name HAVING COUNT(*) FILTER (WHERE g.amount > 0) > 0`;
       return {

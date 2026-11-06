@@ -440,7 +440,7 @@ function inventory() {
       const has = (g, l) => !!g && g.labels.some(x => x.startsWith(l));
       const full = await menuCtx(ADMIN, { width: 1440, height: 900 });
       const gA = await openMenu(full.page, A);
-      ok("§8 Stripe on: Request a gift; AI on: Brief me", has(gA, "Request a gift") && has(gA, "Brief me"), gA && gA.labels);
+      ok("§8 Stripe on: Send a payment link; AI on: Brief me", has(gA, "Send a payment link") && has(gA, "Brief me"), gA && gA.labels);
       ok("§8 admin: Export, Erase and Delete; not lapsed: no Why did they stop?; a person: no public filing",
         has(gA, "Export this person") && has(gA, "Erase this person") && has(gA, "Delete donor") && !has(gA, "Why did they stop?") && !has(gA, "Look up public filing"), gA && gA.labels);
       ok("§8 no group heading is drawn without an item", !!gA && !gA.emptyGroup);
@@ -451,7 +451,7 @@ function inventory() {
       await full.ctx.close();
       const bare = await menuCtx(ADMIN, { width: 1440, height: 900 }, { stripe: false, ai: false });
       const gB = await openMenu(bare.page, A);
-      ok("§8 no Stripe: no Request a gift; no AI: no Brief me", !!gB && !has(gB, "Request a gift") && !has(gB, "Brief me") && has(gB, "Edit record"), gB && gB.labels);
+      ok("§8 no Stripe: no Send a payment link; no AI: no Brief me", !!gB && !has(gB, "Send a payment link") && !has(gB, "Brief me") && has(gB, "Edit record"), gB && gB.labels);
       await bare.ctx.close();
       const st = await menuCtx(STAFF, { width: 1440, height: 900 });
       const gS = await openMenu(st.page, A);

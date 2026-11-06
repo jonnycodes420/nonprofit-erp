@@ -29,6 +29,7 @@ import { errorMessage } from "../lib/domainError";
 import MediaPicker from "./MediaPicker";
 import StewardEditor, { RailSection, DeviceFrame, useNarrow, railLabel, railInput, railQuietBtn, railNote, stockPhotoForBlock } from "./StewardEditor";
 import StockPhotoPicker from "./StockPhotoPicker";
+import { previewAsParam } from "../lib/previewAs";   // GIFTS-2: one rule for who a preview is drawn for
 
 const say = (e, fallback) => (e && e.sentence) || errorMessage(e, fallback);
 const BUTTON_ACTIONS = [
@@ -516,7 +517,7 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
     const t = setTimeout(() => {
       const cur = latest.current;
       apiFetch(`/email-templates/${template.id}/preview`, { method: "POST",
-        body: JSON.stringify({ blocks: stripKeys(cur.blocks), subject: cur.subject, preheader: cur.preheader, device, dark, editable: !isReadOnly, as: as === null ? "me" : as ? as.id : undefined }) })
+        body: JSON.stringify({ blocks: stripKeys(cur.blocks), subject: cur.subject, preheader: cur.preheader, device, dark, editable: !isReadOnly, as: previewAsParam(as) }) })
         .then(r => { if (n === seq.current) setPreview({ html: r.html, problems: r.problems || [], loading: false, as: r.as, subject: r.subject || "" }); })
         .catch(e => { if (n === seq.current) setPreview(p => ({ ...p, loading: false, problems: [say(e, "The preview could not be drawn.")] })); });
     }, 300);

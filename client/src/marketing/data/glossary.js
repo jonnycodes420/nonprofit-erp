@@ -465,7 +465,7 @@ export const GLOSSARY = [
     ],
     steward: [
       "On a donor's profile you can start a proposal with \"+ New proposal\", which holds the amount you asked for and where it stands. An open ask is never counted as a gift. When a donor gives, the gift is entered on its own and linked to the ask.",
-      "\"Request a gift\" in the profile's More menu gives you a link the donor can give through, which you send yourself.",
+      "\"Send a payment link\" in the profile's More menu gives you a link the donor can give through, which you send yourself.",
     ],
     related: ["cultivation", "case-for-support", "capacity"],
     see: ["/articles/second-gift", "/articles/thank-you-call"],
