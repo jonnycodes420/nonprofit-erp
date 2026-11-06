@@ -135,8 +135,13 @@ const figureCount = b => Number(b && (b.value ?? b.count ?? (b.figure && b.figur
   // ── §2 ZERO IS HIDDEN, AND SAID ────────────────────────────────────────
   const zero = r0.body.starters.filter(s => s.count === 0);
   ok("§2 no starter at 0 is shown", zero.length === 0, zero.map(s => s.key));
-  ok("§2 a file with no board members, monthly plans or event guests hides those starters", !S.board && !S.monthly && !S.guests_never_gave, Object.keys(S));
-  ok("§2 the hidden ones are counted", r0.body.hidden === 14 - r0.body.starters.length && r0.body.hidden >= 3, r0.body.hidden);
+  ok("§2 a file with no board members or event guests hides those starters", !S.board && !S.guests_never_gave, Object.keys(S));
+  // FLOWS-2: Monthly givers is the one gives-monthly rule (a monthly plan, or gifts about a month
+  // apart), so this file's month-apart givers show it with no plan on file; its count is the rule's.
+  const mo = await api("GET", `/donors?role=donor&limit=1&offset=0&where=${encodeURIComponent(JSON.stringify({ join: "and", conditions: [{ field: "monthly", op: "yes", value: null }] }))}`, T);
+  ok("§2 Monthly givers is shown exactly when the gives-monthly rule finds someone, at the Donors filter's count",
+    mo.status === 200 && (S.monthly ? S.monthly.count + (S.monthly.leftOut || 0) === mo.body.total : mo.body.total === 0), { starter: S.monthly, filter: mo.body && mo.body.total });
+  ok("§2 the hidden ones are counted", r0.body.hidden === 14 - r0.body.starters.length && r0.body.hidden >= 2, r0.body.hidden);
 
   // ── §3 DO NOT SOLICIT IS RESPECTED ─────────────────────────────────────
   ok("§3 the LYBUNT starter says it leaves out the two marked do not solicit", S.lybunt && S.lybunt.leftOut >= 2, S.lybunt);

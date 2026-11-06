@@ -31,10 +31,11 @@ const RULE = {
 };
 
 // The statement. `o`: { orgId, cur, prior (the fiscal-year windows), since
-// (thanksSince), status (statusSql's { sql, args }), recurringIn (the running
+// (thanksSince), status (statusSql's { sql, args }), monthlyIds (FLOWS-2; was recurringIn, the running
 // recurring states, quoted), starters }.
 function starterCountsSql(o) {
-  const { orgId, cur, prior, since, status, recurringIn: RECURRING_IN, starters } = o;
+  // FLOWS-2: monthlyIds is the one gives-monthly rule's people (shared/numbers/givesMonthly.js), worked out before this statement.
+  const { orgId, cur, prior, since, status, starters, monthlyIds = [] } = o;
   const args = [];
   const p = (v) => { args.push(v); return "?"; };
   // One per person: the gift facts the starter rules read (each the same
@@ -51,7 +52,7 @@ function starterCountsSql(o) {
       FROM gifts g WHERE g.org_id = ${p(orgId)} GROUP BY g.donor_id`;
   const st = status.sql; args.push(...status.args);
   const rest = `
-    rx AS (SELECT rx.donor_id FROM recurring_subscriptions rx WHERE rx.org_id = ${p(orgId)} AND rx.interval = 'month' AND rx.status IN (${RECURRING_IN}) AND rx.donor_id IS NOT NULL),
+    rx AS (SELECT unnest(${p(monthlyIds)}::text[]) AS donor_id),
     tt AS (SELECT t.id FROM (SELECT x.id, ROW_NUMBER() OVER (ORDER BY COALESCE(x.total_giving,0) DESC, x.id) AS rn, COUNT(*) OVER () AS n
                                FROM donors x WHERE x.org_id = ${p(orgId)} AND x.deleted_at IS NULL AND COALESCE(x.total_giving,0) > 0) t
             WHERE t.rn <= CEIL(t.n / 10.0)),

@@ -35,6 +35,7 @@ import { CoverFeesCard } from "./settings/CoverFeesCard";
 import { GivingLevelsCard } from "./settings/GivingLevelsCard";
 import { TaxReceiptsManager } from "./settings/TaxReceiptsManager";
 import { OrgNameCard } from "./settings/OrgNameCard";   // FLOWS-2
+import { useAuth } from "../main";   // FLOWS-2: refreshOrg, as Communications reads it
 import { AddPhotos } from "./settings/AddPhotos";
 import { DpaDownload } from "./settings/DpaDownload";
 import { BringInAFile } from "./settings/BringInAFile";
@@ -56,6 +57,7 @@ export { ImpactUpdatesManager } from "./settings/ImpactUpdatesManager";
 export { GivingSourcesManager } from "./settings/GivingSourcesManager";
 
 export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
+  const { refreshOrg } = useAuth() || {};   // FLOWS-2: a saved org name is read back into the app
   // THE TDZ RULE. Every const the tab filter reads is declared above it: the
   // Audit log tab is admin-only, so `visibleTabs` now reads `isAdmin`, which
   // used to be declared six lines further down. A component-scope const read
@@ -559,7 +561,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         </div>
         <div style={{background:T.bg,borderRadius:10,padding:"14px 16px"}}>
           {/* FLOWS-2: the name is editable here (settings/OrgNameCard.jsx says why it vanished) */}
-          <OrgNameCard key={auth?.org?.id||"org"} org={auth?.org||{}} isAdmin={isAdmin} isReadOnly={isReadOnly}/>
+          <OrgNameCard key={auth?.org?.id||"org"} org={auth?.org||{}} isAdmin={isAdmin} isReadOnly={isReadOnly} onSaved={refreshOrg}/>
           {auth?.org?.mission&&<div style={{fontSize:12,color:T.ink3,marginTop:4,lineHeight:1.5}}>{auth.org.mission}</div>}
         </div>
       </div>}

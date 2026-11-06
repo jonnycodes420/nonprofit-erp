@@ -9,12 +9,10 @@
 // org is read again (refreshOrg), so the top bar and every page say the new name.
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../api";
-import { useAuth } from "../../main";
 import { errorMessage } from "../../lib/domainError";
 import { T } from "../shared";
 
-export function OrgNameCard({ org, isAdmin, isReadOnly }) {
-  const { refreshOrg } = useAuth() || {};
+export function OrgNameCard({ org, isAdmin, isReadOnly, onSaved }) {
   const [name, setName] = useState(org && org.name || "");
   const [shown, setShown] = useState(org && org.name || "Your organization");
   const [editing, setEditing] = useState(false);
@@ -33,7 +31,7 @@ export function OrgNameCard({ org, isAdmin, isReadOnly }) {
     try {
       await apiFetch(`/orgs/${org.id}`, { method: "PATCH", body: JSON.stringify({ name: next }) });
       setShown(next); setEditing(false); setMsg("Saved. Steward uses the new name everywhere.");
-      if (refreshOrg) refreshOrg();
+      if (onSaved) onSaved();
     } catch (e) { setMsg(errorMessage(e, "The name didn't save. Try again.")); }
     setBusy(false);
   };
