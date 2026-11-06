@@ -20,13 +20,22 @@ function retentionSql(orgId, windows) {
   const plan = windows.map(w => ({ w, e: at(w.from1, w.to1), l: at(w.from0, w.to0) }));
   const args = [];
   const p = v => { args.push(v); return "?"; };
-  const inSpan = s => `LEFT(g.date,10) >= ${p(s.from)} AND LEFT(g.date,10) <= ${p(s.to)}`;
+  // SPEED-3: each gift's money and gift tests (MONEY, GIFT) and its day are
+  // worked out once, in a subquery the planner keeps whole (OFFSET 0), and
+  // the windows filter on those; the gifts are summed per person before the
+  // join to people. Before, the tests ran again inside every window's
+  // aggregate (nine times a gift), and that was the report's time.
+  const inSpan = s => `g.dt >= ${p(s.from)} AND g.dt <= ${p(s.to)}`;
   const perSpan = spans.map((s, i) => `
-      BOOL_OR(${NMONEY.GIFT("g")} AND ${inSpan(s)}) AS gave${i},
-      ROUND(COALESCE(SUM(g.amount) FILTER (WHERE ${NMONEY.MONEY("g")} AND ${inSpan(s)}), 0)::numeric, 2) AS amt${i}`).join(",");
-  const per = `SELECT d.id, ${FG.EARLIER(FG.FIRST_ON_FILE_AGG("g"), FG.IMPORTED_FIRST("d"))} AS first,${perSpan}
-      FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-     WHERE g.org_id = ${p(orgId)} AND d.deleted_at IS NULL GROUP BY d.id`;
+      BOOL_OR(g.is_gift AND ${inSpan(s)}) AS gave${i},
+      ROUND(COALESCE(SUM(g.amount) FILTER (WHERE g.is_money AND ${inSpan(s)}), 0)::numeric, 2) AS amt${i}`).join(",");
+  const agg = `SELECT g.donor_id, ${FG.FIRST_ON_FILE_AGG("g")} AS first_on_file,${perSpan}
+      FROM (SELECT g.donor_id, g.amount, g.date, g.type, LEFT(g.date,10) AS dt, ${NMONEY.GIFT("g")} AS is_gift, ${NMONEY.MONEY("g")} AS is_money
+              FROM gifts g WHERE g.org_id = ${p(orgId)} ORDER BY g.donor_id OFFSET 0) g
+     GROUP BY g.donor_id`;
+  const per = `SELECT d.id, ${FG.EARLIER("a.first_on_file", FG.IMPORTED_FIRST("d"))} AS first,
+      ${spans.map((s, i) => `a.gave${i}, a.amt${i}`).join(", ")}
+      FROM (${agg}) a JOIN donors d ON d.id = a.donor_id AND d.org_id = ${p(orgId)} AND d.deleted_at IS NULL`;
   const cols = [];
   plan.forEach((x, j) => {
     // Placeholders bind in the order they appear, so each use takes its own.

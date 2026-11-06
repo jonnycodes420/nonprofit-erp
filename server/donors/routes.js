@@ -99,7 +99,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   const limit  = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
   const [donors, cnt] = await Promise.all([
-    query(`SELECT donors.*${selectCols} FROM donors WHERE ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...selectArgs, ...params, ...orderArgs, limit, offset]),
+    query(...require("./listPage").pageSql({ selectCols, selectArgs, whereSql, params, orderBy, orderArgs, limit, offset })),
     query(`SELECT COUNT(*) AS c FROM donors WHERE ${whereSql}`, params),
   ]);
   lap("page");

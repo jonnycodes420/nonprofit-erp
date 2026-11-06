@@ -352,42 +352,19 @@ async function reportRetention(orgId, p) {
   // INSIGHTS-2: the three years at once, and their figures in one read (server/reports/retentionFigures.js).
   const bounds = years.map(y => ({ y, cur: reportYearBounds(y, p.yearMode, p.fiscalStartMonth), prior: reportYearBounds(y - 1, p.yearMode, p.fiscalStartMonth) }));
   const figs = require("./retentionFigures").retentionFigures(orgId, bounds.map(({ cur, prior }) => ({ from1: prior.from, to1: prior.to, from0: cur.from, to0: cur.to })));
-  figs.catch(() => {});   // awaited per row below; never an unhandled rejection meanwhile
-  const rows = await Promise.all(bounds.map(async ({ y, cur, prior }, j) => {
-    const [r] = await query(
-      // NUMBERS-5: a donor in a year gave a gift in it (a refund alone is not
-      // giving), and their dollars are money (credit rows out, refunds off).
-      `WITH prior AS (SELECT g.donor_id, ${NUMBERS.money.MONEY_SUM("g")} AS amt FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-                      WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NUMBERS.givingBetween.IN_SPAN("g")} GROUP BY g.donor_id HAVING bool_or(${NUMBERS.money.GIFT("g")})),
-            cur AS (SELECT g.donor_id, ${NUMBERS.money.MONEY_SUM("g")} AS amt FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-                    WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NUMBERS.givingBetween.IN_SPAN("g")} GROUP BY g.donor_id HAVING bool_or(${NUMBERS.money.GIFT("g")})),
-            firsts AS (SELECT donor_id, MIN(date) AS fg FROM gifts WHERE org_id = ? GROUP BY donor_id)
-       SELECT (SELECT COUNT(*) FROM prior)::int AS prior_donors,
-              (SELECT COUNT(*) FROM prior pr WHERE EXISTS (SELECT 1 FROM cur c WHERE c.donor_id = pr.donor_id))::int AS retained_donors,
-              (SELECT COALESCE(SUM(amt),0) FROM prior) AS prior_dollars,
-              (SELECT COALESCE(SUM(c.amt),0) FROM cur c WHERE EXISTS (SELECT 1 FROM prior pr WHERE pr.donor_id = c.donor_id)) AS retained_dollars,
-              (SELECT COUNT(*) FROM prior pr JOIN firsts f ON f.donor_id = pr.donor_id WHERE f.fg >= ? AND f.fg <= ?)::int AS first_year_donors,
-              (SELECT COUNT(*) FROM prior pr JOIN firsts f ON f.donor_id = pr.donor_id
-                WHERE f.fg >= ? AND f.fg <= ? AND EXISTS (SELECT 1 FROM cur c WHERE c.donor_id = pr.donor_id))::int AS first_year_retained`,
-      [orgId, prior.from, prior.to, orgId, cur.from, cur.to, orgId, prior.from, prior.to, prior.from, prior.to]);
-    const pct = (a, b) => b > 0 ? Math.round(a / b * 1000) / 10 : null;
-    const row = {
-      year: y, label: reportYearLabel(y, p),
-      priorDonors: r.prior_donors, retainedDonors: r.retained_donors,
-      retentionRate: pct(r.retained_donors, r.prior_donors),
-      priorDollars: Number(r.prior_dollars), retainedDollars: Number(r.retained_dollars),
-      dollarRetentionRate: r.prior_dollars > 0 ? Math.round(Number(r.retained_dollars) / Number(r.prior_dollars) * 1000) / 10 : null,
-      firstYearDonors: r.first_year_donors, firstYearRetained: r.first_year_retained,
-      firstYearRetentionRate: pct(r.first_year_retained, r.first_year_donors),
-    };
-    // REPORTS-4: the row's figures through their sources, and the row shows
-    // THEIR values. A person counts as having given when a gift above zero is
-    // dated in the year, as on the Board; a refund alone is not giving.
-    const f = (await figs)[j];
+  // SPEED-3: every column of a row is one of these figures (retentionFigures,
+  // one pass over the gifts for all three years). The row used to run its own
+  // statement per year as well (three more passes, and a first-gift pass each),
+  // only for the two columns the figures now carry; under load it was the
+  // report's p95 (2 s). The percentages are figure()'s, from their parts.
+  const all = await figs;
+  const rows = bounds.map(({ y }, j) => {
+    const f = all[j];
+    const row = { year: y, label: reportYearLabel(y, p) };
     for (const k of Object.keys(f)) row[k] = f[k].value;
     row.figures = f;
     return row;
-  }));
+  });
   return { yearMode: p.yearMode, rows };
 }
 
