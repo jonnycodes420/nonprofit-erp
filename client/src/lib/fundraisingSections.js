@@ -21,7 +21,10 @@ export const FR_SECTIONS = [
   {
     id: "overview", label: "Overview",
     question: "How is this year's fundraising going?",
-    parts: [{ id: "overview", label: "Overview" }],
+    // FLOWS-2: Lost & Found, the same list as Donors → Re-engage's "over 24
+    // months" window (lapse.js lostSql), so the people who stopped giving are
+    // in Fundraising's nav as well as on the report.
+    parts: [{ id: "overview", label: "Overview" }, { id: "lostfound", label: "Lost & Found" }],
   },
   {
     id: "campaigns", label: "Campaigns & pages",
@@ -104,6 +107,8 @@ export const FR_LEGACY = {
   toconfirm:       { section: "moneyin",    part: "toconfirm",       label: "To confirm" },
   // FUNDRAISING-2: a new part id, registered for the same reason.
   pledges:         { section: "moneyin",    part: "pledges",         label: "Pledges" },
+  // FLOWS-2: a new part id, registered for the same reason.
+  lostfound:       { section: "overview",   part: "lostfound",       label: "Lost & Found" },
 };
 
 // Any id — an old tab id, a section id, or nothing — to {section, part}.

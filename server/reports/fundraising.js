@@ -263,7 +263,7 @@ app.post("/drift/:donorId/done", requireAuth, wrap(async (req, res) => {
 async function goalGiftsBetween(orgId, goal, from, to) {
   if (goal.goal_type === "lapsed_recovery") {
     const [r] = await query(
-      `SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(DISTINCT g.donor_id)::int AS donors
+      `SELECT COALESCE(SUM(g.amount),0) AS total, ${NUMBERS.money.GIVERS("g", "d")}::int AS donors
        FROM gifts g
        JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
        WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND g.date = d.last_gift_date
@@ -274,7 +274,7 @@ async function goalGiftsBetween(orgId, goal, from, to) {
     return { total: parseFloat(r?.total) || 0, donors: Number(r?.donors) || 0 };
   }
   const [r] = await query(
-    `SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(DISTINCT g.donor_id)::int AS donors FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+    `SELECT COALESCE(SUM(g.amount),0) AS total, ${NUMBERS.money.GIVERS("g", "d")}::int AS donors FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`,
     [orgId, from, to]);
   return { total: parseFloat(r?.total) || 0, donors: Number(r?.donors) || 0 };
@@ -466,7 +466,7 @@ app.get("/metrics/stewardship-summary", requireAuth, OS.cached("stewardship-summ
 // FUNDRAISING-2: the stored answer's name carries its shape, so a deploy that
 // changes the shape never serves yesterday's body (stored answers are not
 // keyed by build).
-app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-2"), wrap(async (req, res) => {
+app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-3"), wrap(async (req, res) => {
   await PACE_READY;
   await FISCAL_READY;   // FIX-10 Part B — the period label is the shared one, not a race
   const { orgId } = req.user;
@@ -663,6 +663,9 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-2"
       // open EXACTLY the rows it claims instead of a whole-Reports link.
       start: cur.start,
       end: cur.end,
+      // FLOWS-2: the gifts behind Raised, the `gifts` figure source over the
+      // span Raised was summed over (to today), so the tile opens those rows.
+      source: { key: "gifts", params: { from: cur.start, to: today < cur.end ? today : cur.end } },
     },
     // FIX-10 Part B — the last twelve months, and whether this org has any
     // giving at all. `emptyYearWithHistory` is the single condition the client

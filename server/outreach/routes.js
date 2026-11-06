@@ -699,7 +699,7 @@ app.get("/campaigns/:id/progress", requireAuth, wrap(async (req, res) => {
   // are a SEPARATE pledged figure, never summed into raised.
   const [giftSum, pledgeSum, grantSum] = await Promise.all([
     query(
-      `SELECT COALESCE(SUM(g.amount),0) as total, COUNT(DISTINCT g.donor_id) as donor_count
+      `SELECT COALESCE(SUM(g.amount),0) as total, COUNT(DISTINCT g.donor_id) FILTER (WHERE g.amount > 0) as donor_count
          FROM campaigns c JOIN gifts g ON g.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}
         WHERE c.org_id=? AND c.id=?`,
       [req.user.orgId, c.id]

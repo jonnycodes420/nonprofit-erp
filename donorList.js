@@ -112,7 +112,8 @@ const FIELDS = [
     sentence: "Slipping: past their own usual time, lapsing, or far below last year. Moving up: their last 12 months are at least 1.5 times the 12 before." }),
   F("planned", "Planned-gift signals", "Giving", { col: false, filter: BOOL_OPS,
     sentence: "A gift of stock, an IRA or investment distribution, a donor-advised fund or foundation gift, a memorial or honor gift, or 5 or more years in a row." }),
-  F("monthly", "Gives monthly", "Giving", { col: false, filter: BOOL_OPS }),
+  // FLOWS-2: one rule (shared/numbers/givesMonthly.js), and these are its words.
+  F("monthly", "Gives monthly", "Giving", { col: false, filter: BOOL_OPS, sentence: require("./shared/numbers/givesMonthly").SENTENCE }),
   F("fund", "Gave to a fund", "Giving", { col: false, filter: SEL_OPS }),
   F("campaign", "Gave to a campaign", "Giving", { col: false, filter: SEL_OPS }),
   F("payment_method", "Paid by", "Giving", { col: false, filter: SEL_OPS }),
@@ -377,7 +378,12 @@ async function compileOne(orgId, c, fields) {
       const keep = [...m.entries()].filter(([, u]) => c.field === "rung" ? u.rung === sel() : c.field === "ladder_status" ? u.status === sel() : !!u.planned === (c.op === "yes")).map(([id]) => id);
       return { sql: "donors.id = ANY(?::text[])", args: [keep] };
     }
-    case "monthly": return c.op === "yes" ? { rules: { recurring: "1" } } : { negateRules: { recurring: "1" } };
+    case "monthly": {
+      // FLOWS-2: a monthly plan running, or a month-apart rhythm (shared/numbers/givesMonthly.js).
+      const ids = await require("./shared/numbers/givesMonthly").givesMonthlyIds(query, orgId, await require("./donorStatus").todayFor(orgId));
+      const r = bool(c.op, "donors.id = ANY(?::text[])");
+      return r && { ...r, args: [ids] };
+    }
     case "fund": return sel() ? { sql: has(`${giftOf("gf")} AND gf.amount > 0 AND gf.fund_id = ?`), args: [sel()] } : needSel();
     case "campaign": return sel() ? { rules: { gaveCampaign: sel() } } : needSel();
     case "payment_method": return sel() ? { sql: has(`${giftOf("gm")} AND gm.amount > 0 AND lower(COALESCE(gm.payment_method,'')) = lower(?)`), args: [sel()] } : needSel();

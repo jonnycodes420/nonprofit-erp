@@ -55,7 +55,10 @@ const DONOR_SCORE_COLS = `,
 // It never comes from the query string: the order would show the word.
 async function buildDonorFilter(orgId, q = {}, opts = {}) {
   const PT = await personTypeMod();
-  const where = ["org_id = ?", "deleted_at IS NULL"];
+  // TRUTH-2: an erased person (TRUST-2, personData.js) is on no list and in
+  // no count: not Everyone, not a group, not a roster. Their gifts stay in
+  // every money total, as anonymous gifts (people-and-records.md).
+  const where = ["org_id = ?", "deleted_at IS NULL", "erased_at IS NULL"];
   // THREAD-3: an archived person is off the lists (the Donors list, a Group's
   // members) and still counts wherever money is counted.
   if (opts.hideArchived) where.push("archived_at IS NULL");
@@ -183,10 +186,12 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   }
   if (q.notDeceased === "1") where.push("deceased IS NOT TRUE");
   if (q.monthly === "1") {
-    // A monthly recurring gift that is still running (the same live states
-    // the journey suggestion reads as "they give every month").
-    where.push(`EXISTS (SELECT 1 FROM recurring_subscriptions rx WHERE rx.org_id = donors.org_id AND rx.donor_id = donors.id
-                         AND rx.interval = 'month' AND rx.status IN (${RECURRING_IN}))`);
+    // FLOWS-2: the one "gives monthly" rule (shared/numbers/givesMonthly.js),
+    // the Donors filter's too: a monthly plan still running, or gifts on 6 or
+    // more days in the last 12 months about a month apart.
+    const GM = require("./shared/numbers/givesMonthly");
+    where.push("donors.id = ANY(?::text[])");
+    params.push(await GM.givesMonthlyIds(query, orgId, await require("./donorStatus").todayFor(orgId)));
   }
   if (q.city) { where.push("lower(trim(COALESCE(city,''))) = lower(trim(?))"); params.push(String(q.city)); }
   // AI-FIX: a state, by postal code; a record may hold "NC" or "North Carolina".
@@ -348,7 +353,8 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
       // holds every LYBUNT person too. The starter is the usual SYBUNT: that
       // list without anyone who gave last year (Reports' SYBUNT minus LYBUNT).
       if (q.bunt === "sybunt") {
-        where.push("NOT EXISTS (SELECT 1 FROM gifts gy WHERE gy.org_id = donors.org_id AND gy.donor_id = donors.id AND gy.date >= ? AND gy.date <= ?)");
+        // TRUTH-2: "gave last year" is a gift (shared/numbers/money GIFT), as in bunt.js
+        where.push(`NOT EXISTS (SELECT 1 FROM gifts gy WHERE gy.org_id = donors.org_id AND gy.donor_id = donors.id AND ${require("./shared/numbers/money").GIFT("gy")} AND gy.date >= ? AND gy.date <= ?)`);
         params.push(prior.from, prior.to);
       }
     }

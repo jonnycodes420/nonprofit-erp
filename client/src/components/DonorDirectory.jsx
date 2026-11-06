@@ -98,7 +98,7 @@ function ColDef({ text, testid, dark }) {
 }
 
 // ── Re-engage View ─────────────────────────────────────────────────────────
-function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
+function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor,initialWin=null}){
   // BUILD-77 Part 1f — a re-engage list is an ASK surface: the no-ask family
   // (deceased / do-not-contact / do-not-solicit) never appears here, and an
   // unlinked imported sustainer belongs to the recurring reconnect list —
@@ -108,7 +108,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
   // COUNTS-1 — two windows, each said plainly (lapseRule.js WORDS.lapsedRecent and
   // WORDS.lost): Lapsed 12 to 24 months, and Lost & Found, over 24 months, the
   // same people the "Lost: over 24 months" report lists (lapse.js lostSql).
-  const[winPicked,setWin]=useState(null);
+  const[winPicked,setWin]=useState(initialWin);   // FLOWS-2: Fundraising's Lost & Found opens on "lost"
   const everyone=[...donors].filter(d=>d.reengage).sort((a,b)=>b.total-a.total);
   const lostList=everyone.filter(d=>d.lost),recentList=everyone.filter(d=>!d.lost);
   const win=winPicked||(recentList.length||!lostList.length?"recent":"lost");   // opens on a list with people in it
@@ -656,11 +656,11 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
           <optgroup label="Closeness">{[["close","Close"],["warm","Warm"],["on_track","On track"],["cooling","Cooling"],["new","New, no pattern yet"]].map(([k,l])=><option key={k} value={"closeness:"+k}>{l}</option>)}</optgroup>
           <optgroup label="Giving"><option value="given:never">Has never given</option></optgroup>
         </select>}
-        <select value={stageFilter} onChange={e=>setStageFilter(e.target.value)} style={filterSel}>
+        <select data-testid="dir-stage-filter" aria-label="Stage" value={stageFilter} onChange={e=>setStageFilter(e.target.value)} style={filterSel}>
           <option value="">All stages</option>
           {STAGES.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
-        <select value={assigneeFilter} onChange={e=>setAssigneeFilter(e.target.value)} style={filterSel}>
+        <select data-testid="dir-owner-filter" aria-label="Owner" value={assigneeFilter} onChange={e=>setAssigneeFilter(e.target.value)} style={filterSel}>
           <option value="">All owners</option>
           {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
         </select>

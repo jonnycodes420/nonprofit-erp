@@ -103,7 +103,7 @@ function campaignGiftTotals(query, orgId) {
   return query(
     `SELECT c.id AS cid,
             COALESCE(SUM(g.amount), 0) AS raised,
-            COUNT(DISTINCT g.donor_id) AS donor_count
+            COUNT(DISTINCT g.donor_id) FILTER (WHERE g.amount > 0) AS donor_count
        FROM campaigns c
        LEFT JOIN gifts g ON g.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}
       WHERE c.org_id = ? AND c.goal_amount IS NOT NULL AND c.goal_amount > 0

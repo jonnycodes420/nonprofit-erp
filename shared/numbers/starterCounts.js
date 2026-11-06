@@ -14,8 +14,10 @@ const M = require("./money");
 // `sol` is the asking starters' rule: leave out do not solicit, do not contact, deceased.
 const SOL = "d.deceased IS NOT TRUE AND d.do_not_contact IS NOT TRUE AND d.do_not_solicit IS NOT TRUE";
 const RULE = {
-  lybunt: "ga.prior_any IS TRUE AND ga.cur_any IS NOT TRUE",
-  sybunt: "ga.before_cur IS TRUE AND ga.cur_any IS NOT TRUE AND ga.prior_any IS NOT TRUE",
+  // TRUTH-2: shared/numbers/bunt.js's rule, set-wise: "gave" is a gift above
+  // zero (money.js GIFT), and an erased or sample person is on neither.
+  lybunt: "ga.prior_gift IS TRUE AND ga.cur_gift IS NOT TRUE AND d.erased_at IS NULL AND d.is_sample IS NOT TRUE",
+  sybunt: "ga.before_gift IS TRUE AND ga.cur_gift IS NOT TRUE AND ga.prior_gift IS NOT TRUE AND d.erased_at IS NULL AND d.is_sample IS NOT TRUE",
   lapsing: "d.id IN (SELECT st.donor_id FROM st WHERE st.lapsing)",
   lapsed: "d.id IN (SELECT st.donor_id FROM st WHERE st.lifecycle = 'lapsed')",
   first_gift: "ga.cur_any IS TRUE AND ga.first_date >= $CUR_FROM",
@@ -31,10 +33,11 @@ const RULE = {
 };
 
 // The statement. `o`: { orgId, cur, prior (the fiscal-year windows), since
-// (thanksSince), status (statusSql's { sql, args }), recurringIn (the running
+// (thanksSince), status (statusSql's { sql, args }), monthlyIds (FLOWS-2; was recurringIn, the running
 // recurring states, quoted), starters }.
 function starterCountsSql(o) {
-  const { orgId, cur, prior, since, status, recurringIn: RECURRING_IN, starters } = o;
+  // FLOWS-2: monthlyIds is the one gives-monthly rule's people (shared/numbers/givesMonthly.js), worked out before this statement.
+  const { orgId, cur, prior, since, status, starters, monthlyIds = [] } = o;
   const args = [];
   const p = (v) => { args.push(v); return "?"; };
   // One per person: the gift facts the starter rules read (each the same
@@ -43,6 +46,9 @@ function starterCountsSql(o) {
         BOOL_OR(g.date >= ${p(prior.from)} AND g.date <= ${p(prior.to)}) AS prior_any,
         BOOL_OR(g.date >= ${p(cur.from)} AND g.date <= ${p(cur.to)}) AS cur_any,
         BOOL_OR(g.date < ${p(cur.from)}) AS before_cur,
+        BOOL_OR(g.date >= ${p(prior.from)} AND g.date <= ${p(prior.to)} AND ${M.GIFT("g")}) AS prior_gift,
+        BOOL_OR(g.date >= ${p(cur.from)} AND g.date <= ${p(cur.to)} AND ${M.GIFT("g")}) AS cur_gift,
+        BOOL_OR(g.date < ${p(cur.from)} AND ${M.GIFT("g")}) AS before_gift,
         MIN(g.date) AS first_date,
         COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ${p(prior.from)} AND g.date <= ${p(prior.to)} AND ${M.MONEY("g")}), 0) AS prior_money,
         COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ${p(cur.from)} AND g.date <= ${p(cur.to)} AND ${M.MONEY("g")}), 0) AS cur_money,
@@ -51,7 +57,7 @@ function starterCountsSql(o) {
       FROM gifts g WHERE g.org_id = ${p(orgId)} GROUP BY g.donor_id`;
   const st = status.sql; args.push(...status.args);
   const rest = `
-    rx AS (SELECT rx.donor_id FROM recurring_subscriptions rx WHERE rx.org_id = ${p(orgId)} AND rx.interval = 'month' AND rx.status IN (${RECURRING_IN}) AND rx.donor_id IS NOT NULL),
+    rx AS (SELECT unnest(${p(monthlyIds)}::text[]) AS donor_id),
     tt AS (SELECT t.id FROM (SELECT x.id, ROW_NUMBER() OVER (ORDER BY COALESCE(x.total_giving,0) DESC, x.id) AS rn, COUNT(*) OVER () AS n
                                FROM donors x WHERE x.org_id = ${p(orgId)} AND x.deleted_at IS NULL AND COALESCE(x.total_giving,0) > 0) t
             WHERE t.rn <= CEIL(t.n / 10.0)),

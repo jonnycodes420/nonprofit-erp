@@ -36,7 +36,16 @@ const app = routers.r0;
 const isAdmin = req => req.user && req.user.role === "admin";
 const knownCols = async orgId => new Set((await DL.fieldsFor(orgId)).filter(f => f.col).map(f => f.key));
 const viewOut = (v, userId) => ({ id: v.id, name: v.name, columns: v.columns, widths: v.widths || {}, filters: v.filters || null,
-  pageSize: v.page_size, sort: v.sort_by || "", sortDir: v.sort_dir || "", mine: v.user_id === userId });
+  pageSize: v.page_size, sort: v.sort_by || "", sortDir: v.sort_dir || "", chips: v.chips || {}, mine: v.user_id === userId });
+// FLOWS-2: the list's own filters a view keeps beside its condition filter.
+// Plain short words only; GET /donors checks each one again when it runs.
+const CHIP_KEYS = ["search", "stage", "owner", "designation", "status", "household", "people"];
+const cleanChips = b => {
+  const c = (b && b.chips && typeof b.chips === "object" && !Array.isArray(b.chips)) ? b.chips : {};
+  const out = {};
+  for (const k of CHIP_KEYS) { const v = c[k]; if (typeof v === "string" && v.trim() && v.length <= 200) out[k] = v.trim(); }
+  return out;
+};
 // LIST-3: the list's sort as the address carries it (GET /donors checks the key itself).
 const cleanSort = b => {
   const sort = String((b && b.sort) || "").trim();
@@ -102,10 +111,10 @@ app.post("/donors/list-views", requireAuth, requireCrm, wrap(async (req, res) =>
   const id = newId("lv");
   const who = actor(req);
   const sort = cleanSort(req.body);
-  await run(`INSERT INTO donor_list_views (id, org_id, user_id, name, columns, widths, filters, page_size, sort_by, sort_dir, created_by, created_by_name)
-             VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?)`,
+  await run(`INSERT INTO donor_list_views (id, org_id, user_id, name, columns, widths, filters, page_size, sort_by, sort_dir, chips, created_by, created_by_name)
+             VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?::jsonb, ?, ?)`,
     [id, orgId, userId, name, JSON.stringify(layout.columns), JSON.stringify(layout.widths), filters ? JSON.stringify(filters) : null,
-     layout.pageSize, sort.sort, sort.dir, who.id, who.name]);
+     layout.pageSize, sort.sort, sort.dir, JSON.stringify(cleanChips(req.body)), who.id, who.name]);
   const [v] = await query(`SELECT * FROM donor_list_views WHERE id = ? AND org_id = ?`, [id, orgId]);
   res.json({ view: viewOut(v, userId) });
 }));

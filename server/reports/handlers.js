@@ -155,7 +155,7 @@ async function reportGivingSummary(orgId, p) {
   const mWhere = reportGiftWhere(p, orgId, mParams);
   const pMonthly = query(
     `SELECT LEFT(g.date, 7) AS month, COUNT(*)::int AS gifts,
-            COALESCE(SUM(g.amount),0) AS total, COUNT(DISTINCT g.donor_id)::int AS donors
+            COALESCE(SUM(g.amount),0) AS total, ${NUMBERS.money.GIVERS("g", "d")}::int AS donors
      ${REPORT_GIFT_FROM} ${mWhere} GROUP BY 1 ORDER BY 1`, mParams);
 
   // FIX-3 E — THE COMPARISON: the same point last year, the Board's figure,
@@ -271,7 +271,7 @@ async function reportByGroup(orgId, p) {
   const where = reportGiftWhere(p, orgId, params);
   const rows = await query(
     `SELECT ${cfg.name} AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(g.amount),0) AS total,
-            COUNT(*)::int AS gift_count, COUNT(DISTINCT g.donor_id)::int AS unique_donors
+            COUNT(*)::int AS gift_count, ${NUMBERS.money.GIVERS("g", "d")}::int AS unique_donors
      FROM gifts g JOIN donors d ON d.id = g.donor_id ${cfg.join}
      WHERE ${where} GROUP BY 1 ORDER BY total DESC`, params);
   // REPORTS-4: a row opens its gifts when one id names it: a fund or a page
@@ -303,14 +303,10 @@ async function reportByGroup(orgId, p) {
 // Both predicates live here in SQL and nowhere else.
 // GROUPS-2: the predicate on its own, for a person alias, so a Groups starter
 // ("Gave last year, not yet this year") is this list and never a second guess.
+// TRUTH-2: the one rule is shared/numbers/bunt.js; the report, its header,
+// the group page and the Groups starter all read it.
 function buntPredicate(kind, cur, prior, a = "d") {
-  const before = kind === "lybunt"
-    ? `EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = ${a}.org_id AND g.donor_id = ${a}.id AND g.date >= ? AND g.date <= ?)`
-    : `EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = ${a}.org_id AND g.donor_id = ${a}.id AND g.date < ?)`;
-  return {
-    sql: `${before} AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = ${a}.org_id AND g.donor_id = ${a}.id AND g.date >= ? AND g.date <= ?)`,
-    args: [...(kind === "lybunt" ? [prior.from, prior.to] : [cur.from]), cur.from, cur.to],
-  };
+  return NUMBERS.bunt.buntSql(kind, cur, prior, a);
 }
 
 async function reportBuntList(orgId, p, kind) {
@@ -434,20 +430,22 @@ async function reportTopDonors(orgId, p) {
               COALESCE(h.name, d.name) AS name,
               (h.id IS NOT NULL) AS is_household,
               COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count,
-              MAX(g.date) AS last_gift_date, COUNT(DISTINCT d.id)::int AS member_count
+              MAX(g.date) AS last_gift_date, ${NUMBERS.money.GIVERS("g", "d")}::int AS member_count
        FROM gifts g
        JOIN donors d ON d.id = g.donor_id
        LEFT JOIN households h ON h.id = d.household_id AND h.org_id = d.org_id
-       WHERE ${where}
+       WHERE ${where} AND d.erased_at IS NULL
        GROUP BY COALESCE(d.household_id, d.id), COALESCE(h.name, d.name), h.id
-       ORDER BY total DESC LIMIT ?`, [...params, p.limit]);
+       HAVING ${NUMBERS.money.GIVERS("g", "d")} > 0
+       ORDER BY total DESC LIMIT ?`, [...params, p.limit]);   // TRUTH-2: a top donor gave (a gift above $0) and is not erased
     return { scope: "period", view: "household", from: p.from, to: p.to,
       rows: rows.map((r, i) => ({ rank: i + 1, id: r.group_id, name: r.name, isHousehold: !!r.is_household, memberCount: r.member_count, total: Number(r.total), giftCount: r.gift_count, lastGiftDate: r.last_gift_date })) };
   }
   const rows = await query(
     `SELECT d.id, d.name, COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count, MAX(g.date) AS last_gift_date
-     ${REPORT_GIFT_FROM} ${where} GROUP BY d.id, d.name
-     ORDER BY total DESC, d.id LIMIT ?`, [...params, p.limit]);
+     ${REPORT_GIFT_FROM} ${where} AND d.erased_at IS NULL GROUP BY d.id, d.name
+     HAVING ${NUMBERS.money.GIVERS("g", "d")} > 0
+     ORDER BY total DESC, d.id LIMIT ?`, [...params, p.limit]);   // TRUTH-2: as the givers figure counts them
   const figures = await reportFigures(orgId, { topTotal: { key: "givers", params: { from: p.from, to: p.to, top: p.limit, measure: "sum",
     ...(p.fundId ? { fund: p.fundId } : {}), ...(p.campaignId ? { campaign: p.campaignId } : {}) } } });
   return { figures, scope: "period", view: "individual", from: p.from, to: p.to, rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: r.gift_count, lastGiftDate: r.last_gift_date })) };
@@ -538,14 +536,14 @@ async function reportAnnual(orgId, p) {
   const [cur, priorSpan] = sp.years;
   const [totals] = await query(
     `SELECT COUNT(*)::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
-            COUNT(DISTINCT g.donor_id)::int AS unique_donors,
+            ${NUMBERS.money.GIVERS("g", "d")}::int AS unique_donors,
             COALESCE(AVG(g.amount),0) AS avg_gift
      FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`,
     [orgId, cur.from, cur.to]);
   const [priorT] = await query(
     `SELECT COUNT(*)::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
-            COUNT(DISTINCT g.donor_id)::int AS unique_donors
+            ${NUMBERS.money.GIVERS("g", "d")}::int AS unique_donors
      FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`,
     [orgId, priorSpan.from, priorSpan.to]);

@@ -9,7 +9,12 @@ import { ProfileTimeline } from "../ProfileTimeline";
 import { HistoryList } from "../EditHistory";
 import { shownTags, shownNote } from "../../lib/internalLabels";
 
-function ListTabs({deleteMaterial,donor,dpTab,giftsFull,inboxConnected,intActions,isReadOnly,loadDpThread,loadGiftsFull,loadRel,localInts,matLoading,matUploading,materials,onInteractionAdded,onLogTouchpoint,onNavigate,rel,saveStewardship,setLogMeeting,setStwForm,setStwOpen,stwForm,stwOpen,stwSaving,tlExtras,tlSearch,uploadMaterial,viewMaterial}){
+function ListTabs(props){
+  // FLOWS-2: the files attached to conversations and notes (the timeline's own read) count as files too.
+  const attachedFiles=(props.tlExtras&&Array.isArray(props.tlExtras.attachments))?props.tlExtras.attachments.length:0;
+  return <ListTabsBody {...props} attachedFiles={attachedFiles}/>;
+}
+function ListTabsBody({attachedFiles,deleteMaterial,donor,dpTab,giftsFull,inboxConnected,intActions,isReadOnly,loadDpThread,loadGiftsFull,loadRel,localInts,matLoading,matUploading,materials,onInteractionAdded,onLogTouchpoint,onNavigate,rel,saveStewardship,setLogMeeting,setStwForm,setStwOpen,stwForm,stwOpen,stwSaving,tlExtras,tlSearch,uploadMaterial,viewMaterial}){
   return <>
           {/* ── THE LIST TABS (PROFILE-1 header) ──────────────────────────
               Conversations, Emails, Tasks, Notes and Files are the old
@@ -39,12 +44,15 @@ function ListTabs({deleteMaterial,donor,dpTab,giftsFull,inboxConnected,intAction
             {dpTab==="notes"&&shownNote(donor.notes)&&<div data-testid="dp-record-notes" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{shownNote(donor.notes)}</div>}
             {dpTab==="files"&&<>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Files</div>
+              {/* FLOWS-2: the header counts every file on this person: uploaded here, and attached to a conversation or note (listed below) */}
+              <div data-testid="dp-files-head" style={{fontSize:14,fontWeight:800,color:T.ink}}>Files{matLoading?"":` · ${(materials.length+attachedFiles).toLocaleString("en-US")}`}</div>
             </div>
             <Uploader accept={[]} readAs="none" busy={matUploading}
               label={matUploading?"Uploading…":"Drop a file here, or browse: proposals, letters, research (any file type)"}
               onFile={({file})=>uploadMaterial(file)}/>
-            {matLoading?<div style={{textAlign:"center",color:T.ink3,fontSize:12,padding:16}}><Spin/></div>:materials.length===0?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:16}}>No materials uploaded yet</div>:(
+            {matLoading?<div style={{textAlign:"center",color:T.ink3,fontSize:12,padding:16}}><Spin/></div>:materials.length===0?<div data-testid="dp-files-none" style={{fontSize:12,color:T.ink3,textAlign:"center",padding:16}}>{attachedFiles>0
+              ?`Nothing uploaded here yet. ${attachedFiles===1?"1 file is":`${attachedFiles.toLocaleString("en-US")} files are`} attached to conversations and notes, below.`
+              :"No files yet. Drop one above, or attach one to a conversation or note."}</div>:(
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {materials.map(m=>(
                   <div key={m.id} data-testid={m.kind==="check_image"?"dp-file-check":"dp-file"} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:12}}>

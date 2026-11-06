@@ -9,6 +9,7 @@
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const SEND_GATE = require("../../sendGate");   // SEND-GATE-1: a staff click is the confirm for one message
 const { newId } = require("./newId");   // IDS-1: every new row id is prefix + 20 hex
+const FIGURE_CHECK = require("../drafts/figureCheck");   // TRUTH-2
 
 function mount(ctx) {
 const {
@@ -32,6 +33,16 @@ async function sendMilestoneDraft(req, draft, opts = {}) {
   // still refuses it, and the auction screen offers its Copy link instead.
   const kind = draft.source === "volunteer_reminder" ? "volunteer_reminder"
     : String(draft.milestone_key || "").startsWith("auction-winner:") ? "auction_winner" : "milestone";
+  // TRUTH-2: a draft Steward wrote (a milestone thank-you, a check-in, a
+  // recipe's words) is checked again at the press of Send: its words were made
+  // days ago, and a gift since then makes "your giving has now reached $3,200"
+  // wrong. A money figure that is not one of the person's amounts as they
+  // stand now refuses the send, with the reason. Words she typed (a task's
+  // email, a video thank-you, a reminder) are hers and are not re-checked.
+  if (!draft.source || String(draft.source).startsWith("workflow:")) {
+    const stale = await FIGURE_CHECK.staleFigures(req.user.orgId, draft);
+    if (stale.length) return { status: 409, error: `This draft states ${stale.join(", ")}, which is not what ${donor.name || "this person"} has given as of today. Edit the figure before you send it.`, code: "stale_figure", stale };
+  }
   const decision = await donorMailDecision(kind, donor.email, req.user.orgId, { donorId: donor.id });
   if (!decision.send) return { status: 400, error: `Cannot send: ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : (mailPolicy.REASON_SENTENCE[decision.reason] || `this donor is suppressed (${String(decision.reason).replace(/_/g, " ")})`)}` };
 

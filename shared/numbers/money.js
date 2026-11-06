@@ -33,4 +33,11 @@ const isMoney = r => !isCredit(r && (r.type ?? r.gift_type));
 const isGift = r => isMoney(r) && centsOf(r) > 0;
 const sumCents = rows => (rows || []).filter(isMoney).reduce((n, r) => n + centsOf(r), 0);
 
-module.exports = { MONEY, GIFT, LIVE, MONEY_SUM, MONEY_CENTS, isMoney, isGift, sumCents, centsOf };
+// TRUTH-2 · A DONOR COUNT. The people who gave in a set of rows: a gift above
+// zero (a $0 row or a refund makes nobody a donor), from a person who is not
+// erased (an erased person counts nowhere; their gifts stay in the money).
+// Fundraising said 363 and the Giving summary 362 when one person's only row
+// was a $0 gift. Needs person alias `d` joined.
+const GIVERS = (g = "g", d = "d") => `COUNT(DISTINCT ${g}.donor_id) FILTER (WHERE ${g}.amount > 0 AND ${d}.erased_at IS NULL)`;
+
+module.exports = { GIVERS, MONEY, GIFT, LIVE, MONEY_SUM, MONEY_CENTS, isMoney, isGift, sumCents, centsOf };
