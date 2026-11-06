@@ -179,21 +179,26 @@ async function collectFrontend() {
 
 // One row per live org: a customer by its Kind (orgKind.js, the console's one
 // rule), not archived. Its name and last sign-in only; no person, no money.
-async function collectCustomers(query) {
-  const [orgs, users, pays, real, logins] = await Promise.all([
+// DEVBOARD-3: the same rule picks the Journey tab's orgs (customerOrgs).
+async function customerOrgs(query) {
+  const [orgs, users, pays, real] = await Promise.all([
     query(`SELECT id, name, org_slug, org_kind, is_demo_org, subscription_status, archived_at, created_at FROM orgs`, []),
     query(`SELECT org_id, email FROM users WHERE deactivated_at IS NULL`, []),
     query(`SELECT org_id, COUNT(*) AS c FROM platform_payments GROUP BY org_id`, []),
     query(`SELECT org_id, COUNT(*) AS c FROM donors WHERE deleted_at IS NULL AND COALESCE(is_sample,false) = false GROUP BY org_id`, []),
-    query(`SELECT s.org_id, MAX(s.created_at) AS t FROM user_sessions s JOIN users u ON u.id = s.user_id AND u.org_id = s.org_id GROUP BY s.org_id`, []),
   ]);
   const group = new Map();
   for (const u of users) { if (!group.has(u.org_id)) group.set(u.org_id, []); group.get(u.org_id).push({ email: u.email }); }
   const pay = new Map(pays.map(r => [r.org_id, r])), realN = new Map(real.map(r => [r.org_id, Number(r.c)]));
-  const last = new Map(logins.map(r => [r.org_id, r.t]));
   return orgs.filter(o => !o.archived_at).filter(o => ORG_KIND.inferKind(o, {
     users: group.get(o.id) || [], payments: Number(pay.get(o.id)?.c || 0), realDonors: realN.get(o.id) || 0,
-  }).kind === "customer").map(o => ({ name: o.name, slug: o.org_slug, lastLogin: last.get(o.id) ? new Date(last.get(o.id)).toISOString() : null }))
+  }).kind === "customer");
+}
+async function collectCustomers(query) {
+  const [orgs, logins] = await Promise.all([customerOrgs(query),
+    query(`SELECT s.org_id, MAX(s.created_at) AS t FROM user_sessions s JOIN users u ON u.id = s.user_id AND u.org_id = s.org_id GROUP BY s.org_id`, [])]);
+  const last = new Map(logins.map(r => [r.org_id, r.t]));
+  return orgs.map(o => ({ name: o.name, slug: o.org_slug, lastLogin: last.get(o.id) ? new Date(last.get(o.id)).toISOString() : null }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -228,4 +233,4 @@ async function readSnapshot(query) {
   return row ? { body: row.body, refreshedAt: new Date(row.refreshed_at).toISOString() } : null;
 }
 
-module.exports = { refreshSnapshot, readSnapshot, prState, buildOf, unzipOne, QUIET_MS };
+module.exports = { refreshSnapshot, readSnapshot, customerOrgs, prState, buildOf, unzipOne, QUIET_MS };
