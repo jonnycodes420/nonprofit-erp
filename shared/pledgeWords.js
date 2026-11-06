@@ -12,7 +12,8 @@
 // WALKB-2: `yearLabel` names the fiscal year the amount falls due in ("due in
 // FY 2026–27"); without it the words stay "due this year" (the import preview).
 export function pledgeMoneyWords({ dueThisYearCents = 0, openCents = 0, years = 1, undatedCents = 0, yearLabel = "" } = {}, fmt = defaultFmt) {
-  const due = `${fmt(dueThisYearCents || 0)} ${yearLabel ? `due in ${yearLabel}` : "due this year"}`;
+  const when = yearLabel ? `due in ${yearLabel}` : "due this year";
+  const due = `${fmt(dueThisYearCents || 0)} ${when}`;
   const und = undatedCents || 0;
   if (und > 0 && und >= (openCents || 0)) return `${fmt(openCents)} ${years > 1 ? `over ${years} years, ` : ""}with no set due date`;
   if (und > 0) return [dueThisYearCents ? due : null, `${fmt(und)} with no set due date`, `${fmt(openCents)} ${years > 1 ? `over ${years} years` : "open in all"}`].filter(Boolean).join(" · ");
