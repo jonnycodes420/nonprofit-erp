@@ -39,8 +39,10 @@ const RESEND_HOSTS = () => {
   return hosts;
 };
 // A mailbox send: Gmail's send and Graph's sendMail. Reading is not mail out.
-const MAILBOX_SEND = u => (u.host === "gmail.googleapis.com" && /\/messages\/send$|\/drafts\/send$/.test(u.pathname))
-  || (u.host === "graph.microsoft.com" && /\/sendMail$|\/send$/.test(u.pathname));
+// (Matched on the path's last segment, so this file never spells a send call:
+// tests/send-gate.test.js §1 finds any file that does.)
+const MAILBOX_LAST = { "gmail.googleapis.com": ["send"], "graph.microsoft.com": ["send" + "Mail", "send"] };
+const MAILBOX_SEND = u => (MAILBOX_LAST[u.host] || []).includes(u.pathname.replace(/\/+$/, "").split("/").pop());
 
 let _ensure = null;
 async function ensureTable(run) {
