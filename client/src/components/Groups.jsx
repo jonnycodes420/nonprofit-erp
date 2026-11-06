@@ -23,6 +23,7 @@ import { SkeletonCards, SkeletonPage } from "./Skeleton";
 import { urlParam, tabHref } from "../lib/appUrls";
 import { RecordLink } from "./RecordLink";
 import { offerUndo } from "./EditHistory";
+import { useWriteRev, GROUP_WRITES } from "../lib/writeRev";
 
 const ACTION = T.greenDk;
 const card = { background: T.bgCard, border: "1px solid " + T.bg2, borderRadius: 12, padding: "16px 18px" };
@@ -404,7 +405,9 @@ export default function GroupsPage({ isReadOnly, onNavigate, initialGroupId }) {
   const load = useCallback(() => {
     apiFetch("/groups").then(r => { setList(r); setErr(""); if (!r.groups.length) setStarters(true); }).catch(() => setErr("Your groups did not load just now. Reload the page to try again."));
   }, []);
-  useEffect(() => { load(); }, [load]);
+  // WALKB-1: a group removed (here, from its own page, by Undo) leaves the list at once.
+  const groupRev = useWriteRev(GROUP_WRITES);
+  useEffect(() => { load(); }, [load, groupRev]);
   const openPerson = id => onNavigate && onNavigate("donors", { selectDonorId: id });
   if (open) return <GroupPage groupId={open} isReadOnly={isReadOnly} onNavigate={onNavigate} onBack={() => { setOpen(null); load(); }} onOpenPerson={openPerson} />;
   return (

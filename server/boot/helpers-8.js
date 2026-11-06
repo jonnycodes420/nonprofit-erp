@@ -1085,6 +1085,9 @@ function validateStoryBlocks(raw) {
 // campaign. The three campaign widgets are `give`-only, so the portal caller
 // passes nothing and nothing changes for it.
 async function resolveWidgetsPublic(org, widgets, ctx = {}) {
+  // WALKB-1: a starter's hint is the editor's, never the public's (shared/placeholderCopy.js).
+  // The editor's own preview passes keepHints, so she can still click the hint and write over it.
+  if (!ctx.keepHints) widgets = (await import("../../shared/placeholderCopy.js")).widgetsWithoutHints(widgets) || [];
   // BUILD-54 §1 discipline: the per-widget resolution queries are independent
   // reads — resolve them in PARALLEL (this is the donor's first paint; a
   // sequential loop re-created the exact round-trip stacking §1 removed).

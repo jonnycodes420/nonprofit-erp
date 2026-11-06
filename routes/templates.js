@@ -41,10 +41,18 @@ function kitOf(o) {
 }
 
 // ── BRAND KIT ──────────────────────────────────────────────────────────────
+// WALKB-1: nothing saved means the signed-in person's own name and title,
+// never a name somebody else left behind; a saved signer says it is saved.
+async function withSigner(req, kit) {
+  const [me] = await query("SELECT name, sign_name, sign_title FROM users WHERE id=? AND org_id=?", [req.user.userId, req.user.orgId]);
+  const saved = !!String(kit.signatureName || "").trim();
+  return { ...kit, signatureSaved: saved,
+    signatureDefault: { name: String((me && (me.sign_name || me.name)) || "").trim(), title: String((me && me.sign_title) || "").trim() } };
+}
 app.get("/brand-kit", requireAuth, wrap(async (req, res) => {
   await READY;
   const o = await orgOf(req.user.orgId);
-  res.json({ ...kitOf(o), palette: B.PALETTE });
+  res.json(await withSigner(req, { ...kitOf(o), palette: B.PALETTE }));
 }));
 app.put("/brand-kit", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   await READY;
@@ -70,7 +78,7 @@ app.put("/brand-kit", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
     [next.brand_primary, next.brand_secondary, next.receipt_signature_name || null, next.receipt_signature_title || null,
      next.brand_signature_extra || null, next.receipt_address || null, next.tax_language || null, next.statement_your_year, o.id]);
   if (req.audit) req.audit.after(next);
-  res.json({ ...kitOf(await orgOf(o.id)), palette: B.PALETTE });
+  res.json(await withSigner(req, { ...kitOf(await orgOf(o.id)), palette: B.PALETTE }));
 }));
 
 // FIX-57 · WHO SIGNS IT. The assignee of the task it was opened from (a

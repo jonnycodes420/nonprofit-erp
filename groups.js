@@ -922,6 +922,9 @@ async function directoryRoles(orgId, q, build) {
   };
   const [everyone, donors] = await Promise.all([countFor(""), countFor("donor")]);
   if (everyone != null && donors != null) roleCounts = { everyone, donors, contacts: everyone - donors };
+  // WALKB-1: a search finds everyone. Home names organizations and contacts
+  // too, and a name Home shows must never be one the Donors search cannot find.
+  if (role === "auto" && String(q.search || "").trim()) role = "";
   if (role === "auto") {
     // the org's own donors, not this search's: the view she opens on does not hop as she types
     const PT = await personTypeMod();

@@ -51,4 +51,41 @@ function personMatchSql(p) {
   return { sql, args: [p, p, p, p, p, p, p] };
 }
 
-module.exports = { FOLD, fold, foldedPattern, personMatchSql };
+// WALKB-1 · A RESULT SAYS WHY IT MATCHED. A search for "Marlowe" found seven
+// people, two with no "Marlowe" anywhere a person could see: they matched on
+// a household or a linked organization. Each row now carries the first thing
+// that matched, in the same order the rule above reads, as "field\tvalue"
+// ("name", "email\tmarlowe@…", "household\tThe Marlowe Hart household").
+// `donors` is unaliased, as above. Arguments: p, repeated per branch.
+function personMatchReasonSql(p) {
+  const E = "ESCAPE '\\'";
+  const sql = `(CASE
+      WHEN ${FOLD("donors.name")} LIKE ? ${E} THEN 'name'
+      WHEN ${FOLD("donors.email")} LIKE ? ${E} THEN 'email' || chr(9) || donors.email
+      WHEN ${FOLD("donors.contact_name")} LIKE ? ${E} THEN 'contact' || chr(9) || donors.contact_name
+      WHEN ${FOLD("donors.employer")} LIKE ? ${E} THEN 'employer' || chr(9) || donors.employer
+      WHEN lower(COALESCE(donors.phone,'')) LIKE ? ${E} THEN 'phone' || chr(9) || donors.phone
+      ELSE COALESCE(
+        (SELECT 'household' || chr(9) || pmh.name FROM households pmh
+          WHERE pmh.org_id = donors.org_id AND pmh.id = donors.household_id AND ${FOLD("pmh.name")} LIKE ? ${E} LIMIT 1),
+        (SELECT 'organization' || chr(9) || pmo.name FROM donor_relationships pmr
+           JOIN donors pmo ON pmo.org_id = pmr.org_id AND pmo.deleted_at IS NULL
+            AND pmo.id = CASE WHEN pmr.donor_id_a = donors.id THEN pmr.donor_id_b ELSE pmr.donor_id_a END
+          WHERE pmr.org_id = donors.org_id AND (pmr.donor_id_a = donors.id OR pmr.donor_id_b = donors.id)
+            AND lower(COALESCE(pmo.kind,'')) IN ('organization','organisation') AND ${FOLD("pmo.name")} LIKE ? ${E} LIMIT 1),
+        'phone')
+    END)`;
+  return { sql, args: [p, p, p, p, p, p, p] };
+}
+
+// The words a person reads for a reason: "email: marlowe@harbor.org".
+const REASON_LABEL = { email: "email", contact: "contact person", employer: "employer", phone: "phone", household: "household", organization: "organization" };
+function matchReasonWords(reason) {
+  const [field, ...rest] = String(reason || "").split("\t");
+  if (!field || field === "name") return field === "name" ? "name" : "";
+  const value = rest.join("\t").trim();
+  const label = REASON_LABEL[field] || field;
+  return value ? `${label}: ${value}` : label;
+}
+
+module.exports = { FOLD, fold, foldedPattern, personMatchSql, personMatchReasonSql, matchReasonWords };

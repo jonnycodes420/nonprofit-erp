@@ -2006,7 +2006,7 @@ app.post("/campaigns/from-template", requireAuth, adminUnlessEmailTemplate, chec
   const pageId = newId("gp");
   const widgets = [
     { type: "hero", heading: plan.page.headline, sub: "", image: null, size: "standard" },
-    { type: "richtext", blocks: plan.page.story.split("\n\n").filter(Boolean).map(t => ({ type: "p", text: t })) },
+    { type: "richtext", blocks: plan.page.story.split("\n\n").filter(Boolean).map(t => ({ type: "p", text: t })), hint: plan.page.hint },
     { type: "countdown", heading: "" },
     { type: "matchchallenge" },
     { type: "recentgifts", count: 8, showAmounts: false, heading: "Recent gifts" },
@@ -6728,6 +6728,8 @@ async function validateWidget(raw, orgId) {
         const v = validateStoryBlocks(raw.blocks);
         if (v.error) return { error: "Rich text must be paragraphs, headings, and lists, no HTML." };
         w.blocks = v.blocks || [];
+        // WALKB-1: the starter's prompt rides beside the words, for the editor only.
+        if (typeof raw.hint === "string" && raw.hint.trim()) w.hint = wStr(raw.hint, 400);
         break;
       }
       case "image":

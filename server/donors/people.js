@@ -167,7 +167,7 @@ app.get("/giving-pages/:id/page/preview", requireAuth, requireAdmin, wrap(async 
       if (!GPE.sameJson(GPE.settingsOf(row, F, fundIds).form, d.form)) page.form_config = d.form;
     }
   }
-  res.json(await givingPagePublicPayload(orgs[0], page, req.query));
+  res.json(await givingPagePublicPayload(orgs[0], page, req.query, { editing: true }));
 }));
 
 // FIX-28: STAFF ADD A FUNDRAISER FOR SOMEBODY. The same person match and the

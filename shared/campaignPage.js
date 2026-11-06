@@ -89,7 +89,9 @@ export const TEMPLATES = [
     page: ({ orgName }) => ({
       titleFor: year => `GivingTuesday ${year}`,
       slugFor: year => `givingtuesday-${year}`,
-      story: `On GivingTuesday, people all over the world give to the causes they believe in. ${orgName} is one of them, and one day is all we are asking for.\n\nWrite two or three sentences here about what this year's gifts will pay for. Say the thing you would say to somebody across a table, and name a number if you have one.`,
+      story: `On GivingTuesday, people all over the world give to the causes they believe in. ${orgName} is one of them, and one day is all we are asking for.`,
+      // WALKB-1: the prompt is the editor's hint, never saved as the page's words.
+      hint: "Write two or three sentences here about what this year's gifts will pay for. Say the thing you would say to somebody across a table, and name a number if you have one.",
       headline: "One day. One ask.",
     }),
     plan: anchor => ([
@@ -119,7 +121,8 @@ export const TEMPLATES = [
     page: ({ orgName }) => ({
       titleFor: year => `Year-end ${year}`,
       slugFor: year => `year-end-${year}`,
-      story: `This is the last chance to give to ${orgName} in this tax year.\n\nWrite two or three sentences here about what this year made possible and what next year needs. The year-end ask that works is the one that looks back before it looks forward.`,
+      story: `This is the last chance to give to ${orgName} in this tax year.`,
+      hint: "Write two or three sentences here about what this year made possible and what next year needs. The year-end ask that works is the one that looks back before it looks forward.",
       headline: "Before the year is out.",
     }),
     plan: anchor => ([
@@ -195,7 +198,7 @@ export function planFor(key, { today, orgName = "this organization" } = {}) {
     anchor,
     year,
     campaign: { name: pg.titleFor(year), startDate: w.start, endDate: w.end },
-    page: { title: pg.titleFor(year), slug: pg.slugFor(year), story: pg.story, headline: pg.headline },
+    page: { title: pg.titleFor(year), slug: pg.slugFor(year), story: pg.story, hint: pg.hint || "", headline: pg.headline },
     // Every step is a DATED REMINDER FOR A PERSON. Nothing here sends anything.
     steps: t.plan(anchor).map(s => ({ ...s, due: s.at })),
   };

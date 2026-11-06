@@ -5,6 +5,7 @@ import { askConfirm } from "../ConfirmDialog";
 import { T, SectionLabel } from "../shared";
 import { MailTypeSwitches } from "../MailTypes";
 import { plural } from "../../../../shared/countWords.js";
+import { isPlaceholderEin, PLACEHOLDER_EIN_WARNING } from "../../../../shared/placeholderCopy.js";
 import { receiptBadge } from "../../lib/receiptBadge";
 import { useMailTypes } from "../../lib/mailTypes";
 
@@ -127,6 +128,7 @@ export function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
 
         <div style={lbl}>EIN</div>
         <input value={form.ein} onChange={e=>setForm(f=>({...f,ein:e.target.value}))} placeholder="XX-XXXXXXX" style={inp} disabled={!isAdmin||isReadOnly}/>
+        {isPlaceholderEin(form.ein)&&<div data-testid="ein-placeholder-warning" style={{fontSize:12.5,color:T.ink,background:"#F0EDE6",borderLeft:"3px solid #C9A84C",padding:"6px 10px",margin:"-4px 0 10px",lineHeight:1.5}}>{PLACEHOLDER_EIN_WARNING}</div>}
 
         <div style={lbl}>Receipt address</div>
         <textarea value={form.receiptAddress} onChange={e=>setForm(f=>({...f,receiptAddress:e.target.value}))} placeholder={"123 Main St\nAnytown, ST 00000"} rows={2} style={{...inp,resize:"vertical"}} disabled={!isAdmin||isReadOnly}/>
