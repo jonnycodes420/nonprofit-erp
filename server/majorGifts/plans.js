@@ -589,7 +589,12 @@ app.get("/donors/:id/plan", requireAuth, wrap(async (req, res) => {
       ORDER BY (p.status='active') DESC,
                -- JOURNEYS-3: of several, the one whose step holds their thread
                EXISTS (SELECT 1 FROM cultivation_plan_steps s WHERE s.plan_id=p.id AND s.status='open') DESC,
-               p.priority DESC, p.created_at DESC LIMIT 1`, [req.user.orgId, req.params.id]);
+               -- TRUTH-2: then the one whose step comes next, so the profile names
+               -- the same step, on the same stored day, as the Calendar's first; and
+               -- a full order, so two journeys started in one moment never swap on
+               -- a reload (Walk A: Nov 7 on the Calendar, Nov 9 here, then flipped)
+               (SELECT MIN(s.due_date) FROM cultivation_plan_steps s WHERE s.plan_id=p.id AND s.status IN ('open','pending')) ASC NULLS LAST,
+               p.priority DESC, p.created_at DESC, p.id ASC LIMIT 1`, [req.user.orgId, req.params.id]);
   if (!p) return res.json({ plan: null });
   res.json({ plan: await readPlan(req.user.orgId, p.id) });
 }));

@@ -55,6 +55,17 @@ export function useReceipts(donor, gifts) {
     } catch (e) { setReceiptNote(n => ({ ...n, [receiptId]: (e && e.sentence) || errorMessage(e, "That did not send.") })); }
     setReceiptBusyId(null);
   };
+  // TRUTH-2: a receipt that should not stand is voided, never deleted: it is
+  // marked void, her note is kept on it, and its number is never used again
+  // (the org's receipt counter only goes up). Then the gift can be removed.
+  const voidReceipt = async (receiptId, note) => {
+    setReceiptBusyId(receiptId);
+    try {
+      await apiFetch(`/receipts/${receiptId}/void`, { method: "POST", body: JSON.stringify({ reason: note || "" }) });
+      await loadDonorReceipts();
+    } catch (e) { setReceiptNote(n => ({ ...n, [receiptId]: (e && e.sentence) || errorMessage(e, "The receipt was not voided.") })); }
+    setReceiptBusyId(null);
+  };
   const downloadReceiptPdf = async (receiptId, filenameHint) => {
     try {
       const resp = await fetch(`${API}/receipts/${receiptId}/pdf`, { headers: { Authorization: `Bearer ${getToken()}` } });
@@ -87,12 +98,14 @@ export function useReceipts(donor, gifts) {
   };
   const toggleYearEnd = v => { const next = typeof v === "function" ? v(showYearEnd) : v; setShowYearEnd(next); if (!next) { setStatement(null); setYearEndErr(""); } };
 
-  return { donorReceipts, receiptsEnabled, receiptBusyId, receiptForGift, sendReceipt, emailReceipt, downloadReceiptPdf, receiptNote,
+  return { donorReceipts, receiptsEnabled, receiptBusyId, receiptForGift, sendReceipt, emailReceipt, voidReceipt, downloadReceiptPdf, receiptNote,
     showYearEnd, setShowYearEnd: toggleYearEnd, yearEndYear, setYearEndYear, yearEndBusy, yearEndErr, sendYearEndStatement, statement };
 }
 
 // A gift's receipt cell: make it, then Download and Email.
 export function ReceiptCell({ g, rc, isReadOnly }) {
+  const [voiding, setVoiding] = useState(false);
+  const [voidNote, setVoidNote] = useState("");
   const r = rc.receiptForGift(g.id);
   const note = r ? rc.receiptNote[r.id] : rc.receiptNote["gift:" + g.id];
   if (r) return (
@@ -100,7 +113,16 @@ export function ReceiptCell({ g, rc, isReadOnly }) {
       <span>Receipt #{r.receipt_number} {r.sent_at ? "emailed ✓" : "ready"} ·
         <button type="button" data-testid="dp-receipt-download" style={linkBtn} onClick={() => rc.downloadReceiptPdf(r.id, `receipt-${r.receipt_number}`)}>Download</button>
         {!r.sent_at && !isReadOnly && <>·<button type="button" data-testid="dp-receipt-email" disabled={rc.receiptBusyId === r.id} style={linkBtn} onClick={() => rc.emailReceipt(r.id)}>{rc.receiptBusyId === r.id ? "Emailing…" : "Email"}</button></>}
+        {!isReadOnly && !voiding && <>·<button type="button" data-testid="dp-receipt-void" style={linkBtn} onClick={() => setVoiding(true)}>Void</button></>}
       </span>
+      {voiding && <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        <input data-testid="dp-receipt-void-note" value={voidNote} onChange={e => setVoidNote(e.target.value)} placeholder="Why it is void (kept on the receipt)"
+          style={{ fontSize: 11.5, padding: "3px 6px", border: "1px solid " + T.bg3, borderRadius: 6, minWidth: 180 }} />
+        <button type="button" data-testid="dp-receipt-void-confirm" disabled={rc.receiptBusyId === r.id} style={linkBtn}
+          onClick={async () => { await rc.voidReceipt(r.id, voidNote); setVoiding(false); setVoidNote(""); }}>{rc.receiptBusyId === r.id ? "Voiding…" : `Void receipt #${r.receipt_number}`}</button>
+        <button type="button" style={{ ...linkBtn, color: T.ink3 }} onClick={() => setVoiding(false)}>Keep it</button>
+        <span style={{ color: T.ink3, whiteSpace: "normal", maxWidth: 260 }}>The receipt stays on file marked void, and its number is never used again.</span>
+      </span>}
       {note && <span role="status" style={{ color: T.ink3, whiteSpace: "normal", maxWidth: 220 }}>{note}</span>}
     </span>);
   if (!rc.receiptsEnabled) return <span style={{ color: T.ink3, fontSize: 12 }}>Off</span>;

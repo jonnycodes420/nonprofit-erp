@@ -96,9 +96,10 @@ async function personFields(ctx, donor, { campaignName = "" } = {}) {
   const { firstName, lastName } = splitName(nameCase(donor && donor.name ? donor.name : ""));
   let last = null;
   if (donor && donor.id) {
-    [last] = await query(
-      "SELECT amount, date FROM gifts WHERE donor_id=? AND org_id=? ORDER BY date DESC NULLS LAST, created_at DESC LIMIT 1",
-      [donor.id, ctx.orgId]).catch(() => []);
+    // TRUTH-2: the last gift is the one rule (shared/numbers/lastGift): a
+    // refund or a credit row is never anyone's last gift.
+    const lg = (await require("./shared/numbers/lastGift").lastGifts(query, ctx.orgId, [donor.id]).catch(() => new Map())).get(donor.id);
+    last = lg ? { amount: lg.cents / 100, date: lg.date } : null;
   }
   return {
     // Empty means "use the renderer's own fallback" ("friend", "your gift").

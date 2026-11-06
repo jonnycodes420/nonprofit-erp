@@ -14,8 +14,10 @@ const M = require("./money");
 // `sol` is the asking starters' rule: leave out do not solicit, do not contact, deceased.
 const SOL = "d.deceased IS NOT TRUE AND d.do_not_contact IS NOT TRUE AND d.do_not_solicit IS NOT TRUE";
 const RULE = {
-  lybunt: "ga.prior_any IS TRUE AND ga.cur_any IS NOT TRUE",
-  sybunt: "ga.before_cur IS TRUE AND ga.cur_any IS NOT TRUE AND ga.prior_any IS NOT TRUE",
+  // TRUTH-2: shared/numbers/bunt.js's rule, set-wise: "gave" is a gift above
+  // zero (money.js GIFT), and an erased or sample person is on neither.
+  lybunt: "ga.prior_gift IS TRUE AND ga.cur_gift IS NOT TRUE AND d.erased_at IS NULL AND d.is_sample IS NOT TRUE",
+  sybunt: "ga.before_gift IS TRUE AND ga.cur_gift IS NOT TRUE AND ga.prior_gift IS NOT TRUE AND d.erased_at IS NULL AND d.is_sample IS NOT TRUE",
   lapsing: "d.id IN (SELECT st.donor_id FROM st WHERE st.lapsing)",
   lapsed: "d.id IN (SELECT st.donor_id FROM st WHERE st.lifecycle = 'lapsed')",
   first_gift: "ga.cur_any IS TRUE AND ga.first_date >= $CUR_FROM",
@@ -43,6 +45,9 @@ function starterCountsSql(o) {
         BOOL_OR(g.date >= ${p(prior.from)} AND g.date <= ${p(prior.to)}) AS prior_any,
         BOOL_OR(g.date >= ${p(cur.from)} AND g.date <= ${p(cur.to)}) AS cur_any,
         BOOL_OR(g.date < ${p(cur.from)}) AS before_cur,
+        BOOL_OR(g.date >= ${p(prior.from)} AND g.date <= ${p(prior.to)} AND ${M.GIFT("g")}) AS prior_gift,
+        BOOL_OR(g.date >= ${p(cur.from)} AND g.date <= ${p(cur.to)} AND ${M.GIFT("g")}) AS cur_gift,
+        BOOL_OR(g.date < ${p(cur.from)} AND ${M.GIFT("g")}) AS before_gift,
         MIN(g.date) AS first_date,
         COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ${p(prior.from)} AND g.date <= ${p(prior.to)} AND ${M.MONEY("g")}), 0) AS prior_money,
         COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ${p(cur.from)} AND g.date <= ${p(cur.to)} AND ${M.MONEY("g")}), 0) AS cur_money,

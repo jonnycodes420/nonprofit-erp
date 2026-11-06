@@ -95,7 +95,8 @@ export function useProfileGiving({ donor, journey, setJourneyList, setJourneySug
     try{
       await apiFetch(`/gifts/${giftId}`,{method:"DELETE"});
       told({donorId:donor.id,gift:true});loadPledges();   // LEDGER-1: the rail and its thank-you too
-    }catch(e){console.error(e);}
+    // TRUTH-2: a refused delete says why (an issued receipt, not yours to remove), never only the console.
+    }catch(e){alert(errorMessage(e,"The gift could not be deleted."));}
   };
 
   // BUILD-98 Part 1 — a person named on the form is one of THIS org's

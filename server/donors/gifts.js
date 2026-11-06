@@ -994,7 +994,11 @@ app.post("/receipts/:id/void", requireAuth, requireAdmin, wrap(async (req, res) 
   const { reason } = req.body;
   const existing = await query("SELECT id FROM receipts WHERE id=? AND org_id=? AND voided_at IS NULL", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Active receipt not found" });
-  await run("UPDATE receipts SET voided_at=NOW(), void_reason=? WHERE id=?", [reason || null, req.params.id]);
+  // TRUTH-2: a void always keeps its note (hers, or who voided it and when).
+  // The number stays on the voided row; the org's counter only goes up, so it
+  // is never issued again.
+  const note = String(reason || "").trim().slice(0, 500) || `Voided by ${actor(req).name} on ${orgToday(await orgTz(req.user.orgId))}.`;   // ORG_TZ_SEAM_OK
+  await run("UPDATE receipts SET voided_at=NOW(), void_reason=? WHERE id=? AND org_id=?", [note, req.params.id, req.user.orgId]);
   const rows = await query(
     "SELECT id, org_id, donor_id, gift_id, type, tax_year, receipt_number, amount, deductible_amount, sent_to, sent_at, voided_at, void_reason, created_at FROM receipts WHERE id=?",
     [req.params.id]

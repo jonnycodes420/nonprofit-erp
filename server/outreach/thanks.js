@@ -459,9 +459,10 @@ app.post("/acknowledgments/mark", requireAuth, checkWriteAccess, wrap(async (req
 app.get("/milestone-drafts", requireAuth, wrap(async (req, res) => {
   const status = req.query.status || "pending_review";
   const rows = await query(
-    `SELECT md.*, d.name AS donor_name, d.email AS donor_email, d.total_giving AS donor_total_giving
+    // TRUTH-2: the person's lifetime is the one rule (shared/numbers/lifetime), never the stored column.
+    `SELECT md.*, d.name AS donor_name, d.email AS donor_email, ${require("../../shared/numbers/lifetime").LIFETIME("d")} AS donor_total_giving
      FROM milestone_drafts md
-     JOIN donors d ON d.id = md.donor_id
+     JOIN donors d ON d.id = md.donor_id AND d.org_id = md.org_id
      WHERE md.org_id = ? AND md.status = ?
      ORDER BY md.created_at DESC`,
     [req.user.orgId, status]
@@ -530,7 +531,7 @@ app.post("/milestone-drafts/:id/send", requireAuth, requireAdmin, checkWriteAcce
   );
   if (!drafts.length) return res.status(404).json({ error: "Not found or already sent" });
   const r = await sendMilestoneDraft(req, drafts[0]);
-  if (r.status !== 200) return res.status(r.status).json({ error: r.error });
+  if (r.status !== 200) return res.status(r.status).json({ error: r.error, ...(r.code ? { code: r.code, stale: r.stale, sentence: r.error } : {}) });   // TRUTH-2: a stale figure says which
   res.json({ success: true });
 }));
 

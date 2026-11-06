@@ -523,3 +523,16 @@ Backend, Whisper transcription, and extraction logic are fully built and functio
 - One function: `meetings.js` `conversationsWith` / `lastContactWith`. The header (figure source
   `donor-contact-gap`), About's sentence and Engagement's sentence read it; the conversation log returns it.
 - A follow-up set while logging a conversation belongs to the person who set it, not the person's officer.
+
+## TRUTH-2 · an erased person counts nowhere; their gifts stay (2026-11-05)
+
+- An erased person (TRUST-2, `personData.js`: the record is "Erased person" with `erased_at` set) is in no
+  count and on no list: not Everyone or Donors, not a group or a starter, not the volunteer roster or list,
+  not Drift, not LYBUNT or SYBUNT, not a donor count or top donors. The one rule for "a person who counts" is
+  `shared/numbers/households.js` `PERSON` (not deleted, not sample, not erased); the directory filter
+  (`groups.js` `buildDonorFilter`) and `server/donors/peopleCounts.js` read the same.
+- Their gifts stay in every money total, as anonymous gifts, so the books, issued receipts and every total
+  still foot to the cent. A list of people (the Donors list, top donors) therefore adds up to the money less
+  the erased records' gifts; the truth check says so (`tests/keys/truthKey.js` `peopleMoneyBetween`).
+- The org's whole-data exports (`/org/export`, the zip) keep the erased record, because it is what holds
+  those gifts. No screen counts it.

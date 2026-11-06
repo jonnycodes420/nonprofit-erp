@@ -55,7 +55,10 @@ const DONOR_SCORE_COLS = `,
 // It never comes from the query string: the order would show the word.
 async function buildDonorFilter(orgId, q = {}, opts = {}) {
   const PT = await personTypeMod();
-  const where = ["org_id = ?", "deleted_at IS NULL"];
+  // TRUTH-2: an erased person (TRUST-2, personData.js) is on no list and in
+  // no count: not Everyone, not a group, not a roster. Their gifts stay in
+  // every money total, as anonymous gifts (people-and-records.md).
+  const where = ["org_id = ?", "deleted_at IS NULL", "erased_at IS NULL"];
   // THREAD-3: an archived person is off the lists (the Donors list, a Group's
   // members) and still counts wherever money is counted.
   if (opts.hideArchived) where.push("archived_at IS NULL");
@@ -348,7 +351,8 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
       // holds every LYBUNT person too. The starter is the usual SYBUNT: that
       // list without anyone who gave last year (Reports' SYBUNT minus LYBUNT).
       if (q.bunt === "sybunt") {
-        where.push("NOT EXISTS (SELECT 1 FROM gifts gy WHERE gy.org_id = donors.org_id AND gy.donor_id = donors.id AND gy.date >= ? AND gy.date <= ?)");
+        // TRUTH-2: "gave last year" is a gift (shared/numbers/money GIFT), as in bunt.js
+        where.push(`NOT EXISTS (SELECT 1 FROM gifts gy WHERE gy.org_id = donors.org_id AND gy.donor_id = donors.id AND ${require("./shared/numbers/money").GIFT("gy")} AND gy.date >= ? AND gy.date <= ?)`);
         params.push(prior.from, prior.to);
       }
     }

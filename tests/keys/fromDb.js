@@ -28,7 +28,7 @@ async function orgRows(q, orgId, { today } = {}) {
   const [[org], people, gifts, soft, pledges, inst, att, links] = await Promise.all([
     q(`SELECT timezone, vocabulary_json FROM orgs WHERE id = $1`, [orgId]),
     q(`SELECT id, household_id, deleted_at IS NOT NULL AS deleted, COALESCE(is_sample, false) AS sample,
-              imported_last_gift_date, imported_first_gift_date,
+              erased_at IS NOT NULL AS erased, imported_last_gift_date, imported_first_gift_date,
               (imported_total IS NOT NULL OR imported_gift_count IS NOT NULL) AS imported FROM donors WHERE org_id = $1`, [orgId]),
     q(`SELECT g.id, g.donor_id, ROUND(g.amount * 100)::bigint AS cents, g.date, g.type, g.payment_method, g.event_id, g.campaign_id, g.giving_page_id,
               g.deposited_on, g.deposit_ref, COALESCE(g.is_sample, false) AS sample,
@@ -47,7 +47,7 @@ async function orgRows(q, orgId, { today } = {}) {
   for (const i of inst) (byPledge.get(i.pledge_id) || byPledge.set(i.pledge_id, []).get(i.pledge_id))
     .push({ due: i.due_date, cents: Number(i.cents), paid: !!i.paid_gift_id });
   const rows = {
-    people: people.map(p => ({ id: p.id, household: p.household_id || null, deleted: p.deleted, sample: p.sample,
+    people: people.map(p => ({ id: p.id, household: p.household_id || null, deleted: p.deleted, sample: p.sample, erased: p.erased,
       importedLastGift: p.imported_last_gift_date || null, importedFirstGift: p.imported_first_gift_date || null, imported: p.imported })),
     gifts: gifts.map(g => ({ id: g.id, person: g.donor_id, cents: Number(g.cents), date: g.date, type: g.type, method: g.payment_method,
       event: g.event_id, campaign: g.campaign_id, page: g.giving_page_id, sample: g.sample, depositRun: g.on_run, depositedOn: g.deposited_on, depositRef: g.deposit_ref })),

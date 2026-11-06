@@ -592,3 +592,20 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 - Lapsed is 12 to 24 months; Lost is over 24 months (`lapseRule.LOST_MONTHS`, `shared/numbers/lapse.js`
   `lostSql`). Re-engage's Lost & Found tab and the "Lost: over 24 months" report count the same people.
 - The truth check's `counts` pass (`tests/lib/countsKey.js`, `tests/lib/counts1Item3.js`) holds these.
+
+## TRUTH-2 · one count per label, and donor-facing money is read when it is used (2026-11-05)
+
+- **A donor count** (Fundraising, the Giving summary, the Board, a campaign) is the people with a gift above
+  $0 dated in the span, not erased: `shared/numbers/money.js` `GIVERS`. A $0 row or a refund makes nobody a
+  donor (Walk A: one person whose only row was $0 made Fundraising 363 and the Giving summary 362).
+- **LYBUNT / SYBUNT** have one rule, `shared/numbers/bunt.js` (a gift above $0, hard credit, not erased,
+  not sample): the report's header (figure source `bunt`), its rows, the group page, the Groups starters
+  (`shared/numbers/starterCounts.js`) all read it. The report's header money is its rows' money; there is no
+  row cap on the report.
+- **A figure in a draft to a donor** (milestone thank-you, note talking points, check-in, merge fields) is
+  read from `shared/numbers/draftFigures.js` when the draft is made, never `donors.total_giving`. A stored
+  draft is checked again at Send (`server/drafts/figureCheck.js`): a giving figure that is not the person's
+  amount today, or a total that is not their lifetime or this year's giving, refuses the send with the
+  figure named.
+- The truth check (`tests/lib/surfacesAgree.js`, pass `bunt`) holds the donor count, LYBUNT and SYBUNT
+  against the key.

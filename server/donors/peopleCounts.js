@@ -25,7 +25,7 @@ const DS = require("../../donorStatus");
 const L = require("../../shared/numbers/lapse");
 const { NOT_CREDIT } = require("../../creditTypes");
 
-const SET = "donors.org_id = ? AND donors.deleted_at IS NULL";
+const SET = "donors.org_id = ? AND donors.deleted_at IS NULL AND donors.erased_at IS NULL";   // TRUTH-2: an erased person is in no count
 
 function countsSql(orgId, today) {
   // statusSql's LAST, for its rows only: people with a positive gift on file.
