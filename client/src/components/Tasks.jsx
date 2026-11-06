@@ -10,7 +10,7 @@ import { orgTodayPlus } from "../lib/orgToday";
 import { fmtDayShort } from "../lib/taskDue";
 import { TASK_VIEWS, TASK_KINDS, NEEDS_OUTCOME, TASK_OUTCOMES, recurPhrase, addDays, weekdayOf } from "../../../shared/taskShape.js";
 import { greetingName, greetingLine } from "../../../shared/greeting.js";
-import { useStewardTold } from "../lib/stewardTold";
+import { useChanged } from "../lib/changes";   // STALE-1: the one channel (told() is in it)
 import { dueNowWords } from "../lib/taskBadge";
 import { countLabel } from "../../../shared/countWords.js";
 
@@ -78,7 +78,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
     })) } : prev)).catch(() => {});
   }, [q, view, setData]);
   useEffect(() => { setRows(null); setSelected(new Set()); load(); }, [load]);
-  useStewardTold(() => { load(); });   // VOICE-4: what Tell Steward did shows at once
+  useChanged(["task"], () => { load(); });   // VOICE-4: what Tell Steward did shows at once. STALE-1: and any task change, from anywhere
   // THREAD-2 · A LINK TO ONE TASK (/app/tasks?task=<id>, from the Thread or an
   // email) opens that task in its sheet, on the view it lives in. Another
   // org's task, or one that is gone, says so and shows nothing of it.

@@ -1,6 +1,7 @@
 import { Figure } from "./Figure";
 import { useState, useEffect } from "react";
 import { apiFetch, API } from "../api";
+import { useChanged } from "../lib/changes";   // STALE-1
 import { T, activeMark, fmt, fmtFull, fmtTotal, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal } from "./shared";
 import { DepositSheetModal } from "./DepositSheet";
 import { RecurringView } from "./RecurringGiving";
@@ -130,6 +131,12 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
     }).catch(e => { console.error(e); setLoading(false); });
   };
   useEffect(() => { load(); }, []);
+  // STALE-1: a gift, pledge or grant payment made anywhere moves the overview
+  // and the campaigns' totals, read again behind the screen (no loading state).
+  useChanged(["gift", "pledge", "totals"], () => {
+    Promise.all([apiFetch("/fundraising/overview"), apiFetch("/fundraising/campaigns")])
+      .then(([o, c]) => { setOverview(o); setCampaigns(c); }).catch(() => { /* keeps what is on screen */ });
+  });
 
   // Any id, old or new, opens its section on its part.
   const goto = id => { const r = resolveFr(id); setSection(r.section); setPartOf(m => ({ ...m, [r.section]: r.part })); };

@@ -20,6 +20,7 @@ import { SkeletonPage } from "./components/Skeleton";
 import { bootRead, homeShape } from "./lib/bootReads";
 import { useStewardTold } from "./lib/stewardTold";
 import { useTaskBadge } from "./lib/taskBadge";
+import { useBootSlices } from "./lib/bootSlices";   // STALE-1
 import { TopBar, MobileSearch, isApplePlatform } from "./components/TopBar";
 import SupportBanner from "./components/SupportBanner";   // FIX-57
 import { errorMessage } from "./lib/domainError";
@@ -500,7 +501,10 @@ function AppShell() {
   // and when its job ends) re-reads the app's own data too, not only the page
   // that opened the window.
   useStewardTold(d=>{if(d&&d.import)loadData({quiet:true});});
-  useStewardTold(d=>{if(d&&d.task)loadData({quiet:true});});   // SWEEP-4: a task drafted from a profile counts at once
+  // SWEEP-4: a task drafted from a profile counts at once. STALE-1: through the
+  // one channel now, and only the slice a change touched is read again.
+  const dataRef=useRef(null);dataRef.current=data;
+  useBootSlices(!!data,setData,dataRef);
   const taskBadge=useTaskBadge(!!data);   // COUNTS-1: the server's count of the list it opens
 
   // HOME-4: clip, not hidden, where the browser has it. Both stop a sideways

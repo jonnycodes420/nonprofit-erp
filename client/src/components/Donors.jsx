@@ -17,6 +17,7 @@ import UpgradeModal from "./UpgradeModal";
 import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, contactGap, Card, AIBtn, AIPanel, PageTitle, Modal, Spin } from "./shared";
 import { offerUndo } from "./EditHistory";
 import { useStewardTold } from "../lib/stewardTold";
+import { useChanged } from "../lib/changes";   // STALE-1
 import { LogConversationModal } from "./LogConversation";
 import { guardSuggestion, dropLog, plainText } from "../../../shared/suggestionGuard.js";
 import { composeNextMove } from "../../../shared/nextMove.js";
@@ -584,6 +585,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // count, the directory and the whole-org list re-read, so "No donors yet"
   // never outlives the file that filled the page.
   useStewardTold(()=>{reloadDonors();});
+  // STALE-1: and a write anywhere that adds, removes or merges people (not every
+  // write to one person's record: their profile re-reads itself).
+  useChanged(["person","import"],c=>{if(c.source==="told")return;if(c.kinds.has("import")||c.source==="worker"||c.method==="DELETE"||/^\/donors\/?$|^\/donors\/bulk|^\/removals|merge|^\/trash|^\/households?\b/.test(c.path||""))reloadDonors();});
 
   // SCALE-2: open someone only if they are still on file (the old list's
   // .find()), asked of the server by id; otherwise run `orElse`.

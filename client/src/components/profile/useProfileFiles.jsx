@@ -55,7 +55,7 @@ export function useProfileFiles({ loadMaterials, donor, onInteractionAdded, setT
   // and Largest, the rail's step, the meeting card, the asks.
   useProfileRefresh(donor.id,e=>{   // COUNTS-1: and after any write to this person, its tasks, notes or files
     setToldNonce(n=>n+1); loadGiftsFull(); loadRel(); loadDpThread(); if(reloadProps&&!e.fromWrite)reloadProps();   // proposals reload through their own forms
-    if(onInteractionAdded&&!e.fromWrite)onInteractionAdded();
+    if(onInteractionAdded&&(!e.fromWrite||e.money))onInteractionAdded();   // STALE-1: a gift or pledge of theirs, made anywhere, moves the header too
   });
   // MEMBERS-2 — one click sends this person the link to their own page. The
   // email goes out through the normal path and the token never comes back to

@@ -5,20 +5,17 @@
 // door. Each read once, when the page opened, so a guest added or marked as
 // come in one panel left "Invited 0, Came 0" in the next one. Any write to an
 // event's guests says so here, and every panel that shows them re-reads.
-import { useEffect, useState } from "react";
+//
+// STALE-1: said and heard through the one channel (lib/changes.js), so a gift
+// recorded for this event anywhere (the profile, Fundraising, Atlas) moves the
+// panels and the Raised figure too, not only a write from this page.
+import { announce, useChangeRev } from "./changes";
 
-const EV = "steward:event-rows";
 export function eventRowsChanged(eventId) {
-  try { window.dispatchEvent(new CustomEvent(EV, { detail: { eventId } })); } catch { /* no window */ }
+  announce({ kinds: ["event"], ids: eventId ? { event: new Set([String(eventId)]) } : {}, source: "event-page" });
 }
-// A number that moves each time this event's guest rows change; put it in a
-// read's dependencies.
+// A number that moves each time this event's guest rows or gifts change; put
+// it in a read's dependencies.
 export function useEventRowsRev(eventId) {
-  const [rev, setRev] = useState(0);
-  useEffect(() => {
-    const on = e => { if (!e.detail || !e.detail.eventId || e.detail.eventId === eventId) setRev(r => r + 1); };
-    window.addEventListener(EV, on);
-    return () => window.removeEventListener(EV, on);
-  }, [eventId]);
-  return rev;
+  return useChangeRev(["event"], eventId ? { event: eventId } : null);
 }

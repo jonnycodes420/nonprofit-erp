@@ -301,7 +301,8 @@ async function reset() {
   const src = p => p === "DonorProfile.jsx" ? require("../scripts/lib/readSource").readSource("client/src/components/DonorProfile.jsx") : fs.readFileSync(path.join(ROOT, "client/src/components", p), "utf8");
   const listeners = ["DonorProfile.jsx", "Tasks.jsx", "Calendar.jsx", "Dashboard.jsx"]   // Home's Thread is in Dashboard.jsx
    // COUNTS-1: the profile listens through useProfileRefresh (lib/profileRefresh.js), which is useStewardTold plus its own writes.
-   .filter(p => fs.existsSync(path.join(ROOT, "client/src/components", p)) && /useStewardTold\(|useProfileRefresh\(/.test(src(p)));
+   // STALE-1: or through useChanged (lib/changes.js), the one channel, which told() announces into.
+   .filter(p => fs.existsSync(path.join(ROOT, "client/src/components", p)) && /useStewardTold\(|useProfileRefresh\(|useChanged\(/.test(src(p)));
   ok("§7 the profile, Thread, Tasks and Calendar re-read when Tell Steward acts", listeners.length === 4, listeners);
   ok("§7 the sheet says so after every change, not only on close", (src("TellSteward.jsx").match(/told\(/g) || []).length >= 3, null);
   ok("§7 the profile's status re-reads with it", /useDonorStatus\(donor\.id,\s*figs,\s*`\$\{stepNonce\}:\$\{toldNonce\}`\)/.test(src("DonorProfile.jsx")), null);

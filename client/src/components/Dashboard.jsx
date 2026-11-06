@@ -17,6 +17,7 @@ import { greetingForHour } from "../lib/greeting";
 
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { useStewardTold } from "../lib/stewardTold";
+import { useChanged } from "../lib/changes";   // STALE-1
 import { MorningBrief } from "./MorningBrief";   // PERF-2: not the meeting forms
 import { MailboxBanner } from "./MailboxBanner";   // PERF-2: not the inbox panels
 import { displayDateShort } from "../../../shared/displayDate";
@@ -497,6 +498,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     loadDrift();
     loadThreads();
   },[]);
+  // STALE-1: a gift, pledge or payment made anywhere moves Home's money figures,
+  // and a task or a conversation moves the Thread and its counts; each is read
+  // again behind the screen, and nothing else is (lib/changes.js).
+  useChanged(["gift","pledge","totals"],()=>{
+    apiFetch("/dashboard/my-stats").then(r=>setMyStats(r||null)).catch(()=>{});
+    apiFetch("/fundraising/overview").then(r=>setFundOverview(r||null)).catch(()=>{});
+    loadGoal();
+    if(surface==="home")loadHomeDay();
+  });
+  useChanged(["task","note"],c=>{if(c.source!=="told")loadThreads();});
 
   // Queue + hero metrics are re-fetched whenever scope changes (including
   // the initial "mine"/"all" decision above) — one shared scope, not three

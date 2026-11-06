@@ -6,6 +6,7 @@
 // received total that foots to those gifts. Every change offers Undo.
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
+import { useChanged } from "../lib/changes";   // STALE-1
 import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
@@ -79,6 +80,7 @@ export function GrantAwardPlan({ grantId, isReadOnly, onChanged, onLink }) {
   const [paying, setPaying] = useState(false);
   const load = () => apiFetch(`/grants/${grantId}/award-plan`).then(setD).catch(e => setMsg(errorMessage(e, "The award did not load.")));
   useEffect(() => { load(); }, [grantId]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useChanged(["grant", "pledge"], () => load());   // STALE-1: a payment recorded anywhere (the funder's profile, Atlas) moves Received
   const record = async () => {
     setMsg("");
     try {
