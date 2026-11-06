@@ -7,7 +7,6 @@
 // be "No fund", "No fund named", "(no fund)" or "General" depending on the
 // screen (RecurringGiving called it "General", which read as the General
 // Operating fund).
-import { plural } from "./countWords.js";
 
 const GIFT_TYPES = {
   cash: "Cash", check: "Check", cheque: "Cheque", credit_card: "Credit card", card: "Card",
@@ -64,27 +63,4 @@ export function withoutInternalNotes(text) {
   return s.trim();
 }
 
-// FEEL-1: the event's "adds up" line, as a person says it. Parts are text and
-// {k} tokens (a count the screen draws as a figure that opens its rows);
-// eventStoryText joins them with the numbers for the server's sentence.
-export function eventStoryParts(s) {
-  const n = k => Number((s && s[k]) || 0);
-  const came = n("attended"), cameGave = n("cameGave"), cameNot = n("cameDidntGive"), gaveNotCame = n("gaveNotCame");
-  if (!came && !n("gave")) return null;
-  const out = [];
-  if (came) {
-    out.push({ k: "attended" }, " came");
-    if (!cameGave) out.push(", and nobody gave yet.");
-    else if (!cameNot) out.push(cameGave === 1 && came === 1 ? ", and gave." : ", and every one of them gave.");
-    else out.push(", and ", { k: "cameGave" }, ` of them gave; `, { k: "cameDidntGive" }, ` ${plural(cameNot, "hasn't", "haven't")} yet.`);
-    if (gaveNotCame) out.push(" ", { k: "gaveNotCame" }, ` ${plural(gaveNotCame, "other", "others")} gave or pledged without coming.`);
-  } else {
-    out.push({ k: "gave" }, " gave or pledged, and nobody is marked as having come yet.");
-  }
-  return out;
-}
-export function eventStoryText(s) {
-  const parts = eventStoryParts(s);
-  if (!parts) return null;
-  return parts.map(p => (typeof p === "string" ? p : Number((s && s[p.k]) || 0).toLocaleString("en-US"))).join("");
-}
+export { eventStoryParts, eventStoryText } from "./eventWords.js";   // the event sentence lives in eventWords.js

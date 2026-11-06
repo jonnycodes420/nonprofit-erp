@@ -10,7 +10,7 @@
 // own (each has its sentence on hover and in its drawer); the line has one.
 import { Figure, FigureWhy } from "./Figure";
 import { T } from "./shared";
-import { eventStoryParts } from "../../../shared/giftWords";
+import { eventStoryParts } from "../../../shared/eventWords";
 
 const STORY_LABELS = { attended: "Came", cameGave: "Came and gave", cameDidntGive: "Came, didn't give", gaveNotCame: "Gave, didn't come", gave: "Gave" };
 

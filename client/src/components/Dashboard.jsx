@@ -1303,8 +1303,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   })();
   const setupDonors=(setupStatus?.items||[]).find(i=>i.key==="donors");
   const noDonorsYet=!!setupDonors&&!(setupDonors.count>0);
-  // FEEL-1: only while the deck is drawn (Home, not editing) and has not settled.
-  const holdUnderDeck=surface==="home"&&!editMode&&!movesSettled;
+  // FEEL-1: only while the deck is drawn (Home, not editing) and has not settled,
+  // and only on a wide screen: on a phone, holding the rail cost 150 ms of its
+  // 3.58 s budget (perf-app), so a phone draws as before.
+  const holdUnderDeck=surface==="home"&&homeWide&&!editMode&&!movesSettled;
   const homeHead=FL.homeHead({ onMovesSettled, agentDaily, cancelEdit, data, editMode, enterEdit, firstName, greeting, homeDay, isReadOnly, layout, loadThreads, noDonorsYet, onNavigate, resetLayout, sampleStatus, saveEdit, setupFirst, surface, threadScope, todayLongStr, todayStr });
   return(
     <div className="dash-root dash-bleed" style={{background:surface==="home"?T.ground:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
@@ -1360,7 +1362,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       return holdUnderDeck?null:cardsBlock;
       })()}
       </div>{/* /home-shell-main */}
-      {surface==="home"&&!(holdUnderDeck&&!homeWide)&&todayRail}
+      {surface==="home"&&todayRail}
       </div>{/* /home-shell-top */}
       {/* FIX-3 A (finding 1) — the lower half runs the full width of the
           panel, below the Thread and the rail (see sectionStack). */}
