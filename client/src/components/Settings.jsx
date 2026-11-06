@@ -34,6 +34,7 @@ import { MatchingEmployersCard } from "./settings/MatchingEmployersCard";
 import { CoverFeesCard } from "./settings/CoverFeesCard";
 import { GivingLevelsCard } from "./settings/GivingLevelsCard";
 import { TaxReceiptsManager } from "./settings/TaxReceiptsManager";
+import { OrgNameCard } from "./settings/OrgNameCard";   // FLOWS-2
 import { AddPhotos } from "./settings/AddPhotos";
 import { DpaDownload } from "./settings/DpaDownload";
 import { BringInAFile } from "./settings/BringInAFile";
@@ -60,7 +61,6 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   // used to be declared six lines further down. A component-scope const read
   // above its declaration is a blank screen, and this is the fifth time that
   // class has cost a build (see CLAUDE.md and scripts/ci/tdz-scan.js).
-  const orgName=auth?.org?.name||"Your Organization";
   const userName=auth?.user?.name||"User";
   const userEmail=auth?.user?.email||"";
   const userRole=auth?.user?.role||"staff";
@@ -558,8 +558,8 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           </div>
         </div>
         <div style={{background:T.bg,borderRadius:10,padding:"14px 16px"}}>
-          <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:6}}>Organization</div>
-          <div style={{fontSize:15,fontWeight:700,color:T.ink}}>{orgName}</div>
+          {/* FLOWS-2: the name is editable here (settings/OrgNameCard.jsx says why it vanished) */}
+          <OrgNameCard key={auth?.org?.id||"org"} org={auth?.org||{}} isAdmin={isAdmin} isReadOnly={isReadOnly}/>
           {auth?.org?.mission&&<div style={{fontSize:12,color:T.ink3,marginTop:4,lineHeight:1.5}}>{auth.org.mission}</div>}
         </div>
       </div>}

@@ -10,6 +10,7 @@ import { T, Card, Modal } from "./shared";
 import { displayDate } from "../../../shared/displayDate.js";
 import { countLabel } from "../../../shared/countWords.js";
 import { displayOrgDate } from "../lib/orgDay";
+import { KeptHeads, keptSentence } from "./merge/KeptHeads";   // FLOWS-2
 
 const fmtMoney = c => "$" + (Number(c || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const plural = countLabel;
@@ -336,12 +337,16 @@ export function CompareModal({ pair, onClose, onMerged, undoWhere = "below" }) {
         <div style={{ fontSize: 13, color: T.ink }}>Keeping <b>{K.name}</b> ({plural(Number(K.gift_count || 0), "gift")}, {fmtMoney(d.lifetimeCents[keptId])}); folding in <b>{O.name}</b> ({plural(Number(O.gift_count || 0), "gift")}, {fmtMoney(d.lifetimeCents[otherId])}).</div>
         <button style={linkBtn} onClick={swap}>Keep the other record instead</button>
       </div>
+      <KeptHeads kept={K} other={O} lifetimeCents={d.lifetimeCents} />
+      <div data-testid="merge-sentence" style={{ fontSize: 13, color: T.ink, marginBottom: 10 }}>{keptSentence(resultingName(), keptId, O)} In each row below, the value on the left is the kept record's.</div>
       {d.crossHousehold && <div style={{ background: T.gold100, border: "1px solid " + T.gold300, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: T.ink, marginBottom: 10 }}>These two are in different households. Check that they are one person before you merge.</div>}
       <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 6 }}>Lifetime giving after the merge: {fmtMoney(d.lifetimeCents[keptId] + d.lifetimeCents[otherId])}. {moving} Both emails and phones are kept.</div>
       {differing.length === 0 && <div style={{ fontSize: 13, color: T.ink3 }}>Every field already agrees.</div>}
       {differing.map(f => (
         <div key={f.key} style={{ padding: "8px 0", borderTop: "1px solid " + T.bg2 }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: T.ink2, marginBottom: 5 }}>{f.label}</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: T.ink2, marginBottom: 5 }}>{f.label}
+            {/* FLOWS-2: the one case the screen starts on the merged-in side, said */}
+            {choices[f.key] === "other" && !fieldVal(K, f.key) && <span data-testid="merge-fill" style={{ fontWeight: 400, color: T.ink3 }}> · the kept record has none, so the merged-in record's starts picked</span>}</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{opt(f, "kept", K)}{opt(f, "other", O)}</div>
         </div>
       ))}
