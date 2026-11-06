@@ -45,12 +45,20 @@ async function isAdmin(req) {
 }
 
 // The org's switch (Jonathan's) and who moved it last.
-async function orgMail(orgId) {
+// ATLAS-4 (Feel 3): "Steward turned email on for you on Nov 3" showed while
+// every switch on the page was off. The line reads the switches as they are
+// now: it is said only while email is actually going out (the org's switch on
+// AND at least one type on), and it names who turned it on and when.
+async function orgMail(orgId, onCount = null) {
   const [o] = await query(`SELECT emails_enabled, donor_mail_set_at, donor_mail_set_by_name, onboarded_at, org_kind, is_demo_org FROM orgs WHERE id = ?`, [orgId]);
   const on = !!o && o.emails_enabled === true;
-  return { on, setAt: o ? o.donor_mail_set_at : null,
-    sentence: !o ? null : o.donor_mail_set_at
-      ? `Steward turned email ${on ? "on" : "off"} for you on ${fmtDay(o.donor_mail_set_at)}.` : null };
+  const n = onCount == null ? (await query(`SELECT COUNT(*)::int AS n FROM org_mail_types WHERE org_id = ? AND is_on = TRUE`, [orgId]))[0].n : onCount;
+  return { on, setAt: o ? o.donor_mail_set_at : null, sentence: mailOnSentence(o, on, n) };
+}
+function mailOnSentence(o, on, onCount) {
+  if (!o || !on || !(onCount > 0) || !o.donor_mail_set_at) return null;
+  const who = String(o.donor_mail_set_by_name || "").trim() || "Steward support";
+  return `${who} turned email on for you on ${fmtDay(o.donor_mail_set_at)}.`;
 }
 
 // Every type as the page shows it. One read of each table for the org.
@@ -81,8 +89,8 @@ async function typesFor(orgId) {
 }
 
 async function pagePayload(req, orgId) {
-  const mail = await orgMail(orgId);
   const types = await typesFor(orgId);
+  const mail = await orgMail(orgId, types.filter(t => t.on).length);
   return {
     mailOn: mail.on, mailSentence: mail.sentence, mailSetAt: mail.setAt,
     top: mail.on ? null : TYPES.ORG_OFF_TOP, waiting: TYPES.WAITING,
@@ -100,8 +108,8 @@ app.get("/mail-types", requireAuth, wrap(async (req, res) => {
 // The top bar and Home. Three states: off, on (with a count), waiting.
 app.get("/mail-types/status", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
-  const mail = await orgMail(orgId);
   const on = (await typesFor(orgId)).filter(t => t.on);
+  const mail = await orgMail(orgId, on.length);
   const state = !on.length ? "off" : mail.on ? "on" : "waiting";
   const list = on.map(t => t.short);
   const joined = list.length <= 1 ? list.join("") : list.slice(0, -1).join(", ") + " and " + list[list.length - 1];

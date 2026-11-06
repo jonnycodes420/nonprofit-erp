@@ -674,7 +674,7 @@ async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request
             ["Not sent: the onboarding sequence is off for good", enr.id]);
           continue;
         }
-        const [recipient] = await query("SELECT id, name, email, salutation, spouse_name, kind FROM donors WHERE id = ? AND org_id = ?", [enr.donor_id, enr.org_id]);
+        const [recipient] = await query("SELECT id, name, email, salutation, spouse_name, kind, total_giving, last_gift_amount FROM donors WHERE id = ? AND org_id = ?", [enr.donor_id, enr.org_id]);
         // "Write a note" reminders are handled before the email-presence
         // check below — they're an in-app nudge for staff to write a real
         // note, not an email send, so a donor without an email on file can
@@ -784,7 +784,9 @@ async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request
           .replace(/{{first_name}}/g, e(firstName))
           .replace(/{{org_name}}/g, e(orgName));
         const subject = applyTokens(step.subject);
-        const bodyRaw = applyTokens(step.body, escapeHtml);
+        // ATLAS-4: the no-gift variant of "given before" for a never-giver (shared/giftSentence.js).
+        const seqHasGift = Number(recipient.total_giving) > 0 || Number(recipient.last_gift_amount) > 0;
+        const bodyRaw = applyTokens((await import("../../shared/giftSentence.js")).withoutGivenBefore(step.body, { hasGift: seqHasGift }), escapeHtml);
         const bodyHtml = (bodyRaw.includes("<") ? bodyRaw
           : `<p>${bodyRaw.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`)
           + await unsubscribeEmailFooterHtml(recipient.email, enr.org_id, "sequence");

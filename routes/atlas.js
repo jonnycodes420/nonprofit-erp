@@ -38,6 +38,14 @@ const TEXT_MIN = 3, TEXT_MAX = 4000;
 // The read is one short structured call; the faster model keeps a request
 // like Undine's under ten seconds. ATLAS_MODEL overrides it.
 const ATLAS_MODEL = () => process.env.ATLAS_MODEL || "claude-sonnet-4-6";
+// ATLAS-4 · ATLAS ANSWERS IN GOOD TIME. Feel 1 (Muse): one answer took about
+// 60 s. A question goes to /ask, which can ask a model three times in a row
+// (the plan, then the query form, then the sentence), each with the SDK's
+// ten-minute timeout and two retries. Atlas now gives the read 12 s (then
+// reads in code) and a question 20 s, then answers with what it has and where
+// the full answer will finish.
+const ATLAS_READ_MS = () => Number(process.env.ATLAS_READ_MS) || 12000;
+const ATLAS_ANSWER_MS = () => Number(process.env.ATLAS_ANSWER_MS) || 20000;
 
 function mount(ctx) {
 const { query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate } = ctx;
@@ -53,9 +61,9 @@ const j = v => (typeof v === "string" ? (() => { try { return JSON.parse(v); } c
 const first = name => String(name || "").split(/\s+/)[0];
 
 // Her own click on one of Steward's routes, in-process, with her session.
-async function asHer(req, method, path, body) {
+async function asHer(req, method, path, body, { signal } = {}) {
   const port = process.env.PORT || 3001;
-  const r = await fetch(`http://127.0.0.1:${port}${path}`, { method,
+  const r = await fetch(`http://127.0.0.1:${port}${path}`, { method, signal,
     headers: { "content-type": "application/json", authorization: req.headers.authorization || "" },
     body: body === undefined ? undefined : JSON.stringify(body) });
   let out = null; try { out = await r.json(); } catch { out = null; }
@@ -211,7 +219,7 @@ async function readSteps(orgId, text, { today, onPage }) {
         model: ATLAS_MODEL(), max_tokens: 2000, thinking: { type: "disabled" }, system: prompt.system, messages: prompt.messages,
         tools: [{ name: AT_.ATLAS_TOOL.name, description: AT_.ATLAS_TOOL.description, strict: true, input_schema: AT_.ATLAS_TOOL.input_schema }],
         tool_choice: { type: "tool", name: AT_.ATLAS_TOOL.name },
-      });
+      }, { timeout: ATLAS_READ_MS(), maxRetries: 0 });
       const use = (msg.content || []).find(b => b.type === "tool_use" && b.name === AT_.ATLAS_TOOL.name);
       if (use && use.input) {
         const steps = AT_.normalizeRead(use.input, text);
@@ -249,7 +257,7 @@ async function writeDraft(orgId, { firstName, opening, words, month, thanks, mee
     const prompt = AT_.buildDraftPrompt({ firstName, words, month, aboutThem, signoff: voice.signoff || "" });
     const msg = await anthropicFor(orgId).messages.create({ model: ATLAS_MODEL(), max_tokens: 400, thinking: { type: "disabled" }, system: prompt.system, messages: prompt.messages,
       tools: [{ name: AT_.DRAFT_TOOL.name, description: AT_.DRAFT_TOOL.description, strict: true, input_schema: AT_.DRAFT_TOOL.input_schema }],
-      tool_choice: { type: "tool", name: AT_.DRAFT_TOOL.name } });
+      tool_choice: { type: "tool", name: AT_.DRAFT_TOOL.name } }, { timeout: Math.max(5000, ATLAS_ANSWER_MS() - 5000), maxRetries: 0 });   // ATLAS-4: the template past 15 s
     const use = (msg.content || []).find(b => b.type === "tool_use" && b.name === AT_.DRAFT_TOOL.name);
     const out = use && use.input;
     // The month she asked to meet in must be in it; otherwise the template is.
@@ -371,6 +379,11 @@ async function saveAnswer(orgId, memoId, actionId, answer) {
 async function execute(req, m, steps, { today, ai, prior = null }) {
   const orgId = req.user.orgId;
   const AT_ = await AT(), V = await VM();
+  { // ATLAS-4: a labelled line kept in a conversation's note ("Notes: …") is not a step of its own.
+    const AN4 = await import("../shared/atlasNote.js");
+    const notes = steps.filter(x => x.kind === "log_conversation").map(x => AN4.conversationNote(m.text, x).toLowerCase());
+    steps = steps.filter(x => !(x.kind === "other" && x.words && notes.some(n => n.includes(String(x.words).toLowerCase()))));
+  }
   const clientSafe = await require("../clientSafe").privacyFor(orgId);
   const CS = await import("../shared/clientSafe.js");
   const names = new Map((await query("SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?::text[])",
@@ -536,10 +549,11 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         const V2 = V.conversationKind(st.how, st.words);
         const when = AT_.whenFromWords(st.whenWords, today);
         const date = when && when.date <= today ? when.date : today;
-        const keep = V.stripSensitive(st.words);
+        // ATLAS-4: the note is her words as typed, labels and all (shared/atlasNote.js).
+        const keep = V.stripSensitive((await import("../shared/atlasNote.js")).conversationNote(m.text, st));
         const label = V.HOW_LABEL[V2.how] || "Conversation";
         const r = await runStep(req, m, insId, { tool: "log_conversation", donorId: id, kind: V2.kind, how: V2.how, date, memoId: m.id,
-          note: (new RegExp(`^${label}\\b`, "i").test(keep.text) ? keep.text : `${label}. ${keep.text}`).slice(0, 2000), citesRows: [id] });
+          note: (new RegExp(`\\b${label}\\b`, "i").test(keep.text) || /\b(call|lunch|coffee|meeting|visit|tour|dinner|breakfast|met|spoke|talked)\b/i.test(keep.text) ? keep.text : `${label}. ${keep.text}`).slice(0, 2000), citesRows: [id] });
         await log({ kind: "logged", state: r.ok ? "done" : "failed", runId: r.runId, undoable: r.ok,
           line: r.ok ? `Logged the ${label.toLowerCase()} with ${nm(id)}, ${AT_.dayWords(date, today)}.` : `I couldn't log that: ${r.reason}.`,
           ...person(id, { section: "timeline" }), place: "person", placeId: id });
@@ -582,10 +596,19 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         break;
       }
       case "question": {
-        const r = await asHer(req, "POST", "/ask", { text: st.target || st.words, ...(prior && prior.context ? { context: prior.context } : {}) });
+        const ctl = new AbortController();
+        const budget = setTimeout(() => ctl.abort(), ATLAS_ANSWER_MS());
+        const r = await asHer(req, "POST", "/ask", { text: st.target || st.words, ...(prior && prior.context ? { context: prior.context } : {}) }, { signal: ctl.signal })
+          .catch(e => ({ status: 504, body: null, timedOut: ctl.signal.aborted, error: e }))
+          .finally(() => clearTimeout(budget));
+        if (r.timedOut) {
+          await log({ kind: "answer", state: "done", link: { tab: "ask", text: st.target || st.words },
+            line: `I stopped after ${Math.round(ATLAS_ANSWER_MS() / 1000)} seconds: looking that up took longer than it should. Open it in Ask, where the full answer will finish.` });
+          break;
+        }
         const said = r.status < 300 && r.body && (r.body.sentence || (r.body.answer && r.body.answer.sentence) || r.body.headline);
         // ATLAS-3: a set of people comes back as the people, with the count and why each matched.
-        const list = r.status < 300 ? await AN.listAnswer({ ask: r.body, query, orgId, asHer, req }).catch(e => { console.error("[atlas] list:", e.message); return null; }) : null;
+        const list = r.status < 300 ? await AN.listAnswer({ ask: r.body, query, orgId, asHer, req, today }).catch(e => { console.error("[atlas] list:", e.message); return null; }) : null;
         const aid = await log({ kind: "answer", state: "done", line: said ? String(said) : "I couldn't answer that just now.", link: { tab: "ask", text: st.target || st.words } });
         if (list) await saveAnswer(orgId, m.id, aid, { type: "list", question: st.target || st.words, ...list });
         break;
