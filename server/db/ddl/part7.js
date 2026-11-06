@@ -906,6 +906,11 @@ async function run7(pool) {
       created_at TIMESTAMPTZ DEFAULT NOW())`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_list_views_user ON donor_list_views (org_id, user_id)`);
   await require("../../donors/listViewsSchema").listViewsSchema(pool);   // LIST-3: a saved view keeps its sort
+  // FLOWS-2: and the list's own filters (search, Stage, Owner, Tag…). Here, not in
+  // listViewsSchema.js: the schema hash covers db.js and server/db/ only, so a
+  // column added in a file outside them would never run on a database already at
+  // the old hash.
+  await pool.query(`ALTER TABLE donor_list_views ADD COLUMN IF NOT EXISTS chips JSONB`);
 
   // FIX-49 decision 8 · ONE HOUSEHOLD GROUPING. Spouses and household links
   // become household records (the only grouping); the links themselves stay.

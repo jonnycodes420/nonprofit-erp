@@ -466,7 +466,7 @@ app.get("/metrics/stewardship-summary", requireAuth, OS.cached("stewardship-summ
 // FUNDRAISING-2: the stored answer's name carries its shape, so a deploy that
 // changes the shape never serves yesterday's body (stored answers are not
 // keyed by build).
-app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-2"), wrap(async (req, res) => {
+app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-3"), wrap(async (req, res) => {
   await PACE_READY;
   await FISCAL_READY;   // FIX-10 Part B — the period label is the shared one, not a race
   const { orgId } = req.user;
@@ -663,6 +663,9 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-2"
       // open EXACTLY the rows it claims instead of a whole-Reports link.
       start: cur.start,
       end: cur.end,
+      // FLOWS-2: the gifts behind Raised, the `gifts` figure source over the
+      // span Raised was summed over (to today), so the tile opens those rows.
+      source: { key: "gifts", params: { from: cur.start, to: today < cur.end ? today : cur.end } },
     },
     // FIX-10 Part B — the last twelve months, and whether this org has any
     // giving at all. `emptyYearWithHistory` is the single condition the client

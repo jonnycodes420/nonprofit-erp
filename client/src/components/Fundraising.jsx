@@ -31,6 +31,9 @@ import { ThankYouDrafts } from "./ThankYouDrafts";   // CHECK-2
 import { EventStory } from "./EventRaised";   // FUNDRAISING-2
 import { PledgesView } from "./Pledges";   // FUNDRAISING-2
 import { countLabel } from "../../../shared/countWords.js";
+import { RowsPanel } from "./fundraising/RowsPanel";   // FLOWS-2
+import { LostAndFoundPart } from "./fundraising/LostAndFoundPart";   // FLOWS-2
+import { RollupThermometer } from "./fundraising/RollupThermometer";   // FLOWS-2: moved out, verbatim
 
 // FIX-14 Part 5: a campaign is /app/fundraising?fr=campaigns&campaign=<id>:
 // the Campaigns part, scrolled to that campaign's card and marked.
@@ -79,13 +82,18 @@ function Thermometer({ raised, goal, percent, rawPercent, over, paceState, paceS
   );
 }
 
-function StatTile({ label, value, sub, accent, onClick, ariaLabel }) {
+// FLOWS-2: a tile with a `source` opens the rows behind its figure, in place.
+function StatTile({ label, value, sub, accent, onClick: go, ariaLabel, source, definition, figure, onOpenPerson }) {
+  const [rowsOpen, setRowsOpen] = useState(false);
+  const onClick = source && source.key ? () => setRowsOpen(true) : go;
   return (
-    <div {...interactive(onClick, { label: ariaLabel || label })}
+    <div {...interactive(onClick, { label: ariaLabel || label })} data-source-key={source && source.key ? source.key : undefined}
       style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", borderLeft: `3px solid ${accent || T.bg3}`, boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
       <span style={{ fontSize: 10, fontWeight: 800, color: T.ink3 }}>{label}</span>
       <span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif", lineHeight: 1.05, letterSpacing: "-0.02em" }}>{value}</span>
       {sub && <span style={{ fontSize: 12, color: T.ink3, lineHeight: 1.4 }}>{sub}</span>}
+      {rowsOpen && <RowsPanel source={source} title={label} definition={definition} value={figure ? figure.value : value}
+        kind={figure ? figure.kind : "money"} onClose={() => setRowsOpen(false)} onOpenPerson={onOpenPerson} />}
     </div>
   );
 }
@@ -236,6 +244,8 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
         </>
       )}
 
+      {!loading && subtab === "lostfound" && <LostAndFoundPart org={data && data.org} onNavigate={onNavigate} />}
+
       {/* FIX-1 §B — the sidebar's Pipeline, folded into Major gifts. The SAME
           board (one GET /pipeline, one Team gate server-side, the Core locked
           preview); `embedded` only drops its own page title under this one. */}
@@ -361,6 +371,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
   // exactly the window each was summed over. A figure that lands on a page
   // showing a different total is not a figure that opens.
   const openRows = (from, to) => () => onNavigate && onNavigate("reports", { report: "giving-summary", from, to });
+  const openPerson = id => onNavigate && onNavigate("donors", { selectDonorId: id });
   const top = overview.campaigns.top && overview.campaigns.top.lifecycle === "active" ? overview.campaigns.top : null;
   const label = { fontSize: 10, fontWeight: 800, color: T.ink3 };
   const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow };
@@ -454,7 +465,8 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
       {/* Momentum: the period's money and gifts, pledges, live pages. */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12 }}>
         <StatTile label={`Raised · ${overview.periodLabel}`} value={fmtTotal(period.raised)}
-          accent={T.gold}
+          accent={T.gold} source={period.source} figure={{ value: period.raised, kind: "money" }} onOpenPerson={openPerson}
+          definition={`Every gift dated ${periodWords} up to today, leaving out soft and matching credits.`}
           onClick={period.start && period.end ? openRows(period.start, period.end) : () => onNavigate && onNavigate("reports")}
           ariaLabel={`View the gifts behind ${overview.periodLabel} raised`}
           sub={period.priorRaised > 0
@@ -464,6 +476,9 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
                   : fmtTotal(Math.abs(period.delta))} vs the same days last year</span>
             : `${countLabel(period.donorCount, "donor")}`} />
         <StatTile label={`Gifts ${periodWords}`} value={period.giftCount.toLocaleString()} accent={T.bg3}
+          source={period.source ? { ...period.source, params: { ...period.source.params, measure: "count" } } : null}
+          figure={{ value: period.giftCount, kind: "count" }} onOpenPerson={openPerson}
+          definition={`Every gift dated ${periodWords} up to today, counted one by one.`}
           onClick={period.start && period.end ? openRows(period.start, period.end) : () => onNavigate && onNavigate("reports")}
           ariaLabel={`View the gifts ${periodWords}`}
           sub={`${countLabel(period.donorCount, "donor")}`} />
@@ -605,28 +620,6 @@ function LeadEvent({ e, onNavigate, card, label }) {
       </div>
       <div style={{ fontSize: 12, color: T.ink3, marginBottom: 12 }}>{e.date ? displayDate(e.date) : "Date not known"}</div>
       <EventStory s={e} />
-    </div>
-  );
-}
-
-// Roll-up thermometer — total raised across active goals vs total goal. FIX-2 C:
-// it sits on a white card now (it was the dark pine hero), brass for progress.
-function RollupThermometer({ rollup }) {
-  const pct = rollup.percent == null ? 0 : rollup.percent;
-  const shown = rollup.rawPercent == null ? rollup.percent : rollup.rawPercent;
-  const met = pct >= 100;
-  return (
-    <div>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 30, color: T.ink, lineHeight: 1 }}>{fmtTotal(rollup.totalRaised)}</span>
-          <span style={{ fontSize: 14, color: T.ink3 }}>of {fmtTotal(rollup.totalGoal)}{rollup.over > 0 ? ` · ${fmtTotal(rollup.over)} over` : ""}</span>
-        </div>
-        {shown != null && <span style={{ fontSize: 16, fontWeight: 800, color: T.gold700 }}>{shown}%</span>}
-      </div>
-      <div style={{ height: 14, background: T.bg2, borderRadius: 99, overflow: "hidden" }}>
-        <div style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.6s cubic-bezier(.22,1,.36,1)", background: met ? T.gold500 : T.gold600 }} />
-      </div>
     </div>
   );
 }

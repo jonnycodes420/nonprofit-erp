@@ -10,15 +10,16 @@
 // reportHooks.yearWindows, thanksSince and donorStatus the rules read) and
 // runs it on the set-wise pool.
 "use strict";
-const { querySetwise } = require("../../db");
+const { query, querySetwise } = require("../../db");
 const NUM = require("../../shared/numbers/starterCounts");
 
 async function starterCounts(orgId, starters) {
   const RH = require("../../routes/crm").reportHooks;
   const DS = require("../../donorStatus");
-  const recurringIn = require("../../groups").ACTIVE_RECURRING_STATUSES.map(x => `'${x}'`).join(",");
   const [{ cur, prior }, since, today, cuts] = await Promise.all([RH.yearWindows(orgId), RH.thanksSince(orgId), DS.todayFor(orgId), DS.cutsFor(orgId)]);
-  const { sql, args } = NUM.starterCountsSql({ orgId, cur, prior, since, status: DS.statusSql(orgId, today, cuts), recurringIn, starters });
+  // FLOWS-2: "Monthly givers" is the one gives-monthly rule (shared/numbers/givesMonthly.js), as its group is.
+  const monthlyIds = starters.some(x => (x.key || x) === "monthly") ? await require("../../shared/numbers/givesMonthly").givesMonthlyIds(query, orgId, today) : [];
+  const { sql, args } = NUM.starterCountsSql({ orgId, cur, prior, since, status: DS.statusSql(orgId, today, cuts), starters, monthlyIds });
   const [row] = await querySetwise(sql, args);
   return NUM.countsOf(row, starters);
 }

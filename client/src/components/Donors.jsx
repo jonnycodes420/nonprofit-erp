@@ -296,7 +296,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   };
   const saveView=async name=>{
     const cur=layoutRef.current||FALLBACK_SETUP.layout;
-    const r=await apiFetch("/donors/list-views",{method:"POST",body:JSON.stringify({name,columns:cur.columns,widths:cur.widths||{},filters:dirWhere,pageSize:cur.pageSize,sort:dirSort,sortDir:dirDir})});
+    // FLOWS-2: and the list's own filters (Tag, Stage, Owner…), not only the condition filter.
+    const chips={search:search.trim(),stage:dirStage,owner:dirAssignee,designation:dirDesignation,status:dirStatus,household:dirHousehold,people:dirPeople};
+    const r=await apiFetch("/donors/list-views",{method:"POST",body:JSON.stringify({name,columns:cur.columns,widths:cur.widths||{},filters:dirWhere,pageSize:cur.pageSize,sort:dirSort,sortDir:dirDir,chips})});
     const v=r&&r.view;
     if(v){setListSetup(s=>({...s,views:[...((s&&s.views)||[]).filter(x=>x.id!==v.id),{mine:true,...v}]}));setActiveViewId(v.id);}
     return v;
@@ -309,6 +311,10 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     setDirWhere(v.filters&&Array.isArray(v.filters.conditions)?{join:v.filters.join==="or"?"or":"and",conditions:v.filters.conditions}:EMPTY_WHERE);
     // LIST-3: and the sort it was saved with (none saved: the list's own order).
     setDirSort(v.sort||"");setDirDir(v.sort?(v.sortDir||""):"");
+    // FLOWS-2: every filter it was saved with; one it was saved without is cleared.
+    const c=v.chips||{};
+    setSearch(c.search||"");setDirSearch(c.search||"");setDirStage(c.stage||"");setDirAssignee(c.owner||"");setDirDesignation(c.designation||"");
+    setDirStatus(c.status||"");setDirHousehold(c.household||"");setDirPeople(c.people||"");
   };
   const deleteView=async v=>{
     try{await apiFetch(`/donors/list-views/${encodeURIComponent(v.id)}`,{method:"DELETE"});
