@@ -627,6 +627,12 @@ app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, 
       kind: outcomeKind,
       sentence: `Say how the ${outcomeKind === "call" ? "call" : "meeting"} went and what's next (or "No next step") to finish it.` });
     viaConversation = true;
+    // FEEL-1: a conversation logged with "No next step" no longer closes the
+    // person's open step by itself (a skip skips only its own step); the step
+    // this task belongs to closes here, on her line, as it did before.
+    if (t.link_kind === "next_step" && t.thread_id)
+      await run(`UPDATE threads SET closed_at=NOW(), close_kind='outcome', closing_interaction_id=? WHERE id=? AND org_id=? AND donor_id=? AND closed_at IS NULL`,
+        [i.id, t.thread_id, orgId, t.donor_id]);
     // JOURNEYS-4 — the outcome she picked rides onto the task, where a
     // task_outcome journey reads it (lifecycleRows).
     const J4 = await journeyMod();

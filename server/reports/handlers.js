@@ -262,7 +262,7 @@ async function reportByGroup(orgId, p) {
   // column); dangling ids (deleted fund/page) fall into the "No X" bucket —
   // the tolerated-dangling-reference pattern.
   const JOINS = {
-    funds: { join: "LEFT JOIN fin_funds x ON x.id = g.fund_id AND x.org_id = g.org_id", name: "COALESCE(x.name, 'No fund')" },
+    funds: { join: "LEFT JOIN fin_funds x ON x.id = g.fund_id AND x.org_id = g.org_id", name: "COALESCE(x.name, 'Unrestricted (no fund)')" },
     campaigns: { join: "LEFT JOIN campaigns x ON x.id = g.campaign_id AND x.org_id = g.org_id", name: "COALESCE(x.name, NULLIF(g.campaign, ''), 'No campaign')" },
     giving_pages: { join: "LEFT JOIN giving_pages x ON x.id = g.giving_page_id AND x.org_id = g.org_id", name: "COALESCE(x.title, 'No giving page')" },
   };
@@ -537,7 +537,7 @@ async function reportAnnual(orgId, p) {
   const ret = await NUMBERS.retained.retention(query, orgId, cur, prior)
     .then(r => ({ prior_donors: r.prior, retained: r.retained }));
   const byFund = await query(
-    `SELECT COALESCE(x.name,'No fund') AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(gf.amount),0) AS total, COUNT(*)::int AS gift_count
+    `SELECT COALESCE(x.name,'Unrestricted (no fund)') AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(gf.amount),0) AS total, COUNT(*)::int AS gift_count
      FROM gifts g JOIN donors d ON d.id = g.donor_id
      JOIN ${NUMBERS.fundLines.GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id   -- GIFTS-2: a split gift by its lines
      LEFT JOIN fin_funds x ON x.id = gf.fund_id AND x.org_id = g.org_id
@@ -752,7 +752,7 @@ async function reportBookkeeper(orgId, p) {
   // whichever fund happens to sort first.
   const byFundMap = new Map();
   for (const row of out) {
-    const name = row.fund || "(no fund)";
+    const name = row.fund || "Unrestricted (no fund)";   // FEEL-1
     const e = byFundMap.get(name) || { name, cents: 0, giftCount: 0 };
     e.cents += row.cents; e.giftCount += 1;
     byFundMap.set(name, e);
@@ -1111,7 +1111,7 @@ async function reportGrantRestricted(orgId) {
       .sort((a, b) => b.remainingCents - a.remainingCents)
       .map(b => ({
         funder: b.funderName || "(not named)", program: b.program || "(not stated)",
-        fund: b.fundName || "(no fund)", restriction: b.restriction,
+        fund: b.fundName || "Unrestricted (no fund)", restriction: b.restriction,
         awarded: b.awarded, received: b.received, spent: b.spent,
         outstanding: b.outstanding, remaining: b.remaining,
         releaseDate: b.releaseDate, overspent: b.overspent, note: b.sentence,

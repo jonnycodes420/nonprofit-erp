@@ -118,6 +118,11 @@ async function restoreSteps(orgId, moved) {
   for (const m of moved || []) {
     await run(`UPDATE cultivation_plan_steps SET due_date=?, moved_from=NULL, moved_reason=NULL
                 WHERE id=? AND org_id=? AND status IN ('pending','open')`, [m.from, m.id, orgId]).catch(() => {});
+    // FEEL-1: the thread the step holds goes back with it, as moveNearSteps
+    // moved it (the step's day and its thread's day are one day).
+    await run(`UPDATE threads SET due_date=? WHERE org_id=? AND closed_at IS NULL AND id IN
+                 (SELECT thread_id FROM cultivation_plan_steps WHERE id=? AND org_id=? AND thread_id IS NOT NULL)
+                 AND calendar_event_id IS NULL`, [m.from, orgId, m.id, orgId]).catch(() => {});
   }
 }
 

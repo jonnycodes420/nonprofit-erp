@@ -3431,7 +3431,7 @@ app.get("/qbo", requireAuth, wrap(async (req, res) => {
     mapping: { mode: map.mode, startDate: QS.startDateOf(c, map), depositAccount: map.depositAccount,
       feeAccount: map.feeAccount, funds: map.funds, campaigns: map.campaigns },
     funds: [...funds.map(f => ({ id: f.id, name: f.name, restricted: f.restricted === true })),
-            { id: QS.NO_FUND, name: "No fund named", restricted: false }],
+            { id: QS.NO_FUND, name: "Unrestricted (no fund)", restricted: false }],
     campaigns: campaigns.map(x => ({ id: x.id, name: x.name, type: x.type || null })),
     definition: map.mode === "deposit"
       ? "Each payout becomes one deposit in QuickBooks, a line per gift on the account its campaign or fund is mapped to, with the processing fee as one negative line. Nothing is sent until somebody presses Sync, and a payout is never sent twice."
@@ -3904,7 +3904,7 @@ app.get("/xero", requireAuth, wrap(async (req, res) => {
     mappingOtherTenant: map.otherTenant,
     mapping: { startDate: since, bankAccount: map.bankAccount, feeAccount: map.feeAccount, funds: map.funds },
     funds: [...funds.map(f => ({ id: f.id, name: f.name, restricted: f.restricted === true })),
-            { id: XS.NO_FUND, name: "No fund named", restricted: false }],
+            { id: XS.NO_FUND, name: "Unrestricted (no fund)", restricted: false }],
     pending: { count: pending.length, cents: pendingCents, undated,
       definition: `Every gift dated on or after ${since} that has not been sent to this Xero organization. Real money only: never a sample, a refund, stock or in-kind.`,
       rows: pending.slice(0, 50).map(r => ({ giftId: r.id, donorName: r.donor_name, date: String(r.date instanceof Date ? orgTime.civilOf(r.date) : r.date).slice(0, 10),
@@ -3982,7 +3982,7 @@ app.post("/xero/sync", requireAuth, requireAdmin, checkWriteAccess, wrap(async (
 }));
 
 // AUTO-SYNC, the org admin's own switch. Off by default, and it cannot be
-// turned on until every fund, and "No fund named", has a Xero account.
+// turned on until every fund, and "Unrestricted (no fund)", has a Xero account.
 app.put("/xero/auto-sync", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const XS = xeroSyncMod();
   const orgId = req.user.orgId;
@@ -4382,7 +4382,7 @@ app.post("/finance/transactions", requireAuth, checkWriteAccess, wrap(async (req
     LEFT JOIN fin_funds f ON f.id = ft.fund_id
     WHERE ft.id = ?`, [id]);
   writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "created", "transaction", id, {
-    description: `Added ${type === "income" ? "+" : "-"}$${parseFloat(amount).toFixed(2)} · ${description} (${rows[0]?.account_name || "No account"}, ${rows[0]?.fund_name || "No fund"})`,
+    description: `Added ${type === "income" ? "+" : "-"}$${parseFloat(amount).toFixed(2)} · ${description} (${rows[0]?.account_name || "No account"}, ${rows[0]?.fund_name || "Unrestricted (no fund)"})`,
     new: { amount: parseFloat(amount), type, description, account: rows[0]?.account_name, fund: rows[0]?.fund_name, date, vendorDonor }
   }).catch(() => {});
   res.status(201).json(rows[0]);

@@ -36,6 +36,7 @@ import { countLabel, plural } from "../../../shared/countWords.js";
 // PERF-2: Home's meetings card and the small pieces it shares with these panels.
 import { DARK_BRASS, SERIF, btnPrimary, btnOutline, input, dayKey, relDay, meetingNoun } from "./MorningBrief";
 import { shownNote } from "../lib/internalLabels";
+import { giftTypeLabel } from "../../../shared/giftWords.js";   // FEEL-1
 export { relDay, meetingNoun, AddToRecord, MorningBrief } from "./MorningBrief";
 
 const CHIP_EDGE = T.bg3;           // the artboards draw a hairline one shade off bg3; bg3 is the token
@@ -249,6 +250,15 @@ export function buildTimelineItems({ rel, gifts = [], pledges = [], interactions
   for (const v of service || []) {
     items.push({ kind: "service", bucket: "service", id: "v:" + v.id, date: String(v.date || "").slice(0, 10), v });
   }
+  // FEEL-1: a stored day that is not YYYY-MM-DD (an attendance line once wrote
+  // "Fri Nov 06") is read as the day the row was written, or "No date"; it is
+  // never a 2001 date under an "Invalid Date" month.
+  for (const it of items) {
+    if (it.undated || !it.date || /^\d{4}-\d{2}-\d{2}$/.test(String(it.date))) continue;
+    const at = it.logged && (it.logged.created_at || it.logged.createdAt);
+    const day = at ? civilDayOf(new Date(at)) : "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(day || ""))) it.date = day; else { it.date = ""; it.undated = true; }
+  }
   items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   // FIX-22 · and the attachments an email arrived with, which stay in the
   // mailbox they came to: listed here too, each opening that message there.
@@ -392,7 +402,10 @@ export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], int
   const loggedOf = it => it.logged || (it.m && byId[it.m.interactionId]) || null;
   const q = String(search || "").trim().toLowerCase();
   const shownQ = q ? shown.filter(it => { const d = describe(it); return [d.title, d.body, d.meta, d.type, d.by].some(x => typeof x === "string" && x.toLowerCase().includes(q)); }) : shown;
-  const monthOf = it => (it.undated || !it.date ? "No date" : new Date(String(it.date).slice(0, 10) + "T12:00:00").toLocaleDateString("en-US", { month: "short", year: "numeric" }));
+  const monthOf = it => {
+    const d = it.undated || !it.date ? null : new Date(String(it.date).slice(0, 10) + "T12:00:00");
+    return d && !isNaN(d.getTime()) ? d.toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "No date";   // FEEL-1: never "Invalid Date"
+  };
   return (
     <section aria-label={lately ? "Lately" : "Conversations and meetings"} data-testid={lately ? "dp-lately" : "dp-timeline"} data-fixed={fixed || undefined} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {lately ? <h2 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Lately</h2>
@@ -448,7 +461,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], int
           </div>;
         } else if (it.kind === "gift") {
           const g = it.g;
-          if (isOpen) extra = <div style={{ fontSize: 14, color: T.ink3, marginTop: 8 }}>{g.type ? `${g.type} · ` : ""}{displayDate(g.date)}{shownNote(g.notes) ? ` · ${shownNote(g.notes)}` : ""}</div>;
+          if (isOpen) extra = <div style={{ fontSize: 14, color: T.ink3, marginTop: 8 }}>{g.type ? `${giftTypeLabel(g.type)} · ` : ""}{displayDate(g.date)}{shownNote(g.notes) ? ` · ${shownNote(g.notes)}` : ""}</div>;
         } else if (it.kind === "file" && it.f) {
           extra = <AttachmentChips files={[it.f]} canRemove={canWrite}/>;
         }

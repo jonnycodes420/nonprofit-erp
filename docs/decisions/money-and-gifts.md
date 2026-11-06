@@ -35,6 +35,8 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   before it is already inside the old total and is never added again. `donorSummary.DONOR_SUMMARY_UPDATE`
   is the one statement for total, count, first and last gift; `recordGift` runs it too (it no longer adds).
   A merge folds both imported totals so the merged Lifetime is the two added up. The checker holds this.
+  An undated gift is after the import, except one that came with the import that stated the total
+  (`donors.imported_import_id`): it is inside that total, so dating it later never moves Lifetime (FEEL-1).
 - **One average gift, one retention (NUMBERS-2).** Average = the counted gifts' total (refunds off) over
   the gifts above zero; soft and matching credit rows are not gifts (`figureSources.AVERAGE_WORDS`, measure
   `per_gift`; the `gifts` source maps `mean` to it). Retention = FEP: last fiscal year's givers who gave

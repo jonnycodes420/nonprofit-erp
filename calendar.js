@@ -150,17 +150,14 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
       })));
   }
   if (want.has("shift")) {
-    jobs.push(query(
-      `SELECT s.id, COALESCE(s.name, o.name) AS name, s.date, s.start_time, s.end_time, s.capacity, s.color, s.venue,
-              (SELECT COUNT(*) FROM volunteer_signups su WHERE su.org_id = s.org_id AND su.slot_id = s.id AND su.status IN ('confirmed','completed'))::int AS filled,
-              (SELECT COALESCE(SUM(r.needed), 0) FROM volunteer_slot_roles r WHERE r.org_id = s.org_id AND r.slot_id = s.id)::int AS role_needed
-         FROM volunteer_slots s LEFT JOIN volunteer_opportunities o ON o.id = s.opportunity_id AND o.org_id = s.org_id
-        WHERE s.org_id = ? AND s.cancelled_at IS NULL AND s.date >= ? AND s.date <= ?`,
-      [orgId, from, to]).then(rows => rows.forEach(r => {
-        const needed = r.role_needed || r.capacity || null;
-        const short = needed ? Math.max(0, needed - r.filled) : 0;
-        out.push({ id: `shift:${r.id}`, type: "shift", title: r.name || "Shift", start: `${r.date}T${hm(r.start_time) || "09:00"}`, end: `${r.date}T${hm(r.end_time) || "12:00"}`,
-          allDay: false, detail: needed ? `${r.filled} of ${needed} filled` : `${r.filled} signed up`, filled: r.filled, needed,
+    // FEEL-1: a shift's people are counted once, by the Volunteers schedule's
+    // own footer (people with a place, role by role), so the Calendar and the
+    // schedule never say two numbers for one shift.
+    jobs.push(require("./routes/volunteerScheduling").scheduleRows(orgId, { from, to }).then(({ shifts }) => shifts.forEach(r => {
+        const needed = r.footer.needed || null, filled = r.footer.scheduled;
+        const short = needed ? r.footer.short : 0;
+        out.push({ id: `shift:${r.id}`, type: "shift", title: r.name || "Shift", start: `${r.date}T${hm(r.startTime) || "09:00"}`, end: `${r.date}T${hm(r.endTime) || "12:00"}`,
+          allDay: false, detail: needed ? `${filled} of ${needed} filled` : `${filled} signed up`, filled, needed,
           short, editable: { move: true, resize: true }, ref: { slotId: r.id }, ...(short ? { conflict: `Short ${short} ${short === 1 ? "person" : "people"}` } : {}) });
       })));
   }

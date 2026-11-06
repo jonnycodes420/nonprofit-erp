@@ -34,6 +34,7 @@ import { ThankYouDrafts } from "./ThankYouDrafts";
 import { countLabel } from "../../../shared/countWords.js";
 import { allPages } from "../lib/pages";
 import { displayOrgDate } from "../lib/orgDay";
+import { triggerLabel } from "../../../shared/giftWords.js";   // FEEL-1
 import { sequencesEmptyLine } from "../lib/sequencesEmpty";   // ATLAS-4
 
 // WIRE-1-ADDENDUM: "Templates" and "Email templates" were one thing twice, so
@@ -831,7 +832,7 @@ function SequencesPanel({ data }) {
     setStepAiLoading(prev => ({ ...prev, [i]: false }));
   };
 
-  const trigLabel = id => SEQ_TRIGGERS.find(t => t.id === id)?.label || id;
+  const trigLabel = id => SEQ_TRIGGERS.find(t => t.id === id)?.label || triggerLabel(id);   // FEEL-1: "First gift", never "first_gift"
   const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 12px", color: T.ink, fontSize: 13, outline: "none", width: "100%", boxSizing: "border-box" };
 
   // Builder view

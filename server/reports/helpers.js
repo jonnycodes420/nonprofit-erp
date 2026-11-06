@@ -151,7 +151,7 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
           const mine = funds.filter(f => (f.id ? f.restricted === restricted : !restricted));
           const rows = await Promise.all(mine.map(async f => {
             const v = await fig({ key: "gifts", params: { ...yr, fund: f.id || "none" } });
-            return { label: f.id ? f.name : "No fund named", restricted, kind: "money", value: v.value, source: v.source };
+            return { label: f.id ? f.name : "Unrestricted (no fund)", restricted, kind: "money", value: v.value, source: v.source };
           }));
           out.push(...rows.sort((a, b) => b.value - a.value || a.label.localeCompare(b.label)));
         }

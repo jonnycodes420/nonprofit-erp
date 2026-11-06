@@ -131,10 +131,13 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
   // headed with the CURRENT label, rendered per the type table.
   const cfDonorDefs = await loadCfDefs("donor", req.user.orgId);
   const { renderCustomValue } = await cfShape();
+  const life = await require("../../shared/numbers/lifetime").lifetimeCents(query, req.user.orgId, donors.map(d => d.id));
   const columns = [
     ["Name", "name"], ["Email", "email"], ["Phone", "phone"],
     ["Stage", "stage"], ["Status", "status"],
-    ["Total giving", "total_giving"], ["Last gift date", "last_gift_date"],
+    // FEEL-1: the lifetime is the one rule (shared/numbers/lifetime.js), worked
+    // out here, never the stored donors.total_giving a write may not have caught up.
+    ["Total giving", d => (life.has(d.id) ? (life.get(d.id) / 100).toFixed(2) : "0.00")], ["Last gift date", "last_gift_date"],
     ["Last gift amount", "last_gift_amount"], ["Gift count", "gift_count"],
     ["Assigned to", d => d.assigned_to_name || ""],
     ["Closeness", d => (d.closeness ? d.closeness.charAt(0).toUpperCase() + d.closeness.slice(1) : "")],
