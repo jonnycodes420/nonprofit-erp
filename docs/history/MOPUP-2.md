@@ -17,7 +17,15 @@ From the reports of FEEL-1, GIFTS-2, SPEED-2 and IMPORT-9.
    that count after it (the AFTER_IMPORT rule Lifetime uses). Such a person is never on "First gift, no
    second yet"; they have their own Grow card, "Gave before Steward, once since": "Gave $37,206 before
    Steward; $244 since." (or, when the one gift is inside the stated total, "…, the latest $244 on …").
-3. **Home on a phone never jumps either.** See the report for the measured numbers.
+3. **Home on a phone never jumps either.** FEEL-1 left a phone ungated (the hold cost ~150 ms of its
+   budget). Measured on a 412 × 823 phone: a deck held 1.3 s lands before anything under it is drawn
+   (CLS 0), but held 3 s or more it pushed the block under it from y 457 out of view (CLS 0.408). Now a
+   phone's stand-in ("Reading your donors…") reserves the deck's height from the first paint
+   (`client/src/lib/movesGate.js`): the deck's last height in this browser, or 1,200 px the first time.
+   Nothing waits and nothing re-renders, so the phone budget is untouched. The reservation only has to
+   reach past the bottom of the screen (the deck starts at y 385), so a deck of any real size lands
+   without moving what she can see; a brand-new org's short empty deck could still pull content up once.
+   perf-app has a phone leg with the deck held 3 s, 10 runs out of 10.
 4. **Copy and flake.** The goal card's note reads its dates through `shared/displayDate.js`. perf-app's
    held routes (the late header, the late deck) are wrapped so a route whose page is closing gives up
    quietly, and `measure` waits for running handlers (`unrouteAll({ behavior: "wait" })`) before it

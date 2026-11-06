@@ -88,7 +88,7 @@ export function BulkTrash({ ids, disabled, onDone, flash }) {
             {check && check.error && <div style={{ fontSize: 13, color: T.ink, marginBottom: 20 }}>{check.error}</div>}
             {check && !check.error && withGifts > 0 && (
               <div data-testid="bulk-trash-gifts" style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.6, marginBottom: 20 }}>
-                {withGifts === ids.length ? (ids.length === 1 ? "This person has gifts" : `All ${people(ids.length)} have gifts`) : `${people(withGifts)} of them ${withGifts === 1 ? "has" : "have"} gifts`}, so {withGifts === 1 ? "that one stays" : "they stay"} unless you say otherwise.
+                {withGifts === ids.length ? (ids.length === 1 ? "This person has gifts" : `All ${people(ids.length)} have gifts`) : `${withGifts.toLocaleString("en-US")} of them ${withGifts === 1 ? "has" : "have"} gifts`}, so {withGifts === 1 ? "that one stays" : "they stay"} unless you say otherwise.
                 <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 10, cursor: "pointer" }}>
                   <input type="checkbox" data-testid="bulk-trash-include" checked={include} onChange={e => setInclude(e.target.checked)} style={{ marginTop: 3 }} />
                   <span>Move the {people(withGifts)} with gifts too, and their gift history with them.</span>

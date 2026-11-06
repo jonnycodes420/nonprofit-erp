@@ -19,7 +19,6 @@ import { countLabel } from "../../../shared/countWords.js";
 import { displayDate } from "../../../shared/displayDate.js";   // SWEEP-1: a written date, never "2025-12-19"
 import { moveSentence } from "../lib/moveSentence";
 import { orgTodayCivil, orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
-import { reservedDeckHeight, rememberDeckHeight } from "../lib/deckReserve";   // MOPUP-2
 
 const SERIF = "'DM Serif Display', Georgia, serif";
 const money = c => {
@@ -449,7 +448,7 @@ function NoDonorsCard({ onNavigate, sample, importAbove = false }) {
   );
 }
 
-export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = false, drift = null, importAbove = false, onSettled = null }) {
+export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = false, drift = null, importAbove = false, onSettled = null, reserve = null, onDeckHeight = null }) {
   // HOME-4: the deck alone; the ladder and "See all" panels read the cards when they open.
   // PERF-2: Home's first read carries each tab's first moves (deck.partial);
   // every move is read when she first reaches for the deck (a touch, a hover,
@@ -484,12 +483,12 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
   // (drawn or failed), so a late deck never pushes the Thread down.
   const settled = !!(deck || err);
   useEffect(() => { if (settled && onSettled) onSettled(); }, [settled]);
-  // MOPUP-2: the drawn deck's height is what a phone reserves next time.
+  // MOPUP-2: the drawn deck's height is what a phone reserves next time (Home passes reserve and onDeckHeight; lib/movesGate.js).
   const deckRef = useRef(null);
-  useEffect(() => { if (deck && deckRef.current) rememberDeckHeight(deckRef.current.offsetHeight); }, [!!deck]);
+  useEffect(() => { if (deck && deckRef.current && onDeckHeight) onDeckHeight(deckRef.current.offsetHeight); }, [!!deck]);
   if (err) return null;
-  // MOPUP-2: on a phone the stand-in is as tall as the deck it becomes (lib/deckReserve.js).
-  if (!deck) return <section aria-label="Your moves" data-testid="home-moves" style={{ ...CARD, color: T.ink3, fontSize: 14, boxSizing: "border-box", minHeight: reservedDeckHeight() || undefined }}>Reading your donors…</section>;
+  // MOPUP-2: on a phone the stand-in is as tall as the deck it becomes (lib/movesGate.js).
+  if (!deck) return <section aria-label="Your moves" data-testid="home-moves" style={{ ...CARD, color: T.ink3, fontSize: 14, boxSizing: "border-box", minHeight: reserve || undefined }}>Reading your donors…</section>;
 
   const live = t => t.moves.filter(m => !gone.has(m.id));
   const tabs = deck.tabs.map(t => ({ ...t, left: live(t) }));
