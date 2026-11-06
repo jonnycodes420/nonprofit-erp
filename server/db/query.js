@@ -204,4 +204,14 @@ function runTx(client, sql, params = []) {
 }
 // SPLIT-2 end
 
-module.exports = { countRoundTrips, withAmbientTransaction, queryOutside, runOutside, query, run, withClient, onThePool, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx };
+// SPEED-2: a transaction's statements cross the network too. countedClient
+// wraps a transaction's client so each statement it sends waits
+// TEST_DB_LATENCY_MS and is counted by countRoundTrips (TEST_MODE only; on
+// prod it is the same client, untouched). The merge uses it, so the merge's
+// budget in tests/perf-app.spec.js charges every statement it sends.
+function countedClient(client) {
+  if (process.env.TEST_MODE !== "1") return client;
+  return { query: async (...a) => { if (TEST_LATENCY_MS) await roundTrip(); noteTrip(); return client.query(...a); } };
+}
+
+module.exports = { countedClient, countRoundTrips, withAmbientTransaction, queryOutside, runOutside, query, run, withClient, onThePool, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx };

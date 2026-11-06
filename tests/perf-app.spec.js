@@ -36,6 +36,10 @@
 //     the giving report, Journeys, Settings) each ready under 2 s after a
 //     fresh sign-in by the app's page-ready mark, on a walk-sized org (1,000
 //     people), strict on CI too (tests/lib/pageReadyLeg.js)
+//   · SPEED-2: the merge of a typical pair, and the side-by-side screen before
+//     it, each under 2 s at prod's round trip, in at most 60 statements
+//     (tests/lib/mergeSpeedLeg.js); and a 1,000-row gift file previews under
+//     3 s, first read and re-read (tests/lib/previewThousandLeg.js). No browser.
 //   · NUMBERS-4: the 25,000-person workbook (messy-25k) imports whole in under
 //     2 minutes (tests/lib/workbookImportLeg.js; PERF-2: over 15). No browser.
 //
@@ -305,6 +309,7 @@ async function previewLeg() {
   const seeded = await PREVIEW.seedPreviewOrg(q, "org_perfpreview", XLSX);
   ok(`the preview org has 2,000 people, 500 of them deleted`, seeded.people === 2000 && seeded.deleted === 500, seeded);
   await PREVIEW.previewBudgets({ ok, base: BASE, token, XLSX });
+  await require("./lib/previewThousandLeg").previewThousandLeg({ ok, q, base: BASE, token, orgId: "org_perfpreview" });   // SPEED-2
 }
 
 // PERF-2: app.html's inline preloader is allowed by its hash in vercel.json's
@@ -321,6 +326,7 @@ function preloaderAllowed() {
 
 (async () => {
   await previewLeg();
+  await require("./lib/mergeSpeedLeg").mergeSpeedLeg({ ok, q, base: BASE, login: require("./helpers").login, freshPerfOrg: PREVIEW.freshPerfOrg });   // SPEED-2
   await workbookImportLeg({ ok, timed, q, login: require("./helpers").login, base: BASE, importWorkSettled });   // the helper (a `login` below shadows it)
   // SCORES-1: an import's one full score pass runs on the queue a moment after
   // its last chunk; the 25k org's pass is done before Home is timed.

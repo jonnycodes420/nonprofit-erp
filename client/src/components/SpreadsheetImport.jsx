@@ -192,6 +192,9 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   };
   // FIX-54: the last delete's Undo comes down while a file is imported
   useEffect(() => { dismissUndo(); }, []);
+  // SPEED-2: the spreadsheet reader starts downloading when the window opens,
+  // not after she picks a file (about 300 ms off the preview at prod's round trip).
+  useEffect(() => { import("xlsx").catch(() => {}); }, []);
   // Reopened while an import is running (a refresh, a closed tab): follow it.
   useEffect(() => {
     let live = true;
