@@ -980,6 +980,7 @@ require("../../routes/supportAccess").mount({ query, run, wrap, requireAuth, req
 // SPLIT-2 server.js piece 798
 require("../admin/opsRoutes").mount({ query, run, wrap, healthBody, buildSha: BUILD_SHA });   // DEVBOARD-1
 // SPLIT-2 end
+require("../perf/pageTiming").mount({ requireAuth });   // PERF-4
 // SPLIT-2 server.js piece 799
 require("../../routes/support").mount({ query, run, wrap, requireAuth, requireSuperAdmin, aiGate, anthropicFor, recordAiFallback, resend, uuid, actor, AGENT_MODEL });
 // SPLIT-2 end

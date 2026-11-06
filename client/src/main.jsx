@@ -30,6 +30,7 @@ import { SkeletonAppShell, SkeletonPublic } from "./components/Skeleton";
 import MARKETING_PATHS from "virtual:marketing-paths";
 import { MarketingRoute, loadMarketing } from "./marketing/lazySite";
 import { startBootReads, startShellReads, startHomeReads } from "./lib/bootReads";
+import { installPageReady } from "./lib/pageReady";
 import "./marketing/site.css";
 import "./marketing/content.css";
 const LoginPage          = React.lazy(() => import("./pages/LoginPage"));
@@ -414,6 +415,10 @@ else {
   // HARDEN-2: on the app with a session, its code and its boot reads start
   // now, side by side, instead of one after the other (lib/bootReads.js).
   if (APP_PATHS.test(here) && localStorage.getItem("npe_token")) {
+    // PERF-4: the page-ready mark (lib/pageReady.js), time only, to /ops.
+    installPageReady(m => fetch(`${API}/perf/page-ready`, { method: "POST", keepalive: true,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("npe_token")}` },
+      body: JSON.stringify(m) }).catch(() => {}));
     startBootReads();
     startShellReads(here === "/dashboard");
     if (here === "/dashboard") startHomeReads();

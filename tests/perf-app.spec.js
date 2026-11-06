@@ -32,6 +32,10 @@
 //     2,000 people with 500 deleted: the first preview under 4 s and each
 //     re-read after an answer under 2 s, at prod's database round trip
 //     (tests/lib/previewPerfOrg.js). No browser, so it runs before the skip.
+//   · PERF-4: the seven main pages (Home, Donors, a big profile, Fundraising,
+//     the giving report, Journeys, Settings) each ready under 2 s after a
+//     fresh sign-in by the app's page-ready mark, on a walk-sized org (1,000
+//     people), strict on CI too (tests/lib/pageReadyLeg.js)
 //   · NUMBERS-4: the 25,000-person workbook (messy-25k) imports whole in under
 //     2 minutes (tests/lib/workbookImportLeg.js; PERF-2: over 15). No browser.
 //
@@ -359,6 +363,8 @@ function preloaderAllowed() {
   const list = await measureN(browser, DESKTOP, auth, "/donors", '[data-testid="dir-table"] [data-testid="person-mark"]', 100);
   const prof = await measureN(browser, DESKTOP, auth, `/donors/${top.id}`, '[data-testid="dp-right-rail"]');
   const open = await profileOpen(browser, auth);   // LOAD-1
+  // PERF-4: the seven main pages, each ready under 2 s after a fresh sign-in (tests/lib/pageReadyLeg.js).
+  await require("./lib/pageReadyLeg").checkSevenPages({ ok, browser, q, api, app: APP, base: BASE });
   await browser.close();
 
   // The list's own request, replayed from here: the server's time alone.
