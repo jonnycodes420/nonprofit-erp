@@ -15,6 +15,7 @@ import { LogTouchpointModal } from "./modals";
 import { BriefPanel } from "../MajorGifts";
 import { PlanFollowUpModal } from "../PlanFollowUp";
 import { MarkDeceasedModal, UndoDeceasedModal, DeceasedBanner } from "./DeceasedDialog";   // PEOPLE-1
+import { CallScriptModal, ImpactSummaryModal } from "./MoreActions";   // ATLAS-3
 
 // MENU-1 — More's menu. Its max height is the room between the button and the
 // screen's edge (or the phone's tab bar), less 12 px, and it scrolls inside; with more room above than
@@ -86,6 +87,7 @@ function MoreMenu({groups,onPick,onClose}){
 
 function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg}){
   const [deceasedOpen,setDeceasedOpen]=useState(null);   // PEOPLE-1: "mark" or "undo"
+  const [moreOpen,setMoreOpen]=useState(null);   // ATLAS-3: "call" or "impact"
   return <>
         <div className="donor-profile-header dp2-head dp3-head" data-testid="dp-head" style={{padding:"16px 0 0",display:"grid",gridTemplateColumns:"72px minmax(0,1fr) auto",columnGap:20,rowGap:0,alignItems:"start"}}>
           <div className="dph-backrow" style={{gridColumn:"1 / -1",gridRow:1,marginBottom:16}}>
@@ -164,9 +166,10 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
                   // FIX-55 item 6: Request a gift needs card payments set up.
                   ...(org?.capabilities?.stripe?[["Request a gift",()=>setShowGiftModal(true),false]]:[]),
                   // FIX-14 Part 3 — the quick drafts live here.
-                  ...(isTeam?[["Draft an email",()=>{setSuggestOpen(true);getAI(donor,"email");},false],
+                  // ATLAS-3: an email is a draft for this person (Atlas writes it, she reviews and sends); a call script is a script.
+                  ...(isTeam?[["Draft an email",()=>openTellSteward(donor,{text:`Draft an email to ${donor.name}`,send:true}),isReadOnly||!donor.email,"dp-draft-email"],
                     ["Draft outreach",()=>{setSuggestOpen(true);getAI(donor,"outreach");},false],
-                    ["Call script",()=>{setSuggestOpen(true);getAI(donor,"callscript");},false]]:[]),
+                    ["Call script",()=>setMoreOpen("call"),!!donor.deceased||!!donor.doNotContact,"dp-call-script"]]:[]),
                   /* MEMBERS-2 — staff send the link; they never see the token it carries. */
                   ["Send their page link",sendYourPageLink,isReadOnly||!donor.email],
                   // PARITY-1 Part F: a short video from her; saving drafts the email, she sends it.
@@ -186,7 +189,7 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
                   // PROSPECT-1 — a one-page prospect brief, saved to their files.
                   ...(canMajorGifts?[["Write a prospect brief",()=>setProspectBriefOpen(true),isReadOnly,"dp-prospect-brief"]]:[]),
                   ...(canMajorGifts&&donor.kind==="organisation"?[["Look up public filing",()=>setFilingLookupOpen(true),isReadOnly,"dp-filing-lookup"]]:[]),
-                  [impactPdfLoading?"Generating…":"Impact summary",downloadImpactSummary,impactPdfLoading],
+                  ["Impact summary",()=>setMoreOpen("impact"),false,"dp-impact-summary"],
                 ]],
                 ["record","Their record",[
                   ["Edit record",onEdit,false],
@@ -272,6 +275,8 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
                 ):null)}
               </div>
             </Modal>}
+            {moreOpen==="call"&&<CallScriptModal donor={donor} onClose={()=>setMoreOpen(null)}/>}
+            {moreOpen==="impact"&&<ImpactSummaryModal donor={donor} onClose={()=>setMoreOpen(null)} onDownload={downloadImpactSummary} downloading={impactPdfLoading}/>}
             {briefOpen&&<Modal onClose={()=>setBriefOpen(false)} width={640} title="Brief me">
               <div>{lockMajor(<BriefPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam}/>,{minHeight:120})}</div>
             </Modal>}

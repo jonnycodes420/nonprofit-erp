@@ -21,7 +21,7 @@ export function linkTarget(link) {
     case "donor": return ["donors", { selectDonorId: link.donorId }];
     case "events": return ["events", { eventId: link.eventId }];
     case "journeys": return ["journeys", { journeyId: link.journeyId }];
-    case "groups": return ["groups", {}];
+    case "groups": return ["groups", link.groupId ? { groupId: link.groupId } : {}];
     case "tasks": return ["tasks", {}];
     case "communications": return ["communications", { subtab: "milestones", highlightDraftId: link.draftId }];
     case "data-health": return ["donors", { view: "health" }];

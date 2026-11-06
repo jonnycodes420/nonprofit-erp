@@ -74,6 +74,7 @@ function count(schema) {
     { name: "propose_column_roles (IMPORT-3 any spreadsheet)", strict: true, schema: (await imp("shared/sheetRead.js")).MAPPING_TOOL.input_schema },
     { name: "atlas_read (AGENT-5 Atlas reads her words)", strict: true, schema: (await imp("shared/atlas.js")).ATLAS_TOOL.input_schema },
     { name: "atlas_draft (AGENT-5 the email Atlas drafts)", strict: true, schema: (await imp("shared/atlas.js")).DRAFT_TOOL.input_schema },
+    { name: "call_script (ATLAS-3 the profile's Call script)", strict: true, schema: require(path.join(ROOT, "routes/atlasMore.js")).SCRIPT_TOOL.input_schema },
   ];
 
   for (const t of TOOLS) {
@@ -106,7 +107,7 @@ function count(schema) {
     "shared/voiceMemo.js": 1, "routes/voice.js": 2, "shared/voiceTalk.js": 1,   // VOICE-3: the log/do/ask sort, defined in shared and sent by the route (meeting mode's two went with it)
     "shared/clientSafe.js": 1, "clientSafe.js": 1,
     "shared/sheetRead.js": 1, "routes/sheetImport.js": 1,
-    "shared/atlas.js": 2, "routes/atlas.js": 2 };   // AGENT-5: the read and the email, defined in shared and sent by the route   // IMPORT-3: the column-role proposal, defined in shared and sent by the route   // CLIENT-SAFE-1: the health read, defined once and sent by clientSafe.js   // VOICE-1: the memo read, defined once and sent by the route
+    "shared/atlas.js": 2, "routes/atlas.js": 2, "routes/atlasMore.js": 2 };   // ATLAS-3: the call script, defined and sent in one file   // AGENT-5: the read and the email, defined in shared and sent by the route   // IMPORT-3: the column-role proposal, defined in shared and sent by the route   // CLIENT-SAFE-1: the health read, defined once and sent by clientSafe.js   // VOICE-1: the memo read, defined once and sent by the route
   const found = {};
   const scan = dir => {
     for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
