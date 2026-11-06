@@ -9,6 +9,7 @@
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
 const TL = require("../../timelineLine");
+const DL = require("../../shared/numbers/donorLabel");   // WALKB-2: who is a donor, the profile's rule
 const PM = require("../../personMatch");   // WIRE-1 rule 1: one record per person   // WIRE-1 rule 2: every act lands on the timeline
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
@@ -1108,13 +1109,7 @@ app.post("/events/:id/photos/remove", requireAuth, checkWriteAccess, wrap(async 
   res.json({ gallery: next });
 }));
 
-app.delete("/events/:id", requireAuth, async (req, res) => {
-  try {
-    const { changes } = await run("DELETE FROM events WHERE id=$1 AND org_id=$2", [req.params.id, req.user.orgId]);
-    if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
-    res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
+// DELETE /events/:id is server/events/eventRemoval.js (WALKB-2): an event with gifts or guests is archived, never deleted.
 
 app.get("/events/:id", requireAuth, async (req, res) => {
   try {
@@ -1123,12 +1118,14 @@ app.get("/events/:id", requireAuth, async (req, res) => {
     if (!evts.length) return res.status(404).json({ error: "Not found" });
     Object.assign(evts[0], await eventCounts(orgId, evts[0].id));
     const attendees = await query(`
-      SELECT ea.*, d.stage, d.total_giving, d.assigned_to_name
+      SELECT ea.*, d.stage, d.total_giving, d.assigned_to_name, ${DL.HAS_GIVEN("d")} AS has_given
       FROM event_attendees ea
       LEFT JOIN donors d ON d.id = ea.donor_id
       WHERE ea.event_id=$1 AND (d.id IS NULL OR d.deleted_at IS NULL)
       ORDER BY ea.created_at ASC
     `, [req.params.id]);
+    // WALKB-2: the guest's label is the profile's rule (shared/numbers/donorLabel.js), never the stage alone.
+    for (const a of attendees) { a.has_given = !!a.has_given; a.donor_label = DL.donorLabel({ hasGiven: a.has_given, stage: a.stage }); }
     // FIX-59: each guest's Gift is what they gave for this event or pledged
     // at it, the rows "Gave or pledged at the event" (event-gave) sums, never
     // the amount typed onto the guest row.
@@ -1290,7 +1287,8 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
       const w = await staffWho(req);
       await openNoShowTask(orgId, att.event_id, w).catch(e => console.error("[event] no-show task:", e.message));
     }
-    const updated = await query("SELECT ea.*, d.stage, d.total_giving FROM event_attendees ea LEFT JOIN donors d ON d.id=ea.donor_id WHERE ea.id=$1", [req.params.attendeeId]);
+    const updated = await query(`SELECT ea.*, d.stage, d.total_giving, ${DL.HAS_GIVEN("d")} AS has_given FROM event_attendees ea LEFT JOIN donors d ON d.id=ea.donor_id WHERE ea.id=$1`, [req.params.attendeeId]);
+    for (const a of updated) a.donor_label = DL.donorLabel({ hasGiven: !!a.has_given, stage: a.stage });   // WALKB-2
     res.json(updated[0]);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

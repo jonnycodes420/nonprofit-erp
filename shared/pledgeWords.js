@@ -9,8 +9,10 @@
 // The preview, the receipt, the profile and Fundraising all read this.
 // IMPORT-5: money on installments with no due date (she chose "No set due
 // date", or has not answered yet) is said as that, never as "$0 due this year".
-export function pledgeMoneyWords({ dueThisYearCents = 0, openCents = 0, years = 1, undatedCents = 0 } = {}, fmt = defaultFmt) {
-  const due = `${fmt(dueThisYearCents || 0)} due this year`;
+// WALKB-2: `yearLabel` names the fiscal year the amount falls due in ("due in
+// FY 2026–27"); without it the words stay "due this year" (the import preview).
+export function pledgeMoneyWords({ dueThisYearCents = 0, openCents = 0, years = 1, undatedCents = 0, yearLabel = "" } = {}, fmt = defaultFmt) {
+  const due = `${fmt(dueThisYearCents || 0)} ${yearLabel ? `due in ${yearLabel}` : "due this year"}`;
   const und = undatedCents || 0;
   if (und > 0 && und >= (openCents || 0)) return `${fmt(openCents)} ${years > 1 ? `over ${years} years, ` : ""}with no set due date`;
   if (und > 0) return [dueThisYearCents ? due : null, `${fmt(und)} with no set due date`, `${fmt(openCents)} ${years > 1 ? `over ${years} years` : "open in all"}`].filter(Boolean).join(" · ");
