@@ -578,6 +578,25 @@ jobs:
           path: .playwright-debs
           key: ${{ steps.pw-keys.outputs.debs }}
 
+  # ── STAGE-1 · WHICH LANE THIS MERGE TAKES ───────────────────────────────
+  # Only once the repo variable STAGING_ENABLED is 'true'. `staging` (the
+  # default): deploy-staging and staging-walk run, prod waits for Ship on /ops.
+  # `hotfix`: the PR has the hotfix label and a "Hotfix reason: …" line, so the
+  # prod jobs below run as they always did (and staging is deployed too).
+  lane:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.STAGING_ENABLED == 'true'
+    outputs:
+      lane: ${{ steps.l.outputs.lane }}
+      reason: ${{ steps.l.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: l
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/deploy-lane.js
+
   # ── Deploy gate: Railway backend (deploy rewire, 2026-08-11) ──────────────
   # Runs ONLY on push to main, ONLY after a green test job.
   #
@@ -605,11 +624,16 @@ jobs:
     runs-on: ubuntu-latest
     # FLAKE-1: 80, not 25: up to 50 minutes waiting its turn, then the deploy.
     timeout-minutes: 80
-    needs: [tree-check, combine]
+    needs: [tree-check, combine, lane]
     # `always()` because the battery is SKIPPED when this exact tree already
     # passed, and a skipped job would otherwise take the deploy down with it.
+    # STAGE-1: with the repo variable STAGING_ENABLED unset this is exactly the
+    # old condition (the `lane` job is skipped and not read). Once it is 'true',
+    # a merge deploys here only on the hotfix lane; every other merge goes to
+    # staging and prod moves when Ship is pressed on /ops (ship.yml).
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
       && (needs.combine.result == 'success' || needs.tree-check.outputs.skip == 'true')
+      && (vars.STAGING_ENABLED != 'true' || needs.lane.outputs.lane == 'hotfix')
     concurrency:
       group: deploy-railway-${{ github.sha }}
       cancel-in-progress: false
@@ -712,11 +736,13 @@ jobs:
   deploy-vercel:
     runs-on: ubuntu-latest
     timeout-minutes: 80   # FLAKE-1: waiting its turn, then the deploy
-    needs: [tree-check, combine]
+    needs: [tree-check, combine, lane]
     # `always()` because the battery is SKIPPED when this exact tree already
     # passed, and a skipped job would otherwise take the deploy down with it.
+    # STAGE-1: the same lane rule as deploy-railway.
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
       && (needs.combine.result == 'success' || needs.tree-check.outputs.skip == 'true') && vars.VERCEL_DEPLOY_ENABLED == 'true'
+      && (vars.STAGING_ENABLED != 'true' || needs.lane.outputs.lane == 'hotfix')
     concurrency:
       group: deploy-vercel-${{ github.sha }}   # FLAKE-1: see deploy-railway
       cancel-in-progress: false
@@ -762,3 +788,152 @@ jobs:
           done
           echo "FAIL: live site never served build-sha $GITHUB_SHA within 5 minutes."
           exit 1
+
+  # ── STAGE-1 · EVERY MERGE GOES TO STAGING FIRST ───────────────────────────
+  # Only once STAGING_ENABLED is 'true' (docs/needs-jonathan/STAGE-1.md says
+  # what Jonathan sets first). Staging is Railway's `staging` environment (its
+  # own web, worker and Postgres; Stripe test keys; mail to the capture sink)
+  # and a second Vercel project whose production domain is
+  # staging.stewardapp.dev. The same FLAKE-1 turnstile queues these deploys in
+  # merge order. RAILWAY_STAGING_TOKEN is a project token scoped to the staging
+  # environment: it cannot deploy prod.
+  deploy-staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    needs: [tree-check, combine, lane]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.STAGING_ENABLED == 'true'
+      && (needs.combine.result == 'success' || needs.tree-check.outputs.skip == 'true')
+    concurrency:
+      group: deploy-staging-${{ github.sha }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read
+      statuses: write
+    env:
+      STAGING_API_URL: ${{ vars.STAGING_API_URL }}
+      STAGING_APP_URL: ${{ vars.STAGING_APP_URL || 'https://staging.stewardapp.dev' }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Staging is configured
+        env:
+          HAS_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN != '' }}
+          VERCEL_STAGING_PROJECT_ID: ${{ vars.VERCEL_STAGING_PROJECT_ID }}
+        run: |
+          [ -n "$STAGING_API_URL" ] || { echo "::error::STAGING_ENABLED is true but the repo variable STAGING_API_URL is not set (docs/needs-jonathan/STAGE-1.md)."; exit 1; }
+          [ "$HAS_TOKEN" = "true" ] || { echo "::error::the RAILWAY_STAGING_TOKEN secret is not set."; exit 1; }
+          [ -n "$VERCEL_STAGING_PROJECT_ID" ] || { echo "::error::the repo variable VERCEL_STAGING_PROJECT_ID is not set."; exit 1; }
+      - name: Wait for the merges before this one to reach staging (FLAKE-1)
+        id: turn
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/deploy-turnstile.js --job deploy-staging --live-health "$STAGING_API_URL/health"
+      - name: The walk on this commit is pending
+        if: steps.turn.outputs.deploy == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/${{ github.repository }}/statuses/$GITHUB_SHA" -f state=pending -f context=staging/walk -f description="Deploying to staging" -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >/dev/null
+      - name: Install Railway CLI
+        if: steps.turn.outputs.deploy == 'true'
+        run: |
+          for i in 1 2 3; do
+            npm install -g @railway/cli && break
+            echo "install attempt $i failed; retrying in 10s"; sleep 10
+            [ "$i" = "3" ] && exit 1
+          done
+      - name: Stamp build SHA
+        if: steps.turn.outputs.deploy == 'true'
+        run: printf '%s' "$GITHUB_SHA" > .build-sha
+      - name: Deploy staging's web and worker
+        if: steps.turn.outputs.deploy == 'true'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
+        run: |
+          railway up --service "${{ vars.RAILWAY_STAGING_WEB_SERVICE || 'web' }}" --ci
+          railway up --service "${{ vars.RAILWAY_STAGING_WORKER_SERVICE || 'worker' }}" --ci
+      - name: Deploy staging's frontend
+        if: steps.turn.outputs.deploy == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: team_bmpIjp9a9Cji8y2NqHsEuewv
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_STAGING_PROJECT_ID }}
+        run: |
+          # vercel.json names prod's API host; staging's copy names staging's (and fails if prod's is left).
+          node scripts/ci/vercel-staging-config.js "$STAGING_API_URL"
+          npx vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN" --local-config vercel.staging.json \
+            --build-env BUILD_SHA="$GITHUB_SHA" --build-env VITE_API_URL="$STAGING_API_URL"
+      - name: Staging serves this commit (web, worker, frontend), and says it is staging
+        if: steps.turn.outputs.deploy == 'true'
+        run: node scripts/ci/wait-live.js --sha "$GITHUB_SHA" --api "$STAGING_API_URL" --worker --env staging --frontend "$STAGING_APP_URL" --minutes 6
+      - name: A failed staging deploy is a failed walk
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/${{ github.repository }}/statuses/$GITHUB_SHA" -f state=failure -f context=staging/walk -f description="The staging deploy failed, so nothing was walked" -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >/dev/null || true
+    outputs:
+      deployed: ${{ steps.turn.outputs.deploy }}
+
+  # ── STAGE-1 · THE STAGING WALK ────────────────────────────────────────────
+  # Sign in, Home, a profile, record a gift, an import and its undo, a report,
+  # on staging (scripts/ci/staging-walk.js). It writes the commit status
+  # `staging/walk`, which /ops's Ship button reads: a red walk turns this run
+  # red, says why in the summary, and Ship stays off until a green one.
+  staging-walk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [deploy-staging]
+    if: always() && needs.deploy-staging.result == 'success' && needs.deploy-staging.outputs.deployed == 'true'
+    permissions:
+      contents: read
+      statuses: write
+    env:
+      STAGING_API_URL: ${{ vars.STAGING_API_URL }}
+      STAGING_APP_URL: ${{ vars.STAGING_APP_URL || 'https://staging.stewardapp.dev' }}
+      STAGING_WALK_EMAIL: walker@walk.staging.invalid
+      PLAYWRIGHT_DIR: ${{ github.workspace }}/.playwright
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+      PW_DEB_CACHE: ${{ github.workspace }}/.playwright-debs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Playwright cache keys
+        id: pw-keys
+        run: echo "debs=pw-debs-${ImageOS:-ubuntu}-${ImageVersion:-unknown}-1.61.1-webkit" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            .playwright
+            .playwright-browsers
+          key: playwright-${{ runner.os }}-1.61.1-webkit
+      - uses: actions/cache/restore@v4
+        with:
+          path: .playwright-debs
+          key: ${{ steps.pw-keys.outputs.debs }}
+          restore-keys: pw-debs-
+      - name: Install Playwright + Chromium
+        timeout-minutes: 35
+        run: bash scripts/ci/install-playwright.sh 1.61.1
+      - name: Walk staging
+        id: walk
+        env:
+          STAGING_WALK_PASSWORD: ${{ secrets.STAGING_WALK_PASSWORD }}
+        run: node scripts/ci/staging-walk.js --out walk.json
+      - name: Write the walk's result on the commit
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f walk.json ]; then
+            state=$(node -e "process.stdout.write(require('./walk.json').ok ? 'success' : 'failure')")
+            line=$(node -e "process.stdout.write(require('./walk.json').line.slice(0,140))")
+          else
+            state=failure; line="The walk did not finish (see the run)."
+          fi
+          gh api "repos/${{ github.repository }}/statuses/$GITHUB_SHA" -f state="$state" -f context=staging/walk -f description="$line" -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >/dev/null
+          echo "staging/walk on ${GITHUB_SHA:0:7}: $state · $line"

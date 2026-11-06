@@ -789,6 +789,8 @@ function healthBody() {
     // against what it intended before writing, so it can never write to a
     // different product or database that merely shares a loopback host/port.
     product: PRODUCT_ID, database: DB_NAME,
+    // STAGE-1: "staging" or "production" (server/shared/stagingEnv.js).
+    env: require("../shared/stagingEnv").envName(),
     status: "ok", version: "1.1.0", buildSha: BUILD_SHA, db: dbReady, sentry: !!process.env.SENTRY_DSN,
     billing: { mode: billingModeStatus.mode, ok: billingModeStatus.ok, checked: billingModeStatus.checked },
     publicUrl: { url: pu.url, fromEnv: pu.fromEnv },

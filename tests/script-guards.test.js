@@ -38,6 +38,9 @@ const read = f => fs.readFileSync(fileOf(f), "utf8");
 
 // Writes data (API or DB) — must resolve its target through prodGuard.
 const GUARDED_WRITERS = [
+  // STAGE-1 — rebuilds STAGING's data. writerBase with --staging, which refuses unless the
+  // target's /health says env "staging" (prod's says "production").
+  "staging-seed",
   // FIX-58 item 6 — moves theme files that fell back to Postgres into S3. A dry
   // run by default; --apply resolves its database through writerDbUrl(), so a
   // remote one also needs --i-know-this-is-prod. Jonathan runs it.
@@ -251,6 +254,10 @@ const EXEMPT = {
   "board-import-walk": "DEVBOARD-1 — reads a local walk report (markdown) and, with --write, rewrites ops/board.json in the checkout. No BASE, no DB, no network",
   "board": "DEVBOARD-1 — adds, assigns or closes items in ops/board.json (dry run unless --write), reading a local build report for close. No BASE, no DB, no network",
   "deploy-turnstile": "FLAKE-1 — before a deploy job deploys, waits for older push-to-main runs' deploy job of the same name (GitHub Actions API, read-only) and compares this commit with the live one (git, and the live site's public build stamp). No BASE, no DB, no app call, no secret; writes only $GITHUB_OUTPUT and the step summary",
+  "staging-walk": "STAGE-1 — the CI walk of STAGING: signs in, records one gift and one import (then undoes it) in the walk org. Refuses to write anything unless the target's /health says env \"staging\"; prod's says \"production\"",
+  "deploy-lane": "STAGE-1 — reads the merged PR's labels and description from the GitHub API and writes a job output (staging or hotfix). No BASE, no DB, no app call",
+  "vercel-staging-config": "STAGE-1 — writes vercel.staging.json in the checkout from vercel.json with prod's API host replaced. No BASE, no DB, no network",
+  "wait-live": "STAGE-1 — polls a copy's public /health and build-sha meta until it serves a commit. Read-only, no secret",
   "tree-already-passed": "CHORE-2 — asks the GitHub Actions API whether this exact git TREE already passed, and writes two job outputs. Read-only against GitHub, no BASE, no DB, no app writes; every failure mode falls back to running the battery",
 };
 
