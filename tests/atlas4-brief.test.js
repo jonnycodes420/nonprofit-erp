@@ -137,17 +137,17 @@ const mock = http.createServer((req, res) => {
 
   // ── §2 ATLAS ANSWERS IN GOOD TIME ────────────────────────────────────────
   console.log("\n§2 Atlas answers in good time");
-  let t0 = Date.now();
+  let t0 = performance.now();
   const r3 = await atlas({ text: "Who gave last December but not this year?" });
-  const peopleMs = Date.now() - t0;
-  t0 = Date.now();
+  const peopleMs = Math.round(performance.now() - t0);
+  t0 = performance.now();
   const rp = await atlas({ text: "Tell me about Marlowe" });
-  const personMs = Date.now() - t0;
+  const personMs = Math.round(performance.now() - t0);
   console.log(`    people answer ${peopleMs} ms · person answer ${personMs} ms`);
   ok("§2 the people and person answers come back well inside 15 s", peopleMs < 15000 && personMs < 15000 && lineOf(rp).answer && lineOf(rp).answer.type === "person", { peopleMs, personMs });
-  t0 = Date.now();
+  t0 = performance.now();
   const rs = await atlas({ text: "Slowly, who gave the most?" });
-  const slowMs = Date.now() - t0;
+  const slowMs = Math.round(performance.now() - t0);
   ok("§2 a question past its budget answers at the budget with what it has and where it will finish", slowMs < 8000 && /^I stopped after 4 seconds/.test(lineOf(rs).line || "") && lineOf(rs).link && lineOf(rs).link.tab === "ask",
     { slowMs, line: lineOf(rs) });
   const ts = fs.readFileSync(path.join(ROOT, "client/src/components/TellSteward.jsx"), "utf8");
