@@ -45,6 +45,7 @@ const SR = typeof window !== "undefined" ? (window.SpeechRecognition || window.w
 let pageRecognizer = null;
 const recognizer = () => { if (!pageRecognizer && SR) pageRecognizer = new SR(); return pageRecognizer; };
 const MIC_ASKS_KEY = "steward_mic_asks";
+const SLOW_MS = 15000;   // ATLAS-4: an answer still coming after this says so, and names its step
 const micAsks = () => { try { return Number(sessionStorage.getItem(MIC_ASKS_KEY)) || 0; } catch { return 0; } };
 // The browser is about to ask when the permission still reads "prompt".
 async function countMicAsk() {
@@ -87,6 +88,8 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
   const [thread, setThread] = useState([]);       // ATLAS-3: the answers so far, oldest first
   const [progress, setProgress] = useState("");   // ATLAS-3: what Atlas is doing right now
   const poll = useRef(null);
+  const [slow, setSlow] = useState(false);        // ATLAS-4: past SLOW_MS, "Still working: <step>"
+  const slowAt = useRef(null);
   const rec = useRef(null);
   const wantOn = useRef(false);
   const downAt = useRef(0);
@@ -159,14 +162,16 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
   // ATLAS-3 · the status line: the server says which step it is on.
   function watch() {
     const key = newProgressKey();
-    setProgress("");
+    setProgress(""); setSlow(false);
+    if (slowAt.current) clearTimeout(slowAt.current);
+    slowAt.current = setTimeout(() => setSlow(true), SLOW_MS);   // ATLAS-4: past 15 s, say it is still working and on what
     if (poll.current) clearInterval(poll.current);
     poll.current = setInterval(() => {
       apiFetch(`/atlas/progress/${key}`).then(r => { if (r && r.progress && r.progress.line) setProgress(r.progress.line); }).catch(() => {});
     }, 700);
     return key;
   }
-  function unwatch() { if (poll.current) clearInterval(poll.current); poll.current = null; setProgress(""); }
+  function unwatch() { if (poll.current) clearInterval(poll.current); poll.current = null; setProgress(""); if (slowAt.current) clearTimeout(slowAt.current); slowAt.current = null; setSlow(false); }
 
   // ── ASKING ATLAS ──────────────────────────────────────────────────────────
   // The spinners go up before the request leaves, so the first thing she sees
@@ -244,7 +249,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
         {pending && <ul data-testid="atlas-pending" aria-live="polite" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
           {[progress || (pending.lines.length > 1 ? "Reading what you asked" : pending.lines[0])].map(l => <li key={l} data-testid="atlas-status" style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 14, color: T.ink }}>
             <span aria-hidden className="atlas-spin" style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid " + T.bg3, borderTopColor: T.greenDk, animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
-            {l}</li>)}
+            {slow ? `Still working: ${l}` : l}</li>)}
           <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
         </ul>}
 

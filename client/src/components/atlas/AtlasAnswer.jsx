@@ -38,7 +38,9 @@ export default function AtlasAnswer({ line, onGo, busy }) {
       <ol style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 4 }}>
         {a.people.map(p => <li key={p.donorId} data-testid="atlas-list-person" style={{ fontSize: 13.5, lineHeight: 1.4, color: T.ink }}>
           <button type="button" style={{ ...link, fontWeight: 700 }} onClick={() => onGo({ tab: "donor", donorId: p.donorId })}>{p.name}</button>
-          <span style={quiet}> · {p.reason}</span></li>)}
+          {/* ATLAS-4: what matched the question first; lifetime second, quieter */}
+          {p.amount ? <><span data-testid="atlas-list-amount" style={{ fontSize: 13.5, color: T.ink }}> · {p.amount}</span>
+            <span style={{ ...quiet, fontSize: 12 }}> · {p.lifetime}</span></> : <span style={quiet}> · {p.reason}</span>}</li>)}
       </ol>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <span data-testid="atlas-list-count" style={{ fontSize: 13, color: T.ink2 }}>{a.count === 1 ? "1 person" : `${a.count.toLocaleString("en-US")} people`}{a.more > 0 ? `, ${a.more.toLocaleString("en-US")} more in the list` : ""}.</span>

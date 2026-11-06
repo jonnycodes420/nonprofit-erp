@@ -186,6 +186,9 @@ async function briefRowsFor(orgId, donorId) {
 
   const refs = new Set([`person:${donor.id}`]);
   const lines = [];
+  // ATLAS-4: the full words behind each quotable row, so a quote is Steward's (briefComplete.js).
+  const quotes = new Map();
+  const quote = (ref, kind, text) => { const t = String(text || "").trim(); if (t) quotes.set(ref, [...(quotes.get(ref) || []), { kind, text: t }]); };
   const money = require("../../money");
   const givingWord = t("giver_singular") || "donor";
 
@@ -256,6 +259,7 @@ async function briefRowsFor(orgId, donorId) {
       WHERE org_id=? AND donor_id=? AND type = ANY(ARRAY['call','meeting','email','ask','note','stewardship'])
         AND COALESCE(note,'') <> '' ORDER BY date DESC NULLS LAST, created_at DESC LIMIT 5`, [orgId, donorId])) {
     refs.add(`conversation:${i.id}`);
+    quote(`conversation:${i.id}`, "conversation", i.note);
     lines.push(`conversation:${i.id} · ${i.type} on ${i.date}${i.logged_by_name ? ` logged by ${i.logged_by_name}` : ""}: "${String(i.note).slice(0, 500)}"`);
   }
 
@@ -273,11 +277,13 @@ async function briefRowsFor(orgId, donorId) {
   // WHAT THE OFFICER WROTE.
   if (String(donor.notes || "").trim()) {
     refs.add(`note:${donor.id}`);
+    quote(`note:${donor.id}`, "notes", donor.notes);
     lines.push(`note:${donor.id}: the note on their record reads: "${String(donor.notes).slice(0, 1200)}"`);
   }
   // DATES-1 · the short "About them" note people read first on the profile.
   if (String(donor.about_them || "").trim()) {
     refs.add(`note:${donor.id}`);
+    quote(`note:${donor.id}`, "about", donor.about_them);
     lines.push(`note:${donor.id}: what the team wrote about them, read first on their profile: "${String(donor.about_them).slice(0, 500)}"`);
   }
 
@@ -293,7 +299,7 @@ async function briefRowsFor(orgId, donorId) {
   { const c = toCents(donor.total_giving); if (c != null) grounded.push(toDollars(c), c); }
   for (const l of lines) for (const m of String(l).matchAll(/\d+(?:\.\d+)?/g)) grounded.push(Number(m[0]));
 
-  return { donor, org, t, refs, lines, grounded: [...new Set(grounded)], giftCount: gifts.length, givingWord };
+  return { donor, org, t, refs, lines, quotes, grounded: [...new Set(grounded)], giftCount: gifts.length, givingWord };
 }
 
 // GET /donors/:id/brief-rows — EXACTLY what the model would be handed, and
@@ -333,14 +339,16 @@ app.post("/donors/:id/brief", requireAuth, requireCrm, checkWriteAccess, wrap(as
 
   // ATLAS-3 · first words at once, the last brief kept until a row changes.
   const BF = require("./briefFast");
+  const BC = require("./briefComplete");   // ATLAS-4: no sentence ends on a colon; quotes are the record's, in full
   const fp = BF.fingerprint(ctx.lines);
   const write = BF.wantsStream(req) ? BF.startStream(res) : null;
   if (write) write({ type: "start", donorName: ctx.donor.name, opening: BF.openingLines(ctx, require("../../money"), toCents) });
   const finish = (status, out) => { if (write) { write(status < 300 ? { type: "brief", brief: out } : { type: "error", ...out }); return res.end(); } return res.status(status).json(out); };
   if (!(req.query && req.query.fresh === "1")) {
     const hit = await BF.cachedBrief(query, orgId, ctx.donor.id, fp);
-    if (hit) return finish(200, { runId: hit.runId, donorId: ctx.donor.id, donorName: ctx.donor.name, headline: hit.brief.headline, sections: hit.brief.sections,
-      dropped: hit.brief.dropped || [], droppedSentence: B.droppedSentence(hit.brief.dropped || []), rowsRead: ctx.refs.size, footer: B.BRIEF_FOOTER, cached: true, writtenAt: hit.writtenAt });
+    const kept = hit && BC.completeBrief(hit.brief, ctx);   // ATLAS-4: a brief kept from before is completed too
+    if (hit) return finish(200, { runId: hit.runId, donorId: ctx.donor.id, donorName: ctx.donor.name, headline: kept.headline, sections: kept.sections,
+      dropped: kept.dropped || [], droppedSentence: B.droppedSentence(kept.dropped || []), rowsRead: ctx.refs.size, footer: B.BRIEF_FOOTER, cached: true, writtenAt: hit.writtenAt });
   }
 
   const runId = newId("arun");
@@ -358,7 +366,7 @@ app.post("/donors/:id/brief", requireAuth, requireCrm, checkWriteAccess, wrap(as
     "- You may say NOTHING about this person that is not in the rows. No capacity, no wealth, no means, no guess about what they could give.",
     "- Use no figure that is not in the rows you were handed. Never state a rule about how giving works (no 'donors who give twice usually…').",
     "- A pledge is a promise, not money received. A soft credit is recognition, not their own giving. Say so if you mention them.",
-    "- Quote a conversation rather than summarizing away the words the officer chose.",
+    "- Quote a conversation rather than summarizing away the words the officer chose. A quote goes inside the sentence that introduces it, whole; never end a sentence on a colon.",
     "- Leave a section out if the rows say nothing about it. Do not pad.",
     "- Use this organization's own vocabulary where the rows give it.",
     ...[BF.vocabularyRule(ctx.givingWord)].filter(Boolean),
@@ -384,11 +392,11 @@ app.post("/donors/:id/brief", requireAuth, requireCrm, checkWriteAccess, wrap(as
     return finish(502, { error: "The brief could not be written just now.", runId });
   }
 
-  const checked = BF.scrub(B.validateBrief(raw, {
+  const checked = BC.completeBrief(BF.scrub(B.validateBrief(raw, {
     rows: ctx.refs,
     ungrounded: (text, opts) => TH.ungroundedClaims(text, opts),
     groundedValues: ctx.grounded,
-  }));
+  })), ctx);
   await run(
     `UPDATE agent_runs SET status='done', finished_at=NOW(), actions=?, declined=?, withheld=?, withheld_reason=? WHERE id=?`,
     [JSON.stringify({ brief: checked, donorId: ctx.donor.id }), checked.dropped.length, checked.dropped.length,
