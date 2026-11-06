@@ -4,7 +4,8 @@
 // draft took about 20 s with no sign of what was happening. Every model call
 // here is a stand-in at a realistic latency, the same rule for every call:
 //   700 ms to the first token, then 15 ms a token (about 67 tokens a second,
-//   Sonnet-class), a token being four characters of the tool's JSON.
+//   Sonnet-class), a token being four characters of the tool's JSON;
+//   and every database statement waits prod's 17 ms round trip.
 // A one-step read is about 1.5 s, a thank-you draft about 4.5 s. Streamed
 // calls get the same clock, delivered in pieces.
 //   §1 a draft: first words on screen under 3 s, the full draft under 10 s,
@@ -38,6 +39,9 @@ process.env.STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_
 process.env.STEWARD_CREDENTIAL_KEY = process.env.STEWARD_CREDENTIAL_KEY || "local-scratch-credential-key-0123456789";
 process.env.ANTHROPIC_API_KEY = "sk-ant-speed3-standin";
 process.env.ANTHROPIC_BASE_URL = `http://localhost:${MOCK}`;
+// Every statement waits prod's database round trip (17 ms), as on Railway.
+process.env.TEST_MODE = "1";
+process.env.TEST_DB_LATENCY_MS = process.env.TEST_DB_LATENCY_MS || "17";
 
 const { ok, summary, login, api, q, closeDb, civilToday } = require("./helpers");
 const bcrypt = require("bcryptjs");
@@ -160,6 +164,10 @@ async function timed(tok, text, label) {
   const r = await api("POST", "/atlas", tok, { text, progressKey: key });
   const total = Math.round(performance.now()) - T0;
   on = false; await watch;
+  // The line is kept for a minute: the last step's line, however quick it was.
+  const last = await api("GET", `/atlas/progress/${key}`, tok).catch(() => null);
+  const lg = last && last.body && last.body.progress;
+  if (lg && lg.line && !seen.some(x => x.line === lg.line)) seen.push({ line: lg.line, at: total });
   const lines = (r.body && r.body.request && r.body.request.lines) || [];
   // The finished answer is words on screen too, when it comes first.
   if (!firstWords && lines.some(x => x.line)) firstWords = { at: total, words: lines.map(x => x.line).join(" ") };
