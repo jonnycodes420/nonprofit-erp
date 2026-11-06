@@ -14,6 +14,7 @@
 const DEP = require("../../depositsFile");
 const BK = require("../../bookkeeper");
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
+const { splitGiftRows, giftCountOf } = require("./splitGiftRows");   // MOPUP-2: a split gift is a row per fund line
 const { NOT_CREDIT } = require("../../creditTypes");   // FIX-49: soft and matching credits are not money
 
 function mount(ctx) {
@@ -712,7 +713,7 @@ async function reportBookkeeper(orgId, p) {
     `SELECT COUNT(*)::int AS n, COALESCE(SUM(g.amount * 100), 0)::text AS cents
        ${REPORT_GIFT_FROM} ${tWhere}`, tParams);
 
-  const out = rows.map(r => {
+  const giftRows = rows.map(r => {
     const cents = bkCents(r.amount);
     const feeCents = bkCents(r.processor_fee_amount);
     const nonCash = DEP.isNonCash({ type: r.gift_type });
@@ -746,6 +747,10 @@ async function reportBookkeeper(orgId, p) {
       giftId: r.gift_id,
     };
   });
+  // MOPUP-2: a gift split across funds is one row per fund line (splitGiftRows.js).
+  const out = splitGiftRows(giftRows,
+    await NUMBERS.fundLines.linesFor(query, orgId, giftRows.map(r => r.giftId)), bkDollars);
+  const giftCount = giftCountOf(out);
 
   // TOTALS BY FUND, over the same rows. A gift with no fund is its own line,
   // named for what it is — never silently dropped and never folded into
@@ -785,10 +790,10 @@ async function reportBookkeeper(orgId, p) {
   // `display` is the money as a person reads it, through the one formatter.
   // `noun` lets a check be called a check ("11 checks with no number").
   const issue = (key, label, rows2, fix, noun = "gift") => rows2.length
-    ? { key, label, noun, count: rows2.length, cents: rows2.reduce((s, r) => s + r.cents, 0),
+    ? { key, label, noun, count: giftCountOf(rows2), cents: rows2.reduce((s, r) => s + r.cents, 0),
         amount: bkDollars(rows2.reduce((s, r) => s + r.cents, 0)),
         display: require("../../money").formatCents(rows2.reduce((s, r) => s + r.cents, 0)),
-        giftIds: rows2.map(r => r.giftId).slice(0, 2000), fix }
+        giftIds: [...new Set(rows2.map(r => r.giftId))].slice(0, 2000), fix }
     : null;
   const issues = [
     issue("no_method", "with no payment method", noMethod, "Open each gift and say how the money arrived."),
@@ -813,7 +818,7 @@ async function reportBookkeeper(orgId, p) {
     netCents: rowCents - feeCents,
     net: bkDollars(rowCents - feeCents),
     nonCashCents: out.filter(r => r.cashOrNot === "Non-cash").reduce((s, r) => s + r.cents, 0),
-    giftCount: out.length,
+    giftCount,
     issues,
     // A sentence, because a count with no sentence is a number nobody acts on.
     issueSentence: issues.length
@@ -857,7 +862,7 @@ async function reportDeposits(orgId, p) {
     paymentMethod: r.paymentMethod, date: r.date,
     depositedOn: r.depositedOn, depositRef: r.deposit,
     depositAccount: accountFor(r),
-    donorName: r.donorName, description: r.notes,
+    donorName: r.donorName, description: r.notes, giftId: r.giftId,
   })));
 
   // THE ASSERTION, IN CENTS, BEFORE ANY FILE IS WRITTEN. The cash gifts and

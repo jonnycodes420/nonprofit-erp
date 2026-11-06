@@ -79,7 +79,7 @@ function depositGroups(rows = []) {
         account: String(r.depositAccount || "").trim() || null,
         matched: (k.split("|").slice(1).join("|")) !== UNMATCHED_REF,
         byFund: new Map(),
-        grossCents: 0, feeCents: 0, giftCount: 0,
+        grossCents: 0, feeCents: 0, giftCount: 0, giftIds: new Set(),
         methods: new Set(),
       });
     }
@@ -90,7 +90,9 @@ function depositGroups(rows = []) {
     g.byFund.set(fund, (g.byFund.get(fund) || 0) + cents);
     g.grossCents += cents;
     g.feeCents += fee;
-    g.giftCount += 1;
+    // MOPUP-2: a split gift arrives as one row per fund line; it is one gift.
+    if (r.giftId) { if (!g.giftIds.has(r.giftId)) { g.giftIds.add(r.giftId); g.giftCount += 1; } }
+    else g.giftCount += 1;
     if (r.paymentMethod) g.methods.add(String(r.paymentMethod));
     if (!g.account && r.depositAccount) g.account = String(r.depositAccount);
   }

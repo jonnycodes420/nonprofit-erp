@@ -448,7 +448,7 @@ function NoDonorsCard({ onNavigate, sample, importAbove = false }) {
   );
 }
 
-export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = false, drift = null, importAbove = false, onSettled = null }) {
+export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = false, drift = null, importAbove = false, onSettled = null, reserve = null, onDeckHeight = null }) {
   // HOME-4: the deck alone; the ladder and "See all" panels read the cards when they open.
   // PERF-2: Home's first read carries each tab's first moves (deck.partial);
   // every move is read when she first reaches for the deck (a touch, a hover,
@@ -483,8 +483,12 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
   // (drawn or failed), so a late deck never pushes the Thread down.
   const settled = !!(deck || err);
   useEffect(() => { if (settled && onSettled) onSettled(); }, [settled]);
+  // MOPUP-2: the drawn deck's height is what a phone reserves next time (Home passes reserve and onDeckHeight; lib/movesGate.js).
+  const deckRef = useRef(null);
+  useEffect(() => { if (deck && deckRef.current && onDeckHeight) onDeckHeight(deckRef.current.offsetHeight); }, [!!deck]);
   if (err) return null;
-  if (!deck) return <section aria-label="Your moves" data-testid="home-moves" style={{ ...CARD, color: T.ink3, fontSize: 14 }}>Reading your donors…</section>;
+  // MOPUP-2: on a phone the stand-in is as tall as the deck it becomes (lib/movesGate.js).
+  if (!deck) return <section aria-label="Your moves" data-testid="home-moves" style={{ ...CARD, color: T.ink3, fontSize: 14, boxSizing: "border-box", minHeight: reserve || undefined }}>Reading your donors…</section>;
 
   const live = t => t.moves.filter(m => !gone.has(m.id));
   const tabs = deck.tabs.map(t => ({ ...t, left: live(t) }));
@@ -551,7 +555,7 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
   const driftPeople = deck.drift && deck.drift.count > 0;
 
   return (
-    <section aria-label="Your moves" data-testid="home-moves" className="moves-deck" tabIndex={0} onKeyDown={onKey} onPointerEnter={rest} onTouchStart={rest} onFocus={rest}
+    <section ref={deckRef} aria-label="Your moves" data-testid="home-moves" className="moves-deck" tabIndex={0} onKeyDown={onKey} onPointerEnter={rest} onTouchStart={rest} onFocus={rest}
       style={{ display: "flex", flexDirection: "column", gap: 18, borderRadius: 12 }}>
       <style>{DECK_CSS}</style>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 10 }}>
@@ -689,7 +693,7 @@ export function FirstLook({ onNavigate, isReadOnly, onClose }) {
 
 // REPORTS: what happened after each kind of card.
 const KIND_LABEL = { review: "Rows that may not be gifts", year_end: "Year-end givers due", sponsors: "Sponsors to renew", second_gift: "First gift, no second yet",
-  upgraded: "Upgraded on their own", major_slipping: "Major donor slipping", pledges: "Open pledges to collect", planned: "Planned-gift signals", family: "Family or network to link",
+  gave_before: "Gave before Steward, once since",  upgraded: "Upgraded on their own", major_slipping: "Major donor slipping", pledges: "Open pledges to collect", planned: "Planned-gift signals", family: "Family or network to link",
   lapsing: "Lapsing donors" };
 export function WhatWorked() {
   const [d, setD] = useState(null);

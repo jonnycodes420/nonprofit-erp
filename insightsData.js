@@ -16,7 +16,10 @@ const insights = require("./insights");
 async function rowsFor(orgId) {
   const [people, households, gifts, pledges, installments, programs, funds, org, reviews, links, outcomes, imports] = await Promise.all([
     query(`SELECT id, name, kind, salutation, contact_name, spouse_name, household_id, assigned_to_name, deceased, do_not_contact, do_not_solicit, address, is_sample, deleted_at,
-                  ROUND(COALESCE(total_giving, 0) * 100)::bigint AS lifetime_cents
+                  ROUND(COALESCE(total_giving, 0) * 100)::bigint AS lifetime_cents,
+                  -- MOPUP-2: the total a file stated (FEEL-1's imported_import_id), so a Grow move never calls them new
+                  CASE WHEN imported_import_id IS NOT NULL THEN ROUND(COALESCE(imported_total, 0) * 100)::bigint ELSE 0 END AS stated_cents,
+                  imported_import_id, imported_through
              FROM donors WHERE org_id=? AND deleted_at IS NULL AND COALESCE(is_sample,false)=false`, [orgId]),
     query(`SELECT id, name FROM households WHERE org_id=?`, [orgId]),
     query(`SELECT g.id, g.donor_id, g.amount, g.date::text AS date, g.memo, g.notes, g.campaign, g.payment_method, g.gift_type, g.type,

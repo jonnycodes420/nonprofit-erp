@@ -28,4 +28,15 @@ async function lifetimeCents(query, orgId, ids) {
   return new Map(rows.map(r => [r.id, Number(r.cents)]));
 }
 
-module.exports = { LIFETIME, AFTER_IMPORT, lifetimeCents };
+// MOPUP-2: AFTER_IMPORT for rows already read (the move deck): `gift` has
+// date (YYYY-MM-DD or empty), import_id and amount_cents; `person` its
+// donors.imported_through and imported_import_id. The cents given since.
+function afterImport(gift, person) {
+  const p = person || {};
+  if (!p.imported_through) return true;
+  if (!gift.date) return !p.imported_import_id || gift.import_id !== p.imported_import_id;
+  return String(gift.date).slice(0, 10) > String(p.imported_through).slice(0, 10);
+}
+const sinceImportCents = (gifts, personOf) => (gifts || []).filter(g => afterImport(g, personOf(g))).reduce((n, g) => n + (Number(g.amount_cents) || 0), 0);
+
+module.exports = { LIFETIME, AFTER_IMPORT, lifetimeCents, afterImport, sinceImportCents };

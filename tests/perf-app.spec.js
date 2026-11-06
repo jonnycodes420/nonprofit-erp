@@ -111,6 +111,7 @@ async function seed() {
 // One screen in one fresh browser. `ready` is the element that means this
 // screen is on the page; `rows` (optional) how many of it must be there.
 async function measure(browser, machine, auth, url, ready, rows = 1, { warm = false, hour = 14, late = false, lateDeck = false } = {}) {
+  // lateDeck: true holds the deck's read 1.3 s (desktop); a number holds it that long.
   const ctx = await browser.newContext({ ...machine.ctx, serviceWorkers: "block", timezoneId: "UTC" });
   // SHIFT-1: the page's clock starts at the pinned hour and keeps ticking. Not
   // Playwright's clock.setFixedTime: a Date that never moves slowed the warm
@@ -180,7 +181,7 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
   const errors = [];
   page.on("pageerror", e => errors.push(String(e.message || e)));
   if (late) await lateHeader(page);
-  if (lateDeck) await lateMovesDeck(page);
+  if (lateDeck) await lateMovesDeck(page, lateDeck === true ? 1300 : lateDeck);
   await page.goto(APP + url, { waitUntil: "load", timeout: 60000 });
   await page.waitForFunction(([sel, n]) => document.querySelectorAll(sel).length >= n, [ready, rows], { timeout: 45000 }).catch(() => {});
   await page.waitForLoadState("networkidle", { timeout: 45000 }).catch(() => {});
@@ -206,6 +207,9 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
     twice: sent.filter(x => x.method === "GET" && /\/home\/bundle\?/.test(x.url)).flatMap(x => new URL(x.url).searchParams.getAll("p")).filter((p, i, a) => a.indexOf(p) !== i),
   };
   out.usable = r.readyAt ? Math.max(out.readyAt, out.longEnd, out.lcp, Math.round(r.netQuiet || 0)) : 0;
+  // MOPUP-2: a held read can still be in flight here; closing under it threw
+  // route.fetch ECONNRESET and crashed the run. Let the handlers finish first.
+  await page.unrouteAll({ behavior: "wait" }).catch(() => {});
   await ctx.close();
   return out;
 }
@@ -222,25 +226,29 @@ const LATE_MS = 1500;
 // cold server or CI's runner makes it. On main the deck landed 1,200 px tall
 // above the Thread and pushed it out of view (desktop CLS 0.201 at ~1.5 s).
 const DESKTOP_LATE_RUNS = 10;
-async function lateMovesDeck(page) {
-  await page.route(u => u.href.startsWith(BASE) && /insights\?view=deck/.test(decodeURIComponent(u.href)), async r => {
-    await new Promise(x => setTimeout(x, 1300));
+const PHONE_LATE_DECK_MS = 3000;   // MOPUP-2
+// MOPUP-2: a held route whose page is closing gives up quietly; any other
+// failure lets the request through unchanged, so the leg measures, never crashes.
+const settled = h => async r => { try { await h(r); } catch { await r.fallback().catch(() => {}); } };
+async function lateMovesDeck(page, ms = 1300) {
+  await page.route(u => u.href.startsWith(BASE) && /insights\?view=deck/.test(decodeURIComponent(u.href)), settled(async r => {
+    await new Promise(x => setTimeout(x, ms));
     await r.continue();
-  });
+  }));
 }
 const LATE_LINE = "Steward did 3 things for you yesterday, and 2 drafts are waiting for you.";
 async function lateHeader(page) {
-  await page.route(u => u.href.startsWith(BASE + "/home/bundle") && u.searchParams.getAll("p").includes("/home/lead"), async r => {
+  await page.route(u => u.href.startsWith(BASE + "/home/bundle") && u.searchParams.getAll("p").includes("/home/lead"), settled(async r => {
     const res = await r.fetch();
     const b = await res.json();
     b["/home/lead"] = { status: 503 };
     if (b["/agent/daily-line"] && b["/agent/daily-line"].body) b["/agent/daily-line"].body.line = LATE_LINE;
     await r.fulfill({ response: res, body: JSON.stringify(b) });
-  });
-  await page.route(u => u.href.startsWith(BASE + "/home/lead"), async r => { await new Promise(z => setTimeout(z, LATE_MS)); await r.continue(); });
+  }));
+  await page.route(u => u.href.startsWith(BASE + "/home/lead"), settled(async r => { await new Promise(z => setTimeout(z, LATE_MS)); await r.continue(); }));
   // And the rail's checklist is a new org's (fewer than three steps done):
   // on main its card, read after the first paint, came in above Your moves.
-  await page.route(u => u.href.startsWith(BASE + "/home/bundle") && u.searchParams.getAll("p").includes("/org/setup-status"), async r => {
+  await page.route(u => u.href.startsWith(BASE + "/home/bundle") && u.searchParams.getAll("p").includes("/org/setup-status"), settled(async r => {
     const res = await r.fetch();
     const b = await res.json();
     const st = b["/org/setup-status"] && b["/org/setup-status"].body;
@@ -249,7 +257,7 @@ async function lateHeader(page) {
       Object.assign(st, { complete: false, cardState: null, doneCount: st.items.filter(i => i.done).length });
     }
     await r.fulfill({ response: res, body: JSON.stringify(b) });
-  });
+  }));
 }
 
 // LOAD-1 · A PROFILE OPENS IN TWO REQUESTS. Donors drawn and quiet, then one
@@ -358,6 +366,11 @@ function preloaderAllowed() {
   const homeD = await measureN(browser, DESKTOP, auth, "/dashboard", HOME_READY);
   const homeDL = [];
   for (let i = 0; i < DESKTOP_LATE_RUNS; i++) homeDL.push(await measure(browser, DESKTOP, auth, "/dashboard", HOME_READY, 1, { lateDeck: true }));
+  // MOPUP-2: a late deck on a phone, 10 runs. A phone's Home is ready at about
+  // 3.5 s, so 1.3 s lands before anything under the deck is drawn; held
+  // PHONE_LATE_DECK_MS, main moved the block under it out of view (CLS 0.408).
+  const homePL = [];
+  for (let i = 0; i < DESKTOP_LATE_RUNS; i++) homePL.push(await measure(browser, PHONE, auth, "/dashboard", HOME_READY, 1, { hour: HOURS[0], lateDeck: PHONE_LATE_DECK_MS }));
   // SHIFT-1: the phone at each pinned hour; its times are the morning's, its CLS the worst hour's.
   const byHour = [];
   for (const hour of HOURS) byHour.push({ hour, ...(await measureN(browser, PHONE, auth, "/dashboard", HOME_READY, 1, { hour: hour })) });
@@ -423,6 +436,9 @@ function preloaderAllowed() {
   const lateBad = homeDL.filter(r => r.cls >= CLS_DESKTOP_MAX);
   ok(`nothing on Home moves on a desktop when the moves deck answers late, ${DESKTOP_LATE_RUNS} runs out of ${DESKTOP_LATE_RUNS} (worst CLS ${Math.max(...homeDL.map(r => r.cls))}; under ${CLS_DESKTOP_MAX})`,
      lateBad.length === 0, lateBad.map(r => ({ cls: r.cls, moved: r.shifts })));
+  const latePhoneBad = homePL.filter(r => r.cls >= CLS_DESKTOP_MAX);
+  ok(`nothing on Home moves on a phone when the moves deck answers late, ${DESKTOP_LATE_RUNS} runs out of ${DESKTOP_LATE_RUNS} (worst CLS ${Math.max(...homePL.map(r => r.cls))}; under ${CLS_DESKTOP_MAX})`,
+     latePhoneBad.length === 0, latePhoneBad.map(r => ({ cls: r.cls, moved: r.shifts })));
   ok("Home asks for none of its bundled reads twice (desktop and phone)", !homeD.twice.length && !homeP.twice.length && !homeW.twice.length, [...homeD.twice, ...homeP.twice, ...homeW.twice].slice(0, 3));
   ok(`Home: no read the rail needs starts after the first paint (${RAIL_READS.length} reads, desktop and phone)`,
      RAIL_READS.length > 5 && !homeD.lateRail.length && !homeP.lateRail.length, [...homeD.lateRail, ...homeP.lateRail].slice(0, 6));

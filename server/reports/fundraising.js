@@ -570,6 +570,7 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-3"
     // read orgGoalRaised over the goal's own start and end.
     const currentAmount = await orgGoalRaised(orgId, gr);
     const pStart = gr.period_start, pEnd = gr.period_end;
+    const DD = await import("../../shared/displayDate.js");
     // GIFTS-2: the goal says whether pledges count; pace reads committed when they do.
     const commit = await goalCommitted(orgId, gr, currentAmount);
     const pace = paceWithCommitment(currentAmount, commit, goalAmount, pStart, pEnd);
@@ -578,7 +579,8 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-3"
     goal = {
       id: gr.id, label, goalType: gr.goal_type, goalAmount, currentAmount,
       periodStart: pStart, periodEnd: pEnd, source: "goal", ...pace, commitment: commit,
-      sourceNote: `Counts every gift dated ${pStart} to ${pEnd}, this goal's own dates${commit.countPledges ? ", and what is still owed on open pledges due by then" : ""}.`,
+      // MOPUP-2: dates read the one way a person reads them (shared/displayDate.js), never ISO.
+      sourceNote: `Counts every gift dated ${DD.displayDate(pStart) || pStart} to ${DD.displayDate(pEnd) || pEnd}, this goal's own dates${commit.countPledges ? ", and what is still owed on open pledges due by then" : ""}.`,
     };
   }
 

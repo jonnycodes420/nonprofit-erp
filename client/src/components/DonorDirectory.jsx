@@ -26,6 +26,7 @@ import { displayDate, displayMonth } from "../../../shared/displayDate.js";
 import { displayName } from "../../../shared/displayName.js";
 import { countLabel, plural } from "../../../shared/countWords.js";
 import { MergeWithModal } from "./profile/MergeWith";
+import { BulkTrash } from "./donors/BulkTrash";   // MOPUP-2: More → Move to trash
 // WALKB-1 · A SEARCH RESULT SAYS WHY IT IS THERE. A name match needs no words;
 // anything else does ("Matched household: The Marlowe Hart household"), and an
 // archived person a search found says so.
@@ -347,7 +348,6 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
   const [privacy]=usePrivacy();   // CLIENT-SAFE-1
   const [planSel,setPlanSel]=useState(null);   // BUILD-85 — the selection being planned
   const [assignDrop,setAssignDrop]=useState(false);
-  const [delModal,setDelModal]=useState(false);
   const [busy,setBusy]=useState(false);
   const [toast,setToast]=useState("");
   const [exporting,setExporting]=useState(false);
@@ -536,30 +536,6 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
       flash(`${r.added} added to your pipeline`);
       setSelIds(new Set());if(onBulkDone)onBulkDone();
     }catch(e){flash("Error: "+e.message);}
-    setBusy(false);
-  }
-
-  // FIX-54: Delete takes everyone matching when that is what is selected, and
-  // the confirm, the request and the toast all carry the same N.
-  const delIds=matchingIds||selFiltered.map(d=>d.id);
-  async function bulkDelete(){
-    const ids=delIds;
-    setBusy(true);
-    try{
-      const r=await apiFetch("/donors/bulk-delete",{method:"POST",body:JSON.stringify({ids,count:ids.length})});
-      setSelIds(new Set());setMatchingIds(null);setDelModal(false);if(onBulkDone)onBulkDone();
-      // WIRE-1: the shared Undo toast brings the whole batch back, one trash row each.
-      const undoIds=Array.isArray(r.undoIds)?r.undoIds:[];
-      const n=r.deleted;
-      if(undoIds.length){
-        offerUndo({ undoSeconds:r.undoSeconds, message:`Moved ${n} ${n===1?"person":"people"} to trash.`, undoAction: async()=>{
-          // HARDEN-1: one request, one transaction: all of them come back or none do.
-          await apiFetch("/deleted-records/restore-people",{method:"POST",body:JSON.stringify({ids:undoIds})});
-          if(onBulkDone)onBulkDone();
-          return { restored: undoIds.length };
-        } }, "people");
-      } else flash(`${countLabel(n, "donor")} moved to trash`);
-    }catch(e){flash(e&&(e.error==="active_plan"||e.error==="count_changed")?e.sentence:"Error: "+e.message);}
     setBusy(false);
   }
 
@@ -778,10 +754,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
               style={{background:"transparent",border:"1px solid "+T.gold500,borderRadius:8,padding:"7px 12px",color:T.gold500,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
               {exporting?"Exporting…":"Export"}
             </button>
-            {isAdmin&&<button type="button" data-testid="bulk-delete-matching" onClick={()=>setDelModal(true)} disabled={busy}
-              style={{background:T.terracotta,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
-              Delete
-            </button>}
+            {isAdmin&&<BulkTrash ids={matchingIds} disabled={busy} flash={flash} onDone={()=>{setSelIds(new Set());setMatchingIds(null);if(onBulkDone)onBulkDone();}}/>}
           </>}
           {!matchingIds&&<>
           {!isReadOnly&&<BulkAddToJourney ids={selFiltered.map(d=>d.id)} disabled={busy} onDone={()=>{if(onBulkDone)onBulkDone();}}/>}
@@ -872,13 +845,8 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
             </div>
           )}
 
-          {/* Delete (admin only) */}
-          {isAdmin&&(
-            <button onClick={()=>setDelModal(true)} disabled={busy}
-              style={{background:T.terracotta,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
-              Delete
-            </button>
-          )}
+          {/* MOPUP-2: More → Move to trash (admin only), with people who have gifts left unless she says so */}
+          {isAdmin&&<BulkTrash ids={selFiltered.map(d=>d.id)} disabled={busy} flash={flash} onDone={()=>{setSelIds(new Set());setMatchingIds(null);if(onBulkDone)onBulkDone();}}/>}
           </>}
         </div>
       )}
@@ -1107,31 +1075,6 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
         </div>
       )}
 
-      {/* Delete confirmation modal — never auto-confirm */}
-      {delModal&&(
-        <Modal className="commit-screen" onClose={()=>setDelModal(false)} width={420} zIndex={900}
-          backdrop="rgba(15,26,18,0.72)" blur={false} padding="36px 32px"
-          ariaLabel="Delete donors" dialogStyle={{background:T.bg,borderRadius:20}}>
-          <div>
-            <div style={{fontSize:24,fontWeight:400,color:T.ink,fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em",marginBottom:12,lineHeight:1.2}}>
-              Delete {delIds.length.toLocaleString("en-US")} {delIds.length!==1?"people":"person"}?
-            </div>
-            <div style={{fontSize:14,color:T.ink3,lineHeight:1.65,marginBottom:28}}>
-              This removes {delIds.length.toLocaleString("en-US")} {delIds.length!==1?"people":"person"} and their gift history from your active lists. Steward keeps the records, so support can bring them back if this was a mistake. There is no trash screen to restore them from yourself.
-            </div>
-            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-              <button onClick={()=>setDelModal(false)}
-                style={{flex:1,background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 16px",color:T.ink3,fontSize:13,fontWeight:600,cursor:"pointer",minWidth:100}}>
-                Cancel
-              </button>
-              <button type="button" data-commit onClick={bulkDelete} disabled={busy}
-                style={{flex:1,background:T.terracotta,border:"none",borderRadius:10,padding:"11px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:busy?"not-allowed":"pointer",opacity:busy?0.7:1,minWidth:100}}>
-                {busy?"Deleting…":`Delete ${delIds.length.toLocaleString("en-US")} ${delIds.length!==1?"people":"person"}`}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }

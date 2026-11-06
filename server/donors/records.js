@@ -274,9 +274,29 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
     [ids, req.user.orgId]
   );
   if (owned.length !== ids.length) return res.status(403).json({ error: "One or more donors not found in your org" });
+  // MOPUP-2 · the Donors list's "Move to trash" says what to do with people who
+  // have gifts: "skip" (its default) leaves them, "include" takes them only when
+  // the confirm named how many (withGiftsCount). Absent, the route is as before
+  // (Undo import's "remove them too" names its own people).
+  let skippedWithGifts = 0, trashIds = ids;
+  if (req.body.withGifts !== undefined) {
+    const mode = String(req.body.withGifts);
+    if (mode !== "skip" && mode !== "include") return res.status(400).json({ error: "withGifts must be skip or include" });
+    const giving = await peopleWithGifts(req.user.orgId, ids);
+    if (mode === "include" && Number(req.body.withGiftsCount) !== giving.size) {
+      req.audit && req.audit.skip && req.audit.skip("a refused delete changes nothing");
+      return res.status(409).json({ error: "with_gifts_changed", withGifts: giving.size,
+        sentence: `You confirmed ${Number(req.body.withGiftsCount || 0).toLocaleString("en-US")} with gifts, and ${giving.size.toLocaleString("en-US")} of these people have gifts. Nobody was moved to trash.` });
+    }
+    if (mode === "skip") { trashIds = ids.filter(id => !giving.has(id)); skippedWithGifts = ids.length - trashIds.length; }
+    if (!trashIds.length) {
+      req.audit && req.audit.skip && req.audit.skip("nothing to move");
+      return res.json({ deleted: 0, skippedWithGifts, undoIds: [], undoSeconds: UNDO_SECONDS });
+    }
+  }
   // THREAD-3: nobody with a live plan is deleted, in a batch either. The
   // whole batch is refused so nothing half-happens; the sentence names them.
-  const plans = await livePlansFor(req.user.orgId, ids);
+  const plans = await livePlansFor(req.user.orgId, trashIds);
   if (plans.length) {
     req.audit && req.audit.skip && req.audit.skip("a refused delete changes nothing");
     const people = [...new Set(plans.map(p => p.donor_id))];
@@ -291,7 +311,7 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
   const { changes, undoIds } = await withTransaction(async (client) => {
     const gone = await queryTx(client,
       "UPDATE donors SET deleted_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL RETURNING id",
-      [ids, req.user.orgId]);
+      [trashIds, req.user.orgId]);
     // one trash row each, written 500 at a time (a whole org is one click now)
     const undoIds = gone.map(() => newId("del"));
     for (let k = 0; k < gone.length; k += 500) {
@@ -303,7 +323,24 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
     return { changes: gone.length, undoIds };
   });
   require("../../routes/dataHealth").recheckSoon(req.user.orgId, "delete");   // FIX-59: Data health is current
-  res.json({ deleted: changes, undoIds, undoSeconds: UNDO_SECONDS });
+  if (req.audit && skippedWithGifts) req.audit.label(`Moved ${changes} ${changes === 1 ? "person" : "people"} to trash; left ${skippedWithGifts} with gifts.`);
+  res.json({ deleted: changes, skippedWithGifts, undoIds, undoSeconds: UNDO_SECONDS });
+}));
+
+// MOPUP-2 · what the trash confirm says before it asks: of these people, how
+// many have gifts. Reads only; a POST because a filter's selection can be
+// thousands of ids.
+async function peopleWithGifts(orgId, ids) {
+  const rows = await query(
+    `SELECT DISTINCT g.donor_id FROM gifts g WHERE g.org_id = ? AND g.donor_id = ANY(?)`, [orgId, ids]);
+  return new Set(rows.map(r => r.donor_id));
+}
+app.post("/donors/trash-check", requireAuth, requireAdmin, wrap(async (req, res) => {
+  req.audit && req.audit.skip && req.audit.skip("a read: nothing changes");
+  if (!Array.isArray(req.body.ids) || req.body.ids.length === 0) return res.status(400).json({ error: "ids array required" });
+  const ids = [...new Set(req.body.ids.map(String))];
+  const giving = await peopleWithGifts(req.user.orgId, ids);
+  res.json({ count: ids.length, withGifts: giving.size });
 }));
 
 // The "permanent-purge" the comment above bulk-delete anticipated: hard-

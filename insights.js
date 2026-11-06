@@ -43,6 +43,7 @@ const STATUS_LABEL = { steady: "Steady", slipping: "Slipping", up: "Moving up" }
 const RANK_ORDER = ["retain", "second", "upgrade", "major", "planned"];
 const TAGS = require("./shared/numbers/tags");   // NUMBERS-4: one major rule
 const RHY = require("./shared/numbers/rhythm");   // STATUS-1: the one rhythm
+const LIFE = require("./shared/numbers/lifetime");   // MOPUP-2: what counts after a stated total
 const SECOND_BEST_DAYS = 90, SECOND_MAX_DAYS = 365;
 const OUTCOME_DAYS = 60;
 const LAPSING_MAX_DAYS = 548;   // 18 months
@@ -386,6 +387,14 @@ function computeInsights(input) {
     x.firstDay = x.days[0] || null;
     x.lastDay = x.days[x.days.length - 1] || null;
     x.isPerson = isPersonUnit(u);
+    // MOPUP-2: what a file stated they gave before Steward (FEEL-1: only an import
+    // that stated the total, imported_import_id), and the gifts that count after
+    // it (shared/numbers/lifetime.js AFTER_IMPORT, the same rule as Lifetime).
+    x.statedCents = u.people.reduce((n, p) => n + (Number(p.stated_cents) || 0), 0);
+    if (x.statedCents > 0) {
+      const who = new Map(u.people.map(p => [p.id, p]));
+      x.sinceCents = LIFE.sinceImportCents(gs, g => who.get(g.donor_id));
+    }
     U.push(x);
   }
   const line = majorLine(input.org && input.org.cuts);
@@ -760,7 +769,8 @@ const LIBRARY = [
   // 4. First gift, no second yet
   function secondGift(U, ctx) {
     const from = addDays(ctx.dataEnd, -SECOND_MAX_DAYS + 1);
-    const xs = U.filter(x => reachable(x) && x.occasions === 1 && x.firstDay && x.firstDay.date >= from);
+    // MOPUP-2: someone whose file stated what they gave before Steward is never a first-time giver (gaveBefore).
+    const xs = U.filter(x => reachable(x) && x.occasions === 1 && x.firstDay && x.firstDay.date >= from && !(x.statedCents > 0));
     if (!xs.length) return null;
     const ft = ctx.stats.firstTime;
     const items = xs.map(x => {
@@ -780,6 +790,34 @@ const LIBRARY = [
                     : "A second gift within 90 days of the first is the best sign a new donor will stay.",
       cardFacts: [["gave again", String(ft.gaveAgain)], ["first-time donors", String(ft.count)], ["year", String(ft.year)], ["days", "90"], ["months", "12"]],
       items, does: [{ action: "draft", label: "Draft a note" }, { action: "task", label: "Create tasks" }, { action: "group", label: "Make a group" }],
+    };
+  },
+  // 4b. MOPUP-2 · Gave before Steward, once since. An imported organization
+  // whose file stated $37,206 read "First gift of $244 on Oct 7, 2026. Nothing
+  // since." The stated lifetime is their history; one gift in Steward is not a first.
+  function gaveBefore(U, ctx) {
+    const from = addDays(ctx.dataEnd, -SECOND_MAX_DAYS + 1);
+    const xs = U.filter(x => reachable(x) && x.statedCents > 0 && x.occasions === 1 && x.firstDay && x.firstDay.date >= from);
+    if (!xs.length) return null;
+    const items = xs.map(x => {
+      const g = x.firstDay;
+      const what = x.sinceCents > 0
+        ? `Gave ${money(x.statedCents)} before Steward; ${money(x.sinceCents)} since.`
+        : `Gave ${money(x.statedCents)} before Steward, the latest ${money(g.amount_cents)} on ${longDate(g.date)}.`;
+      return { key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: g.amount_cents, what,
+        facts: [["given before Steward", money(x.statedCents)], ...(x.sinceCents > 0 ? [["since", money(x.sinceCents)]] : []),
+                ["latest gift", money(g.amount_cents)], ["latest gift date", longDate(g.date)]],
+        how: { who: whoFor(x, x.rung), channel: g.amount_cents >= 25000 || x.statedCents >= 1000000 ? "Call" : "Note",
+          when: windowWords(ctx.asOf, addDays(ctx.asOf, 14)),
+          say: `${hello(x)}, thank you for your gift in ${monthYear(g.date)}, and for everything you gave before it. Would you give again before the year is out?`,
+          ask: x.noAsk ? null : oneAsk(x) } };
+    });
+    return {
+      kind: "gave_before", rung: "second", title: "Gave before Steward, once since",
+      what: c => `${plural(c.items.length, "donor")} gave before Steward (your file stated it) and once since.`,
+      why: "Their history is in the total your file stated, not in gifts Steward can date, so they are not new. Thank them for all of it.",
+      cardFacts: [], items,
+      does: [{ action: "draft", label: "Draft a note" }, { action: "task", label: "Create tasks" }],
     };
   },
   // 5. Upgraded on their own
@@ -982,9 +1020,9 @@ function undatedNote(x, importName) {
 // other moves ride on that card as "also" lines. Planned counts people, not
 // dollars, and never outranks a move with money in it.
 const DECK_TABS = [["keep", "Keep"], ["grow", "Grow"], ["major", "Major"], ["planned", "Planned"]];
-const TAB_OF = { year_end: "keep", pledges: "keep", sponsors: "keep", lapsing: "keep", second_gift: "grow", upgraded: "grow", major_slipping: "major", planned: "planned" };
+const TAB_OF = { year_end: "keep", pledges: "keep", sponsors: "keep", lapsing: "keep", second_gift: "grow", gave_before: "grow", upgraded: "grow", major_slipping: "major", planned: "planned" };
 const MOVE_LABEL = { year_end: "Year-end giver", pledges: "Pledge to collect", sponsors: "Sponsor to renew", lapsing: "Lapsing",
-  second_gift: "Second gift", upgraded: "Moving up", major_slipping: "Slipping", planned: "Legacy signal" };
+  second_gift: "Second gift", gave_before: "Gave before Steward", upgraded: "Moving up", major_slipping: "Slipping", planned: "Legacy signal" };
 // The card's one button, and the task it makes (nothing on Home sends).
 const MOVE_ACTION = {
   draft: { label: "Draft the note", taskKind: "write" }, calls: { label: "Add to calls", taskKind: "call" },
@@ -997,7 +1035,7 @@ const DECK_CAP = 150;
 // first-time donors were lost among them. Inside Grow: second gifts first,
 // then the guests who came and didn't give, then the rest; by dollars inside
 // each. The tab says the split ("85 second gifts · 112 more").
-const GROW_RANK = { second_gift: 0, came_no_gift: 1 };
+const GROW_RANK = { second_gift: 0, gave_before: 0, came_no_gift: 1 };
 const growRank = m => (m.kind in GROW_RANK ? GROW_RANK[m.kind] : 2);
 const byGrow = (a, b) => growRank(a) - growRank(b) || b.cents - a.cents || (a.n || 0) - (b.n || 0);
 function growSplit(second, count) {

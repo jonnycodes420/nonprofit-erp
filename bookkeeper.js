@@ -46,8 +46,11 @@ function bookkeeperRefusals(rows, byFund, dbCents, dbCount) {
     out.push(`the ${fmtInt(list.length)} rows total ${fmtMoney(rowCents)} but the database holds ${(db / 100).toFixed(4)} dollars`);
   if (fundCents !== rowCents)
     out.push(`the fund totals come to ${fmtMoney(fundCents)} but the rows come to ${fmtMoney(rowCents)}`);
-  if (Number(dbCount) !== list.length)
-    out.push(`the database counts ${fmtInt(Number(dbCount) || 0)} gifts but ${fmtInt(list.length)} rows were built`);
+  // MOPUP-2: a split gift is one row per fund line, so gifts are counted by id.
+  const ids = new Set(list.map(r => r && r.giftId).filter(Boolean));
+  const built = ids.size + list.filter(r => !(r && r.giftId)).length;
+  if (Number(dbCount) !== built)
+    out.push(`the database counts ${fmtInt(Number(dbCount) || 0)} gifts but ${fmtInt(built)} were built`);
   return out;
 }
 
