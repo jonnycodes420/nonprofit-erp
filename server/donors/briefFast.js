@@ -18,7 +18,7 @@
 const crypto = require("crypto");
 
 const BRIEF_MODEL = () => process.env.BRIEF_MODEL || "claude-sonnet-4-6";
-const VERSION = "atlas3-v1";   // a change to the prompt or the check writes every brief fresh
+const VERSION = "atlas4-v1";   // ATLAS-4: quotes completed in code (briefComplete.js)   // a change to the prompt or the check writes every brief fresh
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const longDay = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || "")); return m ? `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}` : ""; };
@@ -53,7 +53,7 @@ function openingLines(ctx, money, toCents) {
   const out = [n
     ? `${first} has given ${money.formatCentsPlain(toCents(d.total_giving) || 0)} across ${n} ${n === 1 ? "gift" : "gifts"}, most recently on ${longDay(d.last_gift_date) || "a date not on record"}.`
     : `${first} has no gifts on record yet.`];
-  if (String(d.about_them || "").trim()) out.push(`About ${first}: ${String(d.about_them).trim().slice(0, 300)}`);
+  if (String(d.about_them || "").trim()) out.push(`About ${first}: ${String(d.about_them).trim()}`);   // ATLAS-4: in full, never cut
   return out;
 }
 

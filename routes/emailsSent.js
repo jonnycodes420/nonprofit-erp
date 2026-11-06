@@ -67,7 +67,10 @@ async function campaignFor(orgId, c, donor) {
 async function sequenceFor(orgId, step, donor) {
   const SEQ = await seqReady;
   const values = await sequenceMergeValues(donor, orgId);
-  return { subject: SEQ.renderMerge(step.subject, values).text, body: bodyFrom(SEQ.renderMerge(step.body, values).text) };
+  // ATLAS-4: the same no-gift variant the send wrote (sendStaffWrittenEmail).
+  const hasGift = Number(donor.total_giving) > 0 || Number(donor.last_gift_amount) > 0 || Number(donor.gift_count) > 0;
+  const body = (await import("../shared/giftSentence.js")).withoutGivenBefore(step.body, { hasGift, orgName: values.org_name });
+  return { subject: SEQ.renderMerge(step.subject, values).text, body: bodyFrom(SEQ.renderMerge(body, values).text) };
 }
 
 async function suppressedSet(orgId) {

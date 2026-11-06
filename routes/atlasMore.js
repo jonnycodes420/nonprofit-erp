@@ -37,6 +37,26 @@ const SCRIPT_TOOL = {
   },
 };
 
+// ATLAS-4 · the call script says who is calling. "(your name)" was left for
+// her to fill in; the signed-in person's signing name and title (Settings,
+// Signature) go in, and any placeholder the model writes is filled the same way.
+async function callerFor(query, req) {
+  const [u] = await query("SELECT name, sign_name, sign_title FROM users WHERE id=? AND org_id=?", [req.user.userId, req.user.orgId]).catch(() => []);
+  const name = String((u && (u.sign_name || u.name)) || (req.user && req.user.name) || "").trim();
+  return { name, title: String((u && u.sign_title) || "").trim() };
+}
+const callerWords = c => (c.name ? `${c.name}${c.title ? `, ${c.title},` : ""}` : "");
+function fillCaller(text, c) {
+  const who = callerWords(c);
+  let t = String(text || "");
+  if (who) t = t.replace(/[([]\s*your (?:full )?name\s*[)\]](?:\s*,?\s*[([]\s*your (?:job )?title\s*[)\]],?)?/gi, who);
+  t = t.replace(/,?\s*[([]\s*your (?:job )?title\s*[)\]]/gi, c.title ? `, ${c.title}` : "");
+  t = t.replace(/,\s*,/g, ",").replace(/\s+,/g, ",");
+  return c.title ? t : t.replace(new RegExp(`(${c.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") || "\\uFFFF"}),\\s+from\\b`, "g"), "$1 from");
+}
+const fillScript = (s, c) => ({ ...s, opening: fillCaller(s.opening, c), thank_for: fillCaller(s.thank_for, c), ask: fillCaller(s.ask, c),
+  questions: (s.questions || []).map(q => fillCaller(q, c)), close: fillCaller(s.close, c) });
+
 // Every dollar figure in the script must be one of the facts.
 function figuresGrounded(script, lines) {
   const said = JSON.stringify(script).match(/\$\s?\d[\d,]*(?:\.\d+)?/g) || [];
@@ -61,11 +81,11 @@ async function facts(orgId, donorId) {
 
 // The script from the facts alone: the answer with AI off, and the one shown
 // when a model script names a figure the record does not have.
-function templateScript(f) {
+function templateScript(f, caller = { name: "", title: "" }) {
   const { d, conv, task, ask, first } = f;
   const n = Number(d.gift_count) || 0;
   return {
-    opening: `Hi ${first}, this is (your name) from ${d.org_name}. Do you have a few minutes? I'm calling to say thank you and to catch up.`,
+    opening: `Hi ${first}, this is ${caller.name ? `${caller.name}${caller.title ? `, ${caller.title},` : ""}` : "(your name)"} from ${d.org_name}. Do you have a few minutes? I'm calling to say thank you and to catch up.`,
     thank_for: n ? `Thank you for your ${n === 1 ? "gift" : "support"}: ${usd(d.last_gift_amount)} on ${day(d.last_gift_date)}${n > 1 ? `, and ${usd(d.total_giving)} across ${n} gifts in all` : ""}. It made a real difference.`
       : "Thank you for being part of what we do.",
     ask: ask ? `There is an open ask on record: ${ask.name}${Number(ask.target_amount) > 0 ? ` (${usd(ask.target_amount)})` : ""}. Ask whether they'd like to talk it through.`
@@ -98,22 +118,23 @@ app.post("/donors/:id/call-script", requireAuth, wrap(async (req, res) => {
   const f = await facts(orgId, String(req.params.id));
   if (!f) return res.status(404).json({ error: "Donor not found" });
   if (f.d.deceased || f.d.do_not_contact) return res.status(409).json({ error: "no_call", sentence: `${f.d.name} is marked ${f.d.deceased ? "as deceased" : "do not contact"}, so there is no call script.` });
-  const template = templateScript(f);
+  const caller = await callerFor(query, req);
+  const template = fillScript(templateScript(f, caller), caller);
   const gate = await agentGate(orgId);
   if (!gate.ok) return res.json({ donorId: f.d.id, name: f.d.name, script: template, source: "template" });
   const lines = factLines(f);
   try {
     const msg = await anthropicFor(orgId).messages.create({
       model: SCRIPT_MODEL(), max_tokens: 700, thinking: { type: "disabled" },
-      system: "You write a short phone call script for a nonprofit fundraiser. Use only the facts given: no amount, date, program or event that is not in them. Plain spoken sentences, no markdown, no em dashes. The caller says (your name) for her own name.",
-      messages: [{ role: "user", content: `Facts:\n${lines.join("\n")}\n\nWrite the call script.` }],
+      system: "You write a short phone call script for a nonprofit fundraiser. Use only the facts given: no amount, date, program or event that is not in them. Plain spoken sentences, no markdown, no em dashes. The caller introduces herself by the name and title given.",
+      messages: [{ role: "user", content: `Facts:\n${lines.join("\n")}\nThe caller: ${callerWords(caller).replace(/,$/, "") || "(not on record)"}.\n\nWrite the call script.` }],
       tools: [{ name: SCRIPT_TOOL.name, description: SCRIPT_TOOL.description, strict: true, input_schema: SCRIPT_TOOL.input_schema }],
       tool_choice: { type: "tool", name: SCRIPT_TOOL.name },
     });
     const use = (msg.content || []).find(b => b.type === "tool_use" && b.name === SCRIPT_TOOL.name);
     const s = use && use.input;
     if (s && s.opening && s.thank_for && s.ask && Array.isArray(s.questions) && s.questions.length && s.close && figuresGrounded(s, lines)) {
-      const clean = t => String(t).replace(/\s*—\s*/g, ", ").slice(0, 600);
+      const clean = t => fillCaller(String(t).replace(/\s*—\s*/g, ", "), caller).slice(0, 600);
       return res.json({ donorId: f.d.id, name: f.d.name, source: "ai",
         script: { opening: clean(s.opening), thank_for: clean(s.thank_for), ask: clean(s.ask), questions: s.questions.slice(0, 4).map(clean), close: clean(s.close) } });
     }
@@ -125,4 +146,4 @@ app.post("/donors/:id/call-script", requireAuth, wrap(async (req, res) => {
 }));
 }
 
-module.exports = { routers, mount, SCRIPT_TOOL, _test: { figuresGrounded } };
+module.exports = { routers, mount, SCRIPT_TOOL, _test: { figuresGrounded, fillCaller } };

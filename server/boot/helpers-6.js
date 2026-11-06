@@ -295,7 +295,9 @@ async function enrollInSequences(orgId, donorId, triggerKey, context = {}, actor
 async function sendStaffWrittenEmail(orgId, donor, subjectTpl, bodyTpl, source) {
   const values = await sequenceMergeValues(donor, orgId);
   const subj = SEQ.renderMerge(subjectTpl, values);
-  const body = SEQ.renderMerge(bodyTpl, values);
+  // ATLAS-4: a never-giver is not told "we are asking the people who have given before" (shared/giftSentence.js).
+  const hasGift = Number(donor.total_giving) > 0 || Number(donor.last_gift_amount) > 0 || Number(donor.gift_count) > 0;
+  const body = SEQ.renderMerge((await import("../../shared/giftSentence.js")).withoutGivenBefore(bodyTpl, { hasGift, orgName: values.org_name }), values);
   const html = (body.text.includes("<") ? body.text
     : `<p>${body.text.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`)
     + await unsubscribeEmailFooterHtml(donor.email, orgId, source);
