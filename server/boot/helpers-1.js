@@ -7,6 +7,8 @@
 // refreshes every module's copy.
 // eslint-disable-next-line no-var, no-global-assign
 var __dirname = require("path").join(__dirname, "..", "..");   // server.js's folder, as the moved code expects
+// STAGE-1: on staging (STEWARD_ENV=staging) refuse a live Stripe key and capture all mail, before anything else loads.
+require("../shared/stagingEnv").install();
 const __boot = require("./share");
 const __share = __boot.share;
 let DB_READY, DONOR_SUMMARY_UPDATE, GC, GC_READY, GIFT_METHOD_UNKNOWN, GREET, GREET_READY, HISTORY, ItemRefs, OUTBOX, PW, SYS_AUTO, SYS_SOURCE, Sentry, TZ_CACHE_MS, _journeyEngine, _journeyNudge, _scoreRuns, _tzCache, _volunteerReminders, applyGiftAsMembershipRenewal, assetHealth, computeDriftForDonors, computeGuardsOk, dbReady, donorFacingOrgName, engagementMod, google, guardBootAt, ledgerChartSelfHeals, newId, notifyFailedPending, notifyUserOnce, onPledgeSettled, openAdminTask, openThreadTx, orgTime, orgToday, publicAppUrl, query, recalcPledgePayment, reconcileAccountsWithStripe, reconciliation, round2, run, scheduleScores, seedOrgData, testMode, threadShapeMod, webhookSubStatus, withAdvisoryLock, withTransaction, withTryAdvisoryLock;

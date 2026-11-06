@@ -173,7 +173,7 @@ function Customers({ customers, now }) {
   </section>;
 }
 
-export default function OpsView({ data, error, now = Date.now(), tabs = null, onShot = null }) {
+export default function OpsView({ data, error, now = Date.now(), tabs = null, onShot = null, ship = null }) {
   if (error) return <div style={page}><div style={sheet}><h1 style={{ fontSize: 24 }}>Ops</h1>{tabs}<Down error={error} /></div></div>;
   if (!data) return <div style={page}><div style={sheet}><h1 style={{ fontSize: 24 }}>Ops</h1>{tabs}<p style={says}>Loading…</p></div></div>;
   return <div style={page}><div style={sheet}>
@@ -182,6 +182,7 @@ export default function OpsView({ data, error, now = Date.now(), tabs = null, on
     <p style={says}>{data.refreshedAt ? `Summaries refreshed ${ago(data.refreshedAt, now)} ago by the worker${data.stale ? ", which is late: it should refresh every five minutes" : ""}.` : "The worker has not refreshed the summaries yet."}
       {data.githubAt ? ` GitHub read ${ago(data.githubAt, now)} ago.` : ""}</p>
     <Health h={data.health} now={now} />
+    {ship /* STAGE-1: staging and the Ship to customers card, beside prod health */}
     <Board board={data.board} onShot={onShot} />
     <Builds builds={data.builds} now={now} />
     <Trend walks={data.board.ok ? data.board.walks : []} />

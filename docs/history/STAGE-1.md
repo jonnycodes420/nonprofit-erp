@@ -1,0 +1,14 @@
+## STAGE-1 · A staging copy of Steward, so big changes get walked before customers see them (2026-11-06)
+
+Until now every merge went straight to prod, so customers were the first to see a change. STAGE-1 adds a second copy, staging, that every merge reaches first, with a scripted walk (sign in, Home, a profile, a gift, an import and its undo, a report) whose result is a commit status, `staging/walk`. Prod then moves only when Jonathan presses Ship on /ops, which deploys exactly staging's commit through `ship.yml`; Roll back puts back the commit prod served before.
+
+Choices and why:
+- **A switch, not a cutover.** Everything is behind the repo variable `STAGING_ENABLED`. Unset, the two prod jobs keep their old condition (one clause, `vars.STAGING_ENABLED != 'true' || lane == 'hotfix'`, which is true when unset) and their steps are untouched, so merges deploy prod exactly as before until Jonathan has made the cloud pieces.
+- **Staging is told, not guessed.** `STEWARD_ENV=staging`, and `/health` says `env`. The write guard (`prodGuard --staging`) and the walk both refuse anything that does not say staging, and prod says production, so neither can write prod by mistake.
+- **Mail is captured in the process, not by trusting configuration.** `server/shared/stagingEnv.js` wraps `fetch` before anything loads: every Resend call from any client and any base URL is stored in `staging_mail_capture`, and a mailbox send is refused. A real Resend key set by mistake still sends nothing. The same module stops the boot on a live Stripe key, naming the variable and never the value.
+- **The staging frontend needed its own config.** `vercel.json` names prod's API in its rewrites and CSP; a staging build from it would have sent portal calls and unsubscribes to prod. `vercel-staging-config.js` writes `vercel.staging.json` with every prod host replaced and fails if one is left.
+- **The previous prod commit is noted by prod itself** (`deploy_history`, one row each time a web process boots on a new commit), so Roll back works whichever path deployed (a ship, a hotfix, break-glass).
+- **`ship.yml` runs its scripts from main** and deploys the tree at the chosen commit, so a roll back to a commit older than these scripts still works.
+- **The name scan treats org_creo's boot-seed fiction as fiction.** "Margaret Chen" is in both the boot seed and the demo on purpose. The scan flags an org_creo person the boot seed did not write (real CREO data on staging) and anyone sharing that name, a customer org name passed in `STAGING_REAL_NAMES`, and any org that should not be there.
+
+Found along the way: Muse's staging services were connected to `main` (auto-deploy would have raced CI) and its Postgres was in `sfo` while web and worker are in `us-east4`; both are steps in `docs/needs-jonathan/STAGE-1.md`. Prod still carries `DEMO_SMTP_*` variables no code reads; staging drops them at boot.

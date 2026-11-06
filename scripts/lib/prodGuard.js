@@ -29,6 +29,7 @@ const { execSync } = require("child_process");
 const { PRODUCT_ID } = require("../../product");
 
 const CONFIRM_FLAG = "--i-know-this-is-prod";
+const STAGING_FLAG = "--staging";   // STAGE-1
 const LOOPBACK_RE = /^https?:\/\/(localhost|127\.0\.0\.1)([:/]|$)/i;
 
 function isLoopback(url) {
@@ -69,6 +70,18 @@ function writerBase(def, opts = {}) {
     throw new Error(`prodGuard.writerBase: default "${def}" is not loopback — writer scripts must default to the scratch stack`);
   }
   const base = (env.BASE || def).replace(/\/+$/, "");
+  // STAGE-1: a remote STAGING host is written with --staging, never the prod
+  // flag, and only when its own /health says env "staging". Prod's /health
+  // says "production", so --staging can never reach it.
+  if (!isLoopback(base) && argv.includes(STAGING_FLAG) && !argv.includes(CONFIRM_FLAG)) {
+    const health = assertServerIdentity(base, { noExit: !!opts.noExit });
+    if (health.env !== "staging") {
+      const msg = `REFUSED: ${STAGING_FLAG} was given but ${base}/health says env "${health.env || "<unset>"}", not "staging".`;
+      if (opts.noExit) { const e = new Error("not_staging"); e.code = "not_staging"; throw e; }
+      console.error("\n" + msg + "\n"); process.exit(1);
+    }
+    return base;
+  }
   if (!isLoopback(base)) {
     if (!argv.includes(CONFIRM_FLAG)) {
       console.error(
@@ -138,4 +151,4 @@ function writerDbUrl(opts = {}) {
   return url;
 }
 
-module.exports = { writerBase, writerDbUrl, logOverwrite, isLoopback, isRemote, assertServerIdentity, CONFIRM_FLAG };
+module.exports = { writerBase, writerDbUrl, logOverwrite, isLoopback, isRemote, assertServerIdentity, CONFIRM_FLAG, STAGING_FLAG };

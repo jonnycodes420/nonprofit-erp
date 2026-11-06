@@ -130,6 +130,17 @@ async function collectCi() {
   const jobs = await gh(`/repos/${R}/actions/runs/${run.id}/jobs?per_page=50`);
   const deploy = (jobs.jobs || []).find(j => j.name === "deploy-railway");
   const step = re => { const s = deploy && (deploy.steps || []).find(x => re.test(x.name)); return s ? (s.conclusion || s.status) : null; };
+  // STAGE-1: with staging on, prod moves in ship.yml (Ship on /ops), not on the push.
+  if (!deploy || deploy.conclusion === "skipped") {
+    const ships = await gh(`/repos/${R}/actions/workflows/ship.yml/runs?per_page=1`).catch(() => ({}));
+    const sr = (ships.workflow_runs || [])[0];
+    if (sr) {
+      const sj = ((await gh(`/repos/${R}/actions/runs/${sr.id}/jobs?per_page=10`)).jobs || []).find(j => j.name === "ship");
+      const sstep = re => { const x = sj && (sj.steps || []).find(y => re.test(y.name)); return x ? (x.conclusion || x.status) : null; };
+      return { sha: sr.head_sha, at: sr.updated_at, url: sr.html_url, run: sr.status === "completed" ? sr.conclusion : sr.status,
+        smoke: sstep(/Prod serves this commit/i), aiSmoke: sstep(/AI smoke/i), via: "ship" };
+    }
+  }
   return { sha: run.head_sha, at: run.updated_at, url: run.html_url, run: run.status === "completed" ? run.conclusion : run.status,
     smoke: step(/Verify prod is healthy/i), aiSmoke: step(/AI smoke/i) };
 }

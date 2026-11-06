@@ -1,0 +1,161 @@
+# STAGE-1 · SHIP TO CUSTOMERS, OR ROLL BACK. Started from /ops, never by a push.
+#
+# Once STAGING_ENABLED is set, a merge to main deploys to staging and is walked
+# there (ci.yml: deploy-staging, staging-walk); prod does not move. Jonathan
+# presses "Ship to customers" on /ops, which dispatches this workflow for
+# exactly the commit staging serves (mode ship), or "Roll back" for the commit
+# prod served before (mode rollback). Each run:
+#   1. checks the commit: a ship must be what staging serves, with a green
+#      `staging/walk`; a roll back must be a commit on main;
+#   2. waits its turn behind any older ship and any prod deploy still running
+#      from ci.yml (a hotfix), the FLAKE-1 turnstile;
+#   3. deploys that commit to prod's web and worker on Railway, then its
+#      frontend on Vercel, the same commands as ci.yml's prod jobs;
+#   4. checks prod serves it (web, worker, frontend) and runs the prod AI smoke.
+# The run's title names the mode, the commit and who pressed it; /ops shows its result.
+name: Ship
+
+run-name: ${{ inputs.mode == 'rollback' && 'Roll back to' || 'Ship' }} ${{ inputs.sha }} (pressed by ${{ inputs.requested_by }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "The full commit to put on prod"
+        required: true
+        type: string
+      mode:
+        description: "ship (staging's commit) or rollback (the previous prod commit)"
+        required: true
+        type: choice
+        options: [ship, rollback]
+      reason:
+        description: "Why, for a roll back or a ship started by hand"
+        required: false
+        type: string
+      requested_by:
+        description: "Who pressed it on /ops"
+        required: false
+        type: string
+
+concurrency:
+  group: ship-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+  statuses: read
+
+jobs:
+  ship:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      SHIP_SHA: ${{ inputs.sha }}
+      MODE: ${{ inputs.mode }}
+      PROD_API: https://nonprofit-erp-production.up.railway.app
+      PROD_APP: https://www.stewardapp.dev
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.sha }}
+
+      # The deploy tree is the commit above; the scripts that run the ship come
+      # from main, so a roll back to a commit older than these scripts still works.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: .ship-tools
+          sparse-checkout: scripts
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check the commit may go out
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGING_API_URL: ${{ vars.STAGING_API_URL }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          echo "$SHIP_SHA" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::not a full commit: $SHIP_SHA"; exit 1; }
+          git fetch -q origin main
+          git merge-base --is-ancestor "$SHIP_SHA" origin/main || { echo "::error::$SHIP_SHA is not a commit on main."; exit 1; }
+          if [ "$MODE" = "ship" ]; then
+            [ -n "$STAGING_API_URL" ] || { echo "::error::STAGING_API_URL is not set."; exit 1; }
+            read -r env web <<< "$(curl -sf --max-time 10 "$STAGING_API_URL/health" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d);console.log((j.env||'-')+' '+(j.buildSha||'-'))}catch{console.log('- -')}})")"
+            [ "$env" = "staging" ] || { echo "::error::$STAGING_API_URL does not say it is staging ($env)."; exit 1; }
+            [ "$web" = "$SHIP_SHA" ] || { echo "::error::staging serves ${web:0:7}, not ${SHIP_SHA:0:7}. Only what staging serves ships."; exit 1; }
+            walk=$(gh api "repos/${{ github.repository }}/commits/$SHIP_SHA/status" --jq '.statuses[] | select(.context=="staging/walk") | .state' | head -1)
+            [ "$walk" = "success" ] || { echo "::error::staging's walk on ${SHIP_SHA:0:7} is '${walk:-missing}', not success."; exit 1; }
+            echo "Ship ${SHIP_SHA:0:7}: staging serves it and its walk passed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Roll back to ${SHIP_SHA:0:7}${REASON:+: $REASON}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Wait for any prod deploy still running from ci.yml (a hotfix)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 150); do
+            busy=0
+            for id in $(gh api "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?branch=main&event=push&status=in_progress&per_page=10" --jq '.workflow_runs[].id'); do
+              n=$(gh api "repos/${{ github.repository }}/actions/runs/$id/jobs?filter=latest&per_page=100" --jq '[.jobs[] | select((.name=="deploy-railway" or .name=="deploy-vercel") and .status!="completed" and .conclusion!="skipped")] | length')
+              [ "${n:-0}" -gt 0 ] && busy=1
+            done
+            [ "$busy" = "0" ] && exit 0
+            echo "  a prod deploy from ci.yml is running; waiting ($i)"; sleep 20
+          done
+          echo "::error::a prod deploy from ci.yml was still running after 50 minutes."; exit 1
+
+      - name: Wait for the ships before this one (FLAKE-1)
+        id: turn
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .ship-tools/scripts/ci/deploy-turnstile.js --job ship --event workflow_dispatch --sha "$SHIP_SHA" --live-health "$PROD_API/health" ${{ inputs.mode == 'rollback' && '--allow-older' || '' }}
+
+      - name: Install Railway CLI
+        if: steps.turn.outputs.deploy == 'true'
+        run: |
+          for i in 1 2 3; do
+            npm install -g @railway/cli && break
+            echo "install attempt $i failed; retrying in 10s"; sleep 10
+            [ "$i" = "3" ] && exit 1
+          done
+
+      - name: Stamp build SHA
+        if: steps.turn.outputs.deploy == 'true'
+        run: printf '%s' "$SHIP_SHA" > .build-sha
+
+      - name: Deploy prod's web and worker
+        if: steps.turn.outputs.deploy == 'true'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway up --service nonprofit-erp --ci
+          if [ -n "${{ vars.RAILWAY_WORKER_SERVICE }}" ]; then railway up --service "${{ vars.RAILWAY_WORKER_SERVICE }}" --ci; fi
+
+      - name: Prod serves this commit (web and worker)
+        if: steps.turn.outputs.deploy == 'true'
+        run: node .ship-tools/scripts/ci/wait-live.js --sha "$SHIP_SHA" --api "$PROD_API" --env production ${{ vars.RAILWAY_WORKER_SERVICE != '' && '--worker' || '' }} --minutes 5
+
+      - name: Prod AI smoke (one Ask, one Agent plan, saves nothing)
+        if: steps.turn.outputs.deploy == 'true'
+        env:
+          PROD_AI_SMOKE_WAIT_SHA: ${{ inputs.sha }}
+          PROD_AI_SMOKE_WORKER: ${{ vars.RAILWAY_WORKER_SERVICE != '' && '1' || '' }}
+        run: node .ship-tools/scripts/ci/prod-ai-smoke.js
+
+      - name: Deploy prod's frontend
+        if: steps.turn.outputs.deploy == 'true' && vars.VERCEL_DEPLOY_ENABLED == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: team_bmpIjp9a9Cji8y2NqHsEuewv
+          VERCEL_PROJECT_ID: prj_OCO0p927wc7CszoQS9PEEnDg7mIy
+        run: npx vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN" --build-env BUILD_SHA="$SHIP_SHA"
+
+      - name: The live site serves this commit
+        if: steps.turn.outputs.deploy == 'true' && vars.VERCEL_DEPLOY_ENABLED == 'true'
+        run: node .ship-tools/scripts/ci/wait-live.js --sha "$SHIP_SHA" --frontend "$PROD_APP" --minutes 5

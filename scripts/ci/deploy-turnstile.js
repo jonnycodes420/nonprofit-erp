@@ -24,6 +24,9 @@
 //
 // usage: node scripts/ci/deploy-turnstile.js --job deploy-railway --live-health <url>
 //        node scripts/ci/deploy-turnstile.js --job deploy-vercel  --live-meta <url>
+// STAGE-1: ship.yml queues its own runs the same way with --event workflow_dispatch
+// (its runs are dispatched from /ops, not pushed), and a Roll back passes
+// --allow-older, the one case where putting back an older commit is the point.
 // env:   GH_TOKEN, GITHUB_REPOSITORY, GITHUB_RUN_ID, GITHUB_SHA
 "use strict";
 const { execFileSync } = require("child_process");
@@ -33,7 +36,10 @@ const arg = (k, d = null) => { const i = process.argv.indexOf(k); return i > 0 ?
 const JOB = arg("--job");
 const MAX_WAIT_MS = Number(arg("--max-wait-min", "50")) * 60000;
 const POLL_MS = Number(arg("--poll-s", "20")) * 1000;
-const { GITHUB_REPOSITORY: REPO, GITHUB_RUN_ID: RUN_ID, GITHUB_SHA: SHA } = process.env;
+const EVENT = arg("--event", "push");                     // STAGE-1
+const ALLOW_OLDER = process.argv.includes("--allow-older"); // STAGE-1: a Roll back
+const { GITHUB_REPOSITORY: REPO, GITHUB_RUN_ID: RUN_ID } = process.env;
+const SHA = arg("--sha") || process.env.GITHUB_SHA;   // STAGE-1: ship.yml deploys inputs.sha, not the dispatch ref's head
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const say = (line) => { console.log(line); if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, line + "\n"); };
 const output = (k, v) => { if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${k}=${v}\n`); };
@@ -41,7 +47,7 @@ const gh = (path) => JSON.parse(execFileSync("gh", ["api", "-H", "Accept: applic
 
 // The older push-to-main runs of this workflow whose `JOB` has not finished.
 function olderUnfinished(me) {
-  const runs = gh(`repos/${REPO}/actions/workflows/${me.workflow_id}/runs?branch=main&event=push&per_page=40`).workflow_runs || [];
+  const runs = gh(`repos/${REPO}/actions/workflows/${me.workflow_id}/runs?branch=main&event=${EVENT}&per_page=40`).workflow_runs || [];
   const older = runs.filter(r => r.run_number < me.run_number && r.status !== "completed");
   const blocking = [];
   for (const r of older) {
@@ -88,7 +94,7 @@ const isAncestor = (a, b) => { try { execFileSync("git", ["merge-base", "--is-an
   }
   const waited = Math.round((Date.now() - t0) / 1000);
   const live = await liveSha();
-  if (live && live !== SHA && isAncestor(SHA, live)) {
+  if (live && live !== SHA && isAncestor(SHA, live) && !ALLOW_OLDER) {
     say(`${JOB}: live is ${live.slice(0, 7)}, which is newer than ${SHA.slice(0, 7)} (this run is a re-run of an older merge). Not deploying, so the latest merge stays live.`);
     output("deploy", "false");
     return;

@@ -147,7 +147,26 @@ function lastLoadRun() {
   require("fs").rmSync(dir, { recursive: true, force: true });
   return { run, summary };
 }
-module.exports = { mailboxReport, smokeVerdict, queueReport, workerReport, poolReport, loadReport };
+// STAGE-1 · STAGING, BESIDE PROD. Staging's API comes from STATUS_STAGING_API_URL
+// (or STAGING_API_URL); unset means staging is not set up and the section says so.
+// Once STAGING_ENABLED is on, origin/main ahead of prod is what staging is FOR
+// (merged, walked, waiting for Ship on /ops), so it is no longer a flag; staging
+// behind origin/main, or a red walk, is.
+const ghCli = args => { try { return require("child_process").execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 20000 }).trim(); } catch { return null; } };
+const STAGING_API = () => (process.env.STATUS_STAGING_API_URL || process.env.STAGING_API_URL || "").replace(/\/+$/, "");
+const STAGING_FRONTEND = () => (process.env.STATUS_STAGING_FRONTEND_URL || "https://staging.stewardapp.dev").replace(/\/+$/, "");
+function stagingReport({ configured, enabled, web, worker, frontend, env, walk, originMain, prodSha }) {
+  if (!configured) return { ok: null, detail: "not set up (STAGING_API_URL unset; docs/needs-jonathan/STAGE-1.md)", flags: [] };
+  const flags = [];
+  const s = x => (x ? String(x).slice(0, 7) : "?");
+  if (env && env !== "staging") flags.push(`STAGING says env "${env}", not staging. Nothing should ship from it.`);
+  if (web && (web !== worker || web !== frontend)) flags.push(`STAGING SPLIT: web ${s(web)}, worker ${s(worker)}, frontend ${s(frontend)}.`);
+  if (enabled && originMain && web && web !== originMain) flags.push(`staging (${s(web)}) is behind origin/main (${s(originMain)}): merged but not on staging yet (CI running or failed).`);
+  if (walk === "failure" || walk === "error") flags.push(`STAGING WALK FAILED on ${s(web)}: Ship stays off until a green walk.`);
+  const waiting = web && prodSha && web !== prodSha ? "ahead of prod, waiting for Ship on /ops" : "same as prod";
+  return { ok: flags.length === 0, detail: `web ${s(web)} · worker ${s(worker)} · frontend ${s(frontend)} · walk ${walk || "none"} · ${waiting}`, flags };
+}
+module.exports = { mailboxReport, smokeVerdict, queueReport, workerReport, poolReport, loadReport, stagingReport };
 
 if (require.main === module) (async () => {
   // ── local + origin ─────────────────────────────────────────────────────────
@@ -267,11 +286,25 @@ if (require.main === module) (async () => {
   row("load", lr.level === "ok" ? `${GREEN}ok${RESET}` : lr.level === "red" ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, lr.detail);
   row("db pool", pr.level === "ok" ? `${GREEN}ok${RESET}` : pr.level === "yellow" ? `${YELLOW}over 80% of the pooler${RESET}` : pr.level === "red" ? `${RED}OVER THE POOLER${RESET}` : `${YELLOW}unverified${RESET}`, pr.detail);
 
+  // STAGE-1: staging, beside prod
+  const stagingEnabled = (process.env.STAGING_ENABLED || (ghCli(["variable", "get", "STAGING_ENABLED"]) || "")).trim() === "true";
+  let st = { configured: !!STAGING_API(), enabled: stagingEnabled, originMain, prodSha: backendSha };
+  if (st.configured) {
+    const sh = await fetchText(`${STAGING_API()}/health`);
+    try { const h = JSON.parse(sh.text); Object.assign(st, { web: h.buildSha, worker: h.worker && h.worker.buildSha, env: h.env || "production" }); } catch { st.web = null; }
+    const sf = await fetchText(STAGING_FRONTEND());
+    st.frontend = ((sf.text || "").match(/<meta\s+name=["']build-sha["']\s+content=["']([^"']*)["']/i) || [])[1] || null;
+    if (st.web) st.walk = (ghCli(["api", `repos/{owner}/{repo}/commits/${st.web}/status`, "--jq", '.statuses[] | select(.context=="staging/walk") | .state']) || "").split("\n")[0] || null;
+  }
+  const sr = stagingReport(st);
+  row("staging", sr.ok === true ? `${GREEN}ok${RESET}` : sr.ok === false ? `${RED}CHECK${RESET}` : `${YELLOW}not set up${RESET}`, sr.detail);
+  row("ships", stagingEnabled ? "from /ops (Ship to customers)" : "on merge (STAGING_ENABLED unset)");
+
   // ── divergence flags (loud) ───────────────────────────────────────────────────
-  const flags = [];
+  const flags = [...sr.flags];
   if (unpushed) flags.push(`${unpushed} commit(s) committed locally but NOT on origin/main — unpushed (the BUILD-65-3b/3c class).`);
   if (behindRemote) flags.push(`local main is ${behindRemote} commit(s) BEHIND origin/main — pull before you push.`);
-  if (originMain && backendSha && originMain !== backendSha) {
+  if (originMain && backendSha && originMain !== backendSha && !stagingEnabled) {
     const ahead = git(`rev-list --count ${backendSha}..${originMain}`);
     flags.push(`origin/main is ahead of PROD BACKEND${ahead ? ` by ${ahead} commit(s)` : ""} — pushed but NOT deployed (CI not run / cap / failed).`);
   }
@@ -290,6 +323,12 @@ if (require.main === module) (async () => {
     for (const f of flags) console.log(`${RED}⚠ ${f}${RESET}`);
     console.log("");
     process.exit(1);
+  }
+  // STAGE-1: with staging on, prod lags main on purpose; aligned means prod's
+  // halves agree and work, and staging serves origin/main.
+  if (stagingEnabled && backendSha && frontendSha && backendSha === frontendSha && smokeOk === true && sr.ok === true && st.web === originMain) {
+    console.log(`${GREEN}✓ aligned — prod backend == prod frontend (${short(backendSha)}) and the smoke passes; staging serves origin/main (${short(originMain)}).${RESET}\n`);
+    return;
   }
   // fully aligned only if we could actually read every link
   if (originMain && backendSha && frontendSha && localHead === originMain && originMain === backendSha && backendSha === frontendSha && smokeOk === true) {

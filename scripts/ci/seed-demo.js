@@ -290,7 +290,7 @@ async function main() {
     refuse(`the server at ${BASE} reports database "${health.database}" but this connection is to "${dbName}". One of them is not what you think.`);
   if (KB_DB.test(dbName))
     refuse(`"${dbName}" is a Kingdom Builders database name. This seed writes STEWARD demo fiction and must never touch it, no flag overrides this.`);
-  const isProdRun = dbName === PROD_DB;
+  const isProdRun = dbName === PROD_DB && health.env !== "staging";   // STAGE-1: staging is never the prod path
   if (isProdRun) {
     // The deliberate path: prod db + non-loopback BASE (writerBase already
     // demanded --i-know-this-is-prod for that BASE) + identity match above.
@@ -299,6 +299,9 @@ async function main() {
     console.log(`\n*** PRODUCTION SEED ***`);
     console.log(`*** This drops and recreates ONLY the Harborlight demo org (${ORG}) — fiction, no real donors. ***`);
     console.log(`*** Every DELETE and INSERT below is pinned to org_id='${ORG}'. Nothing else is touched. ***\n`);
+  } else if (health.env === "staging" && process.argv.includes(guard.STAGING_FLAG) && !guard.isLoopback(BASE)) {
+    // STAGE-1: the staging copy (writerBase checked its /health says staging).
+    console.log(`[identity] ${BASE} is STAGING (database "${dbName}"): the demo is rebuilt there for Muse's walks.\n`);
   } else if (!ALLOWED_DB.test(dbName)) {
     refuse(`"${dbName}" is not an allowlisted scratch database (${ALLOWED_DB}) and not the guarded prod path. Failing closed.`);
   } else {

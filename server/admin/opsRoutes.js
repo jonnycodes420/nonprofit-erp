@@ -101,6 +101,8 @@ function mount(ctx) {
 
   // DEVBOARD-2: the Map tab and Jonathan's checks, behind this same door.
   require("./opsMapRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter });
+  // STAGE-1: the Ship to customers card, behind this same door.
+  require("./shipRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter, buildSha });
 
   // The worker's job: refresh the cached snapshot every five minutes. Queued,
   // so it runs on the worker (or the one process locally), never in a request.

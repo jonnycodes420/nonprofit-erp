@@ -145,6 +145,11 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
   and green tests deploy Railway and Vercel with a SHA-verified health poll. Git auto-deploy is
   off on both sides, and it stays off. Read CI after every push. Break-glass steps are in
   `docs/decisions/tests-and-ci.md`.
+- **Staging first (STAGE-1).** Once the repo variable `STAGING_ENABLED` is `true`, a merge deploys
+  to staging and is walked there, and prod moves only when Jonathan presses Ship on `/ops`. Then a
+  build is done when it is live on staging (web, worker and frontend on its commit, `staging/walk`
+  green), not on prod; "confirm web and worker deployed" means on staging. A hotfix skips staging
+  only with the `hotfix` label and a `Hotfix reason:` line in the PR. `docs/decisions/staging.md`.
 - **Prod smoke:** `node scripts/ci/status.js` (= `npm run status`), once, after the push that
   deploys. It includes the AI smoke (`scripts/ci/prod-ai-smoke.js`), which CI also runs after deploy.
 - **Git:** work on a branch in your own worktree. Never push a branch that sits on another
@@ -174,6 +179,7 @@ touch …", then the rules, then the reference sections moved from the old CLAUD
 - `docs/decisions/home-and-reports.md` — Home, the Dashboard, the Thread, Drift, tasks, goals, report definitions, board reports.
 - `docs/decisions/people-and-records.md` — the person record: donors, orgs, non-donors, households, merge, deletion, profile, volunteers, events.
 - `docs/decisions/accounts-and-billing.md` — sign-in, signup, onboarding, invites, roles, super admin, Settings, platform billing.
+- `docs/decisions/staging.md` — staging, the staging walk, Ship and Roll back on /ops, hotfixes, the staging seed, Muse's sign-in.
 - `docs/history/` — one file per brief, the why, not instructions. Index: `node scripts/ci/history-index.js`.
 - `docs/architecture/` — ARCHITECTURE.md (the rules), the MAP-1 map, and the ratchet baselines.
 - `docs/needs-jonathan/` — what waits on Jonathan, one file per brief. All of it: `node scripts/ci/needs-jonathan.js`.

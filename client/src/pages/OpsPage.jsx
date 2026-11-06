@@ -6,6 +6,7 @@ import { useSearchParams } from "react-router-dom";
 import { API, apiFetch, getToken } from "../api";
 import OpsView from "./ops/OpsView";
 import MapView from "./ops/MapView";
+import ShipCard from "./ops/ShipCard";
 
 const INK = "#0F1A12", CREAM = "#F0EDE6", EMERALD = "#0D5C3A";
 const TABS = [["machine", "Machine"], ["map", "Map"]];
@@ -56,7 +57,7 @@ export default function OpsPage() {
         fontSize: 14, fontWeight: tab === id ? 700 : 500, color: INK, cursor: "pointer", fontFamily: "inherit" }}>{label}</button>)}
   </div>;
 
-  if (tab === "machine") return <OpsView data={data} error={error} tabs={tabs} onShot={openShot} />;
+  if (tab === "machine") return <OpsView data={data} error={error} tabs={tabs} onShot={openShot} ship={<ShipCard />} />;
   return <div style={{ background: CREAM, minHeight: "100vh", color: INK, fontFamily: "Inter, system-ui, sans-serif", padding: "24px 16px 48px" }}>
     <div style={{ maxWidth: 1100, margin: "0 auto" }}>
       <h1 style={{ fontSize: 24, margin: "0 0 4px" }}>Ops</h1>
