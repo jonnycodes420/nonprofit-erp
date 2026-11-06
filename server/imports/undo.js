@@ -157,7 +157,7 @@ async function undoRefusal(req, imp) {
 async function undoImport(orgId, imp, who, { deadline = null, onProgress = null } = {}) {
   const id = imp.id;
   const st = stateOf(imp);
-  const removed = { gifts: 0, pledges: 0, interactions: 0, tasks: 0, journeys: 0, people: 0, alreadyDeleted: 0, ...(st.removed || {}) };
+  const removed = { gifts: 0, pledges: 0, interactions: 0, tasks: 0, journeys: 0, people: 0, alreadyDeleted: 0, backToTrash: 0, ...(st.removed || {}) };
   // a step boundary: past the request's limit, the rest goes to the queue
   const step = async (phase, done = 0, total = 0) => {
     if (deadline && Date.now() > deadline) throw new UndoHandOff();
@@ -324,6 +324,15 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null 
         r.other && (r.other === 1 ? "a line on their timeline" : `${r.other} lines on their timeline`)].filter(Boolean);
       return { id: r.id, name: r.name, why: why.length ? why.join(", ") : "another record holds them" };
     });
+  // IMPORT-9: the people this run brought back from the trash go back to it
+  // (restoredPeople.js), unless something was added to them since
+  {
+    await step("putting back the people it brought back from the trash");
+    const back = await require("./restoredPeople").sendBackToTrash(require("../../db"), orgId, imp, sj, who);
+    removed.backToTrash = (Number((st.removed || {}).backToTrash) || 0) + back.trashed.length;
+    stayed.push(...back.stayed);
+    await keep();
+  }
   if (imp.shape === "sheet") {
     await run(`DELETE FROM households h WHERE h.org_id=? AND h.import_id=? AND NOT EXISTS (SELECT 1 FROM donors d WHERE d.household_id=h.id)`, [orgId, id]);
     await run(`DELETE FROM events e WHERE e.org_id=? AND e.import_id=? AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.event_id=e.id)
@@ -367,11 +376,13 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null 
   const money = [removed.gifts && n(removed.gifts, "gift", "gifts"), removed.pledges && n(removed.pledges, "pledge", "pledges")].filter(Boolean).join(" and ");
   const ppl = removed.people ? `${n(removed.people, "person", "people")} this file created`
     + (removed.alreadyDeleted ? ` (${removed.alreadyDeleted.toLocaleString("en-US")} of them already deleted)` : "") : "";
-  const what = money ? ` ${money} removed${ppl ? ` and ${ppl}` : ""}` : ppl ? ` ${ppl} removed` : " Nothing it wrote was left to remove";
+  const backSaid = removed.backToTrash ? `${n(removed.backToTrash, "person", "people")} it brought back from the trash ${removed.backToTrash === 1 ? "is" : "are"} back in the trash` : "";
+  const what = (money ? ` ${money} removed${ppl ? ` and ${ppl}` : ""}` : ppl ? ` ${ppl} removed` : backSaid ? "" : " Nothing it wrote was left to remove")
+    + (backSaid ? `${money || ppl ? ";" : ""} ${backSaid}` : "");   // IMPORT-9
   const list = (xs, k) => xs.slice(0, k).map(x => `${x.name} (${x.why})`).join("; ") + (xs.length > k ? `; and ${(xs.length - k).toLocaleString("en-US")} more` : "");
   const lead = stayed.length ? `Undone, except for ${n(stayed.length, "person", "people")}.` : "Undone.";
   return done({ reversed: true, gifts: removed.gifts, donorsRemoved: removed.people, journeysStopped: removed.journeys,
-    pledgesRemoved: removed.pledges, alreadyDeleted: removed.alreadyDeleted,
+    pledgesRemoved: removed.pledges, alreadyDeleted: removed.alreadyDeleted, backToTrash: removed.backToTrash,
     stayed: stayed.slice(0, 500), stayedCount: stayed.length,
     sentence: lead
       + what
