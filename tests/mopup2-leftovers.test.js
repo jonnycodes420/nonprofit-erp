@@ -141,7 +141,7 @@ async function person(name, kind = "individual") {
         [`g_mp2_tw${i}_${RUN}`, ORG, d, daysAgo(10)]);
     const alive = async () => (await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND id = ANY($2) AND deleted_at IS NULL`, [ORG, ids]))[0].n;
 
-    const check = await api("POST", "/donors/bulk-delete/check", tok, { ids });
+    const check = await api("POST", "/donors/trash-check", tok, { ids });
     ok("§4 the confirm can say 50 people, 5 with gifts", check.status === 200 && check.body.count === 50 && check.body.withGifts === 5, check.body);
     const auditBefore = (await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1`, [ORG]))[0].n;
     ok("§4 the count is a read: it writes no audit row", auditBefore === (await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1`, [ORG]))[0].n);

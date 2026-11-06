@@ -335,7 +335,7 @@ async function peopleWithGifts(orgId, ids) {
     `SELECT DISTINCT g.donor_id FROM gifts g WHERE g.org_id = ? AND g.donor_id = ANY(?)`, [orgId, ids]);
   return new Set(rows.map(r => r.donor_id));
 }
-app.post("/donors/bulk-delete/check", requireAuth, requireAdmin, wrap(async (req, res) => {
+app.post("/donors/trash-check", requireAuth, requireAdmin, wrap(async (req, res) => {
   req.audit && req.audit.skip && req.audit.skip("a read: nothing changes");
   if (!Array.isArray(req.body.ids) || req.body.ids.length === 0) return res.status(400).json({ error: "ids array required" });
   const ids = [...new Set(req.body.ids.map(String))];

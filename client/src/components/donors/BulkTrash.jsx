@@ -26,7 +26,7 @@ export function BulkTrash({ ids, disabled, onDone, flash }) {
     if (!confirm) return undefined;
     let live = true;
     setCheck(null); setInclude(false);
-    apiFetch("/donors/bulk-delete/check", { method: "POST", body: JSON.stringify({ ids }) })
+    apiFetch("/donors/trash-check", { method: "POST", body: JSON.stringify({ ids }) })
       .then(r => { if (live) setCheck(r); })
       .catch(e => { if (live) setCheck({ error: errorMessage(e, "Steward could not count who has gifts. Nothing was changed.") }); });
     return () => { live = false; };

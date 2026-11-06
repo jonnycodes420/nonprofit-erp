@@ -34,7 +34,7 @@ From the reports of FEEL-1, GIFTS-2, SPEED-2 and IMPORT-9.
    (`client/src/components/donors/BulkTrash.jsx`). It is the same trash route (`POST /donors/bulk-delete`):
    one request, one audit row, one trash row each, one Undo toast. New: `withGifts` ("skip", the
    default the screen sends, or "include" with `withGiftsCount`, the number the confirm named; a different
-   number is refused whole) and `POST /donors/bulk-delete/check`, a read that tells the confirm how many
+   number is refused whole) and `POST /donors/trash-check`, a read that tells the confirm how many
    have gifts. Without `withGifts` the route is as before, because Undo import's "remove them too" names
    its own people and has its own confirm.
 
