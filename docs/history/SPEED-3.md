@@ -52,3 +52,15 @@ the content column. /ops shows Settings section by section under Settings.
 **Not done.** LYBUNT (~300 ms on 25,000 people) is unchanged. Retention and LYBUNT were not
 put in the store: the store's refresher recomputes after every write, and the load mix
 writes more often than it reads reports.
+
+**LYBUNT, for the next build.** Its "gave in the prior year" test is a semi-join that reads
+the whole org's prior-year gifts, and Postgres builds that hash once in each of three
+parallel workers (about 210 ms each on 25,000 people). It passed the nightly at 959 ms p95
+once the other reads stopped crowding the CPU, against main's 2,048 ms the same hour:
+thin margin. The fix is a set-wise form of shared/numbers/bunt.js (one pass over the
+two years' gifts per person), proven equal to the current rule.
+
+**On CI's own runner** (the nightly workflow, dispatched the same hour): main failed
+(LYBUNT 2,048, /donors 1,798, retention 1,772, counts 1,764, bundle 1,637, profile open
+2,085 ms p95); this branch passed every bar (retention 685, counts 389, /donors 468,
+bundle 432, LYBUNT 959, profile open 635).
