@@ -271,13 +271,13 @@ async function seed() {
     // A control already on (the scope it is set to, the tab that is open) is not a dead end.
     const SEL = 'button:not([disabled]):not([aria-pressed="true"]):not([aria-selected="true"]):not([aria-current="true"]):not([aria-current="page"]), a[href], [role="button"]:not([aria-pressed="true"]), [role="tab"]:not([aria-selected="true"])';
     const n = await page.locator(`${rootSel} :is(${SEL})`).count();
-    const dead = [], started = Date.now();
+    const dead = [], started = performance.now();
     let tried = 0;
     const sig = () => page.evaluate(() => [location.href, document.querySelectorAll('[role="dialog"],[role="menu"],[role="listbox"],[role="tooltip"]').length,
       [...document.querySelectorAll("[aria-pressed],[aria-selected],[aria-expanded]")].map(e => [e.getAttribute("aria-pressed"), e.getAttribute("aria-selected"), e.getAttribute("aria-expanded")].join()).join(";"),
       document.body.innerText.length, document.body.innerText.slice(0, 6000)].join("|"));
     const overlays = () => page.locator('[role="dialog"],[role="menu"]').count();
-    for (let i = 0; i < Math.min(n, 70) && Date.now() - started < 150000; i++) {
+    for (let i = 0; i < Math.min(n, 70) && performance.now() - started < 150000; i++) {
       const el = page.locator(`${rootSel} :is(${SEL})`).nth(i);
       const info = await el.evaluate(e => ({ text: (e.innerText || e.getAttribute("aria-label") || "").trim().replace(/\s+/g, " ").slice(0, 50), href: e.getAttribute("href"),
         visible: !!(e.offsetWidth || e.offsetHeight), tag: e.tagName, commit: e.hasAttribute("data-commit") }), null, { timeout: 2000 }).catch(() => null);
