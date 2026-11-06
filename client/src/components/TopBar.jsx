@@ -43,6 +43,11 @@ const QUICK_NAV = [
   { id:"nav_memberships", label:"Memberships", hint:"Members, levels, renewals and the membership page",
     keywords:"memberships membership members member levels tiers renewals renew lapsed dues join card",
     go:nav=>nav("memberships") },
+  // GIFTS-2: "recurring" and "monthly" found people's plans and never the page
+  // that lists them all (Muse, 6 Nov). It opens Fundraising → Money in.
+  { id:"nav_recurring", label:"Recurring giving", hint:"Every monthly and yearly plan, failed cards and recoveries",
+    keywords:"recurring giving monthly donors monthly giving monthly gifts sustainers sustaining subscriptions plans yearly annual plan failed card dunning",
+    go:nav=>nav("fundraising",{frSection:"recurring"}) },
 ];
 
 const fmtMoney = n => "$" + Math.round(Number(n)||0).toLocaleString();

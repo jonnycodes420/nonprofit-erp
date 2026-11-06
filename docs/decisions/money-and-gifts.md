@@ -7,6 +7,10 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 - **Restricted + Unrestricted = Lifetime (LEDGER-2).** A person's split is `shared/numbers/fundSplit.js`: Lifetime
   cut by fund, each gift in exactly one bucket by its fund's restriction. A gift on an unrestricted fund, a gift
   with no fund and the imported total are Unrestricted. A portfolio total is its donors' Lifetime, read live.
+- **A gift split across funds is one gift (GIFTS-2).** Its lines are `gift_fund_lines`, written only by
+  `server/donors/giftFundLines.js`, and they add up to the gift to the cent (`shared/numbers/fundLines.js`
+  `linesRefusal`). One gift, one receipt, one ledger row; `gifts.fund_id` is the largest line. Anything that
+  sums by fund reads `GIFT_FUND_ROWS` (gifts) or `LEDGER_FUND_ROWS` (the ledger), never `g.fund_id` alone.
 - **Every pledge has its installments (SWEEP-4, FIX-60).** A pledge is written only by `writePledges` /
   `writePledge` (`pledgeWrite.js`), with its installments, from every door: the profile (and API), file import,
   history import (`import-semantics`), To confirm, proposals, grants, event sponsorships and recordGift's

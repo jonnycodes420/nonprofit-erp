@@ -763,6 +763,21 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
            paceSentence, paceMath, paceRaisedPct, paceElapsedPct, startsOn: lifecycle === "upcoming" ? civilDay(startDate) : null };
 }
 
+// GIFTS-2 · PACE ON COMMITTED, THE BAR ON RAISED. When a goal counts pledges,
+// the pace badge compares committed (raised + still owed) with the time gone;
+// the bar, the percent and "over" stay money raised, which is what every other
+// figure of this goal (goal-progress, Reports) reads.
+const PACE_KEYS = ["paceState", "expected", "paceSentence", "paceMath", "paceRaisedPct", "paceElapsedPct"];
+function paceWithCommitment(raised, commitment, goal, startDate, endDate) {
+  const base = computeFundraisingPace(raised, goal, startDate, endDate);
+  if (!commitment || !commitment.countPledges || commitment.paceBasis === raised) return base;
+  const on = computeFundraisingPace(commitment.paceBasis, goal, startDate, endDate);
+  for (const k of PACE_KEYS) base[k] = on[k];
+  if (base.paceSentence) base.paceSentence = base.paceSentence.replace("% raised", "% committed");
+  if (base.paceMath) base.paceMath = base.paceMath.replace(" raised by day", " committed by day");
+  return base;
+}
+
 // Live totals for a set of campaigns, matched the same way
 // /campaigns/:id/progress matches: campaign_id OR the legacy campaign-name text
 // column. One query per component, grouped, so the list view never N+1s.
@@ -784,7 +799,7 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
 async function fundraisingCampaignRows(orgId) {
   await PACE_READY;
   const campaigns = await query(
-    `SELECT id, name, goal_amount, start_date, end_date, status, type, goal_category, parent_goal_id, created_at,
+    `SELECT id, name, goal_amount, start_date, end_date, status, type, goal_category, parent_goal_id, created_at, count_pledges,
             donor_facing_name, donor_description, donor_story, hero_image_url, hero_crop, hero_focal_x, hero_focal_y, goal_progress_public, grants_off_public_bar, retired_at
      FROM campaigns WHERE org_id = ? AND goal_amount IS NOT NULL AND goal_amount > 0
      ORDER BY created_at DESC`,
@@ -834,7 +849,11 @@ async function fundraisingCampaignRows(orgId) {
     const grantAwarded = parseFloat(grantById[c.id]?.grant_awarded) || 0;
     const raised = giftRaised + grantAwarded;
     const pledged = parseFloat(pledgeById[c.id]?.pledged) || 0;
-    const pace = computeFundraisingPace(raised, c.goal_amount, c.start_date, c.end_date);
+    // GIFTS-2: a campaign counts its pledges toward the goal unless it says not;
+    // pace then reads committed (raised + still owed), never a dollar twice.
+    const GP = require("../../shared/numbers/goalPledges");
+    const commitment = { ...GP.committedOf({ raised, pledged, countPledges: GP.countsPledges("campaign", c.count_pledges) }), goalId: c.id, kind: "campaign", canCount: true };
+    const pace = paceWithCommitment(raised, commitment, c.goal_amount, c.start_date, c.end_date);
     return {
       id: c.id,
       name: c.name,
@@ -846,6 +865,7 @@ async function fundraisingCampaignRows(orgId) {
       grantCount: parseInt(grantById[c.id]?.grant_count, 10) || 0,
       pledged,
       pledgeCount: parseInt(pledgeById[c.id]?.pledge_count, 10) || 0,
+      commitment,   // GIFTS-2
       earlyGiven: earlyById[c.id] || 0,
       donorCount: parseInt(s.donor_count, 10) || 0,
       startDate: c.start_date,
@@ -950,7 +970,7 @@ reportHooks.yearWindows = async orgId => {
   return { cur: reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth), prior: reportYearBounds(p.year - 1, p.yearMode, p.fiscalStartMonth), year: p.year };
 };
 reportHooks.run = async (orgId, key, q = {}) => REPORT_HANDLERS[key](orgId, parseReportParams(q, await orgForYears(orgId)));   // ORG_TZ_SEAM_OK
-return { GOAL_CATEGORIES, composeBoardPack, computeDashboard, computeFundraisingPace, fundraisingCampaignRows, fundraisingGoalsPortfolio, goalFigureRow, savedDashboardFor };
+return { GOAL_CATEGORIES, composeBoardPack, computeDashboard, computeFundraisingPace, paceWithCommitment, fundraisingCampaignRows, fundraisingGoalsPortfolio, goalFigureRow, savedDashboardFor };
 }
 
 module.exports = { mount };

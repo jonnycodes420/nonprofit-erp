@@ -118,7 +118,7 @@ function CampaignFacts({ g }) {
   );
 }
 
-export function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit, openId, onOpenCampaign, onBack, onNavigate, templates, planPanel, onRemoved }) {
+export function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit, openId, onOpenCampaign, onBack, onNavigate, templates, planPanel, commitPanel, onRemoved }) {
   const [tpl, setTpl] = useState(null);
   const loadTpl = () => apiFetch("/campaign-templates").then(setTpl).catch(() => setTpl({ templates: [] }));
   useEffect(() => { loadTpl(); }, []);
@@ -135,7 +135,7 @@ export function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit, openId,
   if (openId) {
     return (
       <FigureContext.Provider value={{ openPerson }}>
-        <CampaignPage g={open} id={openId} allGoals={goals} editBtn={editBtn} isReadOnly={isReadOnly} onBack={onBack} onOpenCampaign={onOpenCampaign} planPanel={planPanel} />
+        <CampaignPage g={open} id={openId} allGoals={goals} editBtn={editBtn} isReadOnly={isReadOnly} onBack={onBack} onOpenCampaign={onOpenCampaign} planPanel={planPanel} commitPanel={commitPanel} />
       </FigureContext.Provider>
     );
   }
@@ -246,7 +246,7 @@ function CampaignCard({ g, allGoals, editBtn, onOpenCampaign }) {
 
 // The campaign's own page: the thermometer, who gave, how it did against the
 // one a year earlier (Ask why), and its plan. Edit opens the same form.
-function CampaignPage({ g, id, allGoals, editBtn, isReadOnly, onBack, onOpenCampaign, planPanel }) {
+function CampaignPage({ g, id, allGoals, editBtn, isReadOnly, onBack, onOpenCampaign, planPanel, commitPanel }) {
   const back = (
     <RecordLink to={listHref()} onOpen={onBack} data-testid="campaign-back" style={{ fontSize: 13, color: T.greenDk, fontWeight: 600 }}>← All campaigns</RecordLink>
   );
@@ -289,6 +289,8 @@ function CampaignPage({ g, id, allGoals, editBtn, isReadOnly, onBack, onOpenCamp
         {!g.isOverarching && (
           <div style={{ marginTop: 14, fontSize: 13.5, color: T.ink2 }}><CampaignFacts g={g} /></div>
         )}
+        {/* GIFTS-2: this campaign's raised + pledged = committed, and its own switch. */}
+        {!g.isOverarching && commitPanel && <div style={{ marginTop: 10 }}>{commitPanel(g)}</div>}
         <div style={{ marginTop: 10, fontSize: 12.5, color: T.ink3 }}>
           Click the amount raised to see every gift behind it, or the donors to see who gave.
         </div>

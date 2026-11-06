@@ -5,6 +5,7 @@ import { useChanged } from "../lib/changes";   // STALE-1
 import { T, activeMark, fmt, fmtFull, fmtTotal, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal } from "./shared";
 import { DepositSheetModal } from "./DepositSheet";
 import { RecurringView } from "./RecurringGiving";
+import GoalCommitment from "./GoalCommitment";   // GIFTS-2: a goal can count pledges
 import { MembersView } from "./Memberships";
 import { EventsDesk } from "./EventsDesk";
 import { ProposalsView, PortfolioView, PlansView, MajorGiftsDashboard } from "./MajorGifts";
@@ -141,10 +142,9 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
   useEffect(() => { load(); }, []);
   // STALE-1: a gift, pledge or grant payment made anywhere moves the overview
   // and the campaigns' totals, read again behind the screen (no loading state).
-  useChanged(["gift", "pledge", "totals"], () => {
-    Promise.all([apiFetch("/fundraising/overview"), apiFetch("/fundraising/campaigns")])
-      .then(([o, c]) => { setOverview(o); setCampaigns(c); }).catch(() => { /* keeps what is on screen */ });
-  });
+  const refresh = () => Promise.all([apiFetch("/fundraising/overview"), apiFetch("/fundraising/campaigns")])
+    .then(([o, c]) => { setOverview(o); setCampaigns(c); }).catch(() => { /* keeps what is on screen */ });
+  useChanged(["gift", "pledge", "totals"], refresh);
 
   // Any id, old or new, opens its section on its part.
   const goto = id => { const r = resolveFr(id); setSection(r.section); setPartOf(m => ({ ...m, [r.section]: r.part })); };
@@ -239,7 +239,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
       <div data-fr-view={subtab}>
       {!loading && subtab === "overview" && (
         <>
-          <OverviewView overview={overview} campaigns={campaigns} isReadOnly={isReadOnly}
+          <OverviewView overview={overview} campaigns={campaigns} isReadOnly={isReadOnly} isAdmin={isAdmin && !isReadOnly} onRefresh={refresh}
             onNewCampaign={() => setSubtab("campaigns")} onGoto={setSubtab} onNavigate={onNavigate} primaryBtn={primaryBtn} onOpenCampaign={openCampaign} />
         </>
       )}
@@ -304,6 +304,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
           onNew={() => !isReadOnly && setModal({ mode: "new" })}
           templates={(tpl, reload) => <CampaignTemplates data={tpl} reload={reload} isReadOnly={isReadOnly} onCreated={out => { load(); if (out && out.campaignId) openCampaign(out.campaignId); }} onOpenCampaign={openCampaign} />}
           planPanel={id => <CampaignPlanPanel campaignId={id} isReadOnly={isReadOnly} />}
+          commitPanel={g => <GoalCommitment c={g.commitment} isAdmin={isAdmin && !isReadOnly} onChanged={refresh} />}
           onEdit={c => !isReadOnly && setModal({ mode: "edit", campaign: c })} onRemoved={load} />
       )}
 
@@ -358,7 +359,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
 // ended goals sit under Past, folded, with their result. Pledges are three
 // figures (open, due this fiscal year, overdue), the ones Home and Pledges
 // read. "Everything in Fundraising" is gone: it repeated the tabs above it.
-function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampaign, onGoto, onOpenCampaign }) {
+function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampaign, onGoto, onOpenCampaign, isAdmin = false, onRefresh }) {
   if (!overview) return <EmptyState title="Nothing to show yet" message="Set a goal and start a campaign to see your fundraising momentum here." />;
   const { period, givingPages, rollup, goals = [], last12, goal: orgGoal, emptyYearWithHistory, pledges, leadEvent } = overview;
   const gp = givingPages;
@@ -412,6 +413,8 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           <Thermometer raised={orgGoal.currentAmount} goal={orgGoal.goalAmount} percent={orgGoal.percent}
             rawPercent={orgGoal.rawPercent} over={orgGoal.over}
             paceState={orgGoal.paceState} paceSentence={orgGoal.paceSentence} paceMath={orgGoal.paceMath} big />
+          {/* GIFTS-2: raised, pledged and committed, and whether this goal counts pledges. */}
+          <GoalCommitment c={orgGoal.commitment} isAdmin={isAdmin} onChanged={onRefresh} style={{ marginTop: 10 }} />
           {orgGoal.sourceNote && (
             <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 10, lineHeight: 1.5 }}>{orgGoal.sourceNote}</div>
           )}
@@ -632,7 +635,9 @@ function LeadEvent({ e, onNavigate, card, label }) {
 // summing a pledge and its payments into one number double-counts.
 function committedText(g) {
   const parts = [];
-  if ((g.pledged || 0) > 0) parts.push(`${fmtTotal(g.pledged)} pledged`);
+  // GIFTS-2: a goal that counts pledges says raised + pledged = committed.
+  if (g.commitment && g.commitment.countPledges && (g.pledged || 0) > 0) parts.push(g.commitment.sentence);
+  else if ((g.pledged || 0) > 0) parts.push(`${fmtTotal(g.pledged)} pledged, not counted toward this goal`);
   if ((g.grantAwarded || 0) > 0) parts.push(`incl. ${fmtTotal(g.grantAwarded)} in awarded grants`);
   return parts.join(" · ");
 }

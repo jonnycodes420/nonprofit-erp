@@ -21,6 +21,7 @@ import { budgetVarianceText, budgetMonthsElapsed } from "../lib/budgetWords";
 // only for a destructive confirm (the four-colour rule).
 const BEHIND = T.gold700;
 import { orgTodayCivil } from "../lib/orgToday";
+import { RecurringView } from "./RecurringGiving";   // GIFTS-2: recurring giving is findable from Finance
 
 // ── Constants ──────────────────────────────────────────────────────────────
 // POLISH-5: the empty ledger's second sentence, one text node with its first.
@@ -799,7 +800,8 @@ const FIN_SECTIONS = [
   { id: "funds", label: "Funds", question: "Where is the money, and what is it promised to?",
     parts: [{ id: "funds", label: "Funds" }, { id: "budgets", label: "Budgets" }] },
   { id: "deposits", label: "Deposits and payouts", question: "What arrived, and does it match?",
-    parts: [{ id: "payouts", label: "Payouts" }, { id: "deposits", label: "Deposit sheet" }] },
+    parts: [{ id: "payouts", label: "Payouts" }, { id: "deposits", label: "Deposit sheet" },
+            { id: "recurring", label: "Recurring giving" }] },   // GIFTS-2: the same view as Fundraising's
   { id: "grantsmoney", label: "Grants money", question: "What is restricted, and who restricted it?",
     parts: [{ id: "restricted", label: "Restricted" }] },
   { id: "exports", label: "Exports", question: "What does the bookkeeper need?",
@@ -1141,6 +1143,9 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
 
       {/* ── FIN-1 · the deposit sheet, where a treasurer looks for it ── */}
       {subtab === "deposits" && <DepositSheetCard onNavigate={onNavigate} isReadOnly={isReadOnly}/>}
+
+      {/* ── GIFTS-2 · the monthly and yearly plans, where a treasurer looks for money arriving ── */}
+      {subtab === "recurring" && <RecurringView onNavigate={onNavigate} isReadOnly={isReadOnly}/>}
 
       {/* ── FIN-1 · the year-end statement run, in Exports with the rest ── */}
       {subtab === "yearend" && <YearEndCard isReadOnly={isReadOnly} onNavigate={onNavigate}/>}

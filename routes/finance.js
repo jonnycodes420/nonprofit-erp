@@ -175,9 +175,9 @@ async function finFigure(orgId, key, { from, to }, rows = false) {
                            WHEN ft.type='expense' THEN -ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS cents`;
     const r = await query(
       `SELECT ${sel} FROM fin_funds f
-         LEFT JOIN fin_transactions ft ON ft.fund_id=f.id AND ft.org_id=f.org_id
+         LEFT JOIN ${NUM.fundLines.LEDGER_FUND_ROWS()} ft ON ft.fund_id=f.id AND ft.org_id=f.org_id
         WHERE f.org_id=? AND COALESCE(f.restricted,false) = ?
-        ${rows ? "GROUP BY f.id, f.name, f.restricted ORDER BY 4 DESC" : ""}`, [orgId, want]);
+        ${rows ? "GROUP BY f.id, f.name, f.restricted ORDER BY 4 DESC" : ""}`, [orgId, orgId, orgId, want]);
     return rows ? r : Number(r[0].cents);
   }
   if (key === "unmatched") {
@@ -467,11 +467,11 @@ app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
             COALESCE(SUM(CASE WHEN ft.type='income'  AND ft.date >= ? AND ft.date <= ? THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS in_period,
             COALESCE(SUM(CASE WHEN ft.type='expense' AND ft.date >= ? AND ft.date <= ? THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS out_period
        FROM fin_funds f
-       LEFT JOIN fin_transactions ft ON ft.fund_id=f.id AND ft.org_id=f.org_id
+       LEFT JOIN ${NUM.fundLines.LEDGER_FUND_ROWS()} ft ON ft.fund_id=f.id AND ft.org_id=f.org_id   -- GIFTS-2: a split gift by its lines
       WHERE f.org_id=?
       GROUP BY f.id, f.name, f.restricted, f.description
       ORDER BY COALESCE(f.restricted,false) DESC, f.name`,
-    [month.from, month.to, month.from, month.to, orgId]);
+    [month.from, month.to, month.from, month.to, orgId, orgId, orgId]);
 
   // WHO RESTRICTED IT. A grant whose money went to this fund, or a donor
   // whose gift did. Read per fund rather than guessed from the name.
@@ -488,17 +488,18 @@ app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
       WHERE ft.org_id=? AND ft.fund_id IS NOT NULL AND ft.type='income'
       GROUP BY 1,2,3
       UNION ALL
-     SELECT g.fund_id, 'donor', d.name, ${NUM.money.MONEY_CENTS("g")}
+     SELECT gf.fund_id, 'donor', d.name, ${NUM.fundLines.LINES_CENTS("gf")}
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
-      WHERE g.org_id=? AND g.fund_id IS NOT NULL AND d.deleted_at IS NULL AND ${NUM.money.MONEY("g")}
+       JOIN ${NUM.fundLines.GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id   -- GIFTS-2
+      WHERE g.org_id=? AND gf.fund_id IS NOT NULL AND d.deleted_at IS NULL AND ${NUM.money.MONEY("g")}
       GROUP BY 1,2,3
       UNION ALL
      SELECT ft.fund_id, 'ledger', ft.vendor_donor, COALESCE(SUM(ROUND(ft.amount*100)),0)::bigint
-       FROM fin_transactions ft
+       FROM ${NUM.fundLines.LEDGER_FUND_ROWS()} ft
       WHERE ft.org_id=? AND ft.fund_id IS NOT NULL AND ft.type='income'
-        AND ft.grant_id IS NULL AND COALESCE(ft.vendor_donor,'') <> ''
+        AND ft.grant_id IS NULL AND ft.gift_id IS NULL AND COALESCE(ft.vendor_donor,'') <> ''   -- GIFTS-2: a gift is the donor line above, never named twice
       GROUP BY 1,2,3
-      ORDER BY 4 DESC`, [orgId, orgId, orgId]);
+      ORDER BY 4 DESC`, [orgId, orgId, orgId, orgId, orgId]);
   const byFund = new Map();
   for (const s of sources) {
     if (!byFund.has(s.fund_id)) byFund.set(s.fund_id, []);
@@ -544,8 +545,8 @@ app.get("/finance/funds-detail/rows", requireAuth, wrap(async (req, res) => {
   if (!(await orgOwns("fin_funds", fundId, orgId))) return res.status(404).json({ error: "Not found" });
   const rows = await query(
     `SELECT ft.id, ft.date, ft.type, ft.amount, ft.description, ft.vendor_donor
-       FROM fin_transactions ft WHERE ft.org_id=? AND ft.fund_id=?
-      ORDER BY ft.date DESC NULLS LAST, ft.id LIMIT 2000`, [orgId, fundId]);
+       FROM ${NUM.fundLines.LEDGER_FUND_ROWS()} ft WHERE ft.org_id=? AND ft.fund_id=?
+      ORDER BY ft.date DESC NULLS LAST, ft.id LIMIT 2000`, [orgId, orgId, orgId, fundId]);
   const net = rows.reduce((a, r) => a + (r.type === "income" ? 1 : -1) * Math.round(Number(r.amount) * 100), 0);
   res.json({ rows: rows.map(r => ({ ...r, amount: Number(r.amount) })), count: rows.length,
     netCents: net, net: toDollars(net),
@@ -4608,10 +4609,10 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
                   COALESCE(SUM(CASE WHEN ft.type='income' THEN ft.amount
                                     WHEN ft.type='expense' THEN -ft.amount ELSE 0 END), 0) AS balance
            FROM fin_funds f
-           LEFT JOIN fin_transactions ft ON ft.fund_id = f.id AND ft.org_id = f.org_id
+           LEFT JOIN ${NUM.fundLines.LEDGER_FUND_ROWS()} ft ON ft.fund_id = f.id AND ft.org_id = f.org_id
            WHERE f.org_id = ?
            GROUP BY f.id, f.name, f.restricted
-           ORDER BY f.restricted ASC, f.name ASC`, [orgId]),
+           ORDER BY f.restricted ASC, f.name ASC`, [orgId, orgId, orgId]),
     query(`SELECT COUNT(DISTINCT fund_id) AS cnt FROM fin_transactions
            WHERE org_id = ? AND date >= ? AND date <= ? AND fund_id IS NOT NULL`, [orgId, cur.start, cur.end]),
     // B1 — the org's whole giving history (all gifts) vs what actually reached the

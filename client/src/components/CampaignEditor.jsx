@@ -25,6 +25,7 @@ import StockPhotoPicker from "./StockPhotoPicker";
 import { askConfirm } from "./ConfirmDialog";
 import StewardEditor, { RailSection, DeviceFrame, useNarrow, railLabel, railInput, railQuietBtn, railNote } from "./StewardEditor";
 import { EmailFrame, EmailBlockSettings, BlockMenu, BrandSummary, PreviewAs, FieldMenu, EmailHistory, insertChip, setAtPath, stripKeys, useBlockList } from "./EmailEditor";
+import { previewAsParam } from "../lib/previewAs";   // GIFTS-2: Preview as yourself re-draws the preview
 
 const NOTE_BOX = { background: T.gold50, border: "1px solid " + T.gold300, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, color: T.ink, lineHeight: 1.5 };
 // The local wall-clock "now" for a datetime-local's min, in the browser's zone.
@@ -67,7 +68,7 @@ export default function CampaignEditor({
   const [blocks, setBlocks, act] = useBlockList(initialBlocks);
   const [device, setDevice] = useState(narrow ? "phone" : "desktop");
   const [dark, setDark] = useState(false);
-  const [as, setAs] = useState(null);
+  const [as, setAs] = useState(undefined);   // GIFTS-2: undefined = first recipient, null = yourself (lib/previewAs.js)
   const [preview, setPreview] = useState({ html: "", problems: [], loading: true, as: null, subject: "" });
   const [selected, setSelected] = useState(null);
   const [menuAt, setMenuAt] = useState(undefined);
@@ -96,7 +97,7 @@ export default function CampaignEditor({
     const t = setTimeout(() => {
       const cur = latest.current;
       apiFetch("/email-preview", { method: "POST", body: JSON.stringify({ blocks: stripKeys(cur.blocks), subject: cur.subject, preheader: cur.preheader, dark,
-        editable: !readOnlySent && !isReadOnly, as: (as && as.id) || firstId || undefined, campaignName: cur.name }) })
+        editable: !readOnlySent && !isReadOnly, as: previewAsParam(as, firstId), campaignName: cur.name }) })
         .then(r => { if (n === seq.current) setPreview({ html: r.html, problems: r.problems || [], loading: false, as: r.as, subject: r.subject || "" }); })
         .catch(e => { if (n === seq.current) setPreview(p => ({ ...p, loading: false, problems: [(e && (e.sentence || e.message)) || "The preview could not be drawn."] })); });
     }, 300);

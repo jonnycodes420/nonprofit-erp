@@ -467,6 +467,9 @@ function bResolver(routePath, param) {
   if (seg1 === "me" && routePath.includes("/sessions/") && param === "id") return `ses_${B}`;
   // ONBOARD-1 — two kinds of row under /setup: a run and a prepared invitation.
   if (seg1 === "setup" && param === "id") return routePath.includes("/invites/") ? `si_${B}` : `sr_${B}`;
+  // GIFTS-2 — "Count pledges toward this goal" on org B's own campaign: org A
+  // must get a 404 and change nothing.
+  if (seg1 === "goals" && routePath.includes("/count-pledges")) return param === "kind" ? "campaign" : param === "id" ? `c_${B}` : null;
   if (seg1 === "webhooks") {
     return routePath.includes("/deliveries/:id") ? `whd_${B}` : `whe_${B}`;
   }

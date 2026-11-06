@@ -16,6 +16,8 @@
 "use strict";
 const { MONEY } = require("./money");
 const { AFTER_IMPORT } = require("./lifetime");
+// GIFTS-2: a gift split across funds is cut by its lines, each in its own fund's bucket.
+const { GIFT_FUND_ROWS } = require("./fundLines");
 
 const NO_FUND = require("../giftWords.js").NO_FUND_LABEL;   // FEEL-1: "Unrestricted (no fund)", one name everywhere
 const IMPORTED = "From your old system";
@@ -26,11 +28,12 @@ async function fundSplit(query, orgId, donorId) {
   const [d] = await query(`SELECT id, org_id, imported_total, imported_through FROM donors WHERE org_id = ? AND id = ?`, [orgId, donorId]);
   if (!d) return null;
   const rows = await query(
-    `SELECT NULLIF(g.fund_id, '') AS fund_id, f.name AS fund_name, COALESCE(f.restricted, false) AS restricted,
-            COUNT(*)::int AS gift_count, ROUND(SUM(g.amount) * 100)::bigint AS cents, MAX(LEFT(g.date, 10)) AS last_date
+    `SELECT NULLIF(gf.fund_id, '') AS fund_id, f.name AS fund_name, COALESCE(f.restricted, false) AS restricted,
+            COUNT(*)::int AS gift_count, ROUND(SUM(gf.amount) * 100)::bigint AS cents, MAX(LEFT(g.date, 10)) AS last_date
        FROM gifts g
        JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-       LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+       JOIN ${GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id
+       LEFT JOIN fin_funds f ON f.id = gf.fund_id AND f.org_id = g.org_id
       WHERE g.org_id = ? AND g.donor_id = ? AND ${MONEY("g")} AND ${AFTER_IMPORT("g", "d")}
       GROUP BY 1, 2, 3`, [orgId, donorId]);
   const funds = rows.map(r => ({

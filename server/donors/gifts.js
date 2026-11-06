@@ -18,6 +18,7 @@ const NUM = require("../../campaignMatch");
 const RCE = require("./receiptEmail");   // FLOWS-1: a receipt or statement emailed only on its own click
 const PW = require("../../pledgeWrite");   // FIX-60: the one writer of a pledge and its installments
 const EG = require("../events/eventGifts");   // GIFTS-1: the event a gift was given at
+const GFL = require("./giftFundLines");   // GIFTS-2: a gift split across funds
 
 const routers = {
   r0: express.Router(),
@@ -162,6 +163,16 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   try { amt = toDollars(parseMoneyOrThrow(amount, "amount")); }
   catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
 
+  // GIFTS-2: "Split across funds". Two or more lines, each a fund of this org's,
+  // adding up to the gift to the cent, checked before the gift exists.
+  let fundLines = null;
+  if (Array.isArray(req.body.fundLines) && req.body.fundLines.length) {
+    const ck = await GFL.checkLines(query, req.user.orgId, amt, req.body.fundLines);
+    if (ck.notFound) return res.status(404).json({ error: ck.error });
+    if (ck.error) return res.status(400).json({ error: ck.error, code: "fund_lines" });
+    fundLines = ck.lines;
+  }
+
   // §1.1 F-3 — client-generated idempotency key, enforced by uq_gifts_idem at
   // the DATABASE (not an app-layer check). A double-tapped Save, a replayed
   // request, or 50 parallel identical submits produce exactly one gift row;
@@ -188,7 +199,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   const written = await recordGift({
     orgId: req.user.orgId, donorId: req.params.id, giftId, amount: amt, date: giftDate,
     type: type || "cash", campaign: campaignName || "", campaignId: effectiveCampaignId || null,
-    notes: notes || "", fundId: fundId || null, paymentMethod: paymentMethodIn,
+    notes: notes || "", fundId: fundLines ? fundLines[0].fundId : (fundId || null), paymentMethod: paymentMethodIn,
     pledgeId: pledgeRow ? pledgeRow.id : null, idempotencyKey: idemKey, conflict: "idempotency",
     eventId: giftEvent ? giftEvent.id : null,
     actorId: actor(req).id, actorName: actor(req).name, source: "gift_form",
@@ -199,12 +210,13 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     const dupDonor = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
     return res.status(200).json({ gift: dupGift[0] || null, donor: dupDonor[0] || null, duplicate: true });
   }
+  if (fundLines) await GFL.writeLines(run, req.user.orgId, giftId, fundLines, actor(req));
   if (pledgeRow) {
     // §1.2 F-5 — apply the PAID amount against the pledge balance; a partial
     // payment leaves the pledge open with an honest remaining balance.
     await recalcPledgePayment(pledgeRow.id, req.user.orgId);
   }
-  const giftRows  = [written.gift];
+  const giftRows  = [fundLines ? (await query("SELECT * FROM gifts WHERE id=?", [giftId]))[0] : written.gift];
   const donorRows = await query("SELECT * FROM donors WHERE id = ?", [req.params.id]);
   calcWealthScore(req.params.id, req.user.orgId).catch(e => console.error("score recalc:", e.message));
   // BUILD-22 — a lapsed donor who just gave auto-moves out of Lapsed to Steward
@@ -293,6 +305,27 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
   }
   const newDate = date ? normalizeGiftDate(date) : g.date;                       // enforce ISO
   if (date && !newDate) return res.status(400).json({ error: "A valid gift date (YYYY-MM-DD) is required, an unparseable date is an error, never today's date." });
+  // GIFTS-2: the fund lines. Sent as a list of two or more: replaced, and they
+  // must add up to the gift's (new) amount. Sent empty or null: the split is
+  // cleared and the gift is on its one fund again. Not sent: kept, and they
+  // must still add up, so an amount edit on a split gift carries its lines.
+  const linesIn = req.body.fundLines;
+  let linesOut;   // undefined = leave alone, [] = clear, [...] = replace
+  if (Array.isArray(linesIn) && linesIn.length) {
+    const ck = await GFL.checkLines(query, req.user.orgId, newAmt, linesIn);
+    if (ck.notFound) return res.status(404).json({ error: ck.error });
+    if (ck.error) return res.status(400).json({ error: ck.error, code: "fund_lines" });
+    linesOut = ck.lines;
+  } else if (linesIn === null || (Array.isArray(linesIn) && !linesIn.length)) {
+    linesOut = [];
+  } else {
+    const held = await query("SELECT fund_id, amount FROM gift_fund_lines WHERE org_id=? AND gift_id=?", [req.user.orgId, req.params.id]);
+    if (held.length) {
+      const refusal = require("../../shared/numbers/fundLines").linesRefusal(newAmt, held.map(h => ({ fundId: h.fund_id, amount: h.amount })));
+      if (refusal) return res.status(400).json({ error: refusal + " Change the fund lines with the amount.", code: "fund_lines" });
+      if (fund_id !== undefined && fund_id !== g.fund_id) linesOut = [];   // a single fund chosen ends the split
+    }
+  }
   // BUILD-27 concurrency (concurrency2 "torn write" fix): serialize this gift's
   // edit → donor-recalc → ledger-stamp trio under a per-gift advisory lock, the
   // same primitive the import/webhook-donor dedup paths use. recalcDonorSummary
@@ -335,6 +368,7 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
     );
     // F-5: an amount edit on a pledge-linked payment changes the pledge's paid
     // total — recompute (may fulfill, may reopen; canceled never resurrected).
+    if (linesOut !== undefined) await GFL.writeLines(run, req.user.orgId, req.params.id, linesOut, actor(req));
     if (g.pledge_id) await recalcPledgePayment(g.pledge_id, req.user.orgId);
     return query("SELECT * FROM gifts WHERE id=?", [req.params.id]);
   });
