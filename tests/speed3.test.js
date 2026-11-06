@@ -1,4 +1,5 @@
-// tests/speed3-atlas.test.js · SPEED-3. ATLAS ANSWERS FAST AND SAYS WHAT IT'S DOING.
+// tests/speed3.test.js · SPEED-3. ATLAS ANSWERS FAST AND SAYS WHAT IT'S DOING,
+// AND THE LOAD TEST'S SLOW READS.
 //
 // Donor data and email (a draft to a donor). Muse's walks: an Atlas answer or
 // draft took about 20 s with no sign of what was happening. Every model call
@@ -16,7 +17,14 @@
 //   §4 a draft past 15 s says "Still working: <step>", and at the 20 s budget
 //      the answer is what it has (the budget is shortened for the suite);
 //   §5 nothing was sent to anyone.
-// Planted (SPEED-3 report): the drafts awaited one after another → §3 red.
+//   §6 the Donors list on a 5,000-person org: its page statement reads no
+//      gifts by a sequential scan (on main, the closeness column turned into
+//      one hashed scan of every org's gifts per read), and the page is the same
+//      people in the same order as the one flat SELECT it replaced;
+//   §7 GET /donors/counts is served from the per-org store on a second read,
+//      and a write to the org's rows makes the next read fresh, moved by one.
+// Planted (SPEED-3 report): the drafts awaited one after another → §3 red;
+// the Donors page as the flat SELECT again (listPage.pageSql) → §6 red.
 "use strict";
 
 const http = require("http");
@@ -180,7 +188,7 @@ async function timed(tok, text, label) {
 }
 
 (async () => {
-  console.log("speed3-atlas (SPEED-3)");
+  console.log("speed3 (SPEED-3)");
   await new Promise(r => mock.listen(MOCK, r));
   await new Promise(r => sink.listen(SINK, r));
   require("../server.js");
@@ -232,6 +240,47 @@ async function timed(tok, text, label) {
   const fs = require("fs"), path = require("path");
   const ts = fs.readFileSync(path.join(__dirname, "../client/src/components/TellSteward.jsx"), "utf8");
   ok("§4 the dialog says \"Still working: <step>\" past 15 s and shows the words so far", /const SLOW_MS = 15000;/.test(ts) && /Still working: \$\{l\}/.test(ts) && /data-testid="atlas-words"/.test(ts), null);
+
+  // ── §6 THE DONORS PAGE ────────────────────────────────────────────────────
+  console.log("\n§6 the Donors list on a 5,000-person org");
+  const BIG = { id: "org_speed3list", slug: "speed3list", name: "Larkspur Commons Choir", tier: "medium", n: 7, donors: 5000, gifts: 30000, interactions: 2000, tasks: 50, subs: 20, users: 1 };
+  {
+    const tabs = await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`);
+    await q("SET session_replication_role = replica");
+    for (const t of tabs) await q(`DELETE FROM ${t.table_name} WHERE org_id=$1`, [BIG.id]).catch(() => {});
+    await q(`DELETE FROM orgs WHERE id=$1`, [BIG.id]);
+    await q("SET session_replication_role = origin");
+    const SM = require("../scripts/load/seed-many.js");
+    await SM.seedOrg(BIG, bcrypt.hashSync("loadtest1234", 8));
+    await SM.pool.query("ANALYZE donors; ANALYZE gifts");
+  }
+  const GR = require("../groups.js"), LP = require("../server/donors/listPage");
+  const num = sql => { let i = 0; return sql.replace(/\?/g, () => "$" + (++i)); };
+  const seqOnGifts = node => ((/Seq Scan/.test(node["Node Type"]) && node["Relation Name"] === "gifts") ? 1 : 0)
+    + (node.Plans || []).reduce((n, c) => n + seqOnGifts(c), 0);
+  for (const qs of [{}, { sort: "name" }, { status: "lapsed" }]) {
+    const f = await GR.buildDonorFilter(BIG.id, qs, { hideArchived: true });
+    const [sql, args] = LP.pageSql({ ...f, limit: 50, offset: 0 });
+    const plan = (await q("EXPLAIN (FORMAT JSON) " + num(sql), args))[0]["QUERY PLAN"][0].Plan;
+    ok(`§6 ${JSON.stringify(qs)}: the page reads no gifts by a sequential scan`, seqOnGifts(plan) === 0, seqOnGifts(plan));
+    for (const offset of [0, 50]) {
+      const [s2, a2] = LP.pageSql({ ...f, limit: 50, offset });
+      const flat = await q(num(`SELECT donors.*${f.selectCols} FROM donors WHERE ${f.whereSql} ORDER BY ${f.orderBy} LIMIT ? OFFSET ?`), [...f.selectArgs, ...f.params, 50, offset]);
+      const now = await q(num(s2), a2);
+      ok(`§6 ${JSON.stringify(qs)} offset ${offset}: the same people, in the same order, with the same values`, now.length === 50 && JSON.stringify(now) === JSON.stringify(flat), { now: now.length, flat: flat.length });
+    }
+  }
+
+  // ── §7 THE COUNTS, KEPT ───────────────────────────────────────────────────
+  console.log("\n§7 GET /donors/counts from the per-org store");
+  const bigTok = (await (await fetch(`${process.env.BASE}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: `admin@${BIG.slug}.load`, password: "loadtest1234" }) })).json()).token;
+  const counts = async () => { const r = await fetch(`${process.env.BASE}/donors/counts`, { headers: { Authorization: "Bearer " + bigTok } }); return { stored: r.headers.get("x-org-summary") === "stored", body: await r.json() }; };
+  const c1 = await counts(), c2 = await counts();
+  ok("§7 the first read is computed, the second is served from the store, the same answer", !c1.stored && c2.stored && JSON.stringify(c1.body) === JSON.stringify(c2.body) && c1.body.total === 5000, { c1, c2 });
+  await q(`INSERT INTO donors (id, org_id, name, created_by, created_by_name) VALUES ('d_speed3_new', $1, 'Tamsin Oakridge', 'system:test', 'test')`, [BIG.id]);
+  const c3 = await counts();
+  ok("§7 after a write to the org's rows the next read is fresh, and moved by one", !c3.stored && c3.body.total === c1.body.total + 1, c3);
 
   // ── §5 NOTHING SENT ───────────────────────────────────────────────────────
   ok("§5 nothing was sent to anyone", MAIL.length === 0, MAIL.length);
