@@ -25,11 +25,14 @@ export function openPledgeWords(pl) {
   const inst = (pl.installments || []).slice().sort((a, b) => a.seq - b.seq);
   const unpaid = inst.filter(i => !i.paid);
   const next = unpaid.find(i => i.dueDate) || null;
-  const more = next ? unpaid.filter(i => i !== next).length : Math.max(0, unpaid.length - 1);
+  // WALKB-2: the count is the unpaid installments (shared/numbers/pledges.js
+  // unpaidCount, on the answer), not the ones after the next: "1 more
+  // installment" was read as one left when two were.
+  const more = Number.isFinite(pl.unpaidCount) ? pl.unpaidCount : unpaid.length;
   const parts = [`${money(pl.paid)} received`];
   if (next) parts.push(`next due ${longDate(next.dueDate)}`);
   else if (unpaid.length || pl.balance > 0) parts.push("no set due date");
-  if (more) parts.push(`${countLabel(more, "more installment")}`);
+  if (more > 1 || (more === 1 && !next)) parts.push(`${countLabel(more, "installment")} left`);
   return { next, more, unpaid, inst, rest: parts.join(" · ") };
 }
 

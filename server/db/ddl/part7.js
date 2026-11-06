@@ -911,6 +911,11 @@ async function run7(pool) {
   // become household records (the only grouping); the links themselves stay.
   await householdsFromLinks(pool);
 
+  // WALKB-2: a withdrawn invite (Settings → Team, Revoke) and an archived
+  // event (one with gifts or guests, which is never deleted). Columns only.
+  await pool.query(`ALTER TABLE invites ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`);
+
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id
   // (orgSummary.js says which few are not, and why).

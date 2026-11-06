@@ -19,4 +19,5 @@ module.exports = {
   ask: require("./ask"),
   pledges: require("./pledges"),
   fundSplit: require("./fundSplit"),   // LEDGER-2
+  donorLabel: require("./donorLabel"),   // WALKB-2
 };
