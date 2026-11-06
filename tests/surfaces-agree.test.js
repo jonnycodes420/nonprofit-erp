@@ -337,6 +337,20 @@ async function janFirst() {
 
   // Home, Fundraising and the Board: one this-year figure, one difference
   const f = await agrees("C: every surface agrees", ORG_C, tokC);
+  // MONEY-3 · THE WRITE ORDER THAT LOST. The import answers, then its
+  // background job (importRecent) writes each person's stored on-time date.
+  // The check that ran in between (FLAKE-1: 2 runs in 10) found Pia with no
+  // stored date: tagged Lapsing and left out of the Directory's On track
+  // (both read the stored date), while the profile, reading her gifts, said On
+  // track. Planted at that order, every run: her stored rows not written yet.
+  {
+    const [pia] = await q(`SELECT id FROM donors WHERE org_id=$1 AND name='Pia January'`, [ORG_C]);
+    const gone = await q(`DELETE FROM donor_rhythm WHERE org_id=$1 AND donor_id=$2 RETURNING donor_id`, [ORG_C, pia.id]);
+    await q(`DELETE FROM donor_scores WHERE org_id=$1 AND donor_id=$2`, [ORG_C, pia.id]);
+    const r = await assertSurfacesAgree(ORG_C, { token: tokC, soft: true, skip: ["atlas", "ask"] });
+    const piaDiffs = r.diffs.filter(d => /Pia January/.test(d));
+    ok("C: before the import's job writes Pia's stored date, every surface still gives one answer (never Lapsing and On track)", gone.length === 1 && piaDiffs.length === 0, piaDiffs.length ? piaDiffs : "no stored rhythm to take away");
+  }
   const thisYear = f.facts["giving this year so far"] || {};
   const ahead = Object.entries(f.facts).find(([k]) => /^ahead of or behind/.test(k))?.[1] || {};
   ok("C: Home, Fundraising and the Board all count the Jan 1 gift this year", Object.keys(thisYear).length >= 3

@@ -309,11 +309,9 @@ function patternOf(gifts, today) {
 // whichever comes first. A date, so it never goes stale as days pass; only a
 // gift moves it, and a gift recomputes both. shared/numbers/lapse.js reads the
 // newer of the two.
+// MONEY-3: the one stored date is rhythm.js's storedThrough, as afterChange.js stores it.
 function onTimeThrough(gifts, today) {
-  const r = RHYTHM.rhythmFor(gifts.filter(g => g.cents > 0).map(g => ({ date: g.date, amount: g.cents / 100 })), today);
-  if (!r.hasPattern) return null;
-  const yearEnds = require("./orgTime").addDays(r.lastGiftDate, 364);
-  return r.onTimeThrough < yearEnds ? r.onTimeThrough : yearEnds;
+  return RHYTHM.storedThrough(RHYTHM.rhythmFor(gifts.filter(g => g.cents > 0).map(g => ({ date: g.date, amount: g.cents / 100 })), today));
 }
 
 // FIX-34 · THE CLOSENESS WORD ON READ. The profile's closeness line and the
@@ -328,7 +326,18 @@ async function closenessNow(q, orgId, donorId, today, bandKey) {
   // the same as donorStatus.closenessSql says for lists.
   const LR = require("./lapseRule");
   const held = LR.pledgeHold(await require("./shared/numbers/lapse").pledgesFor(q, orgId, donorId, today), today) === "hold";   // past due is not on track
-  const pattern = held ? "on_track" : patternOf(gifts.filter(g => g.date && g.date <= today), today);
+  // MONEY-3 · ONE ANSWER TO "ON TRACK". On track is the stored on-time date
+  // (lapse.js ON_TIME_THROUGH), the one the Lapsing tag, the Directory's
+  // filters, Home's counts and Re-engage read; the gifts say late or lapsed
+  // only when it is not. Read live from the gifts while the tag read the
+  // stored row, the profile said Lapsing and On track at once for Pia January
+  // in the seconds after an import answered and before its background job
+  // (importRecent) wrote her rhythm (surfaces-agree, FLAKE-1: 2 runs in 10).
+  // The after-change step rewrites the date after every change to the person.
+  const live = patternOf(gifts.filter(g => g.date && g.date <= today), today);
+  const [st] = await q(`SELECT ${require("./shared/numbers/lapse").ON_TIME_THROUGH("d.id")} AS through FROM donors d WHERE d.id = ? AND d.org_id = ?`, [donorId, orgId]);
+  const storedOnTime = !!(st && st.through && String(st.through).slice(0, 10) >= today);
+  const pattern = held || storedOnTime ? "on_track" : live === "on_track" ? "late" : live;
   const [fs] = await q(`SELECT ${DS.firstSeenSql("d.")} AS first FROM donors d WHERE d.id = ? AND d.org_id = ?`, [donorId, orgId]);
   const isNew = !!(fs && fs.first && String(fs.first).slice(0, 10) >= DS.windowsFor(today).newFrom);
   return { key: w.closenessFor(bandKey || "distant", { isNew, pattern }), pattern };

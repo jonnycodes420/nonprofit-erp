@@ -272,6 +272,17 @@ async function dropped() {
   ac.abort();
   const gone = await req;
   ok("§5 the browser lost the request", gone && gone.aborted === "AbortError", JSON.stringify(gone && gone.status));
+  // MONEY-3: "reopening" means after the server has the request. The abort is
+  // 120 ms after the send, and on CI's slower runner the server had not yet
+  // read the body, signed the person in and claimed the job when the GETs
+  // below arrived, so they read before the job existed (CI runs 42040721478,
+  // 41972806542: "[200,{"jobs":[]},[]]", then the job ended done). Reproduced
+  // locally by delaying the commit route 600 ms. Wait (bounded) until the job's
+  // row is there, then ask the same two doors as before: a list that leaves a
+  // running job out still goes red.
+  const t0 = performance.now();   // elapsed only: the suite's clock is tests/clock.js
+  for (let i = 0; i < 200 && !(await one(`SELECT 1 AS x FROM sheet_import_jobs WHERE id=$1 AND org_id=$2`, [RUN, ORG])); i++) await new Promise(res => setTimeout(res, 50));
+  if (performance.now() - t0 > 100) console.log(`        (§5: the server claimed the job ${Math.round(performance.now() - t0)} ms after the abort)`);
   const seen = await api("GET", "/sheet-import/jobs?running=1", tok);
   const listed = (await api("GET", "/imports", tok)).body.imports || [];
   ok("§5 reopening Import or the Imports list shows the job, never an empty screen",

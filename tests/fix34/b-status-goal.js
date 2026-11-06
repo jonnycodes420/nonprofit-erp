@@ -57,6 +57,13 @@ async function run() {
     await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,'system:test','fix34 b')`,
       [`g_fix34b_${i}`, ORG, EMILY, amt, civilPlusDays(d)]);
   }
+  // MONEY-3: the profile's On track reads the stored on-time date the lists
+  // read. Gifts written by SQL skip the after-change step, so her row is the
+  // one it writes for these gifts (rhythm.js storedThrough).
+  { const RHY = require("../../shared/numbers/rhythm"), today = civilPlusDays(0);
+    const through = RHY.storedThrough(RHY.rhythmFor(gifts.map(([d, amt]) => ({ date: civilPlusDays(d), amount: amt })), today));
+    await q(`INSERT INTO donor_rhythm (org_id,donor_id,rhythm,cadence_days,expected_next,drift_state,computed_for,created_by,created_by_name)
+             VALUES ($1,$2,'none',NULL,$3,'ok',$4,'system:test','fix34 b')`, [ORG, EMILY, through, today]); }
   await q(`INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,person_ids,created_by,created_by_name)
            VALUES ('ce_fix34b',$1,$2,'google','ev_fix34b','Coffee with Emily',NOW() + INTERVAL '6 days',NOW() + INTERVAL '6 days 1 hour',ARRAY[$3],'system:test','fix34 b')`,
     [ORG, `u_${ORG}`, EMILY]);

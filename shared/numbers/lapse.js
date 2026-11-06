@@ -94,11 +94,10 @@ function holdSql(idExpr, today) {
       AND (pp.status = 'open' OR (pp.status = 'fulfilled' AND ${PLEDGE_MADE} >= ?)))`, args: [bounds(today).lapsingFrom] };
 }
 // STATUS-1 · THE STORED ANSWER TO "UNTIL WHEN ARE THEY ON TIME?". The one
-// rhythm (shared/numbers/rhythm.js) is stored twice, each time from the gifts:
-// donor_rhythm.expected_next by the after-change step (every change to a
-// person) and donor_scores.on_time_through by the scores (nightly, and after
-// every gift or touch). The newer of the two is the answer, so a list never
-// reads one that a later write has replaced. NULL: no pattern stored.
+// rhythm (shared/numbers/rhythm.js storedThrough) is stored twice, each time
+// from the gifts: donor_rhythm.expected_next by the after-change step (every
+// change to a person) and donor_scores.on_time_through by the scores (nightly,
+// and after every gift or touch). NULL: no pattern stored.
 // LOAD-1: both tables are keyed (org_id, donor_id), so the lookup names the
 // org too, or no index serves it and every row of each is read per person.
 // The org is the id's own row's: `d.id` and `a.donor_id` read `d.org_id` and `a.org_id`.
@@ -107,10 +106,17 @@ const orgOf = (idExpr) => {
   if (!m) throw new Error(`lapse.ON_TIME_THROUGH: no org column beside ${idExpr}`);
   return `${m[1]}org_id`;
 };
+// MONEY-3 · ONE ROW. The rhythm row is the answer; the scores row only for
+// someone who has none yet. "The newer of the two" read whichever was
+// written last, and a scores pass that read the gifts before one arrived
+// could be the newer: Pia January read Lapsing and On track at once
+// (surfaces-agree, about 1 run in 5). Both store rhythm.js storedThrough; the
+// rhythm row is rewritten by the after-change step after every change to the
+// person, so it is the answer for their gifts as they stand.
 const ON_TIME_THROUGH = (idExpr, orgExpr = orgOf(idExpr)) => `(SELECT x.d FROM (
-      SELECT LEFT(rr.expected_next::text, 10) AS d, rr.computed_at AS t FROM donor_rhythm rr WHERE rr.org_id = ${orgExpr} AND rr.donor_id = ${idExpr}
-      UNION ALL SELECT ds.on_time_through, ds.computed_at FROM donor_scores ds WHERE ds.org_id = ${orgExpr} AND ds.donor_id = ${idExpr}) x
-    ORDER BY x.t DESC NULLS LAST LIMIT 1)`;
+      SELECT LEFT(rr.expected_next::text, 10) AS d, 0 AS k FROM donor_rhythm rr WHERE rr.org_id = ${orgExpr} AND rr.donor_id = ${idExpr}
+      UNION ALL SELECT ds.on_time_through, 1 FROM donor_scores ds WHERE ds.org_id = ${orgExpr} AND ds.donor_id = ${idExpr}) x
+    ORDER BY x.k LIMIT 1)`;
 // Their usual time to give is still ahead: that day is today or later.
 // STATUS-1: any rhythm, not only yearly and year-end (lapseRule.usualTimeAhead).
 function rhythmAheadSql(idExpr, today) {

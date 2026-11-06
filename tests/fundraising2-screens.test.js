@@ -56,15 +56,15 @@ const cents = v => Math.round(Number(v || 0) * 100);
 let assertSurfacesAgree = null;
 try { ({ assertSurfacesAgree } = require("./lib/surfacesAgree")); } catch {}
 
-async function freshOrg() {
+async function freshOrg(org = ORG, slug = "fr2-screens", email = EMAIL) {
   const all = (await q(`SELECT table_name AS t FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.t);
   for (let pass = 0; pass < 5; pass++) {
-    for (const t of all) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [ORG]).catch(() => {});
-    if (await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).then(() => true).catch(() => false)) break;
+    for (const t of all) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [org]).catch(() => {});
+    if (await q(`DELETE FROM orgs WHERE id=$1`, [org]).then(() => true).catch(() => false)) break;
   }
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,'Fundraising Two','fr2-screens',1,'active','team','America/New_York')`, [ORG]);
-  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_fr2screens',$1,$2,$3,'Allie Test','admin')`, [ORG, EMAIL, bcrypt.hashSync(PASSWORD, 4)]);
-  return login(EMAIL, PASSWORD);
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,'Fundraising Two',$2,1,'active','team','America/New_York')`, [org, slug]);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Allie Test','admin')`, ["u_" + org.replace(/^org_/, ""), org, email, bcrypt.hashSync(PASSWORD, 4)]);
+  return login(email, PASSWORD);
 }
 async function importFile(tok, file, answers) {
   const R = await import("../shared/sheetRead.js");
@@ -156,6 +156,40 @@ async function main() {
     try { await assertSurfacesAgree(ORG, { token: tok, skip: ["atlas", "ask"] }); } catch (e) { agreeErr = e.message; }
     ok("§4 the surfaces agree: database, Pledges and its rows, Overview, Home, every profile, the event page", !agreeErr, agreeErr && agreeErr.slice(0, 600));
   } else ok("§4 the truth check is there", false, "tests/lib/surfacesAgree.js did not load");
+
+  // §4b MONEY-3 · A COUPLE'S TWO PLEDGES ON HOME. CI run 42110734392: "open
+  // pledge for Finley Northcott6: the database says $20000.00, Home's move says
+  // $20400.00". Finley & Paige are one household, and the $400 pledge above
+  // goes to whoever has the lowest id; when that was Paige, Home folded her
+  // pledge move into Finley's card and the truth check read its facts as his.
+  // Fixed here, every run, in an org of its own (Home's first read carries two
+  // cards a tab): Rowan's $20,000 pledge in three yearly installments (the
+  // remainder on the last, GIFTS-1) and Sage's $400 pledge, one household.
+  {
+    const ORG2 = "org_fr2couple", tok2 = await freshOrg(ORG2, "fr2-couple", "admin@fr2couple.local");
+    const mk = async name => (await api("POST", "/donors", tok2, { name, email: `${name.split(" ")[0].toLowerCase()}@fr2couple.test` })).body.id;
+    const [rowan, sage] = [await mk("Rowan Fernhill"), await mk("Sage Fernhill")];
+    const hh = await api("POST", "/households", tok2, { name: "The Fernhill Household", memberIds: [rowan, sage], primaryDonorId: rowan });
+    const gave = (await api("POST", `/donors/${rowan}/gifts`, tok2, { amount: 500, date: civilPlusDays(-100), paymentMethod: "Check" })).status;   // a giving unit Home reads
+    const pR = await api("POST", `/donors/${rowan}/pledges`, tok2, { amount: 20000, dueDate: civilPlusDays(30), frequency: "yearly", installmentCount: 3 });
+    const pS = await api("POST", `/donors/${sage}/pledges`, tok2, { amount: 400, dueDate: civilPlusDays(45) });
+    ok("§4b the couple, their household, a gift and both pledges are recorded", hh.status === 201 && gave === 201 && pR.status === 201 && pS.status === 201
+       && (pR.body.installments || []).length === 3 && (pR.body.installments || []).reduce((n, i) => n + cents(i.amount), 0) === 2000000,
+       JSON.stringify([hh.status, gave, pR.status, pS.status, (pR.body.installments || []).map(i => i.amount)]));
+    let card = null;
+    for (let i = 0; i < 60 && !card; i++) {   // the stored Insights build catches up with the writes
+      const deck = (await api("GET", "/insights?view=deck", tok2)).body || {};
+      if (!deck.stale && deck.deck) card = ((deck.deck.tabs || []).flatMap(t => t.moves || [])).find(x => (x.ids || []).includes(rowan) && x.kind === "pledges") || null;
+      if (!card) await new Promise(res => setTimeout(res, 500));
+    }
+    ok("§4b Home has the couple's pledge card", !!card, null);
+    let coupleErr = null;
+    if (assertSurfacesAgree) {
+      const r = await assertSurfacesAgree(ORG2, { token: tok2, soft: true, skip: ["atlas", "ask"] });
+      coupleErr = r.diffs.filter(d => /open pledge/.test(d)).join("; ") || null;
+    }
+    ok("§4b Home's card for Rowan's $20,000 pledge says $20,000; Sage's $400 rides under it as hers", !coupleErr && !!assertSurfacesAgree, coupleErr);
+  }
 
   // §5 a page is live only once it can take money
   await q(`INSERT INTO giving_pages (id,org_id,slug,title,status,created_by,created_by_name) VALUES ('gp_fr2',$1,'dinner-gifts','Dinner gifts','active','system:test','test')`, [ORG]);
