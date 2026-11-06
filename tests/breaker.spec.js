@@ -258,8 +258,9 @@ async function caseClicks() {
   await page.waitForSelector(".dir-donor-row", { timeout: 30000 });
   for (const nm of CLICK_NAMES.slice(1, 4))
     await page.locator(".dir-donor-row", { hasText: nm }).locator('input[type="checkbox"]').first().check({ timeout: 10000 });
-  await page.locator('[data-testid="dir-bulk-bar"]').getByRole("button", { name: /^Delete$/ }).click({ timeout: 10000 });
-  await page.getByRole("button", { name: "Delete 3 people" }).click({ clickCount: 3, timeout: 10000 });
+  await page.locator('[data-testid="dir-bulk-bar"] [data-testid="bulk-more"]').click({ timeout: 10000 });   // MOPUP-2: More → Move to trash
+  await page.locator('[data-testid="bulk-trash"]').click({ timeout: 10000 });
+  await page.getByRole("button", { name: "Move 3 people to trash" }).click({ clickCount: 3, timeout: 10000 });
   await page.waitForSelector('[data-testid="undo-toast"]', { timeout: 15000 });
   const bulk = writesTo(page, /\/donors\/bulk-delete$/);
   const trash3 = await one("SELECT COUNT(*)::int AS n FROM deleted_records WHERE org_id=$1 AND record_id = ANY($2)", [o.orgId, ["d_brk_c2", "d_brk_c3", "d_brk_c4"]]);
@@ -609,8 +610,9 @@ async function caseToast() {
     await page.goto(`${APP}/donors`, { waitUntil: "domcontentloaded", timeout: 60000 });
     await page.waitForSelector(".dir-header-row input[type=checkbox]", { timeout: 30000 });
     await page.locator(".dir-header-row input[type=checkbox]").first().check();
-    await page.locator('[data-testid="dir-bulk-bar"]').getByRole("button", { name: /^Delete$/ }).click({ timeout: 10000 });
-    await page.getByRole("button", { name: /^Delete \d+ people$/ }).click({ timeout: 10000 });
+    await page.locator('[data-testid="dir-bulk-bar"] [data-testid="bulk-more"]').click({ timeout: 10000 });   // MOPUP-2
+    await page.locator('[data-testid="bulk-trash"]').click({ timeout: 10000 });
+    await page.getByRole("button", { name: /^Move \d+ people to trash$/ }).click({ timeout: 10000 });
     await page.waitForSelector('[data-testid="undo-toast"]', { timeout: 15000 });
   };
   // 4a · delete, open another screen with the toast up, then Undo
@@ -862,8 +864,9 @@ async function caseEnter() {
   await page.waitForSelector(".dir-donor-row", { timeout: 30000 });
   await page.locator(".dir-donor-row", { hasText: "Wren Halloway" }).locator('input[type="checkbox"]').first().check();
   const p3a = await enterInEveryField(page, "body");
-  await page.locator('[data-testid="dir-bulk-bar"]').getByRole("button", { name: /^Delete$/ }).click({ timeout: 10000 });
-  await page.getByRole("button", { name: "Delete 1 person" }).waitFor({ timeout: 10000 });
+  await page.locator('[data-testid="dir-bulk-bar"] [data-testid="bulk-more"]').click({ timeout: 10000 });   // MOPUP-2
+  await page.locator('[data-testid="bulk-trash"]').click({ timeout: 10000 });
+  await page.getByRole("button", { name: "Move 1 person to trash" }).waitFor({ timeout: 10000 });
   const p3b = await enterInEveryField(page, "body");
   ok(`${L} delete: Enter in each of ${p3a + p3b} fields, with the delete confirm open, deletes nobody`, !committed().length, committed());
   await page.keyboard.press("Escape").catch(() => {});

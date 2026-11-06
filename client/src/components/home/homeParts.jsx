@@ -5,6 +5,7 @@ import { orgTodayCivil } from "../../lib/orgToday";   // MOPUP-1: pre-filled dat
 import { T, interactive, fmt } from "../shared";
 import { apiFetch } from "../../api";
 import { plural, countLabel } from "../../../../shared/countWords";
+import { reservedDeckHeight } from "../../lib/deckReserve";   // MOPUP-2
 
 // SWEEP-6 (PERF-1): what Home opens on a click loads on that click, so a
 // phone's first look downloads Home and not its panels.
@@ -26,7 +27,9 @@ export function HomeMoves(p) {
   const [Now] = useState(() => movesIn && movesIn.HomeMoves);
   return Now ? <Now {...p}/> : <HomeMovesLater {...p}/>;
 }
-export const MOVES_WAIT = <section aria-label="Your moves" data-testid="home-moves" style={{background:T.white,border:"1px solid "+T.bg2,borderRadius:14,padding:"16px 18px",marginBottom:12,color:T.ink3,fontSize:14}}>Reading your donors…</section>;
+// MOPUP-2: on a phone the stand-in is as tall as the deck it becomes (lib/deckReserve.js).
+export const MovesWait = () => <section aria-label="Your moves" data-testid="home-moves" style={{background:T.white,border:"1px solid "+T.bg2,borderRadius:14,padding:"16px 18px",marginBottom:12,color:T.ink3,fontSize:14,boxSizing:"border-box",minHeight:reservedDeckHeight()||undefined}}>Reading your donors…</section>;
+export const MOVES_WAIT = <MovesWait/>;
 export const LogConversationModal = lazy(() => retryImport(() => import("../LogConversation")).then(m => ({ default: m.LogConversationModal })));   // PERF-2
 export const Breakdown = p => p.open ? <Suspense fallback={null}><MetricBreakdownPanel {...p}/></Suspense> : null;
 // Most orgs pin nothing: the pins' code loads only when there is a pin to draw.
