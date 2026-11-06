@@ -1282,6 +1282,8 @@ async function run6(pool) {
   // DATES-1 · "About them", yearly-date skips and journey batches (server/shared/dates1Schema.js).
   await require("../../shared/dates1Schema").dates1Schema(pool);
   await require("../../donors/deceasedSchema").deceasedSchema(pool);   // PEOPLE-1
+  await require("../../donors/giftFundLines").giftFundLinesSchema(pool);   // GIFTS-2: a gift split across funds
+  await require("../../reports/goalPledgesSchema").goalPledgesSchema(pool);   // GIFTS-2: a goal can count pledges
 
   // Part 4. A shift has a name, a colour, a venue and a place within it, and
   // is published or a draft (volunteers see only published shifts). Published

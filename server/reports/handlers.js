@@ -560,9 +560,10 @@ async function reportAnnual(orgId, p) {
   const ret = await NUMBERS.retained.retention(query, orgId, cur, prior)
     .then(r => ({ prior_donors: r.prior, retained: r.retained }));
   const byFund = await query(
-    `SELECT COALESCE(x.name,'No fund') AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count
+    `SELECT COALESCE(x.name,'No fund') AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(gf.amount),0) AS total, COUNT(*)::int AS gift_count
      FROM gifts g JOIN donors d ON d.id = g.donor_id
-     LEFT JOIN fin_funds x ON x.id = g.fund_id AND x.org_id = g.org_id
+     JOIN ${NUMBERS.fundLines.GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id   -- GIFTS-2: a split gift by its lines
+     LEFT JOIN fin_funds x ON x.id = gf.fund_id AND x.org_id = g.org_id
      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}
      GROUP BY 1 ORDER BY total DESC`, [orgId, cur.from, cur.to]);
   const byCampaign = await query(

@@ -504,7 +504,7 @@ export const HELP_ARTICLES = [
         `Click "More ▾", then "Add a task". Their open tasks are on the Tasks tab.`,
       ]},
       { h: `More`, p: [
-        `"More ▾" holds "Request a gift" (a link the donor can give through), drafting help such as "Draft an email" and "Brief me", "Record a video thank-you", "Add a task", "Impact summary", "Send their page link" and "Edit record". For admins it also holds "Export this person's data" and "Erase this person". See Export or erase a donor. A draft is only a draft: nothing reaches the donor until you send it.`,
+        `"More ▾" holds "Send a payment link" (a link the donor can give through) and "Record a pledge", drafting help such as "Draft an email" and "Brief me", "Record a video thank-you", "Add a task", "Impact summary", "Send their page link" and "Edit record". For admins it also holds "Export this person's data" and "Erase this person". See Export or erase a donor. A draft is only a draft: nothing reaches the donor until you send it.`,
       ]},
     ],
   },

@@ -386,7 +386,11 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
             -- LEDGER-1: who this gift is soft-credited to, so the row says "Soft credit to …"
             (SELECT COALESCE(json_agg(json_build_object('donorId', sd.id, 'name', sd.name, 'amount', sc.amount) ORDER BY sd.name), '[]'::json)
                FROM gift_soft_credits sc JOIN donors sd ON sd.id = sc.donor_id AND sd.org_id = sc.org_id AND sd.deleted_at IS NULL
-              WHERE sc.gift_id = g.id AND sc.org_id = g.org_id) AS soft_credit_to
+              WHERE sc.gift_id = g.id AND sc.org_id = g.org_id) AS soft_credit_to,
+            -- GIFTS-2: a gift split across funds carries its lines, largest first
+            (SELECT json_agg(json_build_object('fundId', l.fund_id, 'fundName', lf.name, 'amount', l.amount) ORDER BY l.amount DESC, l.fund_id)
+               FROM gift_fund_lines l LEFT JOIN fin_funds lf ON lf.id = l.fund_id AND lf.org_id = l.org_id
+              WHERE l.gift_id = g.id AND l.org_id = g.org_id) AS fund_lines
        FROM gifts g LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
        LEFT JOIN events ev ON ev.id = g.event_id AND ev.org_id = g.org_id
       WHERE g.donor_id = ? AND g.org_id = ? ORDER BY g.date DESC NULLS LAST`, [d.id, req.user.orgId]);
