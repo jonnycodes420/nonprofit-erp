@@ -25,41 +25,54 @@ const GIVE_KIND_SQL = (a = "") => `COALESCE(${a ? a + "." : ""}page_kind, 'give'
 const SHIFT_DAYS = 90;          // how far ahead the shift picker looks
 const SHIFT_MAX = 40;
 
-// The three ready-made pages. Each is only blocks and prompts.
+// The three ready-made pages. Each is only blocks and prompts. PAGES-1: each
+// opens with the org's header and closes with its footer, its photo is one of
+// Steward's from the org's mission group, and its prompts are the editor's
+// (`hint`), so a page made from one looks finished with only the logo and
+// colors, and nothing on it is a placeholder.
 const STARTERS = {
   one_day: {
     label: "One-day event",
+    blurb: "A photo, the day's shifts and the sign-up.",
     widgets: [
+      { type: "pageheader" },
       { type: "hero", heading: "", sub: "", image: null, size: "tall" },
-      { type: "richtext", blocks: [{ type: "p", text: "Say what the day is, who it helps and what volunteers will do, in your own words." }] },
+      { type: "richtext", blocks: [], hint: "Say what the day is, who it helps and what volunteers will do, in your own words." },
+      { type: "goalbar", heading: "", target: null },
       { type: "shiftpicker", heading: "Pick a shift", opportunityIds: [] },
       { type: "volsignup", heading: "Sign up to help", askPhone: true, askAvailability: false, askInterests: false, questions: [] },
       { type: "volwaiver", heading: "Before your first shift" },
-      { type: "volquote", text: "", name: "", permission: false },
+      { type: "pagefooter" },
     ],
   },
   ongoing: {
     label: "Ongoing roles",
+    blurb: "Every role, your numbers, then the sign-up.",
     widgets: [
+      { type: "pageheader" },
       { type: "hero", heading: "", sub: "", image: null, size: "standard" },
-      { type: "richtext", blocks: [{ type: "p", text: "Say why volunteers matter here, in your own words." }] },
+      { type: "richtext", blocks: [], hint: "Say why volunteers matter here, in your own words." },
       { type: "opportunities", heading: "Ways to help", opportunityIds: [] },
       { type: "volimpact", heading: "What our volunteers did this year" },
       { type: "volquote", text: "", name: "", permission: false },
       { type: "shiftpicker", heading: "Upcoming shifts", opportunityIds: [] },
       { type: "volsignup", heading: "Sign up to help", askPhone: true, askAvailability: true, askInterests: true, questions: [] },
       { type: "volwaiver", heading: "Before your first shift" },
+      { type: "pagefooter" },
     ],
   },
   group_day: {
     label: "Group service day",
+    blurb: "For churches, schools and companies.",
     widgets: [
+      { type: "pageheader" },
       { type: "hero", heading: "", sub: "", image: null, size: "tall" },
-      { type: "richtext", blocks: [{ type: "p", text: "Say what a group will do on the day and what to bring, in your own words." }] },
+      { type: "richtext", blocks: [], hint: "Say what a group will do on the day and what to bring, in your own words." },
       { type: "groupsignup", heading: "Bringing a group?", text: "Churches, schools and companies are welcome. Tell us about your group and we will be in touch to plan the day together." },
       { type: "shiftpicker", heading: "Pick a date", opportunityIds: [] },
       { type: "volsignup", heading: "Sign up your group", askPhone: true, askAvailability: false, askInterests: false, questions: [] },
       { type: "volwaiver", heading: "Before the day" },
+      { type: "pagefooter" },
     ],
   },
 };
