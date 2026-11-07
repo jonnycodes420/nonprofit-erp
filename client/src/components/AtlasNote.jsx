@@ -13,7 +13,8 @@ import { apiFetch } from "../api";
 import { T } from "./shared";
 import { useStewardTold, told } from "../lib/stewardTold";
 import { noteServerChanges, useChanged } from "../lib/changes";   // STALE-1
-import { dismissDrafts, DismissX } from "./DraftDismiss";   // COMMS-1 item 4
+// COMMS-1 item 4: the dismiss flow loads on the first × (Home's first look stays within perf-app's budget).
+const dismissDrafts = (...a) => import("./DraftDismiss").then(m => m.dismissDrafts(...a));
 import { linkTarget, useAtlasName } from "../lib/atlas";
 
 const TAP = { gift: "Record", pledge: "Record", receipt: "Send both", held_back: "Keep as a note" };
@@ -40,7 +41,8 @@ function NoteLine({ n, onAct, onOpen, busy, onDismiss }) {
       </span>
       {n.undoable && <button type="button" data-testid="atlas-note-undo" disabled={busy} onClick={() => onAct(`/atlas/actions/${n.id}/undo`)} style={small(false)}>Undo</button>}
       {n.waits && TAP[n.kind] && <button type="button" data-testid="atlas-note-tap" disabled={busy} onClick={() => onAct(`/atlas/actions/${n.id}/yes`)} style={small(true)}>{TAP[n.kind]}</button>}
-      {onDismiss && draftOf(n) && <DismissX testid="atlas-note-dismiss" disabled={busy} onClick={() => onDismiss([n])} label="Dismiss this draft" />}
+      {onDismiss && draftOf(n) && <button type="button" data-testid="atlas-note-dismiss" aria-label="Dismiss this draft" title="Dismiss this draft" disabled={busy} onClick={() => onDismiss([n])}
+        style={{ ...small(false), width: 30, padding: 0, color: T.ink3, fontSize: 16, lineHeight: 1 }}>{"\u00d7"}</button>}
     </div>
   );
 }

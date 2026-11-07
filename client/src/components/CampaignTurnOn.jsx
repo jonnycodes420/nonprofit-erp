@@ -8,7 +8,7 @@ export default function CampaignTurnOn({ note, testid = "campaign-turn-on", styl
   if (!note) return null;
   return (
     <div data-testid={testid} style={{ fontSize: 13, color: T.ink, lineHeight: 1.55, marginTop: 8, ...(style || {}) }}>
-      {note.sentence}{" "}
+      {note.sentence + " "}
       {note.link
         ? <a data-testid={testid + "-link"} href={note.link.href} style={{ color: T.greenDk, fontWeight: 700 }}>{note.link.label}</a>
         : <span data-testid={testid + "-ask"}>{note.ask}</span>}
