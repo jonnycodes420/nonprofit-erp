@@ -96,6 +96,9 @@ export function PageBlock({ w, ctx = {} }) {
               <LevelCard key={l.id} l={l} th={lth} card={{ ...card }} orgSlug={ctx.orgSlug} prefill={null} mine={null} isMember={false} />
             ))}
           </div>
+          <div style={{ fontSize: 12, color: MUTED, marginTop: 12, lineHeight: 1.5, textAlign: "center" }}>
+            Payments are processed securely by Stripe. {th.displayName || ctx.orgName || "We"} never {th.displayName || ctx.orgName ? "stores" : "store"} your card details.
+          </div>
         </section>
       );
     }

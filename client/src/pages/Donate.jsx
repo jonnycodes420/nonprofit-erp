@@ -630,8 +630,8 @@ const G3_CSS = `
 .g3-photo > [data-picture]{aspect-ratio:16 / 8 !important}
 .g3-fill{width:100%;aspect-ratio:16 / 8;border-radius:16px;background:var(--g3-primary);display:flex;align-items:center;justify-content:center}
 .g3-fill img{max-height:64px;max-width:60%;object-fit:contain}
-.g3-addphoto{width:100%;aspect-ratio:16 / 8;border-radius:16px;border:1.5px dashed var(--g3-hair);display:flex;align-items:center;justify-content:center;color:var(--g3-muted);font-size:14px;font-weight:600}
-.g3-story-empty{border:1.5px dashed var(--g3-hair);border-radius:12px;padding:16px 18px;min-height:64px;color:var(--g3-muted)}
+.g3-addphoto{width:100%;aspect-ratio:16 / 8;border-radius:16px;border:1.5px dashed var(--g3-muted);display:flex;align-items:center;justify-content:center;color:var(--g3-muted);font-size:14px;font-weight:600}
+.g3-story-empty{border:1.5px dashed var(--g3-muted);border-radius:12px;padding:16px 18px;min-height:64px;color:var(--g3-muted)}
 .g3-h1{margin:18px 0 0;font-family:var(--g3-serif);font-size:30px;line-height:1.12;letter-spacing:-0.02em;font-weight:800}
 .g3-org{font-size:13px;font-weight:700;color:var(--g3-muted);margin-top:14px}
 .g3-story p{font-size:16px;line-height:1.7;margin:0 0 14px}

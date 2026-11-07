@@ -783,6 +783,7 @@ ${INLINE_CSS}`;
     coverSection: (
       <RailSection key="cover" id="cover" testid="rail-cover" title="Cover photo" focus={at("cover")}>
         <RailPhoto value={cover} name={ds.title || meta?.pageTitle || ""} testid="editor-cover-photo" onChange={setCover}
+          emptyNote="No photo yet. Donors see your logo here if you have one, and nothing if you don't."
           onLibrary={LazyStockPicker ? () => choosePhoto(setCover) : undefined} />
         {cover && livePayload && livePayload.givingPage && layoutFor(livePayload.givingPage.design, livePayload.givingPage) === "simple" && <div data-testid="cover-hidden-note" style={{ fontSize: 12, color: E.muted, marginTop: 6 }}>The Simple layout shows no photo. Pick Story or Campaign in Layout to show it.</div>}
         {coverFromHero && <div data-testid="cover-from-hero" style={{ fontSize: 12, color: E.muted, marginTop: 6 }}>This is the Hero block's photo, which leads the page while the page has no cover of its own.</div>}

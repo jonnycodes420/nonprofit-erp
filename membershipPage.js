@@ -39,7 +39,7 @@ const STARTERS = {
     widgets: [
       { type: "pageheader" },
       { type: "hero", heading: "", sub: "", image: null, size: "standard" },
-      { type: "goalbar", heading: "Members this year", target: 100 },
+      { type: "goalbar", heading: "Members today", target: 100 },
       { type: "memberlevels", heading: "Join today" },
       prompt("Say why you are asking now, in your own words."),
       { type: "pagefooter" },

@@ -38,7 +38,7 @@ const STARTERS = {
       { type: "pageheader" },
       { type: "hero", heading: "", sub: "", image: null, size: "tall" },
       { type: "richtext", blocks: [], hint: "Say what the day is, who it helps and what volunteers will do, in your own words." },
-      { type: "goalbar", heading: "Spots filled", target: null },
+      { type: "goalbar", heading: "", target: null },
       { type: "shiftpicker", heading: "Pick a shift", opportunityIds: [] },
       { type: "volsignup", heading: "Sign up to help", askPhone: true, askAvailability: false, askInterests: false, questions: [] },
       { type: "volwaiver", heading: "Before your first shift" },
