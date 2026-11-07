@@ -4,24 +4,12 @@
 // a new session in that org (POST /auth/switch-org) and reloads into it, so no
 // screen keeps a list from the org she left. A Steward super-admin opening a
 // customer's org writes why; the customer sees the reason in their Activity.
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { apiFetch } from "../api";
 import { T, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { enterSupport } from "../lib/supportSession";
 import { roleWord } from "../../../shared/viewOnly.js";
-
-// The orgs this person is in. Null until read; [] when the read failed.
-export function useMyOrgs(enabled = true) {
-  const [orgs, setOrgs] = useState(null);
-  useEffect(() => {
-    if (!enabled) return;
-    let live = true;
-    apiFetch("/me/orgs").then(r => { if (live) setOrgs((r && r.orgs) || []); }).catch(() => { if (live) setOrgs([]); });
-    return () => { live = false; };
-  }, [enabled]);
-  return orgs;
-}
 
 function takeSession(answer) {
   if (answer.user && answer.user.support) { enterSupport(answer); return; }
@@ -31,7 +19,7 @@ function takeSession(answer) {
   window.location.href = "/dashboard";
 }
 
-export function OrgSwitcher({ orgs, currentId, onClose }) {
+export default function OrgSwitcher({ orgs, currentId, onClose }) {
   const [pick, setPick] = useState(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
