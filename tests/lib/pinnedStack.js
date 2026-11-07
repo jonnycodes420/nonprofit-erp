@@ -95,7 +95,8 @@ async function main(file, atFn = null) {
   const at = own !== null ? own : asked !== null ? asked : nextNoon();
   // The offset is from the REAL clock: the database's now() and the child's
   // clock.js both add it to the machine's time.
-  const offset = at - RealDate.now();
+  // (testNow() less the run's own offset is the machine's time.)
+  const offset = at - (testNow() - (Number(process.env.STEWARD_TEST_OFFSET_MS) || 0));
   console.log(`  pinned clock: ${new RealDate(at).toISOString()} (${own !== null ? "the suite's own instant" : asked !== null ? "PINNED_STACK_AT" : "noon in New York"}), a stack of its own on database ${dbName}`);
 
   // Created and dropped from the server's maintenance database, so the drop
