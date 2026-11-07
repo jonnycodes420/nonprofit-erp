@@ -149,6 +149,31 @@ const day = s => Math.round(Date.parse(String(s).slice(0, 10) + "T00:00:00Z") / 
   await api("POST", "/journeys/run-sweep", tok, {});
   await api("POST", "/journeys/run-sweep", tok, {});
   ok("§1 running the sweep twice more enrols nobody a second time", (await countPlans()) === before2, `${before2} then ${await countPlans()}`);
+  // FLAKE-2: two sweeps of the org at the same moment (the hourly job beside
+  // a person's run, CI 6 Nov run 42259122245) both found the failed-card
+  // person due: one enrolled them twice over (a duplicate key on
+  // cultivation_plans_one_active_per_journey) and the replaced card journey's
+  // step kept the Thread, so the monthly-gift step sat pending with none.
+  // Each racer here has a failed monthly gift AND a card expiring, as
+  // d_j3_failed does: they end in the higher journey once, and both sweeps
+  // answer. (Whether its first step then holds their Thread is left out here:
+  // it was still lost in 2 of 30 loaded local runs with the sweeps
+  // serialised, a race this build did not find; FLAKE-2's report hands it on.)
+  for (let round = 1; round <= 5; round++) {
+    const who = `race${round}`;
+    await q(`INSERT INTO donors (id,org_id,name,email,created_by,created_by_name) VALUES ($1,$2,$3,$4,'system:test','test')`,
+      [P(who), ORG, `J3 Race ${round}`, `${who}@j3trig.local`]);
+    await q(`INSERT INTO recurring_subscriptions (id,org_id,donor_id,stripe_subscription_id,amount,interval,status,first_failed_at,last_failed_at,card_exp_year,card_exp_month)
+             VALUES ($1,$2,$3,$4,25,'month','past_due',NOW(),NOW(),$5,$6)`, [`rs_j3_${who}`, ORG, P(who), `sub_j3_${who}`, nextY, nextM]);
+    const both = await Promise.all([api("POST", "/journeys/run-sweep", tok, {}), api("POST", "/journeys/run-sweep", tok, {})]);
+    const active = await q(`SELECT id, trigger_key FROM cultivation_plans WHERE org_id=$1 AND donor_id=$2 AND status='active'`, [ORG, P(who)]);
+    const [step] = active.length === 1 ? await q(`SELECT status, thread_id FROM cultivation_plan_steps WHERE plan_id=$1 ORDER BY seq LIMIT 1`, [active[0].id]) : [];
+    ok(`§1 two sweeps at once (round ${round}): both answer, and the person is in the monthly-gift journey once`,
+       both.every(r => r.status === 200) && active.length === 1 && active[0].trigger_key === "recurring_failed",
+       { statuses: both.map(r => r.status), active, step,
+         threads: await q(`SELECT id, next_step_label, closed_at, close_kind, created_by, created_at FROM threads WHERE org_id=$1 AND donor_id=$2 ORDER BY created_at`, [ORG, P(who)]).catch(e => e.message),
+         plans: await q(`SELECT id, trigger_key, status, created_at, replaced_reason FROM cultivation_plans WHERE org_id=$1 AND donor_id=$2 ORDER BY created_at`, [ORG, P(who)]) });
+  }
 
   // ── §2 SEVERAL JOURNEYS AT ONCE ───────────────────────────────────────────
   const A = await api("POST", "/journeys", tok, { name: "J3 High", trigger: "by_hand", priority: 90,

@@ -28,6 +28,7 @@
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, civilPlusDays, waitFor, importAutoSettle, drainQueue } = require("./helpers");
 const { testNow } = require("./clock");
+const { holdImport } = require("./lib/importHold");   // FLAKE-2
 // This suite watches the background work run, so imports here do not wait for it.
 importAutoSettle(false);
 
@@ -175,22 +176,38 @@ const file = (tag, n, perDonor = 1) => ({
   // time, that import is undone (and seen gone), and a fresh file is imported
   // once more; that second import is the one held to the bar and undone
   // below. A route that is really slow is slow both times and fails.
+  // FLAKE-2: and on a fast runner the work finished before the suite looked
+  // ("the work is part way through" found it done), or had gone far enough
+  // that the undo was over the inline limit and was queued. The suite now
+  // holds the work at its first batch (tests/lib/importHold.js, TEST_MODE
+  // only), reads it part way through, presses Undo, and lets the work go only
+  // once the undo has stopped it: the moment is held, never raced.
   let runF = runId("f");
+  let hold = await holdImport(runF);
   let fF = await importFile(runF, file("f", 1000, 5), { thanks: { mode: "all" } });
   if (!(fF.imp.status === 200 && fF.ms < 3000)) {
     console.log(`  §5: the import answered ${fF.imp.status} in ${fF.ms} ms (bar 3,000 ms; §4's 5,000 gifts answered in ${e.ms} ms on this run). The runner or the route? Undoing it and importing once more`);
+    await hold.release();
     await undo(runF);
     const gone = await waitFor(async () => ((await giftsOf(runF)) === 0 ? true : null), { timeout: 180000, interval: 500 }).catch(() => null);
     await drainQueue({ timeout: 120000 });
     console.log(`  §5: the first import ${gone ? "is undone" : "was NOT gone after 180 s"}; importing a fresh file`);
     runF = runId("f2");
+    hold = await holdImport(runF);
     fF = await importFile(runF, file("f2", 1000, 5), { thanks: { mode: "all" } });
   }
   ok("§5 a second 5,000-gift import answers quickly too", fF.imp.status === 200 && fF.ms < 3000, fF.ms);
-  await waitFor(async () => { const r = await api("GET", `/imports/${runF}/progress`, tok); return r.body?.done > 0 ? r : null; }, { timeout: 30000, interval: 100 }).catch(() => null);
-  const mid = await api("GET", `/imports/${runF}/progress`, tok);
+  const progressF = () => api("GET", `/imports/${runF}/progress`, tok);
+  const mid = (await waitFor(async () => { const r = await progressF(); return r.body?.done > 0 ? r : null; }, { timeout: 60000, interval: 100 })) || await progressF();
   ok("§5 the work is part way through", mid.body?.status === "running" && mid.body.done > 0 && mid.body.done < 5000, mid.body);
-  const u = await undo(runF);
+  const undoing = undo(runF);
+  const stopped = await waitFor(async () => {
+    const [r] = await q(`SELECT status FROM import_recent_jobs WHERE import_id=$1`, [runF]);
+    return r && r.status === "cancelled" ? true : null;
+  }, { timeout: 60000, interval: 100 });
+  await hold.release();
+  const u = await undoing;
+  ok("§5 undo during the work stops it first", stopped === true, stopped);
   ok("§5 undo during the work answers", u.status === 200 && u.body?.reversed === true, u.body);
   ok("§5 no gift from it is left", (await giftsOf(runF)) === 0, await giftsOf(runF));
   ok("§5 no person it created is left", Number((await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND created_import_id=$2`, [ORG, runF]))[0].n) === 0);
