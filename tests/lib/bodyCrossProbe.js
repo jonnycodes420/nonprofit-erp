@@ -117,6 +117,11 @@ async function runBodyCrossProbe({ inv, mfetch, q, ok, A, B, tok, bResolver, fil
     for (const { t, n } of await q(sql, [B])) out[t] = n;
     return out;
   }
+  // §7 sends org A a signed Stripe gift carrying org B's donor's EMAIL on
+  // purpose, so org A rightly has a person with that address. It is org A's
+  // own row; renamed here so the leak scan reads only what §8 caused.
+  await q(`UPDATE donors SET email = 'webhook-probe@mx.local' WHERE org_id = $1 AND lower(email) LIKE 'donor-zzmarkb%'`, [A]);
+  await q(`DELETE FROM mail_blocked WHERE org_id = $1 AND lower(mail_blocked::text) LIKE '%zzmarkb%'`, [A]).catch(() => {});
   const before = await aRowsPointingAtB();
   const bBefore = await bCounts();
 
