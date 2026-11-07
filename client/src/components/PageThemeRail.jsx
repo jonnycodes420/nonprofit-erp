@@ -1,9 +1,9 @@
 // PageThemeRail.jsx · PAGES-1. THE PAGE'S OWN THEME, IN THE EDITOR'S RAIL.
 //
-// The org's brand colours are the default. On top of them a page picks an
-// accent colour, one of five curated font pairings, a button style, how round
+// The org's brand colors are the default. On top of them a page picks an
+// accent color, one of five curated font pairings, a button style, how round
 // the corners are, and light or dark sections. Each change is a draft of
-// `design.theme`, saved and published with the rest of the page. A colour pair
+// `design.theme`, saved and published with the rest of the page. A color pair
 // that fails WCAG AA (4.5:1) is named here, with its ratio, the moment it is
 // picked (shared/pageTheme.js does the arithmetic the test reads too).
 import { railLabel, railInput, railNote } from "./StewardEditor";
@@ -34,13 +34,13 @@ export default function PageThemeRail({ brand, theme, onChange }) {
   const set = (k, v) => onChange({ ...t, [k]: v });
   return (
     <div data-testid="page-theme-rail">
-      <div style={railNote}>Your brand colours are the default. Everything here is for this page only.</div>
-      <span style={railLabel}>Accent colour</span>
+      <div style={railNote}>Your brand colors are the default. Everything here is for this page only.</div>
+      <span style={railLabel}>Accent color</span>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <input type="color" aria-label="Accent colour" data-testid="theme-accent-picker" value={r.accent.toLowerCase()} onChange={e => set("accent", e.target.value.toUpperCase())}
+        <input type="color" aria-label="Accent color" data-testid="theme-accent-picker" value={r.accent.toLowerCase()} onChange={e => set("accent", e.target.value.toUpperCase())}
           style={{ width: 44, height: 36, border: "1px solid " + T.bg3, borderRadius: 8, padding: 2, background: T.white, cursor: "pointer" }} />
         <input style={{ ...railInput, flex: 1 }} data-testid="theme-accent" value={t.accent} placeholder={r.accent + " (your brand)"}
-          onChange={e => set("accent", e.target.value.trim())} aria-label="Accent colour as a hex code" />
+          onChange={e => set("accent", e.target.value.trim())} aria-label="Accent color as a hex code" />
         {t.accent && <button type="button" onClick={() => set("accent", "")} style={{ ...chip(false), flex: "none" }}>Brand</button>}
       </div>
       <label style={railLabel} htmlFor="theme-fonts">Fonts</label>

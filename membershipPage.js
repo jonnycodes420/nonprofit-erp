@@ -13,7 +13,7 @@
 // library, the levels and the member count from Memberships, the footer from
 // Settings. A text block holds a prompt, which is the editor's (a `hint`),
 // and the public page leaves out until somebody writes over it (WALKB-1).
-// So a template looks finished with nothing but the org's logo and colours.
+// So a template looks finished with nothing but the org's logo and colors.
 
 const { query } = require("./db");
 

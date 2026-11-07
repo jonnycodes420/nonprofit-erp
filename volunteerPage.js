@@ -29,7 +29,7 @@ const SHIFT_MAX = 40;
 // opens with the org's header and closes with its footer, its photo is one of
 // Steward's from the org's mission group, and its prompts are the editor's
 // (`hint`), so a page made from one looks finished with only the logo and
-// colours, and nothing on it is a placeholder.
+// colors, and nothing on it is a placeholder.
 const STARTERS = {
   one_day: {
     label: "One-day event",

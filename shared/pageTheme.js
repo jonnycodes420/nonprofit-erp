@@ -1,7 +1,7 @@
 // shared/pageTheme.js · PAGES-1. HOW ONE DONOR-FACING PAGE LOOKS, said once.
 //
 // Giving, volunteer and membership pages share one theme: the org's brand
-// colours by default, and on top of them, per page, an accent colour, one of a
+// colors by default, and on top of them, per page, an accent color, one of a
 // few curated font pairings (never free text: the keys are portalTheme's), a
 // button style, how round the corners are, and light or dark sections. It is
 // stored on the page as `design.theme` (shared/givingPageDesign.js keeps it),
@@ -39,7 +39,7 @@ const CORNER_KEYS = CORNERS.map(c => c.key);
 const SECTION_KEYS = SECTIONS.map(s => s.key);
 
 // The ink and paper a section is drawn in. Dark sections use Steward's ink,
-// light ones white; the brand colour is the org's.
+// light ones white; the brand color is the org's.
 export const INK = "#0F1A12";
 export const PAPER = "#FFFFFF";
 export const AA = 4.5;
@@ -70,7 +70,7 @@ export function validateTheme(raw) {
   const t = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : null;
   if (raw != null && !t) errors.push({ field: "design.theme", message: "The page theme is a set of choices." });
   if (t) {
-    if (t.accent && !cleanHex(t.accent)) errors.push({ field: "design.theme.accent", message: "An accent colour is a hex colour like #0D5C3A." });
+    if (t.accent && !cleanHex(t.accent)) errors.push({ field: "design.theme.accent", message: "An accent color is a hex color like #0D5C3A." });
     if (t.fonts && !FONT_KEYS.includes(t.fonts)) errors.push({ field: "design.theme.fonts", message: "Choose one of the font pairings." });
     if (t.button && !BUTTON_KEYS.includes(t.button)) errors.push({ field: "design.theme.button", message: "Choose Filled, Outline or Pill." });
     if (t.corners && !CORNER_KEYS.includes(t.corners)) errors.push({ field: "design.theme.corners", message: "Choose Square, Soft or Round." });
@@ -93,7 +93,7 @@ export function contrastRatio(a, b) {
   const [hi, lo] = la > lb ? [la, lb] : [lb, la];
   return Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100;
 }
-// The text that reads best on a colour: ink or white.
+// The text that reads best on a color: ink or white.
 export function textOn(hex) {
   const c1 = contrastRatio(hex, INK) || 0, c2 = contrastRatio(hex, PAPER) || 0;
   return c1 >= c2 ? INK : PAPER;
@@ -118,10 +118,10 @@ export function resolvePageTheme(brand, rawTheme) {
   };
 }
 
-// Every pair that fails AA, as a sentence the editor shows beside the colours.
+// Every pair that fails AA, as a sentence the editor shows beside the colors.
 // Each pair is one a donor actually reads: the words on a button, a link or a
-// heading in the accent colour on the section's ground, and the brand band's
-// name on the brand colour.
+// heading in the accent color on the section's ground, and the brand band's
+// name on the brand color.
 export function contrastWarnings(brand, rawTheme) {
   const r = resolvePageTheme(brand, rawTheme);
   const out = [];

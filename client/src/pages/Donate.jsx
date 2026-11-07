@@ -1691,8 +1691,8 @@ export default function Donate({ preview = null }) {
     // EDITOR-1: in the editor the photo carries its tools (replace, focus),
     // and the headline and story are typed where they show.
     const tools = preview && preview.photoTools ? preview.photoTools(!!cover) : null;
-    // PAGES-1: never an empty coloured block. With no photo the page shows the
-    // logo on the brand colour only when there IS a logo; with neither, the
+    // PAGES-1: never an empty colored block. With no photo the page shows the
+    // logo on the brand color only when there IS a logo; with neither, the
     // public page shows nothing here and the editor a dashed "Add a cover photo".
     const photo = cover ? (
       <div className="g3-photo" data-edit="photo" style={tools ? { position: "relative" } : undefined}><Picture value={cover} alt={givingPage.title} ratio="16 / 9" radius={16} width={1280} testid="page-cover" />{tools}</div>

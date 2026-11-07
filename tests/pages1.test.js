@@ -3,14 +3,14 @@
 // The build's one new test. It earns its place under CLAUDE.md's rule because
 // it guards what a donor sees on a page that takes money or a sign-up: a blank
 // block never shows a placeholder or an empty box to the public, a template
-// never publishes prompt copy, a colour pair a donor cannot read is named in
+// never publishes prompt copy, a color pair a donor cannot read is named in
 // the editor, and the pages load and fit a phone.
 //
 //   §1  the editor: the left rail scrolls on its own to its last section at
 //       1280×720; the Cover photo section names the photo the page shows (a
 //       page led by its Hero block's photo is not "No photo"); a blank story is
 //       a dashed "Add your story" box in the editor and nothing on the public
-//       page, never an empty coloured block.
+//       page, never an empty colored block.
 //  §2  volunteer and membership pages add, reorder and remove blocks and save
 //       a theme (accent, fonts, buttons, corners, sections), which publishes.
 //  §3  every template of every page type publishes with no placeholder text,
@@ -23,7 +23,7 @@
 //       scroll at 390 wide.
 //
 // RED ON MAIN (acea33c/a814f6e): §1 cover (the rail said "No photo" over the
-// Hero's photo) and blank story (no dashed box; an empty brand-coloured block
+// Hero's photo) and blank story (no dashed box; an empty brand-colored block
 // with no photo and no logo), §2 (no membership kind, no theme, volunteer
 // pages refused stats/quote), §3 (no membership templates; an empty FAQ or
 // stats block drew a blank card publicly), §4 (no check), §5 for membership
@@ -197,14 +197,14 @@ async function wipe(org) {
       ok("§1 the left rail scrolls on its own to its last section at 1280×720", rail.max > 0 && rail.st >= rail.max - 2 && rail.lastBottom <= rail.vh && rail.winScroll === 0, rail);
       await shot(pg, "editor-rail-end");
       await ctx.close();
-      // The public page: nothing where the blank story is, no empty coloured block.
+      // The public page: nothing where the blank story is, no empty colored block.
       await api("PUT", `/giving-pages/${gid}/page/draft`, TOK, { widgets: [] });
       await publish(gid);
       const pub = await browser.newPage({ viewport: { width: 1440, height: 900 } });
       await pub.goto(`${APP}/give/${SLUG}/${give.body.slug}`, { waitUntil: "domcontentloaded", timeout: 45000 });
       await pub.locator('[data-testid="giving-page"]').waitFor({ timeout: 20000 }).catch(() => {});
       const blankPub = await pub.evaluate(() => ({ story: !!document.querySelector(".g3-story"), fill: [...document.querySelectorAll(".g3-fill")].filter(el => !el.querySelector("img")).length, add: !!document.querySelector('[data-testid="add-cover-photo"]') }));
-      ok("§1 a blank story renders no block on the public page, and no empty coloured block", blankPub.story === false && blankPub.fill === 0 && blankPub.add === false, blankPub);
+      ok("§1 a blank story renders no block on the public page, and no empty colored block", blankPub.story === false && blankPub.fill === 0 && blankPub.add === false, blankPub);
       await pub.close();
     }
 
@@ -218,7 +218,7 @@ async function wipe(org) {
       await pg.locator('[data-testid="theme-accent"]').fill("#F2E3A0");
       await pg.locator('[data-testid="contrast-warning"]').waitFor({ timeout: 5000 }).catch(() => {});
       const warn = await pg.locator('[data-testid="contrast-warning"]').innerText().catch(() => "");
-      ok("§4 a failing colour pair shows the contrast warning in the editor", /4\.5:1/.test(warn), warn);
+      ok("§4 a failing color pair shows the contrast warning in the editor", /4\.5:1/.test(warn), warn);
       await shot(pg, "editor-contrast-warning");
       // The same pale accent reads well on dark sections: the warning goes.
       await pg.locator('[data-testid="theme-sections"] [data-value="dark"]').click();

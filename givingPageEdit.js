@@ -206,7 +206,7 @@ function validateOrgForm(base, patch) {
 }
 
 // PAGES-1: three starting points, each finished with only the org's logo,
-// colours and the page's own photo: the story with the form beside it, a
+// colors and the page's own photo: the story with the form beside it, a
 // campaign that leads with its goal, and the form alone. A starter also picks
 // the page's layout (drafted, like every other change, until Publish).
 const GIVE_STARTERS = {
@@ -229,7 +229,7 @@ const GIVE_STARTERS = {
   },
   simple: {
     label: "Simple",
-    blurb: "The form alone, under a band in your colours.",
+    blurb: "The form alone, under a band in your colors.",
     design: { layout: "simple" },
     widgets: [],
   },

@@ -130,7 +130,7 @@ function mount(ctx) {
 
 // PAGES-1: a template's photo blocks start with one of Steward's photos from
 // the org's mission group (EDITOR-1's rule: never an empty box), so a page
-// made from a template looks finished with only the org's logo and colours.
+// made from a template looks finished with only the org's logo and colors.
 async function withStockPhotos(widgets, orgId, pageId) {
   const out = [];
   for (const w of widgets || []) {
