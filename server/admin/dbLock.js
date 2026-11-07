@@ -59,7 +59,7 @@ async function lockPublicSchema(db) {
   for (const t of off) {
     // RLS does not bind the table's owner (no FORCE) or a role that bypasses it.
     if (!t.mine && !bypass) { out.skippedNotOwner.push(t.relname); continue; }
-    await db.query(`ALTER TABLE public.${qi(t.relname)} ENABLE ROW LEVEL SECURITY`);
+    await db.query(`ALTER TABLE public.${qi(t.relname)} ENABLE ROW LEVEL SECURITY`);   // nosemgrep: javascript.express.security.injection.tainted-sql-string.tainted-sql-string -- a pg_class name, quoted by qi
     out.rlsEnabled.push(t.relname);
   }
 

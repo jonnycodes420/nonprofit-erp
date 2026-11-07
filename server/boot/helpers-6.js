@@ -154,9 +154,9 @@ async function autoEnroll({ orgId = null } = {}) {
         const enrId = newId("se");
         await run(
           `INSERT INTO sequence_enrollments (id, sequence_id, org_id, donor_id, current_step, status, next_send_at)
-           VALUES (?, ?, ?, ?, 0, 'active', NOW() + INTERVAL '${firstDelay} days')
+           VALUES (?, ?, ?, ?, 0, 'active', NOW() + (?::int * INTERVAL '1 day'))
            ON CONFLICT (sequence_id, donor_id) DO NOTHING`,
-          [enrId, seq.id, seq.org_id, donor.id]
+          [enrId, seq.id, seq.org_id, donor.id, firstDelay]   // REDTEAM-1: the delay is a parameter, not pasted into SQL
         );
       }
     }
@@ -275,9 +275,9 @@ async function enrollInSequences(orgId, donorId, triggerKey, context = {}, actor
         `INSERT INTO sequence_enrollments
            (id, sequence_id, org_id, donor_id, current_step, status, next_send_at, track_key,
             enrolled_by, enrolled_by_name, gift_count_at_enroll)
-         VALUES (?,?,?,?,0,'active', NOW() + INTERVAL '${firstDelay} days', ?,?,?,?)
+         VALUES (?,?,?,?,0,'active', NOW() + (?::int * INTERVAL '1 day'), ?,?,?,?)
          ON CONFLICT (sequence_id, donor_id) DO NOTHING`,
-        [newId("se"), seq.id, orgId, donorId, track.key,
+        [newId("se"), seq.id, orgId, donorId, firstDelay, track.key,   // REDTEAM-1: the delay is a parameter
          actor?.id || "system:sequence", actor?.name || null, d ? Number(d.gift_count || 0) : null]);
       if (r.changes) enrolled++;
     } catch (e) { console.error(`[seq] enroll ${seq.id}/${donorId}:`, e.message); errors.push(`${seq.id}: ${e.message}`); }
