@@ -672,8 +672,8 @@ async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request
           const nxt = steps[enr.current_step + 1];
           if (nxt) {
             await run(
-              `UPDATE sequence_enrollments SET current_step = current_step + 1, next_send_at = NOW() + INTERVAL '${parseInt(nxt.delay_days, 10)} days' WHERE id = ?`,
-              [enr.id]
+              `UPDATE sequence_enrollments SET current_step = current_step + 1, next_send_at = NOW() + make_interval(days => ?) WHERE id = ?`,
+              [parseInt(nxt.delay_days, 10) || 0, enr.id]   // REDTEAM-2: the delay is a bound integer, not text
             );
           } else {
             await run("UPDATE sequence_enrollments SET status='completed', completed_at=NOW() WHERE id=?", [enr.id]);
@@ -810,8 +810,8 @@ async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request
         const nextStep = steps[enr.current_step + 1];
         if (nextStep) {
           await run(
-            `UPDATE sequence_enrollments SET current_step = current_step + 1, next_send_at = NOW() + INTERVAL '${parseInt(nextStep.delay_days, 10)} days' WHERE id = ?`,
-            [enr.id]
+            `UPDATE sequence_enrollments SET current_step = current_step + 1, next_send_at = NOW() + make_interval(days => ?) WHERE id = ?`,
+            [parseInt(nextStep.delay_days, 10) || 0, enr.id]   // REDTEAM-2: the delay is a bound integer, not text
           );
         } else {
           await run("UPDATE sequence_enrollments SET status='completed', completed_at=NOW(), current_step=current_step+1 WHERE id=?", [enr.id]);

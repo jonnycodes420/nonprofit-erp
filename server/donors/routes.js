@@ -12,6 +12,7 @@ const DTAGS = require("../../donorTags");   // FIX-33: internal flags never reac
 const ItemRefs = require("../../itemRefs");   // THREAD-2: the things a sentence names
 const SEALED_MAIL = require("../mail/sealedMail");   // SECURE-3: a synced email's body opens only here
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
+const { sql } = require("../db/sql");   // REDTEAM-2: SQL text only from the code
 
 const routers = {
   r1: express.Router(),
@@ -726,7 +727,8 @@ app.patch("/donors/:id/contact", requireAuth, checkWriteAccess, wrap(async (req,
     await run(`INSERT INTO donor_address_history (id, org_id, donor_id, source, before, after, created_by, created_by_name) VALUES (?,?,?,?,?::jsonb,?::jsonb,?,?)`,
       [newId("dah"), orgId, d.id, "edit", JSON.stringify(was), JSON.stringify(now), actor(req).id, actor(req).name]);
   }
-  await run(`UPDATE donors SET ${keys.map(k => `${k}=?`).join(", ")}, updated_at=NOW() WHERE id=? AND org_id=?`, [...keys.map(k => next[k] || null), d.id, orgId]);
+  // REDTEAM-2: each column is one of FIELDS (sql.id throws on anything else), each value bound.
+  await run(sql`UPDATE donors SET ${sql.join(keys.map(k => sql`${sql.id(k, FIELDS)} = ${next[k] || null}`))}, updated_at=NOW() WHERE id=${d.id} AND org_id=${orgId}`);
   if (keys.some(k => ["address", "city", "state", "zip"].includes(k))) {
     try { await markDonorsForGeocoding(orgId, { donorIds: [d.id] }); } catch (e) { console.error("[geocode] mark after contact edit failed:", e.message); }
   }
@@ -788,8 +790,8 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   );
   if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
   if (Object.keys(street).length) {
-    await run(`UPDATE donors SET ${Object.keys(street).map(k => `${k}=?`).join(", ")} WHERE id=? AND org_id=?`,
-      [...Object.values(street).map(v => v || null), req.params.id, req.user.orgId]);
+    // REDTEAM-2: each column one of the two street lines (sql.id throws on anything else), each value bound.
+    await run(sql`UPDATE donors SET ${sql.join(Object.keys(street).map(k => sql`${sql.id(k, ["address", "address2"])} = ${street[k] || null}`))} WHERE id=${req.params.id} AND org_id=${req.user.orgId}`);
   }
   if (was) {
     const now = { ...was, city: city || null, state: state || null, zip: zip || null, ...Object.fromEntries(Object.entries(street).map(([k, v]) => [k, v || null])) };

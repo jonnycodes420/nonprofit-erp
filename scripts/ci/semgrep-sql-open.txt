@@ -1,0 +1,10 @@
+# scripts/ci/semgrep-sql-open.txt · REDTEAM-2: the SQL findings still open, by file and line text.
+# <path> | <the flagged line, trimmed> | <why it is open>. Only shrinks: a fixed hit must be removed
+# (the gate fails on a stale line), and a new hit is fixed with the sql`` tag, never added here
+# without a reason a reviewer accepts. Read by scripts/ci/semgrep-sql-check.js.
+routes/billing.js | `quote one number and charge another. Run scripts/once/create-billing-products.js and update ${plan.env}.` | not SQL: an error message (console.error) whose words "create" and "update" read as SQL to the rule; it never reaches the database
+routes/billing.js | + `Create the price at the right amount and update ${plan.env} before closing anyone.`, | not SQL: the close-link refusal message; "Create the price" reads as SQL to the rule; it never reaches the database
+routes/billing.js | message: `Steward will not delete ${orgs[0].name} because ${blockers.join(" and ")}. Archive it instead; that hides it and can be undone.` }); | not SQL: the org-delete refusal message; "will not delete" reads as SQL to the rule; it never reaches the database
+routes/groups.js | FROM donors d LEFT JOIN (${st.sql}) s ON s.donor_id = d.id | safe, open: the group page runs the group's saved rule through groups.js buildDonorFilter (text from the code, every value bound, REDTEAM-2 read it); clears when buildDonorFilter builds sql`` pieces
+routes/volunteer.js | FROM donors WHERE ${f.whereSql} ORDER BY lower(donors.name), donors.id LIMIT 2000`, | safe, open: the volunteer roster's filter through groups.js buildDonorFilter (text from the code, values bound); clears with the buildDonorFilter move to sql``
+server/donors/routes.js | query(`SELECT COUNT(*) AS c FROM donors WHERE ${whereSql}`, params), | safe, open: the Donors list's filter through groups.js buildDonorFilter (text from the code, values bound); clears with the buildDonorFilter move to sql``

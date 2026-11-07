@@ -461,7 +461,7 @@ app.post("/tasks/bulk", requireAuth, checkWriteAccess, wrap(async (req, res) => 
   const action = String(b.action || "");
   if (!ids.length || !["reassign", "move", "done", "undone", "delete", "restore"].includes(action))
     return res.status(400).json({ error: "bad_bulk", sentence: "Pick some tasks and one thing to do to them." });
-  const rows = await query(`SELECT id, title, due, done, recur, assigned_to, assigned_to_name, link_kind, thread_id FROM tasks WHERE org_id=? AND id IN (${ids.map(() => "?").join(",")})`, [orgId, ...ids]);
+  const rows = await query(`SELECT id, title, due, done, recur, assigned_to, assigned_to_name, link_kind, thread_id FROM tasks WHERE org_id=? AND id = ANY(?::text[])`, [orgId, ids]);   // REDTEAM-2: one bound array
   let owner = null;
   if (action === "reassign") {
     const { ok, user: u } = await OU.orgUser(orgId, b.assignedTo);
@@ -1274,14 +1274,14 @@ app.post("/threads/plan", requireAuth, checkWriteAccess, wrap(async (req, res) =
   const userName = userRow[0]?.name || "";
 
   // Org-scoped up front: an id from another org is not found, never planted.
-  const ph = ids.map(() => "?").join(",");
+  // REDTEAM-2: the ids as one bound array, not a placeholder list built into the text.
   const donors = await query(
     `SELECT id, name, assigned_to, assigned_to_name FROM donors
-      WHERE org_id = ? AND deleted_at IS NULL AND id IN (${ph})`, [orgId, ...ids]);
+      WHERE org_id = ? AND deleted_at IS NULL AND id = ANY(?::text[])`, [orgId, ids]);
   const byId = new Map(donors.map(d => [d.id, d]));
   const openAlready = new Set((await query(
-    `SELECT donor_id FROM threads WHERE org_id = ? AND closed_at IS NULL AND donor_id IN (${ph})`,
-    [orgId, ...ids])).map(r => r.donor_id));
+    `SELECT donor_id FROM threads WHERE org_id = ? AND closed_at IS NULL AND donor_id = ANY(?::text[])`,
+    [orgId, ids])).map(r => r.donor_id));
 
   const planned = [], skipped = [];
   for (const id of ids) {

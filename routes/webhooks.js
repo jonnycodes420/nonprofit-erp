@@ -21,6 +21,7 @@ const ORG_KIND = require("../orgKind");   // ADMIN-CLEAN: real subscription amou
 const TL = require("../timelineLine");   // WIRE-1 rule 2: every act lands on the timeline   // PARITY-2 Part 4: who won, and the split
 const { rateLimit } = require("../rateLimitStore");   // SCALE-1: shared by every replica
 const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
+const { sql } = require("../server/db/sql");   // REDTEAM-2: SQL text only from the code
 
 const routers = {
   r0: express.Router(),
@@ -1158,9 +1159,9 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
                 if ((await query("SELECT id FROM gifts WHERE id=$1", [snap.id])).length) return; // already restored
                 snap.dispute_status = "won";
                 // Re-insert the gift verbatim (every column the reversal froze).
+                // REDTEAM-2: each column a quoted name, each value bound (server/db/sql.js).
                 const cols = Object.keys(snap).filter(k => snap[k] !== undefined);
-                const ph = cols.map((_, i) => "$" + (i + 1)).join(",");
-                await run(`INSERT INTO gifts (${cols.join(",")}) VALUES (${ph}) ON CONFLICT (id) DO NOTHING`, cols.map(k => snap[k]));
+                await run(sql`INSERT INTO gifts (${sql.join(cols.map(k => sql.ident(k)))}) VALUES (${sql.join(cols.map(k => sql`${snap[k]}`))}) ON CONFLICT (id) DO NOTHING`);
                 // Re-stamp the ledger through the ONE ledger helper (same as the
                 // online-gift path); idempotent on gift_id.
                 try {
