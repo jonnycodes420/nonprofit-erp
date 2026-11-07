@@ -3,6 +3,8 @@
 // down. Each section says so when its source could not be read.
 import { useState } from "react";
 import { countLabel } from "../../../../shared/countWords.js";
+import MorningCard from "./MorningCard";
+import { TierPill } from "./leadBits";
 
 const INK = "#0F1A12", WHITE = "#FFFFFF", CREAM = "#F0EDE6", EMERALD = "#0D5C3A", BRASS = "#C9A84C";
 const STATES = ["open", "reopened", "fixed", "verified"];
@@ -74,7 +76,7 @@ function Board({ board, onShot }) {
   const sel = { fontSize: 13, padding: "4px 6px", marginRight: 8, border: `1px solid ${INK}33`, borderRadius: 6, background: WHITE, color: INK };
   return <section style={card}>
     <h2 style={h2}>The board</h2>
-    <p style={says}>Every finding, from a walk, your checks on the Map, a customer or a build. Open → fixed when its build merges → verified when the next walk passes it.
+    <p style={says}>Every finding, from a walk, the QA fleet lead's summary, your checks on the Map, a customer or a build. Open → fixed when its build merges → verified when the next walk passes it; reopened when a fixed one fails again. Within a build, the lead's order: tier 1 first, repeats above new fails.
       {" "}{STATES.map(s => `${board.counts[s]} ${s}`).join(" · ")}.</p>
     <div style={{ marginBottom: 10 }}>
       <select aria-label="Source" style={sel} value={source} onChange={e => setSource(e.target.value)}>
@@ -90,8 +92,9 @@ function Board({ board, onShot }) {
           {"  "}{STATES.filter(s => g.counts[s]).map(s => `${g.counts[s]} ${s}`).join(" · ")}{g.build ? ` · report .claude/reports/${g.build}.md` : ""}</span></div>
       <table style={{ borderCollapse: "collapse", width: "100%" }}><tbody>
         {g.shown.map(it => <tr key={it.id}>
-          <td style={{ ...cell, width: 190, fontFamily: "ui-monospace, monospace", fontSize: 12 }}>{it.id}</td>
-          <td style={cell}>{it.words}{it.customer ? <span style={{ opacity: 0.7 }}> · from {it.customer}</span> : null}
+          <td style={{ ...cell, width: 210, fontFamily: "ui-monospace, monospace", fontSize: 12 }}><TierPill tier={it.tier} />{it.id}</td>
+          <td style={cell}>{it.words}{it.seen === "REPEAT" ? <span style={{ opacity: 0.7 }}> · a repeat</span> : null}
+            {it.evidence ? <span style={{ opacity: 0.7 }}> · evidence {it.evidence}</span> : null}{it.customer ? <span style={{ opacity: 0.7 }}> · from {it.customer}</span> : null}
             {it.check && it.source === "jonathan" ? <span style={{ opacity: 0.7 }}> · {it.check}</span> : null}
             {it.verifiedBy === "jonathan" ? <span style={{ opacity: 0.7 }}> · you passed it on the Map</span> : null}
             {it.shot && onShot ? <> · <button type="button" onClick={() => onShot(it.shot)} style={{ color: EMERALD, background: "none", border: 0, padding: 0, cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>screenshot</button></> : null}</td>
@@ -121,7 +124,7 @@ function Builds({ builds, now }) {
 }
 
 function Trend({ walks }) {
-  if (!walks.length) return <section style={card}><h2 style={h2}>The walk trend</h2><p style={says}>No walk imported yet: node scripts/ops/board-import-walk.js &lt;report.md&gt; --write.</p></section>;
+  if (!walks.length) return <section style={card}><h2 style={h2}>The walk trend</h2><p style={says}>No walk imported yet. Import one above, under Import a walk report.</p></section>;
   const W = 640, H = 140, P = 28, max = Math.max(1, ...walks.map(w => w.fail));
   const x = i => P + (walks.length === 1 ? (W - 2 * P) / 2 : (i * (W - 2 * P)) / (walks.length - 1));
   const y = v => H - P - (v / max) * (H - 2 * P);
@@ -180,7 +183,7 @@ function Customers({ customers, now }) {
   </section>;
 }
 
-export default function OpsView({ data, error, now = Date.now(), tabs = null, onShot = null, ship = null }) {
+export default function OpsView({ data, error, now = Date.now(), tabs = null, onShot = null, ship = null, importer = null }) {
   if (error) return <div style={page}><div style={sheet}><h1 style={{ fontSize: 24 }}>Ops</h1>{tabs}<Down error={error} /></div></div>;
   if (!data) return <div style={page}><div style={sheet}><h1 style={{ fontSize: 24 }}>Ops</h1>{tabs}<p style={says}>Loading…</p></div></div>;
   return <div style={page}><div style={sheet}>
@@ -188,8 +191,10 @@ export default function OpsView({ data, error, now = Date.now(), tabs = null, on
     {tabs}
     <p style={says}>{data.refreshedAt ? `Summaries refreshed ${ago(data.refreshedAt, now)} ago by the worker${data.stale ? ", which is late: it should refresh every five minutes" : ""}.` : "The worker has not refreshed the summaries yet."}
       {data.githubAt ? ` GitHub read ${ago(data.githubAt, now)} ago.` : ""}</p>
+    <MorningCard m={data.morning || null} />
     <Health h={data.health} now={now} />
     {ship /* STAGE-1: staging and the Ship to customers card, beside prod health */}
+    {importer /* LEAD-IMPORT-1: Import a walk report, above the board it writes to */}
     <Board board={data.board} onShot={onShot} />
     <Builds builds={data.builds} now={now} />
     <Trend walks={data.board.ok ? data.board.walks : []} />

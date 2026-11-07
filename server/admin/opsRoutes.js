@@ -3,6 +3,7 @@
 //   GET /ops           what the page reads: prod health, the board, builds, the
 //                      walk trend, page timing (PERF-4) and customers, in one answer
 //   /ops/map, /ops/checks   DEVBOARD-2, the Map tab (opsMapRoutes.js)
+//   /ops/imports       LEAD-IMPORT-1, upload a walk report or the lead's summary (opsImportRoutes.js)
 //   /ops/journey, /ops/flow DEVBOARD-3, the Journey and How-it-works tabs (opsJourneyRoutes.js)
 //
 // GET /ops is read-only. It never writes a row (the worker's opsBoardRefresh writes the one
@@ -13,6 +14,7 @@
 "use strict";
 const express = require("express");
 const BOARD = require("./board");
+const IMPORTS = require("./opsImports");
 const SOURCES = require("./opsSources");
 const STATUS = require("../../scripts/ci/status");
 
@@ -71,8 +73,14 @@ function mount(ctx) {
     let board;
     // DEVBOARD-2: Jonathan's own checks (ops_checks) are merged into the walk's board.
     const checks = await require("./opsMapRoutes").readChecks(query).catch(() => []);
-    try { board = { ok: true, ...BOARD.summarize(require("./opsMap").mergeBoard(BOARD.readBoard(), checks)) }; }
-    catch (e) { board = { ok: false, error: `The board file could not be read: ${e.message}` }; }
+    // LEAD-IMPORT-1: and every report uploaded on this page (ops_imports), applied in date order.
+    const imports = await IMPORTS.readImports(query).catch(() => []);
+    let morning = null;
+    try {
+      const merged = require("./opsMap").mergeBoard(IMPORTS.deriveBoard(BOARD.readBoard(), imports), checks);
+      board = { ok: true, ...BOARD.summarize(merged), importProblems: merged.importProblems || [] };
+      morning = IMPORTS.morning(merged, imports);
+    } catch (e) { board = { ok: false, error: `The board file could not be read: ${e.message}` }; }
     const builds = gh.builds || none;
     if (board.ok && builds.ok) {
       const prOf = new Map(builds.rows.filter(r => r.build).map(r => [r.build, r.url]));
@@ -94,7 +102,7 @@ function mount(ctx) {
       refreshedAt: snap ? snap.refreshedAt : null,
       stale: snap ? now - new Date(snap.refreshedAt).getTime() > STALE_MS : true,
       githubAt: gh.collectedAt || null,
-      health, board, builds, customers,
+      health, board, builds, customers, morning,
       // PERF-4: the page-ready marks this web process has had (time only)
       pageTiming: require("../perf/pageTiming").summary(now),
     });
@@ -102,6 +110,8 @@ function mount(ctx) {
 
   // DEVBOARD-2: the Map tab and Jonathan's checks, behind this same door.
   require("./opsMapRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter });
+  // LEAD-IMPORT-1: "Import a walk report", behind this same door.
+  require("./opsImportRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter });
   // STAGE-1: the Ship to customers card, behind this same door.
   require("./shipRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter, buildSha });
   // DEVBOARD-3: the Journey and How-it-works tabs, behind this same door.
