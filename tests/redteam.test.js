@@ -23,6 +23,8 @@
 //       "javascript:" link was stored and opened with window.open).
 //   §6  Every search and filter parameter in the live router survives quotes and
 //       SQL-shaped input: no 5xx anywhere.
+//   §7  REDTEAM-2: SQL text only from the code (server/db/sql.js), and a stored
+//       table name off the restore list is refused.
 //
 // Standard scratch stack (tests/README.md). Fixtures are the suite's own orgs.
 const crypto = require("crypto");
@@ -285,6 +287,34 @@ async function walkGet(path, tok, dropped) {
   ok(`§2/§6 no route dropped the connection twice (${dropped.length})`, dropped.length === 0, dropped.slice(0, 10));
   const [{ n: stillB }] = await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1`, [B]);
   ok("§6 …and org B's people are all still there", stillB === 1, stillB);
+
+  // ── §7 · REDTEAM-2: SQL text only from the code (server/db/sql.js) ─────
+  // The one door every converted statement goes through. RED if sql.id lets a
+  // name off its list, if sql() takes a plain string, if a value lands in the
+  // text, if a quote in a catalog name escapes sql.ident, or if a pick takes a
+  // key the code didn't write. Then one converted route, live: a restore whose
+  // stored table name is not on RESTORABLE is refused and writes nothing.
+  console.log("\n§7 · SQL text comes only from the code");
+  {
+    const { sql, toQuery } = require("../server/db/sql");
+    const evil = "x'; DROP TABLE donors; --";
+    const st = sql`SELECT id FROM donors WHERE name = ${evil} AND org_id = ${A}`;
+    ok("§7 a ${value} is bound, never text", !st.text.includes("DROP") && st.values[0] === evil && (st.text.match(/\?/g) || []).length === 2, st.text);
+    const refuses = fn => { try { fn(); return false; } catch { return true; } };
+    ok("§7 sql() refuses a plain string (only a template's own literal parts are text)", refuses(() => sql("SELECT 1")) && refuses(() => sql(Object.assign(["SELECT 1"], { raw: ["SELECT 1"] }))));
+    ok("§7 sql.id refuses a name off its list", refuses(() => sql.id(evil, ["donors"])) && refuses(() => sql.id("gifts", ["donors"])) && sql.id("donors", ["donors"]).text === "donors");
+    ok("§7 sql.ident keeps a catalog name a name (a quote is doubled)", sql.ident('a"b; DROP').text === '"a""b; DROP"');
+    ok("§7 sql.pick takes only a key the code wrote", refuses(() => sql.pick(evil, { a: "x" })) && refuses(() => sql.pick("constructor", { a: "x" })) && sql.pick("a", { a: "x" }).text === "x");
+    ok("§7 a Sql with bound values takes no params beside it", refuses(() => toQuery(st, [1])));
+    // Live: a trash row whose table_name isn't restorable can't steer the INSERT.
+    const tid = "del_" + crypto.randomBytes(10).toString("hex");
+    await q(`INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name) VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7)`,
+      [tid, A, "donors_x; DROP TABLE gifts", "zz_none", JSON.stringify({ id: "zz_none" }), `u_${A}_admin`, "Odile Brant"]);
+    const r7 = await api("POST", `/deleted-records/${tid}/restore`, admin, {});
+    const [{ n: gifts7 }] = await q(`SELECT COUNT(*)::int AS n FROM gifts`);
+    ok("§7 a restore of a table not on the list is refused, and gifts are still a table", r7.status === 400 && gifts7 >= 0, { status: r7.status });
+    await q(`DELETE FROM deleted_records WHERE id=$1`, [tid]);
+  }
 
   await reset();
   await closeDb();

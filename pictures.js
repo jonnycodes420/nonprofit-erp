@@ -117,6 +117,12 @@ const SLOTS = {
 };
 
 const express = require("express");
+// REDTEAM-2: every table and column a slot names, the only names its SQL may hold (server/db/sql.js).
+const { sql } = require("./server/db/sql");
+const SLOT_NAMES = new Set(Object.values(SLOTS).flatMap(x => [x.table, x.col, x.meta, x.label]).filter(Boolean));
+const slotName = n => sql.id(n, SLOT_NAMES);
+// The slot's read: its column, its words and focus, its label, from its own row (or the org's).
+const slotRead = (s, { label = false } = {}) => sql`SELECT ${slotName(s.col)} AS v${s.meta ? sql`, ${slotName(s.meta)} AS m` : sql.empty}${label && s.label ? sql`, ${slotName(s.label)} AS label` : sql.empty} FROM ${slotName(s.table)}`;
 // Mounted with the other route modules (server.js app.use(routers.r0)), above
 // the app's final 404; mount() fills it once server.js has its helpers.
 const routers = { r0: express.Router() };
@@ -175,9 +181,8 @@ function mount(ctx) {
   app.get("/pictures/:kind/:id", requireAuth, wrap(async (req, res) => {
     const s = SLOTS[req.params.kind];
     if (!s) return res.status(404).json({ error: "not_found" });
-    const where = s.byOrg ? "org_id = ?" : "id = ? AND org_id = ?";
-    const args = s.byOrg ? [req.user.orgId] : [req.params.id, req.user.orgId];
-    const [row] = await query(`SELECT ${s.col} AS v${s.meta ? `, ${s.meta} AS m` : ""} FROM ${s.table} WHERE ${where}`, args);   // nosemgrep: javascript.express.security.injection.tainted-sql-string.tainted-sql-string -- table and columns from the fixed SLOTS map
+    const where = s.byOrg ? sql`org_id = ${req.user.orgId}` : sql`id = ${req.params.id} AND org_id = ${req.user.orgId}`;
+    const [row] = await query(sql`${slotRead(s)} WHERE ${where}`);
     if (!row && !s.byOrg) return res.status(404).json({ error: "not_found" });
     const pic = row ? readPicture(s.meta ? (row.v ? { url: row.v, ...(row.m || {}) } : null) : row.v) : null;
     res.json({ picture: pic });
@@ -187,9 +192,8 @@ function mount(ctx) {
     const s = SLOTS[req.params.kind];
     if (!s) return res.status(404).json({ error: "not_found" });
     const orgId = req.user.orgId;
-    const where = s.byOrg ? "org_id = ?" : "id = ? AND org_id = ?";
-    const args = s.byOrg ? [orgId] : [req.params.id, orgId];
-    const [row] = await query(`SELECT ${s.col} AS v${s.meta ? `, ${s.meta} AS m` : ""}${s.label ? `, ${s.label} AS label` : ""} FROM ${s.table} WHERE ${where}`, args);   // nosemgrep: javascript.express.security.injection.tainted-sql-string.tainted-sql-string -- fixed SLOTS map
+    const where = s.byOrg ? sql`org_id = ${orgId}` : sql`id = ${req.params.id} AND org_id = ${orgId}`;
+    const [row] = await query(sql`${slotRead(s, { label: true })} WHERE ${where}`);
     if (!row && !s.byOrg) return res.status(404).json({ error: "not_found" });
     const c = await ownPicture(orgId, req.body && req.body.picture, row && row.label);
     if (c.error) return res.status(400).json({ error: "bad_image", message: c.error });
@@ -199,12 +203,13 @@ function mount(ctx) {
     if (p && p.stock && !(await require("./routes/stockPhotos").isStockUrl(orgId, p.url))) delete p.stock;
     if (s.byOrg) {
       if (!row) await run(`INSERT INTO portal_settings (org_id) VALUES (?) ON CONFLICT (org_id) DO NOTHING`, [orgId]);
-      await run(`UPDATE portal_settings SET ${s.col} = ?::jsonb WHERE org_id = ?`, [p ? JSON.stringify(p) : null, orgId]);   // nosemgrep: javascript.express.security.injection.tainted-sql-string.tainted-sql-string -- column from the fixed SLOTS map
+      await run(sql`UPDATE portal_settings SET ${slotName(s.col)} = ${p ? JSON.stringify(p) : null}::jsonb WHERE org_id = ${orgId}`);
     } else if (s.meta) {
-      await run(`UPDATE ${s.table} SET ${s.col} = ?, ${s.meta} = ?::jsonb WHERE id = ? AND org_id = ?`,
-        [p ? p.url : null, p ? JSON.stringify({ alt: p.alt, fx: p.fx, fy: p.fy, ...(p.stock ? { stock: true } : {}) }) : null, req.params.id, orgId]);
+      await run(sql`UPDATE ${slotName(s.table)} SET ${slotName(s.col)} = ${p ? p.url : null},
+        ${slotName(s.meta)} = ${p ? JSON.stringify({ alt: p.alt, fx: p.fx, fy: p.fy, ...(p.stock ? { stock: true } : {}) }) : null}::jsonb
+        WHERE id = ${req.params.id} AND org_id = ${orgId}`);
     } else {
-      await run(`UPDATE ${s.table} SET ${s.col} = ?::jsonb WHERE id = ? AND org_id = ?`, [p ? JSON.stringify(p) : null, req.params.id, orgId]);
+      await run(sql`UPDATE ${slotName(s.table)} SET ${slotName(s.col)} = ${p ? JSON.stringify(p) : null}::jsonb WHERE id = ${req.params.id} AND org_id = ${orgId}`);
     }
     await recordAssetPointerHistory(orgId, `${req.params.kind}.picture`, s.byOrg ? orgId : req.params.id, before, p ? p.url : null, req.user);
     if (req.audit && req.audit.entity) req.audit.entity(s.table, s.byOrg ? orgId : req.params.id);
