@@ -166,7 +166,7 @@ const fill = p => String(p).replace(/:\w+(\([^)]*\))?\??/g, "x").replace(/\*/g, 
   ok("§2 a viewer's Atlas logged no conversation and recorded no gift", before[0].i === after[0].i && before[0].t === after[0].t, { before: before[0], after: after[0] });
   ok("§2 and says why, in one line", acts.some(x => x.line === VO.VIEWER_ATLAS_SENTENCE), acts.map(x => x.line));
   // The control: the same words from an admin DO write, so §2 is not passing on a parse that found nothing.
-  const atA = await api("POST", "/atlas", tok.adminA, { text: ATLAS_WORDS });
+  const atA = await require("./helpers").atlasSaved(tok.adminA, { text: ATLAS_WORDS });   // SENDS-1: written on her Save
   const afterA = await q(`SELECT (SELECT COUNT(*) FROM interactions WHERE org_id=$1)::int AS i, (SELECT COUNT(*) FROM gifts WHERE org_id=$1)::int AS t`, [A]);
   ok("§2 control: the same words from an admin do write", atA.status < 300 && (afterA[0].i > after[0].i || afterA[0].t > after[0].t), { status: atA.status, after: afterA[0] });
   for (const p of ["/atlas/actions/x/yes", "/atlas/x/undo", "/atlas/x/all"]) {

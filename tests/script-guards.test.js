@@ -88,6 +88,9 @@ const GUARDED_WRITERS = [
   // TRUST-1: turns off the at-risk and milestone sequences Steward made and
   // left on. Dry run by default; --apply writes through writerDbUrl.
   "trust1-turn-off-steward-sequences",
+  // SENDS-1: pauses sequences that are Active with an empty step or no trigger.
+  // Dry run by default; --apply writes through writerDbUrl, one audit row per org.
+  "sends1-off-audit",
   // COMMS-1: archives the unsent drafts of turned-off sequences, older than 7 days.
   // Dry run by default; --apply/--undo write through writerDbUrl, one audit row per org. org_creo skipped.
   "comms1-old-sequence-drafts",

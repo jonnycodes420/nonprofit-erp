@@ -3,6 +3,16 @@
 Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follow-ups, goals, report definitions, custom reports or board reports.
 
 ## Rules
+- **Done on a move is done for the person (SENDS-1, 7 Nov 2026).** A move can carry the person's Drifting sign folded into
+  it; Done records the move and that sign (`POST /insights/outcome` with `lead`), so the same person does not rise again
+  as a Drift move, and every move of theirs leaves the deck. **Home's "people to follow up" and the Tasks badge ("tasks due
+  today or overdue") are different counts,** each labelled exactly, with a tooltip that names the other.
+- **Journeys (SENDS-1).** "Add to a journey" lists every journey that is not archived; one that can't be started for this
+  person is greyed out with why (`client/src/lib/journeyPick.js`; the bulk dialog does the same per row). A birthday
+  journey's preview counts from the day the sweep would start it (`shared/birthday.js` `birthdayJourneyStart`). Batch Undo
+  removes everything the batch made, its steps' Threads and tasks and its scheduled journey emails. A plain task on the
+  Calendar has Delete, with Undo.
+
 - **One rhythm (STATUS-1).** "When is this person's next gift due, and has it passed?" is
   `shared/numbers/rhythm.js` `rhythmFor(gifts, today)`, once: the usual gap (or the season, with the
   year-end rule), the expected next gift, late and by how much, on time. Drift, `lapseRule.usualTimeAhead`

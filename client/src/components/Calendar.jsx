@@ -561,7 +561,20 @@ function ItemCard({ card, today, onMove, isReadOnly, onClose, onNavigate, onChan
     onClose();
     await onMove(it, { days, minutes: (h2 * 60 + m2) - (h1 * 60 + m1) });
   };
-  const doneBtn = !isReadOnly && !it.done ? <button type="button" data-testid="cal-card-done" style={btn} disabled={busy} onClick={done}>{busy ? "Saving…" : "Mark done"}</button> : null;
+  // SENDS-1 (W-1107-Fundraising-29): a task on the calendar can be deleted here, with Undo,
+  // the same DELETE /tasks/:id the Tasks page uses (a next step is dismissed on its Thread).
+  const del = async () => {
+    setBusy(true); setErr("");
+    try {
+      const r = await apiFetch(`/tasks/${encodeURIComponent(it.ref.taskId)}`, { method: "DELETE" });
+      offerUndo({ message: `Deleted: ${it.title}.`, undoAction: async () => { const u = await apiFetch(`/deleted-records/${encodeURIComponent(r.undoId)}/restore`, { method: "POST" }); onChanged(""); return u; } }, it.title);
+      onChanged("Deleted.");
+    } catch (e) { setErr((e && e.sentence) || errorMessage(e, "That did not delete.")); }
+    setBusy(false);
+  };
+  const delBtn = !isReadOnly && it.type === "step" && it.ref && it.ref.taskId && !it.ref.threadId
+    ? <button type="button" data-testid="cal-card-delete" style={chip} disabled={busy} onClick={del}>Delete</button> : null;
+  const doneBtn = !isReadOnly && !it.done ? <><button type="button" data-testid="cal-card-done" style={btn} disabled={busy} onClick={done}>{busy ? "Saving…" : "Mark done"}</button>{delBtn}</> : null;
   const action = (() => {
     if (it.type === "shift") return <button type="button" style={btn} onClick={() => onEditShift(it)}>Change this shift</button>;
     if (it.type === "event") return <RecordLink to={tabHref("fundraising", { frSection: "events", eventId: it.ref.eventId })} onOpen={() => go("fundraising", { frSection: "events", eventId: it.ref.eventId })} style={{ ...btn, display: "inline-block", textDecoration: "none" }}>Open the event to check in</RecordLink>;

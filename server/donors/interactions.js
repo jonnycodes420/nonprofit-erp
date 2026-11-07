@@ -21,6 +21,7 @@ const routers = {
   r1: express.Router(),
 };
 
+const LOG_CLOSE = require("../tasks/logClose");   // SENDS-1: what logging a conversation closes
 function mount(ctx) {
 const {
   AGENT_MODEL, ASSET_ID_RE, NOT_YOURS, UNDO_SECONDS, actor, advanceCultivationPlan, agentGate,
@@ -659,7 +660,6 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
 
   const ns = req.body?.nextStep;
   const nsSkipped = !!(ns && ns.skipped === true);
-  const onThreadId = typeof req.body?.threadId === "string" && req.body.threadId ? req.body.threadId : null;   // FEEL-1
   let step = null;
   if (!nsSkipped) {
     const typeLabel = shape.nextStepLabelFor(ns?.type);
@@ -729,19 +729,10 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
                         ...(step ? { next_step_label: step.label } : {}), ...(nsSource ? { next_step_source: nsSource } : {}),
                         ...(outcome ? { outcome } : {}) })]);
 
-    // An open thread on this donor closes on this conversation — the outcome.
-    // FEEL-1: a skip applies only to the step this dialog offers. Skipped, the
-    // conversation closes the one follow-up the dialog was opened on (threadId),
-    // or nothing: it never marks another open follow-up done.
-    const closedRows = nsSkipped
-      ? (onThreadId ? await queryTx(client,
-          `UPDATE threads SET closed_at = NOW(), close_kind = 'outcome', closing_interaction_id = ?
-            WHERE org_id = ? AND donor_id = ? AND id = ? AND closed_at IS NULL RETURNING id`,
-          [intId, orgId, req.params.id, onThreadId]) : [])
-      : await queryTx(client,
-          `UPDATE threads SET closed_at = NOW(), close_kind = 'outcome', closing_interaction_id = ?
-            WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL RETURNING id`,
-          [intId, orgId, req.params.id]);
+    // An open thread on this donor closes on this conversation, the outcome.
+    // SENDS-1: a skip closes nothing at all, the follow-up it was opened on
+    // included (server/tasks/logClose.js, the one rule for every log path).
+    const closedRows = await LOG_CLOSE.closeOnLog(client, queryTx, { orgId, donorId: req.params.id, interactionId: intId, skipped: nsSkipped });
 
     let thread = null;
     if (step) {

@@ -1247,8 +1247,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     // lib/homeReads.js RAIL_READS); placeholders in this shape hold its place.
     if(!railReady) return <HomeRailSkeleton/>;
     const todayItems=[
-      {key:"followups",n:threadsData&&!threadsData.failed?(threadStat?.open||0):null,one:"follow-up",many:"follow-ups",
-       definition:"Every donor with a next step planned and not yet done.",onOpen:()=>setRailView({kind:"list",key:"open"})},
+      {key:"followups",n:threadsData&&!threadsData.failed?(threadStat?.open||0):null,one:"person to follow up",many:"people to follow up",   // SENDS-1: never read as the Tasks badge
+       definition:"Every person with a next step planned and not yet done, whenever it is due. Not the same as the Tasks badge, which counts your tasks due today or overdue, with or without a person.",onOpen:()=>setRailView({kind:"list",key:"open"})},
       {key:"due",n:typeof railDueToday==="number"?railDueToday:null,one:"due today",many:"due today",
        definition:"Your tasks and next steps due today, in your organization's timezone. The same count as Tasks, Today.",onOpen:()=>onNavigate&&onNavigate("tasks",{scope:"mine",view:"today"})},
       {key:"failed",n:recurringHealth&&!recurringHealth.failed?railFailedThisWeek:null,one:"card failed",many:"cards failed",

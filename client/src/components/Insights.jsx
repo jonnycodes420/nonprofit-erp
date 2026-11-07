@@ -509,13 +509,15 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
   };
   // the move leaves this deck; the next one takes its place
   const advance = () => {
-    setGone(new Set([...gone, m.id]));
+    // SENDS-1: the person's other moves on this deck leave with it, and the next person rises.
+    const same = m.lead ? deck.tabs.flatMap(t => t.moves).filter(x => x.lead === m.lead).map(x => x.id) : [];
+    setGone(new Set([...gone, m.id, ...same]));
     setSlide("next");
     setPos({ ...pos, [cur.key]: moves.length - 1 > i ? i : 0 });
     setMode(null); setReason("");
   };
   const outcome = async (state, extra) => {
-    await apiFetch("/insights/outcome", { method: "POST", body: JSON.stringify({ kind: m.kind, itemKeys: [m.itemKey], donorIds: m.ids, state, ...extra }) });
+    await apiFetch("/insights/outcome", { method: "POST", body: JSON.stringify({ kind: m.kind, itemKeys: [m.itemKey], donorIds: m.ids, lead: m.lead || null, state, ...extra }) });
   };
   const act = async (state, extra, said) => {
     if (!m || busy) return;

@@ -51,7 +51,7 @@ process.env.ANTHROPIC_BASE_URL = `http://localhost:${MOCK}`;
 process.env.TEST_MODE = "1";
 process.env.TEST_DB_LATENCY_MS = process.env.TEST_DB_LATENCY_MS || "17";
 
-const { ok, summary, login, api, q, closeDb, civilToday } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, civilToday, atlasSaved } = require("./helpers");
 const bcrypt = require("bcryptjs");
 
 const ORG = "org_speed3a", ADMIN = "speed3a-admin@example.org", USER = "u_speed3a";
@@ -169,7 +169,7 @@ async function timed(tok, text, label) {
       await sleep(100);
     }
   })();
-  const r = await api("POST", "/atlas", tok, { text, progressKey: key });
+  const r = await atlasSaved(tok, { text, progressKey: key });
   const total = Math.round(performance.now()) - T0;
   on = false; await watch;
   // The line is kept for a minute: the last step's line, however quick it was.
@@ -198,7 +198,7 @@ async function timed(tok, text, label) {
   ok("fixture admin signed in", !!tok, tok);
   await api("POST", "/onboarding/complete", tok, {}).catch(() => {});
   // Warm the process once (module loads), as a person's second ask would be.
-  await api("POST", "/atlas", tok, { text: "Tell me about Marlowe" });
+  await atlasSaved(tok, { text: "Tell me about Marlowe" });
 
   // ── §1 A DRAFT ────────────────────────────────────────────────────────────
   console.log("\n§1 a draft");

@@ -3,6 +3,13 @@
 Read this when you touch the person record: donors, organisations, non-donors, households, photos, merge and duplicates, deletion, the timeline, the profile, volunteers or events.
 
 ## Rules
+- **Every action happens once (SENDS-1, 7 Nov 2026).** "Skip the next step" logs the conversation and closes nothing,
+  the follow-up it was opened on included; every log path asks `server/tasks/logClose.js`. An owner change writes one
+  "Reassigned" line, from `PATCH /donors/:id/assign` under the person's lock and only when the owner changed; no screen
+  writes its own. A gift has one thank-you: an open thank-you step on the Thread, or else one task keyed to the gift
+  (`tasks.thanks_gift_id`, unique per gift, `server/shared/thankYouOnce.js`); the gift's step voids a task written for
+  the same gift a moment earlier.
+
 - **PEOPLE-1 (2026-11-04): deceased is one flag, and every list reads it.** `donors.deceased` (the importer's field,
   or the profile's More → Mark as deceased, `server/donors/deceased.js`) keeps a person out of every ask, next move,
   Home move, thank-you queue, lapse and Re-engage list, journey, sequence, campaign and send. A new list of people to

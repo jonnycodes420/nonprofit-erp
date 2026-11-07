@@ -84,13 +84,14 @@ export function MailTypeSwitch({ typeKey, from = "settings", compact = false, on
     try { await setMailType(t.key, false, null, from); } catch { /* the page reloads as it is */ }
     setBusy(false);
   };
-  const state = waiting ? page.waiting
+  // SENDS-1: one master. While the org's email is off this switch reads Off; the choice is kept for when it is on.
+  const state = waiting ? `Off: email is off for your organization, so nothing of this kind goes. ${t.since}; it starts only when Steward turns email on with you.`
     : t.on ? `${t.since} · ${t.whoGetsIt.toLowerCase()} · ${t.lastSent.charAt(0).toLowerCase() + t.lastSent.slice(1)}` : t.since;
   const line = compact
-    ? (waiting ? page.waiting : t.on ? `${t.name}: on, ${t.whoGetsIt.toLowerCase()}.` : t.offLine)
+    ? (waiting ? `${t.name}: off, because email is off for your organization.` : t.on ? `${t.name}: on, ${t.whoGetsIt.toLowerCase()}.` : t.offLine)
     : null;
   return (
-    <div data-testid={`mail-type-${t.key}`} data-on={t.on ? "1" : "0"} style={{ display: "flex", gap: compact ? 12 : 14, alignItems: compact ? "center" : "flex-start", padding: compact ? "4px 0" : "14px 0", borderTop: compact ? "none" : "1px solid " + T.bg2 }}>
+    <div data-testid={`mail-type-${t.key}`} data-on={t.on && !waiting ? "1" : "0"} style={{ display: "flex", gap: compact ? 12 : 14, alignItems: compact ? "center" : "flex-start", padding: compact ? "4px 0" : "14px 0", borderTop: compact ? "none" : "1px solid " + T.bg2 }}>
       <div style={{ flex: compact ? "0 1 auto" : "1 1 auto", minWidth: 0 }}>
         {compact
           ? <div style={help} data-testid={`mail-type-line-${t.key}`}>{line}{!can && !t.on ? " An admin can turn it on." : ""}</div>
@@ -103,7 +104,8 @@ export function MailTypeSwitch({ typeKey, from = "settings", compact = false, on
               </div>
             </>}
       </div>
-      <Switch on={t.on} disabled={!can || busy} onClick={flip} label={t.name} testid={`mail-type-switch-${t.key}`} />
+      {waiting && can && !compact && <button type="button" style={{ ...linkBtn, fontSize: 12, whiteSpace: "nowrap" }} data-testid={`mail-type-clear-${t.key}`} onClick={flip}>Don't start it</button>}
+      <Switch on={t.on && !waiting} disabled={!can || busy || waiting} onClick={flip} label={t.name} testid={`mail-type-switch-${t.key}`} />
       {asking && <TurnOnDialog t={t} onClose={() => setAsking(false)}
         onDone={async who => { await setMailType(t.key, true, who, from); setAsking(false); }} />}
     </div>

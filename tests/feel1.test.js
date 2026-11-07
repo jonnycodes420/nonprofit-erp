@@ -154,8 +154,10 @@ async function reset() {
        note.status < 300 && t1 && t1.closed_at == null, { status: note.status, closed: t1 && t1.closed_at });
     const call = await api("POST", `/donors/${id}/conversations`, tok, { touch: "call_reached", line: "We talked about the visit.", threadId: th, nextStep: { skipped: true } });
     const [t2] = await q(`SELECT closed_at, closing_interaction_id FROM threads WHERE id=$1`, [th]);
-    ok("§3 a call logged on that follow-up, skipping the next step, closes that one follow-up on its line",
-       call.status < 300 && t2 && !!t2.closed_at && t2.closing_interaction_id === call.body.interactionId, { status: call.status, t2 });
+    // SENDS-1 (W-1107-Donors-36): FEEL-1 closed the follow-up the dialog was opened on. The fleet
+    // read that as Skip completing her follow-up, twice. A skip touches nothing (server/tasks/logClose.js).
+    ok("§3 a call logged on that follow-up, skipping the next step, leaves that follow-up open too",
+       call.status < 300 && t2 && t2.closed_at == null, { status: call.status, t2 });
     ok("§3 the restored meeting step takes its thread's day back with it (meetingEffects.restoreSteps)",
        /restoreSteps[\s\S]{0,600}UPDATE threads SET due_date=\?/.test(read("meetingEffects.js")));
   }

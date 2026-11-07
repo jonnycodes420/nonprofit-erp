@@ -102,7 +102,7 @@ export function emailTemplates({ orgName = "your organization", t = (k) => DEFAU
         p("Hello {{first_name}},"),
         p(`I am writing with one ask, and I will keep it short.`),
         p(`We are raising money for the year ahead at ${org}, and we are asking the people who have given before to go first. Whatever you can do makes the next ask easier to make.`),
-        p("If now is not the time, that is genuinely all right. Reply and tell me and I will not ask again this year."),
+        p("If now is not the time, that is genuinely all right. Reply and tell me and I will not ask a second time this year."),   // SENDS-1: no "again" to a never-giver
         p("Thank you for reading this far."),
       ].join("\n"),
     },

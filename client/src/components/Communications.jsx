@@ -37,7 +37,8 @@ import { countLabel } from "../../../shared/countWords.js";
 import { allPages } from "../lib/pages";
 import { displayOrgDate } from "../lib/orgDay";
 import { triggerLabel } from "../../../shared/giftWords.js";   // FEEL-1
-import { sequencesEmptyLine } from "../lib/sequencesEmpty";   // ATLAS-4
+import { sequencesEmptyLine, sequenceStatusWord, sequencesMailOff } from "../lib/sequencesEmpty";   // ATLAS-4, SENDS-1
+import { useMailTypes } from "../lib/mailTypes";
 
 // WIRE-1-ADDENDUM: "Templates" and "Email templates" were one thing twice, so
 // they are one Templates tab now. An old link to either (?subtab=templates,
@@ -496,6 +497,8 @@ function TimezoneGateBanner({ onChosen }) {
 }
 
 function TrackedSequences() {
+  const { page: mailPage, types: mailTypes } = useMailTypes();   // SENDS-1: Off means Off on every surface
+  const mailOff = sequencesMailOff(mailPage, mailTypes);
   const [builder, setBuilder] = useState(null);
   const [list, setList] = useState([]);
   const [view, setView] = useState("list");       // list | edit
@@ -689,7 +692,7 @@ function TrackedSequences() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{s.line}</div>
               <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 3 }} data-testid="seq-status">
-                {s.status === "active" ? (tzPaused ? PAUSED_FOR_TZ : "On") : "Off"}
+                {sequenceStatusWord({ active: s.status === "active", tzPaused, mailOff, tzWord: PAUSED_FOR_TZ })}
               </div>
             </div>
             <button onClick={() => showPreview(s.id)} style={{ ...S.btn("ghost"), fontSize: 12 }}>Preview</button>
@@ -708,6 +711,7 @@ function TrackedSequences() {
             {turnOn.retroactiveSentence}
           </div>
           <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.6, marginBottom: 16 }}>{turnOn.stopNote}</div>
+          {turnOn.blockedReason && <div data-testid="turn-on-blocked" style={{ fontSize: 13, color: T.ink, lineHeight: 1.6, marginBottom: 14 }}>{turnOn.blockedReason}</div>}
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={doTurnOn} disabled={!turnOn.canTurnOn} data-testid="turn-on-confirm" style={S.btn("send")}>Turn it on</button>
             <button onClick={() => setTurnOn(null)} style={S.btn("ghost")}>Not yet</button>
@@ -738,6 +742,8 @@ function TrackedSequences() {
 }
 
 function SequencesPanel({ data }) {
+  const { page: mailPage, types: mailTypes } = useMailTypes();   // SENDS-1
+  const mailOff = sequencesMailOff(mailPage, mailTypes);
   const [seqGate] = useSequenceGate();
   const tzPaused = !!(seqGate && !seqGate.canRun);
   const [seqList, setSeqList] = useState([]);
@@ -916,7 +922,7 @@ function SequencesPanel({ data }) {
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{seq.name}</div>
-                        <span data-testid="legacy-seq-status" style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: "3px 9px", background: isActive && !tzPaused ? T.green100 : T.bg2, color: isActive && !tzPaused ? T.greenDk : T.ink3 }}>{isActive ? (tzPaused ? PAUSED_FOR_TZ : "Active") : "Paused"}</span>
+                        <span data-testid="legacy-seq-status" style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: "3px 9px", background: isActive && !tzPaused && !mailOff ? T.green100 : T.bg2, color: isActive && !tzPaused && !mailOff ? T.greenDk : T.ink3 }}>{sequenceStatusWord({ active: isActive, tzPaused, mailOff, legacy: true, tzWord: PAUSED_FOR_TZ })}</span>
                       </div>
                       <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>
                         {trigLabel(seq.trigger)} · <span style={{ color: T.gold700, fontWeight: 700 }}>{seq.step_count} step{seq.step_count != 1 ? "s" : ""}</span> · {seq.active_enrollments} active

@@ -22,6 +22,7 @@
 const express = require("express");
 const TYPES = require("../mailTypes");
 const SEND_GATE = require("../sendGate");
+const SENDS_OFF = require("../server/outreach/sendsOff");   // SENDS-1: one master switch
 const GOING = require("../goingOut");
 const ORG_TIME = require("../orgTime");
 const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
@@ -51,7 +52,8 @@ async function isAdmin(req) {
 // AND at least one type on), and it names who turned it on and when.
 async function orgMail(orgId, onCount = null) {
   const [o] = await query(`SELECT emails_enabled, donor_mail_set_at, donor_mail_set_by_name, onboarded_at, org_kind, is_demo_org FROM orgs WHERE id = ?`, [orgId]);
-  const on = !!o && o.emails_enabled === true;
+  // SENDS-1: the master is the org's Donor mail as the sweeps read it (onboarding and demo included).
+  const on = !!o && o.emails_enabled === true && (await SENDS_OFF.master(orgId, o)).on;
   const n = onCount == null ? (await query(`SELECT COUNT(*)::int AS n FROM org_mail_types WHERE org_id = ? AND is_on = TRUE`, [orgId]))[0].n : onCount;
   return { on, setAt: o ? o.donor_mail_set_at : null, sentence: mailOnSentence(o, on, n) };
 }
@@ -110,14 +112,15 @@ app.get("/mail-types/status", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const on = (await typesFor(orgId)).filter(t => t.on);
   const mail = await orgMail(orgId, on.length);
-  const state = !on.length ? "off" : mail.on ? "on" : "waiting";
+  // SENDS-1: one master. With the org's email off every surface says Off, whatever is chosen below it.
+  const state = !on.length || !mail.on ? "off" : "on";
   const list = on.map(t => t.short);
   const joined = list.length <= 1 ? list.join("") : list.slice(0, -1).join(", ") + " and " + list[list.length - 1];
   res.json({
     state, count: on.length, mailOn: mail.on, mailSentence: mail.sentence, mailSetAt: mail.setAt,
     chip: state === "off" ? "Automatic email: Off" : state === "on" ? `Automatic email: ${on.length} on` : TYPES.WAITING,
     short: state === "off" ? "Off" : state === "on" ? `${on.length} on` : "Waiting",
-    home: state === "off" ? "Steward sends nothing on its own. You decide what's automatic."
+    home: state === "off" ? (on.length ? `Steward sends nothing on its own: email is off for your organization. ${joined.charAt(0).toUpperCase() + joined.slice(1)} will start only when Steward turns email on with you.` : "Steward sends nothing on its own. You decide what's automatic.")
       : state === "on" ? `Steward is sending ${joined} for you.`
       : `You've turned on ${joined}. ${TYPES.WAITING}.`,
     types: on.map(t => ({ key: t.key, short: t.short, whoGetsIt: t.whoGetsIt })),

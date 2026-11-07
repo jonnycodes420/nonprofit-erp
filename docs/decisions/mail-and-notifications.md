@@ -34,6 +34,21 @@ the morning email unless the person turned on its own reminder, so no step goes 
 
 ## Rules
 
+- **One master switch: Off means nothing goes out (SENDS-1, 7 Nov 2026).** The org's Donor mail (`orgs.emails_enabled`,
+  with mailPolicy's onboarding and demo rules) is the master; each email type in Settings, Automatic email only narrows what
+  it allows. While the master is off, every surface says Off (`/mail-types/status` state `off`, never "Waiting"; each
+  type's switch draws Off and keeps her choice for later; the Sequences page reads "Off: email is off"), and no journey or
+  sequence step sends: a due step becomes a draft in Communications (`server/outreach/sendsOff.js`, one per step per
+  person, `milestone_drafts` source `journey` or `sequence`), the journey send is `skipped` with reason `email_off`, and no
+  enrollment is closed as "unsubscribed". A sequence with an empty step or no trigger can't be Active: every way of turning
+  one on refuses with the reason (`sequenceActivationProblem`; the milestone sequence, which drafts each email per
+  person, is the one exception). `tests/sends1.test.js` §1 runs a whole worker day with Off and counts zero sends.
+  `scripts/ops/sends1-off-audit.js` lists orgs that broke this before it was a rule.
+- **Every renderer goes through giftSentence (SENDS-1).** The send, the draft (the text part), the subject, the test,
+  the campaign preview and the editor's own preview (chips) all apply `withoutMissingGift`. In the editor a swapped
+  sentence is a locked span (`data-st-keep`) that reads back as her own words, so a preview never rewrites a template.
+  `tests/sends1.test.js` §5 renders every starter for a never-giver and scans for "given before" and "again".
+
 - **A preview is one of her donors (SWEEP-3).** With nobody chosen, a template's preview, a card's subject and an
   Automatic email sample are the org's newest giver (`defaultPreviewDonorId`, `sampleDonor`), with the org's own
   name; "me" is Preview as yourself, and a test send is always to her, as her. A one-person email leaves out a

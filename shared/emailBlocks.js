@@ -105,13 +105,21 @@ function chip(name, value) {
 function mergeText(raw, fields, problems, where, defs = EMAIL_MERGE_FIELDS, chips = false) {
   // FIX-46: a name field after "Dear" is the greeting (fields.greeting).
   // TRUST-1: for a person with no gift, a sentence naming one is a thank-you instead.
-  const source = chips ? String(raw == null ? "" : raw) : greetMerge(withoutMissingGift(raw == null ? "" : raw, {
-    hasGift: hasValue(fields && (fields.last_gift_amount || fields.gift_amount)),
-    hasTotal: !(fields && ("lifetime_total" in fields || "total_giving" in fields)) || hasValue(fields.lifetime_total || fields.total_giving),
-  }), fields && fields.greeting);
+  // SENDS-1: the editor's preview (chips) goes through giftSentence too; a swapped
+  // sentence is a locked span that reads back as her own words (data-st-keep).
+  const kept = [];
+  const gifts = giftFacts(fields);
+  const source = chips
+    ? withoutMissingGift(raw == null ? "" : raw, { ...gifts, mark: (orig, variant) => { kept.push({ orig, variant }); return `\u0001${kept.length - 1}\u0002`; } })
+    : greetMerge(withoutMissingGift(raw == null ? "" : raw, gifts), fields && fields.greeting);
   const escaped = esc(source);
+  const unmark = s => kept.length ? s.replace(/\u0001(\d+)\u0002/g, (w, i) => {
+    const k = kept[Number(i)];
+    const shown = k.variant.replace(/\{\{\s*org_name\s*\}\}/g, String((fields && fields.org_name) || ""));
+    return `<span class="st-keep" data-st-keep="${esc(k.orig)}" contenteditable="false" title="A never-giver reads this sentence" style="${CHIP_STYLE}">${esc(shown)}</span>`;
+  }) : s;
   const keys = keysOf(defs);
-  return escaped.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (whole, name, at) => {
+  return unmark(escaped.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (whole, name, at) => {
     const key = MERGE_ALIASES[name] || name;
     if (chips && ["donor_name", "full_name", "name"].includes(key) && fields && fields.greeting && /\b(dear|hi|hello|hey|greetings|good (?:morning|afternoon|evening)),?[ \t]+$/i.test(escaped.slice(0, at))) {
       return chip(name, fields.greeting);
@@ -121,7 +129,14 @@ function mergeText(raw, fields, problems, where, defs = EMAIL_MERGE_FIELDS, chip
       return chips ? chip(name, `{{${name}}}`) : whole;
     }
     return chips ? chip(name, fieldValue(fields, key, defs)) : esc(fieldValue(fields, key, defs));
-  });
+  }));
+}
+// TRUST-1/SENDS-1: whether this person has a gift and a lifetime total, for giftSentence.
+function giftFacts(fields) {
+  return {
+    hasGift: hasValue(fields && (fields.last_gift_amount || fields.gift_amount)),
+    hasTotal: !(fields && ("lifetime_total" in fields || "total_giving" in fields)) || hasValue(fields.lifetime_total || fields.total_giving),
+  };
 }
 function fieldValue(fields, key, defs = EMAIL_MERGE_FIELDS) {
   const v = fields && fields[key];
@@ -161,7 +176,7 @@ function resolveSrc(src, links) {
 // reports them.
 export function renderSubject(subject, fields, extraFields) {
   const defs = fieldDefs(extraFields), keys = keysOf(defs);
-  return greetMerge(String(subject || ""), fields && fields.greeting).replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (w, n) => {
+  return greetMerge(withoutMissingGift(String(subject || ""), giftFacts(fields)), fields && fields.greeting).replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (w, n) => {
     const k = MERGE_ALIASES[n] || n;
     return keys.has(k) ? fieldValue(fields || {}, k, defs) : w;
   }).replace(/[\r\n]+/g, " ").trim();
@@ -195,7 +210,8 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
   // An empty field still has a place to type when editing.
   const has = v => ED || (v != null && String(v) !== "");
   // The plain-text part gets the same fields, unescaped (it is not HTML).
-  const plain = s => greetMerge(String(s == null ? "" : s), F.greeting).replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (w, n) => {
+  // SENDS-1: the text part (what a draft is made from) says the same to a never-giver as the HTML.
+  const plain = s => greetMerge(withoutMissingGift(String(s == null ? "" : s), giftFacts(F)), F.greeting).replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (w, n) => {
     const k = MERGE_ALIASES[n] || n;
     return keys.has(k) ? fieldValue(F, k, defs) : w;
   });

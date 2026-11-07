@@ -267,7 +267,20 @@ async function untilReady({ base = process.env.BASE || BASE, tries = 1200 } = {}
 }
 
 const drainQueue = (opts) => drainQueueWith(q, opts);
-module.exports = { drainQueue, queueAutoDrain, untilReady, mailTypesOn, mailTypesOnForDonor, BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, civilPlusDays, textMatch, leaks, waitFor, importWorkSettled, importAutoSettle, settleNegative, NEGATIVE_MAIL_WAIT_MS };
+// SENDS-1: Atlas proposes and writes nothing until Save. A suite that drives
+// Atlas to write (a call, a reminder, a draft) asks, then presses Save on the
+// proposal, and reads the request as it stands after the Save. `path` is
+// "/atlas" or "/atlas/<id>/answer".
+// `edits(items)` may return her edits (e.g. a draft's "remind me" ticked).
+async function atlasSaved(token, body, path = "/atlas", edits = null) {
+  const r = await api("POST", path, token, body);
+  const req = r.body && r.body.request;
+  if (!req || !req.proposal || req.proposal.savedAt) return r;
+  const s = await api("POST", `/atlas/${req.id}/save`, token, { proposalId: req.proposal.id, items: edits ? edits(req.proposal.items) : undefined });
+  return s.body && s.body.request ? { ...r, body: { ...r.body, request: s.body.request }, saveStatus: s.status } : r;
+}
+
+module.exports = { atlasSaved, drainQueue, queueAutoDrain, untilReady, mailTypesOn, mailTypesOnForDonor, BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, civilPlusDays, textMatch, leaks, waitFor, importWorkSettled, importAutoSettle, settleNegative, NEGATIVE_MAIL_WAIT_MS };
 
 // ── GTM-1a A · A BROWSER LEG MAY NOT SKIP WHERE IT IS REQUIRED ─────────────
 // Both browser suites SKIP cleanly when Playwright or a localhost-API dist is

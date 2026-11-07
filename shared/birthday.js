@@ -69,3 +69,19 @@ export function isBirthdayOn(month, day, civilDate) {
   const leap = y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
   return month === 2 && day === 29 && !leap && mm === 2 && dd === 28;
 }
+
+// SENDS-1 (W-1107-Fundraising-27X) · THE DAY A BIRTHDAY JOURNEY STARTS. The
+// hourly sweep (server/outreach/helpers.js) starts it on the day whose date
+// `leadDays` ahead is the birthday (isBirthdayOn), and the steps count from
+// that day. The preview asks this same question, so it shows the run's dates,
+// never a join date or a gift date. The first such day on or after `today`.
+export function birthdayJourneyStart(month, day, today, leadDays = 0) {
+  if (!month || !day || !/^\d{4}-\d{2}-\d{2}$/.test(String(today || ""))) return null;
+  const add = (d, n) => { const t = new Date(d + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+  const lead = Math.max(0, Number(leadDays) || 0);
+  for (let i = 0; i <= 370; i++) {
+    const start = add(today, i);
+    if (isBirthdayOn(Number(month), Number(day), add(start, lead))) return start;
+  }
+  return null;
+}

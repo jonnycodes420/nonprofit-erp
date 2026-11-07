@@ -437,6 +437,7 @@ async function agentWrite(ctx, { tool, table, entityId, before, after, cites }) 
 // AGENT-2: the screens' own routes (agentCall.js), and a route's refusal as a reason.
 const AC = require("../agentCall");
 const TLa = require("../timelineLine");   // WIRE-1-ADDENDUM: an approved draft lands on the timeline
+const SENDS_OFF = require("../server/outreach/sendsOff");   // SENDS-1: an empty or triggerless sequence can't be Active
 function refusal(r) {
   const b = r.body || {};
   const said = b.sentence || b.message || (typeof b.error === "string" && b.error.length > 12 ? b.error : null);
@@ -464,7 +465,8 @@ const AGENT_EXECUTORS = {
     let threadId = null;
     const [open] = await require("../db").queryTx(ctx.client,
       "SELECT id, next_step_type, next_step_label FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL", [ctx.orgId, donor.id]);
-    if (!open) {
+    // SENDS-1 (W-1107-Donors-26X): Atlas's "Draft an email" makes the draft only, never a step (and so a task) beside it.
+    if (!open && !step.noThread) {
       threadId = newId("thr");
       const r = await runTx(ctx.client,
         `INSERT INTO threads (id,org_id,donor_id,owner_id,next_step_type,next_step_label,due_date,opened_on,created_by,created_by_name)
@@ -473,7 +475,7 @@ const AGENT_EXECUTORS = {
          orgTime.addDays(ctx.today, 2), ctx.today, AGENT_ACTOR.id, AGENT_ACTOR.name]);
       if (r && r.changes === 0) threadId = null;
       else await agentWrite(ctx, { tool: "draft_note", table: "threads", entityId: threadId, before: null, after: { donor_id: donor.id }, cites: step.citesRows });
-    } else if (["thank", "thank_you_note"].includes(open.next_step_type)) {
+    } else if (open && ["thank", "thank_you_note"].includes(open.next_step_type)) {
       threadId = open.id;
       await runTx(ctx.client, "UPDATE threads SET next_step_label=? WHERE id=? AND org_id=?", [label, open.id, ctx.orgId]);
       await agentWrite(ctx, { tool: "draft_note", table: "threads", entityId: open.id,
@@ -504,7 +506,6 @@ const AGENT_EXECUTORS = {
   async create_task(ctx, step) {
     const donor = step.donorId ? ctx.donorById(step.donorId) : null;
     if (step.donorId && !donor) return { skipped: "unknown_donor" };
-    const id = newId("task");
     // PARITY-1 Part F: `due` is a CIVIL DATE or nothing. The plan she read
     // carries the date it showed her; a step with only `dueDays` is resolved
     // here from the org's own today. Free text ("next Friday") is not a date
@@ -514,17 +515,12 @@ const AGENT_EXECUTORS = {
     // AGENT-3: a task about a grant is on that grant (its own screen lists it).
     const [grant] = step.grantId ? await require("../db").queryTx(ctx.client, "SELECT id FROM grants WHERE id=? AND org_id=?", [String(step.grantId), ctx.orgId]) : [];
     const title = String(step.title || "Follow up").slice(0, 300);
-    await runTx(ctx.client,
-      `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,grant_id,created_by,created_by_name)
-       VALUES (?,?,?,?,?,?,0,?,?,?,?)`,
-      [id, ctx.orgId, title, due,
-       step.priority === "high" ? "high" : "medium", grant ? "grant" : "donor", donor ? donor.id : null, grant ? grant.id : null,
-       AGENT_ACTOR.id, AGENT_ACTOR.name]);
-    await agentWrite(ctx, { tool: "create_task", table: "tasks", entityId: id,
-      before: null, after: { title: step.title }, cites: step.citesRows });
     // AGENT-3 · WIRE-1 rule 8: A TASK LIVES ON THE PERSON. Their Thread gets it
-    // as the next step when nothing is open (one open thread per person), and
-    // their timeline gets one line, in this run's transaction.
+    // as the next step when nothing is open (one open thread per person).
+    // SENDS-1 (W-1107-Atlas-06): the Thread's own task (steward_thread_task_sync)
+    // IS the follow-up then. Writing a task as well made two of the same.
+    let id = newId("task");
+    let onThread = false;
     if (donor) {
       const [open] = await require("../db").queryTx(ctx.client,
         "SELECT id FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL", [ctx.orgId, donor.id]);
@@ -535,8 +531,25 @@ const AGENT_EXECUTORS = {
            VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
           [threadId, ctx.orgId, donor.id, donor.assigned_to || ctx.userId || null, "follow_up", title.slice(0, 200),
            due || orgTime.addDays(ctx.today, 7), ctx.today, AGENT_ACTOR.id, AGENT_ACTOR.name]);
-        if (r && r.changes !== 0) await agentWrite(ctx, { tool: "create_task", table: "threads", entityId: threadId, before: null, after: { donor_id: donor.id }, cites: step.citesRows });
+        if (r && r.changes !== 0) {
+          await agentWrite(ctx, { tool: "create_task", table: "threads", entityId: threadId, before: null, after: { donor_id: donor.id }, cites: step.citesRows });
+          const [t] = await require("../db").queryTx(ctx.client, "SELECT id FROM tasks WHERE thread_id=? AND org_id=?", [threadId, ctx.orgId]);
+          if (t) { id = t.id; onThread = true; }
+        }
       }
+    }
+    if (!onThread) {
+      await runTx(ctx.client,
+        `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,grant_id,created_by,created_by_name)
+         VALUES (?,?,?,?,?,?,0,?,?,?,?)`,
+        [id, ctx.orgId, title, due,
+         step.priority === "high" ? "high" : "medium", grant ? "grant" : "donor", donor ? donor.id : null, grant ? grant.id : null,
+         AGENT_ACTOR.id, AGENT_ACTOR.name]);
+      await agentWrite(ctx, { tool: "create_task", table: "tasks", entityId: id,
+        before: null, after: { title: step.title }, cites: step.citesRows });
+    }
+    // Their timeline gets one line, in this run's transaction.
+    if (donor) {
       const lineId = newId("i");
       await runTx(ctx.client,
         `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
@@ -2953,9 +2966,10 @@ app.get("/sequences/tracked/:id/turn-on-preview", requireAuth, wrap(async (req, 
   if (!seq) return res.status(404).json({ error: "Sequence not found" });
   const gate = await sequenceTimezoneGate(req.user.orgId);
   const n = await retroactiveCount(req.user.orgId, seq.trigger);
+  const why = SENDS_OFF.sequenceActivationProblem(seq, await query(`SELECT body FROM sequence_steps WHERE sequence_id=? ORDER BY step_order`, [seq.id]));
   res.json({
-    canTurnOn: gate.ok,
-    blockedReason: gate.ok ? null : gate.message,
+    canTurnOn: gate.ok && !why,
+    blockedReason: !gate.ok ? gate.message : why ? why.sentence : null,
     timezone: gate.timezone,
     retroactiveCount: n,
     retroactiveSentence: SEQ.retroactiveSentence(n, seq.trigger),
@@ -2969,6 +2983,8 @@ app.post("/sequences/tracked/:id/turn-on", requireAuth, requireAdmin, checkWrite
   if (!seq) return res.status(404).json({ error: "Sequence not found" });
   const gate = await sequenceTimezoneGate(req.user.orgId);
   if (!gate.ok) return res.status(400).json({ error: "no_timezone", message: gate.message });
+  const why = SENDS_OFF.sequenceActivationProblem(seq, await query(`SELECT body FROM sequence_steps WHERE sequence_id=? ORDER BY step_order`, [seq.id]));
+  if (why) return res.status(409).json({ ...why, message: why.sentence });
   // NOTHING TURNS ON WITHOUT A USER IN HER ORG PRESSING IT. Allie asked
   // Jonathan to set it up, and he can — build it, write nothing, leave it off.
   // But a SUPER-ADMIN account may not be the one that flips it, because "she
@@ -3026,13 +3042,15 @@ app.get("/sequences/tracked/:id/preview", requireAuth, wrap(async (req, res) => 
   }
   if (!donor) return res.json({ person: null, steps: [], note: "There is nobody with an email address to preview against yet." });
   const values = await sequenceMergeValues(donor, orgId);
+  const GS = await import("../shared/giftSentence.js");   // SENDS-1
   const trackKey = req.query.trackKey || null;
   const shown = trackKey ? steps.filter(s => s.track_key === trackKey) : steps;
   res.json({
     person: { id: donor.id, name: donor.name, email: donor.email },
     steps: shown.map(s => {
       const subj = SEQ.renderMerge(s.subject, values);
-      const body = SEQ.renderMerge(s.body, values);
+      // SENDS-1: the preview says what the send says to a never-giver (sendStaffWrittenEmail).
+      const body = SEQ.renderMerge(GS.withoutGivenBefore(s.body, { hasGift: Number(donor.total_giving) > 0 || Number(donor.last_gift_amount) > 0 || Number(donor.gift_count) > 0, orgName: values.org_name }), values);
       return {
         stepOrder: s.step_order, trackKey: s.track_key, dayOffset: s.delay_days,
         subject: subj.text, body: body.text,
@@ -3176,9 +3194,10 @@ app.post("/sequences", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { name, trigger, triggerStage, steps = [] } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
   const id = newId("seq");
+  const why = SENDS_OFF.sequenceActivationProblem({ trigger: trigger || "manual" }, steps);   // SENDS-1: saved Paused, with the reason
   await run(
-    "INSERT INTO sequences (id, org_id, name, trigger, trigger_stage, created_by, created_by_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [id, req.user.orgId, name, trigger || "manual", triggerStage || null, actor(req).id, actor(req).name]
+    "INSERT INTO sequences (id, org_id, name, trigger, trigger_stage, status, created_by, created_by_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    [id, req.user.orgId, name, trigger || "manual", triggerStage || null, why ? "paused" : "active", actor(req).id, actor(req).name]
   );
   for (let i = 0; i < steps.length; i++) {
     const s = steps[i];
@@ -3188,7 +3207,7 @@ app.post("/sequences", requireAuth, requireAdmin, wrap(async (req, res) => {
     );
   }
   const created = await query("SELECT * FROM sequences WHERE id = ?", [id]);
-  res.status(201).json(created[0]);
+  res.status(201).json({ ...created[0], ...(why ? { notActive: why.sentence } : {}) });
 }));
 
 app.get("/sequences/:id/steps", requireAuth, wrap(async (req, res) => {
@@ -3263,6 +3282,11 @@ app.put("/sequences/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { name, trigger, triggerStage, status, steps } = req.body;
   const existing = await query("SELECT id FROM sequences WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Not found" });
+  if ((status || "active") === "active") {
+    const why = SENDS_OFF.sequenceActivationProblem({ trigger: trigger || "manual" },
+      Array.isArray(steps) ? steps : await query("SELECT body FROM sequence_steps WHERE sequence_id=? ORDER BY step_order", [req.params.id]));
+    if (why) return res.status(409).json({ ...why, error: why.sentence, code: why.error });
+  }
   await run(
     "UPDATE sequences SET name=?, trigger=?, trigger_stage=?, status=? WHERE id=? AND org_id=?",
     [name, trigger || "manual", triggerStage || null, status || "active", req.params.id, req.user.orgId]
@@ -3284,6 +3308,11 @@ app.put("/sequences/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
 app.patch("/sequences/:id/status", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { status } = req.body;
   if (!["active", "paused"].includes(status)) return res.status(400).json({ error: "Invalid status" });
+  if (status === "active") {
+    const [seq] = await query("SELECT id, trigger FROM sequences WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+    const why = seq && SENDS_OFF.sequenceActivationProblem(seq, await query("SELECT body FROM sequence_steps WHERE sequence_id=? ORDER BY step_order", [seq.id]));
+    if (why) return res.status(409).json({ ...why, error: why.sentence, code: why.error });
+  }
   const affected = await run(
     "UPDATE sequences SET status=? WHERE id=? AND org_id=?",
     [status, req.params.id, req.user.orgId]

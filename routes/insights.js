@@ -235,9 +235,16 @@ app.post("/insights/outcome", requireAuth, checkWriteAccess, wrap(async (req, re
   if (!b.kind || !keys.length) return res.status(400).json({ error: "need_item" });
   const own = await ownIds(req.user.orgId, b.donorIds || []);
   const a = actor(req);
-  for (const k of keys) {
+  // SENDS-1 (W-1107-Donors-04): a move can carry a person's Drifting sign folded
+  // into it (insights.js withDrift, `also`). Done recorded the move alone, so on
+  // the next read the same person rose again as a Drift move and Done looked
+  // like it did nothing. Done is done for the person: the folded sign goes too.
+  const rows = keys.map(k => [String(b.kind).slice(0, 40), String(k).slice(0, 300)]);
+  const lead = b.lead && own.has(String(b.lead)) ? String(b.lead) : null;
+  if (b.state === "done" && lead && b.kind !== "drift") rows.push(["drift", lead]);
+  for (const [kind, k] of rows) {
     await run(`INSERT INTO insight_outcomes (id, org_id, kind, item_key, donor_ids, state, until, reason, created_by, created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [newId("io"), req.user.orgId, String(b.kind).slice(0, 40), String(k).slice(0, 300), [...own], b.state,
+      [newId("io"), req.user.orgId, kind, k, [...own], b.state,
        b.state === "snoozed" ? b.until : null, b.reason ? String(b.reason).slice(0, 500) : null, a.id, a.name]);
   }
   res.json({ ok: true, recorded: keys.length });
