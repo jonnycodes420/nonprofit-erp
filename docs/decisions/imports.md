@@ -455,3 +455,13 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
   tab or a CR gets a leading apostrophe and quotes; a plain number stays a number. Never write a cell
   escaper of your own: four exports had none and six missed the tab. `tests/redteam.test.js` §1 opens
   each file and fails on any live formula.
+
+## INTEGRITY-1 · An undo removes only what its own import created or restored (2026-11-07)
+
+- **The invariant.** An import's undo removes only the people that import created (`created_import_id`) or brought back
+  from the trash for that same file. A person who was live before the import is never trashed, merged or hidden by its
+  undo, whatever else runs at the same time (`tests/integrity1.test.js` §1, two imports and two undos at once).
+- **A bring-back names its file.** `POST /sheet-import/bring-back` takes the preview's `fileKey` and stamps it on the
+  trash rows it closes (`__bringBack.file`); only an import of that same file (`fileFingerprint`) claims them. A stamp
+  with no file is never claimed. Undo re-reads the trash rows and trashes only people whose closed row names its run.
+- Leftovers from before: `scripts/ops/integrity1-find-vanished.js` (dry run first; `--apply`; `--undo=<audit id>`).

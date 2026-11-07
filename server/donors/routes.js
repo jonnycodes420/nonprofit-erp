@@ -102,6 +102,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
     query(...require("./listPage").pageSql({ selectCols, selectArgs, whereSql, params, orderBy, orderArgs, limit, offset })),
     query(`SELECT COUNT(*) AS c FROM donors WHERE ${whereSql}`, params),
   ]);
+  await require("./ownerName").withLiveOwnerNames(query, donors);   // INTEGRITY-1: one owner field
   lap("page");
   // Touchpoints + drift only for the page's donors — not the org-wide GROUP BY
   const ids = donors.map(d => d.id);
@@ -172,7 +173,8 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
     query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
     computeDriftForDonors(req.user.orgId),   // BUILD-76 — the shared-state views badge from the same computation
   ]);
-  res.setHeader("X-Total-Count", String((await query("SELECT COUNT(*)::int AS n FROM donors WHERE org_id = ? AND deleted_at IS NULL", [req.user.orgId]))[0].n));
+  await require("./ownerName").withLiveOwnerNames(query, donors);   // INTEGRITY-1: one owner field
+  res.setHeader("X-Total-Count", String(await require("../../shared/numbers/everyone").everyoneCount(query, req.user.orgId)));   // INTEGRITY-1: Everyone
   const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
   res.json(donors.map(d => ({
     ...d,
@@ -674,7 +676,9 @@ app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   // NUMBERS-2: a typed amount with no gift behind it is kept as its own figure.
   if (lastAmount) await keepImportedTotals(query, req.user.orgId, [id], "an amount typed in when they were added");
   const rows = await query("SELECT * FROM donors WHERE id = ?", [id]);
-  res.status(201).json(rows[0]);
+  // INTEGRITY-1: an email already on another active person is said on save, never silent
+  const warning = await require("../dataHealth/integrity").emailWarning(query, req.user.orgId, rows[0] && rows[0].email, id);
+  res.status(201).json(warning ? { ...rows[0], warning } : rows[0]);
 }));
 
 // DATES-1 · ABOUT THEM: the short note somebody reads first when the profile
@@ -730,7 +734,8 @@ app.patch("/donors/:id/contact", requireAuth, checkWriteAccess, wrap(async (req,
   if (keys.some(k => ["address", "city", "state", "zip"].includes(k))) {
     try { await markDonorsForGeocoding(orgId, { donorIds: [d.id] }); } catch (e) { console.error("[geocode] mark after contact edit failed:", e.message); }
   }
-  res.json({ id: d.id, changed: keys, before: Object.fromEntries(keys.map(k => [k, d[k] ?? null])),
+  const warning = keys.includes("email") ? await require("../dataHealth/integrity").emailWarning(query, orgId, next.email, d.id) : null;   // INTEGRITY-1
+  res.json({ id: d.id, changed: keys, before: Object.fromEntries(keys.map(k => [k, d[k] ?? null])), ...(warning ? { warning } : {}),
     sentence: `${d.name}'s ${keys.map(k => k === "address2" ? "address" : k).filter((x, i, a) => a.indexOf(x) === i).join(", ")} ${keys.length === 1 ? "is" : "are"} changed.` });
 }));
 
@@ -845,7 +850,8 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const d = rows[0];
   d.tags = DTAGS.visibleTags(d.tags);
   d.matching_gift = lookupMatchingGift(d.employer);
-  res.json(d);
+  const warning = await require("../dataHealth/integrity").emailWarning(query, req.user.orgId, d.email, d.id);   // INTEGRITY-1
+  res.json(warning ? { ...d, warning } : d);
 }));
 
 // Managed-stage changes are a Team (major-gifts) capability — the pipeline is

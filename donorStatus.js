@@ -258,9 +258,12 @@ async function statusFor(orgId, donorId, { today = null, cuts = null } = {}) {
   if (row.retained) keys.push("retained");
   if (row.lapsing) keys.push("lapsing");
   if (row.pledge_overdue) keys.push("pledge_overdue");
+  // INTEGRITY-1: Current only through a linked person says who (server/donors/currentThrough.js)
+  const through = await require("./server/donors/currentThrough").currentThrough(query, orgId, donorId, row, today);
   const tags = keys.map(k => ({
     key: k, label: tagLabel(k), kind: LEVELS[k] ? "level" : LIFECYCLES[k] ? "lifecycle" : k,
-    sentence: k === "current" && row.pledge_held ? PLEDGE_HELD_SENTENCE : tagSentence(k, cuts),
+    sentence: k === "current" && row.pledge_held ? PLEDGE_HELD_SENTENCE : k === "current" && through ? through.sentence : tagSentence(k, cuts),
+    ...(k === "current" && through ? { through: { name: through.name, how: through.how } } : {}),
     source: { key: "donors-by-status", params: { tag: k, today } },
   }));
   return { today, cuts, row, tags };

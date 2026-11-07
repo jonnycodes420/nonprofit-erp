@@ -24,14 +24,27 @@
 //      added to them since the import (a gift, a note, a call, a task): then
 //      they stay and the sentence names them, as IMPORT-8's created people do.
 // No schema change: the trail is in the trash rows the doors already write.
+//
+// INTEGRITY-1 · AN UNDO REMOVES ONLY WHAT ITS OWN IMPORT CREATED OR RESTORED.
+// On 7 Nov a donor with $11,700 lifetime vanished from the Donors list while
+// another area's 1,000-row import was undone. A bring-back stamp named no
+// file: ANY import in the next 24 hours that matched the person claimed it,
+// so a person brought back for one file (or brought back and never imported)
+// was claimed by a different file, and that file's Undo trashed someone who
+// was live and in use before it ran. Now the stamp carries the file it was
+// pressed for (the preview's fileKey, the cells' fingerprint), only an
+// import of that same file claims it, and Undo trashes a person only when
+// their trash row names this run (re-read from the trash rows, never trusted
+// from the summary alone).
 "use strict";
 const { newId } = require("../shared/newId");
 
 const CLAIM_HOURS = 24;
 
-async function markBroughtBack(db, orgId, ids, who) {
+async function markBroughtBack(db, orgId, ids, who, fileKey) {
   if (!ids.length) return 0;
-  const stamp = JSON.stringify({ __bringBack: { at: new Date().toISOString(), by: (who && who.id) || null } });
+  const file = typeof fileKey === "string" && /^[0-9a-f]{8,64}$/.test(fileKey) ? fileKey : null;
+  const stamp = JSON.stringify({ __bringBack: { at: new Date().toISOString(), by: (who && who.id) || null, file } });
   const r = await db.query(
     `UPDATE deleted_records SET row_data = row_data || ?::jsonb
       WHERE org_id=? AND table_name='donors' AND record_id = ANY(?) AND restored_at IS NOT NULL
@@ -41,16 +54,18 @@ async function markBroughtBack(db, orgId, ids, who) {
 }
 
 // Inside the import's write (its ambient transaction). Returns the ids.
-async function claimForImport(db, orgId, matchedIds, importId) {
+// INTEGRITY-1: only a stamp pressed for this same file (its fingerprint).
+async function claimForImport(db, orgId, matchedIds, importId, fileKey) {
   const ids = [...new Set(matchedIds)];
-  if (!ids.length) return [];
+  if (!ids.length || !fileKey) return [];
   const rows = await db.query(
     `UPDATE deleted_records r SET row_data = jsonb_set(r.row_data, '{__bringBack,importId}', to_jsonb(?::text))
       WHERE r.org_id=? AND r.table_name='donors' AND r.record_id = ANY(?) AND r.restored_at IS NOT NULL
         AND r.restored_at > NOW() - (? * INTERVAL '1 hour')
         AND (r.row_data -> '__bringBack') IS NOT NULL AND (r.row_data -> '__bringBack' -> 'importId') IS NULL
+        AND (r.row_data -> '__bringBack' ->> 'file') = ?
         AND EXISTS (SELECT 1 FROM donors d WHERE d.org_id = r.org_id AND d.id = r.record_id AND d.deleted_at IS NULL)
-      RETURNING r.record_id`, [importId, orgId, ids, CLAIM_HOURS]);
+      RETURNING r.record_id`, [importId, orgId, ids, CLAIM_HOURS, fileKey]);
   return [...new Set(rows.map(r => r.record_id))];
 }
 
@@ -74,7 +89,13 @@ async function activitySince(db, orgId, ids, importId, since) {
 
 // Undo's step. Returns { trashed: [id], stayed: [{ id, name, why }] }.
 async function sendBackToTrash(db, orgId, imp, sj, who) {
-  const ids = [...new Set((sj && sj.restoredFromTrash) || [])];
+  const listed = [...new Set((sj && sj.restoredFromTrash) || [])];
+  if (!listed.length) return { trashed: [], stayed: [] };
+  // INTEGRITY-1: the trash rows are the proof. A person goes back only when a
+  // trash row of theirs was closed by a bring-back this very run claimed.
+  const ids = (await db.query(
+    `SELECT DISTINCT record_id FROM deleted_records WHERE org_id=? AND table_name='donors' AND record_id = ANY(?)
+        AND restored_at IS NOT NULL AND (row_data -> '__bringBack' ->> 'importId') = ?`, [orgId, listed, imp.id])).map(r => r.record_id);
   if (!ids.length) return { trashed: [], stayed: [] };
   const live = await activitySince(db, orgId, ids, imp.id, imp.committed_at || imp.created_at);
   const stayed = [], go = [];

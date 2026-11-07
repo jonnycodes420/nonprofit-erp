@@ -134,6 +134,13 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
         ? `${plural(c.businessPeople, "person", "people")} and ${plural(c.businessOrgs, "organization")} on file look like one giving unit, each counted once. Linked, a gift from either keeps both off Lapsed.`
         : `${c.businesses === 1 ? "1 person looks" : `${c.businesses.toLocaleString("en-US")} people look`} linked to an organization on file. Linked, a gift from either keeps both off Lapsed.`,
       action: "Review" }] : []),
+    // INTEGRITY-1: an email belongs to one person; a person and their household with the same gifts
+    ...(c.sharedEmails ? [{ id: "sharedEmails", label: "One email on two people", count: c.sharedEmails,
+      sentence: `${c.sharedEmails === 1 ? "1 email address is" : `${c.sharedEmails.toLocaleString("en-US")} email addresses are`} on more than one person. An email belongs to one person: change it on all but one, or merge them if they are the same.`,
+      action: "Review" }] : []),
+    ...(c.identicalGifts ? [{ id: "identicalGifts", label: "A person and their household with the same gifts", count: c.identicalGifts,
+      sentence: `${plural(c.identicalGifts, "pair")} in one household or gives-through link hold exactly the same gifts, date and amount: one set was entered twice. Retention reports list the household once either way.`,
+      action: "Review" }] : []),
     { id: "unreachable", label: "No way to reach", count: c.unreachable,
       sentence: `${plural(c.unreachable, "person", "people")} with no email, no phone and no mailable address.`,
       action: c.unreachable ? "Open the list" : null },
@@ -163,6 +170,7 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
       {open === "moved" && <MovedPanel onDone={done} isReadOnly={isReadOnly} note={health.ncoaNote} demo={!!health.demo} />}
       {open === "emails" && <EmailsPanel onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
       {open === "unreachable" && <UnreachablePanel onOpenDonor={onOpenDonor} />}
+      {(open === "sharedEmails" || open === "identicalGifts") && <IntegrityPanel kind={open} onOpenDonor={onOpenDonor} />}
       {open === "couples" && <CouplesPanel onDone={done} isReadOnly={isReadOnly} />}
       {open === "pledgeDates" && <PledgeDatesPanel onDone={done} isReadOnly={isReadOnly} />}
       {open === "names" && <NamesPanel onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
@@ -932,6 +940,30 @@ function UnreachablePanel({ onOpenDonor }) {
         <div key={r.donorId} style={{ ...rowStyle, padding: "8px 0" }}>
           <button style={linkBtn} onClick={() => onOpenDonor && onOpenDonor(r.donorId)}>{r.name}</button>
           <span style={{ fontSize: 12.5, color: T.ink3 }}>{r.why}</span>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+// INTEGRITY-1: the rows behind "One email on two people" and "the same gifts"
+function IntegrityPanel({ kind, onOpenDonor }) {
+  const [rows, setRows] = useState(null);
+  useEffect(() => { setRows(null); apiFetch(kind === "sharedEmails" ? "/data-health/shared-emails" : "/data-health/identical-gifts").then(r => setRows(r.rows)).catch(() => setRows([])); }, [kind]);
+  if (!rows) return <Card>Finding them…</Card>;
+  const who = (id, name) => <button key={id} style={linkBtn} onClick={() => onOpenDonor && onOpenDonor(id)}>{name || "A person with no name"}</button>;
+  return (
+    <Card data-testid={`dh-${kind}`}>
+      <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{kind === "sharedEmails" ? `${plural(rows.length, "email")} on more than one person` : `${plural(rows.length, "pair")} with the same gifts`}</div>
+      <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>Open a person to change their email, or merge the two from Possible duplicates.</div>
+      {rows.map(r => kind === "sharedEmails" ? (
+        <div key={r.email} style={{ ...rowStyle, padding: "8px 0", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12.5, color: T.ink3 }}>{r.email}</span>{r.people.map(p => who(p.id, p.name))}
+        </div>
+      ) : (
+        <div key={`${r.a}:${r.b}`} style={{ ...rowStyle, padding: "8px 0", gap: 8, flexWrap: "wrap" }}>
+          {who(r.a, r.a_name)}<span style={{ fontSize: 12.5, color: T.ink3 }}>and</span>{who(r.b, r.b_name)}
+          <span style={{ fontSize: 12.5, color: T.ink3 }}>({r.how}): {plural(r.gifts, "gift")} each, the same dates and amounts</span>
         </div>
       ))}
     </Card>

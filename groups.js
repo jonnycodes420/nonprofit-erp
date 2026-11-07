@@ -58,10 +58,11 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   // TRUTH-2: an erased person (TRUST-2, personData.js) is on no list and in
   // no count: not Everyone, not a group, not a roster. Their gifts stay in
   // every money total, as anonymous gifts (people-and-records.md).
-  const where = ["org_id = ?", "deleted_at IS NULL", "erased_at IS NULL"];
+  // INTEGRITY-1: the Directory is Everyone (shared/numbers/everyone.js);
   // THREAD-3: an archived person is off the lists (the Donors list, a Group's
   // members) and still counts wherever money is counted.
-  if (opts.hideArchived) where.push("archived_at IS NULL");
+  const EV = require("./shared/numbers/everyone").EVERYONE("donors");
+  const where = ["org_id = ?", opts.hideArchived ? EV : "deleted_at IS NULL AND erased_at IS NULL"];
   const params = [orgId];
   const today = await DS.todayFor(orgId);
   const cl = DS.closenessSql(today);

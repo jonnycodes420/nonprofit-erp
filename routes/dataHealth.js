@@ -371,6 +371,8 @@ async function healthCounts(orgId) {
     businessRows(orgId, people),
   ]);
   const pairs = found.pairs;
+  const DI = require("../server/dataHealth/integrity");   // INTEGRITY-1
+  const [sharedEmails, identicalGifts] = await Promise.all([DI.sharedEmailRows(query, orgId), DI.identicalGiftRows(query, orgId)]);
   const [{ n: ncoaFiles } = { n: 0 }] = await query("SELECT COUNT(*)::int AS n FROM ncoa_batches WHERE org_id=?", [orgId]);
   return {
     people: people.length,
@@ -391,6 +393,7 @@ async function healthCounts(orgId) {
     eventDuplicates: eventPairs.length,
     eventDuplicatesByEvent: eventPairCounts(eventPairs),
     pledgesOnEventDay: pledgeDays.length,
+    sharedEmails: sharedEmails.length, identicalGifts: identicalGifts.length,   // INTEGRITY-1
     _pairs: pairs, _people: people, _couples: couples, _names: names, _eventPairs: eventPairs,
   };
 }
@@ -1045,6 +1048,13 @@ app.post("/data-health/couples/undo", requireAuth, checkWriteAccess, wrap(async 
 }));
 
 // ── Names with markup or a note in them (FIX-59) ───────────────────────────
+// INTEGRITY-1: one email on two people; a person and their household with the same gifts (server/dataHealth/integrity.js)
+app.get("/data-health/shared-emails", requireAuth, wrap(async (req, res) => {
+  res.json({ rows: await require("../server/dataHealth/integrity").sharedEmailRows(query, req.user.orgId) });
+}));
+app.get("/data-health/identical-gifts", requireAuth, wrap(async (req, res) => {
+  res.json({ rows: await require("../server/dataHealth/integrity").identicalGiftRows(query, req.user.orgId) });
+}));
 app.get("/data-health/names", requireAuth, wrap(async (req, res) => {
   const rows = await nameNoteRows(req.user.orgId, await livePeople(req.user.orgId));
   res.json({ rows, sentence: `${rows.length.toLocaleString("en-US")} ${rows.length === 1 ? "name has" : "names have"} markup or a note written into ${rows.length === 1 ? "it" : "them"}` });
