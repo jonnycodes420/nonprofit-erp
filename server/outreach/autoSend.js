@@ -362,7 +362,12 @@ function nudgeJourneys(orgId) {
   if (!orgId || _journeyNudges.has(orgId)) return;
   const t = setTimeout(async () => {
     _journeyNudges.delete(orgId);
-    try { await runLifecycleTriggers(orgId, orgToday(await orgTz(orgId))); }   // ORG_TZ_SEAM_OK
+    // RACE-1: the nudge takes the sweep's own lock, so it never runs beside a
+    // sweep of the same org (it was the second writer in FLAKE-2's lost step).
+    try {
+      await require("../../db").withAdvisoryLock(`journey-sweep:${orgId}`,
+        async () => runLifecycleTriggers(orgId, orgToday(await orgTz(orgId))));   // ORG_TZ_SEAM_OK
+    }
     catch (e) { console.error(`[journey] nudge ${orgId}:`, e.message); }
   }, 1200);
   if (t.unref) t.unref();

@@ -831,7 +831,15 @@ async function resendReceiptEmail(receipt, org, donor, by) {
 // Supersedes (voids) any prior active statement for the same donor+year
 // before inserting the new one, since the partial-unique index only allows
 // one active statement per (org_id, donor_id, tax_year).
-async function issueYearEndStatement(org, donor, year, { send = true, by = SYS_AUTO } = {}) {
+// RACE-1: one statement for a person's year is made at a time. Two at once
+// each voided, each took a number, and the second INSERT hit
+// receipts_active_statement_uk: a 500 and a number skipped. They now take turns,
+// as two clicks a second apart always did.
+function issueYearEndStatement(org, donor, year, opts = {}) {
+  return require("../shared/personLock").withPersonLock("year-end", org.id, `${donor.id}:${year}`,
+    () => issueYearEndStatementNow(org, donor, year, opts));
+}
+async function issueYearEndStatementNow(org, donor, year, { send = true, by = SYS_AUTO } = {}) {
   const gifts = await query(
     `SELECT * FROM gifts WHERE org_id=? AND donor_id=? AND (is_sample IS NOT TRUE)
        AND date >= ? AND date <= ? ORDER BY date ASC`,
@@ -1066,6 +1074,8 @@ app.post("/gifts/:id/receipt", requireAuth, checkWriteAccess, wrap(async (req, r
 
   // FLOWS-1: the profile makes the receipt (send:false) and emails it only on its own click (/receipts/:id/email)
   const result = await issueGiftReceipt(gift, org, donor, { send: !(req.body && req.body.send === false), by: actor(req), manual: true });
+  // RACE-1: a second click at the same moment gets the answer a later click gets.
+  if (result.skipped === "already_issued") return res.status(409).json({ error: "This gift already has an active receipt.", receipt: result.receipt });
   if (result.skipped === "undated_gift") return res.status(409).json({ error: "undated_gift",
     message: "This gift has no date, and a tax receipt names the day a gift was given. Set the date on the gift, then send the receipt." });
   if (result.skipped) return res.status(400).json({ error: `Could not issue receipt: ${result.skipped}` });
