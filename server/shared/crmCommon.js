@@ -66,8 +66,8 @@ const STAGE_WEIGHT = { prospect: 0.1, qualify: 0.2, cultivate: 0.4, solicit: 0.7
 //   'mine'      → the caller's own assigned donors (assigned_to = userId)
 //   'all'       → every assigned donor in the org (assigned_to IS NOT NULL)
 //   assignedTo  → one specific officer's portfolio (overrides scope)
-function portfolioMembership({ orgId, userId, scope = "mine", assignedTo = null, alias = "d" }) {
-  const a = alias ? alias + "." : "";
+function portfolioMembershipSql({ orgId, userId, scope = "mine", assignedTo = null, alias = "d" }) {
+  const a = sql.pick(alias || "", { d: "d.", donors: "donors.", "": "" });   // REDTEAM-2: Sql, values bound
   // stage ∈ the 6 canonical pipeline stages — every real donor has one (validation
   // only permits these), so for real data "assigned" ⟺ "member". The clause is a
   // belt-and-braces guard so a donor in some non-pipeline stage can never make the
@@ -79,16 +79,17 @@ function portfolioMembership({ orgId, userId, scope = "mine", assignedTo = null,
   // So membership reads the placed stage OR the suggestion, and the CARD says
   // which it is. Moving the card writes `stage` and the suggestion stops
   // mattering for that donor.
-  const clauses = [`${a}org_id = ?`, `${a}deleted_at IS NULL`, `COALESCE(${a}stage, ${a}suggested_stage) = ANY(?)`];
-  const params = [orgId, ALL_PIPELINE_STAGES];
-  if (assignedTo) {
-    clauses.push(`${a}assigned_to = ?`); params.push(String(assignedTo));
-  } else if (scope === "all") {
-    clauses.push(`${a}assigned_to IS NOT NULL`);
-  } else {
-    clauses.push(`${a}assigned_to = ?`); params.push(String(userId));
-  }
-  return { where: clauses.join(" AND "), params };
+  const clauses = [sql`${a}org_id = ${orgId}`, sql`${a}deleted_at IS NULL`, sql`COALESCE(${a}stage, ${a}suggested_stage) = ANY(${ALL_PIPELINE_STAGES})`];
+  if (assignedTo) clauses.push(sql`${a}assigned_to = ${String(assignedTo)}`);
+  else if (scope === "all") clauses.push(sql`${a}assigned_to IS NOT NULL`);
+  else clauses.push(sql`${a}assigned_to = ${String(userId)}`);
+  return sql.join(clauses, sql` AND `);
+}
+// The older shape (text with ? and its params) for callers not yet moved, made
+// from the Sql above, which is `.sql` for a caller that composes with sql``.
+function portfolioMembership(o) {
+  const m = portfolioMembershipSql(o);
+  return { where: m.text, params: m.values, sql: m };
 }
 // ═══ SEC-1 · TWO-FACTOR AND SESSIONS ═══════════════════════════════════════
 // Every route below is the signed-in person's own, except the three marked
@@ -96,6 +97,7 @@ function portfolioMembership({ orgId, userId, scope = "mine", assignedTo = null,
 // one is audited by the trail above every router; the verbs are named here.
 const TF = require("../../twoFactor");
 const { newId } = require("./newId");   // IDS-1: every new row id is prefix + 20 hex
+const { sql } = require("../db/sql");   // REDTEAM-2: SQL text only from the code
 
 // THE ORG'S STEWARD START DATE — 0.6's answer depends on it. A thank-you is not
 // owed for a gift that arrived before the product did: an imported file is

@@ -15,6 +15,8 @@ const { newId } = require("../shared/newId");   // IDS-1: every new row id is pr
 // SCALE-2: org-wide figures are stored per org and served until something changes.
 const OS = require("../../orgSummary");
 const lapseRule = require("../../lapseRule");   // FIX-49: the one lapse rule
+const { sql } = require("../db/sql");   // REDTEAM-2: SQL text only from the code
+const GOAL_TABLES = { goal: "fundraising_goals", campaign: "campaigns" };   // REDTEAM-2: the tables a goal's setting lives in
 
 const routers = {
   r1: express.Router(),
@@ -379,14 +381,14 @@ app.post("/goals", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req,
 // GIFTS-2 · "Count pledges toward this goal", for the org's goal or a campaign.
 // A setting on the goal, changed by an admin; the audit row is the middleware's.
 app.put("/goals/:kind/:id/count-pledges", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-  const table = { goal: "fundraising_goals", campaign: "campaigns" }[req.params.kind];
+  const table = GOAL_TABLES[req.params.kind];
   if (!table) return res.status(404).json({ error: "Not found" });
   // The goal is this org's before the body is read, so another org's id and an
   // id that does not exist get the same 404 (tenant-matrix: no existence oracle).
-  const [own] = await query(`SELECT id FROM ${table} WHERE id = ? AND org_id = ?`, [req.params.id, req.user.orgId]);
+  const [own] = await query(sql`SELECT id FROM ${sql.id(table, GOAL_TABLES)} WHERE id = ${req.params.id} AND org_id = ${req.user.orgId}`);   // REDTEAM-2
   if (!own) return res.status(404).json({ error: "Not found" });
   if (typeof (req.body && req.body.on) !== "boolean") return res.status(400).json({ error: "on must be true or false" });
-  await run(`UPDATE ${table} SET count_pledges = ? WHERE id = ? AND org_id = ?`, [req.body.on, req.params.id, req.user.orgId]);
+  await run(sql`UPDATE ${sql.id(table, GOAL_TABLES)} SET count_pledges = ${req.body.on} WHERE id = ${req.params.id} AND org_id = ${req.user.orgId}`);
   res.json({ ok: true, countPledges: req.body.on });
 }));
 
@@ -806,38 +808,38 @@ app.get("/fundraising/goals", requireAuth, wrap(async (req, res) => {
 // separate configuration screen to forget). Shared validator for both routes;
 // returns { sets, params } column assignments or { status, body } to reject.
 async function parseDonorFacingCampaignFields(b, orgId) {
-  const sets = [], params = [];
-  if (b.donorFacingName !== undefined) { sets.push("donor_facing_name = ?"); params.push(String(b.donorFacingName || "").trim().slice(0, 120) || null); }
-  if (b.donorDescription !== undefined) { sets.push("donor_description = ?"); params.push(String(b.donorDescription || "").trim().slice(0, 600) || null); }
+  const sets = [];   // REDTEAM-2: each a sql`` piece, its value bound
+  if (b.donorFacingName !== undefined) { sets.push(sql`donor_facing_name = ${String(b.donorFacingName || "").trim().slice(0, 120) || null}`); }
+  if (b.donorDescription !== undefined) { sets.push(sql`donor_description = ${String(b.donorDescription || "").trim().slice(0, 600) || null}`); }
   if (b.donorStory !== undefined) {
     const v = validateStoryBlocks(b.donorStory);
     if (v.error) return { status: 400, body: { error: v.error, message: "The story must be paragraphs, headings, and lists, no HTML or embeds." } };
-    sets.push("donor_story = ?"); params.push(v.blocks && v.blocks.length ? JSON.stringify(v.blocks) : null);
+    sets.push(sql`donor_story = ${v.blocks && v.blocks.length ? JSON.stringify(v.blocks) : null}`);
   }
   if (b.heroImageData !== undefined) {
     const h = await storeCampaignHero(orgId, b.heroImageData);
     if (h.error) return { status: 400, body: { error: h.error, message: h.message } };
-    if (h.url !== undefined) { sets.push("hero_image_url = ?"); params.push(h.url); }
+    if (h.url !== undefined) { sets.push(sql`hero_image_url = ${h.url}`); }
   }
   // BUILD-65 Part 3 — non-destructive crop + focal for the hero (same library
   // and validation as the banner: parseCrop; a crop wins, focal is the fallback).
   if (b.heroCrop !== undefined) {
-    if (b.heroCrop === "" || b.heroCrop == null) { sets.push("hero_crop = NULL"); }
+    if (b.heroCrop === "" || b.heroCrop == null) { sets.push(sql`hero_crop = NULL`); }
     else {
       const c = parseCrop(b.heroCrop);
       if (!c) return { status: 400, body: { error: "bad_crop", message: "Crop must be a rectangle {x,y,w,h} within the image." } };
-      sets.push("hero_crop = ?"); params.push(JSON.stringify(c));
+      sets.push(sql`hero_crop = ${JSON.stringify(c)}`);
     }
   }
   for (const [key, col] of [["heroFocalX", "hero_focal_x"], ["heroFocalY", "hero_focal_y"]]) {
     if (b[key] === undefined) continue;
     const nn = Number(b[key]);
     if (!Number.isFinite(nn)) return { status: 400, body: { error: "bad_focal", message: "Focal point must be a number between 0 and 1." } };
-    sets.push(`${col} = ?`); params.push(Math.min(1, Math.max(0, nn)));
+    sets.push(sql`${sql.id(col, ["hero_focal_x", "hero_focal_y"])} = ${Math.min(1, Math.max(0, nn))}`);
   }
-  if (b.goalProgressPublic !== undefined) { sets.push("goal_progress_public = ?"); params.push(b.goalProgressPublic === true); }
-  if (b.grantsOffPublicBar !== undefined) { sets.push("grants_off_public_bar = ?"); params.push(b.grantsOffPublicBar === true); }   // FIX-49
-  return { sets, params };
+  if (b.goalProgressPublic !== undefined) { sets.push(sql`goal_progress_public = ${b.goalProgressPublic === true}`); }
+  if (b.grantsOffPublicBar !== undefined) { sets.push(sql`grants_off_public_bar = ${b.grantsOffPublicBar === true}`); }   // FIX-49
+  return { sets };
 }
 
 app.post("/fundraising/campaigns", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -862,7 +864,7 @@ app.post("/fundraising/campaigns", requireAuth, checkWriteAccess, wrap(async (re
     [id, req.user.orgId, name.trim(), "appeal", "", "", "draft", JSON.stringify({}), goal, startDate || null, endDate || null, category, parent, actor(req).id, actor(req).name]
   );
   if (df.sets.length) {
-    await run(`UPDATE campaigns SET ${df.sets.join(", ")} WHERE id = ? AND org_id = ?`, [...df.params, id, req.user.orgId]);
+    await run(sql`UPDATE campaigns SET ${sql.join(df.sets)} WHERE id = ${id} AND org_id = ${req.user.orgId}`);
   }
   if (req.body.heroImageData !== undefined) {
     const [c] = await query(`SELECT hero_image_url FROM campaigns WHERE id = ?`, [id]);
@@ -902,7 +904,7 @@ app.put("/fundraising/campaigns/:id", requireAuth, checkWriteAccess, wrap(async 
      parentProvided, parentUpdate, req.params.id, req.user.orgId]
   );
   if (df.sets.length) {
-    await run(`UPDATE campaigns SET ${df.sets.join(", ")} WHERE id = ? AND org_id = ?`, [...df.params, req.params.id, req.user.orgId]);
+    await run(sql`UPDATE campaigns SET ${sql.join(df.sets)} WHERE id = ${req.params.id} AND org_id = ${req.user.orgId}`);
     // A replaced/cleared hero leaves no orphaned asset (content addressing —
     // one photo may back several campaigns; reference-counted like impact).
     // BUILD-56: prune = soft delete + a pointer-history row.

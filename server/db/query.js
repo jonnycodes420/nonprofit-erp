@@ -2,6 +2,7 @@
 // Each "SPLIT-2 db.js piece N" block is db.js's own text; tests read db.js through
 // readSource("db.js"), which puts the pieces back in order.
 const { pool, LIMITS, once } = require("./pool");
+const { toQuery } = require("./sql");   // REDTEAM-2
 
 // SPLIT-2 db.js piece 14
 
@@ -68,6 +69,7 @@ async function withAmbientTransaction(fn) {
 // SPLIT-2 db.js piece 23
 // IMPORT-7: the progress and job writes outside the transaction cross the network too
 async function queryOutside(sql, params = []) {
+  [sql, params] = toQuery(sql, params);   // REDTEAM-2: a Sql brings its own values (server/db/sql.js)
   if (TEST_LATENCY_MS) await roundTrip();
   noteTrip();
   let i = 0;
@@ -76,6 +78,7 @@ async function queryOutside(sql, params = []) {
 // SPLIT-2 end
 // SPLIT-2 db.js piece 24
 async function runOutside(sql, params = []) {
+  [sql, params] = toQuery(sql, params);   // REDTEAM-2: a Sql brings its own values (server/db/sql.js)
   if (TEST_LATENCY_MS) await roundTrip();
   noteTrip();
   let i = 0;
@@ -86,6 +89,7 @@ async function runOutside(sql, params = []) {
 
 // Convert SQLite ? placeholders to PostgreSQL $1, $2, ... positional params
 async function query(sql, params = []) {
+  [sql, params] = toQuery(sql, params);   // REDTEAM-2: a Sql brings its own values (server/db/sql.js)
   if (TEST_LATENCY_MS) await roundTrip();
   noteTrip();
   let i = 0;
@@ -99,6 +103,7 @@ async function query(sql, params = []) {
 // SPLIT-2 db.js piece 26
 
 async function run(sql, params = []) {
+  [sql, params] = toQuery(sql, params);   // REDTEAM-2: a Sql brings its own values (server/db/sql.js)
   if (TEST_LATENCY_MS) await roundTrip();
   noteTrip();
   let i = 0;
@@ -191,6 +196,7 @@ async function withTryAdvisoryLock(key, fn) {
 
 // Like query() / run() but bound to a specific pg client (for use inside withTransaction)
 function queryTx(client, sql, params = []) {
+  [sql, params] = toQuery(sql, params);   // REDTEAM-2: a Sql brings its own values (server/db/sql.js)
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
   return client.query(pgSql, params).then(r => r.rows);
@@ -198,6 +204,7 @@ function queryTx(client, sql, params = []) {
 // SPLIT-2 end
 // SPLIT-2 db.js piece 33
 function runTx(client, sql, params = []) {
+  [sql, params] = toQuery(sql, params);   // REDTEAM-2: a Sql brings its own values (server/db/sql.js)
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
   return client.query(pgSql, params).then(r => ({ changes: r.rowCount }));

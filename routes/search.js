@@ -76,165 +76,168 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
   const amt = read.amount, day = read.date;
   // "Rafael gift": the money kinds match the name, not the whole phrase.
   const nameP = read.personGifts ? likePattern(read.personGifts) : p;
+  // REDTEAM-2: for gifts, plans and pledges, a condition's text is picked by a
+  // ternary from the code's own strings and its values go in a list beside it,
+  // so nothing typed into the box is ever part of the SQL text.
+  const dayMode = day ? (day.iso ? "iso" : "md") : null;
+  const words = !amt && !day ? "yes" : null;
   // A day, on a YYYY-MM-DD text column: that exact day, or with no year that
-  // month and day in any year.
-  const dayOn = col => !day ? null : day.iso ? { sql: `${col} = ?`, args: [day.iso] }
-    : { sql: `SUBSTRING(${col} FROM 6 FOR 5) = ?`, args: [day.monthDay] };
-  // OR of the conditions that apply; FALSE when none do.
-  const anyOf = conds => {
-    const c = conds.filter(Boolean);
-    return c.length ? { sql: "(" + c.map(x => x.sql).join(" OR ") + ")", args: c.flatMap(x => x.args) }
-      : { sql: "FALSE", args: [] };
-  };
-  const money = col => amt ? { sql: `${col} = ?`, args: [amt.dollars] } : null;
-  const nameMatch = { sql: `d.name ILIKE ? ${E}`, args: [nameP] };
+  // month and day in any year. OR of the conditions that apply; FALSE when none do.
+  const dayText = col => dayMode === "iso" ? `${col} = ?` : dayMode === "md" ? `SUBSTRING(${col} FROM 6 FOR 5) = ?` : null;
+  const dayArgs = day ? [day.iso || day.monthDay] : [];
+  const amtArgs = amt ? [amt.dollars] : [];
+  const orOf = texts => { const t = texts.filter(Boolean); return t.length ? "(" + t.join(" OR ") + ")" : "FALSE"; };
 
-  const reads = {
-    people: {
-      sql: `SELECT id, name, email, phone, kind, person_types, total_giving, contact_name,
-              ${PM.personMatchReasonSql(fp).sql} AS match_reason
+  // REDTEAM-2: each read is its SQL text (T, made only from the code's own strings)
+  // and its values (A), kept apart so nothing typed into the box is ever text.
+  const T = {}, A = {};
+  // LIST-2: the one person rule (server/donors/personMatch.js): name, email,
+  // phone, contact person, household and linked organization, accents folded.
+  T.people = `SELECT id, name, email, phone, kind, person_types, total_giving, contact_name,
+              ${PM.PERSON_MATCH_REASON_SQL} AS match_reason
          FROM donors
         WHERE org_id = ? AND deleted_at IS NULL
-          AND (${PM.personMatchSql(fp).sql} OR mobile ILIKE ? ${E}
+          AND (${PM.PERSON_MATCH_SQL} OR mobile ILIKE ? ${E}
                ${digits.length >= 4 && !amt?.explicit ? "OR regexp_replace(COALESCE(phone,''), '\\D', '', 'g') LIKE ? OR regexp_replace(COALESCE(mobile,''), '\\D', '', 'g') LIKE ?" : ""})
         ORDER BY (${PM.FOLD("name")} LIKE ? ${E}) DESC, (${PM.FOLD("name")} LIKE ? ${E}) DESC, total_giving DESC NULLS LAST, id
-        LIMIT ${L}`,
-      // LIST-2: the one person rule (server/donors/personMatch.js): name, email,
-      // phone, contact person, household and linked organization, accents folded.
-      args: [...PM.personMatchReasonSql(fp).args, orgId, ...PM.personMatchSql(fp).args, p, ...(digits.length >= 4 && !amt?.explicit ? ["%" + digits + "%", "%" + digits + "%"] : []),
-        fp, PM.fold(String(q).trim()).replace(/[\\%_]/g, ch => "\\" + ch) + "%"] },   // WALKB-1: a name match ranks first
-    // "Rafael gift": the person, opened on their gifts.
-    personGifts: read.personGifts ? {
-      sql: `SELECT id, name, kind, total_giving FROM donors
+        LIMIT ${L}`;
+  A.people = [...PM.personMatchReasonSql(fp).args, orgId, ...PM.personMatchSql(fp).args, p, ...(digits.length >= 4 && !amt?.explicit ? ["%" + digits + "%", "%" + digits + "%"] : []),
+        fp, PM.fold(String(q).trim()).replace(/[\\%_]/g, ch => "\\" + ch) + "%"];   // WALKB-1: a name match ranks first
+  // "Rafael gift": the person, opened on their gifts.
+  if (read.personGifts) {
+    T.personGifts = `SELECT id, name, kind, total_giving FROM donors
         WHERE org_id = ? AND deleted_at IS NULL AND name ILIKE ? ${E}
-        ORDER BY total_giving DESC NULLS LAST, id LIMIT ${L}`, args: [orgId, nameP] } : null,
-    households: {
-      sql: `SELECT h.id, h.name, h.primary_donor_id,
+        ORDER BY total_giving DESC NULLS LAST, id LIMIT ${L}`;
+    A.personGifts = [orgId, nameP];
+  }
+  T.households = `SELECT h.id, h.name, h.primary_donor_id,
               (SELECT d.id FROM donors d WHERE d.org_id = h.org_id AND d.household_id = h.id AND d.deleted_at IS NULL ORDER BY d.total_giving DESC NULLS LAST, d.id LIMIT 1) AS member_id,
               (SELECT COUNT(*)::int FROM donors d WHERE d.org_id = h.org_id AND d.household_id = h.id AND d.deleted_at IS NULL) AS members
-         FROM households h WHERE h.org_id = ? AND h.name ILIKE ? ${E} ORDER BY lower(h.name), h.id LIMIT ${L}`, args: [orgId, p] },
-    campaigns: {
-      sql: `SELECT id, name, type, status, goal_amount, start_date FROM campaigns
+         FROM households h WHERE h.org_id = ? AND h.name ILIKE ? ${E} ORDER BY lower(h.name), h.id LIMIT ${L}`;
+  A.households = [orgId, p];
+  T.campaigns = `SELECT id, name, type, status, goal_amount, start_date FROM campaigns
         WHERE org_id = ? AND (name ILIKE ? ${E} OR donor_facing_name ILIKE ? ${E})
-        ORDER BY start_date DESC NULLS LAST, created_at DESC, id LIMIT ${L}`, args: [orgId, p, p] },
-    events: {
-      sql: `SELECT id, name, date, location FROM events
+        ORDER BY start_date DESC NULLS LAST, created_at DESC, id LIMIT ${L}`;
+  A.campaigns = [orgId, p, p];
+  T.events = `SELECT id, name, date, location FROM events
         WHERE org_id = ? AND (name ILIKE ? ${E} OR location ILIKE ? ${E})
-        ORDER BY date DESC NULLS LAST, id LIMIT ${L}`, args: [orgId, p, p] },
-    pages: {
-      sql: `SELECT id, title, slug, status, COALESCE(page_kind,'give') AS page_kind FROM giving_pages
+        ORDER BY date DESC NULLS LAST, id LIMIT ${L}`;
+  A.events = [orgId, p, p];
+  T.pages = `SELECT id, title, slug, status, COALESCE(page_kind,'give') AS page_kind FROM giving_pages
         WHERE org_id = ? AND (title ILIKE ? ${E} OR slug ILIKE ? ${E})
-        ORDER BY updated_at DESC NULLS LAST, id LIMIT ${L}`, args: [orgId, p, p] },
-    p2p: {
-      sql: `SELECT pf.id, pf.name, pf.slug, pf.status, gp.title AS page_title, pf.giving_page_id
+        ORDER BY updated_at DESC NULLS LAST, id LIMIT ${L}`;
+  A.pages = [orgId, p, p];
+  T.p2p = `SELECT pf.id, pf.name, pf.slug, pf.status, gp.title AS page_title, pf.giving_page_id
          FROM peer_fundraisers pf LEFT JOIN giving_pages gp ON gp.id = pf.giving_page_id AND gp.org_id = pf.org_id
         WHERE pf.org_id = ? AND (pf.name ILIKE ? ${E} OR pf.slug ILIKE ? ${E})
-        ORDER BY pf.created_at DESC, pf.id LIMIT ${L}`, args: [orgId, p, p] },
-    grants: {
-      sql: `SELECT id, funder, program, amount, status, funder_donor_id FROM grants
+        ORDER BY pf.created_at DESC, pf.id LIMIT ${L}`;
+  A.p2p = [orgId, p, p];
+  T.grants = `SELECT id, funder, program, amount, status, funder_donor_id FROM grants
         WHERE org_id = ? AND (funder ILIKE ? ${E} OR program ILIKE ? ${E} OR cycle_name ILIKE ? ${E})
-        ORDER BY created_at DESC, id LIMIT ${L}`, args: [orgId, p, p, p] },
-    auctions: {
-      sql: `SELECT a.id, a.title, a.status, a.closes_at,
+        ORDER BY created_at DESC, id LIMIT ${L}`;
+  A.grants = [orgId, p, p, p];
+  T.auctions = `SELECT a.id, a.title, a.status, a.closes_at,
               (SELECT COUNT(*)::int FROM auction_items i WHERE i.org_id = a.org_id AND i.auction_id = a.id AND i.title ILIKE ? ${E}) AS item_hits
          FROM auctions a
         WHERE a.org_id = ? AND (a.title ILIKE ? ${E}
               OR EXISTS (SELECT 1 FROM auction_items i WHERE i.org_id = a.org_id AND i.auction_id = a.id AND i.title ILIKE ? ${E}))
-        ORDER BY a.created_at DESC, a.id LIMIT ${L}`, args: [p, orgId, p, p] },
-    levels: {
-      sql: `SELECT id, name, price, term FROM membership_levels
-        WHERE org_id = ? AND name ILIKE ? ${E} ORDER BY position NULLS LAST, lower(name), id LIMIT ${L}`, args: [orgId, p] },
-    tasks: {
-      sql: `SELECT t.id, t.title, t.due, t.donor_id, d.name AS donor_name FROM tasks t
+        ORDER BY a.created_at DESC, a.id LIMIT ${L}`;
+  A.auctions = [p, orgId, p, p];
+  T.levels = `SELECT id, name, price, term FROM membership_levels
+        WHERE org_id = ? AND name ILIKE ? ${E} ORDER BY position NULLS LAST, lower(name), id LIMIT ${L}`;
+  A.levels = [orgId, p];
+  T.tasks = `SELECT t.id, t.title, t.due, t.donor_id, d.name AS donor_name FROM tasks t
          LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
         WHERE t.org_id = ? AND COALESCE(t.done,0) = 0 AND t.voided_at IS NULL AND (d.id IS NULL OR d.deleted_at IS NULL) AND t.title ILIKE ? ${E}
-        ORDER BY t.due NULLS LAST, t.id LIMIT ${L}`, args: [orgId, p] },
+        ORDER BY t.due NULLS LAST, t.id LIMIT ${L}`;
+  A.tasks = [orgId, p];
     // Saved reports and dashboards: the ones this person may open (shared, or
-    // their own), the same rule the Reports rail reads.
-    reports: {
-      sql: `SELECT id, name FROM saved_reports WHERE org_id = ? AND (shared = true OR owner_id = ?) AND name ILIKE ? ${E}
-        ORDER BY lower(name), id LIMIT ${L}`, args: [orgId, userId, p] },
-    dashboards: {
-      sql: `SELECT id, name FROM saved_dashboards WHERE org_id = ? AND (shared = true OR owner_id = ?) AND name ILIKE ? ${E}
-        ORDER BY lower(name), id LIMIT ${L}`, args: [orgId, userId, p] },
-    boardFiles: {
-      // REPORTS-5: an old system's report is a past report too, found by its
-      // title, its file name or the system it came from.
-      sql: `SELECT id, title, file_name, period_label, kind, report_kind, source_system FROM stored_sheets
+  // their own), the same rule the Reports rail reads.
+  T.reports = `SELECT id, name FROM saved_reports WHERE org_id = ? AND (shared = true OR owner_id = ?) AND name ILIKE ? ${E}
+        ORDER BY lower(name), id LIMIT ${L}`;
+  A.reports = [orgId, userId, p];
+  T.dashboards = `SELECT id, name FROM saved_dashboards WHERE org_id = ? AND (shared = true OR owner_id = ?) AND name ILIKE ? ${E}
+        ORDER BY lower(name), id LIMIT ${L}`;
+  A.dashboards = [orgId, userId, p];
+  // REPORTS-5: an old system's report is a past report too, found by its
+  // title, its file name or the system it came from.
+  T.boardFiles = `SELECT id, title, file_name, period_label, kind, report_kind, source_system FROM stored_sheets
         WHERE org_id = ? AND kind IN ('board_report', 'old_report') AND removed_at IS NULL
           AND (title ILIKE ? ${E} OR file_name ILIKE ? ${E} OR source_system ILIKE ? ${E}
                OR regexp_replace(file_name, '[-_.]+', ' ', 'g') ILIKE ? ${E})
-        ORDER BY created_at DESC, id LIMIT ${L}`, args: [orgId, p, p, p, p] },
+        ORDER BY created_at DESC, id LIMIT ${L}`;
+  A.boardFiles = [orgId, p, p, p, p];
     // Documents by file name: a file kept on somebody's timeline, and a
-    // grant's documents.
-    files: {
-      sql: `SELECT a.id, a.filename AS file_name, a.donor_id, d.name AS donor_name FROM interaction_attachments a
+  // grant's documents.
+  T.files = `SELECT a.id, a.filename AS file_name, a.donor_id, d.name AS donor_name FROM interaction_attachments a
          JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id AND d.deleted_at IS NULL
         WHERE a.org_id = ? AND a.deleted_at IS NULL AND a.filename ILIKE ? ${E}
-        ORDER BY a.created_at DESC, a.id LIMIT ${L}`, args: [orgId, p] },
-    grantFiles: {
-      sql: `SELECT gd.id, gd.file_name, gd.grant_id, g.funder FROM grant_documents gd
+        ORDER BY a.created_at DESC, a.id LIMIT ${L}`;
+  A.files = [orgId, p];
+  T.grantFiles = `SELECT gd.id, gd.file_name, gd.grant_id, g.funder FROM grant_documents gd
          JOIN grants g ON g.id = gd.grant_id AND g.org_id = gd.org_id
         WHERE gd.org_id = ? AND gd.file_name ILIKE ? ${E}
-        ORDER BY gd.uploaded_at DESC NULLS LAST, gd.id LIMIT ${L}`, args: [orgId, p] },
-  };
+        ORDER BY gd.uploaded_at DESC NULLS LAST, gd.id LIMIT ${L}`;
+  A.grantFiles = [orgId, p];
 
   // ── SEARCH-2 · the records that hang off a person ──────────────────────────
   // Gifts: by amount, by the day, by cheque number, or by who gave.
   {
-    const w = anyOf([money("g.amount"), dayOn("g.date"),
-      amt && amt.digits ? { sql: "g.check_number = ?", args: [amt.digits] } : null,
-      !amt && !day ? { sql: `g.check_number ILIKE ? ${E}`, args: [p] } : null,
-      !amt && !day ? nameMatch : null]);
-    reads.gifts = {
-      sql: `SELECT g.id, g.amount, g.date, g.check_number, g.payment_method, g.donor_id, d.name AS donor_name
+    const checkNo = amt && amt.digits ? "yes" : null;
+    const wText = orOf([amt ? "g.amount = ?" : null, dayText("g.date"), checkNo ? "g.check_number = ?" : null,
+      words ? `g.check_number ILIKE ? ${E}` : null, words ? `d.name ILIKE ? ${E}` : null]);
+    const w = { args: [...amtArgs, ...dayArgs, ...(checkNo ? [amt.digits] : []), ...(words ? [p, nameP] : [])] };
+    T.gifts = `SELECT g.id, g.amount, g.date, g.check_number, g.payment_method, g.donor_id, d.name AS donor_name
          FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
-        WHERE g.org_id = ? AND ${w.sql}
-        ORDER BY g.date DESC NULLS LAST, g.created_at DESC, g.id LIMIT ${L}`, args: [orgId, ...w.args] };
+        WHERE g.org_id = ? AND ${wText}
+        ORDER BY g.date DESC NULLS LAST, g.created_at DESC, g.id LIMIT ${L}`;
+    A.gifts = [orgId, ...w.args];
   }
   // Monthly plans: by amount or by who gives.
   {
-    const w = anyOf([money("r.amount"), !amt && !day ? nameMatch : null]);
-    reads.plans = {
-      sql: `SELECT r.id, r.amount, r.interval, r.status, r.donor_id, d.name AS donor_name
+    const wText = orOf([amt ? "r.amount = ?" : null, words ? `d.name ILIKE ? ${E}` : null]);
+    const w = { args: [...amtArgs, ...(words ? [nameP] : [])] };
+    T.plans = `SELECT r.id, r.amount, r.interval, r.status, r.donor_id, d.name AS donor_name
          FROM recurring_subscriptions r JOIN donors d ON d.id = r.donor_id AND d.org_id = r.org_id AND d.deleted_at IS NULL
-        WHERE r.org_id = ? AND ${w.sql}
-        ORDER BY (r.status = 'canceled'), r.created_at DESC, r.id LIMIT ${L}`, args: [orgId, ...w.args] };
+        WHERE r.org_id = ? AND ${wText}
+        ORDER BY (r.status = 'canceled'), r.created_at DESC, r.id LIMIT ${L}`;
+    A.plans = [orgId, ...w.args];
   }
   // Pledges: by amount, the day it is due, who promised it, or its note.
   {
-    const w = anyOf([money("pl.amount"), dayOn("pl.due_date"),
-      !amt && !day ? nameMatch : null, !amt && !day && !read.personGifts ? { sql: `pl.notes ILIKE ? ${E}`, args: [p] } : null]);
-    reads.pledges = {
-      sql: `SELECT pl.id, pl.amount, pl.due_date, pl.status, pl.donor_id, d.name AS donor_name
+    const notes = words && !read.personGifts ? "yes" : null;
+    const wText = orOf([amt ? "pl.amount = ?" : null, dayText("pl.due_date"), words ? `d.name ILIKE ? ${E}` : null,
+      notes ? `pl.notes ILIKE ? ${E}` : null]);
+    const w = { args: [...amtArgs, ...dayArgs, ...(words ? [nameP] : []), ...(notes ? [p] : [])] };
+    T.pledges = `SELECT pl.id, pl.amount, pl.due_date, pl.status, pl.donor_id, d.name AS donor_name
          FROM pledges pl JOIN donors d ON d.id = pl.donor_id AND d.org_id = pl.org_id AND d.deleted_at IS NULL
-        WHERE pl.org_id = ? AND ${w.sql}
-        ORDER BY pl.due_date DESC NULLS LAST, pl.id LIMIT ${L}`, args: [orgId, ...w.args] };
+        WHERE pl.org_id = ? AND ${wText}
+        ORDER BY pl.due_date DESC NULLS LAST, pl.id LIMIT ${L}`;
+    A.pledges = [orgId, ...w.args];
   }
   // Journeys: by name or description; archived ones are gone.
-  reads.journeys = {
-    sql: `SELECT id, name, description, journey_enabled, jsonb_array_length(COALESCE(steps, '[]'::jsonb))::int AS step_count
+  T.journeys = `SELECT id, name, description, journey_enabled, jsonb_array_length(COALESCE(steps, '[]'::jsonb))::int AS step_count
        FROM cultivation_templates
       WHERE org_id = ? AND archived_at IS NULL AND (name ILIKE ? ${E} OR description ILIKE ? ${E})
-      ORDER BY lower(name), id LIMIT ${L}`, args: [orgId, p, p] };
+      ORDER BY lower(name), id LIMIT ${L}`;
+  A.journeys = [orgId, p, p];
   // Meetings: the one meetings query (calendar and logged), by its title,
   // note or place, or by the day it was on.
   {
     const m = meetingsSql(orgId);
-    const w = anyOf([dayOn("m.date"),
-      !amt && !day ? { sql: `(m.title ILIKE ? ${E} OR m.note ILIKE ? ${E} OR m.location ILIKE ? ${E})`, args: [p, p, p] } : null]);
-    reads.meetings = {
-      sql: `SELECT m.id, m.kind, m.title, m.note, m.date, m.location, m.donor_id, d.name AS donor_name
+    const wText = orOf([dayText("m.date"), words ? `(m.title ILIKE ? ${E} OR m.note ILIKE ? ${E} OR m.location ILIKE ? ${E})` : null]);
+    const w = { args: [...dayArgs, ...(words ? [p, p, p] : [])] };
+    T.meetings = `SELECT m.id, m.kind, m.title, m.note, m.date, m.location, m.donor_id, d.name AS donor_name
          FROM (${m.sql}) m JOIN donors d ON d.id = m.donor_id AND d.org_id = ? AND d.deleted_at IS NULL
-        WHERE ${w.sql}
-        ORDER BY m.date DESC NULLS LAST, m.id LIMIT ${L}`, args: [...m.args, orgId, ...w.args] };
+        WHERE ${wText}
+        ORDER BY m.date DESC NULLS LAST, m.id LIMIT ${L}`;
+    A.meetings = [...m.args, orgId, ...w.args];
   }
   // Emails: by subject, or by who sent it (the person for one they wrote, the
   // colleague for one we wrote). The sender's address is never stored, so a
   // person's own address finds the mail they sent.
   if (!amt && !day) {
-    reads.emails = {
-      sql: `SELECT i.id, i.date, i.donor_id, d.name AS donor_name, i.logged_by_name,
+    T.emails = `SELECT i.id, i.date, i.donor_id, d.name AS donor_name, i.logged_by_name,
               COALESCE(NULLIF(i.metadata->>'subject', ''), split_part(i.note, E'\\n', 1)) AS subject,
               i.metadata->>'direction' AS direction
          FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id AND d.deleted_at IS NULL
@@ -242,10 +245,10 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
           AND (COALESCE(NULLIF(i.metadata->>'subject', ''), split_part(i.note, E'\\n', 1)) ILIKE ? ${E}
                OR (COALESCE(i.metadata->>'direction', '') = 'outbound' AND i.logged_by_name ILIKE ? ${E})
                OR (COALESCE(i.metadata->>'direction', '') <> 'outbound' AND (d.name ILIKE ? ${E} OR d.email ILIKE ? ${E})))
-        ORDER BY i.date DESC NULLS LAST, i.created_at DESC, i.id LIMIT ${L}`, args: [orgId, p, p, p, p] };
+        ORDER BY i.date DESC NULLS LAST, i.created_at DESC, i.id LIMIT ${L}`;
+    A.emails = [orgId, p, p, p, p];
     // Notes: by their words.
-    reads.notes = {
-      sql: `SELECT i.id, i.date, i.note, i.donor_id, d.name AS donor_name
+    T.notes = `SELECT i.id, i.date, i.note, i.donor_id, d.name AS donor_name
          FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id AND d.deleted_at IS NULL
         WHERE i.org_id = ? AND i.note ILIKE ? ${E}
           -- IMPORT-2: the words of every conversation, not only notes. Calls,
@@ -254,30 +257,32 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
           -- mail keep their own kinds above.
           AND (i.type IN ('note', 'call', 'letter', 'text', 'event', 'ask', 'stewardship', 'visit', 'other')
                OR (i.type = 'email' AND i.metadata->>'source' = 'history-import'))
-        ORDER BY i.date DESC NULLS LAST, i.created_at DESC, i.id LIMIT ${L}`, args: [orgId, p] };
+        ORDER BY i.date DESC NULLS LAST, i.created_at DESC, i.id LIMIT ${L}`;
+    A.notes = [orgId, p];
   }
   // Imports: by the name or file name, or the day it went in (the org's day).
   {
     const tzDay = `TO_CHAR(im.committed_at AT TIME ZONE (SELECT COALESCE(NULLIF(oz.timezone, ''), 'America/New_York') FROM orgs oz WHERE oz.id = im.org_id), 'YYYY-MM-DD')`;
-    const w = anyOf([dayOn(tzDay), !amt && !day ? { sql: `(im.name ILIKE ? ${E} OR im.source_filename ILIKE ? ${E})`, args: [p, p] } : null]);
-    reads.imports = {
-      sql: `SELECT im.id, im.name, im.source_filename, ${tzDay} AS day, im.rows_in, im.gifts_created, im.reversed_at
-         FROM imports im WHERE im.org_id = ? AND COALESCE(im.shape, '') <> 'source' AND ${w.sql}
-        ORDER BY im.committed_at DESC, im.id LIMIT ${L}`, args: [orgId, ...w.args] };
+    const wText = orOf([dayText(tzDay), words ? `(im.name ILIKE ? ${E} OR im.source_filename ILIKE ? ${E})` : null]);
+    const w = { args: [...dayArgs, ...(words ? [p, p] : [])] };
+    T.imports = `SELECT im.id, im.name, im.source_filename, ${tzDay} AS day, im.rows_in, im.gifts_created, im.reversed_at
+         FROM imports im WHERE im.org_id = ? AND COALESCE(im.shape, '') <> 'source' AND ${wText}
+        ORDER BY im.committed_at DESC, im.id LIMIT ${L}`;
+    A.imports = [orgId, ...w.args];
   }
 
   // The words-only kinds have nothing to say about an amount or a day.
   if (amt?.explicit || day) {
     for (const k of ["households", "campaigns", "pages", "p2p", "grants", "auctions", "levels", "tasks",
-      "reports", "dashboards", "boardFiles", "files", "grantFiles", "journeys"]) delete reads[k];
+      "reports", "dashboards", "boardFiles", "files", "grantFiles", "journeys"]) { delete T[k]; delete A[k]; }
   }
 
   // One statement: each kind a json array of its rows.
-  const keys = Object.keys(reads).filter(k => reads[k] && (!want || want.has(k)));
+  const keys = Object.keys(T).filter(k => !want || want.has(k));
   if (!keys.length) return res.json({ q, results: [], more: {} });
   const sql = "SELECT " + keys.map(k =>
-    `(SELECT COALESCE(json_agg(t), '[]'::json) FROM (${reads[k].sql}) t) AS "${k}"`).join(",\n");
-  const [row] = await query(sql, keys.flatMap(k => reads[k].args));
+    `(SELECT COALESCE(json_agg(t), '[]'::json) FROM (${T[k]}) t) AS "${k}"`).join(",\n");
+  const [row] = await query(sql, keys.flatMap(k => A[k]));
   const more = {};
   const r = {};
   for (const k of KINDS) {

@@ -11,6 +11,7 @@ const express = require("express");
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
 const lapseRule = require("../../lapseRule");   // FIX-49: the one lapse rule
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
+const { sql } = require("../db/sql");   // REDTEAM-2: SQL text only from the code
 
 const routers = {
   r1: express.Router(),
@@ -165,22 +166,20 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
     if (assignedTo && assignedTo !== userId) assignedTo = null;
   }
   const membership = portfolioMembership({ orgId, userId, scope, assignedTo, alias: "d" });
-  const filters = [membership.where];
-  const params = [...membership.params];
+  const filters = [membership.sql];   // REDTEAM-2: Sql pieces, every value bound
   if (req.query.designation) {
-    filters.push("EXISTS (SELECT 1 FROM donor_designations dd WHERE dd.donor_id = d.id AND dd.org_id = d.org_id AND dd.kind = ?)");
-    params.push(req.query.designation);
+    filters.push(sql`EXISTS (SELECT 1 FROM donor_designations dd WHERE dd.donor_id = d.id AND dd.org_id = d.org_id AND dd.kind = ${req.query.designation})`);
   }
   if (req.query.search && String(req.query.search).trim()) {
-    filters.push("LOWER(d.name) LIKE ?"); params.push("%" + String(req.query.search).trim().toLowerCase() + "%");
+    filters.push(sql`LOWER(d.name) LIKE ${"%" + String(req.query.search).trim().toLowerCase() + "%"}`);
   }
   const minGiving = parseFloat(req.query.minGiving);
-  if (Number.isFinite(minGiving) && minGiving > 0) { filters.push("d.total_giving >= ?"); params.push(minGiving); }
+  if (Number.isFinite(minGiving) && minGiving > 0) filters.push(sql`d.total_giving >= ${minGiving}`);
 
   const donors = await query(
-    `SELECT d.id, d.name, COALESCE(d.stage, d.suggested_stage) AS stage, (d.stage IS NULL) AS stage_suggested,
+    sql`SELECT d.id, d.name, COALESCE(d.stage, d.suggested_stage) AS stage, (d.stage IS NULL) AS stage_suggested,
             d.total_giving, d.last_gift_date, d.assigned_to, d.assigned_to_name, d.updated_at, d.created_at
-       FROM donors d WHERE ${filters.join(" AND ")}`, params);
+       FROM donors d WHERE ${sql.join(filters, sql` AND `)}`);
 
   // Open asks aggregated per donor (org-wide, joined in JS).
   const oppAgg = await query(
@@ -525,9 +524,9 @@ app.get("/portfolio/:officerId", requireAuth, wrap(async (req, res) => {
   // THE MEMBERSHIP IS THE SHARED ONE. Read it, then decorate it.
   const m = portfolioMembership({ orgId, userId: officer.id, scope: "mine", assignedTo: officer.id, alias: "d" });
   const people = await query(
-    `SELECT d.id, d.name, d.email, d.kind, d.stage, d.suggested_stage, d.total_giving,
+    sql`SELECT d.id, d.name, d.email, d.kind, d.stage, d.suggested_stage, d.total_giving,
             d.last_gift_date, d.last_gift_amount, d.assigned_by_name, d.assigned_at
-       FROM donors d WHERE ${m.where} ORDER BY d.id`, m.params);
+       FROM donors d WHERE ${m.sql} ORDER BY d.id`);
   const ids = people.map(p => p.id);
 
   const openAsk = new Map(), lastConv = new Map(), nextStep = new Map();

@@ -3,6 +3,7 @@
 "use strict";
 const { Pool } = require("pg");
 const LIMITS = require("./requestLimits");
+const { toQuery, toPg } = require("../db/sql");   // REDTEAM-2
 
 // POOL-1 · ONE CONNECTION BUDGET PER PROCESS. Prod reaches its database
 // through Supabase's pooler in session mode, which holds a fixed number of
@@ -38,8 +39,7 @@ const isPoolFull = (e) => !!e && (e.code === "53300" || /EMAXCONNSESSION|max cli
 let _setPool = null;
 function setPool() {
   return _setPool || (_setPool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false },
+    ...require("./dbTls").poolTls(),   // REDTEAM-2: the same certificate check as the main pool
     options: `-c steward.app_connection=on -c enable_nestloop=off -c application_name=${APP_NAME}`,
     // POOL-1: out of the same per-process budget (a third of DB_POOL_MAX, one
     // to three), and let go after five minutes idle. Kept open for good, its
@@ -58,11 +58,12 @@ function setPoolReady() {
   return p;
 }
 // LOAD-1: under a web request's limit and cancel, like every main-pool read.
-async function querySetwise(sql, params = []) {
-  let i = 0;
-  const pgSql = sql.replace(/\?/g, () => `$${++i}`);
+async function querySetwise(statement, params = []) {
+  // REDTEAM-2: a Sql brings its own values; ? becomes $n in one place (server/db/sql.js toPg).
+  const [text, values] = toQuery(statement, params);
+  const pgSql = toPg(text);
   const client = await LIMITS.checkout(setPoolReady());
-  try { return (await client.query(pgSql, params)).rows; }
+  try { return (await client.query(pgSql, values)).rows; }
   catch (e) { throw LIMITS.translate(e); }
   finally { LIMITS.release(client); }
 }
