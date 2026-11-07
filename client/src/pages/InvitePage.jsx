@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
+import { roleWord } from "../../../shared/viewOnly.js";   // ACCESS-1
+const signedInAsInvitee = email => { try { return String((JSON.parse(localStorage.getItem("npe_user") || "null") || {}).email || "").toLowerCase() === String(email || "").toLowerCase(); } catch { return false; } };
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
 
@@ -77,19 +79,21 @@ export default function InvitePage() {
   async function handleAccept(e) {
     e.preventDefault();
     setFormErr("");
-    if (!name.trim()) return setFormErr("Please enter your name.");
-    if (password.length < 8) return setFormErr("Password must be at least 8 characters.");
-    if (password !== confirm) return setFormErr("Passwords don't match.");
+    // ACCESS-1: an address that already has an account joins signed in as it.
+    const existing = !!(invite && invite.existingAccount);
+    if (!existing && !name.trim()) return setFormErr("Please enter your name.");
+    if (!existing && password.length < 8) return setFormErr("Password must be at least 8 characters.");
+    if (!existing && password !== confirm) return setFormErr("Passwords don't match.");
 
     setSubmitting(true);
     try {
       const r = await fetch(`${API}/auth/invite/accept`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, name: name.trim(), password }),
+        headers: { "Content-Type": "application/json", ...(existing && localStorage.getItem("npe_token") ? { Authorization: "Bearer " + localStorage.getItem("npe_token") } : {}) },
+        body: JSON.stringify(existing ? { token } : { token, name: name.trim(), password }),
       });
       const data = await r.json();
-      if (!r.ok) { setFormErr(data.error || "Something went wrong."); setSubmitting(false); return; }
+      if (!r.ok) { setFormErr(data.message || data.error || "Something went wrong."); setSubmitting(false); return; }
 
       localStorage.setItem("npe_token", data.token);
       localStorage.setItem("npe_user", JSON.stringify(data.user));
@@ -153,7 +157,7 @@ export default function InvitePage() {
           Join <span style={{ color: T.ink2, fontWeight: 700 }}>{invite.orgName}</span> on Steward.
         </p>
         <div style={{ marginTop: 14, display: "inline-block", background: T.cream2, border: `1px solid ${T.cream3}`, borderRadius: 20, padding: "4px 14px", fontSize: 12.5, color: T.ink2, fontWeight: 600 }}>
-          {invite.email} · {invite.role}
+          {invite.email} · {roleWord(invite.role)}
         </div>
       </div>
 
@@ -165,15 +169,20 @@ export default function InvitePage() {
           after you sign. Cancel any time before then and you pay nothing.
         </div>
         <form onSubmit={handleAccept} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <Field label="Your name">
+          {invite.existingAccount && <div style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.6 }}>
+            {signedInAsInvitee(invite.email)
+              ? <>Add {invite.orgName} to your Steward account. You switch between organizations from your account menu.</>
+              : <>{invite.email} already has a Steward account. <Link to="/login" style={{ color: T.forest, fontWeight: 700 }}>Sign in to it</Link>, then open this invite again.</>}
+          </div>}
+          {!invite.existingAccount && <Field label="Your name">
             <input style={inputStyle} type="text" placeholder="Full name" value={name} onChange={e => setName(e.target.value)} autoFocus />
-          </Field>
-          <Field label="Create password">
+          </Field>}
+          {!invite.existingAccount && <Field label="Create password">
             <input style={inputStyle} type="password" placeholder="At least 8 characters" value={password} onChange={e => setPassword(e.target.value)} />
-          </Field>
-          <Field label="Confirm password">
+          </Field>}
+          {!invite.existingAccount && <Field label="Confirm password">
             <input style={inputStyle} type="password" placeholder="Repeat password" value={confirm} onChange={e => setConfirm(e.target.value)} />
-          </Field>
+          </Field>}
 
           {formErr && (
             <div style={{ background: T.terra100, border: `1px solid ${T.terra200}`, borderRadius: 8, padding: "10px 14px", fontSize: 13, color: T.red }}>
@@ -183,7 +192,7 @@ export default function InvitePage() {
 
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || (invite.existingAccount && !signedInAsInvitee(invite.email))}
             style={{
               marginTop: 4,
               background: submitting ? T.cream3 : T.gold,
@@ -198,7 +207,7 @@ export default function InvitePage() {
               fontFamily: "inherit",
             }}
           >
-            {submitting ? "Creating account…" : "Accept invitation →"}
+            {submitting ? (invite.existingAccount ? "Adding…" : "Creating account…") : (invite.existingAccount ? `Add ${invite.orgName} →` : "Accept invitation →")}
           </button>
         </form>
       </div>

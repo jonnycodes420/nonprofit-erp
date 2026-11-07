@@ -12,6 +12,7 @@ import { askConfirm } from "../ConfirmDialog";
 import { errorMessage } from "../../lib/domainError";
 import { displayDate } from "../../../../shared/displayDate";
 import { civilDayOf } from "../../lib/orgToday";   // the org's day, never the UTC one
+import { roleWord } from "../../../../shared/viewOnly.js";   // ACCESS-1
 
 const link = { background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, cursor: "pointer", fontSize: 12, fontFamily: "inherit" };
 
@@ -51,7 +52,7 @@ export function InvitedList({ isAdmin, version = 0 }) {
               Invited {displayDate(civilDayOf(new Date(i.createdAt)))}{i.invitedBy ? ` by ${i.invitedBy}` : ""} · {i.expired ? "the link has expired" : `the link works until ${displayDate(civilDayOf(new Date(i.expiresAt)))}`}
             </div>
           </div>
-          <Pill label={i.role === "volunteer_coordinator" ? "volunteer coordinator" : i.role} color={T.ink3} />
+          <Pill label={roleWord(i.role)} color={T.ink3} />
           <span style={{ display: "inline-flex", gap: 12, alignItems: "center" }}>
             <button type="button" style={link} disabled={busy === i.id} onClick={() => resend(i)}>Resend</button>
             <button type="button" style={link} onClick={() => copy(i)}>Copy link</button>

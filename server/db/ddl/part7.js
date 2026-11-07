@@ -925,6 +925,26 @@ async function run7(pool) {
   await pool.query(`ALTER TABLE invites ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`);
 
+  // ACCESS-1 · a person in more than one org. Their home org stays users.org_id
+  // with users.role; each further org is one row here, with its own role. A
+  // session is in one org at a time (the token's orgId), and requireAuth reads
+  // the role from the row for that org. Additive: no existing row changes.
+  // viewer_exports_off: an admin's switch that stops view-only accounts exporting.
+  await pool.query(`CREATE TABLE IF NOT EXISTS org_memberships (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    org_id TEXT NOT NULL REFERENCES orgs(id),
+    role TEXT NOT NULL DEFAULT 'staff',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    created_by TEXT NOT NULL,
+    created_by_name TEXT,
+    revoked_at TIMESTAMPTZ
+  )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_org_memberships_user_org ON org_memberships (user_id, org_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_org_memberships_org ON org_memberships (org_id) WHERE revoked_at IS NULL`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS viewer_exports_off BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE support_sessions ADD COLUMN IF NOT EXISTS reason TEXT`);
+
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id
   // (orgSummary.js says which few are not, and why).

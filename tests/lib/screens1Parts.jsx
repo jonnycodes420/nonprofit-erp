@@ -27,6 +27,7 @@ import * as GivingSourcesManager from "../../client/src/components/settings/Givi
 import * as ImpactUpdatesManager from "../../client/src/components/settings/ImpactUpdatesManager.jsx";
 import * as ImportsDrop from "../../client/src/components/settings/ImportsDrop.jsx";
 import * as InvitedList from "../../client/src/components/settings/InvitedList.jsx";   // WALKB-2
+import * as ViewerExports from "../../client/src/components/settings/ViewerExports.jsx";   // ACCESS-1
 import * as ImportsHistory from "../../client/src/components/settings/ImportsHistory.jsx";
 import * as importsWords from "../../client/src/components/settings/importsWords.js";
 import * as InboundEmailCard from "../../client/src/components/settings/InboundEmailCard.jsx";
@@ -102,6 +103,7 @@ export const CASES = [
   ["settings/GivingSourcesManager", () => <GivingSourcesManager.GivingSourcesManager isReadOnly={false} isAdmin onChanged={noop}/>, /Where giving comes in/],
   ["settings/ImpactUpdatesManager", () => <ImpactUpdatesManager.ImpactUpdatesManager isAdmin isReadOnly={false}/>, /Impact Updates/],
   ["settings/InvitedList", () => <InvitedList.InvitedList isAdmin/>, /Invited[\s\S]*wren\.halloway@example\.org[\s\S]*Revoke/],
+  ["settings/ViewerExports", () => <ViewerExports.ViewerExports/>, /Viewers can export/],
   ["settings/ImportsDrop", () => <ImportsDrop.ImportsDrop isReadOnly={false}><div>Bring in a spreadsheet</div></ImportsDrop.ImportsDrop>, /Bring in a spreadsheet/],
   ["settings/ImportsHistory", () => <ImportsHistory.ImportsHistory/>, /Every file you have loaded, newest first/],
   ["settings/importsWords", () => <div>{importsWords.fmtMoney(1234.5)} · {importsWords.fmtCount(1200)}</div>, /\$1,234\.50 · 1,200/],

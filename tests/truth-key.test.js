@@ -76,6 +76,7 @@ eq("the two credit rows are $700.00 of recognition", [K.credits.rows, K.credits.
 eq("this fiscal year: rows 1, 8 and 10, $675.00", K.thisFiscalYear, { from: "2026-07-01", to: "2026-11-02", cents: 67500, count: 3 });
 eq("by fiscal year: FY2024 $360, FY2025 $425 (the refund off), FY2026 $675", K.byFiscalYear, { FY2026: 67500, FY2025: 42500, FY2024: 36000 });
 eq("lifetime per person (hard only)", K.lifetimeById, { ada: 15000, ben: 7500, cleo: 30000, dov: 37500, gus: 50000, hal: 6000 });
+eq("HISTORY-1: year totals sum to lifetime (Dov: $400 in FY2025, the refund off; Ada: $50 + $100)", [K.byYearById.dov, K.byYearById.ada, K.yearsFootLifetime], [{ FY2025: 37500 }, { FY2026: 10000, FY2025: 5000 }, true]);
 eq("lapsed: Cleo (her matching credit is not giving; Hal is held by his pledge)", K.lapsed, ["cleo"]);
 eq("lapsing: Dov (last gift Jan 10, 2026)", K.lapsing, ["dov"]);
 eq("no pledge is overdue", K.pledgeOverdue, []);

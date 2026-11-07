@@ -44,7 +44,7 @@ let app = routers.r1;
 app.get("/figures/:source/rows", requireAuth, wrap(async (req, res) => {
   const { page, pageSize, ...params } = req.query;
   // PROSPECT-1 — "Who could give more?" opens its rows only for those who may ask it.
-  if (String(req.params.source) === "why" && params.q === "more" && !(await require("../../prospect").canSee(req.user.userId))) {
+  if (String(req.params.source) === "why" && params.q === "more" && !(await require("../../prospect").canSee(req.user.userId, req.user.orgId))) {
     return res.status(403).json({ error: "major_gifts_only" });
   }
   try {
@@ -66,7 +66,7 @@ app.get("/figures/:source/rows", requireAuth, wrap(async (req, res) => {
 // and Undo are theirs. A percentage's rows are the people it counts.
 async function figureRowsFor(req, res) {
   const { page, pageSize, ...params } = req.query;
-  if (String(req.params.source) === "why" && params.q === "more" && !(await require("../../prospect").canSee(req.user.userId))) {
+  if (String(req.params.source) === "why" && params.q === "more" && !(await require("../../prospect").canSee(req.user.userId, req.user.orgId))) {
     res.status(403).json({ error: "major_gifts_only" }); return null;
   }
   try {
@@ -255,6 +255,14 @@ app.get("/reports/activity", requireAuth, wrap(async (req, res) => {
   const scope = req.query.scope === "mine" ? "mine" : "org";
   const report = await composeActivityReport(req.user.orgId, { start, end }, scope === "mine" ? req.user.userId : null);
   res.json({ ...report, definitions: ACTIVITY_DEFINITIONS });
+}));
+
+// HISTORY-1 · BY YEAR: one person's giving by fiscal year (shared/numbers/byYear.js).
+app.get("/donors/:id/by-year", requireAuth, wrap(async (req, res) => {
+  const org = await orgTz(req.user.orgId);   // ORG_TZ_SEAM_OK
+  const out = await require("../../shared/numbers/byYear").donorByYear(query, { ...org, id: req.user.orgId }, req.params.id, orgToday(org));
+  if (!out) return res.status(404).json({ error: "Donor not found" });
+  res.json(out);
 }));
 
 app.get("/reports/:key", requireAuth, OS.cached("report", { perUser: false, when: req => req.params.key === "giving-summary" && !req.query.format }), wrap(async (req, res) => {

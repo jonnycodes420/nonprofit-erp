@@ -78,6 +78,7 @@ const MODULES = [
   "../server/org/publicPages",
   "../server/org/routes",
   "../server/org/invites",   // WALKB-2
+  "../server/org/switchOrg",   // ACCESS-1
   "../server/events/eventRemoval",   // WALKB-2
   "../server/outreach/autoSend",
   "../server/outreach/journeys",
@@ -102,6 +103,7 @@ routers.r1.use(require("../server/org/me").routers.r1);
 routers.r1.use(require("../server/org/morningEmail").routers.r1);   // TIDY-1: preview and test the morning email
 routers.r1.use(require("../server/org/routes").routers.r1);
 routers.r1.use(require("../server/org/invites").routers.r1);   // WALKB-2: pending invites
+routers.r1.use(require("../server/org/switchOrg").routers.r1);   // ACCESS-1: the org switcher
 routers.r1.use(require("../server/reports/dashboard").routers.r1);
 routers.r1.use(require("../server/reports/boardPack").routers.r1);
 routers.r1.use(require("../server/reports/routes").routers.r1);

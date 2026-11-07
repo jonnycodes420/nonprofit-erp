@@ -91,7 +91,7 @@ app.get("/donors/:id/scores", requireAuth, wrap(async (req, res) => {
     bands: W.BANDS,
     // PROSPECT-1 — screening results move the ask only for someone who may see them.
     suggestedAsk: await engagementMod.suggestedAsk(query, orgId, d.id,
-      (await require("../../prospect").canSee(req.user.userId)) ? { screening: (await require("../../prospect").latestScreening(orgId, [d.id])).get(d.id) || null } : {}),
+      (await require("../../prospect").canSee(req.user.userId, req.user.orgId)) ? { screening: (await require("../../prospect").latestScreening(orgId, [d.id])).get(d.id) || null } : {}),
   });
 }));
 

@@ -88,7 +88,13 @@ async function sessionOrgOf(req) {
     return s && s.orgId ? String(s.orgId) : null;
   }
   const info = await sessionCache.get(p.userId, loadUserSession);
-  return info && info.org_id ? String(info.org_id) : null;
+  if (!info || !info.org_id) return null;
+  // ACCESS-1: a session switched into another org is in that org.
+  if (p.orgId && String(p.orgId) !== String(info.org_id)) {
+    const m = await require("./server/auth/access").membershipFor(p.userId, p.orgId).catch(() => null);
+    return m ? String(m.org_id) : null;
+  }
+  return String(info.org_id);
 }
 
 // Loader for the session cache: the live revocation state for one user, or null
@@ -183,8 +189,17 @@ async function requireAuth(req, res, next) {
       }
       return next();
     }
+    // ACCESS-1: the session is in the org its token names. The home org's role
+    // is on the users row; any other org's is its membership row, read live, so
+    // a removed membership ends that org's session on its next request.
+    let orgId = info.org_id, role = info.role;
+    if (payload.orgId && String(payload.orgId) !== String(info.org_id)) {
+      const m = await require("./server/auth/access").membershipFor(payload.userId, payload.orgId);
+      if (!m) return res.status(401).json({ error: "membership_ended", message: "You're no longer a member of that organization. Sign in again." });
+      orgId = m.org_id; role = m.role;
+    }
     // FIX-57: her name as set, so what she does is signed with it, not her email.
-    req.user = { ...payload, role: info.role, orgId: info.org_id, name: String(info.name || "").trim() || null };
+    req.user = { ...payload, role, orgId, name: String(info.name || "").trim() || null };
     // SECURE-2: a Sentry event names the org and the user by id, never by name.
     if (process.env.SENTRY_DSN) { try { const sc = require("@sentry/node").getIsolationScope(); sc.setTag("org_id", info.org_id); sc.setUser({ id: payload.userId }); } catch { /* never fails a request */ } }
     // BUILD-98 (switch) Part 8 — a setup-only session (an admin whose org
@@ -215,6 +230,16 @@ async function requireAuth(req, res, next) {
           message: "Your account covers volunteers and hours. Giving, grants and finance are not part of it. "
             + "An admin can change your role in Settings.",
         });
+      }
+    }
+    // ── ACCESS-1 · THE VIEWER ──────────────────────────────────────────────
+    // A viewer changes nothing. Decided here, by method, so a write route added
+    // tomorrow is refused tomorrow (shared/viewOnly.js holds the rule).
+    if (req.user.role === "viewer") {
+      const refusal = await require("./server/auth/access").viewerRefusalFor(req);
+      if (refusal) {
+        if (req.audit) req.audit.skip("view_only");
+        return res.status(refusal.status).json(refusal.body);
       }
     }
     next();
