@@ -33,6 +33,7 @@ import FundField, { fundFromGift, fundLinesProblem } from "../gifts/FundField"; 
 import { lifetimeShareWords, sharePercent } from "../../../../shared/lifetimeShare.js";   // MOPUP-1: "under 1% of lifetime"
 import PledgeSchedule, { emptySchedule, scheduleBody } from "../gifts/PledgeSchedule";   // GIFTS-1: one payment or installments
 import { giftTypeLabel } from "../../../../shared/giftWords.js";
+import OfflinePlans from "./OfflinePlans";   // PLEDGES-2: a recurring plan staff record by hand
 import ByYear from "./ByYear";   // HISTORY-1: giving by fiscal year   // FEEL-1: "Pledge payment", never "Pledge_payment"
 
 // GIFTS-1: a pledge's schedule as the edit opens it, read from its installments.
@@ -270,6 +271,8 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
 
             {showYearEnd&&receiptsEnabled&&<YearEndPanel rc={rc} donor={donor} isReadOnly={isReadOnly}/>}
 
+            {/* PLEDGES-2: a recurring plan staff record for an offline commitment, labelled apart from a card plan */}
+            <OfflinePlans donorId={donor.id} isReadOnly={isReadOnly} giftsFull={giftsFull}/>
             {/* Recurring gift health — failed-payment recovery status */}
             {recurringSub&&(()=>{
               const RS_META={
@@ -286,7 +289,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                     <span style={{background:meta.color+"15",color:meta.color,border:"1px solid "+meta.color+"40",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:800}}>{meta.label}</span>
                     <span style={{fontSize:12,color:T.ink3}}>
-                      Recurring gift{recurringSub.amount!=null?` · ${fmtFull(recurringSub.amount)}/${recurringSub.interval==="year"?"yr":"mo"}`:""}
+                      Card on file · Stripe · Recurring gift{recurringSub.amount!=null?` · ${fmtFull(recurringSub.amount)}/${recurringSub.interval==="year"?"yr":"mo"}`:""}
                       {atRisk&&recurringSub.failure_count>0&&` · ${countLabel(recurringSub.failure_count, "failed attempt")}`}
                     </span>
                     {/* GIFTS-2: the plan links to every plan, so Recurring giving is found from a person too. */}
@@ -514,7 +517,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                             {isOverdue&&<span style={{fontSize:10,fontWeight:800,color:T.gold700}}>{daysOver}d overdue · reminder {Math.min(pl.reminder_step+1,4)}/4 sent</span>}
                           </div>
                           <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{(()=>{const ins=pl.installments||[],nx=ins.length>1&&pl.status==="open"?ins.find(i=>!i.paid):null;   /* GIFTS-1: the next installment, not the first */
-                            return nx?`Next due ${displayDate(nx.dueDate)} · ${ins.length} installments`:`Due ${displayDate(pl.due_date)}`;})()}{pl.campaign_id?(()=>{const c=campaigns.find(x=>x.id===pl.campaign_id);return c?` · counts toward ${c.name}`:"";})():""}</div>
+                            return nx?`Next due ${displayDate(nx.dueDate)} · ${countLabel(Number.isFinite(pl.unpaidCount)?pl.unpaidCount:ins.filter(i=>!i.paid).length,"installment")} left`:`Due ${displayDate(pl.due_date)}`;   /* PLEDGES-2: the rail's count (unpaidCount), not every row */})()}{pl.campaign_id?(()=>{const c=campaigns.find(x=>x.id===pl.campaign_id);return c?` · counts toward ${c.name}`:"";})():""}</div>
                           {pl.notes&&<div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.4}}>{pl.notes}</div>}
                           {pledgeEdit&&pledgeEdit.id===pl.id&&<div data-testid="pledge-edit" style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
                             <input aria-label="Amount" value={pledgeEdit.amount} onChange={e=>setPledgeEdit({...pledgeEdit,amount:e.target.value})} style={{width:100,border:"1px solid "+T.bg3,borderRadius:7,padding:"6px 8px",fontSize:12}}/>
@@ -532,7 +535,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                               {pledgeResentIds.has(pl.id)?"Sent ✓":pledgeResendBusyId===pl.id?"Sending…":"Resend reminder"}
                             </button>}
                             <button onClick={()=>setPledgeStatus(pl.id,"fulfilled")} disabled={isReadOnly} style={{background:T.green100,border:"1px solid "+T.greenDk,borderRadius:6,padding:"5px 9px",color:T.greenDk,fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Mark Fulfilled</button>
-                            <button onClick={()=>setPledgeStatus(pl.id,"written_off")} disabled={isReadOnly} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink3,fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Write Off</button>
+                            <button onClick={()=>setPledgeStatus(pl.id,"written_off",pl)} disabled={isReadOnly} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink3,fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Write Off</button>
                           </>}
                           <EditedMarker item={pl}/>
                           {!isReadOnly&&<button onClick={()=>setPledgeEdit({id:pl.id,amount:String(pl.amount),dueDate:String(pl.due_date||"").slice(0,10),notes:pl.notes||"",sched:pledgeSched(pl)})} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink2,fontSize:11,fontWeight:600,cursor:"pointer"}}>Edit</button>}
@@ -590,7 +593,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
           {/* Funds tab */}
           {dpTab==="giving"&&<div className="dp3-gutter" style={{padding:"0 var(--dp-gutter,40px) 24px",display:"flex",flexDirection:"column",gap:16}}>
             {fundLoading&&<div style={{textAlign:"center",color:T.ink3,fontSize:12,padding:24}}><Spin/></div>}
-            {!fundLoading&&fundAffinity&&(()=>{
+            {!fundLoading&&fundAffinity&&fundAffinity.donorId===donor.id&&(()=>{
               const {affinity,unrestrictedTotal,restrictedTotal,totalGiving,activeFunds,restrictedPct,unrestrictedPct,definition}=fundAffinity;
               const maxFund=affinity.length>0?affinity[0].total:1;
               return(<>

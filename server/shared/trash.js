@@ -46,8 +46,10 @@ const TRASH_WITH = {
     await runTx(client, "UPDATE calendar_events SET interaction_id = NULL, updated_at = NOW() WHERE interaction_id = ? AND org_id = ?", [id, orgId]);
     return { calendar_event_ids: ev.map(e => e.id) };
   },
-  pledges: async (client, id) => ({
+  pledges: async (client, id, orgId) => ({
     installments: await queryTx(client, "SELECT * FROM pledge_installments WHERE pledge_id = ?", [id]),
+    // PLEDGES-2: its "Pledged" line and collect tasks go with it (pledgePayments.js).
+    ...((await require("../donors/pledgePayments").trashWith(client, id, orgId)) || {}),
   }),
   households: async (client, id, orgId) => ({
     member_ids: (await queryTx(client, "SELECT id FROM donors WHERE household_id = ? AND org_id = ?", [id, orgId])).map(d => d.id),

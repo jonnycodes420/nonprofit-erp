@@ -6,9 +6,8 @@
 //
 //   §1  Payment ladders reaching the amount in 1, 2, 3 and 7 steps.
 //   §2  A payment of exactly the full amount.
-//   §3  OVERPAYMENT — recorded and flagged, never swallowed, never capped,
-//       never rejected. A donor who overpays is a good problem and the money
-//       must still appear.
+//   §3  OVERPAYMENT — PLEDGES-2: the form asks (an extra gift, or reduce to
+//       the balance); the money always appears, never swallowed.
 //   §4  A payment on an already-fulfilled pledge.
 //   §5  Status is DERIVED, never an independent flag that can drift — both
 //       drift vectors Part 0 found are refused or recomputed.
@@ -100,22 +99,25 @@ const storedStatus = async pledgeId =>
   ok("exact payment leaves balance 0", cents(exact.balance) === 0, exact.balance);
   ok("exact payment records NO surplus", cents(exact.surplus) === 0, exact.surplus);
 
-  // ── §3 · OVERPAYMENT — recorded and flagged, never swallowed ─────────────
-  console.log("\n— §3 · overpayment —");
+  // ── §3 · OVERPAYMENT — PLEDGES-2: the form asks, and every dollar lands ─
+  // BUILD-72 took an overpayment silently as surplus. PLEDGES-2 (W-1107-Finance-25X)
+  // makes it a question: what is over the balance is recorded as an extra gift,
+  // or the payment is reduced to the balance. Never swallowed either way.
+  console.log("\n— §3 · overpayment asks —");
   const overId = await newPledge(1000);
   await pay(overId, 400);
-  const over1 = await pay(overId, 900);   // $1,300 against a $1,000 pledge
-  ok("the overpaying payment is ACCEPTED (not rejected, not capped)", over1.status === 201, over1.status);
-  ok("the payment response reports the surplus", cents(over1.body.pledge?.surplus) === cents(300), over1.body.pledge);
+  const asked = await pay(overId, 900);   // $1,300 against a $1,000 pledge
+  ok("the over-balance payment ASKS first (409), writing nothing", asked.status === 409 && asked.body.code === "over_balance", asked.status);
+  ok("the question names the balance and what is over", cents(asked.body.balance) === cents(600) && cents(asked.body.extra) === cents(300), asked.body);
+  const over1 = await api("POST", "/donors/d_plmath/gifts", tok, { amount: 900, date: TODAY, pledgeId: overId, overBalance: "extra_gift", idempotencyKey: crypto.randomUUID() });
+  ok("as an extra gift: accepted", over1.status === 201, over1.status);
+  ok("the extra $300 is its own gift, not on the pledge", over1.body.extraGift && cents(over1.body.extraGift.amount) === cents(300) && !over1.body.extraGift.pledge_id, over1.body.extraGift);
   const over = await readPledge(overId);
-  ok("overpaid pledge is fulfilled", over.displayStatus === "fulfilled", over.displayStatus);
-  ok("overpaid pledge shows the full $1,300 applied", cents(over.paid) === cents(1300), over.paid);
-  ok("overpaid pledge balance is 0 (not negative)", cents(over.balance) === 0, over.balance);
-  ok("the $300 SURPLUS is recorded, not swallowed", cents(over.surplus) === cents(300), over.surplus);
-  ok("and it is FLAGGED", over.overpaid === true, over);
-  const overStored = await storedStatus(overId);
-  ok("the surplus is persisted, not just computed on read", cents(overStored.surplus) === cents(300), overStored);
-  const overGifts = await q(`SELECT COALESCE(SUM(amount),0)::float s FROM gifts WHERE pledge_id=$1`, [overId]);
+  ok("the pledge is fulfilled", over.displayStatus === "fulfilled", over.displayStatus);
+  ok("the pledge shows $1,000 applied", cents(over.paid) === cents(1000), over.paid);
+  ok("balance is 0 (not negative)", cents(over.balance) === 0, over.balance);
+  ok("no surplus is left on the pledge", cents(over.surplus) === 0, over.surplus);
+  const overGifts = await q(`SELECT COALESCE(SUM(amount),0)::float s FROM gifts WHERE donor_id='d_plmath' AND org_id=$1 AND (pledge_id=$2 OR notes='Given over the pledge balance.')`, [ORG, overId]);
   ok("every dollar the donor gave still exists as gifts", cents(overGifts[0].s) === cents(1300), overGifts[0]);
 
   // ── §4 · a payment on an ALREADY-fulfilled pledge ────────────────────────
@@ -124,12 +126,13 @@ const storedStatus = async pledgeId =>
   await pay(fulId, 500);
   const beforeExtra = await readPledge(fulId);
   ok("pledge is fulfilled before the extra payment", beforeExtra.displayStatus === "fulfilled", beforeExtra.displayStatus);
-  const extra = await pay(fulId, 125);
-  ok("a payment on a fulfilled pledge is accepted", extra.status === 201, extra.status);
+  const ask2 = await pay(fulId, 125);
+  ok("a payment on a fulfilled pledge asks, offering only an extra gift", ask2.status === 409 && JSON.stringify(ask2.body.choices) === '["extra_gift"]', ask2.body);
+  const extra = await api("POST", "/donors/d_plmath/gifts", tok, { amount: 125, date: TODAY, pledgeId: fulId, overBalance: "extra_gift", idempotencyKey: crypto.randomUUID() });
+  ok("as an extra gift it is accepted", extra.status === 201 && cents(extra.body.gift.amount) === cents(125) && !extra.body.gift.pledge_id, extra.body.gift);
   const afterExtra = await readPledge(fulId);
   ok("it stays fulfilled", afterExtra.displayStatus === "fulfilled", afterExtra.displayStatus);
-  ok("the extra $125 becomes surplus, not a loss", cents(afterExtra.surplus) === cents(125), afterExtra.surplus);
-  ok("paid reflects all $625", cents(afterExtra.paid) === cents(625), afterExtra.paid);
+  ok("paid stays $500", cents(afterExtra.paid) === cents(500), afterExtra.paid);
 
   // ── §5 · status is DERIVED — both Part 0 drift vectors are closed ────────
   console.log("\n— §5 · status cannot drift from the money —");
@@ -158,7 +161,9 @@ const storedStatus = async pledgeId =>
 
   // write_off IS a human decision, and remains settable.
   const woId = await newPledge(300);
-  const wo = await api("PUT", `/pledges/${woId}`, tok, { status: "written_off" });
+  const woAsk = await api("PUT", `/pledges/${woId}`, tok, { status: "written_off" });   // PLEDGES-2: asks first
+  ok("an unconfirmed write-off asks, naming the amount", woAsk.status === 409 && woAsk.body.code === "confirm_write_off" && /\$/.test(woAsk.body.sentence), woAsk.body);
+  const wo = await api("PUT", `/pledges/${woId}`, tok, { status: "written_off", confirmed: true });
   ok("a write-off IS still a human decision", wo.status === 200, wo.body);
   ok("and it sticks", (await storedStatus(woId)).status === "written_off", await storedStatus(woId));
   await pay(woId, 300);

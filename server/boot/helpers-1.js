@@ -554,7 +554,18 @@ async function recordGift(o) {
   // cent is deliberately NOT matched here — that is a question, and a
   // background path has nobody to ask, so a near miss stays a plain gift.
   let appliedInstallment = null;
-  if (o.installmentId === undefined && o.applyInstallment !== false) {
+  // PLEDGES-2 · A PAYMENT AGAINST A NAMED PLEDGE applies oldest due first and
+  // any overage carries to the next installment(s) (server/donors/pledgePayments.js).
+  // An amount that matched no installment flagged none, and $50 of a $150
+  // payment on a $100 installment was lost to the schedule (W-1107-Finance-25X).
+  if (o.installmentId === undefined && o.applyInstallment !== false && o.pledgeId && !o.applyToInstallmentId) {
+    try {
+      appliedInstallment = await require("../donors/pledgePayments").relay(orgId, o.pledgeId, giftId);
+      if (appliedInstallment) await run("UPDATE gifts SET type=CASE WHEN type='cash' THEN 'pledge payment' ELSE type END WHERE id=?", [giftId]);
+      await recalcPledgePayment(o.pledgeId, orgId).catch(e => console.error("[pledge] recalc:", e.message));
+      await onPledgeSettled(orgId, o.pledgeId).catch(e => console.error("[pledge] settle:", e.message));
+    } catch (e) { console.error("[pledge] payment apply:", e.message); }
+  } else if (o.installmentId === undefined && o.applyInstallment !== false) {
     try {
       // CHECK-2: a check whose memo named the payment ("pledge pmt 2 of 4")
       // and that she confirmed onto it names the instalment; the amount may

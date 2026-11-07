@@ -264,6 +264,9 @@ async function seedOrg(o, tag) {
     [`jb_${o}`, o, `ct_${o}`, `${mark} Plan`, JSON.stringify([`cp_${o}`])]);
   await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status) VALUES ($1,$2,$3,500,$4,'open')`,
     [`pl_${o}`, o, `d_${o}`, TODAY]);
+  // PLEDGES-2: each org's recorded recurring plan; org A may not add to B's, convert into it or cancel it.
+  await q(`INSERT INTO offline_recurring_plans (id,org_id,donor_id,amount,frequency,start_date,created_by,created_by_name) VALUES ($1,$2,$3,25,'monthly','2026-01-01','system:test','Test')`,
+    [`orp_${o}`, o, `d_${o}`]);
   await q(`INSERT INTO planned_gifts (id,org_id,donor_id,type,estimated_value) VALUES ($1,$2,$3,'bequest',10000)`,
     [`pgift_${o}`, o, `d_${o}`]);
   await q(`INSERT INTO donor_materials (id,org_id,donor_id,file_name,file_type,file_data) VALUES ($1,$2,$3,$4,'text/plain','eg==')`,
@@ -514,7 +517,7 @@ function bResolver(routePath, param) {
     "old-reports": `orb_${B}`,
     donors: `d_${B}`, gifts: `g_${B}`, grants: `gr_${B}`, campaigns: `c_${B}`, tasks: `t_${B}`,
     events: `ev_${B}`, sequences: `sq_${B}`, programs: `prg_${B}`, households: `h_${B}`,
-    "giving-pages": `gp_${B}`, pledges: `pl_${B}`, opportunities: `op_${B}`, "planned-gifts": `pgift_${B}`,
+    "giving-pages": `gp_${B}`, pledges: `pl_${B}`, "offline-plans": `orp_${B}`,   // PLEDGES-2: a recorded recurring plan opportunities: `op_${B}`, "planned-gifts": `pgift_${B}`,
     receipts: `rc_${B}`, "milestone-drafts": `md_${B}`, "note-reminders": `nr_${B}`,
     "custom-fields": `cf_${B}`, "impact-metrics": `im_${B}`, "impact-updates": `iu_${B}`,
     workflows: `wf_${B}`, volunteers: `v_${B}`, interactions: `i_${B}`, materials: `mat_${B}`,

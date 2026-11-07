@@ -967,6 +967,34 @@ async function run7(pool) {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS viewer_exports_off BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE support_sessions ADD COLUMN IF NOT EXISTS reason TEXT`);
 
+  // PLEDGES-2 · A RECURRING PLAN STAFF RECORD BY HAND (W-1107-Finance-24/-23):
+  // an offline commitment (a check every month, a bank draft, payroll giving).
+  // Not money: its payments are gifts (gifts.offline_plan_id), written by
+  // recordGift. A card plan through Stripe stays recurring_subscriptions. Schema only.
+  await pool.query(`CREATE TABLE IF NOT EXISTS offline_recurring_plans (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL REFERENCES orgs(id),
+    donor_id TEXT NOT NULL REFERENCES donors(id),
+    amount NUMERIC NOT NULL,
+    frequency TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT,
+    fund_id TEXT,
+    method TEXT,
+    notes TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    canceled_at TIMESTAMPTZ,
+    canceled_by TEXT,
+    canceled_by_name TEXT,
+    created_by TEXT NOT NULL,
+    created_by_name TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_offline_plans_donor ON offline_recurring_plans (org_id, donor_id)`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS offline_plan_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_offline_plan ON gifts (offline_plan_id) WHERE offline_plan_id IS NOT NULL`);
+
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id
   // (orgSummary.js says which few are not, and why).
