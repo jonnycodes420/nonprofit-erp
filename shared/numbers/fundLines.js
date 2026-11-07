@@ -113,4 +113,10 @@ async function linesFor(query, orgId, giftIds) {
   return out;
 }
 
-module.exports = { linesRefusal, normalLines, GIFT_FUND_ROWS, LINES_CENTS, LEDGER_FUND_ROWS, linesFor, MAX_LINES, cents };
+// MOPUP-3 · A FUND FILTER BY FUND LINE (the bookkeeper's report). FUND_HIT:
+// gift `g` has a fund row (its lines, or itself when it has none) on the fund
+// (one `?`, the fund id). FUND_CENTS: the cents of those rows (one `?`).
+const FUND_HIT = (g = "g") => `EXISTS (SELECT 1 FROM ${GIFT_FUND_ROWS(g)} bf WHERE bf.fund_id = ?)`;
+const FUND_CENTS = (g = "g") => `(SELECT SUM(bf.amount * 100) FROM ${GIFT_FUND_ROWS(g)} bf WHERE bf.fund_id = ?)`;
+
+module.exports = { linesRefusal, normalLines, GIFT_FUND_ROWS, LINES_CENTS, LEDGER_FUND_ROWS, linesFor, MAX_LINES, cents, FUND_HIT, FUND_CENTS };

@@ -86,10 +86,13 @@ function naturalCents(c) {
 // the person's. A sponsorship renewal (the level's price) and a pledge (as
 // promised) are not suggested asks and keep their own amounts.
 const ASK = require("./shared/numbers/ask");
+const STATED = require("./shared/numbers/statedAsk");   // MOPUP-3: an imported history is the ask's base
 const PLEDGES = require("./shared/numbers/pledges");   // MONEY-3: a pledge's still to come
 function oneAsk(x) {
   // NUMBERS-5: a rising unit steps up only when Room to give is known for one of its people (the profile's rule).
-  const a = ASK.askFor((x.dated || []).map(g => ({ date: g.date, amount_cents: g.amount_cents })), { roomKnown: x.roomKnown });
+  const own = ASK.askFor((x.dated || []).map(g => ({ date: g.date, amount_cents: g.amount_cents })), { roomKnown: x.roomKnown });
+  // MOPUP-3: a file's stated history is the base when it asks more (shared/numbers/statedAsk.js).
+  const a = x.stated ? STATED.withStated(own, x.stated, naturalCents) : own;
   if (!a) return null;
   const m = a.sentence.match(/^(.*): ask \$[\d,.]+(?:, ([^.]*))?\.$/);
   const why = m ? m[1] : a.sentence.replace(/\.$/, "");
@@ -392,6 +395,11 @@ function computeInsights(input) {
     // it (shared/numbers/lifetime.js AFTER_IMPORT, the same rule as Lifetime).
     x.statedCents = u.people.reduce((n, p) => n + (Number(p.stated_cents) || 0), 0);
     if (x.statedCents > 0) {
+      // MOPUP-3: the stated history, summed over the unit's people, is the ask's base (oneAsk).
+      const st = u.people.filter(p => Number(p.stated_cents) > 0);
+      const dates = k => st.map(p => p[k]).filter(Boolean).sort();
+      x.stated = { cents: x.statedCents, count: st.every(p => Number(p.stated_count) > 0) ? st.reduce((n, p) => n + Number(p.stated_count), 0) : 0,
+        lastCents: Math.max(0, ...st.map(p => Number(p.stated_last_cents) || 0)), firstDate: dates("stated_first")[0] || null, lastDate: dates("stated_last").pop() || null };
       const who = new Map(u.people.map(p => [p.id, p]));
       x.sinceCents = LIFE.sinceImportCents(gs, g => who.get(g.donor_id));
     }

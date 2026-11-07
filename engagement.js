@@ -600,6 +600,16 @@ async function suggestedAsk(q, orgId, donorId, opts = {}) {
   if (own && own.rising && !(await ASK.roomKnown(q, orgId, [donorId], new Map([[donorId, opts.screening || null]]))).has(donorId)) {
     own = SA.suggestedAskCents({ largestCents, lastThreeCents, stepUp: false, holdWords: ASK.HOLD_WORDS });
   }
+  // MOPUP-3: a file's stated history is the base, as on Home's cards (shared/numbers/statedAsk.js).
+  const [st] = await q(`SELECT ROUND(COALESCE(imported_total, 0) * 100)::bigint AS cents, imported_gift_count AS count,
+                               ROUND(COALESCE(imported_last_gift_amount, 0) * 100)::bigint AS last_cents,
+                               LEFT(imported_first_gift_date::text, 10) AS first_date, LEFT(imported_last_gift_date::text, 10) AS last_date
+                          FROM donors WHERE id = ? AND org_id = ? AND imported_import_id IS NOT NULL`, [donorId, orgId]);
+  if (st && Number(st.cents) > 0) {
+    own = require("./shared/numbers/statedAsk").withStated(own,
+      { cents: Number(st.cents), count: Number(st.count) || 0, lastCents: Number(st.last_cents) || 0, firstDate: st.first_date, lastDate: st.last_date },
+      c => SA.naturalAskCents(c));
+  }
   const s = opts.screening;
   if (!own || !s || s.capacityLowCents == null) return own;
   const RT = await import("./shared/roomToGive.js");

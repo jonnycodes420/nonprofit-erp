@@ -30,7 +30,7 @@ import { SetupFirstCard, SetupRailCard, setupStage } from "./HomeSetup";   // HO
 import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads, HomeRailColumn, OwnersCard } from "./HomeRail";   // HOME-4, PROFILE-2
 import { plural } from "../../../shared/countWords";
 import { HOME_GRID_CSS } from "./home/homeGrid";   // HOME-6
-import { useMovesGate } from "../lib/movesGate";   // FEEL-1
+import { useMovesGate, deckKnownEmpty } from "../lib/movesGate";   // FEEL-1; MOPUP-3
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="home"}) {
@@ -211,7 +211,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const foldBtn=HL.foldBtn({ homeFold, toggleFold });
   const [homeWide,setHomeWide]=useState(()=>typeof window==="undefined"||!window.matchMedia||window.matchMedia("(min-width:1100px)").matches);
   // FEEL-1: under the moves deck, a wide Home waits for the deck's size (lib/movesGate.js).
-  const [movesSettled,onMovesSettled]=useMovesGate(homeWide);
+  // MOPUP-3: a phone holds what sits under the deck too, when the deck is known to be empty (lib/movesGate.js).
+  const [phoneHold]=useState(()=>!homeWide&&deckKnownEmpty());
+  const [movesSettled,onMovesSettled]=useMovesGate(homeWide||phoneHold);
   useEffect(()=>{
     if(typeof window==="undefined"||!window.matchMedia)return;
     const mq=window.matchMedia("(min-width:1100px)"); const on=()=>setHomeWide(mq.matches);
@@ -1333,7 +1335,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       <div className={surface==="home"?"home-shell":""}>
       {surface==="home"&&<style>{HOME_GRID_CSS}</style>}{/* HOME-6: Home's one grid (home/homeGrid.js) */}
       {surface==="home"&&!homeWide&&<div className="home-head-narrow">{homeHead}</div>}
-      <div className={surface==="home"?"home-shell-top":""}>
+      <div className={surface==="home"?"home-shell-top":""} style={holdUnderDeck&&phoneHold?{display:"none"}:undefined}>{/* MOPUP-3: held whole under an empty deck on a phone */}
       <div className={surface==="home"?"home-shell-main":""}>
 
       {/* HOME-TIDY 2 — the header (greeting, day, Ask). On a wide screen it
