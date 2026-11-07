@@ -11,6 +11,7 @@ const express = require("express");
 const auditMw = require("../../middleware/auditTrail");
 const DTAGS = require("../../donorTags");   // FIX-33: internal flags never reach a screen as tags
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
+const { sql } = require("../db/sql");   // REDTEAM-2: SQL text only from the code
 
 const routers = {
   r1: express.Router(),
@@ -316,9 +317,9 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
     const undoIds = gone.map(() => newId("del"));
     for (let k = 0; k < gone.length; k += 500) {
       const b = gone.slice(k, k + 500);
-      await runTx(client, `INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
-                 VALUES ${b.map(() => `(?, ?, 'donors', ?, '{"__soft":true}'::jsonb, ?, ?)`).join(",")}`,
-        b.flatMap((g, i) => [undoIds[k + i], req.user.orgId, g.id, who.id, who.name]));
+      // REDTEAM-2: the rows are sql`` pieces, so every value is bound and the text is the code's own.
+      await runTx(client, sql`INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
+                 VALUES ${sql.join(b.map((g, i) => sql`(${undoIds[k + i]}, ${req.user.orgId}, 'donors', ${g.id}, '{"__soft":true}'::jsonb, ${who.id}, ${who.name})`), sql`,`)}`);
     }
     return { changes: gone.length, undoIds };
   });
@@ -570,8 +571,8 @@ app.post("/deleted-records/:id/restore", requireAuth, wrap(async (req, res) => {
   if (!RESTORABLE.has(t.table_name)) return res.status(400).json({ error: "Cannot restore this" });
   try {
     await withTransaction(async client => {
-      await runTx(client, `INSERT INTO ${t.table_name} SELECT * FROM jsonb_populate_record(NULL::${t.table_name}, ?::jsonb)`,
-        [JSON.stringify(t.row_data)]);
+      const tbl = sql.id(t.table_name, RESTORABLE);   // REDTEAM-2: a name from the RESTORABLE list, or it throws
+      await runTx(client, sql`INSERT INTO ${tbl} SELECT * FROM jsonb_populate_record(NULL::${tbl}, ${JSON.stringify(t.row_data)}::jsonb)`);
       const data = typeof t.row_data === "string" ? JSON.parse(t.row_data) : t.row_data;
       if (RESTORE_WITH[t.table_name]) await RESTORE_WITH[t.table_name](client, data && data.__with, t.record_id, req.user.orgId);
       // FIX-45: any picture the row names comes back out of the retention window with it.
@@ -583,7 +584,7 @@ app.post("/deleted-records/:id/restore", requireAuth, wrap(async (req, res) => {
     if (e.code === "23505") return res.status(409).json({ error: "conflict", sentence: "It could not come back, because something now stands in its place (an open next step, most likely)." });
     throw e;
   }
-  const [row] = await query(`SELECT * FROM ${t.table_name} WHERE id = ? AND org_id = ?`, [t.record_id, req.user.orgId]);
+  const [row] = await query(sql`SELECT * FROM ${sql.id(t.table_name, RESTORABLE)} WHERE id = ${t.record_id} AND org_id = ${req.user.orgId}`);
   // The audit row is about the record that came back, not the trash row.
   if (req.audit) {
     req.audit.entity(TRASH_ENTITY[t.table_name], t.record_id);

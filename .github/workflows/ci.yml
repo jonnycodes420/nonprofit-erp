@@ -170,6 +170,12 @@ jobs:
           git cat-file -e "$BASELINE^{commit}" 2>/dev/null || BASELINE=$(git rev-parse HEAD~1)
           echo "baseline: $BASELINE"
           SEMGREP_BASELINE="$BASELINE" SEMGREP_JOBS=4 bash scripts/ci/semgrep-gate.sh
+      # REDTEAM-2: the SQL rules with NO baseline, over every file, one job
+      # (parallel jobs drop taint findings). A SQL finding not on
+      # scripts/ci/semgrep-sql-open.txt fails, and so does a listed one that has
+      # gone; a nosemgrep comment doesn't hide one (--disable-nosem).
+      - name: Semgrep SQL gate (no baseline; any new SQL finding fails)
+        run: bash scripts/ci/semgrep-sql-gate.sh
 
   # ── CI-2 · THE PLAN, WRITTEN ONCE ─────────────────────────────────────────
   # Which suites go in which shard, from the cached suite timings (ARCH-1's

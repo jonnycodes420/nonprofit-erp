@@ -93,7 +93,9 @@ app.get("/groups/starters", requireAuth, wrap(async (req, res) => {
 // people, read now. A GET, and it writes nothing.
 app.get("/groups/starters/:key", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
-  const st = GR.starterByKey(req.params.key);
+  // REDTEAM-2: the key picks one of the code's own starters (GR.STARTERS), in
+  // plain sight here, so the rule and its SQL are the code's, never the request's.
+  const st = GR.STARTERS.find(x => x.key === req.params.key);
   if (!st) return res.status(404).json({ error: "Not found" });
   const g = GR.starterGroup(st);
   const m = await GR.memberSql(orgId, g);
