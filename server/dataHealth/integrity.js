@@ -49,7 +49,7 @@ async function identicalGiftRows(query, orgId) {
   return query(
     `WITH sig AS (
        SELECT g.donor_id, string_agg(LEFT(g.date, 10) || ':' || g.amount::text, ',' ORDER BY LEFT(g.date, 10), g.amount) AS s,
-              COUNT(*)::int AS n, SUM(g.amount) AS total
+              COUNT(*)::int AS n
          FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id AND ${EVERYONE("d")}
         WHERE g.org_id = ? AND g.amount > 0 AND ${MONEY("g")}
         GROUP BY g.donor_id),
@@ -59,11 +59,11 @@ async function identicalGiftRows(query, orgId) {
        UNION
        SELECT LEAST(r.donor_id_a, r.donor_id_b), GREATEST(r.donor_id_a, r.donor_id_b), CASE WHEN r.relationship_type = 'owner' THEN 'gives through' ELSE 'household' END
          FROM donor_relationships r WHERE r.org_id = ? AND r.relationship_type IN ('owner','spouse','partner'))
-     SELECT p.a, da.name AS a_name, p.b, db.name AS b_name, MIN(p.how) AS how, sa.n AS gifts, sa.total
+     SELECT p.a, da.name AS a_name, p.b, db.name AS b_name, MIN(p.how) AS how, sa.n AS gifts
        FROM pairs p JOIN sig sa ON sa.donor_id = p.a JOIN sig sb ON sb.donor_id = p.b AND sb.s = sa.s
        JOIN donors da ON da.id = p.a JOIN donors db ON db.id = p.b
-      GROUP BY p.a, da.name, p.b, db.name, sa.n, sa.total
-      ORDER BY sa.total DESC, p.a`, [orgId, orgId, orgId]);
+      GROUP BY p.a, da.name, p.b, db.name, sa.n
+      ORDER BY sa.n DESC, p.a`, [orgId, orgId, orgId]);
 }
 
 module.exports = { emailOwners, emailWarning, sharedEmailRows, identicalGiftRows };
