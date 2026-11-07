@@ -44,7 +44,7 @@ let app = routers.r1;
 app.get("/figures/:source/rows", requireAuth, wrap(async (req, res) => {
   const { page, pageSize, ...params } = req.query;
   // PROSPECT-1 — "Who could give more?" opens its rows only for those who may ask it.
-  if (String(req.params.source) === "why" && params.q === "more" && !(await require("../../prospect").canSee(req.user.userId))) {
+  if (String(req.params.source) === "why" && params.q === "more" && !(await require("../../prospect").canSee(req.user.userId, req.user.orgId))) {
     return res.status(403).json({ error: "major_gifts_only" });
   }
   try {
@@ -66,7 +66,7 @@ app.get("/figures/:source/rows", requireAuth, wrap(async (req, res) => {
 // and Undo are theirs. A percentage's rows are the people it counts.
 async function figureRowsFor(req, res) {
   const { page, pageSize, ...params } = req.query;
-  if (String(req.params.source) === "why" && params.q === "more" && !(await require("../../prospect").canSee(req.user.userId))) {
+  if (String(req.params.source) === "why" && params.q === "more" && !(await require("../../prospect").canSee(req.user.userId, req.user.orgId))) {
     res.status(403).json({ error: "major_gifts_only" }); return null;
   }
   try {

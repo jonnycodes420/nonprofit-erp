@@ -62,7 +62,7 @@ app.get("/donors/list-setup", requireAuth, requireCrm, wrap(async (req, res) => 
     query(`SELECT EXISTS (SELECT 1 FROM donors WHERE org_id = ? AND deleted_at IS NULL AND latitude IS NOT NULL) AS on`, [orgId]),
   ]);
   // Room to give is a column only for someone who may see the word.
-  const mayRoom = await require("../prospect").canSee(userId);
+  const mayRoom = await require("../prospect").canSee(userId, orgId);
   const shown = fields.filter(f => !f.majorGifts || mayRoom);
   const known = new Set(shown.filter(f => f.col).map(f => f.key));
   // A column whose field has gone (an archived custom field) leaves quietly.

@@ -7,6 +7,8 @@ import { donorHref, tabHref, isPlainLeftClick } from "../lib/appUrls";
 import { openRecentChanges } from "./RecentChanges";
 import { AtlasBell } from "./AtlasNote";   // AGENT-5
 import { orgsSeenCount } from "../lib/orgBinding"; // HARDEN-1
+import { useMyOrgs, OrgSwitcher } from "./OrgSwitcher";   // ACCESS-1
+import { installViewOnlyGate, VIEWER, VIEW_ONLY_TIP } from "../lib/viewOnly";   // ACCESS-1
 
 const LAST_SEEN_KEY = "npe_whats_new_seen";
 
@@ -440,7 +442,13 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
   const userName = firstNameOf(auth?.user?.name) || "You";
   // HARDEN-1 item 6: a super admin, or a browser that has been signed in to
   // more than one org, always sees which org this tab is in.
-  const orgLabel = (auth?.user?.isSuperAdmin || orgsSeenCount() > 1) ? (auth?.org?.name || "") : "";
+  // ACCESS-1: and anyone in more than one org, who can switch from the menu.
+  const myOrgs = useMyOrgs(!!auth?.user && !auth?.user?.support);
+  const manyOrgs = (myOrgs || []).length > 1;
+  const [switchOpen, setSwitchOpen] = useState(false);
+  const viewer = auth?.user?.role === VIEWER;
+  useEffect(() => { if (viewer) installViewOnlyGate(); }, [viewer]);
+  const orgLabel = (auth?.user?.isSuperAdmin || manyOrgs || orgsSeenCount() > 1) ? (auth?.org?.name || "") : "";
 
   return <div className="app-topbar" style={{height:52,background:T.ink,borderBottom:"1px solid "+T.bgElevated,display:"flex",alignItems:"center",gap:14,padding:"0 20px 0 0",position:"fixed",top:0,left:0,right:0,zIndex:250,boxSizing:"border-box"}}>
 
@@ -460,6 +468,8 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
     {orgLabel && <div data-testid="topbar-org" title={"You are in " + orgLabel}
       style={{maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.inkInverse,fontSize:13.5,fontWeight:700,
               padding:"4px 10px",border:"1px solid "+T.green650,borderRadius:8}}>{orgLabel}</div>}
+    {viewer && <div data-testid="topbar-view-only" title={VIEW_ONLY_TIP + ": you can see every page, and change nothing"}
+      style={{color:T.gold,fontSize:12,fontWeight:700,padding:"4px 9px",border:"1px solid "+T.gold,borderRadius:8,whiteSpace:"nowrap"}}>View only</div>}
 
     {/* HOME-6 — no Automatic email pill up here: the setting lives in Settings, Automatic email. */}
 
@@ -487,11 +497,12 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
       {meOpen && <div role="menu" style={{position:"absolute",top:"calc(100% + 8px)",right:0,background:T.ink,border:"1px solid "+T.green650,borderRadius:12,boxShadow:"0 12px 40px rgba(0,0,0,0.45)",padding:"6px 0",width:230,zIndex:130}}>
         {[["Account settings","Your name, password and sign-in",()=>onNavigate("settings",{section:"account"})],
           ["Your email","Your weekly and daily email: what's in them and when",()=>onNavigate("settings",{section:"myemail"})],
-          ["Connect your inbox","Gmail or Outlook, so conversations log themselves",()=>onNavigate("settings",{section:"connections",focus:"inbox"})],
+          ...(manyOrgs?[["Switch organization",`You're in ${auth?.org?.name||"this organization"}`,()=>setSwitchOpen(true)]]:[]),
+          ...(viewer?[]:[["Connect your inbox","Gmail or Outlook, so conversations log themselves",()=>onNavigate("settings",{section:"connections",focus:"inbox"})]]),
           ["Two-factor and sessions","A code at sign-in, and every browser you're signed in on",()=>onNavigate("settings",{section:"security"})],
           ["Recent changes","Your last 50 changes, each with Undo",openRecentChanges],
           ["What's new"+(wnUnseen?" ·":""),"What we shipped lately",openWn]]
-          .map(([label,sub,go])=><button key={label} role="menuitem" data-testid={label==="Connect your inbox"?"topbar-connect-inbox":label==="Recent changes"?"topbar-recent-changes":undefined}
+          .map(([label,sub,go])=><button key={label} role="menuitem" data-viewer-ok="1" data-testid={label==="Connect your inbox"?"topbar-connect-inbox":label==="Recent changes"?"topbar-recent-changes":label==="Switch organization"?"topbar-switch-org":undefined}
             onClick={()=>{setMeOpen(false);go();}}
             style={{display:"block",width:"100%",textAlign:"left",background:"transparent",border:"none",padding:"8px 14px",cursor:"pointer",fontFamily:"inherit"}}>
             <div style={{fontSize:13,color:T.inkInverse,fontWeight:600}}>{label}</div>
@@ -501,6 +512,7 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
       </div>
       <button onClick={logout} style={{background:"transparent",border:"1px solid "+T.green650,borderRadius:8,padding:"5px 11px",color:"rgba(240,237,230,0.7)",fontSize:12,cursor:"pointer"}}>Sign out</button>
     </div>
+    {switchOpen && <OrgSwitcher orgs={myOrgs} currentId={auth?.org?.id} onClose={()=>setSwitchOpen(false)}/>}
     {wnOpen && <div role="dialog" aria-label="What's new" data-testid="whats-new-panel" onClick={()=>setWnOpen(false)}
       style={{position:"fixed",inset:0,background:"rgba(15,26,18,0.5)",zIndex:400,display:"flex",justifyContent:"flex-end"}}>
       <div onClick={e=>e.stopPropagation()} style={{width:"min(440px,100%)",height:"100%",overflowY:"auto",background:T.bg,padding:"24px 22px",boxSizing:"border-box"}}>

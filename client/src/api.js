@@ -4,6 +4,7 @@ import { saveDrafts } from "./lib/idleDraft";
 import { inSupport, leaveSupport } from "./lib/supportSession";   // FIX-57
 import { bundlePath } from "./lib/homeReads";   // PERF-2
 import { announce, kindsOfWrite, onAnyChange } from "./lib/changes";   // STALE-1: one refresh, everywhere
+import { viewOnlyRefusal } from "./lib/viewOnly.js";   // ACCESS-1
 
 // GRANTS-1: one adapter for a legacy grant row, used by the first load and by
 // the Grants screen when it opens a grant created since (a planned renewal).
@@ -251,6 +252,10 @@ onAnyChange(c => { if (c.source !== "write") { kept.clear(); parked.clear(); for
 
 export async function apiFetch(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
+  // ACCESS-1: a viewer's write never leaves the browser; it is answered here
+  // with the server's own sentence (the server refuses it too).
+  const viewOnly = viewOnlyRefusal(method, path);
+  if (viewOnly) throw viewOnly;
   // FIX-25: a write also forgets the reads in flight. A read asked for after a
   // write must not be handed the answer to a read that left before it, or a
   // list re-read after "Approve all" comes back as it was before the approval.
