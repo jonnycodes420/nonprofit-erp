@@ -1236,7 +1236,7 @@ app.post("/volunteer-hub/signups/:id/no-show", requireAuth, checkWriteAccess, wr
 
 // Staff sign somebody up, and staff cancel. The same two functions the public
 // page uses, so capacity behaves identically whichever door it came through.
-app.post("/volunteer-hub/signups", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+app.post("/volunteer-hub/signups", requireAuth, checkWriteAccess, require("../server/volunteers/shiftRules").overlapGate(query), wrap(async (req, res) => {   // STALE-2: a clash asks first
   await READY;
   const orgId = req.user.orgId, who = actor(req);
   const [slot] = await query("SELECT id FROM volunteer_slots WHERE id=? AND org_id=? AND cancelled_at IS NULL",
@@ -1260,10 +1260,13 @@ app.post("/volunteer-hub/signups", requireAuth, checkWriteAccess, wrap(async (re
 app.post("/volunteer-hub/signups/:id/cancel", requireAuth, wrap(async (req, res) => {
   const r = await cancelSignUp(req.user.orgId, req.params.id, { by: actor(req).name });
   if (!r.ok) return res.status(404).json({ error: "Not found" });
+  // STALE-2 (W-1107-Volunteers-25X): the line names who came off, never a bare "Cancelled.".
+  const [off] = await query("SELECT d.name FROM volunteer_signups su JOIN donors d ON d.id=su.person_id AND d.org_id=su.org_id WHERE su.id=? AND su.org_id=?", [req.params.id, req.user.orgId]);
+  const who = (off && off.name) || "They";
   res.json({ ok: true, promoted: r.promoted,
     message: r.promoted
-      ? `Cancelled. ${r.promoted.name} came off the waiting list into the place. Steward has not written to them: telling them is yours.`
-      : "Cancelled." });
+      ? `${who} is off this shift. ${r.promoted.name} came off the waiting list into the place. Steward has not written to them: telling them is yours.`
+      : `${who} is off this shift.` });
 }));
 
 // ── MILESTONES ───────────────────────────────────────────────────────────
@@ -1569,11 +1572,8 @@ async function scheduleRows(orgId, { from = null, to = null, slotIds = null, opp
       ORDER BY (su.status='waitlisted'), su.position NULLS FIRST, d.name`, [orgId, ids]) : [];
   // Conflicts: a person's places on the same days, wherever those places are.
   const dates = [...new Set(slots.map(s => s.date))];
-  const places = dates.length ? await query(
-    `SELECT su.person_id AS "personId", su.slot_id AS "slotId", s.date, s.start_time AS "startTime", s.end_time AS "endTime"
-       FROM volunteer_signups su JOIN volunteer_slots s ON s.id=su.slot_id AND s.org_id=su.org_id
-      WHERE su.org_id=? AND su.status IN ('confirmed','completed') AND s.cancelled_at IS NULL AND s.date = ANY(?)`,
-    [orgId, dates]) : [];
+  // STALE-2: computed from the places as they stand; a deleted person holds none (server/volunteers/shiftRules.js).
+  const places = dates.length ? await query(require("../server/volunteers/shiftRules").CONFLICT_PLACES_SQL, [orgId, dates]) : [];
   const conflicts = VS.findConflicts(places);
   const inConflict = new Map();   // slotId -> Set(personId)
   for (const c of conflicts) for (const sid of [c.a, c.b]) {
