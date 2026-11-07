@@ -165,16 +165,22 @@ async function runBodyCrossProbe({ inv, mfetch, q, ok, A, B, tok, bResolver, fil
     }
     const bodies = [spray, ...(Object.keys(own).length ? [{ ...own, amount: 25, date: "2026-11-04", name: "Body Probe" }] : []),
       ...(r.method === "DELETE" ? [] : entities)];
+    let answered = false;
     for (const body of bodies) {
       const res = await mfetch(r.method, out, tok, body);
+      if (res.status < 400) answered = true;
       if (res.status >= 200 && res.status < 300) twoXX.push(key);
       scanLeak(r, "cross-tenant-body", res.text);
     }
     probed.add(key);
-    // Cheap per-route check on the tables a write most often lands in.
+    // The whole-database read after a route that took any body (< 400), so a
+    // crossing names its route; a refused route is caught by the read below.
+    if (!answered) continue;
     const now = await aRowsPointingAtB();
     for (const [t, n] of Object.entries(now)) if (n > (before[t] || 0)) { crossed.push(`${key} → ${t} (+${n - (before[t] || 0)})`); before[t] = n; }
   }
+  // And once at the end, for a route that wrote although it answered >= 400.
+  for (const [t, n] of Object.entries(await aRowsPointingAtB())) if (n > (before[t] || 0)) crossed.push(`a route that answered >= 400 → ${t} (+${n - (before[t] || 0)})`);
   const bAfter = await bCounts();
   const bChanged = Object.keys(bAfter).filter(t => bAfter[t] !== bBefore[t]).map(t => `${t}: ${bBefore[t]}→${bAfter[t]}`);
 
