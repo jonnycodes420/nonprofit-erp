@@ -1,7 +1,11 @@
 // components/profile/ProfileDialogs.jsx (PROFILE-3): part of the donor profile, cut from DonorProfile.jsx.
 import { Modal, T, fmtFull } from "../shared";
+import { linkedPeople } from "../../lib/linkedPeople";
 
-function ProfileDialogs({createHousehold,donor,eraseBusy,eraseMsg,eraseOpen,erasePerson,eraseWord,hhModalOpen,hhPeople,hhPick,hhSearch,isAdmin,setEraseOpen,setEraseWord,setHhModalOpen,setHhPick,setHhSearch}){
+function ProfileDialogs({relationships=[],createHousehold,donor,eraseBusy,eraseMsg,eraseOpen,erasePerson,eraseWord,hhModalOpen,hhPeople,hhPick,hhSearch,isAdmin,setEraseOpen,setEraseWord,setHhModalOpen,setHhPick,setHhSearch}){
+  // STALE-2: person-to-person links only (a "works at" organization is not household).
+  const hhLinked=linkedPeople({relationships,donorId:donor.id}).filter(x=>x.rel&&!x.rel.side&&!x.rel.relatedDonorDeceased);
+  const hhLinkedIds=new Set(hhLinked.map(x=>x.id));
   return <>
           {/* Dialogs any tab can open (PROFILE-1 header). */}
               {hhModalOpen&&(
@@ -13,7 +17,23 @@ function ProfileDialogs({createHousehold,donor,eraseBusy,eraseMsg,eraseOpen,eras
                     <div style={{fontSize:12,color:T.ink3}}>Pick the spouse/partner(s) to combine with. {donor.name} becomes the primary. Hard credit stays with each donor; only the relationship view combines.</div>
                     <input value={hhSearch} onChange={e=>setHhSearch(e.target.value)} placeholder="Search donors…" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 12px",fontSize:13,color:T.ink,outline:"none"}}/>
                     <div style={{overflowY:"auto",display:"flex",flexDirection:"column",gap:4,flex:1}}>
-                      {hhPeople.filter(x=>x.id!==donor.id&&!x.householdId).slice(0,40).map(x=>{
+                      {/* STALE-2: the people already linked to them (the rail's list,
+                          lib/linkedPeople.js) come first, so a spouse is never lost in a search. */}
+                      {hhLinked.length>0&&<div data-testid="hh-linked" style={{display:"flex",flexDirection:"column",gap:4,marginBottom:6}}>
+                        <div style={{fontSize:11,fontWeight:700,color:T.ink3}}>Linked to {donor.name}</div>
+                        {hhLinked.map(({rel:r})=>{
+                          const picked=hhPick.has(r.relatedDonorId);
+                          return(
+                            <label key={"l:"+r.relatedDonorId} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,background:picked?T.greenDk+"12":T.white,border:"1px solid "+(picked?T.greenDk+"55":T.bg3),cursor:"pointer"}}>
+                              <input type="checkbox" checked={picked} onChange={()=>{const n=new Set(hhPick);n.has(r.relatedDonorId)?n.delete(r.relatedDonorId):n.add(r.relatedDonorId);setHhPick(n);}} style={{accentColor:T.greenDk}}/>
+                              <span style={{fontSize:13,fontWeight:600,color:T.ink}}>{r.relatedDonorName}</span>
+                              <span style={{fontSize:11,color:T.ink3}}>{String(r.relationshipType||"").replace(/_/g," ")}</span>
+                              <span style={{marginLeft:"auto",fontSize:11,color:T.ink3}}>{fmtFull(r.relatedDonorTotalGiving||0)}</span>
+                            </label>
+                          );
+                        })}
+                      </div>}
+                      {hhPeople.filter(x=>x.id!==donor.id&&!x.householdId&&!hhLinkedIds.has(x.id)).slice(0,40).map(x=>{
                         const picked=hhPick.has(x.id);
                         return(
                           <label key={x.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,background:picked?T.greenDk+"12":T.white,border:"1px solid "+(picked?T.greenDk+"55":T.bg3),cursor:"pointer"}}>

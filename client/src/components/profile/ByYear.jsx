@@ -7,6 +7,7 @@
 // (GET /donors/:id/by-year, shared/numbers/byYear.js); nothing is added here.
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../api";
+import { useChangeRev } from "../../lib/changes";
 import { T, Spin, fmtFull } from "../shared";
 import { Figure } from "../Figure";
 import { countLabel } from "../../../../shared/countWords.js";
@@ -45,12 +46,15 @@ export function YearBars({ years, label = "Giving by year" }) {
 
 export default function ByYear({ donor, reloadKey }) {
   const [d, setD] = useState(null), [err, setErr] = useState("");
+  // STALE-2 (W-1107-Finance-04X): and after any change to this person's gifts or
+  // pledges, made anywhere (an edit or a refund keeps the count the key reads).
+  const rev = useChangeRev(["gift", "pledge"], { person: donor.id });
   useEffect(() => {
     let dead = false;
     setErr("");
     apiFetch(`/donors/${donor.id}/by-year`).then(r => { if (!dead) setD(r); }).catch(e => { if (!dead) setErr(e.message || "Could not read the years."); });
     return () => { dead = true; };
-  }, [donor.id, reloadKey]);
+  }, [donor.id, reloadKey, rev]);
   if (err) return <div data-testid="dp-by-year-error" style={{ fontSize: 12.5, color: T.ink3 }}>By year could not be read: {err}</div>;
   if (!d) return <div style={{ height: 80, display: "flex", alignItems: "center", justifyContent: "center" }}><Spin /></div>;
   const years = d.years || [];

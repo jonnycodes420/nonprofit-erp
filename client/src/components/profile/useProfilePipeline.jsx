@@ -125,8 +125,8 @@ export function useProfilePipeline({ donor, setDesignations, refreshSoftCredit, 
     apiFetch(`/donors/${donor.id}/pledges`).then(rows=>setPledges(Array.isArray(rows)?rows:[])).catch(()=>{});
   };
 
-  const loadMaterials=()=>{
-    setMatLoading(true);
+  const loadMaterials=(quiet)=>{
+    if(quiet!==true)setMatLoading(true);   // STALE-2: a re-read after a change keeps the list up
     apiFetch(`/donors/${donor.id}/materials`).then(rows=>setMaterials(Array.isArray(rows)?rows:[])).catch(()=>{}).finally(()=>setMatLoading(false));
   };
 
