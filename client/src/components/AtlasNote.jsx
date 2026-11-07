@@ -12,7 +12,8 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { useStewardTold, told } from "../lib/stewardTold";
-import { noteServerChanges } from "../lib/changes";   // STALE-1
+import { noteServerChanges, useChanged } from "../lib/changes";   // STALE-1
+import { dismissDrafts, DismissX } from "./DraftDismiss";   // COMMS-1 item 4
 import { linkTarget, useAtlasName } from "../lib/atlas";
 
 const TAP = { gift: "Record", pledge: "Record", receipt: "Send both", held_back: "Keep as a note" };
@@ -24,7 +25,11 @@ const small = primary => ({ background: primary ? T.greenDk : T.white, color: pr
 const VERB = /^(Marked|Added|Drafted|Logged|Noted|Took|Recorded|Sent|Kept|Undid)\b/;
 const lower = s => { const t = String(s || ""); return VERB.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t; };
 
-function NoteLine({ n, onAct, onOpen, busy }) {
+// COMMS-1: a line asking for a draft's review ("Drafted an email to Marlowe")
+// names that draft; its × dismisses the draft itself (server/drafts/dismiss.js).
+const draftOf = n => (n && n.kind === "draft" && n.waits && n.link && n.link.draftId ? String(n.link.draftId) : null);
+
+function NoteLine({ n, onAct, onOpen, busy, onDismiss }) {
   return (
     <div data-testid="atlas-note" data-kind={n.kind} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 13.5, color: T.ink, lineHeight: 1.45 }}>
       <span style={{ flex: "1 1 240px", minWidth: 0 }}>
@@ -35,6 +40,7 @@ function NoteLine({ n, onAct, onOpen, busy }) {
       </span>
       {n.undoable && <button type="button" data-testid="atlas-note-undo" disabled={busy} onClick={() => onAct(`/atlas/actions/${n.id}/undo`)} style={small(false)}>Undo</button>}
       {n.waits && TAP[n.kind] && <button type="button" data-testid="atlas-note-tap" disabled={busy} onClick={() => onAct(`/atlas/actions/${n.id}/yes`)} style={small(true)}>{TAP[n.kind]}</button>}
+      {onDismiss && draftOf(n) && <DismissX testid="atlas-note-dismiss" disabled={busy} onClick={() => onDismiss([n])} label="Dismiss this draft" />}
     </div>
   );
 }
@@ -48,6 +54,7 @@ export function AtlasNote({ place, id = null, onNavigate, style }) {
     .then(r => { setNotes(r.notes || []); setFading(false); }).catch(() => setNotes([]));
   useEffect(() => { load(); return () => clearTimeout(timer.current); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [place, id]);
   useStewardTold(() => load());
+  useChanged(["draft"], () => load());   // COMMS-1: a draft dismissed anywhere leaves the banner
   // Seen once it is on the screen; what does not wait fades a few seconds later.
   useEffect(() => {
     const unseen = notes.filter(n => !n.seenAt).map(n => n.id);
@@ -63,10 +70,20 @@ export function AtlasNote({ place, id = null, onNavigate, style }) {
   };
   const open = onNavigate ? link => { const t = linkTarget(link); if (t) onNavigate(t[0], t[1]); } : null;
   const shown = fading ? notes.filter(n => n.waits) : notes;
+  const dismiss = async lines => {
+    setBusy(true);
+    try { if (await dismissDrafts(lines.map(n => ({ kind: "agent", id: draftOf(n) })), { onRestored: () => load() })) await load(); }
+    catch { /* the lines stay as they were */ }
+    setBusy(false);
+  };
+  const draftLines = (shown.length ? shown : notes).slice(0, 6).filter(draftOf);
   return (
     <div data-testid="atlas-notes" data-place={place} style={{ background: T.white, border: "1px solid " + T.bg3, borderLeft: "3px solid " + T.greenDk, borderRadius: 10,
       padding: "10px 14px", display: "flex", flexDirection: "column", gap: 8, transition: "opacity 1.2s", opacity: fading && !shown.length ? 0 : 1, margin: "0 0 14px", ...style }}>
-      {(shown.length ? shown : notes).slice(0, 6).map(n => <NoteLine key={n.id} n={n} busy={busy} onAct={act} onOpen={open} />)}
+      {(shown.length ? shown : notes).slice(0, 6).map(n => <NoteLine key={n.id} n={n} busy={busy} onAct={act} onOpen={open} onDismiss={dismiss} />)}
+      {draftLines.length >= 2 && (
+        <div><button type="button" data-testid="atlas-note-dismiss-all" disabled={busy} onClick={() => dismiss(draftLines)} style={small(false)}>Dismiss all {draftLines.length}</button></div>
+      )}
     </div>
   );
 }
@@ -87,6 +104,7 @@ export function AtlasBell({ onNavigate }) {
   const load = () => readBell().then(setData).catch(() => {});
   useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, []);
   useStewardTold(() => load());
+  useChanged(["draft"], c => { if (c.source !== "worker") load(); });   // COMMS-1: the count drops at once
   const act = async path => { setBusy(true); try { await apiFetch(path, { method: "POST", body: "{}" }); told(); await load(); } catch { /* unchanged */ } setBusy(false); };
   const go = link => { const t = linkTarget(link); if (t && onNavigate) { setOpen(false); onNavigate(t[0], t[1]); } };
   const n = data.waiting || 0;

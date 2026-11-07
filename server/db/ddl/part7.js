@@ -924,6 +924,28 @@ async function run7(pool) {
   // event (one with gifts or guests, which is never deleted). Columns only.
   await pool.query(`ALTER TABLE invites ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`);
+  // COMMS-1 · each staff invite email Steward sent (server/org/inviteMail.js):
+  // the 20-a-day cap per org, Resend's once-in-ten-minutes, and a bounce.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS invite_sends (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      invite_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      provider_id TEXT,
+      sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      bounced_at TIMESTAMPTZ,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_invite_sends_org ON invite_sends (org_id, sent_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_invite_sends_invite ON invite_sends (invite_id, sent_at DESC)`);
+  // COMMS-1 item 4 · a dismissed draft is archived, never deleted: who and when (server/drafts/dismiss.js).
+  for (const t of ["milestone_drafts", "agent_drafts", "thank_you_drafts"]) {
+    await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS archived_by TEXT`);
+    await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS archived_by_name TEXT`);
+  }
 
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id

@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
+import CampaignTurnOn from "./CampaignTurnOn";   // COMMS-1
+import { useChangeRev } from "../lib/changes";   // STALE-1: the "draft" kind (COMMS-1)
+import { dismissDrafts, DismissX, SelectBar, SelectBox, useSelection, DismissedDrafts } from "./DraftDismiss";   // COMMS-1 item 4
 import { SurveysPanel } from "./Surveys";
 import EmailTemplates from "./EmailTemplates";
 import { RecordLink } from "./RecordLink";
@@ -974,17 +977,32 @@ function SequencesPanel({ data }) {
 // WIRE-1-ADDENDUM: the Agent's drafts are drafts to review too. They keep
 // their own queue (approving one marks its gift thanked), so this is the door
 // to it: how many are waiting, and Review all, in a row.
-function AgentDraftsWaiting({ highlightDraftId = null }) {
-  const [n, setN] = useState(null);
+function AgentDraftsWaiting({ highlightDraftId = null, selection = null }) {
+  const [items, setItems] = useState(null);
   // AGENT-5: Atlas's "Review and send" opens its draft here, ready to read.
   const [open, setOpen] = useState(() => /^adr_/.test(String(highlightDraftId || "")));
-  const load = () => apiFetch("/agent/waiting").then(w => setN(agentDraftsIn(w).length)).catch(() => setN(0));
-  useEffect(() => { load(); }, []);
+  const rev = useChangeRev(["draft"]);   // COMMS-1: a dismiss anywhere re-reads
+  const load = () => apiFetch("/agent/waiting").then(w => setItems(agentDraftsIn(w))).catch(() => setItems([]));
+  useEffect(() => { load(); }, [rev]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const n = (items || []).length;
   if (!n) return null;
+  // COMMS-1: each Atlas draft is a row with its own ×.
   return (
-    <div data-testid="agent-drafts-waiting" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", background: T.bg2, borderRadius: 10, padding: "10px 14px" }}>
-      <span style={{ fontSize: 13.5, color: T.ink }}>{n === 1 ? `One note ${atlasName()} drafted is` : `${n} notes ${atlasName()} drafted are`} waiting for you.</span>
-      <button onClick={() => setOpen(true)} style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "8px 14px", color: T.white, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Review all {n}</button>
+    <div data-testid="agent-drafts-waiting" style={{ marginTop: 12, background: T.bg2, borderRadius: 10, padding: "10px 14px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 13.5, color: T.ink }}>{n === 1 ? `One note ${atlasName()} drafted is` : `${n} notes ${atlasName()} drafted are`} waiting for you.</span>
+        <button onClick={() => setOpen(true)} style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "8px 14px", color: T.white, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Review all {n}</button>
+      </div>
+      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+        {items.map(it => (
+          <div key={it.id} data-testid="agent-draft-row" data-draft={it.id} style={{ display: "flex", alignItems: "center", gap: 10, background: T.white, borderRadius: 8, padding: "8px 10px", flexWrap: "wrap" }}>
+            {selection && selection.selecting && <SelectBox checked={selection.has("agent", it.id)} onChange={on => selection.toggle("agent", it.id, on)} label={`Select the draft to ${it.who}`} />}
+            <div style={{ flex: "1 1 200px", minWidth: 0, fontSize: 13, color: T.ink }}><b>{it.who}</b>{it.subject ? ` · ${it.subject}` : ""}</div>
+            <button type="button" onClick={() => setOpen(true)} style={{ background: T.white, border: "1px solid " + T.ink, borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: T.ink }}>Read the draft</button>
+            <DismissX onClick={() => dismissDrafts([{ kind: "agent", id: it.id }]).then(() => load()).catch(e => alert(errorMessage(e)))} label={`Dismiss the draft to ${it.who}`} />
+          </div>
+        ))}
+      </div>
       {open && <AgentDraftReview onClose={() => { setOpen(false); load(); }} onChanged={load} />}
     </div>
   );
@@ -1072,15 +1090,26 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
     setBusyId(null);
   };
 
+  // COMMS-1: × archives the draft (never deletes it), with Undo; Select dismisses many.
   const dismiss = async (id) => {
-    if (!(await askConfirm({ title: "Dismiss this draft?", body: "It is set aside without sending.", yes: "Dismiss" }))) return;
     setBusyId(id);
     try {
-      await apiFetch(`/milestone-drafts/${id}/dismiss`, { method: "POST" });
-      setDrafts(prev => prev.filter(d => d.id !== id));
+      if (await dismissDrafts([{ kind: "milestone", id }], { onRestored: () => load() })) setDrafts(prev => prev.filter(d => d.id !== id));
     } catch (e) { alert(errorMessage(e)); }
     setBusyId(null);
   };
+  const sel = useSelection();
+  const dismissSelected = async () => {
+    try {
+      if (await dismissDrafts(sel.list, { onRestored: () => load() })) {
+        const gone = new Set(sel.list.filter(x => x.kind === "milestone").map(x => x.id));
+        setDrafts(prev => prev.filter(d => !gone.has(d.id)));
+        sel.setSelecting(false);
+      }
+    } catch (e) { alert(errorMessage(e)); }
+  };
+  const draftRev = useChangeRev(["draft"]);
+  useEffect(() => { if (draftRev) load(); }, [draftRev]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 12px", color: T.ink, fontSize: 13, outline: "none", width: "100%", boxSizing: "border-box", fontFamily: "inherit" };
 
@@ -1093,8 +1122,9 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
         <p style={{ margin: "4px 0 0", fontSize: 13, color: T.ink3 }}>
           Emails drafted for a milestone, an anniversary, a journey step or Atlas. Steward drafts it. You send it. Nothing goes to a donor until somebody sends it from here.
         </p>
-        <AgentDraftsWaiting highlightDraftId={highlightDraftId} />
-        <div style={{ marginTop: 14 }}><ThankYouDrafts highlightId={highlightDraftId} testid="comms-ty-drafts" /></div>
+        <div style={{ marginTop: 12 }}><SelectBar selecting={sel.selecting} setSelecting={sel.setSelecting} selected={sel.list} onDismiss={dismissSelected} total={1} /></div>
+        <AgentDraftsWaiting highlightDraftId={highlightDraftId} selection={sel} />
+        <div style={{ marginTop: 14 }}><ThankYouDrafts highlightId={highlightDraftId} testid="comms-ty-drafts" selection={sel} /></div>
         {reviewedCount > 0 && (
           <button type="button" data-commit data-testid="drafts-send-reviewed" onClick={sendAllReviewed} disabled={busyId === "all"}
             style={{ marginTop: 12, background: T.green, border: "none", borderRadius: 8, padding: "8px 14px", color: T.white, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
@@ -1111,8 +1141,9 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
 
       {drafts.map(d => (
         <div key={d.id} ref={el => { rowRefs.current[d.id] = el; }} style={{ background: T.white, border: (highlightDraftId === d.id ? "2px solid " + T.gold : "1px solid " + T.bg3), boxShadow: highlightDraftId === d.id ? "0 0 0 3px " + T.gold + "22" : "none", borderRadius: 12, padding: 18, transition: "box-shadow 0.3s" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-            <div>
+          <div data-testid="milestone-draft-row" data-draft={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10, gap: 10 }}>
+            {sel.selecting && <SelectBox checked={sel.has("milestone", d.id)} onChange={on => sel.toggle("milestone", d.id, on)} label={`Select the draft to ${d.donor_name}`} />}
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>
                 {d.donor_id ? <DonorLink id={d.donor_id} data-testid="draft-person" style={{ color: T.ink }}>{d.donor_name}</DonorLink> : d.donor_name}
               </div>
@@ -1124,7 +1155,10 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
                 {d.reviewed_at ? <strong style={{ color: T.greenMid }}> · Reviewed</strong> : null}
               </div>
             </div>
-            <div style={{ fontSize: 11, color: T.ink3 }}>{displayOrgDate(d.created_at)}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ fontSize: 11, color: T.ink3 }}>{displayOrgDate(d.created_at)}</div>
+              <DismissX onClick={() => dismiss(d.id)} disabled={busyId === d.id} label={`Dismiss the draft to ${d.donor_name}`} />
+            </div>
           </div>
 
           {editingId === d.id ? (
@@ -1154,12 +1188,12 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
                   <button type="button" data-testid="edit-in-editor" onClick={() => onEditTemplate(d.template_id)}
                     style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink2, fontSize: 12, cursor: "pointer" }}>Edit in editor</button>
                 )}
-                <button onClick={() => dismiss(d.id)} disabled={busyId === d.id} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink3, fontSize: 12, cursor: "pointer" }}>Dismiss</button>
               </div>
             </div>
           )}
         </div>
       ))}
+      <DismissedDrafts />
     </div>
   );
 }
@@ -1918,6 +1952,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                          <strong style={{ color: T.ink }}>{hub.audiences.length}</strong>{" "}
                          {hub.audiences.length === 1 ? "audience" : "audiences"}.</>}
                 </div>
+                {hub && hub.reach === 0 && hub.withEmail > 0 && <CampaignTurnOn note={hub.campaignTurnOn} testid="hub-campaign-turn-on" />}
                 {/* MAIL-1: one sentence from the mail policy. Before the donor file
                     is in, "Email turns on once your donor file is in."; once it
                     sends, the From address. Never a raw flag. */}

@@ -1613,6 +1613,11 @@ app.post("/resend/webhook", resendWebhookLimiter, express.raw({ type: "applicati
       const reason = type === "email.bounced" ? "bounced" : "complained";
       const rawTo = event?.data?.to;
       const recipients = Array.isArray(rawTo) ? rawTo : (rawTo ? [rawTo] : []);
+      // COMMS-1: a bounced staff invite says so on Team's Invited row.
+      if (reason === "bounced") {
+        try { await require("../server/org/inviteMail").markBounced(query, run, { providerId: event?.data?.email_id || null, email: recipients[0] || null }); }
+        catch (e) { console.error("[resend webhook] invite bounce not marked:", e.message); }
+      }
       for (const rawEmail of recipients) {
         const email = String(rawEmail).toLowerCase().trim();
         if (!email) continue;
