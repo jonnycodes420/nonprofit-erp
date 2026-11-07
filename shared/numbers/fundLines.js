@@ -119,4 +119,10 @@ async function linesFor(query, orgId, giftIds) {
 const FUND_HIT = (g = "g") => `EXISTS (SELECT 1 FROM ${GIFT_FUND_ROWS(g)} bf WHERE bf.fund_id = ?)`;
 const FUND_CENTS = (g = "g") => `(SELECT SUM(bf.amount * 100) FROM ${GIFT_FUND_ROWS(g)} bf WHERE bf.fund_id = ?)`;
 
-module.exports = { linesRefusal, normalLines, GIFT_FUND_ROWS, LINES_CENTS, LEDGER_FUND_ROWS, linesFor, MAX_LINES, cents, FUND_HIT, FUND_CENTS };
+// TRUTH-3: the money on gift rows that name any of these funds (fund merge's preview), in cents.
+async function giftCentsOnFunds(query, orgId, fundIds) {
+  const [r] = await query(`SELECT COALESCE(SUM(ROUND(g.amount * 100)), 0)::bigint AS c FROM gifts g WHERE g.org_id = ? AND g.fund_id = ANY(?::text[])`, [orgId, fundIds]);
+  return Number(r && r.c) || 0;
+}
+
+module.exports = { giftCentsOnFunds, linesRefusal, normalLines, GIFT_FUND_ROWS, LINES_CENTS, LEDGER_FUND_ROWS, linesFor, MAX_LINES, cents, FUND_HIT, FUND_CENTS };

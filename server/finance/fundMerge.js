@@ -69,10 +69,10 @@ async function preview(query, orgId, mergeIds) {
   }
   const [o] = await query("SELECT COUNT(*)::int AS n FROM orgs WHERE id = ? AND default_fund_id = ANY(?::text[])", [orgId, mergeIds]).catch(() => [{ n: 0 }]);
   counts.orgs = Number(o && o.n) || 0;
-  const [money] = await query(`SELECT COALESCE(SUM(amount), 0)::text AS s FROM gifts WHERE org_id = ? AND fund_id = ANY(?::text[])`, [orgId, mergeIds]);
+  const giftCents = await require("../../shared/numbers/fundLines").giftCentsOnFunds(query, orgId, mergeIds);
   const parts = REFS.filter(r => counts[r.table]).map(r => `${counts[r.table].toLocaleString("en-US")} ${r.word}`);
   if (counts.orgs) parts.push("the default fund");
-  return { counts, giftCents: Math.round(Number(money.s) * 100), words: parts.length ? parts.join(", ") : "nothing", total: Object.values(counts).reduce((a, b) => a + b, 0) };
+  return { counts, giftCents, words: parts.length ? parts.join(", ") : "nothing", total: Object.values(counts).reduce((a, b) => a + b, 0) };
 }
 
 function check(body) {
