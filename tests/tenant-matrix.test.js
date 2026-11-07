@@ -53,6 +53,9 @@ process.env.RESEND_API_KEY = process.env.RESEND_API_KEY || "re_dummy_local";
 process.env.RESEND_BASE_URL = process.env.RESEND_BASE_URL || "http://localhost:5602";
 process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "sk_test_dummy";
 process.env.STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
+// REDTEAM-1: §8 sends real-looking bodies to every write, so Stripe is a local
+// port nobody listens on, never api.stripe.com.
+process.env.STRIPE_API_BASE = process.env.STRIPE_API_BASE || "http://localhost:5603";
 process.env.DONOR_ACCOUNTS_ENABLED = "1";   // flag-off 404s are byte-identical to unknown routes BY DESIGN — the wall is only probeable with the surface on
 process.env.NETWORK_SIGNUP_ENABLED = "1";
 process.env.RESEND_WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET || "whsec_resend_dummy"; // so the unsigned probe gets the 400, not the unconfigured 503
@@ -638,6 +641,12 @@ function bResolver(routePath, param) {
 // Routes whose params deliberately get NO cross-tenant probe — each with the
 // reason a reviewer can audit. Anything parameterized, unresolved, and not
 // listed here FAILS §1.
+// REDTEAM-1: routes registered without a literal path whose live chain names
+// no gate, because they are public by design. Anything else unread fails.
+const PUBLIC_UNREAD = [
+  /^\/push\//,            // Google and Microsoft push notifications: verified by their own channel token, no session
+];
+
 const PARAM_EXEMPT = [
   [/^\/(portal|org|give|donate|track|portal-assets|unsubscribe|auth|network|fundraiser)\//, "public / capability-token / slug-scoped surface — org-scoping is by slug or signed token, covered by portal.test.js + donor-front-door"],
   // PARITY-2 Part 4: the public auction page, its bid and register forms and
@@ -935,6 +944,11 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   const fakeExempt = PARAM_EXEMPT.some(([re]) => re.test(fake.path));
   ok("a synthetic uncovered route lands in the unexercised bucket (the B.4 gate fails on it)",
      fakeResolved.unresolved.length > 0 && !fakeExempt, { unresolved: fakeResolved.unresolved, fakeExempt });
+  // REDTEAM-1: a route whose auth chain the inventory could not read was filed
+  // as public and skipped the auth wall and §3 (398 of them before this build).
+  // Every route's registration must be read, or the matrix fails.
+  const unread = inv.filter(r => !r.authRead && !PUBLIC_UNREAD.some(re => re.test(r.path))).map(keyOf);
+  ok(`every route's auth chain was read from its source (${unread.length} unread): [${unread.slice(0, 10).join(", ")}]`, unread.length === 0, unread);
   ok(`probe ledger covers every route (${ledger.size}/${inv.length})`, ledger.size === inv.length,
      inv.map(keyOf).filter(k => !ledger.has(k)).slice(0, 10));
 
@@ -1281,6 +1295,10 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
       ok("§12 …and no account was created", n === 0, n);
     } finally { if (was !== undefined) process.env.TEST_MODE = was; }
   }
+
+  // REDTEAM-1 §8 · org B's ids in the BODY of every write (tests/lib/bodyCrossProbe.js).
+  await require("./lib/bodyCrossProbe").runBodyCrossProbe({ inv, mfetch, q, ok, A, B, tok: aAdmin, bResolver, fillPath, scanLeak, keyOf });
+  ok(`§8 …and no body probe leaked a B marker (${failures.leak.length})`, failures.leak.length === 0, failures.leak.slice(0, 12));
 
   console.log("\n— §5 · B-integrity: the battery wrote nothing across the wall —");
   const bAfter = await hashOrgB();
