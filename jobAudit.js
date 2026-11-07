@@ -44,6 +44,7 @@ const JOB_WRITES = {
   deliverWebhooks:                   "delivers a queued webhook to the org's endpoint",
   retryFailedNotifications:          "retries a notification that failed to send",
   processRecordBands:                "notes an org over its band two months running, and moves a band price only with the owner's yes",
+  expireAtlasGroups:                 "TIDY-1: removes a list Atlas made over 30 days ago that nobody renamed, pinned or used in a campaign (the people stay)",
 };
 
 // Jobs that only read, compute or clean up after themselves. Nothing here

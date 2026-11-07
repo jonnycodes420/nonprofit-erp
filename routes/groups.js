@@ -4,6 +4,7 @@
 //   POST   /groups                      make one: static (by hand) or dynamic (by rule)
 //   PATCH  /groups/:id                  rename, describe, change the rule
 //   DELETE /groups/:id                  remove it (the people stay; only the list goes)
+//   POST   /groups/:id/pin              keep it (TIDY-1: Atlas's lists go after 30 days unless kept)
 //   GET    /groups/:id                  the group's page: its figures, its months, its people
 //   POST   /groups/:id/members          add people by hand (static groups only)
 //   POST   /groups/:id/members/remove   take people out by hand (static groups only)
@@ -156,7 +157,9 @@ app.patch("/groups/:id", requireAuth, checkWriteAccess, wrap(async (req, res) =>
   const description = v.value.description !== undefined ? v.value.description : g.description;
   const rules = g.kind === "dynamic" ? (v.value.rules !== undefined ? v.value.rules : g.rules) : null;
   try {
-    await run(`UPDATE audiences SET name=?, description=?, rules=?::jsonb, updated_at=NOW() WHERE id=? AND org_id=?`,
+    // TIDY-1: a new name is somebody keeping it, so a group Atlas made stays past 30 days.
+    const renamed = name !== g.name;
+    await run(`UPDATE audiences SET name=?, description=?, rules=?::jsonb, updated_at=NOW()${renamed ? ", renamed_at=NOW()" : ""} WHERE id=? AND org_id=?`,
       [name, description || null, rules ? JSON.stringify(rules) : null, g.id, req.user.orgId]);
   } catch (err) {
     if (err.code === "23505") return res.status(409).json({ error: "You already have a group or an audience called that." });
@@ -172,6 +175,16 @@ app.delete("/groups/:id", requireAuth, checkWriteAccess, wrap(async (req, res) =
   // resolves to nobody (resolveSegmentSpec), never to everybody.
   await run("DELETE FROM audiences WHERE id=? AND org_id=?", [g.id, req.user.orgId]);
   res.json({ deleted: true });
+}));
+
+// TIDY-1 · POST /groups/:id/pin { pinned }: keep a group (one Atlas made
+// goes after 30 days unless kept), or let it go again.
+app.post("/groups/:id/pin", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const g = await GR.groupById(req.user.orgId, req.params.id);
+  if (!g) return res.status(404).json({ error: "Not found" });
+  const pinned = !(req.body && req.body.pinned === false);
+  await run(`UPDATE audiences SET pinned_at=${pinned ? "NOW()" : "NULL"}, updated_at=NOW() WHERE id=? AND org_id=?`, [g.id, req.user.orgId]);
+  res.json(await GR.groupById(req.user.orgId, g.id));
 }));
 
 // GET /groups/:id — the page. A GET, and it writes nothing.

@@ -18,6 +18,7 @@ import EventRaised from "./EventRaised";   // HOME-3: the first look's events
 import { countLabel } from "../../../shared/countWords.js";
 import { displayDate } from "../../../shared/displayDate.js";   // SWEEP-1: a written date, never "2025-12-19"
 import { moveSentence } from "../lib/moveSentence";
+import { alsoKey } from "../lib/alsoKey";   // TIDY-1: two pledges, two keys
 import { orgTodayCivil, orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 
 const SERIF = "'DM Serif Display', Georgia, serif";
@@ -605,7 +606,7 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
             </div>
             {(m.also || []).length > 0 && (
               <div data-testid="move-also" style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.5 }}>
-                {m.also.map(a => <div key={a.kind}><b style={{ color: T.ink }}>Also {a.label.toLowerCase()}:</b> {a.line}</div>)}
+                {m.also.map((a, ai) => <div key={alsoKey(a, ai)}><b style={{ color: T.ink }}>Also {a.label.toLowerCase()}:</b> {a.line}</div>)}
               </div>
             )}
             {mode === "snooze" && (
