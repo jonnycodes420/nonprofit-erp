@@ -451,3 +451,7 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 - **Every amount the reader tidied is counted in the preview** ("We tidied 6 amounts. See them."). Plain is a number,
   `75`, `75.50`, `$75`, `$75.50`, `$1,250.00`; anything else (a comma, one decimal, a word, a k) was tidied.
 - Leftovers from undos before this build: `scripts/ops/import9-undo-leftovers.js` (dry run first; `--apply`; `--undo=<audit id>`).
+- **Every CSV cell goes through `server/shared/csvCell.js`** (REDTEAM-1). A cell starting with = + - @, a
+  tab or a CR gets a leading apostrophe and quotes; a plain number stays a number. Never write a cell
+  escaper of your own: four exports had none and six missed the tab. `tests/redteam.test.js` §1 opens
+  each file and fails on any live formula.

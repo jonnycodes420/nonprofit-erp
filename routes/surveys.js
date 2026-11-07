@@ -157,7 +157,8 @@ app.get("/surveys/:id/export.csv", requireAuth, wrap(async (req, res) => {
     `SELECT r.*, d.name AS donor_name, d.email AS donor_email FROM survey_responses r
        LEFT JOIN donors d ON d.id = r.donor_id AND d.org_id = r.org_id WHERE r.survey_id=? AND r.org_id=? ORDER BY r.submitted_at`,
     [r.id, req.user.orgId]);
-  const cell = v => { const s = Array.isArray(v) ? v.join("; ") : v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  // REDTEAM-1: an answer is typed by anyone on the public page; the guard is shared.
+  const cell = v => require("../server/shared/csvCell").csvCell(Array.isArray(v) ? v.join("; ") : v);
   const head = ["Submitted", "Respondent", "Email", ...qs.map(q => q.label)];
   const lines = [head.map(cell).join(",")];
   for (const x of resp) {

@@ -59,12 +59,17 @@ jobs:
 
       - name: Read the day's error lines
         id: logs
+        # REDTEAM-1: the asked-for day reaches the shell through env, never
+        # pasted into the script, and must be a date.
+        env:
+          ASKED_DAY: ${{ github.event.inputs.day }}
         run: |
           if [ -z "$RAILWAY_TOKEN" ]; then
             echo "::error::The error digest cannot read the logs because the RAILWAY_TOKEN repository secret is not set."
             exit 1
           fi
-          DAY="${{ github.event.inputs.day }}"
+          DAY="$ASKED_DAY"
+          if [ -n "$DAY" ] && ! printf '%s' "$DAY" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then echo "::error::day must be YYYY-MM-DD"; exit 1; fi
           [ -n "$DAY" ] || DAY=$(date -u -d "yesterday" +%F)
           echo "day=$DAY" >> "$GITHUB_OUTPUT"
           : > logs.jsonl

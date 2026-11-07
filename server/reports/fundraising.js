@@ -920,7 +920,9 @@ app.put("/fundraising/campaigns/:id", requireAuth, checkWriteAccess, wrap(async 
 // ── Annual Fund ────────────────────────────────────────────────────────────
 app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
-  const year = parseInt(req.query.year) || orgTime.parseCivil(orgToday(await orgTz(orgId))).y; // ORG_TZ_SEAM_OK (BUILD-75 A.4)
+  // REDTEAM-1: a year outside 1900–2200 (or "1' OR …", which parses as 1) was a 500.
+  const asked = parseInt(req.query.year, 10);
+  const year = asked >= 1900 && asked <= 2200 ? asked : orgTime.parseCivil(orgToday(await orgTz(orgId))).y; // ORG_TZ_SEAM_OK (BUILD-75 A.4)
 
   const goalRows = await query(
     "SELECT goal FROM annual_fund_goals WHERE org_id = ? AND year = ?",

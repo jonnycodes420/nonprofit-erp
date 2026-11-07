@@ -79,7 +79,7 @@ async function figureRowsFor(req, res) {
     throw e;
   }
 }
-const csvCell = v => { const t = v === null || v === undefined ? "" : String(v); return /[",\n\r]/.test(t) || /^[=+\-@]/.test(t) ? `"${(/^[=+\-@]/.test(t) ? "'" : "") + t.replace(/"/g, '""')}"` : t; };
+const { csvCell } = require("../shared/csvCell");   // REDTEAM-1: one guard, tab and CR too
 app.get("/figures/:source/export.csv", requireAuth, wrap(async (req, res) => {
   const rows = await figureRowsFor(req, res);
   if (!rows) return;

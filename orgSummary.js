@@ -126,7 +126,7 @@ async function installTriggers(pool) {
   // A table someone later marks unwatched loses its triggers.
   for (const k of have) {
     const [t, name] = k.split(".");
-    if (UNWATCHED.has(t)) await pool.query(`DROP TRIGGER IF EXISTS ${name} ON "${t}"`);
+    if (UNWATCHED.has(t)) await pool.query(`DROP TRIGGER IF EXISTS ${name} ON "${t}"`);   // nosemgrep: javascript.express.security.injection.tainted-sql-string.tainted-sql-string -- names from pg_trigger, the table in the UNWATCHED set
   }
   for (const [t, fn] of plan) {
     for (const [ev, ref] of [["INSERT", "NEW TABLE AS new_rows"], ["DELETE", "OLD TABLE AS old_rows"],

@@ -177,7 +177,7 @@ function mount(ctx) {
     if (!s) return res.status(404).json({ error: "not_found" });
     const where = s.byOrg ? "org_id = ?" : "id = ? AND org_id = ?";
     const args = s.byOrg ? [req.user.orgId] : [req.params.id, req.user.orgId];
-    const [row] = await query(`SELECT ${s.col} AS v${s.meta ? `, ${s.meta} AS m` : ""} FROM ${s.table} WHERE ${where}`, args);
+    const [row] = await query(`SELECT ${s.col} AS v${s.meta ? `, ${s.meta} AS m` : ""} FROM ${s.table} WHERE ${where}`, args);   // nosemgrep: javascript.express.security.injection.tainted-sql-string.tainted-sql-string -- table and columns from the fixed SLOTS map
     if (!row && !s.byOrg) return res.status(404).json({ error: "not_found" });
     const pic = row ? readPicture(s.meta ? (row.v ? { url: row.v, ...(row.m || {}) } : null) : row.v) : null;
     res.json({ picture: pic });
@@ -189,7 +189,7 @@ function mount(ctx) {
     const orgId = req.user.orgId;
     const where = s.byOrg ? "org_id = ?" : "id = ? AND org_id = ?";
     const args = s.byOrg ? [orgId] : [req.params.id, orgId];
-    const [row] = await query(`SELECT ${s.col} AS v${s.meta ? `, ${s.meta} AS m` : ""}${s.label ? `, ${s.label} AS label` : ""} FROM ${s.table} WHERE ${where}`, args);
+    const [row] = await query(`SELECT ${s.col} AS v${s.meta ? `, ${s.meta} AS m` : ""}${s.label ? `, ${s.label} AS label` : ""} FROM ${s.table} WHERE ${where}`, args);   // nosemgrep: javascript.express.security.injection.tainted-sql-string.tainted-sql-string -- fixed SLOTS map
     if (!row && !s.byOrg) return res.status(404).json({ error: "not_found" });
     const c = await ownPicture(orgId, req.body && req.body.picture, row && row.label);
     if (c.error) return res.status(400).json({ error: "bad_image", message: c.error });
@@ -199,7 +199,7 @@ function mount(ctx) {
     if (p && p.stock && !(await require("./routes/stockPhotos").isStockUrl(orgId, p.url))) delete p.stock;
     if (s.byOrg) {
       if (!row) await run(`INSERT INTO portal_settings (org_id) VALUES (?) ON CONFLICT (org_id) DO NOTHING`, [orgId]);
-      await run(`UPDATE portal_settings SET ${s.col} = ?::jsonb WHERE org_id = ?`, [p ? JSON.stringify(p) : null, orgId]);
+      await run(`UPDATE portal_settings SET ${s.col} = ?::jsonb WHERE org_id = ?`, [p ? JSON.stringify(p) : null, orgId]);   // nosemgrep: javascript.express.security.injection.tainted-sql-string.tainted-sql-string -- column from the fixed SLOTS map
     } else if (s.meta) {
       await run(`UPDATE ${s.table} SET ${s.col} = ?, ${s.meta} = ?::jsonb WHERE id = ? AND org_id = ?`,
         [p ? p.url : null, p ? JSON.stringify({ alt: p.alt, fx: p.fx, fy: p.fy, ...(p.stock ? { stock: true } : {}) }) : null, req.params.id, orgId]);

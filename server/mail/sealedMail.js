@@ -111,7 +111,7 @@ function gcm(key, iv, aad, data) {
   return { ct, tag: c.getAuthTag() };
 }
 function ungcm(key, iv, tag, aad, ct) {
-  const d = crypto.createDecipheriv("aes-256-gcm", key, iv);
+  const d = crypto.createDecipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });   // REDTEAM-1: the tag's length is fixed, not read off the tag
   d.setAAD(Buffer.from(aad, "utf8"));
   d.setAuthTag(tag);
   return Buffer.concat([d.update(ct), d.final()]);

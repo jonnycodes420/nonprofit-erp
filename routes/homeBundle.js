@@ -78,6 +78,7 @@ const PROFILE_READS = [
 
 function mount(ctx) {
 const { requireAuth, testMode, wrap } = ctx;
+const { query } = require("../db");   // REDTEAM-1: the profile bundle checks the person is this org's
 const app = routers.r0;
 
 // Each named read, answered by its own route inside this process as the person
@@ -145,6 +146,9 @@ app.get("/donors/:id/bundle", requireAuth, wrap(async (req, res) => {
   const paths = [...new Set([].concat(req.query.p || []).map(String))].slice(0, MAX_READS);
   const refused = paths.filter(p => !allowed.has(p));
   if (refused.length) return res.status(400).json({ error: "not_a_profile_read", message: "That read is not part of this profile.", paths: refused });
+  // REDTEAM-1: another org's person is a 404 for the whole bundle, not a 200 of refusals.
+  const [mine] = await query(`SELECT 1 FROM donors WHERE id=? AND org_id=?`, [id, req.user.orgId]);
+  if (!mine) return res.status(404).json({ error: "Not found" });
   await answer(req, res, paths);
 }));
 

@@ -956,6 +956,9 @@ app.post("/data-health/addresses/dismiss", requireAuth, checkWriteAccess, wrap(a
   res.status(201).json({ ok: true });
 }));
 app.get("/donors/:id/address-history", requireAuth, wrap(async (req, res) => {
+  // REDTEAM-1: another org's person (or none) is a 404, the one answer, never an empty 200.
+  const [mine] = await query(`SELECT 1 FROM donors WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!mine) return res.status(404).json({ error: "Not found" });
   const rows = await query(`SELECT id, source, before, after, created_by_name, created_at FROM donor_address_history WHERE org_id=? AND donor_id=? ORDER BY created_at DESC`, [req.user.orgId, req.params.id]);
   res.json({ history: rows });
 }));

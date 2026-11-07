@@ -221,11 +221,8 @@ app.get("/audit/log/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
 // the row. Nothing here calls the audit layer by hand.
 app.get("/audit/log.csv", requireAuth, requireAdmin, wrap(async (req, res) => {
   const rows = await auditQuery(req);
-  const cell = v => {
-    const s = v === null || v === undefined ? ""
-      : typeof v === "object" ? JSON.stringify(v) : String(v);
-    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-  };
+  // REDTEAM-1: a description or a record name can start with =; one guard.
+  const cell = require("../shared/csvCell").csvCell;
   const people = await auditPeople(rows, req.user.orgId);
   const head = ["When", "Who", "In what capacity", "Description", "Action", "Record type", "Record",
                 "Record id", "What changed (before)", "What changed (after)", "Summary",
