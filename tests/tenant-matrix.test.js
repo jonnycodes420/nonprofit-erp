@@ -517,7 +517,8 @@ function bResolver(routePath, param) {
     "old-reports": `orb_${B}`,
     donors: `d_${B}`, gifts: `g_${B}`, grants: `gr_${B}`, campaigns: `c_${B}`, tasks: `t_${B}`,
     events: `ev_${B}`, sequences: `sq_${B}`, programs: `prg_${B}`, households: `h_${B}`,
-    "giving-pages": `gp_${B}`, pledges: `pl_${B}`, "offline-plans": `orp_${B}`,   // PLEDGES-2: a recorded recurring plan opportunities: `op_${B}`, "planned-gifts": `pgift_${B}`,
+    "giving-pages": `gp_${B}`, pledges: `pl_${B}`, opportunities: `op_${B}`, "planned-gifts": `pgift_${B}`,
+    "offline-plans": `orp_${B}`,   // PLEDGES-2: a recorded recurring plan
     receipts: `rc_${B}`, "milestone-drafts": `md_${B}`, "note-reminders": `nr_${B}`,
     "custom-fields": `cf_${B}`, "impact-metrics": `im_${B}`, "impact-updates": `iu_${B}`,
     workflows: `wf_${B}`, volunteers: `v_${B}`, interactions: `i_${B}`, materials: `mat_${B}`,
