@@ -403,12 +403,35 @@ export default function GroupsPage({ isReadOnly, onNavigate, initialGroupId }) {
   // a guest list, a campaign or the donor list lands on its own page).
   const [open, setOpen] = useState(() => initialGroupId || urlParam("groups", "group") || null);
   const load = useCallback(() => {
-    apiFetch("/groups").then(r => { setList(r); setErr(""); if (!r.groups.length) setStarters(true); }).catch(() => setErr("Your groups did not load just now. Reload the page to try again."));
+    apiFetch("/groups").then(r => { setList(r); setErr(""); if (!r.groups.filter(g => !g.fromAtlas).length) setStarters(true); }).catch(() => setErr("Your groups did not load just now. Reload the page to try again."));
   }, []);
   // WALKB-1: a group removed (here, from its own page, by Undo) leaves the list at once.
   const groupRev = useWriteRev(GROUP_WRITES);
   useEffect(() => { load(); }, [load, groupRev]);
   const openPerson = id => onNavigate && onNavigate("donors", { selectDonorId: id });
+  // TIDY-1: the lists Atlas's "Open list" made sit apart, under From Atlas.
+  const mine = list ? list.groups.filter(g => !g.fromAtlas) : [];
+  const fromAtlas = list ? list.groups.filter(g => g.fromAtlas) : [];
+  const pin = (g, pinned) => apiFetch(`/groups/${g.id}/pin`, { method: "POST", body: JSON.stringify({ pinned }) }).then(load).catch(() => {});
+  const groupCard = (g, atlas) => (
+    <div key={g.id} style={{ ...card, display: "flex", flexDirection: "column", gap: 8 }} data-testid={atlas ? "atlas-group-card" : "group-card"}
+      {...interactive(() => setOpen(g.id), { label: `Open ${g.name}` })}>
+      <div style={{ color: T.ink, fontSize: 16, fontWeight: 600 }}>
+        {g.name}{g.kind === "dynamic" && <LightningMark />}
+      </div>
+      <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>{g.description || g.sentence}</div>
+      <div style={{ fontSize: 13, color: T.ink2, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <span><Figure variant="inline" kind="count" label={`People in ${g.name}`} value={g.count} definition={list.countSentence} source={g.countSource} unit={plural(g.count, "person", "people")} /></span>
+        <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+          {atlas && !isReadOnly && (
+            <button type="button" data-testid="atlas-group-pin" style={{ ...quiet, padding: "3px 9px", fontSize: 12 }}
+              onClick={e => { e.stopPropagation(); pin(g, !g.pinned); }}>{g.pinned ? "Kept" : "Keep"}</button>
+          )}
+          <RemoveMenu kind="group" id={g.id} disabled={isReadOnly} onDone={load} />
+        </span>
+      </div>
+    </div>
+  );
   if (open) return <GroupPage groupId={open} isReadOnly={isReadOnly} onNavigate={onNavigate} onBack={() => { setOpen(null); load(); }} onOpenPerson={openPerson} />;
   return (
     <FigureContext.Provider value={{ openPerson }}>
@@ -425,28 +448,27 @@ export default function GroupsPage({ isReadOnly, onNavigate, initialGroupId }) {
           campaigns, your email tool's tags, journeys, surveys and the board pack.
         </p>
         {making && <NewGroup onCancel={() => setMaking(false)} onMade={g => { setMaking(false); load(); if (g && g.id) setOpen(g.id); }} />}
-        {list && (making || starters || !list.groups.length) && <Starters isReadOnly={isReadOnly} onAdded={() => load()} onOpenGroup={id => setOpen(id)} />}
+        {list && (making || starters || !mine.length) && <Starters isReadOnly={isReadOnly} onAdded={() => load()} onOpenGroup={id => setOpen(id)} />}
         {err && <div role="alert" style={{ ...card, color: T.ink }}>{err}</div>}
         {!list && !err && <div data-testid="groups-loading"><div style={{ fontSize: 13, color: T.ink3, margin: "0 0 10px" }}>Loading your groups…</div><SkeletonCards count={4} label="Loading groups" /></div>}
-        {list && !list.groups.length && (
+        {list && !mine.length && (
           <div style={{ fontSize: 13, color: T.ink3, margin: "0 0 12px" }}>No groups yet. Add one of the lists above, or press New group to make your own.</div>
         )}
-        {list && list.groups.length > 0 && (
+        {list && mine.length > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
-            {list.groups.map(g => (
-              <div key={g.id} style={{ ...card, display: "flex", flexDirection: "column", gap: 8 }} data-testid="group-card"
-                {...interactive(() => setOpen(g.id), { label: `Open ${g.name}` })}>
-                <div style={{ color: T.ink, fontSize: 16, fontWeight: 600 }}>
-                  {g.name}{g.kind === "dynamic" && <LightningMark />}
-                </div>
-                <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>{g.description || g.sentence}</div>
-                <div style={{ fontSize: 13, color: T.ink2, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                  <span><Figure variant="inline" kind="count" label={`People in ${g.name}`} value={g.count} definition={list.countSentence} source={g.countSource} unit={plural(g.count, "person", "people")} /></span>
-                  <RemoveMenu kind="group" id={g.id} disabled={isReadOnly} onDone={load} />
-                </div>
-              </div>
-            ))}
+            {mine.map(g => groupCard(g, false))}
           </div>
+        )}
+        {list && fromAtlas.length > 0 && (
+          <section data-testid="groups-from-atlas" style={{ marginTop: 24 }}>
+            <h2 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontWeight: 400, fontSize: 22, margin: "0 0 4px", color: T.ink }}>From Atlas</h2>
+            <p style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, margin: "0 0 12px", maxWidth: 680 }}>
+              The lists Atlas made when you pressed Open list. Each goes 30 days after it was made unless you rename it, keep it, or use it in a campaign. The people stay either way.
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
+              {fromAtlas.map(g => groupCard(g, true))}
+            </div>
+          </section>
         )}
       </div>
     </FigureContext.Provider>

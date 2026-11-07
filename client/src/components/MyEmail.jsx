@@ -9,6 +9,7 @@ import { useState, useEffect } from "react";
 import { T } from "./shared";
 import { apiFetch } from "../api";
 import { errorMessage } from "../lib/domainError";
+import { MorningEmailPreview } from "./MorningEmailPreview";   // TIDY-1
 
 const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "24px 28px", marginBottom: 20 };
 const rowStyle = { display: "flex", alignItems: "flex-start", gap: 12, padding: "10px 0", borderTop: "1px solid " + T.bg2 };
@@ -156,6 +157,7 @@ export function MyEmailPanel({ isAdmin }) {
           ))}
           {noneIn && <div data-testid="brief-empty" style={{ fontSize: 12.5, color: T.gold700, marginTop: 4 }}>Nothing is ticked, so no daily email will come.</div>}
         </>}
+        <MorningEmailPreview />
       </div>
 
       <div style={card}>

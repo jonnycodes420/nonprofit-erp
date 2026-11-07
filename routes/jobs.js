@@ -363,6 +363,13 @@ if (!backgroundTicksDisabled()) {
   every("processRecordBands", 24 * 60 * 60 * 1000, () => recordTick("processRecordBands", processRecordBands), 60000);
 }
 
+// TIDY-1: once a day, the lists Atlas made that nobody kept go after 30 days
+// (server/groups/atlasExpiry.js).
+if (!backgroundTicksDisabled()) {
+  every("expireAtlasGroups", 24 * 60 * 60 * 1000,
+    () => recordTick("expireAtlasGroups", () => require("../server/groups/atlasExpiry").expireAtlasGroups(query)), 75000);
+}
+
 // INT-BUILD-1 — THE TICK READ THE WRONG TABLE. Since INT-4 every connection
 // lives in `mailbox_connections`, but this still read `gmail_connections`, so
 // a mailbox connected after INT-4 synced only when somebody pressed the

@@ -739,6 +739,8 @@ function shapeGroup(r) {
     id: r.id, name: r.name, description: r.description || "", kind: r.kind, rules,
     sentence: r.kind === "dynamic" ? rulesSentence(rules) : "People added to this group by hand. They stay until someone takes them out.",
     createdByName: r.created_by_name || "", createdAt: r.created_at,
+    // TIDY-1: made by Atlas's Open list, and what keeps it past 30 days.
+    fromAtlas: require("./server/groups/atlasExpiry").isFromAtlas(r), pinned: !!r.pinned_at, renamed: !!r.renamed_at,
   };
 }
 

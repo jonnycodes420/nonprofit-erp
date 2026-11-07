@@ -104,6 +104,10 @@ async function rhythmFor(orgId, ids, { door, today }) {
   const [orgRow] = await query(`SELECT vocabulary_json FROM orgs WHERE id=?`, [orgId]);
   const sm = FY.startMonth(orgRow || {});
   const year = FY.startYearOf(today, sm);
+  // TIDY-1: the print of each person's gifts, read BEFORE the gifts, so the
+  // write below lands only if nothing changed since (server/donors/rhythmGuard.js).
+  const GUARD = require("./server/donors/rhythmGuard");
+  const prints = await GUARD.readPrints(query, orgId, ids);
   const rows = await query(
     // STATUS-1: money only (no soft or matching credit row), as the profile's live read (engagement.givingRows)
     `SELECT g.donor_id, array_agg(g.date ORDER BY g.date) AS dates, array_agg(g.amount ORDER BY g.date) AS amounts
@@ -134,26 +138,12 @@ async function rhythmFor(orgId, ids, { door, today }) {
     const RHY = require("./shared/numbers/rhythm");
     vals.push(orgId, id, rhythm, a.cadenceDays || null, RHY.storedThrough(RHY.rhythmFor(gifts, today)), state,
               Math.round(thisYear * 100) / 100, Math.round(lastYear * 100) / 100, largest, door, today,
-              ACTOR.id, ACTOR.name);
-    tuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?)");
+              ACTOR.id, ACTOR.name, prints.get(id));
+    tuples.push(id);
   }
-  for (let i = 0; i < tuples.length; i += 2000) {
-    const t = tuples.slice(i, i + 2000);
-    await query(
-      `INSERT INTO donor_rhythm (org_id, donor_id, rhythm, cadence_days, expected_next, drift_state,
-         giving_this_year, giving_last_year, largest_gift, last_door, computed_for, created_by, created_by_name)
-       VALUES ${t.join(",")}
-       ON CONFLICT (org_id, donor_id) DO UPDATE SET
-         rhythm = EXCLUDED.rhythm, cadence_days = EXCLUDED.cadence_days, expected_next = EXCLUDED.expected_next,
-         state_changed_at = CASE WHEN donor_rhythm.drift_state IS DISTINCT FROM EXCLUDED.drift_state
-                                 THEN NOW() ELSE donor_rhythm.state_changed_at END,
-         drift_state = EXCLUDED.drift_state,
-         giving_this_year = EXCLUDED.giving_this_year, giving_last_year = EXCLUDED.giving_last_year,
-         largest_gift = EXCLUDED.largest_gift, last_door = EXCLUDED.last_door,
-         computed_for = EXCLUDED.computed_for, computed_at = NOW()`,
-      vals.slice(i * 13, (i + t.length) * 13));
-  }
-  return { becameLate };
+  const written = new Set(await GUARD.writeGuarded(query, vals, tuples.length));
+  const skipped = ids.filter(id => !written.has(id));
+  return { becameLate: becameLate.filter(id => written.has(id)), skipped };
 }
 
 // THE STEP. `door` names who called (one of DOORS); `history` is true when
@@ -182,6 +172,7 @@ async function afterChangeNow(orgId, donorIds, { door, history = false, fire = n
     if (deps.unlapseHeldByPledge) await deps.unlapseHeldByPledge(orgId, ids);
     const r = await rhythmFor(orgId, ids, { door: stamp, today });
     result.becameLate = r.becameLate;
+    if (r.skipped.length) result.rhythmSkipped = r.skipped;   // TIDY-1: their gifts moved; the newer call writes
     result.crossings = await groupCrossings(orgId, ids, { door: stamp, today, fire: history ? null : fire });
     // SCORES-1: the people it touched are rescored; history (an import, a
     // first read) asks for the one full pass, folded to the import's end.
@@ -250,4 +241,4 @@ function afterChangeSoon(orgId, donorIds, opts = {}) {
   for (const id of donorIds || []) if (id) p.ids.add(id);
 }
 
-module.exports = { ACTOR, DOORS, configure, afterChange, afterChangeNow, afterChangeSoon, recalcDonorSummaryBatch, LOG };
+module.exports = { ACTOR, DOORS, configure, afterChange, afterChangeNow, rhythmFor, afterChangeSoon, recalcDonorSummaryBatch, LOG };

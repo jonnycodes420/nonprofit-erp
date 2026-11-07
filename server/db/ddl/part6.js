@@ -1004,6 +1004,11 @@ async function run6(pool) {
   // before. One store for every named list; no second list table.
   await pool.query(`ALTER TABLE audiences ADD COLUMN IF NOT EXISTS kind TEXT`);
   await pool.query(`ALTER TABLE audiences ADD COLUMN IF NOT EXISTS rules JSONB`);
+  // TIDY-1: a group Atlas made ("Open list"), and what keeps it past 30 days
+  // (server/groups/atlasExpiry.js): a name somebody gave it, or a pin.
+  await pool.query(`ALTER TABLE audiences ADD COLUMN IF NOT EXISTS made_by TEXT`);
+  await pool.query(`ALTER TABLE audiences ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE audiences ADD COLUMN IF NOT EXISTS renamed_at TIMESTAMPTZ`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS group_members (
       org_id TEXT NOT NULL REFERENCES orgs(id),
