@@ -1294,16 +1294,16 @@ async function composeThreadNudge(orgId, today, { userId = null, isAdmin = false
   // The same rank signals the queue uses, read in batches for exactly the
   // donors on this person's list — never one query per row.
   const donorIds = [...new Set(eligible.map(r => r.donor_id))];
-  const ph = donorIds.map(() => "?").join(",");
+  // REDTEAM-2: one bound array, not a placeholder list built into the text.
   const asks = {}; const atRisk = new Set();
   for (const a of await query(
     `SELECT donor_id, COALESCE(SUM(target_amount),0) AS amt FROM opportunities
-      WHERE org_id = ? AND status = 'open' AND donor_id IN (${ph}) GROUP BY donor_id`,
-    [orgId, ...donorIds])) asks[a.donor_id] = parseFloat(a.amt) || 0;
+      WHERE org_id = ? AND status = 'open' AND donor_id = ANY(?::text[]) GROUP BY donor_id`,
+    [orgId, donorIds])) asks[a.donor_id] = parseFloat(a.amt) || 0;
   for (const r of await query(
     `SELECT DISTINCT donor_id FROM recurring_subscriptions
-      WHERE org_id = ? AND donor_id IN (${ph}) AND status IN ('past_due','recovering')`,
-    [orgId, ...donorIds])) atRisk.add(r.donor_id);
+      WHERE org_id = ? AND donor_id = ANY(?::text[]) AND status IN ('past_due','recovering')`,
+    [orgId, donorIds])) atRisk.add(r.donor_id);
   // NUMBERS-4: the top tenth by lifetime, one line (shared/numbers/tags.js).
   const [{ p90 } = {}] = await query(require("../../shared/numbers/tags").TOP_TENTH_SQL, [orgId]);
   const majorThreshold = parseFloat(p90) || 0;

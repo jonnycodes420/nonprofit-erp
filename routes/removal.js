@@ -17,6 +17,9 @@
 // No route here refunds, emails, charges or touches a payment.
 const express = require("express");
 const R = require("../removal");
+// REDTEAM-2: the tables a removal may touch are its kinds' own (server/db/sql.js).
+const { sql } = require("../server/db/sql");
+const KIND_TABLES = new Set(Object.values(R.KINDS).map(k => k.table));
 const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
@@ -269,13 +272,15 @@ function mount(ctx) {
               const K = R.kindOf(data.kind);
               if (!K || K.table !== data.table) { const e = new Error("bad"); e.status = 400; throw e; }
               const cols = Object.keys(data.prev || {}).filter(c => /^[a-z_]+$/.test(c));
-              await runTx(tx, `UPDATE ${K.table} SET ${cols.map(c => `${c} = ?`).join(", ")} WHERE id=? AND org_id=?`,
-                [...cols.map(c => data.prev[c]), t.record_id, orgId]);
+              // REDTEAM-2: the table from the kinds, each column a quoted name, each value bound.
+              await runTx(tx, sql`UPDATE ${sql.id(K.table, KIND_TABLES)} SET ${sql.join(cols.map(c => sql`${sql.ident(c)} = ${data.prev[c]}`))}
+                WHERE id=${t.record_id} AND org_id=${orgId}`);
               back.push({ kind: data.kind, id: t.record_id });
             } else {
               const K = R.kindOf(data && data.__removal);
               if (!K || K.table !== t.table_name) { const e = new Error("bad"); e.status = 400; throw e; }
-              await runTx(tx, `INSERT INTO ${K.table} SELECT * FROM jsonb_populate_record(NULL::${K.table}, ?::jsonb)`, [JSON.stringify(data)]);   // nosemgrep: javascript.express.security.injection.tainted-sql-string.tainted-sql-string -- table from the R.kindOf allow-list, checked on the line above
+              const tbl = sql.id(K.table, KIND_TABLES);   // REDTEAM-2: one of the kinds' tables, or it throws
+              await runTx(tx, sql`INSERT INTO ${tbl} SELECT * FROM jsonb_populate_record(NULL::${tbl}, ${JSON.stringify(data)}::jsonb)`);
               if (WITH[K.table]) await WITH[K.table].give(tx, ctx, data.__with, data, orgId);
               back.push({ kind: data.__removal, id: t.record_id });
             }

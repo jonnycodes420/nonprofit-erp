@@ -30,10 +30,10 @@ const { POOL_MAX, SET_POOL_MAX, APP_NAME, isPoolFull, setPool, querySetwise } = 
 // SPLIT-2 end
 // SPLIT-2 db.js piece 9
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
   // Default keeps prod behavior (Supabase requires SSL). DB_SSL=disable turns it
   // off for a plain, non-SSL Postgres — the stock image CI uses (BUILD-38 Part 2).
-  ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false },
+  // REDTEAM-2: with PGSSLROOTCERT_PEM/_PATH set, the server's certificate is checked (server/shared/dbTls.js).
+  ...require("../shared/dbTls").poolTls(),
   // FIX-11 Part 1 — see the note below `getDb`. Set as a STARTUP option rather
   // than from a `connect` listener: a listener issues its SET while pg is still
   // finishing the handshake on that client, which pg rightly warns about and
@@ -52,8 +52,7 @@ const pool = new Pool({
 const LIMITS = require("../shared/requestLimits");
 // SPLIT-2 end
 // SPLIT-2 db.js piece 11
-const requestLimits = () => LIMITS.middleware(LIMITS.cancelWith(Pool, { connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false }, options: `-c steward.app_connection=on -c application_name=${APP_NAME}` }));
+const requestLimits = () => LIMITS.middleware(LIMITS.cancelWith(Pool, { ...require("../shared/dbTls").poolTls(), options: `-c steward.app_connection=on -c application_name=${APP_NAME}` }));
 // SPLIT-2 end
 // SPLIT-2 db.js piece 12
 // One statement on its own connection, the way pool.query did it.
