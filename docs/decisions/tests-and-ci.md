@@ -77,6 +77,13 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
   `real-clock` arch-check is a hard rule over every file under `tests/`, and a "today" is the org's
   day (`civilDay()`, `dayOffset(n)`), never `toISOString().slice(0, 10)`, which is the UTC day.
   There is no weekend pin. (FIX-42, CLOCK-1)
+- **A suite that needs an hour pins its own; it never asks the run to.** Use
+  `runPinnedOrContinue(__filename, { at: () => nextNyHour(21) })` (`tests/lib/pinnedStack.js`) to
+  get a server and database of its own at that instant. The run's clock is untouched. (FLAKE-2)
+- **A test that watches background work hold it; never race it.** "Part way through" is held at a
+  step by a TEST_MODE-only advisory lock (`server/imports/testHold.js`, `tests/lib/importHold.js`).
+  It is never caught by polling a job that a fast runner finishes first. A truth check that reads two
+  surfaces in turn drains the org's queue first (`drainQueue({ orgId, scores: true })`). (FLAKE-2)
 - **A real boundary is proven by a `SELF_REFUSING` drill against the real service, and an
   undrilled one is decided or goes in `NEEDS-JONATHAN.md` (never a new `BLOCKED-*.md`).** Examples are `scripts/ops/build58-stripe-drill.js`
   and `scripts/ops/build95-cheque-drill.js`. (BUILD-57, BUILD-58, BUILD-95)

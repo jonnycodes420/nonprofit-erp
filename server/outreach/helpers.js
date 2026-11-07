@@ -41,6 +41,12 @@ async function runJourneySweep(onlyOrgId = null, { at } = {}) {
   let fired = 0;
   for (const { org_id: orgId } of orgs) {
     try {
+      // FLAKE-2: one sweep of an org at a time. The hourly job and a person's
+      // run of the sweep at the same moment both found a person due and both
+      // enrolled them: the second hit cultivation_plans_one_active_per_journey,
+      // and a replaced exclusive journey's step kept the Thread (journeys3, CI
+      // 6 Nov). The second sweep now waits, then finds them enrolled.
+      await require("../../db").withAdvisoryLock(`journey-sweep:${orgId}`, async () => {
       const org = await orgTz(orgId);
       const today = at ? orgToday(org, at) : orgToday(org);   // ORG_TZ_SEAM_OK
       fired += await GR.dynamicJoins(orgId, { today,
@@ -95,6 +101,7 @@ async function runJourneySweep(onlyOrgId = null, { at } = {}) {
       fired += await runYearlyDates(orgId, today);
       // JOURNEYS-3 — memberships, monthly gifts, cards, hours, grants, pages.
       fired += await runLifecycleTriggers(orgId, today);
+      });
     } catch (e) { console.error(`[journey] sweep ${orgId}:`, e.message); }
   }
   return fired;

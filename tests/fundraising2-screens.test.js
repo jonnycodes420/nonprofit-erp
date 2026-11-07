@@ -35,7 +35,15 @@
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb, civilPlusDays, browserLegOrSkip, BASE } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, civilPlusDays, browserLegOrSkip, BASE, drainQueue } = require("./helpers");
+// FLAKE-2: the truth check reads the Directory first and each profile after
+// it. With the scores pass of the last writes still on the queue, the stored
+// on-time date moved between the two reads (CI 6 Nov, run 42251251531:
+// "Zelda Rainierson: the profile does not say On track, the Directory's On
+// track filter lists them"): two moments, not two surfaces disagreeing. Each
+// check waits for the org's queued work first, the scores included, as
+// surfaces-agree does (FLAKE-1). The comparisons are unchanged.
+const settle = orgId => drainQueue({ orgId, scores: true, timeout: 120000 });
 const { testNow } = require("./clock");
 
 const XLSX = require(path.join(__dirname, "..", "client", "node_modules", "xlsx"));
@@ -149,6 +157,7 @@ async function main() {
   ok("§4 the dinner's pledges in Pledges: $104,050 still to come", ((pl.body || {}).pledges || []).filter(p => p.madeAt && p.madeAt.id === ev.id).reduce((n, p) => n + cents(p.balance), 0) === 10405000, "");
   ok(`§4 every dinner gift carries the event (${RECEIVED_ROWS})`, (await q(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1 AND event_id=$2`, [ORG, ev.id]))[0].n === RECEIVED_ROWS, "");
   let agreeErr = null;
+  await settle(ORG);
   if (assertSurfacesAgree) {
     // PLANTED, to prove the pledge check can go red: Fundraising says $1 more is overdue.
     const planted = await assertSurfacesAgree(ORG, { token: tok, soft: true, skip: ["atlas", "ask"], plant: ({ fund }) => { if (fund && fund.pledges) fund.pledges.overdue += 1; } });
@@ -184,6 +193,7 @@ async function main() {
     }
     ok("§4b Home has the couple's pledge card", !!card, null);
     let coupleErr = null;
+    await settle(ORG2);
     if (assertSurfacesAgree) {
       const r = await assertSurfacesAgree(ORG2, { token: tok2, soft: true, skip: ["atlas", "ask"] });
       coupleErr = r.diffs.filter(d => /open pledge/.test(d)).join("; ") || null;
@@ -327,6 +337,7 @@ async function eventList(tok) {
   const ask = (await api("POST", "/ask", tok, { text: `Who came to the ${NAME} and didn't give?` })).body || {};
   ok("§7 Ask says the page's came-and-didn't-give, by the event's own name", ask.figures && ask.figures.value && ask.figures.value.value === FIG.cameDidntGive && (ask.sentence || "").includes(NAME),
      JSON.stringify([ask.figures && ask.figures.value && ask.figures.value.value, ask.sentence]));
+  await settle(ORG);
   if (assertSurfacesAgree) {
     // PLANTED, to prove the event checks can go red: the page says one more registered, the door one fewer in.
     const planted = await assertSurfacesAgree(ORG, { token: tok, soft: true, skip: ["atlas"], plantEvent: (id, b) => {
