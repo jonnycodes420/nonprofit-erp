@@ -908,7 +908,9 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
       const { out, unresolved } = fillPath(r.path, bResolver);
       if (!unresolved.length) {
         const tok = aAdmin; // admin = the STRONGEST in-org credential; if admin can't cross, staff can't
-        const ghostPath = fillPath(r.path, () => "zz-nonexistent").out;
+        // The ghost differs from B's path ONLY in its row ids: a word param (a kind, a step number) keeps
+        // its real value, or a route that checks the word first answers the ghost "unknown kind".
+        const ghostPath = fillPath(r.path, (p, n) => /^(kind|order|seq|qid|cardId)$/.test(n) ? bResolver(p, n) : "zz-nonexistent").out;
         const body = r.method === "GET" ? undefined : {};
         const res = await mfetch(r.method, out, tok, body);
         const ghost = await mfetch(r.method, ghostPath, tok, body);

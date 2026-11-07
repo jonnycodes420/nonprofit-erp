@@ -1119,6 +1119,8 @@ app.post("/ask/pins", requireAuth, wrap(async (req, res) => {
 }));
 app.delete("/ask/pins/:id", requireAuth, wrap(async (req, res) => {
   const out = await run(`DELETE FROM ask_pins WHERE id = ? AND org_id = ? AND user_id = ?`, [req.params.id, req.user.orgId, req.user.userId]);
+  // REDTEAM-1: somebody else's pin (or none) is a 404, the one answer, not a 200 that removed nothing.
+  if (out && out.changes === 0) return res.status(404).json({ error: "Not found" });
   res.json({ ok: true, removed: out && out.changes !== undefined ? out.changes : null });
 }));
 

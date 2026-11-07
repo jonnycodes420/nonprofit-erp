@@ -64,7 +64,24 @@ function bodyFor(B) {
   // lookup and not a 400 on a missing amount.
   Object.assign(spray, { amount: 25, date: "2026-11-04", name: "Body Probe", title: "Body Probe", type: "cash",
     subject: "Body Probe", body: "Body Probe", note: "Body Probe" });
-  return { one, many, spray };
+  // ONE ENTITY AT A TIME as well. The spray names every kind of row at once,
+  // so the first org check that refuses (an unknown campaign, say) answers 404
+  // before the route ever reads the fund: a planted defect on the fund check
+  // stayed green under the spray alone. Each body here carries one of org B's
+  // rows, in every spelling, plus what a write needs to get past validation.
+  const base = { amount: 25, date: "2026-11-04", name: "Body Probe", title: "Body Probe", type: "cash",
+    subject: "Body Probe", body: "Body Probe", note: "Body Probe" };
+  const byEntity = new Map();
+  for (const [k, v] of Object.entries(spray)) {
+    const id = typeof v === "string" && v.includes(B) ? v : Array.isArray(v) && typeof v[0] === "string" && v[0].includes(B) ? v[0] : null;
+    if (!id) continue;
+    if (!byEntity.has(id)) byEntity.set(id, { ...base });
+    byEntity.get(id)[k] = v;
+  }
+  byEntity.get(`d_${B}`).softCredits = spray.softCredits;
+  byEntity.get(`fnd_${B}`).splits = spray.splits;
+  const entities = [...byEntity.values()];
+  return { one, many, spray, entities };
 }
 const A_OF = B => B.replace(/b$/, "a");
 
@@ -85,11 +102,14 @@ const BODY_EXEMPT = [
   [/^\/admin\//, "super-admin only (requireSuperAdmin, crossed by §2), all-org by design"],
   [/^\/ops(\/|$)/, "super-admin only, all-org by design"],
   [/^\/support\//, "SUPPORT-1: the help assistant and support sessions, no org rows addressed by id"],
+  [/^\/mail-types\/:key$/, "a key from the fixed registry in mailTypes.js; turns a type on or off for the caller's own org, reads only `on` and `audience`"],
+  [/^\/groups\/starters\/:key$/, "a key from a fixed starter registry; makes a group in the caller's own org from it, no ids read from the body"],
+  [/^\/stock-photos\/:id\/use$/, "a bundled stock-photo catalog id, not an org row (exempt in the matrix's PARAM_EXEMPT for the same reason)"],
 ];
 
 async function runBodyCrossProbe({ inv, mfetch, q, ok, A, B, tok, bResolver, fillPath, scanLeak, keyOf }) {
   console.log("\n— §8 · REDTEAM-1: org B's ids in the BODY of every write —");
-  const { spray } = bodyFor(B);
+  const { spray, entities } = bodyFor(B);
   const aRes = aSide(bResolver, A, B);
   const tables = (await q(`SELECT c.table_name FROM information_schema.columns c
     JOIN information_schema.tables t ON t.table_name = c.table_name AND t.table_schema = c.table_schema
@@ -143,7 +163,9 @@ async function runBodyCrossProbe({ inv, mfetch, q, ok, A, B, tok, bResolver, fil
       const k = f.replace(/_/g, "").toLowerCase();
       if (one[k]) own[f] = one[k]; else if (many[k]) own[f] = many[k];
     }
-    for (const body of Object.keys(own).length ? [spray, { ...own, amount: 25, date: "2026-11-04", name: "Body Probe" }] : [spray]) {
+    const bodies = [spray, ...(Object.keys(own).length ? [{ ...own, amount: 25, date: "2026-11-04", name: "Body Probe" }] : []),
+      ...(r.method === "DELETE" ? [] : entities)];
+    for (const body of bodies) {
       const res = await mfetch(r.method, out, tok, body);
       if (res.status >= 200 && res.status < 300) twoXX.push(key);
       scanLeak(r, "cross-tenant-body", res.text);

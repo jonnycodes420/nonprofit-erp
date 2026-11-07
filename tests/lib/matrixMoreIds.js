@@ -73,7 +73,7 @@ async function seed(q, o, tag) {
   await ins(q, "milestone_drafts", { id: `mds_${o}`, org_id: o, donor_id: d, milestone_key: "threshold_500", subject: `${mark} sent journey`,
     body: `${mark} sent journey body`, status: "sent", sent_at: new Date().toISOString() });
   // CAPTURE — a scanned item waiting, low stakes.
-  await ins(q, "capture_items", { id: `cap_${o}`, org_id: o, kind: "letter", stakes: "low", status: "waiting", source: "upload",
+  await ins(q, "capture_items", { id: `cap_${o}`, org_id: o, kind: "letter", stakes: "low", status: "waiting", source: "upload", asset_id: `asset_${o}`,
     headline: `${mark} capture`, sentence: `${mark} capture sentence` });
   // SETUP — a file on this org's setup run.
   await ins(q, "setup_files", { id: `sf_${o}`, org_id: o, run_id: `sr_${o}`, name: `${mark}.txt`, body: JSON.stringify({ text: `${mark} setup file` }), bytes: 10 });
@@ -86,8 +86,10 @@ async function seed(q, o, tag) {
   // PRIVACY — a client mark and an email removal, each with nothing to put back.
   await ins(q, "client_marks", { id: `cmk_${o}`, org_id: o, source: "manual", donor_ids: [] });
   await ins(q, "client_email_removals", { id: `cer_${o}`, org_id: o, donor_id: d, count: 0, rows: [] });
-  // EMAIL TEMPLATES — one template.
-  await ins(q, "email_templates", { id: `etpl_${o}`, org_id: o, name: `${mark} Template`, purpose: "thank_you", subject: `${mark} subject`,
+  // EMAIL TEMPLATES — one template. The route refuses any id not shaped
+  // `et_<12 hex>` before it looks, so this id cannot carry the org name and §8
+  // probes org B's own id here rather than org A's twin.
+  await ins(q, "email_templates", { id: `et_${tag}0000000000${tag}`, org_id: o, name: `${mark} Template`, purpose: "thank_you", subject: `${mark} subject`,
     blocks: [{ type: "text", text: `${mark} block` }] });
   // INSIGHTS — a review of this org's gift ("it is a gift", nothing to restore).
   await ins(q, "insight_reviews", { org_id: o, gift_id: `g_${o}`, decision: "gift", donor_id: d });
@@ -133,7 +135,7 @@ function resolve(p, n, B) {
     [/^\/atlas\/:id/, { id: `vm_${B}` }],
     [/^\/privacy\/marks\//, { id: `cmk_${B}` }],
     [/^\/privacy\/removals\//, { id: `cer_${B}` }],
-    [/^\/email-templates\//, { id: `etpl_${B}` }],
+    [/^\/email-templates\//, { id: `et_${B.slice(-1)}0000000000${B.slice(-1)}` }],
     [/^\/insights\/donor\//, { id: `d_${B}` }],
     [/^\/insights\/review\//, { giftId: `g_${B}` }],
     [/^\/readouts\//, { id: `rdo_${B}`, kind: "new_donors" }],
