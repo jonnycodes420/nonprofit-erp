@@ -100,10 +100,4 @@ function toQuery(text, params) {
   return [text.text, text.values.length ? text.values : (params || [])];
 }
 
-// The ? placeholders as Postgres's $1, $2, ... (what query.js's helpers have always done).
-function toPg(text) {
-  let i = 0;
-  return String(text).replace(/\?/g, () => `$${++i}`);
-}
-
-module.exports = { sql, Sql, toQuery, toPg };
+module.exports = { sql, Sql, toQuery };

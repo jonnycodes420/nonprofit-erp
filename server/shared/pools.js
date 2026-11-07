@@ -3,7 +3,7 @@
 "use strict";
 const { Pool } = require("pg");
 const LIMITS = require("./requestLimits");
-const { toQuery, toPg } = require("../db/sql");   // REDTEAM-2
+const { toQuery } = require("../db/sql");   // REDTEAM-2
 
 // POOL-1 · ONE CONNECTION BUDGET PER PROCESS. Prod reaches its database
 // through Supabase's pooler in session mode, which holds a fixed number of
@@ -58,12 +58,14 @@ function setPoolReady() {
   return p;
 }
 // LOAD-1: under a web request's limit and cancel, like every main-pool read.
+const checkoutSet = () => LIMITS.checkout(setPoolReady());
+// ? as Postgres's $1, $2, ..., as query.js's helpers do it.
+function dollarParams(text) { let i = 0; return String(text).replace(/\?/g, () => "$" + (++i)); }
 async function querySetwise(statement, params = []) {
-  // REDTEAM-2: a Sql brings its own values; ? becomes $n in one place (server/db/sql.js toPg).
+  // REDTEAM-2: a Sql brings its own values (server/db/sql.js).
   const [text, values] = toQuery(statement, params);
-  const pgSql = toPg(text);
-  const client = await LIMITS.checkout(setPoolReady());
-  try { return (await client.query(pgSql, values)).rows; }
+  const client = await checkoutSet();
+  try { return (await client.query(dollarParams(text), values)).rows; }
   catch (e) { throw LIMITS.translate(e); }
   finally { LIMITS.release(client); }
 }

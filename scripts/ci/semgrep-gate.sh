@@ -16,6 +16,10 @@
 # with a number), generic_path_traversal (ids looked up in a bundled list).
 # A single checked line elsewhere carries `// nosemgrep: <rule>` and a reason.
 #
+# REDTEAM-2: the SQL rules also run on their own with NO baseline and one job
+# (scripts/ci/semgrep-sql-gate.sh); the 24 hits named below were read and
+# cleared there, and what is still open is listed by line in semgrep-sql-open.txt.
+#
 # A RATCHET, not a clean sheet. A full scan with a 60 s rule timeout found 24
 # tainted-sql-string hits on main (dynamic WHERE builders whose pieces are
 # fixed strings and whose values are bound, as far as REDTEAM-1 read them) that
