@@ -38,6 +38,16 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
   (BUILD-84, ARCH-1)
 - **A new parameterized route needs a tenant probe (a `bResolver` entry) or a reasoned
   `PARAM_EXEMPT` entry** in `tests/tenant-matrix.test.js`. (BUILD-86, BUILD-100)
+- **The inventory reads every route module, and every route's auth chain must be read** (REDTEAM-1).
+  `scripts/lib/routeInventory.js` scans `routes/`, `server/` and the root files as well as `server.js`,
+  and falls back to the live chain's named middleware for a route registered in a loop. A route
+  it still cannot read fails the matrix unless it is public by design (`PUBLIC_UNREAD`). Before
+  this, 398 routes were filed as public and skipped the auth wall and the cross-tenant probe.
+- **Org B's ids go in the BODY too** (REDTEAM-1, matrix §8, `tests/lib/bodyCrossProbe.js`). Every
+  authenticated write is sent org B's ids in every spelling, once all at once and once one row
+  at a time, with its path on org A's own rows; no row of org A's may then point at org B's, and
+  org B's row counts must not move. A new write route is probed by itself; one that can't be
+  goes in `BODY_EXEMPT` with a reason. New fixtures for the matrix go in `tests/lib/matrixMoreIds.js`.
 - **Add every new table to tenant-matrix's reset list, children before parents.** This includes
   children whose FK is nullable. Otherwise one crashed run leaves the suite unable to re-run.
   (BUILD-87, BUILD-100)

@@ -8,7 +8,7 @@
 //   seed(q, o, tag)            insert this org's rows (called from seedOrg)
 //   resolve(routePath, param, B)  org B's id for one path param, or undefined
 //                                 when this module does not own that param
-const { civilDay } = require("../clock");
+const { civilDay, testNow } = require("../clock");
 
 const colsOf = new Map();
 async function cols(q, table) {
@@ -53,7 +53,7 @@ async function seed(q, o, tag) {
   // org A's own twin under §8 is refused rather than rewriting two people).
   await ins(q, "data_health_runs", { id: `dhr_${o}`, org_id: o, trigger: "import", counts: {}, new_duplicates: 9 });
   await ins(q, "donor_merges", { id: `dmg_${o}`, org_id: o, kept_id: d, merged_id: `ds_${o}`, kept_name: `${mark} Donor`,
-    merged_name: "Shared Person", kept_before: {}, merged_before: {}, moved: {}, undone_at: new Date().toISOString() });
+    merged_name: "Shared Person", kept_before: {}, merged_before: {}, moved: {}, undone_at: new Date(testNow()).toISOString() });
   // GRANTS — a funder contact, a checklist task, a library piece and its
   // version, a send and a report, all on this org's grant.
   await ins(q, "donor_relationships", { id: `drc_${o}`, org_id: o, donor_id_a: d, donor_id_b: `ds_${o}`, relationship_type: "program_officer" });
@@ -71,7 +71,7 @@ async function seed(q, o, tag) {
   // EMAILS SENT — a sequence step 1, and a journey email that went.
   await ins(q, "sequence_steps", { id: `sqs_${o}`, sequence_id: `sq_${o}`, step_order: 1, delay_days: 0, subject: `${mark} step`, body: `${mark} step body` });
   await ins(q, "milestone_drafts", { id: `mds_${o}`, org_id: o, donor_id: d, milestone_key: "threshold_500", subject: `${mark} sent journey`,
-    body: `${mark} sent journey body`, status: "sent", sent_at: new Date().toISOString() });
+    body: `${mark} sent journey body`, status: "sent", sent_at: new Date(testNow()).toISOString() });
   // CAPTURE — a scanned item waiting, low stakes.
   await ins(q, "capture_items", { id: `cap_${o}`, org_id: o, kind: "letter", stakes: "low", status: "waiting", source: "upload", asset_id: `asset_${o}`,
     headline: `${mark} capture`, sentence: `${mark} capture sentence` });
