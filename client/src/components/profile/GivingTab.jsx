@@ -1,5 +1,5 @@
 // components/profile/GivingTab.jsx (PROFILE-3): part of the donor profile, cut from DonorProfile.jsx.
-import { GivingByYearChart, STAGES, STAGE_ACTION, Spin, T, activeMark, daysDiff, firstNameOf, fmtFull } from "../shared";
+import { STAGES, STAGE_ACTION, Spin, T, activeMark, daysDiff, firstNameOf, fmtFull } from "../shared";
 import { Figure } from "../Figure";
 import { PROPOSAL_STAGE_LABEL, UndatedGiftDate, cap } from "./profileShared";
 import { displayDate, displayDateShort } from "../../../../shared/displayDate";
@@ -32,7 +32,8 @@ import EventField from "../gifts/EventField";   // GIFTS-1: a gift can belong to
 import FundField, { fundFromGift, fundLinesProblem } from "../gifts/FundField";   // GIFTS-2: one fund, or a split across funds
 import { lifetimeShareWords, sharePercent } from "../../../../shared/lifetimeShare.js";   // MOPUP-1: "under 1% of lifetime"
 import PledgeSchedule, { emptySchedule, scheduleBody } from "../gifts/PledgeSchedule";   // GIFTS-1: one payment or installments
-import { giftTypeLabel } from "../../../../shared/giftWords.js";   // FEEL-1: "Pledge payment", never "Pledge_payment"
+import { giftTypeLabel } from "../../../../shared/giftWords.js";
+import ByYear from "./ByYear";   // HISTORY-1: giving by fiscal year   // FEEL-1: "Pledge payment", never "Pledge_payment"
 
 // GIFTS-1: a pledge's schedule as the edit opens it, read from its installments.
 const FREQ_IN={annual:"yearly"};
@@ -182,13 +183,11 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
               style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenDk,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Add a gift</button>}
           </div>
           :<div data-testid="dp-giving-by-year" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
-            <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginBottom:12}}>Giving by year</div>
+            {/* HISTORY-1 — By year: one row per fiscal year, the chart above it. */}
+            <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginBottom:12}}>By year</div>
             {giftLoading
               ?<div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}><Spin/></div>
-              :<GivingByYearChart gifts={giftsFull.length?giftsFull:gifts} onOpenYear={y=>setYearDrill(y)}/>}
-            <div style={{fontSize:11.5,color:T.ink3,marginTop:8,lineHeight:1.5}}>
-              Every gift recorded against this record, added by the calendar year it was given in. A bar opens the gifts behind it.
-            </div>
+              :<ByYear donor={donor} reloadKey={`${gifts.length}:${giftsFull.length}:${donor.total_giving}`}/>}
           </div>}
           </div>
 

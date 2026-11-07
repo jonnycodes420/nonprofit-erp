@@ -956,6 +956,12 @@ function reportToCsv(key, data, opts = {}) {
         headers: ["Rank", "Name", "Total", "Gifts", "Last gift date"],
         rows: data.rows.map(r => [r.rank, r.name, r.total, r.giftCount, r.lastGiftDate]),
       };
+    case "year-over-year":   // HISTORY-1
+      return {
+        headers: ["Fiscal year", "From", "To", "Total", "Gifts", "Largest gift", "Change", "Donors", "New", "Retained", "Reactivated", "Retention %", "Same point last year", "Same point to"],
+        rows: data.years.map(r => [r.label + (r.current ? " (so far)" : ""), r.from, r.to, r.total, r.giftCount, r.largest, r.change, r.donors, r.newDonors, r.retained, r.reactivated,
+          r.retentionRate == null ? "" : Math.round(r.retentionRate * 1000) / 10, r.current && data.samePoint ? data.samePoint.total : "", r.current && data.samePoint ? data.samePoint.to : ""]),
+      };
     case "three-year":
       return {
         // FIX-60: the file says which days every column counts.
@@ -1304,6 +1310,8 @@ const REPORT_HANDLERS = {
   "retention": reportRetention,
   "top-donors": reportTopDonors,
   "three-year": reportThreeYear,
+  // HISTORY-1 — each fiscal year beside the one before (shared/numbers/byYear.js).
+  "year-over-year": async (orgId, p) => require("../../shared/numbers/byYear").orgByYear(query, { ...p.org, id: orgId }, p.today),
   "annual": reportAnnual,
   "solicitations": reportSolicitations,
   // BUILD-87 Part 4 — the bookkeeper's export. A read path like every other

@@ -117,6 +117,15 @@ function computeKey(rows, opts = {}) {
   const byFy = {};
   for (const g of hard) if (g.d) { const k = fiscalYear(g.d, sm).label; byFy[k] = (byFy[k] || 0) + g.c; }
 
+  // HISTORY-1 · year totals sum to lifetime.
+  const byYearById = {};
+  for (const id of live.keys()) {
+    const ys = {};
+    for (const g of hard.filter(x => x.person === id)) { const k = g.d ? fiscalYear(g.d, sm).label : "undated"; ys[k] = (ys[k] || 0) + g.c; }
+    byYearById[id] = ys;
+  }
+  const yearsFootLifetime = [...live.keys()].every(id => Object.values(byYearById[id]).reduce((n, c) => n + c, 0) === sumC(hard.filter(g => g.person === id)));
+
   // ── gave: each person's dates of giving (hard, above zero, on or before today) ──
   const given = new Map();   // id -> sorted dates
   for (const g of hard) if (g.c > 0 && g.d && g.d <= today && counted.has(g.person)) (given.get(g.person) || given.set(g.person, []).get(g.person)).push(g.d);
@@ -225,6 +234,10 @@ function computeKey(rows, opts = {}) {
     thisFiscalYear: { from: fy.from, to: today, cents: sumC(fyGifts), count: fyGifts.length },
     byFiscalYear: byFy,
     lifetimeById: Object.fromEntries([...live.keys()].map(id => [id, sumC(hard.filter(g => g.person === id))])),
+    // HISTORY-1: each person's hard money by fiscal year ("FY2025" names the
+    // year by the year it starts in); an undated gift is under "undated".
+    // Year totals sum to lifetime: yearsFootLifetime says they do, for everyone.
+    byYearById, yearsFootLifetime,
     lapsed: sortIds(lapsed),
     lapsing: sortIds(lapsing),
     // TRUTH-2: the donor count this fiscal year so far, and LYBUNT and SYBUNT

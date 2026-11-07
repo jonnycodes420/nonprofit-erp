@@ -22,7 +22,7 @@
 // controls in Reports.jsx (REPORT_DEFS); tests/fix2-b-reports.test.js holds
 // the two lists equal.
 export const TAB_IDS = ["giving-summary", "by-group", "lybunt", "sybunt", "retention", "top-donors",
-  "week-in-review", "three-year", "annual", "solicitations", "bookkeeper"];
+  "week-in-review", "three-year", "annual", "solicitations", "bookkeeper", "year-over-year"];
 
 // A standard report that IS one of the reports above (the same handler, the
 // same computation) is not listed twice: its id lands on the richer one.
@@ -78,7 +78,7 @@ export const RAIL_GROUPS = [
   { id: "most", question: "Who gives the most",
     items: ["top-donors", "three-year", "std:board-giving", "solicitations"] },
   { id: "year", question: "The year",
-    items: ["giving-summary", "std:by-month", "by-group", "annual", "week-in-review", "std:first-time"] },
+    items: ["giving-summary", "year-over-year", "std:by-month", "by-group", "annual", "week-in-review", "std:first-time"] },
   { id: "money", question: "Money in",
     items: ["std:pledges-outstanding", "std:ack-backlog", "std:gifts-by-link-source", "bookkeeper"] },
   { id: "grants", question: "Grants",

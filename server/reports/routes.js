@@ -257,6 +257,14 @@ app.get("/reports/activity", requireAuth, wrap(async (req, res) => {
   res.json({ ...report, definitions: ACTIVITY_DEFINITIONS });
 }));
 
+// HISTORY-1 · BY YEAR: one person's giving by fiscal year (shared/numbers/byYear.js).
+app.get("/donors/:id/by-year", requireAuth, wrap(async (req, res) => {
+  const org = await orgTz(req.user.orgId);   // ORG_TZ_SEAM_OK
+  const out = await require("../../shared/numbers/byYear").donorByYear(query, { ...org, id: req.user.orgId }, req.params.id, orgToday(org));
+  if (!out) return res.status(404).json({ error: "Donor not found" });
+  res.json(out);
+}));
+
 app.get("/reports/:key", requireAuth, OS.cached("report", { perUser: false, when: req => req.params.key === "giving-summary" && !req.query.format }), wrap(async (req, res) => {
   const { key } = req.params;
   if (!REPORT_HANDLERS[key]) return res.status(404).json({ error: "Unknown report" });
