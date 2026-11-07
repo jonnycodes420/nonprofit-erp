@@ -78,7 +78,7 @@ async function api(method, path, token, body) {
   // after-change step) runs on the queue after the answer. A suite reads it as
   // done, so a write waits here for it (tests/lib/drainQueue.js), as an import
   // waits for its recent gifts above.
-  if (autoDrain && method !== "GET" && method !== "HEAD" && r.status < 500) await drainQueueWith(q).catch(() => null);
+  if (autoDrain && method !== "GET" && method !== "HEAD" && r.status < 500) await drainQueueWith(q, { background: false }).catch(() => null);   // TIDY-1: never waits out an import mid-run
   return { status: r.status, body: parsed, text, ms: Math.round(ms), bytes: Buffer.byteLength(text) };
 }
 

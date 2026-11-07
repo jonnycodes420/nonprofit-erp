@@ -8,6 +8,7 @@ import { T } from "./shared";
 import { apiFetch } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { displayDateTime } from "../../../shared/displayDate.js";
+import { countLabel } from "../../../shared/countWords.js";
 
 const btn = { background: "none", border: "1px solid " + T.bg3, borderRadius: 10, padding: "8px 14px", fontSize: 13.5, fontWeight: 700, color: T.greenDk, cursor: "pointer", fontFamily: "inherit" };
 
@@ -28,7 +29,7 @@ export function MorningEmailPreview() {
     setBusy("test"); setNote("");
     try {
       const r = await apiFetch("/me/morning-email/test", { method: "POST", body: "{}" });
-      setNote(`Sent to ${r.to}. ${r.testsLeft === 0 ? "That was your last test today." : `${r.testsLeft} more test${r.testsLeft === 1 ? "" : "s"} today.`}`);
+      setNote(`Sent to ${r.to}. ${r.testsLeft === 0 ? "That was your last test today." : `${countLabel(r.testsLeft, "more test", "more tests")} today.`}`);
       setD(x => x && { ...x, testsLeft: r.testsLeft });
     } catch (e) { setNote(errorMessage(e, "The test didn't send.")); }
     finally { setBusy(""); }
@@ -39,7 +40,7 @@ export function MorningEmailPreview() {
     <div data-testid="morning-preview" style={{ borderTop: "1px solid " + T.bg2, paddingTop: 12, marginTop: 4 }}>
       <div data-testid="morning-last-sent" style={{ fontSize: 13, color: T.ink3, marginBottom: 10 }}>
         {!d ? " " : last
-          ? <>Last sent {displayDateTime(last.at)}, with {last.items} item{last.items === 1 ? "" : "s"}.</>
+          ? <>Last sent {displayDateTime(last.at)}, with {countLabel(last.items, "item", "items")}.</>
           : "No morning email has been sent to you yet."}
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>

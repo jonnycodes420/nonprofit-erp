@@ -91,7 +91,7 @@ function mount(ctx) {
     const sent = await S().sendDigestEmail(t.org, to, `[Test] ${t.mail.subject}`, t.mail.body);
     if (!sent) {
       await query(`DELETE FROM digest_sends WHERE id=?`, [slot]);   // it never went: the slot is hers again
-      return res.status(502).json({ error: "The test didn't send. Staff email may be switched off for your organisation, or the mail service refused it." });
+      return res.status(502).json({ error: "The test didn't send. Staff email may be switched off for your organization, or the mail service refused it." });
     }
     res.json({ sent: true, to, subject: `[Test] ${t.mail.subject}`, testsLeft: Math.max(0, TESTS_A_DAY - await testsUsed(query, t.org.id, t.u.id, t.today)) });
   }));

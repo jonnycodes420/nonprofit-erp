@@ -14,7 +14,10 @@
 // check reads right after the import answers.
 const BACKGROUND = ["importRecent"];
 
-async function drainQueue(q, { orgId = null, scores = false, timeout = 30000, interval = 25 } = {}) {
+// `background: false` leaves them out: the wait after every write in
+// tests/helpers.js api(), where a suite may be watching an import mid-run
+// (fix37-import-thanks reads its progress while it works).
+async function drainQueue(q, { orgId = null, scores = false, background = true, timeout = 30000, interval = 25 } = {}) {
   const t0 = process.hrtime.bigint();
   const elapsedMs = () => Number(process.hrtime.bigint() - t0) / 1e6;
   for (;;) {
@@ -25,7 +28,7 @@ async function drainQueue(q, { orgId = null, scores = false, timeout = 30000, in
                 WHERE (j.name LIKE 'handler:%' OR j.name = ANY($3::text[])) AND ($1::text IS NULL OR j.org_id = $1)
                   AND (j.status = 'running'
                        OR (j.status = 'waiting' AND j.attempts = 0 AND ($2::boolean OR j.run_after <= NOW()))))::int AS n`,
-      [orgId, !!scores, BACKGROUND]).catch(e => (/does not exist/.test(e.message) ? [{ n: 0 }] : Promise.reject(e)));
+      [orgId, !!scores, background ? BACKGROUND : []]).catch(e => (/does not exist/.test(e.message) ? [{ n: 0 }] : Promise.reject(e)));
     if (!r || r.n === 0) return { drained: true, waiting: 0 };
     if (elapsedMs() >= timeout) return { drained: false, waiting: r.n };
     await new Promise(res => setTimeout(res, interval));
