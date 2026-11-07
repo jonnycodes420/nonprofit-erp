@@ -12,6 +12,7 @@ import { askConfirm } from "../ConfirmDialog";
 import { errorMessage } from "../../lib/domainError";
 import { displayDate } from "../../../../shared/displayDate";
 import { civilDayOf } from "../../lib/orgToday";   // the org's day, never the UTC one
+import { roleWord } from "../../../../shared/viewOnly.js";   // ACCESS-1
 
 const link = { background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, cursor: "pointer", fontSize: 12, fontFamily: "inherit" };
 
@@ -55,7 +56,7 @@ export function InvitedList({ isAdmin, version = 0 }) {
               ? <div data-testid="team-invite-bounced" style={{ fontSize: 11, color: T.gold700, fontWeight: 700, marginTop: 1 }}>The invite email to {i.email} bounced. Check the address, or copy the link and send it another way.</div>
               : !i.lastSentAt && <div data-testid="team-invite-unsent" style={{ fontSize: 11, color: T.ink3, marginTop: 1 }}>The email hasn't gone yet. Resend it, or copy the link.</div>}
           </div>
-          <Pill label={i.role === "volunteer_coordinator" ? "volunteer coordinator" : i.role} color={T.ink3} />
+          <Pill label={roleWord(i.role)} color={T.ink3} />
           <span style={{ display: "inline-flex", gap: 12, alignItems: "center" }}>
             <button type="button" style={link} disabled={busy === i.id} onClick={() => resend(i)}>Resend</button>
             <button type="button" style={link} onClick={() => copy(i)}>Copy link</button>

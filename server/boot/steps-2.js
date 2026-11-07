@@ -110,9 +110,10 @@ const requireAdmin = wrap(async (req, res, next) => {
   // FIX-57: a support session acts as an admin of the org it was opened for
   // (its own users row is in another org); requireAuth already decided it.
   if (req.user && req.user.support) return next();
-  const rows = await query("SELECT role FROM users WHERE id = ?", [req.user.userId]);
-  if (!rows.length) return res.status(401).json({ error: "user_not_found", message: "Your account no longer exists" });
-  if (rows[0].role !== "admin") return res.status(403).json({ error: "Admin access required" });
+  // ACCESS-1: the role in the org this session is in, never the home org's.
+  const role = await require("../auth/access").liveRoleIn(req.user.userId, req.user.orgId);
+  if (role === null) return res.status(401).json({ error: "user_not_found", message: "Your account no longer exists" });
+  if (role !== "admin") return res.status(403).json({ error: "Admin access required" });
   next();
 });
 // SPLIT-2 end

@@ -91,7 +91,7 @@ app.get("/donors/:id/scores", requireAuth, wrap(async (req, res) => {
     bands: W.BANDS,
     // PROSPECT-1 — screening results move the ask only for someone who may see them.
     suggestedAsk: await engagementMod.suggestedAsk(query, orgId, d.id,
-      (await require("../../prospect").canSee(req.user.userId)) ? { screening: (await require("../../prospect").latestScreening(orgId, [d.id])).get(d.id) || null } : {}),
+      (await require("../../prospect").canSee(req.user.userId, req.user.orgId)) ? { screening: (await require("../../prospect").latestScreening(orgId, [d.id])).get(d.id) || null } : {}),
   });
 }));
 
@@ -136,6 +136,15 @@ app.get("/giving-pages/:id/volunteer-data", requireAuth, wrap(async (req, res) =
   const [page] = await query("SELECT id, draft FROM giving_pages WHERE id = ? AND org_id = ? AND page_kind = ?", [req.params.id, req.user.orgId, VP.KIND]);
   if (!page) return res.status(404).json({ error: "not_found" });
   res.json(await VP.pageData(req.user.orgId, page.draft || []));
+}));
+
+// PAGES-1: a membership page's goal bar in the editor's preview, counted as
+// the public page counts it. The levels come from the public read.
+app.get("/giving-pages/:id/membership-data", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const MP = require("../../membershipPage");
+  const [page] = await query("SELECT id FROM giving_pages WHERE id = ? AND org_id = ? AND page_kind = ?", [req.params.id, req.user.orgId, MP.KIND]);
+  if (!page) return res.status(404).json({ error: "not_found" });
+  res.json({ members: { count: await MP.memberCount(req.user.orgId), sentence: MP.MEMBER_SENTENCE } });
 }));
 
 // GIVE-3 · THE EDITOR'S PREVIEW: the draft, through the very same payload.

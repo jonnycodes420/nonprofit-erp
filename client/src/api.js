@@ -251,6 +251,13 @@ onAnyChange(c => { if (c.source !== "write") { kept.clear(); parked.clear(); for
 
 export async function apiFetch(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
+  // ACCESS-1: a viewer's write never leaves the browser; it is answered here
+  // with the server's own sentence (the server refuses it too).
+  // Loaded only for a viewer's write, so Home's first download doesn't carry it.
+  if (method !== "GET" && /"role":"viewer"/.test(localStorage.getItem("npe_user") || "")) {
+    const viewOnly = (await import("./lib/viewOnly.js")).viewOnlyRefusal(method, path);
+    if (viewOnly) throw viewOnly;
+  }
   // FIX-25: a write also forgets the reads in flight. A read asked for after a
   // write must not be handed the answer to a read that left before it, or a
   // list re-read after "Approve all" comes back as it was before the approval.

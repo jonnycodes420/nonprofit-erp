@@ -52,6 +52,7 @@ import { StaffBoardList } from "./settings/StaffBoardList";
 import { SETTINGS_TABS, SECTION_ALIAS, BILLING_STATUS_META } from "./settings/settingsTabs";
 import { displayOrgDate } from "../lib/orgDay";
 import { impactExample } from "../lib/impactExample";
+import { VIEWER, ROLES, ROLE_LABEL, roleWord } from "../../../shared/viewOnly.js"; import { ViewerExports } from "./settings/ViewerExports";   // ACCESS-1
 export { PortalWebsiteSnippet, PortalWebsiteSnippetCard } from "./settings/PortalWebsiteSnippet";
 export { ImpactUpdatesManager } from "./settings/ImpactUpdatesManager";
 export { GivingSourcesManager } from "./settings/GivingSourcesManager";
@@ -68,7 +69,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   const userRole=auth?.user?.role||"staff";
   const isAdmin=userRole==="admin";
   const isPortalTier=auth?.org?.plan==="portal";
-  const visibleTabs=SETTINGS_TABS.filter(t=>(!t.portalTierOnly||isPortalTier)&&(!t.adminOnly||isAdmin));
+  const visibleTabs=SETTINGS_TABS.filter(t=>(!t.portalTierOnly||isPortalTier)&&(!t.adminOnly||isAdmin)&&(!t.viewerHidden||userRole!==VIEWER));   // ACCESS-1: a viewer has no Team or Connections
   const wantSection=SECTION_ALIAS[initialSection]?.section||initialSection;
   const wantFocus=initialFocus||SECTION_ALIAS[initialSection]?.focus||null;
   const [section,setSection]=useState(visibleTabs.some(t=>t.id===wantSection)?wantSection:"org");
@@ -509,7 +510,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   }
 
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+    <div style={{display:"flex",flexDirection:"column",gap:20}} data-viewer-ok={["account","profile","myemail","security"].includes(section)?"1":undefined}>
       <PageTitle main="Workspace" accent="settings."/>
       {/* Value-first landing (BUILD-31 Part 2.1): the first thing an org sees is
           what Steward has done for them, not a near-empty Organization card.
@@ -594,7 +595,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       {section==="team"&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <SectionLabel>Team Members</SectionLabel>
-          {isAdmin&&<button onClick={()=>setShowInvite(true)} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Invite Staff</button>}
+          {isAdmin&&<ViewerExports/>}{isAdmin&&<button onClick={()=>setShowInvite(true)} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Invite Staff</button>}
         </div>
         {billing&&!billing.isTrial&&billing.limits?.seats!==999999999&&billing.usage?.seats>=billing.limits?.seats&&(
           <div style={{background:T.ground,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.ink3,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
@@ -611,11 +612,11 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{m.name}{m.id===auth?.user?.id&&<span style={{fontSize:11,color:T.ink3,marginLeft:6}}>(you)</span>}</div>
               <div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.email}</div>
             </div>
-            <Pill label={m.role} color={m.role==="admin"?T.ink:T.ink3}/>
+            <Pill label={roleWord(m.role)+(m.member?" · joined from another org":"")} color={m.role==="admin"?T.ink:T.ink3}/>
             {/* PROSPECT-1 — who sees Room to give, screening results and
                 prospect briefs. Admins always do; anyone else only when an
                 admin ticks this. */}
-            {isAdmin&&m.role!=="volunteer_coordinator"&&(
+            {isAdmin&&!["volunteer_coordinator",VIEWER].includes(m.role)&&!m.member&&(
               <label data-testid={"team-major-gifts-"+m.id} title={m.role==="admin"?"Admins always have it":"Sees Room to give, screening results and prospect briefs"}
                 style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,color:T.ink3,cursor:m.role==="admin"?"default":"pointer",flexShrink:0}}>
                 <input type="checkbox" checked={m.role==="admin"||!!m.can_major_gifts} disabled={m.role==="admin"}
@@ -1022,7 +1023,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           already comes here, which makes this the profile menu's destination
           and the right home for a thing that is personal to how you work. */}
       <BccAddressCard/>
-      <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",marginTop:16}}>
+      <div hidden={userRole===VIEWER} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",marginTop:16}}>
         <SectionLabel>Billing</SectionLabel>
         {billing ? (
           <div style={{display:"flex",flexDirection:"column",gap:16}}>
@@ -1457,9 +1458,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                 <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Role</div>
                 <select value={invRole} onChange={e=>setInvRole(e.target.value)}
                   style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:16}}>
-                  <option value="staff">Staff, can view and edit data</option>
-                  <option value="volunteer_coordinator">Volunteer coordinator, volunteers and hours only</option>
-                  <option value="admin">Admin, full access including settings</option>
+                  {ROLES.map(r=><option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                 </select>
                 {invErr&&<div style={{marginBottom:12,fontSize:13,color:T.terra700,background:T.terra100,border:"1px solid "+T.terra200,borderRadius:8,padding:"8px 12px"}}>{invErr}</div>}
                 <div style={{display:"flex",gap:10}}>

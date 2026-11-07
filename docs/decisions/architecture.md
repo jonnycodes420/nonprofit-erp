@@ -179,6 +179,16 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 - **Read a whole set through `querySetwise` (db.js), not `query`.** Its pool has nested loops
   off, because an org added since the last ANALYZE is estimated at one row and a nested loop
   over 1,000 real rows took a group page from 20 ms to 35 s. Lookups by id stay on `query`. (FIX-21)
+- **A write that happens once per person per thing has a rule, an index and a turn.** Name its
+  uniqueness rule; a unique index says it (new ones go in `server/db/race1Indexes.js`: built
+  CONCURRENTLY, skipped and logged if rows already break it); and the read-then-write runs under
+  `withPersonLock(kind, orgId, id, fn)` (`server/shared/personLock.js`), with the INSERT yielding
+  (`ON CONFLICT DO NOTHING`). A concurrent loser answers what a later press would (409, the
+  existing row), never a 500. Every journey write for a person takes `journey:<org>:<donor>`.
+  `tests/race1-concurrency.test.js` fires each one 10 times at once. (RACE-1)
+- **An advisory-lock waiter never sits on a pool connection.** `withAdvisoryLock` asks with a
+  150 ms lock_timeout and hands its connection back between tries; the pool is 10, and ten
+  waiters inside `pg_advisory_lock` starved the holder (nine statement timeouts). (RACE-1)
 
 ## Gotchas
 - **Use a regex route (`app.all(/^\/api\/v1.../)`) and the route inventory breaks**, because it

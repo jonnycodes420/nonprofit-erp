@@ -139,6 +139,38 @@ jobs:
         run: node scripts/ci/audit-gate.js client
 
 
+  # ── REDTEAM-1 · SEMGREP AS A GATE ─────────────────────────────────────────
+  # The JS/Node and OWASP rulesets over app code, failing on any ERROR finding,
+  # with no file skipped for time (scripts/ci/semgrep-gate.sh says why and which
+  # rules are excluded). Runs beside the guards; `test` waits for it. The npm
+  # audit gate (high and above) is in the guards job above.
+  semgrep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [tree-check]
+    if: needs.tree-check.outputs.skip != 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Semgrep (pinned)
+        run: pip install --quiet semgrep==1.184.0
+      # A new ERROR finding fails: on a PR, new since it left main; on a push,
+      # new since the commit before it.
+      - name: Semgrep gate (a new ERROR finding fails)
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then BASELINE=$(git merge-base "origin/$BASE_REF" HEAD); else BASELINE="$BEFORE"; fi
+          git cat-file -e "$BASELINE^{commit}" 2>/dev/null || BASELINE=$(git rev-parse HEAD~1)
+          echo "baseline: $BASELINE"
+          SEMGREP_BASELINE="$BASELINE" SEMGREP_JOBS=4 bash scripts/ci/semgrep-gate.sh
+
   # ── CI-2 · THE PLAN, WRITTEN ONCE ─────────────────────────────────────────
   # Which suites go in which shard, from the cached suite timings (ARCH-1's
   # .generated/, never committed). Planned ONCE and handed to every matrix job
@@ -327,9 +359,13 @@ jobs:
       # on a move-only build (a branch named split-*) the diff must be empty.
       - name: Route diff against main
         if: matrix.shard == 1 && github.event_name == 'pull_request'
+        # REDTEAM-1: expressions reach the shell through env, never pasted in.
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          STRICT_FLAG: ${{ startsWith(github.head_ref, 'split-') && '--strict' || '' }}
         run: |
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
-          node scripts/ci/route-diff.js --against FETCH_HEAD ${{ startsWith(github.head_ref, 'split-') && '--strict' || '' }}
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          node scripts/ci/route-diff.js --against FETCH_HEAD $STRICT_FLAG
 
       # ── Playwright + Chromium + WebKit, and their system packages, cached ──
       # Pinned to the same version Jonathan's ~/steward-qa runs, so a suite
@@ -438,14 +474,14 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [tree-check, guards, plan, shard]
+    needs: [tree-check, guards, semgrep, plan, shard]
     if: always() && needs.tree-check.outputs.skip != 'true' && needs.tree-check.outputs.docs_only != 'true'
     steps:
       - uses: actions/checkout@v4
       - name: The plan and guards ran
         run: |
-          echo "guards: ${{ needs.guards.result }} · plan: ${{ needs.plan.result }} · shards: ${{ needs.shard.result }}"
-          [ "${{ needs.guards.result }}" = "success" ] && [ "${{ needs.plan.result }}" = "success" ] \
+          echo "guards: ${{ needs.guards.result }} · semgrep: ${{ needs.semgrep.result }} · plan: ${{ needs.plan.result }} · shards: ${{ needs.shard.result }}"
+          [ "${{ needs.guards.result }}" = "success" ] && [ "${{ needs.semgrep.result }}" = "success" ] && [ "${{ needs.plan.result }}" = "success" ] \
             || { echo "::error::the guards or the plan did not pass, so the battery is not green"; exit 1; }
       - uses: actions/download-artifact@v4
         with:

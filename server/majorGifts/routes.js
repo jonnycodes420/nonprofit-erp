@@ -177,10 +177,9 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
   const minGiving = parseFloat(req.query.minGiving);
   if (Number.isFinite(minGiving) && minGiving > 0) { filters.push("d.total_giving >= ?"); params.push(minGiving); }
 
-  const donors = await query(
-    `SELECT d.id, d.name, COALESCE(d.stage, d.suggested_stage) AS stage, (d.stage IS NULL) AS stage_suggested,
-            d.total_giving, d.last_gift_date, d.assigned_to, d.assigned_to_name, d.updated_at, d.created_at
-       FROM donors d WHERE ${filters.join(" AND ")}`, params);
+  // REDTEAM-1: every filter is a fixed string above and every value a `?`.
+  const where = filters.join(" AND ");
+  const donors = await query(`SELECT d.id, d.name, COALESCE(d.stage, d.suggested_stage) AS stage, (d.stage IS NULL) AS stage_suggested, d.total_giving, d.last_gift_date, d.assigned_to, d.assigned_to_name, d.updated_at, d.created_at FROM donors d WHERE ${where}`, params);   // nosemgrep: javascript.express.security.injection.tainted-sql-string.tainted-sql-string -- fixed filter strings, values bound
 
   // Open asks aggregated per donor (org-wide, joined in JS).
   const oppAgg = await query(
@@ -524,10 +523,7 @@ app.get("/portfolio/:officerId", requireAuth, wrap(async (req, res) => {
 
   // THE MEMBERSHIP IS THE SHARED ONE. Read it, then decorate it.
   const m = portfolioMembership({ orgId, userId: officer.id, scope: "mine", assignedTo: officer.id, alias: "d" });
-  const people = await query(
-    `SELECT d.id, d.name, d.email, d.kind, d.stage, d.suggested_stage, d.total_giving,
-            d.last_gift_date, d.last_gift_amount, d.assigned_by_name, d.assigned_at
-       FROM donors d WHERE ${m.where} ORDER BY d.id`, m.params);
+  const people = await query(`SELECT d.id, d.name, d.email, d.kind, d.stage, d.suggested_stage, d.total_giving, d.last_gift_date, d.last_gift_amount, d.assigned_by_name, d.assigned_at FROM donors d WHERE ${m.where} ORDER BY d.id`, m.params);   // nosemgrep: javascript.express.security.injection.tainted-sql-string.tainted-sql-string -- portfolioMembership builds fixed SQL, values bound
   const ids = people.map(p => p.id);
 
   const openAsk = new Map(), lastConv = new Map(), nextStep = new Map();
@@ -775,8 +771,10 @@ app.get("/major-gifts/dashboard", requireAuth, wrap(async (req, res) => {
 // The raw data BUILD-17's per-officer reports read; just recorded cleanly here.
 app.get("/pipeline/officer-activity", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
-  const to = req.query.to || orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
-  const from = req.query.from || orgTime.addDays(orgToday(await orgTz(orgId)), -90);   // ORG_TZ_SEAM_OK (ARCH-1: the org's day, not UTC's)
+  // REDTEAM-1: a day that is not a day (a quote, a word) was a 500; it is the default.
+  const day = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : null;
+  const to = day(req.query.to) || orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
+  const from = day(req.query.from) || orgTime.addDays(orgToday(await orgTz(orgId)), -90);   // ORG_TZ_SEAM_OK (ARCH-1: the org's day, not UTC's)
   const officers = await query("SELECT id, name, portfolio_color FROM users WHERE org_id=? ORDER BY name", [orgId]);
   const moves = await query(
     `SELECT officer_id, COUNT(*)::int AS cnt FROM moves WHERE org_id=? AND ${inOrgDays("created_at", "org_id", "?", "?")} GROUP BY officer_id`, [orgId, from, to]);

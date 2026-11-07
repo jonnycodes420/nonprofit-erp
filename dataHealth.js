@@ -464,7 +464,7 @@ const mailable = d => !d.deceased && !d.address_unmailable && !d.deleted_at && !
   && !!String(d.city || "").trim() && !!String(d.state || "").trim() && !!String(d.zip || "").trim()
   && ["", "US", "USA", "UNITED STATES"].includes(String(d.country || "US").trim().toUpperCase());
 
-function csvCell(v) { const s = v == null ? "" : String(v); return /[",\n\r]/.test(s) || /^[=+\-@]/.test(s) ? `"${(/^[=+\-@]/.test(s) ? "'" : "") + s.replace(/"/g, '""')}"` : s; }
+function csvCell(v) { return require("./server/shared/csvCell").csvCell(v); }   // REDTEAM-1: one guard, tab and CR too
 function ncoaExportCsv(rows) {
   const lines = [NCOA_EXPORT_COLUMNS.join(",")];
   for (const d of rows) {

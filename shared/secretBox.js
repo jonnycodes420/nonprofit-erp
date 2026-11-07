@@ -128,7 +128,7 @@ export function open(envelope, { aad = "", env = process.env, key = null } = {})
     const [, s, i, t, c] = parts;
     const tag = unb64u(t);
     if (tag.length !== TAG_BYTES) throw new Error("tag length");
-    const d = createDecipheriv("aes-256-gcm", deriveKey(master, unb64u(s)), unb64u(i));
+    const d = createDecipheriv("aes-256-gcm", deriveKey(master, unb64u(s)), unb64u(i), { authTagLength: 16 });   // REDTEAM-1
     if (aad) d.setAAD(Buffer.from(String(aad), "utf8"));
     d.setAuthTag(tag);
     return Buffer.concat([d.update(unb64u(c)), d.final()]).toString("utf8");

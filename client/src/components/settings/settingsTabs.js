@@ -14,7 +14,7 @@ export const BILLING_STATUS_META = {
 
 export const SETTINGS_TABS=[
   {id:"org",label:"Organization"},
-  {id:"team",label:"Team"},
+  {id:"team",label:"Team",viewerHidden:true},   // ACCESS-1
   // BUILD-95 §4 — ONE TAB FOR EVERY OUTSIDE CONNECTION. Setting up online
   // giving is two jobs — a card processor for Steward's own pages, and the
   // places you already take gifts so Steward can see them — and they lived on
@@ -26,7 +26,7 @@ export const SETTINGS_TABS=[
   // things were scattered between them. ONE page now, Connections. The old
   // ids are aliases (SECTION_ALIAS below), so every saved link, nav intent
   // and ?sub= URL still lands, on the right card when it names one.
-  {id:"connections",label:"Connections"},
+  {id:"connections",label:"Connections",viewerHidden:true},
   {id:"giving",label:"Giving Pages"},
   {id:"customization",label:"Customization"},
   // BUILD-86 Part B — the five questions, reachable forever after the first run.

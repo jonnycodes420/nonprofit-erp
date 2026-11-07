@@ -53,6 +53,9 @@ process.env.RESEND_API_KEY = process.env.RESEND_API_KEY || "re_dummy_local";
 process.env.RESEND_BASE_URL = process.env.RESEND_BASE_URL || "http://localhost:5602";
 process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "sk_test_dummy";
 process.env.STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
+// REDTEAM-1: §8 sends real-looking bodies to every write, so Stripe is a local
+// port nobody listens on, never api.stripe.com.
+process.env.STRIPE_API_BASE = process.env.STRIPE_API_BASE || "http://localhost:5603";
 process.env.DONOR_ACCOUNTS_ENABLED = "1";   // flag-off 404s are byte-identical to unknown routes BY DESIGN — the wall is only probeable with the surface on
 process.env.NETWORK_SIGNUP_ENABLED = "1";
 process.env.RESEND_WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET || "whsec_resend_dummy"; // so the unsigned probe gets the 400, not the unconfigured 503
@@ -449,6 +452,7 @@ async function seedOrg(o, tag) {
   // no gift backs was read as a wrong number by any suite that checks every
   // org in a shard's database (numbers1-foot §1, docs/defects.md).
   await q(DONOR_SUMMARY_UPDATE(), [o]);
+  await require("./lib/matrixMoreIds").seed(q, o, tag);   // REDTEAM-1: rows for the routes the inventory newly reads
 }
 
 // ── The cross-tenant resolver: (path segment or param name) → org B's row id.
@@ -456,6 +460,7 @@ async function seedOrg(o, tag) {
 // whose params don't resolve must be added here or to PARAM_EXEMPT — that
 // forced decision IS the coverage gate.
 function bResolver(routePath, param) {
+  { const v = require("./lib/matrixMoreIds").resolve(routePath, param, B); if (v !== undefined) return v; }
   const seg1 = routePath.split("/").filter(Boolean)[0] || "";
   // INT-5 — two different kinds of row live under /webhooks, so the first path
   // segment is not enough to say which id a probe needs: /webhooks/:id is an
@@ -638,6 +643,12 @@ function bResolver(routePath, param) {
 // Routes whose params deliberately get NO cross-tenant probe — each with the
 // reason a reviewer can audit. Anything parameterized, unresolved, and not
 // listed here FAILS §1.
+// REDTEAM-1: routes registered without a literal path whose live chain names
+// no gate, because they are public by design. Anything else unread fails.
+const PUBLIC_UNREAD = [
+  /^\/push\//,            // Google and Microsoft push notifications: verified by their own channel token, no session
+];
+
 const PARAM_EXEMPT = [
   [/^\/(portal|org|give|donate|track|portal-assets|unsubscribe|auth|network|fundraiser)\//, "public / capability-token / slug-scoped surface — org-scoping is by slug or signed token, covered by portal.test.js + donor-front-door"],
   // PARITY-2 Part 4: the public auction page, its bid and register forms and
@@ -710,6 +721,11 @@ const PARAM_EXEMPT = [
   // NOTE /mailbox/never-log/:id is deliberately NOT exempt: its param is a real
   // row id and it resolves through bResolver onto org B's own entry.
   [/^\/mailbox\/:provider\//, "param is a PROVIDER KEY from a fixed registry, not a row id — the wall is per-USER, see int4-mailbox.test.js §7"],
+  // REDTEAM-1: params that name no row of any org, so there is no org B value to aim at.
+  [/^\/mail-types\/:key/, "param is an automatic-email TYPE KEY from the fixed registry in mailTypes.js; the setting is the token's own org's row"],
+  [/^\/groups\/starters\/:key$/, "param is a STARTER GROUP key from a fixed registry; preview and create act on the token's own org"],
+  [/^\/atlas\/progress\/:key$/, "param is a progress key in server/atlas/progress.js, an in-memory map keyed by the token's own org and user; there is no row"],
+  [/^\/capture\/:id\/settled$/, "TEST_MODE-only hook that awaits an in-memory promise and returns no row; 404 for every id in production"],
 ];
 
 function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, opts); }
@@ -892,7 +908,9 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
       const { out, unresolved } = fillPath(r.path, bResolver);
       if (!unresolved.length) {
         const tok = aAdmin; // admin = the STRONGEST in-org credential; if admin can't cross, staff can't
-        const ghostPath = fillPath(r.path, () => "zz-nonexistent").out;
+        // The ghost differs from B's path ONLY in its row ids: a word param (a kind, a step number) keeps
+        // its real value, or a route that checks the word first answers the ghost "unknown kind".
+        const ghostPath = fillPath(r.path, (p, n) => /^(kind|order|seq|qid|cardId)$/.test(n) ? bResolver(p, n) : "zz-nonexistent").out;
         const body = r.method === "GET" ? undefined : {};
         const res = await mfetch(r.method, out, tok, body);
         const ghost = await mfetch(r.method, ghostPath, tok, body);
@@ -935,6 +953,11 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   const fakeExempt = PARAM_EXEMPT.some(([re]) => re.test(fake.path));
   ok("a synthetic uncovered route lands in the unexercised bucket (the B.4 gate fails on it)",
      fakeResolved.unresolved.length > 0 && !fakeExempt, { unresolved: fakeResolved.unresolved, fakeExempt });
+  // REDTEAM-1: a route whose auth chain the inventory could not read was filed
+  // as public and skipped the auth wall and §3 (398 of them before this build).
+  // Every route's registration must be read, or the matrix fails.
+  const unread = inv.filter(r => !r.authRead && !PUBLIC_UNREAD.some(re => re.test(r.path))).map(keyOf);
+  ok(`every route's auth chain was read from its source (${unread.length} unread): [${unread.slice(0, 10).join(", ")}]`, unread.length === 0, unread);
   ok(`probe ledger covers every route (${ledger.size}/${inv.length})`, ledger.size === inv.length,
      inv.map(keyOf).filter(k => !ledger.has(k)).slice(0, 10));
 
@@ -1281,6 +1304,10 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
       ok("§12 …and no account was created", n === 0, n);
     } finally { if (was !== undefined) process.env.TEST_MODE = was; }
   }
+
+  // REDTEAM-1 §8 · org B's ids in the BODY of every write (tests/lib/bodyCrossProbe.js).
+  await require("./lib/bodyCrossProbe").runBodyCrossProbe({ inv, mfetch, q, ok, A, B, tok: aAdmin, bResolver, fillPath, scanLeak, keyOf });
+  ok(`§8 …and no body probe leaked a B marker (${failures.leak.length})`, failures.leak.length === 0, failures.leak.slice(0, 12));
 
   console.log("\n— §5 · B-integrity: the battery wrote nothing across the wall —");
   const bAfter = await hashOrgB();

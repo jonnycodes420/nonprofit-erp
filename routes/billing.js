@@ -525,7 +525,7 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (!email) return res.status(400).json({ error: "Email required" });
   // VOL-1 — three roles now. A volunteer coordinator sees volunteers and
   // hours and not giving; the boundary is enforced in auth.js, not here.
-  const validRole = ["admin", "volunteer_coordinator"].includes(role) ? role : "staff";
+  const validRole = ["admin", "volunteer_coordinator", "viewer"].includes(role) ? role : "staff";   // ACCESS-1: viewer, read only
   const normalizedEmail = email.trim().toLowerCase();
 
   // WALKB-2: a member, or an address with an invite already waiting, is refused in one sentence.
@@ -591,13 +591,14 @@ app.get("/auth/invite/:token", wrap(async (req, res) => {
   if (invite.accepted_at) return res.status(410).json({ error: "This invite has already been accepted" });
   if (invite.revoked_at) return res.status(410).json({ error: "This invite was withdrawn. Ask your admin for a new one." });   // WALKB-2
   if (new Date(invite.expires_at) < new Date()) return res.status(410).json({ error: "This invite has expired" });
-  res.json({ email: invite.email, orgName: invite.org_name, role: invite.role });
+  // ACCESS-1: an address with an account already joins with its own password.
+  const [has] = await query("SELECT 1 FROM users WHERE lower(email) = lower(btrim(?)) AND deactivated_at IS NULL", [invite.email]);
+  res.json({ email: invite.email, orgName: invite.org_name, role: invite.role, existingAccount: !!has });
 }));
 
 app.post("/auth/invite/accept", wrap(async (req, res) => {
   const { token, name, password } = req.body;
-  if (!token || !name || !password) return res.status(400).json({ error: "token, name, and password required" });
-  if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
+  if (!token) return res.status(400).json({ error: "token, name, and password required" });
 
   const rows = await query(
     `SELECT i.*, o.onboarding_complete FROM invites i
@@ -610,8 +611,18 @@ app.post("/auth/invite/accept", wrap(async (req, res) => {
   if (invite.accepted_at) return res.status(410).json({ error: "This invite has already been accepted" });
   if (invite.revoked_at || new Date(invite.expires_at) < new Date()) return res.status(410).json({ error: invite.revoked_at ? "This invite was withdrawn." : "This invite has expired" });
 
-  const existing = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [invite.email]);
-  if (existing.length) return res.status(409).json({ error: "An account with this email already exists" });
+  const existing = await query("SELECT id, org_id, email, name, password_hash, is_super_admin, deactivated_at FROM users WHERE lower(email) = lower(btrim(?))", [invite.email]);
+  if (existing.length) {
+    // ACCESS-1: someone who already has a Steward account joins this org as a
+    // second one. She accepts SIGNED IN as that account (her sign-in, with its
+    // two-step code), never with a password typed here: this page is public,
+    // and a password check on it would be a guessing door around sign-in.
+    const out = await require("../server/org/joinOrg").joinWithInvite({ query, run, invite, user: existing[0], req, res, signToken });
+    if (out) return res.status(out.status).json(out.body);
+    return;
+  }
+  if (!name || !password) return res.status(400).json({ error: "token, name, and password required" });
+  if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
 
   const userId = newId("user");
   const hash = bcrypt.hashSync(password, 12);

@@ -275,7 +275,7 @@ function mount(ctx) {
             } else {
               const K = R.kindOf(data && data.__removal);
               if (!K || K.table !== t.table_name) { const e = new Error("bad"); e.status = 400; throw e; }
-              await runTx(tx, `INSERT INTO ${K.table} SELECT * FROM jsonb_populate_record(NULL::${K.table}, ?::jsonb)`, [JSON.stringify(data)]);
+              await runTx(tx, `INSERT INTO ${K.table} SELECT * FROM jsonb_populate_record(NULL::${K.table}, ?::jsonb)`, [JSON.stringify(data)]);   // nosemgrep: javascript.express.security.injection.tainted-sql-string.tainted-sql-string -- table from the R.kindOf allow-list, checked on the line above
               if (WITH[K.table]) await WITH[K.table].give(tx, ctx, data.__with, data, orgId);
               back.push({ kind: data.__removal, id: t.record_id });
             }

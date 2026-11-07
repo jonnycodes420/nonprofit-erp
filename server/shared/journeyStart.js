@@ -11,6 +11,9 @@ const TL = require("../../timelineLine");
 const { newId } = require("./newId");   // IDS-1: every new row id is prefix + 20 hex
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../../emailCompose");
+// RACE-1 — one journey writer per person at a time, and a TEST_MODE hold.
+const { withPersonLock } = require("./personLock");
+const raceHold = require("./raceHold");
 
 function mount(ctx) {
 const {
@@ -58,7 +61,17 @@ async function journeyMod() { return import("../../shared/journeyShape.js"); }
 // attributing it to whoever happened to be signed in.
 const JOURNEY_ACTOR = { id: "system:journey", name: "Steward (journey)" };
 
-async function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
+// RACE-1 · EVERY JOURNEY WRITE FOR A PERSON TAKES THEIR TURN. A start reads
+// the person's journeys, may replace one, writes a plan and its steps, and
+// opens the soonest step's Thread; the advance reads and writes the same rows.
+// Two of these for one person at once (the sweep beside the nudge, a webhook
+// beside a person pressing Apply) each read before the other wrote, and a
+// replaced journey's step could take the Thread from the one that replaced it.
+// personLock serialises them per person; the inner advance re-enters.
+function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
+  return withPersonLock("journey", orgId, donorId, () => maybeStartJourneyNow(orgId, donorId, triggerKey, opts));
+}
+async function maybeStartJourneyNow(orgId, donorId, triggerKey, opts = {}) {
   const J = await journeyMod();
   const PL = await planMod();
   if (!J.TRIGGER_KEYS.includes(triggerKey)) return { started: false, reason: "unknown_trigger" };
@@ -380,7 +393,10 @@ async function donorInAudience(orgId, donorId, audience = {}) {
 // When a journey step already holds the thread but another journey's step is
 // due sooner, the thread is handed to the sooner one and the other step goes
 // back to waiting, so the Thread always shows what is next.
-async function advanceCultivationPlan(orgId, donorId, { actorId, actorName, today } = {}) {
+function advanceCultivationPlan(orgId, donorId, opts = {}) {
+  return withPersonLock("journey", orgId, donorId, () => advanceCultivationPlanNow(orgId, donorId, opts));
+}
+async function advanceCultivationPlanNow(orgId, donorId, { actorId, actorName, today } = {}) {
   const PL = await planMod();
   const plans = await query(
     `SELECT * FROM cultivation_plans WHERE org_id=? AND donor_id=? AND status='active'
@@ -455,6 +471,9 @@ async function advanceCultivationPlan(orgId, donorId, { actorId, actorName, toda
   }
   if (holder) return holder.plan.id;
 
+  // RACE-1: a suite can stop here, with the plans read and the Thread not yet
+  // opened, the moment FLAKE-2's lost step needed (tests/race1-concurrency).
+  await raceHold.at(`journey-open:${donorId}:${plan.template_id}`);
   const opened = await withTransaction(async client => openThreadTx(client, {
     orgId, donorId,
     step: { type: step.step_type, label: step.label, due: step.due_date },
@@ -503,7 +522,8 @@ async function journeyTemplateDraft(orgId, donorId, step) {
   await run(
     `INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,template_id,created_by,created_by_name)
      SELECT ?::text,?::text,?::text,?::text,?::text,?::text,'pending_review','journey',?::text,?::text,?::text
-      WHERE NOT EXISTS (SELECT 1 FROM milestone_drafts WHERE org_id=?::text AND milestone_key=?::text)`,
+      WHERE NOT EXISTS (SELECT 1 FROM milestone_drafts WHERE org_id=?::text AND milestone_key=?::text)
+     ON CONFLICT DO NOTHING`,   // RACE-1: milestone_drafts_journey_step_once (server/db/race1Indexes.js)
     [id, orgId, donorId, key, words.subject || step.label || t.name, words.body, t.id,
      JOURNEY_ACTOR.id, JOURNEY_ACTOR.name, orgId, key]);
   return id;

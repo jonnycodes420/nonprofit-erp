@@ -20,15 +20,20 @@ const importShape = async () => (IS = IS || await import("./shared/importShape.j
 const toC = v => Math.round(Number(v || 0) * 100);
 
 // ── WHO MAY SEE IT ──────────────────────────────────────────────────────────
-async function canSee(userId) {
+async function canSee(userId, orgId) {
   if (!userId) return false;
-  const [u] = await query(`SELECT role, can_major_gifts, deactivated_at FROM users WHERE id = ?`, [userId]);
+  const [u] = await query(`SELECT org_id, role, can_major_gifts, deactivated_at FROM users WHERE id = ?`, [userId]);
   if (!u || u.deactivated_at) return false;
+  // ACCESS-1: in an org that isn't her home, the membership's role decides
+  // (the major-gifts tick is per home org, so only an admin sees it there).
+  if (orgId && String(orgId) !== String(u.org_id)) {
+    return (await require("./server/auth/access").liveRoleIn(userId, orgId)) === "admin";
+  }
   return u.role === "admin" || !!u.can_major_gifts;
 }
 function requireMajorGifts(wrap) {
   return wrap(async (req, res, next) => {
-    if (!(await canSee(req.user && req.user.userId))) {
+    if (!(await canSee(req.user && req.user.userId, req.user && req.user.orgId))) {
       return res.status(403).json({ error: "major_gifts_only", message: "Room to give and screening results are for admins and staff with the major gifts permission." });
     }
     next();
@@ -129,7 +134,7 @@ function splitName(name) {
   if (parts.length < 2) return [parts[0] || "", ""];
   return [parts.slice(0, -1).join(" "), parts[parts.length - 1]];
 }
-const csvCell = v => { const s = v == null ? "" : String(v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+const { csvCell } = require("./server/shared/csvCell");   // REDTEAM-1: the formula guard, shared
 function fileCsv(rows) {
   const lines = [FILE_FIELDS.join(",")];
   for (const r of rows) {

@@ -23,7 +23,7 @@
 // GET and HEAD change nothing, so they are never refused here.
 
 const ORG_HEADER = "x-steward-org";
-const EXEMPT_PATHS = new Set(["/auth/logout", "/auth/login"]);
+const EXEMPT_PATHS = new Set(["/auth/logout", "/auth/login", "/auth/switch-org"]);   // ACCESS-1: a switch is the deliberate change of org
 
 function orgChangedSentence(pageName, nowName) {
   return `This page was for ${pageName || "another organization"}, but you're now in ${nowName || "another organization"}. Reload to continue.`;

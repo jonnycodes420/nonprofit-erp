@@ -128,7 +128,7 @@ async function buildDonorListFilter(req) {
   let opts = {};
   if (q.sort === "room_to_give") {
     const PR = require("../../prospect");
-    if (await PR.canSee(req.user.userId)) {
+    if (await PR.canSee(req.user.userId, req.user.orgId)) {
       const all = await PR.roomToGive(req.user.orgId);
       const roomRanks = [];
       for (const [id, a] of all) if (a.rank > 0) roomRanks.push([id, a.rank]);

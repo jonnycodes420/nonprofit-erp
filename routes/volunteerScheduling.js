@@ -1412,12 +1412,8 @@ app.get("/volunteer-hub/report/export.csv", requireAuth, wrap(async (req, res) =
        LEFT JOIN volunteer_opportunities o ON o.id = sl.opportunity_id
       WHERE s.org_id=? AND s.date >= ? AND s.date <= ? AND d.deleted_at IS NULL
       ORDER BY s.date, d.name`, [orgId, from, to]);
-  const esc = v => {
-    const s = String(v ?? "");
-    // A leading =, +, - or @ is a formula to a spreadsheet, not a value.
-    const safe = /^[=+\-@]/.test(s) ? "'" + s : s;
-    return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
-  };
+  // A leading =, +, - or @ (or a tab, or a CR) is a formula to a spreadsheet, not a value.
+  const esc = require("../server/shared/csvCell").csvCell;
   const head = ["Volunteer", "Email", "Date", "Hours", "What they did", "Program", "How it was recorded"];
   const body = rows.map(r => [r.name, r.email || "", r.date, Number(r.hours), r.what, r.program,
     { staff: "Coordinator", self: "The volunteer", import: "Imported" }[r.via] || r.via].map(esc).join(","));
@@ -1878,7 +1874,7 @@ app.get("/volunteer-hub/slots/export.csv", requireAuth, wrap(async (req, res) =>
   const ids = String(req.query.ids || "").split(",").map(s => s.trim()).filter(Boolean).slice(0, 500);
   if (!ids.length) return res.status(400).json({ error: "Pick at least one shift." });
   const { shifts } = await scheduleRows(orgId, { slotIds: ids });
-  const cell = v => { const t = v == null ? "" : String(v); return /[",\n\r]/.test(t) || /^[=+\-@]/.test(t) ? `"${(/^[=+\-@]/.test(t) ? "'" : "") + t.replace(/"/g, '""')}"` : t; };
+  const cell = require("../server/shared/csvCell").csvCell;   // REDTEAM-1: one guard
   const lines = [["Shift", "Opportunity", "Date", "Start", "End", "Venue", "Location", "Published", "Role", "Person", "Email", "Status", "Waiting list number",
     "Needed", "Scheduled", "Short", "Waitlisted", "Hours scheduled"].join(",")];
   for (const s of shifts) {

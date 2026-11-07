@@ -64,7 +64,8 @@ function walkRouter(app) {
 // handler region (this registration → the next one) and extract every
 // req.params/req.query/req.body reference, including destructuring.
 function sourceParamMap(serverSrc) {
-  const regRe = /app\.(get|post|put|patch|delete)\(\s*["']([^"']+)["']/g;
+  // REDTEAM-1: a module may register on `r` or `routers.r0` as well as `app`.
+  const regRe = /\b(?:app|r|router|routers\.\w+)\.(get|post|put|patch|delete)\(\s*["'](\/[^"']*)["']/g;
   const regs = [];
   let m;
   while ((m = regRe.exec(serverSrc))) regs.push({ method: m[1].toUpperCase(), path: m[2], at: m.index });
@@ -134,10 +135,44 @@ function loadClientFiles() {
   return out;
 }
 
+// REDTEAM-1: the route modules outside server.js. readSource("server.js")
+// rebuilds only what was cut out of server.js; a route written straight into
+// routes/*.js or server/<domain>/*.js since (398 of them on 6 Nov 2026) had no
+// auth chain the matrix could read, so it was filed as PUBLIC and got neither
+// the auth wall nor the cross-tenant probe. Every server file that registers a
+// route is read too; server.js's own reading wins where both name a route.
+function routeModuleSources() {
+  const out = [];
+  const skip = new Set(["node_modules", "client", "tests", "scripts", "docs", ".generated", ".git", "audit", "dist"]);
+  const walk = (dir, depth) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (skip.has(e.name) || e.name.startsWith(".")) continue;
+      const fp = path.join(dir, e.name);
+      if (e.isDirectory()) { if (depth < 4) walk(fp, depth + 1); continue; }
+      if (!/\.js$/.test(e.name)) continue;
+      const src = fs.readFileSync(fp, "utf8");
+      if (/\b(app|router|r)\.(get|post|put|patch|delete)\(\s*["']\//.test(src)) out.push(src);
+    }
+  };
+  walk(ROOT, 0);
+  return out;
+}
+
+const LIVE_GATES = new Set(["requireAuth", "requireAuth404", "requireAdmin", "requireSuperAdmin", "checkWriteAccess",
+  "requireDonorAccount", "requirePortalSession", "requireMembershipSession", "verifyStripeSignature"]);
+const liveGates = mws => (mws || []).filter(n => LIVE_GATES.has(n));
+
 function buildInventory(app) {
   const serverSrc = readSource("server.js");
   const routes = walkRouter(app);
   const paramMap = sourceParamMap(serverSrc);
+  for (const src of routeModuleSources()) {
+    for (const [k, v] of sourceParamMap(src)) {
+      const have = paramMap.get(k);
+      if (!have) paramMap.set(k, v);
+      else if (!have.gates.length && v.gates.length) have.gates = v.gates;
+    }
+  }
   const clientFiles = loadClientFiles();
   return routes.map(r => {
     const pm = paramMap.get(`${r.method} ${r.path}`) || { path: new Set(), query: new Set(), body: new Set(), gates: null, line: null };
@@ -150,8 +185,13 @@ function buildInventory(app) {
       method: r.method, path: r.path, line: pm.line,
       // gates from the source registration (legible names); layerCount from the
       // live router (cross-check that the registration was actually found)
-      auth: pm.gates || [],
+      auth: pm.gates || liveGates(r.middlewares),
       sourceSeen: pm.gates !== null,
+      // REDTEAM-1: a route registered in a loop (`for (const p of [...])
+      // app.post(p, requireAuth, ...)`) has no literal path to find in source.
+      // Its live chain still names requireAuth; that is enough to put it
+      // behind the auth wall and the cross-tenant probe.
+      authRead: pm.gates !== null || liveGates(r.middlewares).length > 0,
       layerCount: r.middlewares.length,
       params, identifiers,
       frontend: fr, // { probe, referenced: true|false|null }
