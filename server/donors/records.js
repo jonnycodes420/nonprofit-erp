@@ -488,6 +488,8 @@ app.post("/donors/merge", requireAuth, checkWriteAccess, wrap(async (req, res) =
   res.json({ merged: true, primaryId, secondaryId, reassigned, mergeId: out.mergeId });
 }));
 const RESTORE_WITH = {
+  // STALE-2: a guest's timeline lines come back with the guest.
+  event_attendees: (client, x) => require("../events/attendanceLines").giveLines(client, x),
   interactions: async (client, x, recordId, orgId) => {
     if (x && Array.isArray(x.calendar_event_ids) && x.calendar_event_ids.length) {
       await runTx(client, "UPDATE calendar_events SET interaction_id = ?, updated_at = NOW() WHERE id = ANY(?) AND org_id = ? AND interaction_id IS NULL",

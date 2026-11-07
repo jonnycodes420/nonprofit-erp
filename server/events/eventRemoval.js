@@ -52,6 +52,8 @@ function mount(ctx) {
     }
     const { changes } = await run("DELETE FROM events WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
     if (!changes) return res.status(404).json({ error: "Not found" });
+    // STALE-2: a line that still names the event goes with it.
+    await require("./attendanceLines").dropEventLines(req.user.orgId, req.params.id);
     res.json({ ok: true });
   }));
 

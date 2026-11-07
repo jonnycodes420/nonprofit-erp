@@ -39,13 +39,18 @@ const RULES = [
   [/^\/(imports?|spreadsheet-import|csv|history-import|old-reports)\b|\/undo\b.*import|import.*\/undo\b/, ALL],
   [/^\/donors\/[^/]+\/gifts\b|^\/gifts\b|^\/donations\b|^\/checks?\b|^\/deposits?\b|^\/batches?\b|^\/recurring\b|^\/refunds?\b|^\/soft-credits?\b|^\/ledger\b|^\/finance\b/, GIFT],
   [/^\/pledges?\b|\/pledges?\b/, ["pledge", "gift", "person", "totals"]],
-  [/^\/grants?\b|^\/funders?\b/, ["grant", "pledge", "gift", "person", "totals"]],
+  // STALE-2: a grant's deadlines are tasks too (trg_milestone_task_sync).
+  [/^\/grants?\b|^\/funders?\b/, ["grant", "pledge", "gift", "person", "totals", "task"]],
   [/^\/events?\b/, ["event", "person"]],
   [/^\/tasks?\b|^\/next-steps?\b|^\/follow-?ups?\b/, ["task", "person"]],
   [/^\/groups?\b|^\/removals\/group\b|^\/segments?\b/, ["group", "person"]],
   [/volunteer|^\/shifts?\b|\/kiosk\b|\/check-?in\b|^\/removals\/(shift|volunteer)\b|^\/hours\b/i, ["volunteer", "person"]],
   [/^\/funds?\b|^\/financials?\b|^\/budget/, ["fund", "totals"]],
-  [/^\/(interactions|threads|attachments|notes|conversations|files)\b/, ["note", "person"]],
+  // STALE-2 (W-1107-Volunteers-15): a Thread's next step IS a task (the
+  // database's trg_thread_task_sync writes it), so snoozing it to revisit,
+  // dismissing it or setting a new one moves the Tasks views and the badge.
+  [/^\/threads\b/, ["note", "person", "task"]],
+  [/^\/(interactions|attachments|notes|conversations|files)\b/, ["note", "person"]],
   [/^\/removals\b|^\/trash\b|^\/merge|\/merge\b|^\/households?\b|^\/donors\b|^\/people\b|^\/relationships?\b/, ["person", "gift", "pledge", "group", "totals", "task", "note"]],
   [/^\/(campaigns?|appeals?|goals?|moves?|portfolio|major-gifts|memberships?)\b/, ["person", "totals", "pledge"]],
 ];
