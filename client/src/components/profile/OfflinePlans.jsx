@@ -17,6 +17,7 @@ import { displayDate } from "../../../../shared/displayDate";
 import { orgTodayCivil } from "../../lib/orgToday";
 import { told } from "../../lib/stewardTold";
 import { useChanged } from "../../lib/changes";
+import { countLabel } from "../../../../shared/countWords.js";
 
 const FREQS = [["monthly", "Monthly"], ["weekly", "Weekly"], ["quarterly", "Quarterly"], ["annually", "Annually"]];
 const STATE = { active: { label: "On track", color: T.greenDk }, behind: { label: "Behind", color: T.gold700 },
@@ -89,7 +90,7 @@ export default function OfflinePlans({ donorId, isReadOnly, giftsFull = [] }) {
               <span style={{ fontSize: 11, color: T.ink3 }}>{p.label}{p.method ? ` · ${p.method}` : ""}{p.fund_name ? ` · ${p.fund_name}` : ""}</span>
             </div>
             <div data-testid="offline-plan-sentence" style={{ fontSize: 12, color: T.ink2, marginTop: 4 }}>{p.sentence}</div>
-            <div style={{ fontSize: 11, color: T.ink3, marginTop: 2 }}>From {displayDate(p.start_date)}{p.end_date ? ` to ${displayDate(p.end_date)}` : ""} · {p.paidCount} payment{p.paidCount === 1 ? "" : "s"} recorded</div>
+            <div style={{ fontSize: 11, color: T.ink3, marginTop: 2 }}>From {displayDate(p.start_date)}{p.end_date ? ` to ${displayDate(p.end_date)}` : ""} · {countLabel(p.paidCount, "payment")} recorded</div>
             {p.payments.length > 0 && <div data-testid="offline-plan-payments" style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
               {p.payments.map(g => <span key={g.giftId} style={{ fontSize: 11, background: T.bg, borderRadius: 6, padding: "2px 7px", color: T.ink2 }}>{displayDate(g.date)} · {fmtFull(g.amount)}</span>)}</div>}
             {!isReadOnly && p.status !== "cancelled" && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
@@ -110,7 +111,7 @@ export default function OfflinePlans({ donorId, isReadOnly, giftsFull = [] }) {
                 <input type="checkbox" checked={convert.ids.has(g.id)} onChange={e => { const ids = new Set(convert.ids); if (e.target.checked) ids.add(g.id); else ids.delete(g.id); setConvert({ ...convert, ids }); }} />{" "}
                 {displayDate(g.date)} · {fmtFull(g.amount)}</label>)}
               <div style={{ display: "flex", gap: 6 }}>
-                <button type="button" onClick={doConvert} disabled={!convert.ids.size} style={btn(true)}>Make {convert.ids.size || ""} payment{convert.ids.size === 1 ? "" : "s"} of this plan</button>
+                <button type="button" onClick={doConvert} disabled={!convert.ids.size} style={btn(true)}>{convert.ids.size ? `Make ${countLabel(convert.ids.size, "payment")} of this plan` : "Pick the gifts"}</button>
                 <button type="button" onClick={() => setConvert(null)} style={{ ...btn(false), border: "none" }}>Cancel</button>
               </div>
             </div>}
