@@ -314,22 +314,35 @@ async function reportBuntList(orgId, p, kind) {
   const cur = reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth);
   const prior = reportYearBounds(p.year - 1, p.yearMode, p.fiscalStartMonth);
   const bp0 = buntPredicate(kind, cur, prior, "d");
-  const rows = await query(
+  // REPORTS-4: the count and the prior-year giving at stake, through the
+  // `bunt` source (the same predicates, moved there). MOPUP-3: asked beside
+  // the rows, not after them.
+  const bp = { kind, from: cur.from, to: cur.to, prevFrom: prior.from, prevTo: prior.to };
+  const pFigures = reportFigures(orgId, { people: { key: "bunt", params: bp }, atStake: { key: "bunt", params: { ...bp, measure: "sum" } } });
+  // MOPUP-3: LYBUNT set-wise (shared/numbers/bunt.js lybuntSet), one pass
+  // over the two years' gifts; the same people and amounts as the form below.
+  const B = NUMBERS.bunt;
+  const fast = kind === "lybunt" && B.samePrior(cur, prior) ? B.lybuntSet(orgId, cur, prior) : null;
+  const rows = fast ? await query(
+    `SELECT d.id, d.name, d.email, d.assigned_to_name,
+            COALESCE(d.total_giving, 0) AS total_giving, d.last_gift_date, d.last_gift_amount,
+            COALESCE(ga.prior_sum, 0) AS prior_year_total, ?::text AS last_year_from, ?::text AS last_year_to
+       FROM donors d JOIN ${fast.sql} ga ON ga.donor_id = d.id
+      WHERE d.org_id = ? AND d.deleted_at IS NULL AND ${B.LIVE_PERSON("d")}
+      ORDER BY COALESCE(d.total_giving, 0) DESC, d.id`,
+    [prior.from, prior.to, ...fast.args, orgId]) : await query(
     `SELECT d.id, d.name, d.email, d.assigned_to_name,
             COALESCE(d.total_giving, 0) AS total_giving, d.last_gift_date, d.last_gift_amount,
             ${NUMBERS.givingBetween.LAST_YEAR_SUM("d")} AS prior_year_total, ly.f AS last_year_from, ly.t AS last_year_to
      FROM donors d ${NUMBERS.givingBetween.LAST_YEAR_JOIN("d")}
      WHERE d.org_id = ? AND d.deleted_at IS NULL
        AND ${bp0.sql}
-     ORDER BY COALESCE(d.total_giving, 0) DESC`,
+     ORDER BY COALESCE(d.total_giving, 0) DESC, d.id`,
     // LEDGER-1: each person's amount is what they gave in the last year they
     // gave (givingBetween.LAST_YEAR_SUM): last year for LYBUNT, and for SYBUNT
     // their own last year, never the prior year they did not give in.
     [...NUMBERS.givingBetween.lastYearArgs(cur.from), orgId, ...bp0.args]);
-  // REPORTS-4: the count and the prior-year giving at stake, through the
-  // `bunt` source (the same predicates, moved there).
-  const bp = { kind, from: cur.from, to: cur.to, prevFrom: prior.from, prevTo: prior.to };
-  const figures = await reportFigures(orgId, { people: { key: "bunt", params: bp }, atStake: { key: "bunt", params: { ...bp, measure: "sum" } } });
+  const figures = await pFigures;
   return {
     figures,
     year: p.year, yearMode: p.yearMode, currentPeriod: cur, priorPeriod: prior,
@@ -668,9 +681,16 @@ async function reportSolicitations(orgId, p) {
 }
 
 async function reportBookkeeper(orgId, p) {
+  // MOPUP-3: the fund filter selects by FUND LINE (shared/numbers/fundLines.js FUND_HIT), so a
+  // split gift's $200 line on the chosen fund is found, and only that line is
+  // in the file. reportGiftWhere's own filter reads gifts.fund_id (the largest line).
+  const BF = NUMBERS.fundLines;
+  const fundId = p.fundId || null;
+  const pAll = fundId ? { ...p, fundId: null } : p;
   const params = [];
-  let where = reportGiftWhere(p, orgId, params);
+  let where = reportGiftWhere(pAll, orgId, params);
   where += ` AND ${NUMBERS.money.MONEY("g")}`;
+  if (fundId) { where += ` AND ${BF.FUND_HIT("g")}`; params.push(fundId); }
 
   const rows = await query(
     `SELECT LEFT(g.date, 10) AS date,
@@ -693,7 +713,7 @@ async function reportBookkeeper(orgId, p) {
             (g.pledge_id IS NOT NULL) AS pledge_payment,
             (g.recurring_subscription_id IS NOT NULL) AS recurring,
             COALESCE(r.receipt_number, '') AS receipt_number,
-            g.id AS gift_id
+            g.id AS gift_id, g.fund_id AS fund_id
        FROM gifts g
        JOIN donors d ON d.id = g.donor_id
        LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
@@ -707,11 +727,12 @@ async function reportBookkeeper(orgId, p) {
   // rounding it here would make the two sides agree by construction, and a
   // number that cannot disagree is not a check.
   const tParams = [];
-  let tWhere = reportGiftWhere(p, orgId, tParams);
+  let tWhere = reportGiftWhere(pAll, orgId, tParams);
   tWhere += ` AND ${NUMBERS.money.MONEY("g")}`;
+  if (fundId) { tWhere += ` AND ${BF.FUND_HIT("g")}`; tParams.push(fundId); }
   const [tot] = await query(
-    `SELECT COUNT(*)::int AS n, COALESCE(SUM(g.amount * 100), 0)::text AS cents
-       ${REPORT_GIFT_FROM} ${tWhere}`, tParams);
+    `SELECT COUNT(*)::int AS n, COALESCE(SUM(${fundId ? BF.FUND_CENTS("g") : "g.amount * 100"}), 0)::text AS cents
+       ${REPORT_GIFT_FROM} ${tWhere}`, fundId ? [fundId, ...tParams] : tParams);
 
   const giftRows = rows.map(r => {
     const cents = bkCents(r.amount);
@@ -745,11 +766,14 @@ async function reportBookkeeper(orgId, p) {
       recurring: r.recurring ? "Yes" : "No",
       receiptNumber: r.receipt_number,
       giftId: r.gift_id,
+      fundId: r.fund_id || null,
     };
   });
   // MOPUP-2: a gift split across funds is one row per fund line (splitGiftRows.js).
-  const out = splitGiftRows(giftRows,
+  const split = splitGiftRows(giftRows,
     await NUMBERS.fundLines.linesFor(query, orgId, giftRows.map(r => r.giftId)), bkDollars);
+  // MOPUP-3: filtered to a fund, only that fund's lines are the file.
+  const out = fundId ? split.filter(r => r.fundId === fundId) : split;
   const giftCount = giftCountOf(out);
 
   // TOTALS BY FUND, over the same rows. A gift with no fund is its own line,

@@ -290,7 +290,9 @@ app.get("/org", requireAuth, wrap(async (req, res) => {
   // FIX-50: `demo` is the one rule (orgKind.isDemoOrg); the banner reads it.
   // FIX-55 item 6: what this server has connected, as booleans only (never a
   // key). A screen whose feature needs a service that is not set up hides it.
-  res.json({ ...org, demo: require("../../orgKind").isDemoOrg(org), accessState: getOrgAccessState(org),
+  // MOPUP-3: how many moves Home's deck holds, so a phone sizes its stand-in before the deck lands.
+  const deckMoves = await require("../insights/deckMoves").forOrg(org.id);
+  res.json({ ...org, deckMoves, demo: require("../../orgKind").isDemoOrg(org), accessState: getOrgAccessState(org),
     capabilities: {
       geocoding: geocode.geocodingConfigured(),
       // aiClient.aiGate's rule without the budget: a key, and the org's switch.

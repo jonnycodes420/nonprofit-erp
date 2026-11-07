@@ -35,6 +35,12 @@
 //       negative line, and syncing again (all, and by id) sends nothing new.
 //       Planted 2026-10-03: letting Pending and the claim take a synced row
 //       again sent three deposits for one payout, and §7 went red.
+//   §9  MOPUP-3: a gift split $300 / $200 across two funds is ONE sales
+//       receipt with TWO lines, each on its own fund's account; in deposit
+//       mode it is two deposit lines, the fee cut per fund as the deposit
+//       sheet cuts it, and the deposit still foots to the payout's net.
+//       Planted 2026-11-06: partsOf returning the gift whole (the largest
+//       line again) turned §9 red.
 //   §8  INT-PROD-1: "What Steward can see" reads the company's name and its
 //       latest customers and payments, and sends QuickBooks nothing. Planted
 //       2026-10-07: a POST inside fetchPreview turned §8 red.
@@ -141,12 +147,13 @@ function startStub() {
 const MAPPING = { qbo: {
   mode: "salesreceipt", startDate: SINCE,
   depositAccount: { id: ACCT_BANK, name: "Checking" },
-  funds: { fnd_p2_youth: { accountId: ACCT_DONATIONS, accountName: "Donations", classId: CLASS_YOUTH, className: "Youth Arts" } },
+  funds: { fnd_p2_youth: { accountId: ACCT_DONATIONS, accountName: "Donations", classId: CLASS_YOUTH, className: "Youth Arts" },
+           fnd_p2_pantry: { accountId: ACCT_PROGRAMS, accountName: "Program Income" } },
   campaigns: {},
 } };
 
 async function reset() {
-  for (const t of ["gift_bookkeeping_syncs", "bookkeeping_customers", "bookkeeping_deposits", "bookkeeping_connections",
+  for (const t of ["gift_bookkeeping_syncs", "gift_fund_lines", "bookkeeping_customers", "bookkeeping_deposits", "bookkeeping_connections",
                    "gifts", "donors", "fin_funds", "users"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
@@ -156,6 +163,7 @@ async function reset() {
            VALUES ('u_p2qbo',$1,$2,$3,'Parity Books Admin','admin')`, [ORG, ADMIN, bcrypt.hashSync("loadtest1234", 10)]);
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('fnd_p2_youth',$1,'Youth Arts',true)`, [ORG]);
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('fnd_p2_roof',$1,'Roof Appeal',true)`, [ORG]);
+  await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('fnd_p2_pantry',$1,'Pantry',false)`, [ORG]);
   await q(`INSERT INTO donors (id,org_id,name,email) VALUES ('d_p2_wren',$1,'Wren O''Callaghan','wren@example.org')`, [ORG]);
   await q(`INSERT INTO donors (id,org_id,name,email) VALUES ('d_p2_ash',$1,'Ash Pemberton','ash@example.org')`, [ORG]);
   const gift = (id, donor, fund, amount, date) => q(
@@ -307,6 +315,52 @@ const sync = (tok, body) => api("POST", "/qbo/sync", tok, body);
   const [{ n: depRows }] = await q(`SELECT COUNT(*)::int AS n FROM gift_bookkeeping_syncs WHERE org_id=$1 AND gift_id IN ('g_p2_po_a','g_p2_po_b')
                                     AND status='synced' AND txn_type='Deposit' AND qbo_id=$2`, [ORG, d0.Id]);
   ok("§7 …and both gifts keep the one deposit's id", depRows === 2, depRows);
+
+  // ── §9 · MOPUP-3: A SPLIT GIFT IS SENT SPLIT ────────────────────────────
+  const splitGift = async (id, amount, date, extra = {}) => {
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,fund_id,payment_method,deposit_ref,deposited_on,processor_fee_amount)
+             VALUES ($1,$2,'d_p2_ash',$3,$4,'online','fnd_p2_youth','card',$5,$6,$7)`,
+      [id, ORG, amount, date, extra.ref || null, extra.on || null, extra.fee || null]);
+    await q(`INSERT INTO gift_fund_lines (id,org_id,gift_id,fund_id,amount,created_by,created_by_name)
+             VALUES ($1||'_a',$2,$1,'fnd_p2_youth',300,'system:test','p2 qbo suite'),
+                    ($1||'_b',$2,$1,'fnd_p2_pantry',200,'system:test','p2 qbo suite')`, [id, ORG]);
+  };
+  await q(`UPDATE bookkeeping_connections SET mapping = jsonb_set(mapping, '{qbo,mode}', '"salesreceipt"') WHERE id=$1`, [CONN]);
+  await splitGift("g_p2_split", 500, "2026-09-25");
+  const pS = await pending(tok);
+  const splitRow = (pS.body?.rows || []).find(r => r.giftId === "g_p2_split");
+  ok("§9 Pending says where each part lands", /\$300\.00 to Donations, class Youth Arts; \$200\.00 to Program Income/.test(splitRow?.lands || ""), splitRow);
+  const sS = await sync(tok, { giftIds: ["g_p2_split"] });
+  const srS = store.receipts.filter(r => r.DocNumber === "g_p2_split");
+  ok("§9 the split gift is ONE sales receipt", sS.status === 200 && sS.body?.synced === 1 && srS.length === 1, { body: sS.body, n: srS.length });
+  const sLines = (srS[0] || {}).Line || [];
+  const acctOf = l => (store.items.find(i => i.Id === l.SalesItemLineDetail?.ItemRef?.value) || {}).IncomeAccountRef?.value;
+  ok("§9 …with TWO lines, $300 on the Youth Arts fund's account and class and $200 on the Pantry fund's",
+     sLines.length === 2
+       && sLines[0].Amount === 300 && acctOf(sLines[0]) === ACCT_DONATIONS && sLines[0].SalesItemLineDetail?.ClassRef?.value === CLASS_YOUTH
+       && sLines[1].Amount === 200 && acctOf(sLines[1]) === ACCT_PROGRAMS && !sLines[1].SalesItemLineDetail?.ClassRef
+       && /Pantry/.test(sLines[1].Description || ""), sLines);
+  ok("§9 …that total the gift, 50000 cents", sLines.reduce((t, l) => t + Math.round(l.Amount * 100), 0) === 50000, sLines.map(l => l.Amount));
+
+  await q(`UPDATE bookkeeping_connections SET mapping = jsonb_set(mapping, '{qbo,mode}', '"deposit"') WHERE id=$1`, [CONN]);
+  await splitGift("g_p2_split_po", 500, "2026-09-26", { ref: "po_p2_2", on: "2026-09-28", fee: 15 });
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,fund_id,payment_method,deposit_ref,deposited_on,processor_fee_amount)
+           VALUES ('g_p2_po_c',$1,'d_p2_wren',100,'2026-09-27','online','fnd_p2_youth','card','po_p2_2','2026-09-28',3.2)`, [ORG]);
+  const depsBefore = store.deposits.length;
+  const dS = await sync(tok, { all: true });
+  ok("§9 deposit mode sends the payout as ONE deposit", dS.status === 200 && store.deposits.length === depsBefore + 1, { body: dS.body, n: store.deposits.length });
+  const dl = (store.deposits[store.deposits.length - 1] || {}).Line || [];
+  const gl = dl.filter(l => l.Amount > 0), fl = dl.filter(l => l.Amount < 0);
+  const cents_ = l => Math.round(l.Amount * 100);
+  ok("§9 …a line per fund line: $300 and $100 on Donations, $200 on Program Income",
+     JSON.stringify(gl.map(l => [cents_(l), l.DepositLineDetail?.AccountRef?.value]).sort()) ===
+       JSON.stringify([[10000, ACCT_DONATIONS], [20000, ACCT_PROGRAMS], [30000, ACCT_DONATIONS]].sort()), gl);
+  ok("§9 …the $15 fee cut $9 / $6 as the deposit sheet cuts it: Youth Arts -$12.20 (with the $3.20), Pantry -$6.00",
+     fl.length === 2
+       && fl.some(l => cents_(l) === -1220 && l.DepositLineDetail?.ClassRef?.value === CLASS_YOUTH)
+       && fl.some(l => cents_(l) === -600 && !l.DepositLineDetail?.ClassRef), fl);
+  ok("§9 …and the deposit foots to the payout's net, 58180 cents (60000 less 1820)",
+     dl.reduce((t, l) => t + cents_(l), 0) === 58180, dl.map(l => l.Amount));
 
   await reset();
   for (const t of ["fin_funds", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});

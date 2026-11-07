@@ -21,6 +21,7 @@ import { bootRead, homeShape } from "./lib/bootReads";
 import { useStewardTold } from "./lib/stewardTold";
 import { useTaskBadge } from "./lib/taskBadge";
 import { useBootSlices } from "./lib/bootSlices";   // STALE-1
+import { noteDeckMoves } from "./lib/movesGate";   // MOPUP-3
 import { TopBar, MobileSearch, isApplePlatform } from "./components/TopBar";
 import SupportBanner from "./components/SupportBanner";   // FIX-57
 import { errorMessage } from "./lib/domainError";
@@ -454,6 +455,7 @@ function AppShell() {
       const [orgR,grantsR,volunteersR,tasksR,boardR,financialsR]=results;
       if(orgR.status==="rejected")throw orgR.reason;
       const org=orgR.value;
+      noteDeckMoves(org?.deckMoves);   // MOPUP-3: a phone sizes the deck's stand-in from its move count (lib/movesGate.js)
       const portalTier=org?.plan==="portal";
       // NAV-1 (a defect the §4 walk found) — A VOLUNTEER COORDINATOR COULD NOT
       // SIGN IN AT ALL. Four of these seven reads are refused for that role by
