@@ -52,7 +52,7 @@ function splitGiftRows(rows, linesByGift, fmt) {
         cents, amount: fmt(cents),
         feeCents, fee: fmt(feeCents),
         netCents: cents - feeCents, net: fmt(cents - feeCents),
-        fund: l.fundName || "",
+        fund: l.fundName || "", fundId: l.fundId || null,
         splitLine: `${i + 1} of ${lines.length}`,
       });
     });

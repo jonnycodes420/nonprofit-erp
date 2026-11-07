@@ -3453,8 +3453,12 @@ app.get("/qbo/pending", requireAuth, wrap(async (req, res) => {
   const q = QS.pendingRowsSql(orgId, since);
   const rows = await query(q.sql, q.args);
   const totalCents = rows.reduce((t, r) => t + Number(r.cents), 0);
+  // MOPUP-3: a split gift lands as its fund lines, each where its own fund maps.
+  const GP = require("../server/qbo/giftParts");
+  const linesByGift = await GP.loadLines(query, orgId, rows.slice(0, 50));
   const shown = rows.slice(0, 50).map(r => {
-    const landing = QS.landingFor(r, map);
+    const placed = GP.landingsOf(GP.partsOf(r, linesByGift), map, QS.landingFor);
+    const landing = placed.ok ? { ok: true, sentence: GP.landsSentence(placed.items) } : placed.landing;
     const where = !landing.ok ? null
       : map.mode === "deposit"
         ? (r.deposit_ref ? `${landing.sentence}, in the deposit for payout ${r.deposit_ref}` : `${landing.sentence}, once it is matched to its payout`)

@@ -53,9 +53,28 @@ export function isPhone() {
   return typeof window !== "undefined" && !!window.matchMedia && !window.matchMedia(WIDE).matches;
 }
 
+// ── MOPUP-3 · …and a short deck never pulls it up.
+//
+// 1,200 px (or the last height) is right for a deck with moves: what sits
+// under it is out of view before the deck lands and after. A new org's deck is
+// short (no moves, or "being prepared"), so the tall stand-in shrank when it
+// landed and pulled what sat under it up into view. GET /org (a boot read)
+// carries the deck's move count (server/insights/deckMoves.js), so before the
+// deck is read a phone knows which deck it is. With moves: the tall reserve,
+// as before (what sits under it is out of view before and after). With none:
+// an empty deck's height is not known ahead (it can carry the drifting list
+// and the chips), so the stand-in keeps its own small size and Home holds
+// what sits under the deck, the rail included, until the deck has landed
+// (FEEL-1's gate, which a wide screen always uses): nothing under it is drawn
+// yet, so nothing can move. Not known (null, an older build): as before.
+let knownMoves = null;
+export function noteDeckMoves(n) { knownMoves = typeof n === "number" && n >= 0 ? n : null; }
+export const deckKnownEmpty = () => knownMoves === 0;
+
 // The stand-in's height on a phone, or null on a wide screen (FEEL-1's gate holds there).
 export function reservedDeckHeight() {
   if (!isPhone()) return null;
+  if (knownMoves === 0) return null;
   let h = 0;
   try { h = Number(localStorage.getItem(KEY)) || 0; } catch { h = 0; }
   return h >= 200 && h <= 4000 ? h : PHONE_DECK_H;
@@ -63,6 +82,7 @@ export function reservedDeckHeight() {
 
 // The deck drew at this height: the next visit reserves it.
 export function rememberDeckHeight(h) {
-  if (!isPhone() || !(h >= 200 && h <= 4000)) return;
+  // MOPUP-3: an empty deck's height is not a deck-with-moves' height.
+  if (!isPhone() || knownMoves === 0 || !(h >= 200 && h <= 4000)) return;
   try { localStorage.setItem(KEY, String(Math.round(h))); } catch { /* this visit only */ }
 }

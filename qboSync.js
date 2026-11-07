@@ -62,6 +62,7 @@ const LIVE_REALM_SQL = `(SELECT COALESCE(bc.realm_id, '') FROM bookkeeping_conne
 // she marked deposited is never "waiting for its payout". Credit rows are not
 // money and are never sent (shared/numbers/money.js).
 const NUMBERS = require("./shared/numbers");
+const GP = require("./server/qbo/giftParts");   // MOPUP-3: a split gift is sent as its fund lines
 const orgTime = require("./orgTime");   // CLOCK-1: "sent since a day" counts from the org's midnight
 const NON_CASH_SQL = [...NON_CASH_TYPES].map(t => `'${String(t).replace(/'/g, "''")}'`).join(",");
 
@@ -438,24 +439,32 @@ function receiptMemo(g) {
   const fund = g.fund_name ? safeName(g.fund_name, 200) : "";
   return `Gift from ${who}${fund ? `, ${fund},` : ""} via Steward`.slice(0, 4000);
 }
-function buildSalesReceipt(g, landing, { customerId, itemId, depositAccountId }) {
-  const amount = dollars(g.cents);
+// MOPUP-3: `lines` is the gift's parts (server/qbo/giftParts.js), one
+// [{ g, landing, itemId }] per fund line; a gift with no split is one line.
+function buildSalesReceipt(g, landing, { customerId, itemId, depositAccountId, lines = null }) {
+  const parts = lines && lines.length ? lines : [{ g, landing, itemId }];
   return {
     TxnDate: String(g.date).slice(0, 10),
     CustomerRef: { value: String(customerId) },
     DepositToAccountRef: { value: String(depositAccountId) },
     PrivateNote: receiptMemo(g),
     DocNumber: String(g.id).slice(0, 21),
-    Line: [{
-      Amount: amount, DetailType: "SalesItemLineDetail", Description: describe(g),
-      SalesItemLineDetail: { ItemRef: { value: String(itemId) }, Qty: 1, UnitPrice: amount,
-        ...(landing.classId ? { ClassRef: { value: String(landing.classId) } } : {}) },
-    }],
+    Line: parts.map(x => {
+      const amount = dollars(x.g.cents);
+      return {
+        Amount: amount, DetailType: "SalesItemLineDetail", Description: describe(x.g),
+        SalesItemLineDetail: { ItemRef: { value: String(x.itemId) }, Qty: 1, UnitPrice: amount,
+          ...(x.landing.classId ? { ClassRef: { value: String(x.landing.classId) } } : {}) },
+      };
+    }),
   };
 }
 // A payout as one deposit: a line per gift (with the donor as its customer),
-// and the processor's fee as ONE negative line, so the deposit equals what
+// and the processor's fee as a negative line, so the deposit equals what
 // reached the bank. The sum is asserted in cents before anything is sent.
+// MOPUP-3: `items` are gift PARTS (a split gift is a line per fund line), and
+// the fee is a negative line per fund, cut as the deposit sheet cuts it; a
+// payout on one fund still has one fee line.
 function buildPayoutDeposit(payoutRef, items, { depositAccountId, feeAccountId }) {
   const lines = items.map(({ g, landing, customerId }) => ({
     Amount: dollars(g.cents), DetailType: "DepositLineDetail", Description: describe(g),
@@ -467,8 +476,20 @@ function buildPayoutDeposit(payoutRef, items, { depositAccountId, feeAccountId }
   const feeCents = items.reduce((t, x) => t + Number(x.g.fee_cents || 0), 0);
   if (feeCents > 0) {
     if (!feeAccountId) return { ok: false, sentence: "This payout carries processing fees and no fees account is chosen. Choose one in the mapping, then press Retry." };
-    lines.push({ Amount: -dollars(feeCents), DetailType: "DepositLineDetail", Description: "Processing fees",
-      DepositLineDetail: { AccountRef: { value: String(feeAccountId) } } });
+    const byFund = new Map();
+    for (const x of items) {
+      const c = Number(x.g.fee_cents || 0);
+      if (!c) continue;
+      const k = x.g.fund_id || "";
+      if (!byFund.has(k)) byFund.set(k, { cents: 0, name: x.g.fund_name || null, classId: x.landing.classId || null });
+      byFund.get(k).cents += c;
+    }
+    for (const f of byFund.values()) {
+      lines.push({ Amount: -dollars(f.cents), DetailType: "DepositLineDetail",
+        Description: byFund.size > 1 && f.name ? `Processing fees · ${f.name}` : "Processing fees",
+        DepositLineDetail: { AccountRef: { value: String(feeAccountId) },
+          ...(f.classId ? { ClassRef: { value: String(f.classId) } } : {}) } });
+    }
   }
   const lineCents = lines.reduce((t, l) => t + Math.round(l.Amount * 100), 0);
   if (lineCents !== grossCents - feeCents)
@@ -542,11 +563,12 @@ const codeOf = res => res.kind === "network" || res.kind === "server" ? "outcome
 
 // ── ONE GIFT AS A SALES RECEIPT ───────────────────────────────────────────
 async function syncSalesReceipt(ctx, g) {
-  const landing = landingFor(g, ctx.map);
-  if (!landing.ok) {
-    await noteUnsendable(ctx, g, landing.sentence, landing.problem);
-    return { giftId: g.id, status: "needs_mapping", sentence: landing.sentence };
+  const placed = GP.landingsOf(GP.partsOf(g, ctx.lines), ctx.map, landingFor);
+  if (!placed.ok) {
+    await noteUnsendable(ctx, g, placed.landing.sentence, placed.landing.problem);
+    return { giftId: g.id, status: "needs_mapping", sentence: placed.landing.sentence };
   }
+  const landing = placed.items[0].landing;
   const claimed = await claim(ctx, g, landing, "SalesReceipt");
   if (!claimed) return { giftId: g.id, status: "already", sentence: "Already sent to QuickBooks, or being sent right now. Steward did not send it again." };
   const cctx = { accountName: landing.accountName, className: landing.className, date: String(g.date).slice(0, 10) };
@@ -557,9 +579,13 @@ async function syncSalesReceipt(ctx, g) {
   };
   const cust = await customerFor(ctx, g);
   if (!cust.ok) return fail(cust, null);
-  const item = await itemFor(ctx, landing);
-  if (!item.ok) return fail(item, null);
-  const body = buildSalesReceipt(g, landing, { customerId: cust.id, itemId: item.id, depositAccountId: ctx.map.depositAccount.id });
+  const lines = [];
+  for (const x of placed.items) {
+    const item = await itemFor(ctx, x.landing);
+    if (!item.ok) return fail(item, null);
+    lines.push({ ...x, itemId: item.id });
+  }
+  const body = buildSalesReceipt(g, landing, { customerId: cust.id, itemId: lines[0].itemId, depositAccountId: ctx.map.depositAccount.id, lines });
   const rid = claimed.keepRid || requestId(ctx.orgId, ctx.realmId, "sr", g.id, body);
   const r = await qboCall(ctx, "POST", "salesreceipt", { body, params: { requestid: rid } });
   if (!r.ok) {
@@ -574,7 +600,7 @@ async function syncSalesReceipt(ctx, g) {
   if (!sr.Id) return fail({ kind: "server", status: 502 }, rid);
   await markSynced(ctx, [g.id], { txnType: "SalesReceipt", qboId: sr.Id, rid, customerIds: { [g.id]: cust.id } });
   return { giftId: g.id, status: "synced", qboId: String(sr.Id), link: txnLink("SalesReceipt", sr.Id),
-           sentence: `Sent to QuickBooks as a sales receipt on ${landing.sentence}.` };
+           sentence: `Sent to QuickBooks as a sales receipt on ${GP.landsSentence(placed.items)}.` };
 }
 
 // ── ONE PAYOUT AS A DEPOSIT ───────────────────────────────────────────────
@@ -582,11 +608,11 @@ async function syncPayout(ctx, payoutRef, gifts) {
   const out = [];
   const ready = [];
   for (const g of gifts) {
-    const landing = landingFor(g, ctx.map);
-    if (!landing.ok) {
-      await noteUnsendable(ctx, g, landing.sentence, landing.problem);
-      out.push({ giftId: g.id, status: "needs_mapping", sentence: landing.sentence });
-    } else ready.push({ g, landing });
+    const placed = GP.landingsOf(GP.partsOf(g, ctx.lines), ctx.map, landingFor);
+    if (!placed.ok) {
+      await noteUnsendable(ctx, g, placed.landing.sentence, placed.landing.problem);
+      out.push({ giftId: g.id, status: "needs_mapping", sentence: placed.landing.sentence });
+    } else ready.push({ g, landing: placed.items[0].landing, parts: placed.items });
   }
   // A deposit with a gift missing is a deposit that does not match the bank,
   // so one unmapped gift holds the whole payout back, and says so.
@@ -615,7 +641,8 @@ async function syncPayout(ctx, payoutRef, gifts) {
     if (!cust.ok) return failAll(cust, null);
     x.customerId = cust.id; customerIds[x.g.id] = cust.id;
   }
-  const built = buildPayoutDeposit(payoutRef, claimed, { depositAccountId: ctx.map.depositAccount.id,
+  const partItems = claimed.flatMap(x => x.parts.map(p => ({ ...p, customerId: x.customerId })));
+  const built = buildPayoutDeposit(payoutRef, partItems, { depositAccountId: ctx.map.depositAccount.id,
     feeAccountId: ctx.map.feeAccount ? ctx.map.feeAccount.id : null });
   if (!built.ok) return failAll(null, null, built.sentence);
   const rid = (claimed.find(x => x.keepRid) || {}).keepRid || requestId(ctx.orgId, ctx.realmId, "dep", payoutRef, built.body);
@@ -730,6 +757,8 @@ async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, li
         }
       }
     }
+    // MOPUP-3: each gift's fund lines, so a split gift is sent split.
+    ctx.lines = await GP.loadLines(query, orgId, pending);
     if (map.mode === "deposit") {
       const groups = new Map();
       // In deposit mode the unit is the payout: Sync on one gift sends its

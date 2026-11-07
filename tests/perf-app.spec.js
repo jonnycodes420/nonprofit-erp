@@ -110,7 +110,7 @@ async function seed() {
 
 // One screen in one fresh browser. `ready` is the element that means this
 // screen is on the page; `rows` (optional) how many of it must be there.
-async function measure(browser, machine, auth, url, ready, rows = 1, { warm = false, hour = 14, late = false, lateDeck = false } = {}) {
+async function measure(browser, machine, auth, url, ready, rows = 1, { warm = false, hour = 14, late = false, lateDeck = false, deckMoves = null } = {}) {
   // lateDeck: true holds the deck's read 1.3 s (desktop); a number holds it that long.
   const ctx = await browser.newContext({ ...machine.ctx, serviceWorkers: "block", timezoneId: "UTC" });
   // SHIFT-1: the page's clock starts at the pinned hour and keeps ticking. Not
@@ -181,11 +181,16 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
   const errors = [];
   page.on("pageerror", e => errors.push(String(e.message || e)));
   if (late) await lateHeader(page);
-  if (lateDeck) await lateMovesDeck(page, lateDeck === true ? 1300 : lateDeck);
+  const hold = lateDeck === true ? 1300 : lateDeck || 0;
+  if (deckMoves != null) await deckOf(page, deckMoves, hold);   // MOPUP-3: the deck cut to n moves, held as lateDeck says
+  else if (lateDeck) await lateMovesDeck(page, hold);
   await page.goto(APP + url, { waitUntil: "load", timeout: 60000 });
   await page.waitForFunction(([sel, n]) => document.querySelectorAll(sel).length >= n, [ready, rows], { timeout: 45000 }).catch(() => {});
   await page.waitForLoadState("networkidle", { timeout: 45000 }).catch(() => {});
   await page.waitForTimeout(300);
+  // MOPUP-3: a read held in a route handler does not keep "networkidle" open,
+  // so these legs wait for the deck itself to be drawn, then a moment more.
+  if (deckMoves != null) { await page.locator(".moves-deck").first().waitFor({ timeout: 30000 }).catch(() => {}); await page.waitForTimeout(800); }
   // When the network went quiet, as Lighthouse's Time to Interactive defines
   // it: from then on no more than two requests are in flight (one trailing
   // beacon, such as "these cards were seen", is not a page still loading).
@@ -227,6 +232,9 @@ const LATE_MS = 1500;
 // above the Thread and pushed it out of view (desktop CLS 0.201 at ~1.5 s).
 const DESKTOP_LATE_RUNS = 10;
 const PHONE_LATE_DECK_MS = 3000;   // MOPUP-2
+// MOPUP-3: held 6 s, so what sits under the deck is drawn before it lands
+// (at 3 s a throttled phone has not drawn it yet, and nothing can move).
+const DECK_SIZES = [0, 1, 8], DECK_SIZE_RUNS = 3, DECK_SIZE_HOLD_MS = 6000;
 // MOPUP-2: a held route whose page is closing gives up quietly; any other
 // failure lets the request through unchanged, so the leg measures, never crashes.
 const settled = h => async r => { try { await h(r); } catch { await r.fallback().catch(() => {}); } };
@@ -234,6 +242,45 @@ async function lateMovesDeck(page, ms = 1300) {
   await page.route(u => u.href.startsWith(BASE) && /insights\?view=deck/.test(decodeURIComponent(u.href)), settled(async r => {
     await new Promise(x => setTimeout(x, ms));
     await r.continue();
+  }));
+}
+// MOPUP-3: the deck holding `n` moves (0, 1 or 8: a new org's, a short one,
+// a full one), and GET /org (alone or in the boot bundle) saying so, as the
+// server's own deck_moves does. The fixture org's own deck is cut to n, so the
+// card drawn is a real one. On main the phone's 1,200 px stand-in was taller
+// than a short deck, and what sat under it jumped up once when the deck landed.
+async function deckOf(page, n, holdMs = 0) {
+  const cut = b => {
+    const d = b && b.deck;
+    if (!d || !Array.isArray(d.tabs)) return b;
+    let left = n;
+    d.tabs = d.tabs.map(t => {
+      const k = Math.min(left, t.count || 0, (t.moves || []).length || 0);
+      left -= k;
+      return { ...t, count: k, carried: k, moves: (t.moves || []).slice(0, k) };
+    });
+    if (d.seen) d.seen = d.seen.slice(0, n);
+    // a new org's deck: nobody drifting yet, so the deck is as short as it gets
+    if (d.drift) d.drift = { ...d.drift, count: 0, people: [] };
+    return b;
+  };
+  await page.route(u => u.href.startsWith(BASE) && /insights\?view=deck/.test(decodeURIComponent(u.href)), settled(async r => {
+    // held here, not by lateMovesDeck: its continue() would skip this rewrite
+    const [res] = await Promise.all([r.fetch(), new Promise(x => setTimeout(x, holdMs))]);
+    const j = await res.json();
+    // alone, or inside the boot bundle (GET /home/bundle?p=/insights?view=deck)
+    for (const k of Object.keys(j)) if (/^\/insights\?view=deck/.test(k) && j[k] && j[k].body) cut(j[k].body);
+    await r.fulfill({ response: res, body: JSON.stringify(cut(j)) });
+  }));
+  await page.route(u => u.href.startsWith(BASE + "/org") && new URL(u.href).pathname === "/org", settled(async r => {
+    const res = await r.fetch();
+    await r.fulfill({ response: res, body: JSON.stringify({ ...(await res.json()), deckMoves: n }) });
+  }));
+  await page.route(u => u.href.startsWith(BASE + "/home/bundle") && u.searchParams.getAll("p").includes("/org"), settled(async r => {
+    const res = await r.fetch();
+    const b = await res.json();
+    if (b["/org"] && b["/org"].body) b["/org"].body.deckMoves = n;
+    await r.fulfill({ response: res, body: JSON.stringify(b) });
   }));
 }
 const LATE_LINE = "Steward did 3 things for you yesterday, and 2 drafts are waiting for you.";
@@ -371,6 +418,15 @@ function preloaderAllowed() {
   // PHONE_LATE_DECK_MS, main moved the block under it out of view (CLS 0.408).
   const homePL = [];
   for (let i = 0; i < DESKTOP_LATE_RUNS; i++) homePL.push(await measure(browser, PHONE, auth, "/dashboard", HOME_READY, 1, { hour: HOURS[0], lateDeck: PHONE_LATE_DECK_MS }));
+  // MOPUP-3: a phone's first visit (nothing remembered) to a deck of 0, 1 and
+  // 8 moves, held DECK_SIZE_HOLD_MS so the stand-in is what she sees first.
+  // Main, the deck held 6 s: 0 moves 0.225 (the Thread jumped up from out of
+  // view to y 621 when a 228 px deck replaced the 1,200 px stand-in); 1 and 8: 0.
+  const homeN = {};
+  for (const n of DECK_SIZES) {
+    homeN[n] = [];
+    for (let i = 0; i < DECK_SIZE_RUNS; i++) homeN[n].push(await measure(browser, PHONE, auth, "/dashboard", HOME_READY, 1, { hour: HOURS[0], lateDeck: DECK_SIZE_HOLD_MS, deckMoves: n }));
+  }
   // SHIFT-1: the phone at each pinned hour; its times are the morning's, its CLS the worst hour's.
   const byHour = [];
   for (const hour of HOURS) byHour.push({ hour, ...(await measureN(browser, PHONE, auth, "/dashboard", HOME_READY, 1, { hour: hour })) });
@@ -439,6 +495,17 @@ function preloaderAllowed() {
   const latePhoneBad = homePL.filter(r => r.cls >= CLS_DESKTOP_MAX);
   ok(`nothing on Home moves on a phone when the moves deck answers late, ${DESKTOP_LATE_RUNS} runs out of ${DESKTOP_LATE_RUNS} (worst CLS ${Math.max(...homePL.map(r => r.cls))}; under ${CLS_DESKTOP_MAX})`,
      latePhoneBad.length === 0, latePhoneBad.map(r => ({ cls: r.cls, moved: r.shifts })));
+  for (const n of DECK_SIZES) {
+    const worst = homeN[n].reduce((w, r) => (r.cls > w.cls ? r : w));
+    ok(`nothing on Home moves on a phone's first visit when the deck holds ${n} move${n === 1 ? "" : "s"} and answers late (worst CLS ${worst.cls} of ${DECK_SIZE_RUNS}; under ${CLS_DESKTOP_MAX})`,
+       worst.cls < CLS_DESKTOP_MAX, { cls: worst.cls, moved: worst.shifts });
+  }
+  {
+    // MOPUP-3: what GET /org says is the stored deck's own count.
+    const o = await api("GET", "/org", auth.token);
+    const [s] = await q(`SELECT deck_moves FROM stored_insights WHERE org_id=$1 ORDER BY as_of DESC LIMIT 1`, [ORG.id]).catch(() => [null]);
+    ok(`GET /org carries the stored deck's move count (${o.body && o.body.deckMoves})`, !!s && o.status === 200 && o.body.deckMoves === s.deck_moves && s.deck_moves > 0, { org: o.body && o.body.deckMoves, stored: s });
+  }
   ok("Home asks for none of its bundled reads twice (desktop and phone)", !homeD.twice.length && !homeP.twice.length && !homeW.twice.length, [...homeD.twice, ...homeP.twice, ...homeW.twice].slice(0, 3));
   ok(`Home: no read the rail needs starts after the first paint (${RAIL_READS.length} reads, desktop and phone)`,
      RAIL_READS.length > 5 && !homeD.lateRail.length && !homeP.lateRail.length, [...homeD.lateRail, ...homeP.lateRail].slice(0, 6));

@@ -574,7 +574,22 @@ const SOURCES = {
       if (!["lybunt", "sybunt"].includes(p.kind)) throw new FigureParamError("kind is lybunt or sybunt.");
       const GB = require("./shared/numbers/givingBetween");
       // TRUTH-2: the one rule (shared/numbers/bunt.js), the report's rows and the group page's too.
-      const B = require("./shared/numbers/bunt").buntSql(p.kind, { from: p.from, to: p.to }, { from: p.prevFrom, to: p.prevTo }, "d");
+      const BU = require("./shared/numbers/bunt");
+      const cur = { from: p.from, to: p.to }, prior = { from: p.prevFrom, to: p.prevTo };
+      // MOPUP-3: LYBUNT set-wise, the report's own rows' form (bunt.js lybuntSet).
+      if (p.kind === "lybunt" && BU.samePrior(cur, prior)) {
+        const S = BU.lybuntSet(orgId, cur, prior);
+        return {
+          sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
+                       ROUND(COALESCE(ga.prior_sum, 0)::numeric, 2) AS amount,
+                       'Lifetime ' || TO_CHAR(COALESCE(d.total_giving, 0), 'FM$999,999,990.00') AS detail
+                  FROM donors d JOIN ${S.sql} ga ON ga.donor_id = d.id
+                 WHERE d.org_id = ? AND d.deleted_at IS NULL AND ${BU.LIVE_PERSON("d")}`,
+          args: [...S.args, orgId],
+          order: "amount DESC, id",
+        };
+      }
+      const B = BU.buntSql(p.kind, cur, prior, "d");
       return {
         // LEDGER-1: the amount is what they gave in the last year they gave
         // (givingBetween.LAST_YEAR_SUM, the report's own years): last year
