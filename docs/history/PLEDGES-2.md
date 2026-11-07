@@ -7,8 +7,10 @@ From the QA fleet's 7 Nov synthesis (W-1107-*), run in CREO Arts (Demo) on prod.
    pledge's paid said $150 while every installment read unpaid. The Giving tab counted every row
    ("4 installments") while the rail counted `unpaidCount` ("3 left"), and Insights' pledge move
    counted unflagged installments by calendar year ("This year's part is $100" after $150 paid). Now
-   a payment against a named pledge re-lays the schedule with every payment applied oldest first
-   (`server/donors/pledgePayments.js` `relay`, through `pledgeWrite.applyPayments`); a payment above
+   a payment against a named pledge applies every payment on it oldest due first and marks each
+   installment the money reaches in full as paid (`server/donors/pledgePayments.js` `relay`); the
+   rows are not split or re-dated (a first cut that split them broke LEDGER-1's overdue: the paid part
+   took the payment's date), and what is left on a part-paid one is the readers' `installmentsLeft`; a payment above
    the balance is a 409 question (`overBalance`: `extra_gift` writes the excess as its own gift
    through recordGift, `reduce` records the balance). This replaces BUILD-72's "an overpayment is
    silently surplus" for the gift form; other doors (imports) still record surplus. The Giving tab
