@@ -228,6 +228,7 @@ async function startOneJourney(orgId, donor, winner, triggerKey, eventKey, opts 
             ?::text,?::int,?::text,?::text,?::text,?::text
       WHERE NOT EXISTS (SELECT 1 FROM cultivation_plans x WHERE x.org_id=?::text AND x.donor_id=?::text
                           AND x.template_id=?::text AND x.status='active')
+     ON CONFLICT DO NOTHING
      RETURNING id`,
     [planId, orgId, donor.id, winner.id, v.name, today,
      donor.assigned_to || null, donor.assigned_to_name || null,
@@ -244,7 +245,16 @@ async function startOneJourney(orgId, donor, winner, triggerKey, eventKey, opts 
     if (e.code === "23505") return { started: false, reason: "already_enrolled_for_event", eventKey };
     throw e;
   }
-  if (!ins.length) return { started: false, reason: "race_lost" };
+  // FLAKE-2: two fires of one event at once (the recurring_failed webhook and
+  // the sweep, or a webhook retried) both pass the NOT EXISTS; the second
+  // used to hit a unique index (cultivation_plans_event_once or
+  // _one_active_per_journey). ON CONFLICT DO NOTHING lets it lose quietly,
+  // on any of them, and it says which race it lost.
+  if (!ins.length) {
+    const [won] = eventKey ? await query(`SELECT 1 FROM cultivation_plans WHERE org_id=? AND template_id=? AND donor_id=? AND trigger_event=? LIMIT 1`,
+      [orgId, winner.id, donor.id, eventKey]) : [];
+    return won ? { started: false, reason: "already_enrolled_for_event", eventKey } : { started: false, reason: "race_lost" };
+  }
 
   for (const s of steps) {
     const src = v.steps[s.seq - 1] || {};

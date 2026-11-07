@@ -54,7 +54,9 @@ const saveState = (orgId, id, patch) => run(`UPDATE imports SET undo_state = COA
 async function undoStatus(orgId, imp) {
   const st = stateOf(imp);
   const [job] = st.jobId ? await query("SELECT status, attempts, last_error FROM job_queue WHERE id=?", [st.jobId]) : [];
-  const status = imp.reversed_at ? "done" : st.status === "failed" || (job && job.status === "dead") ? "failed" : st.status === "running" ? "running" : "none";
+  // FLAKE-2: "done" only once the result is written with it. A run that set
+  // reversed_at and was still finishing read as done with no count.
+  const status = imp.reversed_at && st.status !== "running" ? "done" : st.status === "failed" || (job && job.status === "dead") ? "failed" : st.status === "running" ? "running" : "none";
   const done = Number(st.done) || 0, total = Number(st.total) || 0;
   return {
     status, job: !!st.jobId, phase: st.phase || null, done, total, reversedAt: imp.reversed_at || null,
@@ -360,9 +362,17 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null 
   }
   for (const pid of pledgeIds) await recalcPledgePayment(pid, orgId).catch(() => {});
   await step("finishing");
-  await run("UPDATE imports SET reversed_at=NOW(), reversed_by=? WHERE id=? AND org_id=?", [who.name || who.id, id, orgId]);
+  // FLAKE-2 (import7 §4): the import is marked undone in the SAME statement
+  // that writes its sentence. reversed_at used to be written here, before the
+  // after-change step, so a screen polling while a long undo finished read
+  // "done" with the stand-in sentence and no count.
   const n = (k, one, many) => `${k.toLocaleString("en-US")} ${k === 1 ? one : many}`;
-  const done = async body => { await saveState(orgId, id, { status: "done", phase: null, error: null, result: body }); return { status: 200, body }; };
+  const done = async body => {
+    await run(`UPDATE imports SET reversed_at=COALESCE(reversed_at, NOW()), reversed_by=COALESCE(reversed_by, ?),
+                 undo_state = COALESCE(undo_state, '{}'::jsonb) || ?::jsonb WHERE id=? AND org_id=?`,
+      [who.name || who.id, JSON.stringify({ status: "done", phase: null, error: null, result: body }), id, orgId]);
+    return { status: 200, body };
+  };
   if (imp.shape === "history") {
     await recomputeScoresForOrg(orgId).catch(() => {});
     return done({ reversed: true, gifts: 0, interactions: removed.interactions, tasks: removed.tasks, donorsRemoved: removed.people,
