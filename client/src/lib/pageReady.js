@@ -35,6 +35,11 @@ const PAGES = [
   [/^\/donors\/[^/]+$/, () => "profile"],
   [/^\/app\/reports\/?$/, s => (new URLSearchParams(s).get("report") === "giving-summary" ? "giving-report" : "reports")],
   [/^\/app\/([a-z0-9-]+)\/?$/, (s, m) => m[1]],
+  // PAGES-1: the public pages a donor or volunteer opens, timed the same way
+  // (marked only: a stranger's browser sends no beacon).
+  [/^\/give\/[^/]+\/[^/]+\/?$/, () => "public-giving-page"],
+  [/^\/volunteer-page\/[^/]+\/[^/]+\/?$/, () => "public-volunteer-page"],
+  [/^\/membership-page\/[^/]+\/[^/]+\/?$/, () => "public-membership-page"],
 ];
 
 let inFlight = 0;
@@ -63,7 +68,9 @@ export function pagePart(pathname, search = "") {
   return new URLSearchParams(search).get("section") || "org";
 }
 // The editor draws outside the content column: its own root, drawn once it has loaded.
-const ROOT = { "giving-page-editor": '[data-page-root="giving-page-editor"]' };
+const ROOT = { "giving-page-editor": '[data-page-root="giving-page-editor"]',
+  // PAGES-1: a public page is ready when the page itself is drawn, not its loading line.
+  "public-giving-page": '[data-testid="giving-page"]', "public-volunteer-page": '[data-page-root="public-page"]', "public-membership-page": '[data-page-root="public-page"]' };
 
 function spinnerShowing(root) {
   if (root.querySelector(SPINNER)) return true;

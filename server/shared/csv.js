@@ -22,11 +22,9 @@ function mount(ctx) {
 // "-8.30" is a number. "-2+3" is not, and still gets the apostrophe.
 const CSV_PLAIN_NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/;
 function reportCsvCell(v) {
+  // REDTEAM-1: the one guard (server/shared/csvCell.js), which also catches a tab or CR.
   if (v === null || v === undefined) return "";
-  let s = String(v);
-  if (typeof v === "string" && /^[=+\-@]/.test(s) && !CSV_PLAIN_NUMBER.test(s)) s = "'" + s;
-  if (/[",\n\r]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
-  return s;
+  return require("./csvCell").csvCell(v);
 }
 
 // Full-file CSV builder for the org export zip — same cell encoding as the

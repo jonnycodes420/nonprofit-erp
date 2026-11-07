@@ -114,7 +114,8 @@ jobs:
         id: turn
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node .ship-tools/scripts/ci/deploy-turnstile.js --job ship --event workflow_dispatch --sha "$SHIP_SHA" --live-health "$PROD_API/health" ${{ inputs.mode == 'rollback' && '--allow-older' || '' }}
+          OLDER_FLAG: ${{ inputs.mode == 'rollback' && '--allow-older' || '' }}   # REDTEAM-1: through env, never pasted in
+        run: node .ship-tools/scripts/ci/deploy-turnstile.js --job ship --event workflow_dispatch --sha "$SHIP_SHA" --live-health "$PROD_API/health" $OLDER_FLAG
 
       - name: Install Railway CLI
         if: steps.turn.outputs.deploy == 'true'

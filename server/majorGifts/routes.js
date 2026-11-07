@@ -774,8 +774,10 @@ app.get("/major-gifts/dashboard", requireAuth, wrap(async (req, res) => {
 // The raw data BUILD-17's per-officer reports read; just recorded cleanly here.
 app.get("/pipeline/officer-activity", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
-  const to = req.query.to || orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
-  const from = req.query.from || orgTime.addDays(orgToday(await orgTz(orgId)), -90);   // ORG_TZ_SEAM_OK (ARCH-1: the org's day, not UTC's)
+  // REDTEAM-1: a day that is not a day (a quote, a word) was a 500; it is the default.
+  const day = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : null;
+  const to = day(req.query.to) || orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
+  const from = day(req.query.from) || orgTime.addDays(orgToday(await orgTz(orgId)), -90);   // ORG_TZ_SEAM_OK (ARCH-1: the org's day, not UTC's)
   const officers = await query("SELECT id, name, portfolio_color FROM users WHERE org_id=? ORDER BY name", [orgId]);
   const moves = await query(
     `SELECT officer_id, COUNT(*)::int AS cnt FROM moves WHERE org_id=? AND ${inOrgDays("created_at", "org_id", "?", "?")} GROUP BY officer_id`, [orgId, from, to]);

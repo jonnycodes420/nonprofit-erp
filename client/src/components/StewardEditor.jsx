@@ -160,7 +160,9 @@ export default function StewardEditor({
     <button type="button" data-testid={primary.testid || "editor-primary"} data-commit onClick={primary.onClick} disabled={!!primary.disabled}
       title={primary.disabled && primary.reason ? primary.reason : undefined} style={primaryBtn(!!primary.disabled)}>{primary.label}</button>
   );
-  const shell = { height: fixed ? "100%" : "100vh", background: ED.canvas, fontFamily: "'DM Sans',system-ui,sans-serif", display: "flex", flexDirection: "column", color: T.ink, minHeight: 0 };
+  // PAGES-1: the shell is exactly the window (100dvh where the browser has it),
+  // so each rail scrolls on its own and its last section is always reachable.
+  const shell = { height: fixed ? "100%" : "100dvh", flex: fixed ? 1 : undefined, background: ED.canvas, fontFamily: "'DM Sans',system-ui,sans-serif", display: "flex", flexDirection: "column", color: T.ink, minHeight: 0 };
   return (
     <div data-testid={testid} data-editor-kind={kind} style={shell}>
       {/* ── Top bar ── */}
@@ -188,13 +190,13 @@ export default function StewardEditor({
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         {left && !narrow && (
-          <aside data-testid="editor-left-rail" style={{ width: RAIL_W, flexShrink: 0, background: ED.rail, borderRight: "1px solid " + ED.railLine, overflowY: "auto", paddingBottom: 40 }}>
+          <aside data-testid="editor-left-rail" style={{ width: RAIL_W, flexShrink: 0, background: ED.rail, borderRight: "1px solid " + ED.railLine, overflowY: "auto", overscrollBehavior: "contain", minHeight: 0, maxHeight: "100%", paddingBottom: 40 }}>
             {left}
           </aside>
         )}
         <main data-testid="editor-canvas" style={{ flex: 1, minWidth: 0, display: "flex", minHeight: 0 }}>{children}</main>
         {right && !narrow && (
-          <aside data-testid="editor-right-rail" style={{ width: RAIL_W, flexShrink: 0, background: ED.rail, borderLeft: "1px solid " + ED.railLine, overflowY: "auto", paddingBottom: 40 }}>
+          <aside data-testid="editor-right-rail" style={{ width: RAIL_W, flexShrink: 0, background: ED.rail, borderLeft: "1px solid " + ED.railLine, overflowY: "auto", overscrollBehavior: "contain", minHeight: 0, maxHeight: "100%", paddingBottom: 40 }}>
             {right}
           </aside>
         )}
