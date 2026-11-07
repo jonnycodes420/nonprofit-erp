@@ -23,7 +23,7 @@ const FY = require("./fiscalYear");
 const { MONEY, GIFT, LIVE } = require("./money");
 const { AFTER_IMPORT, LIFETIME } = require("./lifetime");
 const { FIRST_DATE } = require("./firstGift");
-const { IS_CREDIT } = require("../../creditTypes");
+const { IS_CREDIT, NOT_CREDIT } = require("../../creditTypes");
 
 const PERSON_YEARS_MAX = 40;   // a longer history than this is very rare; older gifts get one row
 const ORG_YEARS = 10;
@@ -255,4 +255,61 @@ async function orgByYear(query, org, today) {
   };
 }
 
-module.exports = { yearsSpan, samePoint, changeWords, donorByYear, orgByYear, donorKindsSql, KIND_WORDS, fmt };
+// ── THE ROWS BEHIND THE FIGURES (server/reports/yoySources.js) ──────────────
+// One person's money in a span of their Lifetime: every money row the imported
+// total does not already cover. `largest` keeps only the largest gift;
+// `undated` only the gifts with no date. Columns as every figure source.
+function donorYearSql(orgId, p) {
+  const args = [orgId, p.donor];
+  let span = "";
+  if (p.undated) span += " AND (g.date IS NULL OR g.date !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}')";
+  else {
+    span += " AND g.date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'";
+    if (p.from) { span += " AND LEFT(g.date, 10) >= ?"; args.push(p.from); }
+    if (p.to) { span += " AND LEFT(g.date, 10) <= ?"; args.push(p.to); }
+  }
+  if (p.largest) span += " AND g.amount > 0";
+  const inner = `SELECT g.id, 'gift' AS type, g.donor_id, COALESCE(f.name, 'Unrestricted') AS name, g.date,
+                        ROUND(g.amount::numeric, 2) AS amount, COALESCE(NULLIF(g.payment_method, ''), INITCAP(NULLIF(g.type, ''))) AS detail
+                   FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+                   LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+                  WHERE g.org_id = ? AND g.donor_id = ? AND d.deleted_at IS NULL AND ${MONEY("g")} AND ${AFTER_IMPORT("g", "d")}${span}`;
+  return {
+    sql: p.largest ? `SELECT * FROM (${inner}) t ORDER BY amount DESC, date DESC NULLS LAST, id LIMIT 1` : inner,
+    args, order: p.largest ? "amount DESC, id" : undefined,
+  };
+}
+// One person's soft credit dated in a span: someone else's gift credited to
+// them, and their own soft or matching credit rows. Never in a total.
+function donorSoftYearSql(orgId, p) {
+  return {
+    sql: `SELECT sc.id, 'soft_credit' AS type, g.donor_id, COALESCE(gd.name, 'Someone no longer in Steward') AS name, g.date,
+                 ROUND(sc.amount::numeric, 2) AS amount, 'Credited from their gift' AS detail
+            FROM gift_soft_credits sc
+            JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
+            JOIN donors d ON d.id = sc.donor_id AND d.org_id = sc.org_id AND d.deleted_at IS NULL
+            LEFT JOIN donors gd ON gd.id = g.donor_id AND gd.org_id = g.org_id
+           WHERE sc.org_id = ? AND sc.donor_id = ? AND LEFT(g.date, 10) >= ? AND LEFT(g.date, 10) <= ?
+          UNION ALL
+          SELECT g.id, 'gift', g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2), INITCAP(TRIM(g.type))
+            FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
+           WHERE g.org_id = ? AND g.donor_id = ? AND ${IS_CREDIT("g")} AND LEFT(g.date, 10) >= ? AND LEFT(g.date, 10) <= ?`,
+    args: [orgId, p.donor, p.from, p.to, orgId, p.donor, p.from, p.to],
+    order: "date DESC NULLS LAST, id",
+  };
+}
+// The org's largest single gift in a span (the `gifts` source's rows, the top one).
+function yearLargestSql(orgId, p) {
+  return {
+    sql: `SELECT * FROM (SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount,
+                 COALESCE(f.name, 'Unrestricted') AS detail
+            FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+            LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+           WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")} AND g.amount > 0
+           ORDER BY g.amount DESC, g.date DESC, g.id LIMIT 1) t`,
+    args: [orgId, p.from, p.to],
+    order: "amount DESC, id",
+  };
+}
+
+module.exports = { donorYearSql, donorSoftYearSql, yearLargestSql, yearsSpan, samePoint, changeWords, donorByYear, orgByYear, donorKindsSql, KIND_WORDS, fmt };
