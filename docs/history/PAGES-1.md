@@ -12,6 +12,6 @@
 
 **Size.** PortalEditor.jsx is 1,192 lines: History moved to `PageHistoryPanel.jsx`, the block options and the editor palette to `PortalEditorBlockOptions.jsx` (scoped out of brand-allowlist with PortalEditor, the same editor).
 
-**Left.** The FAQ and Stats validators refuse an empty block, so a template cannot carry them empty, and a freshly added FAQ block shows "Save failed" until a question is typed (unchanged from main). Public block pages do not install PERF-4's app mark; the test times them to their own ready marker on the same 150 ms round trip.
+**Left.** The FAQ and Stats validators refuse an empty block, so a template cannot carry them empty, and a freshly added FAQ block shows "Save failed" until a question is typed (unchanged from main). PERF-4's page-ready mark now runs on the three public page kinds too (mark only, no beacon: a stranger's browser has no session); at a 150 ms round trip, cache off, they were ready in 0.65 s (giving), 0.76 s (volunteer) and 0.75 s (membership) locally. The goal bar is a `meter`, not a `progressbar`, which the mark reads as a spinner.
 
 Test: `tests/pages1.test.js` (API and browser legs).

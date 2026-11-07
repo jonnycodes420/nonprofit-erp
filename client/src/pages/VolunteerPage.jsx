@@ -121,7 +121,7 @@ export default function VolunteerPage({ kind = "volunteer" }) {
   const ctx = { me: null, theme, orgSlug, orgName: page.org?.name, volData: page.data, pageData: page.data, surface: kind };
 
   return (
-    <div className={"vp-page pg-themed" + (pageTheme && pageTheme.button === "outline" ? " pg-btn-outline" : "") + (dark ? " pg-dark" : "")} style={shell} data-page-ready="1" data-page-kind={kind}>
+    <div className={"vp-page pg-themed" + (pageTheme && pageTheme.button === "outline" ? " pg-btn-outline" : "") + (dark ? " pg-dark" : "")} style={shell} data-page-ready="1" data-page-root="public-page" data-page-kind={kind}>
       <style>{PAGE_BUTTON_CSS}</style>
       <style>{`
         .vp-wrap { max-width: 760px; margin: 0 auto; padding: ${isEmbed ? "16px 16px 32px" : "22px 16px 64px"}; }

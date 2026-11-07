@@ -18,8 +18,9 @@
 //       nothing publicly (planted: the editor's own note shown publicly → red).
 //  §4  contrast: a failing accent is named with its ratio (shared/pageTheme.js)
 //       and the editor shows the warning.
-//  §5  each public page is ready under 2 s at a 150 ms round trip, and has no
-//       horizontal scroll at 390 wide.
+//  §5  each public page is ready under 2 s at a 150 ms round trip by PERF-4's
+//       page-ready mark (now on the public pages too), and has no horizontal
+//       scroll at 390 wide.
 //
 // RED ON MAIN (acea33c/a814f6e): §1 cover (the rail said "No photo" over the
 // Hero's photo) and blank story (no dashed box; an empty brand-coloured block
@@ -263,10 +264,10 @@ async function wipe(org) {
         await cdp.send("Network.enable");
         await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
         await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 150, downloadThroughput: 10 * 1024 * 1024 / 8, uploadThroughput: 5 * 1024 * 1024 / 8 });
-        const t0 = performance.now();
         await pg.goto(urlOf(p), { waitUntil: "commit", timeout: 45000 });
-        await pg.locator(readySel(p)).waitFor({ timeout: 15000 }).catch(() => {});
-        times.push(Math.round(performance.now() - t0));
+        // PERF-4's mark: drawn, nothing loading, no read in flight, held 150 ms.
+        const mark = await pg.waitForFunction(() => window.__stewardReady, null, { timeout: 15000 }).then(h => h.jsonValue()).catch(() => null);
+        times.push(mark ? mark.ms : 99999);
         if (i === 0 && kind !== "give") await shot(pg, `public-${kind}-1440`);
         await ctx.close();
       }

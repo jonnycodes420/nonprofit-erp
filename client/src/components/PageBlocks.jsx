@@ -76,7 +76,7 @@ export function PageBlock({ w, ctx = {} }) {
             <span style={{ fontSize: 26, fontFamily: "var(--pt-serif,Georgia,serif)", color: "var(--pt-accent-text, var(--pt-text, #0F1A12))" }}>{g.done.toLocaleString("en-US")}</span>
             <span style={{ fontSize: 14, color: MUTED }}>of {g.of.toLocaleString("en-US")} {g.noun}{g.word ? " " + g.word : ""}</span>
           </div>
-          <div role="progressbar" aria-valuemin={0} aria-valuemax={g.of} aria-valuenow={g.done} style={{ height: 10, borderRadius: 999, background: "var(--pt-track, #e8e4db)", overflow: "hidden" }}>
+          <div role="meter" aria-label={(w.heading || "Progress")} aria-valuemin={0} aria-valuemax={g.of} aria-valuenow={g.done} style={{ height: 10, borderRadius: 999, background: "var(--pt-track, #e8e4db)", overflow: "hidden" }}>
             <div style={{ width: pct + "%", height: "100%", background: "var(--pt-accent, var(--pt-primary))" }} />
           </div>
           {g.sentence && <div style={{ fontSize: 12, color: MUTED, marginTop: 8, lineHeight: 1.5 }}>{g.sentence}</div>}
