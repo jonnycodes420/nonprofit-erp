@@ -98,8 +98,9 @@ const TYPES = [
     offLine: "Journey emails are off, so steps set to send on their own will wait.",
     place: "Journeys" },
   { key: "campaign", group: "journeys", name: "Campaign emails", short: "campaign emails", kinds: ["campaign"],
-    sentence: "A campaign email you schedule goes out at the time you picked.",
-    turnOn: "Campaign emails you schedule will go out at the time you picked.",
+    // COMMS-1: what turning it on does. It sends nothing by itself.
+    sentence: "Lets the campaigns you write reach your donors. Sending stays manual, with one click per campaign: each one goes only when someone presses Send or Schedule on it, and nothing goes out on its own.",
+    turnOn: "Turning this on sends nothing. A campaign still goes only when someone presses Send or Schedule on it.",
     offLine: "Campaign emails are off, so a scheduled campaign will wait.",
     place: "Campaigns" },
 ];

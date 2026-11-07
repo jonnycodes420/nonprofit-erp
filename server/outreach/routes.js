@@ -147,7 +147,7 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
     // not; while Donor mail is off (or this is the demonstration org) the
     // people it would reach are that group. The Send button reads `wouldReach`
     // and is never live while `sendable` is 0, with `blocked` as its reason.
-    audience: await audienceLine(orgId, aud, noun),
+    audience: await audienceLine(orgId, aud, noun, req),
   });
 }));
 
@@ -163,7 +163,7 @@ const AUDIENCE_WORDS = {
   complained: n => `marked a past email as spam`, blocked_address: () => "on the list Steward never mails",
   sample_donor: () => "sample records, not real people",
 };
-async function audienceLine(orgId, aud, noun) {
+async function audienceLine(orgId, aud, noun, req = null) {
   const [o] = await query("SELECT name FROM orgs WHERE id=?", [orgId]);
   const orgName = displayNameCase(await donorFacingOrgName(orgId, (o && o.name) || "").catch(() => (o && o.name) || ""));
   const groups = aud.leftOut.map(g => ({ reason: g.reason, count: g.count,
@@ -185,8 +185,11 @@ async function audienceLine(orgId, aud, noun) {
       : `Donor mail is off for ${orgName}, so nothing is sent until it is turned on.`)
     : sendable === 0 && groups.some(g => g.reason === "type_off") ? "Campaign emails are off, so this campaign waits until they are turned on in Settings, Automatic email."
     : sendable === 0 ? (total ? "Nobody in this group can get this email." : "Nobody is in this group yet.") : null;
+  // COMMS-1: where the audience waits on Campaign emails, say where they are turned on.
+  const TURN = require("./campaignTurnOn");
+  const turnOn = TURN.turnOnNote({ off: groups.some(g => g.reason === "type_off"), isAdmin: TURN.isAdminReq(req) });
   return {
-    total, sendable, wouldReach, blocked, groups, noun,
+    total, sendable, wouldReach, blocked, groups, noun, turnOn,
     line: `${total.toLocaleString()} ${noun} \u00b7 ${sendable.toLocaleString()} can get this email${groups.length ? ": " + groups.map(g => g.sentence).join(" \u00b7 ") : ""}.`,
   };
 }
@@ -943,9 +946,13 @@ app.get("/communications/hub", requireAuth, wrap(async (req, res) => {
   const totalSent = cs.totalSent;
   const mail = await hubMailState(orgId);
   const totalOpen = cs.totalSentRows.reduce((n, c) => n + (Number(c.open_count) || 0), 0);
+  // COMMS-1: none can get a campaign email because the switch is off: say where it is.
+  const TURN = require("./campaignTurnOn");
+  const campaignTurnOn = TURN.turnOnNote({ off: await TURN.campaignEmailsOff(query, orgId).catch(() => false), isAdmin: TURN.isAdminReq(req) });
   res.json({
     ...roster,
     mail,
+    campaignTurnOn,
     campaigns: await require("../../campaignDelivery").withDelivery(orgId, campaigns),
     sequences: seqs.map(s => ({ ...s, active: parseInt(s.active, 10) || 0 })),
     stats: {

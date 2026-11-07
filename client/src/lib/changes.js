@@ -25,7 +25,7 @@
 // A view that is not mounted hears nothing and asks for nothing.
 import { useEffect, useRef, useState } from "react";
 
-export const KINDS = ["person", "gift", "pledge", "event", "grant", "task", "group", "volunteer", "fund", "totals", "note", "import"];
+export const KINDS = ["person", "gift", "pledge", "event", "grant", "task", "group", "volunteer", "fund", "totals", "note", "import", "draft"];
 const ALL = KINDS;
 
 // ── WHAT A WRITE TOUCHED ─────────────────────────────────────────────────────
@@ -33,6 +33,8 @@ const ALL = KINDS;
 // kept lists hear (api.js onWrite), so an unnamed write never re-reads a page.
 const GIFT = ["gift", "person", "totals", "fund"];
 const RULES = [
+  // COMMS-1: a draft dismissed, restored, sent, approved or skipped moves every count of drafts waiting.
+  [/^\/(drafts|milestone-drafts|thank-yous)\b|^\/agent\/(waiting|drafts?)\b/, ["draft", "task"]],
   [/^\/(atlas|tell|voice|memos?|requests)\b/, ALL],
   [/^\/(imports?|spreadsheet-import|csv|history-import|old-reports)\b|\/undo\b.*import|import.*\/undo\b/, ALL],
   [/^\/donors\/[^/]+\/gifts\b|^\/gifts\b|^\/donations\b|^\/checks?\b|^\/deposits?\b|^\/batches?\b|^\/recurring\b|^\/refunds?\b|^\/soft-credits?\b|^\/ledger\b|^\/finance\b/, GIFT],
@@ -178,6 +180,7 @@ const TABLE_KINDS = [
   [/^(grant|funder)/, ["grant", "pledge", "totals"]],
   [/^(event|attendee|guest|ticket|table_)/, ["event"]],
   [/^(task)/, ["task"]],
+  [/^(milestone_drafts|agent_drafts|thank_you_drafts)/, ["draft"]],   // COMMS-1
   [/^(group|segment)/, ["group"]],
   [/^(volunteer|shift|hours)/, ["volunteer"]],
   [/^(fund|financial|budget)/, ["fund", "totals"]],

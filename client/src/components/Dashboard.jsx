@@ -513,6 +513,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     if(surface==="home")loadHomeDay();
   });
   useChanged(["task","note"],c=>{if(c.source!=="told")loadThreads();});
+  // COMMS-1: a draft dismissed or restored anywhere moves "N drafts are waiting for you" and the thank-yous at once.
+  useChanged(["draft"],()=>{loadAgentDaily();loadThankYous();});
 
   // Queue + hero metrics are re-fetched whenever scope changes (including
   // the initial "mine"/"all" decision above) — one shared scope, not three

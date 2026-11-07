@@ -567,13 +567,16 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
   const org = orgs[0];
 
-  // WALKB-2: the one invitation email (server/org/invites.js), shared with Resend.
-  const emailSent = await require("../server/org/invites").sendStaffInvite({ resend, orgName: displayNameCase(org.name), email: normalizedEmail, role: validRole, link: inviteLink });
+  // COMMS-1: the one invitation email (server/org/inviteMail.js), shared with Resend:
+  // an account email from Steward's own address, whether or not the org has SMTP.
+  const sent = await require("../server/org/inviteMail").sendInvite({ query, run, resend }, { orgId: req.user.orgId, inviteId: id, email: normalizedEmail,
+    role: validRole, link: inviteLink, orgName: displayNameCase(org.name), tz: org.timezone, actor: ctx.actor ? ctx.actor(req) : { id: req.user.userId, name: null } });
+  const emailSent = sent.sent;
 
   // Return the invite id/email/derived name so the caller (e.g. the import
   // officer-mapping screen) can make the newly-invited officer immediately
   // selectable + assignable as PENDING, without re-running the import.
-  res.json({ success: true, inviteLink, emailSent, id, email: normalizedEmail, name: inviteeDisplayName(normalizedEmail) });
+  res.json({ success: true, inviteLink, emailSent, emailMessage: sent.message, id, email: normalizedEmail, name: inviteeDisplayName(normalizedEmail) });
 }));
 
 app.get("/auth/invite/:token", wrap(async (req, res) => {

@@ -51,6 +51,10 @@ export function InvitedList({ isAdmin, version = 0 }) {
             <div style={{ fontSize: 11, color: T.ink3, marginTop: 1 }}>
               Invited {displayDate(civilDayOf(new Date(i.createdAt)))}{i.invitedBy ? ` by ${i.invitedBy}` : ""} · {i.expired ? "the link has expired" : `the link works until ${displayDate(civilDayOf(new Date(i.expiresAt)))}`}
             </div>
+            {/* COMMS-1: the email itself: not sent, or it bounced. */}
+            {i.bounced
+              ? <div data-testid="team-invite-bounced" style={{ fontSize: 11, color: T.gold700, fontWeight: 700, marginTop: 1 }}>The invite email to {i.email} bounced. Check the address, or copy the link and send it another way.</div>
+              : !i.lastSentAt && <div data-testid="team-invite-unsent" style={{ fontSize: 11, color: T.ink3, marginTop: 1 }}>The email hasn't gone yet. Resend it, or copy the link.</div>}
           </div>
           <Pill label={roleWord(i.role)} color={T.ink3} />
           <span style={{ display: "inline-flex", gap: 12, alignItems: "center" }}>

@@ -26,6 +26,7 @@ import { askConfirm } from "./ConfirmDialog";
 import StewardEditor, { RailSection, DeviceFrame, useNarrow, railLabel, railInput, railQuietBtn, railNote } from "./StewardEditor";
 import { EmailFrame, EmailBlockSettings, BlockMenu, BrandSummary, PreviewAs, FieldMenu, EmailHistory, insertChip, setAtPath, stripKeys, useBlockList } from "./EmailEditor";
 import { previewAsParam } from "../lib/previewAs";   // GIFTS-2: Preview as yourself re-draws the preview
+import CampaignTurnOn from "./CampaignTurnOn";   // COMMS-1: where Campaign emails are turned on
 
 const NOTE_BOX = { background: T.gold50, border: "1px solid " + T.gold300, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, color: T.ink, lineHeight: 1.5 };
 // The local wall-clock "now" for a datetime-local's min, in the browser's zone.
@@ -50,6 +51,7 @@ export function AudienceLine({ audience, testid = "audience-line" }) {
           </span>
         ))}
       </div>
+      <CampaignTurnOn note={audience.turnOn} />
       {g && (
         <div data-testid="audience-group-list" style={{ marginTop: 8, background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 10px", fontSize: 12.5, lineHeight: 1.6 }}>
           {g.people.map(p => <div key={p.id}><a href={`/app/donors/${encodeURIComponent(p.id)}`} style={{ color: T.ink }}>{p.name}</a></div>)}

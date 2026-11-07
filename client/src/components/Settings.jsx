@@ -380,7 +380,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
     setInviting(true);setInvErr("");
     try{
       const r=await apiFetch("/auth/invite",{method:"POST",body:JSON.stringify({email:invEmail.trim(),role:invRole})});
-      setInviteResult({link:r.inviteLink,emailSent:r.emailSent});setInvVer(v=>v+1);
+      setInviteResult({link:r.inviteLink,emailSent:r.emailSent,emailMessage:r.emailMessage});setInvVer(v=>v+1);
     }catch(e){
       if(e.error==="seat_limit"){
         closeInvite();
@@ -1477,7 +1477,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                   <div style={{fontSize:12,color:T.greenDk,wordBreak:"break-all",lineHeight:1.5}}>{inviteResult.link}</div>
                 </div>
                 {!inviteResult.emailSent&&<div style={{fontSize:12,color:T.ink3,marginBottom:14,lineHeight:1.5}}>
-                  SMTP not configured, copy and share this link directly. It expires in 7 days.
+                  {inviteResult.emailMessage||"The invite was not emailed."} The link expires in 7 days.
                 </div>}
                 <div style={{display:"flex",gap:10}}>
                   <button onClick={copyLink} style={{flex:1,background:copied?T.green:T.bg,border:"1px solid "+(copied?T.green:T.bg3),borderRadius:10,padding:"10px",color:copied?T.white:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer",transition:"all 0.15s"}}>
