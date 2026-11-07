@@ -176,6 +176,12 @@ async function seed() {
   }
   const [{ n: stillThere }] = await q(`SELECT COUNT(*)::int AS n FROM donors WHERE id=$1 AND deleted_at IS NULL AND erased_at IS NULL`, [`d_${A}`]);
   ok("§3 …and the person is still there, unerased", stillThere === 1, stillThere);
+  // ACCESS-1's org switcher: a person who is not a member of org B cannot switch into it.
+  for (const [who, tok] of [["an admin", admin], ["staff", staff]]) {
+    const sw = await api("POST", "/auth/switch-org", tok, { orgId: B });
+    const ghost = await api("POST", "/auth/switch-org", tok, { orgId: "org_redteam1_none" });
+    ok(`§3 ${who} cannot switch into another org (404, the same as no such org)`, sw.status === 404 && sw.text === ghost.text && !/token/.test(sw.text), { status: sw.status });
+  }
   for (const p of ["/ops", "/ops/ship", "/admin/orgs", "/admin/metrics", `/admin/orgs/${B}`]) {
     const r = await api("GET", p, admin);
     ok(`§3 an org admin cannot reach ${p.replace(B, "B")} (${r.status})`, r.status === 403 || r.status === 404, r.status);
