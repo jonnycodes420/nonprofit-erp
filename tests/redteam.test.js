@@ -87,7 +87,22 @@ async function seed() {
     [`d_${A}_f`, A, FORMULA_NAME, "\t=2+3"]);
 }
 
+// A walk's GET: a connection the server drops is tried once more, then named
+// as a failure for that route, never a crash of the whole suite.
+async function walkGet(path, tok, dropped) {
+  for (let i = 0; i < 2; i++) {
+    try { return await api("GET", path, tok); }
+    catch (e) { if (i === 1) { dropped.push(`${path}: ${e.cause && e.cause.code || e.message}`); return { status: 0, text: "" }; } }
+  }
+}
+
 (async () => {
+  // The route inventory first: when it is stale, load() boots a server to
+  // rebuild it, and a pause of several seconds between requests let the
+  // server's 5 s keep-alive close a socket the next request then reused
+  // (CI, 7 Nov: "fetch failed: other side closed" on the first §2 read).
+  const inv = require("./lib/routeInventoryFile").load().routes;
+  const dropped = [];
   await reset();
   await seed();
   const admin = await login("admin@redteam-riverside.example.org");
@@ -128,14 +143,13 @@ async function seed() {
   // ── §2 · the volunteer coordinator ─────────────────────────────────────
   console.log("\n§2 · a coordinator reaches volunteers and hours, and no giving");
   const { coordinatorMayReach } = require("../auth");
-  const inv = require("./lib/routeInventoryFile").load().routes;
   const fill = p => p.replace(/:donorId|:personId/g, `d_${A}`).replace(/:id\b/g, `d_${A}`).replace(/:[A-Za-z_]+\??/g, "x");
   const leaks = [], open = [], errors = [];
   let walked = 0;
   for (const r of inv) {
     if (r.method !== "GET" || !(r.auth || []).includes("requireAuth")) continue;
     const path = fill(r.path);
-    const res = await api("GET", path, coord);
+    const res = await walkGet(path, coord, dropped);
     walked++;
     if (res.status >= 500) errors.push(`${r.path} → ${res.status}`);
     if (!coordinatorMayReach(path)) {
@@ -262,12 +276,13 @@ async function seed() {
     const path = r.path.replace(/:donorId|:id\b/g, `d_${A}`).replace(/:[A-Za-z_]+\??/g, "x");
     for (const v of evil) {
       const qs = params.map(p => `${encodeURIComponent(p)}=${encodeURIComponent(v)}`).join("&");
-      const res = await api("GET", `${path}?${qs}`, admin);
+      const res = await walkGet(`${path}?${qs}`, admin, dropped);
       if (res.status >= 500) { fails.push(`${r.path} [${v}] → ${res.status} ${String(res.text).slice(0, 80)}`); break; }
     }
     probed++;
   }
   ok(`§6 no 5xx from SQL-shaped values on ${probed} filtered routes (${fails.length})`, fails.length === 0 && probed > 80, fails.slice(0, 12));
+  ok(`§2/§6 no route dropped the connection twice (${dropped.length})`, dropped.length === 0, dropped.slice(0, 10));
   const [{ n: stillB }] = await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1`, [B]);
   ok("§6 …and org B's people are all still there", stillB === 1, stillB);
 
