@@ -21,6 +21,7 @@ import { WhyLink } from "./WhyAnswer";
 import { AskBox } from "./AskPanel";
 import { WhatWorked } from "./Insights";   // INSIGHTS-1
 import EventRaised from "./EventRaised";   // HOME-3
+import { yoyView } from "./YearOverYear";   // HISTORY-1
 import { countLabel, plural } from "../../../shared/countWords.js";
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
@@ -50,6 +51,7 @@ const REPORT_DEFS = [
   // BUILD-17 — the development reporting cadence.
   { key: "week-in-review", label: "Week in review" },
   { key: "three-year", label: "3-year comparison" },
+  { key: "year-over-year", label: "Year over year" },   // HISTORY-1
   { key: "annual", label: "Annual report" },
   { key: "solicitations", label: "Solicitations", team: true },
   // BUILD-87 Part 4 — the file the person who reconciles the bank actually
@@ -583,6 +585,8 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         { key: "giftCount", label: "Gifts", type: "count" },
         { key: "lastGiftDate", label: "Last gift", type: "date" },
       ]} rows={d.rows} />;
+    } else if (active === "year-over-year") {
+      ({ narrative, table, empty } = yoyView(d));
     } else if (active === "three-year") {
       empty = d.years.every(y => y.total === 0);
       const g = d.orgGrowthPct;
