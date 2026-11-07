@@ -126,16 +126,53 @@ app.get("/org/:orgSlug/volunteer-page/:pageSlug/public", donateLimiter, wrap(asy
   const [org] = await query(`SELECT o.id, o.name, o.org_slug, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`,
     [req.params.orgSlug]);
   if (!org) return res.status(404).json({ error: "not_found", message: "This page could not be found." });
-  const [page] = await query(`SELECT id, title, slug, published, image_url, image_meta FROM giving_pages
+  const [page] = await query(`SELECT id, title, slug, published, image_url, image_meta, design FROM giving_pages
      WHERE org_id = ? AND slug = ? AND page_kind = ? AND status = 'active' AND published IS NOT NULL`, [org.id, req.params.pageSlug, VP.KIND]);
   if (!page || !Array.isArray(page.published) || !page.published.length) return res.status(404).json({ error: "not_found", message: "This page could not be found." });
   const widgets = (await resolveWidgetsPublic(org, page.published, { pageId: page.id, today: orgToday(await orgTz(org.id)) }))   // ORG_TZ_SEAM_OK
     .filter(w => w.type !== "volquote" || (w.permission === true && w.text && w.name));
   const data = await VP.pageData(org.id, page.published);
   res.json({ org: { id: org.id, name: String(org.display_name || "").trim() || org.name, slug: org.org_slug },
-    theme: giveThemePayload(org), page: { id: page.id, title: page.title, slug: page.slug,
+    theme: await pageBrand(org), page: { id: page.id, title: page.title, slug: page.slug, pageTheme: await pageThemeOf(page),
       cover: page.image_url ? { url: page.image_url, ...(page.image_meta || {}) } : null }, widgets, data });   // FIX-41
 }));
+
+// ── PAGES-1 · THE PUBLIC MEMBERSHIP PAGE ──────────────────────────────────
+// The volunteer page's read for a page of kind membership: the brand, the
+// page's own theme, its blocks through the same resolver (hints never leave
+// the server), the levels its form sells (the same rows and payload as
+// /memberships/public), and the member count only when the page has a goal
+// bar that shows it. A GET: it writes nothing.
+app.get("/org/:orgSlug/membership-page/:pageSlug/public", donateLimiter, wrap(async (req, res) => {
+  await MB_READY;
+  const MP = require("../../membershipPage");
+  const [org] = await query(`SELECT o.id, o.name, o.org_slug, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`,
+    [req.params.orgSlug]);
+  if (!org) return res.status(404).json({ error: "not_found", message: "This page could not be found." });
+  const [page] = await query(`SELECT id, title, slug, published, image_url, image_meta, design FROM giving_pages
+     WHERE org_id = ? AND slug = ? AND page_kind = ? AND status = 'active' AND published IS NOT NULL`, [org.id, req.params.pageSlug, MP.KIND]);
+  if (!page || !Array.isArray(page.published) || !page.published.length) return res.status(404).json({ error: "not_found", message: "This page could not be found." });
+  const widgets = await resolveWidgetsPublic(org, page.published, { pageId: page.id, today: orgToday(await orgTz(org.id)) });   // ORG_TZ_SEAM_OK
+  const levels = await query(`SELECT * FROM membership_levels WHERE org_id=? AND active IS NOT FALSE AND hidden IS NOT TRUE ORDER BY position, price, name`, [org.id]);
+  const showsCount = widgets.some(w => w.type === "goalbar");
+  res.json({ org: { id: org.id, name: String(org.display_name || "").trim() || org.name, slug: org.org_slug },
+    theme: await pageBrand(org), page: { id: page.id, title: page.title, slug: page.slug, pageTheme: await pageThemeOf(page),
+      cover: page.image_url ? { url: page.image_url, ...(page.image_meta || {}) } : null }, widgets,
+    data: { levels: levels.map(publicLevelPayload), members: showsCount ? { count: await MP.memberCount(org.id), sentence: MP.MEMBER_SENTENCE } : null } });
+}));
+// The brand a page draws with, and the footer's facts. A placeholder EIN never
+// reaches a public page (WALKB-1).
+async function pageBrand(org) {
+  const t = giveThemePayload(org);
+  const PC = await import("../../shared/placeholderCopy.js");
+  const digits = String(t.einLine || "").replace(/\D/g, "");
+  if (digits.length === 9 && PC.isPlaceholderEin(digits)) t.einLine = null;
+  return t;
+}
+async function pageThemeOf(page) {
+  const D = await import("../../shared/givingPageDesign.js");
+  return D.normalizeDesign(page && page.design).theme;
+}
 app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   const orgs = await query(gpOrgSql("o.org_slug = ?"), [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });

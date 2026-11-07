@@ -23,6 +23,12 @@ export const VOL_TEMPLATES=[
   ["ongoing","Ongoing roles","your regular roles, each with its shifts"],
   ["group_day","A group service day","churches, schools and companies bring a team"],
 ];
+// PAGES-1 — the three membership page templates (keys match membershipPage.js).
+export const MEM_TEMPLATES=[
+  ["story_first","Story first","a photo, why membership matters, then the levels"],
+  ["campaign","Campaign","a member drive: the count toward your goal leads"],
+  ["simple","Simple","your logo and the levels, nothing else"],
+];
 export const GP_STATUS_META={
   active:   {label:"Active",   bg:T.green100, color:T.greenDk, border:T.greenDk},
   archived: {label:"Archived", bg:T.bg2, color:T.ink3, border:T.bg3},
@@ -353,15 +359,15 @@ export function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
     if(!volNew||!volNew.title.trim())return;
     setSaving(true);
     try{
-      const created=await apiFetch("/giving-pages",{method:"POST",body:JSON.stringify({title:volNew.title.trim(),page_kind:"volunteer",template:volNew.template})});
+      const created=await apiFetch("/giving-pages",{method:"POST",body:JSON.stringify({title:volNew.title.trim(),page_kind:volNew.kind||"volunteer",template:volNew.template})});
       setPages(prev=>[created,...prev]);
       setVolNew(null);
       offerUndo({undoAction:async()=>{
         await apiFetch(`/giving-pages/${created.id}`,{method:"DELETE"});
         setPages(prev=>prev.filter(x=>x.id!==created.id));
         return {ok:true};
-      },message:`Made ${created.title}. Build it, then publish.`},"Volunteer page made");
-    }catch(e){alert(errorMessage(e, "Could not make the volunteer page"));}
+      },message:`Made ${created.title}. Build it, then publish.`},volNew.kind==="membership"?"Membership page made":"Volunteer page made");
+    }catch(e){alert(errorMessage(e, volNew.kind==="membership"?"Could not make the membership page":"Could not make the volunteer page"));}
     setSaving(false);
   }
 
@@ -385,12 +391,12 @@ export function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
       </div>
       <div style={{marginTop:-10,marginBottom:12}}><MailTypeSwitches keys={["gift_receipt"]} from="giving_pages"/></div>
       {isAdmin&&(volNew?(
-        <div data-testid="new-volunteer-page" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
-          <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:8}}>A new volunteer page</div>
+        <div data-testid={volNew.kind==="membership"?"new-membership-page":"new-volunteer-page"} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:8}}>{volNew.kind==="membership"?"A new membership page":"A new volunteer page"}</div>
           <input style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,marginBottom:10,fontFamily:"inherit"}}
             value={volNew.title} placeholder="Volunteer with us" onChange={e=>setVolNew({...volNew,title:e.target.value})} aria-label="Page title"/>
           <div style={{fontSize:12,fontWeight:700,color:T.ink3,marginBottom:6}}>Start from</div>
-          {VOL_TEMPLATES.map(([k,label,hint])=>(
+          {(volNew.kind==="membership"?MEM_TEMPLATES:VOL_TEMPLATES).map(([k,label,hint])=>(
             <label key={k} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:13,padding:"5px 0",cursor:"pointer"}}>
               <input type="radio" name="vol-template" checked={volNew.template===k} onChange={()=>setVolNew({...volNew,template:k})} style={{marginTop:3}}/>
               <span><strong>{label}</strong><span style={{color:T.ink3}}> · {hint}</span></span>
@@ -402,10 +408,16 @@ export function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
           </div>
         </div>
       ):(
-        <button onClick={()=>setVolNew({title:"Volunteer with us",template:"ongoing"})} disabled={isReadOnly||!orgSlug}
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button onClick={()=>setVolNew({title:"Volunteer with us",template:"ongoing",kind:"volunteer"})} disabled={isReadOnly||!orgSlug}
           style={{background:"none",border:"1px solid "+T.green,borderRadius:8,padding:"6px 12px",color:T.green,fontSize:12,fontWeight:700,cursor:(isReadOnly||!orgSlug)?"not-allowed":"pointer",marginBottom:14,opacity:(isReadOnly||!orgSlug)?0.45:1}}>
           + New volunteer page
         </button>
+        <button data-testid="new-membership-page-open" onClick={()=>setVolNew({title:"Become a member",template:"story_first",kind:"membership"})} disabled={isReadOnly||!orgSlug}
+          style={{background:"none",border:"1px solid "+T.green,borderRadius:8,padding:"6px 12px",color:T.green,fontSize:12,fontWeight:700,cursor:(isReadOnly||!orgSlug)?"not-allowed":"pointer",marginBottom:14,opacity:(isReadOnly||!orgSlug)?0.45:1}}>
+          + New membership page
+        </button>
+        </div>
       ))}
       <div style={{fontSize:13,color:T.ink3,marginBottom:pages.length?14:0,lineHeight:1.6}}>
         {pages.length===0
@@ -418,7 +430,8 @@ export function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
         // One goal concept: a page linked to a campaign tracks toward THAT
         // campaign — its progress line/bar shows the campaign's live figures,
         // not a second page-local goal system. An unlinked page keeps its own.
-        const isVol=p.page_kind==="volunteer";
+        const isMem=p.page_kind==="membership";   // PAGES-1: drawn like a volunteer page's card
+        const isVol=p.page_kind==="volunteer"||isMem;
         const linked=!!p.campaign_id;
         const raised=linked?(parseFloat(p.campaign_raised)||0):(parseFloat(p.raised_amount)||0);
         const goal=linked?(p.campaign_goal!=null?parseFloat(p.campaign_goal):null):(p.goal_amount!=null?parseFloat(p.goal_amount):null);
@@ -434,11 +447,13 @@ export function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                 <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                   <span style={{fontSize:14,fontWeight:700,color:T.ink}}>{p.title}</span>
                   <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:meta.bg,color:meta.color,border:"1px solid "+meta.border}}>{isVol?(p.status==="active"?(p.published_at?"Published":"Not published yet"):"Unpublished"):meta.label}</span>
-                  {isVol&&<span data-testid="volunteer-page-label" style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:T.bg,color:T.ink2,border:"1px solid "+T.bg3}}>Volunteer page</span>}
+                  {isVol&&<span data-testid={isMem?"membership-page-label":"volunteer-page-label"} style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:T.bg,color:T.ink2,border:"1px solid "+T.bg3}}>{isMem?"Membership page":"Volunteer page"}</span>}
                   {p.fund_name&&<span style={{fontSize:11,color:T.ink3}}>→ {p.fund_name}</span>}
                   {p.campaign_name&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:T.gold100,color:T.gold700,border:"1px solid "+T.gold300}}>Counts toward {p.campaign_name}</span>}
                 </div>
-                {isVol?(
+                {isMem?(
+                  <div style={{fontSize:12,color:T.ink3,marginTop:4}}>Joins go through Memberships, with their gifts and receipts.</div>
+                ):isVol?(
                   <div style={{fontSize:12,color:T.ink3,marginTop:4}}>
                     {Number(p.vol_signups||0)} sign-ups · {Number(p.vol_shifts_filled||0)} shifts filled · {Number(p.vol_views||0)} views
                   </div>
@@ -482,7 +497,7 @@ export function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                 <label style={{display:"flex",flexDirection:"column",gap:4,fontSize:12,fontWeight:600,color:T.ink2,flex:"1 1 220px"}}>Title
                   <input value={volLink.title} onChange={e=>setVolLink({...volLink,title:e.target.value})} style={{padding:"8px 10px",border:"1px solid "+T.bg3,borderRadius:6,fontSize:14}}/>
                 </label>
-                <label style={{display:"flex",flexDirection:"column",gap:4,fontSize:12,fontWeight:600,color:T.ink2,flex:"1 1 220px"}}>Link: /volunteer-page/{orgSlug}/
+                <label style={{display:"flex",flexDirection:"column",gap:4,fontSize:12,fontWeight:600,color:T.ink2,flex:"1 1 220px"}}>Link: /{(pages.find(x=>x.id===volLink.id)||{}).page_kind==="membership"?"membership-page":"volunteer-page"}/{orgSlug}/
                   <input value={volLink.slug} onChange={e=>setVolLink({...volLink,slug:e.target.value})} style={{padding:"8px 10px",border:"1px solid "+T.bg3,borderRadius:6,fontSize:14}}/>
                 </label>
                 <button onClick={()=>saveVolLink(p)} disabled={saving||isReadOnly} style={{background:T.green,color:T.bgCard,border:"none",borderRadius:6,padding:"9px 14px",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save</button>

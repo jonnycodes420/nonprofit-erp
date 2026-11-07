@@ -9,6 +9,7 @@
 //
 // Pure: no database, no network, no DOM. The server loads it with import()
 // like the other shared modules; the client imports it directly.
+import { normalizeTheme, validateTheme } from "./pageTheme.js";
 
 export const LAYOUTS = [
   { key: "story", label: "Story", hint: "A photo and the story beside the form." },
@@ -51,6 +52,8 @@ export function normalizeDesign(raw) {
     privacyUrl: /^https:\/\/\S{3,500}$/.test(String(d.privacyUrl || "").trim()) ? String(d.privacyUrl).trim() : "",
     phone: str(d.phone, 40),
     ways: { check: w.check === true, phone: w.phone === true, daf: w.daf === true, stock: w.stock === true },
+    // PAGES-1: the page's own theme over the org's brand (shared/pageTheme.js).
+    theme: normalizeTheme(d.theme),
   };
 }
 
@@ -70,6 +73,7 @@ export function validateDesign(raw) {
   }
   if (d.phone && !/^[0-9+().\-\s]{7,40}$/.test(String(d.phone).trim()))
     errors.push({ field: "design.phone", message: "A phone number is digits, spaces and + ( ) - only." });
+  if (d.theme != null) errors.push(...validateTheme(d.theme).errors);
   return { ok: errors.length === 0, errors, design: errors.length ? null : normalizeDesign(d) };
 }
 
@@ -80,7 +84,10 @@ export function layoutFor(design, page) {
   const d = normalizeDesign(design);
   if (d.layout) return d.layout;
   if (page && page.campaignId) return "campaign";
-  if (page && (page.imageUrl || String(page.story || "").trim())) return "story";
+  // PAGES-1: the Hero block's photo leads a page with no cover of its own
+  // (Donate.jsx draws it as the cover), so it counts as the page's picture.
+  const heroPic = page && Array.isArray(page.page) && page.page.some(w => w && w.type === "hero" && w.image);
+  if (page && (page.imageUrl || heroPic || String(page.story || "").trim())) return "story";
   return "simple";
 }
 

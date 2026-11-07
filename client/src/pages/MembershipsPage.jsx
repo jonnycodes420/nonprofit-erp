@@ -41,7 +41,7 @@ function deductibleSentence(l) {
     : "All of it is tax-deductible.";
 }
 
-function LevelCard({ l, th, card, orgSlug, prefill, mine, isMember }) {
+export function LevelCard({ l, th, card, orgSlug, prefill, mine, isMember }) {
   const [open, setOpen] = useState(false);
   const [firstName, setFirstName] = useState(prefill?.firstName || "");
   const [lastName, setLastName] = useState(prefill?.lastName || "");

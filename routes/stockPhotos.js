@@ -128,4 +128,18 @@ function mount(ctx) {
   }));
 }
 
-module.exports = { mount, routers, useStockPhoto, stockPictureForOrg, isStockUrl, orgGroup, STOCK_DIR };
+// PAGES-1: a template's photo blocks start with one of Steward's photos from
+// the org's mission group (EDITOR-1's rule: never an empty box), so a page
+// made from a template looks finished with only the org's logo and colours.
+async function withStockPhotos(widgets, orgId, pageId) {
+  const out = [];
+  for (const w of widgets || []) {
+    if (w && w.type === "hero" && !w.image) {
+      const pic = await stockPictureForOrg(orgId, pageId).catch(() => null);
+      out.push(pic ? { ...w, image: pic.url, alt: pic.alt || "" } : w);
+    } else out.push(w);
+  }
+  return out;
+}
+
+module.exports = { withStockPhotos, mount, routers, useStockPhoto, stockPictureForOrg, isStockUrl, orgGroup, STOCK_DIR };

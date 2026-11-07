@@ -363,6 +363,8 @@ function Root() {
           {/* VOL-PAGE-1 — a volunteer page, built like a giving page. Not under
               /volunteer: those paths are the API's server-rendered pages. */}
           <Route path="/volunteer-page/:orgSlug/:pageSlug" element={<VolunteerPage />} />
+          {/* PAGES-1 — a membership page, built from the same blocks in the same editor. */}
+          <Route path="/membership-page/:orgSlug/:pageSlug" element={<VolunteerPage kind="membership" />} />
           <Route path="/give/:orgSlug" element={<Donate />} />
           <Route path="/give/:orgSlug/:pageSlug" element={<Donate />} />
           <Route path="/give/:orgSlug/:pageSlug/:fundraiserSlug" element={<Donate />} />

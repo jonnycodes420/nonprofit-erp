@@ -10,6 +10,28 @@ import { resolveAssetUrl } from "../lib/assetUrl";
 import { bannerImgStyle, bannerSrcSet, PORTAL_CAMPAIGN_HERO_RATIO, PORTAL_IMPACT_PHOTO_RATIO, PORTAL_WIDGET_IMAGE_RATIO } from "./PortalBanner";
 import { displayDate } from "../../../shared/displayDate";
 import { VolunteerBlock } from "./VolunteerBlocks";
+import { PageBlock } from "./PageBlocks";
+
+// PAGES-1 · NEVER AN EMPTY BLOCK ON A PUBLIC PAGE. A block with nothing true
+// to show renders nothing (the editor draws its own dashed "Empty block" box
+// around an empty node), so a template or a half-built page never shows a
+// blank card, a broken frame or a placeholder to a donor.
+const filled = v => typeof v === "string" ? v.trim() !== "" : v != null;
+export function blockHasContent(w) {
+  if (!w) return false;
+  switch (w.type) {
+    case "hero": return filled(w.image) || filled(w.heading) || filled(w.sub);
+    case "richtext": return Array.isArray(w.blocks) && w.blocks.some(b => filled(b && b.text) || (Array.isArray(b && b.items) && b.items.some(filled)));
+    case "image": return filled(w.image);
+    case "gallery": return Array.isArray(w.images) && w.images.some(filled);
+    case "stats": return Array.isArray(w.items) && w.items.some(i => i && filled(i.value) && filled(i.label));
+    case "staff": return Array.isArray(w.members) && w.members.some(m => m && filled(m.name));
+    case "faq": return Array.isArray(w.items) && w.items.some(i => i && filled(i.q) && filled(i.a));
+    case "video": return filled(w.videoId);
+    case "quote": return filled(w.text);
+    default: return true;
+  }
+}
 
 // FIX-2 C — this surface's colours, named once (it keeps its own palette;
 // see tests/fix2-c-hex.test.js for why a public surface does).
@@ -58,6 +80,7 @@ function GoalBar({ goal }) {
 // ctx: { giveSlug, me | null, renderMyGiving() — supplied by the host page
 //        (live donor data on the portal, SAMPLE data in the editor) }
 export function WidgetView({ w, ctx }) {
+  if (!blockHasContent(w)) return null;
   switch (w.type) {
     case "hero":
       return (
@@ -92,7 +115,7 @@ export function WidgetView({ w, ctx }) {
     case "gallery":
       return (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 8, marginBottom: 18 }}>
-          {(w.images || []).map((u, i) => (
+          {(w.images || []).filter(filled).map((u, i) => (
             <img key={i} src={resolveAssetUrl(u)} alt="" style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 10, display: "block" }} />
           ))}
         </div>
@@ -100,7 +123,7 @@ export function WidgetView({ w, ctx }) {
     case "stats":
       return (
         <div style={{ ...cardStyle, display: "flex", gap: 28, flexWrap: "wrap" }}>
-          {(w.items || []).map((s, i) => (
+          {(w.items || []).filter(s => s && filled(s.value) && filled(s.label)).map((s, i) => (
             <div key={i}>
               <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "var(--pt-serif, Georgia,serif)" }}>{s.value}</div>
               <div style={{ fontSize: 12, fontWeight: 700, color: PAL.muted }}>{s.label}</div>
@@ -241,7 +264,7 @@ export function WidgetView({ w, ctx }) {
       return (
         <div style={cardStyle}>
           <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-            {(w.members || []).map((m, i) => (
+            {(w.members || []).filter(m => m && filled(m.name)).map((m, i) => (
               <div key={i} style={{ width: 120, textAlign: "center" }}>
                 {m.photo
                   ? <img src={resolveAssetUrl(m.photo)} alt="" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover", margin: "0 auto 8px", display: "block" }} />
@@ -257,7 +280,7 @@ export function WidgetView({ w, ctx }) {
     case "faq":
       return (
         <div style={cardStyle}>
-          {(w.items || []).map((it, i) => (
+          {(w.items || []).filter(it => it && filled(it.q) && filled(it.a)).map((it, i) => (
             <details key={i} style={{ borderTop: i ? "1px solid "+PAL.cream : "none", padding: "10px 0" }}>
               <summary style={{ fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{it.q}</summary>
               <div style={{ fontSize: 14, lineHeight: 1.7, marginTop: 6 }}>{it.a}</div>
@@ -296,6 +319,8 @@ export function WidgetView({ w, ctx }) {
     case "opportunities": case "shiftpicker": case "volsignup": case "volwaiver":
     case "volimpact": case "volquote": case "groupsignup":
       return <VolunteerBlock w={w} ctx={ctx} />;
+    case "pageheader": case "goalbar": case "memberlevels": case "pagefooter":
+      return <PageBlock w={w} ctx={ctx} />;
     default:
       return null;
   }
