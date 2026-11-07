@@ -24,8 +24,9 @@ export function useProfileFiles({ loadMaterials, donor, onInteractionAdded, setT
       const blob=new Blob([byteArray],{type:m.file_type||"application/octet-stream"});
       const url=URL.createObjectURL(blob);
       window.open(url,"_blank");
-    }else if(m.file_url){
-      window.open(m.file_url,"_blank");
+    }else if(m.file_url&&/^https?:\/\//i.test(String(m.file_url).trim())){
+      // REDTEAM-1: only a web address opens; an old "javascript:" link stays shut.
+      window.open(m.file_url,"_blank","noopener");
     }
   };
 

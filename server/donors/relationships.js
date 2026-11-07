@@ -85,6 +85,11 @@ const MATERIAL_ALLOWED_MIME_TYPES = new Set([
 app.post("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
   const { file_name, file_type, file_url, file_data, notes } = req.body;
   if (!file_name) return res.status(400).json({ error: "file_name required" });
+  // REDTEAM-1: a material's link is opened with window.open on the profile, so
+  // a "javascript:" link ran as Steward for whoever clicked it. A web address
+  // or nothing (webAddress.js, SECURE-1 §10's rule for websites).
+  const fileUrl = file_url ? require("../../webAddress").webAddress(String(file_url), 2000) : null;
+  if (file_url && !fileUrl) return res.status(400).json({ error: "A file link must be a web address (https://…)." });
   if (file_type && !MATERIAL_ALLOWED_MIME_TYPES.has(file_type)) {
     return res.status(400).json({ error: `Unsupported file type: ${file_type}` });
   }
@@ -97,7 +102,7 @@ app.post("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
   const id = newId("mat");
   await run(
     "INSERT INTO donor_materials (id,org_id,donor_id,file_name,file_type,file_url,file_data,notes,uploaded_by) VALUES (?,?,?,?,?,?,?,?,?)",
-    [id, req.user.orgId, req.params.id, file_name, file_type||"", file_url||null, file_data||null, notes||"", userRow[0]?.name||""]
+    [id, req.user.orgId, req.params.id, file_name, file_type||"", fileUrl||null, file_data||null, notes||"", userRow[0]?.name||""]
   );
   const rows = await query("SELECT id,org_id,donor_id,file_name,file_type,file_url,notes,uploaded_by,uploaded_at FROM donor_materials WHERE id=?", [id]);
   // Log interaction
