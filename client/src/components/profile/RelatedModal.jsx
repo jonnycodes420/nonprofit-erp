@@ -7,10 +7,12 @@ import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { Figure } from "../Figure";
 import { relationshipLabelsFor } from "./profileShared";
+import { linkedPeople } from "../../lib/linkedPeople";
 
-function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor,refreshSoftCredit,relErr,relLoading,relPickerOpen,relPickerResults,relSaving,relSearch,relType,relatedOpen,relationships,removeFromHousehold,retypeRelationship,setHhModalOpen,setRelErr,setRelPickerOpen,setRelSearch,setRelType,setRelatedOpen,softCredit,unlinkDonor}){
+function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor,refreshSoftCredit,relErr,relLoading,relPickerOpen,relPickerResults,relPickerPending,relSaving,relSearch,relType,relatedOpen,relationships,removeFromHousehold,retypeRelationship,setHhModalOpen,setRelErr,setRelPickerOpen,setRelSearch,setRelType,setRelatedOpen,softCredit,unlinkDonor}){
   // MENU-1 — the types as this record reads them ("Gives through" on a person, "Owned by" on a business).
   const DONOR_RELATIONSHIP_LABELS=relationshipLabelsFor(donor);
+  const linked=linkedPeople({household,relationships,donorId:donor.id});   // STALE-2: the rail's list
   return <>
           {/* Related tab — manual household/spouse/family/employer_match
               links. No auto-detection (matching last name, address, etc.) —
@@ -29,7 +31,7 @@ function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor
                 {relSearch.trim()&&(
                   <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:180,overflowY:"auto"}}>
                     {relPickerResults.length===0
-                      ?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",padding:"6px 4px"}}>No matching donors.</div>
+                      ?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",padding:"6px 4px"}}>{relPickerPending?"Searching…":"No matching donors."}</div>
                       :relPickerResults.map(d=>(
                         <button key={d.id} disabled={relSaving} onClick={()=>linkDonor(d.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",cursor:relSaving?"not-allowed":"pointer",textAlign:"left"}}>
                           <span style={{fontSize:12,fontWeight:600,color:T.ink}}>{d.name}</span>
@@ -93,11 +95,23 @@ function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor
               {!isReadOnly&&<button onClick={()=>{setRelPickerOpen(v=>!v);setRelErr("");}} style={{background:T.greenDk,border:"none",borderRadius:7,padding:"6px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Link someone</button>}
             </div>
 
+            {/* STALE-2: the people the rail lists (lib/linkedPeople.js): the household's
+                other members, then each relationship row. It said "Nobody linked
+                yet" beside a household of three. */}
             {relLoading?<div style={{padding:20,textAlign:"center"}}><Spin/></div>
-              :relationships.length===0
-                ?<div style={{fontSize:13,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:24}}>Nobody linked yet.</div>
-                :<div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  {relationships.map(r=>(
+              :linked.length===0
+                ?<div data-testid="dp-linked-people" style={{fontSize:13,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:24}}>Nobody linked yet.</div>
+                :<div data-testid="dp-linked-people" style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {linked.filter(x=>x.via==="household").map(({member:m})=>(
+                    <div key={"hh:"+m.id} data-testid="dp-linked-household" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 14px"}}>
+                      <div onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{cursor:onSelectRelatedDonor?"pointer":"default",minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{m.name} →</div>
+                        <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{fmtFull(m.total_giving)} lifetime</div>
+                      </div>
+                      <span style={{fontSize:11,color:T.ink3,flexShrink:0}}>In the household</span>
+                    </div>
+                  ))}
+                  {linked.filter(x=>x.via==="relationship").map(({rel:r})=>(
                     <div key={r.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 14px"}}>
                       <div onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(r.relatedDonorId)} style={{cursor:onSelectRelatedDonor?"pointer":"default",minWidth:0}}>
                         <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.relatedDonorName} →</div>

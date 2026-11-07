@@ -54,8 +54,11 @@ export function useProfileGiving({ donor, journey, setJourneyList, setJourneySug
     loadPledges();
   },[donor.id,interactionCount]);
 
+  // STALE-2: the uploads are read when the record opens, not when Files is
+  // clicked: the tab's count is the one file tally (lib/profileFiles.js).
+  useEffect(()=>{loadMaterials();},[donor.id]);
   useEffect(()=>{
-    if(dpTab==="files")loadMaterials();
+    if(dpTab==="files")loadMaterials(true);
     if(dpTab==="giving"&&!fundAffinity)loadFundAffinity();
   },[dpTab,donor.id]);
 
@@ -231,7 +234,7 @@ export function useProfileGiving({ donor, journey, setJourneyList, setJourneySug
         file_data,file_url,notes:matNote,
       })});
       setMatNote("");
-      loadMaterials();
+      loadMaterials(true);
     }catch(e){window.alert(errorMessage(e,"That file did not save."));}
     setMatUploading(false);
   };
