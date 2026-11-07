@@ -3646,7 +3646,10 @@ const donateHandler = async (req, res) => {
   // computed could be stale the moment a capability changed. `GET
   // /give-settings/payment-methods` reads the account's capabilities so the org
   // can SEE what will appear, and it is a report, never a gate.
+  // TRUTH-3: the donor sees the charity's name on Stripe's page and statement (server/give/checkoutName.js).
+  const CHECKOUT_ID = require("../server/give/checkoutName").checkoutIdentity(await donorFacingOrgName(org.id, org.name), { oneTime: !isRecurring });
   const sessionParams = {
+    ...CHECKOUT_ID.session,
     mode: isRecurring ? "subscription" : "payment",
     // Stripe refuses `customer` and `customer_email` together.
     ...(rememberMe && rememberCustomerId ? {} : { customer_email: email }),
@@ -3678,7 +3681,7 @@ const donateHandler = async (req, res) => {
           payment_intent_data: {
             receipt_email: email,
             metadata,
-            statement_descriptor: org.name.toUpperCase().replace(/[^A-Z0-9 ]/g, "").replace(/\s+/g, " ").trim().slice(0, 22),
+            ...CHECKOUT_ID.paymentIntent,   // TRUTH-3: a card takes a suffix after the account's prefix
             // ── GIVE-2 §4 — "REMEMBER ME" ────────────────────────────────
             // Saves the payment method on a customer on THE ORG'S OWN Stripe
             // account, so the same donor can give again in one tap from an

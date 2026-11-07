@@ -43,7 +43,7 @@ function MilestoneRow({ m, onDone, onOpenGrant, isReadOnly, showGrant = true }) 
       </div>
       <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
         {showGrant && onOpenGrant && <button style={quietBtn} onClick={() => onOpenGrant(m.grantId)}>Open grant</button>}
-        {!isReadOnly && <button style={quietBtn} data-testid="deadline-done" onClick={() => onDone(m)}>Done</button>}
+        {!isReadOnly && !m.fromGrant && <button style={quietBtn} data-testid="deadline-done" onClick={() => onDone(m)}>Done</button>}
       </div>
     </div>
   );

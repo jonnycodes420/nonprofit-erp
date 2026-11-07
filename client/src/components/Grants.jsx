@@ -12,6 +12,7 @@ import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, rowClick } from "../lib/appUrls";
 import { GRANT_STATUSES, statusLabel, normalizeStatus, AWARDED_STATUS_KEYS } from "../../../shared/grantShape";
 import { grantAwardLine } from "../../../shared/grantAwardLine.js";   // WALKB-2
+import { deadlineWord } from "../../../shared/grantDeadline.js";   // TRUTH-3: the date's word, on the org's day
 import { AwardStep, FunderPicker } from "./GrantAward";   // GRANTS-FIX: Awarded goes through the award
 import { offerUndo } from "./EditHistory";
 import GrantBoard from "./GrantBoard";
@@ -268,7 +269,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
               ["Amount Requested",fmtFull(grant.amount),T.ink],
               ["Received",fmtFull(grant.received||0),T.greenMid],
               ["% Funded",pct+"%",pct>75?T.greenMid:pct>40?T.gold600:T.ink3],
-              ["Days to Deadline",grant.deadline?(actionable?(days<0?"Overdue":days+"d"):"Passed"):"Not set",actionable&&days<14?T.terracotta:actionable&&days<30?T.gold600:T.ink],
+              ["Days to Deadline",deadlineWord(grant.deadline,orgTodayCivil(),{pursuing:actionable}).word,actionable&&days>=0&&days<14?T.gold600:actionable&&days<0?T.gold600:T.ink],
             ].map(([l,v,c])=>(
               <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
                 <div style={{fontSize:9,fontWeight:700,color:T.ink3,marginBottom:4}}>{l}</div>

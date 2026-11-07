@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../../api";
+import IssuedReceipts from "./IssuedReceipts";   // TRUTH-3: every issued receipt
 import { errorMessage } from "../../lib/domainError";
 import { askConfirm } from "../ConfirmDialog";
 import { T, SectionLabel } from "../shared";
@@ -203,6 +204,7 @@ export function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
           )}
         </div>
       )}
+      <IssuedReceipts isAdmin={isAdmin} isReadOnly={isReadOnly}/>
     </div>
   );
 }

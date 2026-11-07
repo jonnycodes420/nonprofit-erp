@@ -22,6 +22,7 @@ import { budgetVarianceText, budgetMonthsElapsed } from "../lib/budgetWords";
 const BEHIND = T.gold700;
 import { orgTodayCivil } from "../lib/orgToday";
 import { RecurringView } from "./RecurringGiving";   // GIFTS-2: recurring giving is findable from Finance
+import MergeFunds from "./finance/MergeFunds";   // TRUTH-3: funds are a managed list
 
 // ── Constants ──────────────────────────────────────────────────────────────
 // POLISH-5: the empty ledger's second sentence, one text node with its first.
@@ -1209,23 +1210,22 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             showing years of giving. When imported historical giving lives in
             Reports but not the ledger, say so plainly and cross-link, so a
             treasurer can reconcile the two numbers instead of distrusting both. */}
-        {summary?.hasUnledgeredGiving && !summary.ledgerEmpty && (
-          <div style={{ background:T.gold100, border:"1px solid "+T.gold300, borderRadius:12, padding:"14px 16px", display:"flex", gap:14, alignItems:"flex-start", flexWrap:"wrap" }}>
-            <div style={{ flex:"1 1 320px", minWidth:260 }}>
-              <div style={{ fontSize:13, fontWeight:700, color:T.ink, marginBottom:3 }}>
-                Your giving history lives in Reports
-              </div>
-              <div style={{ fontSize:12, color:T.ink2, lineHeight:1.5 }}>
-                {/* FIX-40: the amount opens where that giving lives */}
-                <button type="button" onClick={() => onNavigate("reports")} className="figure-inline"
-                  style={{ background:"none", border:"none", padding:0, font:"inherit", color:"inherit", fontWeight:700, cursor:"pointer" }}>{fmtFull(summary.unledgeredGiving)}</button> of imported giving{summary.giftHistoryCount ? ` across ${summary.giftHistoryCount.toLocaleString()} gifts` : ""} isn't in this ledger.
-                The ledger tracks <strong>money moving through Steward</strong>: connect Stripe or log a transaction. Your full giving record is in Reports.
-              </div>
-            </div>
-            <button onClick={() => onNavigate("reports")}
-              style={{ background:T.white, color:T.ink, border:"1.5px solid "+T.ink, borderRadius:8, padding:"9px 14px", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
-              View giving in Reports →
-            </button>
+        {/* TRUTH-3 (W-1107-Finance-39X): not an alarm. Every gift is posted,
+            waiting to post with its deposit, or history only (an import from
+            before this fiscal year, whose books are already closed). The three
+            foot to every gift (shared/numbers/ledgerStatus.js). */}
+        {summary?.ledgerStatus && summary.ledgerStatus.all.count > 0 && (
+          <div data-testid="ledger-status" style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px", display:"flex", gap:18, flexWrap:"wrap" }}>
+            {[["posted", "Posted"], ["waiting", "Waiting to post"], ["history", "History only (before Steward)"]].map(([k, label]) => {
+              const f = summary.ledgerStatus[k];
+              return (
+                <div key={k} data-testid={`ledger-status-${k}`} style={{ flex:"1 1 200px", minWidth:180 }} title={f.sentence}>
+                  <div style={{ fontSize:12, fontWeight:700, color:T.ink3 }}>{label}</div>
+                  <div style={{ fontSize:16, fontWeight:800, color:T.ink }}>{fmtFull(f.amount)}</div>
+                  <div style={{ fontSize:12, color:T.ink3, lineHeight:1.5 }}>{countLabel(f.count, "gift")}. {f.sentence}</div>
+                </div>
+              );
+            })}
           </div>
         )}
         <MoneyInStrip onNavigate={onNavigate} cashOnHand={summary ? summary.cashOnHand : null} onOpenPayout={id => { setOpenPayout(id); setSubtab("payouts"); }}/>
@@ -1438,6 +1438,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             );
           })}
         </Card>
+        <MergeFunds funds={funds} isReadOnly={isReadOnly} onChanged={() => apiFetch("/finance/funds").then(x => setFunds(Array.isArray(x) ? x : [])).catch(() => {})} />
       </>}
 
       {/* ── Budgets ── */}
@@ -1942,7 +1943,7 @@ function FinFundCards() {
           {open.sentence && <div style={{ fontSize:13, color:T.ink2, lineHeight:1.6, marginBottom:12 }}>{open.sentence}</div>}
           {open.rows && (
             <div style={{ maxHeight:380, overflowY:"auto" }}>
-              {!open.rows.length && <div style={{ fontSize:13, color:T.ink3 }}>Nothing has moved through this fund yet.</div>}
+              {!open.rows.length && !(open.gifts && open.gifts.length) && <div style={{ fontSize:13, color:T.ink3 }}>Nothing has moved through this fund yet.</div>}
               {open.rows.map(r => (
                 <div key={r.id} style={{ display:"flex", justifyContent:"space-between", gap:12, padding:"8px 0",
                                          borderBottom:"1px solid "+T.bg2, fontSize:13 }}>
@@ -1950,6 +1951,14 @@ function FinFundCards() {
                   <span style={{ fontWeight:700, color: r.type === "income" ? IN : OUT, whiteSpace:"nowrap" }}>
                     {r.type === "income" ? "+" : "−"}{fmtFull(r.amount)}
                   </span>
+                </div>
+              ))}
+              {/* TRUTH-3: the gifts behind the fund, and where each stands with the books. */}
+              {open.gifts && open.gifts.length > 0 && <div style={{ fontSize:12, fontWeight:700, color:T.ink3, marginTop:12 }}>Gifts to this fund</div>}
+              {(open.gifts || []).map(g => (
+                <div key={g.id} data-testid="fund-gift-row" style={{ display:"flex", justifyContent:"space-between", gap:12, padding:"8px 0", borderBottom:"1px solid "+T.bg2, fontSize:13 }}>
+                  <span style={{ color:T.ink, minWidth:0 }}>{g.date || "No date"} · <DonorLink id={g.donor_id}>{g.donor_name}</DonorLink> · {g.ledgerWord}</span>
+                  <span style={{ fontWeight:700, color:T.ink, whiteSpace:"nowrap" }}>{fmtFull(g.amount)}</span>
                 </div>
               ))}
             </div>

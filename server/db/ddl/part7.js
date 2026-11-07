@@ -967,6 +967,25 @@ async function run7(pool) {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS viewer_exports_off BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE support_sessions ADD COLUMN IF NOT EXISTS reason TEXT`);
 
+  // TRUTH-3 item 5 · FUNDS ARE A MANAGED LIST. A merge of near-duplicate funds
+  // ("General" into "General Operating") keeps every row it moved and the
+  // funds it retired, so Undo puts each back exactly (server/finance/fundMerge.js).
+  await pool.query(`CREATE TABLE IF NOT EXISTS fund_merges (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    keeper_id TEXT NOT NULL,
+    merged_ids JSONB NOT NULL DEFAULT '[]',
+    funds JSONB NOT NULL DEFAULT '[]',
+    moved JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    created_by TEXT NOT NULL,
+    created_by_name TEXT,
+    undone_at TIMESTAMPTZ,
+    undone_by TEXT,
+    undone_by_name TEXT
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_fund_merges_org ON fund_merges (org_id, created_at DESC)`);
+
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id
   // (orgSummary.js says which few are not, and why).

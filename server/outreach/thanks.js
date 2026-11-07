@@ -11,6 +11,7 @@ const express = require("express");
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../../emailCompose");
+const DRAFT_RENDER = require("../../shared/numbers/draftRender");   // TRUTH-3: drafts store figure keys
 
 const routers = {
   r0: express.Router(),
@@ -467,7 +468,8 @@ app.get("/milestone-drafts", requireAuth, wrap(async (req, res) => {
      ORDER BY md.created_at DESC`,
     [req.user.orgId, status]
   );
-  res.json(rows);
+  // TRUTH-3: the words are filled from the person's figures today (server/drafts/render.js).
+  res.json(status === "pending_review" ? await require("../drafts/render").renderDrafts(req.user.orgId, rows) : rows);
 }));
 
 app.put("/milestone-drafts/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -476,11 +478,12 @@ app.put("/milestone-drafts/:id", requireAuth, checkWriteAccess, wrap(async (req,
   const affected = await run(
     // Saving her own edit is reviewing it: she has just read every word.
     "UPDATE milestone_drafts SET subject=?, body=?, reviewed_at=NOW(), reviewed_by=?, reviewed_by_name=? WHERE id=? AND org_id=? AND status='pending_review'",
-    [subject, body, actor(req).id, actor(req).name, req.params.id, req.user.orgId]
+    // TRUTH-3: a total she leaves in the words is stored as its key, so it stays true.
+    [DRAFT_RENDER.templatize(subject), DRAFT_RENDER.templatize(body), actor(req).id, actor(req).name, req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Not found or already sent" });
   const rows = await query("SELECT * FROM milestone_drafts WHERE id=?", [req.params.id]);
-  res.json(rows[0]);
+  res.json(await require("../drafts/render").renderDraft(req.user.orgId, rows[0]));
 }));
 
 // EMAIL-1 — START FROM A TEMPLATE. The draft's subject and words become the

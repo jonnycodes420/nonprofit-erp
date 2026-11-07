@@ -432,3 +432,9 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 
 ### Route ordering note
 `POST /sequences/process` is declared BEFORE `GET /sequences/:id` routes to prevent Express matching "process" as an :id param
+
+- **A draft stores figure keys, never numbers (TRUTH-3).** `{{total_giving}}`, `{{giving_this_year}}`,
+  `{{last_gift_amount}}`, `{{gift_count}}` (`shared/numbers/draftRender.js`), filled from `draftFigures.js` on
+  every open, preview and send (`server/drafts/render.js`). A total in a stored draft's words is read as its key.
+  Header lines (the subject, the card's lifetime) use the same keys.
+

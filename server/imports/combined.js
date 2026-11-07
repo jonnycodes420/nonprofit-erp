@@ -183,6 +183,22 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     const named = donors.filter(d => d && String(d.name || "").trim()).length;
     return res.json({ dryRun: true, matchPeople: true, rows: named, matched, people: ids.size, new: named - matched, byKey, sample });
   }
+  // TRUTH-3 item 5 · A FUND NAME CLOSE TO ONE SHE HAS IS ASKED, NOT CREATED
+  // SILENTLY. A dry run with `fundCheck` lists every fund the file names that
+  // is an existing fund in other words ("General" beside "General Operating":
+  // server/finance/fundMerge.js fundKey). The write then takes her answers in
+  // `fundMatches` ({ "General": "<fund id>" } uses that fund; "new" makes one).
+  if (req.body.dryRun === true && req.body.fundCheck === true) {
+    const FM = require("../finance/fundMerge");
+    const names = [...new Set((gifts || []).map(g => String((g && g.fund) || "").trim()).filter(Boolean))];
+    const fundQuestions = [];
+    for (const name of names) {
+      const near = await FM.closeFund(query, req.user.orgId, name);
+      if (near) fundQuestions.push({ file: name, existing: { id: near.id, name: near.name },
+        sentence: `The file names "${name}", and you have a fund called "${near.name}". Is it the same fund?` });
+    }
+    return res.json({ dryRun: true, fundCheck: true, fundQuestions });
+  }
   // Dry run: resolve and report BEFORE anything is written — the pre-write
   // summary for a gift-sheet-alone import states its link counts honestly.
   if (linkToExisting && req.body.dryRun === true) {
@@ -796,6 +812,10 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // FIX-45: oldest first, so a name two funds share resolves the same way every time.
       const existing = await queryTx(txc, "SELECT id, name FROM fin_funds WHERE org_id=? ORDER BY created_at, id", [orgId]);
       for (const f of existing) { const k = fundKey(f.name); if (k && !fundIdByKey.has(k)) fundIdByKey.set(k, f.id); }
+      // TRUTH-3: her answer to "is it the same fund?" (the fundCheck dry run) is used, never guessed.
+      const answers = req.body.fundMatches && typeof req.body.fundMatches === "object" ? req.body.fundMatches : {};
+      const ownIds = new Set(existing.map(f => f.id));
+      for (const [name, fid] of Object.entries(answers)) { const k = fundKey(name); if (k && ownIds.has(String(fid)) && !fundIdByKey.has(k)) fundIdByKey.set(k, String(fid)); }
       const toCreate = [...wanted.entries()].filter(([k]) => !fundIdByKey.has(k));
       for (let fi = 0; fi < toCreate.length; fi += 200) {
         const slice = toCreate.slice(fi, fi + 200);

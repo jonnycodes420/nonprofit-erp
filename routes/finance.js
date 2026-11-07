@@ -548,9 +548,22 @@ app.get("/finance/funds-detail/rows", requireAuth, wrap(async (req, res) => {
        FROM ${NUM.fundLines.LEDGER_FUND_ROWS()} ft WHERE ft.org_id=? AND ft.fund_id=?
       ORDER BY ft.date DESC NULLS LAST, ft.id LIMIT 2000`, [orgId, orgId, orgId, fundId]);
   const net = rows.reduce((a, r) => a + (r.type === "income" ? 1 : -1) * Math.round(Number(r.amount) * 100), 0);
+  // TRUTH-3: the gifts behind the fund, each with where it stands with the books,
+  // so a fund backed by a gift that has not posted never reads "No transactions".
+  const fyFrom = NUM.fiscalYear.fiscalYearToDate(await orgTz(orgId)).from;
+  const gifts = await query(
+    `SELECT g.id, g.donor_id, d.name AS donor_name, LEFT(g.date, 10) AS date, gf.amount, ${NUM.ledgerStatus.STATUS("g")} AS ledger
+       FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+       JOIN ${NUM.fundLines.GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id
+      WHERE g.org_id = ? AND gf.fund_id = ? AND ${NUM.money.LIVE("d")} AND ${NUM.money.MONEY("g")}
+      ORDER BY g.date DESC NULLS LAST, g.id LIMIT 2000`, [fyFrom, orgId, fundId]).catch(e => { console.error("[funds-detail] gifts:", e.message); return []; });
+  const giftCents = gifts.reduce((a, g) => a + Math.round(Number(g.amount) * 100), 0);
+  const WORD = { posted: "posted", waiting: "waiting to post", history: "history only" };
   res.json({ rows: rows.map(r => ({ ...r, amount: Number(r.amount) })), count: rows.length,
     netCents: net, net: toDollars(net),
-    sentence: `${rows.length} ${rows.length === 1 ? "transaction" : "transactions"}, ${money.formatCentsPlain(net)} net. This is every row behind that balance.` });
+    gifts: gifts.map(g => ({ ...g, amount: Number(g.amount), ledgerWord: WORD[g.ledger] })), giftCount: gifts.length, giftCents,
+    sentence: `${rows.length} ${rows.length === 1 ? "transaction" : "transactions"}, ${money.formatCentsPlain(net)} net. This is every row behind that balance.`
+      + (gifts.length ? ` ${gifts.length} ${gifts.length === 1 ? "gift names" : "gifts name"} this fund (${money.formatCentsPlain(giftCents)}): ${["posted", "waiting", "history"].map(k => [k, gifts.filter(g => g.ledger === k).length]).filter(([, n]) => n).map(([k, n]) => `${n} ${WORD[k]}`).join(", ")}.` : "") });
 }));
 
 // ── FIN-1 · THE BOOKKEEPER'S EXPORT, IN THE SHAPE THEIR TOOL WANTS ───────
@@ -4664,6 +4677,12 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
   const giftHistoryCount = parseInt(giftHistRows[0]?.n || 0);
   const ledgerGiftTotal  = parseFloat(ledgerGiftRows[0]?.total || 0);
   const unledgeredGiving = Math.max(0, giftHistoryTotal - ledgerGiftTotal);
+  // TRUTH-3 (W-1107-Finance-39X): not one alarm, three figures that foot to
+  // every gift: Posted, Waiting to post and History only (shared/numbers/ledgerStatus.js).
+  const LS = NUM.ledgerStatus;
+  const fyFrom = NUM.fiscalYear.fiscalYearToDate(await orgTz(orgId)).from;
+  const split = await LS.ledgerSplit(query, orgId, fyFrom);
+  const ledgerStatus = Object.fromEntries(["posted", "waiting", "history", "all"].map(k => [k, { count: split[k].n, cents: split[k].cents, amount: split[k].cents / 100, sentence: LS.SENTENCES[k] || "Every gift on file." }]));
 
   res.json({
     cashOnHand,
@@ -4682,6 +4701,7 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
     })),
     giftHistoryTotal, giftHistoryCount, ledgerGiftTotal,
     unledgeredGiving, hasUnledgeredGiving: unledgeredGiving > 1,
+    ledgerStatus, fiscalYearFrom: fyFrom,
     // SWEEP-5: nothing has ever posted. Overview then says so in one card
     // instead of drawing the ledger's figures as a row of zeros.
     ledgerEmpty: allRows.length === 0,

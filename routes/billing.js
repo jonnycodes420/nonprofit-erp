@@ -3040,6 +3040,7 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
   await run("DELETE FROM budgets WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM fin_transactions WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM fin_funds WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM fund_merges WHERE org_id=?", [orgId]).catch(() => {});   // TRUTH-3
   await run("DELETE FROM accounts WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM campaign_recipients WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM campaigns WHERE org_id=?", [orgId]).catch(() => {});

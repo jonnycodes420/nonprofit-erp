@@ -35,7 +35,7 @@ const MEMBER_STATUSES = { current: ["active", "grace"], active: ["active"], grac
 const ANY_IDS = ["attendedEvent", "registeredEvent", "gavePage", "auctionBidder", "inJourney"];
 
 const DONOR_SORTS = {
-  total_giving:   "total_giving DESC",
+  total_giving:   `${require("./shared/numbers/lifetime").LIFETIME("donors")} DESC`,   // TRUTH-3: the amount the row shows
   name:           "lower(name) ASC",
   last_gift_date: "last_gift_date DESC NULLS LAST",
   created_at:     "created_at DESC",

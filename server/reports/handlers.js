@@ -200,7 +200,7 @@ async function reportGivingSummary(orgId, p) {
   const pParams = [];
   const pWhere = reportGiftWhere(prior, orgId, pParams);
   const pPrior = query(
-    `SELECT COUNT(*)::int AS gift_count, COALESCE(SUM(g.amount),0) AS total
+    `SELECT COUNT(*) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")})::int AS gift_count, COALESCE(SUM(g.amount),0) AS total
      ${REPORT_GIFT_FROM} ${pWhere}`, pParams);
 
   // REPORTS-4: every figure on the summary, through the source that opens it.
@@ -272,7 +272,7 @@ async function reportByGroup(orgId, p) {
   const where = reportGiftWhere(p, orgId, params);
   const rows = await query(
     `SELECT ${cfg.name} AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(g.amount),0) AS total,
-            COUNT(*)::int AS gift_count, ${NUMBERS.money.GIVERS("g", "d")}::int AS unique_donors
+            COUNT(*) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")})::int AS gift_count, ${NUMBERS.money.GIVERS("g", "d")}::int AS unique_donors
      FROM gifts g JOIN donors d ON d.id = g.donor_id ${cfg.join}
      WHERE ${where} GROUP BY 1 ORDER BY total DESC`, params);
   // REPORTS-4: a row opens its gifts when one id names it: a fund or a page
@@ -383,12 +383,21 @@ async function reportRetention(orgId, p) {
 
 async function reportTopDonors(orgId, p) {
   if (p.scope === "lifetime") {
-    // Donor columns, not SUM(gifts) — imported giving history often has
-    // total_giving set with no individual gifts rows behind it.
+    // TRUTH-3 (W-1107-Fundraising-11): Top donors read the stored rollup and
+    // the Directory another figure. Lifetime is now read by the one rule, live
+    // (shared/numbers/lifetime.js LIFETIME: an import's stated total plus every
+    // gift after it), and the gift count by the statement that keeps the
+    // Directory's column (donorSummary.js SUMMARY_OF: the import's count plus
+    // counted gifts after it). Sorted numerically on that amount.
+    const { SUMMARY_OF } = require("../../donorSummary");
     const rows = await query(
-      `SELECT id, name, COALESCE(total_giving,0) AS total, COALESCE(gift_count,0) AS gift_count, last_gift_date
-       FROM donors WHERE org_id = ? AND deleted_at IS NULL AND COALESCE(total_giving,0) > 0
-       ORDER BY COALESCE(total_giving,0) DESC LIMIT ?`, [orgId, p.limit]);
+      `SELECT x.id, x.name, x.total, x.gift_count, x.last_gift_date FROM (
+         SELECT d.id, d.name, ROUND(${NUMBERS.lifetime.LIFETIME("d")}, 2) AS total,
+                (SELECT s.n FROM ${SUMMARY_OF("d")} s) AS gift_count, d.last_gift_date
+           FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.erased_at IS NULL
+            AND (d.imported_total IS NOT NULL OR EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id))) x
+        WHERE x.total > 0
+        ORDER BY x.total DESC, x.id LIMIT ?`, [orgId, p.limit]);
     let soft = new Map();
     if (p.credit === "soft" && rows.length) {
       const sr = await query(
@@ -405,7 +414,8 @@ async function reportTopDonors(orgId, p) {
     const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
     const figures = await reportFigures(orgId, { topTotal: { key: "top-lifetime", params: { top: p.limit } },
       allTime: { key: "gifts", params: { from: "1900-01-01", to: today } } });
-    return { figures, scope: "lifetime", credit: p.credit, rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: Number(r.gift_count), lastGiftDate: r.last_gift_date,
+    return { figures, scope: "lifetime", credit: p.credit,
+      periodWords: "Lifetime: every gift each person has ever given, with any total an import stated. The same figure as the Directory and the profile.", rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: Number(r.gift_count), lastGiftDate: r.last_gift_date,
       ...(p.credit === "soft" ? { softCredit: soft.get(r.id) || 0 } : {}) })) };
   }
   const params = [];
@@ -420,7 +430,7 @@ async function reportTopDonors(orgId, p) {
       `SELECT COALESCE(d.household_id, d.id) AS group_id,
               COALESCE(h.name, d.name) AS name,
               (h.id IS NOT NULL) AS is_household,
-              COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count,
+              COALESCE(SUM(g.amount),0) AS total, COUNT(*) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")})::int AS gift_count,
               MAX(g.date) AS last_gift_date, ${NUMBERS.money.GIVERS("g", "d")}::int AS member_count
        FROM gifts g
        JOIN donors d ON d.id = g.donor_id
@@ -430,16 +440,20 @@ async function reportTopDonors(orgId, p) {
        HAVING ${NUMBERS.money.GIVERS("g", "d")} > 0
        ORDER BY total DESC LIMIT ?`, [...params, p.limit]);   // TRUTH-2: a top donor gave (a gift above $0) and is not erased
     return { scope: "period", view: "household", from: p.from, to: p.to,
+      periodWords: `Given ${orgTime.formatCivil(p.from)} to ${orgTime.formatCivil(p.to)} only, by household. Lifetime giving is the Lifetime view.`,
       rows: rows.map((r, i) => ({ rank: i + 1, id: r.group_id, name: r.name, isHousehold: !!r.is_household, memberCount: r.member_count, total: Number(r.total), giftCount: r.gift_count, lastGiftDate: r.last_gift_date })) };
   }
   const rows = await query(
-    `SELECT d.id, d.name, COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count, MAX(g.date) AS last_gift_date
+    `SELECT d.id, d.name, COALESCE(SUM(g.amount),0) AS total, COUNT(*) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")})::int AS gift_count, MAX(g.date) AS last_gift_date
      ${REPORT_GIFT_FROM} ${where} AND d.erased_at IS NULL GROUP BY d.id, d.name
      HAVING ${NUMBERS.money.GIVERS("g", "d")} > 0
      ORDER BY total DESC, d.id LIMIT ?`, [...params, p.limit]);   // TRUTH-2: as the givers figure counts them
   const figures = await reportFigures(orgId, { topTotal: { key: "givers", params: { from: p.from, to: p.to, top: p.limit, measure: "sum",
     ...(p.fundId ? { fund: p.fundId } : {}), ...(p.campaignId ? { campaign: p.campaignId } : {}) } } });
-  return { figures, scope: "period", view: "individual", from: p.from, to: p.to, rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: r.gift_count, lastGiftDate: r.last_gift_date })) };
+  return { figures, scope: "period", view: "individual", from: p.from, to: p.to,
+    // TRUTH-3: a period's Top donors says its period, and that it is not lifetime.
+    periodWords: `Given ${orgTime.formatCivil(p.from)} to ${orgTime.formatCivil(p.to)} only. Lifetime giving (the Directory's figure) is the Lifetime view.`,
+    rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: r.gift_count, lastGiftDate: r.last_gift_date })) };
 }
 
 // ── BUILD-17 reporting-cadence reports ─────────────────────────────────────
@@ -526,14 +540,14 @@ async function reportAnnual(orgId, p) {
   const sp = await yearSpans(p, [reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth), prior]);
   const [cur, priorSpan] = sp.years;
   const [totals] = await query(
-    `SELECT COUNT(*)::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
+    `SELECT COUNT(*) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")})::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
             ${NUMBERS.money.GIVERS("g", "d")}::int AS unique_donors,
-            COALESCE(AVG(g.amount),0) AS avg_gift
+            COALESCE(AVG(g.amount) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")}),0) AS avg_gift
      FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`,
     [orgId, cur.from, cur.to]);
   const [priorT] = await query(
-    `SELECT COUNT(*)::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
+    `SELECT COUNT(*) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")})::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
             ${NUMBERS.money.GIVERS("g", "d")}::int AS unique_donors
      FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`,
@@ -551,14 +565,14 @@ async function reportAnnual(orgId, p) {
   const ret = await NUMBERS.retained.retention(query, orgId, cur, prior)
     .then(r => ({ prior_donors: r.prior, retained: r.retained }));
   const byFund = await query(
-    `SELECT COALESCE(x.name,'Unrestricted (no fund)') AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(gf.amount),0) AS total, COUNT(*)::int AS gift_count
+    `SELECT COALESCE(x.name,'Unrestricted (no fund)') AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(gf.amount),0) AS total, COUNT(*) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")})::int AS gift_count
      FROM gifts g JOIN donors d ON d.id = g.donor_id
      JOIN ${NUMBERS.fundLines.GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id   -- GIFTS-2: a split gift by its lines
      LEFT JOIN fin_funds x ON x.id = gf.fund_id AND x.org_id = g.org_id
      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}
      GROUP BY 1 ORDER BY total DESC`, [orgId, cur.from, cur.to]);
   const byCampaign = await query(
-    `SELECT COALESCE(x.name, NULLIF(g.campaign,''), 'No campaign') AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count
+    `SELECT COALESCE(x.name, NULLIF(g.campaign,''), 'No campaign') AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(g.amount),0) AS total, COUNT(*) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")})::int AS gift_count
      FROM gifts g JOIN donors d ON d.id = g.donor_id
      LEFT JOIN campaigns x ON x.id = g.campaign_id AND x.org_id = g.org_id
      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}

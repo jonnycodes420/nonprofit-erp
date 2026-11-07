@@ -19,6 +19,8 @@
 //
 // The filter travels as JSON: {"join":"and"|"or","conditions":[{field,op,value}]}.
 "use strict";
+// TRUTH-3: the lifetime a Directory row shows (shared/numbers/lifetime.js), as a sort key.
+const LIFETIME_SORT = require("./shared/numbers/lifetime").LIFETIME("donors");
 const { query } = require("./db");
 
 const GROUPS = ["Contact", "Giving", "Pledges", "Events", "Volunteering", "Communication", "From your imports"];
@@ -88,7 +90,8 @@ const FIELDS = [
   F("group", "Group", "Contact", { col: false, filter: SEL_OPS }),
   F("added", "Added", "Contact", { format: "date", sort: "created_at", filter: ops("after", "before", "dbetween"), cell: "added" }),
   // Giving
-  F("lifetime", "Lifetime", "Giving", { format: "money", sort: "total_giving", filter: MONEY_OPS, cell: "lifetime",
+  // TRUTH-3 (W-1107-Fundraising-11): the row shows the live lifetime (LIST-2), so it sorts on that same amount, numerically.
+  F("lifetime", "Lifetime", "Giving", { format: "money", sort: LIFETIME_SORT, filter: MONEY_OPS, cell: "lifetime",
     sentence: "Every gift this person has ever given, added up, with any total brought in from an old system. The same figure as Lifetime on the profile." }),
   F("this_year", "This year", "Giving", { format: "money", filter: MONEY_OPS, cell: "this_year",
     sentence: "Every gift dated from the start of your fiscal year to today. The same figure as This year on the profile." }),
@@ -550,7 +553,7 @@ async function cellsFor(orgId, rows, columns) {
 // name). A giving column puts the people with no gift last in both directions.
 const LAST_NAME_SQL = `CASE WHEN lower(COALESCE(kind,'')) IN ('organization','organisation') THEN lower(trim(COALESCE(name,'')))
   ELSE lower(regexp_replace(trim(COALESCE(name,'')), '^.*\\s', '')) || ' ' || lower(trim(COALESCE(name,''))) END`;
-const NO_GIFT_LAST = { lifetime: "COALESCE(total_giving,0) <= 0", last_gift_date: "COALESCE(last_gift_date::text,'') = ''",
+const NO_GIFT_LAST = { lifetime: `COALESCE(${LIFETIME_SORT},0) <= 0`, last_gift_date: "COALESCE(last_gift_date::text,'') = ''",
   last_gift_amount: "COALESCE(last_gift_amount,0) <= 0", first_gift_date: "COALESCE(first_gift_date::text,'') = ''", gift_count: "COALESCE(gift_count,0) <= 0" };
 function sortSql(key, dir) {
   const f = BY_KEY.get(key === "total_giving" ? "lifetime" : key);

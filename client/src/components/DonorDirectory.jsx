@@ -2,6 +2,7 @@
 //
 // FIX-1 split: moved VERBATIM out of Donors.jsx. Nothing in it changed.
 // Tests read it through readSource("client/src/components/Donors.jsx").
+import { RANK_RULES, rankBy, rankWords } from "../lib/reengageRank";   // TRUTH-3
 import { useState, useEffect, useMemo, Fragment } from "react";
 import { Figure } from "./Figure";
 import { EXPLANATION as ENGAGEMENT_EXPLANATION, bandFor } from "../../../shared/engagementWeights.js";
@@ -113,7 +114,8 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor,initialWin=null}
   const everyone=[...donors].filter(d=>d.reengage).sort((a,b)=>b.total-a.total);
   const lostList=everyone.filter(d=>d.lost),recentList=everyone.filter(d=>!d.lost);
   const win=winPicked||(recentList.length||!lostList.length?"recent":"lost");   // opens on a list with people in it
-  const lapsed=win==="lost"?lostList:recentList;
+  const[rankRule,setRankRule]=useState("lifetime");   // TRUTH-3: the rule is named, and it is the sort
+  const lapsed=rankBy(win==="lost"?lostList:recentList,rankRule);
   const totalValue=lapsed.reduce((s,d)=>s+d.total,0);
   // BUILD-79 Part 4 — averaged over donors with a REAL date only; a donor
   // with no dates contributes nothing rather than a today-anchored zero.
@@ -128,7 +130,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor,initialWin=null}
     setAiLoading(true);setAiText("");
     await askClaude(
       `You are a nonprofit major gifts officer. Be specific and tactical. Max 250 words.`,
-      `Re-engagement strategy for ${org?.name||"this organization"}.\n\nLapsed donors: ${lapsed.length} total, ${fmtFull(totalValue)} combined lifetime value, avg ${avgDays} days lapsed.\n\nTop lapsed donors:\n${lapsed.slice(0,8).map(d=>`- ${d.name}: ${fmtFull(d.total)} lifetime, last gift ${d.lastGift||"unknown"} (${fmtFull(d.lastAmount)})${(d.lastGift||d.lastTouchpoint)?`, ${daysDiff(d.lastGift||d.lastTouchpoint)}d lapsed`:", no dates on file"}`).join("\n")}\n\nProvide:\n1. Top 3 highest-priority donors to call this week and why\n2. Best re-engagement message angle for this portfolio\n3. One creative re-engagement tactic for the full group`,
+      `Re-engagement strategy for ${org?.name||"this organization"}.\n\nLapsed donors: ${lapsed.length} total, ${fmtFull(totalValue)} combined lifetime value, avg ${avgDays} days lapsed.\n\nLapsed donors, ranked by ${RANK_RULES[rankRule].label.toLowerCase()}, highest first (this order is fixed: keep it, and when you name who to call first, take them in this order and say it is by ${RANK_RULES[rankRule].label.toLowerCase()}):\n${lapsed.slice(0,8).map(d=>`- ${d.name}: ${fmtFull(d.total)} lifetime, last gift ${d.lastGift||"unknown"} (${fmtFull(d.lastAmount)})${(d.lastGift||d.lastTouchpoint)?`, ${daysDiff(d.lastGift||d.lastTouchpoint)}d lapsed`:", no dates on file"}`).join("\n")}\n\nProvide:\n1. Top 3 highest-priority donors to call this week and why\n2. Best re-engagement message angle for this portfolio\n3. One creative re-engagement tactic for the full group`,
       chunk=>setAiText(chunk)
     );
     setAiLoading(false);
@@ -157,6 +159,10 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor,initialWin=null}
             style={{background:T.white,border:"1px solid "+(win===k?T.ink:T.bg3),borderRadius:8,padding:"7px 14px",cursor:"pointer",color:T.ink,fontSize:12.5,fontWeight:win===k?700:400}}>
             {label} · {n.toLocaleString("en-US")}</button>))}
         <span style={{fontSize:12.5,color:T.ink3}}>{(WINDOWS.find(w=>w[0]===win)||WINDOWS[0])[3]}</span>
+        <label style={{fontSize:12.5,color:T.ink,marginLeft:"auto"}}>Ranked by{" "}
+          <select data-testid="reengage-rank" value={rankRule} onChange={e=>setRankRule(e.target.value)}>
+            {Object.entries(RANK_RULES).map(([k,r])=><option key={k} value={k}>{r.label}</option>)}
+          </select></label>
       </div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         {[
@@ -203,6 +209,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor,initialWin=null}
               <div className="re-col-name">
                 <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><DonorLink id={d.id} onOpen={()=>onSelectDonor(d)}>{d.name}</DonorLink></div>
                 {d.email&&<div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>}
+                <div data-testid="reengage-rank-words" style={{fontSize:10.5,color:T.ink3,marginTop:1}}>{rankWords(idx,rankRule)}</div>
               </div>
               <div className="re-col-lifetime" style={{textAlign:"right",fontSize:13,fontWeight:700,color:T.ink}}>{fmtFull(d.total)}</div>
               <div className="re-col-lastgift" style={{textAlign:"right"}}>

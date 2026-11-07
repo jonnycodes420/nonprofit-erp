@@ -16,11 +16,28 @@ import { normalizeStatus } from "./grantShape.js";
 
 const money = n => "$" + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString("en-US", { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 });
 
+// TRUTH-3 (W-1107-Finance-31): the award's state, from ONE place. A grant
+// read "Awarded" beside "no award recorded" when the award amount was on the
+// grant (grants.amount_awarded) but its award record (the pledge) was not.
+//   recorded  an award record (awardPledgeId)
+//   stated    an awarded amount on the grant, no award record yet
+//   missing   marked Awarded, no amount and no record
+//   none      not awarded
+export function awardState(grant = {}) {
+  const g = grant || {};
+  if (g.awardPledgeId) return "recorded";
+  if ((Number(g.amountAwarded) || 0) > 0) return "stated";
+  if (normalizeStatus(g.status) === "awarded") return "missing";
+  return "none";
+}
+
 export function grantAwardLine(grant = {}) {
   const g = grant || {};
-  if (g.awardPledgeId) return null;
+  const st = awardState(g);
+  if (st === "recorded") return null;
   const received = Number(g.received) || 0;
+  if (st === "stated") return { key: "awarded_stated", text: `Awarded ${money(g.amountAwarded)}${received > 0 ? `, ${money(received)} received` : ""}. Record the award to track its payments.`, action: "Record the award" };
   if (received > 0) return { key: "received_no_award", text: `Received ${money(received)}, award not recorded.`, action: "Record the award" };
-  if (normalizeStatus(g.status) === "awarded") return { key: "awarded_no_award", text: "Awarded, but no award recorded.", action: "Record the award" };
+  if (st === "missing") return { key: "awarded_no_award", text: "Marked Awarded, with no award amount yet.", action: "Record the award" };
   return null;
 }
