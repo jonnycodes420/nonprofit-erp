@@ -83,7 +83,7 @@ async function runRecentWork(orgId, runId, job) {
   const thanks = IT.cleanAnswer(typeof jr.thanks === "string" ? JSON.parse(jr.thanks) : jr.thanks);
   const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
   const gctx = await importGiftContext(orgId);
-  let done = 0, thankYous = 0, lastSaved = Date.now();
+  let done = 0, thankYous = 0, lastSaved = Date.now(), firstBatch = true;
   const errors = [], credits = [];
   const save = async () => {
     const d = done, t = thankYous; done = 0; thankYous = 0;
@@ -132,6 +132,8 @@ async function runRecentWork(orgId, runId, job) {
     });
     });   // end withAdvisoryLock
     await save();
+    // FLAKE-2: TEST_MODE only, a suite can hold the work here (testHold.js)
+    if (firstBatch) { firstBatch = false; await require("./testHold").atFirstBatch(withAdvisoryLock, runId); }
   }
   await save();
   if (credits.length) await importGiftExtras(orgId, credits, RECENT_WORK_ACTOR).catch(e => console.error("[import-recent] credit:", e.message));

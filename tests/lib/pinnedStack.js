@@ -34,6 +34,17 @@ const CLOCK = path.join(ROOT, "tests", "clock.js");
 const freePort = () => new Promise(res => { const s = net.createServer(); s.listen(0, () => { const p = s.address().port; s.close(() => res(p)); }); });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// FLAKE-2: the next h:00 in New York at least a minute from now (21 for the
+// 9 PM Eastern cases, when New York and UTC are on different days).
+function nextNyHour(h, now = testNow()) {
+  for (let d = 0; d <= 2; d++) {
+    const day = dayOffset(d, now);
+    const t = nyNoon(day) + (h - 12) * 3600e3;   // h:00 that New York day (no DST change falls in the evening)
+    if (t >= now + 60000) return t;
+  }
+  throw new Error(`pinnedStack: no ${h}:00 in New York in the next two days`);
+}
+
 // The next noon in New York at least a minute from now.
 // (Only an unpinned run gets here, so testNow() is the machine's own now.)
 function nextNoon(now = testNow()) {
@@ -52,14 +63,23 @@ async function pg(url, sqls) {
 // Returns true when the caller should go on and run its checks here (this
 // process IS the pinned child, or the run is already pinned). Otherwise it
 // runs the pinned child, exits with its code, and returns false.
-function runPinnedOrContinue(file) {
-  if (process.env.STEWARD_TEST_OFFSET_MS) return true;
-  if (process.env.FLAKE1_PINNED_CHILD === "1") throw new Error("pinnedStack: the child has no clock offset");
-  main(file).then(code => process.exit(code), e => { console.error("pinnedStack:", e); process.exit(1); });
+//
+// FLAKE-2: a suite can name its own instant, `{ at: () => nextNyHour(21) }`,
+// and only that suite runs at it: the run's clock, and every other suite's,
+// is untouched. A suite that names its instant keeps it even when the run is
+// pinned (the run's pin is then the "now" its instant is counted from), so
+// its hour never depends on when, or how, the battery started.
+function runPinnedOrContinue(file, { at = null } = {}) {
+  if (process.env.FLAKE1_PINNED_CHILD === "1") {
+    if (!process.env.STEWARD_TEST_OFFSET_MS) throw new Error("pinnedStack: the child has no clock offset");
+    return true;
+  }
+  if (process.env.STEWARD_TEST_OFFSET_MS && !at) return true;
+  main(file, at).then(code => process.exit(code), e => { console.error("pinnedStack:", e); process.exit(1); });
   return false;
 }
 
-async function main(file) {
+async function main(file, atFn = null) {
   const baseUrl = process.env.DATABASE_URL;
   if (!baseUrl) throw new Error("DATABASE_URL is not set");
   const u = new URL(baseUrl);
@@ -70,9 +90,14 @@ async function main(file) {
   // New York proof runs); never earlier than the real clock, as above.
   const asked = process.env.PINNED_STACK_AT ? RealDate.parse(process.env.PINNED_STACK_AT) : null;
   if (asked !== null && !(Number.isFinite(asked) && asked >= testNow() + 60000)) throw new Error(`pinnedStack: PINNED_STACK_AT must be an instant at least a minute ahead: ${process.env.PINNED_STACK_AT}`);
-  const at = asked !== null ? asked : nextNoon();
-  const offset = at - testNow();
-  console.log(`  pinned clock: ${new RealDate(at).toISOString()} (${asked !== null ? "PINNED_STACK_AT" : "noon in New York"}), a stack of its own on database ${dbName}`);
+  const own = atFn ? atFn() : null;
+  if (own !== null && !(Number.isFinite(own) && own >= testNow() + 60000)) throw new Error(`pinnedStack: the suite's own instant must be at least a minute ahead: ${own}`);
+  const at = own !== null ? own : asked !== null ? asked : nextNoon();
+  // The offset is from the REAL clock: the database's now() and the child's
+  // clock.js both add it to the machine's time.
+  // (testNow() less the run's own offset is the machine's time.)
+  const offset = at - (testNow() - (Number(process.env.STEWARD_TEST_OFFSET_MS) || 0));
+  console.log(`  pinned clock: ${new RealDate(at).toISOString()} (${own !== null ? "the suite's own instant" : asked !== null ? "PINNED_STACK_AT" : "noon in New York"}), a stack of its own on database ${dbName}`);
 
   // Created and dropped from the server's maintenance database, so the drop
   // works even when the shard's own database has gone first.
@@ -122,4 +147,4 @@ async function main(file) {
   return code;
 }
 
-module.exports = { runPinnedOrContinue, nextNoon };
+module.exports = { runPinnedOrContinue, nextNoon, nextNyHour };
