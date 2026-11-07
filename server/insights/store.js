@@ -54,6 +54,7 @@ function ensure() {
         PRIMARY KEY (org_id, as_of))`);
     // SECURE-3: locked like every public table (dbLock re-checks on each boot).
     await query(`ALTER TABLE stored_insights ENABLE ROW LEVEL SECURITY`);
+    await require("./deckMoves").ensureColumn();   // MOPUP-3
   })().catch(e => { ready = null; throw e; }));
 }
 
@@ -77,9 +78,11 @@ async function build(orgId, asOf = null) {
   const result = await require("../../insightsData").computeFor(orgId, day);
   const body = JSON.stringify(result);
   const ms = Date.now() - t0;
-  await run(`INSERT INTO stored_insights (org_id, as_of, fingerprint, body, built_at, ms) VALUES (?,?,?,?,NOW(),?)
-             ON CONFLICT (org_id, as_of) DO UPDATE SET fingerprint = EXCLUDED.fingerprint, body = EXCLUDED.body, built_at = NOW(), ms = EXCLUDED.ms`,
-    [orgId, day, key, body, ms]);
+  // MOPUP-3: the deck's move count beside the body, for Home's first paint on a phone (deckMoves.js).
+  const moves = require("./deckMoves").countOf(result);
+  await run(`INSERT INTO stored_insights (org_id, as_of, fingerprint, body, built_at, ms, deck_moves) VALUES (?,?,?,?,NOW(),?,?)
+             ON CONFLICT (org_id, as_of) DO UPDATE SET fingerprint = EXCLUDED.fingerprint, body = EXCLUDED.body, built_at = NOW(), ms = EXCLUDED.ms, deck_moves = EXCLUDED.deck_moves`,
+    [orgId, day, key, body, ms, moves]);
   if (!asOf) await run(`DELETE FROM stored_insights WHERE org_id = ? AND as_of < ?`, [orgId, shiftDay(day, -KEEP_DAYS)]);
   stats.builds++; stats.lastMs = ms;
   return { orgId, asOf: day, ms, bytes: body.length };

@@ -765,6 +765,9 @@ app.post("/atlas/actions/:id/list", requireAuth, checkWriteAccess, wrap(async (r
     else if (r.status !== 409) return res.status(r.status || 500).json(r.body || { error: "group_failed" });
   }
   if (!made) return res.status(409).json({ error: "group_name_taken" });
+  // TIDY-1: marked as Atlas's, so Groups shows it under "From Atlas" and it
+  // goes after 30 days unless somebody renames, pins or sends to it.
+  await run("UPDATE audiences SET made_by='atlas' WHERE id=? AND org_id=?", [made.id, orgId]);
   for (let i = 0; i < ans.ids.length; i += 500) {
     const r = await asHer(req, "POST", `/groups/${made.id}/members`, { donorIds: ans.ids.slice(i, i + 500) });
     if (r.status >= 300) return res.status(r.status).json(r.body || { error: "members_failed" });

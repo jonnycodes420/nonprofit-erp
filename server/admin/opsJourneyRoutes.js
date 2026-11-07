@@ -12,7 +12,6 @@
 // Both are behind GET /ops's door (404 to anyone who is not a live
 // super-admin), read-only, and show no donor: counts and timestamps only.
 "use strict";
-const BOARD = require("./board");
 const MAP = require("./opsMap");
 const JOURNEY = require("./opsJourney");
 const FLOW = require("./opsFlow");
@@ -23,7 +22,7 @@ const STATUS = require("../../scripts/ci/status");
 async function mapAreas(query) {
   const map = MAP.readMap();
   let board;
-  try { board = BOARD.readBoard(); } catch (e) { board = { items: [], walks: [], results: {} }; }
+  try { board = await require("./opsImports").currentBoard(query); } catch (e) { board = { items: [], walks: [], results: {} }; }   // LEAD-IMPORT-1: with the uploads
   const rows = await require("./opsMapRoutes").readChecks(query);
   return MAP.buildMap(map, board, rows, {});
 }
