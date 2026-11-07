@@ -16,12 +16,15 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { API } from "./api";
 import { installOrgBinding } from "./lib/orgBinding";
 import { installCommitGuard } from "./lib/commitGuard";
+import { installPageReady } from "./lib/pageReady";
 import Donate from "./pages/Donate";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 
 installOrgBinding(API);
 installCommitGuard();
+// PAGES-1: a giving page carries PERF-4's page-ready mark (lib/pageReady.js), with no beacon.
+if (/^\/give\/[^/]+\/[^/]+\/?$/.test(window.location.pathname)) installPageReady(null);
 
 // main.jsx's words, so a donor sees the same thing whichever entry drew the page.
 const PAL = { cream: "#f0ede6", white: "#ffffff", cardEdge: "#e0dccf", terracotta: "#b8593f", bodyMuted: "#5b6b60", emerald: "#0d5c3a" };

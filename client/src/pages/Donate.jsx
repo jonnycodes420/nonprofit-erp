@@ -32,6 +32,7 @@ import InlineText, { INLINE_CSS } from "../components/InlineText";
 import PortalBanner, { PORTAL_HEADER_RATIO } from "../components/PortalBanner";
 // GIVE-3 — the page's layout, trust panel, other ways to give and impact lines,
 // said once and read by this page AND the editor's preview of it.
+import { resolvePageTheme } from "../../../shared/pageTheme.js";
 import { layoutFor, storyParagraphs, impactFor as designImpact, trustLines, waysLines, READ_MORE_AFTER } from "../../../shared/givingPageDesign.js";
 
 // BUILD-60 — THE GIVING PAGE IS THE ORG'S PAGE.
@@ -120,6 +121,15 @@ function resolveTheme(theme) {
     onetimeAmounts: Array.isArray(t.onetimeAmounts) && t.onetimeAmounts.length ? t.onetimeAmounts : ONETIME_FALLBACK,
     monthlyAmounts: Array.isArray(t.monthlyAmounts) && t.monthlyAmounts.length ? t.monthlyAmounts : MONTHLY_FALLBACK,
   };
+}
+
+function withPageTheme(th, pageTheme) {
+  if (!pageTheme) return th;
+  const r = resolvePageTheme({ primary: th.primary, button: th.button }, pageTheme);
+  const pairing = r.fonts ? resolvePairing(r.fonts) : null;
+  return { ...th, button: r.accent, buttonFg: r.accentFg, pageTheme: r,
+    ...(pairing ? { serif: pairing.serif, sans: pairing.sans } : {}),
+    ...(r.sections === "dark" ? { pageBg: "#0F1A12" } : {}) };
 }
 
 const baseInp = {
@@ -620,6 +630,8 @@ const G3_CSS = `
 .g3-photo > [data-picture]{aspect-ratio:16 / 8 !important}
 .g3-fill{width:100%;aspect-ratio:16 / 8;border-radius:16px;background:var(--g3-primary);display:flex;align-items:center;justify-content:center}
 .g3-fill img{max-height:64px;max-width:60%;object-fit:contain}
+.g3-addphoto{width:100%;aspect-ratio:16 / 8;border-radius:16px;border:1.5px dashed var(--g3-muted);display:flex;align-items:center;justify-content:center;color:var(--g3-muted);font-size:14px;font-weight:600}
+.g3-story-empty{border:1.5px dashed var(--g3-muted);border-radius:12px;padding:16px 18px;min-height:64px;color:var(--g3-muted)}
 .g3-h1{margin:18px 0 0;font-family:var(--g3-serif);font-size:30px;line-height:1.12;letter-spacing:-0.02em;font-weight:800}
 .g3-org{font-size:13px;font-weight:700;color:var(--g3-muted);margin-top:14px}
 .g3-story p{font-size:16px;line-height:1.7;margin:0 0 14px}
@@ -640,6 +652,15 @@ const G3_CSS = `
 .g3-band img{max-height:72px;max-width:70%;object-fit:contain}
 .g3-simple .g3-grid{max-width:560px;margin:0 auto;grid-template-areas:"top" "side"}
 .g3-simple .g3-h1{text-align:center}
+.g3-themed .g3-photo [data-picture],.g3-themed .g3-formcard,.g3-themed .g3-trust,.g3-themed .g3-fill{border-radius:var(--g3-radius) !important}
+.g3-themed .g3-formcard button[type=submit],.g3-themed #give-form button[type=submit]{border-radius:var(--g3-btn-radius) !important}
+.g3-btn-outline .g3-formcard button[type=submit]{background:transparent !important;color:var(--g3-button) !important;border:2px solid var(--g3-button) !important}
+.g3-dark{color:#FFFFFF}
+.g3-dark .g3-bar{background:#0F1A12;border-color:rgba(255,255,255,0.16)}
+.g3-dark .g3-org,.g3-dark .g3-label{color:rgba(255,255,255,0.78)}
+.g3-dark .g3-story,.g3-dark .g3-h1,.g3-dark .g3-bar-name{color:#FFFFFF}
+.g3-dark .g3-trust{background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.16)}
+.g3-dark .g3-trust-line,.g3-dark .g3-trust a{color:rgba(255,255,255,0.88)}
 @container (min-width: 860px){
   .g3-wrap{padding:32px 32px 96px}
   .g3-grid{grid-template-columns:minmax(0,1fr) 420px;gap:28px 56px;grid-template-rows:auto 1fr;grid-template-areas:"top side" "body side";align-items:start}
@@ -761,7 +782,9 @@ export default function Donate({ preview = null }) {
     window.history.replaceState(null, "", window.location.pathname + window.location.search);
   }, []);
 
-  const th = resolveTheme(org?.theme);
+  // PAGES-1: a giving page draws in its own theme over the brand (accent,
+  // fonts, buttons, corners, light or dark sections; shared/pageTheme.js).
+  const th = withPageTheme(resolveTheme(org?.theme), givingPage && givingPage.design && givingPage.design.theme);
 
   // BUILD-95 §5B — the built giving page. ONE renderer, shared with the portal:
   // a widget that drew differently on the two surfaces would eventually show
@@ -1651,7 +1674,9 @@ export default function Donate({ preview = null }) {
       const el = e.target.closest && e.target.closest("[data-edit]");
       if (el) { e.preventDefault(); preview.onPick(el.getAttribute("data-edit")); }
     } : undefined;
+    const ptv = th.pageTheme || null;
     const vars = {
+      ...(ptv ? { "--g3-radius": ptv.radius + "px", "--g3-btn-radius": ptv.buttonRadius + "px" } : {}),
       "--g3-bg": th.pageBg, "--g3-white": T.white, "--g3-hair": T.bg3, "--g3-ink": T.ink, "--g3-ink2": T.ink2,
       "--g3-muted": T.ink3, "--g3-primary": th.primary, "--g3-button": th.button, "--g3-serif": th.serif, "--g3-sans": th.sans,
     };
@@ -1666,14 +1691,19 @@ export default function Donate({ preview = null }) {
     // EDITOR-1: in the editor the photo carries its tools (replace, focus),
     // and the headline and story are typed where they show.
     const tools = preview && preview.photoTools ? preview.photoTools(!!cover) : null;
+    // PAGES-1: never an empty colored block. With no photo the page shows the
+    // logo on the brand color only when there IS a logo; with neither, the
+    // public page shows nothing here and the editor a dashed "Add a cover photo".
     const photo = cover ? (
       <div className="g3-photo" data-edit="photo" style={tools ? { position: "relative" } : undefined}><Picture value={cover} alt={givingPage.title} ratio="16 / 9" radius={16} width={1280} testid="page-cover" />{tools}</div>
-    ) : !tools && (headerBanner || !brandLogo) ? null : (
+    ) : brandLogo && !headerBanner ? (
       <div className="g3-fill" data-edit="photo" style={tools ? { position: "relative" } : undefined}>{brandLogo}{tools}</div>
-    );
+    ) : tools ? (
+      <div className="g3-addphoto" data-edit="photo" data-editor-only="" data-testid="add-cover-photo" style={{ position: "relative" }}><span>Add a cover photo</span>{tools}</div>
+    ) : null;
     const onText = preview && preview.onText;
     return (
-      <div className={"g3 g3-" + layout + (trust.some(l => l.key === "stripe") ? " g3-trust-stripe" : "")} data-testid="giving-page" data-layout={layout} style={vars} onClickCapture={pick}>
+      <div className={"g3 g3-" + layout + (trust.some(l => l.key === "stripe") ? " g3-trust-stripe" : "") + (ptv ? " g3-themed g3-btn-" + ptv.button + (ptv.sections === "dark" ? " g3-dark" : "") : "")} data-testid="giving-page" data-layout={layout} style={vars} onClickCapture={pick}>
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
         <style>{G3_CSS}</style>
         {onText && <style data-editor-only="">{INLINE_CSS}</style>}
@@ -1716,9 +1746,11 @@ export default function Donate({ preview = null }) {
             </div>
             {layout !== "simple" && (
               <div className="g3-body">
+                {/* PAGES-1: a blank story is a dashed "Add your story" box in the
+                    editor and nothing at all on the public page. */}
                 {onText && !hasRichtext && (
-                  <InlineText as="div" className="g3-story" field="story" testid="inline-story" multiline value={givingPage.story || ""}
-                    placeholder="What this gift makes possible, in your own words." label="The story" onChange={t => onText("story", t)} />
+                  <InlineText as="div" className={"g3-story" + (String(givingPage.story || "").trim() ? "" : " g3-story-empty")} field="story" testid="inline-story" multiline value={givingPage.story || ""}
+                    placeholder="Add your story: what this gift makes possible, in your own words." label="The story" onChange={t => onText("story", t)} />
                 )}
                 {!onText && paras.length > 0 && (
                   <div className="g3-story" data-edit="story">

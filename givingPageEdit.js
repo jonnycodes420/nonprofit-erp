@@ -205,5 +205,36 @@ function validateOrgForm(base, patch) {
   return { ok: errors.length === 0, errors, settings: errors.length ? null : out };
 }
 
+// PAGES-1: three starting points, each finished with only the org's logo,
+// colors and the page's own photo: the story with the form beside it, a
+// campaign that leads with its goal, and the form alone. A starter also picks
+// the page's layout (drafted, like every other change, until Publish).
+const GIVE_STARTERS = {
+  story_first: {
+    label: "Story first",
+    blurb: "The photo and your story beside the form.",
+    design: { layout: "story" },
+    widgets: [
+      { type: "richtext", blocks: [], hint: "Say what this page is for, in your own words." },
+    ],
+  },
+  campaign: {
+    label: "Campaign",
+    blurb: "The goal bar first, then the story and the form.",
+    design: { layout: "campaign" },
+    widgets: [
+      { type: "richtext", blocks: [], hint: "Say why you are asking now, in your own words." },
+      { type: "recentgifts", count: 8, showAmounts: false, heading: "Recent gifts" },
+    ],
+  },
+  simple: {
+    label: "Simple",
+    blurb: "The form alone, under a band in your colors.",
+    design: { layout: "simple" },
+    widgets: [],
+  },
+};
+
 module.exports = {
+  GIVE_STARTERS,
   readImageMeta, TEMPLATES, templateList, settingsOf, currentSettings, validateSettings, sameJson, snapshotOf, validateOrgForm, IMAGE_PATH };

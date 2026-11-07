@@ -21,6 +21,7 @@ const AC = require("../auctionCore");   // PARITY-2 Part 4: the one definition o
 const { requireAuth404 } = require("../auth");      // FIX-20 Part 0: the file doors
 const { getAssetMeta, ASSET_CSP } = require("../assetStore");
 const VP = require("../volunteerPage");   // VOL-PAGE-1: a volunteer page is a giving_pages row of kind volunteer
+const MP = require("../membershipPage");  // PAGES-1: so is a membership page, of kind membership
 const GPE = require("../givingPageEdit");  // GIVE-EDIT-1: a page's own fields, drafted and published in the one editor
 const { CAMPAIGN_GIFT_MATCH, PUBLIC_BAR_GRANTS, NOT_DELETED } = require("../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
 const { newId, randomHex } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
@@ -1692,6 +1693,9 @@ app.get("/giving-pages", requireAuth, wrap(async (req, res) => {
       }
       continue;
     }
+    // PAGES-1: a membership page's card shows its link; its money is the
+    // membership gifts Memberships already counts, so no second figure here.
+    if (r.page_kind === MP.KIND) { r.public_url = `/membership-page/${orgRow && orgRow.org_slug}/${r.slug}`; continue; }
     r.raised_source = { key: "page-raised", params: { page: r.id } };
     r.raised_amount = (await FS.figureValue(req.user.orgId, r.raised_source)).value;
     // GIVE-EDIT-1: a giving card shows raised, gifts and views like the
@@ -1732,8 +1736,9 @@ app.post("/giving-pages", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
   let { title } = req.body;
   // GIVE-EDIT-1: "New giving page" starts from a template, in its own words,
   // and opens in the editor. A title she typed wins over the template's.
-  const tpl = req.body.page_kind !== VP.KIND && req.body.template ? GPE.TEMPLATES[req.body.template] : null;
-  if (req.body.page_kind !== VP.KIND && req.body.template && !tpl) return res.status(400).json({ error: "unknown_template" });
+  const blockKind = req.body.page_kind === VP.KIND || req.body.page_kind === MP.KIND;   // PAGES-1: built from blocks
+  const tpl = !blockKind && req.body.template ? GPE.TEMPLATES[req.body.template] : null;
+  if (!blockKind && req.body.template && !tpl) return res.status(400).json({ error: "unknown_template" });
   if (tpl && !(title && String(title).trim())) title = tpl.title;
   if (!title || !title.trim()) return res.status(400).json({ error: "title required" });
   const validationErr = validateGivingPageFields(title, story, imageUrl, goalAmount);
@@ -1760,13 +1765,14 @@ app.post("/giving-pages", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
   const id = newId("gp");
   // VOL-PAGE-1: a volunteer page is the same row, born with its template's
   // blocks as its draft (through the one validator) and no gift fields.
-  if (req.body.page_kind === VP.KIND) {
-    const st = VP.STARTERS[req.body.template] || VP.STARTERS.ongoing;
-    const v = await validateWidgets(st.widgets, req.user.orgId);
+  if (blockKind) {
+    const K = req.body.page_kind === MP.KIND ? MP : VP;
+    const st = K.STARTERS[req.body.template] || (K === MP ? MP.STARTERS.story_first : VP.STARTERS.ongoing);
+    const v = await validateWidgets(await withStockPhotos(st.widgets, req.user.orgId, id), req.user.orgId);
     if (v.error) return res.status(400).json({ error: v.error });
     await run(`INSERT INTO giving_pages (id, org_id, slug, title, story, image_url, status, page_kind, draft, draft_updated_at, created_by, created_by_name)
                VALUES (?,?,?,?,'','','active',?,?,NOW(),?,?)`,
-      [id, req.user.orgId, finalSlug, title.trim(), VP.KIND, JSON.stringify(v.widgets), actor(req).id, actor(req).name]);
+      [id, req.user.orgId, finalSlug, title.trim(), K.KIND, JSON.stringify(v.widgets), actor(req).id, actor(req).name]);
     const [row] = await query("SELECT * FROM giving_pages WHERE id=?", [id]);
     return res.status(201).json(row);
   }
@@ -1884,27 +1890,16 @@ app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(a
 // Two starting points, and NEITHER INVENTS CONTENT — the portal starters'
 // rule (tests/portal-page.test.js pins it there): a starter lays out empty
 // widgets and prompts, never a fabricated number, quote or testimonial.
-const GIVE_STARTERS = {
-  story_first: {
-    label: "Story first",
-    widgets: [
-      { type: "hero", heading: "", sub: "", image: null, size: "tall" },
-      { type: "richtext", blocks: [{ type: "p", text: "Say what this page is for, in your own words." }] },
-      { type: "funds", heading: "Where you can give", fundIds: [] },
-    ],
-  },
-  short_and_clear: {
-    label: "Short and clear",
-    widgets: [
-      { type: "hero", heading: "", sub: "", image: null, size: "standard" },
-      { type: "stats", items: [{ value: "", label: "" }] },
-    ],
-  },
-};
+const GIVE_STARTERS = GPE.GIVE_STARTERS;   // PAGES-1: Story first, Campaign, Simple (givingPageEdit.js)
 
 // VOL-PAGE-1: which registry surface and which templates a page uses.
-const surfaceOf = pg => (pg && pg.page_kind === VP.KIND ? VP.KIND : "give");
-const startersOf = pg => (surfaceOf(pg) === VP.KIND ? VP.STARTERS : GIVE_STARTERS);
+const surfaceOf = pg => (pg && pg.page_kind === VP.KIND ? VP.KIND : pg && pg.page_kind === MP.KIND ? MP.KIND : "give");
+const startersOf = pg => (surfaceOf(pg) === VP.KIND ? VP.STARTERS : surfaceOf(pg) === MP.KIND ? MP.STARTERS : GIVE_STARTERS);
+const KIND_WORD = { give: "giving", volunteer: "volunteer", membership: "membership" };
+const publicPathOf = (pg, orgSlug) => (surfaceOf(pg) === VP.KIND ? `/volunteer-page/${orgSlug}/${pg.slug}`
+  : surfaceOf(pg) === MP.KIND ? `/membership-page/${orgSlug}/${pg.slug}` : `/give/${orgSlug}/${pg.slug}`);
+
+const withStockPhotos = (w, orgId, pageId) => require("./stockPhotos").withStockPhotos(w, orgId, pageId);   // PAGES-1
 
 const givingPageOr404 = async (id, orgId) => {
   const [p] = await query(`SELECT * FROM giving_pages WHERE id = ? AND org_id = ?`, [id, orgId]);
@@ -2259,6 +2254,12 @@ app.get("/giving-pages/:id/embed", requireAuth, requireAdmin, wrap(async (req, r
   const pg = await givingPageOr404(req.params.id, req.user.orgId);
   if (!pg) return res.status(404).json({ error: "not_found" });
   const base = publicAppUrl();
+  if (pg.page_kind === MP.KIND) {
+    const [o] = await query("SELECT org_slug FROM orgs WHERE id=?", [req.user.orgId]);
+    const url = `${base}${publicPathOf(pg, o.org_slug)}`;
+    return res.json({ pageId: pg.id, status: pg.status, url, previewUrl: url,
+      iframe: `<iframe src="${url}" width="100%" height="1100" style="border:0" title="Membership" loading="lazy"></iframe>` });
+  }
   if (pg.page_kind === VP.KIND) {
     // A volunteer page embeds as itself: the form posts to Steward, never to the site it sits on.
     const [o] = await query("SELECT org_slug FROM orgs WHERE id=?", [req.user.orgId]);
@@ -2409,7 +2410,7 @@ app.get("/giving-pages/:id/page", requireAuth, requireAdmin, wrap(async (req, re
     pageKind: surfaceOf(pg), surface: surfaceOf(pg), status: pg.status,
     // The palette the editor may offer for THIS surface, from the one registry.
     widgetTypes: typesForSurface(surfaceOf(pg)),
-    starters: Object.entries(startersOf(pg)).map(([key, st]) => ({ key, label: st.label })),
+    starters: Object.entries(startersOf(pg)).map(([key, st]) => ({ key, label: st.label, blurb: st.blurb || "" })),
     // GIVE-EDIT-1: the page's own fields, live and drafted, beside the blocks.
     ...(await pageSettingsPayload(pg, req.user.orgId)),
   });
@@ -2434,7 +2435,7 @@ async function pageSettingsPayload(pg, orgId) {
     settings: GPE.settingsOf(pg, F, ids.orgFundIds),
     draftSettings: draft,
     formConfigured: !!(pg.form_config && typeof pg.form_config === "object" && Object.keys(pg.form_config).length),
-    publicUrl: pg.page_kind === VP.KIND ? `/volunteer-page/${slug}/${pg.slug}` : `/give/${slug}/${pg.slug}`,
+    publicUrl: publicPathOf(pg, slug),
     funds: ids.funds, campaigns: ids.camps,
   };
 }
@@ -2446,13 +2447,15 @@ app.put("/giving-pages/:id/page/settings", requireAuth, requireAdmin, checkWrite
   if (!pg) return res.status(404).json({ error: "not_found" });
   // FIX-41: a volunteer page has no Details rail, but it has a cover photo,
   // drafted and published the same way. Only the cover is taken from it.
-  const volunteerCover = surfaceOf(pg) === VP.KIND;
+  // PAGES-1: a volunteer or membership page drafts its cover and its theme
+  // (design.theme) here too; its other gift fields do not apply.
+  const volunteerCover = surfaceOf(pg) === VP.KIND || surfaceOf(pg) === MP.KIND;
   if (surfaceOf(pg) !== "give" && !volunteerCover) return res.status(400).json({ error: "not_a_giving_page" });
   const F = await formConfigMod();
   const ids = await orgIdsFor(req.user.orgId);
   const sent = (req.body && req.body.settings) || {};
   const patch = volunteerCover
-    ? Object.fromEntries(["imageUrl", "imageData", "imageMeta"].filter(k => sent[k] !== undefined).map(k => [k, sent[k]]))
+    ? Object.fromEntries(["imageUrl", "imageData", "imageMeta", "design"].filter(k => sent[k] !== undefined).map(k => [k, sent[k]]))
     : { ...sent };
   // A new photo arrives as a data: URI and is stored through the same widget
   // validator every page photo goes through, so it becomes an asset path.
@@ -2554,7 +2557,7 @@ app.put("/giving-pages/:id/page/draft", requireAuth, requireAdmin, checkWriteAcc
   const allowed = new Set(typesForSurface(surfaceOf(pg)));
   const stray = v.widgets.find(w => !allowed.has(w.type));
   if (stray) return res.status(400).json({ error: "wrong_surface",
-    message: `A "${stray.type}" widget does not belong on a ${surfaceOf(pg) === VP.KIND ? "volunteer" : "giving"} page.` });
+    message: `A "${stray.type}" widget does not belong on a ${KIND_WORD[surfaceOf(pg)]} page.` });
 
   const pos = normalizeFormPosition(req.body?.formPosition ?? pg.form_position);
   await run(`UPDATE giving_pages SET draft = ?, draft_updated_at = NOW(), form_position = ?, updated_at = NOW()
@@ -2573,11 +2576,23 @@ app.post("/giving-pages/:id/page/starter", requireAuth, requireAdmin, checkWrite
   if (!st) return res.status(400).json({ error: "unknown_starter" });
   // Through the SAME validator every other draft goes through — a starter is
   // not a privileged path into the page.
-  const v = await validateWidgets(st.widgets, req.user.orgId);
+  const v = await validateWidgets(await withStockPhotos(st.widgets, req.user.orgId, pg.id), req.user.orgId);
   if (v.error) return res.status(400).json({ error: "bad_widget", message: v.error });
   await run(`UPDATE giving_pages SET draft = ?, draft_updated_at = NOW(), updated_at = NOW()
              WHERE id = ? AND org_id = ?`, [JSON.stringify(v.widgets), pg.id, req.user.orgId]);
-  res.json({ ok: true, draft: v.widgets });
+  // PAGES-1: a giving page's starter picks its layout too, as a draft.
+  let draftSettings;
+  if (st.design && surfaceOf(pg) === "give") {
+    const F = await formConfigMod();
+    const ids = await orgIdsFor(req.user.orgId);
+    const base = GPE.currentSettings(pg, F, ids.orgFundIds);
+    const sv = GPE.validateSettings(base, { design: st.design }, F, ids);
+    if (sv.ok) {
+      await run(`UPDATE giving_pages SET draft_settings = ? WHERE id = ? AND org_id = ?`, [JSON.stringify(sv.settings), pg.id, req.user.orgId]);
+      draftSettings = sv.settings;
+    }
+  }
+  res.json({ ok: true, draft: v.widgets, ...(draftSettings ? { draftSettings } : {}) });
 }));
 
 app.post("/giving-pages/:id/page/publish", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
@@ -6850,6 +6865,23 @@ async function validateWidget(raw, orgId) {
         break;
       case "matchchallenge":
         break;      // no fields: it reads the campaign's own match
+      // PAGES-1: the page system's own blocks. The header and footer have no
+      // fields (the brand and the org's facts fill them); the goal bar's only
+      // number is a membership page's target, and what counts toward it is
+      // always read from records.
+      case "pageheader":
+      case "pagefooter":
+        break;
+      case "goalbar": {
+        w.heading = wStr(raw.heading, 120);
+        const t = raw.target == null || raw.target === "" ? null : Math.round(Number(raw.target));
+        if (t != null && !(Number.isFinite(t) && t >= 1 && t <= 1000000)) return { error: "A goal is a whole number from 1 to 1,000,000." };
+        w.target = t;
+        break;
+      }
+      case "memberlevels":
+        w.heading = wStr(raw.heading, 120);
+        break;
       case "mygiving":
         break;      // no fields — renders the signed-in donor's own data,
                     // degrades to a sign-in prompt on a public view
