@@ -34,6 +34,7 @@
 // never stored or served.
 "use strict";
 const { query, run } = require("./db");
+const { sql } = require("./server/db/sql");   // REDTEAM-2
 const inProcess = require("./inProcess");
 
 let deps = null;   // { orgTz, orgToday, signInternalToken }
@@ -126,7 +127,8 @@ async function installTriggers(pool) {
   // A table someone later marks unwatched loses its triggers.
   for (const k of have) {
     const [t, name] = k.split(".");
-    if (UNWATCHED.has(t)) await pool.query(`DROP TRIGGER IF EXISTS ${name} ON "${t}"`);   // nosemgrep: javascript.express.security.injection.tainted-sql-string.tainted-sql-string -- names from pg_trigger, the table in the UNWATCHED set
+    // REDTEAM-2: both names read from pg_trigger, quoted as names (server/db/sql.js).
+    if (UNWATCHED.has(t)) await pool.query(sql`DROP TRIGGER IF EXISTS ${sql.ident(name)} ON ${sql.ident(t)}`.text);
   }
   for (const [t, fn] of plan) {
     for (const [ev, ref] of [["INSERT", "NEW TABLE AS new_rows"], ["DELETE", "OLD TABLE AS old_rows"],

@@ -38,7 +38,9 @@ const DENY_ROLES = ["anon", "authenticated"];
 const REVOKE_ROLES = ["anon", "authenticated", "service_role"];
 const POLICY = "steward_deny_supabase_api";
 
-const qi = name => '"' + String(name).replace(/"/g, '""') + '"';
+// REDTEAM-2: one quoting rule for a name, sql.ident (server/db/sql.js); as text where a statement is still built as a string.
+const { sql } = require("../db/sql");
+const qi = name => sql.ident(name).text;
 
 // `db` is anything with query(sql, params) -> { rows } (a pg client, a pool,
 // or db.js's ddl session).
@@ -59,7 +61,7 @@ async function lockPublicSchema(db) {
   for (const t of off) {
     // RLS does not bind the table's owner (no FORCE) or a role that bypasses it.
     if (!t.mine && !bypass) { out.skippedNotOwner.push(t.relname); continue; }
-    await db.query(`ALTER TABLE public.${qi(t.relname)} ENABLE ROW LEVEL SECURITY`);   // nosemgrep: javascript.express.security.injection.tainted-sql-string.tainted-sql-string -- a pg_class name, quoted by qi
+    await db.query(sql`ALTER TABLE public.${sql.ident(t.relname)} ENABLE ROW LEVEL SECURITY`.text);
     out.rlsEnabled.push(t.relname);
   }
 

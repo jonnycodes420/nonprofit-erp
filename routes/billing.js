@@ -2647,14 +2647,13 @@ app.post("/admin/orgs/:id/extend-trial", requireAuth, requireSuperAdmin, wrap(as
   // a long-expired trial by 7 days must land in the future, not still in the
   // past. If checkTrialExpiry already flipped the org to trial_expired
   // (read_only), restore trialing so the extension actually grants access.
-  // INTERVAL template literal is safe — n is parseInt-validated (see the
-  // sequences engine's identical convention).
+  // REDTEAM-2: the days are a bound integer (make_interval), never text.
   const result = await run(
     `UPDATE orgs SET
-       trial_ends_at = GREATEST(COALESCE(trial_ends_at, NOW()), NOW()) + INTERVAL '${n} days',
+       trial_ends_at = GREATEST(COALESCE(trial_ends_at, NOW()), NOW()) + make_interval(days => ?),
        subscription_status = CASE WHEN subscription_status = 'trial_expired' THEN 'trialing' ELSE subscription_status END
      WHERE id = ?`,
-    [req.params.id]
+    [n, req.params.id]
   );
   if (!result.changes) return res.status(404).json({ error: "Org not found" });
   const orgs = await query("SELECT * FROM orgs WHERE id=?", [req.params.id]);

@@ -3240,15 +3240,15 @@ app.post("/sequences/:id/enroll", requireAuth, requireCrm, wrap(async (req, res)
   const firstDelay = parseInt(steps[0]?.delay_days || 0, 10);
   if (existing.length) {
     await run(
-      `UPDATE sequence_enrollments SET status='active', current_step=0, enrolled_at=NOW(), completed_at=NULL, next_send_at=NOW() + INTERVAL '${firstDelay} days' WHERE id=?`,
-      [existing[0].id]
+      `UPDATE sequence_enrollments SET status='active', current_step=0, enrolled_at=NOW(), completed_at=NULL, next_send_at=NOW() + make_interval(days => ?) WHERE id=?`,
+      [firstDelay || 0, existing[0].id]   // REDTEAM-2: the delay is a bound integer
     );
   } else {
     const enrId = newId("se");
     await run(
       `INSERT INTO sequence_enrollments (id, sequence_id, org_id, donor_id, current_step, status, next_send_at)
-       VALUES (?, ?, ?, ?, 0, 'active', NOW() + INTERVAL '${firstDelay} days')`,
-      [enrId, req.params.id, req.user.orgId, donorId]
+       VALUES (?, ?, ?, ?, 0, 'active', NOW() + make_interval(days => ?))`,
+      [enrId, req.params.id, req.user.orgId, donorId, firstDelay || 0]   // REDTEAM-2: the delay is a bound integer
     );
   }
   res.json({ success: true });

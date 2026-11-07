@@ -79,6 +79,16 @@ function queueReport(queue) {
   if (level && level !== "ok") parts.push("scripts/sql/queue-status.sql says which; scripts/ops/queue-requeue.js clears them");
   return { level, detail: parts.join(" · ") };
 }
+// REDTEAM-2 · THE DATABASE'S CERTIFICATE, from /health.dbTls.
+function dbTlsReport(mode) {
+  if (mode === undefined) return { level: null, word: "unverified", detail: "backend unreachable" };
+  if (mode === "verified") return { level: "ok", word: "verified", detail: "PGSSLROOTCERT is set; the server's certificate is checked" };
+  if (mode === "unverified") return { level: "yellow", word: "NOT CHECKED", detail: "encrypted, but the database's certificate is not checked: set PGSSLROOTCERT_PEM (docs/needs-jonathan/REDTEAM-2.md)" };
+  if (mode === "misconfigured") return { level: "red", word: "MISCONFIGURED", detail: "PGSSLROOTCERT_PEM/_PATH is set but unreadable" };
+  if (mode === "off") return { level: "yellow", word: "TLS OFF", detail: "DB_SSL=disable on this backend" };
+  return { level: null, word: "unverified", detail: "no dbTls on /health (older deploy)" };
+}
+
 // DEPLOY-1 · the worker: its heartbeat (read through the web's /health, since
 // it has no public address) carries main's build and the role "worker".
 function workerReport(worker, mainSha) {
@@ -166,7 +176,7 @@ function stagingReport({ configured, enabled, web, worker, frontend, env, walk, 
   const waiting = web && prodSha && web !== prodSha ? "ahead of prod, waiting for Ship on /ops" : "same as prod";
   return { ok: flags.length === 0, detail: `web ${s(web)} · worker ${s(worker)} · frontend ${s(frontend)} · walk ${walk || "none"} · ${waiting}`, flags };
 }
-module.exports = { mailboxReport, smokeVerdict, queueReport, workerReport, poolReport, loadReport, stagingReport };
+module.exports = { mailboxReport, smokeVerdict, queueReport, workerReport, poolReport, loadReport, stagingReport, dbTlsReport };
 
 if (require.main === module) (async () => {
   // ── local + origin ─────────────────────────────────────────────────────────
@@ -187,8 +197,8 @@ if (require.main === module) (async () => {
 
   // ── prod surfaces ────────────────────────────────────────────────────────────
   const beRes = await fetchText(`${BACKEND}/health`);
-  let backendSha = null, backendErr = null, mailboxSync = null, guards = null, queue = null, worker = null, webPool = null;
-  if (beRes.ok) { try { const h = JSON.parse(beRes.text); backendSha = h.buildSha; mailboxSync = h.mailboxSync || null; guards = { ok: h.guardsOk, failed: h.guardsFailed }; queue = h.queue || null; worker = h.worker || null; webPool = h.pool || null; } catch { backendErr = "unparseable /health"; } }
+  let backendSha = null, backendErr = null, mailboxSync = null, guards = null, queue = null, worker = null, webPool = null, dbTls = null;
+  if (beRes.ok) { try { const h = JSON.parse(beRes.text); backendSha = h.buildSha; mailboxSync = h.mailboxSync || null; guards = { ok: h.guardsOk, failed: h.guardsFailed }; queue = h.queue || null; worker = h.worker || null; webPool = h.pool || null; dbTls = h.dbTls || null; } catch { backendErr = "unparseable /health"; } }
   else backendErr = beRes.error || `HTTP ${beRes.status}`;
 
   const feRes = await fetchText(FRONTEND);
@@ -285,6 +295,11 @@ if (require.main === module) (async () => {
   const lr = (() => { const { run, summary } = lastLoadRun(); return run === undefined ? { level: null, detail: "gh could not list the runs" } : loadReport(run, summary); })();
   row("load", lr.level === "ok" ? `${GREEN}ok${RESET}` : lr.level === "red" ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, lr.detail);
   row("db pool", pr.level === "ok" ? `${GREEN}ok${RESET}` : pr.level === "yellow" ? `${YELLOW}over 80% of the pooler${RESET}` : pr.level === "red" ? `${RED}OVER THE POOLER${RESET}` : `${YELLOW}unverified${RESET}`, pr.detail);
+
+  // REDTEAM-2: the database's certificate. A warning, never a smoke failure:
+  // "unverified" is how prod ran before the CA was set (docs/needs-jonathan/REDTEAM-2.md).
+  const tr = dbTlsReport(backendSha ? dbTls : undefined);
+  row("db certificate", tr.level === "ok" ? `${GREEN}verified${RESET}` : tr.level === "red" ? `${RED}${tr.word}${RESET}` : `${YELLOW}${tr.word}${RESET}`, tr.detail);
 
   // STAGE-1: staging, beside prod
   const stagingEnabled = (process.env.STAGING_ENABLED || (ghCli(["variable", "get", "STAGING_ENABLED"]) || "")).trim() === "true";

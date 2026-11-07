@@ -37,9 +37,11 @@ function foldedPattern(q) {
 
 // The condition over an unaliased `donors` row. `p` is foldedPattern(...).
 // Phone digits are matched by the callers, which already do it their way.
-function personMatchSql(p) {
+// REDTEAM-2: the text is a constant (it never depends on what was typed);
+// only the seven arguments do. A caller composing SQL uses PERSON_MATCH_SQL.
+const PERSON_MATCH_SQL = (() => {
   const E = "ESCAPE '\\'";
-  const sql = `(${FOLD("donors.name")} LIKE ? ${E} OR ${FOLD("donors.email")} LIKE ? ${E}
+  return `(${FOLD("donors.name")} LIKE ? ${E} OR ${FOLD("donors.email")} LIKE ? ${E}
      OR ${FOLD("donors.contact_name")} LIKE ? ${E} OR ${FOLD("donors.employer")} LIKE ? ${E}
      OR lower(COALESCE(donors.phone,'')) LIKE ? ${E}
      OR EXISTS (SELECT 1 FROM households pmh WHERE pmh.org_id = donors.org_id AND pmh.id = donors.household_id AND ${FOLD("pmh.name")} LIKE ? ${E})
@@ -48,7 +50,9 @@ function personMatchSql(p) {
                    AND pmo.id = CASE WHEN pmr.donor_id_a = donors.id THEN pmr.donor_id_b ELSE pmr.donor_id_a END
                  WHERE pmr.org_id = donors.org_id AND (pmr.donor_id_a = donors.id OR pmr.donor_id_b = donors.id)
                    AND lower(COALESCE(pmo.kind,'')) IN ('organization','organisation') AND ${FOLD("pmo.name")} LIKE ? ${E}))`;
-  return { sql, args: [p, p, p, p, p, p, p] };
+})();
+function personMatchSql(p) {
+  return { sql: PERSON_MATCH_SQL, args: [p, p, p, p, p, p, p] };
 }
 
 // WALKB-1 · A RESULT SAYS WHY IT MATCHED. A search for "Marlowe" found seven
@@ -57,9 +61,9 @@ function personMatchSql(p) {
 // that matched, in the same order the rule above reads, as "field\tvalue"
 // ("name", "email\tmarlowe@…", "household\tThe Marlowe Hart household").
 // `donors` is unaliased, as above. Arguments: p, repeated per branch.
-function personMatchReasonSql(p) {
+const PERSON_MATCH_REASON_SQL = (() => {   // REDTEAM-2: a constant, as PERSON_MATCH_SQL
   const E = "ESCAPE '\\'";
-  const sql = `(CASE
+  return `(CASE
       WHEN ${FOLD("donors.name")} LIKE ? ${E} THEN 'name'
       WHEN ${FOLD("donors.email")} LIKE ? ${E} THEN 'email' || chr(9) || donors.email
       WHEN ${FOLD("donors.contact_name")} LIKE ? ${E} THEN 'contact' || chr(9) || donors.contact_name
@@ -75,7 +79,9 @@ function personMatchReasonSql(p) {
             AND lower(COALESCE(pmo.kind,'')) IN ('organization','organisation') AND ${FOLD("pmo.name")} LIKE ? ${E} LIMIT 1),
         'phone')
     END)`;
-  return { sql, args: [p, p, p, p, p, p, p] };
+})();
+function personMatchReasonSql(p) {
+  return { sql: PERSON_MATCH_REASON_SQL, args: [p, p, p, p, p, p, p] };
 }
 
 // The words a person reads for a reason: "email: marlowe@harbor.org".
@@ -88,4 +94,4 @@ function matchReasonWords(reason) {
   return value ? `${label}: ${value}` : label;
 }
 
-module.exports = { FOLD, fold, foldedPattern, personMatchSql, personMatchReasonSql, matchReasonWords };
+module.exports = { FOLD, fold, foldedPattern, personMatchSql, personMatchReasonSql, PERSON_MATCH_SQL, PERSON_MATCH_REASON_SQL, matchReasonWords };

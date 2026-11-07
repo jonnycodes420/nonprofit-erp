@@ -792,6 +792,9 @@ function healthBody() {
     // STAGE-1: "staging" or "production" (server/shared/stagingEnv.js).
     env: require("../shared/stagingEnv").envName(),
     status: "ok", version: "1.1.0", buildSha: BUILD_SHA, db: dbReady, sentry: !!process.env.SENTRY_DSN,
+    // REDTEAM-2: is the database's certificate checked? "verified" (a CA is set),
+    // "unverified" (encrypted, not checked), "off" (DB_SSL=disable). npm run status warns on unverified.
+    dbTls: (() => { try { return require("../shared/dbTls").tlsMode(); } catch { return "misconfigured"; } })(),
     billing: { mode: billingModeStatus.mode, ok: billingModeStatus.ok, checked: billingModeStatus.checked },
     publicUrl: { url: pu.url, fromEnv: pu.fromEnv },
     // BUILD-45 (F-2): non-secret count of internal notifications the email
