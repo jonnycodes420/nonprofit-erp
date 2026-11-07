@@ -452,6 +452,7 @@ async function seedOrg(o, tag) {
   // no gift backs was read as a wrong number by any suite that checks every
   // org in a shard's database (numbers1-foot §1, docs/defects.md).
   await q(DONOR_SUMMARY_UPDATE(), [o]);
+  await require("./lib/matrixMoreIds").seed(q, o, tag);   // REDTEAM-1: rows for the routes the inventory newly reads
 }
 
 // ── The cross-tenant resolver: (path segment or param name) → org B's row id.
@@ -459,6 +460,7 @@ async function seedOrg(o, tag) {
 // whose params don't resolve must be added here or to PARAM_EXEMPT — that
 // forced decision IS the coverage gate.
 function bResolver(routePath, param) {
+  { const v = require("./lib/matrixMoreIds").resolve(routePath, param, B); if (v !== undefined) return v; }
   const seg1 = routePath.split("/").filter(Boolean)[0] || "";
   // INT-5 — two different kinds of row live under /webhooks, so the first path
   // segment is not enough to say which id a probe needs: /webhooks/:id is an
@@ -719,6 +721,11 @@ const PARAM_EXEMPT = [
   // NOTE /mailbox/never-log/:id is deliberately NOT exempt: its param is a real
   // row id and it resolves through bResolver onto org B's own entry.
   [/^\/mailbox\/:provider\//, "param is a PROVIDER KEY from a fixed registry, not a row id — the wall is per-USER, see int4-mailbox.test.js §7"],
+  // REDTEAM-1: params that name no row of any org, so there is no org B value to aim at.
+  [/^\/mail-types\/:key/, "param is an automatic-email TYPE KEY from the fixed registry in mailTypes.js; the setting is the token's own org's row"],
+  [/^\/groups\/starters\/:key$/, "param is a STARTER GROUP key from a fixed registry; preview and create act on the token's own org"],
+  [/^\/atlas\/progress\/:key$/, "param is a progress key in server/atlas/progress.js, an in-memory map keyed by the token's own org and user; there is no row"],
+  [/^\/capture\/:id\/settled$/, "TEST_MODE-only hook that awaits an in-memory promise and returns no row; 404 for every id in production"],
 ];
 
 function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, opts); }

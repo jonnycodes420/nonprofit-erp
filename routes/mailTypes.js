@@ -188,11 +188,13 @@ app.post("/mail-types/:key", requireAuth, requireAdmin, wrap(async (req, res) =>
 }));
 
 // ── Going out ────────────────────────────────────────────────────────────
+// REDTEAM-1: a from/to that is not a day (a quote, a word) was a 500; it is no bound.
+const dayOrNull = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : null;
 app.get("/going-out", requireAuth, wrap(async (req, res) => {
-  res.json(await GOING.goingOut(ctx, req.user.orgId, { type: req.query.type || null, from: req.query.from || null, to: req.query.to || null }));
+  res.json(await GOING.goingOut(ctx, req.user.orgId, { type: req.query.type || null, from: dayOrNull(req.query.from), to: dayOrNull(req.query.to) }));
 }));
 app.get("/going-out/sent.csv", requireAuth, wrap(async (req, res) => {
-  const out = await GOING.sentRows(ctx, req.user.orgId, { type: req.query.type || null, from: req.query.from || null, to: req.query.to || null, limit: 10000 });
+  const out = await GOING.sentRows(ctx, req.user.orgId, { type: req.query.type || null, from: dayOrNull(req.query.from), to: dayOrNull(req.query.to), limit: 10000 });
   const esc = require("../server/shared/csvCell").csvCell;   // REDTEAM-1: a subject or name can start with =
   const lines = [["Sent", "Email", "Person", "Subject"].join(",")]
     .concat(out.map(r => [new Date(r.sentAt).toISOString(), r.typeName, r.name || "", r.subject || ""].map(esc).join(",")));

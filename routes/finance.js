@@ -4844,7 +4844,7 @@ app.get("/finance/audit-log", requireAuth, wrap(async (req, res) => {
   if (action) { sql += " AND action = ?"; params.push(action); }
   if (entityType) { sql += " AND entity_type = ?"; params.push(entityType); }
   sql += " ORDER BY created_at DESC LIMIT ?";
-  params.push(parseInt(limit));
+  params.push(Math.min(Math.max(parseInt(limit, 10) || 200, 1), 1000));   // REDTEAM-1: a non-number was a 500
   // FIX-12 Part 4: names are looked up as the log is read, never stored.
   const rows = await require("../middleware/auditTrail").resolveAuditNames(await query(sql, params), req.user.orgId);
   res.json(rows.map(r => ({
