@@ -247,7 +247,7 @@ const forgetLists = (w) => { for (const fn of writeHooks) { try { fn(w || {}); }
 // the worker's marks on the bell's read) forgets what is held exactly as a
 // write does, so the views that re-read for it are not handed the old answer
 // (the Tasks badge's kept count did that for 60 seconds after Atlas added one).
-onAnyChange(c => { if (c.source !== "write") { kept.clear(); parked.clear(); forgetLists({ path: null, method: "TOLD", phase: "after" }); } });
+onAnyChange(c => { if (c.source !== "write") { kept.clear(); parked.clear(); handed.clear(); inFlight.clear(); forgetLists({ path: null, method: "TOLD", phase: "after" }); } });   // STALE-2: as a write does (handed and in flight too)
 
 export async function apiFetch(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();

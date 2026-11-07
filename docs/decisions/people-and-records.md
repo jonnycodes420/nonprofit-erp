@@ -495,6 +495,12 @@ Backend, Whisper transcription, and extraction logic are fully built and functio
   stage or award on the funder, joined or left a household) writes one `interactions` row through it, keyed
   by `metadata.line_key` so the same act never writes two. System lines use type `activity`, which is not
   a contact type: a line Steward wrote never counts as somebody talking to the donor. (WIRE-1)
+- **An event's lines on a profile are the guest row as it stands now.** A status change rewrites the
+  attendance line ("Came to X." / "Registered for X and did not come.") or removes it and clears
+  `attendance_logged_at`; removing a guest (one, or the bulk Remove) takes its `event_registration` and
+  `event_attendance` lines into the trash with it, and the guest's Undo brings them back; deleting an event
+  drops any line still naming it. One module: `server/events/attendanceLines.js`. A new door that changes a
+  guest's status calls `syncAttendanceLine`. (STALE-2)
 - **A person arriving by any door is matched by `personMatch.js findPersonId`.** Email first (lower-cased,
   the oldest record when two share it), then a name only when exactly one person has it and no other email.
   Event registration, staff add-attendee, and the volunteer doors use it; the donation webhook, mailbox,

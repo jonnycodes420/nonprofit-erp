@@ -21,6 +21,8 @@
 //   §3 a next step snoozed to revisit later, on the profile's Thread, leaves
 //      the Tasks badge
 //      (W-1107-Volunteers-15)
+//   §4 hours logged elsewhere move an open profile's volunteer panel
+//      (W-1107-Volunteers-08)
 //
 // Planted defects (each turned this suite red, then was taken back out; the
 // STALE-2 report names them):
@@ -70,7 +72,7 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
 (async () => {
   const tok = await freshOrg();
   const today = civilToday();
-  for (const [id, name] of [["ada", "Ada Quill"], ["bram", "Bram Oduya"], ["cleo", "Cleo Varga"], ["dev", "Devi Halloran"], ["eli", "Eli Strand"], ["fay", "Fay Morrow"], ["gus", "Gus Penhale"]]) await person(id, name);
+  for (const [id, name] of [["ada", "Ada Quill"], ["bram", "Bram Oduya"], ["cleo", "Cleo Varga"], ["dev", "Devi Halloran"], ["eli", "Eli Strand"], ["fay", "Fay Morrow"], ["gus", "Gus Penhale"], ["hal", "Hal Wexford"]]) await person(id, name);
 
   // ── §A · THE ATTENDANCE LINE FOLLOWS THE GUEST ROW ─────────────────────────
   const evA = await api("POST", "/events", tok, { name: "Heron Lantern Walk", date: today, eventType: "community", description: "A walk." });
@@ -148,6 +150,7 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
   await api("POST", `/events/${E2}/attendees`, tok, { donorIds: [P("eli")] });
   await api("POST", `/donors/${P("fay")}/gifts`, tok, { amount: 400, date: today, type: "cash", eventId: E2 });
   const th = await api("POST", `/donors/${P("gus")}/threads`, tok, { label: "Call Gus about the gala", due: today, ownerId: ME });
+  await api("POST", `/donors/${P("hal")}/volunteer-hours`, tok, { date: today, hours: 2, role: "Shelving" });
   ok("browser fixtures: two events, a guest, an event gift and a next step due today", !!E1 && !!E2 && th.status < 300, { E1, E2, thread: th.status });
 
   const why = (() => {
@@ -237,6 +240,24 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
     await page.locator('[role="menu"]').getByRole("button", { name: "Snooze", exact: true }).click();
     const moved = await until(([n]) => { const el = document.querySelector('[data-testid="tasks-rail-badge"]'); return !el || Number(el.textContent || 0) === n - 1; }, [b0]);
     ok("§3 the badge drops by one, with no reload (W-1107-Volunteers-15)", moved, { before: b0, after: await text(badge) });
+  });
+
+  // ── §4 · HOURS LOGGED ELSEWHERE MOVE THE OPEN VOLUNTEER PANEL ─────────────
+  // The kiosk, the Volunteers page or Atlas log hours while this profile is
+  // open; Atlas's told() announces it on the one channel (the bell's worker
+  // marks do the same for the kiosk), and the panel's total re-reads.
+  await open(`/donors/${P("hal")}`);
+  await noReload("§4", async () => {
+    const tot = '[data-testid="volunteer-total"]';
+    await page.locator('[data-tab="giving"]').first().click({ timeout: 20000 });   // the panel sits on Giving
+    await page.locator(tot).first().waitFor({ timeout: 20000 });
+    const before = await text(tot);
+    const logged = await api("POST", `/donors/${P("hal")}/volunteer-hours`, tok, { date: today, hours: 3, role: "Sorting" });
+    ok("§4 three more hours are logged elsewhere", logged.status === 201, { status: logged.status, body: logged.body && (logged.body.error || "") });
+    // Atlas or Tell Steward logged it: VOICE-4's told(), which may have changed anything.
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("steward:told", { detail: {} })));
+    const moved = await until(([b]) => { const el = document.querySelector('[data-testid="volunteer-total"]'); return el && el.textContent.replace(/\s+/g, " ").trim() !== b; }, [before]);
+    ok("§4 the panel's hours move, with no reload (W-1107-Volunteers-08)", moved, { before, after: await text(tot) });
   });
 
   await browser.close();
