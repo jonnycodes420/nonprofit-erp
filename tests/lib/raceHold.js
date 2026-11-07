@@ -42,8 +42,8 @@ async function waiters(q, key = null) {
 
 // Wait until `pred()` is true, or `ms` pass. Returns whether it came true.
 async function until(pred, ms = 5000, every = 10) {
-  const end = Date.now() + ms;
-  while (Date.now() < end) {
+  const end = performance.now() + ms;   // elapsed time, not the date
+  while (performance.now() < end) {
     if (await pred()) return true;
     await new Promise(r => setTimeout(r, every));
   }

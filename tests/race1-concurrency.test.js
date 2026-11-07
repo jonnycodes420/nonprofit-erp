@@ -20,14 +20,14 @@
 "use strict";
 
 const bcrypt = require("bcryptjs");
-const { ok, summary, q, closeDb, login, api } = require("./helpers");
+const { ok, summary, q, closeDb, login, api, civilToday } = require("./helpers");
 const { drainQueue } = require("./lib/drainQueue");
 const { hold, waiters, until } = require("./lib/raceHold");
 
 const ORG = "org_race1";
 const ADMIN = "admin@race1.local";
 const ROUNDS = Math.max(1, Number(process.env.RACE1_ROUNDS) || (process.env.CI ? 50 : 100));   // CI: 50 keeps the suite well under 90 s
-const t0 = Date.now();
+const t0 = performance.now();   // elapsed time, not the date
 
 async function freshOrg() {
   const orgTables = (await q(`SELECT table_name FROM information_schema.columns
@@ -179,7 +179,7 @@ async function receipts(tok) {
 async function gifts(tok) {
   const who = "d_race1_gift";
   await person(who, "Race Gift");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = civilToday();
   const rs = await ten(() => api("POST", `/donors/${who}/gifts`, tok, { amount: 40, date: today, idempotencyKey: "race1-same-press" }));
   await drainQueue(q, { orgId: ORG });
   const g = await q(`SELECT id FROM gifts WHERE org_id=$1 AND donor_id=$2`, [ORG, who]);
@@ -205,7 +205,7 @@ async function gifts(tok) {
   await yearly(tok);
   await receipts(tok);
   await gifts(tok);
-  console.log(`race1: ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+  console.log(`race1: ${((performance.now() - t0) / 1000).toFixed(1)} s`);
   await closeDb();
   summary();
 })().catch(async e => { console.error(e); await closeDb().catch(() => {}); process.exit(1); });
