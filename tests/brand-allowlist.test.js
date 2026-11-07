@@ -133,7 +133,7 @@ const EXCLUDE = new Set([
   "pages/AdminDashboard.jsx",
   "pages/Portal.jsx",
   "components/PortalWidgets.jsx",
-  "pages/PortalEditor.jsx",
+  "pages/PortalEditor.jsx", "pages/PortalEditorBlockOptions.jsx",   // PAGES-1: split from PortalEditor.jsx, the same editor
   "components/Events.jsx", "components/Board.jsx", "components/Volunteers.jsx",
   "components/Programs.jsx", "components/AnnualFund.jsx",
 ]);

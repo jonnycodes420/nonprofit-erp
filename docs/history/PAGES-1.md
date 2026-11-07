@@ -10,6 +10,8 @@
 
 **Templates.** Giving: Story first, Campaign, Simple (each also sets the layout). Volunteer: One-day event, Ongoing roles, Group service day. Membership: Story first, Campaign, Simple. A template's photo is one of Steward's from the org's mission group and its prompts are hints (WALKB-1), so each looks finished with only the logo and colours.
 
-**Left.** PortalEditor.jsx is 1,480 lines (History moved to `PageHistoryPanel.jsx`; the rail helpers are the next to move). The FAQ and Stats validators refuse an empty block, so a template cannot carry them empty, and a freshly added FAQ block shows "Save failed" until a question is typed (unchanged from main). Public block pages do not install PERF-4's app mark; the test times them to their own ready marker on the same 150 ms round trip.
+**Size.** PortalEditor.jsx is 1,192 lines: History moved to `PageHistoryPanel.jsx`, the block options and the editor palette to `PortalEditorBlockOptions.jsx` (scoped out of brand-allowlist with PortalEditor, the same editor).
+
+**Left.** The FAQ and Stats validators refuse an empty block, so a template cannot carry them empty, and a freshly added FAQ block shows "Save failed" until a question is typed (unchanged from main). Public block pages do not install PERF-4's app mark; the test times them to their own ready marker on the same 150 ms round trip.
 
 Test: `tests/pages1.test.js` (API and browser legs).
