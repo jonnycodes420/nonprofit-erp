@@ -33,12 +33,16 @@ import { safeBack } from "../lib/appUrls";
 // GIVE-3 — the preview IS the giving page: the same component a donor opens,
 // drawn from the draft's payload, so the two cannot drift apart again.
 import Donate from "./Donate";
-import { LAYOUTS, TRUST_KEYS, TRUST_LABELS, normalizeDesign, wayNeeds } from "../../../shared/givingPageDesign.js";
+import { LAYOUTS, TRUST_KEYS, TRUST_LABELS, normalizeDesign, wayNeeds, layoutFor } from "../../../shared/givingPageDesign.js";
 import { hintsLeft, FILL_IN_NOTE } from "../../../shared/placeholderCopy.js";
 // EDITOR-1 — the one editor shell every donor-facing thing opens in.
 import StewardEditor, { RailSection, DeviceFrame, RailPhoto, PhotoTools, useNarrow, stockPhotoForBlock } from "../components/StewardEditor";
 import InlineText, { INLINE_CSS } from "../components/InlineText";
 import { retryImport } from "../lib/lazyRetry";
+import PageThemeRail from "../components/PageThemeRail";
+import HistoryPanel from "../components/PageHistoryPanel";
+import WidgetOptions, { E, btnQuiet, inp, lbl } from "./PortalEditorBlockOptions";   // PAGES-1: split out (file size)   // PAGES-1: moved to its own module (file size)        // PAGES-1: the page's own theme
+import { pageVarsFor, PAGE_BUTTON_CSS } from "./VolunteerPage";   // PAGES-1: the same theme CSS as the public page
 
 // Part 3: Steward's photos, opened from the cover and from a photo block.
 const LazyStockPicker = lazy(() => retryImport(() => import("../components/StockPhotoPicker")));
@@ -64,26 +68,6 @@ const SAMPLE_IMPACT = [{
 const WIDGET_META = Object.fromEntries(WIDGETS.map(w => [w.key, { label: w.label, hint: w.hint }]));
 const widgetTypesHere = surface => typesForSurface(surface);
 
-const E = {
-  ink: "#0f1a12", cream: "#f0ede6", gold: "#c9a84c", bg3: "#dcd8cc", terra: "#8a3a24", green: "#0d5c3a",
-  // The editor chrome's own four, named rather than repeated thirty-four times.
-  line: "#3a4a3e", muted: "#6b6b64", panel: "#1b2a20", preview: "#1a6b4a",
-
-  // FIX-2 C — named here once, where they were inline.
-  white: "#ffffff",
-  paper: "#faf9f6",
-  hair: "#e7e4dc",
-  editInk: "#101a13",
-  editPanel2: "#2a3a2e",
-  sage: "#8fa896",
-  terra100: "#f6e3dd",
-  editGround: "#f7f5ef",
-  editLine: "#e0dcd0",
-  body: "#1c1c1a",
-};
-const btnQuiet = { background: "transparent", color: E.cream, border: "1px solid " + E.line, borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" };
-const inp = { width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: 13, border: "1px solid " + E.bg3, borderRadius: 8, fontFamily: "inherit" };
-const lbl = { fontSize: 11, fontWeight: 700, color: E.muted, textTransform: "uppercase", letterSpacing: "0.06em", margin: "10px 0 4px" };
 // GIVE-EDIT-1 — the Details rail and the form preview.
 const money0 = n => "$" + Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const FREQ_LABEL = { once: "One-time", monthly: "Monthly", annual: "Annual" };
@@ -215,6 +199,7 @@ export default function PortalEditor() {
   const [camps, setCamps] = useState([]);
   const [impactUpdates, setImpactUpdates] = useState([]); // the org's REAL published updates (BUILD-55)
   const [volData, setVolData] = useState(null);       // VOL-PAGE-1: the programme's live roles, shifts and numbers
+  const [memData, setMemData] = useState(null);       // PAGES-1: a membership page's levels and member count
   // GIVE-EDIT-1 — `?form=org` edits the org's own donation form in this same
   // editor; `?page=gp_…` a giving or volunteer page; nothing, the portal.
   const editorParams = new URLSearchParams(window.location.search);
@@ -252,6 +237,8 @@ export default function PortalEditor() {
   // which surface it is, and with it which widgets the palette may offer.
   const surface = isOrgForm ? "orgform" : givingPageId ? (meta?.surface || "give") : "portal";
   const isVolunteer = surface === "volunteer";
+  const isMembership = surface === "membership";       // PAGES-1
+  const isBlockPage = isVolunteer || isMembership;     // a page drawn only from blocks
   const apiBase = isOrgForm ? "/org-form/page" : givingPageId ? `/giving-pages/${givingPageId}/page` : "/portal-page";
   const [formPosition, setFormPosition] = useState("top");
   const [selected, setSelected] = useState(null);
@@ -287,7 +274,7 @@ export default function PortalEditor() {
       const s0 = d.draftSettings || d.settings || null;
       dsRef.current = s0; setDs(s0);
       // A volunteer page keeps the phone first.
-      if (d.surface === "volunteer") setDevice("phone");
+      if (d.surface === "volunteer" || d.surface === "membership") setDevice("phone");
       // The preview draws the real programme (org content, never a person's data).
       if (d.surface === "volunteer" && givingPageId) {
         apiFetch(`/giving-pages/${givingPageId}/volunteer-data`).then(setVolData).catch(() => setVolData({}));
@@ -306,6 +293,16 @@ export default function PortalEditor() {
       setImpactUpdates(pub);
     }).catch(() => {});
   }, []);
+
+  // PAGES-1: a membership page's preview draws the levels its form sells and
+  // the member count its goal bar shows, as the public page reads them.
+  useEffect(() => {
+    if (!isMembership || !ps || !ps.org_slug || !givingPageId) return;
+    Promise.all([
+      apiFetch(`/org/${encodeURIComponent(ps.org_slug)}/memberships/public`).catch(() => ({})),
+      apiFetch(`/giving-pages/${givingPageId}/membership-data`).catch(() => ({})),
+    ]).then(([pub, md]) => setMemData({ levels: Array.isArray(pub && pub.levels) ? pub.levels : [], members: (md && md.members) || null }));
+  }, [isMembership, ps && ps.org_slug, givingPageId]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Design mode: appearance/content settings, saved via PUT /portal-settings
   // with the same debounced-autosave chrome as the widget draft. Images ride
@@ -561,7 +558,7 @@ export default function PortalEditor() {
   // duplicate, remove, and a "+" under it to add one there); a text block is
   // typed in where it shows once it is picked; the headline and the story of
   // a giving page are typed in the page; the photo is clicked for its focus.
-  const typeLabel = isVolunteer ? "Volunteer page" : surface === "give" ? "Giving page" : surface === "orgform" ? "Donation form" : "Portal";
+  const typeLabel = isVolunteer ? "Volunteer page" : isMembership ? "Membership page" : surface === "give" ? "Giving page" : surface === "orgform" ? "Donation form" : "Portal";
   const libraryTypes = (Array.isArray(meta?.widgetTypes) && givingPageId ? meta.widgetTypes : widgetTypesHere(surface)).filter(t => WIDGET_META[t]);
   const blockMenu = (afterId) => (
     <div className="se-menu" data-editor-only="" data-testid="editor-block-menu" onClick={e => e.stopPropagation()}>
@@ -670,12 +667,18 @@ ${INLINE_CSS}`;
       {addAfter === "__end" && blockMenu(null)}
     </div>
   );
+  // PAGES-1: what a page's own blocks read (the brand for its header and
+  // footer, its records for the goal bar and the levels), as the public page.
+  const brandForBlocks = { displayName: ps.display_name || "", logo: ps.logo_data || ps.logo_url || null, footerText: ps.footer_text || "",
+    contactEmail: ps.contact_email || "", einLine: ps.ein_line || "", primary: ps.primary_color || "", buttonColor: ps.button_color || "" };
+  const blockCtx = { ...publicPreviewCtx, volData: volData || {}, pageData: isMembership ? (memData || {}) : (volData || {}), surface, editing: true,
+    theme: brandForBlocks, orgSlug: ps.org_slug, orgName: ps.display_name || "" };
   const pageBody = surface === "orgform" ? null : (
     <>
-      {isVolunteer ? (
-        <VolunteerProvider data={volData || {}} orgSlug={ps.org_slug} pageSlug={meta?.pageSlug} preview
+      {isBlockPage ? (
+        <VolunteerProvider data={isVolunteer ? (volData || {}) : {}} orgSlug={ps.org_slug} pageSlug={meta?.pageSlug} preview
           hasGroup={widgets.some(w => w.type === "groupsignup")}>
-          <PageRenderer page={{ widgets: resolvedWidgets, giveSlug: ps.org_slug }} ctx={{ ...publicPreviewCtx, volData: volData || {} }} decorate={decorateWidget} />
+          <PageRenderer page={{ widgets: resolvedWidgets, giveSlug: ps.org_slug }} ctx={blockCtx} decorate={decorateWidget} />
         </VolunteerProvider>
       ) : (
         <PageRenderer page={{ widgets: resolvedWidgets, giveSlug: ps.org_slug }} ctx={publicPreviewCtx} decorate={decorateWidget} />
@@ -685,13 +688,23 @@ ${INLINE_CSS}`;
   );
 
   // The giving page's photo, worked on where it shows.
-  const cover = ds && ds.imageUrl ? { url: ds.imageUrl, ...(ds.imageMeta || {}) } : null;
-  const setCover = p => setSettings(p ? { imageUrl: p.url, imageMeta: { alt: p.alt || "", fx: p.fx ?? 0.5, fy: p.fy ?? 0.5, ...(p.stock ? { stock: true } : {}) } }
-    : { imageUrl: "", imageMeta: { alt: "", fx: 0.5, fy: 0.5 } });
+  // PAGES-1: the rail names the photo the page actually shows. A page with no
+  // cover of its own leads with its Hero block's photo (Donate.jsx draws
+  // `cover || hero.image`), so the rail shows that one, and Replace and Remove
+  // act on it there, instead of saying "No photo" over a photo.
+  const heroPhotoW = (widgets || []).find(w => w && w.type === "hero" && w.image) || null;
+  const coverFromHero = !(ds && ds.imageUrl) && !!heroPhotoW && (surface === "give" || isBlockPage);
+  const cover = ds && ds.imageUrl ? { url: ds.imageUrl, ...(ds.imageMeta || {}) }
+    : coverFromHero ? { url: heroPhotoW.image, alt: heroPhotoW.alt || "", fx: heroPhotoW.fx ?? 0.5, fy: heroPhotoW.fy ?? 0.5 } : null;
+  const setCover = p => {
+    if (coverFromHero) { updateWidget(heroPhotoW.id, p ? { image: p.url, alt: p.alt || "" } : { image: null }); return; }
+    setSettings(p ? { imageUrl: p.url, imageMeta: { alt: p.alt || "", fx: p.fx ?? 0.5, fy: p.fy ?? 0.5, ...(p.stock ? { stock: true } : {}) } }
+      : { imageUrl: "", imageMeta: { alt: "", fx: 0.5, fy: 0.5 } });
+  };
   const choosePhoto = (onPick) => { if (LazyStockPicker) setStockOpen({ onPick }); else askSection("cover"); };
   const photoTools = (has) => (
     <PhotoTools has={has && !!cover} focus={cover ? { fx: Number(cover.fx ?? 0.5), fy: Number(cover.fy ?? 0.5) } : null}
-      onFocus={(fx, fy) => setSettings({ imageMeta: { ...(ds.imageMeta || {}), fx, fy } })}
+      onFocus={(fx, fy) => (coverFromHero ? updateWidget(heroPhotoW.id, { fx, fy }) : setSettings({ imageMeta: { ...(ds.imageMeta || {}), fx, fy } }))}
       onReplace={() => choosePhoto(setCover)} onRemove={() => setCover(null)} />
   );
   const heroWidget = widgets.find(w => w.type === "hero") || null;
@@ -705,6 +718,8 @@ ${INLINE_CSS}`;
   // WALKB-1 · A HINT IS THE EDITOR'S. Whatever is still Steward's prompt is named
   // here, and the public page leaves it out until she writes over it.
   // The story field shows only on a page with no text block, so only then is its hint on the page.
+  const pageThemeNow = (ds && ds.design && ds.design.theme) || {};
+  const setPageTheme = t => setSetting("design", { ...((dsRef.current && dsRef.current.design) || {}), theme: t });
   const hintsOnPage = surface === "give" ? hintsLeft({ story: (widgets || []).some(w => w && w.type === "richtext") ? "" : ds?.story, widgets }) : [];
   const realPage = useRealPage ? (
     <div data-testid="real-preview">
@@ -721,9 +736,12 @@ ${INLINE_CSS}`;
   const canvasInner = useRealPage
     ? (device === "desktop" && !narrow ? <ScaledDesktop>{realPage}</ScaledDesktop> : realPage)
     : (
-      <div className={device === "desktop" ? "pe-desktop" : ""} style={{ ...themeVars, background: "var(--pt-bg," + E.paper + ")", flex: 1 }}>
-        <div className={device === "desktop" ? "pe-wrap" : ""} style={{ color: E.body, fontFamily: "var(--pt-sans)", padding: device === "desktop" ? undefined : "18px 20px 60px" }}>
-          {pageHeader}
+      <div className={(device === "desktop" ? "pe-desktop " : "") + (isBlockPage ? "pg-themed" + (pageThemeNow.button === "outline" ? " pg-btn-outline" : "") + (pageThemeNow.sections === "dark" ? " pg-dark" : "") : "")}
+        data-testid={isBlockPage ? "block-page-preview" : undefined}
+        style={{ ...themeVars, ...(isBlockPage ? pageVarsFor({ primary: ps.primary_color, buttonColor: ps.button_color }, pageThemeNow) : {}), background: "var(--pt-bg," + E.paper + ")", flex: 1 }}>
+        {isBlockPage && <style>{PAGE_BUTTON_CSS}</style>}
+        <div className={device === "desktop" ? "pe-wrap" : ""} style={{ color: isBlockPage && pageThemeNow.sections === "dark" ? "#FFFFFF" : E.body, fontFamily: "var(--pt-sans)", padding: device === "desktop" ? undefined : "18px 20px 60px" }}>
+          {!(isBlockPage && widgets.some(w => w.type === "pageheader")) && pageHeader}
           {pageBody}
         </div>
       </div>
@@ -746,16 +764,24 @@ ${INLINE_CSS}`;
     coverSection: (
       <RailSection key="cover" id="cover" testid="rail-cover" title="Cover photo" focus={at("cover")}>
         <RailPhoto value={cover} name={ds.title || meta?.pageTitle || ""} testid="editor-cover-photo" onChange={setCover}
+          emptyNote="No photo yet. Donors see your logo here if you have one, and nothing if you don't."
           onLibrary={LazyStockPicker ? () => choosePhoto(setCover) : undefined} />
+        {cover && livePayload && livePayload.givingPage && layoutFor(livePayload.givingPage.design, livePayload.givingPage) === "simple" && <div data-testid="cover-hidden-note" style={{ fontSize: 12, color: E.muted, marginTop: 6 }}>The Simple layout shows no photo. Pick Story or Campaign in Layout to show it.</div>}
+        {coverFromHero && <div data-testid="cover-from-hero" style={{ fontSize: 12, color: E.muted, marginTop: 6 }}>This is the Hero block's photo, which leads the page while the page has no cover of its own.</div>}
       </RailSection>
     ) }));
   if (surface === "orgform" && ds) sections.push(
     <RailSection key="details" id="details" title="Details" focus={at("details")}><OrgFormRail ds={ds} onSet={setSetting} errors={dsErrors} saveState={dsSave} /></RailSection>
   );
-  if (isVolunteer && ds) sections.push(
+  if (isBlockPage && ds) sections.push(
     <RailSection key="cover" id="cover" testid="rail-cover" title="Cover photo" focus={at("cover")}>
       <RailPhoto value={cover} name={ds.title || meta?.pageTitle || ""} testid="editor-cover-photo" onChange={setCover}
         onLibrary={LazyStockPicker ? () => choosePhoto(setCover) : undefined} />
+    </RailSection>
+  );
+  if ((surface === "give" || isBlockPage) && ds) sections.push(
+    <RailSection key="pagetheme" id="pagetheme" testid="rail-page-theme" title="Page theme" focus={at("pagetheme")} defaultOpen={false}>
+      <PageThemeRail brand={{ primary: ps.primary_color, button: ps.button_color }} theme={pageThemeNow} onChange={setPageTheme} />
     </RailSection>
   );
   if (surface !== "orgform") sections.push(
@@ -782,7 +808,7 @@ ${INLINE_CSS}`;
   const status = saveState === "saving" || dsSave === "saving" ? "Saving draft…" : saveState === "dirty" || dsSave === "dirty" ? "Unsaved edits…"
     : saveState === "error" || dsSave === "error" ? "Save failed" : meta?.publishedAt ? "Draft autosaves · publish when ready" : "Draft autosaves";
   return (
-    <div data-page-root="giving-page-editor" style={{ height: "100vh" }}>{/* SPEED-3: the page-ready mark times the editor from here (lib/pageReady.js) */}
+    <div data-page-root="giving-page-editor" style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column" }}>{/* SPEED-3: the page-ready mark times the editor from here (lib/pageReady.js) */}
       <style>{`
         .pe-wrap { max-width: 860px; margin: 0 auto; padding: 18px 20px 64px; }
         @media (min-width: 1280px) {
@@ -935,261 +961,6 @@ function DesignRail({ ps, onSet, note }) {
   );
 }
 
-function WidgetOptions({ w, funds, camps, volData, onChange, onClose }) {
-  // EMAIL-1: the media library, shared with emails. `picker` is
-  // { kind, onPick } while the picker is open; picking fills the widget with
-  // the item's /portal-assets path (and its words where the widget has them),
-  // which the draft route stores as it is. The upload beside it still works.
-  const [picker, setPicker] = useState(null);
-  const pickerModal = picker && (
-    <MediaPicker kind={picker.kind} onClose={() => setPicker(null)}
-      onPick={item => { setPicker(null); picker.onPick(item); }} />
-  );
-  const libraryBtn = (kind, onPick) => (
-    <button type="button" data-testid="choose-from-library" onClick={() => setPicker({ kind, onPick })}
-      style={{ ...btnQuiet, color: E.ink, borderColor: E.bg3, marginTop: 6, padding: "6px 12px", fontSize: 12 }}>
-      Choose from your library
-    </button>
-  );
-  const head = (<>{pickerModal}
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-      <div style={{ fontSize: 13, fontWeight: 700 }}>{WIDGET_META[w.type]?.label}</div>
-      <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer", color: E.muted }}>Done ✕</button>
-    </div></>
-  );
-  const imgUploader = (value, set, label = "Photo", onPickItem = null) => (
-    <>
-      <div style={lbl}>{label}</div>
-      {/* FIX-41: the one picture control, as on the cover and every item. */}
-      <PhotoField variant="cover" noAlt value={value || null} name={w.heading || w.caption || ""} testid="widget-photo"
-        onChange={p => set(p ? p.url : null)} />
-      {libraryBtn("photo", item => (onPickItem ? onPickItem(item) : set(item.url)))}
-    </>
-  );
-  // The words a screen reader hears for the photo; filled from the library.
-  const altField = () => (
-    <><div style={lbl}>Describe the photo</div>
-      <input style={inp} value={w.alt || ""} maxLength={300} placeholder="What the photo shows, in a few words"
-        onChange={e => onChange({ alt: e.target.value })} /></>
-  );
-  // BUILD-65 Part 3 — the non-destructive crop for a widget image; same
-  // PortalBannerCrop the banner uses, at the widget ratio, so preview==render.
-  const imgCropper = (value, crop, setCrop) => value ? (
-    <div style={{ marginTop: 8 }}>
-      <PortalBannerCrop url={String(value).startsWith("data:") ? value : resolveAssetUrl(value)}
-        crop={crop || null} ratio={PORTAL_WIDGET_IMAGE_RATIO} onChange={setCrop} />
-    </div>
-  ) : null;
-  switch (w.type) {
-    case "hero": return <>{head}
-      <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
-      <div style={lbl}>Subheading</div><textarea style={{ ...inp, resize: "vertical" }} rows={2} value={w.sub || ""} onChange={e => onChange({ sub: e.target.value })} />
-      <div style={lbl}>Size</div>
-      <select style={inp} value={w.size || "standard"} onChange={e => onChange({ size: e.target.value })}>
-        <option value="standard">Standard</option><option value="tall">Tall</option>
-      </select>
-      {imgUploader(w.image, v => onChange({ image: v, imageCrop: null }), "Photo", item => onChange({ image: item.url, imageCrop: null, alt: item.alt }))}
-      {imgCropper(w.image, w.imageCrop, c => onChange({ imageCrop: c }))}
-      {w.image && altField()}</>;
-    // EDITOR-1: a text block's words are typed in the preview, where they show.
-    case "richtext": return <>{head}
-      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5 }}>Type in the block in the preview. A blank line starts a new paragraph, "## " a heading, "- " a list.</div></>;
-    case "image": return <>{head}
-      {imgUploader(w.image, v => onChange({ image: v, imageCrop: null }), "Photo", item => onChange({ image: item.url, imageCrop: null, alt: item.alt }))}
-      {imgCropper(w.image, w.imageCrop, c => onChange({ imageCrop: c }))}
-      {w.image && altField()}
-      <div style={lbl}>Caption</div><input style={inp} value={w.caption || ""} onChange={e => onChange({ caption: e.target.value })} /></>;
-    case "gallery": return <>{head}
-      <div style={lbl}>Photos</div>
-      {/* Multi-photo site: the images array is not a single preview, so the
-          thumbnail strip renders as children below the drop zone. */}
-      <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact multiple
-        label="Drag photos here, or browse"
-        hint={"Up to 8 photos · " + IMAGE_ACCEPT_LABEL}
-        disabled={(w.images || []).length >= 8}
-        onFile={({ dataUrl }) => onChange({ images: [...(w.images || []), dataUrl].slice(0, 8) })}>
-        {(w.images || []).length > 0 && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-            {(w.images || []).map((u, i) => (
-              <div key={i} style={{ position: "relative" }}>
-                <img src={String(u).startsWith("data:") ? u : resolveAssetUrl(u)} alt="" style={{ height: 48, borderRadius: 6 }} />
-                <button onClick={() => onChange({ images: w.images.filter((_, j) => j !== i) })}
-                  style={{ position: "absolute", top: -6, right: -6, background: E.ink, color: E.white, border: "none", borderRadius: "50%", width: 16, height: 16, fontSize: 9, cursor: "pointer", lineHeight: 1 }}>✕</button>
-              </div>
-            ))}
-          </div>
-        )}
-      </Uploader>
-      {(w.images || []).length < 8 && libraryBtn("photo", item => onChange({ images: [...(w.images || []), item.url].slice(0, 8) }))}</>;
-    case "stats": return <>{head}
-      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5, marginBottom: 4 }}>Your own numbers, in your own words, nothing is computed or invented for you.</div>
-      {(w.items || []).map((it, i) => (
-        <div key={i} style={{ display: "flex", gap: 6, marginTop: 6 }}>
-          <input style={{ ...inp, width: 90 }} placeholder="1,200" value={it.value} onChange={e => onChange({ items: w.items.map((x, j) => j === i ? { ...x, value: e.target.value } : x) })} />
-          <input style={inp} placeholder="meals served" value={it.label} onChange={e => onChange({ items: w.items.map((x, j) => j === i ? { ...x, label: e.target.value } : x) })} />
-          <button onClick={() => onChange({ items: w.items.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: E.terra, cursor: "pointer" }}>✕</button>
-        </div>
-      ))}
-      {(w.items || []).length < 4 && <button onClick={() => onChange({ items: [...(w.items || []), { value: "", label: "" }] })} style={{ ...btnQuiet, color: E.ink, borderColor: E.bg3, marginTop: 8 }}>+ Add stat</button>}</>;
-    case "funds": {
-      // BUILD-55 — manual sort: fundIds IS the display order. Chosen funds
-      // list with ↑ ↓ reorder (the first leads the section); the rest are
-      // one-tap adds below.
-      const chosen = (w.fundIds || []).map(id => funds.find(f => f.id === id)).filter(Boolean);
-      const unchosen = funds.filter(f => !(w.fundIds || []).includes(f.id));
-      const moveFund = (i, dir) => {
-        const next = (w.fundIds || []).slice();
-        const j = i + dir;
-        if (j < 0 || j >= next.length) return;
-        [next[i], next[j]] = [next[j], next[i]];
-        onChange({ fundIds: next });
-      };
-      return <>{head}
-        <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
-        <div style={lbl}>Funds, in display order</div>
-        {chosen.map((f, i) => (
-          <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 6, background: E.white, border: "1px solid "+E.editLine, borderRadius: 8, padding: "6px 8px", marginBottom: 4 }}>
-            <span style={{ flex: 1, fontSize: 13, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
-            <button aria-label={`Move ${f.name} up`} disabled={i === 0} onClick={() => moveFund(i, -1)} style={{ background: "none", border: "1px solid "+E.editLine, borderRadius: 6, width: 24, height: 22, fontSize: 11, cursor: i === 0 ? "default" : "pointer", opacity: i === 0 ? 0.35 : 1 }}>↑</button>
-            <button aria-label={`Move ${f.name} down`} disabled={i === chosen.length - 1} onClick={() => moveFund(i, +1)} style={{ background: "none", border: "1px solid "+E.editLine, borderRadius: 6, width: 24, height: 22, fontSize: 11, cursor: i === chosen.length - 1 ? "default" : "pointer", opacity: i === chosen.length - 1 ? 0.35 : 1 }}>↓</button>
-            <button aria-label={`Remove ${f.name}`} onClick={() => onChange({ fundIds: (w.fundIds || []).filter(x => x !== f.id) })} style={{ background: "none", border: "none", color: E.terra, fontSize: 12, cursor: "pointer" }}>✕</button>
-          </div>
-        ))}
-        {!chosen.length && <div style={{ fontSize: 12, color: E.muted, marginBottom: 4 }}>Nothing selected yet, the first fund you add leads the section.</div>}
-        {chosen.length >= 6 && <div style={{ fontSize: 11.5, color: E.muted, marginBottom: 4 }}>Up to 6 funds show here.</div>}
-        {unchosen.length > 0 && chosen.length < 6 && <>
-          <div style={lbl}>Add a fund</div>
-          {unchosen.map(f => (
-            <button key={f.id} onClick={() => onChange({ fundIds: [...(w.fundIds || []), f.id].slice(0, 6) })}
-              style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "1px dashed " + E.bg3, borderRadius: 8, padding: "6px 10px", marginBottom: 4, fontSize: 13, cursor: "pointer" }}>
-              + {f.name}
-            </button>
-          ))}
-        </>}
-        {!funds.length && <div style={{ fontSize: 12, color: E.muted }}>No funds yet, create them in Finance.</div>}
-        <div style={{ fontSize: 12, color: E.muted, marginTop: 10, lineHeight: 1.5 }}>
-          Each card's Give button carries that fund as the gift's designation.
-        </div>
-      </>;
-    }
-    case "campaign": return <>{head}
-      <div style={lbl}>Campaign</div>
-      <select style={inp} value={w.campaignId || ""} onChange={e => onChange({ campaignId: e.target.value })}>
-        <option value="">Pick a campaign</option>
-        {camps.map(c => <option key={c.id} value={c.id}>{c.donorFacingName || c.name}</option>)}
-      </select>
-      <div style={{ fontSize: 12, color: E.muted, marginTop: 8, lineHeight: 1.5 }}>
-        The story, photo, and goal come from the campaign itself, edit them in Fundraising. A campaign with no donor-facing content shows nothing here.
-      </div></>;
-    case "impact": return <>{head}
-      <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} /></>;
-    case "quote": return <>{head}
-      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5 }}>Type the quote and who said it in the preview.</div></>;
-    case "staff": return <>{head}
-      {(w.members || []).map((m, i) => (
-        <div key={i} style={{ border: "1px solid "+E.editLine, borderRadius: 8, padding: 8, marginTop: 8 }}>
-          <input style={inp} placeholder="Name" value={m.name} onChange={e => onChange({ members: w.members.map((x, j) => j === i ? { ...x, name: e.target.value } : x) })} />
-          <input style={{ ...inp, marginTop: 6 }} placeholder="Role" value={m.role} onChange={e => onChange({ members: w.members.map((x, j) => j === i ? { ...x, role: e.target.value } : x) })} />
-          {imgUploader(m.photo, v => onChange({ members: w.members.map((x, j) => j === i ? { ...x, photo: v } : x) }), "Photo (optional)")}
-          <button onClick={() => onChange({ members: w.members.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: E.terra, fontSize: 12, cursor: "pointer", marginTop: 6 }}>Remove person</button>
-        </div>
-      ))}
-      {(w.members || []).length < 6 && <button onClick={() => onChange({ members: [...(w.members || []), { name: "", role: "", photo: null }] })} style={{ ...btnQuiet, color: E.ink, borderColor: E.bg3, marginTop: 8 }}>+ Add person</button>}
-      <div style={lbl}>Contact email</div><input style={inp} value={w.contactEmail || ""} onChange={e => onChange({ contactEmail: e.target.value })} /></>;
-    case "faq": return <>{head}
-      {(w.items || []).map((it, i) => (
-        <div key={i} style={{ border: "1px solid "+E.editLine, borderRadius: 8, padding: 8, marginTop: 8 }}>
-          <input style={inp} placeholder="Question" value={it.q} onChange={e => onChange({ items: w.items.map((x, j) => j === i ? { ...x, q: e.target.value } : x) })} />
-          <textarea style={{ ...inp, marginTop: 6, resize: "vertical" }} rows={2} placeholder="Answer" value={it.a} onChange={e => onChange({ items: w.items.map((x, j) => j === i ? { ...x, a: e.target.value } : x) })} />
-          <button onClick={() => onChange({ items: w.items.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: E.terra, fontSize: 12, cursor: "pointer", marginTop: 6 }}>Remove</button>
-        </div>
-      ))}
-      {(w.items || []).length < 10 && <button onClick={() => onChange({ items: [...(w.items || []), { q: "", a: "" }] })} style={{ ...btnQuiet, color: E.ink, borderColor: E.bg3, marginTop: 8 }}>+ Add question</button>}</>;
-    case "video": return <>{head}
-      <div style={lbl}>YouTube or Vimeo link</div>
-      <input style={inp} placeholder="https://youtu.be/…" value={w.url || (w.videoId ? `(saved ${w.provider} video)` : "")}
-        onChange={e => onChange({ url: e.target.value, provider: undefined, videoId: undefined })} />
-      {libraryBtn("video", item => onChange({ url: item.url, provider: undefined, videoId: undefined, caption: w.caption || item.title || "" }))}
-      <div style={{ fontSize: 12, color: E.muted, marginTop: 6, lineHeight: 1.5 }}>Only YouTube and Vimeo links work, the video ID is stored, never pasted embed code.</div>
-      <div style={lbl}>Caption</div><input style={inp} value={w.caption || ""} onChange={e => onChange({ caption: e.target.value })} /></>;
-    case "give": return <>{head}
-      <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
-      <div style={lbl}>Button label</div><input style={inp} value={w.buttonLabel || ""} onChange={e => onChange({ buttonLabel: e.target.value })} /></>;
-    // ── VOL-PAGE-1 · the volunteer blocks. Roles, shifts and numbers come
-    // from Volunteers; only headings, choices and the org's own words are set here.
-    case "opportunities":
-    case "shiftpicker": {
-      const opps = (volData && volData.opportunities) || [];
-      const ids = Array.isArray(w.opportunityIds) ? w.opportunityIds : [];
-      const toggleOpp = id => onChange({ opportunityIds: ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id] });
-      return <>{head}
-        <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
-        <div style={lbl}>Roles to show</div>
-        <div style={{ fontSize: 12, color: E.muted, marginBottom: 6, lineHeight: 1.5 }}>Leave them all unticked to show every public role, including ones you add later.</div>
-        {opps.map(o => (
-          <label key={o.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, padding: "4px 0", cursor: "pointer" }}>
-            <input type="checkbox" checked={ids.includes(o.id)} onChange={() => toggleOpp(o.id)} /> {o.name}
-          </label>
-        ))}
-        {!opps.length && <div style={{ fontSize: 12, color: E.muted }}>No public volunteer roles yet. Add one in Volunteers.</div>}
-        <div style={{ fontSize: 12, color: E.muted, marginTop: 10, lineHeight: 1.5 }}>
-          {w.type === "shiftpicker" ? "Shifts, open spots and the waiting list come from Volunteers and update themselves." : "Each role's description, time, skills and place come from Volunteers."}
-        </div></>;
-    }
-    case "volsignup": {
-      const qs = Array.isArray(w.questions) ? w.questions.map(q => (typeof q === "string" ? q : (q && (q.label || q.q)) || "")) : [];
-      const setQs = next => onChange({ questions: next });
-      const flag = (k, text) => (
-        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, padding: "4px 0", cursor: "pointer" }}>
-          <input type="checkbox" checked={w[k] !== false} onChange={e => onChange({ [k]: e.target.checked })} /> {text}
-        </label>
-      );
-      return <>{head}
-        <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
-        <div style={lbl}>Ask for</div>
-        <div style={{ fontSize: 12, color: E.muted, marginBottom: 4 }}>Name, email and a shift are always asked.</div>
-        {flag("askPhone", "Phone")}
-        {flag("askAvailability", "When they can usually help")}
-        {flag("askInterests", "Which roles interest them")}
-        <div style={lbl}>Your own questions (up to 5)</div>
-        {qs.map((q, i) => (
-          <div key={i} style={{ display: "flex", gap: 6, marginTop: 6 }}>
-            <input style={inp} value={q} maxLength={200} placeholder="Do you have a T-shirt size preference?" onChange={e => setQs(qs.map((x, j) => j === i ? e.target.value : x))} />
-            <button aria-label="Remove question" onClick={() => setQs(qs.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: E.terra, cursor: "pointer" }}>✕</button>
-          </div>
-        ))}
-        {qs.length < 5 && <button onClick={() => setQs([...qs, ""])} style={{ ...btnQuiet, color: E.ink, borderColor: E.bg3, marginTop: 8 }}>+ Add a question</button>}
-        <div style={{ fontSize: 12, color: E.muted, marginTop: 10, lineHeight: 1.5 }}>
-          A sign-up finds the person if they are already in Steward, or adds them, and books the shift they chose.
-        </div></>;
-    }
-    case "volwaiver":
-    case "volimpact":
-    case "groupsignup": return <>{head}
-      <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
-      {w.type === "groupsignup" && <><div style={lbl}>Text</div><textarea style={{ ...inp, resize: "vertical" }} rows={3} value={w.text || ""} onChange={e => onChange({ text: e.target.value })} /></>}
-      <div style={{ fontSize: 12, color: E.muted, marginTop: 10, lineHeight: 1.5 }}>
-        {w.type === "volwaiver" ? "Which roles ask for a waiver or a background check comes from each role in Volunteers."
-          : w.type === "volimpact" ? "Hours served this year and the volunteer roster are counted from your records when the page is opened, never typed in."
-          : "Adds a group option to the sign-up form: the group's name, kind, size and the leader's phone."}
-      </div></>;
-    case "volquote": return <>{head}
-      <div style={lbl}>Their words</div>
-      <textarea style={{ ...inp, resize: "vertical" }} rows={3} value={w.text || ""} maxLength={500} placeholder="Add a quote from one of your volunteers" onChange={e => onChange({ text: e.target.value })} />
-      <div style={lbl}>Their name</div><input style={inp} value={w.name || ""} maxLength={120} onChange={e => onChange({ name: e.target.value })} />
-      <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, marginTop: 10, cursor: "pointer", lineHeight: 1.5 }}>
-        <input type="checkbox" checked={w.permission === true} onChange={e => onChange({ permission: e.target.checked })} style={{ marginTop: 3 }} />
-        This volunteer said we may share these words with their name.
-      </label>
-      <div style={{ fontSize: 12, color: E.muted, marginTop: 8, lineHeight: 1.5 }}>The quote shows on the page only with this box ticked.</div></>;
-    case "mygiving": return <>{head}
-      <div style={{ fontSize: 12.5, color: E.muted, lineHeight: 1.6 }}>
-        Signed-in donors see their own giving history, recurring gifts, and receipts here.
-        On the public page it shows a sign-in prompt instead. Nothing to configure.
-      </div></>;
-    default: return head;
-  }
-}
 
 // ── GIVE-EDIT-1 · The page's details, its form, its history ──────────────
 // One editor still: the Details rail edits the page's DRAFT settings (the
@@ -1416,45 +1187,6 @@ function OrgFormRail({ ds, onSet, errors, saveState }) {
       {railGroup("Monthly amounts")}
       <AmountList testid="orgform-monthly" valueDollars={ds.monthlyAmounts || []} min={3} max={6} whole onChange={v => onSet("monthlyAmounts", v)} />
       <div style={{ fontSize: 11.5, color: E.muted, marginTop: 10, lineHeight: 1.45 }}>Three to six whole-dollar amounts for each.</div>
-    </div>
-  );
-}
-
-function HistoryPanel({ apiBase, onClose, onRestored }) {
-  const [rows, setRows] = useState(null);
-  const [err, setErr] = useState("");
-  const [busy, setBusy] = useState("");
-  const load = useCallback(() => {
-    apiFetch(apiBase + "/history").then(r => setRows(Array.isArray(r?.versions) ? r.versions : []))
-      .catch(e => { setRows([]); setErr(errorMessage(e, "Could not load the history.")); });
-  }, [apiBase]);
-  useEffect(() => { load(); }, [load]);
-  const when = d => { try { return new Date(d).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return ""; } };
-  const restore = async (v) => {
-    if (!(await askConfirm({ title: `Put version ${v.number} back?`, body: "It goes live straight away, at the same link. The page as it is now stays in this list, so you can come back to it.", yes: "Restore" }))) return;
-    setBusy(v.id); setErr("");
-    try { await apiFetch(`${apiBase}/history/${encodeURIComponent(v.id)}/restore`, { method: "POST", body: "{}" }); await onRestored(); load(); }
-    catch (e) { setErr(errorMessage(e, "Could not restore that version.")); }
-    setBusy("");
-  };
-  return (
-    <div data-testid="history-panel">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-        <div style={{ fontSize: 13, fontWeight: 700 }}>History</div>
-        <button onClick={onClose} aria-label="Close history" style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer", color: E.muted }}>Done ✕</button>
-      </div>
-      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5, marginBottom: 10 }}>Every publish is kept, with who did it and when. Restore puts that version live again.</div>
-      {err && <div style={{ fontSize: 12, color: E.terra, marginBottom: 8 }}>{err}</div>}
-      {rows === null ? <div style={{ fontSize: 12, color: E.muted }}>Loading…</div>
-        : rows.length === 0 ? <div style={{ fontSize: 12.5, color: E.muted }}>Nothing published yet. The first Publish starts the history.</div>
-        : rows.map((v, i) => (
-          <div key={v.id} data-testid="history-row" style={{ background: E.white, border: "1px solid " + E.editLine, borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: E.body }}>Version {v.number}{i === 0 ? " · live now" : ""}</div>
-            <div style={{ fontSize: 12, color: E.muted, marginTop: 2 }}>{v.baseline ? "As it was before the first edit here" : `${v.restoredFrom ? `Restored from version ${v.restoredFrom}` : "Published"} by ${v.byName || "someone on your team"}`} · {when(v.createdAt)}</div>
-            {i > 0 && <button type="button" data-testid="history-restore" disabled={!!busy} onClick={() => restore(v)}
-              style={{ ...btnQuiet, color: E.ink, borderColor: E.bg3, padding: "5px 12px", fontSize: 12, marginTop: 8 }}>{busy === v.id ? "Restoring…" : "Restore"}</button>}
-          </div>
-        ))}
     </div>
   );
 }

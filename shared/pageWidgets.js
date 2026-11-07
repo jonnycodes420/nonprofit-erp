@@ -22,20 +22,25 @@
 // VOL-PAGE-1: the volunteer page is the fourth. It is a giving_pages row with
 // page_kind 'volunteer', built in the same editor on the same brand, so it
 // takes the page blocks that make sense to a volunteer plus its own below.
-export const SURFACES = ["portal", "give", "email", "volunteer"];
+// PAGES-1: the membership page is the fifth, a giving_pages row of page_kind
+// 'membership', built in the same editor from the same blocks, its form the
+// org's membership levels.
+export const SURFACES = ["portal", "give", "email", "volunteer", "membership"];
+// The three donor-facing page kinds, which share PAGES-1's page blocks.
+const PAGES = ["give", "volunteer", "membership"];
 
 // `full` = spans both grid tracks on a wide screen (the old FULL_WIDTH_WIDGETS).
 // `defaults` = what the editor inserts. Both were separate literals before.
 export const WIDGETS = [
-  { key: "hero",     label: "Hero",             hint: "Big photo + headline",        surfaces: ["portal", "give", "email", "volunteer"], full: true,
+  { key: "hero",     label: "Hero",             hint: "Big photo + headline",        surfaces: ["portal", "give", "email", "volunteer", "membership"], full: true,
     defaults: { heading: "", sub: "", image: null, alt: "", size: "standard" } },
-  { key: "richtext", label: "Rich text",        hint: "Paragraphs, headings, lists", surfaces: ["portal", "give", "email", "volunteer"], full: true,
+  { key: "richtext", label: "Rich text",        hint: "Paragraphs, headings, lists", surfaces: ["portal", "give", "email", "volunteer", "membership"], full: true,
     defaults: { blocks: [{ type: "p", text: "Write something in your own words." }] } },
-  { key: "image",    label: "Image + caption",  hint: "One photo",                   surfaces: ["portal", "give", "email", "volunteer"], full: false,
+  { key: "image",    label: "Image + caption",  hint: "One photo",                   surfaces: ["portal", "give", "email", "volunteer", "membership"], full: false,
     defaults: { image: null, alt: "", caption: "" } },
-  { key: "gallery",  label: "Gallery",          hint: "Up to 8 photos",              surfaces: ["portal", "give", "volunteer"], full: false,
+  { key: "gallery",  label: "Gallery",          hint: "Up to 8 photos",              surfaces: ["portal", "give", "volunteer", "membership"], full: false,
     defaults: { images: [] } },
-  { key: "stats",    label: "Stats",            hint: "Your own numbers",            surfaces: ["portal", "give", "email"], full: false,
+  { key: "stats",    label: "Stats",            hint: "Your own numbers",            surfaces: ["portal", "give", "email", "volunteer", "membership"], full: false,
     defaults: { items: [{ value: "", label: "" }] } },
   { key: "funds",    label: "Programs & funds", hint: "Cards from your real funds",  surfaces: ["portal", "give"], full: false,
     defaults: { heading: "Where you can give", fundIds: [] } },
@@ -43,13 +48,13 @@ export const WIDGETS = [
     defaults: { campaignId: "" } },
   { key: "impact",   label: "Impact feed",      hint: "Your impact updates",         surfaces: ["portal", "give"], full: false,
     defaults: { heading: "What your giving made possible" } },
-  { key: "quote",    label: "Quote",            hint: "A voice from your community", surfaces: ["portal", "give", "email"], full: false,
+  { key: "quote",    label: "Quote",            hint: "A voice from your community", surfaces: ["portal", "give", "email", "volunteer", "membership"], full: false,
     defaults: { text: "", attribution: "" } },
-  { key: "staff",    label: "People & contact", hint: "Faces + a way to reach you",  surfaces: ["portal", "give", "volunteer"], full: false,
+  { key: "staff",    label: "People & contact", hint: "Faces + a way to reach you",  surfaces: ["portal", "give", "volunteer", "membership"], full: false,
     defaults: { members: [{ name: "", role: "", photo: null }], contactEmail: "" } },
-  { key: "faq",      label: "FAQ",              hint: "Questions donors ask",        surfaces: ["portal", "give", "volunteer"], full: false,
+  { key: "faq",      label: "FAQ",              hint: "Questions donors ask",        surfaces: ["portal", "give", "volunteer", "membership"], full: false,
     defaults: { items: [{ q: "", a: "" }] } },
-  { key: "video",    label: "Video",            hint: "YouTube or Vimeo link",       surfaces: ["portal", "give", "email", "volunteer"], full: true,
+  { key: "video",    label: "Video",            hint: "YouTube or Vimeo link",       surfaces: ["portal", "give", "email", "volunteer", "membership"], full: true,
     defaults: { url: "", caption: "" } },
 
   // ── EMAIL-1 · WHAT ONLY AN EMAIL NEEDS ───────────────────────────────────
@@ -127,6 +132,22 @@ export const WIDGETS = [
   { key: "groupsignup", label: "Group sign-up", hint: "For churches, schools and companies", surfaces: ["volunteer"], full: false,
     defaults: { heading: "Bringing a group?", text: "Churches, schools and companies are welcome. Tell us about your group and we will be in touch to plan the day together." } },
 
+  // ── PAGES-1 · ONE PAGE SYSTEM FOR EVERY DONOR-FACING PAGE ────────────────
+  // The header and footer of a volunteer or membership page are the org's
+  // brand and its own facts, filled when the page is opened (a giving page
+  // draws its own, fixed, around the form). The goal bar reads records, never
+  // a typed number: a giving page's gifts toward its goal, a volunteer page's
+  // spots filled on its upcoming shifts, a membership page's members of the
+  // number it is aiming for. The levels block is the membership page's form.
+  { key: "pageheader", label: "Header with logo", hint: "Your logo and name, from your brand", surfaces: ["volunteer", "membership"], full: true,
+    defaults: {} },
+  { key: "goalbar",    label: "Goal bar",         hint: "Progress from your records", surfaces: ["volunteer", "membership"], full: true,
+    defaults: { heading: "", target: null } },
+  { key: "memberlevels", label: "Membership levels", hint: "Each level with Join: the page's form", surfaces: ["membership"], full: true,
+    defaults: { heading: "Become a member" } },
+  { key: "pagefooter", label: "Footer",           hint: "Your name, contact and EIN, from your records", surfaces: ["volunteer", "membership"], full: true,
+    defaults: {} },
+
   // PORTAL ONLY, and each for a reason a giving page cannot satisfy.
   //
   // `give` sends somebody TO a giving page; on the giving page they are already
@@ -143,6 +164,9 @@ export const WIDGETS = [
 export const WIDGET_TYPES = WIDGETS.map(w => w.key);
 const BY_KEY = new Map(WIDGETS.map(w => [w.key, w]));
 
+export function isPageSurface(surface) { return PAGES.includes(surface); }
+// What a goal bar is called on each kind of page.
+export const GOAL_WORDS = { give: "Goal", volunteer: "Spots filled", membership: "Members" };
 export function widgetsForSurface(surface) { return WIDGETS.filter(w => w.surfaces.includes(surface)); }
 export function typesForSurface(surface) { return widgetsForSurface(surface).map(w => w.key); }
 export function defaultWidget(key) {
