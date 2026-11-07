@@ -886,8 +886,9 @@ app.post("/data-health/merges/:id/undo", requireAuth, checkWriteAccess, wrap(asy
       for (const s of m.set_aside || []) {
         await client.query("SAVEPOINT dh_aside");
         try {
-          // REDTEAM-2: the table is one of the two a merge sets aside (sql.id throws on anything else).
-          const tbl = sql.id(s.table, ["donor_relationships", "gift_soft_credits"]);
+          // REDTEAM-2: the table the merge record names (a MERGE_REFS table, or one an older
+          // merge set aside), quoted as a name, so it can only ever be a table.
+          const tbl = sql.ident(s.table);
           await runTx(client, sql`INSERT INTO ${tbl} SELECT * FROM jsonb_populate_record(NULL::${tbl}, ${JSON.stringify(s.row)}::jsonb)`);
           await client.query("RELEASE SAVEPOINT dh_aside");
           if (s.table === "gift_soft_credits" && s.row && s.row.gift_id) resized.add(s.row.gift_id);
