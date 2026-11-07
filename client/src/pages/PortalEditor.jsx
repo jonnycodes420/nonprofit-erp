@@ -712,7 +712,7 @@ ${INLINE_CSS}`;
   // `cover || hero.image`), so the rail shows that one, and Replace and Remove
   // act on it there, instead of saying "No photo" over a photo.
   const heroPhotoW = (widgets || []).find(w => w && w.type === "hero" && w.image) || null;
-  const coverFromHero = !(ds && ds.imageUrl) && !!heroPhotoW && (surface === "give" || isVolunteer);
+  const coverFromHero = !(ds && ds.imageUrl) && !!heroPhotoW && (surface === "give" || isBlockPage);
   const cover = ds && ds.imageUrl ? { url: ds.imageUrl, ...(ds.imageMeta || {}) }
     : coverFromHero ? { url: heroPhotoW.image, alt: heroPhotoW.alt || "", fx: heroPhotoW.fx ?? 0.5, fy: heroPhotoW.fy ?? 0.5 } : null;
   const setCover = p => {
