@@ -730,6 +730,15 @@ export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn,
   const [copied, setCopied] = useState(false);
   const load = () => apiFetch(`/insights/donor/${encodeURIComponent(donorId)}`).then(setD).catch(() => setD(null));
   useEffect(() => { if (donorId) { setD(undefined); load(); } }, [donorId]);
+  // PLEDGES-2 (W-1107-Finance-20X): a payment, write-off or delete re-reads the move, and an
+  // answer the worker is still rebuilding (stale) is read again shortly, at most three times.
+  const staleTries = useRef(0);
+  useChanged(["gift", "pledge"], () => { staleTries.current = 0; if (donorId) load(); });
+  useEffect(() => {
+    if (!(d && d.stale) || staleTries.current >= 3) return undefined;
+    const t = setTimeout(() => { staleTries.current += 1; load(); }, 2500);
+    return () => clearTimeout(t);
+  }, [d]);
   if (d === undefined) return <div data-testid="dp-next-move-loading" style={{ height: 22 }} />;
   // INSIGHTS-2: the org's first Insights are still being built on the worker.
   if (d && d.preparing) return <div data-testid="dp-next-move-preparing" style={{ fontSize: 14, color: T.ink3, padding: "2px 0" }}>{d.sentence}</div>;

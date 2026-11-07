@@ -19,9 +19,12 @@ const routers = {
 };
 // PEOPLE-1: Mark as deceased (server/donors/deceased.js) sits beside the person's links.
 routers.r1.use(require("./deceased").routers.r1);
+// PLEDGES-2: a recurring plan staff record by hand (server/donors/offlinePlans.js).
+routers.r1.use(require("./offlinePlans").routers.r1);
 
 function mount(ctx) {
 require("./deceased").mount(ctx);
+require("./offlinePlans").mount(ctx);
 const {
   NOT_YOURS, PERSON_ONLY_SENTENCE, UNDO_SECONDS, VH_READY, actor, auditShape, checkWriteAccess, crypto,
   donorPhotoUrl, editStamp, figureSources, insertShift, lastName, mayEditLogged, orgOwns, orgToday, orgTz,

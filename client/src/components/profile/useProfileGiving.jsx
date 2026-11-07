@@ -8,6 +8,7 @@ import { errorMessage } from "../../lib/domainError";
 import { askConfirm } from "../ConfirmDialog";
 import { fmtFull } from "../shared";
 import { told } from "../../lib/stewardTold";
+import { useChanged } from "../../lib/changes";
 import { peopleNamed } from "../../lib/people";
 import { orgTodayCivil } from "../../lib/orgToday";
 import { fundBody, fundLinesProblem } from "../gifts/FundField";   // GIFTS-2: a gift split across funds
@@ -56,8 +57,11 @@ export function useProfileGiving({ donor, journey, setJourneyList, setJourneySug
 
   useEffect(()=>{
     if(dpTab==="files")loadMaterials();
-    if(dpTab==="giving"&&!fundAffinity)loadFundAffinity();
+    if(dpTab==="giving"&&(!fundAffinity||fundAffinity.donorId!==donor.id))loadFundAffinity();   // PLEDGES-2: this person's, not the last one's
   },[dpTab,donor.id]);
+  // PLEDGES-2: a payment, a write-off or a delete made anywhere re-reads the
+  // pledges (the Giving tab and the rail read the same answer) and the support panel.
+  useChanged(["gift","pledge"],()=>{loadPledges();if(fundAffinity&&fundAffinity.donorId===donor.id)loadFundAffinity();});
 
   useEffect(()=>{
     // BUILD-32 — attribute gifts to goal'd fundraising campaigns (the ones with
@@ -127,9 +131,9 @@ export function useProfileGiving({ donor, journey, setJourneyList, setJourneySug
     setGiftErr("");
     setGiftSaving(true);
     if(!addGiftIdemRef.current)addGiftIdemRef.current=crypto.randomUUID();
-    try{
-      await apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({
-        ...extras,
+    // PLEDGES-2: a payment above what is left on the pledge asks first (the server's question, in its words).
+    const post=overBalance=>apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({
+        ...extras,overBalance,
         amount:Number(addGiftForm.amount),date:addGiftForm.date,type:addGiftForm.type,
         campaignId:addGiftForm.campaign_id||undefined,notes:addGiftForm.notes,
         ...(addGiftForm.fund?fundBody(addGiftForm.fund):{fund_id:addGiftForm.fund_id}),payment_method:addGiftForm.payment_method,
@@ -137,6 +141,16 @@ export function useProfileGiving({ donor, journey, setJourneyList, setJourneySug
         pledgeId:addGiftForm.pledgeId||undefined,eventId:addGiftForm.eventId||undefined,
         idempotencyKey:addGiftIdemRef.current,
       })});
+    try{
+      try{await post(undefined);}
+      catch(e){
+        if(!(e&&(e.code==="over_balance"||(e.body&&e.body.code==="over_balance"))))throw e;
+        const q=e.body||e,fm=v=>fmtFull(Number(v)||0);
+        const pick=await askConfirm({title:"This is more than is left on the pledge",body:q.sentence,
+          yes:`Record ${fm(q.extra)} as an extra gift`,...((q.choices||[]).includes("reduce")?{alt:`Reduce to ${fm(q.balance)}`}:{}),no:"Go back"});
+        if(!pick){setGiftSaving(false);return;}
+        await post(pick==="alt"?"reduce":"extra_gift");
+      }
       addGiftIdemRef.current=null;
       setAddGiftOpen(false);
       // VOICE-4: every tile re-reads, not only the ones the gift read carries
@@ -166,17 +180,27 @@ export function useProfileGiving({ donor, journey, setJourneyList, setJourneySug
     setPledgeSaving(false);
   };
 
-  const setPledgeStatus=async(id,status)=>{
+  // PLEDGES-2 · A WRITE-OFF IS A MONEY ACTION (W-1107-Finance-30X): a confirm
+  // that states the amount, then an Undo toast. The server writes the audit row.
+  const setPledgeStatus=async(id,status,pl)=>{
     try{
-      await apiFetch(`/pledges/${id}`,{method:"PUT",body:JSON.stringify({status})});
-      loadPledges();
+      let body={status};
+      if(status==="written_off"){
+        const bal=fmtFull(Number(pl&&pl.balance)||0);
+        if(!(await askConfirm({title:`Write off ${bal}?`,body:`${bal} is still owed on this pledge. Writing it off stops the reminders and takes it off what is pledged. You can undo it.`,yes:`Write off ${bal}`,danger:true})))return;
+        body={status,confirmed:true};
+      }
+      await apiFetch(`/pledges/${id}`,{method:"PUT",body:JSON.stringify(body)});
+      told({donorId:donor.id,pledge:true});loadPledges();
+      if(status==="written_off")offerUndo({undoAction:async()=>{await apiFetch(`/pledges/${id}`,{method:"PUT",body:JSON.stringify({status:"open"})});told({donorId:donor.id,pledge:true});loadPledges();}},"write-off",loadPledges);
     }catch(e){alert(errorMessage(e, "Could not update pledge"));}
   };
 
   const deletePledge=async(id)=>{
-        try{
+    if(!(await askConfirm({title:"Delete this pledge?",body:"It comes off this person's record, with its schedule and its line on the timeline. You can undo it.",yes:"Delete pledge",danger:true})))return;
+    try{
       const r=await apiFetch(`/pledges/${id}`,{method:"DELETE"});
-      loadPledges();
+      told({donorId:donor.id,pledge:true});loadPledges();
       offerUndo(r,"pledge",loadPledges);
     }catch(e){alert(errorMessage(e,"The pledge could not be deleted."));}
   };
