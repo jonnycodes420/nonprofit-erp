@@ -773,7 +773,7 @@ async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request
           // SENDS-1: Off means nothing goes out. One draft per step per person, and the enrollment moves on.
           await SENDS_OFF.sequenceStepDraft({ orgId: enr.org_id, enrollmentId: enr.id, donorId: enr.donor_id, stepOrder: step.step_order, subject, body: bodyRaw });
           const nx = steps[enr.current_step + 1];
-          if (nx) await run(`UPDATE sequence_enrollments SET current_step = current_step + 1, next_send_at = NOW() + INTERVAL '${parseInt(nx.delay_days, 10) || 0} days' WHERE id = ?`, [enr.id]);
+          if (nx) await run(`UPDATE sequence_enrollments SET current_step = current_step + 1, next_send_at = NOW() + (?::int * INTERVAL '1 day') WHERE id = ?`, [parseInt(nx.delay_days, 10) || 0, enr.id]);
           else await run("UPDATE sequence_enrollments SET status='completed', completed_at=NOW() WHERE id=?", [enr.id]);
           continue;
         }

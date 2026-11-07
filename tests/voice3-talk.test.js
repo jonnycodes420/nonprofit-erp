@@ -197,7 +197,9 @@ const writes = async () => n(`SELECT ((SELECT COUNT(*) FROM tasks WHERE org_id=$
   // VOICE-4: a reminder is low stakes, so it runs at once and is listed with
   // the one Undo (it waited for Confirm in VOICE-3). Money and personal details
   // still wait (voice4-does-it-all).
-  const tasks = await q(`SELECT id, donor_id, title FROM tasks WHERE org_id=$1 AND donor_id='d_v3_tobias' AND link_kind IS NULL AND voided_at IS NULL`, [ORG]);
+  // SENDS-1 (W-1107-Atlas-06): with nothing open on Tobias, the reminder IS his Thread's next step, and that
+  // step's own task is the one task (it was a task plus a second one from the Thread). Exactly one, either way.
+  const tasks = await q(`SELECT id, donor_id, title FROM tasks WHERE org_id=$1 AND donor_id='d_v3_tobias' AND voided_at IS NULL AND done=0`, [ORG]);
   ok("§4 a reminder runs at once: the task is on Tobias, listed with Undo", plan.ranAlone === true && !!d1.body.memo && tasks.length === 1 && /call Tobias/i.test(tasks[0].title), { ranAlone: plan.ranAlone, tasks });
   const und = await api("POST", `/voice/memos/${d1.body.memo.id}/undo`, tok, {});
   const left = await q(`SELECT 1 FROM tasks WHERE org_id=$1 AND donor_id='d_v3_tobias' AND link_kind IS NULL AND done=0 AND voided_at IS NULL`, [ORG]);
