@@ -130,9 +130,17 @@ export function useProfilePipeline({ donor, setDesignations, refreshSoftCredit, 
     apiFetch(`/donors/${donor.id}/materials`).then(rows=>setMaterials(Array.isArray(rows)?rows:[])).catch(()=>{}).finally(()=>setMatLoading(false));
   };
 
+  // PLEDGES-2 · "WHAT THEY SUPPORT" IS THIS PERSON'S (W-1107-Finance-01X). The
+  // panel loaded only while it was empty, so a profile opened after another kept
+  // the last person's funds, and a slow answer for the last person could land on
+  // this one. The answer is tagged with whose it is, an answer for someone no
+  // longer on screen is dropped, and a switch clears it.
+  const fundFor=useRef(null);
+  useEffect(()=>{fundFor.current=null;setFundAffinity(null);},[donor.id]);
   const loadFundAffinity=()=>{
+    const id=donor.id;fundFor.current=id;
     setFundLoading(true);
-    apiFetch(`/donors/${donor.id}/fund-affinity`).then(r=>setFundAffinity(r||null)).catch(()=>{}).finally(()=>setFundLoading(false));
+    apiFetch(`/donors/${id}/fund-affinity`).then(r=>{if(fundFor.current===id)setFundAffinity(r?{...r,donorId:id}:null);}).catch(()=>{}).finally(()=>{if(fundFor.current===id)setFundLoading(false);});
   };
 
   // Optimistic delete: drop the entry locally right away; on failure, refetch

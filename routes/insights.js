@@ -164,7 +164,13 @@ app.get("/insights/donor/:id", requireAuth, wrap(async (req, res) => {
   if (got.preparing) return res.json({ asOf, preparing: true, stale: false, sentence: got.sentence, unit: null, notGifts: [], move: null, combined: null, rungSentence: null });
   const r = got.result;
   const unit = r.units.find(u => u.ids.includes(d.id)) || null;
-  const move = d.deceased === true ? null : I.nextMoveFor(r, d.id);
+  let move = d.deceased === true ? null : I.nextMoveFor(r, d.id);
+  // PLEDGES-2 (W-1107-Finance-18X): a stored answer the worker has not rebuilt yet never
+  // asks to collect a pledge that was deleted, written off or paid since.
+  if (move && move.item && move.item.pledgeId) {
+    const [live] = await query("SELECT status FROM pledges WHERE id=? AND org_id=?", [move.item.pledgeId, req.user.orgId]);
+    if (!live || live.status !== "open") move = null;
+  }
   // linked records (a family or network she linked) show what they give together
   const rel = await query(`SELECT donor_id_a, donor_id_b FROM donor_relationships WHERE org_id=? AND (donor_id_a=? OR donor_id_b=?) AND relationship_type IN ('family','network')`,
     [req.user.orgId, d.id, d.id]);
