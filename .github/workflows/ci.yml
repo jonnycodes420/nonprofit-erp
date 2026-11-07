@@ -151,13 +151,25 @@ jobs:
     if: needs.tree-check.outputs.skip != 'true'
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install Semgrep (pinned)
         run: pip install --quiet semgrep==1.184.0
-      - name: Semgrep gate (ERROR findings fail)
-        run: SEMGREP_JOBS=4 bash scripts/ci/semgrep-gate.sh
+      # A new ERROR finding fails: on a PR, new since it left main; on a push,
+      # new since the commit before it.
+      - name: Semgrep gate (a new ERROR finding fails)
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then BASELINE=$(git merge-base "origin/$BASE_REF" HEAD); else BASELINE="$BEFORE"; fi
+          git cat-file -e "$BASELINE^{commit}" 2>/dev/null || BASELINE=$(git rev-parse HEAD~1)
+          echo "baseline: $BASELINE"
+          SEMGREP_BASELINE="$BASELINE" SEMGREP_JOBS=4 bash scripts/ci/semgrep-gate.sh
 
   # ── CI-2 · THE PLAN, WRITTEN ONCE ─────────────────────────────────────────
   # Which suites go in which shard, from the cached suite timings (ARCH-1's

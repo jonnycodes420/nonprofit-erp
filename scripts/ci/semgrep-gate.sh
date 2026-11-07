@@ -16,7 +16,14 @@
 # with a number), generic_path_traversal (ids looked up in a bundled list).
 # A single checked line elsewhere carries `// nosemgrep: <rule>` and a reason.
 #
-# Usage: bash scripts/ci/semgrep-gate.sh   (needs `semgrep` on PATH)
+# A RATCHET, not a clean sheet. A full scan with a 60 s rule timeout found 24
+# tainted-sql-string hits on main (dynamic WHERE builders whose pieces are
+# fixed strings and whose values are bound, as far as REDTEAM-1 read them) that
+# REDTEAM-1 did not have time to read one by one; they are the next build's
+# list (docs/history/REDTEAM-1.md). With SEMGREP_BASELINE set to a commit,
+# only a finding that is NEW since it fails, and only changed files are read.
+#
+# Usage: [SEMGREP_BASELINE=<sha>] bash scripts/ci/semgrep-gate.sh   (needs `semgrep` on PATH)
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -31,6 +38,7 @@ EXCLUDE_RULES=(
 )
 args=()
 for r in "${EXCLUDE_RULES[@]}"; do args+=(--exclude-rule "$r"); done
+if [ -n "${SEMGREP_BASELINE:-}" ]; then args+=(--baseline-commit "$SEMGREP_BASELINE"); fi
 
 exec semgrep scan --metrics=off --error --severity ERROR \
   --timeout "${SEMGREP_TIMEOUT:-60}" --timeout-threshold 0 -j "${SEMGREP_JOBS:-4}" \
