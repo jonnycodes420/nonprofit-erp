@@ -157,15 +157,41 @@ async function withTransaction(fn) {
 // (the duplicate-merge tool exists precisely for that), so a UNIQUE(email) is the
 // wrong primitive; an advisory lock closes the race without forbidding dupes or
 // risking boot failure on already-duplicated data.
-async function withAdvisoryLock(key, fn) {
-  const client = await LIMITS.checkout(pool);
-  try {
-    await client.query("SELECT pg_advisory_lock(hashtext($1))", [String(key)]);
-    return await fn();
-  } finally {
-    try { await client.query("SELECT pg_advisory_unlock(hashtext($1))", [String(key)]); } catch {}
+// RACE-1 · A WAITER DOES NOT SIT ON A POOL CONNECTION. The pool is 10. Ten
+// callers queued on one key each held a connection inside pg_advisory_lock,
+// and the holder could not get one for its own queries: ten first gifts of a
+// new org at once (ensureOrgLedger's lock) ended in nine statement timeouts.
+// A waiter now asks with a short lock_timeout and hands its connection back
+// between tries. `giveUpMs` 0 waits as long as it takes, as before.
+const LOCK_TRY_MS = 150;
+async function lockAdvisory(key, { giveUpMs = 0 } = {}) {
+  const deadline = giveUpMs ? Date.now() + giveUpMs : Infinity;
+  for (;;) {
+    const client = await LIMITS.checkout(pool);
+    let got = false;
+    try {
+      await client.query(`SET lock_timeout = '${LOCK_TRY_MS}ms'`);
+      try { await client.query("SELECT pg_advisory_lock(hashtext($1))", [String(key)]); got = true; }
+      catch (e) { if (e.code !== "55P03") throw e; }          // lock_not_available: try again
+      await client.query("RESET lock_timeout");
+    } catch (e) {
+      if (got) await client.query("SELECT pg_advisory_unlock(hashtext($1))", [String(key)]).catch(() => {});
+      LIMITS.release(client);
+      throw e;
+    }
+    if (got) return client;
     LIMITS.release(client);
+    if (Date.now() > deadline) throw new Error(`advisory lock ${key} not free after ${giveUpMs} ms`);
+    await new Promise(r => setTimeout(r, 5 + Math.floor(Math.random() * 20)));
   }
+}
+async function unlockAdvisory(client, key) {
+  try { await client.query("SELECT pg_advisory_unlock(hashtext($1))", [String(key)]); } catch {}
+  LIMITS.release(client);
+}
+async function withAdvisoryLock(key, fn) {
+  const client = await lockAdvisory(key);
+  try { return await fn(); } finally { await unlockAdvisory(client, key); }
 }
 // SPLIT-2 end
 // SPLIT-2 db.js piece 31
@@ -214,4 +240,6 @@ function countedClient(client) {
   return { query: async (...a) => { if (TEST_LATENCY_MS) await roundTrip(); noteTrip(); return client.query(...a); } };
 }
 
-module.exports = { countedClient, countRoundTrips, withAmbientTransaction, queryOutside, runOutside, query, run, withClient, onThePool, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx };
+// RACE-1 · server/shared/personLock.js needs to know whether it is inside an ambient transaction.
+function inAmbientTransaction() { return !!ambient(); }
+module.exports = { inAmbientTransaction, lockAdvisory, unlockAdvisory, countedClient, countRoundTrips, withAmbientTransaction, queryOutside, runOutside, query, run, withClient, onThePool, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx };

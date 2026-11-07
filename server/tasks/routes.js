@@ -1246,6 +1246,8 @@ app.post("/donors/:id/threads", requireAuth, checkWriteAccess, wrap(async (req, 
     ownerName: named.user ? named.user.name : (donor.assigned_to ? donor.assigned_to_name : userName),
     actorId: userId, actorName: userName,
   }));
+  // RACE-1: a press beside another loses at the index; it answers 409, as a later press does.
+  if (!thread) return res.status(409).json({ error: "thread_open", message: `${donor.name} already has an open next step.` });
   res.status(201).json({ thread });
 }));
 
