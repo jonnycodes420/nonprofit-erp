@@ -18,6 +18,7 @@ import { GroupPage } from "./Groups";
 import { RecordLink } from "./RecordLink";
 import { tabHref } from "../lib/appUrls";
 import { orgTodayCivil, orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
+import { signUpForShift } from "../lib/shiftSignup";   // STALE-2
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 12.5, color: T.ink, fontFamily: "inherit", boxSizing: "border-box", maxWidth: "100%" };
 // On a phone the filters fold behind one button, so the people come first.
@@ -243,8 +244,8 @@ function BulkModal({ kind, people, rules, opps, onClose, onDone }) {
       if (kind === "shift") {
         let ok = 0, wait = 0; const notes = [];
         for (const id of ids) {
-          try { const r = await apiFetch("/volunteer-hub/signups", { method: "POST", body: JSON.stringify({ slotId: v.slotId, personId: id, ...(v.roleId ? { roleId: v.roleId } : {}) }) });
-            if (r.status === "waitlisted") wait++; else ok++; }
+          try { const r = await signUpForShift({ slotId: v.slotId, personId: id, ...(v.roleId ? { roleId: v.roleId } : {}) });   // STALE-2: a clash asks first
+            if (!r) notes.push("left off: it clashes with another shift"); else if (r.status === "waitlisted") wait++; else ok++; }
           catch (e) { notes.push(errorMessage(e, "not added")); }
         }
         m = `${ok} on the shift${wait ? `, ${wait} on its waiting list` : ""}${notes.length ? `; ${notes.length} not added (${notes[0]})` : ""}.`;

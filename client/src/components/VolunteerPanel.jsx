@@ -58,7 +58,11 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
   if (!data) return null;
   // In the main column for anyone with hours or a volunteer record (FIX-24);
   // somebody with neither has it under More, opened with `always`.
-  if (!always && !data.shiftCount && !(prof && prof.record)) return null;
+  // STALE-2 (W-1107-Volunteers-13X, -24): a person tagged Volunteer, or on a
+  // shift, has the panel too, saying "0 hours, 0 shifts" rather than nothing.
+  const tagged = (Array.isArray(donor.person_types) ? donor.person_types : []).includes("volunteer");
+  const scheduled = (data.upcoming || []).length + (data.pastShifts || []).length;
+  if (!always && !data.shiftCount && !(prof && prof.record) && !tagged && !scheduled) return null;
   const act = async (fn, fallback) => {
     setMsg("");
     try { const r = await fn(); load(); loadProf(); changed(); return r; }
@@ -118,7 +122,7 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
             <div style={{ fontSize: 11, color: T.ink3 }}>{t.label}</div>
             <Figure value={t.hours} kind="count" variant="inline" label={t.label} definition={t.sentence} source={t.source} figureKey={`vol-${t.label}`} />
           </div>))}
-        <div style={{ fontSize: 12.5, color: T.ink3, alignSelf: "flex-end" }}>across {data.shiftCount} {data.shiftCount === 1 ? "shift" : "shifts"}</div>
+        <div data-testid="volunteer-shift-count" style={{ fontSize: 12.5, color: T.ink3, alignSelf: "flex-end" }}>{data.shiftCount ? `across ${data.shiftCount} ${data.shiftCount === 1 ? "shift" : "shifts"}` : "0 hours, 0 shifts logged"}</div>
       </div>
       {/* FIX-25: what they said they can give (Make a volunteer saves it), up
           here beside the hours they have given, not only at the foot. */}
@@ -134,9 +138,13 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
           ? "Gives and volunteers. Their hours and their giving are on this one record."
           : "Volunteers, and has never given. They already say yes with their time."}
       </div>
-      {!!(data.upcoming || []).length && (
-        <div data-testid="volunteer-upcoming" style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5 }}>
-          <span style={{ fontWeight: 700 }}>Coming up: </span>{data.upcoming.map(u => u.when).join(" · ")}
+      {/* STALE-2 (W-1107-Volunteers-24): every shift they're scheduled on, ahead and behind. */}
+      <div data-testid="volunteer-upcoming" style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5 }}>
+        <span style={{ fontWeight: 700 }}>Coming up: </span>{(data.upcoming || []).length ? data.upcoming.map(u => u.when).join(" · ") : <span style={{ color: T.ink3 }}>nothing on the schedule.</span>}
+      </div>
+      {!!(data.pastShifts || []).length && (
+        <div data-testid="volunteer-past-shifts" style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5 }}>
+          <span style={{ fontWeight: 700 }}>Past shifts: </span>{data.pastShifts.map(u => u.when).join(" · ")}
         </div>)}
 
       {/* THE HOURS LOG */}

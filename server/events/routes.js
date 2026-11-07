@@ -1140,14 +1140,16 @@ app.get("/events/:id", requireAuth, async (req, res) => {
     const [money] = await require("../../numbers").eventsRaised(orgId, { ids: [req.params.id] });
     // SWEEP-4: the public page is "Not open yet" until payments are connected
     const [pay] = await query("SELECT stripe_connected, stripe_account_id FROM orgs WHERE id=$1", [orgId]);
-    res.json({ ...evts[0], attendees, public_page_url, money: money || null,
+    // STALE-2: seats left, from the count the add-guest door checks (server/events/capacity.js).
+    const CAP = require("./capacity"), seats = CAP.seats(evts[0].capacity, await CAP.placesTaken(query, orgId, req.params.id));
+    res.json({ ...evts[0], attendees, public_page_url, money: money || null, seats,
       payments_connected: !!(pay && pay.stripe_connected && pay.stripe_account_id),
       givenSource: { key: "event-gave", params: { event: req.params.id } },
       givenSentence: "What each person gave for this event or pledged at it, from the gifts and pledges themselves." });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post("/events/:id/attendees", requireAuth, checkWriteAccess, async (req, res) => {
+app.post("/events/:id/attendees", requireAuth, checkWriteAccess, require("./capacity").gate(query), async (req, res) => {   // STALE-2: past capacity asks first
   try {
     const orgId = req.user.orgId;
     const eventId = req.params.id;

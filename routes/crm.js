@@ -81,6 +81,7 @@ const MODULES = [
   "../server/drafts/dismiss",   // COMMS-1
   "../server/org/switchOrg",   // ACCESS-1
   "../server/events/eventRemoval",   // WALKB-2
+  "../server/volunteers/shiftRules",   // STALE-2: a bare draft shift deletes
   "../server/outreach/autoSend",
   "../server/outreach/journeys",
   "../server/outreach/routes",
@@ -137,6 +138,7 @@ routers.r1.use(require("../server/reports/impact").routers.r1);
 routers.r1.use(require("../server/memberships/routes").routers.r1);
 routers.r1.use(require("../server/events/eventGifts").routers.r1);   // GIFTS-1
 routers.r1.use(require("../server/events/eventRemoval").routers.r1);   // WALKB-2: delete or archive, above the event routes
+routers.r1.use(require("../server/volunteers/shiftRules").routers.r1);   // STALE-2: a bare draft shift deletes
 routers.r1.use(require("../server/events/routes").routers.r1);
 routers.r1.use(require("../server/events/publicPage").routers.r1);
 
