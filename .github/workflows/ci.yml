@@ -146,7 +146,7 @@ jobs:
   # audit gate (high and above) is in the guards job above.
   semgrep:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [tree-check]
     if: needs.tree-check.outputs.skip != 'true'
     steps:
