@@ -41,7 +41,7 @@ function mount(ctx) {
   app.post("/auth/switch-org", requireAuth, wrap(async (req, res) => {
     const orgId = String((req.body && req.body.orgId) || "").trim();
     const reason = String((req.body && req.body.reason) || "").replace(/\s+/g, " ").trim().slice(0, 500);
-    if (!orgId) return res.status(400).json({ error: "org_required", message: "Choose an organization to switch to." });
+    if (!orgId) return res.status(400).json({ error: "choose_an_org", message: "Choose an organization to switch to." });
     if (req.user.support) {
       return res.status(403).json({ error: "in_support_session", message: "End the support session first, then switch." });
     }
