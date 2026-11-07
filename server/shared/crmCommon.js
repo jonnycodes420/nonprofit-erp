@@ -7,6 +7,7 @@
 // mount() runs once at the end of boot with server.js's ctx and what the helper
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
+const { sql } = require("../db/sql");   // REDTEAM-2: SQL text only from the code
 
 function mount(ctx) {
 const {
@@ -97,7 +98,6 @@ function portfolioMembership(o) {
 // one is audited by the trail above every router; the verbs are named here.
 const TF = require("../../twoFactor");
 const { newId } = require("./newId");   // IDS-1: every new row id is prefix + 20 hex
-const { sql } = require("../db/sql");   // REDTEAM-2: SQL text only from the code
 
 // THE ORG'S STEWARD START DATE — 0.6's answer depends on it. A thank-you is not
 // owed for a gift that arrived before the product did: an imported file is
