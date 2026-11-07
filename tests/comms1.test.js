@@ -108,7 +108,7 @@ async function turningOnSendsNothing({ admin }) {
 // ── §3 and §4: the invite routes in-process, with a stubbed Resend ──────────
 function stubResend() {
   const sent = [];
-  return { sent, emails: { send: async opts => { sent.push(opts); return { data: { id: "re_" + sent.length + "_" + Date.now() }, error: null }; } } };
+  return { sent, emails: { send: async opts => { sent.push(opts); return { data: { id: "re_c1_" + sent.length }, error: null }; } } };
 }
 function inviteApp(resend) {
   const { query, run } = require("../db");
@@ -182,7 +182,7 @@ async function oldDrafts() {
   await q(`INSERT INTO sequence_enrollments (id,sequence_id,org_id,donor_id,status) VALUES ('enr_c1_a','seq_c1_off',$1,'d_c1_0','active'),('enr_c1_b','seq_c1_off',$1,'d_c1_1','active'),('enr_c1_c','seq_c1_on',$1,'d_c1_2','active')`, [ORG]);
   const md = (id, enr, donor, days, status = "pending_review", sent = false) => q(
     `INSERT INTO milestone_drafts (id,org_id,donor_id,sequence_enrollment_id,milestone_key,subject,body,status,created_at,sent_at,created_by,created_by_name)
-     VALUES ($1,$2,$3,$4,'at_risk','We miss you','Body',$5,NOW() - ($6 || ' days')::interval,$7,${sys})`, [id, ORG, donor, enr, status, String(days), sent ? new Date().toISOString() : null]);
+     VALUES ($1,$2,$3,$4,'at_risk','We miss you','Body',$5,NOW() - ($6 || ' days')::interval,CASE WHEN $7 THEN NOW() END,${sys})`, [id, ORG, donor, enr, status, String(days), sent]);
   await md("md_c1_old", "enr_c1_a", "d_c1_0", 10);            // off, old, unsent: the one
   await md("md_c1_new", "enr_c1_b", "d_c1_1", 2);             // off but recent: stays
   await md("md_c1_live", "enr_c1_c", "d_c1_2", 20);           // its sequence is on: stays
