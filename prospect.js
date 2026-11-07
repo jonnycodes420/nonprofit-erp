@@ -129,7 +129,7 @@ function splitName(name) {
   if (parts.length < 2) return [parts[0] || "", ""];
   return [parts.slice(0, -1).join(" "), parts[parts.length - 1]];
 }
-const csvCell = v => { const s = v == null ? "" : String(v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+const { csvCell } = require("./server/shared/csvCell");   // REDTEAM-1: the formula guard, shared
 function fileCsv(rows) {
   const lines = [FILE_FIELDS.join(",")];
   for (const r of rows) {

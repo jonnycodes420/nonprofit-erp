@@ -527,7 +527,7 @@ app.get("/donors/:id/volunteer-hours.csv", requireAuth, wrap(async (req, res) =>
   const [d] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, orgId]);
   if (!d) return res.status(404).json({ error: "Donor not found" });
   const rows = await volunteerLog(orgId, d.id, req.query || {});
-  const cell = v => { const t = v == null ? "" : String(v); const g = /^[=+\-@]/.test(t) ? "'" + t : t; return /[",\n\r]/.test(g) || g !== t ? `"${g.replace(/"/g, '""')}"` : g; };
+  const cell = require("../shared/csvCell").csvCell;   // REDTEAM-1: one guard
   const lines = [["Person", "Opportunity", "Date", "Hours", "Start", "End", "Entered", "Entered by", "Notes"].join(",")];
   for (const r of rows) lines.push([d.name, r.opportunity_name || r.role || "", r.date, Number(r.hours), r.start_time || "", r.end_time || "",
     r.created_at ? new Date(r.created_at).toISOString().slice(0, 16).replace("T", " ") : "", r.created_by_name || VIA_WORD[r.via] || "", r.note || ""].map(cell).join(","));

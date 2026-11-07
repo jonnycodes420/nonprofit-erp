@@ -193,7 +193,7 @@ app.get("/going-out", requireAuth, wrap(async (req, res) => {
 }));
 app.get("/going-out/sent.csv", requireAuth, wrap(async (req, res) => {
   const out = await GOING.sentRows(ctx, req.user.orgId, { type: req.query.type || null, from: req.query.from || null, to: req.query.to || null, limit: 10000 });
-  const esc = v => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const esc = require("../server/shared/csvCell").csvCell;   // REDTEAM-1: a subject or name can start with =
   const lines = [["Sent", "Email", "Person", "Subject"].join(",")]
     .concat(out.map(r => [new Date(r.sentAt).toISOString(), r.typeName, r.name || "", r.subject || ""].map(esc).join(",")));
   req.audit && req.audit.action && req.audit.action("exported what Steward sent");
