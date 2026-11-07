@@ -4,6 +4,19 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
 
 ## Rules
 
+- **ACCESS-1 (2026-11-06). Roles are per org, and a viewer changes nothing.** The roles are staff,
+  viewer, volunteer coordinator and admin (`shared/viewOnly.js` `ROLES`). A viewer is refused in
+  `requireAuth` by method: every non-GET answers 403 `view_only` unless `shared/viewOnly.js` names it
+  (her own account, Ask/Why/help/report-run, Atlas's question, switch, invite accept). Widening that
+  list is a decision, and `tests/access1-roles.test.js` holds its own copy so it can't happen quietly.
+  A viewer can't read Team, billing (except `/billing/status`) or connections; exports follow
+  `orgs.viewer_exports_off`. A person's home org is `users.org_id`; every other org is an
+  `org_memberships` row with its own role. The session's org is the token's `orgId`, checked live
+  against that row; read a role only through `server/auth/access.js` `liveRoleIn`, never
+  `users.role`, and never re-sign a token with `users.org_id` (use `req.user.orgId`). A super-admin
+  into a customer's org (any `org_kind` but demo, internal_test, fixture) gives a reason, and the
+  audit row is that org's. An existing account joins another org signed in, never with a password
+  typed on the invite page.
 - **SECURE-2 (2026-10-29).** Sign-up and reset never say whether an address has an account: the
   same status, sentence and shape, the checkout link by email. Turning two-factor off takes an admin
   and emails the person. Each org has idle sign-out (15 to 480 minutes, default 60). A sign-in from

@@ -394,6 +394,15 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
   const nm = id => names.get(id) || "them";
   const insId = newId("ai");
   const base = { requestId: m.id };
+  // ACCESS-1: a viewer's Atlas answers questions and does nothing else. The
+  // steps that would log, draft or change are said once and left out, before
+  // any of them starts (the server refuses their writes too, in auth.js).
+  if (req.user.role === "viewer") {
+    const VO = await import("../shared/viewOnly.js");
+    const kept = steps.filter(x => VO.ATLAS_READ_KINDS.has(x.kind));
+    if (kept.length < steps.length) await logAction(req, { ...base, kind: "refused", state: "refused", line: VO.VIEWER_ATLAS_SENTENCE });
+    steps = kept;
+  }
   const cardId = () => newId("vc");
   const log = a => logAction(req, { ...base, ...a });
   const refusedClients = new Set();

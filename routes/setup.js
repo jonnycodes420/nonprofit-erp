@@ -183,7 +183,7 @@ app.put("/setup/invites/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(
   const orgId = req.user.orgId;
   const email = String((req.body && req.body.email) || "").trim().toLowerCase();
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "bad_email", sentence: "That does not look like an email address." });
-  const role = ["admin", "staff", "volunteer_coordinator"].includes(req.body && req.body.role) ? req.body.role : null;
+  const role = ["admin", "staff", "volunteer_coordinator", "viewer"].includes(req.body && req.body.role) ? req.body.role : null;
   const up = await query(`UPDATE setup_invites SET email=COALESCE(?, email), role=COALESCE(?, role) WHERE id=? AND org_id=? AND status='prepared' RETURNING id`,
     [email || null, role, req.params.id, orgId]);
   if (!up.length) return res.status(404).json({ error: "not_found" });

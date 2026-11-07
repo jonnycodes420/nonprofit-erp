@@ -35,7 +35,7 @@ let app = routers.r1;
 app.get("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
   if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B: the parent must be YOURS before children are answered — even an empty list confirms nothing about another tenant
   // PROSPECT-1 — a prospect brief is for admins and major gifts staff only.
-  const mg = await require("../../prospect").canSee(req.user.userId);
+  const mg = await require("../../prospect").canSee(req.user.userId, req.user.orgId);
   const rows = await query(`SELECT id,org_id,donor_id,file_name,file_type,file_url,notes,uploaded_by,uploaded_at,major_gifts_only FROM donor_materials
       WHERE donor_id=? AND org_id=?${mg ? "" : " AND COALESCE(major_gifts_only,false) = false"} ORDER BY uploaded_at DESC`, [req.params.id, req.user.orgId]);
   // FIX-45: the photograph of a check is this person's file too. It lives on
@@ -116,7 +116,7 @@ app.post("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
 app.delete("/materials/:id", requireAuth, wrap(async (req, res) => {
   const existing = await query("SELECT * FROM donor_materials WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Not found" });
-  if (existing[0].major_gifts_only && !(await require("../../prospect").canSee(req.user.userId))) return res.status(404).json({ error: "Not found" });
+  if (existing[0].major_gifts_only && !(await require("../../prospect").canSee(req.user.userId, req.user.orgId))) return res.status(404).json({ error: "Not found" });
   const undoId = await trashRow("donor_materials", req.params.id, req);
   if (!undoId) return res.status(404).json({ error: "Not found" });
   res.json({ ok: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });

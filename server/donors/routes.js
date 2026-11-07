@@ -64,7 +64,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   const orderArgs = searchQ && !req.query.dir ? [require("./personMatch").foldedPattern(searchQ)] : [];
   const PRm = require("../../prospect");
   const roomWord = a => (a ? { word: a.word, label: a.label, rank: a.rank } : { word: "unknown", label: "Not yet known", rank: 0 });
-  const mayRoom = await PRm.canSee(req.user.userId);
+  const mayRoom = await PRm.canSee(req.user.userId, req.user.orgId);
   let roomMap = null;
   // BUILD-76 Part 2 — every donor row carries the drift badge field, computed
   // fresh by the same function as the home list (one computation, one truth).

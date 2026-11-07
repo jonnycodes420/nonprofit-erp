@@ -125,7 +125,7 @@ app.get("/why/questions", requireAuth, wrap(async (req, res) => {
   const taps = [{ key: "call", text: Sx.QUESTIONS.find(q => q.key === "call").ask() }];
   if (c) taps.push({ key: "appeal", campaign: c.id, text: Sx.QUESTIONS.find(q => q.key === "appeal").ask(c.name) });
   // PROSPECT-1 — the eighth question is a one-tap for admins and major gifts staff, and nobody else.
-  const mg = await P.canSee(req.user.userId);
+  const mg = await P.canSee(req.user.userId, req.user.orgId);
   if (mg) taps.push({ key: "more", text: Sx.QUESTIONS.find(q => q.key === "more").ask() });
   res.json({ taps, all: Sx.QUESTIONS.filter(q => mg || !q.restricted).map(q => ({ key: q.key, needs: q.needs, text: q.ask() })) });
 }));
@@ -245,7 +245,7 @@ async function showMe(req, res, typed, preset = null) {
   let asks = new Map(), room = new Map(), maySee = false;
   if (asking && rows.length) {
     const E = require("../engagement");
-    maySee = await P.canSee(req.user.userId);
+    maySee = await P.canSee(req.user.userId, req.user.orgId);
     const ids = rows.map(r => r.id);
     const screens = maySee ? await P.latestScreening(orgId, ids) : new Map();
     const [askList, rtg] = await Promise.all([
@@ -297,7 +297,7 @@ async function whyAskHandler(req, res) {
   if (key === "stopped" && !donor) key = null;
   // PROSPECT-1 — room to give is for admins and major gifts staff. Anyone else
   // who types the question is told plainly, and nothing about anybody is shown.
-  if (key === "more" && !(await P.canSee(req.user.userId))) {
+  if (key === "more" && !(await P.canSee(req.user.userId, req.user.orgId))) {
     await logQuestion(req.user.orgId, typed || "Who could give more?", "more", false);
     return res.status(403).json({ error: "major_gifts_only", answered: false,
       sentence: "Room to give is for admins and staff with the major gifts permission.", question: { text: typed } });
@@ -321,7 +321,7 @@ async function whyAskHandler(req, res) {
   await logQuestion(req.user.orgId, logged, key, true);
   const params = { q: key, ...(campaign ? { campaign } : {}), ...(donor ? { donor } : {}), ...(key === "call" ? { user: req.user.userId } : {}) };
   const G = await guide();
-  const canSeeMore = await P.canSee(req.user.userId);
+  const canSeeMore = await P.canSee(req.user.userId, req.user.orgId);
   // ASK-3: one part of the appeal's breakdown ("Who are the 11 who haven't
   // given?"): the same reason, its own people, the template sentence only.
   const partKey = key === "appeal" && body.part ? String(body.part) : null;
@@ -572,7 +572,7 @@ async function askRefuse(req, res, typed, what, C, extra = {}, sentence = null) 
   await logQuestion(req.user.orgId, typed || "(plan)", "ask: refused", false);
   // ASK-3: never a neighbouring list; the three closest questions it can answer.
   const G = await guide();
-  const [campaigns, canSeeMore] = await Promise.all([WHY.comparableCampaigns(req.user.orgId), P.canSee(req.user.userId)]);
+  const [campaigns, canSeeMore] = await Promise.all([WHY.comparableCampaigns(req.user.orgId), P.canSee(req.user.userId, req.user.orgId)]);
   const followUps = G.closestQuestions(typed, G.guidedLists({ campaigns, canSeeMore }));
   return res.json({ answered: false, refused: true, kind: "answer", sentence: sentence || C.refusalSentence(what), question: { text: typed }, followUps, ...extra });
 }
@@ -608,7 +608,7 @@ async function personAnswer(req, res, { donor, intent, campaign, typed }) {
     alsoSteps: (a.alsoSteps || []).map(x => ({ ...x, due: orgTime.addDays(today, x.dueIn || 7),
       ...(x.fallback ? { fallback: { ...x.fallback, due: orgTime.addDays(today, x.fallback.dueIn || 7) } } : {}) })),
   };
-  res.json({ ...out, followUps: G.followUpsFor(out, { canSeeMore: await P.canSee(req.user.userId) }) });
+  res.json({ ...out, followUps: G.followUpsFor(out, { canSeeMore: await P.canSee(req.user.userId, req.user.orgId) }) });
 }
 
 // WIRE-1 · "What has Rafael done with us this year?" One line per kind of
@@ -673,7 +673,7 @@ async function personActivity(req, res, { donor, typed }) {
     cantSee: "This reads what is on their record in Steward. Time they gave that nobody logged is not here.",
     step: null, alsoSteps: [],
   };
-  res.json({ ...out, followUps: G.followUpsFor(out, { canSeeMore: await P.canSee(req.user.userId) }) });
+  res.json({ ...out, followUps: G.followUpsFor(out, { canSeeMore: await P.canSee(req.user.userId, req.user.orgId) }) });
 }
 
 // IMPORT-2 · "What did we talk about with Christine in 2024?" The
@@ -773,7 +773,7 @@ async function peopleAsks(req, res, { typed, list, n }) {
     step: { kind: "plan", label: `Plan calls to ${who.length === 1 ? "them" : `all ${spellN(who.length)}`}`, items: who.map(w => ({ donorId: w.donorId, name: w.name, label: w.cents ? `Ask for ${fmtUsd(w.cents)}` : "Call" })), dueIn: 1, due: orgTime.addDays(today, 1) },
     alsoSteps: [],
   };
-  res.json({ ...out, followUps: G.followUpsFor({ ...out, part: "list" }, { canSeeMore: await P.canSee(req.user.userId) }) });
+  res.json({ ...out, followUps: G.followUpsFor({ ...out, part: "list" }, { canSeeMore: await P.canSee(req.user.userId, req.user.orgId) }) });
 }
 
 // Who a typed question is about. The thread first (anyone named in the last
@@ -956,7 +956,7 @@ async function askHandler(req, res) {
   const ctx = await AE.askContext(orgId);
   let raw = null, source = "template", restatement = null, person = null;
   const G = await guide();
-  const canSeeMore = await P.canSee(req.user.userId);
+  const canSeeMore = await P.canSee(req.user.userId, req.user.orgId);
 
   // ASK-3: a question about one person, from the Why and What rail.
   if (body.person && typeof body.person === "object") {
@@ -1161,7 +1161,7 @@ app.get("/ask/guided", requireAuth, wrap(async (req, res) => {
     donor = { id: d.id, name: d.name, gave: !!d.last, lapsed: lapseRule.isLapsed(d.last, today) };   // FIX-51: the one rule
   }
   const [campaigns, canSeeMore, gate] = await Promise.all([
-    donor ? [] : WHY.comparableCampaigns(orgId), P.canSee(req.user.userId), aiGate(orgId)]);
+    donor ? [] : WHY.comparableCampaigns(orgId), P.canSee(req.user.userId, req.user.orgId), aiGate(orgId)]);
   res.json({ ...G.guidedLists({ campaigns, canSeeMore, donor }), ai: !!gate.ok });
 }));
 
