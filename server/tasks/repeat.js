@@ -15,22 +15,31 @@ const tsMod = async () => _ts || (_ts = await import("../../shared/taskShape.js"
 
 // t: the task row as it was (needs id, org_id, recur, due). Returns the new
 // task's id, or null when it does not repeat or its next one is already made.
-async function afterDone({ query, run }, orgId, t, today) {
+// RACE-1: one next repeat per task. Ten "done" presses at once each found no
+// next one and each made one. The check and the write now take turns per task,
+// and tasks_one_repeat_per_parent (server/db/race1Indexes.js) backs it; the
+// INSERT yields to it rather than fail.
+function afterDone(db, orgId, t, today) {
+  if (!t || !t.id) return afterDoneNow(db, orgId, t, today);
+  return require("../shared/personLock").withPersonLock("task-repeat", orgId, t.id, () => afterDoneNow(db, orgId, t, today));
+}
+async function afterDoneNow({ query, run }, orgId, t, today) {
   const ts = await tsMod();
   const recur = ts.normalizeRecur(t && t.recur);
   if (!recur) return null;
   const [have] = await query("SELECT id FROM tasks WHERE recur_parent_id=? AND org_id=?", [t.id, orgId]);
   if (have) return null;
   const nid = newId("t");
-  await run(
+  const { changes } = await run(
     `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name,
                         kind,due_time,notes,checklist,recur,household_id,grant_id,event_id,campaign_id,recur_parent_id)
      SELECT ?,org_id,title,?,priority,type,0,donor_id,assigned_to,assigned_to_name,NOW(),?,?,
             kind,due_time,notes,(SELECT COALESCE(jsonb_agg(jsonb_set(e,'{done}','false'::jsonb)),'[]'::jsonb) FROM jsonb_array_elements(COALESCE(checklist,'[]'::jsonb)) e),
             recur,household_id,grant_id,event_id,campaign_id,id
-       FROM tasks WHERE id=? AND org_id=?`,
+       FROM tasks WHERE id=? AND org_id=?
+     ON CONFLICT DO NOTHING`,
     [nid, ts.nextDue(recur, t.due, today), "system:task-repeat", "Steward", t.id, orgId]);
-  return nid;
+  return changes === 0 ? null : nid;
 }
 
 async function afterUndone({ run }, orgId, t) {

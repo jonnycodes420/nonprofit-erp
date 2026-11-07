@@ -55,7 +55,7 @@ async function ddlSession() {
 // SPLIT-2 db.js piece 39
 
 // Returns true when the DDL ran, false when the unchanged hash skipped it.
-async function initSchema() {
+async function initSchemaNow() {
   if (await schemaUnchanged()) {
     // SCALE-2: the change triggers follow orgSummary.js, not this file's
     // hash, so a boot on an unchanged schema still brings them up to date
@@ -97,4 +97,12 @@ async function runSchemaInit(pool) {
 }
 // SPLIT-2 end
 
+// RACE-1: after the schema, changed or not, the unique indexes behind the
+// write-once paths, built CONCURRENTLY (server/db/race1Indexes.js). Never fails boot.
+async function initSchema() {
+  const ran = await initSchemaNow();
+  await require("./race1Indexes").ensureRace1Indexes(pool)
+    .catch(err => console.error("[race1-indexes] not built (server continues):", err.message));
+  return ran;
+}
 module.exports = { initSchema, runSchemaInit };

@@ -123,6 +123,11 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
   (`splitOrder.json` "routes/crm.js"), wherever they now live, so a suite that reads server.js's source sees
   the text it always did.
 
+- **A race is replayed, not waited for.** `raceHold.at(name)` (`server/shared/raceHold.js`, TEST_MODE
+  only) stops a write at a named point; the suite holds `test-hold:<name>` from its own session
+  (`tests/lib/raceHold.js`), starts the second writer, and counts waiters in its own database with
+  `waiters()`. The journey Thread race is held at `journey-open:<donor>:<journey>`. (RACE-1)
+
 ## Gotchas
 - **Never write GitHub's skip-ci marker (square brackets around "skip ci") in a commit message or PR body**,
   not even to describe the error digest. A squash merge copies every commit message into one, GitHub honours

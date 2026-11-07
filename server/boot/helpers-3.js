@@ -237,7 +237,15 @@ async function givingAccountEntry(org) {
 // webhook (fire-and-forget) and the manual "Send receipt" route, so
 // idempotency/suppression/sample-skip logic lives in exactly one place.
 // SEND-GATE-1: `manual` is a person's click (Send receipt): the confirm for this one receipt.
-async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO, manual = false } = {}) {
+// RACE-1: one issue per gift at a time. Two at once (a redelivered webhook, a
+// double-click) both passed the check below, each took a receipt number, and
+// the second INSERT hit receipts_active_gift_uk: a 500 and a number skipped.
+// Under the lock the second finds the first's receipt, and no number is taken.
+function issueGiftReceipt(gift, org, donor, opts = {}) {
+  return require("../shared/personLock").withPersonLock("receipt", org.id, gift.id,
+    () => issueGiftReceiptNow(gift, org, donor, opts));
+}
+async function issueGiftReceiptNow(gift, org, donor, { send = true, by = SYS_AUTO, manual = false } = {}) {
   if (!org.receipts_enabled) return { skipped: "receipts_disabled" };
   if (gift.is_sample) return { skipped: "sample_gift" };
   // HARDEN-1: a tax receipt names the day the gift was given. An undated gift
