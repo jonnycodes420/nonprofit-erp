@@ -166,7 +166,7 @@ function buildMap(map, board, rows, personIds = {}) {
   // Walk checks the map does not name: their own row in the area their prefix names.
   for (const [k, w] of Object.entries(results)) {
     if (mapCheckArea.has(k)) continue;
-    byId.get(areaFor(w.check)).walkChecks.push({ id: w.check, verdict: w.verdict, date: w.date, words: w.words || "", mark: marks[k] || null });
+    byId.get(w.area && byId.has(w.area) ? w.area : areaFor(w.check)).walkChecks.push({ id: w.check, verdict: w.verdict, date: w.date, words: w.words || "", mark: marks[k] || null });
   }
   for (const it of merged) if (live(it)) byId.get(it.area && byId.has(it.area) ? it.area : areaFor(it.check)).items.push(itemView(it));
   for (const a of out) a.walkChecks.sort((x, y) => x.id.localeCompare(y.id, undefined, { numeric: true }));

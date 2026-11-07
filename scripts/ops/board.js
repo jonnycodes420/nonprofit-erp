@@ -41,7 +41,7 @@ if (cmd === "add") {
   if (!ids.length) { console.error(`No "Closes: W-…, C-…" line in ${report}.`); process.exit(65); }
   const r = B.closeItems(board, ids, { build, date: today });
   next = r.board;
-  console.log(`close ${build}: ${r.done.length} to fixed${r.done.length ? " (" + r.done.join(", ") + ")" : ""}${r.missing.length ? ` · not on the board: ${r.missing.join(", ")}` : ""}`);
+  console.log(`close ${build}: ${r.done.length} to fixed${r.done.length ? " (" + r.done.join(", ") + ")" : ""}${r.missing.length ? ` · not on the board: ${r.missing.join(", ")}` : ""}${r.recorded && r.recorded.length ? ` · recorded for items uploaded on /ops: ${r.recorded.join(", ")}` : ""}`);
 } else { console.error("usage: board.js add|assign|close …"); process.exit(64); }
 
 const problems = B.validate(next);

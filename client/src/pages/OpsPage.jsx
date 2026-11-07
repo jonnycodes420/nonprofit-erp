@@ -11,6 +11,7 @@ import MapView from "./ops/MapView";
 import ShipCard from "./ops/ShipCard";
 import JourneyView from "./ops/JourneyView";
 import FlowView from "./ops/FlowView";
+import ImportCard from "./ops/ImportCard";
 
 const INK = "#0F1A12", CREAM = "#F0EDE6", EMERALD = "#0D5C3A";
 const TABS = [["machine", "Machine"], ["map", "Map"], ["journey", "Journey"], ["flow", "How it works"]];
@@ -79,7 +80,7 @@ export default function OpsPage() {
     <Link to="/admin" data-back-to-admin="1" style={{ color: EMERALD, fontSize: 13, fontWeight: 600, textDecoration: "none", padding: "10px 0" }}>← Back to admin</Link>
   </div>;
 
-  if (tab === "machine") return <OpsView data={data} error={error} tabs={tabs} onShot={openShot} ship={<ShipCard />} />;
+  if (tab === "machine") return <OpsView data={data} error={error} tabs={tabs} onShot={openShot} ship={<ShipCard />} importer={<ImportCard onImported={load} />} />;
   const g = got[tab] || {};
   const wide = tab === "journey" || tab === "flow";
   return <div style={{ background: CREAM, minHeight: "100vh", color: INK, fontFamily: wide ? "'DM Sans', system-ui, sans-serif" : "Inter, system-ui, sans-serif", padding: "24px 16px 64px", boxSizing: "border-box" }}>

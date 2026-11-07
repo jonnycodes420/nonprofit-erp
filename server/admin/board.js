@@ -137,15 +137,21 @@ const closesIn = text => {
 };
 function closeItems(board, ids, { build, date }) {
   const next = JSON.parse(JSON.stringify(board));
-  const done = [], missing = [];
+  const done = [], missing = [], recorded = [];
   for (const id of ids) {
     const it = next.items.find(i => i.id === id);
-    if (!it) { missing.push(id); continue; }
+    if (!it) {
+      // LEAD-IMPORT-1: an item uploaded on /ops is not in this file; its close is
+      // recorded here and applied when /ops works the board out (opsImports.deriveBoard).
+      if (/^W-\d{4}-/.test(id)) { next.closed = (next.closed || []).filter(c => c.id !== id); next.closed.push({ id, build, on: date }); recorded.push(id); }
+      else missing.push(id);
+      continue;
+    }
     if (it.state === "fixed" && it.fixedBy === build) continue;
     it.state = "fixed"; it.fixedBy = build; if (!it.build) it.build = build;
     note(it, date, "fixed", `build ${build}`); done.push(id);
   }
-  return { board: next, done, missing };
+  return { board: next, done, missing, recorded };
 }
 
 // What /ops shows: items grouped by owning build, counts per state.
@@ -158,8 +164,12 @@ function summarize(board) {
     if (!groups.has(k)) groups.set(k, { build: it.build || null, counts: Object.fromEntries(STATES.map(s => [s, 0])), items: [] });
     const g = groups.get(k); g.counts[it.state]++;
     g.items.push({ id: it.id, source: it.source, words: it.words, state: it.state, customer: it.customer || null, opened: it.opened || null, fixedBy: it.fixedBy || null,
-      check: it.check || null, area: it.area || null, shot: it.shot || null, verifiedBy: it.verifiedBy || null });   // DEVBOARD-2
+      check: it.check || null, area: it.area || null, shot: it.shot || null, verifiedBy: it.verifiedBy || null,   // DEVBOARD-2
+      tier: it.tier || null, seen: it.seen || null, evidence: it.evidence || null, fleetArea: it.fleetArea || null, rank: it.rank || null });   // LEAD-IMPORT-1
   }
+  // LEAD-IMPORT-1: inside a group, the lead's order: tier, repeats above new fails, then as written.
+  const leadOrder = (a, b) => (a.tier || 9) - (b.tier || 9) || (b.seen === "REPEAT") - (a.seen === "REPEAT") || (a.rank || 1e9) - (b.rank || 1e9) || a.id.localeCompare(b.id);
+  for (const g of groups.values()) g.items.sort(leadOrder);
   const live = g => g.counts.open + g.counts.reopened;
   const builds = [...groups.values()].sort((a, b) => live(b) - live(a) || String(a.build || "~").localeCompare(String(b.build || "~")));
   return { counts, builds, walks: board.walks.slice(-30) };

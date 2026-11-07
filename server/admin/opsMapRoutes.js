@@ -15,7 +15,6 @@
 // customer. Demo people are looked up in the demo org alone.
 "use strict";
 const crypto = require("crypto");
-const BOARD = require("./board");
 const MAP = require("./opsMap");
 
 const SHOT_MAX = 2_500_000;                             // characters of the data URL (~1.8 MB image)
@@ -53,7 +52,7 @@ function mount(app, { query, run, wrap, opsOnly, opsLimiter }) {
   app.get("/ops/map", opsLimiter, opsOnly, wrap(async (req, res) => {
     let map, board;
     try { map = MAP.readMap(); } catch (e) { return res.json({ ok: false, error: `The map file could not be read: ${e.message}` }); }
-    try { board = BOARD.readBoard(); } catch (e) { board = { items: [], walks: [], results: {}, error: e.message }; }
+    try { board = await require("./opsImports").currentBoard(query); } catch (e) { board = { items: [], walks: [], results: {}, error: e.message }; }   // LEAD-IMPORT-1: with the uploads
     const rows = await readChecks(query);
     const names = [...new Set(map.areas.flatMap(a => (a.checks || []).map(c => c.person).filter(Boolean)))];
     const people = await demoPeople(query, names).catch(() => ({}));
