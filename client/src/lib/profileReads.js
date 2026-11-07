@@ -24,7 +24,7 @@ export const PROFILE_BELOW = id => [
   `/donors/${id}/custom-fields`, `/donors/${id}/events`, `/donors/${id}/attachments`, `/donors/${id}/tasks`,
   `/donors/${id}/volunteer-hours`, `/donors/${id}/recurring-subscription`, `/donors/${id}/soft-credit`, `/donors/${id}/moves`,
   `/donors/${id}/opportunities`, `/donors/${id}/move-suggestions`, `/donors/${id}/designations`, `/donors/${id}/receipts`,
-  `/donors/${id}/planned-gifts`, `/donors/${id}/pledges`,
+  `/donors/${id}/planned-gifts`, `/donors/${id}/pledges`, `/donors/${id}/materials`,   // STALE-2: the Files tab's uploads
   "/mailbox", "/sequences", "/org", "/journeys", "/fundraising/campaigns", "/custom-fields?entity=gift",
 ];
 const bundleFor = id => paths => `/donors/${enc(id)}/bundle?` + paths.map(p => "p=" + enc(p)).join("&");
