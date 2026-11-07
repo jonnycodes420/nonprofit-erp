@@ -33,6 +33,6 @@ From the reports of MOPUP-2, GIFTS-2, FEEL-1 and SPEED-3.
    which a wide screen always uses). An empty deck's height can't be known ahead: it can carry the
    drifting list and the chips.
 5. **The bookkeeper's fund filter reads fund lines.** It read `gifts.fund_id`, so filtered to General a
-   $500 gift split $300 Food Pantry / $200 General was missing. Now (`server/reports/bookkeeperFund.js`)
+   $500 gift split $300 Food Pantry / $200 General was missing. Now (`shared/numbers/fundLines.js` FUND_HIT / FUND_CENTS)
    a gift is in when any of its fund rows is on the fund, and the file keeps only that fund's rows; the
    database total it foots against is that fund's line amounts.

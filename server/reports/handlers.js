@@ -681,10 +681,10 @@ async function reportSolicitations(orgId, p) {
 }
 
 async function reportBookkeeper(orgId, p) {
-  // MOPUP-3: the fund filter selects by FUND LINE (bookkeeperFund.js), so a
+  // MOPUP-3: the fund filter selects by FUND LINE (shared/numbers/fundLines.js FUND_HIT), so a
   // split gift's $200 line on the chosen fund is found, and only that line is
   // in the file. reportGiftWhere's own filter reads gifts.fund_id (the largest line).
-  const BF = require("./bookkeeperFund");
+  const BF = NUMBERS.fundLines;
   const fundId = p.fundId || null;
   const pAll = fundId ? { ...p, fundId: null } : p;
   const params = [];
