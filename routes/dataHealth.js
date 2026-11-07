@@ -49,6 +49,7 @@ const DH = require("../dataHealth");
 const NMONEY = require("../shared/numbers/money");   // NUMBERS-5
 const MOVES = require("../server/donors/mergeMoves");   // SPEED-2: the merge's moves, set-based
 const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
+const { sql } = require("../server/db/sql");   // REDTEAM-2: SQL text only from the code
 
 const routers = { r0: express.Router() };
 
@@ -888,7 +889,10 @@ app.post("/data-health/merges/:id/undo", requireAuth, checkWriteAccess, wrap(asy
       for (const s of m.set_aside || []) {
         await client.query("SAVEPOINT dh_aside");
         try {
-          await runTx(client, `INSERT INTO ${s.table} SELECT * FROM jsonb_populate_record(NULL::${s.table}, ?::jsonb)`, [JSON.stringify(s.row)]);
+          // REDTEAM-2: the table the merge record names (a MERGE_REFS table, or one an older
+          // merge set aside), quoted as a name, so it can only ever be a table.
+          const tbl = sql.ident(s.table);
+          await runTx(client, sql`INSERT INTO ${tbl} SELECT * FROM jsonb_populate_record(NULL::${tbl}, ${JSON.stringify(s.row)}::jsonb)`);
           await client.query("RELEASE SAVEPOINT dh_aside");
           if (s.table === "gift_soft_credits" && s.row && s.row.gift_id) resized.add(s.row.gift_id);
         } catch (e) {

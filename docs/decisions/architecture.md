@@ -4,6 +4,21 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 
 ## Rules
 
+- **REDTEAM-2 (2026-11-07): SQL text comes only from the code.** A statement that takes anything
+  from a request is written with the `sql` tag (`server/db/sql.js`): every `${value}` is a bound
+  parameter, a `${Sql}` splices in with its own values, a table or column name goes through
+  `sql.id(name, fixedList)`, and a request may only *choose* among texts the code wrote
+  (`sql.pick(key, table)`). There is no raw door. `query`, `run`, `queryTx`, `runTx` and
+  `querySetwise` take a `Sql` as well as `(text, params)`. A list of ids is one bound array
+  (`= ANY(?::text[])`), never a `?, ?, ?` list built into the text. Semgrep's SQL rules have no
+  baseline (`scripts/ci/semgrep-sql-gate.sh`): a new hit fails CI. The few hits still open are
+  listed by line in `scripts/ci/semgrep-sql-open.txt`, each with its reason, and the list only shrinks.
+- **REDTEAM-2 (2026-11-07): the database's certificate.** Every app pool takes its TLS from
+  `server/shared/dbTls.js`. With `PGSSLROOTCERT_PEM` (the CA's PEM text) or `PGSSLROOTCERT_PATH`
+  set, the server's certificate must chain to it and name the host dialled, or the connection is
+  refused; a CA that is set but unreadable stops the boot. Unset, it is encrypted and unchecked as
+  before, `/health.dbTls` says `"unverified"` and `npm run status` warns. `DB_SSL=disable` turns TLS
+  off (CI and the scratch stack). Never commit a certificate (`tests/db-tls.test.js` makes its own).
 - **STALE-1 (2026-11-05): one refresh, everywhere.** A view that shows a figure re-reads it through
   `client/src/lib/changes.js`: `useChanged(kinds, fn, ids)` or `useChangeRev(kinds, ids)`, never its
   own window event or a write-path regex. A new write route gets a rule in `kindsOfWrite` if no rule

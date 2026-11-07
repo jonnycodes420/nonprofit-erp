@@ -26,6 +26,7 @@ const {
   recomputeScoresForOrg, recordAssetPointerHistory, requireAdmin, requireAuth, requireCrm, run, scheduleScores,
   slugifyGivingPage, staffWho, uniquePeerFundraiserSlug, uuid, wrap, writeAuditLog,
 } = ctx;
+const { sql } = require("../db/sql");   // REDTEAM-2: SQL text only from the code
 let PT = null;
 PT_READY.then(m => { PT = m; });
 // FIX-1 D — the roles a person can carry that a chip or a list may name.
@@ -323,12 +324,14 @@ app.get("/people", requireAuth, wrap(async (req, res) => {
   const role = String(req.query.role || "");
   if (!PEOPLE_ROLES.includes(role))
     return res.status(400).json({ error: "role_required", sentence: "Ask for donors, volunteers, or staff and board." });
+  // REDTEAM-2: the request picks one of the roles; the condition's text is the code's own.
   const rows = await query(
-    `SELECT d.id, d.name, d.email, d.phone, d.kind, d.person_types, d.gift_count, d.total_giving, d.last_gift_date
+    sql`SELECT d.id, d.name, d.email, d.phone, d.kind, d.person_types, d.gift_count, d.total_giving, d.last_gift_date
        FROM donors d
-      WHERE d.org_id=? AND d.deleted_at IS NULL AND d.erased_at IS NULL AND ${PT.typeSql(role, "d")}
+      WHERE d.org_id=${req.user.orgId} AND d.deleted_at IS NULL AND d.erased_at IS NULL
+        AND ${sql.pick(role, Object.fromEntries(PEOPLE_ROLES.map(r => [r, PT.typeSql(r, "d")])))}
       ORDER BY lower(d.name), d.id
-      LIMIT 5000`, [req.user.orgId]);   // TRUTH-2: an erased person is on no list
+      LIMIT 5000`);   // TRUTH-2: an erased person is on no list
   res.json({
     role,
     people: rows.map(r => ({
