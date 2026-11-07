@@ -14,6 +14,8 @@ import { DonorLink, RecordLink } from "./RecordLink";
 import { giftHref } from "../lib/appUrls";
 import { displayName } from "../../../shared/displayName.js";
 import { giftOnDate } from "../../../shared/draftNote";
+import { dismissDrafts, DismissX, SelectBox } from "./DraftDismiss";   // COMMS-1 item 4
+import { useChangeRev } from "../lib/changes";
 
 export const THANK_YOUS_CHANGED = "steward:thank-yous-changed";
 const CAPTURE_CHANGED = "steward:capture-changed";
@@ -21,7 +23,7 @@ const announce = () => { try { window.dispatchEvent(new Event(THANK_YOUS_CHANGED
 
 const btn = { borderRadius: 8, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
 
-export function ThankYouDrafts({ donorId = null, highlightId = null, title = "Thank-yous waiting to send", intro, onNavigate, hideWhenEmpty = false, testid = "ty-drafts" }) {
+export function ThankYouDrafts({ donorId = null, highlightId = null, title = "Thank-yous waiting to send", intro, onNavigate, hideWhenEmpty = false, testid = "ty-drafts", selection = null }) {
   const [rows, setRows] = useState(null);
   const [open, setOpen] = useState(highlightId || null);
   const [copied, setCopied] = useState(null);
@@ -38,6 +40,8 @@ export function ThankYouDrafts({ donorId = null, highlightId = null, title = "Th
     window.addEventListener(CAPTURE_CHANGED, on);
     return () => { window.removeEventListener(THANK_YOUS_CHANGED, on); window.removeEventListener(CAPTURE_CHANGED, on); };
   }, [donorId]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const draftRev = useChangeRev(["draft"]);   // COMMS-1: a dismiss or restore anywhere re-reads
+  useEffect(() => { if (draftRev) load(); }, [draftRev]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // The deep link: open it, record that it was read, and bring it into view.
   useEffect(() => {
@@ -82,6 +86,7 @@ export function ThankYouDrafts({ donorId = null, highlightId = null, title = "Th
             <div key={d.id} ref={el => { refs.current[d.id] = el; }} data-thank-you={d.id} data-testid="ty-draft-row"
               style={{ padding: "12px 14px", borderTop: i ? "1px solid " + T.bg2 : "none", boxShadow: highlightId === d.id ? "inset 3px 0 0 " + T.gold : "none" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                {selection && selection.selecting && <SelectBox checked={selection.has("thank_you", d.id)} onChange={on => selection.toggle("thank_you", d.id, on)} label={`Select the thank-you to ${d.donorName}`} />}
                 {!donorId && <PersonMark id={d.donorId} name={d.donorName} size={28} />}
                 <div style={{ flex: "1 1 180px", minWidth: 0, display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
                   {!donorId && (
@@ -99,6 +104,10 @@ export function ThankYouDrafts({ donorId = null, highlightId = null, title = "Th
                   style={{ ...btn, flexShrink: 0, background: T.white, border: "1px solid " + T.ink, color: T.ink, whiteSpace: "nowrap" }}>
                   {open === d.id ? "Close" : "Read the draft"}
                 </button>
+                {/* COMMS-1: × archives it (Undo restores it); it is never sent. */}
+                <DismissX onClick={() => dismissDrafts([{ kind: "thank_you", id: d.id }], { onRestored: () => load() })
+                  .then(done => { if (done) setRows(rs => (rs || []).filter(x => x.id !== d.id)); }).catch(e => setErr(errorMessage(e, "That draft was not dismissed.")))}
+                  label={`Dismiss the thank-you to ${displayName(d.donorName)}`} />
               </div>
               {open === d.id && (
                 <div style={{ marginTop: 10 }}>

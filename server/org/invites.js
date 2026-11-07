@@ -39,26 +39,12 @@ async function inviteRefusal(query, orgId, email) {
   return null;
 }
 
-// The staff invitation email, from Invite and from Resend. Staff mail, never
-// donor mail: it goes through the client's mail block like every send.
-async function sendStaffInvite({ resend, orgName, email, role, link }) {
-  if (!process.env.RESEND_API_KEY || !resend) return false;
-  try {
-    const from = process.env.DEMO_SMTP_FROM || "onboarding@resend.dev";
-    const { error } = await resend.emails.send({
-      from,
-      to: email,
-      subject: `You've been invited to join ${orgName} on Steward`,
-      html: `<p>You've been invited to join <strong>${orgName}</strong> on Steward as a <strong>${role}</strong>.</p>
-             <p><a href="${link}" style="background:#c9a84c;color:#0f1a12;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:16px 0">Accept Invitation</a></p>
-             <p>This link expires in 7 days.</p>`,
-    });
-    if (error) throw new Error(error.message);
-    return true;
-  } catch (err) {
-    console.error("Invite email send failed:", err.message);
-    return false;
-  }
+// The staff invitation email, from Invite and from Resend: server/org/inviteMail.js
+// (COMMS-1), an account email from Steward's own address, never the org's.
+const MAIL = require("./inviteMail");
+async function orgTzOf(query, orgId) {
+  const [o] = await query("SELECT timezone FROM orgs WHERE id = ?", [orgId]).catch(() => []);
+  return (o && o.timezone) || "America/New_York";
 }
 
 function mount(ctx) {
@@ -73,8 +59,11 @@ function mount(ctx) {
         WHERE i.org_id = ? AND ${PENDING}
           AND NOT EXISTS (SELECT 1 FROM users m WHERE lower(m.email) = lower(i.email) AND m.org_id = i.org_id AND m.deactivated_at IS NULL)
         ORDER BY i.created_at DESC, i.id`, [req.user.orgId]);
+    const sends = await MAIL.sendStateByInvite(query, req.user.orgId);
     res.json({ invites: rows.map(r => ({ id: r.id, email: r.email, role: r.role, createdAt: r.created_at, expiresAt: r.expires_at,
-      expired: !!r.expired, invitedBy: r.invited_by_name || null, link: linkOf(r.token) })) });
+      expired: !!r.expired, invitedBy: r.invited_by_name || null, link: linkOf(r.token),
+      // COMMS-1: when the email last went, and whether it bounced.
+      lastSentAt: (sends.get(r.id) || {}).lastSentAt || null, bounced: !!(sends.get(r.id) || {}).bounced })) });
   }));
 
   app.post("/org/invites/:id/resend", requireAuth, requireAdmin, wrap(async (req, res) => {
@@ -83,10 +72,13 @@ function mount(ctx) {
     if (!i) return res.status(404).json({ error: "not_found", message: "That invite is no longer waiting." });
     await run("UPDATE invites SET expires_at = ? WHERE id = ? AND org_id = ?", [new Date(Date.now() + WEEK_MS).toISOString(), i.id, orgId]);
     const [org] = await query("SELECT name FROM orgs WHERE id = ?", [orgId]);
-    const emailSent = await sendStaffInvite({ resend, orgName: displayNameCase(org && org.name), email: i.email, role: i.role, link: linkOf(i.token) });
+    // COMMS-1: it really sends again, at most once every 10 minutes (inviteMail.js).
+    const out = await MAIL.sendInvite({ query, run, resend }, { orgId, inviteId: i.id, email: i.email, role: i.role, link: linkOf(i.token),
+      orgName: displayNameCase(org && org.name), tz: await orgTzOf(query, orgId), actor: ctx.actor ? ctx.actor(req) : { id: req.user.userId, name: null }, again: true });
     req.audit && req.audit.entity && req.audit.entity("invite", i.id);
-    res.json({ ok: true, emailSent, link: linkOf(i.token),
-      message: emailSent ? `Sent again to ${i.email}. The link works for 7 more days.` : `The link works for 7 more days. Copy it and send it to ${i.email}.` });
+    if (req.audit && req.audit.action) req.audit.action(out.sent ? "sent an invite again" : "renewed an invite link");
+    res.json({ ok: true, emailSent: out.sent, reason: out.reason, sentAt: out.sentAt || null, retryAt: out.retryAt || null, link: linkOf(i.token),
+      message: out.sent ? `${out.message} The link works for 7 more days.` : out.message });
   }));
 
   app.delete("/org/invites/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
@@ -100,4 +92,4 @@ function mount(ctx) {
   return {};
 }
 
-module.exports = { routers, mount, inviteRefusal, sendStaffInvite, PENDING };
+module.exports = { routers, mount, inviteRefusal, PENDING, orgTzOf };
