@@ -23,6 +23,7 @@ const BEHIND = T.gold700;
 import { orgTodayCivil } from "../lib/orgToday";
 import { RecurringView } from "./RecurringGiving";   // GIFTS-2: recurring giving is findable from Finance
 import MergeFunds from "./finance/MergeFunds";   // TRUTH-3: funds are a managed list
+import { Figure } from "./Figure";   // TRUTH-3: the ledger's three figures open their gifts
 
 // ── Constants ──────────────────────────────────────────────────────────────
 // POLISH-5: the empty ledger's second sentence, one text node with its first.
@@ -1221,8 +1222,8 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
               return (
                 <div key={k} data-testid={`ledger-status-${k}`} style={{ flex:"1 1 200px", minWidth:180 }} title={f.sentence}>
                   <div style={{ fontSize:12, fontWeight:700, color:T.ink3 }}>{label}</div>
-                  <div style={{ fontSize:16, fontWeight:800, color:T.ink }}>{fmtFull(f.amount)}</div>
-                  <div style={{ fontSize:12, color:T.ink3, lineHeight:1.5 }}>{countLabel(f.count, "gift")}. {f.sentence}</div>
+                  <div style={{ fontSize:16, fontWeight:800, color:T.ink }}><Figure variant="inline" kind="money" value={f.amount} label={label} definition={f.sentence} source={{ key: "ledger-status", params: { status: k } }} /></div>
+                  <div style={{ fontSize:12, color:T.ink3, lineHeight:1.5 }}><Figure variant="inline" kind="count" value={f.count} label={`${label}, gifts`} definition={f.sentence} source={{ key: "ledger-status", params: { status: k, measure: "count" } }} />{` ${f.count === 1 ? "gift" : "gifts"}. ${f.sentence}`}</div>
                 </div>
               );
             })}

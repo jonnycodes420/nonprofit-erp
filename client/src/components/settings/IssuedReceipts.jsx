@@ -24,11 +24,11 @@ export default function IssuedReceipts({ isAdmin, isReadOnly }) {
   };
   const voidIt = r => apiFetch(`/receipts/${r.id}/void`, { method: "POST", body: JSON.stringify({ reason: note }) })
     .then(() => { setVoiding(null); setNote(""); load(); }).catch(e => setErr(errorMessage(e)));
-  if (!data) return null;
+  if (!data) return <div data-testid="issued-receipts" style={{ borderTop: "1px solid " + T.bg3, paddingTop: 20 }}><SectionLabel>Issued receipts</SectionLabel><div style={{ fontSize: 12.5, color: T.ink3 }}>{err || "Reading the receipts you have issued…"}</div></div>;
   return (
     <div data-testid="issued-receipts" style={{ borderTop: "1px solid " + T.bg3, paddingTop: 20 }}>
       <SectionLabel>Issued receipts</SectionLabel>
-      {!data.receiptsEnabled && <div data-testid="receipts-off-words" style={{ fontSize: 12.5, color: T.ink, background: T.bg, borderRadius: 8, padding: "8px 12px", marginBottom: 10, lineHeight: 1.6 }}>Receipts are off. {data.whenOff}</div>}
+      {!data.receiptsEnabled && <div data-testid="receipts-off-words" style={{ fontSize: 12.5, color: T.ink, background: T.bg, borderRadius: 8, padding: "8px 12px", marginBottom: 10, lineHeight: 1.6 }}>{`Receipts are off. ${data.whenOff}`}</div>}
       <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
         <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === "Enter") load(); }} placeholder="Search a name, email, receipt number or year"
           aria-label="Search receipts" data-testid="receipts-search" style={{ flex: 1, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", fontSize: 13 }} />

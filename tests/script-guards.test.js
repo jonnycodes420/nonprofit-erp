@@ -100,6 +100,9 @@ const GUARDED_WRITERS = [
   // MOPUP-1: removes the old whole-award income rows (source='grant', no
   // gift_id). Dry run by default; --apply writes through writerDbUrl, one audit row per org.
   "mopup1-award-stamps",
+  // TRUTH-3: stores unsent drafts with figure keys. Dry run by default; --apply
+  // writes through writerDbUrl, one audit row per org; --undo puts words back.
+  "truth3-rerender-drafts",
   "backfill-campaign-attribution",                    "dedupe-finance-gift-stamps",
    "fix-build54-demo-photos",
   "fix-demo-finance-ledger",  "load-irs-ein-registry",

@@ -3027,6 +3027,7 @@ async function historicalGiving(orgId, from, to, { baseline = false } = {}) {
 // ── THE ENGINE ─────────────────────────────────────────────────────────────
 // HISTORY-1: By year (the profile) and Year over year (Reports), in their own module.
 Object.assign(SOURCES, require("./server/reports/yoySources")({ FigureParamError }));
+Object.assign(SOURCES, require("./server/reports/ledgerSources")({ FigureParamError }));   // TRUTH-3: the ledger's three figures
 function sourceDef(key) { return Object.prototype.hasOwnProperty.call(SOURCES, key) ? SOURCES[key] : null; }
 
 const num = v => (v === null || v === undefined ? null : Number(v));
