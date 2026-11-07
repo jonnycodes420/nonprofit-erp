@@ -169,7 +169,7 @@ app.post("/me/sessions/sign-out-others", requireAuth, wrap(async (req, res) => {
   await run(`UPDATE users SET sessions_valid_after=NOW() - INTERVAL '2 seconds' WHERE id=?`, [u.id]);
   require("../../sessionCache").sessionCache.evict(u.id);
   let token = null;
-  if (req.user.sid) { token = signToken({ userId: u.id, orgId: u.org_id, email: u.email, role: u.role, isSuperAdmin: !!u.is_super_admin, sid: req.user.sid }); }
+  if (req.user.sid) { token = signToken({ userId: u.id, orgId: req.user.orgId || u.org_id, email: u.email, role: req.user.role || u.role, isSuperAdmin: !!u.is_super_admin, sid: req.user.sid }); }
   else token = (await TF.issueSession(u, req, signToken)).token;
   req.audit.action("signed out everywhere else"); req.audit.entity("user", u.id, u.email);
   res.json({ ok: true, ended: n, token });
@@ -186,7 +186,7 @@ app.post("/me/password", requireAuth, wrap(async (req, res) => {
   const n = await TF.revokeSessions("user_id=? AND id <> ?", [u.id, req.user.sid || ""], u.id);
   await run(`UPDATE users SET sessions_valid_after=NOW() - INTERVAL '2 seconds' WHERE id=?`, [u.id]);
   require("../../sessionCache").sessionCache.evict(u.id);
-  const token = req.user.sid ? signToken({ userId: u.id, orgId: u.org_id, email: u.email, role: u.role, isSuperAdmin: !!u.is_super_admin, sid: req.user.sid })
+  const token = req.user.sid ? signToken({ userId: u.id, orgId: req.user.orgId || u.org_id, email: u.email, role: req.user.role || u.role, isSuperAdmin: !!u.is_super_admin, sid: req.user.sid })
     : (await TF.issueSession(u, req, signToken)).token;
   req.audit.action("password changed"); req.audit.entity("user", u.id, u.email);
   res.json({ ok: true, ended: n, token, sentence: n ? `Password changed. ${n} other ${n === 1 ? "session was" : "sessions were"} signed out.` : "Password changed." });
@@ -198,7 +198,7 @@ app.get("/me", requireAuth, wrap(async (req, res) => {
   if (!users.length || !orgs.length) return res.status(404).json({ error: "Not found" });
   const u = users[0];
   res.json({
-    user: { id: u.id, email: u.email, name: u.name, role: req.user.support ? "admin" : u.role, canMajorGifts: await require("../../prospect").canSee(u.id) },   // PROSPECT-1
+    user: { id: u.id, email: u.email, name: u.name, role: req.user.support ? "admin" : req.user.role, canMajorGifts: await require("../../prospect").canSee(u.id, req.user.orgId) },   // PROSPECT-1
     org: orgs[0],
     // FIX-57: a support session says so, so the banner reads the server.
     ...(req.user.support ? { support: { ...req.user.support, orgName: orgs[0].name } } : {}),

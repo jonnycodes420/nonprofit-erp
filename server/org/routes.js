@@ -878,12 +878,9 @@ app.patch("/org/ai-settings", requireAuth, requireAdmin, wrap(async (req, res) =
 app.get("/org/team", requireAuth, wrap(async (req, res) => {
   // Active members only — a removed (soft-detached) user leaves the team list
   // but their authored rows keep their created_by identity (BUILD-75 C.1/C.3).
-  const members = await query(
-    // SEC-1 — whether each person has two-factor on, for the owner's Security list.
-    "SELECT id, email, name, role, created_at, (mfa_enabled_at IS NOT NULL) AS mfa_enabled, mfa_must_setup, (role = 'admin' OR COALESCE(can_major_gifts, false)) AS can_major_gifts FROM users WHERE org_id = ? AND deactivated_at IS NULL ORDER BY created_at ASC",
-    [req.user.orgId]
-  );
-  res.json(members);
+  // SEC-1 — whether each person has two-factor on, for the owner's Security list.
+  // ACCESS-1: and the people whose home is another org who joined this one.
+  res.json(await require("./joinOrg").teamOf(query, req.user.orgId));
 }));
 
 // ── BUILD-75 C.3 — USER REMOVAL, finally ────────────────────────────────────
@@ -902,7 +899,19 @@ app.delete("/users/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { orgId } = req.user;
   const [target] = await query(
     "SELECT id, role, email, deactivated_at, is_super_admin FROM users WHERE id=? AND org_id=?", [req.params.id, orgId]);
-  if (!target || target.deactivated_at) return res.status(404).json({ error: "Not found" });
+  if (!target || target.deactivated_at) {
+    // ACCESS-1: a member whose home is another org leaves this org only.
+    if (req.params.id !== req.user.userId) {
+      const gone = await require("./joinOrg").removeMembership({ query, run, orgId, userId: req.params.id, by: req.user.userId });
+      if (gone) {
+        req.audit.entity("user", req.params.id);
+        req.audit.before({ role: gone.role });
+        req.audit.action("removed from the team"); req.audit.after({ removed: true });
+        return res.json({ removed: true, donorsUnassigned: null, openTasksUnassigned: null });
+      }
+    }
+    return res.status(404).json({ error: "Not found" });
+  }
 
   // Everything that refuses below is RECORDED, not just returned. A refusal is
   // an attempt, and an attempt on a super-admin is the thing you most want to

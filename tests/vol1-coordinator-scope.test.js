@@ -91,7 +91,8 @@ const ok = (name, cond, extra) => {
   // would mean. requireAuth already overlays the live role for exactly this
   // reason; the gate must sit AFTER that overlay and read `req.user.role`.
   const authSrc = require("fs").readFileSync(require("path").join(__dirname, "..", "auth.js"), "utf8");
-  const overlayAt = authSrc.indexOf("req.user = { ...payload, role: info.role");
+  // ACCESS-1: the live role is the home row's or the membership's (`role`), set on this line.
+  const overlayAt = authSrc.indexOf("req.user = { ...payload, role, orgId,");
   const gateAt = authSrc.indexOf("if (req.user.role === VOLUNTEER_COORDINATOR)");
   ok("§5 the gate reads req.user.role (the live row), not payload.role", gateAt > 0 && overlayAt > 0 && gateAt > overlayAt,
      { overlayAt, gateAt });

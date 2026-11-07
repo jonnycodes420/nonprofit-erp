@@ -26,7 +26,14 @@ async function inviteRefusal(query, orgId, email) {
   if (u && u.org_id === orgId) return u.gone
     ? { error: "already_user", message: `${e} was removed from your team, and that account can't be invited again.` }
     : { error: "already_member", message: `${e} is already on your team.` };
-  if (u) return { error: "already_user", message: `${e} already has a Steward account with another organization, so it can't be invited here.` };
+  // ACCESS-1: an account in another org can be invited; accepting adds this org
+  // to it (org_memberships). A removed account, or one already a member, can't.
+  if (u && u.gone) return { error: "already_user", message: `${e} already has a Steward account with another organization, so it can't be invited here.` };
+  if (u) {
+    const [m] = await query(`SELECT 1 FROM org_memberships m JOIN users x ON x.id = m.user_id
+                              WHERE lower(x.email) = lower(btrim(?)) AND m.org_id = ? AND m.revoked_at IS NULL`, [e, orgId]);
+    if (m) return { error: "already_member", message: `${e} is already on your team.` };
+  }
   const [p] = await query(`SELECT i.id FROM invites i WHERE i.org_id = ? AND lower(i.email) = ? AND ${PENDING} AND i.expires_at > NOW()`, [orgId, e]);
   if (p) return { error: "already_invited", message: `${e} already has an invite waiting. Resend it from Team, under Invited.`, inviteId: p.id };
   return null;

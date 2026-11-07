@@ -252,7 +252,7 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
   const pMe = query(`SELECT role FROM users WHERE id = ? AND org_id = ?`, [req.user.userId, orgId]);
   const pTags = query(`SELECT tags FROM donors WHERE id = ? AND org_id = ?`, [d.id, orgId]);
   const pMeeting = require("../meetingEffects").meetingSetFor(orgId, [d.id]);
-  const pCanSee = require("../prospect").canSee(req.user.userId);
+  const pCanSee = require("../prospect").canSee(req.user.userId, req.user.orgId);
   const src = k => ({ key: k, params: { donor: d.id } });
   const pPair = Promise.all(["donor-lifetime", "donor-last-gift"].map(async key => {
     const f = await FS.figure(orgId, src(key), {}, { pageSize: 1 });

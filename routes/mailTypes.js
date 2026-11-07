@@ -40,8 +40,8 @@ async function superAdmin(req) {
   return !!(me && me.is_super_admin === true);
 }
 async function isAdmin(req) {
-  const [me] = await query("SELECT role FROM users WHERE id = ?", [req.user.userId]);
-  return !!(me && me.role === "admin");
+  // ACCESS-1: the role in this session's org.
+  return (await require("../server/auth/access").liveRoleIn(req.user.userId, req.user.orgId)) === "admin";
 }
 
 // The org's switch (Jonathan's) and who moved it last.
