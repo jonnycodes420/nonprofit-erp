@@ -211,6 +211,18 @@ async function importJob(tok, body) {
   const small = await undoAndWait(BASE, tok3, j3.importId || "none", { timeoutMs: 30000 });
   ok("§4 a small import is still undone in the request (200 with its sentence)", small.via === "inline" && small.status === 200 && /^Undone\. 8 gifts removed/.test((small.body && small.body.sentence) || ""),
     { via: small.via, status: small.status, sentence: small.body && (small.body.sentence || small.body.message) });
+  // FLAKE-2: an undo that has marked the import undone but is still finishing
+  // (the after-change step of a long undo) is not done yet. The old order
+  // wrote reversed_at first, and a screen polling then read "done" with the
+  // stand-in "Undone. The whole import was removed." and no count. Planted
+  // here: that in-between row; the screen must read it as still running.
+  if (j3.importId) {
+    await q(`UPDATE imports SET undo_state = (undo_state - 'result') || '{"status":"running","phase":"finishing"}'::jsonb WHERE id=$1 AND org_id=$2`, [j3.importId, ORG3]);
+    const mid = await call("GET", `/imports/${j3.importId}/undo-status`, tok3);
+    ok("§4 an undo still finishing is never read as done without its count",
+      mid.status === 200 && mid.body.status === "running" && !/whole import was removed/.test(mid.body.sentence || ""),
+      { status: mid.status, undo: mid.body && mid.body.status, sentence: mid.body && mid.body.sentence });
+  }
 
   for (const id of [ORG1, ORG2, ORG3, ORG5]) {
     const all = (await q(`SELECT table_name AS t FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.t);
