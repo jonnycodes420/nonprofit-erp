@@ -18,6 +18,7 @@ import { errorMessage } from "../lib/domainError";
 import { RESTRICTIONS, statusLabel } from "../../../shared/grantShape";
 import { toAmountInput, fromAmountInput } from "../lib/amountInput";
 import PledgeSchedule, { scheduleBody } from "./gifts/PledgeSchedule";   // GIFTS-1: the pledge form's own schedule
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 
 const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: T.ink, background: T.white, fontFamily: "inherit", width: "100%", boxSizing: "border-box" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" });
@@ -126,7 +127,7 @@ export function AwardStep({ grant, target = "awarded", onDone, onClose }) {
               <option value="">Not said</option>
               {RESTRICTIONS.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}</select></label>
           {a.restriction === "time_restricted" && <label><span style={lbl}>Released on</span>
-            <input aria-label="Released on" type="date" value={a.restrictedUntil} onChange={e => set("restrictedUntil", e.target.value)} style={inp} /></label>}
+            <DateInput aria-label="Released on" value={a.restrictedUntil} onChange={e => set("restrictedUntil", e.target.value)} style={inp} /></label>}
           {msg && <div role="status" style={{ fontSize: 13, color: T.ink }}>{msg}</div>}
           <div style={{ display: "flex", gap: 8 }}>
             <button type="button" style={btn(true)} disabled={busy} onClick={confirm} data-testid="award-confirm">{busy ? "Saving…" : "Record the award"}</button>

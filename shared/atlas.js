@@ -345,7 +345,17 @@ export function previewLines(text) {
 // ── WHAT ATLAS SAYS ────────────────────────────────────────────────────────
 // Brief, first person, one line per thing. Each line carries where it lives.
 export const AI_OFF_LINE = "My reading is off for this organization, so I can log a conversation, find someone, and add someone to a journey by its exact name. Say it plainly and I'll do that.";
-export const CANT_LINE = words => `I can't do "${String(words).slice(0, 80)}" yet. I did the rest.`;
+// POLISH-6 (W-1107-Atlas-07): a refusal is one plain sentence, never a quoted
+// fragment cut mid-word. A question about something Steward does not keep
+// ("what is Renee's favorite color") says so by name; anything else says the
+// part that was not done, plainly.
+const ASKED_ABOUT = /^\s*(?:what(?:'s| is| was| are)|where(?:'s| is| does)|when(?:'s| is)|do you know|tell me)\s+(?:the\s+)?([A-Z][\w'’-]*(?:\s+[A-Z][\w'’-]*)?)['’]s?\s+([^?.!]{1,60}?)\s*[?.!]*\s*$/i;
+export const CANT_LINE = words => {
+  const w = String(words || "").replace(/\s+/g, " ").trim();
+  const m = ASKED_ABOUT.exec(w);
+  if (m) return `I don't have ${m[1].replace(/['’]s$/i, "")}'s ${m[2].trim().replace(/^(?:the|their|her|his)\s+/i, "")} in Steward.`;
+  return "I can't do that part yet, so I did the rest.";
+};
 export const REFUSE = {
   send_now: "I don't send without your yes. The draft is waiting for you.",
   merge: "I never merge people. I put them in Data health for you to decide.",

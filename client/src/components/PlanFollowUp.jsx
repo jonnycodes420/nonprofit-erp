@@ -20,6 +20,7 @@ import { T, activeMark, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { addCivilDays, sanitizeStepLabel, NEXT_STEP_LABEL_MAX } from "../../../shared/threadShape";
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 
 const todayLocal = () => orgTodayCivil();
 
@@ -129,7 +130,7 @@ export function PlanFollowUpModal({ donor = null, donors = null, onSaved, onClos
 
         <div style={{ marginTop: 16 }}>
           <label style={lbl}>When should it come back?</label>
-          <input type="date" style={{ ...fld, maxWidth: 190 }} value={due} onChange={e => setDue(e.target.value)} />
+          <DateInput style={{ ...fld, maxWidth: 190 }} value={due} onChange={e => setDue(e.target.value)} />
         </div>
 
         {err && <div style={{ marginTop: 14, fontSize: 12.5, color: T.terra700, background: T.terra100, border: "1px solid " + T.terra200, borderRadius: 8, padding: "9px 11px", lineHeight: 1.5 }}>{err}</div>}

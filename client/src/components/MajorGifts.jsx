@@ -7,6 +7,7 @@ import { DonorLink } from "./RecordLink";
 import { ItemMenu, EditedMarker, offerUndo } from "./EditHistory";
 import { streamBrief } from "../lib/briefStream";   // ATLAS-3: first words at once
 import { citeWords } from "../../../shared/briefCite.js";   // ATLAS-3: "from 3 gifts", not "(1 row)"
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 
 // ── Major gifts (BUILD-99) ──────────────────────────────────────────────────
 // Moves management on top of the stages Steward already has, for the
@@ -124,7 +125,7 @@ function ProposalForm({ open, onClose, onSaved, meta, donorId, existing, donorNa
           <div><label style={lbl}>Ask amount</label>
             <input style={inp} value={f.askAmount} onChange={e => set("askAmount", e.target.value)} placeholder="25,000" /></div>
           <div><label style={lbl}>Expected close</label>
-            <input type="date" style={inp} value={f.expectedClose} onChange={e => set("expectedClose", e.target.value)} /></div>
+            <DateInput style={inp} value={f.expectedClose} onChange={e => set("expectedClose", e.target.value)} /></div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div><label style={lbl}>Stage</label>

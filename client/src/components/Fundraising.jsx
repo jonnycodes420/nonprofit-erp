@@ -35,6 +35,7 @@ import { countLabel } from "../../../shared/countWords.js";
 import { RowsPanel } from "./fundraising/RowsPanel";   // FLOWS-2
 import { LostAndFoundPart } from "./fundraising/LostAndFoundPart";   // FLOWS-2
 import { RollupThermometer } from "./fundraising/RollupThermometer";   // FLOWS-2: moved out, verbatim
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 
 // FIX-14 Part 5: a campaign is /app/fundraising?fr=campaigns&campaign=<id>:
 // the Campaigns part, scrolled to that campaign's card and marked.
@@ -569,7 +570,7 @@ function PledgeTile({ p, onOpen }) {
       <span style={{ fontSize: 10, fontWeight: 800, color: T.ink3 }}>Pledged, still to come</span>
       <span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif", lineHeight: 1.05, letterSpacing: "-0.02em" }}>{fig("open", "Pledged, still to come")}</span>
       <span style={{ fontSize: 12, color: T.ink3, lineHeight: 1.4 }}>
-        {fig("dueThisYear", "Pledged, due this fiscal year")} due this fiscal year · {fig("overdue", "Pledged, overdue")} overdue
+        {fig("dueThisYear", `Pledged, due in ${p.yearLabel || "this fiscal year"}`)}{` due in ${p.yearLabel || "this fiscal year"} · `}{fig("overdue", "Pledged, overdue")}{" overdue"}
       </span>
       <button onClick={onOpen} style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, fontSize: 12, fontWeight: 700, color: T.greenDk, cursor: "pointer", fontFamily: "inherit" }}>Every pledge →</button>
     </div>
@@ -1008,11 +1009,11 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
         <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
           <div style={{ flex: 1 }}>
             <label style={lbl}>Start date <span style={{ color: T.ink3, fontWeight: 400 }}>(optional)</span></label>
-            <input type="date" value={start} onChange={e => setStart(e.target.value)} style={field} />
+            <DateInput value={start} onChange={e => setStart(e.target.value)} style={field} />
           </div>
           <div style={{ flex: 1 }}>
             <label style={lbl}>Deadline <span style={{ color: T.ink3, fontWeight: 400 }}>(optional)</span></label>
-            <input type="date" value={end} onChange={e => setEnd(e.target.value)} style={field} />
+            <DateInput value={end} onChange={e => setEnd(e.target.value)} style={field} />
           </div>
         </div>
         {/* BUILD-54 §2 — donor-facing content, org-authored only. Honest empty

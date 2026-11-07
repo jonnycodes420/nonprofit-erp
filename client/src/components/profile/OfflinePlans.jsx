@@ -18,6 +18,7 @@ import { orgTodayCivil } from "../../lib/orgToday";
 import { told } from "../../lib/stewardTold";
 import { useChanged } from "../../lib/changes";
 import { countLabel } from "../../../../shared/countWords.js";
+import DateInput from "../inputs/DateInput";   // POLISH-6: the one date box
 
 const FREQS = [["monthly", "Monthly"], ["weekly", "Weekly"], ["quarterly", "Quarterly"], ["annually", "Annually"]];
 const STATE = { active: { label: "On track", color: T.greenDk }, behind: { label: "Behind", color: T.gold700 },
@@ -70,8 +71,8 @@ export default function OfflinePlans({ donorId, isReadOnly, giftsFull = [] }) {
       {form && <div data-testid="offline-plan-form" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: 14, marginBottom: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <input aria-label="Amount" placeholder="Amount ($)" type="number" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} style={{ ...input, width: 110 }} />
         <select aria-label="How often" value={form.frequency} onChange={e => setForm({ ...form, frequency: e.target.value })} style={input}>{FREQS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-        <label style={{ fontSize: 12, color: T.ink3 }}>From <input aria-label="Start date" type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} style={input} /></label>
-        <label style={{ fontSize: 12, color: T.ink3 }}>Until <input aria-label="End date" type="date" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} style={input} /></label>
+        <label style={{ fontSize: 12, color: T.ink3 }}>From <DateInput aria-label="Start date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} style={input} /></label>
+        <label style={{ fontSize: 12, color: T.ink3 }}>Until <DateInput aria-label="End date" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} style={input} /></label>
         <select aria-label="Fund" value={form.fundId} onChange={e => setForm({ ...form, fundId: e.target.value })} style={input}>
           <option value="">No fund</option>{funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
         <select aria-label="Paid by" value={form.method} onChange={e => setForm({ ...form, method: e.target.value })} style={input}>
@@ -96,7 +97,7 @@ export default function OfflinePlans({ donorId, isReadOnly, giftsFull = [] }) {
             {!isReadOnly && p.status !== "cancelled" && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
               {pay && pay.planId === p.id
                 ? <>
-                    <input aria-label="Payment date" type="date" value={pay.date} onChange={e => setPay({ ...pay, date: e.target.value })} style={input} />
+                    <DateInput aria-label="Payment date" value={pay.date} onChange={e => setPay({ ...pay, date: e.target.value })} style={input} />
                     <input aria-label="Payment amount" type="number" value={pay.amount} onChange={e => setPay({ ...pay, amount: e.target.value })} style={{ ...input, width: 100 }} />
                     <button type="button" data-testid="offline-plan-pay-save" onClick={addPayment} style={btn(true)}>Record payment</button>
                     <button type="button" onClick={() => setPay(null)} style={{ ...btn(false), border: "none" }}>Cancel</button>

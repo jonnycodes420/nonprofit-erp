@@ -27,6 +27,7 @@ import { displayName } from "../../../shared/displayName.js";
 import { countLabel, plural } from "../../../shared/countWords.js";
 import { MergeWithModal } from "./profile/MergeWith";
 import { BulkTrash } from "./donors/BulkTrash";   // MOPUP-2: More → Move to trash
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 // WALKB-1 · A SEARCH RESULT SAYS WHY IT IS THERE. A name match needs no words;
 // anything else does ("Matched household: The Marlowe Hart household"), and an
 // archived person a search found says so.
@@ -1166,9 +1167,9 @@ function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
       <div className="filter-bar-row" style={row}>
         <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
           <span style={lbl}>Last Gift</span>
-          <input type="date" value={filters.giftFrom} onChange={e=>set("giftFrom",e.target.value)} style={inp}/>
+          <DateInput value={filters.giftFrom} onChange={e=>set("giftFrom",e.target.value)} style={inp}/>
           <span style={{fontSize:11,color:T.ink3}}>→</span>
-          <input type="date" value={filters.giftTo} onChange={e=>set("giftTo",e.target.value)} style={inp}/>
+          <DateInput value={filters.giftTo} onChange={e=>set("giftTo",e.target.value)} style={inp}/>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
           <span style={lbl}>Lifetime Giving</span>
@@ -1212,9 +1213,9 @@ function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
               return(
                 <div key={f.id} className="filter-bar-row" style={row}>
                   <span style={lbl}>{f.label}</span>
-                  <input type="date" value={val.from||""} onChange={e=>setCf(f.id,{...val,from:e.target.value})} style={inp}/>
+                  <DateInput value={val.from||""} onChange={e=>setCf(f.id,{...val,from:e.target.value})} style={inp}/>
                   <span style={{fontSize:11,color:T.ink3}}>→</span>
-                  <input type="date" value={val.to||""} onChange={e=>setCf(f.id,{...val,to:e.target.value})} style={inp}/>
+                  <DateInput value={val.to||""} onChange={e=>setCf(f.id,{...val,to:e.target.value})} style={inp}/>
                 </div>
               );
             }

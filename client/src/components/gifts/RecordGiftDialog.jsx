@@ -15,6 +15,7 @@ import { orgTodayCivil } from "../../lib/orgToday";
 import { personNamed } from "../../lib/people";
 import { PeopleDatalist } from "../PeopleDatalist";
 import EventField from "./EventField";
+import DateInput from "../inputs/DateInput";   // POLISH-6: the one date box
 
 const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", color: T.ink, fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box", width: "100%" };
 const lbl = { fontSize: 11.5, fontWeight: 700, color: T.ink3, marginBottom: 4, display: "block" };
@@ -59,7 +60,7 @@ export default function RecordGiftDialog({ person = null, eventId = "", pledgeId
           <label><span style={lbl}>Amount ($)</span>
             <input type="number" min="0" step="0.01" value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} data-testid={testid + "-amount"} style={inp} autoFocus /></label>
           <label><span style={lbl}>Date</span>
-            <input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} data-testid={testid + "-date"} style={inp} /></label>
+            <DateInput value={f.date} onChange={e => setF({ ...f, date: e.target.value })} data-testid={testid + "-date"} style={inp} /></label>
           <label><span style={lbl}>Method</span>
             <select value={f.method} onChange={e => setF({ ...f, method: e.target.value })} data-testid={testid + "-method"} style={inp}>
               {["Check", "Cash", "Card", "ACH / bank transfer", "Wire", "Other"].map(m => <option key={m} value={m}>{m}</option>)}

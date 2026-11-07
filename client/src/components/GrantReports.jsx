@@ -15,6 +15,7 @@ import { apiFetch } from "../api";
 import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 
 const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", fontSize: 13, color: T.ink, background: T.white, boxSizing: "border-box", fontFamily: "inherit" };
 const quietBtn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer", minHeight: 36, fontFamily: "inherit" };
@@ -90,7 +91,7 @@ function RecordSend({ grantId, pieces, reports, onDone }) {
         {options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
       </select>
       {what === "library" && <input aria-label="Version" placeholder="Version (current)" value={version} onChange={e => setVersion(e.target.value.replace(/\D/g, ""))} style={{ ...inp, width: 130 }} />}
-      <input aria-label="Date it went" type="date" value={sentOn} onChange={e => setSentOn(e.target.value)} style={inp} />
+      <DateInput aria-label="Date it went" value={sentOn} onChange={e => setSentOn(e.target.value)} style={inp} />
       <input aria-label="To whom" placeholder="To whom" value={name} onChange={e => setName(e.target.value)} style={{ ...inp, flex: "1 1 120px" }} />
       <input aria-label="Their email" placeholder="Their email" value={email} onChange={e => setEmail(e.target.value)} style={{ ...inp, flex: "1 1 160px" }} />
       <button style={primaryBtn} disabled={!itemId} onClick={save}>Record it</button>
@@ -177,7 +178,7 @@ function ReportEditor({ report, grantId, pieces, isReadOnly, onChanged }) {
       {draft ? (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input aria-label="Report title" value={r.title} onChange={e => { setR({ ...r, title: e.target.value }); setDirty(true); }} style={{ ...inp, flex: "2 1 220px" }} />
-          <input aria-label="Due" type="date" value={r.dueDate || ""} onChange={e => { setR({ ...r, dueDate: e.target.value }); setDirty(true); }} style={inp} />
+          <DateInput aria-label="Due" value={r.dueDate || ""} onChange={e => { setR({ ...r, dueDate: e.target.value }); setDirty(true); }} style={inp} />
           <textarea aria-label="What the funder asked for" placeholder="What the funder asked for" value={r.askedFor} rows={2} onChange={e => { setR({ ...r, askedFor: e.target.value }); setDirty(true); }} style={{ ...inp, width: "100%" }} />
         </div>
       ) : (
@@ -236,7 +237,7 @@ function ReportEditor({ report, grantId, pieces, isReadOnly, onChanged }) {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <input aria-label="Sent to" placeholder="Sent to" value={sub.toName} onChange={e => setSub({ ...sub, toName: e.target.value })} style={{ ...inp, flex: "1 1 140px" }} />
               <input aria-label="Their email" placeholder="Their email" value={sub.toEmail} onChange={e => setSub({ ...sub, toEmail: e.target.value })} style={{ ...inp, flex: "1 1 160px" }} />
-              <input aria-label="Date it went" type="date" value={sub.submittedOn} onChange={e => setSub({ ...sub, submittedOn: e.target.value })} style={inp} />
+              <DateInput aria-label="Date it went" value={sub.submittedOn} onChange={e => setSub({ ...sub, submittedOn: e.target.value })} style={inp} />
               <button style={primaryBtn} disabled={!!busy} onClick={submit}>{busy === "submit" ? "Saving…" : "Mark submitted"}</button>
             </div>
           </div>
@@ -311,7 +312,7 @@ export function GrantReportsPanel({ grantId, funderId, isReadOnly = false }) {
         {adding && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
             <input aria-label="Title" placeholder="Title (for example, Year one report)" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} style={{ ...inp, flex: "2 1 200px" }} />
-            <input aria-label="Due" type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} style={inp} />
+            <DateInput aria-label="Due" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} style={inp} />
             <textarea aria-label="What the funder asked for" placeholder="What the funder asked for" rows={2} value={form.askedFor} onChange={e => setForm({ ...form, askedFor: e.target.value })} style={{ ...inp, width: "100%" }} />
             <button style={primaryBtn} onClick={create}>Start the report</button>
             <button style={quietBtn} onClick={() => setAdding(false)}>Cancel</button>

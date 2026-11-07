@@ -37,6 +37,7 @@ import { countLabel, plural } from "../../../shared/countWords.js";
 import { DARK_BRASS, SERIF, btnPrimary, btnOutline, input, dayKey, relDay, meetingNoun } from "./MorningBrief";
 import { shownNote } from "../lib/internalLabels";
 import { giftTypeLabel } from "../../../shared/giftWords.js";   // FEEL-1
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 export { relDay, meetingNoun, AddToRecord, MorningBrief } from "./MorningBrief";
 
 const CHIP_EDGE = T.bg3;           // the artboards draw a hairline one shade off bg3; bg3 is the token
@@ -96,7 +97,7 @@ function TimeForm({ initialStart, initialMinutes = 60, onSubmit, submitLabel, bu
   return (
     <form onSubmit={go} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end" }}>
       <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "inherit" }}>Day
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} required style={{ ...input, width: 160, padding: 8 }}/></label>
+        <DateInput value={date} onChange={e => setDate(e.target.value)} required style={{ ...input, width: 160, padding: 8 }}/></label>
       <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "inherit" }}>Time
         <input type="time" value={time} onChange={e => setTime(e.target.value)} required style={{ ...input, width: 120, padding: 8 }}/></label>
       <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "inherit" }}>Minutes
@@ -827,7 +828,7 @@ export function AfterMeetingForm({ meeting, onDone }) {
         <label htmlFor={`next-${meeting.id}`} style={{ fontSize: 13, color: T.ink3 }}>Next step</label>
         <input id={`next-${meeting.id}`} value={next} onChange={e => { setNext(e.target.value); setNextTouched(true); }} style={input}/>
         {next.trim() && <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, color: T.ink3 }}>Due
-          <input type="date" value={due} onChange={e => setDue(e.target.value)} style={{ ...input, width: 170, padding: 8 }}/></label>}
+          <DateInput value={due} onChange={e => setDue(e.target.value)} style={{ ...input, width: 170, padding: 8 }}/></label>}
         <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, color: T.ink3 }}>
           <input type="checkbox" checked={noNext} onChange={e => setNoNext(e.target.checked)}/> No next step for now</label>
         {!next.trim() && !noNext && (note.trim() || takeaways.trim()) && <div data-testid="after-needs-next" style={{ fontSize: 13, color: T.gold700 }}>What happens next? Add a next step with a date, or tick "No next step for now".</div>}

@@ -21,6 +21,7 @@ import { Figure } from "./Figure";
 import { coachDrafts, coachMailto } from "../../../shared/p2p.js";
 import { displayDate } from "../../../shared/displayDate";
 import { offerUndo } from "./EditHistory";
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3, marginBottom: 8 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -209,8 +210,8 @@ function NewCampaignForm({ orgSlug, onMade, onCancel }) {
           <input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} style={inp} data-testid="p2p-new-name" autoFocus /></label>
         <label style={lab}>Goal ($)
           <input type="number" min="1" value={f.goalAmount} onChange={e => setF({ ...f, goalAmount: e.target.value })} style={{ ...inp, width: 120 }} data-testid="p2p-new-goal" /></label>
-        <label style={lab}>Ends on
-          <input type="date" value={f.endsOn} onChange={e => setF({ ...f, endsOn: e.target.value })} style={inp} data-testid="p2p-new-ends" /></label>
+        <label style={lab}>Ends on{" "}
+          <DateInput value={f.endsOn} onChange={e => setF({ ...f, endsOn: e.target.value })} style={inp} data-testid="p2p-new-ends" /></label>
       </div>
       <label style={{ ...lab, marginTop: 10 }}>Public page address
         <input value={slugTouched ? f.slug : slug} onChange={e => { setSlugTouched(true); setF({ ...f, slug: e.target.value }); }} style={{ ...inp, maxWidth: 320 }} data-testid="p2p-new-slug" /></label>
@@ -461,7 +462,7 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
             {d.page.campaignEndDate
               ? <span>The public countdown runs to the campaign's end, {displayDate(d.page.campaignEndDate) || d.page.campaignEndDate}.</span>
               : <label style={{ display: "flex", gap: 6, alignItems: "center" }}>Ends on
-                  <input type="date" data-testid="p2p-ends-on" value={d.page.endsOn || ""} disabled={isReadOnly || !isAdmin} style={inp}
+                  <DateInput data-testid="p2p-ends-on" value={d.page.endsOn || ""} disabled={isReadOnly || !isAdmin} style={inp}
                     onChange={e => savePage({ endsOn: e.target.value }, e.target.value ? "The public page counts down to that date." : "The countdown is off.")} />
                 </label>}
           </div>

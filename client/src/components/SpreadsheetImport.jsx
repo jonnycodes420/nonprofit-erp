@@ -26,6 +26,7 @@ import { WorkbookImport } from "./WorkbookImport";
 import { DateOrderQuestions, GuessNotes } from "./import/SheetGuesses";   // IMPORT-9
 import { told } from "../lib/stewardTold";   // HOME-3: the pages behind the window re-read
 import { droppedSpreadsheet, filesAsOne, isFileDrag, SheetDropTarget } from "./SheetDropTarget";   // PERF-4
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 
 const box = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px" };
 const h3 = { fontSize: 13, fontWeight: 800, color: T.ink, margin: "0 0 6px" };
@@ -535,7 +536,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                     <input type="text" data-testid="sheet-event-name" value={eventName} placeholder="The event's name" onChange={e => setAnswer({ eventName: e.target.value })} style={field} />
                   </label>
                   <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center" }}>{eventQ && eventQ.required ? "On" : "On (optional)"}
-                    <input type="date" data-testid="sheet-event-date" required={!!(eventQ && eventQ.required)} value={answers.eventDate || ""} onChange={e => setAnswer({ eventDate: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
+                    <DateInput data-testid="sheet-event-date" required={!!(eventQ && eventQ.required)} value={answers.eventDate || ""} onChange={e => setAnswer({ eventDate: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
                   </label>
                 </div>
                 {eventQ && eventQ.canSayNotEvent && (
@@ -573,7 +574,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                       onClick={() => setAnswer({ pledgeDue: o.key })}>{o.label}{o.key === "event" && answers.eventDate ? ` (first due ${longDate(`${answers.eventDate.slice(0, 4)}-12-31`)})` : ""}</button>
                   ))}
                   {answers.pledgeDue === "choose" && (
-                    <input type="date" data-testid="sheet-pledge-due-date" aria-label="First due date" value={answers.pledgeDueDate || ""} onChange={e => setAnswer({ pledgeDueDate: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
+                    <DateInput data-testid="sheet-pledge-due-date" aria-label="First due date" value={answers.pledgeDueDate || ""} onChange={e => setAnswer({ pledgeDueDate: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
                   )}
                 </div>
                 {answers.pledgeDue === "event" && !answers.eventDate && <div style={{ ...small, marginTop: 6 }}>Give the event's date above first.</div>}
@@ -670,7 +671,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                     )}
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
                       <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center" }}>Date them all (optional)
-                        <input type="date" data-testid="sheet-date-input" value={answers.date || ""} onChange={e => setAnswer({ date: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
+                        <DateInput data-testid="sheet-date-input" value={answers.date || ""} onChange={e => setAnswer({ date: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
                       </label>
                       <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center", flex: "1 1 220px" }}>Event
                         <input type="text" value={eventName} placeholder="Name of the event (optional)" onChange={e => setAnswer({ eventName: e.target.value })} style={field} />
@@ -870,7 +871,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 <div style={{ fontSize: 13 }}>{dated || `${n(result.undatedGifts, "gift")} came in with no date. They count in Lifetime and ${result.eventName || "the event"}'s total, not in This year.`}</div>
                 {!dated && (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
-                    <input type="date" data-testid="sheet-undated-date" value={undatedDate} onChange={e => setUndatedDate(e.target.value)} style={{ ...field, flex: "0 0 auto" }} />
+                    <DateInput data-testid="sheet-undated-date" value={undatedDate} onChange={e => setUndatedDate(e.target.value)} style={{ ...field, flex: "0 0 auto" }} />
                     <button type="button" data-commit data-testid="sheet-undated-go" style={btn(false)} disabled={!undatedDate || busy === "date"} onClick={dateUndated}>
                       {busy === "date" ? "Dating…" : answers.eventDate && undatedDate === answers.eventDate ? `Use the event date for these ${n(result.undatedGifts, "gift")}` : `Date these ${n(result.undatedGifts, "gift")}`}
                     </button>

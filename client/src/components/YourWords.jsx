@@ -13,6 +13,7 @@ import { apiFetch } from "../api";
 import { T, activeMark, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { VOCAB_DEFAULTS, MONTH_NAMES } from "../../../shared/vocabulary";
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 
 export function YourWords({ mode = "settings", onDone, onClose }) {
   const firstRun = mode === "first-run";
@@ -109,7 +110,7 @@ export function YourWords({ mode = "settings", onDone, onClose }) {
         <div style={help}>Steward mentions it on your morning screen as the date approaches. Leave it blank if there isn’t one.</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input style={{ ...fld, flex: 1, minWidth: 180 }} placeholder="Spring Campaign" value={v.season_name || ""} onChange={e => set("season_name", e.target.value)} />
-          <input type="date" style={{ ...fld, maxWidth: 190 }} value={v.season_date || ""} onChange={e => set("season_date", e.target.value)} />
+          <DateInput style={{ ...fld, maxWidth: 190 }} value={v.season_date || ""} onChange={e => set("season_date", e.target.value)} />
         </div>
       </div>
 

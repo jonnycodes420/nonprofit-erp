@@ -22,6 +22,7 @@ import { eventStatus } from "../../../shared/eventStatus.js";
 import { eventEditForm } from "../lib/eventEditForm.js";   // WALKB-2: the dialog opens with the date
 import EventRemoveButton, { AttendeeLabel } from "./events/EventRemoveButton.jsx";   // WALKB-2
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: the org's day
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 
 // PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
 const CHAIR = 44;
@@ -142,8 +143,8 @@ function NewEventPanel({ onSave, onClose }) {
           </select>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div><label style={LBL}>Date *</label><input type="date" value={form.date} onChange={set("date")} style={INP} /></div>
-          <div><label style={LBL}>End Date</label><input type="date" value={form.endDate} onChange={set("endDate")} style={INP} /></div>
+          <div><label style={LBL}>Date *</label><DateInput value={form.date} onChange={set("date")} style={INP} /></div>
+          <div><label style={LBL}>End Date</label><DateInput value={form.endDate} onChange={set("endDate")} style={INP} /></div>
         </div>
         <div><label style={LBL}>Location</label><input value={form.location} onChange={set("location")} placeholder="Venue name or address" style={INP} /></div>
         <div><label style={LBL}>Description</label><textarea value={form.description} onChange={set("description")} rows={3} placeholder="What is this event about?" style={{ ...INP, resize: "vertical" }} /></div>
@@ -332,7 +333,7 @@ function FollowUpModal({ eventId, onDone, onClose }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
                   <div style={LBL}>Due</div>
-                  <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={INP} aria-label="Due" />
+                  <DateInput value={dueDate} onChange={e => setDueDate(e.target.value)} style={INP} aria-label="Due" />
                 </div>
                 <div>
                   <div style={LBL}>Priority</div>

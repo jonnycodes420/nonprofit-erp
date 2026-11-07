@@ -193,8 +193,11 @@ function isReadOnlyPost(pattern) {
   return READ_ONLY_POSTS.some(re => re.test(pattern));
 }
 
+// POLISH-6: words that end in s and are already one ("atlas" read as "atla").
+const ONE_ALREADY = /(^|\s)(atlas|canvas|status|bonus|campus|alias|census|focus|analysis|basis|thesis|gas|bus|news|series)$/i;
 function singular(word) {
   const w = String(word || "");
+  if (ONE_ALREADY.test(w)) return w;
   if (/ies$/.test(w)) return w.replace(/ies$/, "y");
   if (/(ses|xes|zes|ches|shes)$/.test(w)) return w.replace(/es$/, "");
   if (/s$/.test(w) && !/ss$/.test(w)) return w.replace(/s$/, "");
@@ -381,7 +384,7 @@ const FIELD_WORD = {
   officer_name: "officer", relationship_type: "kind", notes: "note", campaign_id: "campaign",
   primary_donor_id: "primary member", joint_acknowledgment: "joint thank-you",
 };
-const ENTITY_WORD = { thread: "next step", interaction: "conversation", "donor relationship": "relationship" };
+const ENTITY_WORD = { thread: "next step", interaction: "conversation", "donor relationship": "relationship", atlas: "Atlas action", atla: "Atlas action" };
 const lowerFirst = s => s ? s.charAt(0).toLowerCase() + s.slice(1) : s;
 const upperFirst = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 function usdShort(v) {
@@ -395,7 +398,7 @@ function showValue(field, v) {
   if (field === "amount" || field === "target_amount") return usdShort(v);
   if (typeof v === "object") return "new details";
   const s = String(v);
-  return s.length > 40 ? `"${s.slice(0, 37)}..."` : `"${s}"`;
+  return `"${clipWords(s, 40)}"`;   // POLISH-6: never cut mid-word
 }
 // The donor a row is about, by id: the record itself when it is a person, or
 // the donor_id the record carries (on the row, or in the context the
@@ -433,7 +436,39 @@ const RELATIONSHIP_WORD = { spouse: "spouse", partner: "partner", parent: "paren
 const nameList = names => names.length <= 1 ? (names[0] || "")
   : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 
+// POLISH-6 (W-1107-Atlas-26X) · ONE WAY AN ACTION IS SAID. The log read
+// "Undone the atla", "Deleted a event" and "Dismissed a draft the draft a draft".
+// Every sentence describeAuditRow returns comes through actionText: "an"
+// before a vowel sound, a noun said once, the past tense a person says
+// ("Undid"), and nothing cut mid-word (clipWords).
+function clipWords(s, max) {
+  const t = String(s || "").replace(/\s+/g, " ").trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max - 1).replace(/\s+\S*$/, "");
+  return (cut || t.slice(0, max - 1)) + "…";
+}
+const AN_WORD = /^(?:[aeio]|u(?!ni|se|su|ra|ro|ti)|hour|honest|honor|heir|[fhlmnrsx](?:[\s.,:;]|$)|\d*8|11\b|18\b)/i;
+const articleFor = w => (AN_WORD.test(String(w || "")) ? "an" : "a");
+function actionText(s) {
+  let t = String(s || "").replace(/\s+/g, " ").trim();
+  t = t.replace(/^Undone\b/, "Undid");
+  t = t.replace(/\b(?:the|a|an) atla\b/gi, "an Atlas action");   // rows written before singular() knew "atlas"
+  // a / an before the word that follows
+  t = t.replace(/\b([Aa]n?) (?=([\w$]))/g, (all, art, next, off) => {
+    const rest = t.slice(off + all.length);
+    if (/^\$/.test(rest)) return art + " ";   // "a $500 gift"
+    const want = articleFor(rest);
+    return (art[0] === "A" ? want[0].toUpperCase() + want.slice(1) : want) + " ";
+  });
+  // a noun said twice in a row ("a draft the draft a draft" → "a draft")
+  t = t.replace(/\b(?:a|an|the) ([a-z][\w ]{0,30}?)((?: (?:a|an|the) \1)+)\b/gi, (all, noun) => all.split(" ").slice(0, 1 + noun.split(" ").length).join(" "));
+  return t;
+}
+
 function describeAuditRow(row, ctx = {}) {
+  return actionText(describeAuditRowRaw(row, ctx));
+}
+function describeAuditRowRaw(row, ctx = {}) {
   const people = ctx.people || new Map();
   const action = String(row.action || "changed");
   const type = String(row.entity_type || "record");
@@ -618,5 +653,5 @@ module.exports = {
   auditRecordName,
   SECRET_KEY_RE, REDACTED, NOISE_COLUMNS, VERB_PAST, READ_ONLY_POSTS,
   redact, diffFields, sameValue, describeRoute, isReadOnlyPost, singular, prettify, rowSentence,
-  bulkSummary, usd, describeAuditRow, auditDonorId, auditPeopleIds, shortDate,
+  bulkSummary, usd, describeAuditRow, auditDonorId, auditPeopleIds, shortDate, actionText, clipWords,
 };

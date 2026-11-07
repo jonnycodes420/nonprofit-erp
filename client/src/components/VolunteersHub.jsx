@@ -33,6 +33,7 @@ import { RecruitmentView, ApplicationsView } from "./VolunteerRecruit";         
 import { VolunteerCounts, VolunteerListView, VolunteersGroupView } from "./VolunteerList";   // PARITY-3 Parts 3 and 5
 import { countLabel } from "../../../shared/countWords.js";
 import { useWriteRev, VOLUNTEER_WRITES } from "../lib/writeRev";
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 
 // ── VOL-1 · THE SAME SHAPE FUNDRAISING GOT ────────────────────────────────
 // Four sections, each one a question a coordinator actually asks, with the
@@ -387,7 +388,7 @@ function ShiftsView({ roster, narrow, isReadOnly, onChanged, onOpen }) {
                 <option value="">Who volunteered?</option>
                 {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
-              <input aria-label="Date" type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={inp} />
+              <DateInput aria-label="Date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={inp} />
               <input aria-label="Hours" type="number" step="0.25" min="0.25" max="24" placeholder="Hours" value={form.hours} onChange={e => setForm({ ...form, hours: e.target.value })} style={{ ...inp, width: 90 }} />
               <input aria-label="What they did" placeholder="What they did" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} style={{ ...inp, flex: "1 1 160px" }} />
               <button onClick={log} disabled={!form.personId || !form.date || !form.hours} style={{ ...btnPrimary, opacity: !form.personId || !form.date || !form.hours ? 0.5 : 1 }}>Log shift</button>
@@ -702,7 +703,7 @@ function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord, onL
                 <select aria-label="Kind of note" value={form.kind} onChange={e => setForm({ ...form, kind: e.target.value })} style={inp}>
                   {NOTE_KINDS.map(k => <option key={k.id} value={k.id}>{k.label}</option>)}
                 </select>
-                <input aria-label="Date" type="date" value={form.noteDate} onChange={e => setForm({ ...form, noteDate: e.target.value })} style={inp} />
+                <DateInput aria-label="Date" value={form.noteDate} onChange={e => setForm({ ...form, noteDate: e.target.value })} style={inp} />
               </div>
               <textarea aria-label="Note" rows={3} placeholder="Cleared on the 5th; trained on the barn crew; free Saturday mornings…" value={form.body} onChange={e => setForm({ ...form, body: e.target.value })} style={{ ...inp, resize: "vertical" }} />
               <div><button onClick={add} disabled={!form.body.trim()} style={{ ...btnPrimary, opacity: form.body.trim() ? 1 : 0.5 }} data-testid="vol-note-add">Add note</button></div>
@@ -880,7 +881,7 @@ function NewSlotModal({ opportunityId, onClose, onSave, busy }) {
   return (
     <Modal onClose={onClose} title="Add a shift">
       <label style={lbl}>Date</label>
-      <input data-testid="slot-date" type="date" value={f.date} onChange={e => set("date", e.target.value)} style={inp} />
+      <DateInput data-testid="slot-date" value={f.date} onChange={e => set("date", e.target.value)} style={inp} />
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <div><label style={lbl}>Starts</label><input type="time" value={f.startTime} onChange={e => set("startTime", e.target.value)} style={inp} /></div>
         <div><label style={lbl}>Ends</label><input type="time" value={f.endTime} onChange={e => set("endTime", e.target.value)} style={inp} /></div>
@@ -1367,9 +1368,9 @@ function AddCredentialModal({ onClose, onSaved }) {
         <option value="waiver">Waiver</option>
       </select>
       <label style={lbl}>Signed or completed on</label>
-      <input data-testid="cred-signed" type="date" value={f.signedOn} onChange={e => set("signedOn", e.target.value)} style={inp} />
+      <DateInput data-testid="cred-signed" value={f.signedOn} onChange={e => set("signedOn", e.target.value)} style={inp} />
       <label style={lbl}>Expires on</label>
-      <input data-testid="cred-expires" type="date" value={f.expiresOn} onChange={e => set("expiresOn", e.target.value)} style={inp} />
+      <DateInput data-testid="cred-expires" value={f.expiresOn} onChange={e => set("expiresOn", e.target.value)} style={inp} />
       <div style={{ fontSize: 12, color: T.ink3, marginTop: 4, lineHeight: 1.5 }}>
         Leave the expiry empty if it does not expire. Steward warns you thirty days before, because a background
         check takes two to three weeks to come back.
@@ -1433,8 +1434,8 @@ function HoursReportView({ narrow }) {
     <div data-testid="vol-report" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <Sentence>{data.sentence}</Sentence>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-        <div><label style={lbl}>From</label><input type="date" value={range.from || data.from} onChange={e => setRange(r => ({ ...r, from: e.target.value }))} style={{ ...inp, width: 170 }} /></div>
-        <div><label style={lbl}>To</label><input type="date" value={range.to || data.to} onChange={e => setRange(r => ({ ...r, to: e.target.value }))} style={{ ...inp, width: 170 }} /></div>
+        <div><label style={lbl}>From</label><DateInput value={range.from || data.from} onChange={e => setRange(r => ({ ...r, from: e.target.value }))} style={{ ...inp, width: 170 }} /></div>
+        <div><label style={lbl}>To</label><DateInput value={range.to || data.to} onChange={e => setRange(r => ({ ...r, to: e.target.value }))} style={{ ...inp, width: 170 }} /></div>
         <button data-testid="vol-report-export" onClick={download} style={btnPrimary}>Download for a funder</button>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: narrow ? "1fr" : "1fr 1fr", gap: 14 }}>

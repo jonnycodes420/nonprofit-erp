@@ -10,6 +10,7 @@ import { DonorLink } from "./RecordLink";
 import { Figure, FigureContext } from "./Figure";
 import { countLabel, plural } from "../../../shared/countWords";
 import { fundLabel } from "../../../shared/giftWords.js";   // FEEL-1: one name for "no fund"
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 
 // FIX-15 Part 3 — "notified" only when the email provider took the message.
 const notified = (r, name) => (r && r.donorNotified === false
@@ -339,7 +340,7 @@ function PauseModal({ sub, onClose, onConfirm }) {
         No charges will occur while paused. {sub.donorName} will be notified by email.
       </p>
       <label style={labelStyle}>Auto-resume date (optional)</label>
-      <input style={inputStyle} type="date" value={resumeAt} onChange={e => setResumeAt(e.target.value)} />
+      <DateInput style={inputStyle} value={resumeAt} onChange={e => setResumeAt(e.target.value)} />
       {err && <p style={{ margin: "12px 0 0", fontSize: 12.5, color: T.terra700 }}>{err}</p>}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
         <button onClick={onClose} style={quietBtnStyle}>Cancel</button>

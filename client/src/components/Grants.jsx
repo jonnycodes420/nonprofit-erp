@@ -22,6 +22,7 @@ import { GrantReportsPanel } from "./GrantReports";
 import GrantOverview from "./GrantOverview";
 import GrantEmailPath from "./GrantEmailPath";
 import SheetImport from "./SheetImport";
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 
 // ── Grant Log Modal ────────────────────────────────────────────────────────
 function GrantLogModal({grant,onSave,onClose}){
@@ -50,7 +51,7 @@ function GrantLogModal({grant,onSave,onClose}){
         </div>
         <div style={{marginBottom:12}}>
           <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5}}>Date</div>
-          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
+          <DateInput value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
         </div>
         <div style={{marginBottom:20}}>
           <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5}}>Notes</div>
@@ -226,7 +227,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
               <div style={{fontSize:11,color:T.ink3,marginTop:4,lineHeight:1.4}}>{grant.awardPledgeId?"The payments recorded on the award. Record one with Record a payment received.":"Record the award, then each payment received."}</div></div>
             {[["deadline","Deadline"],["reportDue","Report Due"]].map(([k,l])=>(
               <div key={k}><div style={{fontSize:11,color:T.ink3,marginBottom:4}}>{l}</div>
-              <input type="date" value={ef[k]||""} onChange={e=>setEf(p=>({...p,[k]:e.target.value}))} style={inp}/></div>
+              <DateInput value={ef[k]||""} onChange={e=>setEf(p=>({...p,[k]:e.target.value}))} style={inp}/></div>
             ))}
           </div>
           <div>

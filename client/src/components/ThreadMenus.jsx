@@ -10,6 +10,7 @@ import { DISMISS_REASONS, addCivilDays } from "../../../shared/threadShape";
 import { displayDate } from "../../../shared/displayDate";
 import { NavIcon } from "./NavIcon";
 import { orgTodayCivil } from "../lib/orgToday";
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 
 // FIX-14 Part 1 — the ORG's today (as in LogConversation.jsx).
 const todayLocal = () => orgTodayCivil();
@@ -82,7 +83,7 @@ export function ThreadDismissMenu({ thread, onDone, label, extra, footer }) {
                 </button>
               ) : (
                 <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "2px 6px" }}>
-                  <input type="date" value={revisitOn} onChange={e => setRevisitOn(e.target.value)}
+                  <DateInput value={revisitOn} onChange={e => setRevisitOn(e.target.value)}
                     style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 7, padding: "6px 8px", color: T.ink, fontSize: 12 }} />
                   <button onClick={() => dismiss("revisit", revisitOn)} disabled={busy}
                     style={{ background: T.greenDk, border: "none", borderRadius: 7, padding: "7px 10px", color: T.white, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Snooze</button>

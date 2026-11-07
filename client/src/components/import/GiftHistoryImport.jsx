@@ -16,6 +16,7 @@ import { parseFileToSheets } from "./reader";
 import { submitImportChunked } from "./payload";
 import { ImportProgress, ImportReadout } from "./ImportProgress";
 import { ThankYouPreview } from "./ThanksQuestion";
+import DateInput from "../inputs/DateInput";   // POLISH-6: the one date box
 
 // ── Gift History Import helpers ────────────────────────────────────────────
 export function detectGiftFormat(headers) {
@@ -649,7 +650,7 @@ export function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org
                     <input type="checkbox" checked={yc.enabled} onChange={e=>setYearCols(c=>c.map((x,j)=>j===i?{...x,enabled:e.target.checked}:x))} style={{cursor:"pointer"}}/>
                     <span style={{flex:1,fontSize:13,color:yc.enabled?T.ink:T.ink3}}>{yc.col}</span>
                     <span style={{fontSize:12,color:T.ink3}}>→</span>
-                    <input type="date" value={yc.date||""} onChange={e=>setYearCols(c=>c.map((x,j)=>j===i?{...x,date:e.target.value}:x))}
+                    <DateInput value={yc.date||""} onChange={e=>setYearCols(c=>c.map((x,j)=>j===i?{...x,date:e.target.value}:x))}
                       style={{background:T.bg2,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
                   </div>
                 ))}

@@ -1189,7 +1189,7 @@ app.get("/donors/:id/soft-credit", requireAuth, wrap(async (req, res) => {
        JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
        JOIN donors dg ON dg.id = g.donor_id AND dg.org_id = g.org_id
        LEFT JOIN giving_pages gp ON gp.id = g.giving_page_id AND gp.org_id = g.org_id
-      WHERE sc.org_id=? AND sc.donor_id=? ORDER BY g.date DESC NULLS LAST LIMIT 200`, [req.user.orgId, req.params.id]);
+      WHERE sc.org_id=? AND sc.donor_id=? ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC LIMIT 200`, [req.user.orgId, req.params.id]);
   // NUMBERS-2: the totals are added up over EVERY soft credit, not the 200
   // newest the list shows (a busy peer-to-peer fundraiser has more).
   const scAgg = await query(

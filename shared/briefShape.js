@@ -203,7 +203,7 @@ export function sectionTitle(key) {
 // car on the way to an ask, and the reader has to know what it is and is not.
 export const BRIEF_FOOTER =
   "Written from this organization's own records. Every line above rests on a row you can open. " +
-  "Steward has not estimated this person's means and cannot.";
+  "Steward does not estimate a person's means from outside data, so nothing here guesses at their wealth.";   // POLISH-6: a sentence that finishes
 
 export function droppedSentence(dropped = []) {
   const n = dropped.length;

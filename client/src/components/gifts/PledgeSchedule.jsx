@@ -13,6 +13,7 @@
 import { T } from "../shared";
 import { apiFetch } from "../../api";
 import { generateInstallments, scheduleWords } from "../../../../shared/depositSheet.js";
+import DateInput from "../inputs/DateInput";   // POLISH-6: the one date box
 
 export const FREQUENCIES = [["weekly", "Weekly"], ["monthly", "Monthly"], ["quarterly", "Quarterly"], ["yearly", "Yearly"]];
 // A schedule written elsewhere (a grant paid every six months) keeps its cadence in the edit.
@@ -65,7 +66,7 @@ export default function PledgeSchedule({ value, onChange, amount, testid = "pled
         </>}
         <label style={{ fontSize: 12, color: T.ink3, display: "inline-flex", gap: 6, alignItems: "center" }}>
           {firstLabel || (s.plan === "many" ? "First due" : "Due")}
-          <input aria-label={s.plan === "many" ? "First due" : "Due"} type="date" value={s.firstDue || ""} onChange={e => set({ firstDue: e.target.value })}
+          <DateInput aria-label={s.plan === "many" ? "First due" : "Due"} value={s.firstDue || ""} onChange={e => set({ firstDue: e.target.value })}
             data-testid={`${testid}-first`} style={inp} />
         </label>
       </div>

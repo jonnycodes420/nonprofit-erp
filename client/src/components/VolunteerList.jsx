@@ -18,6 +18,7 @@ import { GroupPage } from "./Groups";
 import { RecordLink } from "./RecordLink";
 import { tabHref } from "../lib/appUrls";
 import { orgTodayCivil, orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 12.5, color: T.ink, fontFamily: "inherit", boxSizing: "border-box", maxWidth: "100%" };
 // On a phone the filters fold behind one button, so the people come first.
@@ -143,13 +144,13 @@ export function VolunteerListView({ isReadOnly, coordinator, onOpenPerson, initi
           <datalist id="vol-quals"><option value="background_check">Current background check</option><option value="waiver">Current waiver</option></datalist>
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", fontSize: 12.5, color: T.ink3 }}>
-          <span>On a shift from</span><input aria-label="On a shift from" type="date" value={f.volShiftFrom} onChange={set("volShiftFrom")} style={inp} />
-          <span>to</span><input aria-label="On a shift to" type="date" value={f.volShiftTo} onChange={set("volShiftTo")} style={inp} />
+          <span>On a shift from</span><DateInput aria-label="On a shift from" value={f.volShiftFrom} onChange={set("volShiftFrom")} style={inp} />
+          <span>to</span><DateInput aria-label="On a shift to" value={f.volShiftTo} onChange={set("volShiftTo")} style={inp} />
           <span style={{ marginLeft: 8 }}>Hours</span>
           <select aria-label="More or less" value={f.hoursOp} onChange={set("hoursOp")} style={inp}><option value="min">at least</option><option value="max">fewer than</option></select>
           <input aria-label="Hours" inputMode="numeric" value={f.hoursN} onChange={set("hoursN")} style={{ ...inp, width: 60 }} />
-          <span>between</span><input aria-label="Hours from" type="date" value={f.volHoursFrom} onChange={set("volHoursFrom")} style={inp} />
-          <span>and</span><input aria-label="Hours to" type="date" value={f.volHoursTo} onChange={set("volHoursTo")} style={inp} />
+          <span>between</span><DateInput aria-label="Hours from" value={f.volHoursFrom} onChange={set("volHoursFrom")} style={inp} />
+          <span>and</span><DateInput aria-label="Hours to" value={f.volHoursTo} onChange={set("volHoursTo")} style={inp} />
           <span style={{ fontSize: 11.5 }}>(the Hours in range column counts the same dates; this year when blank)</span>
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", fontSize: 12.5, color: T.ink3 }}>
@@ -157,7 +158,7 @@ export function VolunteerListView({ isReadOnly, coordinator, onOpenPerson, initi
             <select aria-label="Giving" value={f.giving} onChange={set("giving")} style={inp}>
               <option value="">Giving: any</option><option value="ever">Has given</option><option value="never">Never given</option><option value="range">Gave between…</option>
             </select>
-            {f.giving === "range" && <><input aria-label="Gave from" type="date" value={f.gaveFrom} onChange={set("gaveFrom")} style={inp} /><span>and</span><input aria-label="Gave to" type="date" value={f.gaveTo} onChange={set("gaveTo")} style={inp} /></>}
+            {f.giving === "range" && <><DateInput aria-label="Gave from" value={f.gaveFrom} onChange={set("gaveFrom")} style={inp} /><span>and</span><DateInput aria-label="Gave to" value={f.gaveTo} onChange={set("gaveTo")} style={inp} /></>}
           </>}
           {fileQs.length > 0 && <select aria-label="Application answer" value={f.volAnswer} onChange={set("volAnswer")} style={inp}>
             <option value="">Any application answer</option>

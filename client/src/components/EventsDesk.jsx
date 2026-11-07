@@ -21,6 +21,7 @@ import RemoveMenu, { removeMany } from "./RemoveMenu";
 import PhotoField from "./PhotoField";
 import Picture from "./Picture";
 import { displayOrgDate } from "../lib/orgDay";
+import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
 
 // FIX-41: a ticket type's or sponsorship level's optional small picture. The
 // thumbnail (or "Add a picture") opens the one picture control; it saves at once.
@@ -261,7 +262,7 @@ export function EventsDesk({ orgSlug, donors = [], isReadOnly }) {
       </div>
       {!isReadOnly && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         <input placeholder="Event name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={{ ...inp, width: 220 }} data-testid="event-new-name" />
-        <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={inp} data-testid="event-new-date" />
+        <DateInput value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} style={inp} data-testid="event-new-date" />
         <input placeholder="Where" value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} style={{ ...inp, width: 180 }} />
         <button onClick={create} disabled={!form.name.trim() || !form.date} style={btn(true)} data-testid="event-create">Create event</button>
       </div>}
