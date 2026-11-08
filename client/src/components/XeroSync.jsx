@@ -15,6 +15,7 @@ import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -119,7 +120,7 @@ export default function XeroSync({ connectionId = null, isReadOnly, isAdmin }) {
         <div style={h}>Where each gift lands</div>
         <div style={row}>
           <span style={{ flex: "1 1 160px" }}>Send gifts dated from</span>
-          <input type="date" value={m.startDate || ""} onChange={e => setMap({ startDate: e.target.value })} style={field} />
+          <DateInput value={m.startDate || ""} onChange={e => setMap({ startDate: e.target.value })} style={field} />
         </div>
         <div style={row}>
           <span style={{ flex: "1 1 160px" }}>Money lands in</span>

@@ -11,6 +11,7 @@ import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
 import RecordGiftDialog from "./gifts/RecordGiftDialog";   // GIFTS-1: a payment received is a gift from the funder
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const day = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${+m[3]} ${MONTHS[+m[2] - 1]} ${m[1]}` : ""; };
@@ -65,7 +66,7 @@ export function GrantChecklist({ grantId, isReadOnly }) {
           <select aria-label="Owner" value={form.assignedTo} onChange={e => setForm({ ...form, assignedTo: e.target.value })} style={inp}>
             <option value="">No owner</option>{d.staff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-          <input aria-label="Due" type="date" value={form.due} onChange={e => setForm({ ...form, due: e.target.value })} style={inp} />
+          <DateInput aria-label="Due" value={form.due} onChange={e => setForm({ ...form, due: e.target.value })} style={inp} />
           <button type="button" style={btn(true)} onClick={add} disabled={!form.title.trim()} data-testid="checklist-save">Add</button>
           <button type="button" style={btn(false)} onClick={() => setForm(null)}>Close</button>
         </div>)}
@@ -122,7 +123,7 @@ export function GrantAwardPlan({ grantId, isReadOnly, onChanged, onLink }) {
           <select aria-label="How often" value={form.frequency} onChange={e => setForm({ ...form, frequency: e.target.value })} style={inp}>
             {[["monthly", "Monthly"], ["quarterly", "Quarterly"], ["semiannual", "Every six months"], ["annual", "Yearly"]].map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
-          <input aria-label="First payment due" type="date" value={form.firstDue} onChange={e => setForm({ ...form, firstDue: e.target.value })} style={inp} />
+          <DateInput aria-label="First payment due" value={form.firstDue} onChange={e => setForm({ ...form, firstDue: e.target.value })} style={inp} />
           <button type="button" style={btn(true)} onClick={record} disabled={!(Number(form.amount) > 0)}>Record the award</button>
           <button type="button" style={btn(false)} onClick={() => setForm(null)}>Cancel</button>
         </div>

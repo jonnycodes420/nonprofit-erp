@@ -39,6 +39,7 @@ import { displayOrgDate } from "../lib/orgDay";
 import { triggerLabel } from "../../../shared/giftWords.js";   // FEEL-1
 import { sequencesEmptyLine, sequenceStatusWord, sequencesMailOff } from "../lib/sequencesEmpty";   // ATLAS-4, SENDS-1
 import { useMailTypes } from "../lib/mailTypes";
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // WIRE-1-ADDENDUM: "Templates" and "Email templates" were one thing twice, so
 // they are one Templates tab now. An old link to either (?subtab=templates,
@@ -94,11 +95,11 @@ function CampaignBriefing({ campaign }) {
           <div style={{ display: "flex", gap: 8 }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 10, color: T.ink3, marginBottom: 4 }}>Start date</div>
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} onBlur={save} style={{ width: "100%", background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", color: T.ink, fontSize: 12, outline: "none", boxSizing: "border-box" }} />
+              <DateInput value={startDate} onChange={e => setStartDate(e.target.value)} onBlur={save} style={{ width: "100%", background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", color: T.ink, fontSize: 12, outline: "none", boxSizing: "border-box" }} />
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 10, color: T.ink3, marginBottom: 4 }}>End date</div>
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} onBlur={save} style={{ width: "100%", background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", color: T.ink, fontSize: 12, outline: "none", boxSizing: "border-box" }} />
+              <DateInput value={endDate} onChange={e => setEndDate(e.target.value)} onBlur={save} style={{ width: "100%", background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", color: T.ink, fontSize: 12, outline: "none", boxSizing: "border-box" }} />
             </div>
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>

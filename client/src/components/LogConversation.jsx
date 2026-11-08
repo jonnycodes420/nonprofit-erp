@@ -15,6 +15,7 @@ import {
 import { TASK_OUTCOMES } from "../../../shared/taskShape.js";
 import { orgTodayCivil } from "../lib/orgToday";
 import { AttachFileField, uploadAttachment } from "./ProfileTimelineParts";
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 // PERF-2: the Thread's row menus live in ThreadMenus.jsx; still importable from here.
 export { ThreadDismissMenu, PutItOnMyCalendar } from "./ThreadMenus";
 
@@ -204,7 +205,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
         <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
           <div style={{ flex: "0 1 170px" }}>
             <span style={lbl}>When</span>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} />
+            <DateInput value={date} onChange={e => setDate(e.target.value)} style={inp} />
           </div>
           {!editing && <div style={{ flex: "0 1 150px" }}>
             <span style={lbl}>Gift (optional)</span>
@@ -242,7 +243,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
               onChange={e => { setNsLabel(e.target.value); setNsDirty(true); }}
               placeholder="What happens next?" aria-label="Next step"
               style={{ ...inp, width: "auto", flex: "1 1 200px" }} />
-            <input type="date" value={nsDue} onChange={e => { setNsDue(e.target.value); setNsDirty(true); }}
+            <DateInput value={nsDue} onChange={e => { setNsDue(e.target.value); setNsDirty(true); }}
               aria-label="Next step due date" style={{ ...inp, width: "auto", flex: "0 1 150px" }} />
             {/* An org still on Steward's default timezone cannot set a time —
                 a 2:00 reminder does not forgive being an hour off, and the

@@ -13,6 +13,7 @@ import { greetingName, greetingLine } from "../../../shared/greeting.js";
 import { useChanged } from "../lib/changes";   // STALE-1: the one channel (told() is in it)
 import { dueNowWords } from "../lib/taskBadge";
 import { countLabel } from "../../../shared/countWords.js";
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // TASKS-2 — Tasks, the place a development director runs her week from.
 // Views (Today, Upcoming, Overdue, Later, No date, Done) each carry the count
@@ -362,7 +363,7 @@ function QuickAdd({ onSaved, today }) {
                     {p.candidates.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>}
             </label>
-            <label style={{ ...lbl, flex: "1 1 130px" }}>Day<input type="date" value={p.due || ""} onChange={e => setP({ ...p, due: e.target.value })} data-testid="qa-due" style={inp} /></label>
+            <label style={{ ...lbl, flex: "1 1 130px" }}>Day<DateInput value={p.due || ""} onChange={e => setP({ ...p, due: e.target.value })} data-testid="qa-due" style={inp} /></label>
             <label style={{ ...lbl, flex: "1 1 100px" }}>Time<input type="time" value={p.time || ""} onChange={e => setP({ ...p, time: e.target.value })} data-testid="qa-time" style={inp} /></label>
             <label style={{ ...lbl, flex: "1 1 110px" }}>Kind
               <select value={p.kind} onChange={e => setP({ ...p, kind: e.target.value })} data-testid="qa-kind" style={inp}>
@@ -426,7 +427,7 @@ function TaskSheet({ t, team, onClose, onChanged, onError, onFinish, isReadOnly 
           ? <div style={{ fontSize: 12.5, color: T.ink3 }}>{t.link_kind === "next_step" ? "This is a next step on the Thread. Its day moves the step too." : "This is a grant deadline. Its day moves the deadline too."}</div>
           : <label style={lbl}>Task<input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} style={inp} /></label>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <label style={{ ...lbl, flex: "1 1 140px" }}>Day<input type="date" value={f.due} onChange={e => setF({ ...f, due: e.target.value })} style={inp} /></label>
+          <label style={{ ...lbl, flex: "1 1 140px" }}>Day<DateInput value={f.due} onChange={e => setF({ ...f, due: e.target.value })} style={inp} /></label>
           <label style={{ ...lbl, flex: "1 1 100px" }}>Time<input type="time" value={f.time} onChange={e => setF({ ...f, time: e.target.value })} style={inp} /></label>
           <label style={{ ...lbl, flex: "1 1 110px" }}>Kind
             <select value={f.kind} onChange={e => setF({ ...f, kind: e.target.value })} style={inp}>{TASK_KINDS.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}</select>
@@ -537,7 +538,7 @@ export function FinishSheet({ t, today, onClose, onDone }) {
         <div style={lbl}>What's next?
           {!none && <div style={{ display: "flex", gap: 8 }}>
             <input value={next.label} onChange={e => setNext({ ...next, label: e.target.value })} data-testid="finish-next" placeholder="Send the table details" style={{ ...inp, flex: 2 }} />
-            <input type="date" value={next.due} onChange={e => setNext({ ...next, due: e.target.value })} data-testid="finish-next-due" style={{ ...inp, flex: 1 }} />
+            <DateInput value={next.due} onChange={e => setNext({ ...next, due: e.target.value })} data-testid="finish-next-due" style={{ ...inp, flex: 1 }} />
           </div>}
           <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: T.ink, textTransform: "none", letterSpacing: 0, fontWeight: 500 }}>
             <input type="checkbox" checked={none} onChange={e => setNone(e.target.checked)} data-testid="finish-none" /> No next step
@@ -563,7 +564,7 @@ function SnoozeSheet({ t, today, onClose, onSnooze }) {
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button onClick={() => setDay(addDays(today, 1))} aria-pressed={day === addDays(today, 1)} style={outlineBtn}>Tomorrow</button>
           <button onClick={() => setDay(nextMonday(today))} aria-pressed={day === nextMonday(today)} style={outlineBtn}>Next week</button>
-          <input type="date" value={day} min={addDays(today, 1)} onChange={e => setDay(e.target.value)} aria-label="Pick a day" style={{ ...inp, width: "auto" }} />
+          <DateInput value={day} min={addDays(today, 1)} onChange={e => setDay(e.target.value)} aria-label="Pick a day" style={{ ...inp, width: "auto" }} />
         </div>
         <label style={lbl}>Why (kept on the task)<input value={reason} onChange={e => setReason(e.target.value)} data-testid="snooze-reason" placeholder="She is travelling until Monday." style={inp} /></label>
       </div>
@@ -587,7 +588,7 @@ function BulkBar({ n, team, today, allPicked, onAll, onClear, onBulk }) {
       </select>
       {who && <input value={note} onChange={e => setNote(e.target.value)} placeholder="A note (optional)" style={{ ...inp, width: 160, padding: "5px 8px" }} />}
       {who && <button onClick={() => onBulk("reassign", { assignedTo: who, note })} data-testid="bulk-reassign" style={barBtn}>Reassign</button>}
-      <input type="date" value={day} onChange={e => setDay(e.target.value)} aria-label="Move to" style={{ ...inp, width: "auto", padding: "5px 8px" }} />
+      <DateInput value={day} onChange={e => setDay(e.target.value)} aria-label="Move to" style={{ ...inp, width: "auto", padding: "5px 8px" }} />
       <button onClick={() => onBulk("move", { due: day })} data-testid="bulk-move" style={barBtn}>Move</button>
       <button onClick={() => onBulk("done")} data-testid="bulk-done" style={barBtn}>Mark done</button>
       <button onClick={() => onBulk("delete")} data-testid="bulk-delete" style={barBtn}>Delete</button>

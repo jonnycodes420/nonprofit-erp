@@ -14,6 +14,7 @@ import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import { errorMessage } from "../lib/domainError";
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { postDownload, rangeOf, dollarsOf, dateWords, ROOM_LABEL } from "../lib/majorGifts";
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const LABEL = { fontSize: 11, fontWeight: 700, color: T.ink3 };
 const LINK = { background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 12.5, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit" };
@@ -279,7 +280,7 @@ export function ScreeningImportModal({ onClose, onDone }) {
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={LABEL}>Screening provider</span>
               <input data-testid="screening-provider" value={provider} onChange={e => setProvider(e.target.value)} placeholder="Who screened the file" style={INPUT} /></label>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={LABEL}>Date screened</span>
-              <input data-testid="screening-date" type="date" value={screenedOn} onChange={e => setScreenedOn(e.target.value)} style={INPUT} /></label>
+              <DateInput data-testid="screening-date" value={screenedOn} onChange={e => setScreenedOn(e.target.value)} style={INPUT} /></label>
           </div>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={LABEL}>The file they sent back</span>
             <input data-testid="screening-file-input" type="file" accept=".csv,text/csv" onChange={pick} style={{ fontSize: 13 }} /></label>

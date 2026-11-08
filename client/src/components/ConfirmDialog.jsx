@@ -34,6 +34,9 @@ function ConfirmHost() {
       footer={<>
         <button type="button" data-testid="confirm-no" onClick={() => done(false)}
           style={{ ...btn, background: T.white, color: T.ink, border: "1px solid " + T.ink }}>{q.no || "Cancel"}</button>
+        {/* PLEDGES-2: a second answer (resolves "alt"), for a question with two ways forward */}
+        {q.alt && <button type="button" data-testid="confirm-alt" onClick={() => done("alt")}
+          style={{ ...btn, background: T.white, color: T.green, border: "1px solid " + T.green }}>{q.alt}</button>}
         <button type="button" data-testid="confirm-yes" onClick={() => done(true)}
           style={{ ...btn, background: q.danger ? T.terracotta : T.green, color: T.white, border: "none" }}>{q.yes || "Confirm"}</button>
       </>}>

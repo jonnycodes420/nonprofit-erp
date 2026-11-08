@@ -928,7 +928,7 @@ export function touchesSentence(steps = []) {
   const weeks = Math.max(1, Math.round(last / 7));
   const span = last < 45 ? `${countLabel(weeks, "week")}`
              : `${countLabel(months, "month")}`;
-  return `${n} touch${n === 1 ? "" : "es"} over ${span}. Nothing is sent without you.`;
+  return `${countLabel(n, "touch", "touches")} over ${span}. Nothing is sent without you.`;   // POLISH-6: countWords
 }
 
 export { MAX_STEPS, MAX_OFFSET_DAYS, sanitizeName, sanitizeLabel };

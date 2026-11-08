@@ -394,7 +394,7 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
               WHERE l.gift_id = g.id AND l.org_id = g.org_id) AS fund_lines
        FROM gifts g LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
        LEFT JOIN events ev ON ev.id = g.event_id AND ev.org_id = g.org_id
-      WHERE g.donor_id = ? AND g.org_id = ? ORDER BY g.date DESC NULLS LAST`, [d.id, req.user.orgId]);
+      WHERE g.donor_id = ? AND g.org_id = ? ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC`, [d.id, req.user.orgId]);
   d.matching_gift = lookupMatchingGift(d.employer);
   // BUILD-76 — the donor record shows the drift reason inline; same
   // computation as the list and every badge.
@@ -488,7 +488,7 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
                      FROM gifts g
                     WHERE g.org_id = ? AND g.donor_id = ? AND COALESCE(g.is_sample,false) = false
                       AND g.date >= ? AND COALESCE(g.acknowledgement_sent,false) = false AND g.amount > 0
-                    ORDER BY g.date DESC NULLS LAST, g.id DESC`, [orgId, id, since]) : [],
+                    ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC`, [orgId, id, since]) : [],
     query(`SELECT e.id, e.name, LEFT(e.date::text, 10) AS date FROM event_attendees ea JOIN events e ON e.id = ea.event_id AND e.org_id = ea.org_id
             WHERE ea.donor_id = ? AND ea.org_id = ? AND LEFT(e.date::text, 10) >= ?
               AND COALESCE(ea.status, '') NOT IN ('cancelled','canceled','declined')

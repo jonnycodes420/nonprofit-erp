@@ -16,6 +16,7 @@ import { apiFetch } from "../api";
 import { T, Modal, fmtFull } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const MAX_FILES = 20;
@@ -194,8 +195,8 @@ export default function OldReportsImport({ onClose, onDone }) {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 8 }}>
                 <label style={{ fontSize: 12, color: T.ink3 }}>Kind of report<br /><select style={sel} value={it.kind} onChange={e => set(i, { kind: e.target.value })}>{it.read.kinds.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}</select></label>
                 <label style={{ fontSize: 12, color: T.ink3 }}>From<br /><select style={sel} value={it.system} onChange={e => set(i, { system: e.target.value })}>{it.read.systems.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}</select></label>
-                <label style={{ fontSize: 12, color: T.ink3 }}>First day it covers<br /><input type="date" style={sel} value={it.from} onChange={e => set(i, { from: e.target.value })} /></label>
-                <label style={{ fontSize: 12, color: T.ink3 }}>Last day it covers<br /><input type="date" style={sel} value={it.to} onChange={e => set(i, { to: e.target.value })} /></label>
+                <label style={{ fontSize: 12, color: T.ink3 }}>First day it covers<br /><DateInput style={sel} value={it.from} onChange={e => set(i, { from: e.target.value })} /></label>
+                <label style={{ fontSize: 12, color: T.ink3 }}>Last day it covers<br /><DateInput style={sel} value={it.to} onChange={e => set(i, { to: e.target.value })} /></label>
               </div>
               <label style={{ fontSize: 12, color: T.ink3 }}>Name it<br /><input style={{ ...sel, width: "100%", boxSizing: "border-box" }} value={it.title} onChange={e => set(i, { title: e.target.value })} /></label>
             </div>))}

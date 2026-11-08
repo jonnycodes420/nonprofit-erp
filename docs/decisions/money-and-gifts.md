@@ -256,6 +256,15 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 - **A month-close tick is never vacuous (SWEEP-5).** A gift with no payment method ("Needs you") may be
   a check, so it counts against "Every check is on a deposit", as it does in the bookkeeper's file.
 
+- **A pledge payment applies oldest due first (PLEDGES-2).** A payment against a named pledge marks
+  each installment its money reaches in full as paid, oldest due first (`server/donors/pledgePayments.js`
+  `relay`); an overage carries to the next installment(s). Rows are never split or re-dated. A gift-form payment above the balance is a question
+  (`overBalance`: `extra_gift` or `reduce`), never silent surplus. Write off needs `confirmed: true`;
+  a deleted pledge takes its "Pledged" line and collect tasks with it, and Undo brings them back.
+- **An offline recurring plan is staff's record (PLEDGES-2).** `offline_recurring_plans`, payments are
+  gifts with `offline_plan_id` written by recordGift; Behind after 7 days late. A card plan stays
+  `recurring_subscriptions`, the donor's own (`server/donors/offlinePlans.js`).
+
 ## Gotchas
 - **`normalizeMoney` returns `{value, warn, blank}`, not a number.** Parse through the money seam
   before any `Number()` guard, or "1,000.00" is refused. (BUILD-89S, BUILD-88b)

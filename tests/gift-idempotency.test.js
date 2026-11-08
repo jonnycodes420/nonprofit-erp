@@ -146,7 +146,10 @@ async function counts(donorId) {
   ok("pledge REOPENS when payments fall below amount", afterDel[0].status === "open", afterDel[0]);
 
   // Over-payment: a $500 payment against the $400 remaining fulfills; balance 0.
-  const pay3 = await api("POST", "/donors/d_gi_a2/gifts", tok, { amount: 500, date: TODAY, pledgeId, idempotencyKey: crypto.randomUUID() });
+  // PLEDGES-2: above the balance the form asks first; recorded as an extra gift, $400 pays the pledge.
+  const ask3 = await api("POST", "/donors/d_gi_a2/gifts", tok, { amount: 500, date: TODAY, pledgeId, idempotencyKey: crypto.randomUUID() });
+  ok("over-payment asks first (PLEDGES-2)", ask3.status === 409 && ask3.body.code === "over_balance", ask3.status);
+  const pay3 = await api("POST", "/donors/d_gi_a2/gifts", tok, { amount: 500, date: TODAY, pledgeId, overBalance: "extra_gift", idempotencyKey: crypto.randomUUID() });
   ok("over-payment fulfills, balance clamps to 0",
     pay3.body.pledge && pay3.body.pledge.status === "fulfilled" && Number(pay3.body.pledge.balance) === 0, pay3.body.pledge);
 

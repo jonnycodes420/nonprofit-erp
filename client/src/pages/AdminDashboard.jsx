@@ -9,6 +9,7 @@ import { CHANGELOG as CHANGELOG_ADMIN } from "../lib/changelog";
 import { enterSupport } from "../lib/supportSession";   // FIX-57
 import { countLabel } from "../../../shared/countWords.js";
 import AdminOpsNav from "./ops/AdminOpsNav";
+import DateInput from "../components/inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
 
@@ -562,7 +563,7 @@ function CustomPrice({ orgId, detail, INP, PBTN, onSaved }) {
         <label style={{ fontSize: 12, color: A.secondary }}>Custom price $</label>
         <input data-testid="admin-custom-price-usd" type="number" min={0} value={usd} onChange={e => setUsd(e.target.value)} placeholder="149" style={{ ...INP, width: 80 }} />
         <span style={{ fontSize: 12, color: A.secondary }}>/mo, ends on</span>
-        <input data-testid="admin-custom-price-ends" type="date" value={ends} onChange={e => setEnds(e.target.value)} style={{ ...INP, width: 150 }} />
+        <DateInput data-testid="admin-custom-price-ends" value={ends} onChange={e => setEnds(e.target.value)} style={{ ...INP, width: 150 }} />
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <input value={note} onChange={e => setNote(e.target.value)} placeholder="Why (e.g. first customer, beta until launch)" style={{ ...INP, flex: 1 }} />

@@ -22,6 +22,7 @@ import { budgetVarianceText, budgetMonthsElapsed } from "../lib/budgetWords";
 const BEHIND = T.gold700;
 import { orgTodayCivil } from "../lib/orgToday";
 import { RecurringView } from "./RecurringGiving";   // GIFTS-2: recurring giving is findable from Finance
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── Constants ──────────────────────────────────────────────────────────────
 // POLISH-5: the empty ledger's second sentence, one text node with its first.
@@ -275,7 +276,7 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
         <div style={{ display:"flex", gap:8 }}>
           <div style={{ flex:"0 0 150px" }}>
             <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Date</div>
-            <input type="date" value={form.date} onChange={set("date")} style={inp}/>
+            <DateInput value={form.date} onChange={set("date")} style={inp}/>
           </div>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Amount ($)</div>

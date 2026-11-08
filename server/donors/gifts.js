@@ -163,6 +163,22 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   try { amt = toDollars(parseMoneyOrThrow(amount, "amount")); }
   catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
 
+  // PLEDGES-2 · A PAYMENT ABOVE WHAT IS STILL OWED ASKS (W-1107-Finance-25X):
+  // record what is over as an extra gift, or reduce the payment to the balance.
+  // Nothing is written until the person has said which.
+  let extraCents = 0;
+  if (pledgeRow) {
+    const over = await require("./pledgePayments").overBalance(req.user.orgId, pledgeRow.id, Math.round(amt * 100));
+    const how = req.body.overBalance;
+    if (over && !over.choices.includes(how))
+      return res.status(409).json({ error: "over_balance", code: "over_balance", sentence: over.sentence, choices: over.choices,
+                                    balance: over.balanceCents / 100, extra: over.extraCents / 100 });
+    if (over && Array.isArray(req.body.fundLines) && req.body.fundLines.length)
+      return res.status(400).json({ error: "Record the pledge payment first, then split the extra gift across funds.", code: "over_balance_split" });
+    if (over && over.balanceCents === 0) pledgeRow = null;   // nothing owed: the whole payment is a plain gift
+    else if (over) { if (how === "extra_gift") extraCents = over.extraCents; amt = toDollars(over.balanceCents); }
+  }
+
   // GIFTS-2: "Split across funds". Two or more lines, each a fund of this org's,
   // adding up to the gift to the cent, checked before the gift exists.
   let fundLines = null;
@@ -211,6 +227,18 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     return res.status(200).json({ gift: dupGift[0] || null, donor: dupDonor[0] || null, duplicate: true });
   }
   if (fundLines) await GFL.writeLines(run, req.user.orgId, giftId, fundLines, actor(req));
+  // PLEDGES-2: what was over the balance, as its own gift through the one gift path.
+  let extraGift = null;
+  if (extraCents > 0) {
+    const extra = await recordGift({
+      orgId: req.user.orgId, donorId: req.params.id, giftId: newId("g"), amount: toDollars(extraCents), date: giftDate,
+      type: type && type !== "pledge payment" ? type : "cash", campaign: campaignName || "", campaignId: effectiveCampaignId || null,
+      notes: "Given over the pledge balance.", fundId: fundId || null, paymentMethod: paymentMethodIn,
+      idempotencyKey: idemKey ? `${idemKey}:extra`.slice(0, 128) : null, conflict: "idempotency", applyInstallment: false,
+      eventId: giftEvent ? giftEvent.id : null, actorId: actor(req).id, actorName: actor(req).name, source: "gift_form",
+    });
+    extraGift = extra.gift || null;
+  }
   if (pledgeRow) {
     // §1.2 F-5 — apply the PAID amount against the pledge balance; a partial
     // payment leaves the pledge open with an honest remaining balance.
@@ -250,7 +278,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   // "Thank" (+2 days) unless the donor already has one open: recordGift's
   // `thread` above, opened by the gift's journeys handler after the journeys
   // have had their turn (JOBS-1). The gift itself never waits.
-  res.status(201).json({ gift: giftRows[0], donor: donorRows[0], pledge: fpOut });
+  res.status(201).json({ gift: giftRows[0], donor: donorRows[0], pledge: fpOut, ...(extraGift ? { extraGift } : {}) });
 }));
 
 app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
@@ -752,6 +780,16 @@ app.put("/pledges/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => 
     });
   }
   const stopping = newStatus !== "open" && p.status === "open";
+  // PLEDGES-2 · A WRITE-OFF IS A MONEY ACTION (W-1107-Finance-30X): it went
+  // through on one click. It now carries the person's confirm of the amount it
+  // writes off; without it nothing changes and the answer is the question.
+  if (newStatus === "written_off" && p.status !== "written_off" && req.body.confirmed !== true) {
+    const [b] = await query(`SELECT GREATEST(p.amount - ${require("../../shared/numbers/pledges").PAID_OF("p")}, 0)::float AS balance FROM pledges p WHERE p.id=? AND p.org_id=?`,
+      [p.id, req.user.orgId]);
+    const bal = round2(Number(b && b.balance) || 0);
+    return res.status(409).json({ error: "confirm_write_off", code: "confirm_write_off", balance: bal,
+      sentence: `Write off ${TL.lineMoney(bal)} still owed on this pledge? It stops the reminders and comes off what is pledged. Undo puts it back.` });
+  }
 
   // BUILD-73 Part 2 — the money seam; was Math.round(Number(amount)).
   let pledgeNewAmt = p.amount;
@@ -807,6 +845,8 @@ app.delete("/pledges/:id", requireAuth, wrap(async (req, res) => {
   }
   const undoId = await trashRow("pledges", req.params.id, req);
   if (!undoId) return res.status(404).json({ error: "Not found" });
+  // PLEDGES-2: the timeline says one "Pledge deleted" line (its "Pledged" line went with it).
+  await require("./pledgePayments").deletedLine({ orgId: req.user.orgId, donorId: p.donor_id, amount: Number(p.amount), pledgeId: p.id, who: await staffWho(req) });
   res.json({ ok: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
@@ -1149,7 +1189,7 @@ app.get("/donors/:id/soft-credit", requireAuth, wrap(async (req, res) => {
        JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
        JOIN donors dg ON dg.id = g.donor_id AND dg.org_id = g.org_id
        LEFT JOIN giving_pages gp ON gp.id = g.giving_page_id AND gp.org_id = g.org_id
-      WHERE sc.org_id=? AND sc.donor_id=? ORDER BY g.date DESC NULLS LAST LIMIT 200`, [req.user.orgId, req.params.id]);
+      WHERE sc.org_id=? AND sc.donor_id=? ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC LIMIT 200`, [req.user.orgId, req.params.id]);
   // NUMBERS-2: the totals are added up over EVERY soft credit, not the 200
   // newest the list shows (a busy peer-to-peer fundraiser has more).
   const scAgg = await query(
