@@ -22,7 +22,8 @@
 const cents = v => Math.round(Number(v || 0) * 100);
 const money = c => `$${(c / 100).toFixed(2)}`;
 // Hard credit, written out: a row typed as any kind of soft or matching credit is recognition.
-const NOT_CREDIT = "NOT (LOWER(COALESCE(g.type,'')) ~ '(soft|match)')";
+// The key's own words (tests/keys/truthKey.js CREDIT_WORDS); a matching gift is money, its credit row is not.
+const NOT_CREDIT = "NOT (LOWER(TRIM(COALESCE(g.type,''))) ~ '^(soft[[:space:]_-]?credit|match(ing|ed)?[[:space:]]+gift[[:space:]]+credit)$')";
 const GIFT = `${NOT_CREDIT} AND g.amount > 0`;
 
 async function truth4Pairs({ orgId, get, q, agree, diffs, today }) {
