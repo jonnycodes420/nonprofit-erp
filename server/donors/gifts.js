@@ -430,13 +430,15 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
   // silently deleted out from under it (was an unhandled FK violation).
   // Void the receipt first (POST /receipts/:id/void), then delete.
   const activeReceipts = await query(
-    "SELECT receipt_number FROM receipts WHERE gift_id=? AND org_id=? AND type='gift' AND voided_at IS NULL",
+    "SELECT id, receipt_number FROM receipts WHERE gift_id=? AND org_id=? AND type='gift' AND voided_at IS NULL",
     [req.params.id, req.user.orgId]
   );
   if (activeReceipts.length) {
     return res.status(409).json({
       error: "receipt_active",
       message: `This gift has an issued tax receipt (#${activeReceipts[0].receipt_number}). Void the receipt first, then delete the gift.`,
+      // LAG-1: the profile asks "Void the receipt first?" and, on her yes, voids these and deletes.
+      receiptIds: activeReceipts.map(r => r.id), receiptNumber: activeReceipts[0].receipt_number,
     });
   }
 

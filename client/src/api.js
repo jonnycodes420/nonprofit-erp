@@ -4,6 +4,7 @@ import { saveDrafts } from "./lib/idleDraft";
 import { inSupport, leaveSupport } from "./lib/supportSession";   // FIX-57
 import { bundlePath } from "./lib/homeReads";   // PERF-2
 import { announce, kindsOfWrite, onAnyChange } from "./lib/changes";   // STALE-1: one refresh, everywhere
+import { followWorker } from "./lib/catchUp";   // LAG-1: the screen follows the worker after a write
 
 // GRANTS-1: one adapter for a legacy grant row, used by the first load and by
 // the Grants screen when it opens a grant created since (a planned renewal).
@@ -274,7 +275,13 @@ export async function apiFetch(path, options = {}) {
     // asked after the write was handed that answer: the profile's Lifetime
     // kept the old figure until a reload.
     const after = () => { kept.clear(); parked.clear(); handed.clear(); inFlight.clear(); forgetLists({ path, method, phase: "after" }); };
-    return apiFetchNow(path, options).then(v => { after(); announce(kindsOfWrite(path, method, options.body)); return v; }, e => { after(); throw e; });
+    return apiFetchNow(path, options).then(v => {
+      after();
+      const w = kindsOfWrite(path, method, options.body);
+      announce(w);
+      followWorker(apiFetchNow, w.kinds);   // LAG-1: what the worker does next reaches the screen as it lands
+      return v;
+    }, e => { after(); throw e; });
   }
   if (options.body || options.signal) return apiFetchNow(path, options);
   const key = getToken() + " " + path;
