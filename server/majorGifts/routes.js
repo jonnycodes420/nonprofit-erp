@@ -582,7 +582,7 @@ app.get("/portfolio/:officerId", requireAuth, wrap(async (req, res) => {
   const prog = PF.targetProgress({
     targetCents: t && t.target_amount != null ? toCents(t.target_amount) : null,
     committedCents: toCents(won.amt) || 0,
-    fiscalLabel: `FY ${fyYear}–${String(fyYear + 1).slice(2)}`,
+    fiscalLabel: await require("../shared/periodLabel").orgFyLabel(org),   // POLISH-6: shared/fiscalPeriod.js
   });
   const cap = PF.capState({ capCount: t ? t.count_cap : null, actualCount: ranked.length });
 
@@ -741,7 +741,7 @@ app.get("/major-gifts/dashboard", requireAuth, wrap(async (req, res) => {
   });
 
   res.json({
-    fiscalYear: fyYear, fiscalLabel: `FY ${fyYear}–${String(fyYear + 1).slice(2)}`,
+    fiscalYear: fyYear, fiscalLabel: await require("../shared/periodLabel").orgFyLabel(org),   // POLISH-6
     quarter: { start: qtr.start, end: qtr.end },
     month: { start: mon.start, end: mon.end },
     proposalCount: counts[0].n,

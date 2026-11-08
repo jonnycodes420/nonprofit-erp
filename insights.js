@@ -307,6 +307,7 @@ function computeInsights(input) {
   const people = (input.people || []).filter(p => !p.deleted_at && !p.is_sample);
   const { units, unitOf } = buildUnits(people, input.households);
   const programs = [...(input.programs || []), ...memoPrograms(input.gifts || [], people)];
+  const fundName = new Set((input.fundNames || []).map(n => String(n).toLowerCase()));   // PLEDGES-2
   const reviewed = input.reviewed || {};
   const importName = input.imports || {};
 
@@ -429,7 +430,9 @@ function computeInsights(input) {
     const recentFdn = x.dated.filter(g => g.date >= L12from && /\bfoundation\b/i.test(g.sig.text));
     const earlierFdn = x.dated.filter(g => g.date < L12from && /\bfoundation\b/i.test(g.sig.text));
     x.movedToFoundation = recentFdn.length > 0 && earlierFdn.length === 0 && x.dated.some(g => g.date < L12from) && !/\bfoundation\b/i.test(x.name);
-    x.designated = x.dated.filter(g => g.date >= L12from && g.sig.program).map(g => g.sig.program);
+    // PLEDGES-2: a gift booked to a restricted fund is designated to it (shared/numbers/fundSplit.js's
+    // rule); a memo's words may name a program, never a fund the money is not in.
+    x.designated = x.dated.filter(g => g.date >= L12from).map(g => g.restricted_fund || (g.sig.program && !fundName.has(String(g.sig.program).toLowerCase()) ? g.sig.program : null)).filter(Boolean);
     x.grew = x.P12 > 0 && x.L12 >= Math.round(x.P12 * 1.5);
     x.shrank = x.P12 > 0 && x.L12 < Math.round(x.P12 * 0.5);
 
@@ -478,8 +481,8 @@ function computeInsights(input) {
   const stats = orgStats(U, gifts, asOf, dataEnd, reviewed, lastDated);
   // SWEEP-1: the org's fiscal year began on fyStart (orgTime's month, default July).
   // NUMBERS-3: the boundary is shared/numbers/fiscalYear.js's.
-  const fyStart = require("./shared/numbers/fiscalYear").thisAndLast(asOf, Number(input.org && input.org.fiscalStartMonth) || 7).cyFrom;
-  const ctx = { asOf, dataEnd, thisYear, fyStart, line, coverage, stats, importName, reviewed, outcomes: indexOutcomes(input.outcomes, asOf), linksDismissed: input.linksDismissed || new Set() };
+  const { cyFrom: fyStart, cyTo: fyEnd } = require("./shared/numbers/fiscalYear").thisAndLast(asOf, Number(input.org && input.org.fiscalStartMonth) || 7);
+  const ctx = { asOf, dataEnd, thisYear, fyStart, fyEnd, line, coverage, stats, importName, reviewed, outcomes: indexOutcomes(input.outcomes, asOf), linksDismissed: input.linksDismissed || new Set() };
   const cards = [];
   for (const make of LIBRARY) {
     const c = make(U, ctx, { gifts, people, units, unitOf });
@@ -894,15 +897,20 @@ const LIBRARY = [
       for (const p of x.openPledges) {
         const inst = p.installments.slice().sort((a, b) => (a.due_date < b.due_date ? -1 : 1));
         const multi = inst.length > 1;
-        const dueNow = inst.filter(i => !i.paid_gift_id && i.due_date && +i.due_date.slice(0, 4) <= y);
-        const later = inst.filter(i => !i.paid_gift_id && i.due_date && +i.due_date.slice(0, 4) > y);
-        const nowCents = multi ? dueNow.reduce((n, i) => n + i.cents, 0) : p.balance;
+        // PLEDGES-2 (W-1107-Finance-20X): what is due this fiscal year is shared/numbers/pledges.js's
+        // dueOf, every payment applied oldest first, as the profile's pledge says it. It counted
+        // the installments not flagged paid, so $150 paid on a $100 installment still read $100 due.
+        const plIn = { amount: p.cents / 100, paid: p.paid / 100, dueDate: p.due_date ? ymd(p.due_date) : "",
+          installments: inst.map(i => ({ dueDate: i.due_date, amount: i.cents / 100, paid: !!i.paid_gift_id })) };
+        const leftOf = PLEDGES.installmentsLeft(plIn);
+        const dueNow = inst.filter((i, k) => leftOf[k].left > 0 && i.due_date && i.due_date <= ctx.fyEnd);
+        const nowCents = multi ? Math.round(PLEDGES.dueOf(plIn, ctx.fyEnd) * 100) : p.balance;
         const facts = [["pledged", money(p.cents)], ["paid", money(p.paid)], ["still to come", money(p.balance)]];
-        if (multi) for (const i of inst) facts.push([`${i.due_date ? i.due_date.slice(0, 4) : "Undated"} installment`, `${money(i.cents)}${i.paid_gift_id ? " (paid)" : ""}`]);
+        if (multi) for (const [k, i] of inst.entries()) facts.push([`${i.due_date ? i.due_date.slice(0, 4) : "Undated"} installment`, `${money(i.cents)}${leftOf[k].left <= 0 ? " (paid)" : leftOf[k].left * 100 < i.cents ? ` (${money(Math.round(leftOf[k].left * 100))} left)` : ""}`]);
         const due = (dueNow[0] && dueNow[0].due_date) || p.due_date && ymd(p.due_date);
         items.push({ key: x.key + ":" + p.id, unit: x.key, pledgeId: p.id, still: p.balance, name: x.name, ids: x.ids, lead: x.lead, cents: nowCents || p.balance, multi,
           what: `Pledged ${money(p.cents)}: ${money(p.paid)} received, ${money(p.balance)} still to come.${multi && nowCents ? ` ${money(nowCents)} is due this year.` : ""}`,
-          installments: inst.map(i => ({ year: i.due_date ? i.due_date.slice(0, 4) : null, due: i.due_date, cents: i.cents, paid: !!i.paid_gift_id })),
+          installments: inst.map((i, k) => ({ year: i.due_date ? i.due_date.slice(0, 4) : null, due: i.due_date, cents: i.cents, paid: leftOf[k].left <= 0 })),
           facts,
           how: { who: whoFor(x, x.rung), channel: p.balance >= 100000 ? "Call" : "Letter",
             when: due && due > ctx.asOf ? windowWords(addDays(due, -14) > ctx.asOf ? addDays(due, -14) : ctx.asOf, due) : windowWords(ctx.asOf, addDays(ctx.asOf, 14)),

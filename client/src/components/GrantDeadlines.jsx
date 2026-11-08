@@ -17,6 +17,7 @@ import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
 import { deadlinesInWindow, HOME_WINDOW_DAYS } from "../../../shared/grantMilestones";
 import { grantDeadlineSentence } from "../../../shared/homeNote";
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const civil = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? { y: +m[1], mo: +m[2], d: +m[3] } : null; };
@@ -205,7 +206,7 @@ export function GrantDeadlinesPanel({ grantId, isReadOnly }) {
       {types.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
     </select>
     {v.kind === "custom" && <input placeholder="Name it, like Site visit" value={v.label} onChange={e => set({ ...v, label: e.target.value })} style={{ ...inp, flex: "1 1 160px" }} aria-label="Deadline name" data-testid="deadline-label" />}
-    <input type="date" value={v.dueDate} onChange={e => set({ ...v, dueDate: e.target.value })} style={inp} aria-label="Due date" data-testid="deadline-date" />
+    <DateInput value={v.dueDate} onChange={e => set({ ...v, dueDate: e.target.value })} style={inp} aria-label="Due date" data-testid="deadline-date" />
     <input placeholder="Notes (optional)" value={v.notes} onChange={e => set({ ...v, notes: e.target.value })} style={{ ...inp, flex: "1 1 160px" }} aria-label="Notes" />
   </>);
   return (
@@ -231,7 +232,7 @@ export function GrantDeadlinesPanel({ grantId, isReadOnly }) {
             <MilestoneRow m={m} onDone={done} isReadOnly={isReadOnly} showGrant={false} />
             {!isReadOnly && <div style={{ fontSize: 12, color: T.ink3, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", paddingLeft: 16, paddingBottom: 6 }}>
               <label style={{ display: "flex", gap: 6, alignItems: "center" }}>Move to
-                <input type="date" key={m.dueDate} defaultValue={m.dueDate} onBlur={e => e.target.value && e.target.value !== m.dueDate && move(m, e.target.value)} style={inp} data-testid="deadline-move" /></label>
+                <DateInput key={m.dueDate} value={m.dueDate} onChange={e => e.target.value && e.target.value !== m.dueDate && move(m, e.target.value)} style={inp} data-testid="deadline-move" /></label>
               <button style={quietBtn} data-testid="deadline-edit" onClick={() => setEdit({ id: m.id, kind: m.kind, label: m.label || "", dueDate: m.dueDate, notes: m.notes || "" })}>Edit</button>
               <button style={quietBtn} data-testid="deadline-remove" onClick={() => remove(m)}>Take off</button>
             </div>}

@@ -63,6 +63,11 @@ async function forEachByDonor(list, fn) {
 // takes the import's own advisory lock for one small batch at a time; a new
 // chunk's transaction waits for at most that one batch.
 const RECENT_BATCH = 50;
+// POLISH-6 (W-1107-Finance-40X): a short pause between batches, so a big file's
+// background work leaves room for every other request (the institutional rule:
+// small transactions, a pause between them, one import's work per org at a time,
+// which the import lock below already makes so).
+const BATCH_PAUSE_MS = () => Math.max(0, Number(process.env.IMPORT_BATCH_PAUSE_MS ?? 100));
 async function importsIdle(orgId) {
   for (;;) {
     const busy = await query(`SELECT 1 FROM import_in_flight WHERE org_id=? AND started_at > NOW() - INTERVAL '10 minutes' LIMIT 1`, [orgId]);
@@ -95,6 +100,7 @@ async function runRecentWork(orgId, runId, job) {
     const [st] = await query(`SELECT status FROM import_recent_jobs WHERE import_id=?`, [runId]);
     if (!st || st.status === "cancelled") { job.cancelled = true; break; }
     await importsIdle(orgId);
+    if (!firstBatch && BATCH_PAUSE_MS()) await new Promise(r => setTimeout(r, BATCH_PAUSE_MS()));   // POLISH-6
     const rows = await query(`SELECT id, gift FROM import_recent_work WHERE import_id=? AND org_id=? ORDER BY seq LIMIT ${RECENT_BATCH}`, [runId, orgId]);
     if (!rows.length) break;
     const list = rows.map(r => ({ ...(typeof r.gift === "string" ? JSON.parse(r.gift) : r.gift), _workId: r.id }));

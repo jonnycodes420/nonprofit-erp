@@ -23,6 +23,7 @@ import { WhatWorked } from "./Insights";   // INSIGHTS-1
 import EventRaised from "./EventRaised";   // HOME-3
 import { yoyView } from "./YearOverYear";   // HISTORY-1
 import { countLabel, plural } from "../../../shared/countWords.js";
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
 // Fixed, parameterized, table-first, CSV-downloadable reports — each one an
@@ -90,7 +91,7 @@ const presetsFor = (years, fiscalStartMonth = 7) => years ? [
   { id: "lastFY", label: periodChipLabel("lastFY", { fy: years.fy, cy: years.cy, fiscalStartMonth }), year: years.fy - 1, yearMode: "fiscal" },
   { id: "thisCY", label: periodChipLabel("thisCY", { fy: years.fy, cy: years.cy, fiscalStartMonth }), year: years.cy, yearMode: "calendar" },
   { id: "lastCY", label: periodChipLabel("lastCY", { fy: years.fy, cy: years.cy, fiscalStartMonth }), year: years.cy - 1, yearMode: "calendar" },
-  { id: "custom", label: "Custom" },
+  { id: "custom", label: "Custom range" },   // POLISH-6 (W-1107-Fundraising-07X): said as what it is
 ] : [];
 const pctStr = v => v === null || v === undefined ? "None yet" : `${v}%`;
 // REPORTS-4 · A REPORT'S FIGURE. Every number a report states is one of its
@@ -817,9 +818,9 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
           <div className="reports-parambar" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 16 }}>
             {isPeriodReport && PRESETS.map(p => <button key={p.id} onClick={() => setPreset(p.id)} aria-pressed={effPreset === p.id} style={chipStyle(effPreset === p.id)}>{p.label}</button>)}
             {isPeriodReport && effPreset === "custom" && <>
-              <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={selStyle} />
+              <DateInput aria-label="Start of the range" data-testid="report-range-from" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={selStyle} />
               <span style={{ color: T.ink3, fontSize: 12 }}>to</span>
-              <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} style={selStyle} />
+              <DateInput aria-label="End of the range" data-testid="report-range-to" value={customTo} onChange={e => setCustomTo(e.target.value)} max={undefined} min={customFrom || undefined} style={selStyle} />
             </>}
             {YEARMODE_TOGGLE_REPORTS.includes(active) && yearModeToggle}
             {YEAR_SELECT_REPORTS.includes(active) && <select value={effYear} onChange={e => setYear(parseInt(e.target.value, 10))} style={{ ...selStyle, maxWidth: 230 }}>

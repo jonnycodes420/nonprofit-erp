@@ -80,7 +80,8 @@ const MERGE_REFS = [
   ["interactions", "donor_id"], ["memberships", "donor_id", "refuse"], ["milestone_drafts", "donor_id"],
   ["moves", "donor_id"], ["ncoa_moves", "donor_id"], ["note_reminders", "donor_id"],
   ["opportunities", "donor_id", "refuse"], ["payment_recovery_events", "donor_id"], ["peer_fundraisers", "person_id"],
-  ["planned_gifts", "donor_id"], ["pledges", "donor_id"], ["portal_audit_log", "donor_id"], ["pos_sales", "person_id"],
+  ["offline_recurring_plans", "donor_id"], ["planned_gifts", "donor_id"], ["pledges", "donor_id"],   // PLEDGES-2: a recorded plan follows the person
+  ["portal_audit_log", "donor_id"], ["pos_sales", "person_id"],
   ["receipts", "donor_id", "refuse"], ["reconnect_sends", "donor_id"], ["recurring_change_log", "donor_id"],
   ["public_filings", "donor_id"], ["recurring_proposals", "donor_id"], ["recurring_subscriptions", "donor_id"],
   ["screening_results", "donor_id"], ["sequence_enrollments", "donor_id"],

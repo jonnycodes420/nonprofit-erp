@@ -11,6 +11,7 @@ import { T } from "../components/shared";
 import { errorMessage } from "../lib/domainError";
 import { orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { countLabel } from "../../../shared/countWords.js";
+import DateInput from "../components/inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // The onboarding flow is a KEYED sequence, not a fixed numeric ladder, so a
 // Team org can slot in an extra "Invite your team" step while Core skips it
@@ -817,11 +818,11 @@ export default function WelcomePage() {
             <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
               <div style={{ flex: 1 }}>
                 <div style={label}>Period start</div>
-                <input type="date" value={goalForm.periodStart} onChange={e => setGoalForm(f => ({ ...f, periodStart: e.target.value }))} style={inp}/>
+                <DateInput value={goalForm.periodStart} onChange={e => setGoalForm(f => ({ ...f, periodStart: e.target.value }))} style={inp}/>
               </div>
               <div style={{ flex: 1 }}>
                 <div style={label}>Period end</div>
-                <input type="date" value={goalForm.periodEnd} onChange={e => setGoalForm(f => ({ ...f, periodEnd: e.target.value }))} style={inp}/>
+                <DateInput value={goalForm.periodEnd} onChange={e => setGoalForm(f => ({ ...f, periodEnd: e.target.value }))} style={inp}/>
               </div>
             </div>
 

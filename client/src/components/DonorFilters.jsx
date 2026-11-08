@@ -7,6 +7,7 @@
 import { useState, useMemo } from "react";
 import { T, fmtFull } from "./shared";
 import { displayDate } from "../../../shared/displayDate.js";
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── Shared consts ───────────────────────────────────────────────────────────
 export const EMPTY_WHERE = { join: "and", conditions: [] };
@@ -57,9 +58,9 @@ function ValueInput({ input, value, onChange, options }) {
   if (input === "none") return null;
   if (input === "daterange") return (
     <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-      <input type="date" aria-label="From" value={value.from || ""} onChange={e => onChange({ ...value, from: e.target.value })} style={ctl} />
+      <DateInput aria-label="From" value={value.from || ""} onChange={e => onChange({ ...value, from: e.target.value })} style={ctl} />
       <span style={{ fontSize: 12, color: T.ink3 }}>to</span>
-      <input type="date" aria-label="To" value={value.to || ""} onChange={e => onChange({ ...value, to: e.target.value })} style={ctl} />
+      <DateInput aria-label="To" value={value.to || ""} onChange={e => onChange({ ...value, to: e.target.value })} style={ctl} />
     </span>
   );
   if (input === "moneyrange") return (
