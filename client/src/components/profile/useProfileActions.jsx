@@ -21,12 +21,8 @@ export function useProfileActions({ donor, orgTeam, onReassign, setShowReassign,
     if(!member)return;
     setReassignLoading(true);
     try{
-      const prevOwner=donor.assignedToName||"nobody";
+      // SENDS-1: one change, one record. The server writes the "Reassigned" line itself.
       await apiFetch(`/donors/${donor.id}/assign`,{method:"PATCH",body:JSON.stringify({assignedTo:member.id,assignedToName:member.name})});
-      await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({
-        type:"other",note:`Reassigned from ${prevOwner} to ${member.name}`,
-        date:orgTodayCivil()
-      })});
       if(onReassign)onReassign(donor.id,member.id,member.name);
       setShowReassign(false);
     }catch(e){console.error(e);}

@@ -941,14 +941,28 @@ app.patch("/donors/:id/assign", requireAuth, requireAdmin, requireCrm, checkWrit
   // actor's and the name is read off the users row.
   const byName = (await query("SELECT name FROM users WHERE id=? AND org_id=?", [req.user.userId, req.user.orgId]))[0]?.name
     || actor(req).name;
-  const affected = await run(
-    `UPDATE donors SET assigned_to=?, assigned_to_name=?,
-       assigned_by=?, assigned_by_name=?, assigned_at=CASE WHEN ?::text IS NULL THEN NULL ELSE NOW() END,
-       pending_assignee_invite_id=NULL, pending_assignee_name=NULL, updated_at=NOW()
-     WHERE id=? AND org_id=?`,
-    [officerId, officerName, officerId ? actor(req).id : null, officerId ? byName : null,
-     officerId, req.params.id, req.user.orgId]
-  );
+  // SENDS-1 (W-1107-Donors-32X): the profile PATCHed here and then POSTed its own
+  // "Reassigned" interaction, two records for one change. The ONE line is written
+  // here, under the person's lock, only when the owner really changed, so every
+  // screen that assigns (profile, Directory, Major gifts) writes exactly one.
+  const affected = await require("../shared/personLock").withPersonLock("assign", req.user.orgId, req.params.id, async () => {
+    const [prev] = await query("SELECT assigned_to, assigned_to_name FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+    if (!prev) return { changes: 0 };
+    const r = await run(
+      `UPDATE donors SET assigned_to=?, assigned_to_name=?,
+         assigned_by=?, assigned_by_name=?, assigned_at=CASE WHEN ?::text IS NULL THEN NULL ELSE NOW() END,
+         pending_assignee_invite_id=NULL, pending_assignee_name=NULL, updated_at=NOW()
+       WHERE id=? AND org_id=?`,
+      [officerId, officerName, officerId ? actor(req).id : null, officerId ? byName : null,
+       officerId, req.params.id, req.user.orgId]
+    );
+    if (r.changes && (prev.assigned_to || null) !== officerId) {
+      await require("../../timelineLine").timelineLine({ orgId: req.user.orgId, donorId: req.params.id, type: "other",
+        note: officerId ? `Reassigned from ${prev.assigned_to_name || "nobody"} to ${officerName}` : `Unassigned from ${prev.assigned_to_name || "nobody"}`,
+        actorId: req.user.userId, actorName: byName, key: `reassign:${newId("ra")}`, metadata: { via: "assign", from: prev.assigned_to || null, to: officerId } });
+    }
+    return r;
+  });
   if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
   res.json({ success: true, assignedTo: officerId, assignedToName: officerName });
 }));

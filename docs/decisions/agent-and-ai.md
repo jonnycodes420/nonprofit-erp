@@ -3,6 +3,13 @@
 Read this when you touch anything a model or an automation does: drafts, the Anthropic gate, `askClaude`, workflows, or system actors.
 
 ## Rules
+- **Atlas proposes, she saves (SENDS-1, 7 Nov 2026).** A call, a note, a follow-up or a draft Atlas would write is one
+  proposal card listing exactly what will be written, with Save and Edit (`server/atlas/proposal.js`,
+  `client/src/components/atlas/ProposalCard.jsx`). Nothing is written until `POST /atlas/:id/save`, which claims the
+  proposal by its id in one UPDATE, so ten Saves write each item once. A draft is signed with her signature block
+  (`senderSignature`), and an email makes the draft only: no Thread step and so no task, unless she ticks "remind me".
+  Atlas's `create_task` writes one follow-up: when it opens the person's Thread, the Thread's own task is the follow-up.
+
 - **One helper, Atlas, and one door: `POST /atlas` (AGENT-5).** Home's box (a non-question), the floating mic,
   the rail and the profile all open the same panel over the page, never a navigation. The model only READS
   her words into steps (`shared/atlas.js` ATLAS_TOOL, strict, her words copied); code resolves every name,

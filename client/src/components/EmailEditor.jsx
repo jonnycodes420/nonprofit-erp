@@ -73,7 +73,9 @@ function inlineText(node) {
     if (n.nodeType === 3) out += n.nodeValue;
     else if (n.nodeType === 1) {
       const tok = n.getAttribute && n.getAttribute("data-st-token");
-      if (tok) out += `{{${tok}}}`;
+      const keep = n.getAttribute && n.getAttribute("data-st-keep");   // SENDS-1: a never-giver's sentence reads back as written
+      if (keep != null) out += keep;
+      else if (tok) out += `{{${tok}}}`;
       else if (n.tagName === "BR") out += "\n";
       else {
         const t = inlineText(n);

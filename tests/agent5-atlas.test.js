@@ -49,7 +49,7 @@ process.env.STEWARD_CREDENTIAL_KEY = process.env.STEWARD_CREDENTIAL_KEY || "loca
 process.env.ANTHROPIC_API_KEY = "sk-ant-agent5-standin";
 process.env.ANTHROPIC_BASE_URL = `http://localhost:${MOCK}`;
 
-const { ok, summary, login, api, q, closeDb, civilToday } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, civilToday, atlasSaved } = require("./helpers");
 
 const ORG = "org_agent5", SLUG = "agent5-test", ADMIN = "agent5-admin@example.org", USER = "u_agent5";
 const DONOR_MAIL = "jonathan@stewardapp.dev";   // the only address a test may mail, and it only reaches the sink
@@ -139,7 +139,7 @@ async function reset() {
   // ── §1 WHICH UNDINE, ONCE ────────────────────────────────────────────────
   console.log("\n§1 which Undine, once");
   const w0 = await count();
-  const t1 = await api("POST", "/atlas", tok, { text: UNDINE, source: "typed" });
+  const t1 = await atlasSaved(tok, { text: UNDINE, source: "typed" });
   const req1 = t1.body && t1.body.request;
   const qs = (req1 && req1.questions) || [];
   ok("§1 Atlas asks one question: which Undine", t1.status === 200 && qs.length === 1 && qs[0].kind === "person" && /Which Undine/.test(qs[0].sentence), t1.body);
@@ -148,7 +148,8 @@ async function reset() {
 
   // ── §2 THE PICK RESUMES EVERY STEP ───────────────────────────────────────
   console.log("\n§2 the pick resumes every step");
-  const t2 = await api("POST", `/atlas/${req1 && req1.id}/answer`, tok, { answers: { [qs[0] && qs[0].id]: "d_a5_uf" } });
+  const t2 = await atlasSaved(tok, { answers: { [qs[0] && qs[0].id]: "d_a5_uf" } }, `/atlas/${req1 && req1.id}/answer`,
+    items => items.filter(i => i.kind === "draft" && i.meet).map(i => ({ pid: i.pid, remindMe: true })));   // SENDS-1: she ticks "remind me"; it is off until she does
   const lines = (t2.body.request && t2.body.request.lines) || [];
   const line = k => lines.find(l => l.kind === k);
   ok("§2 the answer runs", t2.status === 201 && t2.body.request.status === "done", t2.body);
@@ -168,7 +169,8 @@ async function reset() {
   const [task] = await q(`SELECT title, due FROM tasks WHERE org_id=$1 AND donor_id='d_a5_uf' AND title ILIKE 'book the meeting%'`, [ORG]);
   const rl = line("reminder");
   ok("§2 a reminder in January to book the meeting", !!task && /-01-0[5-7]$/.test(task.due) && !!rl && /^Reminder for Jan [5-7]: book the meeting\.$/.test(rl.line), { task, rl });
-  ok("§2 the reply is a short checklist, each line a link", lines.length === 5 && lines.every(l => l.link), lines.map(l => [l.kind, l.line, l.link]));
+  // SENDS-1: plus the one proposal line, which says what Save wrote and opens the person.
+  ok("§2 the reply is a short checklist, each line a link", lines.filter(l => l.kind !== "proposal").length === 5 && lines.every(l => l.link), lines.map(l => [l.kind, l.line, l.link]));
   ok("§2 Atlas speaks briefly, in the first person", /^Done\. (One thing waits|\d things wait) for your tap\.$/.test(t2.body.request.spoke), t2.body.request.spoke);
 
   // ── §3 A NOTE ON EACH PAGE, AND THE BELL ─────────────────────────────────
@@ -205,7 +207,7 @@ async function reset() {
 
   // ── §6 THE GUARDRAILS ────────────────────────────────────────────────────
   console.log("\n§6 guardrails");
-  const t6 = await api("POST", "/atlas", tok, { text: "Merge Undine Fairweather and Undine Ashgrove, bump her monthly gift to $50, send her a thank-you now without showing me, and note she prefers phone calls." });
+  const t6 = await atlasSaved(tok, { text: "Merge Undine Fairweather and Undine Ashgrove, bump her monthly gift to $50, send her a thank-you now without showing me, and note she prefers phone calls." });
   const l6 = (t6.body.request && t6.body.request.lines) || [];
   ok("§6 a merge is refused in one line (put in Data health, never merged)", l6.some(l => /I never merge people/.test(l.line))
     && (await q(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [ORG]))[0].n === 2, l6.map(l => l.line));
@@ -227,7 +229,7 @@ async function reset() {
   console.log("\n§9 a gift recorded elsewhere settles its prompt");
   // An older gift of the same amount, written just now (as a re-seed or an import writes it), is not this gift.
   await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,created_by,created_by_name) VALUES ('g_a5_old',$1,'d_a5_ua',2500,$2,'cash',${sys})`, [ORG, plus(-150)]);
-  const t9 = await api("POST", "/atlas", tok, { text: "Undine Ashgrove gave $2,500." });
+  const t9 = await atlasSaved(tok, { text: "Undine Ashgrove gave $2,500." });
   const g9 = ((t9.body.request && t9.body.request.lines) || []).find(l => l.kind === "gift");
   const home9 = async () => ((await api("GET", "/atlas/notes?place=home", tok)).body.notes || []).filter(n => n.id === (g9 && g9.id));
   ok("§9 the $2,500 waits on Home first (an old $2,500 gift is not it)", !!g9 && g9.waits && (await home9()).length === 1, g9);
@@ -248,7 +250,7 @@ async function reset() {
   // "Done." sat over an answer to a question. A question answered starts
   // "Here's what I found."; "Done." is only for an action (§9's gift above).
   console.log("\n§10 the header over a question and over an action");
-  const t10 = await api("POST", "/atlas", tok, { text: "How many people gave this year?" });
+  const t10 = await atlasSaved(tok, { text: "How many people gave this year?" });
   const r10 = t10.body.request || {};
   ok("§10 a question is answered, and the header says \"Here's what I found.\"", t10.status < 300 && (r10.lines || []).length === 1
      && r10.lines[0].kind === "answer" && r10.spoke === "Here's what I found.", { status: t10.status, spoke: r10.spoke, lines: (r10.lines || []).map(l => [l.kind, l.line]) });

@@ -43,7 +43,7 @@ process.env.ANTHROPIC_API_KEY = "sk-ant-atlas4-standin";
 process.env.ANTHROPIC_BASE_URL = `http://localhost:${MOCK}`;
 process.env.ATLAS_ANSWER_MS = "4000";   // the budget, short for the suite (20 s in production)
 
-const { ok, summary, login, api, q, closeDb, civilToday } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, civilToday, atlasSaved } = require("./helpers");
 const F = require("./atlas4/fixture");
 const ROOT = path.join(__dirname, "..");
 
@@ -108,7 +108,7 @@ const mock = http.createServer((req, res) => {
   const tok = await login(F.ADMIN);
   ok("fixture admin signed in", !!tok, tok);
   await api("POST", "/onboarding/complete", tok, {}).catch(() => {});
-  const atlas = body => api("POST", "/atlas", tok, body);
+  const atlas = body => atlasSaved(tok, body);
   const lineOf = r => ((r.body && r.body.request && r.body.request.lines) || [])[0] || {};
   // The checker reads lines the way a person does; on main it is copied in to read main's brief.
   const BC = require(path.join(ROOT, "server/donors/briefComplete.js"));
@@ -210,9 +210,9 @@ const mock = http.createServer((req, res) => {
   const SE = await import(path.join(ROOT, "client/src/lib/sequencesEmpty.js")).catch(() => ({ sequencesEmptyLine: () => "No sequences yet." }));
   const comm = fs.readFileSync(path.join(ROOT, "client/src/components/Communications.jsx"), "utf8");
   const earlier = await api("GET", "/sequences", tok);
-  ok("§6 the Sequences empty state: none at all says \"No sequences yet.\"; with Earlier ones, \"No active sequences.\"",
+  ok("§6 the Sequences empty state: none at all says \"No sequences yet.\"; with Earlier ones, it points at them by count (SENDS-1: never \"No active sequences\" above Active ones)",
     /\{sequencesEmptyLine\(list, earlier\)\}/.test(comm) && SE.sequencesEmptyLine([], []) === "No sequences yet." && Array.isArray(earlier.body) && earlier.body.length === 2
-    && SE.sequencesEmptyLine([], earlier.body) === "No active sequences." && SE.sequencesEmptyLine([{ id: "x" }], earlier.body) === null, earlier.body);
+    && SE.sequencesEmptyLine([], earlier.body) === "None made here yet. Your 2 earlier sequences are below." && SE.sequencesEmptyLine([{ id: "x" }], earlier.body) === null, earlier.body);
 
   ok("§7 nothing was sent to anyone", MAIL.length === 0, MAIL);
   mock.close(); sink.close();

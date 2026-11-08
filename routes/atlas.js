@@ -49,6 +49,7 @@ const ATLAS_MODEL = () => process.env.ATLAS_MODEL || "claude-sonnet-4-6";
 const ATLAS_READ_MS = () => Number(process.env.ATLAS_READ_MS) || 12000;
 const ATLAS_ANSWER_MS = () => Number(process.env.ATLAS_ANSWER_MS) || 20000;
 
+const PROP = require("../server/atlas/proposal");   // SENDS-1: Atlas proposes, she saves
 function mount(ctx) {
 const { query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate } = ctx;
 require("./atlasMore").mount({ query, wrap, requireAuth, agentGate });   // ATLAS-3
@@ -202,7 +203,8 @@ async function requestOut(orgId, id) {
   const AT_ = await AT();
   return { id: m.id, text: m.text, status: m.status, ai: m.ai, questions: m.status === "needs_answers" ? (read.atlas && read.atlas.questions) || [] : [],
     lines, waiting, spoke: m.status === "needs_answers" ? (read.atlas && read.atlas.spoke) || "" : (read.atlas && read.atlas.spoke) || AT_.spokeFor(lines, waiting),   // MONEY-3: "Here's what I found." over an answer
-    timings: read.atlas && read.atlas.timings, undoneAt: m.undone_at, follows: (read.atlas && read.atlas.follows) || null };   // ATLAS-3: the request this one followed
+    timings: read.atlas && read.atlas.timings, undoneAt: m.undone_at, follows: (read.atlas && read.atlas.follows) || null,   // ATLAS-3: the request this one followed
+    proposal: read.atlas && read.atlas.proposal ? read.atlas.proposal : null };   // SENDS-1: what Save will write, or what it wrote
 }
 
 // ── READ, RESOLVE, ASK ──────────────────────────────────────────────────────
@@ -431,8 +433,8 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
   const refusedClients = new Set();
   const missing = new Set();
   let giftCard = null;
-  const drafted = [];
-  const reminders = steps.filter(s => s.kind === "reminder");
+  const propose = [];       // SENDS-1: what Save will write
+  let signature = null;
   const person = (id, extra = {}) => ({ donorId: id, link: { tab: "donor", donorId: id, ...extra } });
   const heldFor = new Set();   // one held-back card per person and kind of detail
   const holdBack = async (id, words) => {
@@ -549,15 +551,10 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
           break;
         }
         const { subject, body } = await drafts.get(st);
-        const r = await runStep(req, m, insId, { tool: "draft_note", donorId: id, subject, body, purpose: thanks ? "thank_you" : undefined, citesRows: [id] });
-        const what = thanks ? "a thank-you" : "an email";
-        if (r.ok && r.entityId) {
-          const c = await addCard(orgId, m.id, { id: cardId(), kind: "draft", draftId: r.entityId, donorId: id, title: `Email to ${fn}`, subject, body, state: "waiting" });
-          drafted.push({ id, when, meet });
-          await log({ kind: "draft", state: "waiting", waits: true, runId: r.runId, cardId: c.id, undoable: false,
-            line: `Drafted ${what} to ${fn}${meet ? ` asking to meet${month ? ` in ${month}` : ""}` : ""}. Review and send.`, donorId: id,
-            place: "communications", placeId: r.entityId, link: { tab: "communications", draftId: r.entityId, donorId: id } });
-        } else await log({ kind: "draft", state: "failed", line: `I couldn't draft ${what} to ${fn}: ${r.reason || "it did not run"}.` });
+        // SENDS-1: proposed, signed, written only on Save. The email is the draft alone; "remind me" is her tick.
+        if (signature == null) signature = await PROP.signatureFor(orgId, req.user.userId).catch(() => "");
+        propose.push({ pid: newId("pi"), kind: "draft", donorId: id, name: nm(id), subject, body: PROP.withSignature(body, signature), thanks, meet, month,
+          remindMe: false, remindDue: when ? when.date : AT_.addDays(today, 7), remindTitle: meet ? `Book the meeting with ${nm(id)}` : `Follow up with ${nm(id)} about the email` });
         if (st.kind === "send_now") await log({ kind: "refused", state: "refused", line: AT_.REFUSE.send_now });
         break;
       }
@@ -566,12 +563,10 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         // Her words without the when ("the first week of January"), and a
         // pronoun said as the person ("thank him" is "Thank Henrik").
         let label = String(st.words || "Follow up").replace(/^remind me (to\s+)?/i, "")
-          .replace(/\s*\b((the|in the|by the|on the)\s+)?(in the new year|new year|after thanksgiving|next week|tomorrow|in \w+ (days?|weeks?|months?)|on \w+day|(first week of |early |mid |late |end of )?(january|february|march|april|may|june|july|august|september|october|november|december)( \d+)?)\b.*$/i, "").trim() || "Follow up";
+          .replace(/\s*\b((the|in the|by the|on the|in|by|on)\s+)?(in the new year|new year|after thanksgiving|next week|tomorrow|in \w+ (days?|weeks?|months?)|on \w+day|(first week of |early |mid |late |end of )?(january|february|march|april|may|june|july|august|september|october|november|december)( \d+)?)\b.*$/i, "").trim() || "Follow up";
         if (id) label = label.replace(/\b(him|her|them)\b/i, first(nm(id)));
         const lbl = label[0].toUpperCase() + label.slice(1);
-        const r = await runStep(req, m, insId, { tool: "create_task", donorId: id || undefined, title: lbl, due: when.date, citesRows: id ? [id] : [] });
-        await log({ kind: "reminder", state: r.ok ? "done" : "failed", runId: r.runId, undoable: r.ok, line: r.ok ? `Reminder for ${AT_.dayWords(when.date, today)}: ${lbl.replace(/\.$/, "")}.` : `I couldn't set that reminder: ${r.reason}.`,
-          donorId: id || null, place: "tasks", placeId: r.entityId, link: id ? { tab: "donor", donorId: id, section: "thread" } : { tab: "tasks" } });
+        propose.push({ pid: newId("pi"), kind: "follow_up", donorId: id || null, name: id ? nm(id) : null, title: lbl, due: when.date });   // SENDS-1
         break;
       }
       case "add_to_journey":
@@ -599,18 +594,14 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         // ATLAS-4: the note is her words as typed, labels and all (shared/atlasNote.js).
         const keep = V.stripSensitive((await import("../shared/atlasNote.js")).conversationNote(m.text, st));
         const label = V.HOW_LABEL[V2.how] || "Conversation";
-        const r = await runStep(req, m, insId, { tool: "log_conversation", donorId: id, kind: V2.kind, how: V2.how, date, memoId: m.id,
-          note: (new RegExp(`\\b${label}\\b`, "i").test(keep.text) || /\b(call|lunch|coffee|meeting|visit|tour|dinner|breakfast|met|spoke|talked)\b/i.test(keep.text) ? keep.text : `${label}. ${keep.text}`).slice(0, 2000), citesRows: [id] });
-        await log({ kind: "logged", state: r.ok ? "done" : "failed", runId: r.runId, undoable: r.ok,
-          line: r.ok ? `Logged the ${label.toLowerCase()} with ${nm(id)}, ${AT_.dayWords(date, today)}.` : `I couldn't log that: ${r.reason}.`,
-          ...person(id, { section: "timeline" }), place: "person", placeId: id });
+        // SENDS-1: proposed; logged only on Save.
+        propose.push({ pid: newId("pi"), kind: "call", donorId: id, name: nm(id), label, how: V2.how, convKind: V2.kind, date,
+          note: (new RegExp(`\\b${label}\\b`, "i").test(keep.text) || /\b(call|lunch|coffee|meeting|visit|tour|dinner|breakfast|met|spoke|talked)\b/i.test(keep.text) ? keep.text : `${label}. ${keep.text}`).slice(0, 2000) });
         for (const h of keep.held) await holdBack(id, h);
         break;
       }
       case "note": {
-        const r = await runStep(req, m, insId, { tool: "log_note", donorId: id, note: st.words, citesRows: [id] });
-        await log({ kind: "note", state: r.ok ? "done" : "failed", runId: r.runId, undoable: r.ok, line: r.ok ? `Noted on ${nm(id)}: "${String(st.words).slice(0, 80)}".` : `I couldn't save that note: ${r.reason}.`,
-          ...person(id, { section: "timeline" }), place: "person", placeId: id });
+        propose.push({ pid: newId("pi"), kind: "note", donorId: id, name: nm(id), note: String(st.words || "") });   // SENDS-1
         break;
       }
       case "merge": {
@@ -682,14 +673,64 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         await log({ kind: "cant", state: "refused", line: ai === "on" ? AT_.CANT_LINE(st.words) : AT_.AI_OFF_LINE });
     }
   }
-  // A meeting asked for in the email gets its reminder to book it, on the day.
-  for (const d of drafted) {
-    if (!d.meet || !d.when || reminders.length) continue;
-    const lbl = "Book the meeting";
-    const r = await runStep(req, m, insId, { tool: "create_task", donorId: d.id, title: `${lbl} with ${nm(d.id)}`, due: d.when.date, citesRows: [d.id] });
-    await log({ kind: "reminder", state: r.ok ? "done" : "failed", runId: r.runId, undoable: r.ok, line: r.ok ? `Reminder for ${AT_.dayWords(d.when.date, today)}: book the meeting.` : `I couldn't set the reminder: ${r.reason}.`,
-      donorId: d.id, place: "tasks", placeId: r.entityId, link: { tab: "donor", donorId: d.id, section: "thread" } });
+  // SENDS-1: everything she would have had written is one proposal, saved only by her Save.
+  // (A meeting asked for in an email is the draft's "remind me" box, off until she ticks it.)
+  if (propose.length) {
+    await PROP.storeProposal(orgId, m.id, propose);
+    const who = (propose.find(x => x.donorId) || {}).donorId || null;   // the line opens the person it is about
+    await log({ kind: "proposal", state: "waiting", waits: true, line: PROP.proposalLine(propose),
+      ...(who ? { donorId: who, link: { tab: "donor", donorId: who }, place: "person", placeId: who } : { link: { tab: "tasks" } }) });
   }
+}
+
+// SENDS-1 · SAVE. The claim first (server/atlas/proposal.js), then one write per item.
+async function saveProposal(req, m, items) {
+  const orgId = req.user.orgId;
+  const AT_ = await AT();
+  const today = orgToday(await orgTz(orgId));
+  const insId = m.instruction_id;
+  const log = a => logAction(req, { requestId: m.id, ...a });
+  const person = (id, extra = {}) => ({ donorId: id, link: { tab: "donor", donorId: id, ...extra } });
+  const fnOf = it => first(it.name || "them");
+  let wrote = 0;
+  for (const it of items) {
+    if (it.skip) { await log({ kind: it.kind === "call" ? "logged" : it.kind === "follow_up" ? "reminder" : it.kind, state: "refused", line: `Left out, as you asked: ${it.kind === "draft" ? `the email to ${fnOf(it)}` : it.kind === "follow_up" ? `"${it.title}"` : `the ${it.kind} for ${fnOf(it)}`}.` }); continue; }
+    if (it.kind === "call") {
+      const r = await runStep(req, m, insId, { tool: "log_conversation", donorId: it.donorId, kind: it.convKind, how: it.how, date: it.date <= today ? it.date : today, memoId: m.id, note: it.note, citesRows: [it.donorId] });
+      await log({ kind: "logged", state: r.ok ? "done" : "failed", runId: r.runId, undoable: r.ok,
+        line: r.ok ? `Logged the ${String(it.label || "conversation").toLowerCase()} with ${it.name}, ${AT_.dayWords(it.date, today)}.` : `I couldn't log that: ${r.reason}.`,
+        ...person(it.donorId, { section: "timeline" }), place: "person", placeId: it.donorId });
+      if (r.ok) wrote++;
+    } else if (it.kind === "note") {
+      const r = await runStep(req, m, insId, { tool: "log_note", donorId: it.donorId, note: it.note, citesRows: [it.donorId] });
+      await log({ kind: "note", state: r.ok ? "done" : "failed", runId: r.runId, undoable: r.ok, line: r.ok ? `Noted on ${it.name}: "${String(it.note).slice(0, 80)}".` : `I couldn't save that note: ${r.reason}.`,
+        ...person(it.donorId, { section: "timeline" }), place: "person", placeId: it.donorId });
+      if (r.ok) wrote++;
+    } else if (it.kind === "follow_up") {
+      const r = await runStep(req, m, insId, { tool: "create_task", donorId: it.donorId || undefined, title: it.title, due: it.due, citesRows: it.donorId ? [it.donorId] : [] });
+      await log({ kind: "reminder", state: r.ok ? "done" : "failed", runId: r.runId, undoable: r.ok, line: r.ok ? `Reminder for ${AT_.dayWords(it.due, today)}: ${String(it.title).replace(/\.$/, "")}.` : `I couldn't set that reminder: ${r.reason}.`,
+        donorId: it.donorId || null, place: "tasks", placeId: r.entityId, link: it.donorId ? { tab: "donor", donorId: it.donorId, section: "thread" } : { tab: "tasks" } });
+      if (r.ok) wrote++;
+    } else if (it.kind === "draft") {
+      const r = await runStep(req, m, insId, { tool: "draft_note", donorId: it.donorId, subject: it.subject, body: it.body, purpose: it.thanks ? "thank_you" : undefined, noThread: true, citesRows: [it.donorId] });
+      const what = it.thanks ? "a thank-you" : "an email";
+      if (r.ok && r.entityId) {
+        await log({ kind: "draft", state: "waiting", waits: true, runId: r.runId, undoable: false,
+          line: `Drafted ${what} to ${fnOf(it)}${it.meet ? ` asking to meet${it.month ? ` in ${it.month}` : ""}` : ""}. Review and send.`, donorId: it.donorId,
+          place: "communications", placeId: r.entityId, link: { tab: "communications", draftId: r.entityId, donorId: it.donorId } });
+        wrote++;
+      } else await log({ kind: "draft", state: "failed", line: `I couldn't draft ${what} to ${fnOf(it)}: ${r.reason || "it did not run"}.` });
+      if (it.remindMe) {
+        const t = await runStep(req, m, insId, { tool: "create_task", donorId: it.donorId, title: it.remindTitle, due: it.remindDue, citesRows: [it.donorId] });
+        await log({ kind: "reminder", state: t.ok ? "done" : "failed", runId: t.runId, undoable: t.ok, line: t.ok ? `Reminder for ${AT_.dayWords(it.remindDue, today)}: ${it.meet ? "book the meeting" : String(it.remindTitle).replace(/\.$/, "")}.` : `I couldn't set the reminder: ${t.reason}.`,
+          donorId: it.donorId, place: "tasks", placeId: t.entityId, link: { tab: "donor", donorId: it.donorId, section: "thread" } });
+        if (t.ok) wrote++;
+      }
+    }
+  }
+  await run("UPDATE atlas_actions SET state='done', waits=false, line=? WHERE org_id=? AND request_id=? AND kind='proposal' AND state='waiting'",
+    [`Saved ${wrote === 1 ? "one thing" : `${wrote} things`}.`, orgId, m.id]);
+  return wrote;
 }
 
 // ── THE DOOR ────────────────────────────────────────────────────────────────
@@ -779,6 +820,28 @@ app.post("/atlas/:id/answer", requireAuth, checkWriteAccess, wrap(async (req, re
   const prior = await AN.priorContext({ query, orgId, userId: actor(req).id, followsId: read.atlas.follows, parse: j });
   await execute(req, { ...m, status: "planned" }, steps, { today, ai: m.ai, prior });
   await finishRequest(orgId, m.id, steps, { ...(read.atlas.timings || {}), answerMs: Date.now() - t0 });
+  res.status(201).json({ request: await requestOut(orgId, m.id) });
+}));
+
+// SENDS-1 · SAVE THE PROPOSAL. Nothing Atlas proposed is written before this.
+// The body names the proposal it saves (and her edits); a second Save of the
+// same proposal writes nothing and answers with what the first one did.
+app.post("/atlas/:id/save", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [m] = await query("SELECT * FROM voice_memos WHERE id=? AND org_id=? AND source LIKE 'atlas%'", [req.params.id, orgId]);
+  if (!m) return res.status(404).json({ error: "Not found" });
+  const proposal = ((j(m.read) || {}).atlas || {}).proposal;
+  const pid = String((req.body && req.body.proposalId) || "");
+  if (!proposal || proposal.id !== pid) return res.status(404).json({ error: "no_proposal", sentence: "There's nothing waiting to be saved here." });
+  if (m.undone_at) return res.status(409).json({ error: "undone", sentence: "This was undone, so there's nothing to save." });
+  if (!(await PROP.claimProposal(orgId, m.id, pid, new Date().toISOString()))) {
+    return res.status(200).json({ already: true, sentence: "Already saved.", request: await requestOut(orgId, m.id) });
+  }
+  const items = PROP.mergeEdits(proposal.items, req.body && req.body.items);
+  // What was saved is what she saw, edits and all.
+  await run(`UPDATE voice_memos SET read = jsonb_set(read, '{atlas,proposal,items}', ?::jsonb) WHERE id=? AND org_id=?`, [JSON.stringify(items), m.id, orgId]);
+  const wrote = await saveProposal(req, m, items);
+  if (req.audit) req.audit.summary(`${atlasName()}: saved ${wrote} of ${items.length}`, { count: wrote });
   res.status(201).json({ request: await requestOut(orgId, m.id) });
 }));
 

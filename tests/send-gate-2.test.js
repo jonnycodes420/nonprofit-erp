@@ -256,7 +256,8 @@ function staticChecks() {
   const fernOff = await q(`SELECT held_reason FROM mail_blocked WHERE org_id=$1 AND donor_id=$2 AND kind='receipt' AND sent_at IS NULL`, [ORG, P.fern[0]]);
   ok("§4 …and it is held because email is off for the organization", fernOff.some(r => r.held_reason === "org_mail_off"), fernOff);
   const st2 = await api("GET", "/mail-types/status", tok);
-  ok("§4 the top bar reads 'Waiting for Steward to turn email on'", st2.body.state === "waiting" && st2.body.chip === "Waiting for Steward to turn email on", st2.body);
+  // SENDS-1: one master. With Donor mail off every surface says Off (it read "Waiting"), and names what she chose.
+  ok("§4 the top bar reads 'Automatic email: Off', naming what will start when email is on", st2.body.state === "off" && st2.body.chip === "Automatic email: Off" && /email is off for your organization/.test(st2.body.home), st2.body);
   const pageW = await api("GET", "/mail-types", tok);
   ok("§4 the page says email is off at the top", pageW.body.mailOn === false && /^Email is off for your organization, so nothing on this page sends yet\./.test(pageW.body.top || ""), pageW.body.top);
   await mailOff(true);

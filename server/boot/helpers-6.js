@@ -9,6 +9,7 @@
 var __dirname = require("path").join(__dirname, "..", "..");   // server.js's folder, as the moved code expects
 const __boot = require("./share");
 const __share = __boot.share;
+const SENDS_OFF = require("../outreach/sendsOff");   // SENDS-1: Off means nothing goes out
 let BILLING_WEBHOOK_EVENTS, CARD_CHECK_BUDGET, CARD_RECHECK_DAYS, DONATION_WEBHOOK_EVENTS, DONOR_EMAIL_ORG, DUNNING_SCHEDULE_DAYS, ItemRefs, MAX_NOTIFY_ATTEMPTS, RECONCILE_WINDOW_HOURS, SEQ, SEQ_RATE_PER_SECOND, SEQ_READY, SEQ_TICK_BUDGET, Sentry, WORKFLOW_RECIPES, asJson, bulkSendAddressGate, cardPeriod, computeAtRiskCandidates, computeDriftForDonors, computeMilestoneCandidates, displayNameCase, donorMailDecision, donorOnly, donorSendOpts, ensureAtRiskSequence, ensureMilestoneSequences, escHtmlWf, fmtMoneyPlain, greetFor, logRecoveryEvent, mailPolicy, newId, notifyFailedPending, openSustainerLapseThread, openingLine, orgMaySendEmail, orgTime, orgToday, orgTz, publicAppUrl, query, reconcileAccountsWithStripe, reconciliation, resend, run, sendCardExpiringEmail, sendDunningEmail, sendGiftAlertEmail, sendRawEmail, solicitableSql, stripe, sysWorkflow, unsubscribeEmailFooterHtml, userWantsEmail, webhookEventDiff, webhookSubStatus;
 __boot.register(c => {
   if ("BILLING_WEBHOOK_EVENTS" in c) BILLING_WEBHOOK_EVENTS = c.BILLING_WEBHOOK_EVENTS;
@@ -343,6 +344,8 @@ async function processTrackedSequences({ orgId = null, limit = SEQ_TICK_BUDGET, 
   for (const e of due) { if (!byOrg.has(e.org_id)) byOrg.set(e.org_id, []); byOrg.get(e.org_id).push(e); }
 
   for (const [oid, list] of byOrg) {
+    // SENDS-1: with the org's email Off, a due step is a draft she sends herself, never a send.
+    if (!(await SENDS_OFF.master(oid)).on) { out.drafted = (out.drafted || 0) + await draftWhileOff(oid, list); continue; }
     const gate = await sequenceTimezoneGate(oid);
     if (!gate.ok) { out.skipped += list.length; continue; }
     // BUILD-94 Part 4 — NO ADDRESS, NO SEND, for sequences too. Nothing is
@@ -443,6 +446,28 @@ async function processTrackedSequences({ orgId = null, limit = SEQ_TICK_BUDGET, 
 }
 // SPLIT-2 end
 // SPLIT-2 server.js piece 546
+
+// SENDS-1: each due step of an org whose email is Off, written once as a draft; the enrollment moves on.
+async function draftWhileOff(oid, list) {
+  let n = 0;
+  for (const enr of list) {
+    try {
+      const steps = await query(`SELECT * FROM sequence_steps WHERE sequence_id = ? AND track_key = ? ORDER BY step_order ASC`, [enr.sequence_id, enr.track_key]);
+      const step = steps[enr.current_step];
+      if (!step) { await closeEnrollment(enr.id, "completed", null); continue; }
+      const [donor] = await query(`SELECT * FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [enr.donor_id, oid]);
+      if (donor) {
+        const values = await sequenceMergeValues(donor, oid);
+        const hasGift = Number(donor.total_giving) > 0 || Number(donor.last_gift_amount) > 0 || Number(donor.gift_count) > 0;
+        const body = SEQ.renderMerge((await import("../../shared/giftSentence.js")).withoutGivenBefore(step.body, { hasGift, orgName: values.org_name }), values).text;
+        if (await SENDS_OFF.sequenceStepDraft({ orgId: oid, enrollmentId: enr.id, donorId: donor.id, stepOrder: step.step_order,
+          subject: SEQ.renderMerge(step.subject, values).text, body })) n++;
+      }
+      await advanceEnrollment(enr, steps);
+    } catch (e) { console.error("[seq] draft while off", enr.id, e.message); }
+  }
+  return n;
+}
 
 async function advanceEnrollment(enr, steps) {
   const next = steps[enr.current_step + 1];

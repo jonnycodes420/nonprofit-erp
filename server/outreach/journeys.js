@@ -657,6 +657,26 @@ app.get("/journeys/:id/preview", requireAuth, wrap(async (req, res) => {
       basis = `${J.firstRunSentence(Number(tf.month), Number(tf.day), today0).replace(/\.$/, "")}`;
     }
   }
+  // SENDS-1 (W-1107-Fundraising-27X): a birthday journey counts from the day the
+  // sweep would start it (shared/birthday.js birthdayJourneyStart, the run's own
+  // rule), for the person whose birthday comes round first. Never a gift or join date.
+  if (t.trigger_key === "birthday") {
+    const B = await import("../../shared/birthday.js");
+    const today0 = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
+    const lead = Number((t.trigger_filters || {}).daysBefore) || 0;
+    const born = await query(`SELECT id, name, birth_month, birth_day FROM donors WHERE org_id=? AND deleted_at IS NULL
+                                AND birth_month IS NOT NULL AND birth_day IS NOT NULL LIMIT 5000`, [orgId]);
+    let best = null;
+    for (const r of born) {
+      const s = B.birthdayJourneyStart(Number(r.birth_month), Number(r.birth_day), today0, lead);
+      if (s && (!best || s < best.start)) best = { r, start: s };
+    }
+    if (best) {
+      donor = { id: best.r.id, name: best.r.name }; from = best.start;
+      basis = `Birthday ${B.birthdayLabel(Number(best.r.birth_month), Number(best.r.birth_day))} · starts ${DD.displayDate(from)}${lead ? `, ${lead} ${lead === 1 ? "day" : "days"} before` : ""}`;
+    } else { donor = null; from = null; }
+    if (!donor) return res.json({ donor: null, steps: [], why: "Nobody on file has a birthday yet, so there is no one to preview this on." });
+  }
   if (!donor) return res.json({ donor: null, steps: [], why: "Nobody on file yet to preview this on." });
 
   // ── FIX-5 · THE CHAIN'S STATES COME FROM A REAL PLAN WHEN THERE IS ONE ──
@@ -1300,6 +1320,19 @@ app.post("/journeys/batches/:batchId/undo", requireAuth, checkWriteAccess, wrap(
         [`Stopped when the batch that started it was undone by ${actor(req).name || "a person"}. Steps already done stay done.`, orgId, worked.map(p => p.id)]);
       stopped = worked.length;
     }
+    // SENDS-1 (W-1107-Fundraising-29): Undo removes everything the batch made. The
+    // steps' own Threads went above (and their tasks with them, by the thread's
+    // trigger); this is the backstop for any journey Thread opened for these people
+    // while the batch ran that no step points to any more, and for the batch's
+    // scheduled journey emails, which would otherwise wait on a step that is gone.
+    const batchDonors = [...new Set(live.map(p => p.donor_id))];
+    await run(`DELETE FROM threads t WHERE t.org_id=? AND t.donor_id = ANY(?::text[]) AND t.closed_at IS NULL
+                 AND t.opening_interaction_id IS NULL AND t.opening_gift_id IS NULL
+                 AND t.created_at >= ? AND t.created_at <= COALESCE(?::timestamptz, NOW()) + INTERVAL '10 seconds'
+                 AND NOT EXISTS (SELECT 1 FROM cultivation_plan_steps s WHERE s.org_id = t.org_id AND s.thread_id = t.id)`,
+      [orgId, batchDonors, b.created_at, b.finished_at || null]).catch(e => console.error("[journey] undo backstop:", e.message));
+    await run(`UPDATE journey_sends SET status='skipped', reason='batch_undone', updated_at=NOW() WHERE org_id=? AND plan_id = ANY(?::text[]) AND status IN ('scheduled','failed')`,
+      [orgId, liveIds]).catch(e => console.error("[journey] undo sends:", e.message));
     for (const donorId of [...new Set(live.map(p => p.donor_id))]) {
       await advanceCultivationPlan(orgId, donorId, { actorId: actor(req).id, actorName: actor(req).name });
     }

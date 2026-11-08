@@ -32,6 +32,8 @@ const TRIGGERS = {
   added_volunteer: "Added as a volunteer", manual: "Started by hand",
   lapsed: "Lapsed", lapsed_90: "Lapsed", lapsed_180: "Lapsed", lapsed_365: "Lapsed",
   lapsing: "Lapsing", major_gift: "Major gift", upgrade: "Gave more", anniversary: "Giving anniversary",
+  // SENDS-1 (W-1107-Fundraising-21): Steward's own sequences read as what starts them, not "Milestone".
+  milestone: "A giving milestone or anniversary", at_risk: "At risk of lapsing",
 };
 export function triggerLabel(key) {
   const k = String(key || "").trim();

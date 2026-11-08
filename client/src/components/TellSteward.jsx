@@ -36,7 +36,8 @@ import { atlasStatus, atlasName, linkTarget } from "../lib/atlas";
 import { Camera } from "lucide-react";
 import { openCheckSnap } from "./CheckSnap";   // CHECK-2
 import { MicGlyph } from "./TellStewardOpen";   // SWEEP-6
-import AtlasAnswer from "./atlas/AtlasAnswer";   // ATLAS-3: a list is a list, a person is what we know
+import AtlasAnswer from "./atlas/AtlasAnswer";
+import ProposalCard from "./atlas/ProposalCard";   // SENDS-1: nothing is written until Save   // ATLAS-3: a list is a list, a person is what we know
 import { continueThread, askBody, newProgressKey } from "../lib/atlasThread";   // ATLAS-3: Tell me more keeps the thread
 
 const SR = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition || null) : null;
@@ -222,6 +223,16 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
     } catch (e) { setErr(said(e)); }
     setBusy(false);
   }
+  // SENDS-1: Save writes what the card lists, with her edits, once.
+  async function save(proposalId, items) {
+    setBusy(true); setErr("");
+    try {
+      const r = await apiFetch(`/atlas/${request.id}/save`, { method: "POST", body: JSON.stringify({ proposalId, items }) });
+      if (r.request) setRequest(r.request);
+      told({ memoId: request.id });
+    } catch (e) { setErr(said(e)); }
+    setBusy(false);
+  }
   const go = link => { const t = linkTarget(link); if (!t || !onNavigate) return; onClose(); onNavigate(t[0], t[1]); };
   // ATLAS-3: Tell me more keeps what was said; the next ask follows on from it.
   const another = () => { setThread(t => continueThread(t, request)); setRequest(null); setPending(null); setText(""); finalText.current = ""; setSource("typed"); };
@@ -320,6 +331,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
             <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.45, flex: "1 1 220px" }}>One tap does the {taps.length} things below that wait for you.</div>
             <button data-testid="atlas-do-all-button" disabled={busy} onClick={() => act(`/atlas/${request.id}/all`)} style={btn(true)}>Do all of this</button>
           </div>}
+          <ProposalCard key={(request.proposal && request.proposal.id) || "none"} request={request} busy={busy} onSave={save} />
           <ul data-testid="atlas-lines" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column" }}>
             {lines.map(l => <li key={l.id} data-testid="atlas-line" data-kind={l.kind} data-state={l.state}
               style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "8px 0", borderBottom: "1px solid " + T.bg2, fontSize: 14, lineHeight: 1.45, color: T.ink }}>

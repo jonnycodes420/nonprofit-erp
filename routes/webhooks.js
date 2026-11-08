@@ -599,12 +599,10 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
             }
             // The ledger stamp is recordGift's — one place, BUILD-58 W-3's
             // self-healing chart included, under the BUILD-83 posting rule.
-            const taskId = newId("t");
-            await run(
-              `INSERT INTO tasks (id, org_id, title, priority, done, created_at, created_by, created_by_name)
-               VALUES ($1,$2,$3,$4,$5,NOW(),$6,$7)`,
-              [taskId, orgId, `Send personal thank-you to ${thankName} for $${amount} online gift`, "high", 0, SYS_STRIPE.id, SYS_STRIPE.name]
-            );
+            // SENDS-1: one thank-you task per gift, through its one writer (an open thank-you step counts).
+            await require("../server/shared/thankYouOnce").thankYouTaskOnce({ orgId, donorId, giftId,
+              title: `Send personal thank-you to ${thankName} for $${amount} online gift`, actor: SYS_STRIPE })
+              .catch(e => console.error("[webhook] thank-you task:", e.message));
 
             // Tax receipt — fire-and-forget, must never fail/500 the
             // webhook itself (Stripe would retry the whole event on a

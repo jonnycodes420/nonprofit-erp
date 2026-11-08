@@ -215,7 +215,8 @@ async function seed() {
     await page.waitForFunction(() => { const l = document.querySelector('[data-testid="rail-list"]'); return l && Number(l.getAttribute("data-rows")) >= 13; }, null, { timeout: 15000 }).catch(() => {});
     const rows = Number(await page.locator('[data-testid="rail-list"]').getAttribute("data-rows").catch(() => 0));
     const rail = await page.locator(".home-rail").innerText();
-    ok("§1 \"13 follow-ups\" opens a list of 13 under \"Open follow-ups · 13\"", label === "13 follow-ups" && rows === 13 && /Open follow-ups · 13/.test(rail), { label, rows, rail: rail.slice(0, 80) });
+    // SENDS-1: Home names what it counts, "people to follow up", never read as the Tasks badge.
+    ok("§1 \"13 people to follow up\" opens a list of 13 under \"Open follow-ups · 13\"", label === "13 people to follow up" && rows === 13 && /Open follow-ups · 13/.test(rail), { label, rows, rail: rail.slice(0, 80) });
     await page.locator(".home-rail .home-rail-row").first().click();
     await page.waitForURL(/\/donors\//, { timeout: 15000 }).catch(() => {});
     ok("§1 a name in that list opens the person", /\/donors\/d_fl2_t/.test(page.url()), page.url());

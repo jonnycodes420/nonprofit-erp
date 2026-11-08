@@ -966,6 +966,9 @@ async function run7(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_org_memberships_org ON org_memberships (org_id) WHERE revoked_at IS NULL`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS viewer_exports_off BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE support_sessions ADD COLUMN IF NOT EXISTS reason TEXT`);
+  // SENDS-1 · one thank-you task per gift (server/shared/thankYouOnce.js). Nullable, no
+  // default: no row is written. Its unique index is built in server/db/race1Indexes.js.
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS thanks_gift_id TEXT`);
 
   // TRUTH-3 item 5 · FUNDS ARE A MANAGED LIST. A merge of near-duplicate funds
   // ("General" into "General Operating") keeps every row it moved and the
