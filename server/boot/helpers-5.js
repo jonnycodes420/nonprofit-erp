@@ -9,6 +9,7 @@
 var __dirname = require("path").join(__dirname, "..", "..");   // server.js's folder, as the moved code expects
 const __boot = require("./share");
 const __share = __boot.share;
+const SENDS_OFF = require("../outreach/sendsOff");   // SENDS-1: Off means nothing goes out
 const DRAFT_KEYS = require("../../shared/numbers/draftRender");   // TRUTH-3: a draft stores figure keys, never numbers
 let BRIEF_CATCH_UP_HOURS, DRAFT_CHECK, DRIFT_STORE_OFF, GREET, GREET_READY, ItemRefs, MEANINGFUL_CONTACT_TYPES, MILESTONE_THRESHOLDS, NOTE_MILESTONE_KEYS, SYS_AUTO, WEEKLY_CATCH_UP_HOURS, WEEKLY_HOUR, WEEKLY_LIST_CAP, WEEKLY_TASK_KINDS, anthropicFor, briefSettings, composeDailyTaskReminder, composeThreadNudgeQueue, digestEsc, digestMoney, displayNameCase, donorFromAddress, donorMailDecision, donorOnly, donorSendOpts, driftEngine, escHtmlWf, escapeHtml, figureSources, greetFor, lapseRule, mailPolicy, morningBriefSubject, newId, openingLine, orgMaySendEmail, orgTime, orgToday, orgTz, publicAppUrl, query, recordAiFallback, resend, reserveDigest, run, sendDigestEmail, solicitableSql, staffLinks, staffUnsubscribeUrl, threadShapeMod, unsubscribeEmailFooterHtml, userWantsEmail, weeklyIsEmpty;
 __boot.register(c => {
@@ -620,6 +621,7 @@ async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request
        JOIN sequences s ON se.sequence_id = s.id
        JOIN orgs o ON o.id = s.org_id
        WHERE se.status = 'active' AND se.next_send_at <= NOW()
+         AND s.status = 'active'   -- SENDS-1: a paused sequence sends nothing
          AND ${mailPolicy.orgSendsSql("o")}${orgId ? " AND s.org_id = ?" : ""}`,
       orgId ? [orgId] : []
     );
@@ -680,7 +682,9 @@ async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request
           continue;
         }
         const seqDecision = await donorMailDecision("sequence", recipient.email, enr.org_id, { donorId: recipient.id });
-        if (!seqDecision.send) {
+        // SENDS-1: the org's email being Off is not this person's answer. The step becomes a draft below.
+        const seqMaster = await SENDS_OFF.master(enr.org_id);
+        if (!seqDecision.send && seqMaster.on) {
           console.log(`[seq] skipping recipient ${recipient.email} (${seqDecision.reason}) — enrollment ${enr.id}`);
           await run(
             `UPDATE sequence_enrollments SET status=?, completed_at=NOW() WHERE id=?`,
@@ -766,6 +770,14 @@ async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request
         // both — next_send_at is untouched, so the next tick retries, and no
         // timeline entry claims an email that never left.
         // No provider is not a delivery (WHY-1 Part 8): the step stays, with its reason.
+        if (!seqMaster.on) {
+          // SENDS-1: Off means nothing goes out. One draft per step per person, and the enrollment moves on.
+          await SENDS_OFF.sequenceStepDraft({ orgId: enr.org_id, enrollmentId: enr.id, donorId: enr.donor_id, stepOrder: step.step_order, subject, body: bodyRaw });
+          const nx = steps[enr.current_step + 1];
+          if (nx) await run(`UPDATE sequence_enrollments SET current_step = current_step + 1, next_send_at = NOW() + (?::int * INTERVAL '1 day') WHERE id = ?`, [parseInt(nx.delay_days, 10) || 0, enr.id]);
+          else await run("UPDATE sequence_enrollments SET status='completed', completed_at=NOW() WHERE id=?", [enr.id]);
+          continue;
+        }
         let seqDelivered = false, seqErr = "No mail provider is configured";
         if (process.env.RESEND_API_KEY && smtpFrom) {
           seqErr = null;

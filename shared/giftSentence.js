@@ -29,23 +29,32 @@ const tokenRe = keys => `\\{\\{\\s*(?:${keys.join("|")})\\s*\\}\\}`;
 // send, a draft and a preview all say the same thing to a never-giver.
 const GIVEN_BEFORE = [
   [/\bwe(?: are|['\u2019]re) asking (?:the )?(?:people|those|friends|supporters|donors) who(?: have|['\u2019]ve) given before to go first\b/gi, "we're asking friends of {{org_name}} to join us"],
+  // SENDS-1: the starter's older wording, kept in templates copied before it changed.
+  [/\bI will not ask again this year\b/g, "I will not ask a second time this year"],
 ];
+// SENDS-1: "We are asking…" at a sentence's start stays capitalised as "We're asking…".
+const sameCase = (orig, v) => (/^[A-Z]/.test(orig) ? v.charAt(0).toUpperCase() + v.slice(1) : v);
 export function withoutGivenBefore(text, { hasGift = true, orgName = null } = {}) {
   let out = String(text == null ? "" : text);
   if (hasGift) return out;
-  for (const [re, variant] of GIVEN_BEFORE) out = out.replace(re, orgName == null ? variant : variant.replace("{{org_name}}", orgName));
+  for (const [re, variant] of GIVEN_BEFORE) out = out.replace(re, m => sameCase(m, orgName == null ? variant : variant.replace("{{org_name}}", orgName)));
   return out;
 }
 export const GIVEN_BEFORE_RE = /\bgiven before\b/i;
 
-export function withoutMissingGift(text, { hasGift = true, hasTotal = true } = {}) {
+// SENDS-1: `mark(original, variant)` is what a swapped sentence becomes. A send,
+// a draft and a test use the variant; the editor's own preview (EDITOR-1, chips)
+// marks it so the words read back as she typed them and the template never changes.
+export function withoutMissingGift(text, { hasGift = true, hasTotal = true, mark = null } = {}) {
   let out = String(text == null ? "" : text);
-  if (!hasGift) for (const [re, variant] of GIVEN_BEFORE) out = out.replace(re, variant);
+  const put = (orig, variant) => (mark ? mark(orig, variant) : variant);
+  if (!hasGift) for (const [re, variant] of GIVEN_BEFORE) out = out.replace(re, m => put(m, sameCase(m, variant)));
   const keys = [...(hasGift ? [] : GIFT_KEYS), ...(hasTotal ? [] : TOTAL_KEYS)];
   if (!keys.length) return out;
   // The leading space (after the sentence before it) is kept as it was.
   const re = new RegExp(`(\\s*)[^.!?<>\\n]*${tokenRe(keys)}[^.!?<>\\n]*[.!?]?`, "g");
-  out = out.replace(re, (whole, gap) => `${gap}${NO_GIFT_SENTENCE}`);
+  out = out.replace(re, (whole, gap) => `${gap}${put(whole.slice(gap.length), NO_GIFT_SENTENCE)}`);
+  if (mark) return out;
   // Two gift sentences in a row become one thank-you, not two.
   const dup = NO_GIFT_SENTENCE.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
   return out.replace(new RegExp(`(${dup})(\\s*${dup})+`, "g"), "$1");

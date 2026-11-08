@@ -206,7 +206,9 @@ async function seed() {
     const says = await page.locator('[data-testid="mail-types-page"]').innerText().catch(() => "");
     ok("§email Settings, Automatic email shows the setting with its explanation", /Steward sends nothing on its own until you turn it on here/.test(says), says.slice(0, 160));
     const sw = page.locator('[data-testid="mail-type-switch-pledge_reminder"]');
-    await sw.click().catch(() => {});
+    // SENDS-1: while the org's email is off the switch reads Off and is still; "Don't start it" turns her choice off.
+    const clear = page.locator('[data-testid="mail-type-clear-pledge_reminder"]');
+    if (await clear.count()) await clear.click().catch(() => {}); else await sw.click().catch(() => {});
     await page.waitForSelector('[data-testid="mail-type-pledge_reminder"][data-on="0"]', { timeout: 8000 }).catch(() => {});
     const [row] = await q(`SELECT is_on FROM org_mail_types WHERE org_id=$1 AND type_key='pledge_reminder'`, [ORG.id]);
     ok("§email turning an email off there saves it (the switch and the row agree)", row && row.is_on === false

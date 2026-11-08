@@ -12,6 +12,7 @@ const TL = require("../../timelineLine");
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../../emailCompose");
+const SENDS_OFF = require("./sendsOff");   // SENDS-1: Off means nothing goes out
 
 const routers = {
   r1: express.Router(),
@@ -34,6 +35,7 @@ const AUTO_SKIP_WORDS = {
   touched_this_week: "they already had a journey email this week", gave_recently: `they gave in the last ${AUTO_GIFT_QUIET_DAYS} days, so an ask must not cross a thank-you`,
   skipped_by_person: "somebody here skipped it", switched_off: "the step was switched off before it went",
   words_changed: "its words changed after it was turned on", step_closed: "the step was already done",
+  email_off: "email is off for your organization, so it waits as a draft for you to send",
 };
 const AUTO_ORG_REASONS = new Set(["not_onboarded", "org_emails_disabled", "demo_org", "org_not_found", "org_gate_unreadable", "no_org"]);
 Object.assign(AUTO_SKIP_WORDS, { blocked_address: "the address is on Steward's never-mail list", sample_donor: "they are sample data" });
@@ -91,6 +93,15 @@ async function processJourneyAutoSends({ orgId = null, now = new Date(), limit =
   const byOrg = new Map();
   for (const r of due) { if (!byOrg.has(r.org_id)) byOrg.set(r.org_id, []); byOrg.get(r.org_id).push(r); }
   for (const [oid, list] of byOrg) {
+    // SENDS-1: with the org's email Off, a due step goes back to a draft she sends herself. Nothing sends.
+    if (!(await SENDS_OFF.master(oid)).on) {
+      const today = (await orgSendClock(oid, now)).date;
+      for (const send of list.filter(s => String(s.send_on) <= today)) {
+        const [step] = await query(`SELECT * FROM cultivation_plan_steps WHERE id=? AND org_id=?`, [send.step_id, oid]);
+        if (await skipAutoSend(oid, send, "email_off")) { out.drafted = (out.drafted || 0) + 1; if (step) await journeyTemplateDraft(oid, send.donor_id, step).catch(() => {}); }
+      }
+      continue;
+    }
     if (list[0].auto_send_paused_at || !list[0].timezone_confirmed_at) { out.waited += list.length; continue; }
     const clock = await orgSendClock(oid, now);
     const ready = list.filter(s => String(s.send_on) <= clock.date);

@@ -17,6 +17,7 @@ const routers = {
   r1: express.Router(),
 };
 
+const LOG_CLOSE = require("./logClose");   // SENDS-1: what logging a conversation closes
 function mount(ctx) {
 const {
   ACK_READY, CAL_READY, NOT_YOURS, OU, UNDO_SECONDS, actor, advanceCultivationPlan, checkWriteAccess,
@@ -600,8 +601,7 @@ app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, 
       await withTransaction(async client => {
         await runTx(client, `UPDATE interactions SET metadata = COALESCE(metadata,'{}'::jsonb) || ?::jsonb WHERE id=? AND org_id=?`,
           [JSON.stringify({ next_step: skipped ? "skipped" : "set", ...(step ? { next_step_label: step.label } : {}) }), ei.id, orgId]);
-        await queryTx(client, `UPDATE threads SET closed_at = NOW(), close_kind = 'outcome', closing_interaction_id = ?
-            WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL RETURNING id`, [ei.id, orgId, t.donor_id]);
+        await LOG_CLOSE.closeOnLog(client, queryTx, { orgId, donorId: t.donor_id, interactionId: ei.id, skipped });   // SENDS-1: a skip closes nothing
         if (step) await openThreadTx(client, { orgId, donorId: t.donor_id, step, openedOn: today,
           ownerId: donor?.assigned_to || req.user.userId, ownerName: donor?.assigned_to ? donor.assigned_to_name : userName,
           actorId: req.user.userId, actorName: userName, openingInteractionId: ei.id, followon: null });

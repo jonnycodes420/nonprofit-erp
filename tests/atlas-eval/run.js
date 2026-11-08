@@ -101,7 +101,13 @@ async function say(tok, c, ctx) {
       req = r.body && r.body.request;
     }
   }
-  const lines = ((req && req.lines) || []).map(l => ({ kind: l.kind, state: l.state, who: l.donorId ? nameOf(l.donorId) : "", line: l.line }));
+  // SENDS-1: Atlas proposes; the eval presses Save (ticking "remind me" on a meeting email) and reads what was written.
+  if (req && req.proposal && !req.proposal.savedAt) {
+    const s = await api("POST", `/atlas/${req.id}/save`, tok, { proposalId: req.proposal.id,
+      items: req.proposal.items.filter(i => i.kind === "draft" && i.meet).map(i => ({ pid: i.pid, remindMe: true })) });
+    if (s.body && s.body.request) req = s.body.request;
+  }
+  const lines = ((req && req.lines) || []).filter(l => l.kind !== "proposal").map(l => ({ kind: l.kind, state: l.state, who: l.donorId ? nameOf(l.donorId) : "", line: l.line }));
   return { status: r.status, lines, asked, ms: testNow() - t0, firstMs, request: req };
 }
 

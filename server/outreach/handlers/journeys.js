@@ -36,6 +36,8 @@ OUTBOX.on("gift.recorded", "journeys", async (raw, deps) => {
   if (!p) return;
   const failed = fires(p) && p.amount > 0 ? await startJourneys(p, deps) : [];
   if (p.thread) await deps.openGiftThread(p.orgId, p.donorId, { giftId: p.giftId, actorId: p.thread.actorId, actorName: p.thread.actorName });
+  // SENDS-1: the gift's step is its thank-you; a task written for the same gift a moment earlier is voided.
+  await require("../../shared/thankYouOnce").settleThankYous(p.orgId, p.donorId, p.giftId).catch(e => console.error("[thank-you] settle:", e.message));
   if (failed.length) throw new Error(`journeys: ${failed.join("; ")}`.slice(0, 480));
 }, { applies: (p) => fires(p) || !!p.thread });
 

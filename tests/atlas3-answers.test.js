@@ -45,7 +45,7 @@ process.env.STEWARD_CREDENTIAL_KEY = process.env.STEWARD_CREDENTIAL_KEY || "loca
 process.env.ANTHROPIC_API_KEY = "sk-ant-atlas3-standin";
 process.env.ANTHROPIC_BASE_URL = `http://localhost:${MOCK}`;
 
-const { ok, summary, login, api, q, closeDb, civilToday } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, civilToday, atlasSaved } = require("./helpers");
 const F = require("./atlas3/fixture");
 const ROOT = path.join(__dirname, "..");
 
@@ -112,7 +112,7 @@ const mock = http.createServer((req, res) => {
   const tok = await login(F.ADMIN);
   ok("fixture admin signed in", !!tok, tok);
   await api("POST", "/onboarding/complete", tok, {}).catch(() => {});
-  const atlas = body => api("POST", "/atlas", tok, body);
+  const atlas = body => atlasSaved(tok, body);
   const lineOf = r => ((r.body && r.body.request && r.body.request.lines) || [])[0] || {};
 
   // ── §1 A LIST IS A LIST ──────────────────────────────────────────────────
@@ -183,7 +183,7 @@ const mock = http.createServer((req, res) => {
   const q6 = (r6.body.request && r6.body.request.questions) || [];
   ok("§6 never \"I never merge people\"", !JSON.stringify(r6.body).includes("I never merge"), r6.body);
   ok("§6 it asks how they are related, both people found", q6.length === 1 && q6[0].kind === "relation" && /Stephen and Margaret/.test(q6[0].sentence) && q6[0].options.some(o => o.id === "spouse"), q6);
-  const r6b = await api("POST", `/atlas/${r6.body.request && r6.body.request.id}/answer`, tok, { answers: { [q6[0] && q6[0].id]: "spouse" } });
+  const r6b = await atlasSaved(tok, { answers: { [q6[0] && q6[0].id]: "spouse" } }, `/atlas/${r6.body.request && r6.body.request.id}/answer`);
   const [rel] = await q(`SELECT relationship_type, created_by FROM donor_relationships WHERE org_id=$1 AND ((donor_id_a='d_a3_stephen' AND donor_id_b='d_a3_margaret') OR (donor_id_a='d_a3_margaret' AND donor_id_b='d_a3_stephen'))`, [F.ORG]);
   ok("§6 one click links them as spouses", !!rel && rel.relationship_type === "spouse" && rel.created_by === F.USER
     && ((r6b.body.request && r6b.body.request.lines) || []).some(l => /^Linked Stephen Hollis and Margaret Hollis \(spouses\)\.$/.test(l.line)), { rel, body: r6b.body });

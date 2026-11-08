@@ -5,6 +5,7 @@ import { RAIL } from "../ProfileRail";
 import { displayDate } from "../../../../shared/displayDate";
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
+import { journeyPickRows } from "../../lib/journeyPick";   // SENDS-1: every journey, greyed with why
 
 function RailJourneys({addErr,addPick,addPreview,allJourneys,confirmAddToJourney,doneFor,doneNote,donor,isReadOnly,journey,journeyBusy,journeyList,journeyMenu,journeySuggest,onInteractionAdded,onNavigate,pickJourney,setAddErr,setDoneFor,setDoneNote,setJourney,setJourneyBusy,setJourneyMenu,setSkipFor,setSkipWhy,setStopAsk,skipFor,skipWhy,stopAsk,touchGap}){
   return <>
@@ -260,7 +261,7 @@ function RailJourneys({addErr,addPick,addPreview,allJourneys,confirmAddToJourney
                             backgroundImage:"linear-gradient(45deg, transparent 50%, #FFFFFF 50%), linear-gradient(135deg, #FFFFFF 50%, transparent 50%)",
                             backgroundPosition:"calc(100% - 16px) 55%, calc(100% - 11px) 55%",backgroundSize:"5px 5px, 5px 5px",backgroundRepeat:"no-repeat"}}>
                     <option value="">Start a journey</option>
-                    {journeyList.filter(j=>!allJourneys.some(a=>a.journeyId===j.id)).map(j=><option key={j.id} value={j.id}>{j.name}</option>)}
+                    {journeyPickRows(journeyList,allJourneys).map(j=><option key={j.id} value={j.id} disabled={j.disabled} data-testid="dp-journey-option">{j.label}</option>)}
                   </select>
                   {addPreview&&(
                     <div data-testid="dp-journey-preview"
