@@ -7,7 +7,7 @@
 // a second apply changes nothing; --undo puts every row back; and an org
 // that is not a demo is refused. Tests set their clock: --today is fixed.
 //
-// Would fail if: the demo check went (§0), a step wrote on a dry run (§1), a
+// Would fail if: the demo check went or refused internal_test (§0), a step wrote on a dry run (§1), a
 // table left QA rows (§2), a step was not idempotent (§3), or an entry was not
 // kept whole for undo (§4).
 "use strict";
@@ -17,6 +17,8 @@ const { Client } = require("pg");
 const { q, closeDb } = require("./helpers");
 
 const ORG = "org_dtidy", LIVE = "org_dtidy_live", TODAY = "2026-11-07";
+const ITEST = "org_dtidy_itest", CUST = "org_dtidy_cust";   // DEMO-TIDY-2: an internal_test org is tidied; a customer org is not
+const ORGS = [ORG, LIVE, ITEST, CUST];
 const DB = process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest";
 const S = require("../scripts/ops/demo-tidy");
 let passed = 0, failed = 0;
@@ -26,8 +28,8 @@ const by = { created_by: "system:test", created_by_name: "test" };
 async function wipe() {
   const all = (await q(`SELECT table_name AS t FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.t);
   for (let p = 0; p < 5; p++) {
-    for (const t of all) await q(`DELETE FROM "${t}" WHERE org_id = ANY($1::text[])`, [[ORG, LIVE]]).catch(() => {});
-    if (await q(`DELETE FROM orgs WHERE id = ANY($1::text[])`, [[ORG, LIVE]]).then(() => true).catch(() => false)) break;
+    for (const t of all) await q(`DELETE FROM "${t}" WHERE org_id = ANY($1::text[])`, [ORGS]).catch(() => {});
+    if (await q(`DELETE FROM orgs WHERE id = ANY($1::text[])`, [ORGS]).then(() => true).catch(() => false)) break;
   }
 }
 const ins = (t, row) => { const k = Object.keys(row); return q(`INSERT INTO ${t} (${k.join(",")}) VALUES (${k.map((_, i) => "$" + (i + 1)).join(",")})`, k.map(x => row[x] !== null && typeof row[x] === "object" ? JSON.stringify(row[x]) : row[x])); };
@@ -36,7 +38,9 @@ async function plant() {
   await wipe();
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,org_kind,ein,receipt_signature_name,receipt_signature_title)
            VALUES ($1,'Tidy Lantern Arts (Demo)','org-dtidy',1,'active','team','America/New_York','demo','47-1234567','Maya Reyes','Executive Director'),
-                  ($2,'Tidy Lantern Live','org-dtidy-live',1,'active','team','America/New_York',NULL,'47-1234567',NULL,NULL)`, [ORG, LIVE]);
+                  ($2,'Tidy Lantern Live','org-dtidy-live',1,'active','team','America/New_York',NULL,'47-1234567',NULL,NULL),
+                  ($3,'Tidy Lantern Internal','org-dtidy-itest',1,'active','team','America/New_York','internal_test','47-1234567',NULL,NULL),
+                  ($4,'Tidy Lantern Customer','org-dtidy-cust',1,'active','team','America/New_York','customer','47-1234567',NULL,NULL)`, ORGS);
   await ins("users", { id: "u_dtidy", org_id: ORG, email: "dtidy@test.local", password_hash: "x", name: "Priya Lindqvist", role: "admin", sign_title: "Executive Director" });
   await ins("users", { id: "u_dtidy_qa", org_id: ORG, email: "dtidy-qa@test.local", password_hash: "x", name: "Fleet Walker", role: "member" });
   const P = (id, name, extra = {}) => ins("donors", { id, org_id: ORG, name, email: `${id}@dtidy.example.org`, stage: "steward", status: "active", person_types: ["donor"], ...by, ...extra });
@@ -104,6 +108,16 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const refused = await S.run({ client: pg, orgId: LIVE, apply: true, today: TODAY, log: () => {} }).then(() => null, e => e.message);
     ok("§0 an org that is not a demo is refused, and nothing is written", /not a demo org/.test(refused || "")
       && (await q(`SELECT ein FROM orgs WHERE id=$1`, [LIVE]))[0].ein === "47-1234567", refused);
+    // DEMO-TIDY-2: CREO Arts (Demo) is internal_test on purpose; the tidy accepts it. A customer org is still refused.
+    const custRefused = await S.run({ client: pg, orgId: CUST, apply: true, today: TODAY, log: () => {} }).then(() => null, e => e.message);
+    ok("§0 a customer org is refused, and nothing is written", /not a demo org \(org_kind is customer\)/.test(custRefused || "")
+      && (await q(`SELECT ein FROM orgs WHERE id=$1`, [CUST]))[0].ein === "47-1234567"
+      && !(await q(`SELECT 1 FROM fin_audit_log WHERE org_id=$1 AND user_id=$2`, [CUST, S.ACTOR.id])).length, custRefused);
+    const itLines = [];
+    const itDry = await S.run({ client: pg, orgId: ITEST, today: TODAY, log: l => itLines.push(l) }).then(r => r, e => ({ error: e.message }));
+    ok("§0 an internal_test org runs the dry run, and nothing is written", !itDry.error && /MODE: DRY RUN on org_dtidy_itest/.test(itLines.join("\n"))
+      && (await q(`SELECT ein FROM orgs WHERE id=$1`, [ITEST]))[0].ein === "47-1234567"
+      && !(await q(`SELECT 1 FROM fin_audit_log WHERE org_id=$1 AND user_id=$2`, [ITEST, S.ACTOR.id])).length, itDry.error || itLines.slice(0, 3));
 
     console.log("\n§1 the dry run");
     const before = await facts();
