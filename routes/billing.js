@@ -556,11 +556,21 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
   const id = newId("inv");
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  await run(
-    `INSERT INTO invites (id, org_id, email, token, role, invited_by, expires_at)
-     VALUES (?,?,?,?,?,?,?)`,
-    [id, req.user.orgId, normalizedEmail, token, validRole, req.user.userId, expiresAt]
-  );
+  // INTEGRITY-1: an expired invite to this address is closed, so the one
+  // pending invite per address (invites_one_pending_per_email) is this one;
+  // a second press at the same moment meets the index and is told so.
+  await run(`UPDATE invites SET revoked_at=NOW() WHERE org_id=? AND lower(email)=? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at <= NOW()`,
+    [req.user.orgId, normalizedEmail]);
+  try {
+    await run(
+      `INSERT INTO invites (id, org_id, email, token, role, invited_by, expires_at)
+       VALUES (?,?,?,?,?,?,?)`,
+      [id, req.user.orgId, normalizedEmail, token, validRole, req.user.userId, expiresAt]
+    );
+  } catch (e) {
+    if (e.code !== "23505") throw e;
+    return res.status(409).json({ error: "already_invited", message: `${normalizedEmail} already has an invite waiting. Resend it from Team, under Invited.` });
+  }
 
   const inviteLink = `${publicAppUrl()}/invite/${token}`;
 

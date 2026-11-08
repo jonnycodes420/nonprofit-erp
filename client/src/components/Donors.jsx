@@ -711,6 +711,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
 
   const[newDonorAssignee,setNewDonorAssignee]=useState("");
   const[addErr,setAddErr]=useState("");   // SECURE-2: the server's sentence when it refuses a new person
+  const[addWarn,setAddWarn]=useState("");   // INTEGRITY-1: an email already on someone else, said on save
 
   const addDonor=async()=>{
     if(!newDonor.name)return;
@@ -728,7 +729,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     // (an email that is not one, a name too long) is read, not lost.
     setAddErr("");
     try{
-      await apiFetch("/donors",{method:"POST",body:JSON.stringify({...newDonor,stage:newDonor.stage,assignedTo:assignTo,assignedToName:assignToName})});
+      const made=await apiFetch("/donors",{method:"POST",body:JSON.stringify({...newDonor,stage:newDonor.stage,assignedTo:assignTo,assignedToName:assignToName})});
+      setAddWarn(made&&made.warning?made.warning.sentence:"");
       patchPeople(list=>[...list,temp]);
       setShowAdd(false);setNewDonor({name:"",email:"",phone:"",address:"",address2:"",city:"",state:"",zip:"",lastAmount:"",stage:"prospect"});setNewDonorAssignee("");
       await reloadDonors();
@@ -986,6 +988,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         </div>
       </Card>}
 
+      {addWarn&&<div data-testid="add-email-warning" role="status" style={{background:T.bg2,border:"1px solid "+T.gold600,borderRadius:8,padding:"8px 12px",fontSize:12.5,color:T.ink,margin:"0 0 10px",display:"flex",gap:10,alignItems:"center"}}><span style={{flex:1}}>{addWarn}</span><button type="button" onClick={()=>setAddWarn("")} style={{background:"none",border:"none",color:T.greenDk,fontWeight:700,cursor:"pointer"}}>OK</button></div>}
       {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null||(searchPending&&dirPageRows.length===0)} serverTotal={dirTotal} updating={!!dirWant&&dirWant!==dirGot&&dirRows!==null} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={0} peopleView={dirPeopleShown||dirPeople||"donors"} setPeopleView={setDirPeople} roleCounts={roleCounts} fromImport={dirImport} clearFromImport={()=>setDirImport("")}
         anyFilter={!!(dirSearch.trim()||dirStage||dirAssignee||dirDesignation||dirHousehold||dirStatus||dirWhereStr||dirImport)}
         exportParams={{role:(dirPeopleShown||dirPeople)==="contacts"?"contact":(dirPeopleShown||dirPeople)==="everyone"?"":"donor",...(dirImport?{fromImport:dirImport}:{}),search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,sort:dirSort,household:dirHousehold,...(dirWhereStr?{where:dirWhereStr}:{}),...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})}} statusFilter={dirStatus} setStatusFilter={setDirStatus} sortBy={dirSort} setSortBy={v=>{setDirSort(v);setDirDir("");}} sortDir={dirDir} setSort={(k,d)=>{setDirSort(k);setDirDir(d);}} household={dirHousehold} clearHousehold={()=>setDirHousehold("")} totalDonors={peopleCount?peopleCount.total:undefined} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly} listSetup={listSetup} layout={layout} setLayoutLocal={setLayout} persistLayout={persistLayout} resetLayout={resetLayout} saveOrgLayout={saveOrgLayout} where={dirWhere} setWhere={w=>{setDirWhere(w);}} filterError={filterError} views={(listSetup&&listSetup.views)||[]} activeViewId={activeViewId} onPickView={pickView} onSaveView={saveView} onDeleteView={deleteView} onPageSize={n=>persistLayout({pageSize:n}).catch(e=>console.warn("[list-layout]",e&&e.message))} includeScreening={includeScreening}/>}

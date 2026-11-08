@@ -343,15 +343,18 @@ async function reportBuntList(orgId, p, kind) {
     // their own last year, never the prior year they did not give in.
     [...NUMBERS.givingBetween.lastYearArgs(cur.from), orgId, ...bp0.args]);
   const figures = await pFigures;
-  return {
-    figures,
-    year: p.year, yearMode: p.yearMode, currentPeriod: cur, priorPeriod: prior,
-    rows: rows.map(r => ({
+  const people = rows.map(r => ({
       id: r.id, name: r.name, email: r.email, assignedTo: r.assigned_to_name,
       lifetimeGiving: Number(r.total_giving), lastGiftDate: r.last_gift_date,
       lastGiftAmount: Number(r.last_gift_amount || 0), priorYearTotal: Number(r.prior_year_total),
       lastYear: r.last_year_from ? { from: r.last_year_from, to: r.last_year_to } : null,
-    })),
+  }));
+  return {
+    figures,
+    year: p.year, yearMode: p.yearMode, currentPeriod: cur, priorPeriod: prior,
+    rows: people,
+    // INTEGRITY-1: one line per household or gives-through link (server/reports/buntUnits.js)
+    units: await require("./buntUnits").buntUnits(query, orgId, people),
   };
 }
 

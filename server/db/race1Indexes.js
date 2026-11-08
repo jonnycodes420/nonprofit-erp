@@ -8,6 +8,7 @@
 //   receipts_number_once               a receipt number is never used twice in an org
 //   milestone_drafts_journey_step_once one draft per journey step
 //   tasks_one_thanks_per_gift          one thank-you task per gift (SENDS-1)
+//   invites_one_pending_per_email      one pending invite per address in an org (INTEGRITY-1)
 //
 // HOW IT IS BUILT, SO A DEPLOY NEVER STALLS THE LIVE SITE OR CHANGES A ROW:
 // - Additive only, CREATE UNIQUE INDEX CONCURRENTLY, outside any transaction,
@@ -29,6 +30,12 @@ const INDEXES = [
   // SENDS-1: one thank-you task per gift (server/shared/thankYouOnce.js).
   { name: "tasks_one_thanks_per_gift", table: "tasks",
     cols: "(org_id, thanks_gift_id)", where: "thanks_gift_id IS NOT NULL AND voided_at IS NULL" },
+  // INTEGRITY-1 (W-1107-Atlas-27X): one pending invite per address in an org. WALKB-2's
+  // guard checked, then inserted; two presses at once made two. Until
+  // scripts/ops/integrity1-duplicate-invites.js has revoked the extras, the
+  // boot log says it was not built, and no row is changed.
+  { name: "invites_one_pending_per_email", table: "invites",
+    cols: "(org_id, lower(email))", where: "accepted_at IS NULL AND revoked_at IS NULL" },
 ];
 
 const LOCK_TIMEOUT = "1s";

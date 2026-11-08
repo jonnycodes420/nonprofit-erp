@@ -642,7 +642,7 @@ app.post("/sheet-import/bring-back", requireAuth, checkWriteAccess, wrap(async (
   // deletion record of theirs, in one transaction.
   const backIds = await require("../personTrash").bringPeopleBack(orgId, ids, { exceptMerged: true, touch: true });
   // IMPORT-9: each trash row it closed says so, so the import that follows can list them and its Undo put them back
-  await require("../server/imports/restoredPeople").markBroughtBack(require("../db"), orgId, backIds, actor(req));
+  await require("../server/imports/restoredPeople").markBroughtBack(require("../db"), orgId, backIds, actor(req), req.body && req.body.fileKey);
   if (backIds.length) {
     await require("../afterChange").afterChange(orgId, backIds, { door: "sheet_import_bring_back" }).catch(e => console.error("[sheet-import] bring back:", e.message));
   }
@@ -894,7 +894,7 @@ async function writePlan({ req, body, importId, who, report }) {
     }
   }
   // IMPORT-9: who this run matched because she brought them back from the trash, for its Undo
-  summary.restoredFromTrash = await require("../server/imports/restoredPeople").claimForImport(DB, orgId, [...matchedIds], importId);
+  summary.restoredFromTrash = await require("../server/imports/restoredPeople").claimForImport(DB, orgId, [...matchedIds], importId, fileFingerprint(body));
   done = memberCount;
   await report("Writing attendance and notes", done, total, true);
   await writeEngagement({ orgId, u, importId, eventId, personIds, who, summary, fileName: body.fileName || "your file", eventName: evName });

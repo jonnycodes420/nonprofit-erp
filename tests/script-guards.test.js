@@ -73,6 +73,11 @@ const GUARDED_WRITERS = [
   // IMPORT-9: puts back in the trash the people an undone import had brought
   // back. Dry run by default; --apply/--undo write through writerDbUrl, one audit row per org.
   "import9-undo-leftovers",
+  // INTEGRITY-1: restores people an import's undo trashed though they were here
+  // before it, and revokes repeated pending invites. Dry run by default;
+  // --apply/--undo write through writerDbUrl, one audit row per org.
+  "integrity1-find-vanished",
+  "integrity1-duplicate-invites",
   // STATUS-1: puts stored donor_rhythm rows on the one rhythm. Dry run by
   // default; --apply writes through writerDbUrl (derived rows, no journeys).
   "status1-rhythm-recompute",
