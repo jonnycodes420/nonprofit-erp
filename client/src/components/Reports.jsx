@@ -548,7 +548,8 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       narrative = <><strong>{d.figures?.people ? <RF f={d.figures.people} label={active === "lybunt" ? "Gave last year, not this year" : "Gave before, not this year"} unit={plural(d.rows.length, "donor")} /> : `${d.rows.length} ${plural(d.rows.length, "donor")}`}</strong> {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${d.rows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
         {active === "lybunt" && atStake > 0 && <>: <strong><RF f={d.figures?.atStake} kind="money" label="Last year's giving at stake" /></strong> of last year's giving is at stake</>}. This is a call list, not a chart.</>;
       table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
-        { key: "name", label: "Donor", type: "text", person: true },
+        // INTEGRITY-1: a household or a gives-through link is one line, named for the household
+        { key: "name", label: "Donor", type: "text", person: true, ...(d.units ? { render: r => r.members ? <span data-testid="bunt-unit">{r.name} <span style={{ color: T.ink3, fontWeight: 400 }}>({r.unit}: {r.members.map(m => m.name).join(", ")})</span></span> : r.name } : {}) },
         // LEDGER-1: SYBUNT's amount is the last year each person gave, named on the row
         { key: "priorYearTotal", label: active === "lybunt" ? `Gave ${priorLabel}` : "Gave in their last year", type: "money",
           ...(active === "sybunt" ? { render: r => `${fmtFull(r.priorYearTotal)}${r.lastYear ? ` · ${yearMode === "fiscal" ? fyLabelFromEnd(Number(String(r.lastYear.to).slice(0, 4)), fsm) : String(r.lastYear.from).slice(0, 4)}` : ""}` } : {}) },
@@ -556,7 +557,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         { key: "lifetimeGiving", label: "Lifetime", type: "money" },
         { key: "assignedTo", label: "Assigned to", type: "text", render: r => r.assignedTo || <span style={{ color: T.ink3 }}>Nobody</span>, hideWhenEmpty: true },
         { key: "email", label: "Email", type: "text", render: r => r.email || <span style={{ color: T.ink3 }}>No email</span> },
-      ]} rows={d.rows} />;
+      ]} rows={d.units || d.rows} />;
     } else if (active === "retention") {
       empty = d.rows.every(r => r.priorDonors === 0);
       const latest = [...d.rows].reverse().find(r => r.retentionRate !== null);

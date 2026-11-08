@@ -86,7 +86,7 @@ async function reimportWithBringBack(tok, org, sheets) {
   const u = await api("POST", "/sheet-import/understand", tok, { fileName: "walk.csv", sheets, useModel: false, today: TODAY });
   const ids = [...new Set([...(u.body.deletedMatches || []).map(x => x.id),
     ...(u.body.questions || []).filter(x => x.kind === "deletedPerson").map(x => x.deletedId)].filter(Boolean))];
-  const bb = await api("POST", "/sheet-import/bring-back", tok, { ids });
+  const bb = await api("POST", "/sheet-import/bring-back", tok, { ids, fileKey: u.body.fileKey });   // INTEGRITY-1: the file it is pressed for
   const j = await importJob(tok, { fileName: "walk.csv", sheets, useModel: false, previewOrgId: org, today: TODAY });
   return { matchedTrash: ids.length, bring: bb, job: j };
 }

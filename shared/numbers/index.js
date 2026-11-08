@@ -16,6 +16,7 @@ module.exports = {
   lapse: require("./lapse"),
   tags: require("./tags"),
   households: require("./households"),
+  everyone: require("./everyone"),   // INTEGRITY-1
   ask: require("./ask"),
   pledges: require("./pledges"),
   fundSplit: require("./fundSplit"),   // LEDGER-2

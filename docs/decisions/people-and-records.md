@@ -536,3 +536,20 @@ Backend, Whisper transcription, and extraction logic are fully built and functio
   the erased records' gifts; the truth check says so (`tests/keys/truthKey.js` `peopleMoneyBetween`).
 - The org's whole-data exports (`/org/export`, the zip) keep the erased record, because it is what holds
   those gifts. No screen counts it.
+
+## INTEGRITY-1 · Everyone, one owner, one email (2026-11-07)
+
+- **Everyone** is `shared/numbers/everyone.js` `EVERYONE(d)`: not trashed, not erased, not archived. Never a user's
+  login. The Directory's tabs and list and the `/donors/summaries` people total read it; Donors + Contacts = Everyone.
+- **The owner is `donors.assigned_to`.** Every face names the owner from `users` by that id
+  (`server/donors/ownerName.js`); `assigned_to_name` is only a fallback for an id with no user. Meeting staff likewise
+  come from `users` by `created_by`, never the text typed when a meeting was logged.
+- **An email belongs to one active person per org.** A save that puts an address already on another active person
+  answers with a `warning` naming them (`server/dataHealth/integrity.js`), and Data health lists it ("One email on two
+  people"). It is not refused: a family inbox is real, and a person decides.
+- **A household is reported once in retention reports.** LYBUNT and SYBUNT keep `rows` (one per person: the header
+  counts people) and add `units` (one per household, gives-through or spouse link), which the screen lists; units foot
+  to the same money. Data health lists a person and household in one unit whose gifts are identical.
+- **Current through someone else says who.** `server/donors/currentThrough.js`: "Current through <name> (household |
+  gives through | employer)" when their own last gift is older than 12 months and no pledge holds them.
+- **One pending invite per address**: unique index `invites_one_pending_per_email` (`server/db/race1Indexes.js`).

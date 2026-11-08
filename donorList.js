@@ -83,7 +83,7 @@ const FIELDS = [
   F("household", "Household", "Contact", { filter: ops("yes", "no"), cell: "household",
     sentence: "The household this person belongs to, from the household record." }),
   F("stage", "Stage", "Contact", { format: "stage", sort: "stage", filter: SEL_OPS, cell: "stage" }),
-  F("owner", "Owner", "Contact", { format: "owner", sort: "lower(COALESCE(assigned_to_name, pending_assignee_name, ''))", filter: SEL_OPS, cell: "owner" }),
+  F("owner", "Owner", "Contact", { format: "owner", sort: `lower(COALESCE(${require("./server/donors/ownerName").OWNER_NAME_SQL("donors")}, pending_assignee_name, ''))`, filter: SEL_OPS, cell: "owner" }),
   F("tags", "Tags", "Contact", { format: "list", filter: SEL_OPS, cell: "tags" }),
   F("group", "Group", "Contact", { col: false, filter: SEL_OPS }),
   F("added", "Added", "Contact", { format: "date", sort: "created_at", filter: ops("after", "before", "dbetween"), cell: "added" }),

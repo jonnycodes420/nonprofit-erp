@@ -71,9 +71,11 @@ function meetingsSql(orgId, { donor = null, staff = null, from = null, to = null
     UNION ALL
     SELECT i.id, 'logged' AS kind, i.donor_id, NULL AS title, i.note, LEFT(i.date, 10) AS date,
            NULL::timestamptz AS starts_at, NULL::timestamptz AS ends_at, i.metadata->>'location' AS location,
-           i.created_by AS staff_id, i.logged_by_name AS who,
+           -- INTEGRITY-1 (W-1107-Fundraising-03): the staff name is the user's, by id, never the text typed when it was logged
+           i.created_by AS staff_id, COALESCE(lu.name, i.logged_by_name) AS who,
            (i.date <= ${ORG_TODAY("i")}) AS held, i.type AS interaction_type
       FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
+      LEFT JOIN users lu ON lu.id = i.created_by
      WHERE i.org_id = ? AND d.deleted_at IS NULL AND i.type = 'meeting'
        AND i.date IS NOT NULL AND i.date <> ''${wi}`;
   return { sql, args: [...calArgs, ...ia] };

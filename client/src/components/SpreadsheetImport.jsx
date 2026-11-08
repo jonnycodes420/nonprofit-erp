@@ -348,7 +348,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const bringBack = async () => {
     setBusy("bring"); setNotice("");
     try {
-      const r = await apiFetch("/sheet-import/bring-back", { method: "POST", body: JSON.stringify({ ids: deletedIds }) });
+      const r = await apiFetch("/sheet-import/bring-back", { method: "POST", body: JSON.stringify({ ids: deletedIds, fileKey: fileKeyRef.current }) });
       setNotice(r.sentence || "");
       // read the file again: they now match, so their questions and their set-aside rows go
       setAnswers(a => { const { deletedPeople, ...rest } = a; return { ...rest }; });
