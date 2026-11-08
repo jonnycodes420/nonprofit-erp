@@ -8,6 +8,10 @@
 // Operating", no recurring donor, no grant with a report due, one email on two
 // people, duplicate pending invites, a campaign "sent to 0". The steps are in
 // scripts/ops/demoTidy/steps.js, one per brief item.
+// REPAIR-1 added steps 6 to 10 (scripts/ops/demoTidy/repairSteps.js): rows
+// written before SENDS-1, STALE-2 and PLEDGES-2 brought up to those rules. It
+// also lets an apply that crashed before recording the plan payments finish:
+// the missing payments join the run that made their plan.
 //
 // ONLY A DEMO ORG: it refuses any org whose org_kind is not "demo" or
 // "internal_test" (canTidy below; DEMO-TIDY-2, because CREO is internal_test). This is the one script
@@ -65,6 +69,12 @@ function appWriters() {
   process.env.RESEND_API_KEY = "re_demo_tidy_sends_nothing";   // nothing this process does can send
   process.env.RESEND_BASE_URL = "http://127.0.0.1:9";
   process.env.PORT = process.env.DEMO_TIDY_PORT || "0";
+  // REPAIR-1: the 8 Nov apply on org_creo crashed here ("JWT_SECRET is not
+  // set. Steward will not start without it.", auth.js). This process loads the
+  // app only to call recordGift: it serves no request and signs nothing a person
+  // can use, so a random secret made now and thrown away with the process is
+  // enough. It is never printed, and a real one in the environment is kept.
+  if (!process.env.JWT_SECRET) process.env.JWT_SECRET = require("crypto").randomBytes(48).toString("hex");
   const app = require("../../server.js");
   APP = { recordGift: app.locals.recordGift };
   return APP;
@@ -96,6 +106,7 @@ async function run({ client: c, orgId, apply = false, today = null, marlowe = nu
   try {
     result = await plan(c, org, { today, marlowe }, log);
     if (!apply || !result.changes) { await c.query("ROLLBACK"); }
+    else if (!result.entries.length) { await c.query("COMMIT"); }   // REPAIR-1: only payments to record; they join the runs that made their plans
     else {
       const runId = rid("al_");
       const ids = [];
@@ -112,27 +123,39 @@ async function run({ client: c, orgId, apply = false, today = null, marlowe = nu
     }
   } catch (e) { await c.query("ROLLBACK").catch(() => {}); throw e; }
   log(`\n${result.ctx.gifts.length} demo payment${result.ctx.gifts.length === 1 ? "" : "s"} ${apply ? "to record" : "would be recorded"} through recordGift.`);
-  if (apply && result.runId && result.ctx.gifts.length) {
+  // Each payment joins a run: this one's for a plan it just made, or (REPAIR-1's
+  // backfill) the earlier run that made the plan, so that run's --undo takes it out.
+  const joined = [];
+  if (apply && result.ctx.gifts.length && (result.runId || result.ctx.gifts.every(g => g.run))) {
     const W = writers || appWriters();
-    const done = [];
-    for (const g of result.ctx.gifts) {
-      const w = await W.recordGift({ orgId: org.id, donorId: g.donorId, giftId: g.id, amount: g.amount, date: g.date, type: "recurring",
-        fundId: g.fundId, paymentMethod: g.method, notes: "Payment on a recurring plan recorded by staff.", recurring: true, applyInstallment: false,
-        history: true, alreadyThanked: true, thankYou: false, actorId: ACTOR.id, actorName: ACTOR.name, source: "offline_plan" });
-      if (w && w.gift) { await c.query(`UPDATE gifts SET offline_plan_id = $1 WHERE id = $2 AND org_id = $3`, [g.planId, g.id, org.id]); done.push(g.id); }
+    const byRun = new Map();
+    for (const g of result.ctx.gifts) { const r = g.run || result.runId; if (!byRun.has(r)) byRun.set(r, []); byRun.get(r).push(g); }
+    for (const [runId, gifts] of byRun) {
+      const done = [];
+      for (const g of gifts) {
+        const w = await W.recordGift({ orgId: org.id, donorId: g.donorId, giftId: g.id, amount: g.amount, date: g.date, type: "recurring",
+          fundId: g.fundId, paymentMethod: g.method, notes: "Payment on a recurring plan recorded by staff.", recurring: true, applyInstallment: false,
+          history: true, alreadyThanked: true, thankYou: false, actorId: ACTOR.id, actorName: ACTOR.name, source: "offline_plan" });
+        if (w && w.gift) { await c.query(`UPDATE gifts SET offline_plan_id = $1 WHERE id = $2 AND org_id = $3`, [g.planId, g.id, org.id]); done.push(g.id); }
+      }
+      const donors = [...new Set(gifts.map(g => g.donorId))];
+      const id = rid("al_");
+      await audit(c, { id, orgId: org.id, action: "demo tidy: 4 Demo data", entity: "gift", changes: { run: runId, entry: { step: "4 Demo data", op: "gift", ids: done, donors, label: `${done.length} plan payments` } },
+        summary: `Demo tidy: ${done.length} recurring plan payments recorded through recordGift`, count: done.length });
+      await c.query("BEGIN");
+      // The run's row is append-only; a second row says which gift row joined it.
+      await audit(c, { id: rid("al_"), orgId: org.id, action: `${RUN_ACTION}: gifts`, entity: "org", changes: { run: runId, entries: [id] },
+        summary: `Demo tidy run ${runId}: ${done.length} payments recorded`, count: done.length });
+      await c.query("COMMIT");
+      log(`${done.length} recorded${runId === result.runId ? "" : `, joined to run ${runId}`}.`);
+      if (runId !== result.runId) joined.push(runId);
     }
-    const donors = [...new Set(result.ctx.gifts.map(g => g.donorId))];
-    const id = rid("al_");
-    await audit(c, { id, orgId: org.id, action: "demo tidy: 4 Demo data", entity: "gift", changes: { run: result.runId, entry: { step: "4 Demo data", op: "gift", ids: done, donors, label: `${done.length} plan payments` } },
-      summary: `Demo tidy: ${done.length} recurring plan payments recorded through recordGift`, count: done.length });
-    await c.query("BEGIN");
-    // The run's row is append-only; a second row says which gift row joined it.
-    await audit(c, { id: rid("al_"), orgId: org.id, action: `${RUN_ACTION}: gifts`, entity: "org", changes: { run: result.runId, entries: [id] },
-      summary: `Demo tidy run ${result.runId}: ${done.length} payments recorded`, count: done.length });
-    await c.query("COMMIT");
-    log(`${done.length} recorded.`);
   }
-  if (apply) log(result.runId ? `\nApplied. Run ${result.runId}; undo with --undo=${result.runId}` : "\nNothing to change.");
+  if (apply) {
+    if (result.runId) log(`\nApplied. Run ${result.runId}; undo with --undo=${result.runId}`);
+    for (const r of joined) log(`${result.runId ? "" : "\nApplied. "}Payments joined run ${r}; undo them with that run: --undo=${r}`);
+    if (!result.runId && !joined.length) log("\nNothing to change.");
+  }
   await printBaselines(c, org, log);
   return result;
 }
