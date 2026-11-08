@@ -132,6 +132,9 @@ const gift = async (tok, donor, body) => { const r = await api("POST", `/donors/
   ok("§3 the application deadline stops counting down once awarded", !tiles.some(x => /\d+d$/.test(String(x.word || ""))) && t("deadline").word === "Closed", tiles);
   const withReport = GA.grantMoneyTiles({ ...G, reportDue: dayOffset(20) }, word, { pursuing: false });
   ok("§3 a report deadline still counts down", (withReport.find(x => x.key === "report") || {}).word === "20d", withReport);
+  const dls = ((await api("GET", "/grants/deadlines", tok)).body || {}).milestones || [];
+  const wexDl = dls.find(x => x.grantId === "gr_pl3t_wexford") || {};
+  ok("§3 Deadlines still lists Wexford's date, closed, with no countdown", wexDl.band === "closed" && !/due in/.test(wexDl.sentence || "") && /application is closed/.test(wexDl.sentence || ""), wexDl);
 
   // ── §4 · A RECEIPT IS A SNAPSHOT ───────────────────────────────────────
   console.log("\n— §4 · receipts and changed gifts —");

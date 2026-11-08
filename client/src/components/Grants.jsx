@@ -11,7 +11,7 @@ import { askConfirm } from "./ConfirmDialog";
 import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, rowClick } from "../lib/appUrls";
 import { GRANT_STATUSES, statusLabel, normalizeStatus, AWARDED_STATUS_KEYS } from "../../../shared/grantShape";
-import { grantAwardLine, grantMoneyTiles } from "../../../shared/grantAwardLine.js";   // WALKB-2; PLEDGES-3: the tiles
+import { grantAwardLine, grantMoneyTiles, awardState } from "../../../shared/grantAwardLine.js";   // WALKB-2; PLEDGES-3: the tiles
 import { deadlineWord } from "../../../shared/grantDeadline.js";   // TRUTH-3: the date's word, on the org's day
 import { AwardStep, FunderPicker } from "./GrantAward";   // GRANTS-FIX: Awarded goes through the award
 import { offerUndo } from "./EditHistory";
@@ -278,7 +278,8 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
             ))}
           </div>
 
-          {grant.amount>0&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px"}}>
+          {/* PLEDGES-3: no progress bar against payments that are not set up */}
+          {grant.amount>0&&!["stated","missing"].includes(awardState(grant))&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px"}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
               <div style={{fontSize:10,fontWeight:700,color:T.ink3}}>Funding Progress</div>
               <div style={{fontSize:11,color:T.ink3}}>{fmtFull(grant.received||0)} of {fmtFull(grant.amount)}</div>
