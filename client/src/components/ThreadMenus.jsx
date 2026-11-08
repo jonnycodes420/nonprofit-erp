@@ -10,7 +10,7 @@ import { DISMISS_REASONS, addCivilDays } from "../../../shared/threadShape";
 import { displayDate } from "../../../shared/displayDate";
 import { NavIcon } from "./NavIcon";
 import { orgTodayCivil } from "../lib/orgToday";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // FIX-14 Part 1 — the ORG's today (as in LogConversation.jsx).
 const todayLocal = () => orgTodayCivil();

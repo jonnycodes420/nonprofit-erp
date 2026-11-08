@@ -18,7 +18,7 @@ import { errorMessage } from "../lib/domainError";
 import { RESTRICTIONS, statusLabel } from "../../../shared/grantShape";
 import { toAmountInput, fromAmountInput } from "../lib/amountInput";
 import PledgeSchedule, { scheduleBody } from "./gifts/PledgeSchedule";   // GIFTS-1: the pledge form's own schedule
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: T.ink, background: T.white, fontFamily: "inherit", width: "100%", boxSizing: "border-box" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" });

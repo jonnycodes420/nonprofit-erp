@@ -11,7 +11,7 @@ import { errorMessage } from "../lib/domainError";
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { offerUndo } from "./EditHistory";
 import EventField from "./gifts/EventField";   // GIFTS-1: the event a check was given at
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const KIND_LABEL = {
   check: "check", pledge: "pledge", daf_grant: "donor-advised fund grant", matching_gift: "matching gift",

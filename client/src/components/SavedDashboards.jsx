@@ -22,7 +22,7 @@ import { ReportTable } from "./ReportBuilder";
 import { errorMessage } from "../lib/domainError";
 import { useUrlWriter } from "./RecordLink";
 import { tabHref } from "../lib/appUrls";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const SD_CSS = `
 .sd-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;align-items:start}

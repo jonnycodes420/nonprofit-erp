@@ -14,7 +14,7 @@ import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import { errorMessage } from "../lib/domainError";
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { postDownload, rangeOf, dollarsOf, dateWords, ROOM_LABEL } from "../lib/majorGifts";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const LABEL = { fontSize: 11, fontWeight: 700, color: T.ink3 };
 const LINK = { background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 12.5, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit" };

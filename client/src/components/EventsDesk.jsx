@@ -21,7 +21,7 @@ import RemoveMenu, { removeMany } from "./RemoveMenu";
 import PhotoField from "./PhotoField";
 import Picture from "./Picture";
 import { displayOrgDate } from "../lib/orgDay";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // FIX-41: a ticket type's or sponsorship level's optional small picture. The
 // thumbnail (or "Add a picture") opens the one picture control; it saves at once.

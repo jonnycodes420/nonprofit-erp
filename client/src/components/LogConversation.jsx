@@ -15,7 +15,7 @@ import {
 import { TASK_OUTCOMES } from "../../../shared/taskShape.js";
 import { orgTodayCivil } from "../lib/orgToday";
 import { AttachFileField, uploadAttachment } from "./ProfileTimelineParts";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 // PERF-2: the Thread's row menus live in ThreadMenus.jsx; still importable from here.
 export { ThreadDismissMenu, PutItOnMyCalendar } from "./ThreadMenus";
 

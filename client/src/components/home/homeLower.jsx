@@ -4,7 +4,7 @@ import { fmtDayLong } from "../../lib/taskDue";
 import { Suspense } from "react";
 import { apiFetch } from "../../api";
 import { plural } from "../../../../shared/countWords";
-import DateInput from "../inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when shown (Home's first look stays in budget)
 
 export function homeOverlays({ closePortfolioBreakdown, convoFor, data, debtBreakdown, debtBreakdownLoading, debtBreakdownOpen, goToDonorFromBreakdown, goToDonorFromPortfolio, impact, loadDrift, loadThreads, onNavigate, planFor, portfolioBreakdown, reengBreakdownOpen, retentionBreakdown, retentionBreakdownLoading, retentionBreakdownOpen, setConvoFor, setData, setDebtBreakdownOpen, setPlanFor, setReengBreakdownOpen, setRetentionBreakdownOpen, setWordsDone, setWordsOpen, wordsOpen }) {
   return (

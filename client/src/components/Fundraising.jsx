@@ -35,7 +35,7 @@ import { countLabel } from "../../../shared/countWords.js";
 import { RowsPanel } from "./fundraising/RowsPanel";   // FLOWS-2
 import { LostAndFoundPart } from "./fundraising/LostAndFoundPart";   // FLOWS-2
 import { RollupThermometer } from "./fundraising/RollupThermometer";   // FLOWS-2: moved out, verbatim
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // FIX-14 Part 5: a campaign is /app/fundraising?fr=campaigns&campaign=<id>:
 // the Campaigns part, scrolled to that campaign's card and marked.

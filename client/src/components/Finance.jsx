@@ -22,7 +22,7 @@ import { budgetVarianceText, budgetMonthsElapsed } from "../lib/budgetWords";
 const BEHIND = T.gold700;
 import { orgTodayCivil } from "../lib/orgToday";
 import { RecurringView } from "./RecurringGiving";   // GIFTS-2: recurring giving is findable from Finance
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── Constants ──────────────────────────────────────────────────────────────
 // POLISH-5: the empty ledger's second sentence, one text node with its first.

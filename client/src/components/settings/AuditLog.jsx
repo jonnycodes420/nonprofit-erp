@@ -5,7 +5,7 @@ import { T, SectionLabel } from "../shared";
 import { fmtInZone } from "../EditHistory";
 import { tabHref } from "../../lib/appUrls";
 import { RecordLink } from "../RecordLink";
-import DateInput from "../inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── FIX-11 Part 1 — THE AUDIT LOG ─────────────────────────────────────────
 // Newest first, filtered by person, record type, action and date, searchable

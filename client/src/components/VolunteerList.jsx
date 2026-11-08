@@ -18,7 +18,7 @@ import { GroupPage } from "./Groups";
 import { RecordLink } from "./RecordLink";
 import { tabHref } from "../lib/appUrls";
 import { orgTodayCivil, orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 12.5, color: T.ink, fontFamily: "inherit", boxSizing: "border-box", maxWidth: "100%" };
 // On a phone the filters fold behind one button, so the people come first.

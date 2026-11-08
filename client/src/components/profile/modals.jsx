@@ -10,7 +10,7 @@ import { AttachFileField, uploadAttachment } from "../ProfileTimelineParts";
 import { MONTHS as BIRTH_MONTHS } from "../../../../shared/birthday.js";
 import { stageTone } from "./profileShared";
 import { nextYearlyOn, recurPhrase } from "../../../../shared/taskShape.js";
-import DateInput from "../inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── Follow-up Task Modal ───────────────────────────────────────────────────
 function FollowUpTaskModal({donor,onSave,onClose}){

@@ -11,7 +11,7 @@ import { T } from "../components/shared";
 import { errorMessage } from "../lib/domainError";
 import { orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { countLabel } from "../../../shared/countWords.js";
-import DateInput from "../components/inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "../components/inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // The onboarding flow is a KEYED sequence, not a fixed numeric ladder, so a
 // Team org can slot in an extra "Invite your team" step while Core skips it

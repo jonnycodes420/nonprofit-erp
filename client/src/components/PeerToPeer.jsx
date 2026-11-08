@@ -21,7 +21,7 @@ import { Figure } from "./Figure";
 import { coachDrafts, coachMailto } from "../../../shared/p2p.js";
 import { displayDate } from "../../../shared/displayDate";
 import { offerUndo } from "./EditHistory";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3, marginBottom: 8 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,

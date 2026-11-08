@@ -23,7 +23,7 @@ import { errorMessage } from "../lib/domainError";
 import { askConfirm } from "./ConfirmDialog";
 import QboRead from "./QboRead";
 import { displayDate } from "../../../shared/displayDate.js";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,

@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import { T, Modal, SectionLabel } from "./shared";
 import { apiFetch, API, getToken } from "../api";
 import { useMailTypes, setMailType, reloadMailTypes } from "../lib/mailTypes";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 // PERF-2: the confirm dialog loads when one is asked (it mounts itself), not with Home.
 const askConfirm = opts => import("./ConfirmDialog").then(m => m.askConfirm(opts));
 

@@ -38,7 +38,7 @@ import { allPages } from "../lib/pages";
 import { displayOrgDate } from "../lib/orgDay";
 import { triggerLabel } from "../../../shared/giftWords.js";   // FEEL-1
 import { sequencesEmptyLine } from "../lib/sequencesEmpty";   // ATLAS-4
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // WIRE-1-ADDENDUM: "Templates" and "Email templates" were one thing twice, so
 // they are one Templates tab now. An old link to either (?subtab=templates,

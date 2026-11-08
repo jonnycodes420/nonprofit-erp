@@ -13,7 +13,7 @@ import { PutItOnMyCalendar, ThreadDismissMenu } from "../LogConversation";
 import { EditedMarker } from "../EditHistory";
 import OpenPledgeBanner from "../OpenPledgeBanner";
 import { ProfileNextMove } from "../Insights";
-import DateInput from "../inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 export function useProfileRail({ donor, isReadOnly, rel, setLogMeeting, stepEdit, setStepEdit, stepBusy, dpThread, dpItems, setConvoOpen, setPlanOpen, openProposals, proposalsKnown, loadDpThread, saveStep, deleteStep, snoozing, snoozeErr, snoozeThread, callName, setDpTab, pledges, setAddGiftForm, setAddGiftOpen, tasks, gifts, giftLoading, giftReadErr, giftsFull, tlCounts, getAI, org, setSuggestOpen, isTeam, openForNextMove }) {
 

@@ -33,7 +33,7 @@ import { RecruitmentView, ApplicationsView } from "./VolunteerRecruit";         
 import { VolunteerCounts, VolunteerListView, VolunteersGroupView } from "./VolunteerList";   // PARITY-3 Parts 3 and 5
 import { countLabel } from "../../../shared/countWords.js";
 import { useWriteRev, VOLUNTEER_WRITES } from "../lib/writeRev";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── VOL-1 · THE SAME SHAPE FUNDRAISING GOT ────────────────────────────────
 // Four sections, each one a question a coordinator actually asks, with the

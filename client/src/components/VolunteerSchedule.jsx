@@ -20,7 +20,7 @@ import PhotoField from "./PhotoField";
 import Picture from "./Picture";
 import { displayDate } from "../../../shared/displayDate";
 import { addDaysCivil } from "../../../shared/volunteerShifts.js";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: T.ink, fontFamily: "inherit", boxSizing: "border-box" };
 const btnPrimary = { background: T.green, border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13, fontWeight: 700, color: T.white, cursor: "pointer" };

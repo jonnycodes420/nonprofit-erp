@@ -22,7 +22,7 @@ import { eventStatus } from "../../../shared/eventStatus.js";
 import { eventEditForm } from "../lib/eventEditForm.js";   // WALKB-2: the dialog opens with the date
 import EventRemoveButton, { AttendeeLabel } from "./events/EventRemoveButton.jsx";   // WALKB-2
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: the org's day
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
 const CHAIR = 44;

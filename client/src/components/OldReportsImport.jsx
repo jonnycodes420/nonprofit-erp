@@ -16,7 +16,7 @@ import { apiFetch } from "../api";
 import { T, Modal, fmtFull } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const MAX_FILES = 20;

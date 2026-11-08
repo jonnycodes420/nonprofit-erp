@@ -36,7 +36,7 @@ import { giftTypeLabel } from "../../../../shared/giftWords.js";
 import OfflinePlans from "./OfflinePlans";   // PLEDGES-2: a recurring plan staff record by hand
 import { compareGifts } from "../../../../shared/giftOrder.js";
 import ByYear from "./ByYear";   // HISTORY-1: giving by fiscal year   // FEEL-1: "Pledge payment", never "Pledge_payment"
-import DateInput from "../inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // GIFTS-1: a pledge's schedule as the edit opens it, read from its installments.
 const FREQ_IN={annual:"yearly"};

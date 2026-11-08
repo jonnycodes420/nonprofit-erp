@@ -16,7 +16,7 @@ import { RailSection } from "../ProfileRail";
 import { displayDateShort } from "../../../../shared/displayDate";
 import { displayOrgDateShort } from "../../lib/orgDay";
 import { shownTags, shownNote } from "../../lib/internalLabels";
-import DateInput from "../inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // IMPORT-4 · A GIFT WITH NO DATE. An import that gave no day keeps the gift
 // undated: it counts in Lifetime and its event, never in This year. "Set date"

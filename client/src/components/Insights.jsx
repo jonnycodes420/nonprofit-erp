@@ -20,7 +20,7 @@ import { displayDate } from "../../../shared/displayDate.js";   // SWEEP-1: a wr
 import { moveSentence } from "../lib/moveSentence";
 import { alsoKey } from "../lib/alsoKey";   // TIDY-1: two pledges, two keys
 import { orgTodayCivil, orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when shown (Home's first look stays in budget)
 
 const SERIF = "'DM Serif Display', Georgia, serif";
 const money = c => {

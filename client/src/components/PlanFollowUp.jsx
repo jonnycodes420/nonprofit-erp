@@ -20,7 +20,7 @@ import { T, activeMark, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { addCivilDays, sanitizeStepLabel, NEXT_STEP_LABEL_MAX } from "../../../shared/threadShape";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const todayLocal = () => orgTodayCivil();
 

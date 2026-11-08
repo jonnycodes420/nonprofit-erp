@@ -7,7 +7,7 @@
 import { useState, useMemo } from "react";
 import { T, fmtFull } from "./shared";
 import { displayDate } from "../../../shared/displayDate.js";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── Shared consts ───────────────────────────────────────────────────────────
 export const EMPTY_WHERE = { join: "and", conditions: [] };

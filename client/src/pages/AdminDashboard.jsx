@@ -9,7 +9,7 @@ import { CHANGELOG as CHANGELOG_ADMIN } from "../lib/changelog";
 import { enterSupport } from "../lib/supportSession";   // FIX-57
 import { countLabel } from "../../../shared/countWords.js";
 import AdminOpsNav from "./ops/AdminOpsNav";
-import DateInput from "../components/inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "../components/inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
 

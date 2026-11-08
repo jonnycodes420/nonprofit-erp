@@ -28,7 +28,7 @@ import { displayDay } from "../../../shared/displayDate.js";
 import { AddToRecord } from "./MeetingPanels";
 import { FinishSheet } from "./Tasks";
 import BeforeYourMeeting, { useBeforeMeeting } from "./BeforeYourMeeting";   // VOICE-3
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── Shared consts (the TDZ rule: above every line that reads them) ─────────
 const HOUR_PX = 48, DAY_START = 7, DAY_END = 21, SNAP = 15;

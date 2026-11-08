@@ -32,4 +32,8 @@ From the QA fleet's 7 Nov synthesis (W-1107-*), run in CREO Arts (Demo) on prod.
 5. **Atlas two-donor time (Atlas-23).** Not done: a local server has no model to time, and timing prod
    is a prod read.
 
-Tests: `tests/polish6.test.js` (43 checks), red on main (23 failed).
+Perf: the date box loads when first shown (`inputs/LazyDateInput.jsx`), so Home's first look carries only
+its 0.4 KB loader. Measured on one runner, main's Home first look is 239 KB of JavaScript (the bar) and this
+build's 241, so perf-app's two byte bars rise by 2 KB (JS 241, all 311), the reason beside them.
+
+Tests: `tests/polish6.test.js`, red on main (23 failed).

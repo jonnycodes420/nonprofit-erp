@@ -22,7 +22,7 @@ import { GrantReportsPanel } from "./GrantReports";
 import GrantOverview from "./GrantOverview";
 import GrantEmailPath from "./GrantEmailPath";
 import SheetImport from "./SheetImport";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── Grant Log Modal ────────────────────────────────────────────────────────
 function GrantLogModal({grant,onSave,onClose}){

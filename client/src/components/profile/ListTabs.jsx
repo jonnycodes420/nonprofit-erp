@@ -8,7 +8,7 @@ import { EmailsReceived } from "../EmailAsSent";
 import { ProfileTimeline } from "../ProfileTimeline";
 import { HistoryList } from "../EditHistory";
 import { shownTags, shownNote } from "../../lib/internalLabels";
-import DateInput from "../inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 function ListTabs(props){
   // FLOWS-2: the files attached to conversations and notes (the timeline's own read) count as files too.

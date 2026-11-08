@@ -18,7 +18,7 @@ import { orgTodayCivil } from "../../lib/orgToday";
 import { told } from "../../lib/stewardTold";
 import { useChanged } from "../../lib/changes";
 import { countLabel } from "../../../../shared/countWords.js";
-import DateInput from "../inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const FREQS = [["monthly", "Monthly"], ["weekly", "Weekly"], ["quarterly", "Quarterly"], ["annually", "Annually"]];
 const STATE = { active: { label: "On track", color: T.greenDk }, behind: { label: "Behind", color: T.gold700 },

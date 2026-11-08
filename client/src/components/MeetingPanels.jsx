@@ -37,7 +37,7 @@ import { countLabel, plural } from "../../../shared/countWords.js";
 import { DARK_BRASS, SERIF, btnPrimary, btnOutline, input, dayKey, relDay, meetingNoun } from "./MorningBrief";
 import { shownNote } from "../lib/internalLabels";
 import { giftTypeLabel } from "../../../shared/giftWords.js";   // FEEL-1
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 export { relDay, meetingNoun, AddToRecord, MorningBrief } from "./MorningBrief";
 
 const CHIP_EDGE = T.bg3;           // the artboards draw a hairline one shade off bg3; bg3 is the token

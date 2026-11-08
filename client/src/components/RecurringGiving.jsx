@@ -10,7 +10,7 @@ import { DonorLink } from "./RecordLink";
 import { Figure, FigureContext } from "./Figure";
 import { countLabel, plural } from "../../../shared/countWords";
 import { fundLabel } from "../../../shared/giftWords.js";   // FEEL-1: one name for "no fund"
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // FIX-15 Part 3 — "notified" only when the email provider took the message.
 const notified = (r, name) => (r && r.donorNotified === false

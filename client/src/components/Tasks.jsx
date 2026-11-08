@@ -13,7 +13,7 @@ import { greetingName, greetingLine } from "../../../shared/greeting.js";
 import { useChanged } from "../lib/changes";   // STALE-1: the one channel (told() is in it)
 import { dueNowWords } from "../lib/taskBadge";
 import { countLabel } from "../../../shared/countWords.js";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // TASKS-2 — Tasks, the place a development director runs her week from.
 // Views (Today, Upcoming, Overdue, Later, No date, Done) each carry the count

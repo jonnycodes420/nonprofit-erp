@@ -13,7 +13,7 @@ import { apiFetch } from "../api";
 import { T, activeMark, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { VOCAB_DEFAULTS, MONTH_NAMES } from "../../../shared/vocabulary";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 export function YourWords({ mode = "settings", onDone, onClose }) {
   const firstRun = mode === "first-run";

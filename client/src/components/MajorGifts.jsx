@@ -7,7 +7,7 @@ import { DonorLink } from "./RecordLink";
 import { ItemMenu, EditedMarker, offerUndo } from "./EditHistory";
 import { streamBrief } from "../lib/briefStream";   // ATLAS-3: first words at once
 import { citeWords } from "../../../shared/briefCite.js";   // ATLAS-3: "from 3 gifts", not "(1 row)"
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── Major gifts (BUILD-99) ──────────────────────────────────────────────────
 // Moves management on top of the stages Steward already has, for the

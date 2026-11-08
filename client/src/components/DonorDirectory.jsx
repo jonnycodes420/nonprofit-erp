@@ -27,7 +27,7 @@ import { displayName } from "../../../shared/displayName.js";
 import { countLabel, plural } from "../../../shared/countWords.js";
 import { MergeWithModal } from "./profile/MergeWith";
 import { BulkTrash } from "./donors/BulkTrash";   // MOPUP-2: More → Move to trash
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 // WALKB-1 · A SEARCH RESULT SAYS WHY IT IS THERE. A name match needs no words;
 // anything else does ("Matched household: The Marlowe Hart household"), and an
 // archived person a search found says so.

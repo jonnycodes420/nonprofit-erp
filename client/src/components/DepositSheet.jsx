@@ -25,7 +25,7 @@ import { T, Modal, fmtFull } from "./shared";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { countLabel, plural } from "../../../shared/countWords.js";
 import EventField from "./gifts/EventField";   // GIFTS-1: each line's gift can belong to an event
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const STATE_META = {
   placed:           { label: "Placed",     colour: T.ink,      note: "" },

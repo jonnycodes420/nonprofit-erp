@@ -16,7 +16,7 @@ import { parseFileToSheets } from "./reader";
 import { submitImportChunked } from "./payload";
 import { ImportProgress, ImportReadout } from "./ImportProgress";
 import { ThankYouPreview } from "./ThanksQuestion";
-import DateInput from "../inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── Gift History Import helpers ────────────────────────────────────────────
 export function detectGiftFormat(headers) {

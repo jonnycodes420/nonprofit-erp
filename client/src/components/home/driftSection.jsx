@@ -7,7 +7,7 @@ import { Fragment } from "react";
 import { displayName } from "../../../../shared/displayName.js";
 import { NEXT_STEP_LABEL_MAX, sanitizeStepLabel, nextStepTypeForLabel } from "../../../../shared/threadShape";
 import { DonorLink } from "../RecordLink";
-import DateInput from "../inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when shown (Home's first look stays in budget)
 
 export function driftEmptyState({ driftData, driftHighRows, driftRows }) {
   return (

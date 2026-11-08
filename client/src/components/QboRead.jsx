@@ -19,7 +19,7 @@ import { T } from "./shared";
 import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
 import { askConfirm } from "./ConfirmDialog";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const sub = { fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 };

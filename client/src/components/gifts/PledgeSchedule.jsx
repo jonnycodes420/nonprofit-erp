@@ -13,7 +13,7 @@
 import { T } from "../shared";
 import { apiFetch } from "../../api";
 import { generateInstallments, scheduleWords } from "../../../../shared/depositSheet.js";
-import DateInput from "../inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 export const FREQUENCIES = [["weekly", "Weekly"], ["monthly", "Monthly"], ["quarterly", "Quarterly"], ["yearly", "Yearly"]];
 // A schedule written elsewhere (a grant paid every six months) keeps its cadence in the edit.

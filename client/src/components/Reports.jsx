@@ -23,7 +23,7 @@ import { WhatWorked } from "./Insights";   // INSIGHTS-1
 import EventRaised from "./EventRaised";   // HOME-3
 import { yoyView } from "./YearOverYear";   // HISTORY-1
 import { countLabel, plural } from "../../../shared/countWords.js";
-import DateInput from "./inputs/DateInput";   // POLISH-6: the one date box
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
 // Fixed, parameterized, table-first, CSV-downloadable reports — each one an
