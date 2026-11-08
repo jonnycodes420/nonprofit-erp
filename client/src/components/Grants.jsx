@@ -267,9 +267,9 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
         <div style={{minWidth:0,padding:"22px 20px 24px 24px",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column",gap:18}}>
           <div className="grant-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
             {/* PLEDGES-3: one rule for the tiles (shared/grantAwardLine.js grantMoneyTiles): no award row says
-                "Not set up", never $0 and 0%; an awarded grant counts to its report, not its closed application. */}
+                "No payments set up", never $0 and 0%; an awarded grant counts to its report, not its closed application. */}
             {grantMoneyTiles(grant,(d,o)=>deadlineWord(d,orgTodayCivil(),o),{pursuing:actionable}).map(t=>[t.label,t.value!=null?t.value:t.word,
-              t.key==="received"?(t.value==="Not set up"?T.ink3:T.greenMid):t.key==="funded"?(t.pct==null?T.ink3:t.pct>75?T.greenMid:t.pct>40?T.gold600:T.ink3)
+              t.key==="received"?(t.value==="No payments set up"?T.ink3:T.greenMid):t.key==="funded"?(t.pct==null?T.ink3:t.pct>75?T.greenMid:t.pct>40?T.gold600:T.ink3)
               :(t.key==="deadline"||t.key==="report")&&t.days!=null&&t.days<14?T.gold600:T.ink]).map(([l,v,c])=>(
               <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
                 <div style={{fontSize:9,fontWeight:700,color:T.ink3,marginBottom:4}}>{l}</div>

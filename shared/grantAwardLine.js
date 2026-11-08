@@ -16,7 +16,7 @@
 // (no award row) says "Awarded $120,000 · payments not set up" + Set up
 // payments. It is awarded; what is missing is the payment schedule, so it
 // never says "Record the award", and the grant's Received and % Funded say
-// "Not set up" (grantMoneyTiles below) instead of $0 and 0%.
+// "No payments set up" (grantMoneyTiles below) instead of $0 and 0%.
 import { normalizeStatus } from "./grantShape.js";
 
 const money = n => "$" + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString("en-US", { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 });
@@ -49,7 +49,7 @@ export function grantAwardLine(grant = {}) {
 
 // PLEDGES-3 · THE GRANT'S FOUR TILES, ONE RULE. Received and % Funded are the
 // payments on the award; with no award row there is no schedule to be paid
-// against, so they say "Not set up" rather than $0 and 0%. Once the grant is
+// against, so they say "No payments set up" rather than $0 and 0%. Once the grant is
 // awarded its application deadline has closed and stops counting down; the
 // fourth tile counts to the report due date instead (report deadlines remain).
 //   grant: { amount, amountAwarded, received, status, deadline, reportDue, awardPledgeId }
@@ -64,8 +64,8 @@ export function grantMoneyTiles(grant = {}, word, { pursuing = true } = {}) {
   const tiles = [
     st === "none" ? { key: "requested", label: "Amount Requested", value: money(g.amount) }
       : { key: "awarded", label: "Awarded", value: Number(g.amountAwarded) > 0 ? money(g.amountAwarded) : "Not set" },
-    { key: "received", label: "Received", value: notSetUp ? "Not set up" : money(received) },
-    { key: "funded", label: "% Funded", value: notSetUp ? "Not set up" : pct + "%", pct: notSetUp ? null : pct },
+    { key: "received", label: "Received", value: notSetUp ? "No payments set up" : money(received) },
+    { key: "funded", label: "% Funded", value: notSetUp ? "No payments set up" : pct + "%", pct: notSetUp ? null : pct },
   ].filter(Boolean);
   if (pursuing) tiles.push({ key: "deadline", label: "Days to Deadline", ...word(g.deadline, { pursuing: true }) });
   else if (g.reportDue) tiles.push({ key: "report", label: "Days to Report Due", ...word(g.reportDue, { pursuing: true }) });

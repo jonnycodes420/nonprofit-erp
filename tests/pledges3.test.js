@@ -11,7 +11,7 @@
 //      schedule says the next installment is $50, not $100.
 //   §3 W-1107-Finance-31: Awarded $120,000 by status alone (no award row) says
 //      "payments not set up · Set up payments", never "Record the award",
-//      Received and % Funded say Not set up, and the application deadline stops
+//      Received and % Funded say "No payments set up", and the application deadline stops
 //      counting down (a report date still does).
 //   §4 W-1108-Finance-09X: a receipted $100 gift edited to $150 says "Gift
 //      changed after this receipt" on the gift's receipt and in Tax receipts;
@@ -128,7 +128,7 @@ const gift = async (tok, donor, body) => { const r = await api("POST", `/donors/
   const word = (d, o) => deadlineWord(d, TODAY, o);
   const tiles = GA.grantMoneyTiles(G, word, { pursuing: false });
   const t = k => tiles.find(x => x.key === k) || {};
-  ok("§3 Received and % Funded say Not set up, not $0 and 0%", t("received").value === "Not set up" && t("funded").value === "Not set up", tiles);
+  ok("§3 Received and % Funded say No payments set up, not $0 and 0%", t("received").value === "No payments set up" && t("funded").value === "No payments set up", tiles);
   ok("§3 the application deadline stops counting down once awarded", !tiles.some(x => /\d+d$/.test(String(x.word || ""))) && t("deadline").word === "Closed", tiles);
   const withReport = GA.grantMoneyTiles({ ...G, reportDue: dayOffset(20) }, word, { pursuing: false });
   ok("§3 a report deadline still counts down", (withReport.find(x => x.key === "report") || {}).word === "20d", withReport);
@@ -217,7 +217,7 @@ const gift = async (tok, donor, body) => { const r = await api("POST", `/donors/
     const fl = await txt('[data-testid="grant-funder-line"]');
     const stats = await txt(".grant-stat-grid");
     ok("§5 Wexford says payments not set up · Set up payments", fl.includes("Awarded $120,000 · payments not set up · Set up payments") && !/Record the award/.test(fl), fl);
-    ok("§5 its tiles say Not set up and no countdown", /Received Not set up/.test(stats) && /% Funded Not set up/.test(stats) && !/\b38d\b/.test(stats), stats);
+    ok("§5 its tiles say No payments set up and no countdown", /Received No payments set up/.test(stats) && /% Funded No payments set up/.test(stats) && !/\b38d\b/.test(stats), stats);
     // The receipt: edit a receipted gift and see the flag on the gift.
     const ROW = await person("d_pl3t_rowan", "Rowan Fetherby");
     const gR = await gift(tok, ROW, { amount: 100, date: dayOffset(-2) });
