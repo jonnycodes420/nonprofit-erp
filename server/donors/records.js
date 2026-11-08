@@ -16,8 +16,11 @@ const { sql } = require("../db/sql");   // REDTEAM-2: SQL text only from the cod
 const routers = {
   r1: express.Router(),
 };
+// INTEGRITY-2: the Trash list, Restore and the 30-day clear-out (server/donors/trashList.js).
+routers.r1.use(require("./trashList").routers.r1);
 
 function mount(ctx) {
+require("./trashList").mount(ctx);
 const {
   NOT_YOURS, OU, RESTORABLE, UNDO_SECONDS, UNKNOWN_ROLE, UNKNOWN_STATUS, actor, auditDescribe, auditQuery,
   auditShape, buildDonorListFilter, cfShape, checkWriteAccess, inviteeDisplayName, livePlanSentence,
@@ -309,20 +312,10 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
   // WIRE-1: one trash row per person, exactly as DELETE /donors/:id writes,
   // so the shared Undo toast can bring the whole batch back.
   const who = actor(req);
-  const { changes, undoIds } = await withTransaction(async (client) => {
-    const gone = await queryTx(client,
-      "UPDATE donors SET deleted_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL RETURNING id",
-      [trashIds, req.user.orgId]);
-    // one trash row each, written 500 at a time (a whole org is one click now)
-    const undoIds = gone.map(() => newId("del"));
-    for (let k = 0; k < gone.length; k += 500) {
-      const b = gone.slice(k, k + 500);
-      // REDTEAM-2: the rows are sql`` pieces, so every value is bound and the text is the code's own.
-      await runTx(client, sql`INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
-                 VALUES ${sql.join(b.map((g, i) => sql`(${undoIds[k + i]}, ${req.user.orgId}, 'donors', ${g.id}, '{"__soft":true}'::jsonb, ${who.id}, ${who.name})`), sql`,`)}`);
-    }
-    return { changes: gone.length, undoIds };
-  });
+  // INTEGRITY-2: through the one door out, so their links go with them (personTrash.trashPeople).
+  const why = req.body.importId ? { kind: "undo_moved_too", importId: String(req.body.importId) } : { kind: "bulk_delete" };
+  const gone = await require("../../personTrash").trashPeople(req.user.orgId, trashIds, who, { why });
+  const changes = gone.length, undoIds = gone.map(g => g.undoId);
   require("../../routes/dataHealth").recheckSoon(req.user.orgId, "delete");   // FIX-59: Data health is current
   if (req.audit && skippedWithGifts) req.audit.label(`Moved ${changes} ${changes === 1 ? "person" : "people"} to trash; left ${skippedWithGifts} with gifts.`);
   res.json({ deleted: changes, skippedWithGifts, undoIds, undoSeconds: UNDO_SECONDS });
@@ -341,7 +334,9 @@ app.post("/donors/trash-check", requireAuth, requireAdmin, wrap(async (req, res)
   if (!Array.isArray(req.body.ids) || req.body.ids.length === 0) return res.status(400).json({ error: "ids array required" });
   const ids = [...new Set(req.body.ids.map(String))];
   const giving = await peopleWithGifts(req.user.orgId, ids);
-  res.json({ count: ids.length, withGifts: giving.size });
+  // INTEGRITY-2: the delete's confirm names what goes with them
+  const withThem = await require("./personLinks").whatGoesWith(query, req.user.orgId, ids);
+  res.json({ count: ids.length, withGifts: giving.size, ...withThem });
 }));
 
 // The "permanent-purge" the comment above bulk-delete anticipated: hard-
@@ -392,22 +387,12 @@ async function purgeableIds(orgId, olderThanDays) {
 const trashSentence = (n, days) => n
   ? `${n.toLocaleString("en-US")} ${n === 1 ? "person" : "people"} deleted ${days != null && days !== "" ? `more than ${days} ${Number(days) === 1 ? "day" : "days"} ago` : "from Steward"} will be deleted for good. They will never match an import again, and this cannot be undone.`
   : "Nobody in the trash matches that.";
-app.get("/donors/purge-trash/preview", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const ids = await purgeableIds(req.user.orgId, req.query.olderThanDays);
-  if (!ids) return res.status(400).json({ error: "bad_days", sentence: "Choose a number of days, or all." });
-  res.json({ count: ids.length, sentence: trashSentence(ids.length, req.query.olderThanDays) });
-}));
-app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const orgId = req.user.orgId;
-  const b = req.body || {};
-  if (b.confirm !== "empty") return res.status(400).json({ error: "confirm_required", sentence: "Confirm emptying the trash first." });
-  const ids = await purgeableIds(orgId, b.olderThanDays);
-  if (!ids) return res.status(400).json({ error: "bad_days", sentence: "Choose a number of days, or all." });
-  if (req.audit) req.audit.summary(`Emptied the trash: ${ids.length} ${ids.length === 1 ? "person" : "people"} deleted for good`, { count: ids.length, entityType: "donors" });
-  if (!ids.length) return res.json({ purged: 0, children: {}, unlinked: {}, sentence: "The trash had nobody to delete." });
+// INTEGRITY-2: the purge is one function, so Empty trash and the 30-day
+// clear-out (server/donors/trashList.js) delete exactly the same way.
+async function purgePeople(orgId, ids) {
   const { MERGE_REFS, REF_SHAPE } = require("../../routes/dataHealth");
   const whereAny = (t, c) => { const w = (REF_SHAPE[`${t}.${c}`] || {}).where; return `${c} = ANY(?)${w ? ` AND ${w}` : ""}`; };
-  const { purged, children, unlinked } = await withTransaction(async (client) => {
+  return withTransaction(async (client) => {
     const children = {}, unlinked = {};
     // 1. Rows that stay, unlinked.
     for (const [t, c] of MERGE_REFS) {
@@ -442,6 +427,23 @@ app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res)
     const d = await runTx(client, "DELETE FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, ids]);
     return { purged: d.changes, children, unlinked };
   });
+}
+module.exports.purgePeople = purgePeople;
+module.exports.purgeableIds = purgeableIds;
+app.get("/donors/purge-trash/preview", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const ids = await purgeableIds(req.user.orgId, req.query.olderThanDays);
+  if (!ids) return res.status(400).json({ error: "bad_days", sentence: "Choose a number of days, or all." });
+  res.json({ count: ids.length, sentence: trashSentence(ids.length, req.query.olderThanDays) });
+}));
+app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const b = req.body || {};
+  if (b.confirm !== "empty") return res.status(400).json({ error: "confirm_required", sentence: "Confirm emptying the trash first." });
+  const ids = await purgeableIds(orgId, b.olderThanDays);
+  if (!ids) return res.status(400).json({ error: "bad_days", sentence: "Choose a number of days, or all." });
+  if (req.audit) req.audit.summary(`Emptied the trash: ${ids.length} ${ids.length === 1 ? "person" : "people"} deleted for good`, { count: ids.length, entityType: "donors" });
+  if (!ids.length) return res.json({ purged: 0, children: {}, unlinked: {}, sentence: "The trash had nobody to delete." });
+  const { purged, children, unlinked } = await purgePeople(orgId, ids);
   res.json({ purged, children, unlinked, sentence: `${purged.toLocaleString("en-US")} ${purged === 1 ? "person was" : "people were"} deleted for good.` });
 }));
 
@@ -495,6 +497,7 @@ const RESTORE_WITH = {
       await runTx(client, "UPDATE calendar_events SET interaction_id = ?, updated_at = NOW() WHERE id = ANY(?) AND org_id = ? AND interaction_id IS NULL",
         [recordId, x.calendar_event_ids, orgId]);
     }
+    if (x && x.meeting) await require("./meetingTrash").giveMeeting(require("../../db"), client, x.meeting, orgId);   // INTEGRITY-2
   },
   pledges: async (client, x, recordId, orgId) => {
     if (x && Array.isArray(x.installments) && x.installments.length) {
