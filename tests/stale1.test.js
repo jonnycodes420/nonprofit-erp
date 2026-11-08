@@ -138,6 +138,14 @@ const money = s => Number(String(s || "").replace(/[^0-9.]/g, "")) || 0;
     }
     ok(label + ": no page load happened", loads === before, { loads: loads - before });
   };
+  // STALE-2: the profile and dialog checks (tests/lib/stale2Profile.js), run
+  // on this same page. STALE1_ONLY=P runs them alone, for a quick red/green.
+  const stale2 = () => require("./lib/stale2Profile")({ page, api, tok, P, person, go, text, until, check, noReload, q, ORG, today });
+  if (process.env.STALE1_ONLY === "P") {
+    await open(`/app/events`); await stale2();
+    ok("no console error or 5xx on the walk", errors.length === 0, errors.slice(0, 4));
+    await browser.close(); await closeDb(); summary(); return;
+  }
 
   // ── §1 · A $100 GIFT FOR AN EVENT ──────────────────────────────────────────
   await open(`/app/events`);
@@ -396,6 +404,8 @@ const money = s => Number(String(s || "").replace(/[^0-9.]/g, "")) || 0;
   ok(`§8 one gift on Home makes at most ${MAX_EXTRA} more requests (it made ${extra.length})`, hooked && extra.length <= MAX_EXTRA, extra);
   const counted = await page.evaluate(() => (window.__stewardChanges || []).slice(-1)[0]);
   ok("§8 …announced as a gift, a person and the totals", !!counted && ["gift", "person", "totals"].every(k => counted.kinds.includes(k)), counted);
+
+  await stale2();   // §P1–§P4
 
   // ── §9 · A CHANGE ONLY THE SERVER MADE ─────────────────────────────────────
   // The worker's after-change step, a webhook, a timed job: no browser request

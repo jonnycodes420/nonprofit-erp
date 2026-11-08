@@ -24,6 +24,7 @@ const { MONEY, GIFT, LIVE } = require("./money");
 const { AFTER_IMPORT, LIFETIME } = require("./lifetime");
 const { FIRST_DATE } = require("./firstGift");
 const { IS_CREDIT, NOT_CREDIT } = require("../../creditTypes");
+const { COUNTED } = require("./giftCount");   // TRUTH-3: one rule for counting a gift
 
 const PERSON_YEARS_MAX = 40;   // a longer history than this is very rare; older gifts get one row
 const ORG_YEARS = 10;
@@ -113,7 +114,7 @@ async function donorByYear(query, org, donorId, today) {
     const src = extra => ({ key: "donor-year", params: { donor: donorId, from: y.from, to: y.to, ...extra } });
     return {
       key: y.key, label: y.label, chartLabel: y.chartLabel, from: y.from, to: y.to, current: y.current,
-      total: dollars(cents), cents, giftCount: mine.length, largest: dollars(largest), largestCents: largest,
+      total: dollars(cents), cents, giftCount: positive.length, largest: dollars(largest), largestCents: largest,
       softCredit: dollars(softCents), softCents,
       sources: { total: src({}), giftCount: src({ measure: "count" }), largest: src({ largest: true }),
         softCredit: { key: "donor-year-soft", params: { donor: donorId, from: y.from, to: y.to } } },
@@ -142,7 +143,7 @@ async function donorByYear(query, org, donorId, today) {
   const add = (key, label, list, params) => {
     if (!list.length) return;
     const c = list.reduce((s, g) => s + toCents(g.amount), 0);
-    other.push({ key, label, total: dollars(c), cents: c, giftCount: list.length, source: { key: "donor-year", params: { donor: donorId, ...params } } });
+    other.push({ key, label, total: dollars(c), cents: c, giftCount: list.filter(g => toCents(g.amount) > 0).length, source: { key: "donor-year", params: { donor: donorId, ...params } } });
   };
   add("older", `Before ${oldest.label}`, older, { to: orgTime.addDays(oldest.from, -1) });
   add("later", "Dated after today", later, { from: orgTime.addDays(years[0].to, 1) });
@@ -197,7 +198,7 @@ async function orgByYear(query, org, today) {
   const spans = years.map(y => ({ k: y.key, f: y.from, t: y.to, pf: y.prevFrom, pt: y.prevTo }));
   // The `gifts` source over each year, all years in one read.
   const totals = await query(
-    `SELECT y.k, COALESCE(SUM(g.amount), 0)::text AS s, COUNT(g.id)::int AS n, MAX(g.amount) FILTER (WHERE g.amount > 0)::text AS mx
+    `SELECT y.k, COALESCE(SUM(g.amount), 0)::text AS s, COUNT(g.id) FILTER (WHERE ${COUNTED("g")})::int AS n, MAX(g.amount) FILTER (WHERE g.amount > 0)::text AS mx
        FROM unnest(?::text[], ?::text[], ?::text[]) AS y(k, f, t)
        JOIN gifts g ON g.org_id = ? AND g.date >= y.f AND g.date <= y.t AND ${MONEY("g")}
        JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
@@ -234,7 +235,7 @@ async function orgByYear(query, org, today) {
   let samePointRow = null;
   if (sp) {
     const [s] = await query(
-      `SELECT COALESCE(SUM(g.amount), 0)::text AS s, COUNT(g.id)::int AS n
+      `SELECT COALESCE(SUM(g.amount), 0)::text AS s, COUNT(g.id) FILTER (WHERE ${COUNTED("g")})::int AS n
          FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
         WHERE g.org_id = ? AND g.date >= ? AND g.date <= ? AND ${MONEY("g")}`, [orgId, sp.from, sp.to]);
     const ks = donorKindsSql(orgId, [{ k: "sp", f: sp.from, t: sp.to, pf: years[1] ? years[1].prevFrom : sp.from, pt: years[1] ? years[1].prevTo : sp.to }]);
@@ -268,7 +269,7 @@ function donorYearSql(orgId, p) {
     if (p.from) { span += " AND LEFT(g.date, 10) >= ?"; args.push(p.from); }
     if (p.to) { span += " AND LEFT(g.date, 10) <= ?"; args.push(p.to); }
   }
-  if (p.largest) span += " AND g.amount > 0";
+  if (p.largest || p.measure === "count") span += " AND g.amount > 0";   // TRUTH-3: a count opens the counted gifts (giftCount.js)
   const inner = `SELECT g.id, 'gift' AS type, g.donor_id, COALESCE(f.name, 'Unrestricted') AS name, g.date,
                         ROUND(g.amount::numeric, 2) AS amount, COALESCE(NULLIF(g.payment_method, ''), INITCAP(NULLIF(g.type, ''))) AS detail
                    FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id

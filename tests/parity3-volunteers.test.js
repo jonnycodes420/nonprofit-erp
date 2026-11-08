@@ -28,6 +28,17 @@
 //      one record" goes red; skip the approved application → "in the
 //      Volunteers group" goes red.
 //
+//   §5 STALE-2 · the QA fleet's 7 Nov volunteer items: a sign-up that
+//      overlaps a shift the person holds answers 409 naming the clash, and
+//      goes on when confirmed (09X); a deleted volunteer leaves no conflict on
+//      the schedule or its count (09Y); a logged shift's hours, date and role
+//      change, and the audit row holds before and after (12); the profile
+//      lists scheduled shifts under Coming up and Past shifts (24); a tagged
+//      volunteer with nothing logged answers 0 hours, 0 shifts (13X); taking
+//      somebody off a shift names them, never a bare "Cancelled." (25X); a
+//      draft shift nobody is on deletes, a published one is refused.
+//      Each was run against main first and went red there.
+//
 //   BASE=http://localhost:5601 node tests/parity3-volunteers.test.js
 const bcrypt = require("bcryptjs");
 const { ok, summary, q, closeDb, login, api, civilToday, civilPlusDays } = require("./helpers");
@@ -212,6 +223,71 @@ const T = civilToday();
     four.status === 200 && (four.body.rows || []).every(r => r.rangeHours >= 4) && !(four.body.rows || []).some(r => r.id === BOB), (four.body.rows || []).map(r => [r.name, r.rangeHours]));
   const cleared = await api("GET", "/volunteer-hub/list", tok);
   ok("§4 cleared, the list is everybody again", cleared.status === 200 && cleared.body.rows.length === all.body.rows.length && all.body.rows.length > 0, cleared.body.sentence);
+
+  // ── §5 STALE-2 · OVERLAPS, PHANTOM CONFLICTS, EDIT, THE PROFILE, DRAFTS ───
+  const opp5 = await api("POST", "/volunteer-hub/opportunities", tok, { name: "Harbour clean-up", isPublic: true });
+  const d5 = civilPlusDays(9);
+  const slotAt = async (start, end, extra = {}) => (await api("POST", "/volunteer-hub/slots", tok, { opportunityId: opp5.body.id, date: d5, startTime: start, endTime: end, capacity: 4, ...extra })).body.id;
+  const morning = await slotAt("09:00", "12:00", { name: "Beach sweep" }), late = await slotAt("11:00", "14:00", { name: "Dock tidy" });
+  const ines = await mkPerson("Ines Marlowe", "ines.marlowe@par3v.local");
+  const s1 = await api("POST", "/volunteer-hub/signups", tok, { slotId: morning, personId: ines });
+  ok("§5 Ines is on the morning shift", s1.status === 201 && s1.body.status === "confirmed", s1.body);
+  const clash = await api("POST", "/volunteer-hub/signups", tok, { slotId: late, personId: ines });
+  ok("§5 (09X) a sign-up that overlaps answers 409, naming the clash", clash.status === 409 && clash.body.error === "overlap"
+    && /Ines Marlowe is already on Beach sweep, .*9am to 12pm, which overlaps this shift\./.test(clash.body.message || ""), clash.body);
+  ok("§5 …and adds nothing until confirmed", !(await q(`SELECT 1 FROM volunteer_signups WHERE slot_id=$1 AND person_id=$2`, [late, ines])).length);
+  const both = await api("POST", "/volunteer-hub/signups", tok, { slotId: late, personId: ines, overlapOk: true });
+  ok("§5 …confirmed, she is on both", both.status === 201 && both.body.status === "confirmed", both.body);
+  const back = await slotAt("12:00", "15:00", { name: "Back to back" });
+  const bb = await api("POST", "/volunteer-hub/signups", tok, { slotId: back, personId: await mkPerson("Theo Brandt", "theo.brandt@par3v.local") });
+  ok("§5 a shift that only touches another is no clash", bb.status === 201, bb.body);
+  const conflictsOn = async () => (await api("GET", `/volunteer-hub/schedule?from=${d5}&to=${d5}`, tok)).body;
+  const c0 = await conflictsOn();
+  ok("§5 the schedule shows Ines's one conflict", c0.conflicts === 1 && c0.shifts.find(x => x.id === morning).conflicts === 1, { conflicts: c0.conflicts });
+  const del = await api("DELETE", `/donors/${ines}`, tok);
+  ok("§5 Ines is deleted", del.status === 200, del.body);
+  const c1 = await conflictsOn();
+  ok("§5 (09Y) no phantom conflict after the volunteer is deleted", c1.conflicts === 0 && c1.shifts.every(x => x.conflicts === 0), { conflicts: c1.conflicts, perShift: c1.shifts.map(x => x.conflicts) });
+
+  // 12 · Edit a logged shift.
+  const MIRA = await mkPerson("Mira Okafor", "mira.okafor@par3v.local");
+  const lg = await api("POST", `/donors/${MIRA}/volunteer-hours`, tok, { date: civilPlusDays(-3), hours: "2", role: "Sorting" });
+  const vsId = lg.body.id || lg.body.shiftId || (await q(`SELECT id FROM volunteer_shifts WHERE org_id=$1 AND person_id=$2`, [ORG, MIRA]))[0].id;
+  const ed = await api("PATCH", `/volunteer-shifts/${vsId}`, tok, { date: civilPlusDays(-4), hours: "3.5", role: "Driving" });
+  const [vrow] = await q(`SELECT date::text AS date, hours::float AS hours, role FROM volunteer_shifts WHERE id=$1`, [vsId]);
+  ok("§5 (12) a logged shift's hours, date and role change", ed.status === 200 && vrow.hours === 3.5 && vrow.date === civilPlusDays(-4) && vrow.role === "Driving", { status: ed.status, vrow });
+  let aud = null;   // the audit trail writes as the response finishes; give it a moment
+  for (let i = 0; i < 20 && !aud; i++) { [aud] = await q(`SELECT * FROM fin_audit_log WHERE org_id=$1 AND changes::text LIKE '%Driving%' ORDER BY created_at DESC LIMIT 1`, [ORG]); if (!aud) await new Promise(r => setTimeout(r, 150)); }
+  ok("§5 …and the audit row holds the before and the after", !!aud && /Sorting/.test(JSON.stringify(aud)) && /Driving/.test(JSON.stringify(aud)), aud ? Object.keys(aud) : null);
+
+  // 24 · Scheduled shifts on the profile, ahead and behind.
+  const past = (await api("POST", "/volunteer-hub/slots", tok, { opportunityId: opp5.body.id, date: civilPlusDays(-6), startTime: "09:00", endTime: "11:00", name: "Last week's sweep", capacity: 4 })).body.id;
+  await api("POST", "/volunteer-hub/signups", tok, { slotId: past, personId: MIRA });
+  await api("POST", "/volunteer-hub/signups", tok, { slotId: back, personId: MIRA, overlapOk: true });
+  const mp = await api("GET", `/donors/${MIRA}/volunteer-hours`, tok);
+  ok("§5 (24) the profile lists the shift ahead under Coming up", (mp.body.upcoming || []).some(u => /Back to back/.test(u.when)), mp.body.upcoming);
+  ok("§5 (24) …and the one behind under Past shifts", (mp.body.pastShifts || []).some(u => /Last week's sweep/.test(u.when)), mp.body.pastShifts);
+
+  // 13X · nothing logged is 0, not a blank.
+  const NEW = await mkPerson("Quinn Adebayo", "quinn.adebayo@par3v.local");
+  const z = await api("GET", `/donors/${NEW}/volunteer-hours`, tok);
+  ok("§5 (13X) a volunteer with nothing logged answers 0 hours and 0 shifts", z.status === 200 && z.body.shiftCount === 0 && z.body.lifetime.hours === 0, { shiftCount: z.body.shiftCount, life: z.body.lifetime && z.body.lifetime.hours });
+  const panel = require("fs").readFileSync(require("path").join(__dirname, "../client/src/components/VolunteerPanel.jsx"), "utf8");
+  ok("§5 (13X) …and the profile panel shows for a tagged volunteer, saying 0 hours, 0 shifts",
+    /includes\("volunteer"\)/.test(panel) && /!tagged && !scheduled\) return null/.test(panel) && /0 hours, 0 shifts/.test(panel));
+
+  // 25X · Taking somebody off says who.
+  const theoSu = (await q(`SELECT su.id FROM volunteer_signups su JOIN donors d ON d.id=su.person_id WHERE su.slot_id=$1 AND d.name='Theo Brandt'`, [back]))[0].id;
+  const offT = await api("POST", `/volunteer-hub/signups/${theoSu}/cancel`, tok);
+  ok("§5 (25X) taking somebody off names them, never a bare \"Cancelled.\"", offT.status === 200 && offT.body.message === "Theo Brandt is off this shift.", offT.body);
+
+  // Draft shifts: one nobody is on deletes; a published one is refused.
+  const draft = await slotAt("16:00", "18:00", { name: "Draft evening", published: false });
+  await q(`UPDATE volunteer_slots SET published=false WHERE id=$1`, [draft]);
+  const dd = await api("DELETE", `/volunteer-hub/slots/${draft}`, tok);
+  ok("§5 a draft shift nobody signed up for deletes", dd.status === 200 && !(await q(`SELECT 1 FROM volunteer_slots WHERE id=$1`, [draft])).length, dd.body);
+  const pubDel = await api("DELETE", `/volunteer-hub/slots/${morning}`, tok);
+  ok("§5 …a published one is refused and stays", pubDel.status === 409 && (await q(`SELECT 1 FROM volunteer_slots WHERE id=$1`, [morning])).length === 1, pubDel.body);
 
   await closeDb();
   summary();

@@ -99,6 +99,9 @@ const GUARDED_WRITERS = [
   // COMMS-1: archives the unsent drafts of turned-off sequences, older than 7 days.
   // Dry run by default; --apply/--undo write through writerDbUrl, one audit row per org. org_creo skipped.
   "comms1-old-sequence-drafts",
+  // STALE-2: deletes event timeline lines whose guest is gone (not in the trash).
+  // Dry run by default; --apply/--undo write through writerDbUrl, one audit row per org. org_creo skipped.
+  "stale2-event-line-orphans",
   // GRANTS-FIX: links grants that carry only a typed funder name. Dry run by
   // default; --apply writes through writerDbUrl, links only, one audit row each.
   "grants-link-funders",
@@ -108,6 +111,9 @@ const GUARDED_WRITERS = [
   // MOPUP-1: removes the old whole-award income rows (source='grant', no
   // gift_id). Dry run by default; --apply writes through writerDbUrl, one audit row per org.
   "mopup1-award-stamps",
+  // TRUTH-3: stores unsent drafts with figure keys. Dry run by default; --apply
+  // writes through writerDbUrl, one audit row per org; --undo puts words back.
+  "truth3-rerender-drafts",
   "backfill-campaign-attribution",                    "dedupe-finance-gift-stamps",
    "fix-build54-demo-photos",
   "fix-demo-finance-ledger",  "load-irs-ein-registry",

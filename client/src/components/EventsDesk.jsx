@@ -7,6 +7,7 @@
 // server's to decide.
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
+import { useChanged } from "../lib/changes";   // STALE-2
 import { personNamed } from "../lib/people";
 import { PeopleDatalist } from "./PeopleDatalist";
 import { T, fmtFull, Card } from "./shared";
@@ -78,6 +79,9 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
     catch (e) { setMsg(errorMessage(e, "That offer did not go out.")); }
   };
   useEffect(() => { load(); }, [event.id]);
+  // STALE-2: a guest added, marked or removed on the event page (or at the
+  // door) re-reads this desk's guest list.
+  useChanged(["event"], load, { event: event.id });
   const act = async (fn, okMsg) => { setMsg(""); try { await fn(); if (okMsg) setMsg(okMsg); load(); } catch (e) { setMsg(errorMessage(e, "That did not save.")); } };
   const addLevel = () => act(() => apiFetch(`/events/${event.id}/levels`, { method: "POST", body: JSON.stringify(lv) })
     .then(() => setLv({ kind: "ticket", name: "", price: "", fmv: "", memberPrice: "", capacity: "", recognition: "", benefits: "" })));
@@ -249,6 +253,7 @@ export function EventsDesk({ orgSlug, donors = [], isReadOnly }) {
     if (wantId) setOpenRaw(o => o || list.find(e => e.id === wantId) || null);
   }).catch(e => setMsg(errorMessage(e, "Could not load your events.")));
   useEffect(() => { load(); }, []);
+  useChanged(["event"], load);   // STALE-2: each card's counts move with any event's guests
   const create = async () => {
     setMsg("");
     try { const e = await apiFetch("/events", { method: "POST", body: JSON.stringify({ ...form, eventType: "gala" }) }); setForm({ name: "", date: "", location: "" }); await load(); setOpen(e); }

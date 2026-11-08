@@ -9,6 +9,7 @@
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
 const TL = require("../../timelineLine");
+const AL = require("./attendanceLines");   // STALE-2: a guest's timeline lines follow the guest row
 const DL = require("../../shared/numbers/donorLabel");   // WALKB-2: who is a donor, the profile's rule
 const PM = require("../../personMatch");   // WIRE-1 rule 1: one record per person   // WIRE-1 rule 2: every act lands on the timeline
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
@@ -447,6 +448,8 @@ app.post("/events/:id/attendance", requireAuth, checkWriteAccess, wrap(async (re
     const status = came.has(a.id) ? "attended" : "no_show";
     await run("UPDATE event_attendees SET status=? WHERE id=? AND org_id=?", [status, a.id, orgId]);
     if (await logEventAttendance(orgId, a, event, status, { id: who.id, name: u?.name || who.name }, day)) logged++;
+    // STALE-2: a guest already marked the other way has their line rewritten.
+    else if (a.status !== status) await AL.syncAttendanceLine(orgId, a.id);
   }
   // THREAD-3: the people who did not come are one task for this event.
   const noShowTaskId = missed.size ? await openNoShowTask(orgId, event.id, { id: who.id, name: u?.name || who.name }) : null;
@@ -769,6 +772,8 @@ app.post("/events/:id/check-in", requireAuth, checkWriteAccess, wrap(async (req,
   if (!rows.length) return res.status(404).json({ error: "Not found" });
   // WIRE-1: through the door is "Came to X." on the person, once.
   if (!undo) await logEventAttendance(orgId, rows[0], event, "attended", await staffWho(req));
+  // STALE-2: out again takes the "Came to" line back off (FIX-59 made them Registered).
+  else await AL.syncAttendanceLine(orgId, rows[0].id);
   delete rows[0].donor_id;
   res.json({ ok: true, attendee: rows[0],
     sentence: undo ? `${rows[0].name} is not checked in.` : `${rows[0].name} is in.` });
@@ -1140,14 +1145,16 @@ app.get("/events/:id", requireAuth, async (req, res) => {
     const [money] = await require("../../numbers").eventsRaised(orgId, { ids: [req.params.id] });
     // SWEEP-4: the public page is "Not open yet" until payments are connected
     const [pay] = await query("SELECT stripe_connected, stripe_account_id FROM orgs WHERE id=$1", [orgId]);
-    res.json({ ...evts[0], attendees, public_page_url, money: money || null,
+    // STALE-2: seats left, from the count the add-guest door checks (server/events/capacity.js).
+    const CAP = require("./capacity"), seats = CAP.seats(evts[0].capacity, await CAP.placesTaken(query, orgId, req.params.id));
+    res.json({ ...evts[0], attendees, public_page_url, money: money || null, seats,
       payments_connected: !!(pay && pay.stripe_connected && pay.stripe_account_id),
       givenSource: { key: "event-gave", params: { event: req.params.id } },
       givenSentence: "What each person gave for this event or pledged at it, from the gifts and pledges themselves." });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post("/events/:id/attendees", requireAuth, checkWriteAccess, async (req, res) => {
+app.post("/events/:id/attendees", requireAuth, checkWriteAccess, require("./capacity").gate(query), async (req, res) => {   // STALE-2: past capacity asks first
   try {
     const orgId = req.user.orgId;
     const eventId = req.params.id;
@@ -1289,6 +1296,9 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
       const w = await staffWho(req);
       await openNoShowTask(orgId, att.event_id, w).catch(e => console.error("[event] no-show task:", e.message));
     }
+    // STALE-2 (W-1107-Volunteers-21): Attended → No Show (or back to
+    // Registered) rewrites or removes the "Came to" line; it never stays behind.
+    if (newStatus !== att.status) await AL.syncAttendanceLine(orgId, att.id);
     const updated = await query(`SELECT ea.*, d.stage, d.total_giving, ${DL.HAS_GIVEN("d")} AS has_given FROM event_attendees ea LEFT JOIN donors d ON d.id=ea.donor_id WHERE ea.id=$1`, [req.params.attendeeId]);
     for (const a of updated) a.donor_label = DL.donorLabel({ hasGiven: !!a.has_given, stage: a.stage });   // WALKB-2
     res.json(updated[0]);

@@ -73,6 +73,7 @@ const PROFILE_READS = [
   "/donors/:id/attachments", "/donors/:id/tasks", "/donors/:id/volunteer-hours", "/donors/:id/recurring-subscription",
   "/donors/:id/soft-credit", "/donors/:id/moves", "/donors/:id/opportunities", "/donors/:id/move-suggestions",
   "/donors/:id/designations", "/donors/:id/receipts", "/donors/:id/planned-gifts", "/donors/:id/pledges",
+  "/donors/:id/materials",   // STALE-2: the Files tab counts uploads from the start, inside the bundle
   "/mailbox", "/sequences", "/org", "/journeys", "/fundraising/campaigns", "/custom-fields?entity=gift",
 ];
 

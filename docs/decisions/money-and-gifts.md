@@ -43,6 +43,15 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   again this fiscal year, gifts above zero, deleted people out (`computeRetentionRate`, the org's own
   year); the same-dates-last-year version is `figureSources.sameDatesLastYear`. The help article
   `how-steward-counts` carries the words; change them in both places.
+- **Counting a gift (TRUTH-3).** A gift is counted when it is hard credit above $0 (`shared/numbers/giftCount.js`).
+  A $0 or soft-credit row shows in history, labeled, and is never counted, averaged or receipted. Every count,
+  average, export and By year reads it.
+- **Where a gift stands with the books (TRUTH-3).** Posted (a ledger row carries it), History only (from an
+  import, dated before this fiscal year: those books are closed elsewhere and it never posts) or Waiting to post.
+  The three foot to every gift (`shared/numbers/ledgerStatus.js`). There is no "not in the ledger" alarm.
+- **Funds are a managed list (TRUTH-3).** Near-duplicates are merged by an admin (`server/finance/fundMerge.js`):
+  preview, move every reference, retire the others (names kept as aliases), Undo exact. An import asks before
+  making a fund that is an existing one in other words (`fundKey`).
 - **A check's memo is read, never lost (CHECK-2).** `gifts.memo` holds the memo as written (less the
   bank-number scrub). "in memory of", "in honor of", "IMO", "IHO" become the gift's tribute through
   `checkGiftExtras`, and the thank-you draft mentions it once. "pledge pmt 2 of 4" offers that instalment

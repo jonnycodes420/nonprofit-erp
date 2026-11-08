@@ -24,7 +24,8 @@ async function draftFigures(query, orgId, donorId, fy = null) {
   if (!donorId) return null;
   const [r] = await query(
     `SELECT ROUND(${LIFETIME("d")} * 100)::bigint AS cents,
-            (SELECT COUNT(*)::int FROM gifts lg WHERE lg.org_id = d.org_id AND lg.donor_id = d.id AND ${GIFT("lg")}) AS n
+            (SELECT COUNT(*)::int FROM gifts lg WHERE lg.org_id = d.org_id AND lg.donor_id = d.id AND ${GIFT("lg")}) AS n,
+            CASE WHEN d.imported_import_id IS NOT NULL THEN ROUND(COALESCE(d.imported_total, 0) * 100)::bigint ELSE 0 END AS before_cents
        FROM donors d WHERE d.org_id = ? AND d.id = ?`, [orgId, donorId]);
   if (!r) return null;
   const last = (await lastGifts(query, orgId, [donorId])).get(donorId) || null;
@@ -35,6 +36,8 @@ async function draftFigures(query, orgId, donorId, fy = null) {
     lastGift: last ? { ...last, amount: last.cents / 100 } : null,
     thisYearCents: year.cents, thisYear: year.cents / 100,
     giftCount: Number(r.n) || 0,
+    // TRUTH-3: the stated "before Steward" total an import brought, inside lifetime.
+    beforeStewardCents: Number(r.before_cents) || 0,
   };
 }
 

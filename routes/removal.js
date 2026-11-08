@@ -49,6 +49,12 @@ const SOFT = {
 // What goes with a deleted row, and how it comes back (the TRASH_WITH idea
 // in routes/crm.js, for the tables this file deletes from).
 const WITH = {
+  // STALE-2: a removed guest takes their "Registered for" / "Came to" lines;
+  // Undo puts them back (server/events/attendanceLines.js).
+  event_attendees: {
+    take: (tx, ctx, row, orgId) => require("../server/events/attendanceLines").takeLines(tx, row.id, orgId),
+    give: (tx, ctx, w) => require("../server/events/attendanceLines").giveLines(tx, w),
+  },
   event_tables: {
     take: async (tx, ctx, row, orgId) => {
       const moved = await ctx.queryTx(tx, `UPDATE event_attendees SET table_id=NULL, table_label=NULL, seat_no=NULL

@@ -29,6 +29,7 @@ const { newId } = require("../server/shared/newId");   // IDS-1: every new row i
 const AN = require("../server/atlas/answers");   // ATLAS-3: lists, people, an unrecorded gift, a link
 const PG = require("../server/atlas/progress");   // ATLAS-3: the status line, one step at a time
 const DS = require("../server/atlas/draftStream");   // SPEED-3: a draft's words as they are written
+const GT = require("../server/atlas/givingTotal");   // TRUTH-3: amounts and counts in code, each person resolved
 
 const routers = { r0: express.Router() };
 // ATLAS-3: the profile's Call script rides on Atlas's router (server.js is at its size ceiling).
@@ -133,10 +134,12 @@ async function resolvePerson(orgId, said, all) {
 // What tells two people apart: their email, last gift, and when last in touch.
 async function personOptions(orgId, list, today) {
   const ids = list.slice(0, 8).map(p => p.id);
-  const rows = ids.length ? await query(`SELECT id, name, email, last_gift_amount, last_gift_date, city FROM donors WHERE org_id=? AND id = ANY(?::text[])`, [orgId, ids]) : [];
+  // TRUTH-3: each match says its lifetime (shared/numbers/lifetime.js), so "Which Walter?" tells them apart.
+  const rows = ids.length ? await query(`SELECT d.id, d.name, d.email, d.last_gift_amount, d.last_gift_date, d.city, ROUND(${require("../shared/numbers/lifetime").LIFETIME("d")} * 100)::bigint AS life_cents
+                                           FROM donors d WHERE d.org_id=? AND d.id = ANY(?::text[])`, [orgId, ids]) : [];
   const AT_ = await AT();
-  return ids.map(id => rows.find(r => r.id === id)).filter(Boolean).map(r => ({ id: r.id, name: r.name,
-    detail: [r.city, r.email, Number(r.last_gift_amount) > 0 ? `last gift ${AT_.usd(Math.round(Number(r.last_gift_amount) * 100))}, ${AT_.dayWords(String(r.last_gift_date).slice(0, 10), today)}` : "no gifts yet"].filter(Boolean).join(" · ") }));
+  return ids.map(id => rows.find(r => r.id === id)).filter(Boolean).map(r => ({ id: r.id, name: r.name, lifetimeCents: Number(r.life_cents) || 0,
+    detail: [r.city, r.email, Number(r.life_cents) > 0 ? `lifetime ${AT_.usd(Number(r.life_cents))}` : null, Number(r.last_gift_amount) > 0 ? `last gift ${AT_.usd(Math.round(Number(r.last_gift_amount) * 100))}, ${AT_.dayWords(String(r.last_gift_date).slice(0, 10), today)}` : "no gifts yet"].filter(Boolean).join(" · ") }));
 }
 
 // ── WHERE IT HAPPENED: EVENTS, JOURNEYS, GROUPS ─────────────────────────────
@@ -294,6 +297,26 @@ async function resolveAll(orgId, steps, { today, onPage, answers = {}, all: allP
   const questions = [];
   const ask = (q) => { if (!questions.some(x => x.id === q.id)) questions.push(q); };
   for (const [i, st] of steps.entries()) {
+    // TRUTH-3: each name in a giving question is its own person. A name that
+    // matches several people asks "Which Walter?" with each one's lifetime;
+    // it never adds them together.
+    if (st.kind === "giving_total") {
+      st.donorIds = []; st.missing = [];
+      for (const who of st.whos || []) {
+        const key = String(who).toLowerCase();
+        if (!whoCache.has(key)) whoCache.set(key, onPage && (key === onPage.name.toLowerCase() || key === first(onPage.name).toLowerCase()) ? { state: "matched", id: onPage.id } : await resolvePerson(orgId, who, all));
+        const r = whoCache.get(key), qid = `p:${key}`;
+        if (r.state === "matched") st.donorIds.push(r.id);
+        else if (r.state === "choices") {
+          if (answers[qid] && r.options.some(o => o.id === answers[qid])) st.donorIds.push(answers[qid]);
+          else ask({ id: qid, kind: "person", said: who, sentence: `Which ${who}?`, options: await personOptions(orgId, r.options, today),
+            more: Math.max(0, r.options.length - 8), nearMiss: !!r.near });
+        } else st.missing.push(who);
+      }
+      st.donorIds = [...new Set(st.donorIds)];
+      st.index = i;
+      continue;
+    }
     // ATLAS-3: "link Stephen and Margaret" is two people related, never a merge,
     // whatever the read said. A merge is only ever her word for one.
     if (st.kind === "merge" && !/\b(merge|combine|duplicates?|same person)\b/i.test(st.words) && /\b(link|connect|related|married|spouses?|partners?)\b/i.test(st.words)) st.kind = "link";
@@ -594,6 +617,15 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
       case "find":
         await log({ kind: "found", state: "done", line: `Here's ${nm(id)}.`, ...person(id) });
         break;
+      case "giving_total": {
+        // TRUTH-3: every figure from shared/numbers, the sum in code.
+        const ppl = await GT.figuresFor(query, orgId, st.donorIds || []);
+        const miss = (st.missing || []).length ? ` I couldn't find ${st.missing.join(" or ")} in Steward, so ${st.missing.length === 1 ? "that name is" : "those names are"} not in it.` : "";
+        const ans = ppl.length ? GT.answerFor(ppl, { together: /\btogether|combined|between them\b/i.test(st.words || "") }) : null;
+        await log({ kind: "answer", state: "done", line: ans ? ans.sentence + miss : `I couldn't find ${(st.whos || []).join(" or ") || "them"} in Steward.`,
+          ...(ppl.length === 1 ? person(ppl[0].id, { section: "giving" }) : {}) });
+        break;
+      }
       case "about": {
         // ATLAS-3: what Steward knows about them, not only their numbers.
         const pa = await AN.personAnswer({ query, orgId, donorId: id, today });
@@ -733,6 +765,11 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const all = people(orgId);
   all.catch(() => {});
   const read = await readSteps(orgId, text, { today, onPage: onPage ? onPage.name : null });
+  // TRUTH-3: "how much did Marlowe and Renee give together" is one question
+  // about each named person, answered in code (server/atlas/givingTotal.js),
+  // whatever the read made of it. Never /ask with the names run together.
+  const gq = GT.parseGivingQuestion(text);
+  if (gq) read.steps = [{ kind: "giving_total", who: gq.names.join(" and "), whos: gq.names, words: text }];
   const t1 = Date.now();
   PG.lap(req, "read");
   const { steps, questions } = await resolveAll(orgId, read.steps, { today, onPage, all });
@@ -772,7 +809,7 @@ app.post("/atlas/:id/answer", requireAuth, checkWriteAccess, wrap(async (req, re
   const today = orgToday(await orgTz(orgId));
   const onPage = read.atlas && read.atlas.onPage ? (await query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [read.atlas.onPage, orgId]))[0] : null;
   const fresh = (read.atlas.steps || []).map(s => ({ kind: s.kind, who: s.who, target: s.target, amountWords: s.amountWords, whenWords: s.whenWords, how: s.how,
-    words: s.words }));
+    words: s.words, ...(s.whos ? { whos: s.whos } : {}) }));
   const { steps, questions } = await resolveAll(orgId, fresh, { today, onPage, answers });
   if (questions.length) {
     await run("UPDATE voice_memos SET read=? WHERE id=? AND org_id=?", [JSON.stringify({ ...read, atlas: { ...read.atlas, questions } }), m.id, orgId]);

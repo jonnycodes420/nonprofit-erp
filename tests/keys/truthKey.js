@@ -229,6 +229,10 @@ function computeKey(rows, opts = {}) {
     erasedIds: sortIds([...live.values()].filter(p => p.erased).map(p => p.id)),   // TRUTH-2
     units: new Set(people.map(p => unitOf(p.id))).size,
     gifts: { count: hard.length, cents: sumC(hard), undated: hard.filter(g => !g.d).length },
+    // TRUTH-3: a gift is COUNTED when it is hard credit above $0; a $0 row or a
+    // credit row shows in history and is never counted (giftCount.js, written
+    // out again here with no app code).
+    giftCountById: Object.fromEntries([...live.keys()].map(id => [id, hard.filter(g => g.person === id && g.c > 0).length])),
     creditIds: sortIds(credits.map(g => g.id)),
     credits: { rows: credits.length, cents: sumC(credits), pointerCents: pointers.reduce((n, s) => n + (s.cents != null ? Number(s.cents) : cents(s.amount)), 0) },
     thisFiscalYear: { from: fy.from, to: today, cents: sumC(fyGifts), count: fyGifts.length },

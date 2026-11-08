@@ -33,6 +33,7 @@ import { RecruitmentView, ApplicationsView } from "./VolunteerRecruit";         
 import { VolunteerCounts, VolunteerListView, VolunteersGroupView } from "./VolunteerList";   // PARITY-3 Parts 3 and 5
 import { countLabel } from "../../../shared/countWords.js";
 import { useWriteRev, VOLUNTEER_WRITES } from "../lib/writeRev";
+import ShiftRowActions from "./volunteers/ShiftRowActions";   // STALE-2: Edit a logged shift
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── VOL-1 · THE SAME SHAPE FUNDRAISING GOT ────────────────────────────────
@@ -418,7 +419,7 @@ function ShiftsView({ roster, narrow, isReadOnly, onChanged, onOpen }) {
                 <span style={{ fontWeight: 700, color: T.ink }}>{s.hours} h</span>
                 <span style={{ color: T.ink }}>{s.role || ""}</span>
                 <span style={{ color: T.ink3 }}>Logged by {via(s)}</span>
-                {!isReadOnly ? <button onClick={() => remove(s.id)} style={{ ...btnLink, color: T.ink3, fontWeight: 600 }} aria-label={`Remove the shift on ${s.date}`}>Remove</button> : <span />}
+                {!isReadOnly ? <ShiftRowActions s={s} onRemove={remove} onSaved={() => { setMsg("Shift changed."); load(); onChanged(); }} /> : <span />}
               </>}
             </div>
           ))}

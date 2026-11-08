@@ -970,6 +970,24 @@ async function run7(pool) {
   // default: no row is written. Its unique index is built in server/db/race1Indexes.js.
   await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS thanks_gift_id TEXT`);
 
+  // TRUTH-3 item 5 · FUNDS ARE A MANAGED LIST. A merge of near-duplicate funds
+  // ("General" into "General Operating") keeps every row it moved and the
+  // funds it retired, so Undo puts each back exactly (server/finance/fundMerge.js).
+  await pool.query(`CREATE TABLE IF NOT EXISTS fund_merges (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    keeper_id TEXT NOT NULL,
+    merged_ids JSONB NOT NULL DEFAULT '[]',
+    funds JSONB NOT NULL DEFAULT '[]',
+    moved JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    created_by TEXT NOT NULL,
+    created_by_name TEXT,
+    undone_at TIMESTAMPTZ,
+    undone_by TEXT,
+    undone_by_name TEXT
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_fund_merges_org ON fund_merges (org_id, created_at DESC)`);
   // PLEDGES-2 · A RECURRING PLAN STAFF RECORD BY HAND (W-1107-Finance-24/-23):
   // an offline commitment (a check every month, a bank draft, payroll giving).
   // Not money: its payments are gifts (gifts.offline_plan_id), written by

@@ -2,6 +2,7 @@
 // state and handlers for this part, as a hook the profile calls in the same place,
 // so every hook runs in the same order. Nothing it does changed.
 // Tests read it through readSource("client/src/components/DonorProfile.jsx").
+import { profileFileTally } from "../../lib/profileFiles";
 import { apiFetch } from "../../api";
 import { orgTodayCivil } from "../../lib/orgToday";
 import { useState, useRef, useEffect, useMemo } from "react";
@@ -128,7 +129,9 @@ export function useProfileActions({ donor, orgTeam, onReassign, setShowReassign,
 
   // Materials
   const [materials,setMaterials]=useState([]);
-  const [matLoading,setMatLoading]=useState(false);
+  const [matLoading,setMatLoading]=useState(true);   // STALE-2: unknown until the first read, never "Files · 0" before it
+  // STALE-2 (W-1107-Donors-31): the tab's count, the heading and the list are this one tally (lib/profileFiles.js).
+  const fileTally=useMemo(()=>profileFileTally({materials,materialsKnown:!matLoading,attachments:tlExtras.attachments,rel}),[materials,matLoading,tlExtras.attachments,rel]);
   const [matDragging,setMatDragging]=useState(false);
   const [matNote,setMatNote]=useState("");
   const [matUploading,setMatUploading]=useState(false);
@@ -226,5 +229,5 @@ export function useProfileActions({ donor, orgTeam, onReassign, setShowReassign,
     if(status==="won"){const amt=prompt(`Actual gift amount closed (asked ${fmtFull(o.target_amount)}):`,o.target_amount);if(amt==null)return;body.giftAmount=parseFloat(amt)||0;}
     try{await apiFetch(`/opportunities/${o.id}`,{method:"PUT",body:JSON.stringify(body)});refreshPipeline();}catch(e){alert(errorMessage(e, "Could not update ask"));}
   };
-  return { handleReassign, showGiftModal, setShowGiftModal, seqOpen, setSeqOpen, seqId, setSeqId, seqLoading, setSeqLoading, seqToast, setSeqToast, dpTab, setDpTab, relatedOpen, setRelatedOpen, mergeOpen, setMergeOpen, mergeKeptRef, tlSearch, setTlSearch, tlSearchOpen, setTlSearchOpen, whyStopOpen, setWhyStopOpen, railRef, noteOpen, setNoteOpen, frameRef, isPhone, dpMoreOpen, setDpMoreOpen, pledges, setPledges, giftsFull, setGiftsFull, giftCountReal, refundRows, tlExtras, tlCounts, railData, railErr, giftEditId, setGiftEditId, giftEditForm, setGiftEditForm, addGiftForm, setAddGiftForm, giftErr, setGiftErr, giftMoreOpen, setGiftMoreOpen, addGiftIdemRef, addPledgeIdemRef, addGiftOpen, setAddGiftOpen, giftSaving, setGiftSaving, plannedGifts, setPlannedGifts, pgForm, setPgForm, addPgOpen, setAddPgOpen, pgSaving, setPgSaving, pledgeForm, setPledgeForm, addPledgeOpen, setAddPledgeOpen, pledgeSaving, setPledgeSaving, pledgeResendBusyId, setPledgeResendBusyId, pledgeResentIds, setPledgeResentIds, fundAffinity, setFundAffinity, fundLoading, setFundLoading, materials, setMaterials, matLoading, setMatLoading, matNote, setMatNote, matUploading, setMatUploading, actMode, stwOpen, setStwOpen, stwForm, setStwForm, stwSaving, setStwSaving, campaigns, setCampaigns, photoUrl, setPhotoUrl, recurringSub, recurResendBusy, recurResendSent, resendRecurringLink, household, setHousehold, softCredit, designations, setDesignations, hhModalOpen, setHhModalOpen, hhPick, setHhPick, hhSearch, setHhSearch, hhPeople, giftPeopleQ, refreshSoftCredit, moves, opps, askOpen, setAskOpen, askName, setAskName, askAmt, setAskAmt, moveSuggestions, dismissedSug, refreshPipeline, acceptSuggestion, dismissSuggestion, addAsk, closeAsk };
+  return { handleReassign, showGiftModal, setShowGiftModal, seqOpen, setSeqOpen, seqId, setSeqId, seqLoading, setSeqLoading, seqToast, setSeqToast, dpTab, setDpTab, relatedOpen, setRelatedOpen, mergeOpen, setMergeOpen, mergeKeptRef, tlSearch, setTlSearch, tlSearchOpen, setTlSearchOpen, whyStopOpen, setWhyStopOpen, railRef, noteOpen, setNoteOpen, frameRef, isPhone, dpMoreOpen, setDpMoreOpen, pledges, setPledges, giftsFull, setGiftsFull, giftCountReal, refundRows, tlExtras, tlCounts, railData, railErr, giftEditId, setGiftEditId, giftEditForm, setGiftEditForm, addGiftForm, setAddGiftForm, giftErr, setGiftErr, giftMoreOpen, setGiftMoreOpen, addGiftIdemRef, addPledgeIdemRef, addGiftOpen, setAddGiftOpen, giftSaving, setGiftSaving, plannedGifts, setPlannedGifts, pgForm, setPgForm, addPgOpen, setAddPgOpen, pgSaving, setPgSaving, pledgeForm, setPledgeForm, addPledgeOpen, setAddPledgeOpen, pledgeSaving, setPledgeSaving, pledgeResendBusyId, setPledgeResendBusyId, pledgeResentIds, setPledgeResentIds, fundAffinity, setFundAffinity, fundLoading, setFundLoading, materials, setMaterials, matLoading, setMatLoading, matNote, setMatNote, matUploading, setMatUploading, actMode, stwOpen, setStwOpen, stwForm, setStwForm, stwSaving, setStwSaving, campaigns, setCampaigns, photoUrl, setPhotoUrl, recurringSub, recurResendBusy, recurResendSent, resendRecurringLink, household, setHousehold, fileTally, softCredit, designations, setDesignations, hhModalOpen, setHhModalOpen, hhPick, setHhPick, hhSearch, setHhSearch, hhPeople, giftPeopleQ, refreshSoftCredit, moves, opps, askOpen, setAskOpen, askName, setAskName, askAmt, setAskAmt, moveSuggestions, dismissedSug, refreshPipeline, acceptSuggestion, dismissSuggestion, addAsk, closeAsk };
 }

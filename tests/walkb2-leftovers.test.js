@@ -141,9 +141,10 @@ async function grant(tok) {
   const line = GL ? GL.grantAwardLine({ status: g.status, awardPledgeId: g.award_pledge_id, received: g.received }) : null;
   ok("§4 the status line says what is true: \"Received $35,000, award not recorded.\" · Record the award",
      !!line && line.text === "Received $35,000, award not recorded." && line.action === "Record the award", JSON.stringify(line));
-  ok("§4 an award on file has no line; awarded with nothing in says no award recorded",
+  // TRUTH-3: one award state (shared/grantAwardLine.js awardState); never "Awarded" beside "no award recorded".
+  ok("§4 an award on file has no line; awarded with nothing in says there is no award amount yet",
      !!GL && GL.grantAwardLine({ status: "awarded", awardPledgeId: "pl_x", received: 35000 }) === null
-       && GL.grantAwardLine({ status: "awarded", awardPledgeId: null, received: 0 }).text === "Awarded, but no award recorded.");
+       && GL.grantAwardLine({ status: "awarded", awardPledgeId: null, received: 0 }).text === "Marked Awarded, with no award amount yet.");
 }
 
 async function events(tok) {

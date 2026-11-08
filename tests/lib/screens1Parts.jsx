@@ -39,6 +39,7 @@ import * as settingsTabs from "../../client/src/components/settings/settingsTabs
 import * as StaffBoardList from "../../client/src/components/settings/StaffBoardList.jsx";
 import * as TaxReceiptsManager from "../../client/src/components/settings/TaxReceiptsManager.jsx";
 import * as TimezoneCard from "../../client/src/components/settings/TimezoneCard.jsx";
+import * as IssuedReceipts from "../../client/src/components/settings/IssuedReceipts.jsx";   // TRUTH-3
 
 import * as DateQuestions from "../../client/src/components/import/DateQuestions.jsx";
 import * as fields from "../../client/src/components/import/fields.js";
@@ -115,6 +116,7 @@ export const CASES = [
   ["settings/settingsTabs", () => <div>{settingsTabs.SETTINGS_TABS.map(t => t.label).join(", ")}</div>, /Organization, Team/],
   ["settings/StaffBoardList", () => <StaffBoardList.StaffBoardList onNavigate={noop}/>, /Staff and board/],
   ["settings/TaxReceiptsManager", () => <TaxReceiptsManager.TaxReceiptsManager orgId="org_fake" isAdmin isReadOnly={false}/>, /Tax Receipts/],
+  ["settings/IssuedReceipts", () => <IssuedReceipts.default isAdmin isReadOnly={false}/>, /Issued receipts/],
   ["settings/TimezoneCard", () => <TimezoneCard.TimezoneCard orgId="org_fake" isAdmin isReadOnly={false}/>, /time zone/i],
 
   // ── the import wizard's steps ─────────────────────────────────────────

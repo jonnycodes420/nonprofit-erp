@@ -61,7 +61,9 @@ const TRASH_WITH = {
   }),
   saved_dashboards: async (client, id, orgId) => ({
     schedule_ids: (await queryTx(client, "SELECT id FROM board_pack_schedules WHERE dashboard_id = ? AND org_id = ?", [id, orgId])).map(r => r.id),
-  }),
+  }),  // STALE-2: a guest's "Registered for" / "Came to" lines go with the guest,
+  // and come back with the guest's Undo (server/events/attendanceLines.js).
+  event_attendees: (client, id, orgId) => require("../events/attendanceLines").takeLines(client, id, orgId),
 };
 // Who edited, for the edited_by / edited_by_name stamp.
 async function editStamp(req) {

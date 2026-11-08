@@ -18,6 +18,7 @@ const express = require("express");
 const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // FIX-12 Part 3: the one door to a model (asks the org's AI switch on every call).
 const { anthropicFor, AI_OFF_MESSAGE, recordAiFallback } = require("../aiClient");
+const DRAFT_KEYS = require("../shared/numbers/draftRender");   // TRUTH-3: drafts store figure keys
 
 const routers = {
   r0: express.Router(),
@@ -207,7 +208,9 @@ async function agentReadPeople(orgId, { limit = 400, ids = null } = {}) {
   // people" for an instruction about one foundation.
   const only = Array.isArray(ids) && ids.length ? ids.map(String) : null;
   return query(
-    `SELECT d.id, d.name, d.email, d.kind, d.funder_type, d.stage, d.status, d.total_giving, d.gift_count,
+    // TRUTH-3: the figures the model is shown are the profile's (shared/numbers), never the stored rollup.
+    `SELECT d.id, d.name, d.email, d.kind, d.funder_type, d.stage, d.status,
+            ROUND(${require("../shared/numbers/lifetime").LIFETIME("d")}, 2) AS total_giving, ${require("../shared/numbers/giftCount").GIFT_COUNT("d")} AS gift_count,
             d.last_gift_date, d.last_gift_amount, d.deceased, d.do_not_contact, d.is_sample, d.person_types,
             d.first_gift_date, d.phone, d.household_id, d.assigned_to, d.assigned_to_name
        FROM donors d
@@ -485,7 +488,8 @@ const AGENT_EXECUTORS = {
       `INSERT INTO agent_drafts (id,org_id,run_id,instruction_id,donor_id,subject,body,cites,gift_ids,thread_id,purpose,template_id)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       [id, ctx.orgId, ctx.runId, ctx.instructionId || null, donor.id,
-       String(step.subject || "").slice(0, 300), String(step.body || "").slice(0, 8000),
+       // TRUTH-3: a total is stored as its key and filled each time the draft is opened.
+       DRAFT_KEYS.templatize(String(step.subject || "").slice(0, 300)), DRAFT_KEYS.templatize(String(step.body || "").slice(0, 8000)),
        JSON.stringify(step.citesRows || []), JSON.stringify(giftIds), threadId, thanks ? "thank_you" : purpose, tplRow ? tplRow.id : null]);
     await agentWrite(ctx, { tool: "draft_note", table: "agent_drafts", entityId: id,
       before: null, after: { donor_id: donor.id }, cites: step.citesRows });
@@ -2542,7 +2546,8 @@ app.get("/agent/waiting", requireAuth, wrap(async (req, res) => {
        FROM agent_drafts a JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
        LEFT JOIN agent_instructions i ON i.id = a.instruction_id AND i.org_id = a.org_id
       WHERE a.org_id=? AND a.status='pending' AND d.deleted_at IS NULL ORDER BY a.created_at ASC LIMIT 200`, [orgId]);
-  for (const a of ad) items.push({ kind: "agent_draft", id: a.id, createdAt: a.created_at, donorId: a.donor_id,
+  const renderedAd = await require("../server/drafts/render").renderDrafts(orgId, ad);   // TRUTH-3: figures filled today
+  for (const a of renderedAd) items.push({ kind: "agent_draft", id: a.id, createdAt: a.created_at, donorId: a.donor_id,
     instructionId: a.instruction_id || null, purpose: a.purpose || null, subject: a.subject || "",
     giftCount: Array.isArray(a.gift_ids) ? a.gift_ids.length : 0,
     persona: a.persona || null, personaName: a.persona ? PSw.getPersona(a.persona).name : null,
@@ -2767,7 +2772,7 @@ app.get("/agent/drafts", requireAuth, wrap(async (req, res) => {
        FROM agent_drafts a JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
       WHERE a.org_id=? AND a.status='pending' ORDER BY a.created_at DESC LIMIT 200`,
     [req.user.orgId]);
-  res.json({ drafts: rows });
+  res.json({ drafts: await require("../server/drafts/render").renderDrafts(req.user.orgId, rows) });   // TRUTH-3
 }));
 
 // EMAIL-1 — START FROM A TEMPLATE. The draft's subject and words become the

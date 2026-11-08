@@ -168,4 +168,4 @@ async function inBatches(ids, fn) {
 const recomputeSummaries = (run, orgId, ids) => inBatches(ids, part => run(DONOR_SUMMARY_UPDATE("AND d.id = ANY($2)"), [orgId, part]));
 const keepImportedTotalsFor = (run, orgId, ids, words, today, importId = null) => inBatches(ids, part => run(KEEP_IMPORTED_TOTAL, [orgId, part, words, today, importId || null]));
 
-module.exports = { BATCH, recomputeSummaries, keepImportedTotalsFor, DONOR_SUMMARY_UPDATE, DONOR_SUMMARY_DIFF, KEEP_IMPORTED_TOTAL, LAST_GIFT_ORDER, SOFT_CREDIT_RESIZE, IMPORTED_FIRST };
+module.exports = { SUMMARY_OF, BATCH, recomputeSummaries, keepImportedTotalsFor, DONOR_SUMMARY_UPDATE, DONOR_SUMMARY_DIFF, KEEP_IMPORTED_TOTAL, LAST_GIFT_ORDER, SOFT_CREDIT_RESIZE, IMPORTED_FIRST };

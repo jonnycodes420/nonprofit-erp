@@ -949,7 +949,8 @@ app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
   const thisYearGifts = allGifts.filter(g => civil(g).slice(0, 4) === String(year));
 
   const totalRaised = thisYearGifts.reduce((s, g) => s + g.amount, 0);
-  const giftCount   = thisYearGifts.length;
+  // TRUTH-3: the count and the average's divisor are the one rule (shared/numbers/giftCount.js).
+  const giftCount   = thisYearGifts.filter(g => g.amount > 0 && !require("../../creditTypes").isCredit(g.type)).length;
   const avgGift     = giftCount > 0 ? Math.round(totalRaised / giftCount) : 0;
 
   const monthly = monthNames.map((month, idx) => {

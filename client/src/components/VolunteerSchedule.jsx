@@ -20,6 +20,7 @@ import PhotoField from "./PhotoField";
 import Picture from "./Picture";
 import { displayDate } from "../../../shared/displayDate";
 import { addDaysCivil } from "../../../shared/volunteerShifts.js";
+import { signUpForShift } from "../lib/shiftSignup";   // STALE-2
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: T.ink, fontFamily: "inherit", boxSizing: "border-box" };
@@ -521,9 +522,13 @@ function ShiftDrawer({ shift, defs, isReadOnly, onClose, onChanged, onOpenPerson
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (adding !== null && !roster) apiFetch("/volunteer-hub/roster").then(setRoster).catch(() => setRoster({ people: [] })); }, [adding, roster]);
-  const act = async (path, body, fallback) => {
+  const act = async (path, body, fallback, send) => {
     setBusy(true); setMsg("");
-    try { const r = await apiFetch(path, { method: "POST", body: JSON.stringify(body || {}) }); setMsg(r.message || ""); onChanged(r.message); }
+    try {
+      const r = send ? await send(body) : await apiFetch(path, { method: "POST", body: JSON.stringify(body || {}) });
+      // STALE-2 (W-1107-Volunteers-25X): the drawer says what happened; the page under it keeps no stray line.
+      if (r) { setMsg(r.message || ""); onChanged(); }
+    }
     catch (e) { setMsg(errorMessage(e, fallback)); }
     setBusy(false);
   };
@@ -542,6 +547,12 @@ function ShiftDrawer({ shift, defs, isReadOnly, onClose, onChanged, onOpenPerson
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {!isReadOnly && <button style={btnQuiet} onClick={() => setEditing(true)}>Change shift</button>}
           {!isReadOnly && <button style={btnQuiet} disabled={busy} onClick={() => act(`/volunteer-hub/slots/bulk`, { ids: [shift.id], action: "settings", published: !shift.published }, "That did not change.")}>{shift.published ? "Make draft" : "Publish"}</button>}
+          {/* STALE-2: a draft nobody is on can go outright; anything else is cancelled, as before. */}
+          {!isReadOnly && !shift.published && !onShift.size && <button data-testid="shift-delete-draft" style={btnQuiet} disabled={busy} onClick={async () => {
+            setBusy(true); setMsg("");
+            try { const r = await apiFetch(`/volunteer-hub/slots/${shift.id}`, { method: "DELETE" }); onChanged(r.message); onClose(); }
+            catch (e) { setMsg(errorMessage(e, "That draft was not deleted.")); setBusy(false); }
+          }}>Delete draft</button>}
           <button style={btnQuiet} onClick={() => { window.dispatchEvent(new CustomEvent("steward:vol-checkin", { detail: shift.id })); onClose(); }}>Check in on this phone</button>
         </div>
         {msg && <div role="status" style={{ fontSize: 13, color: T.ink2 }}>{msg}</div>}
@@ -574,7 +585,7 @@ function ShiftDrawer({ shift, defs, isReadOnly, onClose, onChanged, onOpenPerson
               <div style={{ marginTop: 8 }}>
                 <input autoFocus aria-label="Find a volunteer" placeholder="Find a volunteer" value={search} onChange={e => setSearch(e.target.value)} style={{ ...inp, width: "100%" }} />
                 {candidates.map(c => <button key={c.id} style={{ ...btnLink, display: "block", padding: "6px 0" }} disabled={busy}
-                  onClick={() => { act("/volunteer-hub/signups", { slotId: shift.id, personId: c.id, ...(g.id ? { roleId: g.id } : {}) }, "That sign-up did not work."); setAdding(null); setSearch(""); }}>{c.name}</button>)}
+                  onClick={() => { act("/volunteer-hub/signups", { slotId: shift.id, personId: c.id, ...(g.id ? { roleId: g.id } : {}) }, "That sign-up did not work.", signUpForShift); setAdding(null); setSearch(""); }}>{c.name}</button>)}
                 {roster && !candidates.length && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 6 }}>Nobody on the roster matches.</div>}
               </div>
             ) : <button style={{ ...btnLink, marginTop: 8 }} onClick={() => setAdding(g.id)}>Add somebody{g.id ? ` to ${g.name}` : ""}</button>)}
@@ -608,7 +619,8 @@ export function RosterModeView({ isReadOnly, narrow }) {
     if (isReadOnly || !person) return;
     setMsg("");
     try {
-      const r = await apiFetch("/volunteer-hub/signups", { method: "POST", body: JSON.stringify({ slotId: shift.id, personId: person.id, ...(roleId ? { roleId } : {}) }) });
+      const r = await signUpForShift({ slotId: shift.id, personId: person.id, ...(roleId ? { roleId } : {}) });   // STALE-2: a clash asks first
+      if (!r) { setMsg("Left as it was."); return; }
       setMsg(r.message); setPicked(null); load();
     } catch (e) { setMsg(errorMessage(e, "That placement did not work.")); }
   };

@@ -414,7 +414,10 @@ function giftsWhere(p, args) {
   // NUMBERS-2: an average or a median is over the counted gifts (AVERAGE_WORDS):
   // soft and matching credit rows are not gifts.
   else if (p.measure === "mean" || p.measure === "median") { w += " AND LOWER(TRIM(COALESCE(g.type,''))) <> ALL(?::text[])"; args.push(BOOKKEEPER_EXCLUDED_TYPES); }
-  if (p.measure === "median") w += " AND g.amount > 0";
+  // TRUTH-3: a count, an average and a median are over COUNTED gifts
+  // (shared/numbers/giftCount.js: hard credit, above $0), so the headline's
+  // count and the average's divisor are one number. A $0 row shows in history.
+  if (p.measure === "median" || p.measure === "count" || p.measure === "mean") w += " AND g.amount > 0";
   if (p.page === "none") w += " AND g.giving_page_id IS NULL";
   else if (p.page) { w += " AND g.giving_page_id = ?"; args.push(p.page); }
   if (p.donor) { w += " AND g.donor_id = ?"; args.push(p.donor); }
@@ -3024,6 +3027,7 @@ async function historicalGiving(orgId, from, to, { baseline = false } = {}) {
 // ── THE ENGINE ─────────────────────────────────────────────────────────────
 // HISTORY-1: By year (the profile) and Year over year (Reports), in their own module.
 Object.assign(SOURCES, require("./server/reports/yoySources")({ FigureParamError }));
+Object.assign(SOURCES, require("./server/reports/ledgerSources")({ FigureParamError }));   // TRUTH-3: the ledger's three figures
 function sourceDef(key) { return Object.prototype.hasOwnProperty.call(SOURCES, key) ? SOURCES[key] : null; }
 
 const num = v => (v === null || v === undefined ? null : Number(v));

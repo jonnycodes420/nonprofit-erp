@@ -99,12 +99,13 @@ const usd = v => "$" + Number(v || 0).toLocaleString("en-US", { minimumFractionD
   }
   const run = await api("POST", "/sequences/process", tok, {});
   ok("§1 the milestone job runs", run.status === 200, run.status + " " + JSON.stringify(run.body));
-  const [note] = await q(`SELECT talking_points FROM note_reminders WHERE org_id=$1 AND donor_id=$2`, [ORG, walk[0].id]);
-  const points = note ? (typeof note.talking_points === "string" ? JSON.parse(note.talking_points) : note.talking_points) : [];
+  // TRUTH-3: stored words hold figure keys; what she reads is the rendered note and draft.
+  const note = ((await api("GET", "/note-reminders", tok)).body || []).find(r => r.donor_id === walk[0].id);
+  const points = note ? note.talking_points || [] : [];
   ok(`§1 ${walk[0].name}'s note says ${usd(walk[0].truth)} total, not the stored ${usd(walk[0].stale)}`,
     points.some(p => p.includes(`${usd(walk[0].truth)} total`)) && !points.join(" ").includes(usd(walk[0].stale)), JSON.stringify(points));
   for (const w of walk.slice(1)) {
-    const [d] = await q(`SELECT subject, body FROM milestone_drafts WHERE org_id=$1 AND donor_id=$2`, [ORG, w.id]);
+    const d = ((await api("GET", "/milestone-drafts", tok)).body || []).find(r => r.donor_id === w.id);
     const text = d ? `${d.subject}\n${d.body}` : "(no draft)";
     ok(`§1 ${w.name}'s draft states ${usd(w.truth)}, read from shared/numbers, never the stored ${usd(w.stale)}`,
       !!d && text.includes(usd(w.truth)) && !text.includes(usd(w.stale)), text);
@@ -116,10 +117,16 @@ const usd = v => "$" + Number(v || 0).toLocaleString("en-US", { minimumFractionD
   // A draft made days ago, before the last gift: its figure is stale now.
   await q(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status)
            VALUES ($4,$1,$2,'threshold_1000','Tamsin, a quick thank you',$3,'pending_review')`,
-    [ORG, walk[2].id, `Tamsin, I wanted to let you know you've now given ${usd(walk[2].stale)} with us. Thank you.`, MD]);
+    [ORG, walk[2].id, `Tamsin, I wanted to let you know you've now given ${usd(walk[2].stale)} with us. Your gift of $4,444 last spring made it possible. Thank you.`, MD]);
+  // TRUTH-3: a stored total is re-rendered every time the draft opens (and at
+  // Send), so the stale total reads true; a figure about one gift that is not
+  // theirs is still refused at Send, with the figure named.
+  const opened = ((await api("GET", "/milestone-drafts", tok)).body || []).find(r => r.id === MD) || {};
+  ok("§1 the stored stale total opens as the true lifetime (TRUTH-3 re-render)",
+    String(opened.body).includes(`now given ${usd(walk[2].truth)}`) && !String(opened.body).includes(usd(walk[2].stale)), opened.body);
   const send = await api("POST", `/milestone-drafts/${MD}/send`, tok, {});
   ok("§1 Send refuses a draft whose giving figure is not theirs today, and says which figure",
-    send.status === 409 && send.body && send.body.code === "stale_figure" && String(send.body.error).includes(usd(walk[2].stale)), send.status + " " + JSON.stringify(send.body));
+    send.status === 409 && send.body && send.body.code === "stale_figure" && String(send.body.error).includes("$4,444"), send.status + " " + JSON.stringify(send.body));
   const [still] = await q(`SELECT status FROM milestone_drafts WHERE id=$1`, [MD]);
   ok("§1 the refused draft is still waiting for her, unsent", still && still.status === "pending_review", still && still.status);
   // The stale column was §1's shape; the rest of the file starts true again.

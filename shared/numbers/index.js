@@ -25,4 +25,7 @@ module.exports = {
   donorLabel: require("./donorLabel"),   // WALKB-2
   bunt: require("./bunt"),   // TRUTH-2
   draftFigures: require("./draftFigures"),   // TRUTH-2
+  draftRender: require("./draftRender"),   // TRUTH-3
+  giftCount: require("./giftCount"),   // TRUTH-3
+  ledgerStatus: require("./ledgerStatus"),   // TRUTH-3
 };

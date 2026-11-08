@@ -51,7 +51,9 @@
 //             counts (COUNTS-1: open tasks and the Tasks badge, each person's
 //             Last contact, against tests/lib/countsKey.js; volunteers card =
 //             roster = list, an audience's number = the builder's, SYBUNT
-//             starter vs report, Re-engage vs Lost, tests/lib/counts1Item3.js)
+//             starter vs report, Re-engage vs Lost, tests/lib/counts1Item3.js),
+//             giftCount (TRUTH-3: each person's counted gifts, hard credit
+//             above $0, against By year)
 //   plantEvent (eventId, { rep, kiosk }) => { rep, kiosk }: change an event's
 //             bodies before its checks, to prove they can go red (FIX-59)
 //
@@ -1178,6 +1180,26 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       const foot = (rep.rows || []).reduce((n, r) => n + cents(r.priorYearTotal), 0);
       if (rep.figures && rep.figures.atStake) agree(`${kind} money`, [["the report's header", cents(rep.figures.atStake.value)], ["the report's rows, added up", foot]], money);
     }
+  }
+
+  // ── TRUTH-3 · GIFT COUNT AGREES ─────────────────────────────────────────
+  // The fleet (W-1107-Donors-21X): a $0 soft-credit row counted 7 in one
+  // place and 6 in another, and By year said "1 gift" beside "no gifts yet".
+  // A gift is counted when it is hard credit above $0 (the key's
+  // giftCountById). For people with no imported total (whose gifts are all
+  // on file), By year's counts add up to the key's, and no year says it has
+  // gifts while saying "no gifts".
+  if (!skip.has("giftCount") && key.giftCountById) {
+    const imported = new Set(key.importedIds || []);
+    const ids = Object.keys(key.giftCountById).filter(id => !imported.has(id)).slice(0, 25);
+    const years = await Promise.all(ids.map(id => get(`/donors/${id}/by-year`).catch(() => null)));
+    ids.forEach((id, i) => {
+      const y = years[i];
+      if (!y || !Array.isArray(y.years)) return;
+      const n = y.years.reduce((t, r) => t + (Number(r.giftCount) || 0), 0) + (y.other || []).reduce((t, r) => t + (Number(r.giftCount) || 0), 0);
+      agree(`gift count for ${id}`, [["the key (hard credit above $0)", key.giftCountById[id]], ["By year, added up", n]]);
+      for (const r of y.years) if (Number(r.giftCount) > 0 && /^no gifts/.test(String(r.change || ""))) diffs.push(`gift count for ${id}: By year ${r.label} says ${r.giftCount} gift(s) and "${r.change}"${label ? ` (${label})` : ""}`);
+    });
   }
 
   // TRUTH-1: a disagreement logged in docs/defects.md (tests/lib/knownDefects.js),

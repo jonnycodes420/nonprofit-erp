@@ -22,6 +22,7 @@ import { eventStatus } from "../../../shared/eventStatus.js";
 import { eventEditForm } from "../lib/eventEditForm.js";   // WALKB-2: the dialog opens with the date
 import EventRemoveButton, { AttendeeLabel } from "./events/EventRemoveButton.jsx";   // WALKB-2
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: the org's day
+import { addGuests } from "../lib/eventCapacity";   // STALE-2: past capacity asks first
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
@@ -1225,8 +1226,8 @@ export function EventKiosk({ eventId }) {
   const addWalkIn = async ({ donorId, name }) => {
     setMsg("");
     try {
-      const r = await apiFetch(`/events/${eventId}/attendees`, { method: "POST",
-        body: JSON.stringify(donorId ? { donorIds: [donorId] } : { name }) });
+      const r = await addGuests(eventId, donorId ? { donorIds: [donorId] } : { name });
+      if (!r) return;
       const id = r && r.ids && r.ids[0];
       if (!id) { setMsg("They are already on the list. Find them by name above."); return; }
       const c = await apiFetch(`/events/${eventId}/check-in`, { method: "POST", body: JSON.stringify({ attendeeId: id }) });
@@ -1456,9 +1457,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
     if (!selectedIds.size) return;
     setAddingDonors(true);
     try {
-      await apiFetch(`/events/${eventId}/attendees`, {
-        method: "POST", body: JSON.stringify({ donorIds: [...selectedIds] }),
-      });
+      if (!(await addGuests(eventId, { donorIds: [...selectedIds] }))) { setAddingDonors(false); return; }
       setSelectedIds(new Set());
       setDonorSearch("");
       eventRowsChanged(eventId);
@@ -1471,9 +1470,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
     if (!guestForm.name.trim()) return;
     setAddingGuest(true);
     try {
-      await apiFetch(`/events/${eventId}/attendees`, {
-        method: "POST", body: JSON.stringify(guestForm),
-      });
+      if (!(await addGuests(eventId, guestForm))) { setAddingGuest(false); return; }
       setGuestForm({ name: "", email: "" });
       eventRowsChanged(eventId);
       if (onEventUpdated) onEventUpdated();
@@ -1540,6 +1537,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
           </div>
           <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", marginTop: 3 }}>
             {event.date_unknown ? "Date not known: the import's file did not give it" : fmtDate(event.date)}{event.end_date ? ` – ${fmtDate(event.end_date)}` : ""}{event.location ? ` · ${event.location}` : ""}
+            {event.seats && <span data-testid="ev-seats-left" title="Places on the guest list that haven't declined, against the event's capacity."> · {event.seats.sentence}</span>}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
