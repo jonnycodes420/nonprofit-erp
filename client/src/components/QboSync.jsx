@@ -23,6 +23,7 @@ import { errorMessage } from "../lib/domainError";
 import { askConfirm } from "./ConfirmDialog";
 import QboRead from "./QboRead";
 import { displayDate } from "../../../shared/displayDate.js";
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -243,7 +244,7 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
           </div>
           <div style={row}>
             <span style={{ flex: "1 1 160px" }}>Send gifts dated from</span>
-            <input type="date" disabled={!can} value={m.startDate || ""} onChange={e => setMap({ startDate: e.target.value })} style={{ ...field, width: 220 }} />
+            <DateInput disabled={!can} value={m.startDate || ""} onChange={e => setMap({ startDate: e.target.value })} style={{ ...field, width: 220 }} />
           </div>
           <div style={row}>
             <span style={{ flex: "1 1 160px" }}>Money lands in</span>

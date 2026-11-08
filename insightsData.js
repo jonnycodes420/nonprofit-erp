@@ -28,8 +28,11 @@ async function rowsFor(orgId) {
              FROM donors WHERE org_id=? AND deleted_at IS NULL AND COALESCE(is_sample,false)=false`, [orgId]),
     query(`SELECT id, name FROM households WHERE org_id=?`, [orgId]),
     query(`SELECT g.id, g.donor_id, g.amount, g.date::text AS date, g.memo, g.notes, g.campaign, g.payment_method, g.gift_type, g.type,
-                  g.tribute_type, g.tribute_name, g.import_id, g.pledge_id, e.name AS event_name
+                  g.tribute_type, g.tribute_name, g.import_id, g.pledge_id, e.name AS event_name,
+                  -- PLEDGES-2: the fund the gift is booked to (fundSplit's rule: restricted is a designation)
+                  NULLIF(g.fund_id, '') AS fund_id, rf.name AS restricted_fund
              FROM gifts g LEFT JOIN events e ON e.id = g.event_id AND e.org_id = g.org_id
+             LEFT JOIN fin_funds rf ON rf.id = g.fund_id AND rf.org_id = g.org_id AND rf.restricted = true
             WHERE g.org_id=? AND COALESCE(g.is_sample,false)=false`, [orgId]),
     // FIX-60: made_on is the day the pledge was made, as the lapse rule reads it
     // (lapseRule.js), so a pledge made in the last 12 months is giving activity.
@@ -40,7 +43,7 @@ async function rowsFor(orgId) {
              FROM pledges p WHERE p.org_id=? AND COALESCE(p.is_shell,false)=false`, [orgId]),
     query(`SELECT pledge_id, seq, due_date::text AS due_date, amount, paid_gift_id FROM pledge_installments WHERE org_id=? ORDER BY pledge_id, seq`, [orgId]),
     query(`SELECT name FROM programs WHERE org_id=?`, [orgId]).catch(() => []),
-    query(`SELECT name FROM fin_funds WHERE org_id=? AND restricted = true`, [orgId]).catch(() => []),
+    query(`SELECT name FROM fin_funds WHERE org_id=?`, [orgId]).catch(() => []),
     query(`SELECT name, giving_level_mid_cents, giving_level_major_cents, vocabulary_json FROM orgs WHERE id=?`, [orgId]),
     query(`SELECT gift_id, decision FROM insight_reviews WHERE org_id=?`, [orgId]),
     query(`SELECT network_key, decision FROM insight_links WHERE org_id=?`, [orgId]),
@@ -54,7 +57,10 @@ async function rowsFor(orgId) {
     org: { name: org[0] && org[0].name, cuts: require("./shared/numbers/tags").cutsOf(org[0]), fiscalStartMonth: org[0] ? require("./orgTime").orgFiscalStartMonth(org[0]) : 7 },
     people, households, gifts,
     pledges: pledges.map(p => ({ ...p, installments: inst.get(p.id) || [] })),
-    programs: [...programs, ...funds].map(r => r.name).filter(n => n && !/^general/i.test(n)),
+    // PLEDGES-2: a fund is named from the fund a gift is booked to, never from its memo
+    // (W-1107-Finance-20X: the move credited a fund the money was not in).
+    programs: programs.map(r => r.name).filter(n => n && !/^general/i.test(n)),
+    fundNames: funds.map(r => r.name).filter(Boolean),
     reviewed: Object.fromEntries(reviews.map(r => [r.gift_id, r.decision])),
     linksDismissed: new Set(links.map(r => r.network_key)),
     outcomes: outcomes.map(o => ({ ...o, item_key: `${o.kind}:${o.item_key}` })),

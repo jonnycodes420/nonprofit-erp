@@ -19,6 +19,7 @@ import { T } from "./shared";
 import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
 import { askConfirm } from "./ConfirmDialog";
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const sub = { fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 };
@@ -168,7 +169,7 @@ export default function QboRead({ can, demo }) {
           </div>))}
         <div style={row}>
           <span style={{ flex: "1 1 200px" }}>Read gifts from</span>
-          <input type="date" disabled={!can} value={s.from || ""} onChange={e => setDraft({ ...s, from: e.target.value })} style={{ ...field, width: 220 }} />
+          <DateInput disabled={!can} value={s.from || ""} onChange={e => setDraft({ ...s, from: e.target.value })} style={{ ...field, width: 220 }} />
         </div>
         {can && draft && <button type="button" data-testid="qbo-read-save-settings" disabled={busy === "settings"} style={{ ...btn(true), marginTop: 8 }}
           onClick={saveSettings}>{busy === "settings" ? "Saving…" : "Save"}</button>}

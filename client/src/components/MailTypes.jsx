@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { T, Modal, SectionLabel } from "./shared";
 import { apiFetch, API, getToken } from "../api";
 import { useMailTypes, setMailType, reloadMailTypes } from "../lib/mailTypes";
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 // PERF-2: the confirm dialog loads when one is asked (it mounts itself), not with Home.
 const askConfirm = opts => import("./ConfirmDialog").then(m => m.askConfirm(opts));
 
@@ -255,7 +256,7 @@ export function GoingOut({ onNavigate, isReadOnly, data: given, orgPath = "" }) 
             <option value="">All emails</option>
             {(data.types || []).map(t => <option key={t.key} value={t.key}>{t.name}</option>)}
           </select>
-          <input type="date" aria-label="From" value={from} onChange={e => setFrom(e.target.value)} style={{ ...quiet, fontWeight: 600 }} />
+          <DateInput aria-label="From" value={from} onChange={e => setFrom(e.target.value)} style={{ ...quiet, fontWeight: 600 }} />
           {!given && <a href={`${API}/going-out/sent.csv${q() ? "?" + q() : ""}`} onClick={async e => {
             e.preventDefault();
             const r = await fetch(`${API}/going-out/sent.csv${q() ? "?" + q() : ""}`, { headers: { Authorization: "Bearer " + (getToken() || "") } }).catch(() => null);
@@ -281,7 +282,7 @@ export function GoingOut({ onNavigate, isReadOnly, data: given, orgPath = "" }) 
           <div key={h.id} style={rowStyle} data-testid="going-out-held-row">
             <span style={{ flex: "1 1 150px", fontWeight: 600 }}>{h.name || "Someone"}</span>
             <span style={{ flex: "2 1 220px", color: T.ink2 }}>{h.what}</span>
-            <span style={{ color: T.ink3, flex: "1 1 200px" }}>Not sent: {h.why} · {day(h.at)}
+            <span style={{ color: T.ink3, flex: "1 1 200px" }}>{`Not sent: ${h.why} · ${day(h.at)}`}{/* POLISH-6: one text, never "Not sent:pledge reminders" */}
               {/* FIX-57: the one fix for a receipt with no address is a link away */}
               {h.reason === "no_org_address" && <> · <a data-testid="held-add-address" href="/app/settings?section=brandkit" style={{ color: T.greenDk, fontWeight: 700 }}>Add your mailing address in Settings</a></>}
               {/* SWEEP-3: every held row says what to do next, not only why. */}

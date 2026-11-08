@@ -494,11 +494,12 @@ const RESTORE_WITH = {
         [recordId, x.calendar_event_ids, orgId]);
     }
   },
-  pledges: async (client, x) => {
+  pledges: async (client, x, recordId, orgId) => {
     if (x && Array.isArray(x.installments) && x.installments.length) {
       await runTx(client, "INSERT INTO pledge_installments SELECT * FROM jsonb_populate_recordset(NULL::pledge_installments, ?::jsonb)",
         [JSON.stringify(x.installments)]);
     }
+    await require("./pledgePayments").restoreWith(client, x, recordId, orgId);   // PLEDGES-2
   },
   campaigns: async (client, x) => {
     if (x && Array.isArray(x.recipients) && x.recipients.length) {

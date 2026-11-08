@@ -19,9 +19,12 @@ const routers = {
 };
 // PEOPLE-1: Mark as deceased (server/donors/deceased.js) sits beside the person's links.
 routers.r1.use(require("./deceased").routers.r1);
+// PLEDGES-2: a recurring plan staff record by hand (server/donors/offlinePlans.js).
+routers.r1.use(require("./offlinePlans").routers.r1);
 
 function mount(ctx) {
 require("./deceased").mount(ctx);
+require("./offlinePlans").mount(ctx);
 const {
   NOT_YOURS, PERSON_ONLY_SENTENCE, UNDO_SECONDS, VH_READY, actor, auditShape, checkWriteAccess, crypto,
   donorPhotoUrl, editStamp, figureSources, insertShift, lastName, mayEditLogged, orgOwns, orgToday, orgTz,
@@ -184,7 +187,7 @@ app.get("/households/:id", requireAuth, wrap(async (req, res) => {
     `SELECT g.id, g.donor_id, d.name AS donor_name, g.amount, g.date, g.type, g.campaign
      FROM gifts g JOIN donors d ON d.id = g.donor_id
      WHERE d.household_id=? AND g.org_id=? AND d.deleted_at IS NULL
-     ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT 200`, [req.params.id, req.user.orgId]);
+     ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC LIMIT 200`, [req.params.id, req.user.orgId]);
   view.giving_history = gifts.map(g => ({ ...g, amount: parseFloat(g.amount) || 0 }));
   res.json(view);
 }));

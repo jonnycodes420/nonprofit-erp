@@ -28,6 +28,7 @@ import { displayDay } from "../../../shared/displayDate.js";
 import { AddToRecord } from "./MeetingPanels";
 import { FinishSheet } from "./Tasks";
 import BeforeYourMeeting, { useBeforeMeeting } from "./BeforeYourMeeting";   // VOICE-3
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── Shared consts (the TDZ rule: above every line that reads them) ─────────
 const HOUR_PX = 48, DAY_START = 7, DAY_END = 21, SNAP = 15;
@@ -496,7 +497,7 @@ function UndatedRow({ u, today, isReadOnly, onSaved }) {
       <span style={{ fontWeight: 600 }}>{u.title}{u.donorName ? <span style={{ color: T.ink3, fontWeight: 400 }}> · {u.donorName}</span> : null}</span>
       {!isReadOnly && (open
         ? <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <input type="date" aria-label={`A day for ${u.title}`} value={day} min={today} onChange={e => setDay(e.target.value)} style={{ fontSize: 12.5, padding: "4px 6px", border: `1px solid ${T.bg3}`, borderRadius: 6 }} />
+            <DateInput aria-label={`A day for ${u.title}`} value={day} min={today} onChange={e => setDay(e.target.value)} style={{ fontSize: 12.5, padding: "4px 6px", border: `1px solid ${T.bg3}`, borderRadius: 6 }} />
             <button type="button" style={{ ...chip, padding: "4px 10px" }} disabled={!day} onClick={save}>Save</button>
           </span>
         : <button type="button" data-testid="cal-give-day" style={{ ...chip, alignSelf: "flex-start", padding: "4px 10px" }} onClick={() => setOpen(true)}>Give it a day</button>)}
@@ -605,7 +606,7 @@ function ItemCard({ card, today, onMove, isReadOnly, onClose, onNavigate, onChan
         {addToRecord}
         {it.step && <div data-testid="cal-card-step" style={{ fontSize: 13.5, color: T.ink2 }}>The next step with {it.donorName || "them"}.</div>}
         {resched && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <input type="date" aria-label="New day" value={resched.day} onChange={e => setResched({ ...resched, day: e.target.value })} style={chip} />
+          <DateInput aria-label="New day" value={resched.day} onChange={e => setResched({ ...resched, day: e.target.value })} style={chip} />
           <input type="time" aria-label="New time" value={resched.time} onChange={e => setResched({ ...resched, time: e.target.value })} style={chip} />
           <button type="button" data-testid="cal-card-reschedule-save" style={btn} onClick={reschedule}>Move it</button>
         </div>}
@@ -702,7 +703,7 @@ function QuickForm({ form, calendar, onClose, onSaved }) {
         {form.kind === "event" && <input aria-label="Event name" placeholder="Event name" value={name} onChange={e => setName(e.target.value)} style={inp} />}
         {(form.kind === "call" || form.kind === "step" || form.kind === "meeting") && <input aria-label="What" placeholder={form.kind === "meeting" ? `Visit with ${who ? who.name : "them"}` : "Call"} value={label} onChange={e => setLabel(e.target.value)} style={inp} />}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <input aria-label="Date" type="date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inp, flex: "1 1 140px" }} />
+          <DateInput aria-label="Date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inp, flex: "1 1 140px" }} />
           <input aria-label="Time" type="time" value={time} onChange={e => setTime(e.target.value)} style={{ ...inp, flex: "0 1 120px" }} />
           {form.kind === "meeting" && <select aria-label="How long" value={mins} onChange={e => setMins(e.target.value)} style={inp}>{["30", "45", "60", "90"].map(m => <option key={m} value={m}>{m} minutes</option>)}</select>}
         </div>

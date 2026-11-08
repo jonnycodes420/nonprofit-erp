@@ -378,7 +378,7 @@ app.get("/org/export", requireAuth, requireAdmin, wrap(async (req, res) => {
 
   const [donors, gifts, pledges, grants, txns, events, attendees, campaigns, interactions, volunteers, board, tasks] = await Promise.all([
     query("SELECT * FROM donors WHERE org_id=? AND deleted_at IS NULL ORDER BY name", [orgId]),
-    query("SELECT g.*, d.name as donor_name FROM gifts g LEFT JOIN donors d ON d.id=g.donor_id WHERE g.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY g.date DESC NULLS LAST", [orgId]),
+    query("SELECT g.*, d.name as donor_name FROM gifts g LEFT JOIN donors d ON d.id=g.donor_id WHERE g.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC", [orgId]),
     query("SELECT pg.*, d.name as donor_name FROM planned_gifts pg LEFT JOIN donors d ON d.id=pg.donor_id WHERE pg.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY pg.created_at DESC", [orgId]),
     query("SELECT * FROM grants WHERE org_id=? ORDER BY deadline", [orgId]),
     query("SELECT * FROM fin_transactions WHERE org_id=? ORDER BY date DESC NULLS LAST", [orgId]),
@@ -485,7 +485,7 @@ app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
            LEFT JOIN campaigns c ON c.id=g.campaign_id
            LEFT JOIN giving_pages gp ON gp.id=g.giving_page_id
            LEFT JOIN peer_fundraisers pf ON pf.id=g.peer_fundraiser_id
-           WHERE g.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY g.date DESC NULLS LAST`, [orgId]),
+           WHERE g.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC`, [orgId]),
     query(`SELECT i.*, d.name AS donor_name, d.email AS donor_email, i.metadata->>'direction' AS direction
            FROM interactions i LEFT JOIN donors d ON d.id=i.donor_id
            WHERE i.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY i.date DESC NULLS LAST`, [orgId]),

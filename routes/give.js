@@ -791,7 +791,7 @@ app.get("/connections/:id/gifts", requireAuth, wrap(async (req, res) => {
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id=? AND g.date >= ? AND g.amount > 0
         AND ${own ? "g.giving_source_id IS NULL AND g.stripe_payment_id IS NOT NULL" : "g.giving_source_id = ?"}
-      ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT 500`,
+      ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC LIMIT 500`,
     own ? [orgId, since] : [orgId, since, req.params.id]);
   const totalCents = rows.reduce((t, r) => t + Math.round(Number(r.amount) * 100), 0);
   res.json({
@@ -902,7 +902,7 @@ app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
        LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id = ? AND s.default_fund_id IS NULL AND s.status <> 'disconnected'
         AND g.fund_id IS NULL AND g.amount > 0
-      ORDER BY g.date DESC NULLS LAST, g.id LIMIT 200`, [req.user.orgId]);
+      ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC LIMIT 200`, [req.user.orgId]);
   const askBySource = new Map();
   for (const g of askRows) {
     if (!askBySource.has(g.giving_source_id)) askBySource.set(g.giving_source_id, []);
@@ -3143,7 +3143,7 @@ app.get("/peer-fundraisers/:id/gifts", requireAuth, wrap(async (req, res) => {
             ROUND(g.amount::numeric, 2)::float AS amount, g.show_name_to_fundraiser, g.show_name_publicly
        FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id=? AND g.peer_fundraiser_id=? AND g.amount > 0
-      ORDER BY g.date DESC NULLS LAST, g.id`, [req.user.orgId, f.id]);
+      ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC`, [req.user.orgId, f.id]);
   const gifts = rows.map(r => ({ id: r.id, donorId: r.donor_id, donorName: r.donor_name || "A supporter", date: r.date,
     amountCents: Math.round(Number(r.amount) * 100),
     shownToFundraiser: r.show_name_to_fundraiser === true, shownPublicly: r.show_name_publicly === true }));
@@ -5223,7 +5223,7 @@ app.get("/recurring/recovery", requireAuth, wrap(async (req, res) => {
           WHERE g.org_id = ? AND g.recurring_subscription_id = ANY(?)
             AND g.date >= ?
             AND g.date >= COALESCE(to_char(rs.recovered_at, 'YYYY-MM-DD'), ?)
-          ORDER BY g.date DESC NULLS LAST, g.id DESC`,
+          ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC`,
         [orgId, recoveredIds, yearStart, yearStart])
     : [];
 
@@ -6185,7 +6185,7 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
        LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
        LEFT JOIN receipts r ON r.gift_id = g.id AND r.org_id = g.org_id AND r.voided_at IS NULL AND r.type = 'gift'
        WHERE g.org_id = ? AND g.donor_id = ANY(?) AND ${NUMBERS.money.MONEY("g")}
-       ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT 500`,
+       ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC LIMIT 500`,
       [org.id, donorIds]),
     query(
       `SELECT id, type, receipt_number, amount, tax_year, created_at, gift_id

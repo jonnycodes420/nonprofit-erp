@@ -20,6 +20,7 @@ import { displayDate } from "../../../shared/displayDate.js";   // SWEEP-1: a wr
 import { moveSentence } from "../lib/moveSentence";
 import { alsoKey } from "../lib/alsoKey";   // TIDY-1: two pledges, two keys
 import { orgTodayCivil, orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when shown (Home's first look stays in budget)
 
 const SERIF = "'DM Serif Display', Georgia, serif";
 const money = c => {
@@ -108,7 +109,7 @@ function OutcomeButtons({ card, items, onChanged, isReadOnly }) {
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
       <button type="button" style={B2} disabled={busy} onClick={() => send("done")}>Done</button>
       {mode !== "snooze" ? <button type="button" style={B2} disabled={busy} onClick={() => setMode("snooze")}>Not now</button>
-        : <span><input type="date" aria-label="Show again on" value={until} min={today()} onChange={e => setUntil(e.target.value)} style={{ fontSize: 13, padding: 6, border: "1px solid " + T.bg3, borderRadius: 8 }} /> <button type="button" style={B1} disabled={busy} onClick={() => send("snoozed")}>Snooze</button></span>}
+        : <span><DateInput aria-label="Show again on" value={until} min={today()} onChange={e => setUntil(e.target.value)} style={{ fontSize: 13, padding: 6, border: "1px solid " + T.bg3, borderRadius: 8 }} /> <button type="button" style={B1} disabled={busy} onClick={() => send("snoozed")}>Snooze</button></span>}
       {mode !== "dismiss" ? <button type="button" style={B2} disabled={busy} onClick={() => setMode("dismiss")}>Doesn't fit</button>
         : <span><input aria-label="Why it doesn't fit (optional)" placeholder="Why (optional)" value={reason} onChange={e => setReason(e.target.value)} style={{ fontSize: 13, padding: 6, border: "1px solid " + T.bg3, borderRadius: 8 }} /> <button type="button" style={B1} disabled={busy} onClick={() => send("dismissed")}>Set aside</button></span>}
     </div>
@@ -254,7 +255,7 @@ export function InsightCard({ card, onNavigate, onChanged, isReadOnly, compact }
         {card.cents > 0 && card.kind !== "pace" && <div style={{ fontSize: 12, color: T.ink3 }}>{money(card.cents)} at stake</div>}
       </div>
       <p style={{ fontFamily: SERIF, fontSize: 19, color: T.ink, margin: "6px 0 4px", lineHeight: 1.3 }}>{card.words.what}</p>
-      <p style={{ fontSize: 13, color: T.ink3, margin: "0 0 10px", lineHeight: 1.5 }}><b style={{ color: T.ink }}>Why:</b> {card.words.why}</p>
+      <p style={{ fontSize: 13, color: T.ink3, margin: "0 0 10px", lineHeight: 1.5 }}><b style={{ color: T.ink }}>Why:</b>{" " + card.words.why}</p>
       {card.kind === "review" ? <ReviewRows card={card} onChanged={onChanged} isReadOnly={isReadOnly} />
         : card.kind === "family" ? <FamilyRows card={card} onChanged={onChanged} onNavigate={onNavigate} isReadOnly={isReadOnly} />
         : card.kind === "pace" ? null
@@ -597,7 +598,7 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
               <DonorLink id={m.lead} onOpen={() => onNavigate && onNavigate("donors", { selectDonorId: m.lead })} style={{ color: T.ink, textDecoration: "none" }}>{m.name}</DonorLink>
             </h3>
             <p data-testid="move-what" style={{ margin: 0, fontSize: 16.5, lineHeight: 1.55, color: T.ink }}>{m.what}</p>
-            <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.55, color: T.ink3 }}><b style={{ color: T.ink }}>Why:</b> {m.why}</p>
+            <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.55, color: T.ink3 }}><b style={{ color: T.ink }}>Why:</b>{" " + m.why}</p>
             {m.say && <blockquote style={{ margin: 0, background: T.white, borderRadius: 12, padding: "14px 16px", fontSize: 15.5, lineHeight: 1.55, fontStyle: "italic", color: T.ink }}>“{m.say}”</blockquote>}
             <div className="moves-facts">
               {m.who && <div><span style={{ color: T.ink3 }}>Who</span><br /><b>{m.who}{m.channel ? ` · ${m.channel.toLowerCase()}` : ""}</b></div>}
@@ -612,7 +613,7 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
             {mode === "snooze" && (
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 14 }}>
                 <label htmlFor="move-until">Show again on</label>
-                <input id="move-until" type="date" value={until} min={today()} onChange={e => setUntil(e.target.value)} style={{ fontSize: 14, padding: 8, border: "1px solid " + T.bg3, borderRadius: 10 }} />
+                <DateInput id="move-until" value={until} min={today()} onChange={e => setUntil(e.target.value)} style={{ fontSize: 14, padding: 8, border: "1px solid " + T.bg3, borderRadius: 10 }} />
                 <button type="button" className="moves-btn" style={BTN_PRIMARY} disabled={busy} onClick={() => act("snoozed", { until }, `${m.name} comes back on ${shortDay(until)}.`)}>Snooze</button>
                 <button type="button" className="moves-btn" style={BTN_QUIET} onClick={() => setMode(null)}>Cancel</button>
               </div>
@@ -730,6 +731,15 @@ export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn,
   const [copied, setCopied] = useState(false);
   const load = () => apiFetch(`/insights/donor/${encodeURIComponent(donorId)}`).then(setD).catch(() => setD(null));
   useEffect(() => { if (donorId) { setD(undefined); load(); } }, [donorId]);
+  // PLEDGES-2 (W-1107-Finance-20X): a payment, write-off or delete re-reads the move, and an
+  // answer the worker is still rebuilding (stale) is read again shortly, at most three times.
+  const staleTries = useRef(0);
+  useChanged(["gift", "pledge"], () => { staleTries.current = 0; if (donorId) load(); });
+  useEffect(() => {
+    if (!(d && d.stale) || staleTries.current >= 3) return undefined;
+    const t = setTimeout(() => { staleTries.current += 1; load(); }, 2500);
+    return () => clearTimeout(t);
+  }, [d]);
   if (d === undefined) return <div data-testid="dp-next-move-loading" style={{ height: 22 }} />;
   // INSIGHTS-2: the org's first Insights are still being built on the worker.
   if (d && d.preparing) return <div data-testid="dp-next-move-preparing" style={{ fontSize: 14, color: T.ink3, padding: "2px 0" }}>{d.sentence}</div>;
@@ -747,7 +757,7 @@ export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn,
     <section data-testid="profile-next-move" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "18px 22px", display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ fontSize: 10.5, fontWeight: 800, color: T.gold700 }}>Next move · {m.title}</div>
       <div data-testid="dp-next-move-sentence" style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 21, lineHeight: 1.3, color: T.ink }}>{sentence}</div>
-      {m.why && <div data-testid="dp-next-move-why" style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}><b>Why:</b> {m.why}</div>}
+      {m.why && <div data-testid="dp-next-move-why" style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}><b>Why:</b>{" " + m.why}</div>}
       {how.say && <div data-testid="dp-next-move-draft" style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", fontSize: 14, lineHeight: 1.55, color: T.ink }}>“{how.say}”</div>}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>

@@ -27,6 +27,24 @@ const endsOnColon = t => /[:—-]\s*$/.test(String(t || "").trim());
 const norm = s => String(s || "").replace(/\s+/g, " ").trim();
 const bare = s => norm(s).replace(/(\.\.\.|…)$/, "").replace(/[.\s]+$/, "").toLowerCase();
 
+// POLISH-6 (W-1107-Donors-26) · A SENTENCE THAT DOES NOT FINISH. Brief me
+// ended a line on "as" ("logged by Mike Henderson as (from a conversation)")
+// or stopped at "cannot.". A line that ends on a preposition or a conjunction
+// (a parenthesis after it does not finish it), or on a bare "cannot." / "can't."
+// / "won't.", is unfinished: the validator names it and completeBrief leaves it out.
+const DANGLING = new Set(["as", "by", "of", "to", "for", "with", "from", "in", "on", "at", "about", "into", "than", "via",
+  "and", "or", "but", "nor", "so", "because", "if", "that", "which", "while", "although", "though", "the", "a", "an"]);
+function unfinishedWhy(line) {
+  const t = norm(line);
+  if (!t) return null;
+  if (/\b(cannot|can't|can not|won't|will not|could not|couldn't)\.?$/i.test(t)) return `stops at "${t.split(/\s+/).slice(-1)[0]}" with nothing after it`;
+  if (/\b(as|by|of|for|with|from)\s*\([^)]*\)\s*\.?$/i.test(t)) return "ends on a word that leads into a parenthesis, not a finish";
+  const words = t.replace(/[\s.!?…"”’)]+$/, "").split(/\s+/);
+  const last = (words[words.length - 1] || "").toLowerCase().replace(/[^a-z']/g, "");
+  if (DANGLING.has(last)) return `ends on "${last}"`;
+  return null;
+}
+
 // The problems a reader would see, one per offending line. The suite reads
 // every line of a brief through this; an empty list is a complete brief.
 function briefProblems(lines) {
@@ -36,6 +54,8 @@ function briefProblems(lines) {
     if (!t) continue;
     if (endsOnColon(t)) out.push({ line: t, why: "ends on a colon with nothing after it" });
     if (EMPTY_QUOTE.test(t)) out.push({ line: t, why: "quotes nothing" });
+    const why = unfinishedWhy(t);   // POLISH-6
+    if (why) out.push({ line: t, why });
   }
   return out;
 }
@@ -82,6 +102,8 @@ function completeBrief(checked, ctx) {
     const kept = [];
     for (const s of sec.sentences || []) {
       const r = completeSentence(s, quotes);
+      const unfinished = !r.drop && unfinishedWhy(r.text);   // POLISH-6: an unfinished line is left out, never shown
+      if (unfinished) { dropped.push({ where: sec.key, text: s.text, why: unfinished }); continue; }
       if (r.drop) { dropped.push({ where: sec.key, text: s.text, why: r.drop }); continue; }
       kept.push({ ...s, text: r.text });
     }
@@ -98,8 +120,8 @@ function completeBrief(checked, ctx) {
       else sections.push({ key: "notes", title: "What you wrote", sentences: [line] });
     }
   }
-  const headline = endsOnColon(checked.headline) ? "" : checked.headline;
+  const headline = endsOnColon(checked.headline) || unfinishedWhy(checked.headline) ? "" : checked.headline;
   return { ...checked, headline, sections, dropped, sentenceCount: sections.reduce((n, x) => n + x.sentences.length, 0) };
 }
 
-module.exports = { completeBrief, briefProblems, briefLines, endsOnColon };
+module.exports = { completeBrief, briefProblems, briefLines, endsOnColon, unfinishedWhy };

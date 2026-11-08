@@ -203,14 +203,16 @@ async function walk(chromium) {
     const clock = await page.evaluate(() => Date().toString()).catch(() => null);
     await page.getByText("Transactions", { exact: true }).first().click({ timeout: 15000 }).catch(() => {});
     await page.getByRole("button", { name: /\+ Add transaction/ }).first().click({ timeout: 15000 }).catch(() => {});
-    const fin = await page.locator('input[type="date"]').first().inputValue({ timeout: 8000 }).catch(() => null);
+    // POLISH-6: the one date box shows MM/DD/YYYY; read back as the ISO day.
+    const finShown = await page.locator('[data-date-input]').first().inputValue({ timeout: 8000 }).catch(() => null);
+    const fin = finShown && /^(\d{2})\/(\d{2})\/(\d{4})$/.test(finShown) ? finShown.replace(/^(\d{2})\/(\d{2})\/(\d{4})$/, "$3-$1-$2") : finShown;
     ok(`§2 Finance's Add transaction fills in the org's day at 9 PM Eastern (${day})`, fin === day, JSON.stringify({ fin, day, clock }));
     await page.keyboard.press("Escape").catch(() => {});
     await page.goto(APP + "/app/finance", { waitUntil: "networkidle", timeout: 30000 }).catch(() => {});
     await page.getByText("Deposits and payouts", { exact: true }).first().click({ timeout: 15000 }).catch(() => {});
     await page.locator('[data-fin-part="deposits"]').first().click({ timeout: 8000 }).catch(() => {});
     await page.locator('[data-testid="fin-open-deposit-sheet"]').first().click({ timeout: 15000 }).catch(() => {});
-    const dep = await page.locator('input[aria-label="Deposit date"]').first().inputValue({ timeout: 8000 }).catch(() => null);
+    const dep = await page.locator('input[aria-label="Deposit date"]').first().getAttribute("data-iso", { timeout: 8000 }).catch(() => null);   // POLISH-6: the one date box
     ok(`§2 the Deposit sheet fills in the org's day at 9 PM Eastern (${day})`, dep === day, JSON.stringify({ dep, day }));
 
     // §2 + §3 Home's move card: "Show again on" is two weeks from the org's day; no "Ask" over "Ask $…".
@@ -229,7 +231,7 @@ async function walk(chromium) {
     }
     ok(`§3 no move card shows an "Ask" label over "Ask $…" (${askChecked} asks read)`, askChecked > 0 && doubled.length === 0, doubled.slice(0, 3));
     await page.locator('[data-testid="move-not-now"]').first().click({ timeout: 8000 }).catch(() => {});
-    const until = await page.locator("#move-until").first().evaluate(i => ({ value: i.value, min: i.min })).catch(() => null);
+    const until = await page.locator("#move-until").first().evaluate(i => ({ value: i.dataset.iso, min: i.dataset.min })).catch(() => null);   // POLISH-6
     ok(`§2 Insights' "Show again on" is two weeks from the org's day, and no earlier than it, at 9 PM Eastern (${day})`,
        !!until && until.value === plusDays(day, 14) && until.min === day, JSON.stringify({ until, want: [plusDays(day, 14), day] }));
 

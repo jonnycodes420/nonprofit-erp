@@ -71,9 +71,11 @@ const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward
 // PERF-2: Home on a phone, and the JavaScript its first look downloads (bytes,
 // so strict everywhere; the milliseconds warn in CI, tests/lib/budget.js).
 const PHONE_MS = 3580;   // PERF-3 measured 3,480 ms + 0.1 s, so it cannot regress (PERF-2 3,537; main 3,840 at PERF-3's start); the bar is 3 s, docs/defects.md
-const JS_FIRST_KB = 239;   // PERF-3 measured 227 KB + 5%: the moves deck's code (15 KB) is on the first look now, preloaded (PERF-2: 214)
+const JS_FIRST_KB = 241;   // POLISH-6: +2 KB, the one shared date box's loader (LazyDateInput) on the shell; main measured 239 on the same runner, the branch 241.
+// Before POLISH-6:   // PERF-3 measured 227 KB + 5%: the moves deck's code (15 KB) is on the first look now, preloaded (PERF-2: 214)
 const WARM_MS = 1446;   // PERF-3: Home on a phone a second time, measured 1,314 ms + 10% (main: 1,528)
-const FIRST_KB = 309;   // PERF-3: every byte of Home's first look, measured 294 KB + 5% (main: 314)
+const FIRST_KB = 311;   // POLISH-6: +2 KB with JS_FIRST_KB above.
+// Before POLISH-6:   // PERF-3: every byte of Home's first look, measured 294 KB + 5% (main: 314)
 const CLS_DESKTOP_MAX = 0.05;   // PERF-4: Home on a desktop, worst of the runs (main: 0)
 const CLS_MAX = 0.02;   // PERF-3: main moved 0.49 of the phone's screen (the deck after its stand-in); now 0
 // SHIFT-1: a made-up name that, with "Good morning, Load", fits Home's greeting
@@ -437,7 +439,7 @@ function preloaderAllowed() {
   // FLAKE-1: "every byte of the first look" is every response finished by
   // the moment the screen is ready, so a runner that is slow to draw counts
   // the reads that land in the extra time too (CI, 5 Nov: 313 and 314 KB
-  // against 309, on changes that sent no new byte). The bar stays 309 KB. A
+  // against 309, on changes that sent no new byte). The bar stays FIRST_KB (311 since POLISH-6). A
   // reading over it is measured once more, saying why, and that reading is
   // the one held to the bar: a first look that really grew is over it twice.
   if (!(homeP.firstKB > 0 && homeP.firstKB <= FIRST_KB)) {

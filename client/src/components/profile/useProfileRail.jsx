@@ -13,6 +13,7 @@ import { PutItOnMyCalendar, ThreadDismissMenu } from "../LogConversation";
 import { EditedMarker } from "../EditHistory";
 import OpenPledgeBanner from "../OpenPledgeBanner";
 import { ProfileNextMove } from "../Insights";
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 export function useProfileRail({ donor, isReadOnly, rel, setLogMeeting, stepEdit, setStepEdit, stepBusy, dpThread, dpItems, setConvoOpen, setPlanOpen, openProposals, proposalsKnown, loadDpThread, saveStep, deleteStep, snoozing, snoozeErr, snoozeThread, callName, setDpTab, pledges, setAddGiftForm, setAddGiftOpen, tasks, gifts, giftLoading, giftReadErr, giftsFull, tlCounts, getAI, org, setSuggestOpen, isTeam, openForNextMove }) {
 
@@ -65,7 +66,7 @@ export function useProfileRail({ donor, isReadOnly, rel, setLogMeeting, stepEdit
                         {stepEdit&&stepEdit.id===it.id&&(
                           <div data-testid="dp-step-edit" style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
                             <input aria-label="Next step" value={stepEdit.label} onChange={e=>setStepEdit({...stepEdit,label:e.target.value})} style={{flex:"1 1 160px",border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 9px",fontSize:13,fontFamily:"inherit"}}/>
-                            <input aria-label="Due" type="date" value={stepEdit.due} onChange={e=>setStepEdit({...stepEdit,due:e.target.value})} style={{border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 8px",fontSize:13,fontFamily:"inherit"}}/>
+                            <DateInput aria-label="Due" value={stepEdit.due} onChange={e=>setStepEdit({...stepEdit,due:e.target.value})} style={{border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 8px",fontSize:13,fontFamily:"inherit"}}/>
                             <button onClick={saveStep} disabled={stepBusy||!stepEdit.label.trim()} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>{stepBusy?"Saving…":"Save"}</button>
                             <button onClick={()=>setStepEdit(null)} style={{background:"none",border:"none",color:T.ink3,fontSize:12.5,cursor:"pointer"}}>Cancel</button>
                           </div>
