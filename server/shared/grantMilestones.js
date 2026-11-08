@@ -23,6 +23,8 @@ function milestoneRow(r, M, today, leadDays) {
   };
   const t = M.milestoneTiming(m, today);
   m.band = t.band; m.overdueDays = t.overdueDays; m.daysUntil = t.days; m.sentence = t.sentence;
+  // PLEDGES-3: an awarded grant's application deadlines stop counting down (reports still count).
+  if (M.applicationClosed && M.applicationClosed({ id: r.id, kind: r.kind }, r.status)) Object.assign(m, M.closedTiming(m));
   m.leadDays = M.leadDaysFor(r.kind, leadDays);
   if (r.state === "waiting") m.waitingSentence = M.waitingSentence(m);
   return m;
