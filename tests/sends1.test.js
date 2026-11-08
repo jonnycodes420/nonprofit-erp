@@ -121,7 +121,7 @@ const ten = fn => Promise.all(Array.from({ length: 10 }, () => fn()));
   await q(`INSERT INTO sequence_steps (id,sequence_id,step_order,delay_days,subject,body,track_key) VALUES ('ss_s1_t1','seq_s1_t',1,0,'Welcome, {{first_name}}','Thank you for joining us, {{first_name}}.','everyone')`);
   await q(`INSERT INTO sequence_enrollments (id,sequence_id,org_id,donor_id,current_step,status,next_send_at,track_key,enrolled_at) VALUES ('se_s1_t','seq_s1_t',$1,'d_s1_c',0,'active',NOW() - INTERVAL '1 hour','everyone',NOW() - INTERVAL '1 day')`, [ORG]);
   await q(`INSERT INTO sequences (id,org_id,name,trigger,status,created_by,created_by_name) VALUES ('seq_s1_l',$1,'Older welcome','manual','active',${sys})`, [ORG]);
-  await q(`INSERT INTO sequence_steps (id,sequence_id,step_order,delay_days,subject,body) VALUES ('ss_s1_l1','seq_s1_l',1,0,'Hello from us','A note from all of us.')`);
+  await q(`INSERT INTO sequence_steps (id,sequence_id,step_order,delay_days,subject,body) VALUES ('ss_s1_l1','seq_s1_l',1,0,'Hello from us','A note from all of us. Your giving totals $1,300 so far.')`);
   await q(`INSERT INTO sequence_enrollments (id,sequence_id,org_id,donor_id,current_step,status,next_send_at) VALUES ('se_s1_l','seq_s1_l',$1,'d_s1_d',0,'active',NOW() - INTERVAL '1 hour')`, [ORG]);
 
   // A full worker day: every tick that sends a journey or sequence step, at 9:30 on a weekday where the org is.
@@ -138,6 +138,8 @@ const ten = fn => Promise.all(Array.from({ length: 10 }, () => fn()));
   ok("§1 and becomes a draft she sends herself, one per person", jd.map(x => x.donor_id).join(",") === "d_s1_a,d_s1_b", jd);
   const sd = await q(`SELECT donor_id, subject FROM milestone_drafts WHERE org_id=$1 AND source='sequence' ORDER BY donor_id`, [ORG]);
   ok("§1 each due sequence step (the builder's and the older one) becomes a draft too", sd.length === 2 && sd[0].donor_id === "d_s1_c" && /^Welcome/.test(sd[0].subject) && sd[1].donor_id === "d_s1_d", sd);
+  const sdBody = (await q(`SELECT body FROM milestone_drafts WHERE org_id=$1 AND source='sequence' AND donor_id='d_s1_d'`, [ORG]))[0]?.body || "";
+  ok("§1 the draft keeps its figure as a key, never a stored number (TRUTH-3)", /\{\{total_giving\}\}/.test(sdBody) && !/totals \$/.test(sdBody), sdBody);
   const en = await q(`SELECT id, status FROM sequence_enrollments WHERE org_id=$1 ORDER BY id`, [ORG]);
   ok("§1 no enrollment is closed as unsubscribed: the person did nothing", en.every(e => e.status !== "unsubscribed" && e.status !== "stopped"), en);
   await api("POST", "/sequences/tracked/run", tok, { now: at });

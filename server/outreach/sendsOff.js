@@ -16,6 +16,7 @@
 const { query, run } = require("../../db");
 const mailPolicy = require("../../mailPolicy");
 const { newId } = require("../shared/newId");
+const DRAFT_KEYS = require("../../shared/numbers/draftRender");   // TRUTH-3: a draft stores figure keys, never numbers
 
 const DRAFT_ACTOR = { id: "system:sequence", name: "Steward (email is off, so this waits for you)" };
 
@@ -37,7 +38,7 @@ async function sequenceStepDraft({ orgId, enrollmentId, donorId, stepOrder, subj
     `INSERT INTO milestone_drafts (id,org_id,donor_id,sequence_enrollment_id,milestone_key,subject,body,status,source,created_by,created_by_name)
      SELECT ?::text,?::text,?::text,?::text,?::text,?::text,?::text,'pending_review','sequence',?::text,?::text
       WHERE NOT EXISTS (SELECT 1 FROM milestone_drafts WHERE org_id=?::text AND milestone_key=?::text)`,
-    [newId("md"), orgId, donorId, enrollmentId, key, subject || "", body || "", DRAFT_ACTOR.id, DRAFT_ACTOR.name, orgId, key]);
+    [newId("md"), orgId, donorId, enrollmentId, key, DRAFT_KEYS.templatize(subject || ""), DRAFT_KEYS.templatize(body || ""), DRAFT_ACTOR.id, DRAFT_ACTOR.name, orgId, key]);
   return !!(r && r.changes);
 }
 
