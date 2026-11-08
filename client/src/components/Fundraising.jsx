@@ -145,7 +145,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
   // and the campaigns' totals, read again behind the screen (no loading state).
   const refresh = () => Promise.all([apiFetch("/fundraising/overview"), apiFetch("/fundraising/campaigns")])
     .then(([o, c]) => { setOverview(o); setCampaigns(c); }).catch(() => { /* keeps what is on screen */ });
-  useChanged(["gift", "pledge", "totals"], refresh);
+  useChanged(["gift", "pledge", "totals", "event"], refresh);   // STALE-2: "event" moves the lead card's Invited and Came
 
   // Any id, old or new, opens its section on its part.
   const goto = id => { const r = resolveFr(id); setSection(r.section); setPartOf(m => ({ ...m, [r.section]: r.part })); };

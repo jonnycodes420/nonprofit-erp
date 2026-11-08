@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch, adaptDonor, onWrite } from "../api";
 import { allPages } from "./pages";
+import { useLatestSearch, personStillMatches } from "./latestSearch";
 
 const qs = o => new URLSearchParams(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== "")).toString();
 
@@ -64,22 +65,11 @@ onWrite(forgetAllPeople);
 // [rows, pending]: pending is true until the answer for this text is back, so
 // a "nobody matches" line never shows for an answer that has not arrived.
 export function usePeoplePicker(text, { match = "concat", limit = 20, enabled = true, emptyToo = false, withEmail } = {}) {
-  const [state, setState] = useState({ key: null, rows: [] });
   const t = String(text || "").trim();
   const key = `${t}|${match}|${limit}|${withEmail ? 1 : 0}`;
   const off = !enabled || (!t && !emptyToo);
-  useEffect(() => {
-    if (off) return undefined;
-    let live = true;
-    const h = setTimeout(() => {
-      pickPeople({ q: t, match, limit, withEmail })
-        .then(r => { if (live) setState({ key, rows: r }); })
-        .catch(() => { if (live) setState({ key, rows: [] }); });
-    }, t ? 200 : 0);
-    return () => { live = false; clearTimeout(h); };
-  }, [key, off]);
-  if (off) return [[], false];
-  return [state.rows, state.key !== key];
+  // STALE-2: the newest answer only, and never an older query's rows (lib/latestSearch.js).
+  return useLatestSearch(t, key, term => pickPeople({ q: term, match, limit, withEmail }), { enabled: !off, narrow: personStillMatches });
 }
 
 // These ids as people, refreshed when the set changes. Returns [map, ready]:

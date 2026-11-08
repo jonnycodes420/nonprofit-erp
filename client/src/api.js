@@ -247,7 +247,7 @@ const forgetLists = (w) => { for (const fn of writeHooks) { try { fn(w || {}); }
 // the worker's marks on the bell's read) forgets what is held exactly as a
 // write does, so the views that re-read for it are not handed the old answer
 // (the Tasks badge's kept count did that for 60 seconds after Atlas added one).
-onAnyChange(c => { if (c.source !== "write") { kept.clear(); parked.clear(); forgetLists({ path: null, method: "TOLD", phase: "after" }); } });
+onAnyChange(c => { if (c.source !== "write") { kept.clear(); parked.clear(); handed.clear(); forgetLists({ path: null, method: "TOLD", phase: "after" }); } });   // STALE-2: and the answer just handed over (a re-read inside 1.5 s was given it back)
 
 export async function apiFetch(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
@@ -267,7 +267,12 @@ export async function apiFetch(path, options = {}) {
   // so every view on screen that shows one of those kinds re-reads it.
   if (method !== "GET") {
     kept.clear(); parked.clear(); handed.clear(); inFlight.clear(); forgetLists({ path, method, phase: "before" });
-    const after = () => forgetLists({ path, method, phase: "after" });
+    // STALE-2 (W-1107-Finance-04X): and again when it lands. A read that left
+    // while the write was on its way (the profile re-reading on a told(), the
+    // bell's poll) was answered as things stood before it, and a reader that
+    // asked after the write was handed that answer: the profile's Lifetime
+    // kept the old figure until a reload.
+    const after = () => { kept.clear(); parked.clear(); handed.clear(); inFlight.clear(); forgetLists({ path, method, phase: "after" }); };
     return apiFetchNow(path, options).then(v => { after(); announce(kindsOfWrite(path, method, options.body)); return v; }, e => { after(); throw e; });
   }
   if (options.body || options.signal) return apiFetchNow(path, options);

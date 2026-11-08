@@ -16,7 +16,7 @@ export function MergeWithModal({ donor, other = null, onClose, onMerged }) {
   const [done, setDone] = useState(null);
   const [undoing, setUndoing] = useState(false);
   const [msg, setMsg] = useState("");
-  const [found] = usePeoplePicker(q, { match: "name", limit: 9 });
+  const [found, searching] = usePeoplePicker(q, { match: "name", limit: 9 });   // STALE-2: the answer to what is typed now
   const results = q.trim() ? found.filter(d => d.id !== donor.id).slice(0, 8) : [];
   const undo = async () => {
     setUndoing(true);
@@ -46,7 +46,7 @@ export function MergeWithModal({ donor, other = null, onClose, onMerged }) {
       <input autoFocus data-testid="mw-search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search people and organizations by name…"
         style={{ width: "100%", boxSizing: "border-box", background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 12px", fontSize: 13, color: T.ink, outline: "none" }}/>
       <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8, maxHeight: 260, overflowY: "auto" }}>
-        {q.trim() && !results.length && <div style={{ fontSize: 12.5, color: T.ink3, padding: "6px 4px" }}>Nobody by that name.</div>}
+        {q.trim() && !results.length && <div data-testid="mw-none" style={{ fontSize: 12.5, color: T.ink3, padding: "6px 4px" }}>{searching ? "Searching…" : "Nobody by that name."}</div>}
         {results.map(d => (
           <button key={d.id} type="button" data-testid="mw-pick" onClick={() => setPicked(d)}
             style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>

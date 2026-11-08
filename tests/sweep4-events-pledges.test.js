@@ -21,6 +21,10 @@
 //   §5 a past event's seating chart is who came (shared/eventShape cameOnly).
 //   §6 Ask on the event says what was received and what was pledged there,
 //      the event page's two parts.
+//   §8 STALE-2 (W-1107-Volunteers-23): a capacity-2 event takes two guests;
+//      a third answers 409 "This puts the event at 3 of 2." and adds nothing;
+//      confirmed (overCapacity), it adds; the event says its seats left.
+//      Red on main: the third guest answered 200 with no warning.
 //   Then assertSurfacesAgree on the org.
 //
 // HOW IT GOES RED ON MAIN (199d99d): First-time givers is 3 with the deleted
@@ -251,6 +255,27 @@ async function fix60(tok) {
 
     // ── §7 FIX-60: every door that makes a pledge writes its installments
     await fix60(tok);
+
+    // ── §8 STALE-2: capacity asks before it is passed
+    {
+      const ev = await api("POST", "/events", tok, { name: "Tidepool Supper", date: "2026-12-12", eventType: "dinner", capacity: 2 });
+      const E = ev.body && (ev.body.id || (ev.body.event && ev.body.event.id));
+      for (const [k, n] of [["cap_a", "Rowan Ashby"], ["cap_b", "Lena Voss"], ["cap_c", "Idris Kell"]])
+        await q(`INSERT INTO donors (id,org_id,name,email,stage,created_by,created_by_name) VALUES ($1,$2,$3,$4,'cultivate','system:test/sweep4','test') ON CONFLICT DO NOTHING`, [P(k), ORG, n, `${k}@sweep4.example.org`]);
+      const two = await api("POST", `/events/${E}/attendees`, tok, { donorIds: [P("cap_a"), P("cap_b")] });
+      ok("§8 a capacity-2 event takes two guests", two.status === 200 && two.body.added === 2, two.body);
+      const third = await api("POST", `/events/${E}/attendees`, tok, { donorIds: [P("cap_c")] });
+      ok("§8 a third guest answers 409: \"This puts the event at 3 of 2.\"", third.status === 409 && third.body.message === "This puts the event at 3 of 2.", { status: third.status, body: third.body });
+      ok("§8 …and adds nobody until confirmed", Number((await one(`SELECT COUNT(*)::int AS n FROM event_attendees WHERE event_id=$1`, [E])).n) === 2);
+      const walk = await api("POST", `/events/${E}/attendees`, tok, { name: "A walk-in" });
+      ok("§8 a typed walk-in past capacity asks too", walk.status === 409 && walk.body.message === "This puts the event at 3 of 2.", walk.body);
+      const yes = await api("POST", `/events/${E}/attendees`, tok, { donorIds: [P("cap_c")], overCapacity: true });
+      ok("§8 confirmed, the third guest is added", yes.status === 200 && yes.body.added === 1, yes.body);
+      const page = await api("GET", `/events/${E}`, tok);
+      ok("§8 the event says 3 of 2 places taken, 1 over", page.body.seats && page.body.seats.taken === 3 && page.body.seats.over === 1 && /1 over capacity/.test(page.body.seats.sentence), page.body.seats);
+      const again = await api("POST", `/events/${E}/attendees`, tok, { donorIds: [P("cap_a")] });
+      ok("§8 re-adding somebody already on the list is no new place, so no warning", again.status === 200, again.body);
+    }
 
     // ── the truth check
     let agree = null;

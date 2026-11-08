@@ -68,16 +68,17 @@ app.patch("/volunteer-shifts/:id", requireAuth, checkWriteAccess, wrap(async (re
   const v = VHm.validateShift({
     date: b.date !== undefined ? b.date : cur.date,
     ...(timed ? { hours: b.hours, minutes: b.minutes, startTime: b.startTime, endTime: b.endTime } : { hours: cur.hours }),
-    role: opp ? opp.name : cur.role, note: b.note !== undefined ? b.note : cur.note,
+    // STALE-2 (W-1107-Volunteers-12): a role typed in Recent shifts' Edit is kept; an opportunity names it otherwise.
+    role: opp ? opp.name : b.role !== undefined ? String(b.role || "").trim().slice(0, 200) : cur.role, note: b.note !== undefined ? b.note : cur.note,
   });
   if (!v.ok) return res.status(400).json({ error: `A shift needs ${v.errors.join("; ")}.` });
-  if (req.audit) req.audit.before({ date: cur.date, hours: Number(cur.hours), opportunityId: cur.opportunity_id, note: cur.note });
+  if (req.audit) req.audit.before({ date: cur.date, hours: Number(cur.hours), role: cur.role, opportunityId: cur.opportunity_id, note: cur.note });
   await run(`UPDATE volunteer_shifts SET date=?, hours=?, role=?, note=?, opportunity_id=?, start_time=?, end_time=?, updated_at=NOW()
               WHERE id=? AND org_id=?`,
     [v.shift.date, v.shift.hundredths / 100, v.shift.role, v.shift.note,
      b.opportunityId !== undefined ? (opp ? opp.id : null) : cur.opportunity_id,
      timed ? v.shift.startTime : cur.start_time, timed ? v.shift.endTime : cur.end_time, cur.id, orgId]);
-  if (req.audit) req.audit.after({ date: v.shift.date, hours: v.shift.hundredths / 100, opportunityId: b.opportunityId !== undefined ? (opp ? opp.id : null) : cur.opportunity_id, note: v.shift.note });
+  if (req.audit) req.audit.after({ date: v.shift.date, hours: v.shift.hundredths / 100, role: v.shift.role, opportunityId: b.opportunityId !== undefined ? (opp ? opp.id : null) : cur.opportunity_id, note: v.shift.note });
   res.json({ ok: true, hours: v.shift.hundredths / 100 });
 }));
 

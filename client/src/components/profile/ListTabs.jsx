@@ -12,10 +12,11 @@ import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box
 
 function ListTabs(props){
   // FLOWS-2: the files attached to conversations and notes (the timeline's own read) count as files too.
-  const attachedFiles=(props.tlExtras&&Array.isArray(props.tlExtras.attachments))?props.tlExtras.attachments.length:0;
+  // STALE-2: and email attachments, as the timeline lists them: the one tally (lib/profileFiles.js).
+  const attachedFiles=props.fileTally?props.fileTally.attached+props.fileTally.mail:0;
   return <ListTabsBody {...props} attachedFiles={attachedFiles}/>;
 }
-function ListTabsBody({attachedFiles,deleteMaterial,donor,dpTab,giftsFull,inboxConnected,intActions,isReadOnly,loadDpThread,loadGiftsFull,loadRel,localInts,matLoading,matUploading,materials,onInteractionAdded,onLogTouchpoint,onNavigate,rel,saveStewardship,setLogMeeting,setStwForm,setStwOpen,stwForm,stwOpen,stwSaving,tlExtras,tlSearch,uploadMaterial,viewMaterial}){
+function ListTabsBody({fileTally,attachedFiles,deleteMaterial,donor,dpTab,giftsFull,inboxConnected,intActions,isReadOnly,loadDpThread,loadGiftsFull,loadRel,localInts,matLoading,matUploading,materials,onInteractionAdded,onLogTouchpoint,onNavigate,rel,saveStewardship,setLogMeeting,setStwForm,setStwOpen,stwForm,stwOpen,stwSaving,tlExtras,tlSearch,uploadMaterial,viewMaterial}){
   return <>
           {/* ── THE LIST TABS (PROFILE-1 header) ──────────────────────────
               Conversations, Emails, Tasks, Notes and Files are the old
@@ -46,7 +47,7 @@ function ListTabsBody({attachedFiles,deleteMaterial,donor,dpTab,giftsFull,inboxC
             {dpTab==="files"&&<>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               {/* FLOWS-2: the header counts every file on this person: uploaded here, and attached to a conversation or note (listed below) */}
-              <div data-testid="dp-files-head" style={{fontSize:14,fontWeight:800,color:T.ink}}>Files{matLoading?"":` · ${(materials.length+attachedFiles).toLocaleString("en-US")}`}</div>
+              <div data-testid="dp-files-head" style={{fontSize:14,fontWeight:800,color:T.ink}}>Files{matLoading||!fileTally?"":` · ${fileTally.total.toLocaleString("en-US")}`}</div>
             </div>
             <Uploader accept={[]} readAs="none" busy={matUploading}
               label={matUploading?"Uploading…":"Drop a file here, or browse: proposals, letters, research (any file type)"}
