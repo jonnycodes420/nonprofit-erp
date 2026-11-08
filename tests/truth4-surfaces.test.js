@@ -27,7 +27,7 @@ const { assertSurfacesAgree } = require("./lib/surfacesAgree");
 
 const APP = process.env.APP_URL || "http://localhost:4173";
 const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright");
-const DIST = path.join(__dirname, "..", "client", "dist");
+const { DIST } = require("./lib/dist");   // CI-2: this shard's built client
 
 (async () => {
   const f = await buildTruth4Org();
