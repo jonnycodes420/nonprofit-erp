@@ -114,7 +114,8 @@ async function freshOrg(id, name) {
   ok("§1 the covered gift ($900) is in no year: FY-3 and earlier hold nothing", !yrs.some(y => y.from <= FY3.from && y.cents !== 0), yrs.map(y => [y.label, y.cents]));
   ok("§1 the undated $75 is its own row", (W.other || []).some(o => o.key === "undated" && o.cents === 7500), W.other);
   ok("§1 newest first, one row per fiscal year, labelled with its months", yrs.length >= 3 && yrs[0].from === FY0.from && yrs.every((y, i) => !i || y.from < yrs[i - 1].from) && /^Jul \d{4} to Jun \d{4}$/.test(yrs[0].label), yrs.map(y => y.label));
-  ok("§1 FY-1's gift count, largest gift and change", yOf(FY1).giftCount === 3 && yOf(FY1).largestCents === 250000 && yOf(FY1).change === "up $1,500 (125%)", yOf(FY1));
+  // TRUTH-3: a refund is not a gift, so it is not counted (shared/numbers/giftCount.js): 2 gifts, the refund off the total.
+  ok("§1 FY-1's gift count, largest gift and change", yOf(FY1).giftCount === 2 && yOf(FY1).largestCents === 250000 && yOf(FY1).change === "up $1,500 (125%)", yOf(FY1));
   ok("§1 the first year after the import says so", yOf(FY2).change === "first year after the import", yOf(FY2).change);
 
   // TRUTH-1's key: each person's years add up to their Lifetime (hard money, no import)

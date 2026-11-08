@@ -10,6 +10,7 @@
 const SEND_GATE = require("../../sendGate");   // SEND-GATE-1: a staff click is the confirm for one message
 const { newId } = require("./newId");   // IDS-1: every new row id is prefix + 20 hex
 const FIGURE_CHECK = require("../drafts/figureCheck");   // TRUTH-2
+const DRAFT_RENDERER = require("../drafts/render");   // TRUTH-3: every send re-renders
 
 function mount(ctx) {
 const {
@@ -20,7 +21,14 @@ const {
 // One send of one draft, by the person who pressed the button. Used by the
 // single "Send" and by "Send all reviewed", so the two cannot drift apart.
 // FIX-12 Part 2: workflow recipes' emails arrive here as drafts too.
-async function sendMilestoneDraft(req, draft, opts = {}) {
+async function sendMilestoneDraft(req, stored, opts = {}) {
+  // TRUTH-3: what is sent is the draft rendered now: its figure keys filled
+  // from the person's figures today, and a total stored as a number (a draft
+  // from before this build) read as the true total. Words she typed (a
+  // task's email, a video thank-you) only have their keys filled.
+  const steward = !stored.source || String(stored.source).startsWith("workflow:");
+  const draft = steward ? await DRAFT_RENDERER.renderDraft(req.user.orgId, stored)
+    : { ...stored, ...(await DRAFT_RENDERER.fillOnly(req.user.orgId, stored)) };
   const donorRows = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [draft.donor_id, req.user.orgId]);
   const donor = donorRows[0];
   if (!donor || !donor.email) return { status: 400, error: "Donor has no email on file" };

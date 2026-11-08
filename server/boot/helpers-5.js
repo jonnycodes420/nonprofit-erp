@@ -9,6 +9,7 @@
 var __dirname = require("path").join(__dirname, "..", "..");   // server.js's folder, as the moved code expects
 const __boot = require("./share");
 const __share = __boot.share;
+const DRAFT_KEYS = require("../../shared/numbers/draftRender");   // TRUTH-3: a draft stores figure keys, never numbers
 let BRIEF_CATCH_UP_HOURS, DRAFT_CHECK, DRIFT_STORE_OFF, GREET, GREET_READY, ItemRefs, MEANINGFUL_CONTACT_TYPES, MILESTONE_THRESHOLDS, NOTE_MILESTONE_KEYS, SYS_AUTO, WEEKLY_CATCH_UP_HOURS, WEEKLY_HOUR, WEEKLY_LIST_CAP, WEEKLY_TASK_KINDS, anthropicFor, briefSettings, composeDailyTaskReminder, composeThreadNudgeQueue, digestEsc, digestMoney, displayNameCase, donorFromAddress, donorMailDecision, donorOnly, donorSendOpts, driftEngine, escHtmlWf, escapeHtml, figureSources, greetFor, lapseRule, mailPolicy, morningBriefSubject, newId, openingLine, orgMaySendEmail, orgTime, orgToday, orgTz, publicAppUrl, query, recordAiFallback, resend, reserveDigest, run, sendDigestEmail, solicitableSql, staffLinks, staffUnsubscribeUrl, threadShapeMod, unsubscribeEmailFooterHtml, userWantsEmail, weeklyIsEmpty;
 __boot.register(c => {
   if ("BRIEF_CATCH_UP_HOURS" in c) BRIEF_CATCH_UP_HOURS = c.BRIEF_CATCH_UP_HOURS;
@@ -657,7 +658,7 @@ async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request
                 await run(
                   `INSERT INTO note_reminders (id, org_id, donor_id, sequence_enrollment_id, milestone_key, talking_points, status)
                    VALUES (?,?,?,?,?,?,'pending')`,
-                  [newId("note"), enr.org_id, enr.donor_id, enr.id, meta0.milestone_key || null, JSON.stringify(points)]
+                  [newId("note"), enr.org_id, enr.donor_id, enr.id, meta0.milestone_key || null, JSON.stringify(points.map(DRAFT_KEYS.templatize))]
                 );
                 console.log(`[note-reminder] queued for donor ${enr.donor_id} (${meta0.milestone_key})`);
               }
@@ -710,7 +711,7 @@ async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request
               await run(
                 `INSERT INTO milestone_drafts (id, org_id, donor_id, sequence_enrollment_id, milestone_key, subject, body, status)
                  VALUES (?,?,?,?,?,?,?,'pending_review')`,
-                [newId("mdraft"), enr.org_id, enr.donor_id, enr.id, meta.milestone_key || null, draft.subject, draft.body]
+                [newId("mdraft"), enr.org_id, enr.donor_id, enr.id, meta.milestone_key || null, DRAFT_KEYS.templatize(draft.subject), DRAFT_KEYS.templatize(draft.body)]   // TRUTH-3: keys, not numbers
               );
               console.log(`[milestone] queued draft for donor ${enr.donor_id} (${meta.milestone_key}) — pending review`);
             } else {
@@ -731,7 +732,7 @@ async function processSequences({ orgId = null } = {}) {   // TRUST-1: a request
               await run(
                 `INSERT INTO milestone_drafts (id, org_id, donor_id, sequence_enrollment_id, milestone_key, subject, body, status)
                  VALUES (?,?,?,?,?,?,?,'pending_review')`,
-                [newId("mdraft"), enr.org_id, enr.donor_id, enr.id, "at_risk", draft.subject, draft.body]
+                [newId("mdraft"), enr.org_id, enr.donor_id, enr.id, "at_risk", DRAFT_KEYS.templatize(draft.subject), DRAFT_KEYS.templatize(draft.body)]   // TRUTH-3
               );
               console.log(`[at-risk] queued re-engagement draft for donor ${enr.donor_id} — pending review`);
             } else {

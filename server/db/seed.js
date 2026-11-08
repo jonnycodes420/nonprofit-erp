@@ -630,7 +630,10 @@ async function seedData() {
     // (isNoteMoment() in server.js), $10k+ thresholds get a "write a note"
     // reminder instead of an AI-drafted email. See noteReminders below.
   ];
+  // TRUTH-3: stored with figure keys ({{total_giving}}), filled each time the draft is opened.
+  const { templatize } = require("../../shared/numbers/draftRender");
   for (const m of milestoneDrafts) {
+    m[5] = templatize(m[5]); m[6] = templatize(m[6]);
     await pool.query(
       `INSERT INTO milestone_drafts (id,org_id,donor_id,sequence_enrollment_id,milestone_key,subject,body,status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING`,

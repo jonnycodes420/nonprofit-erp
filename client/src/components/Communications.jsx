@@ -191,7 +191,7 @@ function StatusBadge({ status, campaign, onFailed }) {
   const clickable = (partial || notSent || status === "failed") && onFailed;
   return (
     <span data-testid="camp-status" data-status={partial ? "partial" : notSent ? "failed" : status} role={clickable ? "button" : undefined} tabIndex={clickable ? 0 : undefined}
-      title={clickable ? ((d && d.reasons && d.reasons.length ? "Why: " + d.reasons.map(r => `${r.n.toLocaleString("en-US")} ${r.reason.toLowerCase()}`).join(", ") + ". " : "") + "Show the ones that did not go") : undefined}
+      title={d && d.why ? "Why: " + d.why : clickable ? ((d && d.reasons && d.reasons.length ? "Why: " + d.reasons.map(r => `${r.n.toLocaleString("en-US")} ${r.reason.toLowerCase()}`).join(", ") + ". " : "") + "Show the ones that did not go") : undefined}
       onClick={clickable ? e => { e.stopPropagation(); onFailed(); } : undefined}
       style={{ fontSize: 11, fontWeight: 700, color: m.color, background: m.bg, borderRadius: label.length > 14 ? 10 : 99, padding: "3px 10px", letterSpacing: "0.04em", cursor: clickable ? "pointer" : "default",
                // SECURE-2: "Sent to 412 of 500 · 88 not sent" wraps inside its column rather than running into the next one.
@@ -1118,7 +1118,7 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
               </div>
               <div style={{ fontSize: 12, color: T.ink3 }}>{d.donor_email} · {d.donor_id
                 ? <Figure variant="cell" kind="money" value={Number(d.donor_total_giving || 0)} label={`${d.donor_name}, lifetime giving`} source={{ key: "donor-lifetime", params: { donor: d.donor_id } }} />
-                : fmtFull(d.donor_total_giving || 0)} lifetime giving</div>
+                : fmtFull(d.donor_total_giving || 0)} lifetime giving{Number(d.donor_before_steward) > 0 ? `, including ${fmtFull(d.donor_before_steward)} before Steward` : ""}</div>
               <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 2 }}>
                 {d.source && d.source.startsWith("workflow:") ? "Drafted by an automatic step" : d.source === "journey" ? "From a journey step" : "Milestone draft"}
                 {d.reviewed_at ? <strong style={{ color: T.greenMid }}> · Reviewed</strong> : null}

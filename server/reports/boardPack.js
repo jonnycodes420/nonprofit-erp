@@ -685,7 +685,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
       ["Total Donors",      String(totalDonors),  INK],
       ["New This Quarter",  String(newDonorsQ),   "#1a6b4a"],
       ["Lapsed Donors",     String(lapsedDonors), "#dc2626"],
-      ["Retention Rate",    retentionRate + "%",  retentionRate >= 70 ? "#1a6b4a" : retentionRate >= 50 ? "#f59e0b" : "#dc2626"],
+      ["Retention (fiscal year)", retentionRate + "%",  retentionRate >= 70 ? "#1a6b4a" : retentionRate >= 50 ? "#f59e0b" : "#dc2626"],
     ].forEach(([label, value, color], i) => {
       const x = 50 + i * mw;
       doc.rect(x, y, mw - 6, 60).fill(BG);

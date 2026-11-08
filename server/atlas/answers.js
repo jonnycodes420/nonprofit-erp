@@ -133,8 +133,11 @@ function groupName(text, today) {
 // "Tell me about Marlowe": giving, the About note, the last conversations and
 // the next step, each a line with where it lives.
 async function personAnswer({ query, orgId, donorId, today }) {
-  const [d] = await query(`SELECT id, name, about_them, total_giving, gift_count, last_gift_amount, last_gift_date, first_gift_date, stage, deceased, do_not_contact
-                             FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);
+  // TRUTH-3: lifetime, the gift count and the last gift by the profile's rules (shared/numbers), never the stored rollup.
+  const [d] = await query(`SELECT d.id, d.name, d.about_them, ROUND(${require("../../shared/numbers/lifetime").LIFETIME("d")}, 2) AS total_giving, ${require("../../shared/numbers/giftCount").GIFT_COUNT("d")} AS gift_count,
+                                    (SELECT lg.amount FROM gifts lg WHERE lg.org_id = d.org_id AND lg.donor_id = d.id AND ${require("../../shared/numbers/money").GIFT("lg")} AND lg.date IS NOT NULL ORDER BY ${require("../../shared/numbers/lastGift").LAST_GIFT_ORDER.replace(/\bg\./g, "lg.")} LIMIT 1) AS last_gift_amount,
+                                    (SELECT LEFT(lg.date, 10) FROM gifts lg WHERE lg.org_id = d.org_id AND lg.donor_id = d.id AND ${require("../../shared/numbers/money").GIFT("lg")} AND lg.date IS NOT NULL ORDER BY ${require("../../shared/numbers/lastGift").LAST_GIFT_ORDER.replace(/\bg\./g, "lg.")} LIMIT 1) AS last_gift_date, d.first_gift_date, d.stage, d.deceased, d.do_not_contact
+                             FROM donors d WHERE d.id=? AND d.org_id=? AND d.deleted_at IS NULL`, [donorId, orgId]);
   if (!d) return null;
   const first = String(d.name).split(/\s+/)[0];
   const convs = await query(`SELECT id, type, date, note FROM interactions WHERE org_id=? AND donor_id=? AND COALESCE(note,'') <> '' AND type = ANY(ARRAY['call','meeting','email','visit','ask','note','stewardship'])

@@ -31,6 +31,7 @@ export function adaptGrant(g) {
     history:   Array.isArray(g.history) ? g.history : JSON.parse(g.history || "[]"),
     funderId:  g.funder_donor_id || null,
     awardPledgeId: g.award_pledge_id || null,   // GRANTS-FIX: the award is recorded
+    amountAwarded: parseFloat(g.amount_awarded) || 0,   // TRUTH-3: one award state (shared/grantAwardLine.js)
     description: g.description || "",
     requirements: g.requirements || "",
   };

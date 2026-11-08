@@ -49,11 +49,17 @@ export const footCount = (rows, get) => rows.reduce((s, r) => s + (Number.isFini
 
 // Sort value for a raw cell: numbers as numbers, money as cents, ISO as text
 // (ISO sorts correctly as text), blanks last.
+// TRUTH-3 (W-1107-Fundraising-11): a sort is numeric on the amount, never on
+// text. A cell that is an amount ("4500.00" from the database, "$4,821", "1,200")
+// sorts as a number whatever its column says, so $4,500 never sits above $4,821.
+const NUMERIC_TEXT = /^\s*-?\$?\s?-?\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*$|^\s*-?\$?\s?-?\d+(?:\.\d+)?\s*$/;
 export function sortValue(v, type) {
   if (v === null || v === undefined || v === "") return null;
   if (type === "money") return centsOf(v);
-  if (type === "number" || type === "count" || type === "pct") { const n = Number(v); return Number.isFinite(n) ? n : String(v); }
-  return typeof v === "number" ? v : String(v);
+  if (type === "number" || type === "count" || type === "pct") { const n = Number(String(v).replace(/[$,\s]/g, "")); return Number.isFinite(n) ? n : String(v); }
+  if (typeof v === "number") return v;
+  if (NUMERIC_TEXT.test(String(v))) { const n = Number(String(v).replace(/[$,\s]/g, "")); if (Number.isFinite(n)) return n; }
+  return String(v);
 }
 
 // The next sort after a header click: descending, then ascending, then none.

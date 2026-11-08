@@ -265,3 +265,8 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
   redirects followed only on the same host, robots.txt honoured, four pages, 600KB each. `SETUP_SITE_ALLOW_LOCAL=1`
   is the test seam and is refused when `NODE_ENV=production`.
 
+- **Atlas never does arithmetic in the model (TRUTH-3).** Every amount and count Atlas states is read from
+  shared/numbers (the profile's functions). A question about several people resolves each name alone, asks
+  "Which Walter?" with each match's lifetime when a name is ambiguous, never merges them, and sums in code
+  (`server/atlas/givingTotal.js`).
+

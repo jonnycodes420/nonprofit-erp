@@ -29,12 +29,16 @@ function reasonWord(r) {
   return "Refused by the email provider";
 }
 
+const NOBODY = "Not sent: nobody could receive it";
+const NOBODY_REASON = "Nobody in its audience had an email address Steward may send to (no address, unsubscribed, bounced, or marked do not email).";
 function sentenceFor(status, sent, total) {
   const notSent = Math.max(0, total - sent);
   if (status === "draft" || status === "scheduled" || status === "awaiting_approval") return null;
   if (status === "sending") return `Sending · ${n(sent)} of ${n(total)} so far`;
   if (total > 0 && sent === 0) return "Not sent";
   if (status === "failed") return "Not sent";
+  // TRUTH-3 (W-1107-Fundraising-16X): a campaign that reached nobody never says "Sent".
+  if (total === 0) return NOBODY;
   if (notSent > 0) return `Sent to ${n(sent)} of ${n(total)} · ${n(notSent)} not sent`;
   return `Sent to ${n(sent)}`;
 }
@@ -65,10 +69,12 @@ async function deliveryFor(orgId, campaigns) {
     const k = byId.get(c.id) || { total: 0, sent: 0 };
     const total = k.total, sent = k.sent, notSent = Math.max(0, total - sent);
     const sentence = sentenceFor(c.status, sent, total);
-    const state = sentence === "Not sent" ? "not_sent" : (sentence && notSent > 0 && c.status !== "sending") ? "partial"
+    const state = sentence === "Not sent" || sentence === NOBODY ? "not_sent" : (sentence && notSent > 0 && c.status !== "sending") ? "partial"
       : (c.status === "sent" ? "sent" : c.status);
     out.set(c.id, { state, sent, total, notSent, sentence,
-      reasons: [...(reasons.get(c.id) || new Map()).entries()].map(([reason, count]) => ({ reason, n: count })).sort((a, b) => b.n - a.n) });
+      reasons: sentence === NOBODY ? [{ reason: NOBODY_REASON, n: 0 }]
+        : [...(reasons.get(c.id) || new Map()).entries()].map(([reason, count]) => ({ reason, n: count })).sort((a, b) => b.n - a.n),
+      ...(sentence === NOBODY ? { why: NOBODY_REASON } : {}) });
   }
   return out;
 }
@@ -79,4 +85,4 @@ async function withDelivery(orgId, campaigns) {
   return (campaigns || []).map(c => ({ ...c, delivery: d.get(c.id) || null }));
 }
 
-module.exports = { deliveryFor, withDelivery, sentenceFor, reasonWord };
+module.exports = { deliveryFor, withDelivery, sentenceFor, reasonWord, NOBODY, NOBODY_REASON };

@@ -1404,14 +1404,21 @@ app.post("/digests/run", requireAuth, requireAdmin, wrap(async (req, res) => {
 app.get("/note-reminders", requireAuth, wrap(async (req, res) => {
   const status = req.query.status || "pending";
   const rows = await query(
-    `SELECT nr.*, d.name AS donor_name, d.email AS donor_email, d.total_giving AS donor_total_giving
+    `SELECT nr.*, d.name AS donor_name, d.email AS donor_email, ${require("../../shared/numbers/lifetime").LIFETIME("d")} AS donor_total_giving
      FROM note_reminders nr
-     JOIN donors d ON d.id = nr.donor_id
+     JOIN donors d ON d.id = nr.donor_id AND d.org_id = nr.org_id
      WHERE nr.org_id = ? AND nr.status = ?
      ORDER BY nr.created_at DESC`,
     [req.user.orgId, status]
   );
-  res.json(rows.map(r => ({ ...r, talking_points: typeof r.talking_points === "string" ? JSON.parse(r.talking_points) : r.talking_points })));
+  // TRUTH-3: talking points are filled from the person's figures today, like every draft.
+  const R = require("../drafts/render"), read = R.figureReader(req.user.orgId);
+  const out = [];
+  for (const r of rows) {
+    const pts = typeof r.talking_points === "string" ? JSON.parse(r.talking_points) : r.talking_points;
+    out.push({ ...r, talking_points: status === "pending" ? await R.renderPoints(req.user.orgId, r.donor_id, pts, read) : pts });
+  }
+  res.json(out);
 }));
 
 // Marks the reminder sent and logs a stewardship interaction confirming a

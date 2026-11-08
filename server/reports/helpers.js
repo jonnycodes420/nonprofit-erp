@@ -173,10 +173,11 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
     const prior = await fig({ key: "retention-prior", params: {} });
     if (prior.value > 0) {
       extra.retentionRate.also = [
-        { key: "retained", label: "Gave again this year", kind: "count", value: retained.value, source: retained.source,
-          definition: "Everyone who gave last calendar year and has given again this one." },
-        { key: "prior", label: "Gave last year", kind: "count", value: prior.value, source: prior.source,
-          definition: "Everyone who gave last calendar year: the people retention is measured against." },
+        // TRUTH-3: these sources are the FISCAL year (retentionOf), and say so.
+        { key: "retained", label: "Gave again this fiscal year", kind: "count", value: retained.value, source: retained.source,
+          definition: "Everyone who gave last fiscal year and has given again this fiscal year." },
+        { key: "prior", label: "Gave last fiscal year", kind: "count", value: prior.value, source: prior.source,
+          definition: "Everyone who gave last fiscal year: the people retention is measured against." },
       ];
     }
     // BUILD-88a A.6 — the org's other income, ONLY if somebody turned it on
@@ -248,6 +249,11 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
         const w = DS.windowsFor(today);
         const fyWin = { from1: fyPrev.start, to1: fyPrev.end, from0: fy.start, to0: today };
         const rollWin = { from1: w.w1From, to1: w.w1To, from0: w.w0From, to0: today };
+        // TRUTH-3 (W-1107-Fundraising-03): "Calendar year" is the calendar year.
+        // It read the plain `retention` source, which is the FISCAL year, under a
+        // calendar-year label. Each label now reads the window it names.
+        const cy = Number(String(today).slice(0, 4));
+        const calWin = { from1: `${cy - 1}-01-01`, to1: `${cy - 1}-12-31`, from0: `${cy}-01-01`, to0: today };
         const opt = async (k, label, definition, source, parts) => {
           const f = await fig(source);
           const ps = await Promise.all(parts.map(async ([pk, plabel, pdef, psrc]) => {
@@ -259,9 +265,9 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
         };
         values.retentionChoice = await Promise.all([
           opt("calendar", "Calendar year", "Of the people who gave last calendar year, the share who have given again this one.",
-            { key: "retention", params: {} }, [
-              ["kept", "Gave again this year", "Everyone who gave last calendar year and has given again this one.", { key: "retention-retained", params: {} }],
-              ["prior", "Gave last year", "Everyone who gave last calendar year: the people retention is measured against.", { key: "retention-prior", params: {} }],
+            { key: "retention-window", params: calWin }, [
+              ["kept", "Gave again this year", "Everyone who gave last calendar year and has given again this one.", { key: "retention-window-kept", params: calWin }],
+              ["prior", "Gave last year", "Everyone who gave last calendar year: the people retention is measured against.", { key: "retention-window-prior", params: { from1: calWin.from1, to1: calWin.to1 } }],
             ]),
           opt("fiscal", "Fiscal year", `Of the people who gave last fiscal year (${DD.displayDate(fyPrev.start)} to ${DD.displayDate(fyPrev.end)}), the share who have given again this fiscal year.`,
             { key: "retention-window", params: fyWin }, [

@@ -588,6 +588,19 @@ app.get("/grants/deadlines", requireAuth, wrap(async (req, res) => {
       WHERE m.org_id=? AND g.is_sample IS NOT TRUE AND m.state <> 'skipped'
       ORDER BY m.due_date ASC`, [orgId]);
   const all = rows.map(r => milestoneRow(r, M, today, leadDays));
+  // TRUTH-3 (W-1107-Finance-31): every future grant deadline is listed. A
+  // grant's own deadline (grants.deadline) with no deadline row of its own on
+  // that day is listed as the grant's deadline, whatever the grant's status:
+  // an awarded grant with a deadline 39 days out is 39 days out, never "Passed".
+  const own = await query(
+    `SELECT g.id AS grant_id, g.deadline, g.program, g.status, g.funder, d.name AS funder_name
+       FROM grants g LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+      WHERE g.org_id = ? AND g.is_sample IS NOT TRUE AND g.deadline ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND LEFT(g.deadline, 10) >= ?
+        AND NOT EXISTS (SELECT 1 FROM grant_milestones m WHERE m.org_id = g.org_id AND m.grant_id = g.id AND m.due_date = LEFT(g.deadline, 10) AND m.state <> 'skipped')`,
+    [orgId, today]).catch(() => []);
+  for (const r of own) all.push(milestoneRow({ id: `grant-deadline:${r.grant_id}`, grant_id: r.grant_id, kind: "custom", label: "Grant deadline",
+    due_date: String(r.deadline).slice(0, 10), state: "open", program: r.program, status: r.status, funder: r.funder, funder_name: r.funder_name }, M, today, leadDays));
+  for (const m of all) if (String(m.id).startsWith("grant-deadline:")) m.fromGrant = true;   // the grant's own date: edited on the grant, no Done
   const open = all.filter(m => m.state !== "done");
 
   // BUILD-100 Part 4 — A REPORT-DUE MILESTONE CARRIES ITS GRANT'S BALANCE,

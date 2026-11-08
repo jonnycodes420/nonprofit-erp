@@ -69,7 +69,10 @@ const { query, wrap, requireAuth, agentGate } = ctx;
 const app = routers.r0;
 
 async function facts(orgId, donorId) {
-  const [d] = await query(`SELECT d.id, d.name, d.about_them, d.total_giving, d.gift_count, d.last_gift_amount, d.last_gift_date, d.deceased, d.do_not_contact, o.name AS org_name
+  // TRUTH-3: lifetime, the gift count and the last gift by the profile's rules (shared/numbers), never the stored rollup.
+  const [d] = await query(`SELECT d.id, d.name, d.about_them, ROUND(${require("../shared/numbers/lifetime").LIFETIME("d")}, 2) AS total_giving, ${require("../shared/numbers/giftCount").GIFT_COUNT("d")} AS gift_count,
+                                    (SELECT lg.amount FROM gifts lg WHERE lg.org_id = d.org_id AND lg.donor_id = d.id AND ${require("../shared/numbers/money").GIFT("lg")} AND lg.date IS NOT NULL ORDER BY ${require("../shared/numbers/lastGift").LAST_GIFT_ORDER.replace(/\bg\./g, "lg.")} LIMIT 1) AS last_gift_amount,
+                                    (SELECT LEFT(lg.date, 10) FROM gifts lg WHERE lg.org_id = d.org_id AND lg.donor_id = d.id AND ${require("../shared/numbers/money").GIFT("lg")} AND lg.date IS NOT NULL ORDER BY ${require("../shared/numbers/lastGift").LAST_GIFT_ORDER.replace(/\bg\./g, "lg.")} LIMIT 1) AS last_gift_date, d.deceased, d.do_not_contact, o.name AS org_name
                              FROM donors d JOIN orgs o ON o.id = d.org_id WHERE d.id=? AND d.org_id=? AND d.deleted_at IS NULL`, [donorId, orgId]);
   if (!d) return null;
   const [conv] = await query(`SELECT type, date, note FROM interactions WHERE org_id=? AND donor_id=? AND COALESCE(note,'') <> '' AND type = ANY(ARRAY['call','meeting','email','visit','ask','note','stewardship']) ORDER BY date DESC NULLS LAST, created_at DESC LIMIT 1`, [orgId, donorId]);
