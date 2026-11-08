@@ -16,6 +16,7 @@ import { RailSection } from "../ProfileRail";
 import { displayDateShort } from "../../../../shared/displayDate";
 import { displayOrgDateShort } from "../../lib/orgDay";
 import { shownTags, shownNote } from "../../lib/internalLabels";
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // IMPORT-4 · A GIFT WITH NO DATE. An import that gave no day keeps the gift
 // undated: it counts in Lifetime and its event, never in This year. "Set date"
@@ -39,7 +40,7 @@ function UndatedGiftDate({ giftId, readOnly, onSaved }) {
       {!readOnly && !open && <button data-testid="dp-gift-set-date" onClick={() => setOpen(true)}
         style={{ background: "none", border: "none", color: T.greenDk, fontSize: 11, fontWeight: 700, cursor: "pointer", padding: 0 }}>Set date</button>}
       {open && <>
-        <input type="date" value={day} onChange={e => setDay(e.target.value)} aria-label="Gift date"
+        <DateInput value={day} onChange={e => setDay(e.target.value)} aria-label="Gift date"
           style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 6, padding: "3px 6px", fontSize: 12, color: T.ink }} />
         <button onClick={save} disabled={busy} style={{ background: T.greenDk, color: T.white, border: "none", borderRadius: 6, padding: "4px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{busy ? "Saving" : "Save"}</button>
         <button onClick={() => { setOpen(false); setErr(""); }} style={{ background: "none", border: "none", color: T.ink3, fontSize: 11, cursor: "pointer" }}>Cancel</button>

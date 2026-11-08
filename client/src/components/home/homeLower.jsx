@@ -4,6 +4,7 @@ import { fmtDayLong } from "../../lib/taskDue";
 import { Suspense } from "react";
 import { apiFetch } from "../../api";
 import { plural } from "../../../../shared/countWords";
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when shown (Home's first look stays in budget)
 
 export function homeOverlays({ closePortfolioBreakdown, convoFor, data, debtBreakdown, debtBreakdownLoading, debtBreakdownOpen, goToDonorFromBreakdown, goToDonorFromPortfolio, impact, loadDrift, loadThreads, onNavigate, planFor, portfolioBreakdown, reengBreakdownOpen, retentionBreakdown, retentionBreakdownLoading, retentionBreakdownOpen, setConvoFor, setData, setDebtBreakdownOpen, setPlanFor, setReengBreakdownOpen, setRetentionBreakdownOpen, setWordsDone, setWordsOpen, wordsOpen }) {
   return (
@@ -168,11 +169,11 @@ export function cardsBlock({ goal, goalForm, goalModalMode, inp, layoutError, re
             <div style={{display:"flex",gap:8,marginBottom:10}}>
               <div style={{flex:1}}>
                 <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4}}>Period start</div>
-                <input type="date" value={goalForm.periodStart} onChange={e=>setGoalForm(f=>({...f,periodStart:e.target.value}))} style={{...inp,marginBottom:0}}/>
+                <DateInput value={goalForm.periodStart} onChange={e=>setGoalForm(f=>({...f,periodStart:e.target.value}))} style={{...inp,marginBottom:0}}/>
               </div>
               <div style={{flex:1}}>
                 <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4}}>Period end</div>
-                <input type="date" value={goalForm.periodEnd} onChange={e=>setGoalForm(f=>({...f,periodEnd:e.target.value}))} style={{...inp,marginBottom:0}}/>
+                <DateInput value={goalForm.periodEnd} onChange={e=>setGoalForm(f=>({...f,periodEnd:e.target.value}))} style={{...inp,marginBottom:0}}/>
               </div>
             </div>
             <div style={{display:"flex",gap:8,marginTop:6}}>

@@ -8,6 +8,7 @@ import { useState } from "react";
 import { apiFetch } from "../../api";
 import { T } from "../shared";
 import { errorMessage } from "../../lib/domainError";
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box
 
 const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 8px", fontSize: 13, color: T.ink, fontFamily: "inherit" };
 const btnLink = { background: "transparent", border: "none", padding: 0, color: T.greenDk, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
@@ -30,7 +31,7 @@ export default function ShiftRowActions({ s, onRemove, onSaved }) {
   };
   return (
     <span data-testid="vol-shift-editing" style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-      <input aria-label="Date" type="date" value={edit.date} onChange={e => setEdit({ ...edit, date: e.target.value })} style={inp} />
+      <DateInput aria-label="Date" value={edit.date} onChange={e => setEdit({ ...edit, date: e.target.value })} style={inp} />
       <input aria-label="Hours" type="number" step="0.25" min="0.25" max="24" value={edit.hours} onChange={e => setEdit({ ...edit, hours: e.target.value })} style={{ ...inp, width: 72 }} />
       <input aria-label="What they did" value={edit.role} onChange={e => setEdit({ ...edit, role: e.target.value })} style={{ ...inp, width: 130 }} />
       <button data-testid="vol-shift-save" onClick={save} disabled={!edit.date || !edit.hours} style={btnLink}>Save</button>

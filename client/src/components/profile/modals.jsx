@@ -10,6 +10,7 @@ import { AttachFileField, uploadAttachment } from "../ProfileTimelineParts";
 import { MONTHS as BIRTH_MONTHS } from "../../../../shared/birthday.js";
 import { stageTone } from "./profileShared";
 import { nextYearlyOn, recurPhrase } from "../../../../shared/taskShape.js";
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── Follow-up Task Modal ───────────────────────────────────────────────────
 function FollowUpTaskModal({donor,onSave,onClose}){
@@ -52,7 +53,7 @@ function FollowUpTaskModal({donor,onSave,onClose}){
           </div>
           <div>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5}}>Due Date</div>
-            <input type="date" value={due} onChange={e=>{setDue(e.target.value);if(recur&&recur.birthday)setRecur({every:"year"});}} style={inp}/>
+            <DateInput value={due} onChange={e=>{setDue(e.target.value);if(recur&&recur.birthday)setRecur({every:"year"});}} style={inp}/>
           </div>
           <div>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5}}>Repeats</div>
@@ -226,7 +227,7 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift,editing=null}){
         <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:16}}>
           {(editing?TYPES.filter(([v])=>v!=="gift"&&(!fromCalendar&&plain===null||v===type)):TYPES).map(([v,l])=><button key={v} aria-pressed={type===v} onClick={()=>setType(v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 13px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark(type===v,"bottom")}}>{l}</button>)}
         </div>
-        <div style={{marginBottom:16}}><span style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5,display:"block"}}>Date</span><input type="date" value={date} onChange={e=>setDate(e.target.value)} disabled={fromCalendar} style={inp}/>
+        <div style={{marginBottom:16}}><span style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5,display:"block"}}>Date</span><DateInput value={date} onChange={e=>setDate(e.target.value)} disabled={fromCalendar} style={inp}/>
           {fromCalendar&&<div style={{fontSize:12,color:T.ink3,marginTop:6}}>The time and place come from your calendar. <a href={`https://${editMeta.provider==="google"?"calendar.google.com/calendar/r/day/":"outlook.office.com/calendar/view/day/"}${String(editing.date||"").slice(0,10).replace(/-/g,"/")}`} target="_blank" rel="noreferrer" style={{color:T.greenDk,fontWeight:700}}>Change it in your calendar</a>.</div>}</div>
         <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:20}}>
           {plain!==null&&<TpField label="Note"><textarea value={plain} onChange={e=>setPlain(e.target.value)} rows={6} style={ta}/></TpField>}

@@ -34,7 +34,9 @@ import { lifetimeShareWords, sharePercent } from "../../../../shared/lifetimeSha
 import PledgeSchedule, { emptySchedule, scheduleBody } from "../gifts/PledgeSchedule";   // GIFTS-1: one payment or installments
 import { giftTypeLabel } from "../../../../shared/giftWords.js";
 import OfflinePlans from "./OfflinePlans";   // PLEDGES-2: a recurring plan staff record by hand
+import { compareGifts } from "../../../../shared/giftOrder.js";
 import ByYear from "./ByYear";   // HISTORY-1: giving by fiscal year   // FEEL-1: "Pledge payment", never "Pledge_payment"
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // GIFTS-1: a pledge's schedule as the edit opens it, read from its installments.
 const FREQ_IN={annual:"yearly"};
@@ -311,7 +313,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
               <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:12}}>New Gift</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
                 <input value={addGiftForm.amount} onChange={e=>setAddGiftForm(p=>({...p,amount:e.target.value}))} placeholder="Amount ($)" type="number" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
-                <input value={addGiftForm.date} onChange={e=>setAddGiftForm(p=>({...p,date:e.target.value}))} type="date" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
+                <DateInput value={addGiftForm.date} onChange={e=>setAddGiftForm(p=>({...p,date:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
                 <select value={addGiftForm.type} onChange={e=>setAddGiftForm(p=>({...p,type:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}>
                   {["cash","check","credit_card","stock","in_kind","matching","other"].map(t=><option key={t} value={t}>{giftTypeLabel(t)}</option>)}
                 </select>
@@ -400,13 +402,13 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                     </tr>
                   </thead>
                   <tbody>
-                    {[...giftsFull].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(g=>(
+                    {[...giftsFull].sort(compareGifts).map(g=>(   /* POLISH-6: date, then entered, newest first */
                       <tr key={g.id} id={`gift-${g.id}`} style={{borderBottom:"1px solid "+T.bg3}}>
                         {giftEditId===g.id?(
                           <td colSpan={8} style={{padding:"10px 12px"}}>
                             <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
                               <input value={giftEditForm.amount} onChange={e=>setGiftEditForm(p=>({...p,amount:e.target.value}))} placeholder="Amount" type="number" style={{width:80,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
-                              <input value={giftEditForm.date} onChange={e=>setGiftEditForm(p=>({...p,date:e.target.value}))} type="date" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
+                              <DateInput value={giftEditForm.date} onChange={e=>setGiftEditForm(p=>({...p,date:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
                               <select value={giftEditForm.type} onChange={e=>setGiftEditForm(p=>({...p,type:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}>
                                 {["cash","check","credit_card","stock","in_kind","matching","other"].map(t=><option key={t} value={t}>{giftTypeLabel(t)}</option>)}
                               </select>
@@ -563,7 +565,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                     {["bequest","charitable_remainder_trust","charitable_lead_trust","annuity","ira_beneficiary","life_insurance","real_estate","other"].map(t=><option key={t} value={t}>{t.replace(/_/g," ")}</option>)}
                   </select>
                   <input value={pgForm.estimated_value} onChange={e=>setPgForm(p=>({...p,estimated_value:e.target.value}))} placeholder="Estimated value ($)" type="number" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
-                  <input value={pgForm.date_indicated} onChange={e=>setPgForm(p=>({...p,date_indicated:e.target.value}))} type="date" placeholder="Date indicated" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
+                  <DateInput value={pgForm.date_indicated} onChange={e=>setPgForm(p=>({...p,date_indicated:e.target.value}))} placeholder="Date indicated" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
                   <input value={pgForm.notes} onChange={e=>setPgForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
                 </div>
                 <div style={{display:"flex",gap:8}}>

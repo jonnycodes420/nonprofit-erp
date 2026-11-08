@@ -8,6 +8,7 @@ import { EmailsReceived } from "../EmailAsSent";
 import { ProfileTimeline } from "../ProfileTimeline";
 import { HistoryList } from "../EditHistory";
 import { shownTags, shownNote } from "../../lib/internalLabels";
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 function ListTabs(props){
   // FLOWS-2: the files attached to conversations and notes (the timeline's own read) count as files too.
@@ -33,7 +34,7 @@ function ListTabsBody({fileTally,attachedFiles,deleteMaterial,donor,dpTab,giftsF
                   <select value={stwForm.type} onChange={e=>setStwForm(p=>({...p,type:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}>
                     {[["thank_you","Thank You Sent"],["recognition","Recognition"],["gift_sent","Gift Sent"],["impact_update","Impact Update"],["appreciation_event","Appreciation Event"],["holiday_card","Holiday Card"],["birthday","Birthday"],["other","Other"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
                   </select>
-                  <input value={stwForm.date} onChange={e=>setStwForm(p=>({...p,date:e.target.value}))} type="date" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
+                  <DateInput value={stwForm.date} onChange={e=>setStwForm(p=>({...p,date:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
                   <input value={stwForm.detail} onChange={e=>setStwForm(p=>({...p,detail:e.target.value}))} placeholder="What was sent/done (e.g. signed book, tote bag)" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",gridColumn:"1/-1"}}/>
                   <input value={stwForm.note} onChange={e=>setStwForm(p=>({...p,note:e.target.value}))} placeholder="Optional note" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",gridColumn:"1/-1"}}/>
                 </div>

@@ -13,6 +13,7 @@ import { errorMessage } from "../lib/domainError";
 import { useChanged } from "../lib/changes";   // STALE-2
 import { displayDate } from "../../../shared/displayDate";
 import { displayOrgDate } from "../lib/orgDay";
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 
@@ -104,7 +105,7 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
         <option value="">No opportunity</option>
         {data.opportunities.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
       </select>
-      <input aria-label="Date" type="date" value={f.date} onChange={e => set({ ...f, date: e.target.value })} style={inp} />
+      <DateInput aria-label="Date" value={f.date} onChange={e => set({ ...f, date: e.target.value })} style={inp} />
       <select aria-label="How to give the hours" value={f.mode} onChange={e => set({ ...f, mode: e.target.value })} style={inp}>
         <option value="hm">Hours and minutes</option><option value="times">Start and end time</option>
       </select>
@@ -156,9 +157,9 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
       <div data-testid="volunteer-log-table" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <span style={{ ...eyebrow, marginRight: 4 }}>Hours log</span>
-          <input aria-label="From" type="date" value={filt.from} onChange={e => setFilt({ ...filt, from: e.target.value })} style={inp} />
+          <DateInput aria-label="From" value={filt.from} onChange={e => setFilt({ ...filt, from: e.target.value })} style={inp} />
           <span style={{ fontSize: 12, color: T.ink3 }}>to</span>
-          <input aria-label="To" type="date" value={filt.to} onChange={e => setFilt({ ...filt, to: e.target.value })} style={inp} />
+          <DateInput aria-label="To" value={filt.to} onChange={e => setFilt({ ...filt, to: e.target.value })} style={inp} />
           <select aria-label="Filter by opportunity" value={filt.opportunityId} onChange={e => setFilt({ ...filt, opportunityId: e.target.value })} style={inp}>
             <option value="">Every opportunity</option>
             {data.opportunities.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
@@ -231,7 +232,7 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
               <option value="skill">Skill</option><option value="certification">Certification</option><option value="tag">Tag</option>
             </select>
             <input aria-label="Name" placeholder={qual.kind === "certification" ? "First aid" : qual.kind === "tag" ? "Saturday regular" : "Spanish"} value={qual.name} onChange={e => setQual({ ...qual, name: e.target.value })} style={inp} />
-            {qual.kind === "certification" && <input aria-label="Runs out on" type="date" value={qual.expiresOn} onChange={e => setQual({ ...qual, expiresOn: e.target.value })} style={inp} />}
+            {qual.kind === "certification" && <DateInput aria-label="Runs out on" value={qual.expiresOn} onChange={e => setQual({ ...qual, expiresOn: e.target.value })} style={inp} />}
             <button style={btnQuiet} disabled={!qual.name.trim()} onClick={() => act(async () => { await apiFetch(`/donors/${donor.id}/volunteer-qualifications`, { method: "POST", body: JSON.stringify(qual) }); setQual({ kind: qual.kind, name: "", expiresOn: "" }); }, "That did not save.")}>Add</button>
           </div>}
         </div>)}

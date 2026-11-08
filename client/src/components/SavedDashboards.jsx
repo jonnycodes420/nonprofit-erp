@@ -22,6 +22,7 @@ import { ReportTable } from "./ReportBuilder";
 import { errorMessage } from "../lib/domainError";
 import { useUrlWriter } from "./RecordLink";
 import { tabHref } from "../lib/appUrls";
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const SD_CSS = `
 .sd-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;align-items:start}
@@ -66,9 +67,9 @@ const qsOf = f => {
 function FilterBar({ value, funds, campaigns, officers, groups = [], onChange, onSaveDefault, saving }) {
   const set = (k, v) => onChange({ ...value, [k]: v || "" });
   return <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 14 }}>
-    <input type="date" aria-label="From" value={value.from || ""} onChange={e => set("from", e.target.value)} style={fieldStyle} />
+    <DateInput aria-label="From" value={value.from || ""} onChange={e => set("from", e.target.value)} style={fieldStyle} />
     <span style={{ fontSize: 12, color: T.ink3 }}>to</span>
-    <input type="date" aria-label="To" value={value.to || ""} onChange={e => set("to", e.target.value)} style={fieldStyle} />
+    <DateInput aria-label="To" value={value.to || ""} onChange={e => set("to", e.target.value)} style={fieldStyle} />
     <select aria-label="Fund" value={value.fund || ""} onChange={e => set("fund", e.target.value)} style={fieldStyle}>
       <option value="">All funds</option>
       {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}

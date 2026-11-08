@@ -7,6 +7,7 @@ import { Fragment } from "react";
 import { displayName } from "../../../../shared/displayName.js";
 import { NEXT_STEP_LABEL_MAX, sanitizeStepLabel, nextStepTypeForLabel } from "../../../../shared/threadShape";
 import { DonorLink } from "../RecordLink";
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when shown (Home's first look stays in budget)
 
 export function driftEmptyState({ driftData, driftHighRows, driftRows }) {
   return (
@@ -187,7 +188,7 @@ export function driftSection({ cPad, cardWrap, driftAllData, driftBusy, driftDat
                         onChange={e=>{setDriftStepDirty(true);setDriftStep(st=>({...st,label:e.target.value}));}}
                         aria-label="Next step" placeholder="Leave blank for no next step"
                         style={{flex:"1 1 180px",minWidth:0,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 10px",fontSize:12.5,color:T.ink,background:T.bg,outline:"none"}}/>
-                      <input type="date" className="drift-step-due" value={driftStep.due||""}
+                      <DateInput className="drift-step-due" value={driftStep.due||""}
                         onChange={e=>{setDriftStepDirty(true);setDriftStep(st=>({...st,due:e.target.value}));}}
                         aria-label="Next step due date"
                         style={{flex:"0 0 auto",border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.ink,background:T.bg,outline:"none"}}/>
