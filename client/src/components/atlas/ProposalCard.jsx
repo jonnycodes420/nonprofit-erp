@@ -5,6 +5,7 @@
 // proposal's id, so a second press writes nothing).
 import { useState } from "react";
 import { T } from "../shared";
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box
 
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: "1px solid " + (primary ? T.greenDk : T.bg3),
   borderRadius: 10, padding: "6px 14px", minHeight: 36, fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" });
@@ -37,11 +38,11 @@ export default function ProposalCard({ request, busy, onSave }) {
             <span style={{ fontWeight: 600, textDecoration: it.skip ? "line-through" : "none" }}>{itemTitle(it)}</span>
           </label>
           {edit && !saved && !it.skip ? <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
-            {it.kind === "call" && <><input type="date" value={it.date} onChange={e => set(it.pid, "date", e.target.value)} style={input} aria-label="When" />
+            {it.kind === "call" && <><DateInput value={it.date} onChange={e => set(it.pid, "date", e.target.value)} style={input} aria-label="When" />
               <textarea rows={3} value={it.note} onChange={e => set(it.pid, "note", e.target.value)} style={input} aria-label="The note" /></>}
             {it.kind === "note" && <textarea rows={2} value={it.note} onChange={e => set(it.pid, "note", e.target.value)} style={input} aria-label="The note" />}
             {it.kind === "follow_up" && <><input value={it.title} onChange={e => set(it.pid, "title", e.target.value)} style={input} aria-label="Follow-up" />
-              <input type="date" value={it.due} onChange={e => set(it.pid, "due", e.target.value)} style={input} aria-label="Due" /></>}
+              <DateInput value={it.due} onChange={e => set(it.pid, "due", e.target.value)} style={input} aria-label="Due" /></>}
             {it.kind === "draft" && <><input value={it.subject} onChange={e => set(it.pid, "subject", e.target.value)} style={input} aria-label="Subject" />
               <textarea rows={8} value={it.body} onChange={e => set(it.pid, "body", e.target.value)} style={input} aria-label="The email" /></>}
           </div>
