@@ -25,7 +25,8 @@ export const dueNowWords = c => {
 // FEEL-1: Home's "follow-ups" is a different list, and the badge says how, so
 // 13 on Home beside 14 here is never read as one number disagreeing.
 // SENDS-1 (W-1107-Volunteers-14): both labels say exactly what they count, and each names the other.
-export const BADGE_VS_FOLLOWUPS = "Home's follow-ups count something else: Home's \"people to follow up\" is each person with a next step planned, whenever it is due. This counts your tasks due today or overdue, with or without a person.";
+// TRUTH-4: Home's set has its own name, "people with a next step", with no word shared with this count.
+export const BADGE_VS_FOLLOWUPS = "Home's \"people with a next step\" is a different list: each person with a next step planned, whenever it is due. This counts your tasks due today or overdue, with or without a person.";
 export const badgeTitle = c => `${dueNowWords(c)}. ${BADGE_VS_FOLLOWUPS}`;
 
 export function useTaskBadge(enabled = true) {

@@ -8,6 +8,7 @@
 // blocks it names). tests/insights2-off-request checks each card against its
 // group's own member query.
 "use strict";
+const { EVERYONE } = require("./everyone");
 const M = require("./money");
 
 // The rule each starter is, over one person row `d` and their gift aggregate `ga`.
@@ -52,7 +53,7 @@ function starterCountsSql(o) {
         MIN(g.date) AS first_date,
         COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ${p(prior.from)} AND g.date <= ${p(prior.to)} AND ${M.MONEY("g")}), 0) AS prior_money,
         COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ${p(cur.from)} AND g.date <= ${p(cur.to)} AND ${M.MONEY("g")}), 0) AS cur_money,
-        BOOL_OR(g.amount > 0) AS gave,
+        BOOL_OR(${M.GIFT("g")}) AS gave,   -- TRUTH-4: a counted gift, as groups.js given=never reads it
         BOOL_OR(g.date >= ${p(since)} AND COALESCE(g.is_sample,false) = false AND COALESCE(g.acknowledgement_sent,false) = false) AS unthanked
       FROM gifts g WHERE g.org_id = ${p(orgId)} GROUP BY g.donor_id`;
   const st = status.sql; args.push(...status.args);
@@ -80,7 +81,7 @@ function starterCountsSql(o) {
   const sql = `WITH ga AS (${gifts}), st AS MATERIALIZED (SELECT s.donor_id, s.lapsing, s.lifecycle FROM (${st}) s),${rest}
     SELECT ${cols.join(",\n      ")}
       FROM donors d LEFT JOIN ga ON ga.donor_id = d.id
-     WHERE d.org_id = ${p(orgId)} AND d.deleted_at IS NULL AND d.archived_at IS NULL`;
+     WHERE d.org_id = ${p(orgId)} AND ${EVERYONE("d")}`;   // TRUTH-4 (W-1108-Volunteers-31X): Everyone's rule, as a group's people (erased out)
   return { sql, args };
 }
 

@@ -115,6 +115,8 @@ async function donorByYear(query, org, donorId, today) {
     return {
       key: y.key, label: y.label, chartLabel: y.chartLabel, from: y.from, to: y.to, current: y.current,
       total: dollars(cents), cents, giftCount: positive.length, largest: dollars(largest), largestCents: largest,
+      // TRUTH-4: a $0 row in the year is listed in history; the year says it is on file, not counted.
+      alsoOnFile: (z => (z ? { zero: z, sentence: require("./giftCount").alsoOnFile(z) } : null))(mine.filter(g => toCents(g.amount) === 0).length),
       softCredit: dollars(softCents), softCents,
       sources: { total: src({}), giftCount: src({ measure: "count" }), largest: src({ largest: true }),
         softCredit: { key: "donor-year-soft", params: { donor: donorId, from: y.from, to: y.to } } },

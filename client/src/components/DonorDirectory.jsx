@@ -118,6 +118,9 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor,initialWin=null}
   const[rankRule,setRankRule]=useState("lifetime");   // TRUTH-3: the rule is named, and it is the sort
   const lapsed=rankBy(win==="lost"?lostList:recentList,rankRule);
   const totalValue=lapsed.reduce((s,d)=>s+d.total,0);
+  // TRUTH-4 (W-1108-Fundraising-15): at risk is each person's last year of giving
+  // (shared/numbers/atRisk.js), the Lost report's figure too; lifetime is labeled beside it.
+  const atRiskValue=lapsed.reduce((s,d)=>s+(d.lastYearGiving||0),0);
   // BUILD-79 Part 4 — averaged over donors with a REAL date only; a donor
   // with no dates contributes nothing rather than a today-anchored zero.
   const lapsedDated=lapsed.filter(d=>d.lastGift||d.lastTouchpoint);
@@ -168,7 +171,8 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor,initialWin=null}
       <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         {[
           [win==="lost"?"Lost donors":"Lapsed donors",lapsed.length,T.ink],
-          ["Total lapsed value",fmtFull(totalValue),T.ink],
+          ["At risk · last year of giving",fmtFull(atRiskValue),T.ink],
+          ["Lifetime, all of them",fmtFull(totalValue),T.ink],
           // SWEEP-2: the days are since the last gift, and the tile is ink (the four colours)
           ["Avg days since last gift",`${avgDays.toLocaleString("en-US")} days`,T.ink],
         ].map(([label,val,color])=>(

@@ -99,7 +99,8 @@ export function SourceRows({ source, initial, onSelectDonor, heading }) {
         </div>
       )}
       {data?.sentence && <div style={{ padding: "8px 24px 4px", fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>{data.sentence}</div>}
-      {loading && <div style={{ padding: "22px 24px", color: T.ink3, fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}><Spin />Reading the rows…</div>}
+      {data?.alsoOnFile?.sentence && <div data-testid="figure-also-on-file" style={{ padding: "2px 24px 4px", fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>{data.alsoOnFile.sentence}</div>}
+      {loading &&<div style={{ padding: "22px 24px", color: T.ink3, fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}><Spin />Reading the rows…</div>}
       {error && <div style={{ padding: "16px 24px", color: T.ink, fontSize: 13 }}>{error}</div>}
       {!loading && !error && rows.length === 0 && (
         <div style={{ padding: "18px 24px", color: T.ink3, fontSize: 13 }}>No rows. That is why this reads zero.</div>

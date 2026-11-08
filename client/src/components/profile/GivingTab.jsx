@@ -32,7 +32,7 @@ import EventField from "../gifts/EventField";   // GIFTS-1: a gift can belong to
 import FundField, { fundFromGift, fundLinesProblem } from "../gifts/FundField";   // GIFTS-2: one fund, or a split across funds
 import { lifetimeShareWords, sharePercent } from "../../../../shared/lifetimeShare.js";   // MOPUP-1: "under 1% of lifetime"
 import PledgeSchedule, { emptySchedule, scheduleBody } from "../gifts/PledgeSchedule";   // GIFTS-1: one payment or installments
-import { giftTypeLabel } from "../../../../shared/giftWords.js";
+import { giftTypeLabel, ZERO_GIFT_LABEL } from "../../../../shared/giftWords.js";   // TRUTH-4: the $0 label
 import OfflinePlans from "./OfflinePlans";   // PLEDGES-2: a recurring plan staff record by hand
 import { compareGifts } from "../../../../shared/giftOrder.js";
 import ByYear from "./ByYear";   // HISTORY-1: giving by fiscal year   // FEEL-1: "Pledge payment", never "Pledge_payment"
@@ -439,7 +439,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                         ):(
                           <>
                             <td style={{padding:"9px 12px",color:T.ink3,whiteSpace:"nowrap"}}>{g.date?displayDate(g.date):<UndatedGiftDate giftId={g.id} readOnly={isReadOnly} onSaved={loadGiftsFull}/>}</td>
-                            <td style={{padding:"9px 12px",fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>{fmtFull(g.amount)}
+                            <td style={{padding:"9px 12px",fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>{Number(g.amount)===0?<span data-testid="gift-zero-label" style={{fontWeight:600,color:T.ink3}}>{ZERO_GIFT_LABEL}</span>:fmtFull(g.amount)}
                               {/* FUNDRAISING-2: a gift for an event names it. */}
                               {g.event_name&&<div data-testid="dp-gift-event" style={{fontSize:11,fontWeight:400,color:T.ink3}}>{g.event_name}</div>}
                               {(g.fund_lines||[]).length>1&&<div data-testid="dp-gift-fund-lines" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Split: {g.fund_lines.map(l=>`${fmtFull(Number(l.amount))} ${l.fundName||"a fund that is gone"}`).join(" · ")}</div>}

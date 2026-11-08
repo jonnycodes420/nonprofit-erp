@@ -216,7 +216,7 @@ async function seed() {
     const rows = Number(await page.locator('[data-testid="rail-list"]').getAttribute("data-rows").catch(() => 0));
     const rail = await page.locator(".home-rail").innerText();
     // SENDS-1: Home names what it counts, "people to follow up", never read as the Tasks badge.
-    ok("§1 \"13 people to follow up\" opens a list of 13 under \"Open follow-ups · 13\"", label === "13 people to follow up" && rows === 13 && /Open follow-ups · 13/.test(rail), { label, rows, rail: rail.slice(0, 80) });
+    ok("§1 \"13 people with a next step\" opens a list of 13 under \"People with a next step · 13\"", label === "13 people with a next step" && rows === 13 && /People with a next step · 13/.test(rail), { label, rows, rail: rail.slice(0, 80) });
     await page.locator(".home-rail .home-rail-row").first().click();
     await page.waitForURL(/\/donors\//, { timeout: 15000 }).catch(() => {});
     ok("§1 a name in that list opens the person", /\/donors\/d_fl2_t/.test(page.url()), page.url());

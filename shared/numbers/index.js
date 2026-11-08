@@ -28,4 +28,6 @@ module.exports = {
   draftRender: require("./draftRender"),   // TRUTH-3
   giftCount: require("./giftCount"),   // TRUTH-3
   ledgerStatus: require("./ledgerStatus"),   // TRUTH-3
+  topDonors: require("./topDonors"),   // TRUTH-4
+  atRisk: require("./atRisk"),   // TRUTH-4
 };

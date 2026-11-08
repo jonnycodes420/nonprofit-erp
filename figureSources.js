@@ -418,6 +418,7 @@ function giftsWhere(p, args) {
   // (shared/numbers/giftCount.js: hard credit, above $0), so the headline's
   // count and the average's divisor are one number. A $0 row shows in history.
   if (p.measure === "median" || p.measure === "count" || p.measure === "mean") w += " AND g.amount > 0";
+  else w += " AND g.amount <> 0";   // TRUTH-4: a sum's rows are counted rows and refunds; a $0 row is said apart (giftCount.js)
   if (p.page === "none") w += " AND g.giving_page_id IS NULL";
   else if (p.page) { w += " AND g.giving_page_id = ?"; args.push(p.page); }
   if (p.donor) { w += " AND g.donor_id = ?"; args.push(p.donor); }
@@ -523,6 +524,7 @@ const SOURCES = {
                WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}${where}`,
         args,
         order: p.order === "amount" ? "amount DESC NULLS LAST, id DESC" : undefined,
+        zeroOnFile: require("./shared/numbers/giftCount").zeroOnFileSql(where, args, byFund),   // TRUTH-4
       };
     },
   },
@@ -615,11 +617,9 @@ const SOURCES = {
     params: { top: "int:required", measure: "measure" },
     sentence: p => `The ${p.top} people with the largest lifetime giving, each with their lifetime total (imported totals included).`,
     sql: (orgId, p) => ({
-      sql: `SELECT * FROM (SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
-                   ROUND(COALESCE(d.total_giving, 0)::numeric, 2) AS amount,
-                   COALESCE(d.gift_count, 0) || CASE WHEN COALESCE(d.gift_count, 0) = 1 THEN ' gift' ELSE ' gifts' END AS detail
-              FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND COALESCE(d.total_giving, 0) > 0
-             ORDER BY COALESCE(d.total_giving, 0) DESC, d.id LIMIT ${p.top}) t`,
+      sql: `SELECT t.id, 'person' AS type, t.id AS donor_id, t.name, t.last_gift_date AS date, t.total AS amount,
+                   COALESCE(t.gift_count, 0) || CASE WHEN COALESCE(t.gift_count, 0) = 1 THEN ' gift' ELSE ' gifts' END AS detail
+              FROM (${require("./shared/numbers/topDonors").topLifetimeSql()} LIMIT ${p.top}) t`,
       args: [orgId],
       order: "amount DESC, id",
     }),
@@ -3099,7 +3099,7 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     // `sql` may be an async builder: a source whose SQL needs something only
     // an ESM module knows (the open proposal stages) awaits it here. Awaiting
     // a plain object is a no-op, so every existing source is untouched.
-    const { sql, args, order } = await def.sql(orgId, p);
+    const { sql, args, order, zeroOnFile } = await def.sql(orgId, p);
     // SCALE-1: the total and the page are independent reads; one parallel batch.
     // POLISH-1: g is the rows that are gifts (above zero), for per_gift.
     const [[a], rowsRead] = await Promise.all([
@@ -3110,6 +3110,7 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     ]);
     agg = a;
     pageRows = rowsRead;
+    if (zeroOnFile) agg.zero = Number(((await query(zeroOnFile.sql, zeroOnFile.args))[0] || {}).n) || 0;
   }
   const { value, cents } = valueOf(measure, agg);
   return {
@@ -3118,6 +3119,7 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     rows: pageRows.map(r => shapeRow(r, dd)), page, pageSize, totalRows: Number(agg.n) || 0,
     ...(measure === "per_gift" ? { giftCount: Number(agg.g) || 0 } : {}),
     ...(agg.people != null ? { people: agg.people } : {}),
+    ...(agg.zero ? { alsoOnFile: { zero: agg.zero, sentence: require("./shared/numbers/giftCount").alsoOnFile(agg.zero) } } : {}),
   };
 }
 

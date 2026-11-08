@@ -53,7 +53,8 @@
 //             roster = list, an audience's number = the builder's, SYBUNT
 //             starter vs report, Re-engage vs Lost, tests/lib/counts1Item3.js),
 //             giftCount (TRUTH-3: each person's counted gifts, hard credit
-//             above $0, against By year)
+//             above $0, against By year), truth4 (TRUTH-4: tests/lib/truth4Pairs.js,
+//             gifts, Top donors, LYBUNT, splits, at risk, people, the volunteer starter)
 //   plantEvent (eventId, { rep, kiosk }) => { rep, kiosk }: change an event's
 //             bodies before its checks, to prove they can go red (FIX-59)
 //
@@ -1201,6 +1202,9 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       for (const r of y.years) if (Number(r.giftCount) > 0 && /^no gifts/.test(String(r.change || ""))) diffs.push(`gift count for ${id}: By year ${r.label} says ${r.giftCount} gift(s) and "${r.change}"${label ? ` (${label})` : ""}`);
     });
   }
+
+  // ── TRUTH-4 · GIFTS, PEOPLE AND AT-RISK MONEY (tests/lib/truth4Pairs.js) ──
+  if (!skip.has("truth4")) await require("./truth4Pairs").truth4Pairs({ orgId, get, q, agree, diffs, today: orgTime.orgToday(org || {}, new Date(testNow())) });
 
   // TRUTH-1: a disagreement logged in docs/defects.md (tests/lib/knownDefects.js),
   // at exactly the value its defect predicts, is still found and still printed,

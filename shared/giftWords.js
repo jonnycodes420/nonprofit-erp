@@ -44,6 +44,8 @@ export function triggerLabel(key) {
 }
 
 export const NO_FUND_LABEL = "Unrestricted (no fund)";
+// TRUTH-4: a $0 row, listed in history, never counted (shared/numbers/giftCount.js).
+export const ZERO_GIFT_LABEL = "$0, not counted";
 // The fund's one name: its own, or the no-fund label. Never a second spelling.
 export function fundLabel(name) {
   const s = name == null ? "" : String(name).trim();
