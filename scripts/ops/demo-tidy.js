@@ -9,8 +9,8 @@
 // people, duplicate pending invites, a campaign "sent to 0". The steps are in
 // scripts/ops/demoTidy/steps.js, one per brief item.
 //
-// ONLY A DEMO ORG: it refuses any org whose org_kind is not "demo" (orgKind.js
-// isDemoOrg; Demo is only ever set, never guessed). This is the one script
+// ONLY A DEMO ORG: it refuses any org whose org_kind is not "demo" or
+// "internal_test" (canTidy below; DEMO-TIDY-2, because CREO is internal_test). This is the one script
 // allowed to write org_creo, and nothing runs it at deploy.
 //
 // SAFE BY DEFAULT: the dry run prints every change with counts (demo names
@@ -42,10 +42,17 @@ const audit = (c, row) => c.query(
    VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,$8,NULL,NULL,$9,$10,'SCRIPT',$11)`,
   [row.id, row.orgId, ACTOR.id, ACTOR.name, ACTOR.kind, row.action, row.entity, JSON.stringify(row.changes), row.summary, row.count || 0, PATH]);
 
+// DEMO-TIDY-2: CREO Arts (Demo), the org Muse walks, is internal_test on purpose,
+// so the tidy accepts a demo OR an internal_test org. Every other kind (customer,
+// prospect_trial, fixture, not set) is refused. Local on purpose: isDemoOrg stays
+// "demo" only, because the mail gate and the console rely on it.
+const TIDY_KINDS = new Set(["demo", "internal_test"]);
+const canTidy = o => !!o && TIDY_KINDS.has(o.org_kind);
+
 async function demoOrg(c, orgId) {
   const [o] = (await c.query(`SELECT id, name, org_kind, timezone FROM orgs WHERE id = $1`, [orgId])).rows;
   if (!o) throw new Error(`No org ${orgId}.`);
-  if (!require("../../orgKind").isDemoOrg(o)) throw new Error(`${orgId} (${o.name}) is not a demo org (org_kind is ${o.org_kind || "not set"}). The tidy runs only on a demo org.`);
+  if (!canTidy(o)) throw new Error(`${orgId} (${o.name}) is not a demo org (org_kind is ${o.org_kind || "not set"}). The tidy runs only on a demo org.`);
   return o;
 }
 

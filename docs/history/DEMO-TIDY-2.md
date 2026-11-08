@@ -1,0 +1,5 @@
+## DEMO-TIDY-2 · the demo tidy runs on CREO Arts (Demo) (2026-11-08)
+
+- **Why.** `node scripts/ops/demo-tidy.js --org=org_creo` refused on prod: "org_creo (CREO Arts (Demo)) is not a demo org (org_kind is internal_test)". DEMO-TIDY-1's guard called `orgKind.isDemoOrg`, which accepts only org_kind "demo". CREO is the org Muse walks and is internal_test on purpose, so its kind stays.
+- **The fix.** A local `canTidy(o)` in `demo-tidy.js` accepts "demo" or "internal_test"; every other kind (customer, prospect_trial, fixture, not set) is refused with the same message. `isDemoOrg` is unchanged, because the mail gate and the console rely on it meaning "demo" only. Dry run by default, `--i-know-this-is-prod`, `--apply` and `--undo` are unchanged.
+- **Test.** `tests/demo-tidy.test.js` §0 gains an internal_test org that must run the dry run (red on main with the prod message) and a customer org that must still be refused (green on main; proven able to fail by planting a check that accepts any set kind).
