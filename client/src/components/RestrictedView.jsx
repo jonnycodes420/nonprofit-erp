@@ -12,6 +12,7 @@ import { apiFetch } from "../api";
 import { T, fmtFull } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", fontSize: 13, color: T.ink, background: T.white, boxSizing: "border-box" };
 const quietBtn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer", minHeight: 36 };
@@ -69,7 +70,7 @@ function SpendPanel({ grantId, isReadOnly, onChanged }) {
       {!isReadOnly && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
           <input placeholder="Amount" inputMode="decimal" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} style={{ ...inp, width: 110 }} data-testid="spend-amount" />
-          <input type="date" value={form.spentOn} onChange={e => setForm({ ...form, spentOn: e.target.value })} style={inp} data-testid="spend-date" />
+          <DateInput value={form.spentOn} onChange={e => setForm({ ...form, spentOn: e.target.value })} style={inp} data-testid="spend-date" />
           <input placeholder="What it paid for" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} style={{ ...inp, flex: "1 1 160px" }} data-testid="spend-desc" />
           <button style={primaryBtn} onClick={add} data-testid="spend-save">Add spending</button>
         </div>)}

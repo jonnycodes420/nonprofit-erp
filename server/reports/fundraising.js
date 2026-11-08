@@ -547,7 +547,7 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-3"
          FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id
          LEFT JOIN events ev ON ev.id = g.event_id AND ev.org_id = g.org_id
         -- NUMBERS-3 (D-8): a soft credit row is recognition, never a recent gift.
-        WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NUMBERS.money.MONEY("g")} ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT 8`,
+        WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NUMBERS.money.MONEY("g")} ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC LIMIT 8`,
       [orgId]
     ),
     fundraisingCampaignRows(orgId),
@@ -610,7 +610,7 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-3"
     if (budgeted > 0) {
       const pace = computeFundraisingPace((parseFloat(curRows[0]?.total) || 0), budgeted, cur.start, cur.end);
       goal = {
-        id: null, label: `Contributions budget, ${yearMode === "fiscal" ? `FY${fyLabel}` : fyLabel}`,
+        id: null, label: `Contributions budget, ${yearMode === "fiscal" ? await require("../shared/periodLabel").fyLabelOf(cur, orgTime.orgFiscalStartMonth(_fpTz)) : fyLabel}`,   // POLISH-6
         goalType: "budget", goalAmount: budgeted, currentAmount: (parseFloat(curRows[0]?.total) || 0),
         periodStart: cur.start, periodEnd: cur.end, source: "budget",
         sourceNote: "From your Finance budget for contributions this year. Set a fundraising goal to use a different number.",
@@ -635,7 +635,9 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-3"
                                      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date IS NULL`, [orgId]);
   const N = require("../../numbers");
   // FUNDRAISING-2: pledges, the same three figures Home and Pledges read.
-  const pledges = await N.pledgeSummary(orgId, { yearEnd: orgTime.orgPeriodBounds(await orgForYears(orgId), "fiscal_year", 0).end, today });
+  const _fyOrg = await orgForYears(orgId);
+  const pledges = { ...(await N.pledgeSummary(orgId, { yearEnd: orgTime.orgPeriodBounds(_fyOrg, "fiscal_year", 0).end, today })),
+    yearLabel: await require("../shared/periodLabel").orgFyLabel(_fyOrg) };   // POLISH-6: "due in FY 2026–27"
   // The leading campaign is the running one that has raised most; one that
   // has ended leads only when nothing is running.
   const running = campaigns.filter(c => c.lifecycle === "active");

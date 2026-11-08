@@ -5,6 +5,7 @@ import { T, SectionLabel } from "../shared";
 import { fmtInZone } from "../EditHistory";
 import { tabHref } from "../../lib/appUrls";
 import { RecordLink } from "../RecordLink";
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // ── FIX-11 Part 1 — THE AUDIT LOG ─────────────────────────────────────────
 // Newest first, filtered by person, record type, action and date, searchable
@@ -102,8 +103,8 @@ export function AuditLog({onNavigate}){
             <option value="">Any action</option>
             {state.facets.actions.map(a=><option key={a} value={a}>{a}</option>)}
           </select>
-          <input type="date" value={filters.from} onChange={e=>setFilters(f=>({...f,from:e.target.value}))} style={sel} aria-label="From"/>
-          <input type="date" value={filters.to} onChange={e=>setFilters(f=>({...f,to:e.target.value}))} style={sel} aria-label="To"/>
+          <DateInput value={filters.from} onChange={e=>setFilters(f=>({...f,from:e.target.value}))} style={sel} aria-label="From"/>
+          <DateInput value={filters.to} onChange={e=>setFilters(f=>({...f,to:e.target.value}))} style={sel} aria-label="To"/>
           {(filters.person||filters.record)&&<span style={{fontSize:12,color:T.ink,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 10px"}}>
             {filters.person?`Only ${scopeName||"this person"}`:`Only ${scopeName||"this record"}`}</span>}
           {anyFilter&&<button onClick={()=>{setFilters({actor:"",entityType:"",action:"",from:"",to:"",q:"",person:"",record:""});setScopeName("");}}

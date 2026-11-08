@@ -208,7 +208,7 @@ const money = s => Number(String(s || "").replace(/[^0-9.]/g, "")) || 0;
     const t0 = Number((await text('[data-tab="tasks"] [data-tab-count="tasks"]')) || 0);
     await page.locator('[data-testid="dp-task"]').first().click();
     await page.getByPlaceholder(/What happens next/).fill("Call Ines about the supper photos");
-    await page.locator('input[type="date"]').last().fill(today);
+    await page.locator('[data-date-input]').last().fill(today);   // POLISH-6: the one date box
     await page.getByRole("button", { name: "Create Task" }).click();
     const bm = await until(([n]) => Number((document.querySelector('[data-testid="tasks-rail-badge"]') || {}).textContent || 0) === n, [b0 + 1]);
     await check("§4 the Tasks badge moves by one", bm, { before: b0, after: await text('[data-testid="tasks-rail-badge"]') });

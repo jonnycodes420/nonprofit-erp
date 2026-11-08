@@ -11,6 +11,7 @@ import { errorMessage } from "../lib/domainError";
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { offerUndo } from "./EditHistory";
 import EventField from "./gifts/EventField";   // GIFTS-1: the event a check was given at
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const KIND_LABEL = {
   check: "check", pledge: "pledge", daf_grant: "donor-advised fund grant", matching_gift: "matching gift",
@@ -285,7 +286,7 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
               </Field>
             )}
             <Field title={card.kind === "pledge" ? "Pledge date" : "Date"}>
-              <input style={input} type="date" value={date} disabled={isReadOnly} onChange={e => setDate(e.target.value)} />
+              <DateInput style={input} value={date} disabled={isReadOnly} onChange={e => setDate(e.target.value)} />
             </Field>
             {isMoney && (
               <Field title="Fund">
@@ -344,7 +345,7 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
                 </Field>
               )}
               <Field title="First payment">
-                <input style={input} type="date" value={startDate} disabled={isReadOnly} onChange={e => setStartDate(e.target.value)} />
+                <DateInput style={input} value={startDate} disabled={isReadOnly} onChange={e => setStartDate(e.target.value)} />
               </Field>
             </div>
           )}

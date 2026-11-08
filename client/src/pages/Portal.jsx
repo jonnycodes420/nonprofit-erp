@@ -19,6 +19,7 @@ import { resolveAssetUrl } from "../lib/assetUrl";
 import { PageRenderer } from "../components/PortalWidgets";
 import PortalBanner, { PORTAL_HEADER_RATIO, PORTAL_CAMPAIGN_HERO_RATIO, PORTAL_IMPACT_PHOTO_RATIO, bannerImgStyle, bannerSrcSet } from "../components/PortalBanner";
 import { portalScaleVars } from "../lib/portalScale";
+import DateInput from "../components/inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 // FIX-2 C — this surface's colours, named once (it keeps its own palette;
 // see tests/fix2-c-hex.test.js for why a public surface does).
@@ -412,7 +413,7 @@ function RecurringCard({ slug, sub, theme, onChanged }) {
         <div style={{ marginTop: 12 }}>
           <div style={S.label}>Resume automatically on (optional)</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <input style={{ ...S.input, maxWidth: 180 }} type="date" value={resumeDate} onChange={e => setResumeDate(e.target.value)} />
+            <DateInput style={{ ...S.input, maxWidth: 180 }} value={resumeDate} onChange={e => setResumeDate(e.target.value)} />
             <button style={S.btn} disabled={busy} onClick={() => act("pause", resumeDate ? { resumeDate } : {})}>{busy ? "Pausing…" : "Pause my gift"}</button>
           </div>
           <div style={{ ...S.muted, marginTop: 6 }}>No charges while paused. Resume anytime.</div>

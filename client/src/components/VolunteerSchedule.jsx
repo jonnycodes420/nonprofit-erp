@@ -20,6 +20,7 @@ import PhotoField from "./PhotoField";
 import Picture from "./Picture";
 import { displayDate } from "../../../shared/displayDate";
 import { addDaysCivil } from "../../../shared/volunteerShifts.js";
+import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: T.ink, fontFamily: "inherit", boxSizing: "border-box" };
 const btnPrimary = { background: T.green, border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13, fontWeight: 700, color: T.white, cursor: "pointer" };
@@ -464,7 +465,7 @@ export function ShiftEditor({ shift, opportunities = [], date, startTime, endTim
           </select></>}
         <label style={lbl}>When</label>
         <div style={row}>
-          <input aria-label="Date" id="se-date" type="date" value={f.date} onChange={set("date")} style={{ ...inp, flex: "1 1 150px" }} />
+          <DateInput aria-label="Date" id="se-date" value={f.date} onChange={set("date")} style={{ ...inp, flex: "1 1 150px" }} />
           {!f.allDay && <>
             <input aria-label="Starts" id="se-start" type="time" value={f.startTime} onChange={set("startTime")} style={{ ...inp, flex: "0 1 110px" }} />
             <span style={{ color: T.ink3, fontSize: 13, paddingBottom: 9 }}>to</span>
@@ -474,7 +475,7 @@ export function ShiftEditor({ shift, opportunities = [], date, startTime, endTim
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 8 }}>
           <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}><input type="checkbox" data-testid="shift-all-day" checked={f.allDay} onChange={set("allDay")} /> All day</label>
           {!editing && <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}><input type="checkbox" data-testid="shift-repeat" checked={f.repeat} onChange={set("repeat")} /> Repeat weekly on {weekday || "this day"}</label>}
-          {!editing && f.repeat && <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>until <input aria-label="Repeat until" type="date" value={f.until} min={f.date} onChange={set("until")} style={inp} /></label>}
+          {!editing && f.repeat && <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>until <DateInput aria-label="Repeat until" value={f.until} min={f.date} onChange={set("until")} style={inp} /></label>}
         </div>
         <div style={row}>
           <div style={{ flex: "1 1 180px" }}><label style={lbl} htmlFor="se-venue">Venue</label><input id="se-venue" value={f.venue} onChange={set("venue")} style={{ ...inp, width: "100%" }} /></div>

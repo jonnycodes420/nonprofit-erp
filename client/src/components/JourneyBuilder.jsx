@@ -6,7 +6,7 @@ import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam, editTemplateHref } from "../lib/appUrls";
 import { offerUndo } from "./EditHistory";
 import { AutoSendSteps, SendingTomorrow, PauseAllSending } from "./AutoSend";   // AUTO-1
-import { plural } from "../../../shared/countWords.js";
+import { countLabel } from "../../../shared/countWords.js";
 import { JourneyDateFields } from "./JourneyDateFields";   // DATES-1
 import { JourneyBatches } from "./BulkJourney";   // DATES-1: undo a batch from the Donors list
 
@@ -891,9 +891,9 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
 
   const maxOffset = draft && draft.length ? Math.max(...draft.map(s => Number(s.offsetDays) || 0)) : 0;
   const touches = draft && draft.length
-    ? `${draft.length} touch${draft.length === 1 ? "" : "es"} over ${
-        maxOffset < 45 ? `${Math.max(1, Math.round(maxOffset / 7))} ${plural(Math.round(maxOffset / 7), "week")}`
-                       : `${Math.round(maxOffset / 30)} ${plural(Math.round(maxOffset / 30), "month")}`}. `
+    // POLISH-6 (W-1107-Atlas-10X): the plural follows the number shown, through countWords ("1 touch over 1 week").
+    ? `${countLabel(draft.length, "touch", "touches")} over ${
+        maxOffset < 45 ? countLabel(Math.max(1, Math.round(maxOffset / 7)), "week") : countLabel(Math.round(maxOffset / 30), "month")}. `
       + (current && current.autoSteps && current.autoSteps.length
         ? `${current.autoSteps.length === 1 ? "Step" : "Steps"} ${current.autoSteps.map(x => x + 1).join(" and ")} ${current.autoSteps.length === 1 ? "sends itself" : "send themselves"} on weekday mornings; nothing else is sent without you.`
         : "Nothing is sent without you.")
