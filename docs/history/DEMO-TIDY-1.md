@@ -1,0 +1,12 @@
+## DEMO-TIDY-1 · the demo org gets a clean, believable baseline, through a script Jonathan runs (2026-11-07)
+
+- **Why.** The QA fleet walks prod in CREO Arts (Demo), and nine of its 7 Nov findings were the demo's own data, not the product. They were walk residue named "QA …" on people, saved views, groups, journeys, tasks, shifts, events and drafts, and on Marlowe's About and address. The rest: a placeholder EIN, a signer ("Maya Reyes") nobody is, "General" beside "General Operating", no active recurring donor, no grant with a report due, one email on two people, duplicate pending invites, and a "GALA 2026" campaign sent to 0.
+- **The script, `scripts/ops/demo-tidy.js`.** It runs only on an org whose `org_kind` is demo (`orgKind.isDemoOrg`; Demo is set, never guessed), so it is the one script that may write org_creo, and nothing runs it at deploy.
+  - A dry run prints every change with counts.
+  - `--apply` makes the changes in one transaction, with one audit row per change. Each row keeps the deleted rows whole (with what their foreign keys cascade) and the values before each update.
+  - `--undo=<run id>` replays them in reverse.
+  - The new demo payments go through `recordGift` (the one gift path) after the commit, as history, so nothing is thanked or sent. The one gift path outranks the single transaction.
+- **Funds merge one way.** TRUTH-3's merge was inline in its route. Its transaction body is now `mergeInTx` / `undoInTx` in `server/finance/fundMerge.js`, and the route and the script both call it. A probe of a table that doesn't exist now sits behind a savepoint, because a caught error inside a Postgres transaction aborts the rest of it.
+- **Marlowe has no seed.** org_creo's people were imported from a CSV on prod. The repo holds no seed for them, the audit log redacts addresses (FIX-12), and imports keep no raw rows. So the script's own made-up baseline is Marlowe's seed, and it fills a field only when the field is empty or carries QA text.
+- **Duplicate invites.** RACE-1's `invites_one_pending_per_email` index blocks an exact duplicate, and boot leaves the index unbuilt where duplicates already exist. The tidy compares trimmed, lower-cased addresses, so it also catches a trailing-space duplicate the index misses.
+- **Test.** `tests/demo-tidy.test.js` is this build's one new test (it guards donor data). It plants a demo org with the residue, then checks the dry run, the apply (in its own process), a second apply, the undo, and that a non-demo org is refused.
