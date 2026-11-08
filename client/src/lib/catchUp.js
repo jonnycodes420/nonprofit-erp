@@ -11,13 +11,13 @@
 // work for this org is pending, for at most 90 seconds. Each table that moved
 // is announced (lib/changes.js noteServerChanges), so the views showing it
 // re-read the moment the worker's row lands. While work is pending,
-// usePending() is true, and a figure the worker owns says "Updating…" rather
-// than show the old number as current.
+// workerPending() is true (onPending tells a listener); a figure the worker
+// owns says "Updating…" from its own stale answer rather than show the old
+// number as current.
 //
 // The first answer after a write does not announce again what the write
 // itself already announced (its own rows moved those tables), so a gift costs
 // what it did before plus what the worker actually changed.
-import { useEffect, useState } from "react";
 import { noteServerChanges } from "./changes";
 
 const FIRST_MS = 300, BUSY_MS = 500, QUIET_MS = 900, LONGEST_MS = 90000;
@@ -50,8 +50,4 @@ export function followWorker(fetch, kinds) {
 }
 
 export function workerPending() { return pending; }
-export function usePending() {
-  const [v, setV] = useState(pending);
-  useEffect(() => { subs.add(setV); setV(pending); return () => subs.delete(setV); }, []);
-  return v;
-}
+export function onPending(fn) { subs.add(fn); return () => subs.delete(fn); }
