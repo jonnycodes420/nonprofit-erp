@@ -81,6 +81,61 @@ function check(body) {
   return { keeperId, mergeIds };
 }
 
+// The merge itself, inside the caller's transaction: the route's, or
+// scripts/ops/demo-tidy.js's (DEMO-TIDY-1), so both merge funds one way.
+// L = { orgId, keeper, merged, keeperId, mergeIds }; who = { id, name }.
+async function mergeInTx(client, L, who, id, { queryTx, runTx }) {
+  const moved = {}, split = {};
+  for (const r of REFS) {
+    // Which merged fund each row named, read inside the transaction, so Undo puts each back on its own fund.
+    let rows;
+    await runTx(client, "SAVEPOINT fund_ref");
+    try {
+      rows = await queryTx(client, `SELECT ${r.key}::text AS k, ${r.col} AS f FROM ${r.table} WHERE org_id = ? AND ${r.col} = ANY(?::text[]) FOR UPDATE`, [L.orgId, L.mergeIds]);
+      await runTx(client, "RELEASE SAVEPOINT fund_ref");
+    } catch (e) { await runTx(client, "ROLLBACK TO SAVEPOINT fund_ref"); if (e.code === "42P01" || e.code === "42703") continue; throw e; }
+    if (!rows.length) continue;
+    split[r.table] = {};
+    for (const x of rows) (split[r.table][x.f] = split[r.table][x.f] || []).push(x.k);
+    moved[r.table] = rows.length;
+    await runTx(client, `UPDATE ${r.table} SET ${r.col} = ? WHERE org_id = ? AND ${r.col} = ANY(?::text[])`, [L.keeperId, L.orgId, L.mergeIds]);
+  }
+  const [o] = await queryTx(client, "SELECT default_fund_id FROM orgs WHERE id = ?", [L.orgId]);
+  if (o && L.mergeIds.includes(o.default_fund_id)) {
+    moved.orgs = [o.default_fund_id];
+    await runTx(client, "UPDATE orgs SET default_fund_id = ? WHERE id = ?", [L.keeperId, L.orgId]);
+  }
+  const prior = Array.isArray(L.keeper.aliases) ? L.keeper.aliases : [];
+  const aliases = [...new Set([...prior, ...L.merged.map(f => f.name)])].slice(0, 25);
+  await runTx(client, "UPDATE fin_funds SET aliases = ?::jsonb WHERE id = ? AND org_id = ?", [JSON.stringify(aliases), L.keeperId, L.orgId]);
+  await runTx(client, "UPDATE fin_funds SET retired_at = NOW(), retired_by = ?, retired_by_name = ? WHERE org_id = ? AND id = ANY(?::text[])",
+    [who.id, who.name, L.orgId, L.mergeIds]);
+  await runTx(client, `INSERT INTO fund_merges (id, org_id, keeper_id, merged_ids, funds, moved, created_by, created_by_name)
+                       VALUES (?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?)`,
+    [id, L.orgId, L.keeperId, JSON.stringify(L.mergeIds), JSON.stringify({ keeper: L.keeper, merged: L.merged, split }), JSON.stringify(moved), who.id, who.name]);
+  return { moved };
+}
+
+// Undo, inside the caller's transaction. m = the fund_merges row.
+async function undoInTx(client, orgId, m, who, { runTx }) {
+  const funds = typeof m.funds === "string" ? JSON.parse(m.funds) : m.funds;
+  const moved = typeof m.moved === "string" ? JSON.parse(m.moved) : m.moved;
+  const split = (funds && funds.split) || {};
+  for (const r of REFS) {
+    const s = split[r.table] || {};
+    for (const [fundId, keys] of Object.entries(s)) {
+      if (keys.length) await runTx(client, `UPDATE ${r.table} SET ${r.col} = ? WHERE org_id = ? AND ${r.key} = ANY(?::text[]) AND ${r.col} = ?`, [fundId, orgId, keys, m.keeper_id]);
+    }
+  }
+  if (moved.orgs && moved.orgs.length) await runTx(client, "UPDATE orgs SET default_fund_id = ? WHERE id = ? AND default_fund_id = ?", [moved.orgs[0], orgId, m.keeper_id]);
+  const keeper = funds.keeper || {};
+  await runTx(client, "UPDATE fin_funds SET aliases = ?::jsonb WHERE id = ? AND org_id = ?",
+    [Array.isArray(keeper.aliases) && keeper.aliases.length ? JSON.stringify(keeper.aliases) : null, m.keeper_id, orgId]);
+  const ids = typeof m.merged_ids === "string" ? JSON.parse(m.merged_ids) : m.merged_ids;
+  await runTx(client, "UPDATE fin_funds SET retired_at = NULL, retired_by = NULL, retired_by_name = NULL WHERE org_id = ? AND id = ANY(?::text[])", [orgId, ids]);
+  await runTx(client, "UPDATE fund_merges SET undone_at = NOW(), undone_by = ?, undone_by_name = ? WHERE id = ? AND org_id = ?", [who.id, who.name, m.id, orgId]);
+}
+
 function mount(ctx) {
   const { query, requireAuth, requireAdmin, checkWriteAccess, wrap, actor } = ctx;
   const { withTransaction, runTx, queryTx } = require("../../db");
@@ -122,36 +177,8 @@ function mount(ctx) {
     const L = await load(req, res); if (!L) return;
     const who = actor(req);
     const id = newId("fm");
-    const moved = {};
     const p = await preview(query, L.orgId, L.mergeIds);
-    const split = {};
-    await withTransaction(async client => {
-      for (const r of REFS) {
-        // Which merged fund each row named, read inside the transaction, so Undo puts each back on its own fund.
-        let rows;
-        try {
-          rows = await queryTx(client, `SELECT ${r.key}::text AS k, ${r.col} AS f FROM ${r.table} WHERE org_id = ? AND ${r.col} = ANY(?::text[]) FOR UPDATE`, [L.orgId, L.mergeIds]);
-        } catch (e) { if (e.code === "42P01" || e.code === "42703") continue; throw e; }
-        if (!rows.length) continue;
-        split[r.table] = {};
-        for (const x of rows) (split[r.table][x.f] = split[r.table][x.f] || []).push(x.k);
-        moved[r.table] = rows.length;
-        await runTx(client, `UPDATE ${r.table} SET ${r.col} = ? WHERE org_id = ? AND ${r.col} = ANY(?::text[])`, [L.keeperId, L.orgId, L.mergeIds]);
-      }
-      const [o] = await queryTx(client, "SELECT default_fund_id FROM orgs WHERE id = ?", [L.orgId]);
-      if (o && L.mergeIds.includes(o.default_fund_id)) {
-        moved.orgs = [o.default_fund_id];
-        await runTx(client, "UPDATE orgs SET default_fund_id = ? WHERE id = ?", [L.keeperId, L.orgId]);
-      }
-      const prior = Array.isArray(L.keeper.aliases) ? L.keeper.aliases : [];
-      const aliases = [...new Set([...prior, ...L.merged.map(f => f.name)])].slice(0, 25);
-      await runTx(client, "UPDATE fin_funds SET aliases = ?::jsonb WHERE id = ? AND org_id = ?", [JSON.stringify(aliases), L.keeperId, L.orgId]);
-      await runTx(client, "UPDATE fin_funds SET retired_at = NOW(), retired_by = ?, retired_by_name = ? WHERE org_id = ? AND id = ANY(?::text[])",
-        [who.id, who.name, L.orgId, L.mergeIds]);
-      await runTx(client, `INSERT INTO fund_merges (id, org_id, keeper_id, merged_ids, funds, moved, created_by, created_by_name)
-                           VALUES (?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?)`,
-        [id, L.orgId, L.keeperId, JSON.stringify(L.mergeIds), JSON.stringify({ keeper: L.keeper, merged: L.merged, split }), JSON.stringify(moved), who.id, who.name]);
-    });
+    await withTransaction(client => mergeInTx(client, L, who, id, { queryTx, runTx }));
     req.audit && req.audit.entity("fund", L.keeperId, L.keeper.name);
     req.audit && req.audit.action(`merged ${L.merged.map(f => f.name).join(", ")} into ${L.keeper.name}`);
     req.audit && req.audit.before({ funds: L.merged.map(f => ({ id: f.id, name: f.name })), counts: p.counts });
@@ -165,24 +192,8 @@ function mount(ctx) {
     if (!m) return res.status(404).json({ error: "not_found", sentence: "That merge is not one of yours." });
     if (m.undone_at) return res.status(409).json({ error: "already_undone", sentence: "That merge was already undone." });
     const funds = typeof m.funds === "string" ? JSON.parse(m.funds) : m.funds;
-    const moved = typeof m.moved === "string" ? JSON.parse(m.moved) : m.moved;
-    const split = (funds && funds.split) || {};
     const who = actor(req);
-    await withTransaction(async client => {
-      for (const r of REFS) {
-        const s = split[r.table] || {};
-        for (const [fundId, keys] of Object.entries(s)) {
-          if (keys.length) await runTx(client, `UPDATE ${r.table} SET ${r.col} = ? WHERE org_id = ? AND ${r.key} = ANY(?::text[]) AND ${r.col} = ?`, [fundId, orgId, keys, m.keeper_id]);
-        }
-      }
-      if (moved.orgs && moved.orgs.length) await runTx(client, "UPDATE orgs SET default_fund_id = ? WHERE id = ? AND default_fund_id = ?", [moved.orgs[0], orgId, m.keeper_id]);
-      const keeper = funds.keeper || {};
-      await runTx(client, "UPDATE fin_funds SET aliases = ?::jsonb WHERE id = ? AND org_id = ?",
-        [Array.isArray(keeper.aliases) && keeper.aliases.length ? JSON.stringify(keeper.aliases) : null, m.keeper_id, orgId]);
-      const ids = typeof m.merged_ids === "string" ? JSON.parse(m.merged_ids) : m.merged_ids;
-      await runTx(client, "UPDATE fin_funds SET retired_at = NULL, retired_by = NULL, retired_by_name = NULL WHERE org_id = ? AND id = ANY(?::text[])", [orgId, ids]);
-      await runTx(client, "UPDATE fund_merges SET undone_at = NOW(), undone_by = ?, undone_by_name = ? WHERE id = ? AND org_id = ?", [who.id, who.name, m.id, orgId]);
-    });
+    await withTransaction(client => undoInTx(client, orgId, m, who, { queryTx, runTx }));
     req.audit && req.audit.entity("fund", m.keeper_id, (funds.keeper && funds.keeper.name) || "a fund");
     req.audit && req.audit.action("undid a fund merge");
     res.json({ ok: true, sentence: `Undone: ${((funds.merged || []).map(f => f.name)).join(" and ")} ${((funds.merged || []).length === 1) ? "is" : "are"} back, with every row that moved.` });
@@ -191,4 +202,4 @@ function mount(ctx) {
   return { fundKey, closeFund: (orgId, name) => closeFund(query, orgId, name) };
 }
 
-module.exports = { routers, mount, fundKey, closeFund, preview, REFS };
+module.exports = { routers, mount, fundKey, closeFund, preview, mergeInTx, undoInTx, liveFunds, REFS };
