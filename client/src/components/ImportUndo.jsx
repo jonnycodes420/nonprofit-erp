@@ -145,7 +145,7 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
           {preview.canUndo && (preview.activitySince || []).length > 0 && (
             <div data-testid="import-undo-activity" style={{ marginTop: 8 }}>
               <div style={{ fontWeight: 700 }}>
-                {preview.activitySinceCount === 1 ? "1 person has" : `${preview.activitySinceCount.toLocaleString("en-US")} people have`} activity since the import:
+                {preview.activitySinceCount === 1 ? "1 person has" : `${preview.activitySinceCount.toLocaleString("en-US")} people have`} activity since the import. Undo keeps them unless you choose to move them:
               </div>
               <ul style={{ margin: "4px 0 6px 18px", padding: 0 }}>
                 {preview.activitySince.slice(0, 20).map(p => <li key={p.id}>{p.name} ({p.why}){p.movable === false ? ". Stays: it was here first" : ""}</li>)}

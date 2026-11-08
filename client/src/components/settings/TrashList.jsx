@@ -43,6 +43,11 @@ export function TrashList({ isAdmin, isReadOnly, onChanged }) {
     setBusy(true); setErr(""); setSaid("");
     try {
       const r = await apiFetch("/trash/people/restore", { method: "POST", body: JSON.stringify({ ids }) });
+      // the restored rows leave the list at once; the recount follows
+      const back = new Set(r.ids || []);
+      setData(d => d && { ...d, people: d.people.filter(p => !back.has(p.id)), total: Math.max(0, d.total - back.size), inTrash: Math.max(0, d.inTrash - back.size),
+        sentence: d.sentence.replace(/^[\d,]+ (people are|person is)/, () => { const k = Math.max(0, d.inTrash - back.size); return `${k.toLocaleString("en-US")} ${k === 1 ? "person is" : "people are"}`; }) });
+      setMore(m => m.filter(p => !back.has(p.id))); setPicked(new Set());
       setSaid(r.sentence || "Restored."); setTick(k => k + 1); told({ donors: true }); if (onChanged) onChanged();
     } catch (e) { setErr(e?.body?.sentence || errorMessage(e, "Nobody was restored.")); }
     setBusy(false);
