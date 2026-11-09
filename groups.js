@@ -152,10 +152,15 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     params.push(String(q.volOpp), String(q.volOpp));
   }
   if (q.volShiftFrom || q.volShiftTo) {
-    where.push(`EXISTS (SELECT 1 FROM volunteer_signups sx JOIN volunteer_slots lx ON lx.id = sx.slot_id AND lx.cancelled_at IS NULL
+    // FLOWS-3 (W-1108-Volunteers-26X): a shift they served and had logged by
+    // hand is a shift too. "On a shift Nov 8 to Nov 8" found nobody beside 3
+    // hours logged on Nov 8, because only sign-ups were read.
+    const d1 = dateOr(q.volShiftFrom, "1900-01-01"), d2 = dateOr(q.volShiftTo, "2999-12-31");
+    where.push(`(EXISTS (SELECT 1 FROM volunteer_signups sx JOIN volunteer_slots lx ON lx.id = sx.slot_id AND lx.cancelled_at IS NULL
                          WHERE sx.org_id = donors.org_id AND sx.person_id = donors.id AND sx.status IN ('confirmed','completed')
-                           AND lx.date >= ? AND lx.date <= ?)`);
-    params.push(dateOr(q.volShiftFrom, "1900-01-01"), dateOr(q.volShiftTo, "2999-12-31"));
+                           AND lx.date >= ? AND lx.date <= ?)
+                 OR EXISTS (SELECT 1 FROM volunteer_shifts vs WHERE vs.org_id = donors.org_id AND vs.person_id = donors.id AND vs.date >= ? AND vs.date <= ?))`);
+    params.push(d1, d2, d1, d2);
   }
   if (q.volHoursMin !== undefined || q.volHoursMax !== undefined) {
     const sum = `(SELECT COALESCE(SUM(vx.hours), 0) FROM volunteer_shifts vx WHERE vx.org_id = donors.org_id AND vx.person_id = donors.id

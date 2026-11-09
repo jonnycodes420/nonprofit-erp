@@ -35,6 +35,7 @@ import { countLabel } from "../../../shared/countWords.js";
 import { useWriteRev, VOLUNTEER_WRITES } from "../lib/writeRev";
 import ShiftRowActions from "./volunteers/ShiftRowActions";   // STALE-2: Edit a logged shift
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { PersonShiftLists } from "./volunteers/PersonShiftLists";   // FLOWS-3: Coming up and Past, from the Schedule's rows
 
 // ── VOL-1 · THE SAME SHAPE FUNDRAISING GOT ────────────────────────────────
 // Four sections, each one a question a coordinator actually asks, with the
@@ -600,18 +601,7 @@ function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord, onL
             What is coming up, what they have given in hours, whether they
             may work, and who they come with. This is the order a coordinator
             asks in, and it is the order the panel answers in. */}
-        {view && (
-          <div data-testid="vol-person-upcoming">
-            <div style={{ ...eyebrow, marginBottom: 6 }}>Coming up</div>
-            {view.upcoming.length ? view.upcoming.map(u => (
-              <div key={u.id} style={{ fontSize: 13, color: T.ink, lineHeight: 1.7 }}>
-                {displayDate(u.date)} · {u.opportunity}
-                {u.status === "waitlisted" && <span style={{ color: T.gold700 }}> · waiting list{u.position ? `, number ${u.position}` : ""}</span>}
-                {u.location && <span style={{ color: T.ink3 }}> · {u.location}</span>}
-              </div>
-            )) : <div style={{ fontSize: 13, color: T.ink3 }}>{view.upcomingSentence}</div>}
-          </div>
-        )}
+        {view && <PersonShiftLists view={view} />}
 
         {/* WAIVERS AND CHECKS. An expiry is not a deadline, so a lapsed one is
             brass and not red: it is a thing to book, not a thing that broke. */}

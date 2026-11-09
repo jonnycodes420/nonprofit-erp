@@ -141,7 +141,7 @@ async function reset(org) {
     await page.locator('[data-testid="cal-quick-form"] button', { hasText: "Odalys Pemberton" }).first().click();
     await page.getByLabel("Time").fill("10:00");
     const where = await page.locator('[data-testid="cal-meeting-where"]').innerText();
-    ok("§2 the dialog says in one sentence where it goes (no calendar is connected)", where === "It goes on Steward's calendar, and nobody is invited.", where);
+    ok("§2 the dialog says in one sentence where it goes (no calendar is connected)", where === "It goes on Steward's calendar, with Odalys Pemberton. No invitation is sent.", where);   // FLOWS-3: she is on it; no invitation goes
     await shot("meeting-dialog");
     await page.locator('[data-testid="cal-quick-save"]').dblclick();
     await page.locator('[data-testid="cal-quick-form"]').waitFor({ state: "detached", timeout: 15000 });
