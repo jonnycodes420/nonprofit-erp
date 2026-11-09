@@ -23,6 +23,9 @@ export const PERSON_TYPES = [
   { key: "donor",       label: "Donor",           plural: "Donors" },
   { key: "volunteer",   label: "Volunteer",       plural: "Volunteers" },
   { key: "staff_board", label: "Staff and board", plural: "Staff and board" },
+  // FLOWS-3 (W-1108-Volunteers-20): somebody typed onto an event's guest list
+  // with no record yet. A contact, never a donor, and searchable like anyone.
+  { key: "guest",       label: "Guest",           plural: "Guests" },
   { key: "other",       label: "Other",           plural: "Other" },
 ];
 export const PERSON_TYPE_KEYS = PERSON_TYPES.map(t => t.key);

@@ -24,6 +24,7 @@ import { urlParam, tabHref } from "../lib/appUrls";
 import { RecordLink } from "./RecordLink";
 import { offerUndo } from "./EditHistory";
 import { useWriteRev, GROUP_WRITES } from "../lib/writeRev";
+import { EMPTY_AUDIENCE, audienceEmpty, figureCount } from "../lib/emptyAudience";   // FLOWS-3: no email to nobody
 
 const ACTION = T.greenDk;
 const card = { background: T.bgCard, border: "1px solid " + T.bg2, borderRadius: 12, padding: "16px 18px" };
@@ -337,7 +338,10 @@ export function GroupPage({ groupId, onBack, onOpenPerson, isReadOnly, onNavigat
             open a draft that arrives off; nothing is sent or started here. */}
         {!isReadOnly && onNavigate && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 16px" }}>
-            <button type="button" data-testid="group-email" style={primary} onClick={() => onNavigate("communications", { audienceId: g.id })}>Email this group</button>
+            {audienceEmpty(figureCount(data.figures))
+              ? <><button type="button" data-testid="group-email" disabled title={EMPTY_AUDIENCE} style={{ ...primary, opacity: 0.5, cursor: "not-allowed" }}>Email this group</button>
+                <span data-testid="group-email-why" style={{ fontSize: 12.5, color: T.ink3, alignSelf: "center" }}>{EMPTY_AUDIENCE}</span></>
+              : <button type="button" data-testid="group-email" style={primary} onClick={() => onNavigate("communications", { audienceId: g.id })}>Email this group</button>}
             <button type="button" data-testid="group-journey" style={quiet} onClick={() => onNavigate("journeys", { groupId: g.id })}>Start a journey</button>
           </div>
         )}

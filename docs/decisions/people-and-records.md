@@ -124,7 +124,9 @@ Read this when you touch the person record: donors, organisations, non-donors, h
 - **A name tag carries a name and a table and nothing else.** A badge that prints somebody's
   giving level tells the room what they gave. (EVENTS-1)
 - **Record a second role on the same row, never a second record.** Donor, Volunteer, Staff and board, and
-  Other are values in `donors.person_types`. (BUILD-94, BUILD-98)
+  Other are values in `donors.person_types`. (BUILD-94, BUILD-98) Guest is the fifth: a guest typed onto an event
+  who matches nobody is added through the one Add person path (`server/donors/addPerson.js`) as a guest, so search
+  finds them and Everyone counts them. (FLOWS-3)
 - **Let `normalizeTypes` validate person types.** It drops unknown keys, and it sets an empty list to
   `["other"]`, never `["donor"]`, because calling a mailing-list contact a donor corrupts giving totals. (BUILD-94)
 - **Splice `donorOnly(alias)` / `donorOnlySql` wherever "donors" means money.** The predicate treats NULL

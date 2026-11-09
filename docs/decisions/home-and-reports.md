@@ -12,6 +12,12 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   journey's preview counts from the day the sweep would start it (`shared/birthday.js` `birthdayJourneyStart`). Batch Undo
   removes everything the batch made, its steps' Threads and tasks and its scheduled journey emails. A plain task on the
   Calendar has Delete, with Undo.
+- **Only an Active journey starts people (FLOWS-3).** Draft and Paused are listed, greyed out, with the reason, and every
+  by-hand door refuses them (`shared/journeyStartRule.js`; `server/outreach/journeyActive.js` for the routes, and the
+  start path itself in `server/shared/journeyStart.js`). Several people at once get a breakdown ("2 can start, 1 is
+  already in it") and the preview lists each person. A by-hand start of a dated journey counts its steps from the
+  journey's date (`journeyAnchor`), and the preview says "First step Dec 1". The rail's "Next gift expected" is the
+  last gift plus the median gap (`rhythm.js` `nextGift`), "Due now" once passed; FIX-33's usual year still decides late.
 
 - **One rhythm (STATUS-1).** "When is this person's next gift due, and has it passed?" is
   `shared/numbers/rhythm.js` `rhythmFor(gifts, today)`, once: the usual gap (or the season, with the

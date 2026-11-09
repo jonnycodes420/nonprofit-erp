@@ -155,7 +155,7 @@ export function VolunteerListView({ isReadOnly, coordinator, onOpenPerson, initi
           <input aria-label="Hours" inputMode="numeric" value={f.hoursN} onChange={set("hoursN")} style={{ ...inp, width: 60 }} />
           <span>between</span><DateInput aria-label="Hours from" value={f.volHoursFrom} onChange={set("volHoursFrom")} style={inp} />
           <span>and</span><DateInput aria-label="Hours to" value={f.volHoursTo} onChange={set("volHoursTo")} style={inp} />
-          <span style={{ fontSize: 11.5 }}>(the Hours in range column counts the same dates; this year when blank)</span>
+          <span style={{ fontSize: 11.5 }}>(the Hours in range column counts these dates, or the shift dates; this year when both are blank)</span>
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", fontSize: 12.5, color: T.ink3 }}>
           {!coordinator && <>

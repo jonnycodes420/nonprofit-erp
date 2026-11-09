@@ -356,6 +356,7 @@ async function agentDraftsLeg() {
 
   // 8. a journey
   await q(`INSERT INTO cultivation_templates (id,org_id,name,trigger_key,steps,created_by,created_by_name) VALUES ('ct_wire1p',$1,'New volunteer welcome','by_hand','[{"type":"thank","draft":null,"label":"Call to say thank you","offsetDays":3}]'::jsonb,'system:test','test')`, [ORG]).catch(e => ok("8 journey fixture", false, e.message));
+  await q(`UPDATE cultivation_templates SET journey_enabled=true, ever_enabled=true WHERE id='ct_wire1p'`);   // FLOWS-3: only an Active journey starts people
   const jy = await api("POST", "/journeys/ct_wire1p/apply", dana, { donorIds: [W] });
   const [plan8] = await q(`SELECT COUNT(*)::int n FROM cultivation_plans WHERE org_id=$1 AND donor_id=$2`, [ORG, W]);
   ok("8 Wren is on a journey", jy.status < 300 && plan8.n === 1, { jy: jy.body, plan8 });

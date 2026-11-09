@@ -498,27 +498,10 @@ app.get("/donors/:id/volunteer-hours", requireAuth, wrap(async (req, res) => {
   if (!d) return res.status(404).json({ error: "Donor not found" });
   const today = orgToday(await orgTz(orgId));                      // ORG_TZ_SEAM_OK
   const shifts = await volunteerLog(orgId, d.id, req.query || {});
-  // VOL-1 — the shifts they are SIGNED UP FOR, beside the hours they have
-  // already given. The record answers both questions a person opening it
-  // asks: what have they done, and when will I see them next.
-  const upcoming = await query(
-    `SELECT s.date, s.start_time, s.end_time, COALESCE(s.name, o.name) AS opp_name, su.status
-       FROM volunteer_signups su
-       JOIN volunteer_slots s ON s.id = su.slot_id
-       JOIN volunteer_opportunities o ON o.id = s.opportunity_id
-      WHERE su.org_id=? AND su.person_id=? AND su.status IN ('confirmed','waitlisted')
-        AND s.cancelled_at IS NULL AND s.date >= ?
-      ORDER BY s.date, s.start_time LIMIT 6`, [orgId, d.id, today]).catch(() => []);
-  // STALE-2 (W-1107-Volunteers-24): the shifts they were scheduled on that are
-  // behind them, beside Coming up; done, or marked as not coming.
-  const pastScheduled = await query(
-    `SELECT s.date, s.start_time, s.end_time, COALESCE(s.name, o.name) AS opp_name, su.status
-       FROM volunteer_signups su
-       JOIN volunteer_slots s ON s.id = su.slot_id AND s.org_id = su.org_id
-       JOIN volunteer_opportunities o ON o.id = s.opportunity_id AND o.org_id = s.org_id
-      WHERE su.org_id=? AND su.person_id=? AND su.status IN ('confirmed','completed','no_show')
-        AND s.cancelled_at IS NULL AND s.date < ?
-      ORDER BY s.date DESC, s.start_time DESC LIMIT 10`, [orgId, d.id, today]).catch(() => []);
+  // VOL-1 — the shifts they are signed up for, beside the hours they have
+  // already given. FLOWS-3 (W-1107-Volunteers-24): read from the Schedule's
+  // own rows, ahead and behind, the same read as the Volunteers drawer.
+  const { upcoming, past: pastScheduled } = await require("../volunteers/personShifts").personShifts(query, orgId, d.id, today, { upcomingLimit: 6, pastLimit: 10 });
   const sum = await volunteerSummary(orgId, d.id);
   const [yr] = await query(`SELECT COALESCE(SUM(ROUND(hours*100)),0)::bigint AS h FROM volunteer_shifts WHERE org_id=? AND person_id=? AND date >= ? AND date <= ?`,
     [orgId, d.id, today.slice(0, 4) + "-01-01", today]);
@@ -536,11 +519,8 @@ app.get("/donors/:id/volunteer-hours", requireAuth, wrap(async (req, res) => {
       source: { key: "volunteer-hours", params: { from: lifeFrom, to: lifeTo, donor: d.id } } },
     glanceLine: sum.shiftCount ? `${sum.totalHours} ${sum.totalHours === 1 ? "hour" : "hours"} since ${first.slice(0, 4)}, last served ${dd(last)}` : null,
     opportunities: opps,
-    upcoming: upcoming.map(u => ({
-      when: `${u.opp_name}, ${u.date}${u.status === "waitlisted" ? " (waiting list)" : ""}`,
-      date: u.date, status: u.status })),
-    pastShifts: pastScheduled.map(u => ({
-      when: `${u.opp_name}, ${u.date}${u.status === "no_show" ? " (did not come)" : ""}`, date: u.date, status: u.status })),
+    upcoming: upcoming.map(u => ({ when: u.when, date: u.date, status: u.status })),
+    pastShifts: pastScheduled.map(u => ({ when: u.when, date: u.date, status: u.status })),
     filtered: !!(req.query.from || req.query.to || req.query.opportunityId),
     shifts: shifts.map(s => ({ id: s.id, date: s.date, hours: Number(s.hours), role: s.role, note: s.note,
       opportunityId: s.opportunity_id || null, opportunityName: s.opportunity_name || null, slotId: s.slot_id || null,

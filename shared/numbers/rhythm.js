@@ -127,7 +127,8 @@ function rhythmFor(gifts, today) {
   const base = { events, n, lastGiftDate: last, firstGiftDate: n ? events[0].date : null, lapsed };
   if (n < 2) {
     return { ...base, hasPattern: false, cadenceDays: null, cv: null, seasonal: null, basis: null,
-      gapExpected: null, onTimeThrough: null, expectedNext: null, extended: false, late: false, daysPast: 0, onTime: false };
+      gapExpected: null, onTimeThrough: null, expectedNext: null, extended: false, late: false, daysPast: 0, onTime: false,
+      nextGift: null, dueNow: false };
   }
   const intervals = [];
   for (let i = 1; i < n; i++) intervals.push(orgTime.daysBetween(events[i - 1].date, events[i].date));
@@ -162,8 +163,14 @@ function rhythmFor(gifts, today) {
   const expectedNext = extended ? onTimeThrough : gapExpected;
   const late = !!t && onTimeThrough < t;
   const daysPast = late ? orgTime.daysBetween(expectedNext, t) : 0;
+  // FLOWS-3 (W-1108-Donors-24X): THE NEXT GIFT A SENTENCE NAMES is their last
+  // gift plus their usual gap (the median), so "about twice a year" is due
+  // about six months on, never a year after an earlier gift. Once that day
+  // has passed it is "Due now". `onTimeThrough` still decides late (FIX-33).
+  const nextGift = gapExpected;
+  const dueNow = !!t && nextGift < t;
   return { ...base, hasPattern: true, cadenceDays, cv, seasonal, basis: seasonal ? "seasonal" : "interval",
-    gapExpected, onTimeThrough, expectedNext, extended, late, daysPast, onTime: !late && !lapsed };
+    gapExpected, onTimeThrough, expectedNext, extended, late, daysPast, onTime: !late && !lapsed, nextGift, dueNow };
 }
 
 // MONEY-3 · THE ONE STORED DATE. The last day a person is on time, as the

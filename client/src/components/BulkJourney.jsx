@@ -130,6 +130,11 @@ function BulkJourneyModal({ ids: idsAtOpen, onClose, onDone }) {
           {pick && !preview && !err && <div style={{ fontSize: 13, color: T.ink3 }}>Working out who would start…</div>}
           {preview && <div data-testid="bulk-journey-preview" style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px" }}>
             <div data-testid="bulk-journey-sentence" style={{ fontSize: 14, color: T.ink, lineHeight: 1.5, fontWeight: 600 }}>{preview.sentence}</div>
+            {preview.breakdown && <div data-testid="bulk-journey-breakdown" style={{ fontSize: 13, color: T.ink, marginTop: 6 }}>{preview.breakdown}</div>}
+            {preview.anchorNote && <div data-testid="bulk-journey-anchor" style={{ fontSize: 12.5, color: T.ink3, marginTop: 4 }}>{preview.anchorNote}</div>}
+            {Array.isArray(preview.people) && preview.people.length > 1 && <div data-testid="bulk-journey-people" style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 8, maxHeight: 160, overflowY: "auto" }}>
+              {preview.people.map(p => <div key={p.id} data-testid="bulk-journey-person" data-can-start={p.canStart ? "1" : "0"} style={{ fontSize: 12.5, color: p.canStart ? T.ink : T.ink3 }}>{p.name} · {p.sentence}</div>)}
+            </div>}
             <Lines lines={preview.lines} testid="bulk-journey-skips" />
             {preview.runsAsJob && <div data-testid="bulk-journey-job-note" style={{ fontSize: 12.5, color: T.ink3, marginTop: 10 }}>That is a big list, so it runs in the background. You can watch it here, and you can close this and come back.</div>}
           </div>}
