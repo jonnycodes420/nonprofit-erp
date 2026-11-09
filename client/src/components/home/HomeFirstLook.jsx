@@ -41,7 +41,7 @@ export function homeHead({ onMovesSettled, agentDaily, cancelEdit, data, editMod
               name gives way with an ellipsis, the greeting and her name never do. */}
           <div data-testid="home-greeting" style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"nowrap",minWidth:0,whiteSpace:"nowrap",fontSize:14,lineHeight:1.35,minHeight:"1.35em",color:T.ink3}}>
             {data.org?.name&&<span title={data.org.name} style={{fontWeight:600,letterSpacing:"-0.01em",minWidth:0,flex:"0 1 auto",overflow:"hidden",textOverflow:"ellipsis"}}>{data.org.name}</span>}
-            <span data-testid="home-greeting-line" style={{fontWeight:400,flexShrink:0}}>{greeting}</span>
+            <span data-testid="home-greeting-line" style={{fontWeight:400,flexShrink:0}}>{greeting}{firstName?(greeting==="Hi"?` ${firstName}`:`, ${firstName}`):""}</span>
           </div>
         </div>
         {/* BUILD-34 edit affordance — a quiet on-palette text button by the

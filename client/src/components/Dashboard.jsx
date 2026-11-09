@@ -13,7 +13,7 @@ import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop } from "../lib/hom
 import { rowFigure } from "../../../shared/threadFigures";
 import { paceOf } from "../../../shared/pace";
 import { makeT } from "../../../shared/vocabulary";
-import { greetingLine, hourIn } from "../lib/greeting";
+import { greetingForHour, hourIn } from "../lib/greeting";
 
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { useStewardTold } from "../lib/stewardTold";
@@ -732,8 +732,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const firstName=auth?.user?.name?.split(" ")[0]||"";
   // Greeting windows are the single source of truth in ../lib/greeting.js
   // (BUILD-36 B3). POLISH-8: the ORG's hour, not the browser's, and the night
-  // (10 PM–5 AM) is just "Hi Mike". The line includes the name.
-  const greeting=greetingLine(hourIn(orgTimezone()),firstName);
+  // (10 PM–5 AM) is just "Hi" (HomeFirstLook says "Hi Mike", no comma).
+  const greeting=greetingForHour(hourIn(orgTimezone()));
   let paceLabel=null,paceColor="rgba(240,237,230,0.7)",paceSub=null,daysLeftInPeriod=null;
   if(goal){
     const periodStartDate=new Date(goal.periodStart+"T00:00:00");

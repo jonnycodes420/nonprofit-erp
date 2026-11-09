@@ -113,10 +113,10 @@ function ProspectCard({ card, colorMap, onOpen, onMove, isReadOnly, dndEnabled, 
         <div {...interactive(() => onOpen(card.donorId), { label: `Open ${card.name}` })} style={{ borderRadius: 6, margin: -4, padding: 4, flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div title={card.assignedToName || "Unassigned"} style={{ width: 22, height: 22, borderRadius: "50%", flexShrink: 0, background: color || T.greenDk+"22", color: color ? T.white : T.greenMid, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800 }}>{initials(card.assignedToName)}</div>
-            {/* POLISH-8 (W-1109-Fundraising-03): the full name, wrapping to two lines, with a tooltip; never "Owen...". */}
+            {/* POLISH-8 (W-1109-Fundraising-03): the full name, wrapping (two lines for most names, more for a very long one, never cut), with a tooltip; never "Owen...". */}
             <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: T.ink, display: "flex", alignItems: "center", gap: 6 }}>
               <DonorLink id={card.donorId} draggable={false} onOpen={() => onOpen(card.donorId)} title={card.name} data-testid="pipeline-card-name"
-                style={{ minWidth: 0, overflowWrap: "anywhere", lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", fontStyle: card.erased ? "italic" : "normal" }}>{card.name}</DonorLink>
+                style={{ minWidth: 0, overflowWrap: "anywhere", lineHeight: 1.3, fontStyle: card.erased ? "italic" : "normal" }}>{card.name}</DonorLink>
               <DriftBadge drift={card.drift}/>
             </div>
           </div>
