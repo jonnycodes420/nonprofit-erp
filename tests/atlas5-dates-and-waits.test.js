@@ -19,6 +19,8 @@
 //   §8 speed: a known shape is answered without the model, and the read goes
 //      to the smaller model (W-1107-Atlas-23);
 //   §9 nothing was sent.
+// §3/§4's browser leg walks this shard's built client (tests/atlas5/browser.js,
+// require("./lib/dist") and playwright), so the shard plan gives it a dist.
 // Planted (ATLAS-5 report): todayIn reading UTC instead of the org's zone
 // turns §1 red.
 "use strict";
