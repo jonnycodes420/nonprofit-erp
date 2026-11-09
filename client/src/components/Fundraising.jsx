@@ -23,6 +23,7 @@ import { StartedNotFinished } from "./StartedNotFinished";
 import { CaptureInbox, CAPTURE_CHANGED } from "./CaptureInbox";
 import { HowDidItDo } from "./HowDidItDo";
 import { displayDate } from "../../../shared/displayDate";
+import { ZERO_GIFT_LABEL as ZERO_LABEL } from "../../../shared/giftWords";   // TRUTH-4
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
 import { useLocation } from "react-router-dom";
 import { CampaignsView, CategoryBadge, CATEGORY_META, PACE_META, daysLeftText, campaignHref } from "./CampaignsList";
@@ -530,7 +531,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
                       <div style={{ fontSize: 13, fontWeight: 600, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.donorId ? <DonorLink id={g.donorId} onOpen={go}>{g.donorName}</DonorLink> : g.donorName}</div>
                       <div data-testid="fr-recent-for" style={{ fontSize: 11, color: T.ink3 }}>{[g.campaign, g.date ? displayDate(g.date) : "No date", g.method].filter(Boolean).join(" · ")}</div>
                     </div>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{fmtFull(g.amount)}</div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{Number(g.amount) === 0 ? <span data-testid="gift-zero-label" style={{ fontFamily: "inherit", fontSize: 12, fontWeight: 600, color: T.ink3 }}>{ZERO_LABEL}</span> : fmtFull(g.amount)}</div>
                   </div>
                 );
               })}

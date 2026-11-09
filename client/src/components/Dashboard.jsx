@@ -1208,7 +1208,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     };
     const list=key==="today"?threadList.filter(x=>x.band==="today"):(railOpenAll||threadList);
     return {
-      title:key==="today"?"Due today":`Open follow-ups · ${(threadStat?.open??list.length).toLocaleString("en-US")}`,
+      title:key==="today"?"Due today":`People with a next step · ${(threadStat?.open??list.length).toLocaleString("en-US")}`,
       loading:key==="open"&&!railOpenAll&&(threadStat?.open||0)>list.length,
       // BUILD-86's rule: never "day 0". A thread planned this morning against
       // a date already past is genuinely overdue and genuinely zero days old,
@@ -1247,7 +1247,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     // lib/homeReads.js RAIL_READS); placeholders in this shape hold its place.
     if(!railReady) return <HomeRailSkeleton/>;
     const todayItems=[
-      {key:"followups",n:threadsData&&!threadsData.failed?(threadStat?.open||0):null,one:"person to follow up",many:"people to follow up",   // SENDS-1: never read as the Tasks badge
+      {key:"followups",n:threadsData&&!threadsData.failed?(threadStat?.open||0):null,one:"person with a next step",many:"people with a next step",   // SENDS-1, TRUTH-4: its own name, never read as the Tasks badge
        definition:"Every person with a next step planned and not yet done, whenever it is due. Not the same as the Tasks badge, which counts your tasks due today or overdue, with or without a person.",onOpen:()=>setRailView({kind:"list",key:"open"})},
       {key:"due",n:typeof railDueToday==="number"?railDueToday:null,one:"due today",many:"due today",
        definition:"Your tasks and next steps due today, in your organization's timezone. The same count as Tasks, Today.",onOpen:()=>onNavigate&&onNavigate("tasks",{scope:"mine",view:"today"})},

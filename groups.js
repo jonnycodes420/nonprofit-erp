@@ -123,8 +123,9 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     if (!c) return { badStatus: true };
     where.push(c.sql); params.push(...c.args);
   }
-  if (q.given === "never") where.push("NOT EXISTS (SELECT 1 FROM gifts gv WHERE gv.org_id = donors.org_id AND gv.donor_id = donors.id AND gv.amount > 0)");
-  else if (q.given === "ever") where.push("EXISTS (SELECT 1 FROM gifts gv WHERE gv.org_id = donors.org_id AND gv.donor_id = donors.id AND gv.amount > 0)");
+  // TRUTH-4: "given" is a counted gift (giftCount.js: hard credit above $0), the starters' rule too.
+  if (q.given === "never") where.push(`NOT EXISTS (SELECT 1 FROM gifts gv WHERE gv.org_id = donors.org_id AND gv.donor_id = donors.id AND ${require("./shared/numbers/giftCount").COUNTED("gv")})`);
+  else if (q.given === "ever") where.push(`EXISTS (SELECT 1 FROM gifts gv WHERE gv.org_id = donors.org_id AND gv.donor_id = donors.id AND ${require("./shared/numbers/giftCount").COUNTED("gv")})`);
   // ── PARITY-3 Part 3 · THE VOLUNTEER FILTERS ──────────────────────────────
   // The Volunteers screen's filters are rules here, so the screen, its export
   // and a Group saved from it are the same rows. Each is an EXISTS or a sum

@@ -50,7 +50,8 @@ const LAST_ON_RECORD = (d = "d") => `GREATEST(NULLIF(LEFT(${d}.last_gift_date, 1
 // pledge or a gift in the giving unit still keeps the person off the list.
 function reengageSql(d, today, unit = null) {
   const l = lapsedSql(LAST_ON_RECORD(d), today, `${d}.id`, unit);
-  return { sql: `(${d}.deceased IS NOT TRUE AND ${d}.do_not_contact IS NOT TRUE AND ${d}.do_not_solicit IS NOT TRUE
+  // TRUTH-4: an erased person is counted nowhere (TRUTH-2), so never on Re-engage's list while its badge leaves them out.
+  return { sql: `(${d}.erased_at IS NULL AND ${d}.deceased IS NOT TRUE AND ${d}.do_not_contact IS NOT TRUE AND ${d}.do_not_solicit IS NOT TRUE
       AND ${d}.imported_sustainer IS NOT TRUE AND COALESCE(${l.sql}, false))`, args: l.args };
 }
 // The relationship types that make one giving unit, and SQL for the people

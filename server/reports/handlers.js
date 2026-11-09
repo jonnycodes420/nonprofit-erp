@@ -155,7 +155,9 @@ async function reportGivingSummary(orgId, p) {
   const mParams = [];
   const mWhere = reportGiftWhere(p, orgId, mParams);
   const pMonthly = query(
-    `SELECT LEFT(g.date, 7) AS month, COUNT(*)::int AS gifts,
+    // TRUTH-4: a month's gifts are counted gifts (giftCount.js), so the months foot to the header.
+    `SELECT LEFT(g.date, 7) AS month, COUNT(*) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")})::int AS gifts,
+            COUNT(*) FILTER (WHERE g.amount = 0)::int AS zero,
             COALESCE(SUM(g.amount),0) AS total, ${NUMBERS.money.GIVERS("g", "d")}::int AS donors
      ${REPORT_GIFT_FROM} ${mWhere} GROUP BY 1 ORDER BY 1`, mParams);
 
@@ -246,6 +248,8 @@ async function reportGivingSummary(orgId, p) {
     totalSource: { key: "gifts", params: { from: p.from, to: p.to, ...(p.fundId ? { fund: p.fundId } : {}), ...(p.campaignId ? { campaign: p.campaignId } : {}) } },
     comparison,
     prior: { basis: "full-period", label: "The whole period before this one", from: prior.from, to: prior.to, total: Number(priorTotals.total), giftCount: priorTotals.gift_count },
+    // TRUTH-4: the $0 rows in the period, said apart from the counted gifts.
+    alsoOnFile: (n => (n ? { zero: n, sentence: NUMBERS.giftCount.alsoOnFile(n) } : null))(monthly.reduce((n, m) => n + (Number(m.zero) || 0), 0)),
     // Each month's gifts open through the same source, clipped to the period.
     monthly: monthly.map(m => {
       const mFrom = m.month + "-01" < p.from ? p.from : m.month + "-01";
@@ -263,7 +267,10 @@ async function reportByGroup(orgId, p) {
   // column); dangling ids (deleted fund/page) fall into the "No X" bucket —
   // the tolerated-dangling-reference pattern.
   const JOINS = {
-    funds: { join: "LEFT JOIN fin_funds x ON x.id = g.fund_id AND x.org_id = g.org_id", name: "COALESCE(x.name, 'Unrestricted (no fund)')" },
+    // TRUTH-4 (W-1108-Finance-38): a split gift is its lines, each in its own
+    // fund (fundLines.GIFT_FUND_ROWS), so a fund's row is the sum of its splits
+    // and foots to the gifts it opens.
+    funds: { join: `JOIN ${NUMBERS.fundLines.GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id LEFT JOIN fin_funds x ON x.id = gf.fund_id AND x.org_id = g.org_id`, name: "COALESCE(x.name, 'Unrestricted (no fund)')", amount: "gf.amount" },
     campaigns: { join: "LEFT JOIN campaigns x ON x.id = g.campaign_id AND x.org_id = g.org_id", name: "COALESCE(x.name, NULLIF(g.campaign, ''), 'No campaign')" },
     giving_pages: { join: "LEFT JOIN giving_pages x ON x.id = g.giving_page_id AND x.org_id = g.org_id", name: "COALESCE(x.title, 'No giving page')" },
   };
@@ -271,7 +278,7 @@ async function reportByGroup(orgId, p) {
   const params = [];
   const where = reportGiftWhere(p, orgId, params);
   const rows = await query(
-    `SELECT ${cfg.name} AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(g.amount),0) AS total,
+    `SELECT ${cfg.name} AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(${cfg.amount || "g.amount"}),0) AS total,
             COUNT(*) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")})::int AS gift_count, ${NUMBERS.money.GIVERS("g", "d")}::int AS unique_donors
      FROM gifts g JOIN donors d ON d.id = g.donor_id ${cfg.join}
      WHERE ${where} GROUP BY 1 ORDER BY total DESC`, params);
@@ -392,15 +399,8 @@ async function reportTopDonors(orgId, p) {
     // gift after it), and the gift count by the statement that keeps the
     // Directory's column (donorSummary.js SUMMARY_OF: the import's count plus
     // counted gifts after it). Sorted numerically on that amount.
-    const { SUMMARY_OF } = require("../../donorSummary");
-    const rows = await query(
-      `SELECT x.id, x.name, x.total, x.gift_count, x.last_gift_date FROM (
-         SELECT d.id, d.name, ROUND(${NUMBERS.lifetime.LIFETIME("d")}, 2) AS total,
-                (SELECT s.n FROM ${SUMMARY_OF("d")} s) AS gift_count, d.last_gift_date
-           FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.erased_at IS NULL
-            AND (d.imported_total IS NOT NULL OR EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id))) x
-        WHERE x.total > 0
-        ORDER BY x.total DESC, x.id LIMIT ?`, [orgId, p.limit]);
+    // TRUTH-4: the header (figureSources top-lifetime) reads the same statement.
+    const rows = await query(`${require("../../shared/numbers/topDonors").topLifetimeSql()} LIMIT ?`, [orgId, p.limit]);
     let soft = new Map();
     if (p.credit === "soft" && rows.length) {
       const sr = await query(

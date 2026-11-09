@@ -544,8 +544,13 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       const atStake = d.figures?.atStake ? d.figures.atStake.value : d.rows.reduce((s, r) => s + r.priorYearTotal, 0);
       const yl = yearMode === "fiscal" ? fyLabelFromEnd(d.year, fsm) : d.year;
       const priorLabel = yearMode === "fiscal" ? fyLabelFromEnd(d.year - 1, fsm) : String(d.year - 1);
-      const havent = d.rows.length === 1 ? "hasn't" : "haven't";
-      narrative = <><strong>{d.figures?.people ? <RF f={d.figures.people} label={active === "lybunt" ? "Gave last year, not this year" : "Gave before, not this year"} unit={plural(d.rows.length, "donor")} /> : `${d.rows.length} ${plural(d.rows.length, "donor")}`}</strong> {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${d.rows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
+      // TRUTH-4 (W-1108-Fundraising-07): the header counts the rows on screen. A
+      // household is one row, so its people are counted once, and the people
+      // behind the rows are said beside it (and open, through the bunt source).
+      const shownRows = d.units || d.rows;
+      const folded = shownRows.length !== d.rows.length;
+      const havent = shownRows.length === 1 ? "hasn't" : "haven't";
+      narrative = <><strong data-testid="bunt-header-count">{folded ? `${shownRows.length} ${shownRows.some(r => r.unit === "household") ? plural(shownRows.length, "donor or household", "donors and households") : plural(shownRows.length, "donor")}` : d.figures?.people ? <RF f={d.figures.people} label={active === "lybunt" ? "Gave last year, not this year" : "Gave before, not this year"} unit={plural(d.rows.length, "donor")} /> : `${d.rows.length} ${plural(d.rows.length, "donor")}`}</strong>{folded && <> ({d.figures?.people ? <RF f={d.figures.people} label="People on these rows" unit={plural(d.rows.length, "person", "people")} /> : `${d.rows.length} people`}, each counted once)</>} {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${shownRows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
         {active === "lybunt" && atStake > 0 && <>: <strong><RF f={d.figures?.atStake} kind="money" label="Last year's giving at stake" /></strong> of last year's giving is at stake</>}. This is a call list, not a chart.</>;
       table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
         // INTEGRITY-1: a household or a gives-through link is one line, named for the household
@@ -579,7 +584,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       empty = d.rows.length === 0;
       const sum = d.rows.reduce((s, r) => s + r.total, 0);
       narrative = d.rows.length > 0 && <>Your top <strong>{d.rows.length}</strong> donors {scope === "lifetime" ? "have given" : "gave"} <strong>{d.figures?.topTotal ? <RF f={d.figures.topTotal} kind="money" label={`Top ${d.rows.length} donors`} /> : fmtFull(sum)}</strong>{scope === "lifetime" ? " all-time" : " this period"}.
-        {scope === "lifetime" && d.figures?.allTime && <span data-testid="top-donors-all-time"> Everyone together has given <strong><RF f={d.figures.allTime} kind="money" label="All-time giving" /></strong> all time.</span>}
+        {scope === "lifetime" && d.figures?.allTime && <span data-testid="top-donors-all-time"> Everyone together has given <strong><RF f={d.figures.allTime} kind="money" label="All-time giving" /></strong> all time: every gift on file dated to today, the sum of the years in Year over year. The rows above are each person's lifetime, which also counts any total an import stated.</span>}
         {d.periodWords && <span data-testid="top-donors-period" style={{ display: "block", marginTop: 4, fontSize: 12.5, color: T.ink3 }}>{d.periodWords}</span>}</>;
       table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
         { key: "rank", label: "#", type: "number" },
@@ -881,9 +886,9 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
                 ? <EmptyState title="No gifts in Steward yet" message="Bring in your giving history from a spreadsheet and every report here fills in from it."
                     action="Import a spreadsheet" onAction={() => onNavigate && onNavigate("donors", { openImport: true })} />
                 : <EmptyState icon="▤" title={active === "lybunt" || active === "sybunt" ? "No one, that's good news" : "No gifts in this period yet"}
-                  message={active === "lybunt" ? "Every donor who gave last year has already given this year." : active === "sybunt" ? "Every past donor has given this year." : "Once gifts land in this period, this report fills in automatically. Try another period above."} />)
+                  message={active === "lybunt" ? "Every donor who gave last year has already given this year." : active === "sybunt" ? "Every past donor has given this year." : `${d.alsoOnFile ? d.alsoOnFile.sentence + " " : ""}Once gifts land in this period, this report fills in automatically. Try another period above.`} />)
               : d ? <>
-                  {narrative && <div style={{ fontSize: 14, color: T.ink2, lineHeight: 1.7, marginBottom: 16, paddingBottom: 14, borderBottom: `1px solid ${T.bg2}` }}>{narrative}</div>}
+                  {narrative && <div style={{ fontSize: 14, color: T.ink2, lineHeight: 1.7, marginBottom: 16, paddingBottom: 14, borderBottom: `1px solid ${T.bg2}` }}>{narrative}{d.alsoOnFile && <span data-testid="report-also-on-file"> {d.alsoOnFile.sentence}</span>}</div>}
                   {table}
                 </> : null);
             if (customIncomplete || loading) return null;
