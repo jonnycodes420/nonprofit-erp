@@ -1171,6 +1171,13 @@ app.post("/events/:id/attendees", requireAuth, checkWriteAccess, require("./capa
       const known = await PM.findPersonId(orgId, { email });
       if (known) donorIds = [known];
     }
+    // FLOWS-3 (W-1108-Volunteers-20): a typed guest with nobody on file is added
+    // as a person (type guest), by + Add's own path, then added like anyone else.
+    if (!(donorIds && Array.isArray(donorIds)) && name) {
+      const g = await require("./typedGuest").typedGuestPerson(ctx, req, { name, email, notes });
+      if (g.refused) return res.status(g.refused.status).json(g.refused.body);
+      donorIds = [g.id];
+    }
     if (donorIds && Array.isArray(donorIds)) {
       for (const donorId of donorIds) {
         const dr = await query("SELECT id, name, email FROM donors WHERE id=$1 AND org_id=$2", [donorId, orgId]);
@@ -1179,9 +1186,9 @@ app.post("/events/:id/attendees", requireAuth, checkWriteAccess, require("./capa
         const attId = newId("att");
         try {
           const ins = await query(
-            `INSERT INTO event_attendees (id, event_id, org_id, donor_id, name, email)
-             VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (event_id, donor_id) DO NOTHING RETURNING id`,
-            [attId, eventId, orgId, donorId, d.name, d.email || ""]
+            `INSERT INTO event_attendees (id, event_id, org_id, donor_id, name, email, notes)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (event_id, donor_id) DO NOTHING RETURNING id`,
+            [attId, eventId, orgId, donorId, d.name, d.email || "", notes || null]
           );
           if (ins.length) {
             ids.push(ins[0].id);
@@ -1194,15 +1201,7 @@ app.post("/events/:id/attendees", requireAuth, checkWriteAccess, require("./capa
         } catch { /* skip */ }
       }
     } else {
-      if (!name) return res.status(400).json({ error: "name required" });
-      const attId = newId("att");
-      await run(
-        `INSERT INTO event_attendees (id, event_id, org_id, donor_id, name, email, notes)
-         VALUES ($1,$2,$3,NULL,$4,$5,$6)`,
-        [attId, eventId, orgId, name, email || "", notes || ""]
-      );
-      ids.push(attId);
-      added.push(name);
+      return res.status(400).json({ error: "name required" });
     }
     res.json({ added: added.length, names: added, ids });
   } catch(e) { res.status(500).json({ error: e.message }); }

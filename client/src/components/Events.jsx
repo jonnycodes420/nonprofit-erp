@@ -1457,7 +1457,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
     if (!selectedIds.size) return;
     setAddingDonors(true);
     try {
-      if (!(await addGuests(eventId, { donorIds: [...selectedIds] }))) { setAddingDonors(false); return; }
+      if (!(await addGuests(eventId, { donorIds: [...selectedIds] }))) { setSelectedIds(new Set()); setAddingDonors(false); return; }   // FLOWS-3 (W-1108-Volunteers-23X): No leaves nobody checked
       setSelectedIds(new Set());
       setDonorSearch("");
       eventRowsChanged(eventId);

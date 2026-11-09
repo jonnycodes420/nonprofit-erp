@@ -172,7 +172,13 @@ async function render(ctx, { blocks, subject, preheader, fields, mode = "send" }
 async function subjectFor(subject, fields) {
   const B = await blocksMod();
   const defs = new Map((B.EMAIL_MERGE_FIELDS || []).map(f => [f.key, f]));
-  const greeted = (await import("./shared/greeting.js")).greetMerge(subject, fields && fields.greeting);   // FIX-46
+  // FLOWS-3 (W-1107-Fundraising-17): the subject follows the no-gift rule the
+  // body does (shared/giftSentence.js), on the send, the test and the draft.
+  const GS = await import("./shared/giftSentence.js");
+  const f = fields || {};
+  const hasTotal = !("lifetime_total" in f || "total_giving" in f) || GS.hasValue(f.lifetime_total || f.total_giving);
+  const told = GS.withoutMissingGift(String(subject == null ? "" : subject), { hasGift: GS.hasValue(f.last_gift_amount || f.gift_amount), hasTotal });
+  const greeted = (await import("./shared/greeting.js")).greetMerge(told, fields && fields.greeting);   // FIX-46
   return greeted.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (m, k) => {
     const key = k === "first" ? "first_name" : k === "org" ? "org_name" : k;
     const v = fields && fields[key];

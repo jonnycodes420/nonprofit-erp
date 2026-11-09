@@ -105,6 +105,9 @@ const GUARDED_WRITERS = [
   // STALE-2: deletes event timeline lines whose guest is gone (not in the trash).
   // Dry run by default; --apply/--undo write through writerDbUrl, one audit row per org. org_creo skipped.
   "stale2-event-line-orphans",
+  // FLOWS-3: gives event guests typed in with no record a person (matched, or a new "guest").
+  // Dry run by default; --apply/--undo write through writerDbUrl, one audit row per org. org_creo skipped.
+  "flows3-typed-guests",
   // DEMO-TIDY-1/2: tidies a demo or internal_test org (refuses every other org_kind; Jonathan runs it on org_creo).
   // Dry run by default; --apply/--undo write through writerDbUrl, one audit row per change and one per run.
   "demo-tidy",
@@ -187,6 +190,8 @@ const LOOPBACK_HARDCODED = [
 // Read-only against whatever BASE points at (may default to prod): their only
 // write-shaped call is POST /auth/login. Verified below, not just trusted.
 const PROD_READONLY = [
+  // FLOWS-3: counts people in Draft/Paused journeys and early dated first steps; SELECTs only, no --apply.
+  "flows3-journey-starts",
   // PLEDGES-3: lists old pledge flags, drifted receipts and grants awarded with no award row; SELECTs only, no --apply.
   "pledges3-old-rows",
   // ATLAS-5: lists reminders saved on the late weekday and notes saved short; SELECTs only, no --apply.

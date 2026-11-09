@@ -182,6 +182,7 @@ function staticChecks() {
   await q(`INSERT INTO cultivation_templates (id,org_id,name,steps,trigger_key,created_by,created_by_name) VALUES ('ct_sg2',$1,'One email',$2::jsonb,'by_hand',${sys})`,
     [ORG, JSON.stringify([{ type: "send", label: "Send the welcome", offsetDays: 0, draft: `template:${TID}` }])]);
   const turned = await api("POST", "/journeys/ct_sg2/steps/0/auto", tok, { on: true, confirm: true });
+  await q(`UPDATE cultivation_templates SET journey_enabled=true, ever_enabled=true WHERE id='ct_sg2'`);   // FLOWS-3: only an Active journey starts people
   const applied = await api("POST", "/journeys/ct_sg2/apply", tok, { donorIds: [P.fern[0], P.abe[0], P.nina[0]] });
   ok("fixture: a journey with an automatic step, applied to three people", turned.status === 200 && applied.status < 300, { t: turned.body, a: applied.body });
   // Every journey send is due in 3 days (the Going-out check moves them).
