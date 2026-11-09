@@ -588,8 +588,8 @@ function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord, onL
               <div style={{ fontSize: 11.5, color: T.ink3 }}>hours</div>
             </div>
             <div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{hours.shiftCount}</div>
-              <div style={{ fontSize: 11.5, color: T.ink3 }}>{hours.shiftCount === 1 ? "shift" : "shifts"}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{Number(hours.shiftCount) || 0}</div>
+              <div style={{ fontSize: 11.5, color: T.ink3 }}>{Number(hours.shiftCount) === 1 ? "shift" : "shifts"}</div>
             </div>
             {hours.lastShift && <div>
               <div style={{ fontSize: 14, color: T.ink, marginTop: 4 }}>{displayDate(hours.lastShift)}</div>

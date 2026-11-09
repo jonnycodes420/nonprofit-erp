@@ -121,8 +121,11 @@ export function VolunteerListView({ isReadOnly, coordinator, onOpenPerson, initi
   const saveCols = next => { setCols(next); try { window.localStorage.setItem(COLS_KEY, JSON.stringify(next)); } catch { /* no storage */ } };
   const cellOf = (r, k) => {
     const v = r[k];
-    if (k === "lastServed" || k === "nextShift" || k === "lastGiftDate") return v ? displayDate(String(v).slice(0, 10)) : "";
+    if (k === "lastGiftDate") return v ? displayDate(String(v).slice(0, 10)) : "";
     if (k === "lifetimeGiving") return v ? money(v) : "Never given";
+    // POLISH-7 (W-1107-Volunteers-13X): zero shows as 0, never a blank cell.
+    if (k === "rangeHours" || k === "lifetimeHours" || k === "gifts" || k === "shifts") return String(Number(v) || 0);
+    if (k === "lastServed" || k === "nextShift") return v ? displayDate(String(v).slice(0, 10)) : "None yet";
     return v ?? "";
   };
   return (

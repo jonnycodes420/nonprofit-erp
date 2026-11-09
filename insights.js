@@ -637,7 +637,8 @@ const hello = x => {
   const name = String(x.name || "").trim();
   // POLISH-4: the one opening line (greeting.js greetingLine): never "Dear Dr.", "Hi &" or "Hi K".
   return GREET ? GREET.greetingLine({ name, kind: org ? "organisation" : (solo && solo.kind), salutation: solo && solo.salutation,
-    contactName: solo && solo.contact_name, spouseName: solo && solo.spouse_name }, { word: "Hi", punct: "" }) : `Dear ${name}`;
+    contactName: solo && solo.contact_name, spouseName: solo && solo.spouse_name,
+    ...(org || (solo && /^organi[sz]ation$/.test(solo.kind || "")) ? { to: (solo && solo.email) || "" } : {}) }, { word: "Hi", punct: "" }) : `Dear ${name}`;   // POLISH-7: the note goes to the record's address
 };
 const yearsLine = x => Object.keys(x.byYear).sort().map(y => `${money(x.byYear[y])} (${y})`).join(", ");
 // FLOWS-1 item 9: a window runs forward. One whose end is already behind its

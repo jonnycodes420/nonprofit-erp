@@ -83,6 +83,21 @@ export function filterCampaigns(emails, filterId) {
 // The brief's rule, in one place so the pills and the rows cannot disagree:
 // zero is "0" and it MEANS zero; a campaign that has not gone out yet has no
 // rate at all, and "0%" would be a claim that nobody opened it.
+// POLISH-7 (W-1107-Fundraising-16X): a campaign is Sent only when it reached
+// at least one person. One that went out to nobody is "Not sent: nobody could
+// receive it", and no Sent count includes it.
+export const NOBODY_SENTENCE = "Not sent: nobody could receive it";
+export function reachedAnyone(campaign) {
+  const c = campaign || {};
+  const d = c.delivery || null;
+  if (d && d.sent != null) return Number(d.sent) > 0;
+  return Number(c.recipient_count || 0) > 0;
+}
+export function wentOutToNobody(campaign) {
+  const c = campaign || {};
+  const status = String(c.status || "").toLowerCase();
+  return (status === "sent" || !!c.sent_at) && !["draft", "scheduled", "awaiting_approval", "sending"].includes(status) && !reachedAnyone(c);
+}
 export function sentWord(campaign) {
   const n = Number((campaign && campaign.recipient_count) || 0);
   if (n > 0) return n.toLocaleString("en-US");
@@ -102,7 +117,7 @@ export function openRateWord(campaign) {
 // computation and cannot drift.
 export function campaignStats(rows) {
   const { emails } = splitCampaigns(rows);
-  const sent = emails.filter(c => String(c.status || "").toLowerCase() === "sent" || c.sent_at);
+  const sent = emails.filter(c => (String(c.status || "").toLowerCase() === "sent" || c.sent_at) && reachedAnyone(c));   // POLISH-7: reached somebody
   const totalSent = sent.reduce((s, c) => s + (Number(c.recipient_count) || 0), 0);
   const totalOpen = sent.reduce((s, c) => s + (Number(c.open_count) || 0), 0);
   const active = emails.filter(c => ["sending", "scheduled"].includes(String(c.status || "").toLowerCase()));

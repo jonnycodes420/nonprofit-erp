@@ -326,7 +326,7 @@ export function donorScoreParts(d) {
   parts.push([total,35,`${fmtFull(d.total||0)} given in all`]);
   const days=d.lastGift?daysDiff(d.lastGift):null;
   const recent=days==null?0:days<90?30:days<180?22:days<365?12:0;
-  parts.push([recent,30,days==null?"no gift date on file":days<365?`last gift ${days} ${days===1?"day":"days"} ago`:"no gift in the last year"]);
+  parts.push([recent,30,days==null?"no gift date on file":days<365?`last gift ${days} ${days===1?"day":"days"} ago`:"no gift of their own in the last year"]);   // POLISH-7: a household gift can still keep them Current
   const count=Math.min((d.gifts||0)*4,20);
   parts.push([count,20,`${d.gifts||0} ${d.gifts===1?"gift":"gifts"}`]);
   if(d.status==="lapsed")parts.push([-15,0,"lapsed"]);

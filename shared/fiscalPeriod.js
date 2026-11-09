@@ -27,6 +27,22 @@ export function fyLabelFromStart(startYear, fiscalStartMonth = 7) {
   return `FY ${y}${RANGE_DASH}${String(y + 1).slice(2)}`;
 }
 
+// POLISH-7 (W-1107-Fundraising-05): the one long form, for the first use on a
+// page: "FY 2026–27 (Jul 1, 2026 to Jun 30, 2027)". Same short label, its
+// dates after it, never a second name for the year.
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export function fyLongLabel(startYear, fiscalStartMonth = 7) {
+  const y = Number(startYear), m = Number(fiscalStartMonth) || 1;
+  const endY = m === 1 ? y : y + 1, endM = m === 1 ? 12 : m - 1;
+  const lastDay = new Date(Date.UTC(endY, endM, 0)).getUTCDate();
+  return `${fyLabelFromStart(y, m)} (${MON[m - 1]} 1, ${y} to ${MON[endM - 1]} ${lastDay}, ${endY})`;
+}
+// The start year of the fiscal year a short label names ("FY 2026–27" → 2026).
+export function fyStartOfLabel(label) {
+  const m = /^FY (\d{4})/.exec(String(label || ""));
+  return m ? Number(m[1]) : null;
+}
+
 // Reports names a fiscal year by the year it ENDS in (that is the number its
 // year picker holds). Same label, one conversion.
 // LEDGER-2: for a year that starts in January too. The server's year number is

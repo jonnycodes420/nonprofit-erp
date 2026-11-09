@@ -5,7 +5,8 @@ import { T, SectionLabel } from "../shared";
 import { fmtInZone } from "../EditHistory";
 import { tabHref } from "../../lib/appUrls";
 import { RecordLink } from "../RecordLink";
-import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import DateInput from "../inputs/LazyDateInput";
+import { auditValue, recordCount } from "../../lib/auditWords";   // POLISH-7: words, never raw JSON   // POLISH-6: the one date box, loaded when first shown
 
 // ── FIX-11 Part 1 — THE AUDIT LOG ─────────────────────────────────────────
 // Newest first, filtered by person, record type, action and date, searchable
@@ -146,7 +147,7 @@ export function AuditLog({onNavigate}){
                           style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:11.5,cursor:"pointer",textDecoration:"underline"}}>Only this person</button>}
                         {r.entity_id&&!filters.record&&!(r.link&&r.link.donorId&&/^(donor|person|organisation|organization)$/.test(r.entity_type))&&<button onClick={()=>{setFilters(f=>({...f,record:r.entity_id,person:""}));setScopeName(r.entity_label||r.entity_type||"this record");}}
                           style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:11.5,cursor:"pointer",textDecoration:"underline"}}>Only this record</button>}
-                        {r.record_count!=null&&<span style={{fontSize:11.5,color:T.ink3}}>{r.record_count} records</span>}
+                        {r.record_count!=null&&<span style={{fontSize:11.5,color:T.ink3}}>{recordCount(r.record_count)}</span>}
                         {r.actor_kind&&r.actor_kind!=="user"&&<span style={{fontSize:10.5,color:T.ink3,border:"1px solid "+T.bg3,borderRadius:6,padding:"1px 6px"}}>{r.actor_kind.replace(/_/g," ")}</span>}
                         {moved&&<button onClick={()=>setOpenRow(open?null:r.id)}
                           style={{marginLeft:"auto",background:"none",border:"none",color:T.greenDk,fontSize:11.5,fontWeight:700,cursor:"pointer"}}>
@@ -186,7 +187,7 @@ export function AuditRowDetail({row}){
   // "not set" rather than a dash. A dash in a Was column is ambiguous between
   // "this field was empty" and "we did not record it", and the house rule is
   // no em dashes in copy anyway.
-  const show=v=>v===null||v===undefined||v===""?"not set":typeof v==="object"?JSON.stringify(v):String(v);
+  const show=auditValue;   // POLISH-7: a list or object reads as words
   return (
     <div style={{marginTop:10,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px"}}>
       {keys.length>0

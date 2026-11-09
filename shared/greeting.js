@@ -46,6 +46,18 @@ const INITIAL = /^[A-Za-z]\.?$/;
 const lastWord = s => { const w = String(s || "").trim().replace(/,.*$/, "").split(/\s+/).filter(t => !/^(jr|sr|ii|iii|iv|v)\.?$/i.test(t)); return w.length > 1 ? w[w.length - 1] : ""; };
 const titled = t => /\.$/.test(t) || /^(miss|pastor|rabbi|hon)$/i.test(t) ? t : `${t}.`;
 
+// POLISH-7: is this address the named contact's own? Their first or last
+// name (three letters or more) is in the part before the @, or their initial
+// and last name ("rashgrove"). No address is nobody's.
+export function contactOwnsAddress(contact, address) {
+  const local = String(address || "").toLowerCase().split("@")[0].replace(/[^a-z]/g, "");
+  if (!local) return false;
+  const words = String(contact || "").toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(w => w.length >= 3);
+  if (!words.length) return false;
+  const first = words[0], last = words[words.length - 1];
+  return words.some(w => local.includes(w)) || local.includes(first[0] + last);
+}
+
 export function greetingName(person = {}) {
   const p = typeof person === "string" ? { name: person } : (person || {});
   const salutation = String(p.salutation || "").trim().replace(/^dear\s+/i, "").replace(/[,:\s]+$/, "");
@@ -60,6 +72,10 @@ export function greetingName(person = {}) {
   // FIX-56: an organisation is greeted by its named contact, else as "friends at" it.
   if (isOrg(p)) {
     const contact = String(p.contactName || p.contact_name || "").trim();
+    // POLISH-7 (W-1108-Finance-21X): a draft that says where it goes (`to`,
+    // the address) greets the contact only when that address is theirs; a
+    // note to grants@windermere is to the foundation, not to Ruth.
+    if (contact && p.to !== undefined && !contactOwnsAddress(contact, p.to)) return `friends at ${name}`;
     return contact ? greetingName({ name: contact }) : `friends at ${name}`;
   }
   if (/^the\s/i.test(name)) return name.replace(/^the\s+/i, "");
