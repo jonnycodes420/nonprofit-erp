@@ -156,7 +156,8 @@ async function personAnswer({ query, orgId, donorId, today }) {
     { kind: "giving", line: giving, link: { tab: "donor", donorId, section: "giving" } },
     about ? { kind: "about", line: `About ${first}: ${about}`, link: { tab: "donor", donorId } }
       : { kind: "about", line: `Nobody has written an About note for ${first} yet.`, link: { tab: "donor", donorId } },
-    ...convs.map(c => ({ kind: "conversation", line: `${TYPE[c.type] || "Conversation"}, ${day(c.date)}: "${String(c.note).replace(/\s+/g, " ").slice(0, 160)}"`, link: { tab: "donor", donorId, section: "timeline" } })),
+    // ATLAS-5 (W-1108-Atlas-02X): each note once, by its id.
+    ...convs.filter((c, i) => convs.findIndex(x => x.id === c.id) === i).map(c => ({ kind: "conversation", id: c.id, line: `${TYPE[c.type] || "Conversation"}, ${day(c.date)}: "${String(c.note).replace(/\s+/g, " ").slice(0, 160)}"`, link: { tab: "donor", donorId, section: "timeline" } })),
     task ? { kind: "next", line: `Next step: ${task.title}${task.due ? `, due ${day(task.due)}` : ""}.`, link: { tab: "donor", donorId, section: "thread" } }
       : plan ? { kind: "next", line: `Next step: ${plan.label}${plan.due_date ? `, due ${day(plan.due_date)}` : ""}.`, link: { tab: "donor", donorId, section: "thread" } }
       : { kind: "next", line: `There is no next step planned for ${first}.`, link: { tab: "donor", donorId, section: "thread" } },

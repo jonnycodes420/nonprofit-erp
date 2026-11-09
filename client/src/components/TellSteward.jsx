@@ -71,8 +71,17 @@ export { openTellSteward, openAtlas, MicGlyph } from "./TellStewardOpen";
 const STATE_MARK = { done: "✓", waiting: "●", refused: "–", failed: "!", undone: "↺", discarded: "–", running: "" };
 const TAP_LABEL = { gift: "Record", pledge: "Record", receipt: "Send both", held_back: "Keep as a note" };
 const ALL_KINDS = new Set(["gift", "pledge", "receipt"]);
+// ATLAS-5 (W-1108-Atlas-01X): the box starts empty. An example is placeholder
+// text only, says it is one, and never sends (Send waits for her own words).
+// While listening, the box says where her words will show, not an example
+// under "What I heard".
+function exampleFor(donor, speech) {
+  if (speech) return "Your words show here as you talk.";
+  const first = donor && donor.name ? String(donor.name).split(/\s+/)[0] : "";
+  return first ? `For example: Lunch with ${first} went well. Remind me to call next Tuesday.` : "For example: Lunch with Sam went well. Remind me to call her next Tuesday.";
+}
 
-export default function TellSteward({ donor, onClose, onNavigate, initialText = "", autoSend = false }) {
+export default function TellSteward({ donor, onClose, onNavigate, initialText = "", autoSend = false, requestId = null }) {
   const phone = isPhone();
   // VOICE-2 Part 1: detection, not the device. A browser that can listen does.
   const [speech, setSpeech] = useState(() => listenMode(typeof window !== "undefined" ? window : {}).mode === "speech" && !initialText);
@@ -102,6 +111,8 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
   useEffect(() => {
     atlasStatus().then(s => setName(s.name)).catch(() => {});
     if (autoSend && initialText) send(initialText);
+    // ATLAS-5: the bell's Answer opens the request that is still asking.
+    if (requestId) apiFetch(`/atlas/${encodeURIComponent(requestId)}`).then(r => { if (r && r.request) setRequest(r.request); }).catch(e => setErr(said(e)));
     return () => {
       wantOn.current = false;
       const r = rec.current;
@@ -298,13 +309,13 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
             <textarea data-testid="tell-text" value={text + (interim ? (text ? " " : "") + interim : "")} rows={phone ? 6 : 4}
               onChange={e => { setText(e.target.value); setInterim(""); finalText.current = e.target.value; }}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-              placeholder={donor && donor.name ? `Lunch with ${String(donor.name).split(/\s+/)[0]} went well. Put them in the major donor journey and remind me to call in March.` : "Undine came to the Harbor Run and gave $10,000. Thank her and ask to meet in January."}
+              placeholder={exampleFor(donor, speech)}
               style={{ width: "100%", boxSizing: "border-box", border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 12px", fontSize: 16, lineHeight: 1.45, fontFamily: "inherit", color: T.ink, resize: "vertical" }} />
             {!speech && <span data-testid="tell-no-listen" style={{ fontSize: 12, color: T.ink3 }}>{phone ? NO_LISTEN_PHONE_LINE : NO_LISTEN_LINE}</span>}
           </label>
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
             {!speech && SR && <button onClick={() => setSpeech(true)} style={btn(false)}>Talk instead</button>}
-            <button data-testid="tell-send" disabled={busy} onClick={() => send()} style={{ ...btn(true), flex: phone ? 1 : "0 0 auto" }}>Send</button>
+            <button data-testid="tell-send" disabled={busy || !(text + interim).trim()} onClick={() => send()} style={{ ...btn(true), flex: phone ? 1 : "0 0 auto" }}>Send</button>
           </div>
           <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>I keep no recording, only these words. I send nothing without your yes, and money waits for your tap.</div>
         </>}
@@ -331,7 +342,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
             <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.45, flex: "1 1 220px" }}>One tap does the {taps.length} things below that wait for you.</div>
             <button data-testid="atlas-do-all-button" disabled={busy} onClick={() => act(`/atlas/${request.id}/all`)} style={btn(true)}>Do all of this</button>
           </div>}
-          <ProposalCard key={(request.proposal && request.proposal.id) || "none"} request={request} busy={busy} onSave={save} />
+          <ProposalCard key={(request.proposal && request.proposal.id) || "none"} request={request} busy={busy} onSave={save} onDiscard={() => act(`/atlas/${request.id}/discard`)} />
           <ul data-testid="atlas-lines" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column" }}>
             {lines.map(l => <li key={l.id} data-testid="atlas-line" data-kind={l.kind} data-state={l.state}
               style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "8px 0", borderBottom: "1px solid " + T.bg2, fontSize: 14, lineHeight: 1.45, color: T.ink }}>

@@ -125,6 +125,12 @@ function score(c, got, ctx, checkOk) {
   return { exact, safe, wantQ, gotQ, want, have, extraDone: extraDone.map(sig) };
 }
 
+// ATLAS-5 · RECORDED TIMING (ATLAS_EVAL_LATENCY=1): each stand-in answer waits as a
+// real one would. Sonnet-class: SPEED-3's profile, 700 ms to the first token then
+// 15 ms a token. Haiku-class (the read since ATLAS-5): 350 ms, then 6 ms a token,
+// an assumption, not a measurement (no key here; prod logs are off limits).
+const LATENCY = process.env.ATLAS_EVAL_LATENCY === "1";
+const latencyFor = (model, json) => (/haiku/.test(String(model)) ? 350 + 6 * Math.ceil(json.length / 4) : 700 + 15 * Math.ceil(json.length / 4));
 function standIn() {
   const READS = require("./ideal-reads");
   const byText = new Map(CASES.map(c => [c.text, READS[c.id]]));
@@ -136,9 +142,12 @@ function standIn() {
       const user = (x.messages || []).map(m => (typeof m.content === "string" ? m.content : "")).join("\n");
       const said = (/What she said: (.*)$/m.exec(user) || [])[1] || "";
       const input = name === "atlas_read" ? { steps: byText.get(said) || [] } : {};
+      const reply = () => {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ id: "msg_standin", type: "message", role: "assistant", model: "claude-opus-5", stop_reason: "tool_use",
         usage: { input_tokens: 1, output_tokens: 1 }, content: [{ type: "tool_use", id: "tu_1", name, input }] }));
+      };
+      if (LATENCY) setTimeout(reply, latencyFor(x.model, JSON.stringify(input))); else reply();
     });
   });
   return new Promise(r => srv.listen(Number(process.env.CALENDAR_MOCK_PORT || 5619), () => r(srv)));
@@ -182,10 +191,13 @@ function standIn() {
   }
   const exact = rows.filter(r => r.pass).length, unsafe = rows.filter(r => !r.safe).length;
   const undine = rows.find(r => r.id === 1);
-  const summary = { ai: aiOn ? "on" : "off", total: rows.length, exact, unsafe, offPassed: off.filter(r => r.pass).length, offTotal: off.length,
+  const ms = rows.map(r => r.totalMs).sort((a, b) => a - b);
+  const pct = p => (ms.length ? ms[Math.min(ms.length - 1, Math.ceil(p * ms.length) - 1)] : null);
+  const summary = { medianMs: pct(0.5), p95Ms: pct(0.95), ai: aiOn ? "on" : "off", total: rows.length, exact, unsafe, offPassed: off.filter(r => r.pass).length, offTotal: off.length,
     undineFirstReplyMs: undine ? undine.firstMs : null, undineTotalMs: undine ? undine.totalMs : null, warmUpColdMs: coldMs, rows, off };
   fs.writeFileSync(OUT, JSON.stringify(summary, null, 2));
   console.log(`\n${aiOn ? `${exact} of ${rows.length} exactly right, ${unsafe} unsafe` : "model cases not run (AI off)"}; AI off ${summary.offPassed} of ${off.length}`);
+  if (aiOn) console.log(`time per case: median ${summary.medianMs} ms, p95 ${summary.p95Ms} ms${LATENCY ? " (recorded timing)" : ""}`);
   await reset();
   await closeDb();
   if (mock) mock.close();

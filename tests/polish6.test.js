@@ -91,7 +91,7 @@ async function person(org, id, name) {
   const BS = await import(path.join(__dirname, "..", "shared/briefShape.js"));
   ok("the brief's footer finishes its sentences", BC.briefProblems([BS.BRIEF_FOOTER]).length === 0 && !/cannot\.$/.test(BS.BRIEF_FOOTER), BS.BRIEF_FOOTER);
   const AT = await import(path.join(__dirname, "..", "shared/atlas.js"));
-  ok("a refusal about a fact Steward does not keep is one plain sentence", AT.CANT_LINE("What is Renee's favorite color?") === "I don't have Renee's favorite color in Steward.", AT.CANT_LINE("What is Renee's favorite color?"));
+  ok("a refusal about a fact Steward does not keep is one plain sentence", AT.CANT_LINE("What is Renee's favorite color?") === "I don't have Renee's favorite color. I can add it as a note if you tell me.", AT.CANT_LINE("What is Renee's favorite color?"));
   const long = AT.CANT_LINE("schedule a lunch with the whole board every quarter and invite everyone from the gala committee as well please");
   ok("any other refusal quotes no fragment and cuts no word", !/["“”]/.test(long) && /\.$/.test(long), long);
   const JS = await import(path.join(__dirname, "..", "shared/journeyShape.js"));
