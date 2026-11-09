@@ -78,6 +78,9 @@ const GUARDED_WRITERS = [
   // --apply/--undo write through writerDbUrl, one audit row per org.
   "integrity1-find-vanished",
   "integrity1-duplicate-invites",
+  // INTEGRITY-2: moves links left on people in the trash onto their trash rows;
+  // lists the rest. Dry run by default; --apply/--undo write through writerDbUrl, one audit row per org.
+  "integrity2-trash-residue",
   // STATUS-1: puts stored donor_rhythm rows on the one rhythm. Dry run by
   // default; --apply writes through writerDbUrl (derived rows, no journeys).
   "status1-rhythm-recompute",

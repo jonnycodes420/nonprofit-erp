@@ -41,10 +41,13 @@ const RESTORABLE = new Set(["interactions", "threads", "tasks", "donor_relations
 // what Undo needs to put those back; RESTORE_WITH puts them back.
 const TRASH_WITH = {
   interactions: async (client, id, orgId) => {
+    // INTEGRITY-2: a deleted meeting takes its open tasks, next step and "How did it go" prompt;
+    // its Done tasks and notes stay, labelled (server/donors/meetingTrash.js)
+    const meeting = await require("../donors/meetingTrash").takeMeeting(require("../../db"), client, id, orgId);
     const ev = await queryTx(client, "SELECT id FROM calendar_events WHERE interaction_id = ? AND org_id = ?", [id, orgId]);
-    if (!ev.length) return null;
-    await runTx(client, "UPDATE calendar_events SET interaction_id = NULL, updated_at = NOW() WHERE interaction_id = ? AND org_id = ?", [id, orgId]);
-    return { calendar_event_ids: ev.map(e => e.id) };
+    if (!ev.length && !meeting) return null;
+    if (ev.length) await runTx(client, "UPDATE calendar_events SET interaction_id = NULL, updated_at = NOW() WHERE interaction_id = ? AND org_id = ?", [id, orgId]);
+    return { calendar_event_ids: ev.map(e => e.id), ...(meeting ? { meeting } : {}) };
   },
   pledges: async (client, id, orgId) => ({
     installments: await queryTx(client, "SELECT * FROM pledge_installments WHERE pledge_id = ?", [id]),

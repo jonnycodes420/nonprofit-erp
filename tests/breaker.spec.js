@@ -245,10 +245,12 @@ async function caseClicks() {
   ok(`${L} §1 both tabs say it is undone (neither says nothing changed)`, said.every(s => /undone/i.test(s) && !/Nothing was changed/i.test(s)), said.map(s => s.slice(0, 160)));
   await page2.close();
 
-  // 1c · Delete on a profile, pressed twice (it goes at once, with an Undo)
+  // 1c · Delete on a profile, its confirm pressed twice (INTEGRITY-2: it asks first, then goes with an Undo)
   await page.goto(`${APP}/donors/d_brk_c1`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.locator('[data-testid="dp-more"]').first().click({ timeout: 30000 });
-  await page.locator('[data-testid="dp-delete"]').dblclick({ timeout: 10000 }).catch(() => {});
+  await page.locator('[data-testid="dp-delete"]').click({ timeout: 10000 }).catch(() => {});
+  await page.waitForSelector('[data-testid="delete-person-yes"]:not([disabled])', { timeout: 15000 }).catch(() => {});
+  await page.locator('[data-testid="delete-person-yes"]').dblclick({ timeout: 10000 }).catch(() => {});
   await page.waitForSelector('[data-testid="undo-toast"]', { timeout: 15000 }).catch(() => {});
   const trash1 = await one("SELECT COUNT(*)::int AS n FROM deleted_records WHERE org_id=$1 AND record_id='d_brk_c1'", [o.orgId]);
   ok(`${L} §1 Delete pressed twice: one delete, one trash row`, trash1.n === 1 && writesTo(page, /DELETE \/donors\/d_brk_c1$/, "2xx").length === 1, { trash: trash1.n, w: writesTo(page, /\/donors\/d_brk_c1$/) });
@@ -552,6 +554,7 @@ async function caseTwoTabs() {
   // tab A: delete a person
   await deleter.locator('[data-testid="dp-more"]').first().click();
   await deleter.locator('[data-testid="dp-delete"]').click({ timeout: 10000 }).catch(() => {});
+  await deleter.locator('[data-testid="delete-person-yes"]').click({ timeout: 10000 }).catch(() => {});   // INTEGRITY-2: it asks first
   await wait(2000);
   // tab A: commit the import
   await importer.locator('[data-testid="sheet-import-go"]').click();

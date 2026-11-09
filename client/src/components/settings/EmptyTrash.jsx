@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { T, SectionLabel } from "../shared";
+import { TrashList } from "./TrashList";
 
 // FIX-55 · EMPTY TRASH. People deleted from this org stay matchable (an import
 // asks about them) until the trash is emptied. The count comes first, then a
@@ -13,23 +14,26 @@ export function EmptyTrash({isAdmin,isReadOnly}){
   const [busy,setBusy]=useState(false);
   const [done,setDone]=useState("");
   const [err,setErr]=useState("");
+  const [seen,setSeen]=useState(0);   // INTEGRITY-2: a Restore above recounts what Empty trash would delete
   const qs=d=>d==="all"?"":`?olderThanDays=${encodeURIComponent(d)}`;
   useEffect(()=>{
     if(!isAdmin) return undefined;
     let live=true; setCheck(null); setSure(false);
     apiFetch("/donors/purge-trash/preview"+qs(days)).then(r=>{if(live)setCheck(r);}).catch(e=>{if(live)setErr(errorMessage(e,"Could not count the trash."));});
     return ()=>{live=false;};
-  },[days,isAdmin,done]);
+  },[days,isAdmin,done,seen]);
   const empty=async()=>{
     setBusy(true); setErr("");
-    try{ const r=await apiFetch("/donors/purge-trash",{method:"POST",body:JSON.stringify({confirm:"empty",olderThanDays:days==="all"?null:Number(days)})}); setDone(r.sentence||"Done."); setSure(false); }
+    try{ const r=await apiFetch("/donors/purge-trash",{method:"POST",body:JSON.stringify({confirm:"empty",olderThanDays:days==="all"?null:Number(days)})}); setDone(r.sentence||"Done."); setSure(false); setSeen(k=>k+1); }
     catch(e){ setErr(e?.body?.sentence||errorMessage(e,"The trash was not emptied.")); }
     setBusy(false);
   };
   const btnS=(danger)=>({background:danger?T.terra700:T.white,color:danger?T.white:T.ink,border:danger?"none":"1px solid "+T.bg3,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:700,cursor:"pointer"});
   return (
     <div data-testid="empty-trash" style={{background:T.bgCard,border:"1px solid "+T.bg3,borderRadius:16,padding:"20px 28px"}}>
-      <SectionLabel>Empty trash</SectionLabel>
+      <SectionLabel>Trash</SectionLabel>
+      {/* INTEGRITY-2: the list you can restore from comes first; Empty trash is below it and asks first */}
+      <TrashList isAdmin={isAdmin} isReadOnly={isReadOnly} onChanged={()=>setSeen(k=>k+1)}/>
       <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,marginBottom:10}}>
         People you delete stay in the trash, so an import can ask whether someone in a file is the person you deleted. Emptying the trash deletes them for good: they never match an import again. The audit log keeps that a delete happened, not who.
       </div>

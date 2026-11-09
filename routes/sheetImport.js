@@ -894,7 +894,7 @@ async function writePlan({ req, body, importId, who, report }) {
     }
   }
   // IMPORT-9: who this run matched because she brought them back from the trash, for its Undo
-  summary.restoredFromTrash = await require("../server/imports/restoredPeople").claimForImport(DB, orgId, [...matchedIds], importId, fileFingerprint(body));
+  summary.restoredFromTrash = await require("../server/imports/restoredPeople").claimForImport(DB, orgId, [...matchedIds], importId, fileFingerprint(body), who.id);
   done = memberCount;
   await report("Writing attendance and notes", done, total, true);
   await writeEngagement({ orgId, u, importId, eventId, personIds, who, summary, fileName: body.fileName || "your file", eventName: evName });
