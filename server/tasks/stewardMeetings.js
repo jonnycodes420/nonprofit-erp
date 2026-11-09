@@ -36,11 +36,15 @@ async function book({ query, run, actor }, req, res, { donor, title, startsAt, e
     sentence: `Saved on Steward's calendar, with ${donor.name}. No invitation was sent: there is no calendar connected to send one from.` });
 }
 
+// FLOWS-4: the key one user action carries (a drag, a reschedule), so its
+// timeline note is written once however many requests it arrives as.
+const actionKeyOf = req => { const k = String((req.body && req.body.actionKey) || ""); return /^[A-Za-z0-9_-]{8,64}$/.test(k) ? k : null; };
+
 // POST /calendar/events/:id/move for a meeting kept in Steward.
 async function move({ query, run, actor }, req, res, c, { startsAt, endsAt }) {
   await run(`UPDATE calendar_events SET starts_at=?, ends_at=?, updated_at=NOW() WHERE id=? AND org_id=?`, [startsAt, endsAt, c.id, req.user.orgId]);
   const who = actor(req);
-  await ME().applyMeeting(c.id, { actorId: who.id, actorName: await actorName(query, req, who) });
+  await ME().applyMeeting(c.id, { actorId: who.id, actorName: await actorName(query, req, who), actionKey: actionKeyOf(req) });   // FLOWS-4: one drag, one note
   return res.json({ ok: true, sentence: "Moved, and the prep, the follow-up and the next step moved with it." });
 }
 
@@ -52,4 +56,4 @@ async function cancel({ query, run, actor }, req, res, c) {
   return res.json({ ok: true, sentence: "Cancelled. The prep and follow-up are closed and the next step is back to what it was." });
 }
 
-module.exports = { PROVIDER, book, move, cancel };
+module.exports = { PROVIDER, book, move, cancel, actionKeyOf };

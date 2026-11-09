@@ -11,6 +11,7 @@ import { T, Modal, Phone } from "./shared";
 import { AVAILABILITY } from "../../../shared/volunteerApply.js";
 import { errorMessage } from "../lib/domainError";
 import { useChanged } from "../lib/changes";   // STALE-2
+import { entryKey } from "../lib/entryKey";   // FLOWS-4: one entry, one key
 import { displayDate } from "../../../shared/displayDate";
 import { displayOrgDate } from "../lib/orgDay";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
@@ -25,7 +26,7 @@ const QUAL_WORD = { skill: "Skill", certification: "Certification", tag: "Tag" }
 const NOTE_KINDS = [["note", "Note"], ["training", "Training"], ["availability", "Availability"], ["background_check", "Background check"]];
 const emptyEntry = { opportunityId: "", date: "", mode: "hm", hours: "", minutes: "", startTime: "", endTime: "", note: "" };
 const changed = () => { try { window.dispatchEvent(new CustomEvent(VOLUNTEER_HOURS_CHANGED)); } catch { /* old browser */ } };
-const entryBody = f => ({ opportunityId: f.opportunityId || null, date: f.date, note: f.note,
+const entryBody = f => ({ opportunityId: f.opportunityId || null, date: f.date, note: f.note, entryKey: f.key,
   ...(f.mode === "times" ? { startTime: f.startTime, endTime: f.endTime } : { hours: f.hours || "0", minutes: f.minutes || "0" }) });
 
 // PARITY-3 Part 1 — THE VOLUNTEER RECORD. On the profile's main column for
@@ -38,7 +39,7 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
   const [data, setData] = useState(null);
   const [prof, setProf] = useState(null);
   const [filt, setFilt] = useState({ from: "", to: "", opportunityId: "" });
-  const [form, setForm] = useState(emptyEntry);
+  const [form, setForm] = useState(() => ({ ...emptyEntry, key: entryKey() }));
   const [adding, setAdding] = useState(false);
   const [edit, setEdit] = useState(null);
   const [qual, setQual] = useState({ kind: "skill", name: "", expiresOn: "" });
@@ -76,7 +77,7 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
   };
   const save = () => act(async () => {
     await apiFetch(`/donors/${donor.id}/volunteer-hours`, { method: "POST", body: JSON.stringify(entryBody(form)) });
-    setForm(emptyEntry); setAdding(false); setMsg("Hours saved.");
+    setForm({ ...emptyEntry, key: entryKey() }); setAdding(false); setMsg("Hours saved.");
   }, "Those hours did not save.");
   const saveEdit = () => act(async () => {
     await apiFetch(`/volunteer-shifts/${edit.id}`, { method: "PATCH", body: JSON.stringify(entryBody(edit)) });
@@ -203,7 +204,7 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
             {entryFields(form, setForm)}
             <div style={{ display: "flex", gap: 8 }}>
               <button style={btnQuiet} onClick={save} disabled={!form.date} data-testid="volunteer-log">Save hours</button>
-              <button style={btnLink} onClick={() => { setAdding(false); setForm(emptyEntry); }}>Cancel</button>
+              <button style={btnLink} onClick={() => { setAdding(false); setForm({ ...emptyEntry, key: entryKey() }); }}>Cancel</button>
             </div>
           </div>
         ) : (

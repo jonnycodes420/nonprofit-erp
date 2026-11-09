@@ -164,7 +164,8 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
   if (want.has("event")) {
     jobs.push(query(
       `SELECT e.id, e.name, e.date::text AS date, e.start_time, e.end_time, e.location FROM events e
-        WHERE e.org_id = ? AND e.date IS NOT NULL AND LEFT(e.date::text, 10) >= ? AND LEFT(e.date::text, 10) <= ?`,
+        WHERE e.org_id = ? AND e.date IS NOT NULL AND LEFT(e.date::text, 10) >= ? AND LEFT(e.date::text, 10) <= ?
+          AND e.archived_at IS NULL   -- FLOWS-4 (W-1109-Volunteers-06X): an archived event leaves the Calendar; it stays in history`,
       [orgId, from, to]).then(rows => rows.forEach(r => {
         const day = String(r.date).slice(0, 10), st = hm(r.start_time), en = hm(r.end_time);
         out.push({ id: `event:${r.id}`, type: "event", title: r.name, start: st ? `${day}T${st}` : day, end: st ? `${day}T${en || addMin(st, 120)}` : day,

@@ -10,6 +10,7 @@
 const express = require("express");
 const TL = require("../../timelineLine");
 const AL = require("./attendanceLines");   // STALE-2: a guest's timeline lines follow the guest row
+const MY = require("./missedYou");   // FLOWS-4: "Missed you" follows the guest list as it stands
 const DL = require("../../shared/numbers/donorLabel");   // WALKB-2: who is a donor, the profile's rule
 const PM = require("../../personMatch");   // WIRE-1 rule 1: one record per person   // WIRE-1 rule 2: every act lands on the timeline
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
@@ -452,56 +453,15 @@ app.post("/events/:id/attendance", requireAuth, checkWriteAccess, wrap(async (re
     else if (a.status !== status) await AL.syncAttendanceLine(orgId, a.id);
   }
   // THREAD-3: the people who did not come are one task for this event.
-  const noShowTaskId = missed.size ? await openNoShowTask(orgId, event.id, { id: who.id, name: u?.name || who.name }) : null;
+  // FLOWS-4: its drafts follow the list as saved (server/events/missedYou.js).
+  const noShowTaskId = await MY.refresh(orgId, event.id, { id: who.id, name: u?.name || who.name }, { make: missed.size > 0 });
   res.json({ updated: rows.length, timelineLines: logged, noShowTaskId });
 }));
 
-// THREAD-3 · AN EVENT'S NO-SHOWS ARE ONE TASK, WITH A DRAFT EACH.
-// Whichever door marked a guest as not having come, this keeps exactly one
-// "Missed you at" task per event (a unique index holds it) and its title
-// counting them, and puts one "Missed you" draft per person with an email in
-// Drafts, written from the template, for a person to read and send or leave.
-// A draft is never written twice for one person and event. Nothing is sent.
-async function openNoShowTask(orgId, eventId, who) {
-  const [event] = await query("SELECT id, name FROM events WHERE id=? AND org_id=?", [eventId, orgId]);
-  if (!event) return null;
-  const missed = await query(
-    `SELECT ea.donor_id, d.name, d.email FROM event_attendees ea
-       JOIN donors d ON d.id = ea.donor_id AND d.org_id = ea.org_id
-      WHERE ea.event_id=? AND ea.org_id=? AND ea.status='no_show'
-        AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE AND d.deceased IS NOT TRUE AND d.do_not_contact IS NOT TRUE
-      ORDER BY d.name`, [event.id, orgId]);
-  if (!missed.length) return null;
-  const BKit = await import("../../shared/brandKit.js");
-  const [u] = who && who.id ? await query(`SELECT ${BKit.SIGN_COLUMNS} FROM users WHERE id=? AND org_id=?`, [who.id, orgId]) : [];
-  const signature = BKit.personSignature(u) || (u && u.name) || (who && who.name) || "";   // FIX-57: her own block first
-  for (const m of missed) {
-    if (!m.email) continue;
-    const key = `event_missed:${event.id}`;
-    const [had] = await query("SELECT id FROM milestone_drafts WHERE org_id=? AND donor_id=? AND milestone_key=?", [orgId, m.donor_id, key]);
-    if (had) continue;
-    const GR = await import("../../shared/greeting.js");
-    const values = { first_name: GR.firstNames(m), greeting: GR.greetingName(m), event_name: event.name, signature };
-    await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
-               VALUES (?,?,?,?,?,?,'pending_review','template',?,?)`,
-      [newId("md"), orgId, m.donor_id, key,
-       BKit.renderTemplate(EV.MISSED_YOU.subject, values).text, BKit.renderTemplate(EV.MISSED_YOU.body, values).text,
-       who.id, who.name]);
-  }
-  const [drafted] = await query("SELECT COUNT(*)::int AS c FROM milestone_drafts WHERE org_id=? AND milestone_key=? AND status='pending_review'", [orgId, `event_missed:${event.id}`]);
-  const title = EV.missedYouTaskTitle(event.name, missed.length, drafted ? drafted.c : 0);
-  const [open] = await query("SELECT id FROM tasks WHERE org_id=? AND event_id=? AND type='event_no_show'", [orgId, event.id]);
-  if (open) { await run("UPDATE tasks SET title=?, updated_at=NOW() WHERE id=? AND org_id=?", [title, open.id, orgId]); return open.id; }
-  const owner = u ? { id: who.id, name: u.name } : (await query(
-    `SELECT id, name, email FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL ORDER BY created_at ASC LIMIT 1`, [orgId]))[0];
-  const id = newId("t");
-  await run(`INSERT INTO tasks (id,org_id,title,due,priority,type,done,event_id,assigned_to,assigned_to_name,created_by,created_by_name)
-             VALUES (?,?,?,?,'medium','event_no_show',0,?,?,?,?,?) ON CONFLICT DO NOTHING`,
-    [id, orgId, title, orgTime.addDays(orgToday(await orgTz(orgId)), 2), event.id,   // ORG_TZ_SEAM_OK
-     owner ? owner.id : null, owner ? (owner.name || owner.email || "") : null, who.id, who.name]);
-  return id;
-}
-
+// THREAD-3 · AN EVENT'S NO-SHOWS ARE ONE TASK, WITH A DRAFT EACH. FLOWS-4 moved
+// it to server/events/missedYou.js, where the audience is read from the guest
+// list as it stands (Registered and not Attended) and a person marked as come
+// afterwards has their waiting draft retired.
 // WIRE-1 · THE ONE ATTENDANCE LINE. Every door that marks a guest as having
 // come (the attendance list, the guest PATCH, the door check-in, the QR scan)
 // runs this: it claims `attendance_logged_at` first, so whichever door is
@@ -519,6 +479,8 @@ async function logEventAttendance(orgId, attendee, event, status, who, day) {
     date, actorId: who.id, actorName: who.name,
     metadata: { via: "event_attendance", event_id: event.id, attendee_id: attendee.id, status } });
   if (status === "attended") {
+    // FLOWS-4: whichever door marked them as come, a "Missed you" waiting for them is retired.
+    await MY.refresh(orgId, event.id, who, { make: false }).catch(e => console.error("[event] missed-you refresh:", e.message));
     await maybeStartJourney(orgId, attendee.donor_id, "attended_event", { eventId: event.id })
       .catch(e => console.error("[journey] attended_event:", e.message));
     // JOURNEYS-3 — the first event they ever came to starts its own journey.
@@ -1291,9 +1253,11 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
         [att.donor_id, orgId]).catch(() => {});
     }
     // THREAD-3: a guest marked as not having come joins the event's one task.
-    if (newStatus === 'no_show' && att.status !== 'no_show' && att.donor_id) {
+    // FLOWS-4 (W-1109-Volunteers-01X): any change of status refreshes it, so a
+    // guest marked No Show and then Attended has their "Missed you" retired.
+    if (newStatus && newStatus !== att.status && att.donor_id) {
       const w = await staffWho(req);
-      await openNoShowTask(orgId, att.event_id, w).catch(e => console.error("[event] no-show task:", e.message));
+      await MY.refresh(orgId, att.event_id, w, { make: newStatus === 'no_show' }).catch(e => console.error("[event] no-show task:", e.message));
     }
     // STALE-2 (W-1107-Volunteers-21): Attended → No Show (or back to
     // Registered) rewrites or removes the "Came to" line; it never stays behind.
