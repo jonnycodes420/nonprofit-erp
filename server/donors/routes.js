@@ -169,7 +169,8 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
                   employer, stripe_subscription_status,
                   deceased, do_not_contact, do_not_solicit, do_not_mail, do_not_email,
                   imported_sustainer, imported_sustainer_amount, imported_sustainer_last_gift,
-                  birth_month, birth_day, birth_year, ${_sumHold.sql} AS pledge_hold, ${_sumRe.sql} AS reengage, ${_sumLost.sql} AS lost
+                  birth_month, birth_day, birth_year, ${_sumHold.sql} AS pledge_hold, ${_sumRe.sql} AS reengage, ${_sumLost.sql} AS lost,
+                  ${require("../../shared/numbers/atRisk").LAST_YEAR_OF_GIVING("donors")} AS last_year_giving
            FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`, [..._sumHold.args, ..._sumRe.args, ..._sumLost.args, req.user.orgId, limit, offset]),
     query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
     computeDriftForDonors(req.user.orgId),   // BUILD-76 — the shared-state views badge from the same computation

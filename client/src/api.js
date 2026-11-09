@@ -431,6 +431,7 @@ export function adaptDonor(d) {
     pledgeHold:     !!d.pledge_hold,
     // POLISH-4 — on Re-engage, by the one rule (shared/numbers/lapse.js reengageSql).
     reengage:       !!d.reengage,
+    lastYearGiving: Number(d.last_year_giving) || 0,   // TRUTH-4: at risk, shared/numbers/atRisk.js
     lost:           !!d.lost,   // COUNTS-1: on Re-engage's Lost & Found (lapse.js lostSql)
     matchWhy:       d.match_why || null,   // WALKB-1: why a search found them ("email: marlowe@…")
     archived:       !!d.archived,

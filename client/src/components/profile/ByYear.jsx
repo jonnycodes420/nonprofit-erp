@@ -77,6 +77,7 @@ export default function ByYear({ donor, reloadKey }) {
                 {y.current && d.samePoint && y.giftCount
                   ? <>{y.change} ({money(d.samePoint.total, "The same point last year", d.samePoint.source)})</>
                   : y.change}
+                {y.alsoOnFile && <span data-testid="dp-by-year-zero" style={{ display: "block", fontSize: 12, color: T.ink3 }}>{y.alsoOnFile.sentence}</span>}
               </td>
             </tr>,
             y.softCents ? <tr key={y.key + ":soft"} data-testid="dp-by-year-soft">

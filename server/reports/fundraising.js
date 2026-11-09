@@ -518,7 +518,7 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-3"
   // Each span's money, gifts and givers: the one computation (shared/numbers),
   // in the row shape this route has always read.
   const periodGiving = span => NUMBERS.givingBetween.givingBetween(query, orgId, { ...span, today })
-    .then(r => [{ total: r.cents / 100, gifts: r.rows, donors: r.givers }]);
+    .then(r => [{ total: r.cents / 100, gifts: r.gifts, donors: r.givers }]);   // TRUTH-4: counted gifts (giftCount.js), never every row
   const [goalRows, curRows, vsLast, weekRows, recentGifts, campaigns, givingPages, l12Rows, anyGiftRows] = await Promise.all([
     query(
       "SELECT * FROM fundraising_goals WHERE org_id = ? AND period_start <= ? AND period_end >= ? ORDER BY created_at DESC LIMIT 1",

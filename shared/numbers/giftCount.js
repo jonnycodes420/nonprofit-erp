@@ -8,7 +8,7 @@
 // an average over 502 under a headline of 503. Every count, average, export
 // and the By year view reads this file.
 "use strict";
-const { GIFT, isGift } = require("./money");
+const { GIFT, isGift, isMoney, centsOf: centsOfRow } = require("./money");
 
 // SQL: gift row `g` is counted.
 const COUNTED = (g = "g") => GIFT(g);
@@ -27,6 +27,25 @@ async function giftCounts(query, orgId, ids) {
   return new Map(rows.map(r => [r.id, Number(r.n) || 0]));
 }
 
+// TRUTH-4 · THE WORDS FOR A $0 ROW. Listed in history with this label; a list
+// whose rows are counted leaves it out and says the line below instead.
+const ZERO_LABEL = require("../giftWords.js").ZERO_GIFT_LABEL;
+const alsoOnFile = n => (n > 0 ? `Also on file: ${n} $0 ${n === 1 ? "record" : "records"}, not counted.` : "");
+const isZero = r => isMoney(r) && centsOfRow(r) === 0;
+
+// SQL: how many $0 rows a gift-row filter (figureSources giftsWhere's `where`,
+// on gifts g / donors d / fin_funds f, three leading args: org, from, to) would
+// have listed. The `gifts` source says them as alsoOnFile.
+function zeroOnFileSql(where, args, byFund) {
+  const { NOT_CREDIT } = require("../../creditTypes");
+  const { GIFT_FUND_ROWS } = require("./fundLines");
+  const w = where.replace(" AND g.amount > 0", "").replace(" AND g.amount <> 0", "") + " AND g.amount = 0";
+  return { sql: `SELECT COUNT(DISTINCT g.id)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+                ${byFund ? `JOIN ${GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id` : ""}
+                LEFT JOIN fin_funds f ON f.id = ${byFund ? "gf" : "g"}.fund_id AND f.org_id = g.org_id
+               WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}${w}`, args };
+}
+
 const SENTENCE = "A gift is a hard-credit gift above $0. A $0 or soft-credit record shows in history, labeled, but is never counted, averaged or receipted.";
 
-module.exports = { COUNTED, GIFT_COUNT, isCounted, countOf, averageCents, giftCounts, SENTENCE };
+module.exports = { COUNTED, GIFT_COUNT, isCounted, countOf, averageCents, giftCounts, SENTENCE, ZERO_LABEL, alsoOnFile, isZero, zeroOnFileSql };

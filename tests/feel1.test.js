@@ -79,7 +79,7 @@ async function reset() {
   {
     const badge = read("client/src/lib/taskBadge.js");
     ok("§2b the Tasks badge's tooltip says why it differs from Home's follow-ups (one person per next step, any day; vs her tasks due today or overdue)",
-       /Home's follow-ups count something else/.test(badge) && /title: counts \? badgeTitle\(counts\)/.test(badge)
+       /Home's \\"people with a next step\\" is a different list/.test(badge) && /title: counts \? badgeTitle\(counts\)/.test(badge)
        && /title=\{taskBadge\.title\}/.test(read("client/src/App.jsx")));
   }
 

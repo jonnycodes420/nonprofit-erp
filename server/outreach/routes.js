@@ -756,7 +756,7 @@ async function audienceMod() {
 async function audienceRoster(orgId) {
   const A = await audienceMod();
   const donors = await query(
-    "SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL",
+    `SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != '' AND ${require("../../shared/numbers/everyone").EVERYONE("donors")}`,   // TRUTH-4: Everyone's rule
     [orgId]);
   const saved = await query(
     "SELECT id, name, description, segment, created_at, kind, rules FROM audiences WHERE org_id=? ORDER BY LOWER(name)",
@@ -895,7 +895,7 @@ app.get("/communications/audience", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const coordinator = req.user.role === "volunteer_coordinator";
   const donors = await query(
-    "SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL", [orgId]);
+    `SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != '' AND ${require("../../shared/numbers/everyone").EVERYONE("donors")}`, [orgId]);   // TRUTH-4: Everyone's rule
   const quiet = await DS.quietIds(orgId, orgToday(await orgTz(orgId)));
   const all = filterBySegment(donors, { mode: "donors" });
   const byStage = st => all.filter(d => d.stage === st);
@@ -910,7 +910,7 @@ app.get("/communications/audience", requireAuth, wrap(async (req, res) => {
     { id: "steward", label: "In ongoing care", rows: byStage("steward"), definition: "Donors with an email address at the Ongoing care stage." },
     { id: "solicit", label: "Ready to solicit", rows: byStage("solicit"), definition: "Donors with an email address at the Solicit stage." },
   ];
-  const everyone = await query("SELECT id, person_types FROM donors WHERE org_id = ? AND deleted_at IS NULL", [orgId]);
+  const everyone = await query(`SELECT id, person_types FROM donors WHERE org_id = ? AND ${require("../../shared/numbers/everyone").EVERYONE("donors")}`, [orgId]);   // TRUTH-4: Donors' own count
   const donorTotal = everyone.filter(d => PT.isDonor(d)).length;
   res.json({
     donorTotal,

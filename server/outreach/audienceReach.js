@@ -10,6 +10,7 @@
 // and each one with an address kept only when donorMailDecision says send.
 // The people are read once and the decisions once, for every audience.
 "use strict";
+const EV = require("../../shared/numbers/everyone");
 
 async function audienceReach(orgId, segments, { query, resolveSegmentSpec, filterBySegment }) {
   const { donorMailDecisions } = require("../../routes/email");
@@ -21,7 +22,10 @@ async function audienceReach(orgId, segments, { query, resolveSegmentSpec, filte
     const seg = await resolveSegmentSpec(raw || {}, orgId);
     const inSegment = filterBySegment(everyone, seg);
     out.push({
-      inSegment: inSegment.length,
+      // TRUTH-4 (W-1108-Fundraising-25X): "N people in it" is the audience's
+      // people by Everyone's one rule (everyone.js: not in the trash, archived
+      // or erased) who have an email address, so it is never above Everyone.
+      inSegment: inSegment.filter(d => EV.isEveryone(d) && EV.hasEmail(d)).length,
       reach: inSegment.filter(d => hasEmail(d) && (decisions.get(d.id) || {}).send).length,
     });
   }

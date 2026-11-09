@@ -18,9 +18,14 @@ const EVERYONE = (d = "donors") => `(${d}.deleted_at IS NULL AND ${d}.erased_at 
 
 const SENTENCE = "Everyone: every active person record here, donors and contacts, not counting anyone in the trash, archived, or erased, and never a user's login.";
 
+// JS, over donors rows already read: the same rule. TRUTH-4: Communications'
+// "people in it" counts read this, so "with email" can never exceed Everyone.
+const isEveryone = d => !!d && !d.deleted_at && !d.erased_at && !d.archived_at;
+const hasEmail = d => !!(d && d.email && String(d.email).trim());
+
 async function everyoneCount(query, orgId) {
   const [r] = await query(`SELECT COUNT(*)::int AS n FROM donors WHERE donors.org_id = ? AND ${EVERYONE("donors")}`, [orgId]);
   return r ? Number(r.n) : 0;
 }
 
-module.exports = { EVERYONE, SENTENCE, everyoneCount };
+module.exports = { EVERYONE, SENTENCE, everyoneCount, isEveryone, hasEmail };
