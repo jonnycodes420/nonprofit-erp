@@ -123,7 +123,7 @@ const mock = http.createServer((req, res) => {
   ok("§1 the answer is a list of people, not one line", !!a1 && a1.type === "list", r1.body);
   ok("§1 the right four: gave last December, nothing this year (Tamsin gave both years, Henrik only this year)",
     names.join(",") === "Marlowe Quince,Odette Varga,Piers Lindqvist,Sterling Nakamura", names);
-  ok("§1 each has a name that opens their record and why they matched", !!a1 && a1.people.every(p => /^d_a3_/.test(p.donorId) && /^\$[\d,]+ in Dec \d{4}$/.test(p.amount) && /in all$/.test(p.lifetime)),   // ATLAS-4: the matched amount
+  ok("§1 each has a name that opens their record and why they matched", !!a1 && a1.people.every(p => /^d_a3_/.test(p.donorId) && /^\$[\d,]+ in Dec \d{4}$/.test(p.amount) && /^Lifetime \$[\d,]+$/.test(p.lifetime)),   // ATLAS-4: the matched amount
     a1 && a1.people);
   ok("§1 Sterling's reason is his own gift ($900 in December)", !!a1 && /^\$900 in Dec \d{4}/.test((a1.people.find(p => p.donorId === "d_a3_sterling") || {}).reason || ""), a1 && a1.people);
   ok("§1 and the count", !!a1 && a1.count === 4, a1 && a1.count);

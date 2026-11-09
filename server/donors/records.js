@@ -128,7 +128,9 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
   if (filter.badStatus) return res.status(400).json(UNKNOWN_STATUS);
   if (!(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
   const { whereSql, params, orderBy, selectCols, selectArgs } = filter;
-  const donors = await query(`SELECT donors.*${selectCols} FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, [...selectArgs, ...params]);
+  // TRUTH-5: the export's Gift count is the Directory's (giftCount.js), never the stored rollup.
+  const donors = (await query(`SELECT donors.*${selectCols}, ${require("../../shared/numbers/giftCount").DONOR_GIFT_COUNT("donors")} AS gift_count_live FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, [...selectArgs, ...params]))
+    .map(({ gift_count_live, ...d }) => ({ ...d, gift_count: Number(gift_count_live) || 0 }));
   if (await require("../../exportGuard").largeExportRefused(req, res, donors.length)) return;   // SECURE-2 item 8
   
   // BUILD-78 6.1 — every non-archived donor custom field is its own column,

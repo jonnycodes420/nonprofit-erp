@@ -57,7 +57,7 @@
     "server/reports/boardPack.js": 4,
     "server/reports/dashboard.js": 5,
     "server/reports/fundraising.js": 12,
-    "server/reports/handlers.js": 25,
+    "server/reports/handlers.js": 24,
     "server/reports/helpers.js": 4,
     "server/reports/impact.js": 3,
     "server/shared/givingPagePayload.js": 3,

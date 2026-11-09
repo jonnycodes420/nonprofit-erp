@@ -51,6 +51,8 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   if (filter.badStatus) return res.status(400).json(UNKNOWN_STATUS);
   if (!(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
   let { whereSql, params, orderBy, selectCols, selectArgs } = filter;
+  // TRUTH-5 (W-1109-Finance-35X): each row's gift count is giftCount.js's, the profile's, never the stored rollup.
+  selectCols = `${selectCols}, ${require("../../shared/numbers/giftCount").DONOR_GIFT_COUNT("donors")} AS gift_count_live`;
   // WALKB-1 · A SEARCH SAYS WHY EACH PERSON MATCHED, NAMES FIRST
   // (server/donors/personMatch.js personMatchReasonSql).
   const searchQ = String(req.query.search || "").trim();
@@ -69,8 +71,9 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   let roomMap = null;
   // BUILD-76 Part 2 — every donor row carries the drift badge field, computed
   // fresh by the same function as the home list (one computation, one truth).
-  const mapDonor = (tpMap, driftMap) => d => ({
+  const mapDonor = (tpMap, driftMap) => ({ gift_count_live, ...d }) => ({
     ...d,
+    gift_count: Number(gift_count_live) || 0,
     tags: DTAGS.visibleTags(d.tags),
     last_touchpoint: tpMap[d.id] || null,
     matching_gift: lookupMatchingGift(d.employer),
@@ -372,12 +375,14 @@ app = routers.r1_2;
 
 app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   const rows = await query(
-    "SELECT * FROM donors WHERE id = ? AND org_id = ?",
+    `SELECT *, ${require("../../shared/numbers/giftCount").DONOR_GIFT_COUNT("donors")} AS gift_count_live FROM donors WHERE id = ? AND org_id = ?`,
     [req.params.id, req.user.orgId]
   );
   if (!rows.length) return res.status(404).json({ error: "Donor not found" });
 
-  const d = rows[0];
+  // TRUTH-5: the profile's count is the Directory's (giftCount.js), never the stored rollup.
+  const { gift_count_live, ...d } = rows[0];
+  d.gift_count = Number(gift_count_live) || 0;
   d.tags = DTAGS.visibleTags(d.tags);
   // SECURE-3: the timeline is the one reader that opens a synced email's body.
   d.interactions = SEALED_MAIL.openInteractions(await query("SELECT * FROM interactions WHERE donor_id = ? AND org_id = ? ORDER BY date DESC NULLS LAST", [d.id, req.user.orgId]));

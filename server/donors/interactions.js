@@ -180,9 +180,9 @@ async function briefRowsFor(orgId, donorId) {
   const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
   const t = V.makeT(org && org.vocabulary_json);
   const [donor] = await query(
-    `SELECT id, name, email, kind, stage, suggested_stage, total_giving, gift_count, first_gift_date,
+    `SELECT id, name, email, kind, stage, suggested_stage, total_giving, ${require("../../shared/numbers/giftCount").DONOR_GIFT_COUNT("donors")} AS gift_count, first_gift_date,
             last_gift_date, last_gift_amount, notes, about_them, assigned_to_name, household_id, deceased, do_not_contact
-       FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);
+       FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);   // TRUTH-5: the count is giftCount.js's
   if (!donor) return null;
 
   const refs = new Set([`person:${donor.id}`]);

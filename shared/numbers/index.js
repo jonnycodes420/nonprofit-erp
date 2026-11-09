@@ -30,4 +30,8 @@ module.exports = {
   ledgerStatus: require("./ledgerStatus"),   // TRUTH-3
   topDonors: require("./topDonors"),   // TRUTH-4
   atRisk: require("./atRisk"),   // TRUTH-4
+  periodAmounts: require("./periodAmounts"),   // TRUTH-5
+  softThrough: require("./softThrough"),   // TRUTH-5
+  pledgeSchedule: require("./pledgeSchedule"),   // TRUTH-5
+  lapseWords: require("./lapseWords"),   // TRUTH-5
 };
