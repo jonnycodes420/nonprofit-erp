@@ -924,7 +924,7 @@ function giveThemePayload(org) {
     ...portalCardTheme(org),
     footerText: clean(org.give_footer, 500),
     contactEmail: clean(org.give_contact, 200),
-    einLine: clean(org.give_ein, 200),
+    einLine: require("../org/einLine").einLineOf(org.give_ein),   // MONEY-4: orgs.ein, the one EIN
     // "Powered by Steward" is OFF by default (white-label). A flag so it can be
     // turned on network-wide later without a rebuild — see BUILD-60 decision.
     poweredBy: org.powered_by === true,

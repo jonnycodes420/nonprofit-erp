@@ -24,7 +24,9 @@ const usd = v => "$" + (cents(v) / 100).toLocaleString("en-US", { minimumFractio
 // For a receipts query aliased `r`: the gift it was issued for, as it is now.
 // LEFT JOIN this, then select DRIFT_COLUMNS.
 const DRIFT_JOIN = (r = "r") => `LEFT JOIN gifts dg ON dg.id = ${r}.gift_id AND dg.org_id = ${r}.org_id`;
-const DRIFT_COLUMNS = "dg.amount AS gift_amount, (dg.id IS NULL) AS gift_missing";
+// MONEY-4: the gift as it is now is its amount less any refund recorded against it.
+const { NET_AMOUNT } = require("../../shared/numbers/refunds");
+const DRIFT_COLUMNS = `${NET_AMOUNT("dg")} AS gift_amount, (dg.id IS NULL) AS gift_missing`;
 
 // One receipt row (with gift_amount, gift_missing) → its drift, or null.
 // Only a gift receipt that still stands can drift; a year-end statement is
@@ -67,7 +69,7 @@ function mount(ctx) {
       const [gift] = await query("SELECT * FROM gifts WHERE id = ? AND org_id = ?", [row.gift_id, orgId]);
       const [org] = await query("SELECT * FROM orgs WHERE id = ?", [orgId]);
       const [donor] = await query("SELECT * FROM donors WHERE id = ? AND org_id = ?", [gift.donor_id, orgId]);
-      const out = await issueGiftReceipt(gift, org, donor, { send: false, by: who, manual: true });
+      const out = await issueGiftReceipt({ ...gift, amount: d.giftAmount, refund_net: true }, org, donor, { send: false, by: who, manual: true });
       receipt = out && out.receipt ? out.receipt : null;
       if (receipt) await run("UPDATE receipts SET void_reason = ? WHERE id = ? AND org_id = ?", [`${why} Reissued as #${receipt.receipt_number}.`, row.id, orgId]);
     }
@@ -77,4 +79,4 @@ function mount(ctx) {
   return {};
 }
 
-module.exports = { routers, mount, driftOf, withDrift, DRIFT_JOIN, DRIFT_COLUMNS };
+module.exports = { routers, mount, driftOf, withDrift, DRIFT_JOIN, DRIFT_COLUMNS, NET_AMOUNT };

@@ -52,6 +52,8 @@ Read this when you touch receipts, acknowledgments, letters, year-end statements
   zero.** The webhook passes `quidProQuoValue = min(fmv, amount)` to `recordGift`, re-reading the item and
   checking the bid is still its winner, and the existing receipt prints it. (PARITY-2)
 
+- **The EIN lives in one place: Settings → Tax Receipts, `orgs.ein` (MONEY-4).** The giving page and portal footer, the editor, receipts and statements all read it (`server/org/einLine.js` for the footer line). `portal_settings.ein_line` is no longer read or written.
+
 ## Gotchas
 - **`POST /donors/:id/year-end-statement` takes `{year, send}`, not `taxYear`.** (Tax receipting)
 - **The thank-you queue must write the user's name as logged-by, not the actor email.** Same trap as

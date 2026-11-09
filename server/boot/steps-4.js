@@ -1053,7 +1053,7 @@ require("../../routes/crm").mount({
   processMembershipRenewals, processPhotoQueue, processPledgeInstallmentReminders,
   processPledgeReminders, pruneUnreferencedAssets, publicAppUrl, putThemeAsset, query, queryTx,
   raiseGrantMilestone, rateLimitDisabled, rbCents, rbCentsEv, rbCustomDefs, rbFormatCell,
-  recalcDonorSummary, recalcPledgePayment, recordAssetPointerHistory, recordAutoMove, recordGift,
+  recalcDonorSummary, recalcPledgePayment, recordAssetPointerHistory, recordAutoMove, recordGift, stripe,   // MONEY-4: a Stripe gift's refund (server/donors/refunds.js)
   donorCreditTotals,   // FIX-51: the census lines' hard and soft credit
   recordMove, registerForEvent, renderReceiptPdf, renewMembership, reportCurrentYear,
   reportYearBounds, requireAdmin, requireAuth, requireCrm, resend, resolveCampaignRecipients, campaignAudience,

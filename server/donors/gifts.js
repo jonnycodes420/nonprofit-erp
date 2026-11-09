@@ -427,6 +427,12 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
   // so may an admin; nobody else (the pledge delete below already worked so).
   if (!(await mayEditLogged(req, g))) return res.status(403).json(NOT_YOURS);
 
+  // MONEY-4: a gift with a refund recorded against it stays, with its refund:
+  // deleting it would leave the refund's negative row standing alone in every total.
+  const [refunded] = await query("SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND refund_of=?", [req.user.orgId, req.params.id]);
+  if (refunded && refunded.n > 0) return res.status(409).json({ error: "has_refunds",
+    message: "This gift has a refund recorded against it, so it stays on file with its refund. Totals already net it out." });
+
   // A receipt is a legal artifact — a gift with an ACTIVE receipt can't be
   // silently deleted out from under it (was an unhandled FK violation).
   // Void the receipt first (POST /receipts/:id/void), then delete.

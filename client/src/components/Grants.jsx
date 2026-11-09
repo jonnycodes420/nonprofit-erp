@@ -176,6 +176,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
           const a=awarding;setAwarding(null);
           const next={...grant,status:(moved&&moved.status)||"awarded",awardPledgeId:award.awardPledgeId||award.pledgeId,funderId:award.funderId};
           onUpdate(next);
+          apiFetch(`/grants/${grant.id}`).then(r=>onUpdate({...next,...adaptGrant(r)})).catch(()=>{});   // MONEY-4: the tiles read the recorded award and its first payment
           setNote({sentence:[`Recorded the award: a pledge on ${award.funderName}'s record, in ${award.installments} ${award.installments===1?"payment":"installments"}.`,moved&&moved.renewal&&moved.renewal.sentence].filter(Boolean).join(" ")});
           if(a.thenSave){try{await saveEditAfterAward(next);}catch(e){alert(errorMessage(e,"The rest of the edit did not save."));}}
         }}/>}
@@ -199,7 +200,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
             {grant.funderId
               ?<span>Funder: {onOpenFunder?<button type="button" onClick={()=>onOpenFunder(grant.funderId)} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,cursor:"pointer",fontSize:12}}>{grant.funder}</button>:grant.funder}</span>
               :<span>Not linked to a funder record{!isReadOnly&&<> · <button type="button" data-testid="grant-link-funder" onClick={()=>setLinking({})} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,cursor:"pointer",fontSize:12}}>Link to funder</button></>}</span>}
-            {awardLine&&<span data-testid="grant-award-missing">· {awardLine.text}{!isReadOnly&&<> <button type="button" onClick={()=>setAwarding({target:"awarded"})} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,cursor:"pointer",fontSize:12}}>{awardLine.action}</button></>}</span>}
+            {awardLine&&<span data-testid="grant-award-missing">· {awardLine.text}{!isReadOnly&&awardLine.action&&<> <button type="button" onClick={()=>setAwarding({target:"awarded"})} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,cursor:"pointer",fontSize:12}}>{awardLine.action}</button></>}</span>}
           </div>
           {note&&<div role="status" style={{fontSize:12,color:T.ink,marginTop:4}}>{note.sentence}{!isReadOnly&&!grant.funderId&&<> <button type="button" onClick={()=>{setLinking({then:note.then});setNote(null);}} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,cursor:"pointer",fontSize:12}}>Link to funder</button></>}</div>}
         </div>
@@ -266,10 +267,10 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
         {/* LEFT */}
         <div style={{minWidth:0,padding:"22px 20px 24px 24px",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column",gap:18}}>
           <div className="grant-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-            {/* PLEDGES-3: one rule for the tiles (shared/grantAwardLine.js grantMoneyTiles): no award row says
-                "No payments set up", never $0 and 0%; an awarded grant counts to its report, not its closed application. */}
+            {/* PLEDGES-3, MONEY-4: one rule for the tiles (shared/grantAwardLine.js grantMoneyTiles): Awarded, Received
+                and Remaining read the payments; an awarded grant counts to its report, not its closed application. */}
             {grantMoneyTiles(grant,(d,o)=>deadlineWord(d,orgTodayCivil(),o),{pursuing:actionable}).map(t=>[t.label,t.value!=null?t.value:t.word,
-              t.key==="received"?(t.value==="No payments set up"?T.ink3:T.greenMid):t.key==="funded"?(t.pct==null?T.ink3:t.pct>75?T.greenMid:t.pct>40?T.gold600:T.ink3)
+              t.key==="received"?T.greenMid:(t.key==="funded"||t.key==="remaining")?(t.pct==null?T.ink3:T.ink)
               :(t.key==="deadline"||t.key==="report")&&t.days!=null&&t.days<14?T.gold600:T.ink]).map(([l,v,c])=>(
               <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
                 <div style={{fontSize:9,fontWeight:700,color:T.ink3,marginBottom:4}}>{l}</div>
@@ -278,22 +279,23 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
             ))}
           </div>
 
-          {/* PLEDGES-3: no progress bar against payments that are not set up */}
-          {grant.amount>0&&!["stated","missing"].includes(awardState(grant))&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px"}}>
+          {/* MONEY-4: the bar is against the award once there is one (stated or recorded), else against the ask */}
+          {(awardState(grant)==="missing"?false:awardState(grant)==="none"?grant.amount>0:grant.amountAwarded>0)&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px"}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
               <div style={{fontSize:10,fontWeight:700,color:T.ink3}}>Funding Progress</div>
-              <div style={{fontSize:11,color:T.ink3}}>{fmtFull(grant.received||0)} of {fmtFull(grant.amount)}</div>
+              <div style={{fontSize:11,color:T.ink3}}>{fmtFull(grant.received||0)} received of {fmtFull(awardState(grant)==="none"?grant.amount:grant.amountAwarded)}</div>
             </div>
             <div style={{height:8,background:T.bg3,borderRadius:99}}>
-              <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:T.greenMid,borderRadius:99,transition:"width 0.4s"}}/>
+              <div style={{height:"100%",width:`${Math.min(awardState(grant)==="none"?pct:grant.amountAwarded>0?Math.round((grant.received||0)/grant.amountAwarded*100):0,100)}%`,background:T.greenMid,borderRadius:99,transition:"width 0.4s"}}/>
             </div>
           </div>}
 
           <div className="grant-2col" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
+            {/* MONEY-4: an application deadline disappears once the application is closed (awarded or later); report deadlines stay. */}
+            {actionable&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
               <div style={{fontSize:9,fontWeight:700,color:T.ink3,marginBottom:4}}>Application Deadline</div>
               <div style={{fontSize:14,fontWeight:600,color:actionable&&days<14?T.terracotta:actionable&&days<30?T.gold600:T.ink}}>{grant.deadline?fmtDayLong(grant.deadline):"Not set"}</div>
-            </div>
+            </div>}
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
               <div style={{fontSize:9,fontWeight:700,color:T.ink3,marginBottom:4}}>Program Officer</div>
               <div style={{fontSize:14,fontWeight:600,color:T.ink}}>{grant.officer||"Not set"}</div>

@@ -1,4 +1,5 @@
 // components/profile/GivingTab.jsx (PROFILE-3): part of the donor profile, cut from DonorProfile.jsx.
+import { useState } from "react";
 import { STAGES, STAGE_ACTION, Spin, T, activeMark, daysDiff, firstNameOf, fmtFull } from "../shared";
 import { Figure } from "../Figure";
 import { PROPOSAL_STAGE_LABEL, UndatedGiftDate, cap } from "./profileShared";
@@ -28,6 +29,7 @@ import { pledgeMoneyWords } from "../../../../shared/pledgeWords.js";
 import { pledgeCoverWords } from "../../../../shared/pledgeCover.js";   // PLEDGES-3: what a payment covers, before Save
 import { EditedMarker } from "../EditHistory";
 import { stepAgainstProposals } from "../../../../shared/nextStepAgree.js";
+import RefundDialog from "../gifts/RefundDialog";   // MONEY-4: Record a refund
 import { displayOrgDateShort } from "../../lib/orgDay";
 import EventField from "../gifts/EventField";   // GIFTS-1: a gift can belong to an event
 import FundField, { fundFromGift, fundLinesProblem } from "../gifts/FundField";   // GIFTS-2: one fund, or a split across funds
@@ -45,6 +47,7 @@ const pledgeSched=pl=>{const ins=pl.installments||[],first=String((ins[0]&&ins[0
   return ins.length>1?{plan:"many",count:ins.length,frequency:FREQ_IN[pl.frequency]||pl.frequency||"monthly",firstDue:first}:emptySchedule(first);};
 
 function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addPgOpen,addPlannedGift,addPledge,addPledgeOpen,addToPipeline,askAmt,askName,askOpen,campaigns,closeAsk,deleteGift,deletePlannedGift,deletePledge,dismissSuggestion,dismissedSug,donor,downloadReceiptPdf,dpItems,dpTab,exportGiftsCSV,figs,fundAffinity,fundLoading,giftCfDefs,giftCfEditStr,giftCountReal,giftEditForm,giftEditId,giftErr,giftLoading,giftMoreOpen,giftPeopleQ,giftReadErr,giftSaving,gifts,giftsFull,hasDesignation,household,isAdmin,isReadOnly,isTeam,loadGiftsFull,lockMajor,moveSuggestions,moves,onNavigate,onStageChange,openProposals,opps,pgForm,pgOpen,pgSaving,pipelineAdded,plannedGifts,pledgeEdit,pledgeForm,pledgeResendBusyId,pledgeResentIds,pledgeSaving,pledges,propData,proposalsKnown,receiptBusyId,receiptForGift,receiptsEnabled,recurResendBusy,recurResendSent,recurringSub,refundRows,reloadProps,resendPledgeReminder,resendRecurringLink,saveGiftEdit,savePledgeEdit,sc,scores,sendReceipt,sendYearEndStatement,seqId,seqLoading,seqOpen,seqToast,sequences,setAddGiftForm,setAddGiftOpen,setAddPgOpen,setAddPledgeOpen,setAskAmt,setAskName,setAskOpen,setDpTab,setGiftEditForm,setGiftEditId,setGiftLoading,setGiftMoreOpen,setHhModalOpen,setPgForm,setPgOpen,setPledgeEdit,setPledgeForm,setPledgeStatus,setRelatedOpen,setSeqId,setSeqLoading,setSeqOpen,setSeqToast,setShowYearEnd,setYearDrill,setYearEndYear,showYearEnd,softCredit,status,toggleDesignation,yearDrill,yearEndBusy,yearEndErr,yearEndYear}){
+  const [refunding,setRefunding]=useState(null);   // MONEY-4: { gift, leftCents } while Record a refund is open
   return <>
           {/* ── PROFILE-2 · GIVING: the ask, then gifts and pledges, Funds, and
               Asks & pipeline, one tab. */}
@@ -447,10 +450,13 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                               {g.event_name&&<div data-testid="dp-gift-event" style={{fontSize:11,fontWeight:400,color:T.ink3}}>{g.event_name}</div>}
                               {(g.fund_lines||[]).length>1&&<div data-testid="dp-gift-fund-lines" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Split: {g.fund_lines.map(l=>`${fmtFull(Number(l.amount))} ${l.fundName||"a fund that is gone"}`).join(" · ")}</div>}
                               {(g.softCreditTo||[]).length>0&&<div data-testid="dp-gift-softcredit" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Soft credit to {g.softCreditTo.map(x=>x.name).join(", ")} (recognition, not in their Lifetime)</div>}
+                              {/* MONEY-4: a refunded gift says so beside its amount; a refund row names the gift it refunds. */}
+                              {(()=>{const rc=-giftsFull.filter(x=>x.refund_of===g.id).reduce((n,x)=>n+Math.round(x.amount*100),0);return rc>0?<div data-testid="dp-gift-refunded" style={{fontSize:11,fontWeight:600,color:T.ink3}}>{g.refunded_in_full?"Refunded in full":`Refunded ${fmtFull(rc/100)}, net ${fmtFull(Math.round(g.amount*100-rc)/100)}`}</div>:null;})()}
+                              {g.refund_of&&<div data-testid="dp-gift-refund-of" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Refund{(()=>{const o=giftsFull.find(x=>x.id===g.refund_of);return o?` of the ${fmtFull(o.amount)} gift of ${o.date?displayDate(o.date):"no date"}`:"";})()}{g.refund_reason?`: ${g.refund_reason}`:""}</div>}
                               {g.fee>0&&g.amount>0&&<div data-testid="dp-gift-fee-net" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Fee {fmtFull(g.fee)}, net {fmtFull(Math.round((g.amount-g.fee)*100)/100)}</div>}</td>
                             <td style={{padding:"9px 12px",color:T.ink3}}>{giftTypeLabel(g.type)}</td>
                             <td style={{padding:"9px 12px",color:T.ink3}}>{g.payment_method||"Not recorded"}</td>
-                            <td style={{padding:"9px 12px",textAlign:"center"}}>{g.acknowledgement_sent?<span style={{color:T.greenDk,fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:12}}>Not yet</span>}</td>
+                            <td style={{padding:"9px 12px",textAlign:"center"}}>{g.amount<0?<span style={{color:T.ink3,fontSize:12}}>Not a gift</span>:g.acknowledgement_sent?<span style={{color:T.greenDk,fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:12}}>Not yet</span>}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
                               <ReceiptCell g={g} rc={rc} isReadOnly={isReadOnly}/>
                             </td>
@@ -458,8 +464,10 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                               title={[g.notes,...giftCfDefs.map(d=>{const v=(g.custom_fields||{})[d.key];return (v!==null&&v!==undefined&&v!=="")?`${d.label}: ${renderCustomValue(d,v)}`:null;}).filter(Boolean)].filter(Boolean).join(" · ")}>
                               {[g.notes,...giftCfDefs.map(d=>{const v=(g.custom_fields||{})[d.key];return (v!==null&&v!==undefined&&v!=="")?`${d.label}: ${renderCustomValue(d,v)}`:null;}).filter(Boolean)].filter(Boolean).join(" · ")}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
-                              <button onClick={()=>{setGiftEditId(g.id);setGiftEditForm({amount:g.amount,date:g.date,type:g.type,payment_method:g.payment_method||"",notes:g.notes||"",fund_id:g.fund_id||"",fund:fundFromGift(g),eventId:g.event_id||"",acknowledgement_sent:g.acknowledgement_sent,customFields:Object.fromEntries(giftCfDefs.map(d=>[d.key,giftCfEditStr(d,(g.custom_fields||{})[d.key])]))});}} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Edit</button>
-                              <button onClick={()=>deleteGift(g.id)} style={{background:"none",border:"none",color:T.terracotta,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Delete</button>
+                              {/* MONEY-4: a refund row is kept as written (append-only, like the ledger); a mistaken one is refunded back by its gift's own edit. */}
+                              {!g.refund_of&&<button onClick={()=>{setGiftEditId(g.id);setGiftEditForm({amount:g.amount,date:g.date,type:g.type,payment_method:g.payment_method||"",notes:g.notes||"",fund_id:g.fund_id||"",fund:fundFromGift(g),eventId:g.event_id||"",acknowledgement_sent:g.acknowledgement_sent,customFields:Object.fromEntries(giftCfDefs.map(d=>[d.key,giftCfEditStr(d,(g.custom_fields||{})[d.key])]))});}} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Edit</button>}
+                              {!g.refund_of&&<button onClick={()=>deleteGift(g.id)} style={{background:"none",border:"none",color:T.terracotta,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Delete</button>}
+                              {!isReadOnly&&g.amount>0&&!g.refund_of&&!g.refunded_in_full&&<button data-testid="dp-gift-refund" onClick={()=>setRefunding({gift:g,leftCents:Math.round(g.amount*100)+giftsFull.filter(x=>x.refund_of===g.id).reduce((n,x)=>n+Math.round(x.amount*100),0)})} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Refund</button>}
                             </td>
                           </>
                         )}
@@ -467,6 +475,8 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                     ))}
                   </tbody>
                 </table>
+              )}
+              {refunding&&(<RefundDialog gift={refunding.gift} leftCents={refunding.leftCents} onClose={()=>setRefunding(null)} onSaved={()=>loadGiftsFull()}/>
               )}
             </div>
 
