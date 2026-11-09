@@ -25,6 +25,8 @@
 //   §4 the campaign editor previews a contact who never gave, with the
 //      no-gift sentence (W-1107-Fundraising-17)
 //
+// The volunteer half (tests/lib/flows3Volunteers.js) is run at the end.
+//
 // Planted defects (FLOWS-3 report): Paused journeys allowed to start
 // (journeyStart.js's refusal removed) turns §1 red; the rhythm computed from
 // the max gap (rhythm.js median → max) turns §2 red.
@@ -70,6 +72,11 @@ const person = (id, name, types = "donor") => q(
   `INSERT INTO donors (id,org_id,name,email,stage,status,person_types,assigned_to,assigned_to_name,created_by,created_by_name)
    VALUES ($1,$2,$3,$4,'cultivate','active',$5::jsonb,$6,'Odile Marsh','system:test/flows3','FLOWS-3 test')`,
   [P(id), ORG, name, `${id}@flows3.example.org`, JSON.stringify([types]), ME]);
+
+// The volunteer, event, group and meeting half (W-1107-Volunteers-24,
+// W-1108-Volunteers-20/34X/10X/26X/23X/19X): tests/lib/flows3Volunteers.js, its
+// own org, its own API and browser legs.
+const runVolunteers = () => require("./lib/flows3Volunteers")().catch(e => ok("volunteer half ran to its end", false, String((e && e.message) || e)));
 
 (async () => {
   await new Promise(r => sink.listen(SINK_PORT, r));
@@ -149,7 +156,7 @@ const person = (id, name, types = "donor") => q(
     if (!fs.existsSync(path.join(DIST, "index.html")) && !fs.existsSync(path.join(DIST, "app.html"))) return "(no client dist at " + DIST + ")";
     return null;
   })();
-  if (browserLegOrSkip(why, "(browser leg)")) { sink.close(); await closeDb(); summary(); return; }
+  if (browserLegOrSkip(why, "(browser leg)")) { await runVolunteers(); sink.close(); await closeDb(); summary(); return; }
 
   const lg = await api("POST", "/auth/login", null, { email: EMAIL, password: PASSWORD });
   const { chromium } = require(PW);
@@ -243,6 +250,7 @@ const person = (id, name, types = "donor") => q(
   } finally {
     await browser.close();
   }
+  await runVolunteers();
   sink.close();
   await closeDb();
   summary();

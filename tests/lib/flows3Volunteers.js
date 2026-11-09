@@ -1,4 +1,4 @@
-// tests/flows3-volunteers.test.js: FLOWS-3, the volunteer, event, group and
+// tests/lib/flows3Volunteers.js (run by tests/flows3.test.js): FLOWS-3, the volunteer, event, group and
 // meeting half. EVERY ITEM IS DRIVEN BY REAL CLICKS ON THE BUILT CLIENT.
 // Guards donor data: a guest typed onto an event was a name with no record,
 // and screens told staff things about their people that were not so.
@@ -22,8 +22,8 @@
 "use strict";
 const path = require("path");
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb, civilToday, civilPlusDays, browserLegOrSkip } = require("./helpers");
-const { DIST } = require("./lib/dist");
+const { ok, login, api, q, civilToday, civilPlusDays, browserLegOrSkip } = require("../helpers");
+const { DIST } = require("./dist");
 
 const PASSWORD = "loadtest1234";
 const ORG = "org_flows3v";
@@ -50,7 +50,8 @@ const person = (id, name, types = '["donor"]') => q(
    VALUES ($1,$2,$3,$4,'cultivate','active',$5::jsonb,$6,'Ines Varro','system:test/flows3-volunteers','FLOWS-3 test')`,
   [P(id), ORG, name, `${id}@flows3v.example.org`, types, ME]);
 
-(async () => {
+// Run by tests/flows3.test.js (one suite for the build); it shares that suite's counts.
+module.exports = async function flows3Volunteers() {
   const tok = await freshOrg();
   const today = civilToday();
   const back4 = civilPlusDays(-4), ahead3 = civilPlusDays(3), ahead5 = civilPlusDays(5);
@@ -99,7 +100,7 @@ const person = (id, name, types = '["donor"]') => q(
     if (!require("fs").existsSync(DIST)) return "(no client dist)";
     return null;
   })();
-  if (browserLegOrSkip(why, "(browser leg)")) { await closeDb(); summary(); return; }
+  if (browserLegOrSkip(why, "(volunteer browser leg)")) return;
 
   const lg = await api("POST", "/auth/login", null, { email: EMAIL, password: PASSWORD });
   const { chromium } = require(PW);
@@ -270,6 +271,4 @@ const person = (id, name, types = '["donor"]') => q(
 
   ok("no page errors on any leg", !errors.length, errors.slice(0, 3));
   await browser.close();
-  await closeDb();
-  summary();
-})().catch(async e => { console.error(e); ok("suite ran", false, String(e && e.message || e)); await closeDb().catch(() => {}); summary(); });
+};
