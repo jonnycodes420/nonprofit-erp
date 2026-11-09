@@ -35,9 +35,9 @@ async function build() {
   const today = civilDay(undefined, "America/New_York");
   const person = (k, name, extra = {}) => q(
     `INSERT INTO donors (id,org_id,name,email,kind,person_types,stage,assigned_to,assigned_to_name,erased_at,created_by,created_by_name)
-     VALUES ($1,$2,$3,$4,'individual','["donor"]'::jsonb,$5,$6,$7,$8,$9,$10)`,
+     VALUES ($1,$2,$3,$4,'individual','["donor"]'::jsonb,$5,$6,$7,CASE WHEN $8::boolean THEN NOW() END,$9,$10)`,
     [D(k), ORG, name, extra.email === undefined ? `${k}@polish8.example.org` : extra.email, extra.stage || null,
-     extra.stage ? ME : null, extra.stage ? "Mike Ostrander" : null, extra.erased ? new Date() : null, ...WHO]);
+     extra.stage ? ME : null, extra.stage ? "Mike Ostrander" : null, !!extra.erased, ...WHO]);
   const gift = (k, amount, date) => api("POST", `/donors/${D(k)}/gifts`, tok, { amount, date, method: "check" });
 
   // §1 Email on (the org's switch), and Journey and sequence steps on.

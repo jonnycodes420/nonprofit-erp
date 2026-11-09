@@ -232,8 +232,8 @@ const leg = k => !ONLY.length || ONLY.includes(k);
       await page.locator('[data-testid="move-not-now"]').click({ timeout: 8000 });
       await page.locator('[data-testid="move-card"]').getByRole("button", { name: "Snooze", exact: true }).click({ timeout: 8000 });
       const seen = [];
-      const t0 = Date.now();
-      while (Date.now() - t0 < 9000) {
+      const t0 = performance.now();   // a stopwatch, not the clock
+      while (performance.now() - t0 < 9000) {
         seen.push(await page.evaluate(() => { const t = document.querySelector('[data-testid="moves-tab-keep"]'); return t ? (t.querySelector('[data-testid="moves-updating"]') ? "Updating" : t.getAttribute("data-count")) : "gone"; }));
         await page.waitForTimeout(150);
       }
