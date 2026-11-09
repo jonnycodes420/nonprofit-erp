@@ -333,7 +333,7 @@ async function seed() {
 
   // ── §4 the merge shows the kept record ──────────────────────────────────────
   await leg("§4 merge", async () => {
-    await page.goto(`${APP}/donors/${P.mo}`, { waitUntil: "load" });
+    await page.goto(`${APP}/donors/${P.mk}`, { waitUntil: "load" });   // FLOWS-4: a merge keeps the record it was started from
     await page.locator('[data-testid="dp-more"]').first().click({ timeout: 30000 });
     await page.getByRole("menuitem", { name: /^Merge with/ }).click();
     await page.getByRole("dialog").locator("input").first().fill("Rosalind");
