@@ -48,8 +48,8 @@ function PledgeSchedule({ s }) {
       <div data-testid="dp-pledge-schedule-words" style={{ fontSize: 12.5, color: T.ink3 }}>{s.words}</div>
       {s.installments.map(i => (
         <div key={i.seq} data-testid="dp-pledge-installment" style={{ fontSize: 12, color: T.ink, lineHeight: 1.45 }}>
-          <b>{i.dueDate ? `Due ${longDate(i.dueDate)}` : "No set date"} · {money(i.amount)}</b> · {i.paid ? "paid" : i.paidAmount > 0 ? `${money(i.paidAmount)} paid, ${money(i.left)} to come` : "to come"}
-          {i.payments.length > 0 && <span style={{ color: T.ink3 }}> ({i.payments.map(p => `${money(p.amount)} on ${longDate(p.date)}`).join(", ")})</span>}
+          <b>{`${i.dueDate ? `Due ${longDate(i.dueDate)}` : "No set date"} · ${money(i.amount)}`}</b>{` · ${i.paid ? "paid" : i.paidAmount > 0 ? `${money(i.paidAmount)} paid, ${money(i.left)} to come` : "to come"}`}
+          {i.payments.length > 0 && <span style={{ color: T.ink3 }}>{` (${i.payments.map(p => `${money(p.amount)} on ${longDate(p.date)}`).join(", ")})`}</span>}
         </div>
       ))}
     </div>

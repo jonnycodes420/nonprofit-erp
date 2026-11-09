@@ -555,9 +555,9 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         {active === "lybunt" && atStake > 0 && <>: <strong><RF f={d.figures?.atStake} kind="money" label="Last year's giving at stake" /></strong> of last year's giving is at stake</>}. This is a call list, not a chart.</>;
       table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
         // INTEGRITY-1: a household or a gives-through link is one line, named for the household
-        { key: "name", label: "Donor", type: "text", person: true, ...(d.units ? { render: r => <span data-testid={r.members ? "bunt-unit" : undefined}>{r.name}{r.members && <span style={{ color: T.ink3, fontWeight: 400 }}> ({r.unit}: {r.members.map(m => m.name).join(", ")})</span>}
+        { key: "name", label: "Donor", type: "text", person: true, ...(d.units ? { render: r => <span data-testid={r.members ? "bunt-unit" : undefined}>{r.name}{r.members && <span style={{ color: T.ink3, fontWeight: 400 }}>{` (${r.unit}: ${r.members.map(m => m.name).join(", ")})`}</span>}
           {/* TRUTH-5: gives through / works at is an affiliation, never money in this row */}
-          {r.connected && <span data-testid="bunt-connected" style={{ display: "block", color: T.ink3, fontWeight: 400, fontSize: 12 }}>Also connected: {r.connected.map(c => `${c.name} (${c.how}; their own ${fmtFull(c.priorYearTotal)}, on their own row)`).join(", ")}</span>}</span> } : {}) },
+          {r.connected && <span data-testid="bunt-connected" style={{ display: "block", color: T.ink3, fontWeight: 400, fontSize: 12 }}>{`Also connected: ${r.connected.map(c => `${c.name} (${c.how}; their own ${fmtFull(c.priorYearTotal)}, on their own row)`).join(", ")}`}</span>}</span> } : {}) },
         // LEDGER-1: SYBUNT's amount is the last year each person gave, named on the row
         { key: "priorYearTotal", label: active === "lybunt" ? `Gave ${priorLabel}` : "Gave in their last year", type: "money",
           ...(active === "sybunt" ? { render: r => `${fmtFull(r.priorYearTotal)}${r.lastYear ? ` · ${yearMode === "fiscal" ? fyLabelFromEnd(Number(String(r.lastYear.to).slice(0, 4)), fsm) : String(r.lastYear.from).slice(0, 4)}` : ""}` } : {}) },

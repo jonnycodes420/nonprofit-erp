@@ -65,7 +65,7 @@ export function OverviewPeriodBar({ overview, onPicked, onNavigate }) {
           style={{ ...chip(false), marginLeft: "auto", display: "flex", gap: 6, alignItems: "baseline" }}>
           <abbr title={LAPSE_WORDS.lybunt.definition} style={{ textDecoration: "underline dotted", fontWeight: 700 }}>{LAPSE_WORDS.lybunt.word}</abbr>
           <span data-testid="fr-lybunt-count" style={{ fontWeight: 800 }}>{lybunt.n.toLocaleString("en-US")}</span>
-          <span style={{ color: T.ink3 }}>{lybunt.n === lybunt.people ? (lybunt.n === 1 ? "donor" : "donors") : "donors and households"}, gave the year before, not yet in {overview.periodLabel}</span>
+          <span style={{ color: T.ink3 }}>{`${lybunt.n === lybunt.people ? (lybunt.n === 1 ? "donor" : "donors") : "donors and households"}, gave the year before, not yet in ${overview.periodLabel}`}</span>
         </button>
       )}
     </div>
