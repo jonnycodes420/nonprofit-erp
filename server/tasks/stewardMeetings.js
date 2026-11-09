@@ -32,7 +32,8 @@ async function book({ query, run, actor }, req, res, { donor, title, startsAt, e
     [id, req.user.orgId, req.user.userId, PROVIDER, id, title, startsAt, endsAt, location, [donor.id], who.id, who.name]);
   await ME().applyMeeting(id, { actorId: who.id, actorName: await actorName(query, req, who) });
   return res.status(201).json({ ok: true, id, inSteward: true,
-    sentence: `Saved on Steward's calendar. ${donor.name} was not invited.` });
+    // FLOWS-3 (W-1108-Volunteers-19X): they ARE on it; what did not happen is an invitation.
+    sentence: `Saved on Steward's calendar, with ${donor.name}. No invitation was sent: there is no calendar connected to send one from.` });
 }
 
 // POST /calendar/events/:id/move for a meeting kept in Steward.

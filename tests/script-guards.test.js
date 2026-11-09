@@ -105,6 +105,9 @@ const GUARDED_WRITERS = [
   // STALE-2: deletes event timeline lines whose guest is gone (not in the trash).
   // Dry run by default; --apply/--undo write through writerDbUrl, one audit row per org. org_creo skipped.
   "stale2-event-line-orphans",
+  // FLOWS-3: gives event guests typed in with no record a person (matched, or a new "guest").
+  // Dry run by default; --apply/--undo write through writerDbUrl, one audit row per org. org_creo skipped.
+  "flows3-typed-guests",
   // DEMO-TIDY-1/2: tidies a demo or internal_test org (refuses every other org_kind; Jonathan runs it on org_creo).
   // Dry run by default; --apply/--undo write through writerDbUrl, one audit row per change and one per run.
   "demo-tidy",
