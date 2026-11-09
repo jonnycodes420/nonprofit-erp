@@ -85,7 +85,8 @@ async function person(org, id, name, extra = {}) {
            VALUES ($1,$2,$3,$4,$5,$6,$7,'system:test','test')`,
     [id, org, name, `${id}@dates1.local`, extra.stage || "cultivate", extra.deceased === true, extra.dnc === true]);
 }
-const journey = (tok, body) => api("POST", "/journeys", tok, body);
+// FLOWS-3: only an Active journey starts people, so a by-hand journey here is turned on.
+const journey = (tok, body) => api("POST", "/journeys", tok, body && body.trigger === "by_hand" ? { enabled: true, ...body } : body);
 const plansOf = (org, tpl) => q(`SELECT id, donor_id, status, trigger_key, batch_id FROM cultivation_plans WHERE org_id=$1 AND template_id=$2 ORDER BY donor_id`, [org, tpl]);
 
 (async () => {

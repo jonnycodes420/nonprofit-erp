@@ -183,6 +183,7 @@ const held = id => q(`SELECT kind, what, sent_at FROM mail_blocked WHERE org_id=
   await q(`INSERT INTO cultivation_templates (id,org_id,name,steps,trigger_key,created_by,created_by_name) VALUES ('ct_sg',$1,'One email',$2::jsonb,'by_hand',${sys})`,
     [ORG, JSON.stringify([{ type: "send", label: "Send the welcome", offsetDays: 0, draft: `template:${TID}` }])]);
   const turned = await api("POST", "/journeys/ct_sg/steps/0/auto", tok, { on: true, confirm: true });
+  await q(`UPDATE cultivation_templates SET journey_enabled=true, ever_enabled=true WHERE id='ct_sg'`);   // FLOWS-3: only an Active journey starts people
   await api("POST", "/journeys/ct_sg/apply", tok, { donorIds: [PEOPLE.off[0], PEOPLE.on[0]] });
   const sendDay = nextWeekday(today);
   const jr = await api("POST", "/journey-sends/run", tok, { now: nyInstant(sendDay, 9) });

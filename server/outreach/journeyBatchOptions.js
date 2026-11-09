@@ -95,7 +95,8 @@ function register(app, { query, journeyMod, requireAuth, wrap, batchIdsFrom, BAT
       const s = splitFor(J, t, ids, facts);
       const state = J.journeyState({ enabled: !!t.journey_enabled, everEnabled: !!t.ever_enabled, archived: false, everIn: everIn.has(t.id) ? 1 : 0 });
       const active = JR.canStartState(state);
-      return { id: t.id, name: t.name, state, stateNote: STATE_NOTE[state] || "", willStart: active ? s.willStart.length : 0,
+      // A Draft or Paused row says so once, in its why.
+      return { id: t.id, name: t.name, state, stateNote: active ? (STATE_NOTE[state] || "") : "", willStart: active ? s.willStart.length : 0,
         canPick: active && s.willStart.length > 0,
         why: !active ? JR.notActiveWhy(state) + "."
           : s.willStart.length > 0 ? JR.breakdownSentence(ids.length, s.willStart.length, s.skips) : rowWhy(ids.length, 0, s.skips) };

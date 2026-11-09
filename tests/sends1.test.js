@@ -112,6 +112,7 @@ const ten = fn => Promise.all(Array.from({ length: 10 }, () => fn()));
     [ORG, JSON.stringify([{ type: "send", label: "Send the welcome", offsetDays: 0, draft: `template:${TID}` }])]);
   await api("PUT", `/email-templates/${TID}`, tok, { subject: "Welcome, {{first_name}}", publish: true });   // her own Save (AUTO-1)
   const autoOn = await api("POST", "/journeys/ct_s1/steps/0/auto", tok, { on: true, confirm: true });
+  await q(`UPDATE cultivation_templates SET journey_enabled=true, ever_enabled=true WHERE id='ct_s1'`);   // FLOWS-3: only an Active journey starts people
   const ap = await api("POST", "/journeys/ct_s1/apply", tok, { donorIds: ["d_s1_a", "d_s1_b"] });
   const sched = await q(`SELECT id FROM journey_sends WHERE org_id=$1 AND status='scheduled'`, [ORG]);
   ok("fixture: a journey's email step set to send itself, scheduled for two people", autoOn.status === 200 && ap.status < 300 && sched.length === 2, { autoOn: autoOn.body, ap: ap.body, sched });
@@ -232,6 +233,7 @@ const ten = fn => Promise.all(Array.from({ length: 10 }, () => fn()));
   for (const id of ["d_s1_a", "d_s1_b", "d_s1_c", "d_s1_d"]) await q(`UPDATE threads SET closed_at=NOW(), close_kind='dismissed', close_reason='handled_outside' WHERE org_id=$1 AND donor_id=$2 AND closed_at IS NULL`, [ORG, id]);
   const taskCount = async () => (await q(`SELECT COUNT(*)::int AS n FROM tasks WHERE org_id=$1 AND done=0 AND voided_at IS NULL AND donor_id IN ('d_s1_a','d_s1_b')`, [ORG]))[0].n;
   const tasks0 = await taskCount();
+  await q(`UPDATE cultivation_templates SET journey_enabled=true, ever_enabled=true WHERE id='ct_s1_b'`);   // FLOWS-3: only an Active journey starts people
   const bt = await api("POST", "/journeys/ct_s1_b/batch", tok, { donorIds: ["d_s1_a", "d_s1_b"] });
   const bid = bt.body && (bt.body.batchId || (bt.body.batch && bt.body.batch.id));
   await waitFor(async () => { const b = await api("GET", `/journeys/batches`, tok); const x = ((b.body && b.body.batches) || []).find(y => y.id === bid); return x && x.status !== "running" ? x : null; }, { timeout: 15000 });
