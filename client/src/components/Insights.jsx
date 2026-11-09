@@ -305,7 +305,19 @@ export function useInsights(view, skip) {
   const load = () => apiFetch(path).then(r => { setData(r); setErr(""); }).catch(e => setErr(e.message || "Couldn't read the cards."));
   useEffect(() => { if (had.current) { had.current = false; return; } if (!skip) load(); }, [view, skip]);
   // STALE-1: a gift, a pledge payment or a task made anywhere moves the deck.
-  useChanged(["gift", "pledge", "task"], () => { if (!skip) load(); });
+  // LAG-1: and the worker's build of it landing (lib/catchUp.js announces "insights").
+  useChanged(["gift", "pledge", "task", "insights"], () => { if (!skip) load(); });
+  // LAG-1 (W-1108-Donors-02X): an answer the worker is still rebuilding (stale) is
+  // read again every second and a half until it is fresh (two minutes at most);
+  // until then the deck says "Updating…" instead of its counts.
+  const staleTries = useRef(0);
+  useEffect(() => {
+    // the org's first build ("being prepared") is waited for the same way
+    if (!(data && (data.stale || data.preparing || (data.deck && data.deck.preparing)))) { staleTries.current = 0; return undefined; }
+    if (skip || staleTries.current >= 80) return undefined;
+    const t = setTimeout(() => { staleTries.current += 1; load(); }, 1500);
+    return () => clearTimeout(t);
+  }, [data, skip]);   // eslint-disable-line react-hooks/exhaustive-deps
   return [data, load, err];
 }
 
@@ -559,7 +571,7 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
   const driftPeople = deck.drift && deck.drift.count > 0;
 
   return (
-    <section ref={deckRef} aria-label="Your moves" data-testid="home-moves" className="moves-deck" tabIndex={0} onKeyDown={onKey} onPointerEnter={rest} onTouchStart={rest} onFocus={rest}
+    <section ref={deckRef} aria-label="Your moves" data-testid="home-moves" data-stale={data.stale ? "true" : "false"} className="moves-deck" tabIndex={0} onKeyDown={onKey} onPointerEnter={rest} onTouchStart={rest} onFocus={rest}
       style={{ display: "flex", flexDirection: "column", gap: 18, borderRadius: 12 }}>
       <style>{DECK_CSS}</style>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 10 }}>
@@ -581,7 +593,8 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
           {tiles.map(t => (
             <button key={t.key} type="button" role="tab" className="moves-tab" data-testid={`moves-tab-${t.key}`} data-count={t.left.length + Math.max(0, t.count - t.moves.length)}
               aria-selected={t.key === cur.key} onClick={() => pick(t.key)} title={t.split ? `${tabCountWords(t, gone)}. ${deck.sentence || ""}` : deck.sentence}>
-              <span style={{ fontSize: 14.5, fontWeight: 700 }}>{t.label} · {(t.left.length + Math.max(0, t.count - t.moves.length)).toLocaleString("en-US")}</span>
+              {/* LAG-1: while the worker rebuilds the deck, its count is not shown as current */}
+              <span style={{ fontSize: 14.5, fontWeight: 700 }}>{t.label} · {data.stale ? <span data-testid="moves-updating">Updating…</span> : (t.left.length + Math.max(0, t.count - t.moves.length)).toLocaleString("en-US")}</span>
               <span className="moves-stake" data-testid="moves-stake" style={{ fontSize: 12.5, opacity: 0.85 }}>
                 {/* SWEEP-1: the tab's own total (every move, not the first 150 the deck carries), less what was acted on here */}
                 {/* POLISH-4: Planned says its own people, the same count as its label, never the 150 the deck carries */}
@@ -736,7 +749,7 @@ export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn,
   // PLEDGES-2 (W-1107-Finance-20X): a payment, write-off or delete re-reads the move, and an
   // answer the worker is still rebuilding (stale) is read again shortly, at most three times.
   const staleTries = useRef(0);
-  useChanged(["gift", "pledge"], () => { staleTries.current = 0; if (donorId) load(); });
+  useChanged(["gift", "pledge", "insights"], () => { staleTries.current = 0; if (donorId) load(); });   // LAG-1: and the worker's build landing
   useEffect(() => {
     if (!(d && d.stale) || staleTries.current >= 3) return undefined;
     const t = setTimeout(() => { staleTries.current += 1; load(); }, 2500);

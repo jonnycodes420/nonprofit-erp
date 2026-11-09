@@ -25,7 +25,7 @@
 // A view that is not mounted hears nothing and asks for nothing.
 import { useEffect, useRef, useState } from "react";
 
-export const KINDS = ["person", "gift", "pledge", "event", "grant", "task", "group", "volunteer", "fund", "totals", "note", "import", "draft"];
+export const KINDS = ["person", "gift", "pledge", "event", "grant", "task", "group", "volunteer", "fund", "totals", "note", "import", "draft", "insights"];
 const ALL = KINDS;
 
 // ── WHAT A WRITE TOUCHED ─────────────────────────────────────────────────────
@@ -50,6 +50,11 @@ const RULES = [
   // database's trg_thread_task_sync writes it), so snoozing it to revisit,
   // dismissing it or setting a new one moves the Tasks views and the badge.
   [/^\/threads\b/, ["note", "person", "task"]],
+  // LAG-1 (W-1107-Volunteers-18X): a meeting moved, booked or cancelled moves its
+  // next step, its prep and follow-up tasks and the record's line (meetingEffects.js).
+  [/^\/calendar\b|\/book-visit\b/, ["task", "note", "person"]],
+  // LAG-1 (W-1108-Donors-02X): Done, Not now or a Review on the deck rebuilds the org's Insights.
+  [/^\/insights\/(outcome|review|link)\b/, ["insights", "task", "person"]],
   [/^\/(interactions|attachments|notes|conversations|files)\b/, ["note", "person"]],
   [/^\/removals\b|^\/trash\b|^\/merge|\/merge\b|^\/households?\b|^\/donors\b|^\/people\b|^\/relationships?\b/, ["person", "gift", "pledge", "group", "totals", "task", "note"]],
   [/^\/(campaigns?|appeals?|goals?|moves?|portfolio|major-gifts|memberships?)\b/, ["person", "totals", "pledge"]],
@@ -192,18 +197,23 @@ const TABLE_KINDS = [
   [/^(donors|donor_rhythm|households|relationships|person)/, ["person", "totals"]],
   [/^(interactions|notes|threads|attachments|conversations)/, ["note"]],
   [/^(imports?|import_)/, ALL],
+  [/^stored_insights$/, ["insights"]],   // LAG-1: the worker's build of the deck landed (routes/catchUp.js)
 ];
 let seen = null;
-export function noteServerChanges(changes) {
+// LAG-1: `covered` is the kinds a write just announced itself (lib/catchUp.js):
+// its own rows moved those tables, so they are not announced a second time.
+export function noteServerChanges(changes, covered = null) {
   const tables = changes && changes.tables;
   if (!tables || typeof tables !== "object") return;
   if (!seen) { seen = { ...tables }; return; }
   const kinds = new Set();
   for (const [t, id] of Object.entries(tables)) {
     if (seen[t] != null && Number(id) <= Number(seen[t])) continue;
+    // LAG-1: a table seen for the first time is new since the baseline (the bell's
+    // ten-minute window had no row for it), so it moved too.
     seen[t] = id;
     const rule = TABLE_KINDS.find(([re]) => re.test(t));
-    if (rule) for (const k of rule[1]) kinds.add(k);
+    if (rule) for (const k of rule[1]) if (!(covered && covered.has(k))) kinds.add(k);
   }
   if (kinds.size) announce({ kinds, ids: {}, source: "worker" });
 }

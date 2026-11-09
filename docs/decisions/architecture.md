@@ -204,6 +204,14 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 - **An advisory-lock waiter never sits on a pool connection.** `withAdvisoryLock` asks with a
   150 ms lock_timeout and hands its connection back between tries; the pool is 10, and ten
   waiters inside `pg_advisory_lock` starved the holder (nine statement timeouts). (RACE-1)
+- **A confirmed write is on every screen at once.** Every GET answers `Cache-Control: no-store`
+  (`middleware/noStore.js`, above every router). A route that wants a public cache sets its own
+  header. After each write the client follows the worker (`client/src/lib/catchUp.js` over
+  `GET /changes/marks`) until the org's after-change work is done, and announces each table that
+  moved. A figure the worker owns says "Updating…" while its answer is stale, never the old number
+  as current. Reproduce a lag on a production-shaped boot: `NODE_ENV=production`, web with
+  `WORKER=off`, `worker.js` started after the web is up, no `TEST_MODE`. A TEST_MODE Insights read
+  waits for the build and hides it. (LAG-1)
 
 ## Gotchas
 - **Use a regex route (`app.all(/^\/api\/v1.../)`) and the route inventory breaks**, because it
