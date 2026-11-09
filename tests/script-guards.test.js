@@ -190,6 +190,8 @@ const LOOPBACK_HARDCODED = [
 // Read-only against whatever BASE points at (may default to prod): their only
 // write-shaped call is POST /auth/login. Verified below, not just trusted.
 const PROD_READONLY = [
+  // FLOWS-4: counts stale "Missed you" drafts, tasks on archived events, hours and meeting notes saved twice; SELECTs only, no --apply.
+  "flows4-volunteer-rows",
   // FLOWS-3: counts people in Draft/Paused journeys and early dated first steps; SELECTs only, no --apply.
   "flows3-journey-starts",
   // PLEDGES-3: lists old pledge flags, drifted receipts and grants awarded with no award row; SELECTs only, no --apply.

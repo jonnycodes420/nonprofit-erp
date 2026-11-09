@@ -496,6 +496,7 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
             WHERE ea.donor_id = ? AND ea.org_id = ? AND LEFT(e.date::text, 10) >= ?
               AND COALESCE(ea.status, '') NOT IN ('cancelled','canceled','declined')
               AND e.date_unknown IS NOT TRUE   -- IMPORT-4: an imported event whose day the file never gave is past, not coming up
+              AND e.archived_at IS NULL        -- FLOWS-4 (W-1109-Volunteers-06X): an archived event is not coming up
             ORDER BY e.date ASC LIMIT 6`, [id, orgId, today]),
     railMeetings.meetingsWith(orgId, id, { held: false, limit: 50 }),
     query(`SELECT st.id, st.label, st.due_date, p.template_name

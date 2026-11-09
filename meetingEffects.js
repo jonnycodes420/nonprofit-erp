@@ -131,7 +131,7 @@ async function loadEvent(eventId) {
   return ev || null;
 }
 
-async function applyMeeting(eventId, { actorId = "system:meetings", actorName = "Meetings" } = {}) {
+async function applyMeeting(eventId, { actorId = "system:meetings", actorName = "Meetings", actionKey = null } = {}) {
   const ev = await loadEvent(eventId);
   if (!ev || ev.logged_at || ev.dismissed_at) return { applied: 0 };
   const orgId = ev.org_id;
@@ -163,6 +163,13 @@ async function applyMeeting(eventId, { actorId = "system:meetings", actorName = 
         continue;
       }
       // MOVED. Everything it made moves with it, and the record says so.
+      // FLOWS-4 (W-1109-Volunteers-18X): ONE MOVE, ONE NOTE. The move is claimed
+      // from the day it was on, so a second request for the same drag (or a
+      // calendar sync racing it) finds the day already changed and writes
+      // nothing; and a move that carries its action key writes its note once.
+      const claim = await query(`UPDATE meeting_effects SET day=?, updated_at=NOW() WHERE id=? AND day=? RETURNING id`, [day, had.id, had.day]);
+      if (!claim.length) continue;
+      if (actionKey && (await query(`SELECT 1 FROM interactions WHERE org_id=? AND donor_id=? AND metadata->>'action_key' = ? LIMIT 1`, [orgId, donorId, actionKey])).length) continue;
       await run(`UPDATE threads SET next_step_label=?, due_date=?, due_time=? WHERE id=? AND closed_at IS NULL AND calendar_event_id=?`,
         [label, day, time, had.thread_id, eventId]).catch(() => {});
       if (had.prep_task_id) await run(`UPDATE tasks SET due=?, updated_at=NOW() WHERE id=? AND done=0`, [prepDay, had.prep_task_id]);
@@ -170,7 +177,7 @@ async function applyMeeting(eventId, { actorId = "system:meetings", actorName = 
       await restoreSteps(orgId, had.moved_steps);
       const moved = await moveNearSteps(orgId, donorId, day, actorId);
       await note(orgId, donorId, `Meeting moved from ${dayWords(had.day)} to ${dayWords(day)}`, today,
-        { kind: "meeting_moved", calendar_event_id: eventId, from_day: had.day, meeting_day: day }, actorId, actorName);
+        { kind: "meeting_moved", calendar_event_id: eventId, from_day: had.day, meeting_day: day, ...(actionKey ? { action_key: actionKey } : {}) }, actorId, actorName);
       await run(`UPDATE meeting_effects SET day=?, moved_steps=?::jsonb, updated_at=NOW() WHERE id=?`,
         [day, JSON.stringify(moved), had.id]);
       applied++;

@@ -31,6 +31,7 @@ const orgTime = require("../orgTime");   // CAL-1: weekly repeat of a shift (civ
 const express = require("express");
 const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person
 const { newId, randomHex } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
+const HR = require("../server/volunteers/hoursReport");   // FLOWS-4: the Hours report, one row per entry
 const routers = { r0: express.Router() };
 
 // FEEL-1: the one count of a shift's people (scheduleRows' footer), for the
@@ -1325,28 +1326,9 @@ app.get("/volunteer-hub/report", requireAuth, wrap(async (req, res) => {
   const from = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || "")) ? String(req.query.from) : `${today.slice(0, 4)}-01-01`;
   const to = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to || "")) ? String(req.query.to) : today;
 
-  const byPerson = await query(
-    `SELECT d.id, d.name, SUM(round(s.hours*100))::bigint AS h, COUNT(*)::int AS n
-       FROM volunteer_shifts s JOIN donors d ON d.id=s.person_id AND d.org_id=s.org_id
-      WHERE s.org_id=? AND s.date >= ? AND s.date <= ? AND d.deleted_at IS NULL
-      GROUP BY d.id, d.name ORDER BY h DESC`, [orgId, from, to]);
-  // PROGRAM comes off the opportunity where the shift came from a checked-out
-  // slot, and off the shift's own role otherwise. Both are recorded; neither
-  // is invented.
-  const byProgram = await query(
-    `SELECT COALESCE(NULLIF(o.program,''), NULLIF(s.role,''), 'Not assigned to a program') AS program,
-            SUM(round(s.hours*100))::bigint AS h, COUNT(*)::int AS n
-       FROM volunteer_shifts s
-       LEFT JOIN volunteer_signups su ON su.hours_shift_id = s.id
-       LEFT JOIN volunteer_slots sl ON sl.id = su.slot_id
-       LEFT JOIN volunteer_opportunities o ON o.id = sl.opportunity_id
-      WHERE s.org_id=? AND s.date >= ? AND s.date <= ?
-      GROUP BY 1 ORDER BY h DESC`, [orgId, from, to]);
-  const byMonth = await query(
-    `SELECT substring(s.date from 1 for 7) AS month, SUM(round(s.hours*100))::bigint AS h, COUNT(*)::int AS n
-       FROM volunteer_shifts s WHERE s.org_id=? AND s.date >= ? AND s.date <= ?
-      GROUP BY 1 ORDER BY 1`, [orgId, from, to]);
-
+  // FLOWS-4 (W-1109-Volunteers-26): the three breakdowns are three groupings of
+  // one set of rows, each logged shift once (server/volunteers/hoursReport.js).
+  const { byPerson, byProgram, byMonth } = await HR.breakdowns(query, orgId, from, to);
   const total = byPerson.reduce((a, r) => a + Number(r.h), 0);
   res.json({
     from, to,
@@ -1356,7 +1338,7 @@ app.get("/volunteer-hub/report", requireAuth, wrap(async (req, res) => {
     byMonth: byMonth.map(r => ({ month: r.month, hours: Number(r.h) / 100, shifts: r.n, rows: "month:" + r.month })),
     definitions: {
       total: `Every hour on a shift dated between ${from} and ${to}, in your organization's time zone. Hours come from a check-out, from the coordinator, from the volunteer's own page, or from an import.`,
-      program: "The opportunity's program where the hours came from a shift somebody was checked out of, and the role written on the shift otherwise.",
+      program: "The program of the opportunity the hours were given to (named on the hours, or the shift somebody was checked in to), and the role written on the hours otherwise. Each entry is counted once.",
       person: "One row per person, whether or not they also give.",
     },
     sentence: total
@@ -1373,23 +1355,13 @@ app.get("/volunteer-hub/report/rows", requireAuth, wrap(async (req, res) => {
   const to = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to || "")) ? String(req.query.to) : "9999-12-31";
   const [kind, ...rest] = key.split(":");
   const value = rest.join(":");
-  let where = "", params = [orgId, from, to];
-  if (kind === "person") { where = "AND s.person_id = ?"; params.push(value); }
-  else if (kind === "month") { where = "AND substring(s.date from 1 for 7) = ?"; params.push(value); }
-  else if (kind === "program") {
-    where = `AND COALESCE(NULLIF(o.program,''), NULLIF(s.role,''), 'Not assigned to a program') = ?`;
-    params.push(value);
-  } else return res.status(400).json({ error: "unknown_rows", message: "That is not a figure this report can open." });
+  const where = HR.rowsWhere(kind);
+  if (!where) return res.status(400).json({ error: "unknown_rows", message: "That is not a figure this report can open." });
+  // FLOWS-4: the same rows the figure was summed from, each entry once.
   const rows = await query(
-    `SELECT s.id, s.date, s.hours, s.role, s.via, d.id AS person_id, d.name,
-            o.name AS opportunity, o.program
-       FROM volunteer_shifts s
-       JOIN donors d ON d.id=s.person_id AND d.org_id=s.org_id
-       LEFT JOIN volunteer_signups su ON su.hours_shift_id = s.id
-       LEFT JOIN volunteer_slots sl ON sl.id = su.slot_id
-       LEFT JOIN volunteer_opportunities o ON o.id = sl.opportunity_id
-      WHERE s.org_id=? AND s.date >= ? AND s.date <= ? ${where}
-      ORDER BY s.date DESC NULLS LAST, s.id LIMIT 2000`, params);
+    `SELECT x.id, x.date, x.hours, x.role, x.via, x.person_id, x.name, x.opportunity, x.opp_program AS program
+       FROM (${HR.SHIFT_ROWS}) x WHERE ${where}
+      ORDER BY x.date DESC NULLS LAST, x.id LIMIT 2000`, [orgId, from, to, value]);
   const total = rows.reduce((a, r) => a + Math.round(Number(r.hours) * 100), 0);
   res.json({ rows: rows.map(r => ({ ...r, hours: Number(r.hours) })), count: rows.length,
     totalHours: total / 100,
@@ -1406,15 +1378,9 @@ app.get("/volunteer-hub/report/export.csv", requireAuth, wrap(async (req, res) =
   const from = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || "")) ? String(req.query.from) : `${today.slice(0, 4)}-01-01`;
   const to = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to || "")) ? String(req.query.to) : today;
   const rows = await query(
-    `SELECT d.name, d.email, s.date, s.hours, COALESCE(o.name, s.role, '') AS what,
-            COALESCE(o.program, '') AS program, s.via
-       FROM volunteer_shifts s
-       JOIN donors d ON d.id=s.person_id AND d.org_id=s.org_id
-       LEFT JOIN volunteer_signups su ON su.hours_shift_id = s.id
-       LEFT JOIN volunteer_slots sl ON sl.id = su.slot_id
-       LEFT JOIN volunteer_opportunities o ON o.id = sl.opportunity_id
-      WHERE s.org_id=? AND s.date >= ? AND s.date <= ? AND d.deleted_at IS NULL
-      ORDER BY s.date, d.name`, [orgId, from, to]);
+    `SELECT x.name, x.email, x.date, x.hours, COALESCE(x.opportunity, x.role, '') AS what,
+            COALESCE(x.opp_program, '') AS program, x.via
+       FROM (${HR.SHIFT_ROWS}) x ORDER BY x.date, x.name`, [orgId, from, to]);   // FLOWS-4: each entry once
   // A leading =, +, - or @ (or a tab, or a CR) is a formula to a spreadsheet, not a value.
   const esc = require("../server/shared/csvCell").csvCell;
   const head = ["Volunteer", "Email", "Date", "Hours", "What they did", "Program", "How it was recorded"];
