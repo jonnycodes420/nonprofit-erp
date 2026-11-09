@@ -95,6 +95,7 @@ async function pagePayload(req, orgId) {
   const mail = await orgMail(orgId, types.filter(t => t.on).length);
   return {
     mailOn: mail.on, mailSentence: mail.sentence, mailSetAt: mail.setAt,
+    header: (await import("../shared/mailHeader.js")).mailHeader({ mailOn: mail.on, types }),   // POLISH-8: read from the switches
     top: mail.on ? null : TYPES.ORG_OFF_TOP, waiting: TYPES.WAITING,
     canChange: req ? (await isAdmin(req)) && !(await superAdmin(req)) : false,
     groups: TYPES.GROUPS.map(g => ({ key: g.key, label: g.label, types: types.filter(t => t.group === g.key) })),

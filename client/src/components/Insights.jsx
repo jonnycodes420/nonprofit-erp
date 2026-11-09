@@ -525,6 +525,7 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
     // SENDS-1: the person's other moves on this deck leave with it, and the next person rises.
     const same = m.lead ? deck.tabs.flatMap(t => t.moves).filter(x => x.lead === m.lead).map(x => x.id) : [];
     setGone(new Set([...gone, m.id, ...same]));
+    return [m.id, ...same];
     setSlide("next");
     setPos({ ...pos, [cur.key]: moves.length - 1 > i ? i : 0 });
     setMode(null); setReason("");
@@ -535,8 +536,12 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
   const act = async (state, extra, said) => {
     if (!m || busy) return;
     setBusy(true); setMsg(null);
-    try { await outcome(state, extra); advance(); setMsg(said ? { text: said } : null); }
-    catch (e) { setMsg({ text: e.message || "That didn't work. Nothing was changed.", err: true }); }
+    // POLISH-8 (W-1108-Donors-02X): optimistic. The move leaves the deck, and
+    // Keep's count drops, the moment Snooze or Done is pressed; if the server
+    // refuses, it comes back with the reason.
+    const left = advance();
+    try { await outcome(state, extra); setMsg(said ? { text: said } : null); }
+    catch (e) { setGone(g => { const n = new Set(g); left.forEach(id => n.delete(id)); return n; }); setMsg({ text: e.message || "That didn't work. Nothing was changed.", err: true }); }
     finally { setBusy(false); }
   };
   const doAction = async () => {

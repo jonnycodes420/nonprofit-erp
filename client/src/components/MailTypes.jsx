@@ -152,8 +152,9 @@ export function MailTypesSettings({ onNavigate }) {
       <div style={card}>
         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>What Steward sends automatically</div>
         <div style={{ ...help, fontSize: 13, marginTop: 4 }}>
-          Steward sends nothing on its own until you turn it on here. Each email starts off. Anything you write and send yourself still goes.
-          {" "}<button type="button" style={linkBtn} data-testid="mail-types-going-out" onClick={() => onNavigate && onNavigate("settings", { section: "going-out" })}>See what's going out</button>
+          {/* POLISH-8: derived from the switches below (shared/mailHeader.js, on the server), never static copy. */}
+          <span data-testid="mail-types-header">{page.header}</span>
+          {" "}Anything you write and send yourself still goes.{" "}<button type="button" style={linkBtn} data-testid="mail-types-going-out" onClick={() => onNavigate && onNavigate("settings", { section: "going-out" })}>See what's going out</button>
         </div>
         {page.top && <div data-testid="mail-types-org-off" style={{ ...help, fontSize: 13, color: T.ink2, marginTop: 10 }}>{page.top}</div>}
         {page.mailSentence && page.mailOn && <div style={{ ...help, marginTop: 8 }}>{page.mailSentence}</div>}

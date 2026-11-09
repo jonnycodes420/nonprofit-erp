@@ -1855,7 +1855,7 @@ app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(a
       imageUrl !== undefined ? imageUrl : existing.image_url,
       fundId !== undefined ? (fundId || null) : existing.fund_id,
       finalSlug,
-      status && ["active", "archived"].includes(status) ? status : existing.status,
+      status && ["active", "archived", "draft"].includes(status) ? status : existing.status,   // POLISH-8: draft = unpublished
       campaignId !== undefined ? (campaignId || null) : existing.campaign_id,
       req.body.p2pEnabled !== undefined ? !!req.body.p2pEnabled : existing.p2p_enabled,
       req.body.p2pRequiresApproval !== undefined ? !!req.body.p2pRequiresApproval : existing.p2p_requires_approval === true,

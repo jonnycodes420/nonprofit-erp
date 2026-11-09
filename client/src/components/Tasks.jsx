@@ -118,6 +118,18 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
     } catch (e) { say(e); }
   };
 
+  // POLISH-8 (W-1109-Donors-42X): a done task can be deleted (it goes to the
+  // trash, with Undo) as well as reopened.
+  const remove = async t => {
+    if (isReadOnly) return;
+    setErr("");
+    try {
+      const r = await apiFetch(`/tasks/${t.id}`, { method: "DELETE" });
+      await load();
+      offerUndo({ ...r, message: `Deleted: ${t.title}. It is in the trash.`, onRestored: load }, t.title);
+    } catch (e) { say(e); }
+  };
+
   // ── Snooze ────────────────────────────────────────────────────────────
   const snooze = async (t, until, reason) => {
     try {
@@ -238,7 +250,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
                   onLongPress={() => { setSelecting(true); setSelected(s => new Set(s).add(t.id)); }}
                   picked={selected.has(t.id)} onPick={() => setSelected(s => { const n = new Set(s); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n; })}
                   onTick={() => tick(t)} onOpen={() => setSheet(t)} onAbout={openAbout(t)} action={kindAction(t)}
-                  onSnooze={() => setSnoozeFor(t)} />
+                  onSnooze={() => setSnoozeFor(t)} onDelete={() => remove(t)} />
               ))}
             </div>
           )}
@@ -263,7 +275,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
   );
 }
 
-function TaskRow({ t, today, picked, onPick, onTick, onOpen, onAbout, action, onSnooze, isReadOnly, selecting, onLongPress }) {
+function TaskRow({ t, today, picked, onPick, onTick, onOpen, onAbout, action, onSnooze, onDelete, isReadOnly, selecting, onLongPress }) {
   const late = t.view === "overdue";
   // A long press on a phone starts selecting, the way "Select" does.
   const press = useRef(null);
@@ -308,6 +320,12 @@ function TaskRow({ t, today, picked, onPick, onTick, onOpen, onAbout, action, on
         <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center", paddingTop: 2 }}>
           {action && <button onClick={action.run} data-testid="task-kind-action" style={outlineBtn}>{action.label}</button>}
           <button onClick={onSnooze} data-testid="task-snooze" style={textBtn}>Snooze</button>
+        </div>
+      )}
+      {t.done && !isReadOnly && (
+        <div style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center", paddingTop: 2 }}>
+          <button onClick={onTick} data-testid="task-reopen" style={textBtn}>Reopen</button>
+          {onDelete && <button onClick={onDelete} data-testid="task-delete" style={textBtn}>Delete</button>}
         </div>
       )}
     </div>
@@ -415,7 +433,7 @@ function TaskSheet({ t, team, onClose, onChanged, onError, onFinish, isReadOnly 
       footer={<div style={{ display: "flex", gap: 8, justifyContent: "space-between", flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 8 }}>
           {!isReadOnly && !t.done && <button onClick={() => onFinish(t)} style={outlineBtn} data-testid="sheet-done">Mark done</button>}
-          {!isReadOnly && !linked && <button onClick={del} style={textBtn}>Delete</button>}
+          {!isReadOnly && (!linked || t.done) && <button onClick={del} data-testid="sheet-delete" style={textBtn}>Delete</button>}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onClose} style={textBtn}>Cancel</button>

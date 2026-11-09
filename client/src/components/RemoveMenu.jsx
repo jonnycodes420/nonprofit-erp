@@ -92,7 +92,7 @@ export default function RemoveMenu({ kind, id, onDone, onError, items = [], remo
       {open && (
         <div role="menu" style={{ position: "absolute", right: 0, top: "100%", marginTop: 4, zIndex: 30, background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, boxShadow: "0 8px 24px rgba(15,26,18,0.12)", padding: 4, minWidth: 160, display: "flex", flexDirection: "column" }}>
           {items.filter(Boolean).map(it => (
-            <button key={it.label} type="button" role="menuitem" style={menuItem} onClick={() => { setOpen(false); it.onClick(); }}>{it.label}</button>
+            <button key={it.label} type="button" role="menuitem" data-testid={it.testid} style={menuItem} onClick={() => { setOpen(false); it.onClick(); }}>{it.label}</button>
           ))}
           <button type="button" role="menuitem" data-testid="row-remove" style={menuItem}
             onClick={() => { setOpen(false); removeOne({ kind, id, onDone, onError }); }}>{removeLabel}</button>
