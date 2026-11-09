@@ -18,7 +18,7 @@ async function personFields(query, orgId, donorId) {
     last_gift_amount: "", last_gift_date: "" };
   if (lg) {
     out.last_gift_amount = "$" + (lg.cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\.00$/, "");
-    const day = String(lg.date instanceof Date ? lg.date.toISOString() : lg.date || "").slice(0, 10);
+    const day = require("../../orgTime").civilOf(lg.date) || "";
     if (day) out.last_gift_date = new Date(day + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
   }
   return { person: { id: d.id, name: d.name }, fields: out };

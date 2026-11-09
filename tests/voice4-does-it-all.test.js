@@ -157,8 +157,8 @@ async function reset() {
   const other = await api("POST", "/tasks", tok, { title: "Send Margaret photos of the second training boat", due: today, donorId: "d_v4_mc" });
   ok("fixture: an unrelated task due today", other.status < 300, other.body);
   await q(`INSERT INTO opportunities (id,org_id,donor_id,name,target_amount,status) VALUES ('op_v4_ask',$1,'d_v4_mc','Youth Arts Access',25000,'open')`, [ORG]);
-  await q(`INSERT INTO cultivation_templates (id,org_id,name,trigger_key,steps) VALUES ('ct_v4_major',$1,'Major donor','by_hand','[{"type":"thank","draft":null,"label":"Call them the same week","offsetDays":3}]'::jsonb),
-           ('ct_v4_lapsed',$1,'Lapsed donor win-back','by_hand','[{"type":"thank","draft":null,"label":"Call them the same week","offsetDays":3}]'::jsonb)`, [ORG]);
+  await q(`INSERT INTO cultivation_templates (id,org_id,name,trigger_key,steps,journey_enabled,ever_enabled) VALUES ('ct_v4_major',$1,'Major donor','by_hand','[{"type":"thank","draft":null,"label":"Call them the same week","offsetDays":3}]'::jsonb,true,true),
+           ('ct_v4_lapsed',$1,'Lapsed donor win-back','by_hand','[{"type":"thank","draft":null,"label":"Call them the same week","offsetDays":3}]'::jsonb,true,true)`, [ORG]);
   await q(`INSERT INTO campaigns (id,org_id,name,goal_amount,start_date,end_date,created_by,created_by_name) VALUES ('camp_v4_gt',$1,'GivingTuesday',20000,$2,$3,${sys})`, [ORG, plus(27), plus(48)]);
   const before = { tasks: await q(`SELECT id, title, notes FROM tasks WHERE org_id=$1 ORDER BY id`, [ORG]), threads: await q(`SELECT id, next_step_label FROM threads WHERE org_id=$1`, [ORG]) };
   const bm0 = await api("GET", "/donors/d_v4_mc/before-meeting", tok);

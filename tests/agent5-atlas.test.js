@@ -130,9 +130,9 @@ async function reset() {
            ('d_a5_uf',$1,'Undine Fairweather',$2,'active','["donor"]'::jsonb,${sys}),
            ('d_a5_ua',$1,'Undine Ashgrove','undine.ashgrove@example.org','active','["donor"]'::jsonb,${sys})`, [ORG, DONOR_MAIL]);
   await q(`INSERT INTO events (id,org_id,name,event_type,date,location) VALUES ('ev_a5_run',$1,'Harbor Run','5k',$2,'North Shore Path')`, [ORG, plus(-2)]);
-  await q(`INSERT INTO cultivation_templates (id,org_id,name,trigger_key,steps) VALUES
-           ('ct_a5_major',$1,'Major giving','by_hand','[{"type":"thank","draft":null,"label":"Call them the same week","offsetDays":3}]'::jsonb),
-           ('ct_a5_new',$1,'New donor, first year','by_hand','[{"type":"thank","draft":null,"label":"Call them","offsetDays":3}]'::jsonb)`, [ORG]);
+  await q(`INSERT INTO cultivation_templates (id,org_id,name,trigger_key,steps,journey_enabled,ever_enabled) VALUES
+           ('ct_a5_major',$1,'Major giving','by_hand','[{"type":"thank","draft":null,"label":"Call them the same week","offsetDays":3}]'::jsonb,true,true),
+           ('ct_a5_new',$1,'New donor, first year','by_hand','[{"type":"thank","draft":null,"label":"Call them","offsetDays":3}]'::jsonb,true,true)`, [ORG]);
   const count = async () => (await q(`SELECT ((SELECT COUNT(*) FROM event_attendees WHERE org_id=$1)+(SELECT COUNT(*) FROM cultivation_plans WHERE org_id=$1)
     +(SELECT COUNT(*) FROM agent_drafts WHERE org_id=$1)+(SELECT COUNT(*) FROM tasks WHERE org_id=$1)+(SELECT COUNT(*) FROM gifts WHERE org_id=$1))::int AS n`, [ORG]))[0].n;
 
