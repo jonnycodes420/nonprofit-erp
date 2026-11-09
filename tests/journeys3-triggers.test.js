@@ -223,6 +223,7 @@ const day = s => Math.round(Date.parse(String(s).slice(0, 10) + "T00:00:00Z") / 
   ok("§3 the fixture journeys are made", [M, H, O].every(r => r.status === 201), [M, H, O].map(r => r.status));
   await api("POST", `/journeys/${H.body.id}/apply`, tok, { donorIds: [P("g2")] });
   await api("POST", `/journeys/${O.body.id}/apply`, tok, { donorIds: [P("g3")] });
+  await q(`UPDATE cultivation_templates SET journey_enabled=true, ever_enabled=true WHERE id=$1`, [M.body.id]);   // FLOWS-3: only an Active journey starts people
   await api("POST", `/journeys/${M.body.id}/apply`, tok, { donorIds: [P("g4")] });
 
   const qual = await api("GET", `/journeys/${M.body.id}/qualifying?days=90`, tok);
@@ -244,7 +245,6 @@ const day = s => Math.round(Date.parse(String(s).slice(0, 10) + "T00:00:00Z") / 
                              WHERE p.org_id=$1 AND p.donor_id=$2 ORDER BY st.id`, [ORG, P("g3")]);
   const [g3Thread0] = await q(`SELECT id, due_date, next_step_label FROM threads WHERE org_id=$1 AND donor_id=$2 AND closed_at IS NULL`, [ORG, P("g3")]);
 
-  await q(`UPDATE cultivation_templates SET journey_enabled=true, ever_enabled=true WHERE id=$1`, [M.body.id]);   // FLOWS-3: only an Active journey starts people
   const ap = await api("POST", `/journeys/${M.body.id}/apply`, tok, { allQualifying: true, days: 90, joinOthers: true });
   ok("§3 the apply puts in exactly the number on the button", ap.status === 200 && ap.body.started === qual.body.willJoin && ap.body.planIds.length === 2, JSON.stringify(ap.body).slice(0, 300));
   ok("§3 the result reads like the toast: '2 people joined J3 Major.'", ap.body.sentence === "2 people joined J3 Major.", ap.body.sentence);
