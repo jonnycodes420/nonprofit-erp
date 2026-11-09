@@ -537,7 +537,10 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
     // months, say) is "none" beside an expected next gift; Drift's own reading
     // names it here, the way routes/profileStatus.js does.
     const said = name === "none" && exp && aR.cadenceDays ? `Gives ${DR.humanCadence(aR.cadenceDays)}` : sentence;
-    rhythm = { sentence: said, expectedNext: exp, late: !!aR.late, source: lifetimeSrc };
+    // FLOWS-3 (W-1108-Donors-24X): "Next gift expected" is the last gift plus
+    // the usual gap (rhythm.js nextGift), "Due now" once that day has passed.
+    const nextGift = aR && aR.nextGift ? String(aR.nextGift).slice(0, 10) : exp;
+    rhythm = { sentence: said, expectedNext: nextGift, dueNow: !!(aR && aR.dueNow), late: !!aR.late, source: lifetimeSrc };
   }
 
   // RECURRING: a monthly plan Steward charges, else a schedule in a source.

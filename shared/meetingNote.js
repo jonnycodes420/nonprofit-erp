@@ -125,7 +125,9 @@ export function suggestFromNote(note, ctx = {}) {
   // A FUND: a fund on file named in the note, or the open ask's fund when
   // she committed to the ask.
   const named = (ctx.funds || []).filter(f => f.name && f.name.length > 3 && low.includes(f.name.toLowerCase()));
-  const fund = named[0] || (out[0] && ctx.openAsk?.fundId ? { id: ctx.openAsk.fundId, name: ctx.openAsk.fundName } : null);
+  // FLOWS-3: the ask's fund follows only a PLEDGE to the ask. A gift she was
+  // handed is named with the fund her note names, never the open ask's.
+  const fund = named[0] || (out[0] && out[0].kind === "pledge" && ctx.openAsk?.fundId ? { id: ctx.openAsk.fundId, name: ctx.openAsk.fundName } : null);
   if (fund && fund.name) out.push({ kind: "fund", fundId: fund.id, label: fund.name, quote: fund.name });
 
   // A NEXT STEP: the first sentence that asks for something to happen.

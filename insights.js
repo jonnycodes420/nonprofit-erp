@@ -846,14 +846,19 @@ const LIBRARY = [
       // POLISH-5: the thank-you names the gift the profile's header shows as Last
       // gift (the newest one), not the biggest day of the year, which the header never shows.
       const lastOne = (x.days || []).slice(-1)[0] || null;   // a day's gifts are one gift (INSIGHTS §9)
+      // FLOWS-3 (W-1108-Volunteers-03X): a gift is named with ITS OWN fund. A
+      // $100 gift to General Operating never reads "for Endowment" because an
+      // earlier gift was designated there.
+      const fundOf = day => { const fs = [...new Set(((day && day.gifts) || []).map(g => g.own_fund).filter(Boolean))]; return fs.length === 1 ? fs[0] : null; };
+      const lastFund = fundOf(lastOne), afterFund = fundOf(after);
       if (lastOne) facts.push(["last gift", `${money(lastOne.amount_cents)} (${monthYear(lastOne.date)})`]);
       if (fdnName) facts.push(["through", fdnName]);
       if (x.designated.length) facts.push(["designated", x.designated[0]]);
       return { key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: x.L12,
-        what: `${money(x.P12)} in the 12 months before, then ${money(x.L12)} in the last 12 months${after ? `, including ${money(after.amount_cents)} in ${monthYear(after.date)}` : ""}${fdnName ? ` through ${fdnName}` : ""}${x.designated.length ? ` for ${x.designated[0]}` : ""}.`,
+        what: `${money(x.P12)} in the 12 months before, then ${money(x.L12)} in the last 12 months${after ? `, including ${money(after.amount_cents)} in ${monthYear(after.date)}` : ""}${fdnName ? ` through ${fdnName}` : ""}${afterFund ? ` for ${afterFund}` : ""}.`,
         facts,
         how: { who: whoFor(x, "upgrade"), channel: "Visit", when: windowWords(ctx.asOf, addDays(ctx.asOf, 30)),
-          say: `${hello(x)}, thank you. Your gift${lastOne ? ` of ${money(lastOne.amount_cents)}` : ""}${fdnName ? ` through ${fdnName}` : ""}${x.designated.length ? ` for ${x.designated[0]}` : ""} went further than you might know. Could we show you what it did, in person?`,
+          say: `${hello(x)}, thank you. Your gift${lastOne ? ` of ${money(lastOne.amount_cents)}` : ""}${fdnName ? ` through ${fdnName}` : ""}${lastOne && lastFund ? ` for ${lastFund}` : ""} went further than you might know. Could we show you what it did, in person?`,
           ask: x.noAsk ? null : oneAsk(x) } };
     });
     return {

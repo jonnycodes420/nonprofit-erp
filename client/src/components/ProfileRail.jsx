@@ -79,7 +79,7 @@ export function RhythmCard({ rhythm, deceased = false }) {
       {rhythm.expectedNext && !deceased && <div style={{ ...ROW, marginTop: 6 }}>   {/* PEOPLE-1: no next gift is expected from someone who has died */}
         <span style={DIM}>Next gift expected</span>
         <span data-testid="dp-rail-rhythm-next" style={{ color: rhythm.late ? T.gold500 : RAIL.text, fontWeight: rhythm.late ? 700 : 400 }}>
-          {displayDate(rhythm.expectedNext)}{rhythm.late ? " · Late" : ""}
+          {rhythm.dueNow ? "Due now" : displayDate(rhythm.expectedNext)}{rhythm.late ? " · Late" : ""}
         </span>
       </div>}
     </RailSection>

@@ -72,11 +72,9 @@ function rowWhy(asked, willStart, skips) {
   return `${who}: ${reasons.map(([k, v]) => `${v.length} ${NONE_WHY[k] || "unable to start"}`).join(", ")}.`;
 }
 
-const STATE_NOTE = {
-  running: "On",
-  paused: "Paused: people you add here still start",
-  draft: "Draft: people you add here still start",
-};
+// FLOWS-3: only an Active journey starts people. Draft and Paused are listed,
+// greyed out, with the reason (shared/journeyStartRule.js).
+const STATE_NOTE = { running: "On", paused: "Paused", draft: "Draft" };
 
 function register(app, { query, journeyMod, requireAuth, wrap, batchIdsFrom, BATCH_MAX }) {
   // A POST because the list can be thousands of ids long; it writes nothing.
@@ -86,6 +84,7 @@ function register(app, { query, journeyMod, requireAuth, wrap, batchIdsFrom, BAT
     if (!ids.length) return res.status(400).json({ error: "no_donors", sentence: "Check at least one person first." });
     if (ids.length > BATCH_MAX) return res.status(400).json({ error: "too_many", sentence: `That is more than ${BATCH_MAX.toLocaleString("en-US")} people at once. Narrow the list first.` });
     const J = await journeyMod();
+    const JR = await import("../../shared/journeyStartRule.js");
     const [templates, facts] = await Promise.all([
       query(`SELECT id, name, steps, priority, exclusive, journey_enabled, ever_enabled
                FROM cultivation_templates WHERE org_id=? AND archived_at IS NULL ORDER BY priority DESC, name`, [orgId]),
@@ -95,8 +94,11 @@ function register(app, { query, journeyMod, requireAuth, wrap, batchIdsFrom, BAT
     const journeys = templates.map(t => {
       const s = splitFor(J, t, ids, facts);
       const state = J.journeyState({ enabled: !!t.journey_enabled, everEnabled: !!t.ever_enabled, archived: false, everIn: everIn.has(t.id) ? 1 : 0 });
-      return { id: t.id, name: t.name, state, stateNote: STATE_NOTE[state] || "", willStart: s.willStart.length,
-        canPick: s.willStart.length > 0, why: rowWhy(ids.length, s.willStart.length, s.skips) };
+      const active = JR.canStartState(state);
+      return { id: t.id, name: t.name, state, stateNote: STATE_NOTE[state] || "", willStart: active ? s.willStart.length : 0,
+        canPick: active && s.willStart.length > 0,
+        why: !active ? JR.notActiveWhy(state) + "."
+          : s.willStart.length > 0 ? JR.breakdownSentence(ids.length, s.willStart.length, s.skips) : rowWhy(ids.length, 0, s.skips) };
     });
     res.json({ asked: ids.length, journeys });
   }));
