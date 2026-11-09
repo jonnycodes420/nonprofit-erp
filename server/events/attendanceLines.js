@@ -68,4 +68,4 @@ const ORPHANS_WHERE = `i.metadata->>'via' = ANY(ARRAY['event_registration','even
   AND NOT EXISTS (SELECT 1 FROM event_attendees a WHERE a.id = i.metadata->>'attendee_id' AND a.org_id = i.org_id)
   AND NOT EXISTS (SELECT 1 FROM deleted_records r WHERE r.org_id = i.org_id AND r.table_name = 'event_attendees' AND r.record_id = i.metadata->>'attendee_id')`;
 
-module.exports = { VIAS, takeLines, giveLines, syncAttendanceLine, dropEventLines, ORPHANS_WHERE };
+module.exports = { VIAS, NOTE, takeLines, giveLines, syncAttendanceLine, dropEventLines, ORPHANS_WHERE };

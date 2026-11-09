@@ -42,14 +42,15 @@ function journal(c, step) {
       return rows.length;
     },
     // Set `set` on rows of `table` matching `where`, keeping each row's values before.
-    async update(table, where, params, set, label) {
+    // `key` names the row's key columns when it is not `id` (REPAIR-1: org_mail_types).
+    async update(table, where, params, set, label, key = ["id"]) {
       const cols = Object.keys(set);
-      const before = (await c.query(`SELECT id, ${cols.map(ident).join(", ")} FROM ${ident(table)} WHERE ${where}`, params)).rows;
+      const before = (await c.query(`SELECT ${key.map(ident).join(", ")}, ${cols.map(ident).join(", ")} FROM ${ident(table)} WHERE ${where}`, params)).rows;
       if (!before.length) return 0;
       const n = params.length;
       await c.query(`UPDATE ${ident(table)} SET ${cols.map((k, i) => `${ident(k)} = $${n + i + 1}`).join(", ")} WHERE ${where}`,
         [...params, ...cols.map(k => set[k])]);
-      entries.push({ step, op: "update", table, before, after: set, label: label || `${before.length} ${table}` });
+      entries.push({ step, op: "update", table, before, after: set, label: label || `${before.length} ${table}`, ...(key.join() === "id" ? {} : { key }) });
       return before.length;
     },
     // Insert one row; the entry keeps its id.
@@ -76,10 +77,12 @@ async function reverse(c, e, extra) {
     await reinsert(c, e.table, e.rows);
     for (const k of e.kids || []) await reinsert(c, k.table, k.rows);
   } else if (e.op === "update") {
+    const key = e.key || ["id"];
     for (const b of e.before) {
-      const cols = Object.keys(b).filter(k => k !== "id");
-      await c.query(`UPDATE ${ident(e.table)} SET ${cols.map((k, i) => `${ident(k)} = $${i + 2}`).join(", ")} WHERE id = $1`,
-        [b.id, ...cols.map(k => (b[k] !== null && typeof b[k] === "object" && !(b[k] instanceof Date)) ? JSON.stringify(b[k]) : b[k])]);
+      const cols = Object.keys(b).filter(k => !key.includes(k));
+      const v = k => (b[k] !== null && typeof b[k] === "object" && !(b[k] instanceof Date)) ? JSON.stringify(b[k]) : b[k];
+      await c.query(`UPDATE ${ident(e.table)} SET ${cols.map((k, i) => `${ident(k)} = $${key.length + i + 1}`).join(", ")}
+                      WHERE ${key.map((k, i) => `${ident(k)} = $${i + 1}`).join(" AND ")}`, [...key.map(k => b[k]), ...cols.map(v)]);
     }
   } else if (e.op === "insert") {
     await c.query(`DELETE FROM ${ident(e.table)} WHERE id = ANY($1::text[])`, [e.ids]);

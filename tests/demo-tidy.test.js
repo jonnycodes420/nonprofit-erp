@@ -9,7 +9,9 @@
 //
 // Would fail if: the demo check went or refused internal_test (§0), a step wrote on a dry run (§1), a
 // table left QA rows (§2), a step was not idempotent (§3), or an entry was not
-// kept whole for undo (§4).
+// kept whole for undo (§4). REPAIR-1: the planted org also carries the old
+// rows steps 6 to 10 repair (checked in §1 to §4); §5 is the 8 Nov crashed
+// apply; §6 is scripts/ops/repair1-all-orgs.js on a non-demo org.
 "use strict";
 const path = require("path");
 const { execFileSync } = require("child_process");
@@ -72,7 +74,55 @@ async function plant() {
   await ins("campaigns", { id: "dt_gala", org_id: ORG, name: "GALA 2026", status: "sent", recipient_count: 0, ...by });
   await ins("invites", { id: "dt_inv1", org_id: ORG, email: "new.hire@dtidy.example.org", token: "dtidy-tok-1", role: "member", expires_at: "2027-01-01T00:00:00Z", created_at: "2026-11-01T12:00:00Z" });
   await ins("invites", { id: "dt_inv2", org_id: ORG, email: "New.Hire@dtidy.example.org ", token: "dtidy-tok-2", role: "member", expires_at: "2027-01-01T00:00:00Z", created_at: "2026-11-03T12:00:00Z" });
+  // REPAIR-1: the rows written before SENDS-1, STALE-2 and PLEDGES-2, shaped like the 8 Nov fleet's reports.
+  await q(`UPDATE orgs SET emails_enabled = false WHERE id = $1`, [ORG]);
+  await ins("org_mail_types", { org_id: ORG, type_key: "journey_steps", is_on: true, audience: "everyone", set_at: "2026-10-20T12:00:00Z", set_by_name: "Priya Lindqvist", ...by });
+  await ins("sequences", { id: "dt_seq_spring", org_id: ORG, name: "Spring appeal", trigger: "manual", status: "active", ...by });
+  await ins("sequence_steps", { id: "dt_ss_spring", sequence_id: "dt_seq_spring", step_order: 0, delay_days: 0, subject: "Spring is here", body: "<p>&nbsp;</p>" });
+  await ins("sequences", { id: "dt_seq_ms", org_id: ORG, name: "Milestone & Anniversary Emails", trigger: "lapsed_90", status: "active", ...by });
+  await ins("sequence_steps", { id: "dt_ss_ms", sequence_id: "dt_seq_ms", step_order: 0, delay_days: 0, subject: "Milestone email (AI-drafted per donor)", body: "" });
+  await plantRepair(ORG, "dt");
 }
+
+// Steps 8 to 10's old state, in any org: two open thank-yous for one gift, a
+// "Came to" line on a guest now Declined, and a pledge whose flags predate the relay.
+async function plantRepair(org, p) {
+  const D = (id, name) => ins("donors", { id, org_id: org, name, email: `${id}@dtidy.example.org`, stage: "steward", status: "active", person_types: ["donor"], ...by });
+  if (org !== ORG) { await D(`${p}_marlowe`, "Ottilie Marlowe"); await D(`${p}_wendell`, "Wendell Ashgrove"); }
+  await D(`${p}_lavinia`, "Lavinia Quarrie");
+  await ins("gifts", { id: `${p}g_m`, org_id: org, donor_id: `${p}_marlowe`, amount: 250, date: "2026-11-01", ...by });
+  await ins("tasks", { id: `${p}_ty_hook`, org_id: org, title: "Send personal thank-you to Ottilie Marlowe", donor_id: `${p}_marlowe`, done: 0, type: "donor", thanks_gift_id: `${p}g_m`, created_at: "2026-11-01T12:00:00Z", ...by });
+  await ins("threads", { id: `${p}_th_ty`, org_id: org, donor_id: `${p}_marlowe`, next_step_type: "thank", next_step_label: "Say thank you", due_date: "2026-11-04", opened_on: "2026-11-01", opening_gift_id: `${p}g_m`, ...by });
+  await ins("events", { id: `${p}_ev_sup`, org_id: org, name: "Harvest Supper", event_type: "dinner", date: "2026-10-18", ...by });
+  await ins("event_attendees", { id: `${p}_guest_w`, org_id: org, event_id: `${p}_ev_sup`, donor_id: `${p}_wendell`, name: "Wendell Ashgrove", status: "declined", attendance_logged_at: "2026-10-18T22:00:00Z" });
+  await ins("interactions", { id: `${p}_line_came`, org_id: org, donor_id: `${p}_wendell`, type: "event", note: "Came to Harvest Supper.", date: "2026-10-18",
+    metadata: { via: "event_attendance", event_id: `${p}_ev_sup`, attendee_id: `${p}_guest_w`, status: "attended" } });
+  await ins("pledges", { id: `${p}p_lav`, org_id: org, donor_id: `${p}_lavinia`, amount: 400, status: "open", frequency: "monthly", installment_count: 4, ...by });
+  await ins("gifts", { id: `${p}g_lav`, org_id: org, donor_id: `${p}_lavinia`, amount: 150, date: "2026-09-03", pledge_id: `${p}p_lav`, ...by });
+  for (let k = 1; k <= 4; k++) await ins("pledge_installments", { id: `${p}pi_lav${k}`, org_id: org, pledge_id: `${p}p_lav`, seq: k, due_date: `2026-${String(8 + k).padStart(2, "0")}-01`, amount: 100,
+    paid_gift_id: k === 2 ? `${p}g_lav` : null, paid_at: k === 2 ? "2026-09-03T12:00:00Z" : null });   // the $150 flagged the wrong row
+}
+const repairFacts = async org => ({
+  types: await q(`SELECT type_key, is_on FROM org_mail_types WHERE org_id=$1 ORDER BY 1`, [org]),
+  seqs: await q(`SELECT id, trigger, status FROM sequences WHERE org_id=$1 ORDER BY id`, [org]),
+  tasks: await q(`SELECT id, done, notes, completed_at IS NOT NULL AS completed FROM tasks WHERE org_id=$1 AND COALESCE(thanks_gift_id, source_gift_id) IS NOT NULL ORDER BY id`, [org]),
+  threads: await q(`SELECT id, closed_at IS NOT NULL AS closed FROM threads WHERE org_id=$1 ORDER BY id`, [org]),
+  lines: await q(`SELECT id, note FROM interactions WHERE org_id=$1 AND metadata->>'via' IN ('event_attendance','event_registration') ORDER BY id`, [org]),
+  stamps: await q(`SELECT id, attendance_logged_at IS NOT NULL AS logged FROM event_attendees WHERE org_id=$1 ORDER BY id`, [org]),
+  flags: await q(`SELECT id, paid_gift_id, paid_at IS NOT NULL AS stamped FROM pledge_installments WHERE org_id=$1 ORDER BY id`, [org]),
+});
+// The new state: what the steps leave, checked field by field.
+const repaired = (r, p, demo) => {
+  const why = [];
+  if (demo && r.types.some(t => t.is_on)) why.push("a type is still On under the master");
+  if (demo && JSON.stringify(r.seqs) !== JSON.stringify([{ id: "dt_seq_ms", trigger: "milestone", status: "active" }, { id: "dt_seq_spring", trigger: "manual", status: "paused" }])) why.push(r.seqs);
+  const open = r.tasks.filter(t => !t.done), hook = r.tasks.find(t => t.id === `${p}_ty_hook`);
+  if (open.length !== 1 || !/^t_ns_/.test(open[0].id) || !hook || hook.notes !== "duplicate" || !hook.completed) why.push(r.tasks);
+  if (r.lines.some(l => l.id === `${p}_line_came`) || r.stamps.find(s => s.id === `${p}_guest_w`).logged) why.push(r.lines);
+  const f = Object.fromEntries(r.flags.map(x => [x.id, x.paid_gift_id]));
+  if (f[`${p}pi_lav1`] !== `${p}g_lav` || f[`${p}pi_lav2`] || f[`${p}pi_lav3`] || f[`${p}pi_lav4`]) why.push(r.flags);
+  return why;
+};
 
 const QA_LEFT = async () => {
   const out = {};
@@ -96,6 +146,7 @@ const facts = async () => ({
                   UNION ALL SELECT 'pl', id FROM offline_recurring_plans WHERE org_id=$1 ORDER BY 1, 2`, [ORG])),
   invites: (await q(`SELECT id, revoked_at IS NOT NULL AS revoked FROM invites WHERE org_id=$1 ORDER BY id`, [ORG])),
   campaigns: (await q(`SELECT id, retired_at IS NOT NULL AS retired FROM campaigns WHERE org_id=$1 ORDER BY id`, [ORG])),
+  repair: await repairFacts(ORG),
 });
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -129,7 +180,12 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       /Signer Maya Reyes → Priya Lindqvist, Executive Director/, /"General" merged into "General Operating"/, /"Building" merged into "Building Fund"/,
       /Corinne Halvorsen: \$50 a month by check since 2026-05-07, 7 payments, next 2026-12-07/, /Desmond Okafor: .*9 payments/,
       /Alder Creek Foundation: .*in Reporting, interim report due 2026-11-28/, /An email on 2 people now sits on one \(dt_renee\)/, /2 pending invites to one address: 1 revoked/,
-      /Archived "GALA 2026"/, /16 demo payments would be recorded/, /Everyone: /, /lifetime \$/];
+      /Archived "GALA 2026"/, /16 demo payments would be recorded/, /Everyone: /, /lifetime \$/,
+      // REPAIR-1 steps 6 to 10
+      /Donor mail is Off, so 1 email type stored On is now Off: journey_steps/, /"Milestone & Anniversary Emails": trigger lapsed_90 → milestone/,
+      /"Spring appeal": Active → Paused \(empty step\)/, /Ottilie Marlowe: 2 open thank-yous for one gift \(dtg_m\); kept "Say thank you", 1 other to Done as duplicate/,
+      /Wendell Ashgrove: "Came to Harvest Supper\." removed \(the guest is declined now\)/,
+      /Lavinia Quarrie's pledge dtp_lav: 2 paid flags put right from 1 payment; 3 installments left, \$250\.00 still to come/];
     const missing = want.filter(r => !r.test(text)).map(String);
     ok("§1 the dry run lists every change, each with its count", !missing.length && dry.changes > 0, { missing, text: text.slice(0, 900) });
     ok("§1 the dry run writes nothing", same(before, await facts()) && !(await q(`SELECT 1 FROM fin_audit_log WHERE org_id=$1 AND user_id=$2`, [ORG, S.ACTOR.id])).length);
@@ -160,6 +216,10 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     ok("§2 one audit row per change and one for the run", !!runId && audits.filter(a => a.action === S.RUN_ACTION).length === 1 && audits.filter(a => /^demo tidy: /.test(a.action)).length >= 15, { runId, n: audits.length });
     ok("§2 the baselines print", /Baselines for Muse[\s\S]*Everyone: \d+[\s\S]*This fiscal year[\s\S]*Ottilie Marlowe .*lifetime[\s\S]*Renee[\s\S]*Wendell Ashgrove .*lifetime \$1,200\.00/.test(out), out.slice(-700));
 
+    const rep = repaired(after.repair, "dt", true);
+    ok("§2 REPAIR-1: no type On under the master; the Milestone sequence on its own trigger; the empty one Paused; one open thank-you; no \"Came to\" for a decline; the $150 flags the first installment only",
+      !rep.length, rep);
+
     console.log("\n§3 a second apply");
     const again = await S.run({ client: pg, orgId: ORG, apply: true, today: TODAY, log: () => {}, writers: { recordGift: () => { throw new Error("a second run must not write a gift"); } } });
     ok("§3 a second apply changes nothing", again.changes === 0 && !again.runId && same(after, await facts()), again.changes);
@@ -173,6 +233,57 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       && !(await q(`SELECT 1 FROM fin_transactions WHERE org_id=$1 AND gift_id LIKE 'dt1_%'`, [ORG])).length);
     const twice = await S.undo({ client: pg, orgId: ORG, runId, log: () => {} }).then(() => null, e => e.message);
     ok("§4 a run is undone once", /already undone/.test(twice || ""), twice);
+
+    // REPAIR-1 · THE 8 NOV CRASH. Steps 1 to 5 committed, then loading the app for
+    // recordGift threw ("JWT_SECRET is not set"), so the plans had no payments, and
+    // a second apply recorded nothing. Would fail if: appWriters needed a real
+    // secret, step 4 skipped a plan whose donor exists, or the payments did not
+    // join the run that made their plan (its --undo would leave them behind).
+    console.log("\n§5 the crashed apply");
+    const crash = await S.run({ client: pg, orgId: ORG, apply: true, today: TODAY, log: () => {},
+      writers: { recordGift: () => { throw new Error("JWT_SECRET is not set. Steward will not start without it."); } } }).then(() => null, e => e.message);
+    const [crashRun] = await q(`SELECT id FROM fin_audit_log WHERE org_id=$1 AND user_id=$2 AND action=$3 ORDER BY created_at DESC LIMIT 1`, [ORG, S.ACTOR.id, S.RUN_ACTION]);
+    const planGifts = async () => (await q(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1 AND offline_plan_id IS NOT NULL`, [ORG]))[0].n;
+    ok("§5 the fixture is in the crashed state: plans, a run row, no payments", /JWT_SECRET/.test(crash || "") && !!crashRun
+      && (await q(`SELECT COUNT(*)::int n FROM offline_recurring_plans WHERE org_id=$1`, [ORG]))[0].n === 2 && await planGifts() === 0, { crash, crashRun });
+    const env = { ...process.env, DATABASE_URL: DB, DEMO_TIDY_PORT: "0", NODE_ENV: "production" };
+    delete env.JWT_SECRET;   // as on prod: the script's shell has no app secret, and a production server refuses to start without one
+    let out2 = "";
+    try { out2 = execFileSync(process.execPath, [path.join(__dirname, "..", "scripts", "ops", "demo-tidy.js"), `--org=${ORG}`, "--apply", `--today=${TODAY}`],
+      { env, encoding: "utf8", timeout: 240000 }); } catch (e) { out2 = String(e.stdout || "") + String(e.stderr || e.message); }
+    const [joinedTo] = await q(`SELECT COALESCE(SUM(jsonb_array_length(changes->'entry'->'ids')), 0)::int AS n FROM fin_audit_log
+                                 WHERE org_id=$1 AND user_id=$2 AND action='demo tidy: 4 Demo data' AND changes->'entry'->>'op'='gift' AND changes->>'run'=$3`, [ORG, S.ACTOR.id, crashRun.id]);
+    ok("§5 the next apply, with no JWT_SECRET, records the 16 missing payments and joins them to the crashed run",
+      await planGifts() === 16 && joinedTo.n === 16 && /Applied\./.test(out2) && /Baselines for Muse/.test(out2) && !/JWT_SECRET/.test(out2),
+      { n: await planGifts(), joinedTo, out: out2.slice(-600) });
+    const third = await S.run({ client: pg, orgId: ORG, apply: true, today: TODAY, log: () => {}, writers: { recordGift: () => { throw new Error("a third run must not write a gift"); } } });
+    ok("§5 a third apply records nothing", third.changes === 0 && await planGifts() === 16, third.changes);
+    await S.undo({ client: pg, orgId: ORG, runId: crashRun.id, log: () => {} });
+    ok("§5 undoing the crashed run takes the backfilled payments out with their plans", await planGifts() === 0
+      && !(await q(`SELECT 1 FROM gifts WHERE org_id=$1 AND id LIKE 'dt1_%'`, [ORG])).length && same(before, await facts()));
+
+    // REPAIR-1 · STEPS 8 TO 10 ON EVERY OTHER ORG. Would fail if: the dry run wrote,
+    // a step was not idempotent, the one audit row could not put the org back,
+    // or org_creo (or the demo) was ever in reach.
+    console.log("\n§6 repair1-all-orgs");
+    const R = require("../scripts/ops/repair1-all-orgs");
+    await plantRepair(LIVE, "lv");
+    const liveBefore = await repairFacts(LIVE);
+    const rLines = [];
+    const rDry = await R.run({ client: pg, orgId: LIVE, log: l => rLines.push(l) });
+    ok("§6 the dry run lists each change and writes nothing", rDry[0].changes > 0 && same(liveBefore, await repairFacts(LIVE))
+      && /8 Thank-you tasks: Ottilie Marlowe: 2 open/.test(rLines.join("\n")) && /10 Pledge flags: Lavinia Quarrie's pledge lvp_lav/.test(rLines.join("\n")), rLines);
+    const rApply = await R.run({ client: pg, orgId: LIVE, apply: true, log: () => {} });
+    const liveRep = repaired(await repairFacts(LIVE), "lv", false);
+    const rAudits = await q(`SELECT id FROM fin_audit_log WHERE org_id=$1 AND user_id=$2 AND action=$3`, [LIVE, R.ACTOR.id, R.ACTION]);
+    ok("§6 --apply brings the org up to the rules, with one audit row", !liveRep.length && rAudits.length === 1 && rAudits[0].id === rApply[0].auditId, liveRep);
+    const rAgain = await R.run({ client: pg, orgId: LIVE, apply: true, log: () => {} });
+    ok("§6 a second apply changes nothing", rAgain[0].changes === 0 && (await q(`SELECT COUNT(*)::int n FROM fin_audit_log WHERE org_id=$1 AND user_id=$2 AND action=$3`, [LIVE, R.ACTOR.id, R.ACTION]))[0].n === 1);
+    await R.undo({ client: pg, auditId: rApply[0].auditId, log: () => {} });
+    ok("§6 --undo puts the org back", same(liveBefore, await repairFacts(LIVE)), { before: liveBefore, back: await repairFacts(LIVE) });
+    const creo = await R.run({ client: pg, orgId: "org_creo", log: () => {} }).then(() => null, e => e.message);
+    const all = await R.run({ client: pg, log: () => {} });
+    ok("§6 org_creo and the demo are never repaired here", /never repaired here/.test(creo || "") && !all.some(r => R.SKIP.includes(r.orgId)) && all.some(r => r.orgId === LIVE), creo);
   } finally {
     await pg.end();
     await wipe();

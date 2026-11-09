@@ -144,12 +144,39 @@ const addDays = (d, n) => new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, 
 const person = (ctx, p, extra = {}) => ({ id: p.id, org_id: ctx.orgId, name: p.name, email: p.email, stage: "steward", status: "active",
   person_types: ["donor"], created_by: ctx.actor.id, created_by_name: ctx.actor.name, ...extra });
 
+// REPAIR-1: the 8 Nov apply on org_creo committed the plans, then crashed
+// loading the app for recordGift, so the plans have no payments, and the step
+// above skips a donor who exists. Each due payment whose fixed id is missing is
+// recorded now, joined to the run that made the plan, so that run's --undo
+// still takes it out with the plan.
+async function backfill(c, ctx, r) {
+  const planId = r.id.replace("dt1_rec_", "dt1_plan_");
+  const [plan] = (await c.query(`SELECT id, donor_id, amount, frequency, LEFT(start_date::text, 10) AS start_date, LEFT(end_date::text, 10) AS end_date, fund_id, method
+                                    FROM offline_recurring_plans WHERE id = $1 AND org_id = $2 AND status = 'active'`, [planId, ctx.orgId])).rows;
+  if (!plan) return [];
+  const [made] = (await c.query(`SELECT changes->>'run' AS run FROM fin_audit_log WHERE org_id = $1 AND user_id = $2 AND action = 'demo tidy: 4 Demo data'
+                                    AND changes->'entry'->>'table' = 'offline_recurring_plans' AND changes->'entry'->'ids' ? $3 ORDER BY created_at DESC LIMIT 1`,
+    [ctx.orgId, ctx.actor.id, planId])).rows;
+  if (!made) return [`${r.name}: the plan was not made by a demo tidy run, so its payments are left alone.`];
+  const have = new Set((await c.query(`SELECT id FROM gifts WHERE org_id = $1 AND id LIKE $2`, [ctx.orgId, `${planId}_g%`])).rows.map(g => g.id));
+  const due = [];
+  for (let k = 0; ; k++) {
+    const d = nthDate(plan, k);
+    if (d > ctx.today || (plan.end_date && d > plan.end_date)) break;
+    const id = `${planId}_g${k + 1}`;
+    if (!have.has(id)) due.push({ id, donorId: plan.donor_id, planId, amount: Number(plan.amount), date: d, fundId: plan.fund_id, method: plan.method, run: made.run });
+  }
+  if (!due.length) return [];
+  ctx.gifts.push(...due);
+  return [`${r.name}: the plan has ${have.size} of ${have.size + due.length} payments; ${due.length} missing, to record and join run ${made.run}`];
+}
+
 async function demoData(c, J, ctx) {
   const out = [];
   const have = async (t, id) => (await c.query(`SELECT 1 FROM ${t} WHERE id = $1`, [id])).rows.length > 0;
   const [gen] = (await c.query(`SELECT id FROM fin_funds WHERE org_id = $1 AND retired_at IS NULL AND restricted IS NOT TRUE ORDER BY (name ILIKE 'general%') DESC, created_at LIMIT 1`, [ctx.orgId])).rows;
   for (const r of RECURRING) {
-    if (await have("donors", r.id)) continue;
+    if (await have("donors", r.id)) { out.push(...await backfill(c, ctx, r)); continue; }
     const start = addMonths(ctx.today, -r.months);
     await J.insert("donors", person(ctx, r), r.name);
     const planId = r.id.replace("dt1_rec_", "dt1_plan_");
@@ -215,6 +242,7 @@ const STEPS = [
   ["3 Near-duplicate funds", funds],
   ["4 Demo data", demoData],
   ["5 One email, one invite, no empty send", people],
+  ...require("./repairSteps").REPAIR_STEPS,   // REPAIR-1: steps 6 to 10
 ];
 
 module.exports = { STEPS, QA, QA_RE, QA_TABLES, MARLOWE, DEMO_EIN, RECURRING, FUNDER, GRANT };

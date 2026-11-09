@@ -108,6 +108,9 @@ const GUARDED_WRITERS = [
   // DEMO-TIDY-1/2: tidies a demo or internal_test org (refuses every other org_kind; Jonathan runs it on org_creo).
   // Dry run by default; --apply/--undo write through writerDbUrl, one audit row per change and one per run.
   "demo-tidy",
+  // REPAIR-1: demo-tidy's steps 8 to 10 (thank-you tasks, attendance lines, pledge flags) on every
+  // org but org_creo and org_b72demo. Dry run by default; --apply/--undo write through writerDbUrl, one audit row per org.
+  "repair1-all-orgs",
   // GRANTS-FIX: links grants that carry only a typed funder name. Dry run by
   // default; --apply writes through writerDbUrl, links only, one audit row each.
   "grants-link-funders",
