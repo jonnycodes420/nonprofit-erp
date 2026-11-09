@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../../api";
 import { T } from "../shared";
 import { LAPSE_WORDS } from "../../../../shared/lapseWords.js";
+import DateInput from "../inputs/LazyDateInput";   // the one shared date box (POLISH-6)
 
 const isDay = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ""));
 // The overview's address for the period in the bar's address (or the default).
@@ -55,8 +56,8 @@ export function OverviewPeriodBar({ overview, onPicked, onNavigate }) {
       <span style={{ fontSize: 12.5, color: T.ink3 }}>Period</span>
       <button type="button" data-testid="fr-period-this" aria-pressed={key === "this_fy"} style={chip(key === "this_fy")} onClick={() => pick("this_fy")}>{fiscal ? "This FY" : "This year"}</button>
       <button type="button" data-testid="fr-period-last" aria-pressed={key === "last_fy"} style={chip(key === "last_fy")} onClick={() => pick("last_fy")}>{fiscal ? "Last FY" : "Last year"}</button>
-      <input type="date" aria-label="From" data-testid="fr-period-from" value={from} onChange={e => setFrom(e.target.value)} style={{ border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 8px", fontSize: 12.5, fontFamily: "inherit" }} />
-      <input type="date" aria-label="To" data-testid="fr-period-to" value={to} onChange={e => setTo(e.target.value)} style={{ border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 8px", fontSize: 12.5, fontFamily: "inherit" }} />
+      <DateInput aria-label="From" data-testid="fr-period-from" value={from} onChange={e => setFrom(e.target.value)} style={{ border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 8px", fontSize: 12.5, fontFamily: "inherit" }} />
+      <DateInput aria-label="To" data-testid="fr-period-to" value={to} onChange={e => setTo(e.target.value)} style={{ border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 8px", fontSize: 12.5, fontFamily: "inherit" }} />
       <button type="button" data-testid="fr-period-custom" aria-pressed={key === "custom"} disabled={!isDay(from) || !isDay(to) || to < from} style={chip(key === "custom")} onClick={() => pick("custom", from, to)}>Show these days</button>
       <span style={{ fontSize: 12.5, color: T.ink3 }}>{overview && overview.periodLabel ? `Showing ${overview.periodLabel}` : ""}</span>
       {lybunt && (
