@@ -179,7 +179,12 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   const org = orgs[0];
   const pageRows = await query(gpPageSql("gp.org_id = ? AND gp.slug = ? AND gp.status = 'active' AND COALESCE(gp.page_kind,'give') = 'give'"),
     [org.id, req.params.pageSlug]);
-  if (!pageRows.length) return res.status(404).json({ error: "This giving page could not be found." });
+  if (!pageRows.length) {
+    // POLISH-8: an unpublished page (back to Draft) says so; it is not "not found".
+    const [draft] = await query(`SELECT id FROM giving_pages WHERE org_id = ? AND slug = ? AND status = 'draft' AND COALESCE(page_kind,'give') = 'give'`, [org.id, req.params.pageSlug]);
+    if (draft) return res.status(404).json({ notOpen: true, paused: true, orgName: org.name, error: "This page isn't taking gifts right now." });
+    return res.status(404).json({ error: "This giving page could not be found." });
+  }
   // FUNDRAISING-2: a page is not open to the public until the org can take
   // money through it. Until payments are connected it is a draft, and its
   // address says so kindly instead of showing a form that cannot work.

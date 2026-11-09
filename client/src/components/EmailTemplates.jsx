@@ -19,6 +19,8 @@ import { errorMessage } from "../lib/domainError";
 // EDITOR-1: every email opens in the one editor (EmailEditor.jsx, on StewardEditor).
 import { EmailEditor, EMAILED_LETTERS } from "./EmailEditor";
 import { retryImport } from "../lib/lazyRetry";
+import DupeName from "./DupeName";   // POLISH-8: two templates of one name say which is which
+const TPL_DUPE = { madeOf: c => c.designed && (c.designed.createdAt || c.designed.created_at), statusOf: c => c.designed ? "yours" : "Steward's starter" };
 
 // MediaLibrary and BrandPanel come from the media part of this build. They are
 // found by glob so this screen builds before they land and picks them up after.
@@ -270,6 +272,7 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
                         <div style={openArea}>
                           <span style={mediumStyle} data-template-medium>{c.medium}</span>
                           <span style={{ fontSize: 14.5, fontWeight: 700, color: T.ink, overflowWrap: "anywhere" }}>{c.name}</span>
+                          <DupeName row={c.designed ? { ...c, id: c.designed.id } : c} rows={cards} path="email-templates" onRenamed={load} canRename={!!c.designed && !isReadOnly} opts={TPL_DUPE} />
                           <span style={{ fontSize: 12, color: T.ink3, overflowWrap: "anywhere" }}>{c.how}</span>
                           <span data-reviewed={c.reviewed ? "1" : "0"} style={reviewedStyle(c.reviewed)}>{c.review}</span>
                           {c.onOpen && <span data-testid={c.openLabel === "Edit in editor" ? "edit-in-editor" : undefined} style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginTop: 4 }}>{c.openLabel} &rarr;</span>}

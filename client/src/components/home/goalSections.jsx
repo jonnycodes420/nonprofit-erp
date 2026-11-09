@@ -2,6 +2,7 @@ import { T, Spin, fmtFull, interactive, fmt, quietPhrase } from "../shared";
 import { Figure } from "../Figure";
 import { countLabel } from "../../../../shared/countWords";
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_MEANING } from "../../../../shared/driftWords";
+import { periodWords } from "../../../../shared/periodWords.js";   // POLISH-8: a goal names its period
 
 export function heroSection({ GoalStat, daysLeftInPeriod, deltaTxt, fgRollup, fundOverview, g0, goal, goalAmt, goalHeadSub, heroCtx, heroPace, heroPaceCol, isAdmin, isReadOnly, many, onNavigate, openEditGoal, openSetGoal, overAmt, paceLabel, paceSub, pct, period, raised, rawPct, reengStat, twStat }) {
   return (
@@ -71,7 +72,7 @@ export function heroSection({ GoalStat, daysLeftInPeriod, deltaTxt, fgRollup, fu
                 <div style={{background:T.bg2,borderRadius:99,height:9,overflow:"hidden",marginBottom:8}}>
                   <div style={{height:"100%",width:`${goal.percent}%`,background:T.gold500,borderRadius:99,transition:"width 0.6s ease"}}/>
                 </div>
-                <div style={{fontSize:13,color:T.ink3}}><strong style={{fontSize:15,color:T.gold700,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(goal.currentAmount)}</strong> of {fmtFull(goal.goalAmount)}</div>
+                <div style={{fontSize:13,color:T.ink3}}><strong style={{fontSize:15,color:T.gold700,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(goal.currentAmount)}</strong> of {fmtFull(goal.goalAmount)} <span data-testid="goal-period">· {periodWords(goal.periodStart,goal.periodEnd)}</span></div>
                 {/* RECONCILE-1: what this goal is measured against. When Steward
                     has no gifts for last year, the old report she chose stands
                     in, and says so. */}
@@ -121,7 +122,7 @@ export function goalCardsSection({ activeTop, catMeta, catPaceColor, fgGoals, he
                       ?<span style={{alignSelf:"flex-start",fontSize:9,fontWeight:800,color:T.ink2,background:T.bg2,padding:"3px 8px",borderRadius:99}}>Overarching</span>
                       :<span style={{alignSelf:"flex-start",fontSize:9,fontWeight:800,color:m.color,background:m.color+"1e",padding:"3px 8px",borderRadius:99}}>{m.label}</span>}
                     <span style={{fontSize:13.5,fontWeight:700,color:T.ink,lineHeight:1.25,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name}</span>
-                    <span style={{fontSize:12,color:T.ink3}}><b style={{color:T.ink,fontSize:14}}>{fmtFull(g.rolledRaised)}</b> of {fmtFull(g.goalAmount)}</span>
+                    <span style={{fontSize:12,color:T.ink3}}><b style={{color:T.ink,fontSize:14}}>{fmtFull(g.rolledRaised)}</b> of {fmtFull(g.goalAmount)} <span data-testid="goal-card-period">· {periodWords(g.startDate,g.endDate)}</span></span>
                     <div style={{background:T.bg2,borderRadius:99,height:7,overflow:"hidden"}}>
                       <div style={{height:"100%",width:`${gp}%`,background:over?T.gold:m.color,borderRadius:99,transition:"width 0.5s ease"}}/>
                     </div>

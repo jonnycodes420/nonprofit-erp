@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { T, Modal, SectionLabel } from "./shared";
 import { apiFetch, API, getToken } from "../api";
 import { useMailTypes, setMailType, reloadMailTypes } from "../lib/mailTypes";
+import { mailHeader } from "../../../shared/mailHeader.js";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 // PERF-2: the confirm dialog loads when one is asked (it mounts itself), not with Home.
 const askConfirm = opts => import("./ConfirmDialog").then(m => m.askConfirm(opts));
@@ -152,8 +153,9 @@ export function MailTypesSettings({ onNavigate }) {
       <div style={card}>
         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>What Steward sends automatically</div>
         <div style={{ ...help, fontSize: 13, marginTop: 4 }}>
-          Steward sends nothing on its own until you turn it on here. Each email starts off. Anything you write and send yourself still goes.
-          {" "}<button type="button" style={linkBtn} data-testid="mail-types-going-out" onClick={() => onNavigate && onNavigate("settings", { section: "going-out" })}>See what's going out</button>
+          {/* POLISH-8: derived from the switches below, never static copy. */}
+          <span data-testid="mail-types-header">{mailHeader({ mailOn: page.mailOn, types: page.groups.flatMap(g => g.types) })}</span>
+          {" "}Anything you write and send yourself still goes.{" "}<button type="button" style={linkBtn} data-testid="mail-types-going-out" onClick={() => onNavigate && onNavigate("settings", { section: "going-out" })}>See what's going out</button>
         </div>
         {page.top && <div data-testid="mail-types-org-off" style={{ ...help, fontSize: 13, color: T.ink2, marginTop: 10 }}>{page.top}</div>}
         {page.mailSentence && page.mailOn && <div style={{ ...help, marginTop: 8 }}>{page.mailSentence}</div>}
