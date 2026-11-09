@@ -9,6 +9,7 @@ import { ProfileTimeline } from "../ProfileTimeline";
 import { HistoryList } from "../EditHistory";
 import { shownTags } from "../../lib/internalLabels";
 import { NotesBanner } from "./NotesBanner";   // FLOWS-4
+import { attachedLine } from "../../lib/profileFiles";
 import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 function ListTabs(props){
@@ -48,8 +49,10 @@ function ListTabsBody({fileTally,attachedFiles,deleteMaterial,donor,dpTab,giftsF
             {dpTab==="files"&&<>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               {/* FLOWS-2: the header counts every file on this person: uploaded here, and attached to a conversation or note (listed below) */}
-              <div data-testid="dp-files-head" style={{fontSize:14,fontWeight:800,color:T.ink}}>Files{matLoading||!fileTally?"":` · ${fileTally.total.toLocaleString("en-US")}`}</div>
+              <div data-testid="dp-files-head" style={{fontSize:14,fontWeight:800,color:T.ink}}>Files{matLoading||!fileTally?"":` · ${fileTally.uploaded.toLocaleString("en-US")}`}</div>
             </div>
+            {/* POLISH-8: the header counts uploads only; attachments are their own line. */}
+            {!matLoading&&attachedLine(fileTally)&&<div data-testid="dp-files-attached" style={{fontSize:12,color:T.ink3,marginTop:-4}}>{attachedLine(fileTally)}</div>}
             <Uploader accept={[]} readAs="none" busy={matUploading}
               label={matUploading?"Uploading…":"Drop a file here, or browse: proposals, letters, research (any file type)"}
               onFile={({file})=>uploadMaterial(file)}/>

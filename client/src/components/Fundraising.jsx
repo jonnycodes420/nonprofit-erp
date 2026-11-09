@@ -29,6 +29,7 @@ import { useLocation } from "react-router-dom";
 import { CampaignsView, CategoryBadge, CATEGORY_META, PACE_META, daysLeftText, campaignHref } from "./CampaignsList";
 import { tabHref, urlParam, giftHref, editPageHref } from "../lib/appUrls";
 import RemoveMenu from "./RemoveMenu";
+import { publishItems, isDraftPage } from "../lib/pagePublish";
 import { ThankYouDrafts } from "./ThankYouDrafts";   // CHECK-2
 import { EventStory } from "./EventRaised";   // FUNDRAISING-2
 import { PledgesView } from "./Pledges";   // FUNDRAISING-2
@@ -1212,7 +1213,7 @@ const draftBadge = <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8
 function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged, takesGifts = true }) {
   const [shareId, setShareId] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
-  const active = pages.filter(p => p.status === "active");
+  const active = pages.filter(p => p.status === "active" || isDraftPage(p));   // POLISH-8: an unpublished (Draft) page stays on the list
   const toggleShare = id => setShareId(s => s === id ? null : id);
   const newButton = (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
@@ -1299,7 +1300,7 @@ function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged, 
                 {p.has_draft && draftBadge}
                 {/* FUNDRAISING-2: never "live" before it can take money. */}
                 {!takesGifts && <span data-testid="page-not-live" style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.gold100, color: T.gold700, border: "1px solid " + T.gold300 }}>Draft · connect payments to go live</span>}
-                <span style={{ marginLeft: "auto" }}><RemoveMenu kind="giving_page" id={p.id} disabled={isReadOnly} onDone={onChanged} /></span>
+                {isDraftPage(p) && <span data-testid="page-draft" style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.bg, color: T.ink2, border: "1px solid " + T.bg3 }}>Draft · not taking gifts</span>}<span style={{ marginLeft: "auto" }}><RemoveMenu kind="giving_page" id={p.id} disabled={isReadOnly} onDone={onChanged} items={publishItems(p, onChanged)} /></span>
               </div>
               {goal > 0 && p.show_goal !== false && (
                 <Thermometer raised={raised} goal={goal} percent={pct} raisedSource={raisedSource} raisedLabel={linked ? `Raised toward ${p.campaign_name || "the campaign"}` : `Raised on ${p.title}`} />
@@ -1312,7 +1313,7 @@ function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged, 
                   </div>
                 ))}
               </div>
-              <PageActions editHref={editPageHref(`page=${encodeURIComponent(p.id)}`)} url={url} live={takesGifts} shareOpen={shareId === p.id} onToggleShare={() => toggleShare(p.id)} />
+              <PageActions editHref={editPageHref(`page=${encodeURIComponent(p.id)}`)} url={url} live={takesGifts && !isDraftPage(p)} shareOpen={shareId === p.id} onToggleShare={() => toggleShare(p.id)} />
               {shareId === p.id && url && <SharePanel url={url} filenameBase={`giving-page-${p.slug}`} />}
             </div>
           );

@@ -204,7 +204,7 @@ async function seed() {
     await page.goto(APP + "/app/settings?section=automatic", { waitUntil: "load" });
     await page.waitForSelector('[data-testid="mail-types-page"]', { timeout: 20000 }).catch(() => {});
     const says = await page.locator('[data-testid="mail-types-page"]').innerText().catch(() => "");
-    ok("§email Settings, Automatic email shows the setting with its explanation", /Steward sends nothing on its own until you turn it on here/.test(says), says.slice(0, 160));
+    ok("§email Settings, Automatic email shows the setting with its explanation", /Email is (off\. Nothing sends on its own\.|on\. (These send on their own: |Nothing sends on its own yet))/.test(says) && !/until you turn it on here/.test(says)   /* POLISH-8: derived from the switches, never static */, says.slice(0, 160));
     const sw = page.locator('[data-testid="mail-type-switch-pledge_reminder"]');
     // SENDS-1: while the org's email is off the switch reads Off and is still; "Don't start it" turns her choice off.
     const clear = page.locator('[data-testid="mail-type-clear-pledge_reminder"]');
