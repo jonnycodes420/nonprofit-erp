@@ -1985,7 +1985,7 @@ app.post("/donors/:id/book-visit", requireAuth, checkWriteAccess, wrap(async (re
   await require("../meetingEffects").applyMeeting(id, { actorId: who.id, actorName: me?.name || who.name });
   res.status(201).json({ ok: true, id, sentence: invite
     ? `On your calendar, and ${d.name} was sent the invitation from it.`
-    : `On your calendar. ${d.name} was not invited; you can add them from your calendar if you want to.` });
+    : `On your calendar, with ${d.name}. No invitation was sent; you can send one from your calendar if you want to.` });   // FLOWS-3 (W-1108-Volunteers-19X)
 }));
 
 app.post("/calendar/events/:id/move", requireAuth, checkWriteAccess, wrap(async (req, res) => {

@@ -99,6 +99,7 @@ async function reset(org) {
   await leg("§1", async () => {
     const jOpen = await api("POST", "/journeys", tok, { presetKey: "new_donor_first_year" });
     const jFull = await api("POST", "/journeys", tok, { presetKey: "welcome_back" });
+    await q(`UPDATE cultivation_templates SET journey_enabled=true, ever_enabled=true WHERE id = ANY($1)`, [[jOpen.body.id, jFull.body.id]]);   // FLOWS-3: only an Active journey starts people
     const three = ["d_f1_a", "d_f1_b", "d_f1_c"];
     const pre = await api("POST", `/journeys/${jFull.body.id}/batch`, tok, { donorIds: three });
     ok("§1 fixture: two journeys, and all three already in Welcome back", jOpen.status < 300 && jFull.status < 300 && pre.status < 300 && pre.body.started === 3, { open: jOpen.status, full: jFull.status, pre: pre.body });
@@ -141,7 +142,7 @@ async function reset(org) {
     await page.locator('[data-testid="cal-quick-form"] button', { hasText: "Odalys Pemberton" }).first().click();
     await page.getByLabel("Time").fill("10:00");
     const where = await page.locator('[data-testid="cal-meeting-where"]').innerText();
-    ok("§2 the dialog says in one sentence where it goes (no calendar is connected)", where === "It goes on Steward's calendar, and nobody is invited.", where);
+    ok("§2 the dialog says in one sentence where it goes (no calendar is connected)", where === "It goes on Steward's calendar, with Odalys Pemberton. No invitation is sent.", where);   // FLOWS-3: she is on it; no invitation goes
     await shot("meeting-dialog");
     await page.locator('[data-testid="cal-quick-save"]').dblclick();
     await page.locator('[data-testid="cal-quick-form"]').waitFor({ state: "detached", timeout: 15000 });

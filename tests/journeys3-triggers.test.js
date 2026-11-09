@@ -176,9 +176,9 @@ const day = s => Math.round(Date.parse(String(s).slice(0, 10) + "T00:00:00Z") / 
   }
 
   // ── §2 SEVERAL JOURNEYS AT ONCE ───────────────────────────────────────────
-  const A = await api("POST", "/journeys", tok, { name: "J3 High", trigger: "by_hand", priority: 90,
+  const A = await api("POST", "/journeys", tok, { name: "J3 High", trigger: "by_hand", enabled: true, priority: 90,
     steps: [{ type: "thank", label: "High call", offsetDays: 3 }, { type: "follow_up", label: "High visit", offsetDays: 20 }] });
-  const B = await api("POST", "/journeys", tok, { name: "J3 Low", trigger: "by_hand", priority: 40,
+  const B = await api("POST", "/journeys", tok, { name: "J3 Low", trigger: "by_hand", enabled: true, priority: 40,
     steps: [{ type: "thank", label: "Low call", offsetDays: 1 }, { type: "send", label: "Low note", offsetDays: 6 }, { type: "follow_up", label: "Low check-in", offsetDays: 22 }] });
   const inB = await api("POST", `/journeys/${B.body.id}/apply`, tok, { donorIds: [P("two")] });
   const inA = await api("POST", `/journeys/${A.body.id}/apply`, tok, { donorIds: [P("two")] });
@@ -203,6 +203,7 @@ const day = s => Math.round(Date.parse(String(s).slice(0, 10) + "T00:00:00Z") / 
   const failedActive = (await plansOf(P("failed"))).filter(p => p.status === "active");
   ok("§2 an exclusive pair still blocks: the failed-card person is in the higher one only",
      failedActive.length === 1 && failedActive[0].trigger_key === "recurring_failed", JSON.stringify(failedActive));
+  await q(`UPDATE cultivation_templates SET journey_enabled=true, ever_enabled=true WHERE id=$1`, [jid.card_expiring]);   // FLOWS-3: only an Active journey starts people
   const tryCard = await api("POST", `/journeys/${jid.card_expiring}/apply`, tok, { donorIds: [P("failed")] });
   ok("§2 putting them in the lower exclusive one by hand is refused, with the reason",
      tryCard.body.started === 0 && tryCard.body.detail.skipped[0].reason === "already_in_a_journey", JSON.stringify(tryCard.body).slice(0, 300));
@@ -215,13 +216,14 @@ const day = s => Math.round(Date.parse(String(s).slice(0, 10) + "T00:00:00Z") / 
   await finish(ORG, ["g1", "g2", "g3", "g4"].map(P));
   const M = await api("POST", "/journeys", tok, { name: "J3 Major", trigger: "gift_over", amountCents: 100000, priority: 50, exclusive: true,
     steps: [{ type: "thank", label: "Major call", offsetDays: 3 }, { type: "follow_up", label: "Major visit", offsetDays: 30 }] });
-  const H = await api("POST", "/journeys", tok, { name: "J3 Higher", trigger: "by_hand", priority: 95, exclusive: true,
+  const H = await api("POST", "/journeys", tok, { name: "J3 Higher", trigger: "by_hand", enabled: true, priority: 95, exclusive: true,
     steps: [{ type: "thank", label: "Higher call", offsetDays: 2 }] });
-  const O = await api("POST", "/journeys", tok, { name: "J3 Other", trigger: "by_hand", priority: 30,
+  const O = await api("POST", "/journeys", tok, { name: "J3 Other", trigger: "by_hand", enabled: true, priority: 30,
     steps: [{ type: "follow_up", label: "Other check-in", offsetDays: 30 }, { type: "send", label: "Other note", offsetDays: 60 }] });
   ok("§3 the fixture journeys are made", [M, H, O].every(r => r.status === 201), [M, H, O].map(r => r.status));
   await api("POST", `/journeys/${H.body.id}/apply`, tok, { donorIds: [P("g2")] });
   await api("POST", `/journeys/${O.body.id}/apply`, tok, { donorIds: [P("g3")] });
+  await q(`UPDATE cultivation_templates SET journey_enabled=true, ever_enabled=true WHERE id=$1`, [M.body.id]);   // FLOWS-3: only an Active journey starts people
   await api("POST", `/journeys/${M.body.id}/apply`, tok, { donorIds: [P("g4")] });
 
   const qual = await api("GET", `/journeys/${M.body.id}/qualifying?days=90`, tok);

@@ -224,7 +224,7 @@ export default function CampaignEditor({
         toggles={[{ id: "dark", label: "Dark mode", on: dark, onClick: () => setDark(v => !v) }]}
         status={readOnlySent ? "Sent, so it can't change" : form.status === "awaiting_approval" ? "Waiting for approval" : "Draft"}
         actions={[
-          !readOnlySent && { id: "test", label: testState && testState.state === "sending" ? "Sending…" : "Send me a test", onClick: () => onTest(email()), testid: "send-me-a-test", disabled: isReadOnly },
+          !readOnlySent && { id: "test", label: testState && testState.state === "sending" ? "Sending…" : "Send me a test", onClick: () => onTest(email(), previewAsParam(as, firstId)), testid: "send-me-a-test", disabled: isReadOnly },
           campaignId && { id: "history", label: "History", active: historyOpen, onClick: () => setHistoryOpen(o => !o), testid: "campaign-history" },
           !readOnlySent && 
 { id: "save", label: "Save draft", onClick: () => onSaveDraft(email()), testid: "campaign-save-draft", disabled: isReadOnly },

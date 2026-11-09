@@ -543,7 +543,10 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
     // months, say) is "none" beside an expected next gift; Drift's own reading
     // names it here, the way routes/profileStatus.js does.
     const said = name === "none" && exp && aR.cadenceDays ? `Gives ${DR.humanCadence(aR.cadenceDays)}` : sentence;
-    rhythm = { sentence: said, expectedNext: exp, late: !!aR.late, source: lifetimeSrc };
+    // FLOWS-3 (W-1108-Donors-24X): "Next gift expected" is the last gift plus
+    // the usual gap (rhythm.js nextGift), "Due now" once that day has passed.
+    const nextGift = aR && aR.nextGift ? String(aR.nextGift).slice(0, 10) : exp;
+    rhythm = { sentence: said, expectedNext: nextGift, dueNow: !!(aR && aR.dueNow), late: !!aR.late, source: lifetimeSrc };
   }
 
   // RECURRING: a monthly plan Steward charges, else a schedule in a source.
@@ -628,64 +631,11 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
     comingUp: comingUp.slice(0, 6), volunteering, connected, contact });
 }));
 
+// FLOWS-3: the body is server/donors/addPerson.js, the one way a person is
+// added by hand. An event's typed guest (W-1108-Volunteers-20) comes in by it too.
 app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
-  { const cv = await require("../../contactInputs").checkContact(req.body || {}, { email: ["email", "email2"], phone: ["phone"] });
-    if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
-    if (req.body) Object.assign(req.body, cv.values); }
-  const { email, phone, status, stage, tags, notes, lastAmount, assignedTo, assignedToName, personTypes } = req.body;
-  // ADDRESS-1: the + Add form carries the mailing address too.
-  const addr = Object.fromEntries(["address", "address2", "city", "state", "zip"].map(f =>
-    [f, req.body[f] == null ? null : (String(req.body[f]).trim().slice(0, f === "address" || f === "address2" ? 200 : 120) || null)]));
-  // THREAD-2 · A NAME IS A NAME. "   " and the word "null" (a form that joined
-  // two empty fields) were saved as names, and printed on the Thread and in
-  // the morning email as a blank or as "null". Refused here, at the source.
-  if (!(await ItemRefs.links()).realName(req.body.name)) return res.status(400).json({ error: "Name required" });
-  const name = String(req.body.name).replace(/\s+/g, " ").trim();
-  // BUILD-94 Part 2 — a person added by hand can be a volunteer from the
-  // start. Unknown keys are dropped by normalizeTypes, never stored.
-  const types = personTypes === undefined ? ["donor"] : PT.normalizeTypes(personTypes);
-
-  const orgForLimit = await query("SELECT * FROM orgs WHERE id=?", [req.user.orgId]);
-  if (orgForLimit.length) {
-    const recordCheck = await checkPlanLimit(orgForLimit[0], "records");
-    if (!recordCheck.isTrial && recordCheck.limit !== 999999999 && recordCheck.current >= recordCheck.limit) {
-      return res.status(403).json({ error: "record_limit", message: `You've reached your donor record limit of ${recordCheck.limit}.`, current: recordCheck.current, limit: recordCheck.limit, plan: orgForLimit[0].plan, isTrial: false });
-    }
-  }
-
-  // FIX-19: an assignee named here is an active user of this org, and the name
-  // beside the id is read off that users row, never the payload.
-  const named = await OU.orgUser(req.user.orgId, assignedTo);
-  if (!named.ok) return OU.refuse(res, "assignedTo");
-
-  const id = newId("d");
-  let selfName = assignedToName;
-  if (!assignedTo && !selfName) {
-    const uRow = await query("SELECT name FROM users WHERE id = ?", [req.user.userId]);
-    selfName = uRow[0]?.name || req.user.email;
-  }
-  const finalAssignedTo = assignedTo || req.user.userId;
-  const finalAssignedToName = assignedTo ? (named.user.name || assignedToName || "") : selfName;
-  await run(
-    `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes,assigned_to,assigned_to_name,created_by,created_by_name,person_types,address,address2,city,state,zip)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    // BUILD-80 Part 10 — the quick form's typed amount carries NO date: a
-    // last_gift_date of "today" was a fiction that un-drifted the donor.
-    [id, req.user.orgId, name, email || "", phone || "", status || "new", stage || "prospect",
-     lastAmount || 0, lastAmount || 0, null, lastAmount ? 1 : 0,
-     JSON.stringify(tags || []), notes || "", finalAssignedTo, finalAssignedToName, actor(req).id, actor(req).name,
-     JSON.stringify(types), addr.address, addr.address2, addr.city, addr.state, addr.zip]
-  );
-  if (addr.address || addr.city || addr.zip) {
-    try { await markDonorsForGeocoding(req.user.orgId, { donorIds: [id] }); } catch (e) { console.error("[geocode] mark after add failed:", e.message); }
-  }
-  // NUMBERS-2: a typed amount with no gift behind it is kept as its own figure.
-  if (lastAmount) await keepImportedTotals(query, req.user.orgId, [id], "an amount typed in when they were added");
-  const rows = await query("SELECT * FROM donors WHERE id = ?", [id]);
-  // INTEGRITY-1: an email already on another active person is said on save, never silent
-  const warning = await require("../dataHealth/integrity").emailWarning(query, req.user.orgId, rows[0] && rows[0].email, id);
-  res.status(201).json(warning ? { ...rows[0], warning } : rows[0]);
+  const r = await require("./addPerson").addPerson(ctx, req, req.body || {});
+  res.status(r.status).json(r.body);
 }));
 
 // DATES-1 · ABOUT THEM: the short note somebody reads first when the profile

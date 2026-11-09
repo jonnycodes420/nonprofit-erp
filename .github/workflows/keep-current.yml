@@ -1,0 +1,58 @@
+# AUTOMERGE-1 · AFTER EVERY MERGE, THE QUEUED PRs PULL MAIN IN, OLDEST FIRST.
+#
+# The main-protection ruleset requires a PR to be up to date with main before
+# it merges. When one PR lands, every other PR with auto-merge on falls behind
+# and would sit there until someone pulled main in by hand. On each push to main
+# this brings them up to date with `gh pr update-branch`, oldest PR first, and
+# their CI reruns; GitHub merges each one when it goes green (automerge.yml).
+#
+# The concurrency group runs one of these at a time and never cancels one part
+# way, so a burst of merges queues here instead of racing.
+#
+# It uses AUTOMERGE_TOKEN, not GITHUB_TOKEN, for the same reason automerge.yml
+# does: a branch update pushed with GITHUB_TOKEN would not start the PR's CI,
+# so the PR would never go green. No token: it says so and passes.
+name: Keep current
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keep-current
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Bring each auto-merge PR up to date, oldest first
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "AUTOMERGE_TOKEN not set; merge by hand"
+            exit 0
+          fi
+          # Open PRs into main with auto-merge on, not drafts, not `no-automerge`,
+          # oldest first.
+          prs=$(gh pr list -R "$REPO" --base main --state open --limit 100 \
+            --json number,createdAt,isDraft,autoMergeRequest,labels \
+            --jq '[.[] | select(.autoMergeRequest != null and .isDraft == false
+                     and ([.labels[].name] | index("no-automerge") | not))]
+                  | sort_by(.createdAt) | .[].number')
+          if [ -z "$prs" ]; then echo "No PR has auto-merge on."; exit 0; fi
+          for n in $prs; do
+            # One PR that cannot update (a conflict, say) must not stop the rest.
+            # It stays as it is, and its author resolves it by hand.
+            if gh pr update-branch "$n" -R "$REPO"; then
+              echo "#$n: brought up to date with main"
+            else
+              echo "#$n: could not be brought up to date (a conflict, or it already is); left as it is"
+            fi
+          done

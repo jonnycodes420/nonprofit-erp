@@ -15,6 +15,8 @@ const { newId } = require("../shared/newId");   // IDS-1: every new row id is pr
 const emailCompose = require("../../emailCompose");
 const { withoutInternalNotes } = require("../../shared/giftWords.js");   // FEEL-1: no build's note in her copy
 const JBO = require("./journeyBatchOptions");   // FLOWS-1: who of the checked people can start each journey
+const JA = require("./journeyActive");          // FLOWS-3: only an Active journey starts people
+const JBP = require("./journeyBatchPeople");    // FLOWS-3: the batch preview, person by person
 
 const routers = {
   r1: express.Router(),
@@ -766,8 +768,13 @@ app.get("/donors/:id/journey-preview", requireAuth, wrap(async (req, res) => {
   const v = PL.validateTemplate({ name: t.name, steps: t.steps });
   if (!v.ok) return res.status(400).json({ error: "invalid_journey", message: v.errors[0].message });
   const today = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
-  const steps = PL.planFromTemplate({ steps: v.steps, today }, orgTime.addDays);
+  // FLOWS-3: the same day the start counts from (a dated journey's own date).
+  const JR = await import("../../shared/journeyStartRule.js");
+  const [born] = await query("SELECT birth_month, birth_day FROM donors WHERE id=? AND org_id=?", [donor.id, orgId]);
+  const anchor = JR.journeyAnchor(t, born || {}, today);
+  const steps = PL.planFromTemplate({ steps: v.steps, today: anchor }, orgTime.addDays);
   const first = steps[0] || null;
+  const state = await JA.journeyStateOf(query, J, orgId, t);
 
   // Somebody already in a plan is the one case where this cannot just say
   // yes, so it says so here rather than at the confirm.
@@ -781,6 +788,9 @@ app.get("/donors/:id/journey-preview", requireAuth, wrap(async (req, res) => {
     firstStep: first ? { label: first.label, dueDate: first.dueDate, type: first.type } : null,
     steps: steps.map(s => ({ seq: s.seq, label: s.label, dueDate: s.dueDate })),
     alreadyIn: open ? open.template_name : null,
+    state, canStart: JR.canStartState(state), notActive: JR.canStartState(state) ? null : JR.notActiveWhy(state),
+    firstStepLine: first ? `First step ${DDj.displayDate(first.dueDate).replace(/, \d{4}$/, "")}` : null,
+    anchorNote: anchor !== today && first ? `It counts from ${DDj.displayDate(anchor)}, the journey's own date, not from today.` : null,
     // JOURNEYS-3 — the other journeys they are in; they can be in this one too.
     alsoIn: inNow.filter(p => p.template_id !== t.id).map(p => p.template_name),
     sentence: first
@@ -1019,6 +1029,7 @@ app.post("/journeys/:id/apply", requireAuth, checkWriteAccess, wrap(async (req, 
   const [t] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL",
     [req.params.id, req.user.orgId]);
   if (!t) return res.status(404).json({ error: "Not found" });
+  if (await JA.refuseNotActive(res, query, J, req.user.orgId, t)) return;   // FLOWS-3
 
   const joinOthers = !(req.body && req.body.joinOthers === false);
   let ids = Array.isArray(req.body && req.body.donorIds) ? req.body.donorIds.map(String) : null;
@@ -1153,17 +1164,20 @@ app.post("/journeys/:id/batch/preview", requireAuth, wrap(async (req, res) => {
   const joinOthers = !(req.body && req.body.joinOthers === false);
   const PL = await planMod();
   const J = await journeyMod();
+  if (await JA.refuseNotActive(res, query, J, orgId, t)) return;   // FLOWS-3
   const DDj = await import("../../shared/displayDate.js");
   const split = await batchSplit(orgId, t, ids, joinOthers);
   const today = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
   const v = PL.validateTemplate({ name: t.name, steps: t.steps });
-  const first = v.ok ? PL.planFromTemplate({ steps: v.steps, today }, orgTime.addDays)[0] || null : null;
+  // FLOWS-3: per person, and from the journey's own date when it has one.
+  const per = await JBP.batchPeople(query, orgId, t, ids, split, today);
+  const first = v.ok ? PL.planFromTemplate({ steps: v.steps, today: per.anchor }, orgTime.addDays)[0] || null : null;
   const n = split.willStart.length;
   const lines = await batchLines(countsOf(split.skips));
   res.json({
     journeyId: t.id, name: t.name, asked: ids.length, willStart: n, joinOthers,
     firstStep: first ? { label: first.label, dueDate: first.dueDate, dueLabel: DDj.displayDate(first.dueDate) } : null,
-    lines, runsAsJob: n > BATCH_INLINE_MAX,
+    lines, runsAsJob: n > BATCH_INLINE_MAX, breakdown: per.breakdown, people: per.people, anchorNote: per.anchorNote,
     touches: J.touchesSentence(t.steps || []),
     sentence: `${n.toLocaleString("en-US")} ${n === 1 ? "person" : "people"} will start ${t.name}.`
       + (first ? ` The first step is "${first.label}", due ${DDj.displayDate(first.dueDate)}.` : "")
@@ -1231,6 +1245,7 @@ app.post("/journeys/:id/batch", requireAuth, checkWriteAccess, wrap(async (req, 
   if (!ids.length) return res.status(400).json({ error: "no_donors", sentence: "Check at least one person first." });
   if (ids.length > BATCH_MAX) return res.status(400).json({ error: "too_many", sentence: `That is more than ${BATCH_MAX.toLocaleString("en-US")} people at once. Narrow the list first.` });
   const joinOthers = !(req.body && req.body.joinOthers === false);
+  if (await JA.refuseNotActive(res, query, await journeyMod(), orgId, t)) return;   // FLOWS-3
   const batchId = "jb_" + uuid().replace(/-/g, "").slice(0, 16);
   await run(`INSERT INTO journey_batches (id, org_id, template_id, template_name, status, asked, donor_ids, join_others, created_by, created_by_name)
              VALUES (?,?,?,?, 'running', ?, ?::jsonb, ?, ?, ?)`,
