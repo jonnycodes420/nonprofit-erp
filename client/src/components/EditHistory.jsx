@@ -77,7 +77,7 @@ export function EditedMarker({ item }) {
     }
     setOpen(o => !o);
   };
-  const show = v => v === null || v === undefined || v === "" ? "nothing" : typeof v === "object" ? JSON.stringify(v) : String(v);
+  const show = v => v === null || v === undefined || v === "" ? "nothing" : typeof v === "object" ? "details" : String(v);   // POLISH-7: never raw JSON
   return (
     <span style={{ position: "relative" }} onClick={e => e.stopPropagation()}>
       <button type="button" onClick={toggle} aria-expanded={open} data-testid="edited-marker"
@@ -210,6 +210,10 @@ export function offerUndo(resp, label, onRestored) {
 export function HistoryList({ donorId }) {
   const [state, setState] = useState({ loading: true, rows: [], tz: null, err: "" });
   const [open, setOpen] = useState(null);
+  // POLISH-7: the words for a list or object load with the history, never on
+  // Home's first look (this file hosts the undo toast, which Home carries).
+  const [words, setWords] = useState(null);
+  useEffect(() => { let alive = true; import("../lib/auditWords").then(m => { if (alive) setWords(() => m.auditValue); }).catch(() => {}); return () => { alive = false; }; }, []);
   useEffect(() => {
     let alive = true;
     apiFetch(`/donors/${encodeURIComponent(donorId)}/history`)
@@ -220,7 +224,7 @@ export function HistoryList({ donorId }) {
   if (state.loading) return <div style={{ fontSize: 12, color: T.ink3, padding: 16 }}>Loading…</div>;
   if (state.err) return <div style={{ fontSize: 12, color: T.ink, padding: 16 }}>{state.err}</div>;
   if (!state.rows.length) return <div style={{ fontSize: 12, color: T.ink3, padding: 16 }}>Nothing has been changed on this record yet. Every change from here on shows up here.</div>;
-  const show = v => v === null || v === undefined || v === "" ? "not set" : typeof v === "object" ? JSON.stringify(v) : String(v);
+  const show = words || (v => v === null || v === undefined || v === "" ? "not set" : typeof v === "object" ? "details" : String(v));   // POLISH-7: words, never raw JSON
   return (
     <div data-testid="dp-history" style={{ display: "flex", flexDirection: "column", gap: 0, background: T.white, border: "1px solid " + T.bg3, borderRadius: 10 }}>
       {state.rows.map((r, i) => {

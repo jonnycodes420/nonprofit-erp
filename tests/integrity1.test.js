@@ -384,7 +384,7 @@ const ODESSA_ROW = ["Odessa Marchbanks", "odessa.marchbanks@example.test", "2025
     const cur = (st.tags || []).find(t => t.key === "current");
     const own = ((await api("GET", "/donors/d_i1c_own/status", tok)).body.tags || []).find(t => t.key === "current");
     ok("§6 Ida, Current only through the trust she gives through, is told so by name; her tooltip never says she gave (main: \"They gave in the last 12 months\")",
-      !!cur && /^Current through Fennick Charitable Trust \(gives through\)\./.test(cur.sentence) && !/^They gave in the last 12 months/.test(cur.sentence)
+      !!cur && /^Current: gift through Fennick Charitable Trust, [A-Z][a-z]{2} \d/.test(cur.sentence) && !/^They gave in the last 12 months/.test(cur.sentence)
         && !!own && /^They gave in the last 12 months/.test(own.sentence),
       { ida: cur, otto: own && own.sentence });
   }

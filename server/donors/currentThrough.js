@@ -13,6 +13,8 @@
 const L = require("../../shared/numbers/lapse");
 const lapseRule = require("../../lapseRule");
 
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const dayWords = (iso, today) => `${MON[+iso.slice(5, 7) - 1]} ${+iso.slice(8, 10)}${iso.slice(0, 4) !== String(today || "").slice(0, 4) ? `, ${iso.slice(0, 4)}` : ""}`;
 const HOW = Object.freeze({ spouse: "household", partner: "household", owner: "gives through", works_at: "employer" });
 
 // `row` is donorStatus.statusSql's row for the person. Returns null, or
@@ -31,8 +33,12 @@ async function currentThrough(query, orgId, donorId, row, today) {
       ORDER BY 3 DESC NULLS LAST, lk.name LIMIT 1`, [donorId, orgId, donorId, donorId, [...L.UNIT_LINK_TYPES]]);
   if (!l || !l.last || String(l.last) < from) return null;
   const how = HOW[l.type] || "linked";
-  return { name: l.name, how,
-    sentence: `Current through ${l.name} (${how}). They have not given in the last 12 months themselves; ${l.name} has, and one giving unit counts as one.` };
+  // POLISH-7: the tooltip says why the tag applies, the gift that keeps them
+  // Current: "Current: household gift by Marlowe Quennell, Nov 5."
+  const gift = how === "household" ? `household gift by ${l.name}` : how === "gives through" ? `gift through ${l.name}`
+    : how === "employer" ? `employer gift from ${l.name}` : `gift by ${l.name}`;
+  return { name: l.name, how, date: String(l.last).slice(0, 10),
+    sentence: `Current: ${gift}, ${dayWords(String(l.last).slice(0, 10), today)}. They have not given in the last 12 months themselves; one giving unit counts as one.` };
 }
 
 module.exports = { currentThrough, HOW };

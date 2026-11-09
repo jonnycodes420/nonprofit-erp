@@ -1,4 +1,5 @@
 import { YEAR_HDR_PAT, normalizeHeader, eitherContainsTokenRun, autoDetectTxMapping, normalizeMoney, normalizeDate } from "../../../../shared/importShape";
+import { candidateLine } from "../../lib/candidateLine";   // POLISH-7: email, city and last gift for each candidate
 import { normalizeNameForDonorMatch, donorsFromUnmatchedGifts } from "../../../../shared/giftFileDonors.js";
 import { useState, useEffect, useMemo } from "react";
 import { allPeople } from "../../lib/people";
@@ -764,8 +765,8 @@ export function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org
                           <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
                             {g.ambiguousDonors.map(d=>(
                               <button key={d.id} onClick={()=>setOverrides(p=>({...p,[i]:{action:"pick",donorId:d.id,donorName:d.name}}))}
-                                style={{fontSize:11,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 10px",cursor:"pointer",color:T.ink}}>
-                                {d.name}{d.email?` (${d.email})`:""}
+                                data-testid="import-candidate" style={{fontSize:11,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 10px",cursor:"pointer",color:T.ink,textAlign:"left"}}>
+                                <strong>{d.name}</strong>{" · "}{candidateLine(d)}
                               </button>
                             ))}
                           </div>

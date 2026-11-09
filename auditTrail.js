@@ -398,6 +398,9 @@ function showValue(field, v) {
   if (field === "amount" || field === "target_amount") return usdShort(v);
   if (typeof v === "object") return "new details";
   const s = String(v);
+  // POLISH-7 (W-1107-Atlas-26X): a value stored as JSON text ("segment from
+  // "{"rules":[…") is details, never raw JSON in a sentence.
+  if (/^\s*[[{]/.test(s)) { try { JSON.parse(s); return "new details"; } catch { if (/^\s*[[{]\s*"/.test(s)) return "new details"; } }
   return `"${clipWords(s, 40)}"`;   // POLISH-6: never cut mid-word
 }
 // The donor a row is about, by id: the record itself when it is a person, or
@@ -441,6 +444,11 @@ const nameList = names => names.length <= 1 ? (names[0] || "")
 // Every sentence describeAuditRow returns comes through actionText: "an"
 // before a vowel sound, a noun said once, the past tense a person says
 // ("Undid"), and nothing cut mid-word (clipWords).
+// POLISH-7: the one plural for a count of records ("1 record", "12 records").
+function countRecords(n) {
+  const k = Number(n) || 0;
+  return `${k.toLocaleString("en-US")} ${k === 1 ? "record" : "records"}`;
+}
 function clipWords(s, max) {
   const t = String(s || "").replace(/\s+/g, " ").trim();
   if (t.length <= max) return t;
@@ -625,7 +633,7 @@ function describeAuditRowRaw(row, ctx = {}) {
     });
     s += `: ${few.join(", ")}${changed.length > 3 ? ` and ${changed.length - 3} more` : ""}`;
   }
-  if (row.record_count != null && !row.summary) s += ` (${row.record_count} records)`;
+  if (row.record_count != null && !row.summary) s += ` (${countRecords(row.record_count)})`;   // POLISH-7: "1 record"
   return s;
 }
 
@@ -653,5 +661,5 @@ module.exports = {
   auditRecordName,
   SECRET_KEY_RE, REDACTED, NOISE_COLUMNS, VERB_PAST, READ_ONLY_POSTS,
   redact, diffFields, sameValue, describeRoute, isReadOnlyPost, singular, prettify, rowSentence,
-  bulkSummary, usd, describeAuditRow, auditDonorId, auditPeopleIds, shortDate, actionText, clipWords,
+  bulkSummary, usd, describeAuditRow, auditDonorId, auditPeopleIds, shortDate, actionText, clipWords, countRecords,
 };

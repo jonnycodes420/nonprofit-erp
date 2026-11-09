@@ -37,7 +37,7 @@ export function heroSection({ GoalStat, daysLeftInPeriod, deltaTxt, fgRollup, fu
                   static count) was dropped — density here must be information. */}
               <div style={{flex:"1 1 260px",minWidth:230,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 18px",alignContent:"start"}}>
                 <GoalStat label="Pace" value={heroPace} valueColor={heroPaceCol} sub={many?"across active goals":"vs the period elapsed"} onClick={()=>onNavigate("fundraising")}/>
-                <GoalStat label={`This ${fundOverview.periodLabel||"period"}`} value={fmtFull(period.raised||0)} sub={deltaTxt} onClick={()=>onNavigate("reports",{report:"giving-summary",preset:"thisFY",yearMode:"fiscal"})}/>
+                <GoalStat label={fundOverview.periodLabel?`Raised · ${fundOverview.periodLabel}`:"Raised this period"} value={fmtFull(period.raised||0)} sub={deltaTxt} onClick={()=>onNavigate("reports",{report:"giving-summary",preset:"thisFY",yearMode:"fiscal"})}/>
                 <GoalStat {...twStat}/>
                 <GoalStat {...reengStat}/>
               </div>

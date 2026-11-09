@@ -19,4 +19,11 @@ async function orgFyLabel(org, offset = 0) {
   return fyLabelOf(orgTime.orgPeriodBounds(org, "fiscal_year", offset), orgTime.orgFiscalStartMonth(org));
 }
 
-module.exports = { fyLabelOf, orgFyLabel };
+// POLISH-7: the long form for a page's first use, from the year's bounds:
+// "FY 2026–27 (Jul 1, 2026 to Jun 30, 2027)".
+async function fyLongLabelOf(bounds) {
+  const s = String(bounds.start);
+  return (await FP).fyLongLabel(Number(s.slice(0, 4)), Number(s.slice(5, 7)));
+}
+
+module.exports = { fyLabelOf, orgFyLabel, fyLongLabelOf };
