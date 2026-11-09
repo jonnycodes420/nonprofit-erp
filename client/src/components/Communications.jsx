@@ -1683,11 +1683,12 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // SEND ME A TEST. One copy, to her, under whatever sending identity is in
   // force — and it is not a recipient: nobody's record gets an email on it and
   // the campaign's count does not move.
-  const sendTest = async (email) => {
+  const sendTest = async (email, as) => {
     setTestState({ state: "sending" });
     try {
       const id = await saveForSend(email);
-      const r = await apiFetch(`/campaigns/${id}/test`, { method: "POST", body: JSON.stringify({}) });
+      // FLOWS-3: the test reads as the person the preview shows.
+      const r = await apiFetch(`/campaigns/${id}/test`, { method: "POST", body: JSON.stringify(as ? { as } : {}) });
       // FIX-15 Part 3: a 200 with sent:false (no mail key configured) is not a send.
       if (r && r.sent === false) setTestState({ state: "error", message: r.message || r.error || "The test was not sent: email is not set up on this server." });
       else setTestState({ state: "sent", to: r.to, from: r.from, verified: r.verified });

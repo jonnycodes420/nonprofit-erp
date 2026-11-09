@@ -16,8 +16,10 @@ async function refuseNotActive(res, query, J, orgId, t) {
   const JR = await import("../../shared/journeyStartRule.js");
   const state = await journeyStateOf(query, J, orgId, t);
   if (JR.canStartState(state)) return false;
-  const why = JR.notActiveWhy(state);
-  res.status(409).json({ error: "journey_not_active", state, sentence: `${t.name} is ${why.charAt(0).toLowerCase()}${why.slice(1)}.`, message: `${t.name} is ${why.charAt(0).toLowerCase()}${why.slice(1)}.` });
+  // "Kestrel paused" is Paused. Turn it back on in Journeys before anyone can start it.
+  const [word, rest] = JR.notActiveWhy(state).split(/:\s*/);
+  const sentence = `"${t.name}" is ${word}.${rest ? ` ${rest.charAt(0).toUpperCase()}${rest.slice(1)}.` : ""}`;
+  res.status(409).json({ error: "journey_not_active", state, sentence, message: sentence });
   return true;
 }
 
