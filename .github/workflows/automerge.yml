@@ -1,0 +1,57 @@
+# AUTOMERGE-1 · A GREEN PR MERGES ITSELF. CI IS STILL THE GATE, AND NEVER --admin.
+#
+# On every PR from this repo that is not a draft and not labelled `no-automerge`,
+# this turns on GitHub's auto-merge (squash, delete the branch). GitHub then
+# merges the PR the moment the required checks pass: the `main-protection`
+# ruleset requires `test`, up to date with main. Nothing here merges anything
+# itself, and nothing bypasses a check.
+#
+# Why a personal token (AUTOMERGE_TOKEN) and not GITHUB_TOKEN: GitHub does not
+# start workflows from events caused by GITHUB_TOKEN. A squash made with it
+# would land on main without the push run of CI, so nothing would deploy. With
+# a personal token the merge is Jonathan's, and main's CI and the ordered deploy
+# (scripts/ci/deploy-turnstile.js) run exactly as they do for a hand merge.
+#
+# No token, no auto-merge: the job says so and passes, and the PR is merged by hand.
+name: Automerge
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  enable:
+    # Only PRs from this repo (a fork's PR never gets the secret), never a draft,
+    # never one labelled `no-automerge`.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.draft == false
+      && !contains(github.event.pull_request.labels.*.name, 'no-automerge')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Turn on auto-merge (squash, delete branch)
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
+          READ_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "AUTOMERGE_TOKEN not set; merge by hand"
+            exit 0
+          fi
+          # If main had no required check, `gh pr merge --auto` would merge the PR
+          # at once, before CI. So it is never asked to unless a rule on main
+          # requires a status check (today: `test`, in the main-protection ruleset).
+          required=$(GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/rules/branches/main" \
+            --jq '[.[] | select(.type == "required_status_checks")] | length')
+          if [ "${required:-0}" = "0" ]; then
+            echo "main has no required status check, so auto-merge would merge before CI; merge by hand"
+            exit 0
+          fi
+          gh pr merge --auto --squash --delete-branch "$PR_URL"

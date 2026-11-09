@@ -17,6 +17,16 @@ Every script that can write resolves its target through `scripts/lib/prodGuard.j
 to the local scratch stack, and a remote `BASE` or `DATABASE_URL` also needs
 `--i-know-this-is-prod`. `tests/script-guards.test.js` holds every script to that.
 
+## For builders: how a PR merges (AUTOMERGE-1)
+
+Brief templates say this. Open the PR and watch CI. Don't run `gh pr merge`: GitHub merges
+on green (`.github/workflows/automerge.yml`), and `keep-current.yml` pulls main into queued PRs
+one at a time, oldest first. A draft or a PR labelled `no-automerge` waits for a hand merge.
+After it merges, do what you did before: record both SHAs, confirm the deploy, run `npm run status`
+once, and clean up. If CI fails on code you didn't touch, rerun that job once. If it fails again,
+stop and say so. Never `--admin`. Until `AUTOMERGE_TOKEN` is set
+(`docs/needs-jonathan/AUTOMERGE-1.md`), both workflows say "merge by hand", so Jonathan merges.
+
 ## Waiting on Jonathan now (FIX-58)
 
 | Script | What it does | Command |
