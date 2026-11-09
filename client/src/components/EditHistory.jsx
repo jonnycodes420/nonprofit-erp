@@ -15,6 +15,7 @@
 //   deletes that cannot be undone or that move money. Never window.confirm.)
 // And HistoryList, the person's own audit rows on their profile.
 import { useEffect, useRef, useState } from "react";
+import { auditValue } from "../lib/auditWords";
 import { createRoot } from "react-dom/client";
 import { apiFetch } from "../api";
 import { T, firstNameOf } from "./shared";
@@ -220,7 +221,7 @@ export function HistoryList({ donorId }) {
   if (state.loading) return <div style={{ fontSize: 12, color: T.ink3, padding: 16 }}>Loading…</div>;
   if (state.err) return <div style={{ fontSize: 12, color: T.ink, padding: 16 }}>{state.err}</div>;
   if (!state.rows.length) return <div style={{ fontSize: 12, color: T.ink3, padding: 16 }}>Nothing has been changed on this record yet. Every change from here on shows up here.</div>;
-  const show = v => v === null || v === undefined || v === "" ? "not set" : typeof v === "object" ? JSON.stringify(v) : String(v);
+  const show = auditValue;   // POLISH-7: a list or object reads as words, never raw JSON
   return (
     <div data-testid="dp-history" style={{ display: "flex", flexDirection: "column", gap: 0, background: T.white, border: "1px solid " + T.bg3, borderRadius: 10 }}>
       {state.rows.map((r, i) => {

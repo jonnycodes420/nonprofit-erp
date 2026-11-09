@@ -207,7 +207,7 @@ export function useProfileGiving({ donor, journey, setJourneyList, setJourneySug
       }
       await apiFetch(`/pledges/${id}`,{method:"PUT",body:JSON.stringify(body)});
       told({donorId:donor.id,pledge:true});loadPledges();
-      if(status==="written_off")offerUndo({undoAction:async()=>{await apiFetch(`/pledges/${id}`,{method:"PUT",body:JSON.stringify({status:"open"})});told({donorId:donor.id,pledge:true});loadPledges();}},"write-off",loadPledges);
+      if(status==="written_off")offerUndo({undoAction:async()=>{await apiFetch(`/pledges/${id}`,{method:"PUT",body:JSON.stringify({status:"open"})});told({donorId:donor.id,pledge:true});loadPledges();},message:`Wrote off ${fmtFull(Number(pl&&pl.balance)||0)}.`},"write-off",loadPledges);   // POLISH-7 W-1108-Finance-48X: the toast says what happened
     }catch(e){alert(errorMessage(e, "Could not update pledge"));}
   };
 

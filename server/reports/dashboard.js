@@ -106,7 +106,7 @@ async function renderDashboardPdf(board, org) {
       y = doc.y + 8;
     }
     doc.font("Helvetica").fontSize(9).fillColor(GREY)
-      .text(`As of ${DD.displayDate(board.asOf)} · fiscal year ${DD.displayDate(board.fiscalYear.start)} to ${DD.displayDate(board.fiscalYear.end)}`, 50, y);
+      .text(`As of ${DD.displayDate(board.asOf)} · ${board.fiscalYear.fyLabel || `${DD.displayDate(board.fiscalYear.start)} to ${DD.displayDate(board.fiscalYear.end)}`}`, 50, y);   // POLISH-7
     y = doc.y + 14;
 
     const notes = [];

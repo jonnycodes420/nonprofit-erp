@@ -918,17 +918,17 @@ export function replacementReason(current, incoming) {
 // ── THE SENTENCES ────────────────────────────────────────────────────────
 // "7 touches over 7 months. Nothing is sent without you." — built, not typed,
 // so it cannot drift from the steps it describes.
+// POLISH-7 (W-1108-Atlas-11X): the span is computed here once, from the
+// steps, and every screen (the list, the template chooser, the builder) reads it.
+export function journeySpan(steps = []) {
+  if (!steps.length) return "";
+  const last = Math.max(...steps.map(s => Number(s.offsetDays ?? s.offset_days) || 0));
+  return last < 45 ? countLabel(Math.max(1, Math.round(last / 7)), "week") : countLabel(Math.round(last / 30), "month");
+}
 export function touchesSentence(steps = []) {
   const n = steps.length;
   if (!n) return "No steps yet.";
-  const last = Math.max(...steps.map(s => Number(s.offsetDays) || 0));
-  const months = Math.round(last / 30);
-  // POLISH-2: the plural follows the number shown ("1 touch over 1 week",
-  // never "1 weeks": a same-day step rounded to 0 weeks but showed as 1).
-  const weeks = Math.max(1, Math.round(last / 7));
-  const span = last < 45 ? `${countLabel(weeks, "week")}`
-             : `${countLabel(months, "month")}`;
-  return `${countLabel(n, "touch", "touches")} over ${span}. Nothing is sent without you.`;   // POLISH-6: countWords
+  return `${countLabel(n, "touch", "touches")} over ${journeySpan(steps)}. Nothing is sent without you.`;
 }
 
 export { MAX_STEPS, MAX_OFFSET_DAYS, sanitizeName, sanitizeLabel };

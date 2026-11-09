@@ -25,7 +25,7 @@ import { campaignBlocksFromHtml } from "../../../shared/emailTemplateLibrary.js"
 // the box from ever being blank if that call fails.
 import { renderMergeFields, normalizeMergeFields, templatesFor } from "../../../shared/emailTemplates";
 import { makeT } from "../../../shared/vocabulary";
-import { campaignStats, sentWord, openRateWord, statusWord, CAMPAIGN_FILTERS, filterCampaigns } from "../../../shared/campaignKind";
+import { campaignStats, sentWord, wentOutToNobody, NOBODY_SENTENCE, reachedAnyone, openRateWord, statusWord, CAMPAIGN_FILTERS, filterCampaigns } from "../../../shared/campaignKind";
 import { displayDate, displayDateTime } from "../../../shared/displayDate";
 import { CalendarDays } from "lucide-react";
 import { AudienceTab, SendsPerMonth, EmailToolGifts, OpenRows } from "./CommsOpens";
@@ -187,8 +187,10 @@ function StatusBadge({ status, campaign, onFailed }) {
   const d = campaign && campaign.delivery;
   const partial = !!d && d.state === "partial";
   const notSent = !!d && d.state === "not_sent";
-  const m = partial ? STATUS_META.partial : notSent ? STATUS_META.failed : (STATUS_META[status] || STATUS_META.draft);
-  const label = d && d.sentence && status !== "sending" ? d.sentence : m.label;
+  const m = partial ? STATUS_META.partial : (notSent || wentOutToNobody(campaign)) ? STATUS_META.failed : (STATUS_META[status] || STATUS_META.draft);
+  // POLISH-7: a campaign that reached nobody is never "Sent".
+  const nobody = !partial && wentOutToNobody(campaign);
+  const label = nobody ? NOBODY_SENTENCE : d && d.sentence && status !== "sending" ? d.sentence : m.label;
   const clickable = (partial || notSent || status === "failed") && onFailed;
   return (
     <span data-testid="camp-status" data-status={partial ? "partial" : notSent ? "failed" : status} role={clickable ? "button" : undefined} tabIndex={clickable ? 0 : undefined}
@@ -1493,7 +1495,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
   // ── Derived stats ───────────────────────────────────────────────────────────
   const stats = useMemo(() => {
-    const sent = campaigns.filter(c => c.status === "sent");
+    const sent = campaigns.filter(c => c.status === "sent" && reachedAnyone(c));   // POLISH-7
     const totalSent = sent.reduce((s, c) => s + (c.recipient_count || 0), 0);
     const totalOpen = sent.reduce((s, c) => s + (c.open_count || 0), 0);
     const avgOpen   = totalSent > 0 ? Math.round(totalOpen / totalSent * 100) : 0;

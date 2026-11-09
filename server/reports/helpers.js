@@ -431,7 +431,8 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
     : p.figure.kind === "money" ? sentenceMoney(p.figure.value) : sentenceCount(p.figure.value)).join("");
   return { key: def.key, label: def.label, question: def.question, blurb: def.blurb,
            asOf: today, asOfLabel: DD.displayDate(today),
-           fiscalYear: { start: fy.start, end: fy.end, label: `${DD.displayDate(fy.start)} to ${DD.displayDate(fy.end)}` }, isTeam,
+           fiscalYear: { start: fy.start, end: fy.end, label: `${DD.displayDate(fy.start)} to ${DD.displayDate(fy.end)}`,
+                        fyLabel: await require("../shared/periodLabel").fyLongLabelOf(fy) }, isTeam,   // POLISH-7: the one name
            answer: { text, parts: answer?.parts || [] },
            // The boundary 0.6's answer turns on, on the payload so a reader can
            // see WHICH date decided the count rather than trusting it.

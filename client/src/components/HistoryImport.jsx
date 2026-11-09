@@ -13,6 +13,7 @@
 //      and every preference found in the words, each unticked until confirmed,
 //   3. the result, with one Undo for all of it.
 import { useState } from "react";
+import { candidateLine } from "../lib/candidateLine";   // POLISH-7
 import { apiFetch } from "../api";
 import { T, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
@@ -222,7 +223,7 @@ export default function HistoryImport({ onClose, onDone }) {
                     <select value={picks[a.index] || ""} onChange={e => setPicks(p => ({ ...p, [a.index]: e.target.value }))}
                       style={{ flex: "1 1 220px", maxWidth: "100%", padding: "6px 8px", border: "1px solid " + T.bg3, borderRadius: 7, fontFamily: "inherit" }}>
                       <option value="">Leave it out</option>
-                      {a.candidates.map(cd => <option key={cd.id} value={cd.id}>{cd.name}{cd.email ? ` · ${cd.email}` : ""}{cd.city ? ` · ${cd.city}` : ""}</option>)}
+                      {a.candidates.map(cd => <option key={cd.id} value={cd.id}>{cd.name} · {candidateLine(cd)}</option>)}
                     </select>
                   </div>
                 ))}

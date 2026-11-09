@@ -79,7 +79,7 @@ export function retentionSection({ DonorChip, MoreChip, Sparkline, driftData, fi
                       // fact ("N of M last-year donors gave again"), not a verdict.
                       const rr=stewardMetrics.retentionRate;
                       // NUMBERS-2: the org's own fiscal years, by the names the server gives them.
-                      const py=rr.prevYearLabel||(rr.prevYear?`FY ${rr.prevYear}`:null), cy=rr.yearLabel||(rr.year?`FY ${rr.year}`:null);
+                      const py=rr.prevYearLabel||null, cy=rr.yearLabel||null;   // POLISH-7: the server's labels (fiscalPeriod.js), never one built here
                       const denom=rr.prevYearCount||0, kept=rr.retained||0;
                       const window=py&&cy?`${py} → ${cy}`:"year over year";
                       const same=rr.sameDatesLastYear&&rr.sameDatesLastYear.current!=null?` At this point last year it was ${rr.sameDatesLastYear.current}%.`:"";

@@ -30,7 +30,7 @@ const H = () => import("../shared/historyImport.js");
 // The people this org has, once, for matching.
 async function orgIndex(orgId, Hm) {
   const donors = await query(
-    `SELECT id, name, email, address, external_donor_id, external_donor_ids, city,
+    `SELECT id, name, email, address, external_donor_id, external_donor_ids, city, last_gift_date, last_gift_amount,
             do_not_solicit, do_not_contact, do_not_mail, do_not_email, do_not_call
        FROM donors WHERE org_id=? AND deleted_at IS NULL`, [orgId]);
   return { donors, byId: new Map(donors.map(d => [d.id, d])), index: Hm.buildIndex(donors) };
@@ -89,7 +89,7 @@ app.post("/history-import/preview", requireAuth, checkWriteAccess, wrap(async (r
     kind: it.kind, kindLabel: Hm.KINDS[it.kind].label, date: it.date, author: it.author,
     text: Hm.timelineNote(it).slice(0, 400), due: it.due, taskOpen: it.taskOpen, matchedBy: it.match.method,
   }));
-  const cand = id => { const d = byId.get(id); return d ? { id, name: d.name, email: d.email || null, city: d.city || null } : { id }; };
+  const cand = id => { const d = byId.get(id); return d ? { id, name: d.name, email: d.email || null, city: d.city || null, last_gift_date: d.last_gift_date || null, last_gift_amount: d.last_gift_amount == null ? null : Number(d.last_gift_amount) } : { id }; };   // POLISH-7: last gift too
   const ambiguous = items.filter(it => !it.refused && it.match.status === "ambiguous").map(it => ({
     line: it.line, index: it.index, who: identityLabel(it.identity), method: it.match.method, candidates: it.match.candidates.map(cand) }));
   // Unmatched rows, grouped by who they name, so "create this person" is one

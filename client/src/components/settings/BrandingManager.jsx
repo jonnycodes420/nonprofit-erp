@@ -17,6 +17,7 @@ import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "../
 export const PRESET_ACCENTS=[T.greenDk,T.terracotta,T.accentRust,T.accentSlate,T.accentPlum,T.accentOchre,T.ink];
 export function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
   const [logo,setLogo]=useState("");        // data URI or ""
+  const [orgName,setOrgName]=useState("");   // POLISH-7: the saved org name, for the preview
   const [accent,setAccent]=useState("");    // hex or ""
   const [loaded,setLoaded]=useState(false);
   const [saving,setSaving]=useState(false);
@@ -26,7 +27,8 @@ export function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
   const [logoChanged,setLogoChanged]=useState(false);   // LIST-3
   useDirtyGuard(dirty);
   useEffect(()=>{
-    apiFetch("/org").then(o=>{setLogo(o.logo_data||"");setAccent(o.brand_accent||"");setLoaded(true);}).catch(()=>setLoaded(true));
+    // POLISH-7 (W-1108-Atlas-14X): the preview reads the saved name and logo.
+    apiFetch("/org").then(o=>{setLogo(o.logo_data||o.logo_url||"");setOrgName(o.name||"");setAccent(o.brand_accent||"");setLoaded(true);}).catch(()=>setLoaded(true));
   },[]);
   const disabled=!isAdmin||isReadOnly;
   const effAccent=accent||T.greenDk;
@@ -37,7 +39,7 @@ export function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
       // LIST-3: the logo goes only when she changed it; saving a colour never removes one.
       const body={brandAccent:accent||"",...(logoChanged?(logo?{logoData:logo}:{removeLogo:true}):{})};
       const res=await apiFetch("/orgs/branding",{method:"PUT",body:JSON.stringify(body)});
-      setAccent(res.brand_accent||"");
+      setAccent(res.brand_accent||"");if(res.name)setOrgName(res.name);if(res.logo_data!==undefined)setLogo(res.logo_data||"");
       setDirty(false);setLogoChanged(false);
       setMsg(res.adjusted?"Saved, your color was deepened slightly so text stays readable.":"Branding saved.");
       onSaved&&onSaved();
@@ -84,8 +86,8 @@ export function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
           <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>Preview</div>
           <div style={{border:"1px solid "+T.bg3,borderRadius:12,overflow:"hidden",background:T.bg}}>
             <div style={{background:effAccent,padding:"14px 18px",display:"flex",alignItems:"center",gap:10}}>
-              {logo&&<img src={logo} alt="" style={{height:26,maxWidth:90,objectFit:"contain"}}/>}
-              <span style={{color:T.white,fontWeight:800,fontSize:15}}>Your Organization</span>
+              {logo&&<img data-testid="brand-preview-logo" src={logo} alt="" style={{height:26,maxWidth:90,objectFit:"contain"}}/>}
+              <span data-testid="brand-preview-name" style={{color:T.white,fontWeight:800,fontSize:15}}>{orgName||"Your organization"}</span>
             </div>
             <div style={{padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
               <div style={{fontSize:13,color:T.ink3}}>Dear Jordan, thank you for your generous gift…</div>
