@@ -10,7 +10,7 @@ import { Figure } from "./Figure";
 import { DonorLink } from "./RecordLink";
 import { displayDate } from "../../../shared/displayDate";
 
-const row = { display: "grid", gridTemplateColumns: "minmax(0,2fr) minmax(0,1.4fr) repeat(3, minmax(90px,1fr))", gap: 12, alignItems: "center", padding: "11px 18px", fontSize: 13, color: T.ink };
+const row = { display: "grid", gridTemplateColumns: "minmax(0,2fr) minmax(0,1.2fr) minmax(110px,1.1fr) repeat(3, minmax(90px,1fr))", gap: 12, alignItems: "center", padding: "11px 18px", fontSize: 13, color: T.ink };
 const head = { fontSize: 10, fontWeight: 800, color: T.ink3, background: T.bg };
 const num = { textAlign: "right", fontVariantNumeric: "tabular-nums" };
 const linkBtn = { background: "none", border: "none", padding: 0, font: "inherit", color: T.greenDk, cursor: "pointer", textAlign: "left" };
@@ -41,7 +41,7 @@ export function PledgesView({ onNavigate }) {
         <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, boxShadow: T.shadow, overflow: "hidden" }}>
           <style>{PHONE_CSS}</style>
           <div className="pledges-head pledge-row-grid" style={{ ...row, ...head }}>
-            <span>Who</span><span>Made at</span><span style={num}>Still to come</span><span style={num}>Due this year</span><span style={num}>Overdue</span>
+            <span>Who</span><span>Made at</span><span style={num}>Next</span><span style={num}>Still to come</span><span style={num}>Due this year</span><span style={num}>Overdue</span>
           </div>
           {d.pledges.map(p => (
             <div key={p.id} data-testid="pledge-row" style={{ borderTop: "1px solid " + T.bg2 }}>
@@ -55,16 +55,20 @@ export function PledgesView({ onNavigate }) {
                   )}
                 </span>
                 <span style={{ fontSize: 12.5, color: T.ink2, minWidth: 0 }}>{madeAt(p.madeAt) || <span style={{ color: T.ink3 }}>Not tied to one</span>}</span>
+                {/* PLEDGES-3: the next installment's OPEN amount and date (summaryOf), never the pledge total */}
+                <span data-testid="pledge-next" title={p.summary ? p.summary.words : ""} style={num}>{p.summary && p.summary.nextAmount > 0
+                  ? <>{fmtFull(p.summary.nextAmount)}<span style={{ display: "block", fontSize: 11.5, color: T.ink3 }}>{p.summary.nextDue ? displayDate(p.summary.nextDue) : "No set date"}</span></> : "None"}</span>
                 <span style={num}>{fmtFull(p.balance)}</span>
                 <span style={num}>{p.dueThisYear ? fmtFull(p.dueThisYear) : "None"}</span>
                 <span style={{ ...num, color: p.overdue ? T.gold700 : T.ink3, fontWeight: p.overdue ? 700 : 400 }}>{p.overdue ? fmtFull(p.overdue) : "None"}</span>
               </div>
+              {p.summary && <div data-testid="pledge-words" style={{ padding: "0 18px 8px", fontSize: 12, color: T.ink3 }}>{p.summary.words}</div>}
               {(open === p.id || p.installments.length === 1) && p.installments.length > 0 && (
                 <div style={{ padding: "0 18px 12px", display: "flex", flexWrap: "wrap", gap: 8 }}>
                   {p.installments.map(i => (
                     <span key={i.id} style={{ fontSize: 12, borderRadius: 99, padding: "3px 10px", background: i.paid ? T.bg2 : i.overdue ? T.gold100 : T.bg,
                                               border: "1px solid " + (i.overdue ? T.gold300 : T.bg3), color: i.paid ? T.ink3 : T.ink }}>
-                      {fmtFull(i.amount)} · {i.dueDate ? displayDate(i.dueDate) : "No date"} · {i.paid ? "paid" : i.overdue ? "overdue" : "due"}
+                      {i.paid || i.left >= i.amount ? fmtFull(i.amount) : `${fmtFull(i.left)} of ${fmtFull(i.amount)}`} · {i.dueDate ? displayDate(i.dueDate) : "No date"} · {i.paid ? "paid" : i.overdue ? "overdue" : "due"}
                     </span>
                   ))}
                 </div>

@@ -6,6 +6,7 @@ import { T, SectionLabel, fmtFull } from "../shared";
 import { apiFetch, API, getToken } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { displayDate } from "../../../../shared/displayDate";
+import ReceiptDrift from "../ReceiptDrift";   // PLEDGES-3
 
 export default function IssuedReceipts({ isAdmin, isReadOnly }) {
   const [q, setQ] = useState("");
@@ -43,6 +44,7 @@ export default function IssuedReceipts({ isAdmin, isReadOnly }) {
             <span style={{ flex: "1 1 160px", minWidth: 0 }}>{r.donor_name || "Someone no longer on file"} · {r.type === "year_end" ? `${r.tax_year} statement` : displayDate(String(r.created_at).slice(0, 10))}</span>
             <span style={{ fontWeight: 700 }}>{fmtFull(r.amount)}</span>
             {r.voided_at ? <span style={{ fontSize: 12, color: T.ink3 }}>Voided: {r.void_reason}</span> : <>
+              <ReceiptDrift receipt={r} isReadOnly={isReadOnly || !isAdmin} onDone={() => load()} />
               {r.has_pdf && <button type="button" onClick={() => pdf(r)} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 6, padding: "3px 8px", fontSize: 12, cursor: "pointer" }}>PDF</button>}
               {isAdmin && !isReadOnly && <button type="button" data-testid="receipt-void" onClick={() => { setVoiding(r.id); setNote(""); }} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 6, padding: "3px 8px", fontSize: 12, cursor: "pointer" }}>Void</button>}
             </>}
