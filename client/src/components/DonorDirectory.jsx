@@ -11,6 +11,7 @@ import { errorMessage } from "../lib/domainError";
 import { censusById } from "../../../shared/numberCensus.js";
 import { T, interactive, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, donorScoreParts, AIBtn, AIPanel, EmptyState, DriftBadge, Modal, PersonMark } from "./shared";
 import { PlanFollowUpModal } from "./PlanFollowUp";
+import { EveryoneBreakdown } from "./EveryoneBreakdown";   // INTEGRITY-2
 import { ColumnEditor, FALLBACK_SETUP, NAME_KEY, PAGE_SIZES, CELL_PAD, CHECK_W, alignFor, cleanColumns, columnSpec, columnTrack, formatCell, gridMinWidth, moveKey } from "./DonorColumns";
 import { FilterBuilder, ViewsMenu } from "./DonorFilters";
 import { AddToGroup, SaveAsGroup } from "./Groups";
@@ -614,6 +615,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
             {l}{nn!=null&&<span data-testid={`dir-people-${k}-count`} style={{marginLeft:6,fontWeight:700}}>{Number(nn).toLocaleString("en-US")}</span>}
           </button>);})}
       </div>}
+      {setPeopleView&&roleCounts&&!anyFilter&&<EveryoneBreakdown count={roleCounts.everyone}/>}
       {fromImport&&<div data-testid="dir-from-import" style={{fontSize:13,color:T.ink,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         Showing the people one import brought in.
         {clearFromImport&&<button type="button" onClick={clearFromImport} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:13,fontWeight:700,cursor:"pointer",textDecoration:"underline"}}>Show everyone</button>}

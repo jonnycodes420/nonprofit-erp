@@ -49,6 +49,9 @@ const FAKE = {
   // ACCESS-1: the admin's switch for view-only exports, on
   "/org/viewer-exports": { on: true, label: "Viewers can export", description: "People with view-only access can download the lists and reports they can see." },
   "/settings/inbound-email": { address: "log-wrenfield@log.stewardapp.dev", unmatched: [] },
+  // INTEGRITY-2: the Trash list (settings/TrashList, inside EmptyTrash)
+  "/trash/people": { total: 1, inTrash: 1, limit: 50, offset: 0, keepDays: 30, sentence: "1 person is in the trash.",
+    people: [{ id: "d_fake", name: "Fiona Faketon", email: null, gifts: 2, deletedAt: "2026-11-08T12:00:00Z", leavesOn: "2026-12-09T00:00:00Z", deletedBy: "Allie Test", why: "Import undo of fixture.csv, 8 Nov" }] },
   // HOME-6 hotfix: a new org's first Home read, before its Insights are built (INSIGHTS-2's answer).
   "/insights": { asOf: "2026-11-05", preparing: true, stale: false, sentence: "Insights are being prepared. They will be here in a moment.", cards: [], ladder: [], stats: {}, deck: { tabs: [], preparing: true } },
   "/import-mappings": { mappings: [{ id: "m1", name: "Wrenfield gift export", columns: [{ key: "gift date", header: "Gift Date", role: "date" }, { key: "amount", header: "Amount", role: "amount" }] }], roles: [{ key: "date", label: "Gift date" }, { key: "amount", label: "Amount" }] },

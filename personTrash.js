@@ -64,6 +64,16 @@ async function bringPeopleBack(orgId, ids, { client = null, exceptMerged = false
         WHERE d.org_id = ? AND d.id = ANY(?) AND d.deleted_at IS NOT NULL
         ${exceptMerged ? "AND NOT EXISTS (SELECT 1 FROM donor_merges m WHERE m.org_id = d.org_id AND m.merged_id = d.id AND m.undone_at IS NULL)" : ""}
         RETURNING d.id`, [orgId, list]);
+    // INTEGRITY-2: the links their delete took (server/donors/personLinks.js)
+    // come back from the open trash rows about to close.
+    if (back.length) {
+      const open = await db.queryTx(c,
+        `SELECT record_id, row_data -> '__links' AS links FROM deleted_records
+          WHERE org_id = ? AND table_name = 'donors' AND record_id = ANY(?) AND restored_at IS NULL AND (row_data -> '__links') IS NOT NULL`,
+        [orgId, back.map(r => r.id)]);
+      if (open.length) await require("./server/donors/personLinks").giveLinks(db, c, orgId,
+        open.map(o => ({ personId: o.record_id, links: typeof o.links === "string" ? JSON.parse(o.links) : o.links })));
+    }
     // Everyone named who is live now (just back, or back already by another
     // door): none of them may keep an open deletion record.
     await db.runTx(c,
@@ -76,4 +86,36 @@ async function bringPeopleBack(orgId, ids, { client = null, exceptMerged = false
   return client ? go(client) : db.withTransaction(go);
 }
 
-module.exports = { bringPeopleBack, STALE_DELETIONS_SQL, STALE_RECORDS_SQL };
+// INTEGRITY-2 · THE ONE DOOR OUT. Every way a person goes to the trash (the
+// profile's Delete, the Donors list's Move to trash, an import undo, Undo's
+// "Move them too") goes through here: deleted_at, one trash row each with
+// who, when and why (row_data.__why, read by the Trash list), and their
+// links (personLinks.takeLinks) kept on that row so Restore brings them back.
+//   why: { kind: "delete" | "bulk_delete" | "import_undo" | "undo_moved_too", importId?, fileName? }
+// Returns [{ id, undoId }] for the people who were live and are now in the trash.
+async function trashPeople(orgId, ids, who, { client = null, why = { kind: "delete" }, extra = {} } = {}) {
+  const db = require("./db");
+  const { newId } = require("./server/shared/newId");
+  const list = [...new Set((ids || []).map(String))];
+  if (!list.length) return [];
+  const go = async c => {
+    const gone = await db.queryTx(c, "UPDATE donors SET deleted_at = NOW() WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NULL RETURNING id", [orgId, list]);
+    if (!gone.length) return [];
+    const links = await require("./server/donors/personLinks").takeLinks(db, c, orgId, gone.map(g => g.id));
+    const out = gone.map(g => ({ id: g.id, undoId: newId("del") }));
+    for (let k = 0; k < out.length; k += 500) {
+      const b = out.slice(k, k + 500);
+      await db.runTx(c, `INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
+                         VALUES ${b.map(() => "(?, ?, 'donors', ?, ?::jsonb, ?, ?)").join(",")}`,
+        b.flatMap(g => {
+          const l = links.get(g.id);
+          const data = { __soft: true, __why: why, ...extra, ...(require("./server/donors/personLinks").hasLinks(l) ? { __links: l } : {}) };
+          return [g.undoId, orgId, g.id, JSON.stringify(data), (who && who.id) || "system:trash", (who && who.name) || "Steward"];
+        }));
+    }
+    return out;
+  };
+  return client ? go(client) : db.withTransaction(go);
+}
+
+module.exports = { bringPeopleBack, trashPeople, STALE_DELETIONS_SQL, STALE_RECORDS_SQL };

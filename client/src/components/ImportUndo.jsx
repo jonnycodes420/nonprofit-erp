@@ -31,6 +31,8 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
   // choice to remove them too: the ordinary delete, to the trash
   const [stayed, setStayed] = useState(null);
   const [removing, setRemoving] = useState("");
+  // INTEGRITY-2: her choice for the people with activity since, made in the confirm
+  const [alsoMove, setAlsoMove] = useState(false);
   const live = useRef(true);
 
   const finish = r => {
@@ -40,10 +42,11 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
     told({ import: importId });   // STALE-1: an undo that finished on the queue is a change every screen hears
   };
   const removeStayed = async () => {
-    const ids = (stayed.people || []).map(p => p.id);
+    // INTEGRITY-2: only the people this import created or restored; a record that was here first never moves
+    const ids = (stayed.people || []).filter(p => p.movable !== false).map(p => p.id);
     setRemoving("working"); setErr("");
     try {
-      await apiFetch("/donors/bulk-delete", { method: "POST", body: JSON.stringify({ ids, count: ids.length }) });
+      await apiFetch("/donors/bulk-delete", { method: "POST", body: JSON.stringify({ ids, count: ids.length, importId }) });
       setRemoving(`${ids.length.toLocaleString("en-US")} ${ids.length === 1 ? "person" : "people"} removed too, with what was added to them since. They are in the trash for 30 days.`);
     } catch (e) { setRemoving(""); setErr(e?.body?.sentence || errorMessage(e, "They were not removed. Nothing was changed.")); }
   };
@@ -86,7 +89,7 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
   const undo = async () => {
     setStep("undoing"); setErr("");
     try {
-      const r = await apiFetch(`/imports/${encodeURIComponent(importId)}/reverse`, { method: "POST", body: "{}" });
+      const r = await apiFetch(`/imports/${encodeURIComponent(importId)}/reverse`, { method: "POST", body: JSON.stringify({ alsoMove }) });
       if (r && r.status === "running") { setProgress(r); return follow(); }
       finish(r);
     } catch (e) {
@@ -110,10 +113,10 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
   if (step === "done") return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div data-testid="import-undo-done" style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{done}</div>
-      {stayed && stayed.people.length > 0 && !/removed too/.test(removing) && (
+      {stayed && stayed.people.some(p => p.movable !== false) && !/removed too/.test(removing) && (
         <div data-testid="import-undo-stayed" style={{ fontSize: 13, color: T.ink }}>
           <button type="button" data-testid="import-undo-remove-stayed" style={btn(null)} disabled={removing === "working"} onClick={removeStayed}>
-            {removing === "working" ? "Removing…" : `Remove ${stayed.people.length === 1 ? "them" : `these ${stayed.people.length.toLocaleString("en-US")}`} too`}
+            {removing === "working" ? "Removing…" : (k => `Remove ${k === 1 ? "them" : `these ${k.toLocaleString("en-US")}`} too`)(stayed.people.filter(p => p.movable !== false).length)}
           </button>
           <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>What was added to them since goes with them, to the trash, where it can be brought back for 30 days.{stayed.count > stayed.people.length ? ` The first ${stayed.people.length.toLocaleString("en-US")} of ${stayed.count.toLocaleString("en-US")}; the rest are on the Donors list.` : ""}</div>
         </div>
@@ -139,6 +142,23 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
       {step === "confirm" && preview && (
         <div data-testid="import-undo-confirm" style={{ fontSize: 13, color: T.ink, background: T.bg, border: "1px solid " + T.bg3, borderRadius: 9, padding: "10px 12px", lineHeight: 1.5 }}>
           {preview.canUndo ? preview.sentence : preview.reversedAt ? "This import was already undone." : "This import can no longer be undone as a whole. Correct it gift by gift instead."}
+          {preview.canUndo && (preview.activitySince || []).length > 0 && (
+            <div data-testid="import-undo-activity" style={{ marginTop: 8 }}>
+              <div style={{ fontWeight: 700 }}>
+                {preview.activitySinceCount === 1 ? "1 person has" : `${preview.activitySinceCount.toLocaleString("en-US")} people have`} activity since the import. Undo keeps them unless you choose to move them:
+              </div>
+              <ul style={{ margin: "4px 0 6px 18px", padding: 0 }}>
+                {preview.activitySince.slice(0, 20).map(p => <li key={p.id}>{p.name} ({p.why}){p.movable === false ? ". Stays: it was here first" : ""}</li>)}
+                {preview.activitySinceCount > 20 && <li>and {(preview.activitySinceCount - 20).toLocaleString("en-US")} more</li>}
+              </ul>
+              {preview.activitySince.some(p => p.movable !== false) && (
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                  <label><input type="radio" name={`undo-also-${importId}`} data-testid="import-undo-keep-active" checked={!alsoMove} onChange={() => setAlsoMove(false)} /> Keep them</label>
+                  <label><input type="radio" name={`undo-also-${importId}`} data-testid="import-undo-move-active" checked={alsoMove} onChange={() => setAlsoMove(true)} /> Move them to the trash too (Restore brings them back for 30 days)</label>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
       {err && <div role="alert" style={{ fontSize: 12.5, color: T.terra700 }}>{err}</div>}

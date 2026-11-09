@@ -1107,6 +1107,7 @@ app.use(require("../../routes/homeCalls").routers.r0);     // PARITY-1 Part C
 // SPLIT-2 end
 // SPLIT-2 server.js piece 378
 app.use(require("../../routes/readouts").routers.r0);     // LIVE-1: what this told us
+app.use(require("../../routes/catchUp").routers.r0);      // LAG-1: the screen follows the worker
 // SPLIT-2 end
 // SPLIT-2 server.js piece 379
 app.use(require("../../routes/groups").routers.r0);        // PARITY-1 Part D
