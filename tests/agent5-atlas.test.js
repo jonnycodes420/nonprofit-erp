@@ -168,7 +168,7 @@ async function reset() {
     && !!dl && /Drafted a thank-you to Undine asking to meet in January\. Review and send\./.test(dl.line), { dr, dl });
   const [task] = await q(`SELECT title, due FROM tasks WHERE org_id=$1 AND donor_id='d_a5_uf' AND title ILIKE 'book the meeting%'`, [ORG]);
   const rl = line("reminder");
-  ok("§2 a reminder in January to book the meeting", !!task && /-01-0[5-7]$/.test(task.due) && !!rl && /^Reminder for Jan [5-7]: book the meeting\.$/.test(rl.line), { task, rl });
+  ok("§2 a reminder in January to book the meeting", !!task && /-01-0[5-7]$/.test(task.due) && !!rl && /^Reminder for \w{3}, Jan [5-7]: book the meeting\.$/.test(rl.line), { task, rl });
   // SENDS-1: plus the one proposal line, which says what Save wrote and opens the person.
   ok("§2 the reply is a short checklist, each line a link", lines.filter(l => l.kind !== "proposal").length === 5 && lines.every(l => l.link), lines.map(l => [l.kind, l.line, l.link]));
   ok("§2 Atlas speaks briefly, in the first person", /^Done\. (One thing waits|\d things wait) for your tap\.$/.test(t2.body.request.spoke), t2.body.request.spoke);

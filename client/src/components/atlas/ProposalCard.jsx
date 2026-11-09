@@ -20,21 +20,22 @@ export function itemTitle(it) {
   return "";
 }
 
-export default function ProposalCard({ request, busy, onSave }) {
+export default function ProposalCard({ request, busy, onSave, onDiscard }) {
   const p = request && request.proposal;
   const [edit, setEdit] = useState(false);
   const [items, setItems] = useState(() => (p ? p.items.map(i => ({ ...i })) : []));
   if (!p || !p.items || !p.items.length) return null;
   const saved = !!p.savedAt;
+  const discarded = !saved && !!p.discardedAt;   // ATLAS-5: let go, nothing written
   const shown = saved ? p.items : items;
   const set = (pid, k, v) => setItems(list => list.map(i => i.pid === pid ? { ...i, [k]: v } : i));
   return (
-    <section data-testid="atlas-proposal" data-saved={saved ? "1" : "0"} style={{ border: "1px solid " + T.greenDk, borderRadius: 12, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{saved ? "Saved." : "Save these?"}</div>
+    <section data-testid="atlas-proposal" data-saved={saved ? "1" : "0"} data-discarded={discarded ? "1" : "0"} style={{ border: "1px solid " + T.greenDk, borderRadius: 12, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{saved ? "Saved." : discarded ? "Discarded. Nothing was saved." : "Save these?"}</div>
       <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
         {shown.map(it => <li key={it.pid} data-testid="atlas-proposal-item" data-kind={it.kind} style={{ fontSize: 13.5, color: it.skip ? T.ink3 : T.ink, lineHeight: 1.45 }}>
           <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-            {!saved && <input type="checkbox" checked={!it.skip} onChange={e => set(it.pid, "skip", !e.target.checked)} aria-label={`Include: ${itemTitle(it)}`} style={{ marginTop: 3, accentColor: T.greenDk }} />}
+            {!saved && !discarded && <input type="checkbox" checked={!it.skip} onChange={e => set(it.pid, "skip", !e.target.checked)} aria-label={`Include: ${itemTitle(it)}`} style={{ marginTop: 3, accentColor: T.greenDk }} />}
             <span style={{ fontWeight: 600, textDecoration: it.skip ? "line-through" : "none" }}>{itemTitle(it)}</span>
           </label>
           {edit && !saved && !it.skip ? <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
@@ -55,11 +56,12 @@ export default function ProposalCard({ request, busy, onSave }) {
           </label>}
         </li>)}
       </ul>
-      {!saved && <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+      {!saved && !discarded && <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+        {onDiscard && <button type="button" data-testid="atlas-proposal-discard" disabled={busy} onClick={onDiscard} style={btn(false)}>Discard</button>}
         <button type="button" data-testid="atlas-proposal-edit" disabled={busy} onClick={() => setEdit(e => !e)} style={btn(false)}>{edit ? "Done editing" : "Edit"}</button>
         <button type="button" data-testid="atlas-proposal-save" disabled={busy || items.every(i => i.skip)} onClick={() => onSave(p.id, items)} style={btn(true)}>Save</button>
       </div>}
-      {!saved && <div style={{ fontSize: 12, color: T.ink3 }}>Nothing is written until you press Save. Nothing is sent.</div>}
+      {!saved && !discarded && <div style={{ fontSize: 12, color: T.ink3 }}>Nothing is written until you press Save. Nothing is sent.</div>}
     </section>
   );
 }

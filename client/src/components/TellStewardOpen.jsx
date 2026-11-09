@@ -3,8 +3,9 @@
 // (TellSteward.jsx) loads the first time it opens.
 
 // Open Atlas from anywhere. `text` arrives typed; `send` asks at once (Home's box).
-export function openTellSteward(donor, { text = "", send = false } = {}) {
-  window.dispatchEvent(new CustomEvent("steward:tell", { detail: { donor: donor ? { id: donor.id, name: donor.name } : null, text, send } }));
+// ATLAS-5: `requestId` opens a request still waiting on her (an unanswered "Which Walter?").
+export function openTellSteward(donor, { text = "", send = false, requestId = null } = {}) {
+  window.dispatchEvent(new CustomEvent("steward:tell", { detail: { donor: donor ? { id: donor.id, name: donor.name } : null, text, send, requestId } }));
 }
 export const openAtlas = openTellSteward;
 

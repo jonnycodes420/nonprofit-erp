@@ -189,6 +189,8 @@ const LOOPBACK_HARDCODED = [
 const PROD_READONLY = [
   // PLEDGES-3: lists old pledge flags, drifted receipts and grants awarded with no award row; SELECTs only, no --apply.
   "pledges3-old-rows",
+  // ATLAS-5: lists reminders saved on the late weekday and notes saved short; SELECTs only, no --apply.
+  "atlas5-old-rows",
   // MAIL-1: what each org's mail would do, in a READ ONLY transaction, counts and org names only.
   "mail-preflight",
   // NUMBERS-1: checks an org's numbers against its gifts; SELECTs only, counts-only with --counts.

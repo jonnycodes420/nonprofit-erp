@@ -168,7 +168,7 @@ function AppShell() {
   const navigateRef=useRef(null);
   const atlas=useAtlasName();
   useEffect(()=>{
-    const on=e=>setTell({donor:(e.detail&&e.detail.donor)||null,text:(e.detail&&e.detail.text)||"",send:!!(e.detail&&e.detail.send)});
+    const on=e=>setTell({donor:(e.detail&&e.detail.donor)||null,text:(e.detail&&e.detail.text)||"",send:!!(e.detail&&e.detail.send),requestId:(e.detail&&e.detail.requestId)||null});
     window.addEventListener("steward:tell",on);
     // AGENT-5: a panel outside the page tree (Recent changes) opens a page.
     const go=e=>e.detail&&e.detail.tab&&navigateRef.current&&navigateRef.current(e.detail.tab,e.detail.opts||{});
@@ -1156,7 +1156,7 @@ function AppShell() {
       onClick={()=>openTellSteward(null)}><MicGlyph size={24}/></button>}
     <CheckSnapHost isReadOnly={isReadOnly||isPortalTier} onNavigate={navigateTo}/>
     <IdleGuard/>
-    {tell&&<Suspense fallback={null}><TellSteward donor={tell.donor} initialText={tell.text} autoSend={tell.send} onClose={()=>{setTell(null);loadData();window.dispatchEvent(new CustomEvent("steward:told"));}} onNavigate={navigateTo}/></Suspense>}
+    {tell&&<Suspense fallback={null}><TellSteward donor={tell.donor} initialText={tell.text} autoSend={tell.send} requestId={tell.requestId} onClose={()=>{setTell(null);loadData();window.dispatchEvent(new CustomEvent("steward:told"));}} onNavigate={navigateTo}/></Suspense>}
     {/* Install prompt — mobile browsers only */}
     {showInstallPrompt&&deferredPrompt&&<div style={{position:"fixed",bottom:"calc(60px + env(safe-area-inset-bottom,0px))",left:0,right:0,zIndex:145,background:T.ink,borderTop:"1px solid "+T.bgElevated,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
       <span style={{flex:1,fontSize:13,color:T.inkInverse,fontWeight:500}}>Add Steward to your home screen</span>

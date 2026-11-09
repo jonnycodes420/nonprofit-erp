@@ -19,6 +19,8 @@
 // The name is one value. The server reads ATLAS_NAME from its environment and
 // every screen reads it from /atlas/status, so a new name is a variable
 // change and a restart, never a build.
+import AD from "./atlasDates.js";   // ATLAS-5: dates in code, in the org's day
+
 export const ATLAS_DEFAULT_NAME = "Atlas";
 
 // ── WHAT A STEP CAN BE ─────────────────────────────────────────────────────
@@ -188,7 +190,6 @@ export const usd = c => "$" + (Number(c) / 100).toLocaleString("en-US", { minimu
 
 // ── DATES IN WORDS ─────────────────────────────────────────────────────────
 const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
-const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 const civil = (y, m, d) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 const ymd = v => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || "")); return m ? [+m[1], +m[2], +m[3]] : null; };
 export function addDays(day, n) { const p = ymd(day); const t = new Date(Date.UTC(p[0], p[1] - 1, p[2] + n)); return civil(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate()); }
@@ -215,11 +216,13 @@ export function whenFromWords(words, today) {
   if (/\b(the )?new year\b|\bafter the holidays\b|\bnext year\b/.test(t)) return { date: workday(civil(y + 1, 1, 5)) };
   if (/\bafter thanksgiving\b/.test(t)) { let tg = thanksgiving(y); if (tg < today) tg = thanksgiving(y + 1); return { date: addDays(tg, 4) }; }
   if (/\bthanksgiving\b/.test(t)) { let tg = thanksgiving(y); if (tg < today) tg = thanksgiving(y + 1); return { date: tg }; }
-  let m = t.match(/\bin (a|an|one|two|three|four|five|six|couple of|few|\d+) (day|week|month)s?\b/);
-  if (m) { const n = NUM[m[1].replace(" of", "")] || Number(m[1]) || 1; return { date: m[2] === "day" ? addDays(today, n) : m[2] === "week" ? addDays(today, 7 * n) : workday(addDays(today, 30 * n)) }; }
+  // ATLAS-5: in N days or weeks, the end of the month and every weekday, by shared/atlasDates.js.
+  const dd = AD.inDays(t, today) || AD.endOfMonth(t, today);
+  if (dd) return dd;
+  let m = t.match(/\bin (a|an|one|two|three|four|five|six|couple of|few|\d+) months?\b/);
+  if (m) { const n = NUM[m[1].replace(" of", "")] || Number(m[1]) || 1; return { date: workday(addDays(today, 30 * n)), said: m[0] }; }
   if (/\bnext week\b/.test(t)) return { date: addDays(today, ((1 - dow(today) + 7) % 7) || 7) };
   if (/\bnext month\b/.test(t)) { const [yy, mo] = ymd(today); return { date: workday(mo === 12 ? civil(yy + 1, 1, 1) : civil(yy, mo + 1, 1)) }; }
-  if (/\bend of (the )?month\b/.test(t)) { const [yy, mo] = ymd(today); return { date: addDays(mo === 12 ? civil(yy + 1, 1, 1) : civil(yy, mo + 1, 1), -1) }; }
   // "January 12", "Jan 12th", "12 January"
   const mon = "(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*";
   m = t.match(new RegExp(`\\b${mon} (\\d{1,2})(st|nd|rd|th)?\\b`)) || null;
@@ -234,12 +237,10 @@ export function whenFromWords(words, today) {
     const d = /mid|middle/.test(q) ? 15 : /late|end|last/.test(q) ? 25 : 5;
     return { date: workday(monthDay(mi, d, today)) };
   }
-  m = t.match(/\b(next |this |on )?(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/);
-  if (m) { let n = (WEEKDAYS.indexOf(m[2]) - dow(today) + 7) % 7 || 7; if (m[1] === "next " && n < 3) n += 7; return { date: addDays(today, n) }; }
+  { const wd = AD.weekdayWhen(t, today); if (wd && !wd.past) return wd; }
   if (/\bsoon\b|\bshortly\b/.test(t)) return { date: addDays(today, 7) };
   if (/\byesterday\b/.test(t)) return { date: addDays(today, -1), past: true };
-  m = t.match(/\blast (sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/);
-  if (m) return { date: addDays(today, -(((dow(today) - WEEKDAYS.indexOf(m[1]) + 7) % 7) || 7)), past: true };
+  { const wd = AD.weekdayWhen(t, today); if (wd && wd.past) return wd; }
   return null;
 }
 // "Jan 5" (and the year when it is not this one).
@@ -350,12 +351,26 @@ export const AI_OFF_LINE = "My reading is off for this organization, so I can lo
 // ("what is Renee's favorite color") says so by name; anything else says the
 // part that was not done, plainly.
 const ASKED_ABOUT = /^\s*(?:what(?:'s| is| was| are)|where(?:'s| is| does)|when(?:'s| is)|do you know|tell me)\s+(?:the\s+)?([A-Z][\w'’-]*(?:\s+[A-Z][\w'’-]*)?)['’]s?\s+([^?.!]{1,60}?)\s*[?.!]*\s*$/i;
-export const CANT_LINE = words => {
+// ATLAS-5 (W-1107-Atlas-07): the plain sentence, and what she can do about it:
+// "I don't have Sterling's favorite color. I can add it as a note if you tell me."
+// What Steward does keep (an email, a phone, giving) is a question for Ask, never this.
+const KEPT = /\b(email|e-mail|phone|number|address|city|zip|giving|gave|given|gift|gifts|donat\w*|total|lifetime|last gift|first gift|pledge\w*|stage|tags?|household|spouse|employer|birthday|age|notes?|about)\b/i;
+const ASKED_OF = /^\s*(?:[Ww]hat(?:'s| is| was| are)|[Ww]here(?:'s| is| does)|[Ww]hen(?:'s| is)|[Dd]o you know|[Tt]ell me)\s+(?:the\s+)?([A-Z][\w-]*(?:\s+[A-Z][\w-]*)?)['’]s\s+([^?.!]{1,60}?)\s*[?.!]*\s*$/;
+export function cantKnow(words, { anyCase = false } = {}) {
   const w = String(words || "").replace(/\s+/g, " ").trim();
-  const m = ASKED_ABOUT.exec(w);
-  if (m) return `I don't have ${m[1].replace(/['’]s$/i, "")}'s ${m[2].trim().replace(/^(?:the|their|her|his)\s+/i, "")} in Steward.`;
-  return "I can't do that part yet, so I did the rest.";
-};
+  const m = ASKED_OF.exec(w) || (anyCase ? new RegExp(ASKED_OF.source, "i").exec(w) : null);
+  if (!m) return null;
+  const what = m[2].trim().replace(/^(?:the|their|her|his)\s+/i, "");
+  if (KEPT.test(what)) return null;
+  const who = m[1].replace(/['’]s$/i, "").split(" ").map(x => x[0].toUpperCase() + x.slice(1)).join(" ");
+  return `I don't have ${who}'s ${what}. I can add it as a note if you tell me.`;
+}
+// What Ask said when it could not answer, in plain words: never a quoted fragment of the question.
+export function plainCant(words, said) {
+  if (!/can['’]t answer|couldn['’]t answer|not able to answer/i.test(String(said || ""))) return null;
+  return cantKnow(words, { anyCase: true }) || "I can't answer that from what Steward keeps. If it's something to remember, tell me and I'll add it as a note.";
+}
+export const CANT_LINE = words => cantKnow(words) || "I can't do that part yet, so I did the rest.";
 export const REFUSE = {
   send_now: "I don't send without your yes. The draft is waiting for you.",
   merge: "I never merge people. I put them in Data health for you to decide.",
@@ -383,4 +398,4 @@ export function spokeFor(lines, waiting = 0) {
 }
 
 export default { ATLAS_DEFAULT_NAME, STEP_KINDS, RUNS, TAPS, ATLAS_RULES, ATLAS_TOOL, ATLAS_SYSTEM, DRAFT_TOOL, DRAFT_SYSTEM, buildDraftPrompt, buildAtlasPrompt, normalizeRead, tidySteps,
-  amountFromWords, usd, whenFromWords, dayWords, monthWord, addDays, tidyTalk, readClause, readInCode, previewLines, AI_OFF_LINE, CANT_LINE, REFUSE, SPOKE, ANSWER_KINDS, spokeFor };
+  amountFromWords, usd, whenFromWords, dayWords, monthWord, addDays, tidyTalk, readClause, readInCode, previewLines, AI_OFF_LINE, CANT_LINE, cantKnow, plainCant, REFUSE, SPOKE, ANSWER_KINDS, spokeFor };

@@ -30,6 +30,8 @@ const AN = require("../server/atlas/answers");   // ATLAS-3: lists, people, an u
 const PG = require("../server/atlas/progress");   // ATLAS-3: the status line, one step at a time
 const DS = require("../server/atlas/draftStream");   // SPEED-3: a draft's words as they are written
 const GT = require("../server/atlas/givingTotal");   // TRUTH-3: amounts and counts in code, each person resolved
+const WT = require("../server/atlas/waiting");   // ATLAS-5: every waiting item can be let go
+const ADm = () => import("../shared/atlasDates.js");   // ATLAS-5: dates in code, in the org's day
 
 const routers = { r0: express.Router() };
 // ATLAS-3: the profile's Call script rides on Atlas's router (server.js is at its size ceiling).
@@ -40,6 +42,12 @@ const TEXT_MIN = 3, TEXT_MAX = 4000;
 // The read is one short structured call; the faster model keeps a request
 // like Undine's under ten seconds. ATLAS_MODEL overrides it.
 const ATLAS_MODEL = () => process.env.ATLAS_MODEL || "claude-sonnet-4-6";
+// ATLAS-5 (W-1107-Atlas-23): reading her words into steps is routing, so it goes
+// to the smaller, faster model. The draft keeps ATLAS_MODEL. ATLAS_ROUTE_MODEL overrides.
+const ATLAS_ROUTE_MODEL = () => process.env.ATLAS_ROUTE_MODEL || "claude-haiku-4-5-20251001";
+// The shapes code reads for certain, answered from shared/numbers with no read by
+// the model: a person's summary, finding someone, and a question for Ask.
+const CODE_SHAPES = new Set(["about", "find", "question"]);
 // ATLAS-4 · ATLAS ANSWERS IN GOOD TIME. Feel 1 (Muse): one answer took about
 // 60 s. A question goes to /ask, which can ask a model three times in a row
 // (the plan, then the query form, then the sentence), each with the SDK's
@@ -51,7 +59,7 @@ const ATLAS_ANSWER_MS = () => Number(process.env.ATLAS_ANSWER_MS) || 20000;
 
 const PROP = require("../server/atlas/proposal");   // SENDS-1: Atlas proposes, she saves
 function mount(ctx) {
-const { query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate } = ctx;
+const { query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, agentGate } = ctx;
 require("./atlasMore").mount({ query, wrap, requireAuth, agentGate });   // ATLAS-3
 const app = routers.r0;
 const AT = () => import("../shared/atlas.js");
@@ -62,6 +70,8 @@ const engine = () => require("./agent").routers.engine;
 const atlasName = () => String(process.env.ATLAS_NAME || "").trim() || "Atlas";
 const j = v => (typeof v === "string" ? (() => { try { return JSON.parse(v); } catch { return null; } })() : v);
 const first = name => String(name || "").split(/\s+/)[0];
+// ATLAS-5: the org's civil today, from its own timezone (shared/atlasDates.js todayIn).
+const atlasToday = async (orgId, tz = null) => (await ADm()).todayIn((tz || await orgTz(orgId)).timezone);
 
 // Her own click on one of Steward's routes, in-process, with her session.
 async function asHer(req, method, path, body, { signal } = {}) {
@@ -215,14 +225,17 @@ const NEEDS_PERSON = new Set(["came_to_event", "register_for_event", "gift", "pl
 const MAY_PERSON = new Set(["reminder"]);
 const TARGET_KIND = { came_to_event: "event", register_for_event: "event", add_to_journey: "journey", remove_from_journey: "journey", add_to_group: "group", remove_from_group: "group" };
 
-async function readSteps(orgId, text, { today, onPage }) {
+async function readSteps(orgId, text, { today, onPage, gateP = null }) {
   const AT_ = await AT();
-  const gate = await agentGate(orgId);
+  const gate = await (gateP || agentGate(orgId));
+  // ATLAS-5: a known shape skips the model's read (each clause read in code, all of them known).
+  const inCode = AT_.readInCode(text);
+  if (inCode.length && inCode.every(x => CODE_SHAPES.has(x.kind) && (x.kind === "question" || x.who))) return { ai: gate.ok ? "on" : "off", steps: inCode, code: true };
   if (gate.ok) {
     const prompt = AT_.buildAtlasPrompt(text, { today, onPage });
     try {
       const msg = await anthropicFor(orgId).messages.create({
-        model: ATLAS_MODEL(), max_tokens: 2000, thinking: { type: "disabled" }, system: prompt.system, messages: prompt.messages,
+        model: ATLAS_ROUTE_MODEL(), max_tokens: 2000, thinking: { type: "disabled" }, system: prompt.system, messages: prompt.messages,
         tools: [{ name: AT_.ATLAS_TOOL.name, description: AT_.ATLAS_TOOL.description, strict: true, input_schema: AT_.ATLAS_TOOL.input_schema }],
         tool_choice: { type: "tool", name: AT_.ATLAS_TOOL.name },
       }, { timeout: ATLAS_READ_MS(), maxRetries: 0 });
@@ -251,9 +264,11 @@ async function readSteps(orgId, text, { today, onPage }) {
 
 // The email's words: the model when AI is on, else the template. Never a
 // fact: the run's own check refuses a draft that states one she did not say.
-async function writeDraft(orgId, { firstName, opening, words, month, thanks, meet, aboutThem = "", onWords = null }) {
+async function writeDraft(orgId, { firstName, opening, words, month, thanks, meet, aboutThem = "", onWords = null, ctx = null }) {
   // SPEED-3: the voice, the switch and the module are read at once, not in turn.
-  const [AT_, voice, gate] = await Promise.all([AT(), orgVoice(orgId), agentGate(orgId)]);   // ATLAS-3: in the org's voice
+  // ATLAS-5: once per request (ctx), however many emails it drafts.
+  const c = ctx || {};
+  const [AT_, voice, gate] = await Promise.all([AT(), c.voice || (c.voice = orgVoice(orgId)), c.gate || (c.gate = agentGate(orgId))]);   // ATLAS-3: in the org's voice
   const template = { subject: thanks ? `Thank you, ${firstName}` : `Hello from us, ${firstName}`,
     body: [opening || `Dear ${firstName},`, "", thanks ? "Thank you so much for your generosity. It means a great deal to all of us." : "I wanted to reach out.",
       ...(meet ? ["", `I would love to meet${month ? ` in ${month}` : ""} to share what your support makes possible. Would that work for you?`] : []), "", `${voice.signoff || "With gratitude"},`, ...(voice.signature ? [voice.signature] : [])].join("\n") };
@@ -412,8 +427,17 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
     import("../shared/clientSafe.js"), query("SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?::text[])",
       [orgId, [...new Set(steps.flatMap(s => [s.donorId, s.otherId]).filter(Boolean))]])]);
   { // ATLAS-4: a labelled line kept in a conversation's note ("Notes: …") is not a step of its own.
-    const notes = steps.filter(x => x.kind === "log_conversation").map(x => AN4.conversationNote(m.text, x).toLowerCase());
-    steps = steps.filter(x => !(x.kind === "other" && x.words && notes.some(n => n.includes(String(x.words).toLowerCase()))));
+    // ATLAS-5: nor is a trailing line kept in a note ("QA A5"): the whole message is the note.
+    for (const x of steps) if (x.kind === "note") x.noteText = AN4.noteText(m.text, x);
+    const notes = steps.map(x => (x.kind === "log_conversation" ? AN4.conversationNote(m.text, x) : x.kind === "note" ? x.noteText : "")).filter(Boolean).map(n => n.toLowerCase());
+    const inNote = x => x.words && notes.some(n => n.includes(String(x.words).toLowerCase().replace(/[.!?;]+$/, "")));
+    steps = steps.filter(x => !(["other", "question"].includes(x.kind) && inNote(x)));
+    // A second note whose words the first one already holds is the same note.
+    const kept = [];
+    steps = steps.filter(x => { if (x.kind !== "note") return true; const dup = kept.some(n => n.includes(String(x.words || "").toLowerCase().replace(/[.!?;]+$/, ""))); if (!dup) kept.push(x.noteText.toLowerCase()); return !dup; });
+    // ATLAS-5 (W-1108-Atlas-02X): one answer per person, however many times the read asked.
+    const seen = new Set();
+    steps = steps.filter(x => x.kind !== "about" || !x.donorId || (!seen.has(x.donorId) && seen.add(x.donorId)));
   }
   const names = new Map(nameRows.map(r => [r.id, r.name]));
   const nm = id => names.get(id) || "them";
@@ -465,7 +489,7 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
     drafts.set(st, (async () => {
       const [[ab], G] = await Promise.all([query("SELECT about_them FROM donors WHERE id=? AND org_id=?", [st.donorId, orgId]), import("../shared/greeting.js")]);
       return writeDraft(orgId, { aboutThem: (ab && ab.about_them) || "", firstName: first(nm(st.donorId)), opening: G.greetingLine({ name: nm(st.donorId) }), words: st.words, month: when ? AT_.monthWord(when.date) : "",
-        thanks: /\bthank/i.test(st.words), meet: /\bmeet|meeting|lunch|coffee|visit|sit down\b/i.test(st.words), onWords });
+        thanks: /\bthank/i.test(st.words), meet: /\bmeet|meeting|lunch|coffee|visit|sit down\b/i.test(st.words), onWords, ctx: req.atlasCtx || (req.atlasCtx = {}) });
     })().finally(() => { me.done = true; showNext(); }));
     drafts.get(st).catch(() => {});   // awaited at its step; never an unhandled rejection before then
   }
@@ -559,10 +583,12 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         break;
       }
       case "reminder": {
-        const when = AT_.whenFromWords(st.whenWords || st.words, today) || { date: AT_.addDays(today, 7) };
+        const when = AT_.whenFromWords(st.whenWords || st.words, today) || AT_.whenFromWords(st.words, today) || { date: AT_.addDays(today, 7) };
         // Her words without the when ("the first week of January"), and a
         // pronoun said as the person ("thank him" is "Thank Henrik").
-        let label = String(st.words || "Follow up").replace(/^remind me (to\s+)?/i, "")
+        // ATLAS-5: the words that named the day come out wherever they sit ("Remind me next Tuesday to call Sterling").
+        const said = when.said ? new RegExp(`\\s*\\b${String(when.said).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b\\s*`, "i") : null;
+        let label = String(st.words || "Follow up").replace(said || /$^/, " ").replace(/\s+/g, " ").trim().replace(/^(remind me\s+)?(to\s+)?/i, "")
           .replace(/\s*\b((the|in the|by the|on the|in|by|on)\s+)?(in the new year|new year|after thanksgiving|next week|tomorrow|in \w+ (days?|weeks?|months?)|on \w+day|(first week of |early |mid |late |end of )?(january|february|march|april|may|june|july|august|september|october|november|december)( \d+)?)\b.*$/i, "").trim() || "Follow up";
         if (id) label = label.replace(/\b(him|her|them)\b/i, first(nm(id)));
         const lbl = label[0].toUpperCase() + label.slice(1);
@@ -601,7 +627,7 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         break;
       }
       case "note": {
-        propose.push({ pid: newId("pi"), kind: "note", donorId: id, name: nm(id), note: String(st.words || "") });   // SENDS-1
+        propose.push({ pid: newId("pi"), kind: "note", donorId: id, name: nm(id), note: String(st.noteText || st.words || "") });   // SENDS-1; ATLAS-5: her whole message
         break;
       }
       case "merge": {
@@ -643,6 +669,9 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         break;
       }
       case "question": {
+        // ATLAS-5: something Steward does not keep is said plainly, at once, with no lookup.
+        const ck = AT_.cantKnow(st.target || st.words);
+        if (ck) { await log({ kind: "answer", state: "done", line: ck }); break; }
         const ctl = new AbortController();
         const budget = setTimeout(() => ctl.abort(), ATLAS_ANSWER_MS());
         const r = await asHer(req, "POST", "/ask", { text: st.target || st.words, ...(prior && prior.context ? { context: prior.context } : {}) }, { signal: ctl.signal })
@@ -653,7 +682,8 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
             line: `I stopped after ${Math.round(ATLAS_ANSWER_MS() / 1000)} seconds: looking that up took longer than it should. Open it in Ask, where the full answer will finish.` });
           break;
         }
-        const said = r.status < 300 && r.body && (r.body.sentence || (r.body.answer && r.body.answer.sentence) || r.body.headline);
+        const said0 = r.status < 300 && r.body && (r.body.sentence || (r.body.answer && r.body.answer.sentence) || r.body.headline);
+        const said = AT_.plainCant(st.target || st.words, said0) || said0;   // ATLAS-5: plain words when Ask can't answer
         if (said) PG.words(req, String(said));   // SPEED-3: the answer's sentence shows while the list is read
         // ATLAS-3: a set of people comes back as the people, with the count and why each matched.
         const list = r.status < 300 ? await AN.listAnswer({ ask: r.body, query, orgId, asHer, req, today }).catch(e => { console.error("[atlas] list:", e.message); return null; }) : null;
@@ -686,8 +716,8 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
 // SENDS-1 · SAVE. The claim first (server/atlas/proposal.js), then one write per item.
 async function saveProposal(req, m, items) {
   const orgId = req.user.orgId;
-  const AT_ = await AT();
-  const today = orgToday(await orgTz(orgId));
+  const [AT_, AD] = await Promise.all([AT(), ADm()]);
+  const today = await atlasToday(orgId);
   const insId = m.instruction_id;
   const log = a => logAction(req, { requestId: m.id, ...a });
   const person = (id, extra = {}) => ({ donorId: id, link: { tab: "donor", donorId: id, ...extra } });
@@ -698,7 +728,7 @@ async function saveProposal(req, m, items) {
     if (it.kind === "call") {
       const r = await runStep(req, m, insId, { tool: "log_conversation", donorId: it.donorId, kind: it.convKind, how: it.how, date: it.date <= today ? it.date : today, memoId: m.id, note: it.note, citesRows: [it.donorId] });
       await log({ kind: "logged", state: r.ok ? "done" : "failed", runId: r.runId, undoable: r.ok,
-        line: r.ok ? `Logged the ${String(it.label || "conversation").toLowerCase()} with ${it.name}, ${AT_.dayWords(it.date, today)}.` : `I couldn't log that: ${r.reason}.`,
+        line: r.ok ? `Logged the ${String(it.label || "conversation").toLowerCase()} with ${it.name}, ${AD.dayWithWeekday(it.date, today)}.` : `I couldn't log that: ${r.reason}.`,
         ...person(it.donorId, { section: "timeline" }), place: "person", placeId: it.donorId });
       if (r.ok) wrote++;
     } else if (it.kind === "note") {
@@ -708,7 +738,7 @@ async function saveProposal(req, m, items) {
       if (r.ok) wrote++;
     } else if (it.kind === "follow_up") {
       const r = await runStep(req, m, insId, { tool: "create_task", donorId: it.donorId || undefined, title: it.title, due: it.due, citesRows: it.donorId ? [it.donorId] : [] });
-      await log({ kind: "reminder", state: r.ok ? "done" : "failed", runId: r.runId, undoable: r.ok, line: r.ok ? `Reminder for ${AT_.dayWords(it.due, today)}: ${String(it.title).replace(/\.$/, "")}.` : `I couldn't set that reminder: ${r.reason}.`,
+      await log({ kind: "reminder", state: r.ok ? "done" : "failed", runId: r.runId, undoable: r.ok, line: r.ok ? `Reminder for ${AD.dayWithWeekday(it.due, today)}: ${String(it.title).replace(/\.$/, "")}.` : `I couldn't set that reminder: ${r.reason}.`,
         donorId: it.donorId || null, place: "tasks", placeId: r.entityId, link: it.donorId ? { tab: "donor", donorId: it.donorId, section: "thread" } : { tab: "tasks" } });
       if (r.ok) wrote++;
     } else if (it.kind === "draft") {
@@ -722,7 +752,7 @@ async function saveProposal(req, m, items) {
       } else await log({ kind: "draft", state: "failed", line: `I couldn't draft ${what} to ${fnOf(it)}: ${r.reason || "it did not run"}.` });
       if (it.remindMe) {
         const t = await runStep(req, m, insId, { tool: "create_task", donorId: it.donorId, title: it.remindTitle, due: it.remindDue, citesRows: [it.donorId] });
-        await log({ kind: "reminder", state: t.ok ? "done" : "failed", runId: t.runId, undoable: t.ok, line: t.ok ? `Reminder for ${AT_.dayWords(it.remindDue, today)}: ${it.meet ? "book the meeting" : String(it.remindTitle).replace(/\.$/, "")}.` : `I couldn't set the reminder: ${t.reason}.`,
+        await log({ kind: "reminder", state: t.ok ? "done" : "failed", runId: t.runId, undoable: t.ok, line: t.ok ? `Reminder for ${AD.dayWithWeekday(it.remindDue, today)}: ${it.meet ? "book the meeting" : String(it.remindTitle).replace(/\.$/, "")}.` : `I couldn't set the reminder: ${t.reason}.`,
           donorId: it.donorId, place: "tasks", placeId: t.entityId, link: { tab: "donor", donorId: it.donorId, section: "thread" } });
         if (t.ok) wrote++;
       }
@@ -757,14 +787,17 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     AN.priorContext({ query, orgId, userId: actor(req).id, followsId: req.body.followsId, parse: j }),
   ]);
   if (org && org.agent_paused_at) return res.status(503).json({ error: "paused", sentence: `${atlasName()} is paused for this organization, so I did nothing.` });
-  const today = orgToday(tz);
+  const today = await atlasToday(orgId, tz);
   let onPage = onPage0;
   if (!onPage && prior && prior.onPage) onPage = prior.onPage;
   PG.lap(req, "setup");
   // SPEED-3: everyone a name could match is read while the model reads her words.
   const all = people(orgId);
   all.catch(() => {});
-  const read = await readSteps(orgId, text, { today, onPage: onPage ? onPage.name : null });
+  // ATLAS-5: the org's context once per request: the AI switch, the voice (writeDraft).
+  req.atlasCtx = { gate: agentGate(orgId) };
+  req.atlasCtx.gate.catch(() => {});
+  const read = await readSteps(orgId, text, { today, onPage: onPage ? onPage.name : null, gateP: req.atlasCtx.gate });
   // TRUTH-3: "how much did Marlowe and Renee give together" is one question
   // about each named person, answered in code (server/atlas/givingTotal.js),
   // whatever the read made of it. Never /ask with the names run together.
@@ -806,7 +839,7 @@ app.post("/atlas/:id/answer", requireAuth, checkWriteAccess, wrap(async (req, re
   if (m.status !== "needs_answers") return res.status(409).json({ error: "already_done", sentence: "I've already done this one." });
   const read = j(m.read) || {};
   const answers = req.body && typeof req.body.answers === "object" && req.body.answers ? req.body.answers : {};
-  const today = orgToday(await orgTz(orgId));
+  const today = await atlasToday(orgId);
   const onPage = read.atlas && read.atlas.onPage ? (await query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [read.atlas.onPage, orgId]))[0] : null;
   const fresh = (read.atlas.steps || []).map(s => ({ kind: s.kind, who: s.who, target: s.target, amountWords: s.amountWords, whenWords: s.whenWords, how: s.how,
     words: s.words, ...(s.whos ? { whos: s.whos } : {}) }));
@@ -834,6 +867,7 @@ app.post("/atlas/:id/save", requireAuth, checkWriteAccess, wrap(async (req, res)
   const pid = String((req.body && req.body.proposalId) || "");
   if (!proposal || proposal.id !== pid) return res.status(404).json({ error: "no_proposal", sentence: "There's nothing waiting to be saved here." });
   if (m.undone_at) return res.status(409).json({ error: "undone", sentence: "This was undone, so there's nothing to save." });
+  if (proposal.discardedAt) return res.status(409).json({ error: "discarded", sentence: "You discarded this one, so nothing was saved." });
   if (!(await PROP.claimProposal(orgId, m.id, pid, new Date().toISOString()))) {
     return res.status(200).json({ already: true, sentence: "Already saved.", request: await requestOut(orgId, m.id) });
   }
@@ -865,7 +899,7 @@ app.post("/atlas/actions/:id/list", requireAuth, checkWriteAccess, wrap(async (r
     const [g] = await query("SELECT id, name FROM audiences WHERE id=? AND org_id=?", [ans.groupId, orgId]);
     if (g) return res.json({ groupId: g.id, name: g.name, count: ans.ids.length, made: false });
   }
-  const today = orgToday(await orgTz(orgId));
+  const today = await atlasToday(orgId);
   let made = null;
   for (let n = 0; n < 4 && !made; n++) {
     const name = AN.groupName(ans.question, today) + (n ? ` ${n + 1}` : "");
@@ -1029,6 +1063,38 @@ app.post("/atlas/:id/all", requireAuth, checkWriteAccess, wrap(async (req, res) 
   res.status(r.status < 300 ? 200 : r.status).json({ request: await requestOut(orgId, m.id), failed: (r.body && r.body.failed) || [] });
 }));
 
+// ── ATLAS-5 · LET IT GO (W-1108-Atlas-08X) ──────────────────────────────────
+// Discard a proposal (nothing is written), or dismiss any waiting line: the
+// proposal's, a tap's (the card's own No), or an unanswered question.
+app.post("/atlas/:id/discard", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [m] = await query("SELECT id FROM voice_memos WHERE id=? AND org_id=? AND source LIKE 'atlas%'", [req.params.id, orgId]);
+  if (!m) return res.status(404).json({ error: "Not found" });
+  await WT.discardProposal({ query, run }, orgId, m.id);
+  res.json({ request: await requestOut(orgId, m.id) });
+}));
+app.post("/atlas/:id/dismiss-question", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [m] = await query("SELECT id, status FROM voice_memos WHERE id=? AND org_id=? AND source LIKE 'atlas%'", [req.params.id, orgId]);
+  if (!m) return res.status(404).json({ error: "Not found" });
+  if (!(await WT.dismissQuestion({ run }, orgId, m.id))) return res.status(409).json({ error: "not_waiting", sentence: "That question isn't waiting any more." });
+  res.json({ ok: true });
+}));
+app.post("/atlas/actions/:id/dismiss", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const a = await actionRow(orgId, req.params.id);
+  if (!a) return res.status(404).json({ error: "Not found" });
+  if (a.state !== "waiting") return res.status(409).json({ error: "not_waiting", sentence: "This one isn't waiting for you." });
+  if (a.kind === "proposal") await WT.discardProposal({ query, run }, orgId, a.request_id);
+  else if (a.card_id) {
+    const r = await asHer(req, "POST", `/voice/memos/${a.request_id}/cards/${a.card_id}/no`, {});
+    if (r.status >= 300) return res.status(r.status).json(r.body || { error: "not_done" });
+    await syncFromCards(orgId, a.request_id);
+  } else if (a.kind === "draft") return res.status(400).json({ error: "dismiss_the_draft", sentence: "Use the draft's own × to dismiss it." });
+  else await run("UPDATE atlas_actions SET state='discarded', waits=false, updated_at=NOW() WHERE id=? AND org_id=? AND state='waiting'", [a.id, orgId]);
+  res.json({ ok: true, action: actionOut(await actionRow(orgId, a.id)), request: a.request_id ? await requestOut(orgId, a.request_id) : null });
+}));
+
 // ── UNDO: ONE LINE, OR THE WHOLE REQUEST ────────────────────────────────────
 async function undoAction(req, a) {
   const orgId = req.user.orgId;
@@ -1083,8 +1149,9 @@ app.get("/atlas/activity", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const rows = await query(`SELECT * FROM atlas_actions WHERE org_id=? ORDER BY created_at DESC, id DESC LIMIT 60`, [orgId]);
   const waitingRows = await query(`SELECT * FROM atlas_actions WHERE org_id=? AND waits=true AND state='waiting'`, [orgId]);
-  const settled = await settledElsewhere(orgId, waitingRows);
-  res.json({ name: atlasName(), waiting: waitingRows.length - settled.size, items: rows.map(r => actionOut(asSettled(r, settled.get(r.id)))),
+  const [settled, asking] = await Promise.all([settledElsewhere(orgId, waitingRows), WT.openQuestions(query, orgId, actor(req).id)]);   // ATLAS-5: her open questions wait too
+  const items = [...asking.map(x => ({ ...x, by: atlasName() })), ...rows.map(r => actionOut(asSettled(r, settled.get(r.id))))];
+  res.json({ name: atlasName(), waiting: waitingRows.length - settled.size + asking.length, items,
     changes: await require("../server/shared/changeMarks").changeMarks(query, orgId) });
 }));
 // The notes on one page: what Atlas did there that nobody has seen yet, and

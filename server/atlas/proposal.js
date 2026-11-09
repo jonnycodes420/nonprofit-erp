@@ -85,7 +85,8 @@ async function storeProposal(orgId, memoId, items) {
 async function claimProposal(orgId, memoId, proposalId, at) {
   const r = await run(
     `UPDATE voice_memos SET read = jsonb_set(read, '{atlas,proposal,savedAt}', to_jsonb(?::text))
-      WHERE id=? AND org_id=? AND read #>> '{atlas,proposal,id}' = ? AND read #>> '{atlas,proposal,savedAt}' IS NULL`,
+      WHERE id=? AND org_id=? AND read #>> '{atlas,proposal,id}' = ? AND read #>> '{atlas,proposal,savedAt}' IS NULL
+        AND read #>> '{atlas,proposal,discardedAt}' IS NULL`,
     [at, memoId, orgId, String(proposalId || "")]);
   return !!(r && r.changes);
 }
