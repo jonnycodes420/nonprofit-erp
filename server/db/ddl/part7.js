@@ -1016,6 +1016,8 @@ async function run7(pool) {
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS offline_plan_id TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_offline_plan ON gifts (offline_plan_id) WHERE offline_plan_id IS NOT NULL`);
 
+  await require("../../donors/notesAtSchema").notesAtSchema(pool);   // FLOWS-4: donors.notes_at, the Notes banner's date
+
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id
   // (orgSummary.js says which few are not, and why).

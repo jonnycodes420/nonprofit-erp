@@ -28,6 +28,7 @@ import { DonorMap } from "./DonorMap";
 import { DataHealth } from "./DataHealth";
 import { DriftList } from "./DriftList";   // HOME-4: Drift opens here from Home's chip
 import { AssignModal, DirectoryView, FilterBar, ReEngageView, TeamView } from "./DonorDirectory";
+import { directoryFilterCount, useDirectoryIds, FilteredChip } from "./donors/ReEngageFilter";   // FLOWS-4
 import { ScreeningFileModal, ScreeningImportModal } from "./RoomToGive";
 import { useCanMajorGifts } from "../lib/majorGifts";
 import { FALLBACK_SETUP, PAGE_SIZES, cleanColumns } from "./DonorColumns";
@@ -403,6 +404,10 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     allPeople({force:true}).then(rows=>{if(live)setOrgPeople(rows);}).catch(e=>console.error(e));
     return()=>{live=false;};
   },[wholeOrgView,orgPeople]);
+  // FLOWS-4 (W-1109-Donors-18X): Re-engage carries the Directory's filters (donors/ReEngageFilter.jsx).
+  const reFilterN=directoryFilterCount({stage:dirStage,owner:dirAssignee,designation:dirDesignation,household:dirHousehold,status:dirStatus,fromImport:dirImport,where:dirWhere});
+  const reIds=useDirectoryIds({role:"",stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,household:dirHousehold,fromImport:dirImport,where:dirWhereStr,...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})},view==="reengage"&&reFilterN>0);
+  const clearDirFilters=()=>{setDirStage("");setDirAssignee("");setDirDesignation("");setDirHousehold("");setDirStatus("");setDirImport("");setDirWhere(EMPTY_WHERE);};
   const filtered=(orgPeople||[])
     .filter(d=>!search||(d.name+d.email).toLowerCase().includes(search.toLowerCase()))
     .filter(matchesAdvanced)
@@ -1001,7 +1006,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {wholeOrgView&&!orgPeople&&<div style={{display:"flex",justifyContent:"center",padding:"40px 0"}}><Spin/></div>}
       {view==="team"&&isAdmin&&orgPeople&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={selectDonor} onOpenDirectory={()=>setView("directory")}/>}
 
-      {view==="reengage"&&orgPeople&&<ReEngageView donors={filtered} org={data.org} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={selectDonor}/>}
+      {view==="reengage"&&orgPeople&&<><FilteredChip count={reFilterN} onClear={clearDirFilters}/>{reFilterN>0&&!reIds?<div style={{fontSize:13,color:T.ink3,padding:"8px 0"}}>Applying the Directory's filters…</div>:<ReEngageView donors={reFilterN>0?filtered.filter(d=>reIds.has(d.id)):filtered} org={data.org} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={selectDonor}/>}</>}
       {view==="map"&&mapOn&&orgPeople&&<DonorMap donors={filtered} userId={userId} onSelectDonor={selectDonor} apiFetch={apiFetch}/>}
       {view==="drift"&&<DriftList onSelectDonor={selectDonor} onBack={()=>setView("directory")}/>}
       {view==="health"&&<DataHealth isReadOnly={isReadOnly} onOpenDonor={id=>openIfOnFile(id,()=>reloadDonors&&reloadDonors())}/>}

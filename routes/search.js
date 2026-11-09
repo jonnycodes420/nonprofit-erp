@@ -99,10 +99,10 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
         WHERE org_id = ? AND deleted_at IS NULL
           AND (${PM.PERSON_MATCH_SQL} OR mobile ILIKE ? ${E}
                ${digits.length >= 4 && !amt?.explicit ? "OR regexp_replace(COALESCE(phone,''), '\\D', '', 'g') LIKE ? OR regexp_replace(COALESCE(mobile,''), '\\D', '', 'g') LIKE ?" : ""})
-        ORDER BY (${PM.FOLD("name")} LIKE ? ${E}) DESC, (${PM.FOLD("name")} LIKE ? ${E}) DESC, total_giving DESC NULLS LAST, id
-        LIMIT ${L}`;
+        ORDER BY ${PM.RANK_ORDER_SQL}
+        LIMIT ${L}`;   // FLOWS-4: the exact name first, then starts-with, then contains, ties by recent activity (personMatch.js)
   A.people = [...PM.personMatchReasonSql(fp).args, orgId, ...PM.personMatchSql(fp).args, p, ...(digits.length >= 4 && !amt?.explicit ? ["%" + digits + "%", "%" + digits + "%"] : []),
-        fp, PM.fold(String(q).trim()).replace(/[\\%_]/g, ch => "\\" + ch) + "%"];   // WALKB-1: a name match ranks first
+        ...PM.rankArgs(q)];
   // "Rafael gift": the person, opened on their gifts.
   if (read.personGifts) {
     T.personGifts = `SELECT id, name, kind, total_giving FROM donors

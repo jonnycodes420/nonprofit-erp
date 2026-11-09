@@ -284,10 +284,10 @@ export function CompareModal({ pair, onClose, onMerged, undoWhere = "below" }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   useEffect(() => {
-    apiFetch(`/data-health/pair?a=${encodeURIComponent(pair.a)}&b=${encodeURIComponent(pair.b)}`)
+    apiFetch(`/data-health/pair?a=${encodeURIComponent(pair.a)}&b=${encodeURIComponent(pair.b)}${pair.keep ? `&keep=${encodeURIComponent(pair.keep)}` : ""}`)   // FLOWS-4: keep the record she started from
       .then(r => { setD(r); setKeptId(r.keptId); setChoices(r.choices); })
       .catch(e => setErr(e.message));
-  }, [pair.a, pair.b]);
+  }, [pair.a, pair.b, pair.keep]);
   const otherId = d && (keptId === pair.a ? pair.b : pair.a);
   // ADDRESS-1: every field starts on the kept record's value, so keeping the
   // other record instead starts every field on that one's (choicesFor).
@@ -342,7 +342,7 @@ export function CompareModal({ pair, onClose, onMerged, undoWhere = "below" }) {
         <button type="button" data-commit style={btn(true, busy)} disabled={busy} onClick={merge} data-testid="dh-merge-confirm">{busy ? "Merging…" : `Merge into ${resultingName()}`}</button>
       </div>}>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
-        <div style={{ fontSize: 13, color: T.ink }}>Keeping <b>{K.name}</b> ({plural(Number(K.gift_count || 0), "gift")}, {fmtMoney(d.lifetimeCents[keptId])}); folding in <b>{O.name}</b> ({plural(Number(O.gift_count || 0), "gift")}, {fmtMoney(d.lifetimeCents[otherId])}).</div>
+        <div data-testid="merge-headline" style={{ fontSize: 13, color: T.ink }}>Keeping <b>{K.name}</b> ({plural(Number(K.gift_count || 0), "gift")}, {fmtMoney(d.lifetimeCents[keptId])}); folding in <b>{O.name}</b> ({plural(Number(O.gift_count || 0), "gift")}, {fmtMoney(d.lifetimeCents[otherId])}).</div>
         <button style={linkBtn} onClick={swap}>Keep the other record instead</button>
       </div>
       <KeptHeads kept={K} other={O} lifetimeCents={d.lifetimeCents} />

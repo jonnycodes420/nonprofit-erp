@@ -7,7 +7,8 @@ import { ThankYouDrafts } from "../ThankYouDrafts";
 import { EmailsReceived } from "../EmailAsSent";
 import { ProfileTimeline } from "../ProfileTimeline";
 import { HistoryList } from "../EditHistory";
-import { shownTags, shownNote } from "../../lib/internalLabels";
+import { shownTags } from "../../lib/internalLabels";
+import { NotesBanner } from "./NotesBanner";   // FLOWS-4
 import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 function ListTabs(props){
@@ -43,7 +44,7 @@ function ListTabsBody({fileTally,attachedFiles,deleteMaterial,donor,dpTab,giftsF
                   <button onClick={()=>setStwOpen(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
                 </div>
               </div>}
-            {dpTab==="notes"&&shownNote(donor.notes)&&<div data-testid="dp-record-notes" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{shownNote(donor.notes)}</div>}
+            {dpTab==="notes"&&<NotesBanner donor={donor}/>/* FLOWS-4: giving as it is now, the stored note dated */}
             {dpTab==="files"&&<>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               {/* FLOWS-2: the header counts every file on this person: uploaded here, and attached to a conversation or note (listed below) */}

@@ -38,7 +38,8 @@ export function MergeWithModal({ donor, other = null, onClose, onMerged }) {
       <div data-testid="mw-done" style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>{done ? done.sentence : msg}</div>
     </Modal>
   );
-  if (picked) return <CompareModal pair={{ a: donor.id, b: picked.id }} undoWhere="here, or from Data health," onClose={onClose}
+  // FLOWS-4 (W-1109-Donors-44X): the record she started from is the one kept; the compare's swap link changes it.
+  if (picked) return <CompareModal pair={{ a: donor.id, b: picked.id, keep: other ? undefined : donor.id }} undoWhere="here, or from Data health," onClose={onClose}
     onMerged={(sentence, r) => { setDone({ sentence, mergeId: r.mergeId }); onMerged && onMerged(r.keptId); }}/>;
   return (
     <Modal onClose={onClose} title={`Merge ${donor.name} with…`} width={560}>
