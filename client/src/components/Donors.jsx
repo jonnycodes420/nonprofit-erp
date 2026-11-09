@@ -35,6 +35,7 @@ import { EMPTY_WHERE, whereParam } from "./DonorFilters";
 // PERF-4: from their own modules, not through DonorImport.jsx, whose import screens
 // (and the spreadsheet reader they open) then stay off Donors' first look.
 import { MergeDuplicatesModal } from "./import/MergeDuplicatesModal";
+import { DeletePersonConfirm } from "./profile/DeletePersonConfirm";
 import { DonorProfile, EditDonorModal, FollowUpTaskModal, LogTouchpointModal } from "./DonorProfile";
 import { PATTERN_META, TIER_META } from "./donorShared";
 import { PLAN_UNKNOWN } from "../lib/entitlement";
@@ -671,10 +672,13 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     setEditTarget(null);
   };
 
-  const deleteDonor=async(id)=>{
+  // INTEGRITY-2 (W-1108-Finance-50X): Delete asks first, naming what goes with them.
+  const [deleteAsk,setDeleteAsk]=useState(null);
+  const deleteDonor=id=>setDeleteAsk({id,name:(selected&&selected.id===id&&selected.name)||"this person"});
+  const deleteDonorNow=async(id)=>{
     // FIX-12 (HELP-1 list): delete is a soft delete, so "cannot be undone" was untrue.
-    // FIX-22: no confirm. It goes at once and Undo brings it back for ten
-    // seconds; to remove someone for good, Erase on their profile still asks.
+    // FIX-22: Undo brings it back for a minute; Restore in Settings, Trash for 30 days.
+    setDeleteAsk(null);
     try{
       const r=await apiFetch(`/donors/${id}`,{method:"DELETE"});
       offerUndo(r,"donor",back=>{setDirReloadKey(k=>k+1);const rec=back&&back.record;if(rec)patchPeople(list=>list.some(d=>d.id===rec.id)?list:[...list,adaptDonor(rec)]);loadPeopleCount();});
@@ -814,6 +818,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           profile opens with. It opens again when the full record lands, and Save
           waits for it, so an early Edit can't save blanks over what is on file. */}
       {editTarget&&(d=>d&&<EditDonorModal key={d.id+(d.fullRecord?":full":":part")} donor={d} onSave={handleEditSaved} onClose={()=>setEditTarget(null)}/>)(selected?.id===editTarget.id?selected:editTarget)}
+      {deleteAsk&&<DeletePersonConfirm person={deleteAsk} onClose={()=>setDeleteAsk(null)} onConfirm={()=>deleteDonorNow(deleteAsk.id)}/>}
       {planBlock&&<Modal onClose={()=>setPlanBlock(null)} width={420} ariaLabel="This person has a monthly plan">
         <div data-testid="delete-plan-block" style={{display:"flex",flexDirection:"column",gap:12}}>
           <div style={{fontSize:16,fontWeight:800,color:T.ink}}>Not deleted</div>

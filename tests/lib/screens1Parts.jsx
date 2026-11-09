@@ -21,6 +21,7 @@ import * as BringInAFile from "../../client/src/components/settings/BringInAFile
 import * as CoverFeesCard from "../../client/src/components/settings/CoverFeesCard.jsx";
 import * as DpaDownload from "../../client/src/components/settings/DpaDownload.jsx";
 import * as EmptyTrash from "../../client/src/components/settings/EmptyTrash.jsx";
+import * as TrashList from "../../client/src/components/settings/TrashList.jsx";
 import * as GivingLevelsCard from "../../client/src/components/settings/GivingLevelsCard.jsx";
 import * as GivingPagesManager from "../../client/src/components/settings/GivingPagesManager.jsx";
 import * as GivingSourcesManager from "../../client/src/components/settings/GivingSourcesManager.jsx";
@@ -99,6 +100,7 @@ export const CASES = [
   ["settings/CoverFeesCard", () => <CoverFeesCard.CoverFeesCard orgId="org_fake" isAdmin/>, /Let Donors Cover Processing Costs/],
   ["settings/DpaDownload", () => <DpaDownload.DpaDownload/>, /Download the DPA/],
   ["settings/EmptyTrash", () => <EmptyTrash.EmptyTrash isAdmin isReadOnly={false}/>, /Empty trash/],
+  ["settings/TrashList", () => <TrashList.TrashList isAdmin isReadOnly={false}/>, /Fiona Faketon[\s\S]*Import undo of fixture\.csv, 8 Nov[\s\S]*Restore/],
   ["settings/GivingLevelsCard", () => <GivingLevelsCard.GivingLevelsCard isAdmin isReadOnly={false}/>, /level/i],
   ["settings/GivingPagesManager", () => <GivingPagesManager.GivingPagesManager orgSlug="fake-org" isAdmin isReadOnly={false}/>, /Giving Pages[\s\S]*New Giving Page/],
   ["settings/GivingSourcesManager", () => <GivingSourcesManager.GivingSourcesManager isReadOnly={false} isAdmin onChanged={noop}/>, /Where giving comes in/],

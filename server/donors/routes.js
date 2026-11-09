@@ -897,18 +897,12 @@ app.delete("/donors/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
     req.audit && req.audit.skip && req.audit.skip("a refused delete changes nothing");
     return res.status(409).json({ error: "active_plan", sentence: livePlanSentence(plan), planId: plan.id, canArchive: true });
   }
-  const result = await run(
-    "UPDATE donors SET deleted_at=NOW() WHERE id = ? AND org_id = ? AND deleted_at IS NULL",
-    [req.params.id, req.user.orgId]
-  );
-  if (!result.changes) return res.status(404).json({ error: "Donor not found" });
-  // FIX-22: a donor delete is already soft (deleted_at), so Undo only has to
-  // clear the stamp. The trash row records that, and nothing else.
-  const who = actor(req);
-  const undoId = newId("del");
-  await run(`INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
-             VALUES (?, ?, 'donors', ?, '{"__soft":true}'::jsonb, ?, ?)`,
-    [undoId, req.user.orgId, req.params.id, who.id, who.name]);
+  // FIX-22: a donor delete is soft (deleted_at). INTEGRITY-2: through the one
+  // door out (personTrash.trashPeople), so their household and relationship
+  // links go with them and come back with Restore.
+  const [t] = await require("../../personTrash").trashPeople(req.user.orgId, [req.params.id], actor(req), { why: { kind: "delete" } });
+  if (!t) return res.status(404).json({ error: "Donor not found" });
+  const undoId = t.undoId;
   res.json({ success: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 

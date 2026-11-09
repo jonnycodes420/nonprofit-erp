@@ -36,8 +36,18 @@
 // import of that same file claims it, and Undo trashes a person only when
 // their trash row names this run (re-read from the trash rows, never trusted
 // from the summary alone).
+//
+// INTEGRITY-2 (W-1107-Finance-35 again, 8 Nov): Fiona Callahan ($35,000)
+// went to the trash in a Finance import undo she was not part of. The fleet
+// imports the same fixture files from several areas, so two areas' files
+// have the same fingerprint: a "Bring them back" one area pressed in its
+// preview was claimed by ANOTHER area's import of the same file, whose Undo
+// then trashed her. A bring-back belongs to the person who pressed it: the
+// claim now needs the stamp's `by` to be the importer as well as the file.
+// And the trash row Undo writes says why (__why: import undo, which import),
+// through the one door out (personTrash.trashPeople), so the Trash list reads
+// "Import undo of <file>, 8 Nov" and Restore brings back what went with them.
 "use strict";
-const { newId } = require("../shared/newId");
 
 const CLAIM_HOURS = 24;
 
@@ -55,17 +65,18 @@ async function markBroughtBack(db, orgId, ids, who, fileKey) {
 
 // Inside the import's write (its ambient transaction). Returns the ids.
 // INTEGRITY-1: only a stamp pressed for this same file (its fingerprint).
-async function claimForImport(db, orgId, matchedIds, importId, fileKey) {
+async function claimForImport(db, orgId, matchedIds, importId, fileKey, byId) {
   const ids = [...new Set(matchedIds)];
-  if (!ids.length || !fileKey) return [];
+  if (!ids.length || !fileKey || !byId) return [];
   const rows = await db.query(
     `UPDATE deleted_records r SET row_data = jsonb_set(r.row_data, '{__bringBack,importId}', to_jsonb(?::text))
       WHERE r.org_id=? AND r.table_name='donors' AND r.record_id = ANY(?) AND r.restored_at IS NOT NULL
         AND r.restored_at > NOW() - (? * INTERVAL '1 hour')
         AND (r.row_data -> '__bringBack') IS NOT NULL AND (r.row_data -> '__bringBack' -> 'importId') IS NULL
         AND (r.row_data -> '__bringBack' ->> 'file') = ?
+        AND (r.row_data -> '__bringBack' ->> 'by') = ?
         AND EXISTS (SELECT 1 FROM donors d WHERE d.org_id = r.org_id AND d.id = r.record_id AND d.deleted_at IS NULL)
-      RETURNING r.record_id`, [importId, orgId, ids, CLAIM_HOURS, fileKey]);
+      RETURNING r.record_id`, [importId, orgId, ids, CLAIM_HOURS, fileKey, String(byId)]);
   return [...new Set(rows.map(r => r.record_id))];
 }
 
@@ -107,18 +118,9 @@ async function sendBackToTrash(db, orgId, imp, sj, who) {
     if (why.length) stayed.push({ id, name: r.name, why: why.join(", "), restored: true });
     else go.push(id);
   }
-  const trashed = [];
-  for (let k = 0; k < go.length; k += 500) {
-    const chunk = go.slice(k, k + 500);
-    await db.withTransaction(async c => {
-      const gone = await db.queryTx(c, "UPDATE donors SET deleted_at=NOW() WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL RETURNING id", [orgId, chunk]);
-      if (!gone.length) return;
-      await db.runTx(c, `INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
-                 VALUES ${gone.map(() => "(?, ?, 'donors', ?, ?::jsonb, ?, ?)").join(",")}`,
-        gone.flatMap(g => [newId("del"), orgId, g.id, JSON.stringify({ __soft: true, __importUndo: imp.id }), (who && who.id) || "system:import-undo", (who && who.name) || "Steward (undo)"]));
-      trashed.push(...gone.map(g => g.id));
-    });
-  }
+  // INTEGRITY-2: the one door out, with why; their links go with them and come back with Restore
+  const trashed = (await require("../../personTrash").trashPeople(orgId, go, who && who.id ? who : { id: "system:import-undo", name: "Steward (undo)" },
+    { why: { kind: "import_undo", importId: imp.id }, extra: { __importUndo: imp.id } })).map(g => g.id);
   return { trashed, stayed };
 }
 

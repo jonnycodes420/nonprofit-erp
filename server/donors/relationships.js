@@ -321,8 +321,12 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
             CASE WHEN dr.donor_id_a = ? THEN dr.donor_id_b ELSE dr.donor_id_a END AS related_donor_id
      FROM donor_relationships dr
      WHERE dr.org_id = ? AND (dr.donor_id_a = ? OR dr.donor_id_b = ?)
+       -- INTEGRITY-2 (W-1108-Donors-45X): a link to someone in the trash is not shown ("Owner: … $0");
+       -- deletes since take the link with them (personLinks.js), and this hides the ones left from before
+       AND NOT EXISTS (SELECT 1 FROM donors o WHERE o.org_id = dr.org_id AND o.deleted_at IS NOT NULL
+                         AND o.id = CASE WHEN dr.donor_id_a = ? THEN dr.donor_id_b ELSE dr.donor_id_a END)
      ORDER BY dr.created_at ASC`,
-    [donorId, donorId, orgId, donorId, donorId]
+    [donorId, donorId, orgId, donorId, donorId, donorId]
   );
   if (!rows.length) return res.json({ relationships: [], householdTotal: null });
 

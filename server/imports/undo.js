@@ -80,8 +80,8 @@ async function undoSize(orgId, id) {
                                 + (SELECT COUNT(*) FROM donors WHERE org_id=? AND created_import_id=?)::int AS n`, [orgId, id, orgId, id, orgId, id]);
   return Number(r && r.n) || 0;
 }
-async function handOff(orgId, id, who, size) {
-  const jobId = await JQ.enqueue({ name: "importUndo", orgId, key: `importUndo:${id}`, payload: { orgId, importId: id, who: { id: who.id, name: who.name } }, priority: 2 });
+async function handOff(orgId, id, who, size, alsoMove = false) {
+  const jobId = await JQ.enqueue({ name: "importUndo", orgId, key: `importUndo:${id}`, payload: { orgId, importId: id, who: { id: who.id, name: who.name }, alsoMove: !!alsoMove }, priority: 2 });
   const [w] = jobId ? [{ id: jobId }] : await query(`SELECT id FROM job_queue WHERE key=? AND status IN ('waiting','running') ORDER BY created_at DESC LIMIT 1`, [`importUndo:${id}`]);
   await saveState(orgId, id, { status: "running", jobId: (w && w.id) || null, phase: "waiting for its turn", done: 0, total: size, error: null, queuedAt: new Date().toISOString() });
   const [imp] = await query("SELECT id, reversed_at, undo_state FROM imports WHERE id=? AND org_id=?", [id, orgId]);
@@ -101,10 +101,11 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
       if (j && (j.status === "waiting" || j.status === "running")) return { status: 202, body: { ...(await undoStatus(orgId, imp)), queued: true } };
     }
     const size = await undoSize(orgId, id);
-    if (size > UNDO_INLINE_MAX) return handOff(orgId, id, actor(req), size);
-    try { return await undoImport(orgId, imp, actor(req), { deadline: Date.now() + UNDO_INLINE_MS() }); }
+    const alsoMove = !!(req.body && req.body.alsoMove === true);   // INTEGRITY-2: her choice in the confirm
+    if (size > UNDO_INLINE_MAX) return handOff(orgId, id, actor(req), size, alsoMove);
+    try { return await undoImport(orgId, imp, actor(req), { deadline: Date.now() + UNDO_INLINE_MS(), alsoMove }); }
     catch (e) {
-      if (e instanceof UndoHandOff) return handOff(orgId, id, actor(req), size);
+      if (e instanceof UndoHandOff) return handOff(orgId, id, actor(req), size, alsoMove);
       await saveState(orgId, id, { status: "failed", error: String(e.message || e).slice(0, 300) }).catch(() => {});
       throw e;
     }
@@ -113,7 +114,7 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
   res.status(out.status).json(out.body);
 }));
 JQ.handle("importUndo", async (payload) => {
-  const { orgId, importId: id, who } = payload || {};
+  const { orgId, importId: id, who, alsoMove } = payload || {};
   if (!orgId || !id) return { skipped: true };
   return withAdvisoryLock(`import-undo:${orgId}:${id}`, async () => {
     const [imp] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [id, orgId]);
@@ -125,7 +126,7 @@ JQ.handle("importUndo", async (payload) => {
       await saveState(orgId, id, { phase, done, total });
     };
     try {
-      const out = await undoImport(orgId, imp, who || { id: "system:import-undo", name: "Steward (undo)" }, { onProgress });
+      const out = await undoImport(orgId, imp, who || { id: "system:import-undo", name: "Steward (undo)" }, { onProgress, alsoMove: !!alsoMove });
       if (out.status !== 200) await saveState(orgId, id, { status: "failed", error: out.body.message || out.body.error });
       else require("../../routes/dataHealth").recheckSoon(orgId, "undo");
       return { status: out.status };
@@ -156,10 +157,10 @@ async function undoRefusal(req, imp) {
   return null;
 }
 
-async function undoImport(orgId, imp, who, { deadline = null, onProgress = null } = {}) {
+async function undoImport(orgId, imp, who, { deadline = null, onProgress = null, alsoMove = false } = {}) {
   const id = imp.id;
   const st = stateOf(imp);
-  const removed = { gifts: 0, pledges: 0, interactions: 0, tasks: 0, journeys: 0, people: 0, alreadyDeleted: 0, backToTrash: 0, ...(st.removed || {}) };
+  const removed = { gifts: 0, pledges: 0, interactions: 0, tasks: 0, journeys: 0, people: 0, alreadyDeleted: 0, backToTrash: 0, movedToo: 0, ...(st.removed || {}) };
   // a step boundary: past the request's limit, the rest goes to the queue
   const step = async (phase, done = 0, total = 0) => {
     if (deadline && Date.now() > deadline) throw new UndoHandOff();
@@ -278,10 +279,13 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null 
       if (cv.wasNull) await run("UPDATE donors SET custom_fields = NULL WHERE org_id=? AND id=? AND custom_fields = '{}'::jsonb", [orgId, cv.donorId]);
     }
   }
+  // INTEGRITY-2: a line Steward wrote by itself (created_by system:…) is not
+  // activity; it goes with the person (undoPeople.js).
   const orphans = await query(
     `SELECT d.id, (d.deleted_at IS NOT NULL) AS was_deleted FROM donors d WHERE d.org_id=? AND d.created_import_id=?
        AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id)
-       AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.donor_id=d.id)`, [orgId, id]);
+       AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.donor_id=d.id AND COALESCE(i.created_by, '') NOT LIKE 'system:%')
+       AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.donor_id=d.id AND COALESCE(t.created_by, '') NOT LIKE 'system:%')`, [orgId, id]);
   // FIX-52: people this file made that were deleted by hand since are still
   // rows (a delete is soft). Undo takes them with the rest, says how many were
   // already deleted, and clears their trash rows so nothing points at nobody.
@@ -295,6 +299,8 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null 
   for (let k = 0; k < orphans.length; k += UNDO_CHUNK) {
     await step("removing the people this file created", k, orphans.length);
     const chunk = orphans.slice(k, k + UNDO_CHUNK);
+    await run("DELETE FROM interactions WHERE org_id=? AND donor_id = ANY(?)", [orgId, chunk.map(o => o.id)]).catch(() => {});
+    await run("DELETE FROM tasks WHERE org_id=? AND donor_id = ANY(?) AND COALESCE(created_by, '') LIKE 'system:%'", [orgId, chunk.map(o => o.id)]).catch(() => {});
     try { await run("DELETE FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, chunk.map(o => o.id)]); chunk.forEach(o => gone.add(o)); }
     catch (e) {
       for (const o of chunk) {
@@ -311,28 +317,34 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null 
   // has a gift, note, call or task added since (or whom another record holds)
   // stays; the result names each one and why, and the receipt offers to
   // remove them too (the ordinary delete, to the trash).
-  const stayed = (await query(
-    `SELECT d.id, d.name,
-            (SELECT COUNT(*) FROM gifts g WHERE g.org_id=d.org_id AND g.donor_id=d.id)::int AS gifts,
-            (SELECT COUNT(*) FROM interactions i WHERE i.org_id=d.org_id AND i.donor_id=d.id AND i.type='note')::int AS notes,
-            (SELECT COUNT(*) FROM interactions i WHERE i.org_id=d.org_id AND i.donor_id=d.id AND i.type='call')::int AS calls,
-            (SELECT COUNT(*) FROM interactions i WHERE i.org_id=d.org_id AND i.donor_id=d.id AND i.type NOT IN ('note','call'))::int AS other,
-            (SELECT COUNT(*) FROM tasks t WHERE t.org_id=d.org_id AND t.donor_id=d.id)::int AS tasks
-       FROM donors d WHERE d.org_id=? AND d.created_import_id=? AND d.deleted_at IS NULL ORDER BY d.name, d.id`, [orgId, id]))
-    .filter(r => !goneIds.has(r.id))
-    .map(r => {
-      const why = [r.gifts && (r.gifts === 1 ? "a gift" : `${r.gifts} gifts`), r.notes && (r.notes === 1 ? "a note" : `${r.notes} notes`),
-        r.calls && (r.calls === 1 ? "a call" : `${r.calls} calls`), r.tasks && (r.tasks === 1 ? "a task" : `${r.tasks} tasks`),
-        r.other && (r.other === 1 ? "a line on their timeline" : `${r.other} lines on their timeline`)].filter(Boolean);
-      return { id: r.id, name: r.name, why: why.length ? why.join(", ") : "another record holds them" };
-    });
+  // INTEGRITY-2: who stayed, and why, by the one definition (undoPeople.js).
+  // A record holding gifts from before the import was here first: it stays,
+  // named, and is never offered to move.
+  const UP = require("./undoPeople");
+  const active = (await UP.peopleWithActivity(query, orgId, imp)).filter(r => !goneIds.has(r.id));
+  const held = (await query(`SELECT id, name FROM donors WHERE org_id=? AND created_import_id=? AND deleted_at IS NULL ORDER BY name, id`, [orgId, id]))
+    .filter(r => !goneIds.has(r.id) && !active.some(a => a.id === r.id))
+    .map(r => ({ id: r.id, name: r.name, why: "another record holds them", movable: true }));
+  const stayed = [...active, ...held];
   // IMPORT-9: the people this run brought back from the trash go back to it
   // (restoredPeople.js), unless something was added to them since
   {
     await step("putting back the people it brought back from the trash");
     const back = await require("./restoredPeople").sendBackToTrash(require("../../db"), orgId, imp, sj, who);
     removed.backToTrash = (Number((st.removed || {}).backToTrash) || 0) + back.trashed.length;
-    stayed.push(...back.stayed);
+    stayed.push(...back.stayed.map(p => ({ ...p, movable: true })));
+    await keep();
+  }
+  // INTEGRITY-2 (W-1107-Finance-17): she chose in Undo's confirm to move the
+  // people with activity since too. Only the ones this run created or
+  // restored (movable), through the one door out, in this same undo.
+  if (alsoMove && stayed.some(p => p.movable)) {
+    await step("moving the people with activity since to the trash");
+    const moved = await require("../../personTrash").trashPeople(orgId, stayed.filter(p => p.movable).map(p => p.id), who,
+      { why: { kind: "undo_moved_too", importId: id } });
+    const movedIds = new Set(moved.map(m => m.id));
+    removed.movedToo = (Number((st.removed || {}).movedToo) || 0) + moved.length;
+    for (let k = stayed.length - 1; k >= 0; k--) if (movedIds.has(stayed[k].id)) stayed.splice(k, 1);
     await keep();
   }
   if (imp.shape === "sheet") {
@@ -386,18 +398,21 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null 
   const money = [removed.gifts && n(removed.gifts, "gift", "gifts"), removed.pledges && n(removed.pledges, "pledge", "pledges")].filter(Boolean).join(" and ");
   const ppl = removed.people ? `${n(removed.people, "person", "people")} this file created`
     + (removed.alreadyDeleted ? ` (${removed.alreadyDeleted.toLocaleString("en-US")} of them already deleted)` : "") : "";
+  const movedSaid = removed.movedToo ? `; ${n(removed.movedToo, "person", "people")} with activity since moved to the trash too, as you chose` : "";
   const backSaid = removed.backToTrash ? `${n(removed.backToTrash, "person", "people")} it brought back from the trash ${removed.backToTrash === 1 ? "is" : "are"} back in the trash` : "";
   const what = (money ? ` ${money} removed${ppl ? ` and ${ppl}` : ""}` : ppl ? ` ${ppl} removed` : backSaid ? "" : " Nothing it wrote was left to remove")
     + (backSaid ? `${money || ppl ? ";" : ""} ${backSaid}` : "");   // IMPORT-9
   const list = (xs, k) => xs.slice(0, k).map(x => `${x.name} (${x.why})`).join("; ") + (xs.length > k ? `; and ${(xs.length - k).toLocaleString("en-US")} more` : "");
   const lead = stayed.length ? `Undone, except for ${n(stayed.length, "person", "people")}.` : "Undone.";
   return done({ reversed: true, gifts: removed.gifts, donorsRemoved: removed.people, journeysStopped: removed.journeys,
-    pledgesRemoved: removed.pledges, alreadyDeleted: removed.alreadyDeleted, backToTrash: removed.backToTrash,
+    pledgesRemoved: removed.pledges, alreadyDeleted: removed.alreadyDeleted, backToTrash: removed.backToTrash, movedToo: removed.movedToo,
     stayed: stayed.slice(0, 500), stayedCount: stayed.length,
     sentence: lead
       + what
-      + (removed.journeys ? `, ${n(removed.journeys, "journey", "journeys")} it started stopped` : "") + "."
-      + (stayed.length ? ` ${n(stayed.length, "person", "people")} stayed because they have activity since the import: ${list(stayed, 20)}.` : "")
+      + (removed.journeys ? `, ${n(removed.journeys, "journey", "journeys")} it started stopped` : "") + movedSaid + "."
+      // INTEGRITY-2: a record that was here before the import is named apart; it never moves
+      + ((a => a.length ? ` ${n(a.length, "person", "people")} stayed because they have activity since the import: ${list(a, 20)}.` : "")(stayed.filter(p => p.movable !== false)))
+      + ((h => h.length ? ` ${n(h.length, "record", "records")} stayed because ${h.length === 1 ? "it was" : "they were"} here before the import: ${list(h, 20)}.` : "")(stayed.filter(p => p.movable === false)))
       + ` Nothing was sent.${stayed.length ? "" : " Nothing else was touched."}` });
 }
 }
