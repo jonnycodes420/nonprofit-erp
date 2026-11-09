@@ -159,7 +159,7 @@ const mock = http.createServer((req, res) => {
   const ster = (a3.people || []).find(p => p.donorId === "d_a4_sterling") || {};
   const y = Number(civilToday().slice(0, 4));
   ok("§3 Sterling: what he gave last December, not his lifetime", ster.amount === `$900 in Dec ${y - 1}`, a3.people);
-  ok("§3 lifetime is there, second", ster.lifetime === "$2,144 in all" && /^\$900 in Dec \d{4}; \$2,144 in all$/.test(ster.reason || ""), ster);
+  ok("§3 lifetime is there, second", ster.lifetime === "Lifetime $2,144" && /^\$900 in Dec \d{4}; Lifetime \$2,144$/.test(ster.reason || ""), ster);
 
   // ── §4 ATLAS KEEPS HER WORDS ─────────────────────────────────────────────
   console.log("\n§4 a logged call keeps her words");

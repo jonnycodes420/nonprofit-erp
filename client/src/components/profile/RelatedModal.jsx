@@ -6,7 +6,7 @@ import { EditedMarker } from "../EditHistory";
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { Figure } from "../Figure";
-import { relationshipLabelsFor } from "./profileShared";
+import { relationshipLabelsFor, throughWords } from "./profileShared";
 import { linkedPeople } from "../../lib/linkedPeople";
 
 function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor,refreshSoftCredit,relErr,relLoading,relPickerOpen,relPickerResults,relPickerPending,relSaving,relSearch,relType,relatedOpen,relationships,removeFromHousehold,retypeRelationship,setHhModalOpen,setRelErr,setRelPickerOpen,setRelSearch,setRelType,setRelatedOpen,softCredit,unlinkDonor}){
@@ -115,7 +115,7 @@ function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor
                     <div key={r.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 14px"}}>
                       <div onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(r.relatedDonorId)} style={{cursor:onSelectRelatedDonor?"pointer":"default",minWidth:0}}>
                         <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.relatedDonorName} →</div>
-                        <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{fmtFull(r.relatedDonorTotalGiving)} lifetime</div>
+                        <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{r.side?throughWords(r):`${fmtFull(r.relatedDonorTotalGiving)} lifetime`}</div>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                         {isReadOnly?<Pill label={DONOR_RELATIONSHIP_LABELS.find(([v])=>v===r.relationshipType)?.[1]||r.relationshipType}/>

@@ -42,6 +42,20 @@ export function openPledgeWords(pl) {
   return { next, nextRow, more, unpaid, inst, rest: parts.join(" · ") };
 }
 
+function PledgeSchedule({ s }) {
+  return (
+    <div data-testid="dp-pledge-schedule" style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+      <div data-testid="dp-pledge-schedule-words" style={{ fontSize: 12.5, color: T.ink3 }}>{s.words}</div>
+      {s.installments.map(i => (
+        <div key={i.seq} data-testid="dp-pledge-installment" style={{ fontSize: 12, color: T.ink, lineHeight: 1.45 }}>
+          <b>{i.dueDate ? `Due ${longDate(i.dueDate)}` : "No set date"} · {money(i.amount)}</b> · {i.paid ? "paid" : i.paidAmount > 0 ? `${money(i.paidAmount)} paid, ${money(i.left)} to come` : "to come"}
+          {i.payments.length > 0 && <span style={{ color: T.ink3 }}> ({i.payments.map(p => `${money(p.amount)} on ${longDate(p.date)}`).join(", ")})</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function OpenPledgeBanner({ pledges, donorName, donorId, isReadOnly, onRecordPayment }) {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState("");
@@ -97,7 +111,10 @@ export default function OpenPledgeBanner({ pledges, donorName, donorId, isReadOn
                 </div>
               )}
             </div>
-            {w.inst.length > 1 && (
+            {/* TRUTH-5 (W-1107-Finance-20): the schedule, always, each payment on the installment it paid
+                (shared/numbers/pledgeSchedule.js; a pledge from before installments is one installment) */}
+            {pl.schedule && <PledgeSchedule s={pl.schedule} />}
+            {!pl.schedule && w.inst.length > 1 && (
               <div data-testid="dp-pledge-installments" style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
                 {w.inst.map(i => (
                   <span key={i.seq} style={{ fontSize: 12, padding: "3px 9px", borderRadius: 999, background: i.paid ? T.green100 : T.bg, color: T.ink,

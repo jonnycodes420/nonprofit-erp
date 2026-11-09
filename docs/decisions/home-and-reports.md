@@ -619,3 +619,25 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   figure named.
 - The truth check (`tests/lib/surfacesAgree.js`, pass `bunt`) holds the donor count, LYBUNT and SYBUNT
   against the key.
+
+## TRUTH-5 · amounts mean what their label says (2026-11-09)
+
+- **A period question gets period amounts.** Every list of people an answer names reads each amount from
+  `shared/numbers/periodAmounts.js` for the question's window (Ask's people, Atlas's list); Lifetime, when shown,
+  is labeled "Lifetime". "How Steward read this" is `readWords(plan words, window)`, never written by hand. The
+  rows are parts of the window's whole (`periodWhole` on the answer); `tests/truth5-amounts.test.js` §1 holds it.
+- **A giving unit is a household; "gives through" is an affiliation.** LYBUNT/SYBUNT units join `household_id`
+  (or the household whose primary record the person is) and `households.js UNIT_LINK_TYPES` (spouse, partner,
+  household). Owner and Works at (`CONNECTED_LINK_TYPES`) never add money into another row: they are listed as
+  `connected`, each person's own amount on their own row.
+- **An organization's Through list is soft credit** on its own gifts (`shared/numbers/softThrough.js`), never the
+  linked people's lifetimes.
+- **A person's gift count is `giftCount.js DONOR_GIFT_COUNT`** everywhere it shows (Directory column, sort, filter,
+  export, profile, Top donors). The stored rollup (`donors.gift_count`, an import's count plus later gifts) is not
+  shown as a count.
+- **LYBUNT, Lapsed and Lost each name one population** (`shared/lapseWords.js`: last fiscal year not this one; 12 to
+  24 months; over 24 months), defined on hover wherever the word shows.
+- **Fundraising Overview takes `period=this_fy|last_fy|custom`** (`server/reports/overviewPeriod.js`) and foots to
+  Reports' Giving summary for the same days.
+- **A pledge's schedule** is `shared/numbers/pledgeSchedule.js`: a pledge with no installments is one installment of
+  its amount; payments are applied oldest first and each names the installment it paid.

@@ -22,6 +22,17 @@ const PERSON = (d = "d") => `(${LIVE(d)} AND ${d}.is_sample IS NOT TRUE AND ${d}
 // SQL: the giving unit `d` belongs to (EVENTS-3: a household once).
 const UNIT = (d = "d") => `COALESCE(${d}.household_id, ${d}.id)`;
 
+// TRUTH-5 · WHAT MAKES ONE GIVING UNIT, AND WHAT DOES NOT. A household
+// (donors.household_id, or the household's primary record) and a spouse,
+// partner or "same household" link pool their money into one row: Raiser's
+// Edge and Bloomerang both report a household once. "Gives through" (Owner)
+// and "Works at" are affiliations: they never add one record's money into
+// another's row or total. They are listed beside it, "also connected", each
+// person's own giving labeled as theirs (W-1108-Fundraising-07).
+const UNIT_LINK_TYPES = Object.freeze(["spouse", "partner", "household"]);
+const CONNECTED_LINK_TYPES = Object.freeze(["owner", "works_at"]);
+const CONNECTED_WORD = Object.freeze({ owner: "gives through", works_at: "works at" });
+
 // One statement: people, households and giving units in the org. `where` is
 // an optional extra condition on `d` (with its own args).
 const COUNTS_SQL = (where = "") => `SELECT COUNT(*)::int AS people,
@@ -49,4 +60,4 @@ const WORDS = Object.freeze({
   households: "Households are counted once, however many of their people are here; a household whose people are all deleted is not counted.",
 });
 
-module.exports = { PERSON, UNIT, COUNTS_SQL, counts, countsOf, WORDS };
+module.exports = { PERSON, UNIT, COUNTS_SQL, counts, countsOf, WORDS, UNIT_LINK_TYPES, CONNECTED_LINK_TYPES, CONNECTED_WORD };

@@ -30,6 +30,8 @@ import { CampaignsView, CategoryBadge, CATEGORY_META, PACE_META, daysLeftText, c
 import { tabHref, urlParam, giftHref, editPageHref } from "../lib/appUrls";
 import RemoveMenu from "./RemoveMenu";
 import { ThankYouDrafts } from "./ThankYouDrafts";   // CHECK-2
+import { ThankClock } from "./fundraising/ThankClock";   // TRUTH-5: moved, unchanged
+import { OverviewPeriodBar, overviewUrl } from "./fundraising/OverviewPeriodBar";   // TRUTH-5: This FY / Last FY / custom
 import { EventStory } from "./EventRaised";   // FUNDRAISING-2
 import { PledgesView } from "./Pledges";   // FUNDRAISING-2
 import { countLabel } from "../../../shared/countWords.js";
@@ -134,7 +136,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
   const load = () => {
     setLoading(true);
     Promise.all([
-      apiFetch("/fundraising/overview"),
+      apiFetch(overviewUrl()),
       apiFetch("/fundraising/campaigns"),
       apiFetch("/giving-pages").catch(() => []),
     ]).then(([o, c, p]) => {
@@ -144,7 +146,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
   useEffect(() => { load(); }, []);
   // STALE-1: a gift, pledge or grant payment made anywhere moves the overview
   // and the campaigns' totals, read again behind the screen (no loading state).
-  const refresh = () => Promise.all([apiFetch("/fundraising/overview"), apiFetch("/fundraising/campaigns")])
+  const refresh = () => Promise.all([apiFetch(overviewUrl()), apiFetch("/fundraising/campaigns")])
     .then(([o, c]) => { setOverview(o); setCampaigns(c); }).catch(() => { /* keeps what is on screen */ });
   useChanged(["gift", "pledge", "totals", "event"], refresh);   // STALE-2: "event" moves the lead card's Invited and Came
 
@@ -467,7 +469,8 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
         </div>
       )}
 
-      {/* Momentum: the period's money and gifts, pledges, live pages. */}
+      {/* Momentum: the period's money and gifts, pledges, live pages. TRUTH-5: the period is hers to pick, LYBUNT beside it. */}
+      <OverviewPeriodBar overview={overview} onPicked={onRefresh} onNavigate={onNavigate} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12 }}>
         <StatTile label={`Raised · ${overview.periodLabel}`} value={fmtTotal(period.raised)}
           accent={T.gold} source={period.source} figure={{ value: period.raised, kind: "money" }} onOpenPerson={openPerson}
@@ -1417,23 +1420,6 @@ function DepositsView({ isReadOnly, roTip }) {
 // CAPTURE-1 · THE GIFT-TO-THANKED CLOCK. One line: how long, on average, a
 // gift waited between arriving and being thanked over the last 30 days. The
 // number opens its gifts, slowest first.
-function ThankClock() {
-  const [c, setC] = useState(null);
-  useEffect(() => { apiFetch("/thank-yous/clock").then(setC).catch(() => setC(null)); }, []);
-  if (!c) return null;
-  return (
-    <div data-testid="thank-clock" style={{ fontSize: 14, color: T.ink, lineHeight: 1.5 }}>
-      Average time from gift to thank-you, last 30 days{": "}
-      {c.days == null ? <span style={{ color: T.ink3 }}>no gifts thanked yet</span> : (
-        <strong>
-          <Figure variant="inline" kind="count" value={Number(c.days)} suffix={Number(c.days) === 1 ? " day" : " days"}
-            label="Average time from gift to thank-you" definition={c.definition} source={{ key: c.source || "gift-to-thanked", params: {} }} figureKey="gift-to-thanked" />
-        </strong>
-      )}
-    </div>
-  );
-}
-
 // The gifts nobody has thanked, older than the org's own N days. Pick them,
 // print one letter per donor (window-envelope address block), print labels,
 // then mark them sent. Printing changes nothing; marking is its own press,

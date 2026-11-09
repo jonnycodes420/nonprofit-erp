@@ -47,42 +47,13 @@ function sharedReason(ask) {
   return "";
 }
 
-// ATLAS-4 · WHAT EACH PERSON GAVE THAT MATCHED. The list showed each
-// person's last gift and lifetime total; asked "who gave last December", the
-// figure that answers is what they gave last December ("$2,144 in Dec 2025").
-// The window is the question's own: the first gift condition it holds that is
-// not a "nothing since". Lifetime stays, as the second, quieter figure.
-const isDay = d => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d);
-function matchWindow(plan, today) {
-  if (!plan) return null;
-  const conds = [];
-  for (const r of plan.related || []) if (r && r.entity === "gifts" && !r.none) conds.push(...(r.where || []).filter(c => c.field === "date"));
-  if (plan.entity === "gifts") conds.push(...(plan.where || []).filter(c => c.field === "date"));
-  const c = conds[0];
-  if (!c) return null;
-  const v = c.value;
-  const mon = d => `${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`;
-  if (c.op === "between" && Array.isArray(v) && isDay(v[0]) && isDay(v[1])) {
-    const whole = v[0].slice(0, 7) === v[1].slice(0, 7) && v[0].endsWith("-01") && Number(v[1].slice(8)) === new Date(Date.UTC(+v[1].slice(0, 4), +v[1].slice(5, 7), 0)).getUTCDate();
-    return { from: v[0], to: v[1], words: whole ? `in ${mon(v[0])}` : `between ${day(v[0])} and ${day(v[1])}` };
-  }
-  if ((c.op === "gte" || c.op === "gt") && isDay(v)) return { from: v, to: today, words: `since ${day(v)}` };
-  if (c.op === "eq" && isDay(v)) return { from: v, to: v, words: `on ${day(v)}` };
-  if (c.op === "last_days" && Number(v) > 0) {
-    const t = new Date(`${today}T00:00:00Z`); t.setUTCDate(t.getUTCDate() - Number(v));
-    return { from: t.toISOString().slice(0, 10), to: today, words: `in the last ${Number(v)} days` };
-  }
-  return null;
-}
-// The one rule for money given in a span (shared/numbers/givingBetween.js:
-// hard credit, refunds off, credit rows out), once per person shown.
-async function matchedCents(query, orgId, ids, w, today) {
-  if (!w || !ids.length) return null;
-  const { givingBetween } = require("../../shared/numbers/givingBetween");
-  const out = new Map();
-  for (const id of ids) out.set(id, (await givingBetween(query, orgId, { from: w.from, to: w.to, today, donorId: id })).cents);
-  return out;
-}
+// ATLAS-4 · WHAT EACH PERSON GAVE THAT MATCHED. Asked "who gave last
+// December", the figure that answers is what they gave last December ("$2,144
+// in Dec 2025"). TRUTH-5: the window and the amounts are shared/numbers/
+// periodAmounts.js's, the rule the Ask answer's people read too, and Lifetime is
+// labeled "Lifetime" (the profile's figure, never the stored rollup).
+const PA = require("../../shared/numbers/periodAmounts");
+const matchWindow = PA.windowOf;
 
 async function listAnswer({ ask, query, orgId, asHer, req, today = null }) {
   const people = answerPeople(ask);
@@ -100,18 +71,19 @@ async function listAnswer({ ask, query, orgId, asHer, req, today = null }) {
   ids = [...new Set(ids)].slice(0, MAX_IDS);
   const shown = people.slice(0, SHOWN);
   const rows = shown.length ? await query(
-    `SELECT id, last_gift_amount, last_gift_date, total_giving FROM donors WHERE org_id=? AND id = ANY(?::text[])`, [orgId, shown.map(p => p.donorId)]) : [];
+    `SELECT id, last_gift_amount, last_gift_date FROM donors WHERE org_id=? AND id = ANY(?::text[])`, [orgId, shown.map(p => p.donorId)]) : [];
+  const life = await PA.lifetimeCents(query, orgId, shown.map(p => p.donorId));
   const byId = new Map(rows.map(r => [r.id, r]));
   const why = sharedReason(ask);
   const day0 = today || new Date().toISOString().slice(0, 10);
   const w = matchWindow(ask.qplan || ask.plan, day0);
-  const matched = await matchedCents(query, orgId, shown.map(p => p.donorId), w, day0).catch(e => { console.error("[atlas] matched:", e.message); return null; });
+  const matched = w ? await PA.periodCents(query, orgId, shown.map(p => p.donorId), w, day0).catch(e => { console.error("[atlas] matched:", e.message); return null; }) : null;
   return {
     count, ids, reason: why, more: Math.max(0, count - shown.length),
     people: shown.map(p => {
       const r = byId.get(p.donorId) || {};
       const last = toCents(r.last_gift_amount) > 0 && r.last_gift_date ? `last gift ${usd(toCents(r.last_gift_amount))} on ${day(r.last_gift_date)}` : "no gift on record";
-      const lifetime = `${usd(toCents(r.total_giving))} in all`;
+      const lifetime = `Lifetime ${usd(life.get(p.donorId) || 0)}`;
       const m = matched && matched.get(p.donorId);
       // The matched amount first; with no window to read, what they last gave.
       if (m > 0) return { donorId: p.donorId, name: p.name, amount: `${usd(m)} ${w.words}`, lifetime, reason: `${usd(m)} ${w.words}; ${lifetime}` };
