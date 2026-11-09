@@ -30,9 +30,12 @@ async function rowsFor(orgId) {
     query(`SELECT g.id, g.donor_id, g.amount, g.date::text AS date, g.memo, g.notes, g.campaign, g.payment_method, g.gift_type, g.type,
                   g.tribute_type, g.tribute_name, g.import_id, g.pledge_id, e.name AS event_name,
                   -- PLEDGES-2: the fund the gift is booked to (fundSplit's rule: restricted is a designation)
-                  NULLIF(g.fund_id, '') AS fund_id, rf.name AS restricted_fund
+                  NULLIF(g.fund_id, '') AS fund_id, rf.name AS restricted_fund,
+                  -- FLOWS-3: the gift's own fund, restricted or not, for the words that name it
+                  af.name AS own_fund
              FROM gifts g LEFT JOIN events e ON e.id = g.event_id AND e.org_id = g.org_id
              LEFT JOIN fin_funds rf ON rf.id = g.fund_id AND rf.org_id = g.org_id AND rf.restricted = true
+             LEFT JOIN fin_funds af ON af.id = g.fund_id AND af.org_id = g.org_id
             WHERE g.org_id=? AND COALESCE(g.is_sample,false)=false`, [orgId]),
     // FIX-60: made_on is the day the pledge was made, as the lapse rule reads it
     // (lapseRule.js), so a pledge made in the last 12 months is giving activity.

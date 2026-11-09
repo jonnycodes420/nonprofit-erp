@@ -722,8 +722,8 @@ function QuickForm({ form, calendar, onClose, onSaved }) {
         </div>
         {/* FLOWS-1: one sentence, true either way: her calendar when one is connected, Steward's when not */}
         {form.kind === "meeting" && <div data-testid="cal-meeting-where" style={{ fontSize: 12.5, color: T.ink3 }}>{calendar && calendar.connected
-          ? `It goes on your ${calendar.provider === "microsoft" ? "Outlook" : "Google"} calendar, and nobody is invited.`
-          : "It goes on Steward's calendar, and nobody is invited."}</div>}
+          ? `It goes on your ${calendar.provider === "microsoft" ? "Outlook" : "Google"} calendar${who ? `, with ${who.name}` : ""}. No invitation is sent.`
+          : `It goes on Steward's calendar${who ? `, with ${who.name}` : ""}. No invitation is sent.`}</div>}
         {err && <div role="alert" style={{ fontSize: 13 }}>{err}</div>}
         <div style={{ display: "flex", gap: 8 }}>
           <button type="button" data-testid="cal-quick-save" style={{ ...btn, opacity: ready ? 1 : 0.5 }} disabled={!ready || busy} onClick={save}>{busy ? "Saving…" : "Add"}</button>

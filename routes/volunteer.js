@@ -518,14 +518,8 @@ app.get("/volunteer-hub/person/:id", requireAuth, wrap(async (req, res) => {
   const shifts = await query(
     `SELECT id, date, hours, role, via FROM volunteer_shifts
       WHERE org_id=? AND person_id=? ORDER BY date DESC NULLS LAST LIMIT 25`, [orgId, p.id]);
-  const upcoming = await query(
-    `SELECT su.id, su.status, su.position, s.date, s.start_time, s.end_time, o.name AS opportunity, o.location
-       FROM volunteer_signups su
-       JOIN volunteer_slots s ON s.id=su.slot_id
-       JOIN volunteer_opportunities o ON o.id=s.opportunity_id
-      WHERE su.org_id=? AND su.person_id=? AND su.status <> 'cancelled'
-        AND s.cancelled_at IS NULL AND s.date >= ?
-      ORDER BY s.date, s.start_time LIMIT 20`, [orgId, p.id, today]);
+  // FLOWS-3 (W-1107-Volunteers-24): the Schedule's own rows, ahead and behind (server/volunteers/personShifts.js).
+  const { upcoming, past } = await require("../server/volunteers/personShifts").personShifts(query, orgId, p.id, today);
   const credentials = await query(
     `SELECT id, kind, signed_on, expires_on FROM volunteer_credentials
       WHERE org_id=? AND person_id=? AND superseded_at IS NULL ORDER BY kind`, [orgId, p.id]);
@@ -551,10 +545,10 @@ app.get("/volunteer-hub/person/:id", requireAuth, wrap(async (req, res) => {
       ? `${summary.totalHours} hours across ${summary.shiftCount} ${summary.shiftCount === 1 ? "shift" : "shifts"}`
         + `${summary.lastShift ? `, the last on ${summary.lastShift}` : ""}.`
       : "No hours logged yet." },
-    shifts, upcoming, credentials, groups,
+    shifts, upcoming: upcoming.map(u => ({ ...u, id: u.signupId })), past: past.map(u => ({ ...u, id: u.signupId })), credentials, groups,
     upcomingSentence: upcoming.length
       ? `${upcoming.length} ${upcoming.length === 1 ? "shift" : "shifts"} coming up.`
-      : "Nothing on the schedule yet.",
+      : past.length ? "Nothing coming up." : "Nothing on the schedule yet.",
     // The one conditional block. Absent means absent: there is no key to read.
     giving: coordinator || !gave ? null : {
       total: Number(p.total_giving), gifts: Number(p.gift_count) || 0, lastGift: p.last_gift_date,
@@ -745,8 +739,11 @@ async function volunteerList(req) {
   if (coord && GIVING_RULES.some(k => rules[k])) return { refused: true };
   const D = /^\d{4}-\d{2}-\d{2}$/;
   const today = orgToday(await orgTz(orgId));                      // ORG_TZ_SEAM_OK
-  const hFrom = D.test(String(q.hoursFrom || "")) ? String(q.hoursFrom) : today.slice(0, 4) + "-01-01";
-  const hTo = D.test(String(q.hoursTo || "")) ? String(q.hoursTo) : today;
+  // FLOWS-3 (W-1108-Volunteers-26X): the column counts exactly the dates set,
+  // the Hours dates or else the On-a-shift dates; this year only when none is.
+  const set = k => (D.test(String(q[k] || "")) ? String(q[k]) : null);
+  const hFrom = set("hoursFrom") || set("volHoursFrom") || set("volShiftFrom") || today.slice(0, 4) + "-01-01";
+  const hTo = set("hoursTo") || set("volHoursTo") || set("volShiftTo") || today;
   // FIX-27 Part 8: the Hours filter counts the SAME dates as the "Hours in
   // range" column beside it (this year when blank). It counted every year,
   // so "at least 10 hours" kept people the column showed with 2 and the

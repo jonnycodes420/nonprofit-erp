@@ -1030,7 +1030,7 @@ async function agentContext(orgId, { today, scope, allowed }) {
     ctx.groups = await safe(query("SELECT id, name FROM audiences WHERE org_id=? AND kind='static' ORDER BY name LIMIT 100", [orgId]));
   if (want("add_to_household")) ctx.households = await safe(query("SELECT id, name FROM households WHERE org_id=? ORDER BY name LIMIT 100", [orgId]));
   if (want("start_journey") || want("stop_journey"))
-    ctx.journeys = await safe(query("SELECT id, name FROM cultivation_templates WHERE org_id=? AND archived_at IS NULL ORDER BY name LIMIT 50", [orgId]));
+    ctx.journeys = await safe(query("SELECT id, name, journey_enabled FROM cultivation_templates WHERE org_id=? AND archived_at IS NULL ORDER BY name LIMIT 50", [orgId]));
   if (want("sign_up_shift") || want("log_hours")) {
     ctx.shifts = await safe(query(`SELECT s.id, s.date, s.start_time, s.end_time, s.name, s.opportunity_id, o.name AS opportunity
         FROM volunteer_slots s LEFT JOIN volunteer_opportunities o ON o.id = s.opportunity_id AND o.org_id = s.org_id
@@ -1547,7 +1547,8 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     const bad = (s.tool === "set_owner" && !(s.ownerName = (idIn(actx.staff, s.ownerUserId) || {}).name))
       || (["add_to_group", "remove_from_group"].includes(s.tool) && !(s.groupName = (idIn(actx.groups, s.groupId) || {}).name))
       || (s.tool === "add_to_household" && !(s.householdName = (idIn(actx.households, s.householdId) || {}).name))
-      || (s.tool === "start_journey" && !(s.journeyName = (idIn(actx.journeys, s.journeyId) || {}).name))
+      // FLOWS-3: only an Active journey starts people; Atlas never proposes a Draft or Paused one.
+      || (s.tool === "start_journey" && !(s.journeyName = ((x => (x && x.journey_enabled === true ? x : null))(idIn(actx.journeys, s.journeyId)) || {}).name))
       || (s.tool === "stop_journey" && s.journeyId && !(s.journeyName = (idIn(actx.journeys, s.journeyId) || {}).name))
       || (s.tool === "sign_up_shift" && !(s.shiftName = (() => { const x = idIn(actx.shifts, s.slotId); return x && `${x.name || x.opportunity || "the shift"} on ${x.date}`; })()))
       || (s.tool === "register_event" && !(s.eventName = (idIn(actx.events, s.eventId) || {}).name))

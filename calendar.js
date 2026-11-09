@@ -158,7 +158,7 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
         const short = needed ? r.footer.short : 0;
         out.push({ id: `shift:${r.id}`, type: "shift", title: r.name || "Shift", start: `${r.date}T${hm(r.startTime) || "09:00"}`, end: `${r.date}T${hm(r.endTime) || "12:00"}`,
           allDay: false, detail: needed ? `${filled} of ${needed} filled` : `${filled} signed up`, filled, needed,
-          short, editable: { move: true, resize: true }, ref: { slotId: r.id }, ...(short ? { conflict: `Short ${short} ${short === 1 ? "person" : "people"}` } : {}) });
+          short, editable: { move: true, resize: true }, ref: { slotId: r.id }, ...shiftMarks(short, r.conflicts) });
       })));
   }
   if (want.has("event")) {
@@ -444,8 +444,21 @@ function foldLoggedMeetings(items) {
   });
 }
 
-// Two of one person's meetings at once; an event and a shift on top of each
-// other. A shift short of people already says so. Quiet markers only.
+// FLOWS-3 (W-1108-Volunteers-10X): ONE CONFLICT RULE. A shift's clash on the
+// Calendar is the Schedule's own: somebody with a place on it who also holds a
+// place on another shift at the same time (scheduleRows' `conflicts`, from
+// shared/volunteerShifts.js findConflicts). An event that merely shares the
+// hour with a shift is not a clash: the Calendar said "Clashes with the shift"
+// while the Schedule counted 0 conflicts.
+function shiftMarks(short, conflicts) {
+  const words = [short ? `Short ${short} ${short === 1 ? "person" : "people"}` : "",
+    conflicts ? `${conflicts} ${conflicts === 1 ? "person is" : "people are"} on another shift at the same time` : ""].filter(Boolean);
+  return words.length ? { conflict: words.join(" · ") } : {};
+}
+
+// Two of one person's meetings at once. A shift's people on two shifts at once
+// and a shift short of people are marked where the shift is read (shiftMarks).
+// Quiet markers only.
 function markConflicts(items) {
   const timed = items.filter(i => !i.allDay && i.start && i.end && i.start.length > 10);
   const overlap = (a, b) => a.start < b.end && b.start < a.end;
@@ -454,11 +467,6 @@ function markConflicts(items) {
     const a = meets[i], b = meets[j];
     if (a.ownerId && a.ownerId === b.ownerId && overlap(a, b)) { a.conflict = a.conflict || "Overlaps another of your meetings"; b.conflict = b.conflict || "Overlaps another of your meetings"; }
   }
-  const evs = items.filter(i => i.type === "event"), shifts = timed.filter(i => i.type === "shift");
-  for (const e of evs) for (const s of shifts) {
-    const same = e.allDay ? s.start.slice(0, 10) === e.start.slice(0, 10) : overlap(e, s);
-    if (same) { e.conflict = e.conflict || `Clashes with the shift ${s.title}`; s.conflict = s.conflict ? `${s.conflict} · clashes with ${e.title}` : `Clashes with ${e.title}`; }
-  }
 }
 
-module.exports = { calendarItems, TYPES, DEFAULT_ON, markConflicts, chargeDays, foldMeetingSteps, foldLoggedMeetings };
+module.exports = { calendarItems, TYPES, DEFAULT_ON, markConflicts, shiftMarks, chargeDays, foldMeetingSteps, foldLoggedMeetings };

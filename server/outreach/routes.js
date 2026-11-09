@@ -298,15 +298,18 @@ app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, 
   // renderer left its slot. A copy the send would refuse is refused here too.
   let blocksHtml = null;
   let testSubject = campaign.subject || campaign.name || "";
+  // FLOWS-3: read as the person the preview shows (req.body.as), never a sample gift.
+  const asPerson = await require("./testAsPerson").personFields(query, orgId, req.body && req.body.as);
   if (emailCompose.hasBlocks(campaign)) {
     const ctx = await emailCompose.orgRenderContext(orgId);
+    const testFields = { ...emailCompose.sampleFields(ctx, { name: me?.name || "", email: to, campaignName: campaign.name || "" }), ...(asPerson ? asPerson.fields : {}) };
     const r = await emailCompose.render(ctx, {
       blocks: campaign.email_blocks, subject: campaign.subject, preheader: campaign.preheader,
-      fields: emailCompose.sampleFields(ctx, { name: me?.name || "", email: to, campaignName: campaign.name || "" }),
+      fields: testFields,
       mode: "send" });
     if (r.problems.length) return res.status(400).json({ error: "email_not_ready", message: emailCompose.refusalSentence(r.problems), problems: r.problems });
     blocksHtml = emailCompose.withFooter(r, await unsubscribeEmailFooterHtml(to, orgId, "campaign") + testNote, "");
-    testSubject = await emailCompose.subjectFor(campaign.subject, emailCompose.sampleFields(ctx, { name: me?.name || "", email: to }));
+    testSubject = await emailCompose.subjectFor(campaign.subject, testFields);
   }
   const html = blocksHtml || await brandEmailHeaderHtml(orgId)
     + T.renderMergeFields(campaign.body || "", {
@@ -332,7 +335,7 @@ app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, 
       return res.status(502).json({ error: "send_failed", message: "The test could not be sent just now. Nothing about the campaign changed." });
     }
   }
-  res.json({ sent: delivered, to, from: identity.from, verified: identity.verified, counted: false });
+  res.json({ sent: delivered, to, from: identity.from, verified: identity.verified, counted: false, as: asPerson ? asPerson.person : null, subject: `[Test] ${testSubject}` });
 }));
 
 // ── EMAIL-1 · WAITING FOR APPROVAL ────────────────────────────────────────

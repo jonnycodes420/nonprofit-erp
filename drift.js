@@ -190,6 +190,7 @@ function assessDrift(gifts, today, opts = {}) {
     intervalCv: cv != null ? Math.round(cv * 100) / 100 : null,
     daysSinceLast, overdueRatio, expectedNext, driftStartDate,
     late: R.late, daysPast: R.daysPast, onTime: R.onTime, onTimeThrough: R.onTimeThrough, v: ANSWER_V,
+    nextGift: R.nextGift, dueNow: R.dueNow,   // FLOWS-3: last gift + usual gap, the rail's next gift
     lastGiftDate: last.date, firstGiftDate: first.date,
     valueAtRisk: Math.round(valueAtRisk * 100) / 100,
     // BUILD-83 Part 3.3/4 — AT RISK IS THE NEXT GIFT, NOT THE LIFETIME. The

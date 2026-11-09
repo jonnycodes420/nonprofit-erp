@@ -266,8 +266,8 @@ function RailJourneys({addErr,addPick,addPreview,allJourneys,confirmAddToJourney
                   {addPreview&&(
                     <div data-testid="dp-journey-preview"
                       style={{marginTop:9,background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:10,padding:"11px 12px"}}>
-                      <div style={{fontSize:10.5,fontWeight:700,color:RAIL.dim}}>
-                        First step
+                      <div data-testid="dp-journey-preview-first" style={{fontSize:10.5,fontWeight:700,color:RAIL.dim}}>
+                        {addPreview.firstStepLine||"First step"}
                       </div>
                       <div style={{fontSize:14,fontWeight:700,color:RAIL.strong,marginTop:3}}>
                         {addPreview.firstStep?addPreview.firstStep.label:"No steps yet"}
@@ -277,16 +277,20 @@ function RailJourneys({addErr,addPick,addPreview,allJourneys,confirmAddToJourney
                           due {new Date(addPreview.firstStep.dueDate+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"})}
                         </div>
                       )}
+                      {addPreview.anchorNote&&<div data-testid="dp-journey-preview-anchor" style={{fontSize:11.5,color:RAIL.dim,marginTop:5,lineHeight:1.5}}>{addPreview.anchorNote}</div>}
                       <div style={{fontSize:11.5,color:RAIL.dim,marginTop:7,lineHeight:1.5}}>{addPreview.touches}</div>
+                      {addPreview.notActive&&(
+                        <div data-testid="dp-journey-preview-off" style={{fontSize:11.5,color:T.gold500,marginTop:7,lineHeight:1.5}}>{addPreview.notActive}.</div>
+                      )}
                       {addPreview.alreadyIn&&(
                         <div style={{fontSize:11.5,color:T.gold500,marginTop:7,lineHeight:1.5}}>
                           They are already working through &ldquo;{addPreview.alreadyIn}&rdquo;. Finish or stop that one first.
                         </div>
                       )}
                       <button data-testid="dp-journey-add-confirm" type="button"
-                        disabled={journeyBusy||!addPreview.firstStep||!!addPreview.alreadyIn}
+                        disabled={journeyBusy||!addPreview.firstStep||!!addPreview.alreadyIn||addPreview.canStart===false}
                         onClick={confirmAddToJourney}
-                        style={{marginTop:10,background:(addPreview.firstStep&&!addPreview.alreadyIn)?T.greenDk:RAIL.line,
+                        style={{marginTop:10,background:(addPreview.firstStep&&!addPreview.alreadyIn&&addPreview.canStart!==false)?T.greenDk:RAIL.line,
                           border:"none",borderRadius:8,padding:"8px 13px",
                           color:(addPreview.firstStep&&!addPreview.alreadyIn)?T.white:RAIL.dim,
                           fontSize:12.5,fontWeight:700,

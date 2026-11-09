@@ -77,7 +77,7 @@ async function maybeStartJourneyNow(orgId, donorId, triggerKey, opts = {}) {
   if (!J.TRIGGER_KEYS.includes(triggerKey)) return { started: false, reason: "unknown_trigger" };
 
   const [donor] = await query(
-    `SELECT id, name, assigned_to, assigned_to_name, deceased, do_not_contact, do_not_solicit FROM donors
+    `SELECT id, name, assigned_to, assigned_to_name, deceased, do_not_contact, do_not_solicit, birth_month, birth_day FROM donors
       WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);
   if (!donor) return { started: false, reason: "donor_not_found" };
   // JOURNEYS-4 · NEVER ENTERED, BY ANY DOOR. Somebody who has died, or who
@@ -98,6 +98,15 @@ async function maybeStartJourneyNow(orgId, donorId, triggerKey, opts = {}) {
           WHERE org_id=? AND trigger_key=? AND journey_enabled=true AND archived_at IS NULL`,
         [orgId, triggerKey]);
   if (!rows.length) return { started: false, reason: opts.forceJourneyId ? "journey_not_found" : "no_journey_for_trigger" };
+  // FLOWS-3 (W-1107-Fundraising-28): ONLY AN ACTIVE JOURNEY STARTS PEOPLE, by
+  // any door. A person choosing still names the journey, but a Draft or a
+  // Paused one is listed greyed out with why, and refused here as well.
+  if (opts.forceJourneyId && rows[0].journey_enabled !== true) {
+    const JR = await import("../../shared/journeyStartRule.js");
+    const state = J.journeyState({ enabled: false, everEnabled: !!rows[0].ever_enabled, archived: false,
+      everIn: (await query(`SELECT 1 FROM cultivation_plans WHERE org_id=? AND template_id=? LIMIT 1`, [orgId, rows[0].id])).length });
+    return { started: false, reason: "journey_not_active", state, sentence: JR.notActiveWhy(state) + "." };
+  }
 
   // `gift_over` is the one trigger that NEEDS a number, and the number is the
   // ORG's. PARITY-1 Part D: every gift trigger may carry one as a floor, and a
@@ -192,7 +201,10 @@ async function startOneJourney(orgId, donor, winner, triggerKey, eventKey, opts 
 
   const org = await orgTz(orgId);
   const today = opts.today || orgToday(org);                    // ORG_TZ_SEAM_OK
-  const steps = PL.planFromTemplate({ steps: v.steps, today }, orgTime.addDays);
+  // FLOWS-3: a by-hand start of a dated journey counts from its date (the
+  // next Dec 1, or this person's birthday start), the day the preview showed.
+  const anchor = opts.forceJourneyId ? (await import("../../shared/journeyStartRule.js")).journeyAnchor(winner, donor, today) : today;
+  const steps = PL.planFromTemplate({ steps: v.steps, today: anchor }, orgTime.addDays);
 
   const current = await query(
     `SELECT p.id, p.template_id, p.template_name, p.priority, COALESCE(t.exclusive, false) AS exclusive

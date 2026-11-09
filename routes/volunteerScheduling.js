@@ -1568,7 +1568,7 @@ async function scheduleRows(orgId, { from = null, to = null, slotIds = null, opp
     `SELECT su.id, su.slot_id, su.person_id, su.status, su.position, su.role_id, su.checked_in_at, su.checked_out_at,
             su.hours_shift_id, d.name, d.email
        FROM volunteer_signups su JOIN donors d ON d.id=su.person_id AND d.org_id=su.org_id AND d.deleted_at IS NULL
-      WHERE su.org_id=? AND su.slot_id = ANY(?) AND su.status IN ('confirmed','waitlisted','completed','no_show')
+      WHERE su.org_id=? AND su.slot_id = ANY(?) AND su.status IN (${require("../server/volunteers/personShifts").SCHEDULE_STATUS_SQL})
       ORDER BY (su.status='waitlisted'), su.position NULLS FIRST, d.name`, [orgId, ids]) : [];
   // Conflicts: a person's places on the same days, wherever those places are.
   const dates = [...new Set(slots.map(s => s.date))];

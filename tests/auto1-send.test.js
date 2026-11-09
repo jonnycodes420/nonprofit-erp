@@ -143,6 +143,7 @@ function nextWeekdayAfter(day) { let d = addDays(day, 1); while ([0, 6].includes
   ok("§1 turning it on writes an audit row", aud.length >= 1, aud);
 
   // Everyone joins; each step opens and is scheduled for the next weekday.
+  await q(`UPDATE cultivation_templates SET journey_enabled=true, ever_enabled=true WHERE id='ct_a1'`);   // FLOWS-3: only an Active journey starts people
   const ap = await api("POST", "/journeys/ct_a1/apply", tok, { donorIds: PEOPLE.map(p => p[0]) });
   const sched = await q(`SELECT donor_id, send_on, status FROM journey_sends WHERE org_id=$1 AND template_id='ct_a1'`, [ORG]);
   ok("§1 each person's step is scheduled for the next weekday morning, not today", ap.status < 300 && sched.length === PEOPLE.length

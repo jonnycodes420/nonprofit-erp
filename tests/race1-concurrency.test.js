@@ -47,7 +47,7 @@ const person = async (id, name) => q(
   [id, ORG, name, `${id}@race1.local`]);
 
 async function journeyRace(tok) {
-  const mk = (name, priority) => api("POST", "/journeys", tok, { name, trigger: "by_hand", priority, exclusive: true,
+  const mk = (name, priority) => api("POST", "/journeys", tok, { name, trigger: "by_hand", enabled: true, priority, exclusive: true,
     steps: [{ type: "thank", label: `${name} call`, offsetDays: 2 }, { type: "follow_up", label: `${name} visit`, offsetDays: 30 }] });
   const low = await mk("Race Card", 40);
   const high = await mk("Race Monthly", 80);
@@ -99,7 +99,7 @@ const statuses = rs => rs.map(r => r.status).sort().join(",");
 // (cultivation_plans_one_active_per_journey), and between exclusive journeys,
 // one of them. Ten applies of one journey, then ten of two exclusive ones mixed.
 async function enrolment(tok) {
-  const mk = (name, priority) => api("POST", "/journeys", tok, { name, trigger: "by_hand", priority, exclusive: true,
+  const mk = (name, priority) => api("POST", "/journeys", tok, { name, trigger: "by_hand", enabled: true, priority, exclusive: true,
     steps: [{ type: "thank", label: `${name} call`, offsetDays: 2 }] });
   const A = (await mk("Race Ten A", 50)).body.id, B = (await mk("Race Ten B", 60)).body.id;
   const one = "d_race1_enrol1", two = "d_race1_enrol2";
