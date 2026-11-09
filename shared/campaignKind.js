@@ -72,11 +72,14 @@ export const CAMPAIGN_FILTERS = [
   { id: "all",       label: "All",       has: () => true },
   { id: "drafts",    label: "Drafts",    has: s => s === "draft" || s === "awaiting_approval" },
   { id: "scheduled", label: "Scheduled", has: s => s === "scheduled" || s === "sending" },
-  { id: "sent",      label: "Sent",      has: s => s === "sent" || s === "failed" },
+  // POLISH-8 (W-1107-Fundraising-16X, repeat): the Sent chip's count reads the
+  // same reachedAnyone as the badge and the figures; one that reached nobody is
+  // never "Sent" (it shows under All, badged "Not sent: nobody could receive it").
+  { id: "sent",      label: "Sent",      has: (s, c) => (s === "sent" || s === "failed") && reachedAnyone(c) },
 ];
 export function filterCampaigns(emails, filterId) {
   const f = CAMPAIGN_FILTERS.find(x => x.id === filterId) || CAMPAIGN_FILTERS[0];
-  return (emails || []).filter(c => f.has(String(c.status || "draft").toLowerCase()));
+  return (emails || []).filter(c => f.has(String(c.status || "draft").toLowerCase(), c));
 }
 
 // ── WHAT A NUMBER SAYS WHEN THERE IS NOTHING TO SAY ──────────────────────

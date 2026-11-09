@@ -25,6 +25,7 @@ import EventRaised from "./EventRaised";   // HOME-3
 import { yoyView } from "./YearOverYear";   // HISTORY-1
 import { countLabel, plural } from "../../../shared/countWords.js";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { optionLabel } from "../../../shared/dupeNames.js";   // POLISH-8: two campaigns of one name are told apart
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
 // Fixed, parameterized, table-first, CSV-downloadable reports — each one an
@@ -854,7 +855,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
             </select>}
             {showFilters && campaigns.length > 0 && <select value={campaignId} onChange={e => setCampaignId(e.target.value)} style={selStyle}>
               <option value="">All campaigns</option>
-              {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {campaigns.map(c => <option key={c.id} value={c.id}>{optionLabel(c, campaigns)}</option>)}
             </select>}
             <div style={{ flex: 1 }} />
             {!DIGEST_REPORTS.includes(active) && <button onClick={downloadCsv} disabled={downloading || loading || customIncomplete}

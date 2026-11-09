@@ -20,6 +20,7 @@ import { tabHref } from "../lib/appUrls";
 import { SaveAsGroup } from "./Groups";
 import { displayDate } from "../../../shared/displayDate";
 import { countLabel } from "../../../shared/countWords.js";
+import { periodWords } from "../../../shared/periodWords.js";   // POLISH-8: a goal names its period
 
 export const campaignHref = id => tabHref("fundraising", { frSection: "campaigns", campaignId: id });
 const listHref = () => tabHref("fundraising", { frSection: "campaigns" });
@@ -82,7 +83,7 @@ function CampaignThermometer({ g, big }) {
             <Figure variant="inline" kind="money" value={raised} label={`Raised · ${g.name}`} definition={SENT.raised} source={s.raised} figureKey="campaign-raised" />
           </span>
           <span style={{ fontSize: big ? 14 : 12, color: T.ink3 }}>
-            of <Figure variant="inline" kind="money" value={g.goalAmount} label={`Goal · ${g.name}`} definition={SENT.goal} source={s.goal} figureKey="campaign-goal" />
+            of <Figure variant="inline" kind="money" value={g.goalAmount} label={`Goal · ${g.name}`} definition={SENT.goal} source={s.goal} figureKey="campaign-goal" /> <span data-testid="campaign-goal-period">· {periodWords(g.startDate, g.endDate)}</span>
           </span>
         </div>
         <span style={{ fontSize: big ? 15 : 13, fontWeight: 800, color: met ? T.gold : T.ink2 }}>

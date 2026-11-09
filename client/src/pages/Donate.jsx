@@ -965,7 +965,7 @@ export default function Donate({ preview = null }) {
             } catch { /* keep A rather than showing nothing */ }
           }
         }
-        if (d.error) { setPageError(d.error); setPageNotOpen(!!d.notOpen); }
+        if (d.error) { setPageError(d.error); setPageNotOpen(d.paused ? "paused" : !!d.notOpen); }
         else applyPayload(d, params);
         setPageLoading(false);
       })
@@ -1114,7 +1114,7 @@ export default function Donate({ preview = null }) {
   if (pageError) return (
     <div style={{ ...BASE, justifyContent: "center", textAlign: "center" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-      <div style={{ fontSize: 16, fontWeight: 700, color: pageNotOpen ? T.ink : T.terra700, marginBottom: 8 }}>{pageNotOpen ? "Not open yet" : "Page not found"}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: pageNotOpen ? T.ink : T.terra700, marginBottom: 8 }}>{pageNotOpen === "paused" ? "Not taking gifts" : pageNotOpen ? "Not open yet" : "Page not found"}</div>
       <div style={{ fontSize: 13, color: T.ink3 }}>{pageError}</div>
     </div>
   );

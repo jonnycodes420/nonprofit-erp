@@ -4,7 +4,7 @@ import { apiFetch, adaptDonor, prefetch, takeParked } from "../api";
 import { usePeopleById, peopleCounts } from "../lib/people";
 import { useAuth } from "../main";
 import { T, fmtFull, daysUntil, daysDiff, GoldMoment } from "./shared";
-import { orgTodayPlus } from "../lib/orgToday";
+import { orgTodayPlus, orgTimezone } from "../lib/orgToday";
 import { HOME_FIRST_READS, RAIL_READS, HOME_SCOPED_FIRST, homeScopeReads, initialScope } from "../lib/homeReads";   // HARDEN-2, PERF-2
 import { isBirthdayOn, MONTHS as BIRTH_MONTHS } from "../../../shared/birthday.js";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop } from "../lib/homeLayout";
@@ -13,7 +13,7 @@ import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop } from "../lib/hom
 import { rowFigure } from "../../../shared/threadFigures";
 import { paceOf } from "../../../shared/pace";
 import { makeT } from "../../../shared/vocabulary";
-import { greetingForHour } from "../lib/greeting";
+import { greetingForHour, hourIn } from "../lib/greeting";
 
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { useStewardTold } from "../lib/stewardTold";
@@ -731,9 +731,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // (goal.recentAmount/recentDonorCount), never invented copy.
   const firstName=auth?.user?.name?.split(" ")[0]||"";
   // Greeting windows are the single source of truth in ../lib/greeting.js
-  // (evening 5 PM–4 AM · morning 4 AM–noon · afternoon noon–5 PM) — a bare
-  // `hour<12` used to say "Good morning" at 12:23 AM (BUILD-36 B3).
-  const greeting=greetingForHour(new Date().getHours());
+  // (BUILD-36 B3). POLISH-8: the ORG's hour, not the browser's, and the night
+  // (10 PM–5 AM) is just "Hi" (HomeFirstLook says "Hi Mike", no comma).
+  const greeting=greetingForHour(hourIn(orgTimezone()));
   let paceLabel=null,paceColor="rgba(240,237,230,0.7)",paceSub=null,daysLeftInPeriod=null;
   if(goal){
     const periodStartDate=new Date(goal.periodStart+"T00:00:00");

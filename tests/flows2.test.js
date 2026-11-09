@@ -382,8 +382,9 @@ async function seed() {
     await page.waitForTimeout(1500);
     const text = await panel.innerText();
     const head = await page.locator('[data-testid="dp-files-head"]').innerText().catch(() => "");
-    ok("§5 with a file present the Files tab never says \"No materials uploaded yet\", and its header counts the file",
-      !/No materials uploaded yet/.test(text) && /annual-report\.pdf/.test(text) && head === "Files · 1", { head, text: text.slice(0, 300) });
+    // POLISH-8: the header counts uploads only; an attached file is said on its own line.
+    ok("§5 with a file present the Files tab never says \"No materials uploaded yet\", and the attached file is said on its own line",
+      !/No materials uploaded yet/.test(text) && /annual-report\.pdf/.test(text) && head === "Files · 0" && /Not counted above: 1 attached to conversations and notes/.test(text), { head, text: text.slice(0, 300) });
   });
 
   ok("no page threw", errors.length === 0, errors.slice(0, 4));

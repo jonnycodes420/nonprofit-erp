@@ -125,7 +125,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               // PROFILE-2: Giving counts gifts AND pledges (a $50,000 pledge read "Gifts & pledges 0").
               const n=id==="giving"?(giftLoading||giftReadErr?null:giftCountReal+pledges.length)
                 :id==="conversations"?(tlCounts.conversation||0):id==="emails"?(tlCounts.email||0):id==="tasks"?(tlCounts.task||0)
-                :id==="notes"?(tlCounts.note||0):id==="files"?(fileTally.known?fileTally.total:null):null;   // STALE-2: the one file tally
+                :id==="notes"?(tlCounts.note||0):id==="files"?(fileTally.known?fileTally.uploaded:null):null;   // STALE-2: the one file tally
               return <button key={id} role="tab" data-tab={id} aria-selected={dpTab===id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",borderBottom:"2px solid "+(dpTab===id?T.greenDk:"transparent"),padding:"12px 0 10px",color:dpTab===id?T.ink:T.ink3,fontSize:13.5,fontWeight:dpTab===id?700:500,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,fontFamily:"inherit",minHeight:44,display:"inline-flex",alignItems:"center"}}>
                 {label}
                 {/* PROFILE-3: a count only when there is something to count; never "0". */}

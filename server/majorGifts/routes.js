@@ -118,6 +118,7 @@ app.put("/portfolio/officers/:userId/color", requireAuth, requireAdmin, requireC
 // queries only (no N+1). Optional ?assignedTo= (portfolio) and ?designation=.
 app.get("/pipeline", requireAuth, wrap(async (req, res) => {
   const { orgId, userId } = req.user;
+  const ERASED = await import("../../shared/erasedLabel.js");
   const orgRows = await query("SELECT plan, subscription_status FROM orgs WHERE id=?", [orgId]);
   const tier = orgRows.length ? orgPlanTier(orgRows[0]) : "core";
   const stages = ALL_PIPELINE_STAGES.map(id => ({ id, label: id.charAt(0).toUpperCase() + id.slice(1) }));
@@ -177,7 +178,7 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
   if (Number.isFinite(minGiving) && minGiving > 0) filters.push(sql`d.total_giving >= ${minGiving}`);
 
   const donors = await query(
-    sql`SELECT d.id, d.name, COALESCE(d.stage, d.suggested_stage) AS stage, (d.stage IS NULL) AS stage_suggested,
+    sql`SELECT d.id, d.name, d.erased_at, COALESCE(d.stage, d.suggested_stage) AS stage, (d.stage IS NULL) AS stage_suggested,
             d.total_giving, d.last_gift_date, d.assigned_to, d.assigned_to_name, d.updated_at, d.created_at
        FROM donors d WHERE ${sql.join(filters, sql` AND `)}`);
 
@@ -216,7 +217,7 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
     const enteredStage = moveInto[d.id + "|" + d.stage] || d.updated_at || d.created_at;
     const stageAge = enteredStage ? Math.max(0, Math.floor((now - new Date(enteredStage).getTime()) / 86400000)) : null;
     (columns[d.stage] = columns[d.stage] || []).push({
-      donorId: d.id, name: d.name, stage: d.stage,
+      donorId: d.id, name: ERASED.shownName(d.name, d.erased_at), erased: !!d.erased_at, stage: d.stage,   // POLISH-8: "Former donor (erased)"
       // BUILD-83 Part 3.5 — the card says whether a human placed this donor or
       // the giving history merely suggests it.
       stageSuggested: d.stage_suggested === true || d.stage_suggested === "t",

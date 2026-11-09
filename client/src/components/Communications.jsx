@@ -25,6 +25,7 @@ import { campaignBlocksFromHtml } from "../../../shared/emailTemplateLibrary.js"
 // the box from ever being blank if that call fails.
 import { renderMergeFields, normalizeMergeFields, templatesFor } from "../../../shared/emailTemplates";
 import { makeT } from "../../../shared/vocabulary";
+import DupeName from "./DupeName";   // POLISH-8: two of one name say which is which
 import { campaignStats, sentWord, wentOutToNobody, NOBODY_SENTENCE, reachedAnyone, openRateWord, statusWord, CAMPAIGN_FILTERS, filterCampaigns } from "../../../shared/campaignKind";
 import { displayDate, displayDateTime } from "../../../shared/displayDate";
 import { CalendarDays } from "lucide-react";
@@ -2237,7 +2238,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                         <div className="fx39-cell fx39-name">
                           <RecordLink to={tabHref("communications", { subtab: "campaigns", campaignId: c.id })} data-record-link="email-campaign"
                             onOpen={() => setExpandedId(isOpen ? null : c.id)}
-                            style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: T.ink }}>{c.name}</RecordLink>
+                            style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: T.ink }}>{c.name}</RecordLink><DupeName row={c} rows={emailCampaigns} path="campaigns" onRenamed={loadCampaigns} canRename={!isReadOnly} />
                           <div data-testid="camp-subject" style={{ fontSize: 12, color: T.ink3, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {c.subject ? renderPreview(c.subject, { text: true }) : "No subject yet"}
                           </div>
