@@ -11,7 +11,7 @@ import { askConfirm } from "./ConfirmDialog";
 import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, rowClick } from "../lib/appUrls";
 import { GRANT_STATUSES, statusLabel, normalizeStatus, AWARDED_STATUS_KEYS } from "../../../shared/grantShape";
-import { grantAwardLine } from "../../../shared/grantAwardLine.js";   // WALKB-2
+import { grantAwardLine, grantMoneyTiles, awardState } from "../../../shared/grantAwardLine.js";   // WALKB-2; PLEDGES-3: the tiles
 import { deadlineWord } from "../../../shared/grantDeadline.js";   // TRUTH-3: the date's word, on the org's day
 import { AwardStep, FunderPicker } from "./GrantAward";   // GRANTS-FIX: Awarded goes through the award
 import { offerUndo } from "./EditHistory";
@@ -266,12 +266,11 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
         {/* LEFT */}
         <div style={{minWidth:0,padding:"22px 20px 24px 24px",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column",gap:18}}>
           <div className="grant-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-            {[
-              ["Amount Requested",fmtFull(grant.amount),T.ink],
-              ["Received",fmtFull(grant.received||0),T.greenMid],
-              ["% Funded",pct+"%",pct>75?T.greenMid:pct>40?T.gold600:T.ink3],
-              ["Days to Deadline",deadlineWord(grant.deadline,orgTodayCivil(),{pursuing:actionable}).word,actionable&&days>=0&&days<14?T.gold600:actionable&&days<0?T.gold600:T.ink],
-            ].map(([l,v,c])=>(
+            {/* PLEDGES-3: one rule for the tiles (shared/grantAwardLine.js grantMoneyTiles): no award row says
+                "No payments set up", never $0 and 0%; an awarded grant counts to its report, not its closed application. */}
+            {grantMoneyTiles(grant,(d,o)=>deadlineWord(d,orgTodayCivil(),o),{pursuing:actionable}).map(t=>[t.label,t.value!=null?t.value:t.word,
+              t.key==="received"?(t.value==="No payments set up"?T.ink3:T.greenMid):t.key==="funded"?(t.pct==null?T.ink3:t.pct>75?T.greenMid:t.pct>40?T.gold600:T.ink3)
+              :(t.key==="deadline"||t.key==="report")&&t.days!=null&&t.days<14?T.gold600:T.ink]).map(([l,v,c])=>(
               <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
                 <div style={{fontSize:9,fontWeight:700,color:T.ink3,marginBottom:4}}>{l}</div>
                 <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"'DM Serif Display',serif",lineHeight:1.1}}>{v}</div>
@@ -279,7 +278,8 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
             ))}
           </div>
 
-          {grant.amount>0&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px"}}>
+          {/* PLEDGES-3: no progress bar against payments that are not set up */}
+          {grant.amount>0&&!["stated","missing"].includes(awardState(grant))&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px"}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
               <div style={{fontSize:10,fontWeight:700,color:T.ink3}}>Funding Progress</div>
               <div style={{fontSize:11,color:T.ink3}}>{fmtFull(grant.received||0)} of {fmtFull(grant.amount)}</div>

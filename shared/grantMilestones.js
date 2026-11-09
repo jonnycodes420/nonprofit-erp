@@ -159,6 +159,22 @@ export function milestoneTiming(m, today) {
     sentence: `${label} is due in ${days === 1 ? "a day" : days + " days"}.` };
 }
 
+// PLEDGES-3 (W-1107-Finance-31) · ONCE A GRANT IS AWARDED, ITS APPLICATION
+// DEADLINES STOP COUNTING DOWN. The LOI, the proposal, the decision and the
+// grant's own (application) deadline belong to winning it; an awarded,
+// reporting or closed grant has won, so they say so and carry no countdown
+// or lateness. Report deadlines and anything custom keep counting.
+const AWARDED_STAGES = new Set(["awarded", "active", "reporting", "closed"]);
+const APPLICATION_KINDS = new Set(["loi_due", "proposal_due", "decision"]);
+export function applicationClosed(m, grantStatus) {
+  if (!m || !AWARDED_STAGES.has(String(grantStatus || "").toLowerCase())) return false;
+  return APPLICATION_KINDS.has(m.kind) || String(m.id || "").startsWith("grant-deadline:");
+}
+export function closedTiming(m) {
+  const label = milestoneName(m) || "This";
+  return { band: "closed", overdueDays: 0, sentence: `${label}: the application is closed, because the grant is awarded.` };
+}
+
 // ── THE HOME LINE ─────────────────────────────────────────────────────────
 // ONLY when non-zero (the brief's own line, and the morning-sentence rule:
 // a source with nothing contributes no clause — "0 grant deadlines" is the

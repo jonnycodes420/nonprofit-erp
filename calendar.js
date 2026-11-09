@@ -197,19 +197,33 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
       }))));
   }
   if (want.has("pledge")) {
+    // PLEDGES-3 (W-1107-Finance-20): an installment shows while something is
+    // left on it once the payments are applied oldest due first
+    // (shared/numbers/pledges.js), at what is left, never by a stale paid flag
+    // or at its face amount; its line says the pledge's five values.
+    const P = require("./shared/numbers/pledges");
     jobs.push(query(
-      `SELECT pi.id, pi.due_date::text AS due, pi.amount, d.id AS donor_id, d.name AS donor_name
-         FROM pledge_installments pi JOIN pledges p ON p.id = pi.pledge_id AND p.org_id = pi.org_id AND p.status = 'open'
+      `SELECT oi.id, oi.due, oi.left_amount AS amount, d.id AS donor_id, d.name AS donor_name,
+              ${P.SUMMARY_WORDS_SQL("p.amount", "COALESCE(pp.paid, 0)")} AS words
+         FROM (${P.OPEN_INSTALLMENTS_SQL}) oi
+         JOIN pledges p ON p.id = oi.pledge_id AND p.org_id = ?
          JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id AND d.deleted_at IS NULL
-        WHERE pi.org_id = ? AND pi.paid_at IS NULL AND LEFT(pi.due_date::text, 10) >= ? AND LEFT(pi.due_date::text, 10) <= ?
+         LEFT JOIN ${P.PAID_BY_PLEDGE} pp ON pp.pledge_id = p.id
+         ${P.NEXT_INSTALLMENT("p")}
+        WHERE oi.due >= ? AND oi.due <= ?
        UNION ALL
-       SELECT p.id, p.due_date::text, p.amount, d.id, d.name FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id AND d.deleted_at IS NULL
+       SELECT p.id, LEFT(p.due_date::text, 10), ROUND(GREATEST(p.amount - COALESCE(pp.paid, 0), 0)::numeric, 2), d.id, d.name,
+              ${P.SUMMARY_WORDS_SQL("p.amount", "COALESCE(pp.paid, 0)").replace(/nx\.next_left/g, "NULL::numeric").replace(/nx\.next_due/g, "NULL::text")}
+         FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id AND d.deleted_at IS NULL
+         LEFT JOIN ${P.PAID_BY_PLEDGE} pp ON pp.pledge_id = p.id
         WHERE p.org_id = ? AND p.status = 'open' AND p.due_date IS NOT NULL AND LEFT(p.due_date::text, 10) >= ? AND LEFT(p.due_date::text, 10) <= ?
+          AND p.amount > COALESCE(pp.paid, 0)
           AND NOT EXISTS (SELECT 1 FROM pledge_installments x WHERE x.org_id = p.org_id AND x.pledge_id = p.id)`,
-      [orgId, from, to, orgId, from, to]).then(rows => rows.forEach(r => {
+      [orgId, orgId, orgId, from, to, orgId, orgId, from, to]).then(rows => rows.forEach(r => {
         const day = String(r.due).slice(0, 10);
         out.push({ id: `pledge:${r.id}`, type: "pledge", title: `Pledge due: ${r.donor_name}`, start: day, end: day, allDay: true,
-          donorId: r.donor_id, donorName: r.donor_name, amount: Number(r.amount) || 0, detail: `$${Number(r.amount || 0).toLocaleString("en-US")} due`,
+          donorId: r.donor_id, donorName: r.donor_name, amount: Number(r.amount) || 0,
+          detail: `$${Number(r.amount || 0).toLocaleString("en-US", { maximumFractionDigits: 2 })} due · ${r.words}`,
           editable: { move: false, resize: false }, ref: { pledgeId: r.id } });
       })));
   }

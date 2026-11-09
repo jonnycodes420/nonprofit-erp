@@ -38,6 +38,7 @@ const {
   writeGiftExtras, giftHooks, queueThankYouDraft,
 } = ctx;
 let app = routers.r0;
+const RD = require("../receipts/drift");
 
 // POST /pledges/run-reminders — drive the sweep for the caller's org now
 // (ops/test hook, the /nudges/run bar). {today} pins the date.
@@ -576,6 +577,7 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
       surplus, overpaid: surplus > 0,
       displayStatus: pledgeDisplayStatus(paid, amount, r.status),
       installmentCount: ix ? ix.n : 1, years, dueThisYear, dueYearLabel: yearLabel, unpaidCount: PL.unpaidCount(pl),
+      summary: PL.summaryOf(pl),   // PLEDGES-3: the five values every surface says
       installments: left.map(i => ({ ...i, paid: i.left <= 0 })),
       // the open-pledge figure opens Fundraising's own rows for this person
       openSource: { key: "pledges-open", params: { donor: r.donor_id } },
@@ -1129,11 +1131,11 @@ RCE.register(app, { query, requireAuth, checkWriteAccess, wrap, actor, resendRec
 app.get("/donors/:id/receipts", requireAuth, wrap(async (req, res) => {
   if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B: the parent must be YOURS before children are answered — even an empty list confirms nothing about another tenant
   const rows = await query(
-    `SELECT id, org_id, donor_id, gift_id, type, tax_year, receipt_number, amount, deductible_amount, sent_to, sent_at, voided_at, void_reason, created_at
-     FROM receipts WHERE donor_id=? AND org_id=? ORDER BY created_at DESC`,
+    `SELECT r.id, r.org_id, r.donor_id, r.gift_id, r.type, r.tax_year, r.receipt_number, r.amount, r.deductible_amount, r.sent_to, r.sent_at, r.voided_at, r.void_reason, r.created_at,
+            ${RD.DRIFT_COLUMNS} FROM receipts r ${RD.DRIFT_JOIN("r")} WHERE r.donor_id=? AND r.org_id=? ORDER BY r.created_at DESC`,
     [req.params.id, req.user.orgId]
   );
-  res.json(rows);
+  res.json(RD.withDrift(rows));   // PLEDGES-3: a receipt whose gift changed says so (server/receipts/drift.js)
 }));
 
 app.post("/donors/:id/year-end-statement", requireAuth, checkWriteAccess, wrap(async (req, res) => {
