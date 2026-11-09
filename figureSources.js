@@ -340,23 +340,9 @@ const ONLINE_GIFT_SQL = "(g.stripe_payment_id IS NOT NULL OR g.giving_page_id IS
 // before (<) a day, plus what is left on a pledge with no schedule by its due
 // date. Overdue and due-this-year differ only in the day and the comparison.
 function pledgesDueSql(orgId, day, op) {
-  // LEDGER-1: what the schedule asked for by the day, less what has been
-  // paid, never more than the balance (shared/numbers/pledges.js DUE_SQL), so
-  // a part-paid installment counts only what is left on it.
-  const P = require("./shared/numbers/pledges");
-  return {
-    sql: `SELECT due.id, 'pledge' AS type, due.donor_id, due.name, due.date, due.amount, 'Due' AS detail
-            FROM (${P.DUE_SQL(op)}) due
-          UNION ALL
-          SELECT p.id, 'pledge', p.donor_id, d.name, p.due_date, ROUND(GREATEST(p.amount - COALESCE(pp.paid, 0), 0)::numeric, 2), 'Due'
-            FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
-            LEFT JOIN ${P.PAID_BY_PLEDGE} pp ON pp.pledge_id = p.id
-           WHERE p.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL
-             AND NOT EXISTS (SELECT 1 FROM pledge_installments i2 WHERE i2.pledge_id = p.id)
-             AND (${op === "<=" ? "p.due_date IS NULL OR p.due_date = '' OR " : ""}LEFT(p.due_date::text, 10) ${op} ?)`,
-    args: [orgId, day, day, orgId, orgId, orgId, orgId, day],
-    order: "date ASC NULLS LAST, id",
-  };
+  // LEDGER-1 / PLEDGES-3: the rule and the row words live with the pledge
+  // numbers (shared/numbers/pledges.js dueRowsSql).
+  return require("./shared/numbers/pledges").dueRowsSql(orgId, day, op);
 }
 
 // EVENTS-1 item 6 · After the event's First-time givers and Sponsors, one SQL
@@ -2093,17 +2079,7 @@ const SOURCES = {
     measure: () => "sum",
     params: { campaign: "id", donor: "id" },
     sentence: p => `Every open pledge${p.campaign ? " to this campaign" : ""}${p.donor ? " from this person" : " from a person still on file"}, at what is still to come on it. A pledge part-paid counts only the remainder.`,
-    sql: (orgId, p) => ({
-      sql: `SELECT p.id, 'pledge' AS type, p.donor_id, d.name, p.due_date AS date,
-                   ROUND(GREATEST(p.amount - COALESCE(pp.paid, 0), 0)::numeric, 2) AS amount, 'Due' AS detail
-              FROM pledges p
-              LEFT JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
-              LEFT JOIN ${require("./shared/numbers/pledges").PAID_BY_PLEDGE} pp
-                     ON pp.pledge_id = p.id
-             WHERE p.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL${p && p.campaign ? " AND p.campaign_id = ?" : ""}${p && p.donor ? " AND p.donor_id = ?" : ""}`,
-      args: [orgId, orgId, ...(p && p.campaign ? [p.campaign] : []), ...(p && p.donor ? [p.donor] : [])],
-      order: "date ASC NULLS LAST, id",
-    }),
+    sql: (orgId, p) => require("./shared/numbers/pledges").openRowsSql(orgId, p),   // PLEDGES-3: dated by the next installment, the five values said
   },
   "pledge-payments": {
     label: "Pledged and paid",

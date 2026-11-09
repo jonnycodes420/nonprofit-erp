@@ -14,6 +14,8 @@ import { API, apiFetch, getToken } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { T, fmtFull } from "../shared";
 import { receiptOffered } from "../../../../shared/giftWords.js";   // FEEL-1
+import ReceiptDrift from "../ReceiptDrift";   // PLEDGES-3: a receipt whose gift changed says so
+import { useChanged } from "../../lib/changes";
 
 const linkBtn = { background: "none", border: "none", padding: "2px 4px", color: T.greenDk, fontSize: 11.5, fontWeight: 700, cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2, fontFamily: "inherit" };
 const yearOf = d => (d ? String(d).slice(0, 4) : "");
@@ -36,6 +38,7 @@ export function useReceipts(donor, gifts) {
     loadDonorReceipts();
     apiFetch("/org").then(o => setReceiptsEnabled(!!o.receipts_enabled)).catch(() => {});
   }, [donor.id]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useChanged(["gift"], loadDonorReceipts);   // PLEDGES-3: an edited gift re-reads its receipt's drift
   const receiptForGift = giftId => donorReceipts.find(r => r.gift_id === giftId && !r.voided_at);
 
   // Make the receipt; it is emailed only from its own Email link.
@@ -116,6 +119,7 @@ export function ReceiptCell({ g, rc, isReadOnly }) {
         {!r.sent_at && !isReadOnly && <>·<button type="button" data-testid="dp-receipt-email" disabled={rc.receiptBusyId === r.id} style={linkBtn} onClick={() => rc.emailReceipt(r.id)}>{rc.receiptBusyId === r.id ? "Emailing…" : "Email"}</button></>}
         {!isReadOnly && !voiding && <>·<button type="button" data-testid="dp-receipt-void" style={linkBtn} onClick={() => setVoiding(true)}>Void</button></>}
       </span>
+      <ReceiptDrift receipt={r} isReadOnly={isReadOnly} testid="dp-receipt-drift" />
       {voiding && <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
         <input data-testid="dp-receipt-void-note" value={voidNote} onChange={e => setVoidNote(e.target.value)} placeholder="Why it is void (kept on the receipt)"
           style={{ fontSize: 11.5, padding: "3px 6px", border: "1px solid " + T.bg3, borderRadius: 6, minWidth: 180 }} />

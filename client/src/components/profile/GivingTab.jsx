@@ -25,6 +25,7 @@ import { PeopleDatalist } from "../PeopleDatalist";
 import { renderCustomValue } from "../../../../shared/customFieldShape";
 import { MailTypeSwitches } from "../MailTypes";
 import { pledgeMoneyWords } from "../../../../shared/pledgeWords.js";
+import { pledgeCoverWords } from "../../../../shared/pledgeCover.js";   // PLEDGES-3: what a payment covers, before Save
 import { EditedMarker } from "../EditHistory";
 import { stepAgainstProposals } from "../../../../shared/nextStepAgree.js";
 import { displayOrgDateShort } from "../../lib/orgDay";
@@ -336,10 +337,12 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                 <select value={addGiftForm.pledgeId} onChange={e=>setAddGiftForm(p=>({...p,pledgeId:e.target.value}))} style={{width:"100%",background:T.bg,border:"1px solid "+T.terracotta+"50",borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}>
                   <option value="">Not fulfilling a pledge</option>
                   {pledges.filter(p=>p.status==="open").map(p=>(
-                    <option key={p.id} value={p.id}>Fulfills {fmtFull(p.amount)} pledge due {displayDate(p.due_date)}</option>
+                    <option key={p.id} value={p.id}>Fulfills the {fmtFull(p.amount)} pledge{p.summary&&p.summary.nextDue?` · next ${fmtFull(p.summary.nextAmount)} due ${displayDate(p.summary.nextDue)}`:""}</option>
                   ))}
                 </select>
               )}
+              {(()=>{const pl=addGiftForm.pledgeId?pledges.find(x=>x.id===addGiftForm.pledgeId):null;const w=pl?pledgeCoverWords(pl,addGiftForm.amount):"";
+                return w?<div data-testid="dp-pledge-cover" role="status" style={{fontSize:12,color:T.ink2,marginTop:-2,marginBottom:8,lineHeight:1.4}}>{w}</div>:null;})()}
               {/* BUILD-98 Part 1 — soft credit, tribute, matching gift. Closed by
                   default: most gifts are none of these, and three blank rows on
                   every gift is how a form starts to feel like paperwork. */}
@@ -519,6 +522,8 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                             {isOverdue&&<span style={{fontSize:10,fontWeight:800,color:T.gold700}}>{daysOver}d overdue · reminder {Math.min(pl.reminder_step+1,4)}/4 sent</span>}
                           </div>
                           <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{(()=>{const ins=pl.installments||[],nx=ins.length>1&&pl.status==="open"?ins.find(i=>!i.paid):null;   /* GIFTS-1: the next installment, not the first */
+                            /* PLEDGES-3: an open pledge says the summary's five values, the banner's own words */
+                            if(pl.status==="open"&&pl.summary&&pl.summary.words)return <span data-testid="dp-pledge-row-words">{pl.summary.words}{Number(pl.unpaidCount)>1?` · ${countLabel(pl.unpaidCount,"installment")} left`:""}</span>;
                             return nx?`Next due ${displayDate(nx.dueDate)} · ${countLabel(Number.isFinite(pl.unpaidCount)?pl.unpaidCount:ins.filter(i=>!i.paid).length,"installment")} left`:`Due ${displayDate(pl.due_date)}`;   /* PLEDGES-2: the rail's count (unpaidCount), not every row */})()}{pl.campaign_id?(()=>{const c=campaigns.find(x=>x.id===pl.campaign_id);return c?` · counts toward ${c.name}`:"";})():""}</div>
                           {pl.notes&&<div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.4}}>{pl.notes}</div>}
                           {pledgeEdit&&pledgeEdit.id===pl.id&&<div data-testid="pledge-edit" style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>

@@ -24,7 +24,11 @@ const btn = primary => ({ background: primary ? T.greenDk : T.white, color: prim
 export function openPledgeWords(pl) {
   const inst = (pl.installments || []).slice().sort((a, b) => a.seq - b.seq);
   const unpaid = inst.filter(i => !i.paid);
-  const next = unpaid.find(i => i.dueDate) || null;
+  // PLEDGES-3: the next installment is the summary's (shared/numbers/pledges.js
+  // summaryOf): the earliest with something left, at what is left on it.
+  const s = pl.summary || null;
+  const nextRow = s && s.nextDue ? (unpaid.find(i => i.dueDate === s.nextDue) || unpaid[0]) : unpaid.find(i => i.dueDate);
+  const next = nextRow ? { ...nextRow, amount: s ? s.nextAmount : (nextRow.left != null ? nextRow.left : nextRow.amount) } : null;
   // WALKB-2: the count is the unpaid installments (shared/numbers/pledges.js
   // unpaidCount, on the answer), not the ones after the next: "1 more
   // installment" was read as one left when two were.
@@ -33,7 +37,9 @@ export function openPledgeWords(pl) {
   if (next) parts.push(`next due ${longDate(next.dueDate)}`);
   else if (unpaid.length || pl.balance > 0) parts.push("no set due date");
   if (more > 1 || (more === 1 && !next)) parts.push(`${countLabel(more, "installment")} left`);
-  return { next, more, unpaid, inst, rest: parts.join(" · ") };
+  // PLEDGES-3: the five values, in the words every pledge surface says them.
+  if (s && s.words) return { next, nextRow, more, unpaid, inst, rest: s.words + (more > 1 ? ` · ${countLabel(more, "installment")} left` : "") };
+  return { next, nextRow, more, unpaid, inst, rest: parts.join(" · ") };
 }
 
 export default function OpenPledgeBanner({ pledges, donorName, donorId, isReadOnly, onRecordPayment }) {
@@ -95,8 +101,8 @@ export default function OpenPledgeBanner({ pledges, donorName, donorId, isReadOn
               <div data-testid="dp-pledge-installments" style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
                 {w.inst.map(i => (
                   <span key={i.seq} style={{ fontSize: 12, padding: "3px 9px", borderRadius: 999, background: i.paid ? T.green100 : T.bg, color: T.ink,
-                    border: "1px solid " + (i.paid ? T.greenDk : i === w.next ? T.gold500 : T.bg3) }}>
-                    {i.dueDate ? longDate(i.dueDate) : "No set date"} · {money(i.amount)} · {i.paid ? "Paid" : i === w.next ? "Next" : "To come"}
+                    border: "1px solid " + (i.paid ? T.greenDk : i === w.nextRow ? T.gold500 : T.bg3) }}>
+                    {i.dueDate ? longDate(i.dueDate) : "No set date"} · {i.paid || i.left == null || Number(i.left) >= Number(i.amount) ? money(i.amount) : `${money(i.left)} of ${money(i.amount)} left`} · {i.paid ? "Paid" : i === w.nextRow ? "Next" : "To come"}
                   </span>
                 ))}
               </div>

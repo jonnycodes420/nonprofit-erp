@@ -769,8 +769,8 @@ app.get("/fundraising/pledges", requireAuth, wrap(async (req, res) => {
         ORDER BY GREATEST(p.amount - COALESCE(pp.paid, 0), 0) DESC, d.name, p.id`, [orgId, orgId]),
   ]);
   const inst = rows.length ? await query(
-    `SELECT id, pledge_id, LEFT(due_date::text, 10) AS due_date, amount, paid_gift_id FROM pledge_installments
-      WHERE org_id = ? AND pledge_id = ANY(?) ORDER BY due_date, id`, [orgId, rows.map(r => r.id)]) : [];
+    `SELECT id, pledge_id, seq, LEFT(due_date::text, 10) AS due_date, amount, paid_gift_id FROM pledge_installments
+      WHERE org_id = ? AND pledge_id = ANY(?) ORDER BY due_date, seq, id`, [orgId, rows.map(r => r.id)]) : [];
   const by = new Map();
   for (const i of inst) (by.get(i.pledge_id) || by.set(i.pledge_id, []).get(i.pledge_id)).push(i);
   const r2 = v => Math.round((parseFloat(v) || 0) * 100) / 100;
@@ -781,13 +781,14 @@ app.get("/fundraising/pledges", requireAuth, wrap(async (req, res) => {
       const balance = r2(r.balance), due = String(r.due_date || "").slice(0, 10);
       // LEDGER-1: the one rule (shared/numbers/pledges.js), the totals' own.
       const PL = require("../../shared/numbers/pledges");
-      const pl = { amount: r.amount, paid: r.paid, dueDate: due, installments: list.map(i => ({ dueDate: i.due_date, amount: i.amount, paid: !!i.paid_gift_id })) };
+      const pl = { amount: r.amount, paid: r.paid, dueDate: due, installments: list.map(i => ({ seq: i.seq, dueDate: i.due_date, amount: i.amount, paid: !!i.paid_gift_id })) };
       const dueThisYear = PL.dueOf(pl, yearEnd, "<=");
       const overdue = PL.dueOf(pl, today, "<");
       const left = PL.installmentsLeft(pl);
       return {
         id: r.id, donorId: r.donor_id, donorName: r.donor_name, amount: r2(r.amount), paid: r2(r.paid), balance,
         dueThisYear: r2(dueThisYear), overdue: r2(overdue), dueDate: due || null,
+        summary: PL.summaryOf(pl),   // PLEDGES-3: the Next column is summary.nextAmount, never the pledge total
         madeAt: r.event_name ? { kind: "event", id: r.event_id, name: r.event_name } : r.campaign_name ? { kind: "campaign", id: r.campaign_id, name: r.campaign_name } : null,
         installments: list.map((i, k) => ({ id: i.id, dueDate: i.due_date, amount: r2(i.amount), left: left[k].left, paid: left[k].left <= 0, overdue: left[k].left > 0 && i.due_date < today })),
       };
