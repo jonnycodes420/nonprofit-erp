@@ -908,6 +908,7 @@ require("../../routes/homeCalls").mount({
 });
 // SPLIT-2 end
 // SPLIT-2 server.js piece 786
+require("../../routes/catchUp").mount({ query, requireAuth, wrap });   // LAG-1
 require("../../routes/readouts").mount({
   actor, checkWriteAccess, orgToday, orgTz, query, queueThankYouDraft, requireAuth, run, testMode, uuid, wrap,
 });

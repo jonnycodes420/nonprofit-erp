@@ -102,11 +102,23 @@ export function useProfileGiving({ donor, journey, setJourneyList, setJourneySug
 
   const deleteGift=async(giftId)=>{
     if(!(await askConfirm({title:"Delete this gift?",body:"It comes off this person's giving and your totals now. A receipt already sent is not taken back.",yes:"Delete gift",danger:true})))return;
-    try{
-      await apiFetch(`/gifts/${giftId}`,{method:"DELETE"});
-      told({donorId:donor.id,gift:true});loadPledges();   // LEDGER-1: the rail and its thank-you too
-    // TRUTH-2: a refused delete says why (an issued receipt, not yours to remove), never only the console.
-    }catch(e){alert(errorMessage(e,"The gift could not be deleted."));}
+    // LAG-1 (W-1107-Finance-04X): a refusal is said on the page, never in a browser
+    // alert (an automated browser dismisses one, and the fleet saw Delete do nothing
+    // three times). A gift with an issued receipt asks to void it first.
+    const say=(e,why)=>askConfirm({title:"The gift was not deleted",body:errorMessage(e,why),yes:"OK",no:"Close"});
+    const del=()=>apiFetch(`/gifts/${giftId}`,{method:"DELETE"}).then(()=>{told({donorId:donor.id,gift:true});loadPledges();});   // LEDGER-1: the rail and its thank-you too
+    try{await del();}
+    catch(e){
+      if(e?.error!=="receipt_active"||!Array.isArray(e.receiptIds)){say(e,"The gift could not be deleted.");return;}
+      const yes=await askConfirm({title:"Void the receipt first?",
+        body:`This gift has a receipt. Void the receipt first?\n\nReceipt ${e.receiptNumber?`#${e.receiptNumber} `:""}is marked void (the donor's copy is not taken back), then the gift comes off this person's giving and your totals.`,
+        yes:"Void and delete",danger:true});
+      if(!yes)return;
+      try{
+        for(const id of e.receiptIds)await apiFetch(`/receipts/${encodeURIComponent(id)}/void`,{method:"POST",body:JSON.stringify({reason:"Voided to delete the gift."})});
+        await del();
+      }catch(e2){say(e2,"The receipt was not voided, so the gift is still here.");}
+    }
   };
 
   // BUILD-98 Part 1 — a person named on the form is one of THIS org's
