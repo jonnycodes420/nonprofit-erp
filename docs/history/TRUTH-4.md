@@ -24,6 +24,10 @@ readers of one rule, one of them hand-written.
 - **Tasks (W-1107-Volunteers-14).** Home's set is "people with a next step", a name of its own.
 - The fixture's erased giver also showed Re-engage listing an erased person its badge left out: `reengageSql` now
   leaves erased people out.
+- CI on the merge with main went red once in `import2-history` (By year "1 gift(s)" beside "no gifts"): a year
+  where a refund took a gift back to $0 or below. The random 1,000-donor file only sometimes holds that shape, so
+  it read as a flake. By year's Change now says "refunded, net $X" when the year has a gift; the fixture's Pell
+  Varga (a gift and its refund in one year) holds it every run: red on the old wording, green after.
 
 The pairs live in `tests/lib/truth4Pairs.js` (surfacesAgree's check `truth4`), on the fixture in
 `tests/lib/truth4Fixture.js`, run by `tests/truth4-surfaces.test.js`.

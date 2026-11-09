@@ -65,7 +65,9 @@ function samePoint(year, today) {
 }
 
 // "up $1,200 (25%)", "down $800 (40%)", "first year", "no gifts".
-function changeWords(cents, prevCents, { first = false, partial = false, firstWords = "first year", basis = "" } = {}) {
+function changeWords(cents, prevCents, { first = false, partial = false, firstWords = "first year", basis = "", gifts = 0 } = {}) {
+  // TRUTH-4: a year with a gift that a refund took back to $0 or below has gifts; it says so, never "no gifts".
+  if (cents <= 0 && gifts > 0) return `refunded, net ${fmt(cents)}`;
   if (cents <= 0 && !first) return partial ? "no gifts yet" : "no gifts";
   if (first) return cents > 0 ? firstWords : (partial ? "no gifts yet" : "no gifts");
   const tail = basis ? ` ${basis}` : "";
@@ -132,8 +134,8 @@ async function donorByYear(query, org, donorId, today) {
   rows.forEach((r, i) => {
     const prev = rows[i + 1];
     const first = !prev;
-    if (r.current && samePointRow) r.change = changeWords(r.cents, samePointRow.cents, { first, partial: true, firstWords: hasBefore ? "first year after the import" : "first year", basis: "on the same point last year" });
-    else r.change = changeWords(r.cents, prev ? prev.cents : 0, { first, partial: r.current, firstWords: hasBefore ? "first year after the import" : "first year" });
+    if (r.current && samePointRow) r.change = changeWords(r.cents, samePointRow.cents, { first, partial: true, firstWords: hasBefore ? "first year after the import" : "first year", basis: "on the same point last year", gifts: r.giftCount });
+    else r.change = changeWords(r.cents, prev ? prev.cents : 0, { first, partial: r.current, firstWords: hasBefore ? "first year after the import" : "first year", gifts: r.giftCount });
   });
 
   // Money Lifetime counts that is in no year: older than the years shown, no

@@ -6,6 +6,7 @@
 //   · Louisa Fenwick: gave last fiscal year on her own (W-1108-Fundraising-07)
 //   · Sable Ingram: one $500 gift split $300 Food Pantry / $200 General (W-1108-Finance-38)
 //   · three lapsed donors with several years of giving (W-1108-Fundraising-15)
+//   · Pell Varga: a gift and a full refund in one year (W-1107-Donors-21X)
 //   · Trina Vale: a donor with an email, in the trash (W-1108-Fundraising-25X)
 //   · two volunteers who never gave, one volunteer who gave (W-1108-Volunteers-31X)
 //   · open tasks: overdue, due today, due tomorrow, someone else's (W-1107-Volunteers-14)
@@ -87,6 +88,11 @@ async function buildTruth4Org(run = require("crypto").randomBytes(4).toString("h
     const id = await person(key, name);
     for (const [n, amt] of gs) await gift(id, amt, day(today, n));
   }
+
+  // Pell Varga: a gift and its refund in one year (By year: 1 gift, net $0, never "no gifts").
+  const pell = await person("pell", "Pell Varga");
+  await gift(pell, 200, day(today, -1300));
+  await rawGift(pell, -200, day(today, -1290));
 
   // Trina Vale: a donor with an email, in the trash.
   const trina = await person("trina", "Trina Vale");
