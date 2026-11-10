@@ -1,6 +1,6 @@
 # ACCESS-2 · Staff who see only the donors assigned to them (2026-11-10)
 
-Allie Barnett (Justin's Place, beta) asked for her campaign cabinet to see only the people assigned to
+A beta customer asked for her campaign cabinet to see only the people assigned to
 them. Raiser's Edge (constituent security), Salesforce NPSP (sharing rules) and Bloomerang (limited users) all
 have it. On main a Staff member saw every person (reproduced in the walk: a Staff account opened Donors and
 saw all six fixture people).
