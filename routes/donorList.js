@@ -50,7 +50,7 @@ const cleanChips = b => {
 const cleanSort = b => {
   const sort = String((b && b.sort) || "").trim();
   const dir = String((b && b.sortDir) || "").trim().toLowerCase();
-  return { sort: /^[a-z0-9_]{1,60}$/i.test(sort) ? sort : null, dir: sort && (dir === "asc" || dir === "desc") ? dir : null };
+  return { sort: /^(cf:)?[a-z0-9_]{1,60}$/i.test(sort) ? sort : null, dir: sort && (dir === "asc" || dir === "desc") ? dir : null };
 };
 
 app.get("/donors/list-setup", requireAuth, requireCrm, wrap(async (req, res) => {
@@ -112,6 +112,11 @@ app.post("/donors/list-views", requireAuth, requireCrm, wrap(async (req, res) =>
   const id = newId("lv");
   const who = actor(req);
   const sort = cleanSort(req.body);
+  // LIST-4: a custom field sort names one of this org's own fields, never another org's.
+  if (sort.sort && sort.sort.startsWith("cf:")) {
+    const cf = await require("../server/donors/cfSort").lookup(orgId, sort.sort);
+    if (cf.error) return res.status(400).json({ error: "bad_sort", sentence: cf.error });
+  }
   await run(`INSERT INTO donor_list_views (id, org_id, user_id, name, columns, widths, filters, page_size, sort_by, sort_dir, chips, created_by, created_by_name)
              VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?::jsonb, ?, ?)`,
     [id, orgId, userId, name, JSON.stringify(layout.columns), JSON.stringify(layout.widths), filters ? JSON.stringify(filters) : null,

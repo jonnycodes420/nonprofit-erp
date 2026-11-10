@@ -414,6 +414,10 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   organization, case and accents folded. A profile opened by id shows "Loading this person…", or "We couldn't
   find this person", never a record drawn from a bare id. Data health's "People and their businesses" counts
   each person and organization once, and a domain two organizations share proposes nobody.
+- **A custom field column sorts by its value (LIST-4).** `server/donors/cfSort.js`, from `groups.buildDonorFilter`:
+  the `cf:<key>` key is looked up among the org's own fields and only the stored key reaches SQL. Number and money
+  by value, date by day, select in the field's option order, text case-insensitively, checkbox Yes first descending,
+  blanks last both ways; multi-select does not sort. SQL patterns hold no `?` (the db layer reads each one as an argument).
 
 - **An open pledge sits at the top of the profile (IMPORT-5).** `OpenPledgeBanner.jsx`: "Open pledge: $20,000 · $0
   received · next due Dec 31, 2026 · 2 more installments", each installment with its state, Record a payment (the gift

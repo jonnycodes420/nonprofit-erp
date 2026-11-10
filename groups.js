@@ -511,7 +511,11 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   // ", id" tiebreak keeps page boundaries stable when many donors share a value
   // LIST-1: a column header sorts by that column, either way.
   // LIST-2: Name with no direction is last name, then first, A to Z.
-  let orderBy = (q.dir && require("./donorList").sortSql(String(q.sort || ""), String(q.dir)))
+  // LIST-4: a custom field column sorts by its value (server/donors/cfSort.js), the key checked against this org's fields.
+  const CFS = require("./server/donors/cfSort");
+  const cfs = CFS.isCfSort(q.sort) ? await CFS.cfSortSql(orgId, q.sort, String(q.dir || "asc")) : null;
+  if (cfs && cfs.error) return { badStatus: true, badFilter: cfs.error };
+  let orderBy = (cfs && cfs.orderBy) || (q.dir && require("./donorList").sortSql(String(q.sort || ""), String(q.dir)))
     || (q.sort === "name" ? require("./donorList").sortSql("name", "asc") : null)
     || (DONOR_SORTS[q.sort] || DONOR_SORTS.total_giving) + ", id";
   // The closeness word rides on every row as a column (selectCols), its
