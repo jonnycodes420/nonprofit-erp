@@ -1,6 +1,6 @@
 // server/donors/quickAdd.js · QUICKADD-1. A NEW PERSON AND THEIR GIFT, IN ONE GO.
 //
-// Allie Barnett typed six Good Giving Challenge donors: add each one, search
+// A beta customer typed six Good Giving Challenge donors: add each one, search
 // for them, open their giving, then record the gift. Four screens a donor. In
 // Record a gift and on each deposit-sheet line, "+ New person: 'Maria Lopez'"
 // now opens first name, last name, email, phone and address, and one Save

@@ -1,6 +1,6 @@
 // server/donors/giftAttribution.js · QUICKADD-1. WHAT A GIFT CAME FROM.
 //
-// Allie Barnett (Justin's Place, beta) typed six Good Giving Challenge gifts
+// A beta customer typed six Good Giving Challenge gifts
 // and had nowhere to say "the Good Giving Challenge" or which fundraiser each
 // one gave to. A gift now carries three answers, each searched from what the
 // org already has:
@@ -25,7 +25,7 @@ const routers = { r1: express.Router() };
 const NAME_MAX = 120;
 const cleanName = v => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, NAME_MAX);
 const like = q => `%${String(q || "").trim().toLowerCase().replace(/[\\%_]/g, c => "\\" + c)}%`;
-const day = v => (v ? String(v instanceof Date ? v.toISOString() : v).slice(0, 10) : null);
+const day = v => (v ? String(v).slice(0, 10) : null);   // the SQL hands days over as text (::text), never a Date
 
 async function checkAttribution(query, orgId, b) {
   const body = b || {};
@@ -82,7 +82,7 @@ async function search(query, orgId, kind, q) {
   const pat = like(q);
   if (kind === "campaign") {
     const rows = await query(
-      `SELECT id, name, start_date, end_date FROM campaigns
+      `SELECT id, name, start_date::text AS start_date, end_date::text AS end_date FROM campaigns
         WHERE org_id=? AND LOWER(name) LIKE ? AND COALESCE(status,'') <> 'archived'
         ORDER BY created_at DESC NULLS LAST LIMIT 20`, [orgId, pat]);
     return rows.map(r => ({ id: r.id, name: r.name, startDate: day(r.start_date), endDate: day(r.end_date) }));
@@ -127,7 +127,7 @@ function mount(ctx) {
   app.post("/gift-attribution/campaign", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     const orgId = req.user.orgId, name = cleanName(req.body && req.body.name);
     if (!name) return res.status(400).json({ error: "Name the campaign." });
-    const [had] = await query("SELECT id, name, start_date, end_date FROM campaigns WHERE org_id=? AND LOWER(name)=LOWER(?) ORDER BY created_at DESC LIMIT 1", [orgId, name]);
+    const [had] = await query("SELECT id, name, start_date::text AS start_date, end_date::text AS end_date FROM campaigns WHERE org_id=? AND LOWER(name)=LOWER(?) ORDER BY created_at DESC LIMIT 1", [orgId, name]);
     if (had) return res.json({ id: had.id, name: had.name, startDate: day(had.start_date), endDate: day(had.end_date), existed: true });
     const id = newId("cmp");
     // No goal and no dates: a campaign made from a gift is a name to attribute

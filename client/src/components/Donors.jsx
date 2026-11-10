@@ -726,7 +726,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[addToast,setAddToast]=useState(null);
   const[recordGiftOpen,setRecordGiftOpen]=useState(false);
 
-  // QUICKADD-1 (Allie Barnett, 10 Nov): Save never leaves her where she was with
+  // QUICKADD-1 (a beta customer, 10 Nov): Save never leaves anyone where they were with
   // nothing happening. "open" lands on the new profile; "gift" lands there with
   // Record a gift open (the profile's own gift form, the person filled in);
   // "another" keeps the form, emptied, with "Added Maria Lopez. Open".

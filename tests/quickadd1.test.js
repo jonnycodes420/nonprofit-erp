@@ -3,7 +3,7 @@
 // that person, with the campaign and fundraiser she chose, and a refused gift
 // must add nobody.
 //
-// Allie Barnett (Justin's Place, beta, 10 Nov): six Good Giving Challenge
+// A beta customer (10 Nov): six Good Giving Challenge
 // donors took four screens each (add, search, open giving, record the gift).
 //
 // API leg:

@@ -9,7 +9,7 @@
 // on the profile. Nothing here counts anything: the event's Raised, the
 // attendee's row and the grant's Received re-read.
 //
-// QUICKADD-1 (Allie Barnett, six Good Giving Challenge donors):
+// QUICKADD-1 (a beta customer, six Good Giving Challenge donors):
 //   · the person search ends with "+ New person: 'Maria Lopez'", which opens
 //     first name, last name, email, phone and address; Save adds the person
 //     and the gift in one write (POST /gifts/new-person), and a name already

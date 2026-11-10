@@ -1,8 +1,8 @@
 ## QUICKADD-1 · Add a person and their gift in one go (2026-11-10)
 
-- **Why.** Allie Barnett (Justin's Place, beta) typed six Good Giving Challenge donors on 10 Nov: add each one,
+- **Why.** A beta customer typed six Good Giving Challenge donors on 10 Nov: add each one,
   search for them, open their giving, record the gift. Four screens a donor. Save on Add person closed the form
-  and left her on the list with nothing open (reproduced with Playwright on the production build of main).
+  and left them on the list with nothing open (reproduced with Playwright on the production build of main).
 - **Add person lands somewhere.** Save opens the new profile; Save and record a gift opens it with the profile's
   own gift form open (the existing `giftHandoff`), scrolled into view; Save and add another keeps the form,
   emptied, with "Added Maria Lopez. Open".
