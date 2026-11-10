@@ -1,7 +1,7 @@
 // server/majorGifts/top100.js · TOP100-1. A TOP 100 LIST WITH A RANK AND A
 // PLAN OF CARE FOR EACH PERSON.
 //
-// Allie Barnett (Justin's Place, 9 Nov) kept her Top 100 in Excel: one row per
+// A beta customer's CEO (9 Nov) kept her Top 100 in Excel: one row per
 // person with rank, wealth score, giving, owner, plan and next step. This is
 // that sheet, inside Steward.
 //
