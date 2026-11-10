@@ -234,12 +234,13 @@ export const HELP_ARTICLES = [
   {
     slug: `fundraising`,
     title: `Fundraising`,
-    screens: [`fundraising`, `auctions`, `p2p`, `memberships`],
+    screens: [`fundraising`, `auctions`, `p2p`, `memberships`, `majorgifts`],   // ASKS-1: Major Gifts, its own rail entry
     summary: `Fundraising is the place for money coming in: goals, campaigns, pages, auctions, peer-to-peer, recurring gifts, memberships, major gifts and deposits.`,
     sections: [
       { h: `What you see`, p: [
-        `The screen is titled "Your fundraising." with four sections. Overview shows your goals, what you have raised this period, active campaigns, live giving pages and recent gifts. Campaigns & pages holds Campaigns, Giving pages & forms, Tickets & sponsors, Auctions, Peer-to-peer, Recurring and Memberships. Major gifts holds At a glance, Pipeline, Proposals, Portfolios and Plans. Money in holds To confirm, Deposits, Acknowledgments, Funds and Started, not finished.`,
+        `The screen is titled "Your fundraising." with four sections. Overview shows your goals, what you have raised this period, active campaigns, live giving pages and recent gifts. Campaigns & pages holds Campaigns, Giving pages & forms, Tickets & sponsors, Auctions, Peer-to-peer, Recurring and Memberships. Major gifts holds At a glance and Proposals. Money in holds To confirm, Deposits, Acknowledgments, Funds and Started, not finished.`,
         `Auctions, Peer-to-peer and Memberships also have their own entries in the sidebar, under Raise, and each one opens its part of this screen.`,
+        `Top 100, Portfolios, Pipeline and Plans are on their own screen, Major Gifts, in the sidebar under Raise between Fundraising and Events. It opens on Top 100. Admins see it, and so does anyone with the major gifts permission (Settings, then Team, then "Major gifts" beside their name). Older links to those views open it on the same tab.`,
       ]},
       { h: `Create a campaign`, steps: [
         `Open Campaigns & pages, then Campaigns, and click "+ New campaign".`,

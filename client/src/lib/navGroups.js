@@ -32,7 +32,7 @@ export const NAV_GROUPS = [
   { id: "relationships", label: "Relationships",   items: ["donors", "groups", "journeys", "communications", "portal"] },
   // FIX-25: Auctions, Peer-to-peer and Memberships are parts of Fundraising
   // with a rail entry each, because nobody found them two clicks deep.
-  { id: "raise",         label: "Raise",           items: ["fundraising", "events", "auctions", "p2p", "memberships", "grants"] },
+  { id: "raise",         label: "Raise",           items: ["fundraising", "majorgifts", "events", "auctions", "p2p", "memberships", "grants"] },   // ASKS-1: Major Gifts after Fundraising
   // Volunteers is its own product. It gets its own group rather than a slot
   // inside somebody else's, because a volunteer coordinator signs in to this
   // one word and nothing else on the rail is theirs.
@@ -50,7 +50,7 @@ export const NAV_ICON_NAMES = {
   grants: "file-text", volunteers: "hand-helping", finance: "wallet",
   reports: "bar-chart-3", settings: "settings",
   portal: "panels-top-left", groups: "group",
-  auctions: "gavel", p2p: "flag", memberships: "id-card", calendar: "calendar-range",
+  auctions: "gavel", p2p: "flag", memberships: "id-card", calendar: "calendar-range", majorgifts: "gem",
 };
 
 // Home is where every deep link lands and Settings is where you fix a mistake:

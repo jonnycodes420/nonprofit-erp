@@ -49,14 +49,12 @@ export const FR_SECTIONS = [
   {
     id: "majorgifts", label: "Major gifts",
     question: "Who are we cultivating for a large gift?",
+    // ASKS-1: Top 100, Portfolios, Pipeline and Plans moved to their own rail
+    // entry, Major Gifts (lib/majorGiftsTab.js); their ids still resolve here
+    // (FR_LEGACY) and App's navigateTo sends each to that page.
     parts: [
       { id: "majorgifts", label: "At a glance" },
-      // The sidebar's Pipeline folded in here. It keeps its Team gate.
-      { id: "pipeline", label: "Pipeline", teamGated: true },
       { id: "proposals", label: "Proposals" },
-      { id: "top100", label: "Top 100" },   // TOP100-1: her ranked list and a plan of care each
-      { id: "portfolios", label: "Portfolios" },
-      { id: "plans", label: "Plans" },
     ],
   },
   {

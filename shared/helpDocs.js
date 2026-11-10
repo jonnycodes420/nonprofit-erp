@@ -359,7 +359,7 @@ export const HELP_DOCS = [
    {
     "h": "What this screen is for",
     "p": [
-     "Major gifts is a tab in Fundraising. It has five parts: At a glance, Pipeline, Proposals, Portfolios and Plans. A proposal is one ask to one person: what it's for, how much, and when you expect an answer. Each proposal moves through six stages: Identified, Cultivating, Asked, Committed, Declined and Stewarding."
+     "Major Gifts has its own entry in the sidebar, under Raise between Fundraising and Events, with four tabs: Top 100, Portfolios, Pipeline and Plans. It opens on Top 100. Admins see it, and so does anyone with the major gifts permission. At a glance and Proposals are in Fundraising, under Major gifts. A proposal is one ask to one person: what it's for, how much, and when you expect an answer. Each proposal moves through six stages: Identified, Cultivating, Asked, Committed, Declined and Stewarding."
     ]
    },
    {

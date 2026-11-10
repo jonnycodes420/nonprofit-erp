@@ -980,6 +980,8 @@ async function writePlan({ req, body, importId, who, report }) {
       afterChange: false,
       // INSIGHTS-1: the gift type the file's method or memo names
       giftType: giftTypeOf([g.methodOriginal, g.note].filter(Boolean).join(" ")) || null,
+      // ASKS-1: an auction purchase: type "auction", the item and what it was worth
+      ...(g.auction && g.auction.fmvCents != null ? { type: "auction", quidProQuoValue: g.auction.fmvCents / 100, quidProQuoDesc: g.auction.item } : {}),
     };
     if (g.kind === "installment") {
       const pid = pledgeIdByRow.get(g.installmentOf);
@@ -988,6 +990,7 @@ async function writePlan({ req, body, importId, who, report }) {
     }
     giftArgs.push(args); giftOf.push(g);
   }
+  const auctionWritten = [];   // ASKS-1
   for (let k = 0; k < giftArgs.length; k += GIFT_BATCH) {
     const out = await recordGifts(giftArgs.slice(k, k + GIFT_BATCH));
     const paid = [];
@@ -998,6 +1001,7 @@ async function writePlan({ req, body, importId, who, report }) {
         paid.push([r.giftId, args.installmentId, args.pledgeId]);
         installmentGifts++; installmentCents += g.cents;
       } else { giftsCreated++; giftCents += g.cents; }
+      if (g.auction && g.auction.fmvCents != null) auctionWritten.push({ giftId: r.giftId, item: g.auction.item, fmvCents: g.auction.fmvCents, cents: g.cents });
     });
     if (paid.length) {
       await run(`UPDATE pledge_installments i SET paid_gift_id = v.gift, paid_at = NOW() FROM unnest(?::text[], ?::text[]) AS v(gift, inst)
@@ -1007,6 +1011,9 @@ async function writePlan({ req, body, importId, who, report }) {
     const n = Math.min(k + GIFT_BATCH, giftArgs.length);
     await report(`Writing gifts ${n.toLocaleString("en-US")} of ${giftArgs.length.toLocaleString("en-US")}`, memberCount + u.pledges.length + n, total, true);
   }
+  // ASKS-1: the items the auction gifts bought, placed in the event's auction
+  if (auctionWritten.length) summary.auction = await require("../server/events/auctionImport").placeAuctionItems(
+    { query, run, newId, randomHex: require("../server/shared/newId").randomHex }, orgId, { eventId, importId, who, written: auctionWritten });
   // FIX-59 · ALREADY DEPOSITED. Yes (the default) marks the run's received
   // gifts deposited on their own dates (deposited_on only, as Finance's "They
   // were already deposited" does: QuickBooks' deposit mode groups by

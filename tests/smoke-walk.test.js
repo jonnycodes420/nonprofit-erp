@@ -86,7 +86,7 @@ function routes() {
 const PROFILE_TABS = ["activity", "giving", "conversations", "emails", "tasks", "notes", "files", "related"];
 // The rail shows a LABEL, the registry holds an id; the two differ for three
 // tabs and a walk that assumed they matched would skip them.
-const LABELS = { dashboard: "Home", board: "Dashboards", portal: "Donor Portal", p2p: "Peer-to-peer" };
+const LABELS = { dashboard: "Home", board: "Dashboards", portal: "Donor Portal", p2p: "Peer-to-peer", majorgifts: "Major Gifts" };   // ASKS-1
 // FIX-25: rail ids that open a PART of Fundraising (tabRegistry FR_PART_TABS).
 // Each is walked like a tab and must land on its own part, not the Overview.
 const FR_PART_TABS = Object.fromEntries([...((/const FR_PART_TABS\s*=\s*\{([^}]*)\}/.exec(

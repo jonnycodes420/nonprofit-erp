@@ -38,6 +38,7 @@ import { EventStory } from "./EventRaised";   // FUNDRAISING-2
 import { PledgesView } from "./Pledges";   // FUNDRAISING-2
 import { countLabel } from "../../../shared/countWords.js";
 import { RowsPanel } from "./fundraising/RowsPanel";   // FLOWS-2
+import { MG_VIEWS } from "../lib/majorGiftsTab";   // ASKS-1
 import { LostAndFoundPart } from "./fundraising/LostAndFoundPart";   // FLOWS-2
 import { RollupThermometer } from "./fundraising/RollupThermometer";   // FLOWS-2: moved out, verbatim
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
@@ -152,8 +153,12 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
     .then(([o, c]) => { setOverview(o); setCampaigns(c); }).catch(() => { /* keeps what is on screen */ });
   useChanged(["gift", "pledge", "totals", "event"], refresh);   // STALE-2: "event" moves the lead card's Invited and Came
 
-  // Any id, old or new, opens its section on its part.
-  const goto = id => { const r = resolveFr(id); setSection(r.section); setPartOf(m => ({ ...m, [r.section]: r.part })); };
+  // Any id, old or new, opens its section on its part; ASKS-1: one that is now
+  // a Major Gifts tab (Top 100, Portfolios, Pipeline, Plans) opens that page.
+  const goto = id => {
+    if (onNavigate && MG_VIEWS.some(v => v.id === id)) return onNavigate("majorgifts", { subtab: id });
+    const r = resolveFr(id); setSection(r.section); setPartOf(m => ({ ...m, [r.section]: r.part }));
+  };
   const sec = FR_SECTIONS.find(s => s.id === section) || FR_SECTIONS[0];
   const subtab = partOf[sec.id] || sec.parts[0].id;   // the old view that is open
   const setSubtab = goto;

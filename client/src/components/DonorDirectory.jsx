@@ -1045,7 +1045,8 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
                   return visCols.map(k=>{
                     if(special[k])return <div key={k} data-col={k} className={k==="stage"?"dir-col-stage":k==="owner"?"dir-col-owner":undefined} style={cellBox(k)}>{special[k]()}</div>;
                     const f=fieldByKey[k];
-                    const txt=formatCell(f,d.cells?d.cells[k]:undefined);
+                    const txt0=formatCell(f,d.cells?d.cells[k]:undefined);
+                    const txt=typeof txt0==="string"?txt0.replace(/\s*\n+\s*/g," · "):txt0;   // ASKS-1: a two-line address on one row
                     return <div key={k} data-col={k} data-testid={`dir-cell-${k}`} title={txt} style={{...cellBox(k),fontSize:12.5,color:txt?T.ink:T.ink3}}><span style={oneLine}>{txt}</span></div>;
                   });
                 })()}

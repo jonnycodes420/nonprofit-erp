@@ -23,6 +23,9 @@ const TABS=[
   // link, card and email still opens the dashboard it named.
   {id:"donors",label:"Donors",icon:"♦"},
   {id:"fundraising",label:"Fundraising",icon:"↗"},
+  // ASKS-1: Major Gifts, its own page (Top 100 · Portfolios · Pipeline · Plans),
+  // for admins and staff with the major gifts permission (lib/majorGiftsTab.js).
+  {id:"majorgifts",label:"Major Gifts",icon:"◆"},
   // FIX-4 2 — JOURNEYS IS ITS OWN ROOM, under Fundraising. It lived in
   // Settings, reachable by one button on Campaigns & pages, which put the
   // thing an org does weekly behind the screen it opens twice a year. The

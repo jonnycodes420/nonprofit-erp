@@ -261,6 +261,7 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null,
     // was already here is put back exactly as they were.
     await run("DELETE FROM event_attendees WHERE org_id=? AND import_id=?", [orgId, id]);
     await run("DELETE FROM interactions WHERE org_id=? AND import_id=?", [orgId, id]);
+    await require("../events/auctionImport").undoAuctionItems({ run }, orgId, id);   // ASKS-1: the auction items it placed
     // FIX-59: the tables the seating chart made, once nobody sits at them
     if ((sj.tablesCreated || []).length) await run(`DELETE FROM event_tables t WHERE t.org_id=? AND t.id = ANY(?)
                                                       AND NOT EXISTS (SELECT 1 FROM event_attendees a WHERE a.table_id = t.id)`, [orgId, sj.tablesCreated]);

@@ -469,7 +469,7 @@
    "link": "/help/fundraising",
    "route": "/app/fundraising",
    "screen": "fundraising",
-   "text": "The screen is titled \"Your fundraising.\" with four sections. Overview shows your goals, what you have raised this period, active campaigns, live giving pages and recent gifts. Campaigns & pages holds Campaigns, Giving pages & forms, Tickets & sponsors, Auctions, Peer-to-peer, Recurring and Memberships. Major gifts holds At a glance, Pipeline, Proposals, Portfolios and Plans. Money in holds To confirm, Deposits, Acknowledgments, Funds and Started, not finished.\nAuctions, Peer-to-peer and Memberships also have their own entries in the sidebar, under Raise, and each one opens its part of this screen."
+   "text": "The screen is titled \"Your fundraising.\" with four sections. Overview shows your goals, what you have raised this period, active campaigns, live giving pages and recent gifts. Campaigns & pages holds Campaigns, Giving pages & forms, Tickets & sponsors, Auctions, Peer-to-peer, Recurring and Memberships. Major gifts holds At a glance and Proposals. Money in holds To confirm, Deposits, Acknowledgments, Funds and Started, not finished.\nAuctions, Peer-to-peer and Memberships also have their own entries in the sidebar, under Raise, and each one opens its part of this screen.\nTop 100, Portfolios, Pipeline and Plans are on their own screen, Major Gifts, in the sidebar under Raise between Fundraising and Events. It opens on Top 100. Admins see it, and so does anyone with the major gifts permission (Settings, then Team, then \"Major gifts\" beside their name). Older links to those views open it on the same tab."
   },
   {
    "id": "help:fundraising:2",
@@ -2485,7 +2485,7 @@
    "link": "/help/major-gifts",
    "route": "/app/fundraising?fr=majorgifts",
    "screen": "fundraising:majorgifts",
-   "text": "Major gifts is a tab in Fundraising. It has five parts: At a glance, Pipeline, Proposals, Portfolios and Plans. A proposal is one ask to one person: what it's for, how much, and when you expect an answer. Each proposal moves through six stages: Identified, Cultivating, Asked, Committed, Declined and Stewarding."
+   "text": "Major Gifts has its own entry in the sidebar, under Raise between Fundraising and Events, with four tabs: Top 100, Portfolios, Pipeline and Plans. It opens on Top 100. Admins see it, and so does anyone with the major gifts permission. At a glance and Proposals are in Fundraising, under Major gifts. A proposal is one ask to one person: what it's for, how much, and when you expect an answer. Each proposal moves through six stages: Identified, Cultivating, Asked, Committed, Declined and Stewarding."
   },
   {
    "id": "helpdoc:major-gifts:2",

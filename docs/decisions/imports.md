@@ -475,3 +475,11 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 - If any of the file's gifts would land on someone already live, the import rolls back whole and says why.
 - Accept (`POST /imports/:id/accept`) clears both columns, runs the after-change step, stamps `orgs.data_in_at`; a super-admin or support session must type a reason. Undo before Accept is the ordinary undo.
 - The Verify page's file side is taken from the reader's plan at commit (`summary_json.verifyFile`, `server/onboard/sheetVerify.js`) and never recomputed.
+
+## ASKS-1 · an auction sheet is gifts, each deductible over the item's value (2026-11-10)
+
+- The one reader knows an auction sheet (`shared/auctionSheet.js`): Bidder (or Winner, Buyer) is the name, Winning bid (or Amount paid) the amount, Item the auction item, Value (or FMV) its fair market value. A Value column on a sheet with no item column is kept as written, as before.
+- Each row is a gift of what was paid, `type = 'auction'`, `quid_pro_quo_value` = the value, `quid_pro_quo_desc` = the item (IRS Pub 1771: only what was paid over the value is a gift; the whole amount is revenue). `recordGifts` carries the three columns with recordGift's own rule (deductible never below zero).
+- No value column is ONE blocking question ("What were these items worth?"): a value per item, or "$0 value (fully deductible)". Never assumed.
+- With the gala linked, each item is matched by name in the gala's auction or made there, marked paid by its gift; an auction made for the gala is made already closed. What the import made carries `import_id`, and Undo removes it (`server/events/auctionImport.js`).
+- Linking an auction sheet to an event on the calendar dates its gifts on the event's day, so each gets a receipt.
