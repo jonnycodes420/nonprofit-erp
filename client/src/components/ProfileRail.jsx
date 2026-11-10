@@ -208,12 +208,14 @@ export function ConnectedCard({ connected }) {
 
 // The contact card's extra lines: the address, the preferred way, and every
 // do-not flag said plainly.
-export function ContactExtras({ contact, donorId, isReadOnly }) {
-  if (!contact) return null;
+// WEALTH-1: `afterAddress` (the Wealth Score row) sits directly under the address.
+export function ContactExtras({ contact, donorId, isReadOnly, afterAddress = null }) {
+  if (!contact) return afterAddress;
   return (
     <>
       {donorId && (contact.privacyOn || contact.isClient) && <><dt style={DIM}>Privacy</dt><dd style={{ margin: 0 }}><ClientFlag donorId={donorId} isClient={contact.isClient} isReadOnly={isReadOnly} /></dd></>}
       {contact.address && <><dt style={DIM}>Address</dt><dd style={{ margin: 0, overflowWrap: "anywhere" }} data-testid="dp-rail-address"><span style={contact.addressBad ? { textDecoration: "line-through" } : undefined}>{contact.address}</span></dd></>}
+      {afterAddress}
       {contact.preferred && <><dt style={DIM}>Prefers</dt><dd style={{ margin: 0 }}>{contact.preferred}</dd></>}
       {(contact.flags || []).length > 0 && <><dt style={DIM}>Careful</dt><dd style={{ margin: 0, display: "flex", flexDirection: "column", gap: 3 }} data-testid="dp-rail-flags">
         {contact.flags.map(f => <span key={f.key} style={{ color: T.gold500, fontWeight: 700 }}>{f.label}</span>)}

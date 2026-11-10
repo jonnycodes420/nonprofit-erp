@@ -1408,7 +1408,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
     "softCreditName","softCreditAmount",
     "tributeName","tributeType","tributeNotify",
     "matchEmployer",
-    "wealthRating","wealthCapacity","wealthDate",
+    "wealthRating","wealthCapacity","wealthDate","wealthScore",
     "birthday", "aboutThem",
     // BUILD-99 (major gifts) Part 6 — A PROPOSAL IS NOT A GIFT, so the mapper has
     // to be able to say which one a column is. Team only, because the whole

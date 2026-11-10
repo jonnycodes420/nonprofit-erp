@@ -28,6 +28,8 @@ import { countLabel, plural } from "../../../shared/countWords.js";
 import { GivingPagesManager } from "./settings/GivingPagesManager";
 import { BrandingManager } from "./settings/BrandingManager";
 import { TimezoneCard } from "./settings/TimezoneCard";
+import { MajorGiftsCheckbox } from "./settings/MajorGiftsCheckbox";   // PROSPECT-1, moved by WEALTH-1
+import { WealthScoresTeamSetting } from "./settings/WealthScoresTeamCard";   // WEALTH-1
 import { BoardPackRecipientsCard } from "./settings/BoardPackRecipientsCard";
 import { ProcessingRatesCard } from "./settings/ProcessingRatesCard";
 import { MatchingEmployersCard } from "./settings/MatchingEmployersCard";
@@ -616,23 +618,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               <div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.email}</div>
             </div>
             <Pill label={roleWord(m.role)+(m.member?" · joined from another org":"")} color={m.role==="admin"?T.ink:T.ink3}/>
-            {/* PROSPECT-1 — who sees Room to give, screening results and
-                prospect briefs. Admins always do; anyone else only when an
-                admin ticks this. */}
-            {isAdmin&&!["volunteer_coordinator",VIEWER].includes(m.role)&&!m.member&&(
-              <label data-testid={"team-major-gifts-"+m.id} title={m.role==="admin"?"Admins always have it":"Sees Room to give, screening results and prospect briefs"}
-                style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,color:T.ink3,cursor:m.role==="admin"?"default":"pointer",flexShrink:0}}>
-                <input type="checkbox" checked={m.role==="admin"||!!m.can_major_gifts} disabled={m.role==="admin"}
-                  onChange={async e=>{
-                    const on=e.target.checked;
-                    setTeam(t=>t.map(x=>x.id===m.id?{...x,can_major_gifts:on}:x));
-                    try{ const r=await apiFetch(`/org/users/${m.id}/major-gifts`,{method:"PUT",body:JSON.stringify({on})});
-                      setTeam(t=>t.map(x=>x.id===m.id?{...x,can_major_gifts:!!r.canMajorGifts}:x)); }
-                    catch(err){ setTeam(t=>t.map(x=>x.id===m.id?{...x,can_major_gifts:!on}:x)); alert(errorMessage(err,"That permission did not change.")); }
-                  }} style={{accentColor:T.greenDk}}/>
-                Major gifts{m.role==="admin"?" (admins always have it)":""}
-              </label>
-            )}
+            <MajorGiftsCheckbox m={m} isAdmin={isAdmin} setTeam={setTeam}/>{/* PROSPECT-1 (settings/MajorGiftsCheckbox.jsx) */}
             {auth?.user?.role==="admin"&&m.id!==auth?.user?.id&&(
               /* BUILD-75 C.3 — soft-detach: revokes their sessions, frees their
                  seat, unassigns their portfolio; everything they authored keeps
@@ -652,6 +638,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         ))}
         {team.length===0&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
         <InvitedList isAdmin={isAdmin} version={invVer}/>
+        <WealthScoresTeamSetting isAdmin={isAdmin}/>{/* WEALTH-1: "Everyone on the team can see Wealth Scores" */}
       </div>}
 
       {/* ── FIX-13 Part 5 · Connections, the one page ─────────────────────────

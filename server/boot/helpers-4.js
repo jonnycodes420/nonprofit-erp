@@ -637,7 +637,7 @@ async function runBuilderDef(orgId, def) {
   // the screen opens that person. It is not a column: the CSV, the PDF and the
   // weekly email walk `columns`, so no file grows a field for it.
   const sel = c.columns.map((f, i) => `${f.sql} AS c${i}`).join(", ") + (c.person ? `, ${c.person} AS _pid` : "");
-  const order = c.sort ? `${c.sort.sql} ${c.sort.dir} NULLS LAST` : "1";
+  const order = c.sort ? `${c.sort.sql} ${c.sort.dir} NULLS LAST${c.sort.then ? `, ${c.sort.then.sql} ${c.sort.then.dir} NULLS LAST` : ""}` : "1";
   const rows = await query(`SELECT ${sel} FROM ${c.from} WHERE ${where} ORDER BY ${order} LIMIT ${c.limit}`, params);
   return {
     columns: c.columns.map((f, i) => ({ key: "c" + i, label: f.label, type: f.type })),
@@ -677,6 +677,8 @@ async function runSavedReportScheduleForOrg(org, { weekKey, force = false } = {}
     if (!reserved.length) { skipped++; continue; }
     const [owner] = await query("SELECT email, name FROM users WHERE id=? AND org_id=?", [r.owner_id, org.id]);
     if (!owner?.email) { skipped++; continue; }
+    // WEALTH-1: a report that reads the Wealth Score goes only to an owner who may still see it.
+    if (RB.usesWealth(asJson(r.definition, {})) && !(await require("../wealth/access").maySee(r.owner_id, org.id))) { await run("DELETE FROM saved_report_sends WHERE id=?", [reserved[0].id]); skipped++; continue; }
     const out = await runBuilderDef(org.id, asJson(r.definition, {}));
     if (out.errors) { await run("DELETE FROM saved_report_sends WHERE id=?", [reserved[0].id]); skipped++; continue; }
     const link = `${publicAppUrl()}/dashboard?report=${encodeURIComponent(r.id)}`;
