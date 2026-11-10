@@ -859,6 +859,7 @@ require("../../routes/donorLookups").mount({ query, requireAuth, wrap });
 // SPLIT-2 end
 // SPLIT-2 server.js piece 774
 require("../../routes/donorList").mount({ query, run, uuid, requireAuth, requireCrm, checkWriteAccess, wrap, actor });
+require("../../routes/wealthScore").mount({ query, run, requireAuth, requireAdmin, checkWriteAccess, wrap, actor });   // WEALTH-1
 // SPLIT-2 end
 // SPLIT-2 server.js piece 775
 require("../../routes/mailTypes").mount({ query, run, uuid, requireAuth, requireAdmin, requireSuperAdmin, checkWriteAccess, wrap, actor, resend, orgToday, orgTz,

@@ -52,6 +52,9 @@ const OP = {
   notBlank:  { op: "not_blank", label: "is not empty", input: "none" },
   yes:       { label: "yes", input: "none" },
   no:        { label: "no", input: "none" },
+  // WEALTH-1: the Wealth Score's own words ("equals 5", "is not set").
+  wEq:       { op: "eq", label: "equals", input: "number" },
+  unset:     { op: "blank", label: "is not set", input: "none" },
 };
 const ops = (...names) => names.map(n => ({ op: OP[n].op || n.replace(/[A-Z]/g, c => "_" + c.toLowerCase()), label: OP[n].label, input: OP[n].input }));
 const TEXT_OPS = ops("is", "contains", "starts", "in", "blank", "notBlank");
@@ -130,6 +133,10 @@ const FIELDS = [
   F("room_to_give", "Room to give", "Giving", { format: "text", majorGifts: true, cell: "room_to_give" }),
   F("engagement", "Engagement", "Giving", { format: "number", sort: "engagement_score", cell: "engagement" }),
   F("generosity", "Giving strength", "Giving", { format: "number", sort: "generosity_score", cell: "generosity" }),
+  // WEALTH-1: the 1 to 5 score a person set by hand (shared/numbers/wealthScore.js). Only
+  // for someone who may see it (server/wealth/access.js); blanks sort last both ways.
+  F("wealth_score", "Wealth Score", "Giving", { format: "number", sort: "wealth_rating", wealth: true, cell: "wealth_score",
+    filter: ops("wEq", "ngte", "nlte", "unset"), sentence: require("./shared/numbers/wealthScore").SENTENCE }),
   // Pledges
   // IMPORT-5: "Open pledge" is a column (what is still to come, the profile's
   // and Fundraising's number) and a filter (has one, or by how much)
@@ -172,7 +179,7 @@ const ROW_CELL = {
   last_gift_date: "last_gift_date", last_gift_amount: "last_gift_amount", first_gift_date: "first_gift_date", gift_count: "gift_count",
   engagement: "engagement_score", generosity: "generosity_score", do_not_contact: "do_not_contact", do_not_solicit: "do_not_solicit",
   do_not_email: "do_not_email", do_not_mail: "do_not_mail", do_not_call: "do_not_call", email_unreachable: "email_unreachable",
-  phone_unreachable: "phone_unreachable", auto_email: "auto_email",
+  phone_unreachable: "phone_unreachable", auto_email: "auto_email", wealth_score: "wealth_rating",
 };
 const BOOL_COL = { do_not_contact: 1, do_not_solicit: 1, do_not_email: 1, do_not_mail: 1, do_not_call: 1, email_unreachable: 1, phone_unreachable: 1, auto_email: 1 };
 
@@ -368,6 +375,16 @@ async function compileOne(orgId, c, fields) {
     }
     case "last_gift_date": return dateCond("last_gift_date", c.op, v);
     case "first_gift_date": return dateCond("first_gift_date", c.op, v);
+    case "wealth_score": {
+      // WEALTH-1: only a score somebody set; a suggestion is stored nowhere, so never counts.
+      if (c.op === "blank") return { sql: "wealth_rating IS NULL", args: [] };
+      const n = Number(String(v ?? "").trim());
+      if (!Number.isInteger(n) || n < 1 || n > 5) return bad("A Wealth Score is 1, 2, 3, 4 or 5.");
+      if (c.op === "eq") return { sql: "wealth_rating = ?", args: [n] };
+      if (c.op === "gte") return { sql: "wealth_rating >= ?", args: [n] };
+      if (c.op === "lte") return { sql: "wealth_rating <= ?", args: [n] };
+      return null;
+    }
     case "gift_count": {
       const r = moneyCond(require("./shared/numbers/giftCount").DONOR_GIFT_COUNT("donors"), c.op === "gte" ? "gte" : "lte", v);
       return r;
@@ -475,7 +492,8 @@ function whereSentence(raw) {
   const words = p.where.conditions.map(c => {
     const f = BY_KEY.get(c.field);
     const label = f ? f.label : String(c.field).startsWith("cf:") ? String(c.field).slice(3) : c.field;
-    const opl = Object.values(OP).find(o => (o.op || "") === c.op) || OP[c.op] || { label: c.op };
+    // WEALTH-1: the field's own words first ("is not set" is the Wealth Score's "blank", not every field's).
+    const opl = (f && f.filter && f.filter.find(o => o.op === c.op)) || Object.values(OP).find(o => (o.op || "") === c.op && o !== OP.unset && o !== OP.wEq) || OP[c.op] || { label: c.op };
     const v = c.value && typeof c.value === "object" ? Object.values(c.value).filter(Boolean).join(" to ") : c.value;
     return `${label} ${opl.label}${v !== null && v !== undefined && v !== "" ? ` ${v}` : ""}`.trim();
   });
@@ -539,7 +557,7 @@ async function cellsFor(orgId, rows, columns) {
       } else if (ROW_CELL[k]) {
         let x = r[ROW_CELL[k]];
         if (BOOL_COL[k]) x = x === true;
-        else if (["lifetime", "last_gift_amount"].includes(k)) x = x == null ? null : Number(x);
+        else if (["lifetime", "last_gift_amount", "wealth_score"].includes(k)) x = x == null ? null : Number(x);
         else if (["added", "last_gift_date", "first_gift_date"].includes(k)) x = x == null ? null : (x instanceof Date ? require("./orgTime").civilOf(x) : String(x)).slice(0, 10);
         cell[k] = x ?? null;
       }

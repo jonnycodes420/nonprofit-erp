@@ -63,7 +63,8 @@ app.get("/donors/list-setup", requireAuth, requireCrm, wrap(async (req, res) => 
   ]);
   // Room to give is a column only for someone who may see the word.
   const mayRoom = await require("../prospect").canSee(userId, orgId);
-  const shown = fields.filter(f => !f.majorGifts || mayRoom);
+  const mayWealth = await require("../server/wealth/access").maySee(userId, orgId);   // WEALTH-1
+  const shown = fields.filter(f => (!f.majorGifts || mayRoom) && (!f.wealth || mayWealth));
   const known = new Set(shown.filter(f => f.col).map(f => f.key));
   // A column whose field has gone (an archived custom field) leaves quietly.
   res.json({

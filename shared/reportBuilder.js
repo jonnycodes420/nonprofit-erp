@@ -52,6 +52,9 @@ export const ENTITIES = {
       last_gift_date:  { label: "Last gift date", sql: "NULLIF(d.last_gift_date,'')", type: "date" },
       last_gift_amount:{ label: "Last gift amount", sql: "COALESCE(d.last_gift_amount,0)", type: "money" },
       owner:           { label: "Assigned to", sql: "d.assigned_to_name", type: "text" },
+      // WEALTH-1: the 1 to 5 score a person set (blank = not set). `wealth`: only
+      // for someone who may see it; the server refuses a definition naming it otherwise.
+      wealth_score:    { label: "Wealth Score", sql: "d.wealth_rating", type: "number", wealth: true },
       tags:            { label: "Tags", sql: "COALESCE(NULLIF(d.tags,''),'[]')", type: "tags" },
       person_type:     { label: "Person type", sql: "COALESCE(d.person_types,'[\"donor\"]'::jsonb)", type: "types" },
       deceased:        { label: "Deceased", sql: "COALESCE(d.deceased,false)", type: "bool" },
@@ -339,10 +342,15 @@ export function compile(def, { customDefs = [], paramStart = 1 } = {}) {
     if (!g) errors.push(`Steward cannot group by "${def.groupBy}".`);
     else group = g;
   }
-  let sortField = null;
+  let sortField = null, thenField = null;
   if (def.sort?.field) {
     sortField = group ? null : fieldFor(def.entity, def.sort.field, customDefs);
     if (!group && !sortField) errors.push(`Steward cannot sort by "${def.sort.field}".`);
+    // WEALTH-1: a second key ("by Wealth Score, then lifetime").
+    if (!group && def.sort.then?.field) {
+      thenField = fieldFor(def.entity, def.sort.then.field, customDefs);
+      if (!thenField) errors.push(`Steward cannot sort by "${def.sort.then.field}".`);
+    }
   }
   if (errors.length) return { ok: false, errors };
 
@@ -359,7 +367,8 @@ export function compile(def, { customDefs = [], paramStart = 1 } = {}) {
     columns: colFields.map(f => ({ key: f.key, label: f.label, type: f.type, sql: f.sql })),
     group: group ? { key: group.key, label: group.label, sql: group.sql } : null,
     sums,
-    sort: group ? null : (sortField ? { sql: sortField.sql, dir: def.sort.dir === "asc" ? "ASC" : "DESC" } : null),
+    sort: group ? null : (sortField ? { sql: sortField.sql, dir: def.sort.dir === "asc" ? "ASC" : "DESC",
+      then: thenField ? { sql: thenField.sql, dir: def.sort.then.dir === "asc" ? "ASC" : "DESC" } : null } : null),
     limit: Math.min(Number(def.limit) > 0 ? Number(def.limit) : ROW_CAP, ROW_CAP),
   };
 }
@@ -414,6 +423,9 @@ export const STANDARD_REPORTS = [
     kind: "builder",
     def: { entity: "gifts", columns: [], groupBy: "utm_source",
            filter: { op: "and", rules: [{ field: "date", cmp: "on_or_after", value: "{{fyStart}}" }] } } },
+  // WEALTH-1: Allie's list. Everyone, their Wealth Score, sorted by it (blanks last), then lifetime.
+  { key: "donors-by-wealth", name: "Donors by Wealth Score", question: "Who has which Wealth Score, and what have they given?", kind: "builder", wealth: true,
+    def: { entity: "people", columns: ["name", "wealth_score", "lifetime", "last_gift_date", "owner"], sort: { field: "wealth_score", dir: "desc", then: { field: "lifetime", dir: "desc" } } } },
   { key: "board-giving", name: "Board giving", question: "What has each board member given?", kind: "builder",
     def: { entity: "people", columns: ["name", "lifetime", "last_gift_date", "last_gift_amount"], filter: { op: "and", rules: [{ field: "person_type", cmp: "contains", value: "staff_board" }] }, sort: { field: "lifetime", dir: "desc" } } },
   // BUILD-101 Part 5 — memberships. Handler reports: the same functions the
@@ -450,3 +462,6 @@ export function validateDefinition(def, opts) {
 }
 
 export const SCHEDULES = [null, "weekly"];
+
+// WEALTH-1: does a definition (or a standard report) read the Wealth Score?
+export const usesWealth = def => JSON.stringify(def || {}).includes("wealth_score");
