@@ -3,7 +3,7 @@ import { ContactExtras, RAIL, RailSection, RhythmCard } from "../ProfileRail";
 import { RecordLink } from "../RecordLink";
 import { householdHref } from "../../lib/appUrls";
 import { linkedPeople } from "../../lib/linkedPeople";
-import { ContactFlag, RoleLine, relationshipLine } from "./profileShared";
+import { ContactFlag, RoleLine, relationshipLine, throughWords } from "./profileShared";
 import { Phone, Pill, T, firstNameOf, fmtFull } from "../shared";
 import { birthdayLabel } from "../../../../shared/birthday.js";
 import { ClosenessLine, ImportRefusalsLine, statusTagItems } from "../ProfileStatus";
@@ -67,9 +67,11 @@ function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatus
               {/* PROFILE-3: drawn only when someone is linked; "Link someone" / "+ Link another" is in About. */}
               {(household||relationships.length>0)&&<RailSection title="Household and related" testid="dp-rail-related"
                 actionNode={<button type="button" data-testid="dp-rail-related-manage" onClick={()=>setRelatedOpen(true)} style={{background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,fontWeight:600,letterSpacing:0,textTransform:"none",cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>{household||relationships.length?"Manage":"Add"}</button>}>
+                {/* TRUTH-5: on an organisation, what was given through it (soft credit), never the linked people's lifetimes */}
+                {(relationships.find(r=>r.throughSummary)||{}).throughSummary&&<div data-testid="dp-rail-through-summary" title={relationships.find(r=>r.throughSummary).throughSummary.definition} style={{fontSize:12.5,color:RAIL.dim,marginBottom:6}}>{`${relationships.find(r=>r.throughSummary).throughSummary.sentence}.`}</div>}
                 {household&&<div style={{fontSize:13,marginBottom:6}}><RecordLink to={householdHref(household.id)} data-record-link="household" style={{color:RAIL.text,fontWeight:700,textDecoration:"underline dotted"}}>{household.name}</RecordLink></div>}
                 {/* STALE-2: the one list of linked people (lib/linkedPeople.js), as Household and related shows it. */}
-                {linkedPeople({household,relationships,donorId:donor.id}).map(x=>x.via==="household"?(m=>(<button key={"hh:"+m.id} type="button" onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"block",background:"none",border:"none",padding:"4px 0",color:RAIL.text,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>{m.name}{m.deceased?(m.died_words?` (died ${m.died_words})`:" (died)"):""} <span style={{color:RAIL.dim}}>· household</span></button>))(x.member):(r=>(<button key={r.id} type="button" data-testid="dp-rail-related-row" onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(r.relatedDonorId)} style={{display:"block",background:"none",border:"none",padding:"4px 0",color:RAIL.text,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>{relationshipLine(r)}{r.side&&<span style={{color:RAIL.dim}}> · {fmtFull(r.relatedDonorTotalGiving)}</span>}</button>))(x.rel))}
+                {linkedPeople({household,relationships,donorId:donor.id}).map(x=>x.via==="household"?(m=>(<button key={"hh:"+m.id} type="button" onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"block",background:"none",border:"none",padding:"4px 0",color:RAIL.text,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>{m.name}{m.deceased?(m.died_words?` (died ${m.died_words})`:" (died)"):""} <span style={{color:RAIL.dim}}>· household</span></button>))(x.member):(r=>(<button key={r.id} type="button" data-testid="dp-rail-related-row" onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(r.relatedDonorId)} style={{display:"block",background:"none",border:"none",padding:"4px 0",color:RAIL.text,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>{relationshipLine(r)}{r.side&&<span data-testid="dp-rail-through" style={{color:RAIL.dim}}>{` · ${throughWords(r)}`}</span>}</button>))(x.rel))}
               </RailSection>}
               {/* PROFILE-2 · 5 ABOUT: donor since and roles, the owner, the giving
                   pattern, how to reach them, and the tags the header did not show. */}

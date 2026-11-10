@@ -492,13 +492,16 @@ app.get("/metrics/stewardship-summary", requireAuth, OS.cached("stewardship-summ
 // FUNDRAISING-2: the stored answer's name carries its shape, so a deploy that
 // changes the shape never serves yesterday's body (stored answers are not
 // keyed by build).
-app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-3"), wrap(async (req, res) => {
+app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-4"), wrap(async (req, res) => {
   await PACE_READY;
   await FISCAL_READY;   // FIX-10 Part B — the period label is the shared one, not a race
   const { orgId } = req.user;
   const yearMode = req.query.yearMode === "calendar" ? "calendar" : "fiscal";
   const _fpTz = await orgTz(orgId);   // ORG_TZ_SEAM_OK
-  const cur = NUMBERS.fiscalYear.period(_fpTz, yearMode, 0);
+  // TRUTH-5: This FY, Last FY or custom days (server/reports/overviewPeriod.js).
+  const OP = require("./overviewPeriod").overviewPeriod(req.query, _fpTz, yearMode);
+  if (OP.error) return res.status(400).json({ error: OP.error });
+  const cur = OP.cur;
   const today = orgToday(_fpTz);   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   // BUILD-32 Part 3 — the Home hero's "this week's giving" figure. A true
   // Monday-based calendar week (weekBounds), independent of the fiscal/calendar
@@ -673,7 +676,7 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-3"
     yearMode,
     periodLabel: cur.chartLabel,
     // "this fiscal year": what "this period" means, in words.
-    periodWords: yearMode === "fiscal" ? "this fiscal year" : "this year",
+    periodWords: OP.periodWords, periodKey: OP.key,
     pledges,
     leadEvent,
     goal,

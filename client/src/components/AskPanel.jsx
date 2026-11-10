@@ -213,7 +213,9 @@ export function AskAnswer({ answer, isReadOnly, onAsk, onStepTaken, compact = fa
             <div key={p.donorId} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "7px 2px", borderTop: "1px solid " + T.bg2, fontSize: 13.5 }}>
               <DonorLink id={p.donorId} style={{ fontWeight: 700, color: T.ink, textDecoration: "underline dotted" }}>{p.name}</DonorLink>
               {/* SWEEP-1: "$0" beside each of 165 who came and didn't give says nothing */}
-              {p.cents > 0 && <span style={{ color: T.ink2, whiteSpace: "nowrap" }}>{fmtFull(p.cents / 100)}</span>}
+              {/* TRUTH-5: the amount says what it is ("$2,144 in Dec 2025"); Lifetime is labeled Lifetime */}
+              {p.cents > 0 && <span data-testid="ask-person-amount" style={{ color: T.ink2, whiteSpace: "nowrap" }}>{p.amountWords === "lifetime" ? `Lifetime ${fmtFull(p.cents / 100)}` : `${fmtFull(p.cents / 100)}${p.amountWords ? " " + p.amountWords : ""}`}
+                {p.amountWords && p.amountWords !== "lifetime" && p.lifetimeCents > 0 && <span style={{ color: T.ink3, fontSize: 12 }}>{` · Lifetime ${fmtFull(p.lifetimeCents / 100)}`}</span>}</span>}
             </div>
           ))}
           {!compact && !allPeople && answer.people.length > 10 && <button type="button" data-testid="ask-more-people" onClick={() => setAllPeople(true)}

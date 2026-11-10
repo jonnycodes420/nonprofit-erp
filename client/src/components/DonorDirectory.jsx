@@ -31,6 +31,7 @@ import { MergeWithModal } from "./profile/MergeWith";
 import { TrashLink } from "./settings/TrashLink";   // FLOWS-4
 import { BulkTrash } from "./donors/BulkTrash";   // MOPUP-2: More → Move to trash
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { LAPSE_WORDS } from "../../../shared/lapseWords.js";   // TRUTH-5: one word, one population
 // WALKB-1 · A SEARCH RESULT SAYS WHY IT IS THERE. A name match needs no words;
 // anything else does ("Matched household: The Marlowe Hart household"), and an
 // archived person a search found says so.
@@ -155,13 +156,14 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor,initialWin=null}
   const cols=["Donor","Lifetime giving","Last gift","Since last gift",GIVING_STRENGTH_LABEL,""];
   const colWidths="2fr 130px 130px 120px 80px 130px";
 
-  const WINDOWS=[["recent","Lapsed 12 to 24 months",recentList.length,"Lapsed: no gift in 12 to 24 months, after giving before."],
-    ["lost","Lost & Found: over 24 months",lostList.length,"Lost: no gift in over 24 months, after giving before. The same people as the report Lost: over 24 months."]];
+  // TRUTH-5: one word, one population, defined on hover (shared/lapseWords.js).
+  const WINDOWS=[["recent",LAPSE_WORDS.lapsed.label,recentList.length,LAPSE_WORDS.lapsed.definition],
+    ["lost","Lost & Found: over 24 months",lostList.length,`${LAPSE_WORDS.lost.definition} The same people as the report Lost: over 24 months.`]];
   return(
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       <div data-testid="reengage-windows" style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-        {WINDOWS.map(([k,label,n])=>(
-          <button key={k} type="button" data-testid={"reengage-win-"+k} data-count={n} aria-pressed={win===k} onClick={()=>setWin(k)}
+        {WINDOWS.map(([k,label,n,def])=>(
+          <button key={k} type="button" data-testid={"reengage-win-"+k} data-count={n} aria-pressed={win===k} onClick={()=>setWin(k)} title={def}
             style={{background:T.white,border:"1px solid "+(win===k?T.ink:T.bg3),borderRadius:8,padding:"7px 14px",cursor:"pointer",color:T.ink,fontSize:12.5,fontWeight:win===k?700:400}}>
             {label} · {n.toLocaleString("en-US")}</button>))}
         <span style={{fontSize:12.5,color:T.ink3}}>{(WINDOWS.find(w=>w[0]===win)||WINDOWS[0])[3]}</span>
@@ -172,13 +174,13 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor,initialWin=null}
       </div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         {[
-          [win==="lost"?"Lost donors":"Lapsed donors",lapsed.length,T.ink],
+          [win==="lost"?"Lost donors":"Lapsed donors",lapsed.length,T.ink,(win==="lost"?LAPSE_WORDS.lost:LAPSE_WORDS.lapsed).definition],
           ["At risk · last year of giving",fmtFull(atRiskValue),T.ink],
           ["Lifetime, all of them",fmtFull(totalValue),T.ink],
           // SWEEP-2: the days are since the last gift, and the tile is ink (the four colours)
           ["Avg days since last gift",`${avgDays.toLocaleString("en-US")} days`,T.ink],
-        ].map(([label,val,color])=>(
-          <div key={label} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"10px 18px",display:"flex",flexDirection:"column",gap:2}}>
+        ].map(([label,val,color,def])=>(
+          <div key={label} title={def} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"10px 18px",display:"flex",flexDirection:"column",gap:2}}>
             <div style={{fontSize:10,fontWeight:700,color:T.ink3}}>{label}</div>
             <div style={{fontSize:20,fontWeight:800,color,fontFamily:"'DM Serif Display',serif"}}>{val}</div>
           </div>
