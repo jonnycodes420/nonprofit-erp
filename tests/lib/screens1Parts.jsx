@@ -62,6 +62,7 @@ import * as payload from "../../client/src/components/import/payload.js";
 import * as reader from "../../client/src/components/import/reader.js";
 import * as ThanksQuestion from "../../client/src/components/import/ThanksQuestion.jsx";
 import * as SheetGuesses from "../../client/src/components/import/SheetGuesses.jsx";
+import * as AuctionValues from "../../client/src/components/import/AuctionValues.jsx";   // ASKS-1
 
 import * as driftSection from "../../client/src/components/home/driftSection.jsx";
 import * as goalSections from "../../client/src/components/home/goalSections.jsx";
@@ -145,6 +146,12 @@ export const CASES = [
   ["import/MergeDuplicatesModal", () => <MergeDuplicatesModal.MergeDuplicatesModal onClose={noop} onMerged={noop} isReadOnly={false}/>, /Merge Duplicates/],
   ["import/payload", () => <div>{payload.buildAutoMapping(["Email", "First Name"]).Email || "unmapped"}</div>, /^email$/],
   ["import/reader", () => <div>{typeof reader.parseFileToSheets}</div>, /function/],
+  // ASKS-1: the auction value question, answered "Enter values", one item still to value
+  ["import/AuctionValues", () => <AuctionValues.AuctionValues answers={{ auctionValue: "enter", itemValues: { "spa day": "200" } }} setAnswers={noop} disabled={false}
+    u={{ gifts: [{ cents: 50000, auction: { item: "Spa Day", fmvCents: 20000 } }, { cents: 35000, auction: { item: "Signed Guitar", fmvCents: null } }],
+         questions: [{ id: "auctionValue", kind: "auctionValue", text: "What were these items worth? Without a value, the receipts can't say what's deductible.", hint: "Steward does not guess the value.",
+           options: [{ key: "enter", label: "Enter values" }, { key: "zero", label: "Treat as $0 value (fully deductible)" }], answer: "enter", missing: 1,
+           items: [{ key: "spa day", item: "Spa Day", line: 2, who: "Wren Halloway" }, { key: "signed guitar", item: "Signed Guitar", line: 3, who: "Tobias Fenn" }] }] }}/>, /What were these items worth/],
   ["import/SheetGuesses", () => <><SheetGuesses.DateOrderQuestions questions={[{ id: "dateOrder:s|2", key: "s|2", sheet: "Gifts", header: "Date", text: "3/4/25: March 4 or 3 April?", hint: "1 date in Date could be read either way.", examples: [{ line: 2, raw: "3/4/25", month: "March 4, 2025", day: "3 April 2025" }], options: [{ key: "month", label: "Month first (March 4, 2025)" }, { key: "day", label: "Day first (3 April 2025)" }] }]} answers={{}} onAnswer={noop}/><SheetGuesses.GuessNotes u={{ dateGuesses: [], tidiedAmounts: { count: 1, rows: [{ sheet: "Gifts", line: 2, raw: "$75.5", shown: "$75.50" }] } }}/></>, /3\/4\/25: March 4 or 3 April\?[\s\S]*We tidied 1 amount/],
   ["import/ThanksQuestion", () => <ThanksQuestion.ThanksQuestion preview={{ ask: true, thankYous: 4, defaultAnswer: "yes", defaultSentence: "We will draft 4 thank-yous." }} answer={null} onChange={noop}/>, /already been thanked\?[\s\S]*We will draft 4 thank-yous/],
 
