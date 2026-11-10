@@ -11,17 +11,20 @@
 // A path here must be one the server's PROFILE_READS allows, spelled exactly
 // as the panel asks for it.
 import { useRef } from "react";
-import { prefetch } from "../api";
-import { canWealthScoresNow } from "./wealth";   // WEALTH-1
+import { prefetch, getToken } from "../api";
 
 const enc = encodeURIComponent;
+// WEALTH-1: someone already known to see Wealth Scores (components/WealthScore.jsx
+// notes the session token once GET /me says so), or a signed-in admin, who
+// always may. No import: this file is in Home's first download.
+const seesWealth = () => { try { const t = getToken(); return !!t && (window.__stewardWealth === t || JSON.parse(localStorage.getItem("npe_user") || "null")?.role === "admin"); } catch { return false; } };
 export const PROFILE_TOP = id => [
   `/donors/${id}`, `/donors/${id}/status`, `/donors/${id}/scores`, `/donors/${id}/rail`, `/donors/${id}/relationship`,
   `/threads?donorId=${id}`, `/insights/donor/${enc(id)}`, `/donors/${enc(id)}/before-meeting`, `/donors/${id}/blocked-mail`,
   `/people/${id}`, `/atlas/notes?place=person&id=${enc(id)}`, `/donors/${id}/plan`, `/donors/${id}/journeys`,
   // WEALTH-1: the Contact card's row, spelled as WealthScoreRow asks; only for
-  // someone known to see it, so nobody else makes the request (lib/wealth.js).
-  ...(canWealthScoresNow() ? [`/donors/${enc(id)}/wealth-score`] : []),
+  // someone known to see it, so nobody else makes the request.
+  ...(seesWealth() ? [`/donors/${enc(id)}/wealth-score`] : []),
 ];
 export const PROFILE_BELOW = id => [
   `/donors/${id}/journey-suggestion`, `/donors/${id}/groups`, `/donors/${id}/proposals`, `/donors/${id}/relationships`,

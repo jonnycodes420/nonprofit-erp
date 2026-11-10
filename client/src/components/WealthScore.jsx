@@ -8,7 +8,6 @@
 // until somebody clicks.
 import { useEffect, useState } from "react";
 import { apiFetch, getToken } from "../api";
-import { noteWealthScores } from "../lib/wealth";
 import { errorMessage } from "../lib/domainError";
 import { T } from "./shared";
 
@@ -17,14 +16,14 @@ const QUIET = { background: "none", border: "none", padding: 0, font: "inherit",
 const CHIP = { minWidth: 28, height: 26, borderRadius: 7, border: "1px solid " + T.bg3, background: T.white, color: T.ink, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", padding: "0 8px" };
 
 // Who may see it: one read of GET /me per session token (the server decides,
-// server/wealth/access.js). The answer is noted in lib/wealth.js so the profile
+// server/wealth/access.js). The answer is noted on window (lib/profileReads.js) so the profile
 // can bundle the Wealth Score read for someone known to see it.
 let pending = null, pendingFor = null;
 export function loadCanWealthScores() {
   const tok = getToken();
   if (pendingFor !== tok) { pending = null; pendingFor = tok; }
   if (!tok) return Promise.resolve(false);
-  if (!pending) pending = apiFetch("/me").then(r => { const yes = !!(r && r.user && r.user.canWealthScores); noteWealthScores(tok, yes); return yes; })
+  if (!pending) pending = apiFetch("/me").then(r => { const yes = !!(r && r.user && r.user.canWealthScores); window.__stewardWealth = yes ? tok : null; return yes; })
     .catch(() => { pending = null; return false; });
   return pending;
 }
