@@ -35,7 +35,7 @@ import { navLayout, flattenNav, moveNavItem, reorderWithin, setNavVisible } from
 import { NavIcon, NAV_ICON_SIZE } from "./components/NavIcon";
 import { openRecentChanges } from "./components/RecentChanges";
 import { retryImport } from "./lib/lazyRetry";
-import { useMajorGiftsAccess } from "./lib/majorGifts";   // ASKS-1
+import { useMajorGiftsAccess } from "./lib/majorGiftsAccess";   // ASKS-1
 import { routeMajorGifts } from "./lib/majorGiftsTab";   // ASKS-1
 const CLIP_X = typeof CSS !== "undefined" && CSS.supports && CSS.supports("overflow-x", "clip") ? "clip" : "hidden";   // HOME-4, see BASE
 // PERF-2: the app's typefaces. app.html writes their faces into its head
@@ -297,7 +297,7 @@ function AppShell() {
   const [tasksIntent,setTasksIntent]=useState(null);
   const [pipelineIntent,setPipelineIntent]=useState(null);
   // ASKS-1: Major Gifts (lib/majorGiftsTab.js): who may see it (null until GET /me says), and the view asked for
-  const canMG=useMajorGiftsAccess();
+  const canMG=useMajorGiftsAccess(auth?.user?.role);
   const [mgIntent,setMgIntent]=useState(null);
   // Attribution FIX — the Home hero chips deep-link into Reports (This FY →
   // Giving Summary current FY; This week → Giving Summary custom week range),

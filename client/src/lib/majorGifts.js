@@ -3,20 +3,14 @@
 // boundary (every route 403s without it); this only decides what to draw, so
 // a person without the permission never sees an empty card or a refusal.
 //
-// One read of GET /me per page load, shared by every caller.
+// The GET /me read is lib/majorGiftsAccess.js, shared by every caller.
 import { useEffect, useState } from "react";
-import { API, apiFetch, getToken } from "../api";
+import { API, getToken } from "../api";
 
-// Keyed on the session token, so signing out and in as somebody else in the
-// same tab never reuses the last person's answer.
-let pending = null, pendingFor = null;
-export function loadCanMajorGifts() {
-  const tok = getToken();
-  if (pendingFor !== tok) { pending = null; pendingFor = tok; }
-  if (!tok) return Promise.resolve(false);
-  if (!pending) pending = apiFetch("/me").then(r => !!(r && r.user && (r.user.canMajorGifts || r.user.role === "admin"))).catch(() => { pending = null; return false; });
-  return pending;
-}
+// The one GET /me read lives in lib/majorGiftsAccess.js (ASKS-1: the shell
+// imports it, and this module stays off Home's first look).
+import { loadCanMajorGifts, useMajorGiftsAccess } from "./majorGiftsAccess";
+export { loadCanMajorGifts, useMajorGiftsAccess };
 
 export function useCanMajorGifts() {
   const [can, setCan] = useState(false);
@@ -67,11 +61,3 @@ export function dateWords(d) {
   return new Date(t).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
-// ASKS-1: the same answer, three-way: null while GET /me has not said, then
-// true or false. The rail and the Major Gifts tab wait for it, so somebody
-// without the permission never sees the page flash before going Home.
-export function useMajorGiftsAccess() {
-  const [can, setCan] = useState(null);
-  useEffect(() => { let live = true; loadCanMajorGifts().then(v => live && setCan(!!v)); return () => { live = false; }; }, []);
-  return can;
-}
