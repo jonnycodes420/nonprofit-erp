@@ -53,7 +53,7 @@ function mount(ctx) {
   // ── Jonathan raises a link ────────────────────────────────────────────────
   app.post("/admin/orgs/:id/start-links", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
     const org = await orgFor(req.params.id);
-    if (!org) return res.status(404).json({ error: "org_not_found", message: "That organization does not exist." });
+    if (!org) return res.status(404).json({ error: "no_such_org", message: "That organization does not exist." });
     if (org.stripe_subscription_id && !["canceled", "cancelled"].includes(org.subscription_status || "")) {
       return res.status(409).json({ error: "already_subscribed",
         message: `${org.name} already has a Stripe subscription. Cancel it in Settings → Billing before raising a start link.` });
@@ -86,7 +86,7 @@ function mount(ctx) {
 
   app.get("/admin/orgs/:id/start-links", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
     const org = await orgFor(req.params.id);
-    if (!org) return res.status(404).json({ error: "org_not_found" });
+    if (!org) return res.status(404).json({ error: "no_such_org" });
     const links = await query(`SELECT id, contact_name, contact_email, price_cents, price_basis, charge_mode, first_charge_on,
         status, expires_at, signed_at, completed_at, created_at, created_by_name FROM start_links WHERE org_id=? ORDER BY created_at DESC`, [org.id]);
     res.json({

@@ -59,13 +59,17 @@ async function stageImport({ query, run }, orgId, importId, { rollback = false }
 }
 
 // What Steward holds for the batch: people, gifts, cents, by year, by fund.
-async function heldFacts(query, orgId, importId, MONEY_CENTS) {
+async function heldFacts(query, orgId, importId, MONEY_CENTS, MONEY) {
   const P = [orgId, importId];
   const [g] = await query(`SELECT COUNT(*)::int AS gifts, ${MONEY_CENTS("g")} AS cents, COUNT(DISTINCT g.donor_id)::int AS people
       FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE ${BATCH_PEOPLE("d")} AND g.import_id = d.created_import_id`, P);
-  const years = await query(`SELECT LEFT(g.date, 4)::int AS year, ${MONEY_CENTS("g")} AS cents
+  // Each gift's day and cents (MONEY's rule), grouped by year here: the year is the day's first four characters.
+  const dated = await query(`SELECT g.date AS day, ROUND(g.amount * 100)::bigint AS cents
       FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE ${BATCH_PEOPLE("d")} AND g.import_id = d.created_import_id
-       AND g.date ~ '^[0-9]{4}' GROUP BY 1 ORDER BY 1 DESC`, P);
+       AND g.date IS NOT NULL AND ${MONEY("g")}`, P);
+  const yearMap = new Map();
+  for (const r of dated) { const y = Number(String(r.day).slice(0, 4)); if (y) yearMap.set(y, (yearMap.get(y) || 0) + Number(r.cents)); }
+  const years = [...yearMap.entries()].sort((a, b) => b[0] - a[0]).map(([year, cents]) => ({ year, cents }));
   const funds = await query(`SELECT COALESCE(f.name, '(no fund named)') AS name, ${MONEY_CENTS("g")} AS cents, COUNT(*)::int AS gifts
       FROM gifts g JOIN donors d ON d.id = g.donor_id LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
      WHERE ${BATCH_PEOPLE("d")} AND g.import_id = d.created_import_id GROUP BY 1 ORDER BY 1`, P);

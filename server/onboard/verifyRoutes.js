@@ -10,7 +10,7 @@
 const express = require("express");
 const ST = require("./staging");
 const V = require("./verify");
-const { MONEY_CENTS } = require("../../shared/numbers/money");
+const { MONEY_CENTS, MONEY } = require("../../shared/numbers/money");
 const { LIFETIME } = require("../../shared/numbers/lifetime");
 const { GIFT_COUNT } = require("../../shared/numbers/giftCount");
 const { LAST_DATE } = require("../../shared/numbers/lastGift");
@@ -43,7 +43,7 @@ function mount(ctx) {
     const summary = parse(r.summary_json);
     const file = summary.moveFile || null;
     const vf = summary.verifyFile || {};
-    const held = await ST.heldFacts(query, req.user.orgId, r.id, MONEY_CENTS);
+    const held = await ST.heldFacts(query, req.user.orgId, r.id, MONEY_CENTS, MONEY);
     // A spreadsheet import (the one reader since HARDEN-1) stored its own file
     // figures and gaps (sheetVerify.js); the older mapper stored moveFile and
     // its reconciliation.
