@@ -147,7 +147,10 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
     ["Last gift amount", "last_gift_amount"], ["Gift count", "gift_count"],
     ["Assigned to", d => d.assigned_to_name || ""],
     ["Closeness", d => (d.closeness ? d.closeness.charAt(0).toUpperCase() + d.closeness.slice(1) : "")],
-    ["City", d => d.city || ""], ["State", d => d.state || ""],
+    // ASKS-1: the whole address, as the Donors list and the People report offer it
+    ["Street address", d => d.address || ""], ["Address line 2", d => d.address2 || ""],
+    ["City", d => d.city || ""], ["State", d => d.state || ""], ["ZIP", d => d.zip || ""],
+    ["Full mailing address", d => require("../../shared/mailingAddress").mailingAddress(d)],
     ["Tags", d => DTAGS.visibleTags(d.tags).join("|")],
     ...cfDonorDefs.map(f => [f.label, d => renderCustomValue(f, (d.custom_fields || {})[f.key])]),
   ];

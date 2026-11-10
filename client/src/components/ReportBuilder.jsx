@@ -77,6 +77,7 @@ export function ReportTable({ cols: allCols, rows, personOf, onOpen, foot = true
   // A figure or a date stays on one line; words (a name, an email, a note) may
   // wrap, so a six-column report fits its card at 1440 instead of hiding its
   // last column behind a scrollbar the Mac does not draw (the FIX-2 walk).
+  // a text cell wraps, and keeps a line break it holds (ASKS-1: the full mailing address is two lines)
   const wraps = c => !["money", "count", "number", "pct", "price", "date"].includes(c.type);
   const cell = (c, r) => {
     const v = raw(c, r);
@@ -114,7 +115,7 @@ export function ReportTable({ cols: allCols, rows, personOf, onOpen, foot = true
             onClick={pid ? () => open(r) : undefined} className={pid ? "rpt-row-click" : undefined}
             style={{ cursor: pid ? "pointer" : "default" }}>
             {cols.map((c, ci) => <td key={c.key} data-cents={c.type === "money" && summed(c) ? centsOf(raw(c, r)) : undefined}
-              style={{ ...td, textAlign: align(c), ...(wraps(c) ? { whiteSpace: "normal", overflowWrap: "anywhere", minWidth: 96 } : null), ...stickLeft(ci, T.white) }}>{cell(c, r)}</td>)}
+              style={{ ...td, textAlign: align(c), ...(wraps(c) ? { whiteSpace: "pre-line", overflowWrap: "anywhere", minWidth: 96 } : null), ...stickLeft(ci, T.white) }}>{cell(c, r)}</td>)}
           </tr>;
         })}
       </tbody>

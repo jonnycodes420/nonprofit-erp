@@ -71,14 +71,16 @@ const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward
 // PERF-2: Home on a phone, and the JavaScript its first look downloads (bytes,
 // so strict everywhere; the milliseconds warn in CI, tests/lib/budget.js).
 const PHONE_MS = 3580;   // PERF-3 measured 3,480 ms + 0.1 s, so it cannot regress (PERF-2 3,537; main 3,840 at PERF-3's start); the bar is 3 s, docs/defects.md
-const JS_FIRST_KB = 243;   // TOP100-1: +1 KB, Home's Thread marking a due Top 100 touch with her rank ("#3") and leading with it, and Atlas's line opening a plan-of-care proposal (lib/atlas.js followLink). The Top 100 phrase reader moved server-side to keep it off the shell; the branch measured 243 locally.
+const JS_FIRST_KB = 244;   // ASKS-1: +1 KB, the Major Gifts rail entry, its routing (lib/majorGiftsTab.js) and its access check (lib/majorGiftsAccess.js, split out of lib/majorGifts.js so that module stays off the shell): App-*.js 90,229 -> 91,013 bytes gzipped against origin/main's own build; the runner read 244 with main at 243's edge.
+// Before ASKS-1: const JS_FIRST_KB = 243;   // TOP100-1: +1 KB, Home's Thread marking a due Top 100 touch with her rank ("#3") and leading with it, and Atlas's line opening a plan-of-care proposal (lib/atlas.js followLink). The Top 100 phrase reader moved server-side to keep it off the shell; the branch measured 243 locally.
 // Before TOP100-1:   // LAG-1: +1 KB, the deck's "Updating…" state and the write rules that announce calendar and deck changes (the worker follow itself loads on the first write, lib/catchUp.js); the branch measured 247,083 bytes (241.3 KB) locally and rounded to 242 on the runner.
 // ONBOARD-1 (merged after TOP100-1): +74 bytes gzipped on the entry (measured against origin/main's own build: main-*.js 16,342 -> 16,416), the one lazy loader for /start/:token and /imports/:id/verify and their framing guard; main sat on the 242 rounding edge and the branch read 243 on the runner and locally.
 // ONBOARD-2 (merged after SCALE-3): +125 bytes gzipped on Home's chunk (App-*.js 89,855 -> 89,983 against origin/main's own build); Getting set up is its own lazy chunk, loaded only for an org in onboarding. Measured 243 locally: within the budget, unchanged.
 // Before LAG-1:   // POLISH-6: +2 KB, the one shared date box's loader (LazyDateInput) on the shell; main measured 239 on the same runner, the branch 241.
 // Before POLISH-6:   // PERF-3 measured 227 KB + 5%: the moves deck's code (15 KB) is on the first look now, preloaded (PERF-2: 214)
 const WARM_MS = 1446;   // PERF-3: Home on a phone a second time, measured 1,314 ms + 10% (main: 1,528)
-const FIRST_KB = 313;   // FLOWS-4: +1 KB on POLISH-8's 312, the top bar's same-name type chip and its Settings → Trash entry (the search ships with the shell); the runner measured 312 for FLOWS-4 alone. JS_FIRST_KB unchanged.
+const FIRST_KB = 314;   // ASKS-1: +1 KB, the same bytes as JS_FIRST_KB's line above (an admin's first look asks nothing new: the access check skips GET /me for an admin).
+// Before ASKS-1: const FIRST_KB = 313;   // FLOWS-4: +1 KB on POLISH-8's 312, the top bar's same-name type chip and its Settings → Trash entry (the search ships with the shell); the runner measured 312 for FLOWS-4 alone. JS_FIRST_KB unchanged.
 // Before FLOWS-4:   // POLISH-6: +2 KB with JS_FIRST_KB above. POLISH-8: +1 KB. Main measured 311 KB (on the bar); the brief's Home items (the greeting in the org's hour, each goal tile's period, Keep dropping at once) add about 0.6 KB gzipped, measured 312. JS_FIRST_KB is unchanged.
 // Before POLISH-6:   // PERF-3: every byte of Home's first look, measured 294 KB + 5% (main: 314)
 const CLS_DESKTOP_MAX = 0.05;   // PERF-4: Home on a desktop, worst of the runs (main: 0)

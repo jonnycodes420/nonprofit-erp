@@ -138,11 +138,12 @@ const settle = async (fn, want) => { let rows = []; for (let i = 0; i < 20; i++)
   const built = await call(admin, "POST", "/report-builder/run", { definition: { entity: "people", columns: ["name", "wealth_score"], filter: { op: "and", rules: [{ field: "wealth_score", cmp: "eq", value: 5 }] } } });
   ok("§3 a Donors report can filter on it (equals 5: two rows)", built.status === 200 && built.body.totals.count === 2, built.body);
   const exp = await call(admin, "GET", "/donors/export/csv");
-  const lines = exp.text.split(/\r?\n/);
-  const head = lines[0].split(",");
+  // ASKS-1: read as CSV (a quoted cell may hold a line break: the full mailing address)
+  const grid = (await import("../shared/sheetRead.js")).gridFromText(exp.text.replace(/^\uFEFF/, ""));
+  const head = (grid[0] || []).map(String);
   const wi = head.indexOf("Wealth Score");
-  const juno = lines.find(l => l.startsWith("Juno Ferris")) || "";
-  ok("§3 the Donors CSV export has a Wealth Score column with Juno's 5", exp.status === 200 && wi >= 0 && juno.split(",")[wi] === "5", { head, juno });
+  const juno = grid.find(r => r[0] === "Juno Ferris") || [];
+  ok("§3 the Donors CSV export has a Wealth Score column with Juno's 5", exp.status === 200 && wi >= 0 && String(juno[wi]) === "5", { head, juno });
 
   // ── §4 import and bulk ───────────────────────────────────────────────────
   const IS = await import("../shared/importShape.js");

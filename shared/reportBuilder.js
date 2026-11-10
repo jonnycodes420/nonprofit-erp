@@ -29,6 +29,7 @@
 // a grant's received are those modules' fragments.
 import numbersMoney from "./numbers/money.js";
 import numbersPledges from "./numbers/pledges.js";
+import { MAILING_ADDRESS_SQL } from "./mailingAddress.js";   // ASKS-1: the street and the whole mailing address
 
 export const ENTITIES = {
   people: {
@@ -41,6 +42,11 @@ export const ENTITIES = {
       name:            { label: "Name", sql: "d.name", type: "text" },
       email:           { label: "Email", sql: "d.email", type: "text" },
       phone:           { label: "Phone", sql: "d.phone", type: "text" },
+      // ASKS-1 (Sarah, CKRH): the street, before City, and the whole mailing
+      // address for a mail merge or labels: street and line 2, then "City, ST ZIP".
+      address:         { label: "Street address", sql: "d.address", type: "text" },
+      address2:        { label: "Address line 2", sql: "d.address2", type: "text" },
+      mailing_address: { label: "Full mailing address", sql: MAILING_ADDRESS_SQL("d"), type: "text" },
       city:            { label: "City", sql: "d.city", type: "text" },
       state:           { label: "State", sql: "d.state", type: "text" },
       zip:             { label: "ZIP", sql: "d.zip", type: "text" },

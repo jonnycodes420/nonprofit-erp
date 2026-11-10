@@ -24,6 +24,7 @@ import { decodeSpreadsheetBytesDetailed, extractWorkbookFromSheetJS, analyzeWork
 import { gridsFromWorkbook, gridFromText, SHEET_ROLES, pledgeMoneyWords, readsAsWorkbook } from "../../../shared/sheetRead";
 import { WorkbookImport } from "./WorkbookImport";
 import { DateOrderQuestions, GuessNotes } from "./import/SheetGuesses";   // IMPORT-9
+import { AuctionValues } from "./import/AuctionValues";   // ASKS-1: an auction sheet's values
 import { told } from "../lib/stewardTold";   // HOME-3: the pages behind the window re-read
 import { droppedSpreadsheet, filesAsOne, isFileDrag, SheetDropTarget } from "./SheetDropTarget";   // PERF-4
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
@@ -336,7 +337,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const giftsQ = eventGiftsQ || (typeof answers.useEventDate === "boolean" && answers.eventDate ? giftsAsked : null);
   const pledgeQ = pledgeDueQ || (answers.pledgeDue ? pledgeAsked : null);
   useEffect(() => { const q = u && u.questions.find(x => x.id === "date"); if (q && !dateAsked) setDateAsked(q); }, [u, dateAsked]);
-  const otherQs = u ? u.questions.filter(q => !["date", "event", "eventGifts", "pledgeDue", "nearDuplicates", "giftsDeposited", "spouseLinks"].includes(q.id) && q.kind !== "column" && q.kind !== "deletedPerson" && q.kind !== "dateOrder") : [];
+  const otherQs = u ? u.questions.filter(q => !["date", "event", "eventGifts", "pledgeDue", "nearDuplicates", "giftsDeposited", "spouseLinks", "auctionValue"].includes(q.id) && q.kind !== "column" && q.kind !== "deletedPerson" && q.kind !== "dateOrder") : [];
   const dateOrderQs = u ? u.questions.filter(q => q.kind === "dateOrder") : [];   // IMPORT-9
   // FIX-59: two defaulted questions, each answered once for the file
   const nearQ = u ? u.questions.find(q => q.id === "nearDuplicates") : null;
@@ -357,6 +358,8 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
     } catch (e) { setMsg(e?.body?.sentence || errorMessage(e, "Nobody was brought back.")); setBusy(""); }
   };
   const eventName = answers.eventName ?? (eventQ && eventQ.suggestedEventName) ?? (dateQ && dateQ.suggestedEventName) ?? "";
+  // ASKS-1: the day of the gala an auction sheet is linked to (an event on her calendar)
+  const auctionDay = u && (u.gifts || []).some(g => g.auction) && u.events && u.events.length && /^\d{4}-\d{2}-\d{2}/.test(u.events[0].date || "") ? u.events[0].date.slice(0, 10) : null;
   const tablesRead = u ? u.tables.filter(t => t.kind === "gifts" || t.kind === "people") : [];
   // HARDEN-1: which org this file goes into, said at the top and on the button
   const intoOrg = (u && u.org && u.org.name) || pageOrgName() || "";
@@ -681,8 +684,10 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                     </div>
                     {eventName && (
                       <label style={{ ...small, display: "flex", gap: 6, alignItems: "center", marginTop: 8, color: T.ink }}>
-                        <input type="checkbox" checked={!!answers.linkEvent} onChange={e => setAnswer({ linkEvent: e.target.checked, eventName })} />
-                        {u.events && u.events.length ? `Link every gift to ${u.events[0].name} on your calendar` : `Create the event "${eventName}" and link every gift to it`}
+                        {/* ASKS-1: an auction sheet linked to the gala is dated on its day, so each purchase gets its receipt */}
+                        <input type="checkbox" data-testid="sheet-link-event" checked={!!answers.linkEvent} onChange={e => setAnswer({ linkEvent: e.target.checked, eventName,
+                          ...(auctionDay && !answers.date ? { date: e.target.checked ? auctionDay : "" } : {}) })} />
+                        {u.events && u.events.length ? `Link every gift to ${u.events[0].name} on your calendar` + (auctionDay ? `, dated ${longDate(auctionDay)}` : "") : `Create the event "${eventName}" and link every gift to it`}
                       </label>
                     )}
                   </>
@@ -692,6 +697,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
 
             <DateOrderQuestions questions={dateOrderQs} answers={answers} disabled={rereading}
               onAnswer={(key, v) => setAnswers(a => ({ ...a, dateOrder: { ...(a.dateOrder || {}), [key]: v } }))} />
+            <AuctionValues u={u} answers={answers} setAnswers={setAnswers} disabled={rereading} />
             {otherQs.length > 0 && (
               <div style={{ ...box, borderColor: T.gold500 }} data-testid="sheet-questions">
                 <div style={h3}>{otherQs.length === 1 ? "One thing Steward can't tell" : `${otherQs.length} things Steward can't tell`}</div>

@@ -6,7 +6,7 @@ route: /app/fundraising?fr=majorgifts
 summary: Major gifts is where you keep every large ask in one place: who you are cultivating, what each ask is for, how much, and when you expect an answer.
 ---
 ## What this screen is for
-Major gifts is a tab in Fundraising. It has five parts: At a glance, Pipeline, Proposals, Portfolios and Plans. A proposal is one ask to one person: what it's for, how much, and when you expect an answer. Each proposal moves through six stages: Identified, Cultivating, Asked, Committed, Declined and Stewarding.
+Major Gifts has its own entry in the sidebar, under Raise between Fundraising and Events, with four tabs: Top 100, Portfolios, Pipeline and Plans. It opens on Top 100. Admins see it, and so does anyone with the major gifts permission. At a glance and Proposals are in Fundraising, under Major gifts. A proposal is one ask to one person: what it's for, how much, and when you expect an answer. Each proposal moves through six stages: Identified, Cultivating, Asked, Committed, Declined and Stewarding.
 
 ## Start a proposal
 1. Open the person's record and go to the "Asks & pipeline" tab.

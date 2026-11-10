@@ -35,6 +35,8 @@ import { navLayout, flattenNav, moveNavItem, reorderWithin, setNavVisible } from
 import { NavIcon, NAV_ICON_SIZE } from "./components/NavIcon";
 import { openRecentChanges } from "./components/RecentChanges";
 import { retryImport } from "./lib/lazyRetry";
+import { useMajorGiftsAccess } from "./lib/majorGiftsAccess";   // ASKS-1
+import { routeMajorGifts } from "./lib/majorGiftsTab";   // ASKS-1
 const CLIP_X = typeof CSS !== "undefined" && CSS.supports && CSS.supports("overflow-x", "clip") ? "clip" : "hidden";   // HOME-4, see BASE
 // PERF-2: the app's typefaces. app.html writes their faces into its head
 // (scripts/prerender.mjs); a second copy of the same faces made each font
@@ -57,6 +59,7 @@ const Reports = named(() => import("./components/Reports"), "Reports");
 const VolunteersHub = named(() => import("./components/VolunteersHub"), "VolunteersHub");
 const Finance = named(() => import("./components/Finance"), "Finance");
 const Fundraising = named(() => import("./components/Fundraising"), "Fundraising");
+const MajorGiftsPage = named(() => import("./components/MajorGiftsPage"), "MajorGiftsPage");   // ASKS-1
 const Tasks = named(() => import("./components/Tasks"), "Tasks");
 const Settings = named(() => import("./components/Settings"), "Settings");
 const JourneyBuilder = lazy(() => retryImport(() => import("./components/JourneyBuilder")));
@@ -293,6 +296,9 @@ function AppShell() {
   // opens on the SAME scope — the count you clicked lands on exactly that view.
   const [tasksIntent,setTasksIntent]=useState(null);
   const [pipelineIntent,setPipelineIntent]=useState(null);
+  // ASKS-1: Major Gifts (lib/majorGiftsTab.js): who may see it (null until GET /me says), and the view asked for
+  const canMG=useMajorGiftsAccess(auth?.user?.role);
+  const [mgIntent,setMgIntent]=useState(null);
   // Attribution FIX — the Home hero chips deep-link into Reports (This FY →
   // Giving Summary current FY; This week → Giving Summary custom week range),
   // so Reports is now intent-carrying too (same remount-on-intent pattern).
@@ -345,7 +351,13 @@ function AppShell() {
     // FIX-1 §B — the Pipeline is no longer a tab: it folded into Fundraising →
     // Major gifts. Every navigateTo("pipeline") (Home's portfolio card, an older
     // link) lands on that part, carrying its scope.
-    if(t==="pipeline"){t="fundraising";opts={...(opts||{}),frSection:"pipeline"};}
+    // ASKS-1: …and it now lives on Major Gifts, as do Top 100, Portfolios and
+    // Plans: an old Fundraising link to any of them opens Major Gifts on it.
+    // Somebody without the permission goes Home.
+    const mgFrom=t;
+    ({tab:t,opts}=routeMajorGifts(t,opts,canMG));
+    // an address that named the old place is replaced by the new one (Back does not return to it)
+    if(how?.fromUrl&&t!==mgFrom)routerNavigate(tabHref(t,opts),{replace:true,state:{internal:true}});
     if(t!==tab&&!confirmIfDirty())return;   // BUILD-54 §6 — unsaved-state guard
     setCommsInitialNav(opts?.subtab||null);
     setCommsHighlightDraftId(opts?.highlightDraftId||null);
@@ -360,6 +372,7 @@ function AppShell() {
     setPipelineIntent(opts?.scope&&opts?.frSection==="pipeline"?{scope:opts.scope}:null);
     setReportsIntent((opts?.report||opts?.savedReport)&&t==="reports"?{report:opts.report,savedReport:opts.savedReport,preset:opts.preset,from:opts.from,to:opts.to,yearMode:opts.yearMode}:null);
     setFundraisingIntent(opts?.frSection&&t==="fundraising"?{section:opts.frSection}:null);
+    setMgIntent(t==="majorgifts"?{view:opts?.subtab,scope:opts?.scope}:null);
     // FIX-4 2 — the profile's journey chip lands on the journey it names,
     // open, rather than on a list somebody then has to find it in.
     setJourneysIntent(t==="journeys"&&opts?.journeyId?{journeyId:opts.journeyId}:null);
@@ -377,6 +390,15 @@ function AppShell() {
 
   navigateRef.current=navigateTo;
 
+  // ASKS-1: /app/majorgifts typed by somebody without the permission: once
+  // GET /me has said so, they go Home, replacing the address (Back does not return here).
+  useEffect(()=>{
+    if(tab!=="majorgifts"||canMG!==false)return;
+    setTab("dashboard");
+    routerNavigate(tabHref("dashboard"),{replace:true,state:{internal:true}});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[tab,canMG]);
+
   // FIX-13 Part 6 — read the URL on load, on Back/Forward, and when a plain
   // <Link> anywhere in the app changes it. Pushes the app made itself are
   // marked `internal` and already on screen.
@@ -386,7 +408,9 @@ function AppShell() {
     if(!r)return;
     navigateTo(r.tab,r.opts,{fromUrl:true});
     if(r.legacy){
-      const canon=r.tab==="pipeline"?tabHref("fundraising",{frSection:"pipeline"}):tabHref(r.tab,r.opts);
+      // ASKS-1: the old Pipeline, Top 100, Portfolios and Plans addresses canonicalise to Major Gifts
+      const rr=routeMajorGifts(r.tab,r.opts,canMG);
+      const canon=tabHref(rr.tab,rr.opts);
       routerNavigate(canon,{replace:true,state:{internal:true}});
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -561,7 +585,7 @@ function AppShell() {
   // A portal-tier org sees ONLY its own surfaces; every other org sees the CRM
   // minus whatever is hidden from it.
   const tabAllowed=id=>isPortalTier?PORTAL_TIER_TABS.has(id)
-    :!CRM_HIDDEN_TABS.has(id);
+    :!CRM_HIDDEN_TABS.has(id)&&(id!=="majorgifts"||canMG===true);   // ASKS-1: admins and major gifts staff
   // ── NAV-1 — THE RAIL, GROUPED ─────────────────────────────────────────────
   // One list of groups drives three surfaces: the sidebar at 1440, the
   // collapsed rail, and the phone's More drawer. They used to be three
@@ -1034,6 +1058,7 @@ function AppShell() {
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
       {tab==="reports"&&<Reports key={navNonce} appData={data} onNavigate={navigateTo} initialReport={reportsIntent?.report} initialParams={reportsIntent} initialSavedReport={reportsIntent?.savedReport}/>}
       {tab==="fundraising"&&<AtlasNote place="gifts" onNavigate={navigateTo}/>}
+      {tab==="majorgifts"&&canMG===true&&<MajorGiftsPage key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={mgIntent?.view} initialScope={mgIntent?.scope}/>}
       {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} isAdmin={auth?.user?.role==="admin"} onNavigate={navigateTo} initialSection={fundraisingIntent?.section} initialScope={pipelineIntent?.scope}/>}
       {/* FIX-4 2 — the builder, in its own room. The SAME component Settings
           renders, with the page header every other screen has around it; the

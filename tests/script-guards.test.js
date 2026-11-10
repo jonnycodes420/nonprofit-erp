@@ -198,6 +198,8 @@ const PROD_READONLY = [
   "integrity3-find-person",
   // INTEGRITY-3: counts, by org, people sent back to the trash on a new row instead of their own; READ ONLY, no --apply.
   "integrity3-trash-rows",
+  // ASKS-1: lists sheet imports that kept an auction sheet's columns as custom fields; SELECTs only, no --apply.
+  "asks1-auction-sheets-readonly",
   // FLOWS-4: counts stale "Missed you" drafts, tasks on archived events, hours and meeting notes saved twice; SELECTs only, no --apply.
   "flows4-volunteer-rows",
   // FLOWS-3: counts people in Draft/Paused journeys and early dated first steps; SELECTs only, no --apply.

@@ -14,6 +14,7 @@ const GIFT_TYPES = {
   pledge_payment: "Pledge payment", pledge: "Pledge", recurring: "Recurring gift", online: "Online",
   wire: "Wire transfer", ach: "Bank transfer (ACH)", daf: "Donor-advised fund", grant: "Grant",
   ira: "IRA distribution", qcd: "IRA distribution", payroll: "Payroll giving", other: "Other",
+  auction: "Auction purchase",   // ASKS-1: paid at an auction; the gift is what was paid over the value
 };
 
 // "pledge_payment" → "Pledge payment"; an unknown key reads as words, first letter up.
