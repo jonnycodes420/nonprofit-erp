@@ -167,7 +167,7 @@ const isOneToN = list => list.length > 0 && list.every((r, i) => Number(r.rank) 
   ok("§4 a template that is not hers: 404", r.status === 404, r.status);
 
   // ── §5 the export is the screen ────────────────────────────────────────
-  await q(`UPDATE donors SET wealth_score=CASE id WHEN $2 THEN 5 WHEN $3 THEN 4 WHEN $4 THEN 2 ELSE NULL END WHERE org_id=$1`, [ORG, PEOPLE[0][0], PEOPLE[2][0], PEOPLE[4][0]]);
+  await q(`UPDATE donors SET wealth_rating=CASE id WHEN $2 THEN 5 WHEN $3 THEN 4 WHEN $4 THEN 2 ELSE NULL END WHERE org_id=$1`, [ORG, PEOPLE[0][0], PEOPLE[2][0], PEOPLE[4][0]]);
   const qs = "sort=lifetime&dir=desc&minScore=2";
   list = await api("GET", `/top100?${qs}`, mgo);
   const csv = await fetch(`${BASE}/top100/export.csv?${qs}`, { headers: { Authorization: "Bearer " + mgo } });

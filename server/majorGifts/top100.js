@@ -67,7 +67,7 @@ async function donorOf(orgId, id) {
 async function listRows(orgId, listId, today) {
   const S = await shapeMod();
   const people = await query(
-    `SELECT m.rank, m.added_at, d.id, d.name, d.email, d.wealth_score, d.total_giving, d.last_gift_date, d.last_gift_amount,
+    `SELECT m.rank, m.added_at, d.id, d.name, d.email, d.wealth_rating, d.total_giving, d.last_gift_date, d.last_gift_amount,
             d.assigned_to, d.assigned_to_name, d.stage, cp.id AS plan_id, cp.goal, cp.ask_cents, cp.ask_by
        FROM portfolio_members m
        JOIN donors d ON d.id = m.donor_id AND d.org_id = m.org_id
@@ -101,7 +101,8 @@ async function listRows(orgId, listId, today) {
     const health = S.planHealth(ts, today);
     return {
       rank: p.rank, donorId: p.id, name: p.name,
-      wealthScore: p.wealth_score == null ? null : Number(p.wealth_score),
+      // WEALTH-1: the Wealth Score she sets (1 to 5), never the old automatic wealth_score.
+      wealthScore: p.wealth_rating == null ? null : Number(p.wealth_rating),
       lifetimeCents: toCents(p.total_giving) || 0,
       lastGift: p.last_gift_date ? { date: String(p.last_gift_date).slice(0, 10), cents: toCents(p.last_gift_amount) || 0 } : null,
       owner: p.assigned_to ? { id: p.assigned_to, name: p.assigned_to_name || "" } : null,
