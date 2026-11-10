@@ -7,6 +7,8 @@
 // and the two facts Jonathan types (the verbal-yes date and "Waiting on").
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../api";
+import { countLabel } from "../../../../shared/countWords.js";
+import DateInput from "../../components/inputs/LazyDateInput";   // POLISH-6: the one date box
 
 const INK = "#0F1A12", WHITE = "#FFFFFF", CREAM = "#F0EDE6", EMERALD = "#0D5C3A", BRASS = "#C9A84C";
 const FIVE = ["paper", "data", "connections", "kickoff", "first_month"];
@@ -16,7 +18,6 @@ const cell = { padding: "10px 12px 10px 0", fontSize: 13.5, verticalAlign: "top"
 const usd = c => `$${(Number(c || 0) / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const dayWords = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || "")); return m ? `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}` : "–"; };
-const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 function Dots({ row }) {
   return <span aria-label={`Stage: ${row.title}`} data-onb-dots={row.stage} style={{ display: "inline-flex", gap: 5 }}>
@@ -75,7 +76,7 @@ function Detail({ orgId, onSaved }) {
     <Gate id="first_month" title="5 · First month" g={row.gates.first_month} />
     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", paddingTop: 12, borderTop: `1px solid ${INK}1a` }}>
       <label style={{ fontSize: 12, fontWeight: 600, display: "flex", flexDirection: "column", gap: 4 }}>Verbal yes on
-        <input type="date" value={yes} onChange={e => setYes(e.target.value)} style={box} data-onb-yes="1" /></label>
+        <DateInput value={yes} onChange={e => setYes(e.target.value)} style={box} data-onb-yes="1" aria-label="Verbal yes on" /></label>
       <label style={{ fontSize: 12, fontWeight: 600, display: "flex", flexDirection: "column", gap: 4, flex: "1 1 260px" }}>Waiting on
         <input value={waiting} onChange={e => setWaiting(e.target.value)} maxLength={200} placeholder="e.g. their email tool and grant system" style={box} data-onb-waiting="1" /></label>
       <button type="button" onClick={save} disabled={busy} data-onb-save="1"
@@ -110,7 +111,7 @@ export default function OnboardingView({ data, error, onReload }) {
                 style={{ cursor: "pointer", background: r.red ? `${BRASS}22` : "transparent" }} aria-expanded={open === r.orgId}>
                 <td style={{ ...cell, fontWeight: 700 }}>{r.name}{r.waitingOn ? <div style={{ fontWeight: 400, fontSize: 12.5, opacity: 0.75 }}>Waiting on: {r.waitingOn}</div> : null}</td>
                 <td style={cell}><Dots row={r} /><div style={{ fontSize: 12, marginTop: 3 }}>{r.title}</div></td>
-                <td style={cell} data-onb-days="1">{r.stage === "billing" ? "–" : r.daysInStage == null ? "–" : plural(r.daysInStage, "day")}</td>
+                <td style={cell} data-onb-days="1">{r.stage === "billing" ? "–" : r.daysInStage == null ? "–" : countLabel(r.daysInStage, "day")}</td>
                 <td style={cell} data-onb-next="1">{r.red ? <span style={{ background: `${BRASS}55`, padding: "1px 6px", borderRadius: 6, fontWeight: 700, marginRight: 6 }}>late</span> : null}{r.next}</td>
                 <td style={cell}>{r.firstChargeOn ? dayWords(r.firstChargeOn) : "–"}</td>
                 <td style={cell}>{r.stage === "billing" ? usd(r.mrrNowCents) : r.mrrAgreedCents ? `${usd(r.mrrAgreedCents)} agreed` : "–"}</td>

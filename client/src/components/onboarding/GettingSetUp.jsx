@@ -17,17 +17,7 @@ const dayWords = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ""
 const usd = c => { const n = Number(c || 0); return `$${(n / 100).toLocaleString("en-US", { minimumFractionDigits: n % 100 ? 2 : 0, maximumFractionDigits: 2 })}`; };
 const withDates = s => String(s || "").replace(/(\d{4}-\d{2}-\d{2})/g, (_, d) => dayWords(d));
 
-export function useOnboarding(on) {
-  const [data, setData] = useState(null);
-  const [n, setN] = useState(0);
-  useEffect(() => {
-    if (!on) return undefined;
-    let live = true;
-    apiFetch("/onboarding/mine").then(d => { if (live) setData(d); }).catch(() => { if (live) setData(x => x || { tracked: false, show: false, steps: [] }); });
-    return () => { live = false; };
-  }, [on, n]);
-  return [data, setData, () => setN(x => x + 1)];   // the third reads it again (after a call is logged)
-}
+export { useOnboarding } from "./useOnboarding";
 
 function Track({ stages }) {
   return <ol aria-label="Your five stages" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", gap: 6, flexWrap: "wrap" }}>

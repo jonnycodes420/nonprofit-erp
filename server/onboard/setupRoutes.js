@@ -101,4 +101,4 @@ function mount(app, ctx) {
   }));
 }
 
-module.exports = { mount, stepsFor };
+module.exports = { mount, stepsFor, inOnboarding };

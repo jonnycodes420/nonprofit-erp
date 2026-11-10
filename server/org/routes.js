@@ -490,6 +490,8 @@ app.get("/org/setup-status", requireAuth, OS.cached("setup-status"), wrap(async 
     complete: doneCount === items.length,
     cardState: org.setup_card_state || null,
     tier,
+    // ONBOARD-2: an org in onboarding gets "Getting set up" (lazy) in place of this checklist.
+    onboarding: await require("../onboard/setupRoutes").inOnboarding(query, orgId),
   });
 }));
 
