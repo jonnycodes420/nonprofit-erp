@@ -11,11 +11,12 @@
 // org's setting is on users; a further org's is on its membership row, since a
 // role (and so a scope) is per org (ACCESS-1).
 async function run(pool) {
-  for (const t of ["users", "org_memberships", "invites"]) {
-    await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS sees TEXT NOT NULL DEFAULT 'everyone'`);
-    await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS can_export BOOLEAN NOT NULL DEFAULT true`);
-    await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS can_wealth BOOLEAN NOT NULL DEFAULT true`);
-  }
+  const COLS = `ADD COLUMN IF NOT EXISTS sees TEXT NOT NULL DEFAULT 'everyone',
+                ADD COLUMN IF NOT EXISTS can_export BOOLEAN NOT NULL DEFAULT true,
+                ADD COLUMN IF NOT EXISTS can_wealth BOOLEAN NOT NULL DEFAULT true`;
+  await pool.query(`ALTER TABLE users ${COLS}`);
+  await pool.query(`ALTER TABLE org_memberships ${COLS}`);
+  await pool.query(`ALTER TABLE invites ${COLS}`);
   // The portfolio read: a person's owner, inside one org.
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_org_assigned ON donors (org_id, assigned_to) WHERE assigned_to IS NOT NULL`);
 }
