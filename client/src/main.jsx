@@ -38,6 +38,7 @@ const LoginPage          = React.lazy(() => import("./pages/LoginPage"));
 const WelcomePage        = React.lazy(() => import("./pages/WelcomePage"));
 const SetupPage          = React.lazy(() => import("./pages/SetupPage"));   // ONBOARD-1
 const InvitePage         = React.lazy(() => import("./pages/InvitePage"));
+const OnboardPages       = React.lazy(() => import("./pages/OnboardPages"));   // ONBOARD-1: the start link and Verify
 const App                = React.lazy(() => import("./App"));
 const Donate             = React.lazy(() => import("./pages/Donate"));
 const VolunteerPage      = React.lazy(() => import("./pages/VolunteerPage")); // VOL-PAGE-1
@@ -329,6 +330,8 @@ function Root() {
           <Route path="/app/integrations" element={<OldIntegrations />} />
           <Route path="/app/:tab" element={<RequireOnboarded><App /></RequireOnboarded>} />
           <Route path="/invite/:token" element={<InvitePage />} />
+          <Route path="/start/:token" element={<OnboardPages />} />
+          <Route path="/imports/:importId/verify" element={<RequireOnboarded><OnboardPages page="verify" /></RequireOnboarded>} />
           {/* LANDING-3 part 1 — /pricing is a marketing route now and lives in
               MARKETING_ROUTES above, in the marketing shell with the prices on
               the first screen. The page keeps the signed-in checkout the app's
@@ -394,7 +397,7 @@ function Root() {
 // site's frame, where a page could lay its own buttons over ours. The forms,
 // giving and volunteer pages an org embeds stay embeddable; only the staff
 // app and the sign-in screens refuse, and they say where to open Steward.
-const STAFF_PATHS = /^\/(app|dashboard|dashboards|donors|integrations|admin|login|signup|welcome|setup|today|invite|portal-editor|lost-and-found|forgot-password|reset-password|oauth)(\/|$)/;
+const STAFF_PATHS = /^\/(app|dashboard|dashboards|donors|integrations|admin|login|signup|welcome|setup|today|invite|portal-editor|lost-and-found|forgot-password|reset-password|oauth|start|imports)(\/|$)/;
 const framedByAnotherSite = () => {
   if (window.top === window.self) return false;
   try { return window.top.location.origin !== window.location.origin; } catch { return true; }

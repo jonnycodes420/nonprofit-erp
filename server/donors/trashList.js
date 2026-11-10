@@ -27,7 +27,8 @@ const KEEP_DAYS = 30;
 const AUTO_EMPTY_FROM = "2026-11-09T00:00:00Z";
 
 // SQL: d is a person in the trash (not merged away, not an erased shell).
-const IN_TRASH = d => `(${d}.deleted_at IS NOT NULL AND ${d}.erased_at IS NULL
+// ONBOARD-1: a staged import's people are hidden, not deleted (server/onboard/staging.js).
+const IN_TRASH = d => `(${d}.deleted_at IS NOT NULL AND ${d}.erased_at IS NULL AND ${d}.staged_import_id IS NULL
   AND NOT EXISTS (SELECT 1 FROM donor_merges m WHERE m.org_id = ${d}.org_id AND m.merged_id = ${d}.id AND m.undone_at IS NULL))`;
 // When they leave on their own.
 const LEAVES_ON = d => `(GREATEST(${d}.deleted_at, '${AUTO_EMPTY_FROM}'::timestamptz) + INTERVAL '${KEEP_DAYS} days')`;

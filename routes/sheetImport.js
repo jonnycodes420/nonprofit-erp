@@ -165,7 +165,7 @@ async function deletedPeopleIndex(orgId) {
     `SELECT d.id, d.name, LOWER(TRIM(COALESCE(d.name,''))) AS lname, LOWER(TRIM(COALESCE(d.email,''))) AS email,
             LOWER(COALESCE(d.external_donor_id,'')) AS ext, d.external_donor_ids AS exts
        FROM donors d
-      WHERE d.org_id=? AND d.deleted_at IS NOT NULL
+      WHERE d.org_id=? AND d.deleted_at IS NOT NULL AND d.staged_import_id IS NULL
         AND NOT EXISTS (SELECT 1 FROM donor_merges m WHERE m.org_id=d.org_id AND m.merged_id=d.id AND m.undone_at IS NULL)`, [orgId]);
   const byExt = new Map(), byEmail = new Map(), byName = new Map();
   for (const r of rows) {
@@ -1070,11 +1070,15 @@ async function writePlan({ req, body, importId, who, report }) {
   summary.eventId = eventId;
   summary.notesSheets = u.notesSheets;
   summary.figureChecks = u.figureChecks;
+  summary.verifyFile = require("../server/onboard/sheetVerify").fileFacts({ u, personId, dupLines, duplicateCents, pledgeCents, installmentCents });   // ONBOARD-1
   await run(`INSERT INTO imports (id, org_id, name, source_filename, shape, started_at, rows_in, gifts_created, donors_created,
                                   rows_set_aside, rows_errored, dollars_in, dollars_created, actor_user_id, actor_user_name, summary_json)
              VALUES (?,?,?,?,'sheet',NOW(),?,?,?,?,0,?,?,?,?,?)`,
     [importId, orgId, (body.fileName || "Spreadsheet").slice(0, 200), body.fileName || null,
      rowsIn, giftsCreated, donorsCreated, u.aside.length + duplicates, dollarsInCents / 100, giftCents / 100, who.id, who.name, JSON.stringify(summary)]);
+  // ONBOARD-1: "Preview first" hides the batch in this same transaction; if it cannot be held back whole, nothing is written.
+  const staged = req.body && req.body.preview === true ? await require("../server/onboard/staging").stageImport({ query, run }, orgId, importId, { rollback: true }) : null;
+  if (staged && !staged.staged) return { status: 409, body: { error: "preview_not_possible", message: staged.sentence, sentence: staged.sentence } };
   const parts = [];
   if (giftsCreated) parts.push(`${giftsCreated.toLocaleString("en-US")} ${giftsCreated === 1 ? "gift" : "gifts"} (${money(giftCents)})`);
   if (installmentGifts) parts.push(`${installmentGifts.toLocaleString("en-US")} ${installmentGifts === 1 ? "first payment" : "first payments"} on pledges (${money(installmentCents)})`);
@@ -1082,7 +1086,7 @@ async function writePlan({ req, body, importId, who, report }) {
   if (donorsCreated) parts.push(`${donorsCreated.toLocaleString("en-US")} new ${donorsCreated === 1 ? "person" : "people"}`);
   const sentence = parts.length ? `Imported ${parts.join(", ")}.` + (duplicates ? ` ${duplicates} ${duplicates === 1 ? "row was" : "rows were"} already here.` : "")
     : `Nothing new: every row in this file was already here.`;
-  return { status: 201, touched: [...touched], body: { importId, eventId, giftsCreated, giftCents, pledgesCreated, pledgeCents, donorsCreated, duplicates,
+  return { status: 201, touched: [...touched], body: { importId, eventId, staged, giftsCreated, giftCents, pledgesCreated, pledgeCents, donorsCreated, duplicates,
     aside: u.aside.length, sentence, totals: u.totals, totalsSentence: u.totalsSentence,
     undatedGifts: summary.undatedGiftIds.length, attendees: summary.attendees, eventName: evName || null,
     eventDateKnown: !!evDate, optOuts: u.counts.optOuts, doNotContact: u.counts.doNotContact,
