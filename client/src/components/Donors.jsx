@@ -16,7 +16,8 @@ import UpgradeModal from "./UpgradeModal";
 import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, contactGap, Card, AIBtn, AIPanel, PageTitle, Modal, Spin } from "./shared";
 import { offerUndo } from "./EditHistory";
 import { useStewardTold } from "../lib/stewardTold";
-import { useChanged } from "../lib/changes";   // STALE-1
+import { useChanged, ADDS_PEOPLE } from "../lib/changes";   // STALE-1; QUICKADD-1: the writes that add people
+import RecordGiftDialog from "./gifts/RecordGiftDialog";   // QUICKADD-1: Record a gift, with + New person
 import { LogConversationModal } from "./LogConversation";
 import { guardSuggestion, dropLog, plainText } from "../../../shared/suggestionGuard.js";
 import { composeNextMove } from "../../../shared/nextMove.js";
@@ -611,7 +612,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   useStewardTold(()=>{reloadDonors();});
   // STALE-1: and a write anywhere that adds, removes or merges people (not every
   // write to one person's record: their profile re-reads itself).
-  useChanged(["person","import"],c=>{if(c.source==="told")return;if(c.kinds.has("import")||c.source==="worker"||c.method==="DELETE"||/^\/donors\/?$|^\/donors\/bulk|^\/removals|merge|^\/trash|^\/households?\b/.test(c.path||""))reloadDonors();});
+  useChanged(["person","import"],c=>{if(c.source==="told")return;if(c.kinds.has("import")||c.source==="worker"||c.method==="DELETE"||ADDS_PEOPLE.test(c.path||"")||/^\/donors\/bulk|^\/removals|merge|^\/trash|^\/households?\b/.test(c.path||""))reloadDonors();});
 
   // SCALE-2: open someone only if they are still on file (the old list's
   // .find()), asked of the server by id; otherwise run `orElse`.
@@ -721,8 +722,15 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[newDonorAssignee,setNewDonorAssignee]=useState("");
   const[addErr,setAddErr]=useState("");   // SECURE-2: the server's sentence when it refuses a new person
   const[addWarn,setAddWarn]=useState("");   // INTEGRITY-1: an email already on someone else, said on save
+  // QUICKADD-1: "Added Maria Lopez. Open" after Save and add another; Record a gift from Donors.
+  const[addToast,setAddToast]=useState(null);
+  const[recordGiftOpen,setRecordGiftOpen]=useState(false);
 
-  const addDonor=async()=>{
+  // QUICKADD-1 (a beta customer, 10 Nov): Save never leaves anyone where they were with
+  // nothing happening. "open" lands on the new profile; "gift" lands there with
+  // Record a gift open (the profile's own gift form, the person filled in);
+  // "another" keeps the form, emptied, with "Added Maria Lopez. Open".
+  const addDonor=async(then="open")=>{
     if(!newDonor.name)return;
     const assignTo=newDonorAssignee||userId;
     const assignToName=newDonorAssignee?(orgTeam.find(u=>u.id===newDonorAssignee)?.name||""):userName;
@@ -741,8 +749,14 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       const made=await apiFetch("/donors",{method:"POST",body:JSON.stringify({...newDonor,stage:newDonor.stage,assignedTo:assignTo,assignedToName:assignToName})});
       setAddWarn(made&&made.warning?made.warning.sentence:"");
       patchPeople(list=>[...list,temp]);
-      setShowAdd(false);setNewDonor({name:"",email:"",phone:"",address:"",address2:"",city:"",state:"",zip:"",lastAmount:"",stage:"prospect"});setNewDonorAssignee("");
-      await reloadDonors();
+      setNewDonor({name:"",email:"",phone:"",address:"",address2:"",city:"",state:"",zip:"",lastAmount:"",stage:"prospect"});setNewDonorAssignee("");
+      if(then==="another"){setAddToast(made&&made.id?{id:made.id,name:made.name}:null);await reloadDonors();return;}
+      setShowAdd(false);setAddToast(null);
+      if(made&&made.id){
+        if(then==="gift")setGiftHandoff({donorId:made.id,carry:true});
+        selectDonor(adaptDonor(made));
+      }
+      reloadDonors();
     }
     catch(e){
       if(e.error==="record_limit"){
@@ -836,6 +850,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           </div>
         </div>
       </Modal>}
+      {selected&&addWarn&&<div data-testid="add-email-warning" role="status" style={{background:T.bg2,border:"1px solid "+T.gold600,borderRadius:8,padding:"8px 12px",fontSize:12.5,color:T.ink,margin:"0 0 10px",display:"flex",gap:10,alignItems:"center"}}><span style={{flex:1}}>{addWarn}</span><button type="button" onClick={()=>setAddWarn("")} style={{background:"none",border:"none",color:T.greenDk,fontWeight:700,cursor:"pointer"}}>OK</button></div>}
+      {recordGiftOpen&&<RecordGiftDialog testid="record-gift" carry onClose={()=>setRecordGiftOpen(false)}/>}
       {selected?.noAccess ? (
         <div data-testid="no-access" style={{padding:"40px 24px",textAlign:"center",color:T.ink,fontSize:15}}>
           <div style={{fontWeight:700,marginBottom:6}}>You don't have access to this.</div>
@@ -886,6 +902,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
             creating the follow-up); above the fold at 1440 and 390. */}
         <button onClick={()=>setConvoPickerOpen(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.gold500,border:"none",borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>Log a call</button>
         <button onClick={()=>setShowAdd(!showAdd)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink2,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add</button>
+        <button onClick={()=>setRecordGiftOpen(true)} disabled={isReadOnly} data-testid="donors-record-gift" title={isReadOnly?"Reactivate your subscription to make changes.":"Record a gift, from someone on file or a new person"} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink2,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>Record a gift</button>
         {/* BUILD-33 Part 3 — ONE "Import & tools" menu instead of four sibling
             buttons. "Import + History" is the recommended default (the magical
             one-file path); the others are labeled as the specific cases they
@@ -975,6 +992,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
 
       {showAdd&&<Card style={{gap:10,display:"flex",flexDirection:"column"}}>
         <div style={{fontSize:14,fontWeight:700,color:T.ink}}>New Donor</div>
+        {addToast&&<div data-testid="add-toast" role="status" style={{display:"flex",alignItems:"center",gap:10,background:T.gold50,border:"1px solid "+T.gold300,borderRadius:8,padding:"7px 10px",fontSize:12.5,color:T.ink}}>
+          <span style={{flex:1}}>Added {addToast.name}. <button type="button" data-testid="add-toast-open" onClick={()=>{const t=addToast;setAddToast(null);setShowAdd(false);selectDonor({id:t.id,name:t.name});}} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,cursor:"pointer",textDecoration:"underline",fontSize:12.5}}>Open</button></span>
+          <button type="button" aria-label="Dismiss" onClick={()=>setAddToast(null)} style={{background:"none",border:"none",padding:0,color:T.ink3,cursor:"pointer",fontSize:14}}>×</button></div>}
         <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
           {STAGES.map(s=><button key={s.id} aria-pressed={newDonor.stage===s.id} onClick={()=>setNewDonor(p=>({...p,stage:s.id}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 11px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark(newDonor.stage===s.id,"bottom")}}>{s.label}</button>)}
         </div>
@@ -993,8 +1013,10 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           {orgTeam.filter(u=>u.id!==userId).map(u=><option key={u.id} value={u.id}>Assign to {u.name}</option>)}
         </select>}
         <div style={{display:"flex",gap:8}}>
-          <button onClick={addDonor} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,fontSize:13,fontWeight:600,cursor:"pointer"}}>Save</button>
-          <button onClick={()=>setShowAdd(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
+          <button onClick={()=>addDonor("open")} data-testid="add-save" style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,fontSize:13,fontWeight:600,cursor:"pointer"}}>Save</button>
+          <button onClick={()=>addDonor("gift")} data-testid="add-save-gift" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer"}}>Save and record a gift</button>
+          <button onClick={()=>addDonor("another")} data-testid="add-save-another" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer"}}>Save and add another</button>
+          <button onClick={()=>{setShowAdd(false);setAddToast(null);}} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </Card>}
 

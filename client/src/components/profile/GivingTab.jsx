@@ -18,6 +18,10 @@ import { VolunteerPanel } from "../VolunteerPanel";
 import { FunderPanel } from "../FunderPanel";
 import { ReceiptCell, YearEndPanel } from "./ReceiptsAndStatements";
 import { ProfileMoreNumbers } from "../ProfileHeaderFigures";
+import AttributionField from "../gifts/AttributionField";   // QUICKADD-1: campaign, appeal, fundraiser
+import SameAsLast from "../gifts/SameAsLast";   // QUICKADD-1: "Same as last"
+import { emptyFund } from "../gifts/FundField";
+import { orgTodayCivil } from "../../lib/orgToday";
 import MetricBreakdownPanel from "../MetricBreakdownPanel";
 import { censusById } from "../../../../shared/numberCensus.js";
 import { openCheckSnap } from "../CheckSnap";
@@ -313,7 +317,8 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
               );
             })()}
 
-            {addGiftOpen&&<div data-testid="dp-add-gift-form" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px"}}>
+            {/* QUICKADD-1: the form comes into view when it opens ("Save and record a gift" lands here). */}
+            {addGiftOpen&&<div data-testid="dp-add-gift-form" ref={el=>{if(el&&!el.dataset.shown){el.dataset.shown="1";el.scrollIntoView({block:"center"});}}} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px"}}>
               <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:12}}>New Gift</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
                 <input value={addGiftForm.amount} onChange={e=>setAddGiftForm(p=>({...p,amount:e.target.value}))} placeholder="Amount ($)" type="number" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
@@ -324,16 +329,20 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                 <input value={addGiftForm.payment_method} onChange={e=>setAddGiftForm(p=>({...p,payment_method:e.target.value}))} placeholder="Payment method" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
               </div>
               <input value={addGiftForm.notes} onChange={e=>setAddGiftForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}/>
-              {campaigns.length>0&&<><select value={addGiftForm.campaign_id||""} onChange={e=>setAddGiftForm(p=>({...p,campaign_id:e.target.value}))} style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:2}}>
-                <option value="">Campaign: not attributed</option>
-                {/* NUMBERS-1 · a gift counts toward a campaign only inside its
-                    dates, so a campaign the gift's date falls outside is shown
-                    and cannot be chosen (the server refuses it too). */}
-                {campaigns.map(c=>{const d=String(addGiftForm.date||"").slice(0,10),s=c.startDate?String(c.startDate).slice(0,10):null,e=c.endDate?String(c.endDate).slice(0,10):null;
-                  const out=(s&&d<s)||(e&&d>e);
-                  return <option key={c.id} value={c.id} disabled={!!out}>{c.name}{out?(s&&d<s?` (starts ${displayDate(s)})`:` (ended ${displayDate(e)})`):""}</option>;})}
-              </select>
-              <div style={{fontSize:11,color:T.ink3,marginBottom:8,lineHeight:1.4}}>Which goal this counts toward. It updates that campaign's thermometer live.</div></>}
+              {/* QUICKADD-1: Campaign, Appeal and Fundraiser / giving page, each searched
+                  from what the org has, Campaign and Appeal made inline. A campaign the
+                  gift's date falls outside is shown and cannot be chosen (NUMBERS-1). A
+                  value carried from the last gift reads "Same as last" (lib/stickyGift.js). */}
+              {(()=>{const c=addGiftForm.carried||{},same=(k,v)=>!!(c[k]&&v&&(c[k].id?c[k].id===v.id:c[k]===v));
+                const pickAttr=k=>v=>setAddGiftForm(p=>({...p,[k]:v,...(k==="campaign"?{campaign_id:v?v.id:""}:{})}));
+                return <>
+                <SameAsLast testid="dp-gift" carried={{date:same("date",addGiftForm.date)&&addGiftForm.date,method:same("method",addGiftForm.payment_method)&&addGiftForm.payment_method,fund:c.fund&&addGiftForm.fund&&!addGiftForm.fund.split&&c.fund.fund_id===addGiftForm.fund.fund_id&&addGiftForm.fund}}
+                  onClear={k=>setAddGiftForm(p=>({...p,...(k==="date"?{date:orgTodayCivil()}:k==="method"?{payment_method:""}:{fund:emptyFund()}),carried:{...(p.carried||{}),[k]:null}}))}/>
+                <AttributionField kind="campaign" value={addGiftForm.campaign||null} sticky={same("campaign",addGiftForm.campaign)} date={addGiftForm.date} testid="dp-gift-campaign" onChange={pickAttr("campaign")} style={{marginTop:8,marginBottom:2}}/>
+                <div style={{fontSize:11,color:T.ink3,marginBottom:8,lineHeight:1.4}}>Which goal this counts toward. It updates that campaign's thermometer live.</div>
+                <AttributionField kind="appeal" value={addGiftForm.appeal||null} sticky={same("appeal",addGiftForm.appeal)} campaignId={addGiftForm.campaign_id||null} testid="dp-gift-appeal" onChange={pickAttr("appeal")} style={{marginBottom:8}}/>
+                <AttributionField kind="page" value={addGiftForm.page||null} sticky={same("page",addGiftForm.page)} testid="dp-gift-page" onChange={pickAttr("page")} style={{marginBottom:8}}/>
+              </>;})()}
               <FundField value={addGiftForm.fund} amount={addGiftForm.amount} onChange={v=>setAddGiftForm(p=>({...p,fund:v}))} style={{marginBottom:8}}/>
               <EventField value={addGiftForm.eventId||""} onChange={id=>setAddGiftForm(p=>({...p,eventId:id}))} style={{marginBottom:8}}/>
               {pledges.filter(p=>p.status==="open").length>0&&(

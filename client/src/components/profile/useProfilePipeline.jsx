@@ -8,6 +8,7 @@ import { errorMessage } from "../../lib/domainError";
 import { offerUndo, EditedMarker, ItemMenu } from "../EditHistory";
 import { useReceipts } from "./ReceiptsAndStatements";
 import { orgTodayCivil } from "../../lib/orgToday";
+import { lastGift } from "../../lib/stickyGift";   // QUICKADD-1
 import { STAGES, donorScore, T, moveUrgency } from "../shared";
 
 export function useProfilePipeline({ donor, setDesignations, refreshSoftCredit, refreshPipeline, designations, setHousehold, setHhModalOpen, hhPick, setHhPick, setHhSearch, household, gifts, initialAddGift, setDpTab, setAddGiftForm, setAddGiftOpen, setGifts, setGiftLoading, setGiftReadErr, giftReadSeq, setLocalInts, setFigs, setGiftsFull, loadRel, setPlannedGifts, setPledges, setMaterials, setMatLoading, setFundAffinity, setFundLoading, localInts, isReadOnly, setEditingInt, onInteractionAdded, setStwOpen, stwForm, setStwForm, setStwSaving }) {
@@ -71,6 +72,14 @@ export function useProfilePipeline({ donor, setDesignations, refreshSoftCredit, 
     setDpTab("giving");
     setAddGiftOpen(true);
     if(initialAddGift.date)setAddGiftForm(f=>({...f,date:initialAddGift.date}));
+    // QUICKADD-1: "Save and record a gift" from Add person starts from the last
+    // gift she typed (date, method, fund, campaign, appeal, fundraiser), each
+    // shown as "Same as last" she can clear.
+    if(initialAddGift.carry){
+      const c=lastGift();
+      setAddGiftForm(f=>({...f,...(c.date?{date:c.date}:{}),...(c.method?{payment_method:c.method}:{}),...(c.fund?{fund:c.fund}:{}),
+        ...(c.campaign?{campaign:c.campaign,campaign_id:c.campaign.id}:{}),...(c.appeal?{appeal:c.appeal}:{}),...(c.page?{page:c.page}:{}),carried:c}));
+    }
   },[initialAddGift]);
 
   const loadGiftsFull=()=>{
