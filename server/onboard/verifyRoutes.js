@@ -51,7 +51,9 @@ function mount(ctx) {
     const fileFacts = sheet ? { people: vf.people, gifts: vf.gifts, cents: vf.fileGiftCents, byYear: vf.byYear, byFund: vf.byFund }
       : file ? { ...file, byFund: vf.byFund || null } : { byFund: vf.byFund || null };
     const side = V.lines({ file: fileFacts, held: sheet ? { ...held, people: held.peopleAll } : held });
-    const money = sheet ? V.moneyFootingFromGaps({ fileCents: vf.fileCents, gaps: vf.gaps, heldCents: held.cents })
+    // The file's total is MONEY-4's one footing (the receipt and the Imports list read it too).
+    const fileCentsOne = sheet ? require("../imports/footing").importFooting(r, summary).dollars.fileCents : null;
+    const money = sheet ? V.moneyFootingFromGaps({ fileCents: fileCentsOne != null ? fileCentsOne : vf.fileCents, gaps: vf.gaps, heldCents: held.cents })
       : V.moneyFooting({ reconciliation: summary.reconciliation, refusedRows: summary.refusedRows || [], heldCents: held.cents });
     const spotKeys = (vf.spot || []).map(s => s.key).filter(Boolean);
     const heldByKey = sheet ? await ST.heldForIds(query, req.user.orgId, r.id, spotKeys, { LIFETIME, GIFT_COUNT, LAST_DATE })
