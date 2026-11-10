@@ -52,6 +52,7 @@ import * as ImportDone from "../../client/src/components/import/ImportDone.jsx";
 import * as ImportHeader from "../../client/src/components/import/ImportHeader.jsx";
 import * as ImportMapping from "../../client/src/components/import/ImportMapping.jsx";
 import * as ImportProgress from "../../client/src/components/import/ImportProgress.jsx";
+import * as ImportPreview from "../../client/src/components/import/ImportPreview.jsx";   // ONBOARD-1
 import * as ImportReader from "../../client/src/components/import/ImportReader.jsx";
 import * as ImportReview from "../../client/src/components/import/ImportReview.jsx";
 import * as MergeDuplicatesModal from "../../client/src/components/import/MergeDuplicatesModal.jsx";
@@ -131,6 +132,7 @@ export const CASES = [
   ["import/GiftHistoryImport", () => <GiftHistoryImport.GiftHistoryImport donors={[person]} onClose={noop} onImported={noop}/>, /Import Giving History/],
   ["import/ImportDetection", () => <ImportDetection.ImportDetection parsed={{ headers: ["Name", "Amount", "Date"], rows: [["Marisol Quentin", "50", "2026-10-01"]] }} effectiveShape="transaction" shapeDetail={{ shape: "transaction", confidence: "high", reasons: [] }} parseReport={null} setShapeOverride={noop}/>, /We detected: individual gifts/],
   ["import/ImportDone", () => <ImportDone.ImportDone result={{ batchErrors: [], created: 3, updated: 1, gifts: 4 }} hasBatchErrors={false} onClose={noop} onImported={noop} setResult={noop} setErr={noop} setFlaggedPage={noop} setUndoBusy={noop} flaggedPage={0} undoBusy={false}/>, /Import complete\.[\s\S]*3 donors added/],
+  ["import/ImportPreview", () => <ImportPreview.StagedNotice staged={{ staged: true, sentence: "Staged: 3 people are in Steward but hidden from every count and list until the file is checked and made live.", verifyUrl: "/imports/imp_x/verify" }}/>, /Staged: 3 people[\s\S]*Check the file and make it live/],
   ["import/ImportHeader", () => <ImportHeader.ImportHeader onClose={noop}/>, /Import Donors/],
   ["import/ImportMapping", () => <ImportMapping.ImportMapping effectiveShape="transaction" TX_ROLES={[["date", "Gift date"], ["amount", "Amount"]]} txMap={{ date: "Date", amount: "Amount" }} parsed={{ headers: ["Date", "Amount"], rows: [["2026-10-01", "50"]] }} setTxMap={noop}/>, /Map gift columns/],
   ["import/ImportProgress", () => <ImportProgress.ImportReadout readout={{ headline: "312 people came in, 4 need a look.", lines: [] }}/>, /312 people came in/],

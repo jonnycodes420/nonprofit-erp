@@ -38,8 +38,7 @@ const LoginPage          = React.lazy(() => import("./pages/LoginPage"));
 const WelcomePage        = React.lazy(() => import("./pages/WelcomePage"));
 const SetupPage          = React.lazy(() => import("./pages/SetupPage"));   // ONBOARD-1
 const InvitePage         = React.lazy(() => import("./pages/InvitePage"));
-const StartPage          = React.lazy(() => import("./pages/StartPage"));   // ONBOARD-1: the start link
-const ImportVerify       = React.lazy(() => import("./pages/ImportVerify"));   // ONBOARD-1: verify a staged import
+const OnboardPages       = React.lazy(() => import("./pages/OnboardPages"));   // ONBOARD-1: the start link and Verify
 const App                = React.lazy(() => import("./App"));
 const Donate             = React.lazy(() => import("./pages/Donate"));
 const VolunteerPage      = React.lazy(() => import("./pages/VolunteerPage")); // VOL-PAGE-1
@@ -331,8 +330,8 @@ function Root() {
           <Route path="/app/integrations" element={<OldIntegrations />} />
           <Route path="/app/:tab" element={<RequireOnboarded><App /></RequireOnboarded>} />
           <Route path="/invite/:token" element={<InvitePage />} />
-          <Route path="/start/:token" element={<StartPage />} />
-          <Route path="/imports/:importId/verify" element={<RequireOnboarded><ImportVerify /></RequireOnboarded>} />
+          <Route path="/start/:token" element={<OnboardPages />} />
+          <Route path="/imports/:importId/verify" element={<RequireOnboarded><OnboardPages page="verify" /></RequireOnboarded>} />
           {/* LANDING-3 part 1 — /pricing is a marketing route now and lives in
               MARKETING_ROUTES above, in the marketing shell with the prices on
               the first screen. The page keeps the signed-in checkout the app's

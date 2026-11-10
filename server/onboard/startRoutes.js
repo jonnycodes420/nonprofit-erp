@@ -80,7 +80,7 @@ function mount(ctx) {
       orgName: org.name, contactName: v.contactName, contactEmail: v.contactEmail,
       priceUsd: v.price.cents / 100, priceBasis: v.price.basis, chargeMode: v.chargeMode,
       firstChargeOn: v.firstChargeOn, expiresAt: row.expires_at,
-      sentence: `Single use, and it expires ${new Date(row.expires_at).toISOString().slice(0, 10)}. Nothing is charged when she signs.`,
+      sentence: `Single use, and it expires ${require("../../closeLink").formatChargeDate(row.expires_at, await orgTzName(org.id))}. Nothing is charged when she signs.`,
     });
   }));
 

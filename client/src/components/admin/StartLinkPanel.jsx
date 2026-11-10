@@ -6,6 +6,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../../api";
 import { T } from "../shared";
+import DateInput from "../inputs/LazyDateInput";   // the one shared date box
 
 const box = { background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 12, padding: 18, maxWidth: 520, width: "100%", boxSizing: "border-box" };
 const inp = { padding: "8px 10px", border: `1px solid ${T.bg3}`, borderRadius: 8, fontSize: 13, fontFamily: "inherit", width: "100%", boxSizing: "border-box" };
@@ -65,7 +66,7 @@ export default function StartLinkPanel({ org, onClose }) {
                 <option value="thirty">30 days from signing</option>
               </select>
             </label>
-            {f.chargeMode === "fixed" ? <label style={lab}>Date<input data-testid="sl-date" style={inp} type="date" value={f.firstChargeOn} onChange={set("firstChargeOn")} /></label> : null}
+            {f.chargeMode === "fixed" ? <label style={lab}>Date<DateInput data-testid="sl-date" style={inp} value={f.firstChargeOn} onChange={set("firstChargeOn")} /></label> : null}
             <label style={lab}>Note (only you see it)<input style={inp} value={f.note} onChange={set("note")} /></label>
             {err ? <div role="alert" style={{ fontSize: 12.5, color: T.ink, fontWeight: 600, marginBottom: 10 }}>{err}</div> : null}
             <div style={{ display: "flex", gap: 8 }}>
