@@ -490,6 +490,8 @@ app.get("/org/setup-status", requireAuth, OS.cached("setup-status"), wrap(async 
     complete: doneCount === items.length,
     cardState: org.setup_card_state || null,
     tier,
+    // ONBOARD-2: an org in onboarding gets "Getting set up" (lazy) in place of this checklist.
+    onboarding: await require("../onboard/setupRoutes").inOnboarding(query, orgId),
   });
 }));
 
@@ -1068,6 +1070,8 @@ app.put("/org/membership-settings", requireAuth, requireAdmin, checkWriteAccess,
     res.json({ renewalDays, graceDays });
   } catch (e) { if (e.status) return res.status(e.status).json({ error: e.message }); throw e; }
 }));
+// ONBOARD-2: Home → "Getting set up", the home-opened signal and "Who to call tomorrow".
+require("../onboard/setupRoutes").mount(routers.r1, ctx);
 }
 
 module.exports = { routers, mount };

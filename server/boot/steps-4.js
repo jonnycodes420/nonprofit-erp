@@ -980,7 +980,7 @@ require("../../routes/clientSafe").mount({ query, run, wrap, requireAuth, requir
 require("../../routes/supportAccess").mount({ query, run, wrap, requireAuth, requireAdmin, requireSuperAdmin, uuid });   // FIX-57
 // SPLIT-2 end
 // SPLIT-2 server.js piece 798
-require("../admin/opsRoutes").mount({ query, run, wrap, healthBody, buildSha: BUILD_SHA });   // DEVBOARD-1
+require("../admin/opsRoutes").mount({ query, run, wrap, healthBody, buildSha: BUILD_SHA, stripeChargesEnabled, opsAlert });   // DEVBOARD-1; ONBOARD-2 adds the two its job asks
 // SPLIT-2 end
 require("../perf/pageTiming").mount({ requireAuth });   // PERF-4
 // SPLIT-2 server.js piece 799

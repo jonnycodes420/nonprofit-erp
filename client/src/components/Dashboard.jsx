@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
 import { HomeMailLine } from "./MailTypes";   // SEND-GATE-2
 import { apiFetch, adaptDonor, prefetch, takeParked } from "../api";
 import { usePeopleById, peopleCounts } from "../lib/people";
@@ -27,6 +27,7 @@ import * as HL from "./home/HomeLater";   // SCREENS-1: the rest of Home, import
 import { PORTFOLIO_BREAKDOWNS, ImpactLine } from "./home/homeParts";
 import { openTellSteward } from "./TellStewardOpen";   // AGENT-5: one input, Atlas over the page
 import { SetupFirstCard, SetupRailCard, setupStage } from "./HomeSetup";   // HOME-4
+const GettingSetUp = lazy(() => import("./onboarding/HomeOnboarding"));   // ONBOARD-2: lazy, so Home's first look stays in budget
 import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads, HomeRailColumn, OwnersCard } from "./HomeRail";   // HOME-4, PROFILE-2
 import { plural } from "../../../shared/countWords";
 import { HOME_GRID_CSS } from "./home/homeGrid";   // HOME-6
@@ -1193,7 +1194,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // the rail for this visit (the rail draws only once the checklist is in), so
   // its arrival never pushes the deck down; the next visit puts it back on top.
   const setupStageNow=surface==="home"?setupStage(setupStatus):null;
-  const setupWhere=setupStageNow==="first"&&setupParked===undefined?"rail":setupStageNow;
+  const onb=surface==="home"&&!!(setupStatus&&setupStatus.onboarding);   // ONBOARD-2: an org in onboarding sees "Getting set up" in place of the old checklist
+  const setupWhere=onb?null:setupStageNow==="first"&&setupParked===undefined?"rail":setupStageNow;
   const railListFor=(key)=>{
     if(key==="birthdays") return {
       title:"Birthdays this week",
@@ -1299,6 +1301,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // it is the rail's first card; done or dismissed, it is gone (Settings keeps
   // it). The completion moment shows once, here.
   const setupFirst=(()=>{
+    if(onb)return <Suspense fallback={null}><GettingSetUp onNavigate={onNavigate}/></Suspense>;
     if(surface!=="home"||!setupStatus)return null;
     // SHIFT-2: the completion moment, too, only when it can be in the first frame.
     if(setupStatus.complete)return setupCelebrate&&setupParked!==undefined?<GoldMoment moment="setup_complete" title="Steward is set up."

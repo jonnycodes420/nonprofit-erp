@@ -5,6 +5,7 @@
 //   /ops/map, /ops/checks   DEVBOARD-2, the Map tab (opsMapRoutes.js)
 //   /ops/imports       LEAD-IMPORT-1, upload a walk report or the lead's summary (opsImportRoutes.js)
 //   /ops/journey, /ops/flow DEVBOARD-3, the Journey and How-it-works tabs (opsJourneyRoutes.js)
+//   /ops/onboarding    ONBOARD-2, the Onboarding tab (server/onboard/opsBoardRoutes.js)
 //
 // GET /ops is read-only. It never writes a row (the worker's opsBoardRefresh writes the one
 // cached snapshot), never shows a donor, a secret, an address or a connection
@@ -118,6 +119,9 @@ function mount(ctx) {
   require("./shipRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter, buildSha });
   // DEVBOARD-3: the Journey and How-it-works tabs, behind this same door.
   require("./opsJourneyRoutes").mount(app, { query, wrap, opsOnly, opsLimiter, healthBody });
+  // ONBOARD-2: the Onboarding tab, behind this same door, and its worker job.
+  require("../onboard/opsBoardRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter });
+  require("../onboard/jobs").define(ctx);
 
   // The worker's job: refresh the cached snapshot every five minutes. Queued,
   // so it runs on the worker (or the one process locally), never in a request.

@@ -727,7 +727,9 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
                         // COUNTS-1: a note she marks as a conversation is a contact (meetings.js).
                         ...(touch.interactionType === "note" && req.body?.conversation === true ? { conversation: true } : {}),
                         ...(step ? { next_step_label: step.label } : {}), ...(nsSource ? { next_step_source: nsSource } : {}),
-                        ...(outcome ? { outcome } : {}) })]);
+                        ...(outcome ? { outcome } : {}),
+                        // ONBOARD-2: logged from one of Steward's moves (Home's deck, or Who to call tomorrow): a kickoff signal.
+                        ...(req.body?.fromMove === true ? { from_move: true } : {}) })]);
 
     // An open thread on this donor closes on this conversation, the outcome.
     // SENDS-1: a skip closes nothing at all, the follow-up it was opened on
