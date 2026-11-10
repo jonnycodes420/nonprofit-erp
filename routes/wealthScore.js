@@ -34,21 +34,30 @@ const mayOr403 = wrap(async (req, res, next) => {
 
 // ── THE GUARD ON EVERY LIST READ ───────────────────────────────────────────
 // Only when the request names the field; any other list read passes untouched.
-const listGuard = wrap(async (req, res, next) => {
+// One middleware matched by path (not a second registration of each route, so
+// the route inventory still holds each route once).
+const GUARDED = [
+  ["GET", /^\/donors(\/ids|\/export\/csv)?\/?$/],
+  ["POST", /^\/donors\/list-views\/?$/],
+  ["PUT", /^\/donors\/list-layout(\/org)?\/?$/],
+  // Group rules can use it (groups.js `where`); making or changing such a group is hers to do only if she may see it.
+  ["POST", /^\/groups\/?$/],
+  ["PATCH", /^\/groups\/[^/]+\/?$/],
+];
+const namesField = req => {
   const q = req.query || {};
   const b = req.body || {};
-  const asks = WA.names(q.where) || WA.names(q.cols) || String(q.sort || "") === WA.FIELD
+  return WA.names(q.where) || WA.names(q.cols) || String(q.sort || "") === WA.FIELD
     || WA.names(b.filters) || WA.names(b.columns) || String(b.sort || "") === WA.FIELD || WA.names(b.rules) || WA.names(b.where);
-  if (!asks) return next();
+};
+const listGuard = wrap(async (req, res, next) => {
   if (!(await WA.maySee(req.user.userId, req.user.orgId))) return res.status(403).json(WA.REFUSAL);
   next();
 });
-app.get(["/donors", "/donors/ids", "/donors/export/csv"], requireAuth, listGuard);
-app.post("/donors/list-views", requireAuth, listGuard);
-app.put(["/donors/list-layout", "/donors/list-layout/org"], requireAuth, listGuard);
-// Group rules can use it (groups.js `where`); making or changing such a group is hers to do only if she may see it.
-app.post("/groups", requireAuth, listGuard);
-app.patch("/groups/:id", requireAuth, listGuard);
+app.use((req, res, next) => {
+  if (!GUARDED.some(([m, re]) => m === req.method && re.test(req.path)) || !namesField(req)) return next();
+  requireAuth(req, res, err => (err ? next(err) : listGuard(req, res, next)));
+});
 
 // ── ONE PERSON ─────────────────────────────────────────────────────────────
 async function suggestionFor(orgId, donorId) {
