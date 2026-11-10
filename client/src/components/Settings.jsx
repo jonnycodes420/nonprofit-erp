@@ -29,7 +29,7 @@ import { GivingPagesManager } from "./settings/GivingPagesManager";
 import { BrandingManager } from "./settings/BrandingManager";
 import { TimezoneCard } from "./settings/TimezoneCard";
 import { MajorGiftsCheckbox } from "./settings/MajorGiftsCheckbox";   // PROSPECT-1, moved by WEALTH-1
-import { WealthScoresTeamSetting } from "./WealthScore";   // WEALTH-1
+import { WealthScoresTeamSetting } from "./settings/WealthScoresTeamCard";   // WEALTH-1
 import { BoardPackRecipientsCard } from "./settings/BoardPackRecipientsCard";
 import { ProcessingRatesCard } from "./settings/ProcessingRatesCard";
 import { MatchingEmployersCard } from "./settings/MatchingEmployersCard";

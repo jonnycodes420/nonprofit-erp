@@ -70,24 +70,13 @@ app.use(["/donors", "/groups"], wealthGuardLimiter, (req, res, next) => {
 });
 
 // ── ONE PERSON ─────────────────────────────────────────────────────────────
-async function suggestionFor(orgId, donorId) {
-  const P = require("../prospect");
-  const facts = (await P.loadFacts(orgId, [donorId])).get(donorId);
-  return facts ? WS.suggest(facts) : null;
-}
-const out = (d, suggestion) => ({
-  id: d.id, score: d.wealth_rating == null ? null : Number(d.wealth_rating),
-  setAt: d.wealth_rating_set_at || null, setByName: d.wealth_rating_set_by_name || null,
-  // A suggestion only beside an empty score, and never counted as set.
-  suggestion: d.wealth_rating == null ? suggestion : null,
-  label: WS.LABEL, definition: WS.SENTENCE,
-});
+const WP = require("../server/wealth/profileRow");
+const suggestionFor = WP.suggestionFor, out = WP.shape;
 
 app.get("/donors/:id/wealth-score", requireAuth, mayOr403, wrap(async (req, res) => {
-  const [d] = await query(`SELECT id, wealth_rating, wealth_rating_set_at, wealth_rating_set_by_name FROM donors
-                            WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [req.params.id, req.user.orgId]);
-  if (!d) return res.status(404).json({ error: "Donor not found" });
-  res.json(out(d, d.wealth_rating == null ? await suggestionFor(req.user.orgId, d.id) : null));
+  const row = await WP.rowFor(req.user.orgId, req.params.id);
+  if (!row) return res.status(404).json({ error: "Donor not found" });
+  res.json(row);
 }));
 
 app.patch("/donors/:id/wealth-score", requireAuth, mayOr403, checkWriteAccess, wrap(async (req, res) => {

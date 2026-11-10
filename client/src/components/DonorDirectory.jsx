@@ -21,7 +21,7 @@ import { donorHref, rowClick } from "../lib/appUrls";
 import { PLAN_UNKNOWN } from "../lib/entitlement";
 import { DESIGNATION_OPTS, PATTERN_META, TIER_META } from "./donorShared";
 import { useCanMajorGifts, ROOM_LABEL } from "../lib/majorGifts";
-import { BulkWealthScore, useCanWealthScores } from "./WealthScore";   // WEALTH-1
+import { BulkWealthScore, useCanWealthScores } from "./BulkWealthScore";   // WEALTH-1
 import { ScreeningFileModal } from "./RoomToGive";
 import { offerUndo } from "./EditHistory";
 import { usePrivacy } from "./PrivacyPanel";
