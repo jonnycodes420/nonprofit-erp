@@ -32,7 +32,7 @@ import { errorMessage } from "../lib/domainError";
 import { listenMode, errorStopsListening, NO_LISTEN_LINE, NO_LISTEN_PHONE_LINE, SAFARI_MIC_TIP, showMicTip } from "../../../shared/voiceTalk.js";
 import { previewLines } from "../../../shared/atlas.js";
 import { told } from "../lib/stewardTold";
-import { atlasStatus, atlasName, linkTarget } from "../lib/atlas";
+import { atlasStatus, atlasName, linkTarget, followLink } from "../lib/atlas";
 import { Camera } from "lucide-react";
 import { openCheckSnap } from "./CheckSnap";   // CHECK-2
 import { MicGlyph } from "./TellStewardOpen";   // SWEEP-6
@@ -244,7 +244,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
     } catch (e) { setErr(said(e)); }
     setBusy(false);
   }
-  const go = link => { const t = linkTarget(link); if (!t || !onNavigate) return; onClose(); onNavigate(t[0], t[1]); };
+  const go = link => { const t = followLink(link); if (!t || !onNavigate) return; onClose(); onNavigate(t[0], t[1]); };
   // ATLAS-3: Tell me more keeps what was said; the next ask follows on from it.
   const another = () => { setThread(t => continueThread(t, request)); setRequest(null); setPending(null); setText(""); finalText.current = ""; setSource("typed"); };
 

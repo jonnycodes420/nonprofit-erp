@@ -113,6 +113,8 @@ export function threadRow({ TOUCH_WORD, finishRow, i, isReadOnly, loadThreads, m
         <div style={{flex:1,minWidth:0}}>
           <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>
             {/* HOME-6: the name opens the profile (the rest of the row still opens the rail beside the list). */}
+            {/* TOP100-1: a due Top 100 touch leads the list and carries her rank. */}
+            {t.top100Lead&&t.top100Rank?<span data-testid="thread-top100-rank" title={t.top100Touch&&t.top100Touch.line} style={{marginRight:6,color:T.gold700,fontWeight:800}}>#{t.top100Rank}</span>:null}
             <DonorLink id={t.donorId} data-testid="thread-name" onOpen={()=>onNavigate("donors",{selectDonorId:t.donorId})}>{displayName(t.donorName)}</DonorLink>
           </div>
           {/* ONE SENTENCE, AND IT WRAPS. The clause and the step were two

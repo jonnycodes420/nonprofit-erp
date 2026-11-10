@@ -198,7 +198,8 @@ app.get("/me", requireAuth, wrap(async (req, res) => {
   if (!users.length || !orgs.length) return res.status(404).json({ error: "Not found" });
   const u = users[0];
   res.json({
-    user: { id: u.id, email: u.email, name: u.name, role: req.user.support ? "admin" : req.user.role, canMajorGifts: await require("../../prospect").canSee(u.id, req.user.orgId) },   // PROSPECT-1
+    user: { id: u.id, email: u.email, name: u.name, role: req.user.support ? "admin" : req.user.role, canMajorGifts: await require("../../prospect").canSee(u.id, req.user.orgId),   // PROSPECT-1
+      canWealthScores: await require("../wealth/access").maySee(u.id, req.user.orgId) },   // WEALTH-1
     org: orgs[0],
     // FIX-57: a support session says so, so the banner reads the server.
     ...(req.user.support ? { support: { ...req.user.support, orgName: orgs[0].name } } : {}),

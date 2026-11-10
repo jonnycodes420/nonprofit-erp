@@ -92,6 +92,7 @@ async function runSchemaInit(pool) {
   await require("./ddl/part4").run(pool);
   await require("./ddl/part5").run(pool);
   await require("./ddl/part6").run(pool);
+  await require("./ddl/onboard1").run(pool);   // ONBOARD-1: start links, signatures, staged imports
   await require("./ddl/part7").run(pool);
 // SPLIT-2 db.js piece 49
 }

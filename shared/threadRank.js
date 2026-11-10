@@ -268,7 +268,11 @@ export function buildQueue(threads, today, { cap = QUEUE_CAP } = {}) {
     const r = rankThread(t, today);
     return { ...t, rank: { score: r.score, reasons: r.reasons, why: r.why }, band: r.band };
   });
+  // TOP100-1 · a Top 100 touch due today or overdue leads the list, by her
+  // rank (#1 first); everything else keeps its band and score below them.
+  const lead = t => (t.top100Lead && t.top100Rank ? t.top100Rank : Infinity);
   ranked.sort((a, b) =>
+    ((lead(a) === lead(b)) ? 0 : (lead(a) < lead(b) ? -1 : 1)) ||
     (BAND_ORDER[a.band] - BAND_ORDER[b.band]) ||
     (b.rank.score - a.rank.score) ||
     String(a.nextStep?.due || "").localeCompare(String(b.nextStep?.due || "")) ||

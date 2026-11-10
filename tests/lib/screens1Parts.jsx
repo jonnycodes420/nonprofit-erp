@@ -40,6 +40,8 @@ import * as ProcessingRatesCard from "../../client/src/components/settings/Proce
 import * as SavedMappings from "../../client/src/components/settings/SavedMappings.jsx";
 import * as settingsTabs from "../../client/src/components/settings/settingsTabs.js";
 import * as StaffBoardList from "../../client/src/components/settings/StaffBoardList.jsx";
+import * as MajorGiftsCheckbox from "../../client/src/components/settings/MajorGiftsCheckbox.jsx";   // WEALTH-1
+import * as WealthScoresTeamCard from "../../client/src/components/settings/WealthScoresTeamCard.jsx";   // WEALTH-1
 import * as TaxReceiptsManager from "../../client/src/components/settings/TaxReceiptsManager.jsx";
 import * as TimezoneCard from "../../client/src/components/settings/TimezoneCard.jsx";
 import * as IssuedReceipts from "../../client/src/components/settings/IssuedReceipts.jsx";   // TRUTH-3
@@ -52,6 +54,7 @@ import * as ImportDone from "../../client/src/components/import/ImportDone.jsx";
 import * as ImportHeader from "../../client/src/components/import/ImportHeader.jsx";
 import * as ImportMapping from "../../client/src/components/import/ImportMapping.jsx";
 import * as ImportProgress from "../../client/src/components/import/ImportProgress.jsx";
+import * as ImportPreview from "../../client/src/components/import/ImportPreview.jsx";   // ONBOARD-1
 import * as ImportReader from "../../client/src/components/import/ImportReader.jsx";
 import * as ImportReview from "../../client/src/components/import/ImportReview.jsx";
 import * as MergeDuplicatesModal from "../../client/src/components/import/MergeDuplicatesModal.jsx";
@@ -121,6 +124,8 @@ export const CASES = [
   ["settings/SavedMappings", () => <SavedMappings.SavedMappings isReadOnly={false}/>, /Saved mappings[\s\S]*Gift Date/],
   ["settings/settingsTabs", () => <div>{settingsTabs.SETTINGS_TABS.map(t => t.label).join(", ")}</div>, /Organization, Team/],
   ["settings/StaffBoardList", () => <StaffBoardList.StaffBoardList onNavigate={noop}/>, /Staff and board/],
+  ["settings/WealthScoresTeamCard", () => <WealthScoresTeamCard.WealthScoresTeamSetting isAdmin/>, /Everyone on the team can see Wealth Scores/],
+  ["settings/MajorGiftsCheckbox", () => <MajorGiftsCheckbox.MajorGiftsCheckbox m={{ id: "u_fake", role: "member", can_major_gifts: false }} isAdmin setTeam={() => {}}/>, /Major gifts/],
   ["settings/TaxReceiptsManager", () => <TaxReceiptsManager.TaxReceiptsManager orgId="org_fake" isAdmin isReadOnly={false}/>, /Tax Receipts/],
   ["settings/IssuedReceipts", () => <IssuedReceipts.default isAdmin isReadOnly={false}/>, /Issued receipts/],
   ["settings/TimezoneCard", () => <TimezoneCard.TimezoneCard orgId="org_fake" isAdmin isReadOnly={false}/>, /time zone/i],
@@ -131,6 +136,7 @@ export const CASES = [
   ["import/GiftHistoryImport", () => <GiftHistoryImport.GiftHistoryImport donors={[person]} onClose={noop} onImported={noop}/>, /Import Giving History/],
   ["import/ImportDetection", () => <ImportDetection.ImportDetection parsed={{ headers: ["Name", "Amount", "Date"], rows: [["Marisol Quentin", "50", "2026-10-01"]] }} effectiveShape="transaction" shapeDetail={{ shape: "transaction", confidence: "high", reasons: [] }} parseReport={null} setShapeOverride={noop}/>, /We detected: individual gifts/],
   ["import/ImportDone", () => <ImportDone.ImportDone result={{ batchErrors: [], created: 3, updated: 1, gifts: 4 }} hasBatchErrors={false} onClose={noop} onImported={noop} setResult={noop} setErr={noop} setFlaggedPage={noop} setUndoBusy={noop} flaggedPage={0} undoBusy={false}/>, /Import complete\.[\s\S]*3 donors added/],
+  ["import/ImportPreview", () => <ImportPreview.StagedNotice staged={{ staged: true, sentence: "Staged: 3 people are in Steward but hidden from every count and list until the file is checked and made live.", verifyUrl: "/imports/imp_x/verify" }}/>, /Staged: 3 people[\s\S]*Check the file and make it live/],
   ["import/ImportHeader", () => <ImportHeader.ImportHeader onClose={noop}/>, /Import Donors/],
   ["import/ImportMapping", () => <ImportMapping.ImportMapping effectiveShape="transaction" TX_ROLES={[["date", "Gift date"], ["amount", "Amount"]]} txMap={{ date: "Date", amount: "Amount" }} parsed={{ headers: ["Date", "Amount"], rows: [["2026-10-01", "50"]] }} setTxMap={noop}/>, /Map gift columns/],
   ["import/ImportProgress", () => <ImportProgress.ImportReadout readout={{ headline: "312 people came in, 4 need a look.", lines: [] }}/>, /312 people came in/],

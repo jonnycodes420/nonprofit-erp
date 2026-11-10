@@ -28,7 +28,7 @@ async function everyoneBreakdown(query, orgId, { newest = 5 } = {}) {
             COUNT(*) FILTER (WHERE ${EVERYONE("d")} AND NOT ${DONOR("d")} AND ${ORG("d")})::int AS c_orgs,
             COUNT(*) FILTER (WHERE ${EVERYONE("d")} AND NOT ${DONOR("d")} AND NOT ${ORG("d")} AND ${HAS("d", "volunteer")})::int AS c_volunteers,
             COUNT(*) FILTER (WHERE ${EVERYONE("d")} AND NOT ${DONOR("d")} AND NOT ${ORG("d")} AND NOT ${HAS("d", "volunteer")} AND ${HAS("d", "staff_board")})::int AS c_staff,
-            COUNT(*) FILTER (WHERE d.deleted_at IS NOT NULL AND d.erased_at IS NULL)::int AS trash,
+            COUNT(*) FILTER (WHERE d.deleted_at IS NOT NULL AND d.erased_at IS NULL AND d.staged_import_id IS NULL)::int AS trash,
             COUNT(*) FILTER (WHERE d.deleted_at IS NULL AND d.erased_at IS NULL AND d.archived_at IS NOT NULL)::int AS archived,
             COUNT(*) FILTER (WHERE d.erased_at IS NOT NULL)::int AS erased
        FROM donors d WHERE d.org_id = ?`, [orgId]);

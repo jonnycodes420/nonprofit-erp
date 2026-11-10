@@ -47,6 +47,8 @@ app.get("/figures/:source/rows", requireAuth, wrap(async (req, res) => {
   if (String(req.params.source) === "why" && params.q === "more" && !(await require("../../prospect").canSee(req.user.userId, req.user.orgId))) {
     return res.status(403).json({ error: "major_gifts_only" });
   }
+  // WEALTH-1: a figure whose question names the Wealth Score opens only for someone who may see it.
+  if (require("../wealth/access").names(params) && !(await require("../wealth/access").maySee(req.user.userId, req.user.orgId))) return res.status(403).json(require("../wealth/access").REFUSAL);
   try {
     const out = await figureSources.figure(req.user.orgId, { key: String(req.params.source), params },
       { computeRetentionRate, computeDriftForDonors }, { page, pageSize });
@@ -69,6 +71,7 @@ async function figureRowsFor(req, res) {
   if (String(req.params.source) === "why" && params.q === "more" && !(await require("../../prospect").canSee(req.user.userId, req.user.orgId))) {
     res.status(403).json({ error: "major_gifts_only" }); return null;
   }
+  if (require("../wealth/access").names(params) && !(await require("../wealth/access").maySee(req.user.userId, req.user.orgId))) { res.status(403).json(require("../wealth/access").REFUSAL); return null; }   // WEALTH-1
   try {
     const rows = await figureSources.allRows(req.user.orgId, { key: String(req.params.source), params },
       { computeRetentionRate, computeDriftForDonors });
@@ -105,14 +108,23 @@ function sendReportCsv(res, filename, headers, rows) {
 }
 
 // ── REPORT-BUILDER ROUTES ──────────────────────────────────────────────────
+// WEALTH-1: a definition that reads the Wealth Score is for someone who may see it (server/wealth/access.js).
+const WA = require("../wealth/access");
+const mayWealth = req => WA.maySee(req.user.userId, req.user.orgId);
+const wealthRefused = async (req, res, def) => {
+  if (!RB.usesWealth(def) || (await mayWealth(req))) return false;
+  res.status(403).json(WA.REFUSAL);
+  return true;
+};
 app.get("/report-builder/catalogue", requireAuth, wrap(async (req, res) => {
   await RB_READY;
   const defs = await rbCustomDefs(req.user.orgId);
+  const seesWealth = await mayWealth(req);
   res.json({
     entities: RB.ENTITY_KEYS.map(k => {
       const E = RB.ENTITIES[k];
       const custom = E.custom ? defs.filter(d => d.entity === E.custom.entity && RB.CUSTOM_KEY.test(d.key)).map(d => RB.fieldFor(k, "cf:" + d.key, defs)).filter(Boolean) : [];
-      return { key: k, label: E.label, fields: [...Object.entries(E.fields).map(([fk, f]) => ({ key: fk, label: f.label, type: f.type, groupOnly: !!f.groupOnly })),
+      return { key: k, label: E.label, fields: [...Object.entries(E.fields).filter(([, f]) => !f.wealth || seesWealth).map(([fk, f]) => ({ key: fk, label: f.label, type: f.type, groupOnly: !!f.groupOnly })),
         ...custom.map(f => ({ key: f.key, label: f.label, type: f.type, custom: true }))] };
     }),
     ops: Object.entries(RB.OPS).map(([k, o]) => ({ key: k, label: o.label, types: o.types })),
@@ -121,6 +133,8 @@ app.get("/report-builder/catalogue", requireAuth, wrap(async (req, res) => {
 
 // Run a definition that has not been saved. A read; changes nothing.
 app.post("/report-builder/run", requireAuth, wrap(async (req, res) => {
+  await RB_READY;
+  if (await wealthRefused(req, res, req.body?.definition)) return;
   const out = await runBuilderDef(req.user.orgId, req.body?.definition || {});
   if (out.errors) return res.status(400).json({ error: out.errors.join(" "), errors: out.errors });
   res.json(out);
@@ -132,7 +146,7 @@ app.get("/saved-reports", requireAuth, wrap(async (req, res) => {
     `SELECT id, name, question, shared, owner_id, owner_name, schedule, updated_at FROM saved_reports
       WHERE org_id=? AND (shared = true OR owner_id = ?) ORDER BY name`, [req.user.orgId, req.user.userId]);
   res.json({
-    standard: RB.STANDARD_REPORTS.map(r => ({ id: "std:" + r.key, name: r.name, question: r.question })),
+    standard: (await mayWealth(req) ? RB.STANDARD_REPORTS : RB.STANDARD_REPORTS.filter(r => !r.wealth)).map(r => ({ id: "std:" + r.key, name: r.name, question: r.question })),
     saved: mine.map(r => ({ id: r.id, name: r.name, question: r.question, shared: r.shared, mine: r.owner_id === req.user.userId,
       ownerName: r.owner_name, schedule: r.schedule, updatedAt: r.updated_at })),
   });
@@ -143,6 +157,7 @@ app.post("/saved-reports", requireAuth, checkWriteAccess, wrap(async (req, res) 
   const name = String(req.body?.name || "").trim().slice(0, 120);
   const def = req.body?.definition || {};
   if (!name) return res.status(400).json({ error: "Give the report a name." });
+  if (await wealthRefused(req, res, def)) return;
   const v = RB.validateDefinition(def, { customDefs: await rbCustomDefs(req.user.orgId) });
   if (!v.ok) return res.status(400).json({ error: v.errors.join(" ") });
   const schedule = RB.SCHEDULES.includes(req.body?.schedule ?? null) ? (req.body?.schedule ?? null) : null;
@@ -162,6 +177,7 @@ app.put("/saved-reports/:id", requireAuth, checkWriteAccess, wrap(async (req, re
   const [r] = await query("SELECT * FROM saved_reports WHERE id=? AND org_id=? AND owner_id=?", [req.params.id, req.user.orgId, req.user.userId]);
   if (!r) return res.status(404).json({ error: "Not found" });
   const def = req.body?.definition ?? asJson(r.definition, {});
+  if (await wealthRefused(req, res, def)) return;
   const v = RB.validateDefinition(def, { customDefs: await rbCustomDefs(req.user.orgId) });
   if (!v.ok) return res.status(400).json({ error: v.errors.join(" ") });
   const schedule = req.body && "schedule" in req.body ? (RB.SCHEDULES.includes(req.body.schedule) ? req.body.schedule : null) : r.schedule;
@@ -180,6 +196,7 @@ app.delete("/saved-reports/:id", requireAuth, wrap(async (req, res) => {
 app.get("/saved-reports/:id/run", requireAuth, wrap(async (req, res) => {
   const rep = await savedReportFor(req.user.orgId, req.user.userId, req.params.id);
   if (!rep) return res.status(404).json({ error: "Not found" });
+  if (await wealthRefused(req, res, rep.def)) return;
   const out = await runSaved(req.user.orgId, rep);
   if (out.errors) return res.status(400).json({ error: out.errors.join(" ") });
   const { raw, ...rest } = out; void raw;
@@ -189,6 +206,7 @@ app.get("/saved-reports/:id/run", requireAuth, wrap(async (req, res) => {
 app.get("/saved-reports/:id/csv", requireAuth, wrap(async (req, res) => {
   const rep = await savedReportFor(req.user.orgId, req.user.userId, req.params.id);
   if (!rep) return res.status(404).json({ error: "Not found" });
+  if (await wealthRefused(req, res, rep.def)) return;
   const out = await runSaved(req.user.orgId, rep);
   if (out.errors) return res.status(400).json({ error: out.errors.join(" ") });
   const slug = String(rep.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "report";
@@ -198,6 +216,7 @@ app.get("/saved-reports/:id/csv", requireAuth, wrap(async (req, res) => {
 app.get("/saved-reports/:id/pdf", requireAuth, wrap(async (req, res) => {
   const rep = await savedReportFor(req.user.orgId, req.user.userId, req.params.id);
   if (!rep) return res.status(404).json({ error: "Not found" });
+  if (await wealthRefused(req, res, rep.def)) return;
   const out = await runSaved(req.user.orgId, rep);
   if (out.errors) return res.status(400).json({ error: out.errors.join(" ") });
   const PDFDocument = require("pdfkit");

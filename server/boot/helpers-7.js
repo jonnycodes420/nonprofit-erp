@@ -548,7 +548,7 @@ async function sendTierNoticeEmail({ orgId, orgName, count, band, nextBandId, ef
 async function processTrialReminders({ now = Date.now(), send = true } = {}) {
   const out = { considered: 0, sent: [], skipped: [] };
   const orgs = await query(
-    `SELECT id, name, plan, trial_ends_at, billing_card_brand, billing_card_last4, stripe_subscription_id
+    `SELECT id, name, plan, trial_ends_at, billing_card_brand, billing_card_last4, stripe_subscription_id, custom_price_cents
        FROM orgs
       WHERE subscription_status = 'trialing'
         AND trial_ends_at IS NOT NULL
@@ -571,7 +571,9 @@ async function processTrialReminders({ now = Date.now(), send = true } = {}) {
     const to = admins[0]?.email;
     if (!to) { out.skipped.push({ id: org.id, reason: "no_admin" }); continue; }
     const tz = await orgTzName(org.id);
-    const sentence = firstChargeSentence({ monthlyUsd: planAmountUsd(plan), firstChargeAt: org.trial_ends_at, tz });
+    // ONBOARD-1: an org on a custom price is told the custom price (its start link charges it).
+    const amountUsd = org.custom_price_cents != null ? org.custom_price_cents / 100 : planAmountUsd(plan);
+    const sentence = firstChargeSentence({ monthlyUsd: amountUsd, firstChargeAt: org.trial_ends_at, tz });
     // Canonical domain via the vercel.json /billing/cancel proxy rewrite — a
     // cancel link is exactly where an unfamiliar host would read as a phish.
     const cancelUrl = `${publicAppUrl()}/billing/cancel/${signCancelToken(org.id)}`;

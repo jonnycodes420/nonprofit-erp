@@ -9,6 +9,7 @@ import { CHANGELOG as CHANGELOG_ADMIN } from "../lib/changelog";
 import { enterSupport } from "../lib/supportSession";   // FIX-57
 import { countLabel } from "../../../shared/countWords.js";
 import AdminOpsNav from "./ops/AdminOpsNav";
+import StartLinkPanel from "../components/admin/StartLinkPanel";   // ONBOARD-1
 import DateInput from "../components/inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
@@ -1005,6 +1006,7 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
   const [changePlanOrgId, setChangePlanOrgId] = useState(null);
   const [newPlan, setNewPlan] = useState("growth");
   const [dollarBusy, setDollarBusy] = useState(null);
+  const [startLinkOrg, setStartLinkOrg] = useState(null);   // ONBOARD-1
   const [reconcileBusy, setReconcileBusy] = useState(null);
 
   const filtered = (orgs || [])
@@ -1201,6 +1203,7 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
                         {reconcileBusy === o.id ? "…" : "Find subscription"}
                       </button>
                     )}
+                    {!o.demo && <button data-testid={`org-start-link-${o.id}`} onClick={() => setStartLinkOrg(o)} style={{ ...ABTN, fontSize: 11 }}>Create start link</button>}
                     {canDollarTest(o) && (
                       <button data-testid={`org-dollar-${o.id}`} onClick={() => moveToDollarPrice(o)}
                         disabled={dollarBusy === o.id}
@@ -1218,6 +1221,7 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
         </table>
       </div>
 
+      {startLinkOrg && <StartLinkPanel org={startLinkOrg} onClose={() => setStartLinkOrg(null)} />}
       {selectedOrg && <OrgPanel org={selectedOrg} onClose={() => setSelectedOrg(null)} onRefresh={(close = true) => { onRefresh(); if (close) setSelectedOrg(null); }} />}
     </div>
   );

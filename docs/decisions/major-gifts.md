@@ -189,13 +189,50 @@ Read this when you touch the pipeline, stage or status, moves, opportunities, po
 - **An open ask is not a gift.** An ask/proposal column must say ASK, PROPOSAL, OPPORTUNITY or SOLICITATION,
   so a bare "Amount" never counts. An open NPSP Opportunity becomes a proposal. Closed Won is a gift.
   Closed Lost is refused. `importProposals` touches no money. (BUILD-99 major gifts)
-- **Never render "Wealth Score".** The figure is "Giving strength", defined by `numberCensus`
-  `list.givingStrength` (not an estimate of capacity). The filter is "Proven capacity". A model is never
-  asked to emit a score. (BUILD-100 score-names)
+- **Never render a COMPUTED figure as "Wealth Score".** The computed figure is "Giving strength", defined by
+  `numberCensus` `list.givingStrength` (not an estimate of capacity). The filter is "Proven capacity". A model
+  is never asked to emit a score. (BUILD-100 score-names; narrowed by WEALTH-1: "Wealth Score" now names
+  only the 1 to 5 a person sets by hand, below.)
+- **The Wealth Score is a 1 to 5 a PERSON sets, in `donors.wealth_rating`, never `donors.wealth_score`.**
+  `wealth_score` is the old automatic 1 to 10 that `calcWealthScore` rewrites; it is not the Wealth Score and
+  nothing renders it under that name. Nothing writes `wealth_rating` but her click (profile, bulk set) or her
+  own import column ("Wealth Score"; a matched record is filled only when blank). Bands and the suggestion
+  live in `shared/numbers/wealthScore.js` (5 = $25k+ a year, 4 = $10k to $25k, 3 = $2.5k to $10k, 2 = $500 to
+  $2.5k, 1 = under $500). A suggestion reads her own giving and a screening file's capacity range, is shown
+  beside an empty score only, is written nowhere until clicked, and is never counted as set. Never FEC data
+  (52 U.S.C. 30111(a)(4)). (WEALTH-1)
+- **Who sees a Wealth Score is `server/wealth/access.js` `maySee`:** admins and staff with the major gifts
+  permission, or everyone on the team once an admin turns on `orgs.wealth_scores_team`. Every route that
+  reads or writes it refuses (403) anyone else: the profile route, bulk set, a list filter/sort/column, a
+  saved view, a group rule, a report, a figure's rows, Atlas. The stored column never rides on a row: the app's
+  `json replacer` (`server/wealth/hideColumns.js`) drops `wealth_rating*` from every JSON answer, so a
+  `donors.*` read cannot leak it. No donor-facing merge field, page or receipt carries it. (WEALTH-1)
 - **Keep the profile's wealth score hidden until `WEALTH_SCORE_DEFINITION` and `WEALTH_SCORE_SOURCE`
   (Donors.jsx) carry real strings.** Nothing may put an undefined number beside a person's name. (BUILD-88a)
 - **An imported wealth screen (DonorSearch/iWave) keeps the vendor's text and never feeds `wealth_score`.**
   It lands in `donors.wealth_screen_*`. A bare "Score" or "Rating" header is not claimed. (BUILD-98 switch Part 6)
+
+- **The Top 100 is one ranked list per org, separate from assignment (TOP100-1).** `portfolio_lists`
+  (one per org, "Top 100", renamable) and `portfolio_members` (rank 1..N). Being on it is not being
+  assigned, and assignment is not being on it. Its Owner is the person's owner (`donors.assigned_to`) and
+  its Stage is the pipeline's (`donors.stage`): the list stores neither, so there is one owner and one
+  stage per person (the BUILD-30 rule).
+- **A rank change takes the list's row lock and writes every moved rank in one statement.**
+  `uq_portfolio_rank` is DEFERRABLE INITIALLY DEFERRED, so a reorder may pass through a shared rank
+  inside its transaction and never commits one. Removing someone closes the gap in the same transaction.
+- **A planned touch IS a task** (`tasks.care_plan_id`, `tasks.touch_type`). It shows in Tasks and on Home
+  and is finished by any Done. A database trigger (`trg_care_touch_line`) writes the one timeline line
+  when it is ticked and removes it when unticked, because a task is ticked from five places. A visit,
+  tour or ask is a meeting and a call is a call, so their Done asks how it went, as any meeting does.
+- **Plan health is one rule** (`shared/careShape.js planHealth`): Behind (a touch past its day, not done),
+  On track (an open touch, none overdue), No plan (no touches), All done (every touch done, nothing more planned).
+- **A due or overdue Top 100 touch leads Home's list and the morning email, by rank**
+  (`server/majorGifts/top100Lead.js`, `shared/threadRank.js buildQueue`), written "#3 Hollis Brandt:
+  visit, due Thu".
+- **Atlas's "Make a plan of care for #4" writes nothing.** It names the template's touches and opens the
+  person's plan of care, where one press adds them.
+- **Who sees the Top 100 and plans of care is `prospect.canSee`**: admins and the major gifts permission,
+  read live, on every route. Never donor-facing.
 
 ## Gotchas
 - **Two "weighted" figures exist, so keep them separate.** The board's `forecast.weighted` is ask ×

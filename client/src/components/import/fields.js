@@ -108,6 +108,7 @@ export const TX_ROLE_LABELS = {
   tributeNotify: "Tribute: who to tell", matchEmployer: "Matching employer",
   wealthRating: "Wealth screen rating", wealthCapacity: "Wealth screen capacity",
   wealthDate: "Wealth screen date",
+  wealthScore: "Wealth Score (1 to 5)",   // WEALTH-1
   birthday: "Birthday (month and day; year optional)",
   aboutThem: "About them (a short note read first)",   // DATES-1
   proposalPurpose: "Proposal: what the ask is for",
