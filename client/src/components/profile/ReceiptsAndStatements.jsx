@@ -132,6 +132,9 @@ export function ReceiptCell({ g, rc, isReadOnly }) {
     </span>);
   if (!rc.receiptsEnabled) return <span style={{ color: T.ink3, fontSize: 12 }}>Off</span>;
   // FEEL-1: a $0 gift has nothing to receipt, so nothing is offered.
+  // MONEY-4: a refund row is money going back out, and a gift refunded in full carries no receipt.
+  if (Number(g.amount) < 0) return <span data-testid="dp-receipt-none" style={{ color: T.ink3, fontSize: 12 }}>A refund, not receipted</span>;
+  if (g.refunded_in_full) return <span data-testid="dp-receipt-none" style={{ color: T.ink3, fontSize: 12 }}>Refunded in full, receipt voided</span>;
   if (!receiptOffered(g)) return <span data-testid="dp-receipt-none" style={{ color: T.ink3, fontSize: 12 }} title="A tax receipt is for money given; this gift is $0.">No receipt for $0</span>;
   const busy = rc.receiptBusyId === g.id;
   return <span style={{ display: "inline-flex", flexDirection: "column", gap: 2 }}>

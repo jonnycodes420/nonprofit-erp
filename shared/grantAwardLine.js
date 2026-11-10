@@ -36,37 +36,49 @@ export function awardState(grant = {}) {
   return "none";
 }
 
+// MONEY-4 (W-1107-Finance-31, W-1109-Finance-33) · ONE STATE MACHINE, ONE
+// STORY. An awarded grant's three money facts (Awarded, Received, Remaining)
+// say the same thing on the line and in the tiles, and never "No payments set
+// up":
+//   stated   the amount is known (Wexford's $120,000): it IS the award.
+//            Received is what has come in (the payments, or before the award
+//            row exists the typed figure, which becomes its first payment):
+//            "Awarded $120,000 · $0 received of $120,000".
+//   missing  marked Awarded with no amount (NEA): money that came in is shown
+//            as received, the amount is what is missing, and the action records
+//            it (prefilled from the ask), turning that money into the award's
+//            first payment: "Awarded · $35,000 received · award amount not
+//            recorded" + Record the award.
+//   recorded nothing here (the award panel says the rest).
 export function grantAwardLine(grant = {}) {
   const g = grant || {};
   const st = awardState(g);
-  if (st === "recorded") return null;
+  if (st === "recorded" || st === "none") return null;
   const received = Number(g.received) || 0;
-  if (st === "stated") return { key: "awarded_stated", text: `Awarded ${money(g.amountAwarded)}${received > 0 ? ` · ${money(received)} received` : ""} · payments not set up ·`, action: "Set up payments" };
-  if (received > 0) return { key: "received_no_award", text: `Received ${money(received)}, award not recorded.`, action: "Record the award" };
-  if (st === "missing") return { key: "awarded_no_award", text: "Marked Awarded, with no award amount yet.", action: "Record the award" };
-  return null;
+  if (st === "stated") return { key: "awarded_stated", text: `Awarded ${money(g.amountAwarded)} · ${money(received)} received of ${money(g.amountAwarded)}`, action: null };
+  return { key: "awarded_no_amount", text: received > 0 ? `Awarded · ${money(received)} received · award amount not recorded ·` : "Awarded · award amount not recorded ·", action: "Record the award" };
 }
 
-// PLEDGES-3 · THE GRANT'S FOUR TILES, ONE RULE. Received and % Funded are the
-// payments on the award; with no award row there is no schedule to be paid
-// against, so they say "No payments set up" rather than $0 and 0%. Once the grant is
-// awarded its application deadline has closed and stops counting down; the
-// fourth tile counts to the report due date instead (report deadlines remain).
+// THE GRANT'S FOUR TILES, ONE RULE (PLEDGES-3, MONEY-4). Received and %
+// Funded read the payments; an award amount not yet recorded says "Not
+// recorded" on Awarded alone. Once the grant is awarded its application
+// deadline is closed and the fourth tile counts to the report due date.
 //   grant: { amount, amountAwarded, received, status, deadline, reportDue, awardPledgeId }
 //   word(date, opts) is grantDeadline.js's deadlineWord bound to the org's day.
 export function grantMoneyTiles(grant = {}, word, { pursuing = true } = {}) {
   const g = grant || {};
   const st = awardState(g);
-  const notSetUp = st === "stated" || st === "missing";
-  const target = Number(g.amountAwarded) > 0 ? Number(g.amountAwarded) : Number(g.amount) || 0;
+  const awarded = Number(g.amountAwarded) || 0;
   const received = Number(g.received) || 0;
-  const pct = target > 0 ? Math.round(received / target * 100) : 0;
+  const pct = awarded > 0 ? Math.round(received / awarded * 100) : null;
   const tiles = [
     st === "none" ? { key: "requested", label: "Amount Requested", value: money(g.amount) }
-      : { key: "awarded", label: "Awarded", value: Number(g.amountAwarded) > 0 ? money(g.amountAwarded) : "Not set" },
-    { key: "received", label: "Received", value: notSetUp ? "No payments set up" : money(received) },
-    { key: "funded", label: "% Funded", value: notSetUp ? "No payments set up" : pct + "%", pct: notSetUp ? null : pct },
-  ].filter(Boolean);
+      : { key: "awarded", label: "Awarded", value: awarded > 0 ? money(awarded) : "Not recorded" },
+    { key: "received", label: "Received", value: money(received) },
+    st === "none" ? { key: "funded", label: "% Funded", value: (Number(g.amount) > 0 ? Math.round(received / Number(g.amount) * 100) : 0) + "%", pct: 0 }
+      : pct == null ? { key: "remaining", label: "Remaining", value: "Not recorded", pct: null }
+      : { key: "remaining", label: "Remaining", value: money(Math.max(0, awarded - received)), pct },
+  ];
   if (pursuing) tiles.push({ key: "deadline", label: "Days to Deadline", ...word(g.deadline, { pursuing: true }) });
   else if (g.reportDue) tiles.push({ key: "report", label: "Days to Report Due", ...word(g.reportDue, { pursuing: true }) });
   else tiles.push({ key: "deadline", label: "Application", word: "Closed", days: null, band: "closed" });

@@ -16,7 +16,9 @@ const M = require("../../money");
 // SQL: gift row `g` is money in a total.
 const MONEY = (g = "g") => NOT_CREDIT(g);
 // SQL: gift row `g` is a gift: money above zero (a refund is not a gift).
-const GIFT = (g = "g") => `(${NOT_CREDIT(g)} AND ${g}.amount > 0)`;
+// MONEY-4: a gift refunded in full (Record a refund) stays on file, netted to
+// $0 by its refund row, and is no longer a gift: the count drops only then.
+const GIFT = (g = "g") => `(${NOT_CREDIT(g)} AND ${g}.amount > 0 AND ${g}.refunded_in_full IS NOT TRUE)`;
 // SQL: person `d` counts (not deleted).
 const LIVE = (d = "d") => `${d}.deleted_at IS NULL`;
 // SQL: the money total of gift rows `g`, in dollars (0 when none), with an
@@ -30,7 +32,7 @@ const MONEY_CENTS = (g = "g", where = "") => `COALESCE(SUM(ROUND(${g}.amount * 1
 // The same rules for rows already read: { amount | cents, type }.
 const centsOf = r => (r.cents != null ? Number(r.cents) : (M.toCents(String(r.amount ?? "0")) ?? 0));
 const isMoney = r => !isCredit(r && (r.type ?? r.gift_type));
-const isGift = r => isMoney(r) && centsOf(r) > 0;
+const isGift = r => isMoney(r) && centsOf(r) > 0 && !(r.refunded_in_full === true || r.refundedInFull === true);
 const sumCents = rows => (rows || []).filter(isMoney).reduce((n, r) => n + centsOf(r), 0);
 
 // TRUTH-2 · A DONOR COUNT. The people who gave in a set of rows: a gift above

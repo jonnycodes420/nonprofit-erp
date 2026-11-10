@@ -33,13 +33,14 @@ const STATUS_META = {
   pending: { label: "Pending donor action", color: T.gold700, bg: T.gold100, border: T.gold300 },
   paused: { label: "Paused", color: T.ink3, bg: T.bg2, border: T.bg3 },
   active: { label: "Active", color: T.greenDk, bg: T.green100, border: T.green200 },
+  behind: { label: "Behind", color: T.gold700, bg: T.gold100, border: T.gold300 },   // MONEY-4: an offline plan whose payment is late
   canceled: { label: "Canceled", color: T.ink3, bg: T.bg2, border: T.bg3 },
 };
 
 // FIX-2 finding 10 — the one formatter, never a Date in some timezone.
 // SWEEP-6: a blank says what is true there ("No date"), never "Not set".
 const fmtDate = iso => (iso && displayDate(iso)) || "No date";
-const per = interval => interval === "year" ? "/yr" : "/mo";
+const per = interval => ({ year: "/yr", quarter: "/qtr", week: "/wk" })[interval] || "/mo";
 const money = n => n == null ? "No amount" : fmtFull(n);
 
 function StatusPill({ status }) {
@@ -88,8 +89,10 @@ function MovementSummary({ movement }) {
                      justifyContent: "center", cursor: "help", verticalAlign: "middle" }}>?</span>
         </div>
         <div style={{ fontSize: 34, fontWeight: 800, fontFamily: "'DM Serif Display',serif", color: T.ink, lineHeight: 1.15, margin: "6px 0 2px" }}>{fmtFull(movement.mrr)}</div>
+        {/* MONEY-4: MRR includes the offline plans staff recorded, and says so. */}
+        {movement.mrrWords && <div data-testid="rec-mrr-words" style={{ fontSize: 12, color: T.ink2, marginBottom: 2 }}>{movement.mrrWords}</div>}
         <div style={{ fontSize: 12, color: T.ink3 }}>
-          {countLabel(movement.healthyCount + movement.atRiskCount, "sustainer")}
+          {countLabel(movement.healthyCount + movement.atRiskCount + (movement.offlineCount || 0), "sustainer")}
           {movement.atRiskCount ? <span style={{ color: T.terra700, fontWeight: 700 }}> · {movement.atRiskCount} at risk</span> : null}
           {/* (2026-09-11) The card that has not failed yet. Its own colour and
               its own clause, because it is the half still worth acting on —
@@ -707,7 +710,7 @@ export function RecurringView({ onNavigate, isReadOnly }) {
       const q = search.trim().toLowerCase();
       rows = rows.filter(s => (s.donorName || "").toLowerCase().includes(q) || (s.donorEmail || "").toLowerCase().includes(q));
     }
-    const STATUS_ORDER = { past_due: 0, pending: 1, paused: 2, active: 3, canceled: 4 };
+    const STATUS_ORDER = { past_due: 0, behind: 1, pending: 1, paused: 2, active: 3, canceled: 4 };
     const cmp = {
       status: (a, b) => (STATUS_ORDER[a.displayStatus] ?? 9) - (STATUS_ORDER[b.displayStatus] ?? 9),
       donor: (a, b) => (a.donorName || "").localeCompare(b.donorName || ""),
@@ -799,8 +802,9 @@ export function RecurringView({ onNavigate, isReadOnly }) {
                 {header("donor", "Donor")}
                 {header("amount", "Amount", "right")}
                 <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 10.5, fontWeight: 800, color: T.ink3 }}>Fund</th>
+                <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 10.5, fontWeight: 800, color: T.ink3 }}>Source</th>
                 {header("status", "Status")}
-                {header("next", "Next charge")}
+                {header("next", "Next payment")}
                 {header("started", "Started")}
                 {header("total", "Total given", "right")}
                 <th style={{ padding: "8px 10px" }}></th>
@@ -819,14 +823,15 @@ export function RecurringView({ onNavigate, isReadOnly }) {
                     {money(s.amount)}<span style={{ color: T.ink3, fontWeight: 500 }}>{per(s.interval)}</span>
                   </td>
                   <td style={{ padding: "10px 10px", fontSize: 12.5, color: s.fundName ? T.ink2 : T.ink3 }}>{fundLabel(s.fundName)}</td>
-                  <td style={{ padding: "10px 10px" }}><StatusPill status={s.displayStatus} /></td>
+                  <td data-testid="rec-source" style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink2, whiteSpace: "nowrap" }}>{s.source === "offline" ? "Offline · recorded by staff" : "Card · Stripe"}</td>
+                  <td style={{ padding: "10px 10px" }} title={s.stateSentence || undefined}><StatusPill status={s.displayStatus} /></td>
                   <td style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>{s.displayStatus === "canceled" ? "Stopped" : s.displayStatus === "paused" ? "Paused" : fmtDate(s.nextChargeAt)}</td>
                   <td style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>{fmtDate(s.startedAt)}</td>
                   <td style={{ padding: "10px 10px", textAlign: "right", fontSize: 12.5, color: T.ink2, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
                     {s.linkedGiftCount > 0 ? `${fmtFull(s.totalGiven)} · ${s.linkedGiftCount}` : "No gifts yet"}
                   </td>
                   <td style={{ padding: "10px 10px", textAlign: "right" }}>
-                    <ActionsMenu sub={s} isReadOnly={isReadOnly} onAction={doAction} />
+                    {s.source === "offline" ? null : <ActionsMenu sub={s} isReadOnly={isReadOnly} onAction={doAction} />}
                   </td>
                 </tr>
               ))}

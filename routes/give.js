@@ -4296,7 +4296,8 @@ app.get("/recurring/roster", requireAuth, wrap(async (req, res) => {
     expiresAt: p.expires_at, resendCount: p.resend_count, createdAt: p.created_at,
     createdByName: p.created_by_name || null,
   }));
-  res.json({ subs: rows, invitations });
+  // MONEY-4: every active plan, card and offline, with its Source.
+  res.json({ subs: await require("../server/donors/offlineRoster").withOffline(query, orgId, orgToday(await orgTz(orgId)), rows), invitations });   // ORG_TZ_SEAM_OK
 }));
 
 // The movement summary — current MRR plus the month-to-date waterfall over
@@ -4366,8 +4367,8 @@ app.get("/recurring/movement", requireAuth, wrap(async (req, res) => {
             BETWEEN date_trunc('month', (now() AT TIME ZONE 'UTC')::date)::date
                 AND (date_trunc('month', (now() AT TIME ZONE 'UTC')::date) + interval '1 month')::date`, [orgId]);
 
-  res.json({
-    mrr: round2(parseFloat(mrrRows[0]?.mrr) || 0),
+  res.json({   // MONEY-4: MRR includes the offline plans, labeled (server/donors/offlineRoster.js)
+    ...(await require("../server/donors/offlineRoster").mrrWithOffline(query, orgId, orgToday(tz), parseFloat(mrrRows[0]?.mrr) || 0)),   // ORG_TZ_SEAM_OK
     healthyCount: mrrRows[0]?.healthy || 0,
     atRiskCount: mrrRows[0]?.at_risk || 0,
     expiringCount: expSoon[0]?.n || 0,
@@ -5522,7 +5523,7 @@ async function portalOrgBySlug(slug, { membership = false } = {}) {
     `SELECT o.*, ps.enabled AS portal_enabled, ps.display_name AS portal_display_name,
             COALESCE(ps.logo_url, ps.logo_data) AS portal_logo, COALESCE(ps.header_image_url, ps.header_image_data) AS portal_header_image,
             ps.primary_color, ps.accent_color, ps.footer_text AS portal_footer,
-            ps.contact_email AS portal_contact, ps.ein_line AS portal_ein,
+            ps.contact_email AS portal_contact, o.ein AS portal_ein,
             ps.powered_by, ps.min_recurring_cents, ps.network_listed,
             ps.background_tint, ps.button_color, ps.type_pairing, ps.card_style,
             ps.header_focal_x, ps.header_focal_y, ps.header_crop
@@ -5557,7 +5558,7 @@ function portalThemePayload(org) {
     ...portalCardTheme(org),
     footerText: clean(org.portal_footer, 500),
     contactEmail: clean(org.portal_contact, 200),
-    einLine: clean(org.portal_ein, 200),
+    einLine: require("../server/org/einLine").einLineOf(org.portal_ein),   // MONEY-4: orgs.ein, the one EIN
     poweredBy: org.powered_by === true,
     minRecurringCents: Number(org.min_recurring_cents) || 500,
     giveSlug: org.stripe_account_id ? org.org_slug : null, // R-6: reuse the existing public giving page
@@ -6643,8 +6644,9 @@ app.post("/assets/run-purge", requireAuth, requireAdmin, wrap(async (req, res) =
 app.get("/portal-settings", requireAuth, wrap(async (req, res) => {
   await run(`INSERT INTO portal_settings (org_id) VALUES (?) ON CONFLICT (org_id) DO NOTHING`, [req.user.orgId]);
   const [ps] = await query(`SELECT * FROM portal_settings WHERE org_id = ?`, [req.user.orgId]);
-  const [org] = await query(`SELECT org_slug FROM orgs WHERE id = ?`, [req.user.orgId]);
-  res.json({ ...ps, org_slug: org?.org_slug || null, portal_url: `${publicAppUrl()}/portal/${org?.org_slug}` });
+  const [org] = await query(`SELECT org_slug, ein FROM orgs WHERE id = ?`, [req.user.orgId]);
+  // MONEY-4: the footer's EIN line is the org's EIN (Settings, Tax Receipts), never a copy kept here.
+  res.json({ ...ps, ein_line: require("../server/org/einLine").einLineOf(org?.ein), org_slug: org?.org_slug || null, portal_url: `${publicAppUrl()}/portal/${org?.org_slug}` });
 }));
 
 // BUILD-56 — a legacy IN-ROW base64 image (a pre-BUILD-51 row that never
@@ -7074,7 +7076,7 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   if (b.directoryState !== undefined) setStr("directory_state", b.directoryState, 40);
   if (b.footerText !== undefined) setStr("footer_text", b.footerText, 500);
   if (b.contactEmail !== undefined) setStr("contact_email", b.contactEmail, 200);
-  if (b.einLine !== undefined) setStr("ein_line", b.einLine, 200);
+  // MONEY-4: the EIN is set in Settings, Tax Receipts (orgs.ein) only; einLine is no longer saved here.
   // BUILD-60 Part 2 — per-frequency, org-configurable amount ladders. A valid
   // ladder is 3–6 positive whole-dollar tiers; null/"" clears back to the
   // built-in default. Stored as a JSON array of ints.
@@ -7782,7 +7784,7 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
     `SELECT l.org_id, l.donor_id, l.via_email, o.name AS org_name, o.org_slug,
             ps.display_name, ps.primary_color, ps.accent_color, COALESCE(ps.logo_url, ps.logo_data) AS logo_data,
             COALESCE(ps.header_image_url, ps.header_image_data) AS header_image_data, ps.background_tint, ps.button_color,
-            ps.type_pairing, ps.card_style, ps.footer_text, ps.ein_line, ps.contact_email
+            ps.type_pairing, ps.card_style, ps.footer_text, o.ein AS ein_line, ps.contact_email
      FROM donor_account_links l
      JOIN orgs o ON o.id = l.org_id
      JOIN portal_settings ps ON ps.org_id = l.org_id AND ps.enabled = true AND ps.network_listed = true
@@ -7818,7 +7820,7 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
       `SELECT f.id, f.org_id, o.org_slug, COALESCE(ps.display_name, o.name) AS name,
               COALESCE(ps.logo_url, ps.logo_data) AS logo_data, ps.primary_color, ps.accent_color, ps.directory_description,
               COALESCE(ps.header_image_url, ps.header_image_data) AS header_image_data, ps.background_tint, ps.button_color,
-              ps.type_pairing, ps.card_style, ps.footer_text, ps.ein_line, ps.contact_email
+              ps.type_pairing, ps.card_style, ps.footer_text, o.ein AS ein_line, ps.contact_email
        FROM donor_org_follows f
        JOIN orgs o ON o.id = f.org_id
        JOIN portal_settings ps ON ps.org_id = f.org_id AND ps.enabled = true AND ps.network_listed = true
@@ -7844,7 +7846,7 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
         logo: meta.logo_data || null,
         displayName: displayNameCase(meta.display_name || meta.org_name),
         footerText: meta.footer_text || null,
-        einLine: meta.ein_line || null,
+        einLine: require("../server/org/einLine").einLineOf(meta.ein_line),   // MONEY-4: orgs.ein
         contactEmail: meta.contact_email || null,
       },
       ytd: t.thisYear, lifetime: t.lifetime,
@@ -7878,7 +7880,7 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
         logo: f.logo_data || null,
         displayName: displayNameCase(f.name),
         footerText: f.footer_text || null,
-        einLine: f.ein_line || null,
+        einLine: require("../server/org/einLine").einLineOf(f.ein_line),   // MONEY-4: orgs.ein
         contactEmail: f.contact_email || null,
       },
     });

@@ -119,6 +119,8 @@ Read this when you touch funders, grant deadlines, documents, restricted money, 
   in ink for light surfaces; on GrantProfile's rail the notes were unreadable while every assertion
   passed (tests/build99-grant-timeline.test.js). (BUILD-99 grant-timeline fix)
 
+- **The stage drives the fields (MONEY-4).** A known award amount is the award: Received and Remaining read the payments ("$0 received of $120,000"), never "No payments set up". Recording the award turns a typed Received into its first payment (`server/grants/awardFirstPayment.js`). An awarded, reporting or closed grant's application deadlines disappear from Deadlines, the Calendar and Home; report deadlines stay (`server/grants/applicationOpen.js`).
+
 ## Gotchas
 - **pg returns `timestamptz` as a JS Date, and `String(date)` sorts by weekday name.** Normalise to ISO
   in one place before sorting or numbering versions. (BUILD-100 grants)

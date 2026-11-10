@@ -118,6 +118,7 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
          LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
          LEFT JOIN users u ON u.id = g.officer_id AND u.org_id = g.org_id
         WHERE m.org_id = ? AND m.state <> 'skipped' AND g.is_sample IS NOT TRUE
+          AND ${require("./server/grants/applicationOpen").APPLICATION_DEADLINE_SHOWS("m", "g")}
           AND LEFT(m.due_date, 10) >= ? AND LEFT(m.due_date, 10) <= ?
           AND (?::text IS NULL OR g.officer_id = ?)`,
       [orgId, from, to, owner, owner]).then(rows => rows.forEach(r => {

@@ -249,6 +249,13 @@ async function issueGiftReceiptNow(gift, org, donor, { send = true, by = SYS_AUT
   if (!org.receipts_enabled) return { skipped: "receipts_disabled" };
   if (gift.is_sample) return { skipped: "sample_gift" };
   if (!(Number(gift.amount) > 0)) return { skipped: "zero_gift" };   // PLEDGES-3: a $0 gift can't carry a receipt
+  // MONEY-4: a gift refunded in full carries no receipt; one refunded in part is receipted for what remains.
+  if (gift.refunded_in_full === true) return { skipped: "refunded_gift" };
+  if (!gift.refund_net) {
+    const [rf] = await query(require("../../shared/numbers/refunds").REFUNDED_CENTS_SQL, [org.id, gift.id]);
+    if (Number(rf && rf.c) > 0) gift = { ...gift, amount: (Math.round(Number(gift.amount) * 100) - Number(rf.c)) / 100 };
+    if (!(Number(gift.amount) > 0)) return { skipped: "refunded_gift" };
+  }
   // HARDEN-1: a tax receipt names the day the gift was given. An undated gift
   // (IMPORT-4) has none, so no receipt is issued until somebody sets its date.
   if (gift.date == null || String(gift.date).trim() === "") return { skipped: "undated_gift" };
