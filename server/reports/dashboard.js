@@ -497,7 +497,8 @@ app.get("/dashboard/home", requireAuth, OS.cached("dashboard-home"), wrap(async 
   const GM = await grantMsMod();
   const openMs = await query(
     `SELECT m.due_date FROM grant_milestones m JOIN grants g ON g.id=m.grant_id AND g.org_id=m.org_id
-      WHERE m.org_id=? AND m.state NOT IN ('done','skipped') AND g.is_sample IS NOT TRUE`, [orgId]);
+      WHERE m.org_id=? AND m.state NOT IN ('done','skipped') AND g.is_sample IS NOT TRUE
+        AND ${require("../grants/applicationOpen").APPLICATION_DEADLINE_SHOWS("m", "g")}`, [orgId]);
   const grantDeadlinesSoon = GM.deadlinesInWindow(openMs.map(r => ({ dueDate: r.due_date })), pledgeToday).length;
   res.json({ tier, scope, portfolio, tasks, pipeline, multiOfficer, today: pledgeToday,
              latePledgeInstallments: lateRow?.late || 0,

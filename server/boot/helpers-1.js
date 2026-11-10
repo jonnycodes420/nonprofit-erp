@@ -432,7 +432,9 @@ async function recordGift(o) {
                 "memo",
                 // IMPORT-3: the event a gift was given at (an event night's
                 // sheet). In THIS insert, for the same reason as every column above.
-                "event_id"];
+                "event_id",
+                // MONEY-4: a refund is a negative row linked to the gift it refunds, with why.
+                "refund_of", "refund_reason"];
   const vals = [giftId, orgId, o.donorId, amount, date, o.type || "cash", o.campaign || "",
                 o.campaignId || null, o.notes || "", fundId, paymentMethod, o.pledgeId || null,
                 o.externalId || null, o.idempotencyKey || null, o.stripePaymentId || null,
@@ -451,7 +453,8 @@ async function recordGift(o) {
                 o.quidProQuoValue != null ? round2(Number(o.quidProQuoValue)) : null,
                 o.utmSource || null, o.utmMedium || null, o.utmCampaign || null,
                 o.importId || null, o.checkNumber ? String(o.checkNumber).slice(0, 24) : null, o.readFromVendor || null,
-                o.receivedAt || null, o.memo ? String(o.memo).slice(0, 300) : null, o.eventId || null];
+                o.receivedAt || null, o.memo ? String(o.memo).slice(0, 300) : null, o.eventId || null,
+                o.refundOf || null, o.refundOf ? String(o.refundReason || "").slice(0, 300) : null];
   // The conflict key is the caller's, because what makes a gift the SAME gift
   // differs by door: Stripe's payment intent, the form's idempotency key, the
   // source system's gift id. One of them, never a guess at (donor, amount, date)
