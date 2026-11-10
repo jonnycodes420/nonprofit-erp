@@ -66,3 +66,12 @@ export function dateWords(d) {
   if (!Number.isFinite(t)) return s;
   return new Date(t).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
+
+// ASKS-1: the same answer, three-way: null while GET /me has not said, then
+// true or false. The rail and the Major Gifts tab wait for it, so somebody
+// without the permission never sees the page flash before going Home.
+export function useMajorGiftsAccess() {
+  const [can, setCan] = useState(null);
+  useEffect(() => { let live = true; loadCanMajorGifts().then(v => live && setCan(!!v)); return () => { live = false; }; }, []);
+  return can;
+}

@@ -10,7 +10,7 @@ import { VIEWER } from "../../../../shared/viewOnly.js";
 export function MajorGiftsCheckbox({ m, isAdmin, setTeam }) {
   if (!(isAdmin && !["volunteer_coordinator", VIEWER].includes(m.role) && !m.member)) return null;
   return (
-    <label data-testid={"team-major-gifts-" + m.id} title={m.role === "admin" ? "Admins always have it" : "Sees Room to give, screening results, prospect briefs and Wealth Scores"}
+    <label data-testid={"team-major-gifts-" + m.id} title={m.role === "admin" ? "Admins always have it" : "Sees the Major Gifts page, Room to give, screening results, prospect briefs and Wealth Scores"}
       style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, color: T.ink3, cursor: m.role === "admin" ? "default" : "pointer", flexShrink: 0 }}>
       <input type="checkbox" checked={m.role === "admin" || !!m.can_major_gifts} disabled={m.role === "admin"}
         onChange={async e => {

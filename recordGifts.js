@@ -35,7 +35,9 @@ const { newId } = require("./server/shared/newId");
 
 const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
 const COLS = ["id", "org_id", "donor_id", "amount", "date", "type", "campaign", "notes", "fund_id", "payment_method", "pledge_id",
-  "idempotency_key", "created_by", "created_by_name", "import_id", "event_id", "gift_type"];
+  "idempotency_key", "created_by", "created_by_name", "import_id", "event_id", "gift_type",
+  // ASKS-1: an auction purchase states what the item was worth, as recordGift does
+  "deductible_amount", "quid_pro_quo_desc", "quid_pro_quo_value"];
 const RESTRICTED = ["program_restricted", "capital", "time_restricted"];
 
 function refuse(o) {
@@ -43,7 +45,7 @@ function refuse(o) {
   if (o.conflict !== "idempotency" || !o.idempotencyKey) return "a batch gift is keyed by its idempotency key";
   if (o.post !== false) return "a batch gift is not posted to the ledger";
   if (o.applyInstallment !== false) return "a batch gift names its instalment or none";
-  if (o.extras || o.peerFundraiserId || o.quidProQuoValue != null || o.recurring || o.liveRead) return "extras, fundraiser pages, tickets, recurring and live reads go through recordGift";
+  if (o.extras || o.peerFundraiserId || o.recurring || o.liveRead) return "extras, fundraiser pages, recurring and live reads go through recordGift";
   if (!(o.undated === true && (o.date == null || o.date === "")) && (o.date == null || o.date === "")) return "a gift needs a date";
   return null;
 }
@@ -88,7 +90,11 @@ async function recordGifts(list, deps) {
   // the gifts, one statement; a key already here is a duplicate, written once only
   const vals = rows.flatMap(r => [r.id, orgId, r.o.donorId, r.amount, r.date, r.o.type || "cash", r.o.campaign || "", r.o.notes || "", r.fundId,
     r.paymentMethod, r.o.pledgeId || null, r.o.idempotencyKey, r.o.actorId || null, r.o.actorName || null, r.o.importId, r.o.eventId || null,
-    r.o.giftType || null]);
+    r.o.giftType || null,
+    // recordGift's own rule: deductible is what was paid over the value received, never below zero
+    r.o.quidProQuoValue != null ? round2(Math.max(0, r.amount - Number(r.o.quidProQuoValue))) : null,
+    r.o.quidProQuoValue != null ? String(r.o.quidProQuoDesc || "").slice(0, 300) : null,
+    r.o.quidProQuoValue != null ? round2(Number(r.o.quidProQuoValue)) : null]);
   const made = new Set((await query(
     `INSERT INTO gifts (${COLS.join(",")}) VALUES ${rows.map(() => "(" + COLS.map(() => "?").join(",") + ")").join(",")}
      ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id`, vals)).map(r => r.id));

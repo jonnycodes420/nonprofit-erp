@@ -76,6 +76,10 @@ const FIELDS = [
   F("email", "Email", "Contact", { sort: "lower(email)", filter: TEXT_OPS, cell: "email" }),
   F("phone", "Phone", "Contact", { filter: ops("contains", "blank", "notBlank"), cell: "phone" }),
   F("address", "Street address", "Contact", { filter: ops("contains", "blank", "notBlank"), cell: "address" }),
+  // ASKS-1: line 2, and the whole address for a merge or a label (shared/mailingAddress.js)
+  F("address2", "Address line 2", "Contact", { filter: ops("contains", "blank", "notBlank"), cell: "address2" }),
+  F("mailing_address", "Full mailing address", "Contact", { cell: "mailing_address",
+    sentence: "The street and line 2, then city, state and ZIP, as they would go on an envelope." }),
   F("city", "City", "Contact", { sort: "lower(city)", filter: TEXT_OPS, cell: "city" }),
   F("state", "State", "Contact", { sort: "upper(state)", filter: ops("is", "in", "blank"), cell: "state" }),
   F("zip", "Zip", "Contact", { sort: "zip", filter: ops("is", "starts", "in", "within", "blank"), cell: "zip" }),
@@ -174,7 +178,7 @@ const STAGE_OPTIONS = [["prospect", "Prospect"], ["qualify", "Qualify"], ["culti
 const BY_KEY = new Map(FIELDS.map(f => [f.key, f]));
 // A donors column a cell reads straight off the row.
 const ROW_CELL = {
-  name: "name", email: "email", phone: "phone", address: "address", city: "city", state: "state", zip: "zip", county: "county",
+  name: "name", email: "email", phone: "phone", address: "address", address2: "address2", city: "city", state: "state", zip: "zip", county: "county",
   country: "country", employer: "employer", kind: "kind", stage: "stage", added: "created_at", lifetime: "total_giving",
   last_gift_date: "last_gift_date", last_gift_amount: "last_gift_amount", first_gift_date: "first_gift_date", gift_count: "gift_count",
   engagement: "engagement_score", generosity: "generosity_score", do_not_contact: "do_not_contact", do_not_solicit: "do_not_solicit",
@@ -328,7 +332,7 @@ async function compileOne(orgId, c, fields) {
   const needSel = () => bad(`Pick one for ${f.label}.`);
   if (f.cfKey) return cfCond(f, c.op, v);
   switch (f.key) {
-    case "name": case "email": case "phone": case "address": case "employer": case "country":
+    case "name": case "email": case "phone": case "address": case "address2": case "employer": case "country":
       return textCond(f.key, c.op, v);
     case "city":
       if (c.op === "is") return sel() ? { rules: { city: sel() } } : bad("Type a city.");
@@ -551,6 +555,7 @@ async function cellsFor(orgId, rows, columns) {
       if (k === "room_to_give") cell.room_to_give = r.room ? r.room.label : null;
       else if (k === "owner") cell.owner = r.assigned_to_name || r.pending_assignee_name || null;
       else if (k === "tags") cell.tags = DTAGS.visibleTags(r.tags);
+      else if (k === "mailing_address") cell.mailing_address = require("./shared/mailingAddress").mailingAddress(r) || null;   // ASKS-1
       else if (k.startsWith("cf:")) {
         const cf = r.custom_fields && typeof r.custom_fields === "object" ? r.custom_fields : (() => { try { return JSON.parse(r.custom_fields || "{}"); } catch { return {}; } })();
         cell[k] = cf[k.slice(3)] ?? null;

@@ -339,3 +339,9 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 - **The prospect brief is assembled from rows, not written by a model.** Steward's record, the screening results
   and the public filing; every line names its source and a "Not known" list says what none of them holds. It is
   saved to the person's files as `major_gifts_only` and never sent.
+
+## ASKS-1 · Major Gifts has its own rail entry (2026-11-10)
+
+- Under Raise, between Fundraising and Events, for admins and staff with the major gifts permission (`prospect.canSee`, read from GET /me). Tabs Top 100 · Portfolios · Pipeline · Plans, the same views; Top 100 is where it opens (`client/src/lib/majorGiftsTab.js`, `MajorGiftsPage.jsx`).
+- Old addresses for those four (`?fr=top100`, `?fr=pipeline`, `navigateTo("pipeline")`, `/dashboard?fr=…`) open Major Gifts on the same tab, and the address is replaced. Somebody without the permission is sent Home.
+- At a glance and Proposals stay in Fundraising → Major gifts, where staff without the permission still reach them.

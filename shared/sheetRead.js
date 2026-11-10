@@ -29,6 +29,7 @@ import { splitAddress, contactNoteFlags } from "./addressSplit.js";
 import { nearDuplicate, nameAndNotes } from "./nearNames.js";
 import { countLabel } from "./countWords.js";
 import { guessDates, amountTidier } from "./sheetGuesses.js";   // IMPORT-9
+import { AUCTION_HEADER_ROLES, AUCTION_ROLE_LABELS, tidyAuctionColumns, auctionFactsOf, auctionValueQuestion } from "./auctionSheet.js";   // ASKS-1
 import { moneyOf, looksMoney, hasCurrencyMark, serialToIso } from "./sheetCells.js";
 import { SECTION_LABEL_RE, noteLine as NOTE_LINE, fixZip, rowLedger as ledgerOf } from "./importRows.js";
 import { RESTRICTION_CODES, MAILING_REMOVE_RE, SHARED_PHONE_MAX, countLines,
@@ -56,6 +57,7 @@ const ROLE_LABELS = {
   tags: "Tags", aboutThem: "About them", spouse: "Spouse or partner", householdName: "Household",
   doNotContact: "Do not contact", commRestrictions: "Communication restrictions", deceased: "Deceased", volunteer: "Volunteer (yes or x)", board: "Board member",
   staff: "Staff", keep: "Keep as a custom field", totalOf: "A total of another sheet", ignore: "Leave out",
+  ...AUCTION_ROLE_LABELS,   // ASKS-1: an auction sheet's item and its fair market value
 };
 export const SHEET_ROLES = Object.keys(ROLE_LABELS).map(k => ({ key: k, label: ROLE_LABELS[k] }));
 
@@ -123,6 +125,7 @@ const HEADER_ROLES = [
   ["volunteer", ["volunteer", "volunteered", "volunteer?", "is volunteer", "volunteers"]],
   ["board", ["board", "board member", "on board", "trustee", "board?"]],
   ["staff", ["staff", "employee", "staff member", "staff?"]],
+  ...AUCTION_HEADER_ROLES,   // ASKS-1: Bidder, Winning bid, Item, Value (shared/auctionSheet.js)
 ];
 // A column that adds up money kept elsewhere ("Gave at dinner" beside a Gifts
 // sheet). Checked against the gifts before it is skipped; one that does not
@@ -657,7 +660,7 @@ export function mapColumns(table, opts = {}) {
     cols.push(col);
   }
   // A second unclaimed money column next to "Amount" is unknown, not a gift.
-  return cols;
+  return tidyAuctionColumns(cols);
 }
 
 // IMPORT-5: a known export's shape places the columns it knows. Each role is
@@ -1472,7 +1475,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       if (dateNote) noteParts.push(dateNote);
       // a stable key for this row, so a second import adds nothing
       const sig = [hnorm(t.header.join("|")), who.name.toLowerCase(), email, cents(amt), methodRaw.toLowerCase(), freq.original.toLowerCase(),
-                   s(get(b, "paid")).toLowerCase(), dateCol ? s(get(b, "date")) : "", s(get(b, "giftId")), extId.toLowerCase()].join("|");
+                   s(get(b, "paid")).toLowerCase(), dateCol ? s(get(b, "date")) : "", s(get(b, "giftId")), extId.toLowerCase(),
+                   ...(role("item") ? [s(get(b, "item")).toLowerCase()] : [])].join("|");
       const n = (occ.get(sig) || 0) + 1; occ.set(sig, n);
       const rowId = hash(sig + "#" + n);
       const giftFlags = [];
@@ -1481,7 +1485,9 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       const base = { rowId, sheet: t.sheet, line: b.line, personKey: pkey, who: who.name, cents: cents(amt), date, datedBy, undated: !date,
                      method: m.method || (methodCol ? "Other" : null), methodOriginal: m.original || null,
                      fund: s(get(b, "fund")) || null, campaign: s(get(b, "campaign")) || catCampaign, externalId: s(get(b, "giftId")) || null,
-                     note: noteParts.join(". ") || null, frequency: freq.kind, frequencyOriginal: freq.original || null, flags: giftFlags };
+                     note: noteParts.join(". ") || null, frequency: freq.kind, frequencyOriginal: freq.original || null, flags: giftFlags,
+                     // ASKS-1: an auction purchase: the item and what it was worth
+                     auction: role("item") ? auctionFactsOf({ itemRaw: get(b, "item"), fmvRaw: get(b, "fmv"), hasFmvColumn: !!role("fmv"), answers, moneyOf }) : null };
       const person = ensure();
       if (freq.kind === "monthly") flags.push({ personKey: pkey, who: who.name, flag: "monthly", cents: cents(amt), line: b.line, sheet: t.sheet });
       // IMPORT-5: a pledge's due dates come from the file, or from her answer
@@ -1610,6 +1616,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
                      hint: "Yes marks them deposited on their own dates, so Finance does not list them as Not yet on a deposit. Pledges are not gifts yet and are not marked.",
                      options: [{ key: "yes", label: "Yes" }, { key: "no", label: "No, I still need to deposit them" }] });
   }
+  const auctionQ = auctionValueQuestion(gifts, answers);   // ASKS-1: never assume what an item was worth
+  if (auctionQ) questions.push(auctionQ);
   // undated gifts with no event are one optional question, never a block
   if (!eventNamed && undatedCount && !dateAnswer) {
     questions.unshift({ id: "date", kind: "date", optional: true, count: undatedCount,

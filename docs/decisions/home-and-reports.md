@@ -647,3 +647,7 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   Reports' Giving summary for the same days.
 - **A pledge's schedule** is `shared/numbers/pledgeSchedule.js`: a pledge with no installments is one installment of
   its amount; payments are applied oldest first and each names the installment it paid.
+
+## ASKS-1 · the street is a field wherever the address is (2026-11-10)
+
+- People reports, the Donors list's columns and the donors CSV each offer Street address, Address line 2 and Full mailing address beside City, State and ZIP. The full address is written one way, `shared/mailingAddress.js` (SQL for the report builder, JS for the list and the CSV): street and line 2, then "City, ST ZIP" on a second line. A report cell keeps the line break; the one-line Donors list shows it as " · ".
