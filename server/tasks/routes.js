@@ -1045,7 +1045,7 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
     }
   }
   // Rank + band + cap in the ONE place that decides it.
-  const forRank = shownList.map(t => ({ ...t, ...t.signals }));
+  const forRank = await require("../majorGifts/top100Lead").annotate(query, orgId, shownList.map(t => ({ ...t, ...t.signals })), today);   // TOP100-1: Top 100 touches lead
   const q = rank.buildQueue(forRank, today, { cap: donorId ? 0 : (cap == null ? rank.QUEUE_CAP : cap) });
   const ranked = q.list.map(r => {
     const { signals, ...rest } = r;

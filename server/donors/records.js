@@ -151,6 +151,8 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
     ["Tags", d => DTAGS.visibleTags(d.tags).join("|")],
     ...cfDonorDefs.map(f => [f.label, d => renderCustomValue(f, (d.custom_fields || {})[f.key])]),
   ];
+  // WEALTH-1: the score somebody set (blank when nobody has), for those who may see it.
+  if (await require("../wealth/access").maySee(req.user.userId, req.user.orgId)) columns.push(["Wealth Score", d => (d.wealth_rating == null ? "" : String(d.wealth_rating))]);
   // PROSPECT-1 — screening results are never in the default export. An admin
   // may add them with the checkbox that says what it adds (includeScreening=1).
   if (String(req.query.includeScreening || "") === "1") {
@@ -368,7 +370,7 @@ const PURGE_KEEP_ROW = new Set([
 // order they must go: receipts and pledges point at gifts, gifts last.
 const PURGE_CHILD_TABLES = [
   "receipts", "pledges", "memberships", "milestone_drafts", "note_reminders", "donor_materials",
-  "planned_gifts", "custom_field_values", "sequence_enrollments",
+  "planned_gifts", "custom_field_values", "sequence_enrollments", "portfolio_members", "care_plans",   // TOP100-1
   "payment_recovery_events", "recurring_subscriptions",
   "tasks", "interaction_attachments", "interactions", "gifts",
 ];
@@ -381,7 +383,7 @@ const PURGE_CHILD_TABLES = [
 async function purgeableIds(orgId, olderThanDays) {
   const days = olderThanDays == null || olderThanDays === "" ? null : Math.max(0, Math.floor(Number(olderThanDays)));
   if (days != null && !Number.isFinite(days)) return null;
-  return (await query(`SELECT d.id FROM donors d WHERE d.org_id=? AND d.deleted_at IS NOT NULL
+  return (await query(`SELECT d.id FROM donors d WHERE d.org_id=? AND d.deleted_at IS NOT NULL AND d.staged_import_id IS NULL
                          ${days != null ? "AND d.deleted_at < NOW() - make_interval(days => ?)" : ""}
                          AND NOT EXISTS (SELECT 1 FROM donor_merges m WHERE m.org_id=d.org_id AND m.merged_id=d.id AND m.undone_at IS NULL)`,
     days != null ? [orgId, days] : [orgId])).map(r => r.id);

@@ -859,6 +859,7 @@ require("../../routes/donorLookups").mount({ query, requireAuth, wrap });
 // SPLIT-2 end
 // SPLIT-2 server.js piece 774
 require("../../routes/donorList").mount({ query, run, uuid, requireAuth, requireCrm, checkWriteAccess, wrap, actor });
+require("../../routes/wealthScore").mount({ query, run, requireAuth, requireAdmin, checkWriteAccess, wrap, actor, rateLimitHandler, rateLimitDisabled });   // WEALTH-1
 // SPLIT-2 end
 // SPLIT-2 server.js piece 775
 require("../../routes/mailTypes").mount({ query, run, uuid, requireAuth, requireAdmin, requireSuperAdmin, checkWriteAccess, wrap, actor, resend, orgToday, orgTz,
@@ -1080,6 +1081,8 @@ DB_READY.then(() => {
   const refresh = () => JQ.refreshHealth().catch(() => {});
   setTimeout(refresh, 5000).unref();
   setInterval(refresh, 15000).unref();
+  // SCALE-3: this process's capacity sample every five minutes (server/perf/capacity.js, read on /ops).
+  require("../perf/capacity").start({ run, role: JQ.role, poolStats: require("../../db").poolStats, queueHealth: JQ.healthNow });
 });
 // SPLIT-2 end
 // SPLIT-2 server.js piece 805

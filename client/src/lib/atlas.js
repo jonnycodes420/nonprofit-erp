@@ -25,8 +25,20 @@ export function linkTarget(link) {
     case "tasks": return ["tasks", {}];
     case "communications": return ["communications", { subtab: "milestones", highlightDraftId: link.draftId }];
     case "data-health": return ["donors", { view: "health" }];
+    // TOP100-1: the list, and a person's plan of care with Atlas's proposal waiting on it.
+    case "top100": return ["fundraising", { frSection: "top100" }];
+    case "careplan": return ["donors", { selectDonorId: link.donorId }];
     default: return null;
   }
+}
+
+// Following a line (a press, never a render): a plan-of-care proposal waits on
+// the person's plan of care for her to confirm (TOP100-1).
+export function followLink(link) {
+  if (link && link.tab === "careplan") {
+    try { sessionStorage.setItem("steward.careProposal", JSON.stringify({ donorId: link.donorId, templateId: link.templateId })); } catch { /* the panel still opens */ }
+  }
+  return linkTarget(link);
 }
 
 // The name, as a React value that updates when /atlas/status answers.

@@ -232,7 +232,7 @@ export function applySourcePreset(key, headers = []) {
     // BUILD-98 (switch) Part 1 — a statement names no soft credit, tribute or match.
     softCreditName: "", softCreditAmount: "", tributeType: "", tributeName: "", tributeNotify: "", matchEmployer: "",
     // BUILD-98 (switch) Part 6 — nor a wealth screen.
-    wealthRating: "", wealthCapacity: "", wealthDate: "",
+    wealthRating: "", wealthCapacity: "", wealthDate: "", wealthScore: "",
     // BUILD-99 (major gifts) Part 6 — a bank or processor statement names no
     // open ask either. Present so this preset speaks the mapper's OWN
     // vocabulary field for field, which is the property build89s-presets exists

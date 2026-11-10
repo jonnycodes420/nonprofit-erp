@@ -27,6 +27,7 @@ import { DateOrderQuestions, GuessNotes } from "./import/SheetGuesses";   // IMP
 import { told } from "../lib/stewardTold";   // HOME-3: the pages behind the window re-read
 import { droppedSpreadsheet, filesAsOne, isFileDrag, SheetDropTarget } from "./SheetDropTarget";   // PERF-4
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { usePreviewChoice, PreviewToggle, StagedNotice } from "./import/ImportPreview";   // ONBOARD-1: "Preview first"
 
 const box = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px" };
 const h3 = { fontSize: 13, fontWeight: 800, color: T.ink, margin: "0 0 6px" };
@@ -138,6 +139,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const [sheets, setSheets] = useState(null);
   const [workbook, setWorkbook] = useState(null);   // NUMBERS-5: read by the workbook screen
   const [u, setU] = useState(null);
+  const previewChoice = usePreviewChoice();   // ONBOARD-1
   const [answers, setAnswers] = useState({});
   const [overrides, setOverrides] = useState({});
   const [busy, setBusy] = useState("read");
@@ -283,7 +285,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
     setBusy("commit"); setMsg(""); setFailed(null);
     const importId = previewRun;
     // the assistant's proposals from the preview go with it, so the write is this plan
-    const payload = { importId, background: true, fileName: file.name, sheets, answers: { ...answers, suggestedDate }, overrides: { ...((u && u.modelOverrides) || {}), ...overrides },
+    const payload = { importId, background: true, preview: previewChoice.on || undefined, fileName: file.name, sheets, answers: { ...answers, suggestedDate }, overrides: { ...((u && u.modelOverrides) || {}), ...overrides },
       // HARDEN-1: the org this preview was read for; the server refuses the write if the session moved
       previewOrgId: (u && u.org && u.org.id) || undefined };
     try {
@@ -826,6 +828,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 </div>))}
             </details>
 
+            <PreviewToggle choice={previewChoice} />
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               {/* FIX-55: the button is this preview's, and waits while the preview catches up with an answer */}
               <button type="button" data-commit data-testid="sheet-import-go" disabled={!u.ready || rereading || busy === "commit" || (job && job.status === "running")}
@@ -843,6 +846,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             <div style={h3}>{undone ? "Undone" : "Imported"}</div>
             {/* IMPORT-8: once undone, Undo's own sentence (who stayed, and Remove them too) is the receipt */}
             {!undone && <div style={{ fontSize: 15, fontWeight: 700 }}>{result.sentence}</div>}
+            {!undone && result.staged && <StagedNotice staged={{ ...result.staged, verifyUrl: `/imports/${encodeURIComponent(result.importId)}/verify` }} />}
             {!undone && result.giftLine && <ImportGiftLine line={result.giftLine} importId={result.importId} style={{ marginTop: 4 }} />}
             {/* IMPORT-7: every row, per sheet, each count named; the file's line adds the sheets up */}
             {!undone && result.sheetRows && result.sheetRows.sheets.length > 0 && (

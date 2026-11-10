@@ -26,6 +26,7 @@ const routers = {
   r0: express.Router(),
   r1: express.Router(),
 };
+routers.r1.use(require("../server/onboard/routes").routers.r1);   // ONBOARD-1: start links, staged imports
 
 function mount(ctx) {
 const {
@@ -863,8 +864,9 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
   // the button beside it posts to /billing/cancel.
   const planPrice = closePlan(plan);
   const tz = await orgTzName(req.user.orgId);
+  const chargeUsd = org.custom_price_cents != null ? org.custom_price_cents / 100 : planPrice && planPrice.monthlyUsd;   // ONBOARD-1
   const firstChargeSentenceText = isTrial && trialEndsAt && planPrice
-    ? firstChargeSentence({ monthlyUsd: planPrice.monthlyUsd, firstChargeAt: trialEndsAt, tz })
+    ? firstChargeSentence({ monthlyUsd: chargeUsd, firstChargeAt: trialEndsAt, tz })
     : null;
 
   const [[seatRow], [recordRow], records] = await Promise.all([
@@ -924,7 +926,7 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
     hasSubscription: !!org.stripe_subscription_id,
     // BUILD-90 90b — the date, the amount, and whether cancelling costs nothing.
     signedAt: org.signed_at,
-    monthlyUsd: planPrice ? planPrice.monthlyUsd : null,
+    monthlyUsd: planPrice ? chargeUsd : null,
     firstChargeAt: isTrial ? org.trial_ends_at : null,
     firstChargeSentence: firstChargeSentenceText,
     // Before the first charge, cancelling means paying nothing. After it, the
@@ -3060,6 +3062,10 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
   await run("DELETE FROM note_reminders WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM donor_materials WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM planned_gifts WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM portfolio_members WHERE org_id=?", [orgId]).catch(() => {});   // TOP100-1
+  await run("DELETE FROM portfolio_lists WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM care_plans WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM care_templates WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM receipts WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM payment_recovery_events WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM recurring_subscriptions WHERE org_id=?", [orgId]).catch(() => {});
@@ -3275,6 +3281,7 @@ app.post("/admin/network/applications/:id/decide", requireAuth, requireSuperAdmi
 app.post("/admin/network/run-gate-sweep", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   res.json(await processNetworkGate());
 }));
+require("../server/onboard/routes").mount(ctx);   // ONBOARD-1
 }
 
 module.exports = { routers, mount };

@@ -1016,6 +1016,109 @@ async function run7(pool) {
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS offline_plan_id TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_offline_plan ON gifts (offline_plan_id) WHERE offline_plan_id IS NOT NULL`);
 
+  // TOP100-1 · A RANKED LIST AND A PLAN OF CARE. Additive only.
+  //   portfolio_lists    one per org, "Top 100" by default, renamable
+  //   portfolio_members  a person's place on it: rank 1..N, unique per list,
+  //                      checked at COMMIT (DEFERRABLE) so a reorder may pass
+  //                      through a shared rank inside its transaction and never
+  //                      lands with one
+  //   care_plans         the plan of care: the goal, the ask and the ask-by day.
+  //                      The owner is the person's owner (donors.assigned_to) and
+  //                      the stage is the pipeline's (donors.stage): one of each
+  //                      per person, never a second copy (BUILD-30).
+  //   care_templates     her own templates, saved from any plan
+  //   tasks.care_plan_id / tasks.touch_type: a planned touch IS a task
+  await pool.query(`CREATE TABLE IF NOT EXISTS portfolio_lists (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL REFERENCES orgs(id),
+    name TEXT NOT NULL DEFAULT 'Top 100',
+    created_by TEXT NOT NULL,
+    created_by_name TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_portfolio_lists_org ON portfolio_lists (org_id)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS portfolio_members (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL REFERENCES orgs(id),
+    list_id TEXT NOT NULL REFERENCES portfolio_lists(id),
+    donor_id TEXT NOT NULL REFERENCES donors(id),
+    rank INTEGER NOT NULL CHECK (rank >= 1),
+    added_at TIMESTAMPTZ DEFAULT NOW(),
+    created_by TEXT NOT NULL,
+    created_by_name TEXT,
+    CONSTRAINT uq_portfolio_member UNIQUE (list_id, donor_id),
+    CONSTRAINT uq_portfolio_rank UNIQUE (list_id, rank) DEFERRABLE INITIALLY DEFERRED
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_portfolio_members_org ON portfolio_members (org_id, donor_id)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS care_plans (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL REFERENCES orgs(id),
+    donor_id TEXT NOT NULL REFERENCES donors(id),
+    goal TEXT,
+    ask_cents BIGINT CHECK (ask_cents IS NULL OR ask_cents >= 0),
+    ask_by TEXT,
+    template_name TEXT,
+    created_by TEXT NOT NULL,
+    created_by_name TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_care_plans_donor ON care_plans (org_id, donor_id)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS care_templates (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL REFERENCES orgs(id),
+    name TEXT NOT NULL,
+    touches JSONB NOT NULL DEFAULT '[]'::jsonb,
+    archived_at TIMESTAMPTZ,
+    created_by TEXT NOT NULL,
+    created_by_name TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_care_templates_org ON care_templates (org_id)`);
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS care_plan_id TEXT`);
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS touch_type TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tasks_care_plan ON tasks (care_plan_id) WHERE care_plan_id IS NOT NULL`);
+
+  // A TOUCH THAT IS DONE IS ON THE TIMELINE, however it was finished. A task
+  // is ticked from Tasks, the bulk Done, the full edit, Home's row and the
+  // Calendar; a hook in each would miss the next one, so the database writes
+  // it (the FIX-31 rule for a next step's task). Ticked: one stewardship line
+  // on the person (a touch, so it is Last contact under meetings.js's rule),
+  // "Visit (plan of care): done.", once per task. Unticked: that line
+  // goes. The name is the person who ticked it (completed_by_name, which the
+  // single Done writes a statement later, so a later update fills it in).
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION steward_care_touch_line() RETURNS TRIGGER AS $fn$
+    DECLARE line_id TEXT; tz TEXT; lbl TEXT;
+    BEGIN
+      IF NEW.care_plan_id IS NULL OR NEW.donor_id IS NULL THEN RETURN NEW; END IF;
+      SELECT id INTO line_id FROM interactions
+        WHERE org_id = NEW.org_id AND donor_id = NEW.donor_id
+          AND metadata->>'via' = 'care_touch' AND metadata->>'taskId' = NEW.id LIMIT 1;
+      IF NEW.done = 1 THEN
+        IF line_id IS NULL THEN
+          SELECT COALESCE(NULLIF(timezone, ''), 'America/New_York') INTO tz FROM orgs WHERE id = NEW.org_id;
+          lbl := CASE NEW.touch_type WHEN 'visit' THEN 'Visit' WHEN 'call' THEN 'Call' WHEN 'tour' THEN 'Tour'
+                   WHEN 'event_invite' THEN 'Event invite' WHEN 'impact_update' THEN 'Impact update'
+                   WHEN 'note' THEN 'Handwritten note' WHEN 'ask' THEN 'Ask' ELSE 'Touch' END;
+          INSERT INTO interactions (id, org_id, donor_id, type, date, note, created_by, logged_by_name, metadata)
+          VALUES ('int_' || substr(md5(random()::text || clock_timestamp()::text || NEW.id), 1, 20), NEW.org_id, NEW.donor_id, 'stewardship',
+                  to_char((NOW() AT TIME ZONE COALESCE(tz, 'America/New_York'))::date, 'YYYY-MM-DD'),
+                  lbl || ' (plan of care): done.', 'system:care-touch', NEW.completed_by_name,
+                  jsonb_build_object('via', 'care_touch', 'taskId', NEW.id, 'touchType', NEW.touch_type));
+        ELSIF NEW.completed_by_name IS NOT NULL THEN
+          UPDATE interactions SET logged_by_name = NEW.completed_by_name WHERE id = line_id AND logged_by_name IS NULL;
+        END IF;
+      ELSIF line_id IS NOT NULL THEN
+        DELETE FROM interactions WHERE id = line_id;
+      END IF;
+      RETURN NEW;
+    END $fn$ LANGUAGE plpgsql`);
+  await pool.query(`DROP TRIGGER IF EXISTS trg_care_touch_line ON tasks`);
+  await pool.query(`CREATE TRIGGER trg_care_touch_line AFTER UPDATE OF done, completed_by_name ON tasks
+    FOR EACH ROW WHEN (NEW.care_plan_id IS NOT NULL) EXECUTE FUNCTION steward_care_touch_line()`);
+
   // MONEY-4 · a refund is a negative gift row linked to the gift it refunds
   // (the original stays), with its reason. A gift refunded in full is no longer
   // a gift (shared/numbers/money.js GIFT): refunded_in_full is kept by the one
@@ -1026,6 +1129,8 @@ async function run7(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_refund_of ON gifts (org_id, refund_of) WHERE refund_of IS NOT NULL`);
 
   await require("../../donors/notesAtSchema").notesAtSchema(pool);   // FLOWS-4: donors.notes_at, the Notes banner's date
+  await require("./wealth1").run(pool);   // WEALTH-1: the Wealth Score a person sets
+  await require("./quickadd1").run(pool);   // QUICKADD-1: appeals, and the appeal a gift came from
 
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id

@@ -464,6 +464,11 @@ app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res
     if (!ev) return res.status(404).json({ error: "Event not found", line: Number(l.line) });
     eventByLine.set(Number(l.line), ev.id);
   }
+  // QUICKADD-1: each line's campaign, appeal and fundraiser / giving page, and a
+  // new person's email, phone and address, checked before anything is written.
+  const attr = await require("../donors/giftAttribution").lineAttribution(query, orgId, body.lines, depositDate);
+  if (attr.error) return res.status(attr.status).json({ error: attr.error, line: attr.line, ...(attr.code ? { code: attr.code } : {}) });
+  const attrOf = line => attr.byLine.get(Number(line)) || {};
 
   // THE GATE, RE-EVALUATED HERE. The screen disables the button; the server
   // refuses the write. A client that has drifted from the plan (a stale tab, a
@@ -495,11 +500,13 @@ app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res
     const key = String(l.donorName || "").toLowerCase().trim();
     if (newDonorIds.has(key)) continue;
     const did = newId("d");
+    const np = attrOf(l.line).person || {};   // QUICKADD-1: what she typed on the line, if anything
     await run(
-      `INSERT INTO donors (id,org_id,name,stage,status,tags,notes,created_by,created_by_name,created_import_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO donors (id,org_id,name,stage,status,tags,notes,created_by,created_by_name,created_import_id,email,phone,address,city,state,zip)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [did, orgId, l.donorName, "steward", "new", JSON.stringify([]),
-       `Added from the deposit of ${depositDate}.`, actorInfo.id, actorInfo.name, importId2]);
+       `Added from the deposit of ${depositDate}.`, actorInfo.id, actorInfo.name, importId2,
+       np.email ? np.email.toLowerCase() : "", np.phone || "", np.address || null, np.city || null, np.state || null, np.zip || null]);
     newDonorIds.set(key, did);
     created.donors++;
   }
@@ -543,6 +550,9 @@ app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res
       // to bytes that failed to save.
       chequeAssetId: chequeByLine.get(Number(l.line)) || null,
       eventId: eventByLine.get(Number(l.line)) || null,
+      campaignId: attrOf(l.line).campaignId || null, campaign: attrOf(l.line).campaignName || "",
+      appealId: attrOf(l.line).appealId || null, givingPageId: attrOf(l.line).givingPageId || null,
+      peerFundraiserId: attrOf(l.line).peerFundraiserId || null,
       actorId: actorInfo.id, actorName: actorInfo.name,
       timelineNote: l.memo || `Deposited ${depositDate}`,
       source: "deposit",

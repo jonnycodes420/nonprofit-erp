@@ -228,6 +228,9 @@ const TARGET_KIND = { came_to_event: "event", register_for_event: "event", add_t
 async function readSteps(orgId, text, { today, onPage, gateP = null }) {
   const AT_ = await AT();
   const gate = await (gateP || agentGate(orgId));
+  // TOP100-1: the Top 100's two asks are read here, on the server only, so the browser's bundle does not carry them.
+  const t100 = require("../server/majorGifts/top100Atlas").readInCode(text);
+  if (t100) return { ai: gate.ok ? "on" : "off", steps: [t100], code: true };
   // ATLAS-5: a known shape skips the model's read (each clause read in code, all of them known).
   const inCode = AT_.readInCode(text);
   if (inCode.length && inCode.every(x => CODE_SHAPES.has(x.kind) && (x.kind === "question" || x.who))) return { ai: gate.ok ? "on" : "off", steps: inCode, code: true };
@@ -652,6 +655,7 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
           ...(ppl.length === 1 ? person(ppl[0].id, { section: "giving" }) : {}) });
         break;
       }
+      case "top100": await log(await require("../server/majorGifts/top100Atlas").answer({ req, query, step: st, today, top100Rows: require("../server/majorGifts/top100").top100Rows })); break;   // TOP100-1
       case "about": {
         // ATLAS-3: what Steward knows about them, not only their numbers.
         const pa = await AN.personAnswer({ query, orgId, donorId: id, today });
@@ -881,7 +885,7 @@ app.post("/atlas/:id/save", requireAuth, checkWriteAccess, wrap(async (req, res)
 
 // ATLAS-3 · the status line while she waits: what Atlas is doing right now.
 app.get("/atlas/progress/:key", requireAuth, wrap(async (req, res) => {
-  res.json({ progress: PG.get(req.user.orgId, req.user.userId, req.params.key) });
+  res.json({ progress: await PG.getShared(req.user.orgId, req.user.userId, req.params.key) });   // SCALE-3: any replica's line
 }));
 
 // ATLAS-3 · OPEN LIST: the same people, every time. The first click keeps

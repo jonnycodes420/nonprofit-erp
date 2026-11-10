@@ -271,6 +271,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   const matchedExtIdFills = [];   // matched donors whose source id we did not hold yet
   const matchedBirthdayFills = []; // PARITY-3 6a: matched people with no birthday on file yet
   const matchedAboutFills = [];    // DATES-1: matched people with no "About them" yet
+  const matchedWealthFills = [];   // WEALTH-1: matched people with no Wealth Score yet
   let giftsInserted = 0, financeSynced = 0, fundsCreated = 0;
   // IMPORT-2 item 4: every Notes / Comments / Background cell becomes a dated
   // note on the person, once per person per wording, tagged with this run so
@@ -424,6 +425,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     if (d.birthday && typeof d.birthday === "object") matchedBirthdayFills.push({ donorId: priorId, b: d.birthday });
     // DATES-1 — and "About them", fill-missing the same way.
     if (d.aboutThem) matchedAboutFills.push({ donorId: priorId, text: d.aboutThem });
+    // WEALTH-1 — and a Wealth Score, fill-missing the same way (a score somebody set is never overwritten).
+    if (d.wealthScore != null) matchedWealthFills.push({ donorId: priorId, n: d.wealthScore });
     // A person matched by email who ALSO carries a source id teaches Steward
     // that id, so the NEXT export matches on the stable key even if she
     // corrects the address in the old system first. Fill-missing only, and
@@ -578,6 +581,13 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         const a = String(d.aboutThem || "").trim().slice(0, 500);
         if (a) await runTx(txc, `UPDATE donors SET about_them=? WHERE id=? AND org_id=?`, [a, d._id, orgId]);
       }
+      // WEALTH-1 — her own Wealth Score column, re-checked here (1 to 5 only), set by her.
+      for (const d of batch) {
+        const n = Number(d.wealthScore);
+        if (Number.isInteger(n) && n >= 1 && n <= 5) await runTx(txc,
+          `UPDATE donors SET wealth_rating=?, wealth_rating_set_at=NOW(), wealth_rating_set_by=?, wealth_rating_set_by_name=? WHERE id=? AND org_id=?`,
+          [n, actor(req).id, actor(req).name, d._id, orgId]);
+      }
     } else {
       console.error(`[combined-import] donor batch ${bi}–${bi+batch.length} failed:`, r.error.message);
       batchErrors.push({ rows:`${bi+1}–${bi+batch.length}`, error:r.error.message });
@@ -609,6 +619,12 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         WHERE id=? AND org_id=? AND external_donor_id IS NOT NULL AND external_donor_id <> ?
           AND NOT (COALESCE(external_donor_ids, '[]'::jsonb) @> jsonb_build_array(?::text))`,
       [f.externalDonorId, f.donorId, orgId, f.externalDonorId, f.externalDonorId]);
+  }
+  for (const f of matchedWealthFills) {   // WEALTH-1
+    const n = Number(f.n);
+    if (Number.isInteger(n) && n >= 1 && n <= 5) await runTx(txc,
+      `UPDATE donors SET wealth_rating=?, wealth_rating_set_at=NOW(), wealth_rating_set_by=?, wealth_rating_set_by_name=? WHERE id=? AND org_id=? AND wealth_rating IS NULL`,
+      [n, actor(req).id, actor(req).name, f.donorId, orgId]);
   }
   for (const f of matchedAboutFills) {
     const a = String(f.text || "").trim().slice(0, 500);

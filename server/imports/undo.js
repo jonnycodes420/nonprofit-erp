@@ -282,7 +282,7 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null,
   // INTEGRITY-2: a line Steward wrote by itself (created_by system:…) is not
   // activity; it goes with the person (undoPeople.js).
   const orphans = await query(
-    `SELECT d.id, (d.deleted_at IS NOT NULL) AS was_deleted FROM donors d WHERE d.org_id=? AND d.created_import_id=?
+    `SELECT d.id, (d.deleted_at IS NOT NULL AND d.staged_import_id IS NULL) AS was_deleted FROM donors d WHERE d.org_id=? AND d.created_import_id=?
        AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id)
        AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.donor_id=d.id AND COALESCE(i.created_by, '') NOT LIKE 'system:%')
        AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.donor_id=d.id AND COALESCE(t.created_by, '') NOT LIKE 'system:%')`, [orgId, id]);

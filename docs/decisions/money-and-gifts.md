@@ -275,6 +275,16 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   `recurring_subscriptions`, the donor's own (`server/donors/offlinePlans.js`).
 
 - **A refund is a linked negative row, never an edit (MONEY-4).** Record a refund (`POST /gifts/:id/refund`, `server/donors/refunds.js`) writes a negative gift through recordGift with `refund_of` and `refund_reason`; the gift stays. Totals net it (MONEY), the count drops only when `refunded_in_full` (GIFT), the receipt is voided and reissued at net, and a Stripe gift refunds in Stripe only after a confirm naming the amount. A gift with a refund can't be deleted. The sums live in `shared/numbers/refunds.js`.
+- **Campaign is the goal, Appeal is the ask, Page is where it came through (QUICKADD-1).** A gift carries
+  `campaign_id` (counts toward a goal, inside its dates), `appeal_id` (the `appeals` table; moves no total of its
+  own) and `giving_page_id` / `peer_fundraiser_id`. One org-scope check for the last three:
+  `server/donors/giftAttribution.js` `checkAttribution`, read by the gift form route and the deposit commit.
+  A campaign made from a gift has no goal and no dates until someone sets them on Fundraising.
+- **A new person inside gift entry is one request (QUICKADD-1).** `POST /gifts/new-person` refuses a gift with no
+  person, checks the gift, offers a same-name or same-email person on file (409 `possible_duplicate`, answered by
+  `useExistingId` or `confirmNew`), adds the person through `addPerson.js`, then records the gift through the
+  gift form's own route body (`gifts.js` `giftForm.body`). A refused gift takes the just-added person back out.
+  "Same as last" is the browser tab's (`client/src/lib/stickyGift.js`); the server never fills a field for her.
 - **Recurring giving lists every active plan (MONEY-4).** Card plans and staff-recorded offline plans, with a Source; MRR adds the offline plans' monthly equivalent (`shared/numbers/offlineMrr.js`) and says so.
 
 ## Gotchas

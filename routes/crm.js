@@ -70,6 +70,7 @@ const MODULES = [
   "../server/imports/undo",
   "../server/majorGifts/plans",
   "../server/majorGifts/routes",
+  "../server/majorGifts/top100",   // TOP100-1
   "../server/memberships/routes",
   "../server/org/data",
   "../server/org/integrations",
@@ -132,6 +133,7 @@ routers.r1.use(require("../server/majorGifts/plans").routers.r1);
 routers.r1.use(require("../server/donors/relationships").routers.r1);
 routers.r1.use(require("../server/outreach/thanks").routers.r1);
 routers.r1.use(require("../server/majorGifts/routes").routers.r1);
+routers.r1.use(require("../server/majorGifts/top100").routers.r1);   // TOP100-1
 routers.r1.use(require("../server/outreach/autoSend").routers.r1);
 routers.r1.use(require("../server/outreach/rename").routers.r1);   // POLISH-8
 routers.r1.use(require("../server/outreach/journeys").routers.r1);

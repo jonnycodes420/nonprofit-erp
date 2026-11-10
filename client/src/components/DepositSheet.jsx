@@ -25,6 +25,7 @@ import { T, Modal, fmtFull } from "./shared";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { countLabel, plural } from "../../../shared/countWords.js";
 import EventField from "./gifts/EventField";   // GIFTS-1: each line's gift can belong to an event
+import DepositLineExtras, { carriedAttribution, attributionBody } from "./gifts/DepositLineExtras";   // QUICKADD-1
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const STATE_META = {
@@ -81,6 +82,10 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
   // is an image of somebody's bank details with nothing to attach it to.
   const [cheques, setCheques] = useState({});
   const [lineEvents, setLineEvents] = useState({});   // GIFTS-1: { line: eventId }
+  // QUICKADD-1: each line's campaign, appeal and fundraiser as she chose them
+  // (the lines under carry them: carriedAttribution), and a new person's details.
+  const [lineAttr, setLineAttr] = useState({});
+  const [linePeople, setLinePeople] = useState({});
 
   // BUILD-95 — PHOTOGRAPH THE STACK, AND IT READS THEM.
   //
@@ -192,8 +197,10 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
       // BUILD-95 — the cheque photographs ride the commit, keyed by line. The
       // server re-plans from `paste` and will not trust a client's line object,
       // so the line NUMBER is the only thing both sides agree on.
-      const keys = [...new Set([...Object.keys(cheques), ...Object.keys(lineEvents).filter(k => lineEvents[k])])];
-      const lines = keys.map(line => ({ line: Number(line), chequeImage: cheques[line] || undefined, eventId: lineEvents[line] || undefined }));
+      const carried = carriedAttribution(plan && plan.lines, lineAttr);
+      const keys = [...new Set([...Object.keys(cheques), ...Object.keys(lineEvents).filter(k => lineEvents[k]), ...Object.keys(carried), ...Object.keys(linePeople)])];
+      const lines = keys.map(line => ({ line: Number(line), chequeImage: cheques[line] || undefined, eventId: lineEvents[line] || undefined,
+        ...attributionBody(carried[line]), person: linePeople[line] || undefined }));
       const r = await apiFetch("/deposits/commit", { method: "POST", body: JSON.stringify({
         paste, depositDate, slipTotal, resolutions, lines }) });
       setDone(r);
@@ -206,6 +213,7 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
   };
 
   const needsYou = useMemo(() => (plan?.lines || []).filter(l => l.state === "needs_you"), [plan]);
+  const carriedLines = useMemo(() => carriedAttribution(plan && plan.lines, lineAttr), [plan, lineAttr]);
   const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 11px", color: T.ink, fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
   const lbl = { fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 5, display: "block" };
 
@@ -324,7 +332,7 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
             {["placed", "placed_new_donor", "needs_you", "not_a_gift"].map(k => {
               const n = (plan.lines || []).filter(l => l.state === k).length;
               if (!n) return null;
-              return <span key={k} style={{ color: STATE_META[k].colour, fontWeight: 700 }}>{n} {STATE_META[k].label.toLowerCase()}</span>;
+              return <span key={k} style={{ color: STATE_META[k].colour, fontWeight: 700 }}>{k === "placed_new_donor" ? countLabel(n, "new donor") : `${n} ${STATE_META[k].label.toLowerCase()}`}</span>;   /* QUICKADD-1: "6 new donors", not "6 new donor" */
             })}
           </div>
 
@@ -358,6 +366,15 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
                         {(l.state === "placed" || l.state === "placed_new_donor") && (
                           <EventField value={lineEvents[l.line] || ""} onChange={id => setLineEvents(x => ({ ...x, [l.line]: id }))}
                             testid={`deposit-event-${l.line}`} style={{ marginTop: 6, maxWidth: 420 }} />)}
+                        {(l.state === "placed" || l.state === "placed_new_donor") && (
+                          <DepositLineExtras line={l} row={carriedLines[l.line]} depositDate={depositDate}
+                            onPick={(k, v) => setLineAttr(x => ({ ...x, [l.line]: { ...(x[l.line] || {}), [k]: v } }))}
+                            person={linePeople[l.line]} onPerson={v => setLinePeople(x => ({ ...x, [l.line]: v }))} />)}
+                        {/* QUICKADD-1: the name matched somebody on file (or two), and this is somebody new. */}
+                        {((l.state === "placed" && l.donorId) || (l.state === "needs_you" && Array.isArray(l.candidates) && l.candidates.length > 0)) && (
+                          <button type="button" data-testid={`deposit-new-person-${l.line}`} onClick={() => resolve(l.line, { donorId: undefined, newDonor: true })}
+                            style={{ display: "block", background: "none", border: "none", padding: 0, marginTop: 5, color: T.greenDk, fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>
+                            + New person: '{l.name || l.donorName}'</button>)}
                         {l.state === "needs_you" && (
                           <div style={{ marginTop: 6 }}>
                             <div style={{ color: STATE_META.needs_you.colour, fontWeight: 600, marginBottom: 6 }}>{l.needs}</div>

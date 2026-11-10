@@ -507,10 +507,18 @@ const DECEASED_HDR = /^(is\s+)?deceased\??$/i;
 // rides along when the file has one (shared/birthday.js).
 export const BIRTHDAY_HDR = /^(birthday|birth[ _-]*date|date[ _-]*of[ _-]*birth|dob|birthdate|bday)$/;
 export const WEALTH_HDR = {
-  rating:   /^(ds|donor ?search|iwave|wealth)[ _-]*(rating|score)$/,
+  // WEALTH-1: a bare "Wealth Score" is Steward's own 1 to 5 (WEALTH_SCORE_HDR), not a vendor's.
+  rating:   /^((ds|donor ?search|iwave)[ _-]*(rating|score)|wealth[ _-]*rating)$/,
   capacity: /^((ds|donor ?search|iwave|wealth)[ _-]*(estimated[ _-]*)?|estimated[ _-]*|gift[ _-]*)capacity([ _-]*range)?$/,
   date:     /^((ds|donor ?search|iwave|wealth)[ _-]*(screen(ing)?[ _-]*)?|screening[ _-]*)date$/,
 };
+// WEALTH-1 · STEWARD'S OWN WEALTH SCORE, 1 to 5, from a column she filled in herself.
+// Only a whole 1 to 5 is read; anything else in the cell is left unset (never guessed).
+export const WEALTH_SCORE_HDR = /^(steward[ _-]*)?wealth[ _-]*(score|rank(ing)?)$/;
+export function wealthScoreOf(v) {
+  const s = String(v ?? "").trim();
+  return /^[1-5](\.0+)?$/.test(s) ? Number(s[0]) : null;
+}
 export function wealthScreenOf({ rating, capacity, date, headers = [] }) {
   const t = (v, n) => String(v ?? "").trim().slice(0, n);
   const r = t(rating, 64), c = t(capacity, 64), d = t(date, 32);
@@ -1554,6 +1562,7 @@ export function autoDetectTxMapping(headers, rows) {
                 softCreditName:"",softCreditAmount:"",tributeType:"",tributeName:"",tributeNotify:"",matchEmployer:"",
                 // BUILD-98 Part 6 — a wealth screen the old CRM already paid for.
                 wealthRating:"",wealthCapacity:"",wealthDate:"",
+                wealthScore:"",   // WEALTH-1: Steward's own 1 to 5
                 // PARITY-3 6a — the person's birthday (month and day; year optional).
                 birthday:"",
                 // DATES-1 — the short "About them" note read first on the profile.
@@ -1601,6 +1610,7 @@ export function autoDetectTxMapping(headers, rows) {
     if (!map.fund     && T(/^(fund|fund.?name|designation|fund designation|restriction|purpose|allocation)$/)) map.fund = h;
     if (!map.campaign && /^(campaign|appeal|appeal.?code|solicitation)$/.test(hl))     map.campaign = h;
     if (!map.donorType && /^(donor.?type|constituent.?type|record.?type|entity.?type)$/.test(hl)) map.donorType = h;
+    if (!map.wealthScore    && WEALTH_SCORE_HDR.test(hl))    map.wealthScore = h;   // WEALTH-1
     if (!map.wealthRating   && WEALTH_HDR.rating.test(hl))   map.wealthRating = h;
     if (!map.wealthCapacity && WEALTH_HDR.capacity.test(hl)) map.wealthCapacity = h;
     if (!map.wealthDate     && WEALTH_HDR.date.test(hl))     map.wealthDate = h;
@@ -2378,6 +2388,8 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     const _ws = wealthScreenOf({ rating: txMap.wealthRating && row[txMap.wealthRating], capacity: txMap.wealthCapacity && row[txMap.wealthCapacity],
       date: txMap.wealthDate && row[txMap.wealthDate], headers: [txMap.wealthRating, txMap.wealthCapacity, txMap.wealthDate] });
     if (_ws && !donor.wealthScreen) donor.wealthScreen = _ws;
+    // WEALTH-1: the Wealth Score she set in her own spreadsheet, 1 to 5.
+    if (txMap.wealthScore && donor.wealthScore == null) { const _w = wealthScoreOf(row[txMap.wealthScore]); if (_w) donor.wealthScore = _w; }
     if (txMap.birthday && row[txMap.birthday] && !donor.birthday) {
       const _bd = parseBirthday(row[txMap.birthday]);
       if (_bd) donor.birthday = _bd;
@@ -3544,7 +3556,9 @@ export const STANDARD_DONOR_FIELDS = [
   { key: "donorType",  label: "Donor type",   aliases: ["donor type", "constituent type", "record type", "entity type"] },
   { key: "board",      label: "Board",        aliases: ["board", "board member", "board?"] },
   // BUILD-98 Part 6 — a wealth screen (DonorSearch / iWave) the old CRM carried.
-  { key: "wealthRating",   label: "Wealth screen rating",   aliases: ["ds rating", "donorsearch rating", "donor search rating", "iwave score", "iwave rating", "wealth rating", "wealth score"] },
+  { key: "wealthRating",   label: "Wealth screen rating",   aliases: ["ds rating", "donorsearch rating", "donor search rating", "iwave score", "iwave rating", "wealth rating"] },
+  // WEALTH-1: Steward's own 1 to 5, set by her team (a vendor's score is the rating above).
+  { key: "wealthScore",    label: "Wealth Score (1 to 5)",  aliases: ["wealth score", "wealth rank", "wealth ranking", "steward wealth score"] },
   { key: "wealthCapacity", label: "Wealth screen capacity", aliases: ["ds capacity", "donorsearch capacity", "iwave capacity", "wealth capacity", "estimated capacity", "gift capacity", "capacity range"] },
   { key: "wealthDate",     label: "Wealth screen date",     aliases: ["ds date", "donorsearch date", "iwave date", "wealth screen date", "screening date"] },
   { key: "birthday",   label: "Birthday",     aliases: ["birthday", "birth date", "birthdate", "date of birth", "dob", "bday"] },
@@ -4158,6 +4172,7 @@ export function buildWorkbookDonors(sheet, mapping, opts = {}) {
     { const _ws = wealthScreenOf({ rating: get("wealthRating"), capacity: get("wealthCapacity"), date: get("wealthDate"),
         headers: [col("wealthRating"), col("wealthCapacity"), col("wealthDate")] });
       if (_ws) d.wealthScreen = _ws; }
+    { const _w = wealthScoreOf(get("wealthScore")); if (_w) d.wealthScore = _w; }   // WEALTH-1
     { const _bc = cellOf("birthday");
       const _bd = _bc == null || _bc === "" ? null : parseBirthday(_bc);
       if (_bd) d.birthday = _bd; }
