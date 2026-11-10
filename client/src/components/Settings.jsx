@@ -28,6 +28,7 @@ import { countLabel, plural } from "../../../shared/countWords.js";
 import { GivingPagesManager } from "./settings/GivingPagesManager";
 import { BrandingManager } from "./settings/BrandingManager";
 import { TimezoneCard } from "./settings/TimezoneCard";
+import { CfTypeHelp } from "./settings/CfTypeHelp";   // LIST-4
 import { MajorGiftsCheckbox } from "./settings/MajorGiftsCheckbox";   // PROSPECT-1, moved by WEALTH-1
 import { WealthScoresTeamSetting } from "./settings/WealthScoresTeamCard";   // WEALTH-1
 import { BoardPackRecipientsCard } from "./settings/BoardPackRecipientsCard";
@@ -1352,9 +1353,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               <option value="multi_select">Multi-select</option>
               <option value="checkbox">Yes/No (Checkbox)</option>
             </select>
-            {editingField&&<div style={{fontSize:11.5,color:T.ink3,marginBottom:14,lineHeight:1.5}}>
-              A field's type can't change after creation, changing it would silently rewrite every saved value. Archive this field and add a new one instead.
-            </div>}
+            <CfTypeHelp type={cfForm.type} editing={!!editingField}/>
             {(cfForm.type==="select"||cfForm.type==="multi_select")&&(
               <div style={{marginBottom:14}}>
                 <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:6}}>Options</div>

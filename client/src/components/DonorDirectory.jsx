@@ -673,6 +673,8 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
           <option value="engagement">Sort: engagement</option>
           <option value="generosity">Sort: giving strength</option>
           {canMajorGifts&&<option value="room_to_give">Sort: room to give</option>}
+          {/* LIST-4: a column header's sort (a custom field, City, Added...) names itself, never "total given". */}
+          {sortBy&&!["total_giving","last_gift_date","name","engagement","generosity","room_to_give"].includes(sortBy)&&<option value={sortBy}>Sort: {(fieldByKey[sortBy]||{}).label||sortBy}</option>}
         </select>}
         {/* LIST-1: her columns, her saved views, rows per page. */}
         {listSetup&&<button type="button" data-testid="dir-edit-columns" onClick={()=>setEditingCols(true)}
@@ -922,14 +924,14 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
                   onDrop={e=>{e.preventDefault();dropCol(k);}}
                   onDragEnd={()=>setDragCol(null)}
                   onClick={()=>{if(room){setSortBy&&setSortBy(roomSort?"":"room_to_give");return;}if(sortable)headerSort(k);}}
-                  title={room?(roomSort?"Back to the list's own order":"Strong first, then Some, then Not yet known"):sortable?"Sort by this column. Drag to move it.":"Drag to move this column."}
+                  title={room?(roomSort?"Back to the list's own order":"Strong first, then Some, then Not yet known"):sortable?"Sort by this column. Drag to move it.":f.sortNote?`${f.sortNote} Drag to move this column.`:"Drag to move this column."}
                   className={k==="stage"?"dir-col-stage":k==="owner"?"dir-col-owner":""}
                   style={{...HEAD,...cellBox(k),position:k===NAME_KEY?"sticky":"relative",flexDirection:"row",alignItems:"center",
                     justifyContent:align==="right"?"flex-end":align==="center"?"center":"flex-start",
                     color:(room&&roomSort)||sortMark(k)?T.greenDk:T.ink3,cursor:sortable?"pointer":k===NAME_KEY?"default":"grab",userSelect:"none",whiteSpace:"nowrap",
                     background:dragCol===k?T.bg2:k===NAME_KEY?T.ground:"transparent"}}>
                   {/* TABLE-1: a heading is one line; cut short with its full name on hover, never wrapped. */}
-                  <span title={label} style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>{label}{room?(roomSort?" ↓":""):sortMark(k)}</span>
+                  <span title={!sortable&&f.sortNote?`${label}. ${f.sortNote}`:label} style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>{label}{room?(roomSort?" ↓":""):sortMark(k)}</span>
                   {k==="generosity"&&<ColDef text={GIVING_STRENGTH_DEF} testid="dir-def-giving-strength"/>}
                   {k==="engagement"&&<ColDef text={ENGAGEMENT_EXPLANATION.engagement} testid="dir-def-engagement"/>}
                   {k==="stage"&&<ColDef text={STAGE_DEF} testid="dir-def-stage"/>}

@@ -22,6 +22,7 @@
 // TRUTH-3: the lifetime a Directory row shows (shared/numbers/lifetime.js), as a sort key.
 const LIFETIME_SORT = require("./shared/numbers/lifetime").LIFETIME("donors");
 const { query } = require("./db");
+const CF_SORT = require("./server/donors/cfSort");   // LIST-4
 
 const GROUPS = ["Contact", "Giving", "Pledges", "Events", "Volunteering", "Communication", "From your imports"];
 const DEFAULT_COLUMNS = ["name", "stage", "owner", "lifetime", "last_gift_date", "engagement", "generosity"];
@@ -200,7 +201,9 @@ function cfField(d) {
   options = Array.isArray(options) ? options.map(o => (typeof o === "object" && o ? String(o.value ?? o.label ?? "") : String(o))).filter(Boolean) : [];
   return { key: `cf:${d.key}`, label: d.label, group: "From your imports", col: true, format: CF_FORMAT[d.type] || "text",
     filter: CF_OPS[d.type] || TEXT_OPS, cfKey: d.key, cfType: d.type, options: options.map(v => ({ value: v, label: v })),
-    sort: null, cell: "cf" };
+    // LIST-4: sorted by server/donors/cfSort.js (groups.js reads the `cf:` key), so `sort` here only says it can be.
+    sort: CF_SORT.SORTABLE.has(d.type) ? `cf:${d.key}` : null,
+    sortNote: d.type === "multi_select" ? CF_SORT.NOT_SORTABLE_SENTENCE : undefined, cell: "cf" };
 }
 
 // Every field for this org, with the choices a select offers.
@@ -233,7 +236,7 @@ async function fieldsFor(orgId) {
 }
 function publicField(f) {
   return { key: f.key, label: f.label, group: f.group, column: !!f.col, sortable: !!f.sort, format: f.format,
-    sentence: f.sentence || undefined, filter: f.filter ? { ops: f.filter, options: f.options } : null };
+    sentence: f.sentence || undefined, sortNote: f.sortNote || undefined, filter: f.filter ? { ops: f.filter, options: f.options } : null };
 }
 
 // ── THE FILTER ─────────────────────────────────────────────────────────────
@@ -439,7 +442,8 @@ function cfCond(f, op, v) {
   const t = f.cfType;
   if (t === "checkbox") return bool(op, `${val} = 'true'`);
   if (t === "number" || t === "money") {
-    const num = `(CASE WHEN ${val} ~ '^-?\\d+(\\.\\d+)?$' THEN ${val}::numeric END)`;
+    // LIST-4 (W-2): no "?" in the pattern: the db layer reads every "?" as an argument, and this filter was a 500.
+    const num = `(CASE WHEN ${val} ~ '^-{0,1}\\d+(\\.\\d+){0,1}$' THEN ${val}::numeric END)`;
     // Money is held in cents (BUILD-78's seam); a person types dollars.
     const expr = t === "money" ? `(${num} / 100.0)` : num;
     return moneyCond(expr, op === "gte" ? "gte" : op === "lte" ? "lte" : op, v);
