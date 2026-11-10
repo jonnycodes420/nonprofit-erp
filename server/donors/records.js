@@ -381,7 +381,7 @@ const PURGE_CHILD_TABLES = [
 async function purgeableIds(orgId, olderThanDays) {
   const days = olderThanDays == null || olderThanDays === "" ? null : Math.max(0, Math.floor(Number(olderThanDays)));
   if (days != null && !Number.isFinite(days)) return null;
-  return (await query(`SELECT d.id FROM donors d WHERE d.org_id=? AND d.deleted_at IS NOT NULL
+  return (await query(`SELECT d.id FROM donors d WHERE d.org_id=? AND d.deleted_at IS NOT NULL AND d.staged_import_id IS NULL
                          ${days != null ? "AND d.deleted_at < NOW() - make_interval(days => ?)" : ""}
                          AND NOT EXISTS (SELECT 1 FROM donor_merges m WHERE m.org_id=d.org_id AND m.merged_id=d.id AND m.undone_at IS NULL)`,
     days != null ? [orgId, days] : [orgId])).map(r => r.id);

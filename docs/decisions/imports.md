@@ -465,3 +465,11 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
   trash rows it closes (`__bringBack.file`); only an import of that same file (`fileFingerprint`) claims them. A stamp
   with no file is never claimed. Undo re-reads the trash rows and trashes only people whose closed row names its run.
 - Leftovers from before: `scripts/ops/integrity1-find-vanished.js` (dry run first; `--apply`; `--undo=<audit id>`).
+
+## ONBOARD-1 · "Preview first": a staged import (2026-11-09)
+
+- Offered only for an org's first file (nobody live), on the one reader (`/sheet-import/commit`, `preview: true`).
+- The batch is hidden inside the import's own transaction: its people carry `deleted_at` AND `staged_import_id`, so every read that already leaves out a deleted person leaves them out. Never add a second "staged" filter to a count; add `staged_import_id IS NULL` only where the TRASH itself is shown (trash list, its count, Empty trash, bring-back).
+- If any of the file's gifts would land on someone already live, the import rolls back whole and says why.
+- Accept (`POST /imports/:id/accept`) clears both columns, runs the after-change step, stamps `orgs.data_in_at`; a super-admin or support session must type a reason. Undo before Accept is the ordinary undo.
+- The Verify page's file side is taken from the reader's plan at commit (`summary_json.verifyFile`, `server/onboard/sheetVerify.js`) and never recomputed.

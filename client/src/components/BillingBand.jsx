@@ -6,6 +6,7 @@ import { useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { displayDate } from "../../../shared/displayDate";
+import { SignedAgreement } from "./billing/SignedAgreement";   // ONBOARD-1
 
 const usd = n => "$" + Number(n).toLocaleString("en-US");
 const day = d => d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : null;
@@ -36,6 +37,7 @@ export function BillingBand({ billing, isAdmin, onChanged }) {
   );
   return (
     <div data-testid="billing-band" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <SignedAgreement isAdmin={isAdmin} />
       <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
         {b.customPrice
           ? cell("Price", b.customPrice.usd === 0 ? "Free" : `${usd(b.customPrice.usd)}/month`,
