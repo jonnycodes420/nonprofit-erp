@@ -16,6 +16,7 @@ import * as AuditLog from "../../client/src/components/settings/AuditLog.jsx";
 import * as BccAddressCard from "../../client/src/components/settings/BccAddressCard.jsx";
 import * as BoardPackRecipientsCard from "../../client/src/components/settings/BoardPackRecipientsCard.jsx";
 import * as BrandingManager from "../../client/src/components/settings/BrandingManager.jsx";
+import * as CfTypeHelp from "../../client/src/components/settings/CfTypeHelp.jsx";   // LIST-4
 import * as OrgNameCard from "../../client/src/components/settings/OrgNameCard.jsx";
 import * as BringInAFile from "../../client/src/components/settings/BringInAFile.jsx";
 import * as CoverFeesCard from "../../client/src/components/settings/CoverFeesCard.jsx";
@@ -101,6 +102,7 @@ export const CASES = [
   ["settings/BccAddressCard", () => <BccAddressCard.BccAddressCard/>, /Logging email by BCC/],
   ["settings/BoardPackRecipientsCard", () => <BoardPackRecipientsCard.BoardPackRecipientsCard orgId="org_fake" isAdmin isReadOnly={false} onNavigate={noop}/>, /Who gets the board pack/],
   ["settings/OrgNameCard", () => <OrgNameCard.OrgNameCard org={{ id: "org_fake", name: "Larkspur Tide Alliance" }} isAdmin isReadOnly={false} onSaved={noop}/>, /Larkspur Tide Alliance[\s\S]*Edit name/],
+  ["settings/CfTypeHelp", () => <CfTypeHelp.CfTypeHelp type="number" editing={false}/>, /Good for scores/],
   ["settings/BrandingManager", () => <BrandingManager.BrandingManager orgId="org_fake" isAdmin isReadOnly={false} onSaved={noop}/>, /Brand Identity/],
   ["settings/BringInAFile", () => <BringInAFile.BringInAFile onNavigate={noop} isReadOnly={false}/>, /Bring in a file/],
   ["settings/CoverFeesCard", () => <CoverFeesCard.CoverFeesCard orgId="org_fake" isAdmin/>, /Let Donors Cover Processing Costs/],
