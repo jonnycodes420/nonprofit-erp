@@ -29,6 +29,7 @@ import { displayDate, displayMonth } from "../../../shared/displayDate.js";
 import { displayName } from "../../../shared/displayName.js";
 import { countLabel, plural } from "../../../shared/countWords.js";
 import { MergeWithModal } from "./profile/MergeWith";
+import { TrashLink } from "./settings/TrashLink";   // FLOWS-4
 import { BulkTrash } from "./donors/BulkTrash";   // MOPUP-2: More → Move to trash
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { LAPSE_WORDS } from "../../../shared/lapseWords.js";   // TRUTH-5: one word, one population
@@ -1093,7 +1094,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
           </button>
         </div>
       )}
-
+      {!loading&&<TrashLink isAdmin={isAdmin} lead="People you deleted are in the " style={{textAlign:"center",padding:"4px 0 10px"}}/>/* FLOWS-4: the way to the Trash */}
     </div>
   );
 }

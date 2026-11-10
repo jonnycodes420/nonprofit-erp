@@ -92,8 +92,13 @@ async function fingerprint(orgId) {
       (SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text,'') FROM pledges WHERE org_id=?) AS p,
       (SELECT COUNT(*)::text || ':' || COALESCE(MAX(updated_at)::text,'') FROM donors WHERE org_id=?) AS d,
       (SELECT COUNT(*)::text FROM insight_outcomes WHERE org_id=?) || ':' || (SELECT COUNT(*)::text FROM insight_reviews WHERE org_id=?)
-        || ':' || (SELECT COUNT(*)::text FROM insight_links WHERE org_id=?) AS i`, [orgId, orgId, orgId, orgId, orgId, orgId]);
-  return `${f.g}|${f.p}|${f.d}|${f.i}`;
+        || ':' || (SELECT COUNT(*)::text FROM insight_links WHERE org_id=?) AS i,
+      -- FLOWS-4 (W-1109-Atlas-11X): the settings Insights reads (Giving levels,
+      -- the year's start, in the vocabulary). Saving them left the stored answer "fresh" on the old
+      -- cut points, so the Major rung and Atlas kept the old level.
+      (SELECT COALESCE(giving_level_mid_cents::text,'') || ':' || COALESCE(giving_level_major_cents::text,'') || ':' || md5(COALESCE(vocabulary_json::text,''))
+         FROM orgs WHERE id=?) AS s`, [orgId, orgId, orgId, orgId, orgId, orgId, orgId]);
+  return `${f.g}|${f.p}|${f.d}|${f.i}|${f.s || ""}`;
 }
 
 // INSIGHTS-2: the whole-org computation, run by the worker's build

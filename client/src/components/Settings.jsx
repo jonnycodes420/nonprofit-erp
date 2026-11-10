@@ -44,6 +44,8 @@ import { BringInAFile } from "./settings/BringInAFile";
 import { ImportsDrop } from "./settings/ImportsDrop";
 import { InvitedList } from "./settings/InvitedList";   // WALKB-2: pending invites under Team
 import { EmptyTrash } from "./settings/EmptyTrash";
+import { TrashLink, useTrashCount, trashLabel } from "./settings/TrashLink";   // FLOWS-4
+import { DataSectionTop } from "./settings/DataSectionTop";   // FLOWS-4
 import { SavedMappings } from "./settings/SavedMappings";
 import { ImportsHistory } from "./settings/ImportsHistory";
 import { InboundEmailCard } from "./settings/InboundEmailCard";
@@ -71,7 +73,8 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   const userRole=auth?.user?.role||"staff";
   const isAdmin=userRole==="admin";
   const isPortalTier=auth?.org?.plan==="portal";
-  const visibleTabs=SETTINGS_TABS.filter(t=>(!t.portalTierOnly||isPortalTier)&&(!t.adminOnly||isAdmin)&&(!t.viewerHidden||userRole!==VIEWER));   // ACCESS-1: a viewer has no Team or Connections
+  const trashN=useTrashCount(!!isAdmin);   // FLOWS-4: Settings → Trash carries its count
+  const visibleTabs=SETTINGS_TABS.filter(t=>(!t.portalTierOnly||isPortalTier)&&(!t.adminOnly||isAdmin)&&(!t.viewerHidden||userRole!==VIEWER)).map(t=>t.id==="trash"?{...t,label:trashLabel(trashN)}:t);   // ACCESS-1: a viewer has no Team or Connections
   const wantSection=SECTION_ALIAS[initialSection]?.section||initialSection;
   const wantFocus=initialFocus||SECTION_ALIAS[initialSection]?.focus||null;
   const [section,setSection]=useState(visibleTabs.some(t=>t.id===wantSection)?wantSection:"org");
@@ -861,7 +864,8 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
 
       {/* ── Your Data ─────────────────────────────────────────────────────── */}
 
-      {section==="imports"&&<ImportsDrop isReadOnly={isReadOnly}><BringInAFile onNavigate={onNavigate} isReadOnly={isReadOnly}/><MoveCard isReadOnly={isReadOnly}/><AddPhotos isReadOnly={isReadOnly}/><ImportsHistory/><SavedMappings isReadOnly={isReadOnly}/><EmptyTrash isAdmin={isAdmin} isReadOnly={isReadOnly}/></ImportsDrop>}
+      {section==="imports"&&<ImportsDrop isReadOnly={isReadOnly}><BringInAFile onNavigate={onNavigate} isReadOnly={isReadOnly}/><MoveCard isReadOnly={isReadOnly}/><AddPhotos isReadOnly={isReadOnly}/><ImportsHistory/><SavedMappings isReadOnly={isReadOnly}/><TrashLink isAdmin={isAdmin} onNavigate={onNavigate} lead="People you deleted, with Restore and Empty trash, are in " style={{padding:"4px 4px 12px"}}/></ImportsDrop>}
+      {section==="trash"&&<EmptyTrash isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
 
       {/* ── Audit log ─────────────────────────────────────────────────────── */}
       {section==="audit"&&(isAdmin
@@ -877,13 +881,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       {section==="atlas"&&<AtlasSettings isAdmin={isAdmin} isReadOnly={isReadOnly} onNavigate={onNavigate}/>}
 
       {section==="data"&&<>
-      {/* CLEAN-1 4d: said plainly, where an admin looks for what Steward does with addresses. */}
-      <div data-testid="settings-ncoa-line" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"18px 28px",marginBottom:14}}>
-        <SectionLabel>Change of address (NCOA)</SectionLabel>
-        <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,maxWidth:620}}>
-          Steward doesn't run the change-of-address check itself yet. Donors, Data health prepares an address update file that works with any USPS-licensed NCOA provider, and reads the file they send back so you can approve each move.
-        </div>
-      </div>
+      <DataSectionTop isAdmin={isAdmin} onNavigate={onNavigate}/>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid "+T.gold500,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Export your data</SectionLabel>
         <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>Your data is yours.</div>

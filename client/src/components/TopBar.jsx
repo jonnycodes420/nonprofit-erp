@@ -32,6 +32,10 @@ const QUICK_NAV = [
   { id:"nav_reports", label:"Reports", hint:"Open the Reports tab",
     keywords:"reports report giving summary lybunt sybunt retention top donors",
     go:nav=>nav("reports") },
+  // FLOWS-4 (W-1107-Finance-35): the Trash, by any word a person uses for it.
+  { id:"nav_settings_trash", label:"Settings → Trash", hint:"People you deleted: restore them, or empty the trash",
+    keywords:"trash bin deleted delete removed restore recover undelete bring back empty trash",
+    go:nav=>nav("settings",{section:"trash"}) },
   { id:"nav_settings_receipts", label:"Settings → Tax Receipts", hint:"Receipt settings & year-end statements",
     keywords:"settings tax receipts receipt year end statement ein legal",
     go:nav=>nav("settings",{section:"receipts"}) },
@@ -123,6 +127,15 @@ const SERVER_KEY = { person:"people", household:"households", campaign:"campaign
   boardFile:"boardFiles", document:"files", grantDocument:"grantFiles" };
 const serverKey = k => k.key || SERVER_KEY[k.kind];
 const GROUP_TOP = 3;
+// FLOWS-4 (W-1109-Volunteers-27): people who share a name carry a type chip
+// (Donor, Contact, Volunteer) so the right one is picked.
+const nameKey = t => String(t||"").trim().toLowerCase().replace(/\s+/g," ");
+function sameNameTwins(results) {
+  const n = new Map();
+  (results||[]).filter(r=>r.kind==="person").forEach(r=>n.set(nameKey(r.title),(n.get(nameKey(r.title))||0)+1));
+  return new Set([...n].filter(([,c])=>c>1).map(([k])=>k));
+}
+const typeChip = r => { if (r.organization) return "Organization"; const t = typeLabels(r); return t.includes("Donor") ? "Donor" : t.includes("Volunteer") ? "Volunteer" : "Contact"; };
 
 // FIX-26: THE ONE SEARCH, for the desktop bar and the phone header alike. It
 // was written inside TopBar, which a phone never shows, so on a phone nothing
@@ -240,13 +253,14 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
     (expanded?.results||[]).forEach(r=>{ (exp[r.kind] = exp[r.kind] || []).push(r); });
     const groupNames = [];
     SEARCH_KINDS.forEach(k=>{ if (!groupNames.includes(k.group)) groupNames.push(k.group); });
+    const twins = sameNameTwins(results);   // FLOWS-4: two people with one name say which is which
     groupNames.forEach(g=>{
       const kinds = SEARCH_KINDS.filter(k=>k.group===g);
       const all = expanded?.group===g;
       const rows = [];
       kinds.forEach(k=>(((all?exp:byKind)[k.kind])||[]).forEach(r=>{
         const row = k.row(r);
-        rows.push({ group:g, key:k.kind+"_"+r.id, title:r.title, ...row,
+        rows.push({ group:g, key:k.kind+"_"+r.id, title:r.title, ...row, chip:k.kind==="person"&&twins.has(nameKey(r.title))?typeChip(r):null,
           onSelect:row.url?()=>window.location.assign(row.url):()=>onNavigate(row.tab,row.opts),
           href:row.url||(row.link===false?undefined:tabHref(row.tab,row.opts)) });
       }));
@@ -352,6 +366,7 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
                 <div style={{minWidth:0,flex:1}}>
                   <div style={{fontSize:13,fontWeight:600,color:T.inkInverse,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
                     <span style={{overflow:"hidden",textOverflow:"ellipsis",...(item.isSeeAll?{color:T.gold,fontWeight:700,fontSize:12}:{})}} {...(item.isSeeAll?{"data-testid":"search-see-all"}:{})}>{item.title}</span>
+                    {item.chip && <span data-testid="search-type-chip" style={{flexShrink:0,fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:99,border:"1px solid rgba(240,237,230,0.35)",color:T.inkInverse}}>{item.chip}</span>}
                     <DriftBadge drift={item.drift}/>
                   </div>
                   {item.sub && <div style={{fontSize:11.5,color:"rgba(240,237,230,0.7)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sub}</div>}

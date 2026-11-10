@@ -3,6 +3,13 @@
 Read this when you touch the person record: donors, organisations, non-donors, households, photos, merge and duplicates, deletion, the timeline, the profile, volunteers or events.
 
 ## Rules
+- **FLOWS-4 (9 Nov 2026): a person search answers in one order.** The exact full name first, then the name
+  starting with the whole query as words, then starting with it, then containing it, then any other match; ties by
+  the most recent gift, then the record's last change (`personMatch.RANK_ORDER_SQL`). Enter opens the top one, and
+  people who share a name carry a type chip (Donor, Contact, Volunteer). Never rank by giving or recency first.
+- **FLOWS-4: the Trash is Settings → Trash (n).** Empty trash lives inside it; the Donors list, Your Data and Imports
+  link to it, and search finds it by trash, deleted or restore. A stored note is shown dated ("Mar 2025 note:")
+  under a line computed from current giving (`profile/NotesBanner.jsx`, `donors.notes_at`).
 - **Every action happens once (SENDS-1, 7 Nov 2026).** "Skip the next step" logs the conversation and closes nothing,
   the follow-up it was opened on included; every log path asks `server/tasks/logClose.js`. An owner change writes one
   "Reassigned" line, from `PATCH /donors/:id/assign` under the person's lock and only when the owner changed; no screen

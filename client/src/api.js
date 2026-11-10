@@ -441,6 +441,8 @@ export function adaptDonor(d) {
     stage:          d.stage || "cultivate",
     tags:           Array.isArray(d.tags) ? d.tags : JSON.parse(d.tags || "[]"),
     notes:          d.notes || "",
+    // FLOWS-4: when the note was written (donors.notes_at); a note from before that column dates by the record's start.
+    notesAt:        d.notes_at || (d.notes ? d.created_at : null) || null,
     lastTouchpoint: d.last_touchpoint || null,
     interactions:   [],
     wealthScore:           d.wealth_score ?? null,
