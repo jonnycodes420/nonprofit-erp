@@ -59,6 +59,9 @@ const RULES = [
   [/^\/removals\b|^\/trash\b|^\/merge|\/merge\b|^\/households?\b|^\/donors\b|^\/people\b|^\/relationships?\b/, ["person", "gift", "pledge", "group", "totals", "task", "note"]],
   [/^\/(campaigns?|appeals?|goals?|moves?|portfolio|major-gifts|memberships?)\b/, ["person", "totals", "pledge"]],
 ];
+// QUICKADD-1: the writes that ADD people, which every list of people re-reads
+// for: + Add, a gift with "+ New person", and a deposit sheet's new donors.
+export const ADDS_PEOPLE = /^\/donors\/?$|^\/gifts\/new-person\b|^\/deposits\/commit\b/;
 const ID_KEYS = { person: ["donorId", "donor_id", "personId", "funderId", "funder_donor_id"], event: ["eventId", "event_id"],
   pledge: ["pledgeId", "pledge_id"], grant: ["grantId", "grant_id"], group: ["groupId", "group_id"], task: ["taskId", "task_id"] };
 const PATH_IDS = [[/\/donors\/([^/?]+)/, "person"], [/\/events\/([^/?]+)/, "event"], [/\/pledges\/([^/?]+)/, "pledge"],

@@ -24,6 +24,7 @@ const routers = {
   r0: express.Router(),
   r1: express.Router(),
 };
+const giftForm = { body: null };   // QUICKADD-1: set at mount, read by server/donors/quickAdd.js
 
 function mount(ctx) {
 const {
@@ -68,7 +69,9 @@ async function autoUnlapseOnGift(orgId, donorId, preStage) {
 }
 app = routers.r1;
 
-app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+// QUICKADD-1: the body is kept as giftForm.body so "+ New person" (server/donors/quickAdd.js)
+// records its gift through exactly this door, after the person is added.
+app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(giftForm.body = async (req, res) => {
   const { amount, date, type, campaign, notes, pledgeId } = req.body;
   // Accept both spellings for back-compat: the touchpoint modal sends `fundId`,
   // the Add-Gift form sends `fund_id`. Same for the campaign reference.
@@ -153,6 +156,9 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   const eventIn = req.body.eventId || req.body.event_id || null;
   const giftEvent = eventIn ? await EG.eventOf(query, req.user.orgId, eventIn) : null;
   if (eventIn && !giftEvent) return res.status(404).json({ error: "Event not found" });
+  // QUICKADD-1: the appeal and the fundraiser / giving page, org-scoped like the event.
+  const attr = await require("./giftAttribution").checkAttribution(query, req.user.orgId, req.body);
+  if (attr.error) return res.status(attr.status).json({ error: attr.error });
 
   const giftId = newId("g");
   const giftDate = normalizeGiftDate(date);              // enforce ISO YYYY-MM-DD
@@ -219,6 +225,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     notes: notes || "", fundId: fundLines ? fundLines[0].fundId : (fundId || null), paymentMethod: paymentMethodIn,
     pledgeId: pledgeRow ? pledgeRow.id : null, idempotencyKey: idemKey, conflict: "idempotency",
     eventId: giftEvent ? giftEvent.id : null,
+    appealId: attr.appealId, givingPageId: attr.givingPageId, peerFundraiserId: attr.peerFundraiserId,
     actorId: actor(req).id, actorName: actor(req).name, source: "gift_form",
     extras: giftExtras, thread: { id: req.user.userId, name: actor(req).name },
   });
@@ -1375,4 +1382,4 @@ app.post("/gifts/:id/cheque", requireAuth, checkWriteAccess, wrap(async (req, re
 giftHooks.autoUnlapseOnGift = autoUnlapseOnGift;
 }
 
-module.exports = { routers, mount };
+module.exports = { routers, mount, giftForm };

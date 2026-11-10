@@ -12,6 +12,7 @@ import { useChanged } from "../../lib/changes";
 import { peopleNamed } from "../../lib/people";
 import { orgTodayCivil } from "../../lib/orgToday";
 import { fundBody, fundLinesProblem } from "../gifts/FundField";   // GIFTS-2: a gift split across funds
+import { rememberGift } from "../../lib/stickyGift";   // QUICKADD-1: "Same as last" for the next gift
 import { offerUndo } from "../EditHistory";
 import { savePledgeSchedule } from "../gifts/PledgeSchedule";
 
@@ -154,6 +155,8 @@ export function useProfileGiving({ donor, journey, setJourneyList, setJourneySug
         ...(addGiftForm.fund?fundBody(addGiftForm.fund):{fund_id:addGiftForm.fund_id}),payment_method:addGiftForm.payment_method,
         acknowledgement_sent:addGiftForm.acknowledgement_sent,
         pledgeId:addGiftForm.pledgeId||undefined,eventId:addGiftForm.eventId||undefined,
+        appealId:(addGiftForm.appeal&&addGiftForm.appeal.id)||undefined,   // QUICKADD-1
+        givingPageId:(addGiftForm.page&&addGiftForm.page.givingPageId)||undefined,peerFundraiserId:(addGiftForm.page&&addGiftForm.page.peerFundraiserId)||undefined,
         idempotencyKey:addGiftIdemRef.current,
       })});
     try{
@@ -167,6 +170,7 @@ export function useProfileGiving({ donor, journey, setJourneyList, setJourneySug
         await post(pick==="alt"?"reduce":"extra_gift");
       }
       addGiftIdemRef.current=null;
+      rememberGift({date:addGiftForm.date,method:addGiftForm.payment_method,fund:addGiftForm.fund,campaign:addGiftForm.campaign,appeal:addGiftForm.appeal,page:addGiftForm.page});
       setAddGiftOpen(false);
       // VOICE-4: every tile re-reads, not only the ones the gift read carries
       // (Average and Largest come from the status read, which waited on figs).
