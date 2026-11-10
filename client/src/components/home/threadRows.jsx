@@ -182,7 +182,7 @@ export function threadRow({ TOUCH_WORD, finishRow, i, isReadOnly, loadThreads, m
           data-testid="thread-row-done" title={isReadOnly?"Reactivate your subscription to make changes.":"Marks this step done"}
           style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>Mark done</button>
         {!isReadOnly&&t.kind!=="task"&&finishRow.logCall&&<button type="button" data-testid="thread-row-log" onClick={()=>finishRow.logCall(t)}
-          style={{background:"none",border:"none",padding:"4px 2px",color:T.ink3,fontSize:11.5,textDecoration:"underline",textUnderlineOffset:2,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>Log a call too</button>}
+          style={{background:"none",border:"none",padding:"4px 2px",color:T.ink3,fontSize:11.5,textDecoration:"underline",textUnderlineOffset:2,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>Log a touch too</button>}
         {/* BUILD-94 Part 5 — a next step is an appointment somebody has to
             keep, and hers lives in Outlook. Three links and a file; nothing
             syncs, and the menu says so. */}

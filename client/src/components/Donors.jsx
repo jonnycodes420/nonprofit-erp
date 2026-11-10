@@ -810,7 +810,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         onClose={()=>setLogTarget(null)}/>}
       {convoPickerOpen&&(
         <Modal onClose={()=>setConvoPickerOpen(false)} width={420} zIndex={300} align="top" padding={0}
-          ariaLabel="Log a call" dialogStyle={{borderRadius:16,border:"1px solid "+T.bg3,maxHeight:"70vh"}}>
+          ariaLabel="Log a touch" dialogStyle={{borderRadius:16,border:"1px solid "+T.bg3,maxHeight:"70vh"}}>
           <div style={{display:"flex",flexDirection:"column",overflow:"hidden",maxHeight:"100%"}}>
             <div style={{padding:"16px 18px 10px"}}>
               <div style={{fontSize:15,fontWeight:800,color:T.ink,marginBottom:8}}>Who did you talk to?</div>
@@ -900,7 +900,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         {data?.org?.capabilities?.ai&&<AIBtn onClick={generateCallList} loading={callLoading} label="✦ Call List"/>}
         {/* BUILD-81 Part 5 — logging a conversation is the primary act (it IS
             creating the follow-up); above the fold at 1440 and 390. */}
-        <button onClick={()=>setConvoPickerOpen(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.gold500,border:"none",borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>Log a call</button>
+        <button onClick={()=>setConvoPickerOpen(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.gold500,border:"none",borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>Log a touch</button>
         <button onClick={()=>setShowAdd(!showAdd)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink2,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add</button>
         <button onClick={()=>setRecordGiftOpen(true)} disabled={isReadOnly} data-testid="donors-record-gift" title={isReadOnly?"Reactivate your subscription to make changes.":"Record a gift, from someone on file or a new person"} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink2,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>Record a gift</button>
         {/* BUILD-33 Part 3 — ONE "Import & tools" menu instead of four sibling

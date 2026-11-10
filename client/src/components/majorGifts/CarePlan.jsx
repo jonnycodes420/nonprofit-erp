@@ -16,6 +16,13 @@ import { errorMessage } from "../../lib/domainError";
 import DateInput from "../inputs/LazyDateInput";
 import { useCanMajorGifts } from "../../lib/majorGifts";
 import { touchesFromTemplate, touchKind } from "../../../../shared/careShape.js";
+import { TOUCH_KINDS } from "../../../../shared/touchKinds.js";
+import { InlineCell } from "./InlineCell";   // TOUCH-1: the same click-to-edit cells as the Top 100
+import { LogConversationModal } from "../LogConversation";
+
+const STAGES = ["prospect", "qualify", "cultivate", "solicit", "steward", "lapsed"];
+// TOUCH-1 · the "Log a touch" kind that fulfils a planned touch ("Handwritten note" ← letter).
+const kindForCare = type => (TOUCH_KINDS.find(k => k.care.includes(type)) || {}).key || null;
 
 const NEEDS_OUTCOME = new Set(["call", "meeting"]);
 const HEALTH_TINT = {
@@ -54,6 +61,8 @@ export function CarePlanPanel({ donorId, isReadOnly, onChanged, onNavigate, comp
   const [tplId, setTplId] = useState("builtin:quarterly");
   const [proposal, setProposal] = useState(() => readProposal(donorId));
   const [saveName, setSaveName] = useState(null);
+  const [logging, setLogging] = useState(null);   // TOUCH-1: { kind, taskId } or {} for a plain "Log a touch"
+  const [offer, setOffer] = useState(null);       // TOUCH-1: the planned touch whose Done is being offered
 
   const load = useCallback(() => apiFetch(`/donors/${encodeURIComponent(donorId)}/care-plan`).then(r => {
     setD(r);
@@ -92,15 +101,26 @@ export function CarePlanPanel({ donorId, isReadOnly, onChanged, onNavigate, comp
     const r = await apiFetch("/care-templates", { method: "POST", body: JSON.stringify({ name: saveName, fromDonorId: donorId }) });
     setSaveName(null); setMsg(`Saved "${r.template.name}" with ${r.template.touches.length} touches.`); await load();
   }, "The template could not be saved.");
+  // TOUCH-1 · Done on a planned touch offers to log it, with the same kind, in
+  // her words; a touch that is not a call or a visit can also just be ticked.
+  // Any day: a touch planned for next month is done today when she did it today.
   const done = t => act(async () => {
-    if (!t.done && NEEDS_OUTCOME.has(touchKind(t.type))) {
-      // A call or a visit is finished by saying how it went, where Tasks asks it.
-      if (onNavigate) onNavigate("tasks", {}); else throw new Error("Finish a call or a visit in Tasks, where it asks how it went.");
-      return;
-    }
-    await apiFetch(`/tasks/${encodeURIComponent(t.taskId)}/complete`, { method: "POST", body: JSON.stringify({ done: !t.done }) });
+    if (!t.done) { setOffer(t); return; }
+    await apiFetch(`/tasks/${encodeURIComponent(t.taskId)}/complete`, { method: "POST", body: JSON.stringify({ done: false }) });
     await load(); onChanged && onChanged();
   }, "That touch could not be updated.");
+  const justDone = t => act(async () => {
+    setOffer(null);
+    await apiFetch(`/tasks/${encodeURIComponent(t.taskId)}/complete`, { method: "POST", body: JSON.stringify({ done: true }) });
+    await load(); onChanged && onChanged();
+  }, "That touch could not be updated.");
+  const enc = encodeURIComponent;
+  const patchPlan = body => async () => { changed(await apiFetch(`/donors/${enc(donorId)}/care-plan`, { method: "PATCH", body: JSON.stringify(body) })); };
+  const saveAsk = v => patchPlan({ askCents: v })();
+  const saveAskBy = v => patchPlan({ askBy: v })();
+  const saveStage = async v => { await apiFetch(`/donors/${enc(donorId)}/stage`, { method: "PATCH", body: JSON.stringify({ stage: v, prevStage: d.stage || undefined }) }); await load(); onChanged && onChanged(); };
+  const saveOwner = async v => { await apiFetch(`/donors/${enc(donorId)}/assign`, { method: "PATCH", body: JSON.stringify({ assignedTo: v || null }) }); await load(); onChanged && onChanged(); };
+  const saveDue = t => async v => { changed(await apiFetch(`/donors/${enc(donorId)}/care-plan/touches/${enc(t.taskId)}`, { method: "PATCH", body: JSON.stringify({ due: v }) })); };
 
   const tpl = (d.templates || []).find(t => t.id === (proposal ? proposal.templateId : tplId));
   const preview = proposal && tpl ? touchesFromTemplate(tpl, d.today) : [];
@@ -128,9 +148,16 @@ export function CarePlanPanel({ donorId, isReadOnly, onChanged, onNavigate, comp
 
       <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "repeat(auto-fit,minmax(150px,1fr))", gap: 8, fontSize: 12.5 }}>
         <div><span style={lbl}>Goal</span>{d.plan?.goal || <span style={{ color: T.ink3 }}>Not set</span>}</div>
-        <div><span style={lbl}>Ask</span>{d.plan?.askCents != null ? fmtFull(d.plan.askCents / 100) : <span style={{ color: T.ink3 }}>Not set</span>}{d.plan?.askBy ? ` by ${dayLabel(d.plan.askBy)}` : ""}</div>
-        <div><span style={lbl}>Owner</span>{d.owner ? d.owner.name : <span style={{ color: T.ink3 }}>Nobody yet</span>}</div>
-        <div><span style={lbl}>Stage</span>{d.stage ? stageName(d.stage) : <span style={{ color: T.ink3 }}>Not placed</span>}</div>
+        <div><span style={lbl}>Ask</span><InlineCell kind="money" label="the ask" testid="care-ask-cell" disabled={isReadOnly} value={d.plan?.askCents ?? null} placeholder="50,000" onSave={saveAsk}
+          display={d.plan?.askCents != null ? fmtFull(d.plan.askCents / 100) : <span style={{ color: T.ink3 }}>Not set</span>} /></div>
+        <div><span style={lbl}>Ask by</span><InlineCell kind="date" label="the ask-by day" testid="care-askby-cell" disabled={isReadOnly} value={d.plan?.askBy || null} onSave={saveAskBy}
+          display={d.plan?.askBy ? dayLabel(d.plan.askBy) : <span style={{ color: T.ink3 }}>Not set</span>} /></div>
+        <div><span style={lbl}>Owner</span><InlineCell kind="select" label="the owner" testid="care-owner-cell" disabled={isReadOnly} value={d.owner ? d.owner.id : ""}
+          options={[{ value: "", label: "Nobody" }, ...(d.owners || []).map(o => ({ value: o.id, label: o.name }))]} onSave={saveOwner}
+          display={d.owner ? d.owner.name : <span style={{ color: T.ink3 }}>Nobody yet</span>} /></div>
+        <div><span style={lbl}>Stage</span><InlineCell kind="select" label="the stage" testid="care-stage-cell" disabled={isReadOnly} value={d.stage || ""}
+          options={[...(d.stage ? [] : [{ value: "", label: "Not placed" }]), ...STAGES.map(s => ({ value: s, label: stageName(s) }))]} onSave={saveStage}
+          display={d.stage ? stageName(d.stage) : <span style={{ color: T.ink3 }}>Not placed</span>} /></div>
       </div>
       {!isReadOnly && (editing ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -139,10 +166,12 @@ export function CarePlanPanel({ donorId, isReadOnly, onChanged, onNavigate, comp
             <label><span style={lbl}>Ask amount</span><input data-testid="care-ask" style={{ ...inp, width: 120 }} value={form.ask} placeholder="50,000" onChange={e => setForm(f => ({ ...f, ask: e.target.value }))} /></label>
             <label><span style={lbl}>Ask by</span><DateInput style={{ ...inp, width: 140 }} value={form.askBy} onChange={e => setForm(f => ({ ...f, askBy: e.target.value }))} /></label>
           </div>
-          <div style={{ fontSize: 11, color: T.ink3 }}>The owner and the stage are the person's own: change them on the profile or the pipeline.</div>
           <div style={{ display: "flex", gap: 8 }}><button data-testid="care-save" onClick={savePlan} style={btn}>Save</button><button onClick={() => setEditing(false)} style={quiet}>Cancel</button></div>
         </div>
-      ) : <div><button data-testid="care-edit" onClick={() => setEditing(true)} style={quiet}>{d.plan?.goal || d.plan?.askCents != null ? "Change the goal or ask" : "Set the goal and ask"}</button></div>)}
+      ) : <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button data-testid="care-log-touch" onClick={() => setLogging({})} style={btn}>Log a touch</button>
+          <button data-testid="care-edit" onClick={() => setEditing(true)} style={quiet}>{d.plan?.goal || d.plan?.askCents != null ? "Change the goal or ask" : "Set the goal and ask"}</button>
+        </div>)}
 
       <div>
         <div style={{ fontSize: 11, fontWeight: 800, color: T.ink3, marginBottom: 6 }}>Planned touches</div>
@@ -150,8 +179,8 @@ export function CarePlanPanel({ donorId, isReadOnly, onChanged, onNavigate, comp
         {d.touches.map(t => (
           <div key={t.taskId} data-testid="care-touch" style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid " + T.bg3 }}>
             <input type="checkbox" aria-label={`${t.label} done`} checked={t.done} disabled={isReadOnly} onChange={() => done(t)} />
-            <span style={{ flex: 1, fontSize: 12.5, textDecoration: t.done ? "line-through" : "none", color: t.done ? T.ink3 : T.ink }}>
-              {t.label} · {dayLabel(t.due)}{t.owner ? ` · ${t.owner.name}` : ""}
+            <span style={{ flex: 1, fontSize: 12.5, textDecoration: t.done ? "line-through" : "none", color: t.done ? T.ink3 : T.ink, display: "flex", gap: 4, alignItems: "baseline", flexWrap: "wrap" }}>
+              {t.label} ·{t.done ? <span>{dayLabel(t.due)}</span> : <InlineCell kind="date" label={`the day for ${t.label}`} testid="care-touch-due" disabled={isReadOnly} value={t.due} onSave={saveDue(t)} display={dayLabel(t.due)} />}{t.owner ? ` · ${t.owner.name}` : ""}
             </span>
             <span style={{ fontSize: 11, fontWeight: 700, color: t.status === "overdue" ? T.gold700 : T.ink3 }}>{t.status === "overdue" ? "Overdue" : t.status === "done" ? "Done" : "Planned"}</span>
           </div>
@@ -185,6 +214,19 @@ export function CarePlanPanel({ donorId, isReadOnly, onChanged, onNavigate, comp
           </div>
         </div>
       )}
+      {offer && (
+        <div data-testid="care-done-offer" style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 12px", fontSize: 12.5 }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>{offer.label}, planned for {dayLabel(offer.due)}</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {kindForCare(offer.type) && <button data-testid="care-done-log" onClick={() => { setLogging({ kind: kindForCare(offer.type), taskId: offer.taskId }); setOffer(null); }} style={btn}>Log the {offer.label.toLowerCase()}</button>}
+            {!NEEDS_OUTCOME.has(touchKind(offer.type)) && <button data-testid="care-done-plain" onClick={() => justDone(offer)} style={quiet}>Just mark it done</button>}
+            <button onClick={() => setOffer(null)} style={quiet}>Not yet</button>
+          </div>
+        </div>
+      )}
+      {logging && <LogConversationModal donor={{ id: donorId, name: d.name }} initialKind={logging.kind || null} completesTaskId={logging.taskId || null}
+        onNavigate={onNavigate} onClose={() => setLogging(null)}
+        onSaved={r => { setMsg(r && r.completed ? `Logged, and the planned ${r.completed.label.toLowerCase()} is done.` : "Logged."); load(); onChanged && onChanged(); }} />}
       {msg && <div style={{ fontSize: 12, color: T.greenDk }}>{msg}</div>}
       {err && <div role="alert" style={{ fontSize: 12, color: T.gold700 }}>{err}</div>}
     </div>

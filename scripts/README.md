@@ -45,6 +45,7 @@ Read-only SQL (paste into a console or `psql "$DATABASE_URL" -f <file>`):
 | `ops/import-receipts-readonly.sql` | Every import receipt foots against its gifts, to the cent |
 | `ops/import5-pledges-from-import-day-readonly.sql` | Pledges that were due from the day of their import (IMPORT-5) |
 | `ops/list-vs-home-readonly.sql` | The Donors list and Home count the same people |
+| `ops/touch1-calls-that-were-notes-readonly.js` | Touches logged as a call whose words say a note, card, gift or text (TOUCH-1; `--org=`), for her to change in the app |
 | `ops/stale-deletions-readonly.sql` | People live again but still named by an open deletion record |
 | `sql/queue-status.sql` | DEPLOY-1: the queue's waiting and running jobs by type, org and age; running jobs past their heartbeat or lease; waiting jobs by type |
 | `sql/big-orgs.sql` | The largest orgs by rows, for scale planning |

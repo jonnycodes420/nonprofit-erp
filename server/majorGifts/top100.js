@@ -467,6 +467,8 @@ app.post("/care-templates", requireAuth, mg, checkWriteAccess, wrap(async (req, 
   res.status(201).json({ template: { id, name, builtIn: false, touches } });
 }));
 
+// TOUCH-1: one field at a time, for the Top 100's cells and the plan of care.
+require("./top100Edit").register(app, { query, run, wrap, requireAuth, checkWriteAccess, mg, donorOf, ensurePlan, planPayload, shapeMod });
 rowsFor = async (orgId) => { const l = await listOf(orgId, null); return l ? listRows(orgId, l.id, await todayOf(orgId)) : []; };
 return {};
 }
