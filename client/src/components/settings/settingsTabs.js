@@ -50,6 +50,10 @@ export const SETTINGS_TABS=[
   // BUILD-87 Part 1 — every import run, newest first, with the receipt it
   // showed when it committed. Read only: this build does not undo an import.
   {id:"imports",label:"Imports"},
+  // FLOWS-4 (W-1107-Finance-35): the people you deleted, with Restore and Empty
+  // trash, in a place of its own (it was at the foot of Imports). Admins only,
+  // as the list's route is. Settings adds the count to the label.
+  {id:"trash",label:"Trash",adminOnly:true},
   // AGENT-5 — Atlas's rules, in plain words, and its pause switch: the
   // Agent page's Guardrails moved here when the page went.
   {id:"atlas",label:"Atlas"},

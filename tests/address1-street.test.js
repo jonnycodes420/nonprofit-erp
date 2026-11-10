@@ -175,11 +175,12 @@ const row = async id => (await q(`SELECT name, address, address2, city, state, z
     await page.keyboard.press("Escape").catch(() => {});
 
     // The merge button says the name the record will have.
-    await page.goto(`${APP}/donors/${P("wo")}`, { waitUntil: "networkidle", timeout: 60000 });
+    // FLOWS-4: a merge keeps the record it was started from, so it starts from Nora's.
+    await page.goto(`${APP}/donors/${P("wk")}`, { waitUntil: "networkidle", timeout: 60000 });
     await page.locator('[data-testid="dp-more"]').first().click();
     await page.getByRole("menuitem", { name: /^Merge with/ }).click();
-    await page.getByRole("dialog").locator("input").first().fill("Nora");
-    await page.getByRole("dialog").getByRole("button", { name: /Nora Vance/ }).first().click();
+    await page.getByRole("dialog").locator("input").first().fill("Eleanor");
+    await page.getByRole("dialog").getByRole("button", { name: /Eleanor Vance/ }).first().click();
     const cmp = page.getByRole("dialog", { name: /Compare and merge/ });
     const btn = cmp.locator('[data-testid="dh-merge-confirm"]');
     await btn.waitFor({ timeout: 20000 });

@@ -588,7 +588,10 @@ async function pairBody(req) {
   const A = rows.find(d => d.id === a), B = rows.find(d => d.id === b);
   if (!A || !B) return { status: 404, json: { error: "Donor not found" } };
   // The default kept record: the one with more gifts, then the older one.
-  const keepA = Number(A.gift_count || 0) !== Number(B.gift_count || 0)
+  // FLOWS-4 (W-1109-Donors-44X): a merge started from a record (More → Merge
+  // with… on its profile) keeps that record; the swap link is still there.
+  const keep = req.query.keep ? String(req.query.keep) : null;
+  const keepA = keep === A.id ? true : keep === B.id ? false : Number(A.gift_count || 0) !== Number(B.gift_count || 0)
     ? Number(A.gift_count || 0) > Number(B.gift_count || 0)
     : new Date(A.created_at) <= new Date(B.created_at);
   const kept = keepA ? A : B, other = keepA ? B : A;

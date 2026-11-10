@@ -337,7 +337,7 @@ async function composeWeeklyOrgPart(orgId, monday) {
       ORDER BY i.due_date, i.amount DESC`, [orgId, monday, sunday]);
   const events = await query(
     `SELECT id, name, TO_CHAR(date, 'YYYY-MM-DD') AS date FROM events WHERE org_id = ? AND date >= ?::date AND date <= ?::date
-        AND COALESCE(status, 'upcoming') NOT IN ('cancelled', 'canceled')
+        AND COALESCE(status, 'upcoming') NOT IN ('cancelled', 'canceled') AND archived_at IS NULL   -- FLOWS-4: not an archived one
       ORDER BY date, name`, [orgId, monday, sunday]);
   return {
     monday, sunday, lastWeek: { from: lastMon, to: lastSun },

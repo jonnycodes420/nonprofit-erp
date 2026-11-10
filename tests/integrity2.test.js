@@ -287,7 +287,7 @@ const live = async id => !!(await one(`SELECT 1 AS x FROM donors WHERE id=$1 AND
         await page.locator('[data-testid="delete-person-yes"]').click();
         await page.waitForTimeout(1500);
         ok("§7 confirming moves her to the trash", deletes.length === 1 && !(await live(ada)), { deletes });
-        await page.goto(`${APP}/app/settings?section=imports`, { waitUntil: "networkidle", timeout: 60000 });
+        await page.goto(`${APP}/app/settings?section=trash`, { waitUntil: "networkidle", timeout: 60000 });   // FLOWS-4: the Trash is its own section
         await page.locator('[data-testid="trash-search"]').fill("Thornfield");
         await page.waitForTimeout(800);
         const rows = await page.locator('[data-testid="trash-row"]').count();

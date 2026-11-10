@@ -198,7 +198,7 @@ async function readFacts(req, nowMs) {
             COALESCE((SELECT COUNT(*) FROM event_attendees a WHERE a.event_id=e.id AND a.org_id=e.org_id AND ${NOT_DELETED("a")} AND a.status IN ('registered','confirmed') AND COALESCE(a.gift_amount,0) > 0 AND a.registration_gift_id IS NULL),0)::int AS unpaid,
             COALESCE((SELECT SUM(a.gift_amount) FROM event_attendees a WHERE a.event_id=e.id AND a.org_id=e.org_id AND ${NOT_DELETED("a")} AND a.status IN ('registered','confirmed') AND COALESCE(a.gift_amount,0) > 0 AND a.registration_gift_id IS NULL),0) AS unpaid_amount
        FROM events e WHERE e.org_id=? AND e.is_sample IS NOT TRUE AND COALESCE(e.status,'') NOT IN ('cancelled','canceled','completed')
-        AND e.date >= ? AND e.date <= ? ORDER BY e.date LIMIT 1`, [orgId, today, orgTime.addDays(today, 7)]))
+        AND e.archived_at IS NULL AND e.date >= ? AND e.date <= ? ORDER BY e.date LIMIT 1`, [orgId, today, orgTime.addDays(today, 7)]))
     .map(e => ({ id: e.id, name: e.name, capacity: num(e.capacity) || null, guests: num(e.guests), unpaid: num(e.unpaid), unpaidAmount: num(e.unpaid_amount),
       // SWEEP-1 + EVENTS-3: Registered is the event page's number (shared/numbers/
       // events.js, each party once); `guests` is places taken, against capacity.

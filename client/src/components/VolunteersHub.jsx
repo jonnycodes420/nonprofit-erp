@@ -35,7 +35,7 @@ import { countLabel } from "../../../shared/countWords.js";
 import { useWriteRev, VOLUNTEER_WRITES } from "../lib/writeRev";
 import ShiftRowActions from "./volunteers/ShiftRowActions";   // STALE-2: Edit a logged shift
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
-import { PersonShiftLists } from "./volunteers/PersonShiftLists";   // FLOWS-3: Coming up and Past, from the Schedule's rows
+import { PersonShiftLists } from "./volunteers/PersonShiftLists"; import { entryKey } from "../lib/entryKey";   // FLOWS-3: Coming up and Past, from the Schedule's rows
 
 // ── VOL-1 · THE SAME SHAPE FUNDRAISING GOT ────────────────────────────────
 // Four sections, each one a question a coordinator actually asks, with the
@@ -350,7 +350,7 @@ function RosterView({ roster, narrow, onOpen, onAdd, onImport, onSignupLink, isR
 // ── Shifts and hours ────────────────────────────────────────────────────────
 function ShiftsView({ roster, narrow, isReadOnly, onChanged, onOpen }) {
   const [data, setData] = useState(null);
-  const [form, setForm] = useState({ personId: "", date: "", hours: "", role: "" });
+  const [form, setForm] = useState(() => ({ personId: "", date: "", hours: "", role: "", key: entryKey() }));   // FLOWS-4: one entry, one key
   const [msg, setMsg] = useState("");
   const [importing, setImporting] = useState(false);
   const load = useCallback(() => { apiFetch("/volunteer-hub/shifts?limit=50").then(setData).catch(() => setData({ shifts: [] })); }, []);
@@ -364,8 +364,8 @@ function ShiftsView({ roster, narrow, isReadOnly, onChanged, onOpen }) {
   const log = async () => {
     setMsg("");
     try {
-      await apiFetch(`/donors/${form.personId}/volunteer-hours`, { method: "POST", body: JSON.stringify({ date: form.date, hours: form.hours, role: form.role }) });
-      setForm({ personId: form.personId, date: "", hours: "", role: "" }); setMsg("Shift logged."); load(); onChanged();
+      await apiFetch(`/donors/${form.personId}/volunteer-hours`, { method: "POST", body: JSON.stringify({ date: form.date, hours: form.hours, role: form.role, entryKey: form.key }) });
+      setForm({ personId: form.personId, date: "", hours: "", role: "", key: entryKey() }); setMsg("Shift logged."); load(); onChanged();
     } catch (e) {
       if (e && e.authHandled) setMsg("Your session has ended, so the shift was not saved. Sign in again and log it.");
       else if (e && e.status === 404) { setForm(f => ({ ...f, personId: "" })); onChanged(); setMsg("That person is no longer on the roster, so the shift was not saved. The list is fresh now: pick them again."); }
