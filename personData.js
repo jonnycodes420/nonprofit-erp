@@ -47,7 +47,7 @@ const DONOR_PII_NULL = ["email", "email2", "phone", "mobile", "address", "addres
 // Rows that are about the person and nothing else: removed.
 const DELETE_BY_DONOR = ["interactions", "threads", "thank_you_drafts", "milestone_drafts", "agent_drafts", "note_reminders",
   "moves", "custom_field_values", "donor_materials", "campaign_recipients", "email_marketing_activity", "tasks",
-  "tribute_notices", "opportunities", "planned_gifts", "donor_designations", "cultivation_plans", "reconnect_sends",
+  "tribute_notices", "opportunities", "planned_gifts", "portfolio_members", "care_plans", "donor_designations", "cultivation_plans", "reconnect_sends",
   "sequence_enrollments", "sequence_sends", "gift_duplicate_questions", "import_merges", "donor_account_links",
   "portal_audit_log",
   // PROSPECT-1 — screening results and a public filing looked up for them.

@@ -47,7 +47,7 @@ const ATLAS_MODEL = () => process.env.ATLAS_MODEL || "claude-sonnet-4-6";
 const ATLAS_ROUTE_MODEL = () => process.env.ATLAS_ROUTE_MODEL || "claude-haiku-4-5-20251001";
 // The shapes code reads for certain, answered from shared/numbers with no read by
 // the model: a person's summary, finding someone, and a question for Ask.
-const CODE_SHAPES = new Set(["about", "find", "question"]);
+const CODE_SHAPES = new Set(["about", "find", "question", "top100"]);   // TOP100-1: the Top 100 asks
 // ATLAS-4 · ATLAS ANSWERS IN GOOD TIME. Feel 1 (Muse): one answer took about
 // 60 s. A question goes to /ask, which can ask a model three times in a row
 // (the plan, then the query form, then the sentence), each with the SDK's
@@ -230,7 +230,7 @@ async function readSteps(orgId, text, { today, onPage, gateP = null }) {
   const gate = await (gateP || agentGate(orgId));
   // ATLAS-5: a known shape skips the model's read (each clause read in code, all of them known).
   const inCode = AT_.readInCode(text);
-  if (inCode.length && inCode.every(x => CODE_SHAPES.has(x.kind) && (x.kind === "question" || x.who))) return { ai: gate.ok ? "on" : "off", steps: inCode, code: true };
+  if (inCode.length && inCode.every(x => CODE_SHAPES.has(x.kind) && (x.kind === "question" || x.kind === "top100" || x.who))) return { ai: gate.ok ? "on" : "off", steps: inCode, code: true };
   if (gate.ok) {
     const prompt = AT_.buildAtlasPrompt(text, { today, onPage });
     try {
@@ -652,6 +652,7 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
           ...(ppl.length === 1 ? person(ppl[0].id, { section: "giving" }) : {}) });
         break;
       }
+      case "top100": await log(await require("../server/majorGifts/top100Atlas").answer({ req, query, step: st, today, top100Rows: require("../server/majorGifts/top100").top100Rows })); break;   // TOP100-1
       case "about": {
         // ATLAS-3: what Steward knows about them, not only their numbers.
         const pa = await AN.personAnswer({ query, orgId, donorId: id, today });

@@ -15,7 +15,7 @@ import { useStewardTold, told } from "../lib/stewardTold";
 import { noteServerChanges, useChanged } from "../lib/changes";   // STALE-1
 // COMMS-1 item 4: the dismiss flow loads on the first × (Home's first look stays within perf-app's budget).
 const dismissDrafts = (...a) => import("./DraftDismiss").then(m => m.dismissDrafts(...a));
-import { linkTarget, useAtlasName } from "../lib/atlas";
+import { linkTarget, followLink, useAtlasName } from "../lib/atlas";
 import { openTellSteward } from "./TellStewardOpen";   // ATLAS-5: Answer opens the question still asking
 
 const TAP = { gift: "Record", pledge: "Record", receipt: "Send both", held_back: "Keep as a note" };
@@ -79,7 +79,7 @@ export function AtlasNote({ place, id = null, onNavigate, style }) {
     try { await apiFetch(path, { method: "POST", body: "{}" }); told(); await load(); } catch { /* the line stays as it was */ }
     setBusy(false);
   };
-  const open = onNavigate ? link => { const t = linkTarget(link); if (t) onNavigate(t[0], t[1]); } : null;
+  const open = onNavigate ? link => { const t = followLink(link); if (t) onNavigate(t[0], t[1]); } : null;
   const shown = fading ? notes.filter(n => n.waits) : notes;
   const dismiss = async lines => {
     setBusy(true);
@@ -132,7 +132,7 @@ export function AtlasBell({ onNavigate }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
   const act = async path => { setBusy(true); try { await apiFetch(path, { method: "POST", body: "{}" }); told(); await load(); } catch { /* unchanged */ } setBusy(false); };
-  const go = link => { const t = linkTarget(link); if (t && onNavigate) { setOpen(false); onNavigate(t[0], t[1]); } };
+  const go = link => { const t = followLink(link); if (t && onNavigate) { setOpen(false); onNavigate(t[0], t[1]); } };
   const answer = n => { setOpen(false); openTellSteward(null, { requestId: n.requestId }); };
   const n = data.waiting || 0;
   return (

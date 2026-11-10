@@ -115,7 +115,7 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
   const taskBlock = tasks.count ? `
     <div style="margin-top:22px;padding-top:14px;border-top:2px solid ${BRASS};">
       <div style="font-family:'DM Serif Display',Georgia,serif;font-size:17px;color:${INK};">Your tasks</div>
-      <table style="margin-top:6px;border-collapse:collapse;width:100%;">${[...tasks.dueToday, ...tasks.overdue].map(taskLi).join("")}</table>
+      <table style="margin-top:6px;border-collapse:collapse;width:100%;">${(tasks.ordered || [...tasks.dueToday, ...tasks.overdue]).map(taskLi).join("")}</table>
     </div>` : "";
 
   // FIX-34 · TODAY'S MEETINGS ride in the same morning email, from the same
