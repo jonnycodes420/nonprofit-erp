@@ -101,8 +101,9 @@ async function snapshot(org) {
   ORG_TABLES = ORG_TABLES || (await q(`SELECT table_name AS t FROM information_schema.columns WHERE column_name='org_id' AND table_schema='public' ORDER BY 1`))
     .map(r => r.t).filter(t => !NOT_STATE.has(t));
   const out = {};
+  const trashed = await require("./lib/undoTrashed").undoTrashed(q, org);   // INTEGRITY-3: an undo trashes, never deletes
   for (const t of ORG_TABLES) {
-    const rows = await q(`SELECT * FROM ${t} WHERE org_id=$1`, [org]).catch(() => []);
+    const rows = (await q(`SELECT * FROM ${t} WHERE org_id=$1`, [org]).catch(() => [])).filter(require("./lib/undoTrashed").notUndoTrashed(trashed, t));
     out[t] = rows.filter(r => !(t === "fin_funds" && r.description === "General unrestricted operating fund"))
       .map(r => JSON.stringify(Object.fromEntries(Object.entries(r).filter(([k]) => !SNAP_SKIP.has(k)).sort()))).sort();
   }

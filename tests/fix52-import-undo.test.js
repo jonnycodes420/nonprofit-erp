@@ -82,7 +82,12 @@ const centsOf = v => Math.round(Number(v || 0) * 100);
 async function snapshot(org) {
   const out = {};
   for (const t of SNAP) {
-    const rows = await q(`SELECT * FROM ${t} WHERE org_id=$1 ORDER BY id`, [org]).catch(() => []);
+    // INTEGRITY-3: an undo puts the people its file created in the trash (restorable for
+    // 30 days), never deletes them outright; the live org is what must match, so they
+    // and the rows that stay with them in the trash are not part of the snapshot
+    const IN_UNDO_TRASH = c => `${c} IN (SELECT id FROM donors WHERE org_id=$1 AND deleted_at IS NOT NULL AND created_import_id IS NOT NULL)`;
+    const where = t === "donors" ? ` AND NOT ${IN_UNDO_TRASH("id")}` : ["interactions", "tasks"].includes(t) ? ` AND (donor_id IS NULL OR NOT ${IN_UNDO_TRASH("donor_id")})` : "";
+    const rows = await q(`SELECT * FROM ${t} WHERE org_id=$1${where} ORDER BY id`, [org]).catch(() => []);
     // setup every org gets with its first gift (the unrestricted fund), never import data
     out[t] = rows.filter(r => !(t === "fin_funds" && r.description === "General unrestricted operating fund"))
       .map(r => JSON.stringify(Object.fromEntries(Object.entries(r).filter(([k]) => !SNAP_SKIP.has(k)).sort())));

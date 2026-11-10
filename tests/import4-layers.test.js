@@ -98,8 +98,9 @@ const centsOf = v => Math.round(Number(v || 0) * 100);
 const SNAP_SKIP = new Set(["updated_at", "last_scored_at", "score_updated_at", "engagement_updated_at"]);
 async function snapshot(org) {
   const out = {};
+  const trashed = await require("./lib/undoTrashed").undoTrashed(q, org);   // INTEGRITY-3: an undo trashes, never deletes
   for (const t of TABLES) {
-    const rows = await q(`SELECT * FROM ${t} WHERE org_id=$1 ORDER BY id`, [org]).catch(() => []);
+    const rows = (await q(`SELECT * FROM ${t} WHERE org_id=$1 ORDER BY id`, [org]).catch(() => [])).filter(require("./lib/undoTrashed").notUndoTrashed(trashed, t));
     // The org's unrestricted fund and its chart of accounts are made the first
     // time any gift is recorded (recordGift's orgUnrestrictedFundId and
     // ensureOrgLedger): setup every org has, never import data, so they stay.

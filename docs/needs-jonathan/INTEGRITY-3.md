@@ -1,0 +1,5 @@
+## INTEGRITY-3 · FIND FIONA, THEN RESTORE HER ONE WAY OR ANOTHER (2026-11-10)
+
+- Run `DATABASE_URL=<prod> node scripts/ops/integrity3-find-person.js --org=<the demo org's id> --name="Callahan" --i-know-this-is-prod` (read only; ids and states only) and send Claude the output. The brief names `org_creo`; CLAUDE.md names `org_b72demo` as the demo. Run it for whichever org Fiona was in (both is fine).
+- If it shows her as `trash`: Settings, Trash, search "Callahan", Restore.
+- If it shows nothing, or `HARD-DELETED (no row)`: she is demo data, so adding her again by hand is fine. To bring back her exact row instead, use Supabase point-in-time recovery into a NEW project (never the prod one): Supabase dashboard, prod project, Database, Backups, Point in time, choose a moment before her undo on 8 Nov and restore it to a new project. In that copy, `SELECT * FROM donors WHERE id='<her id>'` (and her `gifts`, `deleted_records` rows by the same id), export those rows as INSERTs, and run them on prod in one transaction. Then delete the restored copy.

@@ -26,10 +26,10 @@ const routers = { r1: express.Router() };
 const KEEP_DAYS = 30;
 const AUTO_EMPTY_FROM = "2026-11-09T00:00:00Z";
 
-// SQL: d is a person in the trash (not merged away, not an erased shell).
-// ONBOARD-1: a staged import's people are hidden, not deleted (server/onboard/staging.js).
-const IN_TRASH = d => `(${d}.deleted_at IS NOT NULL AND ${d}.erased_at IS NULL AND ${d}.staged_import_id IS NULL
-  AND NOT EXISTS (SELECT 1 FROM donor_merges m WHERE m.org_id = ${d}.org_id AND m.merged_id = ${d}.id AND m.undone_at IS NULL))`;
+// SQL: d is a person in the trash (not merged away, not an erased shell, not
+// a staged import's hidden people). INTEGRITY-3: the one definition, which the
+// Everyone breakdown and Empty trash read too (shared/numbers/trash.js).
+const { IN_TRASH } = require("../../shared/numbers/trash");
 // When they leave on their own.
 const LEAVES_ON = d => `(GREATEST(${d}.deleted_at, '${AUTO_EMPTY_FROM}'::timestamptz) + INTERVAL '${KEEP_DAYS} days')`;
 
@@ -61,7 +61,7 @@ app.get("/trash/people", requireAuth, requireAdmin, wrap(async (req, res) => {
   const where = `d.org_id = ? AND ${IN_TRASH("d")}${like ? " AND (d.name ILIKE ? OR d.email ILIKE ?)" : ""}`;
   const args = like ? [orgId, like, like] : [orgId];
   const [{ n }] = await query(`SELECT COUNT(*)::int AS n FROM donors d WHERE ${where}`, args);
-  const [{ all }] = await query(`SELECT COUNT(*)::int AS all FROM donors d WHERE d.org_id = ? AND ${IN_TRASH("d")}`, [orgId]);
+  const all = await require("../../shared/numbers/trash").trashCount(query, orgId);   // INTEGRITY-3: the breakdown reads this too
   const rows = await query(
     `SELECT d.id, d.name, d.email, d.deleted_at, ${LEAVES_ON("d")} AS leaves_on,
             (SELECT COUNT(*) FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id)::int AS gifts,
@@ -112,6 +112,15 @@ app.post("/trash/people/restore", requireAuth, requireAdmin, checkWriteAccess, w
 }));
 }
 
+// INTEGRITY-3: who left Steward for good, one audit row each (their id, from
+// the trash to deleted for good), so a person who is gone can always be traced
+// to the Empty trash or the clear-out that took them. The first row is the
+// purge itself, with its count.
+function purgeRows(ids, summary) {
+  return [{ entityType: "donors", entityId: null, label: "Trash", summary, action: "delete", recordCount: ids.length },
+    ...ids.map(id => ({ entityType: "donor", entityId: id, action: "deleted for good", before: { state: "trash" }, after: { state: "deleted for good" }, summary }))];
+}
+
 // The 30-day clear-out. Every org, the people whose day has come, through the
 // same purge as Empty trash; one audit row per org, as a system actor.
 async function autoEmpty({ now = null } = {}) {
@@ -124,10 +133,13 @@ async function autoEmpty({ now = null } = {}) {
   for (const o of due) {
     const out = await R.purgePeople(o.org_id, o.ids);
     purged += out.purged;
-    await require("../../middleware/auditTrail").insertAuditRow({ orgId: o.org_id, actorId: "system:trash/auto-empty", actorName: "Steward (trash)", actorKind: "system",
-      action: "delete", entityType: "donors", entityId: null, entityLabel: "Trash",
-      summary: `The trash cleared ${out.purged} ${out.purged === 1 ? "person" : "people"} deleted more than ${KEEP_DAYS} days ago`,
-      changes: { count: out.purged }, method: "TICK", path: "trashAutoEmpty", status: 200 }).catch(e => console.error("[trash] audit:", e.message));
+    const summary = `The trash cleared ${out.purged} ${out.purged === 1 ? "person" : "people"} deleted more than ${KEEP_DAYS} days ago`;
+    // INTEGRITY-3: one row per person, as Empty trash writes
+    await require("../../middleware/auditTrail").insertAuditRows(purgeRows(o.ids, summary).map((r, k) => ({
+      orgId: o.org_id, actorId: "system:trash/auto-empty", actorName: "Steward (trash)", actorKind: "system",
+      action: r.action, entityType: r.entityType, entityId: r.entityId, entityLabel: r.label || null,
+      changes: k === 0 ? { count: out.purged } : { state: { before: "trash", after: "deleted for good" } }, before: r.before || null, after: r.after || null,
+      summary, recordCount: k === 0 ? out.purged : 1, method: "TICK", path: "trashAutoEmpty", status: 200 }))).catch(e => console.error("[trash] audit:", e.message));
   }
   return { orgs: due.length, purged };
 }
@@ -135,4 +147,4 @@ if (process.env.DISABLE_BACKGROUND_TICKS !== "1") {
   require("../../jobQueue").define("trashAutoEmpty", { everyMs: 6 * 3600e3, firstMs: 15 * 60e3, run: () => autoEmpty() });
 }
 
-module.exports = { routers, mount, autoEmpty, whySentence, KEEP_DAYS, AUTO_EMPTY_FROM, IN_TRASH };
+module.exports = { routers, mount, autoEmpty, whySentence, purgeRows, KEEP_DAYS, AUTO_EMPTY_FROM, IN_TRASH };

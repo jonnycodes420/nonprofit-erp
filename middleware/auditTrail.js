@@ -336,6 +336,28 @@ async function insertAuditRow(rawFields) {
   return id;
 }
 
+// INTEGRITY-3 · MANY ROWS AT ONCE, for a change that must be findable person
+// by person (an import undo's moves, Empty trash, the 30-day clear-out): the
+// same scrub as insertAuditRow, written 500 to a statement so 25,000 people
+// is fifty statements, not 25,000.
+async function insertAuditRows(list) {
+  const rows = [];
+  for (const raw of list || []) rows.push(await personScrub(raw));
+  for (let k = 0; k < rows.length; k += 500) {
+    const b = rows.slice(k, k + 500);
+    await run(
+      `INSERT INTO fin_audit_log
+         (id, org_id, user_id, user_name, actor_kind, action, entity_type, entity_id, entity_label,
+          changes, before_fields, after_fields, summary, record_count, request_method, request_path, status_code, ip)
+       VALUES ${b.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(",")}`,
+      b.flatMap(f => [newId("al"), f.orgId, f.actorId, f.actorName, f.actorKind, f.action,
+        f.entityType, f.entityId, f.entityLabel, JSON.stringify(f.changes || {}),
+        f.before ? JSON.stringify(f.before) : null, f.after ? JSON.stringify(f.after) : null,
+        f.summary || null, f.recordCount == null ? null : f.recordCount, f.method, f.path, f.status, f.ip || null]));
+  }
+  return rows.length;
+}
+
 // FIX-14 Part 2 — WHICH PERSON A CHANGE WAS ABOUT. An edit keeps only the
 // fields that moved, so the row would no longer say whose meeting it was. The
 // donor's id (never a name, per FIX-12) and the record's kind ride beside the
@@ -614,16 +636,15 @@ function auditTrail(opts = {}) {
         }
 
         if (perRecordRows && status < 400) {
-          for (const r of perRecordRows) {
-            await insertAuditRow({
-              orgId, actorId: who.id, actorName: who.name, actorKind: who.kind,
-              action, entityType: r.entityType || entityType, entityId: r.entityId || null, entityLabel: r.label || null,
-              changes: r.before && r.after ? A.diffFields(r.before, r.after) || {} : {},
-              before: r.before || null, after: r.after || null,
-              summary: bulk ? bulk.text : null, recordCount: 1,
-              method, path: req.originalUrl || req.path, status, ip: extra.noIp ? null : req.ip,
-            });
-          }
+          // INTEGRITY-3: one statement per 500 rows (an undo of 5,000 people)
+          await insertAuditRows(perRecordRows.map(r => ({
+            orgId, actorId: who.id, actorName: who.name, actorKind: who.kind,
+            action: r.action || action, entityType: r.entityType || entityType, entityId: r.entityId || null, entityLabel: r.label || null,
+            changes: r.before && r.after ? A.diffFields(r.before, r.after) || {} : {},
+            before: r.before || null, after: r.after || null,
+            summary: r.summary || (bulk ? bulk.text : null), recordCount: r.recordCount != null ? r.recordCount : 1,
+            method, path: req.originalUrl || req.path, status, ip: extra.noIp ? null : req.ip,
+          })));
           return;
         }
         await insertAuditRow({
@@ -675,5 +696,5 @@ function enrichFromLegacyCall(orgId, userId, userName, action, entityType, entit
 
 module.exports = {
   auditTrail, coversRoute, snapshottableTables, tableCandidates, resolveActor, MUTATING,
-  auditContext, enrichFromLegacyCall, insertAuditRow, resolveAuditNames, personScrub,
+  auditContext, enrichFromLegacyCall, insertAuditRow, insertAuditRows, resolveAuditNames, personScrub,
 };

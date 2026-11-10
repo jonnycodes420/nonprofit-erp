@@ -183,11 +183,16 @@ async function apiLegs() {
   let aud = [];
   for (let i = 0; i < 30 && !aud.length; i++) {
     aud = await q(`SELECT summary, record_count, entity_id, entity_label, changes::text AS changes, before_fields::text AS b, after_fields::text AS a
-                         FROM fin_audit_log WHERE org_id=$1 AND request_path='/donors/purge-trash' AND status_code < 300 AND created_at >= $2 ORDER BY created_at DESC LIMIT 1`, [B.id, since]);
+                         FROM fin_audit_log WHERE org_id=$1 AND request_path='/donors/purge-trash' AND status_code < 300 AND created_at >= $2 AND entity_id IS NULL ORDER BY created_at DESC LIMIT 1`, [B.id, since]);
     if (!aud.length) await new Promise(r => setTimeout(r, 100));
   }
   const audText = JSON.stringify(aud[0] || {});
   ok("§5 the audit row says a delete happened, not who", aud.length === 1 && aud[0].record_count === ids.length && !ids.some(id => audText.includes(id)), audText.slice(0, 300));
+  // INTEGRITY-3: and one row per person deleted for good, by id only (no name, label or email), so a person who is gone can be traced
+  const per = await q(`SELECT entity_id, entity_label, before_fields::text AS b, after_fields::text AS a FROM fin_audit_log
+                        WHERE org_id=$1 AND request_path='/donors/purge-trash' AND action='deleted for good' AND created_at >= $2`, [B.id, since]);
+  ok("§5 ...and one row per person, naming only their id", per.length === ids.length && per.every(r => ids.includes(r.entity_id) && !r.entity_label && !/@/.test(r.b + r.a)),
+    { per: per.length, ids: ids.length, first: per[0] });
   pv = (await api("POST", "/sheet-import/understand", B.token, wbBody)).body;
   ok("§5 after Empty trash nobody in the file matches someone deleted", !(pv.deletedMatches || []).length && !(pv.questions || []).some(x => x.kind === "deletedPerson")
      && pv.counts.gifts === WKEY.gifts, JSON.stringify([(pv.deletedMatches || []).length, pv.counts.gifts]));

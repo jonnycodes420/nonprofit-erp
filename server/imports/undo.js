@@ -90,6 +90,8 @@ async function handOff(orgId, id, who, size, alsoMove = false) {
 
 app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId, id = req.params.id;
+  const moved = [];   // INTEGRITY-3: everyone this request moved, one audit row each
+  const onMoved = async m => { moved.push(...m); };
   const out = await withAdvisoryLock(`import-undo:${orgId}:${id}`, async () => {
     const [imp] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [id, orgId]);
     const refused = await undoRefusal(req, imp);
@@ -103,7 +105,7 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
     const size = await undoSize(orgId, id);
     const alsoMove = !!(req.body && req.body.alsoMove === true);   // INTEGRITY-2: her choice in the confirm
     if (size > UNDO_INLINE_MAX) return handOff(orgId, id, actor(req), size, alsoMove);
-    try { return await undoImport(orgId, imp, actor(req), { deadline: Date.now() + UNDO_INLINE_MS(), alsoMove }); }
+    try { return await undoImport(orgId, imp, actor(req), { deadline: Date.now() + UNDO_INLINE_MS(), alsoMove, onMoved }); }
     catch (e) {
       if (e instanceof UndoHandOff) return handOff(orgId, id, actor(req), size, alsoMove);
       await saveState(orgId, id, { status: "failed", error: String(e.message || e).slice(0, 300) }).catch(() => {});
@@ -111,6 +113,7 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
     }
   });
   if (out.status === 200) require("../../routes/dataHealth").recheckSoon(orgId, "undo");   // FIX-59: Data health is current
+  if (moved.length && req.audit) req.audit.perRecord(require("./undoMoves").rowsFor(id, moved));
   res.status(out.status).json(out.body);
 }));
 JQ.handle("importUndo", async (payload) => {
@@ -126,7 +129,10 @@ JQ.handle("importUndo", async (payload) => {
       await saveState(orgId, id, { phase, done, total });
     };
     try {
-      const out = await undoImport(orgId, imp, who || { id: "system:import-undo", name: "Steward (undo)" }, { onProgress, alsoMove: !!alsoMove });
+      const actorOf = who || { id: "system:import-undo", name: "Steward (undo)" };
+      // INTEGRITY-3: on the queue the job writes each person's row as they move
+      const onMoved = m => require("./undoMoves").writeRows(orgId, actorOf, id, m);
+      const out = await undoImport(orgId, imp, actorOf, { onProgress, alsoMove: !!alsoMove, onMoved });
       if (out.status !== 200) await saveState(orgId, id, { status: "failed", error: out.body.message || out.body.error });
       else require("../../routes/dataHealth").recheckSoon(orgId, "undo");
       return { status: out.status };
@@ -157,10 +163,10 @@ async function undoRefusal(req, imp) {
   return null;
 }
 
-async function undoImport(orgId, imp, who, { deadline = null, onProgress = null, alsoMove = false } = {}) {
+async function undoImport(orgId, imp, who, { deadline = null, onProgress = null, alsoMove = false, onMoved = async () => {} } = {}) {
   const id = imp.id;
   const st = stateOf(imp);
-  const removed = { gifts: 0, pledges: 0, interactions: 0, tasks: 0, journeys: 0, people: 0, alreadyDeleted: 0, backToTrash: 0, movedToo: 0, ...(st.removed || {}) };
+  const removed = { gifts: 0, pledges: 0, interactions: 0, tasks: 0, journeys: 0, people: 0, alreadyDeleted: 0, backToTrash: 0, movedToo: 0, discarded: 0, ...(st.removed || {}) };
   // a step boundary: past the request's limit, the rest goes to the queue
   const step = async (phase, done = 0, total = 0) => {
     if (deadline && Date.now() > deadline) throw new UndoHandOff();
@@ -281,38 +287,28 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null,
   }
   // INTEGRITY-2: a line Steward wrote by itself (created_by system:…) is not
   // activity; it goes with the person (undoPeople.js).
+  // INTEGRITY-3: someone this undo already moved (a run picked up from the
+  // queue) is not counted twice.
   const orphans = await query(
-    `SELECT d.id, (d.deleted_at IS NOT NULL AND d.staged_import_id IS NULL) AS was_deleted FROM donors d WHERE d.org_id=? AND d.created_import_id=?
+    `SELECT d.id, (d.deleted_at IS NOT NULL AND d.staged_import_id IS NULL) AS was_deleted, (d.staged_import_id IS NOT NULL) AS staged
+       FROM donors d WHERE d.org_id=? AND d.created_import_id=?
        AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id)
        AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.donor_id=d.id AND COALESCE(i.created_by, '') NOT LIKE 'system:%')
-       AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.donor_id=d.id AND COALESCE(t.created_by, '') NOT LIKE 'system:%')`, [orgId, id]);
-  // FIX-52: people this file made that were deleted by hand since are still
-  // rows (a delete is soft). Undo takes them with the rest, says how many were
-  // already deleted, and clears their trash rows so nothing points at nobody.
-  const wasDeleted = orphans.filter(o => o.was_deleted);
-  if (wasDeleted.length) await run(`DELETE FROM deleted_records WHERE org_id=? AND table_name='donors' AND record_id = ANY(?)`,
-    [orgId, wasDeleted.map(o => o.id)]).catch(() => {});
-  // A person the file created who is held by something else the file wrote
-  // and this undo does not reach (a membership, an open ask) stays, rather than
-  // the whole undo failing half way.
-  const gone = new Set();
-  for (let k = 0; k < orphans.length; k += UNDO_CHUNK) {
-    await step("removing the people this file created", k, orphans.length);
-    const chunk = orphans.slice(k, k + UNDO_CHUNK);
-    await run("DELETE FROM interactions WHERE org_id=? AND donor_id = ANY(?)", [orgId, chunk.map(o => o.id)]).catch(() => {});
-    await run("DELETE FROM tasks WHERE org_id=? AND donor_id = ANY(?) AND COALESCE(created_by, '') LIKE 'system:%'", [orgId, chunk.map(o => o.id)]).catch(() => {});
-    try { await run("DELETE FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, chunk.map(o => o.id)]); chunk.forEach(o => gone.add(o)); }
-    catch (e) {
-      for (const o of chunk) {
-        try { await run("DELETE FROM donors WHERE org_id=? AND id=?", [orgId, o.id]); gone.add(o); }
-        catch (e2) { console.error("[imports] undo kept a person another record holds:", o.id, e2.code || e2.message); }
-      }
-    }
-    removed.people = (Number((st.removed || {}).people) || 0) + gone.size;
-    removed.alreadyDeleted = (Number((st.removed || {}).alreadyDeleted) || 0) + [...gone].filter(o => o.was_deleted).length;
-    await keep();
-  }
-  const goneIds = new Set([...gone].map(o => o.id));
+       AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.donor_id=d.id AND COALESCE(t.created_by, '') NOT LIKE 'system:%')
+       AND NOT EXISTS (SELECT 1 FROM deleted_records r WHERE r.org_id=d.org_id AND r.table_name='donors' AND r.record_id=d.id
+                         AND r.restored_at IS NULL AND (r.row_data ->> '__importUndo') = ?)`, [orgId, id, id]);
+  // INTEGRITY-3 (W-Fiona): the people this file created go to the TRASH,
+  // restorable for 30 days, never deleted outright; anyone of them already in
+  // the trash stays there as they are, trash row and all (undoMoves.js).
+  // FIX-52's count of the ones already deleted is kept.
+  await step("moving the people this file created to the trash", 0, orphans.length);
+  const made = await require("./undoMoves").trashCreated(require("../../db"), orgId, imp, orphans, who);
+  await onMoved([...made.moved, ...made.discarded]);
+  removed.discarded = (Number((st.removed || {}).discarded) || 0) + made.discarded.length;
+  removed.people = (Number((st.removed || {}).people) || 0) + made.moved.length + made.alreadyInTrash.length + made.discarded.length;
+  removed.alreadyDeleted = (Number((st.removed || {}).alreadyDeleted) || 0) + made.alreadyInTrash.length;
+  await keep();
+  const goneIds = new Set([...made.moved.map(m => m.id), ...made.alreadyInTrash, ...made.discarded.map(m => m.id)]);
   // IMPORT-8 · UNDO NEVER QUIETLY KEEPS PEOPLE. Someone this file made who
   // has a gift, note, call or task added since (or whom another record holds)
   // stays; the result names each one and why, and the receipt offers to
@@ -331,6 +327,7 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null,
   {
     await step("putting back the people it brought back from the trash");
     const back = await require("./restoredPeople").sendBackToTrash(require("../../db"), orgId, imp, sj, who);
+    await onMoved(back.moved);
     removed.backToTrash = (Number((st.removed || {}).backToTrash) || 0) + back.trashed.length;
     stayed.push(...back.stayed.map(p => ({ ...p, movable: true })));
     await keep();
@@ -342,6 +339,7 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null,
     await step("moving the people with activity since to the trash");
     const moved = await require("../../personTrash").trashPeople(orgId, stayed.filter(p => p.movable).map(p => p.id), who,
       { why: { kind: "undo_moved_too", importId: id } });
+    await onMoved(moved.map(m => ({ id: m.id, from: "active", to: "trash", how: "moved_too" })));
     const movedIds = new Set(moved.map(m => m.id));
     removed.movedToo = (Number((st.removed || {}).movedToo) || 0) + moved.length;
     for (let k = stayed.length - 1; k >= 0; k--) if (movedIds.has(stayed[k].id)) stayed.splice(k, 1);
@@ -368,6 +366,9 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null,
   // undo removed (now, or in the run it picks up from) has nothing to recompute.
   const left = new Set((await query("SELECT id FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, donorIds])).map(r => r.id));
   const recompute = donorIds.filter(d => left.has(d) && !goneIds.has(d));
+  // INTEGRITY-3: a person moved to the trash keeps their row, so their totals
+  // are recomputed too (a Restore shows what is really theirs)
+  for (const d of donorIds.filter(x => left.has(x) && goneIds.has(x))) await recalcDonorSummary(d, orgId).catch(() => {});
   for (let k = 0; k < recompute.length; k++) {
     if (k % 250 === 0) await step("recomputing totals", k, recompute.length);
     await recalcDonorSummary(recompute[k], orgId).catch(() => {});
@@ -389,18 +390,22 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null,
     await recomputeScoresForOrg(orgId).catch(() => {});
     return done({ reversed: true, gifts: 0, interactions: removed.interactions, tasks: removed.tasks, donorsRemoved: removed.people,
       sentence: `Undone. ${removed.interactions.toLocaleString()} history ${removed.interactions === 1 ? "line" : "lines"}, ${removed.tasks} ${removed.tasks === 1 ? "task" : "tasks"}`
-        + (removed.people ? ` and ${removed.people} ${removed.people === 1 ? "person" : "people"} this file created` : "")
-        + " removed, and the preferences it set turned back off. Nothing else was touched." });
+        + " removed"
+        + (removed.people ? `; ${removed.people} ${removed.people === 1 ? "person" : "people"} this file created ${removed.people === 1 ? "is" : "are"} in the trash, restorable for 30 days` : "")   // INTEGRITY-3
+        + "; and the preferences it set turned back off. Nothing else was touched." });
   }
   // LIVE-1 — the people it touched are recomputed by the one after-change step.
   await require("../../afterChange").afterChange(orgId, recompute, { door: "csv_import", history: true });
   // what was there leads (a file of people only says its people, never "0 gifts removed")
   const money = [removed.gifts && n(removed.gifts, "gift", "gifts"), removed.pledges && n(removed.pledges, "pledge", "pledges")].filter(Boolean).join(" and ");
+  // INTEGRITY-3: the people it created go to the trash, and the sentence says so
   const ppl = removed.people ? `${n(removed.people, "person", "people")} this file created`
     + (removed.alreadyDeleted ? ` (${removed.alreadyDeleted.toLocaleString("en-US")} of them already deleted)` : "") : "";
+  const pplTo = !removed.people ? "" : removed.discarded >= removed.people ? " removed (the import was staged, so they were never shown)"
+    : ` ${removed.people === 1 ? "is" : "are"} in the trash, restorable for 30 days`;
   const movedSaid = removed.movedToo ? `; ${n(removed.movedToo, "person", "people")} with activity since moved to the trash too, as you chose` : "";
   const backSaid = removed.backToTrash ? `${n(removed.backToTrash, "person", "people")} it brought back from the trash ${removed.backToTrash === 1 ? "is" : "are"} back in the trash` : "";
-  const what = (money ? ` ${money} removed${ppl ? ` and ${ppl}` : ""}` : ppl ? ` ${ppl} removed` : backSaid ? "" : " Nothing it wrote was left to remove")
+  const what = (money ? ` ${money} removed${ppl ? `; ${ppl}${pplTo}` : ""}` : ppl ? ` ${ppl}${pplTo}` : backSaid ? "" : " Nothing it wrote was left to remove")
     + (backSaid ? `${money || ppl ? ";" : ""} ${backSaid}` : "");   // IMPORT-9
   const list = (xs, k) => xs.slice(0, k).map(x => `${x.name} (${x.why})`).join("; ") + (xs.length > k ? `; and ${(xs.length - k).toLocaleString("en-US")} more` : "");
   const lead = stayed.length ? `Undone, except for ${n(stayed.length, "person", "people")}.` : "Undone.";

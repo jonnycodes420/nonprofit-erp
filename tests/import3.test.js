@@ -176,7 +176,7 @@ async function eventSheet() {
   const un = await api("POST", `/imports/${run1}/reverse`, tok, {});
   ok("§9 undo answers 200", un.status === 200, un.status + " " + JSON.stringify(un.body));
   const left = await one(`SELECT (SELECT COUNT(*) FROM gifts WHERE org_id=$1)::int AS g, (SELECT COUNT(*) FROM pledges WHERE org_id=$1)::int AS p,
-                                 (SELECT COUNT(*) FROM donors WHERE org_id=$1)::int AS d, (SELECT COUNT(*) FROM households WHERE org_id=$1)::int AS h,
+                                 (SELECT COUNT(*) FROM donors WHERE org_id=$1 AND deleted_at IS NULL)::int AS d, (SELECT COUNT(*) FROM households WHERE org_id=$1)::int AS h,   -- INTEGRITY-3: to the trash
                                  (SELECT COUNT(*) FROM events WHERE org_id=$1)::int AS e, (SELECT COUNT(*) FROM pledge_installments WHERE org_id=$1)::int AS i`, [ORG]);
   ok("§9 undo removes the whole import", left.g === 0 && left.p === 0 && left.d === 0 && left.h === 0 && left.e === 0 && left.i === 0, JSON.stringify(left));
   await surfacesAgree("after the undo", ORG, tok);

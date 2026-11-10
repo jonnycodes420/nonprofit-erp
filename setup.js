@@ -729,7 +729,12 @@ async function undoAll(orgId, runId, call) {
         // a row setup also made) goes with it: setup made them and nothing else did.
         if (ok) {
           await run(`DELETE FROM import_merges WHERE org_id=? AND import_id=?`, [orgId, w.entity_id]).catch(() => {});
-          await run(`DELETE FROM donors d WHERE d.org_id=? AND d.created_import_id=? AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id)`, [orgId, w.entity_id]).catch(e => kept.push({ table: "donors", id: w.entity_id, why: e.code || e.message }));
+          // INTEGRITY-3: to the trash, never deleted outright (an import undo destroys nobody)
+          const left = (await query(`SELECT d.id FROM donors d WHERE d.org_id=? AND d.created_import_id=? AND d.deleted_at IS NULL
+                                       AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id)`, [orgId, w.entity_id])).map(d => d.id);
+          await require("./personTrash").trashPeople(orgId, left, { id: call.userId || "system:setup-undo", name: call.userName || "Steward (setup)" },
+            { why: { kind: "import_undo", importId: w.entity_id }, extra: { __importUndo: w.entity_id, __created: true } })
+            .catch(e => kept.push({ table: "donors", id: w.entity_id, why: e.code || e.message }));
         }
       } else if (t === "old_report_batches") {
         const x = await AC.call(call, "POST", `/old-reports/batches/${w.entity_id}/undo`, {});

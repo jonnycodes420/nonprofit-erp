@@ -257,7 +257,7 @@ const cents = n => Math.round(Number(n) * 100);
   ok("§4 …and so is the gift somebody made after the import",
     afterGifts.some(g => g.id === `g_after_${A}`), { left: afterGifts.map(g => g.id) });
 
-  const afterDonors = await q(`SELECT id, name FROM donors WHERE org_id=$1 ORDER BY name`, [A]);
+  const afterDonors = await q(`SELECT id, name FROM donors WHERE org_id=$1 AND deleted_at IS NULL ORDER BY name`, [A]);   // INTEGRITY-3: they are in the trash
   ok("§4 the people the import created are gone",
     !afterDonors.some(d => /Ada|Ben|Dee|Esi/.test(d.name)), { left: afterDonors.map(d => d.name) });
   ok("§4 …the donor who was already here is still here",

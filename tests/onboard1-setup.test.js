@@ -176,7 +176,7 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
   const g0 = (await q(`SELECT COUNT(*)::int n, COALESCE(SUM(ROUND(amount*100)),0)::bigint c FROM gifts WHERE org_id=$1`, [ORG]))[0];
   ok("§1b 99 gifts, $29,536.00 to the cent, and 40 people", g0.n === 99 && Number(g0.c) === 2953600
     && (await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`)) === 40, g0);
-  const before = { gifts: g0.n, donors: await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1`) };
+  const before = { gifts: g0.n, donors: await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`) /* INTEGRITY-3: an undo trashes, never deletes */ };
 
   // ── §2 one Start, and the work runs on the server ────────────────────────
   console.log("\n§2 Start");
@@ -294,7 +294,7 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
   for (const id of [...imports].reverse()) rev.push((await api("POST", `/imports/${id}/reverse`, tok, {})).status);
   ok("§8 the import undoes from its own receipt", rev.length === 1 && rev.every(x => x === 200), rev);
   const left = {
-    donors: await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1`),
+    donors: await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`) /* INTEGRITY-3: an undo trashes, never deletes */,
     gifts: await n(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`),
     funds: await n(`SELECT COUNT(*)::int n FROM fin_funds WHERE org_id=$1`),
     journeys: await n(`SELECT COUNT(*)::int n FROM cultivation_templates WHERE org_id=$1`),
@@ -356,7 +356,7 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
       && line.open && line.open.kind === "old_report_check" && sheet && line.open.id === sheet.id, line);
     const u2 = await api("POST", `/setup/runs/${R2.id}/undo`, tok, {});
     const r9 = c9.importId ? await api("POST", `/imports/${c9.importId}/reverse`, tok, {}) : { status: 0 };
-    const left2 = { gifts: await n(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`), donors: await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1`),
+    const left2 = { gifts: await n(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`), donors: await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`) /* INTEGRITY-3: an undo trashes, never deletes */,
       sheets: await n(`SELECT COUNT(*)::int n FROM stored_sheets WHERE org_id=$1 AND removed_at IS NULL`), totals: await n(`SELECT COUNT(*)::int n FROM historical_totals WHERE org_id=$1`) };
     ok("§9 setup's undo takes the old report back out, and the import's own Undo the gifts", u2.status === 200 && r9.status === 200 && Object.values(left2).every(v => v === 0), { u: u2.body, r9: r9.status, left2 });
   }

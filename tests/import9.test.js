@@ -78,10 +78,15 @@ async function trashedByAnEarlierRun(tok, org, sheets, keep) {
   for (const d of made) await q(`INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by, logged_by_name) VALUES ($1,$2,$3,'note','Met at the walk.',$4,$5,'Wren Tester')`,
     [`ix_i9_${d.id}`, org, d.id, TODAY, "u_" + org]);
   const back = await undoAndWait(BASE, tok, j.importId, { timeoutMs: 60000, pollMs: 100 });
+  await emptyTrash(tok);   // INTEGRITY-3: the undo put the rest in the trash; this walk's state had them gone
   const stayed = (back.body && back.body.stayed) || [];
   const rm = await api("POST", "/donors/bulk-delete", tok, { ids: stayed.map(x => x.id), count: stayed.length });
   return { job: j, undo: back, stayed: stayed.length, rm: rm.status };
 }
+// INTEGRITY-3: an undo puts the people its file created in the trash (it used to delete
+// them outright). The walk was recorded when they were gone, so it empties the trash
+// (Empty trash, the only way out) where the undo used to delete them.
+const emptyTrash = tok => api("POST", "/donors/purge-trash", tok, { confirm: "empty", olderThanDays: null });
 async function reimportWithBringBack(tok, org, sheets) {
   const u = await api("POST", "/sheet-import/understand", tok, { fileName: "walk.csv", sheets, useModel: false, today: TODAY });
   const ids = [...new Set([...(u.body.deletedMatches || []).map(x => x.id),
@@ -108,6 +113,7 @@ const script = (...args) => {
     const e1 = await everyone(tok);
     const u1 = await undoAndWait(BASE, tok, j1.importId, { timeoutMs: 60000, pollMs: 100 });
     const e2 = await everyone(tok);
+    await emptyTrash(tok);
     ok("§1 a 1,000-row file imports 200 people and its undo takes them away (17 → 217 → 17)",
       j1.end && j1.end.status === "done" && e0 === 17 && e1 === 217 && u1.status === 200 && e2 === 17, { job: j1.end && j1.end.status, e0, e1, undo: u1.status, e2 });
     const t = await trashedByAnEarlierRun(tok, ORG, sheets, 199);
@@ -129,7 +135,7 @@ const script = (...args) => {
     const open = (await one(`SELECT COUNT(DISTINCT d.id)::int n FROM donors d JOIN deleted_records r ON r.org_id=d.org_id AND r.record_id=d.id AND r.table_name='donors' AND r.restored_at IS NULL
                                WHERE d.org_id=$1 AND d.deleted_at IS NOT NULL`, [ORG])).n;
     ok("§1 after the final undo Everyone is what it was before the import (17), nobody from the file is left at $0, and the 199 are in the trash with a trash row each (main: 216)",
-      u2.status === 200 && after === before && zero === 0 && open === 199 && u2.body.backToTrash === 199
+      u2.status === 200 && after === before && zero === 0 && open === 200 && u2.body.backToTrash === 199   // INTEGRITY-3: + the one person the file made, in the trash too
         && /199 people it brought back from the trash are back in the trash/.test(u2.body.sentence || ""),
       { undo: u2.status, before, after, zero, open, backToTrash: u2.body && u2.body.backToTrash, sentence: u2.body && u2.body.sentence });
   }

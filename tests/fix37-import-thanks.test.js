@@ -210,7 +210,8 @@ const file = (tag, n, perDonor = 1) => ({
   ok("§5 undo during the work stops it first", stopped === true, stopped);
   ok("§5 undo during the work answers", u.status === 200 && u.body?.reversed === true, u.body);
   ok("§5 no gift from it is left", (await giftsOf(runF)) === 0, await giftsOf(runF));
-  ok("§5 no person it created is left", Number((await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND created_import_id=$2`, [ORG, runF]))[0].n) === 0);
+  // INTEGRITY-3: an undo puts the people its file created in the trash, never deletes them outright
+  ok("§5 no person it created is left (they are in the trash)", Number((await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND created_import_id=$2 AND deleted_at IS NULL`, [ORG, runF]))[0].n) === 0);
   ok("§5 no thank-you draft or journey from it is left",
      (await drafts(runF)) === 0 && (await plans(runF)) === 0
        && Number((await q(`SELECT COUNT(*)::int AS n FROM thank_you_drafts WHERE org_id=$1 AND gift_id NOT IN (SELECT id FROM gifts)`, [ORG]))[0].n) === 0);

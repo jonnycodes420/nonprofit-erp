@@ -165,9 +165,10 @@ const live = async id => !!(await one(`SELECT 1 AS x FROM donors WHERE id=$1 AND
       listed.includes(hugo.id) && !listed.includes(quiet.id) && pre.body.activitySinceCount === 1, pre.body.activitySince);
     const undo = await api("POST", `/imports/${j.importId}/reverse`, tok, { alsoMove: true });
     const tr = await one(`SELECT row_data->'__why'->>'kind' AS k FROM deleted_records WHERE org_id=$1 AND record_id=$2 AND restored_at IS NULL`, [ORG, hugo.id]);
-    ok("§3 choosing Move them too moves Hugo in the same undo, to the trash with why; the quiet person is gone with the rest",
+    // INTEGRITY-3: the people a file created go to the trash with the rest, never deleted outright
+    ok("§3 choosing Move them too moves Hugo in the same undo, to the trash with why; the quiet person goes to the trash with the rest",
       undo.status === 200 && undo.body.movedToo === 1 && !(await live(hugo.id)) && tr && tr.k === "undo_moved_too"
-        && !(await one(`SELECT 1 AS x FROM donors WHERE id=$1`, [quiet.id])) && (undo.body.stayed || []).length === 0,
+        && !(await live(quiet.id)) && !!(await one(`SELECT 1 AS x FROM donors WHERE id=$1`, [quiet.id])) && (undo.body.stayed || []).length === 0,
       { body: undo.body && undo.body.sentence, why: tr });
     const t = await api("GET", "/trash/people?q=kovac", tok);
     ok("§3 the Trash says why Hugo is there", t.body.total === 1 && /^Moved with an import undo of since\.csv, /.test(t.body.people[0].why), t.body.people);

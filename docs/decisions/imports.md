@@ -209,7 +209,17 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   own row's amount, never a total column.
 - **Every receipt that reverses as a whole offers Undo for its window, reconciled or not (FIX-52).** `importUndoWindow`
   says so; the sheet window is 30 days. Undo confirms with counts first (`GET /imports/:id/undo-preview`). People the
-  file made that were deleted by hand since are removed with the rest and counted as "already deleted".
+  file made that were deleted by hand since stay in the trash as they are and are counted as "already deleted".
+- **An import undo never destroys a person (INTEGRITY-3).** It puts every person back to the state they were in before
+  that import: the people it CREATED go to the trash (restorable for 30 days, a trash row with `__created` and the
+  import), the people it RESTORED from the trash go back on their ORIGINAL trash row (who, when, why; reopened, never a
+  new one), and a person who was here and active is untouched. Nothing an undo does is a hard delete; a person leaves
+  for good only through Empty trash or the 30-day clear-out. Every person an undo moves is one audit row (id,
+  from-state, to-state), and so is every person Empty trash or the clear-out deletes. The one exception: a staged
+  import's people (ONBOARD-1), never shown, are discarded with the preview, each with its own audit row. The deleted
+  people a re-import is asked about (FIX-54) leave out the people an undo trashed because their file created them, so
+  the same file imports again as it always did. The code is `server/imports/undoMoves.js`; the trash count is
+  `shared/numbers/trash.js`, read by the Trash page, the Everyone breakdown and Empty trash.
 - **A notes sheet is not people (FIX-52).** A table with a reviewer's columns ("What to check", "How matched") and no
   money, whose rows mostly name people another sheet lists, is notes: not imported, its columns not kept, unless she
   says "Import it anyway" (`answers.notesSheets`). Counts written above a header ("People 443") are notes, and the
