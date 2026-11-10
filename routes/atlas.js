@@ -47,7 +47,7 @@ const ATLAS_MODEL = () => process.env.ATLAS_MODEL || "claude-sonnet-4-6";
 const ATLAS_ROUTE_MODEL = () => process.env.ATLAS_ROUTE_MODEL || "claude-haiku-4-5-20251001";
 // The shapes code reads for certain, answered from shared/numbers with no read by
 // the model: a person's summary, finding someone, and a question for Ask.
-const CODE_SHAPES = new Set(["about", "find", "question", "top100"]);   // TOP100-1: the Top 100 asks
+const CODE_SHAPES = new Set(["about", "find", "question"]);
 // ATLAS-4 · ATLAS ANSWERS IN GOOD TIME. Feel 1 (Muse): one answer took about
 // 60 s. A question goes to /ask, which can ask a model three times in a row
 // (the plan, then the query form, then the sentence), each with the SDK's
@@ -228,9 +228,12 @@ const TARGET_KIND = { came_to_event: "event", register_for_event: "event", add_t
 async function readSteps(orgId, text, { today, onPage, gateP = null }) {
   const AT_ = await AT();
   const gate = await (gateP || agentGate(orgId));
+  // TOP100-1: the Top 100's two asks are read here, on the server only, so the browser's bundle does not carry them.
+  const t100 = require("../server/majorGifts/top100Atlas").readInCode(text);
+  if (t100) return { ai: gate.ok ? "on" : "off", steps: [t100], code: true };
   // ATLAS-5: a known shape skips the model's read (each clause read in code, all of them known).
   const inCode = AT_.readInCode(text);
-  if (inCode.length && inCode.every(x => CODE_SHAPES.has(x.kind) && (x.kind === "question" || x.kind === "top100" || x.who))) return { ai: gate.ok ? "on" : "off", steps: inCode, code: true };
+  if (inCode.length && inCode.every(x => CODE_SHAPES.has(x.kind) && (x.kind === "question" || x.who))) return { ai: gate.ok ? "on" : "off", steps: inCode, code: true };
   if (gate.ok) {
     const prompt = AT_.buildAtlasPrompt(text, { today, onPage });
     try {

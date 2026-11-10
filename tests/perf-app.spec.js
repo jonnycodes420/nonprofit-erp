@@ -71,7 +71,8 @@ const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward
 // PERF-2: Home on a phone, and the JavaScript its first look downloads (bytes,
 // so strict everywhere; the milliseconds warn in CI, tests/lib/budget.js).
 const PHONE_MS = 3580;   // PERF-3 measured 3,480 ms + 0.1 s, so it cannot regress (PERF-2 3,537; main 3,840 at PERF-3's start); the bar is 3 s, docs/defects.md
-const JS_FIRST_KB = 242;   // LAG-1: +1 KB, the deck's "Updating…" state and the write rules that announce calendar and deck changes (the worker follow itself loads on the first write, lib/catchUp.js); the branch measured 247,083 bytes (241.3 KB) locally and rounded to 242 on the runner.
+const JS_FIRST_KB = 243;   // TOP100-1: +1 KB, Home's Thread marking a due Top 100 touch with her rank ("#3") and leading with it, and Atlas's line opening a plan-of-care proposal (lib/atlas.js followLink). The Top 100 phrase reader moved server-side to keep it off the shell; the branch measured 243 locally.
+// Before TOP100-1:   // LAG-1: +1 KB, the deck's "Updating…" state and the write rules that announce calendar and deck changes (the worker follow itself loads on the first write, lib/catchUp.js); the branch measured 247,083 bytes (241.3 KB) locally and rounded to 242 on the runner.
 // Before LAG-1:   // POLISH-6: +2 KB, the one shared date box's loader (LazyDateInput) on the shell; main measured 239 on the same runner, the branch 241.
 // Before POLISH-6:   // PERF-3 measured 227 KB + 5%: the moves deck's code (15 KB) is on the first look now, preloaded (PERF-2: 214)
 const WARM_MS = 1446;   // PERF-3: Home on a phone a second time, measured 1,314 ms + 10% (main: 1,528)

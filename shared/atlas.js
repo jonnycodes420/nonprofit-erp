@@ -285,12 +285,6 @@ function readClauseRaw(c) {
   const t = c.trim();
   const blank = { who: "", target: "", amountWords: "", whenWords: "", how: "", words: t };
   if (/^(undo|take back|reverse)\b.*\b(that|it|last)\b|^undo$/i.test(t)) return { ...blank, kind: "undo" };
-  // TOP100-1: the Top 100's two asks, read in code. "Who on my Top 100 hasn't
-  // been touched in 60 days" and "Make a plan of care for #4" (a proposal).
-  { const m = /\btop\s*100\b/i.test(t) && /\b(touched|contacted|heard from|spoken to|talked to|reached|seen|visited)\b/i.test(t) ? (t.match(/(\d+)\s*days?\b/i) || [null, "60"]) : null;
-    if (m) return { ...blank, kind: "top100", how: "quiet", amountWords: m[1], target: t }; }
-  { const m = t.match(new RegExp(`^(?:make|build|create|draft|start|write)\\s+(?:a\\s+|the\\s+)?(?:plan of care|care plan)\\s+for\\s+(#\\s*\\d+|number\\s+\\d+|${NAME})`, "i"));
-    if (m) return { ...blank, kind: "top100", how: "plan", target: m[1].trim() }; }
   // ATLAS-3: two people linked is not a merge. "Link Stephen and Margaret (as spouses)".
   { const m = t.match(new RegExp(`^(?:[Ll]ink|[Cc]onnect)\\s+${NAME}\\s+(?:and|with|to)\\s+${NAME}`)); if (m) return { ...blank, kind: "link", who: m[1], target: m[2] }; }
   { const m = t.match(new RegExp(`^(?:tell me about|what do (?:we|i) know about|brief me on|who is)\\s+${NAME}\\s*$`, "i")); if (m) return { ...blank, kind: "about", who: m[1] }; }
@@ -331,7 +325,7 @@ const PREVIEW = { came_to_event: "Marking attendance", register_for_event: "Addi
   pledge: "Getting the pledge ready for your tap", add_to_journey: "Adding to the journey", remove_from_journey: "Taking out of the journey",
   add_to_group: "Adding to the group", remove_from_group: "Taking out of the group", draft_email: "Drafting the email", reminder: "Setting the reminder",
   log_conversation: "Logging the conversation", note: "Saving the note", send_receipt: "Getting the receipt ready", question: "Looking it up",
-  find: "Finding them", undo: "Undoing", top100: "Reading your Top 100", about: "Reading their record", link: "Linking the two of them", merge: "Checking", recurring_change: "Checking", send_now: "Drafting", personal_detail: "Holding a detail back", other: "Working on it" };
+  find: "Finding them", undo: "Undoing", about: "Reading their record", link: "Linking the two of them", merge: "Checking", recurring_change: "Checking", send_now: "Drafting", personal_detail: "Holding a detail back", other: "Working on it" };
 export function previewLines(text) {
   const out = [];
   for (const c of clauses(text)) {

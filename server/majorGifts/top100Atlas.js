@@ -50,4 +50,19 @@ async function answer({ req, query, step, top100Rows, today }) {
       + (who.touchCount ? ` ${who.name} already has ${who.touchCount} planned ${who.touchCount === 1 ? "touch" : "touches"}.` : "") };
 }
 
-module.exports = { answer };
+// The two asks, read in code: "Who on my Top 100 hasn't been touched in 60
+// days" (any number of days; 60 when none is said) and "Make a plan of care
+// for #4" (or "number 4", or a name). Anything else is not one of these.
+function readInCode(text) {
+  const t = String(text || "").trim().replace(/[.!?]+$/, "");
+  const words = t;
+  if (/\btop\s*100\b/i.test(t) && /\b(touched|contacted|heard from|spoken to|talked to|reached|seen|visited)\b/i.test(t)) {
+    const d = t.match(/(\d+)\s*days?\b/i);
+    return { kind: "top100", how: "quiet", amountWords: d ? d[1] : "60", target: t, who: "", whenWords: "", words };
+  }
+  const m = t.match(/^(?:please\s+)?(?:make|build|create|draft|start|write)\s+(?:a\s+|the\s+)?(?:plan of care|care plan)\s+for\s+(#\s*\d+|number\s+\d+|[A-Za-z][A-Za-z'’ -]{1,60})$/i);
+  if (m) return { kind: "top100", how: "plan", target: m[1].trim(), amountWords: "", who: "", whenWords: "", words };
+  return null;
+}
+
+module.exports = { answer, readInCode };
