@@ -118,6 +118,7 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
          LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
          LEFT JOIN users u ON u.id = g.officer_id AND u.org_id = g.org_id
         WHERE m.org_id = ? AND m.state <> 'skipped' AND g.is_sample IS NOT TRUE
+          AND ${require("./server/grants/applicationOpen").APPLICATION_DEADLINE_SHOWS("m", "g")}
           AND LEFT(m.due_date, 10) >= ? AND LEFT(m.due_date, 10) <= ?
           AND (?::text IS NULL OR g.officer_id = ?)`,
       [orgId, from, to, owner, owner]).then(rows => rows.forEach(r => {
@@ -164,7 +165,8 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
   if (want.has("event")) {
     jobs.push(query(
       `SELECT e.id, e.name, e.date::text AS date, e.start_time, e.end_time, e.location FROM events e
-        WHERE e.org_id = ? AND e.date IS NOT NULL AND LEFT(e.date::text, 10) >= ? AND LEFT(e.date::text, 10) <= ?`,
+        WHERE e.org_id = ? AND e.date IS NOT NULL AND LEFT(e.date::text, 10) >= ? AND LEFT(e.date::text, 10) <= ?
+          AND e.archived_at IS NULL   -- FLOWS-4 (W-1109-Volunteers-06X): an archived event leaves the Calendar; it stays in history`,
       [orgId, from, to]).then(rows => rows.forEach(r => {
         const day = String(r.date).slice(0, 10), st = hm(r.start_time), en = hm(r.end_time);
         out.push({ id: `event:${r.id}`, type: "event", title: r.name, start: st ? `${day}T${st}` : day, end: st ? `${day}T${en || addMin(st, 120)}` : day,

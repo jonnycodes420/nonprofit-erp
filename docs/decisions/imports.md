@@ -292,6 +292,8 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   Steward's own joint name and is left), and a record already in a household: its fix joins that household and
   makes no second person the household already holds.
 
+- **An import foots in rows AND dollars, once (MONEY-4).** `server/imports/footing.js` is the one footing: "File $X = imported $Y + set aside $Z (future-dated …; matches deleted people …)". The receipt's lines, its findings and the Imports list's flag all read it, so they cannot disagree; never a stored "reconciled".
+
 ## Gotchas
 - **A catch inside the mapper's memos turned a TDZ bug into "No rows ready — map a column".** Make
   `rethrowProgrammerError(e)` the first line of those catches, and use `errorMessage` in async handlers. (BUILD-84)

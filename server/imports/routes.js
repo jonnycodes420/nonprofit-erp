@@ -621,39 +621,16 @@ function importNotices(row) {
   return out;
 }
 
+// MONEY-4: the findings, the receipt's line and the list's flag all come from
+// one footing in rows AND dollars (server/imports/footing.js).
 function importFindings(row, summary) {
-  const out = [];
-  const n = v => Number(v) || 0;
-  const s = summary && typeof summary === "object" ? summary : {};
-  // FIX-52: a pledge is a row the file brought in, as much as a gift is. The
-  // spreadsheet import stores how many it made; every other shape has none.
-  // A receipt written before FIX-52 kept the same figures under summary.counts.
-  const sc = s.counts && typeof s.counts === "object" && row.shape === "sheet" ? s.counts : {};
-  const rowsIn = n(row.rows_in), created = n(row.gifts_created), pledges = n(s.pledgesCreated ?? sc.pledgesCreated),
-        aside = n(row.rows_set_aside), errored = n(row.rows_errored);
-  if (rowsIn !== created + pledges + aside + errored) {
-    out.push(`Rows do not reconcile: ${rowsIn} in the file, ${created} gifts${pledges ? ` + ${pledges} pledges` : ""} created + ${aside} set aside + ${errored} errored = ${created + pledges + aside + errored}.`);
-  }
-  const c = v => money.toCents(v) ?? 0;
-  const inC = c(row.dollars_in), madeC = c(row.dollars_created),
-        pledgeC = s.pledgeDollarsCreated != null ? c(s.pledgeDollarsCreated) : sc.pledgeCents != null ? n(sc.pledgeCents) : 0,
-        asideC = c(s.dollarsSetAside), errC = c(s.dollarsErrored);
-  if (inC !== madeC + pledgeC + asideC + errC) {
-    out.push(`Dollars do not reconcile: ${money.formatCents(inC)} in the file, ${money.formatCents(madeC)} in gifts${pledgeC ? ` + ${money.formatCents(pledgeC)} in pledges` : ""} created + ${money.formatCents(asideC)} set aside + ${money.formatCents(errC)} errored = ${money.formatCents(madeC + pledgeC + asideC + errC)}.`);
-  }
-  // The stored columns against the summary's own copy of the same figures.
-  // These are written in one request from one object; if they ever differ,
-  // something between the screen and the row is lying.
-  const pairs = [["rowsIn", rowsIn], ["giftsCreated", created], ["donorsCreated", n(row.donors_created)],
-                 ["rowsSetAside", aside], ["rowsErrored", errored]];
-  for (const [k, stored] of pairs) {
-    if (s[k] != null && Number(s[k]) !== stored) {
-      out.push(`Stored ${k} is ${stored} but the receipt shows ${Number(s[k])}.`);
-    }
-  }
-  if (s.dollarsIn != null && c(s.dollarsIn) !== inC) out.push(`Stored dollars in is ${money.formatCents(inC)} but the receipt shows ${money.formatCents(c(s.dollarsIn))}.`);
-  if (s.dollarsCreated != null && c(s.dollarsCreated) !== madeC) out.push(`Stored dollars created is ${money.formatCents(madeC)} but the receipt shows ${money.formatCents(c(s.dollarsCreated))}.`);
-  return out;
+  const F = require("./footing");
+  return F.footingFindings(F.importFooting(row, summary));
+}
+function importFootingOf(row, summary) {
+  const F = require("./footing");
+  const f = F.importFooting(row, summary);
+  return { balanced: f.balanced, rowsSentence: f.rowsSentence, dollarsSentence: f.dollarsSentence, dollars: f.dollars, rows: f.rows };
 }
 
 // FIX-11 Part 4 — `gift_file_with_donors` is a gift file imported against an
@@ -811,6 +788,7 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
         dollarsIn: Number(r.dollars_in) || 0, dollarsCreated: Number(r.dollars_created) || 0,
         ...given(r, summary),
         reconciled: findings.length === 0, findings, notices: importNotices(r),
+        footing: r.reversed_at ? null : importFootingOf(r, summary),   // MONEY-4: the flag's own footing
         // TRANS-1 — a named import says where the file came from, and whether
         // it has a Move Report to open. `hasMoveReport` is the presence of the
         // stored file facts, not a guess from the source name: a run recorded
@@ -900,6 +878,7 @@ app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
       rowsSetAside: Number(r.rows_set_aside) || 0, rowsErrored: Number(r.rows_errored) || 0,
       dollarsIn: Number(r.dollars_in) || 0, dollarsCreated: Number(r.dollars_created) || 0,
       reconciled: findings.length === 0, findings, notices: importNotices(r),
+      footing: r.reversed_at ? null : importFootingOf(r, summary),   // MONEY-4: rows AND dollars, the same footing the list's flag reads
       migrationSource: r.migration_source || null,
       hasMoveReport: !!(summary && summary.moveFile),
       thanks: (await recentGiftRuns(req.user.orgId, [r])).has(r.id) ? IT.answerSentence(IT.cleanAnswer(r.thanks_answer)) || null : null,

@@ -89,18 +89,31 @@ export function GrantAwardPlan({ grantId, isReadOnly, onChanged, onLink }) {
       setForm(null); load(); onChanged && onChanged();
     } catch (e) { setMsg(errorMessage(e, "The award did not save.")); }
   };
+  // MONEY-4: an award whose amount is known but has no award row yet is recorded
+  // (one installment, the amount as stated) the moment a payment is recorded on it.
+  const payFirst = async () => {
+    setMsg("");
+    if (!d.pledge) {
+      try { await apiFetch(`/grants/${grantId}/award`, { method: "PUT", body: JSON.stringify({ amountAwarded: d.awardedCents / 100, installmentCount: 1 }) }); }
+      catch (e) { setMsg(errorMessage(e, "The award did not save.")); return; }
+      const fresh = await apiFetch(`/grants/${grantId}/award-plan`).catch(() => null);
+      if (fresh) setD(fresh);
+      onChanged && onChanged();
+    }
+    setPaying(true);
+  };
   if (!d) return null;
   return (
     <div data-testid="grant-award" style={card}>
       <div style={eyebrow}>The award, paid in installments</div>
       <div data-testid="grant-award-sentence" style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>{d.sentence}</div>
       {/* GIFTS-1: what has come in and what the funder still owes, from the payments recorded on the award. */}
-      {d.pledge && <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+      {(d.pledge || d.awardedCents > 0) && <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
         <span data-testid="grant-received" title="Every payment recorded on this award, a refund off." style={{ fontSize: 13, color: T.ink }}>Received <strong>{money2(d.receivedCents)}</strong></span>
         <span data-testid="grant-remaining" title="The award less what has been received." style={{ fontSize: 13, color: T.ink }}>Remaining <strong>{money2(d.outstandingCents)}</strong></span>
-        {!isReadOnly && d.funderId && <button type="button" data-testid="grant-record-payment" onClick={() => setPaying(true)} style={btn(true)}>Record a payment received</button>}
+        {!isReadOnly && d.funderId && <button type="button" data-testid="grant-record-payment" onClick={payFirst} style={btn(true)}>Record a payment received</button>}
       </div>}
-      {paying && <RecordGiftDialog person={{ id: d.funderId, name: d.funderName || "The funder" }} fixedPerson pledgeId={d.pledge.id} title="Record a payment received"
+      {paying && d.pledge && <RecordGiftDialog person={{ id: d.funderId, name: d.funderName || "The funder" }} fixedPerson pledgeId={d.pledge && d.pledge.id} title="Record a payment received"
         testid="grant-payment" onClose={() => setPaying(false)} onSaved={() => { load(); onChanged && onChanged(); }} />}
       {d.installments.length > 0 && (
         <div style={{ marginTop: 8 }}>
@@ -116,7 +129,7 @@ export function GrantAwardPlan({ grantId, isReadOnly, onChanged, onLink }) {
       {/* GRANTS-FIX: the sentence that asks for the link carries the action. */}
       {!d.pledge && !d.canRecord && !isReadOnly && onLink && (
         <button type="button" data-testid="grant-award-link" onClick={onLink} style={{ marginTop: 8, background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "7px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Link to funder</button>)}
-      {!d.pledge && d.canRecord && !isReadOnly && (form ? (
+      {!d.pledge && d.canRecord && !(d.awardedCents > 0) && !isReadOnly && (form ? (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
           <input aria-label="Amount awarded" type="number" placeholder="Awarded $" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} style={{ ...inp, width: 130 }} />
           <input aria-label="Instalments" type="number" min="1" max="24" value={form.count} onChange={e => setForm({ ...form, count: e.target.value })} style={{ ...inp, width: 80 }} />
@@ -127,7 +140,7 @@ export function GrantAwardPlan({ grantId, isReadOnly, onChanged, onLink }) {
           <button type="button" style={btn(true)} onClick={record} disabled={!(Number(form.amount) > 0)}>Record the award</button>
           <button type="button" style={btn(false)} onClick={() => setForm(null)}>Cancel</button>
         </div>
-      ) : <button type="button" style={{ ...btn(false), marginTop: 8 }} onClick={() => setForm({ amount: "", count: 2, frequency: "semiannual", firstDue: "" })} data-testid="award-record">Record the award</button>)}
+      ) : <button type="button" style={{ ...btn(false), marginTop: 8 }} onClick={() => setForm({ amount: d.askCents > 0 ? String(d.askCents / 100) : "", count: 2, frequency: "semiannual", firstDue: "" })} data-testid="award-record">Record the award</button>)}
       {msg && <div role="status" style={{ fontSize: 12, marginTop: 6 }}>{msg}</div>}
     </div>);
 }

@@ -62,8 +62,11 @@ function mount(ctx) {
       const rows = await query(`UPDATE events SET archived_at = ${on ? "COALESCE(archived_at, NOW())" : "NULL"} WHERE id = ? AND org_id = ? RETURNING id, name, archived_at`,
         [req.params.id, req.user.orgId]);
       if (!rows.length) return res.status(404).json({ error: "Not found" });
-      res.json({ ok: true, archivedAt: rows[0].archived_at,
-        message: on ? `${rows[0].name} is archived. Its gifts stay counted, and Archived on the Events list shows it.` : `${rows[0].name} is back on the Events list.` });
+      // FLOWS-4 (W-1109-Volunteers-01X): an archived event's waiting drafts and open tasks are retired, "event archived".
+      const retired = on ? await require("./missedYou").retireForArchive(req.user.orgId, rows[0].id) : { drafts: 0, tasks: 0 };
+      const tail = retired.drafts || retired.tasks ? ` Its ${[retired.drafts && plural(retired.drafts, "waiting draft"), retired.tasks && plural(retired.tasks, "open task")].filter(Boolean).join(" and ")} ${retired.drafts + retired.tasks === 1 ? "is" : "are"} closed, noted "event archived".` : "";
+      res.json({ ok: true, archivedAt: rows[0].archived_at, retired,
+        message: on ? `${rows[0].name} is archived. Its gifts stay counted, and Archived on the Events list shows it.${tail}` : `${rows[0].name} is back on the Events list.` });
     }));
   }
   return {};

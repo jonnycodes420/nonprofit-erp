@@ -21,10 +21,13 @@ const routers = {
 routers.r1.use(require("./deceased").routers.r1);
 // PLEDGES-2: a recurring plan staff record by hand (server/donors/offlinePlans.js).
 routers.r1.use(require("./offlinePlans").routers.r1);
+// MONEY-4: Record a refund (server/donors/refunds.js).
+routers.r1.use(require("./refunds").routers.r1);
 
 function mount(ctx) {
 require("./deceased").mount(ctx);
 require("./offlinePlans").mount(ctx);
+require("./refunds").mount(ctx);
 const {
   NOT_YOURS, PERSON_ONLY_SENTENCE, UNDO_SECONDS, VH_READY, actor, auditShape, checkWriteAccess, crypto,
   donorPhotoUrl, editStamp, figureSources, insertShift, lastName, mayEditLogged, orgOwns, orgToday, orgTz,
@@ -570,8 +573,12 @@ app.post("/donors/:id/volunteer-hours", requireAuth, checkWriteAccess, wrap(asyn
   }
   const v = VH.validateShift({ ...b, role: b.role || (opp && opp.name) || null });
   if (!v.ok) return res.status(400).json({ error: `A shift needs ${v.errors.join("; ")}.` });
-  const id = await insertShift(orgId, d.id, { ...v.shift, opportunityId: opp ? opp.id : null }, { via: "staff", who: actor(req) });
-  res.status(201).json({ id, ...(await volunteerSummary(orgId, d.id)) });
+  // FLOWS-4 (W-1109-Volunteers-26): one entry is one row. The form's key rides
+  // the import-key index, so a double click's second request writes nothing.
+  const key = /^[A-Za-z0-9_-]{8,64}$/.test(String(b.entryKey || "")) ? `entry:${b.entryKey}` : null;
+  const id = await insertShift(orgId, d.id, { ...v.shift, opportunityId: opp ? opp.id : null }, { via: "staff", who: actor(req), importKey: key });
+  if (!id && key) req.audit && req.audit.skip && req.audit.skip("the same entry, sent twice");
+  res.status(id || !key ? 201 : 200).json({ id, already: !id && !!key, ...(await volunteerSummary(orgId, d.id)) });
 }));
 
 // What a volunteer is qualified for and what they told you: tags, skills and

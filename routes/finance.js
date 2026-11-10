@@ -2006,7 +2006,7 @@ app.post("/calendar/events/:id/move", requireAuth, checkWriteAccess, wrap(async 
   await run(`UPDATE calendar_events SET starts_at=?, ends_at=?, updated_at=NOW() WHERE id=?`, [startsAt, endsAt, c.id]);
   const whoM = actor(req);
   const [meM] = await query(`SELECT name FROM users WHERE id=?`, [req.user.userId]);
-  await require("../meetingEffects").applyMeeting(c.id, { actorId: whoM.id, actorName: meM?.name || whoM.name });
+  await require("../meetingEffects").applyMeeting(c.id, { actorId: whoM.id, actorName: meM?.name || whoM.name, actionKey: SM.actionKeyOf(req) });   // FLOWS-4
   res.json({ ok: true, sentence: "Moved on your calendar, and the prep, the follow-up and the next step moved with it." });
 }));
 

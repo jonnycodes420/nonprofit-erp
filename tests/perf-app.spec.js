@@ -75,7 +75,8 @@ const JS_FIRST_KB = 242;   // LAG-1: +1 KB, the deck's "Updating…" state and t
 // Before LAG-1:   // POLISH-6: +2 KB, the one shared date box's loader (LazyDateInput) on the shell; main measured 239 on the same runner, the branch 241.
 // Before POLISH-6:   // PERF-3 measured 227 KB + 5%: the moves deck's code (15 KB) is on the first look now, preloaded (PERF-2: 214)
 const WARM_MS = 1446;   // PERF-3: Home on a phone a second time, measured 1,314 ms + 10% (main: 1,528)
-const FIRST_KB = 312;   // POLISH-6: +2 KB with JS_FIRST_KB above. POLISH-8: +1 KB. Main measured 311 KB (on the bar); the brief's Home items (the greeting in the org's hour, each goal tile's period, Keep dropping at once) add about 0.6 KB gzipped, measured 312. JS_FIRST_KB is unchanged.
+const FIRST_KB = 313;   // FLOWS-4: +1 KB on POLISH-8's 312, the top bar's same-name type chip and its Settings → Trash entry (the search ships with the shell); the runner measured 312 for FLOWS-4 alone. JS_FIRST_KB unchanged.
+// Before FLOWS-4:   // POLISH-6: +2 KB with JS_FIRST_KB above. POLISH-8: +1 KB. Main measured 311 KB (on the bar); the brief's Home items (the greeting in the org's hour, each goal tile's period, Keep dropping at once) add about 0.6 KB gzipped, measured 312. JS_FIRST_KB is unchanged.
 // Before POLISH-6:   // PERF-3: every byte of Home's first look, measured 294 KB + 5% (main: 314)
 const CLS_DESKTOP_MAX = 0.05;   // PERF-4: Home on a desktop, worst of the runs (main: 0)
 const CLS_MAX = 0.02;   // PERF-3: main moved 0.49 of the phone's screen (the deck after its stand-in); now 0

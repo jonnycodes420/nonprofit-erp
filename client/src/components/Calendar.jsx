@@ -24,6 +24,7 @@ import { errorMessage } from "../lib/domainError";
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { tabHref, urlParam } from "../lib/appUrls";
 import { moveRequest, movedWords, addDaysCivil } from "../../../shared/calendarMoves.js";
+import { entryKey } from "../lib/entryKey";   // FLOWS-4: one action, one key
 import { displayDay } from "../../../shared/displayDate.js";
 import { AddToRecord } from "./MeetingPanels";
 import { FinishSheet } from "./Tasks";
@@ -147,7 +148,8 @@ export default function CalendarPage({ isReadOnly, onNavigate, isAdmin }) {
     const req = moveRequest(item, d);
     if (req.refused) { setNote(req.refused); return; }
     try {
-      await apiFetch(req.path, { method: req.method, body: JSON.stringify(req.body) });
+      // FLOWS-4 (W-1109-Volunteers-18X): one drag is one action, with one key, so the meeting's note is written once.
+      await apiFetch(req.path, { method: req.method, body: JSON.stringify(item.type === "meeting" ? { ...req.body, actionKey: entryKey() } : req.body) });
       setNote("");
       load();
       offerUndo({ message: movedWords(item, req), undoAction: async () => { const r = await apiFetch(req.undo.path, { method: req.undo.method, body: JSON.stringify(req.undo.body) }); load(); return r; } }, item.title);
@@ -290,6 +292,7 @@ function lanesFor(list) {
 function TimeGrid({ days, items, today, isReadOnly, onOpen, onAdd, onMove }) {
   const gridRef = useRef(null);
   const [drag, setDrag] = useState(null);   // { item, mode, x0, y0, dx, dy }
+  const dragRef = useRef(null);             // FLOWS-4: the same drag, read once on release
   const justDragged = useRef(false);        // the click that ends a drag is not a click on the item
   const [now, setNow] = useState(() => new Date());
   // CHECK-2: "3 more" in the all-day row opens that day's whole list, never the add form.
@@ -303,18 +306,25 @@ function TimeGrid({ days, items, today, isReadOnly, onOpen, onAdd, onMove }) {
   const nowMins = now.getHours() * 60 + now.getMinutes();
   useEffect(() => {
     if (!drag) return undefined;
-    const mv = e => setDrag(d => d && { ...d, dx: e.clientX - d.x0, dy: e.clientY - d.y0, moved: d.moved || Math.abs(e.clientX - d.x0) + Math.abs(e.clientY - d.y0) > 4 });
+    const mv = e => {
+      const d = dragRef.current; if (!d) return;
+      dragRef.current = { ...d, dx: e.clientX - d.x0, dy: e.clientY - d.y0, moved: d.moved || Math.abs(e.clientX - d.x0) + Math.abs(e.clientY - d.y0) > 4 };
+      setDrag(dragRef.current);
+    };
+    // FLOWS-4 (W-1109-Volunteers-18X): the move is sent from here, once, never
+    // from inside a state updater (React may run an updater twice, and each run
+    // sent the move again). The drag's latest position is kept in a ref.
     const up = () => {
-      setDrag(d => {
-        if (d && d.moved) {
-          justDragged.current = true; setTimeout(() => { justDragged.current = false; }, 50);
-          const days = d.mode === "move" ? Math.round(d.dx / colW()) : 0;
-          // FLOWS-1 item 3: an all-day item (a task, a step with no time) moves by whole days only
-          const mins = d.allDay ? 0 : Math.round(((d.dy / HOUR_PX) * 60) / SNAP) * SNAP;
-          if (days || mins) onMove(d.item, d.mode === "move" ? { days, minutes: mins } : { endMinutes: mins });
-        }
-        return null;
-      });
+      const d = dragRef.current;
+      dragRef.current = null;
+      setDrag(null);
+      if (d && d.moved) {
+        justDragged.current = true; setTimeout(() => { justDragged.current = false; }, 50);
+        const days = d.mode === "move" ? Math.round(d.dx / colW()) : 0;
+        // FLOWS-1 item 3: an all-day item (a task, a step with no time) moves by whole days only
+        const mins = d.allDay ? 0 : Math.round(((d.dy / HOUR_PX) * 60) / SNAP) * SNAP;
+        if (days || mins) onMove(d.item, d.mode === "move" ? { days, minutes: mins } : { endMinutes: mins });
+      }
     };
     window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up);
     return () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); };
@@ -322,7 +332,8 @@ function TimeGrid({ days, items, today, isReadOnly, onOpen, onAdd, onMove }) {
   const start = (e, item, mode, allDayRow = false) => {
     if (isReadOnly || !(item.editable && item.editable[mode === "move" ? "move" : "resize"])) return;
     e.stopPropagation(); e.preventDefault();
-    setDrag({ item, mode, allDay: allDayRow, x0: e.clientX, y0: e.clientY, dx: 0, dy: 0, moved: false });
+    dragRef.current = { item, mode, allDay: allDayRow, x0: e.clientX, y0: e.clientY, dx: 0, dy: 0, moved: false };
+    setDrag(dragRef.current);
   };
   return (
     <div data-testid="cal-grid" style={{ border: "1px solid " + T.bg3, borderRadius: 12, background: T.white, overflow: "hidden" }}>

@@ -1016,6 +1016,17 @@ async function run7(pool) {
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS offline_plan_id TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_offline_plan ON gifts (offline_plan_id) WHERE offline_plan_id IS NOT NULL`);
 
+  // MONEY-4 · a refund is a negative gift row linked to the gift it refunds
+  // (the original stays), with its reason. A gift refunded in full is no longer
+  // a gift (shared/numbers/money.js GIFT): refunded_in_full is kept by the one
+  // refund writer (server/donors/refunds.js), so every count reads one column.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS refund_of TEXT`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS refund_reason TEXT`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS refunded_in_full BOOLEAN`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_refund_of ON gifts (org_id, refund_of) WHERE refund_of IS NOT NULL`);
+
+  await require("../../donors/notesAtSchema").notesAtSchema(pool);   // FLOWS-4: donors.notes_at, the Notes banner's date
+
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id
   // (orgSummary.js says which few are not, and why).
