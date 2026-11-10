@@ -543,6 +543,7 @@ app.use((req, res, next) => {
 // SPLIT-2 end
 // SPLIT-2 server.js piece 81
 app.use(require("../../db").requestLimits());   // LOAD-1: limits and cancel, above every route (server/shared/requestLimits.js)
+app.use(require("../perf/capacity").middleware);   // SCALE-3: request time for the capacity gauge (timing only)
 // SPLIT-2 end
 // SPLIT-2 server.js piece 82
 

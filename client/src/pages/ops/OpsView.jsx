@@ -5,6 +5,7 @@ import { useState } from "react";
 import { countLabel } from "../../../../shared/countWords.js";
 import MorningCard from "./MorningCard";
 import { TierPill } from "./leadBits";
+import CapacityCard from "./CapacityCard";
 
 const INK = "#0F1A12", WHITE = "#FFFFFF", CREAM = "#F0EDE6", EMERALD = "#0D5C3A", BRASS = "#C9A84C";
 const STATES = ["open", "reopened", "fixed", "verified"];
@@ -193,6 +194,7 @@ export default function OpsView({ data, error, now = Date.now(), tabs = null, on
       {data.githubAt ? ` GitHub read ${ago(data.githubAt, now)} ago.` : ""}</p>
     <MorningCard m={data.morning || null} />
     <Health h={data.health} now={now} />
+    <CapacityCard c={data.capacity || null} />{/* SCALE-3: when to add a web replica or give the worker more room */}
     {ship /* STAGE-1: staging and the Ship to customers card, beside prod health */}
     {importer /* LEAD-IMPORT-1: Import a walk report, above the board it writes to */}
     <Board board={data.board} onShot={onShot} />

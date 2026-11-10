@@ -10,10 +10,10 @@
 // run: USERS (20) simulated staff, two per org, for DURATION seconds (300),
 // each doing a realistic mix with THINK_MS (3 s) to read each screen: open Home, open Donors,
 // filter, search, open a profile, log a call, record a gift, open
-// Fundraising, run one report. It prints a table per route (count, p50, p95,
+// Fundraising, run one report (and, since SCALE-3, any other report). It prints a table per route (count, p50, p95,
 // max) and the pass bar, writes OUT (JSON) and GITHUB_STEP_SUMMARY (markdown)
 // when set, and exits 1 when the bar fails:
-//   p95 under 1 s for every API route · a whole profile open under 1.5 s (p95)
+//   p95 under 1 s for every API route (retention 800 ms) · a whole profile open under 1.5 s (p95)
 //   · nothing over 10 s · zero waits for a connection that gave up · zero 5xx
 //
 // Refuses any BASE or DATABASE_URL that is not loopback. Never run it against prod.
@@ -124,6 +124,10 @@ const profileLists = (id) => {
     `/people/${id}`, `/atlas/notes?place=person&id=${id}`, `/donors/${id}/plan`, `/donors/${id}/journeys`];
   return { top, below: PROFILE_MANY(id).filter(p => !top.includes(p)) };
 };
+// SCALE-3: the rest of REPORT_HANDLERS (server/reports/handlers.js), one picked per "reports" turn.
+const OTHER_REPORTS = ["giving-summary", "deposits", "non-cash", "by-group", "sybunt", "top-donors", "three-year", "year-over-year",
+  "annual", "solicitations", "bookkeeper", "grant-deadlines", "grant-restricted", "members-directory", "members-by-level",
+  "members-expiring", "members-lapsed", "members-new-renewed", "membership-revenue", "p2p-fundraisers", "p2p-teams"];
 const pick = (arr, r) => arr[Math.floor(r() * arr.length)];
 const routeOf = (path) => (/\/bundle\?/.test(path) ? path.split("?")[0] + (path.includes(encodeURIComponent("/status")) ? " (above the fold)" : " (below the fold)") : path.split("?")[0]).replace(/\/org_ten\d+_[a-z]+\d+/g, "/:id").replace(/\/(d|g|i|t)_[0-9a-f]{8,}/g, "/:id");
 
@@ -158,8 +162,12 @@ async function run() {
   // 20 an IP in 15 minutes, and every simulated user signs in from loopback.
   const signedIn = new Map();
   const tokens = [];
+  // SCALE-3: ONLY_ORG=org_ten10 puts every user on one org (the brief's "the
+  // largest org with 20 users"); unset, users spread two to an org as before.
+  const pool = process.env.ONLY_ORG ? ORGS.filter(o => o.id === process.env.ONLY_ORG) : ORGS;
+  if (!pool.length) throw new Error(`ONLY_ORG ${process.env.ONLY_ORG} is not one of the ten orgs`);
   for (let u = 0; u < USERS; u++) {
-    const o = ORGS[u % ORGS.length];
+    const o = pool[u % pool.length];
     if (!signedIn.has(o.id)) {
       const r = await fetch(`${BASE}/auth/login`, { method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ email: `admin@${o.slug}.load`, password: "loadtest1234" }) });
@@ -171,7 +179,7 @@ async function run() {
   }
   const today = new Date().toISOString().slice(0, 10);
   const until = Date.now() + DURATION;
-  const MIX = [["home", 3], ["donors", 3], ["filter", 2], ["search", 2], ["profile", 5], ["call", 1], ["gift", 1], ["fundraising", 1], ["report", 1]];
+  const MIX = [["home", 3], ["donors", 3], ["filter", 2], ["search", 2], ["profile", 5], ["call", 1], ["gift", 1], ["fundraising", 1], ["report", 1], ["reports", 1]];
   const bag = MIX.flatMap(([k, w]) => Array(w).fill(k));
   await Promise.all(tokens.map(async ({ tok, o }, u) => {
     let seedN = u * 7919 + 1;
@@ -192,6 +200,8 @@ async function run() {
       else if (what === "gift") await call(tok, "POST", `/donors/${person()}/gifts`, { amount: 25 + Math.floor(r() * 200), date: today, type: "cash", payment_method: "check" });
       else if (what === "fundraising") await call(tok, "GET", "/fundraising/overview");
       else if (what === "report") await call(tok, "GET", `/reports/${pick(["lybunt", "retention"], r)}`);
+      // SCALE-3: every other report on the Reports tab, so a slow one shows in the same run.
+      else if (what === "reports") await call(tok, "GET", `/reports/${pick(OTHER_REPORTS, r)}`);
     }
   }));
   const health1 = await (await fetch(`${BASE}/health`)).json();
@@ -200,6 +210,7 @@ async function run() {
   return report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS, DURATION, THINK_MS });
 }
 
+const RETENTION_BAR_MS = 800;
 const pct = (arr, p) => { if (!arr.length) return 0; const s = arr.slice().sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.ceil(p / 100 * s.length) - 1)]; };
 function report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS, DURATION, THINK_MS = 0 }) {
   const rows = [...stats].map(([route, ms]) => ({ route, count: ms.length, p50: Math.round(pct(ms, 50)), p95: Math.round(pct(ms, 95)), max: Math.round(Math.max(...ms)), fivexx: fivexx.get(route) || 0 }))
@@ -211,6 +222,8 @@ function report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS,
     if (r.max > 10000) misses.push(`${r.route} max ${r.max} ms`);
     if (r.fivexx) misses.push(`${r.route} ${r.fivexx} 5xx or no answer`);
   }
+  // SCALE-3: retention's own bar is tighter, 800 ms, so it has room under the 1 s.
+  for (const r of rows) if (r.route === "GET /reports/retention" && r.p95 >= RETENTION_BAR_MS && r.p95 < 1000) misses.push(`${r.route} p95 ${r.p95} ms (its bar is ${RETENTION_BAR_MS} ms)`);
   if (profile.p95 >= 1500) misses.push(`profile open p95 ${profile.p95} ms`);
   if (checkoutTimeouts) misses.push(`${checkoutTimeouts} waits for a connection gave up`);
   const pass = misses.length === 0;

@@ -15,6 +15,7 @@
 //   §7 a sign-in rate limit is one count across both web processes
 //   §8 a guard job runs after each boot, not at the slot the last process left (FIX-47),
 //      and in the booting process itself, never through the queue (GUARDS-1)
+//   §9 Atlas's status line set on one web process is read on the other (SCALE-3)
 //
 // The suite's own server (if one is running against the same database) may
 // also claim jobs; that is just one more worker, and every assertion holds.
@@ -73,6 +74,7 @@ const settled = (keys) => waitFor(async () => {
   // Sign-in counts are shared and persist now; this suite's own come off first
   // (only TEST_MODE servers run beside it, and they count nothing).
   await q(`DELETE FROM rate_limit_hits WHERE key LIKE 'rl:loginAccountLimiter:%scale1q%' OR key LIKE 'rl:loginIpLimiter:%'`);
+  for (const t of ["atlas_actions", "agent_instructions", "question_log", "voice_memos"]) await q(`DELETE FROM ${t} WHERE org_id IN ($1,$2)`, [ORG_A, ORG_B]);   // §9.s Atlas request
   await q(`DELETE FROM users WHERE org_id IN ($1,$2)`, [ORG_A, ORG_B]);
   await q(`DELETE FROM orgs WHERE id IN ($1,$2)`, [ORG_A, ORG_B]);
   for (const o of [ORG_A, ORG_B])
@@ -227,8 +229,26 @@ const settled = (keys) => waitFor(async () => {
   await q(`DELETE FROM job_queue WHERE name = ANY($1::text[])`, [probes]);
   await q(`DELETE FROM job_schedule WHERE name = ANY($1::text[])`, [probes]);
 
+  // §9 SCALE-3 · Atlas's status line ("Reading what you asked…") is set by the
+  // web process running her request and polled by the browser, which a second
+  // replica may answer. Ask on web 1, poll web 2: it sees web 1's line. Red on
+  // main, where the line lived only in web 1's memory (server/atlas/progress.js).
+  const pkey = "scale3-" + Math.random().toString(36).slice(2, 12);
+  const asked = fetch(`${web1.base}/atlas`, { method: "POST", headers: auth, body: JSON.stringify({ text: "Who gave last month?", progressKey: pkey }) })
+    .then(r => r.status).catch(() => 0);
+  const seenOn2 = await waitFor(async () => {
+    const p = await (await fetch(`${web2.base}/atlas/progress/${pkey}`, { headers: auth })).json().catch(() => null);
+    return p && p.progress && p.progress.line ? p.progress.line : false;
+  }, { timeout: 15000, interval: 100 });
+  await asked;
+  ok("§9 web 2 shows the line web 1 set for her Atlas request", typeof seenOn2 === "string" && seenOn2.length > 0, String(seenOn2));
+  const other = await (await fetch(`${web2.base}/atlas/progress/scale3-nobody-else`, { headers: auth })).json().catch(() => null);
+  ok("§9 a key nobody set has no line", !!other && other.progress === null, JSON.stringify(other));
+  await q(`DELETE FROM atlas_progress WHERE k LIKE $1`, [`${ORG_A}:%`]).catch(() => {});
+
   await reset();
   await q(`DELETE FROM oauth_states WHERE org_id IN ($1,$2)`, [ORG_A, ORG_B]);
+  for (const t of ["atlas_actions", "agent_instructions", "question_log", "voice_memos"]) await q(`DELETE FROM ${t} WHERE org_id IN ($1,$2)`, [ORG_A, ORG_B]);   // §9.s Atlas request
   await q(`DELETE FROM users WHERE org_id IN ($1,$2)`, [ORG_A, ORG_B]);
   await q(`DELETE FROM orgs WHERE id IN ($1,$2)`, [ORG_A, ORG_B]);
 })().catch(e => { ok("suite ran without throwing", false, e.stack); })

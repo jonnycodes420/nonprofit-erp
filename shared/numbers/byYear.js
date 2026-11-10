@@ -22,7 +22,7 @@ const orgTime = require("../../orgTime");
 const FY = require("./fiscalYear");
 const { MONEY, GIFT, LIVE } = require("./money");
 const { AFTER_IMPORT, LIFETIME } = require("./lifetime");
-const { FIRST_DATE } = require("./firstGift");
+const { FIRST_DATE, FIRST_ON_FILE_AGG, EARLIER, IMPORTED_FIRST } = require("./firstGift");
 const { IS_CREDIT, NOT_CREDIT } = require("../../creditTypes");
 const { COUNTED } = require("./giftCount");   // TRUTH-3: one rule for counting a gift
 
@@ -174,20 +174,31 @@ async function donorByYear(query, org, donorId, today) {
 // exactly one of: new (their first gift ever is in the span, firstGift.js),
 // retained (gave in the year before, retained.js), reactivated (gave before
 // that, not in the year before). The `givers` source's people, cut three ways.
+// SCALE-3: set-wise. Each person's first gift date (FIRST_DATE's aggregate,
+// FIRST_ON_FILE_AGG, then EARLIER with the import's) is read once for the org,
+// and "gave in the year before" once per span, then joined; before, both were
+// a subquery per person per span, 1.3 s of year-over-year's 1.6 s on a
+// 25,000-person org. Same rows, same kinds (the JSON diffed byte for byte).
 function donorKindsSql(orgId, spans) {
-  const args = [spans.map(s => s.k), spans.map(s => s.f), spans.map(s => s.t), spans.map(s => s.pf), spans.map(s => s.pt), orgId];
+  const args = [spans.map(s => s.k), spans.map(s => s.f), spans.map(s => s.t), spans.map(s => s.pf), spans.map(s => s.pt), orgId,
+    orgId, spans.map(s => s.k), spans.map(s => s.pf), spans.map(s => s.pt), orgId];
   const sql = `
     SELECT p.k, d.id, 'person' AS type, d.id AS donor_id, d.name, p.date, p.amount,
-           CASE WHEN ${FIRST_DATE("d")} >= p.f THEN 'new'
-                WHEN EXISTS (SELECT 1 FROM gifts pg WHERE pg.org_id = d.org_id AND pg.donor_id = d.id AND ${GIFT("pg")}
-                               AND pg.date >= p.pf AND pg.date <= p.pt) THEN 'retained'
+           CASE WHEN ${EARLIER("fa.first", IMPORTED_FIRST("d"))} >= p.f THEN 'new'
+                WHEN pv.donor_id IS NOT NULL THEN 'retained'
                 ELSE 'reactivated' END AS kind
       FROM (SELECT y.k, y.f, y.pf, y.pt, g.donor_id, g.org_id, MAX(g.date) AS date, ROUND(SUM(g.amount)::numeric, 2) AS amount
               FROM unnest(?::text[], ?::text[], ?::text[], ?::text[], ?::text[]) AS y(k, f, t, pf, pt)
               JOIN gifts g ON g.org_id = ? AND g.date >= y.f AND g.date <= y.t AND ${MONEY("g")}
              GROUP BY y.k, y.f, y.pf, y.pt, g.donor_id, g.org_id
             HAVING COUNT(*) FILTER (WHERE g.amount > 0) > 0) p
-      JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id AND d.deleted_at IS NULL AND d.erased_at IS NULL`;
+      JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id AND d.deleted_at IS NULL AND d.erased_at IS NULL
+      LEFT JOIN (SELECT fg.donor_id, ${FIRST_ON_FILE_AGG("fg")} AS first FROM gifts fg WHERE fg.org_id = ? GROUP BY fg.donor_id) fa
+             ON fa.donor_id = d.id
+      LEFT JOIN (SELECT DISTINCT y.k, y.pf, y.pt, pg.donor_id
+                   FROM unnest(?::text[], ?::text[], ?::text[]) AS y(k, pf, pt)
+                   JOIN gifts pg ON pg.org_id = ? AND ${GIFT("pg")} AND pg.date >= y.pf AND pg.date <= y.pt) pv
+             ON pv.k = p.k AND pv.pf = p.pf AND pv.pt = p.pt AND pv.donor_id = d.id`;
   return { sql, args };
 }
 const KIND_WORDS = { new: "First gift ever in this year", retained: "Gave the year before too", reactivated: "Gave before, not the year before" };

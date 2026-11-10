@@ -157,12 +157,17 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
   memory and /health read `notRun`. It must be read-only: every replica runs it. (GUARDS-1)
 - **Nothing a request reads may live only in one process's memory** when a second replica would read
   it differently: rate limits (`rateLimitStore.js`, Postgres), OAuth state (`oauth_states`), an
-  import in flight (`import_in_flight`), an alert's hourly mark (`ops_alert_marks`). Pure caches of
+  import in flight (`import_in_flight`), an alert's hourly mark (`ops_alert_marks`), Atlas's status
+  line (`atlas_progress`, SCALE-3). Pure caches of
   data that is the same everywhere are fine. The two general per-request ceilings stay in memory on
   purpose and each replica takes `1/WEB_REPLICAS` of them. (SCALE-1)
 - **Every model call is counted against the org's daily AI budget** in `aiClient.requireAi`
   (`AI_DAILY_CALLS_PER_ORG`, default 500). Past it the call is refused like AI off (`ai_budget`, 429),
   so the route's non-AI path answers. (SCALE-1)
+- **When to add a web replica or a bigger worker is the Capacity card on /ops** (`server/perf/capacity.js`,
+  one `capacity_samples` row per process every five minutes). Do the steps in `docs/needs-jonathan/SCALE-3.md`
+  only when its sentence says so. Don't store a report in `OS.cached` to make it fast: in a busy org every
+  write invalidates it and the worker recomputes it after each one (SCALE-3 measured it worse). (SCALE-3)
 - **Measure scale with the load harness, never against prod.** `scripts/load/` seeds 200 orgs on a
   loopback cluster (`seed-many.js`), stands in for every provider (`standins.js`) and measures screens,
   jobs and imports (`measure.js`, `import-drive.js`); `npm run test:load` is the pass/fail. (SCALE-1)

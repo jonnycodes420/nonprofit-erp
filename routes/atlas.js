@@ -881,7 +881,7 @@ app.post("/atlas/:id/save", requireAuth, checkWriteAccess, wrap(async (req, res)
 
 // ATLAS-3 · the status line while she waits: what Atlas is doing right now.
 app.get("/atlas/progress/:key", requireAuth, wrap(async (req, res) => {
-  res.json({ progress: PG.get(req.user.orgId, req.user.userId, req.params.key) });
+  res.json({ progress: await PG.getShared(req.user.orgId, req.user.userId, req.params.key) });   // SCALE-3: any replica's line
 }));
 
 // ATLAS-3 · OPEN LIST: the same people, every time. The first click keeps
