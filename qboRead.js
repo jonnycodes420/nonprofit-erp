@@ -697,20 +697,21 @@ async function undoRun({ orgId, runId, who, deps }) {
     await run(`DELETE FROM gifts WHERE org_id=? AND id = ANY(?)`, [orgId, ids]);
   }
   await run(`DELETE FROM qbo_read_gifts WHERE org_id=? AND run_id=? AND status='recorded'`, [orgId, runId]);
+  // INTEGRITY-3: the people this read created go to the trash (restorable
+  // for 30 days), never deleted outright; anyone already there stays as they are
   const orphans = await query(
-    `SELECT d.id FROM donors d WHERE d.org_id=? AND d.created_import_id=?
+    `SELECT d.id FROM donors d WHERE d.org_id=? AND d.created_import_id=? AND d.deleted_at IS NULL
        AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id)
        AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.donor_id=d.id)`, [orgId, r.import_id]);
-  if (orphans.length) {
-    await run(`UPDATE qbo_read_lines SET donor_id=NULL WHERE org_id=? AND donor_id = ANY(?)`, [orgId, orphans.map(o => o.id)]);
-    await run(`DELETE FROM donors WHERE org_id=? AND id = ANY(?)`, [orgId, orphans.map(o => o.id)]);
-  }
+  const trashedPeople = !orphans.length ? [] : await require("./personTrash").trashPeople(orgId, orphans.map(o => o.id), who && who.id ? who : { id: "system:qbo-read-undo", name: "Steward (undo)" },
+    { why: { kind: "import_undo", importId: r.import_id }, extra: { __importUndo: r.import_id, __created: true } });
   for (const d of donorIds) await recalcDonorSummary(d, orgId).catch(() => {});
   await run(`UPDATE imports SET reversed_at=NOW(), reversed_by=? WHERE id=? AND org_id=?`, [who.name || who.id, r.import_id, orgId]);
   await run(`UPDATE qbo_read_runs SET status='undone' WHERE id=? AND org_id=?`, [runId, orgId]);
-  return { ok: true, gifts: ids.length, donorsRemoved: orphans.length,
+  return { ok: true, gifts: ids.length, donorsRemoved: orphans.length, importId: r.import_id,
+    moved: trashedPeople.map(t => ({ id: t.id, from: "active", to: "trash", how: "created" })),
     sentence: `Undone. ${ids.length} ${ids.length === 1 ? "gift" : "gifts"} read from QuickBooks removed`
-      + (orphans.length ? ` and ${orphans.length} ${orphans.length === 1 ? "person" : "people"} this read created` : "")
+      + (orphans.length ? `; ${orphans.length} ${orphans.length === 1 ? "person" : "people"} this read created ${orphans.length === 1 ? "is" : "are"} in the trash, restorable for 30 days` : "")
       + ". Nothing in QuickBooks was touched." };
 }
 

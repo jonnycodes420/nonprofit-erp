@@ -160,13 +160,19 @@ async function orgPeopleIndex(orgId) {
 // (by the old system's ID, the email, then the exact name); a record that
 // matches one is not imported, and the preview says so with a Bring them back
 // she has to press. A record merged into another is not a deletion.
+// INTEGRITY-3: nor is a person an undo put in the trash because the undone
+// file created them (their trash row says __created). An undo used to delete
+// them outright, so a file imported again never met them; it still doesn't,
+// and the same file imports again as it always did.
 async function deletedPeopleIndex(orgId) {
   const rows = await query(
     `SELECT d.id, d.name, LOWER(TRIM(COALESCE(d.name,''))) AS lname, LOWER(TRIM(COALESCE(d.email,''))) AS email,
             LOWER(COALESCE(d.external_donor_id,'')) AS ext, d.external_donor_ids AS exts
        FROM donors d
       WHERE d.org_id=? AND d.deleted_at IS NOT NULL AND d.staged_import_id IS NULL
-        AND NOT EXISTS (SELECT 1 FROM donor_merges m WHERE m.org_id=d.org_id AND m.merged_id=d.id AND m.undone_at IS NULL)`, [orgId]);
+        AND NOT EXISTS (SELECT 1 FROM donor_merges m WHERE m.org_id=d.org_id AND m.merged_id=d.id AND m.undone_at IS NULL)
+        AND NOT EXISTS (SELECT 1 FROM deleted_records r WHERE r.org_id=d.org_id AND r.table_name='donors' AND r.record_id=d.id
+                          AND r.restored_at IS NULL AND (r.row_data ->> '__created') = 'true')`, [orgId]);
   const byExt = new Map(), byEmail = new Map(), byName = new Map();
   for (const r of rows) {
     let more = r.exts;

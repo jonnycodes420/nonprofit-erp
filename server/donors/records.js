@@ -386,9 +386,9 @@ const PURGE_CHILD_TABLES = [
 async function purgeableIds(orgId, olderThanDays) {
   const days = olderThanDays == null || olderThanDays === "" ? null : Math.max(0, Math.floor(Number(olderThanDays)));
   if (days != null && !Number.isFinite(days)) return null;
-  return (await query(`SELECT d.id FROM donors d WHERE d.org_id=? AND d.deleted_at IS NOT NULL AND d.staged_import_id IS NULL
-                         ${days != null ? "AND d.deleted_at < NOW() - make_interval(days => ?)" : ""}
-                         AND NOT EXISTS (SELECT 1 FROM donor_merges m WHERE m.org_id=d.org_id AND m.merged_id=d.id AND m.undone_at IS NULL)`,
+  // INTEGRITY-3: the Trash page's own definition (shared/numbers/trash.js)
+  return (await query(`SELECT d.id FROM donors d WHERE d.org_id=? AND ${require("../../shared/numbers/trash").IN_TRASH("d")}
+                         ${days != null ? "AND d.deleted_at < NOW() - make_interval(days => ?)" : ""}`,
     days != null ? [orgId, days] : [orgId])).map(r => r.id);
 }
 const trashSentence = (n, days) => n
@@ -451,6 +451,8 @@ app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res)
   if (req.audit) req.audit.summary(`Emptied the trash: ${ids.length} ${ids.length === 1 ? "person" : "people"} deleted for good`, { count: ids.length, entityType: "donors" });
   if (!ids.length) return res.json({ purged: 0, children: {}, unlinked: {}, sentence: "The trash had nobody to delete." });
   const { purged, children, unlinked } = await purgePeople(orgId, ids);
+  // INTEGRITY-3: one audit row per person deleted for good, by id
+  if (req.audit) req.audit.perRecord(require("./trashList").purgeRows(ids, `Emptied the trash: ${ids.length} ${ids.length === 1 ? "person" : "people"} deleted for good`));
   res.json({ purged, children, unlinked, sentence: `${purged.toLocaleString("en-US")} ${purged === 1 ? "person was" : "people were"} deleted for good.` });
 }));
 

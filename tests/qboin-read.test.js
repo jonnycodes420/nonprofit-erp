@@ -170,12 +170,13 @@ const qboGifts = () => q(`SELECT g.id, g.donor_id, ROUND(g.amount::numeric*100):
   ok("§9 undo answers", u.status === 200 && u.body?.ok, u.body);
   const left = await q(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1 AND import_id=(SELECT import_id FROM qbo_read_runs WHERE id=$2)`, [ORG, p1.body.runId]);
   const keys = await q(`SELECT COUNT(*)::int AS n FROM qbo_read_gifts WHERE org_id=$1 AND run_id=$2 AND status='recorded'`, [ORG, p1.body.runId]);
-  const hh2 = await q(`SELECT id FROM donors WHERE org_id=$1 AND name='Harbor Hardware LLC'`, [ORG]);
+  const hh2 = await q(`SELECT id, deleted_at IS NOT NULL AS trashed FROM donors WHERE org_id=$1 AND name='Harbor Hardware LLC'`, [ORG]);
   const drafts = await q(`SELECT COUNT(*)::int AS n FROM thank_you_drafts WHERE org_id=$1`, [ORG]);
   const ledger2 = await q(`SELECT COUNT(*)::int AS n FROM fin_transactions WHERE org_id=$1 AND gift_id = ANY($2)`, [ORG, gifts1.map(g => g.id)]);
   ok("§9 every gift the read added is gone, with its ledger lines and thank-you drafts",
      left[0].n === 0 && ledger2[0].n === 0 && drafts[0].n === 0, { left, ledger2, drafts });
-  ok("§9 the person it created is gone", hh2.length === 0, hh2);
+  // INTEGRITY-3: an undo puts the people it created in the trash (restorable for 30 days), never deletes them outright
+  ok("§9 the person it created is in the trash", hh2.length === 1 && hh2[0].trashed === true, hh2);
   ok("§9 its once-only keys are gone, so a later read can bring the lines in again", keys[0].n === 0, keys);
   const [ada3] = await q(`SELECT total_giving, gift_count FROM donors WHERE id='d_qi_ada'`);
   const [cara] = await q(`SELECT total_giving FROM donors WHERE id='d_qi_cara'`);

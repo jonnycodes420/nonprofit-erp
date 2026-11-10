@@ -120,7 +120,9 @@ async function person(orgId, id, name, emailAddr) {
 }
 const counts = async orgId => one(`SELECT
    (SELECT COUNT(*)::int FROM donors WHERE org_id=$1 AND deleted_at IS NULL) AS alive,
-   (SELECT COUNT(*)::int FROM donors WHERE org_id=$1 AND deleted_at IS NOT NULL) AS deleted,
+   (SELECT COUNT(*)::int FROM donors d WHERE d.org_id=$1 AND d.deleted_at IS NOT NULL   -- INTEGRITY-3: not the people an import undo put in the trash
+      AND NOT EXISTS (SELECT 1 FROM deleted_records r WHERE r.org_id=d.org_id AND r.table_name='donors' AND r.record_id=d.id
+                        AND r.restored_at IS NULL AND (r.row_data ->> '__created') = 'true')) AS deleted,
    (SELECT COUNT(*)::int FROM gifts WHERE org_id=$1) AS gifts,
    (SELECT COUNT(*)::int FROM imports WHERE org_id=$1) AS imports,
    (SELECT COUNT(*)::int FROM imports WHERE org_id=$1 AND reversed_at IS NOT NULL) AS reversed,

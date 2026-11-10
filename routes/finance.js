@@ -3837,7 +3837,10 @@ app.post("/qbo/read/undo", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
   const out = await R.undoRun({ orgId: g.orgId, runId: String(req.body?.runId || ""), who: qboReadWho(req),
     deps: { recalcDonorSummary } });
   if (!out.ok) return res.status(out.status || 409).json({ error: out.error, sentence: out.sentence });
-  res.json(out);
+  // INTEGRITY-3: one audit row per person the undo moved to the trash
+  const { moved = [], ...body } = out;
+  if (moved.length && req.audit) req.audit.perRecord(require("../server/imports/undoMoves").rowsFor(out.importId, moved));
+  res.json(body);
 }));
 
 // "Read new gifts automatically": after the first reviewed save, the hourly

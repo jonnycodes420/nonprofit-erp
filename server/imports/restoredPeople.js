@@ -98,16 +98,16 @@ async function activitySince(db, orgId, ids, importId, since) {
   return new Map(rows.map(r => [r.id, r]));
 }
 
-// Undo's step. Returns { trashed: [id], stayed: [{ id, name, why }] }.
+// Undo's step. Returns { trashed: [id], moved: [{ id, from, to, how }], stayed: [{ id, name, why }] }.
 async function sendBackToTrash(db, orgId, imp, sj, who) {
   const listed = [...new Set((sj && sj.restoredFromTrash) || [])];
-  if (!listed.length) return { trashed: [], stayed: [] };
+  if (!listed.length) return { trashed: [], moved: [], stayed: [] };
   // INTEGRITY-1: the trash rows are the proof. A person goes back only when a
   // trash row of theirs was closed by a bring-back this very run claimed.
   const ids = (await db.query(
     `SELECT DISTINCT record_id FROM deleted_records WHERE org_id=? AND table_name='donors' AND record_id = ANY(?)
         AND restored_at IS NOT NULL AND (row_data -> '__bringBack' ->> 'importId') = ?`, [orgId, listed, imp.id])).map(r => r.record_id);
-  if (!ids.length) return { trashed: [], stayed: [] };
+  if (!ids.length) return { trashed: [], moved: [], stayed: [] };
   const live = await activitySince(db, orgId, ids, imp.id, imp.committed_at || imp.created_at);
   const stayed = [], go = [];
   for (const id of ids) {
@@ -118,10 +118,10 @@ async function sendBackToTrash(db, orgId, imp, sj, who) {
     if (why.length) stayed.push({ id, name: r.name, why: why.join(", "), restored: true });
     else go.push(id);
   }
-  // INTEGRITY-2: the one door out, with why; their links go with them and come back with Restore
-  const trashed = (await require("../../personTrash").trashPeople(orgId, go, who && who.id ? who : { id: "system:import-undo", name: "Steward (undo)" },
-    { why: { kind: "import_undo", importId: imp.id }, extra: { __importUndo: imp.id } })).map(g => g.id);
-  return { trashed, stayed };
+  // INTEGRITY-3: back on the trash row they came out of (who deleted them,
+  // when and why), not a new one; their links go with them again (undoMoves.js)
+  const moved = await require("./undoMoves").putBackRestored(db, orgId, imp, go, who);
+  return { trashed: moved.map(m => m.id), moved, stayed };
 }
 
 module.exports = { markBroughtBack, claimForImport, sendBackToTrash, CLAIM_HOURS };

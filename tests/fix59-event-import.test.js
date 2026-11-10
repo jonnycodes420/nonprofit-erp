@@ -161,7 +161,7 @@ const ANSWERED = { eventDate: EVENT_DAY, useEventDate: true, pledgeDue: "event" 
     const unmatched = ((fin.needsYou || []).find(x => x.key === "unmatched") || { count: 0 }).count;
     ok("§2 Finance does not list the deposited gifts as Not yet on a deposit", unmatched === 0, JSON.stringify(fin.needsYou && fin.needsYou.map(x => [x.key, x.count])));
     const un = await undo(tok, j.importId);
-    const left = await one(`SELECT (SELECT COUNT(*)::int FROM donors WHERE org_id=$1) AS donors, (SELECT COUNT(*)::int FROM gifts WHERE org_id=$1) AS gifts,
+    const left = await one(`SELECT (SELECT COUNT(*)::int FROM donors WHERE org_id=$1 AND deleted_at IS NULL) AS donors,   -- INTEGRITY-3: to the trash (SELECT COUNT(*)::int FROM gifts WHERE org_id=$1) AS gifts,
                                    (SELECT COUNT(*)::int FROM pledges WHERE org_id=$1) AS pledges, (SELECT COUNT(*)::int FROM events WHERE org_id=$1) AS events,
                                    (SELECT COUNT(*)::int FROM event_tables WHERE org_id=$1) AS tables, (SELECT COUNT(*)::int FROM event_attendees WHERE org_id=$1) AS att,
                                    (SELECT COUNT(*)::int FROM interactions WHERE org_id=$1 AND import_id=$2) AS notes, (SELECT COUNT(*)::int FROM households WHERE org_id=$1) AS hh`, [ORG, j.importId]);

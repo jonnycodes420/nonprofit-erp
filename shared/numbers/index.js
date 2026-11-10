@@ -17,6 +17,7 @@ module.exports = {
   tags: require("./tags"),
   households: require("./households"),
   everyone: require("./everyone"),   // INTEGRITY-1
+  trash: require("./trash"),   // INTEGRITY-3
   ask: require("./ask"),
   pledges: require("./pledges"),
   fundSplit: require("./fundSplit"),   // LEDGER-2

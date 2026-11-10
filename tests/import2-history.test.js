@@ -239,7 +239,7 @@ async function reset() {
     const [left] = await q(`SELECT (SELECT COUNT(*) FROM interactions WHERE org_id=$1 AND import_id=$2)::int ix,
                                    (SELECT COUNT(*) FROM tasks WHERE org_id=$1 AND import_id=$2)::int tk,
                                    (SELECT COUNT(*) FROM donors WHERE org_id=$1 AND do_not_solicit IS TRUE)::int dns,
-                                   (SELECT COUNT(*) FROM donors WHERE org_id=$1 AND created_import_id=$2)::int people,
+                                   (SELECT COUNT(*) FROM donors WHERE org_id=$1 AND created_import_id=$2 AND deleted_at IS NULL)::int people,   -- INTEGRITY-3: to the trash
                                    (SELECT COUNT(*) FROM interactions WHERE org_id=$1 AND import_id=$3)::int donor_notes`, [ORG, RUN_HIST, RUN_DONORS]);
     ok("§10 every history line, task, person and flag it added is gone",
       left.ix === 0 && left.tk === 0 && left.people === 0 && created.length === 1 && left.dns === flagsBefore, left);

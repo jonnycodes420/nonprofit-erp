@@ -117,7 +117,8 @@ async function importJob(tok, body) {
 
   // ── §4 the big Undo, followed with this suite's own deadline
   const back = await undoAndWait(BASE, tok, job.importId, { timeoutMs: 120000, pollMs: 100 });
-  const { n: leftPeople } = await one(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1`, [ORG1]);
+  // INTEGRITY-3: an undo puts the people its file created in the trash, never deletes them outright
+  const { n: leftPeople } = await one(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [ORG1]);
   ok("§4 Undo of the 25,000-person import answers at once (202) and runs on the queue, not in the request (main: one request held to the end)",
     back.via === "queue" && back.answeredMs < 10000, { via: back.via, answeredMs: back.answeredMs, status: back.status, error: back.error });
   ok("§4 ...with its progress on the way (what it is doing, how far of how many)",
