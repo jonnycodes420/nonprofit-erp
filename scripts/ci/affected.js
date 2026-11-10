@@ -87,7 +87,8 @@ function changedFiles() {
 // ── the local require graph ────────────────────────────────────────────────
 // `require("./x")`, `require("../x")`, and require(path.join(__dirname, "..", "x")).
 const REQ = /require\(\s*["'`](\.{1,2}\/[^"'`]+)["'`]\s*\)/g;
-const REQ_JOIN = /require\(\s*path\.(?:join|resolve)\(\s*__dirname\s*,((?:\s*["'`][^"'`]+["'`]\s*,?)+)\)\s*\)/g;
+// (the argument list is taken whole, then its strings picked out: no nested quantifier)
+const REQ_JOIN = /require\(\s*path\.(?:join|resolve)\(\s*__dirname\s*,([^()]*)\)\s*\)/g;
 function resolveFrom(fromFile, spec) {
   const abs = path.resolve(path.dirname(path.join(ROOT, fromFile)), spec);
   for (const c of [abs, abs + ".js", abs + ".jsx", path.join(abs, "index.js")]) {
