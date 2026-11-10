@@ -19,12 +19,13 @@
 const express = require("express");
 const WS = require("../shared/numbers/wealthScore");
 const WA = require("../server/wealth/access");
+const { rateLimit } = require("../rateLimitStore");   // SCALE-1: shared by every replica
 
 const routers = { r0: express.Router() };
 const BULK_CAP = 25000;
 
 function mount(ctx) {
-const { query, run, requireAuth, requireAdmin, checkWriteAccess, wrap, actor } = ctx;
+const { query, run, requireAuth, requireAdmin, checkWriteAccess, wrap, actor, rateLimitHandler, rateLimitDisabled } = ctx;
 const app = routers.r0;
 
 const mayOr403 = wrap(async (req, res, next) => {
@@ -54,8 +55,17 @@ const listGuard = wrap(async (req, res, next) => {
   if (!(await WA.maySee(req.user.userId, req.user.orgId))) return res.status(403).json(WA.REFUSAL);
   next();
 });
-app.use((req, res, next) => {
-  if (!GUARDED.some(([m, re]) => m === req.method && re.test(req.path)) || !namesField(req)) return next();
+const guarded = req => GUARDED.some(([m, re]) => m === req.method && re.test(req.baseUrl + req.path)) && namesField(req);   // the mount strips "/donors" or "/groups"
+// Its own budget (CodeQL js/missing-rate-limiting): the guard reads the
+// session and the permission row, so it is limited like any route that does.
+// It counts ONLY the requests the guard checks (each count is a Postgres
+// upsert, rateLimitStore.js), so the hot list reads pay nothing for it.
+const wealthGuardLimiter = rateLimit("wealthGuardLimiter", {
+  windowMs: 60 * 1000, limit: 3000, standardHeaders: false, legacyHeaders: false,
+  handler: rateLimitHandler, skip: (req, res) => rateLimitDisabled(req, res) || !guarded(req),
+});
+app.use(["/donors", "/groups"], wealthGuardLimiter, (req, res, next) => {
+  if (!guarded(req)) return next();
   requireAuth(req, res, err => (err ? next(err) : listGuard(req, res, next)));
 });
 
