@@ -51,7 +51,7 @@ const line = (c, key) => c.lines.find(l => l.key === key);
   ok("§1 another route at 850 ms is still inside the 1 s bar", !tight.misses.some(m => /GET \/donors/.test(m)));
 
   // §2 the gauge
-  const now = new Date(testNow ? testNow() : Date.now()).getTime();
+  const now = testNow();
   const pass = { ok: true, level: "ok", detail: "last run 3h ago · slowest GET /donors p95 640 ms" };
   const quiet = CAP.summarize([...samples(now, 7, () => web()), ...samples(now, 7, () => wkr())], pass, now);
   ok("§2 a quiet week: nothing to add", quiet.advice === "none" && quiet.sentence === CAP.SAY.none, quiet.sentence);
