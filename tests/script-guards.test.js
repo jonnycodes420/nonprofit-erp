@@ -120,6 +120,10 @@ const GUARDED_WRITERS = [
   // GIFTS-1: one payment gift per grant for its typed Received less its recorded
   // payments, through recordGift. Dry run by default; --apply writes through writerDbUrl.
   "gifts1-grant-received",
+  // MONEY-4: records the award (a pledge on the funder) for grants at an award stage with
+  // no award row, and turns typed Received into its first payment. Dry run by default;
+  // --apply writes through writerDbUrl, through the app's own pledge and gift writers.
+  "money4-grant-awards",
   // MOPUP-1: removes the old whole-award income rows (source='grant', no
   // gift_id). Dry run by default; --apply writes through writerDbUrl, one audit row per org.
   "mopup1-award-stamps",
@@ -196,6 +200,8 @@ const PROD_READONLY = [
   "flows3-journey-starts",
   // PLEDGES-3: lists old pledge flags, drifted receipts and grants awarded with no award row; SELECTs only, no --apply.
   "pledges3-old-rows",
+  // MONEY-4: lists orgs whose giving-page EIN copy differed from Settings; SELECTs only, no --apply.
+  "money4-ein-copies",
   // ATLAS-5: lists reminders saved on the late weekday and notes saved short; SELECTs only, no --apply.
   "atlas5-old-rows",
   // MAIL-1: what each org's mail would do, in a READ ONLY transaction, counts and org names only.

@@ -313,7 +313,6 @@ export default function PortalEditor() {
     displayName: p.display_name || "",
     contactEmail: p.contact_email || "",
     footerText: p.footer_text || "",
-    einLine: p.ein_line || "",
     minRecurringCents: Number(p.min_recurring_cents) || 500,
     primaryColor: p.primary_color || "",
     accentColor: p.accent_color || "",
@@ -946,8 +945,9 @@ function DesignRail({ ps, onSet, note }) {
       <input style={inp} value={ps.contact_email || ""} placeholder="hello@yourorg.org" onChange={e => onSet("contact_email", e.target.value)} />
       <div style={lbl}>Footer text</div>
       <input style={inp} value={ps.footer_text || ""} placeholder="Your mission line or mailing address" onChange={e => onSet("footer_text", e.target.value)} />
-      <div style={lbl}>EIN line (for receipts context)</div>
-      <input style={inp} value={ps.ein_line || ""} placeholder="Tax ID (EIN): 12-3456789" onChange={e => onSet("ein_line", e.target.value)} />
+      {/* MONEY-4: the EIN lives in one place, Settings → Tax Receipts; the footer, receipts and statements all read it. */}
+      <div style={lbl}>EIN</div>
+      <div data-testid="pe-ein-source" style={{ fontSize: 12.5, color: E.muted, lineHeight: 1.5, marginBottom: 8 }}>{ps.ein_line ? `${ps.ein_line}, from Settings → Tax Receipts. Change it there; the footer, receipts and statements all read it.` : "Add your EIN in Settings → Tax Receipts. The footer, receipts and statements all read it from there."}</div>
       <div style={lbl}>Minimum recurring amount ($)</div>
       <input style={inp} inputMode="numeric" value={(Number(ps.min_recurring_cents) || 500) / 100}
         onChange={e => onSet("min_recurring_cents", Math.round((parseFloat(e.target.value) || 5) * 100))} />

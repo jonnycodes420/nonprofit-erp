@@ -274,6 +274,9 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   gifts with `offline_plan_id` written by recordGift; Behind after 7 days late. A card plan stays
   `recurring_subscriptions`, the donor's own (`server/donors/offlinePlans.js`).
 
+- **A refund is a linked negative row, never an edit (MONEY-4).** Record a refund (`POST /gifts/:id/refund`, `server/donors/refunds.js`) writes a negative gift through recordGift with `refund_of` and `refund_reason`; the gift stays. Totals net it (MONEY), the count drops only when `refunded_in_full` (GIFT), the receipt is voided and reissued at net, and a Stripe gift refunds in Stripe only after a confirm naming the amount. A gift with a refund can't be deleted. The sums live in `shared/numbers/refunds.js`.
+- **Recurring giving lists every active plan (MONEY-4).** Card plans and staff-recorded offline plans, with a Source; MRR adds the offline plans' monthly equivalent (`shared/numbers/offlineMrr.js`) and says so.
+
 ## Gotchas
 - **`normalizeMoney` returns `{value, warn, blank}`, not a number.** Parse through the money seam
   before any `Number()` guard, or "1,000.00" is refused. (BUILD-89S, BUILD-88b)

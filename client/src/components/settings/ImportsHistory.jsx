@@ -111,10 +111,15 @@ export function ImportsHistory(){
               {open.giftLine&&<ImportGiftLine line={open.giftLine} importId={open.id} style={{marginBottom:12}}/>}
               {/* HARDEN-1: a file of people is counted in people, never "0 rows in the file" */}
               {/* IMPORT-7: a spreadsheet's receipt says each sheet's rows, each count named */}
-              {open.sheetRows&&open.sheetRows.sheets.length ? <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:open.sheetRows.file.balanced?T.ink3:T.terra700,marginBottom:12}}>
-                {open.sheetRows.sheets.map(x=><div key={x.sheet} data-testid="import-receipt-sheet">{x.sentence}</div>)}
-                {open.sheetRows.file.sentence&&<div style={{fontWeight:700}}>{open.sheetRows.file.sentence}</div>}
-              </div> :
+              {/* MONEY-4: the receipt foots in rows AND dollars, from the same footing the Imports list's flag reads (server/imports/footing.js). */}
+              {open.footing&&!open.peopleSentence&&<div data-testid="import-receipt-footing" style={{fontSize:12.5,color:open.footing.balanced?T.ink3:T.terra700,marginBottom:12}}>
+                <div data-testid="import-receipt-footing-rows">{open.footing.rowsSentence}</div>
+                <div data-testid="import-receipt-footing-dollars" style={{fontWeight:700}}>{open.footing.dollarsSentence}</div>
+              </div>}
+              {open.sheetRows&&open.sheetRows.sheets.length ? <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:T.ink3,marginBottom:12}}>
+                {open.sheetRows.sheets.map(x=><div key={x.sheet} data-testid="import-receipt-sheet">{String(x.sentence||"").replace(/ [✓✗]$/,"")}</div>)}
+                {open.sheetRows.file.sentence&&<div style={{fontWeight:700}}>{String(open.sheetRows.file.sentence).replace(/ [✓✗]$/,"")}</div>}
+              </div> : open.footing&&!open.peopleSentence ? null :
               open.peopleSentence ? <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:T.ink3,marginBottom:12}}>{open.peopleSentence}</div> :
               <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:open.reconciled?T.ink3:T.terra700,marginBottom:12}}>
                 {fmtCount(open.rowsIn)} gift rows in the file = {fmtCount(open.giftsCreated)} {open.pledgesCreated?"gifts":"written"}{open.pledgesCreated?<> + {fmtCount(open.pledgesCreated)} pledges</>:null} + {fmtCount(open.rowsSetAside)} set aside + {fmtCount(open.rowsErrored)} errored {open.reconciled?"✓":"✗"}

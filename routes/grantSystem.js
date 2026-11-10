@@ -355,11 +355,22 @@ app.put("/grants/checklist/:taskId", requireAuth, checkWriteAccess, wrap(async (
 // gives every other screen, so it foots to the cent.
 app.get("/grants/:id/award-plan", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
-  const [g] = await query(`SELECT gr.id, gr.funder, gr.funder_donor_id, gr.award_pledge_id, gr.amount_awarded, gr.status, d.name AS funder_name
+  const [g] = await query(`SELECT gr.id, gr.funder, gr.funder_donor_id, gr.award_pledge_id, gr.amount_awarded, gr.status, gr.received, gr.amount_requested, gr.amount, d.name AS funder_name
     FROM grants gr LEFT JOIN donors d ON d.id = gr.funder_donor_id AND d.org_id = gr.org_id WHERE gr.id=? AND gr.org_id=?`, [req.params.id, orgId]);
   if (!g) return res.status(404).json({ error: "Grant not found" });
-  if (!g.award_pledge_id) return res.json({ pledge: null, installments: [], receivedCents: 0, awardedCents: cents(g.amount_awarded), canRecord: !!g.funder_donor_id,
-    sentence: g.funder_donor_id ? "No award is recorded yet. Record it with its installments and each payment links itself when it arrives." : "Link this grant to its funder on file before recording the award." });
+  // MONEY-4: with no award row yet, Received is the typed figure (it becomes the
+  // award's first payment when the award is recorded), and a known amount IS the
+  // award: "$0 received of $120,000 awarded, $120,000 still to come."
+  if (!g.award_pledge_id) {
+    const awardedC = cents(g.amount_awarded), receivedC = Math.max(0, cents(g.received)), askC = cents(g.amount_requested) || cents(g.amount);
+    const f = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return res.json({ pledge: null, installments: [], receivedCents: receivedC, awardedCents: awardedC, outstandingCents: Math.max(0, awardedC - receivedC),
+      askCents: askC, canRecord: !!g.funder_donor_id, funderId: g.funder_donor_id || null, funderName: g.funder_name || g.funder || "",
+      sentence: !g.funder_donor_id ? "Link this grant to its funder on file before recording the award."
+        : awardedC > 0 ? `${f(receivedC)} received of ${f(awardedC)} awarded, ${f(Math.max(0, awardedC - receivedC))} still to come.`
+        : receivedC > 0 ? `${f(receivedC)} received, and the award amount is not recorded yet. Record it, and the ${f(receivedC)} becomes its first payment.`
+        : "No award is recorded yet. Record it with its installments and each payment links itself when it arrives." });
+  }
   const [pl] = await query(`SELECT id, amount, status FROM pledges WHERE id=? AND org_id=?`, [g.award_pledge_id, orgId]);
   const inst = await query(
     `SELECT pi.id, pi.seq, pi.due_date, pi.amount, pi.paid_gift_id, pi.paid_at, gf.date AS gift_date, gf.amount AS gift_amount
