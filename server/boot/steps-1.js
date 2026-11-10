@@ -516,6 +516,7 @@ __share({ billingStripe });
 // SPLIT-2 server.js piece 77
 
 const app = express();
+app.set("json replacer", require("../wealth/hideColumns").replacer);   // WEALTH-1: the stored score never rides on a donors.* row
 // SPLIT-2 end
 __share({ app });
 // SPLIT-2 server.js piece 78

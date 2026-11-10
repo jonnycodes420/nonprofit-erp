@@ -3062,6 +3062,10 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
   await run("DELETE FROM note_reminders WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM donor_materials WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM planned_gifts WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM portfolio_members WHERE org_id=?", [orgId]).catch(() => {});   // TOP100-1
+  await run("DELETE FROM portfolio_lists WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM care_plans WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM care_templates WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM receipts WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM payment_recovery_events WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM recurring_subscriptions WHERE org_id=?", [orgId]).catch(() => {});

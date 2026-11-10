@@ -535,6 +535,10 @@ function queryFollowUps(plan) {
   return out.slice(0, 3);
 }
 async function runQueryPlan(req, plan, typed, source) {
+  // WEALTH-1: a question that reads the Wealth Score is answered only for someone who may see it.
+  if (AQ.usesWealth(plan) && !(await require("../server/wealth/access").maySee(req.user.userId, req.user.orgId))) {
+    return { answered: false, refused: true, kind: "answer", sentence: require("../server/wealth/access").REFUSAL.sentence, question: { text: typed }, followUps: [] };
+  }
   const today = orgToday(await orgTz(req.user.orgId));
   const r = await AQ.runQuery(req.user.orgId, plan, today);
   if (source !== "replay") await logQuestion(req.user.orgId, typed || "(query)", `query: ${plan.entity}`, true);
@@ -984,6 +988,11 @@ async function askHandler(req, res) {
     if (came) { await logQuestion(orgId, typed, "event guests", came.answered); return res.json(came); }
     const ro = await readoutAnswer(orgId, typed);
     if (ro) { await logQuestion(orgId, typed, "readout", ro.answered); return res.json(ro); }
+    // WEALTH-1: "show me my 5s who haven't given this year", read by template (AI on or off).
+    { const [fyOrg] = await query(`SELECT timezone, vocabulary_json FROM orgs WHERE id = ?`, [orgId]);
+      const wp = require("../server/wealth/atlasWealth").planFor(typed, { fyStart: orgTime.orgFiscalYearStart(fyOrg || {}) });
+      const wc = wp && AQ.validateQuery(wp);
+      if (wc && wc.ok) return res.json(await runQueryPlan(req, wc.plan, typed, "wealth")); }
     let intent = G.personIntent(typed);
     const follow = G.isNameFollowUp(typed);
     // "the top five", "what should I ask them for": the last answer's people.

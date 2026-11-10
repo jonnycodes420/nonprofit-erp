@@ -47,6 +47,7 @@ const FAKE = {
   // WALKB-2: one pending invite under Team
   "/org/invites": { invites: [{ id: "inv_fake", email: "wren.halloway@example.org", role: "staff", createdAt: "2026-11-05T15:00:00Z", expiresAt: "2026-11-12T15:00:00Z", expired: false, invitedBy: "Allie Test", link: "http://localhost/invite/fake" }] },
   // ACCESS-1: the admin's switch for view-only exports, on
+  "/org/wealth-scores": { team: false, maySee: true },   // WEALTH-1
   "/org/viewer-exports": { on: true, label: "Viewers can export", description: "People with view-only access can download the lists and reports they can see." },
   "/settings/inbound-email": { address: "log-wrenfield@log.stewardapp.dev", unmatched: [] },
   // INTEGRITY-2: the Trash list (settings/TrashList, inside EmptyTrash)

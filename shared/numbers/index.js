@@ -27,6 +27,7 @@ module.exports = {
   draftFigures: require("./draftFigures"),   // TRUTH-2
   draftRender: require("./draftRender"),   // TRUTH-3
   giftCount: require("./giftCount"),   // TRUTH-3
+  wealthScore: require("./wealthScore"),   // WEALTH-1
   ledgerStatus: require("./ledgerStatus"),   // TRUTH-3
   topDonors: require("./topDonors"),   // TRUTH-4
   atRisk: require("./atRisk"),   // TRUTH-4

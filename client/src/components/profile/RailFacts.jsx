@@ -5,6 +5,7 @@ import { RAIL, RailSection } from "../ProfileRail";
 import { T } from "../shared";
 import { renderCustomValue } from "../../../../shared/customFieldShape";
 import { PlanPanel } from "../MajorGifts";
+import { CarePlanRail } from "../majorGifts/CarePlan";   // TOP100-1
 import { WEALTH_SCORE_DEFINITION, WEALTH_SCORE_SOURCE } from "./profileShared";
 
 function RailFacts({nothingLogged,cfData,cfEditVal,cfEditing,cfError,cfSaved,cfShowAll,donor,isReadOnly,isTeam,localConf,localRationale,localScore,localTier,lockMajor,onCfSaved,recalcScore,scoreLoading,setCfData,setCfEditVal,setCfEditing,setCfError,setCfSaved,setCfShowAll}){
@@ -108,6 +109,10 @@ function RailFacts({nothingLogged,cfData,cfEditVal,cfEditing,cfError,cfSaved,cfS
           {/* BUILD-99 Part 3 — the cultivation plan. It moved off the reading
               column and into the rail with the rest of how-we-manage-them, and
               it is folded because most days she does not open it. */}
+          {/* TOP100-1 — the plan of care and the Top 100 rank, for admins and
+              staff with the major gifts permission (it draws nothing otherwise). */}
+          <CarePlanRail donorId={donor.id} isReadOnly={isReadOnly} RailSection={RailSection}/>
+
           {!nothingLogged&&<RailSection title="Cultivation plan" testid="dp-rail-plan" fold foldOpenLabel="Hide" foldShutLabel="Show">
             <div>{lockMajor(<PlanPanel donorId={donor.id} isReadOnly={isReadOnly} canWrite={isTeam}/>,{minHeight:120})}</div>
           </RailSection>}

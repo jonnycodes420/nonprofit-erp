@@ -66,7 +66,7 @@ const routers = { r0: express.Router() };
 const MERGE_REFS = [
   ["agent_drafts", "donor_id"], ["atlas_actions", "donor_id"], ["auction_bidders", "donor_id"], ["auction_items", "donor_id"],   // AGENT-5: Atlas's lines follow the person
   ["auction_refund_flags", "donor_id"], ["bookkeeping_customers", "donor_id"], ["campaign_recipients", "donor_id"],
-  ["cultivation_plans", "donor_id", "refuse"], ["custom_field_values", "donor_id"], ["donor_account_links", "donor_id"],
+  ["cultivation_plans", "donor_id", "refuse"], ["portfolio_members", "donor_id"], ["care_plans", "donor_id"], ["custom_field_values", "donor_id"], ["donor_account_links", "donor_id"],   // TOP100-1: Top 100 and plan of care follow the person; the kept twin wins
   ["donor_address_history", "donor_id"], ["donor_designations", "donor_id"], ["donor_materials", "donor_id"],
   ["donor_relationships", "donor_id_a"], ["donor_relationships", "donor_id_b"], ["donor_scores", "donor_id"],
   ["donor_rhythm", "donor_id"], ["group_crossings", "donor_id"], ["readout_events", "donor_id"],   // LIVE-1

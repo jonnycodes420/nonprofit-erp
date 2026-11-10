@@ -143,4 +143,39 @@ async function lastContactWith(orgId, donorId) {
   return r ? { date: String(r.date).slice(0, 10), type: r.type, kind: r.kind, note: r.note || null } : null;
 }
 
-module.exports = { meetingsSql, meetingsWith, lastMeetingWith, conversationsWith, lastContactWith, CONVERSATION_TYPES, CAL_DATE };
+// TOP100-1 · THE SAME LAST CONTACT FOR MANY PEOPLE AT ONCE (the Top 100's
+// column and Atlas's "not touched in 60 days"). conversationsWith's rule, the
+// newest per person, read set-wise: three reads for any number of people,
+// never one per row. A Map of donorId -> { date, type, kind }.
+async function lastContactsFor(orgId, donorIds) {
+  const ids = [...new Set((donorIds || []).filter(Boolean).map(String))];
+  const out = new Map();
+  if (!ids.length) return out;
+  const { EVENT_CAME } = require("./shared/numbers/events");
+  const m = meetingsSql(orgId, { held: true, eachPerson: true });
+  const [talk, came, met] = await Promise.all([query(
+    `SELECT DISTINCT ON (i.donor_id) i.donor_id, i.type, 'logged' AS kind, LEFT(i.date, 10) AS date
+       FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
+      WHERE i.org_id = ? AND i.donor_id = ANY(?::text[]) AND d.deleted_at IS NULL
+        AND (i.type = ANY(?) OR (i.type = 'note' AND COALESCE(i.metadata->>'conversation', '') = 'true'))
+        AND COALESCE(i.created_by, '') NOT LIKE 'system:email-marketing%'
+        AND i.date IS NOT NULL AND i.date <> '' AND LEFT(i.date, 10) <= ${ORG_TODAY("i")}
+      ORDER BY i.donor_id, LEFT(i.date, 10) DESC, i.id DESC`, [orgId, ids, CONVERSATION_TYPES]),
+    query(
+    `SELECT a.donor_id, 'event' AS type, 'event' AS kind, MAX(LEFT(e.date::text, 10)) AS date
+       FROM event_attendees a JOIN events e ON e.id = a.event_id AND e.org_id = a.org_id
+       JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
+      WHERE a.org_id = ? AND a.donor_id = ANY(?::text[]) AND d.deleted_at IS NULL AND ${EVENT_CAME("a")}
+        AND e.date IS NOT NULL AND LEFT(e.date::text, 10) <= ${ORG_TODAY("a")}
+      GROUP BY a.donor_id`, [orgId, ids]),
+    query(`SELECT x.donor_id, 'meeting' AS type, MAX(x.kind) AS kind, MAX(x.date) AS date FROM (${m.sql}) x
+            WHERE x.donor_id = ANY(?::text[]) GROUP BY x.donor_id`, [...m.args, ids])]);
+  for (const r of [...talk, ...came, ...met]) {
+    const date = String(r.date || "").slice(0, 10);
+    const had = out.get(r.donor_id);
+    if (date && (!had || date > had.date)) out.set(r.donor_id, { date, type: r.type, kind: r.kind });
+  }
+  return out;
+}
+
+module.exports = { meetingsSql, meetingsWith, lastMeetingWith, conversationsWith, lastContactWith, lastContactsFor, CONVERSATION_TYPES, CAL_DATE };

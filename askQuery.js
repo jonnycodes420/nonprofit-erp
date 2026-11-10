@@ -23,6 +23,8 @@ const orgTime = require("./orgTime");
 
 const T = { text: "text", money: "money", number: "number", date: "date", bool: "bool" };
 const f = (sql, type, label, extra = {}) => ({ sql, type, label, ...extra });
+// WEALTH-1: does a plan read the Wealth Score (a condition, a related condition, a measure, a sort)?
+const usesWealth = plan => JSON.stringify(plan || {}).includes("wealth_score");
 
 // ── THE CATALOG ────────────────────────────────────────────────────────────
 // from      the FROM clause; the org condition is `org` (one `?`)
@@ -40,7 +42,10 @@ const ENTITIES = {
       email: f("d.email", T.text, "email address"), phone: f("d.phone", T.text, "phone"),
       tags: f("d.tags", T.text, "tags"), capacity_tier: f("d.capacity_tier", T.text, "capacity tier"),
       lifetime_giving: f("d.total_giving", T.money, "lifetime giving"), gift_count: f("d.gift_count", T.number, "number of gifts"),
-      last_gift_amount: f("d.last_gift_amount", T.money, "last gift"), wealth_score: f("d.wealth_score", T.number, "wealth score"),
+      last_gift_amount: f("d.last_gift_amount", T.money, "last gift"),
+      // WEALTH-1: the 1 to 5 Wealth Score somebody on the team set by hand (blank = not set),
+      // never the old automatic figure. Only for someone who may see it (routes/why.js checks).
+      wealth_score: f("d.wealth_rating", T.number, "Wealth Score", { wealth: true }),
       first_gift_date: f("LEFT(d.first_gift_date,10)", T.date, "first gift date"), last_gift_date: f("LEFT(d.last_gift_date,10)", T.date, "last gift date"),
       added_on: f("d.created_at::date::text", T.date, "date added"),
       deceased: f("d.deceased", T.bool, "deceased"), do_not_contact: f("d.do_not_contact", T.bool, "do not contact"),
@@ -661,7 +666,7 @@ async function figureRows(orgId, plan, cell) {
 // The Agent's people-finder, when the donor list's filters cannot express her
 // words: the model fills the query form for a list of PEOPLE, Steward runs it.
 // Returns { ids, words } or null.
-async function peopleForWords(orgId, words, client, model) {
+async function peopleForWords(orgId, words, client, model, opts = {}) {
   if (!client || !words) return null;
   const today = await orgToday(orgId);
   const catalog = catalogText(await catalogValues(orgId));
@@ -671,8 +676,9 @@ async function peopleForWords(orgId, words, client, model) {
   if (!raw || raw.answerable === false) return null;
   const chk = validateQuery({ ...raw, list: true, groupBy: null });
   if (!chk.ok || chk.plan.entity !== "people") return null;
+  if (usesWealth(chk.plan) && !opts.mayWealth) return null;   // WEALTH-1: the caller says she may see it
   const rows = await listRows(orgId, chk.plan, today, { limit: 1001 });
   return { ids: rows.map(r => r.id), words: queryWords(chk.plan).split(" · ").slice(1), plan: chk.plan };
 }
 
-module.exports = { orgToday, figureRows, peopleForWords, ENTITIES, ENTITY_KEYS, OPS, FNS, validateQuery, whereFor, runQuery, listRows, queryWords, catalogValues, catalogText, queryTool, queryPrompt, readQueryTool, money, dayWords };
+module.exports = { usesWealth, orgToday, figureRows, peopleForWords, ENTITIES, ENTITY_KEYS, OPS, FNS, validateQuery, whereFor, runQuery, listRows, queryWords, catalogValues, catalogText, queryTool, queryPrompt, readQueryTool, money, dayWords };

@@ -591,6 +591,7 @@ app.use(require("../../routes/grantMail").routers.r1);     // GRANTS-1 fixed /gr
 app.use(require("../../routes/donorLookups").routers.r0); // SCALE-2: pickers, counts and lookups, ahead of crm's /donors/:id
 // SPLIT-2 end
 // SPLIT-2 server.js piece 256
+app.use(require("../../routes/wealthScore").routers.r0);  // WEALTH-1: the Wealth Score, and the guard on list reads that name it
 app.use(require("../../routes/donorList").routers.r0);    // LIST-1: columns, views and the filter, ahead of crm's /donors/:id
 // SPLIT-2 end
 // SPLIT-2 server.js piece 257
