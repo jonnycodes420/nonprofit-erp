@@ -7,7 +7,7 @@ import { tabHref, urlParam, editTemplateHref } from "../lib/appUrls";
 import { offerUndo } from "./EditHistory";
 import { AutoSendSteps, SendingTomorrow, PauseAllSending } from "./AutoSend";   // AUTO-1
 import { countLabel } from "../../../shared/countWords.js";
-import { journeySpan } from "../../../shared/journeyShape.js";   // POLISH-7: the one journey span
+import { journeySpan, dayWord } from "../../../shared/journeyShape.js";   // POLISH-7: the one journey span; FLOWS-4: Day N
 import { JourneyDateFields } from "./JourneyDateFields";   // DATES-1
 import { JourneyBatches } from "./BulkJourney";   // DATES-1: undo a batch from the Donors list
 
@@ -75,10 +75,7 @@ export function whenWord(step) {
     const unit = v === 1 ? String(t.unit || "days").replace(/s$/, "") : String(t.unit || "days");
     return `+${v} ${unit}`;
   }
-  if (d === 0) return "Same day";
-  if (d < 7) return `Day ${d}`;
-  if (d < 45) return `Week ${Math.round(d / 7)}`;
-  return `Month ${Math.round(d / 30)}`;
+  return dayWord(d);   // FLOWS-4: Day N is start + (N-1), the one helper (journeyShape.js)
 }
 
 const fmtShort = iso => {

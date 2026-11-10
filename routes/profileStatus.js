@@ -341,6 +341,9 @@ app.put("/settings/giving-levels", requireAuth, requireAdmin, checkWriteAccess, 
   if (!mid || !major) return res.status(400).json({ error: "invalid_levels", message: "Both cut points are dollar amounts above zero." });
   if (major <= mid) return res.status(400).json({ error: "invalid_levels", message: "Major has to start above Mid." });
   await run(`UPDATE orgs SET giving_level_mid_cents = ?, giving_level_major_cents = ? WHERE id = ?`, [mid, major, req.user.orgId]);
+  // FLOWS-4 (W-1109-Atlas-11X): what is derived from the levels is rebuilt now (the
+  // tags are live; the stored Insights, which Atlas and the Major rung read, are not).
+  await require("../server/insights/store").schedule(req.user.orgId).catch(e => console.error("[giving-levels] insights:", e.message));
   const cuts = await DS.cutsFor(req.user.orgId);
   res.json({ ...cuts, defaults: DS.DEFAULT_CUTS, sentence: DS.levelSentence(cuts) });
 }));

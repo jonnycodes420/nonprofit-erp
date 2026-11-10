@@ -84,6 +84,28 @@ function personMatchReasonSql(p) {
   return { sql: PERSON_MATCH_REASON_SQL, args: [p, p, p, p, p, p, p] };
 }
 
+// FLOWS-4 (W-1109-Volunteers-27) · THE ORDER A PERSON SEARCH ANSWERS IN.
+// "Jonathan A" and Enter opened Jonathan Atkinson: every name containing the
+// words ranked together and the larger giver won, so the exact match came
+// third. Now, on the whole query, folded:
+//   0  the full name is exactly what was typed ("Jonathan A")
+//   1  the name starts with it as whole words ("Jonathan A. Reyes")
+//   2  the name starts with it ("Jonathan Atkinson")
+//   3  the name contains it ("Mary Jonathan Abel")
+//   4  something else matched (email, household, ...)
+// Ties: the most recent activity first (last gift, then the last change to
+// the record), then the id. Over an unaliased `donors`; args are rankArgs(q).
+const RANK_ORDER_SQL = `(CASE WHEN ${FOLD("donors.name")} = ? THEN 0
+      WHEN ${FOLD("donors.name")} LIKE ? ESCAPE '\\' THEN 1
+      WHEN ${FOLD("donors.name")} LIKE ? ESCAPE '\\' THEN 2
+      WHEN ${FOLD("donors.name")} LIKE ? ESCAPE '\\' THEN 3 ELSE 4 END),
+    NULLIF(donors.last_gift_date, '') DESC NULLS LAST, donors.updated_at DESC NULLS LAST, donors.id`;
+function rankArgs(q) {
+  const f = fold(String(q || "").trim().replace(/\s+/g, " "));
+  const esc = f.replace(/[\\%_]/g, ch => "\\" + ch);
+  return [f, esc + " %", esc + "%", "%" + esc + "%"];
+}
+
 // The words a person reads for a reason: "email: marlowe@harbor.org".
 const REASON_LABEL = { email: "email", contact: "contact person", employer: "employer", phone: "phone", household: "household", organization: "organization" };
 function matchReasonWords(reason) {
@@ -94,4 +116,4 @@ function matchReasonWords(reason) {
   return value ? `${label}: ${value}` : label;
 }
 
-module.exports = { FOLD, fold, foldedPattern, personMatchSql, personMatchReasonSql, PERSON_MATCH_SQL, PERSON_MATCH_REASON_SQL, matchReasonWords };
+module.exports = { FOLD, fold, foldedPattern, personMatchSql, personMatchReasonSql, PERSON_MATCH_SQL, PERSON_MATCH_REASON_SQL, matchReasonWords, RANK_ORDER_SQL, rankArgs };

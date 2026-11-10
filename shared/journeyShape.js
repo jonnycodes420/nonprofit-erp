@@ -664,10 +664,29 @@ export function timingWord(timing = {}, offsetDays = 0) {
     if (!value) return "Same day";
     return `+${value} ${value === 1 ? unit.label.replace(/s$/, "") : unit.label}`;
   }
+  return dayWord(offsetDays);
+}
+
+// FLOWS-4 (W-1109-Fundraising-24X) · DAY N IS DATED START + (N-1) DAYS.
+// A journey starting Dec 1 called its step two days in "Day 2" and dated it
+// Dec 3. The start is Day 1, so a step `offsetDays` after it is Day
+// offsetDays + 1, and Day N falls on start + (N-1). One helper for the label
+// (dayWord, which the builder and the server both read) and the date
+// (dayOfJourney), so they cannot disagree. Weeks and months stay counts of
+// time ("Week 2" is two weeks in) and start where the days stop.
+export function dayNumber(offsetDays) {
+  return Math.max(0, Math.round(Number(offsetDays) || 0)) + 1;
+}
+export function dayOfJourney(startIso, n) {
+  const [y, m, d] = String(startIso || "").slice(0, 10).split("-").map(Number);
+  if (!y || !m || !d || !(Number(n) >= 1)) return null;
+  return new Date(Date.UTC(y, m - 1, d + Math.round(Number(n)) - 1)).toISOString().slice(0, 10);
+}
+export function dayWord(offsetDays) {
   const d = Math.max(0, Math.round(Number(offsetDays) || 0));
   if (d === 0) return "Same day";
-  if (d < 7) return `Day ${d}`;
-  if (d < 45) { const w = Math.round(d / 7); return `Week ${w}`; }
+  if (d < 14) return `Day ${dayNumber(d)}`;
+  if (d < 45) return `Week ${Math.round(d / 7)}`;
   return `Month ${Math.round(d / 30)}`;
 }
 

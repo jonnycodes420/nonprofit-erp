@@ -139,11 +139,11 @@ async function reset() {
   ok("§2 attendance saved", a1.status === 200 && !!a1.body.noShowTaskId, a1.body);
   let nt = await q(`SELECT id, title, type, event_id, assigned_to, created_by FROM tasks WHERE org_id=$1 AND event_id='ev_t3'`, [ORG]);
   ok("§2 three no-shows are ONE task for the event", nt.length === 1 && nt[0].type === "event_no_show" && nt[0].assigned_to === USER
-    && nt[0].title === "Missed you at Spring Supper: 3 people did not come, 2 drafts waiting in Drafts", nt);
+    && nt[0].title === "Missed you at Spring Supper: 4 people did not come, 3 drafts waiting in Drafts", nt);   // FLOWS-4: Registered and not Attended (Corner Shop, never marked) missed it too
   const drafts = await q(`SELECT donor_id, subject, body, status FROM milestone_drafts WHERE org_id=$1 AND milestone_key='event_missed:ev_t3' ORDER BY donor_id`, [ORG]);
   ok("§2 a 'Missed you' draft for each person with an email, waiting for review",
-    drafts.length === 2 && drafts.every(d => d.status === "pending_review" && d.subject === "Missed you at Spring Supper" && /We missed you at Spring Supper/.test(d.body))
-    && drafts.map(d => d.donor_id).join() === "d_t3_quinn,d_t3_rosa", drafts.map(d => d.donor_id));
+    drafts.length === 3 && drafts.every(d => d.status === "pending_review" && d.subject === "Missed you at Spring Supper" && /We missed you at Spring Supper/.test(d.body))
+    && drafts.map(d => d.donor_id).join() === "d_t3_quinn,d_t3_rosa,d_t3_store", drafts.map(d => d.donor_id));
   await api("POST", "/events/ev_t3/attendance", dana, mark);
   await api("PATCH", "/events/ev_t3/attendees/ea_t3_5", dana, { status: "no_show" });
   nt = await q(`SELECT title FROM tasks WHERE org_id=$1 AND event_id='ev_t3'`, [ORG]);
