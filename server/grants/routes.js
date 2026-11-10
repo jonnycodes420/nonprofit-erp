@@ -28,7 +28,7 @@ const {
   markMilestoneDone, mayEditLogged, milestoneRow, money, orgFundNamesG, orgLeadDays, orgOfficerNames,
   orgToday, orgTz, parseMoneyOrThrow, processGrantMilestones, putThemeAsset, query, queryTx,
   raiseGrantMilestone, recordAssetPointerHistory, reopenMilestone, requireAdmin, requireAuth, requireCrm,
-  restrictedMod, run, runTx, staffWho, testMode, thresholdsMod, toCents, toDollars, uuid, withTransaction,
+  restrictedMod, run, runTx, staffWho, recordGift, recalcPledgePayment, testMode, thresholdsMod, toCents, toDollars, uuid, withTransaction,
   wrap, writeAuditLog,
 } = ctx;
 
@@ -318,6 +318,9 @@ app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(asy
   return null;
   });
   if (refused) return res.status(refused.status).json(refused.body);
+  // MONEY-4: a Received typed before the award existed becomes its first payment (GIFTS-1's path).
+  const firstPayment = await require("./awardFirstPayment").typedReceivedToFirstPayment({ query, recordGift, recalcPledgePayment },
+    { orgId, grantId: g.id, date: today, actorId: actor(req).id, actorName: actor(req).name });
 
   // WIRE-1: the award is on the funder's timeline, once (the board drag that
   // first awards it writes the same key).
@@ -332,7 +335,7 @@ app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(asy
   const [inst] = await query("SELECT COUNT(*)::int AS c FROM pledge_installments WHERE pledge_id=?", [pledgeId]);
   res.json({ ...grantRow({ ...row, status_canonical: "awarded" },
                          { funds: await orgFundNamesG(orgId), officers: await orgOfficerNames(orgId) }),
-             pledgeId, installments: inst.c });
+             pledgeId, installments: inst.c, firstPayment });
 }));
 
 // PUT /grants/:id/decline — a no, with its reason, its date, and whether to try
@@ -601,7 +604,8 @@ app.get("/grants/deadlines", requireAuth, wrap(async (req, res) => {
   for (const r of own) all.push(milestoneRow({ id: `grant-deadline:${r.grant_id}`, grant_id: r.grant_id, kind: "custom", label: "Grant deadline",
     due_date: String(r.deadline).slice(0, 10), state: "open", program: r.program, status: r.status, funder: r.funder, funder_name: r.funder_name }, M, today, leadDays));
   for (const m of all) if (String(m.id).startsWith("grant-deadline:")) m.fromGrant = true;   // the grant's own date: edited on the grant, no Done
-  const open = all.filter(m => m.state !== "done");
+  // MONEY-4: an application deadline disappears once the application is closed (awarded or later); report deadlines stay.
+  const open = all.filter(m => m.state !== "done" && m.band !== "closed");
 
   // BUILD-100 Part 4 — A REPORT-DUE MILESTONE CARRIES ITS GRANT'S BALANCE,
   // because the balance is what the report is about. Only for `report_due`: the

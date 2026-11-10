@@ -21,10 +21,13 @@ const routers = {
 routers.r1.use(require("./deceased").routers.r1);
 // PLEDGES-2: a recurring plan staff record by hand (server/donors/offlinePlans.js).
 routers.r1.use(require("./offlinePlans").routers.r1);
+// MONEY-4: Record a refund (server/donors/refunds.js).
+routers.r1.use(require("./refunds").routers.r1);
 
 function mount(ctx) {
 require("./deceased").mount(ctx);
 require("./offlinePlans").mount(ctx);
+require("./refunds").mount(ctx);
 const {
   NOT_YOURS, PERSON_ONLY_SENTENCE, UNDO_SECONDS, VH_READY, actor, auditShape, checkWriteAccess, crypto,
   donorPhotoUrl, editStamp, figureSources, insertShift, lastName, mayEditLogged, orgOwns, orgToday, orgTz,

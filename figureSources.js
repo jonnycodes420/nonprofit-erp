@@ -1003,7 +1003,7 @@ const SOURCES = {
     sql: (orgId, p) => ({
       // IMPORT-4: the last gift is a dated one; a gift with no date is never "last".
       // NUMBERS-3: the last GIFT (shared/numbers/lastGift.js): never a refund or a credit row.
-      sql: `${DONOR_GIFT_SELECT} AND g.date IS NOT NULL AND g.amount > 0 AND ${NOT_CREDIT("g")} ORDER BY ${LAST_GIFT_ORDER} LIMIT 1`,
+      sql: `${DONOR_GIFT_SELECT} AND g.date IS NOT NULL AND ${require("./shared/numbers/money").GIFT("g")} ORDER BY ${LAST_GIFT_ORDER} LIMIT 1`,   // MONEY-4: never a gift refunded in full
       args: [orgId, p.donor],
     }),
   },

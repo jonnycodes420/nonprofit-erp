@@ -60,8 +60,8 @@ const PERSON_X = (dd = "dd") => `(SELECT ${dd}.id AS donor_id, ${dd}.imported_to
                        ${dd}.imported_last_gift_amount AS imp_last_amt, ga.*
                   FROM (SELECT
                        SUM(g.amount) FILTER (WHERE ${AFTER_IMPORT(dd)} AND ${NOT_CREDIT("g")}) AS after_total,
-                       COUNT(g.id) FILTER (WHERE g.amount > 0 AND ${AFTER_IMPORT(dd)} AND ${NOT_CREDIT("g")}) AS after_n,
-                       COUNT(g.id) FILTER (WHERE g.amount > 0 AND NOT ${AFTER_IMPORT(dd)} AND ${NOT_CREDIT("g")}) AS before_n,
+                       COUNT(g.id) FILTER (WHERE ${GIFT("g")} AND ${AFTER_IMPORT(dd)}) AS after_n,
+                       COUNT(g.id) FILTER (WHERE ${GIFT("g")} AND NOT ${AFTER_IMPORT(dd)}) AS before_n,
                        ${FIRST_ON_FILE_AGG("g")} AS row_first,
                        MAX(g.date) FILTER (WHERE ${GIFT("g")}) AS row_last,
                        (ARRAY_AGG(g.amount ORDER BY ${LAST_GIFT_ORDER}) FILTER (WHERE g.date IS NOT NULL AND ${GIFT("g")}))[1] AS row_last_amt
@@ -127,7 +127,7 @@ const GIFTS_ON_FILE = what => `(SELECT ${what} FROM gifts g WHERE g.org_id = d.o
 const KEEP_IMPORTED_TOTAL = `
   UPDATE donors d SET
     imported_total = d.total_giving,
-    imported_gift_count = NULLIF(GREATEST(COALESCE(d.gift_count, 0), ${GIFTS_ON_FILE("COUNT(*) FILTER (WHERE g.amount > 0)")}), 0),
+    imported_gift_count = NULLIF(GREATEST(COALESCE(d.gift_count, 0), ${GIFTS_ON_FILE("COUNT(*) FILTER (WHERE g.amount > 0 AND g.refunded_in_full IS NOT TRUE)")}), 0),
     imported_first_gift_date = NULLIF(d.first_gift_date, ''),
     imported_last_gift_date = NULLIF(d.last_gift_date, ''),
     imported_last_gift_amount = CASE WHEN NULLIF(d.last_gift_date, '') IS NOT NULL THEN d.last_gift_amount END,

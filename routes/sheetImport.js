@@ -1051,6 +1051,11 @@ async function writePlan({ req, body, importId, who, report }) {
   summary.pledgesCreated = pledgesCreated;
   summary.pledgeDollarsCreated = pledgeCents / 100;
   summary.dollarsSetAside = (asideCents + duplicateCents) / 100;
+  // MONEY-4: the set-aside dollars by reason, every row (the receipt's footing names them).
+  summary.asideByReason = (() => { const RK = require("../server/imports/footing").reasonKey, by = {};
+    for (const a of u.aside) { const k = RK(a.reason); by[k] = (by[k] || 0) + (a.cents || 0); }
+    if (duplicateCents) by.here = (by.here || 0) + duplicateCents;
+    return by; })();
   summary.dollarsErrored = 0;
   summary.peopleRows = u.people.length;
   // HARDEN-1: what the receipt of a file of people says (crm.js peopleLine)

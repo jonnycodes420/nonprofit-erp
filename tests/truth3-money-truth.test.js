@@ -264,7 +264,8 @@ const tryRequire = rel => { try { return require(path.join("..", rel)); } catch 
     const line = GL ? GL.grantAwardLine({ status: "awarded", amountAwarded: 20000, awardPledgeId: null, received: 0 }) : null;
     ok("§7 an awarded amount is never \"no award recorded\"", !!GL && !!GL.awardState && GL.awardState({ status: "awarded", amountAwarded: 20000 }) === "stated" && !!line && !/no award recorded/i.test(line.text), JSON.stringify(line));
     const dls = (await api("GET", "/grants/deadlines", tok)).body || {};
-    ok("§7 Deadlines lists the grant's future deadline", (dls.milestones || []).some(m => m.grantId === gr && m.dueDate === dl && m.daysUntil === 39), JSON.stringify((dls.milestones || []).map(m => [m.grantId, m.dueDate])).slice(0, 300));
+    // MONEY-4: an awarded grant's application deadline disappears from Deadlines (report deadlines stay).
+    ok("§7 Deadlines no longer lists an awarded grant's application deadline", !(dls.milestones || []).some(m => m.grantId === gr && m.dueDate === dl), JSON.stringify((dls.milestones || []).map(m => [m.grantId, m.dueDate])).slice(0, 300));
   }
   {
     const src = require("fs").readFileSync(path.join(__dirname, "..", "server", "reports", "helpers.js"), "utf8");

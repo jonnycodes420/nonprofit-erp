@@ -123,18 +123,20 @@ const gift = async (tok, donor, body) => { const r = await api("POST", `/donors/
   const wex = (Array.isArray(gr) ? gr : gr.grants || []).find(g => g.id === "gr_pl3t_wexford") || {};
   const G = { amount: Number(wex.amount), amountAwarded: Number(wex.amount_awarded), received: Number(wex.received) || 0, status: wex.status, deadline: String(wex.deadline || "").slice(0, 10), awardPledgeId: wex.award_pledge_id || null };
   const line = GA.grantAwardLine(G) || {};
-  ok("§3 the line says Awarded $120,000 · payments not set up · Set up payments", `${line.text} ${line.action}` === "Awarded $120,000 · payments not set up · Set up payments", line);
+  // MONEY-4 (W-1107-Finance-31 repeat): the known amount IS the award; Received reads from payments.
+  ok("§3 the line says Awarded $120,000 · $0 received of $120,000", line.text === "Awarded $120,000 · $0 received of $120,000" && !line.action, line);
   ok("§3 it never says Record the award", !/Record the award/.test(`${line.text} ${line.action}`), line);
   const word = (d, o) => deadlineWord(d, TODAY, o);
   const tiles = GA.grantMoneyTiles(G, word, { pursuing: false });
   const t = k => tiles.find(x => x.key === k) || {};
-  ok("§3 Received and % Funded say No payments set up, not $0 and 0%", t("received").value === "No payments set up" && t("funded").value === "No payments set up", tiles);
+  ok("§3 Received and Remaining read from payments ($0 of $120,000), never No payments set up", t("received").value === "$0" && t("remaining").value === "$120,000" && !tiles.some(x => /No payments/.test(String(x.value))), tiles);
   ok("§3 the application deadline stops counting down once awarded", !tiles.some(x => /\d+d$/.test(String(x.word || ""))) && t("deadline").word === "Closed", tiles);
   const withReport = GA.grantMoneyTiles({ ...G, reportDue: dayOffset(20) }, word, { pursuing: false });
   ok("§3 a report deadline still counts down", (withReport.find(x => x.key === "report") || {}).word === "20d", withReport);
   const dls = ((await api("GET", "/grants/deadlines", tok)).body || {}).milestones || [];
   const wexDl = dls.find(x => x.grantId === "gr_pl3t_wexford") || {};
-  ok("§3 Deadlines still lists Wexford's date, closed, with no countdown", wexDl.band === "closed" && !/due in/.test(wexDl.sentence || "") && /application is closed/.test(wexDl.sentence || ""), wexDl);
+  // MONEY-4: an application deadline disappears once the grant is awarded (report deadlines stay).
+  ok("§3 Deadlines no longer lists Wexford's application date", !dls.some(x => x.grantId === "gr_pl3t_wexford"), wexDl);
 
   // ── §4 · A RECEIPT IS A SNAPSHOT ───────────────────────────────────────
   console.log("\n— §4 · receipts and changed gifts —");
@@ -216,8 +218,8 @@ const gift = async (tok, donor, body) => { const r = await api("POST", `/donors/
     await page.goto(`${APP}/app/grants?grant=gr_pl3t_wexford`, { waitUntil: "networkidle" });
     const fl = await txt('[data-testid="grant-funder-line"]');
     const stats = await txt(".grant-stat-grid");
-    ok("§5 Wexford says payments not set up · Set up payments", fl.includes("Awarded $120,000 · payments not set up · Set up payments") && !/Record the award/.test(fl), fl);
-    ok("§5 its tiles say No payments set up and no countdown", /Received No payments set up/.test(stats) && /% Funded No payments set up/.test(stats) && !/\b38d\b/.test(stats), stats);
+    ok("§5 Wexford says $0 received of $120,000 (MONEY-4)", fl.includes("Awarded $120,000 · $0 received of $120,000") && !/Record the award|not set up/.test(fl), fl);
+    ok("§5 its tiles read from payments and count down nothing", /Received \$0/.test(stats) && /Remaining \$120,000/.test(stats) && !/No payments set up/.test(stats) && !/\b38d\b/.test(stats), stats);
     // The receipt: edit a receipted gift and see the flag on the gift.
     const ROW = await person("d_pl3t_rowan", "Rowan Fetherby");
     const gR = await gift(tok, ROW, { amount: 100, date: dayOffset(-2) });

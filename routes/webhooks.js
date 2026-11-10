@@ -968,7 +968,12 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
             const remaining = Math.max(0, ((ch.amount || 0) - (ch.amount_refunded || 0)) / 100);
             const refunded = (ch.amount_refunded || 0) / 100;
             const today = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK (BUILD-75)
-            if (remaining <= 0) {
+            // MONEY-4: a refund Steward started (Record a refund) is already on
+            // file as a linked negative row; Stripe's echo of it changes nothing.
+            const [rec] = await query(require("../shared/numbers/refunds").REFUNDED_CENTS_PG, [orgId, g.id]);
+            if (Number(rec && rec.c) > 0 && Number(rec.c) >= (ch.amount_refunded || 0)) {
+              console.log(`[stripe] charge.refunded ${ch.id}: gift ${g.id}'s refund is already recorded in Steward, nothing to change`);
+            } else if (remaining <= 0) {
               // FULL refund — the gift's net effect becomes zero everywhere,
               // exactly once. A refund is a fact about the money, so an active
               // receipt is auto-VOIDED (the acknowledgment no longer describes a

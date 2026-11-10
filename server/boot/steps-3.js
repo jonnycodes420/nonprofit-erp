@@ -1033,7 +1033,7 @@ const GIVE_THEME_COLS = `ps.display_name,
   ps.header_focal_x, ps.header_focal_y, ps.header_crop,
   ps.primary_color, ps.accent_color, ps.button_color, ps.background_tint,
   ps.type_pairing, ps.card_style,
-  ps.footer_text AS give_footer, ps.contact_email AS give_contact, ps.ein_line AS give_ein,
+  ps.footer_text AS give_footer, ps.contact_email AS give_contact, o.ein AS give_ein,
   ps.powered_by, ps.onetime_amounts, ps.monthly_amounts,
   ps.enabled AS portal_enabled`;
 // SPLIT-2 end
