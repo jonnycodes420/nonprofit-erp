@@ -1081,6 +1081,8 @@ DB_READY.then(() => {
   const refresh = () => JQ.refreshHealth().catch(() => {});
   setTimeout(refresh, 5000).unref();
   setInterval(refresh, 15000).unref();
+  // SCALE-3: this process's capacity sample every five minutes (server/perf/capacity.js, read on /ops).
+  require("../perf/capacity").start({ run, role: JQ.role, poolStats: require("../../db").poolStats, queueHealth: JQ.healthNow });
 });
 // SPLIT-2 end
 // SPLIT-2 server.js piece 805

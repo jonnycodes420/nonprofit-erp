@@ -96,6 +96,7 @@ async function checkout(pool) {
   const sc = live();
   if (!sc) return align(await pool.connect(), 0, null);
   if (sc.closed) throw abandoned();
+  const t0 = Date.now();   // SCALE-3: the wait, for the capacity gauge (server/perf/capacity.js)
   const client = await new Promise((resolve, reject) => {
     // One wait: it ends once, by a connection, the limit, or an abandon (close()).
     const wait = { settled: false, timer: null, fail: null };
@@ -108,6 +109,7 @@ async function checkout(pool) {
       end(); resolve(c);
     }, wait.fail);
   });
+  require("../perf/capacity").noteWait(Date.now() - t0);
   return align(client, sc.limitMs, sc);
 }
 async function align(client, ms, sc) {
