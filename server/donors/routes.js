@@ -162,6 +162,7 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
   // POLISH-4: who Re-engage names, decided once (shared/numbers/lapse.js).
   const _sumRe = require("../../shared/numbers/lapse").reengageSql("donors", _sumToday);
   const _sumLost = require("../../shared/numbers/lapse").lostSql("donors", _sumToday);   // COUNTS-1: Re-engage's Lost & Found
+  const _vis = require("../auth/portfolio").visibleSql(req);   // ACCESS-2: their people only
   const [donors, touchpoints, { map: driftMap }] = await Promise.all([
     query(`SELECT id, name, email, phone, stage, status, total_giving, last_gift_date,
                   last_gift_amount, gift_count, assigned_to, assigned_to_name,
@@ -174,12 +175,12 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
                   imported_sustainer, imported_sustainer_amount, imported_sustainer_last_gift,
                   birth_month, birth_day, birth_year, ${_sumHold.sql} AS pledge_hold, ${_sumRe.sql} AS reengage, ${_sumLost.sql} AS lost,
                   ${require("../../shared/numbers/atRisk").LAST_YEAR_OF_GIVING("donors")} AS last_year_giving
-           FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`, [..._sumHold.args, ..._sumRe.args, ..._sumLost.args, req.user.orgId, limit, offset]),
+           FROM donors WHERE org_id = ? AND deleted_at IS NULL${_vis.sql} ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`, [..._sumHold.args, ..._sumRe.args, ..._sumLost.args, req.user.orgId, ..._vis.args, limit, offset]),
     query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
     computeDriftForDonors(req.user.orgId),   // BUILD-76 — the shared-state views badge from the same computation
   ]);
   await require("./ownerName").withLiveOwnerNames(query, donors);   // INTEGRITY-1: one owner field
-  res.setHeader("X-Total-Count", String(await require("../../shared/numbers/everyone").everyoneCount(query, req.user.orgId)));   // INTEGRITY-1: Everyone
+  res.setHeader("X-Total-Count", String(await require("../../shared/numbers/everyone").everyoneCount(query, req.user.orgId, _vis)));   // INTEGRITY-1: Everyone (ACCESS-2: theirs)
   const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
   res.json(donors.map(d => ({
     ...d,
@@ -209,14 +210,15 @@ app.get("/donors/custom-field-values/all", requireAuth, wrap(async (req, res) =>
 // what the giving history proposes for the ones nobody has touched. A caller
 // that shows the suggestion must say it is one (Home does).
 app.get("/donors/stage-counts", requireAuth, wrap(async (req, res) => {
+  const _svis = require("../auth/portfolio").visibleSql(req);   // ACCESS-2: their people only
   const rows = await query(
     `SELECT COALESCE(stage, suggested_stage) AS stage,
             (stage IS NOT NULL) AS placed,
             COUNT(*) AS count, COALESCE(SUM(total_giving),0) AS total
        FROM donors WHERE org_id = ? AND deleted_at IS NULL
-        AND COALESCE(stage, suggested_stage) IS NOT NULL
+        AND COALESCE(stage, suggested_stage) IS NOT NULL${_svis.sql}
       GROUP BY 1, 2`,
-    [req.user.orgId]
+    [req.user.orgId, ..._svis.args]
   );
   const merge = (acc, r) => {
     const k = r.stage;

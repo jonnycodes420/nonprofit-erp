@@ -23,6 +23,8 @@ async function teamMaySee(orgId) {
 
 async function maySee(userId, orgId) {
   if (!userId || !orgId) return false;
+  // ACCESS-2: the Campaign cabinet preset sees no Wealth Score, whatever else is on.
+  if (!(await require("../auth/portfolio").accessFor(userId, orgId)).canWealth) return false;
   const P = require("../../prospect");
   if (await P.canSee(userId, orgId)) return true;
   if (!(await teamMaySee(orgId))) return false;

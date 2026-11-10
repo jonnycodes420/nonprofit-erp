@@ -29,8 +29,9 @@ const { query, run, uuid, requireAuth, requireCrm, checkWriteAccess, wrap, actor
 const buildListFilter = async req => {
   const GR = require("../groups");
   const q = req.query || {};
-  if (String(q.archived || "") === "1") return GR.buildDonorFilter(req.user.orgId, q).then(f => (f.whereSql ? { ...f, whereSql: `${f.whereSql} AND archived_at IS NOT NULL` } : f));
-  return GR.buildDonorFilter(req.user.orgId, q, { hideArchived: true });
+  const visible = require("../server/auth/portfolio").visibleSql(req);   // ACCESS-2: their people only
+  if (String(q.archived || "") === "1") return GR.buildDonorFilter(req.user.orgId, q, { visible }).then(f => (f.whereSql ? { ...f, whereSql: `${f.whereSql} AND archived_at IS NOT NULL` } : f));
+  return GR.buildDonorFilter(req.user.orgId, q, { hideArchived: true, visible });
 };
 const app = routers.r0;
 const isAdmin = req => req.user && req.user.role === "admin";
