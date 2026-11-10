@@ -98,7 +98,8 @@ const FIELDS = [
   F("last_gift_date", "Last gift", "Giving", { format: "date", sort: "last_gift_date", filter: DATE_OPS, cell: "last_gift_date" }),
   F("last_gift_amount", "Last gift amount", "Giving", { format: "money", sort: "last_gift_amount", filter: MONEY_OPS, cell: "last_gift_amount" }),
   F("first_gift_date", "First gift", "Giving", { format: "date", sort: "first_gift_date", filter: DATE_OPS, cell: "first_gift_date" }),
-  F("gift_count", "Number of gifts", "Giving", { format: "number", sort: "gift_count", filter: NUM_OPS, cell: "gift_count" }),
+  // TRUTH-5: the count, its sort and its filter are giftCount.js's (gifts on file), never the stored rollup.
+  F("gift_count", "Number of gifts", "Giving", { format: "number", sort: require("./shared/numbers/giftCount").DONOR_GIFT_COUNT("donors"), filter: NUM_OPS, cell: "gift_count" }),
   F("level", "Giving level", "Giving", { col: false, filter: SEL_OPS,
     options: [{ value: "general", label: "General" }, { value: "mid", label: "Mid" }, { value: "major", label: "Major" }] }),
   F("lapse", "Lapsed or lapsing", "Giving", { col: false, filter: SEL_OPS,
@@ -368,7 +369,7 @@ async function compileOne(orgId, c, fields) {
     case "last_gift_date": return dateCond("last_gift_date", c.op, v);
     case "first_gift_date": return dateCond("first_gift_date", c.op, v);
     case "gift_count": {
-      const r = moneyCond("COALESCE(gift_count,0)", c.op === "gte" ? "gte" : "lte", v);
+      const r = moneyCond(require("./shared/numbers/giftCount").DONOR_GIFT_COUNT("donors"), c.op === "gte" ? "gte" : "lte", v);
       return r;
     }
     case "level": return sel() ? { rules: { level: sel() } } : needSel();

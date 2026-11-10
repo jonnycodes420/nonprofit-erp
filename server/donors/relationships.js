@@ -354,6 +354,21 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
     side: PERSON_TO_ORG.has(r.relationship_type) ? (r.mine_first ? "person" : "organization") : null,
   }));
 
+  // TRUTH-5 (W-1109-Finance-37X): on an organisation, the people linked to it
+  // read what they gave THROUGH it (soft credit on its gifts), never their lifetime.
+  const orgSide = relationships.filter(r => r.side === "organization");
+  let through = null;
+  if (relationships.some(r => r.side)) {
+    const ST = require("../../shared/numbers/softThrough");
+    if (orgSide.length) {
+      const [per, sum] = await Promise.all([ST.throughByPerson(query, orgId, donorId, orgSide.map(r => r.relatedDonorId)), ST.throughSummary(query, orgId, donorId)]);
+      through = { cents: sum.cents, people: sum.people, sentence: ST.summaryWords(sum, "this organization"), definition: ST.SENTENCE };
+      for (const r of orgSide) { r.throughCents = per.get(r.relatedDonorId) || 0; r.throughSummary = through; }
+    }
+    // On the person: what they hold through the organisation they give through.
+    for (const r of relationships.filter(x => x.side === "person")) r.throughCents = (await ST.throughByPerson(query, orgId, r.relatedDonorId, [donorId])).get(donorId) || 0;
+  }
+
   // FIX-49 decision 8: the household record is the only grouping. The total
   // is the household's combined giving (`household-giving`, the household
   // panel's own figure), never a second sum over spouse links.
@@ -364,7 +379,7 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
     householdTotal = (await figureSources.figureValue(orgId, householdTotalSource)).value;
   }
 
-  res.json({ relationships, householdTotal, householdTotalSource });
+  res.json({ relationships, householdTotal, householdTotalSource, through });
 }));
 
 app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async (req, res) => {

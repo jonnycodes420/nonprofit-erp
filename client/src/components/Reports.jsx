@@ -8,6 +8,7 @@ import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TW
 import StoredReports from "./StoredReports";
 import OldReportsImport from "./OldReportsImport";
 import { displayDate } from "../../../shared/displayDate";
+import { LAPSE_WORDS } from "../../../shared/lapseWords.js";   // TRUTH-5
 import { periodChipLabel, fyLabelFromEnd, reportYearsFrom } from "../../../shared/fiscalPeriod";
 import { bookkeeperCell } from "../lib/bookkeeperCell";
 import { Figure, FigureContext } from "./Figure";
@@ -24,6 +25,7 @@ import EventRaised from "./EventRaised";   // HOME-3
 import { yoyView } from "./YearOverYear";   // HISTORY-1
 import { countLabel, plural } from "../../../shared/countWords.js";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { optionLabel } from "../../../shared/dupeNames.js";   // POLISH-8: two campaigns of one name are told apart
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
 // Fixed, parameterized, table-first, CSV-downloadable reports — each one an
@@ -45,7 +47,7 @@ import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box,
 const REPORT_DEFS = [
   { key: "giving-summary", label: "Giving summary" },
   { key: "by-group", label: "Gifts by fund" },
-  { key: "lybunt", label: "Gave last year, not this year" },
+  { key: "lybunt", label: LAPSE_WORDS.lybunt.label },   // TRUTH-5: the word, one population
   { key: "sybunt", label: "Gave before, not this year" },
   { key: "retention", label: "Retention" },
   { key: "top-donors", label: "Top donors" },
@@ -550,11 +552,13 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       const shownRows = d.units || d.rows;
       const folded = shownRows.length !== d.rows.length;
       const havent = shownRows.length === 1 ? "hasn't" : "haven't";
-      narrative = <><strong data-testid="bunt-header-count">{folded ? `${shownRows.length} ${shownRows.some(r => r.unit === "household") ? plural(shownRows.length, "donor or household", "donors and households") : plural(shownRows.length, "donor")}` : d.figures?.people ? <RF f={d.figures.people} label={active === "lybunt" ? "Gave last year, not this year" : "Gave before, not this year"} unit={plural(d.rows.length, "donor")} /> : `${d.rows.length} ${plural(d.rows.length, "donor")}`}</strong>{folded && <> ({d.figures?.people ? <RF f={d.figures.people} label="People on these rows" unit={plural(d.rows.length, "person", "people")} /> : `${d.rows.length} people`}, each counted once)</>} {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${shownRows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
+      narrative = <>{active === "lybunt" && <><abbr data-testid="bunt-word" title={LAPSE_WORDS.lybunt.definition} style={{ textDecoration: "underline dotted", cursor: "help" }}>LYBUNT</abbr>: </>}<strong data-testid="bunt-header-count">{folded ? `${shownRows.length} ${shownRows.some(r => r.unit === "household") ? plural(shownRows.length, "donor or household", "donors and households") : plural(shownRows.length, "donor")}` : d.figures?.people ? <RF f={d.figures.people} label={active === "lybunt" ? "Gave last year, not this year" : "Gave before, not this year"} unit={plural(d.rows.length, "donor")} /> : `${d.rows.length} ${plural(d.rows.length, "donor")}`}</strong>{folded && <> ({d.figures?.people ? <RF f={d.figures.people} label="People on these rows" unit={plural(d.rows.length, "person", "people")} /> : `${d.rows.length} people`}, each counted once)</>} {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${shownRows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
         {active === "lybunt" && atStake > 0 && <>: <strong><RF f={d.figures?.atStake} kind="money" label="Last year's giving at stake" /></strong> of last year's giving is at stake</>}. This is a call list, not a chart.</>;
       table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
         // INTEGRITY-1: a household or a gives-through link is one line, named for the household
-        { key: "name", label: "Donor", type: "text", person: true, ...(d.units ? { render: r => r.members ? <span data-testid="bunt-unit">{r.name} <span style={{ color: T.ink3, fontWeight: 400 }}>({r.unit}: {r.members.map(m => m.name).join(", ")})</span></span> : r.name } : {}) },
+        { key: "name", label: "Donor", type: "text", person: true, ...(d.units ? { render: r => <span data-testid={r.members ? "bunt-unit" : undefined}>{r.name}{r.members && <span style={{ color: T.ink3, fontWeight: 400 }}>{` (${r.unit}: ${r.members.map(m => m.name).join(", ")})`}</span>}
+          {/* TRUTH-5: gives through / works at is an affiliation, never money in this row */}
+          {r.connected && <span data-testid="bunt-connected" style={{ display: "block", color: T.ink3, fontWeight: 400, fontSize: 12 }}>{`Also connected: ${r.connected.map(c => `${c.name} (${c.how}; their own ${fmtFull(c.priorYearTotal)}, on their own row)`).join(", ")}`}</span>}</span> } : {}) },
         // LEDGER-1: SYBUNT's amount is the last year each person gave, named on the row
         { key: "priorYearTotal", label: active === "lybunt" ? `Gave ${priorLabel}` : "Gave in their last year", type: "money",
           ...(active === "sybunt" ? { render: r => `${fmtFull(r.priorYearTotal)}${r.lastYear ? ` · ${yearMode === "fiscal" ? fyLabelFromEnd(Number(String(r.lastYear.to).slice(0, 4)), fsm) : String(r.lastYear.from).slice(0, 4)}` : ""}` } : {}) },
@@ -851,7 +855,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
             </select>}
             {showFilters && campaigns.length > 0 && <select value={campaignId} onChange={e => setCampaignId(e.target.value)} style={selStyle}>
               <option value="">All campaigns</option>
-              {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {campaigns.map(c => <option key={c.id} value={c.id}>{optionLabel(c, campaigns)}</option>)}
             </select>}
             <div style={{ flex: 1 }} />
             {!DIGEST_REPORTS.includes(active) && <button onClick={downloadCsv} disabled={downloading || loading || customIncomplete}

@@ -32,6 +32,7 @@ export const MEM_TEMPLATES=[
 export const GP_STATUS_META={
   active:   {label:"Active",   bg:T.green100, color:T.greenDk, border:T.greenDk},
   archived: {label:"Archived", bg:T.bg2, color:T.ink3, border:T.bg3},
+  draft:    {label:"Draft",    bg:T.bg,  color:T.ink2, border:T.bg3},   // POLISH-8: unpublished
 };
 
 // A shareable URL renders as labeled actions — open + copy — never bare

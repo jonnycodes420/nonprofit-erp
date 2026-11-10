@@ -86,6 +86,7 @@ const MODULES = [
   "../server/events/eventRemoval",   // WALKB-2
   "../server/volunteers/shiftRules",   // STALE-2: a bare draft shift deletes
   "../server/outreach/autoSend",
+  "../server/outreach/rename",   // POLISH-8: rename a campaign or template in place
   "../server/outreach/journeys",
   "../server/outreach/routes",
   "../server/outreach/thanks",
@@ -132,6 +133,7 @@ routers.r1.use(require("../server/donors/relationships").routers.r1);
 routers.r1.use(require("../server/outreach/thanks").routers.r1);
 routers.r1.use(require("../server/majorGifts/routes").routers.r1);
 routers.r1.use(require("../server/outreach/autoSend").routers.r1);
+routers.r1.use(require("../server/outreach/rename").routers.r1);   // POLISH-8
 routers.r1.use(require("../server/outreach/journeys").routers.r1);
 routers.r1.use(require("../server/donors/people").routers.r1);
 routers.r1.use(require("../server/outreach/routes").routers.r1);

@@ -564,6 +564,10 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
   const instRows = rows.length ? await query(
     `SELECT pledge_id, seq, due_date, amount, paid_gift_id FROM pledge_installments WHERE org_id=? AND pledge_id = ANY(?) ORDER BY pledge_id, seq`,
     [req.user.orgId, rows.map(r => r.id)]) : [];
+  // TRUTH-5: each pledge's payments, for its schedule (shared/numbers/pledgeSchedule.js).
+  const PS = require("../../shared/numbers/pledgeSchedule");
+  const payBy = new Map();
+  for (const g of rows.length ? await query(PS.PAYMENTS_SQL(), [req.user.orgId, rows.map(r => r.id)]) : []) (payBy.get(g.pledge_id) || payBy.set(g.pledge_id, []).get(g.pledge_id)).push(g);
   const listBy = new Map();
   for (const i of instRows) (listBy.get(i.pledge_id) || listBy.set(i.pledge_id, []).get(i.pledge_id))
     .push({ seq: i.seq, dueDate: i.due_date ? String(i.due_date).slice(0, 10) : null, amount: round2(parseFloat(i.amount) || 0), paid: !!i.paid_gift_id });
@@ -587,6 +591,7 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
       installmentCount: ix ? ix.n : 1, years, dueThisYear, dueYearLabel: yearLabel, unpaidCount: PL.unpaidCount(pl),
       summary: PL.summaryOf(pl),   // PLEDGES-3: the five values every surface says
       installments: left.map(i => ({ ...i, paid: i.left <= 0 })),
+      schedule: PS.scheduleOf(pl, payBy.get(r.id) || []),   // TRUTH-5: every installment, each payment on the one it paid
       // the open-pledge figure opens Fundraising's own rows for this person
       openSource: { key: "pledges-open", params: { donor: r.donor_id } },
     };

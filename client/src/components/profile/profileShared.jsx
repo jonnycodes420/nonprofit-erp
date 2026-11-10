@@ -100,6 +100,9 @@ const SIDED = {
   owner: { person: n => `Gives through ${n}`, organization: n => `Owner: ${n}` },
   works_at: { person: n => `Works at ${n}`, organization: n => `Works here: ${n}` },
 };
+// TRUTH-5 (W-1109-Finance-37X): a person-to-organization link reads what went
+// THROUGH it (soft credit on the organization's gifts), never anyone's lifetime.
+const throughWords = r => (r.throughCents > 0 ? `${fmtFull(r.throughCents / 100)} given through ${r.side === "organization" ? "here" : "it"}` : "nothing soft-credited through it yet");
 const relationshipLine = r => {
   const sided = SIDED[r.relationshipType] && SIDED[r.relationshipType][r.side];
   if (sided) return sided(r.relatedDonorName);
@@ -337,4 +340,4 @@ function ComingUpMain({tasks=[],meetings=[],onTaskToggle,isReadOnly,onAddTask}){
 }
 const cap=s=>s?String(s).charAt(0).toUpperCase()+String(s).slice(1):"Not set";
 
-export { UndatedGiftDate, ContactFlag, stageTone, lateWords, WEALTH_SCORE_DEFINITION, WEALTH_SCORE_SOURCE, DONOR_RELATIONSHIP_LABELS, relationshipLabelsFor, relationshipLine, stripGiftAmountPrefix, giftFundName, giftTimelineLine, HEADER_CHIP_LIMIT, HeaderChips, ROLE_CHIPS, RoleLine, PROFILE_FIGURES, SUGGEST_KINDS, PROPOSAL_STAGE_LABEL, OPEN_PROPOSAL_KEYS, PROFILE_TABS, TAB_KIND, TAB_SUBCHIPS, STAGE_BAR, RailGroups, ComingUpMain, cap };
+export { UndatedGiftDate, ContactFlag, stageTone, lateWords, WEALTH_SCORE_DEFINITION, WEALTH_SCORE_SOURCE, DONOR_RELATIONSHIP_LABELS, relationshipLabelsFor, relationshipLine, throughWords, stripGiftAmountPrefix, giftFundName, giftTimelineLine, HEADER_CHIP_LIMIT, HeaderChips, ROLE_CHIPS, RoleLine, PROFILE_FIGURES, SUGGEST_KINDS, PROPOSAL_STAGE_LABEL, OPEN_PROPOSAL_KEYS, PROFILE_TABS, TAB_KIND, TAB_SUBCHIPS, STAGE_BAR, RailGroups, ComingUpMain, cap };

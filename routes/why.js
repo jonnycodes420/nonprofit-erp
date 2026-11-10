@@ -542,6 +542,8 @@ async function runQueryPlan(req, plan, typed, source) {
   // MONEY-3: why these people, in plain words ("gave last December, nothing
   // since Jan 1"), for the header over a list (Atlas's list reads it).
   const reasonWords = require("../server/shared/reasonWords").reasonWords(plan, today, AQ.queryWords);
+  // TRUTH-5 (W-1109-Atlas-01): each person's amount is the period's, Lifetime labeled (shared/numbers/periodAmounts.js).
+  if (a.people && plan.entity === "people") Object.assign(a, await require("../server/atlas/periodAnswer").periodAnswer(query, req.user.orgId, plan, a, today));
   return { ...a, reasonWords, question: { text: typed }, planSource: source, followUps: queryFollowUps(plan) };
 }
 async function tryQuery(req, typed, previousQuery = null) {

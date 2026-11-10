@@ -28,7 +28,7 @@ function ProfileDialogs({relationships=[],createHousehold,donor,eraseBusy,eraseM
                               <input type="checkbox" checked={picked} onChange={()=>{const n=new Set(hhPick);n.has(r.relatedDonorId)?n.delete(r.relatedDonorId):n.add(r.relatedDonorId);setHhPick(n);}} style={{accentColor:T.greenDk}}/>
                               <span style={{fontSize:13,fontWeight:600,color:T.ink}}>{r.relatedDonorName}</span>
                               <span style={{fontSize:11,color:T.ink3}}>{String(r.relationshipType||"").replace(/_/g," ")}</span>
-                              <span style={{marginLeft:"auto",fontSize:11,color:T.ink3}}>{fmtFull(r.relatedDonorTotalGiving||0)}</span>
+                              <span style={{marginLeft:"auto",fontSize:11,color:T.ink3}}>Lifetime {fmtFull(r.relatedDonorTotalGiving||0)}</span>
                             </label>
                           );
                         })}

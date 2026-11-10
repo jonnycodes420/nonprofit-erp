@@ -14,6 +14,13 @@ const { GIFT, isGift, isMoney, centsOf: centsOfRow } = require("./money");
 const COUNTED = (g = "g") => GIFT(g);
 // SQL: how many gifts person `d` has on file, by the rule.
 const GIFT_COUNT = (d = "d") => `(SELECT COUNT(*)::int FROM gifts gc WHERE gc.org_id = ${d}.org_id AND gc.donor_id = ${d}.id AND ${COUNTED("gc")})`;
+// TRUTH-5 (W-1109-Finance-35X): the ONE count a person's gifts are said as,
+// wherever a person's count shows: the Directory's column, its sort and filter,
+// the profile, Top donors, Atlas. The Directory read the stored rollup (an
+// import's stated "6 gifts" beside a Giving tab of 5 rows). It is the gifts on
+// file that count (above), so the number always opens to its rows. An old
+// system's stated count stays its own fact, on Before Steward.
+const DONOR_GIFT_COUNT = GIFT_COUNT;
 // JS: a row already read ({ amount | cents, type | gift_type }) is counted.
 const isCounted = r => isGift(r);
 const countOf = rows => (rows || []).filter(isCounted).length;
@@ -48,4 +55,4 @@ function zeroOnFileSql(where, args, byFund) {
 
 const SENTENCE = "A gift is a hard-credit gift above $0. A $0 or soft-credit record shows in history, labeled, but is never counted, averaged or receipted.";
 
-module.exports = { COUNTED, GIFT_COUNT, isCounted, countOf, averageCents, giftCounts, SENTENCE, ZERO_LABEL, alsoOnFile, isZero, zeroOnFileSql };
+module.exports = { COUNTED, GIFT_COUNT, DONOR_GIFT_COUNT, isCounted, countOf, averageCents, giftCounts, SENTENCE, ZERO_LABEL, alsoOnFile, isZero, zeroOnFileSql };

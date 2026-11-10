@@ -777,7 +777,8 @@ app.patch("/tasks/:id/due", requireAuth, checkWriteAccess, wrap(async (req, res)
 
 app.delete("/tasks/:id", requireAuth, wrap(async (req, res) => {
   // FIX-31: a linked task goes when its next step or deadline goes, never alone.
-  const [lk] = await query("SELECT link_kind FROM tasks WHERE id=? AND org_id=? AND link_kind IN ('next_step','deadline')", [req.params.id, req.user.orgId]);
+  // POLISH-8: a DONE linked task is history, not the live step; it can go to the trash.
+  const [lk] = await query("SELECT link_kind FROM tasks WHERE id=? AND org_id=? AND link_kind IN ('next_step','deadline') AND COALESCE(done,0) = 0", [req.params.id, req.user.orgId]);
   if (lk) return res.status(409).json({ error: "linked_task", sentence: lk.link_kind === "deadline"
     ? "This task is the grant deadline itself. Take the deadline off the grant and the task goes with it."
     : "This task is a next step. Dismiss it on the Thread and the task goes with it." });
