@@ -1068,6 +1068,8 @@ app.put("/org/membership-settings", requireAuth, requireAdmin, checkWriteAccess,
     res.json({ renewalDays, graceDays });
   } catch (e) { if (e.status) return res.status(e.status).json({ error: e.message }); throw e; }
 }));
+// ONBOARD-2: Home → "Getting set up", the home-opened signal and "Who to call tomorrow".
+require("../onboard/setupRoutes").mount(routers.r1, ctx);
 }
 
 module.exports = { routers, mount };

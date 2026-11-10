@@ -25,7 +25,7 @@ const touchTypeLabel = k => (TOUCH_TYPES.find(t => t.key === k)?.label || "touch
 // conversation logged after 8pm in New York defaulted to tomorrow.
 const todayLocal = () => orgTodayCivil();
 
-export function LogConversationModal({ donor, thread = null, onSaved, onClose, org = null, onNavigate = null, editing = null, initialTouch = null }) {
+export function LogConversationModal({ donor, thread = null, onSaved, onClose, org = null, onNavigate = null, editing = null, initialTouch = null, fromMove = false }) {
   // FIX-14 Part 2 — editing opens this same form, filled in: the touch, the
   // line and the day. The next step and any gift are their own records and
   // are changed where they live, so editing shows neither.
@@ -123,7 +123,8 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
           ...(amountTyped ? { gift: { amount: String(amount).trim(),
                                       fundId: fundId || (defaultFund ? defaultFund.id : null),
                                       paymentMethod: method || undefined } } : {}),
-          ...(thread && thread.id ? { threadId: thread.id } : {}),   // SENDS-1: kept for the record; a skip closes nothing (server/tasks/logClose.js)
+          ...(thread && thread.id ? { threadId: thread.id } : {}),
+          ...(fromMove ? { fromMove: true } : {}),   // ONBOARD-2: logged from one of Steward's moves (a kickoff signal)   // SENDS-1: kept for the record; a skip closes nothing (server/tasks/logClose.js)
           nextStep: skipped ? { skipped: true }
             : { type: nextStepTypeForLabel(nsLabel), label: sanitizeStepLabel(nsLabel), due: nsDue,
                 time: sanitizeStepTime(nsTime) || undefined,

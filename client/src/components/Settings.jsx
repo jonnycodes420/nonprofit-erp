@@ -54,6 +54,7 @@ import { StaffBoardList } from "./settings/StaffBoardList";
 import { SETTINGS_TABS, SECTION_ALIAS, BILLING_STATUS_META } from "./settings/settingsTabs";
 import { displayOrgDate } from "../lib/orgDay";
 import { impactExample } from "../lib/impactExample";
+import SettingsSetup from "./onboarding/SettingsSetup";   // ONBOARD-2
 import { VIEWER, ROLES, ROLE_LABEL, roleWord } from "../../../shared/viewOnly.js"; import { ViewerExports } from "./settings/ViewerExports";   // ACCESS-1
 export { PortalWebsiteSnippet, PortalWebsiteSnippetCard } from "./settings/PortalWebsiteSnippet";
 export { ImpactUpdatesManager } from "./settings/ImpactUpdatesManager";
@@ -1013,6 +1014,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       {section==="security"&&isAdmin&&<SupportAccessCard/>}
 
       {section==="account"&&<>
+      <SettingsSetup onNavigate={onNavigate}/>
       {/* TRUST-2 — the DPA, once an attorney has read it and it is published. */}
       <DpaDownload/>
       {/* FIX-11 Part 5 — YOUR BCC ADDRESS, where you would look for it.

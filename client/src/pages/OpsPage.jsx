@@ -11,10 +11,11 @@ import MapView from "./ops/MapView";
 import ShipCard from "./ops/ShipCard";
 import JourneyView from "./ops/JourneyView";
 import FlowView from "./ops/FlowView";
+import OnboardingView from "./ops/OnboardingView";   // ONBOARD-2
 import ImportCard from "./ops/ImportCard";
 
 const INK = "#0F1A12", CREAM = "#F0EDE6", EMERALD = "#0D5C3A";
-const TABS = [["machine", "Machine"], ["map", "Map"], ["journey", "Journey"], ["flow", "How it works"]];
+const TABS = [["machine", "Machine"], ["onboarding", "Onboarding"], ["map", "Map"], ["journey", "Journey"], ["flow", "How it works"]];
 const TAB_IDS = TABS.map(t => t[0]);
 const NOT_FOR = "This page is for Steward's super-admins.";
 // What each tab reads, and what it says when it cannot.
@@ -22,6 +23,7 @@ const SOURCES = {
   map: ["/ops/map", "The map could not be read. Try again in a minute."],
   journey: ["/ops/journey", "The journey could not be read. Try again in a minute."],
   flow: ["/ops/flow", "How it works could not be read. Try again in a minute."],
+  onboarding: ["/ops/onboarding", "The onboarding board could not be read. Try again in a minute."],   // ONBOARD-2
 };
 
 // A Fail's screenshot, read with this session and opened in a new tab.
@@ -82,12 +84,13 @@ export default function OpsPage() {
 
   if (tab === "machine") return <OpsView data={data} error={error} tabs={tabs} onShot={openShot} ship={<ShipCard />} importer={<ImportCard onImported={load} />} />;
   const g = got[tab] || {};
-  const wide = tab === "journey" || tab === "flow";
+  const wide = tab === "journey" || tab === "flow" || tab === "onboarding";
   return <div style={{ background: CREAM, minHeight: "100vh", color: INK, fontFamily: wide ? "'DM Sans', system-ui, sans-serif" : "Inter, system-ui, sans-serif", padding: "24px 16px 64px", boxSizing: "border-box" }}>
     <div style={{ maxWidth: wide ? 1180 : 1100, margin: "0 auto" }}>
       <h1 style={{ fontSize: 24, margin: "0 0 4px" }}>Ops</h1>
       {tabs}
       {tab === "map" ? <MapView data={g.data || null} error={g.error || null} onMark={onMark} onShot={openShot} />
+        : tab === "onboarding" ? <OnboardingView data={g.data || null} error={g.error || null} onReload={() => loadTab("onboarding")} />
         : tab === "journey" ? <JourneyView data={g.data || null} error={g.error || null} />
         : <FlowView data={g.data || null} error={g.error || null} />}
     </div>

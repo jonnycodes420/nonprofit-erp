@@ -4,6 +4,12 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
 
 ## Rules
 
+- **ONBOARD-2 (2026-11-09). An onboarding stage is read from signals, never set.** The five gates
+  (paper, data in, connections, kickoff, first month) live in `server/onboard/stages.js`; `org_onboarding`'s
+  stage, entered_at, blockers and flags are written only by `server/onboard/board.js` `recompute`. The
+  hand-typed facts are `verbal_yes_on` and `waiting_on`, and neither is a gate. A deal past its window is
+  brass. Customer-facing "Getting set up" (`/onboarding/mine`) never carries the windows, the next action,
+  Waiting on or MRR.
 - **ACCESS-1 (2026-11-06). Roles are per org, and a viewer changes nothing.** The roles are staff,
   viewer, volunteer coordinator and admin (`shared/viewOnly.js` `ROLES`). A viewer is refused in
   `requireAuth` by method: every non-GET answers 403 `view_only` unless `shared/viewOnly.js` names it

@@ -93,6 +93,7 @@ async function runSchemaInit(pool) {
   await require("./ddl/part5").run(pool);
   await require("./ddl/part6").run(pool);
   await require("./ddl/part7").run(pool);
+  await require("./ddl/onboard2").run(pool);   // ONBOARD-2: the onboarding board
 // SPLIT-2 db.js piece 49
 }
 // SPLIT-2 end
