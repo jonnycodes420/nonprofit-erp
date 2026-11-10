@@ -629,7 +629,9 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
     isClient: d.is_client === true, privacyOn: d.client_privacy === true };
 
   res.json({ today, rhythm, recurring, thankYous, thankYousSource: thankYous.length ? thankYousSource : null,
-    comingUp: comingUp.slice(0, 6), volunteering, connected, contact });
+    comingUp: comingUp.slice(0, 6), volunteering, connected, contact,
+    // WEALTH-1: the Contact card's Wealth Score row, only for someone who may see it (null otherwise).
+    wealth: await require("../wealth/profileRow").forViewer(req, d.id) });
 }));
 
 // FLOWS-3: the body is server/donors/addPerson.js, the one way a person is

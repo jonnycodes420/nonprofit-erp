@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { shownTags, shownNote } from "../../lib/internalLabels";
+import { WealthScoreRow } from "../WealthScore";   // WEALTH-1
 
 const ABOUT_MAX=500;
 const QUIET={background:"none",border:"none",padding:0,font:"inherit",color:RAIL.dim,textDecoration:"underline",textUnderlineOffset:3,cursor:"pointer"};
@@ -59,6 +60,7 @@ function AboutThemNote({donorId,initial,isReadOnly}){
 
 function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatusTags,canMajorGifts,contactPerson,donor,handleReassign,household,isAdmin,isReadOnly,isTeam,onSelectRelatedDonor,orgTeam,publicFiling,railData,reassignId,reassignLoading,relationships,scores,setConvoOpen,setReassignId,setRelatedOpen,setShowReassign,showReassign,status,onEdit}){
   const cx=(railData&&railData.contact)||{};
+  const wealth=railData&&railData.wealth;   // WEALTH-1: the rail carries it only for someone who may see it
   const hasContact=!!(donor.email||donor.phone||contactPerson||cx.address||cx.preferred||cx.privacyOn||cx.isClient||(cx.flags||[]).length);
   return <>
               {/* PROFILE-2 · 4 HOUSEHOLD AND RELATED: the household and the people and
@@ -78,6 +80,8 @@ function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatus
               <RailSection title="About" testid="dp-rail-about">
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                   <AboutThemNote donorId={donor.id} initial={donor.aboutThem||""} isReadOnly={isReadOnly}/>
+                  {/* WEALTH-1: with no Contact card (an empty record draws none), the Wealth Score sits here. */}
+                  {wealth&&!hasContact&&<dl style={{display:"grid",gridTemplateColumns:"104px 1fr",gap:"7px 10px",fontSize:12.5,margin:0}}><WealthScoreRow donorId={donor.id} initial={wealth} isReadOnly={isReadOnly} dtStyle={{color:RAIL.dim}}/></dl>}
                   <RoleLine donor={donor} isReadOnly={isReadOnly} noGifts={noGifts} birthday={donor.birthday?birthdayLabel(donor.birthday.month,donor.birthday.day,donor.birthday.year):""}/>
                   {donor.sourceRecurring&&(
                 <div data-testid="donor-source-recurring"
@@ -140,7 +144,8 @@ function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatus
               {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}><Phone value={donor.phone} bad={donor.phone_unreachable===true} badWhy={donor.phone_unreachable_reason||undefined}/><ContactFlag flags={donor.contact_flags} field="phone"/>{donor.phone_unreachable===true&&<span style={{display:"block",fontSize:11.5,color:RAIL.dim}}>Marked wrong. Never dialed or texted from Steward.</span>}</dd></>}
               {/* PROFILE-1 (header): the birthday is under the name and in Coming
                   up; a monthly plan is the Recurring card. */}
-              <ContactExtras contact={railData&&railData.contact} donorId={donor&&donor.id} isReadOnly={isReadOnly}/>
+              <ContactExtras contact={railData&&railData.contact} donorId={donor&&donor.id} isReadOnly={isReadOnly}
+                afterAddress={wealth&&donor&&donor.id?<WealthScoreRow donorId={donor.id} initial={wealth} isReadOnly={isReadOnly} dtStyle={{color:RAIL.dim}}/>:null}/>
             </dl>
           </RailSection>}
               {/* PROFILE-2 · 6 ENGAGEMENT: one word and the facts behind it. */}

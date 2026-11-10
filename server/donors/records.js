@@ -151,6 +151,8 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
     ["Tags", d => DTAGS.visibleTags(d.tags).join("|")],
     ...cfDonorDefs.map(f => [f.label, d => renderCustomValue(f, (d.custom_fields || {})[f.key])]),
   ];
+  // WEALTH-1: the score somebody set (blank when nobody has), for those who may see it.
+  if (await require("../wealth/access").maySee(req.user.userId, req.user.orgId)) columns.push(["Wealth Score", d => (d.wealth_rating == null ? "" : String(d.wealth_rating))]);
   // PROSPECT-1 — screening results are never in the default export. An admin
   // may add them with the checkbox that says what it adds (includeScreening=1).
   if (String(req.query.includeScreening || "") === "1") {

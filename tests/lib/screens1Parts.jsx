@@ -40,6 +40,8 @@ import * as ProcessingRatesCard from "../../client/src/components/settings/Proce
 import * as SavedMappings from "../../client/src/components/settings/SavedMappings.jsx";
 import * as settingsTabs from "../../client/src/components/settings/settingsTabs.js";
 import * as StaffBoardList from "../../client/src/components/settings/StaffBoardList.jsx";
+import * as MajorGiftsCheckbox from "../../client/src/components/settings/MajorGiftsCheckbox.jsx";   // WEALTH-1
+import * as WealthScoresTeamCard from "../../client/src/components/settings/WealthScoresTeamCard.jsx";   // WEALTH-1
 import * as TaxReceiptsManager from "../../client/src/components/settings/TaxReceiptsManager.jsx";
 import * as TimezoneCard from "../../client/src/components/settings/TimezoneCard.jsx";
 import * as IssuedReceipts from "../../client/src/components/settings/IssuedReceipts.jsx";   // TRUTH-3
@@ -121,6 +123,8 @@ export const CASES = [
   ["settings/SavedMappings", () => <SavedMappings.SavedMappings isReadOnly={false}/>, /Saved mappings[\s\S]*Gift Date/],
   ["settings/settingsTabs", () => <div>{settingsTabs.SETTINGS_TABS.map(t => t.label).join(", ")}</div>, /Organization, Team/],
   ["settings/StaffBoardList", () => <StaffBoardList.StaffBoardList onNavigate={noop}/>, /Staff and board/],
+  ["settings/WealthScoresTeamCard", () => <WealthScoresTeamCard.WealthScoresTeamSetting isAdmin/>, /Everyone on the team can see Wealth Scores/],
+  ["settings/MajorGiftsCheckbox", () => <MajorGiftsCheckbox.MajorGiftsCheckbox m={{ id: "u_fake", role: "member", can_major_gifts: false }} isAdmin setTeam={() => {}}/>, /Major gifts/],
   ["settings/TaxReceiptsManager", () => <TaxReceiptsManager.TaxReceiptsManager orgId="org_fake" isAdmin isReadOnly={false}/>, /Tax Receipts/],
   ["settings/IssuedReceipts", () => <IssuedReceipts.default isAdmin isReadOnly={false}/>, /Issued receipts/],
   ["settings/TimezoneCard", () => <TimezoneCard.TimezoneCard orgId="org_fake" isAdmin isReadOnly={false}/>, /time zone/i],

@@ -21,6 +21,7 @@ import { donorHref, rowClick } from "../lib/appUrls";
 import { PLAN_UNKNOWN } from "../lib/entitlement";
 import { DESIGNATION_OPTS, PATTERN_META, TIER_META } from "./donorShared";
 import { useCanMajorGifts, ROOM_LABEL } from "../lib/majorGifts";
+import { BulkWealthScore, useCanWealthScores } from "./BulkWealthScore";   // WEALTH-1
 import { ScreeningFileModal } from "./RoomToGive";
 import { offerUndo } from "./EditHistory";
 import { usePrivacy } from "./PrivacyPanel";
@@ -372,6 +373,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
   // screening results. Admins and the major gifts permission only; the
   // routes refuse anyone else.
   const canMajorGifts=useCanMajorGifts();
+  const canWealth=useCanWealthScores();   // WEALTH-1
   // FIX-22: the server sorts by Room to give (?sort=room_to_give), across
   // the whole list, so page two continues page one.
   const roomSort=sortBy==="room_to_give";
@@ -778,6 +780,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
           {!isReadOnly&&<BulkAddToJourney ids={selFiltered.map(d=>d.id)} disabled={busy} onDone={()=>{if(onBulkDone)onBulkDone();}}/>}
           {!isReadOnly&&<BulkTag ids={selFiltered.map(d=>d.id)} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
           {!isReadOnly&&<BulkAutoEmail ids={selFiltered.map(d=>d.id)} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
+          {!isReadOnly&&canWealth&&<BulkWealthScore ids={selFiltered.map(d=>d.id)} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
           {/* BUILD-85 — PLAN A FOLLOW-UP for the selection. "Call these twenty
               lapsed donors this month" had nowhere to live before this; it
               lived in Tasks, which is what kept two follow-up systems running

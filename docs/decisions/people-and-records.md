@@ -458,7 +458,8 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 ## Database tables (moved from the old "Database — key tables and columns")
 
 ### donors
-- wealth_score (integer), capacity_tier (text), score_confidence (text), score_last_updated (timestamptz), score_rationale (text) — wealth scoring system
+- wealth_score (integer), capacity_tier (text), score_confidence (text), score_last_updated (timestamptz), score_rationale (text) — wealth scoring system (automatic, 1 to 10; NOT the Wealth Score)
+- wealth_rating (smallint, 1 to 5, check), wealth_rating_set_at, wealth_rating_set_by, wealth_rating_set_by_name — the Wealth Score a person sets (WEALTH-1, major-gifts.md); never in a JSON answer under this name
 - stage (text), total_giving, last_gift_date, last_gift_amount, gift_count, tags (jsonb), notes
 - status (text) — giving tier: new/mid/major/lapsed (separate from stage!)
 - assigned_to (text), assigned_to_name (text) — MGO portfolio assignment
