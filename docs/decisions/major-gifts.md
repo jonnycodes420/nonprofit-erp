@@ -210,7 +210,7 @@ Read this when you touch the pipeline, stage or status, moves, opportunities, po
   when it is ticked and removes it when unticked, because a task is ticked from five places. A visit,
   tour or ask is a meeting and a call is a call, so their Done asks how it went, as any meeting does.
 - **Plan health is one rule** (`shared/careShape.js planHealth`): Behind (a touch past its day, not done),
-  On track (an open touch, none overdue), No plan (no touches), No next touch (all done).
+  On track (an open touch, none overdue), No plan (no touches), All done (every touch done, nothing more planned).
 - **A due or overdue Top 100 touch leads Home's list and the morning email, by rank**
   (`server/majorGifts/top100Lead.js`, `shared/threadRank.js buildQueue`), written "#3 Hollis Brandt:
   visit, due Thu".

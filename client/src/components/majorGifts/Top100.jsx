@@ -16,13 +16,14 @@ import { Figure } from "../Figure";
 import { CarePlanPanel, HealthChip, dayLabel } from "./CarePlan";
 import { useCanMajorGifts } from "../../lib/majorGifts";
 
+// Sized to fit the page at 1440 wide; narrower, the table scrolls inside its own box.
 const COLS = [
-  { key: "rank", label: "Rank", w: "74px" }, { key: "name", label: "Name", w: "1.5fr" }, { key: "wealth", label: "Wealth Score", w: "70px" },
-  { key: "lifetime", label: "Lifetime", w: "100px" }, { key: "lastGift", label: "Last gift", w: "120px" }, { key: "owner", label: "Owner", w: "110px" },
-  { key: "stage", label: "Stage", w: "90px" }, { key: "ask", label: "Ask", w: "100px" }, { key: "askBy", label: "Ask by", w: "100px" },
-  { key: "next", label: "Next step", w: "1.3fr" }, { key: "lastContact", label: "Last contact", w: "105px" }, { key: "health", label: "Plan", w: "96px" },
+  { key: "rank", label: "Rank", w: "58px" }, { key: "name", label: "Name", w: "minmax(104px,1.3fr)" }, { key: "wealth", label: "Wealth Score", w: "58px" },
+  { key: "lifetime", label: "Lifetime", w: "84px" }, { key: "lastGift", label: "Last gift", w: "88px" }, { key: "owner", label: "Owner", w: "86px" },
+  { key: "stage", label: "Stage", w: "76px" }, { key: "ask", label: "Ask", w: "80px" }, { key: "askBy", label: "Ask by", w: "88px" },
+  { key: "next", label: "Next step", w: "minmax(90px,1fr)" }, { key: "lastContact", label: "Last contact", w: "84px" }, { key: "health", label: "Plan", w: "84px" },
 ];
-const GRID = COLS.map(c => c.w).join(" ") + " 28px";
+const GRID = COLS.map(c => c.w).join(" ") + " 20px";
 const STAGES = ["prospect", "qualify", "cultivate", "solicit", "steward", "lapsed"];
 const sel = { padding: "7px 10px", border: "1px solid " + T.bg3, borderRadius: 9, fontSize: 12, background: T.white, color: T.ink };
 const btn = { background: T.green, border: "none", borderRadius: 9, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, color: T.white, cursor: "pointer" };
@@ -150,7 +151,7 @@ export function Top100View({ isReadOnly, onNavigate }) {
           <option value="">Every stage</option>{STAGES.map(s => <option key={s} value={s}>{stageName(s)}</option>)}<option value="none">Not placed</option>
         </select>
         <select aria-label="Plan" style={sel} value={filt.health} onChange={e => setFilt(f => ({ ...f, health: e.target.value }))}>
-          <option value="">Any plan</option><option value="behind">Behind</option><option value="on_track">On track</option><option value="no_plan">No plan</option><option value="no_next">No next touch</option>
+          <option value="">Any plan</option><option value="behind">Behind</option><option value="on_track">On track</option><option value="no_plan">No plan</option><option value="no_next">All done</option>
         </select>
         {!canDrag && !isReadOnly && <span style={{ fontSize: 11.5, color: T.ink3 }}>Drag works when the list is in rank order with no filter; typing a rank always works.</span>}
       </div>
@@ -162,8 +163,8 @@ export function Top100View({ isReadOnly, onNavigate }) {
           message="Add people by name above, from a person's profile (Plan of care → Add), or from Donors by ticking several and choosing Add to Top 100." />
       ) : (
         <div style={{ overflowX: "auto", background: T.white, border: "1px solid " + T.bg3, borderRadius: 14 }}>
-          <div data-testid="top100-table" style={{ minWidth: 1280 }}>
-            <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 10, padding: "10px 14px", background: T.bg2, fontSize: 10.5, fontWeight: 800, color: T.ink3 }}>
+          <div data-testid="top100-table" style={{ minWidth: 1090 }}>
+            <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 8, padding: "10px 12px", background: T.bg2, fontSize: 10.5, fontWeight: 800, color: T.ink3 }}>
               {COLS.map(c => (
                 <button key={c.key} onClick={() => head(c.key)} title={d.sentences[c.key] || `Sort by ${c.label}`} aria-sort={sort.key === c.key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
                   style={{ background: "none", border: "none", padding: 0, font: "inherit", color: sort.key === c.key ? T.ink : T.ink3, textAlign: "left", cursor: "pointer" }}>
@@ -177,7 +178,7 @@ export function Top100View({ isReadOnly, onNavigate }) {
                 draggable={canDrag} onDragStart={() => setDrag(r.donorId)} onDragEnd={() => { setDrag(null); setOver(null); }}
                 onDragOver={e => { if (canDrag && drag) { e.preventDefault(); setOver(r.donorId); } }}
                 onDrop={e => { e.preventDefault(); if (drag && drag !== r.donorId) moveTo(drag, r.rank); setDrag(null); setOver(null); }}
-                style={{ display: "grid", gridTemplateColumns: GRID, gap: 10, alignItems: "center", padding: "10px 14px", borderTop: "1px solid " + T.bg3,
+                style={{ display: "grid", gridTemplateColumns: GRID, gap: 8, alignItems: "center", padding: "10px 12px", borderTop: "1px solid " + T.bg3,
                          background: over === r.donorId ? T.gold100 : drag === r.donorId ? T.bg2 : T.white, fontSize: 12.5, color: T.ink }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   {canDrag && <span aria-hidden="true" title="Drag to reorder" style={{ cursor: "grab", color: T.ink3, fontSize: 14 }}>⋮⋮</span>}
@@ -193,7 +194,7 @@ export function Top100View({ isReadOnly, onNavigate }) {
                 <div style={{ minWidth: 0 }}>
                   <DonorLink id={r.donorId} onOpen={onNavigate ? () => onNavigate("donors", { selectDonorId: r.donorId }) : undefined}
                     style={{ fontWeight: 700, color: T.ink, textDecoration: "none", overflowWrap: "anywhere" }}>{r.name}</DonorLink>
-                  {r.goal && <div style={{ fontSize: 11, color: T.ink3, overflowWrap: "anywhere" }}>{r.goal}</div>}
+                  {r.goal && <div title={r.goal} style={{ fontSize: 11, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.goal}</div>}
                 </div>
                 <div style={{ fontWeight: 700 }}>{r.wealthScore ?? <span style={{ color: T.ink3, fontWeight: 400 }}>Not set</span>}</div>
                 <div><Figure variant="cell" kind="money" value={r.lifetimeCents / 100} label={`${r.name}'s lifetime giving`} source={{ key: "donor-lifetime", params: { donor: r.donorId } }} /></div>

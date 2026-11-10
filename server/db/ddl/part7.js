@@ -1083,8 +1083,9 @@ async function run7(pool) {
   // A TOUCH THAT IS DONE IS ON THE TIMELINE, however it was finished. A task
   // is ticked from Tasks, the bulk Done, the full edit, Home's row and the
   // Calendar; a hook in each would miss the next one, so the database writes
-  // it (the FIX-31 rule for a next step's task). Ticked: one line on the
-  // person, "Visit (plan of care): done.", once per task. Unticked: that line
+  // it (the FIX-31 rule for a next step's task). Ticked: one stewardship line
+  // on the person (a touch, so it is Last contact under meetings.js's rule),
+  // "Visit (plan of care): done.", once per task. Unticked: that line
   // goes. The name is the person who ticked it (completed_by_name, which the
   // single Done writes a statement later, so a later update fills it in).
   await pool.query(`
@@ -1102,7 +1103,7 @@ async function run7(pool) {
                    WHEN 'event_invite' THEN 'Event invite' WHEN 'impact_update' THEN 'Impact update'
                    WHEN 'note' THEN 'Handwritten note' WHEN 'ask' THEN 'Ask' ELSE 'Touch' END;
           INSERT INTO interactions (id, org_id, donor_id, type, date, note, created_by, logged_by_name, metadata)
-          VALUES ('int_' || substr(md5(random()::text || clock_timestamp()::text || NEW.id), 1, 20), NEW.org_id, NEW.donor_id, 'note',
+          VALUES ('int_' || substr(md5(random()::text || clock_timestamp()::text || NEW.id), 1, 20), NEW.org_id, NEW.donor_id, 'stewardship',
                   to_char((NOW() AT TIME ZONE COALESCE(tz, 'America/New_York'))::date, 'YYYY-MM-DD'),
                   lbl || ' (plan of care): done.', 'system:care-touch', NEW.completed_by_name,
                   jsonb_build_object('via', 'care_touch', 'taskId', NEW.id, 'touchType', NEW.touch_type));

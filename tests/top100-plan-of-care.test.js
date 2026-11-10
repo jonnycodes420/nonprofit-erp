@@ -43,7 +43,7 @@ async function reset() {
     await q(`DELETE FROM interactions WHERE org_id=$1`, [org]).catch(() => {});
     await q(`DELETE FROM tasks WHERE org_id=$1`, [org]).catch(() => {});
     await q(`DELETE FROM threads WHERE org_id=$1`, [org]).catch(() => {});
-    for (const t of ["portfolio_members", "portfolio_lists", "care_plans", "care_templates", "gifts"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
+    for (const t of ["portfolio_members", "portfolio_lists", "care_plans", "care_templates", "gifts", "atlas_actions", "voice_memos"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
     await q(`DELETE FROM donors WHERE org_id=$1`, [org]);
     await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,$2,$3,1,'active','team','America/New_York') ON CONFLICT (id) DO NOTHING`,
       [org, org === ORG ? "Top Hundred Test" : "Other Test", org === ORG ? "top-hundred-test" : "top-hundred-other"]);
@@ -139,6 +139,8 @@ const isOneToN = list => list.length > 0 && list.every((r, i) => Number(r.rank) 
   ok("§3 health is On track again", r.body.health.key === "on_track", JSON.stringify(r.body.health));
   let lines = rowsOf(await q(`SELECT note, created_by, logged_by_name FROM interactions WHERE org_id=$1 AND donor_id=$2 AND metadata->>'taskId'=$3`, [ORG, RUTH, lateTask]));
   ok("§3 one timeline line: Impact update (plan of care): done., by the person who ticked it", lines.length === 1 && lines[0].note === "Impact update (plan of care): done." && lines[0].logged_by_name === "Mo Gifts", JSON.stringify(lines));
+  ruthRow = (await api("GET", "/top100", mgo)).body.rows.find(x => x.donorId === RUTH);
+  ok("§3 a done touch is a stewardship touch, so Ruth's Last contact is today", ruthRow.lastContact && ruthRow.lastContact.date === today && ruthRow.lastContact.days === 0, JSON.stringify(ruthRow.lastContact));
   r = await api("POST", `/tasks/${lateTask}/complete`, mgo, { done: false });
   lines = rowsOf(await q(`SELECT id FROM interactions WHERE org_id=$1 AND metadata->>'taskId'=$2`, [ORG, lateTask]));
   ok("§3 taking the tick back takes the line back, and it is Behind again", r.status === 200 && lines.length === 0
@@ -147,7 +149,7 @@ const isOneToN = list => list.length > 0 && list.every((r, i) => Number(r.rank) 
   lines = rowsOf(await q(`SELECT metadata->>'taskId' AS tid FROM interactions WHERE org_id=$1 AND metadata->>'via'='care_touch'`, [ORG]));
   ok("§3 the bulk Done finishes both and logs each once", r.status === 200 && lines.length === 2, JSON.stringify(lines));
   r = await api("GET", `/donors/${RUTH}/care-plan`, mgo);
-  ok("§3 every touch done and nothing planned: No next touch", r.body.health.key === "no_next", JSON.stringify(r.body.health));
+  ok("§3 every touch done and nothing planned: All done", r.body.health.key === "no_next", JSON.stringify(r.body.health));
 
   // ── §4 templates ───────────────────────────────────────────────────────
   const INES = PEOPLE[2][0];
@@ -190,10 +192,17 @@ const isOneToN = list => list.length > 0 && list.every((r, i) => Number(r.rank) 
     && second.donorId === PEOPLE[4][0] && second.top100Rank === 5 && /^#5 Wren Delacroix: visit, due [A-Z][a-z]{2}$/.test(second.top100Touch && second.top100Touch.line),
     JSON.stringify({ n: (home.body.list || []).map(x => x.donorName), a: first.top100Touch, b: second.top100Touch }));
   ok("§6 an older ordinary task for someone off the touches comes after it", (home.body.list || []).findIndex(x => x.donorId === PEOPLE[5][0]) > 0);
+  const mail = await api("GET", "/me/morning-email", mgo);
+  const taskText = ((String(mail.body.html || "").match(/Your tasks[\s\S]*?<\/table>/) || [""])[0]).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  ok("§6 the morning email's tasks lead with the Top 100 touches by rank, then the older ordinary task",
+    /#3 Ines Calloway: visit · Due today .*#5 Wren Delacroix: visit · Overdue .*Send the receipt · Overdue/.test(taskText), taskText);
 
   // ── §7 Atlas ───────────────────────────────────────────────────────────
   await q(`INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name) VALUES ('int_t100_recent',$1,$2,'call',$3,'Caught up.',$4,'Mo Gifts')`,
     [ORG, PEOPLE[0][0], dayOffset(-10), U("mgo")]);
+  // A plain note is not contact (meetings.js, COUNTS-1): Ines stays "never".
+  await q(`INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name) VALUES ('int_t100_plain',$1,$2,'note',$3,'Mentioned her daughter.',$4,'Mo Gifts')`,
+    [ORG, PEOPLE[2][0], today, U("mgo")]);
   r = await api("POST", "/atlas", mgo, { text: "Who on my Top 100 hasn't been touched in 60 days?" });
   const said = JSON.stringify(r.body);
   ok("§7 Atlas names the quiet ones by rank and leaves out Hollis (called 10 days ago)", r.status < 300 && /#3 Ines Calloway \(never\)/.test(said) && !/Hollis/.test(said), said.slice(0, 600));

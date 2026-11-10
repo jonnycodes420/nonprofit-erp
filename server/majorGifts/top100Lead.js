@@ -63,6 +63,8 @@ async function annotate(query, orgId, rows, today) {
 
 // The morning email's tasks ({ rows, overdue, dueToday, count }): the Top 100
 // touches first, by rank, each titled with the rank, then the rest as before.
+// The email's row says "Due today" or "Overdue" itself and names the person
+// once, so the title is "#3 Hollis Brandt: visit" (no day, no second name).
 async function leadTasks(query, orgId, tasks, today) {
   const all = [...(tasks.dueToday || []), ...(tasks.overdue || [])];
   if (!all.length) return tasks;
@@ -71,7 +73,7 @@ async function leadTasks(query, orgId, tasks, today) {
   const lead = all.filter(t => touches.has(t.id) && ranks.has(t.donor_id))
     .sort((a, b) => ranks.get(a.donor_id) - ranks.get(b.donor_id) || String(a.due).localeCompare(String(b.due)))
     .map(t => ({ ...t, top100Rank: ranks.get(t.donor_id),
-      title: S.touchLine({ rank: ranks.get(t.donor_id), name: t.donor_name || "", type: t.touch_type, due: String(t.due).slice(0, 10) }, d => dayWords(d, today)) }));
+      title: S.touchLine({ rank: ranks.get(t.donor_id), name: t.donor_name || "", type: t.touch_type }) }));
   const ids = new Set(lead.map(t => t.id));
   return { ...tasks, top100: lead, ordered: [...lead, ...all.filter(t => !ids.has(t.id))] };
 }

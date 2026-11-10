@@ -82,12 +82,12 @@ export function touchesFromTemplate(template, startDay) {
 //   Behind      a touch not done whose day has passed
 //   On track    nothing overdue and the next touch is today or later
 //   No plan     no touches at all
-//   No next touch  every touch is done and nothing is planned
+//   All done    every touch is done and nothing more is planned
 export const HEALTH = {
   behind: { key: "behind", label: "Behind", sentence: "A planned touch is past its day and not done." },
   on_track: { key: "on_track", label: "On track", sentence: "The next planned touch is today or later, and none is overdue." },
   no_plan: { key: "no_plan", label: "No plan", sentence: "No touches are planned for this person." },
-  no_next: { key: "no_next", label: "No next touch", sentence: "Every planned touch is done, and nothing else is planned." },
+  no_next: { key: "no_next", label: "All done", sentence: "Every planned touch is done, and nothing else is planned." },
 };
 export function planHealth(touches, today) {
   const list = Array.isArray(touches) ? touches : [];

@@ -12,6 +12,10 @@
 "use strict";
 const P = require("../../prospect");
 
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// "Feb 8", with the year when it is not this year ("Nov 8, 2027").
+const dayWords = (day, today) => { const [y, m, d] = String(day).split("-").map(Number); return `${MON[m - 1]} ${d}${String(y) === String(today).slice(0, 4) ? "" : `, ${y}`}`; };
+
 let _shape = null;
 const shapeMod = async () => _shape || (_shape = await import("../../shared/careShape.js"));
 
@@ -39,7 +43,7 @@ async function answer({ req, query, step, top100Rows, today }) {
   if (!who) return { kind: "not_found", state: "refused", link: { tab: "top100" },
     line: n ? `Nobody is #${n} on your Top 100; it has ${rows.length}.` : `I couldn't find ${said} on your Top 100.` };
   const touches = S.touchesFromTemplate(S.QUARTERLY, today);
-  const parts = touches.map(t => `${t.label.toLowerCase()} ${t.due}`);
+  const parts = touches.map(t => `${t.label.toLowerCase()} ${t.due === today ? "today" : dayWords(t.due, today)}`);
   return { kind: "answer", state: "done", donorId: who.donorId,
     link: { tab: "careplan", donorId: who.donorId, templateId: S.QUARTERLY.id },
     line: `Here's a plan of care for #${who.rank} ${who.name} from ${S.QUARTERLY.name}: ${parts.join(", ")}. Open it to add them; nothing is added until you do.`

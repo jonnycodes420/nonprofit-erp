@@ -102,7 +102,7 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
 
   const taskLi = t => {
     const late = String(t.due).slice(0, 10) < today;
-    const donor = t.donor_id ? ` · ${L.refLinkHtml({ kind: "person", id: t.donor_id, name: displayNameCase(t.donor_name || ""), email: t.donor_email }, base, { style: QUIET })}` : "";
+    const donor = t.donor_id && !t.top100Rank ? ` · ${L.refLinkHtml({ kind: "person", id: t.donor_id, name: displayNameCase(t.donor_name || ""), email: t.donor_email }, base, { style: QUIET })}` : "";
     return `<tr><td style="padding:7px 0;font-size:13.5px;color:${INK};">
       ${L.refLinkHtml({ kind: "task", id: t.id, name: t.title }, base, { style: `color:${INK};text-decoration:underline;` })}<span style="color:${late ? TERRA : SAGE};font-weight:700;"> · ${late ? "Overdue" : "Due today"}</span><span style="color:${SAGE};">${donor}</span></td></tr>`;
   };

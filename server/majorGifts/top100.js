@@ -86,13 +86,9 @@ async function listRows(orgId, listId, today) {
       touches.get(t.donor_id).push({ id: t.id, type: t.touch_type, label: S.touchLabel(t.touch_type), due: String(t.due || "").slice(0, 10), done: t.done === 1,
         owner: t.assigned_to ? { id: t.assigned_to, name: t.assigned_to_name } : null });
     }
-    // Last contact: the last logged conversation, the portfolio's own read.
-    for (const r of await query(
-      `SELECT DISTINCT ON (donor_id) donor_id, type, date FROM interactions
-        WHERE org_id = ? AND donor_id = ANY(?::text[])
-          AND type = ANY(ARRAY['call','meeting','email','ask','note','stewardship','gift','event','visit','lunch','coffee'])
-        ORDER BY donor_id, date DESC NULLS LAST, created_at DESC`, [orgId, ids]))
-      lastConv.set(r.donor_id, { type: r.type, date: String(r.date || "").slice(0, 10) });
+    // Last contact: the one Last contact (meetings.js, COUNTS-1), the
+    // profile header's own rule, for every row in three reads.
+    for (const [id, lc] of await require("../../meetings").lastContactsFor(orgId, ids)) lastConv.set(id, lc);
     for (const r of await query(
       `SELECT donor_id, next_step_label, due_date FROM threads WHERE org_id = ? AND donor_id = ANY(?::text[]) AND closed_at IS NULL`, [orgId, ids]))
       thread.set(r.donor_id, { label: r.next_step_label, due: String(r.due_date || "").slice(0, 10) });
