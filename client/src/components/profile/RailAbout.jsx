@@ -61,7 +61,7 @@ function AboutThemNote({donorId,initial,isReadOnly}){
 function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatusTags,canMajorGifts,contactPerson,donor,handleReassign,household,isAdmin,isReadOnly,isTeam,onSelectRelatedDonor,orgTeam,publicFiling,railData,reassignId,reassignLoading,relationships,scores,setConvoOpen,setReassignId,setRelatedOpen,setShowReassign,showReassign,status,onEdit}){
   const cx=(railData&&railData.contact)||{};
   const canWealth=useCanWealthScores();   // WEALTH-1: the Wealth Score row, under the address
-  const hasContact=!!(donor.email||donor.phone||contactPerson||cx.address||cx.preferred||cx.privacyOn||cx.isClient||(cx.flags||[]).length||canWealth);
+  const hasContact=!!(donor.email||donor.phone||contactPerson||cx.address||cx.preferred||cx.privacyOn||cx.isClient||(cx.flags||[]).length);
   return <>
               {/* PROFILE-2 · 4 HOUSEHOLD AND RELATED: the household and the people and
                   organisations linked to them, each opening its profile. Manage
@@ -80,6 +80,8 @@ function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatus
               <RailSection title="About" testid="dp-rail-about">
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                   <AboutThemNote donorId={donor.id} initial={donor.aboutThem||""} isReadOnly={isReadOnly}/>
+                  {/* WEALTH-1: with no Contact card (an empty record draws none), the Wealth Score sits here. */}
+                  {canWealth&&!hasContact&&<dl style={{display:"grid",gridTemplateColumns:"104px 1fr",gap:"7px 10px",fontSize:12.5,margin:0}}><WealthScoreRow donorId={donor.id} isReadOnly={isReadOnly} dtStyle={{color:RAIL.dim}}/></dl>}
                   <RoleLine donor={donor} isReadOnly={isReadOnly} noGifts={noGifts} birthday={donor.birthday?birthdayLabel(donor.birthday.month,donor.birthday.day,donor.birthday.year):""}/>
                   {donor.sourceRecurring&&(
                 <div data-testid="donor-source-recurring"

@@ -8,6 +8,7 @@
 // until somebody clicks.
 import { useEffect, useState } from "react";
 import { apiFetch, getToken } from "../api";
+import { noteWealthScores } from "../lib/wealth";
 import { errorMessage } from "../lib/domainError";
 import { T } from "./shared";
 
@@ -15,13 +16,16 @@ const SCORES = [1, 2, 3, 4, 5];
 const QUIET = { background: "none", border: "none", padding: 0, font: "inherit", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 3 };
 const CHIP = { minWidth: 28, height: 26, borderRadius: 7, border: "1px solid " + T.bg3, background: T.white, color: T.ink, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", padding: "0 8px" };
 
-// One read of GET /me per page load, keyed on the session token.
+// Who may see it: one read of GET /me per session token (the server decides,
+// server/wealth/access.js). The answer is noted in lib/wealth.js so the profile
+// can bundle the Wealth Score read for someone known to see it.
 let pending = null, pendingFor = null;
 export function loadCanWealthScores() {
   const tok = getToken();
   if (pendingFor !== tok) { pending = null; pendingFor = tok; }
   if (!tok) return Promise.resolve(false);
-  if (!pending) pending = apiFetch("/me").then(r => !!(r && r.user && r.user.canWealthScores)).catch(() => { pending = null; return false; });
+  if (!pending) pending = apiFetch("/me").then(r => { const yes = !!(r && r.user && r.user.canWealthScores); noteWealthScores(tok, yes); return yes; })
+    .catch(() => { pending = null; return false; });
   return pending;
 }
 export function useCanWealthScores() {
@@ -72,8 +76,8 @@ export function WealthScoreRow({ donorId, isReadOnly, dtStyle, ddStyle }) {
             <button type="button" onClick={() => setPicking(false)} style={{ ...QUIET, color: T.ink3, fontSize: 12 }}>Cancel</button>
           </span>
         : isReadOnly
-          ? <span data-testid="dp-wealth-value">{set ? st.score : "Not set"}</span>
-          : <button type="button" data-testid="dp-wealth-value" title="Click to set 1 to 5, or clear it" onClick={() => setPicking(true)}
+          ? <span data-testid="dp-wealth-value" data-says-ok="WEALTH-1">{set ? st.score : "Not set"}</span>
+          : <button type="button" data-testid="dp-wealth-value" data-says-ok="WEALTH-1" title="Click to set 1 to 5, or clear it" onClick={() => setPicking(true)}
               style={{ ...QUIET, textDecoration: "underline dotted", color: set ? T.ink : T.ink3, fontWeight: set ? 700 : 400 }}>{set ? st.score : "Not set"}</button>}
       {set && setLine && !picking && <span style={{ display: "block", fontSize: 11.5, color: T.ink3 }}>{setLine}</span>}
       {/* A suggestion beside an empty score: shown, never saved, until she clicks. */}

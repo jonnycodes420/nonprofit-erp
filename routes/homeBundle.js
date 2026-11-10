@@ -74,6 +74,7 @@ const PROFILE_READS = [
   "/donors/:id/soft-credit", "/donors/:id/moves", "/donors/:id/opportunities", "/donors/:id/move-suggestions",
   "/donors/:id/designations", "/donors/:id/receipts", "/donors/:id/planned-gifts", "/donors/:id/pledges",
   "/donors/:id/materials",   // STALE-2: the Files tab counts uploads from the start, inside the bundle
+  "/donors/:id/wealth-score",   // WEALTH-1: the Contact card's row (403 inside the bundle for anyone who may not see it)
   "/mailbox", "/sequences", "/org", "/journeys", "/fundraising/campaigns", "/custom-fields?entity=gift",
 ];
 

@@ -1,7 +1,7 @@
 ## WEALTH-1 · A Wealth Score on every person (2026-11-09)
 
-Allie Barnett (Justin's Place, beta) asked for a field "where their address goes" to rank people, search
-for everyone who is a 5, and sort the whole list by it. Jonathan's call: build it as she described.
+A beta customer's director asked for a field "where their address goes" to rank people, search for
+everyone who is a 5, and sort the whole list by it. Jonathan's call: build it as she described.
 
 - **A new column, not the old one.** `donors.wealth_score` already held an automatic 1 to 10 that
   `calcWealthScore` rewrites after gifts, on existing rows. Reusing it would have shown numbers nobody set as

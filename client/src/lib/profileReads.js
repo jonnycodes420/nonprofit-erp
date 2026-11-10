@@ -12,12 +12,16 @@
 // as the panel asks for it.
 import { useRef } from "react";
 import { prefetch } from "../api";
+import { canWealthScoresNow } from "./wealth";   // WEALTH-1
 
 const enc = encodeURIComponent;
 export const PROFILE_TOP = id => [
   `/donors/${id}`, `/donors/${id}/status`, `/donors/${id}/scores`, `/donors/${id}/rail`, `/donors/${id}/relationship`,
   `/threads?donorId=${id}`, `/insights/donor/${enc(id)}`, `/donors/${enc(id)}/before-meeting`, `/donors/${id}/blocked-mail`,
   `/people/${id}`, `/atlas/notes?place=person&id=${enc(id)}`, `/donors/${id}/plan`, `/donors/${id}/journeys`,
+  // WEALTH-1: the Contact card's row, spelled as WealthScoreRow asks; only for
+  // someone known to see it, so nobody else makes the request (lib/wealth.js).
+  ...(canWealthScoresNow() ? [`/donors/${enc(id)}/wealth-score`] : []),
 ];
 export const PROFILE_BELOW = id => [
   `/donors/${id}/journey-suggestion`, `/donors/${id}/groups`, `/donors/${id}/proposals`, `/donors/${id}/relationships`,

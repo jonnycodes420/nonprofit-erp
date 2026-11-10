@@ -1221,7 +1221,9 @@ async function givingSideAndPhoneSayNothingWrong(browser) {
         const m = document.querySelector(".app-content") || document.body;
         const says = SAYS_SRC.map(([src, n]) => [new RegExp(src), n]);
         const bad = [];
-        for (const line of (m.innerText || "").split("\n")) for (const [re, n] of says) if (re.test(line)) bad.push(`${n}: ${line.trim().slice(0, 100)}`);
+        // WEALTH-1: the Wealth Score's empty state is the brief's own words ("Not set"), and only that element is exempt.
+        const okLines = new Set([...m.querySelectorAll("[data-says-ok]")].map(e => (e.innerText || "").trim()));
+        for (const line of (m.innerText || "").split("\n")) if (!okLines.has(line.trim())) for (const [re, n] of says) if (re.test(line)) bad.push(`${n}: ${line.trim().slice(0, 100)}`);
         const caps = [];
         for (const el of document.body.querySelectorAll("*")) {
           if (!el.offsetParent || el.children.length || !/[a-z]{2}/i.test(el.textContent || "")) continue;
