@@ -212,6 +212,28 @@ Read this when you touch the pipeline, stage or status, moves, opportunities, po
 - **An imported wealth screen (DonorSearch/iWave) keeps the vendor's text and never feeds `wealth_score`.**
   It lands in `donors.wealth_screen_*`. A bare "Score" or "Rating" header is not claimed. (BUILD-98 switch Part 6)
 
+- **The Top 100 is one ranked list per org, separate from assignment (TOP100-1).** `portfolio_lists`
+  (one per org, "Top 100", renamable) and `portfolio_members` (rank 1..N). Being on it is not being
+  assigned, and assignment is not being on it. Its Owner is the person's owner (`donors.assigned_to`) and
+  its Stage is the pipeline's (`donors.stage`): the list stores neither, so there is one owner and one
+  stage per person (the BUILD-30 rule).
+- **A rank change takes the list's row lock and writes every moved rank in one statement.**
+  `uq_portfolio_rank` is DEFERRABLE INITIALLY DEFERRED, so a reorder may pass through a shared rank
+  inside its transaction and never commits one. Removing someone closes the gap in the same transaction.
+- **A planned touch IS a task** (`tasks.care_plan_id`, `tasks.touch_type`). It shows in Tasks and on Home
+  and is finished by any Done. A database trigger (`trg_care_touch_line`) writes the one timeline line
+  when it is ticked and removes it when unticked, because a task is ticked from five places. A visit,
+  tour or ask is a meeting and a call is a call, so their Done asks how it went, as any meeting does.
+- **Plan health is one rule** (`shared/careShape.js planHealth`): Behind (a touch past its day, not done),
+  On track (an open touch, none overdue), No plan (no touches), All done (every touch done, nothing more planned).
+- **A due or overdue Top 100 touch leads Home's list and the morning email, by rank**
+  (`server/majorGifts/top100Lead.js`, `shared/threadRank.js buildQueue`), written "#3 Hollis Brandt:
+  visit, due Thu".
+- **Atlas's "Make a plan of care for #4" writes nothing.** It names the template's touches and opens the
+  person's plan of care, where one press adds them.
+- **Who sees the Top 100 and plans of care is `prospect.canSee`**: admins and the major gifts permission,
+  read live, on every route. Never donor-facing.
+
 ## Gotchas
 - **Two "weighted" figures exist, so keep them separate.** The board's `forecast.weighted` is ask ×
   `STAGE_WEIGHT[donor.stage]`. The proposals total uses only the probabilities she set. (BUILD-15, BUILD-99 major gifts)

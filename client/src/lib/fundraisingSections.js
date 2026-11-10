@@ -54,6 +54,7 @@ export const FR_SECTIONS = [
       // The sidebar's Pipeline folded in here. It keeps its Team gate.
       { id: "pipeline", label: "Pipeline", teamGated: true },
       { id: "proposals", label: "Proposals" },
+      { id: "top100", label: "Top 100" },   // TOP100-1: her ranked list and a plan of care each
       { id: "portfolios", label: "Portfolios" },
       { id: "plans", label: "Plans" },
     ],
@@ -91,6 +92,7 @@ export const FR_LEGACY = {
   proposals:       { section: "majorgifts", part: "proposals",       label: "Proposals" },
   portfolios:      { section: "majorgifts", part: "portfolios",      label: "Portfolios" },
   plans:           { section: "majorgifts", part: "plans",           label: "Plans" },
+  top100:          { section: "majorgifts", part: "top100",          label: "Top 100" },   // TOP100-1
   campaigns:       { section: "campaigns",  part: "campaigns",       label: "Campaigns" },
   pages:           { section: "campaigns",  part: "pages",           label: "Giving Pages" },
   recurring:       { section: "moneyin",    part: "recurring",       label: "Recurring Giving" },

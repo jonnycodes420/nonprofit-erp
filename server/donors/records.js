@@ -370,7 +370,7 @@ const PURGE_KEEP_ROW = new Set([
 // order they must go: receipts and pledges point at gifts, gifts last.
 const PURGE_CHILD_TABLES = [
   "receipts", "pledges", "memberships", "milestone_drafts", "note_reminders", "donor_materials",
-  "planned_gifts", "custom_field_values", "sequence_enrollments",
+  "planned_gifts", "custom_field_values", "sequence_enrollments", "portfolio_members", "care_plans",   // TOP100-1
   "payment_recovery_events", "recurring_subscriptions",
   "tasks", "interaction_attachments", "interactions", "gifts",
 ];

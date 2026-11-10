@@ -37,7 +37,7 @@ async function composeFor(org, u, today, team) {
   const b = c.briefSettings(u);
   const keepTimed = !(await c.userWantsEmail(u.id, "step_reminder"));
   const tqAll = await c.composeThreadNudgeQueue(org.id, today, { userId: u.id, isAdmin: u.role === "admin", keepTimed });
-  const taskAll = await c.composeDailyTaskReminder(org.id, u.id, today);
+  const taskAll = await require("../majorGifts/top100Lead").leadTasks(S().query, org.id, await c.composeDailyTaskReminder(org.id, u.id, today), today);   // TOP100-1: Top 100 touches first
   const suppressed = (!b.sections.steps && tqAll.list.length > 0) || (!b.sections.tasks && taskAll.count > 0);
   const tq = b.sections.steps ? tqAll : { list: [], more: 0, total: 0 };
   const tasks = b.sections.tasks ? taskAll : { rows: [], overdue: [], dueToday: [], count: 0 };

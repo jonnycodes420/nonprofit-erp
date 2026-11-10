@@ -9,6 +9,7 @@ import GoalCommitment from "./GoalCommitment";   // GIFTS-2: a goal can count pl
 import { MembersView } from "./Memberships";
 import { EventsDesk } from "./EventsDesk";
 import { ProposalsView, PortfolioView, PlansView, MajorGiftsDashboard } from "./MajorGifts";
+import { Top100View } from "./majorGifts/Top100";   // TOP100-1
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./Uploader";
 import { textToStory, storyToText } from "../lib/storyBlocks";
@@ -290,6 +291,8 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
       {!loading && subtab === "portfolios" && (
         <PortfolioView isReadOnly={isReadOnly} onNavigate={onNavigate} />
       )}
+
+      {!loading && subtab === "top100" && <Top100View isReadOnly={isReadOnly} onNavigate={onNavigate} />}   {/* TOP100-1 */}
 
       {!loading && subtab === "plans" && (
         <PlansView isReadOnly={isReadOnly} />
