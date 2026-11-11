@@ -68,7 +68,7 @@ ok(has(server, "donorId: g.donor_id || null"), "/fundraising/overview returns do
 ok(/import \{[^}]*interactive[^}]*\} from "\.\/shared"/.test(fin), "Finance imports interactive");
 ok(has(fin, "const gotoTxns = (patch = {}) =>"), "Finance has gotoTxns() drill helper");
 ok(has(fin, 'gotoTxns({ type: "income" })') && has(fin, 'gotoTxns({ type: "expense" })'), "Revenue/Expense stat cards drill by type");
-ok(/\.map\(\(\[label, value, color, caption, onClick\]\) => \(\s*<div key=\{label\} \{\.\.\.interactive\(onClick/.test(fin), "Finance stat cards are interactive");
+ok(/\.map\(\(\[label, value, color, caption, onClick(, basis)?\]\) => \(\s*<div key=\{label\} \{\.\.\.interactive\(onClick/.test(fin), "Finance stat cards are interactive");   // TRUTH-6: a card may carry its basis
 ok(has(fin, "gotoTxns({ fund: f.id })"), "Fund rows drill to fund-filtered transactions");
 ok(has(fin, "View txns →"), "Funds subtab row exposes a transactions drill link");
 ok(has(fin, "View ${m.label} transactions"), "Monthly breakdown rows drill to transactions");

@@ -30,7 +30,7 @@ function retentionSql(orgId, windows) {
       BOOL_OR(g.is_gift AND ${inSpan(s)}) AS gave${i},
       ROUND(COALESCE(SUM(g.amount) FILTER (WHERE g.is_money AND ${inSpan(s)}), 0)::numeric, 2) AS amt${i}`).join(",");
   const agg = `SELECT g.donor_id, ${FG.FIRST_ON_FILE_AGG("g")} AS first_on_file,${perSpan}
-      FROM (SELECT g.donor_id, g.amount, g.date, g.type, g.refunded_in_full, LEFT(g.date,10) AS dt, ${NMONEY.GIFT("g")} AS is_gift, ${NMONEY.MONEY("g")} AS is_money
+      FROM (SELECT g.donor_id, g.org_id, g.amount, g.date, g.type, g.refunded_in_full, g.scheduled_on, LEFT(g.date,10) AS dt, ${NMONEY.GIFT("g")} AS is_gift, ${NMONEY.MONEY("g")} AS is_money
               FROM gifts g WHERE g.org_id = ${p(orgId)} ORDER BY g.donor_id OFFSET 0) g
      GROUP BY g.donor_id`;
   const per = `SELECT d.id, ${FG.EARLIER("a.first_on_file", FG.IMPORTED_FIRST("d"))} AS first,
