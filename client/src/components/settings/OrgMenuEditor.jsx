@@ -42,7 +42,7 @@ function useOrgMenu(load, save, announce) {
 
 export function OrgMenuCard({ load, save, canEdit = true, who = "Everyone in your organization", announce = false }) {
   const { m, msg, put } = useOrgMenu(load, save, announce);
-  if (!m) return <div style={box} data-testid="org-menu">{msg || "Loading…"}</div>;
+  if (!m) return <div style={box} data-testid="org-menu"><div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>Menu</div><p style={note}>{msg || "Loading…"}</p></div>;
   const groups = orgNavLayout(m.layout).map(g => ({ ...g, items: g.items.filter(i => !CRM_HIDDEN_TABS.has(i.id)) }));
   const write = next => put({ layout: flattenNav(next) });
   return (
@@ -68,7 +68,7 @@ export function OrgMenuCard({ load, save, canEdit = true, who = "Everyone in you
 
 export function MajorGiftsTabsCard({ load, save, canEdit = true, announce = false }) {
   const { m, msg, put } = useOrgMenu(load, save, announce);
-  if (!m) return <div style={box} data-testid="org-mg-views">{msg || "Loading…"}</div>;
+  if (!m) return <div style={box} data-testid="org-mg-views"><div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>Major Gifts shows</div><p style={note}>{msg || "Loading…"}</p></div>;
   const on = new Set(m.mgViews || MG_VIEWS.map(v => v.id));
   const flip = (id, want) => {
     const next = MG_VIEWS.map(v => v.id).filter(v => (v === id ? want : on.has(v)));
