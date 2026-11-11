@@ -52,7 +52,7 @@ export function KickoffView({ onNavigate, onLogged }) {
       </div>
       {logged[p.id] ? <span style={{ fontSize: 13, fontWeight: 700, color: T.greenDk, padding: "8px 0" }}>Logged ✓</span>
         : <button type="button" data-testid="onb-log-call" onClick={() => setLogFor(p)}
-          style={{ background: T.greenDk, color: T.white, border: 0, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", minHeight: 36 }}>Log the call</button>}
+          style={{ background: T.greenDk, color: T.white, border: 0, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", minHeight: 36 }}>Log a touch</button>}
     </div>)}
     {logFor && <Suspense fallback={null}><LogConversationModal donor={{ id: logFor.id, name: logFor.name }} fromMove onNavigate={onNavigate}
       onSaved={() => { setLogged(l => ({ ...l, [logFor.id]: true })); onLogged && onLogged(); }} onClose={() => setLogFor(null)} /></Suspense>}

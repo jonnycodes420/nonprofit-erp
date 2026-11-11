@@ -58,6 +58,8 @@ async function seed(q, o, tag) {
   // version, a send and a report, all on this org's grant.
   await ins(q, "donor_relationships", { id: `drc_${o}`, org_id: o, donor_id_a: d, donor_id_b: `ds_${o}`, relationship_type: "program_officer" });
   await ins(q, "tasks", { id: `tgc_${o}`, org_id: o, title: `${mark} checklist item`, due: today, priority: "normal", done: 0, grant_id: `gr_${o}` });
+  // TOUCH-1 — an org's own kind of touch.
+  await ins(q, "org_touch_types", { id: `ttp_${o}`, org_id: o, label: `${mark} Birthday card` });
   await ins(q, "grant_library", { id: `glib_${o}`, org_id: o, kind: "mission", title: `${mark} Mission`, body: `${mark} library text`, version: 1 });
   await ins(q, "grant_library_versions", { id: `glv_${o}`, org_id: o, piece_id: `glib_${o}`, version: 1, title: `${mark} Mission`, body: `${mark} library text` });
   await ins(q, "grant_reports", { id: `grpt_${o}`, org_id: o, grant_id: `gr_${o}`, title: `${mark} Grant report`, status: "draft",
@@ -146,6 +148,8 @@ function resolve(p, n, B) {
     [/^\/removals\/:kind/, { kind: "membership_level", id: `mbl_${B}` }],
     [/^\/volunteer-hub\/removals\/:kind/, { kind: "shift", id: `vslot_${B}` }],
     [/^\/org\/invites\//, { id: `inv_${B}` }],
+    [/^\/touch-types\//, { id: `ttp_${B}` }],   // TOUCH-1
+    [/^\/donors\/:id\/care-plan\/touches\/:taskId/, { id: `d_${B}`, taskId: `t_${B}` }],   // TOUCH-1: a planned touch's kind or day
   ];
   for (const [re, map] of R) if (re.test(p)) return map[n];
   return undefined;

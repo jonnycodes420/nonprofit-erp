@@ -114,7 +114,11 @@ async function lastMeetingWith(orgId, donorId, { before = null } = {}) {
 // (lastContactWith, GET /donors/:id/scores), so the three cannot disagree.
 // It used to leave out events and marked notes, and the header read only Last
 // met and Last email, so a call logged today left it at "none yet".
-const CONVERSATION_TYPES = ["call", "email", "ask", "stewardship"];
+// TOUCH-1: every kind of touch counts, not only calls: a handwritten note, a
+// text, a gift sent or an event invite (shared/touchKinds.js), and anything
+// logged through "Log a touch" (metadata.touch_kind), an org's own kind included.
+const CONVERSATION_TYPES = ["call", "email", "ask", "stewardship", "letter", "text", "gift_sent", "event_invite"];
+const TOUCH_LOGGED = "(i.metadata->>'touch_kind') IS NOT NULL";
 async function conversationsWith(orgId, donorId, { limit = 500 } = {}) {
   const lim = Math.max(1, Math.min(1000, Number(limit) || 500));
   const { EVENT_CAME } = require("./shared/numbers/events");
@@ -122,7 +126,7 @@ async function conversationsWith(orgId, donorId, { limit = 500 } = {}) {
     `SELECT i.id, 'logged' AS kind, i.donor_id, i.type, i.note, LEFT(i.date, 10) AS date, i.logged_by_name AS who
        FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
       WHERE i.org_id = ? AND i.donor_id = ? AND d.deleted_at IS NULL
-        AND (i.type = ANY(?) OR (i.type = 'note' AND COALESCE(i.metadata->>'conversation', '') = 'true'))
+        AND (i.type = ANY(?) OR (i.type = 'note' AND COALESCE(i.metadata->>'conversation', '') = 'true') OR ${TOUCH_LOGGED})
         AND COALESCE(i.created_by, '') NOT LIKE 'system:email-marketing%'
         AND i.date IS NOT NULL AND i.date <> '' AND LEFT(i.date, 10) <= ${ORG_TODAY("i")}
       ORDER BY i.date DESC NULLS LAST, i.id DESC LIMIT ${lim}`, [orgId, donorId, CONVERSATION_TYPES]),
@@ -157,7 +161,7 @@ async function lastContactsFor(orgId, donorIds) {
     `SELECT DISTINCT ON (i.donor_id) i.donor_id, i.type, 'logged' AS kind, LEFT(i.date, 10) AS date
        FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
       WHERE i.org_id = ? AND i.donor_id = ANY(?::text[]) AND d.deleted_at IS NULL
-        AND (i.type = ANY(?) OR (i.type = 'note' AND COALESCE(i.metadata->>'conversation', '') = 'true'))
+        AND (i.type = ANY(?) OR (i.type = 'note' AND COALESCE(i.metadata->>'conversation', '') = 'true') OR ${TOUCH_LOGGED})
         AND COALESCE(i.created_by, '') NOT LIKE 'system:email-marketing%'
         AND i.date IS NOT NULL AND i.date <> '' AND LEFT(i.date, 10) <= ${ORG_TODAY("i")}
       ORDER BY i.donor_id, LEFT(i.date, 10) DESC, i.id DESC`, [orgId, ids, CONVERSATION_TYPES]),

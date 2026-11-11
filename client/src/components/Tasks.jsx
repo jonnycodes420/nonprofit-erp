@@ -14,6 +14,7 @@ import { useChanged } from "../lib/changes";   // STALE-1: the one channel (told
 import { dueNowWords } from "../lib/taskBadge";
 import { countLabel } from "../../../shared/countWords.js";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { PlannedTouchOffer } from "./majorGifts/PlannedTouchOffer";   // TOUCH-1
 
 // TASKS-2 — Tasks, the place a development director runs her week from.
 // Views (Today, Upcoming, Overdue, Later, No date, Done) each carry the count
@@ -63,6 +64,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
   const [draft, setDraft] = useState(null);         // a thank-you or email task's draft
   const [sheet, setSheet] = useState(null);         // a task open in the sheet
   const [finish, setFinish] = useState(null);       // a call/meeting being finished
+  const [touchOffer, setTouchOffer] = useState(null);   // TOUCH-1: a planned touch, offered as a touch to log
   const [snoozeFor, setSnoozeFor] = useState(null);
 
   useEffect(() => { apiFetch("/org/team").then(r => setTeam(Array.isArray(r) ? r : [])).catch(() => {}); }, []);
@@ -109,6 +111,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
   const tick = async t => {
     if (isReadOnly) return;
     setErr("");
+    if (!t.done && t.touch_type && t.donor_id) { setTouchOffer(t); return; }   // TOUCH-1: any day, early is fine
     if (!t.done && NEEDS_OUTCOME.has(t.kind) && t.donor_id) { setFinish(t); return; }
     try {
       const row = await complete(t, !t.done);
@@ -257,6 +260,8 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
 
       {sheet && <TaskSheet t={sheet} team={team} isReadOnly={isReadOnly} onClose={() => setSheet(null)}
         onChanged={async () => { await load(); }} onError={say} onFinish={t => { setSheet(null); if (NEEDS_OUTCOME.has(t.kind) && t.donor_id) setFinish(t); else tick(t); }} />}
+      {touchOffer && <PlannedTouchOffer task={touchOffer} onClose={() => setTouchOffer(null)} onLogged={async () => { setTouchOffer(null); await load(); }}
+        onJustDone={async () => { const t = touchOffer; setTouchOffer(null); try { await complete(t, true); await load(); offerUndo({ message: `Done: ${t.title}.`, undoAction: async () => { await complete(t, false); await load(); } }, t.title); } catch (e) { say(e); } }} />}
       {finish && <FinishSheet t={finish} today={today} onClose={() => setFinish(null)} onDone={async (row) => {
         setFinish(null); await load();
         const t = finish;

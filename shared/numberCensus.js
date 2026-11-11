@@ -90,7 +90,7 @@ export const NUMBER_CENSUS = [
     id: "profile.contact",
     surface: "Donor profile",
     label: "Last contact",
-    computation: "figureSources donor-contact-gap: whole days between the org's civil today and the most recent conversation (meetings.js conversationsWith, COUNTS-1: a held meeting, a call, an email sent or received, an ask, a stewardship touch, a note marked as a conversation, or an event they came to; a plain note, a newsletter or a gift on its own is not one)",
+    computation: "figureSources donor-contact-gap: whole days between the org's civil today and the most recent conversation (meetings.js conversationsWith, COUNTS-1: a held meeting, a call, a handwritten note, an email sent or received, a text, a gift sent, an event invite or any touch logged through Log a touch (TOUCH-1), an ask, a stewardship touch, a note marked as a conversation, or an event they came to; a plain note, a newsletter or a gift on its own is not one)",
     sentence: "How long since the last contact with them: a call, a meeting, an email sent or received, a note marked as a conversation, or an event they came to. A gift on its own does not count. Click it for every contact on the record, most recent first.",
     where: HOVER,
     testid: "dp-tile-def-Last contact",

@@ -163,8 +163,10 @@ const DUE_NOW = c => (Number(c.today) || 0) + (Number(c.overdue) || 0);
     const t0 = Number((await tasksTab.textContent().catch(() => "0")) || 0);
     await page.locator('[data-testid="dp-primary"]').first().click();
     await page.locator('[data-testid="conv-line"]').fill("Called about the walk, he will bring two friends");
+    // TOUCH-1: "Log a touch" opens on Call; its next step is optional, so she types one.
+    await page.locator('[data-testid="touch-next"]').fill("Follow up");
     await page.getByLabel("Next step due date").fill(today);
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.locator('[data-testid="touch-save"]').click();
     await page.locator('[data-testid="conv-line"]').waitFor({ state: "detached", timeout: 15000 }).catch(() => {});
     await page.waitForFunction(([n]) => { const el = document.querySelector('[data-testid="tasks-rail-badge"]'); return el && Number(el.textContent) === n; }, [b0 + 1], { timeout: 15000 }).catch(() => {});
     const b1 = Number((await badge.textContent().catch(() => "")) || NaN);

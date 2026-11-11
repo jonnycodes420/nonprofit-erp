@@ -125,7 +125,7 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
                 to press. Emerald means "this is the button" and exactly one thing
                 may mean that; the rest are outlines. */}
             <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} className="dph-primary" data-testid="dp-primary" style={{whiteSpace:"nowrap",minHeight:40,boxSizing:"border-box",background:T.greenDk,border:"none",borderRadius:9,padding:"0 16px",color:T.white,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
-              Log a call
+              Log a touch
             </button>
             {/* BUILD-85 — plan forward. Offered only when there is NO open thread,
                 because one open step per donor is the model and a second button
