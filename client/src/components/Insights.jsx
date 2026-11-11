@@ -649,7 +649,7 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
               </div>
             )}
             <div className="moves-acts" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
-              {!isReadOnly && <button type="button" className="moves-btn" data-testid="move-action" style={BTN_PRIMARY} disabled={busy} onClick={doAction}>{m.action.label}</button>}
+              {!isReadOnly && <button type="button" className="moves-btn" data-testid="move-action" title={m.action.why || undefined} style={BTN_PRIMARY} disabled={busy} onClick={doAction}>{m.action.label}</button>}
               {!isReadOnly && <button type="button" className="moves-btn" data-testid="move-not-now" style={BTN_QUIET} disabled={busy} onClick={() => setMode(mode === "snooze" ? null : "snooze")}>Not now</button>}
               {!isReadOnly && <button type="button" className="moves-btn" data-testid="move-not-fit" style={BTN_QUIET} disabled={busy} onClick={() => setMode(mode === "dismiss" ? null : "dismiss")}>Doesn't fit</button>}
               {!isReadOnly && <button type="button" data-testid="move-done" style={LNK} disabled={busy} onClick={() => act("done", {}, `Done. ${m.name} is off your moves.`)}>Done</button>}

@@ -595,10 +595,11 @@ async function pairBody(req) {
     ? Number(A.gift_count || 0) > Number(B.gift_count || 0)
     : new Date(A.created_at) <= new Date(B.created_at);
   const kept = keepA ? A : B, other = keepA ? B : A;
-  // SPEED-2: the four reads leave together
-  const [households, judged, movingA, movingB] = await Promise.all([
+  // SPEED-2: the reads leave together (FLOWS-6: the owners by name, server/dataHealth/pairOwners.js)
+  const [households, judged, movingA, movingB, users] = await Promise.all([
     query("SELECT id, name FROM households WHERE org_id=? AND id = ANY(?)", [req.user.orgId, [A.household_id, B.household_id].filter(Boolean)]).catch(() => []),
-    judge(A, B), movingCounts(req.user.orgId, A.id), movingCounts(req.user.orgId, B.id)]);
+    judge(A, B), movingCounts(req.user.orgId, A.id), movingCounts(req.user.orgId, B.id),
+    require("../server/dataHealth/pairOwners").ownersByName(query, req.user.orgId, [A.assigned_to, B.assigned_to])]);
   return {
     keptId: kept.id, otherId: other.id,
     records: { [A.id]: A, [B.id]: B },
@@ -608,6 +609,7 @@ async function pairBody(req) {
     choices: DH.keptFirstChoices(kept, other),
     choicesFor: { [kept.id]: DH.keptFirstChoices(kept, other), [other.id]: DH.keptFirstChoices(other, kept) },
     households: Object.fromEntries(households.map(h => [h.id, h.name])),
+    users,
     reasons: judged ? judged.reasons : [], confidence: judged ? judged.confidence : null,
     crossHousehold: !!A.household_id && !!B.household_id && A.household_id !== B.household_id,
     moving: { [A.id]: movingA, [B.id]: movingB },

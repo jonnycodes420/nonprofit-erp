@@ -741,10 +741,12 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
     // An open thread on this donor closes on this conversation, the outcome.
     // SENDS-1: a skip closes nothing at all, the follow-up it was opened on
     // included (server/tasks/logClose.js, the one rule for every log path).
-    const closedRows = await LOG_CLOSE.closeOnLog(client, queryTx, { orgId, donorId: req.params.id, interactionId: intId, skipped: nsSkipped });
+    // FLOWS-6: the same step again is carried to its new day, never closed and reopened (logClose.js).
+    const carried = await LOG_CLOSE.carrySameStep(client, queryTx, { orgId, donorId: req.params.id, interactionId: intId, step });
+    const closedRows = carried ? [] : await LOG_CLOSE.closeOnLog(client, queryTx, { orgId, donorId: req.params.id, interactionId: intId, skipped: nsSkipped });
 
-    let thread = null;
-    if (step) {
+    let thread = carried;
+    if (step && !carried) {
       // The meeting/visit chain: when the user KEPT the thank-you-note
       // default, the second thread (Follow up, +14 from the touch) rides
       // along and prefills the prompt when this one closes. A changed type
@@ -873,6 +875,9 @@ app.post("/interactions/:id/suggest", requireAuth, wrap(async (req, res) => {
   const out = [];
   for (const c of suggestions) {
     if (i.done.includes(c.kind)) continue;
+    // FLOWS-6 (W-1110-Donors-36X): a touch logged with the Next step box answered
+    // it (left empty is no next step), so the note is never asked again.
+    if (c.kind === "next" && (i.meta.next_step === "skipped" || i.meta.next_step === "set")) continue;
     if (c.kind === "planned") {
       const [has] = await query(`SELECT 1 FROM donor_designations WHERE org_id = ? AND donor_id = ? AND kind IN ('planned_prospect','planned_confirmed','estate')`, [orgId, i.donor_id]);
       if (has) continue;

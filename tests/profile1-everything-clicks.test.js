@@ -413,7 +413,8 @@ function inventory() {
       if (vp.width === 1440) {
         ok("§8 the groups, in order", !!g && JSON.stringify(g.headings) === JSON.stringify(["Reach out", "Plan", "Know them", "Their record"]), g && g.headings);
         ok("§8 Add a task is not in the menu (the Task button is beside More)", !!g && !g.labels.includes("Add a task") && await s.page.locator("[data-testid=dp-task]").count() === 1);
-        ok("§8 Plan a follow-up stays in the menu while Next step has no button for it (an open ask)", !!g && g.labels.includes("Plan a follow-up") && await s.page.locator("[data-testid=dp-next-plan]").count() === 0, g && g.labels);
+        // FLOWS-6 (W-1109-Donors-41): Next step always carries Plan a follow-up now, an open ask included, so the menu leaves it out: once on the screen.
+        ok("§8 Plan a follow-up is on the screen once: on Next step, and not again in the menu", !!g && !g.labels.includes("Plan a follow-up") && await s.page.locator("[data-testid=dp-next-plan]").count() === 1, g && g.labels);
         ok("§8 the first item has focus", !!g && g.focusFirst);
         // Arrow keys walk the items in reading order, across groups; Esc closes and hands focus back.
         const walk = [];
