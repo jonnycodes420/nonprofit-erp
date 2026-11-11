@@ -1,0 +1,128 @@
+# FLAKE-3 · ONE SUITE, N TIMES IN A ROW, ON CI'S OWN MACHINES.
+#
+# A flake is closed by counts, not by one green rerun: each suite runs `count`
+# times on one shard (tests/shard.sh, its own database, server and preview,
+# exactly as the battery runs it), one job per suite, and the job is red if any
+# run was. The summary names each red run's last line.
+#
+#   gh workflow run repeat.yml -f suites='["lag1","integrity3"]' -f count=30
+#
+# A branch named repeat/<anything> runs it too, with the defaults (dispatch only
+# reaches a workflow that is already on main). It deploys nothing, and it is
+# not part of CI's gate.
+name: Repeat
+
+on:
+  workflow_dispatch:
+    inputs:
+      suites:
+        description: 'Suites, as a JSON list of names (tests/<name>.test.js)'
+        default: '["lag1","integrity3","load1-no-jam"]'
+      count:
+        description: 'Runs of each suite'
+        default: '30'
+  push:
+    branches: ['repeat/**']
+
+permissions:
+  contents: read
+
+jobs:
+  repeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ${{ fromJSON(inputs.suites || '["lag1","integrity3","load1-no-jam"]') }}
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: steward
+          POSTGRES_PASSWORD: steward
+          POSTGRES_DB: steward_loadtest
+        ports:
+          - 5544:5432
+        options: >-
+          --health-cmd "pg_isready -U steward"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_SSL: disable
+      SHARD_PGUSER: steward
+      PGPASSWORD: steward
+      PLAYWRIGHT_DIR: ${{ github.workspace }}/.playwright
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+      REQUIRE_BROWSER: "1"
+      SUITE: ${{ matrix.suite }}
+      COUNT: ${{ inputs.count || '30' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            client/package-lock.json
+      - name: node_modules cache key
+        id: nm-keys
+        run: echo "key=node-modules-${ImageOS:-ubuntu}-node$(node -p 'process.versions.node.split(".")[0]')-${{ hashFiles('package-lock.json', 'client/package-lock.json') }}" >> "$GITHUB_OUTPUT"
+      - name: Restore node_modules (server + client)
+        id: nm-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            client/node_modules
+          key: ${{ steps.nm-keys.outputs.key }}
+      - name: Install deps (locked)
+        if: steps.nm-cache.outputs.cache-hit != 'true'
+        run: npm ci && npm ci --prefix client
+      - name: Playwright cache keys
+        id: pw-keys
+        run: echo "debs=pw-debs-${ImageOS:-ubuntu}-${ImageVersion:-unknown}-1.61.1-webkit" >> "$GITHUB_OUTPUT"
+      - name: Restore Playwright (package + browsers)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .playwright
+            .playwright-browsers
+          key: playwright-${{ runner.os }}-1.61.1-webkit
+      - name: Restore Playwright's system packages (.deb)
+        uses: actions/cache/restore@v4
+        with:
+          path: .playwright-debs
+          key: ${{ steps.pw-keys.outputs.debs }}
+          restore-keys: pw-debs-
+      - name: Install Playwright + Chromium
+        timeout-minutes: 35
+        env:
+          PW_DEB_CACHE: ${{ github.workspace }}/.playwright-debs
+        run: bash scripts/ci/install-playwright.sh 1.61.1
+      # The client, built for this shard's API (port base 6000, shard 1 → :6010),
+      # when the suite has a browser leg.
+      - name: Client build (browser suites)
+        run: |
+          if node -e 'process.exit(require("./tests/lib/suites").needsDist(process.argv[1]) ? 0 : 1)' "$SUITE"; then
+            node scripts/ci/dist-fresh.js --rebuild --api http://localhost:6010
+          fi
+      - name: The suite, ${{ env.COUNT }} times
+        env:
+          SHARD_OUT: /tmp/steward-shards
+          SUITE_LOG_DIR: /tmp/steward-suite-logs
+        run: |
+          list=$(for i in $(seq 1 "$COUNT"); do printf '%s ' "$SUITE"; done)
+          SHARD_N=1 SHARD_PORT_BASE=6000 SHARD_SUITES="$list" bash tests/shard.sh || true
+          node -e '
+            const j = JSON.parse(require("fs").readFileSync("/tmp/steward-shards/shard-1.json", "utf8"));
+            const rows = j.suites || [];
+            const red = rows.map((r, i) => ({ ...r, i: i + 1 })).filter(r => r.rc !== 0);
+            console.log(`${process.env.SUITE}: ${rows.length - red.length} green, ${red.length} red, of ${rows.length} (asked ${process.env.COUNT})`);
+            for (const r of red) console.log(`  run ${r.i} red: ${r.last}`);
+            process.exit(red.length || rows.length !== Number(process.env.COUNT) ? 1 : 0);' || { grep -h -E "FAIL|Error" /tmp/steward-suite-logs/shard-1/*.red-*.log | head -40; exit 1; }
+      - name: Server log on failure
+        if: failure()
+        run: tail -80 /tmp/steward-shards/server-1.log || true

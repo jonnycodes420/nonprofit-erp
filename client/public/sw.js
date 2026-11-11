@@ -22,8 +22,13 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  // Let API calls and Railway backend pass through without caching
+  // Let API calls and Railway backend pass through without caching.
+  // FLAKE-3: and anything on another origin. The API is always one (Railway in
+  // production, a localhost port in tests), but only production's matched the
+  // two names below, so in tests this worker stood in front of every API read
+  // and cached them: not what production does.
   if (
+    new URL(event.request.url).origin !== self.location.origin ||
     event.request.url.includes('railway.app') ||
     event.request.url.includes('/api/') ||
     event.request.method !== 'GET'
