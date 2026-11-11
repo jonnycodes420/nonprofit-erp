@@ -22,7 +22,7 @@
 import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../api";
 import { T, firstNameOf, fmtFull } from "./shared";
-import { displayDate, humanDates } from "../../../shared/displayDate.js";
+import { displayDate, displayDateShort, humanDates } from "../../../shared/displayDate.js";
 import { askConfirm } from "./ConfirmDialog";
 import BeforeYourMeeting from "./BeforeYourMeeting";   // VOICE-3
 import { Figure } from "./Figure";
@@ -559,6 +559,12 @@ function MailFileLinks({ files }) {
 const KIND_WORD = { meeting: "Meeting", call: "Call", email: "Email", note: "Note", ask: "Ask", stewardship: "Stewardship", stage_change: "Stage change" };
 function metaOf(i) {
   try { return typeof i?.metadata === "string" ? JSON.parse(i.metadata || "{}") : (i?.metadata || {}); } catch { return {}; }
+}
+// FLOWS-6 (W-1110-Donors-36X): "From your note", drawn only around the chips there are.
+export function HeardCard({ last, onChanged }) {
+  return <ConversationChips interactionId={last.id} onChanged={onChanged}
+    heading={<div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>From your note: {conversationTitle(last)}, {displayDateShort(last.date, orgTodayCivil())}</div>}
+    wrap={inner => <section data-testid="dp-heard" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "14px 18px", display: "flex", flexDirection: "column", gap: 6 }}>{inner}</section>}/>;
 }
 export function conversationTitle(i) {
   const meta = metaOf(i);
