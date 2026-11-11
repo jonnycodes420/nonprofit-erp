@@ -71,13 +71,20 @@ function buildToday(input, now, tz = "America/New_York") {
   }
   stuck.sort((a, b) => (b.days - b.limit) - (a.days - a.limit));
 
+  // Part B: a contact or deal emailed with no reply for N days (email.replyFacts).
+  const names = new Map((input.deals || []).map(d => [`deal:${d.id}`, d.displayName]));
+  for (const [k, n] of Object.entries(input.contactNames || {})) names.set(`contact:${k}`, n);
+  const noReply = Object.entries(input.noReply || {}).filter(([k, f]) => f.noReplyDays != null && names.has(k))
+    .map(([k, f]) => { const [type, id] = k.split(":"); return { days: f.noReplyDays, says: `${names.get(k)}: no reply in ${f.noReplyDays} days`, open: { type, id, name: names.get(k) } }; })
+    .sort((a, b) => b.days - a.days);
+
   const revisit = (input.deals || []).filter(d => d.stage_kind === "later" && d.revisit_on && d.revisit_on <= today)
     .sort((a, b) => a.revisit_on.localeCompare(b.revisit_on))
     .map(d => ({ on: d.revisit_on, overdue: d.revisit_on < today, says: `Revisit ${d.displayName}`, open: { type: "deal", id: d.id, name: d.displayName } }));
 
   return {
     today, week: { from: monday, to: sunday },
-    lines: { due, revisit, trials, quiet, noNext, meetings, stuck },
+    lines: { due, revisit, noReply, trials, quiet, noNext, meetings, stuck },
     sentences: {
       due: "Open tasks and deals' next steps due today or earlier. Overdue first.",
       trials: `Trials and betas ending in the next ${TRIAL_DAYS} days: a deal's own end date, or its linked Steward org's trial.`,
@@ -86,6 +93,7 @@ function buildToday(input, now, tz = "America/New_York") {
       meetings: "Meetings logged for this week, Monday to Sunday.",
       stuck: "Open deals that have sat in one stage longer than that stage's limit.",
       revisit: "Deals parked in Later whose revisit date is today or earlier.",
+      noReply: "Contacts and deals you emailed last, with no reply since, for the days set in Sales settings or more.",
     },
   };
 }
@@ -103,7 +111,9 @@ async function loadToday(query, dealRows, stages, now = Date.now()) {
   const [tasksR, meetingsR, facts] = await Promise.all([ACT.withRecords(query, tasks), ACT.withRecords(query, meetings), LINK.facts(query, links.map(l => l.stewardOrgId))]);
   const limit = new Map([...stages.values()].map(s => [s.id, s.limit_days]));
   const deals = dealRows.map(d => ({ ...d, limit_days: limit.get(d.stage_id) }));
-  return { tasks: tasksR, meetings: meetingsR, deals, links, facts };
+  const contacts = await query(`SELECT id, first_name, last_name, emails FROM sales_contacts WHERE deleted_at IS NULL`);
+  const contactNames = Object.fromEntries(contacts.map(c => [c.id, [c.first_name, c.last_name].filter(Boolean).join(" ") || (c.emails || [])[0] || "(no name)"]));
+  return { tasks: tasksR, meetings: meetingsR, deals, links, facts, contactNames };
 }
 
 module.exports = { buildToday, loadToday, civil, addDays, TRIAL_DAYS, QUIET_DAYS };

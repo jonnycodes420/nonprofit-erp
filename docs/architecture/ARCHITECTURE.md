@@ -110,6 +110,7 @@ rather than writing a second.
 | Suggested ask | `shared/numbers/ask.js` (NUMBERS-4): one rule for the profile (`engagement.suggestedAsk`) and every Insights card, through `shared/smartAmounts.suggestedAskCents`, rounded by `naturalAskCents`; a rising donor steps up only when Room to give is known (`roomKnown`, NUMBERS-5) |
 | People and households | `shared/numbers/households.js` (NUMBERS-4): `PERSON` (not deleted, not sample), `counts()` (people, households with a live person, giving units on EVENTS-3's `PARTY`) |
 | Net and fee | `shared/giftFooting.js` |
+| A channel partner's payout (SALES-1) | `shared/numbers/partnerPayout.js`: `termOf`, `owedByMonth` (percent of ONBOARD-2's MRR or a flat amount, within the term's months and cap) |
 
 Every number on a screen is a `<Figure>` with a `source` (CLAUDE.md), so the place that computes it
 is also the place its rows come from.

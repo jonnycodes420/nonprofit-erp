@@ -27,6 +27,17 @@ import { apiFetch } from "../api";
 // hand-copying a palette — which is the exact drift publicTheme.js exists to
 // stop, and which the brand guard catches within a minute of trying.
 import { T } from "./publicTheme";
+// SALES-1: the sales mailbox's own consent marks its state's nonce ("sales.").
+// The state is base64url of "org\0user\0nonce" (shared/oauth.js encodeState);
+// it is read here only to choose where to finish, and the server checks its signature.
+const isSalesState = st => {
+  try {
+    const t = String(st || "").split(".")[0].replace(/-/g, "+").replace(/_/g, "/");
+    const bin = atob(t + "=".repeat((4 - (t.length % 4)) % 4));
+    const nonce = new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))).split("\u0000")[2] || "";
+    return nonce.startsWith("sales.");
+  } catch { return false; }
+};
 const PAL = { cream: T.bg, white: T.pureWhite, ink: T.ink, ink3: T.ink3,
               emerald: T.greenDk, edge: T.bg2 };
 
@@ -57,6 +68,14 @@ export default function OAuthCallback() {
     if (!localStorage.getItem("npe_token")) {
       setState({ phase: "signin",
         sentence: "Sign in first, then open Connections and press Connect again. Nothing was connected, and this link cannot be used twice." });
+      return;
+    }
+    // SALES-1: a state started from /ops → Sales settings (its nonce begins
+    // "sales.") finishes at the sales mailbox, never at an org's Connections.
+    if (isSalesState(st)) {
+      apiFetch(`/ops/sales/mailbox/${encodeURIComponent(provider)}/complete`, { method: "POST", body: JSON.stringify({ code, state: st }) })
+        .then(r => { setState({ phase: "done", sentence: r.sentence }); setTimeout(() => nav(`/ops?tab=sales&panel=settings`, { replace: true }), 1200); })
+        .catch(e => setState({ phase: "failed", sentence: e?.message || "Steward could not finish the connection. Nothing was connected." }));
       return;
     }
     apiFetch(`/oauth/${encodeURIComponent(provider)}/complete`, {

@@ -10,6 +10,7 @@ import { RailSection, useNarrow } from "../../../components/StewardEditor";
 import { INK, WHITE, CREAM, EMERALD, BRASS, TERRA, card, h2, says, btn, quiet, box, link, brassTag, usd, dayWords, whenWords, TYPE_WORDS, InlineField, fieldsOf, valueAt } from "./salesBits";
 import Timeline from "./Timeline";
 import NewRecord from "./NewRecord";
+import DealPartners from "./DealPartners";
 
 const PLURAL = { org: "Organizations", contact: "Contacts", deal: "Deals" };
 const SIDES = { org: ["contact", "deal"], contact: ["org", "deal"], deal: ["org", "contact"] };
@@ -146,7 +147,10 @@ export default function RecordPage({ type, id, meta, open, onBack, onChanged }) 
   return <div data-sales-record={`${type}:${id}`}>
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
       <button type="button" style={link} onClick={onBack}>← {PLURAL[type]}</button>
-      <h2 style={{ ...h2, fontSize: 20, margin: 0, flex: 1 }}>{r.displayName} <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.6 }}>{TYPE_WORDS[type]}</span></h2>
+      <h2 style={{ ...h2, fontSize: 20, margin: 0, flex: 1 }}>{r.displayName} <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.6 }}>{TYPE_WORDS[type]}</span>
+        {d.reply ? <span style={{ fontSize: 12.5, fontWeight: 500, marginLeft: 10 }} data-sales-reply="1" title={`Last emailed: the latest email you sent that is on this record. No reply: you emailed last and nothing came back for ${d.noReplyAfterDays} days or more.`}>
+          {d.reply.lastEmailedAt ? `Last emailed ${whenWords(d.reply.lastEmailedAt)}` : "Not emailed yet"}
+          {d.reply.noReplyDays != null ? <span style={{ ...brassTag, marginLeft: 6 }}>No reply in {d.reply.noReplyDays} days</span> : null}</span> : null}</h2>
       {confirmDel ? <span style={{ fontSize: 13 }}>Delete only this {TYPE_WORDS[type].toLowerCase()}? What it links to stays.{" "}
         <button type="button" style={{ ...btn, background: TERRA }} onClick={del} data-sales-delete-go="1">Yes, delete</button>{" "}
         <button type="button" style={quiet} onClick={() => setConfirmDel(false)}>Cancel</button></span>
@@ -177,12 +181,14 @@ export default function RecordPage({ type, id, meta, open, onBack, onChanged }) 
         <RailSection id="stamp" title="Record" testid="rail-stamp" defaultOpen={false}>{stamp.map(fieldRow)}
           <div style={{ fontSize: 12, opacity: 0.7 }}>Made by {r.created_by_name}{r.updated_by_name ? `, last changed by ${r.updated_by_name}` : ""}</div></RailSection>
       </aside>
-      <main style={{ minWidth: 0 }}><Timeline type={type} id={id} items={d.timeline} linked={d.linked} meta={meta} open={open} reload={changed} /></main>
+      <main style={{ minWidth: 0 }}><Timeline type={type} id={id} items={d.timeline} emails={d.emails || []} linked={d.linked} meta={meta} open={open} reload={changed} /></main>
       <aside style={{ background: WHITE, borderRadius: 12, border: `1px solid ${INK}14`, overflow: "hidden" }} data-sales-rail="right">
         {SIDES[type].map(side => <Linked key={side} type={type} id={id} side={side} rows={d.linked[side]} meta={meta} open={open} reload={changed} />)}
         {type !== "contact" ? <RailSection id="steward" title="Steward account" testid="rail-steward" defaultOpen={!!d.steward}>
           <StewardBox s={d.steward} orgId={id} reload={changed} canLink={type === "org"} /></RailSection> : null}
         {d.onboarding ? <RailSection id="gates" title="Onboarding gates" testid="rail-gates"><Gates o={d.onboarding} /></RailSection> : null}
+        {type === "deal" ? <RailSection id="partners" title="Partners" testid="rail-partners" defaultOpen={(d.partners || []).length > 0}>
+          <DealPartners dealId={id} lines={d.partners || []} reload={changed} /></RailSection> : null}
       </aside>
     </div>
   </div>;

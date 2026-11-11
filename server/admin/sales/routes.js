@@ -80,7 +80,9 @@ function mount(app, { query, run, wrap, opsOnly }) {
     const [deals, pipelines, s, history] = await Promise.all([LISTS.rowsFor(query, "deal"), PIPES.readAll(query), settings(query),
       query(`SELECT deal_id, to_stage_id, to_name, at FROM sales_stage_history WHERE at > ?`, [new Date(now - 400 * 86400000).toISOString()])]);
     const stages = PIPES.stageIndex(pipelines);
-    const today = TODAY.buildToday(await TODAY.loadToday(query, deals, stages, now), now, s.tz);
+    const input = await TODAY.loadToday(query, deals, stages, now);
+    input.noReply = await require("./email").replyFacts(query, now, await require("./email").noReplyDays(query));
+    const today = TODAY.buildToday(input, now, s.tz);
     // MRR now is ONBOARD-2's own figure, computed once, there.
     let mrrNowCents = 0, mrrError = null;
     try { mrrNowCents = (await require("../../onboard/board").board(query, now)).summary.mrrNowCents; }
@@ -129,7 +131,18 @@ function mount(app, { query, run, wrap, opsOnly }) {
     const [linked, timeline, merges] = await Promise.all([LINKS.linkedOf(query, type, id), ACT.forRecord(query, type, id),
       type === "deal" ? [] : MERGE.mergesOf(query, type, id)]);
     const out = { ok: true, type, record: { ...row, displayName: M.nameOf(type, row), value_cents: row.value_cents != null ? Number(row.value_cents) : undefined }, linked, timeline, merges };
+    // Part B: captured email on this record, and "last emailed" / "no reply in N days".
+    const MAIL = require("./email");
+    const days = await MAIL.noReplyDays(query);
+    out.emails = await MAIL.forRecord(query, type, id);
+    out.reply = type === "org" ? null : ((await MAIL.replyFacts(query, Date.now(), days))[`${type}:${id}`] || { lastEmailedAt: null, noReplyDays: null });
+    out.noReplyAfterDays = days;
     if (type === "deal") {
+      const P = require("./partners");
+      const { rows: led } = await require("./routesB").ledgerFor(query, { dealId: id });
+      out.partners = (await P.lines(query, { dealId: id })).map(l => ({ id: l.id, partnerId: l.partner_id, partner: l.partner_name, term: `${P.termName(l)} · ${P.termWords(l)}`,
+        override: { percent: l.override_percent, flat_cents: l.override_flat_cents, months: l.override_months, cap_cents: l.override_cap_cents },
+        owedCents: (led.find(x => x.lineId === l.id) || { months: [] }).months.reduce((n, m) => n + m.owedCents, 0) }));
       out.history = await query(`SELECT id, from_name, to_name, at, created_by_name FROM sales_stage_history WHERE deal_id = ? ORDER BY at DESC`, [id]);
       const [st] = await query(`SELECT onboarding FROM sales_stages WHERE id = ?`, [row.stage_id]);
       const primary = linked.org.find(o => o.primary) || linked.org[0];
@@ -306,6 +319,9 @@ function mount(app, { query, run, wrap, opsOnly }) {
     send(res, r.changes ? { ok: true } : { error: "not_found" });
   }));
   app.get("/ops/sales/steward-orgs", salesLimiter, door, wrap(async (req, res) => res.json({ ok: true, orgs: await LINK.candidates(query, req.query.q) })));
+
+  // SALES-1 Part B: the mailbox, partners and payouts, behind this same door.
+  require("./routesB").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
 }
 
 module.exports = { mount, settings };
