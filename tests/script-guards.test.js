@@ -285,6 +285,7 @@ const LOOPBACK_CAPTURES = [
 
 // Out of scope for BASE/DB guarding, each for a stated reason.
 const EXEMPT = {
+  "sales-staging-seed": "SALES-1 — a module, not a command: exports seedSales(q) and is called only by staging-seed.js, which resolves its target with writerBase --staging (refuses anything but staging). It has no require.main entry and reads no BASE, DATABASE_URL or network",
   "history-index": "ARCH-1 — prints the index of docs/history/ from the files there. Reads only; no BASE, no DB, no network, no writes",
   "needs-jonathan": "ARCH-1 — prints what waits on Jonathan from docs/needs-jonathan/. Reads only; no BASE, no DB, no network, no writes",
   "arch-check": "ARCH-1 — the architecture ratchet. Reads the tracked tree (git ls-files) and its own baselines in docs/architecture/baseline/; --update rewrites only those baselines. No BASE, no DB, no network",
