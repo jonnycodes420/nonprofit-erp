@@ -25,6 +25,19 @@ const IDS = new Set(MG_VIEWS.map(v => v.id));
 // The view a request names, or Top 100.
 export function mgView(id) { return IDS.has(id) ? id : MG_DEFAULT; }
 
+// NAV-1 (menu, 10 Nov) · THE TABS THIS ORG SHOWS. An org setting ("Major
+// Gifts shows", Settings → Major gifts, or super-admin → Organizations), never
+// an org id: Justin's Place wanted Top 100 alone. `views` is the org's list
+// (all four when unset); anything else asked for opens the first one shown.
+export function mgShownViews(views) {
+  const want = new Set(Array.isArray(views) && views.length ? views : MG_VIEWS.map(v => v.id));
+  const shown = MG_VIEWS.filter(v => want.has(v.id));
+  return shown.length ? shown : MG_VIEWS;
+}
+export function mgViewIn(id, shown) {
+  return shown.some(v => v.id === id) ? id : shown[0].id;
+}
+
 // A navigation, rewritten: an old Fundraising part that is one of these views
 // (or the old `pipeline` tab) opens Major Gifts on it; Major Gifts itself is
 // only for somebody who may see it (`can`: true, false, or null while unknown).

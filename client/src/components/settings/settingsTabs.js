@@ -29,6 +29,9 @@ export const SETTINGS_TABS=[
   {id:"connections",label:"Connections",viewerHidden:true},
   {id:"giving",label:"Giving Pages"},
   {id:"customization",label:"Customization"},
+  // NAV-1 (menu): the org's sidebar, and the Major Gifts tabs it shows. Admins.
+  {id:"menu",label:"Menu",adminOnly:true},
+  {id:"majorgifts",label:"Major gifts",adminOnly:true},
   // BUILD-86 Part B — the five questions, reachable forever after the first run.
   {id:"words",label:"Your words"},
   // THREAD-2b 3 — the journey builder lives here, and Fundraising links to
