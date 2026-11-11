@@ -43,9 +43,11 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   let tl = t0;
   const lap = name => { const now = Date.now(); steps.push([name, now - tl]); tl = now; };
   // IMPORT-6 · Everyone · Donors · Contacts, each counted (groups.directoryRoles)
-  const { roleCounts, role } = await GR.directoryRoles(req.user.orgId, req.query, rq => buildDonorListFilter({ ...req, query: rq }));
+  const { roleCounts, role, everyoneFilter } = await GR.directoryRoles(req.user.orgId, req.query, rq => buildDonorListFilter({ ...req, query: rq }));
   lap("roles");
-  const filter = await buildDonorListFilter(role === req.query.role ? req : { ...req, query: { ...req.query, role } });
+  // LIST-5: Everyone's page reads the filter the counts were just built from (the same query, role "").
+  const filter = everyoneFilter && String(role || "") === "" ? everyoneFilter
+    : await buildDonorListFilter(role === req.query.role ? req : { ...req, query: { ...req.query, role } });
   lap("filter");
   if (filter.badFilter) return res.status(400).json({ error: "bad_filter", sentence: filter.badFilter });   // LIST-1
   if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
@@ -103,41 +105,46 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   // old no-limit form read every person in the org in one answer.
   const limit  = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+  // LIST-5: the total is the role count already taken under these filters
+  // (groups.totalFromRoleCounts); only a role the counts don't cover counts again.
+  const counted = GR.totalFromRoleCounts(roleCounts, role);
   const [donors, cnt] = await Promise.all([
     query(...require("./listPage").pageSql({ selectCols, selectArgs, whereSql, params, orderBy, orderArgs, limit, offset })),
-    query(`SELECT COUNT(*) AS c FROM donors WHERE ${whereSql}`, params),
+    counted != null ? [{ c: counted }] : query(`SELECT COUNT(*) AS c FROM donors WHERE ${whereSql}`, params),
   ]);
   await require("./ownerName").withLiveOwnerNames(query, donors);   // INTEGRITY-1: one owner field
   lap("page");
   // Touchpoints + drift only for the page's donors — not the org-wide GROUP BY
+  // LIST-5: drift, Room to give, the chosen columns and Lifetime each read
+  // only the page's rows and none needs another, so they run side by side.
+  // Each step keeps its own time in Server-Timing.
   const ids = donors.map(d => d.id);
   const waitingAtDrift = require("../../db").poolStats().waiting;
-  const [touchpoints, { map: driftMap }] = await Promise.all([
-    ids.length
-      ? query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? AND donor_id = ANY(?) GROUP BY donor_id", [req.user.orgId, ids])
-      : Promise.resolve([]),
-    computeDriftForDonors(req.user.orgId, { donorIds: ids.length ? ids : ["_none_"], store: false }),   // LIST-2: a GET writes nothing
-  ]);
-  const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
-  lap("drift");
-  if (mayRoom && ids.length) roomMap = await PRm.roomToGive(req.user.orgId, ids);
-  lap("room");
+  const timed = (name, p) => { const t = Date.now(); return Promise.resolve(p).then(v => { steps.push([name, Date.now() - t]); return v; }); };
   // LIST-1: the columns she chose, for this page only (donorList.js cellsFor).
   const cols = String(req.query.cols || "").split(",").map(s => s.trim()).filter(Boolean).slice(0, 40);
-  const cells = cols.length ? await require("../../donorList").cellsFor(req.user.orgId, donors, cols) : null;
-  lap("cells");
+  const [[touchpoints, { map: driftMap }], room, cells, lt] = await Promise.all([
+    timed("drift", Promise.all([
+      ids.length
+        ? query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? AND donor_id = ANY(?) GROUP BY donor_id", [req.user.orgId, ids])
+        : Promise.resolve([]),
+      computeDriftForDonors(req.user.orgId, { donorIds: ids.length ? ids : ["_none_"], store: false }),   // LIST-2: a GET writes nothing
+    ])),
+    timed("room", mayRoom && ids.length ? PRm.roomToGive(req.user.orgId, ids) : null),
+    timed("cells", cols.length ? require("../../donorList").cellsFor(req.user.orgId, donors, cols) : null),
+    // LIST-2: the Lifetime on each row is the profile's (shared/numbers/lifetime.js),
+    // one read for the page, so the column and the Lifetime filter agree with it.
+    timed("lifetime", ids.length ? require("../../shared/numbers/lifetime").lifetimeCents(query, req.user.orgId, ids) : null),
+  ]);
+  roomMap = room;
+  const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
   const out = donors.map(mapDonor(tpMap, driftMap));
   if (cells) for (const d of out) d.cells = cells.get(d.id) || {};
-  // LIST-2: the Lifetime on each row is the profile's (shared/numbers/lifetime.js),
-  // one read for the page, so the column and the Lifetime filter agree with it.
-  if (ids.length) {
-    const lt = await require("../../shared/numbers/lifetime").lifetimeCents(query, req.user.orgId, ids);
-    for (const d of out) if (lt.has(d.id)) {
-      d.total_giving = lt.get(d.id) / 100;
-      if (d.cells && "lifetime" in d.cells) d.cells.lifetime = d.total_giving;
-    }
+  if (lt) for (const d of out) if (lt.has(d.id)) {
+    d.total_giving = lt.get(d.id) / 100;
+    if (d.cells && "lifetime" in d.cells) d.cells.lifetime = d.total_giving;
   }
-  lap("lifetime");
+  lap("rows");
   res.setHeader("Server-Timing", steps.map(([n, ms]) => `${n};dur=${ms}`).join(", "));
   if (Date.now() - t0 > 2000) {
     const ps = require("../../db").poolStats();

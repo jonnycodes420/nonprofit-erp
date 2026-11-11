@@ -107,6 +107,9 @@ async function initSchema() {
   const ran = await initSchemaNow();
   await require("./race1Indexes").ensureRace1Indexes(pool)
     .catch(err => console.error("[race1-indexes] not built (server continues):", err.message));
+  // LIST-5: the Donors list's index, built in the background; boot never waits for it.
+  require("./list5Indexes").ensureList5Indexes(pool)
+    .catch(err => console.error("[list5-indexes] not built (server continues):", err.message));
   return ran;
 }
 module.exports = { initSchema, runSchemaInit };

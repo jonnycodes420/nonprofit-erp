@@ -935,29 +935,43 @@ async function dynamicJoins(orgId, { donorId = null, today = "", fire } = {}) {
 // donor and Everyone before, so a people-only import opens on its people.
 // `build` is the list's own filter builder, given a query.
 async function directoryRoles(orgId, q, build) {
-  let roleCounts = null, role = q.role;
-  if (String(q.roleCounts || "") !== "1" && role !== "auto") return { roleCounts, role };
-  const countFor = async r => {
-    const f = await build({ ...q, role: r });
+  let roleCounts = null, role = q.role, everyoneFilter = null;
+  if (String(q.roleCounts || "") !== "1" && role !== "auto") return { roleCounts, role, everyoneFilter };
+  // LIST-5: the three counts in one pass. Donors is Everyone's own WHERE with
+  // the donor predicate (the same SQL role=donor adds), and Contacts is
+  // everyone else, so one grouped count answers all three. A search's match
+  // ran once per count, and again for the page's total; now it runs once here.
+  const PT = await personTypeMod();
+  const counted = (async () => {
+    const f = await build({ ...q, role: "" });
     if (f.badFilter || f.badRole || f.badStatus) return null;
-    return parseInt((await query(`SELECT COUNT(*) AS c FROM donors WHERE ${f.whereSql}`, f.params))[0].c, 10);
-  };
-  const [everyone, donors] = await Promise.all([countFor(""), countFor("donor")]);
-  if (everyone != null && donors != null) roleCounts = { everyone, donors, contacts: everyone - donors };
+    const [r] = await query(`SELECT COUNT(*) AS everyone, COUNT(*) FILTER (WHERE ${PT.donorOnlySql()}) AS donors FROM donors WHERE ${f.whereSql}`, f.params);
+    everyoneFilter = f;
+    return { everyone: parseInt(r.everyone, 10), donors: parseInt(r.donors, 10) };
+  })();
   // WALKB-1: a search finds everyone. Home names organizations and contacts
   // too, and a name Home shows must never be one the Donors search cannot find.
   if (role === "auto" && String(q.search || "").trim()) role = "";
-  if (role === "auto") {
-    // the org's own donors, not this search's: the view she opens on does not hop as she types
-    const PT = await personTypeMod();
-    const [{ c }] = await query(`SELECT COUNT(*) AS c FROM donors WHERE org_id=? AND deleted_at IS NULL AND archived_at IS NULL AND ${PT.donorOnlySql()}`, [orgId]);
-    role = parseInt(c, 10) > 0 ? "donor" : "";
-  }
-  return { roleCounts, role };
+  // the org's own donors, not this search's: the view she opens on does not hop as she types
+  const auto = role === "auto"
+    ? query(`SELECT COUNT(*) AS c FROM donors WHERE org_id=? AND deleted_at IS NULL AND archived_at IS NULL AND ${PT.donorOnlySql()}`, [orgId])
+    : null;
+  const [c, a] = await Promise.all([counted, auto]);
+  if (c) roleCounts = { everyone: c.everyone, donors: c.donors, contacts: c.everyone - c.donors };
+  if (a) role = parseInt(a[0].c, 10) > 0 ? "donor" : "";
+  return { roleCounts, role, everyoneFilter };
+}
+
+// LIST-5: the page's total, read off the role counts when they were counted
+// under the same filters (Everyone, Donors, Contacts); null for any other role.
+function totalFromRoleCounts(roleCounts, role) {
+  if (!roleCounts) return null;
+  const r = String(role || "");
+  return r === "" ? roleCounts.everyone : r === "donor" ? roleCounts.donors : r === "contact" ? roleCounts.contacts : null;
 }
 
 module.exports = {
-  directoryRoles,
+  directoryRoles, totalFromRoleCounts,
   baselineGroup, dynamicJoins, watchedDynamicGroups,
   DONOR_SORTS, DONOR_SCORE_COLS, PEOPLE_ROLES, RULE_KEYS, KINDS, ACTIVE_RECURRING_STATUSES, eventGuestSql, EVENT_GUEST_KINDS,
   STARTERS, starterList, starterByKey, starterGroup,
