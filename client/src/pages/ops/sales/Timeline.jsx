@@ -38,7 +38,21 @@ export function ActivityRow({ a, here, open, reload }) {
   </div>;
 }
 
-export default function Timeline({ type, id, items, linked, open, reload }) {
+// Part B: one captured email on the timeline: subject, date, direction; the body on click.
+function EmailRow({ e }) {
+  const [body, setBody] = useState(null);
+  const show = async () => { if (body != null) { setBody(null); return; } try { const r = await apiFetch(`/ops/sales/emails/${e.id}`); setBody(r.email.body || "(no text)"); } catch { setBody("The message could not be read."); } };
+  return <div style={{ display: "flex", gap: 10, padding: "10px 0", borderTop: `1px solid ${CREAM}` }} data-email={e.id} data-direction={e.direction}>
+    <span style={{ width: 20, fontSize: 11, fontWeight: 700, opacity: 0.55, paddingTop: 2 }}>{e.direction === "out" ? "Sent" : "In"}</span>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ fontSize: 12, opacity: 0.75 }}><b>Email {e.direction === "out" ? "sent" : "received"}</b> · {whenWords(e.sent_at)} · {e.direction === "out" ? `to ${(e.to_addrs || []).join(", ")}` : `from ${e.from_addr}`}</div>
+      <button type="button" style={{ ...link, fontSize: 13.5, marginTop: 2 }} onClick={show} aria-expanded={body != null}>{e.subject || "(no subject)"}</button>
+      {body != null ? <div style={{ fontSize: 13, whiteSpace: "pre-wrap", marginTop: 6, background: CREAM, padding: 8, borderRadius: 6, maxHeight: 360, overflowY: "auto" }}>{body}</div> : null}
+    </div>
+  </div>;
+}
+
+export default function Timeline({ type, id, items, emails = [], linked, open, reload }) {
   const [kind, setKind] = useState("note");
   const [body, setBody] = useState("");
   const [at, setAt] = useState(localNow());
@@ -74,7 +88,10 @@ export default function Timeline({ type, id, items, linked, open, reload }) {
         {o.name} <span style={{ opacity: 0.55 }}>{TYPE_WORDS[o.type]}</span></label>; })}</div> : null}
     {err ? <p style={{ ...says, opacity: 1, marginTop: 6 }}><span style={brassTag}>Not logged</span> {err}</p> : null}
     <div style={{ marginTop: 12 }}>
-      {items.length === 0 ? <p style={says}>Nothing logged yet.</p> : items.map(a => <ActivityRow key={a.id} a={a} here={{ type, id }} open={open} reload={reload} />)}
+      {items.length === 0 && emails.length === 0 ? <p style={says}>Nothing logged yet.</p>
+        : [...items.map(a => ({ k: "a", t: a.kind === "task" && !a.done_at ? a.due_on || a.at : a.at, a })), ...emails.map(e => ({ k: "e", t: e.sent_at, e }))]
+          .sort((x, y) => new Date(y.t) - new Date(x.t))
+          .map(x => (x.k === "a" ? <ActivityRow key={x.a.id} a={x.a} here={{ type, id }} open={open} reload={reload} /> : <EmailRow key={x.e.id} e={x.e} />))}
     </div>
     <p style={{ ...says, marginTop: 8, color: INK }}><span style={{ color: BRASS }}>■</span> Overdue tasks are marked in brass.</p>
   </section>;

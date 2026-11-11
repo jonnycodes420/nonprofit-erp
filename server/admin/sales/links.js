@@ -69,6 +69,7 @@ async function linkedOf(query, type, id) {
   const meta = new Map();
   for (const r of rows) {
     const [ot, oid] = r.a_type === type && r.a_id === id ? [r.b_type, r.b_id] : [r.a_type, r.a_id];
+    if (!want[ot]) continue;   // a partner's link to an org (Part B) is drawn by the partner's own section
     want[ot].add(oid); meta.set(`${ot}:${oid}`, { label: r.label, primary: r.is_primary });
   }
   const out = { org: [], contact: [], deal: [] };

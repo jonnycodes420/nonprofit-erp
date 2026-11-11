@@ -13,10 +13,11 @@ import RecordPage from "./RecordPage";
 import TasksView from "./TasksView";
 import SettingsPanel from "./SettingsPanel";
 import ImportPanel from "./ImportPanel";
+import PartnersView from "./PartnersView";
 
-const SUBS = [["org", "Organizations"], ["contact", "Contacts"], ["deal", "Deals"], ["task", "Tasks"]];
+const SUBS = [["org", "Organizations"], ["contact", "Contacts"], ["deal", "Deals"], ["task", "Tasks"], ["partner", "Partners"]];
 const LINES = [
-  ["due", "Due today or overdue"], ["revisit", "Back from Later"], ["trials", "Trials and betas ending"], ["quiet", "Gone quiet"],
+  ["due", "Due today or overdue"], ["revisit", "Back from Later"], ["noReply", "No reply"], ["trials", "Trials and betas ending"], ["quiet", "Gone quiet"],
   ["noNext", "No next step"], ["meetings", "This week's meetings"], ["stuck", "Stuck in a stage"],
 ];
 
@@ -137,6 +138,7 @@ export default function SalesView() {
               fontWeight: sub === id ? 700 : 500, color: INK, cursor: "pointer", fontFamily: "inherit" }}>{label}</button>)}
         </div>
         {sub === "task" ? <TasksView meta={meta} open={open} onChanged={changed} />
+          : sub === "partner" ? <PartnersView open={open} />
           : <ListView key={sub} type={sub} meta={meta} open={open} onChanged={changed} onMeta={loadMeta} />}
       </>}
   </div>;

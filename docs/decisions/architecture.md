@@ -563,3 +563,4 @@ Diagnostic tooling added after manually deleting test-user rows in Supabase's Ta
 - Every route is behind `/ops`'s door (`opsOnly`: 404 to anyone who is not a live super-admin, read from the users row on each request).
 - It reads a customer org only through counts and dates (last sign-in, people count, trial end, ONBOARD-2's MRR and gates), never a donor's name, email or gift.
 - No seed writes sales data on prod; the staging seed writes a made-up book.
+- Part B: the sales mailbox lives in `sales_mailboxes` (sealed with aad "sales"), never in an org's `mailbox_connections`. Only mail involving a sales contact's address or a prospect domain is stored (`email.keeps`), and nothing is sent. Partner payouts are `shared/numbers/partnerPayout.js` on ONBOARD-2's MRR.

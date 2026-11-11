@@ -124,6 +124,7 @@ function mount(ctx) {
   require("../onboard/jobs").define(ctx);
   // SALES-1: the Sales tab, Steward's own CRM, behind this same door.
   require("./sales/routes").mount(app, { query, run, wrap, opsOnly });
+  require("./sales/routesB").defineJobs({ query, run });   // SALES-1 Part B: the sales mailbox read, on the worker
 
   // The worker's job: refresh the cached snapshot every five minutes. Queued,
   // so it runs on the worker (or the one process locally), never in a request.

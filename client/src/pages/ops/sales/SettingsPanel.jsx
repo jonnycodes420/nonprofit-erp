@@ -5,6 +5,7 @@ import { useState } from "react";
 import { apiFetch } from "../../../api";
 import DateInput from "../../../components/inputs/LazyDateInput";
 import { INK, CREAM, card, h2, says, btn, quiet, box, link, brassTag } from "./salesBits";
+import MailboxSettings from "./MailboxSettings";
 
 const TYPE_WORDS = { text: "Text", long_text: "Long text", number: "Number", currency: "Currency", date: "Date", picklist: "Pick-list", multiselect: "Multi-select", checkbox: "Checkbox", url: "URL" };
 const KIND_WORDS = { open: "Open", won: "Won", later: "Later (closed, needs a revisit date)", lost: "Lost (closed, needs a reason)" };
@@ -102,6 +103,7 @@ export default function SettingsPanel({ meta, onChanged, onClose }) {
   return <div data-sales-settings="1">
     <button type="button" style={{ ...link, marginBottom: 10 }} onClick={onClose}>← Back to Sales</button>
     <Goal goal={meta.settings.goal} onChanged={onChanged} />
+    <MailboxSettings />
     <section style={card}>
       <h2 style={h2}>Pipelines and stages</h2>
       <p style={says}>Each stage has a probability (the forecast weights a deal's value by it) and a days limit (a deal in it longer shows in Today as stuck). Later and Lost are closed: Later needs a revisit date and is never a loss; Lost needs a reason. Tick Gates where ONBOARD-2's five gates should show on the deal. A stage that still holds a deal can't be removed.</p>
