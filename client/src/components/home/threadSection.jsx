@@ -4,6 +4,8 @@ import { PinsIfAny, OneLineEmpty } from "./homeParts";
 import { apiFetch } from "../../api";
 
 export function threadSection({ cPad, cardWrap, crossover, dhNotice, foldBtn, gsNotice, homeCalm, homeData, homeFold, homeRows, isReadOnly, jsNotice, loadThreads, moveLine, onNavigate, onPanel, sHdr, sHdrPad, sLink, sSerif, sampleStatus, setDhNotice, setGsNotice, setPlanFor, setThreadAllOpen, setThreadExpanded, setThreadScope, surface, threadAllOpen, threadExpanded, threadList, threadRows, threadScope, threadStat, threadsData }) {
+  const planBtn=<button data-testid="home-plan-followup" onClick={()=>setPlanFor({donor:null})} disabled={isReadOnly}
+    style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:7,padding:"4px 10px",color:T.ink,fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>Plan a follow-up</button>;
   return (
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
           {/* ── VOL-1 · THE CROSSOVER ─────────────────────────────────────
@@ -47,17 +49,8 @@ export function threadSection({ cPad, cardWrap, crossover, dhNotice, foldBtn, gs
           )}
           {/* HOME-4 — on Home, the Thread draws only when it has conversations
               to show; nothing logged (or nothing waiting) is no section at all. */}
-          {/* FLOWS-5 (Area 1): with nothing on the Thread there is no next step, so
-              Plan a follow-up stays: snoozing the last one no longer takes it away. */}
-          {surface==="home"&&threadsData&&!threadsData.failed&&threadList.length===0&&!dhNotice&&(
-            <div data-testid="home-thread-empty" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"0 2px",fontSize:13.5,color:T.ink3}}>
-              <span>Nothing is waiting on the Thread.</span>
-              <button data-testid="home-plan-followup" onClick={()=>setPlanFor({donor:null})} disabled={isReadOnly}
-                style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:7,padding:"4px 10px",color:T.ink,fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
-                Plan a follow-up
-              </button>
-            </div>
-          )}
+          {/* FLOWS-5 (Area 1): an empty Thread keeps Plan a follow-up. */}
+          {surface==="home"&&threadsData&&!threadsData.failed&&threadList.length===0&&!dhNotice&&<div data-testid="home-thread-empty" style={{textAlign:"right"}}>{planBtn}</div>}
           {!(surface==="home"&&threadsData&&!threadsData.failed&&threadList.length===0&&!dhNotice)&&(
           <div id="dash-thread" style={{...cardWrap,scrollMarginTop:64}}>
             <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
@@ -104,11 +97,7 @@ export function threadSection({ cPad, cardWrap, crossover, dhNotice, foldBtn, gs
                     {threadStat.oldestDays>=1?` · oldest ${countLabel(threadStat.oldestDays, "day")}`:""}
                   </span>
                 )}
-                <button data-testid="home-plan-followup" onClick={()=>setPlanFor({donor:null})} disabled={isReadOnly}
-                  style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:7,padding:"4px 10px",
-                          color:T.ink,fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
-                  Plan a follow-up
-                </button>
+                {planBtn}
               </span>
             </div>
             {/* ASK-3 — Why and What, at the top of the Thread: each opens a
