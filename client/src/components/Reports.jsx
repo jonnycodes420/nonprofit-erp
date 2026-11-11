@@ -892,7 +892,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
                 : <EmptyState icon="▤" title={active === "lybunt" || active === "sybunt" ? "No one, that's good news" : "No gifts in this period yet"}
                   message={active === "lybunt" ? "Every donor who gave last year has already given this year." : active === "sybunt" ? "Every past donor has given this year." : `${d.alsoOnFile ? d.alsoOnFile.sentence + " " : ""}Once gifts land in this period, this report fills in automatically. Try another period above.`} />)
               : d ? <>
-                  {narrative && <div style={{ fontSize: 14, color: T.ink2, lineHeight: 1.7, marginBottom: 16, paddingBottom: 14, borderBottom: `1px solid ${T.bg2}` }}>{narrative}{d.alsoOnFile && <span data-testid="report-also-on-file"> {d.alsoOnFile.sentence}</span>}</div>}
+                  {narrative && <div style={{ fontSize: 14, color: T.ink2, lineHeight: 1.7, marginBottom: 16, paddingBottom: 14, borderBottom: `1px solid ${T.bg2}` }}>{narrative}{d.alsoOnFile && <span data-testid="report-also-on-file"> {d.alsoOnFile.sentence}</span>}{d.scheduled && <span data-testid="report-scheduled" title="A gift dated after today counts on its date, not before."> {d.scheduled.sentence}</span>}</div>}
                   {table}
                 </> : null);
             if (customIncomplete || loading) return null;

@@ -41,9 +41,9 @@ function driftOf(row) {
   const zero = !(cents(row.gift_amount) > 0);
   return { receiptAmount: Number(row.amount), giftAmount: Number(row.gift_amount), zero,
     sentence: zero
-      ? `Gift changed after this receipt: the receipt says ${usd(row.amount)} and the gift is now $0, and a $0 gift can't carry a receipt. Void it?`
+      ? `Gift changed after this receipt: the receipt says ${usd(row.amount)} and the gift is now $0, and a $0 gift can't carry a receipt. Void this receipt.`
       : `Gift changed after this receipt: the receipt says ${usd(row.amount)} and the gift is now ${usd(row.gift_amount)}. Void and reissue?`,
-    action: zero ? "Void it" : "Void and reissue" };
+    action: zero ? "Void this receipt" : "Void and reissue" };   // TRUTH-6: a $0 gift has no receipt
 }
 const withDrift = rows => rows.map(r => { const { gift_amount, gift_missing, ...rest } = r; return { ...rest, drift: driftOf(r) }; });
 

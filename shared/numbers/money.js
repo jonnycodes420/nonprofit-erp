@@ -14,11 +14,14 @@ const { NOT_CREDIT, isCredit } = require("../../creditTypes");
 const M = require("../../money");
 
 // SQL: gift row `g` is money in a total.
-const MONEY = (g = "g") => NOT_CREDIT(g);
+// TRUTH-6: a scheduled gift (dated after today, scheduled.js) is money on its
+// date, not before: it is in no total until then.
+const { DUE } = require("./scheduled");
+const MONEY = (g = "g") => `(${NOT_CREDIT(g)} AND ${DUE(g)})`;
 // SQL: gift row `g` is a gift: money above zero (a refund is not a gift).
 // MONEY-4: a gift refunded in full (Record a refund) stays on file, netted to
 // $0 by its refund row, and is no longer a gift: the count drops only then.
-const GIFT = (g = "g") => `(${NOT_CREDIT(g)} AND ${g}.amount > 0 AND ${g}.refunded_in_full IS NOT TRUE)`;
+const GIFT = (g = "g") => `(${NOT_CREDIT(g)} AND ${g}.amount > 0 AND ${g}.refunded_in_full IS NOT TRUE AND ${DUE(g)})`;
 // SQL: person `d` counts (not deleted).
 const LIVE = (d = "d") => `${d}.deleted_at IS NULL`;
 // SQL: the money total of gift rows `g`, in dollars (0 when none), with an
@@ -31,7 +34,8 @@ const MONEY_CENTS = (g = "g", where = "") => `COALESCE(SUM(ROUND(${g}.amount * 1
 
 // The same rules for rows already read: { amount | cents, type }.
 const centsOf = r => (r.cents != null ? Number(r.cents) : (M.toCents(String(r.amount ?? "0")) ?? 0));
-const isMoney = r => !isCredit(r && (r.type ?? r.gift_type));
+// A row read with `scheduled: true` (its day has not come, scheduled.js) is not money yet.
+const isMoney = r => !isCredit(r && (r.type ?? r.gift_type)) && !(r && r.scheduled === true);
 const isGift = r => isMoney(r) && centsOf(r) > 0 && !(r.refunded_in_full === true || r.refundedInFull === true);
 const sumCents = rows => (rows || []).filter(isMoney).reduce((n, r) => n + centsOf(r), 0);
 

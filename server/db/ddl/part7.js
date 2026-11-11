@@ -1137,6 +1137,7 @@ async function run7(pool) {
   await require("./access2").run(pool);   // ACCESS-2: staff who see only the people assigned to them
   await require("./touch1").run(pool);   // TOUCH-1: an org's own kinds of touch
   await require("./nav1menu").run(pool);   // NAV-1 (menu): the org's sidebar and Major Gifts tabs
+  await require("./truth6").run(pool);   // TRUTH-6: a gift dated after today is scheduled
 
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id

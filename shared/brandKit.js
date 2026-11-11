@@ -35,8 +35,15 @@ export const DEFAULT_TAX_LANGUAGE = (legalName) =>
 export const MERGE_FIELDS = Object.freeze([
   { key: "first_name",      label: "First name",                  sample: "Margaret" },
   { key: "full_name",       label: "Full name",                   sample: "Margaret Chen" },
-  { key: "gift_amount",     label: "Their latest gift",           sample: "$250" },
+  { key: "gift_amount",     label: "The gift this letter is about (the first gift in a first-gift thank-you, else the latest)", sample: "$250" },
   { key: "gift_date",       label: "Date of that gift",           sample: "September 14, 2026" },
+  // TRUTH-6: each gift named for what it is (shared/numbers/giftFacts.js).
+  { key: "first_gift_amount",   label: "Their first gift",        sample: "$100" },
+  { key: "first_gift_date",     label: "Date of their first gift", sample: "September 14, 2024" },
+  { key: "last_gift_amount",    label: "Their latest gift",       sample: "$250" },
+  { key: "last_gift_date",      label: "Date of their latest gift", sample: "September 14, 2026" },
+  { key: "largest_gift_amount", label: "Their largest gift",      sample: "$2,500" },
+  { key: "largest_gift_date",   label: "Date of their largest gift", sample: "February 11, 2026" },
   { key: "fund",            label: "Fund of that gift",           sample: "Youth Arts Access" },
   { key: "tribute",         label: "In memory or honor of",      sample: "in memory of Walter Chen" },
   { key: "year",            label: "This year",                   sample: "2026" },
@@ -65,7 +72,7 @@ export const MERGE_KEYS = MERGE_FIELDS.map(f => f.key);
 export const TEMPLATE_KINDS = Object.freeze([
   { kind: "thanks_first", label: "Thank you: first gift", channel: "letter",
     subject: "Thank you, {{first_name}}",
-    body: "Dear {{first_name}},\n\nThank you for your first gift to {{org_name}}, {{gift_amount}} on {{gift_date}}. It goes straight into the work, and we are glad you are part of it.\n\nWe will write now and then to tell you what your gift made possible.\n\nWith thanks,\n{{signature}}" },
+    body: "Dear {{first_name}},\n\nThank you for your first gift to {{org_name}}, {{first_gift_amount}} on {{first_gift_date}}. It goes straight into the work, and we are glad you are part of it.\n\nWe will write now and then to tell you what your gift made possible.\n\nWith thanks,\n{{signature}}" },
   { kind: "thanks_renewal", label: "Thank you: renewal", channel: "letter",
     subject: "Thank you again, {{first_name}}",
     body: "Dear {{first_name}},\n\nThank you for giving again. Your gift of {{gift_amount}} means you have now given {{lifetime_total}} to {{org_name}}, and every year of it has counted.\n\nWith thanks,\n{{signature}}" },

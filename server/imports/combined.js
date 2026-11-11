@@ -711,7 +711,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
 
     const date = normalizeGiftDate(g.date);
     if (!date) { ledger.errored("unparseable_or_missing_date", amt); continue; }
-    if (date > importToday) { ledger.errored("future_date", amt); continue; }   // Part 2c policy: a gift is a thing that happened
+    // TRUTH-6 (W-1109-Finance-15): a row dated after today is a postdated gift.
+    // It comes in, stored as scheduled (recordGift, shared/numbers/scheduled.js),
+    // the same as one typed in by hand, so the file foots: it is no longer set aside.
     const rowKey = `${donorId}|${date}|${amt}`;
     // The user's explicit deselection from the pre-commit review — the ONLY way
     // a row is dropped on purpose, and it is counted as such.

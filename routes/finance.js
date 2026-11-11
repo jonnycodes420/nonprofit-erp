@@ -217,14 +217,15 @@ app.get("/finance/overview", requireAuth, wrap(async (req, res) => {
   const rawMonths = await query(
     `SELECT substring(g.date from 1 for 7) AS month,
             COALESCE(SUM(ROUND(g.amount*100)),0)::bigint AS cents,
-            COUNT(*)::int AS n
+            -- TRUTH-6 (W-1107-Donors-21X): gifts by the one rule (giftCount.js), never every row; a split gift is one row.
+            COUNT(*) FILTER (WHERE ${NUM.giftCount.COUNTED("g")})::int AS n
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
       WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date IS NOT NULL AND g.date <> ''
         AND g.date >= ? AND g.date <= ? AND ${NUM.money.MONEY("g")}
       GROUP BY 1
       UNION ALL
      -- INSIGHTS-1: the rows marked Not a gift are money in too
-     SELECT substring(t.date from 1 for 7) AS month, COALESCE(SUM(ROUND(t.amount*100)),0)::bigint AS cents, COUNT(*)::int AS n
+     SELECT substring(t.date from 1 for 7) AS month, COALESCE(SUM(ROUND(t.amount*100)),0)::bigint AS cents, 0 AS n   -- money in, never a gift
        FROM fin_transactions t LEFT JOIN donors d ON d.id=t.donor_id AND d.org_id=t.org_id
       WHERE t.org_id=? AND t.source='not_a_gift' AND (d.id IS NULL OR d.deleted_at IS NULL)
         AND t.date IS NOT NULL AND t.date <> '' AND t.date >= ? AND t.date <= ?
@@ -441,15 +442,12 @@ app.get("/finance/overview/month", requireAuth, wrap(async (req, res) => {
   const m = String(req.query.month || "");
   if (!/^\d{4}-\d{2}$/.test(m)) return res.status(400).json({ error: "bad_month" });
   const rows = await query(
-    `SELECT g.id, g.date, g.amount, g.type, d.name AS who, f.name AS fund
+    `SELECT g.id, g.date, g.amount, g.type, g.refunded_in_full, ${NUM.scheduled.SCHEDULED("g")} AS scheduled, d.name AS who, f.name AS fund
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
        LEFT JOIN fin_funds f ON f.id=g.fund_id
       WHERE g.org_id=? AND d.deleted_at IS NULL AND substring(g.date from 1 for 7) = ?
       ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC LIMIT 2000`, [orgId, m]);
-  const total = rows.reduce((a, r) => a + Math.round(Number(r.amount) * 100), 0);
-  res.json({ month: m, rows: rows.map(r => ({ ...r, amount: Number(r.amount) })), count: rows.length,
-    totalCents: total, total: toDollars(total),
-    sentence: `${rows.length} ${rows.length === 1 ? "gift" : "gifts"} in ${m}, ${money.formatCentsPlain(total)}.` });
+  res.json(require("../server/finance/monthRows").monthRows(m, rows));   // TRUTH-6: counted gifts, the rest labeled
 }));
 
 // ── FIN-1 · FUNDS, ONE CARD EACH ──────────────────────────────────────────
@@ -4687,7 +4685,10 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
   const split = await LS.ledgerSplit(query, orgId, fyFrom);
   const ledgerStatus = Object.fromEntries(["posted", "waiting", "history", "all"].map(k => [k, { count: split[k].n, cents: split[k].cents, amount: split[k].cents / 100, sentence: LS.SENTENCES[k] || "Every gift on file." }]));
 
+  const FB = NUM.financeBasis;   // TRUTH-6 (W-1107-Finance-39X): each basis named, one line to Fundraising's figure
+  const basis = { ...FB.BASIS, ...(await FB.financeBasis(query, orgId, { from: cur.start, to: cur.end, today: orgToday(_fpTz), revenueCents: Math.round(ytdRevenue * 100) })) };   // ORG_TZ_SEAM_OK
   res.json({
+    basis,
     cashOnHand,
     ytdRevenue, ytdExpenses, netSurplus: ytdRevenue - ytdExpenses,
     priorRevenue, priorExpenses, priorNet: priorRevenue - priorExpenses,

@@ -13,7 +13,7 @@
 //   waiting   anything else not posted yet: ready to post with its deposit
 // The three foot to every gift, in count and in cents.
 "use strict";
-const { MONEY, LIVE } = require("./money");
+const { MONEY, LIVE, GIFT } = require("./money");
 
 const POSTED = (g = "g") => `EXISTS (SELECT 1 FROM fin_transactions ftp WHERE ftp.org_id = ${g}.org_id AND ftp.gift_id = ${g}.id)`;
 // `fyFrom` is a bound parameter placeholder ("?") for the fiscal year's first day.
@@ -29,9 +29,9 @@ const SENTENCES = {
 // { posted, waiting, history, all }: each { n, cents }.
 async function ledgerSplit(query, orgId, fyFrom) {
   const rows = await query(
-    // The count is gifts by the one rule (giftCount.js: above $0); the money is every money row (a refund comes off).
-    `SELECT s.status, COUNT(*) FILTER (WHERE s.amount > 0)::int AS n, COALESCE(SUM(ROUND(s.amount * 100)), 0)::bigint AS cents FROM (
-       SELECT g.amount, ${STATUS("g")} AS status
+    // The count is gifts by the one rule (giftCount.js: above $0, not refunded in full; TRUTH-6); the money is every money row (a refund comes off).
+    `SELECT s.status, COUNT(*) FILTER (WHERE s.counted)::int AS n, COALESCE(SUM(ROUND(s.amount * 100)), 0)::bigint AS cents FROM (
+       SELECT g.amount, ${GIFT("g")} AS counted, ${STATUS("g")} AS status
          FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
         WHERE g.org_id = ? AND ${LIVE("d")} AND ${MONEY("g")}) s
       GROUP BY s.status`, [fyFrom, orgId]);

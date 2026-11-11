@@ -33,6 +33,9 @@ module.exports = {
   topDonors: require("./topDonors"),   // TRUTH-4
   atRisk: require("./atRisk"),   // TRUTH-4
   periodAmounts: require("./periodAmounts"),   // TRUTH-5
+  scheduled: require("./scheduled"),   // TRUTH-6
+  giftFacts: require("./giftFacts"),   // TRUTH-6
+  financeBasis: require("./financeBasis"),   // TRUTH-6
   softThrough: require("./softThrough"),   // TRUTH-5
   pledgeSchedule: require("./pledgeSchedule"),   // TRUTH-5
   lapseWords: require("./lapseWords"),   // TRUTH-5

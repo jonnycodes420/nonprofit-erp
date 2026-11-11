@@ -35,7 +35,7 @@ const { NOT_CREDIT } = require("./creditTypes");
 // (MAP-1 §2.3); a credit row could be someone's last gift. One rule now,
 // shared/numbers/lastGift.js and firstGift.js, and the profile's Last gift
 // opens the same row.
-const { GIFT } = require("./shared/numbers/money");
+const { GIFT, MONEY } = require("./shared/numbers/money");
 const { LAST_GIFT_ORDER } = require("./shared/numbers/lastGift");
 
 // FIX-49 · THE OLD SYSTEM'S FIRST GIFT, and the first gift on file: one rule,
@@ -59,7 +59,7 @@ const PERSON_X = (dd = "dd") => `(SELECT ${dd}.id AS donor_id, ${dd}.imported_to
                        ${IMPORTED_FIRST(dd)} AS imp_first, ${dd}.imported_last_gift_date AS imp_last,
                        ${dd}.imported_last_gift_amount AS imp_last_amt, ga.*
                   FROM (SELECT
-                       SUM(g.amount) FILTER (WHERE ${AFTER_IMPORT(dd)} AND ${NOT_CREDIT("g")}) AS after_total,
+                       SUM(g.amount) FILTER (WHERE ${AFTER_IMPORT(dd)} AND ${MONEY("g")}) AS after_total,   -- TRUTH-6: a scheduled gift counts on its date
                        COUNT(g.id) FILTER (WHERE ${GIFT("g")} AND ${AFTER_IMPORT(dd)}) AS after_n,
                        COUNT(g.id) FILTER (WHERE ${GIFT("g")} AND NOT ${AFTER_IMPORT(dd)}) AS before_n,
                        ${FIRST_ON_FILE_AGG("g")} AS row_first,
