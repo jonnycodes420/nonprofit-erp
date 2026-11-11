@@ -651,3 +651,15 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 ## ASKS-1 · the street is a field wherever the address is (2026-11-10)
 
 - People reports, the Donors list's columns and the donors CSV each offer Street address, Address line 2 and Full mailing address beside City, State and ZIP. The full address is written one way, `shared/mailingAddress.js` (SQL for the report builder, JS for the list and the CSV): street and line 2, then "City, ST ZIP" on a second line. A report cell keeps the line break; the one-line Donors list shows it as " · ".
+
+## REPORTS-SPEED-1 · Stored report answers name what they read (2026-11-10)
+
+- Retention, Annual and SYBUNT's common asks are stored per org (`server/reports/storedReports.js`); filtered,
+  custom-range, older-year and CSV asks compute live.
+- A stored answer may name the tables it reads (`orgSummary.cached(name, { reads })`, `org_summary.deps`); only
+  a change row from one of them makes it stale. Without `reads` it depends on every watched table, as before.
+- `donors.people` is the change row for a donor change that matters to a report: any column except the
+  background-rewritten ones in `storedReports.PEOPLE_EXCEPT`. A column added to donors counts by default. A
+  report that starts reading one of the excepted columns must take it out of that list.
+- A new report joining the store: capture the SQL it sends (every table it reads goes in its list), add it to
+  `KEYS`, and extend `tests/reports-speed1-stored.test.js` §1 and §2 to it.
