@@ -588,7 +588,17 @@ ok(nulFiles.length === 0,
   for (const j of ["tree-check", "guards", "plan", "shard", "combine"]) ok(!/secrets\./.test(jobs[j] || ""), `ci.yml's ${j} job is given no secret`);
   const dbUrl = ((jobs.shard || "").match(/DATABASE_URL:\s*(\S+)/) || [])[1] || "";
   ok(/^postgres(ql)?:\/\/[^@]*@(localhost|127\.0\.0\.1)[:/]/.test(dbUrl), "ci.yml's shard job's DATABASE_URL is loopback");
-  ok(Object.keys(jobs).filter(j => /secrets\.RAILWAY_TOKEN/.test(jobs[j])).every(j => /^deploy-/.test(j)), "only a deploy job in ci.yml holds RAILWAY_TOKEN");
+  // STAGE-2: one named exception. `drift` hands RAILWAY_TOKEN to drift.yml, whose one
+  // step runs scripts/ci/railway-drift.js: it reads prod's settings and variable NAMES
+  // and writes nothing. Pinned below so the token can't reach anything else there.
+  ok(Object.keys(jobs).filter(j => /secrets\.RAILWAY_TOKEN/.test(jobs[j])).every(j => /^deploy-/.test(j) || j === "drift"), "only a deploy job (or the read-only drift job) in ci.yml holds RAILWAY_TOKEN");
+  ok(/uses: \.\/\.github\/workflows\/drift\.yml/.test(jobs.drift || "") && !/\brun:/.test(jobs.drift || ""), "ci.yml's drift job runs nothing itself; it only calls drift.yml");
+  {
+    const dy = fs.readFileSync(path.join(root, ".github", "workflows", "drift.yml"), "utf8").replace(/#.*$/gm, "");
+    const runs = [...dy.matchAll(/\brun:\s*(.+)/g)].map(m => m[1].trim());
+    ok(runs.length === 1 && runs[0] === "node scripts/ci/railway-drift.js", "drift.yml's one command is the read-only drift script", runs);
+    ok(!/secrets: inherit/.test(dy + (jobs.drift || "")), "no secrets: inherit on the drift path");
+  }
 }
 
 // ── SECURE-3 item 4 · THE RESTORE DRILL REFUSES PROD ──────────────────────
