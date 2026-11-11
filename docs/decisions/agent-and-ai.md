@@ -277,3 +277,13 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
   "Which Walter?" with each match's lifetime when a name is ambiguous, never merges them, and sums in code
   (`server/atlas/givingTotal.js`).
 
+
+## ATLAS-6 · No ungrounded numbers (2026-11-11)
+
+- An amount for a period reads `shared/numbers` for the window `shared/atlasDates.js periodOf` read from her words.
+  Lifetime only when no period was named, and then labeled.
+- A gift Atlas names is quoted from a row the answer fetched, and the row ids stay on the answer.
+- Every reply that carries model words passes `server/atlas/grounded.js groundedIn`: each $ amount and date must be
+  one the answer read, or the template sentence goes instead. A new place Atlas or Ask shows model words runs it too.
+- Org facts (executive director, signer, EIN, address, fiscal year, time zone) come from settings and the team's titles.
+- A compound question is split; each part answered in plain words; the question is never echoed.
