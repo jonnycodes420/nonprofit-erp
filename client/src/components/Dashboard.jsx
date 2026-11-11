@@ -23,6 +23,8 @@ import { MailboxBanner } from "./MailboxBanner";   // PERF-2: not the inbox pane
 import { displayDateShort } from "../../../shared/displayDate";
 import { CallsToMake } from "./CallsToMake";
 import * as FL from "./home/HomeFirstLook";   // SCREENS-1: Home's first look
+import { isPortfolioUser } from "../lib/portfolioRoutes";   // ACCESS-3
+import { retryImport } from "../lib/lazyRetry";   // ACCESS-3
 import * as HL from "./home/HomeLater";   // SCREENS-1: the rest of Home, imported with it
 import { PORTFOLIO_BREAKDOWNS, ImpactLine } from "./home/homeParts";
 import { openTellSteward } from "./TellStewardOpen";   // AGENT-5: one input, Atlas over the page
@@ -32,6 +34,7 @@ import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads, HomeRailColum
 import { plural } from "../../../shared/countWords";
 import { HOME_GRID_CSS } from "./home/homeGrid";   // HOME-6
 import { useMovesGate, deckKnownEmpty } from "../lib/movesGate";   // FEEL-1; MOPUP-3
+const PortfolioCard = lazy(() => retryImport(() => import("./home/PortfolioCard")).then(m => ({ default: m.PortfolioCard })));   // ACCESS-3: loaded only for someone who sees only their own people
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="home"}) {
@@ -735,6 +738,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // (BUILD-36 B3). POLISH-8: the ORG's hour, not the browser's, and the night
   // (10 PM–5 AM) is just "Hi" (HomeFirstLook says "Hi Mike", no comma).
   const greeting=greetingForHour(hourIn(orgTimezone()));
+  const scopedHome=surface==="home"&&isPortfolioUser();   // ACCESS-3: their own Home (Your portfolio, no closed panels)
   let paceLabel=null,paceColor="rgba(240,237,230,0.7)",paceSub=null,daysLeftInPeriod=null;
   if(goal){
     const periodStartDate=new Date(goal.periodStart+"T00:00:00");
@@ -1247,6 +1251,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     // automatic email line, then the day's meetings. Nothing draws until every
     // read the rail needs is back (they all left with Home's first reads, see
     // lib/homeReads.js RAIL_READS); placeholders in this shape hold its place.
+    if(scopedHome) return <div data-testid="home-rail" data-ready="1" style={{display:"flex",flexDirection:"column",gap:12}}><Suspense fallback={null}><PortfolioCard onNavigate={onNavigate} openProfile={openProfile}/></Suspense></div>;   // ACCESS-3
     if(!railReady) return <HomeRailSkeleton/>;
     const todayItems=[
       {key:"followups",n:threadsData&&!threadsData.failed?(threadStat?.open||0):null,one:"person with a next step",many:"people with a next step",   // SENDS-1, TRUTH-4: its own name, never read as the Tasks badge
@@ -1313,8 +1318,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // FEEL-1: only while the deck is drawn (Home, not editing) and has not settled,
   // and only on a wide screen: on a phone, holding the rail cost 150 ms of its
   // 3.58 s budget (perf-app), so a phone draws as before.
-  const holdUnderDeck=surface==="home"&&!editMode&&!movesSettled;
-  const homeHead=FL.homeHead({ onMovesSettled, agentDaily, cancelEdit, data, editMode, enterEdit, firstName, greeting, homeDay, isReadOnly, layout, loadThreads, noDonorsYet, onNavigate, resetLayout, sampleStatus, saveEdit, setupFirst, surface, threadScope, todayLongStr, todayStr });
+  const holdUnderDeck=surface==="home"&&!editMode&&!movesSettled&&!scopedHome;   // ACCESS-3: no deck is drawn for them, so nothing waits on one
+  const homeHead=FL.homeHead({ scoped:scopedHome, onMovesSettled, agentDaily, cancelEdit, data, editMode, enterEdit, firstName, greeting, homeDay, isReadOnly, layout, loadThreads, noDonorsYet, onNavigate, resetLayout, sampleStatus, saveEdit, setupFirst, surface, threadScope, todayLongStr, todayStr });
   return(
     <div className="dash-root dash-bleed" style={{background:surface==="home"?T.ground:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
       {/* BUILD-87 F.3.1 — ONE CONTENT COLUMN. Home was as wide as the window,
@@ -1337,7 +1342,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           because the panel already drew it. */}
       {/* HOME-3 — nothing renders above the greeting: the moves deck sits
           under Ask, inside the header (homeHead). */}
-      <div className={surface==="home"?"home-shell":""}>
+      <div className={surface==="home"?(scopedHome?"home-shell home-shell-scoped":"home-shell"):""}>
       {surface==="home"&&<style>{HOME_GRID_CSS}</style>}{/* HOME-6: Home's one grid (home/homeGrid.js) */}
       {surface==="home"&&!homeWide&&<div className="home-head-narrow">{homeHead}</div>}
       <div className={surface==="home"?"home-shell-top":""} style={holdUnderDeck&&phoneHold?{display:"none"}:undefined}>{/* MOPUP-3: held whole under an empty deck on a phone */}

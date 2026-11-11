@@ -84,6 +84,7 @@ import * as HomeLater from "../../client/src/components/home/HomeLater.js";
 import * as DriftList from "../../client/src/components/home/DriftList.jsx";
 import * as ReadoutPanel from "../../client/src/components/home/ReadoutPanel.jsx";
 import * as homeGrid from "../../client/src/components/home/homeGrid.js";
+import * as PortfolioCard from "../../client/src/components/home/PortfolioCard.jsx";   // ACCESS-3
 import * as Insights from "../../client/src/components/Insights.jsx";
 
 const noop = () => {};
@@ -182,6 +183,8 @@ export const CASES = [
   ["home/DriftList", () => <DriftList.DriftList drift={{ count: 6, people: [{ id: "d1", name: "Odessa Penwright", short: "Gave Dec 2025, nothing since", reason: "Past their usual time.", stakeCents: 50000, lastCents: 25000, lastDate: "2025-12-03" }] }} onNavigate={noop}/>, /Drifting · 6[\s\S]*Odessa Penwright[\s\S]*\$500[\s\S]*Last \$250[\s\S]*Show all 6/],
   ["home/ReadoutPanel", () => <ReadoutPanel.ReadoutPanel id="ro1" title="What your history shows" onClose={noop}/>, /What your history shows/],
   ["home/homeGrid", () => <div>{/grid-template-columns: minmax\(0, 7fr\) minmax\(300px, 3fr\)/.test(homeGrid.HOME_GRID_CSS) ? "seven to three" : "no grid"}</div>, /seven to three/],
+  // ACCESS-3: the header of someone who sees only their own people: the date, the greeting, the org's name.
+  ["home/PortfolioCard", () => <PortfolioCard.ScopedHead data={{ org: { name: "Zzwren Valley Arts Trust" } }} editMode={false} firstName="Sam" greeting="Good evening" layout={[]} todayLongStr="Tuesday, November 10" enterEdit={noop} cancelEdit={noop} saveEdit={noop} resetLayout={noop}/>, /Tuesday, November 10[\s\S]*Good evening, Sam[\s\S]*Zzwren Valley Arts Trust/],
   ["home/HomeLater", () => <div>{["threadSection", "driftSection", "sectionStack", "homeOverlays", "cardsBlock"].filter(k => typeof HomeLater[k] === "function").join(" ")}</div>, /threadSection driftSection sectionStack homeOverlays cardsBlock/],
 ];
 

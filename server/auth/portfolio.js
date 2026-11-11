@@ -26,6 +26,7 @@ const R = require("./portfolioRoutes");
 
 const NOT_FOUND = { error: "not_found", message: "Not found." };
 const CLOSED = { error: "not_found", scope: "portfolio", message: "This isn't part of what you see in Steward." };
+const NO_EXPORT = { error: "export_off", message: "Export is turned off for your account. Ask your admin if you need a file." };
 const NOBODY = "portfolio_nobody_0000000000000000";
 const SAFE_ID = /^[A-Za-z0-9_.:-]{1,128}$/;
 
@@ -159,7 +160,10 @@ async function gate(req) {
   // way it does for the coordinator (it names a page, never a person).
   if (!decl || decl.cls === "closed") return { status: 404, body: CLOSED, why: "closed" };
   const p = req.user.portfolio || {};
-  if (!p.canExport && R.isExport(req.method, routePath)) return { status: 404, body: CLOSED, why: "export" };
+  // ACCESS-3: export is a capability (the Campaign cabinet preset turns it off),
+  // not a person scope, so it is refused as one: 403, saying why. It names no
+  // person, so it can't tell anyone who exists.
+  if (!p.canExport && R.isExport(req.method, routePath)) return { status: 403, body: NO_EXPORT, why: "export" };
   const orgId = req.user.orgId;
   // Path parameters.
   for (const [name, val] of Object.entries(req.params || {})) {

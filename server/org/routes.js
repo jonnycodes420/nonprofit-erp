@@ -887,6 +887,7 @@ app.get("/org/team", requireAuth, wrap(async (req, res) => {
 
 // ACCESS-2: Settings → Team, "Sees: Everyone / Only people assigned to them".
 require("./teamAccess").mount({ query, run, requireAuth, requireAdmin, wrap }, app);
+require("../home/portfolioCard").mount({ query, requireAuth, wrap }, app);   // ACCESS-3: Home's "Your portfolio"
 
 // ── BUILD-75 C.3 — USER REMOVAL, finally ────────────────────────────────────
 // Settings could invite but not remove; the only path was manual database

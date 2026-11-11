@@ -24,17 +24,36 @@ const SPAN_CENTS = (g = "g") => `COALESCE(SUM(ROUND(${g}.amount * 100)) FILTER (
 
 // Total given in cents for the org or one person: `gifts` the gifts above
 // zero, `rows` every money row (a refund included), `givers` the people.
-async function givingBetween(query, orgId, { from, to, today, donorId = null }) {
+// ACCESS-3: `visible` (server/auth/portfolio.js visibleSql over "d") narrows it
+// to a portfolio user's people; omitted, it is the whole org.
+async function givingBetween(query, orgId, { from, to, today, donorId = null, visible = null }) {
   const s = capped({ from, to }, today);
   if (!s.from || !s.to || s.to < s.from) return { cents: 0, gifts: 0, rows: 0, givers: 0, from: s.from, to: s.to };
+  const v = visible && visible.sql ? visible : { sql: "", args: [] };
   const args = [orgId, s.from, s.to];
   if (donorId) args.push(donorId);
   const [r] = await query(
     `SELECT COALESCE(SUM(ROUND(g.amount * 100)), 0)::bigint AS cents, COUNT(*) FILTER (WHERE g.amount > 0)::int AS n,
             COUNT(*)::int AS rows, ${GIVERS("g", "d")}::int AS givers
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-      WHERE g.org_id = ? AND ${LIVE("d")} AND ${IN_SPAN("g")}${donorId ? " AND g.donor_id = ?" : ""}`, args);
+      WHERE g.org_id = ? AND ${LIVE("d")} AND ${IN_SPAN("g")}${donorId ? " AND g.donor_id = ?" : ""}${v.sql}`, [...args, ...v.args]);
   return { cents: Number(r.cents), gifts: Number(r.n), rows: Number(r.rows), givers: Number(r.givers), from: s.from, to: s.to };
+}
+
+// ACCESS-3: the same money, person by person, most first (ties by id), people
+// who gave nothing in the span left out. Its rows foot to givingBetween's cents
+// for the same span and `visible`, because both read IN_SPAN over live people.
+async function givingBetweenByPerson(query, orgId, { from, to, today, visible = null, limit = 5 }) {
+  const s = capped({ from, to }, today);
+  if (!s.from || !s.to || s.to < s.from) return [];
+  const v = visible && visible.sql ? visible : { sql: "", args: [] };
+  const rows = await query(
+    `SELECT d.id, d.name, COALESCE(SUM(ROUND(g.amount * 100)), 0)::bigint AS cents
+       FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+      WHERE g.org_id = ? AND ${LIVE("d")} AND ${IN_SPAN("g")}${v.sql}
+      GROUP BY d.id, d.name HAVING COALESCE(SUM(ROUND(g.amount * 100)), 0) > 0
+      ORDER BY cents DESC, d.id LIMIT ${Math.max(1, Math.min(100, Number(limit) || 5))}`, [orgId, s.from, s.to, ...v.args]);
+  return rows.map(r => ({ id: r.id, name: r.name, cents: Number(r.cents) }));
 }
 
 // LEDGER-1 · THE LAST YEAR THEY GAVE. LYBUNT's and SYBUNT's amount, one rule:
@@ -70,4 +89,4 @@ const LAST_YEAR_SUM = (d = "d") => `(SELECT COALESCE(SUM(lg.amount), 0) FROM gif
      WHERE lg.org_id = ${d}.org_id AND lg.donor_id = ${d}.id AND ${MONEY("lg")} AND lg.date >= ly.f AND lg.date <= ly.t)`;
 const lastYearArgs = (yearFrom) => { const y = yearsBefore(yearFrom); return [yearFrom, y.froms, y.tos]; };
 
-module.exports = { capped, IN_SPAN, SPAN_SUM, SPAN_CENTS, givingBetween, yearsBefore, LAST_YEAR_JOIN, LAST_YEAR_SUM, lastYearArgs };
+module.exports = { capped, IN_SPAN, SPAN_SUM, SPAN_CENTS, givingBetween, givingBetweenByPerson, yearsBefore, LAST_YEAR_JOIN, LAST_YEAR_SUM, lastYearArgs };
