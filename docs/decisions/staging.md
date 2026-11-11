@@ -39,6 +39,23 @@ run on staging.
   goes through staging, with a warning on the run.
 - **A build is done when it is live on staging** and its walk is green. Jonathan ships it.
 
+## The rules (STAGE-2)
+
+- **Staging says it's staging.** Every page (app, landing, public pages) carries the strip
+  "Staging · not what customers see" and titles start "[Staging] "
+  (`client/src/lib/stagingStrip.js`). It shows when the build has `VITE_STEWARD_ENV=staging`
+  (only `deploy-staging` passes it) or, as a fallback, when the API's `/health` says
+  `env: "staging"`. A header pinned to the top of the window adds
+  `var(--steward-strip-h, 0px)` to its offset; it is 0 on prod.
+- **Drift is caught by name, never by value.** `scripts/ci/railway-drift.js` (the `drift`
+  job, push to main and nightly; it blocks nothing) reads each environment with its own token
+  and compares build and start commands and variable names. A name prod has and staging
+  lacks fails unless `scripts/ci/drift-allow.json` lists it with a reason. No variable value
+  is fetched: names come from Railway's `Environment.variables`, which has no value field,
+  and `STEWARD_ENV` is checked through staging's `/health`.
+- **No config-as-code for Railway** (`railway.json`): a file in the repo would then govern
+  prod's deploys. Settings stay in Railway; the drift job watches them.
+
 ## For Muse: signing in to staging
 
 Staging is `https://staging.stewardapp.dev`. Sign in as the Harborlight director,
