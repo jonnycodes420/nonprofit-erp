@@ -23,6 +23,7 @@ import { eventEditForm } from "../lib/eventEditForm.js";   // WALKB-2: the dialo
 import EventRemoveButton, { AttendeeLabel } from "./events/EventRemoveButton.jsx";   // WALKB-2
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: the org's day
 import { GuestOfPicker } from "./events/GuestOfPicker";   // CONNECT-1: "Guest of…" when a guest is added
+import { GuestChip } from "./events/GuestChip";   // CONNECT-1: moved out whole, Events.jsx stays under its size baseline
 import { addGuests } from "../lib/eventCapacity";   // STALE-2: past capacity asks first
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { EventAuction, EventsAuctions } from "./events/EventAuction";   // NAV-1 (menu): auctions on the event, and an Auctions list
@@ -885,29 +886,6 @@ function EventSeating({ eventId }) {
 
       <div style={{ marginTop: 12 }}><TableAdder testid="ev-tables-adder" /></div>
     </div>
-  );
-}
-
-// A guest, tappable and draggable and reachable by keyboard. It is a BUTTON so
-// the phone, the mouse and the Tab key all reach it the same way; drag is an
-// extra on top rather than the only means.
-function GuestChip({ g, picked, onToggle, onDragStart, onDragEnd, chair = null }) {
-  return (
-    <button type="button" data-testid="ev-guest" aria-pressed={picked}
-      draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onToggle}
-      style={{
-        display: "block", width: "100%", textAlign: "left", font: "inherit",
-        background: picked ? T.greenDk + "16" : "transparent",
-        border: picked ? "1px solid " + T.greenDk : "1px solid transparent",
-        borderRadius: 7, padding: "3px 6px", margin: "1px 0", minHeight: 30,
-        fontSize: 12.5, color: T.ink, cursor: "pointer", overflowWrap: "anywhere",
-      }}>
-      {chair ? <span style={{ color: T.ink3, fontVariantNumeric: "tabular-nums" }}>{chair} · </span> : null}
-      {g.name}
-      {g.vip ? <span data-testid="ev-vip-mark" style={{ color: T.gold700, fontWeight: 800 }}> · VIP</span> : null}
-      {g.guest_of ? <span style={{ color: T.ink3 }}> · guest</span> : null}
-      {g.dietary ? <span style={{ color: T.gold700 }}> · {g.dietary}</span> : null}
-    </button>
   );
 }
 
