@@ -127,7 +127,7 @@ carry, e.g. a calendar or a household; the test checks the profile's code still 
 | mtg-print | Print the brief | `window.print()` | "Print the brief" || activity · `Print the brief` · code |
 | mtg-move | Move it | time form → `POST /calendar/events/:id/move` | "Move it" || activity · `Move it` · code |
 | mtg-cancel | Cancel it | confirm → `POST /calendar/events/:id/cancel` | `[data-testid=dp-meeting-cancel]` || activity · `dp-meeting-cancel` · code |
-| heard-chip | From your note: chip / Not now (within 30 days of a hand-logged note) | `POST /interactions/:id/chips` (MeetingPanels `ConversationChips`) | `[data-testid=dp-heard] [data-chip]` || activity · `[data-testid=dp-heard]` · exists |
+| heard-chip | From your note: chip / Not now (within 30 days of a hand-logged note, and only when the note offers a chip: FLOWS-6) | `POST /interactions/:id/chips` (MeetingPanels `HeardCard`, `ConversationChips`) | `[data-testid=dp-heard] [data-chip]` || activity · `dp-heard` · code |
 | howdid | How did it go? · Write it down (meeting ended < 7 days, not logged) | `AfterMeetingForm` modal | `[data-testid=dp-how-did-it-go] button` || activity · `dp-how-did-it-go` · code |
 | ask-new | + New ask | `ProposalForm` → `POST /donors/:id/proposals` (MajorGifts `ProposalsPanel`) | `[data-testid=dp-the-ask]` "+ New ask" || giving · `[data-testid=dp-the-ask] button:has-text("+ New ask")` · dialog |
 | ask-stage | Stage buttons (Prospect, Qualify, Cultivate, Solicit, Ongoing care, Lapsed) (team) | `onStageChange(id, stage)` (Donors.jsx → `PUT /donors/:id`, stage) | `[data-testid=dp-move-stage] button[aria-pressed]` || giving · `[data-testid=dp-stage-bar] [data-stage=solicit]` · exists |

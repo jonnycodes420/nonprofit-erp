@@ -132,6 +132,8 @@ export function useProfileRail({ donor, isReadOnly, rel, setLogMeeting, stepEdit
                       {openProposals.length>1?<> · and {openProposals.length-1} more open {openProposals.length-1===1?"ask":"asks"}</>:null}
                     </div>
                   </div>
+                  {/* FLOWS-6 (W-1109-Donors-41): Plan a follow-up is on Next step whatever it holds. */}
+                  {!isReadOnly&&<button type="button" data-testid="dp-next-plan" onClick={()=>setPlanOpen(true)} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12.5,fontWeight:700,textDecoration:"underline",textUnderlineOffset:2,cursor:"pointer",fontFamily:"inherit"}}>Plan a follow-up</button>}
                 </div>
               ):(
                 <div data-testid="dp-next-empty" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"16px 18px",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
