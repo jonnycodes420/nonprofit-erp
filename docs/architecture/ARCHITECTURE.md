@@ -111,6 +111,7 @@ rather than writing a second.
 | People and households | `shared/numbers/households.js` (NUMBERS-4): `PERSON` (not deleted, not sample), `counts()` (people, households with a live person, giving units on EVENTS-3's `PARTY`) |
 | Net and fee | `shared/giftFooting.js` |
 | A channel partner's payout (SALES-1) | `shared/numbers/partnerPayout.js`: `termOf`, `owedByMonth` (percent of ONBOARD-2's MRR or a flat amount, within the term's months and cap) |
+| What the people someone brought in gave since (CONNECT-1) | `shared/numbers/broughtIn.js`: the people linked to a connector by Introduced by or Guest of, and their gifts dated on or after the link (money.js's rule); the figure sources `brought-in-people` and `brought-in-gifts` |
 
 Every number on a screen is a `<Figure>` with a `source` (CLAUDE.md), so the place that computes it
 is also the place its rows come from.
