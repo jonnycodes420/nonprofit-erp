@@ -20,7 +20,7 @@
 //       the hidden person's markers. Home's bundle too.
 //   §5  EXACT: her Everyone count, the list, search, ⌘K and export are her
 //       portfolio, exactly (the household's member included); the cabinet
-//       preset's export is a 404; a new person is hers; her writes inside
+//       preset's export is a 403 (ACCESS-3); a new person is hers; her writes inside
 //       land; an admin and a staff member who sees everyone are unaffected.
 //   §6  ATLAS: asked about someone outside, it can't find them; asked about
 //       her own, it answers. The control: an admin's Atlas finds the other.
@@ -284,7 +284,7 @@ const SKIP = new Set([
   const rows = String(ex.text || "").trim().split("\n").slice(1);
   ok("§5 her export is her portfolio exactly", ex.status === 200 && rows.length === 4 && !leaked(ex.text).length, { status: ex.status, rows: rows.length });
   const exCab = await api("GET", "/donors/export/csv", tok.cab);
-  ok("§5 the Campaign cabinet's export is off (404)", exCab.status === 404, exCab.status);
+  ok("§5 the Campaign cabinet's export is off (403: a capability, not a person; ACCESS-3)", exCab.status === 403 && !leaked(exCab.text).length, exCab.status);
   const wsCab = await api("GET", `/donors/${MINE.a}`, tok.cab);
   ok("§5 the Campaign cabinet sees no Wealth Score", wsCab.status === 404 || !/"wealth_rating":\s*\d/.test(wsCab.text || ""), wsCab.status);
   const touch = await api("POST", `/donors/${MINE.a}/interactions`, tok.port, { type: "call", note: "acc2 call inside", date: civilDay() });

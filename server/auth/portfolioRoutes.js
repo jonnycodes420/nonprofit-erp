@@ -63,6 +63,7 @@ const DECLARATIONS = [
   D("GET", "/donors/birthdays-near", "scoped"),   // ACCESS-2B: Home's birthdays, their people's
   // ACCESS-2B: the Thread, their people's follow-ups only (composeThreads' visible).
   D("GET", "/threads", "scoped"),
+  D("GET", "/home/portfolio", "scoped"),   // ACCESS-3: Home's "Your portfolio" card, their people only
   D("POST", "/threads/plan", "param"),
   // Creating a person makes them the creator's own (server/donors/routes.js).
   D("POST", /^\/donors$|^\/gifts\/new-person$/, "scoped"),
