@@ -169,7 +169,10 @@ const DOORS = { why: "The reasons behind your numbers", what: "Results, and who 
 // year at this point."); otherwise they fold into the questions under Ask.
 // `lead` is the lead slot, drawn between Ask and the agent's daily line.
 // Before the day has loaded, the two doors show as they always have.
-export function AskHero({ isReadOnly, onStepTaken, agent, day, lead, doors: showDoors = true }) {
+// ACCESS-3: `collapse` draws the two reserved rows only when they have
+// something in them: for someone whose reads behind them are closed, they
+// would stay blank and make an empty band above the Thread.
+export function AskHero({ isReadOnly, onStepTaken, agent, day, lead, doors: showDoors = true, collapse = false }) {
   const [open, setOpen] = useState(null);
   const [text, setText] = useState("");
   const [kept, setKept] = useState(() => readKept());
@@ -216,21 +219,21 @@ export function AskHero({ isReadOnly, onStepTaken, agent, day, lead, doors: show
           and pushed Your moves down (CLS 0.045). Each row is one line of a fixed
           height, there before its words: the chips scroll sideways rather than
           wrap, and the agent's line ends in an ellipsis. */}
-      <div data-testid="ask-tries" className="ask-tries" aria-hidden={tries.length ? undefined : true}
+      {(!collapse || tries.length > 0) && <div data-testid="ask-tries" className="ask-tries" aria-hidden={tries.length ? undefined : true}
         style={{ display: "flex", flexWrap: "nowrap", alignItems: "center", gap: 8, height: 26, overflowX: "auto", overflowY: "hidden", fontSize: 13, color: T.ink3, marginTop: -2 }}>
         {tries.length > 0 && <span style={{ padding: "0 2px", color: T.ink3, flexShrink: 0, lineHeight: "18px" }}>Try:</span>}
         {tries.map(t => <button key={t} type="button" data-testid="ask-try" onClick={() => ask(t)}
           style={{ flexShrink: 0, whiteSpace: "nowrap", border: "1px solid " + T.bg2, borderRadius: 16, padding: "3px 12px", lineHeight: "18px", background: T.ground, color: T.ink2, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{t}</button>)}
-      </div>
+      </div>}
       {lead}
       {doorsShown.length > 0 && <div className="ask-doors" data-count={doorsShown.length}>{doorsShown.map(door)}</div>}
-      <div data-testid="ask-under" style={{ display: "flex", flexWrap: "nowrap", gap: 12, alignItems: "center", height: 17, minWidth: 0, overflow: "hidden", fontSize: 12.5, color: T.ink3 }}>
+      {(!collapse || (agent && agent.line) || kept) && <div data-testid="ask-under" style={{ display: "flex", flexWrap: "nowrap", gap: 12, alignItems: "center", height: 17, minWidth: 0, overflow: "hidden", fontSize: 12.5, color: T.ink3 }}>
         {agent && agent.line && <button type="button" data-testid="agent-daily-line" onClick={agent.onOpen} title={agent.line}
           style={{ background: "none", border: "none", padding: 0, color: T.ink2, fontSize: 12.5, lineHeight: "17px", cursor: "pointer", fontFamily: "inherit", textAlign: "left", minWidth: 0, flex: "0 1 auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{agent.line}</button>}
         {kept && <button type="button" data-testid="ask-kept" onClick={() => setOpen({ mode: "thread", replay: kept.turns, n: Date.now() })}
           style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 12.5, lineHeight: "17px", cursor: "pointer", fontFamily: "inherit", minWidth: 0, flex: "0 1 auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           Your kept thread · {kept.turns[0].text}</button>}
-      </div>
+      </div>}
       {open && <AskRail key={open.n} mode={open.mode} replay={open.replay} isReadOnly={isReadOnly} onStepTaken={onStepTaken}
         onKept={setKept} kept={kept} onClose={() => setOpen(null)} />}
     </div>

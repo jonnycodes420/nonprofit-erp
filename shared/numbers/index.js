@@ -36,4 +36,5 @@ module.exports = {
   softThrough: require("./softThrough"),   // TRUTH-5
   pledgeSchedule: require("./pledgeSchedule"),   // TRUTH-5
   lapseWords: require("./lapseWords"),   // TRUTH-5
+  nextSteps: require("./nextSteps"),   // ACCESS-3
 };

@@ -1,0 +1,22 @@
+{
+  "orgAndGreetingOneRow": true,
+  "dateUnderGreeting": true,
+  "workBlocks": [
+    "home-head-wide",
+    "home-block"
+  ],
+  "askRows": {
+    "tries": 26,
+    "under": 17
+  },
+  "moves": true,
+  "railCards": [
+    "home-setup-rail",
+    "home-today",
+    "home-calls",
+    "home-to-confirm",
+    "home-mail-line",
+    "home-rail-meetings"
+  ],
+  "portfolioCard": false
+}
