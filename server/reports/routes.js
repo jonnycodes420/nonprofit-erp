@@ -284,7 +284,12 @@ app.get("/donors/:id/by-year", requireAuth, wrap(async (req, res) => {
   res.json(out);
 }));
 
-app.get("/reports/:key", requireAuth, OS.cached("report", { perUser: false, when: req => req.params.key === "giving-summary" && !req.query.format }), wrap(async (req, res) => {
+// REPORTS-SPEED-1: Retention, Annual and SYBUNT's common asks are stored too, and
+// stale only when a table they read changes (server/reports/storedReports.js).
+const STORED = require("./storedReports");
+app.get("/reports/:key", requireAuth, OS.cached("report", { perUser: false,
+  when: req => (req.params.key === "giving-summary" && !req.query.format) || STORED.isStoredAsk(req),
+  reads: req => (STORED.KEYS.has(req.params.key) ? STORED.DEPS : null) }), wrap(async (req, res) => {
   const { key } = req.params;
   if (!REPORT_HANDLERS[key]) return res.status(404).json({ error: "Unknown report" });
   let p;
