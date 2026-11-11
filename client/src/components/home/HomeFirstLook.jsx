@@ -1,7 +1,8 @@
 import { T } from "../shared";
 import { AskHero } from "../AskRail";
 import { openTellSteward } from "../TellStewardOpen";
-import { Suspense } from "react";
+import { Suspense, lazy } from "react";
+import { retryImport } from "../../lib/lazyRetry";
 import { MOVES_WAIT, HomeMoves } from "./homeParts";
 
 export function homeHead({ scoped, onMovesSettled, agentDaily, cancelEdit, data, editMode, enterEdit, firstName, greeting, homeDay, isReadOnly, layout, loadThreads, noDonorsYet, onNavigate, resetLayout, sampleStatus, saveEdit, setupFirst, surface, threadScope, todayLongStr, todayStr }) {
@@ -122,36 +123,11 @@ export function homeHead({ scoped, onMovesSettled, agentDaily, cancelEdit, data,
   );
 }
 
-// ACCESS-3 · THE HEADER OF SOMEONE WHO SEES ONLY THEIR OWN PEOPLE. Jonathan,
-// walking Home as a Campaign cabinet member (10 Nov): "Harborlight Youth
-// Collective  Hi test" sat as one run-on line above the date. For them the
-// date is the headline, the greeting (POLISH-8's, the org's hour) its own line
-// under it, and the org's name small under that. Under Ask, nothing waits for
-// a panel closed to them: the suggestion rows draw only with something in
-// them, and the moves deck (closed to them) has no slot, so the Thread sits
-// under the Atlas box.
-function scopedHead({ agentDaily, cancelEdit, data, editMode, enterEdit, firstName, greeting, homeDay, isReadOnly, layout, loadThreads, resetLayout, saveEdit, threadScope, todayLongStr }) {
-  const quiet = { background: "transparent", border: "none", padding: 0, color: T.ink3, fontSize: 12, fontWeight: 700, cursor: "pointer" };
-  return (
-    <>
-      <div className="home-head" data-scoped="1" style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {!editMode && <h1 className="home-day" style={{ fontFamily: "'DM Serif Display',Georgia,serif", textWrap: "balance", fontSize: 44, fontWeight: 400, lineHeight: 1.08, letterSpacing: "-0.02em", color: T.ink, margin: 0 }}>{todayLongStr}</h1>}
-          <div data-testid="home-greeting" style={{ marginTop: 8 }}>
-            <div data-testid="home-greeting-line" style={{ fontSize: 17, lineHeight: 1.35, color: T.ink2 }}>{greeting}{firstName ? (greeting === "Hi" ? ` ${firstName}` : `, ${firstName}`) : ""}</div>
-            {data.org?.name && <div data-testid="home-org-name" title={data.org.name} style={{ fontSize: 12.5, lineHeight: 1.4, color: T.ink3, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{data.org.name}</div>}
-          </div>
-        </div>
-        <div aria-hidden={layout === undefined || undefined} style={{ display: "flex", gap: 16, flexShrink: 0, marginTop: 6, visibility: layout === undefined ? "hidden" : undefined }}>
-          {editMode ? <>
-            <button onClick={resetLayout} style={quiet}>Reset to default</button>
-            <button onClick={cancelEdit} style={quiet}>Cancel</button>
-            <button onClick={saveEdit} style={{ ...quiet, color: T.greenDk, fontWeight: 800 }}>Done</button>
-          </> : <button onClick={enterEdit} disabled={layout === undefined} aria-label="Edit Home layout, reorder or hide sections" style={{ ...quiet, color: T.greenDk }}>Edit</button>}
-        </div>
-      </div>
-      {!editMode && <AskHero isReadOnly={isReadOnly} onStepTaken={() => loadThreads(threadScope)} day={homeDay} doors={false} collapse
-        agent={{ available: true, line: agentDaily && agentDaily.line, onSend: t => openTellSteward(null, { text: t, send: true }), onOpen: () => openTellSteward(null) }}/>}
-    </>
-  );
+
+// ACCESS-3 · someone who sees only their own people: their own header and
+// Ask (PortfolioCard.jsx ScopedHomeHead), loaded only for them, so everyone
+// else's first look is not one byte heavier. Its place is held meanwhile.
+const ScopedHomeHeadLater = lazy(() => retryImport(() => import("./PortfolioCard")).then(m => ({ default: m.ScopedHomeHead })));
+function scopedHead(p) {
+  return <Suspense fallback={<div aria-hidden="true" style={{ minHeight: 180 }}/>}><ScopedHomeHeadLater {...p}/></Suspense>;
 }

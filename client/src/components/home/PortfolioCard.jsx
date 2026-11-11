@@ -15,6 +15,8 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../../api";
 import { T } from "../shared";
 import { displayDateShort } from "../../../../shared/displayDate";
+import { AskHero } from "../AskRail";
+import { openTellSteward } from "../TellStewardOpen";
 
 const card = { border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 16px 14px", background: T.white, display: "flex", flexDirection: "column", gap: 14 };
 const eyebrow = { fontSize: 10, fontWeight: 800, color: T.ink3, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 6 };
@@ -91,5 +93,50 @@ export function PortfolioCard({ onNavigate, openProfile }) {
           : <div style={{ fontSize: 13.5, color: T.ink2 }}>{p.onTop100 ? "Nothing is planned for your people on the Top 100." : "None of your people is on the Top 100."}</div>}
       </div>
     </section>
+  );
+}
+
+// ACCESS-3 · THE HEADER OF SOMEONE WHO SEES ONLY THEIR OWN PEOPLE. Jonathan,
+// walking Home as a Campaign cabinet member (10 Nov): "Harborlight Youth
+// Collective  Hi test" sat as one run-on line above the date. For them the
+// date is the headline, the greeting (POLISH-8's, the org's hour) its own line
+// under it, and the org's name small under that. Ask follows it, drawn by
+// HomeFirstLook.jsx; this file loads only for them.
+export function ScopedHead({ cancelEdit, data, editMode, enterEdit, firstName, greeting, layout, resetLayout, saveEdit, todayLongStr }) {
+  const quiet = { background: "transparent", border: "none", padding: 0, color: T.ink3, fontSize: 12, fontWeight: 700, cursor: "pointer" };
+  return (
+    <>
+      <div className="home-head" data-scoped="1" style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {!editMode && <h1 className="home-day" style={{ fontFamily: "'DM Serif Display',Georgia,serif", textWrap: "balance", fontSize: 44, fontWeight: 400, lineHeight: 1.08, letterSpacing: "-0.02em", color: T.ink, margin: 0 }}>{todayLongStr}</h1>}
+          <div data-testid="home-greeting" style={{ marginTop: 8 }}>
+            <div data-testid="home-greeting-line" style={{ fontSize: 17, lineHeight: 1.35, color: T.ink2 }}>{greeting}{firstName ? (greeting === "Hi" ? ` ${firstName}` : `, ${firstName}`) : ""}</div>
+            {data.org?.name && <div data-testid="home-org-name" title={data.org.name} style={{ fontSize: 12.5, lineHeight: 1.4, color: T.ink3, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{data.org.name}</div>}
+          </div>
+        </div>
+        <div aria-hidden={layout === undefined || undefined} style={{ display: "flex", gap: 16, flexShrink: 0, marginTop: 6, visibility: layout === undefined ? "hidden" : undefined }}>
+          {editMode ? <>
+            <button onClick={resetLayout} style={quiet}>Reset to default</button>
+            <button onClick={cancelEdit} style={quiet}>Cancel</button>
+            <button onClick={saveEdit} style={{ ...quiet, color: T.greenDk, fontWeight: 800 }}>Done</button>
+          </> : <button onClick={enterEdit} disabled={layout === undefined} aria-label="Edit Home layout, reorder or hide sections" style={{ ...quiet, color: T.greenDk }}>Edit</button>}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// The header, then Ask with its empty rows collapsed (the reads behind them are
+// closed to them). The moves deck is closed to them and has no slot, and the
+// first Thread block loses its top margin, so the Thread sits under Ask.
+const SCOPED_CSS = `.home-shell-scoped .home-head-wide + .home-block, .home-shell-scoped .home-shell-top > :first-child > .home-block:first-child { margin-top: 0; }`;
+export function ScopedHomeHead(p) {
+  return (
+    <>
+      <style>{SCOPED_CSS}</style>
+      <ScopedHead {...p}/>
+      {!p.editMode && <AskHero isReadOnly={p.isReadOnly} onStepTaken={() => p.loadThreads(p.threadScope)} day={p.homeDay} doors={false} collapse
+        agent={{ available: true, line: p.agentDaily && p.agentDaily.line, onSend: t => openTellSteward(null, { text: t, send: true }), onOpen: () => openTellSteward(null) }}/>}
+    </>
   );
 }

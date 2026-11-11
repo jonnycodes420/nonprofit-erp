@@ -24,7 +24,7 @@ import { displayDateShort } from "../../../shared/displayDate";
 import { CallsToMake } from "./CallsToMake";
 import * as FL from "./home/HomeFirstLook";   // SCREENS-1: Home's first look
 import { isPortfolioUser } from "../lib/portfolioRoutes";   // ACCESS-3
-import { PortfolioCard } from "./home/PortfolioCard";   // ACCESS-3
+import { retryImport } from "../lib/lazyRetry";   // ACCESS-3
 import * as HL from "./home/HomeLater";   // SCREENS-1: the rest of Home, imported with it
 import { PORTFOLIO_BREAKDOWNS, ImpactLine } from "./home/homeParts";
 import { openTellSteward } from "./TellStewardOpen";   // AGENT-5: one input, Atlas over the page
@@ -34,6 +34,7 @@ import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads, HomeRailColum
 import { plural } from "../../../shared/countWords";
 import { HOME_GRID_CSS } from "./home/homeGrid";   // HOME-6
 import { useMovesGate, deckKnownEmpty } from "../lib/movesGate";   // FEEL-1; MOPUP-3
+const PortfolioCard = lazy(() => retryImport(() => import("./home/PortfolioCard")).then(m => ({ default: m.PortfolioCard })));   // ACCESS-3: loaded only for someone who sees only their own people
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="home"}) {
@@ -1250,7 +1251,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     // automatic email line, then the day's meetings. Nothing draws until every
     // read the rail needs is back (they all left with Home's first reads, see
     // lib/homeReads.js RAIL_READS); placeholders in this shape hold its place.
-    if(scopedHome) return <div data-testid="home-rail" data-ready="1" style={{display:"flex",flexDirection:"column",gap:12}}><PortfolioCard onNavigate={onNavigate} openProfile={openProfile}/></div>;   // ACCESS-3
+    if(scopedHome) return <div data-testid="home-rail" data-ready="1" style={{display:"flex",flexDirection:"column",gap:12}}><Suspense fallback={null}><PortfolioCard onNavigate={onNavigate} openProfile={openProfile}/></Suspense></div>;   // ACCESS-3
     if(!railReady) return <HomeRailSkeleton/>;
     const todayItems=[
       {key:"followups",n:threadsData&&!threadsData.failed?(threadStat?.open||0):null,one:"person with a next step",many:"people with a next step",   // SENDS-1, TRUTH-4: its own name, never read as the Tasks badge
