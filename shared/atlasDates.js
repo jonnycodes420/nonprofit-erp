@@ -84,10 +84,11 @@ export function endOfMonth(words, today) {
 //   a quarter    "in Q1 2026", "first quarter of 2026", "last quarter", "this quarter"
 //   a fiscal yr  "in FY 2026", "fiscal year 2026", "this fiscal year", "last fiscal year"
 //   a year       "in 2025", "this year", "last year", "year to date"
-// A fiscal year is labeled by the year it ends in (FY 2026 = Jul 2025 to Jun
-// 2026 with a July start), as Reports label it. "Lifetime", "ever", "in total"
-// and no period at all → null: the caller says Lifetime, labeled.
-// → { from, to, words } (civil days, inclusive) or null.
+// A fiscal year comes back named, { fiscal: { endYear } | { offset } }: the
+// server turns it into days with shared/numbers/fiscalYear (it ends in endYear,
+// as Reports label it). "Lifetime", "ever", "in total" and no period at all →
+// null: the caller says Lifetime, labeled.
+// → { from, to, words } (civil days, inclusive), { fiscal }, or null.
 const MONTH_NAMES = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
 const MON = "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
 const monthIdx = w => MONTH_NAMES.findIndex(m => m.startsWith(String(w || "").toLowerCase().slice(0, 3))) + 1;
@@ -112,7 +113,7 @@ function oneDate(t) {
   return null;
 }
 const okDay = x => x && x.m >= 1 && x.m <= 12 && x.d >= 1 && x.d <= lastDay(x.y || 2000, x.m);
-export function periodOf(words, today, { fiscalStartMonth = 7 } = {}) {
+export function periodOf(words, today) {
   const t = String(words || "").toLowerCase().replace(/[?!]/g, " ").replace(/\s+/g, " ");
   const T = ymd(today); if (!T) return null;
   const [ty, tm] = T;
@@ -148,18 +149,12 @@ export function periodOf(words, today, { fiscalStartMonth = 7 } = {}) {
     const from = civil(y, 3 * q - 2, 1), to = civil(y, 3 * q, lastDay(y, 3 * q));
     return { from, to, words: `in Q${q} ${y} (${SHORT_MON[3 * q - 3]} 1 to ${SHORT_MON[3 * q - 1]} ${lastDay(y, 3 * q)})` };
   }
-  // A fiscal year, labeled by the year it ends in.
-  const fyEnd = (y, mo) => (fiscalStartMonth === 1 ? y : (mo >= fiscalStartMonth ? y + 1 : y));
-  const fySpan = label => {
-    const from = fiscalStartMonth === 1 ? civil(label, 1, 1) : civil(label - 1, fiscalStartMonth, 1);
-    const to = addDays(fiscalStartMonth === 1 ? civil(label + 1, 1, 1) : civil(label, fiscalStartMonth, 1), -1);
-    const lbl = fiscalStartMonth === 1 ? `FY ${label}` : `FY ${label - 1}–${String(label).slice(2)}`;
-    return { from, to, label: lbl };
-  };
+  // A fiscal year: named here, its days worked out by shared/numbers/fiscalYear on the
+  // server (the one home of a fiscal-year boundary). FY 2026 is the year that ends in 2026.
   m = /\b(?:fy|fiscal year)\s?'?(\d{4}|\d{2})\b/.exec(t);
-  if (m) { const y = m[1].length === 2 ? 2000 + +m[1] : +m[1]; const f = fySpan(y); return { from: f.from, to: f.to, words: `in ${f.label}` }; }
+  if (m) return { fiscal: { endYear: m[1].length === 2 ? 2000 + +m[1] : +m[1] } };
   m = /\b(this|last|previous|prior) fiscal year\b|\b(this|last) fy\b/.exec(t);
-  if (m) { const now = fyEnd(ty, tm); const y = /this/.test(m[0]) ? now : now - 1; const f = fySpan(y); return { from: f.from, to: f.to, words: `in ${f.label}${/this/.test(m[0]) ? " so far" : ""}` }; }
+  if (m) return { fiscal: { offset: /this/.test(m[0]) ? 0 : -1 } };
   // A month.
   if (/\bthis month\b/.test(t)) { const s2 = monthSpan(ty, tm); return { ...s2, words: `in ${MONTH_NAMES[tm - 1][0].toUpperCase() + MONTH_NAMES[tm - 1].slice(1)} ${ty} so far` }; }
   if (/\blast month\b/.test(t)) { const y = tm === 1 ? ty - 1 : ty, mo = tm === 1 ? 12 : tm - 1; return { ...monthSpan(y, mo), words: `in ${SHORT_MON[mo - 1]} ${y}` }; }

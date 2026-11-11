@@ -691,7 +691,7 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
           ...(ppl.length === 1 ? person(ppl[0].id, { section: "giving" }) : {}) });
         break;
       }
-      case "org_fact": {   // ATLAS-6: from the org's settings and the team's titles, never a lookup that can't find them
+      case "setting_fact": {   // ATLAS-6: from the org's settings and the team's titles, never a lookup that can't find them
         const of6 = await GR.orgFactAnswer(query, orgId, st.fact);
         await log({ kind: "answer", state: "done", line: of6 ? of6.sentence : "I couldn't read that from your settings just now." });
         break;
@@ -856,7 +856,7 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   // each part of a compound question, read in code (server/atlas/grounded.js).
   {
     const [AT6, D6, [o6]] = await Promise.all([AT(), import("../shared/atlasDates.js"), query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId])]);
-    const q6 = GR.questionSteps(text, { today, fiscalStartMonth: require("../orgTime").orgFiscalStartMonth(o6 || {}), A: AT6, D: D6 });
+    const q6 = GR.questionSteps(text, { today, org: o6 || {}, A: AT6, D: D6 });
     if (q6) read.steps = q6;
   }
   const t1 = Date.now();

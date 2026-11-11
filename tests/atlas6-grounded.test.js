@@ -55,6 +55,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   ok("the director's colleague signs in", !!tok);
   const today = civilDay();
   const D = await import("../shared/atlasDates.js");
+  const GRm = require("../server/atlas/grounded");
 
   // ── §1 the period grid ──────────────────────────────────────────────────
   const PHRASES = ["between Jan 1 and Mar 31, 2026", "between 1/1/2026 and 3/31/2026", "in Q1 2026", "in March 2026", "in 2025",
@@ -62,7 +63,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const bad = [];
   for (const p of Object.values(F.PEOPLE)) {
     for (const ph of PHRASES) {
-      const w = D.periodOf(ph, today, { fiscalStartMonth: 7 });
+      const w = GRm.resolvePeriod(D.periodOf(ph, today), { vocabulary_json: JSON.stringify({ fiscal_year_start_month: 7 }) }, today);
       const to = w.to > today ? today : w.to;
       const want = p.gifts.filter(([d]) => d >= w.from && d <= to).reduce((s, [, a]) => s + Math.round(a * 100), 0);
       const r = await ask(tok, `How much did ${p.name} give ${ph}?`);

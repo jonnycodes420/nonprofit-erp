@@ -21,6 +21,7 @@
 const { givingBetween, IN_SPAN } = require("../../shared/numbers/givingBetween");
 const { LIVE } = require("../../shared/numbers/money");
 const GT = require("./givingTotal");
+const FY = require("../../shared/numbers/fiscalYear");   // the one home of a fiscal-year boundary
 
 const MON3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const dayWords = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || "")); return m ? `${MON3[+m[2] - 1]} ${+m[3]}, ${m[1]}` : ""; };
@@ -154,7 +155,7 @@ async function orgFactAnswer(query, orgId, fact) {
                              FROM orgs WHERE id = ?`, [orgId]);
   if (!o) return { sentence: "I couldn't read your organization's settings just now." };
   const orgName = o.name || "Your organization";
-  const orgs = /s$/i.test(orgName) ? `${orgName}'` : `${orgName}'s`;   // "Cedar Hollow Arts'", "Harborlight's"
+  const orgs = /s$/i.test(orgName) ? `${orgName}'` : `${orgName}'s`;   // a name ending in s takes the apostrophe alone
   if (fact === "director") {
     const team = await query(`SELECT name, sign_title FROM users WHERE org_id = ? AND deactivated_at IS NULL AND COALESCE(sign_title, '') <> ''`, [orgId]);
     const byTitle = team.find(u => DIRECTOR_TITLE.test(u.sign_title));
@@ -197,10 +198,19 @@ function splitQuestion(words) {
 const PREDICT = /\b(?:will|going to|gonna|expect(?:ed)? to|predict|forecast)\b.*\b(?:give|donate|gift|giving)\b|\bnext (?:year|month|quarter|fiscal year)\b.*\b(?:give|giving|donate)\b/i;
 const isPrediction = words => PREDICT.test(String(words || ""));
 
+// The window a period names, in days: a named fiscal year through shared/numbers/fiscalYear.
+function resolvePeriod(p, org, today) {
+  if (!p || !p.fiscal) return p || null;
+  const sm = FY.startMonth(org || {});
+  const startYear = p.fiscal.endYear != null ? (sm === 1 ? p.fiscal.endYear : p.fiscal.endYear - 1) : FY.startYearOf(today, sm) + p.fiscal.offset;
+  const y = FY.yearStarting(startYear, sm);
+  return { from: y.start, to: y.end, words: `in ${y.chartLabel}${p.fiscal.offset === 0 ? " so far" : ""}` };
+}
+
 // ── Her words, as the steps ATLAS-6 answers in code ────────────────────────
 // null when none of these shapes is all of it (the usual read goes on). Each
 // part of a compound question is its own step, answered in order:
-//   an org fact            → org_fact
+//   a setting (org fact)   → setting_fact
 //   something not kept     → cant_know ("I don't have Renee's favorite color.")
 //   a forecast             → giving_total { predict }: what they gave this fiscal year, said as known
 //   an amount (a period?)  → giving_total { period }
@@ -218,14 +228,14 @@ function nameIn(words) {
   }
   return null;
 }
-function questionSteps(text, { today, fiscalStartMonth, A, D }) {
+function questionSteps(text, { today, org, A, D }) {
   const parts = splitQuestion(text);
   const list = parts || [String(text || "").trim()];
   const steps = [];
   let lastName = null;
   for (const part of list) {
     const fact = orgFactAsked(part);
-    if (fact) { steps.push({ kind: "org_fact", fact, words: part }); continue; }
+    if (fact) { steps.push({ kind: "setting_fact", fact, words: part }); continue; }
     const ck = A.cantKnow(part, { anyCase: true });
     if (ck) {
       lastName = nameIn(part) || lastName;
@@ -236,14 +246,14 @@ function questionSteps(text, { today, fiscalStartMonth, A, D }) {
     if (isPrediction(part)) {
       let who = nameIn(part);
       if (!who || PRONOUN.test(who)) who = lastName;
-      const fy = D.periodOf("this fiscal year", today, { fiscalStartMonth });
+      const fy = resolvePeriod(D.periodOf("this fiscal year", today), org, today);
       if (who) { steps.push({ kind: "giving_total", predict: true, who, whos: [who], words: part, period: fy }); lastName = who; continue; }
       steps.push({ kind: "cant_know", line: "I can't predict future giving. Ask me what someone has given, and I'll read it from their gifts.", words: part });
       continue;
     }
     const gq = GT.parseGivingQuestion(part);
     if (gq) {
-      steps.push({ kind: "giving_total", who: gq.names.join(" and "), whos: gq.names, words: part, period: D.periodOf(part, today, { fiscalStartMonth }) });
+      steps.push({ kind: "giving_total", who: gq.names.join(" and "), whos: gq.names, words: part, period: resolvePeriod(D.periodOf(part, today), org, today) });
       lastName = gq.names[gq.names.length - 1];
       continue;
     }
@@ -253,5 +263,5 @@ function questionSteps(text, { today, fiscalStartMonth, A, D }) {
   return steps;
 }
 
-module.exports = { questionSteps, periodFigures, periodSentence, periodAnswer, claims, factsOf, groundedIn, groundedReply,
+module.exports = { questionSteps, resolvePeriod, periodFigures, periodSentence, periodAnswer, claims, factsOf, groundedIn, groundedReply,
   orgFactAsked, orgFactAnswer, splitQuestion, isPrediction, dayWords };
