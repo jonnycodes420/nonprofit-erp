@@ -48,7 +48,7 @@ const HUBSPOT = {
   org: {
     "company name": "name", "name": "name", "company domain name": "domain", "domain": "domain", "website url": "website", "website": "website",
     "phone number": "phone", "phone": "phone", "street address": "address", "address": "address", "city": "city", "state/region": "state", "state": "state",
-    "annual revenue": "revenue_raw", "type": "org_type", "company owner": "owner_name", "current crm": "current_crm",
+    "annual revenue": "revenue_raw", "type": "nonprofit_type", "company owner": "owner_name", "current crm": "current_crm",
   },
   contact: {
     "first name": "first_name", "last name": "last_name", "email": "emails", "email address": "emails", "additional email addresses": "emails_more",
@@ -270,7 +270,7 @@ function toCsv(type, rows, columns, { props = [], owners = [], stages = new Map(
   const cols = columns && columns.length ? columns : ["name", ...def.defaultColumns.filter(c => c !== "name"), ...props.map(p => `props.${p.key}`)];
   const ownerName = new Map(owners.map(o => [o.id, o.name]));
   const label = k => (k === "name" ? "Name" : k.startsWith("props.") ? ((props.find(p => p.key === k.slice(6)) || {}).label || k) :
-    (def.fields.find(f => f.key === k) || {}).label || { org_name: "Organization", last_activity: "Last activity", contact_count: "Contacts", stage_name: "Stage" }[k] || k);
+    (def.fields.find(f => f.key === k) || {}).label || { primary_org_name: "Organization", last_activity: "Last activity", contact_count: "Contacts", stage_name: "Stage" }[k] || k);
   const val = (r, k) => {
     if (k === "name") return r.displayName;
     if (k === "owner_id") return ownerName.get(r.owner_id) || "";

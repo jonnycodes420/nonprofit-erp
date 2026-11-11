@@ -14,7 +14,7 @@ const EDITED = `updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_by TEXT, 
 async function run(pool) {
   await pool.query(`CREATE TABLE IF NOT EXISTS sales_orgs (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, domain TEXT, website TEXT, phone TEXT, address TEXT, city TEXT, state TEXT,
-    revenue_band TEXT, current_crm TEXT, org_type TEXT, owner_id TEXT, steward_org_id TEXT,
+    revenue_band TEXT, current_crm TEXT, nonprofit_type TEXT, owner_id TEXT, steward_org_id TEXT,
     props JSONB NOT NULL DEFAULT '{}'::jsonb, import_id TEXT, deleted_at TIMESTAMPTZ, merged_into TEXT,
     ${ACTOR}, ${EDITED})`);
   await pool.query(`CREATE TABLE IF NOT EXISTS sales_contacts (

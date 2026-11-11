@@ -20,14 +20,14 @@ const ASSOC_FIELDS = {
     { key: "steward_org_id", label: "Linked Steward org", type: "text" },
   ],
   contact: [
-    { key: "org_ids", label: "Organization", type: "org" },
-    { key: "org_name", label: "Primary organization", type: "text" },
+    { key: "linked_org_ids", label: "Organization", type: "org" },
+    { key: "primary_org_name", label: "Primary organization", type: "text" },
     { key: "open_deal_stage", label: "Has an open deal in stage", type: "stage" },
     { key: "last_activity", label: "Last activity", type: "date" },
   ],
   deal: [
-    { key: "org_ids", label: "Organization", type: "org" },
-    { key: "org_name", label: "Primary organization", type: "text" },
+    { key: "linked_org_ids", label: "Organization", type: "org" },
+    { key: "primary_org_name", label: "Primary organization", type: "text" },
     { key: "last_activity", label: "Last activity", type: "date" },
     { key: "has_open_task", label: "Has an open task", type: "checkbox" },
     { key: "stage_kind", label: "Open, won, later or lost", type: "text" },
@@ -73,12 +73,12 @@ async function rowsFor(query, type) {
       Object.assign(out, { value_cents: Number(r.value_cents || 0), close_date: day(r.close_date), next_step_on: day(r.next_step_on), trial_ends_on: day(r.trial_ends_on), revisit_on: day(r.revisit_on),
         stage_name: st.name || null, stage_kind: st.kind || "open", probability: Number(st.probability || 0), has_open_task: tasksOpen.has(r.id),
         stage_entered_at: iso(r.stage_entered_at), won_at: iso(r.won_at), lost_at: iso(r.lost_at),
-        org_ids: orgIds.map(m => m.id), org_id: primaryOrg ? primaryOrg.id : null, org_name: primaryOrg ? orgName.get(primaryOrg.id) : null,
+        linked_org_ids: orgIds.map(m => m.id), org_id: primaryOrg ? primaryOrg.id : null, primary_org_name: primaryOrg ? orgName.get(primaryOrg.id) : null,
         contact_count: mine.filter(m => m.t === "contact").length });
     } else {
       out.open_deal_stage = myDeals.filter(d => (d.kind || "open") === "open").map(d => d.stage_id);
       if (type === "org") out.contact_count = mine.filter(m => m.t === "contact").length;
-      if (type === "contact") Object.assign(out, { org_ids: orgIds.map(m => m.id), org_id: primaryOrg ? primaryOrg.id : null, org_name: primaryOrg ? orgName.get(primaryOrg.id) : null });
+      if (type === "contact") Object.assign(out, { linked_org_ids: orgIds.map(m => m.id), org_id: primaryOrg ? primaryOrg.id : null, primary_org_name: primaryOrg ? orgName.get(primaryOrg.id) : null });
     }
     return out;
   });
@@ -121,7 +121,7 @@ function applyView(rows, view = {}) {
   const filters = (view.filters || []).filter(f => f && f.field && OPS.includes(f.op));
   const q = String(view.q || "").trim().toLowerCase();
   let out = rows.filter(r => filters.every(f => matches(r, f)));
-  if (q) out = out.filter(r => [r.displayName, r.domain, r.website, ...(r.emails || []), r.org_name, r.city].some(x => x && String(x).toLowerCase().includes(q)));
+  if (q) out = out.filter(r => [r.displayName, r.domain, r.website, ...(r.emails || []), r.primary_org_name, r.city].some(x => x && String(x).toLowerCase().includes(q)));
   const s = view.sort && view.sort.key ? view.sort : { key: "name", dir: "asc" };
   const dir = s.dir === "desc" ? -1 : 1;
   return out.slice().sort((a, b) => {

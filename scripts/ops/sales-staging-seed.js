@@ -45,7 +45,7 @@ async function seedSales(q, now = Date.now()) {
       [sid(name), name, i, p, kind, onb, ...ACTOR]);
   }
   for (const [i, [name, slug, city, state, crm]] of ORGS.entries()) {
-    await q(`INSERT INTO sales_orgs (id,name,domain,website,city,state,current_crm,org_type,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7,'Prospect',$8,$9)`,
+    await q(`INSERT INTO sales_orgs (id,name,domain,website,city,state,current_crm,nonprofit_type,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7,'Prospect',$8,$9)`,
       [`sor_stg_${i}`, name, `${slug}.example.org`, `https://${slug}.example.org`, city, state, crm, ...ACTOR]);
   }
   for (let i = 0; i < 20; i++) {

@@ -63,7 +63,7 @@ export default function Board({ rows, meta, open, onMoved }) {
               onClick={() => open("deal", d.id)} onKeyDown={e => { if (e.key === "Enter") open("deal", d.id); }} data-board-deal={d.id} data-bare={bare ? "1" : "0"}
               style={{ background: bare ? `${BRASS}33` : WHITE, border: `1px solid ${bare ? BRASS : `${INK}1a`}`, borderRadius: 8, padding: "8px 9px", marginBottom: 6, cursor: "grab" }}>
               <div style={{ ...link, fontSize: 13 }}>{d.displayName}</div>
-              <div style={{ fontSize: 12, opacity: 0.75 }}>{usd(d.value_cents)}{d.org_name ? ` · ${d.org_name}` : ""}</div>
+              <div style={{ fontSize: 12, opacity: 0.75 }}>{usd(d.value_cents)}{d.primary_org_name ? ` · ${d.primary_org_name}` : ""}</div>
               <div style={{ fontSize: 11.5, marginTop: 2 }}>{d.stage_kind === "later" && d.revisit_on ? `Revisit ${dayWords(d.revisit_on)}` : d.stage_kind === "lost" ? (d.lost_reason || "") : d.next_step ? `Next: ${d.next_step}` : d.has_open_task ? "Has an open task" : bare ? "No next step" : ""}</div>
             </div>;
           })}

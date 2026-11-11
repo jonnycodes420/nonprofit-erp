@@ -92,7 +92,7 @@ const src = rel => { try { return fs.readFileSync(path.join(__dirname, "..", rel
   const ST = Object.fromEntries(direct.stages.map(s => [s.name, s.id]));
 
   // ── §1 / §8 · THE THREE OBJECTS, EACH WITH AN OWNER ────────────────────────
-  const org1 = await S(sup, "POST", "/rec/org", { name: "Harrow Creek Tutors", website: "https://www.harrowcreek.example.org/home", city: "Dayton", state: "OH", revenue_band: "$250K–$1M", current_crm: "Bloomerang", org_type: "Prospect" });
+  const org1 = await S(sup, "POST", "/rec/org", { name: "Harrow Creek Tutors", website: "https://www.harrowcreek.example.org/home", city: "Dayton", state: "OH", revenue_band: "$250K–$1M", current_crm: "Bloomerang", nonprofit_type: "Prospect" });
   const org2 = await S(sup, "POST", "/rec/org", { name: "Bellweather Pantry", domain: "bellweather.example.org" });
   const c1 = await S(sup, "POST", "/rec/contact", { first_name: "Rosalind", last_name: "Okafor", title: "Executive Director", emails: "rosalind@harrowcreek.example.org", phones: "555-0301", role: "ED" });
   const c2 = await S(sup, "POST", "/rec/contact", { first_name: "Dmitri", last_name: "Vale", emails: ["dmitri@harrowcreek.example.org"], role: "Board" });

@@ -26,7 +26,7 @@ const OBJECTS = {
       { key: "revenue_band", label: "Annual revenue", type: "picklist", col: "revenue_band",
         options: ["Under $250K", "$250K–$1M", "$1M–$5M", "$5M–$20M", "Over $20M"] },
       { key: "current_crm", label: "Current CRM", type: "text", col: "current_crm" },
-      { key: "org_type", label: "Type", type: "text", col: "org_type" },
+      { key: "nonprofit_type", label: "Type", type: "text", col: "nonprofit_type" },
       { key: "owner_id", label: "Owner", type: "owner", col: "owner_id" },
       { key: "created_at", label: "Created", type: "date", col: "created_at", readOnly: true },
       { key: "updated_at", label: "Updated", type: "date", col: "updated_at", readOnly: true },
