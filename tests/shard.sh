@@ -201,7 +201,7 @@ if [ -n "$PREV_PID" ]; then
   done
   if [ "$pready" -ne 1 ]; then browser_unready="the client preview on :$preview never answered (see $OUT/preview-$N.log)"; say "$browser_unready"; fi
 else
-  browser_unready="no client build was served at $STEWARD_DIST"
+  browser_unready="no client preview was started for it (no build at $STEWARD_DIST, or SHARD_PREVIEW=0)"
 fi
 export DATABASE_URL="$DBURL"
 # FIX-11 Part 5 — the inbound suite stands up its own Resend-receiving mock and
@@ -269,7 +269,7 @@ rows=""
 for name in $SUITES_IN; do
   file="tests/${name}.test.js"
   if [ -n "$browser_unready" ] && [ -n "${SHARD_BROWSER_SUITES:-}" ] && [[ " $SHARD_BROWSER_SUITES " == *" $name "* ]]; then
-    echo "[affected] skip $name: a browser suite, and $browser_unready. CI will run it."
+    say "skip $name: a browser suite, and $browser_unready. CI will run it."
     rows="$rows{\"name\":\"$name\",\"rc\":0,\"secs\":0,\"skips\":1,\"legSkips\":1,\"last\":\"skipped: $browser_unready. CI will run it.\"},"
     continue
   fi
