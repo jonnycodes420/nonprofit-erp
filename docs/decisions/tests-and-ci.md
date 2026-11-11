@@ -193,6 +193,8 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
   of two machine slots (`scripts/ci/affected-slots.js`, the same pid and takeover rules as below)
   and waits at most two minutes before telling the builder to push. The battery lock stays for a
   full local battery, which only Jonathan asks for.
+- **A flake is closed by counts (FLAKE-3).** Loop it 30 times on main to see it red, fix it, then
+  30 in a row green locally and on CI (`repeat.yml`). One green rerun closes nothing.
 - **A run never removes a lock it does not own (FIX-58).** Every lock goes through
   `tests/lib/battery-lock.sh`: release checks the pid is ours, and a stale lock is taken over only
   under `<lock>.takeover` after re-reading its pid (two waiters on one dead owner used to delete

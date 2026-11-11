@@ -184,6 +184,25 @@ fi
 
 export BASE="http://localhost:$api"
 export APP_URL="http://localhost:$preview"
+
+# FLAKE-3 · NEVER HALF-READY. A browser suite started before this shard's
+# preview answers fails with "connection refused", which reads as a broken app
+# (CI-SPEED-1 found `npm run affected` doing exactly that). The preview gets
+# 60 s to answer. Under `npm run affected` (SHARD_BROWSER_SUITES names its
+# browser suites), a browser suite with no ready preview is skipped, saying so,
+# and CI runs it; anywhere else the suite runs and its own failure says why.
+browser_unready=""
+if [ -n "$PREV_PID" ]; then
+  pready=0
+  for _ in $(seq 1 60); do
+    if curl -sf -o /dev/null "http://localhost:$preview/" 2>/dev/null; then pready=1; break; fi
+    kill -0 "$PREV_PID" 2>/dev/null || break
+    sleep 1
+  done
+  if [ "$pready" -ne 1 ]; then browser_unready="the client preview on :$preview never answered (see $OUT/preview-$N.log)"; say "$browser_unready"; fi
+else
+  browser_unready="no client build was served at $STEWARD_DIST"
+fi
 export DATABASE_URL="$DBURL"
 # FIX-11 Part 5 — the inbound suite stands up its own Resend-receiving mock and
 # binds THIS port, which is the one the server above was told to call. Without
@@ -249,6 +268,11 @@ fi
 rows=""
 for name in $SUITES_IN; do
   file="tests/${name}.test.js"
+  if [ -n "$browser_unready" ] && [ -n "${SHARD_BROWSER_SUITES:-}" ] && [[ " $SHARD_BROWSER_SUITES " == *" $name "* ]]; then
+    echo "[affected] skip $name: a browser suite, and $browser_unready. CI will run it."
+    rows="$rows{\"name\":\"$name\",\"rc\":0,\"secs\":0,\"skips\":1,\"legSkips\":1,\"last\":\"skipped: $browser_unready. CI will run it.\"},"
+    continue
+  fi
   if [ ! -f "$file" ]; then
     rows="$rows{\"name\":\"$name\",\"rc\":0,\"secs\":0,\"missing\":true,\"last\":\"missing\"},"
     continue
@@ -278,6 +302,8 @@ for name in $SUITES_IN; do
   # seconds is its own kind of slow.
   if [ "$rc" -ne 0 ]; then
     printf "  \033[31mFAIL\033[0m  [%s] %-26s %4ss  %s\n" "$N" "$name" "$secs" "$last"
+    # FLAKE-3: a suite named more than once (the Repeat workflow) keeps each red run's log
+    reds=$((${reds:-0} + 1)); cp "$log" "$LOGDIR/${name}.red-${reds}.log" 2>/dev/null || true
   fi
   rows="$rows{\"name\":\"$name\",\"rc\":$rc,\"secs\":$secs,\"skips\":$skips,\"legSkips\":$legskips,\"last\":\"$last\"},"
 done

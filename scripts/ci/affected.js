@@ -271,14 +271,55 @@ function print(p) {
   if (p.skipped.length > shown.length) console.log(`   … and ${p.skipped.length - shown.length} more`);
 }
 
+// ── FLAKE-3 · a browser suite runs fully, or is skipped saying so ─────────
+// CI-SPEED-1 started a changed browser suite with no client build and no
+// preview, so its browser leg could not connect (ERR_CONNECTION_REFUSED) and
+// read like a broken app. Now: what a browser suite needs is checked here, and
+// a suite that cannot have it is skipped with the reason; one that can gets
+// the client built for this run's server and served before it starts.
+const PLAYWRIGHT = path.join(process.env.PLAYWRIGHT_DIR || path.join(require("os").homedir(), "steward-qa"), "node_modules", "playwright");
+function browserCannot() {
+  if (process.env.AFFECTED_NO_BROWSER) return process.env.AFFECTED_NO_BROWSER;   // test seam: the reason to report
+  if (!fs.existsSync(PLAYWRIGHT)) return `Playwright is not installed at ${PLAYWRIGHT}`;
+  if (!fs.existsSync(path.join(ROOT, "client", "node_modules"))) return "this worktree has no client/node_modules to build the client with (npm ci --prefix client)";
+  return null;
+}
+// { browser: the browser suites that will run, said: the lines to print };
+// a browser suite that cannot run fully moves from p.run to p.skipped.
+function browserLeg(p) {
+  const browser = p.run.filter(r => heavyReason(r.suite, 0) === "browser").map(r => r.suite);
+  if (!browser.length) return { browser: [], said: [] };
+  const why = process.env.BASE ? null : browserCannot();
+  if (why) {
+    p.skipped.push(...p.run.filter(r => browser.includes(r.suite)).map(r => ({ ...r, because: `a browser suite, and ${why}. CI will run it` })));
+    p.run = p.run.filter(r => !browser.includes(r.suite));
+    return { browser: [], said: browser.map(s => `[affected] skip ${s}: a browser suite, and ${why}. CI will run it.`) };
+  }
+  return { browser, said: [`[affected] browser suite(s) ${browser.join(", ")}: the client is built for this run's server and served before they start`] };
+}
+
+// The run's environment. Its own server and database unless BASE is given: a
+// server that happens to be up on :5601 may be another worktree's, running
+// other code. FLAKE-3: with a browser suite to run, the client is built for
+// that server and served on the run's own port, and the shard waits for it to
+// answer; a browser suite with no ready preview is skipped, saying so
+// (tests/shard.sh).
+function runEnv(p, browser, base = process.env.BASE) {
+  const env = { ...process.env, SUITES: p.run.map(r => r.suite).join(" "), SHARDS: "1", BATTERY_LOCK: "0" };
+  if (!base) Object.assign(env, { SHARD_SELF: "1", SHARD_BUILD_DIST: browser.length ? "1" : "0", SHARD_PREVIEW: browser.length ? "1" : "0",
+    SHARD_BROWSER_SUITES: browser.join(" ") });
+  return env;
+}
+
 // ── 4. run it ─────────────────────────────────────────────────────────────
 function tag() {
   return (process.env.STEWARD_WT_TAG || path.basename(ROOT).toLowerCase().replace(/[^a-z0-9\n]/g, "_").replace(/^steward_/, "").replace(/_*$/, "").slice(0, 30)) || "wt";
 }
 async function main() {
   const p = plan(changedFiles());
+  const { browser, said } = browserLeg(p);
   if (has("json")) { console.log(JSON.stringify({ ...p, run: p.run.map(r => r.suite), skipped: p.skipped.map(r => ({ suite: r.suite, because: r.because })) }, null, 1)); }
-  else print(p);
+  else { print(p); for (const line of said) console.log(line); }
   if (has("dry-run") && !process.env.AFFECTED_HOLD_MS) { console.log("[affected] dry run. CI will run the rest."); return 0; }
 
   const t = tag();
@@ -301,10 +342,7 @@ async function main() {
     console.log("[affected] note: no client/node_modules in this worktree; the suites that read client source need `npm ci --prefix client`");
   }
   const t0 = Date.now();
-  const env = { ...process.env, SUITES: p.run.map(r => r.suite).join(" "), SHARDS: "1", BATTERY_LOCK: "0" };
-  // Its own server and database unless BASE is given: a server that happens
-  // to be up on :5601 may be another worktree's, running other code.
-  if (!process.env.BASE) Object.assign(env, { SHARD_SELF: "1", SHARD_BUILD_DIST: "0", SHARD_PREVIEW: "0" });
+  const env = runEnv(p, browser);
   const rc = await new Promise(res => spawn("bash", ["tests/run-all.sh"], { cwd: ROOT, env, stdio: "inherit" }).on("exit", c => res(c ?? 1)));
   got.release();
   const took = Math.round((Date.now() - t0) / 1000);
@@ -313,4 +351,4 @@ async function main() {
 }
 
 if (require.main === module) main().then(c => process.exit(c), e => { console.error(e); process.exit(2); });
-module.exports = { plan, relevance, heavyReason };
+module.exports = { plan, relevance, heavyReason, browserLeg, runEnv };
