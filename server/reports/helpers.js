@@ -417,11 +417,22 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
     const h = await figureSources.historicalGiving(orgId, lastYearSource.params.from, lastYearSource.params.to, { baseline: true });
     if (h) { values.revenueLastYear = h.value; extra.revenueLastYear = { source: h.source, imported: h }; }
   }
+  // POLISH-9 (W-1107-Fundraising-05): the Board names its periods from
+  // periodLabel.js, never "this year" / "same point last year".
+  const YN = key === "board" ? await require("../shared/periodLabel").yearPairNames(fy, today) : null;
+  const periodName = YN ? {
+    revenueThisYear: `Giving, ${YN.cur}`, revenueLastYear: `Giving, ${YN.samePoint}`,
+    revenueChangePct: `Change on ${YN.samePoint}`, otherIncomeThisYear: `Other income, ${YN.cur}`,
+    donorCount: `People who gave in ${YN.cur}`, byDesignation: `Giving by designation, ${YN.cur}`,
+    givingByMonth: `Giving by month, ${YN.cur} against ${YN.prev}`,
+  } : {};
+  if (YN && extra.retentionRate && extra.retentionRate.also) for (const a of extra.retentionRate.also)
+    a.label = a.key === "retained" ? `Gave again in ${YN.cur}` : a.key === "prior" ? `Gave in ${YN.prev}` : a.label;
   const metrics = def.metrics
     .filter(m => !m.teamOnly || isTeam)
     // A.6 — an OPTIONAL metric with no value is ABSENT, not blank.
     .filter(m => !m.optional || values[m.key] !== undefined)
-    .map(m => ({ key: m.key, label: extra[m.key] && extra[m.key].imported ? `${m.label}, from your old system` : m.label, kind: m.kind, rowsAre: m.rowsAre || null,
+    .map(m => ({ key: m.key, label: extra[m.key] && extra[m.key].imported ? `${periodName[m.key] || m.label}, from your old system` : (periodName[m.key] || m.label), kind: m.kind, rowsAre: m.rowsAre || null,
                  definition: extra[m.key] && extra[m.key].imported ? extra[m.key].imported.note : m.definition,
                  value: values[m.key] === undefined ? null : values[m.key],
                  ...(extra[m.key] ? { source: extra[m.key].source, blank: extra[m.key].blank || null,
@@ -432,7 +443,7 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
   return { key: def.key, label: def.label, question: def.question, blurb: def.blurb,
            asOf: today, asOfLabel: DD.displayDate(today),
            fiscalYear: { start: fy.start, end: fy.end, label: `${DD.displayDate(fy.start)} to ${DD.displayDate(fy.end)}`,
-                        fyLabel: await require("../shared/periodLabel").fyLongLabelOf(fy) }, isTeam,   // POLISH-7: the one name
+                        fyLabel: await require("../shared/periodLabel").fyLongLabelOf(fy), short: YN ? YN.cur : null }, isTeam,   // POLISH-7: the one name
            answer: { text, parts: answer?.parts || [] },
            // The boundary 0.6's answer turns on, on the payload so a reader can
            // see WHICH date decided the count rather than trusting it.

@@ -102,6 +102,9 @@ const GUARDED_WRITERS = [
   // COMMS-1: archives the unsent drafts of turned-off sequences, older than 7 days.
   // Dry run by default; --apply/--undo write through writerDbUrl, one audit row per org. org_creo skipped.
   "comms1-old-sequence-drafts",
+  // POLISH-9: gives never-used journey drafts copied from an older template that template's steps.
+  // Dry run by default; --apply writes through writerDbUrl, one audit row per org. org_creo skipped.
+  "journey-older-template",
   // STALE-2: deletes event timeline lines whose guest is gone (not in the trash).
   // Dry run by default; --apply/--undo write through writerDbUrl, one audit row per org. org_creo skipped.
   "stale2-event-line-orphans",

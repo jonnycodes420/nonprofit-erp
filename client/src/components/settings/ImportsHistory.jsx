@@ -15,6 +15,12 @@ export function ImportsHistory(){
   const [err,setErr]=useState("");
   const [open,setOpen]=useState(null);
   const [moveReportId,setMoveReportId]=useState(null);   // TRANS-1 Part 3
+  const [showArchived,setShowArchived]=useState(false);   // POLISH-9
+  // POLISH-9: Archive takes an import from before the checks off the main rows; the list answers at once.
+  const archive=async(id,archived)=>{
+    try{ await apiFetch(`/imports/${id}/archive`,{method:"POST",body:JSON.stringify({archived})}); setRows(rs=>(rs||[]).map(r=>r.id===id?{...r,archived}:r)); }
+    catch(e){ setErr(errorMessage(e,"Could not archive that import.")); }
+  };
   useEffect(()=>{
     apiFetch("/imports").then(r=>setRows(Array.isArray(r.imports)?r.imports:[]))
       .catch(e=>{setRows([]);setErr(errorMessage(e,"Could not load your import history."));});
@@ -48,14 +54,17 @@ export function ImportsHistory(){
               <th style={{...th,textAlign:"right"}}>Dollars in</th>
             </tr></thead>
             <tbody>
-              {rows.map(r=>(
-                <tr key={r.id} data-testid="imports-row">
+              {rows.filter(r=>showArchived||!r.archived).map(r=>(
+                <tr key={r.id} data-testid="imports-row" data-archived={r.archived?"1":"0"}>
                   <td style={td}>
                     <button onClick={()=>(r.state==="in_progress"||r.state==="failed")?null:openOne(r.id)} data-testid="imports-open"
                       style={{background:"none",border:"none",padding:0,font:"inherit",fontWeight:700,color:T.green,cursor:"pointer",textAlign:"left"}}>
                       {r.name}
                     </button>
                     {r.reconciled===false&&r.state!=="undone"&&<div style={{fontSize:11.5,color:T.terra700,marginTop:2}}>Does not reconcile, open for the finding.</div>}
+                    {r.beforeChecks&&<div data-testid="imports-before-checks" style={{fontSize:11.5,color:T.ink3,marginTop:2}}>{r.beforeChecks}{" · "}
+                      <button type="button" data-testid="imports-archive" onClick={()=>archive(r.id,!r.archived)}
+                        style={{background:"none",border:"none",padding:0,font:"inherit",color:T.greenDk,textDecoration:"underline",cursor:"pointer"}}>{r.archived?"Unarchive":"Archive"}</button></div>}
                     {/* FIX-52: a spreadsheet import still being written, or one rolled back */}
                     {(r.state==="in_progress"||r.state==="failed")&&<div data-testid="imports-state" style={{fontSize:11.5,color:r.state==="failed"?T.terra700:T.greenDk,marginTop:2}}>{r.sentence}</div>}
                     {r.state==="undone"&&<div style={{fontSize:11.5,color:T.ink3,marginTop:2}}>Undone</div>}
@@ -93,6 +102,9 @@ export function ImportsHistory(){
               ))}
             </tbody>
           </table>
+          {rows.some(r=>r.archived)&&<button type="button" data-testid="imports-show-archived" onClick={()=>setShowArchived(v=>!v)}
+            style={{background:"none",border:"none",padding:"10px 0 0",font:"inherit",fontSize:12.5,color:T.greenDk,cursor:"pointer"}}>
+            {showArchived?"Hide archived":`Show archived (${rows.filter(r=>r.archived).length})`}</button>}
         </div>
       )}
       {open&&(
@@ -119,7 +131,7 @@ export function ImportsHistory(){
               {open.sheetRows&&open.sheetRows.sheets.length ? <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:T.ink3,marginBottom:12}}>
                 {open.sheetRows.sheets.map(x=><div key={x.sheet} data-testid="import-receipt-sheet">{String(x.sentence||"").replace(/ [✓✗]$/,"")}</div>)}
                 {open.sheetRows.file.sentence&&<div style={{fontWeight:700}}>{String(open.sheetRows.file.sentence).replace(/ [✓✗]$/,"")}</div>}
-              </div> : open.footing&&!open.peopleSentence ? null :
+              </div> : (open.footing&&!open.peopleSentence)||open.beforeChecks ? null :
               open.peopleSentence ? <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:T.ink3,marginBottom:12}}>{open.peopleSentence}</div> :
               <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:open.reconciled?T.ink3:T.terra700,marginBottom:12}}>
                 {fmtCount(open.rowsIn)} gift rows in the file = {fmtCount(open.giftsCreated)} {open.pledgesCreated?"gifts":"written"}{open.pledgesCreated?<> + {fmtCount(open.pledgesCreated)} pledges</>:null} + {fmtCount(open.rowsSetAside)} set aside + {fmtCount(open.rowsErrored)} errored {open.reconciled?"✓":"✗"}
@@ -132,6 +144,7 @@ export function ImportsHistory(){
               {(open.notices||[]).map((n,i)=>(
                 <div key={`n${i}`} data-testid="import-receipt-notice" style={{fontSize:12.5,color:T.ink3,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",marginBottom:8}}>{n}</div>
               ))}
+              {open.beforeChecks&&<div data-testid="import-receipt-before-checks" style={{fontSize:12.5,color:T.ink3,marginBottom:12}}>{open.beforeChecks}. Steward did not yet foot imports then, so this receipt has no rows-and-dollars check.</div>}
               {(open.findings||[]).map((f,i)=>(
                 <div key={i} data-testid="import-finding" style={{fontSize:12.5,color:T.terra700,background:T.terra100,border:"1px solid "+T.terra200,borderRadius:8,padding:"8px 10px",marginBottom:8}}>{f}</div>
               ))}

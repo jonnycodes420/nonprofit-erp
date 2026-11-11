@@ -172,7 +172,7 @@ export function GivingLine({ m }) {
   );
 }
 
-export function BoardBody({ get }) {
+export function BoardBody({ get, fyShort }) {
   const ret = get("retentionRate");
   const also = ret?.also || [];
   const retained = also.find(a => a.key === "retained"), prior = also.find(a => a.key === "prior");
@@ -199,7 +199,7 @@ export function BoardBody({ get }) {
           <GivingLine m={get("givingByMonth")} />
         </section>
         <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
-          <RowsCard m={des} empty="No gifts yet this fiscal year.">
+          <RowsCard m={des} empty={`No gifts yet in ${fyShort || "this fiscal year"}.`}>
             {(r, i) => <Row key={i} r={r} first={i === 0} indent={!r.group} />}
           </RowsCard>
           <section className="dash-card">
@@ -470,7 +470,7 @@ export function Dashboards({ data, onNavigate, dashKey }) {
           </div>
 
           {loading && <div style={{ padding: 30 }}><Spin /></div>}
-          {!loading && board?.key === "board" && <BoardBody get={get} />}
+          {!loading && board?.key === "board" && <BoardBody get={get} fyShort={board?.fiscalYear?.short} />}
           {!loading && board?.key === "fundraising" && <FundraisingBody get={get} />}
           {!loading && board?.key === "people" && <PeopleBody get={get} openPerson={openPerson} />}
           {!loading && board?.key === "recurring" && <RecurringBody get={get} />}

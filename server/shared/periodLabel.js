@@ -26,4 +26,19 @@ async function fyLongLabelOf(bounds) {
   return (await FP).fyLongLabel(Number(s.slice(0, 4)), Number(s.slice(5, 7)));
 }
 
-module.exports = { fyLabelOf, orgFyLabel, fyLongLabelOf };
+// POLISH-9 (W-1107-Fundraising-05, the Board): one period had four names
+// ("FY 2026-27", "Giving this year", "Same point last year", "This fiscal
+// year"). The year, the one before it, and that one up to the same day, from
+// the year's bounds and today: { cur: "FY 2026–27", prev: "FY 2025–26",
+// samePoint: "FY 2025–26 to Nov 10" }.
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+async function yearPairNames(bounds, today) {
+  const F = await FP;
+  const s = String(bounds.start), y = Number(s.slice(0, 4)), m = Number(s.slice(5, 7));
+  const t = String(today || "");
+  const cur = F.fyLabelFromStart(y, m), prev = F.fyLabelFromStart(y - 1, m);
+  const day = /^\d{4}-\d{2}-\d{2}/.test(t) ? `${MON[Number(t.slice(5, 7)) - 1]} ${Number(t.slice(8, 10))}` : null;
+  return { cur, prev, samePoint: day ? `${prev} to ${day}` : prev };
+}
+
+module.exports = { fyLabelOf, orgFyLabel, fyLongLabelOf, yearPairNames };

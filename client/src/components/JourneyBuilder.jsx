@@ -10,6 +10,7 @@ import { countLabel } from "../../../shared/countWords.js";
 import { journeySpan, dayWord } from "../../../shared/journeyShape.js";   // POLISH-7: the one journey span; FLOWS-4: Day N
 import { JourneyDateFields } from "./JourneyDateFields";   // DATES-1
 import { JourneyBatches } from "./BulkJourney";   // DATES-1: undo a batch from the Donors list
+import { OlderTemplateNote } from "./OlderTemplateNote";   // POLISH-9
 
 // ── FIX-5 · JOURNEYS: YOURS, AND PREMIUM ──────────────────────────────────
 //
@@ -1043,7 +1044,8 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
                       onDuplicate={duplicateStep} onRemove={removeStep} />
 
                     <p style={{ fontSize: 13.5, lineHeight: 1.6, color: T.ink3, margin: "14px 2px 0" }}>
-                      <strong style={{ color: T.ink }} data-testid="jb-touches">{touches}</strong><br />
+                      <strong style={{ color: T.ink }} data-testid="jb-touches">{touches}</strong>
+                      <OlderTemplateNote note={current && current.olderTemplate} draft={draft} editable={editable} onUse={steps => setDraft(steps.map(s => ({ ...s })))} /><br />
                       Every step becomes a next step on your Thread on the day it is due. You mark it done, or you skip it and say why.
                     </p>
                   </div>

@@ -455,7 +455,7 @@ for (const [path, archived] of [["archive", true], ["restore", false]]) {
 // Margaret"): their own name, last gift and, for a one-person email, the facts
 // their draft would carry. Reading only. `editable` marks the words and
 // fields so the editor can be typed in where they show.
-async function previewHtml(req, row, { as = null, editable = false } = {}) {
+async function previewHtml(req, row, { as = null, editable = false, audienceNoGift = false } = {}) {
   const orgId = req.user.orgId;
   const person = await me(req);
   const ectx = await buildEmailContext(orgId);
@@ -478,6 +478,7 @@ async function previewHtml(req, row, { as = null, editable = false } = {}) {
       }
     }
   }
+  if (audienceNoGift) fields = { ...fields, audience_no_gift: true };   // POLISH-9
   const r = EB.renderEmail({ blocks: row.blocks || [], brand: ectx.brand, fields, links: ectx.links, subject: row.subject || "", preheader: row.preheader || "",
     mode: "preview", extraFields: personKind ? personFieldDefs() : null, editable });
   const footer = await unsubscribeEmailFooterHtml((shownAs && shownAs.email) || person.email || "you@example.org", orgId, "campaign");
@@ -544,7 +545,7 @@ app.post("/email-preview", requireAuth, wrap(async (req, res) => {
   const v = EB.validateEmailBlocks(b.blocks || [], PW.typesForSurface("email"));
   if (!v.ok) return res.status(400).json({ error: "invalid_blocks", sentence: v.error });
   const row = { blocks: v.blocks, subject: clip(b.subject || "", 200), preheader: clip(b.preheader || "", 200), starter_key: null };
-  const p = await previewHtml(req, row, { as: b.as || null, editable: b.editable === true });
+  const p = await previewHtml(req, row, { as: b.as || null, editable: b.editable === true, audienceNoGift: b.audienceNoGift === true });
   if (b.campaignName) p.fields.campaign = clip(b.campaignName, 120);
   let html = p.html;
   if (b.dark === true) html = html.split(EB.DARK_MEDIA).join("@media all");

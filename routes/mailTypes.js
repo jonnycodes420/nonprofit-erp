@@ -55,10 +55,27 @@ async function orgMail(orgId, onCount = null) {
   // SENDS-1: the master is the org's Donor mail as the sweeps read it (onboarding and demo included).
   const on = !!o && o.emails_enabled === true && (await SENDS_OFF.master(orgId, o)).on;
   const n = onCount == null ? (await query(`SELECT COUNT(*)::int AS n FROM org_mail_types WHERE org_id = ? AND is_on = TRUE`, [orgId]))[0].n : onCount;
-  return { on, setAt: o ? o.donor_mail_set_at : null, sentence: mailOnSentence(o, on, n) };
+  return { on, setAt: o ? o.donor_mail_set_at : null, sentence: mailOnSentence(o, on, n, await lastEmailChange(orgId)) };
 }
-function mailOnSentence(o, on, onCount) {
-  if (!o || !on || !(onCount > 0) || !o.donor_mail_set_at) return null;
+// POLISH-9 (W-1107-Fundraising-20): the banner said "Jonathan turned email on
+// Nov 3" (a stored string) while the switch said "Mike Henderson, Nov 6". It
+// names the latest person who changed any email setting, read from the audit
+// log (the org's switch and every type), never a stored string. A person not
+// on this org's team (Steward's own staff) reads "Steward support".
+async function lastEmailChange(orgId) {
+  const [a] = await query(
+    `SELECT a.created_at, a.actor_kind, a.user_name, u.name AS team_name
+       FROM fin_audit_log a LEFT JOIN users u ON u.id = a.user_id AND u.org_id = a.org_id
+      WHERE a.org_id = ? AND a.entity_type = 'org setting' AND (a.entity_id = ? OR a.entity_id LIKE ? || ':%')
+        AND COALESCE(a.status_code, 200) < 400
+      ORDER BY a.created_at DESC, a.id DESC LIMIT 1`, [orgId, orgId, orgId]).catch(() => []);
+  if (!a) return null;
+  return { at: a.created_at, who: String(a.team_name || "").trim() || "Steward support" };
+}
+function mailOnSentence(o, on, onCount, last) {
+  if (!o || !on || !(onCount > 0)) return null;
+  if (last) return `${last.who} last changed what sends on ${fmtDay(last.at)}.`;
+  if (!o.donor_mail_set_at) return null;
   const who = String(o.donor_mail_set_by_name || "").trim() || "Steward support";
   return `${who} turned email on for you on ${fmtDay(o.donor_mail_set_at)}.`;
 }

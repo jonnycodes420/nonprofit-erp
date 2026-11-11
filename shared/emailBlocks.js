@@ -136,6 +136,7 @@ function giftFacts(fields) {
   return {
     hasGift: hasValue(fields && (fields.last_gift_amount || fields.gift_amount)),
     hasTotal: !(fields && ("lifetime_total" in fields || "total_giving" in fields)) || hasValue(fields.lifetime_total || fields.total_giving),
+    audienceNoGift: !!(fields && fields.audience_no_gift === true),   // POLISH-9
   };
 }
 function fieldValue(fields, key, defs = EMAIL_MERGE_FIELDS) {
