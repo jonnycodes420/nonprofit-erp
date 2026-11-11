@@ -15,6 +15,7 @@ import { entryKey } from "../lib/entryKey";   // FLOWS-4: one entry, one key
 import { displayDate } from "../../../shared/displayDate";
 import { displayOrgDate } from "../lib/orgDay";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import TimeInput from "./inputs/TimeInput";   // FLOWS-5: a time as she types it
 
 const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 
@@ -111,8 +112,8 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
         <option value="hm">Hours and minutes</option><option value="times">Start and end time</option>
       </select>
       {f.mode === "times" ? <>
-        <input aria-label="Start time" type="time" value={f.startTime} onChange={e => set({ ...f, startTime: e.target.value })} style={inp} />
-        <input aria-label="End time" type="time" value={f.endTime} onChange={e => set({ ...f, endTime: e.target.value })} style={inp} />
+        <TimeInput aria-label="Start time" value={f.startTime} onChange={e => set({ ...f, startTime: e.target.value })} style={inp} />
+        <TimeInput aria-label="End time" value={f.endTime} onChange={e => set({ ...f, endTime: e.target.value })} style={inp} />
       </> : <>
         <input aria-label="Hours" inputMode="numeric" placeholder="Hours" value={f.hours} onChange={e => set({ ...f, hours: e.target.value })} style={{ ...inp, width: 64 }} />
         <input aria-label="Minutes" inputMode="numeric" placeholder="Min" value={f.minutes} onChange={e => set({ ...f, minutes: e.target.value })} style={{ ...inp, width: 56 }} />

@@ -97,7 +97,7 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
     jobs.push(query(
       `SELECT t.id, t.title, t.due, t.assigned_to, t.assigned_to_name, d.id AS donor_id, d.name AS donor_name
          FROM tasks t LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
-        WHERE t.org_id = ? AND COALESCE(t.done::text, '0') NOT IN ('1', 'true') AND t.voided_at IS NULL AND COALESCE(t.is_sample, false) = false
+        WHERE t.org_id = ? AND ${require("./server/tasks/openTaskRule").OPEN("t")} AND ${require("./server/tasks/openTaskRule").ONE_THANKS("t")}   -- FLOWS-5: the Tasks tab's rule
           -- FIX-31: a next step's or a deadline's own task is drawn once, as that step or deadline.
           AND COALESCE(t.link_kind, '') NOT IN ('next_step', 'deadline')
           AND t.due IS NOT NULL AND LEFT(t.due::text, 10) >= ? AND LEFT(t.due::text, 10) <= ?
@@ -157,8 +157,9 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
     jobs.push(require("./routes/volunteerScheduling").scheduleRows(orgId, { from, to }).then(({ shifts }) => shifts.forEach(r => {
         const needed = r.footer.needed || null, filled = r.footer.scheduled;
         const short = needed ? r.footer.short : 0;
-        out.push({ id: `shift:${r.id}`, type: "shift", title: r.name || "Shift", start: `${r.date}T${hm(r.startTime) || "09:00"}`, end: `${r.date}T${hm(r.endTime) || "12:00"}`,
-          allDay: false, detail: needed ? `${filled} of ${needed} filled` : `${filled} signed up`, filled, needed,
+        // FLOWS-5 (W-1110-Volunteers-08X): a draft is never shown as an ordinary upcoming shift.
+        out.push({ id: `shift:${r.id}`, type: "shift", title: `${r.published === false ? "Draft: " : ""}${r.name || "Shift"}`, start: `${r.date}T${hm(r.startTime) || "09:00"}`, end: `${r.date}T${hm(r.endTime) || "12:00"}`,
+          allDay: false, draft: r.published === false, detail: `${r.published === false ? "Draft, volunteers cannot see it · " : ""}${needed ? `${filled} of ${needed} filled` : `${filled} signed up`}`, filled, needed,
           short, editable: { move: true, resize: true }, ref: { slotId: r.id }, ...shiftMarks(short, r.conflicts) });
       })));
   }

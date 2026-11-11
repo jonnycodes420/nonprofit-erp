@@ -119,6 +119,7 @@ app.get("/volunteer-hub/opportunities", requireAuth, wrap(async (req, res) => {
   const slots = await query(
     `SELECT s.*, ${SLOT_COUNTS} FROM volunteer_slots s
       WHERE s.org_id=? AND s.cancelled_at IS NULL AND s.date >= ?
+        AND s.published IS NOT FALSE   -- FLOWS-5 (W-1110-Volunteers-08X): a draft is never upcoming; it lives on the Schedule, marked Draft
       ORDER BY s.date, s.start_time`, [orgId, today]);
   const byOpp = new Map();
   for (const s of slots) {

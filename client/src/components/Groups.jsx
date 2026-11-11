@@ -581,13 +581,20 @@ export function AddToGroup({ donorIds, onDone }) {
 // the Donors list's filters: one press saves them as a group by rule, so the
 // people in it keep up with the list by themselves. The shared Undo toast
 // takes it back. A name already used gets the date added, never a refusal.
-export function SaveAsGroup({ name, rules, label = "Save as a group", testid = "save-as-group", style }) {
+// FLOWS-5: with `donorIds` (a list report's rows) it keeps those people as a
+// hand-kept group, since a report like Lost has no list filter to keep.
+export function SaveAsGroup({ name, rules, donorIds = null, label = "Save as a group", testid = "save-as-group", style }) {
   const [saved, setSaved] = useState(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true); setErr("");
-    const post = n => apiFetch("/groups", { method: "POST", body: JSON.stringify({ name: n.slice(0, 60), kind: "dynamic", rules }) });
+    const post = async n => {
+      if (!donorIds) return apiFetch("/groups", { method: "POST", body: JSON.stringify({ name: n.slice(0, 60), kind: "dynamic", rules }) });
+      const g = await apiFetch("/groups", { method: "POST", body: JSON.stringify({ name: n.slice(0, 60), kind: "static" }) });
+      await apiFetch(`/groups/${encodeURIComponent(g.id)}/members`, { method: "POST", body: JSON.stringify({ donorIds }) });
+      return g;
+    };
     try {
       let g;
       try { g = await post(name); }
@@ -596,7 +603,7 @@ export function SaveAsGroup({ name, rules, label = "Save as a group", testid = "
         g = await post(`${name.slice(0, 47)} ${new Date().toISOString().slice(0, 10)}`);
       }
       setSaved(g);
-      offerUndo({ message: `Saved as the group ${g.name}. It keeps up with the list by itself.`,
+      offerUndo({ message: donorIds ? `Saved ${donorIds.length} ${donorIds.length === 1 ? "person" : "people"} as the group ${g.name}.` : `Saved as the group ${g.name}. It keeps up with the list by itself.`,
         undoAction: async () => { const r = await apiFetch(`/groups/${g.id}`, { method: "DELETE" }); setSaved(null); return r; } }, "group");
     } catch (e) { setErr(e?.error || errorMessage(e, "That group did not save.")); }
     setBusy(false);

@@ -83,14 +83,16 @@ function mount(ctx) {
     const orgId = req.user.orgId;
     const [s] = await query(
       `SELECT s.id, s.published, s.date,
-              (SELECT COUNT(*)::int FROM volunteer_signups su WHERE su.slot_id = s.id AND su.org_id = s.org_id) AS signups,
+              -- FLOWS-5 (W-1110-Volunteers-08X): people still on it; a cancelled sign-up is nobody.
+              (SELECT COUNT(*)::int FROM volunteer_signups su WHERE su.slot_id = s.id AND su.org_id = s.org_id AND su.status <> 'cancelled') AS signups,
               (SELECT COUNT(*)::int FROM volunteer_shifts v WHERE v.slot_id = s.id AND v.org_id = s.org_id) AS logged
          FROM volunteer_slots s WHERE s.id = ? AND s.org_id = ?`, [req.params.id, orgId]);
     if (!s) return res.status(404).json({ error: "Not found" });
     if (s.published !== false || s.signups > 0 || s.logged > 0) {
       return res.status(409).json({ error: "not_a_bare_draft",
         message: s.published !== false ? "This shift is published, so it can be cancelled but not deleted."
-          : "Somebody has been signed up for this shift, so it can be cancelled but not deleted." });
+          : s.signups > 0 ? `${s.signups === 1 ? "1 person is" : `${s.signups} people are`} signed up for this shift, so it can be cancelled but not deleted.`
+          : "Hours are logged against this shift, so it can be cancelled but not deleted." });
     }
     await run("DELETE FROM volunteer_slot_roles WHERE slot_id = ? AND org_id = ?", [s.id, orgId]);
     await run("DELETE FROM volunteer_slots WHERE id = ? AND org_id = ?", [s.id, orgId]);

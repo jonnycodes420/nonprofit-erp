@@ -291,8 +291,9 @@ app.get("/donors/:id/tasks", requireAuth, wrap(async (req, res) => {
   if (!(await orgOwns("donors", req.params.id, req.user.orgId)))
     return res.status(404).json({ error: "Donor not found" });
   const tasks = await query(
-    `SELECT * FROM tasks WHERE org_id = ? AND donor_id = ? AND voided_at IS NULL
-      ORDER BY done ASC, due ASC NULLS LAST, created_at DESC`,
+    // FLOWS-5: the Calendar's rule too (server/tasks/openTaskRule.js), so a thank-you shows once in both.
+    `SELECT t.* FROM tasks t WHERE t.org_id = ? AND t.donor_id = ? AND ${require("./openTaskRule").SHOWN("t")} AND ${require("./openTaskRule").ONE_THANKS("t")}
+      ORDER BY t.done ASC, t.due ASC NULLS LAST, t.created_at DESC`,
     [req.user.orgId, req.params.id]
   );
   res.json(tasks);

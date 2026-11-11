@@ -1130,10 +1130,11 @@ const SOURCES = {
     label: "Meetings",
     measure: () => "count",
     params: { from: "date:required", to: "date:required", staff: "id", donor: "id" },
-    sentence: (p, dd) => `Every meeting with someone on file from ${dd(p.from)} to ${dd(p.to)}${p.staff ? ", held by this staff member" : ""}${p.donor ? ", with this person" : ""}: meetings on a connected calendar, and meetings logged by hand. A calendar meeting that was logged afterwards is counted once.`,
+    sentence: (p, dd) => `Every meeting held with someone on file from ${dd(p.from)} to ${dd(p.to)}${p.staff ? ", by this staff member" : ""}${p.donor ? ", with this person" : ""}: meetings on a connected calendar that have happened, and meetings logged by hand. One still to come, or called off, is not counted. A calendar meeting that was logged afterwards is counted once.`,
     sql: (orgId, p) => {
       // FIX-14 Part 1 — the one source (meetings.js), shaped as figure rows.
-      const m = meetings.meetingsSql(orgId, { from: p.from, to: p.to, staff: p.staff || null, donor: p.donor || null });
+      // FLOWS-5 (W-1110-Volunteers-06X): a meeting counts once it has happened, never one still to come.
+      const m = meetings.meetingsSql(orgId, { from: p.from, to: p.to, staff: p.staff || null, donor: p.donor || null, held: true });
       return {
         sql: `SELECT m.id, CASE m.kind WHEN 'calendar' THEN 'meeting' ELSE 'interaction' END AS type, m.donor_id,
                      CASE m.kind WHEN 'calendar' THEN m.title
@@ -2256,10 +2257,16 @@ const SOURCES = {
     label: "Events this year",
     measure: () => "count",
     params: { from: "date:required", to: "date:required" },
-    sentence: (p, dd) => `Every event dated ${dd(p.from)} to ${dd(p.to)}, upcoming and past.`,
+    sentence: (p, dd) => `Every event dated ${dd(p.from)} to ${dd(p.to)}, each marked Past, Today, Upcoming or Archived by its date.`,
     sql: (orgId, p) => ({
       sql: `SELECT e.id, 'event' AS type, NULL::text AS donor_id, e.name, LEFT(e.date::text, 10) AS date, NULL::numeric AS amount,
-                   COALESCE(NULLIF(e.status, ''), 'upcoming') AS detail
+                   -- FLOWS-5 (W-1110-Volunteers-04X): each row says what it is by its date in
+                   -- the org's own day, never the stored status (which defaults to upcoming).
+                   CASE WHEN e.archived_at IS NOT NULL THEN 'Archived'
+                        WHEN COALESCE(NULLIF(e.status, ''), '') = 'cancelled' THEN 'Cancelled'
+                        WHEN LEFT(e.date::text, 10) < to_char(${require("./orgTime").orgTodaySql(require("./orgTime").orgTzSql("e.org_id"))}, 'YYYY-MM-DD') THEN 'Past'
+                        WHEN LEFT(e.date::text, 10) = to_char(${require("./orgTime").orgTodaySql(require("./orgTime").orgTzSql("e.org_id"))}, 'YYYY-MM-DD') THEN 'Today'
+                        ELSE 'Upcoming' END AS detail
               FROM events e WHERE e.org_id = ? AND LEFT(e.date::text, 10) BETWEEN ? AND ?`,
       args: [orgId, p.from, p.to],
       order: "date ASC, id",

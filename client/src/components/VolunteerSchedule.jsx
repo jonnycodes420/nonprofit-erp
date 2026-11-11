@@ -22,6 +22,7 @@ import { displayDate } from "../../../shared/displayDate";
 import { addDaysCivil } from "../../../shared/volunteerShifts.js";
 import { signUpForShift } from "../lib/shiftSignup";   // STALE-2
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import TimeInput from "./inputs/TimeInput";   // FLOWS-5: a time as she types it
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: T.ink, fontFamily: "inherit", boxSizing: "border-box" };
 const btnPrimary = { background: T.green, border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13, fontWeight: 700, color: T.white, cursor: "pointer" };
@@ -468,9 +469,9 @@ export function ShiftEditor({ shift, opportunities = [], date, startTime, endTim
         <div style={row}>
           <DateInput aria-label="Date" id="se-date" value={f.date} onChange={set("date")} style={{ ...inp, flex: "1 1 150px" }} />
           {!f.allDay && <>
-            <input aria-label="Starts" id="se-start" type="time" value={f.startTime} onChange={set("startTime")} style={{ ...inp, flex: "0 1 110px" }} />
+            <TimeInput aria-label="Starts" id="se-start" value={f.startTime} onChange={set("startTime")} style={{ ...inp, flex: "0 1 110px" }} />
             <span style={{ color: T.ink3, fontSize: 13, paddingBottom: 9 }}>to</span>
-            <input aria-label="Ends" id="se-end" type="time" value={f.endTime} onChange={set("endTime")} style={{ ...inp, flex: "0 1 110px" }} />
+            <TimeInput aria-label="Ends" id="se-end" value={f.endTime} onChange={set("endTime")} style={{ ...inp, flex: "0 1 110px" }} />
           </>}
         </div>
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 8 }}>
@@ -514,7 +515,26 @@ export function ShiftEditor({ shift, opportunities = [], date, startTime, endTim
   );
 }
 
+// FLOWS-5 (W-1110-Volunteers-07X): ONE SHIFT DIALOG. Opportunities' "Who is
+// coming" opened a people list and the Calendar opened the edit form, while
+// the Schedule opened this drawer. Every place now opens this drawer, by the
+// shift's id and day, with the full controls (people, roles, edit, cancel).
+export function ShiftDrawerFor({ slotId, date, isReadOnly, onClose, onOpenPerson }) {
+  const [data, setData] = useState(null);
+  const load = () => apiFetch(`/volunteer-hub/schedule?from=${date}&to=${date}`)
+    .then(d => setData({ defs: d.definitions, shift: (d.shifts || []).find(s => s.id === slotId) || false })).catch(() => setData({ shift: false }));
+  useEffect(() => { load(); }, [slotId, date]);   // eslint-disable-line react-hooks/exhaustive-deps
+  if (data === null) return null;
+  if (!data.shift) return <Modal onClose={onClose} width={420} ariaLabel="Shift"><div style={{ fontSize: 13.5, color: T.ink }}>This shift is no longer on the schedule.</div></Modal>;
+  return <ShiftDrawer shift={data.shift} defs={data.defs} isReadOnly={isReadOnly} onClose={onClose} onChanged={() => load()} onOpenPerson={onOpenPerson} />;
+}
+
 function ShiftDrawer({ shift, defs, isReadOnly, onClose, onChanged, onOpenPerson }) {
+  const [reminders, setReminders] = useState(null);   // signupId -> { state, reason }
+  useEffect(() => {
+    apiFetch(`/volunteer-hub/slots/${shift.id}/signups`).then(d => setReminders(Object.fromEntries(((d && (d.signups || d.people)) || [])
+      .filter(x => x.reminder).map(x => [x.signupId || x.id, x.reminder])))).catch(() => setReminders({}));
+  }, [shift.id]);
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(null);   // role id (or "" for no role)
   const [roster, setRoster] = useState(null);
@@ -568,6 +588,9 @@ function ShiftDrawer({ shift, defs, isReadOnly, onClose, onChanged, onOpenPerson
             {g.people.map(p => (
               <div key={p.signupId} data-person={p.personId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid " + T.bg2, flexWrap: "wrap" }}>
                 <button style={{ ...btnLink, color: T.ink, fontWeight: 600 }} onClick={() => onOpenPerson && onOpenPerson({ id: p.personId, name: p.name })}>{p.name}</button>
+                {/* WHY-1 Part 8, kept by FLOWS-5's one dialog: the reminder says what happened to it. */}
+                {reminders && reminders[p.signupId] && reminders[p.signupId].state === "failed" && <span data-testid="vol-reminder-failed" style={{ fontSize: 12, color: T.gold700 }} title={reminders[p.signupId].reason}>Reminder not sent: {reminders[p.signupId].reason}</span>}
+                {reminders && reminders[p.signupId] && reminders[p.signupId].state === "sent" && <span style={{ fontSize: 12, color: T.ink3 }}>Reminder sent</span>}
                 <span style={{ fontSize: 12, color: T.ink3 }}>
                   {p.status === "waitlisted" ? `Waiting, number ${p.position}` : p.checkedInAt ? "Checked in" : p.status === "completed" ? "Done" : p.status === "no_show" ? "Did not come" : "Confirmed"}
                 </span>

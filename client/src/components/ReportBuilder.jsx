@@ -16,6 +16,8 @@ import { T, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { cellText, centsOf, footCents, footCount, sortValue, nextSort, sortRows, splitHandlerRows } from "../lib/reportFormat";
 import { DonorLink, useUrlWriter } from "./RecordLink";
+import { SaveAsGroup } from "./Groups";   // FLOWS-5: list reports save their people
+import { listReportOf, listGroupName } from "../lib/listReports";
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 const btn = (primary) => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 9,
@@ -146,11 +148,14 @@ function outColumns(out) {
   });
 }
 
-function ResultTable({ out, onOpen }) {
+function ResultTable({ out, onOpen, listId = null }) {
   if (!out) return null;
   const { rows } = splitHandlerRows(out.rows, out.columns[0]?.key);
+  const ids = listId && listReportOf(listId) ? [...new Set(rows.map(r => r._pid).filter(Boolean))] : [];
   return (
     <div data-testid="rb-result">
+      {/* FLOWS-5 (W-1110-Fundraising-14): a list report offers Save as a group every time it is drawn. */}
+      {ids.length > 0 && <div style={{ marginBottom: 8 }}><SaveAsGroup name={listGroupName(listId)} donorIds={ids} testid="report-save-group" /></div>}
       <ReportTable cols={outColumns(out)} rows={rows} personOf={r => r._pid || null} onOpen={onOpen} />
       <div style={{ fontSize: 12, color: T.ink3, marginTop: 8 }}>
         {rows.length.toLocaleString("en-US")} {rows.length === 1 ? "row" : "rows"}
@@ -316,7 +321,7 @@ export function ReportRunView({ id, meta, onOpen }) {
           </div>
         </div>
         {msg && <div role="alert" style={{ fontSize: 13, color: T.terracotta }}>{msg}</div>}
-        {out ? (out.rows.length ? <ResultTable out={out} onOpen={onOpen} /> : <div style={{ color: T.ink3, fontSize: 13 }}>Nothing matches this report yet.</div>)
+        {out ? (out.rows.length ? <ResultTable out={out} onOpen={onOpen} listId={id} /> : <div style={{ color: T.ink3, fontSize: 13 }}>Nothing matches this report yet.</div>)
           : !msg && <div style={{ color: T.ink3, fontSize: 13 }}>Running…</div>}
       </Card>
     </div>

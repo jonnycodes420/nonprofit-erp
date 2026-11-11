@@ -16,7 +16,7 @@
 //
 // No money is drawn here on purpose: this is the coordinator's screen. Giving
 // is one click away on the person's record, where it is defined.
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Papa from "papaparse";
 import { apiFetch, API } from "../api";
 import { T, PageTitle, SectionTabs, EmptyState, Modal, activeMark } from "./shared";
@@ -28,7 +28,7 @@ import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam } from "../lib/appUrls";
-import { ScheduleView, RosterModeView, ToSendView } from "./VolunteerSchedule";   // PARITY-3 Part 4
+import { ScheduleView, RosterModeView, ToSendView, ShiftDrawerFor } from "./VolunteerSchedule";   // PARITY-3 Part 4
 import { RecruitmentView, ApplicationsView } from "./VolunteerRecruit";          // PARITY-3 Part 2
 import { VolunteerCounts, VolunteerListView, VolunteersGroupView } from "./VolunteerList";   // PARITY-3 Parts 3 and 5
 import { countLabel } from "../../../shared/countWords.js";
@@ -36,6 +36,7 @@ import { useWriteRev, VOLUNTEER_WRITES } from "../lib/writeRev";
 import ShiftRowActions from "./volunteers/ShiftRowActions";   // STALE-2: Edit a logged shift
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { PersonShiftLists } from "./volunteers/PersonShiftLists"; import { entryKey } from "../lib/entryKey";   // FLOWS-3: Coming up and Past, from the Schedule's rows
+import TimeInput from "./inputs/TimeInput";   // FLOWS-5: a time as she types it
 
 // ── VOL-1 · THE SAME SHAPE FUNDRAISING GOT ────────────────────────────────
 // Four sections, each one a question a coordinator actually asks, with the
@@ -728,9 +729,15 @@ function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord, onL
 function useLoad(path, deps = []) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
+  // FLOWS-5 (W-1109-Volunteers-26): only the newest read may land. Each edit
+  // of a range starts a read; an older one coming back last put the previous
+  // end date's answer on screen.
+  const seq = useRef(0);
   const load = useCallback(() => {
     setErr("");
-    apiFetch(path).then(setData).catch(e => setErr(errorMessage(e, "That did not load.")));
+    const n = ++seq.current;
+    apiFetch(path).then(d => { if (n === seq.current) setData(d); })
+      .catch(e => { if (n === seq.current) setErr(errorMessage(e, "That did not load.")); });
   }, [path]);                                          // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load, ...deps]);       // eslint-disable-line react-hooks/exhaustive-deps
   return [data, load, err, setData];
@@ -829,7 +836,8 @@ function OpportunitiesView({ isReadOnly, narrow }) {
 
       {newOpp && <NewOpportunityModal busy={busy} onClose={() => setNewOpp(null)} onSave={createOpp} />}
       {newSlot && <NewSlotModal busy={busy} opportunityId={newSlot} onClose={() => setNewSlot(null)} onSave={createSlot} />}
-      {openSlot && <SlotPeopleModal slotId={openSlot} isReadOnly={isReadOnly} onClose={() => { setOpenSlot(null); reload(); }} />}
+      {/* FLOWS-5: the one shift dialog, the Schedule's drawer. */}
+      {openSlot && <ShiftDrawerFor slotId={openSlot} date={(data.opportunities.flatMap(o => o.slots).find(x => x.id === openSlot) || {}).date} isReadOnly={isReadOnly} onClose={() => { setOpenSlot(null); reload(); }} />}
     </div>
   );
 }
@@ -874,8 +882,8 @@ function NewSlotModal({ opportunityId, onClose, onSave, busy }) {
       <label style={lbl}>Date</label>
       <DateInput data-testid="slot-date" value={f.date} onChange={e => set("date", e.target.value)} style={inp} />
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <div><label style={lbl}>Starts</label><input type="time" value={f.startTime} onChange={e => set("startTime", e.target.value)} style={inp} /></div>
-        <div><label style={lbl}>Ends</label><input type="time" value={f.endTime} onChange={e => set("endTime", e.target.value)} style={inp} /></div>
+        <div><label style={lbl}>Starts</label><TimeInput aria-label="Starts" value={f.startTime} onChange={e => set("startTime", e.target.value)} style={inp} /></div>
+        <div><label style={lbl}>Ends</label><TimeInput aria-label="Ends" value={f.endTime} onChange={e => set("endTime", e.target.value)} style={inp} /></div>
       </div>
       <label style={lbl}>How many people</label>
       <input data-testid="slot-capacity" type="number" min="0" max="1000" value={f.capacity} onChange={e => set("capacity", e.target.value)} style={inp} placeholder="Leave empty for no limit" />
@@ -889,58 +897,6 @@ function NewSlotModal({ opportunityId, onClose, onSave, busy }) {
           style={{ ...btnPrimary, opacity: (!f.date || busy) ? 0.5 : 1 }}>{busy ? "Saving…" : "Add it"}</button>
         <button onClick={onClose} style={btnQuiet}>Not now</button>
       </div>
-    </Modal>
-  );
-}
-
-function SlotPeopleModal({ slotId, onClose, isReadOnly }) {
-  const [data, reload, err] = useLoad(`/volunteer-hub/slots/${slotId}/signups`);
-  const [busy, setBusy] = useState(null);
-  async function cancel(id) {
-    setBusy(id);
-    try { const r = await apiFetch(`/volunteer-hub/signups/${id}/cancel`, { method: "POST", body: "{}" }); window.alert(r.message); reload(); }
-    catch (e) { window.alert(errorMessage(e, "Could not cancel that.")); }
-    setBusy(null);
-  }
-  return (
-    <Modal onClose={onClose} title={data ? `${data.slot.opportunityName} · ${data.slot.when}` : "Who is coming"}>
-      {err && <div role="alert" style={{ fontSize: 13 }}>{err}</div>}
-      {!data ? <div style={{ fontSize: 13, color: T.ink3 }}>Loading…</div> : (
-        <>
-          <Sentence>{data.slot.sentence}</Sentence>
-          {!data.people.length && <div style={{ fontSize: 13, color: T.ink3 }}>Nobody yet.</div>}
-          {data.people.map(p => (
-            <div key={p.signupId} data-testid="vol-slot-person"
-              style={{ display: "flex", gap: 10, alignItems: "center", padding: "9px 0", borderBottom: "1px solid " + T.bg2, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink, minWidth: 120 }}>{p.name}</span>
-              <span style={{ ...pillQuiet, background: p.status === "waitlisted" ? T.gold100 : T.green100,
-                             color: p.status === "waitlisted" ? T.gold700 : T.greenDk }}>{p.status === "waitlisted" ? "Waiting list" : p.status}</span>
-              {p.groupName && <span style={{ fontSize: 12, color: T.ink3 }}>{p.groupName}</span>}
-              {/* WHY-1 Part 8 — the reminder says what happened to it: sent
-                  means the provider took it, and a refusal shows its reason. */}
-              {p.reminder && p.reminder.state === "failed" && <span data-testid="vol-reminder-failed" style={{ fontSize: 12, color: T.gold700 }} title={p.reminder.reason}>Reminder not sent: {p.reminder.reason}</span>}
-              {p.reminder && p.reminder.state === "sent" && <span style={{ fontSize: 12, color: T.ink3 }}>Reminder sent</span>}
-              {/* The credential state, where it matters: she is looking at
-                  who is coming on Saturday. */}
-              {data.slot.requiresWaiver && (
-                <span style={{ fontSize: 12, color: (p.waiver && p.waiver.ok) ? T.ink3 : T.gold700 }}
-                  title={(p.waiver && p.waiver.sentence) || "No waiver on file."}>
-                  {(p.waiver && p.waiver.ok) ? "Waiver current" : "No waiver"}
-                </span>
-              )}
-              {data.slot.requiresBackgroundCheck && (
-                <span style={{ fontSize: 12, color: (p.backgroundCheck && p.backgroundCheck.ok) ? T.ink3 : T.gold700 }}
-                  title={(p.backgroundCheck && p.backgroundCheck.sentence) || "No background check on file."}>
-                  {(p.backgroundCheck && p.backgroundCheck.ok) ? "Check current" : "No check"}
-                </span>
-              )}
-              {!isReadOnly && <button onClick={() => cancel(p.signupId)} disabled={busy === p.signupId}
-                style={{ ...btnQuiet, marginLeft: "auto", padding: "5px 10px", fontSize: 12 }}>Take off</button>}
-            </div>
-          ))}
-          <Definitions items={Object.entries(data.definitions || {})} />
-        </>
-      )}
     </Modal>
   );
 }
@@ -1425,8 +1381,9 @@ function HoursReportView({ narrow }) {
     <div data-testid="vol-report" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <Sentence>{data.sentence}</Sentence>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-        <div><label style={lbl}>From</label><DateInput value={range.from || data.from} onChange={e => setRange(r => ({ ...r, from: e.target.value }))} style={{ ...inp, width: 170 }} /></div>
-        <div><label style={lbl}>To</label><DateInput value={range.to || data.to} onChange={e => setRange(r => ({ ...r, to: e.target.value }))} style={{ ...inp, width: 170 }} /></div>
+        {/* FLOWS-5: each change sends BOTH ends as the boxes show them now, never the other end's old answer. */}
+        <div><label style={lbl}>From</label><DateInput data-testid="vol-report-from" value={range.from || data.from} onChange={e => { const v = e.target.value; setRange(r => ({ from: v, to: r.to || data.to })); }} style={{ ...inp, width: 170 }} /></div>
+        <div><label style={lbl}>To</label><DateInput data-testid="vol-report-to" value={range.to || data.to} onChange={e => { const v = e.target.value; setRange(r => ({ from: r.from || data.from, to: v })); }} style={{ ...inp, width: 170 }} /></div>
         <button data-testid="vol-report-export" onClick={download} style={btnPrimary}>Download for a funder</button>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: narrow ? "1fr" : "1fr 1fr", gap: 14 }}>
