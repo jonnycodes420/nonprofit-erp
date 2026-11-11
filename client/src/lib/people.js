@@ -18,8 +18,8 @@ const qs = o => new URLSearchParams(Object.entries(o).filter(([, v]) => v !== un
 
 // People for a picker. match: "concat" (name and email run together), "either"
 // (name or email) or "name".
-export async function pickPeople({ q = "", match = "concat", limit = 20, status, withEmail, named, kind, gave } = {}) {
-  const rows = await apiFetch(`/donors/pick?${qs({ q: q.trim(), match, limit, status, kind, gave,
+export async function pickPeople({ q = "", match = "concat", limit = 20, status, withEmail, named, kind } = {}) {
+  const rows = await apiFetch(`/donors/pick?${qs({ q: q.trim(), match, limit, status, kind,
     withEmail: withEmail ? "1" : "", named: named ? "1" : "" })}`);
   return (Array.isArray(rows) ? rows : []).map(adaptDonor);
 }
@@ -64,12 +64,12 @@ onWrite(forgetAllPeople);
 // A picker's suggestions for what has been typed so far (debounced). Returns
 // [rows, pending]: pending is true until the answer for this text is back, so
 // a "nobody matches" line never shows for an answer that has not arrived.
-export function usePeoplePicker(text, { match = "concat", limit = 20, enabled = true, emptyToo = false, withEmail, gave } = {}) {
+export function usePeoplePicker(text, { match = "concat", limit = 20, enabled = true, emptyToo = false, withEmail } = {}) {
   const t = String(text || "").trim();
-  const key = `${t}|${match}|${limit}|${withEmail ? 1 : 0}|${gave ?? ""}`;
+  const key = `${t}|${match}|${limit}|${withEmail ? 1 : 0}`;
   const off = !enabled || (!t && !emptyToo);
   // STALE-2: the newest answer only, and never an older query's rows (lib/latestSearch.js).
-  return useLatestSearch(t, key, term => pickPeople({ q: term, match, limit, withEmail, gave }), { enabled: !off, narrow: personStillMatches });
+  return useLatestSearch(t, key, term => pickPeople({ q: term, match, limit, withEmail }), { enabled: !off, narrow: personStillMatches });
 }
 
 // These ids as people, refreshed when the set changes. Returns [map, ready]:

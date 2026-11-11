@@ -22,6 +22,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { apiFetch } from "../api";
 import { usePeoplePicker } from "../lib/people";
+import { useLatestSearch, personStillMatches } from "../lib/latestSearch";   // POLISH-9: the never-given half, kept off the shell's people.js
 import { T, Spin } from "./shared";
 import { offerUndo } from "./EditHistory";
 import { askConfirm } from "./ConfirmDialog";
@@ -261,7 +262,9 @@ export function PreviewAs({ as, onPick }) {
   const [q, setQ] = useState("");
   const [givers, loading1] = usePeoplePicker(q, { match: "name", limit: 8, emptyToo: true });
   // POLISH-9: people who never gave, on their own (the no-gift version of the email), never crowded out by givers
-  const [never, loading2] = usePeoplePicker(q, { match: "name", limit: 5, emptyToo: true, gave: "0" });
+  const term = q.trim();
+  const [never, loading2] = useLatestSearch(term, `${term}|never`, t => apiFetch(`/donors/pick?${new URLSearchParams({ q: t, match: "name", limit: "5", gave: "0" })}`).then(r => (Array.isArray(r) ? r : [])),
+    { narrow: personStillMatches });
   const loading = loading1 || loading2;
   const people = [...givers, ...never.filter(n => !givers.some(g => g.id === n.id)).map(n => ({ ...n, neverGave: true }))];
   return (
