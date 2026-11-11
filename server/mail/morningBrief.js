@@ -49,8 +49,11 @@ async function composeFor(org, u, today, team) {
   }
   // LIVE-1 · yesterday's readouts (Friday's and the weekend's on a Monday).
   const readouts = b.sections.readouts ? await c.yesterdaysReadouts(org.id, today) : [];
-  const empty = tq.list.length === 0 && tasks.count === 0 && meetings.length === 0 && readouts.length === 0;
-  return { b, suppressed, empty, threads: tq.list, more: tq.more, tasks, meetings, readouts,
+  // ACCESS-2: someone who sees only their own people gets only their people:
+  // the items about anyone else come out, and the org-wide readouts with them.
+  const own = await require("../auth/portfolioMail").forPortfolio(org.id, u, { threads: tq.list, tasks, meetings, readouts });
+  const empty = own.threads.length === 0 && own.tasks.count === 0 && own.meetings.length === 0 && own.readouts.length === 0;
+  return { b, suppressed, empty, threads: own.threads, more: own.scoped ? 0 : tq.more, tasks: own.tasks, meetings: own.meetings, readouts: own.readouts,
            team: u.role === "admin" && team && team.multiOfficer && b.sections.team ? team.teamRows : null };
 }
 

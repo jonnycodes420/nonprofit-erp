@@ -336,6 +336,9 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
      ORDER BY dr.created_at ASC`,
     [donorId, donorId, orgId, donorId, donorId, donorId]
   );
+  // ACCESS-2: a link to someone outside her portfolio isn't shown: to her, they aren't there.
+  const hiddenRel = new Set(await require("../auth/portfolio").hiddenOf(req.user, orgId, rows.map(r => r.related_donor_id)));
+  if (hiddenRel.size) rows.splice(0, rows.length, ...rows.filter(r => !hiddenRel.has(r.related_donor_id)));
   if (!rows.length) return res.json({ relationships: [], householdTotal: null });
 
   const relatedIds = rows.map(r => r.related_donor_id);

@@ -98,10 +98,13 @@ function lev(a, b) {
   return p[b.length];
 }
 const near = (a, b) => a.length >= 4 && b.length >= 4 && a[0] === b[0] ? lev(a, b) <= (a.length >= 6 ? 2 : 1) : a.length >= 5 && lev(a, b) === 1;
-async function people(orgId) {
+// ACCESS-2: `req` narrows them to a portfolio user's people (server/auth/portfolio.js),
+// so a name outside it is one Atlas can't find.
+async function people(orgId, req) {
+  const v = require("../server/auth/portfolio").visibleSql(req, "d");
   return query(`SELECT d.id, d.name, d.household_id, h.name AS household, h.primary_donor_id, d.total_giving
                   FROM donors d LEFT JOIN households h ON h.id = d.household_id AND h.org_id = d.org_id
-                 WHERE d.org_id=? AND d.deleted_at IS NULL AND COALESCE(d.is_sample,false) = false ORDER BY d.total_giving DESC NULLS LAST, d.id LIMIT 20000`, [orgId]);
+                 WHERE d.org_id=? AND d.deleted_at IS NULL AND COALESCE(d.is_sample,false) = false${v.sql} ORDER BY d.total_giving DESC NULLS LAST, d.id LIMIT 20000`, [orgId, ...v.args]);
 }
 async function resolvePerson(orgId, said, all) {
   const raw = String(said || "").replace(/[’]/g, "'").replace(/'s$/i, "").replace(/^(mr|mrs|ms|dr)\.?\s+/i, "").trim();
@@ -121,7 +124,12 @@ async function resolvePerson(orgId, said, all) {
     return opts(kin);
   }
   if (toks.length >= 2) {
-    const m = await DM.matchDonor(orgId, { name: raw });
+    // ACCESS-2: donorMatch reads the whole org; only the people in `all` count.
+    const m0 = await DM.matchDonor(orgId, { name: raw });
+    const inAll = new Set(all.map(p => p.id));
+    const picks = m0.state === "choices" ? m0.choices.filter(c => inAll.has(c.id)) : [];
+    const m = m0.state === "matched" && !inAll.has(m0.selectedId) ? { state: "none" }
+      : m0.state === "choices" ? (picks.length ? { ...m0, choices: picks } : { state: "none" }) : m0;
     if (m.state === "matched") return { state: "matched", id: m.selectedId };
     if (m.state === "choices") return { state: "choices", options: m.choices.map(c => all.find(p => p.id === c.id) || { id: c.id, name: c.name }) };
     // A typo in either half: first and last each within a letter or two.
@@ -453,6 +461,15 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
     const VO = await import("../shared/viewOnly.js");
     const kept = steps.filter(x => VO.ATLAS_READ_KINDS.has(x.kind));
     if (kept.length < steps.length) await logAction(req, { ...base, kind: "refused", state: "refused", line: VO.VIEWER_ATLAS_SENTENCE });
+    steps = kept;
+  }
+  // ACCESS-2: a portfolio user's Atlas reads only their people. A question
+  // about the whole org (Ask) and the org's Top 100 read everyone, so they are
+  // said once and left out.
+  if (require("../server/auth/portfolio").isScoped(req.user)) {
+    const kept = steps.filter(x => x.kind !== "question" && x.kind !== "top100");
+    if (kept.length < steps.length) await logAction(req, { ...base, kind: "refused", state: "refused",
+      line: "You see the people assigned to you, so I can only answer about them. Questions about the whole organization are for colleagues who see everyone." });
     steps = kept;
   }
   const cardId = () => newId("vc");
@@ -796,7 +813,7 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   if (!onPage && prior && prior.onPage) onPage = prior.onPage;
   PG.lap(req, "setup");
   // SPEED-3: everyone a name could match is read while the model reads her words.
-  const all = people(orgId);
+  const all = people(orgId, req);
   all.catch(() => {});
   // ATLAS-5: the org's context once per request: the AI switch, the voice (writeDraft).
   req.atlasCtx = { gate: agentGate(orgId) };
@@ -847,7 +864,7 @@ app.post("/atlas/:id/answer", requireAuth, checkWriteAccess, wrap(async (req, re
   const onPage = read.atlas && read.atlas.onPage ? (await query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [read.atlas.onPage, orgId]))[0] : null;
   const fresh = (read.atlas.steps || []).map(s => ({ kind: s.kind, who: s.who, target: s.target, amountWords: s.amountWords, whenWords: s.whenWords, how: s.how,
     words: s.words, ...(s.whos ? { whos: s.whos } : {}) }));
-  const { steps, questions } = await resolveAll(orgId, fresh, { today, onPage, answers });
+  const { steps, questions } = await resolveAll(orgId, fresh, { today, onPage, answers, all: people(orgId, req) });
   if (questions.length) {
     await run("UPDATE voice_memos SET read=? WHERE id=? AND org_id=?", [JSON.stringify({ ...read, atlas: { ...read.atlas, questions } }), m.id, orgId]);
     return res.status(400).json({ error: "unanswered", sentence: "Pick one for each question.", request: await requestOut(orgId, m.id) });

@@ -232,6 +232,23 @@ async function requireAuth(req, res, next) {
         });
       }
     }
+    // ── ACCESS-2 · A PORTFOLIO ────────────────────────────────────────────
+    // Staff who see only the people assigned to them. Read live (users.sees,
+    // or the membership's in a further org); an admin always sees everyone.
+    // The gate runs here, after the route matched, so every route is checked
+    // against its declaration (server/auth/portfolioRoutes.js) and every
+    // person it names; outside the portfolio is a 404 (server/auth/portfolio.js).
+    if (req.user.role !== "admin") {
+      const PF = require("./server/auth/portfolio");
+      req.user.portfolio = await PF.accessFor(payload.userId, orgId);
+      if (PF.isScoped(req.user)) {
+        const refusal = await PF.gate(req);
+        if (refusal) {
+          if (req.audit) req.audit.skip("portfolio_scope");
+          return res.status(refusal.status).json(refusal.body);
+        }
+      }
+    }
     // ── ACCESS-1 · THE VIEWER ──────────────────────────────────────────────
     // A viewer changes nothing. Decided here, by method, so a write route added
     // tomorrow is refused tomorrow (shared/viewOnly.js holds the rule).

@@ -37,6 +37,7 @@ async function joinWithInvite({ query, run, invite, user, req, res, signToken })
        VALUES (?,?,?,?,?,?)
        ON CONFLICT (user_id, org_id) DO UPDATE SET role = EXCLUDED.role, revoked_at = NULL`,
       [newId("mem"), user.id, invite.org_id, invite.role || "staff", invite.invited_by || "system:invite-accept", null]);
+    await require("./teamAccess").copyFromInvite(run, invite.id, { userId: user.id, orgId: invite.org_id, home: false });   // ACCESS-2
   }
   await run("UPDATE invites SET accepted_at = NOW() WHERE id = ?", [invite.id]);
   if (req.audit) {
@@ -56,11 +57,13 @@ async function joinWithInvite({ query, run, invite, user, req, res, signToken })
 async function teamOf(query, orgId) {
   return query(
     `SELECT id, email, name, role, created_at, (mfa_enabled_at IS NOT NULL) AS mfa_enabled, mfa_must_setup,
-            (role = 'admin' OR COALESCE(can_major_gifts, false)) AS can_major_gifts, false AS member
+            (role = 'admin' OR COALESCE(can_major_gifts, false)) AS can_major_gifts, false AS member,
+            sees, can_export, can_wealth
        FROM users WHERE org_id = ? AND deactivated_at IS NULL
      UNION ALL
      SELECT u.id, u.email, u.name, m.role, m.created_at, (u.mfa_enabled_at IS NOT NULL) AS mfa_enabled, u.mfa_must_setup,
-            (m.role = 'admin') AS can_major_gifts, true AS member
+            (m.role = 'admin') AS can_major_gifts, true AS member,
+            m.sees, m.can_export, m.can_wealth
        FROM org_memberships m JOIN users u ON u.id = m.user_id
       WHERE m.org_id = ? AND m.revoked_at IS NULL AND u.deactivated_at IS NULL
      ORDER BY created_at ASC`, [orgId, orgId]);
