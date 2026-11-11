@@ -33,3 +33,12 @@ next one, which is why it failed on Jonathan's laptop every time.
 and no preview. Now it builds the client for its own server and the shard waits for the preview
 to answer before any suite starts. If Playwright, the client's modules, the build or the preview
 is missing, the browser suite is skipped with "CI will run it", and it is never started half-ready.
+
+**Left open: one more lag1 red, in the PR's own battery.** CI run 42951804310 (shard 2) logged
+two stackless "TypeError: Failed to fetch" lines after every leg had passed. That came after 30 of 30
+green locally and 30 of 30 on CI's Repeat. The server log was clean, and three runs in shard 2's
+order (flows4, scores1-recompute, dates1, lag1) were green. The one difference from production found: `sw.js` passed
+an API read through only when its URL held `/api/` or `railway.app`, so in tests (an API on a
+localhost port) the service worker stood in front of every API read and cached it. It now passes
+through anything on another origin, as production always did. lag1's console check now names
+the script, line and page of each error and the reads cut off just before it.

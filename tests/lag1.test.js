@@ -114,7 +114,16 @@ const person = (id, name, f = {}) => q(
   const errors = [];
   const dialogs = [];
   const NOISE = /\/_vercel\/|fonts\.googleapis|\/favicon|\/ai\/stream/;
-  page.on("console", m => { if (m.type() === "error" && !NOISE.test((m.location() || {}).url || "") && !/React DevTools|status of 409/.test(m.text())) errors.push(m.text()); });
+  // FLAKE-3: each error names where it was logged and the page it was on, and
+  // the reads cut off just before it, so a red run says which code logged it.
+  const failedReqs = [];
+  page.on("requestfailed", r => { failedReqs.push(`${r.method()} ${r.url().replace(/^https?:\/\/[^/]+/, "").slice(0, 60)} ${(r.failure() || {}).errorText || ""}`); if (failedReqs.length > 12) failedReqs.shift(); });
+  page.on("console", m => {
+    if (m.type() === "error" && !NOISE.test((m.location() || {}).url || "") && !/React DevTools|status of 409/.test(m.text())) {
+      const at = m.location() || {};
+      errors.push(`${m.text().split("\n").slice(0, 3).join(" | ")} @ ${String(at.url || "").replace(/^https?:\/\/[^/]+/, "")}:${at.lineNumber} on ${page.url().replace(/^https?:\/\/[^/]+/, "")} · cut off: ${failedReqs.slice(-3).join("; ")}`);
+    }
+  });
   page.on("response", r => { if (r.status() >= 500 && !NOISE.test(r.url())) errors.push(r.status() + " " + r.url()); });
   // A browser alert is what the fleet never saw (an automated browser dismisses it): count it as "said nothing".
   page.on("dialog", d => { dialogs.push(d.message()); d.dismiss().catch(() => {}); });
