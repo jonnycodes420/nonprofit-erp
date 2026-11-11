@@ -17,7 +17,8 @@ export function linkedPeople({ household = null, relationships = [], donorId = n
     out.push({ id: m.id, name: m.name, via: "household", member: m });
   }
   for (const r of relationships || []) {
-    if (!r || inHousehold.has(r.relatedDonorId)) continue;
+    // CONNECT-1: how someone came in (r.direction) is said even of a household member.
+    if (!r || (inHousehold.has(r.relatedDonorId) && !r.direction)) continue;
     out.push({ id: r.relatedDonorId, name: r.relatedDonorName, via: "relationship", rel: r });
   }
   return out;

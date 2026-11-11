@@ -96,6 +96,11 @@ const FIELDS = [
   F("owner", "Owner", "Contact", { format: "owner", sort: `lower(COALESCE(${require("./server/donors/ownerName").OWNER_NAME_SQL("donors")}, pending_assignee_name, ''))`, filter: SEL_OPS, cell: "owner" }),
   F("tags", "Tags", "Contact", { format: "list", filter: SEL_OPS, cell: "tags" }),
   F("group", "Group", "Contact", { col: false, filter: SEL_OPS }),
+  // CONNECT-1: how they came in (server/donors/connections.js), and who brought people in.
+  F("introduced_by", "Introduced by", "Contact", { col: false, filter: SEL_OPS,
+    sentence: "People linked as introduced by the person you pick." }),
+  F("brought_in", "Brought people in", "Contact", { col: false, filter: BOOL_OPS,
+    sentence: "Has introduced someone, or brought someone as a guest, who is still in Steward." }),
   F("added", "Added", "Contact", { format: "date", sort: "created_at", filter: ops("after", "before", "dbetween"), cell: "added" }),
   // Giving
   // TRUTH-3 (W-1107-Fundraising-11): the row shows the live lifetime (LIST-2), so it sorts on that same amount, numerically.
@@ -154,6 +159,8 @@ const FIELDS = [
   F("event_attended", "Came to an event", "Events", { col: false, filter: SEL_OPS }),
   F("event_no_gift", "Came to an event and didn't give", "Events", { col: false, filter: SEL_OPS,
     sentence: "Came to the event (attended or checked in) and has given nothing since the day of the event." }),
+  F("guest_of", "Guest of", "Events", { col: false, filter: SEL_OPS,
+    sentence: "People linked as the guest of the person you pick, at any event or the one you pick." }),
   F("events_attended", "Events attended", "Events", { format: "number", cell: "events_attended" }),
   // Volunteering
   F("volunteer", "Volunteers", "Volunteering", { col: false, filter: BOOL_OPS }),
@@ -212,7 +219,7 @@ function cfField(d) {
 
 // Every field for this org, with the choices a select offers.
 async function fieldsFor(orgId) {
-  const [defs, owners, tags, groups, funds, campaigns, methods, events] = await Promise.all([
+  const [defs, owners, tags, groups, funds, campaigns, methods, events, connects] = await Promise.all([
     customFieldDefs(orgId),
     query(`SELECT id, name FROM users WHERE org_id = ? AND deactivated_at IS NULL ORDER BY lower(name)`, [orgId]),
     query(`SELECT DISTINCT t AS tag FROM donors, LATERAL jsonb_array_elements_text(
@@ -223,6 +230,7 @@ async function fieldsFor(orgId) {
     query(`SELECT id, name FROM campaigns WHERE org_id = ? ORDER BY lower(name)`, [orgId]).catch(() => []),
     query(`SELECT DISTINCT payment_method AS m FROM gifts WHERE org_id = ? AND COALESCE(payment_method,'') <> '' ORDER BY 1 LIMIT 50`, [orgId]),
     query(`SELECT id, name, date::text AS date FROM events WHERE org_id = ? ORDER BY date DESC NULLS LAST, lower(name) LIMIT 300`, [orgId]).catch(() => []),
+    require("./server/donors/connections").filterChoices(query, orgId),   // CONNECT-1
   ]);
   const ev = events.map(e => ({ value: e.id, label: e.date ? `${e.name} (${String(e.date).slice(0, 10)})` : e.name }));
   const choices = {
@@ -235,6 +243,7 @@ async function fieldsFor(orgId) {
     event_invited: ev, event_registered: [{ value: "any", label: "Any event" }, ...ev],
     event_attended: [{ value: "any", label: "Any event" }, ...ev], event_no_gift: ev,
     stage: STAGE_OPTIONS,
+    introduced_by: connects.introduced_by, guest_of: connects.guest_of,
   };
   return [...FIELDS.map(f => ({ ...f, options: choices[f.key] || f.options || undefined })), ...defs.map(cfField)];
 }
@@ -434,6 +443,8 @@ async function compileOne(orgId, c, fields) {
     case "do_not_contact": case "do_not_solicit": case "do_not_email": case "do_not_mail": case "do_not_call": case "email_unreachable":
     case "phone_unreachable": case "auto_email":
       return bool(c.op, `${f.key} IS TRUE`);
+    case "introduced_by": case "guest_of": case "brought_in":
+      return require("./server/donors/connections").filterCond(f.key, c.op, v);
     case "opted_out":
       return bool(c.op, "(do_not_contact IS TRUE OR do_not_solicit IS TRUE OR do_not_email IS TRUE OR do_not_mail IS TRUE OR do_not_call IS TRUE)");
     default: return bad(`Steward can't filter by "${c.field}".`);

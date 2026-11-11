@@ -1127,6 +1127,14 @@ app.post("/events/:id/attendees", requireAuth, checkWriteAccess, require("./capa
     const added = [];
     const ids = [];   // PARITY-4: the door checks a walk-in in by id the moment they are added
     const who = await staffWho(req);
+    // CONNECT-1: "Guest of…" names a person already on this event's list; the
+    // guest is linked to them (guest_of, with this event). Nothing else changes.
+    const guestOf = req.body.guestOfDonorId ? String(req.body.guestOfDonorId) : null;
+    if (guestOf) {
+      const [host] = await query("SELECT id FROM event_attendees WHERE event_id=$1 AND org_id=$2 AND donor_id=$3 LIMIT 1", [eventId, orgId, guestOf]);
+      if (!host) return res.status(400).json({ error: "The person they came with is not on this event's list." });
+    }
+    const addedDonors = [];
     // WIRE-1 rule 1: a name typed with an email that is already on file is
     // that person, not a stranger with no record.
     if (!(donorIds && Array.isArray(donorIds)) && name && String(email || "").trim()) {
@@ -1160,10 +1168,17 @@ app.post("/events/:id/attendees", requireAuth, checkWriteAccess, require("./capa
             if (had && !(req.body.donorIds && Array.isArray(req.body.donorIds))) ids.push(had.id);
           }
           added.push(d.name);
+          addedDonors.push(donorId);
         } catch { /* skip */ }
       }
     } else {
       return res.status(400).json({ error: "name required" });
+    }
+    if (guestOf) {
+      const CN = require("../donors/connections");
+      for (const donorId of addedDonors.filter(x => x !== guestOf)) {
+        await CN.addConnection({ query }, orgId, { newcomerId: donorId, connectorId: guestOf, type: "guest_of", eventId, actor: who });
+      }
     }
     res.json({ added: added.length, names: added, ids });
   } catch(e) { res.status(500).json({ error: e.message }); }

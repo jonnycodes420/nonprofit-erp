@@ -55,6 +55,8 @@ const ROLE_LABELS = {
   logistics: "Event logistics (kept on the attendance)", mailingList: "Mailing list (on or off)",
   optOut: "Opted out of email", doNotEmail: "Do not email", doNotMail: "Do not mail", doNotCall: "Do not call",
   tags: "Tags", aboutThem: "About them", spouse: "Spouse or partner", householdName: "Household",
+  // CONNECT-1: who brought them in, matched by name or email to someone already in Steward, never a new person.
+  introducedBy: "Introduced by", guestOf: "Guest of",
   doNotContact: "Do not contact", commRestrictions: "Communication restrictions", deceased: "Deceased", volunteer: "Volunteer (yes or x)", board: "Board member",
   staff: "Staff", keep: "Keep as a custom field", totalOf: "A total of another sheet", ignore: "Leave out",
   ...AUCTION_ROLE_LABELS,   // ASKS-1: an auction sheet's item and its fair market value
@@ -122,6 +124,8 @@ const HEADER_ROLES = [
   ["aboutThem", ["about them", "about", "bio", "background", "about him", "about her"]],
   ["spouse", ["spouse", "partner", "spouse/partner", "spouse / partner", "spouse name", "partner name", "spouse or partner", "significant other"]],
   ["householdName", ["household", "household name", "account household", "household account", "family household"]],
+  ["introducedBy", ["introduced by", "referred by", "referred by name", "introduced through", "connected through"]],
+  ["guestOf", ["guest of", "brought by", "came with", "invited by", "host name"]],
   ["volunteer", ["volunteer", "volunteered", "volunteer?", "is volunteer", "volunteers"]],
   ["board", ["board", "board member", "on board", "trustee", "board?"]],
   ["staff", ["staff", "employee", "staff member", "staff?"]],
@@ -137,7 +141,7 @@ const OPT_OUT_WORDS = /^(unsubscribed?|opt(ed)?[- ]?out|remove|removed|no emails
 const EVENT_WORD_RE = /\b(dinner|gala|lunch|luncheon|breakfast|auction|benefit|banquet|celebration|party|golf|walk|run|5k|concert|reception|fundraiser|night|brunch|tea|festival|open house)\b/i;
 // The roles that put a value on the person (core Steward fields).
 const PERSON_ROLES = new Set(["name", "first", "last", "lastFirst", "org", "email", "phone", "address", "address2", "city", "state", "zip", "country", "externalId",
-  "tags", "aboutThem", "spouse", "householdName"]);
+  "tags", "aboutThem", "spouse", "householdName", "introducedBy", "guestOf"]);
 const ENGAGE_ROLES = new Set(["invited", "rsvp", "attended", "table", "partySize", "logistics"]);
 const COMMS_ROLES = new Set(["mailingList", "optOut", "doNotEmail", "doNotMail", "doNotCall", "doNotContact", "deceased", "commRestrictions"]);
 const ROLE_FLAG_ROLES = new Set(["volunteer", "board", "staff"]);

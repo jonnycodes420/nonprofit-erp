@@ -667,6 +667,8 @@ function mergeInTx(orgId, keptId, mergedId, { choices, me, confidence, reasons, 
       [orgId, mergedId, keptId, keptId, mergedId]);
     for (const r of selfRel) { await runTx(client, "DELETE FROM donor_relationships WHERE id=? AND org_id=?", [r.j.id, orgId]); setAside.push({ table: "donor_relationships", why: "would relate the person to themselves", row: r.j }); }
     for (const r of selfCredit) { await runTx(client, "DELETE FROM gift_soft_credits WHERE id=? AND org_id=?", [r.j.id, orgId]); setAside.push({ table: "gift_soft_credits", why: "would soft-credit the person on their own gift", row: r.j }); }
+    // CONNECT-1: an Introduced by or Guest of link the kept person already has is set aside, never doubled.
+    setAside.push(...await require("../server/dataHealth/mergeConnections").setAsideTwins(client, { orgId, keptId, mergedId, queryTx, runTx }));
 
     // 2. Every pointer. SPEED-2: every table's rows read in one statement and
     //    the columns no unique key covers moved in one more

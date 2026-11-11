@@ -904,6 +904,8 @@ async function writePlan({ req, body, importId, who, report }) {
   done = memberCount;
   await report("Writing attendance and notes", done, total, true);
   await writeEngagement({ orgId, u, importId, eventId, personIds, who, summary, fileName: body.fileName || "your file", eventName: evName });
+  // CONNECT-1: Introduced by and Guest of, matched to people already here, never a new person.
+  summary.connections = await require("../server/imports/connectionsImport").linkFromFile({ query, orgId, people: u.people, personIds, importId, who, eventId });
 
   // funds named in the file
   const fundCache = new Map();
@@ -1104,7 +1106,7 @@ async function writePlan({ req, body, importId, who, report }) {
     undatedGifts: summary.undatedGiftIds.length, attendees: summary.attendees, eventName: evName || null,
     eventDateKnown: !!evDate, optOuts: u.counts.optOuts, doNotContact: u.counts.doNotContact,
     columnAccount: u.columnAccount, button: summary.button, reconciled: true, giftLine: summary.giftLine,
-    givenCents: summary.givenCents, pledgedOpenCents: summary.pledgedOpenCents, sheetRows: summary.sheetRows } };
+    givenCents: summary.givenCents, pledgedOpenCents: summary.pledgedOpenCents, sheetRows: summary.sheetRows, connections: summary.connections } };
 }
 
 // IMPORT-7 · EACH SHEET'S ROWS, EACH COUNT NAMED. Every row the reader read

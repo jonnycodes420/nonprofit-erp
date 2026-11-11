@@ -6,7 +6,7 @@ import { EditedMarker } from "../EditHistory";
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { Figure } from "../Figure";
-import { relationshipLabelsFor, throughWords } from "./profileShared";
+import { relationshipLabelsFor, throughWords, CONNECT_PICKS } from "./profileShared";
 import { linkedPeople } from "../../lib/linkedPeople";
 
 function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor,refreshSoftCredit,relErr,relLoading,relPickerOpen,relPickerResults,relPickerPending,relSaving,relSearch,relType,relatedOpen,relationships,removeFromHousehold,retypeRelationship,setHhModalOpen,setRelErr,setRelPickerOpen,setRelSearch,setRelType,setRelatedOpen,softCredit,unlinkDonor}){
@@ -75,7 +75,8 @@ function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor
             {relPickerOpen&&(
               <div data-testid="dp-rel-picker" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:12,display:"flex",flexDirection:"column",gap:8}}>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  {DONOR_RELATIONSHIP_LABELS.map(([v,l])=>(
+                  {/* CONNECT-1: and how they came in, from either end (Introduced by… / Introduced…) */}
+                  {[...DONOR_RELATIONSHIP_LABELS,...CONNECT_PICKS.map(([v,l])=>[v,l])].map(([v,l])=>(
                     <button key={v} data-testid={`dp-rel-type-${v}`} aria-pressed={relType===v} onClick={()=>setRelType(v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer",...activeMark(relType===v,"bottom")}}>{l}</button>
                   ))}
                 </div>
@@ -120,7 +121,8 @@ function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor
                         <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{r.side?throughWords(r):`${fmtFull(r.relatedDonorTotalGiving)} lifetime`}</div>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                        {isReadOnly?<Pill label={DONOR_RELATIONSHIP_LABELS.find(([v])=>v===r.relationshipType)?.[1]||r.relationshipType}/>
+                        {r.direction?<span data-testid="dp-rel-connect" style={{fontSize:11,color:T.ink3}}>{`${r.relationshipType==="introduced_by"?(r.direction==="newcomer"?"Introduced by":"Introduced them"):(r.direction==="newcomer"?"Guest of":"Brought as a guest")}${r.eventName?` · ${r.eventName}`:""}`}</span>
+                          :isReadOnly?<Pill label={DONOR_RELATIONSHIP_LABELS.find(([v])=>v===r.relationshipType)?.[1]||r.relationshipType}/>
                           :<select aria-label="Relationship" value={r.relationshipType} onChange={e=>retypeRelationship(r.id,e.target.value)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 8px",fontSize:11,color:T.ink}}>
                             {DONOR_RELATIONSHIP_LABELS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
                           </select>}
