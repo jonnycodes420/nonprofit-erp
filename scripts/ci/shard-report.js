@@ -51,8 +51,9 @@ const missingFiles = results.filter(r => r.missing);
 
 console.log("");
 for (const r of [...results].sort((a, b) => a.name.localeCompare(b.name))) {
-  const mark = r.rc === 0 ? `${G}PASS${Z}` : `${R}FAIL${Z}`;
-  console.log(`  ${mark}  [${r.shard}] ${r.name.padEnd(28)} ${String(r.secs).padStart(4)}s  ${r.last}`);
+  const mark = r.rc === 0 ? (r.flaky ? `${Y}PASS${Z}` : `${G}PASS${Z}`) : `${R}FAIL${Z}`;
+  // FLAKE-4: a pass that took the retry says so on its own line.
+  console.log(`  ${mark}  [${r.shard}] ${r.name.padEnd(28)} ${String(r.secs).padStart(4)}s  ${r.last}${r.flaky ? `  ${Y}(FLAKY: passed on retry)${Z}` : ""}`);
 }
 
 // A failing suite's whole log, inline, exactly as the serial runner does it.
@@ -73,6 +74,8 @@ const counts = {};
 for (const r of results) { const c = countOf(r.last); if (c !== null) counts[r.name] = c; }
 if (OUT) fs.writeFileSync(path.join(OUT, "counts.json"), JSON.stringify(counts, null, 1));
 
+const flaky = results.filter(r => r.flaky && r.rc === 0);
+for (const r of flaky) console.log(`${Y}FLAKY: ${r.name} passed on retry${Z}`);
 const slowest = [...results].sort((a, b) => b.secs - a.secs).slice(0, 10);
 console.log(`\n  slowest 10: ${slowest.map(s => `${s.name} ${s.secs}s`).join(" · ")}`);
 if (skipped.length) console.log(`  ${Y}suites containing a SKIP${Z}: ${skipped.map(s => `${s.name}(${s.skips})`).join(" · ")}`);

@@ -195,6 +195,15 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
   full local battery, which only Jonathan asks for.
 - **A flake is closed by counts (FLAKE-3).** Loop it 30 times on main to see it red, fix it, then
   30 in a row green locally and on CI (`repeat.yml`). One green rerun closes nothing.
+- **A failed suite runs once more, inside the shard, and a pass the second time is named (FLAKE-4).**
+  `tests/lib/run-suite.sh` reruns it in the same job; fails twice is red as before. A pass on the
+  retry keeps the build green and is written down: `"flaky": true` in the shard result, the
+  `flaky` artifact (`flaky.json`), a `FLAKY: <name> passed on retry` line and a PR comment from
+  the `test` gate. The nightly (`flaky-nightly.yml`) lists suites flaky in 3+ runs in 7 days in
+  the open issue "Flaky suites (nightly)": the next FLAKE build's input. Never retried:
+  `tenant-matrix`, `security`, and any suite whose file says `@no-retry`
+  (`tests/lib/retryPolicy.js`); Repeat sets `SHARD_RETRY=0` so it counts every red run. The
+  retry is not a fix: a flake on the list still gets a FLAKE build.
 - **A run never removes a lock it does not own (FIX-58).** Every lock goes through
   `tests/lib/battery-lock.sh`: release checks the pid is ours, and a stale lock is taken over only
   under `<lock>.takeover` after re-reading its pid (two waiters on one dead owner used to delete

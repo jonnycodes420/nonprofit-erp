@@ -263,8 +263,16 @@ fi
 # ── the suites ─────────────────────────────────────────────────────────────
 # Serial within a shard, deliberately: the parallelism is the shard, and two
 # suites in one process tree sharing one database is the collision this whole
-# file exists to avoid. NO RETRIES — a suite that only passes on the second
-# run is a flake, and hiding it is how a flake becomes a habit.
+# file exists to avoid.
+#
+# FLAKE-4 · ONE RETRY, NAMED. A suite that fails runs once more, here, in the
+# same shard (tests/lib/run-suite.sh). A real bug fails twice and the job is
+# red as before; a flake passes the second time, the job is green, and the
+# suite is written down ("flaky": true in this shard's result, then flaky.json,
+# the PR comment and the nightly list). Never retried: tenant-matrix, security,
+# any suite tagged @no-retry (tests/lib/retryPolicy.js), or anything under
+# SHARD_RETRY=0.
+. tests/lib/run-suite.sh
 rows=""
 for name in $SUITES_IN; do
   file="tests/${name}.test.js"
@@ -279,8 +287,8 @@ for name in $SUITES_IN; do
   fi
   log="$LOGDIR/${name}.log"
   t0=$(date +%s)
-  node "$file" >"$log" 2>&1
-  rc=$?
+  run_suite "$name" "$file" "$log"
+  rc=$SUITE_RC
   t1=$(date +%s)
   secs=$((t1 - t0))
   last=$(tail -1 "$log" | tr -d '\r' | sed 's/\\/\\\\/g; s/"/\\"/g' | cut -c1-300)
@@ -305,7 +313,12 @@ for name in $SUITES_IN; do
     # FLAKE-3: a suite named more than once (the Repeat workflow) keeps each red run's log
     reds=$((${reds:-0} + 1)); cp "$log" "$LOGDIR/${name}.red-${reds}.log" 2>/dev/null || true
   fi
-  rows="$rows{\"name\":\"$name\",\"rc\":$rc,\"secs\":$secs,\"skips\":$skips,\"legSkips\":$legskips,\"last\":\"$last\"},"
+  retry=""
+  if [ "$SUITE_TRIES" -gt 1 ]; then
+    first=$(printf '%s' "$SUITE_FIRST_LAST" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    retry=",\"tries\":$SUITE_TRIES,\"flaky\":$([ "$SUITE_FLAKY" -eq 1 ] && echo true || echo false),\"firstLast\":\"$first\""
+  fi
+  rows="$rows{\"name\":\"$name\",\"rc\":$rc,\"secs\":$secs,\"skips\":$skips,\"legSkips\":$legskips,\"last\":\"$last\"$retry},"
 done
 
 printf '{"shard":%s,"api":%s,"db":"%s","suites":[%s]}\n' "$N" "$api" "$DBNAME" "${rows%,}" >"$OUT/shard-$N.json"

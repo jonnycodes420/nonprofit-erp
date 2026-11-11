@@ -75,4 +75,103 @@ export function endOfMonth(words, today) {
   return { date: addDays(mo === 12 ? civil(y + 1, 1, 1) : civil(y, mo + 1, 1), -1), said: String(words).match(/\b(by |at )?(the )?end of (the |this )?month\b/i)[0] };
 }
 
-export default { WEEKDAYS, todayIn, addDays, weekdayOf, dayWithWeekday, weekdayWhen, inDays, endOfMonth };
+// ── ATLAS-6 · THE PERIOD A QUESTION NAMES ─────────────────────────────────
+// W-1109-Atlas-01: "how much did Wendell give between Jan 1 and Mar 31, 2026"
+// was answered with his lifetime: nothing read the period. periodOf reads it,
+// in code, so every amount for a period is that period's (shared/numbers).
+//   a range      "between Jan 1 and Mar 31, 2026", "from 1/1/2026 to 3/31/2026"
+//   a month      "in March", "in March 2026", "last month", "this month"
+//   a quarter    "in Q1 2026", "first quarter of 2026", "last quarter", "this quarter"
+//   a fiscal yr  "in FY 2026", "fiscal year 2026", "this fiscal year", "last fiscal year"
+//   a year       "in 2025", "this year", "last year", "year to date"
+// A fiscal year comes back named, { fiscal: { endYear } | { offset } }: the
+// server turns it into days with shared/numbers/fiscalYear (it ends in endYear,
+// as Reports label it). "Lifetime", "ever", "in total" and no period at all →
+// null: the caller says Lifetime, labeled.
+// → { from, to, words } (civil days, inclusive), { fiscal }, or null.
+const MONTH_NAMES = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+const MON = "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+const monthIdx = w => MONTH_NAMES.findIndex(m => m.startsWith(String(w || "").toLowerCase().slice(0, 3))) + 1;
+const lastDay = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+const monthSpan = (y, m) => ({ from: civil(y, m, 1), to: civil(y, m, lastDay(y, m)) });
+const words2 = (from, to) => {
+  const a = ymd(from), b = ymd(to);
+  const md = p => `${SHORT_MON[p[1] - 1]} ${p[2]}`;
+  return a[0] === b[0] ? `between ${md(a)} and ${md(b)}, ${b[0]}` : `between ${md(a)}, ${a[0]} and ${md(b)}, ${b[0]}`;
+};
+// One date in words: "Jan 1", "January 1st, 2026", "1/1/2026", "2026-01-01". { y|null, m, d } or null.
+function oneDate(t) {
+  const s = String(t || "").trim().toLowerCase().replace(/,/g, " ").replace(/\s+/g, " ");
+  let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (m) return { y: +m[1], m: +m[2], d: +m[3] };
+  m = /^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/.exec(s);
+  if (m) return { y: m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : null, m: +m[1], d: +m[2] };
+  m = new RegExp(`^${MON}\\.? (\\d{1,2})(?:st|nd|rd|th)?(?: (\\d{4}))?$`).exec(s);
+  if (m) return { y: m[3] ? +m[3] : null, m: monthIdx(m[1]), d: +m[2] };
+  m = new RegExp(`^(\\d{1,2})(?:st|nd|rd|th)? (?:of )?${MON}(?: (\\d{4}))?$`).exec(s);
+  if (m) return { y: m[3] ? +m[3] : null, m: monthIdx(m[2]), d: +m[1] };
+  return null;
+}
+const okDay = x => x && x.m >= 1 && x.m <= 12 && x.d >= 1 && x.d <= lastDay(x.y || 2000, x.m);
+export function periodOf(words, today) {
+  const t = String(words || "").toLowerCase().replace(/[?!]/g, " ").replace(/\s+/g, " ");
+  const T = ymd(today); if (!T) return null;
+  const [ty, tm] = T;
+  if (/\b(lifetime|ever|all[- ]time|in total|altogether|so far)\b/.test(t) && !/\b(this|last) (fiscal )?year\b/.test(t)) return null;
+  const MNC = MON.replace(/^\(/, "(?:");   // the month, not captured, so the range has exactly two groups
+  const DATE = `(\\d{4}-\\d{2}-\\d{2}|\\d{1,2}\\/\\d{1,2}(?:\\/\\d{2,4})?|${MNC}\\.? \\d{1,2}(?:st|nd|rd|th)?(?:,? \\d{4})?|\\d{1,2}(?:st|nd|rd|th)? (?:of )?${MNC}(?:,? \\d{4})?)`;
+  // A range of two dates.
+  let m = new RegExp(`\\b(?:between|from) ${DATE} (?:and|to|through|thru|until|till|-) ${DATE}`).exec(t);
+  if (m) {
+    const a = oneDate(m[1]), end = oneDate(m[2]);
+    if (a && end) {
+      let by = end.y || a.y || ty, ay = a.y || by;
+      if (!a.y && (ay * 10000 + a.m * 100 + a.d) > (by * 10000 + end.m * 100 + end.d)) ay -= 1;
+      if (!end.y && !a.y && civil(by, end.m, end.d) > today) { by -= 1; ay -= 1; }
+      const A = { ...a, y: ay }, B = { ...end, y: by };
+      if (okDay(A) && okDay(B)) {
+        const from = civil(A.y, A.m, A.d), to = civil(B.y, B.m, B.d);
+        if (from <= to) return { from, to, words: words2(from, to) };
+      }
+    }
+  }
+  // A quarter.
+  const Q = { first: 1, "1st": 1, second: 2, "2nd": 2, third: 3, "3rd": 3, fourth: 4, "4th": 4 };
+  m = /\bq([1-4])(?:,? (?:of )?(\d{4}))?\b/.exec(t) || /\b(first|1st|second|2nd|third|3rd|fourth|4th) quarter(?: of)?(?: (\d{4}))?\b/.exec(t);
+  if (m) {
+    const q = Number(m[1]) || Q[m[1]]; const y = m[2] ? +m[2] : ty;
+    const from = civil(y, 3 * q - 2, 1), to = civil(y, 3 * q, lastDay(y, 3 * q));
+    return { from, to, words: `in Q${q} ${y} (${SHORT_MON[3 * q - 3]} 1 to ${SHORT_MON[3 * q - 1]} ${lastDay(y, 3 * q)})` };
+  }
+  if (/\b(this|last) quarter\b/.test(t)) {
+    let q = Math.floor((tm - 1) / 3) + 1, y = ty;
+    if (/\blast quarter\b/.test(t)) { q -= 1; if (q === 0) { q = 4; y -= 1; } }
+    const from = civil(y, 3 * q - 2, 1), to = civil(y, 3 * q, lastDay(y, 3 * q));
+    return { from, to, words: `in Q${q} ${y} (${SHORT_MON[3 * q - 3]} 1 to ${SHORT_MON[3 * q - 1]} ${lastDay(y, 3 * q)})` };
+  }
+  // A fiscal year: named here, its days worked out by shared/numbers/fiscalYear on the
+  // server (the one home of a fiscal-year boundary). FY 2026 is the year that ends in 2026.
+  m = /\b(?:fy|fiscal year)\s?'?(\d{4}|\d{2})\b/.exec(t);
+  if (m) return { fiscal: { endYear: m[1].length === 2 ? 2000 + +m[1] : +m[1] } };
+  m = /\b(this|last|previous|prior) fiscal year\b|\b(this|last) fy\b/.exec(t);
+  if (m) return { fiscal: { offset: /this/.test(m[0]) ? 0 : -1 } };
+  // A month.
+  if (/\bthis month\b/.test(t)) { const s2 = monthSpan(ty, tm); return { ...s2, words: `in ${MONTH_NAMES[tm - 1][0].toUpperCase() + MONTH_NAMES[tm - 1].slice(1)} ${ty} so far` }; }
+  if (/\blast month\b/.test(t)) { const y = tm === 1 ? ty - 1 : ty, mo = tm === 1 ? 12 : tm - 1; return { ...monthSpan(y, mo), words: `in ${SHORT_MON[mo - 1]} ${y}` }; }
+  m = new RegExp(`\\b(?:in|during|for|last|this) ${MON}(?:,? (\\d{4}))?\\b`).exec(t);
+  if (m && !/\bmay (?:i|you|we|he|she|they)\b/.test(m[0])) {
+    const mo = monthIdx(m[1]);
+    let y = m[2] ? +m[2] : ty;
+    if (!m[2] && (mo > tm || (/^last /.test(m[0]) && mo >= tm))) y -= 1;
+    return { ...monthSpan(y, mo), words: `in ${SHORT_MON[mo - 1]} ${y}` };
+  }
+  // A calendar year.
+  if (/\b(year to date|ytd)\b/.test(t)) return { from: civil(ty, 1, 1), to: today, words: `in ${ty} so far` };
+  if (/\bthis (calendar )?year\b/.test(t)) return { from: civil(ty, 1, 1), to: civil(ty, 12, 31), words: `in ${ty} so far` };
+  if (/\blast (calendar )?year\b/.test(t)) return { from: civil(ty - 1, 1, 1), to: civil(ty - 1, 12, 31), words: `in ${ty - 1}` };
+  m = /\b(?:in|during|for) (\d{4})\b/.exec(t);
+  if (m && +m[1] > 1900 && +m[1] < 2200) return { from: civil(+m[1], 1, 1), to: civil(+m[1], 12, 31), words: `in ${m[1]}` };
+  return null;
+}
+
+export default { WEEKDAYS, todayIn, addDays, weekdayOf, dayWithWeekday, weekdayWhen, inDays, endOfMonth, periodOf };

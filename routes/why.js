@@ -100,8 +100,10 @@ async function writeSentence(orgId, questionText, a, Sx) {
     const text = (out.content || []).filter(b => b.type === "text").map(b => b.text).join(" ").replace(/\s+/g, " ").trim();
     const G = await guide();
     // ASK-3: complete, plain, about the donor's world, and every number Steward's own.
-    if (text && Sx.sentencePasses(text, facts) && G.sentenceIsPlain(text)) return { sentence: text, source: "ai", template, aiOff: false };
-    const refused = !text ? "empty" : Sx.sentencePasses(text, facts) ? "plain" : "numbers";
+    // ATLAS-6: and every amount and date in it is one the facts carry (a real $2,500 in the wrong month is refused).
+    const grounded = text ? require("../server/atlas/grounded").groundedIn(text, require("../server/atlas/grounded").factsOf(facts)).ok : false;
+    if (text && Sx.sentencePasses(text, facts) && G.sentenceIsPlain(text) && grounded) return { sentence: text, source: "ai", template, aiOff: false };
+    const refused = !text ? "empty" : !Sx.sentencePasses(text, facts) ? "numbers" : !grounded ? "dates" : "plain";
     recordAiFallback(orgId, "ask.sentence", refused);
     return { sentence: template, source: "template", template, aiOff: false, refused };
   } catch (e) {
