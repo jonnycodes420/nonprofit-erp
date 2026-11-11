@@ -45,7 +45,14 @@ export function showStagingStrip() {
     textAlign: "center", height: "24px", boxSizing: "border-box", margin: "0", padding: "0 16px",
     whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", pointerEvents: "none",
   });
-  const put = () => { document.body.insertBefore(strip, document.body.firstChild); keepTitlePrefix(); };
+  // The app's top bar and rail, and the site's header, are pinned at the top of
+  // the window; they add this to their offset so the strip never covers them.
+  // Unset (prod) it reads as 0px and nothing moves.
+  const put = () => {
+    document.documentElement.style.setProperty("--steward-strip-h", "24px");
+    document.body.insertBefore(strip, document.body.firstChild);
+    keepTitlePrefix();
+  };
   if (document.body) put(); else document.addEventListener("DOMContentLoaded", put, { once: true });
 }
 

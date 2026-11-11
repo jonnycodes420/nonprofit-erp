@@ -44,7 +44,7 @@
 @media (max-width:760px){.mk section{padding-block:76px}}
 
 /* ---------- header and mega menus ---------- */
-.mk .hdr{position:sticky;top:env(safe-area-inset-top,0px);z-index:50;background:var(--white)}
+.mk .hdr{position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--steward-strip-h, 0px));z-index:50;background:var(--white)}
 .mk .hdr.shadow{box-shadow:0 1px 0 var(--line),0 10px 30px -18px rgba(15,26,18,.25)}
 .mk .bar{display:flex;align-items:center;gap:28px;height:96px}
 .mk .word{font:400 40px/1 var(--serif);letter-spacing:-.02em;text-decoration:none;color:var(--ink)}
@@ -83,7 +83,7 @@
 .mk .promo h6{margin:22px 0 14px;font:700 21px/1.25 var(--sans)}
 .mk .promo a.go{font:800 16px var(--sans);text-transform:uppercase;letter-spacing:.02em;text-decoration:none;display:inline-flex;gap:12px;align-items:center}
 .mk .go i{width:30px;height:30px;border-radius:50%;background:var(--emerald);display:inline-flex;align-items:center;justify-content:center}
-.mk .drawer{position:fixed;inset:96px 0 0 0;background:var(--white);overflow:auto;padding:20px 24px 60px;z-index:49}
+.mk .drawer{position:fixed;inset:calc(96px + var(--steward-strip-h, 0px)) 0 0 0;background:var(--white);overflow:auto;padding:20px 24px 60px;z-index:49}
 .mk .drawer[hidden]{display:none!important}
 .mk .drawer details{border-bottom:1px solid var(--line);padding:18px 0}
 .mk .drawer summary{font:600 20px var(--sans);list-style:none;cursor:pointer}

@@ -10,7 +10,8 @@
 //      on the landing page, the app and a public page.
 //   §2 the same build with a staging /health (the runtime fallback): the strip
 //      on all three, first in <body> (above the demo banner and the app), and
-//      the title prefix kept after a page sets its own title.
+//      the title prefix kept after a page sets its own title, and the site's
+//      pinned header below the strip, not under it.
 //   §3 a staging BUILD (VITE_STEWARD_ENV=staging), with /health unreachable:
 //      the strip still shows. The module is bundled with the client's own
 //      esbuild, once with the var and once without.
@@ -77,6 +78,11 @@ async function look(page, url) {
         ok(`§2 ${name}: the strip, first in <body>, pinned`, r.strip === TEXT && r.first && r.pos === "sticky", r);
         ok(`§2 ${name}: the tab title starts "[Staging] "`, /^\[Staging\] /.test(r.title) && !/^\[Staging\] \[Staging\]/.test(r.title), r.title);
       }
+      await page.goto(APP + "/", { waitUntil: "load" });
+      await page.waitForSelector("#steward-staging-strip");
+      await page.mouse.wheel(0, 1500); await page.waitForTimeout(300);
+      const cover = await page.evaluate(() => { const h = document.querySelector(".mk .hdr"); const s = document.getElementById("steward-staging-strip"); return h && { hdrTop: Math.round(h.getBoundingClientRect().top), stripBottom: Math.round(s.getBoundingClientRect().bottom) }; });
+      ok("§2 scrolled, the site's header sits below the strip, not under it", cover && cover.hdrTop >= cover.stripBottom && cover.stripBottom === 24, cover);
       await page.evaluate(() => { document.title = "A page's own title"; });
       await page.waitForTimeout(50);
       ok("§2 a page that sets its own title keeps the prefix", await page.title() === "[Staging] A page's own title", await page.title());
