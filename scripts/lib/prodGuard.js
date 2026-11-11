@@ -25,11 +25,16 @@
 
 const fs = require("fs");
 const path = require("path");
-const { execSync } = require("child_process");
+const { spawnSync } = require("child_process");
 const { PRODUCT_ID } = require("../../product");
 
 const CONFIRM_FLAG = "--i-know-this-is-prod";
 const STAGING_FLAG = "--staging";   // STAGE-1
+// The child script assertServerIdentity runs: GET the URL with a 5 s timeout,
+// print the body, exit 1 on anything but a 2xx.
+const HEALTH_READER = `fetch(process.argv[1], { signal: AbortSignal.timeout(5000) })
+  .then(r => r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status)))
+  .then(t => process.stdout.write(t), () => process.exit(1));`;
 const LOOPBACK_RE = /^https?:\/\/(localhost|127\.0\.0\.1)([:/]|$)/i;
 
 function isLoopback(url) {
@@ -47,8 +52,13 @@ function assertServerIdentity(base, opts = {}) {
   let health = null;
   try {
     const url = String(base).replace(/\/+$/, "") + "/health";
-    const out = execSync(`curl -fsS --max-time 5 ${JSON.stringify(url)}`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-    health = JSON.parse(out);
+    // STAGE-2: Node's own fetch in a child Node, not curl. Railway's runtime
+    // image has no curl, so the staging seed could not run inside a container.
+    // A child process keeps this synchronous (writerBase and its callers
+    // depend on that). Non-2xx, a timeout or a bad body all read as "no health".
+    const r = spawnSync(process.execPath, ["-e", HEALTH_READER, url], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 8000 });
+    if (r.status !== 0) throw new Error("health_unreadable");
+    health = JSON.parse(r.stdout);
   } catch { health = null; }
   const refuse = (code, msg) => {
     if (opts.noExit) { const e = new Error(code); e.code = code; throw e; }
