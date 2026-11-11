@@ -26,6 +26,8 @@ import { yoyView } from "./YearOverYear";   // HISTORY-1
 import { countLabel, plural } from "../../../shared/countWords.js";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { optionLabel } from "../../../shared/dupeNames.js";   // POLISH-8: two campaigns of one name are told apart
+import { SaveAsGroup } from "./Groups";   // FLOWS-5: list reports save their people
+import { listReportOf, listGroupName } from "../lib/listReports";
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
 // Fixed, parameterized, table-first, CSV-downloadable reports — each one an
@@ -553,7 +555,9 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       const folded = shownRows.length !== d.rows.length;
       const havent = shownRows.length === 1 ? "hasn't" : "haven't";
       narrative = <>{active === "lybunt" && <><abbr data-testid="bunt-word" title={LAPSE_WORDS.lybunt.definition} style={{ textDecoration: "underline dotted", cursor: "help" }}>LYBUNT</abbr>: </>}<strong data-testid="bunt-header-count">{folded ? `${shownRows.length} ${shownRows.some(r => r.unit === "household") ? plural(shownRows.length, "donor or household", "donors and households") : plural(shownRows.length, "donor")}` : d.figures?.people ? <RF f={d.figures.people} label={active === "lybunt" ? "Gave last year, not this year" : "Gave before, not this year"} unit={plural(d.rows.length, "donor")} /> : `${d.rows.length} ${plural(d.rows.length, "donor")}`}</strong>{folded && <> ({d.figures?.people ? <RF f={d.figures.people} label="People on these rows" unit={plural(d.rows.length, "person", "people")} /> : `${d.rows.length} people`}, each counted once)</>} {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${shownRows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
-        {active === "lybunt" && atStake > 0 && <>: <strong><RF f={d.figures?.atStake} kind="money" label="Last year's giving at stake" /></strong> of last year's giving is at stake</>}. This is a call list, not a chart.</>;
+        {active === "lybunt" && atStake > 0 && <>: <strong><RF f={d.figures?.atStake} kind="money" label="Last year's giving at stake" /></strong> of last year's giving is at stake</>}. This is a call list, not a chart.
+        {/* FLOWS-5 (W-1110-Fundraising-14): offered every time, from the list report's definition. */}
+        {listReportOf(active) && d.rows.length > 0 && <span style={{ marginLeft: 8 }}><SaveAsGroup name={listGroupName(active)} donorIds={d.rows.map(r => r.id).filter(Boolean)} testid="report-save-group" /></span>}</>;
       table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
         // INTEGRITY-1: a household or a gives-through link is one line, named for the household
         { key: "name", label: "Donor", type: "text", person: true, ...(d.units ? { render: r => <span data-testid={r.members ? "bunt-unit" : undefined}>{r.name}{r.members && <span style={{ color: T.ink3, fontWeight: 400 }}>{` (${r.unit}: ${r.members.map(m => m.name).join(", ")})`}</span>}

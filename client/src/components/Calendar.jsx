@@ -19,7 +19,7 @@ import { offerUndo } from "./EditHistory";
 import { DonorLink, RecordLink } from "./RecordLink";
 import { AskBox } from "./AskPanel";
 import { useStewardTold } from "../lib/stewardTold";
-import { ShiftEditor } from "./VolunteerSchedule";
+import { ShiftEditor, ShiftDrawerFor } from "./VolunteerSchedule";
 import { errorMessage } from "../lib/domainError";
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { tabHref, urlParam } from "../lib/appUrls";
@@ -665,12 +665,9 @@ function AddForm({ form, calendar, onClose, onSaved }) {
   }
   return <QuickForm form={form} calendar={calendar} onClose={onClose} onSaved={onSaved} />;
 }
+// FLOWS-5 (W-1110-Volunteers-07X): a shift opens the one shift dialog, the Schedule's drawer.
 function ShiftFromCalendar({ slotId, date, onClose, onSaved }) {
-  const [shift, setShift] = useState(null);
-  useEffect(() => { apiFetch(`/volunteer-hub/schedule?from=${date}&to=${date}`).then(d => setShift((d.shifts || []).find(s => s.id === slotId) || false)).catch(() => setShift(false)); }, [slotId, date]);
-  if (shift === null) return null;
-  if (!shift) { onClose(); return null; }
-  return <ShiftEditor shift={shift} onClose={onClose} onSaved={onSaved} />;
+  return <ShiftDrawerFor slotId={slotId} date={date} onClose={() => { onClose(); if (onSaved) onSaved(); }} />;
 }
 function QuickForm({ form, calendar, onClose, onSaved }) {
   const saving = useRef(false);   // FLOWS-1: a second press while the first is saving is not a second save

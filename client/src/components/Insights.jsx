@@ -525,10 +525,13 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
     // SENDS-1: the person's other moves on this deck leave with it, and the next person rises.
     const same = m.lead ? deck.tabs.flatMap(t => t.moves).filter(x => x.lead === m.lead).map(x => x.id) : [];
     setGone(new Set([...gone, m.id, ...same]));
-    return [m.id, ...same];
+    // FLOWS-5 (Area 1): each card starts with no form open. A return above
+    // these lines left them dead, so the snooze form and its date leaked onto
+    // the next card after a snooze.
     setSlide("next");
     setPos({ ...pos, [cur.key]: moves.length - 1 > i ? i : 0 });
-    setMode(null); setReason("");
+    setMode(null); setReason(""); setUntil(plusDays(14));
+    return [m.id, ...same];
   };
   const outcome = async (state, extra) => {
     await apiFetch("/insights/outcome", { method: "POST", body: JSON.stringify({ kind: m.kind, itemKeys: [m.itemKey], donorIds: m.ids, lead: m.lead || null, state, ...extra }) });

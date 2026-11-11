@@ -47,6 +47,17 @@ export function threadSection({ cPad, cardWrap, crossover, dhNotice, foldBtn, gs
           )}
           {/* HOME-4 — on Home, the Thread draws only when it has conversations
               to show; nothing logged (or nothing waiting) is no section at all. */}
+          {/* FLOWS-5 (Area 1): with nothing on the Thread there is no next step, so
+              Plan a follow-up stays: snoozing the last one no longer takes it away. */}
+          {surface==="home"&&threadsData&&!threadsData.failed&&threadList.length===0&&!dhNotice&&(
+            <div data-testid="home-thread-empty" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"0 2px",fontSize:13.5,color:T.ink3}}>
+              <span>Nothing is waiting on the Thread.</span>
+              <button data-testid="home-plan-followup" onClick={()=>setPlanFor({donor:null})} disabled={isReadOnly}
+                style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:7,padding:"4px 10px",color:T.ink,fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
+                Plan a follow-up
+              </button>
+            </div>
+          )}
           {!(surface==="home"&&threadsData&&!threadsData.failed&&threadList.length===0&&!dhNotice)&&(
           <div id="dash-thread" style={{...cardWrap,scrollMarginTop:64}}>
             <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
@@ -93,7 +104,7 @@ export function threadSection({ cPad, cardWrap, crossover, dhNotice, foldBtn, gs
                     {threadStat.oldestDays>=1?` · oldest ${countLabel(threadStat.oldestDays, "day")}`:""}
                   </span>
                 )}
-                <button onClick={()=>setPlanFor({donor:null})} disabled={isReadOnly}
+                <button data-testid="home-plan-followup" onClick={()=>setPlanFor({donor:null})} disabled={isReadOnly}
                   style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:7,padding:"4px 10px",
                           color:T.ink,fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
                   Plan a follow-up
