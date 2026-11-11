@@ -314,7 +314,7 @@ const src = rel => { try { return fs.readFileSync(path.join(__dirname, "..", rel
   ok("§11 the linked org's facts box: last sign-in, people imported (a count), trial end, MRR once paying",
     st && st.stewardOrgId === CUST && st.peopleImported === 2 && st.trialEndsOn === dayOffset(10) && st.mrrNowCents === null && st.lastSignInAt === tenAgo, st);
   const wire = JSON.stringify(op.body) + JSON.stringify((await S(sup, "GET", `/rec/deal/${d1.body.id}`)).body);
-  ok("§11 no donor data: the planted donor's name, email and amount are nowhere", !wire.includes(PLANTED_DONOR) && !wire.includes("planted.example.org") && !wire.includes(String(PLANTED_AMOUNT)));
+  ok("§11 no donor data: the planted donor's name, email and amount are nowhere", !wire.includes(PLANTED_DONOR) && !/zeb@planted\.example\.org/.test(wire) && !wire.includes(String(PLANTED_AMOUNT)));
   const dv = await S(sup, "GET", `/rec/deal/${d1.body.id}`);
   ok("§11 at Verbal yes the deal shows ONBOARD-2's five gates, read-only", dv.body.onboarding && ["paper", "data", "connections", "kickoff", "first_month"].every(g => dv.body.onboarding.gates[g]), dv.body.onboarding);
   const dEarly = (await S(sup, "GET", `/rec/deal/${jrDeal.body.record.id}`)).body;

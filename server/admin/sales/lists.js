@@ -37,7 +37,8 @@ const ASSOC_FIELDS = {
 const OPS = ["eq", "neq", "contains", "empty", "notempty", "gt", "lt", "before", "after", "in", "is_true", "is_false", "none_since"];
 
 const iso = t => (t ? new Date(t).toISOString() : null);
-const day = t => (t ? (t instanceof Date ? t.toISOString() : String(t)).slice(0, 10) : null);
+// DATE columns arrive as text (model.sel casts them), so a day is the text itself, never a Date read in local time.
+const day = t => (t ? String(t).slice(0, 10) : null);
 
 async function rowsFor(query, type) {
   const def = M.OBJECTS[type];

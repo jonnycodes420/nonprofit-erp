@@ -65,17 +65,17 @@ function mount(app, { query, run, wrap, opsOnly }) {
   const ctx = { query, run };
   // THE PLANTED DEFECT (SALES1_PLANT=door, tests only): any signed-in person passes. §0 goes red.
   const door = REC.PLANT === "door" ? (req, res, next) => require("../../../auth").requireAuth404(req, res, next) : opsOnly;
-  const R = (method, path, fn) => app[method](path, salesLimiter, door, wrap(fn));
+  // Each route names its gates on its own line, so the route inventory (tenant-matrix) can read them.
 
-  R("get", "/ops/sales/meta", async (req, res) => {
+  app.get("/ops/sales/meta", salesLimiter, door, wrap(async (req, res) => {
     const [owners, properties, pipelines, views, s] = await Promise.all([
       REC.owners(query), REC.properties(query), PIPES.readAll(query),
       query(`SELECT id, object, name, config FROM sales_views ORDER BY object, name`), settings(query)]);
     res.json({ ok: true, owners, properties, pipelines, views, settings: s, objects: M.OBJECTS, assocFields: LISTS.ASSOC_FIELDS, ops: LISTS.OPS,
       propTypes: M.PROP_TYPES, roles: M.ROLES, activityKinds: M.ACTIVITY_KINDS, me: req.user.userId });
-  });
+  }));
 
-  R("get", "/ops/sales/home", async (req, res) => {
+  app.get("/ops/sales/home", salesLimiter, door, wrap(async (req, res) => {
     const now = Date.now();
     const [deals, pipelines, s, history] = await Promise.all([LISTS.rowsFor(query, "deal"), PIPES.readAll(query), settings(query),
       query(`SELECT deal_id, to_stage_id, to_name, at FROM sales_stage_history WHERE at > ?`, [new Date(now - 400 * 86400000).toISOString()])]);
@@ -87,19 +87,19 @@ function mount(app, { query, run, wrap, opsOnly }) {
     catch (e) { mrrError = "MRR now could not be read from the onboarding board."; }
     const fc = FORECAST.forecast({ deals, history, stages, mrrNowCents, goal: s.goal }, now, s.tz);
     res.json({ ok: true, today, forecast: { ...fc, mrrError } });
-  });
+  }));
 
-  R("get", "/ops/sales/search", async (req, res) => res.json({ ok: true, results: await LISTS.search(query, req.query.q) }));
+  app.get("/ops/sales/search", salesLimiter, door, wrap(async (req, res) => res.json({ ok: true, results: await LISTS.search(query, req.query.q) })));
 
-  R("get", "/ops/sales/list/:type", async (req, res) => {
+  app.get("/ops/sales/list/:type", salesLimiter, door, wrap(async (req, res) => {
     const type = req.params.type;
     if (!isType(type)) return res.status(404).json({ error: "not_found" });
     const view = parseJson(req.query.view, {});
     const rows = LISTS.applyView(await LISTS.rowsFor(query, type), view);
     res.json({ ok: true, total: rows.length, rows });
-  });
+  }));
 
-  R("get", "/ops/sales/export/:type", async (req, res) => {
+  app.get("/ops/sales/export/:type", salesLimiter, door, wrap(async (req, res) => {
     const type = req.params.type;
     if (!isType(type)) return res.status(404).json({ error: "not_found" });
     const view = parseJson(req.query.view, {});
@@ -109,9 +109,9 @@ function mount(app, { query, run, wrap, opsOnly }) {
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="steward-sales-${M.OBJECTS[type].plural.toLowerCase()}.csv"`);
     res.send(csv);
-  });
+  }));
 
-  R("post", "/ops/sales/rec/:type", async (req, res) => {
+  app.post("/ops/sales/rec/:type", salesLimiter, door, wrap(async (req, res) => {
     const type = req.params.type;
     if (!isType(type)) return res.status(404).json({ error: "not_found" });
     const b = req.body || {};
@@ -119,9 +119,9 @@ function mount(app, { query, run, wrap, opsOnly }) {
     if (r.ok && Array.isArray(b.links)) for (const l of b.links) if (l && isType(l.type)) await LINKS.associate(ctx, type, r.id, l.type, String(l.id), { label: l.label, primary: l.primary }, whoOf(req));
     if (r.ok && req.audit) req.audit.entity(`sales ${type}`, r.id, M.nameOf(type, { name: b.name, first_name: b.first_name, last_name: b.last_name }));
     send(res, r, 201);
-  });
+  }));
 
-  R("get", "/ops/sales/rec/:type/:id", async (req, res) => {
+  app.get("/ops/sales/rec/:type/:id", salesLimiter, door, wrap(async (req, res) => {
     const { type, id } = req.params;
     if (!isType(type)) return res.status(404).json({ error: "not_found" });
     const row = await REC.readRow(query, type, id);
@@ -143,26 +143,26 @@ function mount(app, { query, run, wrap, opsOnly }) {
     }
     if (type === "org" && row.steward_org_id) out.steward = (await LINK.facts(query, [row.steward_org_id]))[row.steward_org_id] || { stewardOrgId: row.steward_org_id, missing: true };
     res.json(out);
-  });
+  }));
 
-  R("patch", "/ops/sales/rec/:type/:id", async (req, res) => {
+  app.patch("/ops/sales/rec/:type/:id", salesLimiter, door, wrap(async (req, res) => {
     const { type, id } = req.params;
     if (!isType(type)) return res.status(404).json({ error: "not_found" });
     const b = req.body || {};
     const r = await REC.update(ctx, type, id, b, whoOf(req), { force: b.force === true });
     if (r.ok && req.audit) req.audit.entity(`sales ${type}`, id);
     send(res, r);
-  });
+  }));
 
-  R("delete", "/ops/sales/rec/:type/:id", async (req, res) => {
+  app.delete("/ops/sales/rec/:type/:id", salesLimiter, door, wrap(async (req, res) => {
     const { type, id } = req.params;
     if (!isType(type)) return res.status(404).json({ error: "not_found" });
     const r = await REC.remove(ctx, type, id, whoOf(req));
     if (r.ok && req.audit) req.audit.entity(`sales ${type}`, id);
     send(res, r);
-  });
+  }));
 
-  R("post", "/ops/sales/bulk/:type", async (req, res) => {
+  app.post("/ops/sales/bulk/:type", salesLimiter, door, wrap(async (req, res) => {
     const type = req.params.type;
     if (!isType(type)) return res.status(404).json({ error: "not_found" });
     const b = req.body || {};
@@ -181,51 +181,51 @@ function mount(app, { query, run, wrap, opsOnly }) {
     }
     if (req.audit) req.audit.label(`sales ${type}: ${b.action} on ${done} record${done === 1 ? "" : "s"}`);
     res.json({ ok: true, done, problems });
-  });
+  }));
 
-  R("post", "/ops/sales/link", async (req, res) => {
+  app.post("/ops/sales/link", salesLimiter, door, wrap(async (req, res) => {
     const { from, to, label, primary } = req.body || {};
     if (!from || !to || !isType(from.type) || !isType(to.type)) return res.status(400).json({ error: "invalid" });
     send(res, await LINKS.associate(ctx, from.type, String(from.id), to.type, String(to.id), { label, primary: primary === undefined ? null : !!primary }, whoOf(req)));
-  });
-  R("patch", "/ops/sales/link", async (req, res) => {
+  }));
+  app.patch("/ops/sales/link", salesLimiter, door, wrap(async (req, res) => {
     const { from, to, label, primary } = req.body || {};
     if (!from || !to || !isType(from.type) || !isType(to.type)) return res.status(400).json({ error: "invalid" });
     send(res, await LINKS.relabel(ctx, from.type, String(from.id), to.type, String(to.id), { label, primary }));
-  });
-  R("post", "/ops/sales/unlink", async (req, res) => {
+  }));
+  app.post("/ops/sales/unlink", salesLimiter, door, wrap(async (req, res) => {
     const { from, to } = req.body || {};
     if (!from || !to || !isType(from.type) || !isType(to.type)) return res.status(400).json({ error: "invalid" });
     send(res, await LINKS.unassociate(ctx, from.type, String(from.id), to.type, String(to.id)));
-  });
+  }));
 
-  R("post", "/ops/sales/deals/:id/stage", async (req, res) => {
+  app.post("/ops/sales/deals/:id/stage", salesLimiter, door, wrap(async (req, res) => {
     const b = req.body || {};
     send(res, await REC.setStage(ctx, req.params.id, String(b.stage_id || ""), whoOf(req), { lostReason: b.lost_reason, revisitOn: b.revisit_on }));
-  });
+  }));
 
-  R("post", "/ops/sales/merge/:type", async (req, res) => {
+  app.post("/ops/sales/merge/:type", salesLimiter, door, wrap(async (req, res) => {
     const b = req.body || {};
     const r = await MERGE.merge(ctx, req.params.type, String(b.keep || ""), String(b.merge || ""), whoOf(req));
     if (r.ok && req.audit) req.audit.entity(`sales ${req.params.type}`, r.id);
     send(res, r);
-  });
+  }));
 
-  R("post", "/ops/sales/activities", async (req, res) => send(res, await ACT.create(ctx, req.body || {}, whoOf(req)), 201));
-  R("patch", "/ops/sales/activities/:id", async (req, res) => send(res, await ACT.update(ctx, req.params.id, req.body || {}, whoOf(req))));
-  R("delete", "/ops/sales/activities/:id", async (req, res) => send(res, await ACT.remove(ctx, req.params.id, whoOf(req))));
-  R("get", "/ops/sales/tasks", async (req, res) => res.json({ ok: true, tasks: await ACT.tasks(query, { state: String(req.query.state || "open"), owner: req.query.owner || null }) }));
+  app.post("/ops/sales/activities", salesLimiter, door, wrap(async (req, res) => send(res, await ACT.create(ctx, req.body || {}, whoOf(req)), 201)));
+  app.patch("/ops/sales/activities/:id", salesLimiter, door, wrap(async (req, res) => send(res, await ACT.update(ctx, req.params.id, req.body || {}, whoOf(req)))));
+  app.delete("/ops/sales/activities/:id", salesLimiter, door, wrap(async (req, res) => send(res, await ACT.remove(ctx, req.params.id, whoOf(req)))));
+  app.get("/ops/sales/tasks", salesLimiter, door, wrap(async (req, res) => res.json({ ok: true, tasks: await ACT.tasks(query, { state: String(req.query.state || "open"), owner: req.query.owner || null }) })));
 
-  R("post", "/ops/sales/import/preview", async (req, res) => send(res, await IMP.preview(ctx, req.body || {}, whoOf(req))));
-  R("post", "/ops/sales/import/commit", async (req, res) => {
+  app.post("/ops/sales/import/preview", salesLimiter, door, wrap(async (req, res) => send(res, await IMP.preview(ctx, req.body || {}, whoOf(req)))));
+  app.post("/ops/sales/import/commit", salesLimiter, door, wrap(async (req, res) => {
     const r = await IMP.commit(ctx, req.body || {}, whoOf(req));
     if (r.ok && req.audit) req.audit.label(`sales import: ${r.counts.created} created, ${r.counts.updated} updated, ${r.counts.skipped} skipped`);
     send(res, r);
-  });
-  R("post", "/ops/sales/import/:id/undo", async (req, res) => send(res, await IMP.undo(ctx, req.params.id, whoOf(req))));
-  R("get", "/ops/sales/imports", async (req, res) => res.json({ ok: true, imports: await IMP.recent(query) }));
+  }));
+  app.post("/ops/sales/import/:id/undo", salesLimiter, door, wrap(async (req, res) => send(res, await IMP.undo(ctx, req.params.id, whoOf(req)))));
+  app.get("/ops/sales/imports", salesLimiter, door, wrap(async (req, res) => res.json({ ok: true, imports: await IMP.recent(query) })));
 
-  R("post", "/ops/sales/properties", async (req, res) => {
+  app.post("/ops/sales/properties", salesLimiter, door, wrap(async (req, res) => {
     const b = req.body || {}, who = whoOf(req);
     if (!isType(b.object)) return res.status(400).json({ error: "invalid", message: "A property belongs to organizations, contacts or deals." });
     if (!M.PROP_TYPES.includes(b.type)) return res.status(400).json({ error: "invalid", message: `A property is one of: ${M.PROP_TYPES.join(", ")}.` });
@@ -241,8 +241,8 @@ function mount(app, { query, run, wrap, opsOnly }) {
         [id, b.object, key, label, b.type, JSON.stringify(options), p, who.id, who.name]);
     } catch (e) { if (e && e.code === "23505") return res.status(400).json({ error: "invalid", message: `There is already a property "${label}".` }); throw e; }
     res.status(201).json({ ok: true, id, key });
-  });
-  R("patch", "/ops/sales/properties/:id", async (req, res) => {
+  }));
+  app.patch("/ops/sales/properties/:id", salesLimiter, door, wrap(async (req, res) => {
     const b = req.body || {};
     const sets = [], vals = [];
     if ("label" in b) { const l = M.clean(b.label); if (!l) return res.status(400).json({ error: "invalid", message: "Name the property." }); sets.push("label = ?"); vals.push(l); }
@@ -250,29 +250,29 @@ function mount(app, { query, run, wrap, opsOnly }) {
     if ("position" in b) { sets.push("position = ?"); vals.push(Number(b.position) || 0); }
     if (!sets.length) return res.status(400).json({ error: "invalid" });
     send(res, (await run(`UPDATE sales_properties SET ${sets.join(", ")} WHERE id = ?`, [...vals, req.params.id])).changes ? { ok: true } : { error: "not_found" });
-  });
-  R("delete", "/ops/sales/properties/:id", async (req, res) => {
+  }));
+  app.delete("/ops/sales/properties/:id", salesLimiter, door, wrap(async (req, res) => {
     // The definition goes; values stay in each record's props, hidden, and come back if it is made again.
     send(res, (await run(`DELETE FROM sales_properties WHERE id = ?`, [req.params.id])).changes ? { ok: true } : { error: "not_found" });
-  });
+  }));
 
-  R("post", "/ops/sales/pipelines", async (req, res) => {
+  app.post("/ops/sales/pipelines", salesLimiter, door, wrap(async (req, res) => {
     const name = M.clean((req.body || {}).name);
     if (!name) return res.status(400).json({ error: "invalid", message: "Name the pipeline." });
     res.status(201).json({ ok: true, id: await PIPES.createPipeline(ctx, name, whoOf(req)) });
-  });
-  R("patch", "/ops/sales/pipelines/:id", async (req, res) => {
+  }));
+  app.patch("/ops/sales/pipelines/:id", salesLimiter, door, wrap(async (req, res) => {
     const name = M.clean((req.body || {}).name);
     if (!name) return res.status(400).json({ error: "invalid", message: "Name the pipeline." });
     send(res, await PIPES.renamePipeline(ctx, req.params.id, name, whoOf(req)));
-  });
-  R("put", "/ops/sales/pipelines/:id/stages", async (req, res) => {
+  }));
+  app.put("/ops/sales/pipelines/:id/stages", salesLimiter, door, wrap(async (req, res) => {
     const stages = (req.body || {}).stages;
     if (!Array.isArray(stages) || !stages.length) return res.status(400).json({ error: "invalid", message: "A pipeline has at least one stage." });
     send(res, await PIPES.saveStages(ctx, req.params.id, stages, whoOf(req)));
-  });
+  }));
 
-  R("post", "/ops/sales/views", async (req, res) => {
+  app.post("/ops/sales/views", salesLimiter, door, wrap(async (req, res) => {
     const b = req.body || {}, who = whoOf(req);
     const name = M.clean(b.name);
     if (!isType(b.object) || !name) return res.status(400).json({ error: "invalid", message: "Name the view." });
@@ -280,10 +280,10 @@ function mount(app, { query, run, wrap, opsOnly }) {
     await run(`INSERT INTO sales_views (id, object, name, config, created_by, created_by_name) VALUES (?, ?, ?, ?::jsonb, ?, ?)`,
       [id, b.object, name, JSON.stringify(b.config || {}), who.id, who.name]);
     res.status(201).json({ ok: true, id });
-  });
-  R("delete", "/ops/sales/views/:id", async (req, res) => send(res, (await run(`DELETE FROM sales_views WHERE id = ?`, [req.params.id])).changes ? { ok: true } : { error: "not_found" }));
+  }));
+  app.delete("/ops/sales/views/:id", salesLimiter, door, wrap(async (req, res) => send(res, (await run(`DELETE FROM sales_views WHERE id = ?`, [req.params.id])).changes ? { ok: true } : { error: "not_found" })));
 
-  R("put", "/ops/sales/settings", async (req, res) => {
+  app.put("/ops/sales/settings", salesLimiter, door, wrap(async (req, res) => {
     const b = req.body || {}, who = whoOf(req);
     if (b.goal) {
       const cents = Math.round(Number(b.goal.cents));
@@ -296,16 +296,16 @@ function mount(app, { query, run, wrap, opsOnly }) {
         [JSON.stringify({ cents, by, says }), who.id, who.name, who.id, who.name]);
     }
     res.json({ ok: true, settings: await settings(query) });
-  });
+  }));
 
-  R("post", "/ops/sales/orgs/:id/steward", async (req, res) => {
+  app.post("/ops/sales/orgs/:id/steward", salesLimiter, door, wrap(async (req, res) => {
     const sid = (req.body || {}).stewardOrgId ? String(req.body.stewardOrgId) : null;
     if (sid) { const [o] = await query(`SELECT id FROM orgs WHERE id = ?`, [sid]); if (!o) return res.status(400).json({ error: "invalid", message: "There is no such Steward org." }); }
     const who = whoOf(req);
     const r = await run(`UPDATE sales_orgs SET steward_org_id = ?, updated_at = NOW(), updated_by = ?, updated_by_name = ? WHERE id = ? AND deleted_at IS NULL`, [sid, who.id, who.name, req.params.id]);
     send(res, r.changes ? { ok: true } : { error: "not_found" });
-  });
-  R("get", "/ops/sales/steward-orgs", async (req, res) => res.json({ ok: true, orgs: await LINK.candidates(query, req.query.q) }));
+  }));
+  app.get("/ops/sales/steward-orgs", salesLimiter, door, wrap(async (req, res) => res.json({ ok: true, orgs: await LINK.candidates(query, req.query.q) })));
 }
 
 module.exports = { mount, settings };
