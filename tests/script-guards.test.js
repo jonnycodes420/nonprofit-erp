@@ -217,6 +217,8 @@ const PROD_READONLY = [
   "atlas5-old-rows",
   // FLOWS-5: lists open thank-you tasks that duplicate another for the same gift; SELECTs only, no --apply.
   "flows5-dup-thanks",
+  // FLOWS-6: lists Done follow-up twins and steps opened on a log with no next step; SELECTs only, no --apply.
+  "flows6-log-twins",
   // TRUTH-6: lists receipts on $0 gifts and future-dated gifts not marked scheduled; SELECTs only, no --apply (it prints an UPDATE for Jonathan, never runs one).
   "truth6-zero-receipts",
   // MAIL-1: what each org's mail would do, in a READ ONLY transaction, counts and org names only.

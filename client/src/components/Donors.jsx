@@ -30,6 +30,7 @@ import { DataHealth } from "./DataHealth";
 import { DriftList } from "./DriftList";   // HOME-4: Drift opens here from Home's chip
 import { AssignModal, DirectoryView, FilterBar, ReEngageView, TeamView } from "./DonorDirectory";
 import { directoryFilterCount, useDirectoryIds, FilteredChip } from "./donors/ReEngageFilter";   // FLOWS-4
+import { tabCountWords } from "../lib/tabCount";   // FLOWS-6
 import { ScreeningFileModal, ScreeningImportModal } from "./RoomToGive";
 import { useCanMajorGifts } from "../lib/majorGifts";
 import { FALLBACK_SETUP, PAGE_SIZES, cleanColumns } from "./DonorColumns";
@@ -414,6 +415,11 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     .filter(d=>!search||(d.name+d.email).toLowerCase().includes(search.toLowerCase()))
     .filter(matchesAdvanced)
     .filter(matchesCf);
+  // FLOWS-6 (W-1109-Donors-18X): the tab's count follows the list's filters (lib/tabCount.js).
+  const listFilterOn=!!search||reFilterN>0||!!(filters.tiers.length||filters.stages.length||filters.pattern||filters.geo.trim()||filters.giftFrom||filters.giftTo||filters.totalMin!==""||filters.totalMax!=="")
+    ||Object.values(cfFilters).some(v=>v&&!(Array.isArray(v)&&!v.length)&&!(typeof v==="object"&&!Array.isArray(v)&&!v.from&&!v.to));
+  const reShown=listFilterOn&&orgPeople&&view==="reengage"&&!(reFilterN>0&&!reIds)?(reFilterN>0?filtered.filter(d=>reIds.has(d.id)):filtered).filter(d=>d.reengage).length:null;
+  const reCountWords=tabCountWords(lapsedCount,reShown,listFilterOn);
   // FIX-45: search filters as you type. The server's answer comes after a
   // 300ms pause and a round trip, and on a slow day nothing on screen moved
   // until then, which read as "it only filters on Enter". So while the answer
@@ -894,7 +900,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           {[["directory","Directory"],...(isAdmin?[["team","Team"]]:[]),["reengage","Re-engage"],...(mapOn?[["map","Map"]]:[]),["health","Data health"]].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:T.ink3,fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",flexShrink:0}}>
               {l}
-              {v==="reengage"&&lapsedCount>0&&<span style={{background:T.greenDk,color:T.white,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{lapsedCount}</span>}
+              {v==="reengage"&&reCountWords&&<span data-testid="reengage-count" title={listFilterOn?"Lapsed people in the list below, of everyone lapsed":undefined} style={{background:T.greenDk,color:T.white,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{reCountWords}</span>}
             </button>
           ))}
         </div>

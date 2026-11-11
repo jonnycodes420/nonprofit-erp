@@ -180,12 +180,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               }).sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(b.created_at||"").localeCompare(String(a.created_at||"")));
               const last=handLogged[0];
               if(!last||!last.id||isReadOnly)return null;
-              return <section data-testid="dp-heard" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 18px",display:"flex",flexDirection:"column",gap:6}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.ink}}>From your note: {conversationTitle(last)}, {displayDateShort(last.date,orgTodayCivil())}</div>
-                <ConversationChips interactionId={last.id} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();refreshSoftCredit();
+              // FLOWS-6: the card is drawn only around chips there are (ConversationChips' wrap).
+              return <ConversationChips interactionId={last.id}
+                heading={<div style={{fontSize:13,fontWeight:700,color:T.ink}}>From your note: {conversationTitle(last)}, {displayDateShort(last.date,orgTodayCivil())}</div>}
+                wrap={inner=><section data-testid="dp-heard" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 18px",display:"flex",flexDirection:"column",gap:6}}>{inner}</section>}
+                onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();refreshSoftCredit();
                   apiFetch(`/donors/${donor.id}/designations`).then(d=>setDesignations(Array.isArray(d)?d:[])).catch(()=>{});
-                  onInteractionAdded&&onInteractionAdded();}}/>
-              </section>;
+                  onInteractionAdded&&onInteractionAdded();}}/>;
             })()}
             {/* LATELY — the last three things that happened, of any kind, each
                 opening its record; "See everything" opens Conversations. */}

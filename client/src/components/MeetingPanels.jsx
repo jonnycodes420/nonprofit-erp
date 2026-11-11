@@ -40,6 +40,7 @@ import { giftTypeLabel } from "../../../shared/giftWords.js";   // FEEL-1
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { TouchIcon } from "./touchIcons";   // TOUCH-1
 import { touchLine } from "../../../shared/touchKinds.js";
+import { taskRowOf } from "../lib/taskRow";   // FLOWS-6
 export { relDay, meetingNoun, AddToRecord, MorningBrief } from "./MorningBrief";
 
 const CHIP_EDGE = T.bg3;           // the artboards draw a hairline one shade off bg3; bg3 is the token
@@ -197,6 +198,8 @@ ICON.talk = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="
 // MASS email; the donor's open and done tasks are Tasks; Attachments lists
 // every file on a conversation or a note.
 ICON.task = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>;
+// FLOWS-6: an open task is an empty box; only a done one carries the check.
+ICON.taskOpen = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>;
 ICON.file = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>;
 TILE_BG.task = T.white; TILE_BG.file = T.bg;
 // PARITY-3 — a volunteer shift: a hand, in the same stroke as the others.
@@ -260,7 +263,7 @@ export function buildTimelineItems({ rel, gifts = [], pledges = [], interactions
     items.push({ kind: "talk", bucket: interactionBucket(i), mass: isMassEmail(i), id: "n:" + i.id, date: String(i.date || "").slice(0, 10), logged: i });
   }
   for (const t of tasks || []) {
-    items.push({ kind: "task", bucket: "task", id: "k:" + t.id, date: String(t.due || t.created_at || "").slice(0, 10), task: t });
+    items.push({ kind: "task", bucket: "task", id: "k:" + t.id, date: taskRowOf(t, orgTodayCivil()).date, task: t });
   }
   // PARITY-3 Part 1 — each logged volunteer shift, with its hours.
   for (const v of service || []) {
@@ -379,9 +382,9 @@ export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], int
       type = it.mass ? "Email" : it.bucket === "note" ? "Note" : it.bucket === "email" ? "Email" : (TYPE_WORD[i.type] || "Conversation");
     } else if (it.kind === "task") {
       const t = it.task;
-      const done = Number(t.done) === 1 || t.done === true;
+      const row = taskRowOf(t, orgTodayCivil());
       title = t.title;
-      body = done ? "Done." : t.due ? `Due ${relDay(String(t.due).slice(0, 10))}.` : "Open, no due date.";
+      body = row.done ? row.doneWords : t.due ? `Due ${relDay(String(t.due).slice(0, 10))}.` : "Open, no due date.";
       by = t.assigned_to_name || "";
       meta = by ? `For ${by}` : null;
     } else if (it.kind === "service") {
@@ -499,11 +502,12 @@ export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], int
           </div>) : null;
         const card = (
           <div key={it.id} className="tl-card" id={it.kind === "gift" && !it.g.matched ? `gift-${it.g.id}` : undefined} role="button" tabIndex={0} aria-expanded={isOpen} data-kind={it.kind}
+            data-task-id={it.kind === "task" ? it.task.id : undefined} data-task-state={it.kind === "task" ? taskRowOf(it.task).state : undefined}
             onClick={() => setOpenId(isOpen ? null : it.id)} onKeyDown={e => { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenId(isOpen ? null : it.id); } }}
             style={{ background: T.white, borderRadius: 16, padding: "22px 26px", display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) auto", gap: 18, alignItems: "start", cursor: "pointer" }}>
             <div style={{ width: 44, height: 44, borderRadius: 12, background: TILE_BG[it.kind], color: it.kind === "meeting" ? T.inkInverse : T.ink,
               border: it.kind === "talk" || it.kind === "task" ? "1px solid " + T.bg3 : "none", boxSizing: "border-box",
-              display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SERIF, fontSize: 20 }}>{it.kind === "gift" || it.kind === "pledge" ? "$" : it.kind === "talk" && touchOf(it.logged) ? <TouchIcon kind={touchOf(it.logged).kind}/> : ICON[it.kind]}</div>
+              display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SERIF, fontSize: 20 }}>{it.kind === "gift" || it.kind === "pledge" ? "$" : it.kind === "talk" && touchOf(it.logged) ? <TouchIcon kind={touchOf(it.logged).kind}/> : it.kind === "task" && !taskRowOf(it.task).done ? ICON.taskOpen : ICON[it.kind]}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
               <div style={{ fontSize: 16, fontWeight: 600 }}>{title}{it.mass && <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 500, color: T.ink3 }}>Mass email</span>}</div>
               {body && <div style={{ fontSize: 15, lineHeight: 1.5, color: T.ink3, whiteSpace: typeof body === "string" ? "pre-wrap" : undefined }}>{body}</div>}
@@ -586,7 +590,10 @@ export function NoteBody({ note }) {
 
 // What Steward heard in a note, as chips. Each one does nothing until a person
 // presses it; "Not now" is remembered too. POSTs from this page only.
-export function ConversationChips({ interactionId, onChanged }) {
+// FLOWS-6 (W-1110-Donors-36X): `heading` and `wrap` draw the card around the
+// chips only when there is something to answer: a heading over nothing read as
+// a Coming up entry with no date and no Mark done.
+export function ConversationChips({ interactionId, onChanged, heading = null, wrap = null }) {
   const [d, setD] = useState(null);
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
@@ -597,7 +604,8 @@ export function ConversationChips({ interactionId, onChanged }) {
       .then(r => { if (alive) setD(r); }).catch(() => { if (alive) setD({ suggestions: [] }); });
     return () => { alive = false; };
   }, [interactionId]);
-  if (!d || !(d.suggestions || []).length) return msg ? <div role="status" style={{ fontSize: 13, color: T.ink }}>{msg}</div> : null;
+  const framed = node => wrap ? wrap(<>{heading}{node}</>) : node;
+  if (!d || !(d.suggestions || []).length) return msg ? framed(<div role="status" style={{ fontSize: 13, color: T.ink }}>{msg}</div>) : null;
   const answer = async (c, yes) => {
     setBusy(c.kind); setMsg("");
     try {
@@ -611,7 +619,7 @@ export function ConversationChips({ interactionId, onChanged }) {
     } catch (e) { setMsg(errorMessage(e, "That did not save.")); }
     setBusy("");
   };
-  return (
+  return framed(
     <div data-testid="conversation-chips" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ fontSize: 12, color: T.ink3 }}>{d.sentence}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>

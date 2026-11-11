@@ -296,7 +296,9 @@ export function CompareModal({ pair, onClose, onMerged, undoWhere = "below" }) {
   const resultingName = () => { const K0 = d.records[keptId], O0 = d.records[otherId]; return ((choices.name === "other" ? O0 : K0).name) || K0.name; };
   const ADDR = ["address", "address2", "city", "state", "zip", "country"];
   const pick = (f, side) => setChoices(c => ADDR.includes(f) ? { ...c, ...Object.fromEntries(ADDR.map(k => [k, side])) } : { ...c, [f]: side });
-  const fieldVal = (rec, f) => f === "household_id" ? (rec.household_id ? (d.households[rec.household_id] || "A household") : null) : show(rec[f]);
+  // FLOWS-6 (W-1110-Donors-44X): a teammate is named, never shown as a user id.
+  const fieldVal = (rec, f) => f === "household_id" ? (rec.household_id ? (d.households[rec.household_id] || "A household") : null)
+    : f === "assigned_to" ? (rec.assigned_to ? ((d.users || {})[rec.assigned_to] || rec.assigned_to_name || "A former teammate") : null) : show(rec[f]);
   const moving = useMemo(() => {
     if (!d || !otherId) return "";
     const m = d.moving[otherId] || {};
