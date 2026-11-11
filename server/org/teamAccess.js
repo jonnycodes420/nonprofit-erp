@@ -51,6 +51,12 @@ async function copyFromInvite(run, inviteId, { userId, orgId, home }) {
 
 function mount(ctx, app) {
   const { query, run, requireAuth, requireAdmin, wrap } = ctx;
+  // ACCESS-2B: the routes this person may ask, for the app to keep to them.
+  // null for someone who sees everyone (the app then asks as it always has).
+  app.get("/me/portfolio-routes", requireAuth, wrap(async (req, res) => {
+    const PF = require("../auth/portfolio");
+    res.json({ portfolio: PF.isScoped(req.user), open: PF.isScoped(req.user) ? PF.openRoutes(req.app, req.user) : null });
+  }));
   // Settings → Team: change who someone sees. The home org's row, or the
   // membership for someone who joined from another org. Their next request
   // reads it (requireAuth reads it live).

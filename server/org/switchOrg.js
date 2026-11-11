@@ -80,7 +80,7 @@ function mount(ctx) {
         ? `${who} (Steward staff) opened this organization. Reason: ${reason}`
         : `${who} switched into this organization`, needsReason ? { reason } : {});
       const [full] = await query("SELECT * FROM orgs WHERE id = ?", [org.id]);
-      return res.json({ token, user: { id: me.id, email: me.email, name: me.name, role, isSuperAdmin: superAdmin }, org: full });
+      return res.json({ token, user: { id: me.id, email: me.email, name: me.name, role, isSuperAdmin: superAdmin, portfolio: await require("../auth/portfolio").flagFor(me.id, org.id) }, org: full });
     }
 
     // A super-admin who isn't a member: a read-only support session (FIX-57).

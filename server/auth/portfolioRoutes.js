@@ -37,7 +37,7 @@ const DECLARATIONS = [
   // ── FREE: their own account, the session, the app's chrome ──────────────
   D(ANY, /^\/me(\/|$)/, "free", { params: { id: null } }),
   D(ANY, /^\/auth\/(logout|switch-org|invite\/accept)$/, "free"),
-  D("GET", /^\/org(\/(welcome|vocabulary|setup-status|ai-status|team|sample-data-status|membership-settings))?$/, "free"),
+  D("GET", /^\/org(\/(welcome|vocabulary|ai-status|team|sample-data-status|membership-settings))?$/, "free"),   // ACCESS-2B: not setup-status, the admin's checklist
   D("POST", "/org/welcome/seen", "free"),
   D("GET", "/billing/status", "free"),
   D(ANY, /^\/onboarding\/(mine|home-opened)$/, "free"),
@@ -47,6 +47,10 @@ const DECLARATIONS = [
   // Home's and the shell's reads in one request: each part is its own route,
   // run as them, so each part meets this gate itself (routes/homeBundle.js).
   D("GET", "/home/bundle", "free"),
+  // ACCESS-2B: the page-timing beacon (a page name and milliseconds), and the
+  // AI stream, whose prompt the browser writes from what it already shows them;
+  // neither reads a person on the server.
+  D("POST", /^\/(perf\/page-ready|ai\/stream)$/, "free"),
   D(ANY, /^\/donors\/list-(setup|layout|views)(\/:id)?$/, "free", { params: { id: null } }),
   D(ANY, /^\/touch-types(\/:id)?$/, "free", { params: { id: null } }),   // TOUCH-1: the kinds of touch (no person; adding one is an admin's)
   D("PATCH", "/donors/:id/care-plan/touches/:taskId", "param", { params: { kind: null, taskId: "task" } }),   // TOUCH-1: a planned touch is a task on their person
@@ -56,6 +60,10 @@ const DECLARATIONS = [
   D("GET", "/search", "scoped"),
   D("GET", /^\/tasks(\/counts)?$/, "scoped"),
   D("GET", /^\/top100(\/export\.csv)?$/, "scoped"),
+  D("GET", "/donors/birthdays-near", "scoped"),   // ACCESS-2B: Home's birthdays, their people's
+  // ACCESS-2B: the Thread, their people's follow-ups only (composeThreads' visible).
+  D("GET", "/threads", "scoped"),
+  D("POST", "/threads/plan", "param"),
   // Creating a person makes them the creator's own (server/donors/routes.js).
   D("POST", /^\/donors$|^\/gifts\/new-person$/, "scoped"),
   D("POST", "/tasks", "scoped"),
@@ -67,7 +75,7 @@ const DECLARATIONS = [
   // ── CLOSED inside the person's routes: someone else's mail, merges, ─────
   // imports, wealth and the owner (an admin's job).
   D(ANY, /^\/donors\/:id\/(blocked-mail|emails-received|auto-email|wealth-score|room-to-give|screening|public-filing|prospect-brief|export-data|erase|refused-rows|assign|archive|unarchive)/, "closed"),
-  D(ANY, /^\/donors\/(merge|import|import-semantics|import-combined|bulk-assign|bulk-delete|bulk-wealth-score|duplicates|trash-check|purge-trash|auto-email|birthdays-near|custom-field-values)/, "closed"),
+  D(ANY, /^\/donors\/(merge|import|import-semantics|import-combined|bulk-assign|bulk-delete|bulk-wealth-score|duplicates|trash-check|purge-trash|auto-email|custom-field-values)/, "closed"),
 
   // ── PARAM: one person, and what hangs off them ──────────────────────────
   D(ANY, /^\/donors\/:id(\/|$)/, "param", { params: { kind: null } }),
