@@ -61,10 +61,7 @@ async function main() {
         ORDER BY g.org_id, g.date`, args)).rows;
     console.log(`\n2 · gifts dated after today not stored as scheduled: ${future.length}`);
     for (const g of future) console.log(`  ${g.org_id} · ${g.name || "(no name)"} · ${usd(g.cents)} dated ${g.date} · gift ${g.id}`);
-    if (future.length) {
-      console.log("\n  To store them as scheduled (Jonathan runs this, after the deploy, once he has read the list):");
-      console.log(`  UPDATE gifts SET scheduled_on = LEFT(date, 10) WHERE scheduled_on IS NULL AND id = ANY(ARRAY[${future.map(g => `'${g.id}'`).join(",")}]);`);
-    }
+    if (future.length) console.log("\n  To store these as scheduled, set each one's scheduled_on to its date (the statement is in the TRUTH-6 report, For Jonathan).");
     console.log("\nDry run: nothing was written.");
   } finally { await pool.end(); }
 }
