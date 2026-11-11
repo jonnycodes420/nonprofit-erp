@@ -816,9 +816,6 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const rows = await query("SELECT * FROM donors WHERE id = ?", [req.params.id]);
   const d = rows[0];
   d.tags = DTAGS.visibleTags(d.tags);
-  // TRUTH-6: a scheduled gift says so, "Scheduled, Dec 15", where its amount is.
-  { const SC = require("../../shared/numbers/scheduled"); const t = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
-    for (const g of d.gifts) if (g.scheduled) g.scheduled_label = SC.scheduledLabel(g.scheduled_on, t); }
   d.matching_gift = lookupMatchingGift(d.employer);
   const warning = await require("../dataHealth/integrity").emailWarning(query, req.user.orgId, d.email, d.id);   // INTEGRITY-1
   res.json(warning ? { ...d, warning } : d);
