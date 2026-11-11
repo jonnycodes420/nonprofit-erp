@@ -556,3 +556,10 @@ Diagnostic tooling added after manually deleting test-user rows in Supabase's Ta
 - The giving-level condition computes its aggregate once (`WITH s AS MATERIALIZED` in
   `donorStatus.tagCondition`), so even a database with no statistics stays near two seconds, not thirty.
 
+
+## The sales CRM is no org's data (SALES-1)
+
+- `/ops → Sales` is Steward's own CRM. Its tables are `sales_*` with **no `org_id`**: they belong to no tenant, so no org export, seed, tenant query or org route reads them. Only `server/admin/sales/`, its DDL (`server/db/ddl/sales1.js`) and the staging seed (`scripts/ops/sales-staging-seed.js`) name a `sales_` table; `tests/tenant-isolation.test.js` fails on any other file that does.
+- Every route is behind `/ops`'s door (`opsOnly`: 404 to anyone who is not a live super-admin, read from the users row on each request).
+- It reads a customer org only through counts and dates (last sign-in, people count, trial end, ONBOARD-2's MRR and gates), never a donor's name, email or gift.
+- No seed writes sales data on prod; the staging seed writes a made-up book.

@@ -95,6 +95,7 @@ async function runSchemaInit(pool) {
   await require("./ddl/onboard1").run(pool);   // ONBOARD-1: start links, signatures, staged imports
   await require("./ddl/part7").run(pool);
   await require("./ddl/onboard2").run(pool);   // ONBOARD-2: the onboarding board
+  await require("./ddl/sales1").run(pool);   // SALES-1: the sales CRM in /ops (no org_id, super-admin only)
 // SPLIT-2 db.js piece 49
 }
 // SPLIT-2 end

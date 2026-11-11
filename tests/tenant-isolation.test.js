@@ -160,6 +160,34 @@ async function seedOrg(o, tag) {
 
   await q(`DELETE FROM fin_transactions WHERE org_id=$1 AND description='ok'`, [A]).catch(() => {});
   await reset();
+  // ── SALES-1 · the sales_ tables are on this suite's allowlist: no org_id, and no org route reads them ──
+  const SALES_ALLOWLIST = /^sales_/;   // Steward's own sales CRM (/ops → Sales): no org's data
+  const salesTables = (await q(`SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name LIKE 'sales\\_%'`)).map(r => r.table_name);
+  const withOrg = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name LIKE 'sales\\_%'`)).map(r => r.table_name);
+  ok("SALES-1: the sales_ tables exist and none carries an org_id", salesTables.length >= 10 && salesTables.every(t => SALES_ALLOWLIST.test(t)) && withOrg.length === 0, { salesTables, withOrg });
+  // Only server/admin/sales/ and its DDL name a sales_ table: no org route, export, seed or tenant query does.
+  const fs = require("fs"), path = require("path");
+  const ROOT = path.join(__dirname, "..");
+  const readers = [];
+  const walk = dir => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) { if (!["node_modules", "client", "tests", "docs", ".git", "dist", ".generated"].includes(e.name)) walk(p); }
+    else if (/\.js$/.test(e.name) && /\bsales_(orgs|contacts|deals|links|activities|activity_links|pipelines|stages|stage_history|views|merges|imports|settings|properties)\b/.test(fs.readFileSync(p, "utf8"))) readers.push(path.relative(ROOT, p));
+  } };
+  walk(ROOT);
+  const allowed = f => f.startsWith("server/admin/sales/") || f === "server/db/ddl/sales1.js" || f === "scripts/ops/staging-seed.js" || f.startsWith("scripts/ops/sales");
+  ok("SALES-1: only the /ops sales routes, their DDL and the staging seed name a sales_ table", readers.every(allowed), readers.filter(f => !allowed(f)));
+  await q(`INSERT INTO sales_orgs (id,name,domain,created_by,created_by_name) VALUES ('sor_iso_sentinel','Sentinel Sales Prospect','sentinel-iso.example.org','system:test','test') ON CONFLICT (id) DO NOTHING`);
+  for (const p of ["/ops/sales/list/org", "/ops/sales/search?q=Sentinel", "/ops/sales/export/org", "/ops/sales/rec/org/sor_iso_sentinel"]) {
+    const r = await api("GET", p, tokenA);
+    ok(`SALES-1: org admin A gets 404 on GET ${p}`, r.status === 404 && !/Sentinel Sales Prospect/.test(JSON.stringify(r.body || "")), r.status);
+  }
+  for (const p of ["/search?q=Sentinel", "/donors?search=Sentinel", "/export/all"]) {
+    const r = await api("GET", p, tokenA);
+    ok(`SALES-1: no org route shows a sales record (GET ${p})`, !/Sentinel Sales Prospect|sentinel-iso/.test(typeof r.body === "string" ? r.body : JSON.stringify(r.body || "")), r.status);
+  }
+  await q(`DELETE FROM sales_orgs WHERE id = 'sor_iso_sentinel'`);
+
   await closeDb();
   summary();
 })().catch(async e => { console.error(e); await closeDb().catch(() => {}); process.exit(1); });

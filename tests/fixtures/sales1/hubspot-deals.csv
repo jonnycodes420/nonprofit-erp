@@ -1,0 +1,4 @@
+Record ID,Deal Name,Pipeline,Deal Stage,Amount,Close Date,Deal owner,Associated Company,Associated Contact,Deal source,Create Date
+5001,Juniper Ridge - Steward Core,Sales Pipeline,Qualified To Buy,350,2026-12-15 00:00,,Juniper Ridge Literacy Fund,marisol@juniperridge.example.org;tobias@juniperridge.example.org,Referral,2026-09-10 10:00
+5002,Copperline - Steward Team,Sales Pipeline,Appointment Scheduled,600,2027-01-31,,Copperline Youth Rowing,ines@copperline.example.org,Conference,2026-09-11 10:00
+5003,Saltmarsh - pilot,Sales Pipeline,Closed Lost,200,2026-10-01,,"Saltmarsh Food Share, Inc.",,Cold email,2026-09-12 10:00

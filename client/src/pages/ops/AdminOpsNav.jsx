@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 const INK = "#0F1A12", WHITE = "#FFFFFF", EMERALD = "#0D5C3A", BRASS = "#C9A84C";
 export const OPS_LINKS = [
   { to: "/ops", label: "Ops", says: "health, builds and the board" },
+  { to: "/ops?tab=sales", label: "Sales", says: "organizations, contacts and deals, from a lead to paying" },   // SALES-1
   { to: "/ops?tab=onboarding", label: "Onboarding", says: "each deal from a yes to billing" },   // ONBOARD-2
   { to: "/ops?tab=map", label: "Map", says: "every area and its checks" },
   { to: "/ops?tab=journey", label: "Journey", says: "where each customer is" },

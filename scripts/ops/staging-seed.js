@@ -162,6 +162,10 @@ async function main() {
     for (const h of await findRealPeople(q, org, { seededUserEmails: seeded })) hits.push({ org_id: org, name: h.name, reason: h.reason });
   }
 
+  // 4b. SALES-1: a made-up sales CRM for /ops → Sales (staging only; sales-staging-seed.js)
+  const sales = await require("./sales-staging-seed").seedSales(q);
+  console.log(`[staging] sales CRM: ${sales.orgs} organizations, ${sales.contacts} contacts, ${sales.deals} deals (made-up)`);
+
   // 5. the baselines Muse walks against
   const count = async (sql, org) => (await q(sql, [org]))[0].n;
   const base = {};
