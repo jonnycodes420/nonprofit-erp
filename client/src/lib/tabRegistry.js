@@ -126,7 +126,8 @@ const CRM_HIDDEN_TABS=new Set(["portal"]);
 // each into ("fundraising", {frSection}), tabHref gives it that URL, and the
 // rail marks it current while that part is open. The values are part ids from
 // lib/fundraisingSections.js.
-const FR_PART_TABS={auctions:"auctions",p2p:"p2p",memberships:"members"};
+// NAV-1 (menu): Auctions left this map; it opens Events → Auctions (lib/navMoves.js).
+const FR_PART_TABS={p2p:"p2p",memberships:"members"};
 
 export { FR_PART_TABS, TABS, BOTTOM_TABS, MORE_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS };
 

@@ -18,6 +18,7 @@ import { PortalBannerCrop, PORTAL_CAMPAIGN_HERO_RATIO } from "./PortalBanner";
 import { errorMessage } from "../lib/domainError";
 import { Pipeline } from "./Pipeline";
 import { FR_SECTIONS, resolveFr } from "../lib/fundraisingSections";
+import { frShown } from "../lib/navMoves";   // NAV-1 (menu): Auctions is in Events; P2P only with a P2P page
 import { PeerToPeerView } from "./PeerToPeer";
 import { AuctionsView } from "./Auctions";
 import { StartedNotFinished } from "./StartedNotFinished";
@@ -108,7 +109,7 @@ function StatTile({ label, value, sub, accent, onClick: go, ariaLabel, source, d
 
 
 
-export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, initialSection, initialScope }) {
+export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, initialSection, initialScope, hasP2p }) {
   // BUILD-57 — deep-linkable (Home's Recurring tab lands on the recurring
   // section via navigateTo("fundraising",{frSection:"recurring"})); consumed
   // on mount only, navNonce remounts like the other intent tabs.
@@ -159,7 +160,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
     if (onNavigate && MG_VIEWS.some(v => v.id === id)) return onNavigate("majorgifts", { subtab: id });
     const r = resolveFr(id); setSection(r.section); setPartOf(m => ({ ...m, [r.section]: r.part }));
   };
-  const sec = FR_SECTIONS.find(s => s.id === section) || FR_SECTIONS[0];
+  const sec = frShown(FR_SECTIONS.find(s => s.id === section) || FR_SECTIONS[0], { hasP2p });
   const subtab = partOf[sec.id] || sec.parts[0].id;   // the old view that is open
   const setSubtab = goto;
   const openCampaign = id => { goUrl(campaignHref(id)); goto("campaigns"); };

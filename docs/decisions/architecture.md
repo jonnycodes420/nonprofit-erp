@@ -402,6 +402,19 @@ default for anybody. The dialog lists only what this org's PLAN has; a save is w
 full layout, so a preference about a plan-hidden item is kept rather than dropped
 (`reorderWithin`).
 
+**The org's menu, under the person's (NAV-1 menu, 2026-11-10).** `orgs.nav_layout` is the org's
+own layout, set by an admin in Settings → Menu or by Jonathan in super-admin → Organizations
+(`server/org/menu.js`, `GET/PUT /org/menu`, `GET/POST /admin/orgs/:id/menu`). **Every org starts
+with Auctions and Peer-to-peer hidden** (`ORG_DEFAULT_HIDDEN`): the agreement does not offer them
+as products. `personNavLayout()` merges the two: an entry shows only when the org shows it AND the
+person has not hidden it, the person's order wins where they saved one, and the person's own
+choice about an entry the org hid is kept apart (`mine`) so turning it on again gives it back.
+Hidden is the menu only, never a route. Auctions live in Events (an event's Auction panel, and
+Events → Auctions at `/app/events?list=auctions`, where every old auctions link lands,
+`lib/navMoves.js`); Peer-to-peer is in Fundraising's strip only for an org with a peer-to-peer page.
+`orgs.mg_views` is the Major Gifts tabs an org shows (NULL = all four; one = no strip). Both are
+settings, never an org id.
+
 **A volunteer coordinator could not sign in at all** until NAV-1. Four of the shell's seven
 opening reads are refused for that role by the VOL-1 allowlist, correctly and by design, and one
 rejection threw in `loadData`, so the whole app rendered "Failed to connect" with the

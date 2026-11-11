@@ -1132,6 +1132,7 @@ async function run7(pool) {
   await require("./wealth1").run(pool);   // WEALTH-1: the Wealth Score a person sets
   await require("./quickadd1").run(pool);   // QUICKADD-1: appeals, and the appeal a gift came from
   await require("./asks1").run(pool);   // ASKS-1: the import an auction item came in on
+  await require("./nav1menu").run(pool);   // NAV-1 (menu): the org's sidebar and Major Gifts tabs
 
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id

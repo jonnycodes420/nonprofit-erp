@@ -24,6 +24,7 @@ import EventRemoveButton, { AttendeeLabel } from "./events/EventRemoveButton.jsx
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: the org's day
 import { addGuests } from "../lib/eventCapacity";   // STALE-2: past capacity asks first
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { EventAuction, EventsAuctions } from "./events/EventAuction";   // NAV-1 (menu): Auctions live in Events
 
 // PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
 const CHAIR = 44;
@@ -1578,6 +1579,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
             <EventSeating eventId={eventId} />
             <EventKiosk eventId={eventId} />
             <EventPageEditor eventId={eventId} />
+            <EventAuction eventId={eventId} />
           </div>
 
           {/* FIX-59: the Invited / Confirmed / Attended / No Show tiles are gone.
@@ -1871,7 +1873,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
 export function Events({ data, isReadOnly }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("upcoming");
+  const [filter, setFilter] = useState(() => (urlParam("events", "list") === "auctions" ? "auctions" : "upcoming"));   // NAV-1 (menu)
   // FIX-14 Part 5: an event is /app/events?event=<id>, so a fresh tab opens
   // on it, and opening or closing one here moves the address bar with it.
   // FIX-60: ?eventId=<id> (the name tabHref takes) opens it too.
@@ -1973,7 +1975,7 @@ export function Events({ data, isReadOnly }) {
       {/* Toolbar */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 4, background: T.bg2, borderRadius: 10, padding: 3 }}>
-          {[["upcoming", "Upcoming"], ["past", "Past"], ["all", "All"], ...(events.some(e => e.archived_at) ? [["archived", "Archived"]] : [])].map(([v, l]) => (
+          {[["upcoming", "Upcoming"], ["past", "Past"], ["all", "All"], ...(events.some(e => e.archived_at) ? [["archived", "Archived"]] : []), ["auctions", "Auctions"]].map(([v, l]) => (
             <button key={v} onClick={() => setFilter(v)} style={{ background: filter === v ? T.white : "transparent", border: filter === v ? "1px solid " + T.bg3 : "none", borderRadius: 7, padding: "6px 16px", color: filter === v ? T.ink : T.ink3, fontSize: 13, fontWeight: filter === v ? 700 : 400, cursor: "pointer", boxShadow: filter === v ? T.shadow : "none" }}>
               {l}
             </button>
@@ -1985,7 +1987,7 @@ export function Events({ data, isReadOnly }) {
       </div>
 
       {/* Event grid */}
-      {loading ? (
+      {filter === "auctions" ? <EventsAuctions isReadOnly={isReadOnly} /> : loading ? (
         <div style={{ fontSize: 13, color: T.ink3, padding: "32px 0", textAlign: "center" }}>Loading events…</div>
       ) : filtered.length === 0 ? (
         <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "48px 24px", textAlign: "center" }}>

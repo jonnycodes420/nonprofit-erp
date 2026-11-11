@@ -63,7 +63,45 @@ export const NEVER_HIDDEN = new Set(["dashboard", "settings"]);
 // Nothing else is hidden by default for anybody.
 export const ROLE_DEFAULT_HIDDEN = { volunteer_coordinator: ["finance"] };
 
+// NAV-1 (menu, 10 Nov) · WHAT EVERY ORG STARTS WITH HIDDEN. Steward's
+// agreement does not offer auctions or peer-to-peer as products, so they are
+// off the menu until an org turns them on (Settings → Menu, or super-admin →
+// Organizations). Hidden from the MENU only: /app/fundraising?fr=auctions,
+// the event's Auction panel, every route and every row are still there.
+export const ORG_DEFAULT_HIDDEN = ["auctions", "p2p"];
+
 export const ALL_NAV_IDS = NAV_GROUPS.flatMap(g => g.items);
+
+// The ORG's layout, merged the same way a person's is: its order within each
+// group, and what it shows. `saved` null = the defaults above.
+export function orgNavLayout(saved) {
+  // The defaults hold for any item the saved list does not name.
+  return navLayout(saved, { defaultHidden: ORG_DEFAULT_HIDDEN });
+}
+
+// What a PERSON sees: the org's layer, then theirs. An item shows only when
+// the org shows it AND the person has not hidden it; the person's order wins
+// where they saved one, else the org's. So a person can hide more, never show
+// what the org hid, and an org that turns Auctions on gives it back to
+// everybody who never hid it themselves.
+export function personNavLayout(userSaved, orgSaved, opts = {}) {
+  const org = orgNavLayout(orgSaved);
+  const orgVis = new Map(org.flatMap(g => g.items.map(i => [i.id, i.visible])));
+  const orgOrder = flattenNav(org);
+  const userIds = new Set((Array.isArray(userSaved) ? userSaved : []).map(r => r && r.id));
+  // The person's saved rows first (their order), then the org's for the rest.
+  const merged = Array.isArray(userSaved)
+    ? [...userSaved, ...orgOrder.filter(r => !userIds.has(r.id)).map(r => ({ id: r.id, visible: true }))]
+    : null;
+  // Somebody who never saved starts from their role's defaults (a volunteer
+  // coordinator: Finance hidden), in the org's order.
+  const roleHidden = new Set(ROLE_DEFAULT_HIDDEN[opts.role] || []);
+  const mine = navLayout(merged || orgOrder.map(r => ({ id: r.id, visible: !roleHidden.has(r.id) })));
+  // `mine` is the person's own choice, kept apart so saving never writes the
+  // org's hide into their layout (an org that turns Auctions on later must
+  // give it back to them).
+  return mine.map(g => ({ ...g, items: g.items.map(i => ({ ...i, mine: i.visible, visible: i.visible && orgVis.get(i.id) !== false, orgHidden: orgVis.get(i.id) === false })) }));
+}
 
 // ── The saved layout, merged with the canonical groups above ───────────────
 // A person's saved layout is [{ id, visible }], the same shape as the Home
@@ -90,7 +128,8 @@ export function navLayout(saved, opts = {}) {
       vis.set(r.id, r.visible !== false);
     });
   }
-  const roleHidden = new Set(rows ? [] : (ROLE_DEFAULT_HIDDEN[role] || []));
+  // defaultHidden: the org's defaults, for an item its saved list does not name (orgNavLayout).
+  const roleHidden = new Set([...(rows ? [] : (ROLE_DEFAULT_HIDDEN[role] || [])), ...(opts.defaultHidden || [])]);
   return NAV_GROUPS.map(g => ({
     id: g.id,
     label: g.label || null,

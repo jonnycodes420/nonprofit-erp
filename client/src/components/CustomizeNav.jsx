@@ -33,7 +33,9 @@ const miniBtn = disabled => ({
   cursor: disabled ? "default" : "pointer", flexShrink: 0, padding: 0,
 });
 
-export function CustomizeNav({ groups, labelOf, onMove, onToggle, onReset, onClose, error }) {
+// NAV-1 (menu): the list itself, shared by this dialog (a person's sidebar)
+// and Settings → Menu / super-admin (the org's, settings/OrgMenuEditor.jsx).
+export function NavLayoutList({ groups, labelOf, onMove, onToggle, testId = "customize-nav" }) {
   const [drag, setDrag] = useState(null);       // { groupId, id }
   const [over, setOver] = useState(null);       // id currently dragged onto
 
@@ -45,25 +47,8 @@ export function CustomizeNav({ groups, labelOf, onMove, onToggle, onReset, onClo
     onMove(groupId, drag.id, to - from);
     setDrag(null); setOver(null);
   };
-
-  return <Modal onClose={onClose} title="Customize the sidebar" width={460}
-    subtitle="Hide what you don't use, and put what you do use where you want it. This is yours alone: nobody else in your organization sees these changes."
-    footer={<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <button type="button" data-testid="nav-reset" onClick={onReset}
-        style={{ background: T.white, border: `1.5px solid ${T.bg3}`, borderRadius: 10, padding: "8px 14px",
-                 color: T.ink2, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
-        Reset to default
-      </button>
-      <div style={{ flex: 1 }} />
-      <button type="button" onClick={onClose}
-        style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "9px 20px",
-                 color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-        Done
-      </button>
-    </div>}>
-    {error && <div role="status" style={{ background: T.gold700, color: T.gold50, borderRadius: 10, padding: "8px 12px",
-      fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
-    <div data-testid="customize-nav">
+  return (
+    <div data-testid={testId}>
       {groups.map(g => g.items.length === 0 ? null : <div key={g.id} style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 9.5, fontWeight: 800, 
           color: T.ink3, marginBottom: 6 }}>{g.label || (g.bottom ? "Bottom of the sidebar" : "Top of the sidebar")}</div>
@@ -96,6 +81,28 @@ export function CustomizeNav({ groups, labelOf, onMove, onToggle, onReset, onClo
         })}
       </div>)}
     </div>
+  );
+}
+
+export function CustomizeNav({ groups, labelOf, onMove, onToggle, onReset, onClose, error }) {
+  return <Modal onClose={onClose} title="Customize the sidebar" width={460}
+    subtitle="Hide what you don't use, and put what you do use where you want it. This is yours alone: nobody else in your organization sees these changes."
+    footer={<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <button type="button" data-testid="nav-reset" onClick={onReset}
+        style={{ background: T.white, border: `1.5px solid ${T.bg3}`, borderRadius: 10, padding: "8px 14px",
+                 color: T.ink2, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+        Reset to default
+      </button>
+      <div style={{ flex: 1 }} />
+      <button type="button" onClick={onClose}
+        style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "9px 20px",
+                 color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+        Done
+      </button>
+    </div>}>
+    {error && <div role="status" style={{ background: T.gold700, color: T.gold50, borderRadius: 10, padding: "8px 12px",
+      fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+    <NavLayoutList groups={groups} labelOf={labelOf} onMove={onMove} onToggle={onToggle} />
     <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.6 }}>
       Home and Settings stay on the rail: one is where every link lands, and the other is where
       you undo a mistake. An item you hide is still reachable from search and from every link to it.

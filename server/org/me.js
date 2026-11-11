@@ -374,7 +374,8 @@ app.get("/me/nav-layout", requireAuth, wrap(async (req, res) => {
   if (!rows.length) return res.status(404).json({ error: "Not found" });
   let layout = null;
   try { layout = rows[0].nav_layout ? JSON.parse(rows[0].nav_layout) : null; } catch { layout = null; }
-  res.json({ layout: normalizeNavLayout(layout) });
+  // NAV-1 (menu): the org's layer rides along, so the shell reads both in one request.
+  res.json({ layout: normalizeNavLayout(layout), org: await require("./menu").orgMenu(query, req.user.orgId) });
 }));
 
 app.put("/me/nav-layout", requireAuth, wrap(async (req, res) => {

@@ -98,6 +98,10 @@ const HIDDEN_FOR_CRM = new Set(
   (/const CRM_HIDDEN_TABS\s*=\s*new Set\(\[([^\]]*)\]/.exec(
     fs.readFileSync(path.join(ROOT, "client", "src", "lib", "tabRegistry.js"), "utf8")) || [0, ""])[1]
     .split(",").map(x => x.trim().replace(/^"|"$/g, "")).filter(Boolean));
+// NAV-1 (menu): what every org's menu starts with hidden (navGroups.js ORG_DEFAULT_HIDDEN).
+// Off the menu, not gone: each is walked by its address in the events leg above.
+const HIDDEN_BY_ORG_DEFAULT = new Set(((/export const ORG_DEFAULT_HIDDEN\s*=\s*\[([^\]]*)\]/.exec(
+  fs.readFileSync(path.join(ROOT, "client", "src", "lib", "navGroups.js"), "utf8")) || [0, ""])[1].match(/"([^"]+)"/g) || []).map(x => x.slice(1, -1)));
 const DEMO = { email: "director@harborlight.demo", password: "demo-harbor-2026" };
 
 // What counts as "on fire". Three things are noise on the local stack and
@@ -1559,6 +1563,7 @@ async function donorScreensSayNothingWrong(browser) {
       // that is the product working. Anything else has genuinely lost its
       // way into the app and is a failure.
       if (HIDDEN_FOR_CRM.has(id)) { console.log(`  SKIP  tab ${id} — hidden from the CRM for this org (tabRegistry CRM_HIDDEN_TABS)`); continue; }
+      if (HIDDEN_BY_ORG_DEFAULT.has(id)) { console.log(`  SKIP  tab ${id} — off every org's menu by default (navGroups ORG_DEFAULT_HIDDEN)`); continue; }
       ok(`tab ${id} — reachable from the nav`, false, "no nav button whose label is " + label);
       continue;
     }

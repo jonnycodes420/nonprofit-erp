@@ -31,7 +31,8 @@ import { TABS, BOTTOM_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS, FR_PART_TABS, leg
 // NAV-1 — the rail is GROUPS now, and the groups live in one JSX-free module
 // beside the registry. PRIMARY_NAV / MORE_NAV / NAV_MORE_KEY are gone with the
 // "More" fold they described.
-import { navLayout, flattenNav, moveNavItem, reorderWithin, setNavVisible } from "./lib/navGroups";
+import { personNavLayout, flattenNav, moveNavItem, reorderWithin, setNavVisible } from "./lib/navGroups";
+import { routeAuctions } from "./lib/navMoves";   // NAV-1 (menu): Auctions live in Events
 import { NavIcon, NAV_ICON_SIZE } from "./components/NavIcon";
 import { openRecentChanges } from "./components/RecentChanges";
 import { retryImport } from "./lib/lazyRetry";
@@ -184,6 +185,7 @@ function AppShell() {
   // Customize dialog read. A failure to load is silent and means the default
   // rail — nobody's navigation is blocked by a preference that would not fetch.
   const [navSaved,setNavSaved]=useState(null);
+  const [navOrg,setNavOrg]=useState(null);   // NAV-1 (menu): the org's layer, its Major Gifts tabs, hasP2p (server/org/menu.js)
   const [navCustomizeOpen,setNavCustomizeOpen]=useState(false);
   const [navError,setNavError]=useState("");
   useEffect(()=>{
@@ -192,8 +194,12 @@ function AppShell() {
     // default rail, never a blank one. The rail is not held back until this
     // lands — a nav that is not there yet is worse than one that settles.
     apiFetch("/me/nav-layout")
-      .then(r=>setNavSaved(Array.isArray(r?.layout)?r.layout:null))
+      .then(r=>{setNavSaved(Array.isArray(r?.layout)?r.layout:null);setNavOrg(r?.org||null);})
       .catch(()=>{});
+    // NAV-1 (menu): Settings → Menu / Major gifts saved; the rail follows without a reload
+    const onOrgMenu=e=>setNavOrg(e.detail||null);
+    window.addEventListener("steward:org-menu",onOrgMenu);
+    return ()=>window.removeEventListener("steward:org-menu",onOrgMenu);
   },[]);
 
   const [billing,setBilling]=useState(null);
@@ -325,6 +331,7 @@ function AppShell() {
     // Atlas open; its "What changed" is Recent changes, and its Guardrails
     // are Settings > Atlas.
     if(t==="settings"&&opts?.section==="agent")opts={...opts,section:"atlas"};
+    {const mv=routeAuctions(t,opts);if(mv.tab!==t&&how?.fromUrl)routerNavigate(tabHref(mv.tab,mv.opts),{replace:true,state:{internal:true}});({tab:t,opts}=mv);}   // NAV-1 (menu)
     const lg=legacyTab(t);
     if(lg){
       const view=opts?.agentView;
@@ -600,7 +607,8 @@ function AppShell() {
   // The canonical layout, every item in it, before the org's plan has a say.
   // Every SAVE is written against this one, so a preference about an item this
   // plan happens to hide is kept rather than quietly dropped.
-  const navFull=navLayout(navSaved,{role:navRole});
+  // NAV-1 (menu): the org's layer under the person's (lib/navGroups.js personNavLayout).
+  const navFull=personNavLayout(navSaved,navOrg?.layout||null,{role:navRole});
   const navGroups=(isPortalTier
     ?[{id:"start",label:null,bottom:false,items:[{id:"dashboard",visible:true},{id:"donors",visible:true},{id:"portal",visible:true}]},
       {id:"bottom",label:null,bottom:true,items:[{id:"settings",visible:true}]}]
@@ -611,7 +619,8 @@ function AppShell() {
   const navVisible=navGroups.map(g=>({...g,items:g.items.filter(i=>i.visible)}));
   const navLabelOf=id=>(TABS.find(t=>t.id===id)||{}).label||id;
   const saveNav=next=>{
-    const flat=flattenNav(next);
+    // the person's own choice for what the org hid, never the org's hide
+    const flat=flattenNav((next||[]).map(g=>({...g,items:g.items.map(i=>i.orgHidden?{...i,visible:i.mine!==false}:i)})));
     setNavSaved(flat);
     setNavError("");
     apiFetch("/me/nav-layout",{method:"PUT",body:JSON.stringify({layout:flat})})
@@ -622,7 +631,7 @@ function AppShell() {
   // is offering a tab that is not there. A hidden-by-plan item keeps whatever
   // the saved layout says about it, untouched, so it comes back as it was if
   // the plan changes.
-  const navEdit=navGroups;
+  const navEdit=navGroups.map(g=>({...g,items:g.items.filter(i=>!i.orgHidden)}));   // NAV-1 (menu): what the org hid is the org's switch
   const resetNav=()=>{
     setNavSaved(null);
     setNavError("");
@@ -1058,8 +1067,8 @@ function AppShell() {
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
       {tab==="reports"&&<Reports key={navNonce} appData={data} onNavigate={navigateTo} initialReport={reportsIntent?.report} initialParams={reportsIntent} initialSavedReport={reportsIntent?.savedReport}/>}
       {tab==="fundraising"&&<AtlasNote place="gifts" onNavigate={navigateTo}/>}
-      {tab==="majorgifts"&&canMG===true&&<MajorGiftsPage key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={mgIntent?.view} initialScope={mgIntent?.scope}/>}
-      {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} isAdmin={auth?.user?.role==="admin"} onNavigate={navigateTo} initialSection={fundraisingIntent?.section} initialScope={pipelineIntent?.scope}/>}
+      {tab==="majorgifts"&&canMG===true&&<MajorGiftsPage key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={mgIntent?.view} initialScope={mgIntent?.scope} views={navOrg?.mgViews}/>}
+      {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} isAdmin={auth?.user?.role==="admin"} onNavigate={navigateTo} initialSection={fundraisingIntent?.section} initialScope={pipelineIntent?.scope} hasP2p={navOrg?navOrg.hasP2p:undefined}/>}
       {/* FIX-4 2 — the builder, in its own room. The SAME component Settings
           renders, with the page header every other screen has around it; the
           Settings section is untouched, so both doors open the same thing. */}
