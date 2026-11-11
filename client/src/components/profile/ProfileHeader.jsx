@@ -290,7 +290,7 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
             </Modal>}
             {deceasedOpen==="mark"&&<MarkDeceasedModal donor={donor} onClose={()=>setDeceasedOpen(null)} onDone={()=>{loadDpThread();loadRel();if(onInteractionAdded)onInteractionAdded();}} onClosed={onRecordChanged}/>}
             {deceasedOpen==="undo"&&<UndoDeceasedModal donor={donor} onClose={()=>setDeceasedOpen(null)} onDone={()=>{loadDpThread();loadRel();if(onInteractionAdded)onInteractionAdded();}} onClosed={onRecordChanged}/>}
-            {planOpen&&<PlanFollowUpModal donor={{id:donor.id,name:donor.name}}
+            {planOpen&&<PlanFollowUpModal donor={{id:donor.id,name:donor.name}} openStep={dpThread&&dpThread.kind==="thread"?{id:dpThread.id,label:(dpThread.nextStep||{}).label||"",due:String((dpThread.nextStep||{}).due||"").slice(0,10)}:null}
               onSaved={()=>loadDpThread()} onClose={()=>setPlanOpen(false)}/>}
           </div>
       </div>

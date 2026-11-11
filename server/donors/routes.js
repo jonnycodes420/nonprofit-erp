@@ -555,6 +555,7 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
     // the usual gap (rhythm.js nextGift), "Due now" once that day has passed.
     const nextGift = aR && aR.nextGift ? String(aR.nextGift).slice(0, 10) : exp;
     rhythm = { sentence: said, expectedNext: nextGift, dueNow: !!(aR && aR.dueNow), late: !!aR.late, source: lifetimeSrc };
+    rhythm = await require("./rhythmUnit").rhythmForUnit(query, orgId, id, rhythm, today);   // FLOWS-6: the tag's giving unit
   }
 
   // RECURRING: a monthly plan Steward charges, else a schedule in a source.
