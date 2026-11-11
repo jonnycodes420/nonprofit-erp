@@ -26,15 +26,10 @@ const path = require("path");
 // dist; that shard carried 2,095 s of PR #294's 2,770 s. Now a browser suite
 // is balanced like any other, and the plan names the shards that hold one
 // (`browserShards`), so tests/run-all.sh builds a dist for each of them.
-// Detected by reading the suite files, never a hand-kept list. The net is
-// wide on purpose: a non-browser suite flagged here only costs a dist.
-const NEEDS_DIST = /playwright|client\/dist|"client",\s*"dist"|lib\/dist/;
-function needsDist(name) {
-  try { return NEEDS_DIST.test(fs.readFileSync(path.join(__dirname, "..", "..", "tests", `${name}.test.js`), "utf8")); }
-  catch { return false; }
-}
+// Detected by reading the suite files (tests/lib/suites.js `needsDist`, which
+// `npm run affected` shares), never a hand-kept list.
 // `// battery: last` suites (the load-heavy ones) run after the rest of their shard.
-const { MARK } = require("../../tests/lib/suites");
+const { MARK, needsDist } = require("../../tests/lib/suites");
 function isLast(name) {
   try { const m = fs.readFileSync(path.join(__dirname, "..", "..", "tests", `${name}.test.js`), "utf8").match(MARK); return !!m && m[1] === "last"; }
   catch { return false; }
