@@ -30,6 +30,7 @@ const AN = require("../server/atlas/answers");   // ATLAS-3: lists, people, an u
 const PG = require("../server/atlas/progress");   // ATLAS-3: the status line, one step at a time
 const DS = require("../server/atlas/draftStream");   // SPEED-3: a draft's words as they are written
 const GT = require("../server/atlas/givingTotal");   // TRUTH-3: amounts and counts in code, each person resolved
+const GR = require("../server/atlas/grounded");   // ATLAS-6: periods, org facts, compound questions, and no ungrounded figure
 const WT = require("../server/atlas/waiting");   // ATLAS-5: every waiting item can be let go
 const ADm = () => import("../shared/atlasDates.js");   // ATLAS-5: dates in code, in the org's day
 
@@ -424,6 +425,12 @@ async function addCard(orgId, memoId, card) {
 }
 
 // ATLAS-3: what a line answered (a list, a person), kept with the request.
+// ATLAS-6: the facts an Ask answer carries under its sentence (not the sentence itself).
+function answerFacts(body) {
+  if (!body || typeof body !== "object") return {};
+  const a = body.answer && typeof body.answer === "object" ? (({ sentence, ...rest }) => rest)(body.answer) : {};
+  return a;
+}
 async function saveAnswer(orgId, memoId, actionId, answer) {
   const [x] = await query("SELECT read FROM voice_memos WHERE id=? AND org_id=?", [memoId, orgId]);
   const read = j(x && x.read) || {};
@@ -664,6 +671,18 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         await log({ kind: "found", state: "done", line: `Here's ${nm(id)}.`, ...person(id) });
         break;
       case "giving_total": {
+        // ATLAS-6: a period's amount reads that period (shared/numbers), each gift quoted from its row;
+        // a forecast says what is known instead. Lifetime only when no period was named.
+        if (st.period && (st.donorIds || []).length) {
+          const pa = await GR.periodAnswer(query, orgId, st.donorIds, st.period, today);
+          const miss6 = (st.missing || []).length ? ` I couldn't find ${st.missing.join(" or ")} in Steward.` : "";
+          const first6 = pa.people[0] ? pa.people[0].name.split(/\s+/)[0] : "they";
+          const fy6 = pa.people.reduce((x, p) => x + p.cents, 0);
+          const line6 = st.predict ? `I can't predict next year's giving, but ${fy6 > 0 ? `${first6} gave ${GT.usd(fy6)} ${st.period.words}` : `${first6} hasn't given anything ${st.period.words}`}.` : pa.sentence + miss6;
+          const aid6 = await log({ kind: "answer", state: "done", line: line6, ...(pa.people.length === 1 ? person(pa.people[0].id, { section: "giving" }) : {}) });
+          await saveAnswer(orgId, m.id, aid6, { type: "giving", period: pa.period, rows: pa.rows, definition: pa.definition });
+          break;
+        }
         // TRUTH-3: every figure from shared/numbers, the sum in code.
         const ppl = await GT.figuresFor(query, orgId, st.donorIds || []);
         const miss = (st.missing || []).length ? ` I couldn't find ${st.missing.join(" or ")} in Steward, so ${st.missing.length === 1 ? "that name is" : "those names are"} not in it.` : "";
@@ -672,6 +691,12 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
           ...(ppl.length === 1 ? person(ppl[0].id, { section: "giving" }) : {}) });
         break;
       }
+      case "setting_fact": {   // ATLAS-6: from the org's settings and the team's titles, never a lookup that can't find them
+        const of6 = await GR.orgFactAnswer(query, orgId, st.fact);
+        await log({ kind: "answer", state: "done", line: of6 ? of6.sentence : "I couldn't read that from your settings just now." });
+        break;
+      }
+      case "cant_know": await log({ kind: "answer", state: "done", line: st.line }); break;   // ATLAS-6: said plainly, never the question echoed
       case "top100": await log(await require("../server/majorGifts/top100Atlas").answer({ req, query, step: st, today, top100Rows: require("../server/majorGifts/top100").top100Rows })); break;   // TOP100-1
       case "about": {
         // ATLAS-3: what Steward knows about them, not only their numbers.
@@ -704,7 +729,10 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
           break;
         }
         const said0 = r.status < 300 && r.body && (r.body.sentence || (r.body.answer && r.body.answer.sentence) || r.body.headline);
-        const said = AT_.plainCant(st.target || st.words, said0) || said0;   // ATLAS-5: plain words when Ask can't answer
+        const said1 = AT_.plainCant(st.target || st.words, said0) || said0;   // ATLAS-5: plain words when Ask can't answer
+        // ATLAS-6: every amount and date in the sentence is one Ask read, or the template goes instead.
+        const read6 = r.body && typeof r.body === "object" ? (({ sentence, headline, answer, ...rest }) => rest)(r.body) : {};
+        const said = said1 && r.status < 300 && said1 !== said0 ? said1 : said1 ? GR.groundedReply(String(said1), GR.factsOf(read6, answerFacts(r.body)), r.body.template || "Here's what I found. Open it in Ask for the details.").sentence : said1;
         if (said) PG.words(req, String(said));   // SPEED-3: the answer's sentence shows while the list is read
         // ATLAS-3: a set of people comes back as the people, with the count and why each matched.
         const list = r.status < 300 ? await AN.listAnswer({ ask: r.body, query, orgId, asHer, req, today }).catch(e => { console.error("[atlas] list:", e.message); return null; }) : null;
@@ -824,6 +852,13 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   // whatever the read made of it. Never /ask with the names run together.
   const gq = GT.parseGivingQuestion(text);
   if (gq) read.steps = [{ kind: "giving_total", who: gq.names.join(" and "), whos: gq.names, words: text }];
+  // ATLAS-6: a period, an org fact, a thing Steward doesn't keep, a forecast, and
+  // each part of a compound question, read in code (server/atlas/grounded.js).
+  {
+    const [AT6, D6, [o6]] = await Promise.all([AT(), import("../shared/atlasDates.js"), query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId])]);
+    const q6 = GR.questionSteps(text, { today, org: o6 || {}, A: AT6, D: D6 });
+    if (q6) read.steps = q6;
+  }
   const t1 = Date.now();
   PG.lap(req, "read");
   const { steps, questions } = await resolveAll(orgId, read.steps, { today, onPage, all });
