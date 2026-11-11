@@ -168,6 +168,14 @@ app.post("/org-summary/check", requireAuth, wrap(async (req, res) => {
   const out = await require("../orgSummary").checkAll({ orgId: req.user.orgId, log: { error: m => lines.push(m), log: m => lines.push(m) } });
   res.json({ ...out, lines });
 }));
+// REPORTS-SPEED-1, TEST_MODE only: the nightly pass over Retention, Annual and
+// SYBUNT for the caller's org (recompute, compare with what was stored, store).
+app.post("/org-summary/stored-reports/check", requireAuth, wrap(async (req, res) => {
+  if (!testMode()) return res.status(404).json({ error: "Not found" });
+  const lines = [];
+  const out = await require("../server/reports/storedReports").nightly({ orgId: req.user.orgId, log: { error: m => lines.push(m), log: m => lines.push(m) } });
+  res.json({ ...out, lines });
+}));
 }
 
 module.exports = { routers, mount, HOME_READS, PROFILE_READS };

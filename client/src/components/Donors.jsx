@@ -44,6 +44,7 @@ import { PLAN_UNKNOWN } from "../lib/entitlement";
 import { useNavigate } from "react-router-dom";
 import { donorHref, donorsListHref, donorsListState } from "../lib/appUrls";
 import { retryImport } from "../lib/lazyRetry";
+import { isAbort } from "../lib/leaving";   // FLAKE-3
 
 // PERF-4: the spreadsheet reader (113 KB) and the old-reports wizard are their
 // own chunks, loaded when one of their windows opens, so the Donors list and a
@@ -268,7 +269,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         setDirPeopleShown(r.role||dirPeople||"donors");
         setDirRowsFor(dirSearch.trim());
       }catch(e){
-        if(cancelled)return;
+        if(cancelled||isAbort(e))return;   // FLAKE-3: the page was left mid-read; nobody to tell
         setDirWant("");   // LIST-2: an answer came back, even if it was a refusal: no longer updating
         // LIST-1: a filter the server cannot run says why, in its own sentence.
         if(e&&e.status===400&&(e.error==="bad_filter"||e.sentence)){setFilterError(e.sentence||"That filter could not be run.");setDirRows([]);setDirTotal(0);return;}

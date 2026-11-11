@@ -5,6 +5,7 @@ import { inSupport, leaveSupport } from "./lib/supportSession";   // FIX-57
 import { bundlePath } from "./lib/homeReads";   // PERF-2
 import { announce, kindsOfWrite, onAnyChange } from "./lib/changes";   // STALE-1: one refresh, everywhere
 import { portfolioBefore, portfolioAfter } from "./lib/portfolioRoutes.js";   // ACCESS-2B
+import { abortIfLeaving } from "./lib/leaving.js";   // FLAKE-3
 
 // GRANTS-1: one adapter for a legacy grant row, used by the first load and by
 // the Grants screen when it opens a grant created since (a planned renewal).
@@ -337,7 +338,7 @@ async function apiFetchNow(path, options = {}) {
       ...(token && { Authorization: `Bearer ${token}` }),
       ...options.headers,
     },
-  });
+  }).catch(e => { throw abortIfLeaving(e); });   // FLAKE-3: cut off by leaving the page is an AbortError
   portfolioAfter(res);   // ACCESS-2B
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));

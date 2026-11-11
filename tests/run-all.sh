@@ -335,9 +335,14 @@ if [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; then
     bapi=$(( ${SHARD_PORT_BASE:-5700} + 10 * i ))
     if [ -z "$first_bshard" ]; then
       first_bshard="$i"
-      node scripts/ci/dist-fresh.js --rebuild --api "http://localhost:$bapi" \
-        || echo "[run-all] WARNING: the client build failed — the browser legs will skip"
-      DIST_FOR[$i]="client/dist"
+      if node scripts/ci/dist-fresh.js --rebuild --api "http://localhost:$bapi"; then
+        DIST_FOR[$i]="client/dist"
+      else
+        echo "[run-all] WARNING: the client build failed — the browser legs will skip"
+        # FLAKE-3: under `npm run affected` an old client/dist (built for some
+        # other API) is never served: no build, so its browser suites skip.
+        if [ -n "${SHARD_BROWSER_SUITES:-}" ]; then DIST_FOR[$i]=".generated/dist/none"; else DIST_FOR[$i]="client/dist"; fi
+      fi
     else
       fapi=$(( ${SHARD_PORT_BASE:-5700} + 10 * first_bshard ))
       node scripts/ci/dist-for-shard.js --from client/dist --to ".generated/dist/shard-$i" \

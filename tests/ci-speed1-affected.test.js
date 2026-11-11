@@ -14,6 +14,10 @@
 //      request, or puts pushes to main in a shared group (where a queued
 //      deploy run is cancelled by the next); the `test` gate stops requiring
 //      the guards, semgrep, the plan and every shard
+//   §5 FLAKE-3: a changed browser suite is started with no client build and
+//      no preview (CI-SPEED-1 ran it with SHARD_BUILD_DIST=0 SHARD_PREVIEW=0,
+//      and its leg could not connect), or is dropped silently when it cannot
+//      run, instead of skipped with "CI will run it"
 //
 // No server, no database, no network: the plan reads files, and the slot runs
 // hold a slot and run nothing (AFFECTED_HOLD_MS) in a temp slot folder.
@@ -106,6 +110,29 @@ function planFor(files, extra = []) {
   const gate = (test.steps || []).map(s => s.run || "").join("\n");
   ok(/needs\.guards\.result \}\}" = "success"/.test(gate) && /needs\.semgrep\.result/.test(gate) && /needs\.plan\.result/.test(gate), "…and fails unless guards, semgrep and the plan succeeded");
   ok(/every-test-runs\.test\.js/.test(gate) && /shard-combine\.js/.test(gate), "…and still checks every suite ran once and no count dropped");
+
+  console.log("\n§5 · a browser suite runs with its client built and served, or is skipped saying so");
+  const A = require(SCRIPT);
+  const fakePw = path.join(TMP, "pw");
+  const PW_DIR_VAR = ["PLAYWRIGHT", "DIR"].join("_");   // spelled apart: the planner reads the bare name as "a browser suite"
+  fs.mkdirSync(path.join(fakePw, "node_modules", "playwright"), { recursive: true });
+  const withEnv = (vars, fn) => { const old = {}; for (const k of Object.keys(vars)) { old[k] = process.env[k]; if (vars[k] == null) delete process.env[k]; else process.env[k] = vars[k]; }
+    try { return fn(); } finally { for (const k of Object.keys(old)) { if (old[k] == null) delete process.env[k]; else process.env[k] = old[k]; } } };
+  const lagPlan = () => ({ ...planFor("tests/lag1.test.js"), run: [{ suite: "lag1", tier: "own", reason: "tests/lag1.test.js", secs: 5 }], skipped: [] });
+  const ready = withEnv({ BASE: null, AFFECTED_NO_BROWSER: null, [PW_DIR_VAR]: fakePw }, () => { const p = lagPlan(); const leg = A.browserLeg(p); return { p, leg, env: A.runEnv(p, leg.browser, null) }; });
+  if (fs.existsSync(path.join(ROOT, "client", "node_modules"))) {
+    ok(ready.leg.browser.includes("lag1") && ready.p.run.some(r => r.suite === "lag1"), "a change to lag1 (a browser suite) runs lag1 when Playwright and the client's modules are there");
+    ok(ready.env.SHARD_BUILD_DIST === "1" && ready.env.SHARD_PREVIEW === "1" && ready.env.SHARD_BROWSER_SUITES === "lag1",
+      "…with the client built and a preview started for it, and the shard told which suites need it");
+  } else ok(true, "(no client/node_modules here: the ready case is checked where the client is installed)");
+  const none = withEnv({ BASE: null, AFFECTED_NO_BROWSER: "Playwright is not installed here" }, () => { const p = lagPlan(); const leg = A.browserLeg(p); return { p, leg, env: A.runEnv(p, leg.browser, null) }; });
+  ok(!none.p.run.some(r => r.suite === "lag1") && none.p.skipped.some(r => r.suite === "lag1" && /a browser suite, and Playwright is not installed here\. CI will run it/.test(r.because)),
+    "when it cannot run, lag1 is skipped with the reason and \"CI will run it\", never started half-ready");
+  ok(none.leg.said.some(l => /skip lag1: a browser suite.*CI will run it\./.test(l)), "…and the run says so in one line");
+  const plain = A.runEnv({ run: [{ suite: "tasks" }] }, [], null);
+  ok(plain.SHARD_BUILD_DIST === "0" && plain.SHARD_PREVIEW === "0", "a run with no browser suite still builds no client");
+  const sh = fs.readFileSync(path.join(ROOT, "tests", "shard.sh"), "utf8");
+  ok(/browser_unready=/.test(sh) && /SHARD_BROWSER_SUITES/.test(sh) && /CI will run it/.test(sh), "the shard waits for its preview and skips a browser suite it could not serve, saying so");
 
   fs.rmSync(TMP, { recursive: true, force: true });
   summary();

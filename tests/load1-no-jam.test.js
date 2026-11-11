@@ -12,11 +12,18 @@
 //      the limit, never a hang, and the statement is gone after it
 // Planted: the statement timeout removed (requestLimits.align sets 0) turns
 // §2 red; the cancel removed (close() skips cancelBackend) turns §1 red.
+// FLAKE-3: a read abandoned while still in requireAuth ran its statement later
+// with no limit (requestLimits.refuseIfAbandoned); planted (checkout reads
+// live() only, as before), §1 leaves sleeps running on most runs. The suite
+// reads Postgres on a pool of its own, counts only statements this run
+// started, and cancels every planted sleep in its teardown, pass or fail, so
+// one red run never leaves 60 s statements behind for the next.
 const { spawn } = require("child_process");
 const path = require("path");
 const net = require("net");
 const bcrypt = require("bcryptjs");
-const { ok, summary, q, closeDb } = require("./helpers");
+const { Pool } = require("pg");
+const { ok, summary } = require("./helpers");
 
 const ROOT = path.join(__dirname, "..");
 const RUN = Math.random().toString(36).slice(2, 8);
@@ -25,12 +32,20 @@ const PW = "loadtest1234";
 const LIMIT_MS = 3000;
 const freePort = () => new Promise(res => { const s = net.createServer(); s.listen(0, () => { const p = s.address().port; s.close(() => res(p)); }); });
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-// Statements the planted route left running, by the marker only it sends.
+// The suite's own pool: two connections, ended in the teardown.
+const pool = new Pool({ connectionString: process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest", max: 2,
+  ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false } });
+const q = async (sql, args) => (await pool.query(sql, args)).rows;
+const PLANTED = `datname = current_database() AND state = 'active' AND query LIKE 'SELECT pg_sleep($1) AS slept%'`;
+let runStart = null;   // the database's clock when this run began
+// Statements the planted route left running, by the marker only it sends,
+// started by this run (an earlier run's leftovers are the teardown's, not ours).
 const sleeping = async () => Number((await q(`SELECT COUNT(*)::int AS n FROM pg_stat_activity
-  WHERE datname = current_database() AND state = 'active' AND query LIKE 'SELECT pg_sleep($1) AS slept%'`))[0].n);
+  WHERE ${PLANTED} AND query_start >= $1`, [runStart]))[0].n);
 let child = null;
 
 (async () => {
+  runStart = (await q(`SELECT clock_timestamp() AS t`))[0].t;
   for (const o of ORGS) {
     await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at)
              VALUES ($1,'Load One Jam',$2,1,'active','team','America/New_York',NOW())`, [o.id, o.id.replace(/_/g, "-")]);
@@ -66,6 +81,10 @@ let child = null;
   }
   await sleep(150);
   const peak = await sleeping();
+  // FLAKE-3: the 8 s starts once every read is abandoned (300 ms), as the
+  // header says. A /me sent at 150 ms waits, rightly, for the ten connections
+  // the slow reads still hold (279 ms once in 30 on a busy laptop).
+  await sleep(250);
   const times = [];
   const until = performance.now() + 8000;
   while (performance.now() < until) {
@@ -92,10 +111,14 @@ let child = null;
   ok("/health.pool counts the cancels and the timeout", h.pool && h.pool.limits && h.pool.limits.cancelled >= 1 && h.pool.limits.statementTimeouts >= 1, h.pool && h.pool.limits);
 })().catch(e => ok("suite ran", false, e.stack)).finally(async () => {
   if (child) { child.kill("SIGTERM"); await new Promise(r => { child.once("exit", r); setTimeout(r, 8000); }); }
+  // A killed server's statements keep running in Postgres: cancel every
+  // planted sleep, this run's or a red run's before it.
+  const left = await q(`SELECT pg_cancel_backend(pid) AS c FROM pg_stat_activity WHERE ${PLANTED}`).catch(() => []);
+  if (left.length) console.log(`  (teardown cancelled ${left.length} planted statement(s))`);
   for (const o of ORGS) {
     await q(`DELETE FROM users WHERE org_id = $1`, [o.id]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id = $1`, [o.id]).catch(() => {});
   }
-  await closeDb();
+  await pool.end().catch(() => {});
   summary();
 });
