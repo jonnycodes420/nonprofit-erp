@@ -56,6 +56,8 @@ jobs:
       PLAYWRIGHT_DIR: ${{ github.workspace }}/.playwright
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
       REQUIRE_BROWSER: "1"
+      # FLAKE-4: Repeat counts every red run, so the battery's one retry is off here.
+      SHARD_RETRY: "0"
       SUITE: ${{ matrix.suite }}
       COUNT: ${{ inputs.count || '30' }}
     steps:

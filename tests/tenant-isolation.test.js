@@ -1,4 +1,5 @@
 // SECURITY §1 — cross-tenant isolation suite.
+// @no-retry (FLAKE-4): a cross-tenant leak that shows one run in two is still a leak.
 // Local scratch server + Postgres (tests/README.md recipe). No external creds.
 //
 // The whole point of this file: authenticate as ORG A and prove A can neither
