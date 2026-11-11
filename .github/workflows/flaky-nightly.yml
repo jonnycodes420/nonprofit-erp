@@ -1,0 +1,67 @@
+# FLAKE-4 · THE NEXT FLAKE BUILD'S INPUT.
+#
+# Every CI run's `test` gate uploads flaky.json: the suites that failed once and
+# passed on their retry (tests/lib/run-suite.sh). Each night this reads the last
+# seven days of them and lists every suite that needed its retry in 3 or more
+# runs (scripts/ci/flaky-week.js). The list goes to the job summary, an
+# artifact, and one open issue, "Flaky suites (nightly)", which is edited each
+# night rather than added to. It deploys nothing and gates nothing.
+#
+#   gh workflow run flaky-nightly.yml            (any time, once this is on main)
+name: Flaky nightly
+
+on:
+  schedule:
+    - cron: '30 9 * * *'   # 04:30 New York (EST), after the evening's builds
+  workflow_dispatch:
+    inputs:
+      min:
+        description: 'Runs in 7 days that make a suite count'
+        default: '3'
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+jobs:
+  flaky-week:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MIN: ${{ inputs.min || '3' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every CI run's flaky.json from the last 7 days
+        run: |
+          since=$(date -u -d '7 days ago' +%Y-%m-%d)
+          mkdir -p /tmp/flaky-week
+          gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --created ">=$since" --limit 1000 \
+            --json databaseId --jq '.[].databaseId' > /tmp/runs.txt
+          echo "CI runs since $since: $(wc -l < /tmp/runs.txt)"
+          while read -r id; do
+            # A run without the artifact (skipped battery, docs-only, cancelled) has nothing to say.
+            gh run download "$id" --repo "$GITHUB_REPOSITORY" -n flaky -D "/tmp/flaky-week/$id" >/dev/null 2>&1 || true
+          done < /tmp/runs.txt
+          echo "flaky.json files: $(find /tmp/flaky-week -name flaky.json | wc -l)"
+      - name: Suites flaky ${{ env.MIN }}+ times in 7 days
+        id: list
+        run: |
+          node scripts/ci/flaky-week.js --in /tmp/flaky-week --min "$MIN" --days 7 --out /tmp/flaky-week.md
+          cat /tmp/flaky-week.md >> "$GITHUB_STEP_SUMMARY"
+          if grep -q '^- `' /tmp/flaky-week.md; then echo "any=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flaky-week
+          path: /tmp/flaky-week.md
+          retention-days: 30
+      - name: Keep the one issue current
+        if: steps.list.outputs.any == 'true'
+        run: |
+          title="Flaky suites (nightly)"
+          n=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$title\"" --json number,title \
+                --jq "map(select(.title == \"$title\")) | .[0].number // empty")
+          { cat /tmp/flaky-week.md; echo; echo "_Updated $(date -u +%Y-%m-%dT%H:%MZ) by the Flaky nightly workflow (FLAKE-4)._"; } > /tmp/body.md
+          if [ -n "$n" ]; then gh issue edit "$n" --repo "$GITHUB_REPOSITORY" --body-file /tmp/body.md
+          else gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file /tmp/body.md; fi

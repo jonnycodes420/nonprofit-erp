@@ -298,6 +298,8 @@ const EXEMPT = {
   // drops `steward_shard_<n>` on the loopback scratch Postgres.
   "shard-plan": "CHORE-2 — pure scheduling: reads .generated/suite-timings.json and a list of suite NAMES, writes a plan JSON. No BASE, no DB, no network",
   "shard-report": "CHORE-2 — reads the shard result files a local run wrote and prints one summary; its only write is .generated/suite-timings.json. No BASE, no DB, no network",
+  "flaky-list": "FLAKE-4 — CI-side: reads the shard result files and writes flaky.json and the PR comment body to the paths it is given (plus the step summary). No BASE, no DB, no network, no app calls",
+  "flaky-week": "FLAKE-4 — the nightly: reads downloaded flaky.json files and prints the suites flaky 3+ times in 7 days; its only write is the --out markdown file it is given. No BASE, no DB, no network",
   "shard-combine": "CHORE-2 — CI-side: reads the shard artifacts and audit/suite-counts.json and decides whether the battery passed. Its only writes are that baseline file and (CI-2) .generated/suite-timings.json. No BASE, no DB, no app calls",
   "dist-for-shard": "CI-2 — copies a local client/dist and rewrites its loopback API origin to another shard's loopback API; both origins must be loopback and it writes only under .generated/. No BASE, no DB, no network",
   "dist-fresh": "FIX-60 item 6 — says whether client/dist was built from HEAD (and the uncommitted client edits) for a given loopback API; its only writes are the stamp file in client/dist and, with --rebuild, scripts/ops/build-local-dist.sh (loopback-only). No BASE, no DB, no network",
