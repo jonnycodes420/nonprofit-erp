@@ -53,6 +53,18 @@ const short = iso => `${MON[+iso.slice(5, 7) - 1]} ${+iso.slice(8, 10)}`;
       && !!ozzie && /^Adding them to your calls because/.test((ozzie.action || {}).why || "") && /\$600/.test(ozzie.action.why),
     { nell: nell && nell.action, ozzie: ozzie && ozzie.action, n: moves.length });
 
+  // §7 a deck stored before FLOWS-6 (no why on its moves) still answers with one (staging, 11 Nov)
+  const stored = await q(`SELECT as_of, body FROM stored_insights WHERE org_id=$1 ORDER BY as_of DESC LIMIT 1`, [f.org]);
+  if (stored[0]) {
+    const body = typeof stored[0].body === "string" ? JSON.parse(stored[0].body) : stored[0].body;
+    for (const t of ((body.deck || {}).tabs || [])) for (const m of t.moves || []) if (m.action) delete m.action.why;
+    await q(`UPDATE stored_insights SET body=$1, built_at=built_at + interval '1 second' WHERE org_id=$2 AND as_of=$3`, [typeof stored[0].body === "string" ? JSON.stringify(body) : body, f.org, stored[0].as_of]);
+  }
+  const old = ((await api("GET", "/insights?view=deck", tok)).body || {}).deck || {};
+  const oldMoves = (old.tabs || []).flatMap(t => t.moves || []);
+  ok("§7 a deck stored before the why existed still gives every move its why on Home's read",
+    !!stored[0] && oldMoves.length > 0 && oldMoves.every(m => /because/.test((m.action || {}).why || "")), { stored: !!stored[0], n: oldMoves.length, first: oldMoves[0] && oldMoves[0].action });
+
   // ── the browser ──────────────────────────────────────────────────────────
   const why = (() => {
     if (!fs.existsSync(path.join(DIST, "assets"))) return "client/dist not built";

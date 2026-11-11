@@ -44,4 +44,14 @@ function actionWhy(kind, act, it) {
   return `${verb} because ${lower1(it.what) || "this is the move for them now"}.`;
 }
 
-module.exports = { actionWhy, CALL_AT };
+// A deck stored before FLOWS-6 (server/insights/store.js keeps each day's)
+// has moves with no why; Home read it on staging and the hover was empty. A
+// read fills any move that lacks one, from the same move's facts.
+function fillWhy(deck) {
+  if (!deck || !Array.isArray(deck.tabs)) return deck;
+  for (const t of deck.tabs) for (const m of t.moves || [])
+    if (m && m.action && !m.action.why) m.action.why = actionWhy(m.kind, m.action.key, m);
+  return deck;
+}
+
+module.exports = { actionWhy, fillWhy, CALL_AT };
