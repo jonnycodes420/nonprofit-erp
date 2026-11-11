@@ -436,7 +436,9 @@ async function recordGift(o) {
                 // MONEY-4: a refund is a negative row linked to the gift it refunds, with why.
                 "refund_of", "refund_reason",
                 // QUICKADD-1: the appeal that brought the gift in (campaign is the goal).
-                "appeal_id"];
+                "appeal_id",
+                // TRUTH-6: a gift dated after today is scheduled (shared/numbers/scheduled.js), by every door.
+                "scheduled_on"];
   const vals = [giftId, orgId, o.donorId, amount, date, o.type || "cash", o.campaign || "",
                 o.campaignId || null, o.notes || "", fundId, paymentMethod, o.pledgeId || null,
                 o.externalId || null, o.idempotencyKey || null, o.stripePaymentId || null,
@@ -457,7 +459,8 @@ async function recordGift(o) {
                 o.importId || null, o.checkNumber ? String(o.checkNumber).slice(0, 24) : null, o.readFromVendor || null,
                 o.receivedAt || null, o.memo ? String(o.memo).slice(0, 300) : null, o.eventId || null,
                 o.refundOf || null, o.refundOf ? String(o.refundReason || "").slice(0, 300) : null,
-                o.appealId || null];
+                o.appealId || null,
+                date ? require("../../shared/numbers/scheduled").scheduledOn(date, o.today || orgToday(await orgTz(orgId))) : null];   // ORG_TZ_SEAM_OK
   // The conflict key is the caller's, because what makes a gift the SAME gift
   // differs by door: Stripe's payment intent, the form's idempotency key, the
   // source system's gift id. One of them, never a guess at (donor, amount, date)

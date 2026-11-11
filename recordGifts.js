@@ -37,7 +37,8 @@ const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
 const COLS = ["id", "org_id", "donor_id", "amount", "date", "type", "campaign", "notes", "fund_id", "payment_method", "pledge_id",
   "idempotency_key", "created_by", "created_by_name", "import_id", "event_id", "gift_type",
   // ASKS-1: an auction purchase states what the item was worth, as recordGift does
-  "deductible_amount", "quid_pro_quo_desc", "quid_pro_quo_value"];
+  "deductible_amount", "quid_pro_quo_desc", "quid_pro_quo_value",
+  "scheduled_on"];   // TRUTH-6: dated after today is scheduled (shared/numbers/scheduled.js), as in recordGift
 const RESTRICTED = ["program_restricted", "capital", "time_restricted"];
 
 function refuse(o) {
@@ -94,7 +95,8 @@ async function recordGifts(list, deps) {
     // recordGift's own rule: deductible is what was paid over the value received, never below zero
     r.o.quidProQuoValue != null ? round2(Math.max(0, r.amount - Number(r.o.quidProQuoValue))) : null,
     r.o.quidProQuoValue != null ? String(r.o.quidProQuoDesc || "").slice(0, 300) : null,
-    r.o.quidProQuoValue != null ? round2(Number(r.o.quidProQuoValue)) : null]);
+    r.o.quidProQuoValue != null ? round2(Number(r.o.quidProQuoValue)) : null,
+    r.date ? require("./shared/numbers/scheduled").scheduledOn(r.date, r.o.today || today) : null]);
   const made = new Set((await query(
     `INSERT INTO gifts (${COLS.join(",")}) VALUES ${rows.map(() => "(" + COLS.map(() => "?").join(",") + ")").join(",")}
      ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id`, vals)).map(r => r.id));

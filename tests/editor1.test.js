@@ -104,7 +104,8 @@ async function fixture(org, slug, name, mission) {
   const h = asMaria.body.html || "";
   ok("§2 previewed as a real person: the preview says whose it is", asMaria.body.as && asMaria.body.as.id === "d_e1_maria", asMaria.body.as);
   ok("§2 a field is a chip that keeps its field and shows her value", /<span class="st-chip" data-st-token="first_name"[^>]*>Maria<\/span>/.test(h), (h.match(/<span class="st-chip"[^>]*>[^<]*<\/span>/g) || []).slice(0, 3));
-  ok("§2 her own last gift fills the gift field", /data-st-token="gift_amount"[^>]*>\$125/.test(h), (h.match(/data-st-token="gift_amount"[^>]*>[^<]*/) || [])[0]);
+  // TRUTH-6: the first-gift thank-you names her first gift (her only one, $125).
+  ok("§2 her own gift fills the gift field", /data-st-token="first_gift_amount"[^>]*>\$125/.test(h), (h.match(/data-st-token="[a-z_]*gift_amount"[^>]*>[^<]*/) || [])[0]);
   ok("§2 the words are marked to be typed in", /data-st-edit="\d+\.blocks"/.test(h));
   const plain = await api("POST", `/email-templates/${tid}/preview`, TOK, {});
   ok("§2 a plain preview carries no marks and no chips", !/data-st-edit|st-chip/.test(plain.body.html || ""), (plain.body.html || "").length);

@@ -164,7 +164,7 @@ const gift = async (tok, donor, body) => { const r = await api("POST", `/donors/
   const rc2 = await api("POST", `/gifts/${g200.id}/receipt`, tok, { send: false });
   await api("PUT", `/gifts/${g200.id}`, tok, { amount: 0 });
   const zero = ((await api("GET", `/donors/${MAR}/receipts`, tok)).body || []).find(r => r.id === rc2.body.id) || {};
-  ok("§4 a receipt against a $0 gift says a $0 gift can't carry one", zero.drift && zero.drift.zero === true && /a \$0 gift can't carry a receipt\. Void it\?$/.test(zero.drift.sentence), zero.drift);
+  ok("§4 a receipt against a $0 gift says a $0 gift can't carry one", zero.drift && zero.drift.zero === true && /a \$0 gift can't carry a receipt\. Void this receipt\.$/.test(zero.drift.sentence), zero.drift);
   const re0 = await api("POST", `/receipts/${rc2.body.id}/reissue`, tok, {});
   const left0 = await q(`SELECT COUNT(*)::int AS n FROM receipts WHERE gift_id=$1 AND voided_at IS NULL`, [g200.id]);
   ok("§4 for a $0 gift the click voids it and makes nothing", re0.status === 200 && re0.body.receipt === null && left0[0].n === 0, re0.body);

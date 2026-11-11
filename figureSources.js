@@ -30,6 +30,7 @@
 // amount, detail }. `date` stays ISO for a machine; `dateLabel` is what a
 // person reads ("Jan 14, 2026", shared/displayDate.js).
 "use strict";
+const SCHED_DUE = require("./shared/numbers/scheduled").DUE;   // TRUTH-6: a scheduled gift counts on its date
 
 const { query, querySetwise } = require("./db");
 const { CAMPAIGN_GIFT_MATCH } = require("./campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
@@ -403,7 +404,9 @@ function giftsWhere(p, args) {
   // TRUTH-3: a count, an average and a median are over COUNTED gifts
   // (shared/numbers/giftCount.js: hard credit, above $0), so the headline's
   // count and the average's divisor are one number. A $0 row shows in history.
-  if (p.measure === "median" || p.measure === "count" || p.measure === "mean") w += " AND g.amount > 0";
+  // TRUTH-6 (W-1107-Donors-21X): COUNTED is the whole rule, a gift refunded in
+  // full included (the header said 503 over a monthly table of 502).
+  if (p.measure === "median" || p.measure === "count" || p.measure === "mean") w += ` AND ${require("./shared/numbers/giftCount").COUNTED("g")}`;
   else w += " AND g.amount <> 0";   // TRUTH-4: a sum's rows are counted rows and refunds; a $0 row is said apart (giftCount.js)
   if (p.page === "none") w += " AND g.giving_page_id IS NULL";
   else if (p.page) { w += " AND g.giving_page_id = ?"; args.push(p.page); }
@@ -507,7 +510,7 @@ const SOURCES = {
                 FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                 ${byFund ? `JOIN ${FUND_LINES.GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id` : ""}
                 LEFT JOIN fin_funds f ON f.id = ${byFund ? "gf" : "g"}.fund_id AND f.org_id = g.org_id
-               WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}${where}`,
+               WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}${where}`,
         args,
         order: p.order === "amount" ? "amount DESC NULLS LAST, id DESC" : undefined,
         zeroOnFile: require("./shared/numbers/giftCount").zeroOnFileSql(where, args, byFund),   // TRUTH-4
@@ -527,7 +530,7 @@ const SOURCES = {
       const args = [orgId, p.from, p.to];
       // TRUTH-1: a soft or matching credit row is recognition: it is not a
       // gift, so it makes nobody a giver and is no one's first gift.
-      let where = giftsWhere({ fund: p.fund, campaign: p.campaign }, args) + ` AND ${NOT_CREDIT("g")}`;
+      let where = giftsWhere({ fund: p.fund, campaign: p.campaign }, args) + ` AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}`;
       // NUMBERS-2: a person's first gift is their first gift above zero, and a
       // person whose only rows in the window are refunds did not give in it.
       // TRUTH-1: the old system's first gift (imported history) is a gift they
@@ -670,7 +673,7 @@ const SOURCES = {
                    ROUND(g.amount::numeric, 2) AS amount,
                    CASE WHEN COALESCE(g.cover_fee_amount, 0) > 0 THEN 'Gift, fee covered' ELSE 'Gift' END AS detail
               FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-             WHERE g.org_id = ? AND g.giving_page_id = ? AND (d.id IS NULL OR d.deleted_at IS NULL) AND ${NOT_CREDIT("g")}`,
+             WHERE g.org_id = ? AND g.giving_page_id = ? AND (d.id IS NULL OR d.deleted_at IS NULL) AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}`,
       args: [orgId, p.page],
     }),
   },
@@ -918,7 +921,7 @@ const SOURCES = {
            FROM donors WHERE org_id = ? AND id = ? AND deleted_at IS NULL`, [orgId, p.donor]);
       if (!d) return [];
       const through = d.imported_total != null && d.imported_through ? String(d.imported_through).slice(0, 10) : null;
-      const rows = await query(`${DONOR_GIFT_SELECT} AND ${NOT_CREDIT("g")}${through ? " AND (g.date IS NULL OR g.date > ?)" : ""} ORDER BY g.date DESC NULLS LAST, g.id DESC`,
+      const rows = await query(`${DONOR_GIFT_SELECT} AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}${through ? " AND (g.date IS NULL OR g.date > ?)" : ""} ORDER BY g.date DESC NULLS LAST, g.id DESC`,
         through ? [orgId, p.donor, through] : [orgId, p.donor]);
       if (d.imported_total == null) return rows;
       const n = Number(d.imported_gift_count) || 0;
@@ -1385,7 +1388,7 @@ const SOURCES = {
     sentence: (p, dd) => `Every gift this person gave from ${dd(p.from)} to ${dd(p.to)}, added up to the cent. A refund comes off the total. Soft and matching credits are not gifts and are shown as Soft credit instead.`,
     // FIX-51: credit rows are not money here either, as in Lifetime.
     sql: (orgId, p) => ({
-      sql: `${DONOR_GIFT_SELECT} AND ${NOT_CREDIT("g")} AND g.date >= ? AND g.date <= ?`,
+      sql: `${DONOR_GIFT_SELECT} AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")} AND g.date >= ? AND g.date <= ?`,
       args: [orgId, p.donor, p.from, p.to], order: "date DESC NULLS LAST, id",
     }),
   },
@@ -1412,7 +1415,7 @@ const SOURCES = {
                    COALESCE(f.name, 'Unrestricted') AS detail
               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
               LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
-             WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NOT_CREDIT("g")} AND g.date IS NULL`,
+             WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")} AND g.date IS NULL`,
       args: [orgId], order: "id",
     }),
   },
@@ -1464,7 +1467,7 @@ const SOURCES = {
       // IMPORT-4: the first gift is a dated one; with none, Donor since is unknown.
       // NUMBERS-3: a credit row is never anyone's first gift (shared/numbers/firstGift.js).
       // NUMBERS-5: on a day with two, the one order (firstGift.FIRST_GIFT_ORDER), never a random id.
-      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 AND ${NOT_CREDIT("g")} AND g.date IS NOT NULL ORDER BY ${require("./shared/numbers/firstGift").FIRST_GIFT_ORDER} LIMIT 1`,
+      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")} AND g.date IS NOT NULL ORDER BY ${require("./shared/numbers/firstGift").FIRST_GIFT_ORDER} LIMIT 1`,
       args: [orgId, p.donor],
     }),
   },
@@ -1474,7 +1477,7 @@ const SOURCES = {
     params: { donor: "id:required" },
     sentence: () => "The largest single gift this person has given. When two gifts are the same size, the more recent one.",
     sql: (orgId, p) => ({
-      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 ORDER BY g.amount DESC, g.date DESC NULLS LAST, g.id DESC LIMIT 1`,
+      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 AND ${SCHED_DUE("g")} ORDER BY g.amount DESC, g.date DESC NULLS LAST, g.id DESC LIMIT 1`,   // TRUTH-6: a scheduled gift is no one's largest yet
       args: [orgId, p.donor],
     }),
   },
@@ -1490,7 +1493,7 @@ const SOURCES = {
     params: { donor: "id:required" },
     sentence: () => AVERAGE_WORDS,
     sql: (orgId, p) => ({
-      sql: `${DONOR_GIFT_SELECT} AND LOWER(TRIM(COALESCE(g.type,''))) <> ALL(?::text[])`,
+      sql: `${DONOR_GIFT_SELECT} AND LOWER(TRIM(COALESCE(g.type,''))) <> ALL(?::text[]) AND ${SCHED_DUE("g")}`,   // TRUTH-6
       args: [orgId, p.donor, BOOKKEEPER_EXCLUDED_TYPES], order: "date DESC NULLS LAST, id",
     }),
   },

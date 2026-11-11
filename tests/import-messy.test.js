@@ -88,8 +88,10 @@ async function reset() {
   // The key was generated on a fixed day; future-vs-today moves with the
   // calendar, so re-derive: a key row errored as future_date whose date has
   // since arrived is expected to be a gift on THIS run.
+  // TRUTH-6: and a row still dated after today comes in too, as a scheduled
+  // gift (shared/numbers/scheduled.js), the same as one typed in by hand.
   const expected = KEY.dispositions.map(d =>
-    d.reason === "future_date" && d.date && d.date <= TODAY
+    d.reason === "future_date"
       ? { ...d, disposition: "gift", reason: null }
       : d);
   const exp = {
@@ -213,8 +215,11 @@ async function reset() {
     JSON.stringify(larry.map(g => `${g.date.slice(0, 10)}|${g.amount}`)) === JSON.stringify(KEY.larryAckerly), larry);
   // strictly FUTURE is the error; a file date that has since arrived is a
   // real gift (the key's future rows re-derive at run time above).
-  const [todayGifts] = await q(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1 AND date::date > $2`, [ORG, TODAY]);
-  ok("ZERO gifts dated after today — a bad date is an error, never a default", todayGifts.n === 0, todayGifts);
+  // TRUTH-6: a gift dated after today in the FILE comes in, stored scheduled
+  // (shared/numbers/scheduled.js); a bad date still never becomes a date.
+  const [todayGifts] = await q(`SELECT COUNT(*)::int n, COUNT(*) FILTER (WHERE scheduled_on IS NULL)::int unmarked FROM gifts WHERE org_id=$1 AND date::date > $2`, [ORG, TODAY]);
+  const fileFuture = KEY.dispositions.filter(d => d.reason === "future_date" && d.date && d.date > TODAY).length;
+  ok("gifts dated after today are exactly the file's postdated rows, each stored scheduled; a bad date is an error, never a default", todayGifts.n === fileFuture && todayGifts.unmarked === 0, { ...todayGifts, fileFuture });
 
   // flags landed as first-class fields
   for (const [field, names] of [["deceased", KEY.exclusions.deceased], ["do_not_solicit", KEY.exclusions.doNotSolicit], ["do_not_contact", KEY.exclusions.doNotContact]]) {
@@ -402,7 +407,13 @@ async function reset() {
     // The key's gifts under the held mixed-date rule: she answers "month first"
     // and the cells that only read day first are refused with their line.
     const KG = K33.giftsUnderMonthFirstAnswer;
-    ok(`distinct gifts built == the key (${KG.rows}; the 40 double-exported copies share a Gift ID)`, giftIds.size === KG.rows, { got: giftIds.size, rows: built33.gifts.length });
+    // TRUTH-6: the key set its postdated rows aside; they now come in as
+    // scheduled gifts, so each one built is one of the key's future rows.
+    const keyFuture = new Set(K33.dispositions.filter(d => d.reason === "future_date").map(d => d.giftId));
+    const fut33 = built33.gifts.filter(g => keyFuture.has(g.externalId));
+    const fut33Ids = new Set(fut33.map(g => g.externalId));
+    const fut33Dollars = [...new Map(fut33.map(g => [g.externalId, Number(g.amount)])).values()].reduce((n, v) => n + v, 0);
+    ok(`distinct gifts built == the key (${KG.rows}) + its postdated rows (the 40 double-exported copies share a Gift ID)`, giftIds.size === KG.rows + fut33Ids.size && fut33Ids.size > 0, { got: giftIds.size, future: fut33Ids.size, rows: built33.gifts.length });
     ok(`the ${KG.refusedDayFirst} day-first cells are refused by line, never re-read or dropped`,
       (() => { const refused = new Set(built33.dispositions.filter(d => d.reason === "unparseable_date").map(d => d.raw["Gift ID"]));
                const dayFirst = K33.dispositions.filter(d => d.dateForm === "d/m/y (day over 12)");
@@ -429,7 +440,7 @@ async function reset() {
     const [dupIds] = await q(`SELECT COUNT(*)::int n FROM (SELECT external_id FROM gifts WHERE org_id=$1 AND external_id IS NOT NULL GROUP BY external_id HAVING COUNT(*)>1) x`, [ORG33]);
     ok("no Gift ID landed twice (the double export is one gift)", dupIds.n === 0, dupIds);
     ok(`DB gifts == the key (${KG.rows} rows, $${KG.dollars}, ${KG.refunds} refunds negative)`,
-      g33.n === KG.rows && Math.abs(g33.d - KG.dollars) < 0.02 && g33.r === KG.refunds, g33);
+      g33.n === KG.rows + fut33Ids.size && Math.abs(g33.d - KG.dollars - fut33Dollars) < 0.02 && g33.r === KG.refunds, { ...g33, future: fut33Ids.size, fut33Dollars });
     // every planted duplicate the key calls certain is ONE record; every one it
     // calls a question is two records AND a likely pair in Data health
     // who each Constituent ID became, read through its gifts (a merged record

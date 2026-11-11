@@ -11,6 +11,7 @@
 // the net and the assertion that the deposits foot (depositsFile.js), and the
 // column sets each tool wants (bookkeeper.js), declared once so the screen,
 // this router and routes/finance.js cannot disagree about any of them.
+const SCHED_DUE = require("../../shared/numbers/scheduled").DUE;   // TRUTH-6: a scheduled gift counts on its date
 const DEP = require("../../depositsFile");
 const BK = require("../../bookkeeper");
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
@@ -123,7 +124,7 @@ function reportYearLabel(y, p) {
 function reportGiftWhere(p, orgId, params) {
   // TRUTH-1: a report's rows are money, so a soft or matching credit row is
   // never in them (the same rule as the gifts source their figures open).
-  let sql = ` g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`;
+  let sql = ` g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}`;
   params.push(orgId, p.from, p.to);
   if (p.fundId) { sql += " AND g.fund_id = ?"; params.push(p.fundId); }
   if (p.campaignId) { sql += " AND g.campaign_id = ?"; params.push(p.campaignId); }
@@ -248,6 +249,8 @@ async function reportGivingSummary(orgId, p) {
     totalSource: { key: "gifts", params: { from: p.from, to: p.to, ...(p.fundId ? { fund: p.fundId } : {}), ...(p.campaignId ? { campaign: p.campaignId } : {}) } },
     comparison,
     prior: { basis: "full-period", label: "The whole period before this one", from: prior.from, to: prior.to, total: Number(priorTotals.total), giftCount: priorTotals.gift_count },
+    // TRUTH-6: gifts dated after today (scheduled), in a row of their own, in no figure above.
+    scheduled: await require("../../shared/numbers/scheduled").scheduledLine(query, orgId).catch(() => null),
     // TRUTH-4: the $0 rows in the period, said apart from the counted gifts.
     alsoOnFile: (n => (n ? { zero: n, sentence: NUMBERS.giftCount.alsoOnFile(n) } : null))(monthly.reduce((n, m) => n + (Number(m.zero) || 0), 0)),
     // Each month's gifts open through the same source, clipped to the period.
@@ -547,17 +550,17 @@ async function reportAnnual(orgId, p) {
             ${NUMBERS.money.GIVERS("g", "d")}::int AS unique_donors,
             COALESCE(AVG(g.amount) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")}),0) AS avg_gift
      FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`,
+     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}`,
     [orgId, cur.from, cur.to]);
   const [priorT] = await query(
     `SELECT COUNT(*) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")})::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
             ${NUMBERS.money.GIVERS("g", "d")}::int AS unique_donors
      FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`,
+     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}`,
     [orgId, priorSpan.from, priorSpan.to]);
   const [split] = await query(
     `WITH period_donors AS (SELECT DISTINCT g.donor_id FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-                            WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}),
+                            WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}),
           -- NUMBERS-3: the one first gift (shared/numbers/firstGift.js), imported history included
           firsts AS (SELECT d.id AS donor_id, ${NUMBERS.firstGift.FIRST_DATE("d")} AS fg FROM donors d WHERE d.org_id = ?)
      SELECT COUNT(*) FILTER (WHERE f.fg >= ? AND f.fg <= ?)::int AS new_donors, COUNT(*)::int AS period_donors
@@ -572,13 +575,13 @@ async function reportAnnual(orgId, p) {
      FROM gifts g JOIN donors d ON d.id = g.donor_id
      JOIN ${NUMBERS.fundLines.GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id   -- GIFTS-2: a split gift by its lines
      LEFT JOIN fin_funds x ON x.id = gf.fund_id AND x.org_id = g.org_id
-     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}
+     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}
      GROUP BY 1 ORDER BY total DESC`, [orgId, cur.from, cur.to]);
   const byCampaign = await query(
     `SELECT COALESCE(x.name, NULLIF(g.campaign,''), 'No campaign') AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(g.amount),0) AS total, COUNT(*) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")})::int AS gift_count
      FROM gifts g JOIN donors d ON d.id = g.donor_id
      LEFT JOIN campaigns x ON x.id = g.campaign_id AND x.org_id = g.org_id
-     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}
+     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}
      GROUP BY 1 ORDER BY total DESC`, [orgId, cur.from, cur.to]);
   // REPORTS-4: the year's figures through their sources; the page shows them.
   const yw = { from: cur.from, to: cur.to };

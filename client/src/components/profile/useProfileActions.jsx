@@ -74,7 +74,7 @@ export function useProfileActions({ donor, orgTeam, onReassign, setShowReassign,
   const [giftsFull,setGiftsFull]=useState([]);
   // POLISH-1 — a refund is a row with a negative amount, not a gift: it comes
   // off the total and never adds to the count, the same rule as the glance.
-  const giftCountReal=giftsFull.filter(g=>g.amount>0&&!g.refunded_in_full).length;   // MONEY-4: a gift refunded in full is no longer a gift (shared/numbers/money.js GIFT)
+  const giftCountReal=giftsFull.filter(g=>g.amount>0&&!g.refunded_in_full&&!g.scheduled).length;   // TRUTH-6: a scheduled gift counts on its date   // MONEY-4: a gift refunded in full is no longer a gift (shared/numbers/money.js GIFT)
   const refundRows=giftsFull.filter(g=>g.amount<0);
   // PROFILE-1 (header) — the timeline's rows, built once: the tab row's
   // counts and every list tab read this one list, with the tasks, files and

@@ -2114,9 +2114,9 @@ export function parseAttributionNote(note) {
 // see normalizeDate above for why the browser and the test runner even
 // disagreed about which dates failed).
 //
-// Policy, written down (BUILD-77 Part 2c): a FUTURE-dated gift is an ERROR
-// (`future_date`, with its line) — a gift is a thing that happened. The one
-// legitimate future-money shape is a pledge, which is not a gift row.
+// Policy, written down (BUILD-77 Part 2c, TRUTH-6): a FUTURE-dated gift comes
+// in as a gift the server stores SCHEDULED (counted on its date); a future-
+// dated pledge payment is the pledge's schedule, not a gift row.
 // Refunds import as NEGATIVE gifts: they reduce the dollar total, not the
 // row count. $0 rows (in-kind / soft credit) are SKIPPED with their reason —
 // visible and downloadable, never silently gone.
@@ -2704,7 +2704,9 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
         fileDollars += money.value;
         return;
       }
-      items.push({ key, donor, gift: null }); record("errored", "future_date", money.value, donor.name); fileDollars += money.value; bumpRefused(key); return;
+      // TRUTH-6 (W-1109-Finance-15): any other gift dated after today comes in,
+      // and the server stores it SCHEDULED (shared/numbers/scheduled.js), the
+      // same rule as a gift typed by hand, so the file foots.
     }
 
     const gift = mkGift(money.value);   // cents preserved — the money seam owns rounding, and it doesn't

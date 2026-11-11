@@ -101,7 +101,11 @@ function computeKey(rows, opts = {}) {
   const people = [...live.values()].filter(p => !p.erased);
   const counted = new Set(people.map(p => p.id));
   // A gift counts when its person is live; a gift on nobody is in no screen's total.
-  const gifts = (rows.gifts || []).filter(g => live.has(g.person) && !g.sample)
+  // TRUTH-6: a gift stored scheduled (dated after today) is money on its date,
+  // not before. It is still on file (an export lists it): `scheduled` below.
+  const isScheduled = g => !!(g.scheduledOn && String(g.scheduledOn).slice(0, 10) > today);
+  const scheduledRows = (rows.gifts || []).filter(g => live.has(g.person) && !g.sample && isScheduled(g) && !isCreditType(g.type));
+  const gifts = (rows.gifts || []).filter(g => live.has(g.person) && !g.sample && !isScheduled(g))
     .map(g => ({ ...g, c: g.cents != null ? Number(g.cents) : cents(g.amount), d: day(g.date), credit: isCreditType(g.type) }));
   const hard = gifts.filter(g => !g.credit);
   const credits = gifts.filter(g => g.credit);
@@ -229,6 +233,7 @@ function computeKey(rows, opts = {}) {
     erasedIds: sortIds([...live.values()].filter(p => p.erased).map(p => p.id)),   // TRUTH-2
     units: new Set(people.map(p => unitOf(p.id))).size,
     gifts: { count: hard.length, cents: sumC(hard), undated: hard.filter(g => !g.d).length },
+    scheduled: { count: scheduledRows.length, cents: scheduledRows.reduce((n, g) => n + (g.cents != null ? Number(g.cents) : cents(g.amount)), 0) },
     // TRUTH-3: a gift is COUNTED when it is hard credit above $0; a $0 row or a
     // credit row shows in history and is never counted (giftCount.js, written
     // out again here with no app code).

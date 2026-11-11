@@ -148,7 +148,7 @@ async function sendAndWait(tok, id) {
   ok("§4 a save that rewrites the tax lines is refused", r2.status === 400 && r2.body.error === "locked_block", r2.body);
   const r3 = await api("PUT", `/email-templates/${receipt.id}`, tok, { blocks: (receipt.blocks || []).map(b => (b.type === "richtext" && !b.locked && /Dear/.test(JSON.stringify(b)) ? { ...b, blocks: [{ type: "p", text: "Hello {{first_name}}, the bridge words for {{gift_amount}}." }] } : b)) });
   ok("§4 a save with its tax lines goes through", r3.status === 200, r3.body);
-  const r4 = await api("PUT", `/email-templates/${receipt.id}`, tok, { subject: "Your receipt", blocks: [...(r3.body.template || receipt).blocks, { type: "richtext", blocks: [{ type: "p", text: "{{last_gift_date}}" }] }] });
+  const r4 = await api("PUT", `/email-templates/${receipt.id}`, tok, { subject: "Your receipt", blocks: [...(r3.body.template || receipt).blocks, { type: "richtext", blocks: [{ type: "p", text: "{{favourite_colour}}" }] }] });   // TRUTH-6: last_gift_date is a field a draft fills now (giftFacts.js)
   ok("§4 a field a draft cannot fill is refused", r4.status === 400 && r4.body.error === "unknown_fields", r4.body);
   const [mt] = await q("SELECT subject, body, reviewed_at FROM message_templates WHERE org_id=$1 AND kind='receipt'", [orgId]);
   ok("§4 the saved words are the receipt's words, reviewed", mt && /the bridge words/.test(mt.body) && mt.body.includes("{{tax_language}}") && mt.reviewed_at, mt);

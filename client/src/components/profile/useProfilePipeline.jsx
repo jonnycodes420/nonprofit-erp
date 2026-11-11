@@ -102,6 +102,7 @@ export function useProfilePipeline({ donor, setDesignations, refreshSoftCredit, 
         fee:parseFloat(g.processor_fee_amount)||0,softCreditTo:Array.isArray(g.soft_credit_to)?g.soft_credit_to:[],   // LEDGER-1: "Soft credit to …"
         fund_lines:Array.isArray(g.fund_lines)?g.fund_lines:[],event_id:g.event_id||"",   // GIFTS-2: a split gift's lines; the edit keeps its event
         refund_of:g.refund_of||null,refund_reason:g.refund_reason||"",refunded_in_full:g.refunded_in_full===true,   // MONEY-4: a refund row names its gift
+        scheduled:g.scheduled===true,scheduled_label:g.scheduled_label||null,   // TRUTH-6: dated after today, counted on its date
       }));
       setGiftsFull(g);
       setGifts(g.map(x=>({amount:x.amount,date:x.date})));

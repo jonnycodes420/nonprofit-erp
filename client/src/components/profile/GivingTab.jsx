@@ -252,7 +252,9 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
               <div>
                 <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Gift History</div>
                 <div style={{fontSize:12,color:T.ink3,marginTop:2}}>
-                  Total: <strong style={{color:T.greenDk}}>{fmtFull(giftsFull.reduce((s,g)=>s+g.amount,0))}</strong> · {giftCountReal} {giftCountReal===1?"gift":"gifts"}
+                  Total: <strong style={{color:T.greenDk}}>{fmtFull(giftsFull.filter(g=>!g.scheduled).reduce((s,g)=>s+g.amount,0))}</strong> · {giftCountReal} {giftCountReal===1?"gift":"gifts"}
+                  {/* TRUTH-6: a scheduled gift (dated after today) is listed, and in no total until its date. */}
+                  {giftsFull.some(g=>g.scheduled)&&<span data-testid="dp-gifts-scheduled-note"> · {giftsFull.filter(g=>g.scheduled).length} scheduled, not counted until {giftsFull.filter(g=>g.scheduled).length===1?"its":"their"} date</span>}
                   {refundRows.length>0&&<span> · {refundRows.length===1?"a refund":`${refundRows.length} refunds`} of {fmtFull(-refundRows.reduce((s,g)=>s+g.amount,0))} taken off</span>}
                   {/* NUMBERS-2: the imported total is its own figure, with its source and the last day it covers. */}
                   {figs&&figs.imported&&(
@@ -455,6 +457,8 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                           <>
                             <td style={{padding:"9px 12px",color:T.ink3,whiteSpace:"nowrap"}}>{g.date?displayDate(g.date):<UndatedGiftDate giftId={g.id} readOnly={isReadOnly} onSaved={loadGiftsFull}/>}</td>
                             <td style={{padding:"9px 12px",fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>{Number(g.amount)===0?<span data-testid="gift-zero-label" style={{fontWeight:600,color:T.ink3}}>{ZERO_GIFT_LABEL}</span>:fmtFull(g.amount)}
+                              {/* TRUTH-6: dated after today, so not in Lifetime, Last gift or any total until then. */}
+                              {g.scheduled&&<div data-testid="dp-gift-scheduled" title="Dated after today: it counts in Lifetime, Last gift and the year's totals on its date, not before." style={{fontSize:11,fontWeight:600,color:T.ink3}}>{g.scheduled_label||"Scheduled"}, not counted yet</div>}
                               {/* FUNDRAISING-2: a gift for an event names it. */}
                               {g.event_name&&<div data-testid="dp-gift-event" style={{fontSize:11,fontWeight:400,color:T.ink3}}>{g.event_name}</div>}
                               {(g.fund_lines||[]).length>1&&<div data-testid="dp-gift-fund-lines" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Split: {g.fund_lines.map(l=>`${fmtFull(Number(l.amount))} ${l.fundName||"a fund that is gone"}`).join(" · ")}</div>}

@@ -1192,20 +1192,24 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                 // explicit so a treasurer never reads cash and period revenue as the
                 // same kind of number.
                 ["Cash on hand", fmt(summary.cashOnHand), summary.cashOnHand >= 0 ? IN : T.gold700, CASH_ON_HAND_SENTENCE, () => gotoTxns({ type: "" })],
-                [yearMode==="fiscal" ? "FY revenue" : "YTD revenue", fmt(summary.ytdRevenue), IN, revDeltaCaption || summary.periodLabel, () => gotoTxns({ type: "income" })],
+                [yearMode==="fiscal" ? "FY revenue" : "YTD revenue", fmt(summary.ytdRevenue), IN, revDeltaCaption || summary.periodLabel, () => gotoTxns({ type: "income" }), summary.basis && summary.basis.revenue],
                 // SWEEP-5: spending is not an error. Expenses read ink; a
                 // negative surplus is brass, the "look here" colour, not red.
                 [yearMode==="fiscal" ? "FY expenses" : "YTD expenses", fmt(summary.ytdExpenses), IN, summary.periodLabel, () => gotoTxns({ type: "expense" })],
                 ["Net surplus", fmt(summary.netSurplus), summary.netSurplus >= 0 ? IN : T.gold700, summary.periodLabel, () => gotoTxns({ type: "" })],
-              ].map(([label, value, color, caption, onClick]) => (
-                <div key={label} {...interactive(onClick, { label: `View ${label} in transactions` })}
+              ].map(([label, value, color, caption, onClick, basis]) => (
+                <div key={label} {...interactive(onClick, { label: `View ${label} in transactions` })} title={basis || undefined}
                   style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px" }}>
-                  <div style={{ fontSize:12, color:T.ink3, fontWeight:600, marginBottom:4 }}>{label}</div>
+                  <div style={{ fontSize:12, color:T.ink3, fontWeight:600, marginBottom:4 }}>{basis ? <abbr data-testid="fin-revenue-basis" title={basis} style={{ textDecoration:"underline dotted" }}>{label}</abbr> : label}</div>
                   <div style={{ fontSize:22, fontWeight:800, color, fontFamily:"'DM Serif Display',serif" }}>{value}</div>
                   {caption && <div style={{ fontSize:10, color:T.ink3, marginTop:4 }}>{caption}</div>}
                 </div>
               ))}
             </div>
+            {/* TRUTH-6: one line from Fundraising's figure to this one, every part computed (server/finance/basis.js). */}
+            {summary.basis && summary.basis.line && (
+              <div data-testid="finance-reconcile" title={summary.basis.sentence} style={{ fontSize:12.5, color:T.ink3, lineHeight:1.5 }}>{`${summary.basis.line} ${summary.basis.sentence}`}</div>
+            )}
           </>
         )}
         {/* B1 — never let Finance read as "$0 raised" next to a Reports page
@@ -1218,7 +1222,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             foot to every gift (shared/numbers/ledgerStatus.js). */}
         {summary?.ledgerStatus && summary.ledgerStatus.all.count > 0 && (
           <div data-testid="ledger-status" style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px", display:"flex", gap:18, flexWrap:"wrap" }}>
-            {[["posted", "Posted"], ["waiting", "Waiting to post"], ["history", "History only (before Steward)"]].map(([k, label]) => {
+            {[["posted", "Posted to the ledger (deposit batches)"], ["waiting", "Waiting to post"], ["history", "History only (before Steward)"]].map(([k, label]) => {
               const f = summary.ledgerStatus[k];
               return (
                 <div key={k} data-testid={`ledger-status-${k}`} style={{ flex:"1 1 200px", minWidth:180 }} title={f.sentence}>

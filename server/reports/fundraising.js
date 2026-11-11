@@ -7,6 +7,7 @@
 // mount() runs once at the end of boot with server.js's ctx and what the helper
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
+const SCHED_DUE = require("../../shared/numbers/scheduled").DUE;   // TRUTH-6: a scheduled gift counts on its date
 const express = require("express");
 const { CAMPAIGN_GIFT_MATCH, NOT_DELETED } = require("../../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
 const NUMBERS = require("../../shared/numbers");   // NUMBERS-3 — one home for every giving number
@@ -269,7 +270,7 @@ async function goalGiftsBetween(orgId, goal, from, to) {
        FROM gifts g
        JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
        WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND g.date = d.last_gift_date
-         AND ${NOT_CREDIT("g")}
+         AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}
          AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.org_id = g.org_id AND g2.date < g.date) IS NOT NULL
          AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.org_id = g.org_id AND g2.date < g.date)::date >= ${lapseRule.LAPSED_DAYS}`,
       [orgId, from, to]);
@@ -277,7 +278,7 @@ async function goalGiftsBetween(orgId, goal, from, to) {
   }
   const [r] = await query(
     `SELECT COALESCE(SUM(g.amount),0) AS total, ${NUMBERS.money.GIVERS("g", "d")}::int AS donors FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`,
+      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}`,
     [orgId, from, to]);
   return { total: parseFloat(r?.total) || 0, donors: Number(r?.donors) || 0 };
 }
@@ -523,10 +524,12 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-4"
   const periodGiving = span => NUMBERS.givingBetween.givingBetween(query, orgId, { ...span, today })
     .then(r => [{ total: r.cents / 100, gifts: r.gifts, donors: r.givers }]);   // TRUTH-4: counted gifts (giftCount.js), never every row
   const [goalRows, curRows, vsLast, weekRows, recentGifts, campaigns, givingPages, l12Rows, anyGiftRows] = await Promise.all([
-    query(
-      "SELECT * FROM fundraising_goals WHERE org_id = ? AND period_start <= ? AND period_end >= ? ORDER BY created_at DESC LIMIT 1",
-      [orgId, today, today]
-    ),
+    // TRUTH-6 (W-1110-Fundraising-06X): the goal is the period's. This FY reads
+    // the goal running today; Last FY or custom days read a goal set for days
+    // in that span, or none (and the page says so: periodNotes below).
+    OP.key === "this_fy"
+      ? query("SELECT * FROM fundraising_goals WHERE org_id = ? AND period_start <= ? AND period_end >= ? ORDER BY created_at DESC LIMIT 1", [orgId, today, today])
+      : query("SELECT * FROM fundraising_goals WHERE org_id = ? AND period_start <= ? AND period_end >= ? ORDER BY period_end DESC, created_at DESC LIMIT 1", [orgId, cur.end, cur.start]),
     // BUILD-33: period totals exclude soft-deleted (trashed) donors' gifts —
     // same JOIN + deleted_at IS NULL predicate as Reports' giving-summary, so
     // Fundraising and Reports report the SAME period number (the BUILD-23
@@ -561,7 +564,7 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-4"
       [orgId]
     ),
     periodGiving({ from: l12Start, to: l12End }),
-    query(`SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NOT_CREDIT("g")}`, [orgId]),
+    query(`SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}`, [orgId]),
   ]);
 
   // Active org goal with pace (reuses the goal-progress math shape).
@@ -677,6 +680,8 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-4"
     periodLabel: cur.chartLabel,
     // "this fiscal year": what "this period" means, in words.
     periodWords: OP.periodWords, periodKey: OP.key,
+    // TRUTH-6: what on the page does not move with the period, said beside it.
+    periodNotes: await require("./periodNotes").periodNotes({ key: OP.key, label: cur.chartLabel, goal, orgId, today, pledges }),
     pledges,
     leadEvent,
     goal,
