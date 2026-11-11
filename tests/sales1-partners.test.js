@@ -9,6 +9,10 @@
 //
 // Fake fixtures only, made-up names. Nothing sends: no provider is called (the
 // mailbox read is handed a fake fetcher), and nothing goes to a partner.
+// The server seals and opens email bodies with STEWARD_CREDENTIAL_KEY, and capture runs in this
+// process, so both must hold the same key: CI sets it for the whole job; locally tests/shard.sh
+// gives the server this default, so this process takes the same one when none is set.
+process.env.STEWARD_CREDENTIAL_KEY = process.env.STEWARD_CREDENTIAL_KEY || "local-scratch-credential-key-0123456789";
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
 const { testNow } = require("./clock");
