@@ -868,7 +868,7 @@ function AppShell() {
     {auth?.user?.support&&<SupportBanner support={auth.user.support} orgName={auth?.org?.name}/>}
 
     {/* Header — mobile only (display:none here; GlobalStyles' 768px block restores it) */}
-    <div className="app-header" style={{borderBottom:"1px solid "+T.bgElevated,padding:"0 24px",display:"none",alignItems:"center",justifyContent:"space-between",background:T.ink,position:"sticky",top:"var(--steward-strip-h, 0px)",zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>
+    <div className="app-header" style={{borderBottom:"1px solid "+T.bgElevated,padding:"0 24px",display:"none",alignItems:"center",justifyContent:"space-between",background:T.ink,position:"sticky",top:0,zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <span style={{fontSize:20,fontWeight:400,color:T.inkInverse,fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
       </div>
