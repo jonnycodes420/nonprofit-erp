@@ -15,6 +15,7 @@ import { ConnectionsPage } from "./Connections";
 import { SecurityPanel } from "./SecurityPanel";
 import SupportAccessCard from "./SupportAccessCard";   // FIX-57
 import { PrivacyPanel } from "./PrivacyPanel";
+import { MenuSection } from "./settings/OrgMenuEditor";   // NAV-1 (menu)
 import { MyEmailPanel } from "./MyEmail";   // STAFF-MAIL-1
 import { MailTypesSettings, GoingOut } from "./MailTypes";   // SEND-GATE-2
 import JourneyBuilder from "./JourneyBuilder";
@@ -880,6 +881,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           </div>)}
 
       {section==="privacy"&&<PrivacyPanel isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
+      {(section==="menu"||section==="majorgifts")&&isAdmin&&<MenuSection section={section} isReadOnly={isReadOnly}/>}
       {section==="myemail"&&<MyEmailPanel isAdmin={isAdmin}/>}
       {section==="automatic"&&<MailTypesSettings onNavigate={onNavigate}/>}
       {section==="going-out"&&<GoingOut onNavigate={onNavigate} isReadOnly={isReadOnly}/>}
