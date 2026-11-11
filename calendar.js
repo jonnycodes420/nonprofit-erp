@@ -180,8 +180,6 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
          FROM cultivation_plan_steps st JOIN cultivation_plans p ON p.id = st.plan_id AND p.org_id = st.org_id
          JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id AND d.deleted_at IS NULL
         WHERE st.org_id = ? AND st.closed_at IS NULL AND COALESCE(st.status, 'open') NOT IN ('done','skipped')
-          -- FLOWS-5: a step that opened a Thread is drawn once, as that Thread's next step
-          AND NOT EXISTS (SELECT 1 FROM threads th WHERE th.id = st.thread_id AND th.org_id = st.org_id AND th.closed_at IS NULL)
           AND st.due_date IS NOT NULL AND LEFT(st.due_date::text, 10) >= ? AND LEFT(st.due_date::text, 10) <= ?
           AND (?::text IS NULL OR st.owner_id = ? OR p.owner_id = ?)`,
       [orgId, from, to, owner, owner, owner]).then(rows => rows.forEach(r => {
