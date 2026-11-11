@@ -14,7 +14,7 @@ import { rethrowProgrammerError, errorMessage } from "../lib/domainError";
 import { stepAgainstProposals } from "../../../shared/nextStepAgree.js";   // FIX-24 2c
 import { renderCustomValue } from "../../../shared/customFieldShape";
 import { useMailbox } from "./InboxConnect";
-import { MeetingCard, AfterMeetingForm, ConversationChips, conversationTitle, MEETING_ACTION } from "./MeetingPanels";
+import { MeetingCard, AfterMeetingForm, HeardCard, MEETING_ACTION } from "./MeetingPanels";
 import { ProfileTimeline, useTimelineExtras } from "./ProfileTimeline";
 import { AtlasNote } from "./AtlasNote";   // AGENT-5
 import { atlasName } from "../lib/atlas";
@@ -31,9 +31,8 @@ import { PlanFollowUpModal } from "./PlanFollowUp";
 import { useIsPhone } from "../lib/stickyRail";
 import { useFrameHeight } from "./profile/columns";
 import { StartCard } from "./profile/StartCard";
-import { displayDateShort } from "../../../shared/displayDate";
 import { displayName } from "../../../shared/displayName.js";
-import { orgTodayCivil, orgTodayPlus, civilDaysAgo } from "../lib/orgToday";   // FIX-14 Part 1 — the org's today, never the UTC day
+import { orgTodayPlus, civilDaysAgo } from "../lib/orgToday";   // FIX-14 Part 1 — the org's today, never the UTC day
 import OpenPledgeBanner from "./OpenPledgeBanner";   // IMPORT-5: the open pledge up front
 import { savePledgeSchedule } from "./gifts/PledgeSchedule";   // GIFTS-1
 import { WhyPanel } from "./WhyAnswer";
@@ -180,12 +179,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               }).sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(b.created_at||"").localeCompare(String(a.created_at||"")));
               const last=handLogged[0];
               if(!last||!last.id||isReadOnly)return null;
-              return <section data-testid="dp-heard" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 18px",display:"flex",flexDirection:"column",gap:6}}>
-                <div style={{fontSize:13,fontWeight:700,color:T.ink}}>From your note: {conversationTitle(last)}, {displayDateShort(last.date,orgTodayCivil())}</div>
-                <ConversationChips interactionId={last.id} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();refreshSoftCredit();
+              // FLOWS-6: the card is drawn only around chips there are (MeetingPanels.jsx HeardCard).
+              return <HeardCard last={last} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();refreshSoftCredit();
                   apiFetch(`/donors/${donor.id}/designations`).then(d=>setDesignations(Array.isArray(d)?d:[])).catch(()=>{});
-                  onInteractionAdded&&onInteractionAdded();}}/>
-              </section>;
+                  onInteractionAdded&&onInteractionAdded();}}/>;
             })()}
             {/* LATELY — the last three things that happened, of any kind, each
                 opening its record; "See everything" opens Conversations. */}

@@ -1051,6 +1051,7 @@ const MOVE_ACTION = {
   visit: { label: "Book a visit", taskKind: "meeting" }, brief: { label: "Build a briefing", taskKind: "meeting" },
   coffee: { label: "Invite to coffee", taskKind: "meeting" }, collect: { label: "Collect", taskKind: "call" },
 };
+const ACTION_WHY = require("./server/insights/actionWhy");   // FLOWS-6
 const DECK_CAP = 150;
 // FIX-59 · GROW LEADS WITH SECOND GIFTS. A contacts import put 112 people who
 // never gave beside the 85 first-time donors who need a second gift, and the
@@ -1087,7 +1088,8 @@ function buildDeck(cards) {
         what: it.what || "", why: c.words.why, say: how.say || null, who: how.who || null, channel: how.channel || null,
         when: how.when ? how.when.words : null, whenFrom: how.when ? how.when.from : null,
         ask: how.ask ? { words: how.ask.words, rule: how.ask.rule } : null,
-        action: { key: act, label: MOVE_ACTION[act].label, taskKind: MOVE_ACTION[act].taskKind },
+        // FLOWS-6 (W-1110-Donors-03X): the button's one-line why (server/insights/actionWhy.js)
+        action: { key: act, label: MOVE_ACTION[act].label, taskKind: MOVE_ACTION[act].taskKind, why: ACTION_WHY.actionWhy(c.kind, act, it) },
         group: { kind: c.kind, title: c.title, count: c.items.length, cents: c.cents },
         // the card's facts, and its ask and when (the card's own number check counts them too)
         facts: [...it.facts, ...(c.cardFacts || []), ...(how.ask ? [["ask", how.ask.words]] : []), ...(how.when ? [["when", how.when.words]] : [])],
@@ -1166,7 +1168,8 @@ function withDrift(deck, rows, { asOf, gone = new Set() } = {}) {
       name: r.donorName, lead: r.donorId, ids: [r.donorId], cents,
       what: r.reason || "Past their own giving rhythm.", why: DRIFT_WHY, say: null, who: r.assignedToName || null, channel: call ? "Call" : "Note",
       when: when.words, whenFrom: when.from, ask,
-      action: { key: act, label: MOVE_ACTION[act].label, taskKind: MOVE_ACTION[act].taskKind },
+      action: { key: act, label: MOVE_ACTION[act].label, taskKind: MOVE_ACTION[act].taskKind,
+        why: ACTION_WHY.actionWhy("drift", act, { facts: cents > 0 ? [["usual gift", money(cents)]] : [], what: r.reason || "Past their own giving rhythm." }) },
       group: { kind: "drift", title: "Drifting donors", count: 0, cents: null },
       facts: [...facts, ...(ask ? [["ask", ask.words]] : []), ["when", when.words]],
     });
@@ -1224,7 +1227,7 @@ function withEventGuests(deck, events, { asOf, gone = new Set() } = {}) {
         what, why: CAME_WHY, who: null, channel: "Note", when: when.words, whenFrom: when.from,
         say: `${hello({ name: p.name })}, thank you for coming to the ${ev.name}. It meant a great deal to have you in the room.`,
         ask: null,
-        action: { key: "draft", label: "Draft a thank-you for coming", taskKind: "write" },
+        action: { key: "draft", label: "Draft a thank-you for coming", taskKind: "write", why: `Drafting a thank-you because they came to the ${ev.name} and haven't given: a thank-you comes before any ask.` },
         group: { kind: "came_no_gift", title: `Came to the ${ev.name}, didn't give`, count: total, people: ev.counts ? ev.counts.cameNoGift.people : null,
                  cents: null, eventId: ev.id, seeAll: `See all ${total}` },
         facts: [...facts, ["when", when.words]],

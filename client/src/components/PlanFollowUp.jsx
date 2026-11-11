@@ -21,6 +21,7 @@ import { errorMessage } from "../lib/domainError";
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { addCivilDays, sanitizeStepLabel, NEXT_STEP_LABEL_MAX } from "../../../shared/threadShape";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { displayDateShort } from "../../../shared/displayDate";
 
 const todayLocal = () => orgTodayCivil();
 
@@ -29,8 +30,12 @@ const todayLocal = () => orgTodayCivil();
 // nobody keeps.
 const QUICK = ["Call", "Send an update", "Ask for a meeting"];
 
-export function PlanFollowUpModal({ donor = null, donors = null, onSaved, onClose }) {
+// FLOWS-6 (W-1109-Donors-41): from a profile whose step is open (`openStep`,
+// {id, label, due}), the plan replaces that step or adds another, as a task
+// beside it. One open step per person still holds.
+export function PlanFollowUpModal({ donor = null, donors = null, openStep = null, onSaved, onClose }) {
   const bulk = Array.isArray(donors) && donors.length > 0;
+  const [how, setHow] = useState("replace");
   const [label, setLabel] = useState("Call");
   const [due, setDue] = useState(addCivilDays(todayLocal(), 7));
   const [picked, setPicked] = useState(donor || null);
@@ -65,6 +70,12 @@ export function PlanFollowUpModal({ donor = null, donors = null, onSaved, onClos
           body: JSON.stringify({ donorIds: donors.map(d => d.id), label: clean, due }) });
         setResult(r);
         if (r.skipped === 0) { onSaved?.(r); onClose?.(); }
+      } else if (openStep && openStep.id && how === "replace") {
+        const r = await apiFetch(`/threads/${openStep.id}`, { method: "PUT", body: JSON.stringify({ label: clean, due }) });
+        onSaved?.(r); onClose?.();
+      } else if (openStep && openStep.id) {
+        const r = await apiFetch("/tasks", { method: "POST", body: JSON.stringify({ title: clean, due, donorId: picked.id, type: "donor" }) });
+        onSaved?.(r); onClose?.();
       } else {
         const r = await apiFetch(`/donors/${picked.id}/threads`, { method: "POST",
           body: JSON.stringify({ label: clean, due }) });
@@ -112,6 +123,17 @@ export function PlanFollowUpModal({ donor = null, donors = null, onSaved, onClos
                     </div>
                   )}
                 </>}
+          </div>
+        )}
+
+        {!bulk && openStep && openStep.id && (
+          <div role="radiogroup" aria-label="The open step" data-testid="plan-open-step" style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 6 }}>
+            <label style={lbl}>{`${openStep.label} is open${openStep.due ? `, due ${displayDateShort(openStep.due, new Date())}` : ""}. This plan…`}</label>
+            {[["replace", `Replace “${openStep.label}” with this`], ["add", "Add another, beside it (a task)"]].map(([k, l]) => (
+              <label key={k} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: T.ink, cursor: "pointer" }}>
+                <input type="radio" name="plan-how" checked={how === k} onChange={() => setHow(k)} data-testid={"plan-how-" + k} />{l}
+              </label>
+            ))}
           </div>
         )}
 

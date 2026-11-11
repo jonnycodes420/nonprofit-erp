@@ -77,7 +77,7 @@ export function RhythmCard({ rhythm, deceased = false }) {
         <Opens source={rhythm.source} title="Their gifts" explanation={rhythm.sentence} testid="dp-rail-rhythm-open">{rhythm.sentence}</Opens>
       </div>
       {rhythm.expectedNext && !deceased && <div style={{ ...ROW, marginTop: 6 }}>   {/* PEOPLE-1: no next gift is expected from someone who has died */}
-        <span style={DIM}>Next gift expected</span>
+        <span style={DIM}>{rhythm.through ? "Their own next gift" : "Next gift expected"}</span>{/* FLOWS-6: one verdict per person */}
         <span data-testid="dp-rail-rhythm-next" style={{ color: rhythm.late ? T.gold500 : RAIL.text, fontWeight: rhythm.late ? 700 : 400 }}>
           {rhythm.dueNow ? "Due now" : displayDate(rhythm.expectedNext)}{rhythm.late ? " · Late" : ""}
         </span>

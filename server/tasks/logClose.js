@@ -23,4 +23,22 @@ async function closeOnLog(client, queryTx, { orgId, donorId, interactionId, skip
   return queryTx(client, CLOSE_ALL_SQL, [interactionId, orgId, donorId]);
 }
 
-module.exports = { closeOnLog, CLOSE_ALL_SQL };
+// FLOWS-6 (W-1110-Donors-35X) · ONE LOG, ONE FOLLOW-UP. A log whose next step
+// is the step already open ("Follow up" while "Follow up" is open) carries that
+// step to its new day instead of closing it and opening a twin: closing it wrote
+// a Done "Follow up" beside the new open one, the same title and day, and the
+// fleet read the touch as a Done task. The log stays on the timeline as a touch.
+// Returns the carried thread, or null when the open step is a different one.
+const sameStep = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+async function carrySameStep(client, queryTx, { orgId, donorId, interactionId, step }) {
+  if (!step) return null;
+  const [open] = await queryTx(client, "SELECT id, next_step_label FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL", [orgId, donorId]);
+  if (!open || !sameStep(open.next_step_label, step.label)) return null;
+  const [t] = await queryTx(client,
+    `UPDATE threads SET next_step_label = ?, due_date = ?, due_time = ?, snoozed_until = NULL, opening_interaction_id = ?
+      WHERE id = ? AND org_id = ? AND closed_at IS NULL RETURNING *`,
+    [step.label, step.due, step.time || null, interactionId, open.id, orgId]);
+  return t || null;
+}
+
+module.exports = { closeOnLog, carrySameStep, sameStep, CLOSE_ALL_SQL };
