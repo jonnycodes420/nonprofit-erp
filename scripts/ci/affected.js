@@ -231,13 +231,15 @@ function heavyReason(s, secs) {
   // Playwright or reads the built client. Narrower than
   // the planner's needsDist, whose wide net only costs a dist; here a false
   // hit would send a plain suite to CI.
-  if (needsDist(s, TESTS)) {
-    const own = [`tests/${s}.test.js`, `tests/${s}.spec.js`];
-    const helpers = own.flatMap(f => [...closure(f)]).filter(f => f.startsWith("tests/"));
-    if ([...own, ...helpers].some(f => BROWSER.test(read(f)))) return "browser";
-  }
+  if (isBrowser(s)) return "browser";
   if (secs >= HEAVY_S) return `${secs}s`;
   return "";
+}
+function isBrowser(s) {
+  if (!needsDist(s, TESTS)) return false;
+  const own = [`tests/${s}.test.js`, `tests/${s}.spec.js`];
+  const helpers = own.flatMap(f => [...closure(f)]).filter(f => f.startsWith("tests/"));
+  return [...own, ...helpers].some(f => BROWSER.test(read(f)));
 }
 function plan({ files, base }) {
   const suites = discover(TESTS).run;
@@ -287,7 +289,7 @@ function browserCannot() {
 // { browser: the browser suites that will run, said: the lines to print };
 // a browser suite that cannot run fully moves from p.run to p.skipped.
 function browserLeg(p) {
-  const browser = p.run.filter(r => heavyReason(r.suite, 0) === "browser").map(r => r.suite);
+  const browser = p.run.filter(r => isBrowser(r.suite)).map(r => r.suite);
   if (!browser.length) return { browser: [], said: [] };
   const why = process.env.BASE ? null : browserCannot();
   if (why) {
@@ -351,4 +353,4 @@ async function main() {
 }
 
 if (require.main === module) main().then(c => process.exit(c), e => { console.error(e); process.exit(2); });
-module.exports = { plan, relevance, heavyReason, browserLeg, runEnv };
+module.exports = { plan, relevance, heavyReason, isBrowser, browserLeg, runEnv };
