@@ -26,7 +26,7 @@ export default function MailboxSettings() {
     <p style={says}>{d.sentence} {d.captured === 1 ? "1 email is" : `${d.captured} emails are`} stored now.</p>
     {d.mailboxes.length === 0 ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
       {d.providers.map(p => <button key={p.provider} type="button" style={p.configured ? btn : quiet} disabled={!p.configured} onClick={() => connect(p.provider)} data-mailbox-connect={p.provider}
-        title={p.configured ? "" : "Not set up on this server"}>Connect {WORD[p.provider]}</button>)}
+        title={p.configured ? "" : "This server has no app for this provider yet"}>Connect {WORD[p.provider]}</button>)}
     </div> : d.mailboxes.map(m => <div key={m.id} style={{ background: CREAM, borderRadius: 8, padding: 10, marginBottom: 8, fontSize: 13 }} data-mailbox-row={m.id}>
       <b>{m.address}</b> · {WORD[m.provider]} · {m.status === "fixture" ? "a made-up fixture: nothing is read from it" : m.status === "active" ? (m.last_ok_at ? `last read ${whenWords(m.last_ok_at)}${m.found_last != null ? `, ${m.found_last} new` : ""}` : "first read on its way") : <span style={brassTag}>{m.last_error || "needs connecting again"}</span>}
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
