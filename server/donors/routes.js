@@ -264,7 +264,7 @@ const PROFILE_FIGURE_BLANKS = {
     short: "No gift yet.",
   },
   contact: {
-    blank: "Nobody has logged a conversation with this person yet. Log a call, a meeting, an email, an ask or a note and this becomes the days since the last one.",
+    blank: "Nobody has logged a conversation with this person yet. Log a touch (a call, a handwritten note, a visit, an email, a text or any other) and this becomes the days since the last one.",
     short: "Never contacted.",
   },
   openAsk: {

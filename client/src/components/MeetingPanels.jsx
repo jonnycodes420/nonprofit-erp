@@ -38,6 +38,8 @@ import { DARK_BRASS, SERIF, btnPrimary, btnOutline, input, dayKey, relDay, meeti
 import { shownNote } from "../lib/internalLabels";
 import { giftTypeLabel } from "../../../shared/giftWords.js";   // FEEL-1
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { TouchIcon } from "./touchIcons";   // TOUCH-1
+import { touchLine } from "../../../shared/touchKinds.js";
 export { relDay, meetingNoun, AddToRecord, MorningBrief } from "./MorningBrief";
 
 const CHIP_EDGE = T.bg3;           // the artboards draw a hairline one shade off bg3; bg3 is the token
@@ -201,7 +203,20 @@ TILE_BG.task = T.white; TILE_BG.file = T.bg;
 ICON.service = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 11V6a1.5 1.5 0 0 1 3 0v5"/><path d="M10 10V4.5a1.5 1.5 0 0 1 3 0V10"/><path d="M13 10V5.5a1.5 1.5 0 0 1 3 0V12"/><path d="M16 9.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-1a6 6 0 0 1-5-2.7L3.5 14a1.5 1.5 0 0 1 2.5-1.7L7 14"/></svg>;
 TILE_BG.service = T.white;
 const KIND_LABEL = { email: "Email", meeting: "Meeting", gift: "Gift", pledge: "Pledge", task: "Task", file: "File", service: "Volunteer service" };
-const TYPE_WORD = { meeting: "Meeting", call: "Call", visit: "Visit", ask: "Ask", stewardship: "Stewardship", event: "Event", letter: "Letter", text: "Text" };
+const TYPE_WORD = { meeting: "Meeting", call: "Call", visit: "Visit", ask: "Ask", stewardship: "Stewardship", event: "Event", letter: "Handwritten note", text: "Text", gift_sent: "Gift sent", event_invite: "Event invite" };
+// TOUCH-1 · a touch from "Log a touch" reads in her words: "Handwritten note:
+// Sent a thank-you card with a photo of Rocket", then the day, then who did it.
+const TOUCH_TYPE_KIND = { call: "call", letter: "letter", text: "text", gift_sent: "gift_sent", event_invite: "event_invite" };
+export function touchOf(i) {
+  if (!i) return null;
+  let m = {}; try { m = typeof i.metadata === "string" ? JSON.parse(i.metadata || "{}") : (i.metadata || {}); } catch { m = {}; }
+  const kind = m.touch_kind || TOUCH_TYPE_KIND[i.type] || null;
+  if (!kind) return null;
+  const label = m.touch_label || TYPE_WORD[i.type] || "Touch";
+  const note = String(i.note || "").trim();
+  const words = note === `${label}.` ? "" : note;
+  return { kind: kind.startsWith("custom:") ? "other" : kind, label, words, by: m.by_name || null, callResult: m.call_result || null };
+}
 
 // PROFILE-1 (header) — THE TIMELINE'S ROWS, BUILT ONCE. The profile's tabs
 // (Conversations, Emails, Tasks, Notes, Files) and the Overview's Lately list
@@ -347,6 +362,14 @@ export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], int
       by = i.logged_by_name || i.created_by_name || "";
       meta = by ? `By ${by}` : null;
       type = i.type === "event" ? "Event" : "Activity";
+    } else if (it.kind === "talk" && touchOf(it.logged)) {
+      const i = it.logged, tc = touchOf(i);
+      const short = tc.words && tc.words.length <= 160 && !/\n/.test(tc.words);
+      title = short ? touchLine(tc.label, tc.words) : tc.label;
+      body = short ? null : <NoteBody note={tc.words}/>;
+      by = tc.by || i.logged_by_name || i.created_by_name || "";
+      meta = [tc.callResult ? { reached: "Reached them", voicemail: "Left a voicemail", no_answer: "No answer" }[tc.callResult] : null, by ? `By ${by}` : null].filter(Boolean).join(" · ") || null;
+      type = tc.label;
     } else if (it.kind === "talk" || it.kind === "meeting") {
       const i = it.logged;
       title = conversationTitle(i);
@@ -480,7 +503,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], int
             style={{ background: T.white, borderRadius: 16, padding: "22px 26px", display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) auto", gap: 18, alignItems: "start", cursor: "pointer" }}>
             <div style={{ width: 44, height: 44, borderRadius: 12, background: TILE_BG[it.kind], color: it.kind === "meeting" ? T.inkInverse : T.ink,
               border: it.kind === "talk" || it.kind === "task" ? "1px solid " + T.bg3 : "none", boxSizing: "border-box",
-              display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SERIF, fontSize: 20 }}>{it.kind === "gift" || it.kind === "pledge" ? "$" : ICON[it.kind]}</div>
+              display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SERIF, fontSize: 20 }}>{it.kind === "gift" || it.kind === "pledge" ? "$" : it.kind === "talk" && touchOf(it.logged) ? <TouchIcon kind={touchOf(it.logged).kind}/> : ICON[it.kind]}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
               <div style={{ fontSize: 16, fontWeight: 600 }}>{title}{it.mass && <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 500, color: T.ink3 }}>Mass email</span>}</div>
               {body && <div style={{ fontSize: 15, lineHeight: 1.5, color: T.ink3, whiteSpace: typeof body === "string" ? "pre-wrap" : undefined }}>{body}</div>}

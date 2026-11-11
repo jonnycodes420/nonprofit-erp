@@ -52,6 +52,8 @@ const DECLARATIONS = [
   // neither reads a person on the server.
   D("POST", /^\/(perf\/page-ready|ai\/stream)$/, "free"),
   D(ANY, /^\/donors\/list-(setup|layout|views)(\/:id)?$/, "free", { params: { id: null } }),
+  D(ANY, /^\/touch-types(\/:id)?$/, "free", { params: { id: null } }),   // TOUCH-1: the kinds of touch (no person; adding one is an admin's)
+  D("PATCH", "/donors/:id/care-plan/touches/:taskId", "param", { params: { kind: null, taskId: "task" } }),   // TOUCH-1: a planned touch is a task on their person
 
   // ── SCOPED: lists, counts, search, export of people ─────────────────────
   D("GET", /^\/donors(\/(ids|pick|lookup|counts|stage-counts|summaries|export\/csv))?$/, "scoped"),

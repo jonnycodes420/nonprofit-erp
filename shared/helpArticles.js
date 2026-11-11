@@ -98,7 +98,7 @@ export const HELP_ARTICLES = [
     summary: `Donors is everyone who ever believed in your work, one record each, where you search, filter and open a person's whole story.`,
     sections: [
       { h: `What you see`, p: [
-        `The screen is titled "Your donors." ("Everyone." and "Your contacts." when the Directory shows those people). Along the top are the search box, the views (Directory, Team for admins, Re-engage, Map and Data health), "✦ Call List", "Log a call", "+ Add" and "↑ Import & tools ▾".`,
+        `The screen is titled "Your donors." ("Everyone." and "Your contacts." when the Directory shows those people). Along the top are the search box, the views (Directory, Team for admins, Re-engage, Map and Data health), "✦ Call List", "Log a touch", "+ Add" and "↑ Import & tools ▾".`,
         `The Directory lists each person with their stage, owner, lifetime giving, last gift and giving strength. Use the stage, owner and designation menus to narrow it, or open "⊞ Filters" for more: stage, giving pattern, geography, last gift, lifetime giving and custom fields. Re-engage gathers lapsed donors. Map shows where people live. Data health lists records that need tidying, such as possible duplicates.`,
       ]},
       { h: `Add a donor`, steps: [
@@ -485,14 +485,15 @@ export const HELP_ARTICLES = [
     summary: `The profile is one person's whole story: every gift, every hour, every conversation, their next step and your tools.`,
     sections: [
       { h: `What you see`, p: [
-        `The header has their photo, name and stage, any flags such as Do not contact, and three buttons: "Log a call", "Plan a follow-up" and "More ▾". Below them sit their figures: Lifetime, This year, Last gift, Average gift, their first and largest gift, Last met and Last email. Click any of them to see the rows behind it.`,
+        `The header has their photo, name and stage, any flags such as Do not contact, and three buttons: "Log a touch", "Plan a follow-up" and "More ▾". Below them sit their figures: Lifetime, This year, Last gift, Average gift, their first and largest gift, Last met and Last email. Click any of them to see the rows behind it.`,
         `The tabs are Overview, Gifts & pledges, Asks & pipeline, Conversations, Emails, Tasks, Notes, Funds, Related and Files. Overview has the timeline, giving by year, recent conversations and their household.`,
         `The rail on the right always shows their next step, contact details, relationship owner, journey and quick actions.`,
       ]},
-      { h: `Log a call`, steps: [
-        `Click "Log a call".`,
-        `Fill in what happened. Add a gift if one came with it.`,
-        `Save it. It joins their timeline.`,
+      { h: `Log a touch`, steps: [
+        `Click "Log a touch".`,
+        `Pick what you did: Call, Handwritten note, Email, Visit, Meeting, Gift sent, Event invite, Text or Other. An admin can add your own kinds in Settings.`,
+        `Write exactly what you did in your words, pick the day, and add a next step if there is one. If a planned touch of that kind is on their plan of care, tick "This completes the planned" one.`,
+        `Save it. It joins their timeline in your words, and it counts as their last contact.`,
       ]},
       { h: `Record a gift`, steps: [
         `Open "Gifts & pledges" and click "+ Add Gift".`,

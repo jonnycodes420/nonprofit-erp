@@ -15,6 +15,9 @@ import { DonorLink } from "../RecordLink";
 import { Figure } from "../Figure";
 import { CarePlanPanel, HealthChip, dayLabel } from "./CarePlan";
 import { useCanMajorGifts } from "../../lib/majorGifts";
+import { InlineCell } from "./InlineCell";   // TOUCH-1: click a cell to edit it
+import { TOUCH_TYPES as CARE_TYPES, addDays } from "../../../../shared/careShape.js";
+import { LogConversationModal } from "../LogConversation";
 
 // Sized to fit the page at 1440 wide; narrower, the table scrolls inside its own box.
 const COLS = [
@@ -23,7 +26,7 @@ const COLS = [
   { key: "stage", label: "Stage", w: "76px" }, { key: "ask", label: "Ask", w: "80px" }, { key: "askBy", label: "Ask by", w: "88px" },
   { key: "next", label: "Next step", w: "minmax(90px,1fr)" }, { key: "lastContact", label: "Last contact", w: "84px" }, { key: "health", label: "Plan", w: "84px" },
 ];
-const GRID = COLS.map(c => c.w).join(" ") + " 20px";
+const GRID = COLS.map(c => c.w).join(" ") + " 64px";
 const STAGES = ["prospect", "qualify", "cultivate", "solicit", "steward", "lapsed"];
 const sel = { padding: "7px 10px", border: "1px solid " + T.bg3, borderRadius: 9, fontSize: 12, background: T.white, color: T.ink };
 const btn = { background: T.green, border: "none", borderRadius: 9, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, color: T.white, cursor: "pointer" };
@@ -51,6 +54,7 @@ export function Top100View({ isReadOnly, onNavigate }) {
   const [find, setFind] = useState("");
   const [found, setFound] = useState([]);
   const [sheet, setSheet] = useState(null);   // { text, preview }
+  const [logFor, setLogFor] = useState(null);   // TOUCH-1: "Log a touch" from a row
 
   const qs = useMemo(() => {
     const p = new URLSearchParams({ sort: sort.key, dir: sort.dir });
@@ -112,6 +116,18 @@ export function Top100View({ isReadOnly, onNavigate }) {
     if (apply) { setSheet(null); setMsg(r.sentence); await load(); } else setSheet(s => ({ ...s, preview: r }));
   }, "Those ranks could not be read.");
   const head = k => setSort(s => ({ key: k, dir: s.key === k && s.dir === "asc" ? "desc" : "asc" }));
+  // TOUCH-1 · each cell saves one field and reloads the rows (the server's numbers, never a guess here).
+  const saveField = (r, path, method, body) => async () => { await apiFetch(path, { method, body: JSON.stringify(body) }); await load(); };
+  const enc = encodeURIComponent;
+  const saveAsk = r => v => saveField(r, `/donors/${enc(r.donorId)}/care-plan`, "PATCH", { askCents: v })();
+  const saveAskBy = r => v => saveField(r, `/donors/${enc(r.donorId)}/care-plan`, "PATCH", { askBy: v })();
+  const saveStage = r => v => saveField(r, `/donors/${enc(r.donorId)}/stage`, "PATCH", { stage: v, prevStage: r.stage || undefined })();
+  const saveOwner = r => v => saveField(r, `/donors/${enc(r.donorId)}/assign`, "PATCH", { assignedTo: v || null })();
+  const saveNextType = r => v => r.next && r.next.kind === "touch"
+    ? saveField(r, `/donors/${enc(r.donorId)}/care-plan/touches/${enc(r.next.taskId)}`, "PATCH", { type: v })()
+    : saveField(r, `/donors/${enc(r.donorId)}/care-plan/touches`, "POST", { type: v, due: addDays(d.today, 14) })();
+  const saveNextDue = r => v => saveField(r, `/donors/${enc(r.donorId)}/care-plan/touches/${enc(r.next.taskId)}`, "PATCH", { due: v })();
+  const typeOpts = CARE_TYPES.map(t => ({ value: t.key, label: t.label }));
 
   return (
     <div data-testid="top100-view">
@@ -163,7 +179,7 @@ export function Top100View({ isReadOnly, onNavigate }) {
           message="Add people by name above, from a person's profile (Plan of care → Add), or from Donors by ticking several and choosing Add to Top 100." />
       ) : (
         <div style={{ overflowX: "auto", background: T.white, border: "1px solid " + T.bg3, borderRadius: 14 }}>
-          <div data-testid="top100-table" style={{ minWidth: 1090 }}>
+          <div data-testid="top100-table" style={{ minWidth: 1140 }}>
             <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 8, padding: "10px 12px", background: T.bg2, fontSize: 10.5, fontWeight: 800, color: T.ink3 }}>
               {COLS.map(c => (
                 <button key={c.key} onClick={() => head(c.key)} title={d.sentences[c.key] || `Sort by ${c.label}`} aria-sort={sort.key === c.key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
@@ -202,18 +218,33 @@ export function Top100View({ isReadOnly, onNavigate }) {
                   ? <><Figure variant="cell" kind="money" value={r.lastGift.cents / 100} label={`${r.name}'s last gift`} source={{ key: "donor-last-gift", params: { donor: r.donorId } }} />
                       <div style={{ fontSize: 11, color: T.ink3 }}>{dayLabel(r.lastGift.date)}</div></>
                   : <span style={{ color: T.ink3 }}>None</span>}</div>
-                <div style={{ overflowWrap: "anywhere" }}>{r.owner ? r.owner.name : <span style={{ color: T.ink3 }}>Nobody</span>}</div>
-                <div>{r.stage ? stageName(r.stage) : <span style={{ color: T.ink3 }}>Not placed</span>}</div>
-                <div style={{ fontWeight: 700 }}>{r.askCents != null ? fmtFull(r.askCents / 100) : <span style={{ color: T.ink3, fontWeight: 400 }}>Not set</span>}</div>
-                <div>{r.askBy ? dayLabel(r.askBy) : <span style={{ color: T.ink3 }}>Not set</span>}</div>
-                <div style={{ minWidth: 0, overflowWrap: "anywhere" }}>{r.next
-                  ? <>{r.next.label}<div style={{ fontSize: 11, color: r.next.due && r.next.due < d.today ? T.gold700 : T.ink3, fontWeight: r.next.due && r.next.due < d.today ? 700 : 400 }}>{r.next.due && r.next.due < d.today ? "Overdue · " : ""}{dayLabel(r.next.due)}</div></>
-                  : <span style={{ color: T.ink3 }}>No next step</span>}</div>
+                <InlineCell kind="select" label={`${r.name}'s owner`} testid="top100-owner" disabled={isReadOnly} value={r.owner ? r.owner.id : ""}
+                  options={[{ value: "", label: "Nobody" }, ...d.owners.map(o => ({ value: o.id, label: o.name }))]} onSave={saveOwner(r)}
+                  display={r.owner ? r.owner.name : <span style={{ color: T.ink3 }}>Nobody</span>} />
+                <InlineCell kind="select" label={`${r.name}'s stage`} testid="top100-stage" disabled={isReadOnly} value={r.stage || ""}
+                  options={[...(r.stage ? [] : [{ value: "", label: "Not placed" }]), ...STAGES.map(s => ({ value: s, label: stageName(s) }))]} onSave={saveStage(r)}
+                  display={r.stage ? stageName(r.stage) : <span style={{ color: T.ink3 }}>Not placed</span>} />
+                <InlineCell kind="money" label={`${r.name}'s ask`} testid="top100-ask" disabled={isReadOnly} value={r.askCents} placeholder="50,000" onSave={saveAsk(r)}
+                  display={r.askCents != null ? <strong>{fmtFull(r.askCents / 100)}</strong> : <span style={{ color: T.ink3 }}>Not set</span>} />
+                <InlineCell kind="date" label={`${r.name}'s ask-by day`} testid="top100-askby" disabled={isReadOnly} value={r.askBy} onSave={saveAskBy(r)}
+                  display={r.askBy ? dayLabel(r.askBy) : <span style={{ color: T.ink3 }}>Not set</span>} />
+                <div style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+                  <InlineCell kind="select" label={`${r.name}'s next step`} testid="top100-next" disabled={isReadOnly || (r.next && r.next.kind === "step")}
+                    value={r.next && r.next.kind === "touch" ? r.next.type : ""} options={[...(r.next && r.next.kind === "touch" ? [] : [{ value: "", label: "Plan a touch…" }]), ...typeOpts]} onSave={saveNextType(r)}
+                    display={r.next ? r.next.label : <span style={{ color: T.ink3 }}>No next step</span>} />
+                  {r.next && (r.next.kind === "touch"
+                    ? <InlineCell kind="date" label={`${r.name}'s next step day`} testid="top100-next-due" disabled={isReadOnly} value={r.next.due} onSave={saveNextDue(r)}
+                        display={<span style={{ fontSize: 11, color: r.next.due && r.next.due < d.today ? T.gold700 : T.ink3, fontWeight: r.next.due && r.next.due < d.today ? 700 : 400 }}>{r.next.due && r.next.due < d.today ? "Overdue · " : ""}{dayLabel(r.next.due)}</span>} />
+                    : <div style={{ fontSize: 11, color: r.next.due && r.next.due < d.today ? T.gold700 : T.ink3, fontWeight: r.next.due && r.next.due < d.today ? 700 : 400 }}>{r.next.due && r.next.due < d.today ? "Overdue · " : ""}{dayLabel(r.next.due)}</div>)}
+                </div>
                 <div style={{ color: !r.lastContact || r.lastContact.days > 60 ? T.gold700 : T.ink2 }}>{contactWords(r.lastContact)}</div>
                 <div><button data-testid="top100-open-plan" onClick={() => setOpen(r)} title={r.health.sentence}
                   style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}><HealthChip health={r.health} /></button></div>
-                <div>{!isReadOnly && <button aria-label={`Take ${r.name} off the list`} title="Take off the list" onClick={() => remove(r)}
-                  style={{ background: "none", border: "none", color: T.ink3, cursor: "pointer", fontSize: 15 }}>×</button>}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 2 }}>{!isReadOnly && <>
+                  <button data-testid="top100-log" aria-label={`Log a touch with ${r.name}`} title="Log a touch" onClick={() => setLogFor(r)}
+                    style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 7, color: T.greenDk, cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "3px 6px", whiteSpace: "nowrap" }}>Log</button>
+                  <button aria-label={`Take ${r.name} off the list`} title="Take off the list" onClick={() => remove(r)}
+                    style={{ background: "none", border: "none", color: T.ink3, cursor: "pointer", fontSize: 15 }}>×</button></>}</div>
               </div>
             ))}
           </div>
@@ -243,6 +274,8 @@ export function Top100View({ isReadOnly, onNavigate }) {
         </Modal>
       )}
 
+      {logFor && <LogConversationModal donor={{ id: logFor.donorId, name: logFor.name }} onNavigate={onNavigate}
+        onClose={() => setLogFor(null)} onSaved={() => { setMsg(`Logged a touch with ${logFor.name}.`); load(); }} />}
       {open && (
         <Modal onClose={() => { setOpen(null); load(); }} title={`#${open.rank} ${open.name}`} subtitle="Plan of care" width={620} align="top">
           <CarePlanPanel donorId={open.donorId} isReadOnly={isReadOnly} onChanged={load} onNavigate={onNavigate} />
