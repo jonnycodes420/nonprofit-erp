@@ -208,6 +208,8 @@ const PROD_READONLY = [
   "pledges3-old-rows",
   // MONEY-4: lists orgs whose giving-page EIN copy differed from Settings; SELECTs only, no --apply.
   "money4-ein-copies",
+  // TOUCH-1: lists touches logged as a call whose words say a note, card, gift or text; one READ ONLY transaction, no --apply.
+  "touch1-calls-that-were-notes-readonly",
   // ATLAS-5: lists reminders saved on the late weekday and notes saved short; SELECTs only, no --apply.
   "atlas5-old-rows",
   // MAIL-1: what each org's mail would do, in a READ ONLY transaction, counts and org names only.

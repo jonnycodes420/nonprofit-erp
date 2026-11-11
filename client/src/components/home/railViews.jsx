@@ -40,7 +40,7 @@ export function railDonorView({ d, isReadOnly, lifetime, name, onNavigate, railB
             {th&&(
               <button onClick={()=>setConvoFor({donor:{id:th.donorId,name:th.donorName},thread:th})} disabled={isReadOnly}
                 style={{background:T.greenDk,border:"none",borderRadius:8,padding:"10px 14px",color:T.white,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
-                Log a call
+                Log a touch
               </button>
             )}
             <DonorLink id={railView.donorId} onOpen={()=>onNavigate("donors",{selectDonorId:railView.donorId})}

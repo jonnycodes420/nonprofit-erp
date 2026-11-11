@@ -345,3 +345,13 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 - Under Raise, between Fundraising and Events, for admins and staff with the major gifts permission (`prospect.canSee`, read from GET /me). Tabs Top 100 · Portfolios · Pipeline · Plans, the same views; Top 100 is where it opens (`client/src/lib/majorGiftsTab.js`, `MajorGiftsPage.jsx`).
 - Old addresses for those four (`?fr=top100`, `?fr=pipeline`, `navigateTo("pipeline")`, `/dashboard?fr=…`) open Major Gifts on the same tab, and the address is replaced. Somebody without the permission is sent Home.
 - At a glance and Proposals stay in Fundraising → Major gifts, where staff without the permission still reach them.
+
+## TOUCH-1 · The Top 100's cells edit in place (2026-11-10)
+
+- Ask, Ask by, Stage, Owner and Next step are click-to-edit in the Top 100 and on the plan of care
+  (`majorGifts/InlineCell.jsx`): Enter or leaving the box saves, Escape cancels, a pencil shows on hover.
+- The Ask and Ask by save one field at a time (`PATCH /donors/:id/care-plan`), so the goal beside them is
+  never rewritten; the next planned touch's kind and day through `PATCH /donors/:id/care-plan/touches/:taskId`
+  (`server/majorGifts/top100Edit.js`). Stage and Owner go through the person's own routes
+  (`PATCH /donors/:id/stage`, `/assign`), so the pipeline's rules and the admin-only assign hold.
+- Every edit is recorded by the one audit write; the PATCH routes add the before and after.

@@ -545,8 +545,10 @@ Backend, Whisper transcription, and extraction logic are fully built and functio
 ## Last contact (COUNTS-1)
 
 - Last contact is the latest of a call, a meeting (logged, or a held calendar meeting), an email sent or
-  received, an ask, a stewardship touch, a note marked as a conversation, or an event they came to, on or
-  before the org's today. A plain note, a newsletter line or a gift on its own is not one.
+  received, a handwritten note, a text, a gift sent, an event invite, any touch logged through "Log a touch"
+  (an org's own kind included, `metadata.touch_kind`), an ask, a stewardship touch, a note marked as a
+  conversation, or an event they came to, on or before the org's today. A plain note, a newsletter line or
+  a gift on its own is not one (TOUCH-1 widened it from calls).
 - One function: `meetings.js` `conversationsWith` / `lastContactWith`. The header (figure source
   `donor-contact-gap`), About's sentence and Engagement's sentence read it; the conversation log returns it.
 - A follow-up set while logging a conversation belongs to the person who set it, not the person's officer.
@@ -580,3 +582,22 @@ Backend, Whisper transcription, and extraction logic are fully built and functio
 - **Current through someone else says who.** `server/donors/currentThrough.js`: "Current through <name> (household |
   gives through | employer)" when their own last gift is older than 12 months and no pledge holds them.
 - **One pending invite per address**: unique index `invites_one_pending_per_email` (`server/db/race1Indexes.js`).
+
+## TOUCH-1 · Log a touch, in her own words (2026-11-10)
+
+- "Log a touch" is the one dialog for recording something she did (`LogConversation.jsx`, kept under its
+  old export name so every door opens it): the profile, Home's moves, the Top 100's rows, the plan of care,
+  Atlas's "log" step and the onboarding board. The kinds are `shared/touchKinds.js` (Call, Handwritten note,
+  Email, Visit, Meeting, Gift sent, Event invite, Text, Other) plus the org's own (`org_touch_types`,
+  Settings → Your words → Kinds of touch, admins). The profile's Note button is still a plain note.
+- Her words are the note, required only for Other. The day is today or earlier (a touch already happened;
+  the server refuses a later day). "Who did it" is stored as `metadata.by_name`; the actor stamp stays the
+  person who wrote the row. A Gift sent is never money (type `gift_sent`, no gift row).
+- The request names `touchKind`; a request with only the older `touch` key (FinishSheet, Atlas, tests)
+  takes the old path, unchanged. The next step is optional: an empty box is `{ skipped: true }`.
+- A planned touch (a plan-of-care task) of a matching kind is completed by logging it
+  (`completesTaskId`, `server/donors/touchTypes.js`), early or not: the task keeps its due day and gets
+  today's completed_at. The care-touch trigger writes no second "(plan of care): done." line when a logged
+  touch completes the task. Ticking a planned touch in Tasks or the plan of care offers to log it.
+- Any task can be marked done on any day. There is no rule against an early Done; do not add one
+  (`tests/touch1-log-a-touch.test.js` §4).

@@ -8,6 +8,8 @@
 //     today. Compared to GET /tasks/counts?scope=all (the Tasks page's tabs).
 //   · Last contact: for each person with anything logged (at most 12), the
 //     latest of a call, email, ask, stewardship touch or meeting logged on
+//     (TOUCH-1: a handwritten note, a text, a gift sent, an event invite, or
+//     any touch logged through "Log a touch", an org's own kind included)
 //     their record, a note marked as a conversation, a held calendar meeting
 //     with them, or an event they came to (marked attended, or checked in and
 //     not cancelled or declined), dated on or before the org's today; never a
@@ -16,7 +18,7 @@
 // It returns a list of disagreements, in words; [] when every count agrees.
 "use strict";
 
-const TALK = ["call", "email", "ask", "stewardship", "meeting"];
+const TALK = ["call", "email", "ask", "stewardship", "meeting", "letter", "text", "gift_sent", "event_invite"];
 const daysBetween = (a, b) => Math.round((Date.parse(b + "T12:00:00Z") - Date.parse(a + "T12:00:00Z")) / 86400000);
 
 async function countsDiffs({ q, orgId, get, asOf }) {
@@ -48,7 +50,7 @@ async function countsDiffs({ q, orgId, get, asOf }) {
       `SELECT MAX(x.day) AS last FROM (
          SELECT LEFT(i.date, 10) AS day FROM interactions i
           WHERE i.org_id = $1 AND i.donor_id = $2 AND i.date IS NOT NULL AND i.date <> ''
-            AND (i.type = ANY($4) OR (i.type = 'note' AND i.metadata->>'conversation' = 'true'))
+            AND (i.type = ANY($4) OR (i.type = 'note' AND i.metadata->>'conversation' = 'true') OR i.metadata ? 'touch_kind')
             AND COALESCE(i.created_by, '') NOT LIKE 'system:email-marketing%'
          UNION ALL
          SELECT LEFT(e.date::text, 10) FROM event_attendees a JOIN events e ON e.id = a.event_id AND e.org_id = a.org_id

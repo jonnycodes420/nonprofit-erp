@@ -181,4 +181,53 @@ async function gate(req) {
   return null;
 }
 
-module.exports = { accessFor, isScoped, visiblePeople, visibleSql, hiddenOf, mayOpen, recordHidden, bodyRefs, gate, NOT_FOUND, RECORD_PEOPLE };
+// The flag the app keeps (a sign-in answer's user.portfolio): does this
+// person see only their own people in this org?
+async function flagFor(userId, orgId) {
+  if (!userId || !orgId) return false;
+  const role = await require("./access").liveRoleIn(userId, orgId);
+  return isScoped({ userId, orgId, role, portfolio: await accessFor(userId, orgId) });
+}
+
+// ── WHAT THE APP MAY ASK (ACCESS-2B) ───────────────────────────────────────
+// Every route open to this portfolio user, as [method, pattern over a real
+// path], built from the live router and the declarations, so the app's list
+// and the gate are one list. The app asks nothing outside it.
+const toPattern = p => "^" + String(p).split("/").map(seg =>
+  seg.startsWith(":") ? "[^/]+" : seg === "*" ? ".*" : seg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("/") + "/?$";
+let ROUTES = null;
+function liveRoutes(app) {
+  if (ROUTES) return ROUTES;
+  const router = (app && app._router) || (app && app.router) || null;
+  const flatten = st => st.flatMap(l =>
+    !l.route && l.name === "router" && (l.slash === true || (l.regexp && l.regexp.fast_slash)) && l.handle && l.handle.stack
+      ? flatten(l.handle.stack) : [l]);
+  const out = [];
+  for (const layer of flatten((router && router.stack) || [])) {
+    if (!layer.route || typeof layer.route.path !== "string") continue;
+    // A route behind no sign-in (public) never meets the gate, so it is open.
+    const authed = layer.route.stack.some(l => /^requireAuth/.test((l.handle && l.handle.name) || ""));
+    for (const m of Object.keys(layer.route.methods).filter(x => x !== "_all")) out.push([m.toUpperCase(), layer.route.path, authed]);
+  }
+  ROUTES = out;
+  return out;
+}
+// Every route, in the router's own order, with whether it is open to them:
+// [method, pattern, open]. A real path is answered by the FIRST route that
+// matches it (Express's rule), so /donors/birthdays-near is that route, not
+// /donors/:id; the app and isOpenPath both read the list that way.
+function openRoutes(app, user) {
+  const p = (user && user.portfolio) || {};
+  return liveRoutes(app).map(([m, path, authed]) => [m, toPattern(path), !authed || openFor(p, m, path)]);
+}
+const openFor = (p, m, path) => { const d = R.declarationFor(m, path); return !!(d && d.cls !== "closed" && (p.canExport !== false || !R.isExport(m, path))); };
+let PATTERNS = null;
+function isOpenPath(app, user, method, realPath) {
+  PATTERNS = PATTERNS || liveRoutes(app).map(([m, path, authed]) => [m, path, authed, new RegExp(toPattern(path))]);
+  const bare = String(realPath || "").split("?")[0];
+  const hit = PATTERNS.find(([m, , , re]) => m === method && re.test(bare));
+  if (!hit) return false;
+  return !hit[2] || openFor((user && user.portfolio) || {}, method, hit[1]);
+}
+
+module.exports = { flagFor, openRoutes, isOpenPath, toPattern, accessFor, isScoped, visiblePeople, visibleSql, hiddenOf, mayOpen, recordHidden, bodyRefs, gate, NOT_FOUND, RECORD_PEOPLE };

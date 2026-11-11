@@ -46,6 +46,7 @@ import * as TeamAccess from "../../client/src/components/settings/TeamAccess.jsx
 import * as OrgMenuEditor from "../../client/src/components/settings/OrgMenuEditor.jsx";   // NAV-1 (menu)
 import * as WealthScoresTeamCard from "../../client/src/components/settings/WealthScoresTeamCard.jsx";   // WEALTH-1
 import * as TaxReceiptsManager from "../../client/src/components/settings/TaxReceiptsManager.jsx";
+import * as TouchTypesCard from "../../client/src/components/settings/TouchTypesCard.jsx";   // TOUCH-1
 import * as TimezoneCard from "../../client/src/components/settings/TimezoneCard.jsx";
 import * as IssuedReceipts from "../../client/src/components/settings/IssuedReceipts.jsx";   // TRUTH-3
 
@@ -134,6 +135,7 @@ export const CASES = [
   ["settings/OrgMenuEditor", () => <OrgMenuEditor.OrgMenuCard load={() => Promise.resolve({ layout: null, mgViews: ["top100"], hasP2p: false })} save={() => Promise.resolve({ layout: null, mgViews: ["top100"], hasP2p: false })}/>, /Menu/],
   ["settings/TeamAccess", () => <TeamAccess.SeesSelect m={{ id: "u_fake", name: "Fiona Faketon", role: "staff", sees: "assigned", can_export: false, can_wealth: false }} isAdmin setTeam={() => {}}/>, /Campaign cabinet/],
   ["settings/TaxReceiptsManager", () => <TaxReceiptsManager.TaxReceiptsManager orgId="org_fake" isAdmin isReadOnly={false}/>, /Tax Receipts/],
+  ["settings/TouchTypesCard", () => <TouchTypesCard.TouchTypesCard isAdmin isReadOnly={false}/>, /Kinds of touch[\s\S]*Add your own/],
   ["settings/IssuedReceipts", () => <IssuedReceipts.default isAdmin isReadOnly={false}/>, /Issued receipts/],
   ["settings/TimezoneCard", () => <TimezoneCard.TimezoneCard orgId="org_fake" isAdmin isReadOnly={false}/>, /time zone/i],
 

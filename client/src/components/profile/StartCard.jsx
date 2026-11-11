@@ -20,7 +20,7 @@ export function StartCard({ name, isReadOnly, onCall, onNote, onGift }) {
           Calls, notes and gifts show here, newest first, as you log them.</p>
       </div>
       {!isReadOnly && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button type="button" data-testid="dp-start-call" onClick={onCall} style={BTN}>Log a call</button>
+        <button type="button" data-testid="dp-start-call" onClick={onCall} style={BTN}>Log a touch</button>
         <button type="button" data-testid="dp-start-note" onClick={onNote} style={BTN}>Add a note</button>
         <button type="button" data-testid="dp-start-gift" onClick={onGift} style={BTN}>Record a gift</button>
       </div>}

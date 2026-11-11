@@ -1097,7 +1097,9 @@ async function run7(pool) {
         WHERE org_id = NEW.org_id AND donor_id = NEW.donor_id
           AND metadata->>'via' = 'care_touch' AND metadata->>'taskId' = NEW.id LIMIT 1;
       IF NEW.done = 1 THEN
-        IF line_id IS NULL THEN
+        -- TOUCH-1: a touch she logged that completes this one is its line already.
+        IF line_id IS NULL AND NOT EXISTS (SELECT 1 FROM interactions WHERE org_id = NEW.org_id AND donor_id = NEW.donor_id
+                                              AND metadata->>'completes_task' = NEW.id) THEN
           SELECT COALESCE(NULLIF(timezone, ''), 'America/New_York') INTO tz FROM orgs WHERE id = NEW.org_id;
           lbl := CASE NEW.touch_type WHEN 'visit' THEN 'Visit' WHEN 'call' THEN 'Call' WHEN 'tour' THEN 'Tour'
                    WHEN 'event_invite' THEN 'Event invite' WHEN 'impact_update' THEN 'Impact update'
@@ -1133,6 +1135,7 @@ async function run7(pool) {
   await require("./quickadd1").run(pool);   // QUICKADD-1: appeals, and the appeal a gift came from
   await require("./asks1").run(pool);   // ASKS-1: the import an auction item came in on
   await require("./access2").run(pool);   // ACCESS-2: staff who see only the people assigned to them
+  await require("./touch1").run(pool);   // TOUCH-1: an org's own kinds of touch
   await require("./nav1menu").run(pool);   // NAV-1 (menu): the org's sidebar and Major Gifts tabs
 
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is

@@ -4,6 +4,7 @@ import { saveDrafts } from "./lib/idleDraft";
 import { inSupport, leaveSupport } from "./lib/supportSession";   // FIX-57
 import { bundlePath } from "./lib/homeReads";   // PERF-2
 import { announce, kindsOfWrite, onAnyChange } from "./lib/changes";   // STALE-1: one refresh, everywhere
+import { portfolioBefore, portfolioAfter } from "./lib/portfolioRoutes.js";   // ACCESS-2B
 
 // GRANTS-1: one adapter for a legacy grant row, used by the first load and by
 // the Grants screen when it opens a grant created since (a planned renewal).
@@ -323,6 +324,12 @@ export function landed(path) {
 
 async function apiFetchNow(path, options = {}) {
   const token = getToken();
+  // ACCESS-2B: someone who sees only their own people asks only their open
+  // routes; a closed one is answered here and never sent (lib/portfolioRoutes.js).
+  const pf = await portfolioBefore(String(options.method || "GET").toUpperCase(), path, API, token);
+  if (pf && pf.refuse) throw pf.refuse;
+  if (pf && pf.empty) return {};
+  if (pf && pf.path) path = pf.path;
   const res = await fetch(`${API}${path}`, {
     ...options,
     headers: {
@@ -331,6 +338,7 @@ async function apiFetchNow(path, options = {}) {
       ...options.headers,
     },
   });
+  portfolioAfter(res);   // ACCESS-2B
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     // WE SENT A TOKEN AND GOT A 401. Whatever the server called it, this token

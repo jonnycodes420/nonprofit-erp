@@ -614,7 +614,7 @@ __share({ corsOrigins });
 // SECURE-1: maxAge lets a browser keep a preflight's answer for two hours
 // (Chrome's ceiling), instead of asking again before every call: HARDEN-2
 // counted about sixty preflights behind one donor profile.
-app.use(cors({ origin: corsOrigins, credentials: true, maxAge: 7200, exposedHeaders: ["X-Steward-CSRF"] }));
+app.use(cors({ origin: corsOrigins, credentials: true, maxAge: 7200, exposedHeaders: ["X-Steward-CSRF", "X-Steward-Portfolio"] }));
 // SPLIT-2 end
 // SPLIT-2 server.js piece 88
 // SECURE-3 item 1: the staff session cookie stands in for the Bearer header,

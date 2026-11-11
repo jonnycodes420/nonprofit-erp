@@ -55,7 +55,7 @@ import { InboundEmailCard } from "./settings/InboundEmailCard";
 import { GivingSourcesManager } from "./settings/GivingSourcesManager";
 import { BccAddressCard } from "./settings/BccAddressCard";
 import { AuditLog } from "./settings/AuditLog";
-import { StaffBoardList } from "./settings/StaffBoardList";
+import { StaffBoardList } from "./settings/StaffBoardList"; import { TouchTypesCard } from "./settings/TouchTypesCard";   // TOUCH-1
 import { SETTINGS_TABS, SECTION_ALIAS, BILLING_STATUS_META } from "./settings/settingsTabs";
 import { displayOrgDate } from "../lib/orgDay";
 import { impactExample } from "../lib/impactExample";
@@ -746,7 +746,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           </div>
           <YourWords mode="settings"/>
         </div>
-      )}
+      )}{section==="words"&&<TouchTypesCard isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
       {section==="customization"&&<>
       {/* BUILD-80 Part 10 — kept-raw values: what the migration stored that
           doesn't type, each fixable in place through the validated seam. */}

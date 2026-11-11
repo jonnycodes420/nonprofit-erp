@@ -31,6 +31,8 @@ const {
   threadShapeMod, thresholdsMod, toCents, toDollars, trashRow, uuid, withTransaction, wrap,
 } = ctx;
 let app = routers.r1;
+// TOUCH-1: the kinds of touch, an org's own, and the plan of care a touch completes.
+const TOUCH = require("./touchTypes").register(app, { ...ctx, actor });
 
 // ── Interactions ───────────────────────────────────────────────────────────
 app.post("/donors/:id/interactions", requireAuth, wrap(async (req, res) => {
@@ -68,7 +70,7 @@ function calendarDayUrl(provider, date) {
     : `https://calendar.google.com/calendar/r/day/${d}`;
 }
 const parseMeta = m => { try { return (typeof m === "string" ? JSON.parse(m || "{}") : m) || {}; } catch { return {}; } };
-const EDITABLE_TYPES = new Set(["meeting", "call", "email", "note", "visit", "event", "other", "letter", "text", "stewardship", "ask"]);
+const EDITABLE_TYPES = new Set(["meeting", "call", "email", "note", "visit", "event", "other", "letter", "text", "stewardship", "ask", "gift_sent", "event_invite"]);   // TOUCH-1: the new kinds
 
 app.put("/interactions/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { orgId, userId } = req.user;
@@ -108,7 +110,7 @@ app.put("/interactions/:id", requireAuth, checkWriteAccess, wrap(async (req, res
   }
   if (b.metadata && typeof b.metadata === "object") {
     const next = { ...meta };
-    for (const k of ["location", "attendees", "next_step"]) {
+    for (const k of ["location", "attendees", "next_step", "touch_kind", "touch_label", "call_result"]) {   // TOUCH-1: a touch's kind is changed in place
       if (b.metadata[k] === undefined) continue;
       if (fromCalendar && k === "location" && String(b.metadata[k] || "") !== String(meta.location || "")) {
         return res.status(409).json({ error: "calendar_owned", sentence: "The time and place come from your calendar. Change it in your calendar.", calendarUrl: calendarDayUrl(meta.provider, row.date) });
@@ -646,9 +648,14 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   if (!donor) return res.status(404).json({ error: "Donor not found" });
 
   const shape = await threadShapeMod();
-  const touch = shape.touchTypeFor(String(req.body?.touch || ""));
+  // TOUCH-1: "Log a touch" names `touchKind` (shared/touchKinds.js); its words
+  // are optional except for Other, and its day is today or earlier.
+  const t1 = req.body && req.body.touchKind != null
+    ? await TOUCH.prepare(orgId, req.params.id, req.body, orgToday(await orgTz(orgId)), actor(req)) : null;   // ORG_TZ_SEAM_OK
+  if (t1 && t1.refused) return res.status(t1.refused.status).json(t1.refused.body);
+  const touch = t1 ? t1.touch : shape.touchTypeFor(String(req.body?.touch || ""));
   if (!touch) return res.status(400).json({ error: "Unknown touch type" });
-  const line = typeof req.body?.line === "string" ? req.body.line.trim().slice(0, 8000) : "";
+  const line = t1 ? t1.line : typeof req.body?.line === "string" ? req.body.line.trim().slice(0, 8000) : "";
   if (!line) return res.status(400).json({ error: "The one line is required, what happened?" });
   // FIX-14 Part 1 — where it happened, for a meeting or a visit. The card is
   // titled by it ("Meeting at Starbucks").
@@ -727,7 +734,7 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
                         // COUNTS-1: a note she marks as a conversation is a contact (meetings.js).
                         ...(touch.interactionType === "note" && req.body?.conversation === true ? { conversation: true } : {}),
                         ...(step ? { next_step_label: step.label } : {}), ...(nsSource ? { next_step_source: nsSource } : {}),
-                        ...(outcome ? { outcome } : {}),
+                        ...(outcome ? { outcome } : {}), ...(t1 ? t1.meta : {}),
                         // ONBOARD-2: logged from one of Steward's moves (Home's deck, or Who to call tomorrow): a kickoff signal.
                         ...(req.body?.fromMove === true ? { from_move: true } : {}) })]);
 
@@ -793,9 +800,11 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   // person: the after-change step. A gift written above ran it already with
   // the gift form's name; this is the touch's own call.
   await require("../../afterChange").afterChange(orgId, [req.params.id], { door: "logged_touch", recalc: false });
+  // TOUCH-1: a planned touch of this kind is done by logging it (early is fine).
+  const completed = t1 && t1.completes ? await TOUCH.completePlanned(orgId, req.params.id, t1.completes.taskId, t1.kind.key, actor(req)) : null;
   // COUNTS-1: the one Last contact, in the same response as the log.
   const lastContact = await require("../../meetings").lastContactWith(orgId, req.params.id);
-  res.status(201).json({ ...out, skipped: nsSkipped, gift: giftOut, lastContact });
+  res.status(201).json({ ...out, skipped: nsSkipped, gift: giftOut, lastContact, ...(completed ? { completed } : {}) });
 }));
 
 // ── FIX-14 Part 1 — WHAT STEWARD HEARD IN A LOGGED CONVERSATION ────────────
