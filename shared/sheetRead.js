@@ -1406,7 +1406,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
             if (date && MONTH_YEAR_RE.test(t0)) dateNote = `Date in your file: ${t0}`;
             if (!date) dateNote = `Date in your file: ${t0}`;
           }
-          if (date && date > T) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `dated ${date}, which is after today`, cents: cents(amt) }); continue; }
+          // TRUTH-6 (W-1109-Finance-15): a gift dated after today comes in as a
+          // scheduled gift (shared/numbers/scheduled.js), never set aside, so the file foots.
         }
       }
       if (!date && dateAnswer) date = dateAnswer;

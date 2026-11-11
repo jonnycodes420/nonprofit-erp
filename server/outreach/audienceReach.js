@@ -21,7 +21,18 @@ async function audienceReach(orgId, segments, { query, resolveSegmentSpec, filte
   for (const raw of segments) {
     const seg = await resolveSegmentSpec(raw || {}, orgId);
     const inSegment = filterBySegment(everyone, seg);
+    // TRUTH-6 (W-1110-Fundraising-16): everyone the audience holds, and each
+    // one who can't get the email with why, so "0 can get this email" is never
+    // said beside a group of 1,217 without the reasons that add up to it.
+    const members = inSegment.filter(EV.isEveryone);
+    const why = new Map();
+    for (const d of members) {
+      const r = !hasEmail(d) ? "no_email" : ((decisions.get(d.id) || {}).send ? null : ((decisions.get(d.id) || {}).reason || "not_sendable"));
+      if (r) why.set(r, (why.get(r) || 0) + 1);
+    }
     out.push({
+      members: members.length,
+      cannot: [...why.entries()].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),
       // TRUTH-4 (W-1108-Fundraising-25X): "N people in it" is the audience's
       // people by Everyone's one rule (everyone.js: not in the trash, archived
       // or erased) who have an email address, so it is never above Everyone.

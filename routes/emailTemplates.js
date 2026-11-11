@@ -473,7 +473,7 @@ async function previewHtml(req, row, { as = null, editable = false } = {}) {
       shownAs = { id: d.id, name: d.name, email: d.email || "" };
       fields = { ...fields, ...(await donorFields(orgId, d, ectx)) };
       if (personKind) {
-        const f = await require("./templates").personFacts(orgId, d.id, req.user.userId);
+        const f = await require("./templates").personFacts(orgId, d.id, req.user.userId, personKind);   // TRUTH-6: {{gift_amount}} is the gift its kind is about
         if (f) for (const [k, v] of Object.entries(f.values)) if (v != null && String(v) !== "") fields[k] = v;
       }
     }

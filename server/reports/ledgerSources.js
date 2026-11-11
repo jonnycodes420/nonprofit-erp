@@ -8,7 +8,7 @@
 const { query } = require("../../db");
 const FY = require("../../shared/numbers/fiscalYear");
 const LS = require("../../shared/numbers/ledgerStatus");
-const { MONEY, LIVE } = require("../../shared/numbers/money");
+const { MONEY, LIVE, GIFT } = require("../../shared/numbers/money");
 
 const STATUSES = ["posted", "waiting", "history"];
 
@@ -29,7 +29,7 @@ module.exports = function ledgerSources({ FigureParamError }) {
                        COALESCE(f.name, 'No fund') AS detail
                   FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                   LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
-                 WHERE ${LS.STATUS("g")} = ? AND g.org_id = ? AND ${LIVE("d")} AND ${MONEY("g")}${p.measure === "count" ? " AND g.amount > 0" : ""}`,
+                 WHERE ${LS.STATUS("g")} = ? AND g.org_id = ? AND ${LIVE("d")} AND ${MONEY("g")}${p.measure === "count" ? ` AND ${GIFT("g")}` : ""}`,
           args: [fyFrom, p.status, orgId],
         };
       },

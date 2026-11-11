@@ -46,7 +46,7 @@ const isZero = r => isMoney(r) && centsOfRow(r) === 0;
 function zeroOnFileSql(where, args, byFund) {
   const { NOT_CREDIT } = require("../../creditTypes");
   const { GIFT_FUND_ROWS } = require("./fundLines");
-  const w = where.replace(" AND g.amount > 0", "").replace(" AND g.amount <> 0", "") + " AND g.amount = 0";
+  const w = where.replace(` AND ${COUNTED("g")}`, "").replace(" AND g.amount > 0", "").replace(" AND g.amount <> 0", "") + " AND g.amount = 0";
   return { sql: `SELECT COUNT(DISTINCT g.id)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                 ${byFund ? `JOIN ${GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id` : ""}
                 LEFT JOIN fin_funds f ON f.id = ${byFund ? "gf" : "g"}.fund_id AND f.org_id = g.org_id

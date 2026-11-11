@@ -627,6 +627,15 @@ function importFindings(row, summary) {
   const F = require("./footing");
   return F.footingFindings(F.importFooting(row, summary));
 }
+// TRUTH-6: the dollars each run brought in as SCHEDULED (dated after the day
+// it ran: shared/numbers/scheduled.js), from its own gifts, so the footing says
+// "imported $X + scheduled $Y" and a file with postdated rows foots.
+async function scheduledByRun(orgId, ids) {
+  if (!ids.length) return new Map();
+  const rows = await query(`SELECT import_id, COALESCE(SUM(ROUND(amount * 100)), 0)::bigint AS cents FROM gifts
+                             WHERE org_id=? AND import_id = ANY(?::text[]) AND scheduled_on IS NOT NULL GROUP BY import_id`, [orgId, ids]);
+  return new Map(rows.map(r => [r.import_id, Number(r.cents) || 0]));
+}
 function importFootingOf(row, summary) {
   const F = require("./footing");
   const f = F.importFooting(row, summary);
@@ -769,6 +778,7 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
                                AND NOT EXISTS (SELECT 1 FROM imports i WHERE i.id=j.id AND i.org_id=j.org_id)
                              ORDER BY j.started_at DESC LIMIT 20`, [req.user.orgId]);
   const recent = await recentGiftRuns(req.user.orgId, rows);
+  const schedC = await scheduledByRun(req.user.orgId, rows.map(r => r.id));   // TRUTH-6
   res.json({
     imports: jobs.map(j => ({ id: j.id, name: j.file_name || "Spreadsheet", sourceFilename: j.file_name, shape: "sheet",
       committedOn: orgToday(tzOrg, new Date(j.started_at)), committedAt: j.started_at, by: j.created_by_name || null,   // ORG_TZ_SEAM_OK
@@ -776,7 +786,7 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
       sentence: j.status === "running" ? `In progress: ${j.phase || "starting"}.` : `Not imported. ${j.error || ""} Nothing was written.`,
       rowsIn: 0, giftsCreated: 0, donorsCreated: 0, donorsMerged: 0, rowsSetAside: 0, rowsErrored: 0, dollarsIn: 0, dollarsCreated: 0,
       reconciled: true, findings: [], notices: [] })).concat(rows.map(r => {
-      const summary = typeof r.summary_json === "string" ? JSON.parse(r.summary_json) : (r.summary_json || {});
+      const summary = { ...(typeof r.summary_json === "string" ? JSON.parse(r.summary_json) : (r.summary_json || {})), scheduledCents: schedC.get(r.id) || 0 };
       // FIX-58: an undone import says Undone, and only that
       const findings = r.reversed_at ? [] : importFindings(r, summary);
       return {
@@ -862,7 +872,8 @@ app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
   const [r] = await query(`SELECT i.*, ${IMPORT_WHO_SQL} AS actor_user_name FROM imports i LEFT JOIN users u ON u.id = i.actor_user_id AND u.org_id = i.org_id
                              WHERE i.id=? AND i.org_id=?`, [req.params.id, req.user.orgId]);
   if (!r) return res.status(404).json({ error: "import not found" });
-  const summary = typeof r.summary_json === "string" ? JSON.parse(r.summary_json) : (r.summary_json || {});
+  const summary = { ...(typeof r.summary_json === "string" ? JSON.parse(r.summary_json) : (r.summary_json || {})),
+    scheduledCents: (await scheduledByRun(req.user.orgId, [r.id])).get(r.id) || 0 };   // TRUTH-6
   // FIX-58: an undone import says Undone, and only that
   const findings = r.reversed_at ? [] : importFindings(r, summary);
   const given = (await importGivenParts(req.user.orgId, [r]))(r, summary);

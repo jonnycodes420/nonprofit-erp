@@ -88,8 +88,10 @@ async function reset() {
   // The key was generated on a fixed day; future-vs-today moves with the
   // calendar, so re-derive: a key row errored as future_date whose date has
   // since arrived is expected to be a gift on THIS run.
+  // TRUTH-6: and a row still dated after today comes in too, as a scheduled
+  // gift (shared/numbers/scheduled.js), the same as one typed in by hand.
   const expected = KEY.dispositions.map(d =>
-    d.reason === "future_date" && d.date && d.date <= TODAY
+    d.reason === "future_date"
       ? { ...d, disposition: "gift", reason: null }
       : d);
   const exp = {

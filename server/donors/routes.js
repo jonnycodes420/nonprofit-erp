@@ -394,6 +394,7 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   // the fund list a second time to translate it.
   d.gifts = await query(
     `SELECT g.*, f.name AS fund_name, ev.name AS event_name,
+            ${require("../../shared/numbers/scheduled").SCHEDULED("g")} AS scheduled,   -- TRUTH-6: dated after today, not counted yet
             -- LEDGER-1: who this gift is soft-credited to, so the row says "Soft credit to …"
             (SELECT COALESCE(json_agg(json_build_object('donorId', sd.id, 'name', sd.name, 'amount', sc.amount) ORDER BY sd.name), '[]'::json)
                FROM gift_soft_credits sc JOIN donors sd ON sd.id = sc.donor_id AND sd.org_id = sc.org_id AND sd.deleted_at IS NULL
@@ -405,6 +406,9 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
        FROM gifts g LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
        LEFT JOIN events ev ON ev.id = g.event_id AND ev.org_id = g.org_id
       WHERE g.donor_id = ? AND g.org_id = ? ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC`, [d.id, req.user.orgId]);
+  // TRUTH-6: a scheduled gift says so, "Scheduled, Dec 15", where its amount is.
+  { const SC = require("../../shared/numbers/scheduled"); const t = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
+    for (const g of d.gifts) if (g.scheduled) g.scheduled_label = SC.scheduledLabel(g.scheduled_on, t); }
   d.matching_gift = lookupMatchingGift(d.employer);
   // BUILD-76 — the donor record shows the drift reason inline; same
   // computation as the list and every badge.
@@ -812,6 +816,9 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const rows = await query("SELECT * FROM donors WHERE id = ?", [req.params.id]);
   const d = rows[0];
   d.tags = DTAGS.visibleTags(d.tags);
+  // TRUTH-6: a scheduled gift says so, "Scheduled, Dec 15", where its amount is.
+  { const SC = require("../../shared/numbers/scheduled"); const t = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
+    for (const g of d.gifts) if (g.scheduled) g.scheduled_label = SC.scheduledLabel(g.scheduled_on, t); }
   d.matching_gift = lookupMatchingGift(d.employer);
   const warning = await require("../dataHealth/integrity").emailWarning(query, req.user.orgId, d.email, d.id);   // INTEGRITY-1
   res.json(warning ? { ...d, warning } : d);
