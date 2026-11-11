@@ -80,6 +80,9 @@ function schemaSql() {
     // A route whose answer turns over at a known moment inside the day (an
     // invite expiring) says when, in res.locals.orgSummaryValidUntil.
     `ALTER TABLE org_summary ADD COLUMN IF NOT EXISTS valid_until TIMESTAMPTZ`,
+    // REPORTS-SPEED-1: the tables an answer reads. NULL is every watched table
+    // (as before); a list makes a write elsewhere in the org leave it current.
+    `ALTER TABLE org_summary ADD COLUMN IF NOT EXISTS deps TEXT[]`,
     // NIGHTLY-OFF: per org, the mark below which change rows may have been
     // deleted (housekeep). An answer marked below it can't be trusted.
     `CREATE TABLE IF NOT EXISTS org_changes_floor (
@@ -139,6 +142,7 @@ async function installTriggers(pool) {
                           FOR EACH STATEMENT EXECUTE FUNCTION ${fn}()`);
     }
   }
+  await require("./server/reports/storedReports").installPeopleTrigger(pool);   // REPORTS-SPEED-1: donors.people
   return plan.length;
 }
 
@@ -153,10 +157,16 @@ function keyFor(name, req, perUser) {
 
 const stats = { hits: 0, misses: 0, stores: 0, refreshes: 0, checks: 0, differences: 0 };
 
+// REPORTS-SPEED-1 · A CHANGE THAT CAN MOVE THIS ANSWER: a change row for the org
+// at or above the answer's mark, from a table the answer reads (every watched
+// table when it names none). The one rule for serving, refreshing and checking.
+const CHANGED_SINCE = (s) => `EXISTS (SELECT 1 FROM org_changes c WHERE c.org_key = ${s}.org_key AND c.xid >= ${s}.snap_xmin
+                                       AND (${s}.deps IS NULL OR c.tbl = ANY(${s}.deps)))`;
+
 // The middleware, placed after requireAuth on a route whose answer is an
 // org-wide figure. `perUser` (default true) keeps one stored answer per
 // person, for routes whose answer reads the person or their role.
-function cached(name, { perUser = true, when = null } = {}) {
+function cached(name, { perUser = true, when = null, reads = null } = {}) {
   return async (req, res, next) => {
     try {
       if (off() || !req.user || !req.user.orgId || !deps) return next();
@@ -172,7 +182,7 @@ function cached(name, { perUser = true, when = null } = {}) {
             WHERE s.org_key = ? AND s.key = ? AND s.computed_for = ?
               AND (s.valid_until IS NULL OR s.valid_until > NOW())
               AND s.snap_xmin >= COALESCE((SELECT f.xid FROM org_changes_floor f WHERE f.org_key = s.org_key), '0'::xid8)
-              AND NOT EXISTS (SELECT 1 FROM org_changes c WHERE c.org_key = s.org_key AND c.xid >= s.snap_xmin)`,
+              AND NOT ${CHANGED_SINCE("s")}`,
           [orgId, key, today]);
         if (hit.length) {
           stats.hits++;
@@ -185,21 +195,22 @@ function cached(name, { perUser = true, when = null } = {}) {
       const [{ x }] = await query(`SELECT pg_snapshot_xmin(pg_current_snapshot())::text AS x`);
       const t0 = Date.now();
       const json = res.json.bind(res);
+      const depList = typeof reads === "function" ? reads(req) : reads;   // REPORTS-SPEED-1: the tables it reads
       // The answer is stored BEFORE it is sent, so a read that follows this
       // one finds it. Never below the org's floor: change rows under it may
       // be gone, so nothing could tell this answer it is stale.
       res.json = (body) => {
         if (res.statusCode !== 200) return json(body);
         query(
-          `INSERT INTO org_summary (org_key, key, path, user_id, body, snap_xmin, computed_for, ms, valid_until)
-           SELECT ?::text, ?::text, ?::text, ?::text, ?::text, ?::xid8, ?::text, ?::int, ?::timestamptz
+          `INSERT INTO org_summary (org_key, key, path, user_id, body, snap_xmin, computed_for, ms, valid_until, deps)
+           SELECT ?::text, ?::text, ?::text, ?::text, ?::text, ?::xid8, ?::text, ?::int, ?::timestamptz, ?::text[]
             WHERE ?::xid8 >= COALESCE((SELECT xid FROM org_changes_floor WHERE org_key = ?), '0'::xid8)
            ON CONFLICT (org_key, key) DO UPDATE SET body = EXCLUDED.body, path = EXCLUDED.path, user_id = EXCLUDED.user_id,
              snap_xmin = EXCLUDED.snap_xmin, computed_for = EXCLUDED.computed_for, computed_at = NOW(), ms = EXCLUDED.ms,
-             valid_until = EXCLUDED.valid_until
+             valid_until = EXCLUDED.valid_until, deps = EXCLUDED.deps
            WHERE org_summary.snap_xmin <= EXCLUDED.snap_xmin`,
           [orgId, key, req.originalUrl, perUser ? req.user.userId : null, JSON.stringify(body), x, today, Date.now() - t0,
-           res.locals.orgSummaryValidUntil || null, x, orgId])
+           res.locals.orgSummaryValidUntil || null, depList && depList.length ? depList : null, x, orgId])
           .then(() => { stats.stores++; }, e => console.error("[org-summary] store", e.message))
           .then(() => json(body));
         return res;
@@ -232,7 +243,7 @@ async function refreshOrg(orgId) {
     `SELECT s.org_key, s.key, s.path, s.user_id FROM org_summary s
       WHERE s.org_key = ? AND s.computed_for = ?
         AND (s.snap_xmin < COALESCE((SELECT f.xid FROM org_changes_floor f WHERE f.org_key = s.org_key), '0'::xid8)
-             OR EXISTS (SELECT 1 FROM org_changes c WHERE c.org_key = s.org_key AND c.xid >= s.snap_xmin))`, [orgId, today]);
+             OR ${CHANGED_SINCE("s")})`, [orgId, today]);
   for (const r of rows) { await computeFresh(r).catch(e => console.error("[org-summary] refresh", e.message)); stats.refreshes++; }
   return rows.length;
 }
@@ -250,21 +261,24 @@ function scheduleRefresh(orgId) {
 // byte for byte, with a fresh computation through the same route. A
 // difference is logged with the org, the route and the first place the two
 // differ; nothing is silently corrected without a line saying so.
+async function changedSince(r) {
+  return (await query(`SELECT 1 FROM org_changes WHERE org_key = ? AND xid >= ?::xid8 AND (?::text[] IS NULL OR tbl = ANY(?::text[])) LIMIT 1`,
+    [r.org_key, r.snap_xmin, r.deps || null, r.deps || null])).length > 0;
+}
 async function checkAll({ log = console, orgId = null } = {}) {
-  const rows = await query(`SELECT s.org_key, s.key, s.path, s.user_id, s.body, s.snap_xmin::text AS snap_xmin, s.computed_for, s.valid_until,
+  const rows = await query(`SELECT s.org_key, s.key, s.path, s.user_id, s.body, s.snap_xmin::text AS snap_xmin, s.computed_for, s.valid_until, s.deps,
                                     s.snap_xmin < COALESCE((SELECT f.xid FROM org_changes_floor f WHERE f.org_key = s.org_key), '0'::xid8) AS below_floor
                                FROM org_summary s ${orgId ? "WHERE s.org_key = ?" : ""}`, orgId ? [orgId] : []);
   const out = { compared: 0, differences: [], skipped: 0 };
   for (const r of rows) {
     const today = deps.orgToday(await deps.orgTz(r.org_key));   // ORG_TZ_SEAM_OK
-    const stillCurrent = r.computed_for === today && !r.below_floor && !(r.valid_until && new Date(r.valid_until) <= new Date()) && !(await query(
-      `SELECT 1 FROM org_changes WHERE org_key = ? AND xid >= ?::xid8 LIMIT 1`, [r.org_key, r.snap_xmin])).length;
+    const stillCurrent = r.computed_for === today && !r.below_floor && !(r.valid_until && new Date(r.valid_until) <= new Date()) && !(await changedSince(r));
     if (!stillCurrent) { out.skipped++; continue; }
     const fresh = await computeFresh(r).catch(() => null);
     if (!fresh || fresh.status !== 200) { out.skipped++; continue; }
     // A write between the read above and the fresh computation makes the two
     // honestly different; only a difference with no change in between counts.
-    const changed = (await query(`SELECT 1 FROM org_changes WHERE org_key = ? AND xid >= ?::xid8 LIMIT 1`, [r.org_key, r.snap_xmin])).length;
+    const changed = await changedSince(r);
     if (changed) { out.skipped++; continue; }
     out.compared++; stats.checks++;
     if (fresh.body !== r.body) {
@@ -298,4 +312,4 @@ async function housekeep(orgId) {
 }
 function addDaysUtc(n) { const d = new Date(Date.now() + n * 86400000); return d.toISOString().slice(0, 10); }
 
-module.exports = { configure, cached, installTriggers, refreshOrg, scheduleRefresh, checkAll, housekeep, computeFresh, stats, FRESH, UNWATCHED };
+module.exports = { configure, cached, installTriggers, refreshOrg, scheduleRefresh, checkAll, housekeep, computeFresh, changedSince, stats, FRESH, UNWATCHED };
