@@ -808,8 +808,22 @@ async function audienceRoster(orgId) {
   // COUNTS-1: each audience's number is the campaign builder's count (audienceReach.js).
   const list = [...builtins, ...custom];
   const reach = await require("./audienceReach").audienceReach(orgId, list.map(x => x.segment || { mode: x.mode }), { query, resolveSegmentSpec, filterBySegment });
+  // TRUTH-6: All donors is the Donors count (the same people: not deleted or
+  // erased, a donor), and any difference is said (archived people are in
+  // Donors and never mailed).
+  const PTm = await import("../../shared/personType.js");
+  const dRows = (await query("SELECT * FROM donors WHERE org_id = ? AND deleted_at IS NULL AND erased_at IS NULL", [orgId])).filter(d => PTm.isDonor(d));
+  const dc = { n: dRows.length, archived: dRows.filter(d => d.archived_at).length };
+  const sayCannot = c => c.map(g => `${g.count.toLocaleString()} ${(AUDIENCE_WORDS[g.reason] || (() => `can't get it (${g.reason.replace(/_/g, " ")})`))(g.count)}`).join(" · ");
   return {
-    audiences: list.map((x, i) => ({ ...x, withEmail: x.count, count: reach[i].reach, inSegment: reach[i].inSegment })),
+    audiences: list.map((x, i) => {
+      const r = reach[i];
+      const differs = x.mode === "donors" && dc && dc.n !== r.members
+        ? ` Donors counts ${dc.n.toLocaleString()}: ${dc.archived ? `${dc.archived.toLocaleString()} archived ${dc.archived === 1 ? "person is" : "people are"} in Donors and never mailed` : `${Math.abs(dc.n - r.members).toLocaleString()} ${dc.n - r.members === 1 ? "person" : "people"} differ`}.` : "";
+      return { ...x, withEmail: x.count, count: r.reach, inSegment: r.inSegment, members: r.members, cannot: r.cannot,
+        donorsCount: x.mode === "donors" && dc ? dc.n : undefined,
+        sentence: `${r.members.toLocaleString()} ${r.members === 1 ? "person" : "people"} · ${r.reach.toLocaleString()} can get this email${r.cannot.length ? `: ${sayCannot(r.cannot)}` : ""}.${differs}` };
+    }),
     // The reach line. DISTINCT people, not the sum of the audiences — a
     // volunteer who gives is in two of them and must be one person here.
     // COUNTS-1: it is "Everyone with an email"'s builder count, the same number

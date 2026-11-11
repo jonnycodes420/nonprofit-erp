@@ -18,6 +18,7 @@
 //     never with a whole year.
 // Every figure carries the source that opens its rows (server/reports/yoySources.js).
 "use strict";
+const SCHED_DUE = require("./scheduled").DUE;   // TRUTH-6: a scheduled gift counts on its date
 const orgTime = require("../../orgTime");
 const FY = require("./fiscalYear");
 const { MONEY, GIFT, LIVE } = require("./money");
@@ -150,6 +151,8 @@ async function donorByYear(query, org, donorId, today) {
     other.push({ key, label, total: dollars(c), cents: c, giftCount: list.filter(g => toCents(g.amount) > 0).length, source: { key: "donor-year", params: { donor: donorId, ...params } } });
   };
   add("older", `Before ${oldest.label}`, older, { to: orgTime.addDays(oldest.from, -1) });
+  // TRUTH-6: a gift stored scheduled is not money yet (money.js MONEY), so it
+  // is never here; this row is a gift dated after today written before the rule.
   add("later", "Dated after today", later, { from: orgTime.addDays(years[0].to, 1) });
   add("undated", "No date on the gift", undated, { undated: true });
 
@@ -321,7 +324,7 @@ function yearLargestSql(orgId, p) {
                  COALESCE(f.name, 'Unrestricted') AS detail
             FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
             LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
-           WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")} AND g.amount > 0
+           WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")} AND g.amount > 0
            ORDER BY g.amount DESC, g.date DESC, g.id LIMIT 1) t`,
     args: [orgId, p.from, p.to],
     order: "amount DESC, id",

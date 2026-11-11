@@ -64,7 +64,11 @@ function importFooting(row, summary) {
   if (asideC > named) parts.push(["other", asideC - named]);   // what the tally does not name is still said
   const order = k => { const i = REASONS.findIndex(([x]) => x === k); return i < 0 ? 99 : i; };
   parts.sort((a, b) => order(a[0]) - order(b[0]));
+  // TRUTH-6: of what was imported, the part stored as scheduled (dated after the
+  // day it ran), said on its own: "imported $250,700 + scheduled $17,725".
+  const schedC = Math.min(n(s.scheduledCents), importedC);
   const dollars = { fileCents: inC, importedCents: importedC, giftCents: madeC, pledgeCents: pledgeC, asideCents: asideC, erroredCents: errC,
+    scheduledCents: schedC, importedNowCents: importedC - schedC,
     asideBy: parts.map(([k, v]) => ({ key: k, label: LABEL[k] || k, cents: v })), balanced: inC === importedC + asideC + errC };
   // The stored columns against the summary's own copy of the same figures.
   const stored = [];
@@ -77,7 +81,7 @@ function importFooting(row, summary) {
   const mark = balanced ? "✓" : "✗";
   const rowsSentence = `${rowsIn.toLocaleString("en-US")} rows in the file = ${(created + pledges).toLocaleString("en-US")} written`
     + ` + ${aside.toLocaleString("en-US")} set aside${errored ? ` + ${errored.toLocaleString("en-US")} errored` : ""} ${rows.balanced ? "✓" : "✗"}`;
-  const dollarsSentence = `File ${usd(inC)} = imported ${usd(importedC)} + set aside ${usd(asideC)}`
+  const dollarsSentence = `File ${usd(inC)} = imported ${usd(importedC - schedC)}${schedC ? ` + scheduled ${usd(schedC)}` : ""} + set aside ${usd(asideC)}`
     + (dollars.asideBy.length ? ` (${dollars.asideBy.map(p => `${p.label} ${usd(p.cents)}`).join("; ")})` : "")
     + (errC ? ` + errored ${usd(errC)}` : "") + ` ${dollars.balanced ? "✓" : "✗"}`;
   return { rows, dollars, stored, balanced, mark, rowsSentence, dollarsSentence };

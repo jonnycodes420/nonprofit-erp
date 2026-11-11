@@ -60,6 +60,10 @@ export function OverviewPeriodBar({ overview, onPicked, onNavigate }) {
       <DateInput aria-label="To" data-testid="fr-period-to" value={to} onChange={e => setTo(e.target.value)} style={{ border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 8px", fontSize: 12.5, fontFamily: "inherit" }} />
       <button type="button" data-testid="fr-period-custom" aria-pressed={key === "custom"} disabled={!isDay(from) || !isDay(to) || to < from} style={chip(key === "custom")} onClick={() => pick("custom", from, to)}>Show these days</button>
       <span style={{ fontSize: 12.5, color: T.ink3 }}>{overview && overview.periodLabel ? `Showing ${overview.periodLabel}` : ""}</span>
+      {/* TRUTH-6: what does not move with the period says so (the goal set for another year, today's open pledges). */}
+      {((overview && overview.periodNotes) || []).map(n => (
+        <span key={n.key} data-testid={`fr-period-note-${n.key}`} style={{ flexBasis: "100%", fontSize: 12.5, color: T.ink3 }}>{n.sentence}</span>
+      ))}
       {lybunt && (
         <button type="button" data-testid="fr-lybunt" title={LAPSE_WORDS.lybunt.definition} onClick={() => onNavigate && onNavigate("reports", { report: "lybunt" })}
           style={{ ...chip(false), marginLeft: "auto", display: "flex", gap: 6, alignItems: "baseline" }}>

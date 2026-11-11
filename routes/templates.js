@@ -100,18 +100,23 @@ async function signerFor(req) {
 // Every merge field's value for one donor, from their own record.
 // EDITOR-1: the email editor's "Preview as" fills a one-person email with
 // this same person's facts, so what it shows is what their draft would say.
-factsForImpl = async (orgId, donorId, signerUserId) => {
+factsForImpl = async (orgId, donorId, signerUserId, kind = null) => {
   const org = await orgOf(orgId);
   const [signer] = signerUserId ? await query(`SELECT ${B.SIGN_COLUMNS} FROM users WHERE id=? AND org_id=?`, [signerUserId, orgId]).catch(() => []) : [];
-  return factsFor(org, donorId, signer || null);
+  return factsFor(org, donorId, signer || null, kind);
 };
-async function factsFor(org, donorId, signer = null) {
+async function factsFor(org, donorId, signer = null, kind = null) {
   const [d] = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [donorId, org.id]);
   if (!d) return null;
   const year = orgTime.orgToday(org).slice(0, 4);
-  const [last] = await query(
-    `SELECT g.amount::text AS amount, g.date, g.tribute_type, g.tribute_name, f.name AS fund FROM gifts g LEFT JOIN fin_funds f ON f.id = g.fund_id
-      WHERE g.org_id=? AND g.donor_id=? AND g.date IS NOT NULL AND ${NUMBERS.money.GIFT("g")} ORDER BY ${NUMBERS.lastGift.LAST_GIFT_ORDER} LIMIT 1`, [org.id, d.id]);
+  // TRUTH-6 (W-1110-Fundraising-19): first, last and largest from
+  // shared/numbers/giftFacts.js; the template's own {{gift_amount}} is the gift
+  // its kind is about (the first-gift thank-you quoted the latest as the first).
+  const GF = require("../shared/numbers/giftFacts");
+  const facts = await GF.giftFacts(query, org.id, d.id);
+  const pick = facts[GF.giftOfKind(kind)];
+  const last = pick ? { amount: (pick.cents / 100).toFixed(2), date: pick.date, tribute_type: pick.tributeType, tribute_name: pick.tributeName, fund: pick.fund } : null;
+  const gf = (k, what) => (facts[k] ? (what === "date" ? longDate(facts[k].date) : fmt$(facts[k].cents)) : "");
   // NUMBERS-3: {{lifetime_total}} is the profile's Lifetime (an imported total
   // included, credit rows out) and {{year_total}} the calendar year's money,
   // which is what the year-end statement it fills says ("in {{year}}"). One
@@ -131,6 +136,9 @@ async function factsFor(org, donorId, signer = null) {
       first_name: (await import("../shared/greeting.js")).firstNames(d) || "", full_name: d.name || "",
       greeting: (await import("../shared/greeting.js")).greetingName(d) || "",
       gift_amount: last ? fmt$(c(last.amount)) : "", gift_date: last ? longDate(last.date) : "", fund: last && last.fund ? last.fund : "",
+      first_gift_amount: gf("first"), first_gift_date: gf("first", "date"),
+      last_gift_amount: gf("last"), last_gift_date: gf("last", "date"),
+      largest_gift_amount: gf("largest"), largest_gift_date: gf("largest", "date"),
       tribute: last && last.tribute_name ? `${last.tribute_type === "memory" ? "in memory of" : "in honor of"} ${last.tribute_name}` : "",
       year, year_total: c(tot.yr) > 0 ? fmt$(c(tot.yr)) : "", lifetime_total: c(tot.life) > 0 ? fmt$(c(tot.life)) : "",
       monthly_amount: sub ? fmt$(c(sub.amount)) : "", event_name: ev ? ev.name : "",
@@ -182,7 +190,7 @@ app.post("/templates/:kind/preview", requireAuth, wrap(async (req, res) => {
   if (!t) return res.status(404).json({ error: "Not found" });
   const org = await orgOf(req.user.orgId);
   const signer = await signerFor(req);
-  const f = await factsFor(org, String((req.body && req.body.donorId) || ""), signer);
+  const f = await factsFor(org, String((req.body && req.body.donorId) || ""), signer, req.params.kind);
   if (!f) return res.status(404).json({ error: "Choose one of your people to preview against." });
   const s = B.renderTemplate(req.body && req.body.subject != null ? req.body.subject : t.subject, f.values);
   const b = B.renderTemplate(req.body && req.body.body != null ? req.body.body : t.body, f.values);
@@ -197,7 +205,7 @@ async function usable(req, res) {
   if (!t) { res.status(404).json({ error: "Not found" }); return null; }
   if (!t.reviewed) { res.status(409).json({ error: "not_reviewed", sentence: "This template is still in Steward's starting words. Read it, change what you like and save it, then use it." }); return null; }
   const org = await orgOf(req.user.orgId);
-  const f = await factsFor(org, String((req.body && req.body.donorId) || ""), await signerFor(req));
+  const f = await factsFor(org, String((req.body && req.body.donorId) || ""), await signerFor(req), req.params.kind);
   if (!f) { res.status(404).json({ error: "Choose one of your people." }); return null; }
   const s = B.renderTemplate(t.subject, f.values), b = B.renderTemplate(t.body, f.values);
   const missing = [...new Set([...s.missing, ...b.missing])];

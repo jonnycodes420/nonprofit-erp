@@ -244,9 +244,10 @@ async function fire(evt) {
   for (let i = 0; i < 400 && c.status === 202; i++) { const j = await api("GET", `/sheet-import/jobs/${encodeURIComponent(c.body.importId)}`, tok); if (j.body.status !== "running") break; await new Promise(r => setTimeout(r, 150)); }
   const IMP = c.body.importId;
   const rec = ((await api("GET", `/imports/${IMP}`, tok)).body || {}).import || {};
-  const FOOT = "File $13,650 = imported $3,675 + set aside $9,975 (future-dated $3,375; matches deleted people $6,600) ✓";
+  // TRUTH-6: the future-dated rows come in as scheduled, never set aside.
+  const FOOT = "File $13,650 = imported $3,675 + scheduled $3,375 + set aside $6,600 (matches deleted people $6,600) ✓";
   ok("§5 the receipt foots in dollars, the set-aside named by reason", rec.footing && rec.footing.dollarsSentence === FOOT, rec.footing);
-  ok("§5 and in rows", rec.footing && rec.footing.rowsSentence === "20 rows in the file = 14 written + 6 set aside ✓", rec.footing && rec.footing.rowsSentence);
+  ok("§5 and in rows", rec.footing && rec.footing.rowsSentence === "20 rows in the file = 17 written + 3 set aside ✓", rec.footing && rec.footing.rowsSentence);
   const listRow = async () => ((await api("GET", "/imports", tok)).body.imports || []).find(x => x.id === IMP) || {};
   const lr = await listRow();
   ok("§5 the list's flag is the receipt's footing (both reconciled)", lr.reconciled === true && rec.reconciled === true && !!rec.footing && rec.footing.balanced === true, lr);

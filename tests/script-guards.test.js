@@ -215,6 +215,8 @@ const PROD_READONLY = [
   "touch1-calls-that-were-notes-readonly",
   // ATLAS-5: lists reminders saved on the late weekday and notes saved short; SELECTs only, no --apply.
   "atlas5-old-rows",
+  // TRUTH-6: lists receipts on $0 gifts and future-dated gifts not marked scheduled; SELECTs only, no --apply (it prints an UPDATE for Jonathan, never runs one).
+  "truth6-zero-receipts",
   // MAIL-1: what each org's mail would do, in a READ ONLY transaction, counts and org names only.
   "mail-preflight",
   // NUMBERS-1: checks an org's numbers against its gifts; SELECTs only, counts-only with --counts.

@@ -34,6 +34,7 @@ import { BulkTrash } from "./donors/BulkTrash";   // MOPUP-2: More → Move to t
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { LAPSE_WORDS } from "../../../shared/lapseWords.js";   // TRUTH-5: one word, one population
 import { AddToTop100 } from "./majorGifts/AddToTop100";   // TOP100-1
+import { useCanExport } from "../lib/exportAccess";   // ACCESS-3: no Export CSV for the Campaign cabinet
 // WALKB-1 · A SEARCH RESULT SAYS WHY IT IS THERE. A name match needs no words;
 // anything else does ("Matched household: The Marlowe Hart household"), and an
 // archived person a search found says so.
@@ -359,6 +360,7 @@ function BulkAutoEmail({ids,disabled,onDone}){
 function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",onPickView,onSaveView,onDeleteView,onPageSize,includeScreening=false,peopleView="donors",setPeopleView,roleCounts=null,fromImport="",clearFromImport,anyFilter=false}){
   // WIRE-1: the server-side filters on screen, as a Group rule, offered once
   // a filter beyond "donors" is set. The sort is not a filter.
+  const canExport=useCanExport(isAdmin?"admin":"staff");   // ACCESS-3
   const groupRules=(()=>{const r={};Object.entries(exportParams||{}).forEach(([k,v])=>{if(v&&k!=="sort")r[k]=String(v);});return Object.keys(r).filter(k=>k!=="role").length>0?r:null;})();
   const [selIds,setSelIds]=useState(new Set());
   const [selectMode,setSelectMode]=useState(false); // BUILD-41: mobile rows show checkboxes only in explicit Select mode
@@ -714,10 +716,10 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",minHeight:40,alignItems:"center",...activeMark(selectMode,"bottom")}}>
           {selectMode?"Done":"Select"}
         </button>
-        <button onClick={exportCsv} disabled={exporting||serverTotal===0} title="Download every donor matching the search/stage/owner filters as a CSV"
+        {canExport&&<button onClick={exportCsv} disabled={exporting||serverTotal===0} title="Download every donor matching the search/stage/owner filters as a CSV"
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:serverTotal===0?T.ink3:T.ink,fontSize:12,fontWeight:600,cursor:exporting||serverTotal===0?"not-allowed":"pointer"}}>
           {exporting?"Exporting…":"Export CSV"}
-        </button>
+        </button>}
         <div style={{display:"flex",background:T.bg,borderRadius:99,padding:2,border:"1px solid "+T.bg3}}>
           {[["comfortable","Comfortable"],["compact","Compact"]].map(([v,l])=>(
             <button key={v} onClick={()=>setDensity(v)} title={l+" row spacing"}

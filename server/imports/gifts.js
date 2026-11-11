@@ -732,9 +732,9 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
     if (amt === 0) { invalid++; ledger.skipped("zero_amount", amt); continue; }
     const date = normalizeGiftDate(g.date);
     if (!date) { invalid++; ledger.errored("unparseable_or_missing_date", amt); continue; }
-    // BUILD-79 Part 4 — the future-date guard existed on import-combined but
-    // not here; the two paths must refuse the same garbage.
-    if (date > importToday) { invalid++; ledger.errored("future_date", amt); continue; }
+    // TRUTH-6 (W-1109-Finance-15): a row dated after today comes in as a
+    // scheduled gift (recordGift, shared/numbers/scheduled.js), the same rule as
+    // import-combined and hand entry; it is no longer refused.
     const externalId = (g.externalId || g.external_id || "").toString().trim().slice(0, 128) || null;
     const rowKey = `${g.donorId}|${date}|${amt}`;
     // The ONLY deliberate drop: the user deselected this row in the review.

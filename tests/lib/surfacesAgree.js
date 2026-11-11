@@ -311,6 +311,11 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       ["the key (live people's hard-credit gifts)", key.gifts.count],
       ["the onboarding card", setupDonors.giftCount],
       ["Fundraising, all time", fund && fund.allTime ? fund.allTime.giftCount : undefined],
+    ], String);
+    // TRUTH-6: an export is every gift on file, the scheduled ones (dated after today) too.
+    const sch = key.scheduled || { count: 0, cents: 0 };
+    agree("gifts on file, scheduled included (count)", [
+      ["the key (hard-credit gifts + scheduled)", key.gifts.count + sch.count],
       ["the workbook export", wbGifts ? wbGifts.length : undefined],
       ["the export zip's gifts.csv", zg ? zg.length : undefined],
     ], String);
@@ -319,6 +324,9 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     agree("total given", [
       ["the key (live people's hard-credit gifts)", key.gifts.cents],
       ["Fundraising, all time", fund && fund.allTime ? cents(fund.allTime.raised) : undefined],
+    ], money);
+    agree("gifts on file, scheduled included (money)", [
+      ["the key (hard-credit gifts + scheduled)", key.gifts.cents + sch.cents],
       ["the workbook export", wbGifts ? wbGifts.reduce((a, g) => a + cents(g.amount), 0) : undefined],
     ], money);
     // TRUTH-2: an erased person is on no list, so a list's lifetimes add up to

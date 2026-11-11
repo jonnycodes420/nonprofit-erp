@@ -376,13 +376,15 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
   const rows = await withAdvisoryLock(`gift:${req.params.id}`, async () => {
     await run(
       `UPDATE gifts SET amount=?,date=?,type=?,campaign=?,campaign_id=?,event_id=?,notes=?,fund_id=?,payment_method=?,acknowledgement_sent=?,
-              acknowledgement_sent_at = CASE WHEN ? IS TRUE THEN COALESCE(acknowledgement_sent_at, NOW()) ELSE NULL END
+              acknowledgement_sent_at = CASE WHEN ? IS TRUE THEN COALESCE(acknowledgement_sent_at, NOW()) ELSE NULL END,
+              scheduled_on=?   -- TRUTH-6: a date moved after today makes it scheduled; one moved to today or before, a gift
         WHERE id=? AND org_id=?`,
       [newAmt, newDate, type||g.type, newCampaign, newCampaignId, newEventId,
        notes!==undefined?notes:g.notes, fund_id!==undefined?fund_id:g.fund_id,
        payment_method!==undefined?payment_method:g.payment_method,
        acknowledgement_sent!==undefined?acknowledgement_sent:g.acknowledgement_sent,
        acknowledgement_sent!==undefined?acknowledgement_sent:g.acknowledgement_sent,   // A.5 — the same value drives the stamp
+       require("../../shared/numbers/scheduled").scheduledOn(newDate, orgToday(await orgTz(req.user.orgId))),   // ORG_TZ_SEAM_OK
        req.params.id, req.user.orgId]
     );
     // NUMBERS-1: a soft credit follows the gift's new amount.

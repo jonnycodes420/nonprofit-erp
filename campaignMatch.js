@@ -11,6 +11,7 @@
 // gift counts its full amount, a fee the donor covered included (Jonathan,
 // 25 Oct: the gift is what the donor paid). Only creditTypes.js is required,
 // so figureSources.js and the routes can all load it.
+const SCHED_DUE = require("./shared/numbers/scheduled").DUE;   // TRUTH-6: a scheduled gift counts on its date
 const { NOT_CREDIT } = require("./creditTypes");
 // The SQL that says a gift row `g` counts toward campaign `c`. Both aliases are
 // the caller's; the donor join is inside, so a caller cannot forget it.
@@ -30,7 +31,7 @@ const CAMPAIGN_GIFT_MATCH = (g = "g", c = "c") =>
   `(${g}.campaign_id = ${c}.id OR (${g}.campaign_id IS NULL AND ${g}.campaign = ${c}.name))
    AND (${c}.start_date IS NULL OR ${g}.date IS NULL OR LEFT(${g}.date, 10)::date >= ${c}.start_date)
    AND (${c}.end_date IS NULL OR ${g}.date IS NULL OR LEFT(${g}.date, 10)::date <= ${c}.end_date)
-   AND ${NOT_CREDIT(g)}
+   AND ${NOT_CREDIT(g)} AND ${SCHED_DUE(g)}
    AND ${NOT_DELETED(g)}`;
 
 // FIX-49 · GRANTS ON A PUBLIC BAR. A grant awarded toward a campaign counts

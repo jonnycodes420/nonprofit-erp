@@ -2041,7 +2041,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                           </span>
                         </div>
                         <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 4, lineHeight: 1.45, paddingLeft: 15 }}>
-                          {a.description}{a.inSegment !== undefined && a.inSegment !== a.count ? ` ${countLabel(a.inSegment, "person", "people")} in it; ${a.count.toLocaleString()} can get a campaign email.` : ""}
+                          {a.description}{a.sentence ? <span data-testid={`aud-sentence-${a.id}`}>{` ${a.sentence}`}</span> : a.inSegment !== undefined && a.inSegment !== a.count ? ` ${countLabel(a.inSegment, "person", "people")} in it; ${a.count.toLocaleString()} can get a campaign email.` : ""}
                         </div>
                         {/* WHERE THEY LIVE — the sentence this rail exists for,
                             and it is shown at a count of ZERO too. An empty
