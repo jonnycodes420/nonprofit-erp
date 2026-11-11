@@ -754,7 +754,7 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
             TO_CHAR(i.committed_at AT TIME ZONE ?, 'YYYY-MM-DD') AS committed_on,
             i.committed_at, ${IMPORT_WHO_SQL} AS actor_user_name, i.rows_in, i.gifts_created, i.donors_created,
             i.donors_merged, i.rows_set_aside, i.rows_errored, i.dollars_in, i.dollars_created, i.summary_json,
-            i.migration_source, i.thanks_answer, i.reversed_at
+            i.migration_source, i.thanks_answer, i.reversed_at, i.archived_at
        FROM imports i LEFT JOIN users u ON u.id = i.actor_user_id AND u.org_id = i.org_id
       WHERE i.org_id=? ${withChecks ? "" : "AND COALESCE(i.shape, '') <> 'source'"}
       ORDER BY i.committed_at DESC, i.id DESC LIMIT 200`,
@@ -778,7 +778,10 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
       reconciled: true, findings: [], notices: [] })).concat(rows.map(r => {
       const summary = typeof r.summary_json === "string" ? JSON.parse(r.summary_json) : (r.summary_json || {});
       // FIX-58: an undone import says Undone, and only that
-      const findings = r.reversed_at ? [] : importFindings(r, summary);
+      const findings0 = r.reversed_at ? [] : importFindings(r, summary);
+      // POLISH-9: from before Steward checked imports, it says so, and is not a finding.
+      const before = require("./beforeChecks").beforeChecks(r, findings0.length === 0);
+      const findings = before ? [] : findings0;
       return {
         id: r.id, name: r.name, sourceFilename: r.source_filename, shape: r.shape,
         committedOn: r.committed_on, committedAt: r.committed_at, by: r.actor_user_name || null,
@@ -788,6 +791,7 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
         dollarsIn: Number(r.dollars_in) || 0, dollarsCreated: Number(r.dollars_created) || 0,
         ...given(r, summary),
         reconciled: findings.length === 0, findings, notices: importNotices(r),
+        beforeChecks: before, archived: !!r.archived_at,
         footing: r.reversed_at ? null : importFootingOf(r, summary),   // MONEY-4: the flag's own footing
         // TRANS-1 — a named import says where the file came from, and whether
         // it has a Move Report to open. `hasMoveReport` is the presence of the
@@ -864,7 +868,9 @@ app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
   if (!r) return res.status(404).json({ error: "import not found" });
   const summary = typeof r.summary_json === "string" ? JSON.parse(r.summary_json) : (r.summary_json || {});
   // FIX-58: an undone import says Undone, and only that
-  const findings = r.reversed_at ? [] : importFindings(r, summary);
+  const findings0 = r.reversed_at ? [] : importFindings(r, summary);
+  const before = require("./beforeChecks").beforeChecks(r, findings0.length === 0);   // POLISH-9
+  const findings = before ? [] : findings0;
   const given = (await importGivenParts(req.user.orgId, [r]))(r, summary);
   // FIX-58: the gift rows said once, each part opening its rows
   const src = part => ({ key: "import-gifts", params: { import: r.id, ...(part ? { part } : {}) } });
@@ -878,7 +884,8 @@ app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
       rowsSetAside: Number(r.rows_set_aside) || 0, rowsErrored: Number(r.rows_errored) || 0,
       dollarsIn: Number(r.dollars_in) || 0, dollarsCreated: Number(r.dollars_created) || 0,
       reconciled: findings.length === 0, findings, notices: importNotices(r),
-      footing: r.reversed_at ? null : importFootingOf(r, summary),   // MONEY-4: rows AND dollars, the same footing the list's flag reads
+      beforeChecks: before, archived: !!r.archived_at,   // POLISH-9: no footing claimed for a run from before the checks
+      footing: r.reversed_at || before ? null : importFootingOf(r, summary),   // MONEY-4: rows AND dollars, the same footing the list's flag reads
       migrationSource: r.migration_source || null,
       hasMoveReport: !!(summary && summary.moveFile),
       thanks: (await recentGiftRuns(req.user.orgId, [r])).has(r.id) ? IT.answerSentence(IT.cleanAnswer(r.thanks_answer)) || null : null,
@@ -1154,6 +1161,20 @@ app.get("/imports/:id/move-report/pdf", requireAuth, wrap(async (req, res) => {
 // The org's own totals, from the system they are leaving. A person's figure
 // typed from memory is never folded into the headline -- it gets its own
 // column -- so this stores it and nothing else.
+// POLISH-9: Archive takes an old import off the list's main rows. Its gifts
+// and people are untouched; Unarchive puts it back.
+app.post("/imports/:id/archive", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const on = !(req.body && req.body.archived === false);
+  const [who] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [req.user.userId, req.user.orgId]);
+  const r = await query(
+    `UPDATE imports SET archived_at = ${on ? "NOW()" : "NULL"}, archived_by = ?, archived_by_name = ?
+      WHERE id=? AND org_id=? RETURNING id, name, archived_at`,
+    [on ? req.user.userId : null, on ? (who && who.name) || null : null, req.params.id, req.user.orgId]);
+  if (!r.length) return res.status(404).json({ error: "That import is not in your organization." });
+  if (req.audit) { req.audit.entity("import", r[0].id, r[0].name); req.audit.action(on ? "archived an import" : "unarchived an import"); }
+  res.json({ ok: true, id: r[0].id, archived: !!r[0].archived_at });
+}));
+
 app.post("/imports/:id/old-system-totals", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [r] = await query("SELECT id FROM imports WHERE id=? AND org_id=?", [req.params.id, orgId]);

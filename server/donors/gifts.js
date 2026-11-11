@@ -423,7 +423,12 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
   }
   await require("../../afterChange").afterChange(req.user.orgId, [g.donor_id], { door: "gift_form", recalc: false })
     .catch(e => console.error("[gift-edit] after-change:", e.message));
-  res.json(rows[0]);
+  // POLISH-9 (W-1107-Finance-04X): the edited screen draws from this answer, never
+  // the old number for the second it takes a re-read to land.
+  let figures = null;   // never a reason the save itself fails
+  try { figures = await require("./routes").donorProfileFigures(req.user.orgId, g.donor_id, orgToday(await orgTz(req.user.orgId))); }   // ORG_TZ_SEAM_OK
+  catch (e) { console.error("[gift-edit] figures:", e.message); }
+  res.json(figures ? { ...rows[0], figures } : rows[0]);
 }));
 
 app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {

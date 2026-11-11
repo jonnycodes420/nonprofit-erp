@@ -19,6 +19,7 @@ const routers = {
   r1_2: express.Router(),
 };
 
+const FIGS = {};   // POLISH-9: donorProfileFigures, set when mounted
 function mount(ctx) {
 const {
   GR, OU, PT_READY, UNDO_SECONDS, UNKNOWN_ROLE, UNKNOWN_STATUS, actor, birthdayMod, buildDonorListFilter,
@@ -932,6 +933,8 @@ async function donorRemovalProblem(orgId, donorId, nextTypes) {
   const lock = await donorLock(orgId, row);
   return lock.locked ? { error: "donor_has_gifts", sentence: lock.reason, giftCount: lock.giftCount } : null;
 }
+FIGS.fn = donorProfileFigures;   // POLISH-9: for the gift edit's answer
 }
 
-module.exports = { routers, mount };
+// POLISH-9: the gift edit answers with the person's four figures (server/donors/gifts.js).
+module.exports = { routers, mount, donorProfileFigures: (...a) => FIGS.fn(...a) };

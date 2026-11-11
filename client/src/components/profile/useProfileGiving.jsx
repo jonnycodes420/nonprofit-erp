@@ -16,7 +16,7 @@ import { rememberGift } from "../../lib/stickyGift";   // QUICKADD-1: "Same as l
 import { offerUndo } from "../EditHistory";
 import { savePledgeSchedule } from "../gifts/PledgeSchedule";
 
-export function useProfileGiving({ donor, journey, setJourneyList, setJourneySuggest, setAddPick, setAddPreview, setAddErr, onInteractionAdded, setJourney, journeyBusy, setJourneyBusy, addPick, setGiftLoading, loadGiftsFull, loadPlannedGifts, loadPledges, dpTab, fundAffinity, loadMaterials, loadFundAffinity, setCampaigns, giftCfDefs, giftsFull, setGiftEditId, giftEditForm, setGiftSaving, receiptForGift, addGiftForm, setAddGiftForm, setGiftErr, addGiftIdemRef, setAddGiftOpen, refreshSoftCredit, addPledgeIdemRef, pledgeForm, setPledgeForm, setAddPledgeOpen, setPledgeSaving, setPledgeResendBusyId, setPledgeResentIds, pgForm, setPgForm, setAddPgOpen, setPgSaving, matNote, setMatNote, setMatUploading }) {
+export function useProfileGiving({ setFigs, setGiftsFull, donor, journey, setJourneyList, setJourneySuggest, setAddPick, setAddPreview, setAddErr, onInteractionAdded, setJourney, journeyBusy, setJourneyBusy, addPick, setGiftLoading, loadGiftsFull, loadPlannedGifts, loadPledges, dpTab, fundAffinity, loadMaterials, loadFundAffinity, setCampaigns, giftCfDefs, giftsFull, setGiftEditId, giftEditForm, setGiftSaving, receiptForGift, addGiftForm, setAddGiftForm, setGiftErr, addGiftIdemRef, setAddGiftOpen, refreshSoftCredit, addPledgeIdemRef, pledgeForm, setPledgeForm, setAddPledgeOpen, setPledgeSaving, setPledgeResendBusyId, setPledgeResentIds, pgForm, setPgForm, setAddPgOpen, setPgSaving, matNote, setMatNote, setMatUploading }) {
   // The list: a person can be in several journeys, so it is always offered.
   useEffect(()=>{
     let live=true;
@@ -90,7 +90,10 @@ export function useProfileGiving({ donor, journey, setJourneyList, setJourneySug
       const {customFields,fund,fund_id:_oldFund,...core}=giftEditForm;
       const fundProblem=fundLinesProblem(core.amount,fund);
       if(fundProblem){setGiftSaving(false);alert(fundProblem);return;}
-      await apiFetch(`/gifts/${giftId}`,{method:"PUT",body:JSON.stringify({...core,...(fund?fundBody(fund,{editing:true}):{})})});
+      const saved=await apiFetch(`/gifts/${giftId}`,{method:"PUT",body:JSON.stringify({...core,...(fund?fundBody(fund,{editing:true}):{})})});
+      // POLISH-9: the screen she edited answers from the save itself, at once
+      if(saved&&saved.figures&&setFigs)setFigs(saved.figures);
+      if(saved&&saved.id&&setGiftsFull)setGiftsFull(gs=>gs.map(x=>x.id===saved.id?{...x,amount:parseFloat(saved.amount)||0,date:saved.date||x.date}:x));
       if(customFields&&giftCfDefs.length){
         // through the ONE seam — a refused value names its reason
         await apiFetch(`/gifts/${giftId}/custom-fields`,{method:"PUT",body:JSON.stringify({values:customFields})});

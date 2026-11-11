@@ -128,6 +128,8 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
     // The first recipient is whose name the preview shows, so what she reads on
     // the right of the screen is the email the first person will get.
     // SWEEP-3: with the gift and total the send fills (legacyCampaignBody).
+    // POLISH-9: the preview reads as this audience will (anyone in it who never gave).
+    audienceNoGift: [...donors, ...aud.leftOut.flatMap(g => g.people)].some(d => !(Number(d.total_giving) > 0)),
     first: donors[0] ? { id: donors[0].id, name: displayNameCase(donors[0].name || ""), firstName: String(donors[0].name || "").trim().split(/\s+/)[0] || "Margaret",
       ...(firstGift ? { giftAmount: `$${Number(firstGift.amount).toLocaleString()}` } : {}),
       ...(Number(donors[0].total_giving) > 0 ? { totalGiving: `$${Number(donors[0].total_giving).toLocaleString()}` } : {}) } : null,

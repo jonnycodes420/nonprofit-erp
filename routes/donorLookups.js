@@ -76,6 +76,10 @@ app.get("/donors/pick", requireAuth, wrap(async (req, res) => {
   if (req.query.withEmail === "1") where.push("COALESCE(email,'') <> ''");
   if (req.query.named === "1") where.push("COALESCE(name,'') <> ''");
   if (req.query.kind) { where.push("kind = ?"); args.push(String(req.query.kind)); }
+  // POLISH-9 (W-1107-Fundraising-17): gave=0 is people who have never given.
+  // Highest giving first put a never-giver after every giver with a like name,
+  // past the picker's limit; the Preview as finder asks for them on their own.
+  if (req.query.gave === "0") where.push("COALESCE(total_giving, 0) <= 0");
   const rows = await query(`SELECT ${COLS} FROM donors WHERE ${where.join(" AND ")} ${ORDER} LIMIT ?`, [...args, limit]);
   res.json(rows.map(shape));
 }));

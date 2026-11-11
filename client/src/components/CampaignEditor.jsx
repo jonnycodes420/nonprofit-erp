@@ -92,14 +92,15 @@ export default function CampaignEditor({
 
   const redraw = useCallback(() => { if (!typing.current) setRev(r => r + 1); }, []);
   const firstId = segPreview && segPreview.first ? segPreview.first.id : null;
-  useEffect(() => { redraw(); }, [blocks.length, device, dark, as, firstId, redraw]);
+  useEffect(() => { redraw(); }, [blocks.length, device, dark, as, firstId, segPreview && segPreview.audienceNoGift, redraw]);
   const seq = useRef(0);
   useEffect(() => {
     const n = ++seq.current;
     const t = setTimeout(() => {
       const cur = latest.current;
       apiFetch("/email-preview", { method: "POST", body: JSON.stringify({ blocks: stripKeys(cur.blocks), subject: cur.subject, preheader: cur.preheader, dark,
-        editable: !readOnlySent && !isReadOnly, as: previewAsParam(as, firstId), campaignName: cur.name }) })
+        editable: !readOnlySent && !isReadOnly, as: previewAsParam(as, firstId), campaignName: cur.name,
+        audienceNoGift: !!(segPreview && segPreview.audienceNoGift) }) })   // POLISH-9
         .then(r => { if (n === seq.current) setPreview({ html: r.html, problems: r.problems || [], loading: false, as: r.as, subject: r.subject || "" }); })
         .catch(e => { if (n === seq.current) setPreview(p => ({ ...p, loading: false, problems: [(e && (e.sentence || e.message)) || "The preview could not be drawn."] })); });
     }, 300);
