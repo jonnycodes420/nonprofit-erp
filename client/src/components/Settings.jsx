@@ -30,6 +30,7 @@ import { BrandingManager } from "./settings/BrandingManager";
 import { TimezoneCard } from "./settings/TimezoneCard";
 import { CfTypeHelp } from "./settings/CfTypeHelp";   // LIST-4
 import { MajorGiftsCheckbox } from "./settings/MajorGiftsCheckbox";   // PROSPECT-1, moved by WEALTH-1
+import { SeesSelect, InviteSees } from "./settings/TeamAccess";   // ACCESS-2: who a member sees
 import { WealthScoresTeamSetting } from "./settings/WealthScoresTeamCard";   // WEALTH-1
 import { BoardPackRecipientsCard } from "./settings/BoardPackRecipientsCard";
 import { ProcessingRatesCard } from "./settings/ProcessingRatesCard";
@@ -95,6 +96,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   const [showInvite,setShowInvite]=useState(false);
   const [invEmail,setInvEmail]=useState("");
   const [invRole,setInvRole]=useState("staff");
+  const [invAccess,setInvAccess]=useState({});   // ACCESS-2
   const [inviting,setInviting]=useState(false);
   const [inviteResult,setInviteResult]=useState(null);
   const [invVer,setInvVer]=useState(0);   // WALKB-2: the Invited list reloads after an invite
@@ -386,7 +388,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
     if(!invEmail.trim()){setInvErr("Email required");return;}
     setInviting(true);setInvErr("");
     try{
-      const r=await apiFetch("/auth/invite",{method:"POST",body:JSON.stringify({email:invEmail.trim(),role:invRole})});
+      const r=await apiFetch("/auth/invite",{method:"POST",body:JSON.stringify({email:invEmail.trim(),role:invRole,...invAccess})});
       setInviteResult({link:r.inviteLink,emailSent:r.emailSent,emailMessage:r.emailMessage});setInvVer(v=>v+1);
     }catch(e){
       if(e.error==="seat_limit"){
@@ -621,6 +623,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             </div>
             <Pill label={roleWord(m.role)+(m.member?" · joined from another org":"")} color={m.role==="admin"?T.ink:T.ink3}/>
             <MajorGiftsCheckbox m={m} isAdmin={isAdmin} setTeam={setTeam}/>{/* PROSPECT-1 (settings/MajorGiftsCheckbox.jsx) */}
+            <SeesSelect m={m} isAdmin={isAdmin} setTeam={setTeam}/>{/* ACCESS-2 */}
             {auth?.user?.role==="admin"&&m.id!==auth?.user?.id&&(
               /* BUILD-75 C.3 — soft-detach: revokes their sessions, frees their
                  seat, unassigns their portfolio; everything they authored keeps
@@ -1446,6 +1449,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                   style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:16}}>
                   {ROLES.map(r=><option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                 </select>
+                <InviteSees role={invRole} value={invAccess} onChange={setInvAccess}/>
                 {invErr&&<div style={{marginBottom:12,fontSize:13,color:T.terra700,background:T.terra100,border:"1px solid "+T.terra200,borderRadius:8,padding:"8px 12px"}}>{invErr}</div>}
                 <div style={{display:"flex",gap:10}}>
                   <button onClick={closeInvite} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>

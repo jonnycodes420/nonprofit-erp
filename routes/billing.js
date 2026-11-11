@@ -526,7 +526,8 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (!email) return res.status(400).json({ error: "Email required" });
   // VOL-1 — three roles now. A volunteer coordinator sees volunteers and
   // hours and not giving; the boundary is enforced in auth.js, not here.
-  const validRole = ["admin", "volunteer_coordinator", "viewer"].includes(role) ? role : "staff";   // ACCESS-1: viewer, read only
+  const validRole = req.body && req.body.preset === "cabinet" ? "staff"   // ACCESS-2: the Campaign cabinet is Staff
+    : ["admin", "volunteer_coordinator", "viewer"].includes(role) ? role : "staff";   // ACCESS-1: viewer, read only
   const normalizedEmail = email.trim().toLowerCase();
 
   // WALKB-2: a member, or an address with an invite already waiting, is refused in one sentence.
@@ -568,6 +569,8 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
        VALUES (?,?,?,?,?,?,?)`,
       [id, req.user.orgId, normalizedEmail, token, validRole, req.user.userId, expiresAt]
     );
+    // ACCESS-2: "Sees: Everyone / Only people assigned to them", or the Campaign cabinet preset.
+    await require("../server/org/teamAccess").saveOnInvite(run, id, validRole === "admin" ? {} : req.body);
   } catch (e) {
     if (e.code !== "23505") throw e;
     return res.status(409).json({ error: "already_invited", message: `${normalizedEmail} already has an invite waiting. Resend it from Team, under Invited.` });
@@ -641,6 +644,7 @@ app.post("/auth/invite/accept", wrap(async (req, res) => {
     "INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,?)",
     [userId, invite.org_id, invite.email, hash, name, invite.role]
   );
+  await require("../server/org/teamAccess").copyFromInvite(run, invite.id, { userId, orgId: invite.org_id, home: true });   // ACCESS-2: who they see
   await run("UPDATE invites SET accepted_at = NOW() WHERE id = ?", [invite.id]);
 
   // Resolve any donors an import routed to this (previously pending) officer —

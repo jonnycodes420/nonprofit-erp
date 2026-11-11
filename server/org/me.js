@@ -199,6 +199,8 @@ app.get("/me", requireAuth, wrap(async (req, res) => {
   const u = users[0];
   res.json({
     user: { id: u.id, email: u.email, name: u.name, role: req.user.support ? "admin" : req.user.role, canMajorGifts: await require("../../prospect").canSee(u.id, req.user.orgId),   // PROSPECT-1
+      // ACCESS-2: who they see here, and the cabinet's two switches (the app hides what's closed to them).
+      portfolio: require("../auth/portfolio").isScoped(req.user), canExport: !(req.user.portfolio && req.user.portfolio.canExport === false),
       canWealthScores: await require("../wealth/access").maySee(u.id, req.user.orgId) },   // WEALTH-1
     org: orgs[0],
     // FIX-57: a support session says so, so the banner reads the server.

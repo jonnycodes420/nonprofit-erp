@@ -23,8 +23,11 @@ const SENTENCE = "Everyone: every active person record here, donors and contacts
 const isEveryone = d => !!d && !d.deleted_at && !d.erased_at && !d.archived_at;
 const hasEmail = d => !!(d && d.email && String(d.email).trim());
 
-async function everyoneCount(query, orgId) {
-  const [r] = await query(`SELECT COUNT(*)::int AS n FROM donors WHERE donors.org_id = ? AND ${EVERYONE("donors")}`, [orgId]);
+// ACCESS-2: `visible` (server/auth/portfolio.js visibleSql) narrows Everyone to
+// a portfolio user's people; omitted, it is the whole org.
+async function everyoneCount(query, orgId, visible) {
+  const v = visible && visible.sql ? visible : { sql: "", args: [] };
+  const [r] = await query(`SELECT COUNT(*)::int AS n FROM donors WHERE donors.org_id = ? AND ${EVERYONE("donors")}${v.sql}`, [orgId, ...v.args]);
   return r ? Number(r.n) : 0;
 }
 

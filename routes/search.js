@@ -277,6 +277,22 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
       "reports", "dashboards", "boardFiles", "files", "grantFiles", "journeys"]) { delete T[k]; delete A[k]; }
   }
 
+  // ACCESS-2: a portfolio user finds their people, and what hangs off them,
+  // only. Every other kind reads the whole org, so it is left out; each kept
+  // kind is read through visiblePeople (server/auth/portfolio.js) on the
+  // column that names its person, before the LIMIT.
+  const vis = require("../server/auth/portfolio").visibleSql(req);
+  if (vis.scoped) {
+    const PERSON_COL = { people: "id", personGifts: "id", gifts: "donor_id", plans: "donor_id", pledges: "donor_id",
+      meetings: "donor_id", emails: "donor_id", notes: "donor_id", files: "donor_id", tasks: "donor_id", households: "member_id" };
+    for (const k of Object.keys(T)) {
+      if (!PERSON_COL[k]) { delete T[k]; delete A[k]; continue; }
+      const m = String(T[k]).match(/^([\s\S]*?)\s+LIMIT\s+(\d+)\s*$/);
+      if (!m) { delete T[k]; delete A[k]; continue; }
+      T[k] = `SELECT * FROM (${m[1]}) pv WHERE pv.${PERSON_COL[k]} IN (SELECT donors.id FROM donors WHERE donors.org_id = ?${vis.sql}) LIMIT ${m[2]}`;
+      A[k] = [...A[k], orgId, ...vis.args];
+    }
+  }
   // One statement: each kind a json array of its rows.
   const keys = Object.keys(T).filter(k => !want || want.has(k));
   if (!keys.length) return res.json({ q, results: [], more: {} });

@@ -27,7 +27,8 @@ const { NOT_CREDIT } = require("../../creditTypes");
 
 const SET = "donors.org_id = ? AND donors.deleted_at IS NULL AND donors.erased_at IS NULL";   // TRUTH-2: an erased person is in no count
 
-function countsSql(orgId, today) {
+function countsSql(orgId, today, visible) {
+  const v = visible && visible.sql ? visible : { sql: "", args: [] };   // ACCESS-2: a portfolio's people
   // statusSql's LAST, for its rows only: people with a positive gift on file.
   const LAST = "GREATEST(a.last_date, a.imp_last)";
   // The giving unit (linked people, pledges) read once for the org, set-wise.
@@ -59,13 +60,13 @@ function countsSql(orgId, today) {
       COUNT(*) FILTER (WHERE s.lapsed)::int AS lapsed,
       COUNT(*) FILTER (WHERE s.lapsing)::int AS lapsing,
       COUNT(*) FILTER (WHERE ${own(L.LAST_ON_RECORD("donors"))} ${re.sql} ELSE false END)::int AS reengage
-    FROM donors LEFT JOIN s ON s.donor_id = donors.id LEFT JOIN unit ud ON ud.donor_id = donors.id WHERE ${SET}`;
-  return { sql, args: [...U.args, orgId, today, b.lapsedOnOrBefore, ...lapsed.args, b.lapsingOnOrBefore, ...lapsing.args, b.lapsedOnOrBefore, ...re.args, orgId] };
+    FROM donors LEFT JOIN s ON s.donor_id = donors.id LEFT JOIN unit ud ON ud.donor_id = donors.id WHERE ${SET}${v.sql}`;
+  return { sql, args: [...U.args, orgId, today, b.lapsedOnOrBefore, ...lapsed.args, b.lapsingOnOrBefore, ...lapsing.args, b.lapsedOnOrBefore, ...re.args, orgId, ...v.args] };
 }
 
-async function peopleCounts(orgId) {
+async function peopleCounts(orgId, visible) {
   const today = await DS.todayFor(orgId);
-  const { sql, args } = countsSql(orgId, today);
+  const { sql, args } = countsSql(orgId, today, visible);
   const [r] = await query(sql, args);
   return r;
 }

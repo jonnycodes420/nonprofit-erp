@@ -4,6 +4,15 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
 
 ## Rules
 
+- **ACCESS-2 (2026-11-10). A portfolio user sees their people and nobody else, decided in one door.** "Sees: Everyone /
+  Only people assigned to them" is `users.sees` (home org) or `org_memberships.sees` (a further org); admins always see
+  everyone. `requireAuth` runs `server/auth/portfolio.js` `gate` for a portfolio user after the route matched: every
+  signed-in route is declared in `server/auth/portfolioRoutes.js` (free, param, scoped or closed) and an undeclared one is
+  closed; a person (or a record hanging off one) outside the portfolio in a path parameter is swapped for an id that
+  can't exist, so the route answers exactly as it does for nobody; one in a write's body is a 404. A list adds
+  `visibleSql` (the one predicate: owner, or the household's primary person's owner). A new signed-in route needs a
+  declaration or `tests/access2-portfolio.test.js` fails; a new list of people needs `visibleSql` before it is opened.
+  The Campaign cabinet preset is Staff, only assigned, `can_export` and `can_wealth` false.
 - **ONBOARD-2 (2026-11-09). An onboarding stage is read from signals, never set.** The five gates
   (paper, data in, connections, kickoff, first month) live in `server/onboard/stages.js`; `org_onboarding`'s
   stage, entered_at, blockers and flags are written only by `server/onboard/board.js` `recompute`. The

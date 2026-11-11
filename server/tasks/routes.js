@@ -155,6 +155,16 @@ const TASK_JOINS = `LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org
 // Whose tasks. "mine" for an admin also holds the unowned ones, the Thread's
 // own rule (composeThreads), so Home's Thread and Home's numbers agree.
 async function taskScope(req) {
+  const base = await taskScopeOrg(req);
+  // ACCESS-2: a portfolio user's tasks are about their people, or about no
+  // person and theirs (server/auth/portfolio.js visibleSql).
+  const vis = require("../auth/portfolio").visibleSql(req);
+  if (base.refused || !vis.scoped) return base;
+  return { sql: `${base.sql} AND ((t.donor_id IS NULL AND t.assigned_to = ?)
+      OR t.donor_id IN (SELECT donors.id FROM donors WHERE donors.org_id = t.org_id${vis.sql}))`,
+    params: [...base.params, req.user.userId, ...vis.args] };
+}
+async function taskScopeOrg(req) {
   const { orgId, userId } = req.user;
   const isAdmin = req.user.role === "admin";
   const staff = req.query.staff ? String(req.query.staff) : null;

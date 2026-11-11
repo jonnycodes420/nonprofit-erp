@@ -64,6 +64,9 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   const EV = require("./shared/numbers/everyone").EVERYONE("donors");
   const where = ["org_id = ?", opts.hideArchived ? EV : "deleted_at IS NULL AND erased_at IS NULL"];
   const params = [orgId];
+  // ACCESS-2: a portfolio user's list is their people (server/auth/portfolio.js
+  // visibleSql, passed in by the route). Everyone else gets "" and no args.
+  if (opts.visible && opts.visible.sql) { where.push(opts.visible.sql.replace(/^ AND /, "")); params.push(...opts.visible.args); }
   const today = await DS.todayFor(orgId);
   const cl = DS.closenessSql(today);
   const { search, stage, status, assignedTo, designation, household, role } = q;
