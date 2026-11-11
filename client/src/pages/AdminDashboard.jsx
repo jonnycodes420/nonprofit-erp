@@ -10,6 +10,7 @@ import { enterSupport } from "../lib/supportSession";   // FIX-57
 import { countLabel } from "../../../shared/countWords.js";
 import AdminOpsNav from "./ops/AdminOpsNav";
 import StartLinkPanel from "../components/admin/StartLinkPanel";   // ONBOARD-1
+import OrgMenuPanel from "../components/admin/OrgMenuPanel";   // NAV-1 (menu): an org's sidebar and Major Gifts tabs
 import DateInput from "../components/inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
@@ -769,6 +770,7 @@ function OrgPanel({ org, onClose, onRefresh }) {
           {/* CLIENT-SAFE-1: privacy mode, turned on here for an org that asked.
               Their audit log records it as changed by Steward support. */}
           <OrgPrivacy orgId={org.id} PSH={PSH} />
+          <OrgMenuPanel orgId={org.id} adminFetch={adminFetch} PSH={PSH} />
 
           {/* MAIL-1: this org's mail. A demonstration org shows it all locked, with why. */}
           {mail && (

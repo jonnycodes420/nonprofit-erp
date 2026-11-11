@@ -75,6 +75,7 @@ const MODULES = [
   "../server/org/data",
   "../server/org/integrations",
   "../server/org/me",
+  "../server/org/menu",   // NAV-1 (menu): the org's sidebar and Major Gifts tabs
   "../server/org/morningEmail",   // TIDY-1
   "../server/org/publicPages",
   "../server/org/routes",
@@ -107,6 +108,7 @@ routers.r0.use(require("../server/org/routes").routers.r0);
 routers.r0.use(require("../server/outreach/thanks").routers.r0);
 routers.r0.use(require("../server/donors/gifts").routers.r0);
 routers.r1.use(require("../server/org/me").routers.r1);
+routers.r1.use(require("../server/org/menu").routers.r1);   // NAV-1 (menu)
 routers.r1.use(require("../server/org/morningEmail").routers.r1);   // TIDY-1: preview and test the morning email
 routers.r1.use(require("../server/org/routes").routers.r1);
 routers.r1.use(require("../server/org/invites").routers.r1);   // WALKB-2: pending invites

@@ -331,12 +331,13 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
   );
 }
 
-export function AuctionsView({ donors = [], isReadOnly, onNavigate }) {
+// NAV-1 (menu): `eventId` shows only that event's auctions, and a new one is that event's.
+export function AuctionsView({ donors = [], isReadOnly, onNavigate, eventId = "" }) {
   const [list, setList] = useState(null);
   const [open, setOpen] = useState(null);
   const [msg, setMsg] = useState("");
   const [nf, setNf] = useState(null);
-  const load = () => apiFetch("/auctions").then(setList).catch(e => setMsg(errorMessage(e, "Could not load auctions.")));
+  const load = () => apiFetch("/auctions").then(r => setList(eventId && r ? { ...r, auctions: (r.auctions || []).filter(a => a.event_id === eventId) } : r)).catch(e => setMsg(errorMessage(e, "Could not load auctions.")));
   useEffect(() => { load(); }, []);
   if (open) return <AuctionDetail id={open} donors={donors} isReadOnly={isReadOnly} onNavigate={onNavigate} onBack={() => { setOpen(null); load(); }} />;
   const create = async () => {
@@ -351,7 +352,7 @@ export function AuctionsView({ donors = [], isReadOnly, onNavigate }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, color: T.ink3, maxWidth: 560 }}>An online auction with its own page: items people donated, bidding that opens and closes on time, and winners who pay through your own Stripe account.
           <MailTypeSwitches keys={["auction_signin"]} from="auctions" /></div>
-        {!nf && <button style={btn(true)} disabled={isReadOnly} onClick={() => setNf({ title: "", eventId: "", opensLocal: "", closesLocal: "", description: "" })} data-testid="auction-new">New auction</button>}
+        {!nf && <button style={btn(true)} disabled={isReadOnly} onClick={() => setNf({ title: "", eventId, opensLocal: "", closesLocal: "", description: "" })} data-testid="auction-new">New auction</button>}
       </div>
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink }}>{msg}</div>}
       {nf && (
