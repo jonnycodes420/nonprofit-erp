@@ -822,7 +822,10 @@ app.delete("/tasks/:id", requireAuth, wrap(async (req, res) => {
 // out of the stat; they resurface by construction the day snoozed_until
 // arrives. `donorId` asks for one donor's thread and bypasses scope and cap —
 // a donor record shows its own thread whoever owns it.
-async function composeThreads(orgId, { donorId = null, scope = "mine", userId = null, isAdmin = false, cap = null } = {}) {
+async function composeThreads(orgId, { donorId = null, scope = "mine", userId = null, isAdmin = false, cap = null, visible = null } = {}) {
+  // ACCESS-2B: for someone who sees only their own people, the Thread is about
+  // them only (server/auth/portfolio.js visibleSql over `d`); "" for everyone else.
+  const vis = visible && visible.sql ? visible : { sql: "", args: [] };
   const DDth = await import("../../shared/displayDate.js");   // CHECK-2: a line Steward wrote reads "Fri, Oct 23"
   const org = await orgTz(orgId);
   const today = orgToday(org);                         // ORG_TZ_SEAM_OK
@@ -844,9 +847,9 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
        LEFT JOIN interactions i ON i.id = t.opening_interaction_id
        LEFT JOIN gifts g ON g.id = t.opening_gift_id
       WHERE t.org_id = ? AND t.closed_at IS NULL AND d.deleted_at IS NULL
-        ${donorId ? "AND t.donor_id = ?" : ""} ${ownerClause}
+        ${donorId ? "AND t.donor_id = ?" : ""} ${ownerClause}${vis.sql}
       ORDER BY t.due_date ASC, t.opened_on ASC`,
-    donorId ? [orgId, donorId, ...ownerParams] : [orgId, ...ownerParams]);
+    [...(donorId ? [orgId, donorId, ...ownerParams] : [orgId, ...ownerParams]), ...vis.args]);
 
   // ── BUILD-88a A.2 — ONE COMPOSER, EVERY OPEN ITEM ────────────────────────
   // A follow-up created by the conversation flow is a THREAD; one created by
@@ -877,11 +880,11 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
         AND NOT EXISTS (SELECT 1 FROM grant_milestones m JOIN threads th ON th.id = m.thread_id AND th.closed_at IS NULL
                          WHERE m.id = k.milestone_id AND m.org_id = k.org_id AND k.link_kind = 'deadline')
         ${donorId ? "AND k.donor_id = ?" : ""}
-        ${effScope === "all" || !userId ? "" : "AND (k.assigned_to = ? OR (k.assigned_to IS NULL AND d.assigned_to = ?))"}
+        ${effScope === "all" || !userId ? "" : "AND (k.assigned_to = ? OR (k.assigned_to IS NULL AND d.assigned_to = ?))"}${vis.sql}
       ORDER BY k.due ASC, k.id ASC`,
-    donorId
+    [...(donorId
       ? (effScope === "all" || !userId ? [orgId, donorId] : [orgId, donorId, userId, userId])
-      : (effScope === "all" || !userId ? [orgId] : [orgId, userId, userId]));
+      : (effScope === "all" || !userId ? [orgId] : [orgId, userId, userId])), ...vis.args]);
 
   // ── The rank signals, read in BATCHES ────────────────────────────────────
   // Four queries for the whole list, never one per row (the BUILD-15 board
@@ -1070,7 +1073,7 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
   const figures = threadFigures(shownList);
   const oldestDays = figures.oldest ? figures.oldest.days : 0;
   const oldest = figures.oldest && figures.oldest.days > 0 ? figures.oldest : null;
-  const [{ n: everCount } = { n: 0 }] = await query(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id = ?`, [orgId]);
+  const [{ n: everCount } = { n: 0 }] = await query(`SELECT COUNT(*)::int AS n FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id WHERE t.org_id = ?${vis.sql}`, [orgId, ...vis.args]);
   return {
     list: ranked, bands: q.bands, more: q.more,
     stat: { open: shownList.length, steps: list.length, overdue, oldestDays, oldest, snoozed, unowned, shown: ranked.length },
@@ -1154,6 +1157,7 @@ app.get("/threads", requireAuth, wrap(async (req, res) => {
     scope: String(req.query.scope || "mine"),
     userId: req.user.userId,
     isAdmin: req.user.role === "admin",
+    visible: require("../auth/portfolio").visibleSql(req, "d"),   // ACCESS-2B: their people only
   }));
 }));
 

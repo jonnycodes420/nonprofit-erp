@@ -123,9 +123,10 @@ app.get("/donors/birthdays-near", requireAuth, wrap(async (req, res) => {
     if (m === 2 && d === 28) pairs.add("2-29");
   }
   const md = [...pairs].map(p => p.split("-").map(Number));
+  const vis = require("../server/auth/portfolio").visibleSql(req);   // ACCESS-2B: their people only
   const rows = await query(`SELECT ${COLS} FROM donors WHERE ${SET} AND deceased IS NOT TRUE
-      AND (birth_month, birth_day) IN (SELECT * FROM unnest(?::int[], ?::int[])) ${ORDER}`,
-    [orgId, md.map(x => x[0]), md.map(x => x[1])]);
+      AND (birth_month, birth_day) IN (SELECT * FROM unnest(?::int[], ?::int[]))${vis.sql} ${ORDER}`,
+    [orgId, md.map(x => x[0]), md.map(x => x[1]), ...vis.args]);
   res.json(rows.map(shape));
 }));
 }

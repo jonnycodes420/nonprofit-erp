@@ -24,6 +24,11 @@
 //       land; an admin and a staff member who sees everyone are unaffected.
 //   §6  ATLAS: asked about someone outside, it can't find them; asked about
 //       her own, it answers. The control: an admin's Atlas finds the other.
+//   §7  THE APP'S LIST (ACCESS-2B): GET /me/portfolio-routes, which the app
+//       reads so it asks nothing closed, agrees with the live gate on every
+//       param-less read, first match deciding as in Express; a bundle answers
+//       a closed part 404 without running it; the Thread is hers only; her
+//       sign-in answer carries the flag the app's first reads go by.
 //
 // Planted defects this suite was watched go red on (ACCESS-2 report):
 //   - the gifts route's scope dropped (POST /donors/:id/gifts declared with no
@@ -65,11 +70,11 @@ const U = {
 const MINE = { a: "d_acc2_mine_a", b: "d_acc2_mine_b", head: "d_acc2_head", member: "d_acc2_member" };
 // Outside: owned by the admin, and owned by nobody.
 const HID = "d_acc2_hid", HID2 = "d_acc2_hid2";
-const HIDDEN_MARKS = ["zzquillon", "zzhiddennote", "zzhiddentask", "7319.47", "731947", "d_acc2_hid", "zzhidden2"];
+const HIDDEN_MARKS = ["zzquillon", "zzhiddennote", "zzhiddentask", "zzhiddenthread", "7319.47", "731947", "d_acc2_hid", "zzhidden2"];
 const IDS = {
-  own:    { donor: MINE.a, gift: "g_acc2_mine", interaction: "i_acc2_mine", pledge: "p_acc2_mine", task: "t_acc2_mine", household: "h_acc2_mine", relationship: "r_acc2_mine", thread: "th_acc2_none" },
+  own:    { donor: MINE.a, gift: "g_acc2_mine", interaction: "i_acc2_mine", pledge: "p_acc2_mine", task: "t_acc2_mine", household: "h_acc2_mine", relationship: "r_acc2_mine", thread: "th_acc2_mine" },
   nobody: { donor: "acc2_nobody_donor", gift: "acc2_nobody_gift", interaction: "acc2_nobody_note", pledge: "acc2_nobody_pledge", task: "acc2_nobody_task", household: "acc2_nobody_house", relationship: "acc2_nobody_rel", thread: "acc2_nobody_thread" },
-  hidden: { donor: HID, gift: "g_acc2_hid", interaction: "i_acc2_hid", pledge: "p_acc2_hid", task: "t_acc2_hid", household: "h_acc2_hid", relationship: "r_acc2_cross", thread: "th_acc2_none" },
+  hidden: { donor: HID, gift: "g_acc2_hid", interaction: "i_acc2_hid", pledge: "p_acc2_hid", task: "t_acc2_hid", household: "h_acc2_hid", relationship: "r_acc2_cross", thread: "th_acc2_hid" },
 };
 
 async function wipe() {
@@ -111,6 +116,10 @@ async function seed() {
   await q(`INSERT INTO interactions (id,org_id,donor_id,type,date,note) VALUES ('i_acc2_mine',$1,$2,'note',$4,'a note on mine'), ('i_acc2_hid',$1,$3,'note',$4,'zzhiddennote about them')`, [ORG, MINE.a, HID, day]);
   await q(`INSERT INTO tasks (id,org_id,donor_id,title,due,assigned_to) VALUES ('t_acc2_mine',$1,$2,'call mine',$5,$4), ('t_acc2_hid',$1,$3,'zzhiddentask call',$5,$4)`, [ORG, MINE.a, HID, U.port[0], day]);
   await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status) VALUES ('p_acc2_mine',$1,$2,500,$4,'open'), ('p_acc2_hid',$1,$3,9000,$4,'open')`, [ORG, MINE.a, HID, day]);
+  // ACCESS-2B: the Thread. One follow-up on her own person, and one she owns on
+  // someone outside her portfolio (an owner can change after a thread opens).
+  await q(`INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,owner_id,owner_name) VALUES
+    ('th_acc2_mine',$1,$2,'call','call mine about spring',$4,$4,$5,'Acc2 port'), ('th_acc2_hid',$1,$3,'call','zzhiddenthread call',$4,$4,$5,'Acc2 port')`, [ORG, MINE.a, HID, day, U.port[0]]);
   await q(`INSERT INTO donor_relationships (id,org_id,donor_id_a,donor_id_b,relationship_type) VALUES ('r_acc2_mine',$1,$2,$3,'friend'), ('r_acc2_cross',$1,$2,$4,'friend')`, [ORG, MINE.a, MINE.b, HID]);
 }
 
@@ -299,6 +308,30 @@ const SKIP = new Set([
   ok("§5 an admin's change in Team takes effect on the next request", flip.status === 200 && stNow.body && stNow.body.total === 0, [flip.status, stNow.body && stNow.body.total]);
   const self = await api("PUT", `/org/users/${U.port[0]}/access`, tok.port, { sees: "everyone" });
   ok("§5 she can't widen her own scope", self.status === 403 || self.status === 404, self.status);
+
+  // ── §7 THE APP'S LIST (ACCESS-2B) ─────────────────────────────────────────
+  // GET /me/portfolio-routes is what the app reads to ask nothing closed. Its
+  // verdict for each param-less read must be the live gate's own answer.
+  const pr = await api("GET", "/me/portfolio-routes", tok.port);
+  const pats = ((pr.body && pr.body.open) || []).map(([m, re, on]) => [m, new RegExp(re), on]);
+  const says = (m, p) => { const h = pats.find(([mm, re]) => mm === m && re.test(p)); return !!(h && h[2]); };
+  const disagree = [];
+  for (const r of signed.filter(x => x.method === "GET" && !/[:*]/.test(x.path))) {
+    const res = await api("GET", r.path, tok.port);
+    const gateClosed = res.status === 404 && res.body && res.body.scope === "portfolio";
+    if (says("GET", r.path) === gateClosed) disagree.push(`${r.path}: list ${says("GET", r.path) ? "open" : "closed"}, gate ${gateClosed ? "closed" : "open"}`);
+  }
+  ok(`§7 the app's list of open routes agrees with the gate on every param-less read`, pats.length > 300 && !disagree.length, disagree.slice(0, 20));
+  ok("§7 the first matching route decides, as in Express (birthdays is its own route, not /donors/:id)", says("GET", "/donors/birthdays-near") && !says("GET", "/donors/duplicates") && says("GET", `/donors/${MINE.a}`));
+  const adminList = await api("GET", "/me/portfolio-routes", tok.admin);
+  ok("§7 someone who sees everyone gets no list (the app asks as it always has)", adminList.body && adminList.body.open === null && adminList.body.portfolio === false, adminList.body);
+  const hb2 = await api("GET", "/home/bundle?p=" + encodeURIComponent("/grants") + "&p=" + encodeURIComponent("/threads"), tok.port);
+  ok("§7 a bundle answers a closed part 404 and runs the open one", hb2.status === 200 && hb2.body["/grants"].status === 404 && hb2.body["/threads"].status === 200, hb2.body && Object.fromEntries(Object.entries(hb2.body).map(([k, v]) => [k, v.status])));
+  const th = await api("GET", "/threads", tok.port);
+  const thNames = ((th.body && th.body.list) || []).map(x => x.donor_id || x.donorId);
+  ok("§7 the Thread is hers: her person's follow-up, not the one on someone outside", th.status === 200 && thNames.includes(MINE.a) && !leaked(th.text).length, { status: th.status, thNames, leak: leaked(th.text) });
+  const login2 = await fetch(`${process.env.BASE}/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: U.port[1], password: PW }) }).then(r => r.json()).catch(() => null);
+  ok("§7 her sign-in answer says she sees only her people (the app's first reads keep to her routes)", login2 && login2.user && login2.user.portfolio === true, login2 && login2.user);
 
   // ── §6 ATLAS ──────────────────────────────────────────────────────────────
   const at = await api("POST", "/atlas", tok.port, { text: "Tell me about Quillon Zzquillon" });
