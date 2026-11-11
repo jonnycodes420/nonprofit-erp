@@ -1,4 +1,4 @@
-// server/finance/basis.js · TRUTH-6 (W-1107-Finance-39X). EACH FINANCE TOTAL NAMES ITS BASIS, AND ONE LINE RECONCILES.
+// shared/numbers/financeBasis.js · TRUTH-6 (W-1107-Finance-39X). EACH FINANCE TOTAL NAMES ITS BASIS, AND ONE LINE RECONCILES.
 //
 // The fleet read "Waiting to post $1.7M / 4,383 gifts", "Posted $148k" and
 // "FY revenue $368k" beside Fundraising's FY $224,991, with no stated basis.
@@ -16,9 +16,9 @@
 // Every part is computed; Z is what the ledger holds for gifts dated outside
 // the year (or posted at another amount), so the line always foots.
 "use strict";
-const { MONEY, LIVE } = require("../../shared/numbers/money");
-const { POSTED } = require("../../shared/numbers/ledgerStatus");
-const { SCHEDULED } = require("../../shared/numbers/scheduled");
+const { MONEY, LIVE } = require("./money");
+const { POSTED } = require("./ledgerStatus");
+const { SCHEDULED } = require("./scheduled");
 
 const BASIS = {
   posted: "Posted to the ledger (deposit batches): gifts the ledger carries, each posted as revenue to its fund.",

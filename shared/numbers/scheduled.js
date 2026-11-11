@@ -65,4 +65,14 @@ async function scheduledLine(query, orgId, { donorId = null } = {}) {
     sentence: `Scheduled: ${n} ${n === 1 ? "gift" : "gifts"}, ${usd}, dated after today (the next ${scheduledLabel(r.next).replace("Scheduled, ", "")}). ${n === 1 ? "It counts" : "They count"} on ${n === 1 ? "its" : "their"} date, not before.` };
 }
 
-module.exports = { ORG_TODAY, DUE, SCHEDULED, scheduledOn, isScheduled, scheduledLabel, scheduledLine, SENTENCE };
+// The dollars each import run brought in as scheduled (dated after the day it
+// ran), from its own gifts: Map importId -> cents. The import's footing says
+// "imported $X + scheduled $Y" from this (server/imports/footing.js).
+async function scheduledByImport(query, orgId, ids) {
+  if (!ids || !ids.length) return new Map();
+  const rows = await query(`SELECT import_id, COALESCE(SUM(ROUND(amount * 100)), 0)::bigint AS cents FROM gifts
+                             WHERE org_id = ? AND import_id = ANY(?::text[]) AND scheduled_on IS NOT NULL GROUP BY import_id`, [orgId, ids]);
+  return new Map(rows.map(r => [r.import_id, Number(r.cents) || 0]));
+}
+
+module.exports = { scheduledByImport, ORG_TODAY, DUE, SCHEDULED, scheduledOn, isScheduled, scheduledLabel, scheduledLine, SENTENCE };

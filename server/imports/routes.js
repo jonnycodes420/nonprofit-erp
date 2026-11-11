@@ -627,15 +627,8 @@ function importFindings(row, summary) {
   const F = require("./footing");
   return F.footingFindings(F.importFooting(row, summary));
 }
-// TRUTH-6: the dollars each run brought in as SCHEDULED (dated after the day
-// it ran: shared/numbers/scheduled.js), from its own gifts, so the footing says
-// "imported $X + scheduled $Y" and a file with postdated rows foots.
-async function scheduledByRun(orgId, ids) {
-  if (!ids.length) return new Map();
-  const rows = await query(`SELECT import_id, COALESCE(SUM(ROUND(amount * 100)), 0)::bigint AS cents FROM gifts
-                             WHERE org_id=? AND import_id = ANY(?::text[]) AND scheduled_on IS NOT NULL GROUP BY import_id`, [orgId, ids]);
-  return new Map(rows.map(r => [r.import_id, Number(r.cents) || 0]));
-}
+// TRUTH-6: the dollars each run brought in as scheduled (shared/numbers/scheduled.js).
+const scheduledByRun = (orgId, ids) => require("../../shared/numbers/scheduled").scheduledByImport(query, orgId, ids);
 function importFootingOf(row, summary) {
   const F = require("./footing");
   const f = F.importFooting(row, summary);
