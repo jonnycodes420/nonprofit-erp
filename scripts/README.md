@@ -17,6 +17,28 @@ Every script that can write resolves its target through `scripts/lib/prodGuard.j
 to the local scratch stack, and a remote `BASE` or `DATABASE_URL` also needs
 `--i-know-this-is-prod`. `tests/script-guards.test.js` holds every script to that.
 
+## For builders: the loop (CI-SPEED-1)
+
+build → your new suite plus `npm run affected` (10 minutes at most) → push → CI gates → auto-merge.
+
+- **`npm run affected`** (`ci/affected.js`) reads what changed against origin/main and picks the
+  suites that cover it: the suite's own file first, then suites that require the file, name its
+  path, call a route the change touches (read from the diff), or carry its name. It runs what
+  fits in 600 s by CI's timings, strongest reason first and fastest first, on its own database
+  and server. It prints what it ran, what it skipped and "CI will run the rest".
+  `-- --dry-run` plans only; `-- --files a.js,b.js` plans for those files; `-- --budget 300`.
+- **Heavy suites are CI's**: tenant-matrix, tenant-isolation, smoke-walk, every Playwright walk,
+  the load suites and any suite over 240 s. They run locally only when you changed that suite's
+  own file.
+- **No waiting on other tabs.** `affected` takes one of two machine slots (`ci/affected-slots.js`,
+  one run per worktree), not the battery lock, and never waits more than two minutes. If it
+  would, it says so and the answer is to push.
+- **CI**: a new push to a PR cancels that PR's stale run; a push to main is never cancelled. The
+  shards plan from timings that blend each run with the last (`ci/shard-report.js`), so one noisy
+  run does not unbalance the next. node_modules and the Playwright browsers are cached on the
+  lockfiles.
+- **If CI fails on code you didn't touch**, rerun that job once. If it fails twice, stop and say so.
+
 ## For builders: how a PR merges (AUTOMERGE-1)
 
 Brief templates say this. Open the PR and watch CI. Don't run `gh pr merge`: GitHub merges

@@ -310,6 +310,8 @@ const EXEMPT = {
   "deploy-lane": "STAGE-1 — reads the merged PR's labels and description from the GitHub API and writes a job output (staging or hotfix). No BASE, no DB, no app call",
   "vercel-staging-config": "STAGE-1 — writes vercel.staging.json in the checkout from vercel.json with prod's API host replaced. No BASE, no DB, no network",
   "wait-live": "STAGE-1 — polls a copy's public /health and build-sha meta until it serves a commit. Read-only, no secret",
+  "affected": "CI-SPEED-1 — `npm run affected`: reads the git diff, the suite files and .generated/suite-timings.json (fetched with `gh run download` when missing), then runs the chosen suites through tests/run-all.sh with SHARD_SELF=1 (its own loopback scratch database and server, tests/shard.sh). No app call and no DB of its own; a BASE it is given is passed to run-all.sh unchanged",
+  "affected-slots": "CI-SPEED-1 — the two machine slots `npm run affected` runs in: mkdir locks under /tmp holding a pid. No BASE, no DB, no network",
   "tree-already-passed": "CHORE-2 — asks the GitHub Actions API whether this exact git TREE already passed, and writes two job outputs. Read-only against GitHub, no BASE, no DB, no app writes; every failure mode falls back to running the battery",
 };
 

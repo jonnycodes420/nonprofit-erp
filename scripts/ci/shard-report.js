@@ -91,10 +91,19 @@ try {
   const file = path.resolve(ROOT, TIMINGS);   // FIX-15: an absolute path (a test's copy) stays absolute
   let prev = {};
   try { prev = (JSON.parse(fs.readFileSync(file, "utf8")) || {}).suites || {}; } catch { /* first time */ }
-  for (const r of results) if (!r.missing) prev[r.name] = r.secs;
+  // CI-SPEED-1: half the old figure and half this run's, not this run alone.
+  // A suite's time moves by up to 15% between runs (numbers1-foot: 510 s, then
+  // 582 s), and planning from one run's noise put a shard 14% over the mean.
+  // Replayed over the seven PR runs of 10 Nov, the blend kept the slowest
+  // shard within 6% of the mean on the last four. A new suite takes its
+  // first time as it is.
+  for (const r of results) {
+    if (r.missing) continue;
+    prev[r.name] = Number.isFinite(prev[r.name]) ? Math.round((prev[r.name] + r.secs) / 2) : r.secs;
+  }
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify({
-    note: "Seconds per suite from the last sharded run. Data for scripts/ci/shard-plan.js, never a gate: a stale entry costs seconds, never correctness.",
+    note: "Seconds per suite: half the previous figure plus half the last sharded run's (CI-SPEED-1). Data for scripts/ci/shard-plan.js, never a gate: a stale entry costs seconds, never correctness.",
     updated: new Date().toISOString().slice(0, 10),
     suites: Object.fromEntries(Object.entries(prev).sort(([a], [b]) => a.localeCompare(b))),
   }, null, 1) + "\n");
