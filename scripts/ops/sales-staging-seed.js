@@ -1,0 +1,83 @@
+// scripts/ops/sales-staging-seed.js · SALES-1. STAGING'S MADE-UP SALES CRM.
+//
+// Called by scripts/ops/staging-seed.js (which refuses anything but staging),
+// never on its own and never on prod. Wipes every sales_ table and writes a
+// fixed, made-up book so Muse can walk /ops → Sales: 12 organizations, 20
+// contacts, 8 deals across the Direct pipeline's stages (one in Later, one in
+// Lost), a few activities and an open task. Every name is invented; every
+// domain is under example.org. Part B adds the partners and the mailbox fixture.
+"use strict";
+
+const ACTOR = ["system:staging-seed", "Staging seed (made-up sales CRM)"];
+const STAGES = [["Lead", 5, "open", false], ["Contacted", 10, "open", false], ["Meeting booked", 20, "open", false], ["Demo done", 35, "open", false],
+  ["Donors loaded", 55, "open", false], ["Verbal yes", 80, "open", true], ["Trial", 90, "open", true], ["Paying", 100, "won", true], ["Later", 0, "later", false], ["Lost", 0, "lost", false]];
+const sid = n => `sst_${n.toLowerCase().replace(/[^a-z]+/g, "_").replace(/^_|_$/g, "")}`;
+
+const ORGS = [
+  ["Fernhollow Reading Circle", "fernhollow", "Asheville", "NC", "Bloomerang"], ["Tidewater Kids Rowing", "tidewaterrow", "Norfolk", "VA", "none"],
+  ["Quarry Hill Food Share", "quarryhill", "Barre", "VT", "Little Green Light"], ["Lanternfly Arts Lab", "lanternfly", "Easton", "PA", "spreadsheets"],
+  ["Mossbank Senior Meals", "mossbank", "Duluth", "MN", "DonorPerfect"], ["Brightwater Literacy", "brightwater", "Tacoma", "WA", "Bloomerang"],
+  ["Cinder Lane Shelter", "cinderlane", "Flagstaff", "AZ", "none"], ["Harrowgate Music School", "harrowgate", "Ithaca", "NY", "Neon"],
+  ["Pebblecreek Watershed", "pebblecreek", "Boise", "ID", "Givebutter"], ["Saltgrass Youth Theatre", "saltgrass", "Galveston", "TX", "none"],
+  ["Northstar Tutoring Fund", "northstartutor", "Fargo", "ND", "Bloomerang"], ["Willowmere Animal Rescue", "willowmere", "Eugene", "OR", "spreadsheets"],
+];
+const FIRST = ["Avery", "Bram", "Celia", "Dario", "Esme", "Folke", "Greer", "Hollis", "Ines", "Jory", "Kestrel", "Linnea", "Mott", "Noor", "Oren", "Pia", "Quill", "Rafe", "Sable", "Tamsin"];
+const LAST = ["Ashdown", "Birchall", "Crane", "Dunmore", "Ellery", "Fenwick", "Galloway", "Hartigan", "Ivers", "Jessop", "Kittredge", "Lowell", "Marchbank", "Nettle", "Oakes", "Pembry", "Quarles", "Ravel", "Stroud", "Thorne"];
+const ROLES = ["ED", "Development Director", "Board", "Other"];
+// [org index, name, stage, value $, close in days, next step]
+const DEALS = [
+  [0, "Fernhollow – Core", "Demo done", 350, 20, "Send the import guide"], [1, "Tidewater – Team", "Meeting booked", 600, 45, null],
+  [2, "Quarry Hill – Core", "Donors loaded", 350, 15, "Second meeting with their file"], [3, "Lanternfly – Core", "Lead", 250, 60, null],
+  [4, "Mossbank – Team", "Verbal yes", 600, 7, "Paper by Friday"], [5, "Brightwater – Core", "Trial", 350, 10, "Kickoff call"],
+  [6, "Cinder Lane – Core", "Later", 300, 90, null], [7, "Harrowgate – Team", "Lost", 500, -10, null],
+];
+
+async function seedSales(q, now = Date.now()) {
+  const day = n => new Date(now + n * 86400000).toISOString().slice(0, 10);
+  for (const t of ["sales_activity_links", "sales_activities", "sales_stage_history", "sales_links", "sales_deals", "sales_contacts", "sales_orgs",
+    "sales_views", "sales_merges", "sales_imports", "sales_properties", "sales_stages", "sales_pipelines", "sales_settings"]) await q(`DELETE FROM ${t}`);
+  // Every record has an owner: staging's first live super-admin, if there is one.
+  const [owner] = await q(`SELECT id FROM users WHERE is_super_admin = true AND deactivated_at IS NULL ORDER BY created_at LIMIT 1`);
+  const OWNER = owner ? owner.id : null;
+  await q(`INSERT INTO sales_pipelines (id,name,position,created_by,created_by_name) VALUES ('spl_direct','Direct',0,$1,$2)`, ACTOR);
+  for (const [i, [name, p, kind, onb]] of STAGES.entries()) {
+    await q(`INSERT INTO sales_stages (id,pipeline_id,name,position,probability,limit_days,kind,onboarding,created_by,created_by_name) VALUES ($1,'spl_direct',$2,$3,$4,21,$5,$6,$7,$8)`,
+      [sid(name), name, i, p, kind, onb, ...ACTOR]);
+  }
+  for (const [i, [name, slug, city, state, crm]] of ORGS.entries()) {
+    await q(`INSERT INTO sales_orgs (id,name,domain,website,city,state,current_crm,org_type,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7,'Prospect',$8,$9)`,
+      [`sor_stg_${i}`, name, `${slug}.example.org`, `https://${slug}.example.org`, city, state, crm, ...ACTOR]);
+  }
+  for (let i = 0; i < 20; i++) {
+    const org = i % 12, slug = ORGS[org][1];
+    await q(`INSERT INTO sales_contacts (id,first_name,last_name,title,emails,role,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)`,
+      [`sco_stg_${i}`, FIRST[i], LAST[i], ["Executive Director", "Development Director", "Board Chair", "Volunteer lead"][i % 4],
+        JSON.stringify([`${FIRST[i].toLowerCase()}@${slug}.example.org`]), ROLES[i % 4], ...ACTOR]);
+    await q(`INSERT INTO sales_links (id,a_type,a_id,b_type,b_id,is_primary,created_by,created_by_name) VALUES ($1,'contact',$2,'org',$3,true,$4,$5)`,
+      [`sli_stg_c${i}`, `sco_stg_${i}`, `sor_stg_${org}`, ...ACTOR]);
+  }
+  for (const [i, [org, name, stage, dollars, close, next]] of DEALS.entries()) {
+    const kind = STAGES.find(s => s[0] === stage)[2];
+    await q(`INSERT INTO sales_deals (id,name,pipeline_id,stage_id,value_cents,close_date,source,next_step,next_step_on,revisit_on,lost_reason,trial_ends_on,
+               stage_entered_at,won_at,lost_at,created_by,created_by_name)
+             VALUES ($1,$2,'spl_direct',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NULL,$13,$14,$15)`,
+      [`sde_stg_${i}`, name, sid(stage), dollars * 100, day(close), ["Referral", "Conference", "Cold email", "Partner"][i % 4], next, next ? day(i % 3 - 1) : null,
+        kind === "later" ? day(-1) : null, kind === "lost" ? "Chose to stay on their spreadsheet" : null, stage === "Trial" ? day(9) : null,
+        new Date(now - (i === 1 ? 30 : 5) * 86400000).toISOString(), kind === "lost" ? new Date(now - 10 * 86400000).toISOString() : null, ...ACTOR]);
+    await q(`INSERT INTO sales_stage_history (id,deal_id,to_stage_id,to_name,at,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [`ssh_stg_${i}`, `sde_stg_${i}`, sid(stage), stage, new Date(now - 30 * 86400000).toISOString(), ...ACTOR]);
+    await q(`INSERT INTO sales_links (id,a_type,a_id,b_type,b_id,is_primary,created_by,created_by_name) VALUES ($1,'deal',$2,'org',$3,true,$4,$5)`, [`sli_stg_d${i}`, `sde_stg_${i}`, `sor_stg_${org}`, ...ACTOR]);
+    await q(`INSERT INTO sales_links (id,a_type,a_id,b_type,b_id,label,created_by,created_by_name) VALUES ($1,'deal',$2,'contact',$3,'Champion',$4,$5)`, [`sli_stg_dc${i}`, `sde_stg_${i}`, `sco_stg_${org}`, ...ACTOR]);
+  }
+  const acts = [["meeting", "Demo of Home and the Thread", 0, [["deal", "sde_stg_0"], ["contact", "sco_stg_0"]]], ["call", "Intro call; they use Bloomerang", -3, [["org", "sor_stg_5"]]],
+    ["note", "Board meets on the 2nd Tuesday", -6, [["org", "sor_stg_4"]]], ["task", "Send pricing for two seats", -2, [["deal", "sde_stg_1"]]]];
+  for (const [i, [kind, body, d, recs]] of acts.entries()) {
+    await q(`INSERT INTO sales_activities (id,kind,at,body,due_on,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [`sac_stg_${i}`, kind, new Date(now + d * 86400000).toISOString(), body, kind === "task" ? day(d) : null, ...ACTOR]);
+    for (const [t, id] of recs) await q(`INSERT INTO sales_activity_links (activity_id,record_type,record_id,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5)`, [`sac_stg_${i}`, t, id, ...ACTOR]);
+  }
+  for (const t of ["sales_orgs", "sales_contacts", "sales_deals", "sales_activities"]) await q(`UPDATE ${t} SET owner_id = $1`, [OWNER]);
+  return { orgs: ORGS.length, contacts: 20, deals: DEALS.length };
+}
+
+module.exports = { seedSales, ORGS, DEALS };
