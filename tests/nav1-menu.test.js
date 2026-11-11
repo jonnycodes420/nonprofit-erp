@@ -169,8 +169,11 @@ const call = async (tok, method, p, body) => {
   ok("§6 Peer-to-peer still opens its Fundraising part", U.tabHref("p2p") === "/app/fundraising?fr=p2p", U.tabHref("p2p"));
 
   console.log("\n§7 · the browser");
+  // The app's own server must be up as well as built (a hook run starts none; CI's REQUIRE_BROWSER makes a skip red).
+  const appUp = await fetch(APP + "/").then(r => r.ok).catch(() => false);
   const why = (() => {
     if (!fs.existsSync(path.join(DIST, "assets"))) return "client/dist not built";
+    if (!appUp) return "no app server at " + APP;
     const apiHost = BASE.replace(/^https?:\/\//, "");
     if (!fs.readdirSync(path.join(DIST, "assets")).filter(f => f.endsWith(".js")).some(f => fs.readFileSync(path.join(DIST, "assets", f), "utf8").includes(apiHost))) return "client/dist not built against the local API";
     try { require(PW); } catch { return "Playwright not found (set PLAYWRIGHT_DIR)"; }
@@ -240,7 +243,11 @@ const call = async (tok, method, p, body) => {
   try { archOut = execFileSync("node", ["scripts/ci/arch-check.js"], { cwd: ROOT, encoding: "utf8" }); } catch (e) { archOk = false; archOut = String(e.stdout || e.message); }
   ok("§8 the org-specific ratchet is green", archOk && /org-specific: (none|.*within the baseline)/.test(archOut), archOut.split("\n").filter(l => /org-specific/.test(l)));
   const base = fs.readFileSync(path.join(ROOT, "docs/architecture/baseline/org-specific.json"), "utf8");
-  ok("§8 the org-specific baseline file is unchanged from main", (() => { try { return execFileSync("git", ["diff", "--quiet", "origin/main", "--", "docs/architecture/baseline/org-specific.json"], { cwd: ROOT }) !== null; } catch { return false; } })(), base.slice(0, 80));
+  // The baseline is a ratchet: no file this build added or changed is in it (CI's checkout has no origin/main to diff against).
+  const counted = Object.keys((JSON.parse(base).counts) || {});
+  const mine = ["server/org/menu.js", "server/db/ddl/nav1menu.js", "client/src/lib/navGroups.js", "client/src/lib/navMoves.js", "client/src/lib/majorGiftsTab.js",
+    "client/src/components/settings/OrgMenuEditor.jsx", "client/src/components/admin/OrgMenuPanel.jsx", "client/src/components/events/EventAuction.jsx", "client/src/components/MajorGiftsPage.jsx"];
+  ok("§8 the org-specific baseline counts none of this build's files", mine.every(f => !counted.includes(f)), counted.filter(f => mine.includes(f)));
   for (const f of ["server/org/menu.js", "client/src/lib/navGroups.js", "client/src/lib/majorGiftsTab.js", "client/src/components/settings/OrgMenuEditor.jsx"])
     ok(`§8 ${f} names no org`, !/org_[a-z0-9]{4,}|[Jj]ustin/.test(fs.readFileSync(path.join(ROOT, f), "utf8").replace(/^\/\/.*$/gm, "")), f);
 
