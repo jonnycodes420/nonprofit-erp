@@ -48,3 +48,9 @@ profile to be read again; with a second's read, the header said $400 after savin
 the person's four figures and the header draws from them. **Finance-42/43, the 5 to 10 second loads: OPEN.** On
 the demo org locally, Fundraising and the giving reports were idle in under 1 s, and in 2.0 to 2.4 s with 400 ms
 added to every read. The lead for the next brief: Fundraising reads the whole LYBUNT list to show one count.
+
+**lag1 in this PR's CI (found mid-build).** lag1 was red on every try in this PR (two runs, the retry inside each):
+"[proposals] AbortError: The page was left before this answer came back.", from the donor profile's proposals read.
+It is FLAKE-3's class: a read cut off by leaving the page is not an error, and only the Donors list had been taught
+that. The three proposals reads in `MajorGifts.jsx` now treat an AbortError as normal (`lib/leaving.js` `isAbort`).
+Locally lag1 was red on the branch before the change and green 3 of 3 after.
