@@ -34,7 +34,17 @@ function discover(dir = TESTS) {
   return { run: [...suites, ...last], skipped };
 }
 
-module.exports = { discover, MARK };
+// A browser suite walks a built client (client/dist). The shard planner gives
+// its shard a dist (CI-2), and `npm run affected` leaves it to CI (CI-SPEED-1).
+// Detected by reading the suite file, never a hand-kept list. The net is wide
+// on purpose: a non-browser suite flagged here only costs a dist.
+const NEEDS_DIST = /playwright|client\/dist|"client",\s*"dist"|lib\/dist/;
+function needsDist(name, dir = TESTS) {
+  try { return NEEDS_DIST.test(fs.readFileSync(path.join(dir, `${name}.test.js`), "utf8")); }
+  catch { return false; }
+}
+
+module.exports = { discover, MARK, NEEDS_DIST, needsDist };
 
 if (require.main === module) {
   const d = discover();

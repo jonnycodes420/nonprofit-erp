@@ -136,6 +136,12 @@ soon as `/health` is ok. Never set this in production.
 error that prints the valid names). A suite the battery cannot run says
 `// battery: skip — <reason>` on one line in its own file (ARCH-1). Per-suite elapsed seconds and a total are printed.
 
+`npm run affected` (`scripts/ci/affected.js`, CI-SPEED-1) is the builder's
+ten-minute run before a push: the suites that cover the diff against
+origin/main, by CI's timings, on its own database and server. Heavy suites
+(tenant-matrix, smoke-walk, browser walks, load) are left to CI unless their
+own file changed. See `scripts/README.md`.
+
 `tests/affected.sh <git-range>` computes which suites a change actually
 touches — it prints `FULL` (shared surface changed: server.js, db.js, routes/,
 package-lock, test infra, …), a space-separated suite list (suite-file or

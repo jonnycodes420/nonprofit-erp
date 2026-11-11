@@ -188,6 +188,11 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
   second such run prints who holds it and waits; a lock whose pid is gone is taken over. A serial
   run against an already-booted `$BASE` (pre-push, `affected.sh`) boots nothing and takes none.
   CI is unaffected (one runner per shard). `BATTERY_LOCK=0` skips it.
+- **`npm run affected` does not take the battery lock (CI-SPEED-1).** It runs ten minutes of
+  suites on its own database and server, so two fit at once: it takes its worktree's slot and one
+  of two machine slots (`scripts/ci/affected-slots.js`, the same pid and takeover rules as below)
+  and waits at most two minutes before telling the builder to push. The battery lock stays for a
+  full local battery, which only Jonathan asks for.
 - **A run never removes a lock it does not own (FIX-58).** Every lock goes through
   `tests/lib/battery-lock.sh`: release checks the pid is ours, and a stale lock is taken over only
   under `<lock>.takeover` after re-reading its pid (two waiters on one dead owner used to delete
