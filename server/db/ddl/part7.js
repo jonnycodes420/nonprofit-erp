@@ -1134,6 +1134,7 @@ async function run7(pool) {
   await require("./wealth1").run(pool);   // WEALTH-1: the Wealth Score a person sets
   await require("./quickadd1").run(pool);   // QUICKADD-1: appeals, and the appeal a gift came from
   await require("./asks1").run(pool);   // ASKS-1: the import an auction item came in on
+  await require("./access2").run(pool);   // ACCESS-2: staff who see only the people assigned to them
   await require("./touch1").run(pool);   // TOUCH-1: an org's own kinds of touch
 
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is

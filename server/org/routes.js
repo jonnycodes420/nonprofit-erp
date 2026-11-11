@@ -885,6 +885,9 @@ app.get("/org/team", requireAuth, wrap(async (req, res) => {
   res.json(await require("./joinOrg").teamOf(query, req.user.orgId));
 }));
 
+// ACCESS-2: Settings → Team, "Sees: Everyone / Only people assigned to them".
+require("./teamAccess").mount({ query, run, requireAuth, requireAdmin, wrap }, app);
+
 // ── BUILD-75 C.3 — USER REMOVAL, finally ────────────────────────────────────
 // Settings could invite but not remove; the only path was manual database
 // surgery (which caused the documented dangling-FK incident). Removal is a

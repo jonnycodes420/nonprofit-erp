@@ -42,6 +42,7 @@ import * as SavedMappings from "../../client/src/components/settings/SavedMappin
 import * as settingsTabs from "../../client/src/components/settings/settingsTabs.js";
 import * as StaffBoardList from "../../client/src/components/settings/StaffBoardList.jsx";
 import * as MajorGiftsCheckbox from "../../client/src/components/settings/MajorGiftsCheckbox.jsx";   // WEALTH-1
+import * as TeamAccess from "../../client/src/components/settings/TeamAccess.jsx";   // ACCESS-2
 import * as WealthScoresTeamCard from "../../client/src/components/settings/WealthScoresTeamCard.jsx";   // WEALTH-1
 import * as TaxReceiptsManager from "../../client/src/components/settings/TaxReceiptsManager.jsx";
 import * as TouchTypesCard from "../../client/src/components/settings/TouchTypesCard.jsx";   // TOUCH-1
@@ -130,6 +131,7 @@ export const CASES = [
   ["settings/StaffBoardList", () => <StaffBoardList.StaffBoardList onNavigate={noop}/>, /Staff and board/],
   ["settings/WealthScoresTeamCard", () => <WealthScoresTeamCard.WealthScoresTeamSetting isAdmin/>, /Everyone on the team can see Wealth Scores/],
   ["settings/MajorGiftsCheckbox", () => <MajorGiftsCheckbox.MajorGiftsCheckbox m={{ id: "u_fake", role: "member", can_major_gifts: false }} isAdmin setTeam={() => {}}/>, /Major gifts/],
+  ["settings/TeamAccess", () => <TeamAccess.SeesSelect m={{ id: "u_fake", name: "Fiona Faketon", role: "staff", sees: "assigned", can_export: false, can_wealth: false }} isAdmin setTeam={() => {}}/>, /Campaign cabinet/],
   ["settings/TaxReceiptsManager", () => <TaxReceiptsManager.TaxReceiptsManager orgId="org_fake" isAdmin isReadOnly={false}/>, /Tax Receipts/],
   ["settings/TouchTypesCard", () => <TouchTypesCard.TouchTypesCard isAdmin isReadOnly={false}/>, /Kinds of touch[\s\S]*Add your own/],
   ["settings/IssuedReceipts", () => <IssuedReceipts.default isAdmin isReadOnly={false}/>, /Issued receipts/],

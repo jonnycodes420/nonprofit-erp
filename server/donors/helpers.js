@@ -126,6 +126,8 @@ async function buildDonorListFilter(req) {
   // for someone who may see it; anyone else gets the list's own order.
   const q = req.query || {};
   let opts = {};
+  // ACCESS-2: their people only, for a portfolio user (and "" for everyone else).
+  const visible = require("../auth/portfolio").visibleSql(req);
   if (q.sort === "room_to_give") {
     const PR = require("../../prospect");
     if (await PR.canSee(req.user.userId, req.user.orgId)) {
@@ -135,6 +137,7 @@ async function buildDonorListFilter(req) {
       opts = { roomRanks };
     }
   }
+  opts = { ...opts, visible };
   // THREAD-3: archived people leave the list; ?archived=1 shows only them.
   if (String(q.archived || "") === "1") return GR.buildDonorFilter(req.user.orgId, q, opts)
     .then(f => ({ ...f, whereSql: `${f.whereSql} AND archived_at IS NOT NULL` }));

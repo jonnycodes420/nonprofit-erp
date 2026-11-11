@@ -57,6 +57,8 @@ app.get("/donors/pick", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const limit = clampLimit(req.query.limit, 20, 2000);
   const where = [SET]; const args = [orgId];
+  const vis = require("../server/auth/portfolio").visibleSql(req);   // ACCESS-2: their people only
+  if (vis.scoped) { where.push(vis.sql.replace(/^ AND /, "")); args.push(...vis.args); }
   const exact = req.query.exact != null ? String(req.query.exact).trim().toLowerCase() : null;
   const q = String(req.query.q || "").trim().toLowerCase();
   if (exact != null) {
@@ -82,7 +84,8 @@ app.get("/donors/pick", requireAuth, wrap(async (req, res) => {
 app.get("/donors/lookup", requireAuth, wrap(async (req, res) => {
   const ids = [...new Set(String(req.query.ids || "").split(",").map(s => s.trim()).filter(Boolean))].slice(0, 500);
   if (!ids.length) return res.json([]);
-  const rows = await query(`SELECT ${COLS} FROM donors WHERE ${SET} AND id = ANY(?) ${ORDER}`, [req.user.orgId, ids]);
+  const vis = require("../server/auth/portfolio").visibleSql(req);   // ACCESS-2: their people only
+  const rows = await query(`SELECT ${COLS} FROM donors WHERE ${SET} AND id = ANY(?)${vis.sql} ${ORDER}`, [req.user.orgId, ids, ...vis.args]);
   res.json(rows.map(shape));
 }));
 
@@ -101,7 +104,8 @@ app.get("/donors/lookup", requireAuth, wrap(async (req, res) => {
 // visit (1.6 s at p95).
 app.get("/donors/counts", requireAuth, require("../orgSummary").cached("people-counts", { perUser: false }), wrap(async (req, res) => {
   // COUNTS-1: one narrow pass (server/donors/peopleCounts.js), same rules.
-  res.json(await require("../server/donors/peopleCounts").peopleCounts(req.user.orgId));
+  // ACCESS-2: a portfolio user's counts are their people's (orgSummary.cached passes them by).
+  res.json(await require("../server/donors/peopleCounts").peopleCounts(req.user.orgId, require("../server/auth/portfolio").visibleSql(req)));
 }));
 
 // Birthdays from yesterday to seven days out, on the org's calendar. A wider

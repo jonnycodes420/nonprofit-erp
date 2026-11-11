@@ -20,7 +20,10 @@ async function addPerson(ctx, req, b) {
   { const cv = await require("../../contactInputs").checkContact(b, { email: ["email", "email2"], phone: ["phone"] });
     if (cv.error) return { status: 400, body: { error: cv.error, message: cv.error, field: cv.field } };
     Object.assign(b, cv.values); }
-  const { email, phone, status, stage, tags, notes, lastAmount, assignedTo, assignedToName, personTypes } = b;
+  const { email, phone, status, stage, tags, notes, lastAmount, personTypes } = b;
+  // ACCESS-2: a portfolio user's new person is their own, whoever the form names.
+  const mine = require("../auth/portfolio").isScoped(req.user);
+  const assignedTo = mine ? undefined : b.assignedTo, assignedToName = mine ? undefined : b.assignedToName;
   // ADDRESS-1: the + Add form carries the mailing address too.
   const addr = Object.fromEntries(["address", "address2", "city", "state", "zip"].map(f =>
     [f, b[f] == null ? null : (String(b[f]).trim().slice(0, f === "address" || f === "address2" ? 200 : 120) || null)]));

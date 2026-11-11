@@ -161,6 +161,8 @@ function cached(name, { perUser = true, when = null } = {}) {
     try {
       if (off() || !req.user || !req.user.orgId || !deps) return next();
       if (when && !when(req)) return next();
+      // ACCESS-2: a portfolio user's answer is theirs, never the org's stored one.
+      if (require("./server/auth/portfolio").isScoped(req.user)) return next();
       const orgId = req.user.orgId;
       const key = keyFor(name, req, perUser);
       const today = deps.orgToday(await deps.orgTz(orgId));   // ORG_TZ_SEAM_OK

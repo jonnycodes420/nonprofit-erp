@@ -32,6 +32,7 @@ import { TABS, BOTTOM_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS, FR_PART_TABS, leg
 // beside the registry. PRIMARY_NAV / MORE_NAV / NAV_MORE_KEY are gone with the
 // "More" fold they described.
 import { navLayout, flattenNav, moveNavItem, reorderWithin, setNavVisible } from "./lib/navGroups";
+import { usePortfolio, portfolioNav } from "./lib/portfolioAccess";   // ACCESS-2
 import { NavIcon, NAV_ICON_SIZE } from "./components/NavIcon";
 import { openRecentChanges } from "./components/RecentChanges";
 import { retryImport } from "./lib/lazyRetry";
@@ -496,6 +497,7 @@ function AppShell() {
         if(r.status==="fulfilled")return r.value;
         if(portalTier||r.reason?.error==="portal_tier")return fallback;
         if(r.reason?.error==="coordinator_scope")return fallback;
+        if(r.reason?.scope==="portfolio")return fallback;   // ACCESS-2: a page not open to someone who sees only their people
         throw r.reason;
       };
       const adapted=adaptData({
@@ -538,6 +540,7 @@ function AppShell() {
   // pins every position:sticky inside it (Home's rail) to nothing.
   const BASE = {minHeight:"100vh",background:T.bg,fontFamily:"'DM Sans',system-ui,sans-serif",overflowX:CLIP_X,maxWidth:"100vw"};
 
+  const navPortfolio=usePortfolio(auth?.user?.role||null);   // ACCESS-2: only their people, so only the pages that answer (a hook: above the early returns)
   if(loading) return <div style={{...BASE,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
     <GlobalStyles/>
     <AppFonts/>
@@ -600,7 +603,7 @@ function AppShell() {
   // The canonical layout, every item in it, before the org's plan has a say.
   // Every SAVE is written against this one, so a preference about an item this
   // plan happens to hide is kept rather than quietly dropped.
-  const navFull=navLayout(navSaved,{role:navRole});
+  const navFull=portfolioNav(navLayout(navSaved,{role:navRole}),navPortfolio);
   const navGroups=(isPortalTier
     ?[{id:"start",label:null,bottom:false,items:[{id:"dashboard",visible:true},{id:"donors",visible:true},{id:"portal",visible:true}]},
       {id:"bottom",label:null,bottom:true,items:[{id:"settings",visible:true}]}]

@@ -64,16 +64,17 @@ async function donorOf(orgId, id) {
 }
 
 // ── The rows: one per person, the columns of her sheet ──────────────────────
-async function listRows(orgId, listId, today) {
+async function listRows(orgId, listId, today, visible) {
   const S = await shapeMod();
+  const v = visible && visible.sql ? visible : { sql: "", args: [] };   // ACCESS-2: only their assigned rows
   const people = await query(
     `SELECT m.rank, m.added_at, d.id, d.name, d.email, d.wealth_rating, d.total_giving, d.last_gift_date, d.last_gift_amount,
             d.assigned_to, d.assigned_to_name, d.stage, cp.id AS plan_id, cp.goal, cp.ask_cents, cp.ask_by
        FROM portfolio_members m
        JOIN donors d ON d.id = m.donor_id AND d.org_id = m.org_id
        LEFT JOIN care_plans cp ON cp.org_id = m.org_id AND cp.donor_id = m.donor_id
-      WHERE m.org_id = ? AND m.list_id = ? AND d.deleted_at IS NULL
-      ORDER BY m.rank`, [orgId, listId]);
+      WHERE m.org_id = ? AND m.list_id = ? AND d.deleted_at IS NULL${v.sql}
+      ORDER BY m.rank`, [orgId, listId, ...v.args]);
   const ids = people.map(p => p.id);
   const touches = new Map(), lastConv = new Map(), thread = new Map();
   if (ids.length) {
@@ -154,7 +155,7 @@ app.get("/top100", requireAuth, mg, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const list = await listOf(orgId, null);
   const today = await todayOf(orgId);
-  const rows = list ? await listRows(orgId, list.id, today) : [];
+  const rows = list ? await listRows(orgId, list.id, today, require("../auth/portfolio").visibleSql(req, "d")) : [];
   res.json({ list: list || { id: null, name: "Top 100" }, today, count: rows.length,
     rows: shape(rows, req.query || {}), owners: await owners(orgId), templates: await templatesOf(orgId),
     sentences: {
@@ -178,7 +179,7 @@ app.get("/top100/export.csv", requireAuth, mg, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const list = await listOf(orgId, null);
   const today = await todayOf(orgId);
-  const rows = shape(list ? await listRows(orgId, list.id, today) : [], req.query || {});
+  const rows = shape(list ? await listRows(orgId, list.id, today, require("../auth/portfolio").visibleSql(req, "d")) : [], req.query || {});
   const money = c => c == null ? "" : (c / 100).toFixed(2);
   const head = ["Rank", "Name", "Wealth Score", "Lifetime", "Last gift date", "Last gift amount", "Owner", "Stage", "Goal", "Ask amount", "Ask by", "Next step", "Next step date", "Last contact", "Plan health"];
   const lines = [head.map(csvCell).join(",")];
