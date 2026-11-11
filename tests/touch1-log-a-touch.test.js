@@ -204,6 +204,9 @@ const log = (tok, id, body) => api("POST", `/donors/${id}/conversations`, tok, {
     const lc = (await page.locator('[data-testid="dp-fig-lastContact"]').first().textContent().catch(() => "")) || "";
     ok("§7 the header's Last contact is today", /(^|\D)0 days|Today/i.test(lc), lc);
 
+    // Let the profile's own reads finish before leaving it: a read cut off by
+    // the next page.goto logs "Failed to fetch" (smoke-walk's lesson; CI's runner).
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
     // The Ask cell in the Top 100.
     await page.goto(`${APP}/app/majorgifts?subtab=top100`, { waitUntil: "networkidle", timeout: 60000 });
     const askCell = page.locator('[data-testid="top100-row"]', { hasText: "Walt Fairbrother" }).locator('[data-testid="top100-ask"]');
@@ -225,6 +228,7 @@ const log = (tok, id, body) => api("POST", `/donors/${id}/conversations`, tok, {
 
     // Tasks: a planned note a month out, ticked, offers to log it.
     const pn = await api("POST", `/donors/${WALK}/care-plan/touches`, tok, { type: "note", due: nextMonth });
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
     await page.goto(`${APP}/app/tasks`, { waitUntil: "networkidle", timeout: 60000 });
     await page.getByText(/^Later \d/).first().click().catch(() => {});
     const trow = page.locator("li, [data-testid=task-row], div").filter({ hasText: "Handwritten note" }).filter({ has: page.locator('[data-testid="task-tick"]') }).last();

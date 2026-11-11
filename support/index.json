@@ -189,7 +189,7 @@
    "link": "/help/donors",
    "route": "/donors",
    "screen": "donors",
-   "text": "The screen is titled \"Your donors.\" (\"Everyone.\" and \"Your contacts.\" when the Directory shows those people). Along the top are the search box, the views (Directory, Team for admins, Re-engage, Map and Data health), \"✦ Call List\", \"Log a call\", \"+ Add\" and \"↑ Import & tools ▾\".\nThe Directory lists each person with their stage, owner, lifetime giving, last gift and giving strength. Use the stage, owner and designation menus to narrow it, or open \"⊞ Filters\" for more: stage, giving pattern, geography, last gift, lifetime giving and custom fields. Re-engage gathers lapsed donors. Map shows where people live. Data health lists records that need tidying, such as possible duplicates."
+   "text": "The screen is titled \"Your donors.\" (\"Everyone.\" and \"Your contacts.\" when the Directory shows those people). Along the top are the search box, the views (Directory, Team for admins, Re-engage, Map and Data health), \"✦ Call List\", \"Log a touch\", \"+ Add\" and \"↑ Import & tools ▾\".\nThe Directory lists each person with their stage, owner, lifetime giving, last gift and giving strength. Use the stage, owner and designation menus to narrow it, or open \"⊞ Filters\" for more: stage, giving pattern, geography, last gift, lifetime giving and custom fields. Re-engage gathers lapsed donors. Map shows where people live. Data health lists records that need tidying, such as possible duplicates."
   },
   {
    "id": "help:donors:2",
@@ -939,17 +939,17 @@
    "link": "/help/donor-profile",
    "route": "/donors",
    "screen": "profile",
-   "text": "The header has their photo, name and stage, any flags such as Do not contact, and three buttons: \"Log a call\", \"Plan a follow-up\" and \"More ▾\". Below them sit their figures: Lifetime, This year, Last gift, Average gift, their first and largest gift, Last met and Last email. Click any of them to see the rows behind it.\nThe tabs are Overview, Gifts & pledges, Asks & pipeline, Conversations, Emails, Tasks, Notes, Funds, Related and Files. Overview has the timeline, giving by year, recent conversations and their household.\nThe rail on the right always shows their next step, contact details, relationship owner, journey and quick actions."
+   "text": "The header has their photo, name and stage, any flags such as Do not contact, and three buttons: \"Log a touch\", \"Plan a follow-up\" and \"More ▾\". Below them sit their figures: Lifetime, This year, Last gift, Average gift, their first and largest gift, Last met and Last email. Click any of them to see the rows behind it.\nThe tabs are Overview, Gifts & pledges, Asks & pipeline, Conversations, Emails, Tasks, Notes, Funds, Related and Files. Overview has the timeline, giving by year, recent conversations and their household.\nThe rail on the right always shows their next step, contact details, relationship owner, journey and quick actions."
   },
   {
    "id": "help:donor-profile:2",
    "source": "help",
    "title": "The donor profile",
-   "heading": "Log a call",
+   "heading": "Log a touch",
    "link": "/help/donor-profile",
    "route": "/donors",
    "screen": "profile",
-   "text": "1. Click \"Log a call\".\n2. Fill in what happened. Add a gift if one came with it.\n3. Save it. It joins their timeline."
+   "text": "1. Click \"Log a touch\".\n2. Pick what you did: Call, Handwritten note, Email, Visit, Meeting, Gift sent, Event invite, Text or Other. An admin can add your own kinds in Settings.\n3. Write exactly what you did in your words, pick the day, and add a next step if there is one. If a planned touch of that kind is on their plan of care, tick \"This completes the planned\" one.\n4. Save it. It joins their timeline in your words, and it counts as their last contact."
   },
   {
    "id": "help:donor-profile:3",
