@@ -88,9 +88,15 @@ const app = routers.r0;
 async function answer(req, res, paths) {
   const out = new Array(paths.length);
   const timing = [];   // Server-Timing: how long each read took, for the load harness
+  // ACCESS-2B: someone who sees only their own people has most routes closed;
+  // a closed part is answered 404 here and its route is never run, so asking
+  // a bundle makes no call to a closed route (server/auth/portfolio.js).
+  const PF = require("../server/auth/portfolio");
+  const closedHere = path => PF.isScoped(req.user) && !PF.isOpenPath(req.app, req.user, "GET", path);
   const read = async (i, path) => {
     const t0 = Date.now();
-    const r = await inProcess.get(path, { headers: req.headers, remoteAddress: req.socket && req.socket.remoteAddress });
+    const r = closedHere(path) ? { status: 404, body: "", headers: {} }
+      : await inProcess.get(path, { headers: req.headers, remoteAddress: req.socket && req.socket.remoteAddress });
     // The route's body is already JSON text; it is placed as-is, never
     // parsed and re-written, so nothing about it can change on the way.
     const ok = r.status === 200 && r.body.length > 0 && /json/.test(String(r.headers["content-type"] || ""));

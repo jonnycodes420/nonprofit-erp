@@ -241,6 +241,9 @@ async function requireAuth(req, res, next) {
     if (req.user.role !== "admin") {
       const PF = require("./server/auth/portfolio");
       req.user.portfolio = await PF.accessFor(payload.userId, orgId);
+      // ACCESS-2B: the app keeps its own copy of the flag in step, so it never
+      // asks a portfolio user's closed routes (client/src/lib/portfolioRoutes.js).
+      res.setHeader("X-Steward-Portfolio", PF.isScoped(req.user) ? "1" : "0");
       if (PF.isScoped(req.user)) {
         const refusal = await PF.gate(req);
         if (refusal) {

@@ -13,6 +13,10 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
   `visibleSql` (the one predicate: owner, or the household's primary person's owner). A new signed-in route needs a
   declaration or `tests/access2-portfolio.test.js` fails; a new list of people needs `visibleSql` before it is opened.
   The Campaign cabinet preset is Staff, only assigned, `can_export` and `can_wealth` false.
+- **ACCESS-2B (2026-11-11). The app asks a portfolio user's open routes and nothing else.** The list is the
+  server's (`GET /me/portfolio-routes`, the live router in order plus the declarations; first match decides),
+  read by `client/src/lib/portfolioRoutes.js` inside `api.js apiFetchNow`. Never hand-keep a client copy.
+  A raw `fetch` to the API bypasses it, so a screen open to a portfolio user uses `apiFetch`.
 - **ONBOARD-2 (2026-11-09). An onboarding stage is read from signals, never set.** The five gates
   (paper, data in, connections, kickoff, first month) live in `server/onboard/stages.js`; `org_onboarding`'s
   stage, entered_at, blockers and flags are written only by `server/onboard/board.js` `recompute`. The

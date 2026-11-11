@@ -51,7 +51,9 @@ const { GLOSSARY } = await import(pathToFileURL(path.join(CLIENT, "src", "market
 // so they download beside App's instead of after App has run. Preloaded, not
 // imported: importing them from main.jsx split App's shared code into a dozen
 // small chunks and grew Home's first look by 21 KB.
-const PRELOAD_JS = `(function(){try{var s=document.currentScript;if(!s||!/^\\/(app|dashboard|donors)(\\/|$)/.test(location.pathname)||!localStorage.getItem("npe_token"))return;` +
+// ACCESS-2B: not for someone who sees only their own people: their reads go
+// through api.js, which asks only their open routes (lib/portfolioRoutes.js).
+const PRELOAD_JS = `(function(){try{var s=document.currentScript;if(!s||!/^\\/(app|dashboard|donors)(\\/|$)/.test(location.pathname)||!localStorage.getItem("npe_token")||/"portfolio":true/.test(localStorage.getItem("npe_user")||""))return;` +
   `var t=localStorage.getItem("npe_token"),api=s.getAttribute("data-api"),here=location.pathname.replace(/(.)\\/+$/,"$1"),e=window.__stewardEarly={at:Date.now(),reads:{}};` +
   `JSON.parse(s.getAttribute(here==="/dashboard"?"data-home-reads":"data-reads")||"[]").forEach(function(u){e.reads[u]=fetch(api+u,{headers:{"Content-Type":"application/json",Authorization:"Bearer "+t}}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});});` +
   `var add=function(rel,h){var l=document.createElement("link");l.rel=rel;l.href=h;document.head.appendChild(l);};` +

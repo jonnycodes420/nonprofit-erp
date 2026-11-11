@@ -50,7 +50,7 @@ async function joinWithInvite({ query, run, invite, user, req, res, signToken })
   const role = invite.role || "staff";
   const { token } = await require("../../twoFactor").issueSession(
     { id: user.id, org_id: invite.org_id, email: user.email, role, is_super_admin: user.is_super_admin === true }, req, signToken);
-  return { status: 201, body: { token, user: { id: user.id, email: user.email, name: user.name, role }, org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 } } };
+  return { status: 201, body: { token, user: { id: user.id, email: user.email, name: user.name, role, portfolio: await require("../auth/portfolio").flagFor(user.id, invite.org_id) }, org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 } } };
 }
 
 // Team: the people whose home is this org, then the members who joined it.

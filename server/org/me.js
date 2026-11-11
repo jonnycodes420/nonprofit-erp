@@ -98,7 +98,7 @@ app.post("/me/mfa/enable", requireAuth, wrap(async (req, res) => {
   const [org] = await query(`SELECT * FROM orgs WHERE id=?`, [u.org_id]);
   res.json({ enabled: true, token, recoveryCodes,
     recoverySentence: "Keep these somewhere safe. Each works once, instead of a code, if you lose your phone. They will not be shown again.",
-    user: { id: u.id, email: u.email, name: u.name, role: u.role, isSuperAdmin, mfaEnabled: true },
+    user: { id: u.id, email: u.email, name: u.name, role: u.role, isSuperAdmin, mfaEnabled: true, portfolio: await require("../auth/portfolio").flagFor(u.id, u.org_id) },
     org: org ? { ...org, onboarding_complete: org.onboarding_complete ?? 1 } : null });
 }));
 

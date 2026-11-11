@@ -201,7 +201,7 @@ app.post("/auth/login", loginIpLimiter, loginAccountLimiter, wrap(async (req, re
         .catch(e => console.error("[new-device] mail failed:", e.message));
     }
   } catch (e) { console.error("[new-device] could not record the browser:", e.message); }
-  res.json({ token, trustToken, user: { id: user.id, email: user.email, name: user.name, role: user.role, isSuperAdmin, mfaEnabled: !!user.mfa_enabled_at }, org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 } });
+  res.json({ token, trustToken, user: { id: user.id, email: user.email, name: user.name, role: user.role, isSuperAdmin, mfaEnabled: !!user.mfa_enabled_at, portfolio: await require("../server/auth/portfolio").flagFor(user.id, user.org_id) }, org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 } });
 }));
 
 // SEC-1 — signing out ends THIS session on the server, not only in the browser.
@@ -671,7 +671,7 @@ app.post("/auth/invite/accept", wrap(async (req, res) => {
   const { token: jwtToken } = await require("../twoFactor").issueSession({ id: userId, org_id: invite.org_id, email: invite.email, role: invite.role }, req, signToken);
   res.status(201).json({
     token: jwtToken,
-    user: { id: userId, email: invite.email, name, role: invite.role },
+    user: { id: userId, email: invite.email, name, role: invite.role, portfolio: await require("../server/auth/portfolio").flagFor(userId, invite.org_id) },
     org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 },
   });
 }));
