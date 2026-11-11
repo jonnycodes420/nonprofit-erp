@@ -184,6 +184,7 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
       audience: t.audience || {},
       audienceSentence: J.audienceSentence(t.audience || {}),
       presetKey: t.preset_key, enabled: !!t.journey_enabled,
+      olderTemplate: require("./olderTemplate").olderTemplateNote(t, J.PRESETS, J.touchesSentence),   // POLISH-9
       touches: autoOnBy.has(t.id) ? J.touchesSentence(t.steps || []).replace("Nothing is sent without you.", autoSentence(autoOnBy.get(t.id))) : J.touchesSentence(t.steps || []),
       autoSteps: autoOnBy.get(t.id) || [],
       // FIX-5 item 2 — arriving on Journeys opens one, and this is how the page
@@ -283,6 +284,11 @@ app.post("/journeys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
     const [already] = await query(
       `SELECT * FROM cultivation_templates WHERE org_id=? AND preset_key=? AND archived_at IS NULL
         ORDER BY created_at ASC, id ASC LIMIT 1`, [req.user.orgId, preset.key]);
+    // POLISH-9: a never-used draft copied from an older version takes the template's steps now.
+    if (already && require("./olderTemplate").olderTemplateOf(already, J.PRESETS)) {
+      await run("UPDATE cultivation_templates SET steps=?::jsonb, updated_at=NOW() WHERE id=? AND org_id=?", [JSON.stringify(preset.steps), already.id, req.user.orgId]);
+      already.steps = preset.steps;
+    }
     if (already) {
       return res.json({
         id: already.id, name: already.name, description: withoutInternalNotes(already.description),

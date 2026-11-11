@@ -38,4 +38,21 @@ function checkoutIdentity(name, { oneTime = true } = {}) {
   };
 }
 
-module.exports = { checkoutIdentity, descriptorSuffix, displayName, SUFFIX_MAX };
+// POLISH-9 (W-1110-Fundraising-02X): the LINE ITEM a donor reads on Checkout
+// ("Donation to … Studio Scholarships") said the internal org name, "CREO Arts
+// (Demo)". It takes the donor-facing name (`orgPublic`: donorFacingOrgName) and
+// the fund's public name, never orgs.name or fin_funds.name when a public one
+// is set. One builder, so no branch of the Checkout reads the internal name.
+const fundLabel = fund => (fund && (String(fund.public_name || "").trim() || String(fund.name || "").trim())) || "";
+function donationProductName({ orgPublic, auctionWin, memLevel, eventLevel, eventQty, eventRow, peerFundraiserId,
+  pageTitle, fundraiserName, givingPageId, fund }) {
+  const fundName = fundLabel(fund);
+  if (auctionWin) return `${auctionWin.item.title}, ${auctionWin.auction.title} (auction), ${orgPublic}`;
+  if (memLevel) return `${memLevel.name} membership · ${orgPublic}`;
+  if (eventLevel) return `${eventQty} × ${eventLevel.name} · ${eventRow.name}`;
+  if (peerFundraiserId) return `Donation to ${orgPublic} · ${pageTitle} (via ${fundraiserName}'s fundraiser)`;
+  if (givingPageId) return `Donation to ${orgPublic} · ${pageTitle}`;
+  return `Donation to ${orgPublic}${fundName ? ` ${fundName}` : ""}`;
+}
+
+module.exports = { checkoutIdentity, descriptorSuffix, displayName, donationProductName, fundLabel, SUFFIX_MAX };

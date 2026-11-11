@@ -341,6 +341,7 @@ async function runCampaignSend(campaign, org, donors) {
       const renderCtx = fromBlocks ? await emailCompose.orgRenderContext(org.id) : null;
       const campaignFrom = smtpFrom ? fromWithDisplayName((await resolveOrgBrandTheme(org.id).catch(() => null))?.displayName, smtpFrom) : smtpFrom; // BUILD-64: org name in the inbox, resolved once
 
+      const audienceNoGift = donors.some(d => !(Number(d.total_giving) > 0));   // POLISH-9: anyone here never gave
       for (const donor of donors) {
         const decision = await donorMailDecision("campaign", donor.email, org.id, { donorId: donor.id });
         if (!decision.send && decision.reason !== "type_off") {   // TRUST-1: Campaign emails off, so it waits: the send gate holds it (Going out's Held)
@@ -367,7 +368,7 @@ async function runCampaignSend(campaign, org, donors) {
           // goes where the renderer left its slot, once, and a copy with a
           // problem in it is never sent (the send route refused the whole
           // campaign before this if the problem was in the blocks).
-          const fields = await emailCompose.personFields(renderCtx, donor, { campaignName: campaign.name || "" });
+          const fields = { ...(await emailCompose.personFields(renderCtx, donor, { campaignName: campaign.name || "" })), audience_no_gift: audienceNoGift };
           const r = await emailCompose.render(renderCtx, {
             blocks: campaign.email_blocks, subject: campaign.subject, preheader: campaign.preheader, fields, mode: "send" });
           htmlFull = r.problems.length ? null : emailCompose.withFooter(r, footer, pixel);
