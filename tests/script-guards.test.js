@@ -320,6 +320,7 @@ const EXEMPT = {
   "deploy-lane": "STAGE-1 — reads the merged PR's labels and description from the GitHub API and writes a job output (staging or hotfix). No BASE, no DB, no app call",
   "vercel-staging-config": "STAGE-1 — writes vercel.staging.json in the checkout from vercel.json with prod's API host replaced. No BASE, no DB, no network",
   "wait-live": "STAGE-1 — polls a copy's public /health and build-sha meta until it serves a commit. Read-only, no secret",
+  "railway-drift": "STAGE-2 — reads prod's and staging's Railway service settings and variable NAMES (each with its own environment's token, through Railway's GraphQL API) and prints what differs. Never prints or compares a value, except STEWARD_ENV, read only to check it is \"staging\". No BASE, no DB, no writes",
   "affected": "CI-SPEED-1 — `npm run affected`: reads the git diff, the suite files and .generated/suite-timings.json (fetched with `gh run download` when missing), then runs the chosen suites through tests/run-all.sh with SHARD_SELF=1 (its own loopback scratch database and server, tests/shard.sh). No app call and no DB of its own; a BASE it is given is passed to run-all.sh unchanged",
   "affected-slots": "CI-SPEED-1 — the two machine slots `npm run affected` runs in: mkdir locks under /tmp holding a pid. No BASE, no DB, no network",
   "tree-already-passed": "CHORE-2 — asks the GitHub Actions API whether this exact git TREE already passed, and writes two job outputs. Read-only against GitHub, no BASE, no DB, no app writes; every failure mode falls back to running the battery",
@@ -588,7 +589,17 @@ ok(nulFiles.length === 0,
   for (const j of ["tree-check", "guards", "plan", "shard", "combine"]) ok(!/secrets\./.test(jobs[j] || ""), `ci.yml's ${j} job is given no secret`);
   const dbUrl = ((jobs.shard || "").match(/DATABASE_URL:\s*(\S+)/) || [])[1] || "";
   ok(/^postgres(ql)?:\/\/[^@]*@(localhost|127\.0\.0\.1)[:/]/.test(dbUrl), "ci.yml's shard job's DATABASE_URL is loopback");
-  ok(Object.keys(jobs).filter(j => /secrets\.RAILWAY_TOKEN/.test(jobs[j])).every(j => /^deploy-/.test(j)), "only a deploy job in ci.yml holds RAILWAY_TOKEN");
+  // STAGE-2: one named exception. `drift` hands RAILWAY_TOKEN to drift.yml, whose one
+  // step runs scripts/ci/railway-drift.js: it reads prod's settings and variable NAMES
+  // and writes nothing. Pinned below so the token can't reach anything else there.
+  ok(Object.keys(jobs).filter(j => /secrets\.RAILWAY_TOKEN/.test(jobs[j])).every(j => /^deploy-/.test(j) || j === "drift"), "only a deploy job (or the read-only drift job) in ci.yml holds RAILWAY_TOKEN");
+  ok(/uses: \.\/\.github\/workflows\/drift\.yml/.test(jobs.drift || "") && !/\brun:/.test(jobs.drift || ""), "ci.yml's drift job runs nothing itself; it only calls drift.yml");
+  {
+    const dy = fs.readFileSync(path.join(root, ".github", "workflows", "drift.yml"), "utf8").replace(/#.*$/gm, "");
+    const runs = [...dy.matchAll(/\brun:\s*(.+)/g)].map(m => m[1].trim());
+    ok(runs.length === 1 && runs[0] === "node scripts/ci/railway-drift.js", "drift.yml's one command is the read-only drift script", runs);
+    ok(!/secrets: inherit/.test(dy + (jobs.drift || "")), "no secrets: inherit on the drift path");
+  }
 }
 
 // ── SECURE-3 item 4 · THE RESTORE DRILL REFUSES PROD ──────────────────────
@@ -634,7 +645,41 @@ ok(nulFiles.length === 0,
 // PROVEN ABLE TO FAIL: a table pointing at orgs through owner_org, with no
 // org_id, is created inside a transaction that is rolled back, and the plan
 // must name it as uncovered.
+// ── STAGE-2 item 2 · THE GUARD READS /health WITHOUT CURL ──────────────────
+// Railway's runtime image has no curl, so the staging seed could not run in a
+// container: assertServerIdentity shelled out to it and read "unverifiable".
+// It now asks a child Node (Node's own fetch). Run here in a child whose PATH
+// is EMPTY, against a fake /health in another process (the guard blocks while
+// it waits, so the server can't share its event loop). Still refuses a
+// different product and a host that doesn't answer.
+// PROVEN ABLE TO FAIL: put the curl line back and the first check goes red
+// (an empty PATH has no curl, so the guard reads nothing).
+async function guardWithoutCurl() {
+  const { spawn, spawnSync } = require("child_process");
+  const serve = product => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["-e", `require("http").createServer((q, r) => { r.setHeader("content-type", "application/json"); r.end(JSON.stringify({ product: ${JSON.stringify(product)}, env: "staging", status: "ok" })); }).listen(0, "127.0.0.1", function () { console.log(this.address().port); });`], { stdio: ["ignore", "pipe", "inherit"] });
+    child.stdout.once("data", d => resolve({ child, base: `http://127.0.0.1:${String(d).trim()}` }));
+    child.once("error", reject);
+  });
+  const guard = base => {
+    const r = spawnSync(process.execPath, ["-e", `try { const h = require(${JSON.stringify(path.join(root, "scripts/lib/prodGuard.js"))}).assertServerIdentity(${JSON.stringify(base)}, { noExit: true }); console.log("OK " + h.product + " " + h.env); } catch (e) { console.log("REFUSED " + e.code); }`],
+      { env: { PATH: "" }, encoding: "utf8", timeout: 20000 });
+    return String(r.stdout || "").trim() || String(r.stderr || "").trim();
+  };
+  const good = await serve("steward"), other = await serve("some-other-app");
+  try {
+    const out = guard(good.base);
+    ok(out === "OK steward staging", `the guard reads /health with no curl on PATH (got "${out}")`);
+    const wrong = guard(other.base);
+    ok(wrong === "REFUSED wrong_product", `a different product on the host is still refused (got "${wrong}")`);
+    const dead = guard("http://127.0.0.1:1");
+    ok(dead === "REFUSED identity_unverifiable", `a host that doesn't answer is still refused (got "${dead}")`);
+    ok(!/execSync\(`curl/.test(fs.readFileSync(path.join(root, "scripts/lib/prodGuard.js"), "utf8")), "prodGuard does not shell out to curl");
+  } finally { good.child.kill(); other.child.kill(); }
+}
+
 (async () => {
+  await guardWithoutCurl();
   const { Client } = require("pg");
   const { execFileSync } = require("child_process");
   const { teardownPlan } = require("../scripts/ci/seed-demo.js");

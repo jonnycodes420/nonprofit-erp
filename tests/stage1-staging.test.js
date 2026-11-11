@@ -15,6 +15,10 @@
 //   §8 a real name in the staging seed (scan against org_creo's people)
 //   §9 the staging frontend's config still pointing at prod's API
 //   §10 Roll back's target: the commit prod served before this one
+//   §11 STAGE-2 drift: STEWARD_ENV (or any must-have) missing on staging
+//       passing, a stray build command passing, or a variable's value printed
+//   §12 STAGE-2 deploy-staging: a railway up without --environment staging,
+//       or the staging build-env dropped / prod's deploy given it
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -226,6 +230,102 @@ function runs(cond, { staging, lane, vercel = "true" }) {
   await SHIP.noteBoot({ run: qq, sha: SHA_A });
   ok("after rolling back to A, the previous is B (Roll back undoes the roll back)", await SHIP.previousSha({ run: qq, query: qq, current: SHA_A }) === SHA_B);
   await qq(`DELETE FROM deploy_history`, []);
+
+  console.log("\n§11 · drift between prod and staging is caught, by name only (STAGE-2)");
+  {
+    const D = require("../scripts/ci/railway-drift");
+    const SECRET = "sk_test_PLANTED_" + Math.random().toString(36).slice(2);
+    const names = (...n) => n;
+    const PROD_WEB = names("DATABASE_URL", "JWT_SECRET", "STRIPE_SECRET_KEY", "RESEND_API_KEY", "CORS_ORIGIN", "SENTRY_DSN", "GOOGLE_CLIENT_ID", "OPS_SHIP_TOKEN", "DATABASE_PUBLIC_URL");
+    const PROD_WORKER = names("DATABASE_URL", "JWT_SECRET", "STRIPE_SECRET_KEY", "RESEND_API_KEY", "CORS_ORIGIN", "SENTRY_DSN");
+    const STG_WEB = names("DATABASE_URL", "JWT_SECRET", "STRIPE_SECRET_KEY", "RESEND_API_KEY", "CORS_ORIGIN", "STEWARD_ENV", "STEWARD_PROCESS", "DATABASE_PUBLIC_URL");
+    const STG_WORKER = names("DATABASE_URL", "JWT_SECRET", "STRIPE_SECRET_KEY", "RESEND_API_KEY", "CORS_ORIGIN", "STEWARD_ENV", "STEWARD_PROCESS");
+    const envOf = (name, svcs) => ({
+      name,
+      serviceInstances: { edges: svcs.map(x => ({ node: { serviceId: name + x.n, serviceName: x.n, buildCommand: x.build ?? null, startCommand: x.start ?? null } })) },
+      // The fake answers with a value on every variable, as if Railway leaked one: none may reach the output.
+      variables: { edges: [...svcs.flatMap(x => x.vars.map(v => ({ node: { name: v, serviceId: name + x.n, value: SECRET } }))),
+        { node: { name: "ORPHAN_SHARED", serviceId: null, value: SECRET } }] },
+    });
+    let world, healthEnv, seen = [];
+    const fake = require("http").createServer((req, res) => {
+      let body = ""; req.on("data", c => (body += c)).on("end", () => {
+        res.setHeader("content-type", "application/json");
+        if (req.url === "/health") return res.end(JSON.stringify({ product: "steward", env: healthEnv, note: SECRET }));
+        seen.push(body);
+        const tok = req.headers["project-access-token"];
+        const which = tok === "tok-prod" ? "prod" : tok === "tok-staging" ? "staging" : null;
+        if (!which) return res.end(JSON.stringify({ errors: [{ message: "Not Authorized" }] }));
+        const q = JSON.parse(body).query;
+        if (/projectToken/.test(q)) return res.end(JSON.stringify({ data: { projectToken: { projectId: "p1", environmentId: which } } }));
+        return res.end(JSON.stringify({ data: { environment: world[which] } }));
+      });
+    });
+    await new Promise(r => fake.listen(0, "127.0.0.1", r));
+    const port = fake.address().port;
+    const fresh = () => ({
+      prod: envOf("production", [{ n: "nonprofit-erp", start: "node server.js", vars: [...PROD_WEB] }, { n: "steward-worker", start: "node worker.js", vars: [...PROD_WORKER] }]),
+      staging: envOf("staging", [{ n: "web", start: "node server.js", vars: [...STG_WEB] }, { n: "worker", start: "node server.js", vars: [...STG_WORKER] }]),
+    });
+    const run = async (mutate, extra = {}) => {
+      world = fresh(); healthEnv = "staging"; seen = [];
+      if (mutate) mutate(world);
+      const lines = [];
+      const code = await D.main({ RAILWAY_API_URL: `http://127.0.0.1:${port}/graphql/v2`, RAILWAY_PROD_TOKEN: "tok-prod", RAILWAY_STAGING_TOKEN: "tok-staging",
+        STAGING_API_URL: `http://127.0.0.1:${port}`, ...extra }, l => lines.push(String(l)));
+      return { code, out: lines.join("\n"), seen: seen.join("\n") };
+    };
+    const dropVar = (w, svc, v) => { w.staging.variables.edges = w.staging.variables.edges.filter(e => !(e.node.serviceId === "staging" + svc && e.node.name === v)); };
+    const outs = [];
+    try {
+      const clean = await run();
+      outs.push(clean);
+      ok("staging matching prod (less the allowlist), worker on node server.js + STEWARD_PROCESS: no drift", clean.code === 0 && /No drift/.test(clean.out), clean.out);
+      const noEnv = await run(w => { dropVar(w, "web", "STEWARD_ENV"); dropVar(w, "worker", "STEWARD_ENV"); });
+      outs.push(noEnv);
+      ok("STEWARD_ENV missing on staging fails, on web and worker", noEnv.code === 1 && /web .*staging must have STEWARD_ENV/.test(noEnv.out) && /worker .*staging must have STEWARD_ENV/.test(noEnv.out), noEnv.out);
+      for (const v of ["DATABASE_URL", "CORS_ORIGIN", "RESEND_API_KEY"]) {
+        const r = await run(w => dropVar(w, "worker", v)); outs.push(r);
+        ok(`${v} missing on staging worker fails`, r.code === 1 && new RegExp(`worker .*${v}`).test(r.out), r.out);
+      }
+      const noPub = await run(w => dropVar(w, "web", "DATABASE_PUBLIC_URL")); outs.push(noPub);
+      ok("DATABASE_PUBLIC_URL missing on staging web fails", noPub.code === 1 && /staging must have DATABASE_PUBLIC_URL/.test(noPub.out), noPub.out);
+      const stray = await run(w => { w.staging.serviceInstances.edges[0].node.buildCommand = "npm run build"; }); outs.push(stray);
+      ok("a stray build command on staging web fails, naming both sides", stray.code === 1 && /web .*build command differs: prod \(none\), staging "npm run build"/.test(stray.out), stray.out);
+      const lost = await run(w => dropVar(w, "web", "STRIPE_SECRET_KEY")); outs.push(lost);
+      ok("a name prod has and staging lacks fails (not in the allowlist)", lost.code === 1 && /prod has STRIPE_SECRET_KEY, staging does not/.test(lost.out), lost.out);
+      ok("…and the allowlisted ones (SENTRY_DSN, GOOGLE_*, OPS_SHIP_TOKEN) don't", !/SENTRY_DSN|GOOGLE_CLIENT_ID|OPS_SHIP_TOKEN/.test(lost.out));
+      const wstart = await run(w => { w.staging.variables.edges = w.staging.variables.edges.filter(e => !(e.node.serviceId === "stagingworker" && e.node.name === "STEWARD_PROCESS")); }); outs.push(wstart);
+      ok("staging worker on node server.js WITHOUT STEWARD_PROCESS is a start-command drift", wstart.code === 1 && /worker .*start command differs/.test(wstart.out), wstart.out);
+      const saysProd = await run(() => { healthEnv = "production"; }); outs.push(saysProd);
+      ok("staging web's /health saying production fails (STEWARD_ENV's value)", saysProd.code === 1 && /says env "production"/.test(saysProd.out), saysProd.out);
+      const refused = await run(null, { RAILWAY_STAGING_TOKEN: "tok-wrong" }); outs.push(refused);
+      ok("a token that can't read the settings stops with exit 2 and says so", refused.code === 2 && /COULD NOT READ/.test(refused.out), refused.out);
+      ok("the planted secret value appears in NO output", outs.every(o => !o.out.includes(SECRET)), outs.map(o => o.code));
+      ok("no query asks for a value or the values-returning variables(...) root field",
+        outs.every(o => !/\bvalue\b/.test(o.seen) && !/variables\s*\(\s*(projectId|environmentId|serviceId)/.test(o.seen)));
+      const allow = JSON.parse(fs.readFileSync(path.join(ROOT, "scripts/ci/drift-allow.json"), "utf8"));
+      ok("every allowlist entry carries a reason", allow.length > 0 && allow.every(e => e.name && String(e.reason || "").trim().length > 10));
+      ok("the must-haves are never allowlisted", !allow.some(e => ["STEWARD_ENV", "DATABASE_URL", "CORS_ORIGIN", "RESEND_API_KEY", "DATABASE_PUBLIC_URL"].includes(e.name)));
+    } finally { fake.close(); }
+    const yml2 = fs.readFileSync(path.join(ROOT, ".github", "workflows", "ci.yml"), "utf8");
+    const jd = jobIf(yml2, "drift");
+    ok("ci.yml's drift job runs on push to main, through drift.yml, and no job needs it",
+      jd && /github\.event_name == 'push'/.test(jd.cond) && /uses: \.\/\.github\/workflows\/drift\.yml/.test(jd.block) && !/needs:[^\n]*\bdrift\b/.test(yml2));
+    const dy = fs.readFileSync(path.join(ROOT, ".github", "workflows", "drift.yml"), "utf8");
+    ok("drift.yml runs nightly, reads prod with RAILWAY_TOKEN and staging with RAILWAY_STAGING_TOKEN, and doesn't swallow a failure",
+      /schedule:/.test(dy) && /RAILWAY_PROD_TOKEN: \$\{\{ secrets\.RAILWAY_TOKEN \}\}/.test(dy) && /RAILWAY_STAGING_TOKEN: \$\{\{ secrets\.RAILWAY_STAGING_TOKEN \}\}/.test(dy) && !/continue-on-error/.test(dy));
+  }
+
+  console.log("\n§12 · deploy-staging names staging and builds the staging strip (STAGE-2)");
+  {
+    const y = fs.readFileSync(path.join(ROOT, ".github", "workflows", "ci.yml"), "utf8");
+    const st = jobIf(y, "deploy-staging").block, pv = jobIf(y, "deploy-vercel").block, pr = jobIf(y, "deploy-railway").block;
+    const ups = st.split("\n").filter(l => /^\s*railway up /.test(l));
+    ok("both railway up lines in deploy-staging carry --environment staging", ups.length === 2 && ups.every(l => /--environment staging\b/.test(l)), ups);
+    ok("staging's frontend is built with VITE_STEWARD_ENV=staging", /--build-env VITE_STEWARD_ENV=staging/.test(st));
+    ok("prod's deploys never set VITE_STEWARD_ENV and never name an environment", !/VITE_STEWARD_ENV/.test(pv + pr) && !/--environment/.test(pr));
+  }
 
   await reset();
   await closeDb();

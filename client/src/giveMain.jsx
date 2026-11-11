@@ -17,11 +17,13 @@ import { API } from "./api";
 import { installOrgBinding } from "./lib/orgBinding";
 import { installCommitGuard } from "./lib/commitGuard";
 import { installPageReady } from "./lib/pageReady";
+import { installStagingStrip } from "./lib/stagingStrip";   // STAGE-2
 import Donate from "./pages/Donate";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 
 installOrgBinding(API);
+installStagingStrip({ api: API });   // STAGE-2: the strip on staging only
 installCommitGuard();
 // PAGES-1: a giving page carries PERF-4's page-ready mark (lib/pageReady.js), with no beacon.
 if (/^\/give\/[^/]+\/[^/]+\/?$/.test(window.location.pathname)) installPageReady(null);

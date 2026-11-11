@@ -390,7 +390,7 @@ export function MobileSearch({ onNavigate }) {
       style={{width:36,height:36,borderRadius:10,background:"transparent",border:"1px solid "+T.green650,color:T.inkInverse,fontSize:17,lineHeight:1,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>⌕</button>
     {on && <div data-testid="mobile-search" role="search"
       onKeyDown={e=>{ if (e.key==="Escape") setOn(false); }}
-      style={{position:"fixed",top:0,left:0,right:0,zIndex:300,background:T.ink,borderBottom:"1px solid "+T.bgElevated,padding:"calc(8px + env(safe-area-inset-top,0px)) 12px 8px",display:"flex",gap:8,alignItems:"flex-start",boxSizing:"border-box"}}>
+      style={{position:"fixed",top:"var(--steward-strip-h, 0px)",left:0,right:0,zIndex:300,background:T.ink,borderBottom:"1px solid "+T.bgElevated,padding:"calc(8px + env(safe-area-inset-top,0px)) 12px 8px",display:"flex",gap:8,alignItems:"flex-start",boxSizing:"border-box"}}>
       <GlobalSearch onNavigate={onNavigate} inputRef={inputRef} autoFocus onPicked={()=>setOn(false)}
         placeholder="Search people, gifts, notes"
         style={{position:"relative",flex:1,minWidth:0}}/>
@@ -467,7 +467,7 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
   useEffect(() => { if (viewer) import("../lib/viewOnlyGate.js").then(m => m.installViewOnlyGate()).catch(() => {}); }, [viewer]);
   const orgLabel = (auth?.user?.isSuperAdmin || manyOrgs || orgsSeenCount() > 1) ? (auth?.org?.name || "") : "";
 
-  return <div className="app-topbar" style={{height:52,background:T.ink,borderBottom:"1px solid "+T.bgElevated,display:"flex",alignItems:"center",gap:14,padding:"0 20px 0 0",position:"fixed",top:0,left:0,right:0,zIndex:250,boxSizing:"border-box"}}>
+  return <div className="app-topbar" style={{height:52,background:T.ink,borderBottom:"1px solid "+T.bgElevated,display:"flex",alignItems:"center",gap:14,padding:"0 20px 0 0",position:"fixed",top:"var(--steward-strip-h, 0px)",left:0,right:0,zIndex:250,boxSizing:"border-box"}}>
 
     {/* Wordmark — over the 240px sidebar rail zone (20px inset matches the
         old sidebar wordmark), links to Home */}
