@@ -18,6 +18,16 @@ on:
   pull_request:
     branches: [main]
 
+# CI-SPEED-1 · A NEW PUSH TO A PR CANCELS THAT PR'S STALE RUN. On 10 Nov asks-1
+# had four runs going at once, each spending six shards on a commit already
+# replaced. On a pull_request the group is the PR's branch and the old run is
+# cancelled. A push to main is NEVER cancelled and never queued behind another
+# (a queued run in a group is itself cancelled by the next arrival), so on main
+# the group is the run's own id: every main run stands alone, as before.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ci-{0}', github.head_ref || github.ref) || format('ci-main-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # ── CHORE-2 · HAS THIS EXACT TREE ALREADY PASSED? ────────────────────────
   # A push to main is nearly always a merge of a PR whose head commit already
@@ -73,9 +83,10 @@ jobs:
   # ── CHORE-2 · THE GUARDS THAT ARE NOT SUITES ──────────────────────────────
   # Lint, the TDZ scan and the dependency audit are one-shot checks of the
   # tree. They used to sit inside the battery job; with six shards that would
-  # run each of them six times for one answer. They run once, here, and the
-  # shards wait on them — a tree that fails the TDZ scan would fail six
-  # batteries in a dozen confusing ways, so failing in two seconds is kinder.
+  # run each of them six times for one answer. They run once, here.
+  # CI-SPEED-1: the shards no longer wait on them. Waiting put about 45 s on
+  # every run's critical path; the `test` gate below still fails unless guards
+  # succeeded, so nothing goes green that went green before.
   guards:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -240,7 +251,7 @@ jobs:
     # FLAKE-1: 45, not 25, so the Playwright step's three attempts fit inside
     # the job; a shard that installs on the first try takes what it always did.
     timeout-minutes: 45
-    needs: [tree-check, guards, plan]
+    needs: [tree-check, plan]
     if: needs.tree-check.outputs.skip != 'true' && needs.tree-check.outputs.docs_only != 'true'
     strategy:
       fail-fast: false
@@ -353,11 +364,39 @@ jobs:
             package-lock.json
             client/package-lock.json
 
+      # CI-SPEED-1: node_modules itself, keyed on both lockfiles, the Node
+      # major and the runner image. A hit skips `npm ci` (the npm download
+      # cache above still serves a miss). Main's playwright-cache job fills it
+      # where every PR can read it; a PR's first miss saves its own.
+      - name: node_modules cache key
+        id: nm-keys
+        run: echo "key=node-modules-${ImageOS:-ubuntu}-node$(node -p 'process.versions.node.split(".")[0]')-${{ hashFiles('package-lock.json', 'client/package-lock.json') }}" >> "$GITHUB_OUTPUT"
+      - name: Restore node_modules (server + client)
+        id: nm-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            client/node_modules
+          key: ${{ steps.nm-keys.outputs.key }}
+
       - name: Install server deps (locked)
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Install client deps (locked)
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci --prefix client
+
+      - name: Save node_modules
+        if: steps.nm-cache.outputs.cache-hit != 'true' && matrix.shard == 1
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            node_modules
+            client/node_modules
+          key: ${{ steps.nm-keys.outputs.key }}
 
       # SPLIT-1 — this PR's routes against main's: the same method, path and
       # middleware chain, line for line, and two routes that can answer the
@@ -584,6 +623,30 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      # CI-SPEED-1: main's node_modules, where every PR's shards can read it.
+      - name: node_modules cache key
+        id: nm-keys
+        run: echo "key=node-modules-${ImageOS:-ubuntu}-node$(node -p 'process.versions.node.split(".")[0]')-${{ hashFiles('package-lock.json', 'client/package-lock.json') }}" >> "$GITHUB_OUTPUT"
+      - name: Is node_modules there?
+        id: nm-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            client/node_modules
+          key: ${{ steps.nm-keys.outputs.key }}
+          lookup-only: true
+      - name: Install node_modules (server + client)
+        if: steps.nm-cache.outputs.cache-hit != 'true'
+        run: npm ci && npm ci --prefix client
+      - if: steps.nm-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            node_modules
+            client/node_modules
+          key: ${{ steps.nm-keys.outputs.key }}
       - name: Playwright cache keys
         id: pw-keys
         run: echo "debs=pw-debs-${ImageOS:-ubuntu}-${ImageVersion:-unknown}-1.61.1-webkit" >> "$GITHUB_OUTPUT"

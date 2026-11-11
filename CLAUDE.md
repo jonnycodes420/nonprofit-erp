@@ -83,10 +83,12 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
 - **Any change to import, delete, undo, merge or sending must pass tests/real-shaped.test.js and
   the truth check (HARDEN-1 item 3) before it merges.** The truth check is `assertSurfacesAgree`
   in `tests/lib/surfacesAgree.js`. (HARDEN-1)
-- **Affected suites while you build; the full battery once, at the end.** A red run during
-  edits tells you nothing, and a full run after every edit is the slowest way to learn that.
-  Nothing is done until that final battery is green, with no silent skips. It is 213 suites
-  (`bash tests/run-all.sh`, three shards; `SHARDS=1` for the serial run).
+- **The loop: build → your new suite plus `npm run affected` (≤10 min) → push → CI gates →
+  auto-merge.** No local full battery. `affected` maps your diff to the suites that cover it,
+  runs what fits in ten minutes in one of two machine slots (never the battery lock, never a
+  wait past two minutes), and leaves tenant-matrix, smoke-walk, the browser walks and load to
+  CI (CI-SPEED-1, `scripts/README.md`). CI's six shards are the gate. If CI fails on code you
+  didn't touch, rerun that job once; if it fails twice, stop and say so.
 - **Never email a prospect, and never create calendar events.** Tests send to the local
   Resend sink. Addresses in `mailBlock.js` are never mailed, from
   any org, and only Jonathan edits that list.
@@ -128,7 +130,7 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
 - **Client dist for the browser legs:** `bash scripts/ops/build-local-dist.sh`, then
   `API=http://localhost:5601 PORT=4173 node scripts/ci/local-preview.js`. Never a bare
   `npx vite build`, because it skips the brand guard. Rebuild after any client edit.
-- **The battery:** `SUITE_LOG_DIR=/tmp/steward-suite-logs-<tag> bash tests/run-all.sh`
+- **The battery (CI's; locally only when Jonathan asks):** `SUITE_LOG_DIR=/tmp/steward-suite-logs-<tag> bash tests/run-all.sh`
   (= `npm test`). It SHARDS three ways by default — each shard builds its own database
   (`steward_<worktree>_shard_<n>`), boots its own server on a port block it claims, and the
   run prints one summary. Two tabs can run batteries side by side: the names, ports and logs
