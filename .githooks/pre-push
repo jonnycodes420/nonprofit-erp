@@ -145,6 +145,12 @@ case "$mode" in
       echo "[pre-push] no test server on $hbase — starting one of its own for these suites"
       echo "[pre-push] (browser legs skip without a client build; CI runs them)"
       self="SHARD_SELF=1 SHARD_BUILD_DIST=0 SHARD_PREVIEW=0"
+      # FLAKE-3: a client/dist left in the worktree (built for some other
+      # port) made the browser suites start anyway, against a preview that was
+      # never served (ERR_CONNECTION_REFUSED). The shard is told which suites
+      # are browser suites, and skips them saying "CI will run it".
+      bsuites=$(node -e 'const {isBrowser}=require("./scripts/ci/affected.js");process.stdout.write(process.argv.slice(1).filter(s=>isBrowser(s)).join(" "))' $selection 2>/dev/null || true)
+      [ -n "$bsuites" ] && export SHARD_BROWSER_SUITES="$bsuites"
     fi
     # FIX-60 item 6: against a server that is already up, the browser legs use
     # whatever client/dist is here. A dist built for that server from an older

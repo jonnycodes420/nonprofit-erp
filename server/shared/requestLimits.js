@@ -46,6 +46,12 @@ const counters = { checkoutTimeouts: 0, statementTimeouts: 0, cancelled: 0 };
 
 // The scope a query is running in, while its request is still being answered.
 function live() { const sc = scopes.getStore(); return sc && !sc.done ? sc : null; }
+// FLAKE-3: a read the browser abandoned is done too, but it is not background
+// work. A request still in requireAuth when the browser gave up reached its
+// route afterwards, found no live scope, and ran its statement with no limit
+// and nobody to cancel it (load1-no-jam: 60 s sleeps left running). Nothing an
+// abandoned read would run next is started.
+function refuseIfAbandoned() { const sc = scopes.getStore(); if (sc && sc.closed) throw abandoned(); }
 
 let _cancelPool = null;
 function cancelPool(Pool, options) {
@@ -93,9 +99,9 @@ function middleware(cancelBackend) {
 // scope's limit, carries the scope's statement_timeout, and is tracked so an
 // abandon can cancel it. release(client) must be called for every one.
 async function checkout(pool) {
+  refuseIfAbandoned();
   const sc = live();
   if (!sc) return align(await pool.connect(), 0, null);
-  if (sc.closed) throw abandoned();
   const t0 = Date.now();   // SCALE-3: the wait, for the capacity gauge (server/perf/capacity.js)
   const client = await new Promise((resolve, reject) => {
     // One wait: it ends once, by a connection, the limit, or an abandon (close()).
@@ -141,7 +147,7 @@ function translate(e) {
   return tooLong();
 }
 // A held client's next statement after an abandon is never started.
-function guard() { const sc = live(); if (sc && sc.closed) throw abandoned(); }
+function guard() { refuseIfAbandoned(); }
 
 // Work several requests wait on together (one org's Insights): it keeps the
 // default limit but is no one request's, so one caller's abandon never

@@ -29,7 +29,12 @@ build → your new suite plus `npm run affected` (10 minutes at most) → push �
   `-- --dry-run` plans only; `-- --files a.js,b.js` plans for those files; `-- --budget 300`.
 - **Heavy suites are CI's**: tenant-matrix, tenant-isolation, smoke-walk, every Playwright walk,
   the load suites and any suite over 240 s. They run locally only when you changed that suite's
-  own file.
+  own file. A browser suite that runs gets the client built for the run's server and a preview
+  the shard waits for. Without Playwright, client/node_modules, a build or a preview that
+  answers, it is skipped with "CI will run it", never started half-ready (FLAKE-3).
+- **Repeat a suite on CI** (`.github/workflows/repeat.yml`, FLAKE-3): `gh workflow run repeat.yml
+  -f suites='["lag1"]' -f count=30` runs it 30 times on one shard and is red if any run was. A
+  branch named `repeat/<anything>` runs the defaults. Not part of the gate.
 - **No waiting on other tabs.** `affected` takes one of two machine slots (`ci/affected-slots.js`,
   one run per worktree), not the battery lock, and never waits more than two minutes. If it
   would, it says so and the answer is to push.

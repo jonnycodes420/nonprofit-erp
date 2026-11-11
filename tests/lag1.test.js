@@ -19,7 +19,13 @@
 //   L6 W-1107-Volunteers-18X a meeting dragged to a new day: its next-step
 //                           task's title and due date move with it
 //   H  every org GET answers Cache-Control: no-store
+//   A  FLAKE-3: a read cut off by leaving the page is not an error. The Donors
+//      list's read is held in flight, the page is left, and nothing is logged
+//      (lib/leaving.js). The walk's last check counts every console error, so
+//      an abort the app logs is red here every time, not one run in a few.
 //
+// Planted defect (FLAKE-3, by hand): the Donors list's catch without
+// isAbort(e) logs the cut-off read again; A goes red on every run.
 // Planted defect: LAG1_PLANT_TTL=30000 on the server (server/http/noStore.js)
 // keeps every org GET's answer for 30 s per replica; L1, L3, L4 and L6 go red.
 "use strict";
@@ -108,7 +114,16 @@ const person = (id, name, f = {}) => q(
   const errors = [];
   const dialogs = [];
   const NOISE = /\/_vercel\/|fonts\.googleapis|\/favicon|\/ai\/stream/;
-  page.on("console", m => { if (m.type() === "error" && !NOISE.test((m.location() || {}).url || "") && !/React DevTools|status of 409/.test(m.text())) errors.push(m.text()); });
+  // FLAKE-3: each error names where it was logged and the page it was on, and
+  // the reads cut off just before it, so a red run says which code logged it.
+  const failedReqs = [];
+  page.on("requestfailed", r => { failedReqs.push(`${r.method()} ${r.url().replace(/^https?:\/\/[^/]+/, "").slice(0, 60)} ${(r.failure() || {}).errorText || ""}`); if (failedReqs.length > 12) failedReqs.shift(); });
+  page.on("console", m => {
+    if (m.type() === "error" && !NOISE.test((m.location() || {}).url || "") && !/React DevTools|status of 409/.test(m.text())) {
+      const at = m.location() || {};
+      errors.push(`${m.text().split("\n").slice(0, 3).join(" | ")} @ ${String(at.url || "").replace(/^https?:\/\/[^/]+/, "")}:${at.lineNumber} on ${page.url().replace(/^https?:\/\/[^/]+/, "")} · cut off: ${failedReqs.slice(-3).join("; ")}`);
+    }
+  });
   page.on("response", r => { if (r.status() >= 500 && !NOISE.test(r.url())) errors.push(r.status() + " " + r.url()); });
   // A browser alert is what the fleet never saw (an automated browser dismisses it): count it as "said nothing".
   page.on("dialog", d => { dialogs.push(d.message()); d.dismiss().catch(() => {}); });
@@ -141,6 +156,32 @@ const person = (id, name, f = {}) => q(
   const timings = {};
   const only = String(process.env.LAG1_ONLY || "").split(",").filter(Boolean);
   const leg = k => !only.length || only.includes(k);
+
+  // ── A · A READ CUT OFF BY LEAVING THE PAGE ────────────────────────────────
+  // The list's read is held for 3 s at the network, the page is left while it
+  // is out, and the page left to must be Tasks with nothing logged on the way.
+  // Its own context, with the service worker blocked: a read the worker makes
+  // is out of page.route's reach, so it could not be held.
+  if (leg("A")) {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
+    const pa = await ctx.newPage();
+    const errs = [];
+    // (the one line blocking the worker causes: its registration failing)
+    pa.on("console", m => { if (m.type() === "error" && !NOISE.test((m.location() || {}).url || "") && !/React DevTools|status of 409|^\[SW\] registration failed/.test(m.text())) errs.push(m.text()); });
+    await pa.addInitScript(([tk, u, o]) => {
+      localStorage.setItem("npe_token", tk); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
+    }, [lg.body.token, JSON.stringify(lg.body.user), JSON.stringify(lg.body.org)]);
+    let held = 0;
+    await pa.route(/\/donors\?/, r => { held++; setTimeout(() => r.continue().catch(() => {}), 3000); });
+    await pa.goto(`${APP}/donors`, { waitUntil: "commit", timeout: 60000 });
+    for (let i = 0; i < 100 && !held; i++) await pa.waitForTimeout(100);
+    await pa.goto(`${APP}/app/tasks`, { waitUntil: "networkidle", timeout: 60000 });
+    const there = await pa.locator('[data-testid="tasks-view-today"]').first().waitFor({ timeout: 20000 }).then(() => true).catch(() => false);
+    await pa.waitForTimeout(300);
+    ok("A FLAKE-3: the Donors list's read was in flight when the page was left, and Tasks opened", held > 0 && there, { held, there });
+    ok("A FLAKE-3: a read cut off by leaving the page logs no error", errs.length === 0, errs.slice(0, 2));
+    await ctx.close();
+  }
 
   // ── L1 · A $100 GIFT EDITED TO $150 ────────────────────────────────────────
   if (leg("L1")) {

@@ -21,10 +21,16 @@
 //
 // Planted defect (run by hand, in the report): undo treats "restored" as
 // "created" (restored people joined to the created list): §1 goes red.
+//
+// FLAKE-3: the audit rows are written on the response's finish, after the
+// answer (middleware/auditTrail.js), so every read of fin_audit_log here waits
+// for the request's rows to land first (tests/lib/auditLanded.js). Without the
+// wait, §4 and §5 were red 4 times in 30 on a busy machine.
 "use strict";
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
 const { undoAndWait } = require("./lib/undoWait");
+const { landed } = require("./lib/auditLanded");
 
 const BASE = process.env.BASE || "http://localhost:5601";
 const PASSWORD = "integritythree12345";
@@ -71,7 +77,13 @@ async function bringBackAndImport(tok, org, fileName, rows) {
 const stateOf = async id => { const d = await one(`SELECT deleted_at IS NOT NULL AS t FROM donors WHERE id=$1`, [id]); return !d ? "gone" : d.t ? "trash" : "active"; };
 const openRows = id => q(`SELECT id, created_by, row_data -> '__why' ->> 'kind' AS why, row_data ->> '__importUndo' AS imp FROM deleted_records
                            WHERE record_id=$1 AND table_name='donors' AND restored_at IS NULL ORDER BY created_at`, [id]);
-const undo = (tok, id) => undoAndWait(BASE, tok, id, { timeoutMs: 60000, pollMs: 100 });
+// The undo, then its audit rows: the request's own row (or the rows it wrote
+// for each person it moved, which the same statement writes) has landed.
+const undo = async (tok, id) => {
+  const out = await undoAndWait(BASE, tok, id, { timeoutMs: 60000, pollMs: 100 });
+  if (id) await landed(q, `SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE request_path = $1`, [`/imports/${encodeURIComponent(id)}/reverse`]);
+  return out;
+};
 const moveRows = (org, id) => q(`SELECT action, before_fields, after_fields FROM fin_audit_log WHERE org_id=$1 AND entity_id=$2 AND action='moved to trash'`, [org, id]);
 
 (async () => {
@@ -151,6 +163,7 @@ const moveRows = (org, id) => q(`SELECT action, before_fields, after_fields FROM
     await api("DELETE", `/donors/${H}`, tok);
     const inTrash = (await q(`SELECT id FROM donors WHERE org_id=$1 AND deleted_at IS NOT NULL ORDER BY id`, [ORG])).map(r => r.id);
     const e = await api("POST", "/donors/purge-trash", tok, { confirm: "empty", olderThanDays: null });
+    await landed(q, `SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1 AND action='deleted for good'`, [ORG], inTrash.length);
     const purged = (await q(`SELECT entity_id FROM fin_audit_log WHERE org_id=$1 AND action='deleted for good' ORDER BY entity_id`, [ORG])).map(r => r.entity_id);
     ok("§5 Empty trash deletes for good and writes one audit row per person, naming their id",
       e.status === 200 && e.body.purged === inTrash.length && inTrash.includes(H) && await stateOf(H) === "gone" && JSON.stringify(purged) === JSON.stringify(inTrash),
