@@ -2418,7 +2418,7 @@ app.post("/stripe/donation-page", requireAuth, wrap(async (req, res) => {
   const stripeOpts = { stripeAccount: org.stripe_account_id };
 
   const product = await stripe.products.create(
-    { name: `Donation to ${org.name}`, metadata: { donor_email: donorEmail, donor_name: donorName } },
+    { name: `Donation to ${await donorFacingOrgName(req.user.orgId, org.name)}`, metadata: { donor_email: donorEmail, donor_name: donorName } },
     stripeOpts
   );
   const price = await stripe.prices.create(
@@ -2474,7 +2474,7 @@ app.post("/stripe/campaign-link", requireAuth, wrap(async (req, res) => {
 
   const stripeOpts = { stripeAccount: org.stripe_account_id };
   const product = await stripe.products.create(
-    { name: `Donation to ${org.name}${campaignName ? ` ${campaignName}` : ""}` },
+    { name: `Donation to ${await donorFacingOrgName(req.user.orgId, org.name)}${campaignName ? ` ${campaignName}` : ""}` },
     stripeOpts
   );
   const price = await stripe.prices.create(

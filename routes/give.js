@@ -2836,6 +2836,8 @@ app.get("/peer-fundraisers/manage/:token", fundraiserManageLimiter, wrap(async (
 
   // THE WORDS THEY SEND THEMSELVES. Merge fields are theirs alone; this
   // function is not given a donor to merge from.
+  // POLISH-9: these words reach donors, so the org's public name, never orgs.name.
+  f.org_name = await donorFacingOrgName(f.org_id, f.org_name).catch(() => f.org_name);
   const ds = P2P.drafts({ fundraiserName: f.name, orgName: f.org_name, causeName: f.giving_page_title,
                           goalCents, raisedCents, link: publicUrl });
 
@@ -3501,11 +3503,8 @@ const donateHandler = async (req, res) => {
 
   // Resolved AFTER the form has had its say, so a fixed designation cannot
   // charge one fund and label the gift with the one the request asked for.
-  let fundName = "";
-  if (fundId) {
-    const fundRow = await query("SELECT name FROM fin_funds WHERE id=$1 AND org_id=$2", [fundId, org.id]);
-    if (fundRow.length) fundName = fundRow[0].name;
-  }
+  // POLISH-9: the donor reads the fund's public name (server/give/checkoutName.js).
+  const fundRow = fundId ? await query("SELECT name, public_name FROM fin_funds WHERE id=$1 AND org_id=$2", [fundId, org.id]) : [];
 
   // Attribution FIX — a page configured to count toward a campaign stamps that
   // campaign into the charge metadata, so the webhook writes gifts.campaign_id
@@ -3516,17 +3515,10 @@ const donateHandler = async (req, res) => {
   // POST/PUT /giving-pages validation, never trusted raw from this request.
   const effectiveCampaignId = pageCampaignId || (eventGift && eventGift.campaignId) || campaignId || "";
 
-  const productName = auctionWin
-    ? `${auctionWin.item.title}, ${auctionWin.auction.title} (auction), ${org.name}`
-    : memLevel
-    ? `${memLevel.name} membership · ${org.name}`
-    : eventLevel
-    ? `${eventQty} × ${eventLevel.name} · ${eventRow.name}`
-    : peerFundraiserId
-    ? `Donation to ${org.name} · ${pageTitle} (via ${fundraiserName}'s fundraiser)`
-    : givingPageId
-      ? `Donation to ${org.name} · ${pageTitle}`
-      : `Donation to ${org.name}${fundName ? ` ${fundName}` : ""}`;
+  // POLISH-9 (W-1110-Fundraising-02X): the public name, never orgs.name.
+  const orgPublic = await donorFacingOrgName(org.id, org.name);
+  const productName = require("../server/give/checkoutName").donationProductName({ orgPublic, auctionWin, memLevel, eventLevel,
+    eventQty, eventRow, peerFundraiserId, pageTitle, fundraiserName, givingPageId, fund: fundRow[0] });
   const metadata = {
     donor_email: email,
     donor_name: donorName,
@@ -3647,7 +3639,7 @@ const donateHandler = async (req, res) => {
   // /give-settings/payment-methods` reads the account's capabilities so the org
   // can SEE what will appear, and it is a report, never a gate.
   // TRUTH-3: the donor sees the charity's name on Stripe's page and statement (server/give/checkoutName.js).
-  const CHECKOUT_ID = require("../server/give/checkoutName").checkoutIdentity(await donorFacingOrgName(org.id, org.name), { oneTime: !isRecurring });
+  const CHECKOUT_ID = require("../server/give/checkoutName").checkoutIdentity(orgPublic, { oneTime: !isRecurring });
   const sessionParams = {
     ...CHECKOUT_ID.session,
     mode: isRecurring ? "subscription" : "payment",
@@ -4728,13 +4720,15 @@ app.put("/recurring/subs/:subId/fund", requireAuth, checkWriteAccess, wrap(async
   if (sub.status === "canceled") return res.status(409).json({ error: "canceled" });
   const orgId = req.user.orgId;
   let fundId = req.body?.fundId || null;
-  let fundName = null;
+  let fundName = null, fundPublic = null;
   if (fundId) {
-    const f = await query("SELECT id, name FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]);
+    const f = await query("SELECT id, name, public_name FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]);
     if (!f.length) return res.status(404).json({ error: "fund_not_found" });
     fundName = f[0].name;
+    fundPublic = require("../server/give/checkoutName").fundLabel(f[0]);
   }
   const org = await staffRecurringOrg(orgId);
+  const orgPublic = await donorFacingOrgName(orgId, org.name);   // POLISH-9: the donor's words
   const actorName = await staffActorName(req);
   await run("UPDATE recurring_subscriptions SET fund_id=?, updated_at=NOW() WHERE id=?", [fundId, sub.id]);
   await logRecurringChange(orgId, sub.id, sub.donor_id, "fund_changed",
@@ -4744,8 +4738,8 @@ app.put("/recurring/subs/:subId/fund", requireAuth, checkWriteAccess, wrap(async
   const donorNotified = await sendRecurringDonorEmail(org, { email: sub.donor_email, name: sub.donor_name },
     "Your recurring gift's designation changed",
     fundId
-      ? `Your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift to ${displayNameCase(org.name)} now supports ${fundName}. Future charges will be designated there.`
-      : `Your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift to ${displayNameCase(org.name)} is no longer designated to a specific fund; it will support the organization's general work.`);
+      ? `Your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift to ${orgPublic} now supports ${fundPublic}. Future charges will be designated there.`
+      : `Your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift to ${orgPublic} is no longer designated to a specific fund; it will support the organization's general work.`);
   res.json({ ok: true, fundId, fundName, donorNotified });
 }));
 
@@ -4911,7 +4905,7 @@ app.get("/recurring/proposal", donateLimiter, wrap(async (req, res) => {
       bodyHtml: `<p>The proposal it pointed to has expired or was already completed. If you still want to make the change, ask the organization to send a fresh one.</p>`,
     }));
   }
-  const orgName = displayNameCase(p.org_name);
+  const orgName = await donorFacingOrgName(p.org_id, p.org_name).catch(() => displayNameCase(p.org_name));   // POLISH-9
   const firstName = String(p.donor_name || "").split(" ")[0] || "there";
   let sub = null;
   if (p.subscription_id) {
@@ -4957,7 +4951,7 @@ app.post("/recurring/proposal/confirm", donateLimiter, express.urlencoded({ exte
       bodyHtml: `<p>The proposal it pointed to has expired or was already completed. If you still want to make the change, ask the organization to send a fresh one.</p>`,
     }));
   }
-  const orgName = displayNameCase(p.org_name);
+  const orgName = await donorFacingOrgName(p.org_id, p.org_name).catch(() => displayNameCase(p.org_name));   // POLISH-9
   if (!stripe || !p.stripe_account_id) {
     return res.status(503).send(proposalPageHtml({ orgName, title: "Payments unavailable", bodyHtml: "<p>Payments aren't configured for this organization yet. Please try again later.</p>" }));
   }
@@ -6024,7 +6018,7 @@ app.post("/express/:orgSlug/charge", donateLimiter, wrap(async (req, res) => {
       // cannot show one.
       automatic_payment_methods: { enabled: true, allow_redirects: "never" },
       receipt_email: donor.email || undefined,
-      description: `Donation to ${org.name}`,
+      description: `Donation to ${await donorFacingOrgName(org.id, org.name)}`,   // POLISH-9
       metadata,
       statement_descriptor_suffix: undefined,
     }, { stripeAccount: org.stripe_account_id });
@@ -6511,7 +6505,7 @@ app.post("/portal/:orgSlug/recurring/:subId/amount", portalMutationLimiter, requ
     // with an existing PRODUCT id — product_data is Checkout-only sugar and
     // real Stripe rejects it (the local mock accepted anything, so this
     // donor-facing reprice had never actually worked against real Stripe).
-    const productId = await ensureRecurringGiftProduct(org.stripe_account_id, displayNameCase(org.name));
+    const productId = await ensureRecurringGiftProduct(org.stripe_account_id, await donorFacingOrgName(org.id, org.name));   // POLISH-9
     await stripe.subscriptions.update(sub.stripe_subscription_id, {
       items: [{ id: item.id, price_data: {
         currency: item.price?.currency || "usd",

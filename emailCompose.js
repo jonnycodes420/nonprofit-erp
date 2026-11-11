@@ -177,7 +177,7 @@ async function subjectFor(subject, fields) {
   const GS = await import("./shared/giftSentence.js");
   const f = fields || {};
   const hasTotal = !("lifetime_total" in f || "total_giving" in f) || GS.hasValue(f.lifetime_total || f.total_giving);
-  const told = GS.withoutMissingGift(String(subject == null ? "" : subject), { hasGift: GS.hasValue(f.last_gift_amount || f.gift_amount), hasTotal });
+  const told = GS.withoutMissingGift(String(subject == null ? "" : subject), { hasGift: GS.hasValue(f.last_gift_amount || f.gift_amount), hasTotal, audienceNoGift: f.audience_no_gift === true });   // POLISH-9
   const greeted = (await import("./shared/greeting.js")).greetMerge(told, fields && fields.greeting);   // FIX-46
   return greeted.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (m, k) => {
     const key = k === "first" ? "first_name" : k === "org" ? "org_name" : k;

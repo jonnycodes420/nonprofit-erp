@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiFetch, API } from "../api";
+import { isAbort } from "../lib/leaving";   // FLAKE-3's rule, POLISH-9: a read cut off by leaving the page is not an error
 import { T, fmtFull, EmptyState, interactive, Modal, Spin, stageName } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { OPEN_STAGE_KEYS as OPEN_PROPOSAL_STAGES } from "../../../shared/proposalShape.js";
@@ -301,7 +302,7 @@ export function ProposalsView({ isReadOnly, onNavigate }) {
     q.set("sort", sort);
     apiFetch("/proposals?" + q.toString())
       .then(r => { setD(r); setLoading(false); })
-      .catch(e => { console.error("[proposals]", e); setLoading(false); });
+      .catch(e => { if (!isAbort(e)) console.error("[proposals]", e); setLoading(false); });
   }, [officerId, fundId, sort, stageFilter]);
   useEffect(() => { load(); }, [load]);
 
@@ -384,7 +385,7 @@ export function useDonorProposals(donorId) {
   const load = useCallback(() => {
     // THREAD-2: a link to someone this person can't see answers 404 here too;
     // the page says "You don't have access to this", so it is not an error.
-    apiFetch(`/donors/${donorId}/proposals`).then(setD).catch(e => { if (e && e.status === 404) return; console.error("[proposals]", e); });
+    apiFetch(`/donors/${donorId}/proposals`).then(setD).catch(e => { if ((e && e.status === 404) || isAbort(e)) return; console.error("[proposals]", e); });
   }, [donorId]);
   useEffect(() => { setD(null); load(); }, [load]);
   return [d, load];
@@ -418,7 +419,7 @@ export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite, onOpe
   const d = shared ? data : own;
   const load = useCallback(() => {
     if (shared) { reload && reload(); return; }
-    apiFetch(`/donors/${donorId}/proposals`).then(setD).catch(e => console.error("[proposals]", e));
+    apiFetch(`/donors/${donorId}/proposals`).then(setD).catch(e => { if (!isAbort(e)) console.error("[proposals]", e); });
   }, [donorId, shared, reload]);
   useEffect(() => { if (!shared) load(); }, [load, shared]);
   // HOTFIX-1 — the open proposals go up to the profile, so "what do I do

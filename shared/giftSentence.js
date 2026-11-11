@@ -45,10 +45,15 @@ export const GIVEN_BEFORE_RE = /\bgiven before\b/i;
 // SENDS-1: `mark(original, variant)` is what a swapped sentence becomes. A send,
 // a draft and a test use the variant; the editor's own preview (EDITOR-1, chips)
 // marks it so the words read back as she typed them and the template never changes.
-export function withoutMissingGift(text, { hasGift = true, hasTotal = true, mark = null } = {}) {
+// POLISH-9 (W-1107-Fundraising-17): `audienceNoGift` is an audience that holds
+// anyone who has never given. "We are asking the people who have given before
+// to go first" is said to the whole audience, so then every copy (and the
+// preview) takes the no-gift wording of that sentence; a sentence naming one
+// person's own gift still follows that person (hasGift).
+export function withoutMissingGift(text, { hasGift = true, hasTotal = true, mark = null, audienceNoGift = false } = {}) {
   let out = String(text == null ? "" : text);
   const put = (orig, variant) => (mark ? mark(orig, variant) : variant);
-  if (!hasGift) for (const [re, variant] of GIVEN_BEFORE) out = out.replace(re, m => put(m, sameCase(m, variant)));
+  if (!hasGift || audienceNoGift) for (const [re, variant] of GIVEN_BEFORE) out = out.replace(re, m => put(m, sameCase(m, variant)));
   const keys = [...(hasGift ? [] : GIFT_KEYS), ...(hasTotal ? [] : TOTAL_KEYS)];
   if (!keys.length) return out;
   // The leading space (after the sentence before it) is kept as it was.
