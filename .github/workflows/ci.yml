@@ -932,6 +932,16 @@ jobs:
   # staging.stewardapp.dev. The same FLAKE-1 turnstile queues these deploys in
   # merge order. RAILWAY_STAGING_TOKEN is a project token scoped to the staging
   # environment: it cannot deploy prod.
+  # STAGE-2 · prod↔staging settings drift (the job is drift.yml, which also
+  # runs nightly). Push to main only. Nothing needs it, so it never holds a
+  # deploy; a drift turns it red on purpose.
+  drift:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/drift.yml
+    secrets:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_STAGING_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
+
   deploy-staging:
     runs-on: ubuntu-latest
     timeout-minutes: 80
@@ -988,8 +998,8 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
         run: |
-          railway up --service "${{ vars.RAILWAY_STAGING_WEB_SERVICE || 'web' }}" --ci
-          railway up --service "${{ vars.RAILWAY_STAGING_WORKER_SERVICE || 'worker' }}" --ci
+          railway up --service "${{ vars.RAILWAY_STAGING_WEB_SERVICE || 'web' }}" --environment staging --ci
+          railway up --service "${{ vars.RAILWAY_STAGING_WORKER_SERVICE || 'worker' }}" --environment staging --ci
       - name: Deploy staging's frontend
         if: steps.turn.outputs.deploy == 'true'
         env:
@@ -1000,7 +1010,8 @@ jobs:
           # vercel.json names prod's API host; staging's copy names staging's (and fails if prod's is left).
           node scripts/ci/vercel-staging-config.js "$STAGING_API_URL"
           npx vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN" --local-config vercel.staging.json \
-            --build-env BUILD_SHA="$GITHUB_SHA" --build-env VITE_API_URL="$STAGING_API_URL"
+            --build-env BUILD_SHA="$GITHUB_SHA" --build-env VITE_API_URL="$STAGING_API_URL" \
+            --build-env VITE_STEWARD_ENV=staging
       - name: Staging serves this commit (web, worker, frontend), and says it is staging
         if: steps.turn.outputs.deploy == 'true'
         run: node scripts/ci/wait-live.js --sha "$GITHUB_SHA" --api "$STAGING_API_URL" --worker --env staging --frontend "$STAGING_APP_URL" --minutes 6

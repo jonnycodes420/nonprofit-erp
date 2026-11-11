@@ -56,7 +56,7 @@ export default function LostAndFound() {
     <div style={{ minHeight: "100vh", background: GROUND, color: INK, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
-      <nav className="lf-nav" style={{ position: "sticky", top: 0, zIndex: 50, display: "flex", alignItems: "center",
+      <nav className="lf-nav" style={{ position: "sticky", top: "var(--steward-strip-h, 0px)", zIndex: 50, display: "flex", alignItems: "center",
         justifyContent: "space-between", gap: 12, padding: "0 32px", height: 56,
         background: GROUND, borderBottom: `1px solid ${EDGE}` }}>
         <Link to="/" style={{ textDecoration: "none", flexShrink: 0 }}>
