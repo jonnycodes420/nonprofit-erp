@@ -130,7 +130,8 @@ app.get("/insights", requireAuth, wrap(async (req, res) => {
   // HOME-3: the first look says what each recent event raised, the way she
   // says it (received + pledged), from the one function Reports and the event page read.
   const events = first ? await require("../numbers").eventsRaised(req.user.orgId, { withMoney: true, limit: 3 }) : undefined;
-  let deck = first ? undefined : await deckWithDrift(req, r.deck, asOf);
+  // FLOWS-6: a deck stored before its moves carried a why gets one on the read (actionWhy.fillWhy).
+  let deck = first ? undefined : require("../server/insights/actionWhy").fillWhy(await deckWithDrift(req, r.deck, asOf));
   // PERF-2: Home's first read of the deck carries what its first card draws:
   // each tab's own figures, its first DECK_FIRST moves and how many it carries
   // in all (`carried`), and the moves Home records as shown (`seen`, the same
