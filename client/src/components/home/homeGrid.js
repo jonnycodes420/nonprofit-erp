@@ -28,7 +28,7 @@ export const HOME_GRID_CSS = `
 .home-card-tight { padding: var(--h-pad-tight); }
 /* ACCESS-3: someone who sees only their own people. Nothing closed to them
    holds a place, so the Thread sits one gap under the Atlas box. */
-.home-shell-scoped .home-head-wide + .home-block, .home-shell-scoped .home-shell-main > .home-block:first-child { margin-top: 0; }
+.home-shell-scoped .home-head-wide + .home-block, .home-shell-scoped .home-shell-top > :first-child > .home-block:first-child { margin-top: 0; }
 .home-shell .moves-deck { gap: var(--h-3) !important; }
 .home-shell .moves-card { border-radius: var(--h-radius); padding: var(--h-4); }
 .home-shell .moves-tab { border-radius: var(--h-radius); }
