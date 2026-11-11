@@ -33,6 +33,13 @@ const ORG = `org_connect1_${RUN}`;
 const EMAIL = `owner-${RUN}@connect1.local`;
 const PASSWORD = "loadtest1234";
 const one = async (sql, a) => (await q(sql, a))[0];
+// HARDEN-1 item 3: a change to import or merge passes the truth check.
+const { assertSurfacesAgree } = require("./lib/surfacesAgree");
+async function surfacesAgree(label, token) {
+  const r = await assertSurfacesAgree(ORG, { token, soft: true, label });
+  ok(`every surface agrees ${label} (${r.ms}ms)`, r.ok, r.diffs.length);
+  for (const d of r.diffs) console.log("        " + d);
+}
 
 (async () => {
   console.log("connect1 (CONNECT-1)");
@@ -202,6 +209,8 @@ const one = async (sql, a) => (await q(sql, a))[0];
       && peopleAfter - peopleBefore === 3 && !(await one(`SELECT 1 AS x FROM donors WHERE org_id=$1 AND lower(name)='nobody atall'`, [ORG])),
     { c: res.connections, added: peopleAfter - peopleBefore });
 
+  await surfacesAgree("after the import with Introduced by and Guest of", tok);
+
   // ── §8 merge ─────────────────────────────────────────────────────────────
   // A second Sam record, also introduced by Dana (a twin of Sam's link) and
   // linked to Sam himself as Guest of (a self-link once merged).
@@ -223,6 +232,8 @@ const one = async (sql, a) => (await q(sql, a))[0];
   const undo = mid ? await api("POST", `/data-health/merges/${mid}/undo`, tok, {}) : { status: 0 };
   const back = await q(`SELECT donor_id_a, donor_id_b, relationship_type FROM donor_relationships WHERE org_id=$1 AND (donor_id_a=$2 OR donor_id_b=$2)`, [ORG, sam2]);
   ok("§8 Undo puts back all three of the merged record's links, the set-aside ones included", undo.status < 300 && back.length === 3, { undo: undo.status, back });
+
+  await surfacesAgree("after the merge and its Undo", tok);
 
   await closeDb();
   summary();

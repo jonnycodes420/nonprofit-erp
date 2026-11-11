@@ -124,8 +124,10 @@ const HEADER_ROLES = [
   ["aboutThem", ["about them", "about", "bio", "background", "about him", "about her"]],
   ["spouse", ["spouse", "partner", "spouse/partner", "spouse / partner", "spouse name", "partner name", "spouse or partner", "significant other"]],
   ["householdName", ["household", "household name", "account household", "household account", "family household"]],
-  ["introducedBy", ["introduced by", "referred by", "referred by name", "introduced through", "connected through"]],
-  ["guestOf", ["guest of", "brought by", "came with", "invited by", "host name"]],
+  // CONNECT-1: only the unambiguous headers. "Referred by", "Invited by" and the like often hold a
+  // first name or a channel, and stay a custom field (kept whole) unless she picks the role.
+  ["introducedBy", ["introduced by", "introduced through"]],
+  ["guestOf", ["guest of"]],
   ["volunteer", ["volunteer", "volunteered", "volunteer?", "is volunteer", "volunteers"]],
   ["board", ["board", "board member", "on board", "trustee", "board?"]],
   ["staff", ["staff", "employee", "staff member", "staff?"]],

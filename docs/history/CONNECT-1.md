@@ -23,6 +23,10 @@ What was learned:
   kept person. Set the twin aside before anything moves (`server/dataHealth/mergeConnections.js`).
 - `GET /donors/:id/relationships` answers no `householdTotal` for someone with no links at all;
   the household panel's own figure is the one to compare.
+- A new import role takes a header away from "Keep as a custom field". "Referred by" in a real
+  file held first names ("Odette"); mapped to Introduced by, an unmatched value would only be
+  listed, not kept (import4-layers caught it). Only "Introduced by", "Introduced through" and
+  "Guest of" map by themselves; anything looser stays a custom field unless she picks the role.
 - The direction can't be inferred for two people (unlike owner and works at, where the org end is
   the org), so the picker offers each type from both ends and the server takes `side`.
 
