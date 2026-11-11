@@ -521,6 +521,11 @@ jobs:
     timeout-minutes: 10
     needs: [tree-check, guards, semgrep, plan, shard]
     if: always() && needs.tree-check.outputs.skip != 'true' && needs.tree-check.outputs.docs_only != 'true'
+    # FLAKE-4: pull-requests: write is for the flaky list's PR comment, and nothing else.
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - name: The plan and guards ran
@@ -545,6 +550,31 @@ jobs:
           mkdir -p .generated
           if [ -f /tmp/plan/suite-timings.json ]; then cp /tmp/plan/suite-timings.json .generated/; fi
           node scripts/ci/shard-report.js --out /tmp/steward-shards --plan /tmp/plan/plan.json --timings .generated/suite-timings.json
+      # FLAKE-4 · A suite that failed once and passed on its retry (tests/lib/run-suite.sh)
+      # keeps the run green and is named: flaky.json (an artifact, which the nightly
+      # counts), a FLAKY line in the summary, and a comment on the PR. Never a gate.
+      - name: Suites that passed only on their retry
+        id: flaky
+        if: always()
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          node scripts/ci/flaky-list.js --in /tmp/steward-shards --shards 6 --out /tmp/flaky/flaky.json --comment /tmp/flaky/comment.md
+          if [ -s /tmp/flaky/comment.md ]; then echo "any=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: flaky
+          path: /tmp/flaky/flaky.json
+          if-no-files-found: ignore
+          overwrite: true
+          retention-days: 14
+      - name: Post the flaky list on the PR
+        if: always() && github.event_name == 'pull_request' && steps.flaky.outputs.any == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/flaky/comment.md || echo "::warning::could not comment the flaky list on the PR"
       - name: Every suite ran exactly once
         if: always()
         run: SHARD_RESULTS=/tmp/steward-shards SHARD_COUNT=6 node tests/every-test-runs.test.js
