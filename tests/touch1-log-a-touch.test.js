@@ -182,6 +182,8 @@ const log = (tok, id, body) => api("POST", `/donors/${id}/conversations`, tok, {
     const NOISE = /\/_vercel\/|fonts\.googleapis|\/favicon|\/ai\/stream/;
     page.on("console", m => { if (m.type() === "error" && !NOISE.test((m.location() || {}).url || "") && !/Download the React DevTools/.test(m.text())) errors.push(m.text()); });
     page.on("response", x => { if (x.status() >= 500 && !NOISE.test(x.url())) errors.push(x.status() + " " + x.url()); });
+    const cut = [];   // which read was cut off, so a "Failed to fetch" says where it came from
+    page.on("requestfailed", x => { if (!NOISE.test(x.url())) cut.push(`${x.method()} ${x.url().replace(/^https?:\/\/[^/]+/, "")} (${(x.failure() || {}).errorText})`); });
     await page.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
       [lg.body.token, JSON.stringify(lg.body.user), JSON.stringify(lg.body.org)]);
 
@@ -219,6 +221,7 @@ const log = (tok, id, body) => api("POST", `/donors/${id}/conversations`, tok, {
     const ed = page.locator('[data-testid="top100-ask-editor"] input');
     await ed.fill("40000"); await ed.press("Enter");
     await page.waitForFunction(() => /\$40,000/.test([...document.querySelectorAll('[data-testid="top100-ask"]')].map(e => e.textContent).join(" ")), null, { timeout: 15000 }).catch(() => {});
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});   // the save's reload of the rows finishes first
     await page.reload({ waitUntil: "networkidle" });
     const after = (await page.locator('[data-testid="top100-row"]', { hasText: "Walt Fairbrother" }).locator('[data-testid="top100-ask"]').textContent({ timeout: 20000 }).catch(() => "")) || "";
     const walt = (await api("GET", `/donors/${WALK}/care-plan`, tok)).body;
@@ -245,7 +248,7 @@ const log = (tok, id, body) => api("POST", `/donors/${id}/conversations`, tok, {
     await d2.waitFor({ state: "detached", timeout: 15000 }).catch(() => {});
     const [pnt] = rows(await q(`SELECT done, due FROM tasks WHERE id=$1`, [pn.body.taskId]));
     ok("§7 saving completes the planned note today; its due day is kept", pnt && pnt.done === 1 && String(pnt.due).slice(0, 10) === nextMonth, pnt);
-    ok("§7 no console error or 5xx on the walk", errors.length === 0, errors.slice(0, 4));
+    ok("§7 no console error or 5xx on the walk", errors.length === 0, { errors: errors.slice(0, 4).map(e => e.slice(0, 160)), cut });
     await browser.close();
   }
 
