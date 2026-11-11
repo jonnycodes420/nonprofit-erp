@@ -787,7 +787,7 @@ function AppShell() {
         drawer). Starts BENEATH the 52px bar (top:52); pure nav now — wordmark
         moved into the bar's left edge, user chip/sign-out live in the bar. */}
     <div className="app-sidebar" data-collapsed={sidebarCollapsed?"1":"0"}
-      style={{position:"fixed",left:0,top:52,bottom:0,width:sidebarCollapsed?SIDEBAR_W_COLLAPSED:SIDEBAR_W,background:T.ink,borderRight:"1px solid "+T.bgElevated,display:"flex",flexDirection:"column",zIndex:120,boxSizing:"border-box",transition:"width 0.16s ease"}}>
+      style={{position:"fixed",left:0,top:"calc(52px + var(--steward-strip-h, 0px))",bottom:0,width:sidebarCollapsed?SIDEBAR_W_COLLAPSED:SIDEBAR_W,background:T.ink,borderRight:"1px solid "+T.bgElevated,display:"flex",flexDirection:"column",zIndex:120,boxSizing:"border-box",transition:"width 0.16s ease"}}>
       <div id="app-sidebar-nav" style={{flex:1,overflowY:"auto",padding:"12px 10px 14px 0",display:"flex",flexDirection:"column",gap:2}}>
         {(()=>{
           // NAV-1 §1 — GROUPS, NOT A FOLD. Five short lists with a small

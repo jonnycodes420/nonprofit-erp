@@ -32,7 +32,7 @@ const GROUND = "#f0ede6";    // the page itself
 
 function Nav() {
   return (
-    <nav style={{ background: INK, padding: "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10 }}>
+    <nav style={{ background: INK, padding: "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: "var(--steward-strip-h, 0px)", zIndex: 10 }}>
       <Link to="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
         <span style={{ fontSize: 20, fontWeight: 400, color: GROUND, fontFamily: "'DM Serif Display',Georgia,serif", letterSpacing: "-0.02em" }}>Steward</span>
       </Link>

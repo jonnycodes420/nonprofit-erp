@@ -1,0 +1,38 @@
+# STAGE-2 · PROD↔STAGING SETTINGS DRIFT (scripts/ci/railway-drift.js).
+#
+# Called by ci.yml's `drift` job on every push to main, and runs here nightly.
+# (The nightly lives in this file, not ci.yml, so a night doesn't re-run the
+# whole battery.) It blocks nothing: no deploy job needs it. A drift FAILS the
+# job on purpose, so it shows red on main and on /ops.
+#
+# Each environment is read with its own existing token: prod's RAILWAY_TOKEN,
+# staging's RAILWAY_STAGING_TOKEN. Names only; no variable value is fetched.
+name: drift
+on:
+  workflow_call:
+    secrets:
+      RAILWAY_TOKEN: { required: false }
+      RAILWAY_STAGING_TOKEN: { required: false }
+  schedule:
+    - cron: "17 7 * * *"   # 07:17 UTC, nightly
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  railway-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: vars.STAGING_ENABLED == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Compare prod's and staging's Railway settings (names only)
+        env:
+          RAILWAY_PROD_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_STAGING_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
+          STAGING_API_URL: ${{ vars.STAGING_API_URL }}
+        run: node scripts/ci/railway-drift.js

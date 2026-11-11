@@ -93,6 +93,7 @@ function LaterBeacons() {
   return on ? <React.Suspense fallback={null}><VercelBeacons /></React.Suspense> : null;
 }
 import { inSupport, leaveSupport } from "./lib/supportSession";   // FIX-57
+import { installStagingStrip } from "./lib/stagingStrip";   // STAGE-2
 
 // FIX-2 C — this surface's colours, named once (it keeps its own palette;
 // see tests/fix2-c-hex.test.js for why a public surface does).
@@ -119,6 +120,7 @@ const APP_PATHS = /^\/(app|dashboard|donors)(\/|$)/;
 // HARDEN-1: every write names the org this tab was rendered for, and a sign-in
 // in another tab is heard here (lib/orgBinding.js). Before anything renders.
 installOrgBinding(API);
+installStagingStrip({ api: API });   // STAGE-2: the strip on staging only
 // HARDEN-1: only a click on a commit button commits (lib/commitGuard.js).
 installCommitGuard();
 function RouteFallback() {

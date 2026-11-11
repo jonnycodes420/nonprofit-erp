@@ -87,3 +87,27 @@ GitHub variable **`STAGING_ENABLED` = `true`**. From the next merge: CI deploys 
 - **Vercel:** a second project on the existing Pro team: no seat or project fee; its builds and traffic count against the same included usage.
 - **GitHub Actions:** each merge adds a staging deploy and walk, about 10 to 15 runner minutes. Ship runs add about 8 minutes each.
 - **Stripe test mode:** free. **Anthropic (optional):** capped by the spend limit you set, about $10.
+
+### 10. Activation, 11 Nov: the six walls and how each was fixed (STAGE-2)
+
+Staging went live on 11 Nov. Every wall was settings drift between prod and staging, plus one guard that only worked on a Mac. The `drift` job (`scripts/ci/railway-drift.js`, on every push to main and nightly) now catches the first four kinds; it reads variable **names** only.
+
+1. **A stray build command on staging `web`** (`npm run build`; prod web has none), so the first deploy failed. Fixed: removed it in staging, web, Settings, Build. The drift job compares build and start commands.
+2. **`DATABASE_URL`, `RESEND_API_KEY` and `STEWARD_ENV=staging` missing on staging `web` and `worker`.** Without `STEWARD_ENV` staging would have booted believing it was prod. The shared Stripe and Resend variables existed but weren't referenced into either service (a shared variable only reaches a service when it is referenced there). Fixed: each service references them (`${{shared.NAME}}`). The drift job fails when staging lacks any name prod has, and always wants `STEWARD_ENV`, `DATABASE_URL`, `CORS_ORIGIN` and `RESEND_API_KEY` on both, plus `DATABASE_PUBLIC_URL` on web.
+3. **The staging Postgres template publishes no `DATABASE_PUBLIC_URL`.** Fixed: on staging `web` it is built from `postgresql://${{Postgres.PGUSER}}:${{Postgres.PGPASSWORD}}@${{Postgres.RAILWAY_TCP_PROXY_DOMAIN}}:${{Postgres.RAILWAY_TCP_PROXY_PORT}}/${{Postgres.PGDATABASE}}`. **The staging Postgres TCP proxy stays on**: the reseed from a Mac reaches the database through it.
+4. **`CORS_ORIGIN` not set on staging `web`**, so sign-in said "Failed to fetch". Fixed: `CORS_ORIGIN=https://staging.stewardapp.dev`. It's a drift must-have now.
+5. **The write guard needed `curl`**, which Railway's runtime image doesn't have, so the seed couldn't run inside a container (`railway ssh`). Fixed in code (STAGE-2): `prodGuard.assertServerIdentity` reads `/health` with Node's own fetch in a child Node process, with the same refusals.
+6. **The old `VERCEL_TOKEN` was limited to the prod `client` project**, so the staging frontend deploy got "Project not found". Fixed: Jonathan replaced it with a token that can deploy both projects. Nothing in code.
+
+Also from STAGE-2: staging now shows a strip, "Staging · not what customers see", on every page, and its tab titles start "[Staging] ". Both `railway up` lines in `deploy-staging` name `--environment staging`.
+
+**Reseed staging from a Mac** (from your checkout of main, after `npm ci` and `npm --prefix client ci`):
+
+```
+railway link --project <the nonprofit-erp project id> --environment staging --service web
+BASE=<STAGING_API_URL> railway run --environment staging --service web -- node scripts/ops/staging-seed.js --staging
+```
+
+Type each line on its own. zsh doesn't treat `#` as a comment when you type it at the prompt, so a pasted line with a trailing `# note` passes `#` and the note to the command as arguments.
+
+**The drift allowlist** is `scripts/ci/drift-allow.json`: names prod has that staging is meant to lack, each with its reason. To let one more through, add an entry with a one-line reason. When a staging Anthropic key exists, remove `ANTHROPIC_API_KEY` from it.
