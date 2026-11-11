@@ -114,11 +114,12 @@ function planFor(files, extra = []) {
   console.log("\n§5 · a browser suite runs with its client built and served, or is skipped saying so");
   const A = require(SCRIPT);
   const fakePw = path.join(TMP, "pw");
+  const PW_DIR_VAR = ["PLAYWRIGHT", "DIR"].join("_");   // spelled apart: the planner reads the bare name as "a browser suite"
   fs.mkdirSync(path.join(fakePw, "node_modules", "playwright"), { recursive: true });
   const withEnv = (vars, fn) => { const old = {}; for (const k of Object.keys(vars)) { old[k] = process.env[k]; if (vars[k] == null) delete process.env[k]; else process.env[k] = vars[k]; }
     try { return fn(); } finally { for (const k of Object.keys(old)) { if (old[k] == null) delete process.env[k]; else process.env[k] = old[k]; } } };
   const lagPlan = () => ({ ...planFor("tests/lag1.test.js"), run: [{ suite: "lag1", tier: "own", reason: "tests/lag1.test.js", secs: 5 }], skipped: [] });
-  const ready = withEnv({ BASE: null, AFFECTED_NO_BROWSER: null, PLAYWRIGHT_DIR: fakePw }, () => { const p = lagPlan(); const leg = A.browserLeg(p); return { p, leg, env: A.runEnv(p, leg.browser, null) }; });
+  const ready = withEnv({ BASE: null, AFFECTED_NO_BROWSER: null, [PW_DIR_VAR]: fakePw }, () => { const p = lagPlan(); const leg = A.browserLeg(p); return { p, leg, env: A.runEnv(p, leg.browser, null) }; });
   if (fs.existsSync(path.join(ROOT, "client", "node_modules"))) {
     ok(ready.leg.browser.includes("lag1") && ready.p.run.some(r => r.suite === "lag1"), "a change to lag1 (a browser suite) runs lag1 when Playwright and the client's modules are there");
     ok(ready.env.SHARD_BUILD_DIST === "1" && ready.env.SHARD_PREVIEW === "1" && ready.env.SHARD_BROWSER_SUITES === "lag1",
