@@ -1,15 +1,15 @@
 // client/src/components/events/EventAuction.jsx · NAV-1 (menu, 10 Nov).
 // AN EVENT'S AUCTION, ON THE EVENT.
 //
-// Auctions left the sidebar ("Auctions and peer to peer should not be on the
-// side", Jonathan, 10 Nov) and moved inside Events: the auction a gala runs
-// belongs on the gala's page. This panel is the same AuctionsView, narrowed
+// An addition: Auctions keeps its own place (Fundraising, and its menu entry),
+// and the auction a gala runs is also on the gala's page. This panel is the
+// same AuctionsView, narrowed
 // to this event: its auctions, their items and purchases, and a new auction
 // made here belongs to this event. An auction sheet (ASKS-1) comes in through
 // the one file import, which links its purchases to this event's auction.
 //
 // EventsAuctions is the Events → Auctions list: every auction, on its own or
-// part of an event (/app/events?list=auctions, where every old link lands).
+// part of an event (/app/events?list=auctions).
 import AuctionsView from "../Auctions";
 import { T } from "../shared";
 import { tabHref } from "../../lib/appUrls";

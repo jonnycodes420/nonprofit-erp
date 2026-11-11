@@ -18,7 +18,7 @@ import { PortalBannerCrop, PORTAL_CAMPAIGN_HERO_RATIO } from "./PortalBanner";
 import { errorMessage } from "../lib/domainError";
 import { Pipeline } from "./Pipeline";
 import { FR_SECTIONS, resolveFr } from "../lib/fundraisingSections";
-import { frShown } from "../lib/navMoves";   // NAV-1 (menu): Auctions is in Events; P2P only with a P2P page
+import { frShown } from "../lib/navMoves";   // NAV-1 (menu): Peer-to-peer only with a P2P page
 import { PeerToPeerView } from "./PeerToPeer";
 import { AuctionsView } from "./Auctions";
 import { StartedNotFinished } from "./StartedNotFinished";

@@ -32,7 +32,6 @@ import { TABS, BOTTOM_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS, FR_PART_TABS, leg
 // beside the registry. PRIMARY_NAV / MORE_NAV / NAV_MORE_KEY are gone with the
 // "More" fold they described.
 import { personNavLayout, flattenNav, moveNavItem, reorderWithin, setNavVisible } from "./lib/navGroups";
-import { routeAuctions } from "./lib/navMoves";   // NAV-1 (menu): Auctions live in Events
 import { usePortfolio, portfolioNav } from "./lib/portfolioAccess";   // ACCESS-2
 import { NavIcon, NAV_ICON_SIZE } from "./components/NavIcon";
 import { openRecentChanges } from "./components/RecentChanges";
@@ -332,7 +331,6 @@ function AppShell() {
     // Atlas open; its "What changed" is Recent changes, and its Guardrails
     // are Settings > Atlas.
     if(t==="settings"&&opts?.section==="agent")opts={...opts,section:"atlas"};
-    {const mv=routeAuctions(t,opts);if(mv.tab!==t&&how?.fromUrl)routerNavigate(tabHref(mv.tab,mv.opts),{replace:true,state:{internal:true}});({tab:t,opts}=mv);}   // NAV-1 (menu)
     const lg=legacyTab(t);
     if(lg){
       const view=opts?.agentView;

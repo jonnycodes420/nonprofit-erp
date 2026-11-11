@@ -63,20 +63,14 @@ export const NEVER_HIDDEN = new Set(["dashboard", "settings"]);
 // Nothing else is hidden by default for anybody.
 export const ROLE_DEFAULT_HIDDEN = { volunteer_coordinator: ["finance"] };
 
-// NAV-1 (menu, 10 Nov) · WHAT EVERY ORG STARTS WITH HIDDEN. Steward's
-// agreement does not offer auctions or peer-to-peer as products, so they are
-// off the menu until an org turns them on (Settings → Menu, or super-admin →
-// Organizations). Hidden from the MENU only: /app/fundraising?fr=auctions,
-// the event's Auction panel, every route and every row are still there.
-export const ORG_DEFAULT_HIDDEN = ["auctions", "p2p"];
-
 export const ALL_NAV_IDS = NAV_GROUPS.flatMap(g => g.items);
 
-// The ORG's layout, merged the same way a person's is: its order within each
-// group, and what it shows. `saved` null = the defaults above.
+// NAV-1 (menu, 10 Nov) · THE ORG'S LAYOUT, merged the same way a person's is:
+// its order within each group, and what it shows. Every entry is ON until the
+// org hides it (Jonathan, 10 Nov: everything on by default, Auctions and
+// Peer-to-peer included; each org customizes from there). `saved` null = all on.
 export function orgNavLayout(saved) {
-  // The defaults hold for any item the saved list does not name.
-  return navLayout(saved, { defaultHidden: ORG_DEFAULT_HIDDEN });
+  return navLayout(saved);
 }
 
 // What a PERSON sees: the org's layer, then theirs. An item shows only when
@@ -128,8 +122,7 @@ export function navLayout(saved, opts = {}) {
       vis.set(r.id, r.visible !== false);
     });
   }
-  // defaultHidden: the org's defaults, for an item its saved list does not name (orgNavLayout).
-  const roleHidden = new Set([...(rows ? [] : (ROLE_DEFAULT_HIDDEN[role] || [])), ...(opts.defaultHidden || [])]);
+  const roleHidden = new Set(rows ? [] : (ROLE_DEFAULT_HIDDEN[role] || []));
   return NAV_GROUPS.map(g => ({
     id: g.id,
     label: g.label || null,

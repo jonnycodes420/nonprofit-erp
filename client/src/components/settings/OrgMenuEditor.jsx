@@ -7,8 +7,8 @@
 // and `save`; everything else is the same.
 //
 // The sidebar: every entry, Show / Hide and moved within its group (drag, or
-// the arrows). Auctions and Peer-to-peer start hidden for every org
-// (navGroups.js ORG_DEFAULT_HIDDEN). Hiding is the menu only: every link and
+// the arrows). Every entry starts on for every org (Jonathan, 10 Nov), and
+// each org hides what it doesn't use. Hiding is the menu only: every link and
 // route still works and nothing is deleted. Each person can still hide more
 // for themselves (the sidebar's own Customize).
 import { useEffect, useState } from "react";
@@ -59,7 +59,7 @@ export function OrgMenuCard({ load, save, canEdit = true, who = "Everyone in you
         <button type="button" data-testid="org-menu-reset" disabled={!canEdit} onClick={() => put({ layout: null })}
           style={{ background: T.white, border: "1.5px solid " + T.bg3, borderRadius: 10, padding: "8px 14px", color: T.ink2, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
           Back to the defaults</button>
-        <span style={{ fontSize: 12, color: T.ink3 }}>The defaults show everything except Auctions and Peer-to-peer.</span>
+        <span style={{ fontSize: 12, color: T.ink3 }}>The defaults show every entry.</span>
       </div>
       {msg && <div role="status" data-testid="org-menu-msg" style={{ fontSize: 12.5, color: T.ink, marginTop: 10 }}>{msg}</div>}
     </div>

@@ -24,7 +24,7 @@ import EventRemoveButton, { AttendeeLabel } from "./events/EventRemoveButton.jsx
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: the org's day
 import { addGuests } from "../lib/eventCapacity";   // STALE-2: past capacity asks first
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
-import { EventAuction, EventsAuctions } from "./events/EventAuction";   // NAV-1 (menu): Auctions live in Events
+import { EventAuction, EventsAuctions } from "./events/EventAuction";   // NAV-1 (menu): auctions on the event, and an Auctions list
 
 // PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
 const CHAIR = 44;

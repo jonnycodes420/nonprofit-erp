@@ -1,7 +1,8 @@
 // tests/nav1-menu.test.js · NAV-1 (menu, 10 Nov). THE ORG'S MENU AND ITS MAJOR GIFTS TABS.
 //
 //   §1  the defaults: GET /org/menu has no saved layout, all four Major Gifts
-//       tabs, and the merged rail (navGroups.js) hides Auctions and Peer-to-peer
+//       tabs, and the merged rail (navGroups.js) shows every entry, Auctions
+//       and Peer-to-peer included (Jonathan's final call, 10 Nov)
 //   §2  an admin hides and shows an entry and reorders a group (PUT /org/menu);
 //       it persists; a staff member cannot change it; a person's own hide
 //       (/me/nav-layout) hides it for them only, and never shows what the org hid
@@ -10,17 +11,18 @@
 //   §4  super-admin sets another org's menu; it lands in THAT org's audit log as
 //       Steward support; a plain admin is refused
 //   §5  hasP2p is false with no peer-to-peer page and true with one; Fundraising's
-//       strip drops Auctions always and Peer-to-peer without a page
-//   §6  old links: /app/auctions and ?fr=auctions open Events → Auctions; a link
-//       naming an event opens that event
-//   §7  the browser, on the built client: no Auctions or Peer-to-peer in the
-//       rail, the event page has its Auction panel, /app/fundraising?fr=auctions
-//       lands on Events → Auctions, and Major Gifts set to Top 100 has no strip
+//       strip keeps Auctions and drops Peer-to-peer without a page
+//   §6  links: Auctions and Peer-to-peer still open their Fundraising parts
+//   §7  the browser, on the built client: Auctions and Peer-to-peer on the rail
+//       by default, Fundraising still has Auctions, the event page has its
+//       Auction panel, Events → Auctions lists every auction, an org that hides
+//       Auctions loses it from the rail without a reload, and Major Gifts set to
+//       Top 100 has no strip
 //   §8  no org id in the code: the org-specific baseline is unchanged
 //
 // HOW IT GOES RED (each watched red before trusting the green):
 //   - on main: GET /org/menu is a 404 and navGroups has no personNavLayout
-//   - planted: ORG_DEFAULT_HIDDEN emptied → §1 and §7 red; personNavLayout ORs
+//   - planted: orgNavLayout hiding Auctions by default → §1 and §7 red; personNavLayout ORs
 //     instead of ANDs the org's hide → §2 "never shows what the org hid" red
 //
 // Standard scratch stack (tests/README.md). Made-up org and people; sends nothing.
@@ -85,14 +87,14 @@ const call = async (tok, method, p, body) => {
   ok("§1 GET /org/menu answers", d.status === 200, d);
   ok("§1 no saved layout and all four Major Gifts tabs", d.body && d.body.layout === null && JSON.stringify(d.body.mgViews) === JSON.stringify(["top100", "portfolios", "pipeline", "plans"]), d.body);
   const def = shownIds(N.personNavLayout(null, null));
-  ok("§1 the default rail has no Auctions and no Peer-to-peer", !def.includes("auctions") && !def.includes("p2p"), def);
-  ok("§1 …and everything else", ["dashboard", "donors", "fundraising", "majorgifts", "events", "memberships", "grants", "finance", "settings"].every(i => def.includes(i)), def);
+  ok("§1 the default rail shows Auctions and Peer-to-peer", def.includes("auctions") && def.includes("p2p"), def);
+  ok("§1 …and every other entry", ["dashboard", "donors", "fundraising", "majorgifts", "events", "memberships", "grants", "finance", "settings"].every(i => def.includes(i)), def);
   const me = await call(admin, "GET", "/me/nav-layout");
   ok("§1 /me/nav-layout carries the org's menu, so the shell reads both in one request", me.body && me.body.org && Array.isArray(me.body.org.mgViews), me.body);
 
   console.log("\n§2 · hide, show, reorder; a person's hide is theirs");
   const orgRail = N.orgNavLayout(null);
-  let next = N.setNavVisible(orgRail, "auctions", true);
+  let next = N.setNavVisible(orgRail, "auctions", false);
   next = N.setNavVisible(next, "grants", false);
   next = N.moveNavItem(next, "raise", "events", -2);
   const put = await call(admin, "PUT", "/org/menu", { layout: N.flattenNav(next) });
@@ -100,9 +102,9 @@ const call = async (tok, method, p, body) => {
   const back = (await call(admin, "GET", "/org/menu")).body;
   const merged = N.personNavLayout(null, back.layout);
   const shown = shownIds(merged);
-  ok("§2 Auctions turned on comes back as an entry", shown.includes("auctions"), shown);
+  ok("§2 Auctions turned off is gone from the menu", !shown.includes("auctions"), shown);
   ok("§2 Grants turned off is gone from the menu", !shown.includes("grants"), shown);
-  ok("§2 Peer-to-peer, never named, keeps its default (hidden)", !shown.includes("p2p"), shown);
+  ok("§2 Peer-to-peer, left on, is still there", shown.includes("p2p"), shown);
   const raise = merged.find(g => g.id === "raise").items.map(i => i.id);
   ok("§2 the reorder persisted: Events moved up two within Raise, to the top", raise.indexOf("events") === 0 && raise.indexOf("fundraising") === 1, raise);
   const staffPut = await call(staff, "PUT", "/org/menu", { layout: N.flattenNav(orgRail) });
@@ -152,20 +154,14 @@ const call = async (tok, method, p, body) => {
   ok("§5 no peer-to-peer page: hasP2p is false", (await call(admin, "GET", "/org/menu")).body.hasP2p === false);
   const camp = FS.FR_SECTIONS.find(s => s.id === "campaigns");
   const noP2p = MV.frShown(camp, { hasP2p: false }).parts.map(p => p.id);
-  ok("§5 Fundraising's strip: no Auctions, no Peer-to-peer without a page", !noP2p.includes("auctions") && !noP2p.includes("p2p"), noP2p);
+  ok("§5 Fundraising's strip keeps Auctions, and has no Peer-to-peer without a page", noP2p.includes("auctions") && !noP2p.includes("p2p"), noP2p);
   await q(`INSERT INTO giving_pages (id,org_id,slug,title,status,p2p_enabled,created_by,created_by_name) VALUES ('gp_nav1',$1,'nav1-walk','Lantern Walk','active',true,$2,'Wren Admin')`, [ORG, `u_${ORG}_admin`]);
   ok("§5 one peer-to-peer page: hasP2p is true", (await call(admin, "GET", "/org/menu")).body.hasP2p === true);
   ok("§5 …and Peer-to-peer is in Fundraising's strip", MV.frShown(camp, { hasP2p: true }).parts.some(p => p.id === "p2p"));
 
-  console.log("\n§6 · old links still land");
-  const a1 = MV.routeAuctions("auctions", {});
-  ok("§6 the old Auctions entry opens Events → Auctions", a1.tab === "events" && a1.opts.eventsList === "auctions", a1);
-  const a2 = MV.routeAuctions("fundraising", { frSection: "auctions" });
-  ok("§6 /app/fundraising?fr=auctions opens Events → Auctions", a2.tab === "events" && a2.opts.eventsList === "auctions" && !a2.opts.frSection, a2);
-  const a3 = MV.routeAuctions("auctions", { eventId: EVENT });
-  ok("§6 a link naming an event opens that event", a3.tab === "events" && a3.opts.eventId === EVENT, a3);
+  console.log("\n§6 · links still land where they did");
   const U = await esm("client/src/lib/appUrls.js");
-  ok("§6 the Auctions address is Events → Auctions", U.tabHref("auctions") === "/app/events?list=auctions", U.tabHref("auctions"));
+  ok("§6 Auctions still opens its Fundraising part", U.tabHref("auctions") === "/app/fundraising?fr=auctions", U.tabHref("auctions"));
   ok("§6 Peer-to-peer still opens its Fundraising part", U.tabHref("p2p") === "/app/fundraising?fr=p2p", U.tabHref("p2p"));
 
   console.log("\n§7 · the browser");
@@ -198,15 +194,18 @@ const call = async (tok, method, p, body) => {
     await page.locator(".side-nav-btn").first().waitFor({ timeout: 30000 });
     const rail = (await page.$$eval(".side-nav-btn", bs => bs.map(b => (b.innerText || "").split("\n").map(s => s.trim()).filter(Boolean).join(" ")))).join(" | ");
     await shot("1-rail-default");
-    ok("§7 the rail has no Auctions and no Peer-to-peer", !/Auctions|Peer-to-peer/.test(rail), rail);
-    ok("§7 …and still has Events and Major Gifts", /Events/.test(rail) && /Major Gifts/.test(rail), rail);
+    ok("§7 the rail has Auctions and Peer-to-peer by default", /Auctions/.test(rail) && /Peer-to-peer/.test(rail), rail);
+    ok("§7 …and Events and Major Gifts", /Events/.test(rail) && /Major Gifts/.test(rail), rail);
     await page.goto(`${APP}/app/fundraising?fr=campaigns`, { waitUntil: "networkidle", timeout: 60000 });
     const parts = await page.$$eval("[data-fr-part], [data-key]", els => els.map(e => e.textContent.trim())).catch(() => []);
-    ok("§7 Fundraising → Campaigns & pages has no Auctions part", !parts.some(t => /^Auctions$/.test(t)), parts.slice(0, 20));
+    ok("§7 Fundraising → Campaigns & pages still has its Auctions part", parts.some(t => /^Auctions$/.test(t)), parts.slice(0, 20));
     await page.goto(`${APP}/app/fundraising?fr=auctions`, { waitUntil: "networkidle", timeout: 60000 });
+    await page.locator('[data-fr-view="auctions"]').waitFor({ timeout: 20000 }).catch(() => {});
+    ok("§7 /app/fundraising?fr=auctions still opens Fundraising's Auctions", /\/app\/fundraising\?fr=auctions/.test(page.url()) && await page.locator('[data-fr-view="auctions"]').count() === 1, page.url());
+    await page.goto(`${APP}/app/events?list=auctions`, { waitUntil: "networkidle", timeout: 60000 });
     await page.locator('[data-testid="events-auctions"]').waitFor({ timeout: 20000 }).catch(() => {});
     await shot("2-events-auctions");
-    ok("§7 an old Auctions address lands on Events → Auctions", /\/app\/events\?list=auctions/.test(page.url()) && await page.locator('[data-testid="events-auctions"]').count() === 1, page.url());
+    ok("§7 Events → Auctions is there too, as an addition", await page.locator('[data-testid="events-auctions"]').count() === 1, page.url());
     await page.locator('[data-auction-row="auc_nav1"]').waitFor({ timeout: 15000 }).catch(() => {});
     ok("§7 …listing the gala's auction", await page.locator('[data-auction-row="auc_nav1"]').count() === 1);
     await page.goto(`${APP}/app/events?event=${EVENT}`, { waitUntil: "networkidle", timeout: 60000 });
@@ -231,9 +230,10 @@ const call = async (tok, method, p, body) => {
     await page.locator('[data-testid="org-menu-list"]').waitFor({ timeout: 20000 }).catch(() => {});
     await page.locator('[data-testid="org-menu-list"] [data-nav-toggle="auctions"]').click().catch(() => {});
     await page.locator('[data-testid="org-menu-msg"]').waitFor({ timeout: 10000 }).catch(() => {});
-    const afterShow = (await page.$$eval(".side-nav-btn", bs => bs.map(b => b.innerText))).join(" | ");
-    await shot("6-settings-menu-auctions-on");
-    ok("§7 Settings → Menu: Show on Auctions puts it on the rail without a reload", /Auctions/.test(afterShow), afterShow);
+    const afterHide = (await page.$$eval(".side-nav-btn", bs => bs.map(b => b.innerText))).join(" | ");
+    await shot("6-settings-menu-auctions-off");
+    ok("§7 Settings → Menu: Hide on Auctions takes it off the rail without a reload", !/Auctions/.test(afterHide) && /Peer-to-peer/.test(afterHide), afterHide);
+    await call(admin, "PUT", "/org/menu", { layout: null });
     ok("§7 no console error or page error on the walk", errors.length === 0, errors.slice(0, 5));
     await browser.close();
   }

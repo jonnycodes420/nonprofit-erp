@@ -4,8 +4,7 @@
 // lock_timeout and a retry, so an ALTER never queues in front of reads.
 //
 //   orgs.nav_layout  [{ id, visible }] as text, the org's sidebar: what it
-//                    shows and in what order. NULL = the defaults (navGroups.js
-//                    ORG_DEFAULT_HIDDEN: Auctions and Peer-to-peer hidden).
+//                    shows and in what order. NULL = every entry shown.
 //   orgs.mg_views    ["top100", …] as text, the Major Gifts tabs this org
 //                    shows. NULL = all four.
 // No row is written here: every org reads the defaults until somebody saves.

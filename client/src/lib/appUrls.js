@@ -24,7 +24,6 @@ const QUERY_KEYS = [
   // (urlParam below), so a fresh tab opens on that record.
   ["eventId", "event"], ["campaignId", "campaign"], ["fundId", "fund"],
   ["volunteerId", "volunteer"],
-  ["eventsList", "list"],   // NAV-1 (menu): /app/events?list=auctions
   // FIX-15 Part 5: a volunteer shift's "Who is coming" and a volunteer group.
   ["slotId", "slot"], ["groupId", "group"],
   // REPORTS-3: a saved dashboard's filters live in the URL, so a dashboard
@@ -111,7 +110,6 @@ export function tabHref(tab, opts) {
   // FIX-25: Auctions, Peer-to-peer and Memberships are rail entries for a
   // part of Fundraising, so their link is that part's own URL.
   if (FR_PART_TABS[tab]) return tabHref("fundraising", { ...o, frSection: FR_PART_TABS[tab] });
-  if (tab === "auctions") return tabHref("events", { ...o, eventsList: "auctions" });   // NAV-1 (menu): lib/navMoves.js
   if (tab === "donors") {
     // SEARCH-2: `anchor` names one row on the profile (gift-, pledge-, plan-,
     // item-<id>, or "gifts" for the Gifts tab), the way giftHref always has.

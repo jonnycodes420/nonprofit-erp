@@ -1,13 +1,11 @@
 // server/org/menu.js · NAV-1 (menu, 10 Nov). THE ORG'S SIDEBAR AND ITS MAJOR GIFTS TABS.
 //
-// Jonathan, 10 Nov: "Auctions and peer to peer should not be on the side" (the
-// agreement says Steward does not do either as a product), "fine as an option
-// but make it customizable", and "I only want Top 100 in Major Gifts for
-// Allie's org". So two org settings, each a switch and never an org id:
+// Jonathan, 10 Nov: the menu is customizable per org, every entry on by default
+// (Auctions and Peer-to-peer included), and "I only want Top 100 in Major
+// Gifts for Allie's org". So two org settings, each a switch and never an org id:
 //
 //   orgs.nav_layout  the org's sidebar, [{ id, visible }] in order. NULL means
-//                    the defaults: everything shown except Auctions and
-//                    Peer-to-peer (client/src/lib/navGroups.js ORG_DEFAULT_HIDDEN).
+//                    every entry shown (client/src/lib/navGroups.js orgNavLayout).
 //                    Each person's own layout (users.nav_layout, /me/nav-layout)
 //                    sits on top: they may hide more and reorder, never show
 //                    what the org hid. Hiding is the menu only; every route and
