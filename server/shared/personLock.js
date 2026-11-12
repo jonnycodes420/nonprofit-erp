@@ -42,7 +42,8 @@ async function withPersonLock(kind, orgId, donorId, fn) {
     return held.run(next, fn);
   }
   const client = await Q.lockAdvisory(key, { giveUpMs: GIVE_UP_MS });
-  try { return await held.run(next, fn); } finally { await Q.unlockAdvisory(client, key); }
+  // PROFILE-SPEED-1: the lock's connection holds one of the request's places, and what fn asks for is nested (requestLimits).
+  try { return await held.run(next, () => require("./requestLimits").holding(fn, client)); } finally { await Q.unlockAdvisory(client, key); }
 }
 
 module.exports = { withPersonLock };

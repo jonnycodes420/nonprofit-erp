@@ -164,6 +164,19 @@ app.get("/donors/:id/bundle", requireAuth, wrap(async (req, res) => {
 
 // PROFILE-SPEED-1: the profile's first screen in one request (server/donors/profileBundle.js).
 require("../server/donors/profileBundle").mount({ app, requireAuth, wrap, answer, query });
+// PROFILE-SPEED-1, TEST_MODE only: the most connections any one request held,
+// and the most of the main pool in use, since the last reset (requestLimits
+// counters), so a suite can hold a window of its own to the cap. A 404 elsewhere.
+app.post("/perf/peaks/reset", requireAuth, (req, res) => {
+  if (!testMode()) return res.status(404).json({ error: "Not found" });
+  require("../server/shared/requestLimits").resetPeaks();
+  res.json({ ok: true });
+});
+app.get("/perf/peaks", requireAuth, (req, res) => {
+  if (!testMode()) return res.status(404).json({ error: "Not found" });
+  const L = require("../server/shared/requestLimits").stats(), P = require("../server/shared/pools");
+  res.json({ perRequestPeak: L.perRequestPeak, perRequestMax: P.PER_REQUEST_MAX, poolPeak: L.poolPeak, poolMax: P.POOL_MAX, capWaits: L.capWaits });
+});
 
 // TEST_MODE only: run the nightly comparison now, for the caller's org, so the
 // suite can prove a stored answer that disagrees with a fresh one is reported.
