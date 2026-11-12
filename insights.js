@@ -88,6 +88,8 @@ function naturalCents(c) {
 const ASK = require("./shared/numbers/ask");
 const STATED = require("./shared/numbers/statedAsk");   // MOPUP-3: an imported history is the ask's base
 const PLEDGES = require("./shared/numbers/pledges");   // MONEY-3: a pledge's still to come
+const NOTGIFT = require("./shared/numbers/notGiftGroups");   // ASKS-2: rows that may not be gifts, in groups
+const TASKS = require("./server/insights/taskSpread");   // ASKS-2: a card's tasks, from today, never a day gone
 function oneAsk(x) {
   // NUMBERS-5: a rising unit steps up only when Room to give is known for one of its people (the profile's rule).
   const own = ASK.askFor((x.dated || []).map(g => ({ date: g.date, amount_cents: g.amount_cents })), { roomKnown: x.roomKnown });
@@ -661,9 +663,13 @@ const LIBRARY = [
       // HOME-3: Partly a gift (a sponsorship with tickets, an item bought
       // above its value) is offered on every row but a raffle.
       partly: g.sig.notGift.kind !== "raffle",
+      // ASKS-2: the reason and the memo's pattern (the person's name, years and seasons out) group the rows
+      kind: g.sig.notGift.kind || "other",
+      pattern: NOTGIFT.patternOf([g.memo, g.notes].filter(Boolean).join(" · "), [(g.unit.people.find(p => p.id === g.donor_id) || {}).name]),
     }));
     return {
       kind: "review", rung: null, title: "Rows that may not be gifts",
+      groups: NOTGIFT.groupsOf(items),
       what: c => `${plural(c.items.length, "row")} (${money(c.items.reduce((n, i) => n + i.cents, 0))}) look like purchases, tickets or reimbursements, not gifts.`,
       why: "A purchase or a reimbursement counted as a gift makes every total and every ask built on it wrong. Nothing changes until you decide each one.",
       cardFacts: [["rows", String(items.length)], ["dollars", money(items.reduce((n, i) => n + i.cents, 0))]],
@@ -699,12 +705,19 @@ const LIBRARY = [
             : one } };
     }).filter(Boolean);
     if (!items.length) return null;
+    // ASKS-2: the button never names a day gone. On or before Nov 1 every
+    // task is due on it; after it they are due from today, spread as ATLAS-7
+    // spreads first calls, the largest givers first (server/insights/taskSpread.js).
+    const leads = [...new Set([...items].sort((a, b) => b.cents - a.cents).map(i => i.lead).filter(Boolean))].slice(0, 50);
+    const plan = TASKS.cardTasks(leads.length, ctx.asOf, season);
+    const dueOf = new Map(leads.map((l, i) => [l, plan.dues[i]]));
+    for (const it of items) if (dueOf.has(it.lead)) it.taskDue = dueOf.get(it.lead);
     return {
       kind: "year_end", rung: "retain", title: "Year-end givers due",
       what: c => `${plural(c.items.length, "giver")} gave ${money(c.items.reduce((n, i) => n + i.cents, 0))} in December ${y1} and haven't given this year-end yet.`,
       why: `In your own data, ${plural(ctx.stats.december.count, "donor")} gave ${wholeMoney(ctx.stats.december.cents)} in December ${y1}. December givers do best when asked in early November.`,
       cardFacts: [["December givers", String(ctx.stats.december.count)], ["December dollars", money(ctx.stats.december.cents)], ["December dollars, rounded", wholeMoney(ctx.stats.december.cents)], ["year", String(y1)]],
-      items, does: [{ action: "call_list", label: "Make a call list" }, { action: "task", label: "Create tasks for Nov 1" }, { action: "group", label: "Make a group" }],
+      items, does: [{ action: "call_list", label: "Make a call list" }, { action: "task", label: plan.label, says: plan.sentence }, { action: "group", label: "Make a group" }],
     };
   },
   // 3. Sponsors not renewed, or downgraded. HOME-3: a downgrade is the last

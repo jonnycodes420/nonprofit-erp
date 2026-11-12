@@ -84,6 +84,9 @@ const GUARDED_WRITERS = [
   "import10-lost-total-rows",
   "import10-auction-winners",
   "import10-donor-roles",
+  // ASKS-2: lists open tasks whose title carries an ask above 1.5 × the person's
+  // anchor. Read only (no --apply); the database comes through writerDbUrl.
+  "asks2-old-asks",
   // INTEGRITY-1: restores people an import's undo trashed though they were here
   // before it, and revokes repeated pending invites. Dry run by default;
   // --apply/--undo write through writerDbUrl, one audit row per org.
