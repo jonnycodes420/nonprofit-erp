@@ -1019,6 +1019,13 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   await keepImportedTotals((sql, params) => queryTx(txc, sql, params), orgId,
     donorsToInsert.map(d => d._id).filter(id => !failedIds.has(id)), req.body.sourceName, runId);   // FEEL-1
 
+  // IMPORT-10 item 8: a person this file made who has not given is not a donor
+  // (shared/numbers/donorType.js). A gift still queued for the background job
+  // gives them the role when it is written (recordGifts.js), so they are left be.
+  const queuedGivers = new Set(recentGiftsToRecord.map(g => g.donorId));
+  await require("../../shared/numbers/donorType").settleDonorRoles((sql, params) => queryTx(txc, sql, params), orgId,
+    donorsToInsert.map(d => d._id).filter(id => !failedIds.has(id) && !queuedGivers.has(id)));
+
   // ── THE ASSERTION. Before this transaction commits, the equations must hold.
   // A throw here rolls the whole import back (db.js withTransaction) and the
   // route answers 409 with the discrepancy named in dollars.

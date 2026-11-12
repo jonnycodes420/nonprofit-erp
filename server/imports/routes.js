@@ -223,6 +223,9 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
       });
       created += batch.length;
       createdDonorIds.push(...batchIds);
+      // IMPORT-10 item 8: a row whose file gave no total and no gift is a contact, not a donor (shared/numbers/donorType.js)
+      await require("../../shared/numbers/donorType").settleDonorRoles(query, req.user.orgId,
+        batch.map((d, i) => (!(toCents(d.total) > 0) && !(parseInt(d.gifts) > 0) ? batchIds[i] : null)));
       for (const d of batch) ledger.created(round2(parseFloat(d.total) || 0));
     } catch (e) {
       const rowStart = bi + 1;

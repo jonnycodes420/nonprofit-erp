@@ -15,6 +15,17 @@
 //   §4 the server commits the file: 45 auction gifts, $4,530 paid, Iris Quarryu's
 //      $120 and Elm Quarryo's $160 among them, and no gift from a total row.
 //
+// Items 5 to 8, found on the same customer import (12 Nov):
+//   §5 an event typed "Night of The Stars" (or "night of the  stars 2026")
+//      never makes a second "NIght of the Stars 2026": the same name links,
+//      a close one asks "Did you mean …?" and Import waits for the answer.
+//   §6 the same file again within 30 days asks "You imported this file on …
+//      Import again anyway?", and the commit refuses until she says yes.
+//   §7 an imported auction purchase is a SOLD item with its winner: Won, Items
+//      sold and Bidders agree with Raised; Undo takes the bids and bidders too.
+//   §8 people with no gift are not Donors: the combined import and the
+//      donor-only import store them as contacts, and the Directory counts so.
+//
 // (Include then leaves the bottom "Total" short by $75, so that row is listed in
 // its turn: the check is honest, never silent.)
 //
@@ -27,14 +38,19 @@
 //          person called Subtotal).
 //   §3:    make the not-footing branch return "total" (the row disappears into
 //          totals with no Include).
+//   §5-§8: run on main's code (no eventMatch, no importedBefore, no
+//          recordWinners, the "donor" default): a second event, an importable
+//          second preview, Won $0 / Items sold 0 / Bidders 0, Donors 3 of 3.
 "use strict";
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
 const { build, csvOf } = require("./fixtures/import/import10/make.cjs");
+const { undoAndWait } = require("./lib/undoWait");
 
 const TODAY = "2026-11-12";
 const PASSWORD = "importten12345";
 const ORG = "org_import10_totals";
+const BASE = process.env.BASE || "http://localhost:5601";
 const DEADLINE_MS = 180000;
 
 async function freshOrg(id, name) {
@@ -100,6 +116,83 @@ async function freshOrg(id, name) {
   ok("§4 Elm Quarryo's $160 and Iris Quarryu's $120 are written", named.length === 2 && named[0].cents === 16000 && named[1].cents === 12000, named);
   const totalPeople = (await q(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND (name ILIKE '%total%')`, [ORG]))[0].n;
   ok("§4 no person named after a total row", totalPeople === 0, { totalPeople });
+
+  // ── §6 the same file again within 30 days is asked, never one click
+  const again = await api("POST", "/sheet-import/understand", tok, body);
+  const ib = (again.body.questions || []).find(x => x.id === "importedBefore");
+  const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const today = (await q(`SELECT to_char(committed_at, 'YYYY-MM-DD') d FROM imports WHERE org_id=$1 ORDER BY committed_at DESC LIMIT 1`, [ORG]))[0].d.split("-").map(Number);
+  ok("§6 the second preview asks: 'You imported this file on … (45 gifts). Import again anyway?'",
+     !!ib && ib.text === `You imported this file on ${mon[today[1] - 1]} ${today[2]} (45 gifts). Import again anyway?` && again.body.ready === false, { ib, ready: again.body.ready });
+  const twice = await api("POST", "/sheet-import/commit", tok, { ...body, previewOrgId: ORG });
+  const giftsNow = (await q(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`, [ORG]))[0].n;
+  ok("§6 the commit refuses without her answer, and nothing is written twice", twice.status === 409 && giftsNow === 45, { status: twice.status, giftsNow });
+  const yes = await api("POST", "/sheet-import/understand", tok, { ...body, answers: { importAgain: ib && ib.importId } });
+  ok("§6 'Import again anyway' clears the question", yes.status === 200 && !(yes.body.questions || []).some(x => x.id === "importedBefore"), (yes.body.questions || []).map(x => x.id));
+
+  // ── §5 one event, however it is typed
+  {
+    const O5 = "org_import10_events";
+    const t5 = await freshOrg(O5, "Import Ten Events");
+    await q(`INSERT INTO events (id, org_id, name, event_type, date, status, created_by, created_by_name) VALUES ('evt_i10_stars',$1,'NIght of the Stars 2026','fundraiser','2026-10-03','completed','system:test','Test')`, [O5]);
+    const sheet = n => [{ name: "Sheet1", grid: [["Name", "Email", "Amount", "Date"], ...[0, 1, 2].map(i => [`Wren Lantern${n}${i}`, `wren${n}${i}@i10ev.test`, String(40 + i), "2026-10-03"])] }];
+    const evBody = (n, answers) => ({ fileName: `stars-${n}.csv`, sheets: sheet(n), useModel: false, today: TODAY, answers: { linkEvent: true, ...answers } });
+    const events = async () => (await q(`SELECT COUNT(*)::int n FROM events WHERE org_id=$1`, [O5]))[0].n;
+    const p1 = await api("POST", "/sheet-import/understand", t5, evBody("a", { eventName: "Night of The Stars" }));
+    const em = (p1.body.questions || []).find(x => x.id === "eventMatch");
+    ok("§5 'Night of The Stars' asks: Did you mean NIght of the Stars 2026?", !!em && em.text === "Did you mean NIght of the Stars 2026?" && em.eventId === "evt_i10_stars" && p1.body.ready === false, em);
+    ok("§5 the preview offers the org's events to pick from, newest first", (p1.body.orgEvents || []).some(e => e.id === "evt_i10_stars"), p1.body.orgEvents);
+    const c1 = await api("POST", "/sheet-import/commit", t5, { ...evBody("a", { eventName: "Night of The Stars" }), previewOrgId: O5 });
+    ok("§5 Import waits for the answer: no second event", c1.status === 409 && await events() === 1, { status: c1.status, events: await events() });
+    const c2 = await api("POST", "/sheet-import/commit", t5, { ...evBody("a", { eventName: "NIght of the Stars 2026", eventId: em && em.eventId }), previewOrgId: O5 });
+    ok("§5 'Yes, use it' links the gifts to the existing event", c2.status === 201 && c2.body.eventId === "evt_i10_stars" && await events() === 1, { status: c2.status, ev: c2.body.eventId });
+    const c3 = await api("POST", "/sheet-import/commit", t5, { ...evBody("b", { eventName: "night of the  stars 2026" }), previewOrgId: O5 });
+    ok("§5 a name that differs only by case and spacing links without asking", c3.status === 201 && c3.body.eventId === "evt_i10_stars" && await events() === 1, { status: c3.status, ev: c3.body.eventId, events: await events() });
+    const p4 = await api("POST", "/sheet-import/understand", t5, evBody("c", { eventName: "Night of The Stars", newEvent: "night of the stars" }));
+    ok("§5 'No, create it' is her choice, and then nothing is asked", !(p4.body.questions || []).some(x => x.id === "eventMatch"), (p4.body.questions || []).map(x => x.id));
+  }
+
+  // ── §7 an imported purchase is a sold item with its winner
+  {
+    const O7 = "org_import10_auction";
+    const t7 = await freshOrg(O7, "Import Ten Auction");
+    const grid = [["Bidder", "Email", "Item", "Winning bid", "FMV"],
+      ["Quill Harrow", "quill@i10auc.test", "Lake Cabin Weekend", "500", "200"],
+      ["Sable Fenwick", "sable@i10auc.test", "Signed Guitar", "350", "150"],
+      ["Quill Harrow", "quill@i10auc.test", "Pottery Class", "90", "60"],
+      ["Moss Ardent", "", "Bakery Box", "45", "30"]];
+    const ab = { fileName: "lantern-auction.csv", sheets: [{ name: "Sheet1", grid }], useModel: false, today: TODAY,
+                 answers: { eventName: "Lantern Auction Night", linkEvent: true, date: "2026-10-03" } };
+    const c = await api("POST", "/sheet-import/commit", t7, { ...ab, previewOrgId: O7 });
+    const [auc] = await q(`SELECT id FROM auctions WHERE org_id=$1`, [O7]);
+    const a = auc ? await api("GET", `/auctions/${auc.id}`, t7) : { body: {} };
+    const F = k => ((a.body.figures || {})[k] || {}).value;
+    ok("§7 the import placed 4 paid items in the event's auction", c.status === 201 && !!auc, { status: c.status, body: JSON.stringify(c.body).slice(0, 300) });
+    ok("§7 Items sold 4, Items unsold 0", Number(F("auction-sold")) === 4 && Number(F("auction-unsold")) === 0, a.body.figures);
+    ok("§7 Won equals Raised ($985)", Number(F("auction-committed")) === 985 && Number(F("auction-raised")) === 985, a.body.figures);
+    ok("§7 Bidders 3 (Quill bought two)", Number(F("auction-bidders")) === 3, a.body.figures);
+    const back = await undoAndWait(BASE, t7, c.body.importId, { timeoutMs: 60000, pollMs: 100 });
+    const left = (await q(`SELECT (SELECT COUNT(*) FROM auction_bids WHERE org_id=$1)::int b, (SELECT COUNT(*) FROM auction_bidders WHERE org_id=$1)::int d,
+                                  (SELECT COUNT(*) FROM auction_items WHERE org_id=$1)::int i`, [O7]))[0];
+    ok("§7 Undo takes the bids, the bidders and the items with the gifts", back.status === 200 && left.b === 0 && left.d === 0 && left.i === 0, { status: back.status, left });
+  }
+
+  // ── §8 people with no gift are not Donors
+  {
+    const O8 = "org_import10_roles";
+    const t8 = await freshOrg(O8, "Import Ten Roles");
+    const comb = await api("POST", "/donors/import-combined", t8, {
+      donors: [{ name: "Fern Gaveonce", email: "fern@i10roles.test" }, { name: "Linden Nevergave", email: "linden@i10roles.test" }, { name: "Briar Nevergave", email: "briar@i10roles.test" }],
+      gifts: [{ donorIndex: 0, externalId: "g_i10_1", date: "2024-03-02", amount: 60, type: "cash", campaign: "", notes: "" }] });
+    const only = await api("POST", "/donors/import", t8, { donors: [{ name: "Juniper Listonly", email: "juniper@i10roles.test" }, { name: "Cedar Statedtotal", email: "cedar@i10roles.test", total: "250" }] });
+    const rc = ((await api("GET", "/donors?people=everyone&roleCounts=1&limit=1", t8)).body || {}).roleCounts || {};
+    const types = Object.fromEntries((await q(`SELECT name, person_types FROM donors WHERE org_id=$1`, [O8])).map(r => [r.name, r.person_types]));
+    ok("§8 both imports ran", comb.status < 300 && only.status < 300, { comb: comb.status, only: only.status, body: JSON.stringify(only.body).slice(0, 200) });
+    ok("§8 the people with no gift are contacts, the giver is a donor", JSON.stringify(types["Fern Gaveonce"]) === '["donor"]' && JSON.stringify(types["Linden Nevergave"]) === '["other"]'
+       && JSON.stringify(types["Briar Nevergave"]) === '["other"]' && JSON.stringify(types["Juniper Listonly"]) === '["other"]', types);
+    ok("§8 a row whose file states a total keeps the donor role", JSON.stringify(types["Cedar Statedtotal"]) === '["donor"]', types);
+    ok("§8 the Directory counts Donors 2, Contacts 3", rc.everyone === 5 && rc.donors === 2 && rc.contacts === 3, rc);
+  }
 
   clearTimeout(deadline);
   await closeDb();

@@ -10,6 +10,9 @@
 async function run(pool) {
   await pool.query(`ALTER TABLE auction_items ADD COLUMN IF NOT EXISTS import_id TEXT`);
   await pool.query(`ALTER TABLE auctions ADD COLUMN IF NOT EXISTS import_id TEXT`);
+  // IMPORT-10: an imported purchase's winner and winning bid carry the run too
+  await pool.query(`ALTER TABLE auction_bidders ADD COLUMN IF NOT EXISTS import_id TEXT`);
+  await pool.query(`ALTER TABLE auction_bids ADD COLUMN IF NOT EXISTS import_id TEXT`);
 }
 
 module.exports = { run };

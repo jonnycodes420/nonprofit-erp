@@ -22,3 +22,30 @@ now asks instead of disappearing. Guard: `tests/import10-total-rows.test.js`.
 nothing to apply. `scripts/ops/import10-lost-total-rows.js` (read only) lists past sheet imports whose
 stored total rows were really people (an email on the row) or do not read as a total label, by org,
 import, file, line and amount, so each org can bring in just those lines.
+
+## Items 5 to 8 (same customer import, 12 Nov, added to the brief mid-build)
+
+- **5 · One event however it is typed.** The importer matched an event only on `LOWER(name)`, so
+  "Night of The Stars" beside "NIght of the Stars 2026" made a second event. `shared/eventMatch.js`
+  holds the rule (same once case, punctuation and spacing are set aside; close once a year is set aside
+  or a letter or two apart); `server/imports/eventAsk.js` links the same event, asks "Did you mean …?"
+  (a required question) for a close one, and the preview carries the org's events so the Event box
+  suggests them as she types, newest first. Picking one carries its date, so it is never asked again.
+- **6 · Done, and the same file twice.** "Done reopened the preview" was **not reproduced**: Done closed
+  the importer from the Donors menu, a file dropped on Donors and a file dropped on Settings, Imports.
+  What did reproduce: the same file opened again was importable with one click. Now a file the org
+  imported in the last 30 days (by its cells, `summary_json.fileKey`, or for older imports its name) is a
+  required question, "You imported this file on Nov 12 (251 gifts). Import again anyway?", which the
+  commit enforces whichever screen opened it (`server/imports/importedBefore.js`). The Import button
+  now says "Answer 1 question first" whenever a question holds it (it used to keep the Import words).
+- **7 · Imported purchases are sold items.** The import placed paid items but no bidder and no bid, and
+  Won, Items sold and Bidders read bids. `recordWinners` (server/events/auctionImport.js) records the
+  gift's donor as the bidder and a winning bid of what was paid on any item with no bid yet, tagged with
+  the run (`import_id`, additive) so Undo removes them. A winner with no email gets a bidder address
+  under `import.invalid`, which can never receive mail; nothing is sent to an imported, paid winner.
+- **8 · No gift, not a Donor.** The Directory counts the stored role, and two import paths
+  (`server/imports/combined.js`, `server/imports/routes.js`) stored "donor" on every row. The rule now
+  lives in `shared/numbers/donorType.js`: the stored donor role means the person has given
+  (donorLabel.js HAS_GIVEN). A gift still adds it (recordGifts.js); imports take it off the people they
+  made who have not given. The Directory's predicate is unchanged, so lists and money totals keep their
+  speed. Not changed: the column default (`'["donor"]'`) and a person added by hand as a donor.
