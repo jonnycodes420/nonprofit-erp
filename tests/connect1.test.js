@@ -179,6 +179,24 @@ async function surfacesAgree(label, token) {
   ok("§6 Guest of Dana, and Guest of Dana at the supper: Rina and Mabry", JSON.stringify(f2.ids) === JSON.stringify([rina, mabry && mabry.id].sort())
     && JSON.stringify(f3.ids) === JSON.stringify(f2.ids), { f2, f3 });
   ok("§6 Brought people in: Dana and Pat", JSON.stringify(f4.ids) === JSON.stringify([dana, pat].sort()), f4);
+  // FLAKE-5 (W-CONNECT-guest-filter): the list's DEFAULT view (role=auto, Donors once the org has a
+  // donor) with one of these filters searches Everyone and says so; Mabry came as a guest and never gave.
+  const asOpened = async (where, role = "auto") => {
+    const r = await api("GET", `/donors?role=${role}&roleCounts=1&limit=50&where=${encodeURIComponent(JSON.stringify(where))}`, tok);
+    return { status: r.status, role: r.body && r.body.role, ids: ((r.body && r.body.donors) || []).map(d => d.id).sort() };
+  };
+  const neverGave = mabry && !(await one(`SELECT 1 AS x FROM gifts WHERE org_id=$1 AND donor_id=$2`, [ORG, mabry.id]));
+  const d2 = await asOpened({ conditions: [{ field: "guest_of", op: "is", value: dana }] });
+  ok("§6 default view + Guest of Dana: the guest who never gave is listed, and the people switch says Everyone",
+    neverGave && d2.status === 200 && d2.role === "everyone" && JSON.stringify(d2.ids) === JSON.stringify(f2.ids), { neverGave, d2 });
+  const d1 = await asOpened({ conditions: [{ field: "introduced_by", op: "is", value: dana }] });
+  const d4 = await asOpened({ conditions: [{ field: "brought_in", op: "yes" }] });
+  ok("§6 …and so do Introduced by and Brought people in", d1.role === "everyone" && JSON.stringify(d1.ids) === JSON.stringify(f1.ids)
+    && d4.role === "everyone" && JSON.stringify(d4.ids) === JSON.stringify(f4.ids), { d1, d4 });
+  const dDonors = await asOpened({ conditions: [{ field: "guest_of", op: "is", value: dana }] }, "donor");
+  const dPlain = await asOpened({ conditions: [{ field: "lifecycle", op: "is", value: "lapsed" }] });
+  ok("§6 a view that picked Donors keeps Donors, and another filter on the default view stays Donors",
+    dDonors.role === "donors" && mabry && !dDonors.ids.includes(mabry.id) && dPlain.role === "donors", { dDonors, dPlain: dPlain.role });
   const setup = ((await api("GET", "/donors/list-setup", tok)).body || {});
   const fl = setup.fields || [];
   const intro = Array.isArray(fl) && fl.find(x => x.key === "introduced_by");

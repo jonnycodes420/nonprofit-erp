@@ -127,6 +127,16 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
   only) stops a write at a named point; the suite holds `test-hold:<name>` from its own session
   (`tests/lib/raceHold.js`), starts the second writer, and counts waiters in its own database with
   `waiters()`. The journey Thread race is held at `journey-open:<donor>:<journey>`. (RACE-1)
+- **An in-process server never closes a kept-alive socket on its own timer.** A suite that boots
+  server.js in its own process shares one event loop with its fetch; a synchronous stretch past
+  Node's 5 s keep-alive timeout (access2's router walk, ~5.4 s on CI) let the server's timer reset
+  the next request's socket on Linux ("fetch failed", ECONNRESET). `helpers.untilReady` sets the
+  in-process server's `keepAliveTimeout` to 0 first (`tests/lib/inProcessServer.js`), so every
+  in-process suite boots through `untilReady`. (FLAKE-5)
+- **No test turns the run's clock into a UTC day.** `new Date(testNow() + n * DAY).toISOString()
+  .slice(0, 10)` is a day ahead of New York from 7 PM Eastern; take days from `tests/clock.js`
+  (`civilDay`, `dayOffset`). script-guards holds the lines that predate the rule and fails a new
+  one (`tests/lib/runClockDays.js`). (FLAKE-5)
 
 ## Gotchas
 - **Never write GitHub's skip-ci marker (square brackets around "skip ci") in a commit message or PR body**,

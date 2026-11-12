@@ -959,6 +959,8 @@ async function directoryRoles(orgId, q, build) {
   // WALKB-1: a search finds everyone. Home names organizations and contacts
   // too, and a name Home shows must never be one the Donors search cannot find.
   if (role === "auto" && String(q.search || "").trim()) role = "";
+  // FLAKE-5: Guest of, Introduced by and Brought people in search Everyone too (connections.namesConnection).
+  if (role === "auto" && require("./server/donors/connections").namesConnection(q.where)) role = "";
   // the org's own donors, not this search's: the view she opens on does not hop as she types
   const auto = role === "auto"
     ? query(`SELECT COUNT(*) AS c FROM donors WHERE org_id=? AND deleted_at IS NULL AND archived_at IS NULL AND ${PT.donorOnlySql()}`, [orgId])

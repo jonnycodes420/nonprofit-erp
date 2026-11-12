@@ -257,8 +257,12 @@ async function mailTypesOnForDonor(donorId) {
 // FIX-57: an in-process suite waits for the server's own readiness check
 // (GET /ready: schema built, database answering), never a fixed sleep. A
 // 3.5 s "boot DDL settles" went red under load ("Database initializing").
+// FLAKE-5: and a server in this same process stops closing kept-alive sockets on
+// its own timer before the first request (tests/lib/inProcessServer.js says why).
 async function untilReady({ base = process.env.BASE || BASE, tries = 1200 } = {}) {
+  const { noServerSideIdleClose } = require("./lib/inProcessServer");
   for (let i = 0; i < tries; i++) {   // 100 ms apart: two minutes, counted, not read off the clock
+    noServerSideIdleClose(base);
     const r = await fetch(base + "/ready").then(x => x.json()).catch(() => null);
     if (r && r.ready) return true;
     await new Promise(res => setTimeout(res, 100));
