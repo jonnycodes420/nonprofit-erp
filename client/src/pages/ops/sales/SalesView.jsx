@@ -7,6 +7,7 @@
 //   &sub=list&list=<id>          SALES-2: one prospect list
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { countLabel } from "../../../../shared/countWords.js";
 import { apiFetch } from "../../../api";
 import { INK, WHITE, CREAM, EMERALD, BRASS, card, h2, says, btn, quiet, box, link, brassTag, usd, dayWords, TYPE_WORDS, Failure, failureWords } from "./salesBits";
 import CallMode from "./CallMode";
@@ -95,7 +96,7 @@ function Forecast({ f }) {
     <h2 style={h2}>Forecast</h2>
     <div style={{ display: "flex", gap: 28, flexWrap: "wrap", margin: "6px 0 10px" }}>
       <div title={f.sentences.weighted}><div style={{ fontSize: 22, fontWeight: 700 }} data-fc-weighted="1">{usd(f.weightedCents)}</div><div style={{ fontSize: 12, opacity: 0.7 }}>weighted pipeline</div></div>
-      <div title={f.sentences.signed}><div style={{ fontSize: 22, fontWeight: 700 }} data-fc-signed="1">{usd(f.signedCents || 0)}</div><div style={{ fontSize: 12, opacity: 0.7 }}>signed, not billing yet · {f.signedDeals || 0} deal{f.signedDeals === 1 ? "" : "s"}</div></div>
+      <div title={f.sentences.signed}><div style={{ fontSize: 22, fontWeight: 700 }} data-fc-signed="1">{usd(f.signedCents || 0)}</div><div style={{ fontSize: 12, opacity: 0.7 }}>signed, not billing yet · {countLabel(f.signedDeals || 0, "deal")}</div></div>
       <div title={f.sentences.mrrNow}><div style={{ fontSize: 22, fontWeight: 700 }} data-fc-mrr="1">{usd(f.mrrNowCents)}</div><div style={{ fontSize: 12, opacity: 0.7 }}>MRR now · {f.mrrPctOfGoal}% of goal</div></div>
       <div title={f.sentences.goal}><div style={{ fontSize: 22, fontWeight: 700 }}>{usd(f.goal.cents)}</div><div style={{ fontSize: 12, opacity: 0.7 }}>goal · {f.goal.says}</div></div>
       <div><div style={{ fontSize: 22, fontWeight: 700 }}>{f.projectedPctOfGoal}%</div><div style={{ fontSize: 12, opacity: 0.7 }}>of goal, MRR now plus signed and weighted</div></div>

@@ -5,6 +5,7 @@
 // agreement is here as a PDF, and what billing did (or why it couldn't) is said in words.
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../../api";
+import DateInput from "../../../components/inputs/LazyDateInput";
 import { INK, CREAM, EMERALD, says, btn, quiet, box, link, brassTag, usd, dayWords, whenWords, downloadCsv, failureWords } from "./salesBits";
 
 const lab = { display: "block", fontSize: 11, fontWeight: 700, opacity: 0.65, margin: "8px 0 2px" };
@@ -39,7 +40,7 @@ function QuoteForm({ data, last, onSaved, onCancel }) {
     {below ? <><label style={lab} htmlFor="q-reason">Why below list (kept here, not shown to her)</label>
       <input id="q-reason" value={f.reason} onChange={e => set("reason", e.target.value)} placeholder="family pricing, beta" style={{ ...box, width: "100%" }} data-quote-reason="1" /></> : null}
     <label style={lab} htmlFor="q-start">Billing starts</label>
-    <input id="q-start" type="date" value={f.start_on} onChange={e => set("start_on", e.target.value)} style={{ ...box, width: "100%" }} data-quote-start="1" />
+    <DateInput id="q-start" value={f.start_on} onChange={e => set("start_on", e.target.value)} style={{ ...box, width: "100%" }} aria-label="Billing starts" data-quote-start="1" />
     <label style={lab} htmlFor="q-setup">Setup fee ($, optional, charged with the first monthly charge)</label>
     <input id="q-setup" value={f.setup_fee} onChange={e => set("setup_fee", e.target.value)} placeholder="none" inputMode="decimal" style={{ ...box, width: "100%" }} data-quote-setup="1" />
     <label style={lab} htmlFor="q-term">Term</label>
