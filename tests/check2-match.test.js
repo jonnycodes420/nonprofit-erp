@@ -50,7 +50,7 @@ process.env.ANTHROPIC_BASE_URL = `http://localhost:${MOCK}`;
 const LOGS = [];
 for (const k of ["log", "error", "warn"]) { const o = console[k]; console[k] = (...a) => { LOGS.push(a.map(String).join(" ")); o(...a); }; }
 
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, untilReady } = require("./helpers");
 const { FAKE_ROUTING, FAKE_ACCOUNT } = require("../scripts/ci/capture1-make-fixtures.js");
 const FX = path.join(__dirname, "fixtures", "capture1");
 const dataUrl = f => `data:image/png;base64,${fs.readFileSync(path.join(FX, f)).toString("base64")}`;
@@ -107,6 +107,7 @@ const upload = (tok, item) => { queued.push([item]); return api("POST", "/captur
   console.log("check2-match (CHECK-2)");
   await new Promise(r => mock.listen(MOCK, r));
   require("../server.js");
+  await untilReady();   // FLAKE-5: an in-process server, so the shared boot step (tests/lib/inProcessServer.js)
   await new Promise(r => setTimeout(r, 3500));
   await reset();
 
