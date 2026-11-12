@@ -2413,6 +2413,7 @@ app.get("/giving-pages/:id/page", requireAuth, requireAdmin, wrap(async (req, re
     starters: Object.entries(startersOf(pg)).map(([key, st]) => ({ key, label: st.label, blurb: st.blurb || "" })),
     // GIVE-EDIT-1: the page's own fields, live and drafted, beside the blocks.
     ...(await pageSettingsPayload(pg, req.user.orgId)),
+    ...(await require("../server/give/takesGifts").takesGiftsPayload({ query }, req.user.orgId, surfaceOf(pg))),   // FLOWS-8 (W-35)
   });
 }));
 

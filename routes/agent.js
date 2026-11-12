@@ -3193,6 +3193,13 @@ app.get("/sequences", requireAuth, wrap(async (req, res) => {
      ORDER BY s.created_at DESC`,
     [req.user.orgId]
   );
+  // FLOWS-8 (W-1112-Fundraising-21): each sequence says whether it can be
+  // turned on, by the same rule Resume and Turn on refuse with.
+  const steps = rows.length ? await query(`SELECT sequence_id, body FROM sequence_steps WHERE sequence_id = ANY(?) ORDER BY step_order`, [rows.map(r => r.id)]) : [];
+  for (const r of rows) {
+    const why = SENDS_OFF.sequenceActivationProblem(r, steps.filter(s => s.sequence_id === r.id));
+    r.not_ready = why ? why.sentence : null;
+  }
   res.json(rows);
 }));
 
