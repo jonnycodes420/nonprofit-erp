@@ -196,6 +196,44 @@ export function ladderFromDistribution(giftCentsList, { count = 4 } = {}) {
 // PROSPECT-1 — the next friendly amount above this one (the ask, one step up).
 export function nextFriendlyAbove(cents) { return rungAbove(toFriendlyCents(cents), 1) ?? cents; }
 
+// ── ASKS-2 · THE STEP UP IS ONE STEP FROM THE ASK, NOT FROM A ROUNDED-UP RUNG ──
+// A customer's donor (largest $35,712, last three averaging $13,397 and
+// rising) was asked $75,000: the anchor was rounded UP to the $50,000 rung and
+// then stepped one more rung, 2.1 times their largest gift. A director reads
+// that as a computer number and stops trusting every ask.
+// Now the step starts from the natural ask of the anchor (naturalAskCents) and
+// lands on the first STEP rung at least a quarter above it, never above 1.5
+// times the anchor. The step rungs are finer than the form's ladder (above
+// $10,000 the friendly rungs are $25,000 apart): 1 / 1.25 / 1.5 / 1.75 / 2 /
+// 2.5 / 3 / 3.5 / 4 / 4.5 / 5 / 6 / 7 / 7.5 / 8 / 9 in every decade, kept only
+// where the rung is itself a natural ask, so $36,000 steps to $45,000, $2,750
+// to $3,500 and $250 to $350.
+export const STEP_FACTOR = 1.25;
+export const STEP_CEILING = 1.5;
+const STEP_MANTISSAS = [100, 125, 150, 175, 200, 250, 300, 350, 400, 450, 500, 600, 700, 750, 800, 900];
+export const STEP_RUNGS_CENTS = Object.freeze((() => {
+  const out = [];
+  for (let decade = 1000; decade <= MAX_SUGGESTION_CENTS; decade *= 10) {   // $10, $100, … each times 1 … 9
+    for (const m of STEP_MANTISSAS) { const c = Math.round(decade * m / 100); if (c >= 2500 && c <= MAX_SUGGESTION_CENTS) out.push(c); }
+  }
+  // Only rungs that are themselves natural asks ($30 and $12,500 are not).
+  return [...new Set(out)].filter(c => naturalAskCents(c) === c).sort((a, b) => a - b);
+})());
+// One step up from `fromCents` (a natural ask), never above STEP_CEILING times
+// `anchorCents`: the first step rung at least STEP_FACTOR above it; failing
+// that the ceiling itself rounded DOWN to a natural amount; failing that
+// (a $10 gift already asks the $25 minimum), no step.
+export function stepUpCents(fromCents, anchorCents = fromCents) {
+  const from = Math.round(Number(fromCents) || 0);
+  if (!(from > 0)) return from;
+  const ceiling = Math.floor(STEP_CEILING * (Math.round(Number(anchorCents) || 0) || from));
+  const rung = STEP_RUNGS_CENTS.find(r => r > from && r >= from * STEP_FACTOR && r <= ceiling);
+  if (rung) return rung;
+  const unit = ceiling < 100000 ? 2500 : ceiling < 1000000 ? 25000 : 100000;
+  const down = Math.floor(ceiling / unit) * unit;
+  return down > from ? down : from;
+}
+
 // WIRE-1 addendum: `stepUp` false holds a rising donor at their own level (the
 // friendly rung at or above what they have given). The caller passes false when
 // Room to give is Not yet known, so the ask never claims more room than the
@@ -210,13 +248,13 @@ export function suggestedAskCents({ largestCents = 0, lastThreeCents = [], stepU
   // product is already in.
   const rising = three.length >= 2 && three[0] > three[three.length - 1];
   const anchor = Math.max(largest, avgThree);
-  const rung = toFriendlyCents(anchor);
-  if (!rung) return null;
+  if (!(anchor > 0)) return null;
   const held = rising && !stepUp;
   // SWEEP-1: held at their level, the ask is their level, rounded the one way
-  // (naturalAskCents); a step up is the next rung, and every rung is natural.
+  // (naturalAskCents). ASKS-2: a step up is one step from that natural ask,
+  // never above 1.5 times the anchor (stepUpCents), and every step rung is natural.
   const base = naturalAskCents(anchor);
-  const ask = rising && stepUp ? (rungAbove(rung, 1) ?? base) : base;
+  const ask = rising && stepUp ? stepUpCents(base, anchor) : base;
   const bits = [];
   if (largest) bits.push(`Largest gift ${dollars(largest)}`);
   if (avgThree) bits.push(`last ${three.length === 1 ? "gift was" : `${three.length} averaged`} ${three.length === 1 ? dollars(avgThree) : wholeDollars(avgThree)}${rising ? " and rising" : ""}`);

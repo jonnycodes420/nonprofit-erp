@@ -28,7 +28,7 @@ const { LAST_GIFT_ORDER } = require("./lastGift");
 let SA = null;
 const ready = import("../smartAmounts.js").then(m => { SA = m; return m; });
 
-const RULE = "Every suggested ask is one rule: the larger of their largest gift and the average of their last three, rounded to a natural amount, one step up when their giving is rising and Room to give is known.";
+const RULE = "Every suggested ask is one rule: the larger of their largest gift and the average of their last three, rounded to a natural amount, one step up (never more than one and a half times that) when their giving is rising and Room to give is known.";
 
 // One person's gifts, newest first, for the rule. `?` org, `?` person.
 const GIFTS_SQL = `SELECT LEFT(g.date, 10) AS date, g.amount::text AS amount, g.type FROM gifts g

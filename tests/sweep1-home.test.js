@@ -103,7 +103,8 @@ const gift = (k, amount, date) => q(`INSERT INTO gifts (id,org_id,donor_id,amoun
     const held = SA.suggestedAskCents({ largestCents: 270000, lastThreeCents: [270000] });
     ok("§6 the profile's ask, held at their level, rounds the same way ($2,700 asks $2,750, not the $3,500 rung)", held && held.askCents === 275000, held);
     const up = SA.suggestedAskCents({ largestCents: 270000, lastThreeCents: [270000, 200000] });
-    ok("§6 a rising donor still steps up a rung, and the rung is natural", up && up.askCents === 500000 && up.askCents === SA.naturalAskCents(up.askCents), up);
+    // ASKS-2: the step is from the natural $2,750, never above 1.5 × $2,700: $3,500 (was $5,000, 1.85 ×)
+    ok("§6 a rising donor still steps up a rung, and the rung is natural", up && up.askCents === 350000 && up.askCents === SA.naturalAskCents(up.askCents), up);
 
     // §3 · Ask
     const askSays = async text => { const r = await api("POST", "/ask", tok, { text }); return r.body || {}; };
