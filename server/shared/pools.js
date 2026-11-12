@@ -15,6 +15,12 @@ const { toQuery } = require("../db/sql");   // REDTEAM-2
 // own list names the process and the build that holds it.
 const POOL_MAX = Math.max(2, Number(process.env.DB_POOL_MAX) || 10);
 const SET_POOL_MAX = Math.min(3, Math.max(1, Math.floor(POOL_MAX / 3)));
+// PROFILE-SPEED-1 · THE MOST CONNECTIONS ONE REQUEST HOLDS AT ONCE, across
+// both pools: 3 by default, never more than a third of the main pool (and at
+// least 1). Every web request's checkout takes one of these places first
+// (requestLimits.checkout), so no page, however many statements it fans out,
+// can hold the pool from everyone else.
+const PER_REQUEST_MAX = Math.max(1, Math.min(Number(process.env.REQUEST_CONNECTION_CAP) || 3, Math.floor(POOL_MAX / 3) || 1));
 const PROCESS_NAME = process.env.STEWARD_PROCESS === "worker" ? "steward-worker" : "steward-web";
 const SHORT_SHA = (() => {
   let sha = null;
@@ -77,7 +83,7 @@ function stats(main) {
   return { max: POOL_MAX, total: main.totalCount, idle: main.idleCount, waiting: main.waitingCount,
     set: { max: SET_POOL_MAX, total: _setPool ? _setPool.totalCount : 0 }, name: PROCESS_NAME,
     // LOAD-1: waits for a connection that gave up, statements stopped at their limit, reads cancelled.
-    limits: LIMITS.stats() };
+    limits: LIMITS.stats(), perRequest: { max: PER_REQUEST_MAX, peak: LIMITS.stats().perRequestPeak, waits: LIMITS.stats().capWaits } };
 }
 
-module.exports = { POOL_MAX, SET_POOL_MAX, PROCESS_NAME, APP_NAME, isPoolFull, setPool, setPoolReady, querySetwise, stats };
+module.exports = { PER_REQUEST_MAX, POOL_MAX, SET_POOL_MAX, PROCESS_NAME, APP_NAME, isPoolFull, setPool, setPoolReady, querySetwise, stats };

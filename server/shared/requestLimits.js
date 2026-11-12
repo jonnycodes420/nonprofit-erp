@@ -42,7 +42,35 @@ const abandoned = () => Object.assign(new Error("The request was closed before i
 const isCancel = (e) => !!e && e.code === "57014";
 
 const scopes = new AsyncLocalStorage();
-const counters = { checkoutTimeouts: 0, statementTimeouts: 0, cancelled: 0 };
+const counters = { checkoutTimeouts: 0, statementTimeouts: 0, cancelled: 0, capWaits: 0, perRequestPeak: 0, poolPeak: 0 };
+
+// PROFILE-SPEED-1 · NO ONE REQUEST TAKES THE POOL. A request's statements
+// share PER_REQUEST connections (pools.js, default 3). Two Donors list reads
+// held all ten of the web's connections between them, because each fanned its
+// statements out with Promise.all and every statement took its own. Now the
+// fourth waits for one of the request's three to come back, inside the same
+// limit and abandon as any wait for a connection. Both pools count.
+//
+// A connection taken while this request already holds one for a callback
+// (withClient, withTransaction, the ambient transaction: holding() below) never
+// waits for a place: the callback cannot finish without it, so waiting could
+// deadlock. Neither does an advisory lock's connection (it sits idle while its
+// caller's own statements take places). Those still count toward the peak.
+const PER_REQUEST = () => require("./pools").PER_REQUEST_MAX;
+const holdingStore = new AsyncLocalStorage();
+function holding(fn) { const sc = scopes.getStore(); return sc ? holdingStore.run(sc, fn) : fn(); }
+function takePlace(sc, wait, go) {
+  const pl = sc.places || (sc.places = { used: 0, queue: [] });
+  const grant = () => { if (wait.settled) return false; pl.used++; wait.place = true; go(); return true; };
+  if (pl.used < PER_REQUEST()) return void grant();
+  counters.capWaits++;
+  pl.queue.push(grant);
+}
+function givePlace(sc) {
+  const pl = sc.places; if (!pl) return;
+  pl.used--;
+  while (pl.queue.length && pl.used < PER_REQUEST()) if (pl.queue.shift()()) break;
+}
 
 // The scope a query is running in, while its request is still being answered.
 function live() { const sc = scopes.getStore(); return sc && !sc.done ? sc : null; }
@@ -98,24 +126,30 @@ function middleware(cancelBackend) {
 // A connection from `pool` for the current scope (or none): waits at most the
 // scope's limit, carries the scope's statement_timeout, and is tracked so an
 // abandon can cancel it. release(client) must be called for every one.
-async function checkout(pool) {
+async function checkout(pool, { lock = false } = {}) {
   refuseIfAbandoned();
   const sc = live();
   if (!sc) return align(await pool.connect(), 0, null);
+  const free = lock || holdingStore.getStore() === sc;   // see "NO ONE REQUEST TAKES THE POOL"
+  let place = false;
   const t0 = Date.now();   // SCALE-3: the wait, for the capacity gauge (server/perf/capacity.js)
   const client = await new Promise((resolve, reject) => {
     // One wait: it ends once, by a connection, the limit, or an abandon (close()).
-    const wait = { settled: false, timer: null, fail: null };
+    const wait = { settled: false, timer: null, fail: null, place: false };
     const end = () => { wait.settled = true; clearTimeout(wait.timer); sc.waiting.delete(wait.fail); };
-    wait.fail = (e) => { if (!wait.settled) { end(); reject(e); } };
+    wait.fail = (e) => { if (!wait.settled) { end(); if (wait.place) givePlace(sc); reject(e); } };
     wait.timer = setTimeout(() => { counters.checkoutTimeouts++; sc.timedOut = true; wait.fail(tooLong()); }, sc.limitMs);
     sc.waiting.add(wait.fail);
-    pool.connect().then(c => {
+    const go = () => pool.connect().then(c => {
       if (wait.settled) return c.release();
-      end(); resolve(c);
+      end(); place = wait.place; resolve(c);
     }, wait.fail);
+    if (free) go(); else takePlace(sc, wait, go);
   });
   require("../perf/capacity").noteWait(Date.now() - t0);
+  if (place) client.__stewardPlace = true;
+  const busy = pool.totalCount - pool.idleCount;
+  if (pool.options && pool.options.max === require("./pools").POOL_MAX && busy > counters.poolPeak) counters.poolPeak = busy;
   return align(client, sc.limitMs, sc);
 }
 async function align(client, ms, sc) {
@@ -126,8 +160,12 @@ async function align(client, ms, sc) {
       if (needPid) client.__stewardPid = r[1].rows[0].pid;
       client.__stewardLimit = ms;
     }
-  } catch (e) { client.release(e); throw e; }
-  if (sc) { sc.held.add(client); client.__stewardScope = sc; }
+  } catch (e) { if (sc && client.__stewardPlace) { client.__stewardPlace = false; givePlace(sc); } client.release(e); throw e; }
+  if (sc) {
+    sc.held.add(client); client.__stewardScope = sc;
+    if (sc.held.size > (sc.peak || 0)) sc.peak = sc.held.size;
+    if (sc.held.size > counters.perRequestPeak) counters.perRequestPeak = sc.held.size;
+  }
   return client;
 }
 function release(client, err) {
@@ -135,6 +173,7 @@ function release(client, err) {
   client.__stewardScope = null;
   if (!sc) return client.release(err);
   sc.held.delete(client);
+  if (client.__stewardPlace) { client.__stewardPlace = false; givePlace(sc); }
   if (sc.cancelling) return void sc.cancelling.then(() => client.release(err));
   client.release(err);
 }
@@ -182,5 +221,7 @@ function cancelWith(Pool, options) {
   return (pids) => cancelPool(Pool, options).query("SELECT pg_cancel_backend(p) FROM unnest($1::int[]) p", [pids]);
 }
 
-module.exports = { answerError, cancelWith, DEFAULT_MS, NAMED, LONGER, limitFor, TOO_LONG, middleware, checkout, release, translate, guard, useLimit, shared,
+// TEST_MODE harnesses read the peaks for a window of their own.
+function resetPeaks() { counters.perRequestPeak = 0; counters.poolPeak = 0; counters.capWaits = 0; }
+module.exports = { holding, resetPeaks, answerError, cancelWith, DEFAULT_MS, NAMED, LONGER, limitFor, TOO_LONG, middleware, checkout, release, translate, guard, useLimit, shared,
   cancelPool, live, stats: () => ({ ...counters }), isCancel };

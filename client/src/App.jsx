@@ -38,6 +38,7 @@ import { openRecentChanges } from "./components/RecentChanges";
 import { retryImport } from "./lib/lazyRetry";
 import { useMajorGiftsAccess } from "./lib/majorGiftsAccess";   // ASKS-1
 import { routeMajorGifts } from "./lib/majorGiftsTab";   // ASKS-1
+import { startPageReads } from "./lib/pageReads";   // PROFILE-SPEED-1
 const CLIP_X = typeof CSS !== "undefined" && CSS.supports && CSS.supports("overflow-x", "clip") ? "clip" : "hidden";   // HOME-4, see BASE
 // PERF-2: the app's typefaces. app.html writes their faces into its head
 // (scripts/prerender.mjs); a second copy of the same faces made each font
@@ -384,6 +385,7 @@ function AppShell() {
     setJourneysIntent(t==="journeys"&&opts?.journeyId?{journeyId:opts.journeyId}:null);
     const hasOpts=!!opts&&Object.keys(opts).some(k=>opts[k]!=null);
     if(hasOpts||how?.fromUrl)setNavNonce(n=>n+1);
+    if(t!==tab||hasOpts){const u=new URL(tabHref(t,opts),window.location.origin);startPageReads(u.pathname,u.search);}   // PROFILE-SPEED-1: the page's first reads leave in one request, before it mounts
     setTab(t);
     // FIX-13 Part 6 — and the address bar follows. A URL change that came
     // FROM the address bar (a link, Back) is not pushed again, and a click

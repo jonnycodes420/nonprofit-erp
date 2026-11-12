@@ -21,10 +21,18 @@ export const PAGE_READS = [
   [/^\/donors\/?$/, () => DONORS],
   [/^\/donors\/[^/]+$/, () => DONORS],
   [/^\/app\/fundraising\/?$/, () => ["/atlas/notes?place=gifts", "/fundraising/overview", "/fundraising/campaigns", "/giving-pages"]],
-  [/^\/app\/reports\/?$/, search => (new URLSearchParams(search).get("report") === "giving-summary"
+  // PROFILE-SPEED-1: the rail opens Reports with no report named, and lands on Giving summary.
+  [/^\/app\/reports\/?$/, search => (["giving-summary", null].includes(new URLSearchParams(search).get("report"))
     ? ["/ask/suggestions", "/meetings/by-staff", "/saved-reports", "/dashboards", "/saved-dashboards", "/finance/funds",
        "/reports/top-donors?scope=lifetime&limit=1", "/campaigns", "/reports/giving-summary?yearMode=fiscal"]
     : null)],
+  // PROFILE-SPEED-1: the pages that opened with more than eight requests.
+  // Paths that carry a year the page works out itself (Finance's transactions,
+  // Events' year figures) are left to the page.
+  [/^\/app\/events\/?$/, search => (new URLSearchParams(search).get("event") ? null : ["/atlas/notes?place=event", "/events"])],
+  [/^\/app\/communications\/?$/, () => ["/atlas/notes?place=communications", "/sequences/builder", "/me", "/communications/hub",
+    "/org/sending-domain", "/campaigns/templates", "/campaigns", "/campaigns/sent"]],
+  [/^\/app\/finance\/?$/, () => ["/finance/accounts", "/finance/funds", "/finance/summary?yearMode=fiscal", "/finance/overview"]],   // not /finance/stripe-summary: it asks Stripe
   [/^\/app\/journeys\/?$/, () => ["/atlas/notes?place=journey", "/journeys", "/auto-send/settings"]],
   [/^\/app\/settings\/?$/, search => (new URLSearchParams(search).get("sub") ? null
     : ["/people?role=staff_board", "/custom-fields/kept-raw", "/org/sending-domain", "/org/voice-samples", "/org/team",

@@ -50,6 +50,9 @@ const HOME_READS = new Set([
   "/reports/top-donors", "/campaigns", "/reports/giving-summary",
   "/journeys", "/auto-send/settings",
   "/people", "/custom-fields/kept-raw", "/org/sending-domain", "/org/voice-samples", "/impact-metrics", "/org/ai-status",
+  // PROFILE-SPEED-1: Events, Communications and Finance's first reads (pageReads.js), asked for on the way to the page. All plain GETs.
+  "/events", "/sequences/builder", "/communications/hub", "/campaigns/templates", "/campaigns/sent",
+  "/finance/accounts", "/finance/summary", "/finance/overview",
 ]);
 const MAX_READS = 40;
 // At most this many run at once for one bundle, so one person's Home cannot
@@ -158,6 +161,9 @@ app.get("/donors/:id/bundle", requireAuth, wrap(async (req, res) => {
   if (!mine) return res.status(404).json({ error: "Not found" });
   await answer(req, res, paths);
 }));
+
+// PROFILE-SPEED-1: the profile's first screen in one request (server/donors/profileBundle.js).
+require("../server/donors/profileBundle").mount({ app, requireAuth, wrap, answer, query });
 
 // TEST_MODE only: run the nightly comparison now, for the caller's org, so the
 // suite can prove a stored answer that disagrees with a fresh one is reported.

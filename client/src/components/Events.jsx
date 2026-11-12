@@ -1920,13 +1920,16 @@ export function Events({ data, isReadOnly }) {
   }, [currentYear]);
   const [yearFig, setYearFig] = useState({});
   useEffect(() => {
+    // PROFILE-SPEED-1: once the list has answered, so the four are asked for
+    // once on open (they were asked for, then again when the list arrived).
+    if (loading) return undefined;
     let live = true;
     const qs = p => Object.entries(p).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
     Promise.all(Object.entries(yearSrc).map(([k, src]) =>
       apiFetch(`/figures/${src.key}/rows?${qs(src.params)}&pageSize=1`).then(r => [k, r]).catch(() => [k, null])))
       .then(all => { if (live) setYearFig(Object.fromEntries(all)); });
     return () => { live = false; };
-  }, [yearSrc, events]);
+  }, [yearSrc, events, loading]);
   const yv = k => (yearFig[k] && !yearFig[k].blank ? yearFig[k].value : null);
   const yearLoaded = Object.keys(yearFig).length > 0;
 

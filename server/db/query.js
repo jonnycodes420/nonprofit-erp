@@ -52,7 +52,7 @@ async function withAmbientTransaction(fn) {
   const st = { client, open: true };
   try {
     await client.query("BEGIN");
-    const result = await ambientTx.run(st, fn);
+    const result = await ambientTx.run(st, () => LIMITS.holding(fn));   // PROFILE-SPEED-1: its inner checkouts never wait for a place
     st.open = false;
     await client.query("COMMIT");
     return result;
@@ -123,7 +123,7 @@ async function run(sql, params = []) {
 // routes then wait for.
 async function withClient(fn) {
   const client = await LIMITS.checkout(pool);
-  try { return await fn(client); } catch (e) { throw LIMITS.translate(e); } finally { LIMITS.release(client); }
+  try { return await LIMITS.holding(() => fn(client)); } catch (e) { throw LIMITS.translate(e); } finally { LIMITS.release(client); }
 }
 // SPLIT-2 end
 // SPLIT-2 db.js piece 28
@@ -140,7 +140,7 @@ async function withTransaction(fn) {
   const client = await LIMITS.checkout(pool);
   try {
     await client.query("BEGIN");
-    const result = await fn(client);
+    const result = await LIMITS.holding(() => fn(client));   // PROFILE-SPEED-1
     await client.query("COMMIT");
     return result;
   } catch (e) {
@@ -172,7 +172,7 @@ const LOCK_TRY_MS = 150;
 async function lockAdvisory(key, { giveUpMs = 0 } = {}) {
   const deadline = giveUpMs ? Date.now() + giveUpMs : Infinity;
   for (;;) {
-    const client = await LIMITS.checkout(pool);
+    const client = await LIMITS.checkout(pool, { lock: true });   // PROFILE-SPEED-1: a lock's connection takes no place
     let got = false;
     try {
       await client.query(`SET lock_timeout = '${LOCK_TRY_MS}ms'`);
@@ -205,7 +205,7 @@ async function withAdvisoryLock(key, fn) {
 // wait: when another run (this instance or another one on the same database)
 // holds the key, fn is not called and { skipped: true } comes back.
 async function withTryAdvisoryLock(key, fn) {
-  const client = await LIMITS.checkout(pool);
+  const client = await LIMITS.checkout(pool, { lock: true });
   let got = false;
   try {
     const r = await client.query("SELECT pg_try_advisory_lock(hashtext($1)) AS ok", [String(key)]);

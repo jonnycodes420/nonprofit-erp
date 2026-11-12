@@ -16,7 +16,7 @@ import { rememberGift } from "../../lib/stickyGift";   // QUICKADD-1: "Same as l
 import { offerUndo } from "../EditHistory";
 import { savePledgeSchedule } from "../gifts/PledgeSchedule";
 
-export function useProfileGiving({ setFigs, setGiftsFull, donor, journey, setJourneyList, setJourneySuggest, setAddPick, setAddPreview, setAddErr, onInteractionAdded, setJourney, journeyBusy, setJourneyBusy, addPick, setGiftLoading, loadGiftsFull, loadPlannedGifts, loadPledges, dpTab, fundAffinity, loadMaterials, loadFundAffinity, setCampaigns, giftCfDefs, giftsFull, setGiftEditId, giftEditForm, setGiftSaving, receiptForGift, addGiftForm, setAddGiftForm, setGiftErr, addGiftIdemRef, setAddGiftOpen, refreshSoftCredit, addPledgeIdemRef, pledgeForm, setPledgeForm, setAddPledgeOpen, setPledgeSaving, setPledgeResendBusyId, setPledgeResentIds, pgForm, setPgForm, setAddPgOpen, setPgSaving, matNote, setMatNote, setMatUploading }) {
+export function useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, journey, setJourneyList, setJourneySuggest, setAddPick, setAddPreview, setAddErr, onInteractionAdded, setJourney, journeyBusy, setJourneyBusy, addPick, setGiftLoading, loadGiftsFull, loadPlannedGifts, loadPledges, dpTab, fundAffinity, loadMaterials, loadFundAffinity, setCampaigns, giftCfDefs, giftsFull, setGiftEditId, giftEditForm, setGiftSaving, receiptForGift, addGiftForm, setAddGiftForm, setGiftErr, addGiftIdemRef, setAddGiftOpen, refreshSoftCredit, addPledgeIdemRef, pledgeForm, setPledgeForm, setAddPledgeOpen, setPledgeSaving, setPledgeResendBusyId, setPledgeResentIds, pgForm, setPgForm, setAddPgOpen, setPgSaving, matNote, setMatNote, setMatUploading }) {
   // The list: a person can be in several journeys, so it is always offered.
   useEffect(()=>{
     let live=true;
@@ -52,9 +52,10 @@ export function useProfileGiving({ setFigs, setGiftsFull, donor, journey, setJou
   useEffect(()=>{
     setGiftLoading(true);
     loadGiftsFull();
-    loadPlannedGifts();
+    if(givingOpen)loadPlannedGifts();   // PROFILE-SPEED-1: only once Giving has been opened
     loadPledges();
-  },[donor.id,interactionCount]);
+  },[donor.id,interactionCount]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{if(givingOpen)loadPlannedGifts();},[givingOpen]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // STALE-2: the uploads are read when the record opens, not when Files is
   // clicked: the tab's count is the one file tally (lib/profileFiles.js).

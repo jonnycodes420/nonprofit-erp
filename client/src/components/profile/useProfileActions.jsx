@@ -44,6 +44,13 @@ export function useProfileActions({ donor, orgTeam, onReassign, setShowReassign,
   // the person chose. Opening on the Gifts tab with the panel already open is
   // what makes the hand-off one step rather than two.
   const [dpTab,setDpTab]=useState(initialAddGift?"giving":"activity");
+  // PROFILE-SPEED-1: what only the Giving tab shows (receipts, open asks,
+  // planned gifts) is read once that tab has been opened for this person, not
+  // on open. A write still re-reads it, as before.
+  const [givingFor,setGivingFor]=useState(null);
+  useEffect(()=>{if(dpTab==="giving"&&givingFor!==donor.id)setGivingFor(donor.id);},[dpTab,donor.id,givingFor]);
+  const givingOpen=givingFor===donor.id;
+  const givingOpenRef=useRef(givingOpen);givingOpenRef.current=givingOpen;
   const [relatedOpen,setRelatedOpen]=useState(false);   // PROFILE-2: Related opens from the rail
   // POLISH-4 — More → Merge with…; the kept record opens when she closes it.
   const [mergeOpen,setMergeOpen]=useState(false);
@@ -202,9 +209,11 @@ export function useProfileActions({ donor, orgTeam, onReassign, setShowReassign,
   // the Core-safe stage PATCH.
   const [moveSuggestions,setMoveSuggestions]=useState([]);
   const [dismissedSug,setDismissedSug]=useState([]);
+  const loadOpps=()=>apiFetch(`/donors/${donor.id}/opportunities`).then(o=>setOpps(Array.isArray(o)?o:[])).catch(()=>setOpps([]));
+  useEffect(()=>{if(givingOpen)loadOpps();},[givingOpen]);   // eslint-disable-line react-hooks/exhaustive-deps
   const refreshPipeline=()=>{
     apiFetch(`/donors/${donor.id}/moves`).then(m=>setMoves(Array.isArray(m)?m:[])).catch(()=>setMoves([]));
-    apiFetch(`/donors/${donor.id}/opportunities`).then(o=>setOpps(Array.isArray(o)?o:[])).catch(()=>setOpps([]));
+    if(givingOpenRef.current)loadOpps();   // PROFILE-SPEED-1: once Giving has been opened
     apiFetch(`/donors/${donor.id}/move-suggestions`).then(r=>setMoveSuggestions(r?.suggestions||[])).catch(()=>setMoveSuggestions([]));
   };
   const acceptSuggestion=async(sug)=>{
@@ -229,5 +238,5 @@ export function useProfileActions({ donor, orgTeam, onReassign, setShowReassign,
     if(status==="won"){const amt=prompt(`Actual gift amount closed (asked ${fmtFull(o.target_amount)}):`,o.target_amount);if(amt==null)return;body.giftAmount=parseFloat(amt)||0;}
     try{await apiFetch(`/opportunities/${o.id}`,{method:"PUT",body:JSON.stringify(body)});refreshPipeline();}catch(e){alert(errorMessage(e, "Could not update ask"));}
   };
-  return { handleReassign, showGiftModal, setShowGiftModal, seqOpen, setSeqOpen, seqId, setSeqId, seqLoading, setSeqLoading, seqToast, setSeqToast, dpTab, setDpTab, relatedOpen, setRelatedOpen, mergeOpen, setMergeOpen, mergeKeptRef, tlSearch, setTlSearch, tlSearchOpen, setTlSearchOpen, whyStopOpen, setWhyStopOpen, railRef, noteOpen, setNoteOpen, frameRef, isPhone, dpMoreOpen, setDpMoreOpen, pledges, setPledges, giftsFull, setGiftsFull, giftCountReal, refundRows, tlExtras, tlCounts, railData, railErr, giftEditId, setGiftEditId, giftEditForm, setGiftEditForm, addGiftForm, setAddGiftForm, giftErr, setGiftErr, giftMoreOpen, setGiftMoreOpen, addGiftIdemRef, addPledgeIdemRef, addGiftOpen, setAddGiftOpen, giftSaving, setGiftSaving, plannedGifts, setPlannedGifts, pgForm, setPgForm, addPgOpen, setAddPgOpen, pgSaving, setPgSaving, pledgeForm, setPledgeForm, addPledgeOpen, setAddPledgeOpen, pledgeSaving, setPledgeSaving, pledgeResendBusyId, setPledgeResendBusyId, pledgeResentIds, setPledgeResentIds, fundAffinity, setFundAffinity, fundLoading, setFundLoading, materials, setMaterials, matLoading, setMatLoading, matNote, setMatNote, matUploading, setMatUploading, actMode, stwOpen, setStwOpen, stwForm, setStwForm, stwSaving, setStwSaving, campaigns, setCampaigns, photoUrl, setPhotoUrl, recurringSub, recurResendBusy, recurResendSent, resendRecurringLink, household, setHousehold, fileTally, softCredit, designations, setDesignations, hhModalOpen, setHhModalOpen, hhPick, setHhPick, hhSearch, setHhSearch, hhPeople, giftPeopleQ, refreshSoftCredit, moves, opps, askOpen, setAskOpen, askName, setAskName, askAmt, setAskAmt, moveSuggestions, dismissedSug, refreshPipeline, acceptSuggestion, dismissSuggestion, addAsk, closeAsk };
+  return { givingOpen, handleReassign, showGiftModal, setShowGiftModal, seqOpen, setSeqOpen, seqId, setSeqId, seqLoading, setSeqLoading, seqToast, setSeqToast, dpTab, setDpTab, relatedOpen, setRelatedOpen, mergeOpen, setMergeOpen, mergeKeptRef, tlSearch, setTlSearch, tlSearchOpen, setTlSearchOpen, whyStopOpen, setWhyStopOpen, railRef, noteOpen, setNoteOpen, frameRef, isPhone, dpMoreOpen, setDpMoreOpen, pledges, setPledges, giftsFull, setGiftsFull, giftCountReal, refundRows, tlExtras, tlCounts, railData, railErr, giftEditId, setGiftEditId, giftEditForm, setGiftEditForm, addGiftForm, setAddGiftForm, giftErr, setGiftErr, giftMoreOpen, setGiftMoreOpen, addGiftIdemRef, addPledgeIdemRef, addGiftOpen, setAddGiftOpen, giftSaving, setGiftSaving, plannedGifts, setPlannedGifts, pgForm, setPgForm, addPgOpen, setAddPgOpen, pgSaving, setPgSaving, pledgeForm, setPledgeForm, addPledgeOpen, setAddPledgeOpen, pledgeSaving, setPledgeSaving, pledgeResendBusyId, setPledgeResendBusyId, pledgeResentIds, setPledgeResentIds, fundAffinity, setFundAffinity, fundLoading, setFundLoading, materials, setMaterials, matLoading, setMatLoading, matNote, setMatNote, matUploading, setMatUploading, actMode, stwOpen, setStwOpen, stwForm, setStwForm, stwSaving, setStwSaving, campaigns, setCampaigns, photoUrl, setPhotoUrl, recurringSub, recurResendBusy, recurResendSent, resendRecurringLink, household, setHousehold, fileTally, softCredit, designations, setDesignations, hhModalOpen, setHhModalOpen, hhPick, setHhPick, hhSearch, setHhSearch, hhPeople, giftPeopleQ, refreshSoftCredit, moves, opps, askOpen, setAskOpen, askName, setAskName, askAmt, setAskAmt, moveSuggestions, dismissedSug, refreshPipeline, acceptSuggestion, dismissSuggestion, addAsk, closeAsk };
 }
