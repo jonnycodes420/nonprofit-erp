@@ -233,7 +233,7 @@ module.exports = async function flows3Volunteers() {
     await open(`/app/events`);
     await page.getByText("Kestrel Small Table").first().click();
     await page.locator('[data-testid="event-detail"]').waitFor({ timeout: 20000 });
-    const s = page.getByPlaceholder("Search donors…");
+    const s = page.getByPlaceholder("Search everyone…");
     await s.fill("Pia");
     await page.getByRole("button", { name: /Pia Lindqvist/ }).first().click({ timeout: 10000 });
     await page.getByRole("button", { name: /^Add \d+ donor/ }).first().click();

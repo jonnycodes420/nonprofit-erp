@@ -191,7 +191,7 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
   await noReload("§1", async () => {
     await page.getByText("Heron Supper Club").first().click();
     await page.locator('[data-testid="event-detail"]').waitFor({ timeout: 20000 });
-    const s = page.getByPlaceholder("Search donors…");
+    const s = page.getByPlaceholder("Search everyone…");
     for (const n of ["Ada Quill", "Bram Oduya"]) { await s.fill(n.split(" ")[0]); await page.getByRole("button", { name: new RegExp(n) }).first().click({ timeout: 10000 }); }
     await page.getByRole("button", { name: /^Add \d+ donor/ }).first().click();
     const added = await until(() => /Attendees \(2\)/.test(document.body.innerText));

@@ -20,6 +20,7 @@ const GR = require("../groups");
 const { querySetwise } = require("../db");
 const DS = require("../donorStatus");
 const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
+const RS = require("../server/groups/reportSource");   // FLOWS-8: groups frozen from a report
 
 const routers = { r0: express.Router() };
 const NAME_MAX = 60, DESC_MAX = 200;
@@ -138,11 +139,15 @@ app.post("/groups", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   if (!v.ok) return res.status(400).json({ error: v.errors[0], errors: v.errors });
   const id = newId("grp");
   const a = actor(req);
+  // FLOWS-8 (W-1112-Volunteers-34X): a hand-kept group frozen from a list
+  // report remembers which and the org's day, so its page can say how far it has drifted.
+  const fromReport = v.value.kind === "static" && RS.reportOf(req.body && req.body.fromReport) ? String(req.body.fromReport) : null;
+  const fromDay = fromReport ? orgTime.orgToday(await orgTz(req.user.orgId)) : null;   // ORG_TZ_SEAM_OK
   try {
-    await run(`INSERT INTO audiences (id, org_id, name, description, segment, kind, rules, created_by, created_by_name)
-               VALUES (?,?,?,?,?::jsonb,?,?::jsonb,?,?)`,
+    await run(`INSERT INTO audiences (id, org_id, name, description, segment, kind, rules, source_report, source_at, created_by, created_by_name)
+               VALUES (?,?,?,?,?::jsonb,?,?::jsonb,?,?,?,?)`,
       [id, req.user.orgId, v.value.name, v.value.description || null, JSON.stringify({ mode: "group" }),
-       v.value.kind, v.value.kind === "dynamic" ? JSON.stringify(v.value.rules) : null, a.id, a.name]);
+       v.value.kind, v.value.kind === "dynamic" ? JSON.stringify(v.value.rules) : null, fromReport, fromDay, a.id, a.name]);
   } catch (err) {
     if (err.code === "23505") return res.status(409).json({ error: "You already have a group or an audience called that." });
     throw err;
@@ -245,9 +250,10 @@ app.get("/groups/:id", requireAuth, wrap(async (req, res) => {
   ]);
   figures.forEach((f, i) => Object.assign(f, values[i], { sentence: sentences[i] }));
   months.forEach((mo, i) => { mo.value = values[figures.length + i].value; });
+  const drift = g.sourceReport ? await RS.driftFor(orgId, g, await GR.memberIds(orgId, g)) : null;   // FLOWS-8
   serverTiming(res, t0);
   res.json({
-    group: g, figures, months,
+    group: g, figures, months, drift,
     monthsSentence: "What the people in this group gave each month, refunds taken off. Each month opens its gifts.",
     members: people.map(p => ({ id: p.id, name: p.name, email: p.email || "", totalGiving: Number(p.total_giving) || 0,
       lastGiftDate: p.last_gift_date || null, level: p.level || null, last12: p.last12 == null ? 0 : Number(p.last12) })),
@@ -303,6 +309,31 @@ app.post("/groups/:id/members/remove", requireAuth, checkWriteAccess, wrap(async
     removed += r.changes || 0;
   }
   res.json({ removed, sentence: `${removed} ${removed === 1 ? "person" : "people"} taken out of ${g.name}.` });
+}));
+
+// FLOWS-8 (W-1112-Volunteers-34X): a group frozen from a report becomes the
+// report's list as it reads today. Those who joined the report are added (a
+// real join, so a journey on joining can start), those who left it are taken
+// out, and the day moves to today. Her press only: a POST from the group page.
+app.post("/groups/:id/refresh-from-report", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const g = await GR.groupById(orgId, req.params.id);
+  if (!g) return res.status(404).json({ error: "Not found" });
+  const rep = RS.reportOf(g.sourceReport);
+  if (g.kind !== "static" || !rep) return res.status(409).json({ error: "not_from_report", sentence: "This group was not saved from a report, so there is nothing to refresh it from." });
+  const d = RS.driftOf(await GR.memberIds(orgId, g), await RS.currentIds(orgId, g.sourceReport));
+  const a = actor(req);
+  const today = orgTime.orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  if (d.left.length) await run(`DELETE FROM group_members WHERE org_id=? AND group_id=? AND donor_id = ANY(?::text[])`, [orgId, g.id, d.left]);
+  let added = 0;
+  for (const id of d.joined) {
+    const ins = await query(`INSERT INTO group_members (org_id, group_id, donor_id, added_by, added_by_name) VALUES (?,?,?,?,?)
+       ON CONFLICT (group_id, donor_id) DO NOTHING RETURNING donor_id`, [orgId, g.id, id, a.id, a.name]);
+    if (ins.length) { added++; await maybeStartJourneyFromServer(orgId, id, "joined_group", { groupId: g.id, today }); }
+  }
+  await run(`UPDATE audiences SET source_at=? WHERE id=? AND org_id=?`, [today, g.id, orgId]);
+  res.json({ added, removed: d.left.length,
+    sentence: `${g.name} is ${rep.label} as it reads today: ${added} added, ${d.left.length} taken out.` });
 }));
 
 // GET /donors/:id/groups — for the small Groups control on the profile.

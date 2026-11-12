@@ -15,7 +15,7 @@ import { Figure } from "./Figure";
 import EventRaised, { EventStory, peopleLine } from "./EventRaised";   // HOME-3 · FUNDRAISING-2 · EVENTS-3
 import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit, EVENT_FIGURES } from "../../../shared/eventShape";
 import { countLabel } from "../../../shared/countWords.js";
-import { eventRowsChanged, useEventRowsRev } from "../lib/eventRows";
+import { eventRowsChanged, useEventRowsRev, withinWrite, useLatestRead } from "../lib/eventRows";
 import { useChangeRev } from "../lib/changes";   // STALE-1   // COUNTS-1: every panel re-reads the guest rows
 import RecordGiftDialog from "./gifts/RecordGiftDialog";   // GIFTS-1: a gift for this event, from its page
 import { eventStatus } from "../../../shared/eventStatus.js";
@@ -24,7 +24,7 @@ import EventRemoveButton, { AttendeeLabel } from "./events/EventRemoveButton.jsx
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: the org's day
 import { GuestOfPicker } from "./events/GuestOfPicker";   // CONNECT-1: "Guest of…" when a guest is added
 import { GuestChip } from "./events/GuestChip";   // CONNECT-1: moved out whole, Events.jsx stays under its size baseline
-import { addGuests } from "../lib/eventCapacity";   // STALE-2: past capacity asks first
+import { addGuests, newGuestOrOnFile } from "../lib/eventCapacity";   // STALE-2: past capacity asks first
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { EventAuction, EventsAuctions } from "./events/EventAuction";   // NAV-1 (menu): auctions on the event, and an Auctions list
 
@@ -374,11 +374,11 @@ function FollowUpModal({ eventId, onDone, onClose }) {
 // rather than in a caption somebody can delete: an event is not the reason
 // anybody gave, and a report that implies it is a report that flatters itself.
 function EventReport({ eventId, onOpenRows }) {
-  const [r, setR] = useState(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const rowsRev = useEventRowsRev(eventId);
-  useEffect(() => { apiFetch(`/events/${eventId}/report`).then(setR).catch(() => setR(null)); }, [eventId, rowsRev]);
+  // FLOWS-8 (W-1112-Volunteers-01X): the newest answer only, and no old count while it comes.
+  const [r, updating] = useLatestRead(() => apiFetch(`/events/${eventId}/report`), [eventId, rowsRev]);
   const thanks = async () => {
     setBusy(true); setMsg("");
     try { const out = await apiFetch(`/events/${eventId}/sponsor-thanks`, { method: "POST", body: "{}" }); setMsg(out.sentence); }
@@ -389,6 +389,7 @@ function EventReport({ eventId, onOpenRows }) {
   return (
     <div data-testid="ev-report" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
       <div style={{ fontSize: 10, fontWeight: 800, color: T.ink3, marginBottom: 10 }}>After the event</div>
+      {updating ? <div data-testid="ev-report-updating" role="status" style={{ fontSize: 13, color: T.ink3, padding: "6px 0" }}>Updating the counts for what you just changed…</div> : <>
       {/* HOME-3: raised the way she says it, each part opening its rows. */}
       {r.money && <EventRaised e={r.money} style={{ marginBottom: 12 }} />}
       {/* FUNDRAISING-2: the night's story, each figure opening its people. */}
@@ -430,6 +431,7 @@ function EventReport({ eventId, onOpenRows }) {
       <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.6, marginBottom: 4 }}>{r.progress.sentence}</div>
       <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.6 }}>{r.attendance.sentence}</div>
       <p data-testid="ev-report-caveat" style={{ fontSize: 12, color: T.ink3, lineHeight: 1.55, margin: "10px 0 0", maxWidth: 620 }}>{r.caveat}</p>
+      </>}
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
         <button onClick={thanks} disabled={busy} data-testid="ev-sponsor-thanks"
           style={{ background: T.greenDk, border: "none", borderRadius: 9, padding: "9px 15px", color: T.white, fontSize: 13, fontWeight: 700, cursor: busy ? "wait" : "pointer" }}>
@@ -1394,30 +1396,36 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
   const [detailRows, setDetailRows] = useState(null);
   const [giftFor, setGiftFor] = useState(null);   // GIFTS-1: { person } for Record a gift
 
+  const readSeq = useRef(0);   // FLOWS-8 (W-1112-Volunteers-01X): an older read landing last never puts the old guest list back
   const reload = async () => {
+    const t = ++readSeq.current;
     try {
       const d = await apiFetch(`/events/${eventId}`);
+      if (t !== readSeq.current) return;
       setEvent(d);
       setNotes(d.notes || "");
     } catch { }
-    setLoading(false);
+    if (t === readSeq.current) setLoading(false);
   };
 
   const rowsRev = useEventRowsRev(eventId);
   useEffect(() => { reload(); }, [eventId, rowsRev]);
 
+  // FLOWS-8 (W-1112-Volunteers-21): a save that never answers (the connection
+  // dropped between the browser and Steward) stops waiting, says so, and the
+  // row goes back to what is saved; it never sits on "Saving…".
   const patchAttendee = async (attId, patch) => {
-    setSavingAtt(attId);
+    setSavingAtt(attId); setActErr("");
     try {
-      const updated = await apiFetch(`/events/${eventId}/attendees/${attId}`, {
+      const updated = await withinWrite(apiFetch(`/events/${eventId}/attendees/${attId}`, {
         method: "PATCH", body: JSON.stringify(patch),
-      });
+      }));
       setEvent(ev => ({
         ...ev,
         attendees: ev.attendees.map(a => a.id === attId ? { ...a, ...updated } : a),
       }));
       eventRowsChanged(eventId);
-    } catch(e) { setActErr(errorMessage(e, "That did not save.")); }
+    } catch(e) { setActErr((e && e.sentence) || errorMessage(e, "That did not save.")); reload(); }
     setSavingAtt(null);
   };
 
@@ -1452,6 +1460,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
     if (!guestForm.name.trim()) return;
     setAddingGuest(true);
     try {
+      if (!(await newGuestOrOnFile(guestForm.name))) { setAddMode("directory"); setDonorSearch(guestForm.name.trim()); setAddingGuest(false); return; }   // FLOWS-8 (W-20)
       if (!(await addGuests(eventId, guestForm))) { setAddingGuest(false); return; }
       setGuestForm({ name: "", email: "", guestOfDonorId: "" });
       eventRowsChanged(eventId);
@@ -1477,7 +1486,8 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
   // (name or email), rather than filtering a whole-org list held in memory.
   // Enough rows are asked for that forty remain after the people already here.
   const attendeeCount = (event?.attendees || []).filter(a => a.donor_id).length;
-  const [pickedPeople] = usePeoplePicker(donorSearch, { match: "either", limit: 40 + attendeeCount, emptyToo: true });
+  // FLOWS-8 (W-1112-Volunteers-20): everyone on file, by the Donors list's own person search.
+  const [pickedPeople] = usePeoplePicker(donorSearch, { match: "person", limit: 40 + attendeeCount, emptyToo: true });
   if (loading || !event) return (
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.ink, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ color: "rgba(240,237,230,0.7)", fontSize: 13 }}>Loading…</div>
@@ -1718,7 +1728,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <input
                   value={donorSearch} onChange={e => setDonorSearch(e.target.value)}
-                  placeholder="Search donors…"
+                  placeholder="Search everyone…" aria-label="Search everyone on file" data-testid="ev-dir-search"
                   style={INP_DARK}
                 />
                 <div data-own-scroll="pick-list" style={{ maxHeight: 240, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
@@ -1738,11 +1748,11 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
                       {d.stage && <Pill label={stageName(d.stage)} color={SC[d.stage] || T.ink3} />}
                     </button>
                   ))}
-                  {filteredDonors.length === 0 && <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", padding: "12px 0", textAlign: "center" }}>No donors to add</div>}
+                  {filteredDonors.length === 0 && <div data-testid="ev-dir-none" style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", padding: "12px 0", textAlign: "center" }}>{donorSearch.trim() ? `Nobody on file matches "${donorSearch.trim()}". Add them as a new guest instead.` : "Everyone on file is already on the list."}</div>}
                 </div>
                 {selectedIds.size > 0 && (
                   <button onClick={addFromDirectory} disabled={addingDonors} style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "9px", color: T.white, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                    {addingDonors ? "Adding…" : `Add ${selectedIds.size} donor${selectedIds.size > 1 ? "s" : ""} →`}
+                    {addingDonors ? "Adding…" : `Add ${selectedIds.size} ${selectedIds.size > 1 ? "people" : "person"} →`}
                   </button>
                 )}
               </div>
@@ -1873,12 +1883,15 @@ export function Events({ data, isReadOnly }) {
     } catch { setRowsPanel({ label, sentence, eventName: event.name, donors: [], count: 0 }); }
   };
 
+  const listSeq = useRef(0);   // FLOWS-8 (W-1112-Volunteers-01X): the newest read of the list wins
   const reload = async () => {
+    const t = ++listSeq.current;
     try {
       const rows = await apiFetch("/events");
+      if (t !== listSeq.current) return;
       setEvents(Array.isArray(rows) ? rows : []);
     } catch { }
-    setLoading(false);
+    if (t === listSeq.current) setLoading(false);
   };
 
   const listRev = useChangeRev(["event"]);   // STALE-1: a gift for any event, made anywhere, moves its card's Raised

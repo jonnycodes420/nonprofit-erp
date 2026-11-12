@@ -441,6 +441,7 @@ function SeqStep({ step, index, total, onChange, onRemove, onAI, aiLoading }) {
         <div style={{ fontSize: 10, color: T.ink3, marginBottom: 4 }}>Body, supports <code style={{ fontSize: 9 }}>{"{{donor_name}}"}</code> and <code style={{ fontSize: 9 }}>{"{{org_name}}"}</code></div>
         <textarea value={step.body} onChange={e => onChange({ body: e.target.value })} placeholder="Write your email body here, or click ✦ Write with AI…" rows={5} style={{ ...inp, resize: "vertical", lineHeight: 1.6 }}/>
         {preview && <div style={{ fontSize: 11, color: T.ink3, marginTop: 5, fontStyle: "italic" }}>Preview: {preview}</div>}
+        {!String(step.body || "").replace(/<[^>]*>/g, " ").trim() && <div data-testid="seq-step-not-ready" style={{ fontSize: 12, color: T.ink, marginTop: 5, fontWeight: 700 }}>Not ready: no message yet. The sequence can't be turned on until this step has words.</div>}
       </div>
     </div>
   );
@@ -690,7 +691,7 @@ function TrackedSequences() {
       </div>
 
       {list.length === 0
-        ? <div data-testid="seq-empty" style={{ fontSize: 13, color: T.ink3 }}>{sequencesEmptyLine(list, earlier)}</div>
+        ? (sequencesEmptyLine(list, earlier) && <div data-testid="seq-empty" style={{ fontSize: 13, color: T.ink3 }}>{sequencesEmptyLine(list, earlier)}</div>)
         : list.map(s => (
           <div key={s.id} data-testid="seq-row" {...interactive(() => open(s.id), { row: true, label: `Edit ${s.line}` })} style={{ border: `1px solid ${T.bg3}`, borderRadius: 12, padding: "13px 16px", background: T.white, display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -931,12 +932,16 @@ function SequencesPanel({ data }) {
                       <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>
                         {trigLabel(seq.trigger)} · <span style={{ color: T.gold700, fontWeight: 700 }}>{seq.step_count} step{seq.step_count != 1 ? "s" : ""}</span> · {seq.active_enrollments} active
                       </div>
+                      {/* FLOWS-8 (W-1112-Fundraising-21): a step with no words is not a finished step */}
+                      {seq.not_ready && <div data-testid="seq-not-ready" style={{ fontSize: 12.5, color: T.ink, marginTop: 6, lineHeight: 1.5 }}>
+                        <strong>Not ready: no message yet.</strong> {seq.not_ready}</div>}
                     </div>
                     <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap" }}>
                       <button onClick={() => viewEnrollments(seq.id)} style={{ ...S.btn("ghost"), fontSize: 11, padding: "5px 10px" }}>
                         {expandedEnr === seq.id ? "Hide" : "Enrollments"}
                       </button>
-                      <button onClick={() => toggleStatus(seq)} style={{ ...S.btn("ghost"), fontSize: 11, padding: "5px 10px" }}>
+                      <button onClick={() => toggleStatus(seq)} data-testid="legacy-seq-toggle" disabled={!isActive && !!seq.not_ready}
+                        title={!isActive && seq.not_ready ? seq.not_ready : undefined} style={{ ...S.btn("ghost"), fontSize: 11, padding: "5px 10px", opacity: !isActive && seq.not_ready ? 0.5 : 1 }}>
                         {isActive ? "Pause" : "Resume"}
                       </button>
                       <button onClick={() => openBuilder(seq)} style={{ ...S.btn("subtle"), fontSize: 11, padding: "5px 10px" }}>Edit</button>
