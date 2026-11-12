@@ -29,7 +29,7 @@ const qq = (sql, p = []) => { let i = 0; return q(sql.replace(/\?/g, () => "$" +
 const ctx = { query: qq, run: (sql, p) => qq(sql, p).then(() => ({ changes: 1 })) };
 const S = (tok, m, p, b) => api(m, `/ops/sales${p}`, tok, b);
 const raw = async (method, path, body) => { const r = await fetch(BASE + path, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined }); return { status: r.status, text: await r.text() }; };
-const until = async (fn, ms = 8000) => { const t0 = Date.now(); for (;;) { const v = await fn(); if (v || Date.now() - t0 > ms) return v; await new Promise(r => setTimeout(r, 150)); } };
+const until = async (fn, ms = 8000) => { const t0 = performance.now(); for (;;) { const v = await fn(); if (v || performance.now() - t0 > ms) return v; await new Promise(r => setTimeout(r, 150)); } };
 
 async function wipeOrg(org) {
   const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
