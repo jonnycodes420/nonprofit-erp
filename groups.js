@@ -276,6 +276,13 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     where.push(`(SELECT COALESCE(SUM(go.amount), 0) FROM gifts go WHERE go.org_id = donors.org_id AND go.donor_id = donors.id AND ${require("./shared/numbers/money").GIFT("go")}${scope.length ? " AND " + scope.join(" AND ") : ""}) > ?`);
     params.push(...sargs, n);
   }
+  if (q.giftOver !== undefined) {
+    // ATLAS-7: one gift, by itself, of more than this many dollars (a gift as money.js GIFT counts one).
+    const n = Number(q.giftOver);
+    if (!Number.isFinite(n) || n < 0) return { badStatus: true };
+    where.push(`EXISTS (SELECT 1 FROM gifts g1 WHERE g1.org_id = donors.org_id AND g1.donor_id = donors.id AND ${require("./shared/numbers/money").GIFT("g1")} AND g1.amount > ?)`);
+    params.push(n);
+  }
   if (q.volQual) {
     // A skill, certification or tag by name; or a background check or waiver
     // that is CURRENT (signed, and not past its expiry) on the org's today.

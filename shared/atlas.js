@@ -383,18 +383,28 @@ export const REFUSE = {
 export const SPOKE = {
   done: "Done.",
   found: "Here's what I found.",
+  nothing: "Nothing was changed.",   // ATLAS-7: every line refused or failed, or nothing ran
   waiting: n => (n === 1 ? "One thing waits for your tap." : `${n} things wait for your tap.`),
 };
 // MONEY-3 · THE HEADER OVER ATLAS'S ANSWER. A question answered (an Ask
 // answer, a person found) starts "Here's what I found."; "Done." is only for
 // an action Atlas took. A request that did both took an action, so it is
 // "Done.". Lines are the activity log's (routes/atlas.js actionOut).
+// ATLAS-7 (W-ATLAS-done-lie): "Done." only when at least one action ran (a
+// line, not an answer, that is done, or was done and since undone). When every
+// line was refused or failed, or there are none, it is "Nothing was changed."
+// and the lines say why; when something only waits, it says that it waits.
 export const ANSWER_KINDS = new Set(["answer", "found"]);
+const RAN = new Set(["done", "undone"]);
+// A proposal's or a plan's own line is the question, not an action: what it wrote has lines of its own.
+const NOT_ACTIONS = new Set(["proposal", "group_plan"]);
 export function spokeFor(lines, waiting = 0) {
   const all = lines || [];
   const asked = all.length > 0 && all.every(l => ANSWER_KINDS.has(l.kind));
-  const head = asked ? SPOKE.found : SPOKE.done;
-  return waiting ? `${head} ${SPOKE.waiting(waiting)}` : head;
+  const ran = all.some(l => RAN.has(l.state) && !ANSWER_KINDS.has(l.kind) && !NOT_ACTIONS.has(l.kind));
+  const found = all.some(l => ANSWER_KINDS.has(l.kind) && l.state === "done");
+  const head = asked || (!ran && found) ? SPOKE.found : ran ? SPOKE.done : waiting ? "" : SPOKE.nothing;
+  return waiting ? `${head ? head + " " : ""}${SPOKE.waiting(waiting)}` : head;
 }
 
 export default { ATLAS_DEFAULT_NAME, STEP_KINDS, RUNS, TAPS, ATLAS_RULES, ATLAS_TOOL, ATLAS_SYSTEM, DRAFT_TOOL, DRAFT_SYSTEM, buildDraftPrompt, buildAtlasPrompt, normalizeRead, tidySteps,

@@ -990,7 +990,7 @@ require("../../routes/support").mount({ query, run, wrap, requireAuth, requireSu
 require("../../routes/voice").mount({ query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate, recordGift, AGENT_MODEL });
 // SPLIT-2 end
 // SPLIT-2 server.js piece 801
-require("../../routes/atlas").mount({ query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate, AGENT_MODEL });   // AGENT-5
+require("../../routes/atlas").mount({ query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate, AGENT_MODEL, maybeStartJourneyFromServer });   // AGENT-5
 // SPLIT-2 end
 // SPLIT-2 server.js piece 802
 require("../../routes/give").mount({
