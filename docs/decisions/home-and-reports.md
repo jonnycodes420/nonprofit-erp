@@ -668,3 +668,10 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   report that starts reading one of the excepted columns must take it out of that list.
 - A new report joining the store: capture the SQL it sends (every table it reads goes in its list), add it to
   `KEYS`, and extend `tests/reports-speed1-stored.test.js` §1 and §2 to it.
+
+## ASKS-2 · asks, card dates and look-alike review rows (2026-11-12)
+
+- **A step up is never more than 1.5 × the anchor.** The step starts from the natural ask of the anchor, never from a rung the anchor was rounded up to (`smartAmounts.stepUpCents`). The profile, Home, Insights and the screening step all read it.
+- **A button never names a day gone.** A card action's date is computed from the day the answer is built for (`server/insights/taskSpread.js`); after its day, tasks are due from today, spread like ATLAS-7's first calls.
+- **Insights' stored answer carries the engine's version** (`insightsData.js` ENGINE). Bump it when `computeInsights` says something different for the same rows, or the day's answer built on the old code stays "fresh" after a deploy.
+- **Look-alike "may not be gifts" rows are decided as a group, never automatically.** The group is the reason plus the memo's pattern (`shared/numbers/notGiftGroups.js`); a group click does exactly the row's own decision (`server/insights/reviewDecide.js`) to rows it re-checks are in the group, previews the change live, and has one Undo.
