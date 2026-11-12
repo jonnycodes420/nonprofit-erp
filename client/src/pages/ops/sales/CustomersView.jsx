@@ -5,7 +5,7 @@
 // goes to /ops's board), and proof: the testimonial and the references owed.
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../../api";
-import { countLabel } from "../../../../shared/countWords.js";
+import { countLabel } from "../../../../../shared/countWords.js";
 import { INK, CREAM, EMERALD, BRASS, card, h2, says, btn, quiet, box, link, brassTag, usd, dayWords, failureWords } from "./salesBits";
 
 const FACT_ORDER = ["daysSinceSignIn", "signIns14", "people", "gifts30", "journeysOn", "dataHealthOpen"];
