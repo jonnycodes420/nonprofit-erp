@@ -80,8 +80,8 @@ async function fixture(o, i) {
   for (let p = 0; p < NAMES.length; p++) {
     const id = `d_${org}_${p}`;
     const imported = o.kind === "long" && p < 3 ? day(-(14 * 365)) : null;
-    const deleted = o.kind === "long" && p === 5 ? new Date(Date.parse(day(-3) + "T12:00:00Z")).toISOString() : null;
-    const erased = o.kind === "long" && p === 6 ? new Date(Date.parse(day(-3) + "T12:00:00Z")).toISOString() : null;
+    const deleted = o.kind === "long" && p === 5 ? `${day(-3)}T12:00:00.000Z` : null;
+    const erased = o.kind === "long" && p === 6 ? `${day(-3)}T12:00:00.000Z` : null;
     await q(`INSERT INTO donors (id,org_id,name,email,kind,created_by,created_by_name,imported_first_gift_date,deleted_at,erased_at)
              VALUES ($1,$2,$3,$4,'individual',$5,'Rhea Speed',$6,$7,$8)`,
       [id, org, NAMES[p], `p${p}@${org}.test`, `u_${org}`, imported, deleted, erased]);
@@ -118,9 +118,9 @@ async function fixture(o, i) {
 }
 async function token(org) { return (await api("POST", "/auth/login", null, { email: `admin@${org}.test`, password: "loadtest1234" })).body.token; }
 async function get(tok, path) {
-  const t0 = Date.now();
+  const t0 = performance.now();
   const r = await fetch(BASE + path, { headers: { authorization: `Bearer ${tok}` } });
-  return { status: r.status, body: await r.text(), ms: Date.now() - t0 };
+  return { status: r.status, body: await r.text(), ms: Math.round(performance.now() - t0) };
 }
 const health = async () => (await (await fetch(BASE + "/health")).json()).pool || {};
 const firstDiff = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return i < Math.max(a.length, b.length) ? `at ${i}: ${a.slice(i, i + 80)} | ${b.slice(i, i + 80)}` : null; };
@@ -179,7 +179,7 @@ const firstDiff = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i
     await wipe(BIG.id);
     const { seedOrg, pool } = require("../scripts/load/seed-many");
     await seedOrg(BIG, bcrypt.hashSync("loadtest1234", 4));
-    await pool.query("ANALYZE gifts; ANALYZE donors");
+    await pool.query("ANALYZE");   // every table, as ten-orgs.js seed does: fresh statistics, or the planner takes the org for one row (FIX-21)
     await pool.end();
   }
   const bigTok = (await api("POST", "/auth/login", null, { email: `admin@${BIG.slug}.load`, password: "loadtest1234" })).body.token;
@@ -191,9 +191,9 @@ const firstDiff = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i
   // One quiet read of each: the time alone, and how many statements it sends after sign-in.
   const trips = r => Number(r.headers || NaN);
   const getT = async (tok, path) => {
-    const t0 = Date.now();
+    const t0 = performance.now();
     const r = await fetch(BASE + path, { headers: { authorization: `Bearer ${tok}` } });
-    return { status: r.status, body: await r.text(), ms: Date.now() - t0, headers: r.headers.get("x-steward-round-trips") };
+    return { status: r.status, body: await r.text(), ms: Math.round(performance.now() - t0), headers: r.headers.get("x-steward-round-trips") };
   };
   await getT(bigTok, "/reports/year-over-year"); await getT(bigTok, ANNUAL(0));   // the first connect is not the report's
   const qy = await getT(bigTok, "/reports/year-over-year"), qa = await getT(bigTok, ANNUAL(0));
