@@ -5,12 +5,13 @@
 // goes to /ops's board), and proof: the testimonial and the references owed.
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../../api";
+import { countLabel } from "../../../../shared/countWords.js";
 import { INK, CREAM, EMERALD, BRASS, card, h2, says, btn, quiet, box, link, brassTag, usd, dayWords, failureWords } from "./salesBits";
 
 const FACT_ORDER = ["daysSinceSignIn", "signIns14", "people", "gifts30", "journeysOn", "dataHealthOpen"];
 const T_WORDS = { none: "Not asked", asked: "Asked", received: "Received, not approved", approved: "Approved to publish" };
 const STEP_WORDS = { named: "named", contacted: "contacted", meeting: "meeting", won: "won" };
-const factValue = (k, v) => (v == null ? (k === "daysSinceSignIn" ? "never" : "–") : k === "daysSinceSignIn" ? `${v} day${v === 1 ? "" : "s"} ago` : Number(v).toLocaleString("en-US"));
+const factValue = (k, v) => (v == null ? (k === "daysSinceSignIn" ? "never" : "–") : k === "daysSinceSignIn" ? `${countLabel(v, "day")} ago` : Number(v).toLocaleString("en-US"));
 
 function FactRows({ row, k, onClose }) {
   const [d, setD] = useState(null);
