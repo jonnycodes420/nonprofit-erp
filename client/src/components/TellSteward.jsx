@@ -37,6 +37,7 @@ import { Camera } from "lucide-react";
 import { openCheckSnap } from "./CheckSnap";   // CHECK-2
 import { MicGlyph } from "./TellStewardOpen";   // SWEEP-6
 import AtlasAnswer from "./atlas/AtlasAnswer";
+import GroupPlanCard from "./atlas/GroupPlanCard";   // ATLAS-7: one confirm for a group, then Do it
 import ProposalCard from "./atlas/ProposalCard";   // SENDS-1: nothing is written until Save   // ATLAS-3: a list is a list, a person is what we know
 import { continueThread, askBody, newProgressKey } from "../lib/atlasThread";   // ATLAS-3: Tell me more keeps the thread
 
@@ -342,6 +343,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
             <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.45, flex: "1 1 220px" }}>One tap does the {taps.length} things below that wait for you.</div>
             <button data-testid="atlas-do-all-button" disabled={busy} onClick={() => act(`/atlas/${request.id}/all`)} style={btn(true)}>Do all of this</button>
           </div>}
+          <GroupPlanCard request={request} busy={busy} onGo={go} onDo={() => act(`/atlas/${request.id}/group`)} onDiscard={id => act(`/atlas/actions/${id}/dismiss`)} />
           <ProposalCard key={(request.proposal && request.proposal.id) || "none"} request={request} busy={busy} onSave={save} onDiscard={() => act(`/atlas/${request.id}/discard`)} />
           <ul data-testid="atlas-lines" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column" }}>
             {lines.map(l => <li key={l.id} data-testid="atlas-line" data-kind={l.kind} data-state={l.state}

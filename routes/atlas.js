@@ -32,6 +32,7 @@ const DS = require("../server/atlas/draftStream");   // SPEED-3: a draft's words
 const GT = require("../server/atlas/givingTotal");   // TRUTH-3: amounts and counts in code, each person resolved
 const GR = require("../server/atlas/grounded");   // ATLAS-6: periods, org facts, compound questions, and no ungrounded figure
 const WT = require("../server/atlas/waiting");   // ATLAS-5: every waiting item can be let go
+const GA = require("../server/atlas/groupAsk");   // ATLAS-7: a group ask, the journey she described, one confirm
 const ADm = () => import("../shared/atlasDates.js");   // ATLAS-5: dates in code, in the org's day
 
 const routers = { r0: express.Router() };
@@ -60,7 +61,7 @@ const ATLAS_ANSWER_MS = () => Number(process.env.ATLAS_ANSWER_MS) || 20000;
 
 const PROP = require("../server/atlas/proposal");   // SENDS-1: Atlas proposes, she saves
 function mount(ctx) {
-const { query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, agentGate } = ctx;
+const { query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, agentGate, maybeStartJourneyFromServer } = ctx;
 require("./atlasMore").mount({ query, wrap, requireAuth, agentGate });   // ATLAS-3
 const app = routers.r0;
 const AT = () => import("../shared/atlas.js");
@@ -223,7 +224,8 @@ async function requestOut(orgId, id) {
   return { id: m.id, text: m.text, status: m.status, ai: m.ai, questions: m.status === "needs_answers" ? (read.atlas && read.atlas.questions) || [] : [],
     lines, waiting, spoke: m.status === "needs_answers" ? (read.atlas && read.atlas.spoke) || "" : (read.atlas && read.atlas.spoke) || AT_.spokeFor(lines, waiting),   // MONEY-3: "Here's what I found." over an answer
     timings: read.atlas && read.atlas.timings, undoneAt: m.undone_at, follows: (read.atlas && read.atlas.follows) || null,   // ATLAS-3: the request this one followed
-    proposal: read.atlas && read.atlas.proposal ? read.atlas.proposal : null };   // SENDS-1: what Save will write, or what it wrote
+    proposal: read.atlas && read.atlas.proposal ? read.atlas.proposal : null,   // SENDS-1: what Save will write, or what it wrote
+    groupPlan: GA.publicPlan(read.atlas && read.atlas.groupPlan) };   // ATLAS-7: the one confirm, and what Do it did
 }
 
 // ── READ, RESOLVE, ASK ──────────────────────────────────────────────────────
@@ -317,13 +319,19 @@ async function orgVoice(orgId) {
 }
 
 // Every name and place in the steps, resolved; the questions it leaves.
-async function resolveAll(orgId, steps, { today, onPage, answers = {}, all: allP = null }) {
+async function resolveAll(orgId, steps, { today, onPage, answers = {}, all: allP = null, req = null }) {
   const all = await (allP || people(orgId));   // SPEED-3: POST /atlas reads them beside the model
   let lastWho = onPage ? onPage.name : "";
   const whoCache = new Map();
   const questions = [];
   const ask = (q) => { if (!questions.some(x => x.id === q.id)) questions.push(q); };
   for (const [i, st] of steps.entries()) {
+    // ATLAS-7: a group ask asks its window (with live counts) and its journey; it names no one person.
+    if (st.kind === "group_plan") {
+      await GA.resolve({ query, orgId, today, asHer: (method, path, body) => asHer(req, method, path, body) }, st, answers, ask);
+      st.index = i;
+      continue;
+    }
     // TRUTH-3: each name in a giving question is its own person. A name that
     // matches several people asks "Which Walter?" with each one's lifetime;
     // it never adds them together.
@@ -538,7 +546,8 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
       if (!missing.has(key)) {
         missing.add(key);
         if (st.notFound) await log({ kind: "not_found", state: "refused", line: AT_.REFUSE.not_found(st.who) });
-        else if (!["merge"].includes(st.kind)) await log({ kind: "not_found", state: "refused", line: AT_.REFUSE.no_who });
+        // ATLAS-7: no_who is only for a one-person ask; words naming a group are said as a group.
+        else if (!["merge"].includes(st.kind)) await log({ kind: "not_found", state: "refused", line: GA.namesGroup(st.words) ? GA.GROUP_LINE : AT_.REFUSE.no_who });
       }
       if (st.kind !== "merge") continue;
     }
@@ -697,6 +706,7 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         break;
       }
       case "cant_know": await log({ kind: "answer", state: "done", line: st.line }); break;   // ATLAS-6: said plainly, never the question echoed
+      case "group_plan": await log(await GA.propose({ req, query, run, asHer: (method, path, body) => asHer(req, method, path, body), memoId: m.id, step: st, today })); break;   // ATLAS-7
       case "top100": await log(await require("../server/majorGifts/top100Atlas").answer({ req, query, step: st, today, top100Rows: require("../server/majorGifts/top100").top100Rows })); break;   // TOP100-1
       case "about": {
         // ATLAS-3: what Steward knows about them, not only their numbers.
@@ -846,22 +856,25 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   // ATLAS-5: the org's context once per request: the AI switch, the voice (writeDraft).
   req.atlasCtx = { gate: agentGate(orgId) };
   req.atlasCtx.gate.catch(() => {});
-  const read = await readSteps(orgId, text, { today, onPage: onPage ? onPage.name : null, gateP: req.atlasCtx.gate });
+  // ATLAS-7: a group ask ("every donor who gave over 1000 … in my top 100 … a journey") is read in code, never as one person.
+  const group = await GA.read(text);
+  const read = group ? { ai: (await req.atlasCtx.gate).ok ? "on" : "off", steps: [group], code: true }
+    : await readSteps(orgId, text, { today, onPage: onPage ? onPage.name : null, gateP: req.atlasCtx.gate });
   // TRUTH-3: "how much did Marlowe and Renee give together" is one question
   // about each named person, answered in code (server/atlas/givingTotal.js),
   // whatever the read made of it. Never /ask with the names run together.
   const gq = GT.parseGivingQuestion(text);
-  if (gq) read.steps = [{ kind: "giving_total", who: gq.names.join(" and "), whos: gq.names, words: text }];
+  if (gq && !group) read.steps = [{ kind: "giving_total", who: gq.names.join(" and "), whos: gq.names, words: text }];
   // ATLAS-6: a period, an org fact, a thing Steward doesn't keep, a forecast, and
   // each part of a compound question, read in code (server/atlas/grounded.js).
   {
     const [AT6, D6, [o6]] = await Promise.all([AT(), import("../shared/atlasDates.js"), query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId])]);
     const q6 = GR.questionSteps(text, { today, org: o6 || {}, A: AT6, D: D6 });
-    if (q6) read.steps = q6;
+    if (q6 && !group) read.steps = q6;
   }
   const t1 = Date.now();
   PG.lap(req, "read");
-  const { steps, questions } = await resolveAll(orgId, read.steps, { today, onPage, all });
+  const { steps, questions } = await resolveAll(orgId, read.steps, { today, onPage, all, req });
   PG.lap(req, "resolve");
   const id = newId("vm");
   const source = req.body.source === "speech" ? "atlas_speech" : "atlas";
@@ -898,8 +911,8 @@ app.post("/atlas/:id/answer", requireAuth, checkWriteAccess, wrap(async (req, re
   const today = await atlasToday(orgId);
   const onPage = read.atlas && read.atlas.onPage ? (await query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [read.atlas.onPage, orgId]))[0] : null;
   const fresh = (read.atlas.steps || []).map(s => ({ kind: s.kind, who: s.who, target: s.target, amountWords: s.amountWords, whenWords: s.whenWords, how: s.how,
-    words: s.words, ...(s.whos ? { whos: s.whos } : {}) }));
-  const { steps, questions } = await resolveAll(orgId, fresh, { today, onPage, answers, all: people(orgId, req) });
+    words: s.words, ...(s.whos ? { whos: s.whos } : {}), ...(s.group ? { group: s.group } : {}) }));
+  const { steps, questions } = await resolveAll(orgId, fresh, { today, onPage, answers, all: people(orgId, req), req });
   if (questions.length) {
     await run("UPDATE voice_memos SET read=? WHERE id=? AND org_id=?", [JSON.stringify({ ...read, atlas: { ...read.atlas, questions } }), m.id, orgId]);
     return res.status(400).json({ error: "unanswered", sentence: "Pick one for each question.", request: await requestOut(orgId, m.id) });
@@ -932,6 +945,18 @@ app.post("/atlas/:id/save", requireAuth, checkWriteAccess, wrap(async (req, res)
   await run(`UPDATE voice_memos SET read = jsonb_set(read, '{atlas,proposal,items}', ?::jsonb) WHERE id=? AND org_id=?`, [JSON.stringify(items), m.id, orgId]);
   const wrote = await saveProposal(req, m, items);
   if (req.audit) req.audit.summary(`${atlasName()}: saved ${wrote} of ${items.length}`, { count: wrote });
+  res.status(201).json({ request: await requestOut(orgId, m.id) });
+}));
+
+// ATLAS-7 · DO IT. The group plan she saw, written once: the list, the journey, the people.
+app.post("/atlas/:id/group", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [m] = await query("SELECT id FROM voice_memos WHERE id=? AND org_id=? AND source LIKE 'atlas%'", [req.params.id, orgId]);
+  if (!m) return res.status(404).json({ error: "Not found" });
+  const out = await GA.runPlan({ req, query, run, memoId: m.id, startJourney: maybeStartJourneyFromServer,
+    asHer: (method, path, body) => asHer(req, method, path, body), log: a => logAction(req, { requestId: m.id, ...a }) });
+  if (out.already) return res.status(409).json({ error: "not_waiting", sentence: "This plan isn't waiting any more.", request: await requestOut(orgId, m.id) });
+  if (req.audit) req.audit.summary(`${atlasName()}: did the group plan`, { count: (out.ran.planIds || []).length });
   res.status(201).json({ request: await requestOut(orgId, m.id) });
 }));
 
@@ -1156,7 +1181,9 @@ async function undoAction(req, a) {
   const orgId = req.user.orgId;
   const who = actor(req);
   let undone = 0;
-  if (a.run_id) {
+  if (GA.GROUP_KINDS.has(a.kind)) {   // ATLAS-7: a group plan's own actions
+    undone += await GA.undoLine({ query, orgId, asHer: (method, path, body) => asHer(req, method, path, body) }, a);
+  } else if (a.run_id) {
     const writes = await query("SELECT * FROM agent_writes WHERE org_id=? AND run_id=? AND undone_at IS NULL ORDER BY created_at DESC, id DESC", [orgId, a.run_id]);
     for (const w of writes) {
       const r = await engine().agentUndoWrite(w, orgId);

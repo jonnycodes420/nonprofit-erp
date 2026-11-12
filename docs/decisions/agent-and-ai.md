@@ -287,3 +287,18 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
   one the answer read, or the template sentence goes instead. A new place Atlas or Ask shows model words runs it too.
 - Org facts (executive director, signer, EIN, address, fiscal year, time zone) come from settings and the team's titles.
 - A compound question is split; each part answered in plain words; the question is never echoed.
+
+## ATLAS-7 · A group ask, the journey she described, one confirm (2026-11-11)
+
+- "Done." heads Atlas's reply only when at least one action ran. All refused or failed is "Nothing was changed."; only
+  waiting says what waits. A proposal's or plan's own line is not an action (`shared/atlas.js spokeFor`).
+- A request naming a group is read in code before any model (`server/atlas/groupAsk.js read`), and the group's words go
+  through Show me's reader, so a group is only ever the Donors list's filters. `no_who` is for a one-person ask; a step
+  whose words name a group says so instead.
+- "Gave over $X" with no window asks once, with each window's live count from the Donors list's own `/donors/ids` for
+  those exact rules (`shared/numbers/gaveOver.js`). One gift over $X is the list filter `giftOver`.
+- A journey she named that doesn't exist is offered first as "Create '<name>': <steps in her words>", made by hand
+  through `POST /journeys` (steps are tasks; nothing sends). Existing journeys follow.
+- Nothing is written before Do it on the one confirm card. Enrolling more than 10 spreads the first step over the next
+  ten working days, largest givers first. Undo all of it: enrollments out, the new journey archived when nobody else is
+  in it, the list adds off.
