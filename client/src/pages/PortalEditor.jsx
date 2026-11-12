@@ -475,7 +475,11 @@ export default function PortalEditor() {
 
   const publish = async () => {
     if (publishing) return;
-    if (!(await askConfirm({ title: "Publish this page?", body: isVolunteer ? "Anyone with the link will see it immediately." : "Donors will see it immediately.", yes: "Publish" }))) return;
+    // FLOWS-8 (W-1112-Fundraising-35): publishing a page that can't take gifts says so first.
+    const noGifts = meta && meta.takesGifts === false;
+    if (!(await askConfirm({ title: noGifts ? "This page can't take gifts yet" : "Publish this page?",
+      body: isVolunteer ? "Anyone with the link will see it immediately." : noGifts ? `${meta.notTakingWhy} Publish it anyway, so it is ready the moment Stripe is connected?` : "Donors will see it immediately.",
+      yes: noGifts ? "Publish anyway" : "Publish" }))) return;
     setPublishing(true); setErr("");
     try {
       if (saveTimer.current) { clearTimeout(saveTimer.current); }
@@ -828,7 +832,12 @@ ${INLINE_CSS}`;
           (meta?.publishedAt || meta?.draftSettings) && { id: "revert", label: "Revert to published", onClick: revert },
         ]}
         primary={{ label: publishing ? "Publishing…" : "Publish", onClick: publish, disabled: publishing, testid: "editor-publish" }}
-        notice={err ? <div style={{ background: E.terra100, color: E.terra, fontSize: 13, padding: "8px 16px" }}>{err}</div> : null}
+        notice={err ? <div style={{ background: E.terra100, color: E.terra, fontSize: 13, padding: "8px 16px" }}>{err}</div>
+          // FLOWS-8 (W-1112-Fundraising-35): a page that can't take gifts says why, with the way to fix it.
+          : meta && meta.takesGifts === false ? <div data-testid="editor-no-gifts" style={{ background: E.cream, color: E.ink, borderBottom: "2px solid " + E.gold, fontSize: 13, padding: "8px 16px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <span>{meta.notTakingWhy}</span>
+              <a href="/app/settings?section=connections" data-testid="editor-connect-stripe" style={{ color: E.green, fontWeight: 700 }}>Connect Stripe</a></div>
+          : null}
         left={<div data-testid={surface === "give" || surface === "orgform" ? "details-rail" : "editor-rail"}>{sections}</div>}
         right={historyOpen && isPageEditor ? <div style={{ padding: "16px 16px 40px" }}><HistoryPanel apiBase={apiBase} onClose={() => setHistoryOpen(false)} onRestored={reloadMeta} /></div> : null}
         rightTitle="History">

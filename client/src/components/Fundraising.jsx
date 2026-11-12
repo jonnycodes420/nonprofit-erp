@@ -509,7 +509,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
         <StatTile label="Live giving pages" value={gp.count} accent={T.bg3}
           onClick={() => onGoto && onGoto("pages")}
           ariaLabel="View giving pages"
-          sub={gp.count > 0 ? `${fmtTotal(gp.raised)} raised` : "None can take a gift yet"}
+          sub={gp.takesGifts === false ? <span data-testid="fr-pages-why">Connect Stripe to take gifts on your pages</span> : gp.count > 0 ? `${fmtTotal(gp.raised)} raised` : "None can take a gift yet"}
           period={gp.count > 0 ? { name: "Since each page opened" } : null} />
       </div>
       {/* IMPORT-4: the period's figures leave out gifts with no date, and say so. */}
@@ -1260,8 +1260,8 @@ function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged, 
       {newOpen && <NewGivingPage onClose={() => setNewOpen(false)} />}
       {!takesGifts && (
         <div data-testid="pages-connect-payments" style={{ background: T.gold100, border: "1px solid " + T.gold300, borderRadius: 12, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: T.ink, lineHeight: 1.5, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ flex: "1 1 320px" }}>Your pages are drafts until payments are connected. Until then each address shows a friendly "not open yet" page, and none of them counts as live.</span>
-          <button onClick={() => onNavigate && onNavigate("settings", { section: "connections" })} style={{ background: T.green, border: "none", borderRadius: 9, padding: "8px 14px", color: T.white, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Connect payments</button>
+          <span style={{ flex: "1 1 320px" }}>Connect Stripe to take gifts on these pages. Until then each page's address shows donors a polite "Not open yet" page, even when it says Published here, and none of them counts as live.</span>
+          <button data-testid="pages-connect-stripe" onClick={() => onNavigate && onNavigate("settings", { section: "connections" })} style={{ background: T.green, border: "none", borderRadius: 9, padding: "8px 14px", color: T.white, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Connect Stripe</button>
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
@@ -1319,8 +1319,8 @@ function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged, 
                 {linked && p.campaign_name && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.bg, color: T.ink2, border: "1px solid " + T.bg3 }}>Counts toward {p.campaign_name}</span>}
                 {p.has_draft && draftBadge}
                 {/* FUNDRAISING-2: never "live" before it can take money. */}
-                {!takesGifts && <span data-testid="page-not-live" style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.gold100, color: T.gold700, border: "1px solid " + T.gold300 }}>Draft · connect payments to go live</span>}
-                {isDraftPage(p) && <span data-testid="page-draft" style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.bg, color: T.ink2, border: "1px solid " + T.bg3 }}>Draft · not taking gifts</span>}<span style={{ marginLeft: "auto" }}><RemoveMenu kind="giving_page" id={p.id} disabled={isReadOnly} onDone={onChanged} items={publishItems(p, onChanged)} /></span>
+                {!takesGifts && <span data-testid="page-not-live" style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.gold100, color: T.gold700, border: "1px solid " + T.gold300 }}>Not taking gifts · Connect Stripe</span>}
+                {isDraftPage(p) && <span data-testid="page-draft" style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.bg, color: T.ink2, border: "1px solid " + T.bg3 }}>Draft · not taking gifts</span>}<span style={{ marginLeft: "auto" }}><RemoveMenu kind="giving_page" id={p.id} disabled={isReadOnly} onDone={onChanged} items={publishItems(p, onChanged, { takesGifts })} /></span>
               </div>
               {goal > 0 && p.show_goal !== false && (
                 <Thermometer raised={raised} goal={goal} percent={pct} raisedSource={raisedSource} raisedLabel={linked ? `Raised toward ${p.campaign_name || "the campaign"}` : `Raised on ${p.title}`} />

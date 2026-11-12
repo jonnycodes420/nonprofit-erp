@@ -5,7 +5,7 @@
 // history. Its suggestions were a browser <datalist> over a plain substring
 // search, which a reader (or a walk) may never see. Now the matches are on
 // the page, from the Donors list's own person search (/donors/pick
-// match=person: personMatch, names first, archived records left out), and
+// match=person: personMatch, names first, an archived record labelled), and
 // "+ New person" sits below them. Choosing New for a name that is exactly
 // someone's asks first: "There's already a Bertrand Saltonstall. Use that record?"
 import { useState } from "react";
@@ -38,7 +38,7 @@ export default function FromPerson({ value, chosen, onType, onChoose, onNew, new
             <button type="button" role="option" aria-selected="false" key={d.id} data-testid={testid + "-match"} data-person={d.id}
               onClick={() => { setAlready(null); onChoose({ id: d.id, name: d.name }); }} style={{ ...rowBtn, borderTop: i ? rowBtn.borderTop : "none" }}>
               <span style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
-              <span style={{ color: T.ink3, fontSize: 12, flexShrink: 0 }}>{d.email || [d.city, d.state].filter(Boolean).join(", ")}</span>
+              <span style={{ color: T.ink3, fontSize: 12, flexShrink: 0 }}>{d.archived ? "Archived · " : ""}{d.email || [d.city, d.state].filter(Boolean).join(", ")}</span>
             </button>
           ))}
         </div>

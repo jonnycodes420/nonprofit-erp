@@ -57,6 +57,7 @@ app.get("/donors/pick", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const limit = clampLimit(req.query.limit, 20, 2000);
   const where = [SET]; const args = [orgId];
+  let personOrder = null;   // FLOWS-7: match=person orders names first
   const vis = require("../server/auth/portfolio").visibleSql(req);   // ACCESS-2: their people only
   if (vis.scoped) { where.push(vis.sql.replace(/^ AND /, "")); args.push(...vis.args); }
   const exact = req.query.exact != null ? String(req.query.exact).trim().toLowerCase() : null;
@@ -68,18 +69,18 @@ app.get("/donors/pick", requireAuth, wrap(async (req, res) => {
     args.push(exact);
   } else if (q) {
     const m = req.query.match;
+    // FLOWS-8 (W-1112-Volunteers-20): "person" is the Donors list's own search
+    // (server/donors/personMatch.js): everyone on file, donors, contacts and
+    // volunteers alike, by name, email, phone, household or linked
+    // organization, accents and case aside.
+    // FLOWS-7 (W-1112-Volunteers-03X): names first, and each row says whether
+    // it is archived, so Record a gift's From box labels one (never hides it).
     if (m === "person") {
-      // FLOWS-7 (W-1112-Volunteers-03X): the Donors list's own person search
-      // (WALKB-1's personMatch: name, email, contact, household, organization;
-      // case and accents folded), names first, and never an archived record.
       const PM = require("../server/donors/personMatch");
-      const pat = PM.foldedPattern(q), pm = PM.personMatchSql(pat);
-      where.push(pm.sql, "archived_at IS NULL"); args.push(...pm.args);
-      const rows = await query(`SELECT ${COLS} FROM donors WHERE ${where.join(" AND ")}
-         ORDER BY (${PM.FOLD("donors.name")} LIKE ? ESCAPE '\\') DESC, total_giving DESC, id LIMIT ?`, [...args, pat, limit]);
-      return res.json(rows.map(shape));
-    }
-    if (m === "name") { where.push("strpos(LOWER(COALESCE(name,'')), ?) > 0"); args.push(q); }
+      const pat = PM.foldedPattern(req.query.q), pm = PM.personMatchSql(pat);
+      where.push(pm.sql); args.push(...pm.args);
+      personOrder = { sql: `ORDER BY (${PM.FOLD("donors.name")} LIKE ? ESCAPE '\\') DESC, total_giving DESC, id`, args: [pat] };
+    } else if (m === "name") { where.push("strpos(LOWER(COALESCE(name,'')), ?) > 0"); args.push(q); }
     else if (m === "either") { where.push("(strpos(LOWER(COALESCE(name,'')), ?) > 0 OR strpos(LOWER(COALESCE(email,'')), ?) > 0)"); args.push(q, q); }
     else { where.push("strpos(LOWER(COALESCE(name,'') || COALESCE(email,'')), ?) > 0"); args.push(q); }
   }
@@ -91,7 +92,9 @@ app.get("/donors/pick", requireAuth, wrap(async (req, res) => {
   // Highest giving first put a never-giver after every giver with a like name,
   // past the picker's limit; the Preview as finder asks for them on their own.
   if (req.query.gave === "0") where.push("COALESCE(total_giving, 0) <= 0");
-  const rows = await query(`SELECT ${COLS} FROM donors WHERE ${where.join(" AND ")} ${ORDER} LIMIT ?`, [...args, limit]);
+  const rows = personOrder
+    ? await query(`SELECT ${COLS}, (archived_at IS NOT NULL) AS archived FROM donors WHERE ${where.join(" AND ")} ${personOrder.sql} LIMIT ?`, [...args, ...personOrder.args, limit])
+    : await query(`SELECT ${COLS} FROM donors WHERE ${where.join(" AND ")} ${ORDER} LIMIT ?`, [...args, limit]);
   res.json(rows.map(shape));
 }));
 

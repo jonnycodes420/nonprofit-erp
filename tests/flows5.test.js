@@ -150,6 +150,8 @@ const { DIST } = require("./lib/dist");
     ok("§7 Save as a group is offered on LYBUNT, SYBUNT and Lost, on the first load and every load after", saw.every(([, , n]) => n === 1), saw);
     await page.goto(`${APP}/app/reports?report=lybunt`, { waitUntil: "networkidle", timeout: 60000 });
     await page.locator('[data-testid="report-save-group"]').first().click({ timeout: 8000 }).catch(() => {});
+    // FLOWS-8 (W-1112-Volunteers-34X): saving from a report asks Keep updating or Freeze; Freeze keeps its people
+    await page.locator('[data-testid="report-save-group-freeze"]').first().click({ timeout: 8000 }).catch(() => {});
     await page.locator('[data-testid="report-save-group-done"]').waitFor({ timeout: 8000 }).catch(() => {});
     const [grp] = await q(`SELECT a.id, (SELECT COUNT(*)::int FROM group_members m WHERE m.group_id = a.id AND m.org_id = a.org_id) AS n FROM audiences a WHERE a.org_id=$1 AND a.name LIKE 'Gave last year, not yet this year%'`, [f.org]).catch(() => [null]);
     ok("§7 …and it keeps the report's people as a group", !!grp && grp.n > 0, grp);

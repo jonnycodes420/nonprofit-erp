@@ -232,7 +232,7 @@ const NOT_HISTORY_TYPES = ["gift", "payment", "email_open", "stage_change", "act
 // FUNDRAISING-2: an org can take a gift through its own pages once Stripe
 // Connect is linked and Stripe has said it can charge (the webhook keeps
 // stripe_connected to Stripe's charges_enabled).
-const orgTakesGifts = org => !!(org && org.stripe_connected && org.stripe_account_id);
+const { orgTakesGifts } = require("../give/takesGifts");   // FLOWS-8: one home for the rule
 
 // The hub's single read. One payload so the landing screen is one request
 // rather than five that arrive in a different order every time.

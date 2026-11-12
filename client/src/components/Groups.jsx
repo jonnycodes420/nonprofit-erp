@@ -21,6 +21,7 @@ import { plural } from "../../../shared/countWords.js";
 import { errorMessage } from "../lib/domainError";
 import { SkeletonCards, SkeletonPage } from "./Skeleton";
 import { urlParam, tabHref } from "../lib/appUrls";
+import { GroupReportDrift } from "./GroupReportDrift";   // FLOWS-8
 import { RecordLink } from "./RecordLink";
 import { offerUndo } from "./EditHistory";
 import { useWriteRev, GROUP_WRITES } from "../lib/writeRev";
@@ -330,6 +331,7 @@ export function GroupPage({ groupId, onBack, onOpenPerson, isReadOnly, onNavigat
         </h2>
         {g.description && <p style={{ fontSize: 14, color: T.ink2, margin: "0 0 4px" }}>{g.description}</p>}
         <p style={{ fontSize: 13, color: T.ink3, margin: "0 0 12px", lineHeight: 1.55 }}>{g.sentence}</p>
+        <GroupReportDrift groupId={g.id} drift={data.drift} isReadOnly={isReadOnly} onRefreshed={load} />
         {g.kind === "dynamic" && !isReadOnly && !editing && (
           <button type="button" data-testid="group-edit-rule-open" style={{ ...quiet, marginBottom: 12 }} onClick={() => setEditing(true)}>Edit the rule</button>
         )}
@@ -583,15 +585,24 @@ export function AddToGroup({ donorIds, onDone }) {
 // takes it back. A name already used gets the date added, never a refusal.
 // FLOWS-5: with `donorIds` (a list report's rows) it keeps those people as a
 // hand-kept group, since a report like Lost has no list filter to keep.
-export function SaveAsGroup({ name, rules, donorIds = null, label = "Save as a group", testid = "save-as-group", style }) {
+// FLOWS-8 (W-1112-Volunteers-34X): saved from a list report (`fromReport`), it
+// asks which: "Keep updating" (a group by rule, when the report has one:
+// `reportRules`) or "Freeze today's list" (hand-kept, remembering the report and
+// the day, so its page says how many have changed since).
+export function SaveAsGroup({ name, rules, donorIds = null, label = "Save as a group", testid = "save-as-group", style, fromReport = null, reportRules = null }) {
   const [saved, setSaved] = useState(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const save = async () => {
+  const [choosing, setChoosing] = useState(false);
+  const save = async (how = null) => {
+    if (fromReport && !how) { setChoosing(true); return; }
+    setChoosing(false);
     setBusy(true); setErr("");
+    const keep = how === "rule" && reportRules;
     const post = async n => {
+      if (keep) return apiFetch("/groups", { method: "POST", body: JSON.stringify({ name: n.slice(0, 60), kind: "dynamic", rules: reportRules }) });
       if (!donorIds) return apiFetch("/groups", { method: "POST", body: JSON.stringify({ name: n.slice(0, 60), kind: "dynamic", rules }) });
-      const g = await apiFetch("/groups", { method: "POST", body: JSON.stringify({ name: n.slice(0, 60), kind: "static" }) });
+      const g = await apiFetch("/groups", { method: "POST", body: JSON.stringify({ name: n.slice(0, 60), kind: "static", ...(fromReport ? { fromReport } : {}) }) });
       await apiFetch(`/groups/${encodeURIComponent(g.id)}/members`, { method: "POST", body: JSON.stringify({ donorIds }) });
       return g;
     };
@@ -603,7 +614,7 @@ export function SaveAsGroup({ name, rules, donorIds = null, label = "Save as a g
         g = await post(`${name.slice(0, 47)} ${new Date().toISOString().slice(0, 10)}`);
       }
       setSaved(g);
-      offerUndo({ message: donorIds ? `Saved ${donorIds.length} ${donorIds.length === 1 ? "person" : "people"} as the group ${g.name}.` : `Saved as the group ${g.name}. It keeps up with the list by itself.`,
+      offerUndo({ message: donorIds && !keep ? `Saved ${donorIds.length} ${donorIds.length === 1 ? "person" : "people"} as the group ${g.name}.` : `Saved as the group ${g.name}. It keeps up with the list by itself.`,
         undoAction: async () => { const r = await apiFetch(`/groups/${g.id}`, { method: "DELETE" }); setSaved(null); return r; } }, "group");
     } catch (e) { setErr(e?.error || errorMessage(e, "That group did not save.")); }
     setBusy(false);
@@ -614,10 +625,17 @@ export function SaveAsGroup({ name, rules, donorIds = null, label = "Save as a g
     </span>
   );
   return (
-    <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-      <button type="button" data-testid={testid} disabled={busy} onClick={save} style={{ ...quiet, padding: "5px 10px", fontSize: 12.5, ...(style || {}) }}>
+    <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+      {!choosing && <button type="button" data-testid={testid} disabled={busy} onClick={() => save()} style={{ ...quiet, padding: "5px 10px", fontSize: 12.5, ...(style || {}) }}>
         {busy ? "Saving…" : label}
-      </button>
+      </button>}
+      {choosing && <>
+        {reportRules && <button type="button" data-testid={testid + "-rule"} onClick={() => save("rule")} style={{ ...quiet, padding: "5px 10px", fontSize: 12.5 }}
+          title="A group by rule: whoever the report finds, today and every day after.">Keep updating (a rule group)</button>}
+        <button type="button" data-testid={testid + "-freeze"} onClick={() => save("freeze")} style={{ ...quiet, padding: "5px 10px", fontSize: 12.5 }}
+          title="A hand-kept group of the people on the report now. Its page says how many have changed since.">Freeze today's list (hand-kept)</button>
+        <button type="button" onClick={() => setChoosing(false)} style={{ background: "none", border: "none", color: T.ink3, fontSize: 12.5, cursor: "pointer" }}>Cancel</button>
+      </>}
       {err && <span role="alert" style={{ fontSize: 12, color: T.ink }}>{err}</span>}
     </span>
   );

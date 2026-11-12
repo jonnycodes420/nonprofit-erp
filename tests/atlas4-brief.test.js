@@ -212,7 +212,7 @@ const mock = http.createServer((req, res) => {
   const earlier = await api("GET", "/sequences", tok);
   ok("§6 the Sequences empty state: none at all says \"No sequences yet.\"; with Earlier ones, it points at them by count (SENDS-1: never \"No active sequences\" above Active ones)",
     /\{sequencesEmptyLine\(list, earlier\)\}/.test(comm) && SE.sequencesEmptyLine([], []) === "No sequences yet." && Array.isArray(earlier.body) && earlier.body.length === 2
-    && SE.sequencesEmptyLine([], earlier.body) === "None made here yet. Your 2 earlier sequences are below." && SE.sequencesEmptyLine([{ id: "x" }], earlier.body) === null, earlier.body);
+    && SE.sequencesEmptyLine([], earlier.body) === null /* FLOWS-8: no "none" line above any sequence */ && SE.sequencesEmptyLine([{ id: "x" }], earlier.body) === null, earlier.body);
 
   ok("§7 nothing was sent to anyone", MAIL.length === 0, MAIL);
   mock.close(); sink.close();
