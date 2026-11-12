@@ -680,7 +680,39 @@ async function guardWithoutCurl() {
   } finally { good.child.kill(); other.child.kill(); }
 }
 
+// ── FLAKE-5 · NO TEST TURNS THE CLOCK INTO A UTC DAY (tests/lib/runClockDays.js) ──
+// "10 days from now" as new Date(testNow() + 10 * DAY).toISOString().slice(0, 10)
+// is the UTC day, a day ahead of New York from 7 PM Eastern (sales1-crm §11,
+// 11b7a36). A day from the run's clock comes from tests/clock.js (civilDay,
+// dayOffset). The lines below were there before the guard; each was green at
+// 2026-11-13T00:30:00Z under TZ=America/New_York and TZ=UTC (the FLAKE-5 sweep),
+// so they are held, not grown: a new file, or one more line in a file, fails.
+// PROVEN ABLE TO FAIL: the planted "10 days from now" lines below.
+const RUN_CLOCK_DAYS_HELD = {
+  "ask2-plans": 4,         // the year-to-date window, cut at the UTC day
+  "fix40-comms-opens": 1,  // a fixture gift 300 days back; any day that far back serves
+  "home2-living": 1,       // which year's 15 December is next
+  "mopup1-leftovers": 1,   // plusDays on a civil day (Date.UTC of its parts): safe, read as clock-fed by its name
+  "onboard1-setup": 1,     // a day a year back, inside last fiscal year whatever the hour
+  "onboard2-board": 6,     // the verbal-yes day: the product reads it at noon UTC, and §0 pins exact instants
+  "recurring-recovery": 1, // this month and next, for a card's expiry month
+  "test-clock-seam": 2,    // its own planted examples, as strings
+};
+function runClockDaysGuard() {
+  const RC = require("./lib/runClockDays");
+  const now = RC.scanTests(__dirname);
+  const grew = Object.entries(now).filter(([f, hits]) => hits.length > (RUN_CLOCK_DAYS_HELD[f] || 0)).map(([f, hits]) => `${f}.test.js:${hits.join(",")}`);
+  ok(!grew.length, `no new test turns the run's clock into a UTC day; use civilDay()/dayOffset() from tests/clock.js: ${grew.join("; ")}`);
+  ok(RC.scan("  const due = new Date(testNow() + 10 * 864e5).toISOString().slice(0, 10);").length === 1
+    && RC.scan("const now = testNow();\nconst inTen = d => new Date(now + d * DAY);\nconst due = inTen(10).toISOString().split(\"T\")[0];").length === 1
+    && RC.scan(`const d = new Date(Date.${"now"}() + 10 * 864e5).getUTCDate();`).length === 1,   // spelled in two parts for the real-clock check
+    "the run-clock-day guard catches a planted \"10 days from now\" (direct, through a helper, and from Date.now) (proven able to fail)");
+  ok(RC.scan("const due = dayOffset(10);\nconst t = new Date(`${civilDay()}T12:00:00Z`).toISOString().slice(0, 10);").length === 0,
+    "…and leaves a day taken from tests/clock.js alone");
+}
+
 (async () => {
+  runClockDaysGuard();
   await guardWithoutCurl();
   const { Client } = require("pg");
   const { execFileSync } = require("child_process");

@@ -96,9 +96,18 @@ function loadAllow(file) {
 }
 
 const norm = c => String(c || "").trim().replace(/\s+/g, " ");
+// FLAKE-5: a service with no start command runs `npm start`, which is
+// package.json's `start` (`node server.js`). Prod's web has none and staging's
+// says `node server.js`; those are one command. Read both the way Railway runs
+// them before comparing.
+const PKG_START = () => { try { return require("../../package.json").scripts.start || ""; } catch { return ""; } };
+function effectiveStart(cmd, pkgStart = PKG_START()) {
+  const c = norm(cmd);
+  return !c || /^npm (run )?start$/.test(c) ? norm(pkgStart) : c;
+}
 // Prod's worker `node worker.js` ≡ staging's `node server.js` + STEWARD_PROCESS=worker.
 function sameStart(role, prod, staging) {
-  const p = norm(prod.start), s = norm(staging.start);
+  const p = effectiveStart(prod.start), s = effectiveStart(staging.start);
   if (p === s) return true;
   return role === "worker" && p === "node worker.js" && s === "node server.js" && staging.names.has("STEWARD_PROCESS");
 }
@@ -161,4 +170,4 @@ async function main(env = process.env, log = console.log) {
 if (require.main === module) {
   main().then(code => process.exit(code), e => { console.error(`railway-drift crashed: ${e.message}`); process.exit(2); });
 }
-module.exports = { compare, readEnvironment, loadAllow, sameStart, main, PAIRS, MUST_HAVE };
+module.exports = { compare, readEnvironment, loadAllow, sameStart, effectiveStart, main, PAIRS, MUST_HAVE };

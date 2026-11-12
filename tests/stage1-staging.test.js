@@ -297,6 +297,14 @@ function runs(cond, { staging, lane, vercel = "true" }) {
       ok("…and the allowlisted ones (SENTRY_DSN, GOOGLE_*, OPS_SHIP_TOKEN) don't", !/SENTRY_DSN|GOOGLE_CLIENT_ID|OPS_SHIP_TOKEN/.test(lost.out));
       const wstart = await run(w => { w.staging.variables.edges = w.staging.variables.edges.filter(e => !(e.node.serviceId === "stagingworker" && e.node.name === "STEWARD_PROCESS")); }); outs.push(wstart);
       ok("staging worker on node server.js WITHOUT STEWARD_PROCESS is a start-command drift", wstart.code === 1 && /worker .*start command differs/.test(wstart.out), wstart.out);
+      // FLAKE-5: the real pair. Prod's web has no start command (Railway runs
+      // `npm start`, package.json's `node server.js`); staging's says it outright.
+      const emptyStart = await run(w => { w.prod.serviceInstances.edges[0].node.startCommand = null; }); outs.push(emptyStart);
+      ok("prod web with no start command ≡ staging web's node server.js (npm start is package.json's start): no drift", emptyStart.code === 0 && /No drift/.test(emptyStart.out), emptyStart.out);
+      const otherStart = await run(w => { w.prod.serviceInstances.edges[0].node.startCommand = null; w.staging.serviceInstances.edges[0].node.startCommand = "node scripts/other.js"; }); outs.push(otherStart);
+      ok("…while a genuinely different command still flags (no start command vs node scripts/other.js)", otherStart.code === 1 && /web .*start command differs: prod \(none\), staging "node scripts\/other\.js"/.test(otherStart.out), otherStart.out);
+      const twoReal = await run(w => { w.staging.serviceInstances.edges[0].node.startCommand = "node --max-old-space-size=512 server.js"; }); outs.push(twoReal);
+      ok("…and so do two different explicit commands", twoReal.code === 1 && /web .*start command differs/.test(twoReal.out), twoReal.out);
       const saysProd = await run(() => { healthEnv = "production"; }); outs.push(saysProd);
       ok("staging web's /health saying production fails (STEWARD_ENV's value)", saysProd.code === 1 && /says env "production"/.test(saysProd.out), saysProd.out);
       const refused = await run(null, { RAILWAY_STAGING_TOKEN: "tok-wrong" }); outs.push(refused);

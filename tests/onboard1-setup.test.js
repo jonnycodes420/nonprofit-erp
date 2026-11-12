@@ -54,7 +54,7 @@ globalThis.fetch = (url, opts) => { OUTBOUND.push(String(url && url.url || url))
 // Setup reads the site through safeFetch.js (FIX-43), not the global fetch.
 require("../safeFetch").observers.add(r => OUTBOUND.push(r.url));
 
-const { ok, summary, login, api, q, closeDb, waitFor, importWorkSettled } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, waitFor, importWorkSettled, untilReady } = require("./helpers");
 const { testNow } = require("./clock");
 const FX = path.join(__dirname, "fixtures", "onboard1");
 const ORG = "org_onb1", SLUG = "onb1-test", ADMIN = "onb1-admin@example.org", USER = "u_onb1";
@@ -100,6 +100,7 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
   await new Promise(r => sink.listen(SINK, r));
   require("../server.js");
   await waitFor(async () => (await realFetch(`http://localhost:${PORT}/health`).then(r => r.ok).catch(() => false)), { timeout: 60000, interval: 250 });
+  await untilReady();   // FLAKE-5: an in-process server, so the shared boot step (tests/lib/inProcessServer.js)
   await new Promise(r => setTimeout(r, 1500));
   await reset();
 

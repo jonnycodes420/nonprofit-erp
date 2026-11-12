@@ -174,6 +174,17 @@ const SKIP = new Set([
   console.log("access2-portfolio (ACCESS-2)");
   const app = require("../server.js");
   await require("./helpers").untilReady();
+  // §0 THE WINDOW (FLAKE-5): this suite's server shares its event loop. A kept-alive
+  // socket from /ready, then the loop blocked past Node's 5 s keep-alive timeout
+  // (the router walk below took ~5.4 s on CI), then a request: on Linux the server's
+  // timer used to close that socket under the request (ECONNRESET, "fetch failed").
+  const srv0 = require("./lib/inProcessServer").inProcessServer(process.env.BASE);
+  ok("§0 the in-process server closes no kept-alive socket on its own timer", !!srv0 && srv0.keepAliveTimeout === 0, srv0 && srv0.keepAliveTimeout);
+  await api("GET", "/ready");
+  const blockedAt = performance.now();
+  while (performance.now() - blockedAt < 7000) { /* the loop blocked 7 s, as a long synchronous walk does */ }
+  const after = await api("POST", "/auth/login", null, { email: "nobody-acc2@example.org", password: "not-it" }).catch(e => ({ status: 0, err: (e.cause && e.cause.code) || e.message }));
+  ok("§0 a request on that socket after the loop was blocked 7 s is answered, not reset", after.status === 401, after.err || after.status);
   await seed();
   const inv = buildInventory(app);
   ok(`live router walked: ${inv.length} routes`, inv.length > 300, inv.length);
