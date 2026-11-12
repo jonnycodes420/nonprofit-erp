@@ -32,6 +32,7 @@ import { guessDates, amountTidier } from "./sheetGuesses.js";   // IMPORT-9
 import { AUCTION_HEADER_ROLES, AUCTION_ROLE_LABELS, tidyAuctionColumns, auctionFactsOf, auctionValueQuestion } from "./auctionSheet.js";   // ASKS-1
 import { moneyOf, looksMoney, hasCurrencyMark, serialToIso } from "./sheetCells.js";
 import { SECTION_LABEL_RE, noteLine as NOTE_LINE, fixZip, rowLedger as ledgerOf } from "./importRows.js";
+import { readTotalRow, checkHeadline } from "./totalRows.js";
 import { RESTRICTION_CODES, MAILING_REMOVE_RE, SHARED_PHONE_MAX, countLines,
   demotePeopleSheetAmounts, mergedLinesOf, partnersAndHouseholds, spouseQuestion, choiceLines, amountChecks, importButtonSentence,
   notePreferences, personFields, peopleSheetGiftsOf } from "./sheetReadLines.js";
@@ -1095,7 +1096,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
 
   const people = new Map();   // key → the record
   const byId = new Map(), byEmail = new Map(), byName = new Map();
-  const gifts = [], pledges = [], aside = [], totals = [], flags = [];
+  const gifts = [], pledges = [], aside = [], totals = [], flags = [], totalChecks = [];   // IMPORT-10: totals that do not foot
   const nearMisses = [];
   // FIX-59 · ONE PERSON, TWO SPELLINGS, ON TWO LISTS OF ONE EVENT. When an
   // event's file brings in more than one list (a guest list and a seating
@@ -1143,7 +1144,6 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       const cells = b.cells;
       const filled = cells.filter(c => !isBlank(c));
       const nameText = nameCols.map(c => s(cells[c.index])).filter(Boolean).join(" ");
-      const anyTotalWord = cells.some((c, i) => NUMERIC_TOTAL_RE.test(s(c)) && !moneyCols.some(m => m.index === i));
       // FIX-59: a note typed as a row under its person ("2 Vegan") is that person's note, never a person
       {
         const noteText = nameRoleCols.map(c => s(cells[c.index])).filter(Boolean).join(" ");
@@ -1169,28 +1169,10 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
         if (!aName && !NUMERIC_TOTAL_RE.test(lbl)) { notes.push({ sheet: t.sheet, line: b.line, text: lbl, label: true, ...(NOTE_LINE(lbl) ? { noteLine: true } : {}) }); continue; }
       }
       const moneyHere = moneyCols.filter(m => moneyOf(cellOf(t, b, m)) != null);
-      // A row with no name is a total when it says so, or when it foots: its
-      // amount is exactly the sum of the rows above it. Otherwise it is a row
-      // with no name (a withdrawal, a stray line) and is listed, not read.
+      // IMPORT-10 (shared/totalRows.js): a total is a short label in a label's place, never a row
+      // with a person on it; one that does not foot is listed for her to check, never dropped.
       const amtCol = moneyCols.find(m => m.role === "amount");
-      const foots = amtCol && moneyHere.includes(amtCol) && (() => {
-        const v = cents(moneyOf(cellOf(t, b, amtCol)));
-        return v !== 0 && (v === tableSums[amtCol.index] || v === sinceSubtotal[amtCol.index]);
-      })();
-      const saysTotal = anyTotalWord || (nameText && NUMERIC_TOTAL_RE.test(nameText) && /^(sub-?total|grand total|total|totals|sum)\b/i.test(nameText));
-      if (moneyHere.length && (saysTotal || (!nameText && t.kind === "gifts" && foots))) {
-        // the label's words only: "TOTAL 178240" is a total, not "total for"
-        const labelText = cells.filter(x => !isBlank(x) && !looksMoney(x)).join(" ");
-        const isSub = /sub-?total|total for|total\s+[a-z]\w*/i.test(labelText) && !/grand total/i.test(labelText);
-        for (const m of moneyHere) {
-          const stated = cents(moneyOf(cellOf(t, b, m)));
-          const against = isSub && sinceSubtotal[m.index] ? sinceSubtotal[m.index] : tableSums[m.index];
-          totals.push({ sheet: t.sheet, line: b.line, column: t.header[m.index], role: m.role, statedCents: stated, sumCents: against, rowsAbove: t.readCount,
-                        matches: stated === against, subtotal: isSub && !!sinceSubtotal[m.index], label: cells.filter(Boolean).filter(x => !looksMoney(x)).join(" ") || "Total" });
-          sinceSubtotal[m.index] = 0;
-        }
-        continue;
-      }
+      if (readTotalRow({ t, b, cells, moneyHere, amtCol, nameText, sums: { table: tableSums, since: sinceSubtotal }, totals, checks: totalChecks, answers, cellOf, moneyOf, cents, fmt$ })) continue;
       t.readCount++;
       if (!nameText) {
         for (const m of moneyHere) { const v = cents(moneyOf(cellOf(t, b, m))); tableSums[m.index] += v; sinceSubtotal[m.index] += v; }
@@ -1689,7 +1671,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const { commsLines, prefNotes, prefNotePeople } = choiceLines(peopleList);
   const persons = peopleList.reduce((a, p) => a + Math.max(1, p.people.length), 0);
   // IMPORT-6 · EVERY ROW ACCOUNTED FOR (shared/importRows.js)
-  const rowLedger = ledgerOf({ tables, usable, aside, totals, notes, people, gifts, pledges, noteRows, fmt$ });
+  const rowLedger = ledgerOf({ tables, usable, aside, totals, totalChecks, notes, people, gifts, pledges, noteRows, fmt$ });
   // IMPORT-5 (7c): every row of a list of people is a person, a row merged into
   // one, or a row set aside, and the line says so: "656 rows · 650 people · 6 merged"
   const rowAccount = (() => {
@@ -1744,7 +1726,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       columns: t.cols.map(c => ({ index: c.index, header: c.header, role: c.role, roleLabel: c.role ? ROLE_LABELS[c.role] : null, by: c.by,
         reason: c.disposition === "skipped" ? c.skipReason : c.reason, disposition: c.disposition, links: !!c.links, sample: c.profile.sample })),
       refused: t.refused })),
-    people: peopleList, gifts, pledges, aside, totals, flags, notes, questions, help, nearMisses, totalOfChecks, peopleSheetGifts, merged, rowAccount, rowLedger, commsLines, prefNotes, mergedLines, countLines: null, householdGroups: [...householdGroups].map(([k, g]) => ({ key: k, ...g })), householdLine,
+    people: peopleList, gifts, pledges, aside, totals, flags, notes, questions, help, nearMisses, totalOfChecks, totalChecks, checkLine: checkHeadline(usable.reduce((a, t) => a + (t.readCount || 0), 0), totalChecks), peopleSheetGifts, merged, rowAccount, rowLedger, commsLines, prefNotes, mergedLines, countLines: null, householdGroups: [...householdGroups].map(([k, g]) => ({ key: k, ...g })), householdLine,
     nearDuplicates: nearDupes, noteRows, namesCleaned, giftsDeposited: answers.giftsDeposited === "no" ? "no" : "yes",
     addressExample: (() => { const p = peopleList.find(x => x.addressFrom); return p ? { from: p.addressFrom, address: p.address, address2: p.address2, city: p.city, state: p.state, zip: p.zip } : null; })(),
     columns: columnList, columnAccount, keptHeaders: [...keptHeaders.values()], notesSheets, figureChecks,
