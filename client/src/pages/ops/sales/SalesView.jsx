@@ -7,7 +7,7 @@
 //   &sub=list&list=<id>          SALES-2: one prospect list
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { countLabel } from "../../../../shared/countWords.js";
+import { countLabel } from "../../../../../shared/countWords.js";
 import { apiFetch } from "../../../api";
 import { INK, WHITE, CREAM, EMERALD, BRASS, card, h2, says, btn, quiet, box, link, brassTag, usd, dayWords, TYPE_WORDS, Failure, failureWords } from "./salesBits";
 import CallMode from "./CallMode";
