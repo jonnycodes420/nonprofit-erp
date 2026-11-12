@@ -102,9 +102,13 @@ function mount(app, { wrap, requireAuth, checkWriteAccess, actor }) {
     if (done && b.decision !== "keep") await afterChange(orgId, donorIds, { door: "gift_form" });
     if (req.audit) { req.audit.entity("insight_review_batch", batchId); req.audit.after({ decision: b.decision, groupKey: b.groupKey, rows: done, giftIds: inGroup.map(g => g.id), contacts }); }
     const what = b.decision === "keep" ? "kept as gifts" : b.decision === "partly" ? "marked partly a gift" : "marked not a gift";
+    // what happened, read again now (the preview said what would)
+    const now = await NG.preview(query, orgId, [], "keep");
+    const usd = c => `$${Math.round(c / 100).toLocaleString("en-US")}`;
+    const changed = `Lifetime giving went from ${usd(before.lifetimeBeforeCents)} to ${usd(now.lifetimeBeforeCents)}${contacts ? `; ${countWords(contacts, "person has", "people have")} no gifts left and ${contacts === 1 ? "is a contact" : "are contacts"} now` : ""}.`;
     res.json({ ok: true, batchId, decision: b.decision, done, cents, skipped, outside: outside.length, contacts,
       undo: `/insights/review-group/${batchId}/undo`,
-      sentence: `${countWords(done, "row", "rows")} ${what}.${b.decision === "keep" ? "" : ` ${before.sentence}`}${skipped.length ? ` ${countWords(skipped.length, "row has", "rows have")} something attached and ${skipped.length === 1 ? "was" : "were"} left for you to change from the gift itself.` : ""}${outside.length ? ` ${countWords(outside.length, "row was", "rows were")} not in this group and ${outside.length === 1 ? "was" : "were"} left as ${outside.length === 1 ? "it was" : "they were"}.` : ""}` });
+      sentence: `${countWords(done, "row", "rows")} ${what}.${b.decision === "keep" ? "" : ` ${changed}`}${skipped.length ? ` ${countWords(skipped.length, "row has", "rows have")} something attached and ${skipped.length === 1 ? "was" : "were"} left for you to change from the gift itself.` : ""}${outside.length ? ` ${countWords(outside.length, "row was", "rows were")} not in this group and ${outside.length === 1 ? "was" : "were"} left as ${outside.length === 1 ? "it was" : "they were"}.` : ""}` });
   }));
 
   app.post("/insights/review-group/:batchId/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {

@@ -6,27 +6,49 @@
 // "Choose one by one". A choice first shows what it would change (read live
 // from the server, never estimated) and changes nothing until the second
 // click; the result has one Undo for the whole group.
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 
 const shown = p => String(p || "").replace(/<year>/g, "(year)").replace(/<season>/g, "(season)").replace(/<month>/g, "(month)").replace(/#/g, "(number)");
-const WHAT = { not_gift: "not a gift", partly: "partly a gift", keep: "kept as gifts" };
+const WHAT = { not_gift: "marked not a gift", partly: "marked partly a gift", keep: "kept as gifts" };
+
+// The last group decision and its Undo live OUTSIDE the card: deciding the
+// last rows takes the card away, and the walk found its Undo went with it.
+// GroupUndoBar, rendered above the cards, keeps the sentence and the Undo.
+let last = null;
+const subs = new Set();
+const setLast = v => { last = v; subs.forEach(f => f()); };
+const subscribe = f => { subs.add(f); return () => subs.delete(f); };
+export function GroupUndoBar({ onChanged, styles }) {
+  const done = useSyncExternalStore(subscribe, () => last);
+  const [busy, setBusy] = useState(false);
+  if (!done) return null;
+  const undo = async () => {
+    setBusy(true);
+    try { const r = await apiFetch(done.undo, { method: "POST" }); setLast({ sentence: r.sentence, undo: null }); onChanged && onChanged(); }
+    catch (e) { setLast({ ...done, sentence: `${done.sentence} ${e.message || "Undo didn't work."}` }); }
+    setBusy(false);
+  };
+  return <div role="status" data-testid="review-group-done" style={{ background: T.white, border: "1px solid " + T.bg3, borderLeft: "4px solid " + T.greenDk, borderRadius: 10, padding: "10px 12px", fontSize: 13, color: T.ink, marginBottom: 10 }}>
+    {done.sentence} {done.undo && <button type="button" style={styles.LNK} disabled={busy} onClick={undo}>Undo</button>}
+    {" "}<button type="button" style={{ ...styles.LNK, color: T.ink3 }} onClick={() => setLast(null)}>Close</button>
+  </div>;
+}
 
 export default function ReviewGroups({ card, onChanged, isReadOnly, open, onOpen, styles }) {
   const { B1, B2, LNK, money } = styles;
   const [pending, setPending] = useState(null);   // { group, decision, value, preview }
   const [value, setValue] = useState("");
   const [partlyFor, setPartlyFor] = useState(null);
-  const [done, setDone] = useState(null);          // { sentence, undo }
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const groups = card.groups || [];
-  if (!groups.length && !done) return null;
+  if (!groups.length) return null;
 
   const body = (g, decision, v) => JSON.stringify({ groupKey: g.key, giftIds: g.giftIds, decision, ...(decision === "partly" ? { value: String(v).replace(/[$,\s]/g, "") } : {}) });
   const ask = async (g, decision) => {
-    setErr(""); setDone(null);
+    setErr(""); setLast(null);
     if (decision === "partly") {
       const n = Number(String(value).replace(/[$,\s]/g, ""));
       if (!(n > 0)) { setErr("Enter the value each person received, in dollars."); return; }
@@ -44,25 +66,13 @@ export default function ReviewGroups({ card, onChanged, isReadOnly, open, onOpen
     try {
       const r = await apiFetch("/insights/review-group", { method: "POST", body: body(group, decision, v) });
       setPending(null); setPartlyFor(null); setValue("");
-      setDone({ sentence: r.sentence, undo: r.undo });
+      setLast({ sentence: r.sentence, undo: r.undo });
       onChanged && onChanged();
     } catch (e) { setErr(e.message || "That didn't work."); }
     setBusy(false);
   };
-  const undo = async () => {
-    setBusy(true);
-    try {
-      const r = await apiFetch(done.undo, { method: "POST" });
-      setDone({ sentence: r.sentence, undo: null });
-      onChanged && onChanged();
-    } catch (e) { setErr(e.message || "That didn't work."); }
-    setBusy(false);
-  };
-
   return (
     <div data-testid="review-groups" style={{ marginBottom: 8 }}>
-      {done && <div role="status" style={{ background: T.bg, borderRadius: 8, padding: "8px 10px", fontSize: 13, marginBottom: 8 }}>
-        {done.sentence} {done.undo && <button type="button" style={LNK} disabled={busy} onClick={undo}>Undo</button>}</div>}
       {err && <div role="alert" style={{ fontSize: 13, color: T.ink, borderLeft: "3px solid " + T.gold, paddingLeft: 8, marginBottom: 8 }}>{err}</div>}
       {groups.map(g => (
         <div key={g.key} data-testid="review-group" style={{ borderTop: "1px solid " + T.bg2, padding: "10px 0" }}>

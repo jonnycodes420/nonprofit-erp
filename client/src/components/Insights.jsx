@@ -20,7 +20,7 @@ import { displayDate } from "../../../shared/displayDate.js";   // SWEEP-1: a wr
 import { moveSentence } from "../lib/moveSentence";
 import { alsoKey } from "../lib/alsoKey";   // TIDY-1: two pledges, two keys
 import { orgTodayCivil, orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
-import ReviewGroups from "./ReviewGroups";   // ASKS-2: one decision for a group of rows
+import ReviewGroups, { GroupUndoBar } from "./ReviewGroups";   // ASKS-2: one decision for a group of rows
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when shown (Home's first look stays in budget)
 
 const SERIF = "'DM Serif Display', Georgia, serif";
@@ -354,6 +354,7 @@ export function HomeInsights({ onNavigate, isReadOnly, data: given, onChanged, o
       </div>}
       {!only && <LadderStrip data={data} onNavigate={onNavigate} showCoverage={!(data.coverage && data.coverage.stale)} />}
       {!only && <div style={{ margin: "-4px 0 10px" }}><button type="button" style={LNK} onClick={() => setLook(true)}>What your data says</button></div>}
+      <GroupUndoBar onChanged={reload} styles={{ LNK }} />
       {cards.map(c => <InsightCard key={c.kind} card={c} onNavigate={onNavigate} onChanged={reload} isReadOnly={isReadOnly} />)}
       <p style={{ fontSize: 12, color: T.ink3 }}>{data.sentences && data.sentences.never}</p>
     </section>
@@ -718,6 +719,7 @@ export function FirstLook({ onNavigate, isReadOnly, onClose }) {
           {data.events.map(e => <EventRaised key={e.id} e={e} />)}
         </div>}
         <LadderStrip data={data} onNavigate={onNavigate} showCoverage={false} />
+        <GroupUndoBar onChanged={load} styles={{ LNK }} />
         {data.cards.map(c => <InsightCard key={c.kind} card={c} onNavigate={onNavigate} onChanged={load} isReadOnly={isReadOnly} />)}
         <p style={{ fontSize: 12, color: T.ink3 }}>{data.sentences.never}</p>
       </>}
