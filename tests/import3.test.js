@@ -163,7 +163,8 @@ async function eventSheet() {
   ok("§7 the \"Reccuring\" row is flagged as a monthly giver to confirm", monthly.length === 1 && Number(monthly[0].a) === 100, JSON.stringify(monthly));
 
   // §8 again
-  const c2 = await api("POST", "/sheet-import/commit", tok, { ...body, answers, importId: "imp_import3e_two" });
+  // IMPORT-10: the same file again is asked first; she says "Import again anyway"
+  const c2 = await api("POST", "/sheet-import/commit", tok, { ...body, answers: { ...answers, importAgain: run1 }, importId: "imp_import3e_two" });
   const g2 = await one("SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1", [ORG]);
   const p2 = await one("SELECT COUNT(*)::int AS n FROM pledges WHERE org_id=$1", [ORG]);
   const d2 = await one("SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1", [ORG]);

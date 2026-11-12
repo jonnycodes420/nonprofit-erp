@@ -39,12 +39,13 @@ export function fixZip(z, state) {
 // row merged into a person, a note on one) or set aside, once. A row in
 // neither is `missing`, which tests/import6.test.js holds at zero on every
 // import fixture. `setAside` is what the preview lists, line by line.
-export function rowLedger({ tables, usable, aside, totals, notes, people, gifts, pledges, noteRows, fmt$ }) {
+export function rowLedger({ tables, usable, aside, totals, totalChecks = [], notes, people, gifts, pledges, noteRows, fmt$ }) {
   const key = (sheet, line) => `${sheet}:${line}`;
   const out = new Map();   // key → { sheet, line, reason, who, cents }
   const asideAt = (sheet, line, reason, extra = {}) => { const k = key(sheet, line); if (!out.has(k)) out.set(k, { sheet, line, reason, ...extra }); };
   for (const a of aside) asideAt(a.sheet, a.line, a.reason, { who: a.who || null, cents: a.cents ?? null });
   for (const x of totals) asideAt(x.sheet, x.line, `a ${x.subtotal ? "subtotal" : "total"} row (${fmt$(x.statedCents)}), checked against the rows above it`);
+  for (const x of totalChecks) asideAt(x.sheet, x.line, `not read, check it: ${x.reason}`, { cents: x.statedCents, check: true });   // IMPORT-10
   for (const x of notes) if (x.label) asideAt(x.sheet, x.line, x.noteLine ? `a note ("${x.text.slice(0, 80)}"), not a person or a gift` : `a section label ("${x.text}"), not a person or a gift`);
   const written = new Set();
   for (const p of people.values()) for (const l of p.lines) written.add(l);

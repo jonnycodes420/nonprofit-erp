@@ -67,6 +67,9 @@ import * as reader from "../../client/src/components/import/reader.js";
 import * as ThanksQuestion from "../../client/src/components/import/ThanksQuestion.jsx";
 import * as SheetGuesses from "../../client/src/components/import/SheetGuesses.jsx";
 import * as AuctionValues from "../../client/src/components/import/AuctionValues.jsx";   // ASKS-1
+import * as TotalChecks from "../../client/src/components/import/TotalChecks.jsx";   // IMPORT-10
+import * as EventPick from "../../client/src/components/import/EventPick.jsx";   // IMPORT-10
+import * as ImportedBefore from "../../client/src/components/import/ImportedBefore.jsx";   // IMPORT-10
 
 import * as driftSection from "../../client/src/components/home/driftSection.jsx";
 import * as goalSections from "../../client/src/components/home/goalSections.jsx";
@@ -162,6 +165,13 @@ export const CASES = [
            options: [{ key: "enter", label: "Enter values" }, { key: "zero", label: "Treat as $0 value (fully deductible)" }], answer: "enter", missing: 1,
            items: [{ key: "spa day", item: "Spa Day", line: 2, who: "Wren Halloway" }, { key: "signed guitar", item: "Signed Guitar", line: 3, who: "Tobias Fenn" }] }] }}/>, /What were these items worth/],
   ["import/SheetGuesses", () => <><SheetGuesses.DateOrderQuestions questions={[{ id: "dateOrder:s|2", key: "s|2", sheet: "Gifts", header: "Date", text: "3/4/25: March 4 or 3 April?", hint: "1 date in Date could be read either way.", examples: [{ line: 2, raw: "3/4/25", month: "March 4, 2025", day: "3 April 2025" }], options: [{ key: "month", label: "Month first (March 4, 2025)" }, { key: "day", label: "Day first (3 April 2025)" }] }]} answers={{}} onAnswer={noop}/><SheetGuesses.GuessNotes u={{ dateGuesses: [], tidiedAmounts: { count: 1, rows: [{ sheet: "Gifts", line: 2, raw: "$75.5", shown: "$75.50" }] } }}/></>, /3\/4\/25: March 4 or 3 April\?[\s\S]*We tidied 1 amount/],
+  // IMPORT-10: a total-looking row that does not foot, the event box, the same file twice
+  ["import/TotalChecks", () => <TotalChecks.TotalChecks setAnswers={noop} disabled={false} answers={{}}
+    u={{ totalChecks: [{ key: "Sheet1:48", sheet: "Sheet1", line: 48, label: "Total Wine & More", column: "Winning Bid Amount", statedCents: 7500, sumCents: 453000, cells: ["Total Wine & More", "75"] }] }}/>, /Not read, check these[\s\S]*Include/],
+  ["import/EventPick", () => <><EventPick.EventSuggest typed="Night of The Stars" answers={{}} onPick={noop} disabled={false} u={{ orgEvents: [{ id: "evt_1", name: "NIght of the Stars 2026", date: "2026-10-03" }] }}/>
+    <EventPick.EventMatchQuestion setAnswer={noop} disabled={false} q={{ id: "eventMatch", typed: "Night of The Stars", eventId: "evt_1", eventName: "NIght of the Stars 2026", eventDate: "2026-10-03", text: "Did you mean NIght of the Stars 2026?", hint: "Close to an event on your calendar." }}/></>, /NIght of the Stars 2026 · Oct 3, 2026[\s\S]*Did you mean NIght of the Stars 2026\?/],
+  ["import/ImportedBefore", () => <ImportedBefore.ImportedBefore setAnswer={noop} onClose={noop} disabled={false}
+    q={{ id: "importedBefore", importId: "imp_1", text: "You imported this file on Nov 12 (45 gifts). Import again anyway?" }}/>, /You imported this file on Nov 12 \(45 gifts\)[\s\S]*Import again anyway/],
   ["import/ThanksQuestion", () => <ThanksQuestion.ThanksQuestion preview={{ ask: true, thankYous: 4, defaultAnswer: "yes", defaultSentence: "We will draft 4 thank-yous." }} answer={null} onChange={noop}/>, /already been thanked\?[\s\S]*We will draft 4 thank-yous/],
 
   // ── Home's parts ───────────────────────────────────────────────────────

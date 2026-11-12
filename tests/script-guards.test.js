@@ -77,6 +77,13 @@ const GUARDED_WRITERS = [
   // IMPORT-9: puts back in the trash the people an undone import had brought
   // back. Dry run by default; --apply/--undo write through writerDbUrl, one audit row per org.
   "import9-undo-leftovers",
+  // IMPORT-10: lists sheet imports that left a person's row out as a total (read
+  // only); records the winners of imported auction purchases; takes the donor
+  // role off people who never gave. Dry run by default; --apply/--undo write
+  // through writerDbUrl, one audit row per org. Jonathan runs them.
+  "import10-lost-total-rows",
+  "import10-auction-winners",
+  "import10-donor-roles",
   // INTEGRITY-1: restores people an import's undo trashed though they were here
   // before it, and revokes repeated pending invites. Dry run by default;
   // --apply/--undo write through writerDbUrl, one audit row per org.

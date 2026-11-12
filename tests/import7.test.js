@@ -202,7 +202,8 @@ async function importJob(tok, body) {
   const charged = wall5 + (trips || 0) * LATENCY_MS;
   ok(`§5 ...in under 2 minutes at ${LATENCY_MS} ms a statement (${wall5} ms here + ${trips} statements × ${LATENCY_MS} ms = ${Math.round(charged / 1000)} s; one gift at a time: about 24 minutes)`,
     trips != null && charged < BUDGET_MS, { wall5, trips, charged });
-  const again5 = u5.status === 200 ? await importJob(tok5, { fileName: "test-1000.xlsx", sheets: gsheets, useModel: false, previewOrgId: ORG5 }) : { end: null };
+  // IMPORT-10: the same file again is asked first; she says "Import again anyway"
+  const again5 = u5.status === 200 ? await importJob(tok5, { fileName: "test-1000.xlsx", sheets: gsheets, useModel: false, previewOrgId: ORG5, answers: { importAgain: j5.importId } }) : { end: null };
   const { n: g5 } = await one(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`, [ORG5]);
   ok("§5 ...and the same file again adds nothing: every gift row is already here",
     again5.end && again5.end.status === "done" && g5 === 5010 && again5.end.result && again5.end.result.giftsCreated === 0 && again5.end.result.duplicates === 5010,
