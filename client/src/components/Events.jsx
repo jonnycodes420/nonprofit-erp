@@ -22,6 +22,8 @@ import { eventStatus } from "../../../shared/eventStatus.js";
 import { eventEditForm } from "../lib/eventEditForm.js";   // WALKB-2: the dialog opens with the date
 import EventRemoveButton, { AttendeeLabel } from "./events/EventRemoveButton.jsx";   // WALKB-2
 import { orgTodayCivil } from "../lib/orgToday";   // MOPUP-1: the org's day
+import { GuestOfPicker } from "./events/GuestOfPicker";   // CONNECT-1: "Guest of…" when a guest is added
+import { GuestChip } from "./events/GuestChip";   // CONNECT-1: moved out whole, Events.jsx stays under its size baseline
 import { addGuests } from "../lib/eventCapacity";   // STALE-2: past capacity asks first
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { EventAuction, EventsAuctions } from "./events/EventAuction";   // NAV-1 (menu): auctions on the event, and an Auctions list
@@ -887,29 +889,6 @@ function EventSeating({ eventId }) {
   );
 }
 
-// A guest, tappable and draggable and reachable by keyboard. It is a BUTTON so
-// the phone, the mouse and the Tab key all reach it the same way; drag is an
-// extra on top rather than the only means.
-function GuestChip({ g, picked, onToggle, onDragStart, onDragEnd, chair = null }) {
-  return (
-    <button type="button" data-testid="ev-guest" aria-pressed={picked}
-      draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onToggle}
-      style={{
-        display: "block", width: "100%", textAlign: "left", font: "inherit",
-        background: picked ? T.greenDk + "16" : "transparent",
-        border: picked ? "1px solid " + T.greenDk : "1px solid transparent",
-        borderRadius: 7, padding: "3px 6px", margin: "1px 0", minHeight: 30,
-        fontSize: 12.5, color: T.ink, cursor: "pointer", overflowWrap: "anywhere",
-      }}>
-      {chair ? <span style={{ color: T.ink3, fontVariantNumeric: "tabular-nums" }}>{chair} · </span> : null}
-      {g.name}
-      {g.vip ? <span data-testid="ev-vip-mark" style={{ color: T.gold700, fontWeight: 800 }}> · VIP</span> : null}
-      {g.guest_of ? <span style={{ color: T.ink3 }}> · guest</span> : null}
-      {g.dietary ? <span style={{ color: T.gold700 }}> · {g.dietary}</span> : null}
-    </button>
-  );
-}
-
 // ── PARITY-4 · ONE TABLE, DRAWN ───────────────────────────────────────────
 // A round table is a circle with its chairs round it; a long table is a
 // rectangle with chairs down both sides, numbered along the top and then the
@@ -1092,6 +1071,7 @@ export function EventKiosk({ eventId }) {
   const [camOn, setCamOn] = useState(false);
   const [camErr, setCamErr] = useState("");
   const [walkins, setWalkins] = useState([]);
+  const [walkGuestOf, setWalkGuestOf] = useState("");   // CONNECT-1
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const detectorRef = useRef(null);
@@ -1227,13 +1207,13 @@ export function EventKiosk({ eventId }) {
   const addWalkIn = async ({ donorId, name }) => {
     setMsg("");
     try {
-      const r = await addGuests(eventId, donorId ? { donorIds: [donorId] } : { name });
+      const r = await addGuests(eventId, { ...(donorId ? { donorIds: [donorId] } : { name }), ...(walkGuestOf ? { guestOfDonorId: walkGuestOf } : {}) });
       if (!r) return;
       const id = r && r.ids && r.ids[0];
       if (!id) { setMsg("They are already on the list. Find them by name above."); return; }
       const c = await apiFetch(`/events/${eventId}/check-in`, { method: "POST", body: JSON.stringify({ attendeeId: id }) });
       show(c, "In.");
-      setTerm("");
+      setTerm(""); setWalkGuestOf("");
       eventRowsChanged(eventId);
     } catch (e) { setMsg(errorMessage(e, "That did not go through.")); }
   };
@@ -1370,6 +1350,7 @@ export function EventKiosk({ eventId }) {
       {q.length >= 2 && (
         <div data-testid="ev-kiosk-walkin" style={{ borderTop: "1px solid " + T.bg3, marginTop: 8, paddingTop: 10 }}>
           <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink3, marginBottom: 6 }}>Walk-in, not on the list</div>
+          <div style={{ marginBottom: 8 }}><GuestOfPicker guests={guests} value={walkGuestOf} onChange={setWalkGuestOf} testid="ev-kiosk-guest-of" /></div>
           {offList.map(d => (
             <button key={d.id} type="button" data-testid="ev-kiosk-walkin-person" onClick={() => addWalkIn({ donorId: d.id })}
               style={{ width: "100%", textAlign: "left", background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "11px 13px", marginBottom: 6, minHeight: 48, cursor: "pointer", fontFamily: "inherit", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -1402,7 +1383,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
   const [donorSearch, setDonorSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [addingDonors, setAddingDonors] = useState(false);
-  const [guestForm, setGuestForm] = useState({ name: "", email: "" });
+  const [guestForm, setGuestForm] = useState({ name: "", email: "", guestOfDonorId: "" });
   const [addingGuest, setAddingGuest] = useState(false);
   const [addMode, setAddMode] = useState("directory");
   const [showFollowUp, setShowFollowUp] = useState(false);
@@ -1472,7 +1453,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
     setAddingGuest(true);
     try {
       if (!(await addGuests(eventId, guestForm))) { setAddingGuest(false); return; }
-      setGuestForm({ name: "", email: "" });
+      setGuestForm({ name: "", email: "", guestOfDonorId: "" });
       eventRowsChanged(eventId);
       if (onEventUpdated) onEventUpdated();
     } catch(e) { setActErr(errorMessage(e, "That did not save.")); }
@@ -1769,6 +1750,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <input value={guestForm.name} onChange={e => setGuestForm(f => ({ ...f, name: e.target.value }))} placeholder="Guest name *" style={INP_DARK} />
                 <input value={guestForm.email} onChange={e => setGuestForm(f => ({ ...f, email: e.target.value }))} placeholder="Email (optional)" style={INP_DARK} />
+                <GuestOfPicker guests={event.attendees || []} value={guestForm.guestOfDonorId} onChange={v => setGuestForm(f => ({ ...f, guestOfDonorId: v }))} style={INP_DARK} />
                 <button onClick={addGuest} disabled={addingGuest || !guestForm.name.trim()} style={{ background: guestForm.name.trim() ? T.greenDk : T.bgElevated, border: "none", borderRadius: 8, padding: "9px", color: T.white, fontSize: 12, fontWeight: 700, cursor: guestForm.name.trim() ? "pointer" : "not-allowed" }}>
                   {addingGuest ? "Adding…" : "Add Guest →"}
                 </button>

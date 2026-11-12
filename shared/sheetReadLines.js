@@ -278,6 +278,9 @@ export function personFields(person, get) {
   const ab = get("aboutThem"); if (ab && !person.aboutThem) person.aboutThem = ab.slice(0, 500);
   const sp = get("spouse"); if (sp && !person.spouseName) person.spouseName = sp.slice(0, 200);
   const hn = get("householdName"); if (hn && !person.householdName) person.householdName = hn.slice(0, 200);
+  // CONNECT-1: who brought them in, as the file says it (a name or an email); matched on import.
+  const ib = get("introducedBy"); if (ib && !person.introducedBy) person.introducedBy = ib.slice(0, 200);
+  const go = get("guestOf"); if (go && !person.guestOf) person.guestOf = go.slice(0, 200);
 }
 // IMPORT-8: a file of people with an amount and no gift sheet keeps reading
 // that amount as one gift a person, and says so.

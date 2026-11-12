@@ -11,7 +11,7 @@ import { usePublicFiling } from "../RoomToGive";
 import { useDonorStatus, useDonorGone } from "../ProfileStatus";
 import { useMailbox } from "../InboxConnect";
 import { useDonorProposals } from "../MajorGifts";
-import { OPEN_PROPOSAL_KEYS } from "./profileShared";
+import { OPEN_PROPOSAL_KEYS, connectPick } from "./profileShared";
 import { errorMessage, rethrowProgrammerError } from "../../lib/domainError";
 import { offerUndo } from "../EditHistory";
 import { usePeoplePicker } from "../../lib/people";
@@ -151,11 +151,12 @@ export function useProfileRecord({ donor, onSelectRelatedDonor, onClose, onInter
   const [relType,setRelType]=useState(()=>/^organi[sz]ation$/i.test(String(donor.kind||""))||(donor.personTypes||[]).includes("organization")?"owner":"spouse");
   const [relSaving,setRelSaving]=useState(false);
   const [relErr,setRelErr]=useState("");
+  const [broughtIn,setBroughtIn]=useState(null);   // CONNECT-1: "Brought in 4 people · $12,400 given since"
   const loadRelationships=()=>{
     setRelLoading(true);
     apiFetch(`/donors/${donor.id}/relationships`)
-      .then(r=>{setRelationships(r.relationships||[]);})
-      .catch(()=>{setRelationships([]);})
+      .then(r=>{setRelationships(r.relationships||[]);setBroughtIn(r.broughtIn||null);})
+      .catch(()=>{setRelationships([]);setBroughtIn(null);})
       .finally(()=>setRelLoading(false));
   };
   useEffect(()=>{loadRelationships();},[donor.id]);
@@ -163,7 +164,8 @@ export function useProfileRecord({ donor, onSelectRelatedDonor, onClose, onInter
   const linkDonor=async(relatedDonorId)=>{
     setRelSaving(true);setRelErr("");
     try{
-      await apiFetch(`/donors/${donor.id}/relationships`,{method:"POST",body:JSON.stringify({relatedDonorId,relationshipType:relType})});
+      // CONNECT-1: a "how they came in" pick is its type plus this record's end of the link.
+      await apiFetch(`/donors/${donor.id}/relationships`,{method:"POST",body:JSON.stringify({relatedDonorId,...(connectPick(relType)||{relationshipType:relType})})});
       setRelPickerOpen(false);setRelSearch("");
       loadRelationships();
     }catch(e){setRelErr(errorMessage(e, "Could not link donor"));}
@@ -183,7 +185,7 @@ export function useProfileRecord({ donor, onSelectRelatedDonor, onClose, onInter
   // that eight remain after this person and the people already linked.
   const [relPicked,relPickerPending]=usePeoplePicker(relSearch,{match:"name",limit:9+linkedIds.size});   // STALE-2: pending while the answer to what is typed now is on its way
   const relPickerResults=relSearch.trim()
-    ?relPicked.filter(d=>d.id!==donor.id&&!linkedIds.has(d.id)).slice(0,8)
+    ?relPicked.filter(d=>d.id!==donor.id&&(connectPick(relType)||!linkedIds.has(d.id))).slice(0,8)
     :[];
 
   const [cfData,setCfData]=useState([]);
@@ -237,5 +239,5 @@ export function useProfileRecord({ donor, onSelectRelatedDonor, onClose, onInter
   useEffect(()=>{
     // A.4 — the Gmail probe went with the send panel it was for.
   },[]);
-  return { gifts, setGifts, giftLoading, setGiftLoading, giftReadErr, setGiftReadErr, giftReadSeq, localInts, setLocalInts, figs, setFigs, rel, setToldNonce, before, scores, canMajorGifts, publicFiling, setPublicFiling, filingLookupOpen, setFilingLookupOpen, prospectBriefOpen, setProspectBriefOpen, status, logMeeting, setLogMeeting, eraseOpen, setEraseOpen, stepEdit, setStepEdit, stepBusy, setStepBusy, pgOpen, setPgOpen, suggestOpen, setSuggestOpen, briefOpen, setBriefOpen, inboxConnected, eraseWord, setEraseWord, eraseBusy, eraseMsg, setEraseMsg, exportPersonData, erasePerson, loadRel, loadRailRef, sequences, dpThread, dpItems, convoOpen, setConvoOpen, editingInt, setEditingInt, planOpen, setPlanOpen, dpItemsLoaded, openProposals, proposalsKnown, propData, reloadProps, loadDpThread, relationships, relLoading, relPickerOpen, setRelPickerOpen, relSearch, setRelSearch, relType, setRelType, relSaving, relErr, setRelErr, linkDonor, unlinkDonor, retypeRelationship, relPickerResults, relPickerPending, cfData, setCfData, cfEditing, setCfEditing, cfEditVal, setCfEditVal, cfSaved, setCfSaved, cfShowAll, setCfShowAll, cfError, setCfError, giftCfDefs, giftCfEditStr, donorEvents, localScore, localTier, localConf, localRationale, scoreLoading, recalcScore, showReassign, setShowReassign, reassignId, setReassignId, reassignLoading, setReassignLoading, draftCopied, copyDraftEmail };
+  return { gifts, setGifts, giftLoading, setGiftLoading, giftReadErr, setGiftReadErr, giftReadSeq, localInts, setLocalInts, figs, setFigs, rel, setToldNonce, before, scores, canMajorGifts, publicFiling, setPublicFiling, filingLookupOpen, setFilingLookupOpen, prospectBriefOpen, setProspectBriefOpen, status, logMeeting, setLogMeeting, eraseOpen, setEraseOpen, stepEdit, setStepEdit, stepBusy, setStepBusy, pgOpen, setPgOpen, suggestOpen, setSuggestOpen, briefOpen, setBriefOpen, inboxConnected, eraseWord, setEraseWord, eraseBusy, eraseMsg, setEraseMsg, exportPersonData, erasePerson, loadRel, loadRailRef, sequences, dpThread, dpItems, convoOpen, setConvoOpen, editingInt, setEditingInt, planOpen, setPlanOpen, dpItemsLoaded, openProposals, proposalsKnown, propData, reloadProps, loadDpThread, relationships, broughtIn, relLoading, relPickerOpen, setRelPickerOpen, relSearch, setRelSearch, relType, setRelType, relSaving, relErr, setRelErr, linkDonor, unlinkDonor, retypeRelationship, relPickerResults, relPickerPending, cfData, setCfData, cfEditing, setCfEditing, cfEditVal, setCfEditVal, cfSaved, setCfSaved, cfShowAll, setCfShowAll, cfError, setCfError, giftCfDefs, giftCfEditStr, donorEvents, localScore, localTier, localConf, localRationale, scoreLoading, recalcScore, showReassign, setShowReassign, reassignId, setReassignId, reassignLoading, setReassignLoading, draftCopied, copyDraftEmail };
 }

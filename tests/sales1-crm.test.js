@@ -14,7 +14,7 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
-const { testNow, civilDay, dayOffset } = require("./clock");
+const { testNow, civilDay, dayOffset, nyNoon } = require("./clock");
 const LISTS = require("../server/admin/sales/lists");
 const FORECAST = require("../server/admin/sales/forecast");
 const TODAY = require("../server/admin/sales/today");
@@ -46,7 +46,9 @@ const src = rel => { try { return fs.readFileSync(path.join(__dirname, "..", rel
   for (const o of [HOME, CUST]) await wipeOrg(o);
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,'Sales1 Home','sales1-home',1,'active','team')`, [HOME]);
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,trial_ends_at) VALUES ($1,'Juniper Ridge (Steward)','sales1-cust',1,'trialing','team',$2)`,
-    [CUST, new Date(testNow() + 10 * DAY).toISOString()]);
+    // The trial ends at noon New York on the run's day + 10 (tests/clock.js nyNoon): "now + 10 days" as an
+    // instant is the next UTC day from 7 PM ET, and §11 reads the stored day against dayOffset(10).
+    [CUST, new Date(nyNoon(dayOffset(10))).toISOString()]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role,is_super_admin) VALUES ('u_sales1_super',$1,$2,$3,'Sales Super','admin',true)`, [HOME, SUPER, bcrypt.hashSync(PASS, 10)]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role,is_super_admin) VALUES ('u_sales1_admin',$1,$2,$3,'Cust Admin','admin',false)`, [CUST, ADMIN, bcrypt.hashSync(PASS, 10)]);
   // The planted donor: a name and an amount the facts box must never show.
