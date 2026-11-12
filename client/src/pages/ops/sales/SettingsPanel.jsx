@@ -8,6 +8,7 @@ import { INK, CREAM, card, h2, says, btn, quiet, box, link, brassTag } from "./s
 import MailboxSettings from "./MailboxSettings";
 import ProspectSettings from "./ProspectSettings";
 import PlanSettings from "./PlanSettings";
+import HealthSettings from "./HealthSettings";
 
 const TYPE_WORDS = { text: "Text", long_text: "Long text", number: "Number", currency: "Currency", date: "Date", picklist: "Pick-list", multiselect: "Multi-select", checkbox: "Checkbox", url: "URL" };
 const KIND_WORDS = { open: "Open", won: "Won", later: "Later (closed, needs a revisit date)", lost: "Lost (closed, needs a reason)" };
@@ -106,6 +107,7 @@ export default function SettingsPanel({ meta, onChanged, onClose }) {
     <button type="button" style={{ ...link, marginBottom: 10 }} onClick={onClose}>← Back to Sales</button>
     <Goal goal={meta.settings.goal} onChanged={onChanged} />
     <PlanSettings />
+    <HealthSettings />
     <ProspectSettings meta={meta} onChanged={onChanged} />
     <MailboxSettings />
     <section style={card}>

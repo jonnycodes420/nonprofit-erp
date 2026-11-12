@@ -18,8 +18,9 @@ import TasksView from "./TasksView";
 import SettingsPanel from "./SettingsPanel";
 import ImportPanel from "./ImportPanel";
 import PartnersView from "./PartnersView";
+import CustomersView from "./CustomersView";
 
-const SUBS = [["org", "Organizations"], ["contact", "Contacts"], ["deal", "Deals"], ["task", "Tasks"], ["partner", "Partners"], ["list", "Lists"], ["score", "Scoreboard"]];
+const SUBS = [["org", "Organizations"], ["contact", "Contacts"], ["deal", "Deals"], ["task", "Tasks"], ["customers", "Customers"], ["partner", "Partners"], ["list", "Lists"], ["score", "Scoreboard"]];
 const LINES = [
   ["howDidItGo", "How did it go?"], ["billingStarts", "Billing starts soon"], ["quoteUnsigned", "Quote sent, not signed"], ["booked", "Meetings booked"],
   ["due", "Due today or overdue"], ["revisit", "Back from Later"], ["noReply", "No reply"], ["trials", "Trials and betas ending"], ["quiet", "Gone quiet"],
@@ -189,6 +190,7 @@ export default function SalesView() {
               fontWeight: sub === id ? 700 : 500, color: INK, cursor: "pointer", fontFamily: "inherit" }}>{label}</button>)}
         </div>
         {sub === "task" ? <TasksView meta={meta} open={open} onChanged={changed} />
+          : sub === "customers" ? <CustomersView open={open} />
           : sub === "partner" ? <PartnersView open={open} />
           : sub === "score" ? <Scoreboard open={open} />
           : sub === "list" && listId && (meta.lists || []).some(l => l.id === listId) ? <ListView key={`list:${listId}`} type="org" list={meta.lists.find(l => l.id === listId)} meta={meta} open={open} onChanged={changed} onMeta={loadMeta} startCalling={startCalling} />
