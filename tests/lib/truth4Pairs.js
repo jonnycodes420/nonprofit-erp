@@ -149,7 +149,8 @@ async function truth4Pairs({ orgId, get, q, agree, diffs, today }) {
   const vs = ((st && (st.starters || st)) || []).find ? (st.starters || st).find(s => s.key === "volunteers_never_gave") : null;
   const vp = await get("/groups/starters/volunteers_never_gave");
   agree("truth4 volunteers who have never given", [["volunteers with no gift above $0", vt.n], ["the starter's count", vs && vs.count],
-    ["the starter's people", vp && Array.isArray(vp.people) ? vp.people.length : (vp && vp.count)]]);
+    // FLOWS-7: the preview lists 12 people at most; its count is the number of them.
+    ["the starter's people", vp && vp.count]]);
   return { from, to };
 }
 
