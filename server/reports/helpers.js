@@ -82,7 +82,7 @@ async function goalFigureRow(g, fig) {
   ]);
   // FIX-7 Part 5 — the badge carries the reason it is a badge.
   return { id: g.id, label: g.name, kind: "money", value: raised.value, source: raised.source, pace: g.paceState || null,
-    paceSentence: g.paceSentence || null,
+    paceSentence: g.paceSentence || null, paceGap: g.paceGap || 0,   // FLOWS-7: Home says the gap, never "behind" (HOME-5)
     also: [
       { key: "goal", label: "The goal", kind: "money", value: target.value, source: target.source,
         definition: "The target set on this goal's record." },
@@ -509,7 +509,7 @@ async function packGoalRows(orgId, deps) {
     return { label: g.name, raised: { value: raised.value, cents: raised.cents, source: raised.source, sentence: raised.sentence },
              target: { value: target.value, cents: target.cents, source: target.source, sentence: target.sentence },
              percent: { value: pct.value, source: pct.source, sentence: pct.sentence, blank: pct.blank || null },
-             pace: g.paceState || null };
+             pace: g.paceState || null, paceGap: g.paceGap || 0 };
   }));
 }
 

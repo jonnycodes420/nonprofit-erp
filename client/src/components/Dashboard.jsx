@@ -34,7 +34,7 @@ import { plural } from "../../../shared/countWords";
 import { HOME_GRID_CSS } from "./home/homeGrid";   // HOME-6
 import { useMovesGate, deckKnownEmpty } from "../lib/movesGate";   // FEEL-1; MOPUP-3
 // FLOWS-7: the words for the server's pace states (shared/numbers/pace.js PACE_LABELS).
-const paceText=s=>s==="met"?"Goal met":s==="ahead"?"Ahead":s==="on_track"?"On pace":s==="behind"?"Behind pace":"In progress";
+const paceText=s=>s==="met"?"Goal met":s==="ahead"?"Ahead":s==="on_track"?"On pace":s==="behind"?"Short of pace":"In progress";   // HOME-5: Home never says "behind"
 const PortfolioCard = lazy(() => retryImport(() => import("./home/PortfolioCard")).then(m => ({ default: m.PortfolioCard })));   // ACCESS-3: loaded only for someone who sees only their own people
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
@@ -841,7 +841,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     const rawPct=(many?fgRollup.rawPercent:g0.rolledRawPercent)??pct;
     const overAmt=(many?fgRollup.over:g0.rolledOver)||0;
     const behindCount=activeTop.filter(g=>g.rolledPaceState==="behind").length;
-    const heroPace=many?(behindCount>0?`${behindCount} behind pace`:"On pace"):paceText(g0.rolledPaceState);
+    const heroPace=many?(behindCount>0?`${behindCount} short of pace`:"On pace"):paceText(g0.rolledPaceState);
     const heroPaceCol=many?(behindCount>0?"rgba(240,237,230,0.7)":T.gold):catPaceColor(g0.rolledPaceState);
     const delta=period.delta||0;
     const deltaTxt=delta>0?`up ${fmtFull(delta)} on the same days last year`:delta<0?`down ${fmtFull(Math.abs(delta))} on the same days last year`:"level with the same days last year";
