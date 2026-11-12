@@ -209,8 +209,11 @@ async function getSuppressionReason(email, orgId) {
   return (await suppressionReasonsFor([email], orgId)).get(String(email).toLowerCase()) || null;
 }
 
-// FIX-26: the same read for many addresses in one query: lower(email) -> the
-// most recent reason. The single-address probe above is this with one address,
+// FIX-26: the same read for many addresses in one query: lower(email) -> one
+// reason. FLOWS-7: by a stated priority, not by which row is newest: a bounce,
+// then a complaint, then the most recent other reason (an unsubscribe). An
+// address that both bounced and unsubscribed is "bounced" on every screen, and
+// a receipt is never sent to it because its unsubscribe happened to be newer. The single-address probe above is this with one address,
 // so there is still one reading of the suppression list.
 async function suppressionReasonsFor(emails, orgId) {
   const list = [...new Set((emails || []).filter(Boolean).map(e => String(e).toLowerCase()))];
@@ -219,7 +222,7 @@ async function suppressionReasonsFor(emails, orgId) {
   const rows = await query(
     `SELECT DISTINCT ON (LOWER(email)) LOWER(email) AS e, reason FROM email_suppressions
      WHERE LOWER(email) = ANY(?::text[]) AND (org_id IS NULL OR org_id = ?)
-     ORDER BY LOWER(email), created_at DESC`,
+     ORDER BY LOWER(email), CASE reason WHEN 'bounced' THEN 0 WHEN 'complained' THEN 1 ELSE 2 END, created_at DESC`,
     [list, orgId || null]
   );
   for (const r of rows) out.set(r.e, r.reason);

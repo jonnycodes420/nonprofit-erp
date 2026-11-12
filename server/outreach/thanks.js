@@ -469,7 +469,10 @@ app.get("/milestone-drafts", requireAuth, wrap(async (req, res) => {
     [req.user.orgId, status]
   );
   // TRUTH-3: the words are filled from the person's figures today (server/drafts/render.js).
-  res.json(status === "pending_review" ? await require("../drafts/render").renderDrafts(req.user.orgId, rows) : rows);
+  // FLOWS-7: every link checked and any video claim backed, before she reads it (server/drafts/linkCheck.js).
+  res.json(status === "pending_review"
+    ? await require("../drafts/linkCheck").checkDrafts(req.user.orgId, await require("../drafts/render").renderDrafts(req.user.orgId, rows))
+    : rows);
 }));
 
 app.put("/milestone-drafts/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {

@@ -30,7 +30,7 @@ export const PACE_META = {
   met:      { label: "Goal reached",  color: T.gold,       bg: T.gold50 },
   ahead:    { label: "Ahead",         color: T.greenDk,    bg: T.bg2 },
   on_track: { label: "On pace",       color: T.ink,        bg: T.bg2 },
-  behind:   { label: "Behind",        color: T.gold700,    bg: T.gold100 },   // FIX-2 C: behind is brass, never red
+  behind:   { label: "Behind pace",   color: T.gold700,    bg: T.gold100 },   // FIX-2 C: behind is brass, never red
 };
 
 export function daysLeftText(dl) {

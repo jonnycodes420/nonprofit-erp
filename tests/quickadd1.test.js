@@ -215,16 +215,26 @@ const donorNamed = async name => (await q(`SELECT * FROM donors WHERE org_id=$1 
     const sticky = ((await tid("record-gift-campaign-same").innerText().catch(() => "")) || "").replace(/\s+/g, " ");
     await shot("b4-sticky");
     ok("§B4 the next gift shows the campaign as \"Same as last\"", /Same as last/.test(sticky) && /Spring Lantern Night/.test(sticky), sticky);
-    // the duplicate check, on the screen
-    await tid("record-gift-who").fill("Kit Ravensworth");
+    // FLOWS-7 (W-1112-Volunteers-03X): the From box shows the person on file
+    // among its matches, above "+ New person", and choosing New for a name
+    // that is exactly someone's asks first. Planted: the From search hiding an
+    // exact match (match=person dropped) turns the first check red.
+    await tid("record-gift-who").fill("kit ravensworth");
+    await tid("record-gift-match").first().waitFor({ timeout: 10000 }).catch(() => {});
+    const matchNames = await pg.locator('[data-testid="record-gift-match"]').allInnerTexts().catch(() => []);
+    const order = await pg.evaluate(() => { const m = document.querySelector('[data-testid="record-gift-matches"]'), n = document.querySelector('[data-testid="record-gift-new-person"]');
+      return m && n ? !!(m.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING) : null; });
+    await shot("b4-matches");
+    ok("§B4 FLOWS-7 a full name typed finds the person on file, listed above + New person",
+      matchNames.some(t => /Kit Ravensworth/.test(t)) && order === true, { matchNames, order });
     await tid("record-gift-new-person").click({ timeout: 10000 }).catch(() => {});
+    await tid("record-gift-already").waitFor({ timeout: 10000 }).catch(() => {});
+    const alreadyText = ((await tid("record-gift-already").innerText().catch(() => "")) || "").replace(/\s+/g, " ");
+    await shot("b4-already");
+    ok("§B4 FLOWS-7 choosing New for a name on file asks first", /There's already a Kit Ravensworth\. Use that record\?/.test(alreadyText), alreadyText);
+    await tid("record-gift-already-use").click().catch(() => {});
     await tid("record-gift-amount").fill("15");
     await tid("record-gift-save").click();
-    await tid("record-gift-dup").waitFor({ timeout: 10000 }).catch(() => {});
-    const dupText = ((await tid("record-gift-dup").innerText().catch(() => "")) || "").replace(/\s+/g, " ");
-    await shot("b4-dup");
-    ok("§B4 a duplicate name offers the person on file", /Kit Ravensworth is already on file/.test(dupText) && /Use that record/.test(dupText), dupText);
-    await tid("record-gift-dup-use").click().catch(() => {});
     await pg.waitForTimeout(1500);
     const kitAll = kit ? await q(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1 AND donor_id=$2`, [ORG, kit.id]) : [{ n: 0 }];
     ok("§B4 \"Use that record\" puts the gift on Kit, and no second Kit is added",

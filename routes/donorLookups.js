@@ -68,6 +68,17 @@ app.get("/donors/pick", requireAuth, wrap(async (req, res) => {
     args.push(exact);
   } else if (q) {
     const m = req.query.match;
+    if (m === "person") {
+      // FLOWS-7 (W-1112-Volunteers-03X): the Donors list's own person search
+      // (WALKB-1's personMatch: name, email, contact, household, organization;
+      // case and accents folded), names first, and never an archived record.
+      const PM = require("../server/donors/personMatch");
+      const pat = PM.foldedPattern(q), pm = PM.personMatchSql(pat);
+      where.push(pm.sql, "archived_at IS NULL"); args.push(...pm.args);
+      const rows = await query(`SELECT ${COLS} FROM donors WHERE ${where.join(" AND ")}
+         ORDER BY (${PM.FOLD("donors.name")} LIKE ? ESCAPE '\\') DESC, total_giving DESC, id LIMIT ?`, [...args, pat, limit]);
+      return res.json(rows.map(shape));
+    }
     if (m === "name") { where.push("strpos(LOWER(COALESCE(name,'')), ?) > 0"); args.push(q); }
     else if (m === "either") { where.push("(strpos(LOWER(COALESCE(name,'')), ?) > 0 OR strpos(LOWER(COALESCE(email,'')), ?) > 0)"); args.push(q, q); }
     else { where.push("strpos(LOWER(COALESCE(name,'') || COALESCE(email,'')), ?) > 0"); args.push(q); }

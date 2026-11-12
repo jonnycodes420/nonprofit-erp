@@ -138,13 +138,7 @@ async function linkedTaskChange(req, taskId, { done, due }) {
 // suite checks the two agree row by row. Done means done in the last 30 days.
 let _taskShape = null;
 const taskShapeMod = async () => _taskShape || (_taskShape = await import("../../shared/taskShape.js"));
-const taskViewSql = `CASE
-    WHEN t.done = 1 THEN 'done'
-    WHEN COALESCE(t.due, '') !~ '^\\d{4}-\\d{2}-\\d{2}' THEN 'nodate'
-    WHEN LEFT(t.due, 10) < ? THEN 'overdue'
-    WHEN LEFT(t.due, 10) = ? THEN 'today'
-    WHEN LEFT(t.due, 10) <= ? THEN 'upcoming'
-    ELSE 'later' END`;
+const taskViewSql = require("../../shared/numbers/taskDue").VIEW_SQL;   // FLOWS-7: the one rule, shared with the morning email
 const TASK_SELECT = `t.*, d.name AS donor_name, g.funder AS grant_funder, g.program AS grant_program,
     ev.name AS event_name, cp.name AS campaign_name, hh.name AS household_name`;
 const TASK_JOINS = `LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id

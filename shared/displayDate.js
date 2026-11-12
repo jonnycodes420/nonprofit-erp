@@ -121,3 +121,18 @@ export function humanDates(text, today) {
   if (text == null) return text;
   return String(text).replace(ISO_DAY, (m, d) => displayDay(d, today) || m);
 }
+
+// FLOWS-7 (W-1112-Fundraising-05): the one way a money card names the dates it
+// counts. "Jan 1 to Dec 31, 2026" inside one year, "Jul 1, 2026 to Jun 30, 2027"
+// across two. `periodWords` puts the period's name first, in the same words on
+// every card: "FY 2026–27 · Jul 1, 2026 to Jun 30, 2027", "Annual Fund 2026 ·
+// Jan 1 to Dec 31, 2026". No dates known: the name alone.
+export function displayRange(start, end) {
+  const a = parts(start), b = parts(end);
+  if (!a || !b) return "";
+  return a.y === b.y ? `${MON[a.mo - 1]} ${a.d} to ${displayDate(end)}` : `${displayDate(start)} to ${displayDate(end)}`;
+}
+export function periodWords(name, start, end) {
+  const r = displayRange(start, end);
+  return [name, r].filter(Boolean).join(" · ");
+}

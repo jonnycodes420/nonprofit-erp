@@ -43,6 +43,7 @@ import { MG_VIEWS } from "../lib/majorGiftsTab";   // ASKS-1
 import { LostAndFoundPart } from "./fundraising/LostAndFoundPart";   // FLOWS-2
 import { RollupThermometer } from "./fundraising/RollupThermometer";   // FLOWS-2: moved out, verbatim
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { MoneyPeriod } from "./fundraising/MoneyPeriod";   // FLOWS-7: each money card names its period
 
 // FIX-14 Part 5: a campaign is /app/fundraising?fr=campaigns&campaign=<id>:
 // the Campaigns part, scrolled to that campaign's card and marked.
@@ -92,7 +93,7 @@ function Thermometer({ raised, goal, percent, rawPercent, over, paceState, paceS
 }
 
 // FLOWS-2: a tile with a `source` opens the rows behind its figure, in place.
-function StatTile({ label, value, sub, accent, onClick: go, ariaLabel, source, definition, figure, onOpenPerson }) {
+function StatTile({ label, value, sub, accent, onClick: go, ariaLabel, source, definition, figure, onOpenPerson, period }) {
   const [rowsOpen, setRowsOpen] = useState(false);
   const onClick = source && source.key ? () => setRowsOpen(true) : go;
   return (
@@ -101,6 +102,7 @@ function StatTile({ label, value, sub, accent, onClick: go, ariaLabel, source, d
       <span style={{ fontSize: 10, fontWeight: 800, color: T.ink3 }}>{label}</span>
       <span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif", lineHeight: 1.05, letterSpacing: "-0.02em" }}>{value}</span>
       {sub && <span style={{ fontSize: 12, color: T.ink3, lineHeight: 1.4 }}>{sub}</span>}
+      {period && <MoneyPeriod {...period} />}
       {rowsOpen && <RowsPanel source={source} title={label} definition={definition} value={figure ? figure.value : value}
         kind={figure ? figure.kind : "money"} onClose={() => setRowsOpen(false)} onOpenPerson={onOpenPerson} />}
     </div>
@@ -419,11 +421,12 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
         </div>
       )}
       {/* FIX-10 Part B — THE ORG GOAL: raised, goal and the pace sentence,
-          all from the one pace function (shared/pace.js). */}
+          all from the one pace rule (shared/numbers/pace.js). */}
       {orgGoal && (
         <div style={{ background: T.white, border: "1px solid " + T.bg2, borderLeft: "4px solid " + T.greenDk, borderRadius: 18, padding: "22px 26px" }}>
           <div style={{ ...label, letterSpacing: "0.14em", marginBottom: 10 }}>Your goal</div>
-          {orgGoal.label && <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 12 }}>{orgGoal.label}</div>}
+          {orgGoal.label && <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 4 }}>{orgGoal.label}</div>}
+          <MoneyPeriod name={orgGoal.label || "Your goal"} start={orgGoal.periodStart} end={orgGoal.periodEnd} style={{ display: "block", marginBottom: 12 }} />
           <Thermometer raised={orgGoal.currentAmount} goal={orgGoal.goalAmount} percent={orgGoal.percent}
             rawPercent={orgGoal.rawPercent} over={orgGoal.over}
             paceState={orgGoal.paceState} paceSentence={orgGoal.paceSentence} paceMath={orgGoal.paceMath} big />
@@ -447,6 +450,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           <div style={{ fontSize: 10, fontWeight: 800, color: T.gold700, marginBottom: 10 }}>
             {rollup.activeGoalCount === 1 ? "Active goal" : `Active goals · ${rollup.activeGoalCount}`}
           </div>
+          <MoneyPeriod name={rollup.activeGoalCount === 1 ? "The goal running today, over its own dates" : "Goals running today, each over its own dates"} style={{ display: "block", marginBottom: 8 }} />
           <RollupThermometer rollup={rollup} />
           {rollup.activeGoalCount > 1 && (
             <div style={{ marginTop: 14, fontSize: 13, color: T.ink3 }}>
@@ -483,6 +487,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
       <OverviewPeriodBar overview={overview} onPicked={onRefresh} onNavigate={onNavigate} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12 }}>
         <StatTile label={`Raised · ${overview.periodLabel}`} value={fmtTotal(period.raised)}
+          period={{ name: overview.periodLabel, start: period.start, end: period.end }}
           accent={T.gold} source={period.source} figure={{ value: period.raised, kind: "money" }} onOpenPerson={openPerson}
           definition={`Every gift dated ${periodWords} up to today, leaving out soft and matching credits.`}
           onClick={period.start && period.end ? openRows(period.start, period.end) : () => onNavigate && onNavigate("reports")}
@@ -504,7 +509,8 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
         <StatTile label="Live giving pages" value={gp.count} accent={T.bg3}
           onClick={() => onGoto && onGoto("pages")}
           ariaLabel="View giving pages"
-          sub={gp.count > 0 ? `${fmtTotal(gp.raised)} raised` : "None can take a gift yet"} />
+          sub={gp.count > 0 ? `${fmtTotal(gp.raised)} raised` : "None can take a gift yet"}
+          period={gp.count > 0 ? { name: "Since each page opened" } : null} />
       </div>
       {/* IMPORT-4: the period's figures leave out gifts with no date, and say so. */}
       {overview.undated && overview.undated.count > 0 && (
@@ -601,7 +607,8 @@ function LeadCampaign({ top, onOpen, onNavigate, card, label }) {
         <span style={label}>Leading campaign</span>
         <button onClick={onOpen} style={{ background: "none", border: "none", padding: 0, fontSize: 12, color: T.greenDk, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Open →</button>
       </div>
-      <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 12 }}>{top.name}</div>
+      <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 4 }}>{top.name}</div>
+      <MoneyPeriod name={top.name} start={top.startDate} end={top.endDate} style={{ display: "block", marginBottom: 12 }} />
       <Thermometer raised={top.raised} goal={top.goalAmount} percent={top.percent} rawPercent={top.rawPercent} over={top.over} paceState={top.paceState} paceSentence={top.paceSentence} paceMath={top.paceMath} />
       <div style={{ marginTop: 12, fontSize: 13, color: T.ink2, lineHeight: 1.6 }}>
         {l.left > 0
@@ -676,6 +683,7 @@ function GoalCard({ g, allGoals, onClick }) {
         </div>
         <CategoryBadge g={g} />
       </div>
+      <MoneyPeriod name={g.name} start={g.startDate} end={g.endDate} style={{ marginTop: -6 }} />
       {g.lifecycle === "upcoming" ? (
         // FUNDRAISING-2: not started, so no bar and no pace: when it starts,
         // its goal, and what came in early.

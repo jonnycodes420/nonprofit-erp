@@ -85,7 +85,7 @@ export function heroSection({ GoalStat, daysLeftInPeriod, deltaTxt, fgRollup, fu
                   + money at risk (BUILD-73 Part 3) are the two live added figures,
                   replacing the vaguer "recent momentum" text line. */}
               <div style={{flex:"1 1 260px",minWidth:230,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 18px",alignContent:"start"}}>
-                <GoalStat label="Pace" value={paceLabel} valueColor={paceLabel==="Ahead of pace"?T.gold:paceLabel==="Behind pace"?T.terracotta:T.bg} sub={paceSub} onClick={()=>onNavigate("fundraising")}/>
+                <GoalStat label="Pace" value={paceLabel} valueColor={paceLabel==="Ahead"?T.gold:T.bg} sub={paceSub} onClick={()=>onNavigate("fundraising")}/>
                 <GoalStat label="Time Left" value={daysLeftInPeriod!=null?`${countLabel(daysLeftInPeriod, "day")}`:"Not set"} sub="left to reach this goal"/>
                 <GoalStat {...twStat}/>
                 <GoalStat {...reengStat}/>

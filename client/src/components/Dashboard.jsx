@@ -11,7 +11,6 @@ import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop } from "../lib/hom
 // BUILD-86 C.2 — the NOTE. shared/homeNote.js replaces the Part A sentence,
 // which read like a log line ("Chen is at day 7.").
 import { rowFigure } from "../../../shared/threadFigures";
-import { paceOf } from "../../../shared/pace";
 import { makeT } from "../../../shared/vocabulary";
 import { greetingForHour, hourIn } from "../lib/greeting";
 
@@ -34,6 +33,8 @@ import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads, HomeRailColum
 import { plural } from "../../../shared/countWords";
 import { HOME_GRID_CSS } from "./home/homeGrid";   // HOME-6
 import { useMovesGate, deckKnownEmpty } from "../lib/movesGate";   // FEEL-1; MOPUP-3
+// FLOWS-7: the words for the server's pace states (shared/numbers/pace.js PACE_LABELS).
+const paceText=s=>s==="met"?"Goal met":s==="ahead"?"Ahead":s==="on_track"?"On pace":s==="behind"?"Behind pace":"In progress";
 const PortfolioCard = lazy(() => retryImport(() => import("./home/PortfolioCard")).then(m => ({ default: m.PortfolioCard })));   // ACCESS-3: loaded only for someone who sees only their own people
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
@@ -751,17 +752,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       paceSub="too early in the period to gauge pace";
     }else{
       // FIX-7 Part 5 — the SAME function the campaign thermometer uses
-      // (shared/pace.js). This block used to carry its own 8-point band and
+      // (shared/numbers/pace.js, via the server). This block used to carry its own 8-point band and
       // its own wording, so Home and Fundraising could describe one number
       // two ways. The sub-line is now the reason, not a restatement.
-      const p=paceOf({raised:goal.currentAmount,goal:goal.goalAmount,
-                      start:goal.periodStart,end:goal.periodEnd,
-                      today:orgTodayPlus(0)});
-      if(!p){paceLabel=null;paceSub=null;}
+      // FLOWS-7: the server's pace (shared/numbers/pace.js), never one worked
+      // out here. Behind is said plainly, in the card's own colour: no alarm on Home.
+      if(!goal.paceState){paceLabel=null;paceSub=null;}
       else{
-        paceLabel=p.label;
-        paceSub=p.sentence;
-        paceColor=p.state==="ahead"?T.gold:p.state==="behind"?T.terracotta:"rgba(240,237,230,0.7)";
+        paceLabel=paceText(goal.paceState);
+        paceSub=goal.paceSentence;
+        paceColor=goal.paceState==="ahead"?T.gold:"rgba(240,237,230,0.7)";
       }
     }
   }
@@ -779,10 +779,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const hasCampaignGoals=!!(fgRollup&&fgRollup.activeGoalCount>=1&&activeTop.length);
   // Category colors are LOCKED (task/BUILD-12): Annual=gold, Capital=green,
   // Project=terracotta — all T tokens, no raw hex.
-  // FIX-7 Part 5 — the four states shared/pace.js actually returns, in its
+  // FIX-7 Part 5 — the four states shared/numbers/pace.js actually returns, in its
   // words. "Ahead" is no longer invented here; it is one of the three.
-  const paceText=s=>s==="met"?"Goal met":s==="ahead"?"Ahead":s==="on_track"?"On pace":s==="behind"?"Behind":"In progress";
-  const catPaceColor=s=>s==="behind"?T.terracotta:s==="met"?T.gold:"rgba(240,237,230,0.7)";
+  const catPaceColor=s=>s==="met"?T.gold:"rgba(240,237,230,0.7)";   // FLOWS-7: behind is stated, not alarmed
   // Exceeded-goal display rule: a beaten goal reads as a win, not a misleading
   // flat "100%". The big number shows the TRUE (uncapped) percent; the sub line
   // names the overage. The thermometer bar still uses the capped percent (a bar
@@ -843,7 +842,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     const overAmt=(many?fgRollup.over:g0.rolledOver)||0;
     const behindCount=activeTop.filter(g=>g.rolledPaceState==="behind").length;
     const heroPace=many?(behindCount>0?`${behindCount} behind pace`:"On pace"):paceText(g0.rolledPaceState);
-    const heroPaceCol=many?(behindCount>0?T.terracotta:T.gold):catPaceColor(g0.rolledPaceState);
+    const heroPaceCol=many?(behindCount>0?"rgba(240,237,230,0.7)":T.gold):catPaceColor(g0.rolledPaceState);
     const delta=period.delta||0;
     const deltaTxt=delta>0?`up ${fmtFull(delta)} on the same days last year`:delta<0?`down ${fmtFull(Math.abs(delta))} on the same days last year`:"level with the same days last year";
     return {period,many,g0,raised,goalAmt,pct,rawPct,overAmt,heroPace,heroPaceCol,deltaTxt};

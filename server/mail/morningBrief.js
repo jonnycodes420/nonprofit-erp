@@ -16,17 +16,13 @@ const S = () => require("../boot/share").ctx;
 const ORG_COLS = "id, name, legal_name, timezone, receipt_address, thread_nudge_weekends";
 const USER_COLS = "id, name, email, role, notify_thread_nudge, brief_sections, brief_hour, brief_days";
 
-// The team roll-up an ADMIN gets beneath their own list: counts per officer,
-// never everyone's rows. Oversight is a shape, not a longer list.
+// The team roll-up an ADMIN gets beneath their own list: counts per person,
+// never everyone's rows. FLOWS-7: TASKS, by Tasks' own rule
+// (shared/numbers/taskDue.js), so "Dana · 17 open · 8 overdue" is what Tasks
+// says for Dana. It counted conversation threads before, under the same words.
 async function teamRollup(orgId, today) {
-  const teamRows = await S().query(
-    `SELECT COALESCE(t.owner_name, 'Unassigned') AS who, COUNT(*)::int AS n,
-            COUNT(*) FILTER (WHERE t.due_date < ?)::int AS overdue
-       FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
-      WHERE t.org_id = ? AND t.closed_at IS NULL AND d.deleted_at IS NULL
-        AND (t.snoozed_until IS NULL OR t.snoozed_until <= ?)
-      GROUP BY 1 ORDER BY 2 DESC`, [today, orgId, today]);
-  return { teamRows, multiOfficer: teamRows.filter(r => r.who !== "Unassigned").length >= 2 };
+  const teamRows = await require("../../shared/numbers/taskDue").teamCounts(S().query, orgId, today);
+  return { teamRows, multiOfficer: teamRows.filter(r => r.user_id).length >= 2 };
 }
 
 // What goes in person `u`'s email today, by their own sections. Compose FIRST,
@@ -37,7 +33,7 @@ async function composeFor(org, u, today, team) {
   const b = c.briefSettings(u);
   const keepTimed = !(await c.userWantsEmail(u.id, "step_reminder"));
   const tqAll = await c.composeThreadNudgeQueue(org.id, today, { userId: u.id, isAdmin: u.role === "admin", keepTimed });
-  const taskAll = await require("../majorGifts/top100Lead").leadTasks(S().query, org.id, await c.composeDailyTaskReminder(org.id, u.id, today), today);   // TOP100-1: Top 100 touches first
+  const taskAll = await require("../majorGifts/top100Lead").leadTasks(S().query, org.id, await c.composeDailyTaskReminder(org.id, u.id, today, { isAdmin: u.role === "admin" }), today);   // TOP100-1: Top 100 touches first
   const suppressed = (!b.sections.steps && tqAll.list.length > 0) || (!b.sections.tasks && taskAll.count > 0);
   const tq = b.sections.steps ? tqAll : { list: [], more: 0, total: 0 };
   const tasks = b.sections.tasks ? taskAll : { rows: [], overdue: [], dueToday: [], count: 0 };
