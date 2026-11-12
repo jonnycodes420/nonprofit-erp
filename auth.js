@@ -311,13 +311,36 @@ function requireSuperAdmin(req, res, next) {
 // requireAuth, but a refusal is a plain 404, so a signed-out probe or another
 // org cannot tell "this file exists" from "there is no such file". The org
 // match itself is the route's job (it reads the org from the stored row).
-function requireAuth404(req, res, next) {
+//
+// SALES-FIX-1 item 1: `reveal(req)` (optional, async) may answer true to let the
+// real 401/403 through, with its own message ("Reload the page and try again"),
+// instead of the 404. The /ops door passes one that is true only for a live
+// super-admin's own token (opsRoutes.js), so everyone else still sees a plain 404.
+function requireAuth404(req, res, next, { reveal = null } = {}) {
   const status = res.status.bind(res);
+  const hide = () => status(404).json({ error: "not_found" });
   res.status = (code) => (code === 401 || code === 403)
-    ? { json: () => status(404).json({ error: "not_found" }) }
+    ? { json: (body) => {
+        if (!reveal) return hide();
+        Promise.resolve().then(() => reveal(req, code, body)).then(yes => (yes ? status(code).json(body) : hide()), hide);
+        return res;
+      } }
     : status(code);
   return requireAuth(req, res, (err) => { res.status = status; next(err); });
 }
 
+// The user a staff token names, its signature checked but its age not: a token
+// that expired is still proof of who held it. null for a support session's
+// token, a bad signature, or none. Used only to decide what a refusal SAYS,
+// never to let anyone in.
+function tokenHolderLoose(req) {
+  const auth = req.headers && req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer ")) return null;
+  try {
+    const p = jwt.verify(auth.slice(7), SIGNING_SECRET, { ignoreExpiration: true });
+    return p && p.userId && !p.supportSid ? String(p.userId) : null;
+  } catch { return null; }
+}
+
 module.exports = {
-  jwtSecretProblem, resetTokenHash, RESET_TOKEN_MATCH, resetTokenArgs, signToken, signInternalToken, signSupportToken, tokenUserId, sessionOrgOf, requireAuth, requireAuth404, requireSuperAdmin, VOLUNTEER_COORDINATOR, coordinatorMayReach };
+  jwtSecretProblem, resetTokenHash, RESET_TOKEN_MATCH, resetTokenArgs, signToken, signInternalToken, signSupportToken, tokenUserId, tokenHolderLoose, sessionOrgOf, requireAuth, requireAuth404, requireSuperAdmin, VOLUNTEER_COORDINATOR, coordinatorMayReach };

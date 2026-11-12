@@ -38,12 +38,22 @@ function mount(ctx) {
   // or an expired token), not a support session, and is_super_admin read live
   // from the users row, never from the token alone (BUILD-37 §A5).
   const notFound = res => res.status(404).json({ error: "not_found" });
+  // SALES-FIX-1 item 1: a refusal of a LIVE super-admin's own session (a stale page's
+  // CSRF token, an expired or signed-out session) is answered as itself, with its
+  // "Reload the page" message; everyone else still gets the plain 404.
+  const liveSuperAdmin = async req => {
+    if (process.env.TEST_MODE === "1" && process.env.SALES2_PLANT === "door404") return false;   // the planted defect (tests only)
+    const uid = require("../../auth").tokenHolderLoose(req);
+    if (!uid) return false;
+    const rows = await query("SELECT is_super_admin, deactivated_at FROM users WHERE id = ?", [uid]);
+    return rows.length === 1 && rows[0].is_super_admin === true && !rows[0].deactivated_at;
+  };
   const opsOnly = (req, res, next) => requireAuth404(req, res, err => {
     if (err) return next(err);
     if (!req.user || req.user.support || !req.user.isSuperAdmin) return notFound(res);
     query("SELECT is_super_admin FROM users WHERE id = ?", [req.user.userId])
       .then(rows => (rows.length && rows[0].is_super_admin === true ? next() : notFound(res)), next);
-  });
+  }, { reveal: liveSuperAdmin });
 
   app.get("/ops", opsLimiter, opsOnly, wrap(async (req, res) => {
     const now = Date.now();

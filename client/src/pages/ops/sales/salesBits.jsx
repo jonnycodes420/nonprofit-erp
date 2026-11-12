@@ -94,3 +94,18 @@ export function fieldsOf(meta, type) {
   return [...core, ...custom];
 }
 export const valueAt = (row, key) => (key.startsWith("props.") ? (row.props || {})[key.slice(6)] : key === "name" ? row.displayName : row[key]);
+
+// SALES-FIX-1 item 1: a read or a write the door refused says why. A stale page (its sign-in
+// changed across a ship or a restart) is told to reload, with the button, instead of "could
+// not be read". Anything else keeps the screen's own sentence.
+const RELOAD_CODES = new Set(["csrf_header_missing", "csrf_token_invalid", "org_changed"]);
+export const needsReload = e => !!e && RELOAD_CODES.has(e.error || e.code);
+export function Failure({ e, fallback, testid = "sales-failure" }) {
+  const reload = needsReload(e);
+  return <p style={{ ...says, opacity: 1 }} data-testid={testid} data-reload={reload ? "1" : "0"}>
+    {reload ? (e.message || "This page's sign-in has changed. Reload the page and try again.") : fallback}
+    {reload ? <> <button type="button" style={{ ...quiet, marginLeft: 6 }} onClick={() => window.location.reload()} data-sales-reload="1">Reload</button></> : null}
+  </p>;
+}
+// For a message line: the refusal's own words when the page must reload, else the error's.
+export const failureWords = (e, fallback) => (needsReload(e) ? (e.message || "Reload the page and try again.") : (e && e.message) || fallback);
