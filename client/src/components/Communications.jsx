@@ -1144,6 +1144,12 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
             </div>
           </div>
 
+          {/* FLOWS-7: a link that does not open, or a video nobody recorded, said in brass at the top. */}
+          {d.linkCheck && !d.linkCheck.ok && (
+            <div data-testid="draft-link-warning" role="note" style={{ background: T.gold50, border: "1px solid " + T.gold300, color: T.gold700, borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 600, marginBottom: 10, lineHeight: 1.5, overflowWrap: "anywhere" }}>
+              {d.linkCheck.sentence}
+            </div>
+          )}
           {editingId === d.id ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <input style={inp} value={editForm.subject} onChange={e => setEditForm(f => ({ ...f, subject: e.target.value }))} placeholder="Subject" />

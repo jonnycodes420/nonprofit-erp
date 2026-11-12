@@ -257,7 +257,10 @@ async function resolveCampaignRecipients(campaign, orgId) {
     "SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL",
     [orgId]
   );
-  return filterBySegment(donors, segment);
+  // FLOWS-7: the send reaches only the audience the builder counted, Everyone's
+  // people (shared/numbers/audienceReasons.js): an archived or erased record is
+  // never mailed by a campaign, and never counted as one it would reach.
+  return filterBySegment(donors, segment).filter(require("../../shared/numbers/everyone").isEveryone);
 }
 // SPLIT-2 end
 // SPLIT-2 server.js piece 435
@@ -269,23 +272,14 @@ async function campaignAudience(campaign, orgId) {
   const everyone = await query("SELECT * FROM donors WHERE org_id = ? AND deleted_at IS NULL", [orgId]);
   const inSegment = filterBySegment(everyone, segment);
   const decisions = await donorMailDecisions("campaign", inSegment.filter(d => d.email && String(d.email).trim()), orgId, { personOnly: true });
-  const recipients = [];
-  const byReason = new Map();
-  for (const d of inSegment) {
-    const dec = (d.email && String(d.email).trim()) ? decisions.get(d.id) : { send: false, reason: "no_email" };
-    if (dec && dec.send) { recipients.push(d); continue; }
-    const reason = (dec && dec.reason) || "no_email";
-    if (!byReason.has(reason)) byReason.set(reason, []);
-    byReason.get(reason).push(d);
-  }
-  const rank = r => { const i = AUDIENCE_REASON_ORDER.indexOf(r); return i < 0 ? 99 : i; };
-  const leftOut = [...byReason.entries()]
-    .sort((a, b) => rank(a[0]) - rank(b[0]))
-    .map(([reason, people]) => ({ reason, count: people.length, people }));
+  // FLOWS-7: who it reaches and who it leaves out, by the one rule the
+  // Overview reads (shared/numbers/audienceReasons.js): Everyone's people only
+  // (never an archived or erased record), each in exactly one place.
+  const a = require("../../shared/numbers/audienceReasons").audienceReasons(inSegment, id => decisions.get(id));
   return {
-    recipients,
-    leftOut,
-    leftOutCount: leftOut.reduce((n, g) => n + g.count, 0),
+    recipients: a.reach,
+    leftOut: a.groups,
+    leftOutCount: a.leftOutCount,
     orgGate: await orgMaySendEmail(orgId),
   };
 }
@@ -1048,22 +1042,11 @@ async function runDigestsForOrg(org, { wk, mo, types = ["weekly", "monthly"], se
 // SPLIT-2 end
 // SPLIT-2 server.js piece 477
 
-async function composeDailyTaskReminder(orgId, userId, today) {
-  const rows = await query(
-    `SELECT t.*, d.name AS donor_name, d.email AS donor_email FROM tasks t
-       LEFT JOIN donors d ON d.id=t.donor_id AND d.org_id=t.org_id
-      WHERE t.org_id=? AND t.assigned_to=? AND t.done=0 AND t.voided_at IS NULL
-        AND t.due IS NOT NULL AND t.due <> '' AND LEFT(t.due,10) <= ?
-        -- FIX-31: a next step (and a deadline whose follow-up thread is open)
-        -- already has its own nudge email; one reminder per thing, not two.
-        AND COALESCE(t.link_kind, '') <> 'next_step'
-        AND NOT EXISTS (SELECT 1 FROM grant_milestones m JOIN threads th ON th.id = m.thread_id AND th.closed_at IS NULL
-                         WHERE m.id = t.milestone_id AND m.org_id = t.org_id AND t.link_kind = 'deadline')
-      ORDER BY t.due ASC`,
-    [orgId, userId, today]);
-  const overdue = rows.filter(r => String(r.due).slice(0, 10) < today);
-  const dueToday = rows.filter(r => String(r.due).slice(0, 10) === today);
-  return { rows, overdue, dueToday, count: rows.length };
+// FLOWS-7 (W-1112-Volunteers-19): the tasks due today or overdue, by the one
+// rule Tasks and Home count with (shared/numbers/taskDue.js). Next steps are in
+// it, as they are on Tasks, and an admin's "mine" holds the unowned ones too.
+async function composeDailyTaskReminder(orgId, userId, today, { isAdmin = false } = {}) {
+  return require("../../shared/numbers/taskDue").dueFor(query, orgId, { userId, isAdmin, today });
 }
 // SPLIT-2 end
 // SPLIT-2 server.js piece 478

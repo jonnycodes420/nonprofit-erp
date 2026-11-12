@@ -3315,6 +3315,10 @@ async function main() {
   // stored the way the asset store's Postgres fallback stores it, and the
   // email with its link is a DRAFT in Communications. Never emailed: the org
   // sends nothing (emails_enabled=false) and nobody has pressed send.
+  // FLOWS-7 (W-1112-Fundraising-19): a seed run again writes the draft's link
+  // and the video's token together, on this host, so the draft's link never
+  // names a token (or a host) the video row does not carry. Drafts to review
+  // also checks every link (server/drafts/linkCheck.js).
   {
     const crypto = require("crypto");
     const buf = require("fs").readFileSync(require("path").join(__dirname, "..", "fixtures", "video-thanks-demo.webm"));
@@ -3326,10 +3330,12 @@ async function main() {
     const token = crypto.randomBytes(32).toString("base64url");
     const link = `${require("../../publicUrl").publicAppUrl()}/v/${token}`;
     await q(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
-             VALUES ('md_b72demo_video',$1,$2,'video:vt_b72demo_1','A thank-you from Harborlight Youth Collective',$3,'pending_review','video_thanks','u_b72demo','Dana Reyes')`,
+             VALUES ('md_b72demo_video',$1,$2,'video:vt_b72demo_1','A thank-you from Harborlight Youth Collective',$3,'pending_review','video_thanks','u_b72demo','Dana Reyes')
+             ON CONFLICT (id) DO UPDATE SET body = EXCLUDED.body WHERE milestone_drafts.status = 'pending_review'`,
       [ORG, margaretId, `Dear Margaret,\n\nI recorded a short video to say thank you. You can watch it here:\n\n${link}\n\nWith gratitude,\nDana Reyes\nHarborlight Youth Collective`]);
     await q(`INSERT INTO video_thanks (id,org_id,donor_id,asset_id,mime,bytes,duration_seconds,token,draft_id,created_by,created_by_name,created_at)
-             VALUES ('vt_b72demo_1',$1,$2,$3,'video/webm',$4,3,$5,'md_b72demo_video','u_b72demo','Dana Reyes',NOW() - INTERVAL '1 hour')`,
+             VALUES ('vt_b72demo_1',$1,$2,$3,'video/webm',$4,3,$5,'md_b72demo_video','u_b72demo','Dana Reyes',NOW() - INTERVAL '1 hour')
+             ON CONFLICT (id) DO UPDATE SET token = EXCLUDED.token, asset_id = EXCLUDED.asset_id`,
       [ORG, margaretId, assetId, buf.length, token]);
     console.log("[seed] video thank-you: one draft for Margaret Chen, not sent");
   }

@@ -25,7 +25,7 @@ import { errorMessage } from "../../lib/domainError";
 import { orgTodayCivil } from "../../lib/orgToday";
 import { personNamed } from "../../lib/people";
 import { lastGift, rememberGift } from "../../lib/stickyGift";
-import { PeopleDatalist } from "../PeopleDatalist";
+import FromPerson from "./FromPerson";   // FLOWS-7: the Donors list's person search, on the page
 import EventField from "./EventField";
 import FundField, { emptyFund, fundBody, fundLinesProblem } from "./FundField";
 import AttributionField from "./AttributionField";
@@ -54,6 +54,7 @@ function startForm(eventId, carry) {
 // (Donors passes it; an event's or a grant's dialog starts clean).
 export default function RecordGiftDialog({ person = null, eventId = "", pledgeId = null, title = "Record a gift", fixedPerson = false, onClose, onSaved, testid = "record-gift", carry = false }) {
   const [who, setWho] = useState(person ? person.name : "");
+  const [picked, setPicked] = useState(person);   // FLOWS-7: the person chosen from the matches
   const [{ f, same }, setForm] = useState(() => startForm(eventId, carry));
   const setF = patch => setForm(s => ({ f: { ...s.f, ...patch }, same: Object.fromEntries(Object.entries(s.same).filter(([k]) => !(k in patch))) }));
   const [np, setNp] = useState(null);          // the new person's fields, or null
@@ -78,7 +79,7 @@ export default function RecordGiftDialog({ person = null, eventId = "", pledgeId
     onSaved && onSaved(r, p);
     if (!another) { onClose(); return; }
     setSaved(`Saved ${fmtFull(Number(f.amount) || 0)} from ${p.name}.`);
-    setWho(""); setNp(null); setDup(null);
+    setWho(""); setPicked(null); setNp(null); setDup(null);
     setForm(startForm(eventId, true));
   };
 
@@ -90,7 +91,7 @@ export default function RecordGiftDialog({ person = null, eventId = "", pledgeId
     if (np && !personName(np)) { setErr("Type the new person's first or last name."); return; }
     let p = null;
     if (!np) {
-      p = person && who === person.name ? person : await personNamed(who.trim()).catch(() => null);
+      p = picked && who === picked.name ? picked : await personNamed(who.trim()).catch(() => null);
       if (!p) { setErr(`${who.trim() || "That name"} is not on file. Choose someone from your records${newPersonOk ? ", or add them as a new person" : ""}.`); return; }
     }
     setBusy(true);
@@ -114,22 +115,17 @@ export default function RecordGiftDialog({ person = null, eventId = "", pledgeId
     setBusy(false);
   };
 
-  const typed = who.trim();
   return (
     <Modal onClose={onClose} width={520} ariaLabel={title}>
       <div data-testid={testid} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{title}</div>
         {saved && <div role="status" data-testid={testid + "-saved"} style={{ fontSize: 12.5, color: T.greenDk, fontWeight: 700 }}>{saved}</div>}
         {np ? <NewPersonFields value={np} onChange={v => { setNp(v); setDup(null); }} testid={testid + "-np"} onCancel={() => { setNp(null); setDup(null); }} />
-          : <label><span style={lbl}>From</span>
+          : <div><span style={lbl}>From</span>
             {fixedPerson ? <div data-testid={testid + "-who"} style={{ fontSize: 14, color: T.ink, fontWeight: 700 }}>{who}</div>
-              : <><input list="record-gift-people" value={who} onChange={e => setWho(e.target.value)} placeholder="Search people on file, or type a new name" data-testid={testid + "-who"} style={inp} autoComplete="off" />
-                <PeopleDatalist id="record-gift-people" text={who} />
-                {newPersonOk && typed && (!person || who !== person.name) && (
-                  <button type="button" data-testid={testid + "-new-person"} onClick={() => { setNp(splitName(typed)); setErr(""); }}
-                    style={{ background: "none", border: "none", padding: "6px 0 0", color: T.greenDk, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                    + New person: '{typed}'</button>)}</>}
-          </label>}
+              : <FromPerson value={who} chosen={picked} onType={setWho} onChoose={x => { setPicked(x); setWho(x.name); setErr(""); }}
+                  onNew={t => { setNp(splitName(t)); setErr(""); }} newPersonOk={newPersonOk} inputStyle={inp} testid={testid} />}
+          </div>}
         {dup && (
           <div data-testid={testid + "-dup"} role="alert" style={{ border: "1px solid " + T.gold300, background: T.gold50, borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ fontSize: 13, color: T.ink }}>{dup.sentence}</div>

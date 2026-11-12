@@ -145,7 +145,7 @@ async function main() {
 
   // ── §3 goal pace and portfolios reconcile ───────────────────────────────
   {
-    const P = await import("../shared/pace.js");
+    const P = require("../shared/numbers/pace");
     const m = P.paceMath && P.paceMath({ raised: 225151, start: "2026-07-01", end: "2027-06-30", today: "2026-11-05" });
     ok("§3 goal pace is its own arithmetic: $225,151 by day 128 of 365 is on pace for 225,151 × 365 ÷ 128",
        !!m && m.day === 128 && m.days === 365 && m.projected === Math.round(225151 * 365 / 128)

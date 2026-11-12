@@ -7,6 +7,10 @@
 import { T } from "./shared";
 import { Figure } from "./Figure";
 
+// FLOWS-7: a goal short of pace says by how much (shared/numbers/pace.js's gap,
+// from the server). Home never says "behind" (HOME-5), so the words name the gap.
+const fmtGap = n => "$" + Math.round(Number(n) || 0).toLocaleString("en-US");
+
 export function GoalRow({ r, first }) {
   const goal = (r.also || []).find(a => a.key === "goal"), pct = (r.also || []).find(a => a.key === "percent");
   const bar = pct && pct.value != null ? Math.min(100, Math.max(0, pct.value)) : 0;
@@ -26,7 +30,7 @@ export function GoalRow({ r, first }) {
       <div style={{ height: 6, background: T.bg2, borderRadius: 99, marginTop: 8, overflow: "hidden" }}>
         <div style={{ height: "100%", width: bar + "%", background: T.greenDk, borderRadius: 99 }} />
       </div>
-      {r.pace && <div style={{ fontSize: 12, color: T.ink3, marginTop: 5 }}>{r.pace === "met" ? "Goal met" : r.pace === "behind" ? "Behind an even pace through the period" : "On an even pace through the period"}</div>}
+      {r.pace && <div style={{ fontSize: 12, color: T.ink3, marginTop: 5 }}>{r.pace === "met" ? "Goal met" : r.pace === "behind" ? (r.paceGap > 0 ? `${fmtGap(r.paceGap)} to go to be on an even pace through the period` : "Not yet on an even pace through the period") : "On an even pace through the period"}</div>}
     </div>
   );
 }

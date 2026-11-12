@@ -27,7 +27,10 @@ const RULE = {
   top_tenth: "d.id IN (SELECT id FROM tt)",
   awaiting_thanks: "ga.unthanked IS TRUE",
   no_history: "d.id NOT IN (SELECT donor_id FROM ih)",
-  volunteers_never_gave: "ga.gave IS NOT TRUE AND d.id IN (SELECT person_id FROM vol)",
+  // FLOWS-7 (W-1112-Volunteers-31X): a volunteer is a person with the Volunteer
+  // type (shared/personType.js typeSql, the rule group's "Role is Volunteer" and
+  // the roster's), not only one with a logged shift: 13 against their 40.
+  volunteers_never_gave: `ga.gave IS NOT TRUE AND (d.person_types @> '["volunteer"]'::jsonb)`,
   guests_never_gave: "ga.gave IS NOT TRUE AND d.id IN (SELECT donor_id FROM att)",
   board: "d.board_member IS TRUE",
   do_not_solicit: "(d.do_not_solicit IS TRUE OR d.do_not_contact IS TRUE)",
@@ -63,8 +66,6 @@ function starterCountsSql(o) {
                                FROM donors x WHERE x.org_id = ${p(orgId)} AND x.deleted_at IS NULL AND COALESCE(x.total_giving,0) > 0) t
             WHERE t.rn <= CEIL(t.n / 10.0)),
     ih AS (SELECT ih.donor_id FROM interactions ih WHERE ih.org_id = ${p(orgId)} AND ih.donor_id IS NOT NULL),
-    vol AS (SELECT vx.person_id FROM volunteer_shifts vx WHERE vx.org_id = ${p(orgId)} AND vx.person_id IS NOT NULL
-            UNION SELECT ax.person_id FROM volunteer_applications ax WHERE ax.org_id = ${p(orgId)} AND ax.status = 'approved' AND ax.person_id IS NOT NULL),
     att AS (SELECT ea.donor_id FROM event_attendees ea WHERE ea.org_id = ${p(orgId)} AND ea.donor_id IS NOT NULL
              AND (lower(COALESCE(ea.status,'')) = 'attended' OR ea.checked_in_at IS NOT NULL))`;
   // Placeholders bind in the order they appear: the CTEs above, the columns, the org.

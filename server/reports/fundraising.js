@@ -34,8 +34,7 @@ const {
   withAdvisoryLock, withTransaction, wrap,
 } = ctx;
 // FIX-7 Part 5 — the one pace function. Pure, no clock of its own.
-let PACE = null;
-const PACE_READY = import("../../shared/pace.js").then(m => { PACE = m; return m; });
+const PACE_READY = Promise.resolve();   // FLOWS-7: pace is shared/numbers/pace.js, required by helpers
 let app = routers.r1;
 
 // ── BUILD-76 Part 2 — the Drifting surface ─────────────────────────────────
@@ -354,11 +353,15 @@ app.get("/goals/active", requireAuth, wrap(async (req, res) => {
     }
   }
 
+  const commit = await goalCommitted(req.user.orgId, goal, currentAmount);
   res.json({
     label: goal.label, goalType: goal.goal_type, goalAmount, currentAmount, percent, rawPercent, over,
     periodStart: goal.period_start, periodEnd: goal.period_end,
     recentAmount, recentDonorCount, lastYear,
-    commitment: await goalCommitted(req.user.orgId, goal, currentAmount),   // GIFTS-2
+    commitment: commit,   // GIFTS-2
+    // FLOWS-7: Home's pace is the server's, by the one rule (shared/numbers/pace.js).
+    ...(({ paceState, paceSentence, paceMath, paceGap, paceBasis }) => ({ paceState, paceSentence, paceMath, paceGap, paceBasis }))(
+      paceWithCommitment(currentAmount, commit, goalAmount, goal.period_start, goal.period_end)),
   });
 }));
 

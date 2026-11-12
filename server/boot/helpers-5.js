@@ -112,10 +112,15 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
   // not an HTML one: a comment inside the body would be text in the email, and
   // a word in it can make an assertion about the email's own ORDER read wrong —
   // which is exactly what happened when this one was written the other way.)
+  // FLOWS-7: every task the count holds is listed, or named as "and N more"
+  // opening Tasks; the count is Tasks' own (shared/numbers/taskDue.js).
+  const TASKS_SHOWN = 12;
+  const taskList = tasks.ordered || [...tasks.dueToday, ...tasks.overdue];
   const taskBlock = tasks.count ? `
     <div style="margin-top:22px;padding-top:14px;border-top:2px solid ${BRASS};">
       <div style="font-family:'DM Serif Display',Georgia,serif;font-size:17px;color:${INK};">Your tasks</div>
-      <table style="margin-top:6px;border-collapse:collapse;width:100%;">${(tasks.ordered || [...tasks.dueToday, ...tasks.overdue]).map(taskLi).join("")}</table>
+      <table style="margin-top:6px;border-collapse:collapse;width:100%;">${taskList.slice(0, TASKS_SHOWN).map(taskLi).join("")}</table>
+      ${taskList.length > TASKS_SHOWN ? `<div style="font-size:12px;color:${SAGE};margin-top:6px;">and ${taskList.length - TASKS_SHOWN} more · <a href="${base}/app/tasks?view=overdue" style="color:${EMERALD};">open them in Tasks</a></div>` : ""}
     </div>` : "";
 
   // FIX-34 · TODAY'S MEETINGS ride in the same morning email, from the same
@@ -138,7 +143,7 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
     </div>` : "";
   const teamBlock = team && team.length ? `
     <div style="margin-top:22px;padding-top:14px;border-top:1px solid #dcd8cd;">
-      <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${SAGE};">Across the team</div>
+      <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${SAGE};">Tasks across the team</div>
       <table style="margin-top:6px;border-collapse:collapse;">${team.map(r =>
         `<tr><td style="padding:3px 0;font-size:13px;color:${INK};">${digestEsc(displayNameCase(r.who))}<span style="color:${SAGE};"> · ${r.n} open${r.overdue ? ` · ${r.overdue} overdue` : ""}</span></td></tr>`).join("")}</table>
     </div>` : "";

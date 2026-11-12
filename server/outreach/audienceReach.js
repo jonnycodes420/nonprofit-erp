@@ -11,6 +11,7 @@
 // The people are read once and the decisions once, for every audience.
 "use strict";
 const EV = require("../../shared/numbers/everyone");
+const AR = require("../../shared/numbers/audienceReasons");
 
 async function audienceReach(orgId, segments, { query, resolveSegmentSpec, filterBySegment }) {
   const { donorMailDecisions } = require("../../routes/email");
@@ -24,20 +25,17 @@ async function audienceReach(orgId, segments, { query, resolveSegmentSpec, filte
     // TRUTH-6 (W-1110-Fundraising-16): everyone the audience holds, and each
     // one who can't get the email with why, so "0 can get this email" is never
     // said beside a group of 1,217 without the reasons that add up to it.
-    const members = inSegment.filter(EV.isEveryone);
-    const why = new Map();
-    for (const d of members) {
-      const r = !hasEmail(d) ? "no_email" : ((decisions.get(d.id) || {}).send ? null : ((decisions.get(d.id) || {}).reason || "not_sendable"));
-      if (r) why.set(r, (why.get(r) || 0) + 1);
-    }
+    // FLOWS-7: the one audience-reasons rule (shared/numbers/audienceReasons.js),
+    // the same call the campaign editor makes, so the two always agree and add up.
+    const a = AR.audienceReasons(inSegment, id => decisions.get(id));
     out.push({
-      members: members.length,
-      cannot: [...why.entries()].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),
+      members: a.audience.length,
+      cannot: a.groups.map(g => ({ reason: g.reason, count: g.count })),
       // TRUTH-4 (W-1108-Fundraising-25X): "N people in it" is the audience's
       // people by Everyone's one rule (everyone.js: not in the trash, archived
       // or erased) who have an email address, so it is never above Everyone.
-      inSegment: inSegment.filter(d => EV.isEveryone(d) && EV.hasEmail(d)).length,
-      reach: inSegment.filter(d => hasEmail(d) && (decisions.get(d.id) || {}).send).length,
+      inSegment: a.audience.filter(EV.hasEmail).length,
+      reach: a.reach.length,
     });
   }
   return out;

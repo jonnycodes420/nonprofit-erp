@@ -17,8 +17,9 @@ const {
   savedReportFor, sentenceMoney, reportHooks,
 } = ctx;
 // FIX-7 Part 5 — the one pace function. Pure, no clock of its own.
-let PACE = null;
-const PACE_READY = import("../../shared/pace.js").then(m => { PACE = m; return m; });
+// FLOWS-7: the one pace rule (shared/numbers/pace.js), required, not imported late.
+const PACE = require("../../shared/numbers/pace");
+const PACE_READY = Promise.resolve(PACE);
 
 // ══ REPORTS-3 — SAVED DASHBOARDS AND THE BOARD PACK ════════════════════════
 //
@@ -81,7 +82,7 @@ async function goalFigureRow(g, fig) {
   ]);
   // FIX-7 Part 5 — the badge carries the reason it is a badge.
   return { id: g.id, label: g.name, kind: "money", value: raised.value, source: raised.source, pace: g.paceState || null,
-    paceSentence: g.paceSentence || null,
+    paceSentence: g.paceSentence || null, paceGap: g.paceGap || 0,   // FLOWS-7: Home says the gap, never "behind" (HOME-5)
     also: [
       { key: "goal", label: "The goal", kind: "money", value: target.value, source: target.source,
         definition: "The target set on this goal's record." },
@@ -508,7 +509,7 @@ async function packGoalRows(orgId, deps) {
     return { label: g.name, raised: { value: raised.value, cents: raised.cents, source: raised.source, sentence: raised.sentence },
              target: { value: target.value, cents: target.cents, source: target.source, sentence: target.sentence },
              percent: { value: pct.value, source: pct.source, sentence: pct.sentence, blank: pct.blank || null },
-             pace: g.paceState || null };
+             pace: g.paceState || null, paceGap: g.paceGap || 0 };
   }));
 }
 
@@ -734,7 +735,7 @@ async function savedDashboardFor(orgId, userId, id) {
 // A DATE column comes back as a Date at local midnight; its own calendar day.
 const civilDay = d => d instanceof Date
   ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : String(d || "").slice(0, 10);
-function computeFundraisingPace(raised, goal, startDate, endDate) {
+function computeFundraisingPace(raised, goal, startDate, endDate, basis = "raised") {
   const g = parseFloat(goal) || 0;
   const r = parseFloat(raised) || 0;
   // `percent` stays capped at 100 (thermometer bar width). `rawPercent` is the
@@ -751,20 +752,22 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
     if (daysLeft < 0) { lifecycle = "ended"; daysLeft = 0; }
   }
   // ── FIX-7 Part 5 · PACE IS ONE FUNCTION, AND IT SAYS WHY ────────────────
-  // shared/pace.js owns the definition (raised share against the share of the
-  // campaign's OWN window that has gone) and the ten-point band. This used to
+  // shared/numbers/pace.js owns the definition (raised share against the share of the
+  // campaign's OWN window that has gone) and, since FLOWS-7, no band below the line. This used to
   // be a 2%-of-expected-dollars test living here, and a separate 8-point test
   // living in Dashboard.jsx, which is how two screens said different things
   // about the same money. No start or no deadline: no pace at all — the caller
   // shows raised against goal, which is the honest thing to show.
-  let paceState = null, expected = null, paceSentence = null, paceRaisedPct = null, paceElapsedPct = null, paceMath = null;
-  const p = PACE && PACE.paceOf({ raised: r, goal: g, start: startDate, end: endDate, today: now.toISOString().slice(0, 10) });
+  let paceState = null, expected = null, paceSentence = null, paceRaisedPct = null, paceElapsedPct = null, paceMath = null, paceGap = 0, paceProjected = null;
+  const p = PACE.paceOf({ raised: r, goal: g, start: startDate, end: endDate, today: now.toISOString().slice(0, 10), basis });
   if (p) {
     paceState = p.state === "on_pace" ? "on_track" : p.state;   // the wire word the screens already read
     paceSentence = p.sentence;
     paceRaisedPct = p.raisedPct;
     paceElapsedPct = p.elapsedPct;
     paceMath = p.math ? p.math.sentence : null;   // LEDGER-2: the projection, with its inputs
+    paceGap = p.gap;   // FLOWS-7: behind says by how much, in dollars
+    paceProjected = p.math ? p.math.projected : null;
     const total = new Date(endDate) - new Date(startDate);
     const elapsed = Math.max(0, Math.min(total, now - new Date(startDate)));
     expected = total > 0 ? g * (elapsed / total) : null;
@@ -773,26 +776,25 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
   }
   // FIX-34: "On pace" beside "$0 of $25,000, 0%" said two things. Nothing
   // counted yet is never on pace; the bar says $0 and no badge rides it.
-  if (r <= 0 && (paceState === "on_track" || paceState === "ahead")) { paceState = null; paceSentence = null; }
+  if (r <= 0 && (paceState === "on_track" || paceState === "ahead")) { paceState = null; paceSentence = null; }   // unreachable since FLOWS-7 (behind at $0), kept as the FIX-34 floor
   // FUNDRAISING-2: a goal that has not started has no pace. It says when it
   // starts, and the card shows what was pledged or given early.
-  if (lifecycle === "upcoming") { paceState = null; paceSentence = null; expected = null; paceRaisedPct = null; paceElapsedPct = null; paceMath = null; }
+  if (lifecycle === "upcoming") { paceState = null; paceSentence = null; expected = null; paceRaisedPct = null; paceElapsedPct = null; paceMath = null; paceGap = 0; paceProjected = null; }
   return { percent, rawPercent, over, daysLeft, lifecycle, paceState, expected,
-           paceSentence, paceMath, paceRaisedPct, paceElapsedPct, startsOn: lifecycle === "upcoming" ? civilDay(startDate) : null };
+           paceSentence, paceMath, paceRaisedPct, paceElapsedPct, paceGap, paceProjected, paceBasis: basis, startsOn: lifecycle === "upcoming" ? civilDay(startDate) : null };
 }
 
 // GIFTS-2 · PACE ON COMMITTED, THE BAR ON RAISED. When a goal counts pledges,
 // the pace badge compares committed (raised + still owed) with the time gone;
 // the bar, the percent and "over" stay money raised, which is what every other
 // figure of this goal (goal-progress, Reports) reads.
-const PACE_KEYS = ["paceState", "expected", "paceSentence", "paceMath", "paceRaisedPct", "paceElapsedPct"];
+const PACE_KEYS = ["paceState", "expected", "paceSentence", "paceMath", "paceRaisedPct", "paceElapsedPct", "paceGap", "paceProjected", "paceBasis"];
 function paceWithCommitment(raised, commitment, goal, startDate, endDate) {
   const base = computeFundraisingPace(raised, goal, startDate, endDate);
   if (!commitment || !commitment.countPledges || commitment.paceBasis === raised) return base;
-  const on = computeFundraisingPace(commitment.paceBasis, goal, startDate, endDate);
+  // FLOWS-7: the rule names its own basis ("85% committed"), no string swap.
+  const on = computeFundraisingPace(commitment.paceBasis, goal, startDate, endDate, "committed");
   for (const k of PACE_KEYS) base[k] = on[k];
-  if (base.paceSentence) base.paceSentence = base.paceSentence.replace("% raised", "% committed");
-  if (base.paceMath) base.paceMath = base.paceMath.replace(" raised by day", " committed by day");
   return base;
 }
 

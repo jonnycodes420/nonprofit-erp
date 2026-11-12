@@ -826,7 +826,8 @@ const STARTERS = [
   { key: "top_tenth", name: "Top tenth by lifetime giving", rules: { topTenth: "1", solicitable: "1" }, asking: true },
   { key: "awaiting_thanks", name: "Gifts waiting for a thank-you", rules: { awaitingThanks: "1" } },
   { key: "no_history", name: "No history yet", rules: { noHistory: "1" } },
-  { key: "volunteers_never_gave", name: "Volunteers who have never given", rules: { volunteer: "1", given: "never" } },
+  // FLOWS-7 (W-1112-Volunteers-31X): Role is Volunteer, the roster's and a rule group's own rule.
+  { key: "volunteers_never_gave", name: "Volunteers who have never given", rules: { role: "volunteer", given: "never" } },
   { key: "guests_never_gave", name: "Event guests who have never given", rules: { attendedEvent: "any", given: "never" } },
   { key: "board", name: "Board members", rules: { boardMember: "1" } },
   { key: "do_not_solicit", name: "Do not solicit", rules: { doNotSolicit: "1" } },
