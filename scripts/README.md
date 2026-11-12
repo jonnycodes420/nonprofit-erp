@@ -117,7 +117,7 @@ Node scripts:
 | `ops/seed-loadtest.js` | A 25,000-donor org on the local database, for load tests | `DATABASE_URL=postgresql://steward@localhost:5544/steward_loadtest node scripts/ops/seed-loadtest.js` |
 | `ops/integrity1-find-vanished.js` | People an import's undo trashed who were here before that import (INTEGRITY-1). Dry run by default: org ids and counts | `DATABASE_URL=… node scripts/ops/integrity1-find-vanished.js`, then `--apply --i-know-this-is-prod`; `--undo=<audit id>` reverses |
 | `ops/integrity1-duplicate-invites.js` | Revokes all but the newest pending invite per address so the unique index can build (INTEGRITY-1). Dry run by default | `DATABASE_URL=… node scripts/ops/integrity1-duplicate-invites.js`, then `--apply --i-know-this-is-prod`; `--undo=<audit id>` reverses |
-| `ops/flows8-stock-alts.js` | Pages that still carry the two old stock-photo alt sentences (FLOWS-8, W-1112-Fundraising-35X). Dry run by default; skips org_b72demo and org_creo | `DATABASE_URL=… node scripts/ops/flows8-stock-alts.js`, then `--apply` |
+| `ops/flows8-stock-alts.js` | Pages that still carry the two old stock-photo alt sentences (FLOWS-8, W-1112-Fundraising-35X). A dry run: it lists and writes nothing; skips org_b72demo and org_creo | `DATABASE_URL=… node scripts/ops/flows8-stock-alts.js` |
 
 `ci/builder-access-check.js` (SECURE-3) is run by the battery (`tests/script-guards.test.js`): it fails if
 this environment holds a Railway token, a Supabase secret or a remote postgres URL, and warns about

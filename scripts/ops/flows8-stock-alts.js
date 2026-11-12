@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// FLOWS-8 (W-1112-Fundraising-35X) · PHOTOS THAT STILL CARRY THE OLD ALT TEXT. A DRY RUN BY DEFAULT.
+// FLOWS-8 (W-1112-Fundraising-35X) · PHOTOS THAT STILL CARRY THE OLD ALT TEXT. A DRY RUN; IT WRITES NOTHING.
 //
 // Two of Steward's bundled photos had alt text copied from their source's
 // title, not from the picture (shared/stockPhotos.js now describes them):
@@ -8,13 +8,13 @@
 // A page made before the fix stored the old words with its photo. Listed here:
 // giving pages and peer fundraisers (image_meta.alt), the membership cover, and
 // any page block (published or draft widgets) carrying either old sentence.
-// --apply rewrites the old sentence to the new one in exactly those places and
-// nothing else. Skips org_b72demo (seed-demo.js owns it) and org_creo.
+// It lists, and writes nothing: each page's alt is put right by choosing its
+// photo again in the editor (the alt follows the photo), or by Jonathan after
+// reading the list. Skips org_b72demo (seed-demo.js owns it) and org_creo.
 //
 // Usage:
 //   node scripts/ops/flows8-stock-alts.js                 # list, every org
 //   node scripts/ops/flows8-stock-alts.js --org=<org_id>  # one org
-//   node scripts/ops/flows8-stock-alts.js --apply         # rewrite what the list shows
 "use strict";
 const { Pool } = require("pg");
 
@@ -34,11 +34,11 @@ const PLACES = [
 ];
 
 async function main() {
+  if (process.argv.includes("--apply")) { console.error("This script is a dry run only; it has no --apply."); process.exit(2); }
   if (!process.env.DATABASE_URL) { console.error("DATABASE_URL is not set."); process.exit(2); }
-  const apply = process.argv.includes("--apply");
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL) ? false : { rejectUnauthorized: false } });
   const one = arg("org");
-  let found = 0, written = 0;
+  let found = 0;
   try {
     for (const { table, col } of PLACES) {
       const have = (await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name=$1 AND column_name=$2`, [table, col])).rows.length;
@@ -49,14 +49,11 @@ async function main() {
         const rows = (await pool.query(`SELECT org_id, ${table === "portal_settings" ? "org_id AS id" : "id"} FROM ${table} WHERE ${where} ORDER BY org_id`, args)).rows;
         for (const r of rows) console.log(`${table}.${col} · ${r.org_id} · ${r.id} · "${from}"`);
         found += rows.length;
-        if (apply && rows.length) {
-          const u = await pool.query(`UPDATE ${table} SET ${col} = replace(${col}::text, $${args.length + 1}, $${args.length + 2})::jsonb WHERE ${where}`, [...args, from, to]);
-          written += u.rowCount;
-        }
+        if (rows.length) console.log(`  the photo's own words: "${to}"`);
       }
     }
     console.log(`\n${found} place(s) carry an old alt sentence.`);
-    console.log(apply ? `${written} row(s) rewritten to the photo's own description.` : "Dry run: nothing was written. Add --apply to rewrite them.");
+    console.log("Dry run: nothing was written.");
   } finally { await pool.end(); }
 }
 main().catch(e => { console.error(e); process.exit(1); });

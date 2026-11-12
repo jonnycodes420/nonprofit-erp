@@ -38,11 +38,9 @@ export function StartFromTopDonors({ listName, isReadOnly, onAdded }) {
   const flip = id => setTicked(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   return (
     <div data-testid="top100-empty" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "18px 20px" }}>
-      <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, marginBottom: 6 }}>Nobody on your {listName} yet</div>
+      <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{`Nobody on your ${listName} yet`}</div>
       <div data-testid="top100-empty-why" style={{ fontSize: 13, color: T.ink2, lineHeight: 1.6, maxWidth: 640, marginBottom: 12 }}>
-        Your {listName} is the list you keep by hand, in your own order, so it starts empty. Reports' Top donors ranks
-        everyone by what they have given; nobody is on this list until you add them. Add people by name above, from a
-        person's profile (Plan of care, then Add), or start from your top donors.
+        {`Your ${listName} is the list you keep by hand, in your own order, so it starts empty. Reports' Top donors ranks everyone by what they have given; nobody is on this list until you add them. Add people by name above, from a person's profile (Plan of care, then Add), or start from your top donors.`}
       </div>
       {!isReadOnly && !offer && <button type="button" data-testid="top100-start" onClick={open} disabled={busy} style={btn}>{busy ? "Reading…" : "Start from your top donors"}</button>}
       {offer && (

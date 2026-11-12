@@ -236,12 +236,12 @@ module.exports = async function flows3Volunteers() {
     const s = page.getByPlaceholder("Search everyone…");
     await s.fill("Pia");
     await page.getByRole("button", { name: /Pia Lindqvist/ }).first().click({ timeout: 10000 });
-    await page.getByRole("button", { name: /^Add \d+ donor/ }).first().click();
+    await page.getByRole("button", { name: /^Add \d+ (donor|person|people)/ }).first().click();
     await page.getByText(/Over capacity/).first().waitFor({ timeout: 10000 });
     await shot("s6-ask");
     await page.locator('[data-testid="confirm-no"]').click();
     await page.waitForTimeout(500);
-    const still = await page.getByRole("button", { name: /^Add \d+ donor/ }).count();
+    const still = await page.getByRole("button", { name: /^Add \d+ (donor|person|people)/ }).count();
     await s.fill("Pia");
     await page.waitForTimeout(600);
     const checked = await page.evaluate(() => [...document.querySelectorAll('button')].filter(b => /Pia Lindqvist/.test(b.textContent || ""))

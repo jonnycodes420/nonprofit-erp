@@ -193,7 +193,7 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
     await page.locator('[data-testid="event-detail"]').waitFor({ timeout: 20000 });
     const s = page.getByPlaceholder("Search everyone…");
     for (const n of ["Ada Quill", "Bram Oduya"]) { await s.fill(n.split(" ")[0]); await page.getByRole("button", { name: new RegExp(n) }).first().click({ timeout: 10000 }); }
-    await page.getByRole("button", { name: /^Add \d+ donor/ }).first().click();
+    await page.getByRole("button", { name: /^Add \d+ (donor|person|people)/ }).first().click();
     const added = await until(() => /Attendees \(2\)/.test(document.body.innerText));
     ok("§1 Attendees says 2 after the add", added, (await page.locator("body").innerText()).match(/Attendees \(\d+\)/));
     const inv = await until(() => { const r = document.querySelector('[data-testid="ev-report"]'); return r && /2 invited/.test(r.innerText); });
