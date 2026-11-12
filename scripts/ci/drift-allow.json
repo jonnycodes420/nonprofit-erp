@@ -21,5 +21,13 @@
   { "name": "RESEND_WEBHOOK_SECRET", "reason": "staging sends nothing through Resend, so no webhook calls it" },
   { "name": "RESEND_BASE_URL", "reason": "staging answers every Resend call in-process (capture sink)" },
   { "name": "INBOUND_EMAIL_*", "reason": "inbound mail routes to prod only" },
-  { "name": "WORKER", "reason": "an old prod switch; staging sets STEWARD_PROCESS instead" }
+  { "name": "WORKER", "reason": "an old prod switch; staging sets STEWARD_PROCESS instead" },
+  { "name": "DEMO_NOTIFY_EMAIL", "reason": "demo mail: staging captures all mail, nothing is delivered" },
+  { "name": "DEMO_SMTP_FROM", "reason": "demo mail: staging captures all mail, nothing is delivered" },
+  { "name": "FOUNDER_EMAIL", "reason": "founder notices go from prod only" },
+  { "name": "RESEND_DOMAIN_VERIFIED", "reason": "staging sends nothing through Resend" },
+  { "name": "DONOR_ACCOUNTS_ENABLED", "reason": "prod switches; staging runs on the code defaults" },
+  { "name": "NETWORK_SIGNUP_ENABLED", "reason": "prod switches; staging runs on the code defaults" },
+  { "name": "RAILWAY_DEPLOYMENT_DRAINING_SECONDS", "reason": "prod deploy tuning" },
+  { "name": "DB_POOL_MAX", "reason": "staging worker runs on the code default pool" }
 ]

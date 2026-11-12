@@ -3,12 +3,13 @@
 // it "No active sequences.", which then sat above two Active ones (W-1107-
 // Fundraising-21). The line over the builder's list now says what is true of
 // the builder, and points at the Earlier list by its count. Pure.
+// FLOWS-8 (W-1112-Fundraising-21): "None made here yet" still read as "none"
+// above the one sequence the org has. The line is said only when there are
+// none at all; with any sequence on the page, the page shows them and no line.
 export function sequencesEmptyLine(builderList, earlierList) {
   const built = Array.isArray(builderList) ? builderList.length : 0;
   const earlier = Array.isArray(earlierList) ? earlierList.length : 0;
-  if (built) return null;
-  if (!earlier) return "No sequences yet.";
-  return `None made here yet. Your ${earlier === 1 ? "earlier sequence is" : `${earlier} earlier sequences are`} below.`;
+  return built || earlier ? null : "No sequences yet.";
 }
 
 // SENDS-1: one master. A sequence that is on reads Off while the org's email

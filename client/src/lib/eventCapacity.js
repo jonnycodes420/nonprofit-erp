@@ -6,6 +6,7 @@
 // a walk-in at the door) posts through here.
 import { apiFetch } from "../api";
 import { askConfirm } from "../components/ConfirmDialog";
+import { pickPeople } from "./people";
 
 // The add's answer, or null when the person said no.
 export async function addGuests(eventId, body) {
@@ -17,4 +18,18 @@ export async function addGuests(eventId, body) {
     if (!yes) return null;
     return post({ ...body, overCapacity: true });
   }
+}
+
+// FLOWS-8 (W-1112-Volunteers-20): a new guest named exactly like someone already
+// on file is asked about first. True: add a new person. False: she chose to find
+// them in the directory, so they stay one person.
+export async function newGuestOrOnFile(name) {
+  // Case and accents aside, as the person search reads names ("Zoe Angstrom" is "Zoë Ångström").
+  const fold = v => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+  const want = fold(name);
+  const same = want ? (await pickPeople({ q: name.trim(), match: "person", limit: 20 }).catch(() => [])).filter(p => fold(p.name) === want) : [];
+  if (!same.length) return true;
+  return askConfirm({ title: `${same[0].name} is already on file`,
+    body: `${same.length > 1 ? "More than one person" : "Someone"} called ${same[0].name} is already in your records. Add them from the directory so they stay one person, or add a new person with the same name.`,
+    yes: "Add a new person", no: "Find them in the directory" });
 }

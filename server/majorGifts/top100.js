@@ -167,6 +167,26 @@ app.get("/top100", requireAuth, mg, wrap(async (req, res) => {
     } });
 }));
 
+// FLOWS-8 (W-1112-Fundraising-11X) · AN EMPTY TOP 100 OFFERS A START. The
+// people Reports' "Top donors, lifetime" ranks first (shared/numbers/topDonors,
+// the one lifetime rule), less anyone already on the list, for her to review
+// and confirm. A GET: it adds nobody; POST /top100/members does, on her press.
+app.get("/top100/suggested", requireAuth, mg, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 25, 1), 100);
+  const list = await listOf(orgId, null);
+  const on = list ? new Set((await query("SELECT donor_id FROM portfolio_members WHERE org_id=? AND list_id=?", [orgId, list.id])).map(r => r.donor_id)) : new Set();
+  let rows = (await query(`${require("../../shared/numbers/topDonors").topLifetimeSql()} LIMIT ?`, [orgId, limit + on.size])).filter(r => !on.has(r.id));
+  const vis = require("../auth/portfolio").visibleSql(req, "d");   // ACCESS-2: their people only
+  if (vis.scoped && rows.length) {
+    const seen = new Set((await query(`SELECT d.id FROM donors d WHERE d.org_id=? AND d.id = ANY(?::text[])${vis.sql}`, [orgId, rows.map(r => r.id), ...vis.args])).map(r => r.id));
+    rows = rows.filter(r => seen.has(r.id));
+  }
+  rows = rows.slice(0, limit);
+  res.json({ people: rows.map((r, i) => ({ id: r.id, name: r.name, rank: i + 1, lifetimeCents: Math.round(Number(r.total) * 100), lastGiftDate: r.last_gift_date || null })),
+    sentence: "Your top donors by lifetime giving, the same order as Reports' Top donors (Lifetime). Untick anyone you don't want, then add the rest; you can reorder after." });
+}));
+
 app.patch("/top100", requireAuth, mg, checkWriteAccess, wrap(async (req, res) => {
   const name = String((req.body && req.body.name) || "").trim().slice(0, 80);
   if (!name) return res.status(400).json({ error: "name_required", sentence: "Give the list a name." });

@@ -18,6 +18,7 @@ import { useCanMajorGifts } from "../../lib/majorGifts";
 import { InlineCell } from "./InlineCell";   // TOUCH-1: click a cell to edit it
 import { TOUCH_TYPES as CARE_TYPES, addDays } from "../../../../shared/careShape.js";
 import { LogConversationModal } from "../LogConversation";
+import { StartFromTopDonors } from "./StartFromTopDonors";   // FLOWS-8
 
 // Sized to fit the page at 1440 wide; narrower, the table scrolls inside its own box.
 const COLS = [
@@ -175,8 +176,7 @@ export function Top100View({ isReadOnly, onNavigate }) {
       {err && <div role="alert" style={{ fontSize: 12.5, color: T.gold700, marginBottom: 8 }}>{err}</div>}
 
       {d.count === 0 ? (
-        <EmptyState title={`Nobody on your ${d.list.name} yet`}
-          message="Add people by name above, from a person's profile (Plan of care → Add), or from Donors by ticking several and choosing Add to Top 100." />
+        <StartFromTopDonors listName={d.list.name} isReadOnly={isReadOnly} onAdded={async s => { setMsg(s); await load(); }} />
       ) : (
         <div style={{ overflowX: "auto", background: T.white, border: "1px solid " + T.bg3, borderRadius: 14 }}>
           <div data-testid="top100-table" style={{ minWidth: 1140 }}>

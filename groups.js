@@ -762,6 +762,8 @@ function shapeGroup(r) {
     createdByName: r.created_by_name || "", createdAt: r.created_at,
     // TIDY-1: made by Atlas's Open list, and what keeps it past 30 days.
     fromAtlas: require("./server/groups/atlasExpiry").isFromAtlas(r), pinned: !!r.pinned_at, renamed: !!r.renamed_at,
+    // FLOWS-8: a hand-kept group frozen from a list report, and the day (server/groups/reportSource.js)
+    sourceReport: r.source_report || null, sourceAt: r.source_at || null,
   };
 }
 
