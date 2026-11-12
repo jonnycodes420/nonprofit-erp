@@ -112,6 +112,9 @@ rather than writing a second.
 | Net and fee | `shared/giftFooting.js` |
 | A channel partner's payout (SALES-1) | `shared/numbers/partnerPayout.js`: `termOf`, `owedByMonth` (percent of ONBOARD-2's MRR or a flat amount, within the term's months and cap) |
 | What the people someone brought in gave since (CONNECT-1) | `shared/numbers/broughtIn.js`: the people linked to a connector by Introduced by or Guest of, and their gifts dated on or after the link (money.js's rule); the figure sources `brought-in-people` and `brought-in-gifts` |
+| Campaign and goal pace (FLOWS-7) | `shared/numbers/pace.js`: `paceOf` (On pace only when the share raised or committed is at least the share of time gone and the projection reaches the goal; Behind pace with the gap in dollars), `paceMath` (the projection). The server attaches it; no screen works it out |
+| Who an audience reaches and why not (FLOWS-7) | `shared/numbers/audienceReasons.js`: Everyone's people only, each in one place by the send's own decision; the Overview, the campaign editor and the send read it |
+| Tasks due or overdue (FLOWS-7) | `shared/numbers/taskDue.js`: `VIEW_SQL` (Tasks' views), `dueFor` (the morning email's list), `teamCounts` (its team row) |
 
 Every number on a screen is a `<Figure>` with a `source` (CLAUDE.md), so the place that computes it
 is also the place its rows come from.

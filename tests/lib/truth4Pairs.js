@@ -143,7 +143,7 @@ async function truth4Pairs({ orgId, get, q, agree, diffs, today }) {
 
   // ── starter ───────────────────────────────────────────────────────────────
   const [vt] = await q(`SELECT COUNT(*)::int AS n FROM donors d WHERE ${LIVE} AND d.erased_at IS NULL AND d.archived_at IS NULL
-      AND d.id IN (SELECT person_id FROM volunteer_shifts WHERE org_id = $1 UNION SELECT person_id FROM volunteer_applications WHERE org_id = $1 AND status = 'approved')
+      AND d.person_types @> '["volunteer"]'::jsonb   -- FLOWS-7: a volunteer is the Volunteer type, as the roster and a rule group read it
       AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND ${GIFT})`, [orgId]);
   const st = await get("/groups/starters");
   const vs = ((st && (st.starters || st)) || []).find ? (st.starters || st).find(s => s.key === "volunteers_never_gave") : null;

@@ -33,6 +33,11 @@ stops it like everything else. Tested in `tests/mail-suppression.test.js` §12a 
 the morning email unless the person turned on its own reminder, so no step goes unmentioned.
 
 ## Rules
+- **One audience, reasons that add up (FLOWS-7, 12 Nov 2026).** The Overview, the campaign editor and the send read
+  `shared/numbers/audienceReasons.js`: Everyone's people only (an archived or erased record is never mailed by a campaign), each
+  in one place by `donorMailDecision`. The suppression list gives bounced, then complained, then the newest reason.
+- **A draft's links open (FLOWS-7).** Drafts to review checks every link and any video claim (`server/drafts/linkCheck.js`);
+  a problem is one brass line at the top of the draft, and the words are never changed for her.
 
 - **One master switch: Off means nothing goes out (SENDS-1, 7 Nov 2026).** The org's Donor mail (`orgs.emails_enabled`,
   with mailPolicy's onboarding and demo rules) is the master; each email type in Settings, Automatic email only narrows what

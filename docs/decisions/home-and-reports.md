@@ -3,6 +3,11 @@
 Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follow-ups, goals, report definitions, custom reports or board reports.
 
 ## Rules
+- **One pace rule, no band below the line (FLOWS-7, 12 Nov 2026).** `shared/numbers/pace.js`: On pace only when the share
+  raised (or committed, and the sentence says which) is at least the share of time gone and the card's own projection reaches
+  the goal; otherwise "Behind pace" with the gap in dollars. The server attaches it to every card and goal; no screen works it
+  out. Home states it plainly, in its ordinary colour. Every money card on Fundraising names its period and dates (`periodWords`).
+- **The morning email counts what Tasks counts (FLOWS-7).** `shared/numbers/taskDue.js`; the email lists every task it counts.
 - **Done on a move is done for the person (SENDS-1, 7 Nov 2026).** A move can carry the person's Drifting sign folded into
   it; Done records the move and that sign (`POST /insights/outcome` with `lead`), so the same person does not rise again
   as a Drift move, and every move of theirs leaves the deck. **Home's "people to follow up" and the Tasks badge ("tasks due
