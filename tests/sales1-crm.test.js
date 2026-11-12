@@ -46,9 +46,10 @@ const src = rel => { try { return fs.readFileSync(path.join(__dirname, "..", rel
   for (const o of [HOME, CUST]) await wipeOrg(o);
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,'Sales1 Home','sales1-home',1,'active','team')`, [HOME]);
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,trial_ends_at) VALUES ($1,'Juniper Ridge (Steward)','sales1-cust',1,'trialing','team',$2)`,
-    // The trial ends at noon New York on the run's day + 10 (tests/clock.js nyNoon): "now + 10 days" as an
-    // instant is the next UTC day from 7 PM ET, and §11 reads the stored day against dayOffset(10).
-    [CUST, new Date(nyNoon(dayOffset(10))).toISOString()]);
+    // FLAKE-5 (W-DAY-ops-trial): the trial ends at 9 PM New York on the run's day + 10, which is the
+    // NEXT UTC day. The facts box must say the org's day (dayOffset(10), §11), whatever the hour the
+    // suite runs; read as a UTC day it says a day late. (CONNECT-1 had pinned it to noon, which hid that.)
+    [CUST, new Date(nyNoon(dayOffset(10)) + 9 * 3600 * 1000).toISOString()]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role,is_super_admin) VALUES ('u_sales1_super',$1,$2,$3,'Sales Super','admin',true)`, [HOME, SUPER, bcrypt.hashSync(PASS, 10)]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role,is_super_admin) VALUES ('u_sales1_admin',$1,$2,$3,'Cust Admin','admin',false)`, [CUST, ADMIN, bcrypt.hashSync(PASS, 10)]);
   // The planted donor: a name and an amount the facts box must never show.

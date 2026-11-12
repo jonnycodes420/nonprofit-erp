@@ -11,6 +11,7 @@
 const { PERSON } = require("../../../shared/numbers/households");
 const SIGNALS = require("../../onboard/signals");
 const BOARD = require("../../onboard/board");
+const { orgToday } = require("../../../orgTime");
 
 const iso = t => (t ? new Date(t).toISOString() : null);
 
@@ -18,7 +19,7 @@ async function facts(query, ids) {
   const list = [...new Set((ids || []).filter(Boolean))];
   if (!list.length) return {};
   const [orgs, logins, people] = await Promise.all([
-    query(`SELECT id, name, subscription_status, trial_ends_at FROM orgs WHERE id = ANY(?)`, [list]),
+    query(`SELECT id, name, subscription_status, trial_ends_at, timezone FROM orgs WHERE id = ANY(?)`, [list]),
     query(`SELECT s.org_id, MAX(GREATEST(s.created_at, COALESCE(s.last_active_at, s.created_at))) AS t
              FROM user_sessions s JOIN users u ON u.id = s.user_id AND u.org_id = s.org_id
             WHERE s.org_id = ANY(?) AND COALESCE(u.is_super_admin, false) = false GROUP BY s.org_id`, [list]),
@@ -35,7 +36,10 @@ async function facts(query, ids) {
       stewardOrgId: o.id, name: o.name, status: st,
       lastSignInAt: last.get(o.id) || null,
       peopleImported: count.get(o.id) || 0,
-      trialEndsOn: !paying && o.trial_ends_at ? iso(o.trial_ends_at).slice(0, 10) : null,
+      // FLAKE-5: the org's own day of the instant the trial ends (its time zone,
+      // New York when unset), never the UTC day: a trial ending at 8 PM Eastern
+      // read as UTC showed a day late.
+      trialEndsOn: !paying && o.trial_ends_at ? orgToday(o, new Date(o.trial_ends_at)) : null,
       mrrNowCents: paying ? Number((onb[o.id] || {}).mrrNowCents || 0) : null,
       sentences: {
         lastSignIn: "The latest day someone at the org (not Steward's staff) signed in or was active.",

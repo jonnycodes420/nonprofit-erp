@@ -121,4 +121,15 @@ function filterCond(field, op, value) {
   };
 }
 
-module.exports = { CONNECT_TYPES, isConnectType, addConnection, endsFrom, describe, broughtInFor, filterChoices, filterCond };
+// FLAKE-5 (W-CONNECT-guest-filter): a guest usually hasn't given, so on the
+// list's default view (role=auto, which is Donors once the org has a donor) a
+// filter on how people came in searches Everyone, and the people switch says
+// Everyone (groups.directoryRoles). A view that picked Donors keeps Donors.
+const CONNECT_FIELDS = new Set(["introduced_by", "guest_of", "brought_in"]);
+function namesConnection(rawWhere) {
+  let w = rawWhere;
+  if (typeof w === "string") { try { w = JSON.parse(w); } catch { return false; } }
+  return !!(w && Array.isArray(w.conditions) && w.conditions.some(c => c && CONNECT_FIELDS.has(c.field)));
+}
+
+module.exports = { CONNECT_TYPES, isConnectType, addConnection, endsFrom, describe, broughtInFor, filterChoices, filterCond, namesConnection };
