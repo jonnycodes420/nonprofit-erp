@@ -977,13 +977,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/ci/deploy-turnstile.js --job deploy-staging --live-health "$STAGING_API_URL/health"
-      - name: The walk on this commit is pending
+      # STAGE-3 · inside the overnight walk window (STAGING_WALK_WINDOW, default
+      # 23:30-03:15 America/New_York) deploy nothing: say so, mark the commit
+      # held, finish. deploy-staging-release.yml re-runs this job for the latest
+      # held merge after the window (or at once when forced). Never a sleep.
+      - name: Hold during the overnight walk (STAGE-3)
+        id: hold
         if: steps.turn.outputs.deploy == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGING_WALK_WINDOW: ${{ vars.STAGING_WALK_WINDOW }}
+        run: node scripts/ci/staging-hold.js
+      - name: The walk on this commit is pending
+        if: steps.hold.outputs.deploy == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh api "repos/${{ github.repository }}/statuses/$GITHUB_SHA" -f state=pending -f context=staging/walk -f description="Deploying to staging" -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >/dev/null
       - name: Install Railway CLI
-        if: steps.turn.outputs.deploy == 'true'
+        if: steps.hold.outputs.deploy == 'true'
         run: |
           for i in 1 2 3; do
             npm install -g @railway/cli && break
@@ -991,17 +1002,17 @@ jobs:
             [ "$i" = "3" ] && exit 1
           done
       - name: Stamp build SHA
-        if: steps.turn.outputs.deploy == 'true'
+        if: steps.hold.outputs.deploy == 'true'
         run: printf '%s' "$GITHUB_SHA" > .build-sha
       - name: Deploy staging's web and worker
-        if: steps.turn.outputs.deploy == 'true'
+        if: steps.hold.outputs.deploy == 'true'
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
         run: |
           railway up --service "${{ vars.RAILWAY_STAGING_WEB_SERVICE || 'web' }}" --environment staging --ci
           railway up --service "${{ vars.RAILWAY_STAGING_WORKER_SERVICE || 'worker' }}" --environment staging --ci
       - name: Deploy staging's frontend
-        if: steps.turn.outputs.deploy == 'true'
+        if: steps.hold.outputs.deploy == 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: team_bmpIjp9a9Cji8y2NqHsEuewv
@@ -1013,7 +1024,7 @@ jobs:
             --build-env BUILD_SHA="$GITHUB_SHA" --build-env VITE_API_URL="$STAGING_API_URL" \
             --build-env VITE_STEWARD_ENV=staging
       - name: Staging serves this commit (web, worker, frontend), and says it is staging
-        if: steps.turn.outputs.deploy == 'true'
+        if: steps.hold.outputs.deploy == 'true'
         run: node scripts/ci/wait-live.js --sha "$GITHUB_SHA" --api "$STAGING_API_URL" --worker --env staging --frontend "$STAGING_APP_URL" --minutes 6
       - name: A failed staging deploy is a failed walk
         if: failure()
@@ -1021,7 +1032,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh api "repos/${{ github.repository }}/statuses/$GITHUB_SHA" -f state=failure -f context=staging/walk -f description="The staging deploy failed, so nothing was walked" -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >/dev/null || true
     outputs:
-      deployed: ${{ steps.turn.outputs.deploy }}
+      deployed: ${{ steps.turn.outputs.deploy == 'true' && steps.hold.outputs.deploy == 'true' }}
 
   # ── STAGE-1 · THE STAGING WALK ────────────────────────────────────────────
   # Sign in, Home, a profile, record a gift, an import and its undo, a report,

@@ -44,7 +44,14 @@ export function ShipView({ data, error, busy, onShip, onRollback, result }) {
           <td style={cell}>{b.title}</td>
           <td style={{ ...cell, width: 110 }}><span style={pill(walkGood(b.walk))}>{walkWord(b.walk)}</span></td></tr>)}
       </tbody></table>}
-    {data.errors && data.errors.length ? <p style={says}>Could not read: {data.errors.join(" ")}</p> : null}
+    {data.held && data.held.rows && data.held.rows.length ? <div data-testid="ship-held" style={{ background: CREAM, borderRadius: 8, padding: "10px 14px", margin: "0 0 12px" }}>
+      <div style={{ fontWeight: 600, fontSize: 14, margin: "0 0 4px" }}>Staging deploy held until {(data.held.until || "the overnight walk ends").replace(/ ET$/, "")} ({data.held.rows.length} waiting)</div>
+      <p style={{ ...says, margin: "0 0 6px" }}>The fleet walks staging overnight, so merges wait. When the walk window ends, the latest one deploys, and the earlier ones go out with it.</p>
+      <table style={{ borderCollapse: "collapse", width: "100%" }}><tbody>
+        {data.held.rows.map(b => <tr key={b.sha}><td style={{ ...cell, width: 150, fontWeight: 600 }}>{b.build || short(b.sha)}</td><td style={cell}>{b.title}</td></tr>)}
+      </tbody></table>
+    </div> : null}
+    {data.errors && data.errors.length ?<p style={says}>Could not read: {data.errors.join(" ")}</p> : null}
     {confirm ? <div role="dialog" aria-label="Confirm" style={{ background: CREAM, borderRadius: 8, padding: "12px 14px", margin: "0 0 10px" }}>
       <p style={{ margin: "0 0 10px", fontSize: 14 }}>{confirm === "ship"
         ? <>Ship {short(st.web)} to customers? Going out: <b>{names.join(", ") || "one commit"}</b>.</>
