@@ -31,7 +31,7 @@ async function seedProspects(q, owner) {
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [`sor_stg_p${i}`, name, `${slug}.example.org`, `https://${slug}.example.org`, noPhones ? null : `${area}-555-01${String(i).padStart(2, "0")}`, city, state, revenue,
         CRMS[i % CRMS.length], ntee, `${60 + (i % 30)}-${5550100 + i}`, owner, ...ACTOR]);
-    await q(`INSERT INTO sales_list_members (list_id,org_id,created_by,created_by_name) VALUES ('sls_stg_prospects',$1,$2,$3)`, [`sor_stg_p${i}`, ...ACTOR]);
+    await q(`INSERT INTO sales_list_members (list_id,sales_org_id,created_by,created_by_name) VALUES ('sls_stg_prospects',$1,$2,$3)`, [`sor_stg_p${i}`, ...ACTOR]);
     for (const [k, role, title] of [[0, "ED", "Executive Director"], [1, "Development Director", "Development Director"]]) {
       const first = FIRST[(i * 2 + k) % FIRST.length], last = LAST[(i + k * 5) % LAST.length];
       const phone = noPhones || mainOnly ? null : `${area}-555-01${String((i * 2 + k) % 100).padStart(2, "0")}`;

@@ -28,8 +28,8 @@ async function run(pool) {
   await pool.query(`CREATE TABLE IF NOT EXISTS sales_lists (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, config JSONB NOT NULL DEFAULT '{}'::jsonb, deleted_at TIMESTAMPTZ, ${ACTOR}, ${EDITED})`);
   await pool.query(`CREATE TABLE IF NOT EXISTS sales_list_members (
-    list_id TEXT NOT NULL, org_id TEXT NOT NULL, import_id TEXT, ${ACTOR}, PRIMARY KEY (list_id, org_id))`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS sales_list_members_org ON sales_list_members (org_id)`);
+    list_id TEXT NOT NULL, sales_org_id TEXT NOT NULL, import_id TEXT, ${ACTOR}, PRIMARY KEY (list_id, sales_org_id))`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS sales_list_members_org ON sales_list_members (sales_org_id)`);
   await pool.query(`ALTER TABLE sales_imports ADD COLUMN IF NOT EXISTS list_id TEXT`);
 }
 

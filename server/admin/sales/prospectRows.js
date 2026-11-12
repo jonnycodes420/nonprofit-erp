@@ -22,7 +22,7 @@ async function fitRule(query) {
 
 async function extrasFor(query, type) {
   const [members, orgDnc] = await Promise.all([
-    query(`SELECT m.list_id, m.org_id FROM sales_list_members m JOIN sales_lists l ON l.id = m.list_id AND l.deleted_at IS NULL`),
+    query(`SELECT m.list_id, m.sales_org_id AS org_id FROM sales_list_members m JOIN sales_lists l ON l.id = m.list_id AND l.deleted_at IS NULL`),
     query(`SELECT id FROM sales_orgs WHERE deleted_at IS NULL AND dnc_at IS NOT NULL`),
   ]);
   const listsOf = new Map();

@@ -11,7 +11,7 @@ const M = require("./model");
 
 async function all(query) {
   return query(`SELECT l.id, l.name, l.config, l.created_at, l.created_by_name,
-                       (SELECT COUNT(*)::int FROM sales_list_members m JOIN sales_orgs o ON o.id = m.org_id AND o.deleted_at IS NULL WHERE m.list_id = l.id) AS orgs
+                       (SELECT COUNT(*)::int FROM sales_list_members m JOIN sales_orgs o ON o.id = m.sales_org_id AND o.deleted_at IS NULL WHERE m.list_id = l.id) AS orgs
                   FROM sales_lists l WHERE l.deleted_at IS NULL ORDER BY l.name`);
 }
 
@@ -42,7 +42,7 @@ async function listFor(ctx, arg, who) {
 }
 
 async function addMember(ctx, listId, orgId, who, importId = null) {
-  await ctx.run(`INSERT INTO sales_list_members (list_id, org_id, import_id, created_by, created_by_name) VALUES (?, ?, ?, ?, ?) ON CONFLICT (list_id, org_id) DO NOTHING`,
+  await ctx.run(`INSERT INTO sales_list_members (list_id, sales_org_id, import_id, created_by, created_by_name) VALUES (?, ?, ?, ?, ?) ON CONFLICT (list_id, sales_org_id) DO NOTHING`,
     [listId, orgId, importId, who.id, who.name]);
 }
 
@@ -63,7 +63,7 @@ async function members(ctx, id, { add = [], remove = [] }, who) {
   const ids = [...new Set(add.map(String))].slice(0, 5000);
   const live = ids.length ? (await ctx.query(`SELECT id FROM sales_orgs WHERE id = ANY(?) AND deleted_at IS NULL`, [ids])).map(r => r.id) : [];
   for (const o of live) await addMember(ctx, id, o, who);
-  const gone = remove.length ? await ctx.run(`DELETE FROM sales_list_members WHERE list_id = ? AND org_id = ANY(?)`, [id, remove.map(String)]) : { changes: 0 };
+  const gone = remove.length ? await ctx.run(`DELETE FROM sales_list_members WHERE list_id = ? AND sales_org_id = ANY(?)`, [id, remove.map(String)]) : { changes: 0 };
   return { ok: true, added: live.length, removed: gone.changes };
 }
 
