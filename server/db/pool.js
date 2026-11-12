@@ -68,6 +68,26 @@ async function onceNow(p, text, params) {
   const client = await LIMITS.checkout(p);
   try { return await client.query(text, params); } catch (e) { throw LIMITS.translate(e); } finally { LIMITS.release(client); }
 }
+// REPORTS-SPEED-2: one big read with JIT off for it alone. A statement with
+// many aggregates and a high cost estimate (year-over-year's one pass) costs
+// Postgres seconds of CPU to JIT-compile where LLVM is built in (the
+// postgres:16 image CI and the nightly run: 2.9 s against 0.19 s without it),
+// and the read itself is a fraction of that. SET LOCAL ends with the
+// transaction, so the connection goes back exactly as it came. In the report
+// lane like any other statement.
+async function onceNoJit(text, params) {
+  const run = async () => {
+    const client = await LIMITS.checkout(pool);
+    try {
+      await client.query("BEGIN; SET LOCAL jit = off");
+      const r = await client.query(text, params);
+      await client.query("COMMIT");
+      return r;
+    } catch (e) { await client.query("ROLLBACK").catch(() => {}); throw LIMITS.translate(e); }
+    finally { LIMITS.release(client); }
+  };
+  return LANE.inLane() ? LANE.run(run) : run();
+}
 // SPLIT-2 end
 
-module.exports = { Pool, uuid, bcrypt, orgTime, newId, pools, POOL_MAX, SET_POOL_MAX, APP_NAME, isPoolFull, setPool, querySetwise, pool, LIMITS, requestLimits, once };
+module.exports = { Pool, uuid, bcrypt, orgTime, newId, pools, POOL_MAX, SET_POOL_MAX, APP_NAME, isPoolFull, setPool, querySetwise, pool, LIMITS, requestLimits, once, onceNoJit };

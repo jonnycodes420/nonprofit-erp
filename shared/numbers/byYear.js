@@ -265,7 +265,8 @@ function orgYearsSql(orgId, spans) {
   return { sql, args, read };
 }
 
-async function orgByYear(query, org, today) {
+// `heavy` (optional): how to send the one big read; the server passes db.queryNoJit (REPORTS-SPEED-2).
+async function orgByYear(query, org, today, { heavy = query } = {}) {
   const orgId = org.id;
   // REPORTS-SPEED-2: the earliest dated money row, as the first one in date
   // order (idx_gifts_org_date walked from the start) rather than MIN over
@@ -286,7 +287,7 @@ async function orgByYear(query, org, today) {
   spans.push({ k: "prior", f: oldest.prevFrom, t: oldest.prevTo, pk: null });
   if (sp) spans.push({ k: "sp", f: sp.from, t: sp.to, pk: null });
   const q = orgYearsSql(orgId, spans);
-  const byKey = q.read((await query(q.sql, q.args))[0]);
+  const byKey = q.read((await heavy(q.sql, q.args))[0]);
   const count = (key, kind) => { const r = byKey.get(key); return r ? r[kind || "donors"] : 0; };
   const priorN = { n: count("prior") };
   const rows = years.map(y => {

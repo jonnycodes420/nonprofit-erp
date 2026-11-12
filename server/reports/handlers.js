@@ -1331,7 +1331,8 @@ const REPORT_HANDLERS = {
   "top-donors": reportTopDonors,
   "three-year": reportThreeYear,
   // HISTORY-1 — each fiscal year beside the one before (shared/numbers/byYear.js).
-  "year-over-year": async (orgId, p) => require("../../shared/numbers/byYear").orgByYear(query, { ...p.org, id: orgId }, p.today),
+  "year-over-year": async (orgId, p) => require("../../shared/numbers/byYear").orgByYear(query, { ...p.org, id: orgId }, p.today,
+    { heavy: require("../../db").queryNoJit }),   // REPORTS-SPEED-2: its one pass, JIT off
   "annual": reportAnnual,
   "solicitations": reportSolicitations,
   // BUILD-87 Part 4 — the bookkeeper's export. A read path like every other
