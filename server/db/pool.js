@@ -50,6 +50,7 @@ const pool = new Pool({
 // LOAD-1: every connection handed out below goes through LIMITS.checkout, so a web request's
 // statements stop at its limit and an abandoned read is cancelled (server/shared/requestLimits.js).
 const LIMITS = require("../shared/requestLimits");
+const LANE = require("../shared/reportLane");   // REPORTS-SPEED-2
 // SPLIT-2 end
 // SPLIT-2 db.js piece 11
 const requestLimits = () => LIMITS.middleware(LIMITS.cancelWith(Pool, { ...require("../shared/dbTls").poolTls(), options: `-c steward.app_connection=on -c application_name=${APP_NAME}` }));
@@ -57,6 +58,13 @@ const requestLimits = () => LIMITS.middleware(LIMITS.cancelWith(Pool, { ...requi
 // SPLIT-2 db.js piece 12
 // One statement on its own connection, the way pool.query did it.
 async function once(p, text, params) {
+  // REPORTS-SPEED-2: a report's statement first takes a place in the report
+  // lane (server/shared/reportLane.js), so reports never hold more than a
+  // third of the main pool between them.
+  if (p === pool && LANE.inLane()) return LANE.run(() => onceNow(p, text, params));
+  return onceNow(p, text, params);
+}
+async function onceNow(p, text, params) {
   const client = await LIMITS.checkout(p);
   try { return await client.query(text, params); } catch (e) { throw LIMITS.translate(e); } finally { LIMITS.release(client); }
 }

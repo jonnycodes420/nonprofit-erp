@@ -17,6 +17,7 @@ const DEP = require("../../depositsFile");
 const BK = require("../../bookkeeper");
 // SCALE-2: org-wide figures are stored per org and served until something changes.
 const OS = require("../../orgSummary");
+const LANE = require("../shared/reportLane");   // REPORTS-SPEED-2: report statements share a third of the pool
 
 const routers = {
   r1: express.Router(),
@@ -193,7 +194,7 @@ app.delete("/saved-reports/:id", requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
-app.get("/saved-reports/:id/run", requireAuth, wrap(async (req, res) => {
+app.get("/saved-reports/:id/run", LANE.middleware, requireAuth, wrap(async (req, res) => {
   const rep = await savedReportFor(req.user.orgId, req.user.userId, req.params.id);
   if (!rep) return res.status(404).json({ error: "Not found" });
   if (await wealthRefused(req, res, rep.def)) return;
@@ -203,7 +204,7 @@ app.get("/saved-reports/:id/run", requireAuth, wrap(async (req, res) => {
   res.json({ report: { id: rep.id, name: rep.name, question: rep.question, standard: rep.standard, definition: rep.def }, ...rest });
 }));
 
-app.get("/saved-reports/:id/csv", requireAuth, wrap(async (req, res) => {
+app.get("/saved-reports/:id/csv", LANE.middleware, requireAuth, wrap(async (req, res) => {
   const rep = await savedReportFor(req.user.orgId, req.user.userId, req.params.id);
   if (!rep) return res.status(404).json({ error: "Not found" });
   if (await wealthRefused(req, res, rep.def)) return;
@@ -213,7 +214,7 @@ app.get("/saved-reports/:id/csv", requireAuth, wrap(async (req, res) => {
   sendReportCsv(res, `${slug}.csv`, out.columns.map(c => c.label), out.rows.map(r => out.columns.map(c => r[c.key])));
 }));
 
-app.get("/saved-reports/:id/pdf", requireAuth, wrap(async (req, res) => {
+app.get("/saved-reports/:id/pdf", LANE.middleware, requireAuth, wrap(async (req, res) => {
   const rep = await savedReportFor(req.user.orgId, req.user.userId, req.params.id);
   if (!rep) return res.status(404).json({ error: "Not found" });
   if (await wealthRefused(req, res, rep.def)) return;
@@ -287,7 +288,7 @@ app.get("/donors/:id/by-year", requireAuth, wrap(async (req, res) => {
 // REPORTS-SPEED-1: Retention, Annual and SYBUNT's common asks are stored too, and
 // stale only when a table they read changes (server/reports/storedReports.js).
 const STORED = require("./storedReports");
-app.get("/reports/:key", requireAuth, OS.cached("report", { perUser: false,
+app.get("/reports/:key", LANE.middleware, requireAuth, OS.cached("report", { perUser: false,
   when: req => (req.params.key === "giving-summary" && !req.query.format) || STORED.isStoredAsk(req),
   reads: req => (STORED.KEYS.has(req.params.key) ? STORED.DEPS : null) }), wrap(async (req, res) => {
   const { key } = req.params;

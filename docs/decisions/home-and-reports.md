@@ -668,3 +668,18 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   report that starts reading one of the excepted columns must take it out of that list.
 - A new report joining the store: capture the SQL it sends (every table it reads goes in its list), add it to
   `KEYS`, and extend `tests/reports-speed1-stored.test.js` §1 and §2 to it.
+
+## REPORTS-SPEED-2 · a report reads in few passes and shares a third of the pool (2026-11-12)
+
+- **A report's statements take a place in the report lane** (`server/shared/reportLane.js`): a third of
+  `DB_POOL_MAX` per process, shared by every report being read. `/reports/:key` and the saved-report run, CSV
+  and PDF mount it ahead of `requireAuth`, so everything those requests send counts. A new report route mounts
+  it too. Fan out inside a report freely (`Promise.all`); the lane, not the report, decides how many run.
+- **Never hold a client across a report's JS work** (`withClient`, a transaction): it is outside the lane and
+  shows in `/health` `pool.reportLane.heldPeak`. `tests/reports-speed2.test.js` §2 fails on it.
+- **A report that runs past its limit answers 503** with "This report took too long to run. Try a smaller date
+  range, or try again in a minute." (the lane sets the scope's sentence; `requestLimits.tooLong(sc)`), never a 500.
+- **One pass over the gifts, not one per year.** Year-over-year's figures come from `byYear.orgYearsSql`: the
+  org's money rows read once in person order off `gifts_person_money`, one FILTER set per span. A report that
+  needs a figure per year adds a span, not a statement. The drawer's rows stay `donorKindsSql`.
+- **Not a cache.** Nothing here stores an answer; every number is computed on the read, as before.
