@@ -4115,7 +4115,10 @@ app.post("/demo-request", wrap(async (req, res) => {
     }
   }
 
-  res.json({ success: true });
+  // SALES-2 item 7: the request lands in Steward's sales CRM AFTER this answer, which is unchanged.
+  const INBOUND = require("../server/admin/sales/inbound");
+  res.json(INBOUND.PLANT === "demoresp" ? { success: true, crm: true } : { success: true });   // the planted defect (tests only) changes it
+  INBOUND.after(query, run, { source: "demo", name, email, orgName, note: [orgSize && `Size: ${orgSize}`, challenge].filter(Boolean).join(". ") });
 }));
 
 // Ops/test hook — same bar as /recurring/process-dunning. {dryRun} composes

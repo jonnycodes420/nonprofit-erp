@@ -45,3 +45,31 @@ async function seedProspects(q, owner) {
 }
 
 module.exports = { seedProspects };
+
+// SALES-2 Part B: Linden Partners' referral link (a fixed, made-up staging token, so the walk can
+// open /refer/<token>), and one running cadence: two prospect contacts in "New prospect (14 days)",
+// started two days ago (so their day-2 call is due today), their steps as tasks.
+const STAGING_REFERRAL_TOKEN = "stagingWalkReferralLinden0000000000000000000";
+async function seedPartBWalk(q, owner, now = Date.now()) {
+  const crypto = require("crypto");
+  await q(`INSERT INTO sales_referral_links (id,partner_id,token_hash,created_by,created_by_name) VALUES ('srl_stg_linden','spt_stg_linden',$1,$2,$3)`,
+    [crypto.createHash("sha256").update(STAGING_REFERRAL_TOKEN).digest("hex"), ...ACTOR]);
+  const CAD = require("../../server/admin/sales/cadences");
+  const np = CAD.DEFAULTS.find(d => d.id === "scd_new_prospect");
+  for (const d of CAD.DEFAULTS) await q(`INSERT INTO sales_cadences (id,name,steps,builtin,created_by,created_by_name) VALUES ($1,$2,$3::jsonb,$4,$5,$6)`, [d.id, d.name, JSON.stringify(d.steps), d.builtin, ...ACTOR]);
+  const day = n => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(now + n * 86400000));
+  for (const i of [5, 6]) {
+    const cid = `sco_stg_p${i}_0`, eid = `sce_stg_${i}`;
+    await q(`INSERT INTO sales_cadence_enrollments (id,cadence_id,contact_id,started_on,created_by,created_by_name) VALUES ($1,'scd_new_prospect',$2,$3,$4,$5)`, [eid, cid, day(-2), ...ACTOR]);
+    for (const [k, s] of np.steps.entries()) {
+      const aid = `sac_stg_cad${i}_${k}`;
+      await q(`INSERT INTO sales_activities (id,kind,at,body,owner_id,due_on,done_at,enrollment_id,step_action,created_by,created_by_name) VALUES ($1,'task',$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [aid, new Date(now - 2 * 86400000).toISOString(), `${s.text || ({ call: "Call", email: "Email", linkedin: "LinkedIn touch", custom: "Task" })[s.action]} (New prospect (14 days), day ${s.day})`, owner,
+          day(s.day - 2), s.day - 2 < 0 ? new Date(now - 86400000).toISOString() : null, eid, s.action, ...ACTOR]);
+      for (const [t, id] of [["contact", cid], ["org", `sor_stg_p${i}`]]) await q(`INSERT INTO sales_activity_links (activity_id,record_type,record_id,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5)`, [aid, t, id, ...ACTOR]);
+    }
+  }
+  return { referralPath: `/refer/${STAGING_REFERRAL_TOKEN}`, cadenceContacts: 2 };
+}
+module.exports.seedPartBWalk = seedPartBWalk;
+module.exports.STAGING_REFERRAL_TOKEN = STAGING_REFERRAL_TOKEN;

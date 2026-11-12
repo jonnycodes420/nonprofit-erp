@@ -73,6 +73,8 @@ async function capture(ctx, mailbox, messages, who = { id: "system:sales-mail", 
     const domainHits = [...new Set(k.matched.map(domainOfAddr).filter(d => d && scope.domains.has(d)))];
     const recs = await linkTargets(ctx.query, contactIds, domainHits);
     for (const r of recs) await ctx.run(`INSERT INTO sales_email_links (email_id, record_type, record_id, created_by, created_by_name) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`, [id, r.type, r.id, who.id, who.name]);
+    // SALES-2 item 9: a reply from them ends their cadences and closes the remaining steps.
+    if (!out && contactIds.length) await require("./cadences").endFor(ctx, contactIds, "reply", who);
   }
   return { stored, skipped };
 }

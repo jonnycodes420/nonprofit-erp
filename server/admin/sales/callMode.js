@@ -114,8 +114,30 @@ function buildQueue(input, today, tz = TZ) {
   return out;
 }
 
-// opts: { view, listId, done: [orgIds], now }
-async function loadQueue(query, { view = {}, listId = null, done = [], now = Date.now() } = {}) {
+// SALES-2 item 9, "today's cadence calls": one entry per contact with an open cadence call step due
+// today or earlier, in due order. Their own future steps don't hide them (those ARE the cadence);
+// Do not contact, no number left, called today and done this session still do.
+function buildCadenceQueue({ due, orgs, contactsByOrg, lastCall, done }, today, tz = TZ) {
+  const orgOfContact = new Map();
+  for (const [orgId, people] of contactsByOrg) for (const c of people) if (!orgOfContact.has(c.id)) orgOfContact.set(c.id, { orgId, c });
+  const orgById = new Map(orgs.map(o => [o.id, o]));
+  const out = [];
+  for (const d of due) {
+    const hit = orgOfContact.get(d.contact_id);
+    if (!hit) continue;
+    const o = orgById.get(hit.orgId);
+    if (!o || o.dnc || o.lost_at || done.has(o.id) || (PLANT !== "dnc" && hit.c.dnc_at)) continue;
+    const t = lastCall.get(`contact:${hit.c.id}`);
+    if (t && civil(t, tz) === today) continue;
+    const phone = phonesLeft(hit.c.phones, hit.c.bad_phones)[0] || phonesLeft(o.phone ? [o.phone] : [], o.bad_phones)[0];
+    if (!phone || out.some(e => e.orgId === o.id)) continue;
+    out.push({ orgId: o.id, contactId: hit.c.id, phone, line: phonesLeft(hit.c.phones, hit.c.bad_phones)[0] ? "direct" : "main", cadenceDue: d.due_on });
+  }
+  return out;
+}
+
+// opts: { view, listId, done: [orgIds], now, cadence }
+async function loadQueue(query, { view = {}, listId = null, done = [], now = Date.now(), cadence = false } = {}) {
   let v = view || {};
   if (listId) {
     const [l] = await query(`SELECT id, name, config FROM sales_lists WHERE id = ? AND deleted_at IS NULL`, [listId]);
@@ -144,7 +166,9 @@ async function loadQueue(query, { view = {}, listId = null, done = [], now = Dat
   for (const c of contacts) { if (!contactsByOrg.has(c.org_id)) contactsByOrg.set(c.org_id, []); contactsByOrg.get(c.org_id).push(c); }
   const lastCall = new Map(calls.map(r => [`${r.record_type}:${r.record_id}`, new Date(r.t).toISOString()]));
   const blocked = new Set(tasks.map(r => `${r.record_type}:${r.record_id}`));
-  const queue = buildQueue({ orgs, contactsByOrg, lastCall, blocked, orgBusy, done: new Set(done.map(String)) }, today);
+  const queue = cadence
+    ? buildCadenceQueue({ due: await require("./cadences").dueCalls(query, today), orgs, contactsByOrg, lastCall, done: new Set(done.map(String)) }, today)
+    : buildQueue({ orgs, contactsByOrg, lastCall, blocked, orgBusy, done: new Set(done.map(String)) }, today);
   const orgOf = new Map(orgs.map(o => [o.id, o]));
   const contactOf = new Map(contacts.map(c => [c.id, c]));
   const entry = e => {
@@ -163,7 +187,8 @@ async function loadQueue(query, { view = {}, listId = null, done = [], now = Dat
     first.deal = await openDealOf(query, first.orgId);
   }
   return { ok: true, today, total: queue.length, current: first, next: queue.slice(1, 6).map(entry),
-    says: "One entry per organization, in the list's order. Skipped: Do not contact, an open task due after today, already called today, reached today, a meeting ahead, and Not a fit." };
+    says: cadence ? "Everyone with a cadence call step due today or earlier, soonest first. Skipped: Do not contact, no number left, and already called today."
+      : "One entry per organization, in the list's order. Skipped: Do not contact, an open task due after today, already called today, reached today, a meeting ahead, and Not a fit." };
 }
 
 // The organization's open deal it's linked to (the newest), or null.
@@ -227,6 +252,13 @@ async function logOutcome(ctx, b, who, now = Date.now()) {
   if (call.error) return call;
   await ctx.run(`UPDATE sales_activities SET outcome = ?, list_id = ? WHERE id = ?`, [o.key, b.listId ? String(b.listId) : null, call.id]);
   const did = [`Logged: ${o.label}.`];
+  // SALES-2 item 9: the call does today's cadence call step; reaching them ends their cadences.
+  if (contact) {
+    await ctx.run(`UPDATE sales_activities SET done_at = ?, updated_at = NOW(), updated_by = ?, updated_by_name = ?
+                    WHERE kind = 'task' AND step_action = 'call' AND done_at IS NULL AND deleted_at IS NULL AND due_on <= ?::date
+                      AND id IN (SELECT activity_id FROM sales_activity_links WHERE record_type = 'contact' AND record_id = ?)`, [new Date(now).toISOString(), who.id, who.name, today, contact.id]);
+    if (o.connect) { const e = await require("./cadences").endFor(ctx, [contact.id], o.meeting ? "meeting" : "connected", who); if (e.ended) did.push(`Their cadence ended (${e.closed} steps closed).`); }
+  }
   const tasks = [];
   const task = async (body, due) => {
     const t = await ACT.create(ctx, { kind: "task", body, due_on: due, records: recs() }, who);
@@ -271,4 +303,4 @@ async function logOutcome(ctx, b, who, now = Date.now()) {
   return { ok: true, id: call.id, dealId: deal ? deal.id : null, tasks, says: did.join(" "), connect: !!o.connect, meeting: !!o.meeting };
 }
 
-module.exports = { OUTCOMES, OUTCOME_KEYS, DEFAULT_CALL_RULES, cleanRules, rules, addBusinessDays, buildQueue, loadQueue, logOutcome, openDealOf, ensureDeal, moveDeal, stageNamed, PLANT };
+module.exports = { OUTCOMES, OUTCOME_KEYS, DEFAULT_CALL_RULES, cleanRules, rules, addBusinessDays, buildQueue, buildCadenceQueue, loadQueue, logOutcome, openDealOf, ensureDeal, moveDeal, stageNamed, PLANT };

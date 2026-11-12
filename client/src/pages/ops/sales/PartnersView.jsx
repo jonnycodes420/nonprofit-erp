@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../../api";
 import DateInput from "../../../components/inputs/LazyDateInput";
 import { INK, CREAM, card, h2, says, btn, quiet, box, link, brassTag, usd, dayWords, downloadCsv } from "./salesBits";
+import PartnerReferrals from "./PartnerReferrals";
 
 const KINDS = [["finder", "Finder"], ["closer", "Closer"], ["reseller", "Reseller"], ["custom", "Custom"]];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -90,6 +91,7 @@ function PartnerPage({ id, back, open }) {
           .map(([k, v, s]) => <div key={k} title={s}><div style={{ fontSize: 18, fontWeight: 700 }}>{v}</div><div style={{ opacity: 0.7 }}>{k}</div></div>)}
       </div>
     </section>
+    <PartnerReferrals partnerId={id} open={open} />
     <section style={card}>
       <h2 style={h2}>Terms</h2>
       <label style={{ fontSize: 13, display: "flex", gap: 6, alignItems: "center", marginBottom: 8 }}>

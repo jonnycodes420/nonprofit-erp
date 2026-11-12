@@ -343,6 +343,8 @@ function mount(app, { query, run, wrap, opsOnly }) {
   require("./routesB").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
   // SALES-2 Part A: prospect lists, call mode, meetings, email drafts, Do not contact.
   require("./routesA2").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
+  // SALES-2 Part B: cadences, partner referral links (and their public page), customer referrals, the scoreboard.
+  require("./routesB2").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
 }
 
 module.exports = { mount, settings };

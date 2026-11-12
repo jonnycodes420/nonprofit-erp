@@ -1688,6 +1688,7 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
       firstChargeAt: computeTrialEnd(Date.now()).toISOString(),
       agreementVersion: agr.version,
     });
+    require("../server/admin/sales/inbound").after(query, run, { source: "signup", name: contactName, email: contactEmail, orgName, note: `${tier.band}, about ${estimate} records, ${interval}` }); // SALES-2 item 7: into the sales CRM, after the unchanged answer
   };
   const clash = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [contactEmail]);
   if (clash.length) {
@@ -1963,6 +1964,7 @@ app.post("/lost-and-found/lead", registerLimiter, wrap(async (req, res) => {
   res.status(201).json({ ok: true, id,
     message: isDemo ? "Thank you. Jonathan will email you within one business day to pick a time."
       : "Thank you. Your report is downloading, and nothing about your donors left your computer." });
+  require("../server/admin/sales/inbound").after(query, run, { source: isDemo ? "demo" : "lostfound", name, email, orgName: organization, note: [orgSize && `Size: ${orgSize}`, currentSystem && `Uses: ${currentSystem}`].filter(Boolean).join(". ") }); // SALES-2 item 7
 }));
 
 // THE BENCHMARK. Four numbers, and the route REFUSES anything that is not

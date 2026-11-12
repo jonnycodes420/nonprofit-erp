@@ -12,7 +12,7 @@ import MeetingForm from "./MeetingForm";
 
 const clock = ms => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 
-export default function CallMode({ meta, listId = null, view = null, onClose, open }) {
+export default function CallMode({ meta, listId = null, view = null, cadence = false, onClose, open }) {
   const [q, setQ] = useState(null);
   const [fail, setFail] = useState(null);
   const [done, setDone] = useState([]);
@@ -29,9 +29,9 @@ export default function CallMode({ meta, listId = null, view = null, onClose, op
   const list = (meta.lists || []).find(l => l.id === listId);
 
   const load = useCallback((doneIds) => {
-    const qs = new URLSearchParams({ ...(listId ? { list: listId } : {}), ...(view ? { view: JSON.stringify(view) } : {}), done: doneIds.join(",") });
+    const qs = new URLSearchParams({ ...(listId ? { list: listId } : {}), ...(view ? { view: JSON.stringify(view) } : {}), ...(cadence ? { cadence: "1" } : {}), done: doneIds.join(",") });
     return apiFetch(`/ops/sales/call/queue?${qs}`).then(d => { setQ(d); setFail(null); }).catch(setFail);
-  }, [listId, view]);
+  }, [listId, view, cadence]);
   useEffect(() => { load([]); }, [load]);
 
   const cur = q && q.current;
@@ -61,7 +61,7 @@ export default function CallMode({ meta, listId = null, view = null, onClose, op
   return <div data-sales-call-mode="1">
     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
       <button type="button" style={link} onClick={onClose}>← Back</button>
-      <b style={{ fontSize: 15, flex: "1 1 auto" }}>Calling{list ? `: ${list.name}` : ""}</b>
+      <b style={{ fontSize: 15, flex: "1 1 auto" }}>{cadence ? "Today's cadence calls" : `Calling${list ? `: ${list.name}` : ""}`}</b>
       <span style={{ fontSize: 13 }} data-call-timer="1">{clock(now - started.current)}</span>
       <span style={{ fontSize: 13, opacity: 0.8 }}>{counts.dials} dials · {counts.connects} connects · {counts.meetings} meetings</span>
       <button type="button" style={quiet} onClick={() => setEnded(true)} data-call-end="1">End session</button>

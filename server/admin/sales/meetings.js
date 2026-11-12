@@ -77,6 +77,7 @@ async function book(ctx, b, who, now = Date.now()) {
     if (mv.error) return mv;
   }
   for (const c of contactIds) await LINKS.associate(ctx, "deal", dealId, "contact", c, {}, who);
+  await require("./cadences").endFor(ctx, contactIds, "meeting", who);   // SALES-2 item 9: a booked meeting ends their cadences
   const at = nyInstant(b.date, b.time);
   const place = String(b.place).trim().slice(0, 500), attendees = String(b.attendees || "").trim().slice(0, 1000);
   const when = words(b.date, b.time);

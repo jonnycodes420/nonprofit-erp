@@ -16,6 +16,13 @@ const opsFor = t => (t === "number" || t === "currency" ? ["eq", "gt", "lt", "em
   : t === "date" ? ["before", "after", "none_since", "empty", "notempty"] : t === "checkbox" ? ["is_true", "is_false"]
   : t === "stage" || t === "owner" || t === "picklist" || t === "multiselect" || t === "org" || t === "salesList" ? ["in", "empty", "notempty"] : ["contains", "eq", "neq", "empty", "notempty"]);
 
+function CadencePick({ value, onChange }) {
+  const [list, setList] = useState([]);
+  useEffect(() => { apiFetch("/ops/sales/cadences").then(d => setList(d.cadences.filter(c => !c.builtin))).catch(() => {}); }, []);
+  return <select value={value} onChange={e => onChange(e.target.value)} style={box} aria-label="Cadence" data-sales-bulk-cadence="1">
+    <option value="">Cadence…</option>{list.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>;
+}
+
 function FilterRow({ f, fields, meta, onChange, onRemove }) {
   const field = fields.find(x => x.key === f.field) || fields[0];
   const ops = opsFor(field.type);
@@ -72,6 +79,11 @@ export default function ListView({ type, meta, open, onChanged, onMeta, list = n
     if (!sel.size || !bulk.action) return;
     if (bulk.action === "delete" && bulk.value !== "confirm") { setBulk(b => ({ ...b, value: "confirm" })); return; }
     try {
+      if (bulk.action === "cadence") {   // SALES-2 item 9: a bulk select into a cadence
+        const r = await apiFetch(`/ops/sales/cadences/${encodeURIComponent(bulk.value)}/enroll`, { method: "POST", body: JSON.stringify({ contactIds: [...sel] }) });
+        setMsg(`Enrolled ${r.enrolled} of ${sel.size}.${r.skipped.length ? ` Not enrolled: ${r.skipped.slice(0, 3).map(s => s.says).join("; ")}${r.skipped.length > 3 ? "; and more" : ""}.` : ""}`);
+        setBulk({ action: "", field: "", value: "" }); load(); onChanged(); return;
+      }
       const body = { ids: [...sel], action: bulk.action, field: bulk.field, value: bulk.action === "delete" ? undefined : bulk.value };
       const r = await apiFetch(`/ops/sales/bulk/${type}`, { method: "POST", body: JSON.stringify(body) });
       setMsg(`Done on ${r.done} of ${sel.size}.${r.problems.length ? ` Not done: ${r.problems.map(p => p.says).slice(0, 3).join("; ")}` : ""}`);
@@ -126,7 +138,8 @@ export default function ListView({ type, meta, open, onChanged, onMeta, list = n
       <b style={{ fontSize: 13 }}>{sel.size} selected</b>
       <select value={bulk.action} onChange={e => setBulk({ action: e.target.value, field: "", value: "" })} style={box} aria-label="Bulk action">
         <option value="">Choose…</option><option value="set">Edit a property</option><option value="owner">Change owner</option>
-        {type === "deal" ? <option value="stage">Change stage</option> : null}<option value="delete">Delete</option></select>
+        {type === "deal" ? <option value="stage">Change stage</option> : null}{type === "contact" ? <option value="cadence">Enroll in a cadence</option> : null}<option value="delete">Delete</option></select>
+      {bulk.action === "cadence" ? <CadencePick value={bulk.value} onChange={v => setBulk(b => ({ ...b, value: v }))} /> : null}
       {bulk.action === "set" ? <><select value={bulk.field} onChange={e => setBulk(b => ({ ...b, field: e.target.value }))} style={box} aria-label="Property">
         <option value="">Property…</option>{editable.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}</select>
         <input value={bulk.value} onChange={e => setBulk(b => ({ ...b, value: e.target.value }))} style={box} aria-label="New value" placeholder="New value" /></> : null}
