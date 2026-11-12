@@ -254,7 +254,9 @@ async function reset() {
   const r10 = t10.body.request || {};
   ok("§10 a question is answered, and the header says \"Here's what I found.\"", t10.status < 300 && (r10.lines || []).length === 1
      && r10.lines[0].kind === "answer" && r10.spoke === "Here's what I found.", { status: t10.status, spoke: r10.spoke, lines: (r10.lines || []).map(l => [l.kind, l.line]) });
-  ok("§10 an action's header is \"Done.\"", /^Done\./.test((t9.body.request || {}).spoke || ""), (t9.body.request || {}).spoke);
+  // ATLAS-7: "Done." only over an action that ran (§2's journey); a gift still waiting for its tap is not done.
+  ok("§10 an action's header is \"Done.\"", /^Done\./.test((t2.body.request || {}).spoke || ""), (t2.body.request || {}).spoke);
+  ok("§10 a request that only waits for a tap is never headed \"Done.\"", (t9.body.request || {}).spoke === "One thing waits for your tap.", (t9.body.request || {}).spoke);
 
   ok("§8 nothing was sent to anyone", MAIL.length === 0, MAIL.map(m => m.to));
   mock.close(); sink.close();
