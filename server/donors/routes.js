@@ -110,7 +110,8 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   const counted = GR.totalFromRoleCounts(roleCounts, role);
   const [donors, cnt] = await Promise.all([
     query(...require("./listPage").pageSql({ selectCols, selectArgs, whereSql, params, orderBy, orderArgs, limit, offset })),
-    counted != null ? [{ c: counted }] : query(`SELECT COUNT(*) AS c FROM donors WHERE ${whereSql}`, params),
+    counted != null ? [{ c: counted }] :
+    query(`SELECT COUNT(*) AS c FROM donors WHERE ${whereSql}`, params),
   ]);
   await require("./ownerName").withLiveOwnerNames(query, donors);   // INTEGRITY-1: one owner field
   lap("page");
