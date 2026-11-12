@@ -63,7 +63,7 @@ async function settings(query) {
     callRules: require("./callMode").cleanRules(m.call_rules || null), templates: require("./templates").cleanTemplates(m.templates || null) };
 }
 
-function mount(app, { query, run, wrap, opsOnly }) {
+function mount(app, { query, run, wrap, opsOnly, billing }) {
   const ctx = { query, run };
   // THE PLANTED DEFECT (SALES1_PLANT=door, tests only): any signed-in person passes. §0 goes red.
   const door = REC.PLANT === "door" ? (req, res, next) => require("../../../auth").requireAuth404(req, res, next) : opsOnly;
@@ -87,11 +87,17 @@ function mount(app, { query, run, wrap, opsOnly }) {
     const input = await TODAY.loadToday(query, deals, stages, now);
     input.noReply = await require("./email").replyFacts(query, now, await require("./email").noReplyDays(query));
     const today = TODAY.buildToday(input, now, s.tz);
+    // SALES-3: "Billing starts in N days" and "Quote sent, not signed", and the forecast reads accepted quotes.
+    const QUOTES = require("./quotes");
+    const [qFacts, accepted] = await Promise.all([QUOTES.todayFacts(query), QUOTES.acceptedByDeal(query)]);
+    const ql = QUOTES.todayLines(qFacts, now, s.tz);
+    Object.assign(today.lines, { billingStarts: ql.billingStarts, quoteUnsigned: ql.quoteUnsigned });
+    Object.assign(today.sentences, ql.sentences);
     // MRR now is ONBOARD-2's own figure, computed once, there.
     let mrrNowCents = 0, mrrError = null;
     try { mrrNowCents = (await require("../../onboard/board").board(query, now)).summary.mrrNowCents; }
     catch (e) { mrrError = "MRR now could not be read from the onboarding board."; }
-    const fc = FORECAST.forecast({ deals, history, stages, mrrNowCents, goal: s.goal }, now, s.tz);
+    const fc = FORECAST.forecast({ deals, history, stages, mrrNowCents, goal: s.goal, accepted }, now, s.tz);
     res.json({ ok: true, today, forecast: { ...fc, mrrError } });
   }));
 
@@ -345,6 +351,8 @@ function mount(app, { query, run, wrap, opsOnly }) {
   require("./routesA2").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
   // SALES-2 Part B: cadences, partner referral links (and their public page), customer referrals, the scoreboard.
   require("./routesB2").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
+  // SALES-3: quotes on a deal, the private quote page, Today's billing lines.
+  require("./routesC").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send, billing: billing || (() => ({})) });
 }
 
 module.exports = { mount, settings };

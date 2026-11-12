@@ -99,6 +99,7 @@ async function runSchemaInit(pool) {
   await require("./ddl/sales1b").run(pool);   // SALES-1 Part B: the sales mailbox, partners and payouts
   await require("./ddl/sales2").run(pool);   // SALES-2: prospect lists, fit, call mode, Do not contact, meetings
   await require("./ddl/sales2b").run(pool);   // SALES-2 Part B: cadences, partner referral links, customer referrals
+  await require("./ddl/sales3").run(pool);   // SALES-3: quotes, their private links and signatures
 // SPLIT-2 db.js piece 49
 }
 // SPLIT-2 end

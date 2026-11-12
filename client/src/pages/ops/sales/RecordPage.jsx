@@ -14,6 +14,7 @@ import { ContactCadences, CustomerReferral } from "./Cadences";
 import Timeline from "./Timeline";
 import NewRecord from "./NewRecord";
 import DealPartners from "./DealPartners";
+import QuotePanel from "./QuotePanel";
 
 const PLURAL = { org: "Organizations", contact: "Contacts", deal: "Deals" };
 const SIDES = { org: ["contact", "deal"], contact: ["org", "deal"], deal: ["org", "contact"] };
@@ -222,6 +223,7 @@ export default function RecordPage({ type, id, meta, open, onBack, onChanged }) 
         {SIDES[type].map(side => <Linked key={side} type={type} id={id} side={side} rows={d.linked[side]} meta={meta} open={open} reload={changed} />)}
         {type !== "contact" ? <RailSection id="steward" title="Steward account" testid="rail-steward" defaultOpen={!!d.steward}>
           <StewardBox s={d.steward} orgId={id} reload={changed} canLink={type === "org"} /></RailSection> : null}
+        {type === "deal" ? <RailSection id="quote" title="Quote" testid="rail-quote"><QuotePanel dealId={id} onChanged={changed} /></RailSection> : null}
         {d.onboarding ? <RailSection id="gates" title="Onboarding gates" testid="rail-gates"><Gates o={d.onboarding} /></RailSection> : null}
         {type === "deal" ? <RailSection id="partners" title="Partners" testid="rail-partners" defaultOpen={(d.partners || []).length > 0}>
           <DealPartners dealId={id} lines={d.partners || []} reload={changed} /></RailSection> : null}
