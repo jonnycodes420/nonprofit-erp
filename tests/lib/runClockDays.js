@@ -24,12 +24,13 @@ const UTC_DAY = /toISOString\(\)\s*\.\s*(slice\(\s*0\s*,\s*10\s*\)|substring\(\s
 const CLOCK = /\btestNow\(\s*\)|\bDate\.now\(\s*\)|\bnew Date\(\s*\)/;
 const ASSIGN = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(.*)$/;
 
+const escapeRe = t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const strip = line => line.replace(/\/\/.*$/, "");
 
 function scan(source) {
   const lines = String(source).split("\n").map(strip);
   const ids = new Set();
-  const refersToClock = text => CLOCK.test(text) || [...ids].some(id => new RegExp(`(^|[^\\w$.])${id.replace(/\$/g, "\\$")}\\b`).test(text));
+  const refersToClock = text => CLOCK.test(text) || [...ids].some(id => new RegExp(`(^|[^\\w$.])${escapeRe(id)}\\b`).test(text));
   for (let changed = true; changed;) {   // names fed by the clock, to a fixed point
     changed = false;
     for (const l of lines) {
