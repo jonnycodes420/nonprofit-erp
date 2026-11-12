@@ -185,6 +185,9 @@ const stageOf = async dealId => (await q(`SELECT s.name, d.value_cents FROM sale
   const org = (await q(`SELECT subscription_status, trial_ends_at, stripe_subscription_id, custom_price_cents, paper_done_at FROM orgs WHERE id = $1`, [PILOT]))[0];
   ok("§3 the org bills from the start day at the agreed price", org.subscription_status === "trialing" && new Date(org.trial_ends_at).getTime() === startAt.getTime() && org.stripe_subscription_id === sq.stripe_subscription_id && org.custom_price_cents === 25000, org);
   ok("§3 paper is signature AND card: signed, no card yet, so the gate waits", org.paper_done_at === null);
+  // The walk found this: the deal's onboarding rail said "Send start link" after she signed the quote.
+  const recA = (await S(sup, "GET", `/rec/deal/${dealA}`)).body;
+  ok("§3 the deal's next onboarding step names what's missing: the card, not a start link", recA.onboarding && recA.onboarding.next === "Signed, no card yet: chase the card", recA.onboarding && recA.onboarding.next);
   const after = await raw("GET", `/public/quote/${tokA2}`);
   ok("§3 after acceptance the link shows the confirmation only, not the quote", after.status === 200 && after.json().state === "accepted" && !after.json().agreement && after.json().canAddCard === true, after.text.slice(0, 300));
   const again = await raw("POST", `/public/quote/${tokA2}/accept`, { name: "Someone Else", title: "Board", agree: true, sha256: pa2.agreement.sha256 });
