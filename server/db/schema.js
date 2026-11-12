@@ -98,6 +98,7 @@ async function runSchemaInit(pool) {
   await require("./ddl/sales1").run(pool);   // SALES-1: the sales CRM in /ops (no org_id, super-admin only)
   await require("./ddl/sales1b").run(pool);   // SALES-1 Part B: the sales mailbox, partners and payouts
   await require("./ddl/sales2").run(pool);   // SALES-2: prospect lists, fit, call mode, Do not contact, meetings
+  await require("./ddl/sales2b").run(pool);   // SALES-2 Part B: cadences, partner referral links, customer referrals
 // SPLIT-2 db.js piece 49
 }
 // SPLIT-2 end

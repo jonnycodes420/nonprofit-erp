@@ -58,6 +58,7 @@ function GivingOrgWrap() { return <GivingOrgShell><Portal /></GivingOrgShell>; }
 // own route because it is a page an org reaches from anywhere, including
 // from somebody else's newsletter with a ?ref= on the end.
 const LostAndFound       = React.lazy(() => import("./pages/LostAndFound"));
+const ReferralPage       = React.lazy(() => import("./pages/ReferralPage"));   // SALES-2: a partner's referral link
 const SignupPage         = React.lazy(() => import("./pages/SignupPage"));
 // NB: Invitation.jsx is also imported eagerly by Landing (the on-page form
 // section), so this lazy route resolves from the already-loaded entry chunk.
@@ -340,6 +341,7 @@ function Root() {
               own Pricing.jsx had, because UpgradeModal and
               Settings still send paying organisations here to change plan. */}
           <Route path="/lost-and-found" element={<LostAndFound />} />
+          <Route path="/refer/:token" element={<ReferralPage />} />
           <Route path="/invitation" element={<InvitationPage />} />
           {/* BUILD-45 — donor portal (magic-link auth; org-themed; /verify
               consumes the fragment token). */}

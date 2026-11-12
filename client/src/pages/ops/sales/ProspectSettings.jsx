@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { apiFetch } from "../../../api";
 import { CREAM, card, h2, says, btn, quiet, box, link, brassTag, failureWords } from "./salesBits";
+import { CadenceSettings } from "./Cadences";
 
 const FIELD_CHOICES = [["state", "State"], ["revenue", "Revenue ($ a year)"], ["current_crm", "Current CRM"], ["city", "City"], ["nonprofit_type", "Type"],
   ["has_ed", "Has an executive director"], ["has_dd", "Has a development director"], ["has_phone", "Has a phone"], ["has_email", "Has an email"]];
@@ -95,5 +96,6 @@ export default function ProspectSettings({ meta, onChanged }) {
     <FitRule fit={meta.settings.fit} onChanged={onChanged} />
     <CallRules meta={meta} onChanged={onChanged} />
     <Templates meta={meta} onChanged={onChanged} />
+    <CadenceSettings meta={meta} />
   </>;
 }

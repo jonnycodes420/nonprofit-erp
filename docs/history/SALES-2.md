@@ -55,3 +55,29 @@ first real import (15 orgs, 16 contacts, 13 deals) hit five problems; SALES-FIX-
 - "Connected – not now" defaults to call again in 20 business days, and both Connected outcomes
   move the deal to Contacted (making one if the org has none). All editable.
 - A dial is any outcome logged; a connect is either Connected outcome or Meeting booked.
+
+## Part B · inbound, partners, cadences, scoreboard
+
+- **Inbound** (`inbound.js`): `/demo-request`, `/public/signup` and `/lost-and-found/lead` call
+  `inbound.after()` once their answer is sent, so the answer is byte-for-byte unchanged (the suite
+  compares the text). It matches the contact by email and the org by the email's domain (free
+  mailboxes fall back to the org's name), opens a deal in Lead with the source, and adds "New
+  inbound: call within the hour" due today. A signup is noted on the same path whether or not the
+  address already has an account, because the form's answer is the same for both.
+- **Partner referral links** (`referrals.js`, `/refer/:token`): 32 random bytes, only the sha256
+  kept, so the link is shown once; making a new one revokes the old. The public read returns
+  exactly `{ ok, partner, says }`. Honeypot field `website`; rate limit 20 per 15 minutes per IP.
+  The deal gets the partner's first (oldest) term as its default.
+- **Cadences** (`cadences.js`): steps become tasks (`enrollment_id`, `step_action`). A captured
+  reply, a Connected or Meeting booked outcome, a booked meeting, or Do not contact ends the
+  enrollment and closes its open steps (`done_at`, `outcome = 'cadence_ended'`). A call logged on
+  the contact completes their due call step. Call mode's `cadence=1` queue ignores the "open task
+  in the future" skip, since those tasks are the cadence itself.
+- **Customer asks**: `setStage` into a won stage starts the built-in cadence for the deal's
+  people, once per deal.
+- **Scoreboard** (`scoreboard.js`): weeks cut in New York, Monday to Sunday; meetings booked
+  count on the day they were written, held on the day they happen. Every number is a list of
+  ids; `/scoreboard/rows` returns its rows.
+- **Walk found and fixed:** the Sales sub-tab bar (now seven tabs) overflowed at 390, which made
+  every Sales screen scroll sideways on a phone; it wraps now. The public referral page fell back
+  to a serif font (public routes don't inherit the app's), now DM Sans like Lost & Found.

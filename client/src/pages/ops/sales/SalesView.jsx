@@ -10,6 +10,7 @@ import { useSearchParams } from "react-router-dom";
 import { apiFetch } from "../../../api";
 import { INK, WHITE, CREAM, EMERALD, BRASS, card, h2, says, btn, quiet, box, link, brassTag, usd, dayWords, TYPE_WORDS, Failure, failureWords } from "./salesBits";
 import CallMode from "./CallMode";
+import Scoreboard from "./Scoreboard";
 import ListView from "./ListView";
 import RecordPage from "./RecordPage";
 import TasksView from "./TasksView";
@@ -17,7 +18,7 @@ import SettingsPanel from "./SettingsPanel";
 import ImportPanel from "./ImportPanel";
 import PartnersView from "./PartnersView";
 
-const SUBS = [["org", "Organizations"], ["contact", "Contacts"], ["deal", "Deals"], ["task", "Tasks"], ["partner", "Partners"], ["list", "Lists"]];
+const SUBS = [["org", "Organizations"], ["contact", "Contacts"], ["deal", "Deals"], ["task", "Tasks"], ["partner", "Partners"], ["list", "Lists"], ["score", "Scoreboard"]];
 const LINES = [
   ["howDidItGo", "How did it go?"], ["booked", "Meetings booked"],
   ["due", "Due today or overdue"], ["revisit", "Back from Later"], ["noReply", "No reply"], ["trials", "Trials and betas ending"], ["quiet", "Gone quiet"],
@@ -51,6 +52,9 @@ function ListsView({ meta, go, onMeta }) {
   const lists = meta.lists || [];
   return <section style={card} data-sales-lists="1">
     <p style={says}>A list is a saved view of organizations plus its own members, so one organization can be on several. Import a lead list into one, or save any Organizations view as one.</p>
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+      <button type="button" style={btn} onClick={() => go({ panel: "call", cadence: "1", list: null, view: null })} data-sales-cadence-calls="1">Today's cadence calls</button>
+      <span style={{ fontSize: 12.5, opacity: 0.75 }}>Everyone with a cadence call step due today or earlier.</span></div>
     {lists.length === 0 ? <p style={says}>No lists yet. Import a lead list, or filter Organizations and save them as a list.</p> : lists.map(l => <div key={l.id} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "8px 0", borderTop: `1px solid ${CREAM}` }} data-sales-list-row={l.id}>
       <button type="button" style={{ ...link, fontSize: 14 }} onClick={() => go({ sub: "list", list: l.id, rec: null })}>{l.name}</button>
       <span style={{ fontSize: 12.5, opacity: 0.7, flex: 1 }}>{l.orgs} organizations · made by {l.created_by_name}</span>
@@ -169,20 +173,21 @@ export default function SalesView() {
       <button type="button" style={quiet} onClick={() => go({ panel: panel === "import" ? null : "import", rec: null })} data-sales-import-open="1">Import</button>
       <button type="button" style={quiet} onClick={() => go({ panel: panel === "settings" ? null : "settings", rec: null })} data-sales-settings-open="1">Sales settings</button>
     </div>
-    {panel === "call" ? <CallMode key={`${listId}:${params.get("view")}`} meta={meta} listId={listId} view={callView} onClose={() => { go({ panel: null, view: null }); loadHome(); }} open={open} />
+    {panel === "call" ? <CallMode key={`${listId}:${params.get("view")}:${params.get("cadence")}`} meta={meta} listId={listId} view={callView} cadence={params.get("cadence") === "1"} onClose={() => { go({ panel: null, view: null, cadence: null }); loadHome(); }} open={open} />
       : panel === "settings" ? <SettingsPanel meta={meta} onChanged={() => { loadMeta(); loadHome(); }} onClose={() => go({ panel: null })} />
       : panel === "import" ? <ImportPanel meta={meta} onChanged={changed} onClose={() => go({ panel: null })} />
       : rec ? <RecordPage key={rec[0]} type={rec[1]} id={rec[2]} meta={meta} open={open} onBack={() => go({ rec: null })} onChanged={changed} />
       : <>
         {home && home.ok ? <><Today today={home.today} open={open} meta={meta} reload={loadHome} /><Forecast f={home.forecast} /></>
           : home ? <section style={card}><p style={says}>Today could not be read. Try again in a minute.</p></section> : null}
-        <div role="tablist" aria-label="Sales" style={{ display: "flex", gap: 18, borderBottom: `1px solid ${INK}1f`, margin: "0 0 14px" }}>
+        <div role="tablist" aria-label="Sales" style={{ display: "flex", flexWrap: "wrap", columnGap: 18, rowGap: 0, borderBottom: `1px solid ${INK}1f`, margin: "0 0 14px" }}>
           {SUBS.map(([id, label]) => <button key={id} role="tab" aria-selected={sub === id} data-sales-sub={id} onClick={() => go({ sub: id, rec: null })}
             style={{ background: "none", border: 0, borderBottom: `2px solid ${sub === id ? EMERALD : "transparent"}`, padding: "8px 0", minHeight: 38, fontSize: 14,
               fontWeight: sub === id ? 700 : 500, color: INK, cursor: "pointer", fontFamily: "inherit" }}>{label}</button>)}
         </div>
         {sub === "task" ? <TasksView meta={meta} open={open} onChanged={changed} />
           : sub === "partner" ? <PartnersView open={open} />
+          : sub === "score" ? <Scoreboard open={open} />
           : sub === "list" && listId && (meta.lists || []).some(l => l.id === listId) ? <ListView key={`list:${listId}`} type="org" list={meta.lists.find(l => l.id === listId)} meta={meta} open={open} onChanged={changed} onMeta={loadMeta} startCalling={startCalling} />
           : sub === "list" ? <ListsView meta={meta} go={go} onMeta={loadMeta} />
           : <ListView key={sub} type={sub} meta={meta} open={open} onChanged={changed} onMeta={loadMeta} startCalling={sub === "org" ? startCalling : null} />}

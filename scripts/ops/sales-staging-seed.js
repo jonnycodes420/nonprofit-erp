@@ -38,7 +38,7 @@ async function seedSales(q, now = Date.now(), opts = {}) {
   for (const t of ["sales_activity_links", "sales_activities", "sales_stage_history", "sales_links", "sales_deals", "sales_contacts", "sales_orgs",
     "sales_views", "sales_merges", "sales_imports", "sales_properties", "sales_stages", "sales_pipelines", "sales_settings",
     "sales_payouts", "sales_deal_partners", "sales_partner_terms", "sales_partners", "sales_email_links", "sales_emails", "sales_mailboxes",
-    "sales_list_members", "sales_lists"]) await q(`DELETE FROM ${t}`);
+    "sales_list_members", "sales_lists", "sales_cadence_enrollments", "sales_cadences", "sales_referral_links"]) await q(`DELETE FROM ${t}`);
   // Every record has an owner: staging's first live super-admin, if there is one.
   const [owner] = await q(`SELECT id FROM users WHERE is_super_admin = true AND deactivated_at IS NULL ORDER BY created_at LIMIT 1`);
   const OWNER = owner ? owner.id : null;
@@ -121,7 +121,8 @@ async function seedSales(q, now = Date.now(), opts = {}) {
   }
   // SALES-2: the made-up prospect list call mode walks (40 organizations across KY, OH and TN).
   const prospects = await require("./sales-staging-prospects").seedProspects(q, OWNER);
-  return { orgs: ORGS.length, contacts: 20, deals: DEALS.length, partners: 2, emails: mails.length, prospects };
+  const partB = await require("./sales-staging-prospects").seedPartBWalk(q, OWNER, now);
+  return { orgs: ORGS.length, contacts: 20, deals: DEALS.length, partners: 2, emails: mails.length, prospects, partB };
 }
 
 module.exports = { seedSales, ORGS, DEALS };

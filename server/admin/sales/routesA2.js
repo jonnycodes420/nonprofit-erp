@@ -39,7 +39,7 @@ function mount(app, { query, run, wrap, door, salesLimiter, whoOf, send }) {
 
   app.get("/ops/sales/call/queue", salesLimiter, door, wrap(async (req, res) => {
     const done = String(req.query.done || "").split(",").map(s => s.trim()).filter(Boolean).slice(0, 2000);
-    send(res, await CM.loadQueue(query, { view: parseJson(req.query.view, {}), listId: req.query.list ? String(req.query.list) : null, done, now: Date.now() }));
+    send(res, await CM.loadQueue(query, { view: parseJson(req.query.view, {}), listId: req.query.list ? String(req.query.list) : null, done, now: Date.now(), cadence: req.query.cadence === "1" }));
   }));
   app.post("/ops/sales/call/outcome", salesLimiter, door, wrap(async (req, res) => {
     const r = await CM.logOutcome(ctx, req.body || {}, whoOf(req), Date.now());
@@ -77,6 +77,8 @@ function mount(app, { query, run, wrap, door, salesLimiter, whoOf, send }) {
       : await run(`UPDATE ${table} SET dnc_at = ?, dnc_reason = ?, dnc_by_name = ?, updated_at = NOW(), updated_by = ?, updated_by_name = ? WHERE id = ? AND deleted_at IS NULL`,
         [new Date().toISOString(), reason, who.name, who.id, who.name, id]);
     if (r.changes && req.audit) req.audit.label(`sales ${type}: Do not contact ${b.clear ? "lifted" : "set"}`);
+    // SALES-2 item 9: Do not contact ends every cadence (an organization's: its people's).
+    if (r.changes && !b.clear) { const CAD = require("./cadences"); await (type === "org" ? CAD.endForOrg(ctx, id, "dnc", who) : CAD.endFor(ctx, [id], "dnc", who)); }
     send(res, r.changes ? { ok: true } : { error: "not_found" });
   }));
 }

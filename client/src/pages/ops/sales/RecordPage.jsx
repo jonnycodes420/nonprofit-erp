@@ -10,6 +10,7 @@ import { RailSection, useNarrow } from "../../../components/StewardEditor";
 import { INK, WHITE, CREAM, EMERALD, BRASS, TERRA, card, h2, says, btn, quiet, box, link, brassTag, usd, dayWords, whenWords, TYPE_WORDS, InlineField, fieldsOf, valueAt, Failure, failureWords } from "./salesBits";
 import EmailDraft from "./EmailDraft";
 import MeetingForm from "./MeetingForm";
+import { ContactCadences, CustomerReferral } from "./Cadences";
 import Timeline from "./Timeline";
 import NewRecord from "./NewRecord";
 import DealPartners from "./DealPartners";
@@ -207,6 +208,8 @@ export default function RecordPage({ type, id, meta, open, onBack, onChanged }) 
           {(d.history || []).map(h => <div key={h.id} style={{ fontSize: 12.5, padding: "4px 0", borderTop: `1px solid ${CREAM}` }} data-stage-history={h.id}>
             {h.from_name ? `${h.from_name} → ` : "Created in "}<b>{h.to_name}</b><div style={{ opacity: 0.7 }}>{whenWords(h.at)} · {h.created_by_name}</div></div>)}
         </RailSection> : null}
+        {type === "contact" ? <RailSection id="cadences" title="Cadences" testid="rail-cadences"><ContactCadences contactId={id} reload={changed} /></RailSection> : null}
+        {type === "org" ? <RailSection id="referral" title="Log a referral from this customer" testid="rail-referral" defaultOpen={false}><CustomerReferral orgId={id} open={open} /></RailSection> : null}
         {type !== "deal" ? <RailSection id="dnc" title="Do not contact" testid="rail-dnc" defaultOpen={!!r.dnc_at}><DoNotContact type={type} id={id} r={r} reload={changed} /></RailSection> : null}
         {type !== "deal" ? <RailSection id="merge" title="Merge" testid="rail-merge" defaultOpen={false}><Merge type={type} id={id} onMerged={changed} />
           {(d.merges || []).map(m => <div key={m.id} style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>Merged in {m.gone_snapshot && (m.gone_snapshot.name || [m.gone_snapshot.first_name, m.gone_snapshot.last_name].filter(Boolean).join(" "))} on {whenWords(m.created_at)} by {m.created_by_name}</div>)}
