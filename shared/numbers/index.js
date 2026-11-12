@@ -40,4 +40,5 @@ module.exports = {
   pledgeSchedule: require("./pledgeSchedule"),   // TRUTH-5
   lapseWords: require("./lapseWords"),   // TRUTH-5
   nextSteps: require("./nextSteps"),   // ACCESS-3
+  broughtIn: require("./broughtIn"),   // CONNECT-1
 };

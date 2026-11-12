@@ -869,6 +869,19 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 {`See the ${n(result.donorsCreated, "person", "people")} you brought in`}
               </button>
             )}
+            {/* CONNECT-1: Introduced by and Guest of, linked to people already here; what named nobody is listed, never added */}
+            {!undone && result.connections && (result.connections.linked > 0 || result.connections.unmatched.length > 0) && (
+              <div data-testid="sheet-result-connections" style={{ ...small, marginTop: 6 }}>
+                {result.connections.linked > 0 && <div>{`${n(result.connections.linked, "Introduced by or Guest of link")} made to people already in Steward.`}</div>}
+                {result.connections.unmatched.length > 0 && <>
+                  <div style={{ fontWeight: 700, marginTop: 4 }}>{`${n(result.connections.unmatched.length, "row")} named someone Steward could not find, so no link was made. Link them on the person's profile:`}</div>
+                  {result.connections.unmatched.slice(0, 50).map((x, i) => (
+                    <div key={i} data-testid="sheet-result-connection-unmatched">{`${x.name}${x.line ? ` (row ${x.line})` : ""}, ${x.kind}: ${x.why}`}</div>
+                  ))}
+                  {result.connections.unmatched.length > 50 && <div>{`and ${n(result.connections.unmatched.length - 50, "more")}.`}</div>}
+                </>}
+              </div>
+            )}
             {!undone && result.totalsSentence && result.totalsSentence.length > 0 && <div style={{ ...small, marginTop: 4 }}>{result.totalsSentence.join(" ")}</div>}
             {/* POLISH-4: the receipt says what the preview said about rows read as one person */}
             {!undone && u && u.rowAccount && u.rowAccount.merged > 0 && (

@@ -103,7 +103,24 @@ const SIDED = {
 // TRUTH-5 (W-1109-Finance-37X): a person-to-organization link reads what went
 // THROUGH it (soft credit on the organization's gifts), never anyone's lifetime.
 const throughWords = r => (r.throughCents > 0 ? `${fmtFull(r.throughCents / 100)} given through ${r.side === "organization" ? "here" : "it"}` : "nothing soft-credited through it yet");
+// CONNECT-1 — how a person came in, read from this record's end of the link
+// (the server stores the newcomer first and says `direction`). In the picker
+// each type is offered from both ends; a pick is the type plus this record's end.
+const CONNECT_PICKS = [
+  ["introduced_by", "Introduced by…", "introduced_by", "newcomer"],
+  ["introduced", "Introduced…", "introduced_by", "connector"],
+  ["guest_of", "Guest of…", "guest_of", "newcomer"],
+  ["brought_guest", "Brought as a guest…", "guest_of", "connector"],
+];
+const connectPick = v => { const p = CONNECT_PICKS.find(([k]) => k === v); return p ? { relationshipType: p[2], side: p[3] } : null; };
+const CONNECT_LINE = {
+  introduced_by: { newcomer: r => `Introduced by ${r.relatedDonorName}`, connector: r => `Introduced ${r.relatedDonorName}` },
+  guest_of: { newcomer: r => `Guest of ${r.relatedDonorName}${r.eventName ? ` at ${r.eventName}` : ""}`,
+    connector: r => `Brought ${r.relatedDonorName} as a guest${r.eventName ? ` to ${r.eventName}` : ""}` },
+};
 const relationshipLine = r => {
+  const how = CONNECT_LINE[r.relationshipType] && CONNECT_LINE[r.relationshipType][r.direction];
+  if (how) return how(r);
   const sided = SIDED[r.relationshipType] && SIDED[r.relationshipType][r.side];
   if (sided) return sided(r.relatedDonorName);
   return `${r.relatedDonorName} · ${(DONOR_RELATIONSHIP_LABELS.find(([v]) => v === r.relationshipType) || [])[1] || r.relationshipType}`;
@@ -340,4 +357,4 @@ function ComingUpMain({tasks=[],meetings=[],onTaskToggle,isReadOnly,onAddTask}){
 }
 const cap=s=>s?String(s).charAt(0).toUpperCase()+String(s).slice(1):"Not set";
 
-export { UndatedGiftDate, ContactFlag, stageTone, lateWords, WEALTH_SCORE_DEFINITION, WEALTH_SCORE_SOURCE, DONOR_RELATIONSHIP_LABELS, relationshipLabelsFor, relationshipLine, throughWords, stripGiftAmountPrefix, giftFundName, giftTimelineLine, HEADER_CHIP_LIMIT, HeaderChips, ROLE_CHIPS, RoleLine, PROFILE_FIGURES, SUGGEST_KINDS, PROPOSAL_STAGE_LABEL, OPEN_PROPOSAL_KEYS, PROFILE_TABS, TAB_KIND, TAB_SUBCHIPS, STAGE_BAR, RailGroups, ComingUpMain, cap };
+export { UndatedGiftDate, ContactFlag, stageTone, lateWords, WEALTH_SCORE_DEFINITION, WEALTH_SCORE_SOURCE, DONOR_RELATIONSHIP_LABELS, relationshipLabelsFor, relationshipLine, CONNECT_PICKS, connectPick, throughWords, stripGiftAmountPrefix, giftFundName, giftTimelineLine, HEADER_CHIP_LIMIT, HeaderChips, ROLE_CHIPS, RoleLine, PROFILE_FIGURES, SUGGEST_KINDS, PROPOSAL_STAGE_LABEL, OPEN_PROPOSAL_KEYS, PROFILE_TABS, TAB_KIND, TAB_SUBCHIPS, STAGE_BAR, RailGroups, ComingUpMain, cap };

@@ -312,7 +312,10 @@ app.delete("/households/:id", requireAuth, wrap(async (req, res) => {
 // POLISH-4: and a person to an organization: Owner (owns it, gives through it)
 // and Works at. These two are stored person first (donor_id_a) and make one
 // giving unit for the lapse rule (shared/numbers/lapse.js UNIT_LINK_TYPES).
-const DONOR_RELATIONSHIP_TYPES = ["spouse", "partner", "household", "family", "employer_match", "owner", "works_at"];
+// CONNECT-1: and how a person came in, Introduced by and Guest of (./connections.js),
+// stored newcomer first, context only.
+const CN = require("./connections");
+const DONOR_RELATIONSHIP_TYPES = ["spouse", "partner", "household", "family", "employer_match", "owner", "works_at", ...CN.CONNECT_TYPES];
 const PERSON_TO_ORG = new Set(["owner", "works_at"]);
 const isOrgRow = d => !!d && (["organisation", "organization"].includes(String(d.kind || "").toLowerCase())
   || (Array.isArray(d.person_types) && d.person_types.includes("organization")));
@@ -325,7 +328,7 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const donorId = req.params.id;
   const rows = await query(
-    `SELECT dr.id, dr.relationship_type, dr.notes, dr.created_at, (dr.donor_id_a = ?) AS mine_first,
+    `SELECT dr.id, dr.relationship_type, dr.notes, dr.created_at, (dr.donor_id_a = ?) AS mine_first, dr.event_id,
             CASE WHEN dr.donor_id_a = ? THEN dr.donor_id_b ELSE dr.donor_id_a END AS related_donor_id
      FROM donor_relationships dr
      WHERE dr.org_id = ? AND (dr.donor_id_a = ? OR dr.donor_id_b = ?)
@@ -339,7 +342,9 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
   // ACCESS-2: a link to someone outside her portfolio isn't shown: to her, they aren't there.
   const hiddenRel = new Set(await require("../auth/portfolio").hiddenOf(req.user, orgId, rows.map(r => r.related_donor_id)));
   if (hiddenRel.size) rows.splice(0, rows.length, ...rows.filter(r => !hiddenRel.has(r.related_donor_id)));
-  if (!rows.length) return res.json({ relationships: [], householdTotal: null });
+  // CONNECT-1: the connector's line, "Brought in 4 people · $12,400 given since".
+  const broughtIn = await CN.broughtInFor(orgId, donorId);
+  if (!rows.length) return res.json({ relationships: [], householdTotal: null, broughtIn });
 
   const relatedIds = rows.map(r => r.related_donor_id);
   const relatedDonors = await query(
@@ -361,6 +366,9 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
     // ("person": Gives through X; "organization": Owner: Y).
     side: PERSON_TO_ORG.has(r.relationship_type) ? (r.mine_first ? "person" : "organization") : null,
   }));
+  // CONNECT-1: which end of an Introduced by or Guest of link this record is, and the event.
+  const how = await CN.describe(query, orgId, rows, donorId);
+  for (const r of relationships) if (how.has(r.id)) Object.assign(r, how.get(r.id));
 
   // TRUTH-5 (W-1109-Finance-37X): on an organisation, the people linked to it
   // read what they gave THROUGH it (soft credit on its gifts), never their lifetime.
@@ -387,7 +395,7 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
     householdTotal = (await figureSources.figureValue(orgId, householdTotalSource)).value;
   }
 
-  res.json({ relationships, householdTotal, householdTotalSource, through });
+  res.json({ relationships, householdTotal, householdTotalSource, through, broughtIn });
 }));
 
 app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -398,6 +406,16 @@ app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async 
     return res.status(400).json({ error: "relatedDonorId and a valid relationshipType are required" });
   }
   if (relatedDonorId === donorId) return res.status(400).json({ error: "A donor can't be linked to themselves" });
+  // CONNECT-1: Introduced by and Guest of are stored newcomer first; `side`
+  // says which end this profile is ("newcomer", the default, or "connector").
+  if (CN.isConnectType(relationshipType)) {
+    const out = await CN.addConnection({ query }, orgId, { ...CN.endsFrom(donorId, relatedDonorId, req.body.side), type: relationshipType,
+      eventId: req.body.eventId || null, actor: actor(req) });
+    if (out.error) return res.status(out.status).json({ error: out.error });
+    if (!out.created) return res.status(409).json({ error: "These people are already linked this way" });
+    if (req.audit) { const [r] = await query("SELECT * FROM donor_relationships WHERE id = ?", [out.id]); req.audit.after(await auditShape("donor_relationships", r, orgId)); }
+    return res.status(201).json({ id: out.id });
+  }
 
   const bothRows = await query(
     "SELECT id, kind, person_types FROM donors WHERE org_id = ? AND id IN (?, ?) AND deleted_at IS NULL",
@@ -413,8 +431,9 @@ app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async 
   // second (A,B) row for the same pair.
   const existing = await query(
     `SELECT id FROM donor_relationships WHERE org_id = ?
-       AND ((donor_id_a = ? AND donor_id_b = ?) OR (donor_id_a = ? AND donor_id_b = ?))`,
-    [orgId, donorId, relatedDonorId, relatedDonorId, donorId]
+       AND ((donor_id_a = ? AND donor_id_b = ?) OR (donor_id_a = ? AND donor_id_b = ?))
+       AND relationship_type <> ALL(?::text[])`,   // CONNECT-1: how they came in is context beside any other link
+    [orgId, donorId, relatedDonorId, relatedDonorId, donorId, [...CN.CONNECT_TYPES]]
   );
   if (existing.length) return res.status(409).json({ error: "These donors are already linked" });
 
@@ -458,6 +477,8 @@ app.put("/donor-relationships/:id", requireAuth, checkWriteAccess, wrap(async (r
   const sets = [], vals = [];
   if (b.relationshipType !== undefined && b.relationshipType !== r.relationship_type) {
     if (!DONOR_RELATIONSHIP_TYPES.includes(b.relationshipType)) return res.status(400).json({ error: "A valid relationshipType is required" });
+    // CONNECT-1: a direction can't be guessed from a retype; remove the link and add it again.
+    if (CN.isConnectType(b.relationshipType) || CN.isConnectType(r.relationship_type)) return res.status(400).json({ error: "Remove this link and add it again the way you want it." });
     sets.push("relationship_type=?"); vals.push(b.relationshipType);
   }
   if (b.notes !== undefined && String(b.notes || "") !== String(r.notes || "")) {

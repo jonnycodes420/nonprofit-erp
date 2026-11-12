@@ -1139,6 +1139,7 @@ async function run7(pool) {
   await require("./nav1menu").run(pool);   // NAV-1 (menu): the org's sidebar and Major Gifts tabs
   await require("./truth6").run(pool);   // TRUTH-6: a gift dated after today is scheduled
   await require("./polish9").run(pool);   // POLISH-9: an old import receipt can be archived
+  await require("./connect1").run(pool);   // CONNECT-1: a Guest of link may name its event
 
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id
