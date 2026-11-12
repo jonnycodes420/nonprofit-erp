@@ -25,6 +25,9 @@ import { gridsFromWorkbook, gridFromText, SHEET_ROLES, pledgeMoneyWords, readsAs
 import { WorkbookImport } from "./WorkbookImport";
 import { DateOrderQuestions, GuessNotes } from "./import/SheetGuesses";   // IMPORT-9
 import { AuctionValues } from "./import/AuctionValues";   // ASKS-1: an auction sheet's values
+import { TotalChecks } from "./import/TotalChecks";   // IMPORT-10: totals that do not foot
+import { EventSuggest, EventMatchQuestion, dayOf } from "./import/EventPick";   // IMPORT-10: the event you meant
+import { ImportedBefore } from "./import/ImportedBefore";   // IMPORT-10: the same file twice is asked
 import { told } from "../lib/stewardTold";   // HOME-3: the pages behind the window re-read
 import { droppedSpreadsheet, filesAsOne, isFileDrag, SheetDropTarget } from "./SheetDropTarget";   // PERF-4
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
@@ -337,7 +340,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const giftsQ = eventGiftsQ || (typeof answers.useEventDate === "boolean" && answers.eventDate ? giftsAsked : null);
   const pledgeQ = pledgeDueQ || (answers.pledgeDue ? pledgeAsked : null);
   useEffect(() => { const q = u && u.questions.find(x => x.id === "date"); if (q && !dateAsked) setDateAsked(q); }, [u, dateAsked]);
-  const otherQs = u ? u.questions.filter(q => !["date", "event", "eventGifts", "pledgeDue", "nearDuplicates", "giftsDeposited", "spouseLinks", "auctionValue"].includes(q.id) && q.kind !== "column" && q.kind !== "deletedPerson" && q.kind !== "dateOrder") : [];
+  const otherQs = u ? u.questions.filter(q => !["date", "event", "eventGifts", "pledgeDue", "nearDuplicates", "giftsDeposited", "spouseLinks", "auctionValue", "eventMatch", "importedBefore"].includes(q.id) && q.kind !== "column" && q.kind !== "deletedPerson" && q.kind !== "dateOrder") : [];
   const dateOrderQs = u ? u.questions.filter(q => q.kind === "dateOrder") : [];   // IMPORT-9
   // FIX-59: two defaulted questions, each answered once for the file
   const nearQ = u ? u.questions.find(q => q.id === "nearDuplicates") : null;
@@ -457,6 +460,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               <div style={h3}>What Steward understood</div>
               {u.knownShape && <div data-testid="sheet-known-shape" style={{ fontSize: 13.5, fontWeight: 700, color: T.greenDk, marginBottom: 4 }}>{u.knownShape.sentence}</div>}
               <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.45 }}>{fileSentence(u, tablesRead, eventName)}</div>
+              {u.checkLine && <div data-testid="sheet-check-line" style={{ fontSize: 13.5, fontWeight: 700, color: T.gold700, marginTop: 4 }}>{u.checkLine}.</div>}
               {u.totalsSentence && u.totalsSentence.length > 0 && <div data-testid="sheet-totals" style={{ fontSize: 13.5, marginTop: 6 }}>{u.totalsSentence.join(" ")}</div>}
               {u.totals.filter(t => !t.matches).map(t => (
                 <div key={t.sheet + t.line + t.column} style={{ ...small, color: T.gold700, marginTop: 4 }}>
@@ -474,7 +478,9 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 </div>))}
               {u.modelUsed && <div style={{ ...small, marginTop: 4 }}>Steward's assistant suggested what some columns are; each suggestion was checked against every row.</div>}
             </div>
+            <ImportedBefore q={u.questions.find(q => q.id === "importedBefore")} setAnswer={setAnswer} onClose={finish} disabled={rereading} />
             <GuessNotes u={u} />
+            <TotalChecks u={u} answers={answers} setAnswers={setAnswers} disabled={rereading} />
 
             {/* FIX-54: people she deleted stay deleted unless she brings them back */}
             {/* HARDEN-1: a match by the name alone is hers to answer; Same person by default */}
@@ -538,12 +544,13 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 {eventQ && <div style={small}>{eventQ.hint}</div>}
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
                   <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center", flex: "1 1 220px" }}>Called
-                    <input type="text" data-testid="sheet-event-name" value={eventName} placeholder="The event's name" onChange={e => setAnswer({ eventName: e.target.value })} style={field} />
+                    <input type="text" data-testid="sheet-event-name" value={eventName} placeholder="The event's name" onChange={e => setAnswer({ eventName: e.target.value, eventId: undefined })} style={field} />
                   </label>
                   <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center" }}>{eventQ && eventQ.required ? "On" : "On (optional)"}
                     <DateInput data-testid="sheet-event-date" required={!!(eventQ && eventQ.required)} value={answers.eventDate || ""} onChange={e => setAnswer({ eventDate: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
                   </label>
                 </div>
+                <EventSuggest u={u} typed={eventName} answers={answers} disabled={rereading} onPick={e => setAnswer({ eventName: e.name, eventId: e.id, ...(dayOf(e.date) ? { eventDate: dayOf(e.date) } : {}) })} />
                 {eventQ && eventQ.canSayNotEvent && (
                   <button type="button" data-testid="sheet-not-event" style={{ ...linkBtn, marginTop: 8 }} onClick={() => setAnswer({ notEvent: true, eventDate: "", useEventDate: undefined, pledgeDue: answers.pledgeDue === "event" ? undefined : answers.pledgeDue })}>
                     This file isn't from an event
@@ -679,9 +686,11 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                         <DateInput data-testid="sheet-date-input" value={answers.date || ""} onChange={e => setAnswer({ date: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
                       </label>
                       <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center", flex: "1 1 220px" }}>Event
-                        <input type="text" value={eventName} placeholder="Name of the event (optional)" onChange={e => setAnswer({ eventName: e.target.value })} style={field} />
+                        <input type="text" data-testid="sheet-date-event-name" value={eventName} placeholder="Name of the event (optional)" onChange={e => setAnswer({ eventName: e.target.value, eventId: undefined })} style={field} />
                       </label>
                     </div>
+                    <EventSuggest u={u} typed={eventName} answers={answers} disabled={rereading}
+                      onPick={e => setAnswer({ eventName: e.name, eventId: e.id, linkEvent: true, ...(dayOf(e.date) ? { eventDate: dayOf(e.date) } : {}), ...(auctionDay && !answers.date ? { date: auctionDay } : {}) })} />
                     {eventName && (
                       <label style={{ ...small, display: "flex", gap: 6, alignItems: "center", marginTop: 8, color: T.ink }}>
                         {/* ASKS-1: an auction sheet linked to the gala is dated on its day, so each purchase gets its receipt */}
@@ -698,6 +707,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             <DateOrderQuestions questions={dateOrderQs} answers={answers} disabled={rereading}
               onAnswer={(key, v) => setAnswers(a => ({ ...a, dateOrder: { ...(a.dateOrder || {}), [key]: v } }))} />
             <AuctionValues u={u} answers={answers} setAnswers={setAnswers} disabled={rereading} />
+            <EventMatchQuestion q={u.questions.find(q => q.id === "eventMatch")} setAnswer={setAnswer} disabled={rereading} />
             {otherQs.length > 0 && (
               <div style={{ ...box, borderColor: T.gold500 }} data-testid="sheet-questions">
                 <div style={h3}>{otherQs.length === 1 ? "One thing Steward can't tell" : `${otherQs.length} things Steward can't tell`}</div>

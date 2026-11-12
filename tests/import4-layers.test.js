@@ -263,7 +263,8 @@ async function combined() {
   // §8 numbers, and again
   const probs = await numbersCheck(ORG);
   ok("§8 NUMBERS-1's checker passes after the import", probs.length === 0, JSON.stringify(probs).slice(0, 600));
-  const c2 = await api("POST", "/sheet-import/commit", tok, { ...body, importId: "imp_import4c_two" });
+  // IMPORT-10: the same file again is asked first; she says "Import again anyway"
+  const c2 = await api("POST", "/sheet-import/commit", tok, { ...body, answers: { ...(body.answers || {}), importAgain: RUN }, importId: "imp_import4c_two" });
   const again = await one(`SELECT (SELECT COUNT(*) FROM gifts WHERE org_id=$1)::int AS g, (SELECT COUNT(*) FROM donors WHERE org_id=$1)::int AS d,
                                   (SELECT COUNT(*) FROM event_attendees WHERE org_id=$1)::int AS a, (SELECT COUNT(*) FROM pledges WHERE org_id=$1)::int AS p,
                                   (SELECT COUNT(*) FROM events WHERE org_id=$1)::int AS e`, [ORG]);

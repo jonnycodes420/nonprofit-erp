@@ -568,10 +568,17 @@ async function buildUnderstanding(req, body) {
   u.peopleLine = { persons: personsNow, new: newPeople, matched: matchedPeople, waiting: waitingPeople, balanced: newPeople + matchedPeople + waitingPeople === personsNow,
     sentence: `${personsNow.toLocaleString("en-US")} ${personsNow === 1 ? "person" : "people"}: ${newPeople.toLocaleString("en-US")} new, ${matchedPeople.toLocaleString("en-US")} already in Steward`
       + (waitingPeople ? `, ${waitingPeople.toLocaleString("en-US")} waiting on your answer` : "") };
-  // an event already on the calendar with the suggested name
-  let events = [];
-  const nm = (body.answers && body.answers.eventName) || (u.questions.find(q => q.id === "date") || {}).suggestedEventName;
-  if (nm) events = await query("SELECT id, name, date::text AS date FROM events WHERE org_id=? AND LOWER(name)=LOWER(?) ORDER BY date DESC NULLS LAST LIMIT 5", [orgId, nm]);
+  // an event already on the calendar with the suggested name. IMPORT-10 (shared/eventMatch.js):
+  // case, spacing and punctuation never make a second event; a close name asks "Did you mean …?"
+  // the name the commit gives the event: hers, the file's (its title rows), or the date question's guess
+  const nm = String((body.answers && body.answers.eventName) || (u.event && u.event.name) || (u.questions.find(q => q.id === "date") || {}).suggestedEventName || "").trim();
+  const EM = await import("../shared/eventMatch.js");
+  const orgEvents = await query("SELECT id, name, date::text AS date FROM events WHERE org_id=? ORDER BY date DESC NULLS LAST, id LIMIT 500", [orgId]);
+  u.orgEvents = orgEvents;
+  const eventPick = require("../server/imports/eventAsk").eventAsk({ u, answers: body.answers || {}, name: nm, orgEvents, EM });
+  const events = eventPick.events;
+  // IMPORT-10 item 6: the same file within 30 days is asked, never one click from a second import
+  u.importedBefore = await require("../server/imports/importedBefore").importedBefore({ query, orgId, fileKey: fileFingerprint(body), fileName: body.fileName, u, answers: body.answers });
   u.ready = u.questions.filter(q => !q.optional).length === 0;
   const button = Rm.importButtonSentence(u, { matched: matchedPeople, waiting: waitingPeople });
   if (!u.ready) button.text = `Answer ${u.questions.filter(q => !q.optional).length === 1 ? "1 question" : u.questions.filter(q => !q.optional).length + " questions"} first`;
@@ -757,10 +764,8 @@ async function writePlan({ req, body, importId, who, report }) {
   const evName = String(a.eventName || (u.event && u.event.name) || "").trim().slice(0, 200);
   const evDate = /^\d{4}-\d{2}-\d{2}$/.test(String(a.eventDate || "")) ? a.eventDate : (a.linkEvent && /^\d{4}-\d{2}-\d{2}$/.test(String(a.date || "")) ? a.date : null);
   if (evName && ((a.linkEvent && a.eventName) || (u.event && (u.event.fromEngagement || u.event.named)))) {
-    const [ev] = a.eventId
-      ? await query("SELECT id FROM events WHERE id=? AND org_id=?", [a.eventId, orgId])
-      : evDate ? await query("SELECT id FROM events WHERE org_id=? AND LOWER(name)=LOWER(?) AND date=?::date LIMIT 1", [orgId, evName, evDate])
-        : await query("SELECT id FROM events WHERE org_id=? AND LOWER(name)=LOWER(?) ORDER BY date DESC LIMIT 1", [orgId, evName]);
+    // IMPORT-10: the event she picked, or the same event however it was typed (server/imports/eventAsk.js)
+    const [ev] = a.eventId ? await query("SELECT id FROM events WHERE id=? AND org_id=?", [a.eventId, orgId]) : (out.events || []).slice(0, 1);
     if (ev) eventId = ev.id;
     else {
       eventId = newId("evt");
@@ -1081,6 +1086,7 @@ async function writePlan({ req, body, importId, who, report }) {
   summary.button = Rm.importButtonSentence(u).text;
   summary.undatedGiftIds = (await query("SELECT id FROM gifts WHERE org_id=? AND import_id=? AND date IS NULL", [orgId, importId])).map(r => r.id);
   summary.totals = u.totals;
+  summary.fileKey = fileFingerprint(body);   // IMPORT-10: the same file is known again (server/imports/importedBefore.js)
   summary.aside = u.aside.slice(0, 500);
   summary.eventId = eventId;
   summary.notesSheets = u.notesSheets;
