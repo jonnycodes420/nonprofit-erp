@@ -36,8 +36,8 @@ import, file, line and amount, so each org can bring in just those lines.
   What did reproduce: the same file opened again was importable with one click. Now a file the org
   imported in the last 30 days (by its cells, `summary_json.fileKey`, or for older imports its name) is a
   required question, "You imported this file on Nov 12 (251 gifts). Import again anyway?", which the
-  commit enforces whichever screen opened it (`server/imports/importedBefore.js`). The Import button
-  now says "Answer 1 question first" whenever a question holds it (it used to keep the Import words).
+  commit enforces whichever screen opened it (`server/imports/importedBefore.js`). The Import button stays
+  disabled under the question and keeps saying what would be imported (fix55 pins that design).
 - **7 · Imported purchases are sold items.** The import placed paid items but no bidder and no bid, and
   Won, Items sold and Bidders read bids. `recordWinners` (server/events/auctionImport.js) records the
   gift's donor as the bidder and a winning bid of what was paid on any item with no bid yet, tagged with

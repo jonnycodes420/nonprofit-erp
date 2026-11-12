@@ -850,7 +850,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               <button type="button" data-commit data-testid="sheet-import-go" disabled={!u.ready || rereading || busy === "commit" || (job && job.status === "running")}
                 onClick={() => (u.button && u.button.review && !asideOpen ? setAsideOpen(true) : commit())}
                 style={{ ...btn(true), opacity: u.ready && !rereading ? 1 : 0.45, cursor: u.ready && !rereading ? "pointer" : "not-allowed", textAlign: "left", lineHeight: 1.4, maxWidth: "100%" }}>
-                {busy === "commit" ? "Importing…" : rereading ? "Updating the preview…" : u.button ? (!u.ready || (u.button.review && !asideOpen) ? u.button.text : (u.button.importText ? u.button.importText + (intoOrg ? " into " + intoOrg : "") : u.button.text)) : "Import"}
+                {busy === "commit" ? "Importing…" : rereading ? "Updating the preview…" : u.button ? (u.button.review && !asideOpen ? u.button.text : (u.button.importText ? u.button.importText + (intoOrg ? " into " + intoOrg : "") : u.button.text)) : "Import"}
               </button>
               <span style={small} data-testid="sheet-import-why">{rereading ? "One moment: Steward is reading the file again with your answer." : u.ready ? "Undo removes the whole import, for 30 days, from its receipt here or in Settings, Imports." : `Answer ${n(u.questions.filter(q => !q.optional).length, "question")} above first.`}</span>
             </div>
