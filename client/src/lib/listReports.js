@@ -4,8 +4,11 @@
 // every time it is drawn, from this definition, never from a flag set on a
 // first load: the fleet saw it on LYBUNT, SYBUNT and Lost once and then never
 // again. The group keeps the people on the rows (a hand-kept group).
+// FLOWS-8 (W-1112-Volunteers-34X): `rules` is the report's own question as a
+// group rule, offered as "Keep updating" (LYBUNT only: groups.js `bunt` is its
+// predicate). Every list report can be frozen, remembering the report and the day.
 export const LIST_REPORTS = Object.freeze({
-  lybunt: { group: "Gave last year, not yet this year" },
+  lybunt: { group: "Gave last year, not yet this year", rules: Object.freeze({ bunt: "lybunt" }) },
   sybunt: { group: "Gave before, not this year" },
   "std:lapsed-24": { group: "Lost: over 24 months" },
 });
@@ -15,3 +18,6 @@ export const listGroupName = (id, day = new Date()) => {
   const d = listReportOf(id);
   return d ? `${d.group}, ${day.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : "";
 };
+
+// The group rule that keeps this report's list up to date, or null.
+export const listReportRules = id => (listReportOf(id) && listReportOf(id).rules) || null;

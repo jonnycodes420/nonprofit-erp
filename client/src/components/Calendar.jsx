@@ -230,7 +230,7 @@ export default function CalendarPage({ isReadOnly, onNavigate, isAdmin }) {
       </div>
       {summary && <Summary kind={summary} items={items} scope={scope} range={range} onClose={() => setSummary(null)} onOpen={openItem} />}
       {note && <div role="status" data-testid="cal-note" style={{ fontSize: 13, color: T.ink, background: T.bg, borderRadius: 8, padding: "8px 12px" }}>{note}</div>}
-      {err && <div role="alert" style={{ fontSize: 13 }}>{err}</div>}
+      {err && <div role="alert" data-testid="cal-quick-why" style={{ fontSize: 13 }}>{err}</div>}
       <div style={{ display: narrow ? "flex" : "grid", flexDirection: "column", gridTemplateColumns: "220px minmax(0,1fr)", gap: 16, alignItems: "start" }}>
         {side}
         <div style={{ minWidth: 0 }}>
@@ -625,7 +625,7 @@ function ItemCard({ card, today, onMove, isReadOnly, onClose, onNavigate, onChan
         {briefHere && <BeforeYourMeeting data={briefHere} showTitle={false} compact/>}
         {it.conflict && <div data-testid="cal-card-conflict" style={{ fontSize: 13, color: T.ink, borderLeft: `3px solid ${T.gold}`, paddingLeft: 8 }}>{it.conflict}</div>}
         {it.ref && it.ref.synced && <div style={{ fontSize: 12.5, color: T.ink3 }}>Moving it here moves it on your connected calendar too.</div>}
-        {err && <div role="alert" style={{ fontSize: 13 }}>{err}</div>}
+        {err && <div role="alert" data-testid="cal-quick-why" style={{ fontSize: 13 }}>{err}</div>}
         {it.unsure && <div data-testid="cal-card-unsure" style={{ fontSize: 13.5, color: T.ink2 }}>Steward could not tell who this meeting is with.</div>}
         {addToRecord}
         {it.step && <div data-testid="cal-card-step" style={{ fontSize: 13.5, color: T.ink2 }}>The next step with {it.donorName || "them"}.</div>}
@@ -670,6 +670,7 @@ function ShiftFromCalendar({ slotId, date, onClose, onSaved }) {
   return <ShiftDrawerFor slotId={slotId} date={date} onClose={() => { onClose(); if (onSaved) onSaved(); }} />;
 }
 function QuickForm({ form, calendar, onClose, onSaved }) {
+  const title = { meeting: "Meeting", call: "Call", step: "Next step", event: "Event" }[form.kind];
   const saving = useRef(false);   // FLOWS-1: a second press while the first is saving is not a second save
   const [q, setQ] = useState("");
   const [hits, setHits] = useState([]);
@@ -687,10 +688,28 @@ function QuickForm({ form, calendar, onClose, onSaved }) {
     const t = setTimeout(() => apiFetch(`/donors?search=${encodeURIComponent(q.trim())}&limit=8`).then(r => setHits((r.donors || r.rows || r || []).slice(0, 8))).catch(() => setHits([])), 200);
     return () => clearTimeout(t);
   }, [q]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // FLOWS-8 (W-1112-Volunteers-17): Add is never a dead button. With nobody
+  // picked yet, a name typed exactly as one of the hits is that person; any
+  // other case says, in the dialog, what is missing. Nothing is sent until then.
+  const missing = () => {
+    if (form.kind === "event") return name.trim() ? "" : "Give the event a name first.";
+    if (who) return "";
+    return q.trim() ? `Pick who the ${title.toLowerCase()} is with from the names under the search${hits.length ? "" : `: nobody matches "${q.trim()}" yet`}.`
+      : `Find who the ${title.toLowerCase()} is with first: type their name, then pick it.`;
+  };
   const save = async () => {
     if (saving.current) return;
+    let person = who;
+    if (needsDonor && !person) {
+      const exact = hits.filter(h => String(h.name || "").trim().toLowerCase() === q.trim().toLowerCase());
+      if (exact.length === 1) { person = { id: exact[0].id, name: exact[0].name }; setWho(person); setHits([]); }
+    }
+    const why = (needsDonor ? (person ? "" : missing()) : missing())
+      || (/^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) ? "" : "Choose the day first.");
+    if (why) { setErr(why); return; }
     saving.current = true;
     setBusy(true); setErr("");
+    const chosen = person;
     try {
       if (form.kind === "event") {
         await apiFetch("/events", { method: "POST", body: JSON.stringify({ name, date, eventType: "other", ...(time ? { startTime: time } : {}) }) });
@@ -698,17 +717,15 @@ function QuickForm({ form, calendar, onClose, onSaved }) {
       } else if (form.kind === "meeting") {
         const startsAt = new Date(`${date}T${time || "10:00"}:00`).toISOString();
         const endsAt = new Date(Date.parse(startsAt) + Number(mins) * 60000).toISOString();
-        const r = await apiFetch(`/donors/${who.id}/book-visit`, { method: "POST", body: JSON.stringify({ startsAt, endsAt, title: label || undefined }) });
+        const r = await apiFetch(`/donors/${chosen.id}/book-visit`, { method: "POST", body: JSON.stringify({ startsAt, endsAt, title: label || undefined }) });
         onSaved(r.sentence || "On your calendar.");
       } else {
-        await apiFetch(`/donors/${who.id}/threads`, { method: "POST", body: JSON.stringify({ label: label || (form.kind === "call" ? "Call" : "Follow up"), due: date, ...(time ? { time } : {}) }) });
-        onSaved(`${label || "The step"} with ${who.name} is on the calendar.`);
+        await apiFetch(`/donors/${chosen.id}/threads`, { method: "POST", body: JSON.stringify({ label: label || (form.kind === "call" ? "Call" : "Follow up"), due: date, ...(time ? { time } : {}) }) });
+        onSaved(`${label || "The step"} with ${chosen.name} is on the calendar.`);
       }
     } catch (e) { setErr((e && e.sentence) || errorMessage(e, "That was not added.")); }
-    saving.current = false;
-    setBusy(false);
+    finally { saving.current = false; setBusy(false); }
   };
-  const title = { meeting: "Meeting", call: "Call", step: "Next step", event: "Event" }[form.kind];
   const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 13.5, fontFamily: "inherit", boxSizing: "border-box" };
   const ready = form.kind === "event" ? !!name.trim() : !!who;
   return (
@@ -732,9 +749,9 @@ function QuickForm({ form, calendar, onClose, onSaved }) {
         {form.kind === "meeting" && <div data-testid="cal-meeting-where" style={{ fontSize: 12.5, color: T.ink3 }}>{calendar && calendar.connected
           ? `It goes on your ${calendar.provider === "microsoft" ? "Outlook" : "Google"} calendar${who ? `, with ${who.name}` : ""}. No invitation is sent.`
           : `It goes on Steward's calendar${who ? `, with ${who.name}` : ""}. No invitation is sent.`}</div>}
-        {err && <div role="alert" style={{ fontSize: 13 }}>{err}</div>}
+        {err && <div role="alert" data-testid="cal-quick-why" style={{ fontSize: 13 }}>{err}</div>}
         <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" data-testid="cal-quick-save" style={{ ...btn, opacity: ready ? 1 : 0.5 }} disabled={!ready || busy} onClick={save}>{busy ? "Saving…" : "Add"}</button>
+          <button type="button" data-testid="cal-quick-save" style={{ ...btn, opacity: ready ? 1 : 0.5 }} disabled={busy} onClick={save}>{busy ? "Saving…" : "Add"}</button>
           <button type="button" style={chip} onClick={onClose}>Cancel</button>
         </div>
       </div>

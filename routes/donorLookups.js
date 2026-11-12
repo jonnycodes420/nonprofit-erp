@@ -68,7 +68,15 @@ app.get("/donors/pick", requireAuth, wrap(async (req, res) => {
     args.push(exact);
   } else if (q) {
     const m = req.query.match;
-    if (m === "name") { where.push("strpos(LOWER(COALESCE(name,'')), ?) > 0"); args.push(q); }
+    // FLOWS-8 (W-1112-Volunteers-20): "person" is the Donors list's own search
+    // (server/donors/personMatch.js): everyone on file, donors, contacts and
+    // volunteers alike, by name, email, phone, household or linked
+    // organization, accents and case aside.
+    if (m === "person") {
+      const PM = require("../server/donors/personMatch");
+      const pm = PM.personMatchSql(PM.foldedPattern(req.query.q));
+      where.push(pm.sql); args.push(...pm.args);
+    } else if (m === "name") { where.push("strpos(LOWER(COALESCE(name,'')), ?) > 0"); args.push(q); }
     else if (m === "either") { where.push("(strpos(LOWER(COALESCE(name,'')), ?) > 0 OR strpos(LOWER(COALESCE(email,'')), ?) > 0)"); args.push(q, q); }
     else { where.push("strpos(LOWER(COALESCE(name,'') || COALESCE(email,'')), ?) > 0"); args.push(q); }
   }

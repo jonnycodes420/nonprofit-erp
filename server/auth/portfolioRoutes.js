@@ -59,7 +59,7 @@ const DECLARATIONS = [
   D("GET", /^\/donors(\/(ids|pick|lookup|counts|stage-counts|summaries|export\/csv))?$/, "scoped"),
   D("GET", "/search", "scoped"),
   D("GET", /^\/tasks(\/counts)?$/, "scoped"),
-  D("GET", /^\/top100(\/export\.csv)?$/, "scoped"),
+  D("GET", /^\/top100(\/(export\.csv|suggested))?$/, "scoped"),   // FLOWS-8: suggested is filtered by visibleSql in its route
   D("GET", "/donors/birthdays-near", "scoped"),   // ACCESS-2B: Home's birthdays, their people's
   // ACCESS-2B: the Thread, their people's follow-ups only (composeThreads' visible).
   D("GET", "/threads", "scoped"),

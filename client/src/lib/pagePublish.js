@@ -13,9 +13,18 @@ const setStatus = (p, status) => apiFetch(`/giving-pages/${p.id}`, { method: "PU
 export const isDraftPage = p => !!p && p.status === "draft";
 
 // The items above Remove in the card's More menu.
-export function publishItems(p, onChanged) {
+// FLOWS-8 (W-1112-Fundraising-35): Publish on a page that can't take gifts
+// (Stripe not connected) says so first, and goes ahead only on a yes.
+export function publishItems(p, onChanged, { takesGifts = true } = {}) {
   if (!p || p.page_kind === "volunteer") return [];
   const flip = async (to, word) => {
+    if (to === "active" && takesGifts === false) {
+      const { askConfirm } = await import("../components/ConfirmDialog");
+      const yes = await askConfirm({ title: "This page can't take gifts yet",
+        body: "Connect Stripe to take gifts on this page. Until then its address shows donors a polite \"Not open yet\" page. Publish it anyway, so it is ready the moment Stripe is connected?",
+        yes: "Publish anyway" });
+      if (!yes) return;
+    }
     await setStatus(p, to);
     onChanged && onChanged();
     offerUndo({ message: `${word} ${p.title}.`, undoAction: async () => { const r = await setStatus(p, p.status); onChanged && onChanged(); return r; } }, word);
