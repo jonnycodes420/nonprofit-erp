@@ -37,7 +37,8 @@ async function seedSales(q, now = Date.now(), opts = {}) {
   const day = n => new Date(now + n * 86400000).toISOString().slice(0, 10);
   for (const t of ["sales_activity_links", "sales_activities", "sales_stage_history", "sales_links", "sales_deals", "sales_contacts", "sales_orgs",
     "sales_views", "sales_merges", "sales_imports", "sales_properties", "sales_stages", "sales_pipelines", "sales_settings",
-    "sales_payouts", "sales_deal_partners", "sales_partner_terms", "sales_partners", "sales_email_links", "sales_emails", "sales_mailboxes"]) await q(`DELETE FROM ${t}`);
+    "sales_payouts", "sales_deal_partners", "sales_partner_terms", "sales_partners", "sales_email_links", "sales_emails", "sales_mailboxes",
+    "sales_list_members", "sales_lists"]) await q(`DELETE FROM ${t}`);
   // Every record has an owner: staging's first live super-admin, if there is one.
   const [owner] = await q(`SELECT id FROM users WHERE is_super_admin = true AND deactivated_at IS NULL ORDER BY created_at LIMIT 1`);
   const OWNER = owner ? owner.id : null;
@@ -118,7 +119,9 @@ async function seedSales(q, now = Date.now(), opts = {}) {
     for (const [t, rid] of [["contact", contact], ...deals.map(x => ["deal", x.a_id]), ...orgs.map(x => ["org", x.b_id])])
       await q(`INSERT INTO sales_email_links (email_id,record_type,record_id,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, [id, t, rid, ...ACTOR]);
   }
-  return { orgs: ORGS.length, contacts: 20, deals: DEALS.length, partners: 2, emails: mails.length };
+  // SALES-2: the made-up prospect list call mode walks (40 organizations across KY, OH and TN).
+  const prospects = await require("./sales-staging-prospects").seedProspects(q, OWNER);
+  return { orgs: ORGS.length, contacts: 20, deals: DEALS.length, partners: 2, emails: mails.length, prospects };
 }
 
 module.exports = { seedSales, ORGS, DEALS };

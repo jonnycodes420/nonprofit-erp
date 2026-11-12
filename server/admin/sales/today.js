@@ -78,13 +78,21 @@ function buildToday(input, now, tz = "America/New_York") {
     .map(([k, f]) => { const [type, id] = k.split(":"); return { days: f.noReplyDays, says: `${names.get(k)}: no reply in ${f.noReplyDays} days`, open: { type, id, name: names.get(k) } }; })
     .sort((a, b) => b.days - a.days);
 
+  // SALES-2 item 6: meetings booked ahead, and yesterday's (or earlier) asking "How did it go?".
+  const booked = (input.meetings || []).filter(m => new Date(m.at).getTime() > now && new Date(m.at).getTime() <= now + 31 * DAY)
+    .sort((a, b) => new Date(a.at) - new Date(b.at))
+    .map(m => ({ id: m.id, at: new Date(m.at).toISOString(), on: civil(m.at, tz), says: m.body, open: m.records.find(r => r.type === "deal") || m.records[0] || null }));
+  const howDidItGo = (input.meetings || []).filter(m => !m.outcome && civil(m.at, tz) < today && m.records.some(r => r.type === "deal"))
+    .sort((a, b) => new Date(b.at) - new Date(a.at))
+    .map(m => ({ id: m.id, ask: true, on: civil(m.at, tz), says: `How did it go? ${m.body}`, open: m.records.find(r => r.type === "deal") }));
+
   const revisit = (input.deals || []).filter(d => d.stage_kind === "later" && d.revisit_on && d.revisit_on <= today)
     .sort((a, b) => a.revisit_on.localeCompare(b.revisit_on))
     .map(d => ({ on: d.revisit_on, overdue: d.revisit_on < today, says: `Revisit ${d.displayName}`, open: { type: "deal", id: d.id, name: d.displayName } }));
 
   return {
     today, week: { from: monday, to: sunday },
-    lines: { due, revisit, noReply, trials, quiet, noNext, meetings, stuck },
+    lines: { howDidItGo, due, booked, revisit, noReply, trials, quiet, noNext, meetings, stuck },
     sentences: {
       due: "Open tasks and deals' next steps due today or earlier. Overdue first.",
       trials: `Trials and betas ending in the next ${TRIAL_DAYS} days: a deal's own end date, or its linked Steward org's trial.`,
@@ -94,6 +102,8 @@ function buildToday(input, now, tz = "America/New_York") {
       stuck: "Open deals that have sat in one stage longer than that stage's limit.",
       revisit: "Deals parked in Later whose revisit date is today or earlier.",
       noReply: "Contacts and deals you emailed last, with no reply since, for the days set in Sales settings or more.",
+      booked: "Meetings booked in the next 31 days, soonest first.",
+      howDidItGo: "Meetings on a deal from the last two weeks, before today, with no answer yet. One click moves the deal.",
     },
   };
 }
@@ -103,8 +113,8 @@ function buildToday(input, now, tz = "America/New_York") {
 async function loadToday(query, dealRows, stages, now = Date.now()) {
   const [tasks, meetings, links] = await Promise.all([
     query(`SELECT a.id, a.body, a.due_on::text AS due_on, a.done_at FROM sales_activities a WHERE a.kind = 'task' AND a.done_at IS NULL AND a.deleted_at IS NULL AND a.due_on IS NOT NULL`),
-    query(`SELECT a.id, a.body, a.at FROM sales_activities a WHERE a.kind = 'meeting' AND a.deleted_at IS NULL AND a.at > ? AND a.at < ?`,
-      [new Date(now - 8 * DAY).toISOString(), new Date(now + 8 * DAY).toISOString()]),
+    query(`SELECT a.id, a.body, a.at, a.outcome FROM sales_activities a WHERE a.kind = 'meeting' AND a.deleted_at IS NULL AND a.at > ? AND a.at < ?`,
+      [new Date(now - 15 * DAY).toISOString(), new Date(now + 32 * DAY).toISOString()]),
     query(`SELECT id AS "salesOrgId", name AS "salesOrgName", steward_org_id AS "stewardOrgId" FROM sales_orgs WHERE deleted_at IS NULL AND steward_org_id IS NOT NULL`),
   ]);
   const ACT = require("./activities");

@@ -12,6 +12,7 @@ const PIPES = require("./pipelines");
 
 const PLANT = process.env.TEST_MODE === "1" ? process.env.SALES1_PLANT || "" : "";
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DNC_COLS = ["dnc_at", "dnc_reason", "dnc_by_name"];   // SALES-2: Do not contact
 
 async function owners(query) {
   return query(`SELECT id, name, email FROM users WHERE is_super_admin = true AND deactivated_at IS NULL ORDER BY name`);
@@ -34,6 +35,11 @@ function normalize(type, body, props, { partial }) {
     } else if (f.key === "value_cents") {
       const n = Math.round(Number(v || 0));
       if (!Number.isFinite(n) || n < 0) return { error: "The value is a monthly amount of zero or more." };
+      cols[f.col] = n;
+    } else if (f.type === "number") {   // SALES-2: revenue, in whole dollars
+      const t = v == null ? "" : String(v).replace(/[$,\s]/g, "");
+      const n = t === "" ? null : Math.round(Number(t));
+      if (n != null && !Number.isFinite(n)) return { error: `${f.label} is a number.` };
       cols[f.col] = n;
     } else if (f.type === "date") {
       const s = v ? String(v).slice(0, 10) : null;
@@ -181,7 +187,7 @@ async function remove(ctx, type, id, who) {
 async function readRow(query, type, id, { withDeleted = false } = {}) {
   const def = M.OBJECTS[type];
   const cols = ["id", ...def.fields.map(f => f.col), "props", "deleted_at", "created_by_name", "updated_by_name",
-    ...(type === "org" ? ["steward_org_id", "merged_into"] : type === "contact" ? ["merged_into"] : ["stage_entered_at", "won_at", "lost_at"])];
+    ...(type === "org" ? ["steward_org_id", "merged_into", ...DNC_COLS, "lost_at", "lost_reason", "bad_phones"] : type === "contact" ? ["merged_into", ...DNC_COLS, "bad_phones"] : ["stage_entered_at", "won_at", "lost_at"])];
   const [r] = await query(`SELECT ${[...new Set(cols)].map(M.sel).join(", ")} FROM ${def.table} WHERE id = ? ${withDeleted ? "" : "AND deleted_at IS NULL"}`, [id]);
   return r || null;
 }

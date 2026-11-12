@@ -44,7 +44,7 @@ const salesLimiter = rateLimit("salesLimiter", {
   skip: () => process.env.TEST_MODE === "1" || process.env.DISABLE_RATE_LIMIT === "1",
 });
 const TZ = "America/New_York";
-const SETTING_KEYS = ["goal"];
+const SETTING_KEYS = ["goal", "fit", "call_rules", "templates"];
 
 const parseJson = (s, dflt) => { try { return s ? JSON.parse(String(s)) : dflt; } catch { return dflt; } };
 const whoOf = req => ({ id: req.user.userId, name: String(req.user.name || req.user.email || "super-admin").slice(0, 120) });
@@ -58,7 +58,9 @@ function send(res, r, okStatus = 200) {
 async function settings(query) {
   const rows = await query(`SELECT key, value FROM sales_settings WHERE key = ANY(?)`, [SETTING_KEYS]);
   const m = Object.fromEntries(rows.map(r => [r.key, r.value]));
-  return { goal: m.goal || M.DEFAULT_GOAL, tz: TZ };
+  // SALES-2: the fit rule, call mode's outcome rules and the email templates, each with its defaults.
+  return { goal: m.goal || M.DEFAULT_GOAL, tz: TZ, fit: m.fit ? require("./fit").cleanRule(m.fit) : require("./fit").DEFAULT_FIT,
+    callRules: require("./callMode").cleanRules(m.call_rules || null), templates: require("./templates").cleanTemplates(m.templates || null) };
 }
 
 function mount(app, { query, run, wrap, opsOnly }) {
@@ -72,7 +74,9 @@ function mount(app, { query, run, wrap, opsOnly }) {
       REC.owners(query), REC.properties(query), PIPES.readAll(query),
       query(`SELECT id, object, name, config FROM sales_views ORDER BY object, name`), settings(query)]);
     res.json({ ok: true, owners, properties, pipelines, views, settings: s, objects: M.OBJECTS, assocFields: LISTS.ASSOC_FIELDS, ops: LISTS.OPS,
-      propTypes: M.PROP_TYPES, roles: M.ROLES, activityKinds: M.ACTIVITY_KINDS, me: req.user.userId });
+      propTypes: M.PROP_TYPES, roles: M.ROLES, activityKinds: M.ACTIVITY_KINDS, me: req.user.userId,
+      lists: await require("./prospectLists").all(query), outcomes: require("./callMode").OUTCOMES, afterMeeting: require("./meetings").AFTER,
+      fitFlags: require("./fit").FLAGS, mergeFields: require("./templates").FIELDS });
   }));
 
   app.get("/ops/sales/home", salesLimiter, door, wrap(async (req, res) => {
@@ -107,7 +111,9 @@ function mount(app, { query, run, wrap, opsOnly }) {
     const view = parseJson(req.query.view, {});
     const columns = parseJson(req.query.columns, null);
     const [all, props, owners, pipelines] = await Promise.all([LISTS.rowsFor(query, type), REC.properties(query, type), REC.owners(query), PIPES.readAll(query)]);
-    const csv = IMP.toCsv(type, LISTS.applyView(all, view), Array.isArray(columns) ? columns : null, { props, owners, stages: PIPES.stageIndex(pipelines) });
+    // SALES-2 item 4: Do not contact leaves every list export (a contact also when its organization is marked).
+    const rows = LISTS.applyView(all, view).filter(r => !r.dnc);
+    const csv = IMP.toCsv(type, rows, Array.isArray(columns) ? columns : null, { props, owners, stages: PIPES.stageIndex(pipelines) });
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="steward-sales-${M.OBJECTS[type].plural.toLowerCase()}.csv"`);
     res.send(csv);
@@ -154,6 +160,12 @@ function mount(app, { query, run, wrap, opsOnly }) {
         }
       }
     }
+    if (type === "org") {   // SALES-2: the fit line, read the same way the list reads it
+      const row2 = (await LISTS.rowsFor(query, "org")).find(x => x.id === id);
+      out.fit = row2 ? { line: row2.fit_line, met: row2.fit_met, total: row2.fit_total, misses: row2.fit_misses } : null;
+    }
+    if (type === "contact") out.dncViaOrg = (await query(`SELECT o.name, o.dnc_reason FROM sales_links l JOIN sales_orgs o ON o.id = l.b_id AND o.deleted_at IS NULL AND o.dnc_at IS NOT NULL
+                                                          WHERE l.a_type = 'contact' AND l.a_id = ? AND l.b_type = 'org' LIMIT 1`, [id]))[0] || null;
     if (type === "org" && row.steward_org_id) out.steward = (await LINK.facts(query, [row.steward_org_id]))[row.steward_org_id] || { stewardOrgId: row.steward_org_id, missing: true };
     res.json(out);
   }));
@@ -308,6 +320,13 @@ function mount(app, { query, run, wrap, opsOnly }) {
                  ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW(), updated_by = EXCLUDED.updated_by, updated_by_name = EXCLUDED.updated_by_name`,
         [JSON.stringify({ cents, by, says }), who.id, who.name, who.id, who.name]);
     }
+    // SALES-2: the fit rule, the call outcome rules and the templates, each saved whole.
+    const save = async (key, value) => run(`INSERT INTO sales_settings (key, value, created_by, created_by_name, updated_by, updated_by_name) VALUES (?, ?::jsonb, ?, ?, ?, ?)
+                 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW(), updated_by = EXCLUDED.updated_by, updated_by_name = EXCLUDED.updated_by_name`,
+      [key, JSON.stringify(value), who.id, who.name, who.id, who.name]);
+    if (b.fit) await save("fit", require("./fit").cleanRule(b.fit));
+    if (b.callRules) await save("call_rules", require("./callMode").cleanRules(b.callRules));
+    if (b.templates) await save("templates", require("./templates").cleanTemplates(b.templates));
     res.json({ ok: true, settings: await settings(query) });
   }));
 
@@ -322,6 +341,8 @@ function mount(app, { query, run, wrap, opsOnly }) {
 
   // SALES-1 Part B: the mailbox, partners and payouts, behind this same door.
   require("./routesB").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
+  // SALES-2 Part A: prospect lists, call mode, meetings, email drafts, Do not contact.
+  require("./routesA2").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
 }
 
 module.exports = { mount, settings };

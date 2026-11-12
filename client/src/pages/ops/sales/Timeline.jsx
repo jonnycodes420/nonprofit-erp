@@ -8,7 +8,7 @@ import { apiFetch } from "../../../api";
 import DateInput from "../../../components/inputs/LazyDateInput";
 import { INK, WHITE, CREAM, EMERALD, BRASS, card, h2, says, btn, box, link, brassTag, dayWords, whenWords, TYPE_WORDS } from "./salesBits";
 
-const KIND_WORDS = { call: "Call", meeting: "Meeting", note: "Note", task: "Task" };
+const KIND_WORDS = { call: "Call", meeting: "Meeting", note: "Note", task: "Task", email: "Email drafted" };   // SALES-2: email = drafted, never sent by Steward
 const localNow = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
 
 export function TaskBox({ a, onToggle }) {

@@ -22,6 +22,12 @@ const M = require("./model");
 const REC = require("./records");
 const LINKS = require("./links");
 const PIPES = require("./pipelines");
+const LISTS2 = require("./prospectLists");   // SALES-2: an import can land in a named list
+
+// THE PLANTED DEFECTS (SALES2_PLANT on the server, tests only; tests/sales2-prospecting.test.js):
+//   skiplink  a skipped row adds no links again (SALES-FIX-1 item 2)        → §F2 red
+//   dupe      an email-less contact is never matched (SALES-FIX-1 item 4)  → §F4 red
+const PLANT = process.env.TEST_MODE === "1" ? process.env.SALES2_PLANT || "" : "";
 
 const MAX_ROWS = 5000;
 
@@ -115,7 +121,7 @@ function rowToBody(type, rec, mapping, { owners, stages, pipes }) {
     if (v === "") continue;
     if (target.startsWith("props.")) body.props[target.slice(6)] = v;
     else if (target === "owner_name") { const o = owners.find(u => norm(u.name) === norm(v) || norm(u.email) === norm(v)); if (o) body.owner_id = o.id; }
-    else if (target === "revenue_raw") body.revenue_band = revenueBand(v);
+    else if (target === "revenue_raw") { body.revenue_band = revenueBand(v); const n = Number(v.replace(/[$,\s]/g, "")); if (Number.isFinite(n) && n > 0) body.revenue = Math.round(n); }
     else if (target === "emails" || target === "emails_more") add("emails", M.listOf(v).map(e => e.toLowerCase()));
     else if (target === "phones" || target === "phones_more") add("phones", M.listOf(v));
     else if (target === "assoc_org_name") assoc.orgName = v;
@@ -155,53 +161,95 @@ function records(csv) {
   return { headers, recs: rows.slice(1).map(r => Object.fromEntries(headers.map((h, i) => [h, r[i] == null ? "" : r[i]]))) };
 }
 
+// The organization a row names: by its domain, else its name. null when it isn't here.
+async function resolveOrg(query, assoc) {
+  if (assoc.orgDomain) { const [o] = await query(`SELECT id, name FROM sales_orgs WHERE deleted_at IS NULL AND domain = ? LIMIT 1`, [assoc.orgDomain]); if (o) return o; }
+  if (assoc.orgName) { const [o] = await query(`SELECT id, name FROM sales_orgs WHERE deleted_at IS NULL AND lower(name) = lower(?) LIMIT 1`, [String(assoc.orgName).trim()]); if (o) return o; }
+  return null;
+}
+const nameKey = v => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
+// SALES-FIX-1 item 4: a contact with no email is the same person as a live contact with the
+// same first and last name (case and spaces ignored) linked to the same organization.
+async function contactByNameAt(query, body, orgId) {
+  const first = nameKey(body.first_name), last = nameKey(body.last_name);
+  if (!orgId || (!first && !last)) return null;
+  const [c] = await query(`SELECT c.id, c.first_name, c.last_name, c.emails FROM sales_contacts c
+                             JOIN sales_links l ON l.a_type = 'contact' AND l.a_id = c.id AND l.b_type = 'org' AND l.b_id = ?
+                            WHERE c.deleted_at IS NULL AND lower(regexp_replace(trim(COALESCE(c.first_name, '')), '\\s+', ' ', 'g')) = ?
+                              AND lower(regexp_replace(trim(COALESCE(c.last_name, '')), '\\s+', ' ', 'g')) = ? ORDER BY c.created_at LIMIT 1`, [orgId, first, last]);
+  if (c) return c;
+  // The shape that bit on prod (11 Nov): contacts imported before their organizations were
+  // never linked. The same name with no organization at all and no email is that person.
+  const [orphan] = await query(`SELECT c.id, c.first_name, c.last_name, c.emails FROM sales_contacts c
+                                 WHERE c.deleted_at IS NULL AND c.emails = '[]'::jsonb
+                                   AND NOT EXISTS (SELECT 1 FROM sales_links l WHERE l.a_type = 'contact' AND l.a_id = c.id AND l.b_type = 'org')
+                                   AND lower(regexp_replace(trim(COALESCE(c.first_name, '')), '\\s+', ' ', 'g')) = ?
+                                   AND lower(regexp_replace(trim(COALESCE(c.last_name, '')), '\\s+', ' ', 'g')) = ? ORDER BY c.created_at LIMIT 1`, [first, last]);
+  return orphan || null;
+}
+
 // The record that a row would duplicate, if any.
-async function existingFor(query, type, body) {
+async function existingFor(query, type, body, assoc = {}) {
   if (type === "org" && body.domain) return (await REC.findDuplicates(query, "org", { domain: body.domain }))[0] || null;
   if (type === "contact" && body.emails && body.emails.length) return (await REC.findDuplicates(query, "contact", { emails: body.emails }))[0] || null;
+  if (type === "contact" && PLANT !== "dupe") { const o = await resolveOrg(query, assoc); return o ? contactByNameAt(query, body, o.id) : null; }
   if (type === "deal" && body.name) return (await query(`SELECT id, name FROM sales_deals WHERE deleted_at IS NULL AND lower(name) = lower(?) LIMIT 1`, [body.name]))[0] || null;
   return null;
 }
 
 async function preview(ctx, { object, csv, mapping }, who) {
-  if (!M.OBJECTS[object]) return { error: "invalid", message: "Import organizations, contacts or deals." };
+  if (object === "prospect") return require("./prospectImport").preview(ctx, { csv, mapping }, who);
+  if (!M.OBJECTS[object]) return { error: "invalid", message: "Import a lead list, organizations, contacts or deals." };
   const { headers, recs } = records(csv);
   if (!headers.length) return { error: "invalid", message: "The file is empty." };
   if (recs.length > MAX_ROWS) return { error: "invalid", message: `The file has ${recs.length} rows; one import takes ${MAX_ROWS} at most.` };
   const c = await context(ctx, object, who);
   const map = mapping && typeof mapping === "object" ? mapping : autoMap(object, headers, c.props);
-  let duplicates = 0;
-  const sample = [];
+  let duplicates = 0, namingOrg = 0, orgMissing = 0;
+  const sample = [], unlinked = [];
   for (const [i, rec] of recs.entries()) {
     const { body, assoc } = rowToBody(object, rec, map, c);
-    const dup = await existingFor(ctx.query, object, body);
+    const dup = await existingFor(ctx.query, object, body, assoc);
     if (dup) duplicates++;
-    if (i < 10) sample.push({ body, assoc, duplicateOf: dup ? { id: dup.id, name: M.nameOf(object, dup) } : null });
+    const links = object === "org" ? [] : await linksFor(ctx.query, assoc);
+    if (assoc.orgName || assoc.orgDomain) { namingOrg++; if (!links.find(l => l.type === "org" && l.ok)) orgMissing++; }
+    const misses = links.filter(l => !l.ok);
+    if (misses.length && unlinked.length < 50) unlinked.push({ row: i + 2, says: misses.map(l => l.says).join("; ") });
+    if (i < 10) sample.push({ body, assoc, links, duplicateOf: dup ? { id: dup.id, name: M.nameOf(object, dup) } : null });
   }
-  return { ok: true, headers, mapping: map, targets: targetsFor(object, c.props), rows: recs.length, duplicates, sample };
+  // SALES-FIX-1 item 3: say before the import what won't link.
+  const warning = orgMissing ? `Import organizations first: ${orgMissing} of ${namingOrg} rows name an organization that isn't here.` : null;
+  return { ok: true, headers, mapping: map, targets: targetsFor(object, c.props), rows: recs.length, duplicates, sample, unlinked, orgMissing, namingOrg, warning };
 }
 
-async function linkTo(ctx, type, id, assoc, who, importId) {
-  let made = 0;
+// What a row's associations resolve to, without writing: [{ type, id?, ok, says }].
+async function linksFor(query, assoc) {
+  const out = [];
   if (assoc.orgDomain || assoc.orgName) {
-    const [org] = assoc.orgDomain
-      ? await ctx.query(`SELECT id FROM sales_orgs WHERE deleted_at IS NULL AND domain = ? LIMIT 1`, [assoc.orgDomain])
-      : await ctx.query(`SELECT id FROM sales_orgs WHERE deleted_at IS NULL AND lower(name) = lower(?) LIMIT 1`, [assoc.orgName]);
-    const [byName] = !org && assoc.orgName ? await ctx.query(`SELECT id FROM sales_orgs WHERE deleted_at IS NULL AND lower(name) = lower(?) LIMIT 1`, [assoc.orgName]) : [];
-    const o = org || byName;
-    if (o) { await LINKS.associate(ctx, type, id, "org", o.id, {}, who, importId); made++; }
+    const o = await resolveOrg(query, assoc);
+    const named = assoc.orgName || assoc.orgDomain;
+    out.push(o ? { type: "org", id: o.id, ok: true, says: `linked to ${o.name}` } : { type: "org", ok: false, says: `organization '${named}' not found` });
   }
   for (const c of assoc.contacts || []) {
     const e = M.emailOf(c);
-    const [ct] = e ? await REC.findDuplicates(ctx.query, "contact", { emails: [e] })
-      : await ctx.query(`SELECT id FROM sales_contacts WHERE deleted_at IS NULL AND lower(trim(COALESCE(first_name,'') || ' ' || COALESCE(last_name,''))) = lower(?) LIMIT 1`, [c]);
-    if (ct) { await LINKS.associate(ctx, type, id, "contact", ct.id, {}, who, importId); made++; }
+    const [ct] = e ? await REC.findDuplicates(query, "contact", { emails: [e] })
+      : await query(`SELECT id FROM sales_contacts WHERE deleted_at IS NULL AND lower(trim(COALESCE(first_name,'') || ' ' || COALESCE(last_name,''))) = lower(?) LIMIT 1`, [c]);
+    out.push(ct ? { type: "contact", id: ct.id, ok: true, says: `linked to ${c}` } : { type: "contact", ok: false, says: `contact '${c}' not found` });
   }
-  return made;
+  return out;
 }
 
-async function commit(ctx, { object, csv, mapping, mode = "skip", fileName = null }, who) {
-  if (!M.OBJECTS[object]) return { error: "invalid", message: "Import organizations, contacts or deals." };
+// Adds the links a row names that don't exist yet; never removes one.
+async function linkTo(ctx, type, id, assoc, who, importId) {
+  const links = await linksFor(ctx.query, assoc);
+  let made = 0;
+  for (const l of links) if (l.ok) { await LINKS.associate(ctx, type, id, l.type, l.id, {}, who, importId); made++; }
+  return { made, misses: links.filter(l => !l.ok).map(l => l.says) };
+}
+
+async function commit(ctx, { object, csv, mapping, mode = "skip", fileName = null, list: listArg = null }, who) {
+  if (object === "prospect") return require("./prospectImport").commit(ctx, { csv, mapping, mode, fileName, list: listArg }, who);
+  if (!M.OBJECTS[object]) return { error: "invalid", message: "Import a lead list, organizations, contacts or deals." };
   if (!["skip", "update", "create"].includes(mode)) return { error: "invalid", message: "For a row that already exists: skip it, update it, or create another." };
   const { headers, recs } = records(csv);
   if (!headers.length) return { error: "invalid", message: "The file is empty." };
@@ -210,15 +258,19 @@ async function commit(ctx, { object, csv, mapping, mode = "skip", fileName = nul
     const c = await context(ctx, object, who);
     const map = mapping && typeof mapping === "object" ? mapping : autoMap(object, headers, c.props);
     const importId = newId("sim");
-    const counts = { created: 0, updated: 0, skipped: 0, linked: 0, problems: [] };
+    const counts = { created: 0, updated: 0, skipped: 0, linked: 0, problems: [], unlinked: [], unlinkedRows: 0 };
+    const list = await LISTS2.listFor(ctx, listArg, who);
+    if (list && list.error) return list;
     const before = [];
     const def = M.OBJECTS[object];
     for (const [i, rec] of recs.entries()) {
       const { body, assoc } = rowToBody(object, rec, map, c);
-      const dup = mode === "create" ? null : await existingFor(ctx.query, object, body);
+      const dup = mode === "create" ? null : await existingFor(ctx.query, object, body, assoc);
       let id;
-      if (dup && mode === "skip") { counts.skipped++; continue; }
-      if (dup && mode === "update") {
+      // SALES-FIX-1 item 2: a skipped row still adds the links it names (a contact imported
+      // before its organization is linked by importing the contacts again).
+      if (dup && mode === "skip") { counts.skipped++; id = dup.id; if (PLANT === "skiplink") continue; }
+      else if (dup && mode === "update") {
         const was = await REC.readRow(ctx.query, object, dup.id);
         const patch = { ...body };
         delete patch.stage_id; delete patch.pipeline_id;   // an update never moves a deal's stage
@@ -231,11 +283,16 @@ async function commit(ctx, { object, csv, mapping, mode = "skip", fileName = nul
         if (r.error) { counts.problems.push({ row: i + 2, says: r.message || r.error }); continue; }
         id = r.id; counts.created++;
       }
-      if (object !== "org") counts.linked += await linkTo(ctx, object, id, assoc, who, importId);
+      if (object !== "org") {
+        const l = await linkTo(ctx, object, id, assoc, who, importId);
+        counts.linked += l.made;
+        if (l.misses.length) { counts.unlinkedRows++; if (counts.unlinked.length < 50) counts.unlinked.push({ row: i + 2, says: l.misses.join("; ") }); }
+      } else if (list) await LISTS2.addMember(ctx, list.id, id, who, importId);
     }
     counts.problems = counts.problems.slice(0, 50);
-    await ctx.run(`INSERT INTO sales_imports (id, object, file_name, mode, counts, updated_before, created_by, created_by_name) VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)`,
-      [importId, object, fileName ? String(fileName).slice(0, 200) : null, mode, JSON.stringify(counts), JSON.stringify(before), who.id, who.name]);
+    if (list) counts.list = { id: list.id, name: list.name };
+    await ctx.run(`INSERT INTO sales_imports (id, object, file_name, mode, counts, updated_before, list_id, created_by, created_by_name) VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?)`,
+      [importId, object, fileName ? String(fileName).slice(0, 200) : null, mode, JSON.stringify(counts), JSON.stringify(before), list ? list.id : null, who.id, who.name]);
     return { ok: true, importId, counts };
   });
 }
@@ -245,15 +302,22 @@ async function undo(ctx, importId, who) {
     const [imp] = await ctx.query(`SELECT id, object, updated_before, undone_at FROM sales_imports WHERE id = ?`, [importId]);
     if (!imp) return { error: "not_found" };
     if (imp.undone_at) return { error: "already_undone", message: "This import was already undone." };
-    const def = M.OBJECTS[imp.object];
-    const made = await ctx.run(`UPDATE ${def.table} SET deleted_at = NOW(), updated_at = NOW(), updated_by = ?, updated_by_name = ? WHERE import_id = ? AND deleted_at IS NULL`, [who.id, who.name, importId]);
+    // A lead list (prospect) makes organizations and contacts; every other import one object.
+    const objects = imp.object === "prospect" ? ["org", "contact"] : [imp.object];
+    const made = { changes: 0 };
+    for (const o of objects) {
+      const r = await ctx.run(`UPDATE ${M.OBJECTS[o].table} SET deleted_at = NOW(), updated_at = NOW(), updated_by = ?, updated_by_name = ? WHERE import_id = ? AND deleted_at IS NULL`, [who.id, who.name, importId]);
+      made.changes += r.changes;
+    }
     for (const b of imp.updated_before || []) {
+      const def = M.OBJECTS[b.object || imp.object];
       const cols = Object.keys(b.cols || {});
       const vals = cols.map(k => (k === "emails" || k === "phones" ? JSON.stringify(b.cols[k] || []) : b.cols[k]));
       await ctx.run(`UPDATE ${def.table} SET ${[...cols.map(k => `${k} = ?`), "props = ?::jsonb"].join(", ")}, updated_at = NOW(), updated_by = ?, updated_by_name = ? WHERE id = ?`,
         [...vals, JSON.stringify(b.props || {}), who.id, who.name, b.id]);
     }
     const links = await ctx.run(`DELETE FROM sales_links WHERE import_id = ?`, [importId]);
+    await ctx.run(`DELETE FROM sales_list_members WHERE import_id = ?`, [importId]);
     await ctx.run(`UPDATE sales_imports SET undone_at = NOW(), undone_by = ? WHERE id = ?`, [who.id, importId]);
     return { ok: true, removed: made.changes, restored: (imp.updated_before || []).length, unlinked: links.changes };
   });
@@ -283,4 +347,5 @@ function toCsv(type, rows, columns, { props = [], owners = [], stages = new Map(
   return [cols.map(label).map(cellOf).join(","), ...rows.map(r => cols.map(k => cellOf(val(r, k))).join(","))].join("\r\n") + "\r\n";
 }
 
-module.exports = { HUBSPOT, HUBSPOT_STAGES, parseCsv, autoMap, targetsFor, rowToBody, dayOf, preview, commit, undo, recent, toCsv, SPECIAL_TARGETS };
+module.exports = { HUBSPOT, HUBSPOT_STAGES, parseCsv, autoMap, targetsFor, rowToBody, dayOf, revenueBand, preview, commit, undo, recent, toCsv, SPECIAL_TARGETS,
+  MAX_ROWS, records, resolveOrg, contactByNameAt, nameKey, linksFor, linkTo, existingFor, PLANT };

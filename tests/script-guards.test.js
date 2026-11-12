@@ -49,6 +49,10 @@ const GUARDED_WRITERS = [
   // and rewraps rows under a rotated key. Dry run by default; --apply writes
   // through writerDbUrl. Jonathan runs it; never at deploy.
   "seal-synced-mail",
+  // SALES-FIX-1 — lists email-less sales contacts duplicated by the old Update import and
+  // contacts left with no organization. Dry run by default; --apply merges through
+  // writerDbUrl. Jonathan runs it; never at deploy.
+  "sales-contact-repair",
   // DEPLOY-1: gives back queue jobs whose lease ran out and stops the ones no
   // worker can run. Dry run by default; --apply writes through writerDbUrl.
   // Jonathan runs it; never at deploy.
@@ -288,6 +292,7 @@ const LOOPBACK_CAPTURES = [
 // Out of scope for BASE/DB guarding, each for a stated reason.
 const EXEMPT = {
   "sales-staging-seed": "SALES-1 — a module, not a command: exports seedSales(q) and is called only by staging-seed.js, which resolves its target with writerBase --staging (refuses anything but staging). It has no require.main entry and reads no BASE, DATABASE_URL or network",
+  "sales-staging-prospects": "SALES-2 — a module, not a command: exports seedProspects(q, owner) and is called only by sales-staging-seed.js (itself called only by staging-seed.js, which refuses anything but staging). No require.main entry; reads no BASE, DATABASE_URL or network",
   "history-index": "ARCH-1 — prints the index of docs/history/ from the files there. Reads only; no BASE, no DB, no network, no writes",
   "needs-jonathan": "ARCH-1 — prints what waits on Jonathan from docs/needs-jonathan/. Reads only; no BASE, no DB, no network, no writes",
   "arch-check": "ARCH-1 — the architecture ratchet. Reads the tracked tree (git ls-files) and its own baselines in docs/architecture/baseline/; --update rewrites only those baselines. No BASE, no DB, no network",

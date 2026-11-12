@@ -85,7 +85,7 @@ async function withRecords(query, acts) {
     .map(l => ({ type: l.record_type, id: l.record_id, name: names.get(`${l.record_type}:${l.record_id}`) })) }));
 }
 
-const COLS = `a.id, a.kind, a.at, a.body, a.owner_id, a.due_on::text AS due_on, a.done_at, a.created_by_name`;
+const COLS = `a.id, a.kind, a.at, a.body, a.owner_id, a.due_on::text AS due_on, a.done_at, a.created_by_name, a.outcome, a.meeting`;
 async function forRecord(query, type, id) {
   const acts = await query(`SELECT ${COLS} FROM sales_activities a JOIN sales_activity_links l ON l.activity_id = a.id
                              WHERE l.record_type = ? AND l.record_id = ? AND a.deleted_at IS NULL ORDER BY a.at DESC`, [type, id]);
