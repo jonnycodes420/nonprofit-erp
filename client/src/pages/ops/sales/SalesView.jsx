@@ -3,11 +3,13 @@
 // top, then the four sub-tabs. Where you are lives in the address:
 //   &sub=org|contact|deal|task   the list
 //   &rec=<type>:<id>             a record page
-//   &panel=settings|import       Sales settings, or Import
+//   &panel=settings|import|call  Sales settings, Import, or call mode (&list=<id>&view=<json>)
+//   &sub=list&list=<id>          SALES-2: one prospect list
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { apiFetch } from "../../../api";
-import { INK, WHITE, CREAM, EMERALD, BRASS, card, h2, says, quiet, box, link, brassTag, usd, dayWords, TYPE_WORDS } from "./salesBits";
+import { INK, WHITE, CREAM, EMERALD, BRASS, card, h2, says, btn, quiet, box, link, brassTag, usd, dayWords, TYPE_WORDS, Failure, failureWords } from "./salesBits";
+import CallMode from "./CallMode";
 import ListView from "./ListView";
 import RecordPage from "./RecordPage";
 import TasksView from "./TasksView";
@@ -15,13 +17,51 @@ import SettingsPanel from "./SettingsPanel";
 import ImportPanel from "./ImportPanel";
 import PartnersView from "./PartnersView";
 
-const SUBS = [["org", "Organizations"], ["contact", "Contacts"], ["deal", "Deals"], ["task", "Tasks"], ["partner", "Partners"]];
+const SUBS = [["org", "Organizations"], ["contact", "Contacts"], ["deal", "Deals"], ["task", "Tasks"], ["partner", "Partners"], ["list", "Lists"]];
 const LINES = [
+  ["howDidItGo", "How did it go?"], ["booked", "Meetings booked"],
   ["due", "Due today or overdue"], ["revisit", "Back from Later"], ["noReply", "No reply"], ["trials", "Trials and betas ending"], ["quiet", "Gone quiet"],
   ["noNext", "No next step"], ["meetings", "This week's meetings"], ["stuck", "Stuck in a stage"],
 ];
 
-function Today({ today, open }) {
+// SALES-2 item 6: the day after a meeting, one click moves its deal.
+function AfterMeeting({ r, meta, onDone }) {
+  const [need, setNeed] = useState(null);   // { key, field }
+  const [val, setVal] = useState("");
+  const [err, setErr] = useState(null);
+  const send = async (key, extra = {}) => {
+    setErr(null);
+    try { await apiFetch(`/ops/sales/meetings/${encodeURIComponent(r.id)}/after`, { method: "POST", body: JSON.stringify({ outcome: key, ...extra }) }); onDone(); }
+    catch (e) { setErr(failureWords(e, "Not moved.")); }
+  };
+  return <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "2px 0 6px" }} data-after-meeting={r.id}>
+    {(meta.afterMeeting || []).map(o => <button key={o.key} type="button" style={{ ...quiet, minHeight: 28, padding: "3px 9px", fontSize: 12.5 }} data-after-outcome={o.key}
+      onClick={() => (o.key === "later" ? setNeed({ key: o.key, field: "revisit_on" }) : o.key === "lost" ? setNeed({ key: o.key, field: "lost_reason" }) : send(o.key))}>{o.label}</button>)}
+    {need ? <><input type={need.field === "revisit_on" ? "date" : "text"} value={val} onChange={e => setVal(e.target.value)} style={box}
+      aria-label={need.field === "revisit_on" ? "Revisit on" : "Why it was lost"} placeholder={need.field === "lost_reason" ? "Why" : ""} />
+      <button type="button" style={{ ...btn, minHeight: 28, padding: "3px 9px" }} disabled={!val} onClick={() => send(need.key, { [need.field]: val })}>Save</button></> : null}
+    {err ? <span style={{ fontSize: 12 }}><span style={brassTag}>Not moved</span> {err}</span> : null}
+  </div>;
+}
+
+// SALES-2 item 1: the prospect lists.
+function ListsView({ meta, go, onMeta }) {
+  const [msg, setMsg] = useState(null);
+  const del = async l => { try { await apiFetch(`/ops/sales/lists/${encodeURIComponent(l.id)}`, { method: "DELETE" }); onMeta(); } catch (e) { setMsg(failureWords(e, "Not deleted.")); } };
+  const lists = meta.lists || [];
+  return <section style={card} data-sales-lists="1">
+    <p style={says}>A list is a saved view of organizations plus its own members, so one organization can be on several. Import a lead list into one, or save any Organizations view as one.</p>
+    {lists.length === 0 ? <p style={says}>No lists yet. Import a lead list, or filter Organizations and save them as a list.</p> : lists.map(l => <div key={l.id} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "8px 0", borderTop: `1px solid ${CREAM}` }} data-sales-list-row={l.id}>
+      <button type="button" style={{ ...link, fontSize: 14 }} onClick={() => go({ sub: "list", list: l.id, rec: null })}>{l.name}</button>
+      <span style={{ fontSize: 12.5, opacity: 0.7, flex: 1 }}>{l.orgs} organizations · made by {l.created_by_name}</span>
+      <button type="button" style={btn} onClick={() => go({ panel: "call", list: l.id, view: null })} data-sales-list-call={l.id}>Start calling</button>
+      <button type="button" style={{ ...link, fontSize: 12, color: INK, opacity: 0.7 }} onClick={() => del(l)}>Delete list</button>
+    </div>)}
+    {msg ? <p style={says}>{msg}</p> : null}
+  </section>;
+}
+
+function Today({ today, open, meta, reload }) {
   return <section style={card} data-sales-today="1">
     <h2 style={h2}>Today</h2>
     <p style={says}>Each line opens its record. Overdue is in brass.</p>
@@ -37,7 +77,7 @@ function Today({ today, open }) {
               {r.overdue ? <span style={brassTag}>overdue</span> : null}
               {r.on ? <span style={{ opacity: 0.7, whiteSpace: "nowrap" }}>{dayWords(r.on)}</span> : null}
               {r.open ? <button type="button" style={link} onClick={() => open(r.open.type, r.open.id)} data-today-open={r.open.id}>{r.says}</button> : <span>{r.says}</span>}
-            </div>)}
+            </div>).flatMap((el, i) => (k === "howDidItGo" ? [el, <AfterMeeting key={`a${i}`} r={rows[i]} meta={meta} onDone={reload} />] : [el]))}
           {rows.length > 8 ? <div style={{ fontSize: 12, opacity: 0.6 }}>and {rows.length - 8} more</div> : null}
         </div>;
       })}
@@ -109,7 +149,7 @@ export default function SalesView() {
   const [home, setHome] = useState(null);
   const [err, setErr] = useState(null);
 
-  const loadMeta = useCallback(() => apiFetch("/ops/sales/meta").then(setMeta).catch(e => setErr(e && e.status === 404 ? "This page is for Steward's super-admins." : "The sales CRM could not be read. Try again in a minute.")), []);
+  const loadMeta = useCallback(() => apiFetch("/ops/sales/meta").then(setMeta).catch(e => setErr(e)), []);
   const loadHome = useCallback(() => apiFetch("/ops/sales/home").then(setHome).catch(() => setHome({ ok: false })), []);
   useEffect(() => { loadMeta(); loadHome(); }, [loadMeta, loadHome]);
 
@@ -117,7 +157,10 @@ export default function SalesView() {
   const open = useCallback((type, id) => go({ sub: type, rec: `${type}:${id}`, panel: null }), [go]);
   const changed = useCallback(() => { loadHome(); }, [loadHome]);
 
-  if (err) return <section style={card}><p style={says}>{err}</p></section>;
+  if (err) return <section style={card}><Failure e={err} fallback={err.status === 404 ? "This page is for Steward's super-admins." : "The sales CRM could not be read. Try again in a minute."} /></section>;
+  const callView = (() => { try { return params.get("view") ? JSON.parse(params.get("view")) : null; } catch { return null; } })();
+  const listId = params.get("list");
+  const startCalling = (view, lid) => go({ panel: "call", list: lid || null, view: view ? JSON.stringify(view) : null, rec: null });
   if (!meta) return <section style={card}><p style={says}>Loading…</p></section>;
   return <div data-testid="ops-sales">
     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
@@ -126,11 +169,12 @@ export default function SalesView() {
       <button type="button" style={quiet} onClick={() => go({ panel: panel === "import" ? null : "import", rec: null })} data-sales-import-open="1">Import</button>
       <button type="button" style={quiet} onClick={() => go({ panel: panel === "settings" ? null : "settings", rec: null })} data-sales-settings-open="1">Sales settings</button>
     </div>
-    {panel === "settings" ? <SettingsPanel meta={meta} onChanged={() => { loadMeta(); loadHome(); }} onClose={() => go({ panel: null })} />
+    {panel === "call" ? <CallMode key={`${listId}:${params.get("view")}`} meta={meta} listId={listId} view={callView} onClose={() => { go({ panel: null, view: null }); loadHome(); }} open={open} />
+      : panel === "settings" ? <SettingsPanel meta={meta} onChanged={() => { loadMeta(); loadHome(); }} onClose={() => go({ panel: null })} />
       : panel === "import" ? <ImportPanel meta={meta} onChanged={changed} onClose={() => go({ panel: null })} />
       : rec ? <RecordPage key={rec[0]} type={rec[1]} id={rec[2]} meta={meta} open={open} onBack={() => go({ rec: null })} onChanged={changed} />
       : <>
-        {home && home.ok ? <><Today today={home.today} open={open} /><Forecast f={home.forecast} /></>
+        {home && home.ok ? <><Today today={home.today} open={open} meta={meta} reload={loadHome} /><Forecast f={home.forecast} /></>
           : home ? <section style={card}><p style={says}>Today could not be read. Try again in a minute.</p></section> : null}
         <div role="tablist" aria-label="Sales" style={{ display: "flex", gap: 18, borderBottom: `1px solid ${INK}1f`, margin: "0 0 14px" }}>
           {SUBS.map(([id, label]) => <button key={id} role="tab" aria-selected={sub === id} data-sales-sub={id} onClick={() => go({ sub: id, rec: null })}
@@ -139,7 +183,9 @@ export default function SalesView() {
         </div>
         {sub === "task" ? <TasksView meta={meta} open={open} onChanged={changed} />
           : sub === "partner" ? <PartnersView open={open} />
-          : <ListView key={sub} type={sub} meta={meta} open={open} onChanged={changed} onMeta={loadMeta} />}
+          : sub === "list" && listId && (meta.lists || []).some(l => l.id === listId) ? <ListView key={`list:${listId}`} type="org" list={meta.lists.find(l => l.id === listId)} meta={meta} open={open} onChanged={changed} onMeta={loadMeta} startCalling={startCalling} />
+          : sub === "list" ? <ListsView meta={meta} go={go} onMeta={loadMeta} />
+          : <ListView key={sub} type={sub} meta={meta} open={open} onChanged={changed} onMeta={loadMeta} startCalling={sub === "org" ? startCalling : null} />}
       </>}
   </div>;
 }

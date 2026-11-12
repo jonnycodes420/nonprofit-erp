@@ -5,7 +5,7 @@
 // applyView); this draws its answer.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../../api";
-import { INK, WHITE, CREAM, BRASS, TERRA, card, says, btn, quiet, box, link, brassTag, showValue, fieldsOf, valueAt, downloadCsv } from "./salesBits";
+import { INK, WHITE, CREAM, BRASS, TERRA, card, says, btn, quiet, box, link, brassTag, showValue, fieldsOf, valueAt, downloadCsv, Failure, failureWords } from "./salesBits";
 import Board from "./Board";
 import NewRecord from "./NewRecord";
 
@@ -14,13 +14,13 @@ const OP_WORDS = { eq: "is", neq: "is not", contains: "contains", empty: "is emp
 const NO_VALUE = new Set(["empty", "notempty", "is_true", "is_false"]);
 const opsFor = t => (t === "number" || t === "currency" ? ["eq", "gt", "lt", "empty", "notempty"]
   : t === "date" ? ["before", "after", "none_since", "empty", "notempty"] : t === "checkbox" ? ["is_true", "is_false"]
-  : t === "stage" || t === "owner" || t === "picklist" || t === "multiselect" || t === "org" ? ["in", "empty", "notempty"] : ["contains", "eq", "neq", "empty", "notempty"]);
+  : t === "stage" || t === "owner" || t === "picklist" || t === "multiselect" || t === "org" || t === "salesList" ? ["in", "empty", "notempty"] : ["contains", "eq", "neq", "empty", "notempty"]);
 
 function FilterRow({ f, fields, meta, onChange, onRemove }) {
   const field = fields.find(x => x.key === f.field) || fields[0];
   const ops = opsFor(field.type);
   const choices = field.type === "stage" ? meta.pipelines.flatMap(p => p.stages.map(s => [s.id, meta.pipelines.length > 1 ? `${p.name}: ${s.name}` : s.name]))
-    : field.type === "owner" ? meta.owners.map(o => [o.id, o.name]) : (field.options || []).map(o => [o, o]);
+    : field.type === "owner" ? meta.owners.map(o => [o.id, o.name]) : field.type === "salesList" ? (meta.lists || []).map(l => [l.id, l.name]) : (field.options || []).map(o => [o, o]);
   return <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }} data-sales-filter={f.field}>
     <select value={f.field} onChange={e => { const nf = fields.find(x => x.key === e.target.value); onChange({ field: nf.key, op: opsFor(nf.type)[0], value: "" }); }} style={box} aria-label="Filter on">
       {fields.map(x => <option key={x.key} value={x.key}>{x.label}</option>)}</select>
@@ -34,7 +34,8 @@ function FilterRow({ f, fields, meta, onChange, onRemove }) {
   </div>;
 }
 
-export default function ListView({ type, meta, open, onChanged, onMeta }) {
+// SALES-2: a prospect list opens here as the Organizations list with "On the list" first.
+export default function ListView({ type, meta, open, onChanged, onMeta, list = null, startCalling = null }) {
   const obj = meta.objects[type];
   const fields = useMemo(() => [{ key: "name", label: "Name", type: "text" }, ...fieldsOf(meta, type).filter(f => !["first_name", "last_name", "name"].includes(f.key)),
     ...meta.assocFields[type].map(a => ({ ...a, assoc: true }))], [meta, type]);
@@ -49,10 +50,14 @@ export default function ListView({ type, meta, open, onChanged, onMeta }) {
   const [msg, setMsg] = useState(null);
   const [adding, setAdding] = useState(false);
   const [bulk, setBulk] = useState({ action: "", field: "", value: "" });
-  const viewJson = JSON.stringify({ filters: filters.filter(f => NO_VALUE.has(f.op) || (f.value !== "" && f.value != null)), sort, q });
+  const listFilter = list ? [{ field: "list_ids", op: "in", value: [list.id] }] : [];
+  const liveFilters = filters.filter(f => NO_VALUE.has(f.op) || (f.value !== "" && f.value != null));
+  const viewJson = JSON.stringify({ filters: [...listFilter, ...liveFilters], sort, q });
+  useEffect(() => { if (list && list.config) { setFilters(list.config.filters || []); if (list.config.sort) setSort(list.config.sort); } }, [list]);
+  useEffect(() => { if (type === "org") setColumns(c => (c.includes("fit_line") ? c : [...c.slice(0, 1), "fit_line", ...c.slice(1)])); }, [type]);
 
   const load = useCallback(() => apiFetch(`/ops/sales/list/${type}?view=${encodeURIComponent(viewJson)}`).then(d => { setData(d); setSel(new Set()); })
-    .catch(() => setData({ ok: false })), [type, viewJson]);
+    .catch(e => setData({ ok: false, err: e })), [type, viewJson]);
   useEffect(() => { const t = setTimeout(load, 150); return () => clearTimeout(t); }, [load]);
 
   const views = meta.views.filter(v => v.object === type);
@@ -73,6 +78,19 @@ export default function ListView({ type, meta, open, onChanged, onMeta }) {
       setBulk({ action: "", field: "", value: "" }); load(); onChanged();
     } catch (e) { setMsg(e.message); }
   };
+  // SALES-2 item 1: this view, saved as a named list with these organizations on it.
+  const [listNameDraft, setListNameDraft] = useState("");
+  const saveAsList = async () => {
+    if (!listNameDraft.trim()) return;
+    try {
+      const r = await apiFetch("/ops/sales/lists", { method: "POST", body: JSON.stringify({ name: listNameDraft, config: { filters: liveFilters, sort }, add: ((data && data.rows) || []).map(x => x.id) }) });
+      setMsg(`Saved the list "${listNameDraft}" with ${((data && data.rows) || []).length} organizations.`); setListNameDraft(""); onMeta(); void r;
+    } catch (e) { setMsg(failureWords(e, "The list was not saved.")); }
+  };
+  const saveListFilters = async () => {
+    try { await apiFetch(`/ops/sales/lists/${encodeURIComponent(list.id)}`, { method: "PATCH", body: JSON.stringify({ config: { filters: liveFilters, sort } }) }); setMsg(`Saved these filters on "${list.name}".`); onMeta(); }
+    catch (e) { setMsg(failureWords(e, "The list was not saved.")); }
+  };
   const exportCsv = () => downloadCsv(`/ops/sales/export/${type}?view=${encodeURIComponent(viewJson)}&columns=${encodeURIComponent(JSON.stringify(columns))}`, `steward-sales-${obj.plural.toLowerCase()}.csv`).catch(e => setMsg(e.message));
   const head = k => (fields.find(f => f.key === k) || { label: k }).label;
   const rows = (data && data.rows) || [];
@@ -88,12 +106,18 @@ export default function ListView({ type, meta, open, onChanged, onMeta }) {
       <button type="button" style={quiet} onClick={() => setShowCols(s => !s)}>Columns</button>
       <button type="button" style={quiet} onClick={exportCsv} data-sales-export="1">Export CSV</button>
       {type === "deal" ? <button type="button" style={quiet} onClick={() => setMode(m => (m === "list" ? "board" : "list"))} data-sales-board-toggle="1">{mode === "list" ? "Board" : "List"}</button> : null}
+      {type === "org" && startCalling ? <button type="button" style={btn} onClick={() => startCalling({ filters: liveFilters, sort, q }, list ? list.id : null)} data-sales-start-calling="1">Start calling</button> : null}
     </div>
+    {list ? <p style={{ ...says, opacity: 1 }} data-sales-list-head={list.id}><b>{list.name}</b> · a list of {list.orgs} organizations. Its own filters and sort are below; the list keeps them when you save.{" "}
+      <button type="button" style={{ ...link, fontSize: 12.5 }} onClick={saveListFilters} data-sales-list-save="1">Save these filters on the list</button></p> : null}
     {adding ? <NewRecord type={type} meta={meta} onDone={id => { setAdding(false); load(); onChanged(); if (id) open(type, id); }} onCancel={() => setAdding(false)} /> : null}
     {filters.map((f, i) => <FilterRow key={i} f={f} fields={fields} meta={meta} onChange={nf => setFilters(fs => fs.map((x, j) => (j === i ? nf : x)))} onRemove={() => setFilters(fs => fs.filter((_, j) => j !== i))} />)}
     {filters.length ? <div style={{ display: "flex", gap: 6, alignItems: "center", margin: "4px 0 10px" }}>
       <input value={viewName} onChange={e => setViewName(e.target.value)} placeholder="Name this view" style={box} aria-label="View name" data-sales-view-name="1" />
       <button type="button" style={quiet} onClick={doSaveView} disabled={!viewName.trim()} data-sales-save-view="1">Save view</button></div> : null}
+    {type === "org" && !list ? <div style={{ display: "flex", gap: 6, alignItems: "center", margin: "4px 0 10px", flexWrap: "wrap" }}>
+      <input value={listNameDraft} onChange={e => setListNameDraft(e.target.value)} placeholder="Name a prospect list" style={box} aria-label="New list name" data-sales-list-name="1" />
+      <button type="button" style={quiet} onClick={saveAsList} disabled={!listNameDraft.trim()} data-sales-save-list="1">Save these {data && data.rows ? data.rows.length : ""} as a list</button></div> : null}
     {showCols ? <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", background: CREAM, padding: 10, borderRadius: 8, marginBottom: 10 }}>
       {fields.map(f => <label key={f.key} style={{ fontSize: 12.5, display: "flex", gap: 4, alignItems: "center" }}>
         <input type="checkbox" checked={columns.includes(f.key)} disabled={f.key === "name"} onChange={e => setColumns(c => (e.target.checked ? [...c, f.key] : c.filter(x => x !== f.key)))} />{f.label}</label>)}
@@ -115,7 +139,7 @@ export default function ListView({ type, meta, open, onChanged, onMeta }) {
       {bulk.action === "delete" && bulk.value === "confirm" ? <span style={{ fontSize: 12 }}>Deletes only these {sel.size}; what they link to stays.</span> : null}
     </div> : null}
     {msg ? <p style={{ ...says, opacity: 1 }}>{msg}</p> : null}
-    {!data ? <p style={says}>Loading…</p> : data.ok === false ? <p style={says}>This list could not be read.</p>
+    {!data ? <p style={says}>Loading…</p> : data.ok === false ? <Failure e={data.err} fallback="This list could not be read." />
       : mode === "board" ? <Board rows={rows} meta={meta} open={open} onMoved={() => { load(); onChanged(); }} />
       : <>
         <p style={says}>{data.total === 1 ? "1 record" : `${data.total} records`}{filters.length ? " match the filters" : ""}. Click a heading to sort.</p>
@@ -124,15 +148,17 @@ export default function ListView({ type, meta, open, onChanged, onMeta }) {
             <th style={{ width: 28 }}><input type="checkbox" aria-label="Select all" checked={rows.length > 0 && sel.size === rows.length} onChange={e => setSel(e.target.checked ? new Set(rows.map(r => r.id)) : new Set())} /></th>
             {columns.map(k => <th key={k} style={{ textAlign: "left", fontSize: 12, fontWeight: 600, padding: "0 12px 8px 0", whiteSpace: "nowrap" }}>
               <button type="button" style={{ ...link, color: INK, fontWeight: 600, fontSize: 12, opacity: 0.75 }} data-sales-sort={k}
-                onClick={() => setSort(s => ({ key: k, dir: s.key === k && s.dir === "asc" ? "desc" : "asc" }))}>{head(k)}{sort.key === k ? (sort.dir === "asc" ? " ↑" : " ↓") : ""}</button></th>)}
+                onClick={() => { const sk = k === "fit_line" ? "fit_met" : k; setSort(s => ({ key: sk, dir: s.key === sk ? (s.dir === "asc" ? "desc" : "asc") : (sk === "fit_met" ? "desc" : "asc") })); }}>{head(k)}{sort.key === (k === "fit_line" ? "fit_met" : k) ? (sort.dir === "asc" ? " ↑" : " ↓") : ""}</button></th>)}
           </tr></thead>
           <tbody>{rows.map(r => <tr key={r.id} data-sales-row={r.id} style={{ background: type === "deal" && r.stage_kind === "open" && !r.next_step && !r.has_open_task ? `${BRASS}18` : WHITE }}>
             <td style={{ borderTop: `1px solid ${CREAM}` }}><input type="checkbox" aria-label={`Select ${r.displayName}`} checked={sel.has(r.id)} onChange={e => setSel(s => { const n = new Set(s); e.target.checked ? n.add(r.id) : n.delete(r.id); return n; })} /></td>
             {columns.map(k => { const f = fields.find(x => x.key === k) || { key: k, type: "text" };
               return <td key={k} style={{ padding: "7px 12px 7px 0", borderTop: `1px solid ${CREAM}`, verticalAlign: "top" }}>
-                {k === "name" ? <button type="button" style={link} onClick={() => open(type, r.id)}>{r.displayName}</button>
+                {k === "name" ? <><button type="button" style={link} onClick={() => open(type, r.id)}>{r.displayName}</button>{r.dnc ? <span style={{ ...brassTag, marginLeft: 6 }} title={r.dnc_reason || "Do not contact"}>Do not contact</span> : null}</>
                   : k === "open_deal_stage" ? [].concat(r.open_deal_stage || []).map(id => showValue({ type: "stage" }, id, meta)).join(", ") || "–"
                   : k === "has_open_task" ? (r.has_open_task ? "Yes" : <span style={brassTag}>No</span>)
+                  : k === "fit_line" ? <span title={(r.fit_misses || []).join("; ") || "Meets every line of the fit rule."} data-fit={r.fit_met}>{r.fit_line}{(r.fit_misses || []).length ? <span style={{ opacity: 0.65 }}> · {(r.fit_misses || []).join("; ")}</span> : null}</span>
+                  : k === "list_ids" ? [].concat(r.list_ids || []).map(id => ((meta.lists || []).find(l => l.id === id) || {}).name).filter(Boolean).join(", ") || "–"
                   : showValue(f, valueAt(r, k), meta)}</td>; })}
           </tr>)}</tbody>
         </table></div>

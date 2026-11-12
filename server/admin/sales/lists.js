@@ -11,6 +11,7 @@
 // for a custom property, or one of the association fields in ASSOC_FIELDS.
 "use strict";
 const M = require("./model");
+const PROSPECT = require("./prospectRows");   // SALES-2: fit, lists and Do not contact on each row
 
 const ASSOC_FIELDS = {
   org: [
@@ -18,12 +19,18 @@ const ASSOC_FIELDS = {
     { key: "last_activity", label: "Last activity", type: "date" },
     { key: "contact_count", label: "Contacts", type: "number" },
     { key: "steward_org_id", label: "Linked Steward org", type: "text" },
+    // SALES-2: prospect lists, fit and Do not contact.
+    { key: "list_ids", label: "On the list", type: "salesList" },
+    { key: "fit_met", label: "Fit (checks met)", type: "number" },
+    { key: "fit_line", label: "Fit", type: "text" },
+    { key: "dnc", label: "Do not contact", type: "checkbox" },
   ],
   contact: [
     { key: "linked_org_ids", label: "Organization", type: "org" },
     { key: "primary_org_name", label: "Primary organization", type: "text" },
     { key: "open_deal_stage", label: "Has an open deal in stage", type: "stage" },
     { key: "last_activity", label: "Last activity", type: "date" },
+    { key: "dnc", label: "Do not contact", type: "checkbox" },
   ],
   deal: [
     { key: "linked_org_ids", label: "Organization", type: "org" },
@@ -42,7 +49,8 @@ const day = t => (t ? String(t).slice(0, 10) : null);
 
 async function rowsFor(query, type) {
   const def = M.OBJECTS[type];
-  const cols = [...new Set(["id", ...def.fields.map(f => f.col), "props", ...(type === "org" ? ["steward_org_id"] : []), ...(type === "deal" ? ["stage_entered_at", "won_at", "lost_at"] : [])])];
+  const cols = [...new Set(["id", ...def.fields.map(f => f.col), "props", ...(type === "org" ? ["steward_org_id", "lost_at", "lost_reason"] : []),
+    ...(type === "deal" ? ["stage_entered_at", "won_at", "lost_at"] : ["dnc_at", "dnc_reason", "bad_phones"])])];
   const [rows, links, lastAct, deals, openTasks] = await Promise.all([
     query(`SELECT ${cols.map(M.sel).join(", ")} FROM ${def.table} WHERE deleted_at IS NULL ORDER BY created_at`),
     query(`SELECT a_type, a_id, b_type, b_id, label, is_primary FROM sales_links WHERE a_type = ? OR b_type = ?`, [type, type]),
@@ -61,6 +69,7 @@ async function rowsFor(query, type) {
   const dealOf = new Map(deals.map(d => [d.id, d]));
   const last = new Map(lastAct.map(r => [r.record_id, iso(r.t)]));
   const tasksOpen = new Set(openTasks.map(r => r.record_id));
+  const extra = type === "deal" ? null : await PROSPECT.extrasFor(query, type);
   return rows.map(r => {
     const mine = links.filter(l => (l.a_type === type && l.a_id === r.id) || (l.b_type === type && l.b_id === r.id))
       .map(l => (l.a_type === type && l.a_id === r.id ? { t: l.b_type, id: l.b_id, primary: l.is_primary } : { t: l.a_type, id: l.a_id, primary: l.is_primary }));
@@ -80,6 +89,7 @@ async function rowsFor(query, type) {
       out.open_deal_stage = myDeals.filter(d => (d.kind || "open") === "open").map(d => d.stage_id);
       if (type === "org") out.contact_count = mine.filter(m => m.t === "contact").length;
       if (type === "contact") Object.assign(out, { linked_org_ids: orgIds.map(m => m.id), org_id: primaryOrg ? primaryOrg.id : null, primary_org_name: primaryOrg ? orgName.get(primaryOrg.id) : null });
+      PROSPECT.addExtras(type, out, extra, orgIds.map(m => m.id));
     }
     return out;
   });

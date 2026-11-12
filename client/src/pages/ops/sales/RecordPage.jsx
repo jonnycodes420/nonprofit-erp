@@ -7,7 +7,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../../api";
 import { RailSection, useNarrow } from "../../../components/StewardEditor";
-import { INK, WHITE, CREAM, EMERALD, BRASS, TERRA, card, h2, says, btn, quiet, box, link, brassTag, usd, dayWords, whenWords, TYPE_WORDS, InlineField, fieldsOf, valueAt } from "./salesBits";
+import { INK, WHITE, CREAM, EMERALD, BRASS, TERRA, card, h2, says, btn, quiet, box, link, brassTag, usd, dayWords, whenWords, TYPE_WORDS, InlineField, fieldsOf, valueAt, Failure, failureWords } from "./salesBits";
+import EmailDraft from "./EmailDraft";
+import MeetingForm from "./MeetingForm";
 import Timeline from "./Timeline";
 import NewRecord from "./NewRecord";
 import DealPartners from "./DealPartners";
@@ -101,6 +103,27 @@ function Gates({ o }) {
   </div>;
 }
 
+// SALES-2 item 4: Do not contact, with its reason and day. It takes the record out of every
+// call queue, cadence and list export; lifting it is a deliberate second step.
+function DoNotContact({ type, id, r, reload }) {
+  const [reason, setReason] = useState("");
+  const [sure, setSure] = useState(false);
+  const [err, setErr] = useState(null);
+  const call = async body => { setErr(null); try { await apiFetch(`/ops/sales/rec/${type}/${encodeURIComponent(id)}/dnc`, { method: "POST", body: JSON.stringify(body) }); setReason(""); setSure(false); reload(); } catch (e) { setErr(failureWords(e, "Not saved.")); } };
+  if (r.dnc_at) return <div data-sales-dnc-rail="1">
+    <p style={says}>Marked {whenWords(r.dnc_at)} by {r.dnc_by_name}: {r.dnc_reason}</p>
+    {sure ? <span style={{ fontSize: 12.5 }}>Put them back in queues, cadences and exports?{" "}<button type="button" style={{ ...quiet, minHeight: 28 }} onClick={() => call({ clear: true })} data-sales-dnc-clear="1">Yes, lift it</button></span>
+      : <button type="button" style={{ ...link, fontSize: 12.5 }} onClick={() => setSure(true)}>Lift Do not contact…</button>}
+    {err ? <div style={{ fontSize: 12 }}>{err}</div> : null}
+  </div>;
+  return <div>
+    <p style={says}>Takes {type === "org" ? "this organization and its people" : "this person"} out of every call queue, cadence and list export, for good, until you lift it.</p>
+    <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Why (kept with the flag)" aria-label="Reason for Do not contact" style={{ ...box, width: "100%" }} data-sales-dnc-reason="1" />
+    <button type="button" style={{ ...quiet, marginTop: 6 }} disabled={!reason.trim()} onClick={() => call({ reason })} data-sales-dnc-set="1">Mark Do not contact</button>
+    {err ? <div style={{ fontSize: 12 }}>{err}</div> : null}
+  </div>;
+}
+
 function Merge({ type, id, onMerged }) {
   const [other, setOther] = useState(null);
   const [err, setErr] = useState(null);
@@ -122,12 +145,13 @@ export default function RecordPage({ type, id, meta, open, onBack, onChanged }) 
   const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [doing, setDoing] = useState(null);   // SALES-2: "email" | "meeting"
   const narrow = useNarrow();
   const load = useCallback(() => apiFetch(`/ops/sales/rec/${type}/${encodeURIComponent(id)}`).then(r => { setD(r); setErr(null); })
-    .catch(e => setErr(e && e.status === 404 ? "This record was deleted or merged." : "This record could not be read.")), [type, id]);
+    .catch(e => setErr(e)), [type, id]);
   useEffect(() => { load(); }, [load]);
   const changed = () => { load(); onChanged(); };
-  if (err) return <section style={card}><button type="button" style={link} onClick={onBack}>← Back</button><p style={says}>{err}</p></section>;
+  if (err) return <section style={card}><button type="button" style={link} onClick={onBack}>← Back</button><Failure e={err} fallback={err.status === 404 ? "This record was deleted or merged." : "This record could not be read."} /></section>;
   if (!d) return <section style={card}><p style={says}>Loading…</p></section>;
   const r = d.record;
   const save = key => async value => {
@@ -151,11 +175,19 @@ export default function RecordPage({ type, id, meta, open, onBack, onChanged }) 
         {d.reply ? <span style={{ fontSize: 12.5, fontWeight: 500, marginLeft: 10 }} data-sales-reply="1" title={`Last emailed: the latest email you sent that is on this record. No reply: you emailed last and nothing came back for ${d.noReplyAfterDays} days or more.`}>
           {d.reply.lastEmailedAt ? `Last emailed ${whenWords(d.reply.lastEmailedAt)}` : "Not emailed yet"}
           {d.reply.noReplyDays != null ? <span style={{ ...brassTag, marginLeft: 6 }}>No reply in {d.reply.noReplyDays} days</span> : null}</span> : null}</h2>
+      {type !== "org" ? <button type="button" style={quiet} onClick={() => setDoing(x => (x === "email" ? null : "email"))} data-sales-email-open="1">Email</button> : null}
+      {type !== "contact" ? <button type="button" style={quiet} onClick={() => setDoing(x => (x === "meeting" ? null : "meeting"))} data-sales-meeting-open="1">Book a meeting</button> : null}
       {confirmDel ? <span style={{ fontSize: 13 }}>Delete only this {TYPE_WORDS[type].toLowerCase()}? What it links to stays.{" "}
         <button type="button" style={{ ...btn, background: TERRA }} onClick={del} data-sales-delete-go="1">Yes, delete</button>{" "}
         <button type="button" style={quiet} onClick={() => setConfirmDel(false)}>Cancel</button></span>
         : <button type="button" style={quiet} onClick={() => setConfirmDel(true)} data-sales-delete="1">Delete</button>}
     </div>
+    {r.dnc_at || d.dncViaOrg ? <p style={{ background: `${BRASS}33`, border: `1px solid ${BRASS}`, borderRadius: 8, padding: "8px 12px", fontSize: 13.5, margin: "0 0 12px" }} data-sales-dnc="1">
+      <b>Do not contact.</b> {r.dnc_at ? `${r.dnc_reason} · marked ${whenWords(r.dnc_at)} by ${r.dnc_by_name}.` : `${d.dncViaOrg.name} is marked Do not contact: ${d.dncViaOrg.dnc_reason}.`} Out of every call queue, cadence and list export.</p> : null}
+    {type === "org" && d.fit ? <p style={{ ...says, opacity: 1 }} data-sales-fit="1" title="The fit rule in Sales settings: arithmetic on this organization's fields."><b>{d.fit.line}</b>{d.fit.misses.length ? ` · ${d.fit.misses.join("; ")}` : " · meets every line"}{r.lost_at ? <span style={{ ...brassTag, marginLeft: 6 }}>{r.lost_reason || "Not a fit"}</span> : null}</p> : null}
+    {doing === "email" ? <EmailDraft contactId={type === "contact" ? id : null} dealId={type === "deal" ? id : null} onClose={() => setDoing(null)} onLogged={changed} /> : null}
+    {doing === "meeting" ? <section style={card}><MeetingForm dealId={type === "deal" ? id : null} orgId={type === "org" ? id : null} contactIds={(d.linked.contact || []).filter(c => type === "deal").map(c => c.id)}
+      attendeesHint={(d.linked.contact || []).map(c => c.displayName).join(", ")} onDone={() => { setDoing(null); changed(); }} onCancel={() => setDoing(null)} /></section> : null}
     <div style={{ display: "grid", gridTemplateColumns: narrow ? "1fr" : "300px minmax(0, 1fr) 300px", gap: 14, alignItems: "start" }}>
       <aside style={{ background: WHITE, borderRadius: 12, border: `1px solid ${INK}14`, overflow: "hidden" }} data-sales-rail="left">
         {type === "deal" ? <RailSection id="stage" title="Stage" testid="rail-stage">
@@ -175,6 +207,7 @@ export default function RecordPage({ type, id, meta, open, onBack, onChanged }) 
           {(d.history || []).map(h => <div key={h.id} style={{ fontSize: 12.5, padding: "4px 0", borderTop: `1px solid ${CREAM}` }} data-stage-history={h.id}>
             {h.from_name ? `${h.from_name} → ` : "Created in "}<b>{h.to_name}</b><div style={{ opacity: 0.7 }}>{whenWords(h.at)} · {h.created_by_name}</div></div>)}
         </RailSection> : null}
+        {type !== "deal" ? <RailSection id="dnc" title="Do not contact" testid="rail-dnc" defaultOpen={!!r.dnc_at}><DoNotContact type={type} id={id} r={r} reload={changed} /></RailSection> : null}
         {type !== "deal" ? <RailSection id="merge" title="Merge" testid="rail-merge" defaultOpen={false}><Merge type={type} id={id} onMerged={changed} />
           {(d.merges || []).map(m => <div key={m.id} style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>Merged in {m.gone_snapshot && (m.gone_snapshot.name || [m.gone_snapshot.first_name, m.gone_snapshot.last_name].filter(Boolean).join(" "))} on {whenWords(m.created_at)} by {m.created_by_name}</div>)}
         </RailSection> : null}

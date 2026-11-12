@@ -25,6 +25,8 @@ const OBJECTS = {
       { key: "state", label: "State", type: "text", col: "state" },
       { key: "revenue_band", label: "Annual revenue", type: "picklist", col: "revenue_band",
         options: ["Under $250K", "$250K–$1M", "$1M–$5M", "$5M–$20M", "Over $20M"] },
+      { key: "revenue", label: "Revenue ($ a year)", type: "number", col: "revenue" },   // SALES-2: the fit rule reads the number
+      { key: "ein", label: "EIN", type: "text", col: "ein" },
       { key: "current_crm", label: "Current CRM", type: "text", col: "current_crm" },
       { key: "nonprofit_type", label: "Type", type: "text", col: "nonprofit_type" },
       { key: "owner_id", label: "Owner", type: "owner", col: "owner_id" },
