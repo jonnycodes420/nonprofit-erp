@@ -17,6 +17,7 @@ import { displayDateShort } from "../../../../shared/displayDate";
 import { displayOrgDateShort } from "../../lib/orgDay";
 import { shownTags, shownNote } from "../../lib/internalLabels";
 import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { relationshipTypeLabel } from "../../lib/relationshipOptions";   // FLOWS-10 item 7
 
 // IMPORT-4 · A GIFT WITH NO DATE. An import that gave no day keeps the gift
 // undated: it counts in Lifetime and its event, never in This year. "Set date"
@@ -123,7 +124,7 @@ const relationshipLine = r => {
   if (how) return how(r);
   const sided = SIDED[r.relationshipType] && SIDED[r.relationshipType][r.side];
   if (sided) return sided(r.relatedDonorName);
-  return `${r.relatedDonorName} · ${(DONOR_RELATIONSHIP_LABELS.find(([v]) => v === r.relationshipType) || [])[1] || r.relationshipType}`;
+  return `${r.relatedDonorName} · ${relationshipTypeLabel(DONOR_RELATIONSHIP_LABELS, r.relationshipType)}`;   // FLOWS-10 item 7: "Program officer", never "program_officer"
 };
 
 // BUILD-88a A.1 — the machine-written gift sentence, which used to CARRY the

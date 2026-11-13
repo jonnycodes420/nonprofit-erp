@@ -25,7 +25,7 @@ const PHOTOS = [
   ["scripts/demo-assets/demo-hero-choir.jpg", "The youth choir at the spring concert", "Young singers in a row on stage, mid-song"],
   ["scripts/demo-assets/demo-impact-exhibition.jpg", "Student art show", "Visitors looking at student paintings on a gallery wall"],
   ["scripts/demo-assets/demo-impact-studio.jpg", "In the pottery studio", "A student shaping a clay bowl on a wheel"],
-  ["scripts/demo-assets/demo-campaign-chapel.jpg", "The old chapel hall", "A sunlit hall with tall windows and wooden benches"],
+  ["scripts/demo-assets/demo-campaign-chapel.jpg", "The old chapel on the hill", "A small chapel with a bell tower on a grassy hill at dusk"],   // FLOWS-10 item 11
   ["client/public/landing/two-young-volunteers-smiling-as-they-pack-food.jpg", "Packing the gift bags", "Two young volunteers smiling as they pack food"],
   ["client/public/landing/four-volunteers-preparing-aid-boxes-and-helpin.jpg", "Saturday crew", "Four volunteers preparing boxes together"],
   ["client/public/landing/three-smiling-volunteers-working-together-outd.jpg", "Out on the dock", "Three volunteers smiling while working outdoors"],

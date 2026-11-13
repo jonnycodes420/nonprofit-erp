@@ -118,6 +118,9 @@ Node scripts:
 | `ops/integrity1-find-vanished.js` | People an import's undo trashed who were here before that import (INTEGRITY-1). Dry run by default: org ids and counts | `DATABASE_URL=… node scripts/ops/integrity1-find-vanished.js`, then `--apply --i-know-this-is-prod`; `--undo=<audit id>` reverses |
 | `ops/integrity1-duplicate-invites.js` | Revokes all but the newest pending invite per address so the unique index can build (INTEGRITY-1). Dry run by default | `DATABASE_URL=… node scripts/ops/integrity1-duplicate-invites.js`, then `--apply --i-know-this-is-prod`; `--undo=<audit id>` reverses |
 | `ops/flows8-stock-alts.js` | Pages that still carry the two old stock-photo alt sentences (FLOWS-8, W-1112-Fundraising-35X). A dry run: it lists and writes nothing; skips org_b72demo and org_creo | `DATABASE_URL=… node scripts/ops/flows8-stock-alts.js` |
+| `ops/flows10-stopped-steps.js` | Journey steps a single-person Stop left reading Done, and steps still pending under a stopped journey (FLOWS-10, W-1113-Fundraising-29X). A dry run, SELECTs only. |
+| `ops/flows10-demo-ein.js` | Sets org_b72demo's made-up EIN (shared/demoEin.js) while it is the 00-0000000 placeholder (FLOWS-10, Area 5 Check 17). Dry run by default; `--apply` through writerDbUrl, a remote target must answer env "staging". |
+| `ops/flows10-demo-alts.js` | The demo's chapel photo whose alt described another picture (FLOWS-10, W-1112-Fundraising-35X). Dry run by default; `--apply` changes alt text only, in org_b72demo only, through writerDbUrl, and a remote target must answer env "staging". |
 
 `ci/builder-access-check.js` (SECURE-3) is run by the battery (`tests/script-guards.test.js`): it fails if
 this environment holds a Railway token, a Supabase secret or a remote postgres URL, and warns about

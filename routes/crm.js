@@ -86,6 +86,7 @@ const MODULES = [
   "../server/receipts/drift",   // PLEDGES-3: void and reissue a receipt whose gift changed
   "../server/org/switchOrg",   // ACCESS-1
   "../server/events/eventRemoval",   // WALKB-2
+  "../server/donors/recordsGapRoute",   // FLOWS-10: Billing's records gap
   "../server/volunteers/shiftRules",   // STALE-2: a bare draft shift deletes
   "../server/outreach/autoSend",
   "../server/outreach/rename",   // POLISH-8: rename a campaign or template in place
@@ -149,6 +150,7 @@ routers.r1.use(require("../server/org/publicPages").routers.r1);
 routers.r1.use(require("../server/reports/impact").routers.r1);
 routers.r1.use(require("../server/memberships/routes").routers.r1);
 routers.r1.use(require("../server/events/eventGifts").routers.r1);   // GIFTS-1
+routers.r1.use(require("../server/donors/recordsGapRoute").routers.r1);   // FLOWS-10 item 14
 routers.r1.use(require("../server/events/eventRemoval").routers.r1);   // WALKB-2: delete or archive, above the event routes
 routers.r1.use(require("../server/volunteers/shiftRules").routers.r1);   // STALE-2: a bare draft shift deletes
 routers.r1.use(require("../server/events/routes").routers.r1);

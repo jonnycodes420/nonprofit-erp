@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from "react";
 
 // fetcher(term) → Promise<rows>. narrow(row, termLower) → still a match?
 // key: what makes two questions the same (the term plus any options).
-// Returns [rows, pending].
+// Returns [rows, pending, failed].
 export function useLatestSearch(term, key, fetcher, { delay = 200, enabled = true, narrow = null } = {}) {
   const [shown, setShown] = useState({ key: null, term: "", rows: [] });
   const seqRef = useRef(0);
@@ -26,21 +26,24 @@ export function useLatestSearch(term, key, fetcher, { delay = 200, enabled = tru
     if (!enabled) return undefined;
     const seq = ++seqRef.current;
     const t = setTimeout(() => {
-      const land = rows => {
+      const land = (rows, failed = false) => {
         if (seq < shownSeqRef.current) return;   // a newer answer is already on screen
         shownSeqRef.current = seq;
-        setShown({ key, term, rows: Array.isArray(rows) ? rows : [] });
+        setShown({ key, term, rows: Array.isArray(rows) ? rows : [], failed });
       };
-      Promise.resolve().then(() => fetchRef.current(term)).then(land, () => land([]));
+      // FLOWS-10 item 2 (W-1112-Volunteers-20): a search that failed is not "nobody matches".
+      Promise.resolve().then(() => fetchRef.current(term)).then(rows => land(rows), () => land([], true));
     }, term ? delay : 0);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, enabled]);
-  if (!enabled) return [[], false];
-  if (shown.key === key) return [shown.rows, false];
+  // Returns [rows, pending, failed]: failed is true when the answer for this text was an error, so
+  // a picker says the search did not answer, never "nobody matches" (FLOWS-10 item 2).
+  if (!enabled) return [[], false, false];
+  if (shown.key === key) return [shown.rows, false, !!shown.failed];
   const now = String(term || "").toLowerCase(), was = String(shown.term || "").toLowerCase();
-  if (narrow && was && now.startsWith(was)) return [shown.rows.filter(r => narrow(r, now)), true];
-  return [[], true];
+  if (narrow && was && now.startsWith(was) && !shown.failed) return [shown.rows.filter(r => narrow(r, now)), true, false];
+  return [[], true, false];
 }
 
 // A person row still matches these words: every word is in the name or email.

@@ -12,7 +12,7 @@
 // Everything reads routes/groups.js. A group by rule is the donor list's own
 // filter, worked out fresh every time, so nothing here stores who is in one.
 import RemoveMenu from "./RemoveMenu";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Zap } from "lucide-react";
 import { apiFetch } from "../api";
 import { T, interactive } from "./shared";
@@ -409,8 +409,13 @@ export default function GroupsPage({ isReadOnly, onNavigate, initialGroupId }) {
   // WIRE-1: /app/groups?group=<id> opens that group (a group just saved from
   // a guest list, a campaign or the donor list lands on its own page).
   const [open, setOpen] = useState(() => initialGroupId || urlParam("groups", "group") || null);
+  // FLOWS-10 item 3 (W-1112-Volunteers-01X): the read after a group was made and the read after it was
+  // deleted could land in either order, and the older one, landing last, put the deleted LYBUNT card
+  // back until a reload. Only the newest read's answer is kept.
+  const listSeq = useRef(0);
   const load = useCallback(() => {
-    apiFetch("/groups").then(r => { setList(r); setErr(""); if (!r.groups.filter(g => !g.fromAtlas).length) setStarters(true); }).catch(() => setErr("Your groups did not load just now. Reload the page to try again."));
+    const t = ++listSeq.current;
+    apiFetch("/groups").then(r => { if (t !== listSeq.current) return; setList(r); setErr(""); if (!r.groups.filter(g => !g.fromAtlas).length) setStarters(true); }).catch(() => t === listSeq.current && setErr("Your groups did not load just now. Reload the page to try again."));
   }, []);
   // WALKB-1: a group removed (here, from its own page, by Undo) leaves the list at once.
   const groupRev = useWriteRev(GROUP_WRITES);

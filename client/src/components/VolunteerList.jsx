@@ -125,7 +125,8 @@ export function VolunteerListView({ isReadOnly, coordinator, onOpenPerson, initi
     if (k === "lifetimeGiving") return v ? money(v) : "Never given";
     // POLISH-7 (W-1107-Volunteers-13X): zero shows as 0, never a blank cell.
     if (k === "rangeHours" || k === "lifetimeHours" || k === "gifts" || k === "shifts") return String(Number(v) || 0);
-    if (k === "lastServed" || k === "nextShift") return v ? displayDate(String(v).slice(0, 10)) : "None yet";
+    if (k === "lastServed") return v ? displayDate(String(v).slice(0, 10)) : "None yet";
+    if (k === "nextShift") return v || "None yet";   // FLOWS-10 item 6: the server's words (shared/numbers/nextShift.js), the waiting list included
     return v ?? "";
   };
   return (

@@ -109,16 +109,14 @@ function completeBrief(checked, ctx) {
     }
     if (kept.length) sections.push({ ...sec, sentences: kept });
   }
-  // The About note, whole, in "What you wrote".
+  // The About note, whole, FIRST. FLOWS-10 item 5 (W-1113-Donors-26): Margaret Chen's brief had it
+  // as the last section, under everything else, and read as leaving it out; Call script on the same
+  // profile quotes it first. Wherever the model put it, the section holding it now leads.
   const about = ctx && ctx.donor && norm(ctx.donor.about_them);
   if (about) {
-    const has = sections.some(sec => sec.sentences.some(x => bare(x.text).includes(bare(about))));
-    if (!has) {
-      const line = { text: `What the team wrote about them: ${OPEN}${about}${CLOSE}`, cites: [`note:${ctx.donor.id}`] };
-      const notes = sections.find(sec => sec.key === "notes");
-      if (notes) notes.sentences.unshift(line);
-      else sections.push({ key: "notes", title: "What you wrote", sentences: [line] });
-    }
+    const at = sections.findIndex(sec => sec.sentences.some(x => bare(x.text).includes(bare(about))));
+    if (at < 0) sections.unshift({ key: "about", title: "What you wrote", sentences: [{ text: `What the team wrote about them: ${OPEN}${about}${CLOSE}`, cites: [`note:${ctx.donor.id}`] }] });
+    else if (at > 0) sections.unshift(sections.splice(at, 1)[0]);
   }
   const headline = endsOnColon(checked.headline) || unfinishedWhy(checked.headline) ? "" : checked.headline;
   return { ...checked, headline, sections, dropped, sentenceCount: sections.reduce((n, x) => n + x.sentences.length, 0) };
