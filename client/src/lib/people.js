@@ -9,7 +9,7 @@
 // (Team, Re-engage, the map, the call list): it loads the old whole-org list
 // when one of them opens (FIX-46: fresh each time Donors opens, and forgotten
 // on any write), never on sign-in.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch, adaptDonor, onWrite } from "../api";
 import { allPages } from "./pages";
 import { useLatestSearch, personStillMatches } from "./latestSearch";
@@ -48,15 +48,53 @@ export async function peopleById(ids) {
 
 export const peopleCounts = () => apiFetch("/donors/counts");
 
-let ALL = null;
-export function allPeople({ force = false } = {}) {
-  if (force || !ALL) {
-    ALL = allPages("/donors/summaries").then(rows => (Array.isArray(rows) ? rows : []).map(adaptDonor));   // SECURE-2: a page at a time
-    ALL.catch(() => { ALL = null; });
-  }
-  return ALL;
+// COMMS-SPEED-1: the whole-org read is shared by whoever is waiting for it,
+// and it stops when the last of them has gone. A caller passes the signal of
+// an AbortController it aborts on unmount (useLeaveSignal below); when every
+// caller with a signal has aborted, the read is cancelled (lib/pages.js) and
+// forgotten. A caller with no signal keeps it alive: use one only for a read
+// a person asked for and is waiting on (a button press), never on a mount.
+let ALL = null;   // { promise, ctl, users, done }
+const leftErr = () => Object.assign(new Error("Stopped: the page that asked for this was left."), { name: "AbortError" });
+function startAll() {
+  const ctl = new AbortController();
+  const entry = { ctl, users: 0, done: false };
+  entry.promise = allPages("/donors/summaries", { signal: ctl.signal })   // SECURE-2: a page at a time
+    .then(rows => (Array.isArray(rows) ? rows : []).map(adaptDonor));
+  entry.promise.then(() => { entry.done = true; }, () => { entry.done = true; if (ALL === entry) ALL = null; });
+  return entry;
 }
-export function forgetAllPeople() { ALL = null; }
+export function allPeople({ force = false, signal } = {}) {
+  if (force || !ALL) ALL = startAll();
+  const entry = ALL;
+  if (!signal) { entry.users = Infinity; return entry.promise; }
+  if (signal.aborted) return Promise.reject(leftErr());
+  entry.users += 1;
+  return new Promise((resolve, reject) => {
+    const leave = () => {
+      reject(leftErr());
+      entry.users -= 1;
+      if (entry.users <= 0 && !entry.done) { entry.ctl.abort(); if (ALL === entry) ALL = null; }
+    };
+    signal.addEventListener("abort", leave, { once: true });
+    entry.promise.then(v => { signal.removeEventListener("abort", leave); resolve(v); },
+      e => { signal.removeEventListener("abort", leave); reject(e); });
+  });
+}
+// A function giving the signal that aborts when the component unmounts, for
+// reads started by a button rather than a mount (the call list, a preview).
+// Call it when the read starts: leaveSignal().
+export function useLeaveSignal() {
+  const ref = useRef(null);
+  if (!ref.current) ref.current = new AbortController();
+  useEffect(() => {
+    if (ref.current.signal.aborted) ref.current = new AbortController();   // StrictMode's second mount
+    const ctl = ref.current;
+    return () => ctl.abort();
+  }, []);
+  return () => ref.current.signal;
+}
+export function forgetAllPeople() { ALL = null; }   // a read in flight goes on for whoever is waiting on it
 // FIX-46: any write may change somebody's totals, so the next whole-org view
 // asks the server again (the same rows the profile reads).
 onWrite(forgetAllPeople);

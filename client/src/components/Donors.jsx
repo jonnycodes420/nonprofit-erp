@@ -8,7 +8,7 @@ import Papa from "papaparse";
 import { HoursImportModal } from "./VolunteerPanel";
 import * as HOURS_PRESETS_MOD from "../../../shared/volunteerHours.js";
 import { apiFetch, adaptDonor } from "../api";
-import { allPeople, forgetAllPeople, peopleById, peopleCounts, usePeoplePicker } from "../lib/people";
+import { allPeople, forgetAllPeople, peopleById, peopleCounts, usePeoplePicker, useLeaveSignal } from "../lib/people";
 import { errorMessage } from "../lib/domainError";
 import { emailHint } from "../../../shared/contactCheck.js";
 import { useAuth } from "../main";
@@ -98,6 +98,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // Re-engage, the map) or the call list is asked for; everything else asks
   // the server (lib/people.js). `orgPeople` is null until then.
   const[orgPeople,setOrgPeople]=useState(null);
+  const leaveSignal=useLeaveSignal();   // COMMS-SPEED-1: a whole-org read stops when Donors closes
   const patchPeople=fn=>{forgetAllPeople();setOrgPeople(prev=>prev?fn(prev):prev);};
   // BUILD-77: the badge matches the (gated) list. SCALE-2: counted by the
   // server with the same rule (routes/donorLookups.js /donors/counts).
@@ -404,8 +405,10 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     // the whole session, a gift logged anywhere else (To confirm, Stripe, an
     // import) left Re-engage showing "$0, no gift on file" beside a profile
     // that said $1,500. Team, Re-engage and the map share this one read.
-    allPeople({force:true}).then(rows=>{if(live)setOrgPeople(rows);}).catch(e=>console.error(e));
-    return()=>{live=false;};
+    // COMMS-SPEED-1: and stopped when the view or the page is left (lib/pages.js).
+    const ctl=new AbortController();
+    allPeople({force:true,signal:ctl.signal}).then(rows=>{if(live)setOrgPeople(rows);}).catch(e=>{if(!isAbort(e))console.error(e);});
+    return()=>{live=false;ctl.abort();};
   },[wholeOrgView,orgPeople]);
   // FLOWS-4 (W-1109-Donors-18X): Re-engage carries the Directory's filters (donors/ReEngageFilter.jsx).
   const reFilterN=directoryFilterCount({stage:dirStage,owner:dirAssignee,designation:dirDesignation,household:dirHousehold,status:dirStatus,fromImport:dirImport,where:dirWhere});
@@ -609,8 +612,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     loadPeopleCount();
     setDirReloadKey(k=>k+1); // refresh the Directory's server page too
     try{
-      if(orgPeople)setOrgPeople(await allPeople());
-    }catch(e){console.error(e);}
+      if(orgPeople)setOrgPeople(await allPeople({signal:leaveSignal()}));
+    }catch(e){if(!isAbort(e))console.error(e);}
   };
 
   // HOME-3 item 4: an import finished (or anything Tell Steward did): the
@@ -719,7 +722,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
 
   const generateCallList=async()=>{
     setCallLoading(true);setCallList("");
-    const everyone=orgPeople||await allPeople().catch(()=>[]);   // SCALE-2: loaded for this, not on sign-in
+    const everyone=orgPeople||await allPeople({signal:leaveSignal()}).catch(e=>isAbort(e)?null:[]);   // SCALE-2: loaded for this, not on sign-in
+    if(!everyone){setCallLoading(false);return;}   // COMMS-SPEED-1: Donors was left before the list came
     await askClaude(`You are a chief development officer. Be tactical. Max 200 words.`,
       `Prioritized call list for this week:\n${everyone.map(d=>`${d.name} [${d.stage||"cultivate"}]: ${daysDiff(d.lastTouchpoint||d.lastGift)}d since contact, ${fmtFull(d.lastAmount)} last gift, score ${donorScore(d)??"none (no gifts on file)"}, notes: ${d.notes}`).join("\n")}`,
       chunk=>setCallList(chunk));

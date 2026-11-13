@@ -35,7 +35,7 @@ import { DonorLink } from "./RecordLink";
 import { EmailAsSentPanel } from "./EmailAsSent";
 import { ThankYouDrafts } from "./ThankYouDrafts";
 import { countLabel } from "../../../shared/countWords.js";
-import { allPages } from "../lib/pages";
+import { ManualAudience } from "./communications/ManualAudience";   // COMMS-SPEED-1: searched on the server
 import { displayOrgDate } from "../lib/orgDay";
 import { triggerLabel } from "../../../shared/giftWords.js";   // FEEL-1
 import { sequencesEmptyLine, sequenceStatusWord, sequencesMailOff } from "../lib/sequencesEmpty";   // ATLAS-4, SENDS-1
@@ -270,7 +270,7 @@ function segLabel(raw) {
 // the server's one answer (segment-preview `audience`), shown by CampaignEditor's
 // AudienceLine as one line whose counts add up to the segment.
 // ── SegmentPicker (module-level) ──────────────────────────────────────────────
-function SegmentPicker({ seg, onChange, allDonors }) {
+function SegmentPicker({ seg, onChange }) {
   const mode = seg.mode || "all";
   const upd  = p => onChange({ ...seg, ...p });
   // WIRE-1: the org's Groups, read once the group mode is chosen.
@@ -351,20 +351,7 @@ function SegmentPicker({ seg, onChange, allDonors }) {
           </optgroup>}
         </select>
       )}
-      {mode === "manual" && (
-        <div style={{ maxHeight: 200, overflowY: "auto", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 8px" }}>
-          {allDonors.length === 0
-            ? <div style={{ fontSize: 12, color: T.ink3, padding: 8 }}>Loading donors…</div>
-            : allDonors.filter(d => d.email).map(d => (
-              <label key={d.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 4px", borderBottom: "1px solid " + T.bg2, cursor: "pointer" }}>
-                <input type="checkbox" checked={(seg.donorIds || []).includes(d.id)} onChange={() => tog("donorIds", d.id)} style={{ accentColor: T.green }} />
-                <span style={{ fontSize: 13, color: T.ink, flex: 1 }}>{d.name}</span>
-                <span style={{ fontSize: 11, color: T.ink3 }}>{d.email}</span>
-              </label>
-            ))
-          }
-        </div>
-      )}
+      {mode === "manual" && <ManualAudience ids={seg.donorIds} onToggle={id => tog("donorIds", id)} />}
     </div>
   );
 }
@@ -1430,7 +1417,6 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const [emailMeta, setEmailMeta]     = useState(null);   // { blockTypes, mergeFields } for the editor
 
   // Donors (loaded lazily)
-  const [allDonors, setAllDonors]     = useState([]);
 
   // Audience tab segment preview
   // FIX-40 · the campaign page: the email as sent, when, and to whom.
@@ -1484,22 +1470,15 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     try { setCampaigns(await apiFetch("/campaigns")); } catch (e) { console.error(e); }
     setLoading(false);
   };
-  const loadDonors = async () => {
-    if (allDonors.length) return;
-    // Summaries carry every field the segment predicates read (email,
-    // total_giving, status, stage, capacity_tier) at a fraction of the payload
-    try { setAllDonors(await allPages("/donors/summaries")); } catch (e) { console.error(e); }   // SECURE-2: a page at a time
-  };
 
   // BUILD-94 Part 4 — the sent list's counts, server-computed so the screen
   // and the numbers cannot disagree.
   const [sentRows, setSentRows] = useState([]);
   const loadSent = () => apiFetch("/campaigns/sent").then(r => setSentRows((r && r.campaigns) || [])).catch(() => setSentRows([]));
-  // PROFILE-SPEED-1: every person's summary (21 pages of 500 on a 10,000-person
-  // org, ~40 s of reads) only feeds the hand-picked audience, so it is read
-  // when one is picked or opened, not when Communications opens.
+  // COMMS-SPEED-1: nothing here reads every person. The hand-picked audience
+  // searches on the server as you type (communications/ManualAudience.jsx);
+  // the counts and reasons are the server's (segment-preview, the hub).
   useEffect(() => { loadCampaigns(); loadSent(); }, []);
-  useEffect(() => { if (form && form.seg && form.seg.mode === "manual") loadDonors(); }, [form && form.seg && form.seg.mode]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll while any campaign is sending
   const anySending = campaigns.some(c => c.status === "sending");
@@ -1830,7 +1809,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         approvalNote={approvalNote}
         notReviewed={!!(form.starterKey && !form.starterReviewed)}
         audiencePicker={<>
-          <SegmentPicker seg={form.seg} onChange={seg => { setForm(f => ({ ...f, seg })); if (seg.mode === "manual") loadDonors(); }} allDonors={allDonors} />
+          <SegmentPicker seg={form.seg} onChange={seg => setForm(f => ({ ...f, seg }))} />
           {/* THE SEGMENT, AS PEOPLE. Nobody notices that 17 is too many;
               everybody notices a name that should not be on the list. */}
           {/* EDITOR-1: with nobody in reach the audience line says why; the

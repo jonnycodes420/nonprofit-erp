@@ -172,8 +172,7 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
   const _sumRe = require("../../shared/numbers/lapse").reengageSql("donors", _sumToday);
   const _sumLost = require("../../shared/numbers/lapse").lostSql("donors", _sumToday);   // COUNTS-1: Re-engage's Lost & Found
   const _vis = require("../auth/portfolio").visibleSql(req);   // ACCESS-2: their people only
-  const [donors, touchpoints, { map: driftMap }] = await Promise.all([
-    query(`SELECT id, name, email, phone, stage, status, total_giving, last_gift_date,
+  const donors = await query(`SELECT id, name, email, phone, stage, status, total_giving, last_gift_date,
                   last_gift_amount, gift_count, assigned_to, assigned_to_name,
                   pending_assignee_invite_id, pending_assignee_name,
                   city, state, zip, country, address, kind, contact_name,
@@ -184,9 +183,15 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
                   imported_sustainer, imported_sustainer_amount, imported_sustainer_last_gift,
                   birth_month, birth_day, birth_year, ${_sumHold.sql} AS pledge_hold, ${_sumRe.sql} AS reengage, ${_sumLost.sql} AS lost,
                   ${require("../../shared/numbers/atRisk").LAST_YEAR_OF_GIVING("donors")} AS last_year_giving
-           FROM donors WHERE org_id = ? AND deleted_at IS NULL${_vis.sql} ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`, [..._sumHold.args, ..._sumRe.args, ..._sumLost.args, req.user.orgId, ..._vis.args, limit, offset]),
-    query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
-    computeDriftForDonors(req.user.orgId),   // BUILD-76 — the shared-state views badge from the same computation
+           FROM donors WHERE org_id = ? AND deleted_at IS NULL${_vis.sql} ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`, [..._sumHold.args, ..._sumRe.args, ..._sumLost.args, req.user.orgId, ..._vis.args, limit, offset]);
+  // COMMS-SPEED-1: the touchpoints and the drift badge for THIS page's people
+  // only, and nothing stored (a GET writes nothing, LIST-2). Every page used to
+  // read the whole org's interactions and drift again and store the drift:
+  // ~1.8 s and 6 connections a page, 21 pages on a 10,000-person org.
+  const pageIds = donors.length ? donors.map(d => d.id) : ["_none_"];
+  const [touchpoints, { map: driftMap }] = await Promise.all([
+    query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? AND donor_id = ANY(?) GROUP BY donor_id", [req.user.orgId, pageIds]),
+    computeDriftForDonors(req.user.orgId, { donorIds: pageIds, store: false }),   // BUILD-76: the same computation as the badge everywhere
   ]);
   await require("./ownerName").withLiveOwnerNames(query, donors);   // INTEGRITY-1: one owner field
   res.setHeader("X-Total-Count", String(await require("../../shared/numbers/everyone").everyoneCount(query, req.user.orgId, _vis)));   // INTEGRITY-1: Everyone (ACCESS-2: theirs)

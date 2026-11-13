@@ -5,6 +5,7 @@
 // one component, read from the one whole-org read Re-engage uses.
 import { useEffect, useState } from "react";
 import { allPeople } from "../../lib/people";
+import { isAbort } from "../../lib/leaving";
 import { ReEngageView } from "../DonorDirectory";
 import { Spin, T } from "../shared";
 
@@ -13,9 +14,10 @@ export function LostAndFoundPart({ org, onNavigate }) {
   const [err, setErr] = useState("");
   useEffect(() => {
     let live = true;
-    allPeople({ force: true }).then(rows => { if (live) setPeople(rows || []); })
-      .catch(() => { if (live) setErr("The list didn't load. Try again in a moment."); });
-    return () => { live = false; };
+    const ctl = new AbortController();   // COMMS-SPEED-1: the read stops when this part closes
+    allPeople({ force: true, signal: ctl.signal }).then(rows => { if (live) setPeople(rows || []); })
+      .catch(e => { if (live && !isAbort(e)) setErr("The list didn't load. Try again in a moment."); });
+    return () => { live = false; ctl.abort(); };
   }, []);
   if (err) return <div role="alert" style={{ fontSize: 13, color: T.ink2 }}>{err}</div>;
   if (!people) return <div style={{ padding: 32, textAlign: "center" }}><Spin /></div>;

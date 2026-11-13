@@ -15,11 +15,17 @@ const LABEL = "Last year of giving";
 const SENTENCE = "At risk: each person's last year of giving, the money they gave in the twelve months ending on their last gift, added up. Lifetime is shown beside it.";
 
 // SQL: person `d`'s last year of giving, dollars (0 when they never gave in Steward).
-const LAST_YEAR_OF_GIVING = (d = "d") => `(SELECT COALESCE(SUM(ay.amount), 0) FROM gifts ay,
-      (SELECT LEFT(MAX(al.date), 10) AS last FROM gifts al WHERE al.org_id = ${d}.org_id AND al.donor_id = ${d}.id AND ${GIFT("al")}
-          AND al.date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}') l
-     WHERE ay.org_id = ${d}.org_id AND ay.donor_id = ${d}.id AND ${MONEY("ay")} AND l.last IS NOT NULL
-       AND LEFT(ay.date, 10) <= l.last AND LEFT(ay.date, 10) > to_char(l.last::date - INTERVAL '12 months', 'YYYY-MM-DD'))`;
+// COMMS-SPEED-1: the last gift's date is a sub-select of its own, so Postgres
+// works it out once per person (an InitPlan). Written as a joined aggregate,
+// the planner put it inside the loop over the person's gifts and worked it out
+// again for every gift: 1.7 s for a page of 500 people, 21 pages on a
+// 10,000-person org. The figure is the same: no dated gift, no last date, 0.
+const LAST_GIFT_DAY = d => `(SELECT LEFT(MAX(al.date), 10) FROM gifts al WHERE al.org_id = ${d}.org_id AND al.donor_id = ${d}.id AND ${GIFT("al")}
+          AND al.date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}')`;
+const LAST_YEAR_OF_GIVING = (d = "d") => `(SELECT COALESCE(SUM(ay.amount), 0) FROM gifts ay
+     WHERE ay.org_id = ${d}.org_id AND ay.donor_id = ${d}.id AND ${MONEY("ay")}
+       AND LEFT(ay.date, 10) <= ${LAST_GIFT_DAY(d)}
+       AND LEFT(ay.date, 10) > to_char(${LAST_GIFT_DAY(d)}::date - INTERVAL '12 months', 'YYYY-MM-DD'))`;
 
 // JS, over gift rows already read ({ date, amount, type }): the same figure, in cents.
 function lastYearOfGivingCents(rows) {
