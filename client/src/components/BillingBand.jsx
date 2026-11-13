@@ -2,11 +2,12 @@
 // how it is counted, the price, the next charge, and whether the setup fee was
 // paid, all from GET /billing/status. A band change waits for the owner's yes
 // here; moving down waits for renewal, on request.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { displayDate } from "../../../shared/displayDate";
 import { SignedAgreement } from "./billing/SignedAgreement";   // ONBOARD-1
+import { Figure } from "./Figure";   // FLOWS-10 item 14
 
 const usd = n => "$" + Number(n).toLocaleString("en-US");
 const day = d => d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : null;
@@ -19,6 +20,9 @@ const LINK = { background: "none", border: "none", padding: 0, color: T.greenDk,
 export function BillingBand({ billing, isAdmin, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // FLOWS-10 item 14: the line under Records, from GET /billing/records-gap (shared/numbers/recordsGap.js).
+  const [gap, setGap] = useState(null);
+  useEffect(() => { let live = true; apiFetch("/billing/records-gap").then(g => { if (live) setGap(g); }).catch(() => {}); return () => { live = false; }; }, [billing && billing.records]);
   if (!billing || billing.records == null) return null;
   const act = (path, body) => {
     setBusy(true); setErr("");
@@ -50,6 +54,15 @@ export function BillingBand({ billing, isAdmin, onChanged }) {
           b.setupFee.paid ? `${usd(b.setupFee.usd)} paid` : "Not charged",
           b.setupFee.paid ? `Charged once, on ${day(b.setupFee.paidAt)}.` : null, "billing-setup")}
       </div>
+      {/* FLOWS-10 item 14 (Area 5 Explore 5): Records and the Donors tab are two numbers; one line says
+          why, and the people marked Donor with no gift open (shared/numbers/recordsGap.js). */}
+      {gap && gap.sentence && (
+        <div data-testid="billing-records-gap" style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.5, maxWidth: 640 }}>
+          {gap.markedNoGift > 0 && gap.source && <><Figure value={gap.markedNoGift} kind="count" label="Marked Donor, no gift on file"
+            definition="People marked Donor who have no gift on file. The Donors tab counts them; Records does not." source={gap.source} variant="inline" />{" "}</>}
+          {gap.markedNoGift > 0 ? gap.sentence.replace(/^[\d,]+ /, "") : gap.sentence}
+        </div>
+      )}
       {b.notice && (
         <div data-testid="billing-band-notice" style={{ ...NOTE, borderLeft: `3px solid ${T.gold}` }}>
           <span style={{ flex: 1, minWidth: 220 }}>

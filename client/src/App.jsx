@@ -384,13 +384,17 @@ function AppShell() {
     // open, rather than on a list somebody then has to find it in.
     setJourneysIntent(t==="journeys"&&opts?.journeyId?{journeyId:opts.journeyId}:null);
     const hasOpts=!!opts&&Object.keys(opts).some(k=>opts[k]!=null);
-    if(hasOpts||how?.fromUrl)setNavNonce(n=>n+1);
-    if(t!==tab||hasOpts){const u=new URL(tabHref(t,opts),window.location.origin);startPageReads(u.pathname,u.search);}   // PROFILE-SPEED-1: the page's first reads leave in one request, before it mounts
+    // FLOWS-10 item 10 (W-1113-Donors-20X): a rail click on the tab already open, from inside it
+    // (a profile is /donors/:id under Donors), goes to the tab itself. It was "the tab already open",
+    // so nothing changed and the profile stayed. Every rail link navigates from every page.
+    const inside=!how?.fromUrl&&!hasOpts&&t===tab&&(window.location.pathname+window.location.search)!==tabHref(t);
+    if(hasOpts||how?.fromUrl||inside)setNavNonce(n=>n+1);
+    if(t!==tab||hasOpts||inside){const u=new URL(tabHref(t,opts),window.location.origin);startPageReads(u.pathname,u.search);}   // PROFILE-SPEED-1: the page's first reads leave in one request, before it mounts
     setTab(t);
     // FIX-13 Part 6 — and the address bar follows. A URL change that came
     // FROM the address bar (a link, Back) is not pushed again, and a click
     // on the tab already open keeps the URL of what is on screen.
-    if(!how?.fromUrl&&(hasOpts||t!==tab)){
+    if(!how?.fromUrl&&(hasOpts||t!==tab||inside)){
       const href=tabHref(t,opts);
       if(href!==window.location.pathname+window.location.search)routerNavigate(href,{state:{internal:true}});
     }

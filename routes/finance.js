@@ -1929,7 +1929,8 @@ app.post("/donors/:id/book-visit", requireAuth, checkWriteAccess, wrap(async (re
   const title = String(req.body?.title || `Visit with ${d.name}`).trim().slice(0, 200);
   const location = String(req.body?.location || "").trim().slice(0, 200) || null;
   // FLOWS-1 item 3: no calendar connected, so the meeting is kept in Steward (it was refused, and nothing saved)
-  if (!chosen && !invite && !(await bookingCalendars(req.user.userId, orgId)).list.length) return SM.book({ query, run, actor }, req, res, { donor: d, title, startsAt, endsAt, location });
+  const demo = await SM.keptInSteward(query, orgId); if (demo && invite) return res.status(409).json({ error: "demo_org", sentence: SM.DEMO_NO_INVITE });   // FLOWS-10 items 1, 9
+  if (demo || (!chosen && !invite && !(await bookingCalendars(req.user.userId, orgId)).list.length)) return SM.book({ query, run, actor }, req, res, { donor: d, title, startsAt, endsAt, location, demo });
   const got = await myCalendarConn(req, res, { provider: chosen }); if (!got) return;
   const CL = await calendarMod();
   const timeZone = (await orgTz(orgId)).timezone || "America/New_York";
@@ -1962,7 +1963,7 @@ app.post("/calendar/events/:id/move", requireAuth, checkWriteAccess, wrap(async 
   if (c.owner_user_id !== req.user.userId) return res.status(403).json({ error: "not_yours", sentence: "Only the person whose calendar it is can move it." });
   const startsAt = validInstant(req.body?.startsAt), endsAt = validInstant(req.body?.endsAt);
   if (!startsAt || !endsAt || endsAt <= startsAt) return res.status(400).json({ error: "bad_time", sentence: "Choose a start and an end, with the end after the start." });
-  if (c.provider === SM.PROVIDER) return SM.move({ query, run, actor }, req, res, c, { startsAt, endsAt });   // FLOWS-1: kept in Steward
+  if (c.provider === SM.PROVIDER || await SM.keptInSteward(query, req.user.orgId)) return SM.move({ query, run, actor }, req, res, c, { startsAt, endsAt });   // FLOWS-1, FLOWS-10 item 9: kept in Steward
   const got = await myCalendarConn(req, res, { provider: c.provider }); if (!got) return;
   const google = c.provider === "google";
   const url = google
@@ -1985,7 +1986,7 @@ app.post("/calendar/events/:id/cancel", requireAuth, checkWriteAccess, wrap(asyn
   const c = await ownMeeting(req, res); if (!c) return;
   if (c.owner_user_id !== req.user.userId) return res.status(403).json({ error: "not_yours", sentence: "Only the person whose calendar it is can cancel it." });
   if (c.logged_at) return res.status(409).json({ error: "already_logged", sentence: "This meeting has a note, so it happened. It stays on the record." });
-  if (c.provider === SM.PROVIDER) return SM.cancel({ query, run, actor }, req, res, c);   // FLOWS-1: kept in Steward
+  if (c.provider === SM.PROVIDER || await SM.keptInSteward(query, req.user.orgId)) return SM.cancel({ query, run, actor }, req, res, c);   // FLOWS-1, FLOWS-10: kept in Steward
   const got = await myCalendarConn(req, res, { provider: c.provider }); if (!got) return;
   const url = c.provider === "google"
     ? `${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events/${encodeURIComponent(c.provider_event_id)}?sendUpdates=all`
@@ -2054,7 +2055,7 @@ app.get("/calendar/push-dates", requireAuth, wrap(async (req, res) => {
   const [conn] = await query(
     `SELECT provider, push_dates FROM mailbox_connections WHERE user_id=? AND org_id=? AND status='active' AND calendar_granted=true
         AND credentials_sealed IS NOT NULL ORDER BY provider LIMIT 1`, [req.user.userId, req.user.orgId]);
-  res.json({ connected: !!conn, provider: conn ? conn.provider : null, enabled: !!(conn && conn.push_dates) });
+  res.json({ connected: !!conn, provider: conn ? conn.provider : null, enabled: !!(conn && conn.push_dates), demo: await SM.keptInSteward(query, req.user.orgId) });   // FLOWS-10: Add meeting says where it goes
 }));
 app.put("/calendar/push-dates", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const [conn] = await query(

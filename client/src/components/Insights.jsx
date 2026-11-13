@@ -10,7 +10,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, takeParked } from "../api";
 import { useChanged } from "../lib/changes";   // STALE-1
-import { T } from "./shared";
+import { T, Modal } from "./shared";   // FLOWS-10 item 8: the shared dialog (above the top bar; Escape closes it)
 import { DonorLink } from "./RecordLink";
 import { fmtWhole } from "../lib/money";   // HOME-6: whole dollars on Home
 import { DriftList } from "./home/DriftList";   // HOME-6
@@ -354,10 +354,10 @@ export function HomeInsights({ onNavigate, isReadOnly, data: given, onChanged, o
       {!only && data.coverage && data.coverage.stale && (
         <div role="note" style={{ ...CARD, borderLeft: "4px solid " + T.gold, fontSize: 14, color: T.ink }}>{data.coverage.sentence}</div>
       )}
-      {look && <div role="dialog" aria-modal="true" aria-label="What your data says" onClick={e => { if (e.target === e.currentTarget) setLook(false); }}
-        style={{ position: "fixed", inset: 0, background: "rgba(15,26,18,0.45)", zIndex: 60, overflowY: "auto", padding: "24px 16px" }}>
+      {look && <Modal onClose={() => { setLook(false); reload(); }} width={880} align="top" ariaLabel="What your data says" padding="0"
+        dialogStyle={{ background: "transparent", boxShadow: "none" }}>
         <FirstLook onNavigate={(...a) => { setLook(false); onNavigate && onNavigate(...a); }} isReadOnly={isReadOnly} onClose={() => { setLook(false); reload(); }} />
-      </div>}
+      </Modal>}
       {!only && <LadderStrip data={data} onNavigate={onNavigate} showCoverage={!(data.coverage && data.coverage.stale)} />}
       {!only && <div style={{ margin: "-4px 0 10px" }}><button type="button" style={LNK} onClick={() => setLook(true)}>What your data says</button></div>}
       <GroupUndoBar cards={cards} onChanged={reload} styles={{ LNK }} />
@@ -693,14 +693,15 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
       {!noDonors && driftPeople && <DriftList drift={deck.drift} onNavigate={onNavigate} onShowAll={rest} loadingAll={full && deck.partial} />}
       {!noDonors && <MoveChips deck={deck} anyMoves={anyMoves} setPanel={setPanel} onDrift={driftPeople ? null : drift} />}
       {panel && (
-        <div role="dialog" aria-modal="true" aria-label={panel === "ladder" ? "Your donor ladder" : "Every move of this kind"} onClick={e => { if (e.target === e.currentTarget) setPanel(null); }}
-          onKeyDown={e => { if (e.key === "Escape") setPanel(null); e.stopPropagation(); }}
-          style={{ position: "fixed", inset: 0, background: "rgba(15,26,18,0.45)", zIndex: 60, overflowY: "auto", padding: "24px 16px" }}>
-          <div style={{ background: T.ground || T.bg, borderRadius: 16, padding: "18px 18px 8px", maxWidth: 880, margin: "0 auto" }}>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}><button type="button" className="moves-btn" style={BTN_QUIET} onClick={() => { setPanel(null); load(); setGone(new Set()); }}>Close</button></div>
+        // FLOWS-10 item 8 (W-1113-Donors-06): its own overlay sat at z-index 60, under the top bar, so
+        // Close was covered at every height, and Escape only worked with focus inside. The shared Modal
+        // sits above the bar, keeps its Close in a header that does not scroll, and closes on Escape.
+        <Modal onClose={() => { setPanel(null); load(); setGone(new Set()); }} width={880} align="top"
+          title={panel === "ladder" ? "Your donor ladder" : "Every move of this kind"} dialogStyle={{ background: T.ground || T.bg }}>
+          <div data-testid="moves-panel">
             <HomeInsights onChanged={() => { load(); setGone(new Set()); }} onNavigate={(...a) => { setPanel(null); onNavigate && onNavigate(...a); }} isReadOnly={isReadOnly} only={panel === "ladder" ? null : panel} />
           </div>
-        </div>
+        </Modal>
       )}
     </section>
   );
@@ -806,7 +807,10 @@ export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn,
             : how.say ? <button type="button" data-testid="dp-next-move-copy" onClick={copy} style={{ background: T.greenDk, color: T.white, border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", minHeight: 40 }}>{copied ? "Copied" : "Copy the words"}</button> : null)}
           <OutcomeButtons card={{ kind: m.kind }} items={[m.item]} onChanged={load} isReadOnly={isReadOnly} />
         </div>
-        {how.ask && <div data-testid="dp-next-move-ask" style={{ fontSize: 13.5, color: T.ink, fontWeight: 700 }} title={how.ask.rule}>{/^Ask\b/.test(how.ask.words) ? how.ask.words : `Ask: ${how.ask.words}`}</div>}
+        {/* FLOWS-10 item 3: while the worker rebuilds after a change (stale), the ask says so; it never shows
+            the $150 from before the gift was deleted as current. */}
+        {how.ask && (d.stale ? <div data-testid="dp-next-move-ask-updating" style={{ fontSize: 13.5, color: T.ink3 }}>Updating the ask…</div>
+          : <div data-testid="dp-next-move-ask" style={{ fontSize: 13.5, color: T.ink, fontWeight: 700 }} title={how.ask.rule}>{/^Ask\b/.test(how.ask.words) ? how.ask.words : `Ask: ${how.ask.words}`}</div>)}
       </div>
     </section>
   );

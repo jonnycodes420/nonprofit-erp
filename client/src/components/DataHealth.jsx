@@ -103,7 +103,7 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
       sentence: c.duplicates ? `${plural(c.duplicates, "pair")} that may be the same person: ${c.duplicatesByConfidence.high} high, ${c.duplicatesByConfidence.medium} medium, ${c.duplicatesByConfidence.low} low confidence.` : "No two people on file look like the same person.",
       action: c.duplicates ? "Review pairs" : null },
     { id: "addresses", label: "Addresses to tidy", count: c.addressesToTidy,
-      sentence: `${plural(c.addressesToTidy, "address", "addresses")} can be written the standard US way${c.addressesUnreadable ? `; ${c.addressesUnreadable} can't be read and are listed for you to fix by hand` : ""}.`,
+      sentence: `${plural(c.addressesToTidy, "address", "addresses")} can be written the standard US way${c.addressesUnreadable ? `; ${c.addressesUnreadable === 1 ? "1 can't be read and is" : `${c.addressesUnreadable.toLocaleString("en-US")} can't be read and are`} listed for you to fix by hand` : ""}.`,
       action: c.addressesToTidy || c.addressesUnreadable ? "Review changes" : null },
     { id: "moved", label: "People who moved", count: c.hasNcoaFile ? c.moved : null,
       sentence: c.hasNcoaFile ? `${plural(c.moved, "change of address", "changes of address")} from the provider's file wait for you.` : "Prepare an address update file for a change-of-address provider, then bring their results back here.",

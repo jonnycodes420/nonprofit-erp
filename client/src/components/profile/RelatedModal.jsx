@@ -9,6 +9,7 @@ import { Figure } from "../Figure";
 import { relationshipLabelsFor, throughWords, CONNECT_PICKS } from "./profileShared";
 import { linkedPeople } from "../../lib/linkedPeople";
 
+import { relationshipOptions, relationshipTypeLabel } from "../../lib/relationshipOptions";   // FLOWS-10 item 7
 function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor,refreshSoftCredit,relErr,relLoading,relPickerOpen,relPickerResults,relPickerPending,relSaving,relSearch,relType,relatedOpen,relationships,removeFromHousehold,retypeRelationship,setHhModalOpen,setRelErr,setRelPickerOpen,setRelSearch,setRelType,setRelatedOpen,softCredit,unlinkDonor}){
   // MENU-1 — the types as this record reads them ("Gives through" on a person, "Owned by" on a business).
   const DONOR_RELATIONSHIP_LABELS=relationshipLabelsFor(donor);
@@ -122,9 +123,9 @@ function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                         {r.direction?<span data-testid="dp-rel-connect" style={{fontSize:11,color:T.ink3}}>{`${r.relationshipType==="introduced_by"?(r.direction==="newcomer"?"Introduced by":"Introduced them"):(r.direction==="newcomer"?"Guest of":"Brought as a guest")}${r.eventName?` · ${r.eventName}`:""}`}</span>
-                          :isReadOnly?<Pill label={DONOR_RELATIONSHIP_LABELS.find(([v])=>v===r.relationshipType)?.[1]||r.relationshipType}/>
+                          :isReadOnly?<Pill label={relationshipTypeLabel(DONOR_RELATIONSHIP_LABELS,r.relationshipType)}/>
                           :<select aria-label="Relationship" value={r.relationshipType} onChange={e=>retypeRelationship(r.id,e.target.value)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 8px",fontSize:11,color:T.ink}}>
-                            {DONOR_RELATIONSHIP_LABELS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                            {relationshipOptions(DONOR_RELATIONSHIP_LABELS,r.relationshipType).map(([v,l])=><option key={v} value={v}>{l}</option>)}
                           </select>}
                         {!isReadOnly&&<button onClick={()=>unlinkDonor(r.id)} style={{background:"transparent",border:"1px solid "+T.terracotta+"55",borderRadius:7,padding:"4px 9px",color:T.terracotta,fontSize:11,cursor:"pointer"}}>Remove</button>}
                       </div>

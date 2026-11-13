@@ -696,22 +696,16 @@ app.post("/plan-steps/:id/skip", requireAuth, requireCrm, checkWriteAccess, wrap
   res.json({ plan: out, skipped: req.params.id, reason: why });
 }));
 
-// POST /plans/:id/stop — the officer decides the plan is over. The steps keep
-// what they were, so "we got three steps in and stopped" stays readable.
+// POST /plans/:id/stop — the officer decides the plan is over. Steps done stay
+// done; every step not done is skipped ("Skipped, journey stopped"), never Done,
+// and POST /plans/:id/stop/undo puts it back for ten minutes (planStop.js).
 app.post("/plans/:id/stop", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
-  const orgId = req.user.orgId;
-  const [p] = await query("SELECT * FROM cultivation_plans WHERE id=? AND org_id=?", [req.params.id, orgId]);
-  if (!p) return res.status(404).json({ error: "Plan not found" });
-  if (p.status !== "active") return res.status(409).json({ error: "That plan is not active." });
-  const [open] = await query("SELECT id, thread_id FROM cultivation_plan_steps WHERE plan_id=? AND status='open'", [p.id]);
-  if (open && open.thread_id) {
-    await run("UPDATE threads SET closed_at=NOW(), close_kind='dismissed', close_reason='handled_outside' WHERE id=? AND org_id=? AND closed_at IS NULL",
-      [open.thread_id, orgId]);
-    await run("UPDATE cultivation_plan_steps SET status='skipped', closed_at=NOW(), closed_by=?, closed_by_name=? WHERE id=?",
-      [actor(req).id, actor(req).name, open.id]);
-  }
-  await run("UPDATE cultivation_plans SET status='abandoned', closed_at=NOW() WHERE id=? AND org_id=?", [p.id, orgId]);
-  res.json({ plan: await readPlan(orgId, p.id) });
+  const out = await require("./planStop").stopPlan({ query, run, actor }, req, res); if (!out) return;   // FLOWS-10 item 4: skipped, never Done
+  res.json({ plan: await readPlan(req.user.orgId, out.plan.id), skipped: out.skipped, undoMinutes: out.undoMinutes, sentence: out.sentence });
+}));
+app.post("/plans/:id/stop/undo", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
+  const out = await require("./planStop").undoStop({ query, run, actor, advance: advanceCultivationPlan }, req, res); if (!out) return;
+  res.json({ plan: await readPlan(req.user.orgId, req.params.id), sentence: out.sentence });
 }));
 }
 

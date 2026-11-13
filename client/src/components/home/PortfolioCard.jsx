@@ -13,6 +13,7 @@
 // the overdue ones on Tasks.
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../api";
+import { useChangeRev } from "../../lib/changes";   // FLOWS-10 item 3
 import { T } from "../shared";
 import { displayDateShort } from "../../../../shared/displayDate";
 import { AskHero } from "../AskRail";
@@ -27,11 +28,15 @@ const plural = (n, one, many) => `${Number(n).toLocaleString("en-US")} ${n === 1
 export function PortfolioCard({ onNavigate, openProfile }) {
   const [p, setP] = useState(null);
   const [failed, setFailed] = useState(false);
+  // FLOWS-10 item 3 (W-1112-Volunteers-01X): it read once, so a gift recorded in a dialog left the
+  // officer's portfolio as it was until a reload. It re-reads when a gift, a person or a task changes,
+  // and an older answer never lands over a newer one (the effect's own `live`).
+  const rev = useChangeRev(["gift", "person", "task", "totals"]);
   useEffect(() => {
     let live = true;
-    apiFetch("/home/portfolio").then(r => { if (live) setP(r || {}); }).catch(() => { if (live) setFailed(true); });
+    apiFetch("/home/portfolio").then(r => { if (live) { setP(r || {}); setFailed(false); } }).catch(() => { if (live) setFailed(true); });
     return () => { live = false; };
-  }, []);
+  }, [rev]);
   const go = (tab, opts) => onNavigate && onNavigate(tab, opts);
   if (failed) return <section data-testid="home-portfolio" style={card}><div style={eyebrow}>Your portfolio</div>
     <div style={{ fontSize: 13.5, color: T.ink2 }}>Your people could not be read just now. Your Donors list has them.</div></section>;

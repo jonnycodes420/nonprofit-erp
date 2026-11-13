@@ -48,6 +48,27 @@ export function useLatestRead(read, deps) {
   return [state.value, state.key !== key];
 }
 
+// FLOWS-10 item 3 (W-1112-Volunteers-01X, repeat): FLOWS-8's latest-wins read reached After the
+// event, but Tables and seating and the door still read with a plain fetch, so an older answer
+// landing last painted "No guests yet" and "0 of 0 checked in" after the action. This is the same
+// rule for a panel that keeps its data in its own state: load() starts a read, only the newest
+// answer is kept, and `reading` is true until it lands, so the panel says "Updating…".
+export function useLatestLoad(read, setValue) {
+  const gate = useRef(null);
+  if (!gate.current) gate.current = latestOnly();
+  const [reading, setReading] = useState(false);
+  const readRef = useRef(read); readRef.current = read;
+  const setRef = useRef(setValue); setRef.current = setValue;
+  const load = () => {
+    const t = gate.current.next();
+    setReading(true);
+    return Promise.resolve().then(() => readRef.current()).then(
+      v => { if (gate.current.isLatest(t)) { setRef.current(v); setReading(false); } },
+      () => { if (gate.current.isLatest(t)) { setRef.current(null); setReading(false); } });
+  };
+  return [load, reading, setReading];   // setReading(true): a write that landed, before its re-read starts
+}
+
 // FLOWS-8 (W-1112-Volunteers-21): a write that never answers stops being
 // waited for. The request is not cancelled (a write is never cut off half way);
 // the screen stops saying "Saving…", says what it knows, and re-reads.

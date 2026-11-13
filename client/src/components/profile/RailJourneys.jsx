@@ -7,6 +7,7 @@ import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { journeyPickRows } from "../../lib/journeyPick";   // SENDS-1: every journey, greyed with why
 
+import { offerUndo } from "../EditHistory";   // FLOWS-10 item 4
 function RailJourneys({addErr,addPick,addPreview,allJourneys,confirmAddToJourney,doneFor,doneNote,donor,isReadOnly,journey,journeyBusy,journeyList,journeyMenu,journeySuggest,onInteractionAdded,onNavigate,pickJourney,setAddErr,setDoneFor,setDoneNote,setJourney,setJourneyBusy,setJourneyMenu,setSkipFor,setSkipWhy,setStopAsk,skipFor,skipWhy,stopAsk,touchGap}){
   return <>
           {/* ── THREAD-2b 5 · THEIR JOURNEY (Direction A) ──────────────
@@ -96,7 +97,9 @@ function RailJourneys({addErr,addPick,addPreview,allJourneys,confirmAddToJourney
                   <div style={{display:"flex",gap:7,marginTop:9}}>
                     <button type="button" data-testid="dp-journey-stop-confirm" disabled={journeyBusy} onClick={async()=>{
                         setJourneyBusy(true);
-                        try{await apiFetch(`/plans/${journey.id}/stop`,{method:"POST",body:JSON.stringify({})});setJourney(null);setStopAsk(null);}
+                        try{const stopped=journey;const r=await apiFetch(`/plans/${stopped.id}/stop`,{method:"POST",body:JSON.stringify({})});setJourney(null);setStopAsk(null);
+                          // FLOWS-10 item 4: one person's Stop has an Undo, like the batch path
+                          offerUndo({message:r.sentence||"Stopped.",undoAction:async()=>{const u=await apiFetch(`/plans/${stopped.id}/stop/undo`,{method:"POST",body:JSON.stringify({})});setJourney(stopped);return u;}},stopped.templateName||"journey");}
                         catch(e){setAddErr(errorMessage(e,"The journey could not be stopped."));}
                         setJourneyBusy(false);}}
                       style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 13px",color:T.white,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>

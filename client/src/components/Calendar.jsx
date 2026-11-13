@@ -746,7 +746,9 @@ function QuickForm({ form, calendar, onClose, onSaved }) {
           {form.kind === "meeting" && <select aria-label="How long" value={mins} onChange={e => setMins(e.target.value)} style={inp}>{["30", "45", "60", "90"].map(m => <option key={m} value={m}>{m} minutes</option>)}</select>}
         </div>
         {/* FLOWS-1: one sentence, true either way: her calendar when one is connected, Steward's when not */}
-        {form.kind === "meeting" && <div data-testid="cal-meeting-where" style={{ fontSize: 12.5, color: T.ink3 }}>{calendar && calendar.connected
+        {form.kind === "meeting" && <div data-testid="cal-meeting-where" style={{ fontSize: 12.5, color: T.ink3 }}>{calendar && calendar.demo
+          ? `It goes on Steward's calendar${who ? `, with ${who.name}` : ""}. This is a demonstration organization, so nothing goes to a real calendar and nobody is invited.`
+          : calendar && calendar.connected
           ? `It goes on your ${calendar.provider === "microsoft" ? "Outlook" : "Google"} calendar${who ? `, with ${who.name}` : ""}. No invitation is sent.`
           : `It goes on Steward's calendar${who ? `, with ${who.name}` : ""}. No invitation is sent.`}</div>}
         {err && <div role="alert" data-testid="cal-quick-why" style={{ fontSize: 13 }}>{err}</div>}

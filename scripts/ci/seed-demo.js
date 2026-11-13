@@ -3238,7 +3238,7 @@ async function main() {
              receipt_signature_title=COALESCE(receipt_signature_title,'Executive Director'),
              brand_signature_extra='Harborlight Youth Collective · (978) 555-0142',
              receipt_address=COALESCE(receipt_address,'12 Wharf Street, Salem, MA 01970'),
-             receipts_enabled=true, legal_name=COALESCE(legal_name,'Harborlight Youth Collective, Inc.'), ein=COALESCE(ein,'00-0000000'),
+             receipts_enabled=true, legal_name=COALESCE(legal_name,'Harborlight Youth Collective, Inc.'), ein=CASE WHEN ein IS NULL OR ein='00-0000000' THEN '${require("../../shared/demoEin").DEMO_EIN}' ELSE ein END,   -- FLOWS-10 item 16: a made-up EIN the receipts check accepts
              tax_language='Harborlight Youth Collective is a 501(c)(3) public charity. No goods or services were provided in exchange for your gift unless this receipt says so. Please keep this for your tax records.'
            WHERE id=$1`, [ORG]);
   for (const [kind, subject, body] of [

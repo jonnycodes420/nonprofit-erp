@@ -200,6 +200,15 @@ async function briefRowsFor(orgId, donorId) {
     + `first on ${donor.first_gift_date || "no recorded date"}, most recently on ${donor.last_gift_date || "no recorded date"}`
     + `${donor.stage ? `, at the stage "${donor.stage}"` : ""}.`);   // ATLAS-3: the org's word is an instruction (briefFast.vocabularyRule), not a row
 
+  // DATES-1 · the short "About them" note people read first on the profile. FLOWS-10 item 5
+  // (W-1113-Donors-26): it is the brief's first row after who they are, as Call script reads it
+  // first; at the end of the rows a brief could skip it (Margaret Chen's Harbor Skills Boat note).
+  if (String(donor.about_them || "").trim()) {
+    refs.add(`note:${donor.id}`);
+    quote(`note:${donor.id}`, "about", donor.about_them);
+    lines.push(`note:${donor.id}: what the team wrote about them, read first on their profile: "${String(donor.about_them).slice(0, 500)}"`);
+  }
+
   // GIFTS — the last twelve, each its own row, with its fund and how it came in.
   const gifts = await query(
     `SELECT g.id, g.amount, g.date, g.type, g.payment_method, g.campaign, f.name AS fund_name
@@ -282,12 +291,6 @@ async function briefRowsFor(orgId, donorId) {
     refs.add(`note:${donor.id}`);
     quote(`note:${donor.id}`, "notes", donor.notes);
     lines.push(`note:${donor.id}: the note on their record reads: "${String(donor.notes).slice(0, 1200)}"`);
-  }
-  // DATES-1 · the short "About them" note people read first on the profile.
-  if (String(donor.about_them || "").trim()) {
-    refs.add(`note:${donor.id}`);
-    quote(`note:${donor.id}`, "about", donor.about_them);
-    lines.push(`note:${donor.id}: what the team wrote about them, read first on their profile: "${String(donor.about_them).slice(0, 500)}"`);
   }
 
   // The grounded numeric set: every figure that genuinely appears in the rows,
