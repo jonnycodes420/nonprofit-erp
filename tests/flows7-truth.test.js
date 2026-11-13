@@ -137,6 +137,8 @@ const person = (id, name, extra = {}) => {
     const host = ((await api("GET", "/health")).body || {}).publicUrl || {};
     const base = String(host.url || "http://localhost:4173").replace(/\/+$/, "");
     await person("d_f7_h", "Hana Heard");
+    // FLOWS-9: a playable video is one whose recording is in the store, so the real one has its asset.
+    await q(`INSERT INTO portal_assets (id,org_id,kind,content_type,bytes,storage,data) VALUES ('pa_f7_real',$1,'video_thanks','video/webm',10,'db','AAAA') ON CONFLICT (id) DO NOTHING`, [ORG]);
     await q(`INSERT INTO video_thanks (id,org_id,donor_id,asset_id,mime,bytes,duration_seconds,token,created_by,created_by_name)
              VALUES ('vt_f7_real',$1,'d_f7_h','pa_f7_real','video/webm',10,3,'realTokenFlows7realTokenFlows7AB','test:flows7','FLOWS-7 test')`, [ORG]);
     const draft = (id, body) => q(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)

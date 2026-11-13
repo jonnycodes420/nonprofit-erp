@@ -49,7 +49,10 @@ const fmtTime = t => {
 const nextMonday = today => addDays(today, ((8 - weekdayOf(today)) % 7) || 7);
 
 export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, initialView }) {
-  const auth = useAuth();
+  // FLOWS-9 (W-1112-Volunteers-19): useAuth() is { auth, … }. Read as the auth itself,
+  // isAdmin was always false, so "One person's tasks" never showed and nobody
+  // could open Tasks filtered to the person the morning email's team row names.
+  const { auth } = useAuth() || {};
   const isAdmin = auth?.user?.role === "admin";
   const today = orgTodayPlus(0);
   const [view, setView] = useState(VIEW_ORDER.includes(initialView) ? initialView : "today");

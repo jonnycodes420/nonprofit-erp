@@ -44,6 +44,7 @@ const sumCents = rows => (rows || []).filter(isMoney).reduce((n, r) => n + cents
 // erased (an erased person counts nowhere; their gifts stay in the money).
 // Fundraising said 363 and the Giving summary 362 when one person's only row
 // was a $0 gift. Needs person alias `d` joined.
-const GIVERS = (g = "g", d = "d") => `COUNT(DISTINCT ${g}.donor_id) FILTER (WHERE ${g}.amount > 0 AND ${d}.erased_at IS NULL)`;
+// FLOWS-9: a person whose only gift was refunded in full gave nothing (GIFT's own refund rule).
+const GIVERS = (g = "g", d = "d") => `COUNT(DISTINCT ${g}.donor_id) FILTER (WHERE ${g}.amount > 0 AND ${g}.refunded_in_full IS NOT TRUE AND ${d}.erased_at IS NULL)`;
 
 module.exports = { GIVERS, MONEY, GIFT, LIVE, MONEY_SUM, MONEY_CENTS, isMoney, isGift, sumCents, centsOf };

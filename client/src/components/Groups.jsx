@@ -76,7 +76,7 @@ function loadPickLists() {
   const pairs = (rows, name) => (Array.isArray(rows) ? rows : []).map(r => [r.id, name(r)]).filter(p => p[0] && p[1]);
   const safe = (path, pick) => apiFetch(path).then(pick).catch(() => []);
   return Promise.all([
-    safe("/events", r => pairs(r, e => `${e.name}${e.date ? ` (${String(e.date).slice(0, 10)})` : ""}`)),
+    safe("/events", r => pairs((Array.isArray(r) ? r : []).filter(e => !e.archived_at), e => `${e.name}${e.date ? ` (${String(e.date).slice(0, 10)})` : ""}`)),
     safe("/fundraising/campaigns", r => pairs(r, c => c.name)),
     safe("/giving-pages", r => pairs(r, g => g.title || g.slug)),
     safe("/auctions", r => pairs(r && r.auctions, a => a.title)),
@@ -120,6 +120,7 @@ function RuleFields({ rules, setRules, retained, setRetained, lists }) {
         <select aria-label="At the event" data-testid="group-rule-eventGuestEvent" value={rules.eventGuestEvent || ""}
           onChange={e => setRules({ ...rules, eventGuestEvent: e.target.value })} style={{ ...field, maxWidth: "min(260px, 100%)", minWidth: 0 }}>
           <option value="">At any event</option>
+          {rules.eventGuestEvent && !lists.events.some(([id]) => id === rules.eventGuestEvent) && <option value={rules.eventGuestEvent}>An archived event</option>}
           {lists.events.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </select>
       )}

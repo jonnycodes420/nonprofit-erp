@@ -685,6 +685,9 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-4"
     periodWords: OP.periodWords, periodKey: OP.key,
     // TRUTH-6: what on the page does not move with the period, said beside it.
     periodNotes: await require("./periodNotes").periodNotes({ key: OP.key, label: cur.chartLabel, goal, orgId, today, pledges }),
+    // FLOWS-9 (W-1112-Fundraising-05): one line under the cards when a campaign card counts other days than Raised.
+    periodsDiffer: require("./periodsDiffer").periodsDiffer({ period: { key: OP.key, start: cur.start, end: cur.end, label: cur.chartLabel }, yearMode,
+      fyStartMonth: orgTime.orgFiscalStartMonth(_fpTz), cards: (portfolio.goals || []).filter(g => g.isTopLevel && g.lifecycle !== "ended") }),
     pledges,
     leadEvent,
     goal,
@@ -962,7 +965,7 @@ app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
 
   const totalRaised = thisYearGifts.reduce((s, g) => s + g.amount, 0);
   // TRUTH-3: the count and the average's divisor are the one rule (shared/numbers/giftCount.js).
-  const giftCount   = thisYearGifts.filter(g => g.amount > 0 && !require("../../creditTypes").isCredit(g.type)).length;
+  const giftCount   = require("../../shared/numbers/giftCount").countOf(thisYearGifts);   // FLOWS-9: refunded in full is not a gift (rows are g.*)
   const avgGift     = giftCount > 0 ? Math.round(totalRaised / giftCount) : 0;
 
   const monthly = monthNames.map((month, idx) => {

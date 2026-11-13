@@ -184,8 +184,8 @@ async function givingPagePublicPayload(org, page, reqQuery, { editing = false } 
           funds: funds.map(f => ({ id: f.id, name: f.name })),
           orgName: org.donor_facing_name,
         }),
-        { orgId: org.id, givingPageId: page.id,
-          personalToken: req.query.reconnect || req.query.r || null }),
+        { orgId: org.id, givingPageId: page.id, editing,   // FLOWS-9: the preview keeps her amounts
+          personalToken: editing ? null : (req.query.reconnect || req.query.r || null) }),
       // BUILD-102 Part 6 — whether a test is running, so a first-time visitor can
       // be assigned a side WITHOUT a cookie being set on every form that has none.
       // A cookie nobody needs is a cookie somebody has to explain in a policy.

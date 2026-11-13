@@ -8,4 +8,7 @@ const REFUNDED_CENTS_SQL = "SELECT COALESCE(-SUM(ROUND(amount * 100)), 0)::bigin
 const NET_AMOUNT = (g = "g") => `(${g}.amount + COALESCE((SELECT SUM(rf.amount) FROM gifts rf WHERE rf.org_id = ${g}.org_id AND rf.refund_of = ${g}.id), 0))`;
 // $n placeholders for a raw pg caller (the webhook).
 const REFUNDED_CENTS_PG = REFUNDED_CENTS_SQL.replace("org_id = ?", "org_id = $1").replace("refund_of = ?", "refund_of = $2");
-module.exports = { REFUNDED_CENTS_SQL, REFUNDED_CENTS_PG, NET_AMOUNT };
+// FLOWS-9: gift ? (org ?) is marked refunded in full exactly when its refunds net it to $0 or less.
+// Run after a refund row is taken back, so every count (giftCount.js reads the mark) agrees again.
+const REMARK_IN_FULL_SQL = `UPDATE gifts SET refunded_in_full = (${NET_AMOUNT("gifts")} <= 0) WHERE id = ? AND org_id = ?`;
+module.exports = { REFUNDED_CENTS_SQL, REFUNDED_CENTS_PG, NET_AMOUNT, REMARK_IN_FULL_SQL };

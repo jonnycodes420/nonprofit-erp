@@ -60,7 +60,8 @@ function renderFor(org, u, today, p) {
   return {
     subject: c.morningBriefSubject(p.threads, p.tasks.count, org, p.meetings.length, p.readouts.length),
     body: c.renderMorningBriefBody({ threads: p.threads, more: p.more, tasks: p.tasks, org, user: u, today,
-                                     meetings: p.meetings, readouts: p.readouts, team: p.team }),
+                                     meetings: p.meetings, readouts: p.readouts, team: p.team,
+                                     emailOn: p.b.on }),   // FLOWS-9: the footer reads her real setting
   };
 }
 

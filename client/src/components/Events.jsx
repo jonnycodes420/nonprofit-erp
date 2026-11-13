@@ -1935,6 +1935,8 @@ export function Events({ data, isReadOnly }) {
     return () => { live = false; };
   }, [yearSrc, events]);
   const yv = k => (yearFig[k] && !yearFig[k].blank ? yearFig[k].value : null);
+  // FLOWS-9 (W-1113-Volunteers-06X): the archived events dated this year, out of the count and named beside it.
+  const archivedThisYear = events.filter(e => e.archived_at && String(e.date || "").slice(0, 4) === String(currentYear)).length;
   const yearLoaded = Object.keys(yearFig).length > 0;
 
   if (selectedId) {
@@ -1957,7 +1959,9 @@ export function Events({ data, isReadOnly }) {
       <div className="events-stats-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 12 }}>
         {yearLoaded ? <>
         <Figure kind="count" value={yv("events")} label="Events this year" figureKey="events.thisYear" source={yearSrc.events}
-          definition={`Every event dated in ${currentYear}, upcoming and past.`} />
+          sub={archivedThisYear > 0 ? <button type="button" data-testid="events-archived-link" onClick={() => setFilter("archived")}
+            style={{ background: "none", border: "none", padding: 0, font: "inherit", color: T.greenDk, textDecoration: "underline", cursor: "pointer" }}>{archivedThisYear} archived</button> : undefined}
+          definition={`Every event dated in ${currentYear}, upcoming and past. An archived event is not counted; it is on the Archived tab.`} />
         {/* EVENTS-3: parties, as the guest list counts them, with the people under */}
         <Figure kind="count" value={yv("came")} label="Came, this year" figureKey="events.came" source={yearSrc.came}
           sub={peopleLine(yearFig.came)}

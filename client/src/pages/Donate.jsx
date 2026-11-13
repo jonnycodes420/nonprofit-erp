@@ -1395,7 +1395,7 @@ export default function Donate({ preview = null }) {
             submitting={submitting}
             submitErr={submitErr}
             onSubmit={postDonation}
-            apiBase={API}
+            apiBase={preview ? null : API}   // FLOWS-9: the editor's preview counts no view and records no gift start (a typed email stayed as an abandoned start)
             orgSlug={orgSlug}
             startToken={startToken}
             signIn={<DonorSignIn orgSlug={orgSlug} enabled={!!org?.portalSignIn} signedInAs={signedInAs} th={th} />}
@@ -1672,7 +1672,19 @@ export default function Donate({ preview = null }) {
     const showGoalBar = givingPage.showGoal !== false && (layout === "campaign" || (givingPage.campaignId ? givingPage.campaignGoal > 0 : givingPage.goalAmount > 0));
     const pick = preview && preview.onPick ? (e) => {
       const el = e.target.closest && e.target.closest("[data-edit]");
-      if (el) { e.preventDefault(); preview.onPick(el.getAttribute("data-edit")); }
+      if (!el) return;
+      // FLOWS-9 (W-1113-Fundraising-36): a box, a choice or a field in the
+      // preview works as it does on the live page (Cover fees toggles and the
+      // total moves). Only a click on plain page text is taken as "edit this".
+      // Two things undid a click on a box: preventDefault cancelled the toggle,
+      // and onPick's state update re-rendered the page in this capture phase,
+      // before the click reached the box, so React put the box back unticked
+      // and never called its onChange. A control's click is left to do its own
+      // work first, and the editor opens its section after it.
+      const field = el.getAttribute("data-edit");
+      if (e.target.closest && e.target.closest("input, label, select, textarea, button")) { setTimeout(() => preview.onPick(field), 0); return; }
+      e.preventDefault();
+      preview.onPick(field);
     } : undefined;
     const ptv = th.pageTheme || null;
     const vars = {
@@ -1727,6 +1739,9 @@ export default function Donate({ preview = null }) {
                 : <h1 className="g3-h1" data-edit="headline">{headline}</h1>}
             </div>
             <div className="g3-side">
+              {preview && giveSpec && giveSpec.amount && giveSpec.amount.liveSentence && (
+                <div data-testid="preview-live-amounts" style={{ fontSize: 12.5, lineHeight: 1.5, color: T.ink, background: T.white, border: "1px solid " + T.gold, borderLeft: "3px solid " + T.gold, borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}>{giveSpec.amount.liveSentence}</div>
+              )}
               <div className="g3-formcard" data-edit="amounts">{formNode}</div>
               {trust.length > 0 && (
                 <div className="g3-trust" data-testid="trust-panel" data-edit="trust">

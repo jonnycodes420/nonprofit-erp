@@ -77,7 +77,7 @@ __boot.register(c => {
 // EVERY THREAD ROW CARRIES ITS REASON. shared/threadRank.js decided the order;
 // this prints the sentence that order was built from, so the list can always
 // answer "why am I looking at this one first?" without the reader guessing.
-function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, meetings = [], readouts = [] }) {
+function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, meetings = [], readouts = [], emailOn = true }) {
   const INK = "#0f1a12", SAGE = "#6b7d70", EMERALD = "#0d5c3a", BRASS = "#c9a84c", TERRA = "#8a3a24";
   // THREAD-2 · every person, task and meeting named here opens its page.
   const L = staffLinks(), base = publicAppUrl();
@@ -146,6 +146,7 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
       <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${SAGE};">Tasks across the team</div>
       <table style="margin-top:6px;border-collapse:collapse;">${team.map(r =>
         `<tr><td style="padding:3px 0;font-size:13px;color:${INK};">${digestEsc(displayNameCase(r.who))}<span style="color:${SAGE};"> · ${r.n} open${r.overdue ? ` · ${r.overdue} overdue` : ""}</span></td></tr>`).join("")}</table>
+      <div data-team-note="" style="font-size:11.5px;color:${SAGE};margin-top:6px;">Each line is what Tasks shows for that person. Your Mine view in Tasks also holds the unassigned tasks.</div>
     </div>` : "";
 
   // The org's mailing address in the footer when it has one. This goes to a
@@ -163,7 +164,10 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
       <div style="font-size:11.5px;letter-spacing:0.1em;text-transform:uppercase;color:${SAGE};">${digestEsc(displayNameCase(user?.name || ""))} · ${digestEsc(orgTime.civilLocale(today, { month: "long", day: "numeric", year: "numeric" }))}</div>
       ${threadBlock}${readoutBlock}${taskBlock}${meetingBlock}${teamBlock}${button}${footer}
-      ${user && user.id && user.email ? `<div style="margin-top:10px;font-size:11px;color:${SAGE};">You get this because the morning email is on in Settings, under Your email, where you choose what is in it and when it comes. <a href="${staffUnsubscribeUrl(user, org.id)}" style="color:${SAGE};text-decoration:underline;">Unsubscribe</a> from the morning email.</div>` : ""}
+      ${user && user.id && user.email ? (emailOn
+        ? `<div style="margin-top:10px;font-size:11px;color:${SAGE};">You get this because the morning email is on in Settings, under Your email, where you choose what is in it and when it comes. <a href="${staffUnsubscribeUrl(user, org.id)}" style="color:${SAGE};text-decoration:underline;">Unsubscribe</a> from the morning email.</div>`
+        // FLOWS-9 (W-1112-Volunteers-19): the footer reads her real setting. With it off this is only a preview, and says so.
+        : `<div data-footer="email-off" style="margin-top:10px;font-size:11px;color:${SAGE};">This is a preview. Your morning email is off in Settings, under Your email, so nothing goes out. Turn it on there to get this each morning.</div>`) : ""}
     </div>`;
 }
 // SPLIT-2 end

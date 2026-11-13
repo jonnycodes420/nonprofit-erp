@@ -157,7 +157,7 @@ export function MyEmailPanel({ isAdmin }) {
           ))}
           {noneIn && <div data-testid="brief-empty" style={{ fontSize: 12.5, color: T.gold700, marginTop: 4 }}>Nothing is ticked, so no daily email will come.</div>}
         </>}
-        <MorningEmailPreview />
+        <MorningEmailPreview isOn={!!p.morningEmail} onTurnOn={turnOnDaily} />
       </div>
 
       <div style={card}>

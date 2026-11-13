@@ -231,7 +231,7 @@ app.get("/pos/mapping", requireAuth, wrap(async (req, res) => {
     mapped: mapped.has(x.item_key),
   }));
   const events = await query(
-    `SELECT id, name, date::text AS date FROM events WHERE org_id=? AND status <> 'cancelled'
+    `SELECT id, name, date::text AS date FROM events WHERE org_id=? AND status <> 'cancelled' AND archived_at IS NULL
       ORDER BY date DESC NULLS LAST LIMIT 50`, [orgId]);
   res.json({
     items, events, classes: POS.CLASS_META, unmapped: items.filter(i => !i.mapped).length,

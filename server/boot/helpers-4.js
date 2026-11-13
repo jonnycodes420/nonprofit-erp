@@ -622,7 +622,7 @@ async function runBuilderDef(orgId, def) {
   if (c.group) {
     const gSel = c.sums.map((s, i) => `COALESCE(SUM(${s.sql}),0) AS s${i}`).join(", ");
     const rows = await query(
-      `SELECT ${c.group.sql} AS g, COUNT(*)::int AS n${gSel ? ", " + gSel : ""} FROM ${c.from} WHERE ${where}
+      `SELECT ${c.group.sql} AS g, ${c.countSql || "COUNT(*)"}::int AS n${gSel ? ", " + gSel : ""} FROM ${c.from} WHERE ${where}
         GROUP BY 1 ORDER BY 1 NULLS LAST LIMIT ${c.limit}`, params);
     const columns = [{ key: "group", label: c.group.label, type: "text" }, { key: "count", label: "Count", type: "number" },
       ...c.sums.map((s, i) => ({ key: "s" + i, label: s.label, type: "money" }))];

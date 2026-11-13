@@ -295,7 +295,10 @@ async function reportByGroup(orgId, p) {
     if (r.key_ids === 0 && PARAM !== "campaign") return { key: "gifts", params: { ...base, [PARAM]: "none" } };
     return null;
   };
-  const figures = await reportFigures(orgId, { grandTotal: { key: "gifts", params: base } });
+  // FLOWS-9 (W-1113-Fundraising-01): a split gift is a line in each of its funds, so the
+  // rows' counts may add to more than the gifts; the total counts each gift once.
+  const figures = await reportFigures(orgId, { grandTotal: { key: "gifts", params: base },
+    grandCount: { key: "gifts", params: { ...base, measure: "count" } } });
   const grand = rows.reduce((s, r) => s + Number(r.total), 0);
   return {
     figures,

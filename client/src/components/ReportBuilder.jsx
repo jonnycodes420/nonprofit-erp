@@ -130,6 +130,8 @@ export function ReportTable({ cols: allCols, rows, personOf, onOpen, foot = true
               const cents = footCents(rows, r => raw(c, r));
               return <td key={c.key} data-cents={cents} style={style}>{cellText(cents / 100, "money")}</td>;
             }
+            // FLOWS-9: a column whose total is not the sum of its rows (a split gift in two funds) carries its own.
+            if (summed(c) && c.footValue != null) return <td key={c.key} style={style}>{cellText(c.footValue, "count")}</td>;
             if (summed(c)) return <td key={c.key} style={style}>{cellText(footCount(rows, r => raw(c, r)), "count")}</td>;
             return <td key={c.key} style={style}>{i === 0 ? footLabel : ""}</td>;
           })}
