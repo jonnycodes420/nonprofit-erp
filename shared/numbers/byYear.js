@@ -206,30 +206,103 @@ function donorKindsSql(orgId, spans) {
 }
 const KIND_WORDS = { new: "First gift ever in this year", retained: "Gave the year before too", reactivated: "Gave before, not the year before" };
 
-async function orgByYear(query, org, today) {
+// REPORTS-SPEED-2: the org's figures for every span in ONE pass over the
+// gifts. Year-over-year sent five statements over the same gifts (the year
+// totals, then donorKindsSql's rows for the years, for the year before the
+// oldest and for the same point last year), and the kinds statement carried
+// each person's name, date and amount through four sorts that spilled to
+// disk: 1.4 s of 2.2 s on a 25,000-person org, holding its connection.
+// Here the org's money rows are read once, in person order straight off the
+// covering index (gifts_person_money), and summed per person with one set of
+// FILTER columns per span, so nothing is sorted; each figure is then a count
+// or a sum over one row per person. The rules are the ones above, unchanged:
+//   · total, gift count, largest: the `gifts` source (MONEY, a person not
+//     deleted), as the totals read was.
+//   · a donor: donorKindsSql's person (not deleted, not erased, a money row
+//     above zero in the span), and its kind by the same CASE: a first gift
+//     ever (FIRST_ON_FILE_AGG, EARLIER than the import's) on or after the
+//     span's start is new; a GIFT in the span keyed `pk` (the year before) is
+//     retained; otherwise reactivated.
+// `spans`: [{ k, f, t, pk }]; pk is another span's key, or null when that
+// span's kinds are never asked. `read(row)` gives a Map of k to
+// { s, n, mx, donors, new, retained, reactivated }. The drawer's rows stay
+// donorKindsSql's, by the same rules; tests/reports-speed2.test.js holds the
+// answer to main's five-statement one and to the raw rows worked by hand.
+function orgYearsSql(orgId, spans) {
+  const whichArgs = [], ownArgs = [];
+  const at = new Map(spans.map((s, i) => [s.k, i]));
+  // Which span a row is in, found once per row. The spans that do not overlap
+  // (the fiscal years and the year before the oldest) are found by walking their
+  // first days newest first until one is on or before the row's date, then one
+  // check of that span's last day. A span that overlaps them (the same point
+  // last year) keeps its own two comparisons. Before, every row was compared with
+  // every span's first and last day: 24 locale-aware comparisons a row, the
+  // statement's CPU on the nightly runner.
+  const overlaps = (x, y) => x.f <= y.t && y.f <= x.t;
+  const chain = [], alone = [];
+  spans.forEach((sp, i) => ((chain.some(j => overlaps(spans[j], sp)) ? alone : chain).push(i)));
+  chain.sort((x, y) => (spans[x].f > spans[y].f ? -1 : 1));   // newest first: most rows stop early
+  const which = `CASE ${chain.map(i => { whichArgs.push(spans[i].f, spans[i].t);
+    return `WHEN g.date >= ? THEN CASE WHEN g.date <= ? THEN ${i} END`; }).join(" ")} END AS b`;
+  const own = alone.map(i => { ownArgs.push(spans[i].f, spans[i].t); return `(g.date >= ? AND g.date <= ?) AS i${i}`; });
+  const perPerson = spans.map((s, i) => `SUM(g.amount) FILTER (WHERE g.i${i}) AS s${i},
+             COUNT(*) FILTER (WHERE g.i${i} AND g.gift) AS n${i},
+             MAX(g.amount) FILTER (WHERE g.i${i} AND g.amount > 0) AS mx${i},
+             COUNT(*) FILTER (WHERE g.i${i} AND g.amount > 0) AS pos${i}`);
+  const kindArgs = [];
+  const perSpan = spans.map((s, i) => {
+    const giver = `p.pos${i} > 0 AND p.erased_at IS NULL`;
+    kindArgs.push(s.f, s.f, s.f);
+    const isNew = `${EARLIER("p.first", IMPORTED_FIRST("p"))} >= ?`;
+    const prev = s.pk != null && at.has(s.pk) ? `p.n${at.get(s.pk)} > 0` : "false";
+    return `COALESCE(SUM(p.s${i}), 0)::text AS s${i}, COALESCE(SUM(p.n${i}), 0)::int AS n${i}, MAX(p.mx${i})::text AS mx${i},
+           COUNT(*) FILTER (WHERE ${giver})::int AS donors${i},
+           COUNT(*) FILTER (WHERE ${giver} AND ${isNew})::int AS new${i},
+           COUNT(*) FILTER (WHERE ${giver} AND NOT COALESCE(${isNew}, false) AND ${prev})::int AS retained${i},
+           COUNT(*) FILTER (WHERE ${giver} AND NOT COALESCE(${isNew}, false) AND NOT (${prev}))::int AS reactivated${i}`;
+  });
+  // In the order the text reads them: the kinds' span starts, the overlapping spans, the bucket's spans, the org twice.
+  const args = [...kindArgs, ...ownArgs, ...whichArgs, orgId, orgId];
+  const sql = `
+    SELECT ${perSpan.join(",\n           ")}
+      FROM (SELECT a.*, d.erased_at, d.imported_first_gift_date, d.imported_last_gift_date
+              FROM (SELECT g.donor_id, ${FIRST_ON_FILE_AGG("g")} AS first,
+                           ${perPerson.join(",\n                           ")}
+                      FROM (SELECT g.donor_id, g.org_id, g.amount, g.type, g.date, g.scheduled_on, g.refunded_in_full, g.b,
+                                   ${COUNTED("g")} AS gift, ${[...chain.map(i => `(g.b = ${i}) AS i${i}`), ...own].join(", ")}
+                              FROM (SELECT g.*, ${which} FROM gifts g WHERE g.org_id = ? AND ${MONEY("g")} OFFSET 0) g) g
+                     GROUP BY g.donor_id) a
+              JOIN donors d ON d.id = a.donor_id AND d.org_id = ? AND d.deleted_at IS NULL) p`;
+  const read = (row) => new Map(spans.map((s, i) => [s.k, { k: s.k, s: row[`s${i}`], n: row[`n${i}`], mx: row[`mx${i}`], donors: row[`donors${i}`],
+    new: row[`new${i}`], retained: row[`retained${i}`], reactivated: row[`reactivated${i}`] }]));
+  return { sql, args, read };
+}
+
+// `heavy` (optional): how to send the one big read; the server passes db.queryNoJit (REPORTS-SPEED-2).
+async function orgByYear(query, org, today, { heavy = query } = {}) {
   const orgId = org.id;
+  // REPORTS-SPEED-2: the earliest dated money row, as the first one in date
+  // order (idx_gifts_org_date walked from the start) rather than MIN over
+  // every row: the same date, 0.3 ms instead of 200 on a 25,000-person org.
   const [e] = await query(
-    `SELECT MIN(g.date) AS first FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-      WHERE g.org_id = ? AND ${LIVE("d")} AND ${MONEY("g")} AND g.date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'`, [orgId]);
+    `SELECT g.date AS first FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+      WHERE g.org_id = ? AND ${LIVE("d")} AND ${MONEY("g")} AND g.date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+      ORDER BY g.date LIMIT 1`, [orgId]);
   const years = yearsSpan(org, today, e && e.first ? String(e.first).slice(0, 10) : null, ORG_YEARS);
   const sp = samePoint(years[0], today);
-  const spans = years.map(y => ({ k: y.key, f: y.from, t: y.to, pf: y.prevFrom, pt: y.prevTo }));
-  // The `gifts` source over each year, all years in one read.
-  const totals = await query(
-    `SELECT y.k, COALESCE(SUM(g.amount), 0)::text AS s, COUNT(g.id) FILTER (WHERE ${COUNTED("g")})::int AS n, MAX(g.amount) FILTER (WHERE g.amount > 0)::text AS mx
-       FROM unnest(?::text[], ?::text[], ?::text[]) AS y(k, f, t)
-       JOIN gifts g ON g.org_id = ? AND g.date >= y.f AND g.date <= y.t AND ${MONEY("g")}
-       JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
-      GROUP BY y.k`, [spans.map(s => s.k), spans.map(s => s.f), spans.map(s => s.t), orgId]);
-  const k = donorKindsSql(orgId, spans);
-  const kinds = await query(`SELECT x.k, x.kind, COUNT(*)::int AS n FROM (${k.sql}) x GROUP BY 1, 2`, k.args);
-  // The year before the oldest shown, so its retention rate has a denominator.
+  // REPORTS-SPEED-2: every span in one read (orgYearsSql). Each year's "year
+  // before" is the next row down, a whole fiscal year, and the oldest's is the
+  // year before it ("prior", so its retention rate has a denominator). The
+  // same point last year is a span of its own; only its total and its donors
+  // are shown, so its kind is never asked.
   const oldest = years[years.length - 1];
-  const kp = donorKindsSql(orgId, [{ k: "prior", f: oldest.prevFrom, t: oldest.prevTo, pf: oldest.prevFrom, pt: oldest.prevTo }]);
-  const [priorN] = await query(`SELECT COUNT(*)::int AS n FROM (${kp.sql}) x`, kp.args);
-
-  const byKey = new Map(totals.map(t => [t.k, t]));
-  const count = (key, kind) => kinds.filter(r => r.k === key && (!kind || r.kind === kind)).reduce((s, r) => s + r.n, 0);
+  const spans = years.map((y, i) => ({ k: y.key, f: y.from, t: y.to, pk: years[i + 1] ? years[i + 1].key : "prior" }));
+  spans.push({ k: "prior", f: oldest.prevFrom, t: oldest.prevTo, pk: null });
+  if (sp) spans.push({ k: "sp", f: sp.from, t: sp.to, pk: null });
+  const q = orgYearsSql(orgId, spans);
+  const byKey = q.read((await heavy(q.sql, q.args))[0]);
+  const count = (key, kind) => { const r = byKey.get(key); return r ? r[kind || "donors"] : 0; };
+  const priorN = { n: count("prior") };
   const rows = years.map(y => {
     const t = byKey.get(y.key) || { s: "0", n: 0, mx: null };
     const G = extra => ({ key: "gifts", params: { from: y.from, to: y.to, ...extra } });
@@ -252,12 +325,8 @@ async function orgByYear(query, org, today) {
   // The same point last year: the same three sources over the earlier window.
   let samePointRow = null;
   if (sp) {
-    const [s] = await query(
-      `SELECT COALESCE(SUM(g.amount), 0)::text AS s, COUNT(g.id) FILTER (WHERE ${COUNTED("g")})::int AS n
-         FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
-        WHERE g.org_id = ? AND g.date >= ? AND g.date <= ? AND ${MONEY("g")}`, [orgId, sp.from, sp.to]);
-    const ks = donorKindsSql(orgId, [{ k: "sp", f: sp.from, t: sp.to, pf: years[1] ? years[1].prevFrom : sp.from, pt: years[1] ? years[1].prevTo : sp.to }]);
-    const [n] = await query(`SELECT COUNT(*)::int AS n FROM (${ks.sql}) x`, ks.args);
+    const s = byKey.get("sp") || { s: "0", n: 0 };
+    const n = { n: count("sp") };
     samePointRow = { from: sp.from, to: sp.to, total: dollars(toCents(s.s)), cents: toCents(s.s), giftCount: s.n, donors: n.n,
       sources: { total: { key: "gifts", params: { from: sp.from, to: sp.to } }, giftCount: { key: "gifts", params: { from: sp.from, to: sp.to, measure: "count" } },
         donors: { key: "givers", params: { from: sp.from, to: sp.to } } } };
@@ -331,4 +400,4 @@ function yearLargestSql(orgId, p) {
   };
 }
 
-module.exports = { donorYearSql, donorSoftYearSql, yearLargestSql, yearsSpan, samePoint, changeWords, donorByYear, orgByYear, donorKindsSql, KIND_WORDS, fmt };
+module.exports = { donorYearSql, donorSoftYearSql, yearLargestSql, yearsSpan, samePoint, changeWords, donorByYear, orgByYear, donorKindsSql, orgYearsSql, KIND_WORDS, fmt };
