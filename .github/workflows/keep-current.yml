@@ -1,3 +1,7 @@
+# CI-PIN-2404 (2026-11-13): runners are pinned to ubuntu-24.04, not ubuntu-latest. GitHub
+# moved ubuntu-latest to Ubuntu 26.04 on 2026-11-13, and Playwright 1.61's browsers fail
+# to launch there ("Target page, context or browser has been closed"), so every job that
+# installs Playwright went red. Unpin (back to ubuntu-latest) once Playwright supports 26.04.
 # AUTOMERGE-1 · AFTER EVERY MERGE, THE QUEUED PRs PULL MAIN IN, OLDEST FIRST.
 #
 # The main-protection ruleset requires a PR to be up to date with main before
@@ -27,7 +31,7 @@ concurrency:
 
 jobs:
   update:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Bring each auto-merge PR up to date, oldest first

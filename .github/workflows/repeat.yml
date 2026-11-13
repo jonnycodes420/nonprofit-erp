@@ -1,3 +1,7 @@
+# CI-PIN-2404 (2026-11-13): runners are pinned to ubuntu-24.04, not ubuntu-latest. GitHub
+# moved ubuntu-latest to Ubuntu 26.04 on 2026-11-13, and Playwright 1.61's browsers fail
+# to launch there ("Target page, context or browser has been closed"), so every job that
+# installs Playwright went red. Unpin (back to ubuntu-latest) once Playwright supports 26.04.
 # FLAKE-3 · ONE SUITE, N TIMES IN A ROW, ON CI'S OWN MACHINES.
 #
 # A flake is closed by counts, not by one green rerun: each suite runs `count`
@@ -29,7 +33,7 @@ permissions:
 
 jobs:
   repeat:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -85,14 +89,17 @@ jobs:
         run: npm ci && npm ci --prefix client
       - name: Playwright cache keys
         id: pw-keys
-        run: echo "debs=pw-debs-${ImageOS:-ubuntu}-${ImageVersion:-unknown}-1.61.1-webkit" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "debs=pw-debs-${ImageOS:-ubuntu}-${ImageVersion:-unknown}-1.61.1-webkit" >> "$GITHUB_OUTPUT"
+          # The browsers are built for one Ubuntu; the key names the runner image (CI-PIN-2404).
+          echo "browsers=playwright-${ImageOS:-ubuntu}-1.61.1-webkit" >> "$GITHUB_OUTPUT"
       - name: Restore Playwright (package + browsers)
         uses: actions/cache/restore@v4
         with:
           path: |
             .playwright
             .playwright-browsers
-          key: playwright-${{ runner.os }}-1.61.1-webkit
+          key: ${{ steps.pw-keys.outputs.browsers }}
       - name: Restore Playwright's system packages (.deb)
         uses: actions/cache/restore@v4
         with:
