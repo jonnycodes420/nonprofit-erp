@@ -173,8 +173,8 @@ async function reset(org) {
 
   // ── §2 (screen half) picking the view puts its sort back ──
   // PROFILE-SPEED-1: when the page never goes quiet, say what was still on its way.
-  const inflight = new Map(), t0 = Date.now(), seen = r => inflight.delete(r);
-  const asked = r => inflight.set(r, Date.now() - t0);
+  const inflight = new Map(), t0 = performance.now(), seen = r => inflight.delete(r);
+  const asked = r => inflight.set(r, Math.round(performance.now() - t0));
   page.on("request", asked); page.on("requestfinished", seen); page.on("requestfailed", seen);
   await page.goto(`${APP}/donors`, { waitUntil: "networkidle" }).catch(e => {
     throw new Error(e.message.split("\n")[0] + " · still in flight: " + [...inflight].map(([r, at]) => `${r.method()} ${r.url().replace(/^https?:\/\/[^/]+/, "").slice(0, 120)} (from ${at} ms)`).join(" | "));
