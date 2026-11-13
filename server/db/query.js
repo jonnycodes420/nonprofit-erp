@@ -89,6 +89,7 @@ async function runOutside(sql, params = []) {
 // only (SELECT or WITH, nothing that writes, locks or moves a sequence), with
 // values that are plain JSON; and a copy per caller, so one route changing its
 // rows can never change another's.
+const MEMO_MS = 1000;   // how long a bundle shares one statement's answer (query() below)
 const READ_ONLY = /^\s*(SELECT|WITH)\b/i;
 const NOT_A_PLAIN_READ = /\b(INSERT|UPDATE|DELETE|MERGE|FOR\s+(UPDATE|SHARE|NO\s+KEY|KEY)|nextval|setval|pg_advisory\w*|pg_sleep|random|clock_timestamp|txid_\w+|set_config)\b/i;
 function memoKey(text, params) {
@@ -119,15 +120,24 @@ async function query(sql, params = []) {
   const memo = !tx && LIMITS.memoFor();   // PROFILE-SPEED-1: inside a bundle, one answer per statement (requestLimits memoize)
   const key = memo && memoKey(pgSql, params);
   if (key) {
-    let rows = memo.get(key);
-    if (!rows) {
+    // An answer is shared for MEMO_MS from when it was asked, then the next ask
+    // goes to the database. A route that reads again to see a change (the
+    // insights store's wait for its build, server/insights/store.js; the
+    // outbox's) sees it within that bound. Shared for the whole request, that
+    // wait was handed its first answer every 100 ms for 30 s and the profile
+    // never drew (stale1, hotfix1-profile, CI 13 Nov).
+    let got = memo.get(key);
+    if (got && Date.now() - got.at >= MEMO_MS) got = null;
+    if (!got) {
       if (TEST_LATENCY_MS) await roundTrip();
       noteTrip();
-      rows = once(pool, pgSql, params).then(r => r.rows);
-      memo.set(key, rows);
-      rows.catch(() => memo.delete(key));
+      const rows = once(pool, pgSql, params).then(r => r.rows);
+      const made = { rows, at: Date.now() };
+      memo.set(key, made);
+      rows.catch(() => { if (memo.get(key) === made) memo.delete(key); });
+      got = made;
     }
-    return copyRows(await rows);
+    return copyRows(await got.rows);
   }
   if (TEST_LATENCY_MS) await roundTrip();
   noteTrip();

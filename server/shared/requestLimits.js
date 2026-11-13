@@ -252,8 +252,9 @@ function cancelWith(Pool, options) {
 // questions again: opening one profile sent 246 statements, 135 of them
 // different (one money sum 21 times). Inside a bundle's request, the same
 // read-only statement with the same values is sent once and each caller gets
-// its own copy of the rows (server/db/query.js). Nothing is kept past the
-// request, so nothing shown can be older than the request that shows it.
+// its own copy of the rows (server/db/query.js), for at most a second from
+// when it was asked: a route that reads again to see a change sees it within
+// that second. Nothing is kept past the request.
 function memoize() { const sc = live(); if (sc && sc.read && !sc.memo) sc.memo = new Map(); }
 function memoFor() { const sc = live(); return sc && sc.memo ? sc.memo : null; }
 
