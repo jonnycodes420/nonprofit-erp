@@ -33,7 +33,7 @@ async function givingBetween(query, orgId, { from, to, today, donorId = null, vi
   const args = [orgId, s.from, s.to];
   if (donorId) args.push(donorId);
   const [r] = await query(
-    `SELECT COALESCE(SUM(ROUND(g.amount * 100)), 0)::bigint AS cents, COUNT(*) FILTER (WHERE g.amount > 0)::int AS n,
+    `SELECT COALESCE(SUM(ROUND(g.amount * 100)), 0)::bigint AS cents, COUNT(*) FILTER (WHERE ${require("./giftCount").COUNTED("g")})::int AS n,   -- FLOWS-9: giftCount.js, a gift refunded in full is not one
             COUNT(*)::int AS rows, ${GIVERS("g", "d")}::int AS givers
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id = ? AND ${LIVE("d")} AND ${IN_SPAN("g")}${donorId ? " AND g.donor_id = ?" : ""}${v.sql}`, [...args, ...v.args]);

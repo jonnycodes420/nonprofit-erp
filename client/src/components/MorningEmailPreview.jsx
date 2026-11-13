@@ -12,13 +12,15 @@ import { countLabel } from "../../../shared/countWords.js";
 
 const btn = { background: "none", border: "1px solid " + T.bg3, borderRadius: 10, padding: "8px 14px", fontSize: 13.5, fontWeight: 700, color: T.greenDk, cursor: "pointer", fontFamily: "inherit" };
 
-export function MorningEmailPreview() {
+// FLOWS-9 (W-1112-Volunteers-19): with the email off, the preview says it is a
+// preview and puts the switch beside it (`onTurnOn`, Settings' own).
+export function MorningEmailPreview({ onTurnOn, isOn } = {}) {
   const [d, setD] = useState(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState("");
   const [note, setNote] = useState("");
   const load = () => apiFetch("/me/morning-email").then(setD).catch(e => setNote(errorMessage(e, "Today's email did not load.")));
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [isOn]);   // FLOWS-9: re-read when the switch moves
 
   async function preview() {
     if (open) { setOpen(false); return; }
@@ -54,6 +56,10 @@ export function MorningEmailPreview() {
       {open && d && (
         <div style={{ marginTop: 12 }}>
           {d.whyWords && <div data-testid="morning-why" style={{ fontSize: 13, color: T.gold700, marginBottom: 8 }}>{d.whyWords}</div>}
+          {d.why === "opted_out" && onTurnOn && (
+            <button type="button" data-testid="morning-turn-on" onClick={onTurnOn}
+              style={{ ...btn, background: T.greenDk, color: T.white, border: "none", marginBottom: 10 }}>Turn on the morning email</button>
+          )}
           <div style={{ fontSize: 13, color: T.ink, marginBottom: 6 }}><b>Subject:</b> {d.subject}</div>
           <iframe title="Today's morning email" data-testid="morning-frame" sandbox="" srcDoc={d.html}
             style={{ width: "100%", height: 480, border: "1px solid " + T.bg3, borderRadius: 10, background: T.white }} />

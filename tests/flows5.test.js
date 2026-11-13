@@ -9,7 +9,7 @@
 //      deleted; the Calendar says Draft (W-1110-Volunteers-08X)
 //   §4 time inputs: "11:00", "11", "11am", "23:00" read as typed (W-1110-Volunteers-09X)
 //   §5 one shift dialog from the Schedule and from Opportunities (W-1110-Volunteers-07X)
-//   §6 Events this year: each row Past, Upcoming or Archived (W-1110-Volunteers-04X)
+//   §6 Events this year: each row Past or Upcoming, an archived one not counted (W-1110-Volunteers-04X; FLOWS-9)
 //   §7 Save as a group on LYBUNT, SYBUNT and Lost, every load (W-1110-Fundraising-14)
 //   §8 one thank-you per gift on the Calendar and the Tasks tab (W-1107-Volunteers-14X)
 //   §9 Home: a snoozed card's form never shows on the next; Plan a follow-up stays (Area 1)
@@ -56,8 +56,9 @@ const { DIST } = require("./lib/dist");
   const y0 = `${f.today.slice(0, 4)}-01-01`, y1 = `${f.today.slice(0, 4)}-12-31`;
   const ev = (await api("GET", `/figures/events-year-events/rows?from=${y0}&to=${y1}`, tok)).body || {};
   const lab = id => ((ev.rows || []).find(r => r.id === id) || {}).detail;
-  ok("§6 Events this year: the past one says Past, the archived one Archived, the one to come Upcoming",
-    lab(ids.events.past) === "Past" && lab(ids.events.archived) === "Archived" && (lab(ids.events.soon) === "Upcoming" || !String(civilPlusDays(12)).startsWith(f.today.slice(0, 4))),
+  // FLOWS-9 (W-1113-Volunteers-06X): an archived event is not counted, so it is not a row here (the header says "1 archived").
+  ok("§6 Events this year: the past one says Past, the one to come Upcoming, and the archived one is not counted",
+    lab(ids.events.past) === "Past" && lab(ids.events.archived) === undefined && (lab(ids.events.soon) === "Upcoming" || !String(civilPlusDays(12)).startsWith(f.today.slice(0, 4))),
     (ev.rows || []).map(r => [r.name, r.date, r.detail]));
 
   // ── §8 one thank-you per gift ────────────────────────────────────────────

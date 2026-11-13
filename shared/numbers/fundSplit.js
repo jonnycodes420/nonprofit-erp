@@ -29,7 +29,9 @@ async function fundSplit(query, orgId, donorId) {
   if (!d) return null;
   const rows = await query(
     `SELECT NULLIF(gf.fund_id, '') AS fund_id, f.name AS fund_name, COALESCE(f.restricted, false) AS restricted,
-            COUNT(*)::int AS gift_count, ROUND(SUM(gf.amount) * 100)::bigint AS cents, MAX(LEFT(g.date, 10)) AS last_date
+            -- FLOWS-9: a fund's gifts are giftCount.js's counted gifts; its money nets the refunds.
+            COUNT(DISTINCT g.id) FILTER (WHERE ${require("./giftCount").COUNTED("g")})::int AS gift_count, ROUND(SUM(gf.amount) * 100)::bigint AS cents,
+            MAX(LEFT(g.date, 10)) FILTER (WHERE ${require("./giftCount").COUNTED("g")}) AS last_date
        FROM gifts g
        JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
        JOIN ${GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id

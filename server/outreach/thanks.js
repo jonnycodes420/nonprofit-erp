@@ -558,7 +558,12 @@ app.post("/milestone-drafts/send-reviewed", requireAuth, requireAdmin, checkWrit
     "SELECT * FROM milestone_drafts WHERE org_id=? AND status='pending_review' AND reviewed_at IS NOT NULL ORDER BY created_at ASC LIMIT 200",
     [req.user.orgId]);
   let sent = 0; const failed = [];
+  // FLOWS-9 (W-1112-Fundraising-19): a draft whose link does not open, or that speaks of a
+  // video nobody recorded, is never "ready": it waits for her own press, after she fixes it.
+  const checked = await require("../drafts/linkCheck").checkDrafts(req.user.orgId, await require("../drafts/render").renderDrafts(req.user.orgId, drafts));
+  const held = new Set(checked.filter(c => c.linkCheck && !c.linkCheck.ok).map(c => c.id));
   for (const d of drafts) {
+    if (held.has(d.id)) { failed.push({ id: d.id, error: "Check this draft before sending: a link in it does not open, or it speaks of a video that is not there." }); continue; }
     const r = await sendMilestoneDraft(req, d);
     if (r.status === 200) sent++; else failed.push({ id: d.id, error: r.error });
   }

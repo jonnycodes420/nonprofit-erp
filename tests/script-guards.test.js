@@ -211,6 +211,8 @@ const LOOPBACK_HARDCODED = [
 // Read-only against whatever BASE points at (may default to prod): their only
 // write-shaped call is POST /auth/login. Verified below, not just trusted.
 const PROD_READONLY = [
+  // FLOWS-9: lists drafts claiming a missing video and gifts whose refunded-in-full mark disagrees; SELECTs only, no --apply.
+  "flows9-old-rows",
   // FLOWS-7: lists saved groups still on the old "Volunteers who have never given" rule, per org; SELECTs only, no --apply.
   "flows7-starter-volunteers",
   // INTEGRITY-3: where is a person (by name, one org): ids and states only, one READ ONLY transaction, no --apply.

@@ -49,17 +49,21 @@ async function dueFor(query, orgId, { userId, isAdmin = false, today }) {
 
 // Per staff member: open and overdue, each equal to Tasks' counts for that person
 // (/tasks/counts?staff=<id>). Unowned tasks are their own line.
+// FLOWS-9 (W-1112-Volunteers-19): open is Tasks' own "every view but done"
+// (a task whose done is unset is open in Tasks, and was left out here), and one
+// person is one row, grouped by who they are, never by how their name reads.
 async function teamCounts(query, orgId, today) {
   return query(
     `SELECT COALESCE(NULLIF(TRIM(u.name), ''), u.email, CASE WHEN t.assigned_to IS NULL THEN 'Unassigned' ELSE 'Someone no longer here' END) AS who,
             t.assigned_to AS user_id,
-            COUNT(*)::int AS n,
+            COUNT(*) FILTER (WHERE ${VIEW_SQL} <> 'done')::int AS n,
             COUNT(*) FILTER (WHERE ${VIEW_SQL} = 'overdue')::int AS overdue
        FROM tasks t LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
        LEFT JOIN users u ON u.id = t.assigned_to AND u.org_id = t.org_id
-      WHERE t.org_id = ? AND ${LIVE_SQL} AND t.done = 0
-      GROUP BY 1, 2 ORDER BY 3 DESC, 1`,
-    [today, today, addDays(today, 7), orgId]);
+      WHERE t.org_id = ? AND ${LIVE_SQL}
+      GROUP BY t.assigned_to, u.name, u.email
+      ORDER BY 3 DESC, 1`,
+    [today, today, addDays(today, 7), today, today, addDays(today, 7), orgId]).then(rows => rows.filter(r => r.n > 0));
 }
 
 module.exports = { VIEW_SQL, LIVE_SQL, MINE, dueFor, teamCounts };

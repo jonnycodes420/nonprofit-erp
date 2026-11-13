@@ -89,9 +89,11 @@ async function donorByYear(query, org, donorId, today) {
   if (!d) return null;
   // Every money row Lifetime counts, read once.
   const gifts = await query(
-    `SELECT g.id, LEFT(g.date, 10) AS date, g.amount::text AS amount
+    `SELECT g.id, LEFT(g.date, 10) AS date, g.amount::text AS amount, g.type, g.refunded_in_full
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id = ? AND g.donor_id = ? AND ${MONEY("g")} AND ${AFTER_IMPORT("g", "d")}`, [orgId, donorId]);
+  // FLOWS-9 (W-1113-Fundraising-01): a year's count is giftCount.js's: a refund row and a gift refunded in full are not gifts.
+  const counted = g => require("./giftCount").isCounted(g);
   // Soft credit: someone else's gift credited to them, and their own credit rows.
   const soft = await query(
     `SELECT LEFT(g.date, 10) AS date, sc.amount::text AS amount
@@ -111,7 +113,7 @@ async function donorByYear(query, org, donorId, today) {
   const rows = years.map(y => {
     const mine = dated.filter(g => inY(g.date, y));
     const cents = mine.reduce((s, g) => s + toCents(g.amount), 0);
-    const positive = mine.filter(g => toCents(g.amount) > 0);
+    const positive = mine.filter(counted);
     const largest = positive.reduce((m, g) => Math.max(m, toCents(g.amount)), 0);
     const softCents = soft.filter(s => s.date && inY(s.date, y)).reduce((n, s) => n + toCents(s.amount), 0);
     const src = extra => ({ key: "donor-year", params: { donor: donorId, from: y.from, to: y.to, ...extra } });
@@ -148,7 +150,7 @@ async function donorByYear(query, org, donorId, today) {
   const add = (key, label, list, params) => {
     if (!list.length) return;
     const c = list.reduce((s, g) => s + toCents(g.amount), 0);
-    other.push({ key, label, total: dollars(c), cents: c, giftCount: list.filter(g => toCents(g.amount) > 0).length, source: { key: "donor-year", params: { donor: donorId, ...params } } });
+    other.push({ key, label, total: dollars(c), cents: c, giftCount: list.filter(counted).length, source: { key: "donor-year", params: { donor: donorId, ...params } } });
   };
   add("older", `Before ${oldest.label}`, older, { to: orgTime.addDays(oldest.from, -1) });
   // TRUTH-6: a gift stored scheduled is not money yet (money.js MONEY), so it
@@ -356,7 +358,7 @@ function donorYearSql(orgId, p) {
     if (p.from) { span += " AND LEFT(g.date, 10) >= ?"; args.push(p.from); }
     if (p.to) { span += " AND LEFT(g.date, 10) <= ?"; args.push(p.to); }
   }
-  if (p.largest || p.measure === "count") span += " AND g.amount > 0";   // TRUTH-3: a count opens the counted gifts (giftCount.js)
+  if (p.largest || p.measure === "count") span += ` AND ${require("./giftCount").COUNTED("g")}`;   // FLOWS-9: the counted gifts, a full refund out   // TRUTH-3: a count opens the counted gifts (giftCount.js)
   const inner = `SELECT g.id, 'gift' AS type, g.donor_id, COALESCE(f.name, 'Unrestricted') AS name, g.date,
                         ROUND(g.amount::numeric, 2) AS amount, COALESCE(NULLIF(g.payment_method, ''), INITCAP(NULLIF(g.type, ''))) AS detail
                    FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
