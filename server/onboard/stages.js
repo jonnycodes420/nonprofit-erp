@@ -143,6 +143,8 @@ function compute(f, now, manual = {}) {
 // The next action, in Jonathan's words.
 function nextAction(stage, g, f, days, manual, now) {
   if (stage === "paper") {
+    // SALES-3: a signed quote is a signature with no start link; what's missing is the card.
+    if (f.signature && !f.cardOnFile && (!f.startLink || f.startLink.signedAt)) return "Signed, no card yet: chase the card";
     if (!f.startLink) return "Send start link";
     if (f.startLink.status === "expired" || (f.startLink.expiresAt && t(f.startLink.expiresAt) < now && !f.startLink.signedAt)) return "The start link expired: send a new one";
     if (!f.startLink.signedAt) return `Chase the signature: link sent ${daysSince(f.startLink.createdAt, now)} days ago`;

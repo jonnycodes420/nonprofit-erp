@@ -7,6 +7,7 @@
 //   &sub=list&list=<id>          SALES-2: one prospect list
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { countLabel } from "../../../../../shared/countWords.js";
 import { apiFetch } from "../../../api";
 import { INK, WHITE, CREAM, EMERALD, BRASS, card, h2, says, btn, quiet, box, link, brassTag, usd, dayWords, TYPE_WORDS, Failure, failureWords } from "./salesBits";
 import CallMode from "./CallMode";
@@ -20,7 +21,7 @@ import PartnersView from "./PartnersView";
 
 const SUBS = [["org", "Organizations"], ["contact", "Contacts"], ["deal", "Deals"], ["task", "Tasks"], ["partner", "Partners"], ["list", "Lists"], ["score", "Scoreboard"]];
 const LINES = [
-  ["howDidItGo", "How did it go?"], ["booked", "Meetings booked"],
+  ["howDidItGo", "How did it go?"], ["billingStarts", "Billing starts soon"], ["quoteUnsigned", "Quote sent, not signed"], ["booked", "Meetings booked"],
   ["due", "Due today or overdue"], ["revisit", "Back from Later"], ["noReply", "No reply"], ["trials", "Trials and betas ending"], ["quiet", "Gone quiet"],
   ["noNext", "No next step"], ["meetings", "This week's meetings"], ["stuck", "Stuck in a stage"],
 ];
@@ -77,7 +78,7 @@ function Today({ today, open, meta, reload }) {
           <div style={{ fontSize: 11.5, opacity: 0.65, margin: "2px 0 6px" }}>{today.sentences[k]}</div>
           {rows.length === 0 ? <div style={{ fontSize: 12.5, opacity: 0.55 }}>Nothing.</div> :
             rows.slice(0, 8).map((r, i) => <div key={i} style={{ fontSize: 13, padding: "3px 0", display: "flex", gap: 6, alignItems: "baseline",
-              background: r.overdue || k === "stuck" || k === "noNext" ? `${BRASS}22` : "transparent", borderRadius: 4 }}>
+              background: r.overdue || k === "stuck" || k === "noNext" || k === "quoteUnsigned" ? `${BRASS}22` : "transparent", borderRadius: 4 }}>
               {r.overdue ? <span style={brassTag}>overdue</span> : null}
               {r.on ? <span style={{ opacity: 0.7, whiteSpace: "nowrap" }}>{dayWords(r.on)}</span> : null}
               {r.open ? <button type="button" style={link} onClick={() => open(r.open.type, r.open.id)} data-today-open={r.open.id}>{r.says}</button> : <span>{r.says}</span>}
@@ -95,16 +96,18 @@ function Forecast({ f }) {
     <h2 style={h2}>Forecast</h2>
     <div style={{ display: "flex", gap: 28, flexWrap: "wrap", margin: "6px 0 10px" }}>
       <div title={f.sentences.weighted}><div style={{ fontSize: 22, fontWeight: 700 }} data-fc-weighted="1">{usd(f.weightedCents)}</div><div style={{ fontSize: 12, opacity: 0.7 }}>weighted pipeline</div></div>
+      <div title={f.sentences.signed}><div style={{ fontSize: 22, fontWeight: 700 }} data-fc-signed="1">{usd(f.signedCents || 0)}</div><div style={{ fontSize: 12, opacity: 0.7 }}>signed, not billing yet · {countLabel(f.signedDeals || 0, "deal")}</div></div>
       <div title={f.sentences.mrrNow}><div style={{ fontSize: 22, fontWeight: 700 }} data-fc-mrr="1">{usd(f.mrrNowCents)}</div><div style={{ fontSize: 12, opacity: 0.7 }}>MRR now · {f.mrrPctOfGoal}% of goal</div></div>
       <div title={f.sentences.goal}><div style={{ fontSize: 22, fontWeight: 700 }}>{usd(f.goal.cents)}</div><div style={{ fontSize: 12, opacity: 0.7 }}>goal · {f.goal.says}</div></div>
-      <div><div style={{ fontSize: 22, fontWeight: 700 }}>{f.projectedPctOfGoal}%</div><div style={{ fontSize: 12, opacity: 0.7 }}>of goal, MRR now plus weighted</div></div>
+      <div><div style={{ fontSize: 22, fontWeight: 700 }}>{f.projectedPctOfGoal}%</div><div style={{ fontSize: 12, opacity: 0.7 }}>of goal, MRR now plus signed and weighted</div></div>
     </div>
-    <p style={says}>{f.sentences.weighted} {f.sentences.mrrNow}{f.mrrError ? ` ${f.mrrError}` : ""}</p>
+    <p style={says}>{f.sentences.weighted} {f.sentences.signed} {f.sentences.mrrNow}{f.mrrError ? ` ${f.mrrError}` : ""}</p>
     <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
-      <thead><tr>{["Month", "Weighted closing", "MRR now + weighted", "Goal line", ""].map(h => <th key={h} style={{ textAlign: "left", fontSize: 12, fontWeight: 600, opacity: 0.65, padding: "0 10px 6px 0" }}>{h}</th>)}</tr></thead>
+      <thead><tr>{["Month", "Weighted closing", "Signed, billing starts", "MRR now + all of it", "Goal line", ""].map(h => <th key={h} style={{ textAlign: "left", fontSize: 12, fontWeight: 600, opacity: 0.65, padding: "0 10px 6px 0" }}>{h}</th>)}</tr></thead>
       <tbody>{f.months.map(m => <tr key={m.month} data-fc-month={m.month}>
         <td style={{ padding: "4px 10px 4px 0", borderTop: `1px solid ${CREAM}` }}>{m.label}</td>
         <td style={{ padding: "4px 10px 4px 0", borderTop: `1px solid ${CREAM}` }}>{usd(m.weightedClosingCents)}</td>
+        <td style={{ padding: "4px 10px 4px 0", borderTop: `1px solid ${CREAM}` }} data-fc-signed-month={m.month}>{usd(m.signedStartingCents || 0)}</td>
         <td style={{ padding: "4px 10px 4px 0", borderTop: `1px solid ${CREAM}` }}>{usd(m.projectedCents)}{m.behind ? <span style={{ ...brassTag, marginLeft: 6 }}>behind</span> : null}</td>
         <td style={{ padding: "4px 10px 4px 0", borderTop: `1px solid ${CREAM}` }}>{usd(m.goalPathCents)}</td>
         <td style={{ width: "30%", borderTop: `1px solid ${CREAM}` }}><div style={{ height: 8, background: CREAM, borderRadius: 4, position: "relative" }}>
