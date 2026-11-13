@@ -13,6 +13,12 @@
 # The concurrency group runs one of these at a time and never cancels one part
 # way, so a burst of merges queues here instead of racing.
 #
+# PIPE-1 · NOT WHILE THE MERGE QUEUE IS ON. With 3 to 4 PRs open, every merge
+# rebased all the others and restarted their 25-minute CI (PROFILE-SPEED-1
+# restarted four times on 13 Nov). The merge queue tests each PR on top of the
+# ones ahead of it instead, so when main's rules include a merge queue this does
+# nothing. Without the queue rule it runs exactly as before.
+#
 # It uses AUTOMERGE_TOKEN, not GITHUB_TOKEN, for the same reason automerge.yml
 # does: a branch update pushed with GITHUB_TOKEN would not start the PR's CI,
 # so the PR would never go green. No token: it says so and passes.
@@ -37,10 +43,19 @@ jobs:
       - name: Bring each auto-merge PR up to date, oldest first
         env:
           GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}
+          READ_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
             echo "AUTOMERGE_TOKEN not set; merge by hand"
+            exit 0
+          fi
+          # PIPE-1: the merge queue keeps PRs current itself; rebasing them here
+          # would only restart their CI.
+          queue=$(GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/rules/branches/main" \
+            --jq '[.[] | select(.type == "merge_queue")] | length')
+          if [ "${queue:-0}" != "0" ]; then
+            echo "main requires the merge queue, which tests each PR on top of the ones ahead; nothing to rebase."
             exit 0
           fi
           # Open PRs into main with auto-merge on, not drafts, not `no-automerge`,

@@ -88,7 +88,10 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
   runs what fits in ten minutes in one of two machine slots (never the battery lock, never a
   wait past two minutes), and leaves tenant-matrix, smoke-walk, the browser walks and load to
   CI (CI-SPEED-1, `scripts/README.md`). CI's six shards are the gate. If CI fails on code you
-  didn't touch, rerun that job once; if it fails twice, stop and say so.
+  didn't touch, rerun that job once. If it fails twice on something **your change didn't
+  touch** and **main is red for the same reason**, fix main in a small separate PR labelled
+  `main-fix`, then keep going. Stop and ask only when the fix needs a repo setting, a secret
+  or a prod change (PIPE-1).
 - **Never email a prospect, and never create calendar events.** Tests send to the local
   Resend sink. Addresses in `mailBlock.js` are never mailed, from
   any org, and only Jonathan edits that list.

@@ -16,6 +16,13 @@
 # the window decides which run acts and the rest find staging current.
 # scripts/lib/stagingWindow.js's RELEASE_CRON_UTC must match these lines.
 #
+# PIPE-1 · IT DOES NOT WAIT FOR GITHUB'S SCHEDULE. On 13 Nov the 3:20 AM run
+# ran at 10:24 AM. So it also runs each time CI finishes a run for a push to
+# main (workflow_run): the first CI run on main after the window ends releases
+# the latest held merge, whichever comes first, that or a scheduled run. A run
+# inside the window finds it still inside and does nothing; a run after a merge
+# that deployed itself finds staging current and does nothing.
+#
 # By hand: Actions → deploy-staging-release → Run workflow. force: true
 # releases now, inside the window too (for Jonathan, rare). The hotfix lane in
 # ci.yml is untouched: a hotfix still goes straight to prod.
@@ -24,6 +31,10 @@ name: deploy-staging-release
 on:
   schedule:
     - cron: "20,50 7-9 * * *"
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       force:
@@ -38,7 +49,10 @@ concurrency:
 
 jobs:
   release:
+    # A workflow_run counts only for CI's runs of a push to main (not a PR's,
+    # not a merge-queue run's): those are the runs that hold a merge.
     if: vars.STAGING_ENABLED == 'true'
+      && (github.event_name != 'workflow_run' || github.event.workflow_run.event == 'push')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

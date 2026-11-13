@@ -147,4 +147,21 @@ async function main(file, atFn = null) {
   return code;
 }
 
-module.exports = { runPinnedOrContinue, nextNoon, nextNyHour };
+// PIPE-1: run `file` once on a stack of its own at the instant `at` (ms, at
+// least a minute ahead), and resolve with its exit code. A suite that must hold
+// at several fixed dates calls this once per date.
+const runAt = (file, at, extraEnv = {}) => {
+  const saved = {};
+  for (const [k, v] of Object.entries(extraEnv)) { saved[k] = process.env[k]; process.env[k] = v; }
+  return main(file, () => at).finally(() => { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } });
+};
+
+// PIPE-1: noon in New York on the next `mm-dd` at least a minute ahead (this
+// year's, else next year's): a fixed calendar date that is never in the past.
+function nextCalendarNoon(mmdd, now = testNow()) {
+  const y = Number(civilDay(now).slice(0, 4));
+  for (const year of [y, y + 1]) { const t = nyNoon(`${year}-${mmdd}`); if (t >= now + 60000) return t; }
+  throw new Error(`pinnedStack: no ${mmdd} ahead`);
+}
+
+module.exports = { runPinnedOrContinue, nextNoon, nextNyHour, runAt, nextCalendarNoon };
