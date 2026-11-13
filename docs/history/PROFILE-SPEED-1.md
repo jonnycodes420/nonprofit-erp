@@ -35,7 +35,11 @@ build with a 10,000-person org, every page clicked in a real browser:
   trip because they are on screen.
 - **One answer per statement inside a bundle** (`server/db/query.js` `memoKey`): the same plain read
   with the same values is sent once per bundle request, and each caller gets its own copy of the
-  rows. Nothing outlives the request. 246 → 160 statements per profile open.
+  rows, for at most a second from when it was asked (`MEMO_MS`). 246 → 159 statements per profile
+  open. The first version shared an answer for the whole request, and CI's first real battery
+  (13 Nov) caught what that breaks: the insights store waits for a queued build by reading again
+  every 100 ms (TEST_MODE), was handed its first answer for 30 s, and the profile never drew. Any
+  route that reads again to see a change now sees it within the second.
 - **A page's first reads leave as you click** (`client/src/App.jsx` navigateTo →
   `lib/pageReads.js`), and Events, Communications and Finance got lists (nothing that asks a third
   party: Finance's Stripe summary stays with the page). Communications reads people only for a
@@ -49,6 +53,13 @@ statement added, a profile's first screen took ~700 ms on main, 1,116 at three, 
 540 uncapped: ~160 statements over three connections wait in line, each paying the round trip.
 Jonathan chose five (12 Nov): level with main, and no request can take more than half the pool.
 Three becomes affordable when a profile sends far fewer statements; that is the next brief.
+
+## What CI's first battery found
+The battery could not run on this branch until the runners were pinned to ubuntu-24.04
+(CI-PIN-2404, #448): every earlier run died installing Chromium. Its first run went red in eight
+suites, all of them the one memo hang above. Two more (hotfix1-profile, perf-app) matched the old
+record and bundle requests and now match `/donors/:id/profile`. perf-app's first-look JS budget
+went up 1 KB (to 247) for the page-read lists, +215 bytes gzipped against main's own build.
 
 ## The pool target
 The brief asked for "pool peak under 70%". A per-request cap cannot reach a momentary peak: ten
