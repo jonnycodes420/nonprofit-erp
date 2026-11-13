@@ -31,8 +31,8 @@ function ensureTable(run) {
 // A read never makes the table (a GET changes nothing): before the first
 // boot has made it, there are simply no checks.
 async function readChecks(query) {
-  return query(`SELECT id, seq, area_id, check_id, verdict, note, (shot IS NOT NULL) AS has_shot, created_at, created_by_name
-                FROM ops_checks ORDER BY seq`, [])
+  return query(`SELECT id, seq, area_id, check_id, verdict, note, (shot IS NOT NULL) AS has_shot, created_at, created_by_name, customer
+                FROM ops_checks ORDER BY seq`, [])   // SALES-3: customer, set on a customer's bug line (sales/customers.js)
     .catch(e => { if (e && (e.code === "42P01" || /ops_checks.*does not exist/.test(e.message))) return []; throw e; });
 }
 // Demo people by name, in the demo org only. Anything not found there gets no id.
