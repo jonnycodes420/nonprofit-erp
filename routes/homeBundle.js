@@ -89,6 +89,7 @@ const app = routers.r0;
 // asking, at most LANES at once. The answer is one JSON object keyed by path:
 // { "<path>": { status, body } }, each body the route's own text.
 async function answer(req, res, paths) {
+  require("../server/shared/requestLimits").memoize();   // PROFILE-SPEED-1: the parts share one answer per statement
   const out = new Array(paths.length);
   const timing = [];   // Server-Timing: how long each read took, for the load harness
   // ACCESS-2B: someone who sees only their own people has most routes closed;
@@ -175,7 +176,7 @@ app.post("/perf/peaks/reset", requireAuth, (req, res) => {
 app.get("/perf/peaks", requireAuth, (req, res) => {
   if (!testMode()) return res.status(404).json({ error: "Not found" });
   const L = require("../server/shared/requestLimits").stats(), P = require("../server/shared/pools");
-  res.json({ perRequestPeak: L.perRequestPeak, perRequestMax: P.PER_REQUEST_MAX, poolPeak: L.poolPeak, poolMax: P.POOL_MAX, capWaits: L.capWaits });
+  res.json({ perRequestPeak: L.perRequestPeak, perRequestMax: P.PER_REQUEST_MAX, overCap: L.overCap, poolPeak: L.poolPeak, poolMax: P.POOL_MAX, capWaits: L.capWaits });
 });
 
 // TEST_MODE only: run the nightly comparison now, for the caller's org, so the

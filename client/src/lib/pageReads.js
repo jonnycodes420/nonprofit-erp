@@ -14,6 +14,7 @@
 // JSX-free so a Node suite can read the lists.
 import { prefetch } from "../api";
 import { openProfileReads } from "./profileReads";
+import { startHomeReads } from "./bootReads";   // PROFILE-SPEED-1: Home's own bundles, when Home is clicked to
 
 const DONORS = ["/privacy", "/me", "/donors/counts", "/donors/list-setup", "/org/team", "/portfolio/officers",
   "/custom-fields?entity=donor", "/donors/custom-field-values/all"];
@@ -51,4 +52,8 @@ export function startPageReads(pathname, search = "") {
   // A profile's own two bundles (LOAD-1), the same call Donors makes when it opens.
   const prof = /^\/donors\/([^/]+)$/.exec(pathname);
   if (prof) openProfileReads(decodeURIComponent(prof[1]));
+  // PROFILE-SPEED-1: back to Home from another page, its deck, rail and first
+  // bundles leave as the click lands, as they do at the boot, so its panels
+  // find their reads in flight instead of each asking on its own.
+  if (/^\/dashboard\/?$/.test(pathname)) startHomeReads();
 }

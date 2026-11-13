@@ -247,7 +247,17 @@ function cancelWith(Pool, options) {
   return (pids) => cancelPool(Pool, options).query("SELECT pg_cancel_backend(p) FROM unnest($1::int[]) p", [pids]);
 }
 
+// PROFILE-SPEED-1 · ONE ANSWER PER STATEMENT IN A BUNDLE. A bundle (Home's,
+// the profile's) runs a dozen routes inside one GET, and each asks the same
+// questions again: opening one profile sent 246 statements, 135 of them
+// different (one money sum 21 times). Inside a bundle's request, the same
+// read-only statement with the same values is sent once and each caller gets
+// its own copy of the rows (server/db/query.js). Nothing is kept past the
+// request, so nothing shown can be older than the request that shows it.
+function memoize() { const sc = live(); if (sc && sc.read && !sc.memo) sc.memo = new Map(); }
+function memoFor() { const sc = live(); return sc && sc.memo ? sc.memo : null; }
+
 // TEST_MODE harnesses read the peaks for a window of their own.
 function resetPeaks() { counters.perRequestPeak = 0; counters.poolPeak = 0; counters.capWaits = 0; counters.overCap = 0; }
-module.exports = { holding, resetPeaks, answerError, cancelWith, DEFAULT_MS, NAMED, LONGER, limitFor, TOO_LONG, middleware, checkout, release, translate, guard, useLimit, shared,
+module.exports = { memoize, memoFor, holding, resetPeaks, answerError, cancelWith, DEFAULT_MS, NAMED, LONGER, limitFor, TOO_LONG, middleware, checkout, release, translate, guard, useLimit, shared,
   cancelPool, live, stats: () => ({ ...counters }), isCancel };
