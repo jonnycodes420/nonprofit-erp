@@ -1,6 +1,6 @@
 # Staging, shipping and rollback
 
-Read this when you touch the deploy jobs (`ci.yml`, `ship.yml`), `/ops`'s Ship card,
+Read this when you touch the deploy jobs (`ci.yml`, `ship.yml`, `deploy-staging-release.yml`), `/ops`'s Ship card,
 `npm run status`, the staging seed, or anything that sends mail or charges money and might
 run on staging.
 
@@ -55,6 +55,26 @@ run on staging.
   and `STEWARD_ENV` is checked through staging's `/health`.
 - **No config-as-code for Railway** (`railway.json`): a file in the repo would then govern
   prod's deploys. Settings stay in Railway; the drift job watches them.
+
+## The rules (STAGE-3)
+
+- **Staging holds still while the fleet walks it.** The walk window is defined once: the repo
+  variable `STAGING_WALK_WINDOW`, default `23:30-03:15 America/New_York` (wall clock, so DST
+  needs no edit; `scripts/lib/stagingWindow.js`). Merges stay instant; there is no merge freeze.
+- **Inside the window `deploy-staging` deploys nothing**: after the turnstile it asks
+  `scripts/ci/staging-hold.js`, which writes "Holding the staging deploy until 3:15 AM ET so the
+  overnight walk isn't interrupted" in the summary, marks the commit `staging/deploy` pending
+  "Held until 3:15 AM ET (overnight walk)", and finishes. `staging-walk` is skipped. No job sleeps.
+- **After the window `deploy-staging-release.yml`** (cron at both UTC offsets) re-runs
+  `deploy-staging` for the LATEST held merge only (`pickRelease`): it marks that commit
+  `staging/deploy` "Released …" first, so its hold step deploys, then the walk runs as usual.
+  Older held merges are marked "Released with <sha>" and never deployed on their own. A newer
+  merge already in its own deploy-staging is left to deploy itself.
+- **By hand**: Actions → deploy-staging-release → Run workflow with `force: true` releases now,
+  inside the window too (Jonathan, rare). The hotfix lane is untouched: prod's jobs never ask the hold.
+- **/ops's Ship card** lists the held merges under "Staging deploy held until 3:15 AM", read
+  from the `staging/deploy` statuses on main's commits that staging lacks. A hold does not turn
+  Ship off: staging itself is unchanged and walked.
 
 ## For Muse: signing in to staging
 

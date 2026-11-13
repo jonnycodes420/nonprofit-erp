@@ -1,0 +1,55 @@
+# STAGE-3 · AFTER THE OVERNIGHT WALK, STAGING CATCHES UP TO MAIN.
+#
+# Merges stay instant. Inside the walk window (the repo variable
+# STAGING_WALK_WINDOW, default 23:30-03:15 America/New_York) ci.yml's
+# deploy-staging deploys nothing and marks the commit held. This workflow runs
+# just after the window ends and re-runs deploy-staging for the LATEST held
+# merge only (scripts/ci/staging-release.js), which then deploys and walks it as
+# usual. It never sleeps: each run takes seconds.
+#
+# Cron is UTC and the window is wall-clock ET, so it runs at both offsets
+# (07:20 UTC is 3:20 AM EDT, 08:20 UTC is 3:20 AM EST) plus two retries each;
+# the window decides which run acts and the rest find staging current.
+# scripts/lib/stagingWindow.js's RELEASE_CRON_UTC must match these lines.
+#
+# By hand: Actions → deploy-staging-release → Run workflow. force: true
+# releases now, inside the window too (for Jonathan, rare). The hotfix lane in
+# ci.yml is untouched: a hotfix still goes straight to prod.
+name: deploy-staging-release
+
+on:
+  schedule:
+    - cron: "20,50 7-9 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Release now, even inside the overnight walk window"
+        type: boolean
+        default: false
+
+# A later run replaces an earlier one still waiting; one release at a time.
+concurrency:
+  group: deploy-staging-release
+  cancel-in-progress: true
+
+jobs:
+  release:
+    if: vars.STAGING_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+      statuses: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Release the latest held merge to staging
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGING_API_URL: ${{ vars.STAGING_API_URL }}
+          STAGING_WALK_WINDOW: ${{ vars.STAGING_WALK_WINDOW }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
+        run: node scripts/ci/staging-release.js
