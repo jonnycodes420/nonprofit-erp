@@ -1,0 +1,2 @@
+- Staging's Harborlight still carries the old chapel alt until the staging seed runs again, or run `DATABASE_URL=<staging db> node scripts/ops/flows10-demo-alts.js` then the same with `--staging --staging-api=<staging api> --apply --i-know-this-is-prod` (needs the staging DB URL, which this build does not hold).
+- Staging's Harborlight EIN is still 00-0000000 until the staging seed runs again, or run `DATABASE_URL=<staging db> node scripts/ops/flows10-demo-ein.js` then the same with `--staging --staging-api=<staging api> --apply --i-know-this-is-prod`.

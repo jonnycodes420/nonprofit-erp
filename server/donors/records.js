@@ -391,9 +391,11 @@ async function purgeableIds(orgId, olderThanDays) {
                          ${days != null ? "AND d.deleted_at < NOW() - make_interval(days => ?)" : ""}`,
     days != null ? [orgId, days] : [orgId])).map(r => r.id);
 }
+const PLANT = process.env.TEST_MODE === "1" ? String(process.env.FLOWS10_PLANT || "") : "";   // FLOWS-10: tests/flows10.test.js plants defects; never set outside tests
 const trashSentence = (n, days) => n
   ? `${n.toLocaleString("en-US")} ${n === 1 ? "person" : "people"} deleted ${days != null && days !== "" ? `more than ${days} ${Number(days) === 1 ? "day" : "days"} ago` : "from Steward"} will be deleted for good. They will never match an import again, and this cannot be undone.`
-  : "Nobody in the trash matches that.";
+  // FLOWS-10 item 15: a filter with nobody in it says which filter, never "Nobody matches" beside the rows above it
+  : PLANT === "nobodymatches" ? "Nobody in the trash matches that." : days != null && days !== "" ? `Nobody in the trash was deleted more than ${days} ${Number(days) === 1 ? "day" : "days"} ago, so there is nothing to empty for that.` : "The trash is empty.";
 // INTEGRITY-2: the purge is one function, so Empty trash and the 30-day
 // clear-out (server/donors/trashList.js) delete exactly the same way.
 async function purgePeople(orgId, ids) {

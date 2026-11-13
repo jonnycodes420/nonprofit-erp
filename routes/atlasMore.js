@@ -64,9 +64,12 @@ function figuresGrounded(script, lines) {
   return said.every(x => known.includes(x.replace(/\s/g, "")));
 }
 
+// FLOWS-10 item 5: filled in by mount(), which holds the query these read through.
+const shared = { facts: null, factLines: null };
 function mount(ctx) {
 const { query, wrap, requireAuth, agentGate } = ctx;
 const app = routers.r0;
+shared.facts = (...a) => facts(...a); shared.factLines = f => factLines(f);   // FLOWS-10 item 5: Atlas's draft reads the facts Call script reads
 
 async function facts(orgId, donorId) {
   // TRUTH-3: lifetime, the gift count and the last gift by the profile's rules (shared/numbers), never the stored rollup.
@@ -149,4 +152,14 @@ app.post("/donors/:id/call-script", requireAuth, wrap(async (req, res) => {
 }));
 }
 
-module.exports = { routers, mount, SCRIPT_TOOL, _test: { figuresGrounded, fillCaller } };
+// FLOWS-10 item 5: one email fact, from the facts Call script reads; what the template names
+// instead of "I wanted to reach out". A gift first, then the last conversation; null when neither.
+function oneFact(f) {
+  if (!f) return null;
+  const n = Number(f.d.gift_count) || 0;
+  if (n && f.d.last_gift_amount && f.d.last_gift_date) return `Thank you for your gift of ${usd(f.d.last_gift_amount)} on ${day(f.d.last_gift_date)}. It made a real difference here.`;
+  if (f.conv && f.conv.date) return `Thank you for the time you gave us when we spoke on ${day(f.conv.date)}.`;
+  return null;
+}
+
+module.exports = { routers, mount, SCRIPT_TOOL, oneFact, facts: (...a) => shared.facts(...a), factLines: f => shared.factLines(f), _test: { figuresGrounded, fillCaller } };

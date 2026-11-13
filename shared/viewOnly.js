@@ -28,10 +28,14 @@ export const ROLE_LABEL = {
   volunteer_coordinator: "Volunteer coordinator, volunteers and hours only",
   admin: "Admin, full access including settings",
 };
+// FLOWS-10 item 16 (Area 5 Check 28): the Invite dialog's own words, everywhere a role is shown.
+// Team said "admin" and "member" beside a dialog offering "Admin" and "Staff". "member" is the
+// older name for staff, so it reads Staff too.
 export function roleWord(role) {
-  if (role === "volunteer_coordinator") return "volunteer coordinator";
-  if (role === VIEWER) return "viewer (read only)";
-  return String(role || "staff");
+  if (role === "admin") return "Admin";
+  if (role === "volunteer_coordinator") return "Volunteer coordinator";
+  if (role === VIEWER) return "Viewer (read only)";
+  return "Staff";
 }
 
 // What a viewer may still POST: their own account and session, and the

@@ -84,6 +84,11 @@ const GUARDED_WRITERS = [
   "import10-lost-total-rows",
   "import10-auction-winners",
   "import10-donor-roles",
+  // FLOWS-10: puts the demo's chapel photo alt right, alt text only, org_b72demo only. Dry run by
+  // default; --apply writes through writerDbUrl, and a remote target must also answer env "staging".
+  "flows10-demo-alts",
+  // FLOWS-10: sets the demo's made-up EIN while it is the placeholder, org_b72demo only. Same guard.
+  "flows10-demo-ein",
   // ASKS-2: lists open tasks whose title carries an ask above 1.5 × the person's
   // anchor. Read only (no --apply); the database comes through writerDbUrl.
   "asks2-old-asks",
@@ -237,6 +242,8 @@ const PROD_READONLY = [
   "flows6-log-twins",
   // FLOWS-8: lists pages still carrying the two old stock-photo alt sentences; SELECTs only, no --apply.
   "flows8-stock-alts",
+  // FLOWS-10: lists steps a stop left reading Done, and steps still pending under a stopped journey; SELECTs only, no --apply.
+  "flows10-stopped-steps",
   // TRUTH-6: lists receipts on $0 gifts and future-dated gifts not marked scheduled; SELECTs only, no --apply (it prints an UPDATE for Jonathan, never runs one).
   "truth6-zero-receipts",
   // MAIL-1: what each org's mail would do, in a READ ONLY transaction, counts and org names only.

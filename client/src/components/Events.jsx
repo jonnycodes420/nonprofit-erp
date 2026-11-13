@@ -15,7 +15,7 @@ import { Figure } from "./Figure";
 import EventRaised, { EventStory, peopleLine } from "./EventRaised";   // HOME-3 · FUNDRAISING-2 · EVENTS-3
 import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit, EVENT_FIGURES } from "../../../shared/eventShape";
 import { countLabel } from "../../../shared/countWords.js";
-import { eventRowsChanged, useEventRowsRev, withinWrite, useLatestRead } from "../lib/eventRows";
+import { eventRowsChanged, useEventRowsRev, withinWrite, useLatestRead, useLatestLoad } from "../lib/eventRows";
 import { useChangeRev } from "../lib/changes";   // STALE-1   // COUNTS-1: every panel re-reads the guest rows
 import RecordGiftDialog from "./gifts/RecordGiftDialog";   // GIFTS-1: a gift for this event, from its page
 import { eventStatus } from "../../../shared/eventStatus.js";
@@ -476,9 +476,10 @@ function EventSeating({ eventId }) {
   const [busy, setBusy] = useState(false);
   const [printing, setPrinting] = useState(null);  // PARITY-4: "chart" | "list", the sheet print media shows
 
-  const load = () => apiFetch(`/events/${eventId}/guests`).then(setData).catch(() => setData(null));
+  // FLOWS-10 item 3: "No guests yet" beside Attendees (1) was the read from before the guest landed.
+  const [load, reading] = useLatestLoad(() => apiFetch(`/events/${eventId}/guests`), setData);
   const rowsRev = useEventRowsRev(eventId);
-  useEffect(() => { load(); }, [eventId, rowsRev]);
+  useEffect(() => { load(); }, [eventId, rowsRev]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Every write lands here, so one place clears the message, keeps the undo
   // the server handed back, and refreshes from the response rather than
@@ -640,6 +641,7 @@ function EventSeating({ eventId }) {
     ? `${window.location.origin}/e/${encodeURIComponent(data.event.public_slug)}` : null;
 
   // ── THE TWO EMPTY STATES ────────────────────────────────────────────────
+  if (!guests.length && reading) return <div data-testid="ev-seating" style={card}><div style={{ ...label, marginBottom: 10 }}>Tables and seating</div><div data-testid="ev-seating-updating" style={{ fontSize: 13, color: T.ink3 }}>Updating…</div></div>;
   if (!guests.length) {
     return (
       <div data-testid="ev-seating" style={card}>
@@ -1081,9 +1083,10 @@ export function EventKiosk({ eventId }) {
   const handleRef = useRef(null);
   const codeBoxRef = useRef(null);
 
-  const load = () => apiFetch(`/events/${eventId}/kiosk`).then(setData).catch(() => setData(null));
+  // FLOWS-10 item 3: the newest read wins, and while it is on its way the count says "Updating…".
+  const [load, reading] = useLatestLoad(() => apiFetch(`/events/${eventId}/kiosk`), setData);
   const rowsRev = useEventRowsRev(eventId);
-  useEffect(() => { load(); }, [eventId, rowsRev]);
+  useEffect(() => { load(); }, [eventId, rowsRev]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const show = (r, fallback) => {
     if (r && r.ok) {
@@ -1253,8 +1256,9 @@ export function EventKiosk({ eventId }) {
           aria-pressed={view === "in"} title="Checked in of everybody expected. Tap for the list."
           style={{ background: view === "in" ? T.green100 : T.white, border: "1.5px solid " + T.greenDk, borderRadius: 999,
                    padding: "8px 14px", fontFamily: "inherit", cursor: "pointer", color: T.ink, minHeight: 44 }}>
+          {reading ? <span data-testid="ev-kiosk-updating" style={{ fontSize: 13 }}>Updating…</span> : <>
           <span style={{ fontSize: 18, fontWeight: 800, color: T.greenDk, fontVariantNumeric: "tabular-nums" }}>{inCount}</span>
-          <span style={{ fontSize: 13 }}> of {expected} checked in</span>
+          <span style={{ fontSize: 13 }}> of {expected} checked in</span></>}
         </button>
       </div>
       <div style={{ fontSize: 12, color: T.ink3, marginBottom: 10 }} data-testid="ev-kiosk-sentence">
@@ -1397,15 +1401,18 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
   const [giftFor, setGiftFor] = useState(null);   // GIFTS-1: { person } for Record a gift
 
   const readSeq = useRef(0);   // FLOWS-8 (W-1112-Volunteers-01X): an older read landing last never puts the old guest list back
+  // FLOWS-10 item 3: while the read after a change is on its way, the header says "Updating…", never the old seats.
+  const [reading, setReading] = useState(false);
   const reload = async () => {
     const t = ++readSeq.current;
+    setReading(true);
     try {
       const d = await apiFetch(`/events/${eventId}`);
       if (t !== readSeq.current) return;
       setEvent(d);
       setNotes(d.notes || "");
     } catch { }
-    if (t === readSeq.current) setLoading(false);
+    if (t === readSeq.current) { setLoading(false); setReading(false); }
   };
 
   const rowsRev = useEventRowsRev(eventId);
@@ -1487,7 +1494,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
   // Enough rows are asked for that forty remain after the people already here.
   const attendeeCount = (event?.attendees || []).filter(a => a.donor_id).length;
   // FLOWS-8 (W-1112-Volunteers-20): everyone on file, by the Donors list's own person search.
-  const [pickedPeople] = usePeoplePicker(donorSearch, { match: "person", limit: 40 + attendeeCount, emptyToo: true });
+  const [pickedPeople, pickPending, pickFailed] = usePeoplePicker(donorSearch, { match: "person", limit: 40 + attendeeCount, emptyToo: true });   // FLOWS-10 items 2, 3
   if (loading || !event) return (
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.ink, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ color: "rgba(240,237,230,0.7)", fontSize: 13 }}>Loading…</div>
@@ -1529,7 +1536,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
           </div>
           <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", marginTop: 3 }}>
             {event.date_unknown ? "Date not known: the import's file did not give it" : fmtDate(event.date)}{event.end_date ? ` – ${fmtDate(event.end_date)}` : ""}{event.location ? ` · ${event.location}` : ""}
-            {event.seats && <span data-testid="ev-seats-left" title="Places on the guest list that haven't declined, against the event's capacity."> · {event.seats.sentence}</span>}
+            {event.seats && <span data-testid="ev-seats-left" data-reading={reading || addingDonors || addingGuest || savingAtt ? "1" : "0"} title="Places on the guest list that haven't declined, against the event's capacity."> · {reading || addingDonors || addingGuest || savingAtt ? "Updating…" : event.seats.sentence}</span>}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
@@ -1748,7 +1755,10 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
                       {d.stage && <Pill label={stageName(d.stage)} color={SC[d.stage] || T.ink3} />}
                     </button>
                   ))}
-                  {filteredDonors.length === 0 && <div data-testid="ev-dir-none" style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", padding: "12px 0", textAlign: "center" }}>{donorSearch.trim() ? `Nobody on file matches "${donorSearch.trim()}". Add them as a new guest instead.` : "Everyone on file is already on the list."}</div>}
+                  {/* FLOWS-10 items 2 and 3: while the answer is coming it says so, a failed search says it failed,
+                      and only an answer with nobody in it says nobody matches (or that everyone is already on the list). */}
+                  {filteredDonors.length === 0 && (pickPending || pickFailed) && <div data-testid={pickFailed ? "ev-dir-failed" : "ev-dir-looking"} role={pickFailed ? "alert" : "status"} style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", padding: "12px 0", textAlign: "center" }}>{pickFailed ? "The search did not answer, so this is not a list of who is on file. Type again to try once more." : "Looking…"}</div>}
+                  {filteredDonors.length === 0 && !pickPending && !pickFailed && <div data-testid="ev-dir-none" style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", padding: "12px 0", textAlign: "center" }}>{donorSearch.trim() ? `Nobody on file matches "${donorSearch.trim()}". Add them as a new guest instead.` : "Everyone on file is already on the list."}</div>}
                 </div>
                 {selectedIds.size > 0 && (
                   <button onClick={addFromDirectory} disabled={addingDonors} style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "9px", color: T.white, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>

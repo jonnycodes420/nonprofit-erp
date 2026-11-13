@@ -21,7 +21,7 @@ const linkBtn = { background: "none", border: "none", padding: "6px 0 0", color:
 export default function FromPerson({ value, chosen, onType, onChoose, onNew, newPersonOk, inputStyle, testid }) {
   const typed = String(value || "").trim();
   const picking = typed && !(chosen && chosen.name === value);
-  const [rows, pending] = usePeoplePicker(picking ? typed : "", { match: "person", limit: SHOWN, enabled: !!picking });
+  const [rows, pending, failed] = usePeoplePicker(picking ? typed : "", { match: "person", limit: SHOWN, enabled: !!picking });
   const [already, setAlready] = useState(null);   // the person on file with exactly this name
   const askNew = async () => {
     const same = await personNamed(typed).catch(() => null);
@@ -43,7 +43,7 @@ export default function FromPerson({ value, chosen, onType, onChoose, onNew, new
           ))}
         </div>
       )}
-      {picking && !pending && rows.length === 0 && <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>Nobody on file matches “{typed}”.</div>}
+      {picking && !pending && rows.length === 0 && <div role={failed ? "alert" : undefined} style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>{failed ? "The search did not answer. Type again to try once more." : <>Nobody on file matches “{typed}”.</>}</div>}
       {already ? (
         <div data-testid={testid + "-already"} role="alert" style={{ border: "1px solid " + T.gold300, background: T.gold50, borderRadius: 10, padding: 10, marginTop: 6, display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ fontSize: 13, color: T.ink }}>There's already a {already.name}. Use that record?</div>

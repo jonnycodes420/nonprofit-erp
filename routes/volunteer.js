@@ -758,8 +758,7 @@ async function volunteerList(req) {
             (SELECT COALESCE(SUM(ROUND(vx.hours*100)),0) FROM volunteer_shifts vx WHERE vx.org_id=donors.org_id AND vx.person_id=donors.id)::bigint AS life_h,
             (SELECT COALESCE(SUM(ROUND(vx.hours*100)),0) FROM volunteer_shifts vx WHERE vx.org_id=donors.org_id AND vx.person_id=donors.id AND vx.date >= ? AND vx.date <= ?)::bigint AS range_h,
             (SELECT MAX(vx.date) FROM volunteer_shifts vx WHERE vx.org_id=donors.org_id AND vx.person_id=donors.id) AS last_served,
-            (SELECT MIN(lx.date) FROM volunteer_signups sx JOIN volunteer_slots lx ON lx.id=sx.slot_id AND lx.cancelled_at IS NULL
-              WHERE sx.org_id=donors.org_id AND sx.person_id=donors.id AND sx.status='confirmed' AND lx.date >= ?) AS next_shift,
+            ${require("../shared/numbers/nextShift").NEXT_SHIFT_SQL("donors")} AS next_shift,   -- FLOWS-10 item 6: the waiting list counts
             (SELECT string_agg(qx.name, ', ' ORDER BY qx.kind, lower(qx.name)) FROM volunteer_qualifications qx WHERE qx.org_id=donors.org_id AND qx.person_id=donors.id) AS quals,
             (SELECT COUNT(*) FROM gifts gx WHERE gx.org_id=donors.org_id AND gx.donor_id=donors.id AND gx.amount > 0)::int AS gift_count
        FROM donors WHERE ${f.whereSql} ORDER BY lower(donors.name), donors.id LIMIT 2000`,
@@ -767,7 +766,7 @@ async function volunteerList(req) {
   return { hFrom, hTo, today, coord, rules,
     rows: rows.map(r => ({ id: r.id, name: r.name, email: r.email || "", phone: r.phone || "",
       lifetimeHours: Number(r.life_h) / 100, rangeHours: Number(r.range_h) / 100,
-      lastServed: r.last_served || null, nextShift: r.next_shift || null, qualifications: r.quals || "",
+      lastServed: r.last_served || null, nextShift: require("../shared/numbers/nextShift").nextShiftWords(r.next_shift), qualifications: r.quals || "",
       ...(coord ? {} : { lifetimeGiving: Number(r.total_giving || 0), lastGiftDate: r.last_gift_date || null, gifts: r.gift_count }) })) };
 }
 
@@ -779,7 +778,7 @@ app.get("/volunteer-hub/list", requireAuth, wrap(async (req, res) => {
     definitions: {
       lifetimeHours: "Every volunteer shift logged for this person, added up.",
       rangeHours: `Hours from shifts dated ${out.hFrom} to ${out.hTo}.`,
-      lastServed: "The most recent shift logged for them.", nextShift: "The next shift they have a place on.",
+      lastServed: "The most recent shift logged for them.", nextShift: "The next shift they have a place on; with none, the next one they are on the waiting list for, and their number.",
       ...(out.coord ? {} : { lifetimeGiving: "Every gift on their record, net of refunds.", gifts: "How many gifts they have given." }),
     } });
 }));

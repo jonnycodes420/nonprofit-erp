@@ -8,7 +8,9 @@ import { TrashList } from "./TrashList";
 // asks about them) until the trash is emptied. The count comes first, then a
 // second confirm; after it they are gone for good and never match an import.
 export function EmptyTrash({isAdmin,isReadOnly}){
-  const [days,setDays]=useState("90");
+  // FLOWS-10 item 15 (Area 5 Explore 6): the filter starts at everything in the trash, the rows
+  // listed above it, so it never reads "Nobody matches" beside four people.
+  const [days,setDays]=useState("all");
   const [check,setCheck]=useState(null);   // {count, sentence} for the days chosen
   const [sure,setSure]=useState(false);
   const [busy,setBusy]=useState(false);

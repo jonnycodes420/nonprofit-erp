@@ -873,11 +873,16 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
     ? firstChargeSentence({ monthlyUsd: chargeUsd, firstChargeAt: trialEndsAt, tz })
     : null;
 
-  const [[seatRow], [recordRow], records] = await Promise.all([
+  const RG = require("../shared/numbers/recordsGap");   // FLOWS-10 item 14
+  const [[seatRow], [recordRow], records, [gapRow]] = await Promise.all([
     query("SELECT COUNT(*) AS c FROM users WHERE org_id=?", [req.user.orgId]),
     query("SELECT COUNT(*) AS c FROM donors WHERE org_id=? AND deleted_at IS NULL", [req.user.orgId]),
     countRecords(req.user.orgId),
+    query(RG.countsSql(), [req.user.orgId]),
   ]);
+  const recordsGap = { markedNoGift: Number(gapRow?.marked_no_gift) || 0, giftNotMarked: Number(gapRow?.gift_not_marked) || 0 };
+  recordsGap.sentence = RG.gapSentence(recordsGap);
+  recordsGap.source = recordsGap.markedNoGift ? { key: "marked-donor-no-gift", params: {} } : null;
   // PRICING-1 · what Billing says: the band, the record count and how it is
   // counted, the price, the next charge, and whether the setup fee was paid.
   const tierNow = PRICING.tierForPlanValue(plan);
@@ -887,6 +892,7 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
   const pricing1 = {
     records,
     recordSentence: PRICING.RECORD_SENTENCE,
+    recordsGap,
     band: tierNow ? { id: tierNow.id, label: tierNow.band, maxRecords: tierNow.maxRecords, legacy: isLegacyBand } : null,
     countBand: countBand ? { id: countBand.id, label: countBand.band } : { id: PRICING.TALK_TO_US.id, label: PRICING.TALK_TO_US.band },
     interval,

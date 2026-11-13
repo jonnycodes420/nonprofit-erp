@@ -46,6 +46,17 @@ export function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
     }catch(e){setErr(errorMessage(e, "Could not save branding."));}
     setSaving(false);
   }
+  // FLOWS-10 item 13 (Area 5 Explore 2): a logo upload saves itself. It showed in Settings after
+  // upload and was gone after leaving and reloading, because only Save branding sent it.
+  async function saveLogo(dataUrl){
+    if(disabled)return;
+    setLogo(dataUrl);setErr("");setMsg("Saving the logo…");
+    try{
+      const res=await apiFetch("/orgs/branding",{method:"PUT",body:JSON.stringify(dataUrl?{logoData:dataUrl}:{removeLogo:true})});
+      if(res.logo_data!==undefined)setLogo(res.logo_data||"");if(res.name)setOrgName(res.name);
+      setLogoChanged(false);setMsg(dataUrl?"Logo saved.":"Logo removed.");onSaved&&onSaved();
+    }catch(e){setLogoChanged(true);setDirty(true);setMsg("");setErr(errorMessage(e,"The logo was not saved. Save branding to try again."));}
+  }
   if(!loaded)return <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",color:T.ink3,fontSize:13}}>Loading…</div>;
   return(
     <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
@@ -61,8 +72,8 @@ export function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
             <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
               shape="square" preview={logo||null}
               disabled={disabled} label={logo?"Replace logo":"Drag your logo here, or browse"}
-              onFile={({dataUrl})=>{setDirty(true);setLogoChanged(true);setLogo(dataUrl);}}
-              onRemove={disabled?null:()=>{setDirty(true);setLogoChanged(true);setLogo("");}}/>
+              onFile={({dataUrl})=>saveLogo(dataUrl)}
+              onRemove={disabled?null:()=>saveLogo("")}/>
           </div>
           <div>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>Accent color</div>

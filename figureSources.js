@@ -3014,7 +3014,8 @@ async function historicalGiving(orgId, from, to, { baseline = false } = {}) {
 // HISTORY-1: By year (the profile) and Year over year (Reports), in their own module.
 Object.assign(SOURCES, require("./server/reports/yoySources")({ FigureParamError }));
 Object.assign(SOURCES, require("./server/reports/ledgerSources")({ FigureParamError }));   // TRUTH-3: the ledger's three figures
-Object.assign(SOURCES, require("./server/donors/broughtInSources")());   // CONNECT-1: who someone brought in, and what they gave since
+Object.assign(SOURCES, require("./server/donors/broughtInSources")());
+Object.assign(SOURCES, require("./server/donors/recordsGapSources")());   // FLOWS-10 item 14: who is on the Donors tab and not a record   // CONNECT-1: who someone brought in, and what they gave since
 function sourceDef(key) { return Object.prototype.hasOwnProperty.call(SOURCES, key) ? SOURCES[key] : null; }
 
 const num = v => (v === null || v === undefined ? null : Number(v));

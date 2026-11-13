@@ -63,7 +63,7 @@ const MORE_PHOTOS = {
 const PAGE_PHOTOS = [
   [A("demo-hero-choir.jpg"), "Young singers on stage, mid-song", 0.5, 0.4],
   [L("two-young-volunteers-smiling-as-they-pack-food.jpg"), "Two young people smiling as they pack food", 0.5, 0.4],
-  [A("demo-campaign-chapel.jpg"), "A sunlit hall with tall windows", 0.5, 0.45],
+  [A("demo-campaign-chapel.jpg"), "A small chapel with a bell tower on a grassy hill at dusk", 0.5, 0.45],   // FLOWS-10 item 11: what the photo shows
   [L("a-nonprofit-team-gathering-around-a-table-to-r.jpg"), "A team gathered around a table", 0.5, 0.45],
   [A("demo-impact-studio.jpg"), "Hands shaping clay on a potter's wheel", 0.5, 0.5],
 ];

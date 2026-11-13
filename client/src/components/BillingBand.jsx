@@ -7,6 +7,7 @@ import { apiFetch } from "../api";
 import { T } from "./shared";
 import { displayDate } from "../../../shared/displayDate";
 import { SignedAgreement } from "./billing/SignedAgreement";   // ONBOARD-1
+import { Figure } from "./Figure";   // FLOWS-10 item 14
 
 const usd = n => "$" + Number(n).toLocaleString("en-US");
 const day = d => d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : null;
@@ -50,6 +51,15 @@ export function BillingBand({ billing, isAdmin, onChanged }) {
           b.setupFee.paid ? `${usd(b.setupFee.usd)} paid` : "Not charged",
           b.setupFee.paid ? `Charged once, on ${day(b.setupFee.paidAt)}.` : null, "billing-setup")}
       </div>
+      {/* FLOWS-10 item 14 (Area 5 Explore 5): Records and the Donors tab are two numbers; one line says
+          why, and the people marked Donor with no gift open (shared/numbers/recordsGap.js). */}
+      {b.recordsGap && b.recordsGap.sentence && (
+        <div data-testid="billing-records-gap" style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.5, maxWidth: 640 }}>
+          {b.recordsGap.markedNoGift > 0 && b.recordsGap.source && <><Figure value={b.recordsGap.markedNoGift} kind="count" label="Marked Donor, no gift on file"
+            definition="People marked Donor who have no gift on file. The Donors tab counts them; Records does not." source={b.recordsGap.source} variant="inline" />{" "}</>}
+          {b.recordsGap.markedNoGift > 0 ? b.recordsGap.sentence.replace(/^[\d,]+ /, "") : b.recordsGap.sentence}
+        </div>
+      )}
       {b.notice && (
         <div data-testid="billing-band-notice" style={{ ...NOTE, borderLeft: `3px solid ${T.gold}` }}>
           <span style={{ flex: 1, minWidth: 220 }}>
