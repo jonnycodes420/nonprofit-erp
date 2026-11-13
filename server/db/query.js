@@ -100,7 +100,7 @@ function memoKey(text, params) {
     });
   } catch { return null; }
 }
-const copyRows = rows => rows.map(r => {
+const copyRows = list => list.map(r => {
   const o = {};
   for (const k in r) {
     const v = r[k];
