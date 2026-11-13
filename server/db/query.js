@@ -85,6 +85,29 @@ async function runOutside(sql, params = []) {
   return { changes: (await once(pool, sql.replace(/\?/g, () => `$${++i}`), params)).rowCount };
 }
 // SPLIT-2 end
+// PROFILE-SPEED-1: which statements a bundle may answer once. A plain read
+// only (SELECT or WITH, nothing that writes, locks or moves a sequence), with
+// values that are plain JSON; and a copy per caller, so one route changing its
+// rows can never change another's.
+const READ_ONLY = /^\s*(SELECT|WITH)\b/i;
+const NOT_A_PLAIN_READ = /\b(INSERT|UPDATE|DELETE|MERGE|FOR\s+(UPDATE|SHARE|NO\s+KEY|KEY)|nextval|setval|pg_advisory\w*|pg_sleep|random|clock_timestamp|txid_\w+|set_config)\b/i;
+function memoKey(text, params) {
+  if (!READ_ONLY.test(text) || NOT_A_PLAIN_READ.test(text)) return null;
+  try {
+    return text + "\u0000" + JSON.stringify(params, (k, v) => {
+      if (typeof v === "bigint" || (v && typeof v === "object" && (Buffer.isBuffer(v) || v instanceof Uint8Array))) throw new Error("not plain");
+      return v;
+    });
+  } catch { return null; }
+}
+const copyRows = rows => rows.map(r => {
+  const o = {};
+  for (const k in r) {
+    const v = r[k];
+    o[k] = v instanceof Date ? new Date(v.getTime()) : Buffer.isBuffer(v) ? Buffer.from(v) : v && typeof v === "object" ? structuredClone(v) : v;
+  }
+  return o;
+});
 // SPLIT-2 db.js piece 25
 
 // Convert SQLite ? placeholders to PostgreSQL $1, $2, ... positional params
@@ -113,29 +136,6 @@ async function query(sql, params = []) {
   try { return (await tx.query(pgSql, params)).rows; } catch (e) { throw LIMITS.translate(e); }
 }
 // SPLIT-2 end
-// PROFILE-SPEED-1: which statements a bundle may answer once. A plain read
-// only (SELECT or WITH, nothing that writes, locks or moves a sequence), with
-// values that are plain JSON; and a copy per caller, so one route changing its
-// rows can never change another's.
-const READ_ONLY = /^\s*(SELECT|WITH)\b/i;
-const NOT_A_PLAIN_READ = /\b(INSERT|UPDATE|DELETE|MERGE|FOR\s+(UPDATE|SHARE|NO\s+KEY|KEY)|nextval|setval|pg_advisory\w*|pg_sleep|random|clock_timestamp|txid_\w+|set_config)\b/i;
-function memoKey(text, params) {
-  if (!READ_ONLY.test(text) || NOT_A_PLAIN_READ.test(text)) return null;
-  try {
-    return text + "\u0000" + JSON.stringify(params, (k, v) => {
-      if (typeof v === "bigint" || (v && typeof v === "object" && (Buffer.isBuffer(v) || v instanceof Uint8Array))) throw new Error("not plain");
-      return v;
-    });
-  } catch { return null; }
-}
-const copyRows = rows => rows.map(r => {
-  const o = {};
-  for (const k in r) {
-    const v = r[k];
-    o[k] = v instanceof Date ? new Date(v.getTime()) : Buffer.isBuffer(v) ? Buffer.from(v) : v && typeof v === "object" ? structuredClone(v) : v;
-  }
-  return o;
-});
 // SPLIT-2 db.js piece 26
 
 async function run(sql, params = []) {
