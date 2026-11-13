@@ -2,7 +2,7 @@
 // the query helpers, the boot DDL, the seed). It keeps getDb and the one export
 // list, so no caller changed. Tests read the whole as readSource("db.js").
 const { uuid, pools, POOL_MAX, SET_POOL_MAX, APP_NAME, isPoolFull, setPool, querySetwise, pool, requestLimits } = require("./server/db/pool");
-const { countedClient, countRoundTrips, withAmbientTransaction, queryOutside, runOutside, query, run, withClient, onThePool, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx } = require("./server/db/query");
+const { queryNoJit, countedClient, countRoundTrips, withAmbientTransaction, queryOutside, runOutside, query, run, withClient, onThePool, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx } = require("./server/db/query");
 const { initSchema } = require("./server/db/schema");
 const { backfillLinkedTasks, householdsFromLinks, seedData, seedOrgData } = require("./server/db/seed");
 
@@ -42,6 +42,6 @@ async function getDb() {
 // SPLIT-2 end
 // SPLIT-2 db.js piece 55
 
-module.exports = { poolStats: () => pools.stats(pool), requestLimits, isPoolFull, POOL_MAX, SET_POOL_MAX, APP_NAME, setPool, countedClient, countRoundTrips, withClient, onThePool, getDb, query, querySetwise, run, withAmbientTransaction, queryOutside, runOutside, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
+module.exports = { poolStats: () => pools.stats(pool), requestLimits, isPoolFull, POOL_MAX, SET_POOL_MAX, APP_NAME, setPool, countedClient, countRoundTrips, withClient, onThePool, getDb, query, queryNoJit, querySetwise, run, withAmbientTransaction, queryOutside, runOutside, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
   householdsFromLinks: (orgId = null) => householdsFromLinks(pool, orgId) };
 // SPLIT-2 end
