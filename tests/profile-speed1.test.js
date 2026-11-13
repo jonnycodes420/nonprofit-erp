@@ -5,7 +5,7 @@
 // shows above the fold) and the two together could hold all ten of the web's
 // connections. Now the first screen is one request, GET /donors/:id/profile
 // (server/donors/profileBundle.js), whose every part is the separate route's
-// own answer, and every web request's statements share three connections
+// own answer, and every web request's statements share five connections
 // (server/shared/pools.js PER_REQUEST_MAX, server/shared/requestLimits.js).
 // It guards donor data on a screen: the profile's numbers, rail, Next step and
 // timeline.
@@ -23,9 +23,9 @@
 //   §2  KEEP IT FAST. A 10,000-person org (the nightly's generator). Ten people
 //       open profiles the way the browser does (the first screen, then the
 //       below-the-fold bundle), two read the Donors list beside them, for
-//       twenty seconds. No request holds more than three connections
+//       twenty seconds. No request holds more than five connections
 //       (GET /perf/peaks, TEST_MODE), every answer is a 200, and the main pool
-//       is at 70% or more for under 18% of the run (main's shape: 28.9%).
+//       is at 70% or more for under 25% of the run (main's shape: ~35%).
 //
 // HOW IT GOES RED (planted, seen red before green; PROFILE-SPEED-1 report):
 //   * the bundle reading the stored rollup: profileBundle.js answering the
@@ -176,12 +176,13 @@ const BELOW = id => [`/donors/${id}/journey-suggestion`, `/donors/${id}/groups`,
   "/mailbox", "/sequences", "/org", "/journeys", "/fundraising/campaigns", "/custom-fields?entity=gift"];
 const RUN_MS = 20000, OPENERS = 10, LISTERS = 2, THINK_MS = 1000;
 // The share of the run the main pool may spend at 70% or more of DB_POOL_MAX.
-// Measured in the battery (PROFILE-SPEED-1 report): the one-trip profile 9.1%
-// and 11.9% on two runs of the same code; the 13 separate calls 28.9%. The bar
-// sits between, clear of the noise on either side. (Jonathan, 12 Nov: the pool
+// Measured in the battery at the cap of 5 (PROFILE-SPEED-1 report): the
+// one-trip profile 12.5%, 14.5% and 17.2% alone, 21.6% beside a browser walk;
+// the 13 separate calls (PS1_SHAPE=many) 34.4% and 35.8%. The bar sits
+// between, clear of the noise on either side. (Jonathan, 12 Nov: the pool
 // is held to its time at 70% or more, not to its momentary peak, which ten
 // requests in one instant reach whatever each of them holds.)
-const AT70_SHARE_MAX = 18;
+const AT70_SHARE_MAX = 25;
 
 async function keepItFast(sameTok) {
   const [have] = await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1`, [BIG.id]);
@@ -235,7 +236,7 @@ async function keepItFast(sameTok) {
   console.log(`   shape ${shape}: ${opens.length} profile opens p95 ${p95(opens)} ms, ${lists.length} Donors list reads p95 ${p95(lists)} ms`);
   console.log(`   pool: most in use at once ${pool.peak} of ${pool.max}; at 70% or more ${pool.pctAt70}% of the run, full ${pool.pctAtFull}%; most one request held ${peaks.perRequestPeak} (cap ${peaks.perRequestMax}), past the cap ${peaks.overCap || 0} time(s)`);
   ok(`§2 ${OPENERS} people opening profiles and ${LISTERS} reading the Donors list for ${RUN_MS / 1000} s: every answer is a 200`, bad.length === 0 && opens.length >= OPENERS, bad.slice(0, 5));
-  ok("§2 no request held more than three connections at once", peaks.perRequestPeak != null && peaks.perRequestPeak <= 3, peaks);
+  ok("§2 no request held more than five connections at once", peaks.perRequestPeak != null && peaks.perRequestMax === 5 && peaks.perRequestPeak <= 5, peaks);
   ok(`§2 the pool was at 70% or more for under ${AT70_SHARE_MAX}% of the run`, pool.samples > 50 && pool.pctAt70 < AT70_SHARE_MAX, pool);
 }
 

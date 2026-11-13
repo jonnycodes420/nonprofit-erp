@@ -55,5 +55,5 @@ export function startPageReads(pathname, search = "") {
   // PROFILE-SPEED-1: back to Home from another page, its deck, rail and first
   // bundles leave as the click lands, as they do at the boot, so its panels
   // find their reads in flight instead of each asking on its own.
-  if (/^\/dashboard\/?$/.test(pathname)) startHomeReads();
+  if (/^\/dashboard\/?$/.test(pathname)) startHomeReads(true);
 }

@@ -20,7 +20,7 @@
 // receipts, open asks, planned gifts) is read when that tab opens
 // (client/src/lib/profileReads.js).
 //
-// The request's statements share the request's three connections
+// The request's statements share the request's five connections
 // (pools.js PER_REQUEST_MAX), however many parts it has.
 "use strict";
 

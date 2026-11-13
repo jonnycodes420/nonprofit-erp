@@ -7,7 +7,7 @@
 // the web's database connections. The fixes: each page's first reads leave in
 // one request as you click (client/src/lib/pageReads.js, from App's navigateTo),
 // the profile's first screen is one request (GET /donors/:id/profile), and a
-// request's statements share three connections (server/shared/pools.js
+// request's statements share five connections (server/shared/pools.js
 // PER_REQUEST_MAX). This walk keeps it that way:
 //
 //   · It signs in to its own org, opens Home, then clicks each page in the
@@ -26,7 +26,7 @@
 //     the drawn screen mounts) is not before the draw.
 //   · Connections: the server's per-request peak is reset before the walk
 //     (POST /perf/peaks/reset, TEST_MODE only) and read after it: no request
-//     held more than PER_REQUEST_MAX (3).
+//     held more than PER_REQUEST_MAX (5).
 //   · No 5xx, except the AI-off POST /ai/stream (smoke-walk's EXPECTED_5XX).
 //
 // HOW IT GOES RED (planted, seen red before green; PROFILE-SPEED-1 report):
@@ -183,7 +183,7 @@ async function fixture() {
   const peaks = await api("GET", "/perf/peaks", a.token);
   const p = peaks.body || {};
   ok(`no request held more than ${p.perRequestMax} connections at once (${p.perRequestPeak})`,
-    peaks.status === 200 && p.perRequestMax === 3 && p.perRequestPeak >= 1 && p.perRequestPeak <= p.perRequestMax, p);
+    peaks.status === 200 && p.perRequestMax === 5 && p.perRequestPeak >= 1 && p.perRequestPeak <= p.perRequestMax, p);
   ok("no 5xx on any page (the AI-off draft aside)", fivexx.length === 0, fivexx.slice(0, 6));
   await browser.close();
   await closeDb();

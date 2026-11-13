@@ -20,7 +20,7 @@ build with a 10,000-person org, every page clicked in a real browser:
   Donors later sent each panel's read on its own: 11 to 13 requests.
 
 ## What changed
-- **A per-request connection cap** (`server/shared/pools.js` `PER_REQUEST_MAX`, 3; the places are
+- **A per-request connection cap** (`server/shared/pools.js` `PER_REQUEST_MAX`, 5; the places are
   taken in `server/shared/requestLimits.js` `checkout`, where every connection passes). Both pools
   count. A connection held for a callback (`withClient`, `withTransaction`, the ambient transaction,
   an advisory lock) takes a place; a connection asked for inside one waits at the front of the
@@ -42,17 +42,25 @@ build with a 10,000-person org, every page clicked in a real browser:
   hand-picked audience. Events asks for its four year figures once.
 - The nightly reports how full the pool got (`scripts/load/poolSampler.js`).
 
+## Why five, not the brief's three
+The brief asked for three. On the nightly runner the branch at three was slower than main in both
+pairs (profile open p95 3,737 ms against 925 in pair 2). Timed quietly with prod's ~17 ms per
+statement added, a profile's first screen took ~700 ms on main, 1,116 at three, 743 at five and
+540 uncapped: ~160 statements over three connections wait in line, each paying the round trip.
+Jonathan chose five (12 Nov): level with main, and no request can take more than half the pool.
+Three becomes affordable when a profile sends far fewer statements; that is the next brief.
+
 ## The pool target
 The brief asked for "pool peak under 70%". A per-request cap cannot reach a momentary peak: ten
 requests in the same instant each holding up to three is 30 wanted of 10. Reaching it would take a
 second cap on all requests together, leaving connections idle while requests wait, which costs
 throughput on prod where each statement crosses the network. Jonathan chose (12 Nov) to hold the
 pool to its time at 70% or more instead. In the battery's load shape the one-trip profile spends
-~9–12% of the run there, the old 13-call shape 29%.
+~12–17% of the run there at the cap of 5 (9–12% at 3), the old 13-call shape ~35%.
 
 ## Tests
 - `tests/profile-speed1.test.js`: parity (seven fixture people, every part byte for byte the route's
   and LOAD-1's bundle's, the header's Lifetime worked out by hand against a deliberately wrong
-  stored rollup) and a load shape (no request over 3, the pool under 18% of the run at ≥70%).
+  stored rollup) and a load shape (no request over 5, the pool under 25% of the run at ≥70%).
 - `tests/page-budget.test.js`: every main page in a browser, at most 5 requests on open (the
-  profile 3 before its first screen lands), a few pages at today's count, and no request over 3.
+  profile 3 before its first screen lands), a few pages at today's count, and no request over 5.

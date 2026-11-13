@@ -16,11 +16,13 @@ const { toQuery } = require("../db/sql");   // REDTEAM-2
 const POOL_MAX = Math.max(2, Number(process.env.DB_POOL_MAX) || 10);
 const SET_POOL_MAX = Math.min(3, Math.max(1, Math.floor(POOL_MAX / 3)));
 // PROFILE-SPEED-1 · THE MOST CONNECTIONS ONE REQUEST HOLDS AT ONCE, across
-// both pools: 3 by default, never more than a third of the main pool (and at
-// least 1). Every web request's checkout takes one of these places first
+// both pools: 5 by default, never more than half the main pool (and at least
+// 1). Every web request's checkout takes one of these places first
 // (requestLimits.checkout), so no page, however many statements it fans out,
-// can hold the pool from everyone else.
-const PER_REQUEST_MAX = Math.max(1, Math.min(Number(process.env.REQUEST_CONNECTION_CAP) || 3, Math.floor(POOL_MAX / 3) || 1));
+// can hold the pool from everyone else. Jonathan chose 5 over the brief's 3
+// (12 Nov): at prod's ~17 ms a statement, 3 made a profile ~400 ms slower than
+// main (1,116 vs ~700 ms; 5: 743). The way to 3 is fewer statements, not this.
+const PER_REQUEST_MAX = Math.max(1, Math.min(Number(process.env.REQUEST_CONNECTION_CAP) || 5, Math.floor(POOL_MAX / 2) || 1));
 const PROCESS_NAME = process.env.STEWARD_PROCESS === "worker" ? "steward-worker" : "steward-web";
 const SHORT_SHA = (() => {
   let sha = null;

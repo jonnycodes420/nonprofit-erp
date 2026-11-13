@@ -6,7 +6,7 @@
 // took within a minute is dropped, so a stale answer is never used.
 import { apiFetch, prefetch, landed } from "../api";
 import { retryImport } from "./lazyRetry";
-import { BOOT_READS, SHELL_READS, bootBundles } from "./homeReads";
+import { BOOT_READS, SHELL_READS, RAIL_READS, bootBundles } from "./homeReads";
 
 export { BOOT_READS, SHELL_READS };   // PERF-2: the lists live in lib/homeReads.js
 let started = null, at = 0;
@@ -32,11 +32,16 @@ export function startShellReads(home) {
 
 // On Home, its first bundle too, with the scoped reads in it (PERF-2). Its
 // answers are parked for Home.
-export function startHomeReads() {
+export function startHomeReads(again = false) {
   startHomeCode();
   // Home's deck (Insights.jsx HomeMoves, useInsights("deck")) on its own: the
   // heaviest read on Home, so it does not hold the first bundle back.
-  const [, , deck, rail, first] = bootBundles(true);
+  let [, , deck, rail, first] = bootBundles(true);
+  // PROFILE-SPEED-1: clicked back to Home (lib/pageReads.js), the shell's bundle
+  // is not asked again, so the two shell reads Home's panels make (the rail's
+  // thank-you clock, Home's volunteer crossover) ride in Home's own bundles
+  // instead of each leaving alone (page-budget: Home sent 6 on a slow run).
+  if (again) { rail = [...new Set(RAIL_READS)]; first = [...first, "/volunteer-hub/crossover"]; }
   prefetch(deck, { keep: true }).catch(() => {});
   // HOME-4: the right rail's reads, beside the deck's.
   prefetch(rail, { keep: true }).catch(() => {});
