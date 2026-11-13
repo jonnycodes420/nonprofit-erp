@@ -295,7 +295,10 @@ async function reportByGroup(orgId, p) {
     if (r.key_ids === 0 && PARAM !== "campaign") return { key: "gifts", params: { ...base, [PARAM]: "none" } };
     return null;
   };
-  const figures = await reportFigures(orgId, { grandTotal: { key: "gifts", params: base } });
+  // FLOWS-9 (W-1113-Fundraising-01): a split gift is a line in each of its funds, so the
+  // rows' counts may add to more than the gifts; the total counts each gift once.
+  const figures = await reportFigures(orgId, { grandTotal: { key: "gifts", params: base },
+    grandCount: { key: "gifts", params: { ...base, measure: "count" } } });
   const grand = rows.reduce((s, r) => s + Number(r.total), 0);
   return {
     figures,
@@ -545,39 +548,38 @@ async function reportAnnual(orgId, p) {
   const prior = reportYearBounds(p.year - 1, p.yearMode, p.fiscalStartMonth);
   const sp = await yearSpans(p, [reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth), prior]);
   const [cur, priorSpan] = sp.years;
-  const [totals] = await query(
+  // REPORTS-SPEED-2: the reads below are independent and go out together; the
+  // report lane (server/shared/reportLane.js) lets at most a third of the pool
+  // run them, so one Annual no longer holds nine of the ten connections.
+  const pTotals = query(
     `SELECT COUNT(*) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")})::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
             ${NUMBERS.money.GIVERS("g", "d")}::int AS unique_donors,
             COALESCE(AVG(g.amount) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")}),0) AS avg_gift
      FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}`,
     [orgId, cur.from, cur.to]);
-  const [priorT] = await query(
+  const pPriorT = query(
     `SELECT COUNT(*) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")})::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
             ${NUMBERS.money.GIVERS("g", "d")}::int AS unique_donors
      FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}`,
     [orgId, priorSpan.from, priorSpan.to]);
-  const [split] = await query(
-    `WITH period_donors AS (SELECT DISTINCT g.donor_id FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-                            WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}),
-          -- NUMBERS-3: the one first gift (shared/numbers/firstGift.js), imported history included
-          firsts AS (SELECT d.id AS donor_id, ${NUMBERS.firstGift.FIRST_DATE("d")} AS fg FROM donors d WHERE d.org_id = ?)
-     SELECT COUNT(*) FILTER (WHERE f.fg >= ? AND f.fg <= ?)::int AS new_donors, COUNT(*)::int AS period_donors
-     FROM period_donors pd JOIN firsts f ON f.donor_id = pd.donor_id`,
-    [orgId, cur.from, cur.to, orgId, cur.from, cur.to]);
+  // REPORTS-SPEED-2: the new/returning split read here (each period donor's
+  // first gift, a subquery per person) was never shown: newDonors and
+  // returningDonors below are the `givers` figures' values, which replace it.
+  // 68 ms of a 25,000-person org's Annual, gone; the answer is unchanged.
   // Retention: donors who gave in the prior year and gave again this year
   // (NUMBERS-3: shared/numbers/retained.js, so a refund is not giving again).
-  const ret = await NUMBERS.retained.retention(query, orgId, cur, prior)
+  const pRet = NUMBERS.retained.retention(query, orgId, cur, prior)
     .then(r => ({ prior_donors: r.prior, retained: r.retained }));
-  const byFund = await query(
+  const pByFund = query(
     `SELECT COALESCE(x.name,'Unrestricted (no fund)') AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(gf.amount),0) AS total, COUNT(*) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")})::int AS gift_count
      FROM gifts g JOIN donors d ON d.id = g.donor_id
      JOIN ${NUMBERS.fundLines.GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id   -- GIFTS-2: a split gift by its lines
      LEFT JOIN fin_funds x ON x.id = gf.fund_id AND x.org_id = g.org_id
      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}
      GROUP BY 1 ORDER BY total DESC`, [orgId, cur.from, cur.to]);
-  const byCampaign = await query(
+  const pByCampaign = query(
     `SELECT COALESCE(x.name, NULLIF(g.campaign,''), 'No campaign') AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(g.amount),0) AS total, COUNT(*) FILTER (WHERE ${NUMBERS.giftCount.COUNTED("g")})::int AS gift_count
      FROM gifts g JOIN donors d ON d.id = g.donor_id
      LEFT JOIN campaigns x ON x.id = g.campaign_id AND x.org_id = g.org_id
@@ -585,7 +587,7 @@ async function reportAnnual(orgId, p) {
      GROUP BY 1 ORDER BY total DESC`, [orgId, cur.from, cur.to]);
   // REPORTS-4: the year's figures through their sources; the page shows them.
   const yw = { from: cur.from, to: cur.to };
-  const figures = await reportFigures(orgId, {
+  const pFigures = reportFigures(orgId, {
     total: { key: "gifts", params: yw }, giftCount: { key: "gifts", params: { ...yw, measure: "count" } },
     uniqueDonors: { key: "givers", params: yw }, avgGift: { key: "gifts", params: { ...yw, measure: "mean" } },
     growthPct: { key: "giving-change", params: { ...yw, prevFrom: priorSpan.from, prevTo: priorSpan.to } },
@@ -593,6 +595,7 @@ async function reportAnnual(orgId, p) {
     newDonors: { key: "givers", params: { ...yw, first: "new" } }, returningDonors: { key: "givers", params: { ...yw, first: "returning" } },
     retentionRate: { key: "retention-window", params: { from1: prior.from, to1: prior.to, from0: cur.from, to0: cur.to } },
   });
+  const [[totals], [priorT], ret, byFund, byCampaign, figures] = await Promise.all([pTotals, pPriorT, pRet, pByFund, pByCampaign, pFigures]);
   const groupSource = (r, param) => r.key_ids === 1 ? { key: "gifts", params: { ...yw, [param]: r.key_id } }
     : r.key_ids === 0 && param === "fund" ? { key: "gifts", params: { ...yw, fund: "none" } } : null;
   const total = Number(totals.total), priorTotal = Number(priorT.total);
@@ -605,7 +608,7 @@ async function reportAnnual(orgId, p) {
     avgGift: Math.round(Number(totals.avg_gift) * 100) / 100,
     priorTotal, priorGiftCount: priorT.gift_count, priorUniqueDonors: priorT.unique_donors,
     growthPct: priorTotal > 0 ? Math.round((total - priorTotal) / priorTotal * 1000) / 10 : null,
-    newDonors: split.new_donors, returningDonors: split.period_donors - split.new_donors,
+    newDonors: null, returningDonors: null,   // the figures' values, set below (REPORTS-SPEED-2: kept here for the answer's key order)
     priorDonors: ret.prior_donors, retainedDonors: ret.retained,
     retentionRate: ret.prior_donors > 0 ? Math.round(ret.retained / ret.prior_donors * 1000) / 10 : null,
     ...Object.fromEntries(Object.entries(figures).map(([k, f]) => [k, f.value])),
@@ -1331,7 +1334,8 @@ const REPORT_HANDLERS = {
   "top-donors": reportTopDonors,
   "three-year": reportThreeYear,
   // HISTORY-1 — each fiscal year beside the one before (shared/numbers/byYear.js).
-  "year-over-year": async (orgId, p) => require("../../shared/numbers/byYear").orgByYear(query, { ...p.org, id: orgId }, p.today),
+  "year-over-year": async (orgId, p) => require("../../shared/numbers/byYear").orgByYear(query, { ...p.org, id: orgId }, p.today,
+    { heavy: require("../../db").queryNoJit }),   // REPORTS-SPEED-2: its one pass, JIT off
   "annual": reportAnnual,
   "solicitations": reportSolicitations,
   // BUILD-87 Part 4 — the bookkeeper's export. A read path like every other

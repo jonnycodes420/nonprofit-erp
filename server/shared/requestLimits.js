@@ -36,7 +36,8 @@ const LONGER = [
 const limitFor = (path) => { for (const [re, name] of LONGER) if (re.test(path)) return name; return "default"; };
 
 const TOO_LONG = "This took too long; try again or narrow it.";
-const tooLong = () => Object.assign(new Error(TOO_LONG), { code: "request_timeout", status: 503 });
+// REPORTS-SPEED-2: a scope may say what took too long (reportLane.js: "This report took too long …").
+const tooLong = (sc) => Object.assign(new Error((sc && sc.tooLongMessage) || TOO_LONG), { code: "request_timeout", status: 503 });
 const abandoned = () => Object.assign(new Error("The request was closed before it finished."), { code: "request_abandoned", status: 499 });
 // 57014 is query_canceled: both a statement_timeout and a pg_cancel_backend.
 const isCancel = (e) => !!e && e.code === "57014";
@@ -160,7 +161,7 @@ async function checkout(pool) {
     const wait = { settled: false, timer: null, fail: null, place: false, over: false };
     const end = () => { wait.settled = true; clearTimeout(wait.timer); sc.waiting.delete(wait.fail); };
     wait.fail = (e) => { if (!wait.settled) { end(); if (wait.place) givePlace(sc); reject(e); } };
-    wait.timer = setTimeout(() => { counters.checkoutTimeouts++; sc.timedOut = true; wait.fail(tooLong()); }, sc.limitMs);
+    wait.timer = setTimeout(() => { counters.checkoutTimeouts++; sc.timedOut = true; wait.fail(tooLong(sc)); }, sc.limitMs);
     sc.waiting.add(wait.fail);
     const go = () => pool.connect().then(c => {
       if (wait.settled) return c.release();
@@ -191,6 +192,7 @@ async function align(client, ms, sc) {
     sc.held.add(client); client.__stewardScope = sc;
     if (sc.held.size > (sc.peak || 0)) sc.peak = sc.held.size;
     if (sc.held.size > counters.perRequestPeak) counters.perRequestPeak = sc.held.size;
+    if (sc.onHeld) sc.onHeld();   // REPORTS-SPEED-2: reportLane counts a report's connections
   }
   return client;
 }
@@ -200,6 +202,7 @@ function release(client, err) {
   if (!sc) return client.release(err);
   sc.held.delete(client);
   if (client.__stewardPlace) { client.__stewardPlace = false; givePlace(sc); }
+  if (sc.onHeld) sc.onHeld();
   if (sc.cancelling) return void sc.cancelling.then(() => client.release(err));
   client.release(err);
 }
@@ -209,7 +212,7 @@ function translate(e) {
   if (!isCancel(e) || !sc) return e;
   if (sc.closed) return abandoned();
   sc.timedOut = true; counters.statementTimeouts++;
-  return tooLong();
+  return tooLong(sc);
 }
 // A held client's next statement after an abandon is never started.
 function guard() { refuseIfAbandoned(); }

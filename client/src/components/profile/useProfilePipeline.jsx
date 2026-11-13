@@ -82,7 +82,10 @@ export function useProfilePipeline({ givingOpen, donor, setDesignations, refresh
     }
   },[initialAddGift]);
 
-  const loadGiftsFull=()=>{
+  const loadGiftsFull=(o)=>{
+    // FLOWS-9 (W-1113-Fundraising-01): after a refund, the soft credit box ("Their own
+    // giving") and What they support are read again, so none says the gift before it.
+    if(o&&o.money){refreshSoftCredit();loadFundAffinity();}
     const seq=++giftReadSeq.current;
     const id=donor.id;
     const attempt=n=>apiFetch(`/donors/${id}`).catch(e=>{

@@ -85,7 +85,9 @@ function stats(main) {
   return { max: POOL_MAX, total: main.totalCount, idle: main.idleCount, waiting: main.waitingCount,
     set: { max: SET_POOL_MAX, total: _setPool ? _setPool.totalCount : 0 }, name: PROCESS_NAME,
     // LOAD-1: waits for a connection that gave up, statements stopped at their limit, reads cancelled.
-    limits: LIMITS.stats(), perRequest: { max: PER_REQUEST_MAX, peak: LIMITS.stats().perRequestPeak, waits: LIMITS.stats().capWaits, overCap: LIMITS.stats().overCap } };
+    limits: LIMITS.stats(), perRequest: { max: PER_REQUEST_MAX, peak: LIMITS.stats().perRequestPeak, waits: LIMITS.stats().capWaits, overCap: LIMITS.stats().overCap },
+    // REPORTS-SPEED-2: the report lane's places (server/shared/reportLane.js).
+    reportLane: require("./reportLane").stats() };
 }
 
 module.exports = { PER_REQUEST_MAX, POOL_MAX, SET_POOL_MAX, PROCESS_NAME, APP_NAME, isPoolFull, setPool, setPoolReady, querySetwise, stats };

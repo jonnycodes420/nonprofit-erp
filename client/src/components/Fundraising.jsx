@@ -512,6 +512,8 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           sub={gp.takesGifts === false ? <span data-testid="fr-pages-why">Connect Stripe to take gifts on your pages</span> : gp.count > 0 ? `${fmtTotal(gp.raised)} raised` : "None can take a gift yet"}
           period={gp.count > 0 ? { name: "Since each page opened" } : null} />
       </div>
+      {/* FLOWS-9 (W-1112-Fundraising-05): when a campaign card counts other days than Raised, one plain line says so. */}
+      {overview.periodsDiffer && <div data-testid="fr-periods-differ" style={{ fontSize: 12.5, color: T.ink2, marginTop: -4 }}>{overview.periodsDiffer}</div>}
       {/* IMPORT-4: the period's figures leave out gifts with no date, and say so. */}
       {overview.undated && overview.undated.count > 0 && (
         <div data-testid="fr-undated" style={{ fontSize: 12, color: T.ink3, marginTop: -4 }}>

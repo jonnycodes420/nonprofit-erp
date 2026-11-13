@@ -505,7 +505,7 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
 
   useEffect(() => { apiFetch(`/email-templates/${template.id}/usage`).then(setUsage).catch(() => setUsage(null)); }, [template.id]);
   useEffect(() => {
-    apiFetch("/events").then(r => setEvents(Array.isArray(r) ? r : [])).catch(() => setEvents([]));
+    apiFetch("/events").then(r => setEvents(Array.isArray(r) ? r.filter(e => !e.archived_at) : [])).catch(() => setEvents([]));   // FLOWS-9: archived is offered nowhere
     apiFetch("/giving-pages").then(r => setPages(Array.isArray(r) ? r : [])).catch(() => setPages([]));
   }, []);
 

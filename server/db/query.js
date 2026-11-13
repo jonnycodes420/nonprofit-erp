@@ -1,7 +1,7 @@
 // SPLIT-2: moved VERBATIM from db.js (the query helpers). db.js re-exports it, so no caller changed.
 // Each "SPLIT-2 db.js piece N" block is db.js's own text; tests read db.js through
 // readSource("db.js"), which puts the pieces back in order.
-const { pool, LIMITS, once } = require("./pool");
+const { pool, LIMITS, once, onceNoJit } = require("./pool");
 const { toQuery } = require("./sql");   // REDTEAM-2
 
 // SPLIT-2 db.js piece 14
@@ -144,6 +144,16 @@ async function query(sql, params = []) {
   if (!tx) return (await once(pool, pgSql, params)).rows;
   LIMITS.guard();
   try { return (await tx.query(pgSql, params)).rows; } catch (e) { throw LIMITS.translate(e); }
+}
+// REPORTS-SPEED-2: query() for one big read that must not be JIT-compiled
+// (server/db/pool.js onceNoJit). Inside an ambient transaction it is query().
+async function queryNoJit(sql, params = []) {
+  if (ambient()) return query(sql, params);
+  [sql, params] = toQuery(sql, params);
+  if (TEST_LATENCY_MS) await roundTrip();
+  noteTrip();
+  let i = 0;
+  return (await onceNoJit(sql.replace(/\?/g, () => `$${++i}`), params)).rows;
 }
 // SPLIT-2 end
 // SPLIT-2 db.js piece 26
@@ -295,4 +305,4 @@ function countedClient(client) {
 
 // RACE-1 · server/shared/personLock.js needs to know whether it is inside an ambient transaction.
 function inAmbientTransaction() { return !!ambient(); }
-module.exports = { inAmbientTransaction, lockAdvisory, unlockAdvisory, countedClient, countRoundTrips, withAmbientTransaction, queryOutside, runOutside, query, run, withClient, onThePool, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx };
+module.exports = { queryNoJit, inAmbientTransaction, lockAdvisory, unlockAdvisory, countedClient, countRoundTrips, withAmbientTransaction, queryOutside, runOutside, query, run, withClient, onThePool, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx };

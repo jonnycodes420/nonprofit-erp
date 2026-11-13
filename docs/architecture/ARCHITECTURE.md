@@ -160,6 +160,7 @@ to grow by at most 50 lines in a build (so a fix can land while the split is sti
 - A read the browser abandons is cancelled. A write is never cancelled half way.
 - No connection is held across an await on anything but the database (an AI call, Stripe, S3, mail, an HTTP call to the app itself). The places that still do are listed in `docs/history/LOAD-1.md`.
 - **No request holds more than five connections at once** (PROFILE-SPEED-1, `pools.js` `PER_REQUEST_MAX`): its statements take places in `requestLimits.checkout`, so a route that fans out with `Promise.all` waits for its own places instead of taking the pool. Raising it is not the fix for a slow route; fewer statements are. A request goes past five only when every connection it holds is a callback waiting on another, and then says so in the log (`[conn-cap] <route>`).
+- REPORTS-SPEED-2: a report's statements share the report lane, a third of `DB_POOL_MAX` per process (`server/shared/reportLane.js`), so reports together never hold more; a report past its limit says "This report took too long to run. Try a smaller date range, or try again in a minute."
 
 ## Tests
 

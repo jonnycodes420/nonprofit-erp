@@ -1072,6 +1072,12 @@ function giftSections({ ds, onSet, onSetForm, errors, funds, camps, saveState, f
       <div style={{ ...lbl, marginTop: 0 }} data-field="amounts">Suggested amounts</div>
       <AmountList testid="details-amounts" valueDollars={(f.amountsCents || []).map(c => c / 100)} max={8}
         onChange={nums => onSetForm({ amountsCents: nums.map(n => Math.round(n * 100)) })} />
+      {/* FLOWS-9 (W-1113-Fundraising-36): the switch that lets the live page replace these, shown and named. */}
+      <label style={checkRow}>
+        <input data-testid="details-smart-amounts" type="checkbox" checked={f.smartAmounts === true} onChange={e => onSetForm({ smartAmounts: e.target.checked })} style={{ marginTop: 2 }} />
+        <span>Suggest amounts from your giving
+          <span style={{ display: "block", fontSize: 11, color: E.muted }}>On: the live page offers amounts built from your organization's gifts, and from a donor's last gift when they open their own link. Off: everyone sees the amounts above.</span></span>
+      </label>
       <FieldError errors={errors} prefix="form.amountsCents" />
       <FieldError errors={errors} prefix="amountsCents" />
       {(f.amountsCents || []).length > 0 && (

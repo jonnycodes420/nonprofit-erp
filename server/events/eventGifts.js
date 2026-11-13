@@ -42,7 +42,7 @@ function mount(ctx) {
     const q = String(req.query.q || "").trim().slice(0, 80);
     const rows = await query(
       `SELECT id, name, CASE WHEN date_unknown THEN NULL ELSE LEFT(date::text, 10) END AS date
-         FROM events WHERE org_id=? AND (?::text = '' OR name ILIKE ?)
+         FROM events WHERE org_id=? AND archived_at IS NULL AND (?::text = '' OR name ILIKE ?)   -- FLOWS-9: an archived event is offered nowhere
         ORDER BY date DESC NULLS LAST, created_at DESC, id LIMIT 25`,
       [req.user.orgId, q, `%${q.replace(/[\\%_]/g, m => "\\" + m)}%`]);
     res.json({ events: rows });
