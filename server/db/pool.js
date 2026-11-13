@@ -50,6 +50,7 @@ const pool = new Pool({
 // LOAD-1: every connection handed out below goes through LIMITS.checkout, so a web request's
 // statements stop at its limit and an abandoned read is cancelled (server/shared/requestLimits.js).
 const LIMITS = require("../shared/requestLimits");
+const LANE = require("../shared/reportLane");   // REPORTS-SPEED-2
 // SPLIT-2 end
 // SPLIT-2 db.js piece 11
 const requestLimits = () => LIMITS.middleware(LIMITS.cancelWith(Pool, { ...require("../shared/dbTls").poolTls(), options: `-c steward.app_connection=on -c application_name=${APP_NAME}` }));
@@ -57,9 +58,36 @@ const requestLimits = () => LIMITS.middleware(LIMITS.cancelWith(Pool, { ...requi
 // SPLIT-2 db.js piece 12
 // One statement on its own connection, the way pool.query did it.
 async function once(p, text, params) {
+  // REPORTS-SPEED-2: a report's statement first takes a place in the report
+  // lane (server/shared/reportLane.js), so reports never hold more than a
+  // third of the main pool between them.
+  if (p === pool && LANE.inLane()) return LANE.run(() => onceNow(p, text, params));
+  return onceNow(p, text, params);
+}
+async function onceNow(p, text, params) {
   const client = await LIMITS.checkout(p);
   try { return await client.query(text, params); } catch (e) { throw LIMITS.translate(e); } finally { LIMITS.release(client); }
 }
+// REPORTS-SPEED-2: one big read with JIT off for it alone. A statement with
+// many aggregates and a high cost estimate (year-over-year's one pass) costs
+// Postgres seconds of CPU to JIT-compile where LLVM is built in (the
+// postgres:16 image CI and the nightly run: 2.9 s against 0.19 s without it),
+// and the read itself is a fraction of that. SET LOCAL ends with the
+// transaction, so the connection goes back exactly as it came. In the report
+// lane like any other statement.
+async function onceNoJit(text, params) {
+  const run = async () => {
+    const client = await LIMITS.checkout(pool);
+    try {
+      await client.query("BEGIN; SET LOCAL jit = off");
+      const r = await client.query(text, params);
+      await client.query("COMMIT");
+      return r;
+    } catch (e) { await client.query("ROLLBACK").catch(() => {}); throw LIMITS.translate(e); }
+    finally { LIMITS.release(client); }
+  };
+  return LANE.inLane() ? LANE.run(run) : run();
+}
 // SPLIT-2 end
 
-module.exports = { Pool, uuid, bcrypt, orgTime, newId, pools, POOL_MAX, SET_POOL_MAX, APP_NAME, isPoolFull, setPool, querySetwise, pool, LIMITS, requestLimits, once };
+module.exports = { Pool, uuid, bcrypt, orgTime, newId, pools, POOL_MAX, SET_POOL_MAX, APP_NAME, isPoolFull, setPool, querySetwise, pool, LIMITS, requestLimits, once, onceNoJit };
