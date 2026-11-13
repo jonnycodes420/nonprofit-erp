@@ -28,7 +28,7 @@ const ORG = "org_flows9", SLUG = "flows-nine", EMAIL = "admin@flows9.local", PAS
 const U = { admin: "u_flows9_admin", dana: "u_flows9_dana" };
 const APP = process.env.APP_URL || "http://localhost:4173";
 const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright");
-const DIST = path.join(__dirname, "..", "client", "dist");
+const { DIST } = require("./lib/dist");   // CI-2: this shard's own built client
 const optional = p => { try { return require(p); } catch { return null; } };
 
 async function freshOrg() {
