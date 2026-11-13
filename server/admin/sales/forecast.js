@@ -9,6 +9,8 @@
 //              value closing that month, MRR now plus everything weighted to
 //              date, and where a straight line to the goal would be
 //   bySource / byStage   win rate and average days to close over the last 90 days
+//   signed     SALES-3: an open deal with an accepted quote counts in full, at the quote's
+//              price, from the month its billing starts (not weighted, not by close date)
 // Every figure carries the one sentence that defines it.
 "use strict";
 
@@ -31,8 +33,11 @@ function rates(groups) {
 // input: { deals (list rows), history: [{ deal_id, to_stage_id, to_name, at }], stages (Map), mrrNowCents, goal }
 function forecast(input, now, tz = "America/New_York") {
   const today = civil(now, tz);
-  const open = input.deals.filter(d => d.stage_kind === "open");
+  const accepted = input.accepted || new Map();
+  const signedDeals = input.deals.filter(d => d.stage_kind === "open" && accepted.has(d.id));
+  const open = input.deals.filter(d => d.stage_kind === "open" && !accepted.has(d.id));
   const weightedCents = open.reduce((n, d) => n + weightOf(d), 0);
+  const signedCents = signedDeals.reduce((n, d) => n + accepted.get(d.id).priceCents, 0);
   const goal = input.goal;
   const mrrNowCents = Number(input.mrrNowCents || 0);
 
@@ -47,11 +52,17 @@ function forecast(input, now, tz = "America/New_York") {
     const k = monthKey(d.close_date) < first ? first : monthKey(d.close_date);   // a close date gone by counts this month
     if (closing.has(k)) closing.set(k, closing.get(k) + weightOf(d));
   }
+  const starting = new Map(keys.map(k => [k, 0]));
+  for (const d of signedDeals) {
+    const a = accepted.get(d.id);
+    const k = monthKey(a.startOn) < first ? first : monthKey(a.startOn);
+    if (starting.has(k)) starting.set(k, starting.get(k) + a.priceCents);
+  }
   let run = mrrNowCents;
   const months = keys.map((k, i) => {
-    run += closing.get(k);
+    run += closing.get(k) + starting.get(k);
     const path = keys.length === 1 ? goal.cents : Math.round(mrrNowCents + (goal.cents - mrrNowCents) * ((i + 1) / keys.length));
-    return { month: k, label: monthWords(k), weightedClosingCents: closing.get(k), projectedCents: run, goalPathCents: path, behind: run < path };
+    return { month: k, label: monthWords(k), weightedClosingCents: closing.get(k), signedStartingCents: starting.get(k), projectedCents: run, goalPathCents: path, behind: run < path };
   });
 
   // The last 90 days: deals won or lost then.
@@ -88,15 +99,16 @@ function forecast(input, now, tz = "America/New_York") {
   const byStage = rates(byStageMap).map(r => ({ ...r, position: byStageMap.get(r.key).position })).sort((a, b) => a.position - b.position);
 
   return {
-    weightedCents, mrrNowCents, goal, undatedWeightedCents: undated,
+    weightedCents, signedCents, signedDeals: signedDeals.length, mrrNowCents, goal, undatedWeightedCents: undated,
     mrrPctOfGoal: goal.cents ? Math.round((mrrNowCents / goal.cents) * 1000) / 10 : null,
-    projectedPctOfGoal: goal.cents ? Math.round(((mrrNowCents + weightedCents) / goal.cents) * 1000) / 10 : null,
+    projectedPctOfGoal: goal.cents ? Math.round(((mrrNowCents + weightedCents + signedCents) / goal.cents) * 1000) / 10 : null,
     months, bySource: rates(bySource), byStage, closedIn90: closed.length,
     sentences: {
-      weighted: "Each open deal's monthly value times its stage's probability, added up.",
+      weighted: "Each open deal's monthly value times its stage's probability, added up. A deal with a signed quote is counted under Signed instead.",
+      signed: "Open deals with an accepted quote: the quote's monthly price, in full, from the month billing starts.",
       mrrNow: "What the live Steward subscriptions bill each month now: the Onboarding tab's own figure.",
       goal: `The goal you set: ${goal.says}.`,
-      months: "Each month to the goal: the weighted value of open deals closing that month (a close date gone by counts this month), MRR now plus everything weighted up to that month, and a straight line from MRR now to the goal.",
+      months: "Each month to the goal: the weighted value of open deals closing that month (a close date gone by counts this month), signed quotes whose billing starts that month, MRR now plus everything up to that month, and a straight line from MRR now to the goal.",
       undated: "Weighted value of open deals with no close date; it is in the weighted total but in no month.",
       winRate: "Of the deals won or lost in the last 90 days: won ÷ (won + lost). A deal parked in Later is not a loss and is not counted.",
       daysToClose: "For deals won in the last 90 days: days from the deal's creation (by source) or from entering the stage (by stage) to the win.",

@@ -172,13 +172,13 @@ async function seedOrg(o, tag) {
   const walk = dir => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) { if (!["node_modules", "client", "tests", "docs", ".git", "dist", ".generated"].includes(e.name)) walk(p); }
-    else if (/\.js$/.test(e.name) && /\bsales_(orgs|contacts|deals|links|activities|activity_links|pipelines|stages|stage_history|views|merges|imports|settings|properties|mailboxes|emails|email_links|partners|partner_terms|deal_partners|payouts|lists|list_members|cadences|cadence_enrollments|referral_links)\b/.test(fs.readFileSync(p, "utf8"))) readers.push(path.relative(ROOT, p));
+    else if (/\.js$/.test(e.name) && /\bsales_(orgs|contacts|deals|links|activities|activity_links|pipelines|stages|stage_history|views|merges|imports|settings|properties|mailboxes|emails|email_links|partners|partner_terms|deal_partners|payouts|lists|list_members|cadences|cadence_enrollments|referral_links|quotes)\b/.test(fs.readFileSync(p, "utf8"))) readers.push(path.relative(ROOT, p));
   } };
   walk(ROOT);
-  const allowed = f => f.startsWith("server/admin/sales/") || f === "server/db/ddl/sales1.js" || f === "server/db/ddl/sales1b.js" || f === "server/db/ddl/sales2.js" || f === "server/db/ddl/sales2b.js" || f === "scripts/ops/staging-seed.js" || f.startsWith("scripts/ops/sales");
+  const allowed = f => f.startsWith("server/admin/sales/") || f === "server/db/ddl/sales1.js" || f === "server/db/ddl/sales1b.js" || f === "server/db/ddl/sales2.js" || f === "server/db/ddl/sales2b.js" || f === "server/db/ddl/sales3.js" || f === "scripts/ops/staging-seed.js" || f.startsWith("scripts/ops/sales");
   ok("SALES-1: only the /ops sales routes, their DDL and the staging seed name a sales_ table", readers.every(allowed), readers.filter(f => !allowed(f)));
   await q(`INSERT INTO sales_orgs (id,name,domain,created_by,created_by_name) VALUES ('sor_iso_sentinel','Sentinel Sales Prospect','sentinel-iso.example.org','system:test','test') ON CONFLICT (id) DO NOTHING`);
-  for (const p of ["/ops/sales/list/org", "/ops/sales/search?q=Sentinel", "/ops/sales/export/org", "/ops/sales/rec/org/sor_iso_sentinel"]) {
+  for (const p of ["/ops/sales/list/org", "/ops/sales/search?q=Sentinel", "/ops/sales/export/org", "/ops/sales/rec/org/sor_iso_sentinel", "/ops/sales/plans", "/ops/sales/deals/sde_iso_none/quotes"]) {   // SALES-3: the quote routes too
     const r = await api("GET", p, tokenA);
     ok(`SALES-1: org admin A gets 404 on GET ${p}`, r.status === 404 && !/Sentinel Sales Prospect/.test(JSON.stringify(r.body || "")), r.status);
   }

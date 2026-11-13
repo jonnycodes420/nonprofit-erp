@@ -1,3 +1,7 @@
+# CI-PIN-2404 (2026-11-13): runners are pinned to ubuntu-24.04, not ubuntu-latest. GitHub
+# moved ubuntu-latest to Ubuntu 26.04 on 2026-11-13, and Playwright 1.61's browsers fail
+# to launch there ("Target page, context or browser has been closed"), so every job that
+# installs Playwright went red. Unpin (back to ubuntu-latest) once Playwright supports 26.04.
 # BUILD-75 B.6 — CodeQL static analysis (javascript). Free, finds common web
 # vulnerability patterns (injection, tainted flows), will not find logic bugs
 # — see audit/BUILD-75-FINDINGS.md B.5 for what nothing automated covers.
@@ -11,7 +15,7 @@ on:
     - cron: "17 6 * * 1" # weekly Monday sweep, catches new query packs
 jobs:
   analyze:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       security-events: write
       contents: read

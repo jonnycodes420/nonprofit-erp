@@ -1,3 +1,7 @@
+# CI-PIN-2404 (2026-11-13): runners are pinned to ubuntu-24.04, not ubuntu-latest. GitHub
+# moved ubuntu-latest to Ubuntu 26.04 on 2026-11-13, and Playwright 1.61's browsers fail
+# to launch there ("Target page, context or browser has been closed"), so every job that
+# installs Playwright went red. Unpin (back to ubuntu-latest) once Playwright supports 26.04.
 # BUILD-38 Part 2 — the gate. Runs the full suite on every push + PR to main.
 # Any failure fails the job; pair this with branch protection (see MANUAL-STEPS.md)
 # so a red run blocks merge. Action versions are pinned to tags here; convert to
@@ -45,7 +49,7 @@ jobs:
   # log and in the summary, and `re-run all jobs` re-tests regardless because
   # the marker lookup is scoped to successful runs of this workflow.
   tree-check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       tree: ${{ steps.t.outputs.tree }}
@@ -88,7 +92,7 @@ jobs:
   # every run's critical path; the `test` gate below still fails unless guards
   # succeeded, so nothing goes green that went green before.
   guards:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [tree-check]
     if: needs.tree-check.outputs.skip != 'true'
@@ -156,7 +160,7 @@ jobs:
   # rules are excluded). Runs beside the guards; `test` waits for it. The npm
   # audit gate (high and above) is in the guards job above.
   semgrep:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     needs: [tree-check]
     if: needs.tree-check.outputs.skip != 'true'
@@ -196,7 +200,7 @@ jobs:
   # would run some suites twice and others never. The same planner is what
   # `SHARDS=6 bash tests/run-all.sh` runs on a laptop.
   plan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: [tree-check]
     if: needs.tree-check.outputs.skip != 'true' && needs.tree-check.outputs.docs_only != 'true'
@@ -247,7 +251,7 @@ jobs:
   # shards and found the others missing. A job now reports only its own
   # shard; only `test` reads them all.)
   shard:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # FLAKE-1: 45, not 25, so the Playwright step's three attempts fit inside
     # the job; a shard that installs on the first try takes what it always did.
     timeout-minutes: 45
@@ -424,7 +428,10 @@ jobs:
       # main, where every PR can read them.
       - name: Playwright cache keys
         id: pw-keys
-        run: echo "debs=pw-debs-${ImageOS:-ubuntu}-${ImageVersion:-unknown}-1.61.1-webkit" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "debs=pw-debs-${ImageOS:-ubuntu}-${ImageVersion:-unknown}-1.61.1-webkit" >> "$GITHUB_OUTPUT"
+          # The browsers are built for one Ubuntu; the key names the runner image (CI-PIN-2404).
+          echo "browsers=playwright-${ImageOS:-ubuntu}-1.61.1-webkit" >> "$GITHUB_OUTPUT"
       - name: Restore Playwright (package + browsers)
         id: pw-cache
         uses: actions/cache/restore@v4
@@ -433,7 +440,7 @@ jobs:
             .playwright
             .playwright-browsers
           # PROFILE-2: WebKit too (smoke-walk §scroll drives Safari's engine), so the key names it.
-          key: playwright-${{ runner.os }}-1.61.1-webkit
+          key: ${{ steps.pw-keys.outputs.browsers }}
       - name: Restore Playwright's system packages (.deb)
         id: pw-debs
         uses: actions/cache/restore@v4
@@ -459,7 +466,7 @@ jobs:
           path: |
             .playwright
             .playwright-browsers
-          key: playwright-${{ runner.os }}-1.61.1-webkit
+          key: ${{ steps.pw-keys.outputs.browsers }}
       - name: Save Playwright's system packages (.deb)
         if: steps.pw-debs.outputs.cache-hit != 'true'
         continue-on-error: true
@@ -517,7 +524,7 @@ jobs:
   # tree skips it, as before.
   combine:
     name: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: [tree-check, guards, semgrep, plan, shard]
     if: always() && needs.tree-check.outputs.skip != 'true' && needs.tree-check.outputs.docs_only != 'true'
@@ -609,7 +616,7 @@ jobs:
   # When main skips, its timings are the trusted run's: copied into main's
   # cache, where every PR can read them.
   timings:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: [tree-check]
     if: github.event_name == 'push' && needs.tree-check.outputs.skip == 'true' && needs.tree-check.outputs.trusted != ''
@@ -641,7 +648,7 @@ jobs:
   # both caches are there, installs and saves when one is missing, and gates
   # nothing: no job needs it.
   playwright-cache:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     env:
@@ -679,7 +686,10 @@ jobs:
           key: ${{ steps.nm-keys.outputs.key }}
       - name: Playwright cache keys
         id: pw-keys
-        run: echo "debs=pw-debs-${ImageOS:-ubuntu}-${ImageVersion:-unknown}-1.61.1-webkit" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "debs=pw-debs-${ImageOS:-ubuntu}-${ImageVersion:-unknown}-1.61.1-webkit" >> "$GITHUB_OUTPUT"
+          # The browsers are built for one Ubuntu; the key names the runner image (CI-PIN-2404).
+          echo "browsers=playwright-${ImageOS:-ubuntu}-1.61.1-webkit" >> "$GITHUB_OUTPUT"
       - name: Is the browser cache there?
         id: pw-cache
         uses: actions/cache/restore@v4
@@ -687,7 +697,7 @@ jobs:
           path: |
             .playwright
             .playwright-browsers
-          key: playwright-${{ runner.os }}-1.61.1-webkit
+          key: ${{ steps.pw-keys.outputs.browsers }}
           lookup-only: true
       - name: Are the system packages there?
         id: pw-debs
@@ -706,7 +716,7 @@ jobs:
           path: |
             .playwright
             .playwright-browsers
-          key: playwright-${{ runner.os }}-1.61.1-webkit
+          key: ${{ steps.pw-keys.outputs.browsers }}
       - if: steps.pw-debs.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
@@ -719,7 +729,7 @@ jobs:
   # `hotfix`: the PR has the hotfix label and a "Hotfix reason: …" line, so the
   # prod jobs below run as they always did (and staging is deployed too).
   lane:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.STAGING_ENABLED == 'true'
     outputs:
@@ -756,7 +766,7 @@ jobs:
   # Actions secrets. Break-glass if Actions is down: manual `railway up` from
   # a local checkout — see audit/deploy-rewire.md.
   deploy-railway:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # FLAKE-1: 80, not 25: up to 50 minutes waiting its turn, then the deploy.
     timeout-minutes: 80
     needs: [tree-check, combine, lane]
@@ -869,7 +879,7 @@ jobs:
   # git auto-build continues to own production so the frontend can always
   # deploy. Enabled-but-no-token is a misconfiguration and fails loudly.
   deploy-vercel:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 80   # FLAKE-1: waiting its turn, then the deploy
     needs: [tree-check, combine, lane]
     # `always()` because the battery is SKIPPED when this exact tree already
@@ -943,7 +953,7 @@ jobs:
       RAILWAY_STAGING_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
 
   deploy-staging:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 80
     needs: [tree-check, combine, lane]
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.STAGING_ENABLED == 'true'
@@ -1040,7 +1050,7 @@ jobs:
   # `staging/walk`, which /ops's Ship button reads: a red walk turns this run
   # red, says why in the summary, and Ship stays off until a green one.
   staging-walk:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     needs: [deploy-staging]
     if: always() && needs.deploy-staging.result == 'success' && needs.deploy-staging.outputs.deployed == 'true'
@@ -1061,13 +1071,16 @@ jobs:
           node-version: "22"
       - name: Playwright cache keys
         id: pw-keys
-        run: echo "debs=pw-debs-${ImageOS:-ubuntu}-${ImageVersion:-unknown}-1.61.1-webkit" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "debs=pw-debs-${ImageOS:-ubuntu}-${ImageVersion:-unknown}-1.61.1-webkit" >> "$GITHUB_OUTPUT"
+          # The browsers are built for one Ubuntu; the key names the runner image (CI-PIN-2404).
+          echo "browsers=playwright-${ImageOS:-ubuntu}-1.61.1-webkit" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@v4
         with:
           path: |
             .playwright
             .playwright-browsers
-          key: playwright-${{ runner.os }}-1.61.1-webkit
+          key: ${{ steps.pw-keys.outputs.browsers }}
       - uses: actions/cache/restore@v4
         with:
           path: .playwright-debs

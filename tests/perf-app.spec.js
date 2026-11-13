@@ -81,7 +81,8 @@ const JS_FIRST_KB = 246;   // FLOWS-5: +1 KB. Home's deck resets its snooze form
 // Before LAG-1:   // POLISH-6: +2 KB, the one shared date box's loader (LazyDateInput) on the shell; main measured 239 on the same runner, the branch 241.
 // Before POLISH-6:   // PERF-3 measured 227 KB + 5%: the moves deck's code (15 KB) is on the first look now, preloaded (PERF-2: 214)
 const WARM_MS = 1446;   // PERF-3: Home on a phone a second time, measured 1,314 ms + 10% (main: 1,528)
-const FIRST_KB = 316;   // FLOWS-5: +1 KB, the same bytes as JS_FIRST_KB's line above; the runner measured 316.
+const FIRST_KB = 317;   // SALES-3: +1 KB, the lazy loader for /quote/:token on the entry: +55 bytes gzipped (main-*.js 16,552 -> 16,607) and +2 on Home's chunk (App-*.js 86,600 -> 86,602), against origin/main's own build. Main sat at 316 on the rounding edge; the runner measured 317 twice.
+// Before SALES-3: const FIRST_KB = 316;   // FLOWS-5: +1 KB, the same bytes as JS_FIRST_KB's line above; the runner measured 316.
 // Before FLOWS-5: const FIRST_KB = 315;   // NAV-1 (menu): +1 KB, the same bytes as JS_FIRST_KB's line above (the org's layer rides on /me/nav-layout: no new request). The runner measured 315.
 // Before NAV-1 (menu): const FIRST_KB = 314;   // ASKS-1: +1 KB, the same bytes as JS_FIRST_KB's line above (an admin's first look asks nothing new: the access check skips GET /me for an admin).
 // Before ASKS-1: const FIRST_KB = 313;   // FLOWS-4: +1 KB on POLISH-8's 312, the top bar's same-name type chip and its Settings → Trash entry (the search ships with the shell); the runner measured 312 for FLOWS-4 alone. JS_FIRST_KB unchanged.
