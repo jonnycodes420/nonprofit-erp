@@ -56,6 +56,8 @@ const read = p => fs.readFileSync(path.join(ROOT, p), "utf8");
   await P("caspar", "Caspar Fenwright");   // marked Donor, no gift
   await P("ysolde", "Ysolde Tarrant");
   await P("linnea", "Linnea Brack", { person_types: ["other"] });   // in a journey (§4)
+  await P("tamsin", "Tamsin Oddway"); await gift(ids.tamsin, 30, civilPlusDays(-90));
+  await q(`UPDATE donors SET erased_at=NOW() WHERE id=$1`, [ids.tamsin]);   // §14: an erased giver is a record, not on the Donors tab
 
   // ── §1/§9 a demo org's meeting is kept in Steward ─────────────────────────
   const at = h => new Date(`${civilPlusDays(3)}T${h}:00Z`).toISOString();
@@ -154,7 +156,7 @@ const read = p => fs.readFileSync(path.join(ROOT, p), "utf8");
   const gap = (await api("GET", "/billing/records-gap", tok)).body || {};
   const [dir] = await q(`SELECT COUNT(*)::int AS n FROM donors d WHERE d.org_id=$1 AND d.deleted_at IS NULL AND d.erased_at IS NULL AND ${require(path.join(ROOT, "shared/personType.js")).donorOnlySql("d")}`, [ORG]);
   const records = (bill.pricing1 || bill).records;
-  ok("§14 Billing says how many are marked Donor with no gift, the line foots to the Donors tab, and the people open",
+  ok("§14 Billing says how many are marked Donor with no gift, the line foots to the Donors tab (an erased giver too), and the people open",
     gap.markedNoGift >= 1 && /marked Donor but ha(s|ve) no gift on file/.test(gap.sentence || "") && gap.source && gap.source.key === "marked-donor-no-gift"
       && records + gap.markedNoGift - gap.giftNotMarked === dir.n, { gap, records, directory: dir.n });
   const rows = await api("GET", "/figures/marked-donor-no-gift/rows", tok);
