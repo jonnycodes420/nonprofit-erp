@@ -567,7 +567,7 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-4"
       [orgId]
     ),
     periodGiving({ from: l12Start, to: l12End }),
-    query(`SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) FILTER (WHERE ${require("../../shared/numbers/giftCount").COUNTED("g")}) AS gifts FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}`, [orgId]),
+    query(`SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}`, [orgId]),
   ]);
 
   // Active org goal with pace (reuses the goal-progress math shape).
