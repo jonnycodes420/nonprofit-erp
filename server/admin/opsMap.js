@@ -96,10 +96,12 @@ function itemsFromChecks(rows) {
     if (r.verdict === "fail") {
       if (open) { open.notes.push(note(r)); continue; }
       const on = isoDay(r.created_at);
-      const item = { id: `J-${on.slice(5, 7)}${on.slice(8, 10)}-${r.check_id}`, source: "jonathan", area: r.area_id, check: r.check_id,
+      // SALES-3: a customer's bug line (logged on the Customers board) is the customer's item, named.
+      const pre = r.customer ? "C" : "J";
+      const item = { id: `${pre}-${on.slice(5, 7)}${on.slice(8, 10)}-${r.check_id}`, source: r.customer ? "customer" : "jonathan", area: r.area_id, check: r.check_id,
         words: r.note, state: "open", opened: on, openedAt: iso(r.created_at), verifiedAt: null, shot: r.has_shot ? r.id : null,
-        markId: r.id, notes: [note(r)] };
-      let n = 2; while (items.some(i => i.id === item.id)) item.id = `J-${on.slice(5, 7)}${on.slice(8, 10)}-${r.check_id}-${n++}`;
+        markId: r.id, notes: [note(r)], ...(r.customer ? { customer: r.customer } : {}) };
+      let n = 2; while (items.some(i => i.id === item.id)) item.id = `${pre}-${on.slice(5, 7)}${on.slice(8, 10)}-${r.check_id}-${n++}`;
       items.push(item); byCheck.set(k, item);
     } else if (r.verdict === "pass" && open) {
       open.state = "verified"; open.verifiedAt = iso(r.created_at); byCheck.delete(k);

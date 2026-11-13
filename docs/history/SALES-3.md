@@ -36,3 +36,11 @@ signed, start billing on a date, or show which pilot is healthy.
   price from the month billing starts, and takes it out of the weighted pipeline.
 
 **Planted defects (SALES3_PLANT):** `noreason`, `otherquote`, `chargeearly` (tests/sales3-close.test.js).
+
+## Part B: keep
+
+- **The Customers board** (`server/admin/sales/customers.js`): one row per sales organization linked to a Steward org, with the plan, the price (the accepted quote's, else the subscription's), billing's start or next charge and the days to it. Facts are counts and dates only, one statement per fact across every customer: last sign-in and sign-ins in 14 days (staff sessions, not super-admins), people (households' `PERSON`), gifts recorded in 30 days (money.js's `GIFT`, by when recorded), journeys with a step turned on, and open items from the latest data-health run. Each fact opens its dated counts. No donor name, email or amount is ever selected.
+- **Health is words from a rule** in Sales settings (`sales_settings.health`): every line that holds is shown in order ("Needs a call: last sign-in 12 days ago."), else "On track: …". Never a score. No sign-in at all matches a "days since" rule.
+- **Nurture is tasks only**: a weekly check-in call until billing starts (at most 12) carrying "What annoyed you this week?", and a 30-day review. A logged check-in is a note on the deal and the org; a line tagged bug is an `ops_checks` fail row with the new `customer` column, which `opsMap.itemsFromChecks` turns into a board item of source "customer" with the customer named (id `C-MMDD-…`). It shows on /ops beside the fleet's items.
+- **Proof** (`sales_customer_proof`): the testimonial's state (asked, received, approved to publish) with its words and each day stamped on change; references asked for, and each referral deal (SALES-2's "Customer referral" source, `referred_by_sales_org_id`) read as named → contacted → meeting → won. The owes line names the org's champion: "Allegra owes a testimonial and two references."
+- Planted defects: `donorname`, `bugnote` (tests/sales3-keep.test.js).

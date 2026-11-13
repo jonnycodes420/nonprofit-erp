@@ -353,6 +353,8 @@ function mount(app, { query, run, wrap, opsOnly, billing }) {
   require("./routesB2").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
   // SALES-3: quotes on a deal, the private quote page, Today's billing lines.
   require("./routesC").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send, billing: billing || (() => ({})) });
+  // SALES-3 Part B: the Customers board, nurture, proof.
+  require("./routesD").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
 }
 
 module.exports = { mount, settings };
