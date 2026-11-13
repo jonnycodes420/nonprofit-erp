@@ -505,8 +505,13 @@ const SOURCES = {
       // its line in that fund, so a fund's total opens rows that foot to it.
       const byFund = !!p.fund || p.restricted !== undefined;
       return {
-        sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(${byFund ? "gf" : "g"}.amount::numeric, 2) AS amount,
-                     COALESCE(f.name, 'Unrestricted') AS detail
+        // FLOWS-9 (W-1113-Fundraising-01): the dialog may list a refund row, marked as one, and a gift
+        // refunded in full, marked; its count line says the gifts (giftCount.js), never the rows.
+        sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date,
+                     ROUND((${byFund ? "gf.amount" : (p.measure === "mean" || p.measure === "median") ? require("./shared/numbers/refunds").NET_AMOUNT("g") : "g.amount"})::numeric, 2) AS amount,   -- FLOWS-9: an average is over each gift at its net
+                     CASE WHEN g.amount < 0 THEN 'Refund' WHEN g.refunded_in_full IS TRUE THEN 'Refunded in full · ' || COALESCE(f.name, 'Unrestricted')
+                          ELSE COALESCE(f.name, 'Unrestricted') END AS detail,
+                     (${require("./shared/numbers/giftCount").COUNTED("g")}) AS counted
                 FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                 ${byFund ? `JOIN ${FUND_LINES.GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id` : ""}
                 LEFT JOIN fin_funds f ON f.id = ${byFund ? "gf" : "g"}.fund_id AND f.org_id = g.org_id
@@ -514,6 +519,7 @@ const SOURCES = {
         args,
         order: p.order === "amount" ? "amount DESC NULLS LAST, id DESC" : undefined,
         zeroOnFile: require("./shared/numbers/giftCount").zeroOnFileSql(where, args, byFund),   // TRUTH-4
+        countsGifts: true,   // FLOWS-9: the rows carry `counted`; the answer says how many are gifts
       };
     },
   },
@@ -544,7 +550,7 @@ const SOURCES = {
               ${byFund ? `JOIN ${FUND_LINES.GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id` : ""}
               LEFT JOIN fin_funds f ON f.id = ${byFund ? "gf" : "g"}.fund_id AND f.org_id = g.org_id
              WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?${where} AND d.erased_at IS NULL   -- TRUTH-2: an erased person is no giver (shared/numbers/money GIVERS)
-             GROUP BY d.id, d.name HAVING COUNT(*) FILTER (WHERE g.amount > 0) > 0`;
+             GROUP BY d.id, d.name HAVING COUNT(*) FILTER (WHERE g.amount > 0 AND g.refunded_in_full IS NOT TRUE) > 0`;   // FLOWS-9: a gift refunded in full makes nobody a giver (money.js GIVERS)
       return {
         sql: p.top ? `SELECT * FROM (${inner}) t ORDER BY amount DESC, id LIMIT ${p.top}` : inner,
         args,
@@ -2257,7 +2263,7 @@ const SOURCES = {
     label: "Events this year",
     measure: () => "count",
     params: { from: "date:required", to: "date:required" },
-    sentence: (p, dd) => `Every event dated ${dd(p.from)} to ${dd(p.to)}, each marked Past, Today, Upcoming or Archived by its date.`,
+    sentence: (p, dd) => `Every event dated ${dd(p.from)} to ${dd(p.to)}, each marked Past, Today or Upcoming by its date. An archived event is not counted.`,
     sql: (orgId, p) => ({
       sql: `SELECT e.id, 'event' AS type, NULL::text AS donor_id, e.name, LEFT(e.date::text, 10) AS date, NULL::numeric AS amount,
                    -- FLOWS-5 (W-1110-Volunteers-04X): each row says what it is by its date in
@@ -2267,7 +2273,7 @@ const SOURCES = {
                         WHEN LEFT(e.date::text, 10) < to_char(${require("./orgTime").orgTodaySql(require("./orgTime").orgTzSql("e.org_id"))}, 'YYYY-MM-DD') THEN 'Past'
                         WHEN LEFT(e.date::text, 10) = to_char(${require("./orgTime").orgTodaySql(require("./orgTime").orgTzSql("e.org_id"))}, 'YYYY-MM-DD') THEN 'Today'
                         ELSE 'Upcoming' END AS detail
-              FROM events e WHERE e.org_id = ? AND LEFT(e.date::text, 10) BETWEEN ? AND ?`,
+              FROM events e WHERE e.org_id = ? AND e.archived_at IS NULL AND LEFT(e.date::text, 10) BETWEEN ? AND ?`,   // FLOWS-9: archived is out of the count
       args: [orgId, p.from, p.to],
       order: "date ASC, id",
     }),
@@ -3073,7 +3079,7 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
   const measure = def.measure(p);
   const DD = await displayDateMod();
   const dd = d => DD.displayDate(d);
-  let agg, pageRows;
+  let agg, pageRows, countsGifts = false;   // FLOWS-9: a source whose rows carry `counted`
   if (def.js) {
     const all = await def.js(orgId, p, deps);
     const sum = all.reduce((s, r) => s + (money.toCents(String(r.amount ?? "0")) ?? 0), 0);
@@ -3086,11 +3092,13 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     // `sql` may be an async builder: a source whose SQL needs something only
     // an ESM module knows (the open proposal stages) awaits it here. Awaiting
     // a plain object is a no-op, so every existing source is untouched.
-    const { sql, args, order, zeroOnFile } = await def.sql(orgId, p);
+    const built = await def.sql(orgId, p);
+    const { sql, args, order, zeroOnFile } = built;
+    countsGifts = !!built.countsGifts;
     // SCALE-1: the total and the page are independent reads; one parallel batch.
     // POLISH-1: g is the rows that are gifts (above zero), for per_gift.
     const [[a], rowsRead] = await Promise.all([
-      query(`SELECT COUNT(*)::int AS n, (COUNT(*) FILTER (WHERE amount > 0))::int AS g, COALESCE(SUM(amount), 0)::text AS s, AVG(amount) AS a${measure === "median" ? ", PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY amount)::numeric(14,2)::text AS m" : ""} FROM (${sql}) x`, args),
+      query(`SELECT COUNT(*)::int AS n, (${countsGifts ? "COUNT(DISTINCT x.id) FILTER (WHERE x.counted)" : "COUNT(*) FILTER (WHERE amount > 0)"})::int AS g, COALESCE(SUM(amount), 0)::text AS s, AVG(amount) AS a${measure === "median" ? ", PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY amount)::numeric(14,2)::text AS m" : ""} FROM (${sql}) x`, args),
       wantRows
         ? query(`SELECT * FROM (${sql}) x ORDER BY ${orderClause(order)} LIMIT ? OFFSET ?`, [...args, pageSize, (page - 1) * pageSize])
         : Promise.resolve([]),
@@ -3104,7 +3112,7 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     key, params: p, measure, amountKind: def.amountKind || "money", label: def.label, sentence: def.sentence(p, dd),
     value, cents, blank: null,
     rows: pageRows.map(r => shapeRow(r, dd)), page, pageSize, totalRows: Number(agg.n) || 0,
-    ...(measure === "per_gift" ? { giftCount: Number(agg.g) || 0 } : {}),
+    ...(measure === "per_gift" || countsGifts ? { giftCount: Number(agg.g) || 0 } : {}),
     ...(agg.people != null ? { people: agg.people } : {}),
     ...(agg.zero ? { alsoOnFile: { zero: agg.zero, sentence: require("./shared/numbers/giftCount").alsoOnFile(agg.zero) } } : {}),
   };

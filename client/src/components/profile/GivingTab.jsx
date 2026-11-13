@@ -489,7 +489,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                   </tbody>
                 </table>
               )}
-              {refunding&&(<RefundDialog gift={refunding.gift} leftCents={refunding.leftCents} onClose={()=>setRefunding(null)} onSaved={()=>loadGiftsFull()}/>
+              {refunding&&(<RefundDialog gift={refunding.gift} leftCents={refunding.leftCents} onClose={()=>setRefunding(null)} onSaved={()=>loadGiftsFull({money:true})}/>
               )}
             </div>
 

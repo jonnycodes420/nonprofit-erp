@@ -74,6 +74,8 @@ export const ENTITIES = {
     label: "Gifts",
     from: "gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id LEFT JOIN fin_funds f ON f.id = g.fund_id",
     base: ["d.deleted_at IS NULL", "g.is_sample IS NOT TRUE", numbersMoney.MONEY("g")],
+    // FLOWS-9 (W-1113-Finance-27X): a gifts report's Count is the gifts (giftCount.js COUNTED); a refund row and a gift refunded in full are listed, not counted.
+    countSql: `COUNT(*) FILTER (WHERE ${numbersMoney.GIFT("g")})`,
     orgCol: "g.org_id",
     person: "d.id",   // FIX-2 B: the person a row opens (never a column, never in a file)
     fields: {
@@ -369,7 +371,7 @@ export function compile(def, { customDefs = [], paramStart = 1 } = {}) {
   if (sqlText.includes("?")) return { ok: false, errors: ["internal: the compiled report contains a ? and would bind wrongly"] };
   const sums = Object.entries(E.fields).filter(([, f]) => f.sum).map(([k, f]) => ({ key: k, label: f.label, sql: f.sql }));
   return {
-    ok: true, entity: def.entity, from: E.from, orgCol: E.orgCol, person: E.person || null, where, params,
+    ok: true, entity: def.entity, from: E.from, orgCol: E.orgCol, countSql: E.countSql || null, person: E.person || null, where, params,
     columns: colFields.map(f => ({ key: f.key, label: f.label, type: f.type, sql: f.sql })),
     group: group ? { key: group.key, label: group.label, sql: group.sql } : null,
     sums,

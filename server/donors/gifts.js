@@ -514,6 +514,9 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
       [req.user.orgId, req.params.id]);
     voidedTaskCount = Number(voided?.changes ?? voided?.rowCount ?? 0) || 0;
     await runTx(client, "DELETE FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+    // FLOWS-9: a refund row taken back un-marks its gift when the gift is no longer netted to $0,
+    // so the counts (giftCount.js, which read the mark) count it again.
+    if (g.refund_of) await runTx(client, require("../../shared/numbers/refunds").REMARK_IN_FULL_SQL, [g.refund_of, req.user.orgId]);
   });
   // Full recalc: old delta left last_gift_date and last_gift_amount stale when deleting the most recent gift
   await recalcDonorSummary(g.donor_id, req.user.orgId);

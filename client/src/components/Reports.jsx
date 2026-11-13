@@ -539,8 +539,8 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       table = <ReportTable cols={[
         { key: "name", label: groupBy === "funds" ? "Fund" : groupBy === "campaigns" ? "Campaign" : "Giving page", type: "text" },
         { key: "total", label: "Received", type: "money", render: cellFig("money", "Received") },
-        { key: "giftCount", label: "Gifts", type: "count", render: r => r.source ? <Figure variant="cell" kind="count" value={r.giftCount} label="Gifts" source={{ ...r.source, params: { ...r.source.params, measure: "count" } }} /> : r.giftCount },
-        { key: "uniqueDonors", label: "Unique donors", type: "number" },
+        { key: "giftCount", label: "Gifts", type: "count", footValue: d.figures?.grandCount ? d.figures.grandCount.value : undefined, render: r => r.source ? <Figure variant="cell" kind="count" value={r.giftCount} label="Gifts" source={{ ...r.source, params: { ...r.source.params, measure: "count" } }} /> : r.giftCount },
+        { key: "uniqueDonors", label: "Unique donors", type: "number"},
         { key: "pct", label: "% of total", type: "pct", render: r => <PctBar pct={r.pct} /> },
       ]} rows={d.rows} />;
     } else if (active === "lybunt" || active === "sybunt") {

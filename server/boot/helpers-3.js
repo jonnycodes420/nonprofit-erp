@@ -1268,6 +1268,16 @@ async function withSmartAmounts(spec, ctx) {
     return null;
   });
   if (!ladder) return spec;
+  // FLOWS-9 (W-1113-Fundraising-36): the editor's preview shows exactly the
+  // amounts she typed, in her order, and says in one line what the live page
+  // offers instead and why. It never shows a ladder as if she had typed it.
+  if (ctx && ctx.editing) {
+    const money = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
+    const list = ladder.amountsCents.map(money);
+    const said = list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}` : list[0];
+    return { ...spec, amount: { ...spec.amount,
+      liveSentence: `This preview shows the amounts you set. Suggest amounts from your giving is on, so the live page offers ${said} instead${ladder.source === "last_gift" ? "" : " to a visitor"}, and someone who opens their own link sees amounts built from their last gift.` } };
+  }
   return { ...spec, amount: { ...spec.amount,
     amountsCents: [...ladder.amountsCents],
     amountsSource: ladder.source,

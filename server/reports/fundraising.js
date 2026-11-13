@@ -567,7 +567,7 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-4"
       [orgId]
     ),
     periodGiving({ from: l12Start, to: l12End }),
-    query(`SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}`, [orgId]),
+    query(`SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) FILTER (WHERE ${require("../../shared/numbers/giftCount").COUNTED("g")}) AS gifts FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")}`, [orgId]),
   ]);
 
   // Active org goal with pace (reuses the goal-progress math shape).
@@ -685,6 +685,9 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-4"
     periodWords: OP.periodWords, periodKey: OP.key,
     // TRUTH-6: what on the page does not move with the period, said beside it.
     periodNotes: await require("./periodNotes").periodNotes({ key: OP.key, label: cur.chartLabel, goal, orgId, today, pledges }),
+    // FLOWS-9 (W-1112-Fundraising-05): one line under the cards when a campaign card counts other days than Raised.
+    periodsDiffer: require("./periodsDiffer").periodsDiffer({ period: { key: OP.key, start: cur.start, end: cur.end, label: cur.chartLabel }, yearMode,
+      fyStartMonth: orgTime.orgFiscalStartMonth(_fpTz), cards: (portfolio.goals || []).filter(g => g.isTopLevel && g.lifecycle !== "ended") }),
     pledges,
     leadEvent,
     goal,
@@ -962,7 +965,7 @@ app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
 
   const totalRaised = thisYearGifts.reduce((s, g) => s + g.amount, 0);
   // TRUTH-3: the count and the average's divisor are the one rule (shared/numbers/giftCount.js).
-  const giftCount   = thisYearGifts.filter(g => g.amount > 0 && !require("../../creditTypes").isCredit(g.type)).length;
+  const giftCount   = require("../../shared/numbers/giftCount").countOf(thisYearGifts);   // FLOWS-9: refunded in full is not a gift (rows are g.*)
   const avgGift     = giftCount > 0 ? Math.round(totalRaised / giftCount) : 0;
 
   const monthly = monthNames.map((month, idx) => {

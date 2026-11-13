@@ -144,7 +144,7 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift,editing=null}){
   // form asks for those, and asking twice in two places is how one of them
   // ends up being the one nobody fills in.
   useEffect(()=>{
-    apiFetch("/events").then(evts=>setOrgEvents(Array.isArray(evts)?evts.slice(0,20):[])).catch(()=>{});
+    apiFetch("/events").then(evts=>setOrgEvents(Array.isArray(evts)?evts.filter(e=>!e.archived_at).slice(0,20):[])).catch(()=>{});
   },[]);
 
   const TYPES=[["call","Call"],["meeting","Meeting"],["email","Email"],["event","Event"],["gift","Gift"],["other","Other"]];

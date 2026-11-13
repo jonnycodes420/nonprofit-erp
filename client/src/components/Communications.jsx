@@ -1045,7 +1045,7 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
     } catch (e) { alert(errorMessage(e)); }
     setBusyId(null);
   };
-  const reviewedCount = drafts.filter(d => d.reviewed_at).length;
+  const reviewedCount = drafts.filter(d => d.reviewed_at && !(d.linkCheck && !d.linkCheck.ok)).length;   // FLOWS-9: a draft with a broken link is never ready
   const sendAllReviewed = async () => {
     if (!(await askConfirm({ title: `Send ${countLabel(reviewedCount, "reviewed draft")} now?`, body: "Each one goes to its donor as soon as you say so.", yes: "Send" }))) return;
     setBusyId("all");
