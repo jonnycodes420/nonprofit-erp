@@ -35,3 +35,8 @@ opening reports at once would have queued every Home, Donors list and profile be
 - Tests: `tests/reports-speed2.test.js` with main's code frozen in `tests/lib/reportsSpeed2Main.js` (parity on
   four orgs, by-hand year figures, the load shape on 10,000 people). Planted: refunds counted, the per-year loop,
   a connection held across JS work; each red before green.
+- **The CPU-contention theory (held the merge one night).** The branch's other routes looked 15–30% slower in
+  back-to-back nightly runs. A bracketed run (main, a probe with main's year-over-year, the branch, main again)
+  did not confirm it: the probe was no faster elsewhere, and main against itself moved 2–3×. The year-over-year
+  statement was still made cheaper before merge: each row's year is found once (newest first) instead of by 24
+  comparisons, 580 → 478 ms on 25,000 people, same answers as main on 15 orgs at three dates.
