@@ -1141,6 +1141,7 @@ async function run7(pool) {
   await require("./polish9").run(pool);   // POLISH-9: an old import receipt can be archived
   await require("./connect1").run(pool);   // CONNECT-1: a Guest of link may name its event
   await require("./flows8").run(pool);   // FLOWS-8: a group frozen from a report remembers which, and when
+  await require("./asks2").run(pool);   // ASKS-2: a group of review rows decided at once, one Undo
 
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id

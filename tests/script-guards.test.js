@@ -84,6 +84,9 @@ const GUARDED_WRITERS = [
   "import10-lost-total-rows",
   "import10-auction-winners",
   "import10-donor-roles",
+  // ASKS-2: lists open tasks whose title carries an ask above 1.5 × the person's
+  // anchor. Read only (no --apply); the database comes through writerDbUrl.
+  "asks2-old-asks",
   // INTEGRITY-1: restores people an import's undo trashed though they were here
   // before it, and revokes repeated pending invites. Dry run by default;
   // --apply/--undo write through writerDbUrl, one audit row per org.
@@ -335,6 +338,8 @@ const EXEMPT = {
   "board": "DEVBOARD-1 — adds, assigns or closes items in ops/board.json (dry run unless --write), reading a local build report for close. No BASE, no DB, no network",
   "deploy-turnstile": "FLAKE-1 — before a deploy job deploys, waits for older push-to-main runs' deploy job of the same name (GitHub Actions API, read-only) and compares this commit with the live one (git, and the live site's public build stamp). No BASE, no DB, no app call, no secret; writes only $GITHUB_OUTPUT and the step summary",
   "staging-walk": "STAGE-1 — the CI walk of STAGING: signs in, records one gift and one import (then undoes it) in the walk org. Refuses to write anything unless the target's /health says env \"staging\"; prod's says \"production\"",
+  "staging-hold": "STAGE-3 — deploy-staging asks it, right before it deploys, whether the overnight walk window holds the deploy (scripts/lib/stagingWindow.js). Reads and writes only this commit's GitHub statuses; writes $GITHUB_OUTPUT and the step summary. No BASE, no DB, no app call, no secret beyond the job's GH_TOKEN",
+  "staging-release": "STAGE-3 — after the walk window, marks the latest held merge released and re-runs its ci.yml deploy-staging job. Reads GitHub and staging's public /health (refuses unless it says env staging); writes only commit statuses and the job re-run. No DB, no app call, no deploy secret",
   "deploy-lane": "STAGE-1 — reads the merged PR's labels and description from the GitHub API and writes a job output (staging or hotfix). No BASE, no DB, no app call",
   "vercel-staging-config": "STAGE-1 — writes vercel.staging.json in the checkout from vercel.json with prod's API host replaced. No BASE, no DB, no network",
   "wait-live": "STAGE-1 — polls a copy's public /health and build-sha meta until it serves a commit. Read-only, no secret",

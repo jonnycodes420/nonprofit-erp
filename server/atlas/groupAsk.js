@@ -32,8 +32,6 @@ const P = require("../../prospect");
 const { newId } = require("../shared/newId");
 
 const MAX_PEOPLE = 2000;          // the journey apply's own limit
-const SPREAD_OVER = 10;           // working days: the next two weeks
-const SPREAD_FROM = 10;           // more than this many first calls are spread
 const j = v => (typeof v === "string" ? (() => { try { return JSON.parse(v); } catch { return null; } })() : v);
 
 // ── READ ────────────────────────────────────────────────────────────────────
@@ -177,29 +175,8 @@ async function resolve({ query, asHer, orgId, today }, st, answers, ask) {
 }
 
 // ── PROPOSE ─────────────────────────────────────────────────────────────────
-const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const addDays = (day, n) => { const d = new Date(day + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-const dayWord = day => { const d = new Date(day + "T12:00:00Z"); return `${DOW[d.getUTCDay()]}, ${MON[d.getUTCMonth()]} ${d.getUTCDate()}`; };
-const isWorkday = day => { const w = new Date(day + "T12:00:00Z").getUTCDay(); return w !== 0 && w !== 6; };
-
-// Each person's first day, in order (largest giver first). Up to SPREAD_FROM
-// people all start on the first working day; more are spread evenly over the
-// next SPREAD_OVER working days, the earliest days to the largest givers.
-function spreadDays(n, today) {
-  const days = [];
-  for (let d = today; days.length < SPREAD_OVER; d = addDays(d, 1)) if (isWorkday(d)) days.push(d);
-  if (n <= SPREAD_FROM) return Array.from({ length: n }, () => days[0]);
-  return Array.from({ length: n }, (_, i) => days[Math.floor(i * SPREAD_OVER / n)]);
-}
-function spreadSentence(dates, what) {
-  if (!dates.length) return "";
-  const first = dates[0], last = dates[dates.length - 1];
-  if (first === last) return `Every first ${what} is due ${dayWord(first)}.`;
-  const perDay = new Map(); for (const d of dates) perDay.set(d, (perDay.get(d) || 0) + 1);
-  const lo = Math.min(...perDay.values()), hi = Math.max(...perDay.values());
-  return `First ${what}s are spread over ${perDay.size} working days, ${dayWord(first)} to ${dayWord(last)}, ${lo === hi ? lo : `${lo} or ${hi}`} a day, largest givers first.`;
-}
+// ASKS-2: the spread is shared with the cards' "Create tasks" (server/insights/taskSpread.js).
+const { addDays, dayWord, isWorkday, spreadDays, spreadSentence } = require("../insights/taskSpread");
 
 const LEFT_OUT = { deceased: "deceased", do_not_contact: "do not contact", already: "already in it" };
 

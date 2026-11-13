@@ -86,6 +86,13 @@ async function roomKnownFor(orgId, rows) {
 // The org's Insights inputs as one string: any write to a gift, pledge, person
 // or an Insights decision changes it. INSIGHTS-2: server/insights/store.js
 // stores each build with the fingerprint read before its rows.
+// ASKS-2: the engine's own version is part of the fingerprint, so a build
+// that changes what Insights says (an ask, a button's words) makes every
+// answer stored before it stale, and the next read rebuilds it. Without it the
+// day's answer built on the old code stayed "fresh" until a gift moved
+// ("Create tasks for Nov 1" and a $75,000 ask after the fix was live).
+// Bump it whenever computeInsights' output changes for the same rows.
+const ENGINE = "asks2-2026-11-12";
 async function fingerprint(orgId) {
   const [f] = await query(`SELECT
       (SELECT COUNT(*)::text || ':' || COALESCE(SUM(amount),0)::text || ':' || COALESCE(MAX(created_at)::text,'') FROM gifts WHERE org_id=?) AS g,
@@ -98,7 +105,7 @@ async function fingerprint(orgId) {
       -- cut points, so the Major rung and Atlas kept the old level.
       (SELECT COALESCE(giving_level_mid_cents::text,'') || ':' || COALESCE(giving_level_major_cents::text,'') || ':' || md5(COALESCE(vocabulary_json::text,''))
          FROM orgs WHERE id=?) AS s`, [orgId, orgId, orgId, orgId, orgId, orgId, orgId]);
-  return `${f.g}|${f.p}|${f.d}|${f.i}|${f.s || ""}`;
+  return `${f.g}|${f.p}|${f.d}|${f.i}|${f.s || ""}|${ENGINE}`;
 }
 
 // INSIGHTS-2: the whole-org computation, run by the worker's build

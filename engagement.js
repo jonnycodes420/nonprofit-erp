@@ -614,10 +614,12 @@ async function suggestedAsk(q, orgId, donorId, opts = {}) {
   if (!own || !s || s.capacityLowCents == null) return own;
   const RT = await import("./shared/roomToGive.js");
   const range = RT.rangeText(s.capacityLowCents, s.capacityHighCents);
-  if (s.capacityLowCents < RT.STRONG_CAPACITY_MULTIPLE * own.largestCents) {
+  // ASKS-2: the screening's step is the same step (stepUpCents), never above
+  // 1.5 times the anchor (their largest gift or the average of their last three).
+  const up = SA.stepUpCents(own.askCents, Math.max(own.largestCents || 0, own.avgLastThreeCents || 0) || own.askCents);
+  if (s.capacityLowCents < RT.STRONG_CAPACITY_MULTIPLE * own.largestCents || !(up > own.askCents)) {
     return { ...own, screening: true, sentence: `${own.sentence} The screening file (${s.provider}, ${s.screenedOn}) puts capacity at ${range}, which does not move the ask.` };
   }
-  const up = SA.nextFriendlyAbove ? SA.nextFriendlyAbove(own.askCents) : own.askCents;
   return { ...own, askCents: up, screening: true,
     sentence: `${own.sentence.replace(/: ask \$[\d,.]+(?:, [^.]*)?\.$/, "")}; the screening file (${s.provider}, ${s.screenedOn}) puts capacity at ${range}, so one step up: ask ${RT.dollars(up)}.` };
 }

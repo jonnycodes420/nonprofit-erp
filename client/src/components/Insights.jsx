@@ -7,7 +7,7 @@
 // here sends anything: a draft opens the person's profile, a task and a group
 // are made by her button. The facts and the words come from the server
 // (insights.js); this file draws them.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, takeParked } from "../api";
 import { useChanged } from "../lib/changes";   // STALE-1
 import { T } from "./shared";
@@ -20,6 +20,13 @@ import { displayDate } from "../../../shared/displayDate.js";   // SWEEP-1: a wr
 import { moveSentence } from "../lib/moveSentence";
 import { alsoKey } from "../lib/alsoKey";   // TIDY-1: two pledges, two keys
 import { orgTodayCivil, orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
+// ASKS-2: one decision for a group of rows. Loaded only when a review card or a
+// group's result is on screen, so Home's first look carries none of it (perf-app).
+const ReviewGroups = lazy(() => import("./ReviewGroups"));
+const GroupUndoBarLazy = lazy(() => import("./ReviewGroups").then(m => ({ default: m.GroupUndoBar })));
+let groupDecided = false;   // a group was decided this session: keep its Undo bar after the card goes
+const GroupUndoBar = ({ cards, ...p }) => (groupDecided || (cards || []).some(c => c.kind === "review"))
+  ? <Suspense fallback={null}><GroupUndoBarLazy {...p} /></Suspense> : null;
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when shown (Home's first look stays in budget)
 
 const SERIF = "'DM Serif Display', Georgia, serif";
@@ -136,11 +143,14 @@ function Does({ card, items, onNavigate, isReadOnly, onDone }) {
         for (const it of items.slice(0, 50)) {
           if (!it.lead || seen.has(it.lead)) continue;
           seen.add(it.lead);
-          const due = (it.how && it.how.when && it.how.when.from) || today();
+          // ASKS-2: the card's own due day for this person (spread from today,
+          // never a day gone); a window's start only when it is not past.
+          const from = it.how && it.how.when && it.how.when.from;
+          const due = it.taskDue || (from && from > today() ? from : today());
           const r = await apiFetch("/tasks", { method: "POST", body: JSON.stringify({ kindKey: card.title, title: `${card.title}: ${it.name}${it.how && it.how.ask && it.how.ask.words ? ". " + it.how.ask.words : ""}`.slice(0, 240), due, type: "donor", donorId: it.lead, priority: "medium" }) });
           if (r && r.existing) had++; else n++;
         }
-        setMsg(`${countLabel(n, "task")} made, each dated for when to reach out.${had ? ` ${countLabel(had, "person", "people")} already had one open, so nothing was added for them.` : ""}`);
+        setMsg(`${countLabel(n, "task")} made, each dated for when to reach out.${d.says && n ? ` ${d.says}` : ""}${had ? ` ${countLabel(had, "person", "people")} already had one open, so nothing was added for them.` : ""}`);
         return;
       }
       if (d.action === "group" || d.action === "call_list") {
@@ -156,7 +166,7 @@ function Does({ card, items, onNavigate, isReadOnly, onDone }) {
     <div style={{ marginTop: 10 }}>
       <div style={EYEBROW}>Steward can</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-        {card.does.map(d => <button key={d.action} type="button" style={B1} onClick={() => run(d)}>{d.label}</button>)}
+        {card.does.map(d => <button key={d.action} type="button" style={B1} title={d.says || undefined} onClick={() => run(d)}>{d.label}</button>)}
       </div>
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink, marginTop: 6 }}>{msg}</div>}
     </div>
@@ -171,6 +181,10 @@ function ReviewRows({ card, onChanged, isReadOnly }) {
   const [as, setAs] = useState({});
   const [partlyOpen, setPartlyOpen] = useState(null);   // the row whose value received is being entered
   const [value, setValue] = useState("");
+  // ASKS-2: rows in a group show under it only when she chooses one by one
+  const [openGroup, setOpenGroup] = useState(null);
+  const grouped = useMemo(() => { const m = new Map(); for (const g of card.groups || []) for (const id of g.giftIds) m.set(id, g.key); return m; }, [card.groups]);
+  const rows = card.items.filter(it => !grouped.has(it.giftId) || grouped.get(it.giftId) === openGroup);
   const decide = async (it, decision) => {
     setErr("");
     if (decision === "partly") {
@@ -195,7 +209,8 @@ function ReviewRows({ card, onChanged, isReadOnly }) {
     <div>
       {undo && <div role="status" style={{ background: T.bg, borderRadius: 8, padding: "8px 10px", fontSize: 13, marginBottom: 8 }}>{undo.sentence} <button type="button" style={LNK} onClick={doUndo}>Undo</button></div>}
       {err && <div role="alert" style={{ fontSize: 13, color: T.ink, borderLeft: "3px solid " + T.gold, paddingLeft: 8, marginBottom: 8 }}>{err}</div>}
-      {card.items.map(it => (
+      {(card.groups || []).length > 0 && <Suspense fallback={null}><ReviewGroups card={card} onChanged={() => { groupDecided = true; onChanged && onChanged(); }} isReadOnly={isReadOnly} open={openGroup} onOpen={setOpenGroup} styles={{ B1, B2, LNK, money }} /></Suspense>}
+      {rows.map(it => (
         <div key={it.key} data-testid="review-row" style={{ borderTop: "1px solid " + T.bg2, padding: "10px 0" }}>
           <div style={{ fontSize: 14, color: T.ink }}><b>{money(it.cents)}</b> · {it.name} · {it.date ? displayDate(it.date) : "no date"}</div>
           <div style={{ fontSize: 13, color: T.ink3 }}>“{it.memo}”. {it.reason}.</div>
@@ -345,6 +360,7 @@ export function HomeInsights({ onNavigate, isReadOnly, data: given, onChanged, o
       </div>}
       {!only && <LadderStrip data={data} onNavigate={onNavigate} showCoverage={!(data.coverage && data.coverage.stale)} />}
       {!only && <div style={{ margin: "-4px 0 10px" }}><button type="button" style={LNK} onClick={() => setLook(true)}>What your data says</button></div>}
+      <GroupUndoBar cards={cards} onChanged={reload} styles={{ LNK }} />
       {cards.map(c => <InsightCard key={c.kind} card={c} onNavigate={onNavigate} onChanged={reload} isReadOnly={isReadOnly} />)}
       <p style={{ fontSize: 12, color: T.ink3 }}>{data.sentences && data.sentences.never}</p>
     </section>
@@ -709,6 +725,7 @@ export function FirstLook({ onNavigate, isReadOnly, onClose }) {
           {data.events.map(e => <EventRaised key={e.id} e={e} />)}
         </div>}
         <LadderStrip data={data} onNavigate={onNavigate} showCoverage={false} />
+        <GroupUndoBar cards={data.cards} onChanged={load} styles={{ LNK }} />
         {data.cards.map(c => <InsightCard key={c.kind} card={c} onNavigate={onNavigate} onChanged={load} isReadOnly={isReadOnly} />)}
         <p style={{ fontSize: 12, color: T.ink3 }}>{data.sentences.never}</p>
       </>}
