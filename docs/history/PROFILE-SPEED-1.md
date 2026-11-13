@@ -72,6 +72,6 @@ pool to its time at 70% or more instead. In the battery's load shape the one-tri
 ## Tests
 - `tests/profile-speed1.test.js`: parity (seven fixture people, every part byte for byte the route's
   and LOAD-1's bundle's, the header's Lifetime worked out by hand against a deliberately wrong
-  stored rollup) and a load shape (no request over 5, its time with the pool at ≥70% under three quarters of main's 13-call shape, run the same way in the same test; a fixed bar moved with the machine).
+  stored rollup) and a load shape (no request over 5, connection time per profile open under three quarters of main's 13-call shape, run the same way in the same test. The pool's time at ≥70% is printed, not asserted: it measures the machine (a laptop 17% against main's 34%, CI's 2-core runner ~75% for both)).
 - `tests/page-budget.test.js`: every main page in a browser, at most 5 requests on open (the
   profile 3 before its first screen lands), a few pages at today's count, and no request over 5.

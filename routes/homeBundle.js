@@ -176,7 +176,7 @@ app.post("/perf/peaks/reset", requireAuth, (req, res) => {
 app.get("/perf/peaks", requireAuth, (req, res) => {
   if (!testMode()) return res.status(404).json({ error: "Not found" });
   const L = require("../server/shared/requestLimits").stats(), P = require("../server/shared/pools");
-  res.json({ perRequestPeak: L.perRequestPeak, perRequestMax: P.PER_REQUEST_MAX, overCap: L.overCap, poolPeak: L.poolPeak, poolMax: P.POOL_MAX, capWaits: L.capWaits });
+  res.json({ perRequestPeak: L.perRequestPeak, perRequestMax: P.PER_REQUEST_MAX, overCap: L.overCap, poolPeak: L.poolPeak, poolMax: P.POOL_MAX, capWaits: L.capWaits, heldMs: L.heldMs });
 });
 
 // TEST_MODE only: run the nightly comparison now, for the caller's org, so the

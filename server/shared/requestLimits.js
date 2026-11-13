@@ -43,7 +43,7 @@ const abandoned = () => Object.assign(new Error("The request was closed before i
 const isCancel = (e) => !!e && e.code === "57014";
 
 const scopes = new AsyncLocalStorage();
-const counters = { checkoutTimeouts: 0, statementTimeouts: 0, cancelled: 0, capWaits: 0, overCap: 0, perRequestPeak: 0, poolPeak: 0 };
+const counters = { checkoutTimeouts: 0, statementTimeouts: 0, cancelled: 0, capWaits: 0, overCap: 0, perRequestPeak: 0, poolPeak: 0, heldMs: 0 };   // heldMs: PROFILE-SPEED-1, web requests' connection time
 
 // PROFILE-SPEED-1 · NO ONE REQUEST TAKES THE POOL. A request's statements
 // share PER_REQUEST connections (pools.js, default 3). Two Donors list reads
@@ -189,7 +189,7 @@ async function align(client, ms, sc) {
     }
   } catch (e) { if (sc && client.__stewardPlace) { client.__stewardPlace = false; givePlace(sc); } client.release(e); throw e; }
   if (sc) {
-    sc.held.add(client); client.__stewardScope = sc;
+    sc.held.add(client); client.__stewardScope = sc; client.__stewardHeldAt = Date.now();
     if (sc.held.size > (sc.peak || 0)) sc.peak = sc.held.size;
     if (sc.held.size > counters.perRequestPeak) counters.perRequestPeak = sc.held.size;
     if (sc.onHeld) sc.onHeld();   // REPORTS-SPEED-2: reportLane counts a report's connections
@@ -201,6 +201,7 @@ function release(client, err) {
   client.__stewardScope = null;
   if (!sc) return client.release(err);
   sc.held.delete(client);
+  if (client.__stewardHeldAt) { counters.heldMs += Date.now() - client.__stewardHeldAt; client.__stewardHeldAt = 0; }
   if (client.__stewardPlace) { client.__stewardPlace = false; givePlace(sc); }
   if (sc.onHeld) sc.onHeld();
   if (sc.cancelling) return void sc.cancelling.then(() => client.release(err));
@@ -262,6 +263,6 @@ function memoize() { const sc = live(); if (sc && sc.read && !sc.memo) sc.memo =
 function memoFor() { const sc = live(); return sc && sc.memo ? sc.memo : null; }
 
 // TEST_MODE harnesses read the peaks for a window of their own.
-function resetPeaks() { counters.perRequestPeak = 0; counters.poolPeak = 0; counters.capWaits = 0; counters.overCap = 0; }
+function resetPeaks() { counters.heldMs = 0; counters.perRequestPeak = 0; counters.poolPeak = 0; counters.capWaits = 0; counters.overCap = 0; }
 module.exports = { memoize, memoFor, holding, resetPeaks, answerError, cancelWith, DEFAULT_MS, NAMED, LONGER, limitFor, TOO_LONG, middleware, checkout, release, translate, guard, useLimit, shared,
   cancelPool, live, stats: () => ({ ...counters }), isCancel };
