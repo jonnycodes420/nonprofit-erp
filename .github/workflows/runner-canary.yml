@@ -50,8 +50,10 @@ jobs:
         with:
           node-version: "22"
       - name: Which image this is
+        env:
+          ASKED: ${{ inputs.image || 'ubuntu-latest' }}
         run: |
-          echo "Asked for: ${{ inputs.image || 'ubuntu-latest' }} · ImageOS=${ImageOS:-?} ImageVersion=${ImageVersion:-?}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Asked for: $ASKED · ImageOS=${ImageOS:-?} ImageVersion=${ImageVersion:-?}" | tee -a "$GITHUB_STEP_SUMMARY"
           grep -E '^(PRETTY_NAME|VERSION_ID)=' /etc/os-release | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Install server and client deps (locked)
         run: npm ci && npm ci --prefix client
