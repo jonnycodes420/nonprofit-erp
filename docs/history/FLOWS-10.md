@@ -25,3 +25,10 @@ a read showed it, otherwise on a local production build of Harborlight.
   seeded journey, seeded media. Re-check a repeat in the org the fleet used.
 - "Done" can be said by a table nobody touched: a closed Thread is a done task. Stopping a journey
   removes the open step's task, as the batch Undo already did.
+
+## After merge: the staging re-check
+Billing's line footed locally and not on staging (1,124 + 66 − 1 = 1,189 against the Donors tab's
+1,188). Records counts every person with a gift who is not deleted, erased people too; the Donors tab
+leaves erased people out, so an erased giver was a record that no part of the line named. The second
+set is now "a gift on file, not on the Donors tab (not marked Donor, or erased)", and the suite has an
+erased giver (red on the first rule, green on this one).
