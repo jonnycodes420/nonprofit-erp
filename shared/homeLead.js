@@ -27,7 +27,9 @@ export const LEAD_FLOOR = 15;
 // After this many "Not now"s of one kind, that kind ranks at half for that person.
 export const DISMISS_RUN = 3;
 
-const money = n => "$" + Math.round(Number(n) || 0).toLocaleString("en-US");
+// Whole dollars, half up. Home passes a gap's size, so its sentences round half away
+// from zero; tests/lib/surfacesAgree.js uses it to hold Home's door to the key (CI-PIN-2404).
+export const money = n => "$" + Math.round(Number(n) || 0).toLocaleString("en-US");
 const rel = (dollars, line) => Math.min(1, Math.max(0, Number(dollars) || 0) / Math.max(Number(line) || 0, 1000));
 const first = name => String(name || "").trim().split(/\s+/)[0] || "them";
 const plural = countLabel;
