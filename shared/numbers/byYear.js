@@ -229,9 +229,22 @@ const KIND_WORDS = { new: "First gift ever in this year", retained: "Gave the ye
 // donorKindsSql's, by the same rules; tests/reports-speed2.test.js holds the
 // answer to main's five-statement one and to the raw rows worked by hand.
 function orgYearsSql(orgId, spans) {
-  const spanArgs = [];
+  const whichArgs = [], ownArgs = [];
   const at = new Map(spans.map((s, i) => [s.k, i]));
-  const inSpan = spans.map((s, i) => { spanArgs.push(s.f, s.t); return `(g.date >= ? AND g.date <= ?) AS i${i}`; });
+  // Which span a row is in, found once per row. The spans that do not overlap
+  // (the fiscal years and the year before the oldest) are found by walking their
+  // first days newest first until one is on or before the row's date, then one
+  // check of that span's last day. A span that overlaps them (the same point
+  // last year) keeps its own two comparisons. Before, every row was compared with
+  // every span's first and last day: 24 locale-aware comparisons a row, the
+  // statement's CPU on the nightly runner.
+  const overlaps = (x, y) => x.f <= y.t && y.f <= x.t;
+  const chain = [], alone = [];
+  spans.forEach((sp, i) => ((chain.some(j => overlaps(spans[j], sp)) ? alone : chain).push(i)));
+  chain.sort((x, y) => (spans[x].f > spans[y].f ? -1 : 1));   // newest first: most rows stop early
+  const which = `CASE ${chain.map(i => { whichArgs.push(spans[i].f, spans[i].t);
+    return `WHEN g.date >= ? THEN CASE WHEN g.date <= ? THEN ${i} END`; }).join(" ")} END AS b`;
+  const own = alone.map(i => { ownArgs.push(spans[i].f, spans[i].t); return `(g.date >= ? AND g.date <= ?) AS i${i}`; });
   const perPerson = spans.map((s, i) => `SUM(g.amount) FILTER (WHERE g.i${i}) AS s${i},
              COUNT(*) FILTER (WHERE g.i${i} AND g.gift) AS n${i},
              MAX(g.amount) FILTER (WHERE g.i${i} AND g.amount > 0) AS mx${i},
@@ -248,16 +261,16 @@ function orgYearsSql(orgId, spans) {
            COUNT(*) FILTER (WHERE ${giver} AND NOT COALESCE(${isNew}, false) AND ${prev})::int AS retained${i},
            COUNT(*) FILTER (WHERE ${giver} AND NOT COALESCE(${isNew}, false) AND NOT (${prev}))::int AS reactivated${i}`;
   });
-  // In the order the text reads them: the kinds' span starts, the spans, the org twice.
-  const args = [...kindArgs, ...spanArgs, orgId, orgId];
+  // In the order the text reads them: the kinds' span starts, the overlapping spans, the bucket's spans, the org twice.
+  const args = [...kindArgs, ...ownArgs, ...whichArgs, orgId, orgId];
   const sql = `
     SELECT ${perSpan.join(",\n           ")}
       FROM (SELECT a.*, d.erased_at, d.imported_first_gift_date, d.imported_last_gift_date
               FROM (SELECT g.donor_id, ${FIRST_ON_FILE_AGG("g")} AS first,
                            ${perPerson.join(",\n                           ")}
-                      FROM (SELECT g.donor_id, g.org_id, g.amount, g.type, g.date, g.scheduled_on, g.refunded_in_full,
-                                   ${COUNTED("g")} AS gift, ${inSpan.join(", ")}
-                              FROM gifts g WHERE g.org_id = ? AND ${MONEY("g")}) g
+                      FROM (SELECT g.donor_id, g.org_id, g.amount, g.type, g.date, g.scheduled_on, g.refunded_in_full, g.b,
+                                   ${COUNTED("g")} AS gift, ${[...chain.map(i => `(g.b = ${i}) AS i${i}`), ...own].join(", ")}
+                              FROM (SELECT g.*, ${which} FROM gifts g WHERE g.org_id = ? AND ${MONEY("g")} OFFSET 0) g) g
                      GROUP BY g.donor_id) a
               JOIN donors d ON d.id = a.donor_id AND d.org_id = ? AND d.deleted_at IS NULL) p`;
   const read = (row) => new Map(spans.map((s, i) => [s.k, { k: s.k, s: row[`s${i}`], n: row[`n${i}`], mx: row[`mx${i}`], donors: row[`donors${i}`],
