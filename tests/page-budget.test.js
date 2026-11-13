@@ -33,6 +33,11 @@
 //   * a page firing 12 calls on open: twelve apiFetch calls added to Settings'
 //     mount → "Settings opens in at most 5 requests (16)" red; reverted → 40
 //     passed, 0 failed.
+//   * COMMS-SPEED-1: the whole-org read put back on choosing Manual
+//     (allPages("/donors/summaries") in Communications) → "a hand-picked
+//     audience reads no one's summary" red; Donors' whole-org read not aborted
+//     on leaving (no ctl.abort() in its cleanup) → "1 s after leaving Re-engage
+//     no /donors/summaries is in flight" red. Both in the COMMS-SPEED-1 report.
 //
 // Browser suite conventions (BUILD-44 Part 6): SKIPs cleanly without
 // Playwright or a localhost-API dist; REQUIRE_BROWSER=1 makes that a failure.
@@ -179,6 +184,54 @@ async function fixture() {
     } catch (e) { ok(`${name} opens`, false, e.message.split("\n")[0].slice(0, 160)); }
   }
   console.log("  counts: " + JSON.stringify(seen));
+
+  // ── COMMS-SPEED-1: nothing reads every person unasked, nothing outlives its page ──
+  // (a) A hand-picked audience searches on the server: choosing Manual in the
+  // campaign editor sends no /donors/summaries (it used to page through
+  // everyone, 21 pages on a 10,000-person org).
+  // (b) A page that does read everyone (Donors → Re-engage) stops when it is
+  // left: 1 s after clicking away, no /donors/summaries is in flight and none
+  // has started. Each summaries answer is held 1.5 s here, so a read that is
+  // not cancelled is still out when the check looks (on main it was).
+  const SUMS = /^GET \/donors\/summaries/;
+  try {
+    await rail("Communications"); await settle(now());
+    log = [];
+    await page.getByText("New campaign", { exact: true }).first().click({ timeout: 15000 });
+    await page.locator('[data-testid^="template-"]').first().click({ timeout: 15000 });
+    const manual = page.getByRole("button", { name: "Manual", exact: true });
+    await page.waitForTimeout(500);
+    if (!(await manual.isVisible().catch(() => false))) await page.locator('[data-testid="rail-audience"]').getByText("Audience", { exact: true }).first().click();
+    await manual.click({ timeout: 15000 });
+    await page.locator('[data-testid="manual-person"]').first().waitFor({ timeout: 15000 });
+    await settle(now());
+    const sums = log.filter(e => SUMS.test(e.path));
+    ok("COMMS-SPEED-1 a hand-picked audience reads no one's summary; it searches (GET /donors/pick)",
+      sums.length === 0 && log.some(e => /^GET \/donors\/pick\?.*withEmail=1/.test(e.path)), log.map(e => e.path.slice(0, 80)));
+  } catch (e) { ok("COMMS-SPEED-1 the Manual audience opens", false, e.message.split("\n")[0].slice(0, 160)); }
+  try {
+    await page.route(u => u.href.startsWith(BASE + "/donors/summaries"), async route => {
+      await new Promise(r => setTimeout(r, 1500));
+      await route.continue().catch(() => {});   // the browser may have dropped it meanwhile: that is the point
+    });
+    await page.goto(`${APP}/dashboard`, { waitUntil: "networkidle", timeout: 90000 });   // out of the editor
+    await rail("Donors"); await settle(now());
+    log = [];
+    await page.locator(".donors-view-toggle button").filter({ hasText: /^Re-engage/ }).first().click({ timeout: 15000 });
+    for (let k = 0; k < 100 && !log.some(e => SUMS.test(e.path)); k++) await page.waitForTimeout(100);
+    const asked = log.some(e => SUMS.test(e.path));
+    await page.waitForTimeout(200);
+    const leftAt = now();
+    await rail("Reports");
+    await page.waitForTimeout(1000);
+    const out = log.filter(e => SUMS.test(e.path) && e.end == null);
+    const after = log.filter(e => SUMS.test(e.path) && e.start > leftAt + 50);
+    ok("COMMS-SPEED-1 Re-engage reads everyone, a page at a time", asked, log.map(e => e.path.slice(0, 80)));
+    ok("COMMS-SPEED-1 1 s after leaving Re-engage no /donors/summaries is in flight or started",
+      asked && out.length === 0 && after.length === 0, { inFlight: out.map(e => e.path.slice(0, 80)), startedAfter: after.map(e => e.path.slice(0, 80)) });
+    await page.unroute(u => u.href.startsWith(BASE + "/donors/summaries")).catch(() => {});
+    await settle(now());
+  } catch (e) { ok("COMMS-SPEED-1 the leave check ran", false, e.message.split("\n")[0].slice(0, 160)); }
 
   const peaks = await api("GET", "/perf/peaks", a.token);
   const p = peaks.body || {};

@@ -2,7 +2,8 @@ import { YEAR_HDR_PAT, normalizeHeader, eitherContainsTokenRun, autoDetectTxMapp
 import { candidateLine } from "../../lib/candidateLine";   // POLISH-7: email, city and last gift for each candidate
 import { normalizeNameForDonorMatch, donorsFromUnmatchedGifts } from "../../../../shared/giftFileDonors.js";
 import { useState, useEffect, useMemo } from "react";
-import { allPeople } from "../../lib/people";
+import { allPeople, useLeaveSignal } from "../../lib/people";
+import { isAbort } from "../../lib/leaving";
 import { T, Modal } from "../shared";
 import Papa from "papaparse";
 import { errorMessage } from "../../lib/domainError";
@@ -146,11 +147,13 @@ export function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org
   // so this import loads the whole-org list itself when it opens, and the
   // preview waits for it. The matching is unchanged.
   const [loadedDonors, setLoadedDonors] = useState(null);
+  const leaveSignal = useLeaveSignal();   // COMMS-SPEED-1: the whole-org read stops when the import closes
   useEffect(() => {
     if (donorsProp) return undefined;
     let live = true;
-    allPeople().then(rows => { if (live) setLoadedDonors(rows); }).catch(() => {});
-    return () => { live = false; };
+    const ctl = new AbortController();
+    allPeople({ signal: ctl.signal }).then(rows => { if (live) setLoadedDonors(rows); }).catch(() => {});
+    return () => { live = false; ctl.abort(); };
   }, [donorsProp]);
   const donorsReady = donorsProp || loadedDonors;
   const [step, setStep]             = useState("upload");
@@ -230,8 +233,8 @@ export function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org
     setErr("");
     let donors = donorsReady;
     if (!donors) {
-      try { donors = await allPeople(); setLoadedDonors(donors); }
-      catch (e) { setErr(errorMessage(e, "Import failed.")); return; }
+      try { donors = await allPeople({ signal: leaveSignal() }); setLoadedDonors(donors); }
+      catch (e) { if (!isAbort(e)) setErr(errorMessage(e, "Import failed.")); return; }
     }
     const gifts = [];
     const refusedDates = [];
