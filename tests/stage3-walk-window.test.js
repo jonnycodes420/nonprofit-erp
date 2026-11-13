@@ -16,6 +16,8 @@
 //   · a cron line that never lands just after the window's end in EST or EDT → §6
 //   · deploy-staging deploying without asking the hold, or the walk running
 //     after a hold                                                          → §7
+//   · (PIPE-1) the release waiting on GitHub's schedule: no workflow_run on
+//     CI's push runs, so a 1 AM merge stays held after a 9 AM push         → §8
 //
 // No server, no database: the pure rules, then the two scripts run against a
 // stub `gh` on PATH and a fake staging /health. Tests set their own clock.
@@ -156,6 +158,39 @@ process.stdout.write("{}");
   healthEnv = "production";
   rr = await release({ STAGING_RELEASE_NOW: "2026-11-12T08:20:00Z" });
   ok("a STAGING_API_URL whose /health says production: stops, re-runs nothing", rr.code === 1 && !calls().some(a => a.includes("POST")), rr.out);
+  healthEnv = "staging";
+
+  // PIPE-1: on 13 Nov GitHub ran the 3:20 AM release at 10:24 AM. A merge held
+  // at 1 AM ET, NO scheduled run all morning, and one push at 9 AM ET whose CI
+  // went red (so its own deploy-staging never ran): CI finishing that run must
+  // start the release (workflow_run), and the release must put the 1 AM merge out.
+  console.log("\n§8 · PIPE-1: held at 1 AM, no scheduled run, a push at 9 AM releases it");
+  const relWf = fs.readFileSync(path.join(ROOT, ".github", "workflows", "deploy-staging-release.yml"), "utf8");
+  const onBlock = (/^on:\n((?:  .*\n|\n)+)/m.exec(relWf) || [])[1] || "";
+  const wr = (/^  workflow_run:\n((?:    .*\n)+)/m.exec(onBlock) || [])[1] || "";
+  ok("CI finishing a run on main starts the release (workflow_run: CI, completed, main)",
+    /workflows: \[CI\]/.test(wr) && /types: \[completed\]/.test(wr) && /branches: \[main\]/.test(wr), onBlock);
+  ok("…only CI's runs of a push to main count (not a PR's, not a merge-queue run's)",
+    /github\.event_name != 'workflow_run' \|\| github\.event\.workflow_run\.event == 'push'/.test(relWf));
+  const morningFx = [
+    ["/actions/workflows/ci.yml/runs", { workflow_runs: [
+      { id: 513, run_number: 13, status: "completed", head_sha: SHA("e"), event: "push" },   // 9:00 AM ET push, CI red
+      { id: 512, run_number: 12, status: "completed", head_sha: SHA("d"), event: "push" },   // 1:00 AM ET merge, held
+      { id: 499, run_number: 9, status: "completed", head_sha: live, event: "push" }] }],
+    ["/runs/513/jobs", { jobs: [{ id: 9013, name: "deploy-staging", status: "completed", conclusion: "skipped" }] }],
+    ["/runs/512/jobs", { jobs: [{ id: 9012, name: "deploy-staging", status: "completed", conclusion: "success" }] }],
+    ["/runs/499/jobs", { jobs: [{ id: 9009, name: "deploy-staging", status: "completed", conclusion: "success" }] }],
+    [`/compare/${live}\\.\\.\\.${live}`, { status: "identical" }],
+    ["/compare/", { status: "ahead" }],
+  ];
+  reset(morningFx);
+  rr = await release({ STAGING_RELEASE_NOW: "2026-11-12T06:00:00Z", GITHUB_EVENT_NAME: "workflow_run" });
+  ok("1:00 AM ET, CI finishing the held merge's own run: still inside the window, nothing re-run", rr.code === 0 && !calls().some(a => a.includes("POST")), rr.out);
+  reset(morningFx);
+  rr = await release({ STAGING_RELEASE_NOW: "2026-11-12T14:30:00Z", GITHUB_EVENT_NAME: "workflow_run" });
+  const morning = calls().filter(a => a.includes("POST") && a.some(x => /\/rerun$/.test(x)));
+  ok("9:30 AM ET, CI finishing the 9 AM push: the 1 AM merge's deploy-staging (job 9012) is re-run, once",
+    rr.code === 0 && morning.length === 1 && morning[0].includes("repos/acme/steward/actions/jobs/9012/rerun"), { morning, out: rr.out });
   srv.close();
 
   console.log("\n§6 · the release cron lands just after the window's end in EST and in EDT");

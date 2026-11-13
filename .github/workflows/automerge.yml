@@ -17,6 +17,13 @@
 # (scripts/ci/deploy-turnstile.js) run exactly as they do for a hand merge.
 #
 # No token, no auto-merge: the job says so and passes, and the PR is merged by hand.
+#
+# PIPE-1 · WITH THE MERGE QUEUE ON, A GREEN PR JOINS THE QUEUE. Once main's
+# ruleset requires a merge queue (docs/needs-jonathan/PIPE-1.md), the same
+# `gh pr merge --auto` puts the PR in the queue when `test` passes (the queue's
+# own settings choose squash, so no method flag is passed),
+# and the queue tests it on top of the PRs ahead of it before it lands. Without
+# the queue rule it is exactly the old squash auto-merge.
 name: Automerge
 
 on:
@@ -58,4 +65,11 @@ jobs:
             echo "main has no required status check, so auto-merge would merge before CI; merge by hand"
             exit 0
           fi
-          gh pr merge --auto --squash --delete-branch "$PR_URL"
+          queue=$(GH_TOKEN="$READ_TOKEN" gh api "repos/$REPO/rules/branches/main" \
+            --jq '[.[] | select(.type == "merge_queue")] | length')
+          if [ "${queue:-0}" != "0" ]; then
+            echo "main requires the merge queue: the PR joins it when test passes"
+            gh pr merge --auto "$PR_URL"
+          else
+            gh pr merge --auto --squash --delete-branch "$PR_URL"
+          fi

@@ -21,15 +21,16 @@
 // quiet day it is "Nothing urgent" and three people worth a note.
 
 import { countLabel } from "./countWords.js";
+import wholeDollarsMod from "./numbers/wholeDollars.js";
 export const KINDS = ["meeting", "gift", "confirm", "drift", "card", "season", "seasonCall", "event", "quiet"];
 // A card has to clear this to lead. Below it, the day is quiet.
 export const LEAD_FLOOR = 15;
 // After this many "Not now"s of one kind, that kind ranks at half for that person.
 export const DISMISS_RUN = 3;
 
-// Whole dollars, half up. Home passes a gap's size, so its sentences round half away
-// from zero; tests/lib/surfacesAgree.js uses it to hold Home's door to the key (CI-PIN-2404).
-export const money = n => "$" + Math.round(Number(n) || 0).toLocaleString("en-US");
+// Whole dollars, half away from zero: shared/numbers/wholeDollars.js, the one rounding
+// tests/lib/surfacesAgree.js also uses to hold Home's door to the key (CI-PIN-2404, PIPE-1).
+export const money = n => wholeDollarsMod.dollarsLabel(n);
 const rel = (dollars, line) => Math.min(1, Math.max(0, Number(dollars) || 0) / Math.max(Number(line) || 0, 1000));
 const first = name => String(name || "").trim().split(/\s+/)[0] || "them";
 const plural = countLabel;

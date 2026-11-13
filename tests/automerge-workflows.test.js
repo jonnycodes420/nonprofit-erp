@@ -112,6 +112,11 @@ const merge = r.calls.filter(c => c.startsWith("pr merge"));
 ok(r.code === 0 && merge.length === 1, "main requires a check: gh pr merge is called once");
 ok(merge[0] === `pr merge --auto --squash --delete-branch ${PR_URL}|TOKEN=pat-fake`, "…as --auto --squash --delete-branch on the PR, with the personal token");
 ok(r.calls.some(c => c.startsWith("api repos/example/repo/rules/branches/main") && c.endsWith("TOKEN=read-fake")), "the rule check reads with the workflow's own read-only token");
+// PIPE-1: with a merge_queue rule on main, a green PR joins the queue: no method flag.
+const RULE_QUEUE = JSON.stringify([{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "test" }] } }, { type: "merge_queue", parameters: { merge_method: "SQUASH" } }]);
+r = runStep(stepA.run, { GH_TOKEN: "pat-fake", READ_TOKEN: "read-fake", REPO: "example/repo", PR_URL, RULES_JSON: RULE_QUEUE });
+const qmerge = r.calls.filter(c => c.startsWith("pr merge"));
+ok(r.code === 0 && qmerge.length === 1 && qmerge[0] === `pr merge --auto ${PR_URL}|TOKEN=pat-fake`, "merge queue required: gh pr merge --auto joins the queue (no --squash, no --delete-branch)");
 
 // ── §4 ──────────────────────────────────────────────────────────────────────
 console.log("§4 keep-current.yml: push to main, one at a time");
@@ -134,11 +139,14 @@ const PRS = JSON.stringify([
 r = runStep(stepK.run, { GH_TOKEN: "", REPO: "example/repo", PRS_JSON: PRS });
 ok(r.code === 0 && r.out.includes("AUTOMERGE_TOKEN not set; merge by hand") && r.calls.length === 0, "no AUTOMERGE_TOKEN: it says so, passes, and calls nothing");
 
-r = runStep(stepK.run, { GH_TOKEN: "pat-fake", REPO: "example/repo", PRS_JSON: PRS });
+r = runStep(stepK.run, { GH_TOKEN: "pat-fake", READ_TOKEN: "read-fake", REPO: "example/repo", PRS_JSON: PRS, RULES_JSON: RULE_ON });
 const updated = r.calls.filter(c => c.startsWith("pr update-branch")).map(c => Number(c.split(" ")[2]));
 ok(r.code === 0, "the job passes");
 ok(JSON.stringify(updated) === JSON.stringify([31, 35, 40]), `updates only the auto-merge PRs, oldest first (got ${JSON.stringify(updated)})`);
-ok(r.calls.every(c => c.endsWith("TOKEN=pat-fake")), "every call uses the personal token");
+ok(r.calls.filter(c => !c.startsWith("api repos/example/repo/rules")).every(c => c.endsWith("TOKEN=pat-fake")), "every PR call uses the personal token (the rule read uses the read-only one)");
+// PIPE-1: while main requires the merge queue, keep-current rebases nothing.
+const kq = runStep(stepK.run, { GH_TOKEN: "pat-fake", READ_TOKEN: "read-fake", REPO: "example/repo", PRS_JSON: PRS, RULES_JSON: RULE_QUEUE });
+ok(kq.code === 0 && !kq.calls.some(c => c.startsWith("pr update-branch") || c.startsWith("pr list")), "merge queue required: keep-current lists and rebases nothing");
 
 r = runStep(stepK.run, { GH_TOKEN: "pat-fake", REPO: "example/repo", PRS_JSON: PRS, FAIL_PRS: "31" });
 const after = r.calls.filter(c => c.startsWith("pr update-branch")).map(c => Number(c.split(" ")[2]));
