@@ -16,6 +16,7 @@ import EventRaised, { EventStory, peopleLine } from "./EventRaised";   // HOME-3
 import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit, EVENT_FIGURES } from "../../../shared/eventShape";
 import { countLabel } from "../../../shared/countWords.js";
 import { eventRowsChanged, useEventRowsRev, withinWrite, useLatestRead, useLatestLoad } from "../lib/eventRows";
+import GuestPickerStatus from "./events/GuestPickerStatus";   // FLOWS-10 items 2, 3
 import { useChangeRev } from "../lib/changes";   // STALE-1   // COUNTS-1: every panel re-reads the guest rows
 import RecordGiftDialog from "./gifts/RecordGiftDialog";   // GIFTS-1: a gift for this event, from its page
 import { eventStatus } from "../../../shared/eventStatus.js";
@@ -1083,8 +1084,7 @@ export function EventKiosk({ eventId }) {
   const handleRef = useRef(null);
   const codeBoxRef = useRef(null);
 
-  // FLOWS-10 item 3: the newest read wins, and while it is on its way the count says "Updating…".
-  const [load, reading] = useLatestLoad(() => apiFetch(`/events/${eventId}/kiosk`), setData);
+  const [load, reading] = useLatestLoad(() => apiFetch(`/events/${eventId}/kiosk`), setData);   // FLOWS-10 item 3 (lib/eventRows.js)
   const rowsRev = useEventRowsRev(eventId);
   useEffect(() => { load(); }, [eventId, rowsRev]);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1755,10 +1755,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
                       {d.stage && <Pill label={stageName(d.stage)} color={SC[d.stage] || T.ink3} />}
                     </button>
                   ))}
-                  {/* FLOWS-10 items 2 and 3: while the answer is coming it says so, a failed search says it failed,
-                      and only an answer with nobody in it says nobody matches (or that everyone is already on the list). */}
-                  {filteredDonors.length === 0 && (pickPending || pickFailed) && <div data-testid={pickFailed ? "ev-dir-failed" : "ev-dir-looking"} role={pickFailed ? "alert" : "status"} style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", padding: "12px 0", textAlign: "center" }}>{pickFailed ? "The search did not answer, so this is not a list of who is on file. Type again to try once more." : "Looking…"}</div>}
-                  {filteredDonors.length === 0 && !pickPending && !pickFailed && <div data-testid="ev-dir-none" style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", padding: "12px 0", textAlign: "center" }}>{donorSearch.trim() ? `Nobody on file matches "${donorSearch.trim()}". Add them as a new guest instead.` : "Everyone on file is already on the list."}</div>}
+                  {filteredDonors.length === 0 && <GuestPickerStatus pending={pickPending} failed={pickFailed} search={donorSearch} />}
                 </div>
                 {selectedIds.size > 0 && (
                   <button onClick={addFromDirectory} disabled={addingDonors} style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "9px", color: T.white, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>

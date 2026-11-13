@@ -2,7 +2,7 @@
 // how it is counted, the price, the next charge, and whether the setup fee was
 // paid, all from GET /billing/status. A band change waits for the owner's yes
 // here; moving down waits for renewal, on request.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { displayDate } from "../../../shared/displayDate";
@@ -20,6 +20,9 @@ const LINK = { background: "none", border: "none", padding: 0, color: T.greenDk,
 export function BillingBand({ billing, isAdmin, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // FLOWS-10 item 14: the line under Records, from GET /billing/records-gap (shared/numbers/recordsGap.js).
+  const [gap, setGap] = useState(null);
+  useEffect(() => { let live = true; apiFetch("/billing/records-gap").then(g => { if (live) setGap(g); }).catch(() => {}); return () => { live = false; }; }, [billing && billing.records]);
   if (!billing || billing.records == null) return null;
   const act = (path, body) => {
     setBusy(true); setErr("");
@@ -53,11 +56,11 @@ export function BillingBand({ billing, isAdmin, onChanged }) {
       </div>
       {/* FLOWS-10 item 14 (Area 5 Explore 5): Records and the Donors tab are two numbers; one line says
           why, and the people marked Donor with no gift open (shared/numbers/recordsGap.js). */}
-      {b.recordsGap && b.recordsGap.sentence && (
+      {gap && gap.sentence && (
         <div data-testid="billing-records-gap" style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.5, maxWidth: 640 }}>
-          {b.recordsGap.markedNoGift > 0 && b.recordsGap.source && <><Figure value={b.recordsGap.markedNoGift} kind="count" label="Marked Donor, no gift on file"
-            definition="People marked Donor who have no gift on file. The Donors tab counts them; Records does not." source={b.recordsGap.source} variant="inline" />{" "}</>}
-          {b.recordsGap.markedNoGift > 0 ? b.recordsGap.sentence.replace(/^[\d,]+ /, "") : b.recordsGap.sentence}
+          {gap.markedNoGift > 0 && gap.source && <><Figure value={gap.markedNoGift} kind="count" label="Marked Donor, no gift on file"
+            definition="People marked Donor who have no gift on file. The Donors tab counts them; Records does not." source={gap.source} variant="inline" />{" "}</>}
+          {gap.markedNoGift > 0 ? gap.sentence.replace(/^[\d,]+ /, "") : gap.sentence}
         </div>
       )}
       {b.notice && (

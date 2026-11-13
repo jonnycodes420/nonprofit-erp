@@ -151,7 +151,7 @@ const read = p => fs.readFileSync(path.join(ROOT, p), "utf8");
 
   // ── §14 Billing's records gap ────────────────────────────────────────────
   const bill = (await api("GET", "/billing/status", tok)).body || {};
-  const gap = (bill.pricing1 || bill).recordsGap || bill.recordsGap || {};
+  const gap = (await api("GET", "/billing/records-gap", tok)).body || {};
   const [dir] = await q(`SELECT COUNT(*)::int AS n FROM donors d WHERE d.org_id=$1 AND d.deleted_at IS NULL AND d.erased_at IS NULL AND ${require(path.join(ROOT, "shared/personType.js")).donorOnlySql("d")}`, [ORG]);
   const records = (bill.pricing1 || bill).records;
   ok("§14 Billing says how many are marked Donor with no gift, the line foots to the Donors tab, and the people open",
