@@ -71,6 +71,11 @@ const { orgRows } = require("../keys/fromDb");
 const { testNow } = require("../clock");
 
 const cents = v => Math.round(Number(v || 0) * 100);
+// PIPE-1: what Home's door should say for a gap of `gapCents` (this year less
+// last, signed), in cents. Home writes whole dollars unless its figure shows
+// cents; either way the rounding is the app's (shared/numbers/wholeDollars.js).
+const { wholeDollarCents } = require("../../shared/numbers/wholeDollars");
+const doorKeyCents = (gapCents, shown = "") => (/\./.test(String(shown)) ? gapCents : wholeDollarCents(gapCents));
 const money = c => `$${(c / 100).toFixed(2)}`;
 // "$63,984" / "$2,887,186.01" / "1,208" → a number (dollars or a count)
 const num = s => Number(String(s).replace(/[$,]/g, ""));
@@ -403,7 +408,10 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       // of the year before (it set four months against twelve).
       const calYear = /-01-01$/.test(fyStart);
       const annual = await get(`/reports/annual?yearMode=${calYear ? "calendar" : "fiscal"}&year=${String(board.fiscalYear.end).slice(0, 4)}`).catch(() => null);
-      const annualCmp = annual && annual.span && annual.span.cut && annual.span.priorFrom === w.from && annual.span.priorTo === w.to;
+      // PIPE-1: on the fiscal year's last day the year is whole, not cut
+      // (span.cut false), and its prior span IS the same days last year; the
+      // spans are what must match (red on 30 Jun at a fixed date, green after).
+      const annualCmp = annual && annual.span && annual.span.priorFrom === w.from && annual.span.priorTo === w.to;
       if (annual && annual.span && !annualCmp) diffs.push(`vs last year: the annual report compares ${annual.span.priorFrom} to ${annual.span.priorTo}; the Board compares ${w.from} to ${w.to}`);
       agree(`ahead of or behind the same days last year (${w.from} to ${w.to})`, [
         ["the key (hard credit)", thisYear - lastYear],
@@ -412,13 +420,13 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         ["Reports' annual report", annual && annual.total !== undefined ? cents(annual.total) - cents(annual.priorTotal) : undefined],
       ], money);
       // Home writes whole dollars ("$63,984"), so it is held to the dollar,
-      // rounded by Home's own helper: half away from zero on the gap's size
-      // (CI-PIN-2404: Math.round sent -$10,149.50 to -$10,149, Home said $10,150 behind).
+      // rounded by the app's own rounding (shared/numbers/wholeDollars.js), never
+      // this file's (CI-PIN-2404, PIPE-1: Math.round sent -$10,149.50 to -$10,149,
+      // Home said $10,150 behind).
       if (door && !seasonal) {
-        const { money: homeMoney } = await import("../../shared/homeLead.js");
         const gap = thisYear - lastYear;
         const homeCents = (door[2] === "behind" ? -1 : 1) * cents(num(door[1]));
-        const dbCents = /\./.test(door[1]) ? gap : Math.sign(gap) * cents(num(homeMoney(Math.abs(gap) / 100)));
+        const dbCents = doorKeyCents(gap, door[1]);
         facts[`ahead of or behind the same days last year (${w.from} to ${w.to})`]["Home's door"] = homeCents;
         if (homeCents !== dbCents) diffs.push(`ahead of or behind the same days last year: the key says ${money(thisYear - lastYear)}, Home's door says ${money(homeCents)} ("${doorLine}")`);
       }
@@ -1232,4 +1240,4 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   return out;
 }
 
-module.exports = { assertSurfacesAgree };
+module.exports = { doorKeyCents, assertSurfacesAgree };

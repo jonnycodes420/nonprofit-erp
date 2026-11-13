@@ -1,0 +1,83 @@
+# PIPE-1 · THE RUNNER CANARY. THE NEXT IMAGE IS TRIED BEFORE IT IS FORCED ON US.
+#
+# Every other workflow stays pinned to ubuntu-24.04 (CI-PIN-2404). This one,
+# once a week, runs the Playwright install and one browser suite
+# (tests/screens1-parts.test.js: real Chromium, no server or database) on
+# ubuntu-latest, the label GitHub moves without asking. If it fails, an issue
+# says so (scripts/ci/runner-canary.js), days before the change reaches us.
+#
+# The `canary` job runs ON the image being tried; `watch` runs on the pinned
+# image beside it and gives the verdict, so an image name GitHub has no runner
+# for (the job sits queued forever) is red within 20 minutes, never a quiet pass.
+#
+# By hand: Actions → runner-canary → Run workflow, with any image name. A run by
+# hand opens no issue unless open_issue is ticked.
+name: runner-canary
+
+on:
+  schedule:
+    - cron: "17 13 * * 1"   # Mondays, 8:17 AM EST / 9:17 AM EDT
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "The runner image to try"
+        type: string
+        default: ubuntu-latest
+      open_issue:
+        description: "Open (or comment on) an issue if it fails"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runner-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    runs-on: ${{ inputs.image || 'ubuntu-latest' }}
+    timeout-minutes: 45
+    env:
+      PLAYWRIGHT_DIR: ${{ github.workspace }}/.playwright
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+      PW_DEB_CACHE: ${{ github.workspace }}/.playwright-debs
+      REQUIRE_BROWSER: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Which image this is
+        run: |
+          echo "Asked for: ${{ inputs.image || 'ubuntu-latest' }} · ImageOS=${ImageOS:-?} ImageVersion=${ImageVersion:-?}" | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -E '^(PRETTY_NAME|VERSION_ID)=' /etc/os-release | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Install server and client deps (locked)
+        run: npm ci && npm ci --prefix client
+      # No cache on purpose: the point is a fresh install on the new image.
+      - name: Install Playwright (the same script and version CI uses)
+        timeout-minutes: 35
+        run: bash scripts/ci/install-playwright.sh 1.61.1
+      - name: One browser suite
+        run: node tests/screens1-parts.test.js
+
+  watch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: The canary's verdict (an issue when it fails)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANARY_IMAGE: ${{ inputs.image || 'ubuntu-latest' }}
+          CANARY_JOB: canary
+          OPEN_ISSUE: ${{ github.event_name == 'schedule' || inputs.open_issue }}
+        run: node scripts/ci/runner-canary.js

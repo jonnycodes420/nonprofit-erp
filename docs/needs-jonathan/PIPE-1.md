@@ -1,0 +1,3 @@
+# PIPE-1 · needs Jonathan
+
+- Turn on the merge queue for main: Settings → Rules → Rulesets → `main-protection` → Edit → tick **Require merge queue** with: Merge method **Squash and merge**; Build concurrency **5**; Minimum group size **1**; Maximum group size **1** (each PR tested on top of the ones ahead, one at a time, so a red one is named alone); Wait time to meet minimum group size **0** minutes; **Require all queue entries to pass required checks** on; Status check timeout **60** minutes. Then, under **Require status checks to pass**, untick **Require branches to be up to date before merging** (the queue does this now) and leave `test` required. Save. Until this is on, automerge and keep-current behave exactly as before.

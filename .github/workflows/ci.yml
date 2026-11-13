@@ -21,13 +21,23 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # PIPE-1 · THE MERGE QUEUE. GitHub's merge queue (the main-protection ruleset,
+  # docs/needs-jonathan/PIPE-1.md) tests each queued PR on top of the ones ahead
+  # of it, in order, on a temporary gh-readonly-queue/main/* branch, and needs the
+  # same required check, `test`, to report on that commit. The battery runs here
+  # exactly as on a PR; nothing deploys (every deploy job asks for a push to main).
+  # When the queue lands the commit on main, its tree is the one tested here, so
+  # tree-check trusts this run and main deploys without running the battery again.
+  merge_group:
+    types: [checks_requested]
 
 # CI-SPEED-1 · A NEW PUSH TO A PR CANCELS THAT PR'S STALE RUN. On 10 Nov asks-1
 # had four runs going at once, each spending six shards on a commit already
 # replaced. On a pull_request the group is the PR's branch and the old run is
 # cancelled. A push to main is NEVER cancelled and never queued behind another
 # (a queued run in a group is itself cancelled by the next arrival), so on main
-# the group is the run's own id: every main run stands alone, as before.
+# the group is the run's own id: every main run stands alone, as before. A
+# merge_group run (PIPE-1) stands alone too: the queue cancels its own runs.
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('ci-{0}', github.head_ref || github.ref) || format('ci-main-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -70,10 +80,11 @@ jobs:
       # runs has changed, so the guards job (lint, TDZ, the arch-check, the
       # image-size check) answers alone and `test` reads as skipped. Only on a
       # pull_request; a push to main is already handled by the tree check.
+      # PIPE-1: a merge-queue run of a docs-only PR skips it the same way.
       - id: d
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           changed=$(git diff --name-only "$BASE_SHA"...HEAD)
           other=$(printf '%s\n' "$changed" | grep -v -E '^docs/|\.md$' | grep . || true)
@@ -180,8 +191,11 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           BEFORE: ${{ github.event.before }}
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
         run: |
-          if [ "$EVENT" = "pull_request" ]; then BASELINE=$(git merge-base "origin/$BASE_REF" HEAD); else BASELINE="$BEFORE"; fi
+          # PIPE-1: in the merge queue, new since the commit this entry sits on.
+          if [ "$EVENT" = "pull_request" ]; then BASELINE=$(git merge-base "origin/$BASE_REF" HEAD);
+          elif [ "$EVENT" = "merge_group" ]; then BASELINE="$QUEUE_BASE"; else BASELINE="$BEFORE"; fi
           git cat-file -e "$BASELINE^{commit}" 2>/dev/null || BASELINE=$(git rev-parse HEAD~1)
           echo "baseline: $BASELINE"
           SEMGREP_BASELINE="$BASELINE" SEMGREP_JOBS=4 bash scripts/ci/semgrep-gate.sh

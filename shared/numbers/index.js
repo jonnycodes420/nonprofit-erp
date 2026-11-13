@@ -4,6 +4,7 @@
 "use strict";
 module.exports = {
   fiscalYear: require("./fiscalYear"),
+  wholeDollars: require("./wholeDollars"),   // PIPE-1
   money: require("./money"),
   lifetime: require("./lifetime"),
   givingBetween: require("./givingBetween"),
