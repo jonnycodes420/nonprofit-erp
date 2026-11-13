@@ -22,6 +22,7 @@ const STAGING_API = () => (process.env.STAGING_API_URL || "").replace(/\/+$/, ""
 const STAGING_FRONTEND = () => (process.env.STAGING_FRONTEND_URL || "https://staging.stewardapp.dev").replace(/\/+$/, "");
 const SHIP_WORKFLOW = "ship.yml";
 const WALK_CONTEXT = "staging/walk";
+const HELD_CONTEXT = "staging/deploy";   // STAGE-3 (scripts/lib/stagingWindow.js)
 const SHA = /^[0-9a-f]{40}$/;
 const short = s => (s ? String(s).slice(0, 7) : "none");
 const BUILD_RE = /^\s*\[?([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)\b/;
@@ -62,10 +63,30 @@ async function readStaging() {
 }
 
 // ── GitHub: the commits between prod and staging, each with its walk ─────────
-async function walkOf(sha) {
+async function statusOf(sha, context) {
   const s = await gh(`/repos/${REPO()}/commits/${sha}/status`);
-  const st = (s.statuses || []).find(x => x.context === WALK_CONTEXT);
+  const st = (s.statuses || []).find(x => x.context === context);
   return st ? { state: st.state, url: st.target_url || null, says: st.description || null } : { state: null, url: null, says: null };
+}
+const walkOf = sha => statusOf(sha, WALK_CONTEXT);
+// STAGE-3 · merges on main that staging does not have yet because deploy-staging
+// held them during the overnight walk (scripts/ci/staging-hold.js marks each
+// `staging/deploy` pending "Held until 3:15 AM ET (overnight walk)").
+async function heldBuilds(stagingSha) {
+  if (!SHA.test(stagingSha || "")) return { until: null, rows: [] };
+  const c = await gh(`/repos/${REPO()}/compare/${stagingSha}...main`);
+  if (c.status !== "ahead") return { until: null, rows: [] };
+  const rows = [];
+  let until = null;
+  for (const k of (c.commits || []).slice(-20).reverse()) {
+    const st = await statusOf(k.sha, HELD_CONTEXT).catch(() => ({ state: null }));
+    if (st.state !== "pending") continue;
+    const m = /until (.+?) \(/.exec(st.says || "");
+    until = until || (m ? m[1] : null);
+    const title = String((k.commit && k.commit.message) || "").split("\n")[0];
+    rows.push({ sha: k.sha, title, build: buildOf(title), url: st.url });
+  }
+  return { until, rows };
 }
 async function pendingBuilds(prodSha, stagingSha) {
   if (!SHA.test(prodSha || "") || !SHA.test(stagingSha || "") || prodSha === stagingSha) return { ahead: prodSha === stagingSha ? 0 : null, rows: [] };
@@ -159,11 +180,12 @@ async function readCard({ run, query, prodSha }) {
   const staging = await readStaging();
   const pending = staging.configured && staging.web ? await settle("the builds on staging", () => pendingBuilds(prodSha, staging.web), null) : null;
   const walk = staging.web && SHA.test(staging.web) ? await settle("staging's walk", () => walkOf(staging.web), null) : null;
+  const held = staging.web && SHA.test(staging.web) ? await settle("the held staging deploys", () => heldBuilds(staging.web), null) : null;
   const inFlight = staging.configured ? await settle("staging's deploys", stagingInFlight, null) : null;
   const ships = await settle("the ships", shipRuns, []);
   const previous = await settle("the previous prod commit", () => previousSha({ run, query, current: prodSha }), null);
   const verdict = decide({ prodSha, staging, pending, walk, inFlight, ship: ships[0] || null, previous });
-  return { prodSha, previousSha: previous, staging, pending: pending ? pending.rows : [], walk, inFlight, lastShip: ships[0] || null, errors, ...verdict };
+  return { prodSha, previousSha: previous, staging, pending: pending ? pending.rows : [], walk, inFlight, held: held && held.rows.length ? held : null, lastShip: ships[0] || null, errors, ...verdict };
 }
 
-module.exports = { readCard, decide, dispatchShip, noteBoot, previousSha, ensureTables, buildOf, SourceError, WALK_CONTEXT, SHA };
+module.exports = { readCard, decide, heldBuilds, HELD_CONTEXT, dispatchShip, noteBoot, previousSha, ensureTables, buildOf, SourceError, WALK_CONTEXT, SHA };
