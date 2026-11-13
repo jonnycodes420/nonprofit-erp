@@ -66,7 +66,7 @@ export function useLatestLoad(read, setValue) {
       v => { if (gate.current.isLatest(t)) { setRef.current(v); setReading(false); } },
       () => { if (gate.current.isLatest(t)) { setRef.current(null); setReading(false); } });
   };
-  return [load, reading];
+  return [load, reading, setReading];   // setReading(true): a write that landed, before its re-read starts
 }
 
 // FLOWS-8 (W-1112-Volunteers-21): a write that never answers stops being

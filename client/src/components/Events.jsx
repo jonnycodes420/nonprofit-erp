@@ -1400,20 +1400,9 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
   const [detailRows, setDetailRows] = useState(null);
   const [giftFor, setGiftFor] = useState(null);   // GIFTS-1: { person } for Record a gift
 
-  const readSeq = useRef(0);   // FLOWS-8 (W-1112-Volunteers-01X): an older read landing last never puts the old guest list back
-  // FLOWS-10 item 3: while the read after a change is on its way, the header says "Updating…", never the old seats.
-  const [reading, setReading] = useState(false);
-  const reload = async () => {
-    const t = ++readSeq.current;
-    setReading(true);
-    try {
-      const d = await apiFetch(`/events/${eventId}`);
-      if (t !== readSeq.current) return;
-      setEvent(d);
-      setNotes(d.notes || "");
-    } catch { }
-    if (t === readSeq.current) { setLoading(false); setReading(false); }
-  };
+  // FLOWS-8/FLOWS-10 (W-1112-Volunteers-01X): the newest read wins and an older one landing last never puts the
+  // old guest list back (lib/eventRows.js useLatestLoad); while it is on its way the header says "Updating…".
+  const [reload, reading, setReading] = useLatestLoad(() => apiFetch(`/events/${eventId}`), d => { if (d) { setEvent(d); setNotes(d.notes || ""); } setLoading(false); });
 
   const rowsRev = useEventRowsRev(eventId);
   useEffect(() => { reload(); }, [eventId, rowsRev]);
