@@ -1457,7 +1457,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
       if (!(await addGuests(eventId, { donorIds: [...selectedIds] }))) { setSelectedIds(new Set()); setAddingDonors(false); return; }   // FLOWS-3 (W-1108-Volunteers-23X): No leaves nobody checked
       setSelectedIds(new Set());
       setDonorSearch("");
-      eventRowsChanged(eventId);
+      setReading(true); eventRowsChanged(eventId);   // FLOWS-10 item 3: "Updating…" until the re-read lands, never the old count between
       if (onEventUpdated) onEventUpdated();
     } catch(e) { setActErr(errorMessage(e, "That did not save.")); }
     setAddingDonors(false);
@@ -1470,7 +1470,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
       if (!(await newGuestOrOnFile(guestForm.name))) { setAddMode("directory"); setDonorSearch(guestForm.name.trim()); setAddingGuest(false); return; }   // FLOWS-8 (W-20)
       if (!(await addGuests(eventId, guestForm))) { setAddingGuest(false); return; }
       setGuestForm({ name: "", email: "", guestOfDonorId: "" });
-      eventRowsChanged(eventId);
+      setReading(true); eventRowsChanged(eventId);
       if (onEventUpdated) onEventUpdated();
     } catch(e) { setActErr(errorMessage(e, "That did not save.")); }
     setAddingGuest(false);
