@@ -1929,7 +1929,9 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
       // Checkout that CREATES the customer rather than belonging to one: the
       // org, its first admin and its subscription are all born here, which is
       // why nothing exists until Stripe says the card went in.
-      if (obj.metadata?.startLinkId) {
+      if (obj.metadata?.salesQuoteId) {
+        await require("../server/admin/sales/quotes").cardSaved({ query, run }, obj, () => ({ billingStripe }));   // SALES-3: a quote's card step
+      } else if (obj.metadata?.startLinkId) {
         await require("../server/onboard/startComplete").onCheckoutCompleted(obj);   // ONBOARD-1: an existing org's start link
       } else if (!orgId && obj.metadata?.closeLinkId) {
         await provisionOrgFromCloseLink(obj);
