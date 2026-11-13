@@ -368,3 +368,10 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 - Checkout runs on the org's EXISTING Stripe customer, subscription mode with `trial_end` = the first charge date; $0 is setup mode. A custom price is an inline amount on the band's own product: never a new product or price.
 - `orgs.paper_done_at` is stamped only when a signature AND a card both exist (`startComplete.stampPaperDone`). Nothing else writes it. ONBOARD-2 reads it.
 - A custom price is the amount every surface quotes: Settings → Billing and the day-minus-7 reminder read `custom_price_cents` before the band.
+
+## SALES-3 · a quote signed from /ops → Sales (2026-11-12)
+
+- A quote's private page (`/quote/<token>`, `server/admin/sales/quotes.js`) is the other door to an existing org's paper: super-admin made, 30 days or until accepted, the token kept only as its hash, the text hashed and the hash checked at signing.
+- Accepting writes a `start_signatures` row for the linked org (`start_link_id` = the quote's id, actor `system:sales/quote-link`) and asks `startComplete.stampPaperDone`. Paper stays signature AND card.
+- The subscription is created with `trial_end` = noon on the quote's start day in the org's zone, an inline price on the band's own product. The setup fee is an invoice item made after the subscription and tied to it (its first real invoice), never `add_invoice_items` (that charges today). No charge before the start day; `tests/sales3-close.test.js` §3 reads every request the billing mock saw.
+- A quote's terms say they govern where they and the agreement's §2 differ (the first-charge day and when the setup fee is charged).
