@@ -411,10 +411,14 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         ["Fundraising's Raised tile", fp && fp.priorRaised > 0 && fp.delta !== undefined ? cents(fp.delta) : undefined],
         ["Reports' annual report", annual && annual.total !== undefined ? cents(annual.total) - cents(annual.priorTotal) : undefined],
       ], money);
-      // Home writes whole dollars ("$63,984"), so it is held to the dollar.
+      // Home writes whole dollars ("$63,984"), so it is held to the dollar,
+      // rounded by Home's own helper: half away from zero on the gap's size
+      // (CI-PIN-2404: Math.round sent -$10,149.50 to -$10,149, Home said $10,150 behind).
       if (door && !seasonal) {
+        const { money: homeMoney } = await import("../../shared/homeLead.js");
+        const gap = thisYear - lastYear;
         const homeCents = (door[2] === "behind" ? -1 : 1) * cents(num(door[1]));
-        const dbCents = /\./.test(door[1]) ? thisYear - lastYear : Math.round((thisYear - lastYear) / 100) * 100;
+        const dbCents = /\./.test(door[1]) ? gap : Math.sign(gap) * cents(num(homeMoney(Math.abs(gap) / 100)));
         facts[`ahead of or behind the same days last year (${w.from} to ${w.to})`]["Home's door"] = homeCents;
         if (homeCents !== dbCents) diffs.push(`ahead of or behind the same days last year: the key says ${money(thisYear - lastYear)}, Home's door says ${money(homeCents)} ("${doorLine}")`);
       }

@@ -1,3 +1,7 @@
+# CI-PIN-2404 (2026-11-13): runners are pinned to ubuntu-24.04, not ubuntu-latest. GitHub
+# moved ubuntu-latest to Ubuntu 26.04 on 2026-11-13, and Playwright 1.61's browsers fail
+# to launch there ("Target page, context or browser has been closed"), so every job that
+# installs Playwright went red. Unpin (back to ubuntu-latest) once Playwright supports 26.04.
 # STAGE-1 · SHIP TO CUSTOMERS, OR ROLL BACK. Started from /ops, never by a push.
 #
 # Once STAGING_ENABLED is set, a merge to main deploys to staging and is walked
@@ -49,7 +53,7 @@ permissions:
 
 jobs:
   ship:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 80
     env:
       SHIP_SHA: ${{ inputs.sha }}
