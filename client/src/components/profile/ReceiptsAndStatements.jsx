@@ -28,16 +28,17 @@ export function defaultStatementYear(gifts, thisYear) {
   return years.length ? years[years.length - 1] : String(thisYear);
 }
 
-export function useReceipts(donor, gifts) {
+export function useReceipts(donor, gifts, open = true) {
   const [donorReceipts, setDonorReceipts] = useState([]);
   const [receiptsEnabled, setReceiptsEnabled] = useState(false);
   const [receiptBusyId, setReceiptBusyId] = useState(null);
   const [receiptNote, setReceiptNote] = useState({});   // receipt id -> what Email did
   const loadDonorReceipts = () => apiFetch(`/donors/${donor.id}/receipts`).then(r => setDonorReceipts(r || [])).catch(() => setDonorReceipts([]));
   useEffect(() => {
+    if (!open) return;   // PROFILE-SPEED-1: the receipts show on the Giving tab, and are read when it opens
     loadDonorReceipts();
     apiFetch("/org").then(o => setReceiptsEnabled(!!o.receipts_enabled)).catch(() => {});
-  }, [donor.id]);   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [donor.id, open]);   // eslint-disable-line react-hooks/exhaustive-deps
   useChanged(["gift"], loadDonorReceipts);   // PLEDGES-3: an edited gift re-reads its receipt's drift
   const receiptForGift = giftId => donorReceipts.find(r => r.gift_id === giftId && !r.voided_at);
 

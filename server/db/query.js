@@ -52,7 +52,7 @@ async function withAmbientTransaction(fn) {
   const st = { client, open: true };
   try {
     await client.query("BEGIN");
-    const result = await ambientTx.run(st, fn);
+    const result = await ambientTx.run(st, () => LIMITS.holding(fn, client));   // PROFILE-SPEED-1: what it asks for besides is nested (requestLimits)
     st.open = false;
     await client.query("COMMIT");
     return result;
@@ -85,16 +85,62 @@ async function runOutside(sql, params = []) {
   return { changes: (await once(pool, sql.replace(/\?/g, () => `$${++i}`), params)).rowCount };
 }
 // SPLIT-2 end
+// PROFILE-SPEED-1: which statements a bundle may answer once. A plain read
+// only (SELECT or WITH, nothing that writes, locks or moves a sequence), with
+// values that are plain JSON; and a copy per caller, so one route changing its
+// rows can never change another's.
+const MEMO_MS = 1000;   // how long a bundle shares one statement's answer (query() below)
+const READ_ONLY = /^\s*(SELECT|WITH)\b/i;
+const NOT_A_PLAIN_READ = /\b(INSERT|UPDATE|DELETE|MERGE|FOR\s+(UPDATE|SHARE|NO\s+KEY|KEY)|nextval|setval|pg_advisory\w*|pg_sleep|random|clock_timestamp|txid_\w+|set_config)\b/i;
+function memoKey(text, params) {
+  if (!READ_ONLY.test(text) || NOT_A_PLAIN_READ.test(text)) return null;
+  try {
+    return text + "\u0000" + JSON.stringify(params, (k, v) => {
+      if (typeof v === "bigint" || (v && typeof v === "object" && (Buffer.isBuffer(v) || v instanceof Uint8Array))) throw new Error("not plain");
+      return v;
+    });
+  } catch { return null; }
+}
+const copyRows = list => list.map(r => {
+  const o = {};
+  for (const k in r) {
+    const v = r[k];
+    o[k] = v instanceof Date ? new Date(v.getTime()) : Buffer.isBuffer(v) ? Buffer.from(v) : v && typeof v === "object" ? structuredClone(v) : v;
+  }
+  return o;
+});
 // SPLIT-2 db.js piece 25
 
 // Convert SQLite ? placeholders to PostgreSQL $1, $2, ... positional params
 async function query(sql, params = []) {
   [sql, params] = toQuery(sql, params);   // REDTEAM-2: a Sql brings its own values (server/db/sql.js)
-  if (TEST_LATENCY_MS) await roundTrip();
-  noteTrip();
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
   const tx = ambient();
+  const memo = !tx && LIMITS.memoFor();   // PROFILE-SPEED-1: inside a bundle, one answer per statement (requestLimits memoize)
+  const key = memo && memoKey(pgSql, params);
+  if (key) {
+    // An answer is shared for MEMO_MS from when it was asked, then the next ask
+    // goes to the database. A route that reads again to see a change (the
+    // insights store's wait for its build, server/insights/store.js; the
+    // outbox's) sees it within that bound. Shared for the whole request, that
+    // wait was handed its first answer every 100 ms for 30 s and the profile
+    // never drew (stale1, hotfix1-profile, CI 13 Nov).
+    let got = memo.get(key);
+    if (got && Date.now() - got.at >= MEMO_MS) got = null;
+    if (!got) {
+      if (TEST_LATENCY_MS) await roundTrip();
+      noteTrip();
+      const rows = once(pool, pgSql, params).then(r => r.rows);
+      const made = { rows, at: Date.now() };
+      memo.set(key, made);
+      rows.catch(() => { if (memo.get(key) === made) memo.delete(key); });
+      got = made;
+    }
+    return copyRows(await got.rows);
+  }
+  if (TEST_LATENCY_MS) await roundTrip();
+  noteTrip();
   if (!tx) return (await once(pool, pgSql, params)).rows;
   LIMITS.guard();
   try { return (await tx.query(pgSql, params)).rows; } catch (e) { throw LIMITS.translate(e); }
@@ -133,7 +179,7 @@ async function run(sql, params = []) {
 // routes then wait for.
 async function withClient(fn) {
   const client = await LIMITS.checkout(pool);
-  try { return await fn(client); } catch (e) { throw LIMITS.translate(e); } finally { LIMITS.release(client); }
+  try { return await LIMITS.holding(() => fn(client), client); } catch (e) { throw LIMITS.translate(e); } finally { LIMITS.release(client); }
 }
 // SPLIT-2 end
 // SPLIT-2 db.js piece 28
@@ -150,7 +196,7 @@ async function withTransaction(fn) {
   const client = await LIMITS.checkout(pool);
   try {
     await client.query("BEGIN");
-    const result = await fn(client);
+    const result = await LIMITS.holding(() => fn(client), client);   // PROFILE-SPEED-1
     await client.query("COMMIT");
     return result;
   } catch (e) {
@@ -206,7 +252,7 @@ async function unlockAdvisory(client, key) {
 }
 async function withAdvisoryLock(key, fn) {
   const client = await lockAdvisory(key);
-  try { return await fn(); } finally { await unlockAdvisory(client, key); }
+  try { return await LIMITS.holding(fn, client); } finally { await unlockAdvisory(client, key); }   // PROFILE-SPEED-1
 }
 // SPLIT-2 end
 // SPLIT-2 db.js piece 31
@@ -221,7 +267,7 @@ async function withTryAdvisoryLock(key, fn) {
     const r = await client.query("SELECT pg_try_advisory_lock(hashtext($1)) AS ok", [String(key)]);
     got = r.rows[0] && r.rows[0].ok === true;
     if (!got) return { skipped: true };
-    return await fn();
+    return await LIMITS.holding(fn, client);   // PROFILE-SPEED-1
   } finally {
     if (got) { try { await client.query("SELECT pg_advisory_unlock(hashtext($1))", [String(key)]); } catch {} }
     LIMITS.release(client);

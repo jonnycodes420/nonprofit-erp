@@ -11,7 +11,7 @@ import { orgTodayCivil } from "../../lib/orgToday";
 import { lastGift } from "../../lib/stickyGift";   // QUICKADD-1
 import { STAGES, donorScore, T, moveUrgency } from "../shared";
 
-export function useProfilePipeline({ donor, setDesignations, refreshSoftCredit, refreshPipeline, designations, setHousehold, setHhModalOpen, hhPick, setHhPick, setHhSearch, household, gifts, initialAddGift, setDpTab, setAddGiftForm, setAddGiftOpen, setGifts, setGiftLoading, setGiftReadErr, giftReadSeq, setLocalInts, setFigs, setGiftsFull, loadRel, setPlannedGifts, setPledges, setMaterials, setMatLoading, setFundAffinity, setFundLoading, localInts, isReadOnly, setEditingInt, onInteractionAdded, setStwOpen, stwForm, setStwForm, setStwSaving }) {
+export function useProfilePipeline({ givingOpen, donor, setDesignations, refreshSoftCredit, refreshPipeline, designations, setHousehold, setHhModalOpen, hhPick, setHhPick, setHhSearch, household, gifts, initialAddGift, setDpTab, setAddGiftForm, setAddGiftOpen, setGifts, setGiftLoading, setGiftReadErr, giftReadSeq, setLocalInts, setFigs, setGiftsFull, loadRel, setPlannedGifts, setPledges, setMaterials, setMatLoading, setFundAffinity, setFundLoading, localInts, isReadOnly, setEditingInt, onInteractionAdded, setStwOpen, stwForm, setStwForm, setStwSaving }) {
   useEffect(()=>{
     refreshSoftCredit();refreshPipeline();
     apiFetch(`/donors/${donor.id}/designations`).then(d=>setDesignations(Array.isArray(d)?d:[])).catch(()=>setDesignations([]));
@@ -56,7 +56,7 @@ export function useProfilePipeline({ donor, setDesignations, refreshSoftCredit, 
   };
 
   // Tax receipts and the year-end statement: made, shown, then Download or Email (FLOWS-1, profile/ReceiptsAndStatements.jsx)
-  const rc=useReceipts(donor,gifts);
+  const rc=useReceipts(donor,gifts,givingOpen);   // PROFILE-SPEED-1: read once Giving is opened
   const {receiptsEnabled,receiptBusyId,receiptForGift,sendReceipt,downloadReceiptPdf,showYearEnd,setShowYearEnd,yearEndYear,setYearEndYear,yearEndBusy,yearEndErr,sendYearEndStatement}=rc;
 
   // FIX-11 Part 1 — "+ LOG → GIFT" WHEN THIS PROFILE IS ALREADY OPEN.

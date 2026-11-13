@@ -380,8 +380,10 @@ async function seed() {
     // PERF-4: the record is asked for inside the profile's first bundle
     // (/donors/:id/bundle?p=/donors/d_hf1…), and a second reader of it is now
     // handed that answer, so the first attempt that fails is whichever asks first.
+    // PROFILE-SPEED-1: and now inside the first screen's one request
+    // (/donors/:id/profile?p=/donors/d_hf1…, lib/profileReads.js).
     const isRecordRead = u => u.href.startsWith(apiBase) && (/\/donors\/d_hf1$/.test(u.pathname)
-      || (/\/donors\/d_hf1\/bundle$/.test(u.pathname) && u.searchParams.getAll("p").includes("/donors/d_hf1")));
+      || (/\/donors\/d_hf1\/(bundle|profile)$/.test(u.pathname) && u.searchParams.getAll("p").includes("/donors/d_hf1")));
     await p2.route(isRecordRead, async route => {
       if (route.request().method() === "GET" && held++ === 0) { await new Promise(r => setTimeout(r, 1500)); return route.abort("connectionreset"); }
       return route.continue();

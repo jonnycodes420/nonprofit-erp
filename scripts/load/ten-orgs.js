@@ -110,19 +110,22 @@ const PROFILE_MANY = (id) => [
   `/donors/${id}/designations`, `/donors/${id}/receipts`, "/org", `/donors/${id}/plan`, `/donors/${id}/journeys`, "/journeys",
   `/donors/${id}/journey-suggestion`, `/donors/${id}/planned-gifts`, `/donors/${id}/pledges`, "/fundraising/campaigns",
 ];
-// LOAD-1 item 4: the header's own read and the above-the-fold bundle at once,
-// then the below-the-fold bundle once that has answered (client/src/lib/profileReads.js).
+// PROFILE-SPEED-1: the first screen in one request (GET /donors/:id/profile,
+// the record included), then the below-the-fold bundle once that has answered
+// (client/src/lib/profileReads.js). The Giving tab's own reads wait for the tab.
 const bundleOf = (id, paths) => `/donors/${id}/bundle?` + paths.map(p => "p=" + encodeURIComponent(p)).join("&");
 const PROFILE_BUNDLE = (id) => {
-  const { top, below } = profileLists(id);
-  return [[`/donors/${id}`, bundleOf(id, top.filter(p => p !== `/donors/${id}`))], [bundleOf(id, below)]];
+  const { below } = profileLists(id);
+  return [[`/donors/${id}/profile`], [bundleOf(id, below)]];
 };
 // The two lists, as the client spells them (PROFILE_MANY, split at the fold).
+const GIVING_TAB = (id) => [`/donors/${id}/receipts`, `/donors/${id}/opportunities`, `/donors/${id}/planned-gifts`];
 const profileLists = (id) => {
   const top = [`/donors/${id}`, `/donors/${id}/status`, `/donors/${id}/scores`, `/donors/${id}/rail`, `/donors/${id}/relationship`,
     `/threads?donorId=${id}`, `/insights/donor/${id}`, `/donors/${id}/before-meeting`, `/donors/${id}/blocked-mail`,
-    `/people/${id}`, `/atlas/notes?place=person&id=${id}`, `/donors/${id}/plan`, `/donors/${id}/journeys`];
-  return { top, below: PROFILE_MANY(id).filter(p => !top.includes(p)) };
+    `/people/${id}`, `/atlas/notes?place=person&id=${id}`, `/donors/${id}/plan`, `/donors/${id}/journeys`,
+    `/donors/${id}/relationships`, `/donors/${id}/pledges`, `/donors/${id}/custom-fields`, `/donors/${id}/attachments`];
+  return { top, below: PROFILE_MANY(id).filter(p => !top.includes(p) && !GIVING_TAB(id).includes(p)) };
 };
 // SCALE-3: the rest of REPORT_HANDLERS (server/reports/handlers.js), one picked per "reports" turn.
 const OTHER_REPORTS = ["giving-summary", "deposits", "non-cash", "by-group", "sybunt", "top-donors", "three-year", "year-over-year",
@@ -178,6 +181,7 @@ async function run() {
     tokens.push({ tok: signedIn.get(o.id), o });
   }
   const today = new Date().toISOString().slice(0, 10);
+  const sampler = require("./poolSampler").startPoolSampler(BASE);   // PROFILE-SPEED-1: how full the pool got
   const until = Date.now() + DURATION;
   const MIX = [["home", 3], ["donors", 3], ["filter", 2], ["search", 2], ["profile", 5], ["call", 1], ["gift", 1], ["fundraising", 1], ["report", 1], ["reports", 1]];
   const bag = MIX.flatMap(([k, w]) => Array(w).fill(k));
@@ -207,12 +211,13 @@ async function run() {
   const health1 = await (await fetch(`${BASE}/health`)).json();
   const lim = (h) => (h.pool && h.pool.limits) || {};
   const checkoutTimeouts = (lim(health1).checkoutTimeouts || 0) - (lim(health0).checkoutTimeouts || 0);
-  return report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS, DURATION, THINK_MS });
+  const poolSeen = await sampler.stop();
+  return report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS, DURATION, THINK_MS, pool: poolSeen });
 }
 
 const RETENTION_BAR_MS = 800;
 const pct = (arr, p) => { if (!arr.length) return 0; const s = arr.slice().sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.ceil(p / 100 * s.length) - 1)]; };
-function report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS, DURATION, THINK_MS = 0 }) {
+function report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS, DURATION, THINK_MS = 0, pool = null }) {
   const rows = [...stats].map(([route, ms]) => ({ route, count: ms.length, p50: Math.round(pct(ms, 50)), p95: Math.round(pct(ms, 95)), max: Math.round(Math.max(...ms)), fivexx: fivexx.get(route) || 0 }))
     .sort((a, b) => b.p95 - a.p95);
   const profile = { count: profileOpens.length, p50: Math.round(pct(profileOpens, 50)), p95: Math.round(pct(profileOpens, 95)), max: Math.round(Math.max(0, ...profileOpens)) };
@@ -233,12 +238,14 @@ function report({ stats, fivexx, slowest, profileOpens, checkoutTimeouts, USERS,
     ...rows.map(r => `| ${r.route} | ${r.count} | ${r.p50} | ${r.p95} | ${r.max} | ${r.fivexx} |`),
     `| **profile open (all its requests)** | ${profile.count} | ${profile.p50} | ${profile.p95} | ${profile.max} | |`, "",
     `Connection waits that gave up: ${checkoutTimeouts}. Slowest single request: ${slowest.route} ${Math.round(slowest.ms)} ms.`,
+    ...(pool && pool.samples ? [`Pool (PROFILE-SPEED-1, ${pool.samples} samples): most in use at once ${pool.peak} of ${pool.max} (${pool.peakPct}%); at 70% or more ${pool.pctAt70}% of the time, full ${pool.pctAtFull}%.` +
+      (pool.perRequestPeak != null ? ` Most one request held: ${pool.perRequestPeak} (cap ${pool.perRequestMax}).` : "")] : []),
     pass ? "Every route is inside the bar." : `Misses: ${misses.join("; ")}.`,
   ];
   const md = lines.join("\n");
   console.log(md);
   const out = { at: new Date().toISOString(), pass, users: USERS, seconds: Math.round(DURATION / 1000), thinkMs: THINK_MS, rows, profile, checkoutTimeouts,
-    slowest: { route: slowest.route, ms: Math.round(slowest.ms) }, misses };
+    slowest: { route: slowest.route, ms: Math.round(slowest.ms) }, pool, misses };
   if (process.env.OUT) fs.writeFileSync(process.env.OUT, JSON.stringify(out, null, 2));
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md + "\n");
   return out;

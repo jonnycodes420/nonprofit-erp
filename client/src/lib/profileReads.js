@@ -14,26 +14,36 @@ import { useRef } from "react";
 import { prefetch } from "../api";
 
 const enc = encodeURIComponent;
+// PROFILE-SPEED-1: the first screen in ONE request, GET /donors/:id/profile
+// (server/donors/profileBundle.js FIRST_SCREEN, the same list): the record,
+// the header's figures, the rail, the Next step, the timeline's threads, the
+// relationships, and the reads behind the tab counts (pledges for Giving,
+// uploads for Files). Spelled exactly as each panel asks for it.
 export const PROFILE_TOP = id => [
   `/donors/${id}`, `/donors/${id}/status`, `/donors/${id}/scores`, `/donors/${id}/rail`, `/donors/${id}/relationship`,
-  `/threads?donorId=${id}`, `/insights/donor/${enc(id)}`, `/donors/${enc(id)}/before-meeting`, `/donors/${id}/blocked-mail`,
-  `/people/${id}`, `/atlas/notes?place=person&id=${enc(id)}`, `/donors/${id}/plan`, `/donors/${id}/journeys`,
+  `/donors/${id}/plan`, `/threads?donorId=${id}`, `/insights/donor/${enc(id)}`, `/donors/${enc(id)}/before-meeting`,
+  `/donors/${id}/blocked-mail`, `/people/${id}`, `/atlas/notes?place=person&id=${enc(id)}`, `/donors/${id}/journeys`,
+  `/donors/${id}/relationships`, `/donors/${id}/pledges`, `/donors/${id}/custom-fields`,
+  `/donors/${id}/attachments`, `/donors/${id}/materials`,
 ];
+// Then, once that has answered, the rest of what the profile's panels read on
+// open, in one request. Receipts, open asks (opportunities) and planned gifts
+// are not here: they show only on the Giving tab, and are read when it opens.
 export const PROFILE_BELOW = id => [
-  `/donors/${id}/journey-suggestion`, `/donors/${id}/groups`, `/donors/${id}/proposals`, `/donors/${id}/relationships`,
-  `/donors/${id}/custom-fields`, `/donors/${id}/events`, `/donors/${id}/attachments`, `/donors/${id}/tasks`,
+  `/donors/${id}/journey-suggestion`, `/donors/${id}/groups`, `/donors/${id}/proposals`,
+  `/donors/${id}/events`, `/donors/${id}/tasks`,
   `/donors/${id}/volunteer-hours`, `/donors/${id}/recurring-subscription`, `/donors/${id}/soft-credit`, `/donors/${id}/moves`,
-  `/donors/${id}/opportunities`, `/donors/${id}/move-suggestions`, `/donors/${id}/designations`, `/donors/${id}/receipts`,
-  `/donors/${id}/planned-gifts`, `/donors/${id}/pledges`, `/donors/${id}/materials`,   // STALE-2: the Files tab's uploads
+  `/donors/${id}/move-suggestions`, `/donors/${id}/designations`,
   "/mailbox", "/sequences", "/org", "/journeys", "/fundraising/campaigns", "/custom-fields?entity=gift",
 ];
+const firstFor = id => paths => `/donors/${enc(id)}/profile?` + paths.map(p => "p=" + enc(p)).join("&");
 const bundleFor = id => paths => `/donors/${enc(id)}/bundle?` + paths.map(p => "p=" + enc(p)).join("&");
 
 // Called before any panel's effect runs (a child's effect runs before its
 // parent's), so every panel finds its read in flight.
 export function openProfileReads(id) {
   if (!id) return;
-  const top = prefetch(PROFILE_TOP(id), { keep: true, bundle: bundleFor(id) });
+  const top = prefetch(PROFILE_TOP(id), { keep: true, bundle: firstFor(id) });
   prefetch(PROFILE_BELOW(id), { keep: true, bundle: bundleFor(id), after: top });
 }
 

@@ -71,7 +71,8 @@ const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward
 // PERF-2: Home on a phone, and the JavaScript its first look downloads (bytes,
 // so strict everywhere; the milliseconds warn in CI, tests/lib/budget.js).
 const PHONE_MS = 3580;   // PERF-3 measured 3,480 ms + 0.1 s, so it cannot regress (PERF-2 3,537; main 3,840 at PERF-3's start); the bar is 3 s, docs/defects.md
-const JS_FIRST_KB = 246;   // FLOWS-5: +1 KB. Home's deck resets its snooze form on the next card (Insights.jsx advance) and an empty Thread keeps Plan a follow-up: +44 bytes gzipped against origin/main's own build (App 87,092 -> 87,110, Insights 13,492 -> 13,518), with main already at 245's edge; the runner measured 246 twice on PR #424. To confirm with Jonathan (the NAV-1 raise below was his).
+const JS_FIRST_KB = 247;   // PROFILE-SPEED-1: +1 KB. Every page's first reads leave in one request as you click (lib/pageReads.js lists for Events, Communications and Finance; App.jsx navigateTo sends them): +215 bytes gzipped against origin/main's own build (main 16,575 -> 16,734, App 86,360 -> 86,416, Insights 13,947 -> 13,950), with main at 246's edge; the runner measured 247 on PR #446. To confirm with Jonathan.
+// Before PROFILE-SPEED-1: const JS_FIRST_KB = 246;   // FLOWS-5: +1 KB. Home's deck resets its snooze form on the next card (Insights.jsx advance) and an empty Thread keeps Plan a follow-up: +44 bytes gzipped against origin/main's own build (App 87,092 -> 87,110, Insights 13,492 -> 13,518), with main already at 245's edge; the runner measured 246 twice on PR #424. To confirm with Jonathan (the NAV-1 raise below was his).
 // Before FLOWS-5: const JS_FIRST_KB = 245;   // NAV-1 (menu): +1 KB, the org's menu layer under the person's (lib/navGroups.js personNavLayout), read at boot; the CI runner measured 245 on PR #415 with main at 244's edge (ASKS-1 below). The editor is its own lazy chunk. Approved by Jonathan, 10 Nov.
 // Before NAV-1 (menu): const JS_FIRST_KB = 244;   // ASKS-1: +1 KB, the Major Gifts rail entry, its routing (lib/majorGiftsTab.js) and its access check (lib/majorGiftsAccess.js, split out of lib/majorGifts.js so that module stays off the shell): App-*.js 90,229 -> 91,013 bytes gzipped against origin/main's own build; the runner read 244 with main at 243's edge.
 // Before ASKS-1: const JS_FIRST_KB = 243;   // TOP100-1: +1 KB, Home's Thread marking a due Top 100 touch with her rank ("#3") and leading with it, and Atlas's line opening a plan-of-care proposal (lib/atlas.js followLink). The Top 100 phrase reader moved server-side to keep it off the shell; the branch measured 243 locally.
@@ -336,7 +337,8 @@ async function profileOpen(browser, auth) {
   const seen = [];
   let painted = null;
   page.on("request", r => { if (r.url().startsWith(BASE)) seen.push({ at: performance.now(), path: r.method() + " " + r.url().slice(BASE.length) }); });
-  page.on("response", r => { if (!painted && /\/donors\/[^/?]+\/(status|bundle)(\?|$)/.test(r.url())) painted = performance.now(); });
+  // PROFILE-SPEED-1: the first screen now lands in one answer, /donors/:id/profile.
+  page.on("response", r => { if (!painted && /\/donors\/[^/?]+\/(status|bundle|profile)(\?|$)/.test(r.url())) painted = performance.now(); });
   await page.locator('[data-testid="dir-table"] [data-testid="person-mark"]').first().click();
   await page.waitForTimeout(PROFILE_OPEN_WAIT_MS);
   await ctx.close();

@@ -14,6 +14,7 @@
 // JSX-free so a Node suite can read the lists.
 import { prefetch } from "../api";
 import { openProfileReads } from "./profileReads";
+import { startHomeReads } from "./bootReads";   // PROFILE-SPEED-1: Home's own bundles, when Home is clicked to
 
 const DONORS = ["/privacy", "/me", "/donors/counts", "/donors/list-setup", "/org/team", "/portfolio/officers",
   "/custom-fields?entity=donor", "/donors/custom-field-values/all"];
@@ -21,10 +22,18 @@ export const PAGE_READS = [
   [/^\/donors\/?$/, () => DONORS],
   [/^\/donors\/[^/]+$/, () => DONORS],
   [/^\/app\/fundraising\/?$/, () => ["/atlas/notes?place=gifts", "/fundraising/overview", "/fundraising/campaigns", "/giving-pages"]],
-  [/^\/app\/reports\/?$/, search => (new URLSearchParams(search).get("report") === "giving-summary"
+  // PROFILE-SPEED-1: the rail opens Reports with no report named, and lands on Giving summary.
+  [/^\/app\/reports\/?$/, search => (["giving-summary", null].includes(new URLSearchParams(search).get("report"))
     ? ["/ask/suggestions", "/meetings/by-staff", "/saved-reports", "/dashboards", "/saved-dashboards", "/finance/funds",
        "/reports/top-donors?scope=lifetime&limit=1", "/campaigns", "/reports/giving-summary?yearMode=fiscal"]
     : null)],
+  // PROFILE-SPEED-1: the pages that opened with more than eight requests.
+  // Paths that carry a year the page works out itself (Finance's transactions,
+  // Events' year figures) are left to the page.
+  [/^\/app\/events\/?$/, search => (new URLSearchParams(search).get("event") ? null : ["/atlas/notes?place=event", "/events"])],
+  [/^\/app\/communications\/?$/, () => ["/atlas/notes?place=communications", "/sequences/builder", "/me", "/communications/hub",
+    "/org/sending-domain", "/campaigns/templates", "/campaigns", "/campaigns/sent"]],
+  [/^\/app\/finance\/?$/, () => ["/finance/accounts", "/finance/funds", "/finance/summary?yearMode=fiscal", "/finance/overview"]],   // not /finance/stripe-summary: it asks Stripe
   [/^\/app\/journeys\/?$/, () => ["/atlas/notes?place=journey", "/journeys", "/auto-send/settings"]],
   [/^\/app\/settings\/?$/, search => (new URLSearchParams(search).get("sub") ? null
     : ["/people?role=staff_board", "/custom-fields/kept-raw", "/org/sending-domain", "/org/voice-samples", "/org/team",
@@ -43,4 +52,8 @@ export function startPageReads(pathname, search = "") {
   // A profile's own two bundles (LOAD-1), the same call Donors makes when it opens.
   const prof = /^\/donors\/([^/]+)$/.exec(pathname);
   if (prof) openProfileReads(decodeURIComponent(prof[1]));
+  // PROFILE-SPEED-1: back to Home from another page, its deck, rail and first
+  // bundles leave as the click lands, as they do at the boot, so its panels
+  // find their reads in flight instead of each asking on its own.
+  if (/^\/dashboard\/?$/.test(pathname)) startHomeReads(true);
 }

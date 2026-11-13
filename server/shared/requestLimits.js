@@ -43,7 +43,57 @@ const abandoned = () => Object.assign(new Error("The request was closed before i
 const isCancel = (e) => !!e && e.code === "57014";
 
 const scopes = new AsyncLocalStorage();
-const counters = { checkoutTimeouts: 0, statementTimeouts: 0, cancelled: 0 };
+const counters = { checkoutTimeouts: 0, statementTimeouts: 0, cancelled: 0, capWaits: 0, overCap: 0, perRequestPeak: 0, poolPeak: 0, heldMs: 0 };   // heldMs: PROFILE-SPEED-1, web requests' connection time
+
+// PROFILE-SPEED-1 · NO ONE REQUEST TAKES THE POOL. A request's statements
+// share PER_REQUEST connections (pools.js, default 3). Two Donors list reads
+// held all ten of the web's connections between them, because each fanned its
+// statements out with Promise.all and every statement took its own. Now the
+// fourth waits for one of the request's three to come back, inside the same
+// limit and abandon as any wait for a connection. Both pools count.
+//
+// A connection held for a callback (withClient, withTransaction, the ambient
+// transaction, an advisory lock: holding() below) takes a place like any
+// other. A connection asked for INSIDE such a callback waits at the front of
+// the request's queue, since a single statement holding a place always gives
+// it back. It goes past the cap only when every place the request has is a
+// held callback, the one case where waiting could never end; that is counted
+// (overCap) and said once, by route ("[conn-cap]").
+const PER_REQUEST = () => require("./pools").PER_REQUEST_MAX;
+const holdingStore = new AsyncLocalStorage();
+const placesOf = sc => sc.places || (sc.places = { used: 0, holders: 0, queue: [] });
+// Run fn as `client`'s holder: what fn asks for is nested (see above).
+async function holding(fn, client) {
+  const sc = scopes.getStore();
+  if (!sc) return fn();
+  const owns = !!(client && client.__stewardPlace && client.__stewardScope === sc);
+  if (!owns) return holdingStore.run(sc, fn);
+  const pl = placesOf(sc);
+  pl.holders++;
+  unstick(sc);
+  try { return await holdingStore.run(sc, fn); } finally { pl.holders--; }
+}
+// Every place is a held callback: a nested wait could never end, so it goes ahead past the cap.
+function unstick(sc) {
+  const pl = placesOf(sc);
+  if (pl.holders < pl.used) return;
+  for (const g of pl.queue.filter(g => g.nested)) { pl.queue.splice(pl.queue.indexOf(g), 1); g.over(); }
+}
+function takePlace(sc, wait, go, nested) {
+  const pl = placesOf(sc);
+  const grant = () => { if (wait.settled) return false; pl.used++; wait.place = true; go(); return true; };
+  grant.nested = nested;
+  grant.over = () => { if (wait.settled) return; wait.over = true; counters.overCap++; go(); };
+  if (pl.used < PER_REQUEST()) return void grant();
+  counters.capWaits++;
+  if (nested) pl.queue.unshift(grant); else pl.queue.push(grant);
+  if (nested) unstick(sc);
+}
+function givePlace(sc) {
+  const pl = placesOf(sc);
+  pl.used--;
+  while (pl.queue.length && pl.used < PER_REQUEST()) if (pl.queue.shift()()) break;
+}
 
 // The scope a query is running in, while its request is still being answered.
 function live() { const sc = scopes.getStore(); return sc && !sc.done ? sc : null; }
@@ -84,7 +134,7 @@ function middleware(cancelBackend) {
     // request that called it, and keeps that request's scope as it is.
     if (req.__stewardInProcess) return next();
     const name = limitFor(req.path);
-    const sc = { limitMs: NAMED[name], limitName: name, read: req.method === "GET" || req.method === "HEAD",
+    const sc = { limitMs: NAMED[name], limitName: name, read: req.method === "GET" || req.method === "HEAD", route: req.method + " " + req.path,
       closed: false, done: false, timedOut: false, held: new Set(), waiting: new Set(), cancelling: null };
     res.on("finish", () => { sc.done = true; });
     res.on("close", () => { if (!res.writableFinished && sc.read) close(sc, cancelBackend); sc.done = true; });
@@ -103,20 +153,30 @@ async function checkout(pool) {
   refuseIfAbandoned();
   const sc = live();
   if (!sc) return align(await pool.connect(), 0, null);
+  const nested = holdingStore.getStore() === sc;   // see "NO ONE REQUEST TAKES THE POOL"
+  let place = false, over = false;
   const t0 = Date.now();   // SCALE-3: the wait, for the capacity gauge (server/perf/capacity.js)
   const client = await new Promise((resolve, reject) => {
     // One wait: it ends once, by a connection, the limit, or an abandon (close()).
-    const wait = { settled: false, timer: null, fail: null };
+    const wait = { settled: false, timer: null, fail: null, place: false, over: false };
     const end = () => { wait.settled = true; clearTimeout(wait.timer); sc.waiting.delete(wait.fail); };
-    wait.fail = (e) => { if (!wait.settled) { end(); reject(e); } };
+    wait.fail = (e) => { if (!wait.settled) { end(); if (wait.place) givePlace(sc); reject(e); } };
     wait.timer = setTimeout(() => { counters.checkoutTimeouts++; sc.timedOut = true; wait.fail(tooLong(sc)); }, sc.limitMs);
     sc.waiting.add(wait.fail);
-    pool.connect().then(c => {
+    const go = () => pool.connect().then(c => {
       if (wait.settled) return c.release();
-      end(); resolve(c);
+      end(); place = wait.place; over = wait.over; resolve(c);
     }, wait.fail);
+    takePlace(sc, wait, go, nested);
   });
   require("../perf/capacity").noteWait(Date.now() - t0);
+  if (place) client.__stewardPlace = true;
+  if (over && !sc.overCapSaid) {   // PROFILE-SPEED-1: past the cap, because every place was a held callback waiting on this
+    sc.overCapSaid = true;
+    console.warn(`[conn-cap] ${sc.route || "shared work"} went past ${PER_REQUEST()} connections: every one it held was a callback waiting on another`);
+  }
+  const busy = pool.totalCount - pool.idleCount;
+  if (pool.options && pool.options.max === require("./pools").POOL_MAX && busy > counters.poolPeak) counters.poolPeak = busy;
   return align(client, sc.limitMs, sc);
 }
 async function align(client, ms, sc) {
@@ -127,8 +187,13 @@ async function align(client, ms, sc) {
       if (needPid) client.__stewardPid = r[1].rows[0].pid;
       client.__stewardLimit = ms;
     }
-  } catch (e) { client.release(e); throw e; }
-  if (sc) { sc.held.add(client); client.__stewardScope = sc; if (sc.onHeld) sc.onHeld(); }   // REPORTS-SPEED-2: reportLane counts a report's connections
+  } catch (e) { if (sc && client.__stewardPlace) { client.__stewardPlace = false; givePlace(sc); } client.release(e); throw e; }
+  if (sc) {
+    sc.held.add(client); client.__stewardScope = sc; client.__stewardHeldAt = Date.now();
+    if (sc.held.size > (sc.peak || 0)) sc.peak = sc.held.size;
+    if (sc.held.size > counters.perRequestPeak) counters.perRequestPeak = sc.held.size;
+    if (sc.onHeld) sc.onHeld();   // REPORTS-SPEED-2: reportLane counts a report's connections
+  }
   return client;
 }
 function release(client, err) {
@@ -136,6 +201,8 @@ function release(client, err) {
   client.__stewardScope = null;
   if (!sc) return client.release(err);
   sc.held.delete(client);
+  if (client.__stewardHeldAt) { counters.heldMs += Date.now() - client.__stewardHeldAt; client.__stewardHeldAt = 0; }
+  if (client.__stewardPlace) { client.__stewardPlace = false; givePlace(sc); }
   if (sc.onHeld) sc.onHeld();
   if (sc.cancelling) return void sc.cancelling.then(() => client.release(err));
   client.release(err);
@@ -184,5 +251,18 @@ function cancelWith(Pool, options) {
   return (pids) => cancelPool(Pool, options).query("SELECT pg_cancel_backend(p) FROM unnest($1::int[]) p", [pids]);
 }
 
-module.exports = { answerError, cancelWith, DEFAULT_MS, NAMED, LONGER, limitFor, TOO_LONG, middleware, checkout, release, translate, guard, useLimit, shared,
+// PROFILE-SPEED-1 · ONE ANSWER PER STATEMENT IN A BUNDLE. A bundle (Home's,
+// the profile's) runs a dozen routes inside one GET, and each asks the same
+// questions again: opening one profile sent 246 statements, 135 of them
+// different (one money sum 21 times). Inside a bundle's request, the same
+// read-only statement with the same values is sent once and each caller gets
+// its own copy of the rows (server/db/query.js), for at most a second from
+// when it was asked: a route that reads again to see a change sees it within
+// that second. Nothing is kept past the request.
+function memoize() { const sc = live(); if (sc && sc.read && !sc.memo) sc.memo = new Map(); }
+function memoFor() { const sc = live(); return sc && sc.memo ? sc.memo : null; }
+
+// TEST_MODE harnesses read the peaks for a window of their own.
+function resetPeaks() { counters.heldMs = 0; counters.perRequestPeak = 0; counters.poolPeak = 0; counters.capWaits = 0; counters.overCap = 0; }
+module.exports = { memoize, memoFor, holding, resetPeaks, answerError, cancelWith, DEFAULT_MS, NAMED, LONGER, limitFor, TOO_LONG, middleware, checkout, release, translate, guard, useLimit, shared,
   cancelPool, live, stats: () => ({ ...counters }), isCancel };

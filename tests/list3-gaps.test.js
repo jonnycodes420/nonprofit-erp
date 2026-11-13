@@ -172,7 +172,14 @@ async function reset(org) {
   await page.unroute(u => /\/search\?q=/.test(String(u))).catch(() => {});
 
   // ── §2 (screen half) picking the view puts its sort back ──
-  await page.goto(`${APP}/donors`, { waitUntil: "networkidle" });
+  // PROFILE-SPEED-1: when the page never goes quiet, say what was still on its way.
+  const inflight = new Map(), t0 = performance.now(), seen = r => inflight.delete(r);
+  const asked = r => inflight.set(r, Math.round(performance.now() - t0));
+  page.on("request", asked); page.on("requestfinished", seen); page.on("requestfailed", seen);
+  await page.goto(`${APP}/donors`, { waitUntil: "networkidle" }).catch(e => {
+    throw new Error(e.message.split("\n")[0] + " · still in flight: " + [...inflight].map(([r, at]) => `${r.method()} ${r.url().replace(/^https?:\/\/[^/]+/, "").slice(0, 120)} (from ${at} ms)`).join(" | "));
+  });
+  page.off("request", asked); page.off("requestfinished", seen); page.off("requestfailed", seen);
   await page.locator(".dir-donor-row").first().waitFor({ timeout: 30000 });
   await settle();
   const sortBefore = await page.locator('[data-testid="dir-sort"]').inputValue().catch(() => null);

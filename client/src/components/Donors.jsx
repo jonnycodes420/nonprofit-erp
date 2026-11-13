@@ -1,5 +1,5 @@
 import { NoRecentMeetingPanel, WarmNotAskedPanel } from "./MovesPanels";
-import { useProfileReads } from "../lib/profileReads";   // LOAD-1
+import { useProfileReads, openProfileReads } from "../lib/profileReads";   // LOAD-1
 import { useState, useEffect, useMemo, useRef, Component, lazy, Suspense } from "react";
 import { GrantImport } from "./GrantImport";
 import HistoryImport from "./HistoryImport";
@@ -634,7 +634,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // the heavy columns; see BUILD-06 Phase A).
   const selectDonor=async(d,attempt=0)=>{
     if(!d){setSelected(null);return;}
-    if(attempt===0)setSelected(d);
+    if(attempt===0){setSelected(d);openProfileReads(d.id);}   // PROFILE-SPEED-1: the record rides in the first screen's one request
     try{
       const full=await apiFetch(`/donors/${d.id}`);
       setSelected(prev=>prev?.id===d.id?{

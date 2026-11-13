@@ -1495,7 +1495,11 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // and the numbers cannot disagree.
   const [sentRows, setSentRows] = useState([]);
   const loadSent = () => apiFetch("/campaigns/sent").then(r => setSentRows((r && r.campaigns) || [])).catch(() => setSentRows([]));
-  useEffect(() => { loadCampaigns(); loadDonors(); loadSent(); }, []);
+  // PROFILE-SPEED-1: every person's summary (21 pages of 500 on a 10,000-person
+  // org, ~40 s of reads) only feeds the hand-picked audience, so it is read
+  // when one is picked or opened, not when Communications opens.
+  useEffect(() => { loadCampaigns(); loadSent(); }, []);
+  useEffect(() => { if (form && form.seg && form.seg.mode === "manual") loadDonors(); }, [form && form.seg && form.seg.mode]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll while any campaign is sending
   const anySending = campaigns.some(c => c.status === "sending");
