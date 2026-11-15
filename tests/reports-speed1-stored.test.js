@@ -43,7 +43,8 @@ const NAMES = ["Ada Quill", "Bram Stoke", "Cora Lind", "Dex Morrow", "Edda Vance
   "Iris Wren", "Jude Calloway", "Kit Ambrose", "Lena Fosse", "Milo Dunst", "Nora Pike"];
 
 async function wipe(org) {
-  for (const t of ["interactions", "tasks", "threads", "gift_fund_lines", "gifts", "org_summary"]) {
+  // NUMBERS-6: a gift's ledger stamp goes with it (the after-battery check reads a stamp left pointing at nothing)
+  for (const t of ["interactions", "tasks", "threads", "gift_fund_lines", "fin_transactions", "gifts", "org_summary"]) {
     await q(`DELETE FROM ${t} WHERE ${t === "org_summary" ? "org_key" : "org_id"}=$1`, [org]).catch(() => {});
   }
   await q(`DELETE FROM donors WHERE org_id=$1`, [org]);

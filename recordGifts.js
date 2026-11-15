@@ -30,7 +30,6 @@
 "use strict";
 const HISTORY = require("./historyGifts");
 const OUTBOX = require("./server/shared/outbox");
-const { DONOR_SUMMARY_UPDATE } = require("./donorSummary");
 const { newId } = require("./server/shared/newId");
 
 const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
@@ -113,7 +112,7 @@ async function recordGifts(list, deps) {
               END,
               updated_at = NOW()
         WHERE org_id = ? AND id = ANY(?)`, [orgId, people]);
-    await run(DONOR_SUMMARY_UPDATE("AND d.id = ANY($2::text[])"), [orgId, people]);
+    await require("./shared/numbers/donorTotals").recomputeStoredTotals(run, orgId, people);   // NUMBERS-6: the one writer
     // Rule 2 — one timeline line a gift, linked, with no copy of the amount
     const lines = kept.filter(r => r.o.timeline !== false);
     if (lines.length) {

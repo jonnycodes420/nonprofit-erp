@@ -56,7 +56,8 @@ async function recalcDonorSummaryBatch(query, donorIds, orgId) {
   // NUMBERS-1: the one statement (donorSummary.js), which also zeroes a person
   // whose last gift was removed (the old one only touched people with gifts).
   // NUMBERS-4: in batches, so 25,000 people after an import is linear.
-  await require("./donorSummary").recomputeSummaries(query, orgId, ids);
+  // NUMBERS-6: through the one writer (shared/numbers/donorTotals.js).
+  await require("./shared/numbers/donorTotals").recomputeStoredTotals(query, orgId, ids);
 }
 
 // Who is newly in a group by rule. Every group by rule is compared, not only

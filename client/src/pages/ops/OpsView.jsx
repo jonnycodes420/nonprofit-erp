@@ -184,7 +184,7 @@ function Customers({ customers, now }) {
   </section>;
 }
 
-export default function OpsView({ data, error, now = Date.now(), tabs = null, onShot = null, ship = null, importer = null }) {
+export default function OpsView({ data, error, now = Date.now(), tabs = null, onShot = null, ship = null, importer = null, numbers = null }) {
   if (error) return <div style={page}><div style={sheet}><h1 style={{ fontSize: 24 }}>Ops</h1>{tabs}<Down error={error} /></div></div>;
   if (!data) return <div style={page}><div style={sheet}><h1 style={{ fontSize: 24 }}>Ops</h1>{tabs}<p style={says}>Loading…</p></div></div>;
   return <div style={page}><div style={sheet}>
@@ -196,6 +196,7 @@ export default function OpsView({ data, error, now = Date.now(), tabs = null, on
     <Health h={data.health} now={now} />
     <CapacityCard c={data.capacity || null} />{/* SCALE-3: when to add a web replica or give the worker more room */}
     {ship /* STAGE-1: staging and the Ship to customers card, beside prod health */}
+    {numbers /* NUMBERS-6: the nightly number check, real orgs first */}
     {importer /* LEAD-IMPORT-1: Import a walk report, above the board it writes to */}
     <Board board={data.board} onShot={onShot} />
     <Builds builds={data.builds} now={now} />

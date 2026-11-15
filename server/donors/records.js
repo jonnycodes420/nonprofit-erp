@@ -409,6 +409,12 @@ async function purgePeople(orgId, ids) {
       const r = await runTx(client, `UPDATE ${t} SET ${c}=NULL WHERE org_id=? AND ${whereAny(t, c)}`, [orgId, ids]);
       if (r.changes) unlinked[`${t}.${c}`] = r.changes;
     }
+    // NUMBERS-6 · a gift's own ledger stamp goes with the gift, as DELETE
+    // /gifts/:id takes it ("zero gifts, zero stamps"). Unlinking only the
+    // person left the stamp pointing at a gift that is gone (the nightly
+    // check's "row pointing at a removed gift") and kept its money in Finance.
+    const stamps = await runTx(client, `DELETE FROM fin_transactions WHERE org_id=? AND gift_id IN (SELECT id FROM gifts WHERE org_id=? AND donor_id = ANY(?))`, [orgId, orgId, ids]);
+    if (stamps.changes) children.fin_transactions = stamps.changes;
     // Another donor's pledge marked paid by one of these gifts stays a pledge.
     await runTx(client, `UPDATE pledges SET fulfilled_gift_id=NULL WHERE org_id=? AND fulfilled_gift_id IN (SELECT id FROM gifts WHERE org_id=? AND donor_id = ANY(?))`, [orgId, orgId, ids]);
     // 2. Meetings: a meeting only these people were on goes; the rest drop them.

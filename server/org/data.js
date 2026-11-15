@@ -165,6 +165,12 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
     );
   }
 
+  // NUMBERS-6 · the totals kept on a sample person are their gifts, through the
+  // one writer. The rows above state a total and a count (e.g. 12 gifts) over
+  // one to three gift rows, and nothing recomputed them, so every org that
+  // loaded the demo carried 58 stored totals that disagreed with its gifts.
+  await require("../../shared/numbers/donorTotals").recomputeStoredTotals(run, orgId, donors.map(d => sid(d.id)));
+
   // Expense transactions to make Finance Overview show P&L
   const expenses = [
     {id:"smpl_exp1",date:dAgo(30),desc:"Program staff salaries",vendor:"Payroll",amount:28000,fund:fGen},

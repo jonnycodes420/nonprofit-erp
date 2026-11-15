@@ -741,7 +741,7 @@ function mergeInTx(orgId, keptId, mergedId, { choices, me, confidence, reasons, 
          through, srcs.join(" and "), other.imported_on || null]);
     }
     // NUMBERS-1: the kept person's summary by the one statement (donorSummary.js).
-    await runTx(client, require("../donorSummary").DONOR_SUMMARY_UPDATE("AND d.id = $2"), [orgId, keptId]);
+    await require("../shared/numbers/donorTotals").recomputeStoredTotals((s, a) => runTx(client, s, a), orgId, [keptId]);   // NUMBERS-6
 
     // 5. One line on the kept person's timeline, and the record undo reads.
     const movedCount = moved.reduce((n, m) => n + (m.ids ? m.ids.length : m.keys.length), 0);
@@ -922,7 +922,7 @@ app.post("/data-health/merges/:id/undo", requireAuth, checkWriteAccess, wrap(asy
           // NUMBERS-1: the whole summary, by the one statement. This set the
           // total, count and date but left the last gift's AMOUNT at the
           // snapshot's, so a refund between the merge and its undo left it wrong.
-          await runTx(client, require("../donorSummary").DONOR_SUMMARY_UPDATE("AND d.id = $2"), [orgId, id]);
+          await require("../shared/numbers/donorTotals").recomputeStoredTotals((s, a) => runTx(client, s, a), orgId, [id]);   // NUMBERS-6
         }
       }
       await runTx(client, "UPDATE donor_merges SET undone_at=NOW(), undone_by=?, undone_by_name=? WHERE id=? AND org_id=?", [me.id, me.name, m.id, orgId]);

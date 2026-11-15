@@ -34,6 +34,9 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   columns. Lifetime = `imported_total` + the gifts dated AFTER `imported_through`; a gift dated on or
   before it is already inside the old total and is never added again. `donorSummary.DONOR_SUMMARY_UPDATE`
   is the one statement for total, count, first and last gift; `recordGift` runs it too (it no longer adds).
+  NUMBERS-6: only `shared/numbers/donorTotals.js` runs it (`recomputeStoredTotals`); no other file
+  writes total_giving, gift_count or the three gift columns in its own SQL (`scripts/ci/stored-totals-guard.js`),
+  nothing writes them at boot, and every CI shard checks the orgs its suites made (`after-battery-numbers.js`).
   A merge folds both imported totals so the merged Lifetime is the two added up. The checker holds this.
   An undated gift is after the import, except one that came with the import that stated the total
   (`donors.imported_import_id`): it is inside that total, so dating it later never moves Lifetime (FEEL-1).

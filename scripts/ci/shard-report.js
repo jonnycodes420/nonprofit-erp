@@ -31,6 +31,7 @@ const planned = new Set(plan.shards.filter((_, i) => !ONLY || i + 1 === ONLY).fl
 
 const results = [];
 const missingShards = [];
+const numbersRed = [];   // NUMBERS-6: a shard whose after-battery check found a stale stored total
 for (let i = 1; i <= plan.shards.length; i++) {
   if (!plan.shards[i - 1] || !plan.shards[i - 1].length) continue;
   if (ONLY && i !== ONLY) continue;
@@ -41,6 +42,7 @@ for (let i = 1; i <= plan.shards.length; i++) {
   catch (e) { missingShards.push(i); continue; }
   if (j.error) { missingShards.push(i); console.log(`  ${R}SHARD ${i} DID NOT RUN${Z}  ${j.error} (see ${OUT}/server-${i}.log)`); continue; }
   for (const s of j.suites) results.push({ ...s, shard: i });
+  if (j.numbers && j.numbers.rc !== 0) numbersRed.push({ shard: i, last: j.numbers.last });
 }
 
 const ran = new Set(results.map(r => r.name));
@@ -113,6 +115,14 @@ try {
 } catch (e) { console.log("  (could not refresh the timings: " + e.message + ")"); }
 
 let bad = failed.length;
+// NUMBERS-6: the after-battery check (scripts/ci/after-battery-numbers.js) is not a suite, so it is
+// in no plan and no pass count; a red one fails the run with its log shown.
+for (const n of numbersRed) {
+  console.log(`${R}After the battery, shard ${n.shard}: ${n.last}${Z}`);
+  const log = path.join(process.env.SUITE_LOG_DIR || "/tmp/steward-suite-logs", `shard-${n.shard}`, "after-battery-numbers.log");
+  try { console.log(fs.readFileSync(log, "utf8")); } catch { console.log("  (no log)"); }
+  bad++;
+}
 if (missingShards.length) { console.log(`${R}Shards that produced no result: ${missingShards.join(", ")}${Z}`); bad += missingShards.length; }
 if (neverRan.length) { console.log(`${R}Planned suites that never ran: ${neverRan.join(", ")}${Z}`); bad += neverRan.length; }
 if (missingFiles.length) console.log(`${Y}Suites with no file: ${missingFiles.map(r => r.name).join(", ")}${Z}`);

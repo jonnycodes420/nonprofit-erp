@@ -62,4 +62,20 @@ async function totalsByOrg(query, links) {
   return new Map(life.map(r => [r.org_id, { lifetime: num(r.lifetime), thisYear: y.get(r.org_id) || 0, last: r.last ? String(r.last).slice(0, 10) : null }]));
 }
 
-module.exports = { donorTotals, totalsByOrg };
+// NUMBERS-6 · THE ONE WRITER OF THE TOTALS KEPT ON A PERSON. donors.total_giving,
+// gift_count, first_gift_date, last_gift_date and last_gift_amount are written
+// here and nowhere else: every gift door, import, undo, merge, refund, the
+// sample data and the recompute Jonathan runs call one of these, and none
+// writes the columns in its own SQL (tests/numbers6-stored.test.js greps for
+// one that does). The statement itself is donorSummary.js's (the rule, said
+// once); this is the only place that runs it. `run(sql, params)` is the
+// caller's query, inside its transaction or not.
+const summary = () => require("../../donorSummary");   // lazily: donorSummary.js loads shared/numbers itself
+// These people (batched, so 25,000 after an import stays linear).
+const recomputeStoredTotals = (run, orgId, ids) => summary().recomputeSummaries(run, orgId, ids);
+// Everyone in the org (the boot fixture's seed, the NUMBERS-6 recompute).
+const recomputeOrgStoredTotals = (run, orgId) => run(summary().DONOR_SUMMARY_UPDATE(""), [orgId]);
+// Read only: the people whose stored totals differ from what they should be.
+const storedTotalsDiff = (run, orgId) => run(summary().DONOR_SUMMARY_DIFF(""), [orgId]);
+
+module.exports = { donorTotals, totalsByOrg, recomputeStoredTotals, recomputeOrgStoredTotals, storedTotalsDiff };
