@@ -69,7 +69,7 @@ const PASSWORD = "loadtest1234";
   const withVersion = blocks.map((b, i) => (i === at ? { ...b, firstGift: VERSION } : b));
   const inesV = await api("POST", "/email-preview", tok, { blocks: withVersion, subject: "Before the year ends", as: ids.ines });
   const margV = await api("POST", "/email-preview", tok, { blocks: withVersion, subject: "Before the year ends", as: ids.marguerite });
-  ok("§1 with her version written, Ines reads it, and not \"give once more\"", inesV.status === 200 && inesV.body.html.includes("your first gift to Tidewater")
+  ok("§1 with her version written, Ines reads it in place of the thank-you paragraphs, still greeted \"Hi Ines,\", and not \"give once more\"", inesV.status === 200 && inesV.body.html.includes("your first gift to Tidewater") && /Hi Ines,/.test(inesV.body.html)
     && !/give once more/.test(inesV.body.html) && PG.pastGivingFlag({ claims: inesV.body.pastGiving.claims, neverGiven: 2 }) === null, { flagClaims: inesV.body.pastGiving });
   ok("§1 and Marguerite, who gives, still reads the letter as written", margV.status === 200 && /give once more/.test(margV.body.html) && !margV.body.html.includes("your first gift to Tidewater"));
   const saved = await api("PUT", `/email-templates/${(tpl.body.template || tpl.body).id}`, tok, { blocks: withVersion });

@@ -33,7 +33,7 @@
 
 import { greetMerge } from "./greeting.js";
 import { withoutMissingGift, hasValue } from "./giftSentence.js";
-import { hasFirstGiftVersion, firstGiftParagraphs } from "./pastGiving.js";   // FLOWS-12 item 1
+import { hasFirstGiftVersion, firstGiftParagraphs, claimIn } from "./pastGiving.js";   // FLOWS-12 item 1
 
 export const FOOTER_SLOT = "<!--steward:footer-->";
 
@@ -288,7 +288,13 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
         // reads the first-gift version she wrote for this block, never a thank-you
         // for giving they did not do. Her own words either way; Steward writes neither.
         const firstGift = !w.locked && !giftFacts(F).hasGift && hasFirstGiftVersion(w);
-        const paras = firstGift ? firstGiftParagraphs(w).map(text => ({ type: "p", text })) : (Array.isArray(w.blocks) ? w.blocks : []);
+        // Her version takes the place of the paragraphs that thank them for giving; the
+        // rest of the block ("Hi {{first_name}},") stays. With no such paragraph, the whole block.
+        const own = Array.isArray(w.blocks) ? w.blocks : [];
+        const version = firstGift ? firstGiftParagraphs(w).map(text => ({ type: "p", text })) : [];
+        const claims = p => p && p.type !== "ul" && !!claimIn(p.text);
+        const paras = !firstGift ? own : !own.some(claims) ? version
+          : own.flatMap((p, k) => (!claims(p) ? [p] : own.findIndex(claims) === k ? version : []));
         for (const b of paras) {
           if (!b) continue;
           if (b.type === "h2") { out.push(H(T(b.text, where), 20, "margin-top:8px;")); text.push(plain(b.text)); }
