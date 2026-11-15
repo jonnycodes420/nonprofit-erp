@@ -127,6 +127,8 @@ function mount(ctx) {
   require("./opsImportRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter });
   // STAGE-1: the Ship to customers card, behind this same door.
   require("./shipRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter, buildSha });
+  // NUMBERS-6: the Numbers card (the nightly check, real orgs first), behind this same door.
+  require("./opsNumbersRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter });
   // DEVBOARD-3: the Journey and How-it-works tabs, behind this same door.
   require("./opsJourneyRoutes").mount(app, { query, wrap, opsOnly, opsLimiter, healthBody });
   // ONBOARD-2: the Onboarding tab, behind this same door, and its worker job.

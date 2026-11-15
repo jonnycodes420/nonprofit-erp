@@ -637,6 +637,8 @@ if (!backgroundTicksDisabled()) {
 // run it now; neither returns a name, an amount or an id.
 if (!backgroundTicksDisabled()) {
   bootGate.everyAfterMigrations(() => require("../../numberCheck").nightlyTick(require("../../numbers").screens).catch(e => console.error("[numbers]", e.message)), 60 * 60 * 1000);
+  // NUMBERS-6: a scheduled gift whose day came moves its person's stored totals (server/numbers/cameDue.js).
+  bootGate.everyAfterMigrations(() => require("../numbers/cameDue").recomputeCameDue(query).catch(e => console.error("[numbers] came due:", e.message)), 60 * 60 * 1000);
 }
 // SPLIT-2 end
 // SPLIT-2 server.js piece 266

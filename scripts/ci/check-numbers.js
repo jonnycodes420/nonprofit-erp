@@ -96,7 +96,20 @@ async function orgToday(orgId) {
   return orgTime.orgToday(o || {});
 }
 
+// NUMBERS-6 · the after-battery check judges only people the APP wrote. The app stamps an actor
+// on every row it writes (CLAUDE.md, the actor on every write); a test fixture's straight-SQL row
+// carries none, or system:test. So: a person whose every gift has an app actor, or, with no gift,
+// a person the app made. A fixture's own gifts or stated totals are the fixture's, not a write path's.
+const FIXTURE = col => `(${col} IS NULL OR ${col} LIKE 'system:test%')`;
+const APP_WRITTEN = ` AND (CASE WHEN EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id)
+     THEN NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND ${FIXTURE("g.created_by")})
+     ELSE NOT ${FIXTURE("d.created_by")} END)`;
+
 async function checkOrg(orgId, opts = {}) {
+  // NUMBERS-6: `opts.narrow` checks only what is kept on a person (donor-stored,
+  // First/Largest/Last) and what was removed, for the after-battery check over
+  // every org a CI shard made (scripts/ci/after-battery-numbers.js).
+  const narrow = !!opts.narrow;
   const problems = {};
   const add = (rule, example) => { (problems[rule] = problems[rule] || []).push(example); };
   const [org] = await query(`SELECT id, name FROM orgs WHERE id = ?`, [orgId]);
@@ -110,14 +123,15 @@ async function checkOrg(orgId, opts = {}) {
   // The gift rows, once. Everything below is worked out from these.
   const gifts = await query(
     `SELECT g.id, g.donor_id, g.type, g.amount::text AS amount, g.date, g.created_at, to_char(g.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') AS created_us, g.import_row, g.campaign_id, g.campaign, g.fund_id,
-            COALESCE(g.cover_fee_amount, 0)::text AS cover, g.is_sample, g.dispute_status, g.deductible_amount::text AS deductible_amount
+            COALESCE(g.cover_fee_amount, 0)::text AS cover, g.is_sample, g.dispute_status, g.deductible_amount::text AS deductible_amount,
+            g.refunded_in_full, g.scheduled_on
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id = ? AND d.deleted_at IS NULL`, [orgId]);
   const donors = await query(
     `SELECT id, total_giving::text AS total_giving, gift_count, first_gift_date, last_gift_date, last_gift_amount::text AS last_gift_amount,
             created_import_id, household_id, imported_total::text AS imported_total, imported_gift_count,
             imported_first_gift_date, imported_last_gift_date, imported_last_gift_amount::text AS imported_last_gift_amount, imported_through
-       FROM donors WHERE org_id = ? AND deleted_at IS NULL`, [orgId]);
+       FROM donors d WHERE org_id = ? AND deleted_at IS NULL${opts.appWrittenOnly ? APP_WRITTEN : ""}`, [orgId]);
   const byDonor = new Map();
   for (const g of gifts) { if (!byDonor.has(g.donor_id)) byDonor.set(g.donor_id, []); byDonor.get(g.donor_id).push(g); }
 
@@ -125,8 +139,11 @@ async function checkOrg(orgId, opts = {}) {
   const sample = opts.sample ? new Set(donors.filter(d => byDonor.has(d.id)).slice(0, opts.sample).map(d => d.id)) : null;
   // People are checked side by side, a few at a time, so a small org checks in
   // one round trip's time and a large one does not open a connection per person.
+  // NUMBERS-6 · TRUTH-6: a scheduled gift (dated after today) is money on its day, not
+  // before: no person's figure, stored or shown, counts it yet (shared/numbers/money.js DUE).
+  const due = g => !(g.scheduled_on && day(g.scheduled_on) > today);
   const one = async d => {
-    const gs = byDonor.get(d.id) || [];
+    const gs = (byDonor.get(d.id) || []).filter(due);
     // FIX-49: soft and matching credit rows are not money: not in Lifetime or the count.
     const cash = gs.filter(g => !CREDIT.has(String(g.type || "").trim().toLowerCase()));
     const real = gs.filter(g => c(g.amount) > 0);
@@ -138,18 +155,24 @@ async function checkOrg(orgId, opts = {}) {
     const through = imp ? day(d.imported_through) : null;
     const after = imp && through ? cash.filter(g => !day(g.date) || day(g.date) > through) : cash;   // IMPORT-4: an undated gift is never inside the period
     const lifetime = (imp ? c(d.imported_total) : 0) + after.reduce((s, g) => s + c(g.amount), 0);
+    // NUMBERS-6 · the stored totals and the Last gift read the app's one gift rule
+    // (shared/numbers/money.js GIFT, written out here): a gift refunded in full stays
+    // on file, netted to $0 by its refund row, and is no longer a gift (FLOWS-9).
+    const isGift = g => c(g.amount) > 0 && g.refunded_in_full !== true;
+    const giftRows = realCash.filter(isGift);
+    const storedLife = lifetime;
     // NUMBERS-3: the first and last gift are gifts: money above zero, so never a
     // refund or a soft or matching credit row (written out here, not read from the app).
     // NUMBERS-4: on one day and one recording, the larger, then the later row on file.
-    const latest = realCash.filter(g => day(g.date)).sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : String(b.created_us).localeCompare(String(a.created_us))   // to the microsecond, as Postgres orders
-      || c(b.amount) - c(a.amount) || (b.import_row == null ? -1 : a.import_row == null ? 1 : b.import_row - a.import_row) || (b.id > a.id ? 1 : -1)))[0];
+    const latest = giftRows.filter(g => day(g.date)).sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : String(b.created_us).localeCompare(String(a.created_us))   // to the microsecond, as Postgres orders
+      || c(b.amount) - c(a.amount) || (b.import_row == null ? (a.import_row == null ? 0 : -1) : a.import_row == null ? 1 : b.import_row - a.import_row) || (b.id > a.id ? 1 : -1)))[0];   // NUMBERS-6: two rows with no import_row tie here, so the id decides (it returned -1, and the input order did)
     // Stored on the person: exactly what the gifts and the imported figure say.
-    if (stored !== lifetime) add("donor-stored", { donor: d.id, what: "total_giving", stored, gifts: lifetime });
-    const afterN = after.filter(g => c(g.amount) > 0).length;
-    const wantN = (imp ? (d.imported_gift_count != null ? Number(d.imported_gift_count) : realCash.length - afterN) : 0) + afterN;
+    if (stored !== storedLife) add("donor-stored", { donor: d.id, what: "total_giving", stored, gifts: storedLife });
+    const afterN = after.filter(isGift).length;
+    const wantN = (imp ? (d.imported_gift_count != null ? Number(d.imported_gift_count) : giftRows.length - afterN) : 0) + afterN;
     const n = Number(d.gift_count) || 0;
     if (n !== wantN) add("donor-stored", { donor: d.id, what: "gift_count", stored: n, gifts: wantN });
-    const firstReal = realCash.map(g => day(g.date)).filter(Boolean).sort()[0] || null;
+    const firstReal = giftRows.map(g => day(g.date)).filter(Boolean).sort()[0] || null;
     const wantFirst = [firstReal, imp ? day(d.imported_first_gift_date || d.imported_last_gift_date) : null].filter(Boolean).sort()[0] || null;
     if ((day(d.first_gift_date) || null) !== wantFirst) add("donor-stored", { donor: d.id, what: "first_gift_date", stored: day(d.first_gift_date), gifts: wantFirst });
     const impLast = imp ? day(d.imported_last_gift_date) : null;
@@ -164,27 +187,29 @@ async function checkOrg(orgId, opts = {}) {
     const src = (key, extra = {}) => ({ key, params: { donor: d.id, ...extra } });
     const glance = await NUM.donorGlance(query, orgId, d.id);
     const [lt, last, year] = await Promise.all([
-      FS.figureValue(orgId, src("donor-lifetime"), {}),
+      narrow ? null : FS.figureValue(orgId, src("donor-lifetime"), {}),
       FS.figure(orgId, src("donor-last-gift"), {}, { pageSize: 1 }),
-      FS.figureValue(orgId, src("donor-gifts-between", { from: fyStart, to: today }), {}),
+      narrow ? null : FS.figureValue(orgId, src("donor-gifts-between", { from: fyStart, to: today }), {}),
     ]);
-    if (lt.cents !== lifetime) add("donor-lifetime", { donor: d.id, shown: lt.cents, gifts: lifetime });
+    if (!narrow && lt.cents !== lifetime) add("donor-lifetime", { donor: d.id, shown: lt.cents, gifts: lifetime });
     // NUMBERS-2: the average is over counted gifts; a soft or matching credit row is not a gift.
     const counted = gs.filter(g => !CREDIT.has(String(g.type || "").trim().toLowerCase()));
     const countedN = counted.filter(g => c(g.amount) > 0).length;
     const avgCents = countedN ? Math.round(counted.reduce((s, g) => s + c(g.amount), 0) / countedN) : null;
-    if ((glance.average.count || 0) !== countedN || (countedN && glance.average.cents !== avgCents))
+    if (!narrow && ((glance.average.count || 0) !== countedN || (countedN && glance.average.cents !== avgCents)))
       add("donor-count-average", { donor: d.id, shown: [glance.average.cents, glance.average.count], gifts: [avgCents, countedN] });
-    const realDated = realCash.filter(g => day(g.date));   // NUMBERS-3: a credit row is no one's first gift
+    // FLOWS-11 (shared/numbers/giftCount.js KEPT): a gift refunded in full is no one's First or Largest.
+    const realDated = realCash.filter(g => g.refunded_in_full !== true && day(g.date));   // NUMBERS-3: a credit row is no one's first gift
     // NUMBERS-5: on one day, the one recorded first (to the microsecond, as Postgres orders), then the
     // larger, then the row higher up its file, written out here (firstGift.js says the same in SQL).
     const first = [...realDated].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : String(a.created_us).localeCompare(String(b.created_us))
       || c(b.amount) - c(a.amount) || (a.import_row == null ? (b.import_row == null ? 0 : 1) : b.import_row == null ? -1 : a.import_row - b.import_row) || (a.id < b.id ? -1 : 1)))[0];
-    const largest = real.reduce((m, g) => (c(g.amount) > m ? c(g.amount) : m), 0);
+    const largest = real.filter(g => g.refunded_in_full !== true).reduce((m, g) => (c(g.amount) > m ? c(g.amount) : m), 0);
     if (realDated.length && (glance.first.cents !== c(first.amount) || day(glance.first.date) !== day(first.date)))
       add("donor-first-largest-last", { donor: d.id, what: "first", shown: glance.first.cents, gifts: c(first.amount) });
-    if (real.length && glance.largest.cents !== largest) add("donor-first-largest-last", { donor: d.id, what: "largest", shown: glance.largest.cents, gifts: largest });
+    if (real.some(g => g.refunded_in_full !== true) && glance.largest.cents !== largest) add("donor-first-largest-last", { donor: d.id, what: "largest", shown: glance.largest.cents, gifts: largest });
     if (latest && (!last.rows[0] || last.rows[0].id !== latest.id)) add("donor-first-largest-last", { donor: d.id, what: "last", shown: last.rows[0] && last.rows[0].id, gifts: latest.id });
+    if (narrow) return;
     const yearCents = cash.filter(g => g.date >= fyStart && g.date <= today).reduce((s, g) => s + c(g.amount), 0);
     if ((year.totalRows ? year.cents : 0) !== yearCents) add("donor-this-year", { donor: d.id, shown: year.cents, gifts: yearCents });
     // IMPORT-4: the profile says how many undated gifts This year leaves out,
@@ -202,6 +227,8 @@ async function checkOrg(orgId, opts = {}) {
   };
   for (let i = 0; i < donors.length; i += 8) await Promise.all(donors.slice(i, i + 8).map(one));
 
+  let households = [], camps = [];
+  if (!narrow) {
   // ── imported history in the tags (FIX-49) ───────────────────────────
   {
     const DS = require("../../donorStatus");
@@ -226,7 +253,7 @@ async function checkOrg(orgId, opts = {}) {
   }
 
   // ── households ───────────────────────────────────────────────────────
-  const households = [...new Set(donors.map(d => d.household_id).filter(Boolean))];
+  households = [...new Set(donors.map(d => d.household_id).filter(Boolean))];
   const lifeOf = new Map(donors.map(d => {
     const through = d.imported_total != null ? day(d.imported_through) : null;
     const it = (byDonor.get(d.id) || []).filter(g => (!through || !day(g.date) || day(g.date) > through) && !CREDIT.has(String(g.type || "").trim().toLowerCase())).reduce((s, g) => s + c(g.amount), 0);
@@ -308,7 +335,7 @@ async function checkOrg(orgId, opts = {}) {
   }
 
   // ── campaigns ────────────────────────────────────────────────────────
-  const camps = await query(`SELECT id, name, start_date, end_date, goal_amount, parent_goal_id, grants_off_public_bar FROM campaigns WHERE org_id = ?`, [orgId]);
+  camps = await query(`SELECT id, name, start_date, end_date, goal_amount, parent_goal_id, grants_off_public_bar FROM campaigns WHERE org_id = ?`, [orgId]);
   const shownCamp = new Map((await NUM.campaignGiftTotals(query, orgId)).map(r => [r.cid, r]));
   const grants = await query(`SELECT campaign_id, COALESCE(SUM(amount),0)::text AS t FROM grants WHERE org_id = ? AND campaign_id IS NOT NULL AND awarded_at IS NOT NULL GROUP BY campaign_id`, [orgId]);
   const grantOf = new Map(grants.map(r => [r.campaign_id, c(r.t)]));
@@ -396,6 +423,8 @@ async function checkOrg(orgId, opts = {}) {
     }
   }
 
+  }   // end of the rules a narrow check leaves out
+
   // ── what was removed counts nowhere ──────────────────────────────────
   const orphans = await query(
     `SELECT 'ledger' AS what, t.id FROM fin_transactions t WHERE t.org_id = ? AND t.gift_id IS NOT NULL
@@ -455,4 +484,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch(e => { console.error(e); process.exit(2); });
-module.exports = { RULES, checkOrg, countLine };
+module.exports = { RULES, UNIT, checkOrg, countLine };

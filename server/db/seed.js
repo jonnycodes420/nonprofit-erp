@@ -69,7 +69,11 @@ async function householdsFromLinks(pool, orgId = null) {
 // SPLIT-2 end
 // SPLIT-2 db.js piece 52
 
-// NUMBERS-2 · called by the schema init and after the boot seed.
+// NUMBERS-2 · called after the boot seed, for its own fixture org only.
+// NUMBERS-6: it no longer runs at schema init. On every boot it turned any
+// stored total standing above a person's gifts (stale or not) into a
+// permanent "imported total", in every org but org_creo: a row change at
+// every deploy, and a stale total frozen so no recompute could correct it.
 async function keepEarlierTotals(pool, orgId = null) {
   // `orgId` narrows it to one org (the boot seed runs on every boot, prod
   // included, and may only ever touch its own fixture org).
@@ -95,17 +99,10 @@ async function keepEarlierTotals(pool, orgId = null) {
     WHERE d.id = dd.id AND d.imported_total IS NULL AND d.is_sample IS NOT TRUE
       AND d.total_giving > COALESCE(g.t, 0)${orgId ? " AND d.org_id = $1" : " AND d.org_id <> 'org_creo'"}
   `, only);
-  // The first gift, from the gifts above zero in the person's own org, and the
-  // old system's first gift when it is older (FIX-49: its last gift date when
-  // the file gave no first one). Kept by the one statement since.
-  await pool.query(`
-    UPDATE donors d
-    SET first_gift_date = NULLIF(LEAST(COALESCE(${require("../../donorSummary").IMPORTED_FIRST("d")}, '9999-12-31'),
-      COALESCE((SELECT MIN(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0), '9999-12-31')), '9999-12-31')
-    WHERE d.first_gift_date IS DISTINCT FROM NULLIF(LEAST(COALESCE(${require("../../donorSummary").IMPORTED_FIRST("d")}, '9999-12-31'),
-      COALESCE((SELECT MIN(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0), '9999-12-31')), '9999-12-31')
-      AND (d.imported_total IS NOT NULL OR EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0))${orgId ? " AND d.org_id = $1" : " AND d.org_id <> 'org_creo'"}
-  `, only);
+  // NUMBERS-6: first_gift_date is not written here. It is one of the totals
+  // kept on a person, and only shared/numbers/donorTotals.js writes those; the
+  // statement that stood here counted any row above zero (a soft credit, a gift
+  // refunded in full, a scheduled gift) and ran on every org at every boot.
 }
 // SPLIT-2 end
 // SPLIT-2 db.js piece 53
@@ -754,7 +751,7 @@ async function seedData() {
   // test boot only (org_creo is never written on prod).
   if (process.env.TEST_MODE) {
     await keepEarlierTotals(pool, orgId);
-    await pool.query(require("../../donorSummary").DONOR_SUMMARY_UPDATE(), [orgId]);
+    await require("../../shared/numbers/donorTotals").recomputeOrgStoredTotals((s, a) => pool.query(s, a), orgId);   // NUMBERS-6: the one writer
   }
 }
 // SPLIT-2 end

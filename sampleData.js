@@ -258,7 +258,7 @@ async function clearSampleData({ query, run }, orgId) {
   await del("gifts", "DELETE FROM gifts WHERE org_id=? AND is_sample=true", [orgId]);
   await del("donors", "DELETE FROM donors WHERE org_id=? AND is_sample=true", [orgId]);
   if (held.length) {
-    try { await run(require("./donorSummary").DONOR_SUMMARY_UPDATE("AND d.id = ANY($2)"), [orgId, held.map(r => r.donor_id)]); }
+    try { await require("./shared/numbers/donorTotals").recomputeStoredTotals(run, orgId, held.map(r => r.donor_id)); }   // NUMBERS-6
     catch (e) { errors.push({ table: "donors", error: e.message }); }
   }
 

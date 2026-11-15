@@ -260,6 +260,10 @@ if [ "$needs_demo" -eq 1 ] && [ "${DEMO_SEEDED:-}" != "1" ]; then
   fi
 fi
 
+# NUMBERS-6: the orgs that exist before the first suite (the boot fixture and the
+# demo), so the after-battery check reads only the orgs the suites made.
+psql -q -At -h localhost -p "$PGHOSTP" -U "$PGUSER_" -d "$DBNAME" -c "SELECT id FROM orgs" >"$OUT/orgs-before-$N.txt" 2>/dev/null || : >"$OUT/orgs-before-$N.txt"
+
 # ── the suites ─────────────────────────────────────────────────────────────
 # Serial within a shard, deliberately: the parallelism is the shard, and two
 # suites in one process tree sharing one database is the collision this whole
@@ -321,4 +325,15 @@ for name in $SUITES_IN; do
   rows="$rows{\"name\":\"$name\",\"rc\":$rc,\"secs\":$secs,\"skips\":$skips,\"legSkips\":$legskips,\"last\":\"$last\"$retry},"
 done
 
-printf '{"shard":%s,"api":%s,"db":"%s","suites":[%s]}\n' "$N" "$api" "$DBNAME" "${rows%,}" >"$OUT/shard-$N.json"
+# NUMBERS-6 · after the suites, every org they made still adds up: the stored
+# totals, First/Largest/Last and no row pointing at a removed gift
+# (scripts/ci/after-battery-numbers.js). Red here fails the shard. SHARD_NUMBERS_CHECK=0 skips it.
+nb='"numbers":null'
+if [ "${SHARD_NUMBERS_CHECK:-1}" = "1" ]; then
+  nb_rc=0
+  node scripts/ci/after-battery-numbers.js --before "$OUT/orgs-before-$N.txt" >"$LOGDIR/after-battery-numbers.log" 2>&1 || nb_rc=$?
+  nb_last=$(tail -1 "$LOGDIR/after-battery-numbers.log" | tr -d '\r' | sed 's/\\/\\\\/g; s/"/\\"/g' | cut -c1-300)
+  [ "$nb_rc" -ne 0 ] && printf "  \033[31mFAIL\033[0m  [%s] %-26s %s\n" "$N" "after-battery numbers" "$nb_last"
+  nb="\"numbers\":{\"rc\":$nb_rc,\"last\":\"$nb_last\"}"
+fi
+printf '{"shard":%s,"api":%s,"db":"%s","suites":[%s],%s}\n' "$N" "$api" "$DBNAME" "${rows%,}" "$nb" >"$OUT/shard-$N.json"

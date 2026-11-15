@@ -13,6 +13,7 @@ import JourneyView from "./ops/JourneyView";
 import FlowView from "./ops/FlowView";
 import OnboardingView from "./ops/OnboardingView";   // ONBOARD-2
 import ImportCard from "./ops/ImportCard";
+import NumbersCard from "./ops/NumbersCard";   // NUMBERS-6
 import SalesView from "./ops/sales/SalesView";   // SALES-1
 
 const INK = "#0F1A12", CREAM = "#F0EDE6", EMERALD = "#0D5C3A";
@@ -84,7 +85,7 @@ export default function OpsPage() {
     <Link to="/admin" data-back-to-admin="1" style={{ color: EMERALD, fontSize: 13, fontWeight: 600, textDecoration: "none", padding: "10px 0" }}>← Back to admin</Link>
   </div>;
 
-  if (tab === "machine") return <OpsView data={data} error={error} tabs={tabs} onShot={openShot} ship={<ShipCard />} importer={<ImportCard onImported={load} />} />;
+  if (tab === "machine") return <OpsView data={data} error={error} tabs={tabs} onShot={openShot} ship={<ShipCard />} numbers={<NumbersCard />} importer={<ImportCard onImported={load} />} />;
   const g = got[tab] || {};
   const wide = tab === "journey" || tab === "flow" || tab === "onboarding" || tab === "sales";
   return <div style={{ background: CREAM, minHeight: "100vh", color: INK, fontFamily: wide ? "'DM Sans', system-ui, sans-serif" : "Inter, system-ui, sans-serif", padding: "24px 16px 64px", boxSizing: "border-box" }}>

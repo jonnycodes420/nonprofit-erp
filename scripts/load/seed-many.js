@@ -118,9 +118,10 @@ async function seedOrg(o, hash) {
              status = CASE WHEN s.total >= 20000 THEN 'major' WHEN s.total >= 5000 THEN 'mid'
                            WHEN s.last::date < CURRENT_DATE - 365 THEN 'lapsed' ELSE 'active' END,
              stage = CASE WHEN s.last::date < CURRENT_DATE - 365 THEN 'lapsed' WHEN s.last::date > CURRENT_DATE - 90 THEN 'steward' ELSE 'cultivate' END
-        FROM (SELECT donor_id, SUM(amount) total, COUNT(*) n, MAX(date) last, MIN(date) first,
-                     (ARRAY_AGG(amount ORDER BY date DESC))[1] last_amt
-                FROM gifts WHERE org_id = $1 GROUP BY donor_id) s
+        FROM (SELECT g.donor_id, SUM(g.amount) total, COUNT(*) n, MAX(g.date) last, MIN(g.date) first,
+                     -- NUMBERS-6: the app's one order for the last gift (a same-day tie went either way)
+                     (ARRAY_AGG(g.amount ORDER BY ${require("../../shared/numbers/lastGift").LAST_GIFT_ORDER}))[1] last_amt
+                FROM gifts g WHERE g.org_id = $1 GROUP BY g.donor_id) s
        WHERE d.id = s.donor_id AND d.org_id = $1`, [o.id]);
     await c.query(`
       INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by, logged_by_name)

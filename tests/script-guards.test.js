@@ -71,6 +71,9 @@ const GUARDED_WRITERS = [
   // NUMBERS-1: moves gifts credited outside their campaign's dates to no campaign.
   // Dry run by default; --apply writes through writerDbUrl, one audit row per gift.
   "numbers1-campaign-window",
+  // NUMBERS-6: recomputes ONE org's stored totals with the one writer. Refuses without
+  // --org; dry run by default, counts only; --apply writes through writerDbUrl, one audit row.
+  "numbers6-recompute",
   // IMPORT-8: turns email back on for people an import blocked because of a
   // note. Dry run by default; --apply writes through writerDbUrl, one audit row each.
   "import8-note-optouts",
@@ -255,6 +258,9 @@ const PROD_READONLY = [
   "mail-preflight",
   // NUMBERS-1: checks an org's numbers against its gifts; SELECTs only, counts-only with --counts.
   "check-numbers",
+  // NUMBERS-6: after the battery, checkOrg (narrow) on the orgs a CI shard's suites made.
+  // SELECTs only, and it refuses any DATABASE_URL that is not localhost/127.0.0.1.
+  "after-battery-numbers",
          "check-webhook-subscriptions",
   // INT-PROD-1: one PayPal token POST, then GET-only Transaction Search; counts and totals only.
   "verify-paypal",
@@ -319,6 +325,7 @@ const LOOPBACK_CAPTURES = [
 const EXEMPT = {
   "sales-staging-seed": "SALES-1 — a module, not a command: exports seedSales(q) and is called only by staging-seed.js, which resolves its target with writerBase --staging (refuses anything but staging). It has no require.main entry and reads no BASE, DATABASE_URL or network",
   "sales-staging-prospects": "SALES-2 — a module, not a command: exports seedProspects(q, owner) and is called only by sales-staging-seed.js (itself called only by staging-seed.js, which refuses anything but staging). No require.main entry; reads no BASE, DATABASE_URL or network",
+  "stored-totals-guard": "NUMBERS-6 — a pure SOURCE scan for SQL that writes a person's stored totals outside shared/numbers/donorTotals.js. No BASE, no DB, no network, no writes",
   "history-index": "ARCH-1 — prints the index of docs/history/ from the files there. Reads only; no BASE, no DB, no network, no writes",
   "needs-jonathan": "ARCH-1 — prints what waits on Jonathan from docs/needs-jonathan/. Reads only; no BASE, no DB, no network, no writes",
   "arch-check": "ARCH-1 — the architecture ratchet. Reads the tracked tree (git ls-files) and its own baselines in docs/architecture/baseline/; --update rewrites only those baselines. No BASE, no DB, no network",

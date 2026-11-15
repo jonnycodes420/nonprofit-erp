@@ -170,7 +170,7 @@ async function keepImportedTotals(q, orgId, ids, sourceName, importId = null) {
   await DS.keepImportedTotalsFor(q, orgId, ids, words, orgToday(await orgTz(orgId)), importId);   // ORG_TZ_SEAM_OK
   // FIX-49: and the one statement, so first_gift_date reads the old system's
   // first (or last) gift the moment the file is in, not at the next gift.
-  await DS.recomputeSummaries(q, orgId, ids);
+  await require("../../shared/numbers/donorTotals").recomputeStoredTotals(q, orgId, ids);   // NUMBERS-6: the one writer
 }
 
 // ── Gift history bulk import ───────────────────────────────────────────────

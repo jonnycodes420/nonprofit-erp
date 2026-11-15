@@ -2,7 +2,6 @@
 // Each "SPLIT-2 db.js piece N" block is db.js's own text; tests read db.js through
 // readSource("db.js"), which puts the pieces back in order.
 const { query, run } = require("../query");
-const { keepEarlierTotals } = require("../seed");
 
 // `pool` here is the init session, as it was in runSchemaInit.
 async function run1(pool) {
@@ -1145,7 +1144,7 @@ async function run1(pool) {
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS imported_through TEXT`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS imported_source TEXT`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS imported_on TEXT`);
-  await keepEarlierTotals(pool);
+  // NUMBERS-6: keepEarlierTotals no longer runs here (server/db/seed.js says why).
 
   // Stores which specific milestone (threshold/anniversary) an enrollment
   // represents, so the sequences engine can tell a genuinely new milestone

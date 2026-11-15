@@ -55,6 +55,8 @@ const UNWATCHED = new Set([
   "donor_drift",
   // INSIGHTS-2: the org's stored Insights, derived from watched rows too.
   "stored_insights",
+  // NUMBERS-6: the nightly check's counts, a log no screen's figure reads.
+  "number_checks",
 ]);
 
 function schemaSql() {

@@ -514,7 +514,7 @@ async function recordGift(o) {
             updated_at = NOW()
       WHERE id = ? AND org_id = ?`,
     [o.donorId, orgId]);
-  await run(DONOR_SUMMARY_UPDATE("AND d.id = $2"), [orgId, o.donorId]);
+  await require("../../shared/numbers/donorTotals").recomputeStoredTotals(run, orgId, [o.donorId]);   // NUMBERS-6: the one writer
   // FIX-49 decision 7: the giving level is one rule (donorStatus.js, the
   // org's cut points over the last 12 months), read live. The lifetime
   // mid/major promotion that used to run here was a second rule.

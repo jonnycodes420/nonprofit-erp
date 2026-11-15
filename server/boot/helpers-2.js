@@ -1130,7 +1130,8 @@ async function unlapseHeldByPledge(orgId, ids = null) {
 async function recalcDonorSummary(donorId, orgId) {
   // NUMBERS-1: the one statement (donorSummary.js). It counts gifts above zero
   // and breaks a same-day tie the way the profile's Last gift does.
-  await run(DONOR_SUMMARY_UPDATE("AND d.id = $2"), [orgId, donorId]);
+  // NUMBERS-6: through the one writer (shared/numbers/donorTotals.js).
+  await require("../../shared/numbers/donorTotals").recomputeStoredTotals(run, orgId, [donorId]);
 }
 // SPLIT-2 end
 // SPLIT-2 server.js piece 299

@@ -21,6 +21,8 @@ function read(dir, shards) {
     catch (e) { problems.push(`shard ${i}'s result is unreadable (${e.message})`); continue; }
     if (j.error) { problems.push(`shard ${i} did not run: ${j.error}`); continue; }
     for (const s of j.suites || []) results.push({ ...s, shard: i });
+    // NUMBERS-6: the after-battery check found an org the suites made with a stale stored total
+    if (j.numbers && j.numbers.rc !== 0) problems.push(`shard ${i}, after the battery: ${j.numbers.last}`);
   }
   return { results, problems };
 }
