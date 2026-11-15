@@ -3125,6 +3125,7 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     key, params: p, measure, amountKind: def.amountKind || "money", label: def.label, sentence: def.sentence(p, dd),
     value, cents, blank: null,
     rows: pageRows.map(r => shapeRow(r, dd)), page, pageSize, totalRows: Number(agg.pagedRows ?? agg.n) || 0,
+    ...(agg.pagedRows != null ? { listedRows: Number(agg.n) || 0 } : {}),   // FLOWS-11: every row listed, refunds and not-counted included
     ...(agg.rest ? { notCounted: { count: agg.rest.count, sentence: agg.rest.sentence, rows: agg.rest.rows.map(r => shapeRow(r, dd)) } } : {}),
     ...(measure === "per_gift" || countsGifts ? { giftCount: Number(agg.g) || 0 } : {}),
     ...(agg.people != null ? { people: agg.people } : {}),

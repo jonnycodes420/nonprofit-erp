@@ -61,7 +61,10 @@ function footProblems(name, src) {
   if (!src || !Array.isArray(src.rows) || src.rows.length < (Number(src.totalRows) || 0)) return [];
   const unit = unitOfMeasure(src.measure, src.amountKind);
   if (src.measure === "sum") {
-    const rowsCents = src.rows.reduce((n, r) => n + cents(r.amount), 0);
+    // FLOWS-11: a count of gifts pages its gifts; each gift's refunds ride under it and the rows not
+    // counted as gifts come once, apart. All of them are the rows the total is made of.
+    const rowsCents = src.rows.reduce((n, r) => n + cents(r.amount) + (r.refunds || []).reduce((m, x) => m + cents(x.amount), 0), 0)
+      + ((src.notCounted && src.notCounted.rows) || []).reduce((n, r) => n + cents(r.amount), 0);
     const got = src.cents != null ? Number(src.cents) : cents(src.value);
     if (got !== rowsCents) return [`${name}: a total of ${(got / 100).toFixed(2)} over rows that add to ${(rowsCents / 100).toFixed(2)}`];
   }
