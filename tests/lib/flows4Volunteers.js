@@ -53,7 +53,14 @@ const sum = xs => Math.round((xs || []).reduce((a, r) => a + Number(r.hours) * 1
 
 module.exports = async function flows4Volunteers() {
   const tok = await freshOrg();
-  const today = civilPlusDays(0), yesterday = civilPlusDays(-1), ahead3 = civilPlusDays(3), tomorrow = civilPlusDays(1);
+  const today = civilPlusDays(0), yesterday = civilPlusDays(-1), ahead3 = civilPlusDays(3);
+  // §4's meeting is on the NEXT WEDNESDAY (1 to 7 days ahead), never "tomorrow": the Calendar's
+  // week runs Monday to Sunday, so a Sunday's tomorrow sat in next week's grid and a Saturday's
+  // drag one column right left the grid. Wednesday to Thursday is the same week on every day the
+  // suite can run (main-fix, 15 Nov 2026, a Sunday).
+  const dow = iso => new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10))).getUTCDay();
+  const meetIn = ((3 - dow(today) + 7) % 7) || 7;
+  const meetDay = civilPlusDays(meetIn), nextDay = civilPlusDays(meetIn + 1);
   for (const [id, name, t] of [["wren", "Wren Halvorsen", '["volunteer"]'], ["tam", "Tamsin Okafor", '["volunteer"]'],
     ["renee", "Renee Okonjo", '["donor"]'], ["jona", "Jonathan Avery", '["donor"]'], ["mae", "Mae Ostrander", '["donor"]']]) await person(id, name, t);
 
@@ -78,19 +85,19 @@ module.exports = async function flows4Volunteers() {
   const FID = fut.body && (fut.body.id || (fut.body.event && fut.body.event.id));
   await api("POST", `/events/${FID}/attendees`, tok, { donorIds: [P("mae")] });
   const arF = await api("POST", `/events/${FID}/archive`, tok, {});
-  // §4: a meeting with Mae tomorrow at 10 AM, kept in Steward.
-  const bv = await api("POST", `/donors/${P("mae")}/book-visit`, tok, { startsAt: `${tomorrow}T15:00:00.000Z`, endsAt: `${tomorrow}T16:00:00.000Z`, title: "Coffee with Mae" });
-  ok("fixture: an event yesterday, an archived one ahead, a meeting tomorrow", !!EID && !!FID && arF.status === 200 && bv.status === 201, { ev: ev.status, fut: fut.status, ar: arF.status, bv: bv.status });
+  // §4: a meeting with Mae next Wednesday at 10 AM, kept in Steward.
+  const bv = await api("POST", `/donors/${P("mae")}/book-visit`, tok, { startsAt: `${meetDay}T15:00:00.000Z`, endsAt: `${meetDay}T16:00:00.000Z`, title: "Coffee with Mae" });
+  ok("fixture: an event yesterday, an archived one ahead, a meeting next Wednesday", !!EID && !!FID && arF.status === 200 && bv.status === 201, { ev: ev.status, fut: fut.status, ar: arF.status, bv: bv.status });
 
   // ── §4 API · THE SAME DRAG SENT TWICE ─────────────────────────────────────
   {
     const [cal] = await q(`SELECT id FROM calendar_events WHERE org_id=$1 AND $2 = ANY(person_ids)`, [ORG, P("mae")]);
-    const body = { startsAt: `${civilPlusDays(2)}T15:00:00.000Z`, endsAt: `${civilPlusDays(2)}T16:00:00.000Z`, actionKey: "flows4-drag-0001" };
+    const body = { startsAt: `${nextDay}T15:00:00.000Z`, endsAt: `${nextDay}T16:00:00.000Z`, actionKey: "flows4-drag-0001" };
     const [a, b] = await Promise.all([api("POST", `/calendar/events/${cal.id}/move`, tok, body), api("POST", `/calendar/events/${cal.id}/move`, tok, body)]);
     const notes = await q(`SELECT note FROM interactions WHERE org_id=$1 AND donor_id=$2 AND note LIKE 'Meeting moved%'`, [ORG, P("mae")]);
     ok("§4 one drag that reaches the server twice writes one \"Meeting moved\" note (W-1109-Volunteers-18X)", a.status === 200 && b.status === 200 && notes.length === 1, { a: a.status, b: b.status, notes: notes.map(n => n.note) });
-    // and back to tomorrow for the browser leg
-    await api("POST", `/calendar/events/${cal.id}/move`, tok, { startsAt: `${tomorrow}T15:00:00.000Z`, endsAt: `${tomorrow}T16:00:00.000Z`, actionKey: "flows4-drag-0002" });
+    // and back to Wednesday for the browser leg
+    await api("POST", `/calendar/events/${cal.id}/move`, tok, { startsAt: `${meetDay}T15:00:00.000Z`, endsAt: `${meetDay}T16:00:00.000Z`, actionKey: "flows4-drag-0002" });
   }
 
   const why = (() => {
@@ -191,7 +198,7 @@ module.exports = async function flows4Volunteers() {
   await leg("§3", async () => {
     const cal = await api("GET", `/calendar/items?from=${ahead3}&to=${ahead3}`, tok);
     const items = (cal.body && cal.body.items) || [];
-    await open(`/app/calendar?date=${ahead3}`);
+    await open(`/app/calendar?day=${ahead3}`);   // the page reads ?day= (SEARCH-2), not ?date=
     await page.waitForTimeout(1200);
     const t = await body();
     await shot("s3-calendar");
@@ -208,7 +215,7 @@ module.exports = async function flows4Volunteers() {
   // ── §4 · ONE DRAG, ONE NOTE ────────────────────────────────────────────────
   await leg("§4", async () => {
     await q(`DELETE FROM interactions WHERE org_id=$1 AND donor_id=$2 AND note LIKE 'Meeting moved%'`, [ORG, P("mae")]);
-    await open(`/app/calendar?date=${tomorrow}`);
+    await open(`/app/calendar?day=${meetDay}`);
     await page.waitForTimeout(1200);
     const sent = [];
     page.on("request", r => { if (/\/calendar\/events\/[^/]+\/move$/.test(r.url())) sent.push(r.postData() || ""); });

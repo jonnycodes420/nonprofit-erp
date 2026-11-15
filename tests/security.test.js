@@ -435,6 +435,11 @@ async function fixtures() {
       await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name)
                SELECT 'g_s2big_'||g, $1, 'd_s2big_'||g, 50, DATE '2026-01-01' + (g % 280), 'system:test', 'test' FROM generate_series(1,25000) g`, [BIG]);
     }
+    // main-fix (15 Nov 2026): 50,000 rows written by SQL and read a second later carry no planner
+    // statistics until autovacuum gets to them. Run after tenant-matrix's churn, /donors and
+    // /donors/counts on this org planned blind and hit the 10 s request limit (a 503, "n":0);
+    // alone they passed. Analyse what the fixture wrote, as a real org's tables would be.
+    await q(`ANALYZE donors`); await q(`ANALYZE gifts`);
     await q(`DELETE FROM users WHERE id='u_secure2_big'`).catch(() => {});
     await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_secure2_big',$1,'admin@secure2-big.example.org',$2,'Big Admin','admin')`, [BIG, bcrypt.hashSync("loadtest1234", 10)]);
     const big = await login("admin@secure2-big.example.org");
@@ -453,8 +458,9 @@ async function fixtures() {
       walk(body, "", 0);
     }
     ok(`no list route answers more than 500 rows on a 25,000-person org (${gets.length} routes asked)`, over.length === 0, over);
-    const page = (await api("GET", "/donors", big)).body;
-    ok("/donors with no limit answers its first page of 100 and the total", page && Array.isArray(page.donors) && page.donors.length === 100 && page.total === 25000, page && { n: (page.donors || []).length, total: page.total });
+    const listed = await api("GET", "/donors", big), page = listed.body;
+    ok("/donors with no limit answers its first page of 100 and the total", page && Array.isArray(page.donors) && page.donors.length === 100 && page.total === 25000,
+      { status: listed.status, n: page && (page.donors || []).length, total: page && page.total, error: page && (page.error || page.message) });
   }
 
   console.log("\n§15 · two-factor: off takes an admin; required means required; a code works once");
