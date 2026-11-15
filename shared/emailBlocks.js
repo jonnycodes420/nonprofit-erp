@@ -33,6 +33,7 @@
 
 import { greetMerge } from "./greeting.js";
 import { withoutMissingGift, hasValue } from "./giftSentence.js";
+import { hasFirstGiftVersion, firstGiftParagraphs } from "./pastGiving.js";   // FLOWS-12 item 1
 
 export const FOOTER_SLOT = "<!--steward:footer-->";
 
@@ -283,7 +284,12 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
       }
       case "richtext": {
         const out = [];
-        for (const b of (Array.isArray(w.blocks) ? w.blocks : [])) {
+        // FLOWS-12 item 1 (W-1114-Fundraising-17): a person who has never given
+        // reads the first-gift version she wrote for this block, never a thank-you
+        // for giving they did not do. Her own words either way; Steward writes neither.
+        const firstGift = !w.locked && !giftFacts(F).hasGift && hasFirstGiftVersion(w);
+        const paras = firstGift ? firstGiftParagraphs(w).map(text => ({ type: "p", text })) : (Array.isArray(w.blocks) ? w.blocks : []);
+        for (const b of paras) {
           if (!b) continue;
           if (b.type === "h2") { out.push(H(T(b.text, where), 20, "margin-top:8px;")); text.push(plain(b.text)); }
           else if (b.type === "ul") {
@@ -294,7 +300,9 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
         }
         // EDITOR-1: the whole block is one place to type, paragraph by paragraph
         // (Enter starts the next one). A locked block (a receipt's tax lines) is not.
-        if (ED && !w.locked) {
+        if (ED && firstGift) {
+          rows.push(row(`<div data-st-first-gift="${i}" title="Their first-gift version. Change it in this block's settings." style="outline:1px dashed #c9a84c;outline-offset:4px;">${out.join("")}</div>`, `12px ${PAD}px 4px`));
+        } else if (ED && !w.locked) {
           if (!out.length) out.push(P(""));
           rows.push(row(`<div data-st-edit="${i}.blocks" data-st-rich="1">${out.join("")}</div>`, `12px ${PAD}px 4px`));
         } else if (out.length) rows.push(row(out.join(""), `12px ${PAD}px 4px`));
@@ -546,7 +554,8 @@ export function validateEmailBlocks(blocks, allowedTypes) {
             if (b && b.type === "ul") return { type: "ul", items: (Array.isArray(b.items) ? b.items : []).slice(0, 30).map(x => str(x, 600)) };
             return { type: b && b.type === "h2" ? "h2" : "p", text: str(b && b.text, 4000) };
           });
-          out.push({ type: "richtext", blocks: bl, ...(w.locked === true ? { locked: true } : {}) }); break;
+          out.push({ type: "richtext", blocks: bl, ...(w.locked === true ? { locked: true } : {}),
+            ...(w.locked !== true && typeof w.firstGift === "string" && w.firstGift.trim() ? { firstGift: str(w.firstGift, 4000) } : {}) }); break;   // FLOWS-12
         }
         case "image": out.push({ type: "image", image: img1(w.image, "the photo"), alt: str(w.alt, 200), caption: str(w.caption, 300) }); break;
         case "photos2": {

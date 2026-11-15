@@ -1309,9 +1309,13 @@ function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged, 
           );
           // GIVE-EDIT-1 — a giving page shows how it is doing the way the
           // volunteer card does: raised, gifts and views, each opening its rows.
+          // FLOWS-12 item 3 (W-1114-Fundraising-35X): Raised and Gifts both count
+          // THIS PAGE (it showed the campaign's $11,579.22 beside the page's 0
+          // gifts); a linked campaign's total is its own line below, named.
+          const pageRaised = parseFloat(p.raised_amount) || 0;
           const stats = [
-            ["Raised", raisedSource ? <Figure variant="inline" kind="money" value={raised} label={linked ? `Raised toward ${p.campaign_name || "the campaign"}` : `Raised on ${p.title}`} source={raisedSource} /> : fmtFull(raised)],
-            ["Gifts", p.gifts_source ? <Figure variant="inline" kind="count" value={Number(p.gifts_count || 0)} label={`Gifts · ${p.title}`} source={p.gifts_source} /> : Number(p.gifts_count || 0).toLocaleString("en-US")],
+            ["Raised through this page", p.raised_source ? <Figure variant="inline" kind="money" value={pageRaised} label={`Raised through ${p.title}`} source={p.raised_source} /> : fmtFull(pageRaised)],
+            ["Gifts through this page", p.gifts_source ? <Figure variant="inline" kind="count" value={Number(p.gifts_count || 0)} label={`Gifts through ${p.title}`} source={p.gifts_source} /> : Number(p.gifts_count || 0).toLocaleString("en-US")],
             ["Views", p.views_source ? <Figure variant="inline" kind="count" value={Number(p.views || 0)} label={`Views · ${p.title}`} source={p.views_source} /> : Number(p.views || 0).toLocaleString("en-US")],
           ];
           return (
@@ -1335,6 +1339,9 @@ function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged, 
                   </div>
                 ))}
               </div>
+              {p.through_page_sentence && <div data-testid="page-card-sentence" style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.5 }}>{p.through_page_sentence}</div>}
+              {linked && p.campaign_line_sentence && <div data-testid="page-card-campaign" style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.5 }}>
+                {p.campaign_raised_source ? <Figure variant="inline" kind="money" value={raised} label={`The whole ${p.campaign_name || "campaign"}, every channel`} source={p.campaign_raised_source} /> : null} {p.campaign_line_sentence}</div>}
               <PageActions editHref={editPageHref(`page=${encodeURIComponent(p.id)}`)} url={url} live={takesGifts && !isDraftPage(p)} shareOpen={shareId === p.id} onToggleShare={() => toggleShare(p.id)} />
               {shareId === p.id && url && <SharePanel url={url} filenameBase={`giving-page-${p.slug}`} />}
             </div>

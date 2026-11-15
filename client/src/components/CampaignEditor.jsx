@@ -27,6 +27,7 @@ import StewardEditor, { RailSection, DeviceFrame, useNarrow, railLabel, railInpu
 import { EmailFrame, EmailBlockSettings, BlockMenu, BrandSummary, PreviewAs, FieldMenu, EmailHistory, insertChip, setAtPath, stripKeys, useBlockList } from "./EmailEditor";
 import { previewAsParam } from "../lib/previewAs";   // GIFTS-2: Preview as yourself re-draws the preview
 import CampaignTurnOn from "./CampaignTurnOn";   // COMMS-1: where Campaign emails are turned on
+import { pastGivingFlag, audienceNeverGivenSentence } from "../../../shared/pastGiving.js";   // FLOWS-12 item 1
 
 const NOTE_BOX = { background: T.gold50, border: "1px solid " + T.gold300, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, color: T.ink, lineHeight: 1.5 };
 // The local wall-clock "now" for a datetime-local's min, in the browser's zone.
@@ -101,11 +102,18 @@ export default function CampaignEditor({
       apiFetch("/email-preview", { method: "POST", body: JSON.stringify({ blocks: stripKeys(cur.blocks), subject: cur.subject, preheader: cur.preheader, dark,
         editable: !readOnlySent && !isReadOnly, as: previewAsParam(as, firstId), campaignName: cur.name,
         audienceNoGift: !!(segPreview && segPreview.audienceNoGift) }) })   // POLISH-9
-        .then(r => { if (n === seq.current) setPreview({ html: r.html, problems: r.problems || [], loading: false, as: r.as, subject: r.subject || "" }); })
+        .then(r => { if (n === seq.current) setPreview({ html: r.html, problems: r.problems || [], loading: false, as: r.as, subject: r.subject || "", pastGiving: r.pastGiving || null }); })
         .catch(e => { if (n === seq.current) setPreview(p => ({ ...p, loading: false, problems: [(e && (e.sentence || e.message)) || "The preview could not be drawn."] })); });
     }, 300);
     return () => clearTimeout(t);
   }, [rev]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // FLOWS-12 item 1 (W-1114-Fundraising-17): a letter that thanks them for
+  // giving, to people who never have. Flagged until each such block has her
+  // first-gift version; never rewritten, never blocked: the send is still hers.
+  const neverGiven = segPreview && segPreview.audienceNeverGiven != null ? segPreview.audienceNeverGiven : null;
+  const pg = preview.pastGiving || null;
+  const pgFlag = pg ? pastGivingFlag({ claims: pg.claims, neverGiven: neverGiven || 0, shownName: pg.shownName }) : null;
+  const pgBlocks = pg ? pg.claims.filter(c => !c.hasVersion).map(c => c.index + 1) : [];
 
   const setBlock = (i, patch) => { setBlocks(bs => bs.map((b, j) => (j === i ? { ...b, ...patch } : b))); redraw(); };
   const on = {
@@ -193,6 +201,7 @@ export default function CampaignEditor({
       <div>
         <div data-testid="builder-who" style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Who it goes to</div>
         <AudienceLine audience={aud} />
+        {neverGiven != null && <div data-testid="audience-never-given" data-count={neverGiven} style={{ ...railNote, marginTop: 6 }}>{audienceNeverGivenSentence(neverGiven)}</div>}
         {aud && aud.blocked && <div data-testid="audience-blocked" style={{ ...NOTE_BOX, marginTop: 8 }}>{aud.blocked}</div>}
       </div>
       <div>
@@ -238,6 +247,7 @@ export default function CampaignEditor({
             {!readOnlySent && <FieldMenu fields={fields} onInsert={insertField} />}
             {preview.loading && <Spin />}
             <div data-testid="email-subject-line" style={{ flexBasis: "100%", fontSize: 13, color: T.ink2 }}><b style={{ color: T.ink }}>Subject:</b> {preview.subject || form.subject || "No subject yet"}</div>
+            {pgFlag && <div data-testid="past-giving-flag" style={{ ...NOTE_BOX, flexBasis: "100%" }}>{pgFlag} Click {pgBlocks.length === 1 ? `block ${pgBlocks[0]}` : `blocks ${pgBlocks.join(" and ")}`} and write a first-gift version in its settings; people who have never given read that instead.</div>}
             {menuAt !== undefined && <BlockMenu blockTypes={blockTypes} onClose={() => setMenuAt(undefined)}
               onPick={type => { act("insert", menuAt, blockTypes, { type }).then(redraw); setMenuAt(undefined); }} />}
           </div>

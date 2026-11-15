@@ -220,11 +220,26 @@ app.post("/templates/:kind/draft", requireAuth, checkWriteAccess, wrap(async (re
   await READY;
   const u = await usable(req, res); if (!u) return;
   if (!u.f.donor.email) return res.status(409).json({ error: "no_email", sentence: `${u.f.donor.name} has no email address on file. Print it as a letter instead.` });
+  // FLOWS-12 item 6 (W-1114-Fundraising-19X): "Make a draft for Margaret Chen"
+  // did nothing visible. A person who already has a draft of this kind waiting
+  // gets the reason, and makes a second only by asking to replace the first.
+  const orgId = req.user.orgId;
+  const [held] = await query(`SELECT id, ((created_at) AT TIME ZONE ${orgTime.orgTzSql("?")})::date::text AS day FROM milestone_drafts
+     WHERE org_id=? AND donor_id=? AND status='pending_review' AND milestone_key LIKE ? ORDER BY created_at DESC LIMIT 1`,
+    [orgId, orgId, u.f.donor.id, `template:${u.t.kind}:%`]);
+  const replace = !!(req.body && req.body.replace === true);
+  if (held && !replace) {
+    const DD = await import("../shared/displayDate.js");
+    return res.status(409).json({ error: "draft_exists", draftId: held.id, day: held.day,
+      sentence: `${u.f.donor.name} already has a draft from ${DD.displayDate(held.day)}. Open it or replace it.` });
+  }
   const who = actor(req), id = newId("md");
+  if (held) await run("UPDATE milestone_drafts SET status='dismissed' WHERE id=? AND org_id=? AND status='pending_review'", [held.id, orgId]);
   await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
              VALUES (?,?,?,?,?,?,'pending_review','template',?,?)`,
-    [id, req.user.orgId, u.f.donor.id, `template:${u.t.kind}:${Date.now()}`, u.subject, u.body, who.id, who.name]);
-  res.status(201).json({ draftId: id, sentence: `A draft to ${u.f.donor.name} is waiting in Drafts to review. Nothing has been sent.` });
+    [id, orgId, u.f.donor.id, `template:${u.t.kind}:${Date.now()}`, u.subject, u.body, who.id, who.name]);
+  res.status(201).json({ draftId: id, replaced: held ? held.id : null,
+    sentence: `${held ? "The new draft replaces the earlier one. " : ""}A draft to ${u.f.donor.name} is waiting in Drafts to review. Nothing has been sent.` });
 }));
 
 // A LETTER prints, in the brand kit: logo, primary band, secondary rule,
