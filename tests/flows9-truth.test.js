@@ -16,6 +16,10 @@
 //      support, givers, and the soft-credit box beside Lifetime.
 //   §5 Fundraising-36  the preview showing amounts the editor doesn't have.
 //   §6 Volunteers-06X  an archived event in the header count or a picker.
+//   FLOWS-11           refund rows paged as gifts; a profile counting a gift refunded in full; a
+//      household statement missing a member's gifts; a split shown as one fund in Transactions; a
+//      typed total made a gift and left unlabelled; a deleted past gift's thank-you left open
+//      (tests/lib/flows11Checks.js, through assertSurfacesAgree).
 //   §B (browser)       the preview's Cover fees box toggles and the total moves
 //      ($500 a month → $515.25); the periods line and "1 archived" are on screen;
 //      an admin sees Tasks' One person's tasks filter (it never rendered).
@@ -147,9 +151,12 @@ const gift = async (tok, donor, amount, extra = {}) => {
     const from = civilPlusDays(-1), to = today;
     const fig = async (params) => (await api("GET", `/figures/gifts/rows?from=${from}&to=${to}${params}`, tok)).body || {};
     const sum = await fig(""), cnt = await fig("&measure=count");
+    // FLOWS-11: the dialog pages the gifts; each refund is listed under its gift, and a gift refunded
+    // in full with its refund under "not counted as gifts". Every refund is still listed and marked.
+    const listedRows = [...(sum.rows || []), ...(sum.rows || []).flatMap(r => r.refunds || []), ...((sum.notCounted && sum.notCounted.rows) || [])];
     ok("§4 the gift dialog: its count line says 2 gifts over rows that net to $175, the refund rows listed and marked",
-      sum.giftCount === KEY.gifts && Math.round(Number(sum.value)) === KEY.net && (sum.rows || []).filter(r => r.detail === "Refund").length === 3
-      && (sum.rows || []).some(r => /^Refunded in full/.test(r.detail || "")), JSON.stringify({ giftCount: sum.giftCount, value: sum.value, details: (sum.rows || []).map(r => r.detail) }));
+      sum.giftCount === KEY.gifts && sum.totalRows === KEY.gifts && Math.round(Number(sum.value)) === KEY.net && listedRows.filter(r => r.detail === "Refund").length === 3
+      && listedRows.some(r => /^Refunded in full/.test(r.detail || "")), JSON.stringify({ giftCount: sum.giftCount, totalRows: sum.totalRows, value: sum.value, details: listedRows.map(r => r.detail) }));
     ok("§4 the count figure: 2", Number(cnt.value) === KEY.gifts, JSON.stringify({ value: cnt.value }));
     const gs = (await api("GET", `/reports/giving-summary?from=${from}&to=${to}`, tok)).body || {};
     const gsF = gs.figures || {};
@@ -235,6 +242,57 @@ const gift = async (tok, donor, amount, extra = {}) => {
     ok("§6 the auction's Part of an event picker leaves it out", !auc.some(e => e.id === "e_f9_3"), auc.map(e => e.name));
     const kept = (await q(`SELECT event_id FROM gifts WHERE org_id = $1 AND donor_id = 'd_f9_e'`, [ORG]))[0] || {};
     ok("§6 the gift already on the archived event keeps it", kept.event_id === "e_f9_3", kept);
+  }
+
+  // ── FLOWS-11 · money that reads true everywhere (tests/lib/flows11Checks.js, asked through
+  // assertSurfacesAgree). The fleet's six, built here through the API the app uses. Each check is
+  // its own line, so a red run names the one that broke. Against main's code all six are red.
+  {
+    const { assertSurfacesAgree } = require("./lib/surfacesAgree");
+    const { drainQueue } = require("./lib/drainQueue");
+    const addr = { address: "1 QA A3 Lane", city: "Harborlight", state: "ME", zip: "04001" };
+    // 1 + 2: QA A3 Refund One, $25 refunded in full; a $100 gift with $30 back.
+    await person("d_f11_r1", "Refund One Eleven");
+    const r1 = await gift(tok, "d_f11_r1", 25);
+    await api("POST", `/gifts/${r1}/refund`, tok, { amount: 25, reason: "Asked for it back" });
+    await person("d_f11_r2", "Partial Two Eleven");
+    const r2 = await gift(tok, "d_f11_r2", 100);
+    await api("POST", `/gifts/${r2}/refund`, tok, { amount: 30, reason: "Overpaid" });
+    // 3: "The Two Household", one address, $60 by House One and $40 by House Two.
+    await person("d_f11_h1", "House One Eleven", addr);
+    await person("d_f11_h2", "House Two Eleven", addr);
+    const hh = await api("POST", "/households", tok, { name: "The Two Household", memberIds: ["d_f11_h1", "d_f11_h2"], primaryDonorId: "d_f11_h1" });
+    await gift(tok, "d_f11_h1", 60); await gift(tok, "d_f11_h2", 40);
+    // 4: $200 split $120 General Operating, $80 Scholarship Fund.
+    const fa = (await api("POST", "/finance/funds", tok, { name: "General Operating Eleven" })).body || {};
+    const fb = (await api("POST", "/finance/funds", tok, { name: "Scholarship Fund Eleven", restricted: true })).body || {};
+    await person("d_f11_s", "Split Eleven");
+    await gift(tok, "d_f11_s", 200, { fundLines: [{ fundId: fa.id, amount: 120 }, { fundId: fb.id, amount: 80 }] });
+    // 5: Add person with a typed $100,000.
+    await api("POST", "/donors", tok, { name: "Typed Total Eleven", email: "typed-eleven@flows9.example", lastAmount: 100000 });
+    // 6: a first-gift journey; a past first gift starts it ("Call to say thank you"); the gift is deleted.
+    await api("POST", "/journeys", tok, { name: "Welcome, Eleven", trigger: "first_gift", enabled: true, steps: [{ type: "thank", label: "Call to say thank you", offsetDays: 2 }] });
+    await person("d_f11_p", "Past Gift Eleven");
+    const pg = await gift(tok, "d_f11_p", 50, { date: civilPlusDays(-3) });
+    await drainQueue(q, { orgId: ORG }).catch(() => {});
+    const openBefore = (await q(`SELECT COUNT(*)::int AS n FROM tasks WHERE org_id = $1 AND donor_id = 'd_f11_p' AND voided_at IS NULL AND COALESCE(done,0) = 0`, [ORG]))[0].n;
+    ok("FLOWS-11 §6 the past first gift opened its thank-you (the fixture)", openBefore >= 1, openBefore);
+    const del = await api("DELETE", `/gifts/${pg}`, tok);
+    const note = (await q(`SELECT note FROM interactions WHERE org_id = $1 AND donor_id = 'd_f11_p' AND note LIKE 'Gift removed%' ORDER BY created_at DESC LIMIT 1`, [ORG]))[0];
+    ok("FLOWS-11 §6 the delete writes the scheduled-gift path's note", del.status === 200 && !!note && /^Gift removed, thank-you cancelled\./.test(note.note), { del: del.body, note });
+
+    for (const name of ["giftDialog", "refundedProfile", "householdStatement", "splitTransactions", "beforeSteward", "deletedThanks"]) {
+      const out = await assertSurfacesAgree(ORG, { token: tok, soft: true, only: [name], label: "FLOWS-11 " + name });
+      ok(`FLOWS-11 assertSurfacesAgree · ${name}`, out.ok, out.diffs);
+    }
+    // 3: the statement itself, made: one, $100, both members named.
+    await q(`UPDATE orgs SET receipts_enabled = true WHERE id = $1`, [ORG]);
+    const st = await api("POST", `/households/${hh.body && hh.body.id}/year-end-statement`, tok, { year: Number(today.slice(0, 4)), send: false });
+    const snap = st.body && (typeof st.body.snapshot === "string" ? JSON.parse(st.body.snapshot) : st.body.snapshot);
+    ok("FLOWS-11 §3 one statement for the household: $100, House One $60 and House Two $40",
+      st.status === 201 && snap && Math.round(snap.totalAmount * 100) === 10000 && (snap.members || []).map(m => `${m.name}:${m.totalAmount}`).join("|") === "House One Eleven:60|House Two Eleven:40", st.body && (snap || st.body));
+    const choice = (await api("GET", `/households/${hh.body && hh.body.id}/statement-choice`, tok)).body || {};
+    ok("FLOWS-11 §3 one address, so the household's statement is the default", choice.defaultChoice === "household", choice);
   }
 
   // ── §B the browser: cover fees toggle in the preview; the lines on screen ──

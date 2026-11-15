@@ -152,10 +152,10 @@ function statusSql(orgId, today, cuts, { donorId = null } = {}) {
         SELECT g.donor_id, g.org_id,
                ROUND(COALESCE(SUM(g.amount) FILTER (WHERE LEFT(g.date,10) BETWEEN ? AND ?), 0)::numeric, 2) AS last12,
                ${FG.FIRST_ON_FILE_AGG("g")} AS first_date,
-               MAX(LEFT(g.date,10)) FILTER (WHERE g.amount > 0) AS last_date,
-               COALESCE(BOOL_OR(g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS w0,
-               MIN(LEFT(g.date,10)) FILTER (WHERE g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?) AS first_w0,
-               MAX(LEFT(g.date,10)) FILTER (WHERE g.amount > 0 AND LEFT(g.date,10) < ?) AS prev_date,
+               MAX(LEFT(g.date,10)) FILTER (WHERE ${require("./shared/numbers/giftCount").KEPT("g")}) AS last_date,
+               COALESCE(BOOL_OR(${require("./shared/numbers/giftCount").KEPT("g")} AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS w0,
+               MIN(LEFT(g.date,10)) FILTER (WHERE ${require("./shared/numbers/giftCount").KEPT("g")} AND LEFT(g.date,10) BETWEEN ? AND ?) AS first_w0,
+               MAX(LEFT(g.date,10)) FILTER (WHERE ${require("./shared/numbers/giftCount").KEPT("g")} AND LEFT(g.date,10) < ?) AS prev_date,
                -- FIX-49: the old system's gifts count as giving before. A person
                -- whose imported history starts before the window is not New;
                -- the imported first and last gift dates are dates they gave.
@@ -163,14 +163,14 @@ function statusSql(orgId, today, cuts, { donorId = null } = {}) {
                             CASE WHEN LEFT(NULLIF(d.imported_last_gift_date, ''), 10) < ? THEN LEFT(d.imported_last_gift_date, 10) END)) AS imp_prev,
                MIN(LEFT(${IMP_FIRST}, 10)) AS imp_first,
                MAX(LEFT(NULLIF(d.imported_last_gift_date, ''), 10)) AS imp_last,
-               COALESCE(BOOL_OR(g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS this_cy,
-               COALESCE(BOOL_OR(g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS last_cy
+               COALESCE(BOOL_OR(${require("./shared/numbers/giftCount").KEPT("g")} AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS this_cy,
+               COALESCE(BOOL_OR(${require("./shared/numbers/giftCount").KEPT("g")} AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS last_cy
           FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
          -- TRUTH-1: a soft or matching credit row is recognition, never a
          -- gift: it neither keeps someone off Lapsed nor counts toward a level.
          WHERE g.org_id = ? AND LEFT(g.date,10) <= ? AND ${NOT_CREDIT("g")}${donorId ? " AND g.donor_id = ?" : ""}
          GROUP BY g.donor_id, g.org_id
-        HAVING BOOL_OR(g.amount > 0)
+        HAVING BOOL_OR(${require("./shared/numbers/giftCount").KEPT("g")})
       ) a`;
   return { sql, args };
 }
@@ -221,7 +221,7 @@ function closenessSql(today, alias = "") {
   // since could have made wrong; the profile reads the same rule live
   // (engagement.patternOf), and TRUTH-1's key checks the two agree.
   const onTime = `COALESCE(${require("./shared/numbers/lapse").ON_TIME_THROUGH(`${a}id`)} >= ?, false)
-      AND EXISTS (SELECT 1 FROM gifts gt WHERE gt.org_id = ${a}org_id AND gt.donor_id = ${a}id AND gt.amount > 0 AND LEFT(gt.date, 10) > ? AND LEFT(gt.date, 10) <= ? AND ${require("./shared/numbers/money").MONEY("gt")})`;
+      AND EXISTS (SELECT 1 FROM gifts gt WHERE gt.org_id = ${a}org_id AND gt.donor_id = ${a}id AND ${require("./shared/numbers/giftCount").KEPT("gt")} AND LEFT(gt.date, 10) > ? AND LEFT(gt.date, 10) <= ? AND ${require("./shared/numbers/money").MONEY("gt")})`;
   // "Arrived" is their first activity on file: a gift, a conversation or a
   // volunteer shift, and only for someone with none of those, the day their
   // record was made (an import made today is not a new relationship).
@@ -234,7 +234,7 @@ function closenessSql(today, alias = "") {
 }
 function firstSeenSql(a) {
   return `COALESCE(LEAST(
-      (SELECT MIN(LEFT(gn.date,10)) FROM gifts gn WHERE gn.org_id = ${a}org_id AND gn.donor_id = ${a}id AND gn.amount > 0),
+      (SELECT MIN(LEFT(gn.date,10)) FROM gifts gn WHERE gn.org_id = ${a}org_id AND gn.donor_id = ${a}id AND ${require("./shared/numbers/giftCount").KEPT("gn")}),
       (SELECT MIN(LEFT(ix.date,10)) FROM interactions ix WHERE ix.org_id = ${a}org_id AND ix.donor_id = ${a}id AND COALESCE(ix.date,'') <> ''),
       (SELECT MIN(LEFT(vs.date::text,10)) FROM volunteer_shifts vs WHERE vs.org_id = ${a}org_id AND vs.person_id = ${a}id)),
     LEFT(${a}created_at::text,10))`;

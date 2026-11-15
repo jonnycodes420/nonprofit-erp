@@ -515,7 +515,7 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
                               AND t.sent_at IS NULL AND t.skipped_at IS NULL ORDER BY t.created_at DESC LIMIT 1) AS draft_id
                      FROM gifts g
                     WHERE g.org_id = ? AND g.donor_id = ? AND COALESCE(g.is_sample,false) = false
-                      AND g.date >= ? AND COALESCE(g.acknowledgement_sent,false) = false AND g.amount > 0
+                      AND g.date >= ? AND COALESCE(g.acknowledgement_sent,false) = false AND ${require("../../shared/numbers/giftCount").KEPT("g")}   -- FLOWS-11: a gift refunded in full waits for no thanks
                     ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC`, [orgId, id, since]) : [],
     query(`SELECT e.id, e.name, LEFT(e.date::text, 10) AS date FROM event_attendees ea JOIN events e ON e.id = ea.event_id AND e.org_id = ea.org_id
             WHERE ea.donor_id = ? AND ea.org_id = ? AND LEFT(e.date::text, 10) >= ?
@@ -553,7 +553,7 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
   let rhythm = null;
   const r = rhy[0];
   const DR = require("../../drift");
-  const gsR = await query(`SELECT LEFT(g.date,10) AS date, g.amount::text AS amount FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND g.amount > 0 AND LEFT(g.date,10) <= ? AND ${require("../../shared/numbers/money").MONEY("g")}`, [orgId, id, today]);
+  const gsR = await query(`SELECT LEFT(g.date,10) AS date, g.amount::text AS amount FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND ${require("../../shared/numbers/giftCount").KEPT("g")} AND LEFT(g.date,10) <= ? AND ${require("../../shared/numbers/money").MONEY("g")}`, [orgId, id, today]);
   const aR = DR.assessDrift(gsR.map(g => ({ date: g.date, amount: Number(g.amount) })), today);
   const name = aR && aR.basis ? DR.rhythmOf(aR) : (r ? r.rhythm : "none");
   const exp = aR && aR.expectedNext ? String(aR.expectedNext).slice(0, 10) : null;

@@ -511,7 +511,7 @@ const SOURCES = {
                      ROUND((${byFund ? "gf.amount" : (p.measure === "mean" || p.measure === "median") ? require("./shared/numbers/refunds").NET_AMOUNT("g") : "g.amount"})::numeric, 2) AS amount,   -- FLOWS-9: an average is over each gift at its net
                      CASE WHEN g.amount < 0 THEN 'Refund' WHEN g.refunded_in_full IS TRUE THEN 'Refunded in full · ' || COALESCE(f.name, 'Unrestricted')
                           ELSE COALESCE(f.name, 'Unrestricted') END AS detail,
-                     (${require("./shared/numbers/giftCount").COUNTED("g")}) AS counted
+                     (${require("./shared/numbers/giftCount").COUNTED("g")}) AS counted, g.refund_of   -- FLOWS-11: a refund is listed under its gift
                 FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                 ${byFund ? `JOIN ${FUND_LINES.GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id` : ""}
                 LEFT JOIN fin_funds f ON f.id = ${byFund ? "gf" : "g"}.fund_id AND f.org_id = g.org_id
@@ -810,7 +810,7 @@ const SOURCES = {
       sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount, NULL::text AS detail
               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
              WHERE g.org_id = ? AND d.deleted_at IS NULL AND COALESCE(g.is_sample,false) = false
-               AND g.date >= ? AND COALESCE(g.acknowledgement_sent,false) = false${p.donor ? " AND g.donor_id = ? AND g.amount > 0" : ""}`,
+               AND g.date >= ? AND COALESCE(g.acknowledgement_sent,false) = false${p.donor ? ` AND g.donor_id = ? AND ${require("./shared/numbers/giftCount").KEPT("g")}` : ""}`,
       args: [orgId, p.since, ...(p.donor ? [p.donor] : [])],
     }),
   },
@@ -1474,7 +1474,7 @@ const SOURCES = {
       // IMPORT-4: the first gift is a dated one; with none, Donor since is unknown.
       // NUMBERS-3: a credit row is never anyone's first gift (shared/numbers/firstGift.js).
       // NUMBERS-5: on a day with two, the one order (firstGift.FIRST_GIFT_ORDER), never a random id.
-      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")} AND g.date IS NOT NULL ORDER BY ${require("./shared/numbers/firstGift").FIRST_GIFT_ORDER} LIMIT 1`,
+      sql: `${DONOR_GIFT_SELECT} AND ${require("./shared/numbers/giftCount").KEPT("g")} AND ${NOT_CREDIT("g")} AND ${SCHED_DUE("g")} AND g.date IS NOT NULL ORDER BY ${require("./shared/numbers/firstGift").FIRST_GIFT_ORDER} LIMIT 1`,
       args: [orgId, p.donor],
     }),
   },
@@ -1484,7 +1484,7 @@ const SOURCES = {
     params: { donor: "id:required" },
     sentence: () => "The largest single gift this person has given. When two gifts are the same size, the more recent one.",
     sql: (orgId, p) => ({
-      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 AND ${SCHED_DUE("g")} ORDER BY g.amount DESC, g.date DESC NULLS LAST, g.id DESC LIMIT 1`,   // TRUTH-6: a scheduled gift is no one's largest yet
+      sql: `${DONOR_GIFT_SELECT} AND ${require("./shared/numbers/giftCount").KEPT("g")} AND ${SCHED_DUE("g")} ORDER BY g.amount DESC, g.date DESC NULLS LAST, g.id DESC LIMIT 1`,   // TRUTH-6: a scheduled gift is no one's largest yet
       args: [orgId, p.donor],
     }),
   },
@@ -1500,8 +1500,9 @@ const SOURCES = {
     params: { donor: "id:required" },
     sentence: () => AVERAGE_WORDS,
     sql: (orgId, p) => ({
-      sql: `${DONOR_GIFT_SELECT} AND LOWER(TRIM(COALESCE(g.type,''))) <> ALL(?::text[]) AND ${SCHED_DUE("g")}`,   // TRUTH-6
-      args: [orgId, p.donor, BOOKKEEPER_EXCLUDED_TYPES], order: "date DESC NULLS LAST, id",
+      // FLOWS-11 (W-1113-Finance-27X): "of N gifts" is the counted gifts (giftCount.js), never the rows above $0.
+      sql: `${DONOR_GIFT_SELECT.replace(" AS detail", ` AS detail, (${require("./shared/numbers/giftCount").COUNTED("g")}) AS counted, g.refund_of`)} AND LOWER(TRIM(COALESCE(g.type,''))) <> ALL(?::text[]) AND ${SCHED_DUE("g")}`,   // TRUTH-6
+      args: [orgId, p.donor, BOOKKEEPER_EXCLUDED_TYPES], order: "date DESC NULLS LAST, id", countsGifts: true,
     }),
   },
   // PARITY-1 Part 1a · EACH TAG OPENS ITS DONORS. The tag's rule is
@@ -3033,6 +3034,9 @@ function shapeRow(r, dd) {
     date, dateLabel: date ? dd(date) : (r.type === "gift" ? "No date" : ""), amount: num(r.amount), detail: r.detail || null,
     // EVENTS-3: a party's row carries its people, each opening their own record
     ...(Array.isArray(r.people) ? { people: r.people.map(x => ({ donorId: x.noRecord ? null : x.id, name: x.name })) } : {}),
+    // FLOWS-11: a counted source says which rows are gifts, and lists each gift's refunds under it
+    ...(r.counted != null ? { counted: !!r.counted } : {}),
+    ...(Array.isArray(r.refunds) && r.refunds.length ? { refunds: r.refunds.map(x => shapeRow({ ...x, counted: false }, dd)) } : {}),
   };
 }
 // FIX-60: a TOTAL is not a gift. money.toCents refuses anything over the
@@ -3100,19 +3104,28 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     // POLISH-1: g is the rows that are gifts (above zero), for per_gift.
     const [[a], rowsRead] = await Promise.all([
       query(`SELECT COUNT(*)::int AS n, (${countsGifts ? "COUNT(DISTINCT x.id) FILTER (WHERE x.counted)" : "COUNT(*) FILTER (WHERE amount > 0)"})::int AS g, COALESCE(SUM(amount), 0)::text AS s, AVG(amount) AS a${measure === "median" ? ", PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY amount)::numeric(14,2)::text AS m" : ""} FROM (${sql}) x`, args),
-      wantRows
+      wantRows && !countsGifts
         ? query(`SELECT * FROM (${sql}) x ORDER BY ${orderClause(order)} LIMIT ? OFFSET ?`, [...args, pageSize, (page - 1) * pageSize])
         : Promise.resolve([]),
     ]);
     agg = a;
     pageRows = rowsRead;
+    // FLOWS-11 (W-1113-Fundraising-01): a count of gifts pages its gifts; refunds ride under them.
+    if (countsGifts) {
+      const GR = require("./server/reports/giftRows");
+      const gp = await GR.giftRowsPage(query, { sql, args }, { page, pageSize, order: orderClause(order), wantRows, restMax: pageSize >= PAGE_MAX ? 1000000 : undefined });
+      agg.pagedRows = gp.n;
+      pageRows = gp.rows;
+      if (gp.restCount) agg.rest = { count: gp.restCount, rows: gp.rest, sentence: GR.NOT_COUNTED_SENTENCE(gp.restCount) };
+    }
     if (zeroOnFile) agg.zero = Number(((await query(zeroOnFile.sql, zeroOnFile.args))[0] || {}).n) || 0;
   }
   const { value, cents } = valueOf(measure, agg);
   return {
     key, params: p, measure, amountKind: def.amountKind || "money", label: def.label, sentence: def.sentence(p, dd),
     value, cents, blank: null,
-    rows: pageRows.map(r => shapeRow(r, dd)), page, pageSize, totalRows: Number(agg.n) || 0,
+    rows: pageRows.map(r => shapeRow(r, dd)), page, pageSize, totalRows: Number(agg.pagedRows ?? agg.n) || 0,
+    ...(agg.rest ? { notCounted: { count: agg.rest.count, sentence: agg.rest.sentence, rows: agg.rest.rows.map(r => shapeRow(r, dd)) } } : {}),
     ...(measure === "per_gift" || countsGifts ? { giftCount: Number(agg.g) || 0 } : {}),
     ...(agg.people != null ? { people: agg.people } : {}),
     ...(agg.zero ? { alsoOnFile: { zero: agg.zero, sentence: require("./shared/numbers/giftCount").alsoOnFile(agg.zero) } } : {}),
@@ -3132,14 +3145,21 @@ function medianOf(xs) {
 // see exactly the rows the drawer shows. A ratio's rows are its numerator's
 // (the people it counts); a difference's are its first part's.
 async function allRows(orgId, source, deps = {}) {
-  const out = [];
+  const out = [], rest = [];
+  let seen = 0;
   for (let page = 1; page <= 500; page++) {
     const f = await figure(orgId, source, deps, { page, pageSize: PAGE_MAX });
     if (!f) return null;
     if (f.parts) return allRows(orgId, f.parts[0].source, deps);
-    out.push(...f.rows);
-    if (out.length >= f.totalRows || !f.rows.length) break;
+    // FLOWS-11: every row, each gift's refunds after it and the not-counted rows once, so a
+    // footing, an export or a group sees what the dialog lists; the pager counts gifts.
+    let gifts = 0;
+    for (const r of f.rows) { const { refunds, ...row } = r; out.push(row, ...(refunds || [])); gifts++; }
+    if (page === 1 && f.notCounted) rest.push(...f.notCounted.rows);
+    seen += gifts;
+    if (seen >= f.totalRows || !f.rows.length) break;
   }
+  out.push(...rest);
   return out;
 }
 
@@ -3165,7 +3185,7 @@ async function footCheck(orgId, source, deps = {}) {
   const sum = cents.reduce((x, y) => x + y, 0);
   let rowsFoot, foots;
   if (f.measure === "sum") { rowsFoot = money.toDollars(sum); foots = sum === f.cents; }
-  else if (f.measure === "per_gift") { const g = rows.filter(r => Number(r.amount) > 0).length; const m = g ? Math.round(sum / g) : 0; rowsFoot = money.toDollars(m); foots = m === f.cents; }
+  else if (f.measure === "per_gift") { const g = rows.filter(r => (r.counted !== undefined ? r.counted : Number(r.amount) > 0)).length; /* FLOWS-11: the counted gifts */ const m = g ? Math.round(sum / g) : 0; rowsFoot = money.toDollars(m); foots = m === f.cents; }
   else if (f.measure === "mean") { const m = rows.length ? Math.round(sum / rows.length) : 0; rowsFoot = money.toDollars(m); foots = m === f.cents; }
   else if (f.measure === "median") { rowsFoot = medianOf(rows.map(r => Number(r.amount) || 0)); foots = Math.round(rowsFoot * 100) === f.cents; }
   else if (f.measure === "avg") { rowsFoot = rows.length ? Math.round(rows.reduce((x, r) => x + (Number(r.amount) || 0), 0) / rows.length) : 0; foots = rowsFoot === f.value; }

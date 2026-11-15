@@ -92,10 +92,11 @@ export function useReceipts(donor, gifts, open = true) {
   const [yearEndBusy, setYearEndBusy] = useState(false);
   const [yearEndErr, setYearEndErr] = useState("");
   const [statement, setStatement] = useState(null);
-  const sendYearEndStatement = async () => {
+  // FLOWS-11 (W-1114-Finance-29): `householdId` makes the household's one statement; tax receipts stay per giver.
+  const sendYearEndStatement = async (householdId = null) => {
     setYearEndBusy(true); setYearEndErr(""); setStatement(null);
     try {
-      const r = await apiFetch(`/donors/${donor.id}/year-end-statement`, { method: "POST", body: JSON.stringify({ year: parseInt(yearEndYear, 10), send: false }) });
+      const r = await apiFetch(householdId ? `/households/${householdId}/year-end-statement` : `/donors/${donor.id}/year-end-statement`, { method: "POST", body: JSON.stringify({ year: parseInt(yearEndYear, 10), send: false }) });
       setStatement(r);
       await loadDonorReceipts();
     } catch (e) { setYearEndErr((e && (e.sentence || e.message)) || errorMessage(e, "Could not make the statement.")); }
@@ -146,7 +147,18 @@ export function ReceiptCell({ g, rc, isReadOnly }) {
 }
 
 // The year-end panel: pick the year, make it, see it, then Download or Email.
-export function YearEndPanel({ rc, donor, isReadOnly }) {
+export function YearEndPanel({ rc, donor, household, isReadOnly }) {
+  // FLOWS-11: in a household, one statement for the household (the default when they share a
+  // mailing address) or this person's own. The choice and its reason come from the server.
+  const [choice, setChoice] = useState(null);
+  const [who, setWho] = useState(null);
+  useEffect(() => {
+    if (!household || !household.id) { setChoice(null); return; }
+    let live = true;
+    apiFetch(`/households/${household.id}/statement-choice`).then(c => { if (live) { setChoice(c); setWho(w => w || c.defaultChoice); } }).catch(() => {});
+    return () => { live = false; };
+  }, [household && household.id]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const forHousehold = !!(choice && who === "household");
   const s = rc.statement;
   const snap = s && (typeof s.snapshot === "string" ? JSON.parse(s.snapshot) : s.snapshot);
   const note = s ? rc.receiptNote[s.id] : "";
@@ -157,11 +169,23 @@ export function YearEndPanel({ rc, donor, isReadOnly }) {
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <span style={{ fontSize: 11, color: T.ink3 }}>Tax year</span>
         <input type="number" data-testid="dp-year-end-year" value={rc.yearEndYear} onChange={e => rc.setYearEndYear(e.target.value)} style={{ width: 100, background: T.bg, border: "1px solid " + T.bg3, borderRadius: 6, padding: "6px 8px", color: T.ink, fontSize: 12, outline: "none" }} />
-        <button type="button" data-testid="dp-year-end-make" onClick={rc.sendYearEndStatement} disabled={rc.yearEndBusy || isReadOnly} style={{ background: T.greenDk, border: "none", borderRadius: 6, padding: "7px 12px", color: T.white, fontSize: 12, fontWeight: 700, cursor: rc.yearEndBusy ? "not-allowed" : "pointer" }}>
+        <button type="button" data-testid="dp-year-end-make" onClick={() => rc.sendYearEndStatement(forHousehold ? household.id : null)} disabled={rc.yearEndBusy || isReadOnly} style={{ background: T.greenDk, border: "none", borderRadius: 6, padding: "7px 12px", color: T.white, fontSize: 12, fontWeight: 700, cursor: rc.yearEndBusy ? "not-allowed" : "pointer" }}>
           {rc.yearEndBusy ? "Making it…" : s ? "Make it again" : "Make the statement"}
         </button>
         <button type="button" onClick={() => rc.setShowYearEnd(false)} style={{ background: T.bg, border: "none", borderRadius: 6, padding: "7px 10px", color: T.ink3, fontSize: 12, cursor: "pointer" }}>Close</button>
       </div>
+      {choice && choice.members.length > 1 && (
+        <div data-testid="dp-year-end-who" style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 10, fontSize: 12.5, color: T.ink }}>
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input type="radio" name="dp-ye-who" data-testid="dp-year-end-household" checked={who === "household"} onChange={() => setWho("household")} />
+            One statement for the household: {choice.members.map(m => m.name).join(" and ")}
+          </label>
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input type="radio" name="dp-ye-who" data-testid="dp-year-end-person" checked={who === "person"} onChange={() => setWho("person")} />
+            Just {donor.name}
+          </label>
+          <div style={{ fontSize: 11, color: T.ink3, lineHeight: 1.5 }}>{choice.sentence} Tax receipts for each gift stay with the person who gave it.</div>
+        </div>)}
       {rc.yearEndErr && <div role="alert" data-testid="dp-year-end-err" style={{ fontSize: 12, color: T.ink, marginTop: 8 }}>{rc.yearEndErr}</div>}
       {!s && <div style={{ fontSize: 11, color: T.ink3, marginTop: 8, lineHeight: 1.5 }}>Puts every {rc.yearEndYear} gift into one statement and shows it here. It replaces any earlier statement for that year. Nothing is emailed until you choose to.</div>}
       {s && snap && (
@@ -172,7 +196,7 @@ export function YearEndPanel({ rc, donor, isReadOnly }) {
             <tbody>
               {(snap.lineItems || []).map((l, i) => (
                 <tr key={i} data-testid="dp-year-end-line" style={{ borderTop: "1px solid " + T.bg2 }}>
-                  <td style={{ padding: "4px 0", color: T.ink }}>{l.date}</td>
+                  <td style={{ padding: "4px 0", color: T.ink }}>{l.date}{l.giver ? <span style={{ color: T.ink3 }}> · {l.giver}</span> : null}</td>
                   <td style={{ padding: "4px 0", textAlign: "right", color: T.ink }}>{fmtFull(l.amount)}</td>
                 </tr>))}
               <tr style={{ borderTop: "1px solid " + T.ink }}>
@@ -181,6 +205,7 @@ export function YearEndPanel({ rc, donor, isReadOnly }) {
               </tr>
             </tbody>
           </table>
+          {Array.isArray(snap.members) && <div data-testid="dp-year-end-members" style={{ fontSize: 11.5, color: T.ink, marginTop: 4 }}>{snap.members.map(m => `${m.name} gave ${fmtFull(m.totalAmount)}`).join("; ")}. Together, {fmtFull(snap.totalAmount)}.</div>}
           <div style={{ fontSize: 11, color: T.ink3, marginTop: 4 }}>The total is every {snap.taxYear} gift above; the tax-deductible part is {fmtFull(snap.totalDeductible)}.</div>
           <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
             <button type="button" data-testid="dp-year-end-download" style={{ ...linkBtn, fontSize: 12.5 }} onClick={() => rc.downloadReceiptPdf(s.id, `${snap.taxYear}-giving-statement`)}>Download PDF</button>

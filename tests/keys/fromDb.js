@@ -32,6 +32,7 @@ async function orgRows(q, orgId, { today } = {}) {
               (imported_total IS NOT NULL OR imported_gift_count IS NOT NULL) AS imported FROM donors WHERE org_id = $1`, [orgId]),
     q(`SELECT g.id, g.donor_id, ROUND(g.amount * 100)::bigint AS cents, g.date, g.type, g.payment_method, g.event_id, g.campaign_id, g.giving_page_id,
               g.deposited_on, g.deposit_ref, COALESCE(g.is_sample, false) AS sample, g.scheduled_on,
+              COALESCE(g.refunded_in_full, false) AS rif,   -- FLOWS-11: a gift refunded in full is not a gift (FLOWS-9's rule)
               (im.id IS NOT NULL) AS on_run
          FROM gifts g LEFT JOIN imports im ON im.id = g.import_id AND im.org_id = g.org_id AND im.shape = 'deposit' AND im.reversed_at IS NULL
         WHERE g.org_id = $1`, [orgId]),
@@ -49,7 +50,7 @@ async function orgRows(q, orgId, { today } = {}) {
   const rows = {
     people: people.map(p => ({ id: p.id, household: p.household_id || null, deleted: p.deleted, sample: p.sample, erased: p.erased,
       importedLastGift: p.imported_last_gift_date || null, importedFirstGift: p.imported_first_gift_date || null, imported: p.imported })),
-    gifts: gifts.map(g => ({ id: g.id, person: g.donor_id, cents: Number(g.cents), date: g.date, type: g.type, method: g.payment_method,
+    gifts: gifts.map(g => ({ id: g.id, person: g.donor_id, cents: Number(g.cents), rif: g.rif === true, date: g.date, type: g.type, method: g.payment_method,
       event: g.event_id, campaign: g.campaign_id, page: g.giving_page_id, sample: g.sample, depositRun: g.on_run, depositedOn: g.deposited_on, depositRef: g.deposit_ref, scheduledOn: g.scheduled_on || null })),
     softCredits: soft.map(s => ({ gift: s.gift_id, person: s.donor_id, cents: Number(s.cents) })),
     pledges: pledges.map(p => ({ id: p.id, person: p.donor_id, cents: Number(p.cents), status: p.status, due: p.due_date,
