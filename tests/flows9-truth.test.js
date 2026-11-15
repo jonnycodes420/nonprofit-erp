@@ -280,6 +280,8 @@ const gift = async (tok, donor, amount, extra = {}) => {
     const del = await api("DELETE", `/gifts/${pg}`, tok);
     const note = (await q(`SELECT note FROM interactions WHERE org_id = $1 AND donor_id = 'd_f11_p' AND note LIKE 'Gift removed%' ORDER BY created_at DESC LIMIT 1`, [ORG]))[0];
     ok("FLOWS-11 §6 the delete writes the scheduled-gift path's note", del.status === 200 && !!note && /^Gift removed, thank-you cancelled\./.test(note.note), { del: del.body, note });
+    const thank = (await q(`SELECT voided_at IS NOT NULL AS voided, voided_reason FROM tasks WHERE org_id = $1 AND donor_id = 'd_f11_p' AND title = 'Call to say thank you'`, [ORG]))[0] || {};
+    ok("FLOWS-11 §6 the thank-you call is voided (gift_deleted), never marked done", thank.voided === true && thank.voided_reason === "gift_deleted" && del.body && del.body.voidedTasks >= 1, { thank, del: del.body });
 
     for (const name of ["giftDialog", "refundedProfile", "householdStatement", "splitTransactions", "beforeSteward", "deletedThanks"]) {
       const out = await assertSurfacesAgree(ORG, { token: tok, soft: true, only: [name], label: "FLOWS-11 " + name });

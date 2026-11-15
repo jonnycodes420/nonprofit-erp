@@ -40,11 +40,13 @@ async function stopJourneysOfGift(client, orgId, donorId, giftId, who) {
   const threads = steps.filter(s => s.status === "open" && s.thread_id).map(s => s.thread_id);
   let tasks = 0;
   if (threads.length) {
-    await runTx(client, `UPDATE threads SET closed_at = NOW(), close_kind = 'dismissed', close_reason = 'gift_deleted'
-                          WHERE org_id = ? AND id = ANY(?::text[]) AND closed_at IS NULL`, [orgId, threads]);
+    // Void first: closing a thread marks its task done (the thread's trigger), and a voided task is
+    // never "Done" on the timeline (the walk caught it reading done).
     const v = await runTx(client, `UPDATE tasks SET voided_at = NOW(), voided_reason = 'gift_deleted', updated_at = NOW()
                                     WHERE org_id = ? AND thread_id = ANY(?::text[]) AND voided_at IS NULL AND COALESCE(done, 0) = 0`, [orgId, threads]);
     tasks = Number(v && v.changes) || 0;
+    await runTx(client, `UPDATE threads SET closed_at = NOW(), close_kind = 'dismissed', close_reason = 'gift_deleted'
+                          WHERE org_id = ? AND id = ANY(?::text[]) AND closed_at IS NULL`, [orgId, threads]);
   }
   if (steps.length) {
     await runTx(client, `UPDATE cultivation_plan_steps SET status = 'skipped', closed_at = NOW(), closed_by = ?, closed_by_name = ?, skip_reason = ?
