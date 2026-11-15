@@ -71,10 +71,17 @@ export function SourceRows({ source, initial, onSelectDonor, heading }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source.key, JSON.stringify(source.params), page]);
 
-  const rows = data?.rows || [];
+  const giftRows = data?.rows || [];
   const total = data?.totalRows || 0;
   const first = total ? (page - 1) * (data?.pageSize || PAGE_SIZE) + 1 : 0;
-  const last = Math.min(total, first + rows.length - 1);
+  const last = Math.min(total, first + giftRows.length - 1);
+  // FLOWS-11 (W-1113-Fundraising-01): the pager counts gifts. A gift's refunds are listed under
+  // it, and the rows not counted as gifts (refunded in full, a refund on its own) once, at the end.
+  const rest = data?.notCounted && last >= total ? data.notCounted : null;
+  const rows = [
+    ...giftRows.flatMap(r => [r, ...(r.refunds || []).map(x => ({ ...x, sub: true }))]),
+    ...(rest ? [{ id: "not-counted-head", head: rest.sentence }, ...rest.rows.map(x => ({ ...x, notCounted: true }))] : []),
+  ];
   // PROFILE-1 — a source may measure something that is not money. `months`
   // was the first (recurring-months); `days` is the second (the profile's
   // "Last contact", where the figure is the gap and only the most recent
@@ -106,6 +113,7 @@ export function SourceRows({ source, initial, onSelectDonor, heading }) {
         <div style={{ padding: "18px 24px", color: T.ink3, fontSize: 13 }}>No rows. That is why this reads zero.</div>
       )}
       {!loading && rows.map(r => {
+        if (r.head) return <div key={r.id} data-testid="figure-not-counted" style={{ padding: "12px 24px 6px", fontSize: 12, color: T.ink3, lineHeight: 1.5, borderTop: "1px solid " + T.bg2 }}>{r.head}</div>;
         const main = (
           <>
             <div style={{ minWidth: 0 }}>
@@ -117,7 +125,7 @@ export function SourceRows({ source, initial, onSelectDonor, heading }) {
             <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, flexShrink: 0, textAlign: "right" }}>{amount(r)}</div>
           </>
         );
-        const rowStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "11px 24px",
+        const rowStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: r.sub ? "6px 24px 9px 44px" : "11px 24px",
                            borderBottom: "1px solid " + T.bg, width: "100%", textAlign: "left", background: "transparent",
                            border: "none", borderTop: "none", font: "inherit" };
         // EVENTS-3 — a party (a household who came together) is one row,

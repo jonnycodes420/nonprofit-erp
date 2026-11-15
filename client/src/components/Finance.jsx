@@ -3,6 +3,7 @@ import { useChanged } from "../lib/changes";   // FEEL-1: fund totals re-read on
 import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import RemoveMenu from "./RemoveMenu"; // FIX-41: a fund's Remove, on the funds list only
 import { RestrictedView } from "./RestrictedView";
+import { groupTxns, SplitGiftRow, FundFootRow } from "./finance/TxnSplit";   // FLOWS-11
 import { DepositSheetModal } from "./DepositSheet";
 import { T, activeMark, fmt, fmtFull, fmtWhole, Card, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive, Modal } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
@@ -950,6 +951,9 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
       return sortDir * (va < vb ? -1 : va > vb ? 1 : 0);
     });
 
+  const txnView = groupTxns(sortedTxns);   // FLOWS-11: a split gift's lines under the gift (finance/TxnSplit.jsx)
+  const fundShown = txnFund ? finFundBalances.find(f => f.id === txnFund) : null;
+
   const toggleSort = col => {
     if (sortCol === col) setSortDir(d => -d);
     else { setSortCol(col); setSortDir(-1); }
@@ -959,7 +963,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   const handleAddTxn = async (form) => {
     try {
       const created = await apiFetch("/finance/transactions", { method:"POST", body: JSON.stringify(form) });
-      const thisYear = civilYear(created.date) === txnYear;   // HARDEN-1: its own year, not a UTC Date read locally
+      const thisYear = txnYear === "all" || civilYear(created.date) === txnYear;   // HARDEN-1: its own year, not a UTC Date read locally
       if (thisYear) setTransactions(prev => [created, ...prev]);
       await Promise.all([reloadSummary(), reloadBudgets(budgetYear)]);
       setShowTxnModal(false);
@@ -1326,8 +1330,10 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             <option value="">All funds</option>
             {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
-          <select value={txnYear} onChange={e => { const yr = parseInt(e.target.value); setTxnYear(yr); reloadTxns(yr); }} style={{ ...inp, width:100, cursor:"pointer" }}>
-            {[2023,2024,2025,2026].map(y => <option key={y} value={y}>{y}</option>)}
+          <select data-testid="txn-year" value={txnYear} onChange={e => { const yr = e.target.value === "all" ? "all" : parseInt(e.target.value); setTxnYear(yr); reloadTxns(yr); }} style={{ ...inp, width:110, cursor:"pointer" }}>
+            {/* FLOWS-11: every year, so a fund's lines can foot to its balance (a balance is all-time) */}
+            <option value="all">All years</option>
+            {[0,1,2,3,4].map(k => new Date().getFullYear() - k).map(y => <option key={y} value={y}>{y}</option>)}
           </select>
           <button style={writeBtn(isReadOnly, btn(IN))} onClick={addBtnHandler(() => setShowTxnModal(true))} title={isReadOnly ? RO_TIP : ""}>+ Add transaction</button>
         </div>
@@ -1348,18 +1354,20 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedTxns.map((t, i) => {
+                    {txnView.map((v, i) => {
+                      const t = v.t;
                       const sm = sourceMeta(t.source, t.grant_id);
                       const linkedDonor = t.donor_id && donorById[t.donor_id];
+                      if (v.head) return <SplitGiftRow key={t.id + ":gift"} v={v} onDelete={handleDeleteTxn}/>;
                       return (
-                      <tr key={t.id} style={{ borderTop:"1px solid "+T.bg3, background: i%2===0?T.white:T.ground }}>
+                      <tr key={t.id + ":" + (t.fund_id || "")} data-testid={v.line ? "txn-split-line" : undefined} style={{ borderTop:"1px solid "+T.bg3, background: i%2===0?T.white:T.ground }}>
                         <td style={{ padding:"10px 14px", color:T.ink3, whiteSpace:"nowrap" }}>{displayDate(t.date)}</td>
                         <td style={{ padding:"10px 14px", fontWeight:700, color:t.type==="income"?IN:OUT, whiteSpace:"nowrap", textAlign:"right" }}>
                           {t.type === "income" ? "+" : "−"}{fmtFull(parseFloat(t.amount))}
                         </td>
-                        <td style={{ padding:"10px 14px" }}>
+                        <td style={{ padding: v.line ? "10px 14px 10px 32px" : "10px 14px" }}>
                           <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-                            <span style={{ fontWeight:600, color:T.ink }}>{t.description}</span>
+                            <span style={{ fontWeight:600, color:T.ink }}>{v.line ? `Part to ${t.fund_name || "a fund"}` : t.description}</span>
                             <span style={{ background:sm.bg, color:sm.color, borderRadius:99, padding:"1px 8px", fontSize:10, fontWeight:700 }}>{sm.label}</span>
                           </div>
                           {t.vendor_donor && <div style={{ fontSize:11, color:T.ink3, marginTop:2 }}>
@@ -1383,7 +1391,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                           )}
                         </td>
                         <td style={{ padding:"10px 14px" }}>
-                          <button onClick={() => handleDeleteTxn(t.id)} style={{ background:"none", border:"none", cursor:"pointer", color:T.ink3, fontSize:14 }}>×</button>
+                          {!v.line && <button onClick={() => handleDeleteTxn(t.id)} style={{ background:"none", border:"none", cursor:"pointer", color:T.ink3, fontSize:14 }}>×</button>}
                         </td>
                       </tr>
                     );})}
@@ -1397,6 +1405,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                       </td>
                       <td colSpan={4}/>
                     </tr>
+                    <FundFootRow fund={fundShown} txns={sortedTxns} year={txnYear}/>
                   </tfoot>
                 </table>
               </div>

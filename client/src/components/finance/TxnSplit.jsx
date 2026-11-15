@@ -1,0 +1,52 @@
+// components/finance/TxnSplit.jsx · FLOWS-11 (W-1114-Finance-05X). A SPLIT GIFT IN TRANSACTIONS.
+//
+// /finance/transactions answers one line per fund (server/finance/ledgerLines.js, the cut Fund
+// Balances reads). A split gift's lines sit under one line for the gift; a fund filter shows only
+// that fund's part. Under a fund filter, one line says what the lines net and the fund's balance.
+import { T, fmtFull } from "../shared";
+import { displayDate } from "../../../../shared/displayDate";
+
+// [{ head, t, lines } | { t, line }] in the order the table draws them.
+export function groupTxns(sortedTxns) {
+  const byId = new Map(), seen = new Set(), out = [];
+  for (const t of sortedTxns) (byId.get(t.id) || byId.set(t.id, []).get(t.id)).push(t);
+  for (const t of sortedTxns) {
+    if (seen.has(t.id)) continue;
+    seen.add(t.id);
+    const split = Number(t.split_lines) > 1, lines = byId.get(t.id);
+    if (split) out.push({ head: true, t, lines });
+    for (const l of lines) out.push({ t: l, line: split });
+  }
+  return out;
+}
+
+export function SplitGiftRow({ v, onDelete }) {
+  const t = v.t;
+  return (
+    <tr data-testid="txn-split-gift" data-gift-id={t.gift_id || ""} style={{ borderTop: "1px solid " + T.bg3, background: T.white }}>
+      <td style={{ padding: "10px 14px", color: T.ink3, whiteSpace: "nowrap" }}>{displayDate(t.date)}</td>
+      <td style={{ padding: "10px 14px", fontWeight: 700, color: T.ink3, whiteSpace: "nowrap", textAlign: "right" }}>{fmtFull(parseFloat(t.row_amount))}</td>
+      <td colSpan={3} style={{ padding: "10px 14px" }}>
+        <span style={{ fontWeight: 600, color: T.ink }}>{t.description}</span>
+        <span style={{ fontSize: 11, color: T.ink3, marginLeft: 8 }}>
+          One gift, split across {t.split_lines} funds{v.lines.length < Number(t.split_lines) ? `. Showing the ${v.lines.map(l => l.fund_name).join(", ")} part.` : ":"}
+        </span>
+      </td>
+      <td style={{ padding: "10px 14px" }}>
+        <button onClick={() => onDelete(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: T.ink3, fontSize: 14 }}>×</button>
+      </td>
+    </tr>
+  );
+}
+
+export function FundFootRow({ fund, txns, year }) {
+  if (!fund) return null;
+  const net = txns.reduce((s, t) => s + (t.type === "income" ? 1 : -1) * parseFloat(t.amount), 0);
+  return (
+    <tr data-testid="txn-fund-foot">
+      <td colSpan={6} style={{ padding: "8px 14px", fontSize: 12, color: T.ink3 }}>
+        {fund.name}: these lines net {fmtFull(net)}{year === "all" ? "" : ` in ${year}`}. Its balance, every year, is {fmtFull(fund.balance)}.{year === "all" ? "" : " Choose All years to see every line behind it."}
+      </td>
+    </tr>
+  );
+}

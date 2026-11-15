@@ -220,6 +220,7 @@ const PROD_READONLY = [
   "flows12-erased-links",
   // FLOWS-9: lists drafts claiming a missing video and gifts whose refunded-in-full mark disagrees; SELECTs only, no --apply.
   "flows9-old-rows",
+  "flows11-old-rows",
   // FLOWS-7: lists saved groups still on the old "Volunteers who have never given" rule, per org; SELECTs only, no --apply.
   "flows7-starter-volunteers",
   // INTEGRITY-3: where is a person (by name, one org): ids and states only, one READ ONLY transaction, no --apply.

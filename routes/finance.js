@@ -4330,22 +4330,8 @@ app.put("/finance/funds/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(
 // ── Finance: Transactions ──────────────────────────────────────────────────
 app.get("/finance/transactions", requireAuth, wrap(async (req, res) => {
   const { year, fund, account, donor_id } = req.query;
-  let sql = `
-    SELECT ft.*, a.code as account_code, a.name as account_name, a.type as account_type,
-           f.name as fund_name, f.restricted as fund_restricted
-    FROM fin_transactions ft
-    LEFT JOIN accounts a ON a.id = ft.account_id
-    LEFT JOIN fin_funds f ON f.id = ft.fund_id
-    WHERE ft.org_id = ?
-  `;
-  const params = [req.user.orgId];
-  if (year) { sql += " AND ft.date >= ? AND ft.date <= ?"; params.push(`${year}-01-01`, `${year}-12-31`); }
-  if (fund) { sql += " AND ft.fund_id = ?"; params.push(fund); }
-  if (account) { sql += " AND ft.account_id = ?"; params.push(account); }
-  if (donor_id) { sql += " AND ft.donor_id = ?"; params.push(donor_id); }
-  sql += " ORDER BY ft.date DESC NULLS LAST, ft.created_at DESC";
-  const rows = await query(sql, params);
-  res.json(rows);
+  // FLOWS-11 (W-1114-Finance-05X): a split gift is one line per fund, the cut Fund Balances reads.
+  res.json(await require("../server/finance/ledgerLines").transactionLines(query, req.user.orgId, { year, fund, account, donor: donor_id }));
 }));
 
 app.post("/finance/transactions", requireAuth, checkWriteAccess, wrap(async (req, res) => {

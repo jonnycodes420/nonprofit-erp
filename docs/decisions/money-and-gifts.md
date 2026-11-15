@@ -69,6 +69,9 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   donor's timeline. A task somebody typed has no source gift, so the rule "hand-written tasks are never touched"
   holds by construction rather than by care. Every task READ carries `voided_at IS NULL`. Gift delete is a hard
   delete with no undo; if one is ever added, restoring the gift restores its voided tasks. (FIX-10)
+  The journeys a gift started are its tasks too: `cultivation_plans.source_gift_id` (or a gift trigger's
+  `gift:<id>`, or a first-gift journey whose person has no gift left) is stopped in the same transaction,
+  its open thank-you voided, and the one note says so (`server/donors/giftThanks.js`). (FLOWS-11)
 - **Write every gift through `recordGift`, from every door.** Extras (soft credits, tributes, quid pro quo,
   instalment matching, membership renewal) live inside it and are checked before the insert
   (`checkGiftExtras`), so a second INSERT silently skips them all. (BUILD-88a, BUILD-98)
@@ -274,6 +277,14 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   gifts with `offline_plan_id` written by recordGift; Behind after 7 days late. A card plan stays
   `recurring_subscriptions`, the donor's own (`server/donors/offlinePlans.js`).
 
+- **A gift refunded in full is not a gift, on every face (FLOWS-11).** A read that keeps its own credit rule
+  uses `giftCount.KEPT(g)` (above $0, not refunded in full), never a bare `amount > 0`. A figure whose rows
+  are `counted` pages its gifts only; refunds are listed under their gift (`server/reports/giftRows.js`).
+- **Transactions reads the ledger by fund line (FLOWS-11).** `server/finance/ledgerLines.js`, the same
+  `LEDGER_FUND_ROWS` cut Fund Balances reads: a split gift is one line per fund, grouped under the gift.
+- **Add person takes no gift amount (FLOWS-11).** A gift is recorded through the profile's gift form
+  (recordGift). The form's only money box is "Giving before Steward", behind More: an imported total, never a
+  gift count or a last gift, and Lifetime says "Includes $X from before Steward".
 - **A refund is a linked negative row, never an edit (MONEY-4).** Record a refund (`POST /gifts/:id/refund`, `server/donors/refunds.js`) writes a negative gift through recordGift with `refund_of` and `refund_reason`; the gift stays. Totals net it (MONEY), the count drops only when `refunded_in_full` (GIFT), the receipt is voided and reissued at net, and a Stripe gift refunds in Stripe only after a confirm naming the amount. A gift with a refund can't be deleted. The sums live in `shared/numbers/refunds.js`.
 - **Campaign is the goal, Appeal is the ask, Page is where it came through (QUICKADD-1).** A gift carries
   `campaign_id` (counts toward a goal, inside its dates), `appeal_id` (the `appeals` table; moves no total of its

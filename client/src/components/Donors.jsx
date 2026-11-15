@@ -151,6 +151,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[callList,setCallList]=useState("");const[callLoading,setCallLoading]=useState(false);
   const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);const[showGiftImport,setShowGiftImport]=useState(false);const[showCombinedImport,setShowCombinedImport]=useState(false);const[showMerge,setShowMerge]=useState(false);const[toolsOpen,setToolsOpen]=useState(false);const[showHours,setShowHours]=useState(false);const[showGrantImport,setShowGrantImport]=useState(false);const[showOldReports,setShowOldReports]=useState(false);const[showHistory,setShowHistory]=useState(false);const[showSheetImport,setShowSheetImport]=useState(false);const[droppedFile,setDroppedFile]=useState(null);
   const[upgradeModal,setUpgradeModal]=useState(null);
+  const[addMore,setAddMore]=useState(false);   // FLOWS-11: the before-Steward total sits behind More
   const[newDonor,setNewDonor]=useState({name:"",email:"",phone:"",address:"",address2:"",city:"",state:"",zip:"",lastAmount:"",stage:"prospect"});
   const[filtersOpen,setFiltersOpen]=useState(false);
   const[filters,setFilters]=useState({tiers:[],stages:[],pattern:"",geo:"",giftFrom:"",giftTo:"",totalMin:"",totalMax:""});
@@ -750,7 +751,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     // the amount tells us what they gave, not when. No date means no date.
     const temp={id:"tmp_"+Date.now(),name:newDonor.name,email:newDonor.email,phone:newDonor.phone,
       total:parseInt(newDonor.lastAmount)||0,lastGift:null,
-      lastAmount:parseInt(newDonor.lastAmount)||0,gifts:newDonor.lastAmount?1:0,
+      lastAmount:0,gifts:0,   // FLOWS-11: a total from before Steward is not a gift
       status:"new",stage:newDonor.stage,tags:[],notes:"",interactions:[],lastTouchpoint:null,
       assignedTo:assignTo,assignedToName:assignToName};
     // SECURE-2: the form stays open until the server takes it, so a refusal
@@ -760,7 +761,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       const made=await apiFetch("/donors",{method:"POST",body:JSON.stringify({...newDonor,stage:newDonor.stage,assignedTo:assignTo,assignedToName:assignToName})});
       setAddWarn(made&&made.warning?made.warning.sentence:"");
       patchPeople(list=>[...list,temp]);
-      setNewDonor({name:"",email:"",phone:"",address:"",address2:"",city:"",state:"",zip:"",lastAmount:"",stage:"prospect"});setNewDonorAssignee("");
+      setNewDonor({name:"",email:"",phone:"",address:"",address2:"",city:"",state:"",zip:"",lastAmount:"",stage:"prospect"});setNewDonorAssignee("");setAddMore(false);
       if(then==="another"){setAddToast(made&&made.id?{id:made.id,name:made.name}:null);await reloadDonors();return;}
       setShowAdd(false);setAddToast(null);
       if(made&&made.id){
@@ -1010,13 +1011,17 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           {STAGES.map(s=><button key={s.id} aria-pressed={newDonor.stage===s.id} onClick={()=>setNewDonor(p=>({...p,stage:s.id}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 11px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark(newDonor.stage===s.id,"bottom")}}>{s.label}</button>)}
         </div>
         {/* ADDRESS-1: each field has a visible label, and the mailing address is asked for here too. */}
-        {[[["name","Full name"]],[["email","Email"]],[["phone","Phone"]],[["address","Street address"]],[["address2","Apt, suite (optional)"]],[["city","City",2],["state","State",1],["zip","ZIP",1]],[["lastAmount","Gift amount ($)"]]].map(row=>(
+        {[[["name","Full name"]],[["email","Email"]],[["phone","Phone"]],[["address","Street address"]],[["address2","Apt, suite (optional)"]],[["city","City",2],["state","State",1],["zip","ZIP",1]],...(addMore?[[["lastAmount","Giving before Steward (a total from your old system, not a gift)"]]]:[])].map(row=>(
           <div key={row[0][0]} style={{display:"flex",gap:8,flexWrap:"wrap"}}>{row.map(([k,lb,fl])=>(
             <label key={k} style={{display:"flex",flexDirection:"column",gap:5,flex:fl?`${fl} 1 ${fl*60}px`:"1 1 100%",minWidth:0}}>
               <span style={{fontSize:11,fontWeight:700,color:T.ink3}}>{lb}</span>
               <input value={newDonor[k]} autoComplete="off" data-testid={"add-"+k} onChange={e=>setNewDonor(p=>({...p,[k]:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",minWidth:0}}/>
             </label>))}</div>
         ))}
+        {/* FLOWS-11 (W-1114-Finance-26X): no bare "Gift amount". A gift is recorded on the profile's own gift
+            form (Save and record a gift, through recordGift); this box is only an old system's total, behind More. */}
+        {!addMore?<button type="button" data-testid="add-more" onClick={()=>setAddMore(true)} style={{alignSelf:"flex-start",background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:600,fontSize:12.5,cursor:"pointer",textDecoration:"underline"}}>More</button>
+          :<div data-testid="add-before-steward-note" style={{fontSize:12,color:T.ink3,lineHeight:1.5}}>It shows in Lifetime as "includes $… from before Steward" and is never counted as a gift. To record a gift, use Save and record a gift.</div>}
         {emailHint(newDonor.email)&&<div data-testid="add-email-hint" style={{fontSize:12,color:T.gold700}}>{emailHint(newDonor.email)}</div>}
         {addErr&&<div data-testid="add-donor-error" role="alert" style={{fontSize:12.5,color:T.ink,background:T.gold50,border:"1px solid "+T.gold300,borderRadius:8,padding:"7px 10px"}}>{addErr}</div>}
         {isAdmin&&orgTeam.length>1&&<select value={newDonorAssignee} onChange={e=>setNewDonorAssignee(e.target.value)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",cursor:"pointer"}}>

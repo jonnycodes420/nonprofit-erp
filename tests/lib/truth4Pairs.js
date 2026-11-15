@@ -52,7 +52,8 @@ async function truth4Pairs({ orgId, get, q, agree, diffs, today }) {
     ["the count dialog's rows", Number(cntDlg && cntDlg.totalRows)],
   ]);
   agree("truth4 the total's dialog lists the counted rows (and refunds), not $0 rows", [
-    ["the rows above or below $0", t.nonzero], ["the total's dialog", Number(sumDlg && sumDlg.totalRows)]]);
+    // FLOWS-11: the dialog pages its gifts; the refunds under them and the rows not counted are listed too.
+    ["the rows above or below $0", t.nonzero], ["the total's dialog", Number(sumDlg && (sumDlg.listedRows ?? sumDlg.totalRows))]]);
   agree("truth4 the $0 rows are said apart", [
     ["the rows at $0", t.zero],
     ["the total's dialog, Also on file", Number(sumDlg && sumDlg.alsoOnFile ? sumDlg.alsoOnFile.zero : 0)],

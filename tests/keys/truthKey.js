@@ -107,6 +107,8 @@ function computeKey(rows, opts = {}) {
   const scheduledRows = (rows.gifts || []).filter(g => live.has(g.person) && !g.sample && isScheduled(g) && !isCreditType(g.type));
   const gifts = (rows.gifts || []).filter(g => live.has(g.person) && !g.sample && !isScheduled(g))
     .map(g => ({ ...g, c: g.cents != null ? Number(g.cents) : cents(g.amount), d: day(g.date), credit: isCreditType(g.type) }));
+  // FLOWS-11: FLOWS-9's rule in the key. A gift refunded in full (`rif`) is not a gift: it gives
+  // nobody a gift count, a first or last gift, or a place among the givers. Money still nets it.
   const hard = gifts.filter(g => !g.credit);
   const credits = gifts.filter(g => g.credit);
   const pointers = (rows.softCredits || []).filter(s => live.has(s.person));
@@ -132,7 +134,7 @@ function computeKey(rows, opts = {}) {
 
   // ── gave: each person's dates of giving (hard, above zero, on or before today) ──
   const given = new Map();   // id -> sorted dates
-  for (const g of hard) if (g.c > 0 && g.d && g.d <= today && counted.has(g.person)) (given.get(g.person) || given.set(g.person, []).get(g.person)).push(g.d);
+  for (const g of hard) if ((g.c > 0 && !g.rif) && g.d && g.d <= today && counted.has(g.person)) (given.get(g.person) || given.set(g.person, []).get(g.person)).push(g.d);
   for (const p of people) {
     for (const k of ["importedLastGift", "importedFirstGift"]) {
       const d = day(p[k]);
@@ -180,7 +182,7 @@ function computeKey(rows, opts = {}) {
 
   // ── TRUTH-2 · LYBUNT and SYBUNT, over gifts on file, the whole year ──
   const giftDays = new Map();   // counted person -> dates of hard gifts above zero (any date)
-  for (const g of hard) if (g.c > 0 && g.d && counted.has(g.person)) (giftDays.get(g.person) || giftDays.set(g.person, []).get(g.person)).push(g.d);
+  for (const g of hard) if ((g.c > 0 && !g.rif) && g.d && counted.has(g.person)) (giftDays.get(g.person) || giftDays.set(g.person, []).get(g.person)).push(g.d);
   const noneThisYear = ds => !ds.some(d => d >= fy.from && d <= fy.to);
   const lybunt = sortIds([...giftDays].filter(([, ds]) => noneThisYear(ds) && ds.some(d => d >= lastFy.from && d <= lastFy.to)).map(([id]) => id));
   const sybunt = sortIds([...giftDays].filter(([, ds]) => noneThisYear(ds) && ds.some(d => d < fy.from)).map(([id]) => id));
@@ -200,7 +202,7 @@ function computeKey(rows, opts = {}) {
   // party: one gave, the row gave).
   const gaveAt = {};
   const mark = (ev, person) => { if (ev && live.has(person)) (gaveAt[ev] || (gaveAt[ev] = new Set())).add(unitOf(person)); };
-  for (const g of hard) if (g.c > 0) mark(g.event, g.person);
+  for (const g of hard) if ((g.c > 0 && !g.rif)) mark(g.event, g.person);
   for (const pl of rows.pledges || []) if (!["cancelled", "canceled"].includes(pl.status)) mark(pl.event, pl.person);
   for (const a of att) {
     const e = events[a.event] || (events[a.event] = { parties: new Set(), people: new Set(), cameParties: new Set(), came: new Set() });
@@ -237,7 +239,7 @@ function computeKey(rows, opts = {}) {
     // TRUTH-3: a gift is COUNTED when it is hard credit above $0; a $0 row or a
     // credit row shows in history and is never counted (giftCount.js, written
     // out again here with no app code).
-    giftCountById: Object.fromEntries([...live.keys()].map(id => [id, hard.filter(g => g.person === id && g.c > 0).length])),
+    giftCountById: Object.fromEntries([...live.keys()].map(id => [id, hard.filter(g => g.person === id && (g.c > 0 && !g.rif)).length])),
     creditIds: sortIds(credits.map(g => g.id)),
     credits: { rows: credits.length, cents: sumC(credits), pointerCents: pointers.reduce((n, s) => n + (s.cents != null ? Number(s.cents) : cents(s.amount)), 0) },
     thisFiscalYear: { from: fy.from, to: today, cents: sumC(fyGifts), count: fyGifts.length },
@@ -250,7 +252,7 @@ function computeKey(rows, opts = {}) {
     lapsed: sortIds(lapsed),
     lapsing: sortIds(lapsing),
     // TRUTH-2: the donor count this fiscal year so far, and LYBUNT and SYBUNT
-    donorsThisYear: new Set(hard.filter(g => g.c > 0 && g.d && g.d >= fy.from && g.d <= today && counted.has(g.person)).map(g => g.person)).size,
+    donorsThisYear: new Set(hard.filter(g => (g.c > 0 && !g.rif) && g.d && g.d >= fy.from && g.d <= today && counted.has(g.person)).map(g => g.person)).size,
     lybunt, sybunt,
     pledgeOverdue: sortIds(overdue),
     firstTime: { [fy.label]: firstIn(fy), [lastFy.label]: firstIn(lastFy) },
@@ -277,7 +279,7 @@ function computeKey(rows, opts = {}) {
     depositRefOf: id => { const g = gifts.find(x => x.id === id); return g ? String(g.depositRef || "").trim() : null; },
     // who gave (hard, above zero) from..to: people, and units (a household once)
     giversBetween: (from, to) => {
-      const ids = new Set(hard.filter(g => g.c > 0 && g.d && g.d >= from && g.d <= to && counted.has(g.person)).map(g => g.person));
+      const ids = new Set(hard.filter(g => (g.c > 0 && !g.rif) && g.d && g.d >= from && g.d <= to && counted.has(g.person)).map(g => g.person));
       return { people: ids.size, units: new Set([...ids].map(unitOf)).size };
     },
   };

@@ -12,6 +12,10 @@ const { GIFT, isGift, isMoney, centsOf: centsOfRow } = require("./money");
 
 // SQL: gift row `g` is counted.
 const COUNTED = (g = "g") => GIFT(g);
+// FLOWS-11 (W-1113-Finance-27X): the amount half of the rule, for a read that already
+// leaves out credit rows its own way: above $0 and not refunded in full. A bare
+// `amount > 0` kept a gift refunded in full as "1 gift", "First $25", "gave once".
+const KEPT = (g = "g") => `(${g}.amount > 0 AND ${g}.refunded_in_full IS NOT TRUE)`;
 // SQL: how many gifts person `d` has on file, by the rule.
 const GIFT_COUNT = (d = "d") => `(SELECT COUNT(*)::int FROM gifts gc WHERE gc.org_id = ${d}.org_id AND gc.donor_id = ${d}.id AND ${COUNTED("gc")})`;
 // TRUTH-5 (W-1109-Finance-35X): the ONE count a person's gifts are said as,
@@ -55,4 +59,4 @@ function zeroOnFileSql(where, args, byFund) {
 
 const SENTENCE = "A gift is a hard-credit gift above $0. A $0 or soft-credit record shows in history, labeled, but is never counted, averaged or receipted.";
 
-module.exports = { COUNTED, GIFT_COUNT, DONOR_GIFT_COUNT, isCounted, countOf, averageCents, giftCounts, SENTENCE, ZERO_LABEL, alsoOnFile, isZero, zeroOnFileSql };
+module.exports = { KEPT, COUNTED, GIFT_COUNT, DONOR_GIFT_COUNT, isCounted, countOf, averageCents, giftCounts, SENTENCE, ZERO_LABEL, alsoOnFile, isZero, zeroOnFileSql };

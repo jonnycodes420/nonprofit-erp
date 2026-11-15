@@ -61,7 +61,7 @@ async function closeness(orgId, d, today, w) {
   const valueFact = async (source, text) => { const v = await FS.figureValue(orgId, source); const t = text(v); return t ? { text: t, source, value: v.value } : null; };
   const rhythmFact = async () => {
     if (key !== "on_track" && key !== "cooling") return null;
-    const gs = await query(`SELECT LEFT(g.date,10) AS date, g.amount::text AS amount FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND g.amount > 0
+    const gs = await query(`SELECT LEFT(g.date,10) AS date, g.amount::text AS amount FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND ${require("../shared/numbers/giftCount").KEPT("g")}
       AND LEFT(g.date,10) <= ? AND ${require("../shared/numbers/money").MONEY("g")}`, [orgId, d.id, today]);   // money only, as closenessNow
     const a = drift.assessDrift(gs.map(g => ({ date: g.date, amount: Number(g.amount) })), today);
     const rhythm = a.seasonal && a.seasonal.kind === "month" ? `every ${MONTHS[a.seasonal.month - 1]}` : drift.humanCadence(a.cadenceDays);
@@ -89,7 +89,7 @@ async function closeness(orgId, d, today, w) {
   };
   const [rhythmF, [ytdRows], ...rest] = await Promise.all([
     rhythmFact(),
-    query(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 AND LEFT(date,10) BETWEEN ? AND ?`, [orgId, d.id, w.cyFrom, today]),
+    query(`SELECT COUNT(*)::int AS n FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND ${require("../shared/numbers/giftCount").KEPT("g")} AND LEFT(g.date,10) BETWEEN ? AND ?`, [orgId, d.id, w.cyFrom, today]),
     valueFact({ key: "volunteer-hours", params: { from: w.w0From, to: today, donor: d.id } },
       v => (v.value > 0 ? `${Number(v.value).toLocaleString("en-US")} volunteer hours in the last 12 months` : null)),
     eventFact(),
@@ -193,7 +193,7 @@ async function nextAction(orgId, d, today, status, glanceLast, viewerMaySee = fa
   let drifting = false;
   try { drifting = !!(ctx.computeDriftForDonors && (await ctx.computeDriftForDonors(orgId, { donorIds: [d.id] })).map.get(d.id)?.state === "drifting"); } catch { drifting = false; }
   const lc = status.row ? status.row.lifecycle : null;
-  const [{ n: giftCount }] = await query(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0`, [orgId, d.id]);
+  const [{ n: giftCount }] = await query(`SELECT COUNT(*)::int AS n FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND ${require("../shared/numbers/giftCount").KEPT("g")}`, [orgId, d.id]);
   let step, why;
   if (thread) {
     step = thread.next_step_label; why = `This is the open next step, due ${(await import("../shared/displayDate.js")).displayDate(thread.due_date) || thread.due_date}.`;

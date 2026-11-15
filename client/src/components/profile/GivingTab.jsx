@@ -281,7 +281,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
               </div>
             )}
 
-            {showYearEnd&&receiptsEnabled&&<YearEndPanel rc={rc} donor={donor} isReadOnly={isReadOnly}/>}
+            {showYearEnd&&receiptsEnabled&&<YearEndPanel rc={rc} donor={donor} household={household} isReadOnly={isReadOnly}/>}
 
             {/* PLEDGES-2: a recurring plan staff record for an offline commitment, labelled apart from a card plan */}
             <OfflinePlans donorId={donor.id} isReadOnly={isReadOnly} giftsFull={giftsFull}/>

@@ -63,7 +63,9 @@ async function addPerson(ctx, req, b) {
     // BUILD-80 Part 10 — the quick form's typed amount carries NO date: a
     // last_gift_date of "today" was a fiction that un-drifted the donor.
     [id, req.user.orgId, name, email || "", phone || "", status || "new", stage || "prospect",
-     lastAmount || 0, lastAmount || 0, null, lastAmount ? 1 : 0,
+     // FLOWS-11 (W-1114-Finance-26X): the typed total is giving from before Steward, kept by
+     // keepImportedTotals below as its own figure: no last gift and no gift count come with it.
+     lastAmount || 0, 0, null, 0,
      JSON.stringify(tags || []), notes || "", finalAssignedTo, finalAssignedToName, actor(req).id, actor(req).name,
      JSON.stringify(types), addr.address, addr.address2, addr.city, addr.state, addr.zip]
   );

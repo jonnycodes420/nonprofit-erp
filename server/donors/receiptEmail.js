@@ -16,7 +16,7 @@ function register(app, { query, requireAuth, checkWriteAccess, wrap, actor, rese
     const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
     const [donor] = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [receipt.donor_id, orgId]);
     if (!donor) return res.status(404).json({ error: "not_found", sentence: "That person is no longer in Steward." });
-    const what = receipt.type === "year_end" ? `The ${receipt.tax_year} statement` : `Receipt #${receipt.receipt_number}`;
+    const what = (receipt.type === "year_end" || receipt.type === "household_year_end") ? `The ${receipt.tax_year} statement` : `Receipt #${receipt.receipt_number}`;
     if (!donor.email) return res.status(409).json({ error: "no_email", sentence: `${donor.name} has no email on file. Download it and send it another way.` });
     const sent = await resendReceiptEmail(receipt, org, donor, actor(req));
     if (!sent) return res.status(409).json({ error: "not_sent", sentence: `${what} was not emailed: ${donor.email} can't be mailed from here. Download it instead.` });
