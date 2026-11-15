@@ -1709,6 +1709,7 @@ app.get("/giving-pages", requireAuth, wrap(async (req, res) => {
       r.campaign_raised_source = { key: "goal-raised", params: { campaign: r.campaign_id } };
       r.campaign_raised = (await FS.figureValue(req.user.orgId, r.campaign_raised_source)).value;
     }
+    require("../shared/numbers/pageCard").sayCard(r);   // FLOWS-12 item 3: the card counts the page, and says so
   }
   res.json(rows);
 }));

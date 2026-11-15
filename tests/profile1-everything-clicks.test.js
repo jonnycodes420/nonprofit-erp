@@ -452,7 +452,8 @@ function inventory() {
       await full.ctx.close();
       const bare = await menuCtx(ADMIN, { width: 1440, height: 900 }, { stripe: false, ai: false });
       const gB = await openMenu(bare.page, A);
-      ok("§8 no Stripe: no Send a payment link; no AI: no Brief me", !!gB && !has(gB, "Send a payment link") && !has(gB, "Brief me") && has(gB, "Edit record"), gB && gB.labels);
+      // FLOWS-12 item 2: Brief me works with AI off (Steward's own sentences), so it stays on the menu.
+      ok("§8 no Stripe: no Send a payment link; no AI: Brief me is still there", !!gB && !has(gB, "Send a payment link") && has(gB, "Brief me") && has(gB, "Edit record"), gB && gB.labels);
       await bare.ctx.close();
       const st = await menuCtx(STAFF, { width: 1440, height: 900 });
       const gS = await openMenu(st.page, A);

@@ -601,3 +601,7 @@ Backend, Whisper transcription, and extraction logic are fully built and functio
   touch completes the task. Ticking a planned touch in Tasks or the plan of care offers to log it.
 - Any task can be marked done on any day. There is no rule against an early Done; do not add one
   (`tests/touch1-log-a-touch.test.js` §4).
+- **Erased means erased (FLOWS-12).** An erased person is offered by no picker (`/donors/pick`, which every
+  person picker asks), joins no household, and is in no portfolio count or total: `shared/numbers/pickable.js`,
+  read by `/donors/pick`, `crmCommon.portfolioMembershipSql` and `/portfolio/officers`. A lookup by id still finds
+  the record and labels it "Former donor (erased)". A new picker asks `/donors/pick`, or reads `PICKABLE`.

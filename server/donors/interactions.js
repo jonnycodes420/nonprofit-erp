@@ -192,6 +192,8 @@ async function briefRowsFor(orgId, donorId) {
   // ATLAS-4: the full words behind each quotable row, so a quote is Steward's (briefComplete.js).
   const quotes = new Map();
   const quote = (ref, kind, text) => { const t = String(text || "").trim(); if (t) quotes.set(ref, [...(quotes.get(ref) || []), { kind, text: t }]); };
+  // FLOWS-12 item 2: the same rows, kept whole, for the brief Steward writes itself when AI is off (briefTemplate.js).
+  const facts = { gifts: [], pledges: [], household: null, softCredits: [], proposals: [], conversations: [], plan: null };
   const money = require("../../money");
   const givingWord = t("giver_singular") || "donor";
 
@@ -215,6 +217,7 @@ async function briefRowsFor(orgId, donorId) {
        FROM gifts g LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
       WHERE g.org_id=? AND g.donor_id=? AND g.is_sample IS NOT TRUE
       ORDER BY g.date DESC NULLS LAST, g.id LIMIT 12`, [orgId, donorId]);
+  facts.gifts = gifts;
   for (const g of gifts) {
     refs.add(`gift:${g.id}`);
     lines.push(`gift:${g.id} · ${money.formatCentsPlain(toCents(g.amount) || 0)} on ${g.date}`
@@ -225,7 +228,7 @@ async function briefRowsFor(orgId, donorId) {
   // PLEDGES — a promise is not money, and the brief must not read it as one.
   for (const p of await query(
     `SELECT id, amount, due_date, status FROM pledges WHERE org_id=? AND donor_id=? ORDER BY due_date DESC NULLS LAST LIMIT 6`, [orgId, donorId])) {
-    refs.add(`pledge:${p.id}`);
+    refs.add(`pledge:${p.id}`); facts.pledges.push(p);
     lines.push(`pledge:${p.id}, a pledge of ${money.formatCentsPlain(toCents(p.amount) || 0)} due ${p.due_date}, currently ${p.status}. A pledge is a promise, not money received.`);
   }
 
@@ -235,6 +238,7 @@ async function briefRowsFor(orgId, donorId) {
     if (h) {
       refs.add(`household:${h.id}`);
       const members = await query("SELECT name FROM donors WHERE org_id=? AND household_id=? AND id<>? AND deleted_at IS NULL", [orgId, h.id, donorId]);
+      facts.household = { id: h.id, name: h.name, members: members.map(m => m.name) };
       lines.push(`household:${h.id}, in the household "${h.name}"${members.length ? `, with ${members.map(m => m.name).join(" and ")}` : ""}.`);
     }
   }
@@ -245,7 +249,7 @@ async function briefRowsFor(orgId, donorId) {
        JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
        JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE sc.org_id=? AND sc.donor_id=? ORDER BY g.date DESC NULLS LAST LIMIT 6`, [orgId, donorId]).catch(() => [])) {
-    refs.add(`softcredit:${sc.id}`);
+    refs.add(`softcredit:${sc.id}`); facts.softCredits.push(sc);
     lines.push(`softcredit:${sc.id}: soft-credited for ${money.formatCentsPlain(toCents(sc.amount) || 0)} given by ${sc.giver} on ${sc.date}`
       + `${sc.role ? ` as ${sc.role}` : ""}. The money was ${sc.giver}'s; this is recognition, not their own giving.`);
   }
@@ -257,7 +261,7 @@ async function briefRowsFor(orgId, donorId) {
        FROM opportunities o LEFT JOIN fin_funds f ON f.id = o.fund_id AND f.org_id = o.org_id
       WHERE o.org_id=? AND o.donor_id=? AND o.proposal_stage = ANY(?::text[])
       ORDER BY o.expected_close NULLS LAST LIMIT 3`, [orgId, donorId, P.OPEN_STAGE_KEYS])) {
-    refs.add(`proposal:${o.id}`);
+    refs.add(`proposal:${o.id}`); facts.proposals.push({ ...o, stageLabel: P.stageLabel(o.proposal_stage) });
     lines.push(`proposal:${o.id}: an open ask of ${money.formatCentsPlain(toCents(o.target_amount) || 0)} for "${o.name}"`
       + `${o.fund_name ? ` (${o.fund_name})` : ""}, at stage "${P.stageLabel(o.proposal_stage)}"`
       + `${o.probability != null ? `, which the officer put at ${o.probability} per cent` : ", with no probability set"}`
@@ -270,7 +274,7 @@ async function briefRowsFor(orgId, donorId) {
     `SELECT id, type, date, note, logged_by_name FROM interactions
       WHERE org_id=? AND donor_id=? AND type = ANY(ARRAY['call','meeting','email','ask','note','stewardship'])
         AND COALESCE(note,'') <> '' ORDER BY date DESC NULLS LAST, created_at DESC LIMIT 5`, [orgId, donorId])) {
-    refs.add(`conversation:${i.id}`);
+    refs.add(`conversation:${i.id}`); facts.conversations.push(i);
     quote(`conversation:${i.id}`, "conversation", i.note);
     lines.push(`conversation:${i.id} · ${i.type} on ${i.date}${i.logged_by_name ? ` logged by ${i.logged_by_name}` : ""}: "${String(i.note).slice(0, 500)}"`);
   }
@@ -282,6 +286,7 @@ async function briefRowsFor(orgId, donorId) {
     const [openStep] = await query("SELECT seq, label, due_date FROM cultivation_plan_steps WHERE plan_id=? AND status='open'", [plan.id]);
     const [nextStep] = await query("SELECT seq, label, due_date FROM cultivation_plan_steps WHERE plan_id=? AND status='pending' ORDER BY seq LIMIT 1", [plan.id]);
     const s = openStep || nextStep;
+    facts.plan = { id: plan.id, name: plan.template_name, step: s || null, open: !!openStep };
     lines.push(`plan:${plan.id}: on the cultivation plan "${plan.template_name}"`
       + (s ? `; ${openStep ? "the open step" : "the next step"} is "${s.label}", due ${s.due_date}.` : "; every step is closed."));
   }
@@ -305,7 +310,7 @@ async function briefRowsFor(orgId, donorId) {
   { const c = toCents(donor.total_giving); if (c != null) grounded.push(toDollars(c), c); }
   for (const l of lines) for (const m of String(l).matchAll(/\d+(?:\.\d+)?/g)) grounded.push(Number(m[0]));
 
-  return { donor, org, t, refs, lines, quotes, grounded: [...new Set(grounded)], giftCount: gifts.length, givingWord };
+  return { donor, org, t, refs, lines, quotes, facts, grounded: [...new Set(grounded)], giftCount: gifts.length, givingWord };
 }
 
 // GET /donors/:id/brief-rows — EXACTLY what the model would be handed, and
@@ -336,12 +341,12 @@ app.post("/donors/:id/brief", requireAuth, requireCrm, checkWriteAccess, wrap(as
   if (!ctx) return res.status(404).json({ error: "Donor not found" });
 
   const gate = await agentGate(orgId);
-  // THE ABSENCE HAS A NAME. No key configured is Steward's state, not the org's,
-  // and the honest answer is that the control is unavailable — never a 500 and
-  // never an invented brief.
-  if (!gate.ok) return res.status(503).json({ error: "brief_unavailable", reason: gate.reason,
-    message: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE
-      : "Not set up yet. Steward support can turn on AI drafting for this server, then an admin switches it on in Settings, Data." });
+  // FLOWS-12 item 2 (W-1113-Donors-26, the second repeat): with AI off (no key,
+  // or the org's switch) Brief me is Steward's own sentences from the same
+  // rows, the About note first, never a 503 and never an invented brief. The
+  // AI path below was fixed in FLOWS-10; this path did not exist, and staging
+  // has no key, so the fleet never reached the fixed one.
+  if (!gate.ok) return require("./briefTemplate").answer({ req, res, ctx, gate, B, query, run, newId, toCents, AI_OFF_MESSAGE });
 
   // ATLAS-3 · first words at once, the last brief kept until a row changes.
   const BF = require("./briefFast");

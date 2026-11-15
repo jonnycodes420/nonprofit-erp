@@ -74,13 +74,14 @@ function portfolioMembershipSql({ orgId, userId, scope = "mine", assignedTo = nu
   // belt-and-braces guard so a donor in some non-pipeline stage can never make the
   // Portfolio card, the Pipeline card, and the board disagree — all three exclude
   // it identically. It also keeps the board's per-stage columns exhaustive.
+  // FLOWS-12 item 5: an erased person is in nobody's portfolio (shared/numbers/pickable.js NOT_ERASED).
   // BUILD-83 Part 3.5 — an imported donor's `stage` is NULL until a human
   // places them, but assignment IS membership (BUILD-30's single definition):
   // assigning someone from an import must never make them vanish off the board.
   // So membership reads the placed stage OR the suggestion, and the CARD says
   // which it is. Moving the card writes `stage` and the suggestion stops
   // mattering for that donor.
-  const clauses = [sql`${a}org_id = ${orgId}`, sql`${a}deleted_at IS NULL`, sql`COALESCE(${a}stage, ${a}suggested_stage) = ANY(${ALL_PIPELINE_STAGES})`];
+  const clauses = [sql`${a}org_id = ${orgId}`, sql`${a}deleted_at IS NULL`, sql`${a}erased_at IS NULL`, sql`COALESCE(${a}stage, ${a}suggested_stage) = ANY(${ALL_PIPELINE_STAGES})`];
   if (assignedTo) clauses.push(sql`${a}assigned_to = ${String(assignedTo)}`);
   else if (scope === "all") clauses.push(sql`${a}assigned_to IS NOT NULL`);
   else clauses.push(sql`${a}assigned_to = ${String(userId)}`);

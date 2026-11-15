@@ -56,7 +56,8 @@ const app = routers.r0;
 app.get("/donors/pick", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const limit = clampLimit(req.query.limit, 20, 2000);
-  const where = [SET]; const args = [orgId];
+  // FLOWS-12 item 5: an erased person is offered by no picker (shared/numbers/pickable.js).
+  const where = [SET, require("../shared/numbers/pickable").PICKABLE("")]; const args = [orgId];
   let personOrder = null;   // FLOWS-7: match=person orders names first
   const vis = require("../server/auth/portfolio").visibleSql(req);   // ACCESS-2: their people only
   if (vis.scoped) { where.push(vis.sql.replace(/^ AND /, "")); args.push(...vis.args); }

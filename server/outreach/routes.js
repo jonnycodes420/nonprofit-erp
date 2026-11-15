@@ -130,6 +130,9 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
     // SWEEP-3: with the gift and total the send fills (legacyCampaignBody).
     // POLISH-9: the preview reads as this audience will (anyone in it who never gave).
     audienceNoGift: [...donors, ...aud.leftOut.flatMap(g => g.people)].some(d => !(Number(d.total_giving) > 0)),
+    // FLOWS-12 item 1: how many this send reaches have never given (shared/numbers/neverGave.js),
+    // so the editor can say so and the preview can flag a letter that thanks them for giving.
+    audienceNeverGiven: require("../../shared/numbers/neverGave").countNeverGave(donors),
     first: donors[0] ? { id: donors[0].id, name: displayNameCase(donors[0].name || ""), firstName: String(donors[0].name || "").trim().split(/\s+/)[0] || "Margaret",
       ...(firstGift ? { giftAmount: `$${Number(firstGift.amount).toLocaleString()}` } : {}),
       ...(Number(donors[0].total_giving) > 0 ? { totalGiving: `$${Number(donors[0].total_giving).toLocaleString()}` } : {}) } : null,

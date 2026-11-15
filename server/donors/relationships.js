@@ -204,9 +204,11 @@ async function validateHouseholdMembers(memberIds, primaryDonorId, orgId, allowH
   const ids = Array.isArray(memberIds) ? [...new Set(memberIds.filter(Boolean))] : [];
   if (ids.length < 2) return { status: 400, error: "A household needs at least two members." };
   const members = await query(
-    "SELECT id, name, kind, household_id FROM donors WHERE id = ANY(?) AND org_id=? AND deleted_at IS NULL",
+    "SELECT id, name, kind, household_id, erased_at FROM donors WHERE id = ANY(?) AND org_id=? AND deleted_at IS NULL",
     [ids, orgId]);
   if (members.length !== ids.length) return { status: 404, error: "One or more donors not found in this organization." };
+  // FLOWS-12 item 5: an erased person joins no household (shared/numbers/pickable.js).
+  if (members.some(m => !require("../../shared/numbers/pickable").pickable(m))) return { status: 400, error: "An erased person can't be part of a household. Their record keeps only their gifts." };
   const foreign = members.find(m => m.household_id && m.household_id !== allowHouseholdId);
   if (foreign) return { status: 400, error: "A donor is already in another household." };
   // BUILD-97 Part 2 — a household is people. Checked on the MEMBER LIST rather
