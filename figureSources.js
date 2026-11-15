@@ -3111,13 +3111,7 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     agg = a;
     pageRows = rowsRead;
     // FLOWS-11 (W-1113-Fundraising-01): a count of gifts pages its gifts; refunds ride under them.
-    if (countsGifts) {
-      const GR = require("./server/reports/giftRows");
-      const gp = await GR.giftRowsPage(query, { sql, args }, { page, pageSize, order: orderClause(order), wantRows, restMax: pageSize >= PAGE_MAX ? 1000000 : undefined });
-      agg.pagedRows = gp.n;
-      pageRows = gp.rows;
-      if (gp.restCount) agg.rest = { count: gp.restCount, rows: gp.rest, sentence: GR.NOT_COUNTED_SENTENCE(gp.restCount) };
-    }
+    if (countsGifts) pageRows = await require("./server/reports/giftRows").pageInto(query, agg, { sql, args }, { page, pageSize, order: orderClause(order), wantRows, restMax: pageSize >= PAGE_MAX ? 1000000 : undefined });
     if (zeroOnFile) agg.zero = Number(((await query(zeroOnFile.sql, zeroOnFile.args))[0] || {}).n) || 0;
   }
   const { value, cents } = valueOf(measure, agg);
@@ -3125,8 +3119,7 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     key, params: p, measure, amountKind: def.amountKind || "money", label: def.label, sentence: def.sentence(p, dd),
     value, cents, blank: null,
     rows: pageRows.map(r => shapeRow(r, dd)), page, pageSize, totalRows: Number(agg.pagedRows ?? agg.n) || 0,
-    ...(agg.pagedRows != null ? { listedRows: Number(agg.n) || 0 } : {}),   // FLOWS-11: every row listed, refunds and not-counted included
-    ...(agg.rest ? { notCounted: { count: agg.rest.count, sentence: agg.rest.sentence, rows: agg.rest.rows.map(r => shapeRow(r, dd)) } } : {}),
+    ...require("./server/reports/giftRows").answerExtras(agg, r => shapeRow(r, dd)),   // FLOWS-11: listedRows, notCounted
     ...(measure === "per_gift" || countsGifts ? { giftCount: Number(agg.g) || 0 } : {}),
     ...(agg.people != null ? { people: agg.people } : {}),
     ...(agg.zero ? { alsoOnFile: { zero: agg.zero, sentence: require("./shared/numbers/giftCount").alsoOnFile(agg.zero) } } : {}),
@@ -3152,12 +3145,8 @@ async function allRows(orgId, source, deps = {}) {
     const f = await figure(orgId, source, deps, { page, pageSize: PAGE_MAX });
     if (!f) return null;
     if (f.parts) return allRows(orgId, f.parts[0].source, deps);
-    // FLOWS-11: every row, each gift's refunds after it and the not-counted rows once, so a
-    // footing, an export or a group sees what the dialog lists; the pager counts gifts.
-    let gifts = 0;
-    for (const r of f.rows) { const { refunds, ...row } = r; out.push(row, ...(refunds || [])); gifts++; }
-    if (page === 1 && f.notCounted) rest.push(...f.notCounted.rows);
-    seen += gifts;
+    // FLOWS-11: every row, each gift's refunds after it and the not-counted rows once (giftRows.js).
+    seen += require("./server/reports/giftRows").flattenInto(f, page, out, rest);
     if (seen >= f.totalRows || !f.rows.length) break;
   }
   out.push(...rest);

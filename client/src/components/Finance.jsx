@@ -3,6 +3,7 @@ import { useChanged } from "../lib/changes";   // FEEL-1: fund totals re-read on
 import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import RemoveMenu from "./RemoveMenu"; // FIX-41: a fund's Remove, on the funds list only
 import { RestrictedView } from "./RestrictedView";
+import { groupTxns, SplitGiftRow, FundFootRow } from "./finance/TxnSplit";   // FLOWS-11
 import { DepositSheetModal } from "./DepositSheet";
 import { T, activeMark, fmt, fmtFull, fmtWhole, Card, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive, Modal } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
@@ -950,20 +951,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
       return sortDir * (va < vb ? -1 : va > vb ? 1 : 0);
     });
 
-  // FLOWS-11 (W-1114-Finance-05X): a split gift's lines (one per fund, the cut Fund Balances
-  // reads) sit under one line for the gift; a fund filter shows only that fund's part of it.
-  const txnView = (() => {
-    const byId = new Map(), seen = new Set(), out = [];
-    for (const t of sortedTxns) (byId.get(t.id) || byId.set(t.id, []).get(t.id)).push(t);
-    for (const t of sortedTxns) {
-      if (seen.has(t.id)) continue;
-      seen.add(t.id);
-      const split = Number(t.split_lines) > 1, lines = byId.get(t.id);
-      if (split) out.push({ head: true, t, lines });
-      for (const l of lines) out.push({ t: l, line: split });
-    }
-    return out;
-  })();
+  const txnView = groupTxns(sortedTxns);   // FLOWS-11: a split gift's lines under the gift (finance/TxnSplit.jsx)
   const fundShown = txnFund ? finFundBalances.find(f => f.id === txnFund) : null;
 
   const toggleSort = col => {
@@ -1370,20 +1358,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                       const t = v.t;
                       const sm = sourceMeta(t.source, t.grant_id);
                       const linkedDonor = t.donor_id && donorById[t.donor_id];
-                      if (v.head) return (
-                      <tr key={t.id + ":gift"} data-testid="txn-split-gift" data-gift-id={t.gift_id || ""} style={{ borderTop:"1px solid "+T.bg3, background:T.white }}>
-                        <td style={{ padding:"10px 14px", color:T.ink3, whiteSpace:"nowrap" }}>{displayDate(t.date)}</td>
-                        <td style={{ padding:"10px 14px", fontWeight:700, color:T.ink3, whiteSpace:"nowrap", textAlign:"right" }}>{fmtFull(parseFloat(t.row_amount))}</td>
-                        <td colSpan={3} style={{ padding:"10px 14px" }}>
-                          <span style={{ fontWeight:600, color:T.ink }}>{t.description}</span>
-                          <span style={{ fontSize:11, color:T.ink3, marginLeft:8 }}>
-                            One gift, split across {t.split_lines} funds{v.lines.length < Number(t.split_lines) ? `. Showing the ${v.lines.map(l => l.fund_name).join(", ")} part.` : ":"}
-                          </span>
-                        </td>
-                        <td style={{ padding:"10px 14px" }}>
-                          <button onClick={() => handleDeleteTxn(t.id)} style={{ background:"none", border:"none", cursor:"pointer", color:T.ink3, fontSize:14 }}>×</button>
-                        </td>
-                      </tr>);
+                      if (v.head) return <SplitGiftRow key={t.id + ":gift"} v={v} onDelete={handleDeleteTxn}/>;
                       return (
                       <tr key={t.id + ":" + (t.fund_id || "")} data-testid={v.line ? "txn-split-line" : undefined} style={{ borderTop:"1px solid "+T.bg3, background: i%2===0?T.white:T.ground }}>
                         <td style={{ padding:"10px 14px", color:T.ink3, whiteSpace:"nowrap" }}>{displayDate(t.date)}</td>
@@ -1430,13 +1405,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                       </td>
                       <td colSpan={4}/>
                     </tr>
-                    {fundShown && (
-                      <tr data-testid="txn-fund-foot">
-                        <td colSpan={6} style={{ padding:"8px 14px", fontSize:12, color:T.ink3 }}>
-                          {fundShown.name}: these lines net {fmtFull(sortedTxns.reduce((s,t)=>s+(t.type==="income"?1:-1)*parseFloat(t.amount),0))}{txnYear === "all" ? "" : ` in ${txnYear}`}. Its balance, every year, is {fmtFull(fundShown.balance)}.{txnYear === "all" ? "" : " Choose All years to see every line behind it."}
-                        </td>
-                      </tr>
-                    )}
+                    <FundFootRow fund={fundShown} txns={sortedTxns} year={txnYear}/>
                   </tfoot>
                 </table>
               </div>

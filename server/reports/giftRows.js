@@ -38,4 +38,26 @@ async function giftRowsPage(query, { sql, args }, { page, pageSize, order, wantR
   return { n: Number(c.n) || 0, restCount: Number(c.r) || 0, rows, rest };
 }
 
-module.exports = { giftRowsPage, NOT_COUNTED_SENTENCE, REST_MAX };
+// figureSources.plainFigure: read the page into `agg` (pagedRows, rest); answers the page's raw rows.
+async function pageInto(query, agg, built, opts) {
+  const gp = await giftRowsPage(query, built, opts);
+  agg.pagedRows = gp.n;
+  if (gp.restCount) agg.rest = { count: gp.restCount, rows: gp.rest, sentence: NOT_COUNTED_SENTENCE(gp.restCount) };
+  return gp.rows;
+}
+// The answer's extra fields: every row it lists (listedRows) and the rows not counted, shaped.
+function answerExtras(agg, shape) {
+  return {
+    ...(agg.pagedRows != null ? { listedRows: Number(agg.n) || 0 } : {}),
+    ...(agg.rest ? { notCounted: { count: agg.rest.count, sentence: agg.rest.sentence, rows: agg.rest.rows.map(shape) } } : {}),
+  };
+}
+// figureSources.allRows: one page's rows into `out` (each gift, then its refunds), the not-counted
+// rows into `rest` once (page 1). Answers how many gifts the page held.
+function flattenInto(f, page, out, rest) {
+  for (const r of f.rows) { const { refunds, ...row } = r; out.push(row, ...(refunds || [])); }
+  if (page === 1 && f.notCounted) rest.push(...f.notCounted.rows);
+  return f.rows.length;
+}
+
+module.exports = { giftRowsPage, pageInto, answerExtras, flattenInto, NOT_COUNTED_SENTENCE, REST_MAX };
