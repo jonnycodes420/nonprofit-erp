@@ -191,8 +191,8 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
                   ...(donor.stage==="lapsed"?[["Why did they stop?",()=>setWhyStopOpen(true),false,"dp-why-stop"]]:[]),
                 ]],
                 ["know","Know them",[
-                  // FIX-55 item 6: Brief me needs AI.
-                  ...(org?.capabilities?.ai?[["Brief me",()=>setBriefOpen(true),false]]:[]),
+                  // FLOWS-12 item 2: Brief me works with AI off too, in Steward's own sentences (server/donors/briefTemplate.js).
+                  ["Brief me",()=>setBriefOpen(true),false,"dp-brief-me"],
                   // PROSPECT-1 — a one-page prospect brief, saved to their files.
                   ...(canMajorGifts?[["Write a prospect brief",()=>setProspectBriefOpen(true),isReadOnly,"dp-prospect-brief"]]:[]),
                   ...(canMajorGifts&&donor.kind==="organisation"?[["Look up public filing",()=>setFilingLookupOpen(true),isReadOnly,"dp-filing-lookup"]]:[]),

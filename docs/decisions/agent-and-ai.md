@@ -302,3 +302,7 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 - Nothing is written before Do it on the one confirm card. Enrolling more than 10 spreads the first step over the next
   ten working days, largest givers first. Undo all of it: enrollments out, the new journey archived when nobody else is
   in it, the list adds off.
+- **Brief me works with AI off (FLOWS-12).** The same rows `briefRowsFor` would hand the model, in Steward's own
+  sentences (`server/donors/briefTemplate.js`), finished by the same `completeBrief` (the About note first, whole),
+  with a line saying AI is off. It is on the More menu whatever the AI switch says. A test of an AI feature runs
+  with AI off too, because staging has no key and that is what the fleet walks.

@@ -1176,17 +1176,21 @@ app.post("/journeys/:id/batch/preview", requireAuth, wrap(async (req, res) => {
   const today = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
   const v = PL.validateTemplate({ name: t.name, steps: t.steps });
   // FLOWS-3: per person, and from the journey's own date when it has one.
-  const per = await JBP.batchPeople(query, orgId, t, ids, split, today);
-  const first = v.ok ? PL.planFromTemplate({ steps: v.steps, today: per.anchor }, orgTime.addDays)[0] || null : null;
+  const per = await JBP.batchPeople(query, orgId, t, ids, split, today, v.ok ? v.steps : null);
+  // FLOWS-12 item 4: one date only when everyone's own first step falls on it.
+  const own = per.people.find(p => p.firstStep);
+  const first = own && per.oneDate ? own.firstStep : null;
   const n = split.willStart.length;
   const lines = await batchLines(countsOf(split.skips));
   res.json({
     journeyId: t.id, name: t.name, asked: ids.length, willStart: n, joinOthers,
     firstStep: first ? { label: first.label, dueDate: first.dueDate, dueLabel: DDj.displayDate(first.dueDate) } : null,
+    oneDate: per.oneDate,
     lines, runsAsJob: n > BATCH_INLINE_MAX, breakdown: per.breakdown, people: per.people, anchorNote: per.anchorNote,
     touches: J.touchesSentence(t.steps || []),
     sentence: `${n.toLocaleString("en-US")} ${n === 1 ? "person" : "people"} will start ${t.name}.`
-      + (first ? ` The first step is "${first.label}", due ${DDj.displayDate(first.dueDate)}.` : "")
+      + (first ? ` The first step is "${first.label}", due ${DDj.displayDate(first.dueDate)}.`
+        : own ? ` The first step is "${own.firstStep.label}", due on each person's own date (listed below).` : "")
       + " Nothing is sent. Every step waits for you.",
   });
 }));

@@ -458,3 +458,12 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
   every open, preview and send (`server/drafts/render.js`). A total in a stored draft's words is read as its key.
   Header lines (the subject, the card's lifetime) use the same keys.
 
+
+## A letter that thanks them for giving (FLOWS-12)
+- **A never-giver reads her first-gift version, or the preview says they won't.** `shared/pastGiving.js` finds the
+  words that thank a reader for giving ("Your support…", "give once more"); a sentence naming a gift field is
+  TRUST-1's, not this. The campaign editor says how many in the audience have never given
+  (`shared/numbers/neverGave.js`, segment-preview `audienceNeverGiven`). A text block may carry `firstGift`, her own
+  words, which a person with no gift reads instead, in the send, a test and the preview (`shared/emailBlocks.js`).
+  With a claim and no version, the preview flags it: "This letter thanks them for giving. 212 people in this
+  audience never have." Steward never writes the version and never blocks the send on it.

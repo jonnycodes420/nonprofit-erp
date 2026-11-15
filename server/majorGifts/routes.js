@@ -73,7 +73,7 @@ app.get("/portfolio/officers", requireAuth, wrap(async (req, res) => {
     `SELECT u.id, u.name, u.email, u.role, u.portfolio_color,
             COUNT(d.id)::int AS portfolio_count, COALESCE(SUM(${NUMBERS.lifetime.LIFETIME("d")}),0) AS portfolio_giving
      FROM users u
-     LEFT JOIN donors d ON d.assigned_to = u.id AND d.org_id = u.org_id AND d.deleted_at IS NULL AND COALESCE(d.stage, d.suggested_stage) = ANY(?)
+     LEFT JOIN donors d ON d.assigned_to = u.id AND d.org_id = u.org_id AND ${NUMBERS.pickable.PICKABLE("d")} AND COALESCE(d.stage, d.suggested_stage) = ANY(?)
      WHERE u.org_id=? GROUP BY u.id ORDER BY portfolio_giving DESC, u.name`, [ALL_PIPELINE_STAGES, req.user.orgId]);
   // Pending invitees (invited, not yet accepted, unexpired) are surfaced too so
   // the import officer-mapping screen can match + assign donors to them BEFORE

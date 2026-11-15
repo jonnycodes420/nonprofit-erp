@@ -38,6 +38,8 @@ module.exports = {
   giftFacts: require("./giftFacts"),   // TRUTH-6
   financeBasis: require("./financeBasis"),   // TRUTH-6
   softThrough: require("./softThrough"),   // TRUTH-5
+  pickable: require("./pickable"),   // FLOWS-12: erased means erased
+  neverGave: require("./neverGave"),   // FLOWS-12: who in an audience never gave
   pledgeSchedule: require("./pledgeSchedule"),   // TRUTH-5
   lapseWords: require("./lapseWords"),   // TRUTH-5
   nextSteps: require("./nextSteps"),   // ACCESS-3
