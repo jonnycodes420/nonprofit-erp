@@ -31,6 +31,7 @@ import MediaPicker from "./MediaPicker";
 import StewardEditor, { RailSection, DeviceFrame, useNarrow, railLabel, railInput, railQuietBtn, railNote, stockPhotoForBlock } from "./StewardEditor";
 import StockPhotoPicker from "./StockPhotoPicker";
 import { previewAsParam } from "../lib/previewAs";   // GIFTS-2: one rule for who a preview is drawn for
+import { claimsOf, blockHint, pastGivingFlag } from "../../../shared/pastGiving.js";   // FLOWS-12 item 1
 
 const say = (e, fallback) => (e && e.sentence) || errorMessage(e, fallback);
 const BUTTON_ACTIONS = [
@@ -322,6 +323,21 @@ function PhotoChoice({ value, alt, onChange, pick, what = "photo" }) {
     </div>
   );
 }
+// FLOWS-12 item 1 (W-1114-Fundraising-17): a text block's version for people
+// who have never given, in her words. Steward finds the words that thank them
+// for giving and says so; it never writes the version.
+function FirstGiftVersion({ b, set }) {
+  const claim = claimsOf([b])[0] || null;
+  return <>
+    <div style={railNote}>Type in the preview. Enter starts a new paragraph.</div>
+    {claim && <div data-testid="first-gift-hint" style={{ ...railNote, marginTop: 8, color: T.ink }}>{blockHint(claim.phrase)}</div>}
+    <label style={railLabel} htmlFor="first-gift-version">For people who have never given</label>
+    <textarea id="first-gift-version" data-testid="first-gift-version" style={{ ...railInput, minHeight: 96, resize: "vertical", fontFamily: "inherit" }} value={b.firstGift || ""}
+      placeholder={claim ? "Your words for someone giving for the first time. A blank line starts a new paragraph." : "Optional. Someone who has never given reads this instead."}
+      onChange={e => set({ firstGift: e.target.value })} />
+  </>;
+}
+
 export function EmailBlockSettings({ b, set, pick, events, pages }) {
   const typed = <div style={railNote}>Type its words in the preview.</div>;
   switch (b.type) {
@@ -330,7 +346,7 @@ export function EmailBlockSettings({ b, set, pick, events, pages }) {
     case "hero": return <>{typed}<label style={railLabel}>Photo</label><PhotoChoice value={b.image} alt={b.alt} pick={pick} onChange={({ src, alt }) => set({ image: src, alt })} /></>;
     case "richtext": return b.locked
       ? <div style={railNote} data-testid="email-locked-block">Your tax lines, from your brand kit. This email must carry them, so this block can't be removed or changed.</div>
-      : <div style={railNote}>Type in the preview. Enter starts a new paragraph.</div>;
+      : <FirstGiftVersion b={b} set={set} />;
     case "image": return <>{typed}<PhotoChoice value={b.image} alt={b.alt} pick={pick} onChange={({ src, alt }) => set({ image: src, alt })} /></>;
     case "photos2": return <>{[0, 1].map(k => {
       const im = (b.images || [])[k] || { src: null, alt: "" };
@@ -527,7 +543,7 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
       const cur = latest.current;
       apiFetch(`/email-templates/${template.id}/preview`, { method: "POST",
         body: JSON.stringify({ blocks: stripKeys(cur.blocks), subject: cur.subject, preheader: cur.preheader, device, dark, editable: !isReadOnly, as: previewAsParam(as) }) })
-        .then(r => { if (n === seq.current) setPreview({ html: r.html, problems: r.problems || [], loading: false, as: r.as, subject: r.subject || "" }); })
+        .then(r => { if (n === seq.current) setPreview({ html: r.html, problems: r.problems || [], loading: false, as: r.as, subject: r.subject || "", pastGiving: r.pastGiving || null }); })
         .catch(e => { if (n === seq.current) setPreview(p => ({ ...p, loading: false, problems: [say(e, "The preview could not be drawn.")] })); });
     }, 300);
     return () => clearTimeout(t);
@@ -619,14 +635,23 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
   const [who, setWho] = useState(null);
   const [whoQ, setWhoQ] = useState("");
   const [people] = usePeoplePicker(whoQ, { match: "name", limit: 8 });
-  const draftForPerson = async () => {
-    setNote("");
-    if (dirty) { setNote("Save first, so the draft holds the words you see."); return; }
+  // FLOWS-12 item 6 (W-1114-Fundraising-19X): the answer shows beside the
+  // button (the rail's note was out of sight above it), a made draft opens,
+  // and a draft already waiting says so, with Open it and Replace it.
+  const [personMsg, setPersonMsg] = useState(null);   // { sentence, held?: draftId, busy? }
+  const draftForPerson = async (replace = false) => {
+    setNote(""); setPersonMsg(null);
+    if (dirty) { setPersonMsg({ sentence: "Save first, so the draft holds the words you see." }); return; }
+    setPersonMsg({ sentence: "Making the draft…", busy: true });
     try {
-      const r = await apiFetch(`/templates/${template.personKind}/draft`, { method: "POST", body: JSON.stringify({ donorId: who.id }) });
+      const r = await apiFetch(`/templates/${template.personKind}/draft`, { method: "POST", body: JSON.stringify({ donorId: who.id, ...(replace ? { replace: true } : {}) }) });
       offerUndo({ message: r.sentence, undoAction: () => apiFetch(`/milestone-drafts/${r.draftId}/dismiss`, { method: "POST", body: "{}" }) }, "draft");
-      setNote(r.sentence);
-    } catch (e) { setNote(say(e, "The draft could not be made.")); }
+      setPersonMsg({ sentence: r.sentence, made: r.draftId });
+      if (onOpenDrafts) onOpenDrafts(r.draftId);
+    } catch (e) {
+      const held = e && e.error === "draft_exists" ? e.draftId : null;   // api.js puts the answer's fields on the error
+      setPersonMsg({ sentence: say(e, "The draft could not be made."), held });
+    }
   };
   const startCampaign = async () => {
     setNote("");
@@ -730,7 +755,12 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
           <input style={railInput} aria-label="Find a person" placeholder={who ? who.name : "Find a person by name"} value={whoQ} onChange={e => setWhoQ(e.target.value)} />
           {people.map(p => <button key={p.id} type="button" onClick={() => { setWho(p); setWhoQ(""); }}
             style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", borderTop: "1px solid " + T.bg2, padding: "7px 8px", cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>{p.name}</button>)}
-          <button type="button" style={{ ...railQuietBtn, marginTop: 6 }} disabled={isReadOnly || !who} onClick={draftForPerson} data-testid="email-person-draft-make">{who ? `Make a draft for ${who.name}` : "Make a draft for this person"}</button>
+          <button type="button" style={{ ...railQuietBtn, marginTop: 6 }} disabled={isReadOnly || !who || !!(personMsg && personMsg.busy)} onClick={() => draftForPerson(false)} data-testid="email-person-draft-make">{who ? `Make a draft for ${who.name}` : "Make a draft for this person"}</button>
+          {personMsg && <div role="status" data-testid="email-person-draft-result" style={{ ...railNote, marginTop: 6, color: T.ink }}>{personMsg.sentence}
+            {personMsg.held && <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+              {onOpenDrafts && <button type="button" style={railQuietBtn} data-testid="email-person-draft-open" onClick={() => onOpenDrafts(personMsg.held)}>Open it</button>}
+              <button type="button" style={railQuietBtn} data-testid="email-person-draft-replace" disabled={isReadOnly} onClick={() => draftForPerson(true)}>Replace it</button>
+            </div>}</div>}
         </div>
       )}
       {!template.personKind && <div><button type="button" style={railQuietBtn} disabled={isReadOnly} onClick={startCampaign} data-testid="email-start-campaign">Start a campaign from this</button></div>}
@@ -782,6 +812,8 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
             {!isReadOnly && <FieldMenu fields={fields} onInsert={insertField} />}
             {preview.loading && <Spin />}
             <div data-testid="email-subject-line" style={{ flexBasis: "100%", fontSize: 13, color: T.ink2, lineHeight: 1.4 }}><b style={{ color: T.ink }}>Subject:</b> {preview.subject || subject || "No subject yet"}</div>
+            {preview.pastGiving && pastGivingFlag({ claims: preview.pastGiving.claims, shownName: preview.pastGiving.shownName }) && <div data-testid="past-giving-flag" style={{ ...PROBLEM_BOX, flexBasis: "100%" }}>
+              {pastGivingFlag({ claims: preview.pastGiving.claims, shownName: preview.pastGiving.shownName })} Click the block and write a first-gift version in its settings; people who have never given read that instead.</div>}
             {menuAt !== undefined && <BlockMenu blockTypes={blockTypes} onClose={() => setMenuAt(undefined)}
               onPick={type => { act("insert", menuAt, blockTypes, { type }).then(redraw); setMenuAt(undefined); }} />}
           </div>

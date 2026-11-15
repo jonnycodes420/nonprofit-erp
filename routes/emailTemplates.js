@@ -533,7 +533,7 @@ app.post("/email-templates/:id/preview", requireAuth, wrap(async (req, res) => {
   let html = p.html;
   if (b.dark === true) html = html.split(EB.DARK_MEDIA).join("@media all");
   res.json({ html, problems: p.problems, device: b.device === "phone" ? "phone" : "desktop", width: b.device === "phone" ? 375 : 600,
-    as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject });
+    as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject, pastGiving: await pastGivingOf(draft.blocks, p) });
 }));
 
 // EDITOR-1 · A CAMPAIGN'S EMAIL, PREVIEWED AS IT IS TYPED. The same render as
@@ -549,8 +549,18 @@ app.post("/email-preview", requireAuth, wrap(async (req, res) => {
   if (b.campaignName) p.fields.campaign = clip(b.campaignName, 120);
   let html = p.html;
   if (b.dark === true) html = html.split(EB.DARK_MEDIA).join("@media all");
-  res.json({ html, problems: p.problems, as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject });
+  res.json({ html, problems: p.problems, as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject, pastGiving: await pastGivingOf(row.blocks, p) });
 }));
+// FLOWS-12 item 1 (W-1114-Fundraising-17): which blocks thank the reader for
+// giving, whether each has a first-gift version, and whether the person shown
+// has never given. The editor says how many in the audience never have
+// (segment-preview's audienceNeverGiven) and flags it (shared/pastGiving.js).
+async function pastGivingOf(blocks, p) {
+  const PG = await import("../shared/pastGiving.js");
+  const shown = p.shownAs && p.shownAs.id ? p.shownAs : null;
+  const neverGave = !!shown && !String((p.fields && p.fields.last_gift_amount) || "").trim();
+  return { claims: PG.claimsOf(blocks), shownNeverGave: neverGave, shownName: neverGave ? shown.name || null : null };
+}
 
 // EDITOR-1 · HISTORY. Every save, publish and discard of this template, from
 // the one audit trail (middleware/auditTrail.js), newest first. Reading only.

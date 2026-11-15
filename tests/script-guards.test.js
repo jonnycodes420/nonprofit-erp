@@ -216,6 +216,8 @@ const LOOPBACK_HARDCODED = [
 // Read-only against whatever BASE points at (may default to prod): their only
 // write-shaped call is POST /auth/login. Verified below, not just trusted.
 const PROD_READONLY = [
+  // FLOWS-12: lists erased people still linked to a household or an officer; one READ ONLY session, no --apply.
+  "flows12-erased-links",
   // FLOWS-9: lists drafts claiming a missing video and gifts whose refunded-in-full mark disagrees; SELECTs only, no --apply.
   "flows9-old-rows",
   "flows11-old-rows",

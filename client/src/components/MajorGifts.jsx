@@ -912,6 +912,7 @@ export function BriefPanel({ donorId, donorName, isReadOnly, canWrite }) {
       )}
       {brief && (
         <div data-testid="brief-body">
+          {brief.sourceSentence && <div data-testid="brief-source" style={{ fontSize: 11.5, color: T.ink3, marginBottom: 8 }}>{brief.sourceSentence}</div>}
           {brief.headline && (
             <div style={{ fontSize: 15, color: T.ink, fontFamily: "'DM Serif Display',serif", marginBottom: 10 }}>{brief.headline}</div>
           )}

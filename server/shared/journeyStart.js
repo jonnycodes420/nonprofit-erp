@@ -203,8 +203,8 @@ async function startOneJourney(orgId, donor, winner, triggerKey, eventKey, opts 
   const today = opts.today || orgToday(org);                    // ORG_TZ_SEAM_OK
   // FLOWS-3: a by-hand start of a dated journey counts from its date (the
   // next Dec 1, or this person's birthday start), the day the preview showed.
-  const anchor = opts.forceJourneyId ? (await import("../../shared/journeyStartRule.js")).journeyAnchor(winner, donor, today) : today;
-  const steps = PL.planFromTemplate({ steps: v.steps, today: anchor }, orgTime.addDays);
+  // FLOWS-12 item 4: the one schedule (journeySchedule.js), which the batch preview reads per person too.
+  const { steps } = await require("./journeySchedule").scheduleFor({ template: winner, steps: v.steps, person: donor, today, byHand: !!opts.forceJourneyId });
 
   const current = await query(
     `SELECT p.id, p.template_id, p.template_name, p.priority, COALESCE(t.exclusive, false) AS exclusive

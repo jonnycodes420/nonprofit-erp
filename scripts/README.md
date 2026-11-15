@@ -121,6 +121,7 @@ Node scripts:
 | `ops/flows10-stopped-steps.js` | Journey steps a single-person Stop left reading Done, and steps still pending under a stopped journey (FLOWS-10, W-1113-Fundraising-29X). A dry run, SELECTs only. |
 | `ops/flows10-demo-ein.js` | Sets org_b72demo's made-up EIN (shared/demoEin.js) while it is the 00-0000000 placeholder (FLOWS-10, Area 5 Check 17). Dry run by default; `--apply` through writerDbUrl, a remote target must answer env "staging". |
 | `ops/flows10-demo-alts.js` | The demo's chapel photo whose alt described another picture (FLOWS-10, W-1112-Fundraising-35X). Dry run by default; `--apply` changes alt text only, in org_b72demo only, through writerDbUrl, and a remote target must answer env "staging". |
+| `ops/flows12-erased-links.js` | Erased people still linked to a household or an officer (FLOWS-12, W-1114-Finance-29X). Read only, no `--apply`: every picker and portfolio count already reads past them; it lists the rows for REPAIR-1. |
 
 `ci/builder-access-check.js` (SECURE-3) is run by the battery (`tests/script-guards.test.js`): it fails if
 this environment holds a Railway token, a Supabase secret or a remote postgres URL, and warns about
