@@ -8,7 +8,7 @@
 //   §3  W-1109-Donors-49X      "+ Link someone" opens the picker, in view
 //   §4  W-1109-Donors-42X      a done task has Delete (to the trash) and Reopen
 //   §5  giving page            Live → Unpublish → the link isn't taking gifts
-//   §6  W-1109-Fundraising-03  board names are whole at 1920; erased = "Former donor (erased)"
+//   §6  W-1109-Fundraising-03  board names are whole at 1920; an erased person is off the board (FLOWS-12)
 //   §7  W-1109-Donors-02       1:01 AM in the org's zone is "Hi Mike"
 //   §8  W-1107-Donors-31       the Files header counts uploads only
 //   §9  W-1109-Fundraising-16X two "General appeal"s are told apart, Rename in place
@@ -58,7 +58,9 @@ const leg = k => !ONLY.length || ONLY.includes(k);
   const pipe = (await api("GET", "/pipeline?scope=all", tok)).body || {};
   const cards = Object.values(pipe.columns || {}).flat();
   const erased = cards.find(c => c.donorId === D("gone"));
-  ok("§6 the board's erased card says \"Former donor (erased)\" with its amount kept", !!EL && !!erased && erased.name === "Former donor (erased)" && Number(erased.totalGiving) === 1200, erased && { name: erased.name, t: erased.totalGiving });
+  // FLOWS-12 item 5 (W-1114-Finance-29X): erased means erased. An erased person is in nobody's
+  // portfolio, so not on the board at all (shared/numbers/pickable.js); the label still names them elsewhere.
+  ok("§6 the board leaves the erased person off (FLOWS-12), and the label still reads \"Former donor (erased)\"", !!EL && !erased && EL.shownName("Erased person", null) === "Former donor (erased)", erased && { name: erased.name, t: erased.totalGiving });
 
   const why = (() => {
     if (!optional(PW)) return "(playwright is not installed at " + PW + ")";
@@ -162,7 +164,7 @@ const leg = k => !ONLY.length || ONLY.includes(k);
         .map(a => ({ t: a.textContent.trim(), cut: a.scrollWidth > a.clientWidth + 1 || a.scrollHeight > a.clientHeight + 1, title: a.getAttribute("title") })));
       const board = names.filter(n => /Owen|Nathaniel|Erased|Former donor/.test(n.t));
       ok("§6 (browser) at 1920 every board name is whole, with a tooltip", board.length >= 2 && board.every(n => !n.cut && n.title === n.t), board);
-      ok("§6 (browser) the erased card says \"Former donor (erased)\", never \"Erased person\"", board.some(n => n.t === "Former donor (erased)") && !board.some(n => n.t === "Erased person"), board.map(n => n.t));
+      ok("§6 (browser) no erased card on the board, under either name (FLOWS-12)", !board.some(n => n.t === "Former donor (erased)" || n.t === "Erased person"), board.map(n => n.t));
       await page.setViewportSize({ width: 1440, height: 1000 });
     });
 
