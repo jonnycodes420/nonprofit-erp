@@ -138,10 +138,11 @@ function inventory() {
     if (!f || !f.source) continue;
     const qs = new URLSearchParams({ ...f.source.params, pageSize: "200" }).toString();
     const r = await api("GET", `/figures/${f.source.key}/rows?${qs}`, tok);
-    const rows2 = (r.body && r.body.rows) || [];
+    // FLOWS-11: a gift's refunds are listed under it, and the rows not counted as gifts once, apart.
+    const rows2 = [...((r.body && r.body.rows) || []).flatMap(x => [x, ...(x.refunds || [])]), ...((r.body && r.body.notCounted && r.body.notCounted.rows) || [])];
     const sum = rows2.reduce((s, x) => s + Math.round(Number(x.amount || 0) * 100), 0);
     const want = Math.round(Number(f.value) * 100);
-    const foots = key === "donor-average-gift" ? Math.round(sum / rows2.filter(x => Number(x.amount) > 0).length) === want : sum === want;
+    const foots = key === "donor-average-gift" ? Math.round(sum / rows2.filter(x => (x.counted !== undefined ? x.counted : Number(x.amount) > 0)).length) === want : sum === want;
     ok(`§2 ${label} foots: its rows come to ${f.value}`, r.status === 200 && foots, { sum, want, n: rows2.length });
   }
   ok("§2 Lifetime is every gift, refund off: $5,750.00", d.figures.lifetime.value === 5750, d.figures.lifetime.value);

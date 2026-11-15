@@ -81,7 +81,9 @@ module.exports = async function partOne(h) {
   ok("§1 nothing imported as a total, so nothing else is left out", avg && avg.importedCents === 0, avg);
   ok("§1 the soft credit and the pledge are in neither number", cents(sum) === 550000 && avg && cents(avg.value) === 183333);
   const drawer = await get(`/figures/donor-average-gift/rows?donor=${A}&pageSize=50`);
-  const rowSum = (drawer.rows || []).reduce((s, r) => s + cents(r.amount), 0);
+  // FLOWS-11: each gift's refunds are listed under it; they are in the total.
+  const rowSum = (drawer.rows || []).reduce((s, r) => s + cents(r.amount) + (r.refunds || []).reduce((m, x) => m + cents(x.amount), 0), 0)
+    + ((drawer.notCounted && drawer.notCounted.rows) || []).reduce((s, r) => s + cents(r.amount), 0);
   ok("§1 the average opens rows that foot: their total over the gifts is the figure",
     drawer.giftCount === 3 && Math.round(rowSum / drawer.giftCount) === cents(avg && avg.value) && rowSum === cents(sum), { giftCount: drawer.giftCount, rowSum });
   const listed = (profile.gifts || []).filter(g => Number(g.amount) > 0).length;
