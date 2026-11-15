@@ -43,6 +43,10 @@ Read this when you touch receipts, acknowledgments, letters, year-end statements
   small pledge payment, anonymous, do-not-contact/deceased or sample; lift only her greeting and sign-off. (BUILD-88b)
 - **Count acknowledgments by `acknowledgement_sent_at`, not the boolean.** A gift acknowledged before
   the stamp existed belongs to no week, and the definition says so. (BUILD-88a)
+- **A household may get one year-end statement; tax receipts stay per giver (FLOWS-11).** Type
+  `household_year_end` with `receipts.household_id`, on the primary member's record, so it never replaces
+  anyone's own statement. It lists each member's gifts under their name and the combined total, footed by
+  `statementTotals.js`. The default is the household's when every member shares one mailing address.
 - **The year-end email is a "year-end giving statement", never a "donation receipt".** Subject and
   body say so. (BUILD-35)
 - **`receipt_address` is also the CAN-SPAM postal address.** `unsubscribeEmailFooterHtml` reads it with

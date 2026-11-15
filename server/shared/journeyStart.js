@@ -248,9 +248,9 @@ async function startOneJourney(orgId, donor, winner, triggerKey, eventKey, opts 
     ins = await query(
     `INSERT INTO cultivation_plans (id,org_id,donor_id,template_id,template_name,applied_on,status,
                                     owner_id,owner_name,created_by,created_by_name,
-                                    trigger_key,priority,replaced_plan_id,replaced_reason,trigger_event,started_import_id)
+                                    trigger_key,priority,replaced_plan_id,replaced_reason,trigger_event,started_import_id,source_gift_id)
      SELECT ?::text,?::text,?::text,?::text,?::text,?::text,'active',?::text,?::text,?::text,?::text,
-            ?::text,?::int,?::text,?::text,?::text,?::text
+            ?::text,?::int,?::text,?::text,?::text,?::text,?::text
       WHERE NOT EXISTS (SELECT 1 FROM cultivation_plans x WHERE x.org_id=?::text AND x.donor_id=?::text
                           AND x.template_id=?::text AND x.status='active')
      ON CONFLICT DO NOTHING
@@ -264,7 +264,9 @@ async function startOneJourney(orgId, donor, winner, triggerKey, eventKey, opts 
      opts.forceJourneyId ? (winner.trigger_key || triggerKey) : triggerKey,
      v.priority, replacedId, reason, eventKey,
      // LIVE-1 — the import whose gift started this, so the import's undo stops it.
-     opts.importId || null, orgId, donor.id, winner.id]);
+     opts.importId || null,
+     // FLOWS-11: the gift that started it, so deleting that gift stops it (server/donors/giftThanks.js).
+     opts.forceJourneyId ? null : (opts.giftId || null), orgId, donor.id, winner.id]);
   } catch (e) {
     // A unique index: a concurrent fire of the same event, or the same journey, won.
     if (e.code === "23505") return { started: false, reason: "already_enrolled_for_event", eventKey };

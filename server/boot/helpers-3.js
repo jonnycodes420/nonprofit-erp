@@ -136,12 +136,17 @@ async function renderReceiptPdf(snapshot) {
       snapshot.lineItems.forEach((item, i) => {
         doc.rect(50, y, PW - 100, 18).fill(i % 2 === 0 ? "#ffffff" : BG);
         doc.font("Helvetica").fontSize(8).fillColor(INK).text(item.date, 58, y + 5, { width: 100 });
-        doc.fillColor(INK3).text(item.paymentMethod || "Not set", 170, y + 5, { width: 150 });
+        doc.fillColor(INK3).text(item.giver ? `${item.giver} · ${item.paymentMethod || "Not set"}` : (item.paymentMethod || "Not set"), 170, y + 5, { width: 230 });   // FLOWS-11: a household's statement names each giver
         doc.font("Helvetica-Bold").fillColor(GREEN).text(fmtD(item.amount), PW - 150, y + 5, { width: 100, align: "right" });
         y += 18;
       });
       y += 10;
       doc.moveTo(50, y).lineTo(PW - 50, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke(); y += 12;
+      // FLOWS-11: a household's statement says what each member gave, and the total is theirs combined.
+      if (Array.isArray(snapshot.members) && snapshot.members.length) {
+        doc.font("Helvetica").fontSize(9).fillColor(INK).text(snapshot.members.map(m => `${m.name} gave ${fmtD(m.totalAmount)}`).join("; ") + `. Together, ${fmtD(snapshot.totalAmount)}.`, 50, y, { width: PW - 100 });
+        y = doc.y + 10;
+      }
       doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text("Total tax-deductible contributions", 50, y);
       doc.font("Helvetica-Bold").fontSize(13).fillColor(GREEN).text(fmtD(snapshot.totalDeductible), PW - 200, y - 2, { width: 150, align: "right" });
       y = doc.y + 18;

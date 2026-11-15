@@ -36,7 +36,9 @@ async function rowsFor(orgId) {
              FROM gifts g LEFT JOIN events e ON e.id = g.event_id AND e.org_id = g.org_id
              LEFT JOIN fin_funds rf ON rf.id = g.fund_id AND rf.org_id = g.org_id AND rf.restricted = true
              LEFT JOIN fin_funds af ON af.id = g.fund_id AND af.org_id = g.org_id
-            WHERE g.org_id=? AND COALESCE(g.is_sample,false)=false`, [orgId]),
+            WHERE g.org_id=? AND COALESCE(g.is_sample,false)=false
+              AND g.refunded_in_full IS NOT TRUE   -- FLOWS-11 (W-1113-Finance-27X): a gift refunded in full is no one's first gift, last gift or ask
+            `, [orgId]),
     // FIX-60: made_on is the day the pledge was made, as the lapse rule reads it
     // (lapseRule.js), so a pledge made in the last 12 months is giving activity.
     query(`SELECT p.id, p.donor_id, p.amount, p.due_date::text AS due_date, p.status, p.frequency, p.installment_count, p.notes, p.gift_type,
@@ -92,7 +94,7 @@ async function roomKnownFor(orgId, rows) {
 // day's answer built on the old code stayed "fresh" until a gift moved
 // ("Create tasks for Nov 1" and a $75,000 ask after the fix was live).
 // Bump it whenever computeInsights' output changes for the same rows.
-const ENGINE = "asks2-2026-11-12";
+const ENGINE = "flows11-2026-11-15";   // FLOWS-11: a gift refunded in full left out
 async function fingerprint(orgId) {
   const [f] = await query(`SELECT
       (SELECT COUNT(*)::text || ':' || COALESCE(SUM(amount),0)::text || ':' || COALESCE(MAX(created_at)::text,'') FROM gifts WHERE org_id=?) AS g,

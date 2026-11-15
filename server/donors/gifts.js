@@ -40,6 +40,7 @@ const {
 } = ctx;
 let app = routers.r0;
 const RD = require("../receipts/drift");
+require("../receipts/householdStatement").mountHousehold(app, ctx);   // FLOWS-11: one statement for a household
 
 // POST /pledges/run-reminders — drive the sweep for the caller's org now
 // (ops/test hook, the /nudges/run bar). {today} pins the date.
@@ -466,6 +467,7 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
   // FIX-10 Part C — how many of this gift's own tasks the delete voided, so the
   // timeline note can say it. Declared above the block that assigns it.
   let voidedTaskCount = 0;
+  let stoppedJourneys = [];   // FLOWS-11: the journeys this gift started, stopped with it
   // BUILD-27 concurrency: serialize the whole delete → donor-recalc under the
   // SAME per-gift advisory lock PUT /gifts/:id takes, so a concurrent edit and
   // delete of the SAME gift can't tear the donor total apart from the ledger.
@@ -513,6 +515,10 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
       "UPDATE tasks SET voided_at=NOW(), voided_reason='gift_deleted', updated_at=NOW() WHERE org_id=? AND source_gift_id=? AND voided_at IS NULL",
       [req.user.orgId, req.params.id]);
     voidedTaskCount = Number(voided?.changes ?? voided?.rowCount ?? 0) || 0;
+    // FLOWS-11 (W-1114-Finance-04X): and the journey the gift started (a past first gift's
+    // "Call to say thank you"), its open thank-you voided the same way. One delete path.
+    const stopped = await require("./giftThanks").stopJourneysOfGift(client, req.user.orgId, g.donor_id, req.params.id, actor(req));
+    voidedTaskCount += stopped.tasks; stoppedJourneys = stopped.journeys;
     await runTx(client, "DELETE FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
     // FLOWS-9: a refund row taken back un-marks its gift when the gift is no longer netted to $0,
     // so the counts (giftCount.js, which read the mark) count it again.
@@ -533,16 +539,16 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
   // comes to believe she already thanked someone she never thanked. Written
   // after the transaction commits, so the note can never describe a void that
   // rolled back.
-  if (voidedTaskCount > 0 && g.donor_id) {
+  const _note = require("./giftThanks").deleteNote(voidedTaskCount, stoppedJourneys);
+  if (_note && g.donor_id) {
     const _a = actor(req);
     await run(
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,'note',?,?,?,?)",
-      [newId("i"), req.user.orgId, g.donor_id,
-       `Gift removed, thank-you cancelled. ${voidedTaskCount === 1 ? "One task" : `${voidedTaskCount} tasks`} Steward had created for this gift ${voidedTaskCount === 1 ? "was" : "were"} voided.`,
+      [newId("i"), req.user.orgId, g.donor_id, _note,
        orgToday(await orgTz(req.user.orgId)), _a.id, _a.name]
     ).catch(e => console.error("[gift-delete] timeline note:", e.message));
   }
-  res.json({ ok: true, voidedTasks: voidedTaskCount });
+  res.json({ ok: true, voidedTasks: voidedTaskCount, stoppedJourneys });
 }));
 
 // ── Pledges ──────────────────────────────────────────────────────────────

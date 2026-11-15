@@ -171,7 +171,9 @@ async function freshOrg(id, name) {
     const qs = Object.entries(f.params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
     const r = await api("GET", `/figures/${f.key}/rows?${qs}&pageSize=200`, tok);
     const b = r.body || {};
-    const rowsCents = (b.rows || []).reduce((s, x) => s + C(x.amount), 0);
+    // FLOWS-11: a gift's refunds ride under it; the rows not counted as gifts come once, apart.
+    const rowsCents = (b.rows || []).reduce((s, x) => s + C(x.amount) + (x.refunds || []).reduce((m, y) => m + C(y.amount), 0), 0)
+      + ((b.notCounted && b.notCounted.rows) || []).reduce((s, x) => s + C(x.amount), 0);
     const count = b.totalRows;
     const okv = r.status === 200 && (b.measure === "count" ? count === want : b.cents === want && rowsCents === want);
     return okv ? null : { label, key: f.key, status: r.status, measure: b.measure, value: b.value, cents: b.cents, rowsCents, count, want };

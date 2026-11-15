@@ -54,7 +54,10 @@
 //             starter vs report, Re-engage vs Lost, tests/lib/counts1Item3.js),
 //             giftCount (TRUTH-3: each person's counted gifts, hard credit
 //             above $0, against By year), truth4 (TRUTH-4: tests/lib/truth4Pairs.js,
-//             gifts, Top donors, LYBUNT, splits, at risk, people, the volunteer starter)
+//             gifts, Top donors, LYBUNT, splits, at risk, people, the volunteer starter),
+//             flows11 (FLOWS-11, tests/lib/flows11Checks.js: giftDialog, refundedProfile,
+//             householdStatement, splitTransactions, beforeSteward, deletedThanks)
+//   only      [names]: run just these checks (FLOWS-11)
 //   plantEvent (eventId, { rep, kiosk }) => { rep, kiosk }: change an event's
 //             bodies before its checks, to prove they can go red (FIX-59)
 //
@@ -136,7 +139,9 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   const t0 = testNow();
   const q = ctx.q || H.q;
   const label = ctx.label || ctx.step || "";
-  const skip = new Set(ctx.skip || []);
+  // FLOWS-11: `only` [names] runs just those checks (a suite whose fixture is about them).
+  const skipSet = new Set(ctx.skip || []), onlySet = ctx.only ? new Set(ctx.only) : null;
+  const skip = { has: n => skipSet.has(n) || (!!onlySet && !onlySet.has(n)) };
   // No token or email: the org's first admin, signed in once per process.
   let email = ctx.email;
   if (!ctx.token && !email) {
@@ -877,7 +882,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   // TRUTH-1: and the key's people who gave (a hard-credit gift above zero) from the year's first day to today
   const kToday = (board && board.asOf) || key.asOf;
   const kGave = key.giversBetween(key.fiscalYear.from, kToday).people;
-  agree("people who gave this year", [["the key", kGave], ["the Board's People who gave", donorCount],
+  if (!skip.has("thisYear")) agree("people who gave this year", [["the key", kGave], ["the Board's People who gave", donorCount],
     ["Ask, asked how many donors", askG ? num(askG[1]) : undefined], ["Atlas, asked how many donors", atlasG ? num(atlasG[1]) : undefined]], String);
 
   // ── OPEN PLEDGES (IMPORT-5): the profile's open pledge, Fundraising's
@@ -1225,6 +1230,10 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
 
   // ── TRUTH-4 · GIFTS, PEOPLE AND AT-RISK MONEY (tests/lib/truth4Pairs.js) ──
   if (!skip.has("truth4")) await require("./truth4Pairs").truth4Pairs({ orgId, get, q, agree, diffs, today: orgTime.orgToday(org || {}, new Date(testNow())) });
+
+  // ── FLOWS-11 · refunds, households, splits, before Steward, deleted gifts (tests/lib/flows11Checks.js) ──
+  if (!skipSet.has("flows11"))
+    await require("./flows11Checks").flows11Checks({ orgId, get, q, agree, diffs, skip, today: orgTime.orgToday(org || {}, new Date(testNow())) });
 
   // TRUTH-1: a disagreement logged in docs/defects.md (tests/lib/knownDefects.js),
   // at exactly the value its defect predicts, is still found and still printed,

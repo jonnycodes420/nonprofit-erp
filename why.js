@@ -427,7 +427,7 @@ async function stopped(orgId, { donor } = {}) {
   if (!d) return null;
   const t = await today(orgId);
   const H = await homeNote();
-  const gifts = await query(`SELECT id, LEFT(date,10) AS date, amount, acknowledgement_sent FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 ORDER BY date DESC NULLS LAST, id`, [orgId, d.id]);
+  const gifts = await query(`SELECT id, LEFT(date,10) AS date, amount, acknowledgement_sent FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND ${require("./shared/numbers/giftCount").KEPT("g")} ORDER BY g.date DESC NULLS LAST, g.id`, [orgId, d.id]);
   const subject = { donor: { id: d.id, name: d.name } };
   if (!gifts.length) return { ...subject, facts: { name: d.name, lastGift: null }, reasons: [], who: [], step: null, cantSee: null };
   const last = gifts[0];

@@ -93,6 +93,8 @@ function importedWords(imp) {
     const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
     when = d === last ? ` (before ${MON[m % 12]} ${m === 12 ? y + 1 : y})` : ` (up to ${d} ${MON[m - 1]} ${y})`;
   }
+  // FLOWS-11 (W-1114-Finance-26X): a total typed in on Add person is from before Steward, not a gift.
+  if (/typed in when they were added/.test(String(imp.imported_source || imp.source || ""))) return `Includes ${money.formatCentsPlain(cents)} from before Steward (a total typed in when they were added, not a gift)`;
   return `Includes ${money.formatCentsPlain(cents)} from your old system${when}`;
 }
 
