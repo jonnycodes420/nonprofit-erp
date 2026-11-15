@@ -6,7 +6,8 @@
 // the list it wrote down before the first suite), with the nightly check's
 // narrow rules (scripts/ci/check-numbers.js checkOrg, `narrow`): the totals
 // kept on a person (`donor-stored`), First/Largest/Last, and rows pointing at a
-// removed gift. Any of those non-zero fails the shard, so a path that leaves a
+// removed gift, for the people the app wrote (a fixture's straight-SQL rows carry no app actor,
+// check-numbers.js APP_WRITTEN). Any of those non-zero fails the shard, so a path that leaves a
 // stored total stale breaks the build that brought it in, not a customer's
 // morning. A suite that leaves a stale total ON PURPOSE (to prove a screen
 // reads the gifts, not the stored figure) names its org in
@@ -41,7 +42,7 @@ async function main() {
   const bad = [], held = [];
   for (const id of orgs) {
     let r;
-    try { r = await checkOrg(id, { narrow: true, sample: 40 }); }
+    try { r = await checkOrg(id, { narrow: true, appWrittenOnly: true, sample: 40 }); }
     catch (e) { if (/no org/.test(e.message)) continue; bad.push({ id, line: `the check could not run: ${e.message}` }); continue; }
     const hits = r.problems.filter(p => RULES.includes(p.rule));
     if (!hits.length) continue;

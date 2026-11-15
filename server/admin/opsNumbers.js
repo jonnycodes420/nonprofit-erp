@@ -35,7 +35,7 @@ function splitLine(rows) {
 
 async function card(query) {
   const { UNIT } = require("../../scripts/ci/check-numbers");
-  const nights = (await query(`SELECT DISTINCT ran_on FROM number_checks ORDER BY ran_on DESC LIMIT ${NIGHTS}`)).map(r => String(r.ran_on instanceof Date ? r.ran_on.toISOString() : r.ran_on).slice(0, 10)).reverse();
+  const nights = (await query(`SELECT DISTINCT to_char(ran_on, 'YYYY-MM-DD') AS d FROM number_checks ORDER BY d DESC LIMIT ${NIGHTS}`)).map(r => r.d).reverse();
   if (!nights.length) return { nights: [], orgs: [], sameName: [], sentence: "The nightly check has not run yet.", digest: null, units: UNIT };
   const latest = nights[nights.length - 1];
   const rows = await query(

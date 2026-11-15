@@ -18,6 +18,10 @@ module.exports = {
   "org_p4show": `parity4-show-me: ${FIXTURE_SQL}`,
   "org_sendgate": `send-gate: ${FIXTURE_SQL}; its people carry stated totals to be judged on`,
   "org_speed3list": `speed3: ${FIXTURE_SQL}, then sets the totals in its own SQL for a 2,000-person list`,
+  // A removed-gift row a suite leaves by deleting in SQL (the gift's ledger stamp stays behind).
+  "org_gi_a": "gift-idempotency: deletes a person's gifts in SQL to set up its replay, leaving their ledger stamps",
+  "org_acc2p": "access2-portfolio: its reset deletes people and gifts in SQL, leaving a ledger stamp",
+  "org_mopup1decoy": "mopup1-leftovers: plants ft_mop1_decoy, a ledger line pointing at a gift that never existed, on purpose",
   "org_list5big": "list5-fast-list: plants stored totals that disagree on purpose, to prove the list reads the gifts, not the stored figure",
 };
 module.exports.lookup = id => module.exports[id] || Object.entries(module.exports).find(([k]) => k.endsWith("*") && id.startsWith(k.slice(0, -1)))?.[1] || null;

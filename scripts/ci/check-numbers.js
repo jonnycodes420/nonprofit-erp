@@ -96,6 +96,15 @@ async function orgToday(orgId) {
   return orgTime.orgToday(o || {});
 }
 
+// NUMBERS-6 · the after-battery check judges only people the APP wrote. The app stamps an actor
+// on every row it writes (CLAUDE.md, the actor on every write); a test fixture's straight-SQL row
+// carries none, or system:test. So: a person whose every gift has an app actor, or, with no gift,
+// a person the app made. A fixture's own gifts or stated totals are the fixture's, not a write path's.
+const FIXTURE = col => `(${col} IS NULL OR ${col} LIKE 'system:test%')`;
+const APP_WRITTEN = ` AND (CASE WHEN EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id)
+     THEN NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND ${FIXTURE("g.created_by")})
+     ELSE NOT ${FIXTURE("d.created_by")} END)`;
+
 async function checkOrg(orgId, opts = {}) {
   // NUMBERS-6: `opts.narrow` checks only what is kept on a person (donor-stored,
   // First/Largest/Last) and what was removed, for the after-battery check over
@@ -122,7 +131,7 @@ async function checkOrg(orgId, opts = {}) {
     `SELECT id, total_giving::text AS total_giving, gift_count, first_gift_date, last_gift_date, last_gift_amount::text AS last_gift_amount,
             created_import_id, household_id, imported_total::text AS imported_total, imported_gift_count,
             imported_first_gift_date, imported_last_gift_date, imported_last_gift_amount::text AS imported_last_gift_amount, imported_through
-       FROM donors WHERE org_id = ? AND deleted_at IS NULL`, [orgId]);
+       FROM donors d WHERE org_id = ? AND deleted_at IS NULL${opts.appWrittenOnly ? APP_WRITTEN : ""}`, [orgId]);
   const byDonor = new Map();
   for (const g of gifts) { if (!byDonor.has(g.donor_id)) byDonor.set(g.donor_id, []); byDonor.get(g.donor_id).push(g); }
 

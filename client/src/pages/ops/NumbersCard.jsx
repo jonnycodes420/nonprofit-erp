@@ -5,6 +5,7 @@
 // apart. Counts only: never a person, an amount or an id beyond the org's own.
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../api";
+import { countLabel } from "../../../../shared/countWords.js";
 
 const INK = "#0F1A12", WHITE = "#FFFFFF", CREAM = "#F0EDE6", EMERALD = "#0D5C3A", BRASS = "#C9A84C";
 const card = { background: WHITE, borderRadius: 10, padding: "18px 20px", marginBottom: 18, border: "1px solid rgba(15,26,18,0.08)" };
@@ -48,7 +49,7 @@ export function NumbersView({ data, error, busy, onMark, result }) {
     {data.orgs.length ? <div style={{ overflowX: "auto" }}><table style={{ borderCollapse: "collapse", width: "100%", minWidth: 560 }}><tbody>
       <tr><td style={head}>Org</td><td style={{ ...head, textAlign: "right" }}>Problems</td><td style={head}>By rule</td><td style={head}>Last {data.nights.length} nights</td><td style={head} /></tr>
       {withProblems(real).map(row)}
-      {cleanReal ? <tr><td colSpan={5} style={{ ...cell, opacity: 0.7 }}>{n(cleanReal)} real org{cleanReal === 1 ? "" : "s"} with no problems.</td></tr> : null}
+      {cleanReal ? <tr><td colSpan={5} style={{ ...cell, opacity: 0.7 }}>{countLabel(cleanReal, "real org")} with no problems.</td></tr> : null}
       {test.length ? <tr><td colSpan={5} style={{ ...cell, fontWeight: 600, paddingTop: 14 }}>Test orgs ({n(test.length)})</td></tr> : null}
       {withProblems(test).map(row)}
     </tbody></table></div> : null}
