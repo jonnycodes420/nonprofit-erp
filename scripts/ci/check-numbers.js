@@ -165,7 +165,7 @@ async function checkOrg(orgId, opts = {}) {
     // refund or a soft or matching credit row (written out here, not read from the app).
     // NUMBERS-4: on one day and one recording, the larger, then the later row on file.
     const latest = giftRows.filter(g => day(g.date)).sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : String(b.created_us).localeCompare(String(a.created_us))   // to the microsecond, as Postgres orders
-      || c(b.amount) - c(a.amount) || (b.import_row == null ? -1 : a.import_row == null ? 1 : b.import_row - a.import_row) || (b.id > a.id ? 1 : -1)))[0];
+      || c(b.amount) - c(a.amount) || (b.import_row == null ? (a.import_row == null ? 0 : -1) : a.import_row == null ? 1 : b.import_row - a.import_row) || (b.id > a.id ? 1 : -1)))[0];   // NUMBERS-6: two rows with no import_row tie here, so the id decides (it returned -1, and the input order did)
     // Stored on the person: exactly what the gifts and the imported figure say.
     if (stored !== storedLife) add("donor-stored", { donor: d.id, what: "total_giving", stored, gifts: storedLife });
     const afterN = after.filter(isGift).length;
