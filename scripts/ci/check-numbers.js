@@ -198,15 +198,16 @@ async function checkOrg(orgId, opts = {}) {
     const avgCents = countedN ? Math.round(counted.reduce((s, g) => s + c(g.amount), 0) / countedN) : null;
     if (!narrow && ((glance.average.count || 0) !== countedN || (countedN && glance.average.cents !== avgCents)))
       add("donor-count-average", { donor: d.id, shown: [glance.average.cents, glance.average.count], gifts: [avgCents, countedN] });
-    const realDated = realCash.filter(g => day(g.date));   // NUMBERS-3: a credit row is no one's first gift
+    // FLOWS-11 (shared/numbers/giftCount.js KEPT): a gift refunded in full is no one's First or Largest.
+    const realDated = realCash.filter(g => g.refunded_in_full !== true && day(g.date));   // NUMBERS-3: a credit row is no one's first gift
     // NUMBERS-5: on one day, the one recorded first (to the microsecond, as Postgres orders), then the
     // larger, then the row higher up its file, written out here (firstGift.js says the same in SQL).
     const first = [...realDated].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : String(a.created_us).localeCompare(String(b.created_us))
       || c(b.amount) - c(a.amount) || (a.import_row == null ? (b.import_row == null ? 0 : 1) : b.import_row == null ? -1 : a.import_row - b.import_row) || (a.id < b.id ? -1 : 1)))[0];
-    const largest = real.reduce((m, g) => (c(g.amount) > m ? c(g.amount) : m), 0);
+    const largest = real.filter(g => g.refunded_in_full !== true).reduce((m, g) => (c(g.amount) > m ? c(g.amount) : m), 0);
     if (realDated.length && (glance.first.cents !== c(first.amount) || day(glance.first.date) !== day(first.date)))
       add("donor-first-largest-last", { donor: d.id, what: "first", shown: glance.first.cents, gifts: c(first.amount) });
-    if (real.length && glance.largest.cents !== largest) add("donor-first-largest-last", { donor: d.id, what: "largest", shown: glance.largest.cents, gifts: largest });
+    if (real.some(g => g.refunded_in_full !== true) && glance.largest.cents !== largest) add("donor-first-largest-last", { donor: d.id, what: "largest", shown: glance.largest.cents, gifts: largest });
     if (latest && (!last.rows[0] || last.rows[0].id !== latest.id)) add("donor-first-largest-last", { donor: d.id, what: "last", shown: last.rows[0] && last.rows[0].id, gifts: latest.id });
     if (narrow) return;
     const yearCents = cash.filter(g => g.date >= fyStart && g.date <= today).reduce((s, g) => s + c(g.amount), 0);
