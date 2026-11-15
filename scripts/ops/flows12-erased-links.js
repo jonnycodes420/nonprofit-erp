@@ -33,6 +33,6 @@ const { Pool } = require("pg");
       console.log(`\n${o}: ${list.filter(r => r.household_id).length} in a household, ${list.filter(r => r.assigned_to).length} assigned to an officer`);
       for (const r of list) console.log(`  ${r.id}  erased ${r.erased_on}${r.household_id ? `  household ${r.household_id}` : ""}${r.assigned_to ? `  assigned ${r.assigned_to}` : ""}`);
     }
-    console.log("\nThe repair, when REPAIR-1 takes it: UPDATE donors SET household_id=NULL, assigned_to=NULL WHERE erased_at IS NOT NULL (per org, audited).");
+    console.log("\nThe repair, when REPAIR-1 takes it: clear household_id and assigned_to on these records, per org, audited.");
   } finally { await pool.end(); }
 })().catch(e => { console.error(e.message); process.exit(1); });
