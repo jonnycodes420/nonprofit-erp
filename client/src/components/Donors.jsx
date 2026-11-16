@@ -436,7 +436,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const dirPageRows=(dirRows||[])
     .filter(d=>!searchPending||!searchTerm||((d.name||"")+" "+(d.email||"")).toLowerCase().includes(searchTerm));
 
-  const loadOfficers=()=>apiFetch("/portfolio/officers").then(r=>{setOfficers(r.officers||[]);setPortfolioMeta({tier:r.tier||PLAN_UNKNOWN,single_user:!!r.single_user});setPendingInvites((r.invites||[]).map(i=>({id:"invite:"+i.id,name:i.name,email:i.email,pending:true})));}).catch(()=>{});
+  const loadOfficers=()=>apiFetch("/portfolio/officers").then(r=>{setOfficers(r.officers||[]);setPortfolioMeta({tier:r.tier||PLAN_UNKNOWN,single_user:!!r.single_user,file:r.file||null});setPendingInvites((r.invites||[]).map(i=>({id:"invite:"+i.id,name:i.name,email:i.email,pending:true})));}).catch(()=>{});
   useEffect(()=>{
     apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});
     apiFetch("/org/team").then(setOrgTeam).catch(()=>{});

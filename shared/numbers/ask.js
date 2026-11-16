@@ -70,4 +70,14 @@ async function roomKnown(q, orgId, ids, screenings = new Map()) {
 }
 const natural = cents => { if (!SA) throw new Error("shared/numbers/ask: await ask.ready first"); return SA.naturalAskCents(cents); };
 
-module.exports = { ready, RULE, HOLD_WORDS, GIFTS_SQL, inputsOf, askFor, rising, roomKnown, natural };
+// FLOWS-14 (W-1115-Finance-34X): whose gifts an ask was read from, as words before it. A
+// giving unit of one person: "" (their own). A household of two or more: "the Okonkwo
+// household's ", so an ask built from a spouse's $250 never reads as this person's own.
+function whoseGifts(unit) {
+  const people = (unit && unit.people) || [];
+  if (people.length < 2) return "";
+  const core = String(unit.name || "").trim().replace(/^the\s+/i, "").replace(/\s+(household|family)$/i, "").trim();
+  return core ? `the ${core} household's ` : "the household's ";
+}
+
+module.exports = { whoseGifts, ready, RULE, HOLD_WORDS, GIFTS_SQL, inputsOf, askFor, rising, roomKnown, natural };

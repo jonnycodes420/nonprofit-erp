@@ -747,7 +747,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     -- (org_id, date) instead of probing every donor: 43 ms -> 10 ms at 25k.
     JOIN donors d ON d.id = g.donor_id AND g.org_id = d.org_id
     WHERE d.org_id = ? AND d.deleted_at IS NULL
-      AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)
+      AND ${require("../../shared/numbers/thanks").AWAITING("g")}   -- FLOWS-14: the one thank-you rule
       AND d.deceased IS NOT TRUE
       AND g.date >= ? ${scopeClause}
     ORDER BY g.amount DESC

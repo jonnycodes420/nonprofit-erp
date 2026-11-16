@@ -86,14 +86,17 @@ app.get("/portfolio/officers", requireAuth, wrap(async (req, res) => {
        LEFT JOIN donors d ON d.pending_assignee_invite_id = i.id AND d.org_id = i.org_id AND d.deleted_at IS NULL
       WHERE i.org_id=? AND i.accepted_at IS NULL AND i.expires_at > NOW()
       GROUP BY i.id, i.email ORDER BY i.created_at DESC`, [req.user.orgId]);
+  const shaped = officers.map(o => ({
+    ...o,
+    portfolio_count: parseInt(o.portfolio_count, 10) || 0,
+    portfolio_giving: parseFloat(o.portfolio_giving) || 0,
+  }));
   res.json({
     tier,
     single_user: officers.length <= 1,
-    officers: officers.map(o => ({
-      ...o,
-      portfolio_count: parseInt(o.portfolio_count, 10) || 0,
-      portfolio_giving: parseFloat(o.portfolio_giving) || 0,
-    })),
+    officers: shaped,
+    // FLOWS-14 (W-1115-Donors-06X): the Unassigned row and the sentence that says the rows add up to the file.
+    file: await require("./portfolioFile").footing(query, req.user.orgId, shaped),
     invites: invites.map(i => ({ id: i.id, email: i.email, name: inviteeDisplayName(i.email), pending_count: parseInt(i.pending_count, 10) || 0 })),
   });
 }));
