@@ -199,9 +199,11 @@ const read = p => fs.readFileSync(path.join(ROOT, p), "utf8");
     });
 
     await step2("§2 Home", async () => {
-      const t4 = await task("Drop the open house flyers off");
+      // Its own person: Home shows one open task per person as "Next", so Delphine's others would hide it.
+      const ezra = await person("Ezra Lindgren-Oduya");
+      const t4 = (await api("POST", "/tasks", tok, { title: "Drop the open house flyers off", due: today, donorId: ezra })).body.id;
       await page.goto(`${APP}/dashboard`, { waitUntil: "networkidle", timeout: 60000 });
-      const row = page.locator("li", { hasText: "Delphine Okonkwo-Hart" }).filter({ hasText: /open house flyers/i }).first();
+      const row = page.locator("li", { hasText: "Ezra Lindgren-Oduya" }).filter({ hasText: /open house flyers/i }).first();
       await row.waitFor({ timeout: 20000 });
       await row.getByRole("button", { name: /^(Mark done|Done)$/ }).click();
       ok("§2 Home: Mark done marks the task done in one click", await until(async () => (await doneOf(t4)) === 1), { done: await doneOf(t4) });

@@ -17,6 +17,9 @@ import { apiFetch } from "../api";
 import { offerUndo } from "../components/EditHistory";
 import { fmtDayShort } from "./taskDue";
 
+// "Done: Ask about the gala?" keeps its own mark; only a bare title gets a full stop.
+export const doneWords = title => `Done: ${String(title || "").trim()}${/[.?!]$/.test(String(title || "").trim()) ? "" : "."}`;
+
 export const completeCall = (id, done) =>
   apiFetch(`/tasks/${encodeURIComponent(id)}/complete`, { method: "POST", body: JSON.stringify({ done }) });
 
@@ -29,7 +32,7 @@ export async function completeTask(t, { after = null, undo = true } = {}) {
   }
   if (after) await after();
   if (undo) offerUndo({
-    message: row && row.next ? `Done: ${t.title}. The next one is on ${fmtDayShort(row.next.due)}.` : `Done: ${t.title}.`,
+    message: row && row.next ? `${doneWords(t.title)} The next one is on ${fmtDayShort(row.next.due)}.` : doneWords(t.title),
     undoAction: async () => { const r = await completeCall(t.id, false); if (after) await after(); return r; },
   }, t.title);
   return { ok: true, row };
