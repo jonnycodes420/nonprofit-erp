@@ -198,11 +198,11 @@ const JPEG = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
       JWT_SECRET: process.env.JWT_SECRET || "local-test-secret", RESEND_API_KEY: "re_dummy_local", RESEND_BASE_URL: "http://localhost:9", DB_SSL: process.env.DB_SSL || "disable" } });
   let err = ""; child.stderr.on("data", d => { err = (err + d).slice(-1500); });
   const atlas = async text => {
-    const t0 = Date.now(); const ctl = new AbortController(); const stop = setTimeout(() => ctl.abort(), 40000);
+    const t0 = performance.now(); const ctl = new AbortController(); const stop = setTimeout(() => ctl.abort(), 40000);
     const r = await fetch(`${B2}/atlas`, { method: "POST", signal: ctl.signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` }, body: JSON.stringify({ text }) })
       .then(async x => ({ status: x.status, body: await x.json().catch(() => null) })).catch(e => ({ status: 0, body: null, e: String(e) })).finally(() => clearTimeout(stop));
     const lines = ((r.body && r.body.request && r.body.request.lines) || []).map(c => String(c.line || "")).filter(Boolean);
-    return { ms: Date.now() - t0, status: r.status, lines };
+    return { ms: Math.round(performance.now() - t0), status: r.status, lines };
   };
   try {
     let up = false;
