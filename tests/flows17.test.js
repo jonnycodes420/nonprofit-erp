@@ -130,7 +130,7 @@ const read = p => fs.readFileSync(path.join(ROOT, p), "utf8");
   const src = read("client/src/lib/completeTask.js");
   ok("§2 one complete call: lib/completeTask.js posts /tasks/:id/complete, and the Tasks page and the profile use it",
     /\/tasks\/\$\{encodeURIComponent\(id\)\}\/complete/.test(src) && /completeTask/.test(read("client/src/components/Tasks.jsx"))
-      && /completeTask/.test(read("client/src/components/DonorProfile.jsx")) && /TaskTick/.test(read("client/src/components/MeetingPanels.jsx"))
+      && /completeTask\(t\)/.test(read("client/src/components/profile/profileShared.jsx")) && /TaskTick/.test(read("client/src/components/MeetingPanels.jsx"))
       && !/method:"PUT"[^\n]*done:/.test(read("client/src/components/Donors.jsx")));
 
   const why = (() => {

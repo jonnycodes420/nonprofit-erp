@@ -2,7 +2,7 @@
   "check": "split-shells",
   "what": "the files SPLIT-2 cut down to a shell (each capped at the size the split left it)",
   "counts": {
-    "client/src/components/DonorProfile.jsx": 260,
+    "client/src/components/DonorProfile.jsx": 258,
     "db.js": 47,
     "server.js": 22
   }
