@@ -264,7 +264,7 @@ async function resolveCampaignRecipients(campaign, orgId) {
 }
 // SPLIT-2 end
 // SPLIT-2 server.js piece 435
-async function campaignAudience(campaign, orgId) {
+async function campaignAudience(campaign, orgId, opts = {}) {
   const raw = typeof campaign.segment === "string"
     ? JSON.parse(campaign.segment || "{}")
     : (campaign.segment || {});
@@ -276,12 +276,13 @@ async function campaignAudience(campaign, orgId) {
   // Overview reads (shared/numbers/audienceReasons.js): Everyone's people only
   // (never an archived or erased record), each in exactly one place.
   const a = require("../../shared/numbers/audienceReasons").audienceReasons(inSegment, id => decisions.get(id));
-  return {
+  // FLOWS-15 item 1: a letter with donor-only copy leaves out the never-givers (server/outreach/firstGiftRule.js).
+  return require("../outreach/firstGiftRule").applyFirstGiftRule({
     recipients: a.reach,
     leftOut: a.groups,
     leftOutCount: a.leftOutCount,
     orgGate: await orgMaySendEmail(orgId),
-  };
+  }, campaign, opts);
 }
 // SPLIT-2 end
 // SPLIT-2 server.js piece 438
@@ -337,7 +338,14 @@ async function runCampaignSend(campaign, org, donors) {
       const campaignFrom = smtpFrom ? fromWithDisplayName((await resolveOrgBrandTheme(org.id).catch(() => null))?.displayName, smtpFrom) : smtpFrom; // BUILD-64: org name in the inbox, resolved once
 
       const audienceNoGift = donors.some(d => !(Number(d.total_giving) > 0));   // POLISH-9: anyone here never gave
+      // FLOWS-15 item 1: never-givers are left out of a letter with donor-only copy (server/outreach/firstGiftRule.js).
+      const firstGiftOutcome = fromBlocks ? await require("../outreach/firstGiftRule").outcomeFor(campaign) : "no_claim";
       for (const donor of donors) {
+        if (firstGiftOutcome === "left_out" && require("../../shared/numbers/neverGave").neverGave(donor)) {
+          await run("INSERT INTO campaign_recipients (id,org_id,campaign_id,donor_id,email,failure_reason) VALUES (?,?,?,?,?,?)",
+            [newId("cr"), org.id, campaign.id, donor.id, donor.email, "suppressed: no_first_gift_version"]);
+          continue;
+        }
         const decision = await donorMailDecision("campaign", donor.email, org.id, { donorId: donor.id });
         if (!decision.send && decision.reason !== "type_off") {   // TRUST-1: Campaign emails off, so it waits: the send gate holds it (Going out's Held)
           console.log(`[campaign:${campaign.id}] skipping ${donor.id} (${decision.reason})`);

@@ -9,6 +9,8 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../api";
 import { T, fmtFull } from "../shared";
+import { FundBadge } from "../FundName";
+import { fundDisplayName, FUND_RESTRICTED_BADGE } from "../../../../shared/giftWords.js";   // FLOWS-15 item 4
 
 const base = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", color: T.ink, fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
 const cents = x => { const n = Number(String(x == null ? "" : x).replace(/[$,\s]/g, "")); return Number.isFinite(n) ? Math.round(n * 100) : NaN; };
@@ -46,7 +48,12 @@ export default function FundField({ value, onChange, amount, style, testid = "gi
   const problem = fundLinesProblem(amount, v);
   const sum = (v.lines || []).reduce((s, l) => s + (cents(l.amount) || 0), 0);
   const pad = compact ? { padding: "5px 8px", fontSize: 12 } : {};
-  const fundOpts = funds.map(f => <option key={f.id} value={f.id}>{f.name}{f.restricted ? " (restricted)" : ""}</option>);
+  // FLOWS-15 item 4: the fund's one name (shared/giftWords.js fundDisplayName); a restricted fund is
+  // grouped under "Restricted" in the list and wears the one badge once chosen, never "(restricted)" in its name.
+  const opt = f => <option key={f.id} value={f.id}>{fundDisplayName(f)}</option>;
+  const open = funds.filter(f => !f.restricted), held = funds.filter(f => f.restricted);
+  const fundOpts = held.length ? <>{open.map(opt)}<optgroup label={FUND_RESTRICTED_BADGE}>{held.map(opt)}</optgroup></> : funds.map(opt);
+  const chosen = funds.find(f => f.id === (v.fund_id || (def && def.id)));
 
   if (!v.split) return (
     <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", ...(style || {}) }}>
@@ -55,6 +62,7 @@ export default function FundField({ value, onChange, amount, style, testid = "gi
         <option value="">{def ? `Fund: ${def.name} (your default)` : "Fund: your default"}</option>
         {fundOpts}
       </select>
+      {chosen && chosen.restricted && <FundBadge />}
       {funds.length > 1 && (
         <button type="button" data-testid={testid + "-split"}
           onClick={() => set({ split: true, lines: [{ fundId: v.fund_id || (def && def.id) || "", amount: amount ? String(amount) : "" }, { fundId: "", amount: "" }] })}

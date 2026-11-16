@@ -45,6 +45,7 @@ import OfflinePlans from "./OfflinePlans";   // PLEDGES-2: a recurring plan staf
 import { compareGifts } from "../../../../shared/giftOrder.js";
 import ByYear from "./ByYear";   // HISTORY-1: giving by fiscal year   // FEEL-1: "Pledge payment", never "Pledge_payment"
 import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import FundName from "../FundName";   // FLOWS-15 item 4
 
 // GIFTS-1: a pledge's schedule as the edit opens it, read from its installments.
 const FREQ_IN={annual:"yearly"};
@@ -637,8 +638,8 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                         <div key={f.fundId||f.fundName} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px"}}>
                           <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:6}}>
                             <div>
-                              <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{f.fundName}</span>
-                              {f.restricted&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.gold700,background:T.gold100,borderRadius:99,padding:"2px 7px"}}>Restricted</span>}
+                              {/* FLOWS-15 item 4: the fund's one name and the one Restricted badge (FundName.jsx) */}
+                              <FundName fund={f} style={{fontSize:13,fontWeight:700,color:T.ink}}/>
                             </div>
                             <div style={{textAlign:"right"}}>
                               <div style={{fontSize:14,fontWeight:800,color:T.ink}}>{fmtFull(f.total)}</div>

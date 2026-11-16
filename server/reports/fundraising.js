@@ -496,7 +496,7 @@ app.get("/metrics/stewardship-summary", requireAuth, OS.cached("stewardship-summ
 // FUNDRAISING-2: the stored answer's name carries its shape, so a deploy that
 // changes the shape never serves yesterday's body (stored answers are not
 // keyed by build).
-app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-4"), wrap(async (req, res) => {
+app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-5"), wrap(async (req, res) => {
   await PACE_READY;
   await FISCAL_READY;   // FIX-10 Part B — the period label is the shared one, not a race
   const { orgId } = req.user;
@@ -661,8 +661,9 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-4"
         WHERE c.org_id = ? AND c.id = ? AND g.date >= ? AND g.date <= ?
         GROUP BY d.id, d.name ORDER BY SUM(g.amount) DESC, d.id LIMIT 3`, [orgId, top.id, monthStart, today]);
     const left = Math.max(0, Math.round((top.goalAmount - top.raised) * 100) / 100);
-    const weeks = top.daysLeft ? Math.max(1, Math.ceil(top.daysLeft / 7)) : null;
-    lead = { left, perWeek: left > 0 && weeks ? Math.ceil(left / weeks) : 0, weeksLeft: weeks,
+    // FLOWS-15 item 2: the weekly pace is over the days-left number the card prints (shared/numbers/pace.js).
+    const wp = require("../../shared/numbers/pace").weeklyPace({ left, daysLeft: top.daysLeft });
+    lead = { left, perWeek: wp.perWeek, weeksLeft: wp.weeks, daysLeft: top.daysLeft,   // overview cache key bumped to -5: a stored answer held the old arithmetic
              topGivers: givers.map(x => ({ id: x.id, name: x.name, total: parseFloat(x.total) || 0 })) };
   }
   // FUNDRAISING-2: with no campaign running, the card shows the event that

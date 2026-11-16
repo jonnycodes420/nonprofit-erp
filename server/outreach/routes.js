@@ -103,7 +103,9 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
   const seg = req.body?.segment && typeof req.body.segment === "object" ? req.body.segment : {};
   // FIX-26: the count is the send's own decision for each person, so the
   // number on the button is the number of messages the send creates.
-  const aud = await campaignAudience({ segment: JSON.stringify(seg) }, orgId)
+  // FLOWS-15 item 1: the editor says whether its live blocks carry donor-only copy, so the count here
+  // is the send's (never-givers left out until she writes a first-gift version or ticks them in).
+  const aud = await campaignAudience({ segment: JSON.stringify(seg) }, orgId, { donorOnlyCopy: req.body?.donorOnlyCopy === true })
     .catch(() => ({ recipients: [], leftOut: [], leftOutCount: 0, orgGate: { send: false, reason: "unreadable" } }));
   const donors = aud.recipients;
   const [org] = await query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId]);
@@ -133,7 +135,11 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
     audienceNoGift: [...donors, ...aud.leftOut.flatMap(g => g.people)].some(d => !(Number(d.total_giving) > 0)),
     // FLOWS-12 item 1: how many this send reaches have never given (shared/numbers/neverGave.js),
     // so the editor can say so and the preview can flag a letter that thanks them for giving.
-    audienceNeverGiven: require("../../shared/numbers/neverGave").countNeverGave(donors),
+    // FLOWS-15: over the whole audience, not only who can get it today (Campaign emails off left it "0").
+    audienceNeverGiven: require("../../shared/numbers/neverGave").countNeverGave([...donors, ...aud.leftOut.flatMap(g => g.people)]),
+    // FLOWS-15 item 1: never-givers this letter leaves out, and how many a tick would bring in.
+    neverGivenLeftOut: (aud.leftOut.find(g => g.reason === "no_first_gift_version") || { count: 0 }).count,
+    neverGiverOutcome: aud.neverGiverOutcome || "no_claim",
     first: donors[0] ? { id: donors[0].id, name: displayNameCase(donors[0].name || ""), firstName: String(donors[0].name || "").trim().split(/\s+/)[0] || "Margaret",
       ...(firstGift ? { giftAmount: `$${Number(firstGift.amount).toLocaleString()}` } : {}),
       ...(Number(donors[0].total_giving) > 0 ? { totalGiving: `$${Number(donors[0].total_giving).toLocaleString()}` } : {}) } : null,
@@ -168,6 +174,7 @@ const AUDIENCE_WORDS = {
   bounced: n => `${n === 1 ? "has an address that bounced" : "have addresses that bounced"}`,
   complained: n => `marked a past email as spam`, blocked_address: () => "on the list Steward never mails",
   sample_donor: () => "sample records, not real people",
+  no_first_gift_version: n => `${n === 1 ? "has" : "have"} never given and wait for a first-gift version`,   // FLOWS-15 item 1
 };
 async function audienceLine(orgId, aud, noun, req = null) {
   const [o] = await query("SELECT name FROM orgs WHERE id=?", [orgId]);
@@ -232,6 +239,12 @@ app.post("/campaigns/:id/preview", requireAuth, wrap(async (req, res) => {
     const seg = req.body && req.body.segment && typeof req.body.segment === "object" ? JSON.stringify(req.body.segment) : campaign.segment;
     const aud = await campaignAudience({ segment: seg }, orgId).catch(() => ({ recipients: [] }));
     donor = aud.recipients[0] || null;
+  }
+  // FLOWS-15 item 1: a never-giver this letter leaves out is shown as that, never as the letter.
+  if (donor && require("../../shared/numbers/neverGave").neverGave(donor) && await require("./firstGiftRule").outcomeFor(campaign) === "left_out") {
+    const PG = await import("../../shared/pastGiving.js");
+    return res.json({ html: "", problems: [], notSent: PG.notSentSentence(displayNameCase(donor.name || "").split(/\s+/)[0]), subject: "",
+      person: { id: donor.id, name: displayNameCase(donor.name || "") } });
   }
   const ctx = await emailCompose.orgRenderContext(orgId);
   const fields = donor

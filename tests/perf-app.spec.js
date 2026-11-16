@@ -83,8 +83,8 @@ const JS_FIRST_KB = 248;   // FLOWS-16: +1 KB. apiFetch shows the route's senten
 // Before LAG-1:   // POLISH-6: +2 KB, the one shared date box's loader (LazyDateInput) on the shell; main measured 239 on the same runner, the branch 241.
 // Before POLISH-6:   // PERF-3 measured 227 KB + 5%: the moves deck's code (15 KB) is on the first look now, preloaded (PERF-2: 214)
 const WARM_MS = 1446;   // PERF-3: Home on a phone a second time, measured 1,314 ms + 10% (main: 1,528)
-const FIRST_KB = 318;   // FLOWS-16: +1 KB, the same bytes as JS_FIRST_KB's line above; the runner measured 318.
-// Before FLOWS-16: const FIRST_KB = 317;   // SALES-3: +1 KB, the lazy loader for /quote/:token on the entry: +55 bytes gzipped (main-*.js 16,552 -> 16,607) and +2 on Home's chunk (App-*.js 86,600 -> 86,602), against origin/main's own build. Main sat at 316 on the rounding edge; the runner measured 317 twice.
+const FIRST_KB = 318;   // FLOWS-15: +1 KB, the gift dialog Home preloads now shows the one Restricted badge (W-1116-Finance-28): FundName chunk +393 bytes gzipped, giftWords +61, RecordGiftDialog +109, this build's changelog entry +51, against origin/main's own build; the runner measured 318.
+// Before FLOWS-15: const FIRST_KB = 317;   // SALES-3: +1 KB, the lazy loader for /quote/:token on the entry: +55 bytes gzipped (main-*.js 16,552 -> 16,607) and +2 on Home's chunk (App-*.js 86,600 -> 86,602), against origin/main's own build. Main sat at 316 on the rounding edge; the runner measured 317 twice.
 // Before SALES-3: const FIRST_KB = 316;   // FLOWS-5: +1 KB, the same bytes as JS_FIRST_KB's line above; the runner measured 316.
 // Before FLOWS-5: const FIRST_KB = 315;   // NAV-1 (menu): +1 KB, the same bytes as JS_FIRST_KB's line above (the org's layer rides on /me/nav-layout: no new request). The runner measured 315.
 // Before NAV-1 (menu): const FIRST_KB = 314;   // ASKS-1: +1 KB, the same bytes as JS_FIRST_KB's line above (an admin's first look asks nothing new: the access check skips GET /me for an admin).

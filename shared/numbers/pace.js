@@ -98,4 +98,19 @@ function paceOf({ raised, goal, start, end, today, basis = "raised" }) {
   };
 }
 
-module.exports = { paceOf, paceMath, PACE_BAND_PTS, PACE_STATES, PACE_LABELS: LABELS };
+// FLOWS-15 item 2 (W-1116-Fundraising-04). WHAT IT TAKES EACH WEEK, FROM THE
+// DAYS LEFT THE CARD SHOWS. The card read "$314,327 to go, 45 days left: about
+// $44,904 a week", which is 49 days' worth: the week count was rounded UP to
+// whole weeks (45 days → 7 weeks) before dividing. The weekly figure is now the
+// money left over the very days-left number printed beside it, as weeks
+// (daysLeft ÷ 7), so a reader can redo it: $314,327 × 7 ÷ 45 = $48,895.
+// Fewer than seven days left: what is left is what this week takes.
+function weeklyPace({ left, daysLeft }) {
+  const l = Math.max(0, Number(left) || 0);
+  const dl = Number(daysLeft);
+  if (!(l > 0) || !Number.isFinite(dl) || dl <= 0) return { perWeek: 0, weeks: null, daysLeft: Number.isFinite(dl) ? dl : null };
+  const weeks = dl / 7;
+  return { perWeek: Math.round(weeks < 1 ? l : l / weeks), weeks, daysLeft: dl };
+}
+
+module.exports = { paceOf, paceMath, weeklyPace, PACE_BAND_PTS, PACE_STATES, PACE_LABELS: LABELS };

@@ -1511,16 +1511,19 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // the only count on the screen (FIX-26): the browser used to count its own,
   // and two answers to "who gets this" is one too many.
   const segKey = JSON.stringify(form.seg);
+  // FLOWS-15 item 1: whether the editor's live blocks thank the reader for giving with no first-gift
+  // version; the count then leaves the never-givers out, as the send will.
+  const [donorOnlyCopy, setDonorOnlyCopy] = useState(false);
   useEffect(() => {
     if (view !== "builder") return;
     let dead = false;
     const tid = setTimeout(() => {
-      apiFetch("/campaigns/segment-preview", { method: "POST", body: JSON.stringify({ segment: JSON.parse(segKey) }) })
+      apiFetch("/campaigns/segment-preview", { method: "POST", body: JSON.stringify({ segment: JSON.parse(segKey), donorOnlyCopy }) })
         .then(r => { if (!dead) setSegPreview(r); })
         .catch(() => { if (!dead) setSegPreview(null); });
     }, 250);
     return () => { dead = true; clearTimeout(tid); };
-  }, [view, segKey]);
+  }, [view, segKey, donorOnlyCopy]);
 
   // EDITOR-1 · the block types and personal fields the campaign editor offers,
   // the same ones every email in Templates has.
@@ -1542,7 +1545,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     const body = normalizeMergeFields(campaign.body || "");
     setForm({ name: campaign.name || "", subject: campaign.subject || "", preheader: campaign.preheader || "", bodyHtml: body,
       seg: { mode, stages: raw.stages || [], tiers: raw.tiers || [], donorIds: raw.donorIds || [],
-             ...(raw.audienceId ? { audienceId: raw.audienceId, audienceName: raw.audienceName || undefined } : {}) },
+             ...(raw.audienceId ? { audienceId: raw.audienceId, audienceName: raw.audienceName || undefined } : {}),
+             ...(raw.includeNeverGiven === true ? { includeNeverGiven: true } : {}) },   // FLOWS-15 item 1: her tick, kept
       // EDITOR-1: an empty time stays empty; a scheduled one shows in this browser's own clock.
       scheduledAt: campaign.scheduled_at ? (() => { const d = new Date(campaign.scheduled_at); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); })() : "",
       status: campaign.status || "draft", templateId: campaign.template_id || null, source: campaign });
@@ -1805,7 +1809,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         title={readOnlySent ? form.name : form.name || (editingId ? "Edit campaign" : "New campaign")}
         statusBadge={readOnlySent ? statusWord(form.source || { status: form.status }) || "Sent" : "Campaign"}
         form={form} setForm={setForm} initialBlocks={cInit} blockTypes={emailMeta.blockTypes} mergeFields={emailMeta.mergeFields}
-        segPreview={segPreview} orgTimezone={orgTimezone} sending={sending} testState={testState} sendingIdentity={sendingIdentity}
+        segPreview={segPreview} onDonorOnlyCopy={setDonorOnlyCopy} orgTimezone={orgTimezone} sending={sending} testState={testState} sendingIdentity={sendingIdentity}
         approvalNote={approvalNote}
         notReviewed={!!(form.starterKey && !form.starterReviewed)}
         audiencePicker={<>
