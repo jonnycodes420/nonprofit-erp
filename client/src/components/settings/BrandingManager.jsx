@@ -100,14 +100,14 @@ export function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
         </div>
         {/* Live preview */}
         <div style={{flex:"1 1 300px",minWidth:260}}>
-          <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>Preview</div>
+          <div data-testid="brand-preview-label" style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>Preview, addressed to a sample donor</div>
           <div style={{border:"1px solid "+T.bg3,borderRadius:12,overflow:"hidden",background:T.bg}}>
             <div style={{background:effAccent,padding:"14px 18px",display:"flex",alignItems:"center",gap:10}}>
               {logo&&<img data-testid="brand-preview-logo" src={logo} alt="" style={{height:26,maxWidth:90,objectFit:"contain"}}/>}
               <span data-testid="brand-preview-name" style={{color:T.white,fontWeight:800,fontSize:15}}>{orgName||"Your organization"}</span>
             </div>
             <div style={{padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
-              <div style={{fontSize:13,color:T.ink3}}>Dear Jordan, thank you for your generous gift…</div>
+              <div style={{fontSize:13,color:T.ink3}}>Dear Sample Donor, thank you for your generous gift…</div>
               <button data-swatch="" style={{alignSelf:"flex-start",background:effAccent,border:"none",borderRadius:8,padding:"8px 16px",color:T.white,fontSize:12,fontWeight:700}}>Primary action</button>
               <div style={{fontSize:11,color:T.ink3}}>The dashboard welcome, receipts, and donor emails use this header.</div>
             </div>

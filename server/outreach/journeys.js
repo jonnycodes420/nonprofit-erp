@@ -828,7 +828,8 @@ app.get("/journeys/:id/rows", requireAuth, wrap(async (req, res) => {
   if (!sql) return res.status(400).json({ error: "unknown_rows",
     message: `There is no set of rows called "${key}". Ask for one of: ${Object.keys(JOURNEY_ROW_SQL).join(", ")}.` });
   const rows = await query(sql, [orgId, t.id]);
-  res.json({ journeyId: t.id, rows: key, count: rows.length, donors: rows.slice(0, 1000) });
+  const shown = key === "skipped" ? require("./skipRows").shape(rows, { thisYear: orgToday(await orgTz(orgId)).slice(0, 4) }) : rows;   // FLOWS-16 item 5   // ORG_TZ_SEAM_OK
+  res.json({ journeyId: t.id, rows: key, count: rows.length, donors: shown.slice(0, 1000) });
 }));
 
 // ONE definition per number, written once, used by the figure AND by the
@@ -865,12 +866,16 @@ const JOURNEY_ROW_SQL = {
             AND ((st.status='done' AND ${orgDateOfSql("st.closed_at", orgTzSql("p.org_id"))} > st.due_date::date)
                  OR (st.status IN ('open','pending') AND st.due_date::date < ${orgTodaySql(orgTzSql("p.org_id"))}))
           ORDER BY d.name`,
-  skipped: `SELECT DISTINCT d.id, d.name, st.skip_reason AS reason
+  // FLOWS-16 item 5: one row per skipped step, with who skipped it, when and why, and the entry it
+  // belongs to; server/outreach/skipRows.js says each as a sentence.
+  skipped: `SELECT d.id, d.name, st.id AS step_id, p.id AS plan_id, st.seq, st.label AS step_label, p.applied_on AS entered,
+                   st.skip_reason AS raw_reason, st.closed_by, st.closed_by_name,
+                   ${orgDateOfSql("st.closed_at", orgTzSql("p.org_id"))}::text AS skipped_on
               FROM cultivation_plan_steps st
               JOIN cultivation_plans p ON p.id=st.plan_id
               JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id
              WHERE p.org_id=? AND p.template_id=? AND st.status='skipped'
-             ORDER BY d.name`,
+             ORDER BY d.name, p.applied_on, st.seq`,
   // DATES-1 · somebody in a yearly-date journey's audience who did not start
   // on its day, with the reason on the row.
   skippedOnDate: `SELECT d.id, d.name, s.sentence AS reason, s.on_day AS entered
@@ -916,7 +921,7 @@ async function journeyStats(orgId, t) {
       { key: "late", label: "Steps late", value: late, rows: "late",
         sentence: "People with a step completed after its due date, or still waiting past it. Late is okay. It isn't failure." },
       { key: "skipped", label: "Steps skipped", value: skipped, rows: "skipped",
-        sentence: "People where somebody decided not to do a step and said why. The reason is on each row." },
+        sentence: "Steps that were not done because somebody, or Steward, decided to skip them. Each row says why, when, and which entry it was." },
       { key: "secondGift", label: "Gave again within a year", value: secondGift, rows: "secondGift",
         sentence: "People who gave another gift within twelve months of entering this journey." },
     ].concat(t.trigger_key === "yearly_date" ? [(await yearlySkipFigure(orgId, t)).skippedOnDate] : []),

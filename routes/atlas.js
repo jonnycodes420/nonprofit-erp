@@ -64,6 +64,7 @@ const ATLAS_TOTAL_MS = () => Number(process.env.ATLAS_TOTAL_MS) || 20000;
 const NS = require("../server/atlas/noSource");   // FLOWS-13 item 6: a question nothing in Steward answers
 
 const PROP = require("../server/atlas/proposal");   // SENDS-1: Atlas proposes, she saves
+const RQ = require("../server/atlas/resume");   // FLOWS-16: a question resumes whole; a follow-up finds the person talked about
 function mount(ctx) {
 const { query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, agentGate, maybeStartJourneyFromServer } = ctx;
 require("./atlasMore").mount({ query, wrap, requireAuth, agentGate });   // ATLAS-3
@@ -338,9 +339,10 @@ async function orgVoice(orgId) {
 }
 
 // Every name and place in the steps, resolved; the questions it leaves.
-async function resolveAll(orgId, steps, { today, onPage, answers = {}, all: allP = null, req = null }) {
+async function resolveAll(orgId, steps, { today, onPage, talkedAbout = null, answers = {}, all: allP = null, req = null }) {
   const all = await (allP || people(orgId));   // SPEED-3: POST /atlas reads them beside the model
-  let lastWho = onPage ? onPage.name : "";
+  // FLOWS-16 item 3: "him" is the person the conversation was about, before the page's record.
+  let lastWho = talkedAbout ? talkedAbout.name : onPage ? onPage.name : "";
   const whoCache = new Map();
   const questions = [];
   const ask = (q) => { if (!questions.some(x => x.id === q.id)) questions.push(q); };
@@ -375,7 +377,9 @@ async function resolveAll(orgId, steps, { today, onPage, answers = {}, all: allP
     // whatever the read said. A merge is only ever her word for one.
     if (st.kind === "merge" && !/\b(merge|combine|duplicates?|same person)\b/i.test(st.words) && /\b(link|connect|related|married|spouses?|partners?)\b/i.test(st.words)) st.kind = "link";
     // ATLAS-3: "remind me to call her" names the person she was just talking about.
-    if (MAY_PERSON.has(st.kind) && !st.who && lastWho && /\b(her|him|them|she|he|they)\b/i.test(st.words)) st.who = lastWho;
+    // FLOWS-16 item 3: and "follow up next week", said right after asking about someone, is them too.
+    if (MAY_PERSON.has(st.kind) && !st.who) st.who = RQ.nameInWords(st.words) || "";   // the name she said, on any page
+    if (MAY_PERSON.has(st.kind) && !st.who && lastWho && (/\b(her|him|them|she|he|they)\b/i.test(st.words) || RQ.pointsAtSomeone(st.words))) st.who = lastWho;
     if (NEEDS_PERSON.has(st.kind) || (MAY_PERSON.has(st.kind) && st.who)) {
       if (!st.who || PRONOUN.test(st.who)) st.who = lastWho || st.who;
       if (st.who && !PRONOUN.test(st.who)) lastWho = st.who;
@@ -647,6 +651,8 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         let label = String(st.words || "Follow up").replace(said || /$^/, " ").replace(/\s+/g, " ").trim().replace(/^(remind me\s+)?(to\s+)?/i, "")
           .replace(/\s*\b((the|in the|by the|on the|in|by|on)\s+)?(in the new year|new year|after thanksgiving|next week|tomorrow|in \w+ (days?|weeks?|months?)|on \w+day|(first week of |early |mid |late |end of )?(january|february|march|april|may|june|july|august|september|october|november|december)( \d+)?)\b.*$/i, "").trim() || "Follow up";
         if (id) label = label.replace(/\b(him|her|them)\b/i, first(nm(id)));
+        // FLOWS-16 item 3: a follow-up with nobody to attach it to is a question, never a Save that writes 0 things.
+        else { await log({ kind: "not_found", state: "refused", line: RQ.NO_PERSON_LINE }); break; }
         const lbl = label[0].toUpperCase() + label.slice(1);
         propose.push({ pid: newId("pi"), kind: "follow_up", donorId: id || null, name: id ? nm(id) : null, title: lbl, due: when.date });   // SENDS-1
         break;
@@ -840,7 +846,8 @@ async function saveProposal(req, m, items) {
     }
   }
   await run("UPDATE atlas_actions SET state='done', waits=false, line=? WHERE org_id=? AND request_id=? AND kind='proposal' AND state='waiting'",
-    [`Saved ${wrote === 1 ? "one thing" : `${wrote} things`}.`, orgId, m.id]);
+    [wrote === 0 ? "Nothing was saved." : `Saved ${wrote === 1 ? "one thing" : `${wrote} things`}.`, orgId, m.id]);   // FLOWS-16 item 3: never "Saved 0 things."
+  await run(`UPDATE voice_memos SET read = jsonb_set(read, '{atlas,proposal,savedCount}', to_jsonb(?::int)) WHERE id=? AND org_id=?`, [wrote, m.id, orgId]);
   return wrote;
 }
 
@@ -871,6 +878,7 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const today = await atlasToday(orgId, tz);
   let onPage = onPage0;
   if (!onPage && prior && prior.onPage) onPage = prior.onPage;
+  const talkedAbout = RQ.personInConversation(prior);   // FLOWS-16 item 3
   PG.lap(req, "setup");
   // SPEED-3: everyone a name could match is read while the model reads her words.
   const all = people(orgId, req);
@@ -901,14 +909,14 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   }
   const t1 = Date.now();
   PG.lap(req, "read");
-  const { steps, questions } = await resolveAll(orgId, read.steps, { today, onPage, all, req });
+  const { steps, questions } = await resolveAll(orgId, read.steps, { today, onPage, talkedAbout, all, req });
   PG.lap(req, "resolve");
   const id = newId("vm");
   const source = req.body.source === "speech" ? "atlas_speech" : "atlas";
   const spoke = questions.length ? (questions.length === 1 ? "One question first, then I'll do all of it." : `${questions.length} questions first, then I'll do all of it.`) : null;
   await run(`INSERT INTO voice_memos (id,org_id,text,source,status,ai,donor_ids,read,cards,run_ids,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,'[]','[]',?,?)`,
     [id, orgId, text, source, questions.length ? "needs_answers" : "planned", read.ai === "on" ? "on" : "off",
-     JSON.stringify([...new Set(steps.map(s => s.donorId).filter(Boolean))]),
+     JSON.stringify(RQ.donorIdsOf(steps)),
      JSON.stringify({ atlas: { steps, questions, spoke, onPage: onPage ? onPage.id : null, follows: prior ? prior.id : null, timings: { readMs: t1 - t0 } } }), actor(req).id, actor(req).name]);
   if (questions.length) return res.json({ request: await requestOut(orgId, id) });
   const [m] = await query("SELECT * FROM voice_memos WHERE id=? AND org_id=?", [id, orgId]);
@@ -923,7 +931,7 @@ async function finishRequest(orgId, id, steps, timings) {
   const [m] = await query("SELECT read FROM voice_memos WHERE id=? AND org_id=?", [id, orgId]);
   const read = j(m && m.read) || {};
   await run("UPDATE voice_memos SET status='done', donor_ids=?, read=? WHERE id=? AND org_id=?",
-    [JSON.stringify([...new Set(steps.map(s => s.donorId).filter(Boolean))]), JSON.stringify({ ...read, atlas: { ...(read.atlas || {}), steps, questions: [], spoke: null, timings } }), id, orgId]);
+    [JSON.stringify(RQ.donorIdsOf(steps)), JSON.stringify({ ...read, atlas: { ...(read.atlas || {}), steps, questions: [], spoke: null, timings } }), id, orgId]);
 }
 
 // Her answers: every question at once. Then every step runs.
@@ -937,16 +945,17 @@ app.post("/atlas/:id/answer", requireAuth, checkWriteAccess, wrap(async (req, re
   const answers = req.body && typeof req.body.answers === "object" && req.body.answers ? req.body.answers : {};
   const today = await atlasToday(orgId);
   const onPage = read.atlas && read.atlas.onPage ? (await query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [read.atlas.onPage, orgId]))[0] : null;
-  const fresh = (read.atlas.steps || []).map(s => ({ kind: s.kind, who: s.who, target: s.target, amountWords: s.amountWords, whenWords: s.whenWords, how: s.how,
-    words: s.words, ...(s.whos ? { whos: s.whos } : {}), ...(s.group ? { group: s.group } : {}) }));
-  const { steps, questions } = await resolveAll(orgId, fresh, { today, onPage, answers, all: people(orgId, req), req });
+  // FLOWS-16 item 4 (W-1116-Atlas-02X): the step resumes whole, its period and every other part of the
+  // question with it. Only what resolving wrote comes off, so it resolves again with her answers.
+  const fresh = (read.atlas.steps || []).map(RQ.unresolved);
+  const prior = await AN.priorContext({ query, orgId, userId: actor(req).id, followsId: read.atlas.follows, parse: j });
+  const { steps, questions } = await resolveAll(orgId, fresh, { today, onPage, talkedAbout: RQ.personInConversation(prior), answers, all: people(orgId, req), req });
   if (questions.length) {
     await run("UPDATE voice_memos SET read=? WHERE id=? AND org_id=?", [JSON.stringify({ ...read, atlas: { ...read.atlas, questions } }), m.id, orgId]);
     return res.status(400).json({ error: "unanswered", sentence: "Pick one for each question.", request: await requestOut(orgId, m.id) });
   }
   const took = await run("UPDATE voice_memos SET status='planned' WHERE id=? AND org_id=? AND status='needs_answers'", [m.id, orgId]);
   if (!took || took.changes === 0) return res.status(409).json({ error: "already_done" });
-  const prior = await AN.priorContext({ query, orgId, userId: actor(req).id, followsId: read.atlas.follows, parse: j });
   await execute(req, { ...m, status: "planned" }, steps, { today, ai: m.ai, prior });
   await finishRequest(orgId, m.id, steps, { ...(read.atlas.timings || {}), answerMs: Date.now() - t0 });
   res.status(201).json({ request: await requestOut(orgId, m.id) });
