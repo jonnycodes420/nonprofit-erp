@@ -21,6 +21,7 @@
 //   point   a point on a chart (an SVG circle), for the Board's line
 import { createContext, useContext, useState, lazy, Suspense } from "react";
 import { T, fmtFull, fmtTotal } from "./shared";
+import { displayDate } from "../../../shared/displayDate";
 import { apiFetch } from "../api";
 import { retryImport } from "../lib/lazyRetry";
 // SWEEP-6 (PERF-1): the rows behind a figure load when it is opened.
@@ -65,9 +66,6 @@ export function FigureWhy({ definition, label, source, tile = false }) {
   );
 }
 
-const MONTHS3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const dateWords = v => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v || "")); return m ? `${MONTHS3[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}` : String(v || ""); };
-
 export function Figure({ value, kind = "count", label, definition, source, blank, blankShort, variant = "tile",
                          figureKey, abs = false, suffix = "", unit, sub, cx, cy, r = 5, color, why = true, whole = false }) {
   const [open, setOpen] = useState(false);
@@ -111,7 +109,7 @@ export function Figure({ value, kind = "count", label, definition, source, blank
   const text = isBlank ? "None yet"   // SWEEP-5: a blank figure says so in words; its reason stays under it
     : kind === "money" ? (whole ? fmtTotal(shown) : fmtFull(shown))   // FUNDRAISING-2: `whole` drops cents on a big total
     : kind === "percent" ? `${shown}%`
-    : kind === "date" ? dateWords(shown)   // FLOWS-15 item 3: a date answer reads as a date, never a number
+    : kind === "date" ? displayDate(shown)   // FLOWS-15 item 3: a date answer reads as a date, never a number
     : Number(shown).toLocaleString("en-US") + suffix;
   data["data-shown"] = text;   // FIX-60: the words drawn, for the units check
 
