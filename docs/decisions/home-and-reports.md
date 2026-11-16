@@ -12,6 +12,13 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   it; Done records the move and that sign (`POST /insights/outcome` with `lead`), so the same person does not rise again
   as a Drift move, and every move of theirs leaves the deck. **Home's "people to follow up" and the Tasks badge ("tasks due
   today or overdue") are different counts,** each labelled exactly, with a tooltip that names the other.
+- **One thank-you task per gift, one writer (FLOWS-17, 16 Nov 2026).** A gift's thank-you task is written only by
+  `thankYouTaskOnce` (`server/shared/thankYouOnce.js`): the webhook and the "Gift received → notify the team" workflow
+  call it, and an open thank-you step on the person's Thread IS the thank-you. A new writer calls it too
+  (`tests/flows17.test.js` reads every `INSERT INTO tasks` that stamps a gift).
+- **A task's box ticks it (FLOWS-17).** Wherever a task is drawn with a box, one click completes it through
+  `client/src/lib/completeTask.js` (`POST /tasks/:id/complete`, with Undo); a call or meeting asks how it went first.
+  A spot that can't act draws no box.
 - **Journeys (SENDS-1).** "Add to a journey" lists every journey that is not archived; one that can't be started for this
   person is greyed out with why (`client/src/lib/journeyPick.js`; the bulk dialog does the same per row). A birthday
   journey's preview counts from the day the sweep would start it (`shared/birthday.js` `birthdayJourneyStart`). Batch Undo

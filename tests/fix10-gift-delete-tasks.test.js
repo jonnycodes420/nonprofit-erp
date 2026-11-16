@@ -92,7 +92,8 @@ const STAMP = "fix10gdt";
   // land a beat after the first one. Read the gift's tasks again once they stop
   // changing, so "exactly the gift's own" means all of them at delete time.
   for (let i = 0, prev = -1; i < 20; i++) {
-    const r = await q(`SELECT id, title FROM tasks WHERE org_id=$1 AND source_gift_id=$2`, [orgId, giftId]);
+    // FLOWS-17: a thank-you the gift's own step replaced is already voided (one_thank_you); the delete voids the open ones.
+    const r = await q(`SELECT id, title FROM tasks WHERE org_id=$1 AND source_gift_id=$2 AND voided_at IS NULL`, [orgId, giftId]);
     if (r.length === prev) { own.splice(0, own.length, ...r); break; }
     prev = r.length; await new Promise(res => setTimeout(res, 300));
   }
@@ -104,7 +105,7 @@ const STAMP = "fix10gdt";
 
   // 1. exactly the gift's tasks are voided
   const voided = await q(
-    `SELECT id, voided_reason, source_gift_id FROM tasks WHERE org_id=$1 AND voided_at IS NOT NULL`, [orgId]);
+    `SELECT id, voided_reason, source_gift_id FROM tasks WHERE org_id=$1 AND voided_at IS NOT NULL AND voided_reason IS DISTINCT FROM 'one_thank_you'`, [orgId]);
   ok(`exactly the gift's own ${own.length} task(s) are voided, no more and no fewer`,
     voided.length === own.length && voided.every(r => r.source_gift_id === giftId), voided);
   ok("each voided row says why", voided.every(r => r.voided_reason === "gift_deleted"), voided);

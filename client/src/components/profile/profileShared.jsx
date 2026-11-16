@@ -1,6 +1,7 @@
 // components/profile/profileShared.jsx (PROFILE-3): the small pieces several parts of
 // the profile share (tabs, labels, the roles line, Coming up), moved verbatim from DonorProfile.jsx.
 import { useEffect, useState } from "react";
+import { completeTask } from "../../lib/completeTask";   // FLOWS-17
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { Pill, T, fmtFull } from "../shared";
@@ -338,7 +339,10 @@ function RailGroups({donorId,isReadOnly}){
 
 // PROFILE-2 · COMING UP, in the main column: the open tasks (each with Mark
 // done) and the meetings ahead. Hidden when there is nothing.
-function ComingUpMain({tasks=[],meetings=[],onTaskToggle,isReadOnly,onAddTask}){
+// FLOWS-17: Mark done is the Tasks page's own call (lib/completeTask.js), with Undo; a call or
+// meeting that must say how it went opens Log a touch (onTaskOutcome).
+function ComingUpMain({tasks=[],meetings=[],onTaskOutcome=null,isReadOnly,onAddTask}){
+  const onTaskToggle=async t=>{try{const r=await completeTask(t);if(r.needsOutcome&&onTaskOutcome)onTaskOutcome(t);}catch(e){console.warn("[task done]",(e&&e.sentence)||(e&&e.message));}};
   const open=(tasks||[]).filter(t=>!(Number(t.done)===1||t.done===true)).sort((a,b)=>String(a.due||"9999").localeCompare(String(b.due||"9999")));
   const ahead=(meetings||[]).slice(0,3);
   if(!open.length&&!ahead.length)return null;
@@ -352,7 +356,7 @@ function ComingUpMain({tasks=[],meetings=[],onTaskToggle,isReadOnly,onAddTask}){
     {open.slice(0,5).map(t=><div key={"t:"+t.id} data-testid="dp-coming-task" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"10px 16px",display:"flex",justifyContent:"space-between",gap:12,alignItems:"center"}}>
       <span style={{minWidth:0}}><span style={{fontSize:14,fontWeight:600,color:T.ink}}>{t.title||t.text||"A task"}</span>
         {t.due&&<span style={{fontSize:13,color:String(t.due).slice(0,10)<today?T.gold700:T.ink3,marginLeft:8}}>{String(t.due).slice(0,10)<today?"Overdue, ":"Due "}{displayDateShort(String(t.due).slice(0,10),today)}</span>}</span>
-      {!isReadOnly&&onTaskToggle&&<button type="button" data-testid="dp-task-done" onClick={()=>onTaskToggle(t)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",fontSize:12.5,fontWeight:700,color:T.ink,cursor:"pointer",whiteSpace:"nowrap",minHeight:36}}>Mark done</button>}
+      {!isReadOnly&&<button type="button" data-testid="dp-task-done" onClick={()=>onTaskToggle(t)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",fontSize:12.5,fontWeight:700,color:T.ink,cursor:"pointer",whiteSpace:"nowrap",minHeight:36}}>Mark done</button>}
     </div>)}
   </section>;
 }

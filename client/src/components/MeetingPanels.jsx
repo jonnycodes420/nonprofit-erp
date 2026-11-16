@@ -28,6 +28,7 @@ import BeforeYourMeeting from "./BeforeYourMeeting";   // VOICE-3
 import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
 import { civilDayOf, orgTodayPlus, orgTodayCivil } from "../lib/orgToday";
+import { TaskTick } from "./profile/TaskTick";   // FLOWS-17: the box beside a task ticks it
 import { orgDayOf } from "../lib/orgDay";
 import { noteFields } from "../../../shared/meetingNote.js";
 import { TIMELINE_FILTERS, loadTimelinePrefs, saveTimelinePrefs, isMassEmail, interactionBucket,
@@ -199,8 +200,7 @@ ICON.talk = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="
 // MASS email; the donor's open and done tasks are Tasks; Attachments lists
 // every file on a conversation or a note.
 ICON.task = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>;
-// FLOWS-6: an open task is an empty box; only a done one carries the check.
-ICON.taskOpen = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>;
+// FLOWS-6 drew an open task as an empty box that was only a picture; FLOWS-17 made it TaskTick.
 ICON.file = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>;
 TILE_BG.task = T.white; TILE_BG.file = T.bg;
 // PARITY-3 — a volunteer shift: a hand, in the same stroke as the others.
@@ -298,7 +298,7 @@ export function timelineCounts(built) {
 
 export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], interactions = [], onLog, onChanged, renderActions = null, inboxConnected = true, onConnect = null,
   tasks = [], attachments = [], service = [], canWrite = false, fixed = null, subChips = null, lately = 0, onSeeAll = null,
-  byMonth = false, search = "", heading = null, noChips = false }) {
+  byMonth = false, search = "", heading = null, noChips = false, onTaskOutcome = null }) {
   // PROFILE-2: `byMonth` puts a small-caps month in a left gutter beside each
   // month's cards; `search` filters what is shown, live, by its words;
   // `heading` replaces "Everything with …" on the profile's Activity tab.
@@ -312,6 +312,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], int
   const setFilter = f => setPrefs(p => ({ ...p, filter: f }));   // this record only (POLISH-1)
   const [openId, setOpenId] = useState(null);
   const [limit, setLimit] = useState(lately || 12);
+  const [tickSaid, setTickSaid] = useState({});   // FLOWS-17: what the server said about a tick, by task
   if (!rel) return null;
   const first = firstNameOf(donor?.name) || "them";
   const byId = Object.fromEntries((interactions || []).map(i => [i.id, i]));
@@ -510,14 +511,18 @@ export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], int
             data-task-id={it.kind === "task" ? it.task.id : undefined} data-task-state={it.kind === "task" ? taskRowOf(it.task).state : undefined}
             onClick={() => setOpenId(isOpen ? null : it.id)} onKeyDown={e => { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenId(isOpen ? null : it.id); } }}
             style={{ background: T.white, borderRadius: 16, padding: "22px 26px", display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) auto", gap: 18, alignItems: "start", cursor: "pointer" }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: TILE_BG[it.kind], color: it.kind === "meeting" ? T.inkInverse : T.ink,
-              border: it.kind === "talk" || it.kind === "task" ? "1px solid " + T.bg3 : "none", boxSizing: "border-box",
-              display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SERIF, fontSize: 20 }}>{it.kind === "gift" || it.kind === "pledge" ? "$" : it.kind === "talk" && touchOf(it.logged) ? <TouchIcon kind={touchOf(it.logged).kind}/> : it.kind === "task" && !taskRowOf(it.task).done ? ICON.taskOpen : ICON[it.kind]}</div>
+            {/* FLOWS-17: a task's square is a checkbox that ticks it (TaskTick), never a picture of one. */}
+            {it.kind === "task" ? <TaskTick task={it.task} done={taskRowOf(it.task).done} canWrite={canWrite} icon={ICON.task}
+              onNeedsOutcome={onTaskOutcome} onSay={w => setTickSaid(m => ({ ...m, [it.task.id]: w }))}/>
+            : <div style={{ width: 44, height: 44, borderRadius: 12, background: TILE_BG[it.kind], color: it.kind === "meeting" ? T.inkInverse : T.ink,
+              border: it.kind === "talk" ? "1px solid " + T.bg3 : "none", boxSizing: "border-box",
+              display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SERIF, fontSize: 20 }}>{it.kind === "gift" || it.kind === "pledge" ? "$" : it.kind === "talk" && touchOf(it.logged) ? <TouchIcon kind={touchOf(it.logged).kind}/> : ICON[it.kind]}</div>}
             <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
               <div style={{ fontSize: 16, fontWeight: 600 }}>{title}{it.mass && <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 500, color: T.ink3 }}>Mass email</span>}</div>
               {body && <div style={{ fontSize: 15, lineHeight: 1.5, color: T.ink3, whiteSpace: typeof body === "string" ? "pre-wrap" : undefined }}>{body}</div>}
               {meta && <div style={{ fontSize: 13, color: it.kind === "meeting" && meta.startsWith("Next") ? T.greenDk : T.ink3, fontWeight: it.kind === "meeting" && meta.startsWith("Next") ? 600 : 400 }}>{meta}</div>}
               {extra}
+              {it.kind === "task" && tickSaid[it.task.id] && <div role="status" data-testid="tl-task-said" style={{ fontSize: 13, color: T.ink3 }}>{tickSaid[it.task.id]}</div>}
               {attachRow}
             </div>
             <div style={{ fontSize: 14, color: T.ink3, textAlign: "right", whiteSpace: "nowrap" }}>{(it.undated ? "No date" : relDay(it.date))}
