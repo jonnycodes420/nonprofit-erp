@@ -111,9 +111,16 @@ export function useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, jou
     // alert (an automated browser dismisses one, and the fleet saw Delete do nothing
     // three times). A gift with an issued receipt asks to void it first.
     const say=(e,why)=>askConfirm({title:"The gift was not deleted",body:errorMessage(e,why),yes:"OK",no:"Close"});
-    const del=()=>apiFetch(`/gifts/${giftId}`,{method:"DELETE"}).then(()=>{told({donorId:donor.id,gift:true});loadPledges();});   // LEDGER-1: the rail and its thank-you too
+    const del=(pair=false)=>apiFetch(`/gifts/${giftId}${pair?"?withRefunds=1":""}`,{method:"DELETE"}).then(()=>{told({donorId:donor.id,gift:true});loadPledges();});   // LEDGER-1: the rail and its thank-you too
     try{await del();}
     catch(e){
+      // FLOWS-14 (W-1115-Finance-07X): a refunded gift goes only with its refund, as a pair.
+      if(e?.error==="has_refunds"){
+        const pair=await askConfirm({title:"This gift has a refund",body:`${e.message||""}\n\nThe gift and its refund come off this person's giving and your totals together, so nothing is left standing alone.`,yes:e.pairButton||"Delete the gift and its refund",no:"Keep both",danger:true});
+        if(!pair)return;
+        try{await del(true);}catch(e2){say(e2,"The gift and its refund are still here.");}
+        return;
+      }
       if(e?.error!=="receipt_active"||!Array.isArray(e.receiptIds)){say(e,"The gift could not be deleted.");return;}
       const yes=await askConfirm({title:"Void the receipt first?",
         body:`This gift has a receipt. Void the receipt first?\n\nReceipt ${e.receiptNumber?`#${e.receiptNumber} `:""}is marked void (the donor's copy is not taken back), then the gift comes off this person's giving and your totals.`,

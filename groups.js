@@ -99,7 +99,9 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   // Board's majors) is the one level rule, not the old stored column.
   const levelAsStatus = status && DS.LEVELS[String(status)] ? String(status) : null;
   if (status && !levelAsStatus) { where.push("status = ?"); params.push(String(status)); }
-  if (assignedTo) { where.push("assigned_to = ?"); params.push(String(assignedTo)); }
+  // FLOWS-14 (W-1115-Donors-06X): the Owner filter's "Unassigned" is the portfolio strip's row.
+  if (String(assignedTo || "") === "none") where.push("assigned_to IS NULL AND pending_assignee_invite_id IS NULL");
+  else if (assignedTo) { where.push("assigned_to = ?"); params.push(String(assignedTo)); }
   // Designation filter (BUILD-14) — planned-giving / estate segments are
   // first-class and filterable everywhere the donor list is. EXISTS keeps it
   // a single query; donors.id is safe (both callers use unaliased FROM donors).

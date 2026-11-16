@@ -406,7 +406,12 @@ function giftsWhere(p, args) {
   // count and the average's divisor are one number. A $0 row shows in history.
   // TRUTH-6 (W-1107-Donors-21X): COUNTED is the whole rule, a gift refunded in
   // full included (the header said 503 over a monthly table of 502).
-  if (p.measure === "median" || p.measure === "count" || p.measure === "mean") w += ` AND ${require("./shared/numbers/giftCount").COUNTED("g")}`;
+  // FLOWS-14 (W-1116-Fundraising-07): the average is the total's own rows (refunds on their day
+  // included, as the total takes them) over the counted gifts among them (per_gift), so the
+  // average times the gift count is the total shown, always. It read each gift at its net,
+  // so a refund with no gift in the period (one left standing by a deposit undo) moved the
+  // total and not the average: $1,249.14 where $805,672.28 over 645 gifts is $1,249.10.
+  if (p.measure === "median" || p.measure === "count") w += ` AND ${require("./shared/numbers/giftCount").COUNTED("g")}`;
   else w += " AND g.amount <> 0";   // TRUTH-4: a sum's rows are counted rows and refunds; a $0 row is said apart (giftCount.js)
   if (p.page === "none") w += " AND g.giving_page_id IS NULL";
   else if (p.page) { w += " AND g.giving_page_id = ?"; args.push(p.page); }
@@ -488,7 +493,7 @@ const SOURCES = {
     // allowlist two lines down and is never interpolated into the SQL; a word
     // this source does not know falls back to the default order.
     params: { from: "date:required", to: "date:required", fund: "id", campaign: "id", restricted: "bool", donor: "id", assigned: "id", measure: "measure", order: "word", group: "id", online: "bool", page: "id", bookkeeper: "bool" },
-    sentence: (p, dd) => `${p.measure === "mean" ? "The average of every counted" : p.measure === "median" ? "The middle amount of every counted" : "Every"} gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.page === "none" ? " not through a giving page" : p.page ? " through this giving page" : ""}${p.online === true ? " paid online: through a giving page, Stripe or a connected giving source" : p.online === false ? " not paid online: recorded by hand or imported from another system" : ""}, leaving out soft and matching credits (recognition, never money)${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}${p.group ? " from the people in this group" : ""}.`,
+    sentence: (p, dd) => `${p.measure === "mean" ? "The total of every" : p.measure === "median" ? "The middle amount of every counted" : "Every"} gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.page === "none" ? " not through a giving page" : p.page ? " through this giving page" : ""}${p.online === true ? " paid online: through a giving page, Stripe or a connected giving source" : p.online === false ? " not paid online: recorded by hand or imported from another system" : ""}, leaving out soft and matching credits (recognition, never money)${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}${p.group ? " from the people in this group" : ""}${p.measure === "mean" ? ", refunds taken off on their day, divided by how many of them are counted gifts: the total over the gift count, so the three always agree" : ""}.`,
     // TRUTH-1: money is hard credit only, in every total this source makes
     // (Board, Home's pace, Reports): a soft or matching credit row is
     // recognition (creditTypes.js) and was summed here into the year's giving.
@@ -508,7 +513,7 @@ const SOURCES = {
         // FLOWS-9 (W-1113-Fundraising-01): the dialog may list a refund row, marked as one, and a gift
         // refunded in full, marked; its count line says the gifts (giftCount.js), never the rows.
         sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date,
-                     ROUND((${byFund ? "gf.amount" : (p.measure === "mean" || p.measure === "median") ? require("./shared/numbers/refunds").NET_AMOUNT("g") : "g.amount"})::numeric, 2) AS amount,   -- FLOWS-9: an average is over each gift at its net
+                     ROUND((${byFund ? "gf.amount" : p.measure === "median" ? require("./shared/numbers/refunds").NET_AMOUNT("g") : "g.amount"})::numeric, 2) AS amount,   -- FLOWS-9: a median is over each gift at its net; FLOWS-14: an average is the total's rows
                      CASE WHEN g.amount < 0 THEN 'Refund' WHEN g.refunded_in_full IS TRUE THEN 'Refunded in full · ' || COALESCE(f.name, 'Unrestricted')
                           ELSE COALESCE(f.name, 'Unrestricted') END AS detail,
                      (${require("./shared/numbers/giftCount").COUNTED("g")}) AS counted, g.refund_of   -- FLOWS-11: a refund is listed under its gift
@@ -805,12 +810,14 @@ const SOURCES = {
     label: "Gifts not yet thanked",
     measure: () => "count",
     params: { since: "date:required", donor: "id" },
-    sentence: (p, dd) => `Every gift${p.donor ? " from this person" : ""} dated on or after ${dd(p.since)}, the day you started with Steward, with no thank-you logged.${p.donor ? " A refund is not a gift waiting for thanks." : ""}`,
+    // FLOWS-14 (W-1115-Finance-02X): Home's org-wide count reads the profile's rule too
+    // (shared/numbers/thanks.js): a refund row and a gift refunded in full wait for no thanks.
+    sentence: (p, dd) => `Every gift${p.donor ? " from this person" : ""} dated on or after ${dd(p.since)}, the day you started with Steward, with no thank-you logged. A refund, and a gift refunded in full, wait for no thanks.`,
     sql: (orgId, p) => ({
       sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount, NULL::text AS detail
               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
              WHERE g.org_id = ? AND d.deleted_at IS NULL AND COALESCE(g.is_sample,false) = false
-               AND g.date >= ? AND COALESCE(g.acknowledgement_sent,false) = false${p.donor ? ` AND g.donor_id = ? AND ${require("./shared/numbers/giftCount").KEPT("g")}` : ""}`,
+               AND g.date >= ? AND ${require("./shared/numbers/thanks").AWAITING("g")}${p.donor ? " AND g.donor_id = ?" : ""}`,
       args: [orgId, p.since, ...(p.donor ? [p.donor] : [])],
     }),
   },
@@ -1214,15 +1221,23 @@ const SOURCES = {
     // and what they gave (sum); the count was opening a sum.
     measure: p => p.measure || "sum",
     params: { officer: "id:required", measure: "measure" },
-    sentence: () => "Every donor assigned to this person who is in a pipeline stage (prospect through ongoing care, or lapsed), with what each has given in total.",
-    sql: (orgId, p) => ({
-      sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
-                   ROUND(${require("./shared/numbers/lifetime").LIFETIME("d")}::numeric, 2) AS amount, 'Given in total' AS detail
-              FROM donors d
-             WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.assigned_to = ?
-               AND COALESCE(d.stage, d.suggested_stage) IN ('prospect','qualify','cultivate','solicit','steward','lapsed')`,
-      args: [orgId, p.officer], order: "amount DESC, id",
-    }),
+    // FLOWS-14 (W-1115-Donors-06X): officer "none" is the strip's Unassigned row (server/majorGifts/portfolioFile.js).
+    sentence: p => (p.officer === "none"
+      ? "Every donor on the Donors tab with no owner and no invite pending, with what each has given in total. Steward never assigns an owner by itself."
+      : "Every donor assigned to this person who is in a pipeline stage (prospect through ongoing care, or lapsed), with what each has given in total."),
+    sql: async (orgId, p) => {
+      const PF = require("./server/majorGifts/portfolioFile");
+      const who = p.officer === "none" ? `${await PF.fileSql("d")} AND ${PF.UNASSIGNED("d")}`
+        : `${require("./shared/numbers/pickable").PICKABLE("d")} AND d.assigned_to = ?
+               AND COALESCE(d.stage, d.suggested_stage) IN ('prospect','qualify','cultivate','solicit','steward','lapsed')`;
+      return {
+        sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
+                     ROUND(${require("./shared/numbers/lifetime").LIFETIME("d")}::numeric, 2) AS amount, 'Given in total' AS detail
+                FROM donors d
+               WHERE d.org_id = ? AND ${who}`,
+        args: p.officer === "none" ? [orgId] : [orgId, p.officer], order: "amount DESC, id",
+      };
+    },
   },
   "mailbox-emails": {
     label: "Emails logged from your inbox",

@@ -56,7 +56,9 @@
 //             above $0, against By year), truth4 (TRUTH-4: tests/lib/truth4Pairs.js,
 //             gifts, Top donors, LYBUNT, splits, at risk, people, the volunteer starter),
 //             flows11 (FLOWS-11, tests/lib/flows11Checks.js: giftDialog, refundedProfile,
-//             householdStatement, splitTransactions, beforeSteward, deletedThanks)
+//             householdStatement, splitTransactions, beforeSteward, deletedThanks),
+//             flows14 (FLOWS-14, tests/lib/flows14Checks.js: orphanRefunds, averageFoots,
+//             askOwnGifts, lastGiftIsGift, thanksRule, portfolioFoots)
 //   only      [names]: run just these checks (FLOWS-11)
 //   plantEvent (eventId, { rep, kiosk }) => { rep, kiosk }: change an event's
 //             bodies before its checks, to prove they can go red (FIX-59)
@@ -1234,6 +1236,9 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   // ── FLOWS-11 · refunds, households, splits, before Steward, deleted gifts (tests/lib/flows11Checks.js) ──
   if (!skipSet.has("flows11"))
     await require("./flows11Checks").flows11Checks({ orgId, get, q, agree, diffs, skip, today: orgTime.orgToday(org || {}, new Date(testNow())) });
+  // ── FLOWS-14 · orphaned refunds, the average, asks, last gifts, thanks, portfolios (tests/lib/flows14Checks.js) ──
+  if (!skipSet.has("flows14"))
+    await require("./flows14Checks").flows14Checks({ orgId, get, q, agree, diffs, skip, named: !!onlySet, today: orgTime.orgToday(org || {}, new Date(testNow())) });
 
   // TRUTH-1: a disagreement logged in docs/defects.md (tests/lib/knownDefects.js),
   // at exactly the value its defect predicts, is still found and still printed,

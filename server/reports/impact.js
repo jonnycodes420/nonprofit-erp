@@ -72,7 +72,9 @@ async function impactData(orgId, donorId) {
   });
 
   const recentGifts = await query(
-    "SELECT amount, date, campaign FROM gifts WHERE donor_id = ? AND org_id = ? ORDER BY date DESC NULLS LAST LIMIT 5",
+    // FLOWS-14: recent GIFTS (money.js GIFT: no refund row, nothing refunded in full), by the one order.
+    `SELECT g.amount, g.date, g.campaign FROM gifts g WHERE g.donor_id = ? AND g.org_id = ? AND ${require("../../shared/numbers/money").GIFT("g")}
+      ORDER BY ${require("../../shared/numbers/lastGift").LAST_GIFT_ORDER} LIMIT 5`,
     [donor.id, orgId]
   );
   const milestoneLabels = [
