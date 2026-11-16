@@ -20,6 +20,10 @@ export function itemTitle(it) {
   return "";
 }
 
+// FLOWS-16 item 3 (W-1116-Atlas-20): "Saved." only when something was. A save that wrote nothing says so;
+// the lines under the request say why each one didn't. (A proposal saved before FLOWS-16 has no count.)
+export const savedHead = n => (n === 0 ? "Nothing was saved." : n == null ? "Saved." : n === 1 ? "Saved one thing." : `Saved ${n} things.`);
+
 export default function ProposalCard({ request, busy, onSave, onDiscard }) {
   const p = request && request.proposal;
   const [edit, setEdit] = useState(false);
@@ -31,7 +35,7 @@ export default function ProposalCard({ request, busy, onSave, onDiscard }) {
   const set = (pid, k, v) => setItems(list => list.map(i => i.pid === pid ? { ...i, [k]: v } : i));
   return (
     <section data-testid="atlas-proposal" data-saved={saved ? "1" : "0"} data-discarded={discarded ? "1" : "0"} style={{ border: "1px solid " + T.greenDk, borderRadius: 12, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{saved ? "Saved." : discarded ? "Discarded. Nothing was saved." : "Save these?"}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{saved ? savedHead(p.savedCount) : discarded ? "Discarded. Nothing was saved." : "Save these?"}</div>
       <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
         {shown.map(it => <li key={it.pid} data-testid="atlas-proposal-item" data-kind={it.kind} style={{ fontSize: 13.5, color: it.skip ? T.ink3 : T.ink, lineHeight: 1.45 }}>
           <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>

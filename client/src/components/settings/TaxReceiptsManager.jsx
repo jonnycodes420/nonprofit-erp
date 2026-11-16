@@ -166,6 +166,7 @@ export function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
             <button onClick={downloadPreview} disabled={previewLoading} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 16px",color:T.ink2,fontSize:12,fontWeight:600,cursor:previewLoading?"not-allowed":"pointer"}}>
               {previewLoading?"Generating…":"Preview receipt"}
             </button>
+            <span data-testid="receipt-preview-note" style={{fontSize:12,color:T.ink3}}>Preview, addressed to a sample donor.</span>
             {saveMsg&&<span style={{fontSize:12,color:T.greenDk,fontWeight:600}}>✓ {saveMsg}</span>}
           </div>
         )}

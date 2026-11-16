@@ -356,6 +356,8 @@ require("../../jobQueue").define("refreshStoredDrift", { everyMs: 6 * 60 * 60 * 
 require("../../jobQueue").define("orgSummaryCheck", { everyMs: 24 * 60 * 60 * 1000, firstMs: 20 * 60 * 1000, long: true, run: () => ORG_SUMMARY.checkAll() });   // SCALE-4: long
 // REPORTS-SPEED-1: every org's Retention, Annual and SYBUNT, compared with what was stored and stored fresh.
 require("../../jobQueue").define("storedReportsNightly", { everyMs: 24 * 60 * 60 * 1000, firstMs: 30 * 60 * 1000, long: true, run: () => require("../reports/storedReports").nightly() });   // SCALE-4: long
+// FLOWS-16 item 4: an Atlas "Which X?" nobody answered for a week closes itself, with a line in the bell.
+require("../../jobQueue").define("atlasQuestionsExpire", { everyMs: 24 * 60 * 60 * 1000, firstMs: 40 * 60 * 1000, run: () => require("../atlas/resume").expireQuestions({ query, run, newId: require("../shared/newId").newId }) });
 // SPLIT-2 end
 // SPLIT-2 server.js piece 206
 // FIX-33, and LIVE-1: a meeting synced from the calendar is a change to the

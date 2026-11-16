@@ -28,6 +28,7 @@
 //     (POST /perf/peaks/reset, TEST_MODE only) and read after it: no request
 //     held more than PER_REQUEST_MAX (5).
 //   · No 5xx, except the AI-off POST /ai/stream (smoke-walk's EXPECTED_5XX).
+//   · FLOWS-16: each page's reads are all answered within 3 s of the click (a warning on CI).
 //
 // HOW IT GOES RED (planted, seen red before green; PROFILE-SPEED-1 report):
 //   * a page firing 12 calls on open: twelve apiFetch calls added to Settings'
@@ -65,6 +66,7 @@ catch { skip("Playwright not installed"); }
 const ORG = "org_pbudget", EMAIL = "org_pbudget@test.local";
 const EVENT_NAME = "Budget Lantern Supper", AUCTION_NAME = "Budget Lantern Auction", PERSON = "Pia Budgetry";
 const DEFAULT_BUDGET = 5;
+const FIRST_LOAD_MS = 3000;   // FLOWS-16 item 2: every page's first load, its reads answered
 // Pages that open with more than DEFAULT_BUDGET today, at today's count.
 const BUDGET = {
   "Events": 6,       // today's count; PROFILE-SPEED-1 lists it for the next brief (its four year figures are four reads)
@@ -75,7 +77,7 @@ const PROFILE_BEFORE_DRAWN = 3;
 const EXPECTED_5XX = /\/ai\/stream/;
 // [page, rail label, then the name to click inside it]
 const PAGES = [
-  ["Donors", "Donors"], ["Profile", "Donors", PERSON], ["Fundraising", "Fundraising"],
+  ["Donors", "Donors"], ["Profile", "Donors", PERSON], ["Groups", "Groups"], ["Fundraising", "Fundraising"],   // FLOWS-16: Groups, the slowest first load
   ["Events", "Events"], ["One event", "Events", EVENT_NAME], ["Auctions", "Auctions"], ["One auction", "Auctions", AUCTION_NAME],
   ["Major Gifts", "Major Gifts"], ["Journeys", "Journeys"], ["Tasks", "Tasks"], ["Calendar", "Calendar"],
   ["Communications", "Communications"], ["Finance", "Finance"], ["Reports", "Reports"], ["Volunteers", "Volunteers"], ["Settings", "Settings"],
@@ -181,6 +183,12 @@ async function fixture() {
         ok(`${name} opens in at most ${budget} requests (${n})`, n <= budget, log.map(e => e.path.slice(0, 80)));
       }
       ok(`${name} settles`, settled, log.filter(e => e.end == null).map(e => e.path.slice(0, 80)));
+      // FLOWS-16 item 2 (W-1116-Volunteers-35): a first load is usable within 3 s, its last read answered.
+      // A strict budget locally; on CI's shared runner a miss is a warning (ARCHITECTURE.md, CI).
+      const answered = log.length ? Math.max(...log.map(e => (e.end == null ? Infinity : e.end))) - t0 : 0;
+      const slowest = [...log].sort((x, y) => ((y.end || Infinity) - y.start) - ((x.end || Infinity) - x.start)).slice(0, 3).map(e => `${Math.round((e.end || Infinity) - e.start)} ms ${e.path.slice(0, 70)}`);
+      if (answered > FIRST_LOAD_MS && process.env.CI) console.log(`  WARN  ${name} answered in ${Math.round(answered)} ms, over ${FIRST_LOAD_MS} ms (CI runner): ${slowest.join(" | ")}`);
+      else ok(`${name} has every read answered within ${FIRST_LOAD_MS} ms of the click (${Math.round(answered)} ms)`, answered <= FIRST_LOAD_MS, slowest);
     } catch (e) { ok(`${name} opens`, false, e.message.split("\n")[0].slice(0, 160)); }
   }
   console.log("  counts: " + JSON.stringify(seen));

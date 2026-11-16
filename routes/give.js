@@ -2591,7 +2591,7 @@ app.post("/giving-pages/:id/page/publish", requireAuth, requireAdmin, checkWrite
   // GIVE-EDIT-1: a publish carries the blocks, the page's own fields, or both.
   const hasBlocks = Array.isArray(pg.draft) && pg.draft.length > 0;
   const ds = pg.draft_settings && typeof pg.draft_settings === "object" ? pg.draft_settings : null;
-  if (!hasBlocks && !ds) return res.status(400).json({ error: "nothing_to_publish" });
+  if (!hasBlocks && !ds) return res.status(400).json({ error: "nothing_to_publish", sentence: await require("../server/give/nothingToPublish").nothingToPublish(query, req.user.orgId, pg.id) });   // FLOWS-16 item 6
   await ensureBaselineVersion(req.user.orgId, pg, GPE.snapshotOf(pg));
   if (hasBlocks) {
     await run(`UPDATE giving_pages SET published = draft, published_at = NOW(), updated_at = NOW()
@@ -2667,7 +2667,7 @@ app.put("/org-form/page/settings", requireAuth, requireAdmin, checkWriteAccess, 
 }));
 app.post("/org-form/page/publish", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const { live, draft } = await orgFormRow(req.user.orgId);
-  if (!draft) return res.status(400).json({ error: "nothing_to_publish" });
+  if (!draft) return res.status(400).json({ error: "nothing_to_publish", sentence: await require("../server/give/nothingToPublish").nothingToPublish(query, req.user.orgId, ORG_FORM) });   // FLOWS-16 item 6
   await ensureBaselineVersion(req.user.orgId, ORG_FORM, orgFormSnapshot(live));
   await run(`UPDATE portal_settings SET onetime_amounts = ?, monthly_amounts = ?, form_draft = NULL, form_published_at = NOW() WHERE org_id = ?`,
     [JSON.stringify(draft.onetimeAmounts), JSON.stringify(draft.monthlyAmounts), req.user.orgId]);
@@ -7013,7 +7013,7 @@ app.put("/portal-page/draft", requireAuth, requireAdmin, checkWriteAccess, wrap(
 
 app.post("/portal-page/publish", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const [row] = await query(`SELECT draft, published FROM portal_pages WHERE org_id = ?`, [req.user.orgId]);
-  if (!row || !Array.isArray(row.draft)) return res.status(400).json({ error: "nothing_to_publish" });
+  if (!row || !Array.isArray(row.draft)) return res.status(400).json({ error: "nothing_to_publish", sentence: await require("../server/give/nothingToPublish").nothingToPublish(query, req.user.orgId, null) });   // FLOWS-16 item 6
   await run(`UPDATE portal_pages SET published = draft, published_at = NOW() WHERE org_id = ?`, [req.user.orgId]);
   await recordAssetPointerHistory(req.user.orgId, "portal_page.published", req.user.orgId,
     widgetPathsOrNull(row.published), widgetPathsOrNull(row.draft), req.user);
