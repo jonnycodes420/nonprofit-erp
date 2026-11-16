@@ -183,7 +183,9 @@ async function seedEmail1(q, ORG, { TODAY, dAdd }) {
     const y = Number(TODAY.slice(0, 4)) + (TODAY.slice(5, 7) === "12" ? 1 : 0);
     await q(`INSERT INTO campaigns (id,org_id,name,type,subject,preheader,body,status,segment,scheduled_at,template_id,email_blocks,created_by,created_by_name)
              VALUES ('ecamp_b72_yearend',$1,'Year-end appeal','appeal',$2,$3,'','awaiting_approval','{}',$4::timestamptz,$5,$6::jsonb,$7,$8) ON CONFLICT (id) DO NOTHING`,
-      [ORG, ye.subject, ye.preheader, `${y}-12-02T14:00:00Z`, ye.id, JSON.stringify(ye.blocks), S, SN]);
+      // FLOWS-15 item 1: the demo's appeal carries a first-gift version (scripts/seed/demoFirstGift.js), the demo's words only.
+      [ORG, ye.subject, ye.preheader, `${y}-12-02T14:00:00Z`, ye.id,
+       JSON.stringify(require("./demoFirstGift").withDemoFirstGift(ye.blocks, (await import("../../shared/pastGiving.js")).claimsOf)), S, SN]);
   }
 
   // ── A JOURNEY WHOSE STEPS START FROM THREE TEMPLATES ───────────────────

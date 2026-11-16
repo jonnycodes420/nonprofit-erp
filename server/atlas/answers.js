@@ -58,7 +58,12 @@ const matchWindow = PA.windowOf;
 async function listAnswer({ ask, query, orgId, asHer, req, today = null }) {
   const people = answerPeople(ask);
   if (!people.length) return null;
-  const count = Number(ask.peopleCount != null ? ask.peopleCount : ask.count != null ? ask.count : people.length) || people.length;
+  // FLOWS-15 item 3 (W-1116-Atlas-01X): the count is a count of PEOPLE, from the answer's own
+  // unit (shared/numbers/answerUnit.js), never its money or date. A money or date answer about
+  // one person is that figure, said in the sentence, and not a list of one.
+  const AU = require("../../shared/numbers/answerUnit");
+  const count = AU.answerPeopleCount(ask, people.length) || people.length;
+  if (!AU.isPeopleList(ask, count)) return null;
   // Every id behind the answer, read once now, so the list she opens later is
   // this answer's list and not a fresh reading of the question.
   let ids = people.map(p => p.donorId);
@@ -79,7 +84,7 @@ async function listAnswer({ ask, query, orgId, asHer, req, today = null }) {
   const w = matchWindow(ask.qplan || ask.plan, day0);
   const matched = w ? await PA.periodCents(query, orgId, shown.map(p => p.donorId), w, day0).catch(e => { console.error("[atlas] matched:", e.message); return null; }) : null;
   return {
-    count, ids, reason: why, more: Math.max(0, count - shown.length),
+    count, unit: "people", ids, reason: why, more: Math.max(0, count - shown.length),
     people: shown.map(p => {
       const r = byId.get(p.donorId) || {};
       const last = toCents(r.last_gift_amount) > 0 && r.last_gift_date ? `last gift ${usd(toCents(r.last_gift_amount))} on ${day(r.last_gift_date)}` : "no gift on record";
@@ -177,7 +182,7 @@ const recordFirstLine = (amount, name) => `I don't see a ${amount} gift from ${n
 // gets the names it shows.
 function publicAnswer(a) {
   if (!a || typeof a !== "object") return null;
-  if (a.type === "list") return { type: "list", question: a.question, count: a.count, reason: a.reason, more: a.more, people: a.people, countSentence: a.countSentence, groupId: a.groupId || null };
+  if (a.type === "list") return { type: "list", question: a.question, count: a.count, unit: a.unit || null, reason: a.reason, more: a.more, people: a.people, countSentence: a.countSentence, groupId: a.groupId || null };
   if (a.type === "person") return { type: "person", donorId: a.donorId, name: a.name, about: a.about, facts: a.facts };
   return null;
 }

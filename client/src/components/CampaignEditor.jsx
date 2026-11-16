@@ -27,7 +27,7 @@ import StewardEditor, { RailSection, DeviceFrame, useNarrow, railLabel, railInpu
 import { EmailFrame, EmailBlockSettings, BlockMenu, BrandSummary, PreviewAs, FieldMenu, EmailHistory, insertChip, setAtPath, stripKeys, useBlockList } from "./EmailEditor";
 import { previewAsParam } from "../lib/previewAs";   // GIFTS-2: Preview as yourself re-draws the preview
 import CampaignTurnOn from "./CampaignTurnOn";   // COMMS-1: where Campaign emails are turned on
-import { pastGivingFlag, audienceNeverGivenSentence } from "../../../shared/pastGiving.js";   // FLOWS-12 item 1
+import { pastGivingFlag, audienceNeverGivenSentence, openClaims, leftOutSentence, includedSentence, INCLUDE_LABEL } from "../../../shared/pastGiving.js";   // FLOWS-12 item 1, FLOWS-15 item 1
 
 const NOTE_BOX = { background: T.gold50, border: "1px solid " + T.gold300, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, color: T.ink, lineHeight: 1.5 };
 // The local wall-clock "now" for a datetime-local's min, in the browser's zone.
@@ -64,7 +64,7 @@ export function AudienceLine({ audience, testid = "audience-line" }) {
 }
 
 export default function CampaignEditor({
-  isAdmin, isReadOnly, readOnlySent, campaignId, statusBadge, title, form, setForm, initialBlocks, blockTypes, mergeFields, segPreview, audiencePicker,
+  isAdmin, isReadOnly, readOnlySent, campaignId, statusBadge, title, form, setForm, initialBlocks, blockTypes, mergeFields, segPreview, onDonorOnlyCopy, audiencePicker,
   orgTimezone, sending, testState, sendingIdentity, approvalNote, notReviewed, onBack, onSaveDraft, onSend, onSchedule, onRequestApproval, onTest, onDuplicate,
 }) {
   const narrow = useNarrow();
@@ -93,7 +93,13 @@ export default function CampaignEditor({
 
   const redraw = useCallback(() => { if (!typing.current) setRev(r => r + 1); }, []);
   const firstId = segPreview && segPreview.first ? segPreview.first.id : null;
-  useEffect(() => { redraw(); }, [blocks.length, device, dark, as, firstId, segPreview && segPreview.audienceNoGift, redraw]);
+  // FLOWS-15 item 1: her tick ("Send it to them anyway") lives on the segment, so the send reads it.
+  const includeNeverGiven = !!(form.seg && form.seg.includeNeverGiven);
+  useEffect(() => { redraw(); }, [blocks.length, device, dark, as, firstId, segPreview && segPreview.audienceNoGift, includeNeverGiven, redraw]);
+  // FLOWS-15 item 1: whether these blocks thank the reader for giving with no first-gift version
+  // (donor-only copy); the audience count leaves the never-givers out while it is so.
+  const donorOnly = useMemo(() => openClaims(stripKeys(blocks)).length > 0, [blocks]);
+  useEffect(() => { if (onDonorOnlyCopy) onDonorOnlyCopy(donorOnly); }, [donorOnly, onDonorOnlyCopy]);
   const seq = useRef(0);
   useEffect(() => {
     const n = ++seq.current;
@@ -101,8 +107,8 @@ export default function CampaignEditor({
       const cur = latest.current;
       apiFetch("/email-preview", { method: "POST", body: JSON.stringify({ blocks: stripKeys(cur.blocks), subject: cur.subject, preheader: cur.preheader, dark,
         editable: !readOnlySent && !isReadOnly, as: previewAsParam(as, firstId), campaignName: cur.name,
-        audienceNoGift: !!(segPreview && segPreview.audienceNoGift) }) })   // POLISH-9
-        .then(r => { if (n === seq.current) setPreview({ html: r.html, problems: r.problems || [], loading: false, as: r.as, subject: r.subject || "", pastGiving: r.pastGiving || null }); })
+        audienceNoGift: !!(segPreview && segPreview.audienceNoGift), campaign: true, includeNeverGiven }) })   // POLISH-9; FLOWS-15 item 1
+        .then(r => { if (n === seq.current) setPreview({ html: r.html, problems: r.problems || [], loading: false, as: r.as, subject: r.subject || "", pastGiving: r.pastGiving || null, notSent: r.notSent || null }); })
         .catch(e => { if (n === seq.current) setPreview(p => ({ ...p, loading: false, problems: [(e && (e.sentence || e.message)) || "The preview could not be drawn."] })); });
     }, 300);
     return () => clearTimeout(t);
@@ -110,7 +116,9 @@ export default function CampaignEditor({
   // FLOWS-12 item 1 (W-1114-Fundraising-17): a letter that thanks them for
   // giving, to people who never have. Flagged until each such block has her
   // first-gift version; never rewritten, never blocked: the send is still hers.
-  const neverGiven = segPreview && segPreview.audienceNeverGiven != null ? segPreview.audienceNeverGiven : null;
+  const neverGiven = segPreview && segPreview.audienceNeverGiven != null ? segPreview.audienceNeverGiven : null;   // FLOWS-15: the whole audience, the left-out ones included
+  const leftOutNeverGiven = segPreview ? segPreview.neverGivenLeftOut || 0 : 0;
+  const setInclude = on => setForm(f => ({ ...f, seg: { ...(f.seg || {}), includeNeverGiven: on ? true : undefined } }));
   const pg = preview.pastGiving || null;
   const pgFlag = pg ? pastGivingFlag({ claims: pg.claims, neverGiven: neverGiven || 0, shownName: pg.shownName }) : null;
   const pgBlocks = pg ? pg.claims.filter(c => !c.hasVersion).map(c => c.index + 1) : [];
@@ -202,6 +210,14 @@ export default function CampaignEditor({
         <div data-testid="builder-who" style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Who it goes to</div>
         <AudienceLine audience={aud} />
         {neverGiven != null && <div data-testid="audience-never-given" data-count={neverGiven} style={{ ...railNote, marginTop: 6 }}>{audienceNeverGivenSentence(neverGiven)}</div>}
+        {/* FLOWS-15 item 1: a never-giver never receives donor-only copy unless she ticks them in, knowingly. */}
+        {donorOnly && (leftOutNeverGiven > 0 || includeNeverGiven) && (neverGiven || 0) > 0 && (
+          <div data-testid="never-given-left-out" data-count={leftOutNeverGiven} style={{ ...NOTE_BOX, marginTop: 8 }}>
+            {includeNeverGiven ? includedSentence(neverGiven) : leftOutSentence(leftOutNeverGiven)}
+            {!readOnlySent && <label style={{ display: "flex", gap: 6, alignItems: "flex-start", marginTop: 6, fontSize: 12.5, cursor: "pointer" }}>
+              <input type="checkbox" data-testid="include-never-given" checked={includeNeverGiven} disabled={isReadOnly} onChange={e => setInclude(e.target.checked)} />
+              <span>{INCLUDE_LABEL}</span></label>}
+          </div>)}
         {aud && aud.blocked && <div data-testid="audience-blocked" style={{ ...NOTE_BOX, marginTop: 8 }}>{aud.blocked}</div>}
       </div>
       <div>
@@ -252,7 +268,9 @@ export default function CampaignEditor({
               onPick={type => { act("insert", menuAt, blockTypes, { type }).then(redraw); setMenuAt(undefined); }} />}
           </div>
           <div style={{ flex: 1, display: "flex", minHeight: 0, background: T.bg2, padding: device === "phone" ? 0 : "12px 0" }}>
-            <EmailFrame html={preview.html} device={device} selected={selected} on={on} frameRef={frameRef} labels={labels} testid="campaign-preview" />
+            {preview.notSent
+              ? <div data-testid="preview-not-sent" style={{ ...NOTE_BOX, margin: "24px auto", maxWidth: 460, alignSelf: "flex-start" }}>{preview.notSent} Write a first-gift version in the block's settings, or tick them in under Who it goes to.</div>
+              : <EmailFrame html={preview.html} device={device} selected={selected} on={on} frameRef={frameRef} labels={labels} testid="campaign-preview" />}
           </div>
         </DeviceFrame>
       </StewardEditor>

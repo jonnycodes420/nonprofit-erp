@@ -58,9 +58,11 @@ export function BillingBand({ billing, isAdmin, onChanged }) {
           why, and the people marked Donor with no gift open (shared/numbers/recordsGap.js). */}
       {gap && gap.sentence && (
         <div data-testid="billing-records-gap" style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.5, maxWidth: 640 }}>
-          {gap.markedNoGift > 0 && gap.source && <><Figure value={gap.markedNoGift} kind="count" label="Marked Donor, no gift on file"
-            definition="People marked Donor who have no gift on file. The Donors tab counts them; Records does not." source={gap.source} variant="inline" />{" "}</>}
-          {gap.markedNoGift > 0 ? gap.sentence.replace(/^[\d,]+ /, "") : gap.sentence}
+          {/* FLOWS-15 item 5: one sum, every part named ("Records 1,122, plus 66 …, minus 4 erased givers whose gifts remain, is the Donors tab's 1,184."). */}
+          {gap.sentence}
+          {gap.markedNoGift > 0 && gap.source && <>{" "}See who: <Figure value={gap.markedNoGift} kind="count" label="Marked Donor, no gift on file"
+            definition="People marked Donor who have no gift on file. The Donors tab counts them; Records does not." source={gap.source} variant="inline" />{" "}
+            marked Donor with no gift.</>}
         </div>
       )}
       {b.notice && (

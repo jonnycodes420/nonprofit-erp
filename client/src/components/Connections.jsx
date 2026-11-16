@@ -26,6 +26,7 @@ import XeroSync from "./XeroSync";
 import { CreditCard, HandCoins, Smartphone, FileSpreadsheet, Mail, AtSign, Send, BookOpen, FileText, Store,
   KeyRound, Webhook, Zap } from "lucide-react";
 import { PrivacyLine, usePrivacy } from "./PrivacyPanel";
+import FundName from "./FundName";   // FLOWS-15 item 4: one name, one badge
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -217,7 +218,7 @@ function Bookkeeping({ isReadOnly, isAdmin }) {
               {(d.funds || []).map(f => (
                 <div key={f.id} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap",
                   padding: "6px 0", borderTop: "1px solid " + T.bg3, fontSize: 13 }}>
-                  <span style={{ minWidth: 160 }}>{f.name}{f.restricted ? " (restricted)" : ""}</span>
+                  <span style={{ minWidth: 160 }}><FundName fund={f} /></span>
                   <input disabled={isReadOnly || !isAdmin} placeholder="Income account"
                     value={(mapping.funds || {})[f.id] || ""}
                     onChange={e => setMap({ funds: { ...(mapping.funds || {}), [f.id]: e.target.value } })}

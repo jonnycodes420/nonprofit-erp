@@ -154,10 +154,11 @@ const read = p => fs.readFileSync(path.join(ROOT, p), "utf8");
   // ── §14 Billing's records gap ────────────────────────────────────────────
   const bill = (await api("GET", "/billing/status", tok)).body || {};
   const gap = (await api("GET", "/billing/records-gap", tok)).body || {};
-  const [dir] = await q(`SELECT COUNT(*)::int AS n FROM donors d WHERE d.org_id=$1 AND d.deleted_at IS NULL AND d.erased_at IS NULL AND ${require(path.join(ROOT, "shared/personType.js")).donorOnlySql("d")}`, [ORG]);
+  // FLOWS-15 item 5: the Donors tab is Everyone's people marked Donor (archived left out too), not "not erased".
+  const [dir] = await q(`SELECT COUNT(*)::int AS n FROM donors d WHERE d.org_id=$1 AND d.deleted_at IS NULL AND d.erased_at IS NULL AND d.archived_at IS NULL AND ${require(path.join(ROOT, "shared/personType.js")).donorOnlySql("d")}`, [ORG]);
   const records = (bill.pricing1 || bill).records;
   ok("§14 Billing says how many are marked Donor with no gift, the line foots to the Donors tab (an erased giver too), and the people open",
-    gap.markedNoGift >= 1 && /marked Donor but ha(s|ve) no gift on file/.test(gap.sentence || "") && gap.source && gap.source.key === "marked-donor-no-gift"
+    gap.markedNoGift >= 1 && /plus [\d,]+ (person|people) marked Donor with no gift on file/.test(gap.sentence || "") && gap.source && gap.source.key === "marked-donor-no-gift"
       && records + gap.markedNoGift - gap.giftNotMarked === dir.n, { gap, records, directory: dir.n });
   const rows = await api("GET", "/figures/marked-donor-no-gift/rows", tok);
   ok("§14 the figure opens the people behind it", rows.status === 200 && JSON.stringify(rows.body).includes("Caspar Fenwright"), { status: rows.status });

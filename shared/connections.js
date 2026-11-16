@@ -92,8 +92,8 @@ export function rhythmOf(giftDates, today) {
   const per = perWeek == null ? null : Math.round(perWeek * 10) / 10;
   return { gifts: dates.length, meanGapDays, perWeek,
            sentence: per != null && per >= 1
-             ? `It usually sends about ${countLabel(per, "gift")} a week.`
-             : `It usually sends a gift every ${Math.round(meanGapDays)} days.` };
+             ? `It usually sends about ${countLabel(per, "gift")} a week, over the last ${RHYTHM_WINDOW_DAYS} days.`
+             : `It usually sends a gift every ${Math.round(meanGapDays)} days, over the last ${RHYTHM_WINDOW_DAYS} days.` };   // FLOWS-15 item 6: the period named
 }
 
 // How long this connection may be silent before silence is worth saying.

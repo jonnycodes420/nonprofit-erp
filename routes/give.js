@@ -475,6 +475,7 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
   }
 
   const byProvider = new Map(sources.filter(sourceIsConnected).map(s => [s.provider, s]));
+  let stripeHistory = null;
   // FIX-10 D — what the SECOND half of the Stripe card says, built from the
   // same row every other API source is built from.
   const stripePart = card => ({
@@ -534,6 +535,7 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
     // Stripe card, so a customer never has to guess which Stripe to connect.
     if (key === "stripe" && stripeCard) {
       stripeCard.parts.push(stripePart(card));
+      stripeHistory = { card, dates: b.dates };   // FLOWS-15 item 6: settled below (server/give/stripeCard.js)
       // The card's own status is the worse of its two halves: a screen sorted
       // by what is wrong must not read "healthy" over a broken half.
       if (card.status === "broken" || (card.status === "quiet" && stripeCard.status === "healthy"))
@@ -543,6 +545,9 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
     }
     cards.push(card);
   }
+  // FLOWS-15 item 6: each half true on its own (pages by the public page's check), one weekly rate.
+  require("../server/give/stripeCard").settleStripeCard(stripeCard, { org, C, ownDates: (bucket.get("own_stripe") || empty).dates,
+    historyDates: stripeHistory ? stripeHistory.dates : [], historyCard: stripeHistory ? stripeHistory.card : null, today });
   // 3 · Statement imports. Not a connection anybody can break: a file arrives
   // or it does not, and the card says when the last one did.
   {

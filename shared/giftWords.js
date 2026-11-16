@@ -54,6 +54,16 @@ export function fundLabel(name) {
   return s || NO_FUND_LABEL;
 }
 
+// FLOWS-15 item 4 (W-1116-Finance-28): one fund, one name. The gift form said "Scholarship Fund
+// (restricted)", Reports and Finance "Scholarship Fund", and the profile "Scholarship". Every surface
+// names a fund with fundDisplayName (a fund row, or its name), and the restriction is never part of
+// the name: where it shows, it is the one badge, FUND_RESTRICTED_BADGE (client FundName.jsx).
+export const FUND_RESTRICTED_BADGE = "Restricted";
+export function fundDisplayName(fund) {
+  if (fund && typeof fund === "object") return fundLabel(fund.name != null ? fund.name : fund.fundName != null ? fund.fundName : fund.fund_name);
+  return fundLabel(fund);
+}
+
 // A receipt is for money given: a $0 (or refund) row has nothing to receipt.
 export function receiptOffered(gift) {
   const a = Number(gift && gift.amount);

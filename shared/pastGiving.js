@@ -27,11 +27,14 @@ export const CLAIMS = [
   /(?<!\b(?:hours?|time|days?|evenings?|weekends?)\]? )\byou(?:['’]ve| have)? (?:given|donated|supported|gave)\b/i,   // the hours you gave are not money
   /\b(?:renew|increase) your (?:gift|support|giving)\b/i,
   /\bas (?:a|one of our) (?:loyal |faithful |longtime )?(?:donors?|supporters?)\b/i,
+  /\byou were (?:a )?part of (?:it|this|that)\b/i,   // FLOWS-15 item 1: the Year-end hero, "This year, you were part of it"
 ];
 
 // The words of one block a person reads (text blocks only: a heading, its
 // paragraphs and list items).
 function blockText(b) {
+  // FLOWS-15 item 1: a hero's heading and line are copy too ("This year, you were part of it").
+  if (b && b.type === "hero" && !b.locked) return [b.heading, b.sub].filter(x => x != null).map(String);
   if (!b || b.type !== "richtext" || b.locked) return [];
   const out = [];
   for (const p of Array.isArray(b.blocks) ? b.blocks : []) {
@@ -65,7 +68,9 @@ export function claimsOf(blocks) {
   return out;
 }
 
-export const hasFirstGiftVersion = b => !!(b && typeof b.firstGift === "string" && b.firstGift.trim());
+// A text block's version is `firstGift`; a hero's is its own heading, `firstGiftHeading` (and an optional `firstGiftSub`).
+export const hasFirstGiftVersion = b => !!(b && (b.type === "hero" ? typeof b.firstGiftHeading === "string" && b.firstGiftHeading.trim()
+  : typeof b.firstGift === "string" && b.firstGift.trim()));
 
 // The first-gift version as paragraphs (a blank line starts the next one).
 export function firstGiftParagraphs(b) {
@@ -98,4 +103,37 @@ export function blockHint(phrase) {
   return `"${phrase}" thanks them for giving. Write a version for people who have never given, and they read it instead.`;
 }
 
-export default { CLAIMS, claimIn, claimsOf, hasFirstGiftVersion, firstGiftParagraphs, audienceNeverGivenSentence, pastGivingFlag, blockHint };
+// ── FLOWS-15 item 1 (W-1114-Fundraising-17, second repeat). WHAT A NEVER-GIVER RECEIVES. ──
+// FLOWS-12 flagged the letter and left the outcome alone, so Ana still got "you were part of it".
+// Now a never-giver never receives donor-only copy:
+//   · every block that thanks them has her first-gift version → they read her versions ("version")
+//   · any such block without one → they are left out of the send ("left_out"), and the editor
+//     says how many ("212 people who have never given won't get this until you write a
+//     first-gift version")
+//   · she ticks "Send it to them anyway" (segment.includeNeverGiven) → they read the letter as it
+//     is, knowingly ("included")
+//   · nothing in it thanks anyone for giving → it goes as written ("no_claim")
+// Steward never writes the version: in a real org it is her words or nothing.
+export const openClaims = blocks => claimsOf(blocks).filter(c => !c.hasVersion);
+export const donorOnlyCopy = blocks => openClaims(blocks).length > 0;
+export function neverGiverOutcome({ blocks, includeNeverGiven = false } = {}) {
+  const claims = claimsOf(blocks);
+  if (!claims.length) return "no_claim";
+  if (claims.every(c => c.hasVersion)) return "version";
+  return includeNeverGiven ? "included" : "left_out";
+}
+export const LEFT_OUT_REASON = "no_first_gift_version";
+export function leftOutSentence(n) {
+  const k = Number(n) || 0;
+  if (!k) return "";
+  return `${fmt(k)} ${k === 1 ? "person who has" : "people who have"} never given won't get this until you write a first-gift version.`;
+}
+export function includedSentence(n) {
+  const k = Number(n) || 0;
+  if (!k) return "";
+  return `${fmt(k)} ${k === 1 ? "person who has" : "people who have"} never given will get this letter as it is, the one that thanks them for giving.`;
+}
+export const INCLUDE_LABEL = "Send it to them anyway, as it is";
+export const notSentSentence = name => `Not sent to ${name || "them"}: no first-gift version.`;
+
+export default { CLAIMS, claimIn, claimsOf, hasFirstGiftVersion, firstGiftParagraphs, audienceNeverGivenSentence, pastGivingFlag, blockHint, openClaims, donorOnlyCopy, neverGiverOutcome, LEFT_OUT_REASON, leftOutSentence, includedSentence, INCLUDE_LABEL, notSentSentence };

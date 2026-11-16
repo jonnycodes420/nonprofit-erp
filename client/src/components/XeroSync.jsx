@@ -16,6 +16,7 @@ import { apiFetch } from "../api";
 import { T, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import FundName from "./FundName";   // FLOWS-15 item 4: one name, one badge
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -132,7 +133,7 @@ export default function XeroSync({ connectionId = null, isReadOnly, isAdmin }) {
         </div>
         {(d.funds || []).map(f => (
           <div key={f.id} data-testid="xero-map-row" style={row}>
-            <span style={{ flex: "1 1 160px", minWidth: 0, overflowWrap: "anywhere" }}>{f.name}{f.restricted ? " (restricted)" : ""}</span>
+            <span style={{ flex: "1 1 160px", minWidth: 0, overflowWrap: "anywhere" }}><FundName fund={f} /></span>
             <Pick list={seen && seen.income} value={(m.funds || {})[f.id]} placeholder="Income account" onChange={a => setFund(f.id, a)} />
           </div>))}
         {!seen && <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>Read from Xero first, and its accounts appear in these lists.</div>}

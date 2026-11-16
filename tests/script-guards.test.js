@@ -92,6 +92,8 @@ const GUARDED_WRITERS = [
   "flows10-demo-alts",
   // FLOWS-10: sets the demo's made-up EIN while it is the placeholder, org_b72demo only. Same guard.
   "flows10-demo-ein",
+  // FLOWS-15: puts the demo's first-gift version on its Year-end appeal, org_b72demo's ecamp_b72_yearend only. Same guard.
+  "flows15-demo-first-gift",
   // ASKS-2: lists open tasks whose title carries an ask above 1.5 × the person's
   // anchor. Read only (no --apply); the database comes through writerDbUrl.
   "asks2-old-asks",
@@ -219,6 +221,8 @@ const LOOPBACK_HARDCODED = [
 // Read-only against whatever BASE points at (may default to prod): their only
 // write-shaped call is POST /auth/login. Verified below, not just trusted.
 const PROD_READONLY = [
+  // FLOWS-15: lists saved Atlas answers whose count is money, and unsent campaigns that now leave never-givers out; READ ONLY session, no --apply.
+  "flows15-old-rows",
   // FLOWS-12: lists erased people still linked to a household or an officer; one READ ONLY session, no --apply.
   "flows12-erased-links",
   // FLOWS-9: lists drafts claiming a missing video and gifts whose refunded-in-full mark disagrees; SELECTs only, no --apply.

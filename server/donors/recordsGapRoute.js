@@ -11,8 +11,9 @@ const routers = { r1: express.Router() };
 function mount(ctx) {
   const { query, requireAuth, wrap } = ctx;
   routers.r1.get("/billing/records-gap", requireAuth, wrap(async (req, res) => {
+    // FLOWS-15 item 5: Records, the Donors tab and every part between them, in one read (shared/numbers/recordsGap.js).
     const [row] = await query(RG.countsSql(), [req.user.orgId]);
-    const gap = { markedNoGift: Number(row && row.marked_no_gift) || 0, giftNotMarked: Number(row && row.gift_not_marked) || 0 };
+    const gap = RG.gapOf(row);
     res.json({ ...gap, sentence: RG.gapSentence(gap), source: gap.markedNoGift ? { key: "marked-donor-no-gift", params: {} } : null });
   }));
 }

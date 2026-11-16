@@ -24,6 +24,7 @@ import { askConfirm } from "./ConfirmDialog";
 import QboRead from "./QboRead";
 import { displayDate } from "../../../shared/displayDate.js";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import FundName from "./FundName";   // FLOWS-15 item 4: one name, one badge
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -160,7 +161,7 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
     const v = (m[part] || {})[it.id] || {};
     return (
       <div key={part + it.id} data-testid="qbo-map-row" style={row}>
-        <span style={{ flex: "1 1 160px", minWidth: 0, overflowWrap: "anywhere" }}>{it.name}{it.restricted ? " (restricted)" : ""}</span>
+        <span style={{ flex: "1 1 160px", minWidth: 0, overflowWrap: "anywhere" }}><FundName fund={it} /></span>
         <Pick list={income} value={v.accountId} name={v.accountName} disabled={!can} placeholder="Income account"
           onChange={x => setPart(part, it.id, { accountId: x ? x.id : null, accountName: x ? x.name : null })} />
         <Pick list={classes} value={v.classId} name={v.className} disabled={!can}
