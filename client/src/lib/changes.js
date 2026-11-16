@@ -25,7 +25,7 @@
 // A view that is not mounted hears nothing and asks for nothing.
 import { useEffect, useRef, useState } from "react";
 
-export const KINDS = ["person", "gift", "pledge", "event", "grant", "task", "group", "volunteer", "fund", "totals", "note", "import", "draft", "insights"];
+export const KINDS = ["person", "gift", "pledge", "event", "grant", "task", "group", "volunteer", "fund", "totals", "note", "import", "draft", "insights", "org"];
 const ALL = KINDS;
 
 // ── WHAT A WRITE TOUCHED ─────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ const RULES = [
   [/^\/(drafts|milestone-drafts|thank-yous)\b|^\/agent\/(waiting|drafts?)\b/, ["draft", "task"]],
   [/^\/(atlas|tell|voice|memos?|requests)\b/, ALL],
   [/^\/(imports?|spreadsheet-import|csv|history-import|old-reports)\b|\/undo\b.*import|import.*\/undo\b/, ALL],
-  [/^\/donors\/[^/]+\/gifts\b|^\/gifts\b|^\/donations\b|^\/checks?\b|^\/deposits?\b|^\/batches?\b|^\/recurring\b|^\/refunds?\b|^\/soft-credits?\b|^\/ledger\b|^\/finance\b/, GIFT],
+  [/^\/donors\/[^/]+\/gifts\b|^\/gifts\b|^\/donations\b|^\/checks?\b|^\/deposits?\b|^\/batches?\b|^\/recurring\b|^\/refunds?\b|^\/soft-credits?\b|^\/ledger\b|^\/finance\b|^\/offline-plans?\b/, GIFT],   // FLOWS-13: a staff-recorded plan's payment or cancel
   [/^\/pledges?\b|\/pledges?\b/, ["pledge", "gift", "person", "totals"]],
   // STALE-2: a grant's deadlines are tasks too (trg_milestone_task_sync).
   [/^\/grants?\b|^\/funders?\b/, ["grant", "pledge", "gift", "person", "totals", "task"]],
@@ -58,6 +58,9 @@ const RULES = [
   [/^\/(interactions|attachments|notes|conversations|files)\b/, ["note", "person"]],
   [/^\/removals\b|^\/trash\b|^\/merge|\/merge\b|^\/households?\b|^\/donors\b|^\/people\b|^\/relationships?\b/, ["person", "gift", "pledge", "group", "totals", "task", "note"]],
   [/^\/(campaigns?|appeals?|goals?|moves?|portfolio|major-gifts|memberships?)\b/, ["person", "totals", "pledge"]],
+  // FLOWS-13 item 1 (Area 5): the org's name, logo, brand kit and team. The Brand Identity
+  // preview ran one save behind a rename, and the Team list held a revoked invite.
+  [/^\/orgs?\b|^\/brand-kit\b|^\/auth\/invite\b|^\/users\/[^/]+$/, ["org"]],
 ];
 // QUICKADD-1: the writes that ADD people, which every list of people re-reads
 // for: + Add, a gift with "+ New person", and a deposit sheet's new donors.

@@ -7,6 +7,7 @@
 // and Revoke (server/org/invites.js).
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../api";
+import { useChanged } from "../../lib/changes";   // FLOWS-13 item 1: an invite made or revoked anywhere re-reads the list
 import { T, Pill, SectionLabel } from "../shared";
 import { askConfirm } from "../ConfirmDialog";
 import { errorMessage } from "../../lib/domainError";
@@ -22,6 +23,7 @@ export function InvitedList({ isAdmin, version = 0 }) {
   const [busy, setBusy] = useState("");
   const load = () => apiFetch("/org/invites").then(r => setInvites((r && r.invites) || [])).catch(() => setInvites([]));
   useEffect(() => { if (isAdmin) load(); }, [isAdmin, version]);
+  useChanged(["org"], () => { if (isAdmin) load(); });
   if (!isAdmin || !invites || !invites.length) return null;
 
   const resend = async i => {

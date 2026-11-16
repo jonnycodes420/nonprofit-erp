@@ -58,6 +58,10 @@ const CODE_SHAPES = new Set(["about", "find", "question"]);
 // the full answer will finish.
 const ATLAS_READ_MS = () => Number(process.env.ATLAS_READ_MS) || 12000;
 const ATLAS_ANSWER_MS = () => Number(process.env.ATLAS_ANSWER_MS) || 20000;
+// FLOWS-13 item 6: and the whole answer, the read included, has one limit. A question's lookup gets
+// what is left of it, never a fresh 20 s after a slow read.
+const ATLAS_TOTAL_MS = () => Number(process.env.ATLAS_TOTAL_MS) || 20000;
+const NS = require("../server/atlas/noSource");   // FLOWS-13 item 6: a question nothing in Steward answers
 
 const PROP = require("../server/atlas/proposal");   // SENDS-1: Atlas proposes, she saves
 function mount(ctx) {
@@ -236,6 +240,19 @@ const NEEDS_PERSON = new Set(["came_to_event", "register_for_event", "gift", "pl
 const MAY_PERSON = new Set(["reminder"]);
 const TARGET_KIND = { came_to_event: "event", register_for_event: "event", add_to_journey: "journey", remove_from_journey: "journey", add_to_group: "group", remove_from_group: "group" };
 
+// FLOWS-13 item 6: the steps code answers with no model and no lookup, or null.
+const CODE_ANSWERED = new Set(["cant_know", "setting_fact", "giving_total"]);
+async function answeredInCode(orgId, text, { today, all }) {
+  const [AT6, D6, [o6]] = await Promise.all([AT(), import("../shared/atlasDates.js"), query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId])]);
+  const q6 = GR.questionSteps(text, { today, org: o6 || {}, A: AT6, D: D6 });
+  if (q6) return q6.every(x => CODE_ANSWERED.has(x.kind)) ? q6 : null;
+  // A known shape that does something (find, about, a gift) is read as usual; a bare question is checked here.
+  if (GT.parseGivingQuestion(text) || AT6.readInCode(text).some(x => x.kind !== "question")) return null;
+  const names = ((await all.catch(() => [])) || []).map(p => p.name);
+  const line = NS.noSource(text, names);
+  return line ? [{ kind: "cant_know", line, words: text }] : null;
+}
+
 async function readSteps(orgId, text, { today, onPage, gateP = null }) {
   const AT_ = await AT();
   const gate = await (gateP || agentGate(orgId));
@@ -252,7 +269,7 @@ async function readSteps(orgId, text, { today, onPage, gateP = null }) {
         model: ATLAS_ROUTE_MODEL(), max_tokens: 2000, thinking: { type: "disabled" }, system: prompt.system, messages: prompt.messages,
         tools: [{ name: AT_.ATLAS_TOOL.name, description: AT_.ATLAS_TOOL.description, strict: true, input_schema: AT_.ATLAS_TOOL.input_schema }],
         tool_choice: { type: "tool", name: AT_.ATLAS_TOOL.name },
-      }, { timeout: ATLAS_READ_MS(), maxRetries: 0 });
+      }, { timeout: Math.min(ATLAS_READ_MS(), ATLAS_TOTAL_MS()), maxRetries: 0 });   // FLOWS-13: never past the whole answer's limit
       const use = (msg.content || []).find(b => b.type === "tool_use" && b.name === AT_.ATLAS_TOOL.name);
       if (use && use.input) {
         const steps = AT_.normalizeRead(use.input, text);
@@ -732,13 +749,15 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         const ck = AT_.cantKnow(st.target || st.words);
         if (ck) { await log({ kind: "answer", state: "done", line: ck }); break; }
         const ctl = new AbortController();
-        const budget = setTimeout(() => ctl.abort(), ATLAS_ANSWER_MS());
+        const leftMs = Math.max(3000, ATLAS_TOTAL_MS() - (Date.now() - (req.atlasT0 || Date.now())));   // FLOWS-13
+        const budgetMs = Math.min(ATLAS_ANSWER_MS(), leftMs);
+        const budget = setTimeout(() => ctl.abort(), budgetMs);
         const r = await asHer(req, "POST", "/ask", { text: st.target || st.words, ...(prior && prior.context ? { context: prior.context } : {}) }, { signal: ctl.signal })
           .catch(e => ({ status: 504, body: null, timedOut: ctl.signal.aborted, error: e }))
           .finally(() => clearTimeout(budget));
         if (r.timedOut) {
           await log({ kind: "answer", state: "done", link: { tab: "ask", text: st.target || st.words },
-            line: `I stopped after ${Math.round(ATLAS_ANSWER_MS() / 1000)} seconds: looking that up took longer than it should. Open it in Ask, where the full answer will finish.` });
+            line: `I stopped after ${Math.round(budgetMs / 1000)} seconds: looking that up took longer than it should. Open it in Ask, where the full answer will finish.` });
           break;
         }
         const said0 = r.status < 300 && r.body && (r.body.sentence || (r.body.answer && r.body.answer.sentence) || r.body.headline);
@@ -861,18 +880,23 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   req.atlasCtx.gate.catch(() => {});
   // ATLAS-7: a group ask ("every donor who gave over 1000 … in my top 100 … a journey") is read in code, never as one person.
   const group = await GA.read(text);
+  // FLOWS-13 item 6 (W-1114-Atlas-23): what code answers for certain is known before any model is
+  // asked. ATLAS-6's shapes (a setting, a thing not kept, a forecast, an amount) and a question that
+  // names nothing Steward keeps (server/atlas/noSource.js) skip the model's read and the lookup loop.
+  const early = group ? null : await answeredInCode(orgId, text, { today, all });
   const read = group ? { ai: (await req.atlasCtx.gate).ok ? "on" : "off", steps: [group], code: true }
+    : early ? { ai: (await req.atlasCtx.gate).ok ? "on" : "off", steps: early, code: true }
     : await readSteps(orgId, text, { today, onPage: onPage ? onPage.name : null, gateP: req.atlasCtx.gate });
   // TRUTH-3: "how much did Marlowe and Renee give together" is one question
   // about each named person, answered in code (server/atlas/givingTotal.js),
   // whatever the read made of it. Never /ask with the names run together.
-  const gq = GT.parseGivingQuestion(text);
+  const gq = early ? null : GT.parseGivingQuestion(text);
   if (gq && !group) read.steps = [{ kind: "giving_total", who: gq.names.join(" and "), whos: gq.names, words: text }];
   // ATLAS-6: a period, an org fact, a thing Steward doesn't keep, a forecast, and
   // each part of a compound question, read in code (server/atlas/grounded.js).
   {
     const [AT6, D6, [o6]] = await Promise.all([AT(), import("../shared/atlasDates.js"), query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId])]);
-    const q6 = GR.questionSteps(text, { today, org: o6 || {}, A: AT6, D: D6 });
+    const q6 = early ? null : GR.questionSteps(text, { today, org: o6 || {}, A: AT6, D: D6 });
     if (q6 && !group) read.steps = q6;
   }
   const t1 = Date.now();

@@ -7,6 +7,7 @@ module.exports = {
   wholeDollars: require("./wholeDollars"),   // PIPE-1
   money: require("./money"),
   lifetime: require("./lifetime"),
+  portfolioValue: require("./portfolioValue"),   // FLOWS-13
   givingBetween: require("./givingBetween"),
   lastGift: require("./lastGift"),
   firstGift: require("./firstGift"),

@@ -33,6 +33,7 @@ import PortalBanner, { PORTAL_HEADER_RATIO } from "../components/PortalBanner";
 // GIVE-3 — the page's layout, trust panel, other ways to give and impact lines,
 // said once and read by this page AND the editor's preview of it.
 import { resolvePageTheme } from "../../../shared/pageTheme.js";
+import { PageNotOpen } from "./OrgBrandHeader";   // FLOWS-13 item 2: "Not open yet" still says whose page it is
 import { layoutFor, storyParagraphs, impactFor as designImpact, trustLines, waysLines, READ_MORE_AFTER } from "../../../shared/givingPageDesign.js";
 
 // BUILD-60 — THE GIVING PAGE IS THE ORG'S PAGE.
@@ -697,6 +698,7 @@ export default function Donate({ preview = null }) {
   const [pageLoading, setPageLoading] = useState(true);
   const [pageError, setPageError] = useState("");
   const [pageNotOpen, setPageNotOpen] = useState(false);   // FUNDRAISING-2: a draft page, not a missing one
+  const [notOpenBrand, setNotOpenBrand] = useState(null);   // FLOWS-13 item 2: the org's name and logo on a page not open yet
   const [donated, setDonated] = useState(false);
   const [cardUpdated, setCardUpdated] = useState(false);
   const [joined, setJoined] = useState(false);   // SWEEP-6: back from a membership checkout
@@ -965,7 +967,7 @@ export default function Donate({ preview = null }) {
             } catch { /* keep A rather than showing nothing */ }
           }
         }
-        if (d.error) { setPageError(d.error); setPageNotOpen(d.paused ? "paused" : !!d.notOpen); }
+        if (d.error) { setPageError(d.error); setPageNotOpen(d.paused ? "paused" : !!d.notOpen); setNotOpenBrand(d.notOpen && d.brand ? d.brand : null); }
         else applyPayload(d, params);
         setPageLoading(false);
       })
@@ -1111,13 +1113,7 @@ export default function Donate({ preview = null }) {
     </div>
   );
 
-  if (pageError) return (
-    <div style={{ ...BASE, justifyContent: "center", textAlign: "center" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-      <div style={{ fontSize: 16, fontWeight: 700, color: pageNotOpen ? T.ink : T.terra700, marginBottom: 8 }}>{pageNotOpen === "paused" ? "Not taking gifts" : pageNotOpen ? "Not open yet" : "Page not found"}</div>
-      <div style={{ fontSize: 13, color: T.ink3 }}>{pageError}</div>
-    </div>
-  );
+  if (pageError) return <PageNotOpen base={BASE} notOpen={pageNotOpen} brand={notOpenBrand} sentence={pageError} />;   // FLOWS-13: with its header
 
   // ── GIVE-2 §4 · THE ONE-TAP SCREEN ───────────────────────────────────────
   // It REPLACES the form rather than sitting beside it. A donor who followed a

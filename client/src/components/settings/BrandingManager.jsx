@@ -1,7 +1,8 @@
 import { T, SectionLabel } from "../shared";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useDirtyGuard } from "../../lib/dirtyGuard";
 import { apiFetch } from "../../api";
+import { useChanged } from "../../lib/changes";   // FLOWS-13 item 1: a rename or a logo saved anywhere reaches the preview
 import { errorMessage } from "../../lib/domainError";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "../Uploader";
 
@@ -30,6 +31,11 @@ export function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
     // POLISH-7 (W-1108-Atlas-14X): the preview reads the saved name and logo.
     apiFetch("/org").then(o=>{setLogo(o.logo_data||o.logo_url||"");setOrgName(o.name||"");setAccent(o.brand_accent||"");setLoaded(true);}).catch(()=>setLoaded(true));
   },[]);
+  // FLOWS-13 item 1 (Area 5): "the Brand Identity preview ran one save behind". The name above
+  // (OrgNameCard) saves on its own, and the preview had read it once, on mount. Any org change
+  // re-reads the saved name and logo; a colour or logo she has not saved yet is kept.
+  const unsavedLogo=useRef(false);unsavedLogo.current=logoChanged;
+  useChanged(["org"],()=>{apiFetch("/org").then(o=>{if(!o)return;setOrgName(o.name||"");if(!unsavedLogo.current)setLogo(o.logo_data||o.logo_url||"");}).catch(()=>{});});
   const disabled=!isAdmin||isReadOnly;
   const effAccent=accent||T.greenDk;
   async function save(){

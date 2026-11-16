@@ -1,5 +1,6 @@
 import { useState, useEffect, Fragment } from "react";
 import { useChanged } from "../lib/changes";   // FEEL-1: fund totals re-read on a gift change
+import { filteredEmptySentence } from "../../../shared/filteredEmpty.js";   // FLOWS-13 item 4
 import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import RemoveMenu from "./RemoveMenu"; // FIX-41: a fund's Remove, on the funds list only
 import { RestrictedView } from "./RestrictedView";
@@ -1339,7 +1340,11 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
         </div>
         <Card style={{ padding:0, overflow:"hidden" }}>
           {sortedTxns.length === 0
-            ? <EmptyState title="No transactions here" message="This is your unified ledger, every online gift, manual entry, and imported record lands here. Log one, or connect Stripe, to begin."/>
+            ? (transactions.length > 0 && (txnType || txnSource || txnFund || txnFilter)
+              // FLOWS-13 item 4: emptied by its filters, it says so (shared/filteredEmpty.js), never "to begin".
+              ? <EmptyState title="No transactions match" message={filteredEmptySentence(transactions.length, "transaction")}
+                  action="Clear filters" onAction={() => { setTxnType(""); setTxnSource(""); setTxnFund(""); setTxnFilter(""); }}/>
+              : <EmptyState title="No transactions here" message={txnYear !== "all" && transactions.length === 0 ? `No transactions are dated in ${txnYear}. Pick All years to see every one, or log one.` : "This is your unified ledger, every online gift, manual entry, and imported record lands here. Log one, or connect Stripe, to begin."}/>)
             : (
               <div style={{ overflowX:"auto" }}>
                 <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>

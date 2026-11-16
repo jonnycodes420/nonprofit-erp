@@ -1,5 +1,5 @@
 import { Figure } from "./Figure";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { apiFetch, API } from "../api";
 import { useChanged } from "../lib/changes";   // STALE-1
 import { T, activeMark, fmt, fmtFull, fmtTotal, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal } from "./shared";
@@ -34,7 +34,8 @@ import RemoveMenu from "./RemoveMenu";
 import { publishItems, isDraftPage } from "../lib/pagePublish";
 import { ThankYouDrafts } from "./ThankYouDrafts";   // CHECK-2
 import { ThankClock } from "./fundraising/ThankClock";   // TRUTH-5: moved, unchanged
-import { OverviewPeriodBar, overviewUrl } from "./fundraising/OverviewPeriodBar";   // TRUTH-5: This FY / Last FY / custom
+import { OverviewPeriodBar, overviewUrl } from "./fundraising/OverviewPeriodBar";
+import { newPeriodReads } from "../lib/periodRead";   // FLOWS-13 item 3: one click applies the period   // TRUTH-5: This FY / Last FY / custom
 import { EventStory } from "./EventRaised";   // FUNDRAISING-2
 import { PledgesView } from "./Pledges";   // FUNDRAISING-2
 import { countLabel } from "../../../shared/countWords.js";
@@ -139,21 +140,38 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
   const goUrl = useUrlWriter();
   const orgSlug = data?.org?.org_slug || "";
 
+  // FLOWS-13 item 3 (W-1114-Fundraising-07X): "the first Show these days click navigated to the
+  // custom URL but still showed FY figures". Every overview read takes a number; only the newest
+  // one's answer lands, and only when it is for the period the address now names
+  // (lib/periodRead.js), so a read that left before the click can never paint over it.
+  const periodReads = useRef(newPeriodReads());
   const load = () => {
     setLoading(true);
+    const ticket = periodReads.current.start(overviewUrl());
     Promise.all([
-      apiFetch(overviewUrl()),
+      apiFetch(ticket.url),
       apiFetch("/fundraising/campaigns"),
       apiFetch("/giving-pages").catch(() => []),
     ]).then(([o, c, p]) => {
-      setOverview(o); setCampaigns(c); setPages(p || []); setLoading(false);
+      if (periodReads.current.lands(ticket, overviewUrl())) setOverview(o && typeof o === "object" ? { ...o, __url: ticket.url } : o);
+      setCampaigns(c); setPages(p || []); setLoading(false);
     }).catch(e => { console.error(e); setLoading(false); });
   };
   useEffect(() => { load(); }, []);
   // STALE-1: a gift, pledge or grant payment made anywhere moves the overview
   // and the campaigns' totals, read again behind the screen (no loading state).
-  const refresh = () => Promise.all([apiFetch(overviewUrl()), apiFetch("/fundraising/campaigns")])
-    .then(([o, c]) => { setOverview(o); setCampaigns(c); }).catch(() => { /* keeps what is on screen */ });
+  const [periodState, setPeriodState] = useState("");   // FLOWS-13: "" | "updating" | "failed"
+  const refresh = () => {
+    const ticket = periodReads.current.start(overviewUrl());
+    const asked = ticket.url !== (overview && overview.__url);
+    if (asked) setPeriodState("updating");
+    return Promise.all([apiFetch(ticket.url), apiFetch("/fundraising/campaigns")])
+      .then(([o, c]) => {
+        if (periodReads.current.lands(ticket, overviewUrl())) { setOverview(o && typeof o === "object" ? { ...o, __url: ticket.url } : o); setPeriodState(""); }
+        setCampaigns(c);
+      })
+      .catch(() => { if (periodReads.current.isNewest(ticket)) setPeriodState(asked ? "failed" : ""); /* keeps what is on screen, and says so */ });
+  };
   useChanged(["gift", "pledge", "totals", "event"], refresh);   // STALE-2: "event" moves the lead card's Invited and Came
 
   // Any id, old or new, opens its section on its part; ASKS-1: one that is now
@@ -253,7 +271,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
       <div data-fr-view={subtab}>
       {!loading && subtab === "overview" && (
         <>
-          <OverviewView overview={overview} campaigns={campaigns} isReadOnly={isReadOnly} isAdmin={isAdmin && !isReadOnly} onRefresh={refresh}
+          <OverviewView overview={overview} campaigns={campaigns} isReadOnly={isReadOnly} isAdmin={isAdmin && !isReadOnly} onRefresh={refresh} periodState={periodState}
             onNewCampaign={() => setSubtab("campaigns")} onGoto={setSubtab} onNavigate={onNavigate} primaryBtn={primaryBtn} onOpenCampaign={openCampaign} />
         </>
       )}
@@ -375,7 +393,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
 // ended goals sit under Past, folded, with their result. Pledges are three
 // figures (open, due this fiscal year, overdue), the ones Home and Pledges
 // read. "Everything in Fundraising" is gone: it repeated the tabs above it.
-function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampaign, onGoto, onOpenCampaign, isAdmin = false, onRefresh }) {
+function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampaign, onGoto, onOpenCampaign, isAdmin = false, onRefresh, periodState = "" }) {
   if (!overview) return <EmptyState title="Nothing to show yet" message="Set a goal and start a campaign to see your fundraising momentum here." />;
   const { period, givingPages, rollup, goals = [], last12, goal: orgGoal, emptyYearWithHistory, pledges, leadEvent } = overview;
   const gp = givingPages;
@@ -484,7 +502,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
       )}
 
       {/* Momentum: the period's money and gifts, pledges, live pages. TRUTH-5: the period is hers to pick, LYBUNT beside it. */}
-      <OverviewPeriodBar overview={overview} onPicked={onRefresh} onNavigate={onNavigate} />
+      <OverviewPeriodBar overview={overview} onPicked={onRefresh} onNavigate={onNavigate} periodState={periodState} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12 }}>
         <StatTile label={`Raised · ${overview.periodLabel}`} value={fmtTotal(period.raised)}
           period={{ name: overview.periodLabel, start: period.start, end: period.end }}

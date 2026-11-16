@@ -24,6 +24,7 @@ import { T } from "./publicTheme";
 import { resolvePairing, cardChrome, THEME_DEFAULTS } from "../lib/portalTheme";
 import { errorMessage } from "../lib/domainError";
 import GiveSteps from "./GiveSteps";
+import OrgBrandHeader from "./OrgBrandHeader";   // FLOWS-13 item 2: the saved logo heads the form
 import { assignVariant } from "../lib/abVariant";
 import * as RATES from "../../../shared/processingRates.js";
 
@@ -43,7 +44,7 @@ function resolveTheme(theme) {
     primary: t.primary || THEME_DEFAULTS.primary,
     primaryFg: t.primaryFg || THEME_DEFAULTS.primaryFg,
     serif: pairing.display, sans: pairing.body,
-    cardStyle: t.cardStyle, displayName: t.displayName,
+    cardStyle: t.cardStyle, displayName: t.displayName, logo: t.logo || null,
     pageBg: t.pageBg || T.bg,
   };
 }
@@ -144,7 +145,8 @@ export default function EmbeddedForm() {
   }
 
   return (
-    <div ref={rootRef} style={wrap}>
+    <div ref={rootRef} style={{ ...wrap, flexDirection: "column", alignItems: "center" }}>
+      <OrgBrandHeader logo={th.logo} name={th.displayName || data.org.name} compact font={th.sans} />
       <GiveSteps
         spec={data.form.spec}
         formId={data.form.id}

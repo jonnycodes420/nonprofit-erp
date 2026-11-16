@@ -40,6 +40,7 @@ app.get("/org/public-list", wrap(async (req, res) => {
 // did for giving pages: the public read and the editor's preview of the
 // org-wide Donation form build it here, so the page and the preview cannot be
 // handed two different shapes. The org's facts ride along for the trust panel.
+const NOB = require("../give/notOpenBrand");   // FLOWS-13 item 2: a not-open page still draws its header
 const orgPageSql = where => `SELECT o.id, o.name, o.org_slug, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents,
           o.form_upsell_monthly_cents,
           o.fee_rate_card_pct, o.fee_rate_card_flat_cents,
@@ -82,7 +83,7 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   const org = orgs[0];
   if (req.query.memberships !== "1" && !orgTakesGifts(org)) {
     const name = String(org.display_name || "").trim() || org.name;
-    return res.status(404).json({ notOpen: true, orgName: name, error: `${name}'s giving page isn't open yet. Please check back soon.` });
+    return res.status(404).json({ notOpen: true, orgName: name, ...NOB.notOpenBrand(org, giveThemePayload), error: `${name}'s giving page isn't open yet. Please check back soon.` });
   }
   res.json(await orgPagePublicPayload(org, req.params.orgSlug));
 }));
@@ -182,13 +183,13 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   if (!pageRows.length) {
     // POLISH-8: an unpublished page (back to Draft) says so; it is not "not found".
     const [draft] = await query(`SELECT id FROM giving_pages WHERE org_id = ? AND slug = ? AND status = 'draft' AND COALESCE(page_kind,'give') = 'give'`, [org.id, req.params.pageSlug]);
-    if (draft) return res.status(404).json({ notOpen: true, paused: true, orgName: org.name, error: "This page isn't taking gifts right now." });
+    if (draft) return res.status(404).json({ notOpen: true, paused: true, orgName: org.name, ...NOB.notOpenBrand(org, giveThemePayload), error: "This page isn't taking gifts right now." });
     return res.status(404).json({ error: "This giving page could not be found." });
   }
   // FUNDRAISING-2: a page is not open to the public until the org can take
   // money through it. Until payments are connected it is a draft, and its
   // address says so kindly instead of showing a form that cannot work.
-  if (!orgTakesGifts(org)) return res.status(404).json({ notOpen: true, orgName: org.name,
+  if (!orgTakesGifts(org)) return res.status(404).json({ notOpen: true, orgName: org.name, ...NOB.notOpenBrand(org, giveThemePayload),   // FLOWS-13 item 2
     error: `${org.name}'s giving page isn't open yet. Please check back soon.` });
   res.json(await givingPagePublicPayload(org, pageRows[0], req.query));
 }));
