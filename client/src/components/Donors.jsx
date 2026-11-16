@@ -484,12 +484,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     if(interaction.type==="gift"&&interaction.amount>0)reloadDonors();
   };
 
-  const toggleTask=async(task)=>{
-    const updated={...task,done:!task.done};
-    setData(prev=>({...prev,tasks:prev.tasks.map(t=>t.id===task.id?updated:t)}));
-    try{await apiFetch(`/tasks/${task.id}`,{method:"PUT",body:JSON.stringify({title:task.title,due:task.due||"",priority:task.priority,type:task.type,done:updated.done})});}
-    catch(e){console.error(e);}
-  };
+  // FLOWS-17: the profile ticks a task itself (lib/completeTask.js); this page's PUT, with no
+  // Undo and no next repeat, is gone.
 
   // HOTFIX-1 — the civil day the suggestion is written on, read from the
   // machine's local calendar parts (never toISOString, which has already
@@ -889,7 +885,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         onStageChange={moveToStage} onLogTouchpoint={()=>{setLogTarget(selected);}}
         aiMap={aiMap} aiErr={aiErr} loadingKey={loadingKey} getAI={getAI}
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
-        tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask} onAddTask={()=>setFollowUpTarget(selected)}
+        tasks={data.tasks.filter(t=>t.donorId===selected.id)} onAddTask={()=>setFollowUpTarget(selected)}
         orgName={data.org?.name||""} org={data.org} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues} onInteractionAdded={reloadDonors}
         onNavigate={onNavigate}
         initialOpenConversation={openIntent.conversation&&selected.id===openIntent.id}

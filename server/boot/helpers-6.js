@@ -1130,12 +1130,13 @@ async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey })
       const taskOwner = owner || recipients[0] || null;
       const title = `Thank ${donor?.name || "a donor"} · ${amtStr || "a gift"} just came in`;
       const due = new Date(Date.now() + 1 * 86400000).toISOString().slice(0, 10);
-      const taskId = newId("t");
-      // FIX-10 Part C — the "just came in" task, stamped with its gift.
-      await run(
-        "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name,source_gift_id) VALUES (?,?,?,?,?,'donor',0,?,?,?,NOW(),?,?,?)",
-        [taskId, org.id, title, due, "high", donor?.id || null, taskOwner?.id || null, taskOwner?.name || null, wfActor.id, wfActor.name, ctx.giftId || null]
-      );
+      // FLOWS-17 — the "just came in" task is the gift's thank-you, so it goes through the one
+      // writer (keyed by the gift, stamped with it for the delete): when the gift's own Thread
+      // step is the thank-you, no second task is written beside it.
+      const ty = await require("../shared/thankYouOnce").thankYouTaskOnce({
+        orgId: org.id, donorId: donor?.id || null, giftId: ctx.giftId || null, title, actor: wfActor,
+        priority: "high", due, assignee: taskOwner ? { id: taskOwner.id, name: taskOwner.name || "" } : null });
+      const taskId = ty && ty.created ? ty.id : null;
       // Email each distinct recipient (internal, no donor footer).
       // THREAD-2 · the person and the gift are links, and the button opens her.
       const L = await ItemRefs.links(), base = publicAppUrl();

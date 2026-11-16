@@ -8,6 +8,7 @@ import { urlParam } from "../lib/appUrls";
 import { offerUndo } from "./EditHistory";
 import { orgTodayPlus } from "../lib/orgToday";
 import { fmtDayShort } from "../lib/taskDue";
+import { completeTask, completeCall } from "../lib/completeTask";
 import { TASK_VIEWS, TASK_KINDS, NEEDS_OUTCOME, TASK_OUTCOMES, recurPhrase, addDays, weekdayOf } from "../../../shared/taskShape.js";
 import { greetingName, greetingLine } from "../../../shared/greeting.js";
 import { useChanged } from "../lib/changes";   // STALE-1: the one channel (told() is in it)
@@ -107,9 +108,10 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
   const say = e => setErr((e && e.sentence) || errorMessage(e, "That did not save."));
 
   // ── Done ──────────────────────────────────────────────────────────────
+  // FLOWS-17: the one complete call (lib/completeTask.js), which the profile and Home use too.
   const complete = async (t, done = true, extra = {}) => {
-    const row = await apiFetch(`/tasks/${t.id}/complete`, { method: "POST", body: JSON.stringify({ done, ...extra }) });
-    return row;
+    if (!Object.keys(extra).length) return completeCall(t.id, done);
+    return apiFetch(`/tasks/${t.id}/complete`, { method: "POST", body: JSON.stringify({ done, ...extra }) });
   };
   const tick = async t => {
     if (isReadOnly) return;
@@ -117,10 +119,9 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
     if (!t.done && t.touch_type && t.donor_id) { setTouchOffer(t); return; }   // TOUCH-1: any day, early is fine
     if (!t.done && NEEDS_OUTCOME.has(t.kind) && t.donor_id) { setFinish(t); return; }
     try {
-      const row = await complete(t, !t.done);
-      await load();
-      if (!t.done) offerUndo({ message: row.next ? `Done: ${t.title}. The next one is on ${fmtDayShort(row.next.due)}.` : `Done: ${t.title}.`,
-        undoAction: async () => { await complete(t, false); await load(); } }, t.title);
+      if (t.done) { await complete(t, false); await load(); return; }
+      const r = await completeTask(t, { after: load });
+      if (r.needsOutcome) setFinish(t);
     } catch (e) { say(e); }
   };
 

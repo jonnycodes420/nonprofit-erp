@@ -93,6 +93,9 @@ const GUARDED_WRITERS = [
   // FLOWS-14: removes refund rows whose gift is gone, one org. Dry run by default; --apply writes
   // through writerDbUrl, and a remote target must hold org_stagewalk and answer env "staging" on BASE.
   "flows14-orphan-refunds",
+  // FLOWS-17: voids open thank-you tasks beside the gift's own thank-you (Justin's Place), one org.
+  // Dry run by default; --apply voids (never deletes) through writerDbUrl, one audit row. Never org_creo or the demo.
+  "flows17-dup-thanks",
   // FLOWS-10: sets the demo's made-up EIN while it is the placeholder, org_b72demo only. Same guard.
   "flows10-demo-ein",
   // FLOWS-15: puts the demo's first-gift version on its Year-end appeal, org_b72demo's ecamp_b72_yearend only. Same guard.

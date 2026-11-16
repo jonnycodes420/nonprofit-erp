@@ -18,7 +18,7 @@ function ListTabs(props){
   const attachedFiles=props.fileTally?props.fileTally.attached+props.fileTally.mail:0;
   return <ListTabsBody {...props} attachedFiles={attachedFiles}/>;
 }
-function ListTabsBody({fileTally,attachedFiles,deleteMaterial,donor,dpTab,giftsFull,inboxConnected,intActions,isReadOnly,loadDpThread,loadGiftsFull,loadRel,localInts,matLoading,matUploading,materials,onInteractionAdded,onLogTouchpoint,onNavigate,rel,saveStewardship,setLogMeeting,setStwForm,setStwOpen,stwForm,stwOpen,stwSaving,tlExtras,tlSearch,uploadMaterial,viewMaterial}){
+function ListTabsBody({fileTally,attachedFiles,deleteMaterial,donor,dpTab,giftsFull,inboxConnected,intActions,isReadOnly,loadDpThread,loadGiftsFull,loadRel,localInts,matLoading,matUploading,materials,onInteractionAdded,onLogTouchpoint,onNavigate,rel,saveStewardship,setLogMeeting,setStwForm,setStwOpen,stwForm,stwOpen,stwSaving,tlExtras,tlSearch,uploadMaterial,viewMaterial,onTaskOutcome}){
   return <>
           {/* ── THE LIST TABS (PROFILE-1 header) ──────────────────────────
               Conversations, Emails, Tasks, Notes and Files are the old
@@ -81,7 +81,7 @@ function ListTabsBody({fileTally,attachedFiles,deleteMaterial,donor,dpTab,giftsF
             </>}
             {dpTab==="conversations"&&<InboxNudge firstName={firstNameOf(donor.name)} onNavigate={onNavigate}/>}
             {dpTab==="emails"&&<><ThankYouDrafts donorId={donor.id} hideWhenEmpty testid="dp-ty-drafts"/><EmailsReceived donorId={donor.id} firstName={firstNameOf(donor.name)}/></>}
-            {rel?<ProfileTimeline key={dpTab} search={tlSearch} fixed={TAB_KIND[dpTab]} subChips={TAB_SUBCHIPS[dpTab]||null} extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} onConnect={onNavigate?()=>onNavigate("settings",{section:"connections",focus:"inbox"}):null} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>:<div style={{padding:16,textAlign:"center"}}><Spin/></div>}
+            {rel?<ProfileTimeline key={dpTab} search={tlSearch} fixed={TAB_KIND[dpTab]} onTaskOutcome={onTaskOutcome} subChips={TAB_SUBCHIPS[dpTab]||null} extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} onConnect={onNavigate?()=>onNavigate("settings",{section:"connections",focus:"inbox"}):null} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>:<div style={{padding:16,textAlign:"center"}}><Spin/></div>}
             {dpTab==="files"&&<section data-testid="dp-history" style={{display:"flex",flexDirection:"column",gap:10}}>
               <h2 style={{margin:0,fontSize:13,fontWeight:600}}>History</h2>
               <HistoryList donorId={donor.id}/>
