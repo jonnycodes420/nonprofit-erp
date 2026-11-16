@@ -444,9 +444,14 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
 
   // MONEY-4: a gift with a refund recorded against it stays, with its refund:
   // deleting it would leave the refund's negative row standing alone in every total.
+  // FLOWS-14 (W-1115-Finance-07X): …unless she asks for both, "Delete the gift and its refund"
+  // (?withRefunds=1): the refunds go in the same transaction as the gift (refundPairs.js).
+  const PAIRS = require("./refundPairs");
+  const withRefunds = String(req.query.withRefunds || "") === "1";
   const [refunded] = await query("SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND refund_of=?", [req.user.orgId, req.params.id]);
-  if (refunded && refunded.n > 0) return res.status(409).json({ error: "has_refunds",
-    message: "This gift has a refund recorded against it, so it stays on file with its refund. Totals already net it out." });
+  if (refunded && refunded.n > 0 && !withRefunds) return res.status(409).json({ error: "has_refunds", refunds: refunded.n,
+    message: PAIRS.PAIR_WORDS.refused, pairButton: PAIRS.PAIR_WORDS.button });
+  let refundsRemoved = 0;
 
   // A receipt is a legal artifact — a gift with an ACTIVE receipt can't be
   // silently deleted out from under it (was an unhandled FK violation).
@@ -519,6 +524,7 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
     // "Call to say thank you"), its open thank-you voided the same way. One delete path.
     const stopped = await require("./giftThanks").stopJourneysOfGift(client, req.user.orgId, g.donor_id, req.params.id, actor(req));
     voidedTaskCount += stopped.tasks; stoppedJourneys = stopped.journeys;
+    if (withRefunds) refundsRemoved = (await PAIRS.removeRefundsOf(PAIRS.onClient(client), req.user.orgId, [req.params.id])).count;
     await runTx(client, "DELETE FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
     // FLOWS-9: a refund row taken back un-marks its gift when the gift is no longer netted to $0,
     // so the counts (giftCount.js, which read the mark) count it again.
@@ -548,7 +554,8 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
        orgToday(await orgTz(req.user.orgId)), _a.id, _a.name]
     ).catch(e => console.error("[gift-delete] timeline note:", e.message));
   }
-  res.json({ ok: true, voidedTasks: voidedTaskCount, stoppedJourneys });
+  res.json({ ok: true, voidedTasks: voidedTaskCount, stoppedJourneys, refundsRemoved,
+    ...(refundsRemoved ? { sentence: PAIRS.PAIR_WORDS.done(refundsRemoved) } : {}) });
 }));
 
 // ── Pledges ──────────────────────────────────────────────────────────────

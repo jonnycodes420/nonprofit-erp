@@ -100,7 +100,10 @@ function oneAsk(x) {
   const why = m ? m[1] : a.sentence.replace(/\.$/, "");
   // A held ask says why, as the profile does ("held at their own level, because Room to give is not yet known").
   const held = a.held && m && m[2] ? `; held at ${m[2]}` : "";
-  return { cents: a.askCents, words: `Ask ${money(a.askCents)}: ${why.charAt(0).toLowerCase()}${why.slice(1)}${held}.`, rule: ASK.RULE, held: !!a.held };
+  // FLOWS-14 (W-1115-Finance-34X): a household's ask reads every member's gifts, so it says so
+  // ("the Okonkwo household's largest gift"); a person's reads only their own.
+  const whose = ASK.whoseGifts(x.unit);
+  return { cents: a.askCents, words: `Ask ${money(a.askCents)}: ${whose}${why.charAt(0).toLowerCase()}${why.slice(1)}${held}.`, rule: ASK.RULE, held: !!a.held, household: !!whose };
 }
 // ", rounded" when rounding moved the figure, so the words never claim an exact amount
 const roundedWord = (ask, raw) => (ask === raw ? "" : ", rounded");

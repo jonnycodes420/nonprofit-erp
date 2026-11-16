@@ -10,6 +10,7 @@ module.exports = {
   portfolioValue: require("./portfolioValue"),   // FLOWS-13
   givingBetween: require("./givingBetween"),
   lastGift: require("./lastGift"),
+  thanks: require("./thanks"),   // FLOWS-14: which gifts wait for a thank-you
   firstGift: require("./firstGift"),
   retained: require("./retained"),
   deposited: require("./deposited"),

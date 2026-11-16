@@ -669,6 +669,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
         <select data-testid="dir-owner-filter" aria-label="Owner" value={assigneeFilter} onChange={e=>setAssigneeFilter(e.target.value)} style={filterSel}>
           <option value="">All owners</option>
           {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+          <option value="none">Unassigned</option>{/* FLOWS-14: no owner, the portfolio strip's row */}
         </select>
         <select value={designationFilter||""} onChange={e=>setDesignationFilter&&setDesignationFilter(e.target.value)} style={filterSel} title="Filter by planned-giving / estate designation">
           <option value="">All designations</option>
@@ -765,6 +766,15 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
               </div>
             );
           })}
+          {/* FLOWS-14 (W-1115-Donors-06X): the people in no portfolio, so the rows add up to the file. */}
+          {portfolioMeta.file&&portfolioMeta.file.unassigned&&Number(portfolioMeta.file.unassigned.portfolio_count)>0&&(
+            <div data-testid="portfolio-unassigned" style={{display:"flex",alignItems:"center",gap:7}}>
+              <span style={{width:14,height:14,borderRadius:"50%",background:"transparent",border:"1px dashed "+T.ink3,display:"inline-block"}}/>
+              <button type="button" onClick={()=>setAssigneeFilter&&setAssigneeFilter("none")} title="Show them: Owner, Unassigned" style={{background:"none",border:"none",padding:0,cursor:"pointer",fontSize:12,color:T.ink,fontWeight:600}}>Unassigned</button>
+              <span style={{fontSize:11,color:T.ink3}}><Figure variant="cell" value={Number(portfolioMeta.file.unassigned.portfolio_count)} label="Unassigned donors" source={{key:"officer-portfolio",params:{officer:"none",measure:"count"}}}/> · <Figure variant="cell" kind="money" value={Number(portfolioMeta.file.unassigned.portfolio_giving)} label="Unassigned donors, given in total" source={{key:"officer-portfolio",params:{officer:"none"}}}/></span>
+            </div>
+          )}
+          {portfolioMeta.file&&portfolioMeta.file.sentence&&<div data-testid="portfolio-foot" style={{flexBasis:"100%",fontSize:11,color:T.ink3}}>{portfolioMeta.file.sentence}</div>}
         </div>
       )}
 

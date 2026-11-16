@@ -296,7 +296,8 @@ async function legacyCampaignBody(body, donor, orgName, year, { text = false } =
   const firstName   = e((await GREET_READY).firstNames(donor));
   const lastName    = e(donor.name.split(" ").slice(1).join(" "));
   const totalGiving = donor.total_giving ? `$${Number(donor.total_giving).toLocaleString()}` : "$0";
-  const giftRows    = await query("SELECT amount FROM gifts WHERE donor_id=? ORDER BY date DESC NULLS LAST LIMIT 1", [donor.id]);
+  // FLOWS-14 (W-1116-Fundraising-15X): the person's last GIFT (shared/numbers/lastGift.js), never the newest row ("$-25" was a refund).
+  const giftRows    = [await require("../donors/lastGiftWords").lastGiftRow(query, donor.org_id, donor.id)].filter(Boolean);
   const giftAmount  = giftRows[0] ? `$${Number(giftRows[0].amount).toLocaleString()}` : "";   // TRUST-1: no gift, no gift sentence (shared/giftSentence.js)
   return (await GREET_READY).greetMerge((await import("../../shared/giftSentence.js")).withoutMissingGift(body || "", { hasGift: !!giftRows[0], hasTotal: Number(donor.total_giving) > 0 }), e(GREET.greetingName(donor)))
     .replace(/{{first_name}}/g,   firstName)
