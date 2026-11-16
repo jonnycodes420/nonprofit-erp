@@ -19,6 +19,11 @@ const IN_SPAN = (g = "g") => `(${MONEY(g)} AND ${g}.date >= ? AND ${g}.date <= ?
 // SQL: the money given in the span by rows `g`, dollars (two placeholders, from
 // then to). A report's year column (NUMBERS-5).
 const SPAN_SUM = (g = "g") => `COALESCE(SUM(${g}.amount) FILTER (WHERE ${IN_SPAN(g)}), 0)`;
+// SCALE-4: the money given in the span by rows `g` that the statement's WHERE
+// has already narrowed to money (IN_SPAN over the whole run of spans), so only
+// the dates are tested again: the same sum as SPAN_SUM over those rows, without
+// working the money rule out once per column. Two placeholders, from then to.
+const SPAN_SUM_OF_MONEY = (g = "g") => `COALESCE(SUM(${g}.amount) FILTER (WHERE ${g}.date >= ? AND ${g}.date <= ?), 0)`;
 // SQL: the same, in whole cents.
 const SPAN_CENTS = (g = "g") => `COALESCE(SUM(ROUND(${g}.amount * 100)) FILTER (WHERE ${IN_SPAN(g)}), 0)::bigint`;
 
@@ -89,4 +94,4 @@ const LAST_YEAR_SUM = (d = "d") => `(SELECT COALESCE(SUM(lg.amount), 0) FROM gif
      WHERE lg.org_id = ${d}.org_id AND lg.donor_id = ${d}.id AND ${MONEY("lg")} AND lg.date >= ly.f AND lg.date <= ly.t)`;
 const lastYearArgs = (yearFrom) => { const y = yearsBefore(yearFrom); return [yearFrom, y.froms, y.tos]; };
 
-module.exports = { capped, IN_SPAN, SPAN_SUM, SPAN_CENTS, givingBetween, givingBetweenByPerson, yearsBefore, LAST_YEAR_JOIN, LAST_YEAR_SUM, lastYearArgs };
+module.exports = { SPAN_SUM_OF_MONEY, capped, IN_SPAN, SPAN_SUM, SPAN_CENTS, givingBetween, givingBetweenByPerson, yearsBefore, LAST_YEAR_JOIN, LAST_YEAR_SUM, lastYearArgs };

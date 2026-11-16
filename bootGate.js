@@ -22,12 +22,15 @@ const READY = new Promise(resolve => { markReady = resolve; });
 
 // fn after `ms`, counted from the end of the migrations. Returns nothing: a
 // boot job is fire-and-forget, and its own .catch says what went wrong.
-function afterMigrations(fn, ms = 0, { unref = false } = {}) {
-  READY.then(() => { const t = setTimeout(fn, ms); if (unref && t.unref) t.unref(); });
+// SCALE-4: `name` puts the tick's database connections down to "tick <name>"
+// on the Capacity card's "Who held the database" (server/perf/holders.js).
+const named = (fn, name) => (name ? () => require("./server/perf/holders").as(`tick ${name}`, fn) : fn);
+function afterMigrations(fn, ms = 0, { unref = false, name = null } = {}) {
+  READY.then(() => { const t = setTimeout(named(fn, name), ms); if (unref && t.unref) t.unref(); });
 }
 // The same for a repeating job: the first tick is `everyMs` after the migrations.
-function everyAfterMigrations(fn, everyMs, { unref = false } = {}) {
-  READY.then(() => { const t = setInterval(fn, everyMs); if (unref && t.unref) t.unref(); });
+function everyAfterMigrations(fn, everyMs, { unref = false, name = null } = {}) {
+  READY.then(() => { const t = setInterval(named(fn, name), everyMs); if (unref && t.unref) t.unref(); });
 }
 
 // name -> { done, error }. A need that fails keeps the gate shut and says so

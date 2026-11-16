@@ -72,10 +72,25 @@ function dollarParams(text) { let i = 0; return String(text).replace(/\?/g, () =
 async function querySetwise(statement, params = []) {
   // REDTEAM-2: a Sql brings its own values (server/db/sql.js).
   const [text, values] = toQuery(statement, params);
+  // SCALE-4: inside withPinnedClient (the nightly number check) a set-wise read
+  // takes the pinned connection, with nested loops off for that statement only.
+  const pinned = require("../db/query").pinnedClient();
+  if (pinned) return onPinned(pinned, dollarParams(text), values);
   const client = await checkoutSet();
   try { return (await client.query(dollarParams(text), values)).rows; }
   catch (e) { throw LIMITS.translate(e); }
   finally { LIMITS.release(client); }
+}
+
+function onPinned(pinned, text, values) {
+  return pinned.turn(async (client) => {   // one turn: nothing else runs between BEGIN and COMMIT
+    try {
+      await client.query("BEGIN; SET LOCAL enable_nestloop = off");
+      const r = await client.query(text, values);
+      await client.query("COMMIT");
+      return r.rows;
+    } catch (e) { await client.query("ROLLBACK").catch(() => {}); throw LIMITS.translate(e); }
+  });
 }
 
 // What /health says about this process's connections, from pg's own counters

@@ -350,12 +350,12 @@ ORG_SUMMARY.configure({ orgTz, orgToday, signInternalToken });
 require("../../jobQueue").handle("orgSummaryRefresh", (payload) => ORG_SUMMARY.refreshOrg(payload && payload.orgId));
 // SPLIT-2 end
 // SPLIT-2 server.js piece 204
-require("../../jobQueue").define("refreshStoredDrift", { everyMs: 6 * 60 * 60 * 1000, firstMs: 10 * 60 * 1000, run: () => refreshStoredDrift() });
+require("../../jobQueue").define("refreshStoredDrift", { everyMs: 6 * 60 * 60 * 1000, firstMs: 10 * 60 * 1000, long: true, run: () => refreshStoredDrift() });   // SCALE-4: long
 // SPLIT-2 end
 // SPLIT-2 server.js piece 205
-require("../../jobQueue").define("orgSummaryCheck", { everyMs: 24 * 60 * 60 * 1000, firstMs: 20 * 60 * 1000, run: () => ORG_SUMMARY.checkAll() });
+require("../../jobQueue").define("orgSummaryCheck", { everyMs: 24 * 60 * 60 * 1000, firstMs: 20 * 60 * 1000, long: true, run: () => ORG_SUMMARY.checkAll() });   // SCALE-4: long
 // REPORTS-SPEED-1: every org's Retention, Annual and SYBUNT, compared with what was stored and stored fresh.
-require("../../jobQueue").define("storedReportsNightly", { everyMs: 24 * 60 * 60 * 1000, firstMs: 30 * 60 * 1000, run: () => require("../reports/storedReports").nightly() });
+require("../../jobQueue").define("storedReportsNightly", { everyMs: 24 * 60 * 60 * 1000, firstMs: 30 * 60 * 1000, long: true, run: () => require("../reports/storedReports").nightly() });   // SCALE-4: long
 // SPLIT-2 end
 // SPLIT-2 server.js piece 206
 // FIX-33, and LIVE-1: a meeting synced from the calendar is a change to the
@@ -626,7 +626,7 @@ __share({ STATUS_SERVICES });
 // SPLIT-2 server.js piece 264
 if (!backgroundTicksDisabled()) {
   bootGate.afterMigrations(() => statusCheckOnce().catch(e => console.error("[status]", e.message)), 20000);
-  bootGate.everyAfterMigrations(() => statusCheckOnce().catch(e => console.error("[status]", e.message)), 60 * 1000);
+  bootGate.everyAfterMigrations(() => statusCheckOnce().catch(e => console.error("[status]", e.message)), 60 * 1000, { name: "status page check" });
 }
 // SPLIT-2 end
 // SPLIT-2 server.js piece 265
@@ -635,10 +635,11 @@ if (!backgroundTicksDisabled()) {
 // The tick looks hourly and runs once a day after 05:00 UTC, before the Error
 // digest reads the day's logs. The super-admin reads the latest night, and may
 // run it now; neither returns a name, an amount or an id.
+// SCALE-4: a queued job now (numberCheck.js defineJobs), so it runs on the worker, never on the web.
+require("../../numberCheck").defineJobs(require("../../jobQueue"), () => require("../../numbers").screens);
 if (!backgroundTicksDisabled()) {
-  bootGate.everyAfterMigrations(() => require("../../numberCheck").nightlyTick(require("../../numbers").screens).catch(e => console.error("[numbers]", e.message)), 60 * 60 * 1000);
   // NUMBERS-6: a scheduled gift whose day came moves its person's stored totals (server/numbers/cameDue.js).
-  bootGate.everyAfterMigrations(() => require("../numbers/cameDue").recomputeCameDue(query).catch(e => console.error("[numbers] came due:", e.message)), 60 * 60 * 1000);
+  bootGate.everyAfterMigrations(() => require("../numbers/cameDue").recomputeCameDue(query).catch(e => console.error("[numbers] came due:", e.message)), 60 * 60 * 1000, { name: "came-due totals" });
 }
 // SPLIT-2 end
 // SPLIT-2 server.js piece 266

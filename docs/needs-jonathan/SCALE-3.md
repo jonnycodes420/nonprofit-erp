@@ -3,6 +3,7 @@
 Do nothing until the Capacity card on /ops (Machine tab) says to. It reads each process's own samples (every five minutes) and the nightly load result. Prerequisite: the worker service from 0-SCALE-1 / 0-JOBS-1 is running (`npm run status` prints `handlers ok`).
 
 **When it says "Add a second web replica"** (web event-loop lag p95 over 100 ms, or request p95 over 800 ms, three days in a row):
+0. SCALE-4: first the connection budget. Two replicas need web replicas × 13 × 2 + 6 = 58 connections during a deploy, and the pooler holds 40. The card now says when a replica does not fit; do Option A or B in `docs/needs-jonathan/SCALE-4.md` before step 1.
 1. Railway, project nonprofit-erp, production, service `nonprofit-erp` (web): Variables, add `STEWARD_PROCESS=web` (if not already there) and `WEB_REPLICAS=2`.
 2. Same service, Settings, Deploy, **Replicas 2**. Save; Railway redeploys.
 3. Check: the Capacity card shows two "Web event-loop lag" lines within ten minutes, one per replica, and `npm run status` is green.

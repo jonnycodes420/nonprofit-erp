@@ -293,6 +293,9 @@ app.get("/reports/:key", LANE.middleware, requireAuth, OS.cached("report", { per
   reads: req => (STORED.KEYS.has(req.params.key) ? STORED.DEPS : null) }), wrap(async (req, res) => {
   const { key } = req.params;
   if (!REPORT_HANDLERS[key]) return res.status(404).json({ error: "Unknown report" });
+  // SCALE-4: a report's statements share one answer per statement, as a bundle's do
+  // (requestLimits memoize): Annual asked 9 of its 36 again, three-year 7 of 27.
+  require("../shared/requestLimits").memoize();
   let p;
   try { p = parseReportParams(req.query, await orgForYears(req.user.orgId)); }   // ORG_TZ_SEAM_OK
   catch (e) { return res.status(e.status === 400 ? 400 : 500).json({ error: e.message }); }

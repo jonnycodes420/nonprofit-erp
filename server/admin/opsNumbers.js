@@ -36,7 +36,10 @@ function splitLine(rows) {
 async function card(query) {
   const { UNIT } = require("../../scripts/ci/check-numbers");
   const nights = (await query(`SELECT DISTINCT to_char(ran_on, 'YYYY-MM-DD') AS d FROM number_checks ORDER BY d DESC LIMIT ${NIGHTS}`)).map(r => r.d).reverse();
-  if (!nights.length) return { nights: [], orgs: [], sameName: [], sentence: "The nightly check has not run yet.", digest: null, units: UNIT };
+  // SCALE-4: a test org the night skips is listed even before its first check, so "Check now" is there.
+  const unchecked = (have) => query(`SELECT id, name FROM orgs WHERE COALESCE(is_test_org, false) ORDER BY name`)
+    .then(rs => rs.filter(r => !have.has(r.id)).map(r => ({ id: r.id, name: r.name, isTest: true, trend: [], problems: null, byRule: {}, checked: false, checkedOn: null })));
+  if (!nights.length) return { nights: [], orgs: await unchecked(new Set()), sameName: [], sentence: "The nightly check has not run yet.", digest: null, units: UNIT };
   const latest = nights[nights.length - 1];
   const rows = await query(
     `SELECT to_char(nc.ran_on, 'YYYY-MM-DD') AS ran_on, nc.org_id, COALESCE(o.name, nc.org_name) AS name, nc.problems, nc.line, nc.by_rule,
@@ -47,14 +50,16 @@ async function card(query) {
   for (const r of rows) {
     const o = byOrg.get(r.org_id) || { id: r.org_id, name: r.name, isTest: r.is_test, trend: Object.fromEntries(nights.map(n => [n, null])), problems: 0, byRule: {}, checked: false };
     o.trend[r.ran_on] = r.problems;
-    if (r.ran_on === latest) {
-      o.problems = r.problems; o.checked = true;
+    // SCALE-4: a test org is not checked at night; its latest check (on demand) is its row.
+    if (r.ran_on === latest || r.is_test) {
+      o.problems = r.problems; o.checked = true; o.checkedOn = r.ran_on;
       o.byRule = r.by_rule && typeof r.by_rule === "object" ? r.by_rule : parseLine(r.line, UNIT);
       if (!Object.keys(o.byRule).length && r.problems > 0 && /could not run/.test(r.line)) o.byRule = { "could-not-run": 1 };
     }
     byOrg.set(r.org_id, o);
   }
   const orgs = [...byOrg.values()].filter(o => o.checked).map(o => ({ ...o, trend: nights.map(n => o.trend[n]) }))
+    .concat(await unchecked(new Set([...byOrg.values()].filter(o => o.checked).map(o => o.id))))
     .sort((a, b) => (a.isTest - b.isTest) || (b.problems - a.problems) || String(a.name).localeCompare(String(b.name)));
 
   // Orgs that share a name, each with what tells them apart.

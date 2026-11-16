@@ -493,16 +493,22 @@ async function reportThreeYear(orgId, p) {
   const [y0, y1, y2] = sp.years;   // most recent (selected) year first, each cut to the same span
   await FP_READY;
   const label = y => reportYearLabel(y, p);
-  const YEAR_SUM = NUMBERS.givingBetween.SPAN_SUM("g");   // NUMBERS-5: each year's money (credit rows out)
+  // NUMBERS-5: each year's money (credit rows out). SCALE-4: each person's
+  // gifts are summed first (the money rule once per gift, in the WHERE), then
+  // the people joined; the rows reach the last sort in id order, as the old
+  // grouped read gave them, so people with equal totals keep their order.
+  // Byte-identical on the ten-orgs fixture; ~190 -> ~100 ms at 25,000 people.
+  const YEAR_SUM = NUMBERS.givingBetween.SPAN_SUM_OF_MONEY("g");
   const rows = await query(
-    `SELECT d.id, d.name, d.email, d.assigned_to_name,
-            ${YEAR_SUM} AS y0, ${YEAR_SUM} AS y1, ${YEAR_SUM} AS y2
-     FROM donors d JOIN gifts g ON g.donor_id = d.id AND g.org_id = d.org_id
-     WHERE d.org_id = ? AND d.deleted_at IS NULL AND ${NUMBERS.givingBetween.IN_SPAN("g")}
-     GROUP BY d.id, d.name, d.email, d.assigned_to_name
-     ORDER BY (${YEAR_SUM} + ${YEAR_SUM} + ${YEAR_SUM}) DESC`,
-    [y0.from, y0.to, y1.from, y1.to, y2.from, y2.to, orgId, y2.from, y0.to,
-     y0.from, y0.to, y1.from, y1.to, y2.from, y2.to]);
+    `SELECT t.* FROM (
+       SELECT d.id, d.name, d.email, d.assigned_to_name, s.y0, s.y1, s.y2
+         FROM (SELECT g.donor_id, ${YEAR_SUM} AS y0, ${YEAR_SUM} AS y1, ${YEAR_SUM} AS y2
+                 FROM gifts g WHERE g.org_id = ? AND ${NUMBERS.givingBetween.IN_SPAN("g")} GROUP BY g.donor_id) s
+         JOIN donors d ON d.id = s.donor_id AND d.org_id = ?
+        WHERE d.deleted_at IS NULL
+        ORDER BY d.id) t
+     ORDER BY (t.y0 + t.y1 + t.y2) DESC`,
+    [y0.from, y0.to, y1.from, y1.to, y2.from, y2.to, orgId, y2.from, y0.to, orgId]);
   const donors = rows.map(r => {
     const c0 = Number(r.y0), c1 = Number(r.y1), c2 = Number(r.y2);
     return {

@@ -593,9 +593,9 @@ __share({ RECONCILE_INTERVAL_MIN });
 // the softDeleted (restorable) count on the same tick.
 if (!backgroundTicksDisabled()) {
   bootGate.afterMigrations(() => refreshAssetFallbackCount().catch(console.error), 20000);
-  bootGate.everyAfterMigrations(() => refreshAssetFallbackCount().catch(console.error), 5 * 60 * 1000);
+  bootGate.everyAfterMigrations(() => refreshAssetFallbackCount().catch(console.error), 5 * 60 * 1000, { name: "asset fallback count" });
   bootGate.afterMigrations(() => refreshRetentionCounts().catch(console.error), 20000);
-  bootGate.everyAfterMigrations(() => refreshRetentionCounts().catch(console.error), 5 * 60 * 1000);
+  bootGate.everyAfterMigrations(() => refreshRetentionCounts().catch(console.error), 5 * 60 * 1000, { name: "retention counts" });
   // BUILD-56 Part 4 — the retention purge: destroys objects soft-deleted more
   // than ASSET_RETENTION_DAYS ago (never a referenced one; every destruction
   // logged in asset_purge_log). 6-hour cadence like checkTrialExpiry.
