@@ -828,6 +828,7 @@ async function composeWeekInReview(orgId, win, officerId = null) {
 // Compose one officer's monthly report: asks made, moves made, gifts closed,
 // portfolio progress — the management-oversight artifact.
 async function composeOfficerMonthly(orgId, win, officer) {
+  const PV = require("../../shared/numbers/portfolioValue");
   const { start, end } = win;
   const [made] = await query(
     `SELECT COUNT(*)::int AS cnt, COALESCE(SUM(target_amount),0) AS amt FROM opportunities WHERE org_id=? AND officer_id=? AND ${orgTime.orgDayWindowSql("created_at", orgTime.orgTzSql("org_id"), "?", "?")}`,
@@ -839,7 +840,8 @@ async function composeOfficerMonthly(orgId, win, officer) {
     `SELECT COUNT(*)::int AS cnt, COALESCE(SUM(gift_amount),0) AS amt FROM opportunities WHERE org_id=? AND officer_id=? AND status='won' AND ${orgTime.orgDayWindowSql("closed_at", orgTime.orgTzSql("org_id"), "?", "?")}`,
     [orgId, officer.id, start, end]);
   const [portfolio] = await query(
-    "SELECT COUNT(*)::int AS cnt, COALESCE(SUM(total_giving),0) AS val FROM donors WHERE org_id=? AND assigned_to=? AND deleted_at IS NULL",
+    // FLOWS-13: not an erased person's stored total (shared/numbers/portfolioValue.js)
+    `SELECT COUNT(*)::int AS cnt, ${PV.VALUE("d")} AS val FROM donors d WHERE d.org_id=? AND d.assigned_to=? AND ${PV.IN_PORTFOLIO("d")}`,
     [orgId, officer.id]);
   return {
     officerId: officer.id, officerName: officer.name,

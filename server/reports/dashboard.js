@@ -314,7 +314,8 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
   const today = orgToday(await orgTz(orgId));                // ORG_TZ_SEAM_OK
 
   const [portfolioRows, visitsRows, movesRows, giftsRows, pipelineRows, lapsedRows, orgInteractionRows, orgGiftHistoryRows] = await Promise.all([
-    query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=? AND deleted_at IS NULL", [orgId, userId]),
+    // FLOWS-13: an officer's people are pickable ones (an erased person is nobody's), shared/numbers/portfolioValue.js
+    query(`SELECT COUNT(*) as cnt FROM donors d WHERE d.org_id=? AND d.assigned_to=? AND ${NUMBERS.portfolioValue.IN_PORTFOLIO("d")}`, [orgId, userId]),
     figureSources.figureValue(orgId, { key: "meetings", params: { from: fyStart, to: today, staff: userId } }, {}).then(f => [{ cnt: f.value || 0 }]),
     // "Moves Made" = every meaningful-contact interaction (call/meeting/
     // email/stewardship — the same MEANINGFUL_CONTACT_TYPES used by
@@ -332,7 +333,7 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
     // NUMBERS-2: the drill-down's rows exactly (deleted people out, cents kept).
     // NUMBERS-3: this fiscal year TO TODAY, money only (shared/numbers/givingBetween.js).
     query(`SELECT COALESCE(SUM(g.amount),0)::text as total FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id WHERE g.org_id=? AND d.assigned_to=? AND d.deleted_at IS NULL AND ${NUMBERS.givingBetween.IN_SPAN("g")}`, [orgId, userId, fyStart, today]),
-    query("SELECT COALESCE(SUM(total_giving),0) as total FROM donors WHERE org_id=? AND assigned_to=? AND stage NOT IN ('lapsed','closed') AND deleted_at IS NULL", [orgId, userId]),
+    query(`SELECT ${NUMBERS.portfolioValue.VALUE("d")} as total FROM donors d WHERE d.org_id=? AND d.assigned_to=? AND d.stage NOT IN ('lapsed','closed') AND ${NUMBERS.portfolioValue.IN_PORTFOLIO("d")}`, [orgId, userId]),
     query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=? AND stage='lapsed' AND deleted_at IS NULL", [orgId, userId]),
     // Org-wide (not user-scoped) signals for the Home dashboard's empty-state
     // copy: distinguishes "you have real donor/gift history but genuinely
@@ -606,14 +607,14 @@ app.get("/dashboard/my-stats/pipeline/breakdown", requireAuth, wrap(async (req, 
   const PAGE_SIZE = 50;
   const [rows, totalRow] = await Promise.all([
     query(
-      `SELECT id, name, stage, total_giving FROM donors
-       WHERE org_id=? AND assigned_to=? AND stage NOT IN ('lapsed','closed') AND deleted_at IS NULL
-       ORDER BY total_giving DESC LIMIT ?`,
+      `SELECT d.id, d.name, d.stage, ${NUMBERS.lifetime.LIFETIME("d")} AS total_giving FROM donors d
+       WHERE d.org_id=? AND d.assigned_to=? AND d.stage NOT IN ('lapsed','closed') AND ${NUMBERS.portfolioValue.IN_PORTFOLIO("d")}
+       ORDER BY 4 DESC LIMIT ?`,
       [orgId, userId, PAGE_SIZE]
     ),
     query(
-      `SELECT COALESCE(SUM(total_giving),0) as total, COUNT(*) as cnt FROM donors
-       WHERE org_id=? AND assigned_to=? AND stage NOT IN ('lapsed','closed') AND deleted_at IS NULL`,
+      `SELECT ${NUMBERS.portfolioValue.VALUE("d")} as total, COUNT(*) as cnt FROM donors d
+       WHERE d.org_id=? AND d.assigned_to=? AND d.stage NOT IN ('lapsed','closed') AND ${NUMBERS.portfolioValue.IN_PORTFOLIO("d")}`,
       [orgId, userId]
     ),
   ]);

@@ -34,6 +34,7 @@ import { BulkTrash } from "./donors/BulkTrash";   // MOPUP-2: More → Move to t
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { LAPSE_WORDS } from "../../../shared/lapseWords.js";   // TRUTH-5: one word, one population
 import { AddToTop100 } from "./majorGifts/AddToTop100";   // TOP100-1
+import { filteredEmptySentence } from "../../../shared/filteredEmpty.js";   // FLOWS-13 item 4: an empty filtered list names its filters
 import { useCanExport } from "../lib/exportAccess";   // ACCESS-3: no Export CSV for the Campaign cabinet
 // WALKB-1 · A SEARCH RESULT SAYS WHY IT IS THERE. A name match needs no words;
 // anything else does ("Matched household: The Marlowe Hart household"), and an
@@ -107,7 +108,7 @@ function ColDef({ text, testid, dark }) {
 }
 
 // ── Re-engage View ─────────────────────────────────────────────────────────
-function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor,initialWin=null}){
+function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor,initialWin=null,unfiltered=null,onClearFilters=null}){
   // BUILD-77 Part 1f — a re-engage list is an ASK surface: the no-ask family
   // (deceased / do-not-contact / do-not-solicit) never appears here, and an
   // unlinked imported sustainer belongs to the recurring reconnect list —
@@ -147,6 +148,13 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor,initialWin=null}
   };
 
   // SWEEP-2: an org with no givers is not "all active"
+  // FLOWS-13 item 4 (W-1113-Donors-18): with the Directory's filters on, an empty list is the
+  // filters, not the file. "0 of 277" sat above "Nobody on file has gone a year without giving".
+  if(!everyone.length&&unfiltered){
+    const all=unfiltered.filter(d=>d.reengage).length;
+    if(all>0)return <EmptyState title="No lapsed donors match these filters" message={filteredEmptySentence(all,"lapsed donor")}
+      action={onClearFilters?"Clear filters":undefined} onAction={onClearFilters||undefined}/>;
+  }
   if(!everyone.length)return donors.some(d=>d.lastGift||d.total>0)
     ?<EmptyState title="No lapsed donors" message="Nobody on file has gone a year without giving. Anyone who does shows here, ready to call."/>
     :<EmptyState title="No givers yet" message="Re-engage lists people whose last gift was over a year ago. Import your gift history from Import & tools, and anyone who has gone quiet shows here."/>;

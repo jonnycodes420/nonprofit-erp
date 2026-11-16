@@ -4,6 +4,7 @@
 // address and the tax language. The logo is the existing logo upload.
 import { useState, useEffect, useRef } from "react";
 import { apiFetch, API, getToken } from "../api";
+import { useChanged } from "../lib/changes";   // FLOWS-13 item 1: the letterhead follows a saved logo or name
 import { pickPeople, usePeoplePicker } from "../lib/people";
 import { T, Spin } from "./shared";
 import { errorMessage } from "../lib/domainError";
@@ -32,6 +33,11 @@ function Swatches({ palette, value, onPick, label, disabled }) {
   );
 }
 
+// FLOWS-13 item 2: where a logo saved under Organization shows. A giving page with its own logo uses that one.
+export const LOGO_PLACES = ["your Home header", "this letterhead", "receipts and year-end statements", "emails to donors",
+  "every giving page, its \"Not open yet\" page too", "the donation form on your website", "the volunteer page", "the membership page", "the donor portal"];
+const LOGO_PLACES_SENTENCE = `Your logo appears on ${LOGO_PLACES.slice(0, -1).join(", ")} and ${LOGO_PLACES[LOGO_PLACES.length - 1]}. A giving page given its own logo shows that one instead.`;
+
 export function BrandKitManager({ isAdmin, isReadOnly }) {
   const [k, setK] = useState(null);
   const [msg, setMsg] = useState("");
@@ -40,6 +46,7 @@ export function BrandKitManager({ isAdmin, isReadOnly }) {
   const withDefault = r => (r && !r.signatureSaved && r.signatureDefault
     ? { ...r, signatureName: r.signatureDefault.name, signatureTitle: r.signatureTitle || r.signatureDefault.title } : r);
   useEffect(() => { apiFetch("/brand-kit").then(r => setK(withDefault(r))).catch(() => setK(false)); }, []);
+  useChanged(["org"], () => { apiFetch("/brand-kit").then(r => { if (r) setK(x => (x ? { ...x, logo: r.logo, orgName: r.orgName } : withDefault(r))); }).catch(() => {}); });
   if (k === null) return <div style={{ padding: 30 }}><Spin /></div>;
   if (!k) return <div style={card}>The brand kit could not be loaded.</div>;
   const can = isAdmin && !isReadOnly;
@@ -58,6 +65,10 @@ export function BrandKitManager({ isAdmin, isReadOnly }) {
     <div data-testid="brand-kit" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <p style={{ margin: 0, fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>
         What your letters, emails and receipts look and sound like. The logo is the one you upload under Organization.
+      </p>
+      {/* FLOWS-13 item 2: every place the saved logo appears, so she knows where to look. */}
+      <p data-testid="brand-kit-logo-places" style={{ margin: 0, fontSize: 12.5, color: T.ink3, lineHeight: 1.55 }}>
+        {LOGO_PLACES_SENTENCE}
       </p>
       <div style={{ ...card, display: "flex", flexDirection: "column", gap: 14 }}>
         <Swatches label="Main color" palette={k.palette} value={k.primary} onPick={v => set("primary", v)} disabled={!can} />

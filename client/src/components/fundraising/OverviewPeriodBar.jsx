@@ -35,7 +35,7 @@ function writePeriod(key, from, to) {
 const chip = on => ({ background: on ? T.ink : T.white, color: on ? T.white : T.ink, border: "1px solid " + (on ? T.ink : T.bg3), borderRadius: 8,
   padding: "6px 12px", fontSize: 12.5, fontWeight: on ? 700 : 500, cursor: "pointer", fontFamily: "inherit" });
 
-export function OverviewPeriodBar({ overview, onPicked, onNavigate }) {
+export function OverviewPeriodBar({ overview, onPicked, onNavigate, periodState = "" }) {
   const key = (overview && overview.periodKey) || "this_fy";
   const p = (overview && overview.period) || {};
   const [from, setFrom] = useState(key === "custom" ? p.start || "" : "");
@@ -59,7 +59,9 @@ export function OverviewPeriodBar({ overview, onPicked, onNavigate }) {
       <DateInput aria-label="From" data-testid="fr-period-from" value={from} onChange={e => setFrom(e.target.value)} style={{ border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 8px", fontSize: 12.5, fontFamily: "inherit" }} />
       <DateInput aria-label="To" data-testid="fr-period-to" value={to} onChange={e => setTo(e.target.value)} style={{ border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 8px", fontSize: 12.5, fontFamily: "inherit" }} />
       <button type="button" data-testid="fr-period-custom" aria-pressed={key === "custom"} disabled={!isDay(from) || !isDay(to) || to < from} style={chip(key === "custom")} onClick={() => pick("custom", from, to)}>Show these days</button>
-      <span style={{ fontSize: 12.5, color: T.ink3 }}>{overview && overview.periodLabel ? `Showing ${overview.periodLabel}` : ""}</span>
+      {/* FLOWS-13 item 3: while the picked period is read, the old figures say they are the old ones; a read that fails says so. */}
+      <span data-testid="fr-period-showing" style={{ fontSize: 12.5, color: T.ink3 }}>{periodState === "updating" ? "Updating…" : overview && overview.periodLabel ? `Showing ${overview.periodLabel}` : ""}</span>
+      {periodState === "failed" && <span data-testid="fr-period-failed" role="alert" style={{ flexBasis: "100%", fontSize: 12.5, color: T.ink }}>That period did not load, so these are still the figures for {overview && overview.periodLabel}. Press it again.</span>}
       {/* TRUTH-6: what does not move with the period says so (the goal set for another year, today's open pledges). */}
       {((overview && overview.periodNotes) || []).map(n => (
         <span key={n.key} data-testid={`fr-period-note-${n.key}`} style={{ flexBasis: "100%", fontSize: 12.5, color: T.ink3 }}>{n.sentence}</span>

@@ -43,6 +43,7 @@ import PageThemeRail from "../components/PageThemeRail";
 import HistoryPanel from "../components/PageHistoryPanel";
 import WidgetOptions, { E, btnQuiet, inp, lbl } from "./PortalEditorBlockOptions";   // PAGES-1: split out (file size)   // PAGES-1: moved to its own module (file size)        // PAGES-1: the page's own theme
 import { pageVarsFor, PAGE_BUTTON_CSS } from "./VolunteerPage";   // PAGES-1: the same theme CSS as the public page
+import { impactPlaceholder, repeatedImpact } from "../../../shared/impactLines.js";   // FLOWS-13 item 5: each amount its own line
 
 // Part 3: Steward's photos, opened from the cover and from a photo block.
 const LazyStockPicker = lazy(() => retryImport(() => import("../components/StockPhotoPicker")));
@@ -477,9 +478,12 @@ export default function PortalEditor() {
     if (publishing) return;
     // FLOWS-8 (W-1112-Fundraising-35): publishing a page that can't take gifts says so first.
     const noGifts = meta && meta.takesGifts === false;
-    if (!(await askConfirm({ title: noGifts ? "This page can't take gifts yet" : "Publish this page?",
-      body: isVolunteer ? "Anyone with the link will see it immediately." : noGifts ? `${meta.notTakingWhy} Publish it anyway, so it is ready the moment Stripe is connected?` : "Donors will see it immediately.",
-      yes: noGifts ? "Publish anyway" : "Publish" }))) return;
+    // FLOWS-13 item 5: the same impact line on several amounts is named before the page goes out.
+    const rep = !isVolunteer && dsRef.current ? repeatedImpact(normalizeDesign(dsRef.current.design).impact, (dsRef.current.form || {}).amountsCents) : null;
+    const repLine = rep ? `\n\n${rep.sentence}` : "";
+    if (!(await askConfirm({ title: noGifts ? "This page can't take gifts yet" : rep ? "The same line is on several amounts" : "Publish this page?",
+      body: isVolunteer ? "Anyone with the link will see it immediately." : noGifts ? `${meta.notTakingWhy} Publish it anyway, so it is ready the moment Stripe is connected?${repLine}` : `Donors will see it immediately.${repLine}`,
+      yes: noGifts || rep ? "Publish anyway" : "Publish" }))) return;
     setPublishing(true); setErr("");
     try {
       if (saveTimer.current) { clearTimeout(saveTimer.current); }
@@ -1088,10 +1092,11 @@ function giftSections({ ds, onSet, onSetForm, errors, funds, camps, saveState, f
             <div key={c} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
               <span style={{ width: 54, fontSize: 12.5, fontWeight: 700 }}>{money0(c / 100)}</span>
               <input data-testid={"details-impact-" + c} style={inp} maxLength={140} value={design.impact[String(c)] || ""}
-                placeholder="buys a week of art supplies for 10 kids"
+                placeholder={impactPlaceholder(c)}
                 onChange={e => setDesign({ impact: { ...design.impact, [String(c)]: e.target.value } })} />
             </div>
           ))}
+          {(() => { const rep = repeatedImpact(design.impact, f.amountsCents); return rep ? <div data-testid="details-impact-repeated" role="alert" style={{ fontSize: 12, color: E.ink, background: E.cream, borderLeft: "3px solid " + E.gold, borderRadius: 6, padding: "6px 8px", lineHeight: 1.45 }}>{rep.sentence}</div> : null; })()}
           <FieldError errors={errors} prefix="design.impact" />
         </>
       )}
