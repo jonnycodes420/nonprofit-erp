@@ -126,7 +126,7 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
   if (filter.badFilter) return res.status(400).json({ error: "bad_filter", sentence: filter.badFilter });   // LIST-1
   if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
   if (filter.badStatus) return res.status(400).json(UNKNOWN_STATUS);
-  if (!(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
+  if (req.query.assignedTo !== "none" && !(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");   // FLOWS-14: "none" is Unassigned
   const { whereSql, params, orderBy, selectCols, selectArgs } = filter;
   // TRUTH-5: the export's Gift count is the Directory's (giftCount.js), never the stored rollup.
   const donors = (await query(`SELECT donors.*${selectCols}, ${require("../../shared/numbers/giftCount").DONOR_GIFT_COUNT("donors")} AS gift_count_live FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, [...selectArgs, ...params]))

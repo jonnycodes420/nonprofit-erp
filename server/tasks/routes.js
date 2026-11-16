@@ -674,8 +674,8 @@ async function taskGiftToThank(orgId, t, giftId) {
   if (giftId) { const [g] = await query("SELECT * FROM gifts WHERE id=? AND org_id=? AND donor_id=?", [String(giftId), orgId, t.donor_id]); if (g) return g; }
   if (t.source_gift_id) { const [g] = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [t.source_gift_id, orgId]); if (g) return g; }
   const [g] = await query(
-    `SELECT * FROM gifts WHERE org_id=? AND donor_id=? AND amount > 0 AND acknowledgement_sent IS NOT TRUE
-      ORDER BY date DESC NULLS LAST, id DESC LIMIT 1`, [orgId, t.donor_id]);
+    `SELECT * FROM gifts g WHERE g.org_id=? AND g.donor_id=? AND ${require("../../shared/numbers/thanks").AWAITING("g")}   -- FLOWS-14: the one rule
+      ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT 1`, [orgId, t.donor_id]);
   return g || null;
 }
 app.get("/tasks/:id/thank", requireAuth, wrap(async (req, res) => {

@@ -122,7 +122,8 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
     : PERSON_SEGMENTS.has(seg.mode) ? "people"
     : t("giver", 2);
   const names = donors.slice(0, 2).map(d => displayNameCase(d.name || ""));
-  const [firstGift] = donors[0] ? await query("SELECT amount FROM gifts WHERE donor_id=? AND org_id=? ORDER BY date DESC NULLS LAST LIMIT 1", [donors[0].id, req.user.orgId]) : [];
+  // FLOWS-14 (W-1116-Fundraising-15X): the preview's gift is the last GIFT (shared/numbers/lastGift.js), never a refund row.
+  const firstGift = donors[0] ? await require("../donors/lastGiftWords").lastGiftRow(query, req.user.orgId, donors[0].id) : null;
   res.json({
     count: donors.length,
     names: donors.slice(0, 8).map(d => ({ id: d.id, name: displayNameCase(d.name || ""), email: d.email })),

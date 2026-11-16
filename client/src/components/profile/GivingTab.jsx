@@ -28,6 +28,7 @@ import { openCheckSnap } from "../CheckSnap";
 import { countLabel } from "../../../../shared/countWords.js";
 import { PeopleDatalist } from "../PeopleDatalist";
 import { renderCustomValue } from "../../../../shared/customFieldShape";
+import { thankState, REFUNDED_WORDS } from "../../../../shared/thankState.js";   // FLOWS-14
 import { MailTypeSwitches } from "../MailTypes";
 import { pledgeMoneyWords } from "../../../../shared/pledgeWords.js";
 import { pledgeCoverWords } from "../../../../shared/pledgeCover.js";   // PLEDGES-3: what a payment covers, before Save
@@ -470,7 +471,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                               {g.fee>0&&g.amount>0&&<div data-testid="dp-gift-fee-net" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Fee {fmtFull(g.fee)}, net {fmtFull(Math.round((g.amount-g.fee)*100)/100)}</div>}</td>
                             <td style={{padding:"9px 12px",color:T.ink3}}>{giftTypeLabel(g.type)}</td>
                             <td style={{padding:"9px 12px",color:T.ink3}}>{g.payment_method||"Not recorded"}</td>
-                            <td style={{padding:"9px 12px",textAlign:"center"}}>{g.amount<0?<span style={{color:T.ink3,fontSize:12}}>Not a gift</span>:g.acknowledgement_sent?<span style={{color:T.greenDk,fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:12}}>Not yet</span>}</td>
+                            <td style={{padding:"9px 12px",textAlign:"center"}}>{/* FLOWS-14: shared/thankState.js, the lists' rule */}{g.amount<0?<span style={{color:T.ink3,fontSize:12}}>Not a gift</span>:thankState(g)?.key==="refunded"?<span data-testid="dp-gift-refunded-thanks" style={{color:T.ink3,fontSize:12}}>{REFUNDED_WORDS}</span>:g.acknowledgement_sent?<span style={{color:T.greenDk,fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:12}}>Not yet</span>}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
                               <ReceiptCell g={g} rc={rc} isReadOnly={isReadOnly}/>
                             </td>
@@ -674,10 +675,12 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                   })():<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No giving data yet</div>}
                 </div>
 
-                {affinity.some(f=>f.fundId)&&(
+                {/* FLOWS-14 (W-1115-Finance-34X): a suggestion reads money given, never a refund: a fund
+                    whose gifts net to $0 or less (a refund left alone, a gift refunded in full) is no suggestion. */}
+                {affinity.some(f=>f.fundId&&Number(f.total)>0&&Number(f.giftCount)>0)&&(
                   <div style={{background:T.gold500+"10",border:"1px solid "+T.gold500+"40",borderRadius:12,padding:"14px 16px"}}>
                     <div style={{fontSize:12,fontWeight:700,color:T.gold500,marginBottom:8}}>Suggested Asks</div>
-                    {affinity.filter(f=>f.fundId).slice(0,2).map(f=>(
+                    {affinity.filter(f=>f.fundId&&Number(f.total)>0&&Number(f.giftCount)>0).slice(0,2).map(f=>(
                       <div key={f.fundId} style={{fontSize:12,color:T.ink,marginBottom:4}}>
                         This donor has given {fmtFull(f.total)} to <strong>{f.fundName}</strong>. Consider them for {f.fundName} campaign appeals.
                       </div>

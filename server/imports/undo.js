@@ -194,12 +194,22 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null,
   for (let k = 0; k < giftIds.length; k += UNDO_CHUNK) {
     await step("removing gifts", k, giftIds.length);
     const chunk = giftIds.slice(k, k + UNDO_CHUNK);
-    await run("UPDATE pledge_installments SET paid_gift_id=NULL, paid_at=NULL WHERE org_id=? AND paid_gift_id = ANY(?)", [orgId, chunk]);
-    await run("DELETE FROM thank_you_drafts WHERE org_id=? AND gift_id = ANY(?)", [orgId, chunk]).catch(() => {});
-    await run("DELETE FROM fin_transactions WHERE org_id=? AND gift_id = ANY(?)", [orgId, chunk]);
-    await run("DELETE FROM interactions WHERE org_id=? AND gift_id = ANY(?)", [orgId, chunk]);
-    await run("DELETE FROM gifts WHERE org_id=? AND id = ANY(?)", [orgId, chunk]);
+    // FLOWS-14 (W-1115-Finance-07X): one transaction per chunk, and a refund recorded
+    // against one of these gifts goes with it (refundPairs.js), never left standing alone.
+    const PAIRS = require("../donors/refundPairs");
+    const gone = await require("../../db").withTransaction(async (client) => {
+      const x = PAIRS.onClient(client);
+      await x("UPDATE pledge_installments SET paid_gift_id=NULL, paid_at=NULL WHERE org_id=$1 AND paid_gift_id = ANY($2::text[])", [orgId, chunk]);
+      const refunds = await PAIRS.removeRefundsOf(x, orgId, chunk);
+      await x("DELETE FROM thank_you_drafts WHERE org_id=$1 AND gift_id = ANY($2::text[])", [orgId, chunk]);
+      await x("DELETE FROM fin_transactions WHERE org_id=$1 AND gift_id = ANY($2::text[])", [orgId, chunk]);
+      await x("DELETE FROM interactions WHERE org_id=$1 AND gift_id = ANY($2::text[])", [orgId, chunk]);
+      await x("UPDATE receipts SET gift_id=NULL WHERE org_id=$1 AND gift_id = ANY($2::text[]) AND voided_at IS NOT NULL", [orgId, chunk]);
+      await x("DELETE FROM gifts WHERE org_id=$1 AND id = ANY($2::text[])", [orgId, chunk]);
+      return refunds.count;
+    });
     removed.gifts += chunk.length;
+    removed.refunds = (Number(removed.refunds) || 0) + gone;
     await keep();
   }
   await step("removing the rest of the file");

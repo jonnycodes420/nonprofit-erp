@@ -90,6 +90,9 @@ const GUARDED_WRITERS = [
   // FLOWS-10: puts the demo's chapel photo alt right, alt text only, org_b72demo only. Dry run by
   // default; --apply writes through writerDbUrl, and a remote target must also answer env "staging".
   "flows10-demo-alts",
+  // FLOWS-14: removes refund rows whose gift is gone, one org. Dry run by default; --apply writes
+  // through writerDbUrl, and a remote target must hold org_stagewalk and answer env "staging" on BASE.
+  "flows14-orphan-refunds",
   // FLOWS-10: sets the demo's made-up EIN while it is the placeholder, org_b72demo only. Same guard.
   "flows10-demo-ein",
   // FLOWS-15: puts the demo's first-gift version on its Year-end appeal, org_b72demo's ecamp_b72_yearend only. Same guard.
