@@ -44,6 +44,7 @@
 // still holds (stop()).
 const os = require("os");
 const { query, run, uuid, withTransaction, isPoolFull } = require("./db");
+const HOLD = require("./server/perf/holders");   // SCALE-4: each job's connections are put down to it (the Capacity card)
 
 const MAX_ATTEMPTS = 5;
 const ORG_CAP = () => Math.max(1, Number(process.env.JOB_ORG_CAP) || 2);
@@ -72,6 +73,17 @@ const schedules = new Map();   // name -> { everyMs, firstMs, run }
 const handlers = new Map();    // name -> async (payload, job) => result
 const timeouts = new Map();    // name -> ms, for a handler that needs a longer lease
 const timeoutOf = (name) => timeouts.get(name) || TIMEOUT_MS();
+// SCALE-4 · A LONG JOB NEVER HOLDS THE LANE THE SHORT ONES NEED. A job type is
+// long when it says so (define/handle `long: true`) or when one of its runs in
+// this process took LONG_MS or more. At most CONCURRENCY - SHORT_LANES lanes
+// run long jobs at once; the rest only claim short ones, so the work that
+// follows a gift or a change never waits behind a whole-org pass.
+const LONG_MS = () => Math.max(1000, Number(process.env.JOB_LONG_MS) || 30 * 1000);
+const SHORT_LANES = () => Math.max(1, Number(process.env.JOB_SHORT_LANES) || 1);
+const longNames = new Set();     // declared long
+const seenLong = new Set();      // measured long in this process
+const isLong = (name) => longNames.has(name) || seenLong.has(name);
+let longRunning = 0;
 
 // JOBS-1: WORKER=off on the web service says the same as STEWARD_PROCESS=web
 // (the worker service runs `node worker.js`).
@@ -92,8 +104,10 @@ const runsJobs = () => role() !== "web";
 // deploy's backlog; with STEWARD_PROCESS=web, nobody ever). FIX-47 moved the
 // queued slot to each boot; GUARDS-1 takes it off the queue. Each web replica
 // then makes its own read-only calls, which is the price of a true answer.
-function define(name, { everyMs, firstMs = null, perBoot = false, run: fn }) {
+function define(name, { everyMs, firstMs = null, perBoot = false, run: fn, long = false, timeoutMs = null }) {
   schedules.set(name, { everyMs, firstMs: firstMs == null ? everyMs : firstMs, perBoot, local: false, run: fn });
+  if (long) longNames.add(name);   // SCALE-4
+  if (timeoutMs) timeouts.set(name, timeoutMs);
   // A per-boot run a previous deploy queued still has a handler, so it drains
   // once (read-only) instead of waiting forever.
   handlers.set(name, () => fn());
@@ -108,15 +122,16 @@ function startLocal() {
     const go = async () => {
       if (busyNow) return;
       busyNow = true;
-      try { await s.run(); } catch (e) { console.error(`[jobs] ${name}:`, e.message); } finally { busyNow = false; }
+      try { await HOLD.as(`tick ${name}`, () => s.run()); } catch (e) { console.error(`[jobs] ${name}:`, e.message); } finally { busyNow = false; }
     };
     const t = setTimeout(() => { go(); const i = setInterval(go, s.everyMs); if (i.unref) i.unref(); }, s.firstMs);
     if (t.unref) t.unref();
   }
 }
 // A job that is only ever enqueued (one org's sync, an import's recent gifts).
-function handle(name, fn, { timeoutMs = null } = {}) {
+function handle(name, fn, { timeoutMs = null, long = false } = {}) {
   handlers.set(name, fn);
+  if (long) longNames.add(name);   // SCALE-4
   if (timeoutMs) timeouts.set(name, timeoutMs);
 }
 
@@ -149,12 +164,14 @@ async function enqueue({ name, orgId = null, key = null, payload = null, runAfte
 // advisory lock on the org and on the key, in a fresh statement: checked in
 // the same statement as the pick, four lanes claiming at once each saw "under
 // the cap" in their own snapshot and one org took every lane (scale1-queue §4).
-async function claim() {
+async function claim({ shortOnly = false } = {}) {
   return withTransaction(async (c) => {
-    const names = [...handlers.keys()], full = [], passed = [];
+    // SCALE-4: with the long lanes full, only a short job may be claimed.
+    const names = [...handlers.keys()].filter(n => !shortOnly || !isLong(n)), full = [], passed = [];
+    if (!names.length) return null;
     for (let i = 0; i < CLAIM_TRIES; i++) {
       const cand = (await c.query(
-        `SELECT j.id, j.org_id, j.key FROM job_queue j
+        `SELECT j.id, j.org_id, j.key, j.name FROM job_queue j
           WHERE j.status = 'waiting' AND j.run_after <= NOW() AND j.name = ANY($1::text[])
             AND (j.org_id IS NULL OR NOT (j.org_id = ANY($2::text[]))) AND NOT (j.id = ANY($3::text[]))
             AND NOT EXISTS (SELECT 1 FROM job_queue r WHERE r.key = j.key AND r.status = 'running')
@@ -167,7 +184,11 @@ async function claim() {
       }
       if (cand.org_id) {
         await c.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, ["jobq-org:" + cand.org_id]);
-        const [{ n }] = (await c.query(`SELECT COUNT(*)::int AS n FROM job_queue WHERE org_id = $1 AND status = 'running'`, [cand.org_id])).rows;
+        // SCALE-4: a short job's place under the per-org cap is not taken by the
+        // org's long jobs (a 25,000-person org's stored answers or full scores pass),
+        // so what follows a gift there never waits behind them.
+        const longs = isLong(cand.name) ? [] : [...new Set([...longNames, ...seenLong])];
+        const [{ n }] = (await c.query(`SELECT COUNT(*)::int AS n FROM job_queue WHERE org_id = $1 AND status = 'running' AND NOT (name = ANY($2::text[]))`, [cand.org_id, longs])).rows;
         if (n >= ORG_CAP()) { full.push(cand.org_id); continue; }
       }
       const r = await c.query(
@@ -250,6 +271,7 @@ const BEAT_MS = () => Math.max(100, Math.min(30000, Math.floor(STALE_MS() / 4)))
 async function runOne(job) {
   const fn = handlers.get(job.name);
   held.set(job.id, job);
+  const long = !!job.__long, t0 = Date.now();   // SCALE-4: counted against the long lanes from its claim (claimNext)
   // Keep the row alive while it runs, so a long run is not mistaken for a
   // dead worker.
   const beat = setInterval(() => {
@@ -264,13 +286,30 @@ async function runOne(job) {
     // the hung call is abandoned (its late finish matches no lease).
     const ms = timeoutOf(job.name);
     await Promise.race([
-      fn(payload || {}, job),
+      HOLD.as(`job ${job.name}`, () => fn(payload || {}, job)),
       new Promise((_, no) => { timer = setTimeout(() => no(new Error(`ran longer than its ${Math.round(ms / 60000) || 1} minute lease`)), ms); if (timer.unref) timer.unref(); }),
     ]);
     await finish(job, null);
   } catch (e) {
     await finish(job, e).catch(x => console.error("[jobs] could not record a failure:", x.message));
-  } finally { clearInterval(beat); clearTimeout(timer); held.delete(job.id); }
+  } finally {
+    clearInterval(beat); clearTimeout(timer); held.delete(job.id);
+    if (long) longRunning--;
+    if (Date.now() - t0 >= LONG_MS() && !seenLong.has(job.name)) { seenLong.add(job.name); console.log(`[jobs] ${job.name} ran ${Math.round((Date.now() - t0) / 1000)} s: a long job from now on (it no longer takes the short lane)`); }
+  }
+}
+
+// SCALE-4: one claim at a time in this process, so two lanes claiming at once
+// cannot both take a long job past the long lanes; a long job counts from here.
+let claimChain = Promise.resolve();
+function claimNext() {
+  const next = claimChain.then(async () => {
+    const job = await claim({ shortOnly: longRunning >= Math.max(0, CONCURRENCY() - SHORT_LANES()) });
+    if (job && isLong(job.name)) { job.__long = true; longRunning++; }
+    return job;
+  });
+  claimChain = next.catch(() => {});
+  return next;
 }
 
 // ── The scheduler: enqueue each due periodic job, once across all processes.
@@ -364,7 +403,11 @@ async function beatProcess() {
   await run(`DELETE FROM process_heartbeats WHERE seen_at < NOW() - INTERVAL '7 days'`);
 }
 
-function start({ scheduler = true, build = null } = {}) {
+function start(opts = {}) {
+  // SCALE-4: the queue's own claims, beats and reaps are one named holder.
+  return HOLD.as("job queue (claim, heartbeat, reap)", () => startNow(opts));
+}
+function startNow({ scheduler = true, build = null } = {}) {
   if (scheduler) startLocal();   // every role, the web included: its /health reads these
   if (started || !runsJobs()) return;
   started = true;
@@ -381,8 +424,9 @@ function start({ scheduler = true, build = null } = {}) {
   const lane = async () => {
     while (!stopping) {
       let job = null;
-      try { job = await claim(); } catch (e) { if (!/does not exist/.test(e.message)) console.error("[jobs] claim:", e.message); }
-      if (stopping && job) { await giveBack(job.id, job.locked_by, { error: "Handed back: its worker was shutting down.", failed: false, tryBack: true }).catch(() => {}); break; }
+      // SCALE-4: a lane may take a long job only while another lane stays free for short ones.
+      try { job = await claimNext(); } catch (e) { if (!/does not exist/.test(e.message)) console.error("[jobs] claim:", e.message); }
+      if (stopping && job) { if (job.__long) longRunning--; await giveBack(job.id, job.locked_by, { error: "Handed back: its worker was shutting down.", failed: false, tryBack: true }).catch(() => {}); break; }
       if (job) { await runOne(job); continue; }
       await new Promise(res => {
         let t = null;
@@ -505,5 +549,6 @@ async function keyBusy(key) {
   return rows.length > 0;
 }
 
-module.exports = { define, handle, enqueue, start, stop, holding, startLocal, role, runsJobs, refreshHealth, healthNow, deadJobs, retry, keyBusy,
+const lanes = () => ({ concurrency: CONCURRENCY(), shortLanes: SHORT_LANES(), longRunning, long: [...new Set([...longNames, ...seenLong])].sort() });
+module.exports = { claimNext, lanes, isLong, define, handle, enqueue, start, stop, holding, startLocal, role, runsJobs, refreshHealth, healthNow, deadJobs, retry, keyBusy,
   scheduleDue, claim, poke, reapStale, failUnhandled, giveBack, queueLevel, MAX_ATTEMPTS, WORKER_ID, STALE_MS, TIMEOUT_MS };

@@ -483,7 +483,7 @@ async function runDataHealthNightly() {
 }
 if (!backgroundTicksDisabled()) {
   // SCALE-1: a queue job (jobQueue.js), so one replica runs it, not each.
-  require("../jobQueue").define("runDataHealthNightly", { everyMs: 24 * 60 * 60 * 1000, firstMs: 15 * 60 * 1000,
+  require("../jobQueue").define("runDataHealthNightly", { everyMs: 24 * 60 * 60 * 1000, firstMs: 15 * 60 * 1000, long: true,   // SCALE-4: long
     run: () => recordTick("runDataHealthNightly", runDataHealthNightly) });
 }
 

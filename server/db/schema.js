@@ -114,6 +114,9 @@ async function initSchema() {
   // LIST-5: the Donors list's index, built in the background; boot never waits for it.
   require("./list5Indexes").ensureList5Indexes(pool)
     .catch(err => console.error("[list5-indexes] not built (server continues):", err.message));
+  // SCALE-4: a gift's day (LEFT(date, 10)) indexed for retention's windows; boot never waits for it.
+  require("./scale4Indexes").ensureScale4Indexes(pool)
+    .catch(err => console.error("[scale4-indexes] not built (server continues):", err.message));
   return ran;
 }
 module.exports = { initSchema, runSchemaInit };

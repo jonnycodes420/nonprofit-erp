@@ -304,5 +304,26 @@ function countedClient(client) {
 }
 
 // RACE-1 · server/shared/personLock.js needs to know whether it is inside an ambient transaction.
-function inAmbientTransaction() { return !!ambient(); }
-module.exports = { queryNoJit, inAmbientTransaction, lockAdvisory, unlockAdvisory, countedClient, countRoundTrips, withAmbientTransaction, queryOutside, runOutside, query, run, withClient, onThePool, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx };
+function inAmbientTransaction() { const st = ambientTx.getStore(); return !!(st && st.open && !st.pinned); }
+// SCALE-4 · ONE CONNECTION FOR A BACKGROUND PASS. Inside withPinnedClient(fn)
+// every query() and run() goes to one client, each statement committing on its
+// own (no BEGIN: nothing is held open across an org), and querySetwise takes
+// the same client (pools.js). Statements fn sends at once queue on that one
+// connection instead of taking the pool. The nightly number check runs each
+// org this way (numberCheck.js), so it never holds more than one connection.
+// Statements sent at once wait their turn here, not inside pg (which warns on
+// a query sent while another runs); turn(fn) runs fn(client) with nothing between.
+function serialized(client) {
+  let chain = Promise.resolve();
+  const turn = (fn) => { const p = chain.then(() => fn(client)); chain = p.catch(() => {}); return p; };
+  return { query: (text, params) => turn(c => c.query(text, params)), turn };
+}
+async function withPinnedClient(fn) {
+  const client = await LIMITS.checkout(pool);
+  const st = { client: serialized(client), open: true, pinned: true };
+  try { return await ambientTx.run(st, () => LIMITS.holding(fn, client)); }
+  catch (e) { throw LIMITS.translate(e); }
+  finally { st.open = false; LIMITS.release(client); }
+}
+function pinnedClient() { const st = ambientTx.getStore(); return st && st.open && st.pinned ? st.client : null; }
+module.exports = { withPinnedClient, pinnedClient, queryNoJit, inAmbientTransaction, lockAdvisory, unlockAdvisory, countedClient, countRoundTrips, withAmbientTransaction, queryOutside, runOutside, query, run, withClient, onThePool, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx };

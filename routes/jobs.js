@@ -343,7 +343,7 @@ if (!backgroundTicksDisabled()) {
 // first sweep (and even when background ticks are disabled), so /health can
 // show "checked 1 of 6". Refreshed on boot + on the 5-min asset tick below.
 bootGate.afterMigrations(() => refreshReconcileDenominator().catch(() => {}), 8000);   // FIX-51
-bootGate.everyAfterMigrations(() => refreshReconcileDenominator().catch(() => {}), 5 * 60 * 1000);
+bootGate.everyAfterMigrations(() => refreshReconcileDenominator().catch(() => {}), 5 * 60 * 1000, { name: "reconcile denominator" });
 if (!backgroundTicksDisabled()) {
   every("checkWebhookSubscriptions", 60 * 60 * 1000, () => checkWebhookSubscriptions(), 95000, { perBoot: true });
 }
@@ -479,7 +479,7 @@ if (!backgroundTicksDisabled()) {
 bootGate.afterMigrations(() => refreshMailboxSyncHealth().catch(() => {}), 3000);
 if (process.env.TEST_MODE === "1" && Number(process.env.MAILBOX_TICK_MS) > 0) {
   bootGate.afterMigrations(() => syncAllGmail().catch(console.error), 10000);
-  bootGate.everyAfterMigrations(() => syncAllGmail().catch(console.error), MAILBOX_SYNC_INTERVAL_MS);
+  bootGate.everyAfterMigrations(() => syncAllGmail().catch(console.error), MAILBOX_SYNC_INTERVAL_MS, { name: "gmail sync" });
 } else if (!backgroundTicksDisabled()) {
   every("syncMailboxes", MAILBOX_SYNC_INTERVAL_MS, () => fanOutMailboxes(), 10000);
 }
@@ -530,10 +530,10 @@ async function snapshotAllOrgMetrics() {
 // ENGAGE-1 — every org's engagement and generosity scores, from what is on
 // file. A gift or a touch also recomputes its own org within seconds.
 if (!backgroundTicksDisabled()) {
-  every("recomputeScores", 6 * 60 * 60 * 1000, () => recordTick("recomputeScores", recomputeAllScores), 45000);
+  every("recomputeScores", 6 * 60 * 60 * 1000, () => recordTick("recomputeScores", recomputeAllScores), 45000, { long: true });   // SCALE-4: a long job (jobQueue's long lanes)
 }
 if (!backgroundTicksDisabled()) {
-  every("snapshotAllOrgMetrics", 6 * 60 * 60 * 1000, () => snapshotAllOrgMetrics(), 20000);
+  every("snapshotAllOrgMetrics", 6 * 60 * 60 * 1000, () => snapshotAllOrgMetrics(), 20000, { long: true });   // SCALE-4: a long job
 }
 }
 
