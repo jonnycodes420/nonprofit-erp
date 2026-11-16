@@ -147,6 +147,9 @@ const GUARDED_WRITERS = [
   // REPAIR-1: demo-tidy's steps 8 to 10 (thank-you tasks, attendance lines, pledge flags) on every
   // org but org_creo and org_b72demo. Dry run by default; --apply/--undo write through writerDbUrl, one audit row per org.
   "repair1-all-orgs",
+  // FLOWS-16: rewrites Atlas proposal lines that said "Saved 0 things." to "Nothing was saved.". Dry run by
+  // default; --apply writes through writerDbUrl, one audit row per org. org_creo skipped.
+  "flows16-saved-zero",
   // GRANTS-FIX: links grants that carry only a typed funder name. Dry run by
   // default; --apply writes through writerDbUrl, links only, one audit row each.
   "grants-link-funders",

@@ -48,7 +48,10 @@ let _setPool = null;
 function setPool() {
   return _setPool || (_setPool = new Pool({
     ...require("./dbTls").poolTls(),   // REDTEAM-2: the same certificate check as the main pool
-    options: `-c steward.app_connection=on -c enable_nestloop=off -c application_name=${APP_NAME}`,
+    // FLOWS-16 item 2 (W-1116-Volunteers-35): and JIT off. With nested loops off a set read's estimated
+    // cost passes Postgres's JIT thresholds, and compiling it took 3 to 4.5 s on staging's Postgres for
+    // reads that run in 60 ms (Groups' counts, the starters). REPORTS-SPEED-2 turned JIT off for big reads.
+    options: `-c steward.app_connection=on -c enable_nestloop=off -c jit=off -c application_name=${APP_NAME}`,
     // POOL-1: out of the same per-process budget (a third of DB_POOL_MAX, one
     // to three), and let go after five minutes idle. Kept open for good, its
     // three were the part of every process's thirteen that never came back.

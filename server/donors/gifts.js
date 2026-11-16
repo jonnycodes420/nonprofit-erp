@@ -1023,7 +1023,9 @@ app.get("/receipts/preview", requireAuth, requireAdmin, wrap(async (req, res) =>
   // Nothing stored, nothing sent — placeholder text fills in any settings
   // fields not yet configured, so this stays useful as a "here's what's
   // missing" preview even before receipts_enabled can be flipped on.
-  const fakeDonor = { name: "Jordan Sample", email: null };
+  // FLOWS-16 item 6 (W-1116-Atlas-16): "Jordan Sample" read like a person who should be in the org; the
+  // preview now says plainly that it is addressed to a sample donor.
+  const fakeDonor = { name: "Sample Donor (preview)", email: null };
   const fakeGiftDate = orgToday(await orgTz(org.id)); // ORG_TZ_SEAM_OK
   // BUILD-65 Part 2 sweep: the preview also assumed base64 (org.brand_accent /
   // org.logo_data) — a modern org's Settings preview showed Steward-green + no

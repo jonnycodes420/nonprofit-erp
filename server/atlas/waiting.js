@@ -37,8 +37,10 @@ async function discardProposal({ query, run }, orgId, memoId, at = new Date().to
 
 // Her own requests that still ask a question, newest first.
 async function openQuestions(query, orgId, userId, limit = 10) {
+  // FLOWS-16 item 4: a question older than a week is closed by the daily job; the bell stops listing it at once.
+  const { STALE_SQL } = require("./resume");
   const rows = await query(`SELECT id, text, read, created_at FROM voice_memos WHERE org_id=? AND created_by=? AND source LIKE 'atlas%' AND status='needs_answers'
-                              ORDER BY created_at DESC LIMIT ?`, [orgId, userId, limit]);
+                              AND NOT (${STALE_SQL}) ORDER BY created_at DESC LIMIT ?`, [orgId, userId, limit]);
   return rows.map(m => {
     const qs = ((j(m.read) || {}).atlas || {}).questions || [];
     const asked = qs.map(x => x.sentence).filter(Boolean).join(" ") || "A question";

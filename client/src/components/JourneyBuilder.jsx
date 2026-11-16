@@ -1309,6 +1309,7 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
               <div key={(d.id || "") + i} style={{ padding: "8px 0", borderBottom: "1px solid " + T.bg3, fontSize: 13.5 }}>
                 <DonorLink id={d.id} style={{ color: T.ink, fontWeight: 600 }}>{d.name}</DonorLink>
                 {d.reason && <div style={{ fontSize: 12, color: T.ink3, marginTop: 2 }}>{d.reason}</div>}
+                {d.entry && <div data-testid="journey-row-entry" style={{ fontSize: 12, color: T.ink3, marginTop: 2 }}>{d.entry}</div>}
               </div>
             ))}
             {!(rowsPanel.donors || []).length && <div style={{ fontSize: 13, color: T.ink3 }}>Nobody yet.</div>}

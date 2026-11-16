@@ -6,6 +6,7 @@ import { bundlePath } from "./lib/homeReads";   // PERF-2
 import { announce, kindsOfWrite, onAnyChange } from "./lib/changes";   // STALE-1: one refresh, everywhere
 import { portfolioBefore, portfolioAfter } from "./lib/portfolioRoutes.js";   // ACCESS-2B
 import { abortIfLeaving } from "./lib/leaving.js";   // FLAKE-3
+import { bodySentence } from "./lib/errorCodes.js";   // FLOWS-16 item 6
 
 // GRANTS-1: one adapter for a legacy grant row, used by the first load and by
 // the Grants screen when it opens a grant created since (a planned renewal).
@@ -348,10 +349,12 @@ async function apiFetchNow(path, options = {}) {
       handleAuthFailure(err.error);
       // `authHandled` tells a caller's catch that somebody is already being
       // sent to /login, so it must not render this as an outage.
-      throw Object.assign(new Error(err.message || err.error || "Request failed"),
-        { status: 401, authHandled: true, ...err });
+      const said = bodySentence(err);
+      throw Object.assign(new Error(said), { status: 401, authHandled: true, ...err, message: said });
     }
-    throw Object.assign(new Error(err.message || err.error || "Request failed"), { status: res.status, ...err });
+    // FLOWS-16 item 6: the route's sentence, never a bare code ("nothing_to_publish"). The code stays on e.error.
+    const said = bodySentence(err);
+    throw Object.assign(new Error(said), { status: res.status, ...err, message: said });
   }
   return res.json();
 }
