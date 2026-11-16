@@ -8,6 +8,7 @@ import { MailTypeSwitches } from "../MailTypes";
 import { editPageHref } from "../../lib/appUrls";
 import { QrCodeBlock, EmbedCodeBlock } from "../ShareBlocks";
 import { fmtDollars } from "./TaxReceiptsManager";
+import { fundDisplayName } from "../../../../shared/giftWords.js";   // FLOWS-15 item 4
 
 // QrCodeBlock/EmbedCodeBlock now live in ./ShareBlocks (factored out so
 // non-Settings pages, e.g. the public peer-fundraiser manage page, can
@@ -618,7 +619,7 @@ export function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
             <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Designate to a fund (optional)</div>
             <select value={form.fundId} onChange={e=>setForm(f=>({...f,fundId:e.target.value}))} style={{...inp,cursor:"pointer"}}>
               <option value="">Where it's needed most</option>
-              {funds.map(f=><option key={f.id} value={f.id}>{f.name}{f.restricted?" (Restricted)":""}</option>)}
+              {funds.map(f=><option key={f.id} value={f.id}>{fundDisplayName(f)}</option>)/* FLOWS-15 item 4: the one name; the badge never rides in it */}
             </select>
 
             <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Gifts through this page count toward (optional)</div>

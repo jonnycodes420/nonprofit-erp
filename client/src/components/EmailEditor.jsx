@@ -338,12 +338,28 @@ function FirstGiftVersion({ b, set }) {
   </>;
 }
 
+// FLOWS-15 item 1: the hero is copy too ("This year, you were part of it"). Her heading for people
+// who have never given; with none, a letter that thanks them is not sent to them.
+function HeroFirstGift({ b, set }) {
+  const claim = claimsOf([b])[0] || null;
+  if (!claim && !b.firstGiftHeading) return null;
+  return <>
+    {claim && <div data-testid="first-gift-hint" style={{ ...railNote, marginTop: 8, color: T.ink }}>{blockHint(claim.phrase)}</div>}
+    <label style={railLabel} htmlFor="first-gift-heading">Heading for people who have never given</label>
+    <input id="first-gift-heading" data-testid="first-gift-heading" style={railInput} value={b.firstGiftHeading || ""} onChange={e => set({ firstGiftHeading: e.target.value })}
+      placeholder="Your words for someone giving for the first time" />
+    <label style={railLabel} htmlFor="first-gift-sub">Line under it (optional)</label>
+    <textarea id="first-gift-sub" data-testid="first-gift-sub" style={{ ...railInput, minHeight: 60, resize: "vertical", fontFamily: "inherit" }} value={b.firstGiftSub || ""}
+      onChange={e => set({ firstGiftSub: e.target.value })} />
+  </>;
+}
+
 export function EmailBlockSettings({ b, set, pick, events, pages }) {
   const typed = <div style={railNote}>Type its words in the preview.</div>;
   switch (b.type) {
     case "header": return <div style={railNote}>Your logo and name, from Brand.</div>;
     case "footer": return <div style={railNote}>Your legal name, mailing address and an unsubscribe link. Always included.</div>;
-    case "hero": return <>{typed}<label style={railLabel}>Photo</label><PhotoChoice value={b.image} alt={b.alt} pick={pick} onChange={({ src, alt }) => set({ image: src, alt })} /></>;
+    case "hero": return <>{typed}<label style={railLabel}>Photo</label><PhotoChoice value={b.image} alt={b.alt} pick={pick} onChange={({ src, alt }) => set({ image: src, alt })} /><HeroFirstGift b={b} set={set} /></>;
     case "richtext": return b.locked
       ? <div style={railNote} data-testid="email-locked-block">Your tax lines, from your brand kit. This email must carry them, so this block can't be removed or changed.</div>
       : <FirstGiftVersion b={b} set={set} />;

@@ -64,9 +64,10 @@ const PASSWORD = "loadtest1234";
     && (pg.claims || []).some(c => /your support/i.test(c.phrase) && !c.hasVersion) && pg.shownNeverGave === true, pg);
   ok("§1 with no first-gift version the preview flags it: \"This letter thanks them for giving. 2 people in this audience never have.\"",
     flag === "This letter thanks them for giving. 2 people in this audience never have.", flag);
-  const at = (pg.claims || [])[0] ? pg.claims[0].index : 2;
+  // FLOWS-15 item 1: the hero is copy too ("you were part of it"), so it carries its own first-gift heading.
+  const at = ((pg.claims || []).find(c => blocks[c.index] && blocks[c.index].type === "richtext") || { index: 2 }).index;
   const VERSION = "This would be your first gift to Tidewater, and we would be glad to welcome you.";
-  const withVersion = blocks.map((b, i) => (i === at ? { ...b, firstGift: VERSION } : b));
+  const withVersion = blocks.map((b, i) => (i === at ? { ...b, firstGift: VERSION } : b.type === "hero" ? { ...b, firstGiftHeading: "A year with room for you" } : b));
   const inesV = await api("POST", "/email-preview", tok, { blocks: withVersion, subject: "Before the year ends", as: ids.ines });
   const margV = await api("POST", "/email-preview", tok, { blocks: withVersion, subject: "Before the year ends", as: ids.marguerite });
   ok("§1 with her version written, Ines reads it in place of the thank-you paragraphs, still greeted \"Hi Ines,\", and not \"give once more\"", inesV.status === 200 && inesV.body.html.includes("your first gift to Tidewater") && /Hi Ines,/.test(inesV.body.html)

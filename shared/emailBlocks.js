@@ -277,6 +277,15 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
         if (w.image !== undefined) {
           rows.push(`<tr><td class="st-card" bgcolor="${C.card}" style="background:${C.card};padding:0;">${img(w.image, w.alt, W, where)}</td></tr>`);
         }
+        // FLOWS-15 item 1: a never-giver reads the hero's first-gift heading she wrote, never "you were part of it".
+        if (!w.locked && !giftFacts(F).hasGift && hasFirstGiftVersion(w)) {
+          const fg = { heading: String(w.firstGiftHeading).trim(), sub: String(w.firstGiftSub || "").trim() };
+          const inner = H(T(fg.heading, where), w.size === "tall" ? 34 : 28) + (fg.sub ? P(T(fg.sub, where), "font-size:17px;") : "");
+          parts.push(ED ? `<div data-st-first-gift="${i}" title="Their first-gift version. Change it in this block's settings." style="outline:1px dashed #c9a84c;outline-offset:4px;">${inner}</div>` : inner);
+          text.push(plain(fg.heading).toUpperCase()); if (fg.sub) text.push(plain(fg.sub));
+          if (parts.length) rows.push(row(parts.join(""), `28px ${PAD}px 8px`));
+          break;
+        }
         if (has(w.heading)) { parts.push(H(T(w.heading || "", where, `${i}.heading`), w.size === "tall" ? 34 : 28)); if (w.heading) text.push(plain(w.heading).toUpperCase()); }
         if (has(w.sub)) { parts.push(P(T(w.sub || "", where, `${i}.sub`), "font-size:17px;")); if (w.sub) text.push(plain(w.sub)); }
         if (parts.length) rows.push(row(parts.join(""), `28px ${PAD}px 8px`));
@@ -554,7 +563,8 @@ export function validateEmailBlocks(blocks, allowedTypes) {
     try {
       switch (w.type) {
         case "header": case "footer": out.push({ type: w.type }); break;
-        case "hero": out.push({ type: "hero", heading: str(w.heading, 200), sub: str(w.sub, 600), image: img1(w.image, "the hero photo"), alt: str(w.alt, 200), size: w.size === "tall" ? "tall" : "standard" }); break;
+        case "hero": out.push({ type: "hero", heading: str(w.heading, 200), sub: str(w.sub, 600), image: img1(w.image, "the hero photo"), alt: str(w.alt, 200), size: w.size === "tall" ? "tall" : "standard",
+            ...(typeof w.firstGiftHeading === "string" && w.firstGiftHeading.trim() ? { firstGiftHeading: str(w.firstGiftHeading, 200), ...(typeof w.firstGiftSub === "string" && w.firstGiftSub.trim() ? { firstGiftSub: str(w.firstGiftSub, 600) } : {}) } : {}) }); break;   // FLOWS-15
         case "richtext": {
           const bl = (Array.isArray(w.blocks) ? w.blocks : []).slice(0, 40).map(b => {
             if (b && b.type === "ul") return { type: "ul", items: (Array.isArray(b.items) ? b.items : []).slice(0, 30).map(x => str(x, 600)) };

@@ -388,7 +388,9 @@ function validateQuery(raw0) {
   if (["sum", "avg", "min", "max"].includes(fn)) {
     if (!field) field = Object.keys(E.fields).find(k => E.fields[k].sql === E.amount) || null;
     const fd = field && E.fields[field];
-    if (!fd || ![T.money, T.number].includes(fd.type)) return { ok: false, refused: `a ${fn === "sum" ? "total" : "figure"} of ${field || "that"}` };
+    // FLOWS-15 item 3: the latest or earliest of a date field is a date ("When did Linwood last give?").
+    const dateEnd = fd && fd.type === T.date && (fn === "min" || fn === "max");
+    if (!fd || (![T.money, T.number].includes(fd.type) && !dateEnd)) return { ok: false, refused: `a ${fn === "sum" ? "total" : "figure"} of ${field || "that"}` };
   } else field = null;
   if (fn === "count_people" && !E.person) return { ok: false, refused: `people behind ${E.plural}` };
   let groupBy = null;
@@ -483,14 +485,17 @@ async function runQuery(orgId, plan, today) {
   const w = whereFor(plan.entity, plan, orgId, today);
   const ms = measureSql(E, plan.measure);
   const [agg] = await query(`SELECT ${ms} AS v, COUNT(*)::int AS n FROM ${E.from} WHERE ${w.sql}`, w.params);
-  const out = { value: agg.v == null ? null : Number(agg.v), rows: Number(agg.n) || 0 };
+  // FLOWS-15 item 3: a date measure stays a date (its unit), never Number("2026-10-07").
+  const mf = plan.measure.field && E.fields[plan.measure.field];
+  const val = v => (v == null ? null : mf && mf.type === T.date ? String(v).slice(0, 10) : Number(v));
+  const out = { value: val(agg.v), rows: Number(agg.n) || 0 };
   if (plan.groupBy) {
     const gx = groupSql(E, plan.groupBy);
     // Dates read in calendar order unless she asked for the most or the least.
     const byKey = !!plan.groupBy.bucket && !(plan.sort && plan.sort.by === "value");
     out.groups = (await query(`SELECT ${gx} AS k, ${ms} AS v, COUNT(*)::int AS n FROM ${E.from} WHERE ${w.sql}
         GROUP BY 1 ORDER BY ${byKey ? "1" : plan.sort && plan.sort.dir === "asc" ? "2 ASC NULLS LAST, 1" : "2 DESC NULLS LAST, 1"} LIMIT ${MAX_LIMIT}`, w.params))
-      .map(r => ({ key: String(r.k), value: r.v == null ? null : Number(r.v), n: Number(r.n) }));
+      .map(r => ({ key: String(r.k), value: val(r.v), n: Number(r.n) }));
   }
   if (plan.list || plan.measure.fn === "count_people" || ["min", "max"].includes(plan.measure.fn)) {
     out.list = await listRows(orgId, plan, today, { limit: plan.limit });

@@ -549,7 +549,14 @@ app.post("/email-preview", requireAuth, wrap(async (req, res) => {
   if (b.campaignName) p.fields.campaign = clip(b.campaignName, 120);
   let html = p.html;
   if (b.dark === true) html = html.split(EB.DARK_MEDIA).join("@media all");
-  res.json({ html, problems: p.problems, as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject, pastGiving: await pastGivingOf(row.blocks, p) });
+  const pastGiving = await pastGivingOf(row.blocks, p);
+  // FLOWS-15 item 1: previewed as a never-giver this letter leaves out, the answer is that, not the letter.
+  if (pastGiving.shownNeverGave && b.campaign === true) {
+    const PG = await import("../shared/pastGiving.js");
+    if (PG.neverGiverOutcome({ blocks: row.blocks, includeNeverGiven: b.includeNeverGiven === true }) === "left_out")
+      return res.json({ html: "", problems: p.problems, as: p.shownAs, subject: p.subject, pastGiving, notSent: PG.notSentSentence(String(p.shownAs.name || "").split(/\s+/)[0]) });
+  }
+  res.json({ html, problems: p.problems, as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject, pastGiving });
 }));
 // FLOWS-12 item 1 (W-1114-Fundraising-17): which blocks thank the reader for
 // giving, whether each has a first-gift version, and whether the person shown

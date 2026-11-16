@@ -395,7 +395,8 @@ function queryAnswerShape(plan, r) {
   const m = plan.measure;
   const fd = m.field ? E.fields[m.field] : null;
   const isMoney = fd ? fd.type === "money" : false;
-  const kindOf = isMoney ? "money" : "count";
+  // FLOWS-15 item 3: the headline's unit is its field's (money, a date, or a count), never guessed later.
+  const kindOf = require("../shared/numbers/answerUnit").unitOfField(fd);
   const words = AQ.queryWords(plan);
   const conds = words.split(" · ").slice(1).join(" · ");
   const defn = `${words}. Counted from the org's own records, read today.`;
@@ -417,8 +418,8 @@ function queryAnswerShape(plan, r) {
   } else if (["min", "max"].includes(m.fn)) {
     const top = (r.list || [])[0];
     figures.value = fig(r.value, "value", words);
-    parts.push(`The ${m.fn === "max" ? "largest" : "smallest"} ${fd.label} is `, { fig: "value" },
-      top ? `, ${top.name}${top.date ? ` on ${AQ.dayWords(String(top.date).slice(0, 10))}` : ""}${tail}.` : `${tail}.`);
+    parts.push(`The ${kindOf === "date" ? (m.fn === "max" ? "latest" : "earliest") : m.fn === "max" ? "largest" : "smallest"} ${fd.label} is `, { fig: "value" },
+      top ? `, ${top.name}${top.date && kindOf !== "date" ? ` on ${AQ.dayWords(String(top.date).slice(0, 10))}` : ""}${tail}.` : `${tail}.`);
   } else if (m.fn === "sum") {
     figures.value = fig(r.value, "value", words);
     figures.n = countFig(r.rows, "value", `${E.plural} counted`);
@@ -447,11 +448,13 @@ function queryAnswerShape(plan, r) {
     items: people.slice(0, 5).map(p => ({ donorId: p.donorId, name: p.name, label: "Call" })), dueIn: 1 });
   // The plain sentence (logs, the follow-up box, screen readers) carries the
   // same numbers the figures draw.
-  const plainNum = k => { const g = figures[k]; if (!g) return ""; const v = Number(g.value) || 0;
+  const plainNum = k => { const g = figures[k]; if (!g) return ""; if (g.kind === "date") return AQ.dayWords(String(g.value || "").slice(0, 10)); const v = Number(g.value) || 0;
     return g.kind === "money" ? "$" + v.toLocaleString("en-US", { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 }) : v.toLocaleString("en-US", { maximumFractionDigits: 2 }); };
   return { answered: true, kind: "answer", plan: null, qplan: plan, planWords: words, sentence: parts.map(x => (typeof x === "string" ? x : plainNum(x.fig))).join(""),
     sentenceParts: parts.filter(x => x !== ""), figures, parts: null, table: table || recordTable, chart: table && plan.groupBy.bucket ? "bars" : null,
-    people, peopleCount: people ? (m.fn === "count_people" || plan.entity === "people" ? r.value : people.length) : null,
+    // FLOWS-15 item 3 (W-1116-Atlas-01X): how many PEOPLE, never the headline's money or date
+    // (shared/numbers/answerUnit.js). A lifetime-giving sum of $6,523 is about 1 person, not 6,523.
+    people, peopleCount: people ? require("../shared/numbers/answerUnit").peopleCountOf({ fn: m.fn, entity: plan.entity, value: r.value, rows: r.rows, listed: people.length }) : null,
     peopleSource: people ? qsrc(plan.entity === "people" ? plan : { ...plan, measure: { fn: "count_people", field: null } }, "value") : null,
     counted: `${words}. Steward read this from your own records and wrote nothing.`, steps };
 }
