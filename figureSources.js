@@ -1215,30 +1215,10 @@ const SOURCES = {
   // FIX-40 · ONE OFFICER'S PORTFOLIO, the Donors page's chip "717 · $4,020,376.66":
   // donors assigned to them in a pipeline stage (prospect through ongoing care,
   // or lapsed), the same JOIN GET /portfolio/officers counts with.
-  "officer-portfolio": {
-    label: "Portfolio",
-    // FIX-60: the Directory draws two figures from it, how many people (count)
-    // and what they gave (sum); the count was opening a sum.
-    measure: p => p.measure || "sum",
-    params: { officer: "id:required", measure: "measure" },
-    // FLOWS-14 (W-1115-Donors-06X): officer "none" is the strip's Unassigned row (server/majorGifts/portfolioFile.js).
-    sentence: p => (p.officer === "none"
-      ? "Every donor on the Donors tab with no owner and no invite pending, with what each has given in total. Steward never assigns an owner by itself."
-      : "Every donor assigned to this person who is in a pipeline stage (prospect through ongoing care, or lapsed), with what each has given in total."),
-    sql: async (orgId, p) => {
-      const PF = require("./server/majorGifts/portfolioFile");
-      const who = p.officer === "none" ? `${await PF.fileSql("d")} AND ${PF.UNASSIGNED("d")}`
-        : `${require("./shared/numbers/pickable").PICKABLE("d")} AND d.assigned_to = ?
-               AND COALESCE(d.stage, d.suggested_stage) IN ('prospect','qualify','cultivate','solicit','steward','lapsed')`;
-      return {
-        sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
-                     ROUND(${require("./shared/numbers/lifetime").LIFETIME("d")}::numeric, 2) AS amount, 'Given in total' AS detail
-                FROM donors d
-               WHERE d.org_id = ? AND ${who}`,
-        args: p.officer === "none" ? [orgId] : [orgId, p.officer], order: "amount DESC, id",
-      };
-    },
-  },
+  // FIX-60: the Directory draws two figures from it, how many people (count) and what they
+  // gave (sum). FLOWS-14: its definition lives with the strip's footing (officer "none" is
+  // the Unassigned row), server/majorGifts/portfolioFile.js.
+  "officer-portfolio": require("./server/majorGifts/portfolioFile").OFFICER_PORTFOLIO_SOURCE,
   "mailbox-emails": {
     label: "Emails logged from your inbox",
     measure: () => "count",

@@ -68,4 +68,26 @@ async function footing(query, orgId, officers) {
   };
 }
 
-module.exports = { UNASSIGNED, UNASSIGNED_WORDS, IN_OFFICER_ROW, fileSql, footing };
+// figureSources.js's "officer-portfolio": one officer's row, or officer "none", the Unassigned row,
+// so each figure on the strip opens the people behind it.
+const OFFICER_PORTFOLIO_SOURCE = {
+  label: "Portfolio",
+  measure: p => p.measure || "sum",
+  params: { officer: "id:required", measure: "measure" },
+  sentence: p => (p.officer === "none"
+    ? "Every donor on the Donors tab with no owner and no invite pending, with what each has given in total. Steward never assigns an owner by itself."
+    : "Every donor assigned to this person who is in a pipeline stage (prospect through ongoing care, or lapsed), with what each has given in total."),
+  sql: async (orgId, p) => {
+    const who = p.officer === "none" ? `${await fileSql("d")} AND ${UNASSIGNED("d")}`
+      : `${PICKABLE("d")} AND d.assigned_to = ? AND COALESCE(d.stage, d.suggested_stage) = ANY(ARRAY[${PIPELINE.map(s => `'${s}'`).join(",")}])`;
+    return {
+      sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
+                   ROUND(${LIFETIME("d")}::numeric, 2) AS amount, 'Given in total' AS detail
+              FROM donors d
+             WHERE d.org_id = ? AND ${who}`,
+      args: p.officer === "none" ? [orgId] : [orgId, p.officer], order: "amount DESC, id",
+    };
+  },
+};
+
+module.exports = { UNASSIGNED, UNASSIGNED_WORDS, IN_OFFICER_ROW, fileSql, footing, OFFICER_PORTFOLIO_SOURCE };
