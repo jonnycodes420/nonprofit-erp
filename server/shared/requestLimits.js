@@ -19,6 +19,7 @@
 // Outside a scope (boot, the worker, the queue's lanes) nothing changes.
 "use strict";
 const { AsyncLocalStorage } = require("async_hooks");
+const HOLD = require("../perf/holders");   // SCALE-4: who held each connection (the Capacity card)
 
 const DEFAULT_MS = Math.max(1000, Number(process.env.REQUEST_STATEMENT_TIMEOUT_MS) || 10000);
 // The named longer limits, and the routes that take them. A limit is per
@@ -135,9 +136,9 @@ function middleware(cancelBackend) {
     if (req.__stewardInProcess) return next();
     const name = limitFor(req.path);
     const sc = { limitMs: NAMED[name], limitName: name, read: req.method === "GET" || req.method === "HEAD", route: req.method + " " + req.path,
-      closed: false, done: false, timedOut: false, held: new Set(), waiting: new Set(), cancelling: null };
-    res.on("finish", () => { sc.done = true; });
-    res.on("close", () => { if (!res.writableFinished && sc.read) close(sc, cancelBackend); sc.done = true; });
+      closed: false, done: false, timedOut: false, held: new Set(), waiting: new Set(), cancelling: null, req };
+    res.on("finish", () => { sc.done = true; HOLD.settle(sc); });
+    res.on("close", () => { if (!res.writableFinished && sc.read) close(sc, cancelBackend); sc.done = true; HOLD.settle(sc); });
     // A route that caught the timeout itself and answered 500 with its message
     // still answers 503: the sentence is the same, and the status says "again".
     const json = res.json.bind(res);
@@ -152,7 +153,7 @@ function middleware(cancelBackend) {
 async function checkout(pool) {
   refuseIfAbandoned();
   const sc = live();
-  if (!sc) return align(await pool.connect(), 0, null);
+  if (!sc) { const c = await align(await pool.connect(), 0, null); HOLD.took(c, null); return c; }
   const nested = holdingStore.getStore() === sc;   // see "NO ONE REQUEST TAKES THE POOL"
   let place = false, over = false;
   const t0 = Date.now();   // SCALE-3: the wait, for the capacity gauge (server/perf/capacity.js)
@@ -177,7 +178,9 @@ async function checkout(pool) {
   }
   const busy = pool.totalCount - pool.idleCount;
   if (pool.options && pool.options.max === require("./pools").POOL_MAX && busy > counters.poolPeak) counters.poolPeak = busy;
-  return align(client, sc.limitMs, sc);
+  const aligned = await align(client, sc.limitMs, sc);
+  HOLD.took(aligned, sc);
+  return aligned;
 }
 async function align(client, ms, sc) {
   try {
@@ -197,6 +200,7 @@ async function align(client, ms, sc) {
   return client;
 }
 function release(client, err) {
+  HOLD.gave(client);
   const sc = client.__stewardScope;
   client.__stewardScope = null;
   if (!sc) return client.release(err);

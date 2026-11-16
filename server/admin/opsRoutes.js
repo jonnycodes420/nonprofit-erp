@@ -117,7 +117,8 @@ function mount(ctx) {
       // PERF-4: the page-ready marks this web process has had (time only)
       pageTiming: require("../perf/pageTiming").summary(now),
       // SCALE-3: the capacity gauge (server/perf/capacity.js), with the nightly load result beside it
-      capacity: await require("../perf/capacity").read(query, gh.load || null, now),
+      // SCALE-4: with the connection budget (the worker's pool from its heartbeat) and who held the database
+      capacity: await require("../perf/capacity").read(query, gh.load || null, now, { worker: h.worker && h.worker.pool }),
     });
   }));
 

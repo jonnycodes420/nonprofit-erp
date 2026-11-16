@@ -152,6 +152,8 @@ to grow by at most 50 lines in a build (so a fix can land while the split is sti
 - Each process opens at most `DB_POOL_MAX` plus the set-wise pool's `min(3, max(1, floor(DB_POOL_MAX / 3)))`: web 10 + 3 = 13 (the default), worker 5 + 1 = 6.
 - A deploy runs the old web, the new web and the worker at once.
 - The rule: **2 × web + worker ≤ pooler size** (today 2 × 13 + 6 = 32 of 40). `npm run status`'s `db pool` line checks it.
+- With more than one web replica the rule is **replicas × web × 2 + worker ≤ the smaller of the pooler size and Postgres's `max_connections`** (SCALE-4, `server/perf/connectionBudget.js`); two replicas at today's pool are 58, so the Capacity card does not advise one until `docs/needs-jonathan/SCALE-4.md` is done.
+- Background work holds one connection where it can: a whole-org pass runs on `withPinnedClient` (`server/db/query.js`), as the nightly number check does (SCALE-4).
 - LOAD-1: a process may also open one connection to cancel an abandoned read (`requestLimits.cancelPool`), only while it cancels, closed after 10 s idle. Keep one spare per process under the pooler for it.
 
 ## Request limits (LOAD-1)

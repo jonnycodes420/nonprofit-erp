@@ -1079,7 +1079,7 @@ require("../../routes/crm").mount({
 DB_READY.then(() => {
   const JQ = require("../../jobQueue");
   JQ.start({ scheduler: !backgroundTicksDisabled(), build: BUILD_SHA });
-  const refresh = () => JQ.refreshHealth().catch(() => {});
+  const refresh = () => require("../perf/holders").as("tick queue health", () => JQ.refreshHealth()).catch(() => {});   // SCALE-4: named on the card
   setTimeout(refresh, 5000).unref();
   setInterval(refresh, 15000).unref();
   // SCALE-3: this process's capacity sample every five minutes (server/perf/capacity.js, read on /ops).

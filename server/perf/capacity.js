@@ -18,6 +18,7 @@
 "use strict";
 const os = require("os");
 const { monitorEventLoopDelay, performance } = require("perf_hooks");
+const HOLD = require("./holders");   // SCALE-4: who held the database, written with each sample
 
 const EVERY_MS = () => Number(process.env.CAPACITY_SAMPLE_MS) || 5 * 60 * 1000;   // a walk sets it shorter
 const KEEP_DAYS = 8;
@@ -64,9 +65,13 @@ function valueOf(key, rows) {
   return n.length ? Math.max(...n) : null;
 }
 
+// SCALE-4: when a replica was last heard from, in Jonathan's time ("Nov 14, 3:05 PM").
+const seenAt = (t) => new Intl.DateTimeFormat("en-US", { timeZone: TZ, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(t));
+
 // rows: [{ at, process, role, lagP95, busyPct, reqP95, poolWaitP95, poolPeakPct, queueOldestS, failedHour }]
 // load: /ops's nightly load report ({ ok, level: "ok"|"red"|null, detail, at }).
-function summarize(rows, load, now = Date.now()) {
+// budget: SCALE-4's connection budget (connectionBudget.js budget()), or null.
+function summarize(rows, load, now = Date.now(), budget = null) {
   const within = (ms) => rows.filter(r => now - new Date(r.at).getTime() <= ms && new Date(r.at).getTime() <= now);
   const windows = { day: within(DAY_MS), week: within(7 * DAY_MS) };
   const webRows = (rs) => rs.filter(r => r.role !== "worker");
@@ -75,13 +80,24 @@ function summarize(rows, load, now = Date.now()) {
   const lines = [];
   for (const line of LINES) {
     if (line.web) {
-      // Per replica: one line for each web process heard from this week.
-      const procs = [...new Set(webRows(windows.week).map(r => r.process))].sort();
+      // Per replica: one line for each web process heard from in the last 24
+      // hours. SCALE-4: a replica with no sample today (an old deploy's) is not
+      // a line of its own; they fold into one line below, with their 7-day value.
+      const procs = [...new Set(webRows(windows.day).map(r => r.process))].sort();
+      const earlier = [...new Set(webRows(windows.week).map(r => r.process))].filter(p => !procs.includes(p));
       for (const p of procs.length ? procs : [null]) {
         const of = rs => webRows(rs).filter(r => p == null || r.process === p);
         const day = valueOf(line.key, of(windows.day)), week = valueOf(line.key, of(windows.week));
         lines.push({ key: line.key, label: procs.length > 1 ? `${line.label}, ${p}` : line.label, unit: line.unit,
           threshold: `amber at ${line.amber}, red at ${line.red}`, day, week, dayColour: colourOf(line, day), weekColour: colourOf(line, week) });
+      }
+      if (earlier.length) {
+        const old = webRows(windows.week).filter(r => earlier.includes(r.process));
+        const last = Math.max(...old.map(r => new Date(r.at).getTime()));
+        const week = valueOf(line.key, old);
+        lines.push({ key: line.key, folded: earlier.length,
+          label: `${line.label}, ${earlier.length} earlier replica${earlier.length === 1 ? "" : "s"}, last seen ${seenAt(last)}`, unit: line.unit,
+          threshold: `amber at ${line.amber}, red at ${line.red}`, day: null, week, dayColour: null, weekColour: colourOf(line, week) });
       }
       continue;
     }
@@ -104,8 +120,18 @@ function summarize(rows, load, now = Date.now()) {
     return o != null && o > 600; };
   const replica = threeInARow(webOver), worker = threeInARow(nightOver);
   const today = days.length ? byDay.get(days[days.length - 1]) : [];
-  const advice = !rows.length ? "empty" : replica && worker ? "both" : replica ? "replica" : worker ? "worker" : today.length && webOver(today) ? "watch" : "none";
-  return { lines, advice, sentence: SAY[advice], days, samples: windows.week.length,
+  let advice = !rows.length ? "empty" : replica && worker ? "both" : replica ? "replica" : worker ? "worker" : today.length && webOver(today) ? "watch" : "none";
+  let sentence = SAY[advice];
+  // SCALE-4: a replica is advised only when it fits the database's connections
+  // (connectionBudget.js); when it does not, the sentence says what comes first.
+  if (budget && !budget.fitsNext && ["replica", "both", "watch"].includes(advice)) {
+    const B = require("./connectionBudget");
+    const over = `${budget.nextSum} connections during a deploy, over the ${budget.limit} the database takes`;
+    if (advice === "watch") sentence = `${SAY.watch} A second replica would not fit today (${over}). ${B.firstStep(budget)}`;
+    else sentence = `${advice === "both" ? `${SAY.worker} ` : ""}A second web replica is due (the web has been over its line three days in a row), but it does not fit yet: ${over}. ${B.firstStep(budget)}`;
+    advice += "-blocked";
+  }
+  return { lines, advice, sentence, days, samples: windows.week.length, budget,
     definition: "Each process writes one sample every five minutes. The day column is the last 24 hours, the week column the last 7 days: timings are the p95 of the samples' p95s, busy time is the average, the rest are the most seen." };
 }
 
@@ -157,6 +183,7 @@ async function flush({ run, role, poolStats, queueHealth }) {
     [processName(), role, lag, busy, req, n, wait, peak, p.max || null,
      worker && q.oldestWaitingSeconds != null ? q.oldestWaitingSeconds : null, worker && q.failedLastHour != null ? q.failedLastHour : null]);
   await run(`DELETE FROM capacity_samples WHERE at < NOW() - (? * INTERVAL '1 day')`, [KEEP_DAYS]);
+  await HOLD.flush(run, processName(), role, KEEP_DAYS);   // SCALE-4: this sample's top holders
 }
 
 // Started once per process at boot. Off with DISABLE_BACKGROUND_TICKS (the battery) unless CAPACITY_SAMPLE_MS is set.
@@ -168,22 +195,24 @@ function start({ run, role, poolStats, queueHealth }) {
   state.elu = performance.eventLoopUtilization();
   state.poll = setInterval(() => { const p = poolStats() || {}; const used = (p.total || 0) - (p.idle || 0); if (used > state.peak) state.peak = used; }, 1000);
   state.poll.unref();
-  ensureTable(run).then(ok => {
-    if (!ok) return;
-    state.timer = setInterval(() => flush({ run, role: role(), poolStats, queueHealth }).catch(e => console.error("[capacity] sample", e.message)), EVERY_MS());
+  ensureTable(run).then(async ok => {
+    if (!ok || !(await HOLD.ensureTable(run))) return;
+    state.timer = setInterval(() => HOLD.as("tick capacity sample", () => flush({ run, role: role(), poolStats, queueHealth })).catch(e => console.error("[capacity] sample", e.message)), EVERY_MS());
     state.timer.unref();
   });
   return true;
 }
 
-// /ops: the last seven days, summarized.
-async function read(query, load, now = Date.now()) {
+// /ops: the last seven days, summarized, with the connection budget read live
+// and who held the database (SCALE-4).
+async function read(query, load, now = Date.now(), { worker = null } = {}) {
   let rows = [];
   try {
     rows = (await query(`SELECT at, process, role, lag_p95, busy_pct, req_p95, pool_wait_p95, pool_peak, pool_max, queue_oldest_s, failed_hour
                            FROM capacity_samples WHERE at > NOW() - INTERVAL '7 days' ORDER BY at`, [])).map(fromRow);
   } catch (_) { /* the table is made by the first process that samples */ }
-  return summarize(rows, load, now);
+  const budget = await require("./connectionBudget").readLive(query, { worker });
+  return { ...summarize(rows, load, now, budget), holders: await HOLD.read(query) };
 }
 const num = v => (v == null ? null : Number(v));
 const fromRow = r => ({ at: new Date(r.at).toISOString(), process: r.process, role: r.role, lagP95: num(r.lag_p95), busyPct: num(r.busy_pct),
