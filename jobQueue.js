@@ -78,7 +78,7 @@ const timeoutOf = (name) => timeouts.get(name) || TIMEOUT_MS();
 // this process took LONG_MS or more. At most CONCURRENCY - SHORT_LANES lanes
 // run long jobs at once; the rest only claim short ones, so the work that
 // follows a gift or a change never waits behind a whole-org pass.
-const LONG_MS = () => Math.max(1000, Number(process.env.JOB_LONG_MS) || 60 * 1000);
+const LONG_MS = () => Math.max(1000, Number(process.env.JOB_LONG_MS) || 30 * 1000);
 const SHORT_LANES = () => Math.max(1, Number(process.env.JOB_SHORT_LANES) || 1);
 const longNames = new Set();     // declared long
 const seenLong = new Set();      // measured long in this process
@@ -171,7 +171,7 @@ async function claim({ shortOnly = false } = {}) {
     if (!names.length) return null;
     for (let i = 0; i < CLAIM_TRIES; i++) {
       const cand = (await c.query(
-        `SELECT j.id, j.org_id, j.key FROM job_queue j
+        `SELECT j.id, j.org_id, j.key, j.name FROM job_queue j
           WHERE j.status = 'waiting' AND j.run_after <= NOW() AND j.name = ANY($1::text[])
             AND (j.org_id IS NULL OR NOT (j.org_id = ANY($2::text[]))) AND NOT (j.id = ANY($3::text[]))
             AND NOT EXISTS (SELECT 1 FROM job_queue r WHERE r.key = j.key AND r.status = 'running')
@@ -184,7 +184,11 @@ async function claim({ shortOnly = false } = {}) {
       }
       if (cand.org_id) {
         await c.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, ["jobq-org:" + cand.org_id]);
-        const [{ n }] = (await c.query(`SELECT COUNT(*)::int AS n FROM job_queue WHERE org_id = $1 AND status = 'running'`, [cand.org_id])).rows;
+        // SCALE-4: a short job's place under the per-org cap is not taken by the
+        // org's long jobs (a 25,000-person org's stored answers or full scores pass),
+        // so what follows a gift there never waits behind them.
+        const longs = isLong(cand.name) ? [] : [...new Set([...longNames, ...seenLong])];
+        const [{ n }] = (await c.query(`SELECT COUNT(*)::int AS n FROM job_queue WHERE org_id = $1 AND status = 'running' AND NOT (name = ANY($2::text[]))`, [cand.org_id, longs])).rows;
         if (n >= ORG_CAP()) { full.push(cand.org_id); continue; }
       }
       const r = await c.query(

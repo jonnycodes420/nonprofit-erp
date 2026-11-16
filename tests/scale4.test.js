@@ -23,7 +23,7 @@
 // PLANTED (each red, then put back): §1 the top list cut at 7; §2 checkOne
 // without withPinnedClient (the org took 6 connections at once), and the
 // nightly back on bootGate's tick; §3 claimNext's shortOnly always false (the
-// short job waited 3 s behind two long ones); §4 summarize ignoring the
+// short job waited 3 s behind two long ones), and the per-org cap counting long jobs; §4 summarize ignoring the
 // budget; §5 per-replica lines from the 7-day window (27 lines).
 const path = require("path");
 const { spawn } = require("child_process");
@@ -131,7 +131,7 @@ async function seed() {
 
   // ── §3 a long job never starves a short one ────────────────────────────
   const child = spawn(process.execPath, [path.join(ROOT, "tests/lib/scale4Lanes.js")], { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, STEWARD_PROCESS: "worker", WORKER_CONCURRENCY: "3", JOB_SHORT_LANES: "1", JOB_POLL_MS: "100", JOB_NO_HANDLER_MS: "86400000", DISABLE_BACKGROUND_TICKS: "1" } });
+    env: { ...process.env, STEWARD_PROCESS: "worker", WORKER_CONCURRENCY: "3", JOB_SHORT_LANES: "1", JOB_POLL_MS: "100", JOB_ORG_CAP: "2", JOB_NO_HANDLER_MS: "86400000", DISABLE_BACKGROUND_TICKS: "1" } });
   let clog = ""; child.stdout.on("data", d => { clog += d; }); child.stderr.on("data", d => { clog += d; });
   try {
     await waitFor(async () => /scale4 lanes ready/.test(clog), { timeout: 30000, interval: 100 });
@@ -140,15 +140,25 @@ async function seed() {
     const RUN = require("crypto").randomBytes(4).toString("hex");   // this run's own rows
     for (let i = 1; i <= 3; i++) await ins(`scale4:${RUN}:long${i}`, "scale4:long", { hold_ms: 3000 });
     await waitFor(async () => (await q(`SELECT COUNT(*)::int AS n FROM job_queue WHERE id LIKE $1 AND status = 'running'`, [`scale4:${RUN}:long%`]))[0].n >= 2, { timeout: 10000, interval: 100 });
-    const t0 = Date.now();
+    const t0 = performance.now();
     await ins(`scale4:${RUN}:short1`, "scale4:short", {});
     await waitFor(async () => (await q(`SELECT status FROM job_queue WHERE id = $1`, [`scale4:${RUN}:short1`]))[0].status === "done", { timeout: 15000, interval: 50 });
-    const waited = Date.now() - t0;
+    const waited = performance.now() - t0;
     ok("§3 with the long lanes busy, a short job starts at once (under 1.5 s, the long ones hold 3 s)", waited < 1500, `${waited} ms`);
     await waitFor(async () => (await q(`SELECT COUNT(*)::int AS n FROM job_queue WHERE id LIKE $1 AND status = 'done'`, [`scale4:${RUN}:long%`]))[0].n === 3, { timeout: 20000, interval: 100 });
     const longs = (await q(`SELECT (payload->>'began')::bigint AS b, (payload->>'ended')::bigint AS e FROM job_queue WHERE id LIKE $1`, [`scale4:${RUN}:long%`]));
-    const most = Math.max(...longs.map(a => longs.filter(x => x.b < a.e && a.b < x.e).length));
+    const most = Math.max(...longs.map(a => longs.filter(x => Number(x.b) <= Number(a.b) && Number(a.b) < Number(x.e)).length));   // running at each start
     ok("§3 at most two long jobs at once with three lanes (one kept for short jobs)", most === 2, JSON.stringify(longs));
+    // The per-org cap (2): an org's two long jobs do not hold its short one back.
+    const insOrg = (id, name, payload) => q(`INSERT INTO job_queue (id, name, org_id, key, payload, status, run_after, created_by, created_by_name)
+      VALUES ($1,$2,$3,$1,$4::jsonb,'waiting',NOW(),'system:test','test')`, [id, name, `${PREFIX}a`, JSON.stringify(payload)]);
+    for (let i = 1; i <= 2; i++) await insOrg(`scale4:${RUN}:olong${i}`, "scale4:long", { hold_ms: 3000 });
+    await waitFor(async () => (await q(`SELECT COUNT(*)::int AS n FROM job_queue WHERE id LIKE $1 AND status = 'running'`, [`scale4:${RUN}:olong%`]))[0].n === 2, { timeout: 10000, interval: 100 });
+    const t1 = performance.now();
+    await insOrg(`scale4:${RUN}:oshort`, "scale4:short", {});
+    await waitFor(async () => (await q(`SELECT status FROM job_queue WHERE id = $1`, [`scale4:${RUN}:oshort`]))[0].status === "done", { timeout: 15000, interval: 50 });
+    ok("§3 an org with two long jobs running still starts its short job at once (per-org cap 2)", performance.now() - t1 < 1500, `${performance.now() - t1} ms`);
+    await waitFor(async () => (await q(`SELECT COUNT(*)::int AS n FROM job_queue WHERE id LIKE $1 AND status = 'done'`, [`scale4:${RUN}:olong%`]))[0].n === 2, { timeout: 20000, interval: 100 });
   } finally { child.kill("SIGTERM"); await q(`DELETE FROM job_queue WHERE name LIKE 'scale4:%'`); }
 
   // ── §4 the replica advice and the connection budget ────────────────────

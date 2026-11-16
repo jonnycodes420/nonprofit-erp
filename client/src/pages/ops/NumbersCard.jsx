@@ -36,7 +36,7 @@ export function NumbersView({ data, error, busy, onMark, onCheck, result }) {
   const row = o => <tr key={o.id} data-testid={`ops-numbers-org-${o.id}`}>
     <td style={{ ...cell, fontWeight: 600 }}>{o.name || o.id}{o.isTest ? <span style={{ marginLeft: 6, fontSize: 11, padding: "1px 6px", borderRadius: 8, background: CREAM }}>test</span> : null}
       {o.isTest && o.checkedOn ? <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.7 }}>checked {o.checkedOn}</div> : null}</td>
-    <td style={{ ...cell, textAlign: "right", fontWeight: o.problems ? 700 : 400, color: o.problems && !o.isTest ? INK : undefined }}>{n(o.problems)}</td>
+    <td style={{ ...cell, textAlign: "right", fontWeight: o.problems ? 700 : 400, color: o.problems && !o.isTest ? INK : undefined }}>{o.problems == null ? "not checked yet" : n(o.problems)}</td>
     <td style={cell}><Rules byRule={o.byRule} units={data.units} /></td>
     <td style={{ ...cell, whiteSpace: "nowrap" }}><Trend trend={o.trend} nights={data.nights} /></td>
     <td style={cell}><button type="button" disabled={busy} style={link} onClick={() => onMark(o.id, !o.isTest)}>{o.isTest ? "Mark as real" : "Mark as test"}</button>

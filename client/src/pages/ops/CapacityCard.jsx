@@ -14,8 +14,8 @@ const pill = c => ({ display: "inline-block", padding: "1px 8px", borderRadius: 
   background: (PILL[c] || [CREAM])[0], color: (PILL[c] || [CREAM, INK])[1], whiteSpace: "nowrap" });
 
 const shown = (v, unit) => (v == null ? "no samples" : typeof v === "string" ? v : `${v}${unit === "%" || unit === "% of the pool" ? "%" : unit ? ` ${unit}` : ""}`);
-function Value({ v, unit, colour, testid }) {
-  return <span data-testid={testid}>{colour ? <span style={pill(colour)}>{colour}</span> : null} {shown(v, unit)}</span>;
+function Value({ v, unit, colour, testid, who }) {
+  return <span data-testid={testid}>{colour ? <span style={pill(colour)}>{colour}</span> : null} {shown(v, unit)}{who ? <span style={{ opacity: 0.7 }}> ({who})</span> : null}</span>;
 }
 
 // SCALE-4: who held the database's connections, top 8 over the last 24 hours.
@@ -48,8 +48,8 @@ export default function CapacityCard({ c }) {
         <td style={{ ...cell, fontWeight: 600 }}>Threshold</td></tr>
       {c.lines.map((l, i) => <tr key={l.key + i} data-testid={`ops-capacity-${l.key}`}>
         <td style={{ ...cell, fontWeight: 600, width: 260 }}>{l.label}</td>
-        <td style={cell} colSpan={l.key === "load" ? 2 : 1}>{l.folded ? <span style={{ opacity: 0.7 }}>not running</span> : <Value v={l.day} unit={l.unit} colour={l.dayColour} testid={`ops-capacity-${l.key}-day`} />}</td>
-        {l.key === "load" ? null : <td style={cell}><Value v={l.week} unit={l.unit} colour={l.weekColour} testid={`ops-capacity-${l.key}-week`} /></td>}
+        <td style={cell} colSpan={l.key === "load" ? 2 : 1}>{l.folded ? <span style={{ opacity: 0.7 }}>not running</span> : <Value v={l.day} unit={l.unit} colour={l.dayColour} who={l.dayWho} testid={`ops-capacity-${l.key}-day`} />}</td>
+        {l.key === "load" ? null : <td style={cell}><Value v={l.week} unit={l.unit} colour={l.weekColour} who={l.weekWho} testid={`ops-capacity-${l.key}-week`} /></td>}
         <td style={{ ...cell, opacity: 0.7 }}>{l.threshold}{l.unit && l.key !== "load" ? (l.unit === "%" || l.unit === "% of the pool" ? "%" : ` ${l.unit}`) : ""}</td>
       </tr>)}
     </tbody></table>

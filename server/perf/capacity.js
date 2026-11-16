@@ -102,8 +102,10 @@ function summarize(rows, load, now = Date.now(), budget = null) {
       continue;
     }
     const day = valueOf(line.key, pick(line, windows.day)), week = valueOf(line.key, pick(line, windows.week));
+    // SCALE-4: the oldest wait says which job it was.
+    const whoOf = (rs, v) => (line.key === "queueOldestS" && v ? (pick(line, rs).find(r => r.queueOldestS === v && r.queueOldestName) || {}).queueOldestName || null : null);
     lines.push({ key: line.key, label: line.label, unit: line.unit, threshold: `amber at ${line.amber}, red at ${line.red}`,
-      day, week, dayColour: colourOf(line, day), weekColour: colourOf(line, week) });
+      day, week, dayColour: colourOf(line, day), weekColour: colourOf(line, week), dayWho: whoOf(windows.day, day), weekWho: whoOf(windows.week, week) });
   }
   const loadColour = !load || !load.level ? null : load.level === "ok" ? "green" : "red";
   lines.push({ key: "load", label: "Nightly load test (20 users, 10 orgs)", unit: "", threshold: "green when every route is inside its bar",
@@ -160,7 +162,8 @@ async function ensureTable(run) {
           at TIMESTAMPTZ NOT NULL DEFAULT NOW(), process TEXT NOT NULL, role TEXT NOT NULL,
           lag_p95 REAL, busy_pct REAL, req_p95 REAL, req_n INTEGER, pool_wait_p95 REAL, pool_peak INTEGER, pool_max INTEGER,
           queue_oldest_s INTEGER, failed_hour INTEGER);
-        CREATE INDEX IF NOT EXISTS idx_capacity_samples_at ON capacity_samples (at); END $$`, []);
+        CREATE INDEX IF NOT EXISTS idx_capacity_samples_at ON capacity_samples (at);
+        ALTER TABLE capacity_samples ADD COLUMN IF NOT EXISTS queue_oldest_name TEXT; END $$`, []);   // SCALE-4: which job waited
       return true;
     } catch (e) { if (i === 2) { console.error("[capacity] table", e.message); return false; } await new Promise(r => setTimeout(r, 1000 * (i + 1))); }
   }
@@ -178,10 +181,11 @@ async function flush({ run, role, poolStats, queueHealth }) {
   const worker = role !== "web";
   state.req = []; state.waits = [];
   const peak = state.peak; state.peak = 0;
-  await run(`INSERT INTO capacity_samples (process, role, lag_p95, busy_pct, req_p95, req_n, pool_wait_p95, pool_peak, pool_max, queue_oldest_s, failed_hour)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  await run(`INSERT INTO capacity_samples (process, role, lag_p95, busy_pct, req_p95, req_n, pool_wait_p95, pool_peak, pool_max, queue_oldest_s, failed_hour, queue_oldest_name)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [processName(), role, lag, busy, req, n, wait, peak, p.max || null,
-     worker && q.oldestWaitingSeconds != null ? q.oldestWaitingSeconds : null, worker && q.failedLastHour != null ? q.failedLastHour : null]);
+     worker && q.oldestWaitingSeconds != null ? q.oldestWaitingSeconds : null, worker && q.failedLastHour != null ? q.failedLastHour : null,
+     worker && q.oldestWaiting && q.oldestWaitingSeconds ? String(q.oldestWaiting.name).slice(0, 100) : null]);
   await run(`DELETE FROM capacity_samples WHERE at < NOW() - (? * INTERVAL '1 day')`, [KEEP_DAYS]);
   await HOLD.flush(run, processName(), role, KEEP_DAYS);   // SCALE-4: this sample's top holders
 }
@@ -208,7 +212,7 @@ function start({ run, role, poolStats, queueHealth }) {
 async function read(query, load, now = Date.now(), { worker = null } = {}) {
   let rows = [];
   try {
-    rows = (await query(`SELECT at, process, role, lag_p95, busy_pct, req_p95, pool_wait_p95, pool_peak, pool_max, queue_oldest_s, failed_hour
+    rows = (await query(`SELECT at, process, role, lag_p95, busy_pct, req_p95, pool_wait_p95, pool_peak, pool_max, queue_oldest_s, failed_hour, queue_oldest_name
                            FROM capacity_samples WHERE at > NOW() - INTERVAL '7 days' ORDER BY at`, [])).map(fromRow);
   } catch (_) { /* the table is made by the first process that samples */ }
   const budget = await require("./connectionBudget").readLive(query, { worker });
@@ -218,6 +222,6 @@ const num = v => (v == null ? null : Number(v));
 const fromRow = r => ({ at: new Date(r.at).toISOString(), process: r.process, role: r.role, lagP95: num(r.lag_p95), busyPct: num(r.busy_pct),
   reqP95: num(r.req_p95), poolWaitP95: num(r.pool_wait_p95),
   poolPeakPct: r.pool_max ? Math.round(Number(r.pool_peak) / Number(r.pool_max) * 100) : null,
-  queueOldestS: num(r.queue_oldest_s), failedHour: num(r.failed_hour) });
+  queueOldestS: num(r.queue_oldest_s), failedHour: num(r.failed_hour), queueOldestName: r.queue_oldest_name || null });
 
 module.exports = { LINES, SAY, summarize, middleware, noteWait, start, read, flush, fromRow };
