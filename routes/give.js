@@ -421,34 +421,17 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
   let stripeCard = null;
   {
     const b = bucket.get("own_stripe") || empty;
-    // Connected means Stripe Connect is finished OR money has demonstrably come
-    // through this path. A card that says "not connected" above forty gifts it
-    // took last month is a card nobody believes again.
-    // FIX-12 (HELP-1 list): stripe_connected is set when onboarding STARTS, so
-    // "finished" is asked of Stripe (charges_enabled). If Stripe cannot be
-    // reached the flag stands, as it did before.
-    let finished = !!(org && org.stripe_connected && org.stripe_account_id);
-    if (finished && stripe) {
-      try { finished = (await stripe.accounts.retrieve(org.stripe_account_id)).charges_enabled === true; }
-      catch (e) { /* unreachable: keep the flag */ }
-    }
-    const connected = finished || b.gifts30 > 0;
+    // FLOWS-15 item 6: whether the pages take gifts, the card's state and its one rate are
+    // settled below by server/give/stripeCard.js (the public page's own check), not "any Stripe
+    // gift in thirty days", which counted the history Steward reads.
     cards.push(stripeCard = {
       id: "own_stripe", kind: "own_stripe", provider: "stripe", label: "Stripe",
       subtitle: "Two things live here: the gifts your giving pages take, and the history Stripe already holds.",
       // THE TWO PARTS, each named for what it does for her. The second one is
       // appended by the provider loop below.
-      parts: [{
-        key: "pages", label: "Take gifts on your giving pages",
-        connected,
-        sentence: connected
-          ? "On. Stripe pays Steward the moment a gift is taken."
-          : "Not on yet. Turn this on and your giving pages can take a gift.",
-        action: connected ? null : "connect", actionLabel: connected ? null : "Set this up",
-      }],
-      connected, canDisconnect: false,
+      parts: [{ key: "pages", label: "Take gifts on your giving pages" }],
+      canDisconnect: false,
       lastSyncedAt: null, liveSentence: "Stripe pays Steward the moment a gift is taken; there is nothing to check on a schedule.",
-      ...connectionState(C.assessConnection({ connected, lastError: null, lastGiftDate: b.last, giftDates: b.dates, today })),
       gifts30: b.gifts30, dollars30Cents: b.cents30, lastGiftDate: b.last,
       figureSource: { key: "connection-gifts", params: { connection: "own_stripe" } },
     });
