@@ -41,6 +41,7 @@ import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box,
 import { TouchIcon } from "./touchIcons";   // TOUCH-1
 import { touchLine } from "../../../shared/touchKinds.js";
 import { taskRowOf } from "../lib/taskRow";   // FLOWS-6
+import { thankState } from "../../../shared/thankState.js";   // FLOWS-14
 export { relDay, meetingNoun, AddToRecord, MorningBrief } from "./MorningBrief";
 
 const CHIP_EDGE = T.bg3;           // the artboards draw a hairline one shade off bg3; bg3 is the token
@@ -421,7 +422,11 @@ export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], int
         return { title, body, meta, by, type };
       }
       title = `${fmtFull(Number(g.amount))}${g.fund_name ? ` to ${g.fund_name}` : ""}${g.payment_method && g.payment_method !== "Needs you" ? ` · ${g.payment_method}` : ""}`;
-      body = g.acknowledgement_sent ? `Thanked${g.acknowledged_via ? ` by ${g.acknowledged_via}` : ""}${g.acknowledged_by_name ? `, ${g.acknowledged_by_name}` : ""}.` : "Not thanked yet.";
+      // FLOWS-14 (W-1115-Finance-02X): a refund row has no thank-you state; a gift refunded in full needs none.
+      const ts = thankState(g);
+      body = !ts ? (g.refund_reason ? `A refund: ${g.refund_reason}.` : "A refund, not a gift.")
+        : ts.key === "refunded" ? `${ts.words}.`
+        : g.acknowledgement_sent ? `Thanked${g.acknowledged_via ? ` by ${g.acknowledged_via}` : ""}${g.acknowledged_by_name ? `, ${g.acknowledged_by_name}` : ""}.` : "Not thanked yet.";
       by = g.created_by_name || "";
     }
     return { title, body, meta, by, type };

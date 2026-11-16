@@ -94,7 +94,7 @@ async function roomKnownFor(orgId, rows) {
 // day's answer built on the old code stayed "fresh" until a gift moved
 // ("Create tasks for Nov 1" and a $75,000 ask after the fix was live).
 // Bump it whenever computeInsights' output changes for the same rows.
-const ENGINE = "flows11-2026-11-15";   // FLOWS-11: a gift refunded in full left out
+const ENGINE = "flows14-2026-11-16";   // FLOWS-14: a household's ask says it is the household's
 async function fingerprint(orgId) {
   const [f] = await query(`SELECT
       (SELECT COUNT(*)::text || ':' || COALESCE(SUM(amount),0)::text || ':' || COALESCE(MAX(created_at)::text,'') FROM gifts WHERE org_id=?) AS g,

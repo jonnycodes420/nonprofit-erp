@@ -32,6 +32,8 @@ async function giftFacts(p, { query }) {
 
 // The live gift triggers: never for history, an import, or a gift already
 // thanked elsewhere (FIX-36, SEND-GATE-1, FIX-37).
-const fires = (p) => !p.oldHistory && !p.thankedElsewhere && !p.fromImport;
+// FLOWS-14 (W-1116-Fundraising-15X): a refund is recorded through recordGift as a negative
+// row and is never a gift, so it fires no gift trigger (first gift, next gift, a sequence's).
+const fires = (p) => !p.oldHistory && !p.thankedElsewhere && !p.fromImport && Number(p.amount) > 0;
 
 module.exports = { giftFacts, fires };

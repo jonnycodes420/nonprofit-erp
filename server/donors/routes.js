@@ -52,7 +52,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   if (filter.badFilter) return res.status(400).json({ error: "bad_filter", sentence: filter.badFilter });   // LIST-1
   if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
   if (filter.badStatus) return res.status(400).json(UNKNOWN_STATUS);
-  if (!(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
+  if (req.query.assignedTo !== "none" && !(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");   // FLOWS-14: "none" is Unassigned
   let { whereSql, params, orderBy, selectCols, selectArgs } = filter;
   // TRUTH-5 (W-1109-Finance-35X): each row's gift count is giftCount.js's, the profile's, never the stored rollup.
   selectCols = `${selectCols}, ${require("../../shared/numbers/giftCount").DONOR_GIFT_COUNT("donors")} AS gift_count_live`;
@@ -515,7 +515,7 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
                               AND t.sent_at IS NULL AND t.skipped_at IS NULL ORDER BY t.created_at DESC LIMIT 1) AS draft_id
                      FROM gifts g
                     WHERE g.org_id = ? AND g.donor_id = ? AND COALESCE(g.is_sample,false) = false
-                      AND g.date >= ? AND COALESCE(g.acknowledgement_sent,false) = false AND ${require("../../shared/numbers/giftCount").KEPT("g")}   -- FLOWS-11: a gift refunded in full waits for no thanks
+                      AND g.date >= ? AND ${require("../../shared/numbers/thanks").AWAITING("g")}   -- FLOWS-11/14: the one rule (a gift refunded in full waits for no thanks)
                     ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC`, [orgId, id, since]) : [],
     query(`SELECT e.id, e.name, LEFT(e.date::text, 10) AS date FROM event_attendees ea JOIN events e ON e.id = ea.event_id AND e.org_id = ea.org_id
             WHERE ea.donor_id = ? AND ea.org_id = ? AND LEFT(e.date::text, 10) >= ?
