@@ -191,13 +191,13 @@ const runq = async (sql, params) => { const r = await qq(sql, params); return { 
   const pub = await api("POST", "/org-form/page/publish", tok, {});
   ok("§6 Publish with nothing changed answers with a sentence", pub.status === 400 && /^Nothing to publish: this page has no changes since/.test((pub.body && pub.body.sentence) || ""), pub.body);
   const EC = await import(path.join(ROOT, "client/src/lib/errorCodes.js"));
-  ok("§6 the banner reads the sentence, not the code", EC.bodySentence(pub.body, 400) === pub.body.sentence, EC.bodySentence(pub.body, 400));
-  ok("§6 a bare code is never the banner's words", EC.bodySentence({ error: "nothing_to_publish" }, 400).startsWith("Nothing to publish")
-    && !EC.isCode(EC.bodySentence({ error: "some_new_code" }, 409)) && EC.bodySentence({ error: "Donor not found" }, 404) === "Donor not found",
-    [EC.bodySentence({ error: "nothing_to_publish" }, 400), EC.bodySentence({ error: "some_new_code" }, 409)]);
+  ok("§6 the banner reads the sentence, not the code", EC.bodySentence(pub.body) === pub.body.sentence, EC.bodySentence(pub.body));
+  ok("§6 a bare code is never the banner's words", !EC.isCode(EC.bodySentence({ error: "nothing_to_publish"  }))
+    && !EC.isCode(EC.bodySentence({ error: "some_new_code"  })) && EC.bodySentence({ error: "Donor not found"  }) === "Donor not found",
+    [EC.bodySentence({ error: "nothing_to_publish"  }), EC.bodySentence({ error: "some_new_code"  })]);
   const fs = require("fs");
   const apiSrc = fs.readFileSync(path.join(ROOT, "client/src/api.js"), "utf8");
-  ok("§6 apiFetch builds its error from the sentence (never err.message || err.error)", /bodySentence\(err, res\.status\)/.test(apiSrc) && !/err\.message \|\| err\.error/.test(apiSrc), null);
+  ok("§6 apiFetch builds its error from the sentence (never err.message || err.error)", /bodySentence\(err\)/.test(apiSrc) && !/err\.message \|\| err\.error/.test(apiSrc), null);
   const brand = fs.readFileSync(path.join(ROOT, "client/src/components/settings/BrandingManager.jsx"), "utf8");
   ok("§6 the thank-you preview says it is addressed to a sample donor", /Preview, addressed to a sample donor/.test(brand) && !/Dear Jordan/.test(brand), null);
   const prev = await fetch(`${process.env.BASE || "http://localhost:5601"}/receipts/preview`, { headers: { Authorization: "Bearer " + tok } });

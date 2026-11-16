@@ -37,8 +37,6 @@
 // re-throw: a crash screen on a real bug is embarrassing and correct, while a
 // data-quality message on a real bug is calm, confident and wrong.
 
-import { isCode, codeSentence } from "./errorCodes.js";   // FLOWS-16 item 6
-
 // The error types that are always the program's fault. `InternalError` is
 // SpiderMonkey's; harmless to list, and this must not depend on the engine.
 const PROGRAMMER_ERROR_NAMES = new Set([
@@ -100,8 +98,5 @@ export function errorMessage(e, fallback) {
     const detail = (e && e.message) ? ` (${e.message})` : "";
     return `Something went wrong inside Steward, this is not a problem with your data, and nothing was changed.${detail}`;
   }
-  // FLOWS-16 item 6: a code is never the words on a banner.
-  const said = (e && (e.sentence || e.message)) || "";
-  if (said && isCode(said)) return codeSentence(said, e && e.status);
-  return said || fallback;
+  return (e && e.message) || fallback;
 }

@@ -349,11 +349,12 @@ async function apiFetchNow(path, options = {}) {
       handleAuthFailure(err.error);
       // `authHandled` tells a caller's catch that somebody is already being
       // sent to /login, so it must not render this as an outage.
-      throw Object.assign(new Error(bodySentence(err, 401)),
-        { status: 401, authHandled: true, ...err, message: bodySentence(err, 401) });
+      const said = bodySentence(err);
+      throw Object.assign(new Error(said), { status: 401, authHandled: true, ...err, message: said });
     }
     // FLOWS-16 item 6: the route's sentence, never a bare code ("nothing_to_publish"). The code stays on e.error.
-    throw Object.assign(new Error(bodySentence(err, res.status)), { status: res.status, ...err, message: bodySentence(err, res.status) });
+    const said = bodySentence(err);
+    throw Object.assign(new Error(said), { status: res.status, ...err, message: said });
   }
   return res.json();
 }
