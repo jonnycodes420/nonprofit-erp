@@ -5,7 +5,7 @@
 // applyView); this draws its answer.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../../api";
-import { INK, WHITE, CREAM, BRASS, TERRA, card, says, btn, quiet, box, link, brassTag, showValue, fieldsOf, valueAt, downloadCsv, Failure, failureWords } from "./salesBits";
+import { INK, WHITE, CREAM, BRASS, TERRA, card, says, btn, quiet, box, link, brassTag, showValue, whenWords, dayWords, fieldsOf, valueAt, downloadCsv, Failure, failureWords } from "./salesBits";
 import Board from "./Board";
 import NewRecord from "./NewRecord";
 
@@ -46,7 +46,8 @@ export default function ListView({ type, meta, open, onChanged, onMeta, list = n
   const obj = meta.objects[type];
   const fields = useMemo(() => [{ key: "name", label: "Name", type: "text" }, ...fieldsOf(meta, type).filter(f => !["first_name", "last_name", "name"].includes(f.key)),
     ...meta.assocFields[type].map(a => ({ ...a, assoc: true }))], [meta, type]);
-  const [columns, setColumns] = useState(["name", ...obj.defaultColumns.filter(c => c !== "name")]);
+  // SALES-4: the screen opens on the scan columns (name, organization, fit, last touch, next step); exports keep defaultColumns.
+  const [columns, setColumns] = useState(["name", ...(obj.scanColumns || obj.defaultColumns).filter(c => c !== "name")]);
   const [filters, setFilters] = useState([]);
   const [sort, setSort] = useState({ key: "name", dir: "asc" });
   const [q, setQ] = useState("");
@@ -170,7 +171,9 @@ export default function ListView({ type, meta, open, onChanged, onMeta, list = n
                 {k === "name" ? <><button type="button" style={link} onClick={() => open(type, r.id)}>{r.displayName}</button>{r.dnc ? <span style={{ ...brassTag, marginLeft: 6 }} title={r.dnc_reason || "Do not contact"}>Do not contact</span> : null}</>
                   : k === "open_deal_stage" ? [].concat(r.open_deal_stage || []).map(id => showValue({ type: "stage" }, id, meta)).join(", ") || "–"
                   : k === "has_open_task" ? (r.has_open_task ? "Yes" : <span style={brassTag}>No</span>)
-                  : k === "fit_line" ? <span title={(r.fit_misses || []).join("; ") || "Meets every line of the fit rule."} data-fit={r.fit_met}>{r.fit_line}{(r.fit_misses || []).length ? <span style={{ opacity: 0.65 }}> · {(r.fit_misses || []).join("; ")}</span> : null}</span>
+                  : k === "fit_line" ? <span title={(r.fit_misses || []).join("; ") || (r.fit_line ? "Meets every line of the fit rule." : "")} data-fit={r.fit_met}>{r.fit_line || "–"}</span>
+                  : k === "last_touch" ? (r.last_touch ? <span data-last-touch={r.last_touch_kind}>{r.last_touch_kind} · {whenWords(r.last_touch)}</span> : <span style={{ opacity: 0.6 }}>None yet</span>)
+                  : k === "next_up" ? (r.next_up ? `${r.next_up}${r.next_up_on ? ` · ${dayWords(r.next_up_on).replace(/, \d{4}$/, "")}` : ""}` : <span style={{ opacity: 0.6 }}>–</span>)
                   : k === "list_ids" ? [].concat(r.list_ids || []).map(id => ((meta.lists || []).find(l => l.id === id) || {}).name).filter(Boolean).join(", ") || "–"
                   : showValue(f, valueAt(r, k), meta)}</td>; })}
           </tr>)}</tbody>

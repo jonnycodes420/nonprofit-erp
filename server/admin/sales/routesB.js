@@ -49,7 +49,8 @@ function mount(app, { query, run, wrap, door, salesLimiter, whoOf, send }) {
     const ready = ["microsoft", "google"].map(k => { const { values } = FLOW.oauthEnv(k, O.ENV_VARS); return { provider: k, configured: !!(values.clientId && values.clientSecret && values.redirectUri) }; });
     const [{ n }] = await query(`SELECT COUNT(*)::int AS n FROM sales_emails`);
     res.json({ ok: true, mailboxes: boxes, providers: ready, prospectDomains: (domains[0] && domains[0].value) || [], noReplyDays: days, captured: n,
-      sentence: "Only mail to or from a sales contact's address, or at a prospect domain, is stored. Nothing is sent from here." });
+      sentence: "Only mail to or from a sales contact's address, or at a prospect domain, is stored. Nothing is sent from here.",
+      reads: require("./calendar").WHAT_IT_READS, never: require("./calendar").NEVER_TOUCHES });
   }));
 
   app.post("/ops/sales/mailbox/:provider/start", salesLimiter, door, wrap(async (req, res) => {
@@ -219,8 +220,12 @@ function defineJobs(ctx) {
   require("../../../jobQueue").define("salesMailboxRead", { everyMs: 30 * 60 * 1000, firstMs: 90000,
     run: async job => {
       const id = job && job.payload && job.payload.mailboxId;
-      const boxes = await ctx.query(`SELECT id, provider, address, credentials_sealed, token_expires_at FROM sales_mailboxes WHERE status = 'active' ${id ? "AND id = ?" : ""}`, id ? [id] : []);
-      for (const mb of boxes) await MAIL.readNow(ctx, mb).catch(e => console.error("[sales-mail] read failed:", e.message));
+      const boxes = await ctx.query(`SELECT id, provider, address, user_id, credentials_sealed, token_expires_at FROM sales_mailboxes WHERE status = 'active' ${id ? "AND id = ?" : ""}`, id ? [id] : []);
+      for (const mb of boxes) {
+        await MAIL.readNow(ctx, mb).catch(e => console.error("[sales-mail] read failed:", e.message));
+        // SALES-4 item 2: the same mailbox's calendar, on the same consent (meetings with a sales contact only).
+        await require("./calendar").readNow(ctx, mb).catch(e => console.error("[sales-calendar] read failed:", e.message));
+      }
     } });
 }
 

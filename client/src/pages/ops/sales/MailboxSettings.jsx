@@ -24,6 +24,11 @@ export default function MailboxSettings() {
   return <section style={card} data-sales-mailbox="1">
     <h2 style={h2}>Mailbox</h2>
     <p style={says}>{d.sentence} {d.captured === 1 ? "1 email is" : `${d.captured} emails are`} stored now.</p>
+    {d.reads ? <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12, fontSize: 12.5, margin: "0 0 10px" }} data-sales-mail-rules="1">
+      {[["What it reads", d.reads], ["What it never touches", d.never]].map(([t, list]) => <div key={t}><b>{t}</b>
+        <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{list.map(x => <li key={x} style={{ marginBottom: 2 }}>{x}</li>)}</ul></div>)}
+      <div style={{ gridColumn: "1 / -1", opacity: 0.75 }}>A new meeting with a sales contact moves its deal to Meeting booked if it was earlier; Now and the deal page offer Undo.</div>
+    </div> : null}
     {d.mailboxes.length === 0 ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
       {d.providers.map(p => <button key={p.provider} type="button" style={p.configured ? btn : quiet} disabled={!p.configured} onClick={() => connect(p.provider)} data-mailbox-connect={p.provider}
         title={p.configured ? "" : "This server has no app for this provider yet"}>Connect {WORD[p.provider]}</button>)}

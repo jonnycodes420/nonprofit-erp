@@ -34,6 +34,7 @@ const OBJECTS = {
       { key: "updated_at", label: "Updated", type: "date", col: "updated_at", readOnly: true },
     ],
     defaultColumns: ["name", "domain", "city", "state", "current_crm", "owner_id", "updated_at"],
+    scanColumns: ["name", "fit_line", "last_touch", "next_up"],
   },
   contact: {
     table: "sales_contacts", label: "Contact", plural: "Contacts",
@@ -49,6 +50,7 @@ const OBJECTS = {
       { key: "updated_at", label: "Updated", type: "date", col: "updated_at", readOnly: true },
     ],
     defaultColumns: ["name", "title", "emails", "role", "owner_id", "updated_at"],
+    scanColumns: ["name", "primary_org_name", "fit_line", "last_touch", "next_up"],
   },
   deal: {
     table: "sales_deals", label: "Deal", plural: "Deals",
@@ -69,6 +71,7 @@ const OBJECTS = {
       { key: "updated_at", label: "Updated", type: "date", col: "updated_at", readOnly: true },
     ],
     defaultColumns: ["name", "stage_id", "value_cents", "close_date", "source", "owner_id", "next_step"],
+    scanColumns: ["name", "primary_org_name", "fit_line", "last_touch", "next_up"],
   },
 };
 const OBJECT_IDS = Object.keys(OBJECTS);

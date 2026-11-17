@@ -35,7 +35,6 @@ const PIPES = require("./pipelines");
 const MERGE = require("./merge");
 const IMP = require("./importCsv");
 const LINK = require("./stewardLink");
-const TODAY = require("./today");
 const FORECAST = require("./forecast");
 
 // A working CRM makes many small calls; per IP, behind nothing but the door.
@@ -44,6 +43,7 @@ const salesLimiter = rateLimit("salesLimiter", {
   skip: () => process.env.TEST_MODE === "1" || process.env.DISABLE_RATE_LIMIT === "1",
 });
 const TZ = "America/New_York";
+const PLANT4 = process.env.TEST_MODE === "1" ? process.env.SALES4_PLANT || "" : "";   // SALES-4 planted defects (tests only)
 const SETTING_KEYS = ["goal", "fit", "call_rules", "templates"];
 
 const parseJson = (s, dflt) => { try { return s ? JSON.parse(String(s)) : dflt; } catch { return dflt; } };
@@ -84,15 +84,9 @@ function mount(app, { query, run, wrap, opsOnly, billing }) {
     const [deals, pipelines, s, history] = await Promise.all([LISTS.rowsFor(query, "deal"), PIPES.readAll(query), settings(query),
       query(`SELECT deal_id, to_stage_id, to_name, at FROM sales_stage_history WHERE at > ?`, [new Date(now - 400 * 86400000).toISOString()])]);
     const stages = PIPES.stageIndex(pipelines);
-    const input = await TODAY.loadToday(query, deals, stages, now);
-    input.noReply = await require("./email").replyFacts(query, now, await require("./email").noReplyDays(query));
-    const today = TODAY.buildToday(input, now, s.tz);
-    // SALES-3: "Billing starts in N days" and "Quote sent, not signed", and the forecast reads accepted quotes.
-    const QUOTES = require("./quotes");
-    const [qFacts, accepted] = await Promise.all([QUOTES.todayFacts(query), QUOTES.acceptedByDeal(query)]);
-    const ql = QUOTES.todayLines(qFacts, now, s.tz);
-    Object.assign(today.lines, { billingStarts: ql.billingStarts, quoteUnsigned: ql.quoteUnsigned });
-    Object.assign(today.sentences, ql.sentences);
+    // SALES-4: Today's lines have one reader, shared with Now (routesE.todayFor).
+    const { today } = await require("./routesE").todayFor(query, deals, now, s.tz);
+    const accepted = await require("./quotes").acceptedByDeal(query);
     // MRR now is ONBOARD-2's own figure, computed once, there.
     let mrrNowCents = 0, mrrError = null;
     try { mrrNowCents = (await require("../../onboard/board").board(query, now)).summary.mrrNowCents; }
@@ -232,7 +226,10 @@ function mount(app, { query, run, wrap, opsOnly, billing }) {
 
   app.post("/ops/sales/deals/:id/stage", salesLimiter, door, wrap(async (req, res) => {
     const b = req.body || {};
-    send(res, await REC.setStage(ctx, req.params.id, String(b.stage_id || ""), whoOf(req), { lostReason: b.lost_reason, revisitOn: b.revisit_on }));
+    const r = await REC.setStage(ctx, req.params.id, String(b.stage_id || ""), whoOf(req), { lostReason: b.lost_reason, revisitOn: b.revisit_on });
+    // SALES-4 item 3: every move carries its Undo (the stage it came from). SALES4_PLANT=noundo drops it (tests only).
+    if (r.ok && !r.unchanged && r.from_stage_id && PLANT4 !== "noundo") r.undo = { stage_id: r.from_stage_id, name: r.from_name };
+    send(res, r);
   }));
 
   app.post("/ops/sales/merge/:type", salesLimiter, door, wrap(async (req, res) => {
@@ -355,6 +352,8 @@ function mount(app, { query, run, wrap, opsOnly, billing }) {
   require("./routesC").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send, billing: billing || (() => ({})) });
   // SALES-3 Part B: the Customers board, nurture, proof.
   require("./routesD").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
+  // SALES-4: Now, one-click next steps, Undo of a calendar move, the deal header.
+  require("./routesE").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
 }
 
 module.exports = { mount, settings };
