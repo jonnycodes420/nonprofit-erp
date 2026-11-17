@@ -6,7 +6,7 @@
 // that mentions the morning email now reads this one function, given the signed-in person's
 // /me `notifications` and `org`, so a sentence can't promise an email the server won't send.
 //
-//   org_off  the org's staff mail is off, or it has not finished onboarding (the server's
+//   staff_mail_off  the org's staff mail is off, or it has not finished onboarding (the server's
 //            mailPolicy.orgMailDecision): nothing goes, whatever her switch says
 //   off      her own switch is off
 //   on       it comes at her hour, on her days, in the org's time zone
@@ -29,7 +29,7 @@ export function morningEmailState(notifications, org) {
   const n = notifications || null;
   const hour = n && n.brief && Number.isInteger(Number(n.brief.hour)) ? Number(n.brief.hour) : 8;
   const days = n && n.brief && n.brief.days === "every_day" ? "every_day" : "weekdays";
-  const state = !staffMailOn(org) ? "org_off" : !(n && n.morningEmail) ? "off" : "on";
+  const state = !staffMailOn(org) ? "staff_mail_off" : !(n && n.morningEmail) ? "off" : "on";
   const when = `${days === "every_day" ? "every morning" : "each weekday morning"} at ${hourLabel(hour)}${org && org.timezone ? ` (${org.timezone})` : ""}`;
   return { state, on: state === "on", hour, days, when };
 }
@@ -40,7 +40,7 @@ export function morningEmailSentence(st, where = "tasks") {
   if (where === "step") {
     return s.on ? "It becomes a task, in your morning email when it's due." : "It becomes a task on your Tasks page when it's due.";
   }
-  if (s.state === "org_off") return "Steward is not sending staff email for your organization yet, so your tasks are here and on Home, not in an email.";
+  if (s.state === "staff_mail_off") return "Steward is not sending staff email for your organization yet, so your tasks are here and on Home, not in an email.";
   if (s.state === "off") return "Your morning email is off, so your tasks are here and on Home, not in an email.";
   return where === "home"
     ? `Your morning email lists what needs you ${s.when}.`

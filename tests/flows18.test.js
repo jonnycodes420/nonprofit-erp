@@ -26,7 +26,7 @@
 //   · the Thank-you starter back on {{gift_amount}} → §2 "every starter" and the refund preview red.
 //   · groups.js role=donor back on PT.typeSql("donor") → §3 Donors search, counts and truth check red.
 //   · the row's team read from the row before it in PeerToPeer.jsx → §4 first paint red.
-//   · Tasks' line hard-coded "Your morning email lists these…" → §5 off/org_off red.
+//   · Tasks' line hard-coded "Your morning email lists these…" → §5 off/staff_mail_off red.
 //   · draftTemplate without the About line → §6 template red.
 "use strict";
 const fs = require("fs");
@@ -189,7 +189,7 @@ const addDays = require("../orgTime").addDays;
   const sOrg = MS.morningEmailState({ morningEmail: true, brief: { hour: 8 } }, { ...onOrg, staff_mail_enabled: false });
   ok("§5 on: Tasks names her own hour and days", sOn.state === "on" && /7:00 AM/.test(MS.morningEmailSentence(sOn)) && /weekday/.test(MS.morningEmailSentence(sOn)), MS.morningEmailSentence(sOn));
   ok("§5 off: Tasks says it is off, and promises no email", sOff.state === "off" && /is off/.test(MS.morningEmailSentence(sOff)) && !/lists these/.test(MS.morningEmailSentence(sOff)), MS.morningEmailSentence(sOff));
-  ok("§5 the org's staff mail off: Tasks says Steward is not sending staff email, whatever her switch says (staging)", sOrg.state === "org_off" && /not sending staff email/.test(MS.morningEmailSentence(sOrg)), MS.morningEmailSentence(sOrg));
+  ok("§5 the org's staff mail off: Tasks says Steward is not sending staff email, whatever her switch says (staging)", sOrg.state === "staff_mail_off" && /not sending staff email/.test(MS.morningEmailSentence(sOrg)), MS.morningEmailSentence(sOrg));
   ok("§5 a next step promises the morning email only when it is on",
     /morning email/.test(MS.morningEmailSentence(sOn, "step")) && !/morning email/.test(MS.morningEmailSentence(sOff, "step")), null);
   const hard = [];
@@ -273,7 +273,7 @@ const addDays = require("../orgTime").addDays;
       ok("§5 Tasks, on: names her hour (7:00 AM), no link", on.state === "on" && /7:00 AM/.test(on.text) && on.link === 0, on);
       await q(`UPDATE orgs SET staff_mail_enabled=false WHERE id=$1`, [ORG]);
       const orgOff = await line();
-      ok("§5 Tasks, the org's staff mail off: says Steward is not sending staff email (her switch on)", orgOff.state === "org_off" && /not sending staff email/.test(orgOff.text), orgOff);
+      ok("§5 Tasks, the org's staff mail off: says Steward is not sending staff email (her switch on)", orgOff.state === "staff_mail_off" && /not sending staff email/.test(orgOff.text), orgOff);
     });
     await browser.close();
   }

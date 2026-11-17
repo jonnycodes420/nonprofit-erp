@@ -9,8 +9,8 @@
 //
 // THE RULE, ONE PLACE: a person is a donor when their stored roles say so (a
 // NULL roles column is a legacy row, a donor) OR when they have given, by the
-// profile's own rule (donorLabel.js HAS_GIVEN: a counted gift on file, or a
-// lifetime above zero from the old system). The second half is applied ON
+// profile's rule (a counted gift on file, or a lifetime from the old system), read
+// from the stored totals. The second half is applied ON
 // READ: nothing stored changes, and a giver typed as a contact or an
 // organisation keeps those roles and gains Donor beside them.
 //
@@ -21,8 +21,13 @@
 const { HAS_GIVEN } = require("./donorLabel");
 
 const STORED = (d) => `(${d}.person_types IS NULL OR ${d}.person_types @> '["donor"]'::jsonb)`;
+// Has given, read from the stored totals: NUMBERS-6 made them the one writer's (donorTotals.js),
+// guarded in CI, so the list reads no gift row per person (list5's probe budget: a gift probe for
+// every contact on a 10,000-person list cost 6,400 probes). tests/lib/flows18Checks.js recounts
+// the same people from the gift rows, so a stored total that drifted would show there.
+const GAVE_STORED = (d) => `(COALESCE(${d}.gift_count, 0) > 0 OR COALESCE(${d}.total_giving, 0) > 0 OR COALESCE(${d}.imported_total, 0) > 0)`;
 // SQL: person `d` is a donor. `d` is the donors row's alias; with none, the table name.
-const IS_DONOR = (d = "d") => { const a = d || "donors"; return `(${STORED(a)} OR ${HAS_GIVEN(a)})`; };
+const IS_DONOR = (d = "d") => { const a = d || "donors"; return `(${STORED(a)} OR ${GAVE_STORED(a)})`; };
 
 // The same rule on a row already read: { person_types, total_giving, gift_count, has_given? }.
 // `has_given` (from HAS_GIVEN in the SELECT) wins when present; otherwise the stored totals.

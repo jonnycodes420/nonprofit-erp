@@ -3,6 +3,10 @@
 Read this when you touch the person record: donors, organisations, non-donors, households, photos, merge and duplicates, deletion, the timeline, the profile, volunteers or events.
 
 ## Rules
+- **Whoever has given is a donor (FLOWS-18, 17 Nov 2026).** `shared/numbers/isDonor.js` `IS_DONOR`: marked Donor (or a
+  NULL roles column) OR has given by the profile's rule (`HAS_GIVEN`). The Donors tab, its counts, Groups, portfolios,
+  appeal audiences and Everyone's breakdown read it; a giver typed contact or organisation gains Donor on read
+  (`typesOnRead`) and nothing stored changes. `assertSurfacesAgree` checks it (`tests/lib/flows18Checks.js`).
 - **FLOWS-4 (9 Nov 2026): a person search answers in one order.** The exact full name first, then the name
   starting with the whole query as words, then starting with it, then containing it, then any other match; ties by
   the most recent gift, then the record's last change (`personMatch.RANK_ORDER_SQL`). Enter opens the top one, and
@@ -428,6 +432,8 @@ Read this when you touch the person record: donors, organisations, non-donors, h
 - **"About them" is a column, not a Note (DATES-1).** `donors.about_them`, 500 characters at most, read first at the
   top of the profile's About box, edited in place (`PATCH /donors/:id/about-them`). It is in the export and erased with
   the person, in Brief me and Atlas's drafting context, and importable; it never appears in the Notes tab or timeline.
+  FLOWS-18: a draft email opens with its detail (`shared/draftAbout.js`); DATES-1's "for tone only, never stated" was why
+  Draft an email stayed a form letter. The draft is hers to edit before anything goes.
 
 ## Gotchas
 - **An `<img>` backend path missing from vercel.json fails exactly like "no photo uploaded".** Proxy

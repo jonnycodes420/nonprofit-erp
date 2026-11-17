@@ -33,6 +33,10 @@ stops it like everything else. Tested in `tests/mail-suppression.test.js` §12a 
 the morning email unless the person turned on its own reminder, so no step goes unmentioned.
 
 ## Rules
+- **A starter names only fields its engine fills (FLOWS-18, 17 Nov 2026).** The campaign starters open in the block
+  editor, so they use its fields (`shared/emailBlocks.js` EMAIL_MERGE_FIELDS: `{{last_gift_amount}}`, never the older
+  `{{gift_amount}}`, which it now reads as the same gift for drafts already saved); letters use the brand kit's.
+  `tests/flows18.test.js` §2 fails on any starter, template or letter tag its engine can't fill.
 - **One audience, reasons that add up (FLOWS-7, 12 Nov 2026).** The Overview, the campaign editor and the send read
   `shared/numbers/audienceReasons.js`: Everyone's people only (an archived or erased record is never mailed by a campaign), each
   in one place by `donorMailDecision`. The suppression list gives bounced, then complained, then the newest reason.

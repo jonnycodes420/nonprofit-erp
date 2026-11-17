@@ -3,6 +3,9 @@
 Read this when you touch anything a model or an automation does: drafts, the Anthropic gate, `askClaude`, workflows, or system actors.
 
 ## Rules
+- **Draft an email opens with the About note (FLOWS-18, 17 Nov 2026).** Atlas's draft, AI and template alike, puts the
+  note's detail in the lines after the greeting (`shared/draftAbout.js`); a model draft whose opening lines name none of it
+  is not used, and the template is. Brief me, Call script and the draft read the same facts.
 - **Atlas proposes, she saves (SENDS-1, 7 Nov 2026).** A call, a note, a follow-up or a draft Atlas would write is one
   proposal card listing exactly what will be written, with Save and Edit (`server/atlas/proposal.js`,
   `client/src/components/atlas/ProposalCard.jsx`). Nothing is written until `POST /atlas/:id/save`, which claims the
