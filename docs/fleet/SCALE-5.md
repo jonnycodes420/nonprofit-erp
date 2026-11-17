@@ -7,7 +7,7 @@ SCALE-5 changed no screen. It changed when background work runs: smart moves (th
 | Check | Clicks | Expect now |
 |---|---|---|
 | Moves still happen (needs a write, org_stagewalk) | In org_stagewalk: add a person, record a gift dated 14 months ago, set Stage to Cultivate. Wait 6 minutes, then reopen the profile. | Stage reads **Lapsed**. Moves shows one line, "Auto: lapsed: no gift in the last 12 months", with no officer. |
-| Off the happy path: a pledge (needs a write) | On that same person, add a pledge due next month. Wait 6 minutes and reopen. | Stage is back to **Stewardship**. Moves adds "Auto: they made a pledge". Delete the pledge: they stay in Stewardship until the next night, then go back to Lapsed. |
+| Off the happy path: a pledge (needs a write) | On that same person, add a pledge due next month. Wait 6 minutes and reopen. | Stage is back to **Stewardship**. Moves adds "Auto: they made a pledge". Then delete the pledge and wait 6 minutes: they go back to **Lapsed** with a second "Auto: lapsed" line (the delete is a change, so the next tick sees it). |
 | Off the happy path: an officer's move wins (needs a write) | Move a different lapsing person to Qualify by hand. Wait 6 minutes. | They stay in Qualify. No automatic move is added. |
 | Harborlight unchanged (read only) | Harborlight → Pipeline → the Lapsed column count. Open any lapsed person → Moves. | Same count as yesterday's walk. Moves are dated as before. Nothing moved twice. |
 | Donors under load | Harborlight → Donors, a search, then page 2, five times in a row. | Each answers in about a second. No "Something went wrong", no blank list. |
