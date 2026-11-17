@@ -68,8 +68,9 @@ async function givingPagePublicPayload(org, page, reqQuery, { editing = false } 
   // WALKB-1: a hint is never published, and a placeholder EIN never reaches a stranger.
   const PH = await import("../../shared/placeholderCopy.js");
   const pageToday = orgToday(await orgTz(org.id));   // ORG_TZ_SEAM_OK: days left is the org's own day
-  const daysLeft = page.campaign_end_date
-    ? Math.max(0, Math.round((Date.parse(page.campaign_end_date + "T00:00:00Z") - Date.parse(pageToday + "T00:00:00Z")) / 86400000)) : null;
+  // FLOWS-18: days left and "ended" are the one rule (shared/numbers/endsOn.js).
+  const pageEnds = require("../../shared/numbers/endsOn").endsOn(page.campaign_end_date || page.page_ends_on || null, { today: pageToday });
+  const daysLeft = pageEnds.daysLeft;
 
   // BUILD-95 §5B — the built page, if she has published one.
   const { normalizeFormPosition } = await widgetMod();
@@ -129,6 +130,7 @@ async function givingPagePublicPayload(org, page, reqQuery, { editing = false } 
       design: GD.normalizeDesign(page.design),
       campaignDonors: page.campaign_id && page.campaign_donors != null ? Number(page.campaign_donors) : null,
       campaignDaysLeft: daysLeft,
+      ends: pageEnds,   // FLOWS-18: { endsOn, daysLeft, state: open|last_day|ended|none, words }
       fundId: page.fund_id, fundName: page.fund_name || null,
       // "Counts toward" linkage (attribution FIX) — when set, the public
       // thermometer shows the campaign's progress, not a second page-local goal.

@@ -68,7 +68,7 @@ export function renderMergeFields(html, values = {}, { text = false } = {}) {
   const greeting = values.greeting || values.first_name;
   // TRUST-1: a person named as having no gift (gift_amount given, and empty)
   // reads no sentence about one. A sample preview (no gift_amount) keeps it.
-  const named = Object.prototype.hasOwnProperty.call(values, "gift_amount");
+  const named = Object.prototype.hasOwnProperty.call(values, "gift_amount");   // last_gift_amount reads the same value
   const source = named ? withoutMissingGift(normalizeMergeFields(html), {
     hasGift: hasValue(values.gift_amount),
     hasTotal: !Object.prototype.hasOwnProperty.call(values, "total_giving") || hasValue(values.total_giving),
@@ -78,6 +78,7 @@ export function renderMergeFields(html, values = {}, { text = false } = {}) {
     .replace(/{{donor_name}}/g, v.donor_name)
     .replace(/{{org_name}}/g, v.org_name)
     .replace(/{{gift_amount}}/g, v.gift_amount)
+    .replace(/{{last_gift_amount}}/g, v.gift_amount)   // FLOWS-18: the block engine's name for the same gift
     .replace(/{{total_giving}}/g, v.total_giving)
     .replace(/{{year}}/g, v.year);
 }
@@ -129,7 +130,8 @@ export function emailTemplates({ orgName = "your organization", t = (k) => DEFAU
       body: [
         p("Hello {{first_name}},"),
         // TRUST-1: one sentence, so a person with no gift reads "Thank you for being part of this." instead.
-        p(`Thank you for your gift of {{gift_amount}} to ${org}, which arrived safely and is already at work.`),
+        // FLOWS-18: the starters open in the block editor, so every field is one it fills (shared/emailBlocks.js EMAIL_MERGE_FIELDS).
+        p(`Thank you for your gift of {{last_gift_amount}} to ${org}, which arrived safely and is already at work.`),
         p("I know you have a choice about where this goes, and I am grateful you chose us."),
         p("If you ever want to know exactly what your giving has paid for, write back and ask. I will tell you."),
       ].join("\n"),
@@ -138,12 +140,12 @@ export function emailTemplates({ orgName = "your organization", t = (k) => DEFAU
       key: "year_end",
       label: "Year-end",
       blurb: "The December letter. One year named, one ask, one deadline that is real.",
-      subject: `Before {{year}} ends`,
+      subject: `Before the year ends`,
       body: [
         p("Hello {{first_name}},"),
         p(`This is the last thing you will hear from ${org} this year.`),
         p("A gift before the 31st counts for this tax year, and it lands with us while the year's work is still in front of us rather than behind."),
-        p("Your giving so far comes to {{total_giving}}, and I am grateful for every part of it."),
+        p("I am grateful for everything you have given so far, every part of it."),
         p("Whatever you decide, I hope the end of the year is a kind one."),
       ].join("\n"),
     },

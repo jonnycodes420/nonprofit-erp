@@ -11,7 +11,7 @@
 import RemoveMenu from "./RemoveMenu";
 import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import PhotoField from "./PhotoField";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { T, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
@@ -313,10 +313,17 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
     <button style={btn(true)} data-testid="p2p-new" onClick={() => setCreating(true)}>New peer-to-peer campaign</button>);
   const newForm = creating && <NewCampaignForm orgSlug={orgSlug} onMade={made} onCancel={() => setCreating(false)} />;
 
+  // FLOWS-18: only the answer for the campaign now chosen is drawn; an older answer that lands
+  // late (a switch, a reload after a save) never paints over it.
+  const wantRef = useRef("");
   const load = () => {
     if (!pageId) return;
-    apiFetch(`/giving-pages/${pageId}/p2p`).then(setD).catch(e => { setD(null); setMsg(errorMessage(e, "That campaign did not load.")); });
+    const want = wantRef.current = pageId;
+    apiFetch(`/giving-pages/${pageId}/p2p`).then(r => { if (wantRef.current === want) setD(r); })
+      .catch(e => { if (wantRef.current !== want) return; setD(null); setMsg(errorMessage(e, "That campaign did not load.")); });
   };
+  // The team a row names is the team card's own, from the same read.
+  const teamOf = f => (d && f && f.teamId ? (d.teams || []).find(t => t.id === f.teamId) || null : null);
   useEffect(() => { load(); }, [pageId]);
 
   const takedown = async (kind, id, status, name, prevStatus = "") => {
@@ -476,7 +483,7 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
             {d.pending.map(f => (
               <div key={f.id} data-testid="p2p-pending-row" style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", fontSize: 13, color: T.ink, padding: "8px 0", borderTop: "1px solid " + T.bg3 }}>
                 <strong style={{ minWidth: 160 }}>{f.name}</strong>
-                {f.teamName && <span style={{ color: T.ink3 }}>{f.teamName}</span>}
+                {teamOf(f) && <span style={{ color: T.ink3 }}>{teamOf(f).name}</span>}
                 <span style={{ color: T.ink2, flex: "1 1 220px", fontSize: 12.5 }}>{f.story ? (f.story.length > 140 ? f.story.slice(0, 140) + "…" : f.story) : "No story yet."}</span>
                 {!isReadOnly && isAdmin && <span style={{ display: "flex", gap: 6 }}>
                   <button style={btn(true)} data-testid="p2p-approve" onClick={() => takedown("fundraiser", f.id, "active", f.name, "pending")}>Approve</button>
@@ -570,7 +577,8 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
                   source={{ key: "fundraiser-gifts", params: { fundraiser: f.id } }} />
                 {f.goalCents ? <span style={{ color: f.raisedCents > f.goalCents ? T.greenDk : T.ink3 }}>{f.raisedCents > f.goalCents ? `, goal ${money(f.goalCents)} passed` : ` of ${money(f.goalCents)}`}</span> : null}
               </span>
-              {f.teamName && <span style={{ color: T.ink3 }}>{f.teamName}</span>}
+              {/* FLOWS-18: the row's team is the team card's own (same read), never a name carried on the row. */}
+              {teamOf(f) && <span data-testid="p2p-fundraiser-team" style={{ color: T.ink3 }}>{teamOf(f).name}</span>}
               <span style={{ color: T.ink3 }}>{f.giftCount} {f.giftCount === 1 ? "gift" : "gifts"}</span>
               {!f.isPerson && <span style={{ color: T.ink3 }} title="This fundraiser is not matched to a person in the CRM, so no soft credit is being recorded for them. Matching is by exact email only.">no record matched</span>}
               {!isReadOnly && isAdmin && <RowMenu

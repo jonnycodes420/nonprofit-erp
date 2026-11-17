@@ -1627,7 +1627,10 @@ export default function Donate({ preview = null }) {
                   {!p2p && linked && (givingPage.campaignDonors != null || givingPage.campaignDaysLeft != null) && (
                     <div data-testid="goal-extra" style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px", marginTop: 10, fontSize: 13, color: T.ink2 }}>
                       {givingPage.campaignDonors != null && <span data-testid="goal-donors"><strong style={{ color: T.ink }}>{givingPage.campaignDonors.toLocaleString("en-US")}</strong> {givingPage.campaignDonors === 1 ? "donor" : "donors"}</span>}
-                      {givingPage.campaignDaysLeft != null && <span data-testid="goal-days"><strong style={{ color: T.ink }}>{givingPage.campaignDaysLeft}</strong> {givingPage.campaignDaysLeft === 1 ? "day" : "days"} left</span>}
+                      {/* FLOWS-18: the server's one rule (shared/numbers/endsOn.js): the end date reads "Last day", never "0 days left". */}
+                      {givingPage.campaignDaysLeft != null && <span data-testid="goal-days" data-ends-state={givingPage.ends?.state || ""}>{givingPage.ends && givingPage.ends.state !== "open"
+                        ? <strong style={{ color: T.ink }}>{givingPage.ends.words}</strong>
+                        : <><strong style={{ color: T.ink }}>{givingPage.campaignDaysLeft}</strong> {givingPage.campaignDaysLeft === 1 ? "day" : "days"} left</>}</span>}
                     </div>
                   )}
                 </div>

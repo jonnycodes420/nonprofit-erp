@@ -21,7 +21,8 @@
 // sum, so a reader adding the first one ("1,122 plus 66 is 1,188") had no way to see the minus.
 "use strict";
 const PLANT = process.env.TEST_MODE === "1" ? String(process.env.FLOWS10_PLANT || "") : "";   // tests plant defects here; never set outside tests
-const { donorOnlySql } = require("../personType.js");
+const { IS_DONOR } = require("./isDonor");   // FLOWS-18: the Donors tab's one rule
+const donorOnlySql = d => IS_DONOR(d);
 const { EVERYONE } = require("./everyone");
 
 const HAS_GIFT_ROW = (d = "d") => `EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id = ${d}.id AND g.org_id = ${d}.org_id)`;

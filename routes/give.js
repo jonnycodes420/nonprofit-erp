@@ -3038,6 +3038,7 @@ app.get("/giving-pages/:id/p2p", requireAuth, wrap(async (req, res) => {
     // payloads never carry it.
     email: f.email, story: f.story || "", imageUrl: f.image_url || "",
   }));
+  require("../server/give/p2pTeams").teamsFromRows(teams, shaped);   // FLOWS-18: one read for the cards and the rows
   const teamCentsTotal = teams.reduce((a, t) => a + cents(t.raised), 0);
   const soloCents = shaped.filter(f => !f.teamName).reduce((a, f) => a + f.raisedCents, 0);
 

@@ -296,16 +296,14 @@ async function readSteps(orgId, text, { today, onPage, gateP = null }) {
 
 // The email's words: the model when AI is on, else the template. Never a
 // fact: the run's own check refuses a draft that states one she did not say.
-async function writeDraft(orgId, { firstName, opening, words, month, thanks, meet, aboutThem = "", facts = [], fact = null, onWords = null, ctx = null }) {
+async function writeDraft(orgId, { firstName, opening, words, month, thanks, meet, aboutThem = "", facts = [], fact = null, onWords = null, ctx = null, fullName = "" }) {
   // SPEED-3: the voice, the switch and the module are read at once, not in turn.
   // ATLAS-5: once per request (ctx), however many emails it drafts.
   const c = ctx || {};
-  const [AT_, voice, gate] = await Promise.all([AT(), c.voice || (c.voice = orgVoice(orgId)), c.gate || (c.gate = agentGate(orgId))]);   // ATLAS-3: in the org's voice
-  // FLOWS-10 item 5 (W-1113-Donors-26): the template names one real fact from their record (Call
-  // script's facts), never "Hello from us" and "I wanted to reach out".
-  const template = { subject: thanks || fact ? `Thank you, ${firstName}` : `A note for ${firstName}`,
-    body: [opening || `Dear ${firstName},`, "", fact || (thanks ? "Thank you so much for your generosity. It means a great deal to all of us." : "Thank you for being part of what we do."),
-      ...(meet ? ["", `I would love to meet${month ? ` in ${month}` : ""} to share what your support makes possible. Would that work for you?`] : []), "", `${voice.signoff || "With gratitude"},`, ...(voice.signature ? [voice.signature] : [])].join("\n") };
+  const [AT_, voice, gate, DA] = await Promise.all([AT(), c.voice || (c.voice = orgVoice(orgId)), c.gate || (c.gate = agentGate(orgId)), import("../shared/draftAbout.js")]);   // ATLAS-3: in the org's voice
+  // FLOWS-10 item 5 / FLOWS-18 (W-1113-Donors-26): the template names one real fact from their record
+  // and opens with the About note's detail (shared/draftAbout.js draftTemplate).
+  const template = DA.draftTemplate({ firstName, opening, fact, thanks, meet, month, aboutThem, voice });
   if (!gate.ok) return template;
   try {
     const prompt = AT_.buildDraftPrompt({ firstName, words, month, aboutThem, facts, signoff: voice.signoff || "" });
@@ -319,7 +317,8 @@ async function writeDraft(orgId, { firstName, opening, words, month, thanks, mee
     const use = (msg.content || []).find(b => b.type === "tool_use" && b.name === AT_.DRAFT_TOOL.name);
     const out = use && use.input;
     // The month she asked to meet in must be in it; otherwise the template is.
-    if (out && out.body && out.subject && (!meet || !month || out.body.includes(month))) return { subject: String(out.subject).slice(0, 200), body: String(out.body).replace(/\s+—\s+|—/g, ", ").slice(0, 4000) };
+    // FLOWS-18: and a draft whose opening lines leave out the About note's detail is not used.
+    if (out && out.body && out.subject && (!meet || !month || out.body.includes(month)) && DA.opensWithAbout(out.body, aboutThem, { name: fullName || firstName })) return { subject: String(out.subject).slice(0, 200), body: String(out.body).replace(/\s+—\s+|—/g, ", ").slice(0, 4000) };
   } catch (e) {
     console.error("[atlas] draft failed:", e && e.status ? e.status : "", String(e && e.message || e).slice(0, 160));
     await recordAiFallback(orgId, "atlas.draft", e).catch(() => {});
@@ -547,7 +546,7 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
     drafts.set(st, (async () => {
       const AM = require("./atlasMore");   // FLOWS-10 item 5: the facts Call script reads, About note first
       const [[ab], G, fx] = await Promise.all([query("SELECT about_them FROM donors WHERE id=? AND org_id=?", [st.donorId, orgId]), import("../shared/greeting.js"), AM.facts(orgId, st.donorId).catch(() => null)]);
-      return writeDraft(orgId, { aboutThem: (ab && ab.about_them) || "", facts: fx ? AM.factLines(fx).filter(l => !/^What the team wrote about them/.test(l)) : [], fact: AM.oneFact(fx), firstName: first(nm(st.donorId)), opening: G.greetingLine({ name: nm(st.donorId) }), words: st.words, month: when ? AT_.monthWord(when.date) : "",
+      return writeDraft(orgId, { fullName: nm(st.donorId), aboutThem: (ab && ab.about_them) || "", facts: fx ? AM.factLines(fx).filter(l => !/^What the team wrote about them/.test(l)) : [], fact: AM.oneFact(fx), firstName: first(nm(st.donorId)), opening: G.greetingLine({ name: nm(st.donorId) }), words: st.words, month: when ? AT_.monthWord(when.date) : "",
         thanks: /\bthank/i.test(st.words), meet: /\bmeet|meeting|lunch|coffee|visit|sit down\b/i.test(st.words), onWords, ctx: req.atlasCtx || (req.atlasCtx = {}) });
     })().finally(() => { me.done = true; showNext(); }));
     drafts.get(st).catch(() => {});   // awaited at its step; never an unhandled rejection before then

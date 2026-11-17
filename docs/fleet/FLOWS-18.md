@@ -1,0 +1,12 @@
+# For the fleet · FLOWS-18
+
+What changed on staging with FLOWS-18, and what each re-check should now show. Harborlight is read only; any write goes in org_stagewalk.
+
+| W-ID | Re-check (your clicks) | Expect now |
+|---|---|---|
+| W-1117-Atlas-01X | Fundraising → Campaigns & pages → Campaigns, Year-end 2026; Settings → Giving Pages; Year-end 2026 → Edit in editor (Countdown block); the public page `/give/harborlight/year-end-2026` | "44 days left" on Nov 17 (one less each day), in Harborlight's own time zone. Dec 31 itself reads "Last day", never "Ended" or "0 days left"; "Ended" from Jan 1. The public page shows "Not open yet" (Stripe isn't connected) and never "Ended" with it. **We could not reproduce your exact "0 days left" / "Ended on Dec 31" screen on Nov 17; if you see it again, note the URL and the time.** |
+| W-1116-Fundraising-15X | Communications → New campaign → Thank-you | The preview reads the person's last real gift (a refund is never it), and the editor flags no field. No `{{` anywhere. Drafts saved from the old starter show the amount too. |
+| W-1117-Fundraising-01 | Donors → search "Meridian"; Donors tab's officer portfolios; Fundraising lifetime | Meridian Foundation is under Donors (Donor beside its own role) and in the portfolios. The portfolio line ends "…everyone who has given is on the Donors tab", and the Donors total equals Fundraising's lifetime for the people on file. |
+| W-1117-Volunteers-30 | Fundraising → Peer-to-peer → Spring Paddle, first load and after reload | Every team label on a fundraiser row is one of the team cards, and each card's "N fundraisers" and raised match the rows carrying its name, on first paint. |
+| W-1117-Volunteers-19 | Tasks (top, under "Your tasks."); Settings → Your email | Tasks says what is true: "Your morning email is off…" with **Turn it on**, or, when Steward isn't sending staff email for the org (Harborlight, a demo), "Steward is not sending staff email for your organization yet…". When it is on, it names your own hour and days. **We found no "8am ET" sentence in the code or help; if you see it again, note where.** |
+| W-1113-Donors-26 | Margaret Chen → More → Draft an email | The draft opens with what the team wrote in her About note (the program and people it names), on both the AI and the template path. On Nov 17 staging's Margaret had no About note (only "Interest: Harbor Skills Boat"); with an About note written in org_stagewalk, its program appears in the first lines. |

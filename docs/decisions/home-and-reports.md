@@ -3,6 +3,13 @@
 Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follow-ups, goals, report definitions, custom reports or board reports.
 
 ## Rules
+- **Days left is one rule, in the org's day (FLOWS-18, 17 Nov 2026).** `shared/numbers/endsOn.js`: the end date is
+  open all day and reads "Last day", never "Ended" or "0 days left"; the day after it reads "Ended". Every campaign card,
+  giving page, countdown block and goal reads it with the org's civil day; none counts milliseconds to UTC midnight.
+  "Not open yet" is Stripe's state (`server/give/takesGifts.js`), never a days-left one.
+- **The morning email is said as it is (FLOWS-18).** Every sentence that names it reads `shared/morningEmailState.js`
+  (her switch, her hour and days, the org's staff mail). Tasks says when it is off, with the link to turn it on; only
+  Settings → Your email describes the email itself (`tests/flows18.test.js` §5 reads the client for any other).
 - **One pace rule, no band below the line (FLOWS-7, 12 Nov 2026).** `shared/numbers/pace.js`: On pace only when the share
   raised (or committed, and the sentence says which) is at least the share of time gone and the card's own projection reaches
   the goal; otherwise "Behind pace" with the gap in dollars. The server attaches it to every card and goal; no screen works it

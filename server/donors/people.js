@@ -329,7 +329,7 @@ app.get("/people", requireAuth, wrap(async (req, res) => {
     sql`SELECT d.id, d.name, d.email, d.phone, d.kind, d.person_types, d.gift_count, d.total_giving, d.last_gift_date
        FROM donors d
       WHERE d.org_id=${req.user.orgId} AND d.deleted_at IS NULL AND d.erased_at IS NULL
-        AND ${sql.pick(role, Object.fromEntries(PEOPLE_ROLES.map(r => [r, PT.typeSql(r, "d")])))}
+        AND ${sql.pick(role, Object.fromEntries(PEOPLE_ROLES.map(r => [r, r === "donor" ? require("../../shared/numbers/isDonor").IS_DONOR("d") : PT.typeSql(r, "d")])))}   /* FLOWS-18 */
       ORDER BY lower(d.name), d.id
       LIMIT 5000`);   // TRUTH-2: an erased person is on no list
   res.json({

@@ -14,6 +14,7 @@ import { T } from "./shared";
 import { SkeletonBar } from "./Skeleton";
 import { openCheckSnap } from "./CheckSnap";
 import { reloadMailTypes, mailTypesNow } from "../lib/mailTypes";
+import { useMorningEmail } from "../lib/morningEmail";   // FLOWS-18: the morning email as it really is
 
 const card = { border: "1px solid " + T.bg3, borderRadius: 14, padding: "12px 14px", background: T.white };
 const eyebrow = { fontSize: 10, fontWeight: 800, color: T.ink3, marginBottom: 6 };
@@ -53,6 +54,7 @@ export function OwnersCard({ owners, onNavigate }) {
   const [done, setDone] = useState(null);   // { ids, n } once assigned
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const mail = useMorningEmail();   // FLOWS-18
   if (!owners || (!owners.offer && !done)) return null;
   const go = async () => {
     setBusy(true); setMsg("");
@@ -72,7 +74,7 @@ export function OwnersCard({ owners, onNavigate }) {
       <div style={eyebrow}>Owners</div>
       {done ? <>
         <div data-testid="home-owners-done" style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>
-          Your {done.n === 1 ? "largest giver is" : `${done.n.toLocaleString("en-US")} largest givers are`} yours now. Home, the calls and your morning email start with them.</div>
+          Your {done.n === 1 ? "largest giver is" : `${done.n.toLocaleString("en-US")} largest givers are`} yours now. {mail && mail.on ? "Home, the calls and your morning email start with them." : "Home and the calls start with them."}</div>
         <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
           <button type="button" data-testid="home-owners-undo" style={link} disabled={busy} onClick={undo}>Undo</button>
           <button type="button" style={link} onClick={() => onNavigate && onNavigate("donors")}>Choose owners for the rest</button>

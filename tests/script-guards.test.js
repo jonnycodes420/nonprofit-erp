@@ -230,6 +230,8 @@ const LOOPBACK_HARDCODED = [
 // Read-only against whatever BASE points at (may default to prod): their only
 // write-shaped call is POST /auth/login. Verified below, not just trusted.
 const PROD_READONLY = [
+  // FLOWS-18: lists saved drafts and email templates still naming a field the block engine can't fill; SELECTs only, no --apply.
+  "flows18-starter-tags",
   // FLOWS-15: lists saved Atlas answers whose count is money, and unsent campaigns that now leave never-givers out; READ ONLY session, no --apply.
   "flows15-old-rows",
   // FLOWS-12: lists erased people still linked to a household or an officer; one READ ONLY session, no --apply.

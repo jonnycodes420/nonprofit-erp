@@ -1188,7 +1188,8 @@ __share({ PT_READY });
 // SPLIT-2 server.js piece 154
 // Every money surface that must exclude a volunteer splices THIS, and there is
 // exactly one of it. See shared/personType.js for why it is NULL-tolerant.
-const donorOnly = (alias = "") => `(${alias ? alias + "." : ""}person_types IS NULL OR ${alias ? alias + "." : ""}person_types @> '["donor"]'::jsonb)`;
+// FLOWS-18: the one rule (shared/numbers/isDonor.js): marked Donor, or has given.
+const donorOnly = (alias = "") => require("../../shared/numbers/isDonor").IS_DONOR(alias);
 // SPLIT-2 end
 __share({ donorOnly });
 // SPLIT-2 server.js piece 155

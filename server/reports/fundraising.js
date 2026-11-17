@@ -361,7 +361,7 @@ app.get("/goals/active", requireAuth, wrap(async (req, res) => {
     commitment: commit,   // GIFTS-2
     // FLOWS-7: Home's pace is the server's, by the one rule (shared/numbers/pace.js).
     ...(({ paceState, paceSentence, paceMath, paceGap, paceBasis }) => ({ paceState, paceSentence, paceMath, paceGap, paceBasis }))(
-      paceWithCommitment(currentAmount, commit, goalAmount, goal.period_start, goal.period_end)),
+      paceWithCommitment(currentAmount, commit, goalAmount, goal.period_start, goal.period_end, orgToday(await orgTz(req.user.orgId)))),   // ORG_TZ_SEAM_OK (FLOWS-18)
   });
 }));
 
@@ -584,7 +584,7 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-5"
     const DD = await import("../../shared/displayDate.js");
     // GIFTS-2: the goal says whether pledges count; pace reads committed when they do.
     const commit = await goalCommitted(orgId, gr, currentAmount);
-    const pace = paceWithCommitment(currentAmount, commit, goalAmount, pStart, pEnd);
+    const pace = paceWithCommitment(currentAmount, commit, goalAmount, pStart, pEnd, orgToday(_fpTz));   // ORG_TZ_SEAM_OK (FLOWS-18)
     // A label that is only the amount again ("25,000") is not a name.
     const label = /^[\s$£€\d,.]*$/.test(String(gr.label || "")) ? null : gr.label;
     goal = {
@@ -617,7 +617,7 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-5"
        yearMode === "fiscal" && orgTime.orgFiscalStartMonth(_fpTz) !== 1 ? "fiscal" : "calendar"]);
     const budgeted = parseFloat(bud?.v) || 0;
     if (budgeted > 0) {
-      const pace = computeFundraisingPace((parseFloat(curRows[0]?.total) || 0), budgeted, cur.start, cur.end);
+      const pace = computeFundraisingPace((parseFloat(curRows[0]?.total) || 0), budgeted, cur.start, cur.end, "raised", orgToday(_fpTz));   // ORG_TZ_SEAM_OK (FLOWS-18)
       goal = {
         id: null, label: `Contributions budget, ${yearMode === "fiscal" ? await require("../shared/periodLabel").fyLabelOf(cur, orgTime.orgFiscalStartMonth(_fpTz)) : fyLabel}`,   // POLISH-6
         goalType: "budget", goalAmount: budgeted, currentAmount: (parseFloat(curRows[0]?.total) || 0),

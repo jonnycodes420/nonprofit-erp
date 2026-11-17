@@ -25,6 +25,8 @@ import { orgTodayCivil } from "../lib/orgToday";
 import { AttachFileField, uploadAttachment } from "./ProfileTimelineParts";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { TouchIcon } from "./touchIcons";
+import { useMorningEmail } from "../lib/morningEmail";   // FLOWS-18: the morning email as it really is
+import { morningEmailSentence } from "../../../shared/morningEmailState.js";
 // PERF-2: the Thread's row menus live in ThreadMenus.jsx; still importable from here.
 export { ThreadDismissMenu, PutItOnMyCalendar } from "./ThreadMenus";
 
@@ -50,6 +52,7 @@ function dueFromWords(label, today) {
 const SOON = [["In 1 week", 7], ["In 2 weeks", 14], ["In 1 month", 30]];
 
 export function LogConversationModal({ donor, thread = null, onSaved, onClose, org = null, onNavigate = null, editing = null, initialTouch = null, fromMove = false, initialKind = null, completesTaskId = null }) {
+  const mailState = useMorningEmail();   // FLOWS-18: "in your morning email" only when it is on
   const noteMode = !editing ? initialTouch === "note_only" : (editing.type === "note" && !metaOf(editing.metadata).touch_kind);
   const startKind = editing ? (kindOfEntry(editing) || "") : (initialKind || (initialTouch === "call_no_answer" ? "call" : TOUCH_KINDS.some(k => k.key === initialTouch) ? initialTouch : "call"));
   const [kind, setKind] = useState(noteMode ? "" : startKind);
@@ -282,7 +285,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
           {sanitizeStepLabel(nsLabel) ? (
             <div style={{ fontSize: 11, color: T.ink3, marginTop: 6, lineHeight: 1.5, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
               {SOON.map(([l, n]) => <button key={n} type="button" style={linkBtn} onClick={() => { setNsDue(addCivilDays(todayLocal(), n)); setNsDueSet(true); }}>{l}</button>)}
-              <span>{sanitizeStepTime(nsTime) ? `One email at ${formatStepTime(nsTime)} that day, instead of the morning list.` : "It becomes a task, in your morning email when it's due."}</span>
+              <span>{sanitizeStepTime(nsTime) ? `One email at ${formatStepTime(nsTime)} that day, instead of the morning list.` : morningEmailSentence(mailState, "step")}</span>
               {!tzKnown && onNavigate && <button type="button" style={linkBtn} onClick={() => { onClose && onClose(); onNavigate("settings", { section: "giving", focus: "timezone" }); }}>Set your time zone to add a time</button>}
             </div>
           ) : <div style={{ fontSize: 11, color: T.ink3, marginTop: 6 }}>Leave it empty and no task is made.</div>}

@@ -31,6 +31,7 @@
 // is a thing that silently stops being true, and this one would stop being true
 // on a date the whole campaign is about.
 import { countLabel } from "./countWords.js";
+import endsOnMod from "./numbers/endsOn.js";   // FLOWS-18: the one days-left rule
 export function thanksgivingDate(year) {
   let thursdays = 0;
   for (let day = 1; day <= 30; day++) {
@@ -255,11 +256,12 @@ export function goalBarSentence({ raisedCents, goalCents, hasPeerPages = false }
 // Days, in words, and it stops rather than going negative. A campaign page that
 // says "-4 days left" is a page nobody has looked at since it closed.
 export function countdownSentence(endDate, today) {
-  if (!endDate) return null;
-  const n = daysBetween(today, endDate);
-  if (n === null) return null;
-  if (n < 0) return "This campaign has closed. Thank you to everybody who gave.";
-  if (n === 0) return "Today is the last day.";
+  if (!endDate || !today) return null;
+  const e = endsOnMod.endsOn(endDate, { today });   // FLOWS-18: days and state from the one rule
+  if (e.state === "none") return null;
+  const n = e.daysLeft;
+  if (e.state === "ended") return "This campaign has closed. Thank you to everybody who gave.";
+  if (e.state === "last_day") return "Today is the last day.";
   if (n === 1) return "One day left.";
   if (n <= 14) return `${n} days left.`;
   const weeks = Math.round(n / 7);

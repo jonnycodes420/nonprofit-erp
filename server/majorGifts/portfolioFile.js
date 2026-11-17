@@ -23,8 +23,7 @@ const UNASSIGNED_WORDS = "Unassigned";
 const PIPELINE = ["prospect", "qualify", "cultivate", "solicit", "steward", "lapsed"];
 
 async function fileSql(d = "d") {
-  const PT = await import("../../shared/personType.js");
-  return `(${PICKABLE(d)} AND ${PT.typeSql("donor", d)})`;
+  return `(${PICKABLE(d)} AND ${require("../../shared/numbers/isDonor").IS_DONOR(d)})`;   // FLOWS-18: a giver is a donor
 }
 // SQL: person `d` is in an officer's row (BUILD-30, /portfolio/officers).
 const IN_OFFICER_ROW = (d = "d") => `(EXISTS (SELECT 1 FROM users u WHERE u.id = ${d}.assigned_to AND u.org_id = ${d}.org_id) AND COALESCE(${d}.stage, ${d}.suggested_stage) = ANY(ARRAY[${PIPELINE.map(s => `'${s}'`).join(",")}]))`;
@@ -44,7 +43,8 @@ async function footing(query, orgId, officers) {
             COUNT(*) FILTER (WHERE ${file} AND NOT ${UNASSIGNED("d")} AND NOT ${IN_OFFICER_ROW("d")})::int AS other_n,
             ROUND(COALESCE(SUM(${LIFETIME("d")}) FILTER (WHERE ${file} AND NOT ${UNASSIGNED("d")} AND NOT ${IN_OFFICER_ROW("d")}), 0)::numeric, 2) AS other_g,
             COUNT(*) FILTER (WHERE ${PICKABLE("d")} AND NOT ${file} AND ${IN_OFFICER_ROW("d")})::int AS out_n,
-            ROUND(COALESCE(SUM(${LIFETIME("d")}) FILTER (WHERE ${PICKABLE("d")} AND NOT ${file} AND ${IN_OFFICER_ROW("d")}), 0)::numeric, 2) AS out_g
+            ROUND(COALESCE(SUM(${LIFETIME("d")}) FILTER (WHERE ${PICKABLE("d")} AND NOT ${file} AND ${IN_OFFICER_ROW("d")}), 0)::numeric, 2) AS out_g,
+            ROUND(COALESCE(SUM(${LIFETIME("d")}) FILTER (WHERE ${PICKABLE("d")}), 0)::numeric, 2) AS all_g
        FROM donors d WHERE d.org_id = ?`, [orgId]);
   const fileN = r.file_n, fileC = cents(r.file_g);
   const unN = r.un_n, unC = cents(r.un_g), otherN = r.other_n, otherC = cents(r.other_g), outN = r.out_n, outC = cents(r.out_g);
@@ -58,11 +58,17 @@ async function footing(query, orgId, officers) {
   if (otherN) parts.push(`That includes ${n(otherN)} with an owner but no pipeline stage or an invite still pending (${usd(otherC)}), in no row above.`);
   if (outN) parts.push(`The officers' rows also hold ${n(outN)} ${outN === 1 ? "person who is" : "people who are"} not on the Donors tab (${usd(outC)}).`);
   if (unN) parts.push(`Unassigned is everyone on the Donors tab with no owner; Steward never assigns one by itself.`);
+  // FLOWS-18 (W-1117-Fundraising-01): a giver typed as a contact or an organisation was off the
+  // Donors tab while their gift was in Fundraising's lifetime. Said only when it is true.
+  const allC = cents(r.all_g);
+  if (allC === fileC) parts.push(`That is every dollar given by the people on file, the lifetime Fundraising counts for them: everyone who has given is on the Donors tab.`);
+  else parts.push(`${usd(allC - fileC)} given by people on file is not on the Donors tab.`);
   return {
     unassigned: { key: "none", name: UNASSIGNED_WORDS, portfolio_count: unN, portfolio_giving: unC / 100 },
     other: otherN ? { count: otherN, giving: otherC / 100 } : null,
     outside: outN ? { count: outN, giving: outC / 100 } : null,
     file: { count: fileN, giving: fileC / 100 },
+    allGiving: allC / 100,   // FLOWS-18: everyone on file's lifetime; equal to file.giving when every giver is a donor
     foots: sumN === fileN && sumC === fileC,
     sentence: parts.join(" "),
   };
