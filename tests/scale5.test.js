@@ -28,6 +28,7 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 const bcrypt = require("bcryptjs");
 const { ok, summary, q, closeDb, waitFor, login, api, civilPlusDays } = require("./helpers");
+const { testNow } = require("./clock");
 
 const ROOT = path.join(__dirname, "..");
 const P = "org_scale5";
@@ -48,7 +49,7 @@ async function clean() {
 async function seedOrg(id, kind, { archived = false } = {}) {
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,org_kind,archived_at)
            VALUES ($1,$2,$3,1,'active','team','America/New_York',$4,$5)`,
-    [id, `Scale Five ${id.slice(P.length)}`, id.replace("org_", ""), kind, archived ? new Date() : null]);
+    [id, `Scale Five ${id.slice(P.length)}`, id.replace("org_", ""), kind, archived ? new Date(testNow()) : null]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Admin','admin')`,
     [`u_${id}`, id, `admin@${id.replace(/_/g, "-")}.example`, bcrypt.hashSync("loadtest1234", 10)]);
 }
@@ -70,7 +71,7 @@ async function shape(org) {
   const { query, run } = require("../db");
 
   // ── §1 live orgs only ───────────────────────────────────────────────────
-  ok("§1 the rule: archived is never live, whatever its kind", !ORG_KIND.isLiveOrg({ id: "x", org_kind: "customer", archived_at: new Date() }));
+  ok("§1 the rule: archived is never live, whatever its kind", !ORG_KIND.isLiveOrg({ id: "x", org_kind: "customer", archived_at: new Date(testNow()) }));
   ok("§1 internal test and fixture are not live; customer, prospect trial and demo are",
     !ORG_KIND.isLiveOrg({ id: "x", org_kind: "internal_test" }) && !ORG_KIND.isLiveOrg({ id: "x", org_kind: "fixture" })
     && ["customer", "prospect_trial", "demo"].every(k => ORG_KIND.isLiveOrg({ id: "x", org_kind: k })));
@@ -150,7 +151,7 @@ async function shape(org) {
   ok("§2 the day really moved people both ways (lapsed and back to Stewardship)", JSON.stringify(auto) === JSON.stringify([{ to_stage: "lapsed", n: 5 }, { to_stage: "steward", n: 1 }]), JSON.stringify(auto));
   const [sw] = await q(`SELECT swept_on FROM smart_move_sweeps WHERE org_key=$1`, [B]);
   ok("§2 the nightly records the org's day, so it runs once a night", sw && /^\d{4}-\d\d-\d\d$/.test(sw.swept_on), JSON.stringify(sw));
-  const again = await SMART.nightly(deps, { onlyOrgs: [B], now: new Date() });
+  const again = await SMART.nightly(deps, { onlyOrgs: [B], now: new Date(testNow()) });
   ok("§2 outside its quiet hours, or swept already today, the nightly passes it by", !again.swept.includes(B) || (() => { const h = require("../orgTime").orgClock({ timezone: "America/New_York" }).hour; return h >= SMART.NIGHT_FROM && h < SMART.NIGHT_TO && sw.swept_on !== require("../orgTime").orgClock({ timezone: "America/New_York" }).date; })(), JSON.stringify(again));
 
   // ── §3 every per-org background sweep reads the live-org list ──────────
@@ -208,12 +209,12 @@ async function shape(org) {
     // Timed asks only: another suite's new rows in a shared database wake it too (that is the point).
     ok("§4 an empty queue is asked by one lane, backing off (under 40 timed asks in 8 s, was ~320)", st.timedPolls < 40, JSON.stringify(st));
     ok("§4 the worker listens for new rows", st.listening === true, JSON.stringify(st));
-    const t0 = Date.now();
     await q(`INSERT INTO job_queue (id, name, key, status, run_after, created_by, created_by_name)
              VALUES ('scale5:wake','scale5:probe','scale5:wake','waiting',NOW(),'system:test','test')`);
     await waitFor(async () => (await q(`SELECT status FROM job_queue WHERE id='scale5:wake'`))[0].status === "done", { timeout: 10000, interval: 25 });
-    const [w] = await q(`SELECT (payload->>'began')::bigint AS began FROM job_queue WHERE id='scale5:wake'`);
-    const waited = Number(w.began) - t0;
+    // Both ends from the database's own clock: the row's insert and its run's start.
+    const [w] = await q(`SELECT (payload->>'began')::bigint - (EXTRACT(EPOCH FROM created_at) * 1000)::bigint AS waited FROM job_queue WHERE id='scale5:wake'`);
+    const waited = Number(w.waited);
     ok("§4 a new row wakes the idle worker at once (under 1 s; its poll was up to 4 s)", waited < 1000, `${waited} ms`);
   } finally { child.kill("SIGTERM"); delete process.env.JOB_WAKE; await WAKE.ensureWakeTrigger(require("../server/db/pool").pool).catch(() => {}); }
   ok("§4 without JOB_WAKE=on no wake trigger is left on job_queue (the measured default)",
