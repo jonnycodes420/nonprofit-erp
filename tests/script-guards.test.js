@@ -53,6 +53,9 @@ const GUARDED_WRITERS = [
   // contacts left with no organization. Dry run by default; --apply merges through
   // writerDbUrl. Jonathan runs it; never at deploy.
   "sales-contact-repair",
+  // SALES-4 — moves Steward's own planning notes off prospects to "Steward (us)". Dry run by
+  // default; --apply writes through writerDbUrl. Jonathan runs it; never at deploy.
+  "sales-misfiled-notes",
   // DEPLOY-1: gives back queue jobs whose lease ran out and stops the ones no
   // worker can run. Dry run by default; --apply writes through writerDbUrl.
   // Jonathan runs it; never at deploy.

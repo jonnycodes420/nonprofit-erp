@@ -43,3 +43,28 @@ him from opening Sales to dialing in under ten seconds?
   it once.
 
 **Planted defects, each red:** `rankdue`, `outlookcase`, `nomove`, `noundo`, `send` (tests/sales4.test.js).
+
+# Part B · Leads to work
+
+- **Add prospects** (`propublica.js`, `prospectAdd.js`, `routesF.js`, `ProspectsPanel.jsx`) searches
+  ProPublica's Nonprofit Explorer API by state (KY, OH, TN), category (an NTEE major group plus the
+  code prefixes that count: K31 food banks, D with "equine/riding/therapeutic" for animal-assisted
+  therapy, O youth, A arts, P human services) and revenue ($100K to $2M by default). A row shows
+  the organization, city, the latest filing's revenue and year, its fit by SALES-2's rule, and
+  whether it is already in Sales. Picked rows go on a named prospect list. Each organization keeps
+  its EIN, its ProPublica link (`source_url`), address and ZIP.
+- **What ProPublica can't give.** The API has no phone and no officers. They are in the 990
+  itself, and ProPublica's filing download sits behind a security check, so fetching it would be
+  scraping. The screen says so on every result; "Find contact" opens a Google search for the ED's
+  name with the organization's (a link only); a CSV with Phone, Executive director and
+  Development director columns fills them. ProPublica unreachable from Railway: the screen says so
+  and offers the CSV path, read the same way.
+- **De-duplication** before anything is written: by EIN, then by name and city (case, punctuation
+  and "Inc" ignored). A match goes on the list instead and the answer names it.
+- **Needs a number.** Call mode already skipped an organization with no number; it now lists them.
+- **Misfiled notes** (`scripts/ops/sales-misfiled-notes.js`, dry run by default): a note or task
+  whose title is about Steward (a month's campaign, the scoreboard, "open question for Jonathan",
+  goals) and that never names the prospect it sits on moves to the built-in "Steward (us)"
+  record (`sor_steward_us`, made on `--apply`, marked Do not contact so no queue offers it).
+
+**Planted defect, red:** `dupe` (§5).

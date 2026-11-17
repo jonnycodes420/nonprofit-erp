@@ -188,6 +188,12 @@ export default function RecordPage({ type, id, meta, open, onBack, onChanged }) 
     </div>
     {r.dnc_at || d.dncViaOrg ? <p style={{ background: `${BRASS}33`, border: `1px solid ${BRASS}`, borderRadius: 8, padding: "8px 12px", fontSize: 13.5, margin: "0 0 12px" }} data-sales-dnc="1">
       <b>Do not contact.</b> {r.dnc_at ? `${r.dnc_reason} · marked ${whenWords(r.dnc_at)} by ${r.dnc_by_name}.` : `${d.dncViaOrg.name} is marked Do not contact: ${d.dncViaOrg.dnc_reason}.`} Out of every call queue, cadence and list export.</p> : null}
+    {type === "org" && d.findContact ? <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 13, margin: "0 0 10px" }} data-sales-org-source="1">
+      {r.phone ? <a href={`tel:${String(r.phone).replace(/[^\d+]/g, "")}`} style={{ color: EMERALD, fontWeight: 700 }}>{r.phone}</a> : <span style={brassTag}>Needs a number</span>}
+      {r.address ? <span style={{ opacity: 0.75 }}>{[r.address, r.city, r.state, d.zip].filter(Boolean).join(", ")}</span> : null}
+      <a href={d.findContact} target="_blank" rel="noopener noreferrer" style={{ ...quiet, textDecoration: "none", display: "inline-block" }} data-sales-find-contact="1">Find contact</a>
+      {d.sourceUrl ? <a href={d.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: EMERALD, fontWeight: 600 }}>ProPublica{r.ein ? ` · EIN ${r.ein}` : ""}</a> : null}
+    </div> : null}
     {type === "org" && d.fit ? <p style={{ ...says, opacity: 1 }} data-sales-fit="1" title="The fit rule in Sales settings: arithmetic on this organization's fields."><b>{d.fit.line}</b>{d.fit.misses.length ? ` · ${d.fit.misses.join("; ")}` : " · meets every line"}{r.lost_at ? <span style={{ ...brassTag, marginLeft: 6 }}>{r.lost_reason || "Not a fit"}</span> : null}</p> : null}
     {type === "deal" ? <DealHeader id={id} reloadKey={headKey} onChanged={() => { load(); onChanged(); }} /> : null}
     {doing === "email" ? <EmailDraft contactId={type === "contact" ? id : null} dealId={type === "deal" ? id : null} onClose={() => setDoing(null)} onLogged={changed} /> : null}

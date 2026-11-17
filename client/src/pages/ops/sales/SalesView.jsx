@@ -21,6 +21,7 @@ import PartnersView from "./PartnersView";
 import CustomersView from "./CustomersView";
 import NowView from "./NowView";
 import PipelineView from "./PipelineView";
+import ProspectsPanel from "./ProspectsPanel";
 
 // SALES-4: Sales opens on Now; the pipeline is a board; Today's lines and the forecast sit under Forecast.
 const SUBS = [["now", "Now"], ["pipeline", "Pipeline"], ["org", "Organizations"], ["contact", "Contacts"], ["deal", "Deals"], ["task", "Tasks"], ["list", "Lists"],
@@ -180,12 +181,14 @@ export default function SalesView() {
     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
       <Search open={open} />
       <span style={{ flex: 1 }} />
+      <button type="button" style={quiet} onClick={() => go({ panel: panel === "prospects" ? null : "prospects", rec: null })} data-sales-prospects-open="1">Add prospects</button>
       <button type="button" style={quiet} onClick={() => go({ panel: panel === "import" ? null : "import", rec: null })} data-sales-import-open="1">Import</button>
       <button type="button" style={quiet} onClick={() => go({ panel: panel === "settings" ? null : "settings", rec: null })} data-sales-settings-open="1">Sales settings</button>
     </div>
     {panel === "call" ? <CallMode key={`${listId}:${params.get("view")}:${params.get("cadence")}:${params.get("now")}`} meta={meta} listId={listId} view={callView} cadence={params.get("cadence") === "1"}
         fromNow={params.get("now") === "1"} first={params.get("first")} onClose={() => { go({ panel: null, view: null, cadence: null, now: null, first: null }); changed(); }} open={open} />
       : panel === "settings" ? <SettingsPanel meta={meta} onChanged={() => { loadMeta(); loadHome(); }} onClose={() => go({ panel: null })} />
+      : panel === "prospects" ? <ProspectsPanel onClose={() => go({ panel: null })} onAdded={() => { loadMeta(); changed(); }} startList={lid => startCalling(null, lid)} />
       : panel === "import" ? <ImportPanel meta={meta} onChanged={changed} onClose={() => go({ panel: null })} />
       : rec ? <RecordPage key={rec[0]} type={rec[1]} id={rec[2]} meta={meta} open={open} onBack={() => go({ rec: null })} onChanged={changed} />
       : <>
