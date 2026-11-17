@@ -13,3 +13,5 @@
 Suite: `tests/scale5.test.js`.
 
 **The org-specific ratchet** for `orgKind.js` went from 1 to 2 lines: the kept list names CREO (the brief: by id, as ADMIN-CLEAN keeps it) and `org_stagewalk`, staging's walk org. That org's name ("Staging walk") reads as a fixture, so without it the sweeps would skip the very org the fleet writes in to check them.
+
+**What CI caught.** The first one-statement claim counted the per-org cap inside the candidate WHERE, so Postgres ran that count for every due waiting row before sorting. In a shard's busy queue each claim became a scan per row, and `flows2`'s Raised drawer sat on "Reading the rows…" (red twice in CI, reproduced locally; green with main's jobQueue.js). The claim now takes the first `CLAIM_TRIES` due rows by the cheap filters and order, counts running jobs once for just those orgs, and locks the chosen row last. It is still one statement. `flows2` is green again (117 → 59 s for the suite).

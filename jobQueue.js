@@ -192,19 +192,32 @@ async function claimNow({ shortOnly = false } = {}) {
   // SCALE-4: a short job's place under the per-org cap is not taken by the
   // org's long jobs, so what follows a gift never waits behind them.
   const longs = [...new Set([...longNames, ...seenLong])];
+  // The cheap filters and the order first, over at most CLAIM_TRIES rows; the
+  // per-org cap is then counted ONCE for just those orgs, and the chosen row is
+  // locked last. (Counting inside the first WHERE ran the count for every due
+  // row before the sort: flows2 found the web starved behind it.)
   const rows = await query(
     `WITH c AS (
-       SELECT j.id FROM job_queue j
+       SELECT j.id, j.org_id, j.name, j.priority, j.run_after, j.created_at FROM job_queue j
         WHERE j.status = 'waiting' AND j.run_after <= NOW() AND j.name = ANY(?::text[])
           AND NOT EXISTS (SELECT 1 FROM job_queue r WHERE r.key = j.key AND r.status = 'running')
-          AND (j.org_id IS NULL OR (SELECT COUNT(*) FROM job_queue r WHERE r.org_id = j.org_id AND r.status = 'running'
-                                      AND (j.name = ANY(?::text[]) OR NOT (r.name = ANY(?::text[])))) < ?)
+        ORDER BY j.priority, j.run_after, j.created_at
+        LIMIT ?),
+     busy AS (
+       SELECT r.org_id, r.name FROM job_queue r
+        WHERE r.status = 'running' AND r.org_id IN (SELECT org_id FROM c WHERE org_id IS NOT NULL)),
+     pick AS (
+       SELECT j.id FROM job_queue j
+        WHERE j.status = 'waiting' AND j.id IN (
+          SELECT c.id FROM c
+           WHERE c.org_id IS NULL OR (SELECT COUNT(*) FROM busy b WHERE b.org_id = c.org_id
+                                        AND (c.name = ANY(?::text[]) OR NOT (b.name = ANY(?::text[])))) < ?)
         ORDER BY j.priority, j.run_after, j.created_at
         LIMIT 1 FOR UPDATE SKIP LOCKED)
      UPDATE job_queue u SET status = 'running', attempts = u.attempts + 1, locked_by = ?, started_at = NOW(),
             heartbeat_at = NOW(), finished_at = NULL
-       FROM c WHERE u.id = c.id RETURNING u.*`,
-    [names, longs, longs, ORG_CAP(), `${WORKER_ID}#${++claimSeq}`]);
+       FROM pick WHERE u.id = pick.id AND u.status = 'waiting' RETURNING u.*`,
+    [names, CLAIM_TRIES, longs, longs, ORG_CAP(), `${WORKER_ID}#${++claimSeq}`]);
   return rows[0] || null;
 }
 
