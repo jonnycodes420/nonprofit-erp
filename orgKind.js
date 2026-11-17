@@ -102,6 +102,26 @@ function inferKind(org, facts = {}, env = process.env) {
 const isDemoOrg = org => !!org && org.org_kind === "demo";
 const demoOrgSql = (alias = "orgs") => `(COALESCE(${alias}.org_kind, '') = 'demo')`;
 
+// SCALE-5 · WHICH ORGS BACKGROUND WORK IS FOR. A sweep that recomputes,
+// digests, nudges or reads mail for an org runs only for an org somebody uses:
+// not archived, and of a kind a person looks at (a customer, a prospect trying
+// Steward, a demo prospects see). Jonathan's test orgs and the fixtures a walk
+// or a suite made are skipped: before this, the five-minute smart moves swept
+// two 25,000-person test orgs 288 times a day (prod's /ops, 17 Nov). CREO is
+// kept by id, as ADMIN-CLEAN keeps it, because the fleet's prod check and the
+// demos use it whatever its Kind says. The kind is inferKind's (set wins,
+// otherwise inferred), so a sweep and the console never disagree.
+// server/orgs/liveOrgs.js reads the facts and caches the list.
+const LIVE_KINDS = new Set(["customer", "prospect_trial", "demo"]);
+// Staging's walk org is kept the same way: the fleet makes its writes there and
+// checks what the sweeps did with them, so it is kept too (it exists only on staging).
+const KEPT_FIXTURE_IDS = ["org_creo", "org_stagewalk"];
+function isLiveOrg(org, facts = {}, env = process.env) {
+  if (!org || org.archived_at) return false;
+  if (KEPT_FIXTURE_IDS.includes(org.id)) return true;
+  return LIVE_KINDS.has(inferKind(org, facts, env).kind);
+}
+
 // What an org pays Steward a month, in cents. Only a counted kind with a live
 // subscription and a real Stripe amount: never a plan's list price.
 function orgMrrCents(org, kind) {
@@ -176,5 +196,5 @@ module.exports = {
   KINDS, KIND_LABEL, COUNTED_KINDS, countsAsCustomer, DEMO_ORG_IDS, isDemoOrg, demoOrgSql,
   inferKind, isInternalEmail, baseEmail, internalEmails, orgMrrCents,
   monthlyCentsFromSubscription, monthlyCentsFromInvoice, perMonth,
-  DEFAULT_TARGET, targetFor, LIVE_STATUSES, ENDED_STATUSES, JUNK_NAME_RE, FIXTURE_NAME_RE,
+  DEFAULT_TARGET, targetFor, LIVE_KINDS, KEPT_FIXTURE_IDS, isLiveOrg, LIVE_STATUSES, ENDED_STATUSES, JUNK_NAME_RE, FIXTURE_NAME_RE,
 };

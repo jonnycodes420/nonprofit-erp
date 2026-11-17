@@ -474,7 +474,8 @@ function recheckSoon(orgId, trigger, { importId = null } = {}) {
   rechecks.set(orgId, { timer, importId: ask.importId });
 }
 async function runDataHealthNightly() {
-  const orgs = await query(`SELECT DISTINCT org_id FROM donors WHERE deleted_at IS NULL`);
+  // SCALE-5: live orgs only (server/orgs/liveOrgs.js).
+  const orgs = await query(`SELECT DISTINCT org_id FROM donors WHERE deleted_at IS NULL AND org_id = ANY(?::text[])`, [await require("../server/orgs/liveOrgs").liveOrgIds(query)]);
   for (const { org_id } of orgs) {
     try { await runDataHealth(org_id, { trigger: "nightly" }); }
     catch (e) { console.error("[data-health] nightly", org_id, e.message); }

@@ -19,7 +19,7 @@ const perRequestFor = (m) => Math.max(1, Math.min(5, Math.floor(m / 2) || 1));  
 // the web replicas running now; `maxConnections` and `poolerSize` the limits
 // (either may be null when unknown).
 function budget({ maxConnections = null, poolerSize = null, web, worker, replicas = 1 }) {
-  const perWeb = Number(web.max) + Number(web.setMax), perWorker = Number(worker.max) + Number(worker.setMax);
+  const perWeb = Number(web.max) + Number(web.setMax), perWorker = Number(worker.max) + Number(worker.setMax) + (Number(worker.listen) || 0);   // SCALE-5: + the wake listener
   const limits = [
     maxConnections ? { n: Number(maxConnections), what: "Postgres max_connections" } : null,
     poolerSize ? { n: Number(poolerSize), what: "the pooler's pool size" } : null,
@@ -55,7 +55,7 @@ async function readLive(query, { worker = null } = {}) {
   let maxConnections = null;
   try { const [r] = await query("SHOW max_connections", []); maxConnections = r ? Number(r.max_connections) : null; } catch (_) { /* unknown */ }
   const P = require("../shared/pools");
-  const w = worker && worker.max != null ? { max: worker.max, setMax: worker.setMax != null ? worker.setMax : setMaxFor(worker.max) } : { max: 5, setMax: 1 };
+  const w = worker && worker.max != null ? { max: worker.max, setMax: worker.setMax != null ? worker.setMax : setMaxFor(worker.max), listen: Number(worker.listen) || 0 } : { max: 5, setMax: 1 };
   return budget({ maxConnections, poolerSize: Number(process.env.POOLER_SIZE) || 40, web: { max: P.POOL_MAX, setMax: P.SET_POOL_MAX },
     worker: w, replicas: Math.max(1, Number(process.env.WEB_REPLICAS) || 1) });
 }

@@ -110,7 +110,7 @@ const setMaxFor = (m) => Math.min(3, Math.max(1, Math.floor(m / 3)));
 function poolReport(webPool, workerPool, poolerSize = POOLER_SIZE()) {
   if (!webPool || webPool.max == null) return { level: null, detail: "no pool on /health (older deploy)" };
   if (!workerPool || workerPool.max == null) return { level: null, detail: "the worker's pool is not on /health yet (no heartbeat with it); re-run in a minute" };
-  const web = webPool.max + (webPool.set ? webPool.set.max : 0), worker = workerPool.max + (workerPool.setMax || 0);
+  const web = webPool.max + (webPool.set ? webPool.set.max : 0), worker = workerPool.max + (workerPool.setMax || 0) + (workerPool.listen || 0);   // SCALE-5: + the wake listener
   const worst = 2 * web + worker, pct = Math.round((worst / poolerSize) * 100);
   const level = worst > poolerSize ? "red" : worst > 0.8 * poolerSize ? "yellow" : "ok";
   let detail = `web ${webPool.max}+${webPool.set ? webPool.set.max : 0}, worker ${workerPool.max}+${workerPool.setMax || 0}`

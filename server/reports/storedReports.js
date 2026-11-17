@@ -115,7 +115,8 @@ async function nightly({ log = console, orgId = null } = {}) {
   const { query } = require("../../db");
   const { orgReportYear } = require("../../orgTime");
   const orgs = orgId ? [{ id: orgId }] : await query(
-    `SELECT o.id FROM orgs o WHERE EXISTS (SELECT 1 FROM donors d WHERE d.org_id = o.id AND d.deleted_at IS NULL) ORDER BY o.id`);
+    `SELECT o.id FROM orgs o WHERE o.id = ANY(?::text[]) AND EXISTS (SELECT 1 FROM donors d WHERE d.org_id = o.id AND d.deleted_at IS NULL) ORDER BY o.id`,
+    [await require("../orgs/liveOrgs").liveOrgIds(query)]);   // SCALE-5: live orgs only
   const out = { orgs: 0, compared: 0, stored: 0, differences: [] };
   for (const o of orgs) {
     try {

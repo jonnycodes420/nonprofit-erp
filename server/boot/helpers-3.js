@@ -529,7 +529,7 @@ async function processGrantMilestones(onlyOrgId = null, { today: pinnedToday = n
   const orgs = onlyOrgId
     ? await query("SELECT id FROM orgs WHERE id=?", [onlyOrgId])
     : await query(`SELECT DISTINCT org_id AS id FROM grant_milestones
-                    WHERE state IN ('pending','waiting') AND org_id IS NOT NULL`);
+                    WHERE state IN ('pending','waiting') AND org_id = ANY(?::text[])`, [await require("../orgs/liveOrgs").liveOrgIds(query)]);   // SCALE-5: live orgs only
   const summary = { raised: 0, waiting: 0, checked: 0 };
   for (const o of orgs) {
     try {
