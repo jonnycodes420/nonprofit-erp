@@ -50,12 +50,13 @@ async function tick({ query, run, autoLapseOrg }, { onlyOrgs = null, markKey = "
   // The first tick there has ever been has nothing to compare with: every live org once.
   const todo = prev == null ? live : await MARKS.changedSince(query, live, prev);
   let moved = 0;
+  const orgs = [];   // jobAudit: the orgs a move was written in
   for (const orgId of todo) {
-    try { moved += await onOneConnection(() => autoLapseOrg(orgId)); }
+    try { const n = await onOneConnection(() => autoLapseOrg(orgId)); moved += n; if (n > 0) orgs.push(orgId); }
     catch (e) { console.error("[smart-move] org", orgId, e.message); }
   }
   await MARKS.keepMark(run, mark, markKey);
-  return { live: live.length, worked: todo, moved };
+  return { live: live.length, worked: todo, moved, orgs, summary: `${todo.length} of ${live.length} live orgs changed; ${moved} moved` };
 }
 
 // THE NIGHTLY SWEEP. Every live org, once per its own day, in its quiet hours,
@@ -65,20 +66,23 @@ async function nightly({ query, run, autoLapseOrg, orgClock }, { now = new Date(
   if (onlyOrgs) orgs = orgs.filter(o => onlyOrgs.includes(o.id));
   const done = new Map((await query(`SELECT org_key, swept_on FROM smart_move_sweeps WHERE org_key = ANY(?::text[])`, [orgs.map(o => o.id)]))
     .map(r => [r.org_key, r.swept_on]));
-  const swept = [];
+  const swept = [], movedIn = [];
   for (const org of orgs) {
     const clock = orgClock(org, now);   // ORG_TZ_SEAM_OK: the org's own night
     if (!force && (clock.hour < NIGHT_FROM || clock.hour >= NIGHT_TO || done.get(org.id) === clock.date)) continue;
     try {
-      await onOneConnection(async () => {
-        for (let i = 0; i < NIGHT_MAX_ROUNDS; i++) if ((await autoLapseOrg(org.id)) < BATCH) break;
+      const n = await onOneConnection(async () => {
+        let total = 0;
+        for (let i = 0; i < NIGHT_MAX_ROUNDS; i++) { const m = await autoLapseOrg(org.id); total += m; if (m < BATCH) break; }
+        return total;
       });
+      if (n > 0) movedIn.push(org.id);
       await run(`INSERT INTO smart_move_sweeps (org_key, swept_on, swept_at) VALUES (?, ?, NOW())
                  ON CONFLICT (org_key) DO UPDATE SET swept_on = EXCLUDED.swept_on, swept_at = NOW()`, [org.id, clock.date]);
       swept.push(org.id);
     } catch (e) { console.error("[smart-move] nightly org", org.id, e.message); }
   }
-  return { swept };
+  return { swept, orgs: movedIn, summary: `${swept.length} live orgs swept` };
 }
 
 module.exports = { tick, nightly, liveOnboarded, BATCH, NIGHT_FROM, NIGHT_TO };
