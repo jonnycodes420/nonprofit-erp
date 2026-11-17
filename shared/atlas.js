@@ -20,6 +20,7 @@
 // every screen reads it from /atlas/status, so a new name is a variable
 // change and a restart, never a build.
 import AD from "./atlasDates.js";   // ATLAS-5: dates in code, in the org's day
+import { aboutInstruction } from "./draftAbout.js";   // FLOWS-18: the About note opens the draft
 
 export const ATLAS_DEFAULT_NAME = "Atlas";
 
@@ -105,14 +106,15 @@ export const DRAFT_TOOL = {
 };
 // FLOWS-10 item 5: the model reads the facts Call script reads, names one of them, and never opens with filler.
 export const DRAFT_SYSTEM = "You write a short email for a nonprofit fundraiser to send one person. Use only what she said and the facts on their record given to you: no amount, date, event or fact that is in neither, and no em dashes. Name one of the facts on their record in the email. Never open with filler such as \"I wanted to reach out\" or \"Hello from us\". If she asked to meet, ask for the meeting in the month given.";
-// DATES-1 · the team's "About them" note rides along as background for the
-// tone, never as something to quote or state as a fact in the email.
+// DATES-1 kept the team's "About them" note as background for the tone, never stated. FLOWS-18
+// (W-1113-Donors-26, the third time): the draft opens with its detail, as Brief me and Call script
+// do (shared/draftAbout.js). "For tone only" is why FLOWS-10's draft stayed a form letter.
 export function buildDraftPrompt({ firstName, words, month, aboutThem = "", facts = [], signoff = "" }) {
   const about = String(aboutThem || "").trim().slice(0, 500);
   const known = (facts || []).filter(Boolean).slice(0, 6).map(l => String(l).slice(0, 300));
   // ATLAS-3: the org's own sign-off, from the writing samples it gave Steward.
   const voice = String(signoff || "").trim() ? `\nEnd with her usual sign-off, "${String(signoff).trim().slice(0, 60)},", instead of "With gratitude,".` : "";
-  return { system: DRAFT_SYSTEM, messages: [{ role: "user", content: `To: ${firstName}\nWhat she asked for: ${words}${month ? `\nThe meeting would be in ${month}.` : ""}${about ? `\nBackground the team keeps about them (for tone only; do not quote it or state any of it in the email): ${about}` : ""}${known.length ? `\nFacts on their record (name one of these):\n${known.join("\n")}` : ""}${voice}` }] };
+  return { system: DRAFT_SYSTEM, messages: [{ role: "user", content: `To: ${firstName}\nWhat she asked for: ${words}${month ? `\nThe meeting would be in ${month}.` : ""}${aboutInstruction(about)}${known.length ? `\nFacts on their record (name one of these):\n${known.join("\n")}` : ""}${voice}` }] };
 }
 export function buildAtlasPrompt(text, { today, onPage = null } = {}) {
   const lines = [`Today is ${today}.`];

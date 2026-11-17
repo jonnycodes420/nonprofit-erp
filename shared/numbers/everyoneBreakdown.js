@@ -17,7 +17,7 @@
 const { EVERYONE } = require("./everyone");
 const { IN_TRASH } = require("./trash");   // INTEGRITY-3: the Trash page's own count
 
-const DONOR = d => `(${d}.person_types IS NULL OR ${d}.person_types @> '["donor"]'::jsonb)`;
+const DONOR = d => require("./isDonor").IS_DONOR(d);   // FLOWS-18: marked Donor, or has given
 const HAS = (d, t) => `(${d}.person_types @> '["${t}"]'::jsonb)`;
 const ORG = d => `(LOWER(COALESCE(${d}.kind, '')) IN ('organisation', 'organization') OR ${d}.person_types @> '["organization"]'::jsonb)`;
 

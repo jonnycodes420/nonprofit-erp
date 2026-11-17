@@ -1,0 +1,50 @@
+// shared/numbers/isDonor.js · FLOWS-18 item 3 (W-1117-Fundraising-01). WHO IS A DONOR.
+//
+// Staging: Fundraising's lifetime was $6,756,201.84 and the Donors tab's
+// $6,701,201.84. The $55,000 between them was exactly Meridian Foundation's
+// gift: Meridian was on Everyone with Lifetime $55,000, but its stored roles
+// said organisation only, so a Donors search for "Meridian" found nobody. The
+// Donors tab read the stored role (shared/personType.js donorOnlySql); the
+// money read the gifts.
+//
+// THE RULE, ONE PLACE: a person is a donor when their stored roles say so (a
+// NULL roles column is a legacy row, a donor) OR when they have given, by the
+// profile's own rule (donorLabel.js HAS_GIVEN: a counted gift on file, or a
+// lifetime above zero from the old system). The second half is applied ON
+// READ: nothing stored changes, and a giver typed as a contact or an
+// organisation keeps those roles and gains Donor beside them.
+//
+// The other direction is IMPORT-10's (donorType.js): the stored role is taken
+// off someone who has not given. Together: on the Donors tab ⇔ has given, or
+// was marked Donor and not yet settled.
+"use strict";
+const { HAS_GIVEN } = require("./donorLabel");
+
+const STORED = (d) => `(${d}.person_types IS NULL OR ${d}.person_types @> '["donor"]'::jsonb)`;
+// SQL: person `d` is a donor. `d` is the donors row's alias; with none, the table name.
+const IS_DONOR = (d = "d") => { const a = d || "donors"; return `(${STORED(a)} OR ${HAS_GIVEN(a)})`; };
+
+// The same rule on a row already read: { person_types, total_giving, gift_count, has_given? }.
+// `has_given` (from HAS_GIVEN in the SELECT) wins when present; otherwise the stored totals.
+function storedTypes(row) {
+  const v = row && (row.person_types ?? row.personTypes);
+  if (v == null) return null;
+  const parsed = typeof v === "string" ? (() => { try { return JSON.parse(v); } catch { return null; } })() : v;
+  return Array.isArray(parsed) && parsed.length ? parsed : null;
+}
+function hasGivenRow(row) {
+  if (!row) return false;
+  if (row.has_given != null) return row.has_given === true || row.has_given === "t" || row.has_given === 1;
+  return Number(row.total_giving) > 0 || Number(row.gift_count) > 0;
+}
+function isDonorRow(row) {
+  const t = storedTypes(row);
+  return !t || t.includes("donor") || hasGivenRow(row);
+}
+// The roles a screen shows for a row: Donor added on read for a giver.
+function typesOnRead(row) {
+  const t = storedTypes(row) || ["donor"];
+  return !t.includes("donor") && hasGivenRow(row) ? ["donor", ...t] : t;
+}
+
+module.exports = { IS_DONOR, HAS_GIVEN, isDonorRow, typesOnRead, hasGivenRow };

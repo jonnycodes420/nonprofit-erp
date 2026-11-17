@@ -828,8 +828,7 @@ async function audienceRoster(orgId) {
   // TRUTH-6: All donors is the Donors count (the same people: not deleted or
   // erased, a donor), and any difference is said (archived people are in
   // Donors and never mailed).
-  const PTm = await import("../../shared/personType.js");
-  const dRows = (await query("SELECT * FROM donors WHERE org_id = ? AND deleted_at IS NULL AND erased_at IS NULL", [orgId])).filter(d => PTm.isDonor(d));
+  const dRows = (await query(`SELECT *, ${require("../../shared/numbers/isDonor").HAS_GIVEN("donors")} AS has_given FROM donors WHERE org_id = ? AND deleted_at IS NULL AND erased_at IS NULL`, [orgId])).filter(d => require("../../shared/numbers/isDonor").isDonorRow(d));   // FLOWS-18
   const dc = { n: dRows.length, archived: dRows.filter(d => d.archived_at).length };
   const sayCannot = c => c.map(g => `${g.count.toLocaleString()} ${(AUDIENCE_WORDS[g.reason] || (() => `can't get it (${g.reason.replace(/_/g, " ")})`))(g.count)}`).join(" · ");
   return {
@@ -946,8 +945,8 @@ app.get("/communications/audience", requireAuth, wrap(async (req, res) => {
     { id: "steward", label: "In ongoing care", rows: byStage("steward"), definition: "Donors with an email address at the Ongoing care stage." },
     { id: "solicit", label: "Ready to solicit", rows: byStage("solicit"), definition: "Donors with an email address at the Solicit stage." },
   ];
-  const everyone = await query(`SELECT id, person_types FROM donors WHERE org_id = ? AND ${require("../../shared/numbers/everyone").EVERYONE("donors")}`, [orgId]);   // TRUTH-4: Donors' own count
-  const donorTotal = everyone.filter(d => PT.isDonor(d)).length;
+  const everyone = await query(`SELECT id, person_types, ${require("../../shared/numbers/isDonor").HAS_GIVEN("donors")} AS has_given FROM donors WHERE org_id = ? AND ${require("../../shared/numbers/everyone").EVERYONE("donors")}`, [orgId]);   // TRUTH-4: Donors' own count
+  const donorTotal = everyone.filter(d => require("../../shared/numbers/isDonor").isDonorRow(d)).length;   // FLOWS-18: a giver is a donor
   res.json({
     donorTotal,
     segments: SEGS.map(s => ({

@@ -21,6 +21,7 @@ let _ps = null;
 async function proposalShapeMod() { return _ps || (_ps = await import("./shared/proposalShape.js")); }
 
 const PEOPLE_ROLES = ["donor", "volunteer", "staff_board"];
+const { IS_DONOR } = require("./shared/numbers/isDonor");   // FLOWS-18: who is a donor, one rule
 // WIRE-1 · THE ONE LIST OF RECURRING STATES THAT COUNT AS RUNNING. A plan in
 // any of these is still giving: the Group rules (monthly, recurring) and the
 // journey audience "gives on a recurring plan" (routes/crm.js) read this, so
@@ -77,9 +78,10 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   if (role !== undefined && role !== "") {
     // IMPORT-6: the Directory's Contacts view is everyone who is not a donor
     // (the same predicate, inverted, so contacts are never counted as donors)
-    if (String(role) === "contact") where.push(`NOT ${PT.donorOnlySql()}`);
+    // FLOWS-18: a donor is the one rule (shared/numbers/isDonor.js): marked Donor, or has given.
+    if (String(role) === "contact") where.push(`NOT ${IS_DONOR("")}`);
     else if (!PEOPLE_ROLES.includes(String(role))) return { badRole: true };
-    else where.push(PT.typeSql(String(role)));
+    else where.push(String(role) === "donor" ? IS_DONOR("") : PT.typeSql(String(role)));
   }
   if (search && String(search).trim()) {
     // WIRE-1: a phone number and an organisation's contact person find the
@@ -957,7 +959,7 @@ async function directoryRoles(orgId, q, build) {
   const counted = (async () => {
     const f = await build({ ...q, role: "" });
     if (f.badFilter || f.badRole || f.badStatus) return null;
-    const [r] = await query(`SELECT COUNT(*) AS everyone, COUNT(*) FILTER (WHERE ${PT.donorOnlySql()}) AS donors FROM donors WHERE ${f.whereSql}`, f.params);
+    const [r] = await query(`SELECT COUNT(*) AS everyone, COUNT(*) FILTER (WHERE ${IS_DONOR("")}) AS donors FROM donors WHERE ${f.whereSql}`, f.params);
     everyoneFilter = f;
     return { everyone: parseInt(r.everyone, 10), donors: parseInt(r.donors, 10) };
   })();
@@ -968,7 +970,7 @@ async function directoryRoles(orgId, q, build) {
   if (role === "auto" && require("./server/donors/connections").namesConnection(q.where)) role = "";
   // the org's own donors, not this search's: the view she opens on does not hop as she types
   const auto = role === "auto"
-    ? query(`SELECT COUNT(*) AS c FROM donors WHERE org_id=? AND deleted_at IS NULL AND archived_at IS NULL AND ${PT.donorOnlySql()}`, [orgId])
+    ? query(`SELECT COUNT(*) AS c FROM donors WHERE org_id=? AND deleted_at IS NULL AND archived_at IS NULL AND ${IS_DONOR("")}`, [orgId])
     : null;
   const [c, a] = await Promise.all([counted, auto]);
   if (c) roleCounts = { everyone: c.everyone, donors: c.donors, contacts: c.everyone - c.donors };

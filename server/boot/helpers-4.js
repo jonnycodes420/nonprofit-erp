@@ -232,14 +232,14 @@ function filterBySegment(allDonors, segment) {
   } else if (mode === "staff_board") {
     donors = donors.filter(d => PT.hasType(d, "staff_board"));
   } else if (mode === "donors") {
-    donors = donors.filter(d => PT.isDonor(d));
+    donors = donors.filter(d => require("../../shared/numbers/isDonor").isDonorRow(d));   // FLOWS-18: a giver is a donor
   } else {
     // "all" or legacy format.
     // BUILD-94 Part 2 — and "all" MEANS ALL DONORS, which is what the picker
     // has always called it. Before this build every person was a donor so the
     // two were the same set; now they are not, and leaving it unfiltered would
     // quietly send an appeal to the volunteer coordinator's whole roster.
-    donors = donors.filter(d => PT.isDonor(d));
+    donors = donors.filter(d => require("../../shared/numbers/isDonor").isDonorRow(d));   // FLOWS-18: a giver is a donor
     if (segment.stages && segment.stages.length) donors = donors.filter(d => segment.stages.includes(d.stage));
     if (segment.statuses && segment.statuses.length) donors = donors.filter(d => segment.statuses.includes(d.status));
   }

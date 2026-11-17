@@ -1240,6 +1240,9 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   if (!skipSet.has("flows14"))
     await require("./flows14Checks").flows14Checks({ orgId, get, q, agree, diffs, skip, named: !!onlySet, today: orgTime.orgToday(org || {}, new Date(testNow())) });
 
+  // ── FLOWS-18 · everyone who has given is a donor (tests/lib/flows18Checks.js) ──
+  if (!skipSet.has("flows18")) await require("./flows18Checks").flows18Checks({ orgId, get, q, agree, skip });
+
   // TRUTH-1: a disagreement logged in docs/defects.md (tests/lib/knownDefects.js),
   // at exactly the value its defect predicts, is still found and still printed,
   // every run, as KNOWN; anything else fails.

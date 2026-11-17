@@ -10,6 +10,9 @@ import { T } from "./shared";
 import { apiFetch } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { MorningEmailPreview } from "./MorningEmailPreview";   // TIDY-1
+// FLOWS-18: the one rule every morning-email sentence reads (shared/morningEmailState.js).
+import { staffMailOn } from "../../../shared/morningEmailState.js";
+import { forgetMorningEmail } from "../lib/morningEmail";
 
 const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "24px 28px", marginBottom: 20 };
 const rowStyle = { display: "flex", alignItems: "flex-start", gap: 12, padding: "10px 0", borderTop: "1px solid " + T.bg2 };
@@ -36,16 +39,6 @@ const OTHERS = [
   { key: "connectionAlerts", label: "A connection stops working", hint: "When a giving page or bank feed breaks or goes quiet. Sent to the first admin. A task is opened either way.", adminOnly: true },
 ];
 
-// The org-wide Staff mail switch and the onboarding wait, read the way the
-// server reads them (mailPolicy.orgMailDecision), so the page never promises
-// an email the server will refuse.
-function staffMailOn(org) {
-  if (!org) return true;
-  if (org.staff_mail_enabled === false) return false;
-  if (org.staff_mail_enabled !== true && org.emails_enabled === false) return false;
-  return !!org.onboarded_at;
-}
-
 export function MyEmailPanel({ isAdmin }) {
   const [p, setP] = useState(null);
   const [org, setOrg] = useState(null);
@@ -64,6 +57,7 @@ export function MyEmailPanel({ isAdmin }) {
     try {
       const r = await apiFetch("/me/notification-prefs", { method: "PUT", body: JSON.stringify(body) });
       if (r?.notifications) setP(r.notifications);
+      forgetMorningEmail();   // FLOWS-18: Tasks and Home re-read it, no reload
       if (r?.weeklyTurnedOff) setUndo(true);
     }
     catch (e) { setP(before); setErr(errorMessage(e, "That setting was not saved.")); }

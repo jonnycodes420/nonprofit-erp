@@ -16,6 +16,8 @@ import { dueNowWords } from "../lib/taskBadge";
 import { countLabel } from "../../../shared/countWords.js";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { PlannedTouchOffer } from "./majorGifts/PlannedTouchOffer";   // TOUCH-1
+import { useMorningEmail } from "../lib/morningEmail";   // FLOWS-18: what the morning email really does
+import { morningEmailSentence } from "../../../shared/morningEmailState.js";
 
 // TASKS-2 — Tasks, the place a development director runs her week from.
 // Views (Today, Upcoming, Overdue, Later, No date, Done) each carry the count
@@ -55,6 +57,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
   // could open Tasks filtered to the person the morning email's team row names.
   const { auth } = useAuth() || {};
   const isAdmin = auth?.user?.role === "admin";
+  const mail = useMorningEmail();   // FLOWS-18: null until /me answers; nothing is said before then
   const today = orgTodayPlus(0);
   const [view, setView] = useState(VIEW_ORDER.includes(initialView) ? initialView : "today");
   const [scope, setScope] = useState(initialScope === "all" ? "all" : "mine");
@@ -197,7 +200,14 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
-        <PageTitle main="Your" accent="tasks." />
+        <div>
+          <PageTitle main="Your" accent="tasks." />
+          {/* FLOWS-18 (W-1117-Volunteers-19): the morning email as it really is: her switch and the org's staff mail. */}
+          {mail && <div data-testid="tasks-morning-email" data-state={mail.state} style={{ fontSize: 12.5, color: T.ink3, marginTop: 4 }}>
+            {morningEmailSentence(mail, "tasks")}
+            {!mail.on && <> <a data-testid="tasks-morning-turn-on" href="/app/settings?section=myemail&daily=1" style={{ color: T.greenDk, fontWeight: 700 }}>{mail.state === "org_off" ? "See Your email" : "Turn it on"}</a></>}
+          </div>}
+        </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <div role="group" aria-label="Whose tasks" style={{ display: "flex", background: T.bg2, borderRadius: 8, padding: 3 }}>
             {[["mine", "Mine"], ["all", "Everyone"]].map(([v, l]) => (

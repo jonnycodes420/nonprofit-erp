@@ -13,7 +13,7 @@ function mount(ctx) {
 const {
   ACTIVITY_DEFINITIONS, DS, REPORT_HANDLERS, asJson, buntPredicate, computeDriftForDonors,
   computeRetentionRate, dashboardsMod, displayNameCase, figureSources, orgForYears, orgStewardStart, orgTime,
-  orgToday, parseCrop, parseReportParams, query, reportYearBounds, runSaved, samePointLastYearSource,
+  orgToday, orgTz, parseCrop, parseReportParams, query, reportYearBounds, runSaved, samePointLastYearSource,
   savedReportFor, sentenceMoney, reportHooks,
 } = ctx;
 // FIX-7 Part 5 — the one pace function. Pure, no clock of its own.
@@ -735,7 +735,10 @@ async function savedDashboardFor(orgId, userId, id) {
 // A DATE column comes back as a Date at local midnight; its own calendar day.
 const civilDay = d => d instanceof Date
   ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : String(d || "").slice(0, 10);
-function computeFundraisingPace(raised, goal, startDate, endDate, basis = "raised") {
+// FLOWS-18: `today` is the org's civil day. Days left and "ended" are the one
+// rule in shared/numbers/endsOn.js: the end date is open all day ("Last day").
+const ENDS = require("../../shared/numbers/endsOn");
+function computeFundraisingPace(raised, goal, startDate, endDate, basis = "raised", today = null) {
   const g = parseFloat(goal) || 0;
   const r = parseFloat(raised) || 0;
   // `percent` stays capped at 100 (thermometer bar width). `rawPercent` is the
@@ -745,11 +748,13 @@ function computeFundraisingPace(raised, goal, startDate, endDate, basis = "raise
   const rawPercent = g > 0 ? Math.round((r / g) * 100) : null;
   const over = g > 0 && r > g ? r - g : 0;
   const now = new Date();
+  const day = ENDS.civilDay(today) || orgTime.orgToday({}, now);   // ORG_TZ_SEAM_OK: callers pass the org's day
   let daysLeft = null, lifecycle = "active";
-  if (startDate && new Date(startDate) > now) lifecycle = "upcoming";
-  if (endDate) {
-    daysLeft = Math.ceil((new Date(endDate) - now) / 86400000);
-    if (daysLeft < 0) { lifecycle = "ended"; daysLeft = 0; }
+  if (ENDS.startsAfter(startDate, day)) lifecycle = "upcoming";
+  const ends = ENDS.endsOn(endDate, { today: day });
+  if (ends.state !== "none") {
+    daysLeft = ends.daysLeft;
+    if (ends.state === "ended") lifecycle = "ended";
   }
   // ── FIX-7 Part 5 · PACE IS ONE FUNCTION, AND IT SAYS WHY ────────────────
   // shared/numbers/pace.js owns the definition (raised share against the share of the
@@ -759,7 +764,7 @@ function computeFundraisingPace(raised, goal, startDate, endDate, basis = "raise
   // about the same money. No start or no deadline: no pace at all — the caller
   // shows raised against goal, which is the honest thing to show.
   let paceState = null, expected = null, paceSentence = null, paceRaisedPct = null, paceElapsedPct = null, paceMath = null, paceGap = 0, paceProjected = null;
-  const p = PACE.paceOf({ raised: r, goal: g, start: startDate, end: endDate, today: now.toISOString().slice(0, 10), basis });
+  const p = PACE.paceOf({ raised: r, goal: g, start: startDate, end: endDate, today: day, basis });
   if (p) {
     paceState = p.state === "on_pace" ? "on_track" : p.state;   // the wire word the screens already read
     paceSentence = p.sentence;
@@ -780,7 +785,7 @@ function computeFundraisingPace(raised, goal, startDate, endDate, basis = "raise
   // FUNDRAISING-2: a goal that has not started has no pace. It says when it
   // starts, and the card shows what was pledged or given early.
   if (lifecycle === "upcoming") { paceState = null; paceSentence = null; expected = null; paceRaisedPct = null; paceElapsedPct = null; paceMath = null; paceGap = 0; paceProjected = null; }
-  return { percent, rawPercent, over, daysLeft, lifecycle, paceState, expected,
+  return { percent, rawPercent, over, daysLeft, endsWords: ends.words, lifecycle, paceState, expected,
            paceSentence, paceMath, paceRaisedPct, paceElapsedPct, paceGap, paceProjected, paceBasis: basis, startsOn: lifecycle === "upcoming" ? civilDay(startDate) : null };
 }
 
@@ -789,11 +794,11 @@ function computeFundraisingPace(raised, goal, startDate, endDate, basis = "raise
 // the bar, the percent and "over" stay money raised, which is what every other
 // figure of this goal (goal-progress, Reports) reads.
 const PACE_KEYS = ["paceState", "expected", "paceSentence", "paceMath", "paceRaisedPct", "paceElapsedPct", "paceGap", "paceProjected", "paceBasis"];
-function paceWithCommitment(raised, commitment, goal, startDate, endDate) {
-  const base = computeFundraisingPace(raised, goal, startDate, endDate);
+function paceWithCommitment(raised, commitment, goal, startDate, endDate, today = null) {
+  const base = computeFundraisingPace(raised, goal, startDate, endDate, "raised", today);
   if (!commitment || !commitment.countPledges || commitment.paceBasis === raised) return base;
   // FLOWS-7: the rule names its own basis ("85% committed"), no string swap.
-  const on = computeFundraisingPace(commitment.paceBasis, goal, startDate, endDate, "committed");
+  const on = computeFundraisingPace(commitment.paceBasis, goal, startDate, endDate, "committed", today);
   for (const k of PACE_KEYS) base[k] = on[k];
   return base;
 }
@@ -818,6 +823,7 @@ function paceWithCommitment(raised, commitment, goal, startDate, endDate) {
 //     one number would double-count and a treasurer would catch it.
 async function fundraisingCampaignRows(orgId) {
   await PACE_READY;
+  const orgDay = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK: days left is the org's own day
   const campaigns = await query(
     `SELECT id, name, goal_amount, start_date, end_date, status, type, goal_category, parent_goal_id, created_at, count_pledges,
             donor_facing_name, donor_description, donor_story, hero_image_url, hero_crop, hero_focal_x, hero_focal_y, goal_progress_public, grants_off_public_bar, retired_at
@@ -873,7 +879,7 @@ async function fundraisingCampaignRows(orgId) {
     // pace then reads committed (raised + still owed), never a dollar twice.
     const GP = require("../../shared/numbers/goalPledges");
     const commitment = { ...GP.committedOf({ raised, pledged, countPledges: GP.countsPledges("campaign", c.count_pledges) }), goalId: c.id, kind: "campaign", canCount: true };
-    const pace = paceWithCommitment(raised, commitment, c.goal_amount, c.start_date, c.end_date);
+    const pace = paceWithCommitment(raised, commitment, c.goal_amount, c.start_date, c.end_date, orgDay);
     return {
       id: c.id,
       name: c.name,
@@ -904,6 +910,7 @@ async function fundraisingCampaignRows(orgId) {
       goalProgressPublic: c.goal_progress_public === true,
       grantsOffPublicBar: c.grants_off_public_bar === true,   // FIX-49
       retired: !!c.retired_at,   // FIX-41: kept on every report; the Campaigns list marks it
+      asOf: orgDay,   // FLOWS-18: the org's day the days-left were counted on (the roll-up reuses it)
       ...pace,
     };
   });
@@ -936,7 +943,7 @@ function fundraisingGoalsPortfolio(rows) {
     const rolledRaised = isOverarching
       ? Math.round(((r.rollupGiftRaised ?? (r.giftRaised + kids.reduce((s, k) => s + (k.giftRaised || 0), 0))) + (r.grantAwarded || 0) + kids.reduce((s, k) => s + (k.grantAwarded || 0), 0)) * 100) / 100
       : r.raised;
-    const rolled = isOverarching ? computeFundraisingPace(rolledRaised, r.goalAmount, r.startDate, r.endDate) : null;
+    const rolled = isOverarching ? computeFundraisingPace(rolledRaised, r.goalAmount, r.startDate, r.endDate, "raised", r.asOf) : null;
     return {
       ...r,
       isOverarching,

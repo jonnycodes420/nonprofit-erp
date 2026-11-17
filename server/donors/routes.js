@@ -145,6 +145,8 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
     d.total_giving = lt.get(d.id) / 100;
     if (d.cells && "lifetime" in d.cells) d.cells.lifetime = d.total_giving;
   }
+  // FLOWS-18: a giver is a donor on read (shared/numbers/isDonor.js), the same rule the Donors view filtered by.
+  for (const d of out) d.person_types = require("../../shared/numbers/isDonor").typesOnRead(d);
   lap("rows");
   res.setHeader("Server-Timing", steps.map(([n, ms]) => `${n};dur=${ms}`).join(", "));
   if (Date.now() - t0 > 2000) {
@@ -456,7 +458,8 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   // rather than reading the /people/photos map, so a profile is never the
   // record whose face went missing because a list was capped.
   d.photo_url = donorPhotoUrl(req.user.orgId, d.photo_asset_id);
-  d.person_types = PT.typesOf(d);   // BUILD-94 Part 2
+  // BUILD-94 Part 2; FLOWS-18: a giver reads as a donor on read, whatever was stored (shared/numbers/isDonor.js).
+  d.person_types = require("../../shared/numbers/isDonor").typesOnRead({ person_types: PT.typesOf(d), total_giving: d.total_giving, gift_count: d.gift_count_live ?? d.gift_count });
   // PROFILE-1 — the four figures, each carrying the source its drawer opens.
   d.figures = await donorProfileFigures(
     req.user.orgId, d.id, orgToday(await orgTz(req.user.orgId)));   // ORG_TZ_SEAM_OK

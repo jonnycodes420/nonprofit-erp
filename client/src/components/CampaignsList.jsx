@@ -33,9 +33,14 @@ export const PACE_META = {
   behind:   { label: "Behind pace",   color: T.gold700,    bg: T.gold100 },   // FIX-2 C: behind is brass, never red
 };
 
-export function daysLeftText(dl) {
+// FLOWS-18: the words are the server's one rule (shared/numbers/endsOn.js),
+// sent as `endsWords`. 0 days on an active goal is its last day, never "ended":
+// a goal ending Dec 31 is open all of Dec 31, in the org's own time zone.
+export function daysLeftText(dl, words = null) {
+  if (words) return words === "Last day" ? "last day" : words === "Ended" ? "ended" : words;
   if (dl == null) return null;
-  if (dl <= 0) return "ended";
+  if (dl < 0) return "ended";
+  if (dl === 0) return "last day";
   if (dl === 1) return "1 day left";
   return `${dl} days left`;
 }
@@ -206,7 +211,7 @@ function CampaignCard({ g, allGoals, editBtn, onOpenCampaign }) {
           </div>
           <div style={{ fontSize: 11, color: T.ink3, marginTop: 3 }}>
             {over ? `Rolls up ${children.length === 1 ? "one goal" : "its goals"}` : (g.lifecycle === "upcoming" ? "Upcoming" : g.lifecycle === "ended" ? "Ended" : "Active")}
-            {!over && daysLeftText(g.daysLeft) && g.lifecycle === "active" ? ` · ${daysLeftText(g.daysLeft)}` : ""}
+            {!over && daysLeftText(g.daysLeft, g.endsWords) && g.lifecycle === "active" ? ` · ${daysLeftText(g.daysLeft, g.endsWords)}` : ""}
           </div>
         </div>
         {editBtn(g)}
@@ -278,7 +283,7 @@ function CampaignPage({ g, id, allGoals, editBtn, isReadOnly, onBack, onOpenCamp
           <div style={{ fontSize: 13, color: T.ink3, marginTop: 6 }}>
             {g.lifecycle === "upcoming" ? "Upcoming" : g.lifecycle === "ended" ? "Ended" : "Active"}
             {g.startDate ? ` · ${displayDate(g.startDate)}` : ""}{g.endDate ? ` to ${displayDate(g.endDate)}` : ""}
-            {g.lifecycle === "active" && daysLeftText(g.daysLeft) ? ` · ${daysLeftText(g.daysLeft)}` : ""}
+            {g.lifecycle === "active" && daysLeftText(g.daysLeft, g.endsWords) ? ` · ${daysLeftText(g.daysLeft, g.endsWords)}` : ""}
             {parent ? <> · part of <RecordLink to={campaignHref(parent.id)} onOpen={() => onOpenCampaign(parent.id)} style={{ color: T.greenDk }}>{parent.name}</RecordLink></> : null}
           </div>
         </div>

@@ -3038,6 +3038,21 @@ app.get("/giving-pages/:id/p2p", requireAuth, wrap(async (req, res) => {
     // payloads never carry it.
     email: f.email, story: f.story || "", imageUrl: f.image_url || "",
   }));
+  // FLOWS-18 item 4 (W-1117-Volunteers-30): a team's members and raised are counted from the
+  // SAME fundraiser rows the list shows, and each row's team name is that team's. Two queries
+  // read a moment apart could disagree (a fundraiser moved between them): Noor read "Dockside
+  // Paddlers" on her row while the Dockside card counted 3 people and $995 without her.
+  const teamById = new Map(teams.map(t => [t.id, t]));
+  for (const f of shaped) {
+    const t = f.teamId ? teamById.get(f.teamId) : null;
+    if (!t) { f.teamId = null; f.teamName = null; } else f.teamName = t.name;
+  }
+  for (const t of teams) {
+    const mine = shaped.filter(f => f.teamId === t.id);
+    t.members = mine.filter(f => f.status === "active").length;
+    t.raised = mine.reduce((a, f) => a + f.raisedCents, 0) / 100;
+  }
+  teams.sort((a, b) => b.raised - a.raised || String(a.name).localeCompare(String(b.name)));
   const teamCentsTotal = teams.reduce((a, t) => a + cents(t.raised), 0);
   const soloCents = shaped.filter(f => !f.teamName).reduce((a, f) => a + f.raisedCents, 0);
 

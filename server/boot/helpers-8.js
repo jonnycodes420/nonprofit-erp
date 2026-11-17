@@ -1136,7 +1136,9 @@ async function resolveWidgetsPublic(org, widgets, ctx = {}) {
       const end = ctx.campaignEndDate || null;
       r.endDate = end;
       r.sentence = end ? CP.countdownSentence(end, ctx.today || null) : null;
-      r.daysLeft = end && ctx.today ? CP.daysBetween(ctx.today, end) : null;
+      const e = require("../../shared/numbers/endsOn").endsOn(end, { today: ctx.today || null });   // FLOWS-18: the one rule
+      r.daysLeft = end && ctx.today ? e.daysLeft : null;
+      r.state = e.state;
     }
     if (w.type === "matchchallenge") {
       const CP = await campaignPageMod();

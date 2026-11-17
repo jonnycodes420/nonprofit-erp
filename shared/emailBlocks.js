@@ -48,7 +48,10 @@ export const EMAIL_MERGE_FIELDS = [
   { key: "org_name",         token: "{{org_name}}",         label: "Your organization", sample: "your organization", fallback: "our organization" },
 ];
 const MERGE_KEYS = new Set(EMAIL_MERGE_FIELDS.map(f => f.key));
-const MERGE_ALIASES = { first: "first_name", org: "org_name" };
+// FLOWS-18: drafts saved from the old Thank-you starter hold {{gift_amount}}, the older engine's
+// name for the same gift; it reads as {{last_gift_amount}} (the last real gift), so they show an
+// amount, not the tag. A starter never uses the old name (tests/flows18.test.js §2).
+const MERGE_ALIASES = { first: "first_name", org: "org_name", gift_amount: "last_gift_amount" };
 
 // The dark block is named so the preview can force it on (it rewrites this
 // one media line to `@media all`).

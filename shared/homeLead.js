@@ -128,7 +128,7 @@ function seasonCards(f) {
   const gap = Math.max(0, s.goal - s.raised);
   const behind = s.lastYearByToday > (s.seasonThisYear || 0) ? s.lastYearByToday - (s.seasonThisYear || 0) : 0;
   const out = [card("season", "season:" + s.campaignId, [{ name: "time", n: s.daysLeft <= 21 ? 40 : 25 }, { name: "stakes", n: Math.round(40 * rel(gap, f.line)) }], {
-    eyebrow: `${s.label} · ${plural(s.daysLeft, "day", "days")} left`,
+    eyebrow: `${s.label} · ${s.daysLeft > 0 ? `${plural(s.daysLeft, "day", "days")} left` : "Last day"}`,   // FLOWS-18: the end date is its last day
     title: `${money(s.raised)} of ${money(s.goal)}`,
     why: [s.shareLine,
       s.lapsed.count ? `${plural(s.lapsed.count, "person", "people")} who gave last ${s.lapsedSeason}${f.role === "officer" ? " in your portfolio" : ""} haven't given this year. They gave ${money(s.lapsed.total)} then.` : null,

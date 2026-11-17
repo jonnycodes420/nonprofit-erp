@@ -632,8 +632,8 @@ function LeadCampaign({ top, onOpen, onNavigate, card, label }) {
       <Thermometer raised={top.raised} goal={top.goalAmount} percent={top.percent} rawPercent={top.rawPercent} over={top.over} paceState={top.paceState} paceSentence={top.paceSentence} paceMath={top.paceMath} />
       <div style={{ marginTop: 12, fontSize: 13, color: T.ink2, lineHeight: 1.6 }}>
         {l.left > 0
-          ? <>{fmtTotal(l.left)} to go{daysLeftText(top.daysLeft) ? `, ${daysLeftText(top.daysLeft)}` : ""}{l.perWeek ? `: about ${fmtTotal(l.perWeek)} a week to finish on time.` : "."}</>
-          : <>The goal is met{daysLeftText(top.daysLeft) ? `, ${daysLeftText(top.daysLeft)}` : ""}.</>}
+          ? <>{fmtTotal(l.left)} to go{daysLeftText(top.daysLeft, top.endsWords) ? `, ${daysLeftText(top.daysLeft, top.endsWords)}` : ""}{l.perWeek ? `: about ${fmtTotal(l.perWeek)} a week to finish on time.` : "."}</>
+          : <>The goal is met{daysLeftText(top.daysLeft, top.endsWords) ? `, ${daysLeftText(top.daysLeft, top.endsWords)}` : ""}.</>}
       </div>
       {(l.topGivers || []).length > 0 && (
         <div style={{ marginTop: 12, borderTop: "1px solid " + T.bg2, paddingTop: 10 }}>
@@ -730,7 +730,7 @@ function GoalCard({ g, allGoals, onClick }) {
       ) : (
         <div style={{ fontSize: 12, color: T.ink3, borderTop: "1px solid " + T.bg2, paddingTop: 10 }}>
           {countLabel(g.donorCount, "donor")}
-          {daysLeftText(g.daysLeft) && g.lifecycle === "active" ? ` · ${daysLeftText(g.daysLeft)}` : g.lifecycle === "upcoming" ? " · upcoming" : g.lifecycle === "ended" ? " · ended" : ""}
+          {daysLeftText(g.daysLeft, g.endsWords) && g.lifecycle === "active" ? ` · ${daysLeftText(g.daysLeft, g.endsWords)}` : g.lifecycle === "upcoming" ? " · upcoming" : g.lifecycle === "ended" ? " · ended" : ""}
           {committedText(g) ? ` · ${committedText(g)}` : ""}
         </div>
       )}
