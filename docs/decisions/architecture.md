@@ -575,6 +575,7 @@ Diagnostic tooling added after manually deleting test-user rows in Supabase's Ta
   A nightly pass sweeps every live org once in its own 2–6 AM, for lapses only the date makes
   (`server/smartMoves/`). Don't add a second list of doors for "changed".
 - **A claim is one statement; an empty queue is asked by one lane with a growing wait** (`JOB_POLL_MS` up to
-  `JOB_POLL_MAX_MS`, 15 s), and a new or returned row wakes the worker through `NOTIFY steward_jobs`
-  (`server/jobs/wake.js`, one listening connection outside the pool, counted in the connection budget).
-  Heartbeats are one write per process for every run it holds, at most every 30 s. `JOB_WAKE=off` falls back to polling.
+  `JOB_POLL_MAX_MS`, default twice the poll: 2 s), and an enqueue in the worker's own process wakes it at once.
+  Heartbeats are one write per process for every run it holds, at most every 30 s. The database wake
+  (`NOTIFY steward_jobs`, `server/jobs/wake.js`) is built but **off unless `JOB_WAKE=on`**: on the load profile
+  it slowed a gift's POST (p95 671 vs 495 ms). Turn it on only with a load run showing the gift path unchanged.

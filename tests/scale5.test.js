@@ -191,8 +191,12 @@ async function shape(org) {
   ok("§4 an empty claim is one statement too", none === null && emptyTrips === 1, `trips=${emptyTrips}`);
   void names;
 
+  // The wake is opt-in (JOB_WAKE=on, server/jobs/wake.js): its trigger is built
+  // for this check and dropped after, as a boot without JOB_WAKE=on does.
+  const WAKE = require("../server/jobs/wake");
+  process.env.JOB_WAKE = "on"; await WAKE.ensureWakeTrigger(require("../server/db/pool").pool);
   const child = spawn(process.execPath, [path.join(ROOT, "tests/lib/scale5Idle.js")], { cwd: ROOT, stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, STEWARD_PROCESS: "worker", WORKER_CONCURRENCY: "4", JOB_POLL_MS: "100", JOB_POLL_MAX_MS: "4000", JOB_NO_HANDLER_MS: "86400000", DISABLE_BACKGROUND_TICKS: "1", JOB_REAP_MS: "60000" } });
+    env: { ...process.env, STEWARD_PROCESS: "worker", WORKER_CONCURRENCY: "4", JOB_WAKE: "on", JOB_POLL_MS: "100", JOB_POLL_MAX_MS: "4000", JOB_NO_HANDLER_MS: "86400000", DISABLE_BACKGROUND_TICKS: "1", JOB_REAP_MS: "60000" } });
   let clog = ""; child.stdout.on("data", d => { clog += d; }); child.stderr.on("data", d => { clog += d; });
   try {
     await waitFor(async () => /scale5 idle ready/.test(clog), { timeout: 30000, interval: 100 });
@@ -211,7 +215,9 @@ async function shape(org) {
     const [w] = await q(`SELECT (payload->>'began')::bigint AS began FROM job_queue WHERE id='scale5:wake'`);
     const waited = Number(w.began) - t0;
     ok("§4 a new row wakes the idle worker at once (under 1 s; its poll was up to 4 s)", waited < 1000, `${waited} ms`);
-  } finally { child.kill("SIGTERM"); }
+  } finally { child.kill("SIGTERM"); delete process.env.JOB_WAKE; await WAKE.ensureWakeTrigger(require("../server/db/pool").pool).catch(() => {}); }
+  ok("§4 without JOB_WAKE=on no wake trigger is left on job_queue (the measured default)",
+    (await q(`SELECT COUNT(*)::int AS n FROM pg_trigger WHERE tgname LIKE 'job_queue_wake%'`))[0].n === 0);
 
   await clean();
 })().catch(e => ok("suite ran without throwing", false, e.stack))

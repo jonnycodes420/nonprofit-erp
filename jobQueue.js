@@ -50,10 +50,11 @@ const MAX_ATTEMPTS = 5;
 const ORG_CAP = () => Math.max(1, Number(process.env.JOB_ORG_CAP) || 2);
 const CONCURRENCY = () => Math.max(1, Number(process.env.WORKER_CONCURRENCY) || 4);
 const POLL_MS = () => Math.max(50, Number(process.env.JOB_POLL_MS) || 1000);
-// SCALE-5: an empty queue is asked less and less often, up to this; a new row
-// wakes the lanes at once (server/jobs/wake.js), so this bounds only a run that
-// was put off (run_after in the future) by another process.
-const POLL_MAX_MS = () => Math.max(POLL_MS(), Number(process.env.JOB_POLL_MAX_MS) || 15000);
+// SCALE-5: an empty queue is asked less and less often, up to this (twice
+// JOB_POLL_MS: 2 s in prod), so a
+// row another process enqueues waits at most this long; one this process
+// enqueues wakes the lanes at once.
+const POLL_MAX_MS = () => Math.max(POLL_MS(), Number(process.env.JOB_POLL_MAX_MS) || 2 * POLL_MS());
 // A running row whose worker has not touched it in this long is taken to have
 // died with its process, and goes back to waiting (it counts as a try).
 const STALE_MS = () => Math.max(1000, Number(process.env.JOB_STALE_MS) || 10 * 60 * 1000);
@@ -487,8 +488,8 @@ function startNow({ scheduler = true, build = null } = {}) {
     }
   };
   ensureBeat();   // SCALE-5: one heartbeat write per process for what it holds
-  // SCALE-5: a new row wakes the lanes at once (JOB_WAKE=off: poll only).
-  if (String(process.env.JOB_WAKE || "").toLowerCase() !== "off") wake = require("./server/jobs/wake").listen(() => pokeOne());
+  // SCALE-5: with JOB_WAKE=on a new row wakes the lanes at once (server/jobs/wake.js: off by default).
+  if (require("./server/jobs/wake").wakeOn()) wake = require("./server/jobs/wake").listen(() => pokeOne());
   lanesDone = Promise.all(Array.from({ length: CONCURRENCY() }, () => lane()));
   // JOBS-1: the outbox's sweep relays any event its door could not.
   require("./server/shared/outbox").startSweep();

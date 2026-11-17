@@ -12,6 +12,15 @@
 //
 // If the listening connection drops, the lanes still poll (at most every
 // JOB_POLL_MAX_MS), and the listener reconnects with a backoff.
+//
+// OFF BY DEFAULT (JOB_WAKE=on to use it). Measured on the ten-orgs load profile
+// (SCALE-5 report): with the trigger on, a gift's POST p95 was 671 ms against
+// 495 ms off, and slower than main in each paired run, while /donors did not
+// move. The gift path is what a person waits on, so the worker polls instead
+// (one lane, backing off to JOB_POLL_MAX_MS, 2 s), and an enqueue in the
+// worker's own process still wakes it at once. Turn it on only with a load run
+// that shows the gift path unchanged.
+const wakeOn = () => String(process.env.JOB_WAKE || "").toLowerCase() === "on";
 "use strict";
 
 const CHANNEL = "steward_jobs";
@@ -30,6 +39,11 @@ async function ensureWakeTrigger(pool) {
     };
     await tries(`CREATE OR REPLACE FUNCTION steward_jobs_wake() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN PERFORM pg_notify('${CHANNEL}', ''); RETURN NULL; END $$`);
+    // Not on: no notices at all (the lanes poll); a trigger left by an earlier boot goes.
+    if (!wakeOn()) {
+      for (const name of ["job_queue_wake_ins", "job_queue_wake_back"]) await tries(`DROP TRIGGER IF EXISTS ${name} ON job_queue`);
+      return;
+    }
     const have = new Set((await client.query(`SELECT tgname FROM pg_trigger WHERE tgrelid = 'job_queue'::regclass AND NOT tgisinternal`)).rows.map(r => r.tgname));
     const want = [
       ["job_queue_wake_ins", `AFTER INSERT ON job_queue FOR EACH STATEMENT EXECUTE FUNCTION steward_jobs_wake()`],
@@ -84,4 +98,4 @@ function listen(onWake, { log = console } = {}) {
   };
 }
 
-module.exports = { ensureWakeTrigger, listen, CHANNEL };
+module.exports = { ensureWakeTrigger, listen, CHANNEL, wakeOn };
