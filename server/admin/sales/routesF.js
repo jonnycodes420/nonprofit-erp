@@ -37,7 +37,12 @@ function mount(app, { query, run, wrap, door, salesLimiter, whoOf, send }) {
 
   app.get("/ops/sales/prospects/search", salesLimiter, door, wrap(async (req, res) => {
     const range = rangeOf(req.query);
-    const r = await PP.search({ state: req.query.state || "KY", category: req.query.category || "food", page: req.query.page || 0, q: req.query.q || "" });
+    // Only known shapes reach ProPublica: a two-letter state, a category key, a page number, plain words.
+    const state = /^[A-Za-z]{2}$/.test(String(req.query.state || "")) ? String(req.query.state).toUpperCase() : "KY";
+    const category = PP.CATEGORIES.some(c => c.key === req.query.category) ? String(req.query.category) : "food";
+    const page = Math.min(1000, Math.max(0, parseInt(req.query.page, 10) || 0));
+    const words = String(req.query.q || "").replace(/[^A-Za-z0-9 '&-]/g, " ").trim().slice(0, 80);
+    const r = await PP.lookup({ state, category, page, q: words });
     if (r.error) return res.status(503).json(r);
     const rows = await withFacts(query, r.rows, range);
     res.json({ ok: true, ...r, range, rows, shown: rows.filter(x => x.inRange).length, sentences: PP.SENTENCES });

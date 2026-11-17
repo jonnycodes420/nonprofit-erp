@@ -185,11 +185,11 @@ async function prospect(name, { stage = "Lead", mrr = 299, ageDays = 1, email = 
     if (/organizations\/619876543\.json/.test(u)) return json({ organization: { address: "9 Oak Ave", zipcode: "40502", revenue_amount: 3900000 }, filings_with_data: [{ tax_prd_yr: 2024, totrevenue: 4100000 }] });
     return new Response("<html>Security Check</html>", { status: 403, headers: { "Content-Type": "text/html" } });
   };
-  const found = await PP.search({ state: "KY", category: "food" }, { fetcher: ppFetch });
+  const found = await PP.lookup({ state: "KY", category: "food" }, { fetcher: ppFetch });
   const wy = found.rows && found.rows.find(r => r.ein === "611234567");
   ok("§5 a ProPublica row carries EIN, city, revenue, year and its ProPublica link", wy && wy.city === "Nicholasville" && wy.revenue === 452000 && wy.year === 2024 && /organizations\/611234567$/.test(wy.sourceUrl), JSON.stringify(wy));
   ok("§5 the revenue range ($100K to $2M by default) keeps one and drops the $4.1M", found.rows.filter(r => PP.inRange(r)).map(r => r.ein).join() === "611234567");
-  const down = await PP.search({ state: "KY", category: "food" }, { fetcher: async () => { throw new Error("getaddrinfo ENOTFOUND"); } });
+  const down = await PP.lookup({ state: "KY", category: "food" }, { fetcher: async () => { throw new Error("getaddrinfo ENOTFOUND"); } });
   ok("§5 ProPublica unreachable says so plainly and offers the CSV", down.error === "unreachable" && /CSV/.test(down.message), JSON.stringify(down));
   const add1 = await S(sup, "POST", "/prospects/add", { list: { name: "KY food pantries (sales4)" }, rows: [wy] });
   const add2 = await S(sup, "POST", "/prospects/add", { list: { name: "KY food pantries (sales4)" }, rows: [wy] });

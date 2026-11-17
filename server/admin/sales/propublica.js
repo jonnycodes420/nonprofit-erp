@@ -56,7 +56,7 @@ async function getJson(url, fetcher) {
 
 // One step of a search (keyword categories: page n of each keyword; group categories: four pages),
 // with each kept organization's revenue and address, fetched four at a time, at most 40.
-async function search({ state = "KY", category = "food", page = 0, q = "" } = {}, { fetcher = null } = {}) {
+async function lookup({ state = "KY", category = "food", page = 0, q = "" } = {}, { fetcher = null } = {}) {
   const cat = CATEGORIES.find(c => c.key === category) || CATEGORIES[0];
   const st = /^[A-Za-z]{2}$/.test(String(state || "")) ? String(state).toUpperCase() : "KY";
   const step = Math.max(0, Number(page) || 0);
@@ -141,4 +141,4 @@ async function existing(query, rows) {
   });
 }
 
-module.exports = { STATES, CATEGORIES, DEFAULT_REVENUE, SENTENCES, ORG_PAGE, einOf, norm, nameKey, search, detail, inRange, fromCsv, existing };
+module.exports = { STATES, CATEGORIES, DEFAULT_REVENUE, SENTENCES, ORG_PAGE, einOf, norm, nameKey, lookup, detail, inRange, fromCsv, existing };
