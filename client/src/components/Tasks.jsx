@@ -204,8 +204,8 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
           <PageTitle main="Your" accent="tasks." />
           {/* FLOWS-18 (W-1117-Volunteers-19): the morning email as it really is: her switch and the org's staff mail. */}
           {mail && <div data-testid="tasks-morning-email" data-state={mail.state} style={{ fontSize: 12.5, color: T.ink3, marginTop: 4 }}>
-            {morningEmailSentence(mail, "tasks")}
-            {!mail.on && <> <a data-testid="tasks-morning-turn-on" href="/app/settings?section=myemail&daily=1" style={{ color: T.greenDk, fontWeight: 700 }}>{mail.state === "staff_mail_off" ? "See Your email" : "Turn it on"}</a></>}
+            {morningEmailSentence(mail, "tasks") + (mail.on ? "" : " ")}
+            {!mail.on && <><a data-testid="tasks-morning-turn-on" href="/app/settings?section=myemail&daily=1" style={{ color: T.greenDk, fontWeight: 700 }}>{mail.state === "staff_mail_off" ? "See Your email" : "Turn it on"}</a></>}
           </div>}
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>

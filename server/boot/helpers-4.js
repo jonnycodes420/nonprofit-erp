@@ -306,6 +306,7 @@ async function legacyCampaignBody(body, donor, orgName, year, { text = false } =
     .replace(/{{donor_name}}/g,   e(donor.name))
     .replace(/{{org_name}}/g,     e(displayNameCase(orgName)))
     .replace(/{{gift_amount}}/g,  giftAmount)
+    .replace(/{{last_gift_amount}}/g, giftAmount)   // FLOWS-18: the starters' field (the block engine's name), the same gift
     .replace(/{{total_giving}}/g, totalGiving)
     .replace(/{{year}}/g,         year);
 }
