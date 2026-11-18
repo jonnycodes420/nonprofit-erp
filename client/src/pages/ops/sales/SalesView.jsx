@@ -19,8 +19,12 @@ import SettingsPanel from "./SettingsPanel";
 import ImportPanel from "./ImportPanel";
 import PartnersView from "./PartnersView";
 import CustomersView from "./CustomersView";
+import NowView from "./NowView";
+import PipelineView from "./PipelineView";
 
-const SUBS = [["org", "Organizations"], ["contact", "Contacts"], ["deal", "Deals"], ["task", "Tasks"], ["customers", "Customers"], ["partner", "Partners"], ["list", "Lists"], ["score", "Scoreboard"]];
+// SALES-4: Sales opens on Now; the pipeline is a board; Today's lines and the forecast sit under Forecast.
+const SUBS = [["now", "Now"], ["pipeline", "Pipeline"], ["org", "Organizations"], ["contact", "Contacts"], ["deal", "Deals"], ["task", "Tasks"], ["list", "Lists"],
+  ["customers", "Customers"], ["partner", "Partners"], ["score", "Scoreboard"], ["forecast", "Forecast"]];
 const LINES = [
   ["howDidItGo", "How did it go?"], ["billingStarts", "Billing starts soon"], ["quoteUnsigned", "Quote sent, not signed"], ["booked", "Meetings booked"],
   ["due", "Due today or overdue"], ["revisit", "Back from Later"], ["noReply", "No reply"], ["trials", "Trials and betas ending"], ["quiet", "Gone quiet"],
@@ -150,7 +154,7 @@ function Search({ open }) {
 
 export default function SalesView() {
   const [params, setParams] = useSearchParams();
-  const sub = SUBS.some(s => s[0] === params.get("sub")) ? params.get("sub") : "org";
+  const sub = SUBS.some(s => s[0] === params.get("sub")) ? params.get("sub") : "now";
   const rec = /^(org|contact|deal):(.+)$/.exec(params.get("rec") || "");
   const panel = params.get("panel");
   const [meta, setMeta] = useState(null);
@@ -161,14 +165,16 @@ export default function SalesView() {
   const loadHome = useCallback(() => apiFetch("/ops/sales/home").then(setHome).catch(() => setHome({ ok: false })), []);
   useEffect(() => { loadMeta(); loadHome(); }, [loadMeta, loadHome]);
 
-  const go = useCallback(next => setParams(p => { const o = { tab: "sales", sub: p.get("sub") || "org", ...next }; Object.keys(o).forEach(k => o[k] == null && delete o[k]); return o; }), [setParams]);
+  const [nowKey, setNowKey] = useState(0);
+  const go = useCallback(next => setParams(p => { const o = { tab: "sales", sub: p.get("sub") || "now", ...next }; Object.keys(o).forEach(k => o[k] == null && delete o[k]); return o; }), [setParams]);
   const open = useCallback((type, id) => go({ sub: type, rec: `${type}:${id}`, panel: null }), [go]);
-  const changed = useCallback(() => { loadHome(); }, [loadHome]);
+  const changed = useCallback(() => { loadHome(); setNowKey(k => k + 1); }, [loadHome]);
 
   if (err) return <section style={card}><Failure e={err} fallback={err.status === 404 ? "This page is for Steward's super-admins." : "The sales CRM could not be read. Try again in a minute."} /></section>;
   const callView = (() => { try { return params.get("view") ? JSON.parse(params.get("view")) : null; } catch { return null; } })();
   const listId = params.get("list");
   const startCalling = (view, lid) => go({ panel: "call", list: lid || null, view: view ? JSON.stringify(view) : null, rec: null });
+  const startNow = first => go({ panel: "call", now: "1", first: first || null, list: null, view: null, rec: null });
   if (!meta) return <section style={card}><p style={says}>Loading…</p></section>;
   return <div data-testid="ops-sales">
     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
@@ -177,19 +183,22 @@ export default function SalesView() {
       <button type="button" style={quiet} onClick={() => go({ panel: panel === "import" ? null : "import", rec: null })} data-sales-import-open="1">Import</button>
       <button type="button" style={quiet} onClick={() => go({ panel: panel === "settings" ? null : "settings", rec: null })} data-sales-settings-open="1">Sales settings</button>
     </div>
-    {panel === "call" ? <CallMode key={`${listId}:${params.get("view")}:${params.get("cadence")}`} meta={meta} listId={listId} view={callView} cadence={params.get("cadence") === "1"} onClose={() => { go({ panel: null, view: null, cadence: null }); loadHome(); }} open={open} />
+    {panel === "call" ? <CallMode key={`${listId}:${params.get("view")}:${params.get("cadence")}:${params.get("now")}`} meta={meta} listId={listId} view={callView} cadence={params.get("cadence") === "1"}
+        fromNow={params.get("now") === "1"} first={params.get("first")} onClose={() => { go({ panel: null, view: null, cadence: null, now: null, first: null }); changed(); }} open={open} />
       : panel === "settings" ? <SettingsPanel meta={meta} onChanged={() => { loadMeta(); loadHome(); }} onClose={() => go({ panel: null })} />
       : panel === "import" ? <ImportPanel meta={meta} onChanged={changed} onClose={() => go({ panel: null })} />
       : rec ? <RecordPage key={rec[0]} type={rec[1]} id={rec[2]} meta={meta} open={open} onBack={() => go({ rec: null })} onChanged={changed} />
       : <>
-        {home && home.ok ? <><Today today={home.today} open={open} meta={meta} reload={loadHome} /><Forecast f={home.forecast} /></>
-          : home ? <section style={card}><p style={says}>Today could not be read. Try again in a minute.</p></section> : null}
         <div role="tablist" aria-label="Sales" style={{ display: "flex", flexWrap: "wrap", columnGap: 18, rowGap: 0, borderBottom: `1px solid ${INK}1f`, margin: "0 0 14px" }}>
           {SUBS.map(([id, label]) => <button key={id} role="tab" aria-selected={sub === id} data-sales-sub={id} onClick={() => go({ sub: id, rec: null })}
             style={{ background: "none", border: 0, borderBottom: `2px solid ${sub === id ? EMERALD : "transparent"}`, padding: "8px 0", minHeight: 38, fontSize: 14,
               fontWeight: sub === id ? 700 : 500, color: INK, cursor: "pointer", fontFamily: "inherit" }}>{label}</button>)}
         </div>
-        {sub === "task" ? <TasksView meta={meta} open={open} onChanged={changed} />
+        {sub === "now" ? <NowView meta={meta} open={open} startCalling={startNow} startList={lid => startCalling(null, lid)} refreshKey={nowKey} />
+          : sub === "pipeline" ? <PipelineView meta={meta} open={open} onChanged={changed} />
+          : sub === "forecast" ? (home && home.ok ? <><Today today={home.today} open={open} meta={meta} reload={loadHome} /><Forecast f={home.forecast} /></>
+            : home ? <section style={card}><p style={says}>Today could not be read. Try again in a minute.</p></section> : <section style={card}><p style={says}>Loading…</p></section>)
+          : sub === "task" ? <TasksView meta={meta} open={open} onChanged={changed} />
           : sub === "customers" ? <CustomersView open={open} />
           : sub === "partner" ? <PartnersView open={open} />
           : sub === "score" ? <Scoreboard open={open} />

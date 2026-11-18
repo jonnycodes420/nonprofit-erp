@@ -15,6 +15,7 @@ import Timeline from "./Timeline";
 import NewRecord from "./NewRecord";
 import DealPartners from "./DealPartners";
 import QuotePanel from "./QuotePanel";
+import DealHeader from "./DealHeader";
 
 const PLURAL = { org: "Organizations", contact: "Contacts", deal: "Deals" };
 const SIDES = { org: ["contact", "deal"], contact: ["org", "deal"], deal: ["org", "contact"] };
@@ -148,11 +149,12 @@ export default function RecordPage({ type, id, meta, open, onBack, onChanged }) 
   const [err, setErr] = useState(null);
   const [confirmDel, setConfirmDel] = useState(false);
   const [doing, setDoing] = useState(null);   // SALES-2: "email" | "meeting"
+  const [headKey, setHeadKey] = useState(0);
   const narrow = useNarrow();
   const load = useCallback(() => apiFetch(`/ops/sales/rec/${type}/${encodeURIComponent(id)}`).then(r => { setD(r); setErr(null); })
     .catch(e => setErr(e)), [type, id]);
   useEffect(() => { load(); }, [load]);
-  const changed = () => { load(); onChanged(); };
+  const changed = () => { load(); onChanged(); setHeadKey(k => k + 1); };
   if (err) return <section style={card}><button type="button" style={link} onClick={onBack}>← Back</button><Failure e={err} fallback={err.status === 404 ? "This record was deleted or merged." : "This record could not be read."} /></section>;
   if (!d) return <section style={card}><p style={says}>Loading…</p></section>;
   const r = d.record;
@@ -187,6 +189,7 @@ export default function RecordPage({ type, id, meta, open, onBack, onChanged }) 
     {r.dnc_at || d.dncViaOrg ? <p style={{ background: `${BRASS}33`, border: `1px solid ${BRASS}`, borderRadius: 8, padding: "8px 12px", fontSize: 13.5, margin: "0 0 12px" }} data-sales-dnc="1">
       <b>Do not contact.</b> {r.dnc_at ? `${r.dnc_reason} · marked ${whenWords(r.dnc_at)} by ${r.dnc_by_name}.` : `${d.dncViaOrg.name} is marked Do not contact: ${d.dncViaOrg.dnc_reason}.`} Out of every call queue, cadence and list export.</p> : null}
     {type === "org" && d.fit ? <p style={{ ...says, opacity: 1 }} data-sales-fit="1" title="The fit rule in Sales settings: arithmetic on this organization's fields."><b>{d.fit.line}</b>{d.fit.misses.length ? ` · ${d.fit.misses.join("; ")}` : " · meets every line"}{r.lost_at ? <span style={{ ...brassTag, marginLeft: 6 }}>{r.lost_reason || "Not a fit"}</span> : null}</p> : null}
+    {type === "deal" ? <DealHeader id={id} reloadKey={headKey} onChanged={() => { load(); onChanged(); }} /> : null}
     {doing === "email" ? <EmailDraft contactId={type === "contact" ? id : null} dealId={type === "deal" ? id : null} onClose={() => setDoing(null)} onLogged={changed} /> : null}
     {doing === "meeting" ? <section style={card}><MeetingForm dealId={type === "deal" ? id : null} orgId={type === "org" ? id : null} contactIds={(d.linked.contact || []).filter(c => type === "deal").map(c => c.id)}
       attendeesHint={(d.linked.contact || []).map(c => c.displayName).join(", ")} onDone={() => { setDoing(null); changed(); }} onCancel={() => setDoing(null)} /></section> : null}
@@ -202,7 +205,7 @@ export default function RecordPage({ type, id, meta, open, onBack, onChanged }) 
           {d.stageMsg ? <p style={{ ...says, opacity: 1, marginTop: 6 }}><span style={brassTag}>Not moved</span> {d.stageMsg} Fill it in below, then choose the stage again.</p> : null}
           <div style={{ fontSize: 12, marginTop: 8, opacity: 0.75 }}>In this stage since {whenWords(r.stage_entered_at)}</div>
         </RailSection> : null}
-        <RailSection id="about" title="About" testid="rail-about">{core.map(fieldRow)}</RailSection>
+        <RailSection id="about" title="About" testid="rail-about" defaultOpen={type !== "deal"}>{core.map(fieldRow)}</RailSection>
         <RailSection id="custom" title="Custom properties" testid="rail-custom" defaultOpen={custom.length > 0}>
           {custom.length ? custom.map(fieldRow) : <p style={says}>None yet. Add them in Sales settings.</p>}</RailSection>
         {type === "deal" ? <RailSection id="history" title="Stage history" testid="rail-history" defaultOpen={false}>
@@ -223,7 +226,9 @@ export default function RecordPage({ type, id, meta, open, onBack, onChanged }) 
         {SIDES[type].map(side => <Linked key={side} type={type} id={id} side={side} rows={d.linked[side]} meta={meta} open={open} reload={changed} />)}
         {type !== "contact" ? <RailSection id="steward" title="Steward account" testid="rail-steward" defaultOpen={!!d.steward}>
           <StewardBox s={d.steward} orgId={id} reload={changed} canLink={type === "org"} /></RailSection> : null}
-        {type === "deal" ? <RailSection id="quote" title="Quote" testid="rail-quote"><QuotePanel dealId={id} onChanged={changed} /></RailSection> : null}
+        {/* Jonathan, 17 Nov: the quote opens from Verbal yes on (or once the deal is won). */}
+        {type === "deal" ? <RailSection id="quote" title="Quote" testid="rail-quote" defaultOpen={(() => { const st = pipe.stages.find(s => s.id === r.stage_id); const vy = pipe.stages.find(s => s.name === "Verbal yes");
+          return !!st && (st.kind === "won" || (vy ? st.kind === "open" && st.position >= vy.position : false)); })()}><QuotePanel dealId={id} onChanged={changed} /></RailSection> : null}
         {d.onboarding ? <RailSection id="gates" title="Onboarding gates" testid="rail-gates"><Gates o={d.onboarding} /></RailSection> : null}
         {type === "deal" ? <RailSection id="partners" title="Partners" testid="rail-partners" defaultOpen={(d.partners || []).length > 0}>
           <DealPartners dealId={id} lines={d.partners || []} reload={changed} /></RailSection> : null}

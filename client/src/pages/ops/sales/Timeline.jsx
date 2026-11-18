@@ -19,6 +19,8 @@ export function TaskBox({ a, onToggle }) {
 }
 
 export function ActivityRow({ a, here, open, reload }) {
+  const [more, setMore] = useState(false);   // SALES-4: a long note shows three lines until asked
+  const long = String(a.body || "").length > 240 || String(a.body || "").split("\n").length > 3;
   const today = new Date().toLocaleDateString("en-CA");   // the viewer's own day
   const overdue = a.kind === "task" && !a.done_at && a.due_on && a.due_on < today;
   const toggle = async () => { await apiFetch(`/ops/sales/activities/${a.id}`, { method: "PATCH", body: JSON.stringify({ done: !a.done_at }) }); reload(); };
@@ -26,12 +28,13 @@ export function ActivityRow({ a, here, open, reload }) {
     {a.kind === "task" ? <TaskBox a={a} onToggle={toggle} /> : <span style={{ width: 20, fontSize: 11, fontWeight: 700, opacity: 0.55, paddingTop: 2 }}>{KIND_WORDS[a.kind].slice(0, 4)}</span>}
     <div style={{ flex: 1, minWidth: 0 }}>
       <div style={{ fontSize: 12, opacity: 0.75, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "baseline" }}>
-        <b>{KIND_WORDS[a.kind]}</b>
+        <b>{KIND_WORDS[a.kind]}</b>{a.source === "calendar" ? <span>from your calendar</span> : null}
         {a.kind === "task" ? (a.done_at ? <span>done {whenWords(a.done_at)}</span> : a.due_on ? <span>due {dayWords(a.due_on)}</span> : <span>no due date</span>) : <span>{whenWords(a.at)}</span>}
         {overdue ? <span style={brassTag}>overdue</span> : null}
         <span>· {a.created_by_name}</span>
       </div>
-      <div style={{ fontSize: 13.5, whiteSpace: "pre-wrap", marginTop: 2}}>{a.body}</div>
+      <div style={{ fontSize: 13.5, whiteSpace: "pre-wrap", marginTop: 2, ...(long && !more ? { display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" } : {}) }}>{a.body}</div>
+      {long ? <button type="button" style={{ ...link, fontSize: 12 }} onClick={() => setMore(m => !m)} aria-expanded={more}>{more ? "Less" : "More"}</button> : null}
       {a.records && a.records.length > (here ? 1 : 0) ? <div style={{ fontSize: 12, marginTop: 3, opacity: 0.8 }}>On: {a.records.map((r, i) => <span key={`${r.type}:${r.id}`}>{i ? ", " : ""}
         {here && r.type === here.type && r.id === here.id ? r.name : <button type="button" style={{ ...link, fontSize: 12 }} onClick={() => open(r.type, r.id)}>{r.name}</button>}</span>)}</div> : null}
     </div>
@@ -53,7 +56,7 @@ function EmailRow({ e }) {
 }
 
 export default function Timeline({ type, id, items, emails = [], linked, open, reload }) {
-  const [kind, setKind] = useState("note");
+  const [kind, setKind] = useState(null);   // SALES-4: the log box opens when a kind is picked
   const [body, setBody] = useState("");
   const [at, setAt] = useState(localNow());
   const [due, setDue] = useState("");
@@ -73,10 +76,11 @@ export default function Timeline({ type, id, items, emails = [], linked, open, r
   return <section style={card} data-sales-timeline="1">
     <h2 style={h2}>Activity</h2>
     <div style={{ display: "flex", gap: 6, marginBottom: 8 }} role="tablist" aria-label="Log">
-      {Object.entries(KIND_WORDS).map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={kind === k} onClick={() => setKind(k)} data-log-kind={k}
+      <span style={{ fontSize: 12.5, opacity: 0.7, alignSelf: "center" }}>Log</span>
+      {Object.entries(KIND_WORDS).map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={kind === k} onClick={() => setKind(x => (x === k ? null : k))} data-log-kind={k}
         style={{ fontSize: 12.5, fontWeight: 600, padding: "4px 10px", borderRadius: 14, border: `1px solid ${kind === k ? EMERALD : `${INK}33`}`, background: kind === k ? EMERALD : WHITE, color: kind === k ? WHITE : INK, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>)}
     </div>
-    <textarea value={body} onChange={e => setBody(e.target.value)} rows={3} placeholder={kind === "task" ? "What needs doing" : `What the ${kind} was about`} style={{ ...box, width: "100%" }} aria-label="What happened" data-log-body="1" />
+    {kind ? <><textarea value={body} onChange={e => setBody(e.target.value)} rows={3} placeholder={kind === "task" ? "What needs doing" : `What the ${kind} was about`} style={{ ...box, width: "100%" }} aria-label="What happened" data-log-body="1" />
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
       {kind === "task" ? <label style={{ fontSize: 12, fontWeight: 600 }}>Due <DateInput value={due} onChange={e => setDue(e.target.value)} style={box} aria-label="Due" /></label>
         : <label style={{ fontSize: 12, fontWeight: 600 }}>When <input type="datetime-local" value={at} onChange={e => setAt(e.target.value)} style={box} aria-label="When" /></label>}
@@ -85,7 +89,7 @@ export default function Timeline({ type, id, items, emails = [], linked, open, r
     {others.length ? <div style={{ fontSize: 12.5, marginTop: 8, display: "flex", gap: "4px 12px", flexWrap: "wrap" }}><span style={{ opacity: 0.7 }}>Also on:</span>
       {others.map(o => { const k = `${o.type}:${o.id}`; return <label key={k} style={{ display: "flex", gap: 4, alignItems: "center" }}>
         <input type="checkbox" checked={also.has(k)} onChange={e => setAlso(s => { const n = new Set(s); e.target.checked ? n.add(k) : n.delete(k); return n; })} data-log-also={o.id} />
-        {o.name} <span style={{ opacity: 0.55 }}>{TYPE_WORDS[o.type]}</span></label>; })}</div> : null}
+        {o.name} <span style={{ opacity: 0.55 }}>{TYPE_WORDS[o.type]}</span></label>; })}</div> : null}</> : null}
     {err ? <p style={{ ...says, opacity: 1, marginTop: 6 }}><span style={brassTag}>Not logged</span> {err}</p> : null}
     <div style={{ marginTop: 12 }}>
       {items.length === 0 && emails.length === 0 ? <p style={says}>Nothing logged yet.</p>

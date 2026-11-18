@@ -169,7 +169,7 @@ async function setStage(ctx, dealId, stageId, who, { lostReason, revisitOn } = {
   await ctx.run(`INSERT INTO sales_stage_history (id, deal_id, from_stage_id, to_stage_id, from_name, to_name, created_by, created_by_name)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [newId("ssh"), dealId, d.stage_id, st.id, d.from_name, st.name, who.id, who.name]);
   if (st.kind === "won") await require("./cadences").onWon(ctx, dealId, who);   // SALES-2 item 10: Customer asks
-  return { ok: true, id: dealId };
+  return { ok: true, id: dealId, from_stage_id: d.stage_id, from_name: d.from_name };
 }
 
 // Delete ONE record. Its links and everything it links to stay.

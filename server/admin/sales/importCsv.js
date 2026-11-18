@@ -334,7 +334,7 @@ function toCsv(type, rows, columns, { props = [], owners = [], stages = new Map(
   const cols = columns && columns.length ? columns : ["name", ...def.defaultColumns.filter(c => c !== "name"), ...props.map(p => `props.${p.key}`)];
   const ownerName = new Map(owners.map(o => [o.id, o.name]));
   const label = k => (k === "name" ? "Name" : k.startsWith("props.") ? ((props.find(p => p.key === k.slice(6)) || {}).label || k) :
-    (def.fields.find(f => f.key === k) || {}).label || { primary_org_name: "Organization", last_activity: "Last activity", contact_count: "Contacts", stage_name: "Stage" }[k] || k);
+    (def.fields.find(f => f.key === k) || {}).label || { primary_org_name: "Organization", last_activity: "Last activity", contact_count: "Contacts", stage_name: "Stage", fit_line: "Fit", last_touch: "Last touch", next_up: "Next step or task" }[k] || k);
   const val = (r, k) => {
     if (k === "name") return r.displayName;
     if (k === "owner_id") return ownerName.get(r.owner_id) || "";

@@ -24,8 +24,12 @@ const addr = v => { const m = String(v || "").match(/<([^>]+)>/); return (m ? m[
 const domainOfAddr = a => (a.includes("@") ? a.split("@").pop() : null);
 
 // Who on the message (not the mailbox itself) is a sales contact or at a prospect domain.
+// THE PLANTED DEFECT (SALES4_PLANT=outlookcase, tests only): the address is not lowercased, so Outlook's
+// "Dana.Okafor@Example.org" misses the contact stored as dana.okafor@example.org. tests/sales4.test.js §2 goes red.
+const PLANT4 = process.env.TEST_MODE === "1" ? process.env.SALES4_PLANT || "" : "";
+const rawAddr = v => { const m = String(v || "").match(/<([^>]+)>/); return (m ? m[1] : String(v || "")).trim(); };
 function keeps(msg, { addresses, domains, own }) {
-  const people = [msg.from, ...(msg.to || []), ...(msg.cc || [])].map(addr).filter(a => a && a !== own);
+  const people = [msg.from, ...(msg.to || []), ...(msg.cc || [])].map(PLANT4 === "outlookcase" ? rawAddr : addr).filter(a => a && a !== own);
   const matched = people.filter(a => addresses.has(a) || (domains.has(domainOfAddr(a))));
   if (PLANT === "storeall") return { people, matched: matched.length ? matched : people };
   return matched.length ? { people, matched } : null;

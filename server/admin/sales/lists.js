@@ -24,6 +24,8 @@ const ASSOC_FIELDS = {
     { key: "fit_met", label: "Fit (checks met)", type: "number" },
     { key: "fit_line", label: "Fit", type: "text" },
     { key: "dnc", label: "Do not contact", type: "checkbox" },
+    { key: "last_touch", label: "Last touch", type: "date" },
+    { key: "next_up", label: "Next step", type: "text" },
   ],
   contact: [
     { key: "linked_org_ids", label: "Organization", type: "org" },
@@ -31,6 +33,9 @@ const ASSOC_FIELDS = {
     { key: "open_deal_stage", label: "Has an open deal in stage", type: "stage" },
     { key: "last_activity", label: "Last activity", type: "date" },
     { key: "dnc", label: "Do not contact", type: "checkbox" },
+    { key: "fit_line", label: "Fit", type: "text" },
+    { key: "last_touch", label: "Last touch", type: "date" },
+    { key: "next_up", label: "Next step", type: "text" },
   ],
   deal: [
     { key: "linked_org_ids", label: "Organization", type: "org" },
@@ -39,6 +44,9 @@ const ASSOC_FIELDS = {
     { key: "has_open_task", label: "Has an open task", type: "checkbox" },
     { key: "stage_kind", label: "Open, won, later or lost", type: "text" },
     { key: "contact_count", label: "Contacts", type: "number" },
+    { key: "fit_line", label: "Fit", type: "text" },
+    { key: "last_touch", label: "Last touch", type: "date" },
+    { key: "next_up", label: "Next step or task", type: "text" },
   ],
 };
 const OPS = ["eq", "neq", "contains", "empty", "notempty", "gt", "lt", "before", "after", "in", "is_true", "is_false", "none_since"];
@@ -47,7 +55,7 @@ const iso = t => (t ? new Date(t).toISOString() : null);
 // DATE columns arrive as text (model.sel casts them), so a day is the text itself, never a Date read in local time.
 const day = t => (t ? String(t).slice(0, 10) : null);
 
-async function rowsFor(query, type) {
+async function rowsFor(query, type, { scan = true } = {}) {
   const def = M.OBJECTS[type];
   const cols = [...new Set(["id", ...def.fields.map(f => f.col), "props", ...(type === "org" ? ["steward_org_id", "lost_at", "lost_reason"] : []),
     ...(type === "deal" ? ["stage_entered_at", "won_at", "lost_at"] : ["dnc_at", "dnc_reason", "bad_phones"])])];
@@ -70,7 +78,7 @@ async function rowsFor(query, type) {
   const last = new Map(lastAct.map(r => [r.record_id, iso(r.t)]));
   const tasksOpen = new Set(openTasks.map(r => r.record_id));
   const extra = type === "deal" ? null : await PROSPECT.extrasFor(query, type);
-  return rows.map(r => {
+  const out = rows.map(r => {
     const mine = links.filter(l => (l.a_type === type && l.a_id === r.id) || (l.b_type === type && l.b_id === r.id))
       .map(l => (l.a_type === type && l.a_id === r.id ? { t: l.b_type, id: l.b_id, primary: l.is_primary } : { t: l.a_type, id: l.a_id, primary: l.is_primary }));
     const orgIds = mine.filter(m => m.t === "org" && orgName.has(m.id));
@@ -93,6 +101,8 @@ async function rowsFor(query, type) {
     }
     return out;
   });
+  // SALES-4: last touch, next step and fit on every row (scanRows.js).
+  return scan ? require("./scanRows").add(query, type, out) : out;
 }
 
 // The value a filter or a sort reads off a row.

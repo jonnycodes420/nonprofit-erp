@@ -39,7 +39,15 @@ function mount(app, { query, run, wrap, door, salesLimiter, whoOf, send }) {
 
   app.get("/ops/sales/call/queue", salesLimiter, door, wrap(async (req, res) => {
     const done = String(req.query.done || "").split(",").map(s => s.trim()).filter(Boolean).slice(0, 2000);
-    send(res, await CM.loadQueue(query, { view: parseJson(req.query.view, {}), listId: req.query.list ? String(req.query.list) : null, done, now: Date.now(), cadence: req.query.cadence === "1" }));
+    // SALES-4: "Start" on Now walks Now's own call rows, in Now's order (first: the row pressed).
+    let orgOrder = null;
+    if (req.query.now === "1") {
+      const n = await require("./routesE").nowFor(query, Date.now());
+      orgOrder = n.start ? n.start.orgIds : [];
+      const first = req.query.first ? String(req.query.first) : null;
+      if (first) orgOrder = [first, ...orgOrder.filter(id => id !== first)];
+    }
+    send(res, await CM.loadQueue(query, { view: parseJson(req.query.view, {}), listId: req.query.list ? String(req.query.list) : null, done, now: Date.now(), cadence: req.query.cadence === "1", orgOrder }));
   }));
   app.post("/ops/sales/call/outcome", salesLimiter, door, wrap(async (req, res) => {
     const r = await CM.logOutcome(ctx, req.body || {}, whoOf(req), Date.now());

@@ -137,7 +137,7 @@ function buildCadenceQueue({ due, orgs, contactsByOrg, lastCall, done }, today, 
 }
 
 // opts: { view, listId, done: [orgIds], now, cadence }
-async function loadQueue(query, { view = {}, listId = null, done = [], now = Date.now(), cadence = false } = {}) {
+async function loadQueue(query, { view = {}, listId = null, done = [], now = Date.now(), cadence = false, orgOrder = null } = {}) {
   let v = view || {};
   if (listId) {
     const [l] = await query(`SELECT id, name, config FROM sales_lists WHERE id = ? AND deleted_at IS NULL`, [listId]);
@@ -145,7 +145,9 @@ async function loadQueue(query, { view = {}, listId = null, done = [], now = Dat
     v = require("./prospectLists").viewOf(l, v);
   }
   const today = civil(now, TZ);
-  const orgs = LISTS.applyView(await LISTS.rowsFor(query, "org"), v);
+  let orgs = LISTS.applyView(await LISTS.rowsFor(query, "org"), v);
+  // SALES-4: Now's order (only its call rows), when call mode starts from Now.
+  if (orgOrder) { const byId = new Map(orgs.map(o => [o.id, o])); orgs = orgOrder.map(id => byId.get(id)).filter(Boolean); }
   const ids = orgs.map(o => o.id);
   const CONNECT = OUTCOMES.filter(o => o.connect).map(o => o.key);
   const [contacts, calls, tasks, recent] = await Promise.all([

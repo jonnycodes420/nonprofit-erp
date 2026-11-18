@@ -6,7 +6,7 @@
 import { useRef, useState } from "react";
 import { apiFetch } from "../../../api";
 import DateInput from "../../../components/inputs/LazyDateInput";
-import { INK, WHITE, CREAM, BRASS, says, btn, quiet, box, link, brassTag, usd, dayWords } from "./salesBits";
+import { INK, WHITE, CREAM, BRASS, EMERALD, says, btn, quiet, box, link, brassTag, usd, dayWords } from "./salesBits";
 
 export default function Board({ rows, meta, open, onMoved }) {
   const [pipeId, setPipeId] = useState(meta.pipelines[0].id);
@@ -14,13 +14,18 @@ export default function Board({ rows, meta, open, onMoved }) {
   const dragged = useRef(null);   // the deal in hand, read on drop (state may not have re-rendered yet)
   const [ask, setAsk] = useState(null);   // { deal, stage, value }
   const [msg, setMsg] = useState(null);
+  const [undo, setUndo] = useState(null);   // SALES-4: { dealId, name, to, back: { stage_id, name } } after every move
   const pipe = meta.pipelines.find(p => p.id === pipeId) || meta.pipelines[0];
   const deals = rows.filter(r => r.pipeline_id === pipe.id);
 
   const move = async (dealId, stage, extra = {}) => {
     setMsg(null);
-    try { await apiFetch(`/ops/sales/deals/${encodeURIComponent(dealId)}/stage`, { method: "POST", body: JSON.stringify({ stage_id: stage.id, ...extra }) }); setAsk(null); onMoved(); }
-    catch (e) { setMsg(e.message || "The deal did not move."); }
+    try {
+      const r = await apiFetch(`/ops/sales/deals/${encodeURIComponent(dealId)}/stage`, { method: "POST", body: JSON.stringify({ stage_id: stage.id, ...extra }) });
+      const d = deals.find(x => x.id === dealId);
+      setUndo(r.undo ? { dealId, name: d ? d.displayName : "The deal", to: stage.name, back: r.undo } : null);
+      setAsk(null); onMoved();
+    } catch (e) { setMsg(e.message || "The deal did not move."); }
   };
   const drop = (e, stage) => {
     e.preventDefault();
@@ -32,11 +37,27 @@ export default function Board({ rows, meta, open, onMoved }) {
     move(d.id, stage);
   };
 
+  const undoMove = async () => {
+    const u = undo;
+    setUndo(null); setMsg(null);
+    try { await apiFetch(`/ops/sales/deals/${encodeURIComponent(u.dealId)}/stage`, { method: "POST", body: JSON.stringify({ stage_id: u.back.stage_id }) }); onMoved(); }
+    catch (e) { setMsg(e.message || "The move could not be undone."); }
+  };
+  // Jonathan, 17 Nov: Later and Lost are a link, not columns. Drop a card on either word to move it there.
+  const closed = pipe.stages.filter(s => s.kind === "later" || s.kind === "lost");
+  const [showClosed, setShowClosed] = useState(null);   // a stage id
+  const days = t => (t ? Math.max(0, Math.floor((Date.now() - new Date(t).getTime()) / 86400000)) : null);
+
   return <div data-sales-board={pipe.id}>
     {meta.pipelines.length > 1 ? <select value={pipe.id} onChange={e => setPipeId(e.target.value)} style={{ ...box, marginBottom: 10 }} aria-label="Pipeline">
       {meta.pipelines.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select> : null}
-    <p style={says}>Drag a deal to another stage. Brass: an open deal with no next step and no open task.</p>
+    <p style={says}>Drag a deal to another stage; every move can be undone. A column shows its count and its monthly total. Brass: an open deal with no next step and no open task.</p>
     {msg ? <p style={{ ...says, opacity: 1 }}><span style={brassTag}>Not moved</span> {msg}</p> : null}
+    {undo ? <div style={{ background: INK, color: WHITE, padding: "8px 12px", borderRadius: 8, marginBottom: 10, display: "flex", gap: 10, alignItems: "center", fontSize: 13 }} data-sales-board-undo={undo.dealId}>
+      <span style={{ flex: 1 }}>{undo.name} moved to {undo.to}.</span>
+      <button type="button" style={{ ...link, color: WHITE, textDecoration: "underline" }} onClick={undoMove} data-sales-board-undo-btn="1">Undo</button>
+      <button type="button" style={{ ...link, color: WHITE, opacity: 0.7 }} onClick={() => setUndo(null)} aria-label="Dismiss">×</button>
+    </div> : null}
     {ask ? <div style={{ background: CREAM, padding: 10, borderRadius: 8, marginBottom: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }} data-sales-board-ask={ask.stage.kind}>
       <b style={{ fontSize: 13 }}>Move {ask.deal.displayName} to {ask.stage.name}:</b>
       {ask.stage.kind === "later"
@@ -47,12 +68,12 @@ export default function Board({ rows, meta, open, onMoved }) {
       <span style={{ fontSize: 12, opacity: 0.7 }}>{ask.stage.kind === "later" ? "Later is not lost: it comes back in Today on this date." : "Lost needs a reason."}</span>
     </div> : null}
     <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8 }}>
-      {pipe.stages.map(s => {
+      {pipe.stages.filter(s => s.kind !== "later" && s.kind !== "lost").map(s => {
         const here = deals.filter(d => d.stage_id === s.id);
         return <div key={s.id} data-board-stage={s.id} onDragOver={e => e.preventDefault()} onDrop={e => drop(e, s)}
           style={{ flex: "1 1 0", minWidth: 118, background: CREAM, borderRadius: 10, padding: 8, minHeight: 180, outline: drag ? `1px dashed ${INK}33` : "none" }}>
           <div style={{ fontSize: 13, fontWeight: 700 }}>{s.name}</div>
-          <div style={{ fontSize: 11.5, opacity: 0.65, marginBottom: 8 }}>{s.probability}% · {here.length} · {usd(here.reduce((n, d) => n + (d.value_cents || 0), 0))}</div>
+          <div style={{ fontSize: 12, marginBottom: 8, display: "flex", justifyContent: "space-between" }} data-board-total={s.id}><span><b>{here.length}</b> <span style={{ opacity: 0.65 }}>· {s.probability}%</span></span><b>{usd(here.reduce((n, d) => n + (d.value_cents || 0), 0))}</b></div>
           {here.map(d => {
             const bare = d.stage_kind === "open" && !d.next_step && !d.has_open_task;
             return <div key={d.id} draggable
@@ -62,13 +83,24 @@ export default function Board({ rows, meta, open, onMoved }) {
               role="button" tabIndex={0} aria-label={`${d.displayName}: open, or drag to another stage`}
               onClick={() => open("deal", d.id)} onKeyDown={e => { if (e.key === "Enter") open("deal", d.id); }} data-board-deal={d.id} data-bare={bare ? "1" : "0"}
               style={{ background: bare ? `${BRASS}33` : WHITE, border: `1px solid ${bare ? BRASS : `${INK}1a`}`, borderRadius: 8, padding: "8px 9px", marginBottom: 6, cursor: "grab" }}>
-              <div style={{ ...link, fontSize: 13 }}>{d.displayName}</div>
-              <div style={{ fontSize: 12, opacity: 0.75 }}>{usd(d.value_cents)}{d.primary_org_name ? ` · ${d.primary_org_name}` : ""}</div>
-              <div style={{ fontSize: 11.5, marginTop: 2 }}>{d.stage_kind === "later" && d.revisit_on ? `Revisit ${dayWords(d.revisit_on)}` : d.stage_kind === "lost" ? (d.lost_reason || "") : d.next_step ? `Next: ${d.next_step}` : d.has_open_task ? "Has an open task" : bare ? "No next step" : ""}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: INK, lineHeight: 1.25 }}>{d.primary_org_name || d.displayName}</div>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: EMERALD, marginTop: 3 }}>{usd(d.value_cents)}/mo</div>
+              <div style={{ fontSize: 11.5, opacity: 0.7 }} data-board-touch={days(d.last_touch) ?? ""}>{d.last_touch ? (days(d.last_touch) === 0 ? "Touched today" : `${days(d.last_touch)} ${days(d.last_touch) === 1 ? "day" : "days"} since a touch`) : "No touch yet"}</div>
+              <div style={{ fontSize: 11.5, marginTop: 3, borderTop: `1px solid ${CREAM}`, paddingTop: 3 }}>{d.stage_kind === "later" && d.revisit_on ? `Revisit ${dayWords(d.revisit_on)}` : d.stage_kind === "lost" ? (d.lost_reason || "") : d.next_up ? `Next: ${d.next_up}${d.next_up_on ? `, ${dayWords(d.next_up_on).replace(/, \d{4}$/, "")}` : ""}` : bare ? "No next step" : ""}</div>
             </div>;
           })}
         </div>;
       })}
     </div>
+    {closed.length ? <div style={{ fontSize: 13, marginTop: 4 }} data-board-closed="1">
+      {closed.map((s, i) => { const n = deals.filter(d => d.stage_id === s.id).length;
+        return <span key={s.id}>{i ? " · " : ""}<button type="button" style={{ ...link, padding: "4px 2px" }} onDragOver={e => e.preventDefault()} onDrop={e => drop(e, s)}
+          onClick={() => setShowClosed(x => (x === s.id ? null : s.id))} data-board-closed-link={s.id}>{s.name} {n}</button></span>; })}
+      {showClosed ? <div style={{ background: CREAM, borderRadius: 8, padding: "6px 10px", marginTop: 6 }}>
+        {deals.filter(d => d.stage_id === showClosed).length ? deals.filter(d => d.stage_id === showClosed).map(d => <div key={d.id} style={{ padding: "2px 0" }}>
+          <button type="button" style={link} onClick={() => open("deal", d.id)}>{d.primary_org_name || d.displayName}</button>
+          <span style={{ opacity: 0.7 }}> · {usd(d.value_cents)}/mo · {d.stage_kind === "later" && d.revisit_on ? `revisit ${dayWords(d.revisit_on)}` : d.lost_reason || ""}</span></div>)
+          : <span style={{ opacity: 0.7 }}>None.</span>}</div> : null}
+    </div> : null}
   </div>;
 }
