@@ -103,7 +103,9 @@ export function BulkLogTouch({ ids, onClose, onDone }) {
             <span>{had.sentence}</span>
             <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
               <input type="checkbox" data-testid="bulk-touch-skip-had" checked={skipHad} onChange={e => setSkipHad(e.target.checked)} />
-              Skip them, and log it for the other {people(ids.length - already)}
+              {already >= ids.length
+                ? `Skip them. Everyone picked already has it, so nothing would be logged; untick to log it again for all ${ids.length.toLocaleString("en-US")}.`
+                : `Skip them, and log it for the other ${people(ids.length - already)}`}
             </label>
           </div>
         )}
