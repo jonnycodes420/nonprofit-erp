@@ -21,8 +21,12 @@ const { orgTakesGifts } = require("./takesGifts");
 const PAGES_ON = "On. Your giving pages take gifts through your Stripe account.";
 const PAGES_OFF = "Off. Your giving pages show donors \"Not open yet\" until Stripe is set up for them.";
 
-function ago(at, today) {
-  const d = at instanceof Date ? (isNaN(at) ? "" : at.toISOString().slice(0, 10)) : String(at || "").slice(0, 10);
+// main-fix: an instant is read as the ORG's civil date, as `today` is. Its UTC
+// date said "4 days ago" for a read 5 org-days ago every evening in a US org
+// (flows15 §6 red after 7 PM Eastern). A bare date stays as it is.
+function ago(at, today, org = null) {
+  const inst = at instanceof Date ? at : (/^\d{4}-\d{2}-\d{2}[T ]\d/.test(String(at || "")) ? new Date(at) : null);
+  const d = inst ? (isNaN(inst) ? "" : require("../../orgTime").orgToday(org || {}, inst)) : String(at || "").slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !today) return null;
   const n = Math.round((Date.parse(String(today).slice(0, 10) + "T00:00:00Z") - Date.parse(d + "T00:00:00Z")) / 86400000);
   return n <= 0 ? "today" : n === 1 ? "yesterday" : `${n} days ago`;
@@ -40,7 +44,7 @@ function settleStripeCard(card, { org, C, ownDates = [], historyDates = [], hist
   const history = (card.parts || []).find(p => p.key === "history");
   const reads = !!(history && history.connected);
   if (history && reads) {
-    const when = ago(historyCard && historyCard.lastSyncedAt, today);
+    const when = ago(historyCard && historyCard.lastSyncedAt, today, org);
     history.sentence = `On. Steward reads the gifts Stripe already holds onto your donor records${when ? `; it last read them ${when}` : ""}.`;
   }
   // The card: connected when either half is; its status and its one rate over every Stripe gift.
@@ -57,4 +61,4 @@ function settleStripeCard(card, { org, C, ownDates = [], historyDates = [], hist
   return card;
 }
 
-module.exports = { settleStripeCard, PAGES_ON, PAGES_OFF };
+module.exports = { settleStripeCard, ago, PAGES_ON, PAGES_OFF };
