@@ -719,7 +719,8 @@ async function signInternalToken(userId) {
 // of the morning reads stored rows too. Checked every six hours because each
 // org's day turns over in its own timezone.
 async function refreshStoredDrift() {
-  const orgs = await query(`SELECT o.id FROM orgs o WHERE EXISTS (SELECT 1 FROM donors d WHERE d.org_id = o.id)`, []);
+  // SCALE-5: live orgs only (server/orgs/liveOrgs.js).
+  const orgs = await query(`SELECT o.id FROM orgs o WHERE o.id = ANY(?::text[]) AND EXISTS (SELECT 1 FROM donors d WHERE d.org_id = o.id)`, [await require("../orgs/liveOrgs").liveOrgIds(query)]);
   let n = 0;
   for (const o of orgs) {
     const today = orgToday(await orgTz(o.id));   // ORG_TZ_SEAM_OK
@@ -734,7 +735,8 @@ async function refreshStoredDrift() {
 // SPLIT-2 server.js piece 207
 // SCORES-1: an org with people; one another run holds is asked again later.
 async function recomputeAllScores() {
-  const orgs = await query("SELECT o.id FROM orgs o WHERE EXISTS (SELECT 1 FROM donors d WHERE d.org_id = o.id)", []);
+  // SCALE-5: live orgs only (server/orgs/liveOrgs.js).
+  const orgs = await query("SELECT o.id FROM orgs o WHERE o.id = ANY(?::text[]) AND EXISTS (SELECT 1 FROM donors d WHERE d.org_id = o.id)", [await require("../orgs/liveOrgs").liveOrgIds(query)]);
   for (const o of orgs) {
     try { await recomputeScoresForOrg(o.id, { wait: false }); } catch (e) { console.error(`[scores] ${o.id}:`, e.message); }
   }

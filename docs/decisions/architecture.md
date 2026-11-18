@@ -564,3 +564,18 @@ Diagnostic tooling added after manually deleting test-user rows in Supabase's Ta
 - It reads a customer org only through counts and dates (last sign-in, people count, trial end, ONBOARD-2's MRR and gates), never a donor's name, email or gift.
 - No seed writes sales data on prod; the staging seed writes a made-up book.
 - Part B: the sales mailbox lives in `sales_mailboxes` (sealed with aad "sales"), never in an org's `mailbox_connections`. Only mail involving a sales contact's address or a prospect domain is stored (`email.keeps`), and nothing is sent. Partner payouts are `shared/numbers/partnerPayout.js` on ONBOARD-2's MRR.
+
+## Background work is for live orgs, and the queue keeps its own bookkeeping small (SCALE-5)
+- **A per-org background sweep reads `liveOrgIds(query)`** (`server/orgs/liveOrgs.js`): not archived, and of a
+  kind a person looks at (customer, prospect trial, demo; `orgKind.isLiveOrg`), with CREO kept by id. A call
+  scoped to one org (a person pressing a button, `onlyOrgId`) is never filtered. Billing, deletion, retention
+  and sends a person scheduled are not sweeps for this rule. `tests/scale5.test.js` §3 lists the sweeps.
+- **Smart moves run for what changed.** The five-minute tick works live orgs with a change since its kept mark,
+  read from `org_changes` (the same per-statement record orgSummary uses), one org at a time on one connection.
+  A nightly pass sweeps every live org once in its own 2–6 AM, for lapses only the date makes
+  (`server/smartMoves/`). Don't add a second list of doors for "changed".
+- **A claim is one statement; an empty queue is asked by one lane with a growing wait** (`JOB_POLL_MS` up to
+  `JOB_POLL_MAX_MS`, default twice the poll: 2 s), and an enqueue in the worker's own process wakes it at once.
+  Heartbeats are one write per process for every run it holds, at most every 30 s. The database wake
+  (`NOTIFY steward_jobs`, `server/jobs/wake.js`) is built but **off unless `JOB_WAKE=on`**: on the load profile
+  it slowed a gift's POST (p95 671 vs 495 ms). Turn it on only with a load run showing the gift path unchanged.

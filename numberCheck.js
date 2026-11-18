@@ -101,7 +101,8 @@ async function nightlyTick(screens, now = new Date()) {
   if (already) return null;
   return withTryAdvisoryLock("numbers-nightly", async () => {
     const [again] = await query(done, [today]);
-    return again ? null : runAll({ screens, ranOn: today, skipTest: true });
+    // SCALE-5: the night checks live orgs only (server/orgs/liveOrgs.js).
+    return again ? null : runAll({ screens, ranOn: today, skipTest: true, orgIds: await require("./server/orgs/liveOrgs").liveOrgIds(query) });
   });
 }
 

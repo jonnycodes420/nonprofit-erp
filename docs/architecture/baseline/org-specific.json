@@ -13,7 +13,7 @@
     "mailRefusal.js": 2,
     "mailTypes.js": 2,
     "middleware/orgBound.js": 3,
-    "orgKind.js": 1,
+    "orgKind.js": 2,
     "orgSummary.js": 1,
     "removal.js": 1,
     "routes/agent.js": 1,
