@@ -2,6 +2,7 @@
 // the profile share (tabs, labels, the roles line, Coming up), moved verbatim from DonorProfile.jsx.
 import { useEffect, useState } from "react";
 import { completeTask } from "../../lib/completeTask";   // FLOWS-17
+import { TaskTitleButton, useProfileTaskSheet } from "./ProfileTaskSheet";   // EDIT-1
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { Pill, T, fmtFull } from "../shared";
@@ -342,11 +343,13 @@ function RailGroups({donorId,isReadOnly}){
 // done) and the meetings ahead. Hidden when there is nothing.
 // FLOWS-17: Mark done is the Tasks page's own call (lib/completeTask.js), with Undo; a call or
 // meeting that must say how it went opens Log a touch (onTaskOutcome).
+// EDIT-1: a task's title is a button that opens the Tasks page's own sheet (ProfileTaskSheet.jsx).
 function ComingUpMain({tasks=[],meetings=[],onTaskOutcome=null,isReadOnly,onAddTask}){
+  const taskSheet=useProfileTaskSheet({isReadOnly,onTaskOutcome});
   const onTaskToggle=async t=>{try{const r=await completeTask(t);if(r.needsOutcome&&onTaskOutcome)onTaskOutcome(t);}catch(e){console.warn("[task done]",(e&&e.sentence)||(e&&e.message));}};
   const open=sortTasks((tasks||[]).filter(t=>!(Number(t.done)===1||t.done===true)));   // EDIT-2: the one task order
   const ahead=(meetings||[]).slice(0,3);
-  if(!open.length&&!ahead.length)return null;
+  if(!open.length&&!ahead.length)return taskSheet.ui;
   const today=orgTodayCivil();
   return <section data-testid="dp-coming-up" style={{display:"flex",flexDirection:"column",gap:8}}>
     <h2 style={{margin:0,fontSize:11,fontWeight:700,color:T.ink3}}>Coming up</h2>
@@ -355,10 +358,11 @@ function ComingUpMain({tasks=[],meetings=[],onTaskOutcome=null,isReadOnly,onAddT
       <span style={{fontSize:13,color:T.ink3,whiteSpace:"nowrap"}}>{displayOrgDateShort(m.date||m.startsAt||"",today)}</span>
     </div>)}
     {open.slice(0,5).map(t=><div key={"t:"+t.id} data-testid="dp-coming-task" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"10px 16px",display:"flex",justifyContent:"space-between",gap:12,alignItems:"center"}}>
-      <span style={{minWidth:0}}><span style={{fontSize:14,fontWeight:600,color:T.ink}}>{t.title||t.text||"A task"}</span>
+      <span style={{minWidth:0}}><TaskTitleButton task={t} onOpen={taskSheet.open} testid="dp-coming-task-open" style={{fontSize:14,fontWeight:600,color:T.ink}}>{t.title||t.text||"A task"}</TaskTitleButton>
         {t.due&&<span style={{fontSize:13,color:String(t.due).slice(0,10)<today?T.gold700:T.ink3,marginLeft:8}}>{String(t.due).slice(0,10)<today?"Overdue, ":"Due "}{displayDateShort(String(t.due).slice(0,10),today)}</span>}</span>
       {!isReadOnly&&<button type="button" data-testid="dp-task-done" onClick={()=>onTaskToggle(t)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",fontSize:12.5,fontWeight:700,color:T.ink,cursor:"pointer",whiteSpace:"nowrap",minHeight:36}}>Mark done</button>}
     </div>)}
+    {taskSheet.ui}
   </section>;
 }
 const cap=s=>s?String(s).charAt(0).toUpperCase()+String(s).slice(1):"Not set";

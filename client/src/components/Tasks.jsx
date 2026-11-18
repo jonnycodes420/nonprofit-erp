@@ -16,6 +16,7 @@ import { dueNowWords } from "../lib/taskBadge";
 import { countLabel } from "../../../shared/countWords.js";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { PlannedTouchOffer } from "./majorGifts/PlannedTouchOffer";   // TOUCH-1
+import { TaskSheet } from "./tasks/TaskSheet";   // EDIT-1: the one sheet, which the profile opens too
 import { useMorningEmail } from "../lib/morningEmail";   // FLOWS-18: what the morning email really does
 import { morningEmailSentence } from "../../../shared/morningEmailState.js";
 
@@ -273,7 +274,8 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
           )}
 
       {sheet && <TaskSheet t={sheet} team={team} isReadOnly={isReadOnly} onClose={() => setSheet(null)}
-        onChanged={async () => { await load(); }} onError={say} onFinish={t => { setSheet(null); if (NEEDS_OUTCOME.has(t.kind) && t.donor_id) setFinish(t); else tick(t); }} />}
+        onChanged={async () => { await load(); }} onError={say} onFinish={t => { setSheet(null); if (NEEDS_OUTCOME.has(t.kind) && t.donor_id) setFinish(t); else tick(t); }}
+        onReopen={t => { setSheet(null); tick(t); }} />}
       {touchOffer && <PlannedTouchOffer task={touchOffer} onClose={() => setTouchOffer(null)} onLogged={async () => { setTouchOffer(null); await load(); }}
         onJustDone={async () => { const t = touchOffer; setTouchOffer(null); try { await complete(t, true); await load(); offerUndo({ message: `Done: ${t.title}.`, undoAction: async () => { await complete(t, false); await load(); } }, t.title); } catch (e) { say(e); } }} />}
       {finish && <FinishSheet t={finish} today={today} onClose={() => setFinish(null)} onDone={async (row) => {
@@ -421,100 +423,7 @@ function QuickAdd({ onSaved, today }) {
   );
 }
 
-// ── The task, opened ─────────────────────────────────────────────────────
-function TaskSheet({ t, team, onClose, onChanged, onError, onFinish, isReadOnly }) {
-  const [f, setF] = useState({ title: t.title, due: (t.due || "").slice(0, 10), time: t.due_time || "", priority: t.priority === "high" ? "high" : "medium",
-    kind: t.kind, notes: t.notes || "", checklist: Array.isArray(t.checklist) ? t.checklist : [], recur: t.recur || null,
-    assignedTo: t.assigned_to || "", reassignNote: "" });
-  const [newItem, setNewItem] = useState("");
-  const [busy, setBusy] = useState(false);
-  const linked = !!t.link_kind;
-  const save = async () => {
-    setBusy(true);
-    try {
-      const body = { due: f.due, dueTime: f.time || null, priority: f.priority, kind: f.kind, notes: f.notes, checklist: f.checklist, recur: f.recur };
-      if (!linked) body.title = f.title;
-      if ((f.assignedTo || "") !== (t.assigned_to || "")) { body.assignedTo = f.assignedTo || null; body.reassignNote = f.reassignNote; }
-      await apiFetch(`/tasks/${t.id}`, { method: "PATCH", body: JSON.stringify(body) });
-      await onChanged(); onClose();
-    } catch (e) { onError(e); }
-    setBusy(false);
-  };
-  const del = async () => {
-    try {
-      const r = await apiFetch(`/tasks/${t.id}`, { method: "DELETE" });
-      await onChanged(); onClose();
-      offerUndo({ ...r, message: `Deleted: ${t.title}.`, onRestored: onChanged }, t.title);
-    } catch (e) { onError(e); }
-  };
-  return (
-    <Modal onClose={onClose} title={linked ? t.title : "Task"} width={520}
-      footer={<div style={{ display: "flex", gap: 8, justifyContent: "space-between", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", gap: 8 }}>
-          {!isReadOnly && !t.done && <button onClick={() => onFinish(t)} style={outlineBtn} data-testid="sheet-done">Mark done</button>}
-          {!isReadOnly && (!linked || t.done) && <button onClick={del} data-testid="sheet-delete" style={textBtn}>Delete</button>}
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={onClose} style={textBtn}>Cancel</button>
-          {!isReadOnly && <button onClick={save} disabled={busy} data-testid="sheet-save" style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "9px 16px", color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{busy ? "Saving…" : "Save"}</button>}
-        </div>
-      </div>}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {linked
-          ? <div style={{ fontSize: 12.5, color: T.ink3 }}>{t.link_kind === "next_step" ? "This is a next step on the Thread. Its day moves the step too." : "This is a grant deadline. Its day moves the deadline too."}</div>
-          : <label style={lbl}>Task<input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} style={inp} /></label>}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <label style={{ ...lbl, flex: "1 1 140px" }}>Day<DateInput value={f.due} onChange={e => setF({ ...f, due: e.target.value })} style={inp} /></label>
-          <label style={{ ...lbl, flex: "1 1 100px" }}>Time<input type="time" value={f.time} onChange={e => setF({ ...f, time: e.target.value })} style={inp} /></label>
-          <label style={{ ...lbl, flex: "1 1 110px" }}>Kind
-            <select value={f.kind} onChange={e => setF({ ...f, kind: e.target.value })} style={inp}>{TASK_KINDS.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}</select>
-          </label>
-          <label style={{ ...lbl, flex: "1 1 110px" }}>Priority
-            <select value={f.priority} onChange={e => setF({ ...f, priority: e.target.value })} style={inp}><option value="medium">Normal</option><option value="high">High</option></select>
-          </label>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <label style={{ ...lbl, flex: "1 1 180px" }}>Owner
-            <select value={f.assignedTo} onChange={e => setF({ ...f, assignedTo: e.target.value })} data-testid="sheet-owner" style={inp}>
-              <option value="">Nobody yet</option>
-              {team.map(u => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
-            </select>
-          </label>
-          {!linked && <label style={{ ...lbl, flex: "1 1 180px" }}>Repeats
-            <select value={f.recur ? JSON.stringify(f.recur) : ""} onChange={e => setF({ ...f, recur: e.target.value ? JSON.parse(e.target.value) : null })} style={inp}>
-              <option value="">Does not repeat</option>
-              <option value={JSON.stringify({ every: "week" })}>Every week</option>
-              <option value={JSON.stringify({ every: "month" })}>Every month, same day</option>
-              <option value={JSON.stringify({ every: "month", nth: 1, weekday: 1 })}>Every month, first Monday</option>
-              <option value={JSON.stringify({ every: "quarter" })}>Every quarter</option>
-              <option value={JSON.stringify({ every: "year" })}>Every year, same date</option>
-              {f.recur && ![`{"every":"week"}`, `{"every":"month"}`, `{"every":"month","nth":1,"weekday":1}`, `{"every":"quarter"}`, `{"every":"year"}`].includes(JSON.stringify(f.recur)) && <option value={JSON.stringify(f.recur)}>{recurPhrase(f.recur)}</option>}
-            </select>
-          </label>}
-        </div>
-        {(f.assignedTo || "") !== (t.assigned_to || "") && (
-          <label style={lbl}>A note for them<input value={f.reassignNote} onChange={e => setF({ ...f, reassignNote: e.target.value })} placeholder="She asked for you by name." style={inp} /></label>
-        )}
-        {t.reassign_note && <div style={{ fontSize: 12.5, color: T.ink2 }}>Handed over with: {t.reassign_note}</div>}
-        <label style={lbl}>Notes<textarea value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} rows={3} style={{ ...inp, resize: "vertical" }} /></label>
-        <div style={lbl}>Checklist
-          {f.checklist.map((i, n) => (
-            <label key={n} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: T.ink, textTransform: "none", letterSpacing: 0, fontWeight: 500 }}>
-              <input type="checkbox" checked={!!i.done} onChange={() => setF({ ...f, checklist: f.checklist.map((x, m) => m === n ? { ...x, done: !x.done } : x) })} />
-              <span style={{ flex: 1, textDecoration: i.done ? "line-through" : "none" }}>{i.text}</span>
-              <button onClick={() => setF({ ...f, checklist: f.checklist.filter((_, m) => m !== n) })} aria-label={`Remove ${i.text}`} style={textBtn}>Remove</button>
-            </label>
-          ))}
-          <div style={{ display: "flex", gap: 6 }}>
-            <input value={newItem} onChange={e => setNewItem(e.target.value)} placeholder="Add an item"
-              onKeyDown={e => { if (e.key === "Enter" && newItem.trim()) { setF({ ...f, checklist: [...f.checklist, { text: newItem.trim(), done: false }] }); setNewItem(""); } }} style={inp} />
-            <button onClick={() => { if (newItem.trim()) { setF({ ...f, checklist: [...f.checklist, { text: newItem.trim(), done: false }] }); setNewItem(""); } }} style={outlineBtn}>Add</button>
-          </div>
-        </div>
-      </div>
-    </Modal>
-  );
-}
+// ── The task, opened: components/tasks/TaskSheet.jsx (EDIT-1), shared with the profile ──
 
 // ── Done properly: how did it go, and what's next ────────────────────────
 export function FinishSheet({ t, today, onClose, onDone }) {
