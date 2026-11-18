@@ -163,6 +163,12 @@ function mount(app, { query, run, wrap, opsOnly, billing }) {
     if (type === "org") {   // SALES-2: the fit line, read the same way the list reads it
       const row2 = (await LISTS.rowsFor(query, "org")).find(x => x.id === id);
       out.fit = row2 ? { line: row2.fit_line, met: row2.fit_met, total: row2.fit_total, misses: row2.fit_misses } : null;
+      // SALES-4 item 5: where the row came from, and "Find contact" (a Google search link; nothing is fetched).
+      const [src] = await query(`SELECT source_url, zip FROM sales_orgs WHERE id = ?`, [id]);
+      const ed = linked.contact.find(c => c.role === "ED") || null;
+      out.sourceUrl = src ? src.source_url : null;
+      out.zip = src ? src.zip : null;
+      out.findContact = require("./prospectAdd").findContactUrl(row, ed);
     }
     if (type === "contact") out.dncViaOrg = (await query(`SELECT o.name, o.dnc_reason FROM sales_links l JOIN sales_orgs o ON o.id = l.b_id AND o.deleted_at IS NULL AND o.dnc_at IS NOT NULL
                                                           WHERE l.a_type = 'contact' AND l.a_id = ? AND l.b_type = 'org' LIMIT 1`, [id]))[0] || null;
@@ -354,6 +360,8 @@ function mount(app, { query, run, wrap, opsOnly, billing }) {
   require("./routesD").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
   // SALES-4: Now, one-click next steps, Undo of a calendar move, the deal header.
   require("./routesE").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
+  // SALES-4 Part B: Add prospects from ProPublica (or a CSV of its results).
+  require("./routesF").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
 }
 
 module.exports = { mount, settings };

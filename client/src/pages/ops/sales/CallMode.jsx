@@ -106,6 +106,11 @@ export default function CallMode({ meta, listId = null, view = null, cadence = f
           {emailing && cur.contact ? <EmailDraft contactId={cur.contact.id} orgId={cur.orgId} dealId={cur.deal ? cur.deal.id : null} onClose={() => setEmailing(false)} /> : null}
         </div>
       </section>}
+    {q && q.needsNumber && q.needsNumber.length ? <section style={card} data-call-needs-number="1"><div style={{ fontSize: 12, fontWeight: 700, opacity: 0.65 }}>Needs a number · {q.needsNumber.length}</div>
+      <div style={{ fontSize: 12, opacity: 0.7, margin: "2px 0 4px" }}>Skipped: no phone for the organization or its people. Open one and use Find contact.</div>
+      {q.needsNumber.slice(0, 12).map(n => <div key={n.id} style={{ fontSize: 13, padding: "2px 0" }}><button type="button" style={link} onClick={() => open("org", n.id)}>{n.name}</button>
+        <span style={{ opacity: 0.6 }}> {[n.city, n.state].filter(Boolean).join(", ")}</span></div>)}
+      {q.needsNumber.length > 12 ? <div style={{ fontSize: 12, opacity: 0.6 }}>and {q.needsNumber.length - 12} more</div> : null}</section> : null}
     {q && q.next && q.next.length ? <section style={card}><div style={{ fontSize: 12, fontWeight: 700, opacity: 0.65 }}>Up next · {q.total} in the queue</div>
       {q.next.map(e => <div key={e.orgId} style={{ fontSize: 13, padding: "3px 0" }}>{e.org.name}{e.contact ? ` · ${e.contact.name}` : ""} <span style={{ opacity: 0.6 }}>{e.org.fit.line}</span></div>)}</section> : null}
   </div>;

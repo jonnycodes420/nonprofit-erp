@@ -171,6 +171,59 @@ async function prospect(name, { stage = "Lead", mrr = 299, ageDays = 1, email = 
   ok("§6 no sales module can send: no mailer, no Graph sendMail, no Gmail send, no calendar write",
     !/require\([^)]*(resend|mailer|nodemailer|sendEmail|emailSender)[^)]*\)|\/sendMail|messages\/send|calendars?\/[^"'`]*\/events["'`][^)]*method:\s*["']POST/i.test(src));
 
+  // ── §5 Add prospects: ProPublica's rows, de-duplicated by EIN, then name and city ──
+  const PP = require("../server/admin/sales/propublica");
+  const ADD = require("../server/admin/sales/prospectAdd");
+  // A made-up ProPublica: one search page, two organizations, their details.
+  const ppFetch = async url => {
+    const u = String(url);
+    const json = b => new Response(JSON.stringify(b), { status: 200, headers: { "Content-Type": "application/json" } });
+    if (/\/search\.json\?/.test(u)) return json({ total_results: 2, num_pages: 1, cur_page: 0, organizations: [
+      { ein: 611234567, name: "Wyndmoor County Food Pantry Inc", city: "Nicholasville", state: "KY", ntee_code: "K31" },
+      { ein: 619876543, name: "Tallowbrook Hunger Network", city: "Lexington", state: "KY", ntee_code: "K31" }] });
+    if (/organizations\/611234567\.json/.test(u)) return json({ organization: { address: "12 Elm St", zipcode: "40356", revenue_amount: 410000 }, filings_with_data: [{ tax_prd_yr: 2024, totrevenue: 452000 }] });
+    if (/organizations\/619876543\.json/.test(u)) return json({ organization: { address: "9 Oak Ave", zipcode: "40502", revenue_amount: 3900000 }, filings_with_data: [{ tax_prd_yr: 2024, totrevenue: 4100000 }] });
+    return new Response("<html>Security Check</html>", { status: 403, headers: { "Content-Type": "text/html" } });
+  };
+  const found = await PP.lookup({ state: "KY", category: "food" }, { fetcher: ppFetch });
+  const wy = found.rows && found.rows.find(r => r.ein === "611234567");
+  ok("§5 a ProPublica row carries EIN, city, revenue, year and its ProPublica link", wy && wy.city === "Nicholasville" && wy.revenue === 452000 && wy.year === 2024 && /organizations\/611234567$/.test(wy.sourceUrl), JSON.stringify(wy));
+  ok("§5 the revenue range ($100K to $2M by default) keeps one and drops the $4.1M", found.rows.filter(r => PP.inRange(r)).map(r => r.ein).join() === "611234567");
+  const down = await PP.lookup({ state: "KY", category: "food" }, { fetcher: async () => { throw new Error("getaddrinfo ENOTFOUND"); } });
+  ok("§5 ProPublica unreachable says so plainly and offers the CSV", down.error === "unreachable" && /CSV/.test(down.message), JSON.stringify(down));
+  const add1 = await S(sup, "POST", "/prospects/add", { list: { name: "KY food pantries (sales4)" }, rows: [wy] });
+  const add2 = await S(sup, "POST", "/prospects/add", { list: { name: "KY food pantries (sales4)" }, rows: [wy] });
+  const byEin = await q(`SELECT id, name, ein, source_url, zip FROM sales_orgs WHERE ein = '611234567' AND deleted_at IS NULL`);
+  // HOW IT GOES RED (SALES4_PLANT=dupe on the server): the second add makes a second organization.
+  ok("§5 adding the same ProPublica result twice makes one organization", add1.status === 201 && add2.status === 201 && byEin.length === 1, JSON.stringify({ byEin, a2: add2.body }));
+  ok("§5 the second add says it was already there, by EIN", add2.body && add2.body.added.length === 0 && /by EIN/.test(add2.body.says), add2.body && add2.body.says);
+  ok("§5 the organization keeps its EIN and source link", byEin[0] && /propublica\.org\/nonprofits\/organizations\/611234567$/.test(byEin[0].source_url) && byEin[0].zip === "40356");
+  // No EIN in a CSV row: the name and city match instead.
+  const csv = PP.fromCsv(`Name,City,State,Revenue,Year,Phone,Executive director\n"Wyndmoor County Food Pantry, Inc.",Nicholasville,KY,"$452,000",2024,(859) 555-0142,Henrietta Vale\n`);
+  const add3 = await S(sup, "POST", "/prospects/add", { list: { name: "KY food pantries (sales4)" }, rows: csv.rows });
+  ok("§5 a CSV row with no EIN matches by name and city", add3.status === 201 && add3.body.added.length === 0 && /name and city/.test(add3.body.says), add3.body && add3.body.says);
+
+  // ── §5b Enough to call: Find contact, and call mode lists who needs a number ──
+  const nophone = await S(sup, "POST", "/prospects/add", { list: { name: "KY food pantries (sales4)" }, rows: [{ ein: "617770001", name: "Corriebrook Pantry", city: "Paris", state: "KY", revenue: 300000, year: 2024 }] });
+  const listId = nophone.body.listId;
+  const qq2 = await S(sup, "GET", `/call/queue?list=${listId}`);
+  ok("§5b call mode skips an organization with no phone and lists it as needing a number", qq2.status === 200 && !(qq2.body.current && /Corriebrook/.test(qq2.body.current.org.name))
+    && (qq2.body.needsNumber || []).some(n => n.name === "Corriebrook Pantry"), JSON.stringify(qq2.body.needsNumber));
+  const rec = await S(sup, "GET", `/rec/org/${nophone.body.added[0].id}`);
+  ok("§5b the organization's page links Find contact to a Google search, nothing fetched", rec.status === 200 && /^https:\/\/www\.google\.com\/search\?q=/.test(rec.body.findContact || "") && /Corriebrook/.test(decodeURIComponent(rec.body.findContact || "")), rec.body && rec.body.findContact);
+
+  // ── §7 Misfiled notes: the dry run lists Steward's own notes on a prospect, by title ──
+  const jess = await prospect("Jessamine County Food Pantry", { stage: "Contacted", mrr: 299, ageDays: 30 });
+  const on = [{ type: "deal", id: jess.dealId }];
+  for (const body of ["December campaign\nGoal: 20 demos by Dec 20.", "Weekly scoreboard\nDials 41, conversations 6.", "Open question for Jonathan\nDo we discount for food banks?",
+    "December campaign: Jessamine County Food Pantry wants to start in January", "Call back after their board meets"])
+    await ACT.create(ctx, { kind: "note", body, records: on }, WHO);
+  const MIS = require("../scripts/ops/sales-misfiled-notes");
+  const mis = await MIS.find(qq);
+  const titles = mis.map(m => m.title).sort();
+  ok("§7 the dry run lists Steward's three notes on the prospect, by title, and nothing about the prospect",
+    titles.join("|") === ["December campaign", "Open question for Jonathan", "Weekly scoreboard"].sort().join("|"), JSON.stringify(titles));
+
   // ── The door ──
   const anon = await api("GET", "/ops/sales/now", null);
   ok("§0 Now is behind the /ops door", anon.status === 404, anon.status);

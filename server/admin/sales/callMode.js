@@ -173,6 +173,10 @@ async function loadQueue(query, { view = {}, listId = null, done = [], now = Dat
     : buildQueue({ orgs, contactsByOrg, lastCall, blocked, orgBusy, done: new Set(done.map(String)) }, today);
   const orgOf = new Map(orgs.map(o => [o.id, o]));
   const contactOf = new Map(contacts.map(c => [c.id, c]));
+  // SALES-4 item 5: who the queue skipped for having no number at all (no one left to dial, no main line).
+  const needsNumber = orgs.filter(o => !o.dnc && !o.lost_at && !phonesLeft(o.phone ? [o.phone] : [], o.bad_phones).length
+      && !(contactsByOrg.get(o.id) || []).some(c => !c.dnc_at && phonesLeft(c.phones, c.bad_phones).length))
+    .slice(0, 100).map(o => ({ id: o.id, name: o.displayName, city: o.city, state: o.state }));
   const entry = e => {
     const o = orgOf.get(e.orgId), c = e.contactId ? contactOf.get(e.contactId) : null;
     return { ...e, org: { id: o.id, name: o.displayName, city: o.city, state: o.state, phone: o.phone, fit: { line: o.fit_line, misses: o.fit_misses || [] } },
@@ -188,9 +192,9 @@ async function loadQueue(query, { view = {}, listId = null, done = [], now = Dat
     first.openTasks = acts.filter(a => a.kind === "task" && !a.done_at).slice(0, 3).map(a => ({ id: a.id, body: a.body, due_on: a.due_on }));
     first.deal = await openDealOf(query, first.orgId);
   }
-  return { ok: true, today, total: queue.length, current: first, next: queue.slice(1, 6).map(entry),
+  return { ok: true, today, total: queue.length, current: first, next: queue.slice(1, 6).map(entry), needsNumber,
     says: cadence ? "Everyone with a cadence call step due today or earlier, soonest first. Skipped: Do not contact, no number left, and already called today."
-      : "One entry per organization, in the list's order. Skipped: Do not contact, an open task due after today, already called today, reached today, a meeting ahead, and Not a fit." };
+      : `One entry per organization, in the list's order. Skipped: Do not contact, an open task due after today, already called today, reached today, a meeting ahead, Not a fit${needsNumber.length ? ", and no number (listed below)" : ""}.` };
 }
 
 // The organization's open deal it's linked to (the newest), or null.

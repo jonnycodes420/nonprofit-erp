@@ -7,8 +7,9 @@ records only. Nothing here touches Harborlight or org_stagewalk's donor data.
 
 **Surfaces changed:** /ops → Sales → Now (new, the default sub-tab); Pipeline (new sub-tab, the
 board); Organizations, Contacts and Deals lists (default columns); a deal's page (new header);
-call mode started from Now; Sales settings → Mailbox (what it reads / never touches); Forecast
-(Today's lines and the forecast moved here).
+call mode started from Now (and its new "Needs a number" box); Sales settings → Mailbox (what it
+reads / never touches); Forecast (Today's lines and the forecast moved here); Add prospects (new
+panel); an organization's page (phone, address, Find contact, ProPublica link).
 
 | Re-check (your clicks) | Expect now |
 |---|---|
@@ -23,6 +24,12 @@ call mode started from Now; Sales settings → Mailbox (what it reads / never to
 | Organizations list | Columns: Name, Fit, Last touch ("Interested · Nov 2, 2026" or "None yet"), Next step. Nothing else unless you add columns. |
 | Sales settings → Mailbox | "What it reads" and "What it never touches" lists. |
 | Now when nothing is waiting (empty filter: a fresh CRM) | "No one's waiting. Work the <list> list →", and the arrow opens call mode on that list. |
+
+| Sales → **Add prospects** → KY, Food banks, $100,000 to $2,000,000 → Search ProPublica | A page of organizations with city, revenue, year, "Fits N of M", "Not in ProPublica's data" under Officers, and a ProPublica link. The count line says how many of the page are in the revenue range. |
+| Add prospects → pick two → name a new list → Add | "2 added to <list>." **Off the happy path:** search again and add the same two: "0 added… already here by EIN". Their rows read "Already in Sales". |
+| Add prospects → Use a CSV instead → a file with Name, City, State, Revenue, Year | The same table from the file. A row with no EIN that matches an existing organization's name and city is "already here by name and city". |
+| An organization added from ProPublica | A brass "Needs a number" (the API has no phone), the address, **Find contact** (opens a Google search in a new tab) and a ProPublica · EIN link. |
+| Lists → that list → Start calling | Organizations with no phone are not offered; a "Needs a number" box lists them. |
 
 **What could have broken nearby:** /ops → Sales → Forecast (Today's lines and the forecast are
 read by the same function as before, now shared with Now); Scoreboard (a calendar meeting counts
