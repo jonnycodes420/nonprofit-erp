@@ -85,7 +85,8 @@ async function processPledgeReminders({ orgId = null } = {}) {   // TRUST-1: a r
     // DATES in the org's own calendar. CURRENT_DATE is the Postgres session
     // zone, so a pledge in a western org used to start its dunning cadence
     // hours early — a reminder email about money, sent on the wrong day.
-    const _overdueOrgs = await query(`SELECT id, timezone FROM orgs${orgId ? " WHERE id = ?" : ""}`, orgId ? [orgId] : []);
+    // SCALE-5: the hourly pass (no orgId) is for live orgs only.
+    const _overdueOrgs = await query(`SELECT id, timezone FROM orgs WHERE ${orgId ? "id = ?" : "id = ANY(?::text[])"}`, [orgId || await require("../orgs/liveOrgs").liveOrgIds(query)]);
     for (const _o of _overdueOrgs) {
       await run(
         `UPDATE pledges SET first_overdue_at=NOW(), next_reminder_at=NOW(), updated_at=NOW()

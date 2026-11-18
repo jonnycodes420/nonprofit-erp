@@ -36,8 +36,8 @@ async function runJourneySweep(onlyOrgId = null, { at } = {}) {
     `SELECT DISTINCT org_id FROM cultivation_templates
       WHERE journey_enabled=true AND archived_at IS NULL
         AND trigger_key = ANY(?::text[])
-        ${onlyOrgId ? "AND org_id = ?" : ""}`,
-    [["joined_group", "giving_anniversary", "birthday", "yearly_date", ...(await journeyMod()).SWEEP_TRIGGER_KEYS], ...(onlyOrgId ? [onlyOrgId] : [])]);
+        ${onlyOrgId ? "AND org_id = ?" : "AND org_id = ANY(?::text[])"}`,   // SCALE-5: the hourly pass, live orgs only
+    [["joined_group", "giving_anniversary", "birthday", "yearly_date", ...(await journeyMod()).SWEEP_TRIGGER_KEYS], onlyOrgId || await require("../orgs/liveOrgs").liveOrgIds(query)]);
   let fired = 0;
   for (const { org_id: orgId } of orgs) {
     try {

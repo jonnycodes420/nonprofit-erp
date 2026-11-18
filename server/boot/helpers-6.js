@@ -1263,7 +1263,7 @@ async function processWorkflowSweeps(onlyOrgId = null) {
   await require("../../workflowsToJourneys").convertWorkflows(onlyOrgId).catch(e => console.error("[workflows-to-journeys]", e.message));
   const orgRows = onlyOrgId
     ? await query("SELECT DISTINCT org_id FROM workflows WHERE trigger='donor_lapsed' AND enabled=true AND org_id=?", [onlyOrgId])
-    : await query("SELECT DISTINCT org_id FROM workflows WHERE trigger='donor_lapsed' AND enabled=true");
+    : await query("SELECT DISTINCT org_id FROM workflows WHERE trigger='donor_lapsed' AND enabled=true AND org_id = ANY(?::text[])", [await require("../orgs/liveOrgs").liveOrgIds(query)]);   // SCALE-5: live orgs only
   for (const { org_id: orgId } of orgRows) {
     try {
       const wfRows = await query("SELECT config FROM workflows WHERE org_id=? AND recipe_key='lapsing_reengage' AND enabled=true", [orgId]);

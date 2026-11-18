@@ -43,13 +43,18 @@
 // orgs and keys. On SIGTERM a worker stops claiming and hands back what it
 // still holds (stop()).
 const os = require("os");
-const { query, run, uuid, withTransaction, isPoolFull } = require("./db");
+const { query, run, uuid, isPoolFull } = require("./db");
 const HOLD = require("./server/perf/holders");   // SCALE-4: each job's connections are put down to it (the Capacity card)
 
 const MAX_ATTEMPTS = 5;
 const ORG_CAP = () => Math.max(1, Number(process.env.JOB_ORG_CAP) || 2);
 const CONCURRENCY = () => Math.max(1, Number(process.env.WORKER_CONCURRENCY) || 4);
 const POLL_MS = () => Math.max(50, Number(process.env.JOB_POLL_MS) || 1000);
+// SCALE-5: an empty queue is asked less and less often, up to this (twice
+// JOB_POLL_MS: 2 s in prod), so a
+// row another process enqueues waits at most this long; one this process
+// enqueues wakes the lanes at once.
+const POLL_MAX_MS = () => Math.max(POLL_MS(), Number(process.env.JOB_POLL_MAX_MS) || 2 * POLL_MS());
 // A running row whose worker has not touched it in this long is taken to have
 // died with its process, and goes back to waiting (it counts as a try).
 const STALE_MS = () => Math.max(1000, Number(process.env.JOB_STALE_MS) || 10 * 60 * 1000);
@@ -68,6 +73,12 @@ const CLAIM_TRIES = 200;
 const REAP_MS = () => Math.max(100, Number(process.env.JOB_REAP_MS) || Math.min(60000, STALE_MS()));
 const WORKER_ID = `${os.hostname()}:${process.pid}`;
 let claimSeq = 0;
+// SCALE-5 state, declared before every reader (the TDZ rule): the scheduler's
+// written rows, the prune clock, the idle poller and the wake listener.
+const ensured = new Set();
+let ensuredAt = 0, prunedAt = 0;
+let idleMs = 0, poller = false, wake = null;
+const idleStats = { emptyPolls: 0, timedPolls: 0 };
 
 const schedules = new Map();   // name -> { everyMs, firstMs, run }
 const handlers = new Map();    // name -> async (payload, job) => result
@@ -106,6 +117,7 @@ const runsJobs = () => role() !== "web";
 // then makes its own read-only calls, which is the price of a true answer.
 function define(name, { everyMs, firstMs = null, perBoot = false, run: fn, long = false, timeoutMs = null }) {
   schedules.set(name, { everyMs, firstMs: firstMs == null ? everyMs : firstMs, perBoot, local: false, run: fn });
+  ensured.delete(name);   // SCALE-5: its schedule row is written on the next pass
   if (long) longNames.add(name);   // SCALE-4
   if (timeoutMs) timeouts.set(name, timeoutMs);
   // A per-boot run a previous deploy queued still has a handler, so it drains
@@ -147,58 +159,66 @@ async function enqueue({ name, orgId = null, key = null, payload = null, runAfte
      ON CONFLICT (key) WHERE status = 'waiting' DO NOTHING RETURNING id`,
     [id, name, orgId, k, payload == null ? null : JSON.stringify(payload), priority, Math.max(0, runAfterMs | 0), round,
      "system:job-queue", "Steward (background work)"]);
-  if (rows.length && runsJobs()) poke();
+  if (rows.length && runsJobs()) { if (runAfterMs > 0) pokeAt(runAfterMs); else pokeOne(); }
   return rows.length ? rows[0].id : null;
 }
 
 // Claim the next runnable row: one this process has a handler for (a process
 // on older code never takes a job it cannot run), due, its key not already
-// running, and its org under the per-org cap. DEPLOY-1: it looks past every
-// busy org and key (it gave up after eight, so nine orgs at their cap held
-// every other org's rows behind them). Each claim gets its own lease token in
-// locked_by, so a run given back and claimed again by the same process is not
-// finished by the first, late one.
+// running, and its org under the per-org cap. Each claim gets its own lease
+// token in locked_by, so a run given back and claimed again by the same
+// process is not finished by the first, late one.
 //
-// SKIP LOCKED means two workers racing for the same row do not wait on each
-// other. The per-org cap and the one-run-per-key rule are checked AFTER an
-// advisory lock on the org and on the key, in a fresh statement: checked in
-// the same statement as the pick, four lanes claiming at once each saw "under
-// the cap" in their own snapshot and one org took every lane (scale1-queue §4).
-async function claim({ shortOnly = false } = {}) {
-  return withTransaction(async (c) => {
-    // SCALE-4: with the long lanes full, only a short job may be claimed.
-    const names = [...handlers.keys()].filter(n => !shortOnly || !isLong(n)), full = [], passed = [];
-    if (!names.length) return null;
-    for (let i = 0; i < CLAIM_TRIES; i++) {
-      const cand = (await c.query(
-        `SELECT j.id, j.org_id, j.key, j.name FROM job_queue j
-          WHERE j.status = 'waiting' AND j.run_after <= NOW() AND j.name = ANY($1::text[])
-            AND (j.org_id IS NULL OR NOT (j.org_id = ANY($2::text[]))) AND NOT (j.id = ANY($3::text[]))
-            AND NOT EXISTS (SELECT 1 FROM job_queue r WHERE r.key = j.key AND r.status = 'running')
-          ORDER BY j.priority, j.run_after, j.created_at
-          LIMIT 1 FOR UPDATE SKIP LOCKED`, [names, full, passed])).rows[0];
-      if (!cand) return null;
-      await c.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, ["jobq-key:" + cand.key]);
-      if ((await c.query(`SELECT 1 FROM job_queue WHERE key = $1 AND status = 'running' LIMIT 1`, [cand.key])).rows.length) {
-        passed.push(cand.id); continue;   // the key started running a moment ago: try the next row
-      }
-      if (cand.org_id) {
-        await c.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, ["jobq-org:" + cand.org_id]);
-        // SCALE-4: a short job's place under the per-org cap is not taken by the
-        // org's long jobs (a 25,000-person org's stored answers or full scores pass),
-        // so what follows a gift there never waits behind them.
-        const longs = isLong(cand.name) ? [] : [...new Set([...longNames, ...seenLong])];
-        const [{ n }] = (await c.query(`SELECT COUNT(*)::int AS n FROM job_queue WHERE org_id = $1 AND status = 'running' AND NOT (name = ANY($2::text[]))`, [cand.org_id, longs])).rows;
-        if (n >= ORG_CAP()) { full.push(cand.org_id); continue; }
-      }
-      const r = await c.query(
-        `UPDATE job_queue SET status = 'running', attempts = attempts + 1, locked_by = $2, started_at = NOW(),
-                heartbeat_at = NOW(), finished_at = NULL
-          WHERE id = $1 RETURNING *`, [cand.id, `${WORKER_ID}#${++claimSeq}`]);
-      return r.rows[0] || null;
-    }
-    return null;
-  });
+// SCALE-5 · ONE STATEMENT. The claim was a transaction of three statements when
+// the queue was empty and eight when it was not (BEGIN, the pick, an advisory
+// lock and a check for the key, another for the org, the cap count, the
+// update, COMMIT), four lanes a second: a quarter of prod's connection time.
+// Now the pick, the key rule, the per-org cap and the update are one UPDATE
+// with FOR UPDATE SKIP LOCKED. Claims in this process go one at a time
+// (claimLock), so lanes never race each other for an org's last place (the
+// race scale1-queue §4 found). Two processes can still meet at the same
+// instant on one org's cap; the cost is one extra run at once for that org,
+// never a key run twice (one waiting row per key, and its row lock).
+let claimLock = Promise.resolve();
+function claim(opts = {}) {
+  const next = claimLock.then(() => claimNow(opts));
+  claimLock = next.catch(() => {});
+  return next;
+}
+async function claimNow({ shortOnly = false } = {}) {
+  // SCALE-4: with the long lanes full, only a short job may be claimed.
+  const names = [...handlers.keys()].filter(n => !shortOnly || !isLong(n));
+  if (!names.length) return null;
+  // SCALE-4: a short job's place under the per-org cap is not taken by the
+  // org's long jobs, so what follows a gift never waits behind them.
+  const longs = [...new Set([...longNames, ...seenLong])];
+  // The cheap filters and the order first, over at most CLAIM_TRIES rows; the
+  // per-org cap is then counted ONCE for just those orgs, and the chosen row is
+  // locked last. (Counting inside the first WHERE ran the count for every due
+  // row before the sort: flows2 found the web starved behind it.)
+  const rows = await query(
+    `WITH c AS (
+       SELECT j.id, j.org_id, j.name, j.priority, j.run_after, j.created_at FROM job_queue j
+        WHERE j.status = 'waiting' AND j.run_after <= NOW() AND j.name = ANY(?::text[])
+          AND NOT EXISTS (SELECT 1 FROM job_queue r WHERE r.key = j.key AND r.status = 'running')
+        ORDER BY j.priority, j.run_after, j.created_at
+        LIMIT ?),
+     busy AS (
+       SELECT r.org_id, r.name FROM job_queue r
+        WHERE r.status = 'running' AND r.org_id IN (SELECT org_id FROM c WHERE org_id IS NOT NULL)),
+     pick AS (
+       SELECT j.id FROM job_queue j
+        WHERE j.status = 'waiting' AND j.id IN (
+          SELECT c.id FROM c
+           WHERE c.org_id IS NULL OR (SELECT COUNT(*) FROM busy b WHERE b.org_id = c.org_id
+                                        AND (c.name = ANY(?::text[]) OR NOT (b.name = ANY(?::text[])))) < ?)
+        ORDER BY j.priority, j.run_after, j.created_at
+        LIMIT 1 FOR UPDATE SKIP LOCKED)
+     UPDATE job_queue u SET status = 'running', attempts = u.attempts + 1, locked_by = ?, started_at = NOW(),
+            heartbeat_at = NOW(), finished_at = NULL
+       FROM pick WHERE u.id = pick.id AND u.status = 'waiting' RETURNING u.*`,
+    [names, CLAIM_TRIES, longs, longs, ORG_CAP(), `${WORKER_ID}#${++claimSeq}`]);
+  return rows[0] || null;
 }
 
 const BACKOFF_MS = () => Math.max(10, Number(process.env.JOB_BACKOFF_MS) || 30000);
@@ -262,22 +282,38 @@ async function finish(job, err) {
         WHERE id = ? AND locked_by = ?`, [msg, job.id, job.locked_by]);
   } else {
     await giveBack(job.id, job.locked_by, { error: msg, runAfterMs: backoffMs(job.attempts, job.backoff_ms) });
+    pokeAt(backoffMs(job.attempts, job.backoff_ms));   // SCALE-5: its retry is due then; this process looks then
   }
   console.error(`[jobs] ${job.name}${job.org_id ? " " + job.org_id : ""} failed (try ${job.attempts}): ${msg}${dead ? " · stopped" : ""}`);
 }
 
 const held = new Map();   // job id -> the job, while this process runs it
 const BEAT_MS = () => Math.max(100, Math.min(30000, Math.floor(STALE_MS() / 4)));
+// SCALE-5: every run this process holds, in one statement.
+async function beatHeld() {
+  if (!held.size) return 0;
+  const jobs = [...held.values()];
+  const r = await run(`UPDATE job_queue j SET heartbeat_at = NOW() FROM unnest(?::text[], ?::text[]) AS h(id, lb)
+                        WHERE j.id = h.id AND j.locked_by = h.lb`, [jobs.map(j => j.id), jobs.map(j => j.locked_by)]);
+  return r && r.changes != null ? r.changes : jobs.length;
+}
+let beatTimer = null;
+function ensureBeat() {
+  if (beatTimer) return;
+  // Under the queue's own name on the Capacity card, whichever run started it.
+  HOLD.as("job queue (claim, heartbeat, reap)", () => {
+    beatTimer = setInterval(() => { beatHeld().catch(() => {}); }, BEAT_MS());
+    if (beatTimer.unref) beatTimer.unref();
+  });
+}
 async function runOne(job) {
   const fn = handlers.get(job.name);
   held.set(job.id, job);
   const long = !!job.__long, t0 = Date.now();   // SCALE-4: counted against the long lanes from its claim (claimNext)
   // Keep the row alive while it runs, so a long run is not mistaken for a
-  // dead worker.
-  const beat = setInterval(() => {
-    run(`UPDATE job_queue SET heartbeat_at = NOW() WHERE id = ? AND locked_by = ?`, [job.id, job.locked_by]).catch(() => {});
-  }, BEAT_MS());
-  if (beat.unref) beat.unref();
+  // dead worker. SCALE-5: one write per process for every run it holds, every
+  // BEAT_MS (30 s at most), not one timer per run (beatHeld).
+  ensureBeat();
   let timer = null;
   try {
     if (!fn) throw new Error(`No handler for job "${job.name}" in this process`);
@@ -293,7 +329,7 @@ async function runOne(job) {
   } catch (e) {
     await finish(job, e).catch(x => console.error("[jobs] could not record a failure:", x.message));
   } finally {
-    clearInterval(beat); clearTimeout(timer); held.delete(job.id);
+    clearTimeout(timer); held.delete(job.id);
     if (long) longRunning--;
     if (Date.now() - t0 >= LONG_MS() && !seenLong.has(job.name)) { seenLong.add(job.name); console.log(`[jobs] ${job.name} ran ${Math.round((Date.now() - t0) / 1000)} s: a long job from now on (it no longer takes the short lane)`); }
   }
@@ -313,18 +349,27 @@ function claimNext() {
 }
 
 // ── The scheduler: enqueue each due periodic job, once across all processes.
+// SCALE-5: two statements per job every ten seconds (an upsert of its row and
+// its due check: ~45 jobs, ~780,000 statements a day) became one upsert per
+// new definition and ONE due check for all of them. The rows a process has
+// written are re-written every ten minutes, in case one was removed.
 async function scheduleDue() {
-  for (const [name, s] of schedules) {
-    if (s.perBoot) continue;   // runs on its own timer in each process (startLocal)
+  const mine = [...schedules].filter(([, s]) => !s.perBoot);   // per-boot jobs run on their own timer (startLocal)
+  if (!mine.length) return;
+  if (Date.now() - ensuredAt > 10 * 60 * 1000) { ensured.clear(); ensuredAt = Date.now(); }
+  const fresh = mine.filter(([name]) => !ensured.has(name));
+  if (fresh.length) {
     await run(
-      `INSERT INTO job_schedule (name, every_ms, next_run_at) VALUES (?, ?, NOW() + (?::int * INTERVAL '1 millisecond'))
+      `INSERT INTO job_schedule (name, every_ms, next_run_at)
+       SELECT n, e, NOW() + (f * INTERVAL '1 millisecond') FROM unnest(?::text[], ?::bigint[], ?::bigint[]) AS x(n, e, f)
        ON CONFLICT (name) DO UPDATE SET every_ms = EXCLUDED.every_ms`,
-      [name, s.everyMs, s.firstMs]);
-    const due = await query(
-      `UPDATE job_schedule SET next_run_at = NOW() + (every_ms * INTERVAL '1 millisecond'), last_enqueued_at = NOW()
-        WHERE name = ? AND next_run_at <= NOW() RETURNING name`, [name]);
-    if (due.length) await enqueue({ name, key: name, round: `${name}@${Date.now()}` });
+      [fresh.map(([n]) => n), fresh.map(([, s]) => s.everyMs), fresh.map(([, s]) => s.firstMs)]);
+    for (const [n] of fresh) ensured.add(n);
   }
+  const due = await query(
+    `UPDATE job_schedule SET next_run_at = NOW() + (every_ms * INTERVAL '1 millisecond'), last_enqueued_at = NOW()
+      WHERE name = ANY(?::text[]) AND next_run_at <= NOW() RETURNING name`, [mine.map(([n]) => n)]);
+  for (const { name } of due) await enqueue({ name, key: name, round: `${name}@${Date.now()}` });
 }
 // A worker that died mid-run leaves its row running. Give it back, ONE ROW AT
 // A TIME (DEPLOY-1): a row that cannot be given back never holds up the rest.
@@ -374,21 +419,36 @@ async function failUnhandled() {
   return rows.length;
 }
 // Done rows are kept a day for /health and the tick figures, then removed.
+// SCALE-5: once an hour per process is plenty for a day's retention.
 async function prune() {
+  if (Date.now() - prunedAt < 60 * 60 * 1000) return;
+  prunedAt = Date.now();
   await run(`DELETE FROM job_queue WHERE status = 'done' AND finished_at < NOW() - INTERVAL '1 day'`);
+  await run(`DELETE FROM process_heartbeats WHERE seen_at < NOW() - INTERVAL '7 days'`).catch(() => {});
 }
 
 let started = false, stopping = false;
 const sleepers = new Set();
 // Wakes every idle lane (it woke only the last one to fall asleep).
-function poke() { for (const w of [...sleepers]) w(); }
+function poke() { idleMs = 0; for (const w of [...sleepers]) w(); }
+// SCALE-5: one more lane, for one more row (a claim that found work, a new row).
+function pokeOne() { idleMs = 0; const w = [...sleepers][0]; if (w) w(); }
+// SCALE-5: look again when something this process put off is due.
+function pokeAt(ms) { const t = setTimeout(poke, Math.max(0, ms) + 20); if (t.unref) t.unref(); }
+// SCALE-5 · AN EMPTY QUEUE IS ASKED BY ONE LANE, LESS AND LESS OFTEN. The
+// other lanes sleep until woken: by a lane that found work (there may be more),
+// by an enqueue in this process, or by the database's notice of a new row
+// (server/jobs/wake.js). The poller's wait doubles from JOB_POLL_MS to
+// JOB_POLL_MAX_MS while it finds nothing, and starts again at the bottom after
+// any wake. `polls` counts empty asks, for the suite.
+
 const timers = [];
 let lanesDone = Promise.resolve();
 let buildSha = null;
 
 // POOL-1: the heartbeat carries this process's connection budget (the
 // numbers only), so `npm run status` can add up the deploy's worst case.
-const poolBudget = () => { const { POOL_MAX, SET_POOL_MAX } = require("./db"); return { max: POOL_MAX, setMax: SET_POOL_MAX }; };
+const poolBudget = () => { const { POOL_MAX, SET_POOL_MAX } = require("./db"); return { max: POOL_MAX, setMax: SET_POOL_MAX, listen: wake ? 1 : 0 }; };   // SCALE-5: the wake listener's own connection
 // DEPLOY-1 · THE WORKER SAYS IT IS THERE. One row per process that runs jobs,
 // written every 30 s: its role, its build and the job types it can run. The
 // web's /health reads the newest (the worker has no public address), and
@@ -400,7 +460,6 @@ async function beatProcess() {
      ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role, build_sha = EXCLUDED.build_sha, handlers = EXCLUDED.handlers,
                                     pool = EXCLUDED.pool, seen_at = NOW(), stopped_at = NULL`,
     [WORKER_ID, role(), buildSha, [...handlers.keys()], JSON.stringify(poolBudget())]);
-  await run(`DELETE FROM process_heartbeats WHERE seen_at < NOW() - INTERVAL '7 days'`);
 }
 
 function start(opts = {}) {
@@ -427,15 +486,23 @@ function startNow({ scheduler = true, build = null } = {}) {
       // SCALE-4: a lane may take a long job only while another lane stays free for short ones.
       try { job = await claimNext(); } catch (e) { if (!/does not exist/.test(e.message)) console.error("[jobs] claim:", e.message); }
       if (stopping && job) { if (job.__long) longRunning--; await giveBack(job.id, job.locked_by, { error: "Handed back: its worker was shutting down.", failed: false, tryBack: true }).catch(() => {}); break; }
-      if (job) { await runOne(job); continue; }
+      if (job) { idleMs = 0; pokeOne(); await runOne(job); continue; }
+      idleStats.emptyPolls++;
+      // SCALE-5: one lane keeps watch with a growing wait; the rest sleep until woken.
+      const watch = !poller;
+      if (watch) { poller = true; idleMs = idleMs ? Math.min(POLL_MAX_MS(), idleMs * 2) : POLL_MS(); }
       await new Promise(res => {
         let t = null;
         function done() { sleepers.delete(done); clearTimeout(t); res(); }
-        t = setTimeout(done, POLL_MS()); if (t.unref) t.unref();
+        if (watch) { t = setTimeout(() => { idleStats.timedPolls++; done(); }, idleMs); if (t.unref) t.unref(); }
         sleepers.add(done);
       });
+      if (watch) poller = false;
     }
   };
+  ensureBeat();   // SCALE-5: one heartbeat write per process for what it holds
+  // SCALE-5: with JOB_WAKE=on a new row wakes the lanes at once (server/jobs/wake.js: off by default).
+  if (require("./server/jobs/wake").wakeOn()) wake = require("./server/jobs/wake").listen(() => pokeOne());
   lanesDone = Promise.all(Array.from({ length: CONCURRENCY() }, () => lane()));
   // JOBS-1: the outbox's sweep relays any event its door could not.
   require("./server/shared/outbox").startSweep();
@@ -450,6 +517,7 @@ async function stop({ graceMs = 20000 } = {}) {
   if (!started || stopping) return { handedBack: 0 };
   stopping = true;
   for (const t of timers) { clearTimeout(t); clearInterval(t); }
+  if (wake) await wake.stop().catch(() => {});
   poke();
   await Promise.race([lanesDone, new Promise(r => { const t = setTimeout(r, graceMs); if (t.unref) t.unref(); })]);
   let handedBack = 0;
@@ -549,6 +617,7 @@ async function keyBusy(key) {
   return rows.length > 0;
 }
 
+const idle = () => ({ emptyPolls: idleStats.emptyPolls, timedPolls: idleStats.timedPolls, idleMs, listening: !!(wake && wake.state.listening), pollMaxMs: POLL_MAX_MS() });
 const lanes = () => ({ concurrency: CONCURRENCY(), shortLanes: SHORT_LANES(), longRunning, long: [...new Set([...longNames, ...seenLong])].sort() });
-module.exports = { claimNext, lanes, isLong, define, handle, enqueue, start, stop, holding, startLocal, role, runsJobs, refreshHealth, healthNow, deadJobs, retry, keyBusy,
+module.exports = { idle, beatHeld, claimNext, lanes, isLong, define, handle, enqueue, start, stop, holding, startLocal, role, runsJobs, refreshHealth, healthNow, deadJobs, retry, keyBusy,
   scheduleDue, claim, poke, reapStale, failUnhandled, giveBack, queueLevel, MAX_ATTEMPTS, WORKER_ID, STALE_MS, TIMEOUT_MS };

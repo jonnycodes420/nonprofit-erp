@@ -781,7 +781,7 @@ async function processMembershipRenewals(opts = {}) {
   const orgs = opts.orgId
     ? await query("SELECT id, name, timezone, voice_samples FROM orgs WHERE id=?", [opts.orgId])
     : await query(`SELECT DISTINCT o.id, o.name, o.timezone, o.voice_samples FROM orgs o JOIN memberships m ON m.org_id=o.id
-                    WHERE o.onboarding_complete=1 AND m.status IN ('active','grace')`, []);
+                    WHERE o.onboarding_complete=1 AND m.status IN ('active','grace') AND o.id = ANY(?::text[])`, [await require("../orgs/liveOrgs").liveOrgIds(query)]);   // SCALE-5: live orgs only
   const draftMod = await import("../../shared/draftNote.js");
   for (const org of orgs) {
     out.orgs++;

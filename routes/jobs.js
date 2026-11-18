@@ -36,19 +36,25 @@ const every = (name, everyMs, fn, firstMs, opts = {}) => Q.define(name, { everyM
 
 // Scheduled sweep — runs on the existing 5-min cadence (same pattern as
 // processWorkflowSweeps / processDigests; NOT a second scheduler). Auto-lapse
-// applies to EVERY onboarded org (it's a core smart-move, not gated on a
+// applies to every LIVE onboarded org (it's a core smart-move, not gated on a
 // workflow recipe being enabled).
+// SCALE-5: it held 56.6% of prod's connection time sweeping every onboarded
+// org, test and archived ones included, from scratch every five minutes. Now
+// the tick works only live orgs that changed since the last tick, one at a
+// time on one connection each, and the nightly pass sweeps every live org once
+// in its own quiet hours (server/smartMoves/index.js).
+const SMART = require("../server/smartMoves");
 async function processSmartMoves() {
-  try {
-    const orgs = await query("SELECT id FROM orgs WHERE onboarding_complete=1");
-    for (const { id } of orgs) {
-      try { await autoLapseOrg(id); }
-      catch (e) { console.error("[smart-move] org", id, e.message); }
-    }
-  } catch (e) { console.error("[smart-move] sweep:", e.message); }
+  try { return await SMART.tick({ query, run, autoLapseOrg }); }
+  catch (e) { console.error("[smart-move] sweep:", e.message); }
+}
+async function processSmartMovesNightly() {
+  try { return await SMART.nightly({ query, run, autoLapseOrg, orgClock: orgTime.orgClock }); }
+  catch (e) { console.error("[smart-move] nightly:", e.message); }
 }
 if (!backgroundTicksDisabled()) {
   every("processSmartMoves", 5 * 60 * 1000, () => recordTick("processSmartMoves", processSmartMoves), 40000);
+  every("processSmartMovesNightly", 60 * 60 * 1000, () => recordTick("processSmartMovesNightly", processSmartMovesNightly), 4 * 60 * 1000, { long: true });
 }
 
 // ---- THE SCHEDULE --------------------------------------------------------
@@ -210,7 +216,8 @@ async function processDigests(now = new Date()) {
     // ORG_TZ_SEAM_OK — windows are computed PER ORG. Two orgs in different
     // timezones complete a week on different days, so one shared window would
     // hand at least one of them somebody else's calendar.
-    const orgs = await query("SELECT id, name, plan, subscription_status, timezone FROM orgs WHERE onboarding_complete=1", []);
+    // SCALE-5: live orgs only (server/orgs/liveOrgs.js): no digest work for an archived or test org.
+    const orgs = await query("SELECT id, name, plan, subscription_status, timezone FROM orgs WHERE onboarding_complete=1 AND id = ANY(?::text[])", [await require("../server/orgs/liveOrgs").liveOrgIds(query)]);
     for (const org of orgs) {
       const wk = weekBounds(-1, org, now), mo = monthBounds(-1, org, now);
       await runDigestsForOrg(org, { wk, mo }).catch(e => console.error("[digest]", org.id, e.message));
@@ -267,7 +274,8 @@ async function processThreadNudges(now = new Date()) {
   try {
     // ORG_TZ_SEAM_OK — the hour and "today" are the ORGANIZATION's; whose
     // hour it is, and whose day, is each person's (STAFF-MAIL-1).
-    const orgs = await query("SELECT id, name, legal_name, timezone, receipt_address, thread_nudge_weekends FROM orgs WHERE onboarding_complete=1", []);
+    // SCALE-5: live orgs only.
+    const orgs = await query("SELECT id, name, legal_name, timezone, receipt_address, thread_nudge_weekends FROM orgs WHERE onboarding_complete=1 AND id = ANY(?::text[])", [await require("../server/orgs/liveOrgs").liveOrgIds(query)]);
     for (const org of orgs) {
       const clock = orgTime.orgClock(org, now);
       await runThreadNudgesForOrg(org, { today: clock.date, nowHour: clock.hour }).catch(e => console.error("[thread-nudge]", org.id, e.message));
@@ -292,7 +300,8 @@ async function processStepReminders(now = new Date()) {
     // ORG_TZ_SEAM_OK — "today" and the wall clock are the ORGANIZATION's.
     // No weekday gate: a time fires on a Saturday, deliberately (see header).
     const orgs = await query(
-      "SELECT id, name, legal_name, timezone, receipt_address FROM orgs WHERE onboarding_complete=1", []);
+      "SELECT id, name, legal_name, timezone, receipt_address FROM orgs WHERE onboarding_complete=1 AND id = ANY(?::text[])",
+      [await require("../server/orgs/liveOrgs").liveOrgIds(query)]);   // SCALE-5: live orgs only
     for (const org of orgs) {
       const clock = orgTime.orgClock(org, now);
       const nowHHMM = `${String(clock.hour).padStart(2, "0")}:${String(clock.minute).padStart(2, "0")}`;
@@ -444,10 +453,11 @@ async function syncAllGmail() {
 async function fanOutMailboxes() {
   await run(`DELETE FROM mailbox_push p USING mailbox_connections m
               WHERE m.id = p.connection_id AND (m.status <> 'active' OR m.paused IS TRUE)`).catch(() => {});
+  // SCALE-5: mailboxes of live orgs only (server/orgs/liveOrgs.js).
   const conns = await query(
     `SELECT id, org_id FROM mailbox_connections
       WHERE status='active' AND paused IS NOT TRUE AND credentials_sealed IS NOT NULL
-        AND (retry_after IS NULL OR retry_after <= NOW())`);
+        AND (retry_after IS NULL OR retry_after <= NOW()) AND org_id = ANY(?::text[])`, [await require("../server/orgs/liveOrgs").liveOrgIds(query)]);
   const round = "mailboxSync@" + Date.now();
   for (const c of conns) await Q.enqueue({ name: "mailboxSync", orgId: c.org_id, key: "mailboxSync:" + c.id, payload: { connectionId: c.id }, round });
   // The stale-connection count, after this round has had time to read.
@@ -521,7 +531,7 @@ if (!backgroundTicksDisabled()) {
 
 async function snapshotAllOrgMetrics() {
   try {
-    const orgs = await query("SELECT id FROM orgs", []);
+    const orgs = await query("SELECT id FROM orgs WHERE id = ANY(?::text[])", [await require("../server/orgs/liveOrgs").liveOrgIds(query)]);   // SCALE-5: live orgs only
     for (const o of orgs) {
       try { await snapshotMetricsForOrg(o.id); } catch (e) { console.error(`[metrics] snapshot failed for org ${o.id}:`, e.message); }
     }

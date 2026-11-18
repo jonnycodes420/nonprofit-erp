@@ -30,6 +30,7 @@ const JOB_WRITES = {
   processXeroAutoSync:               "sends waiting gifts to Xero for orgs that turned auto-sync on and mapped every fund",
   processTrackedSequences:           "advances a donor through a sequence the org turned on",
   processSmartMoves:                 "moves a donor's stage and logs the move",
+  processSmartMovesNightly:          "moves a donor's stage and logs the move (SCALE-5: each live org once a night)",
   processThreadNudges:               "sends each person's morning email at the hour they picked",
   processStepReminders:              "reminds a staff member about a step they own",
   processDigests:                    "sends the digest",

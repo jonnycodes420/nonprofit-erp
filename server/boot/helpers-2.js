@@ -688,7 +688,7 @@ async function processPledgeInstallmentReminders(opts = {}) {
   const out = { opened: 0, skipped: 0, orgs: 0, rows: [] };
   const orgs = opts.orgId
     ? await query("SELECT id, name, timezone, voice_samples FROM orgs WHERE id=?", [opts.orgId])
-    : await query("SELECT id, name, timezone, voice_samples FROM orgs WHERE onboarding_complete=1", []);
+    : await query("SELECT id, name, timezone, voice_samples FROM orgs WHERE onboarding_complete=1 AND id = ANY(?::text[])", [await require("../orgs/liveOrgs").liveOrgIds(query)]);   // SCALE-5: live orgs only
   const draftMod = await import("../../shared/draftNote.js");
   for (const org of orgs) {
     out.orgs++;
