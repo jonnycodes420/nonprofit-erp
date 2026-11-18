@@ -287,6 +287,14 @@ const mock = http.createServer((req, res) => {
     TG.orgTakesGifts(orgRow) === false && part("pages").connected === false && /^Off\./.test(part("pages").sentence || "") && /Not open yet/.test(part("pages").sentence || ""), card.parts);
   ok("§6 Read your Stripe history says only that, and is On", part("history").connected === true && /^On\. Steward reads the gifts Stripe already holds onto your donor records; it last read them 5 days ago\.$/.test(part("history").sentence || "") && !/a week/.test(part("history").sentence || ""), part("history"));
   const weekly = JSON.stringify(card).match(/about [\d.]+ gifts? a week/g) || [];
+  // main-fix: "N days ago" by the org's calendar, whatever the hour. 00:22 UTC on 13 Nov is
+  // 12 Nov in New York; on 17 Nov (New York) that is 5 days ago, never 4.
+  const SC = require(path.join(ROOT, "server/give/stripeCard.js"));
+  ok("§6 the last read is counted in the org's days, not UTC's (evening in New York)",
+    SC.ago(new Date("2026-11-13T00:22:00Z"), "2026-11-17", { timezone: "America/New_York" }) === "5 days ago"
+    && SC.ago("2026-11-13T00:22:00.000Z", "2026-11-17", { timezone: "America/New_York" }) === "5 days ago"
+    && SC.ago("2026-11-12", "2026-11-17", { timezone: "America/New_York" }) === "5 days ago",
+    SC.ago(new Date("2026-11-13T00:22:00Z"), "2026-11-17", { timezone: "America/New_York" }));
   ok("§6 one weekly rate on the whole card, with its period named", new Set(weekly).size === 1 && /over the last 120 days/.test(card.sentence || ""), { weekly, sentence: card.sentence });
   ok("§6 nothing was mailed outside the sink", MAIL.every(b => /flows15\.invalid/.test(b)), MAIL.length);
 
