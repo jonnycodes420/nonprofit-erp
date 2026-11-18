@@ -3,6 +3,12 @@
 Read this when you touch the person record: donors, organisations, non-donors, households, photos, merge and duplicates, deletion, the timeline, the profile, volunteers or events.
 
 ## Rules
+- **One touch, logged to many people (EDIT-2, 18 Nov 2026).** `server/donors/touchBatch.js`: Donors' selection bar, or
+  Log a touch's picker with several ticked. One transaction, at most 2,000 people, only people in the org and visible to
+  the user; each gets one interaction (`touch_batch_id`), closes no follow-up and sends nothing; a task only when "Also
+  add a follow-up task" is ticked. One Undo (`/touch-batches/:id/undo`) takes the batch back and voids its tasks; the
+  audit row is one summary. "Who's already had it" and the Donors filter "Touch titled · has had / hasn't had" share one
+  title test (`TITLE_MATCH`), and a deleted touch, having left `interactions`, never counts.
 - **Whoever has given is a donor (FLOWS-18, 17 Nov 2026).** `shared/numbers/isDonor.js` `IS_DONOR`: marked Donor (or a
   NULL roles column) OR has given by the profile's rule (`HAS_GIVEN`). The Donors tab, its counts, Groups, portfolios,
   appeal audiences and Everyone's breakdown read it; a giver typed contact or organisation gains Donor on read

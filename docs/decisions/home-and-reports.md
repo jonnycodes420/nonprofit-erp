@@ -3,6 +3,12 @@
 Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follow-ups, goals, report definitions, custom reports or board reports.
 
 ## Rules
+- **A person's next step is one rule (EDIT-2, 18 Nov 2026).** `shared/nextStep.js pickNextStep`: of every open step on the
+  person (their Thread step and their open tasks, `server/tasks/nextStep.js` reads them), the soonest due today or later;
+  when every one is past, the most overdue, said as overdue; an undated one only when nothing is dated. Home's Thread row,
+  the profile rail and its "Next:" line, Major gifts' portfolio and the Top 100 all read it. Home's overdue count still
+  counts a person who carries any overdue step. A profile's task lists use `sortTasks` from the same file: open soonest
+  first, undated last, then done newest first.
 - **Days left is one rule, in the org's day (FLOWS-18, 17 Nov 2026).** `shared/numbers/endsOn.js`: the end date is
   open all day and reads "Last day", never "Ended" or "0 days left"; the day after it reads "Ended". Every campaign card,
   giving page, countdown block and goal reads it with the org's civil day; none counts milliseconds to UTC midnight.
