@@ -88,8 +88,9 @@ function Row({ r, first, startCalling, open, meta, reload }) {
         {r.open ? <button type="button" style={{ ...link, color: INK, fontSize: 14.5 }} onClick={() => open(r.open.type, r.open.id)}>{r.says}</button> : <span style={{ fontSize: 14.5, fontWeight: 600 }}>{r.says}</span>}
         <div style={{ fontSize: 13, opacity: 0.8 }} data-now-reason="1">{r.reason}</div>
       </div>
-      {r.score ? <button type="button" style={{ ...link, color: INK, fontWeight: 500, fontSize: 12, opacity: 0.75 }} title="Why this order: open the sum" onClick={() => setShown(s => (s === "score" ? null : "score"))} data-now-score={r.score.n}>
-        {due ? "due first" : `score ${r.score.n.toLocaleString("en-US")}`}</button> : due ? <span style={{ fontSize: 12, opacity: 0.6 }}>due first</span> : null}
+      {/* Jonathan, 17 Nov: the weighted value, not the score; the score's sum still opens on a click. */}
+      {r.score && r.score.value ? <button type="button" style={{ ...link, color: INK, fontWeight: 600, fontSize: 12.5, opacity: 0.8 }} title="Monthly value × stage probability. Click for why it's in this place." onClick={() => setShown(s => (s === "score" ? null : "score"))} data-now-likely={Math.round((r.score.value * r.score.probability) / 100)}>
+        {usd(Math.round(r.score.value * r.score.probability))}/mo likely</button> : null}
       {first && r.action === "call" ? <button type="button" style={{ ...btn, minHeight: 40, padding: "8px 18px", fontSize: 14 }} onClick={() => startCalling(r.orgId)} data-now-start="1">Start</button>
         : r.action === "after" ? null
         : <button type="button" style={r.action === "call" || first ? btn : quiet} onClick={go} data-now-action={r.action}>{ACTION_WORDS[r.action]}</button>}

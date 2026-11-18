@@ -43,6 +43,9 @@ export default function Board({ rows, meta, open, onMoved }) {
     try { await apiFetch(`/ops/sales/deals/${encodeURIComponent(u.dealId)}/stage`, { method: "POST", body: JSON.stringify({ stage_id: u.back.stage_id }) }); onMoved(); }
     catch (e) { setMsg(e.message || "The move could not be undone."); }
   };
+  // Jonathan, 17 Nov: Later and Lost are a link, not columns. Drop a card on either word to move it there.
+  const closed = pipe.stages.filter(s => s.kind === "later" || s.kind === "lost");
+  const [showClosed, setShowClosed] = useState(null);   // a stage id
   const days = t => (t ? Math.max(0, Math.floor((Date.now() - new Date(t).getTime()) / 86400000)) : null);
 
   return <div data-sales-board={pipe.id}>
@@ -65,7 +68,7 @@ export default function Board({ rows, meta, open, onMoved }) {
       <span style={{ fontSize: 12, opacity: 0.7 }}>{ask.stage.kind === "later" ? "Later is not lost: it comes back in Today on this date." : "Lost needs a reason."}</span>
     </div> : null}
     <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 8 }}>
-      {pipe.stages.map(s => {
+      {pipe.stages.filter(s => s.kind !== "later" && s.kind !== "lost").map(s => {
         const here = deals.filter(d => d.stage_id === s.id);
         return <div key={s.id} data-board-stage={s.id} onDragOver={e => e.preventDefault()} onDrop={e => drop(e, s)}
           style={{ flex: "1 1 0", minWidth: 118, background: CREAM, borderRadius: 10, padding: 8, minHeight: 180, outline: drag ? `1px dashed ${INK}33` : "none" }}>
@@ -89,5 +92,15 @@ export default function Board({ rows, meta, open, onMoved }) {
         </div>;
       })}
     </div>
+    {closed.length ? <div style={{ fontSize: 13, marginTop: 4 }} data-board-closed="1">
+      {closed.map((s, i) => { const n = deals.filter(d => d.stage_id === s.id).length;
+        return <span key={s.id}>{i ? " · " : ""}<button type="button" style={{ ...link, padding: "4px 2px" }} onDragOver={e => e.preventDefault()} onDrop={e => drop(e, s)}
+          onClick={() => setShowClosed(x => (x === s.id ? null : s.id))} data-board-closed-link={s.id}>{s.name} {n}</button></span>; })}
+      {showClosed ? <div style={{ background: CREAM, borderRadius: 8, padding: "6px 10px", marginTop: 6 }}>
+        {deals.filter(d => d.stage_id === showClosed).length ? deals.filter(d => d.stage_id === showClosed).map(d => <div key={d.id} style={{ padding: "2px 0" }}>
+          <button type="button" style={link} onClick={() => open("deal", d.id)}>{d.primary_org_name || d.displayName}</button>
+          <span style={{ opacity: 0.7 }}> · {usd(d.value_cents)}/mo · {d.stage_kind === "later" && d.revisit_on ? `revisit ${dayWords(d.revisit_on)}` : d.lost_reason || ""}</span></div>)
+          : <span style={{ opacity: 0.7 }}>None.</span>}</div> : null}
+    </div> : null}
   </div>;
 }

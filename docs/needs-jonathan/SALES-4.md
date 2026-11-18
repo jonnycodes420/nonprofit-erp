@@ -1,6 +1,6 @@
 # SALES-4 · what waits on Jonathan
 
-- Approve the look before Part A merges: Now ([now.png](SALES-4/now.png)), the Pipeline board ([board.png](SALES-4/board.png)) and a deal ([deal.png](SALES-4/deal.png)). Made-up fixtures, local production build, 1440 wide. Reply OK, or say what to change.
+- The look was approved on 17 Nov with three changes (weighted value on Now, Later and Lost as a link, Quote collapsed before Verbal yes); the screenshots below show them.
 
 ![Now](SALES-4/now.png)
 ![The Pipeline board](SALES-4/board.png)
