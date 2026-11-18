@@ -17,10 +17,23 @@
 //     replaced) → §1a/§1c count 2, and §1 "every writer" names helpers-6.js.
 //   · TaskTick's click not calling the complete call (an empty handler) → §2 Activity and the
 //     Tasks tab stay open; a "Mark done" back on PUT /tasks/:id → §2 "one complete call" fails.
+//
+// §3 EDIT-1 (the same customer, Nov 18): a task's title on a profile opens the Tasks page's own
+//    sheet, wherever it is shown (Coming up, the timeline, the Tasks tab), as one shared component:
+//    an edit saves through PATCH /tasks/:id and shows with no reload; a done task opens too (notes
+//    editable, Reopen offered); Enter opens it, Escape closes it; read-only shows it with no Save;
+//    a gift's "Send thank-you note" step opens the same way.
+//    PROVEN ABLE TO FAIL (each planted, each red, then put back):
+//      · Coming up's title back to a plain <span> → §3 "the title is a button" and every click after.
+//      · the profile's sheet saving with its own PUT (a copy of the sheet in ProfileTaskSheet.jsx)
+//        → §3 "one sheet" (source) and "...through PATCH /tasks/:id" (browser).
+//      · a done task's title not opening (open() returning early when the task is done) → §3 done.
+//      · the edit only showing after a reload (the profile's task re-read dropped from the channel)
+//        → §3 "...and Coming up shows the new title with no reload".
 "use strict";
 const fs = require("fs");
 const path = require("path");
-const { ok, summary, api, q, closeDb, browserLegOrSkip, civilToday, waitFor, drainQueue } = require("./helpers");
+const { ok, summary, api, q, closeDb, browserLegOrSkip, civilToday, civilPlusDays, waitFor, drainQueue } = require("./helpers");
 
 const ROOT = path.join(__dirname, "..");
 const BASE = process.env.BASE || "http://localhost:5601";
@@ -133,6 +146,14 @@ const read = p => fs.readFileSync(path.join(ROOT, p), "utf8");
       && /completeTask\(t\)/.test(read("client/src/components/profile/profileShared.jsx")) && /TaskTick/.test(read("client/src/components/MeetingPanels.jsx"))
       && !/method:"PUT"[^\n]*done:/.test(read("client/src/components/Donors.jsx")));
 
+  // §3 (source): one sheet. The Tasks page and the profile import the same TaskSheet, and it saves through PATCH.
+  const sheetSrc = read("client/src/components/tasks/TaskSheet.jsx");
+  ok("§3 one sheet: Tasks.jsx keeps no TaskSheet of its own; it and the profile import components/tasks/TaskSheet.jsx, which saves by PATCH /tasks/:id",
+    !/function TaskSheet\b/.test(read("client/src/components/Tasks.jsx")) && /from "\.\/tasks\/TaskSheet"/.test(read("client/src/components/Tasks.jsx"))
+      && /from "\.\.\/tasks\/TaskSheet"/.test(read("client/src/components/profile/ProfileTaskSheet.jsx"))
+      && !/method:\s*"(PUT|PATCH)"/.test(read("client/src/components/profile/ProfileTaskSheet.jsx"))
+      && /method: "PATCH"/.test(sheetSrc) && !/method: "PUT"/.test(sheetSrc));
+
   const why = (() => {
     if (!fs.existsSync(path.join(DIST, "assets"))) return "client/dist not built";
     const apiHost = BASE.replace(/^https?:\/\//, "");
@@ -221,6 +242,95 @@ const read = p => fs.readFileSync(path.join(ROOT, p), "utf8");
       await profile();
       ok("§2 ...and the profile shows it done (the box is checked)",
         await until(async () => (await page.locator(`[data-task-tick="${t5}"]`).first().getAttribute("aria-checked")) === "true"), null);
+    });
+
+    // ── §3 EDIT-1 · a task on a profile opens to edit ─────────────────────
+    const sheetOpen = async () => { try { await page.locator('[data-testid="task-sheet"]').waitFor({ timeout: 6000 }); return true; } catch { return false; } };
+    const sheetGone = async () => until(async () => (await page.locator('[data-testid="task-sheet"]').count()) === 0, 5000);
+    const taskRow = async id => (await q(`SELECT title, notes, done FROM tasks WHERE id=$1`, [id]))[0] || {};
+    const wil = await person("Wilhelmina Strand-Achebe");
+    const dec2 = civilPlusDays(14);
+    const tw = async (title, extra = {}) => (await api("POST", "/tasks", tok, { title, due: dec2, donorId: wil, ...extra })).body.id;
+    const profileW = async () => { await page.goto(`${APP}/donors/${wil}`, { waitUntil: "networkidle", timeout: 60000 }); };
+
+    await step2("§3 Coming up", async () => {
+      const e1 = await tw("Check in about the spring visit");
+      await profileW();
+      const title = page.locator('[data-testid="dp-coming-task"]', { hasText: "Check in about the spring visit" }).locator('[data-testid="dp-coming-task-open"]');
+      await title.waitFor({ timeout: 20000 }).catch(() => {});
+      ok("§3 Coming up: the task's title is a button (main: plain text, nothing to click)",
+        (await title.count()) === 1 && (await title.evaluate(el => el.tagName)) === "BUTTON", { count: await title.count() });
+      await title.click();
+      ok("§3 ...a click opens the Tasks page's sheet, with Save", await sheetOpen() && (await page.locator('[data-testid="sheet-save"]').count()) === 1);
+      calls.length = 0;
+      await page.locator('[data-testid="sheet-title"]').fill("Check in about the spring visit and the gala");
+      await page.locator('[data-testid="sheet-notes"]').fill("She prefers mornings.");
+      await page.locator('[data-testid="sheet-save"]').click();
+      ok("§3 ...Save writes the title and the notes", await until(async () => { const r = await taskRow(e1); return r.title === "Check in about the spring visit and the gala" && r.notes === "She prefers mornings."; }), await taskRow(e1));
+      ok("§3 ...through PATCH /tasks/:id, the Tasks page's own call", calls.includes(`PATCH /tasks/${e1}`) && !calls.some(c => c.startsWith("PUT")), calls);
+      ok("§3 ...and Coming up shows the new title with no reload",
+        await until(async () => (await page.locator('[data-testid="dp-coming-task"]', { hasText: "and the gala" }).count()) === 1), null);
+      ok("§3 ...and so does the timeline", await until(async () => (await page.locator(`[data-task-id="${e1}"]`, { hasText: "and the gala" }).count()) > 0), null);
+      // Keyboard: Enter on the title opens it; Escape closes it, with nothing saved.
+      await page.locator('[data-testid="dp-coming-task"]', { hasText: "and the gala" }).locator('[data-testid="dp-coming-task-open"]').focus();
+      await page.keyboard.press("Enter");
+      ok("§3 Enter on the title opens it", await sheetOpen());
+      await page.locator('[data-testid="sheet-notes"]').fill("Not saved");
+      await page.keyboard.press("Escape");
+      ok("§3 Escape closes it, and nothing is saved", await sheetGone() && (await taskRow(e1)).notes === "She prefers mornings.", await taskRow(e1));
+    });
+
+    await step2("§3 Tasks tab and done", async () => {
+      const e2 = await tw("Send thank you");
+      const e3 = await tw("Ask about the matching gift");
+      await api("POST", `/tasks/${e2}/complete`, tok, { done: true });
+      await profileW();
+      await page.locator('[role="tab"][data-tab="tasks"]').click();
+      const open3 = page.locator(`[data-task-open="${e3}"]`).first();
+      await open3.waitFor({ timeout: 20000 });
+      await open3.click();
+      ok("§3 the Tasks tab: a click on an open task's title opens the sheet (main: the card only expanded)",
+        await sheetOpen() && (await page.locator('[data-testid="task-sheet"]').getAttribute("data-task-id")) === e3);
+      await page.keyboard.press("Escape"); await sheetGone();
+      const open2 = page.locator(`[data-task-open="${e2}"]`).first();
+      await open2.waitFor({ timeout: 10000 });
+      await open2.click();
+      ok("§3 a DONE task opens too (she ticked \"Send thank you\" and wants to add what it was)", await sheetOpen()
+        && (await page.locator('[data-testid="task-sheet"]').getAttribute("data-task-id")) === e2);
+      ok("§3 ...with Reopen offered and no Mark done", (await page.locator('[data-testid="sheet-reopen"]').count()) === 1 && (await page.locator('[data-testid="sheet-done"]').count()) === 0);
+      await page.locator('[data-testid="sheet-notes"]').fill("Sent a card with a photo from the fall picnic.");
+      await page.locator('[data-testid="sheet-save"]').click();
+      ok("§3 ...its notes save, and it stays done", await until(async () => { const r = await taskRow(e2); return r.notes === "Sent a card with a photo from the fall picnic." && Number(r.done) === 1; }), await taskRow(e2));
+      await sheetGone();
+      await page.locator(`[data-task-open="${e2}"]`).first().click();
+      await sheetOpen();
+      await page.locator('[data-testid="sheet-reopen"]').click();
+      ok("§3 ...Reopen opens it again", await until(async () => Number((await taskRow(e2)).done) === 0), await taskRow(e2));
+      ok("§3 ...and its box reads open, no reload", await until(async () => (await page.locator(`[data-task-tick="${e2}"]`).first().getAttribute("aria-checked")) === "false"), null);
+    });
+
+    await step2("§3 a gift's thank-you step", async () => {
+      const [th] = await openThanks(ada);
+      await page.goto(`${APP}/donors/${ada}`, { waitUntil: "networkidle", timeout: 60000 });
+      const b = page.locator(`[data-task-open="${th.id}"]`).first();
+      await b.waitFor({ timeout: 20000 });
+      await b.click();
+      ok("§3 a gift's \"Send thank-you note\" step opens in the same sheet (title held by its Thread, notes editable)",
+        await sheetOpen() && (await page.locator('[data-testid="sheet-notes"]').count()) === 1, th);
+      await page.keyboard.press("Escape"); await sheetGone();
+    });
+
+    await step2("§3 read-only", async () => {
+      const e4 = await tw("Bring the annual report");
+      await q(`UPDATE orgs SET subscription_status='trial_expired' WHERE id=$1`, [ORG]);
+      await profileW();
+      const b = page.locator(`[data-task-open="${e4}"]`).first();
+      await b.waitFor({ timeout: 20000 });
+      await b.click();
+      ok("§3 read-only: the sheet opens to read, with no Save and no Mark done", await sheetOpen()
+        && (await page.locator('[data-testid="sheet-save"]').count()) === 0 && (await page.locator('[data-testid="sheet-done"]').count()) === 0
+        && await page.locator('[data-testid="sheet-notes"]').isDisabled());
+      await q(`UPDATE orgs SET subscription_status='trialing' WHERE id=$1`, [ORG]);
     });
     await browser.close();
   }

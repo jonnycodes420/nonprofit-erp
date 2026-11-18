@@ -29,6 +29,7 @@ import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
 import { civilDayOf, orgTodayPlus, orgTodayCivil } from "../lib/orgToday";
 import { TaskTick } from "./profile/TaskTick";   // FLOWS-17: the box beside a task ticks it
+import { TaskTitleButton, useProfileTaskSheet } from "./profile/ProfileTaskSheet";   // EDIT-1: a task's title opens it
 import { orgDayOf } from "../lib/orgDay";
 import { noteFields } from "../../../shared/meetingNote.js";
 import { TIMELINE_FILTERS, loadTimelinePrefs, saveTimelinePrefs, isMassEmail, interactionBucket,
@@ -313,6 +314,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], int
   const [openId, setOpenId] = useState(null);
   const [limit, setLimit] = useState(lately || 12);
   const [tickSaid, setTickSaid] = useState({});   // FLOWS-17: what the server said about a tick, by task
+  const taskSheet = useProfileTaskSheet({ isReadOnly: !canWrite, onTaskOutcome });   // EDIT-1: the Tasks page's own sheet
   if (!rel) return null;
   const first = firstNameOf(donor?.name) || "them";
   const byId = Object.fromEntries((interactions || []).map(i => [i.id, i]));
@@ -466,7 +468,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], int
         rows={shownQ.slice(0, limit).map(it => { const d = describe(it); const lg = loggedOf(it);
           return { id: it.id, kind: it.kind, dateLabel: (it.undated ? "No date" : relDay(it.date)), type: d.type, mass: !!it.mass,
             summary: typeof d.title === "string" ? d.title : "", by: d.by, files: lg ? (filesBy[lg.id] || []) : [] }; })}
-        onOpen={r => { setPref({ view: "cards" }); setOpenId(r.id); }}/>}
+        onOpen={r => { const t = shownQ.find(x => x.id === r.id); if (t && t.kind === "task") { taskSheet.open(t.task); return; } setPref({ view: "cards" }); setOpenId(r.id); }}/>}
       {view !== "list" && shownQ.slice(0, limit).map((it, ix, arr) => {
         const isOpen = openId === it.id;
         const { title, body, meta } = describe(it);
@@ -518,7 +520,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], int
               border: it.kind === "talk" ? "1px solid " + T.bg3 : "none", boxSizing: "border-box",
               display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SERIF, fontSize: 20 }}>{it.kind === "gift" || it.kind === "pledge" ? "$" : it.kind === "talk" && touchOf(it.logged) ? <TouchIcon kind={touchOf(it.logged).kind}/> : ICON[it.kind]}</div>}
             <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-              <div style={{ fontSize: 16, fontWeight: 600 }}>{title}{it.mass && <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 500, color: T.ink3 }}>Mass email</span>}</div>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>{it.kind === "task" ? <TaskTitleButton task={it.task} onOpen={taskSheet.open} testid="tl-task-open">{title}</TaskTitleButton> : title}{it.mass && <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 500, color: T.ink3 }}>Mass email</span>}</div>
               {body && <div style={{ fontSize: 15, lineHeight: 1.5, color: T.ink3, whiteSpace: typeof body === "string" ? "pre-wrap" : undefined }}>{body}</div>}
               {meta && <div style={{ fontSize: 13, color: it.kind === "meeting" && meta.startsWith("Next") ? T.greenDk : T.ink3, fontWeight: it.kind === "meeting" && meta.startsWith("Next") ? 600 : 400 }}>{meta}</div>}
               {extra}
@@ -541,6 +543,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], int
         );
       })}
       {!lately && shownQ.length > limit && <button type="button" onClick={() => setLimit(l => l + 20)} style={{ ...btnOutline, alignSelf: "flex-start" }}>Show {Math.min(20, shownQ.length - limit)} more</button>}
+      {taskSheet.ui}
       {lately > 0 && onSeeAll && <button type="button" data-testid="dp-lately-see-all" onClick={onSeeAll}
         style={{ background: "none", border: "none", padding: 0, alignSelf: "flex-start", color: T.greenDk, fontWeight: 700, fontSize: 14, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit" }}>See everything with {first}</button>}
     </section>
