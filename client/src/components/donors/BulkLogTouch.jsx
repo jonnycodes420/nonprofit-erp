@@ -13,6 +13,7 @@ import { offerUndo } from "../EditHistory";
 import { errorMessage } from "../../lib/domainError";
 import { TOUCH_KINDS } from "../../../../shared/touchKinds.js";
 import { orgTodayCivil } from "../../lib/orgToday";
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box
 
 export const MAX_BATCH = 2000;
 const people = n => `${Number(n).toLocaleString("en-US")} ${n === 1 ? "person" : "people"}`;
@@ -115,14 +116,14 @@ export function BulkLogTouch({ ids, onClose, onDone }) {
         </label>
         <label>
           <span style={lbl}>Day</span>
-          <input type="date" data-testid="bulk-touch-date" value={date} max={today} onChange={e => setDate(e.target.value)} style={{ ...inp, width: "auto" }} />
+          <DateInput data-testid="bulk-touch-date" aria-label="Day" value={date} max={today} onChange={e => setDate(e.target.value)} style={{ ...inp, width: "auto" }} />
         </label>
         <div>
           <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: T.ink, cursor: "pointer" }}>
             <input type="checkbox" data-testid="bulk-touch-follow" checked={follow} onChange={e => setFollow(e.target.checked)} />
             Also add a follow-up task for each person
           </label>
-          {follow && <input type="date" aria-label="Follow-up due" data-testid="bulk-touch-follow-due" value={due} min={today} onChange={e => setDue(e.target.value)} style={{ ...inp, width: "auto", marginTop: 8 }} />}
+          {follow && <div style={{ marginTop: 8 }}><DateInput aria-label="Follow-up due" data-testid="bulk-touch-follow-due" value={due} min={today} onChange={e => setDue(e.target.value)} style={{ ...inp, width: "auto" }} /></div>}
         </div>
         {err && <div role="alert" style={{ fontSize: 13, color: T.ink }}>{err}</div>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>

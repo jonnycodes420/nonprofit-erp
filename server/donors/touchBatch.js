@@ -134,7 +134,9 @@ function register(app, ctx) {
     const who = actor(req);
     const out = await withTransaction(async client => {
       const [bt] = await queryTx(client, `SELECT * FROM touch_batches WHERE id = ? AND org_id = ? FOR UPDATE`, [req.params.id, orgId]);
-      if (!bt) return { status: 404, body: { error: "not_found", sentence: "That batch isn't here." } };
+      // A portfolio user (ACCESS-2) undoes only a batch they logged: another's can hold people they can't see.
+      if (!bt || (require("../auth/portfolio").visibleSql(req, "d").scoped && bt.created_by !== who.id))
+        return { status: 404, body: { error: "not_found", sentence: "That batch isn't here." } };
       if (bt.undone_at) return { status: 409, body: { error: "already_undone", sentence: "That batch was already undone." } };
       const gone = await queryTx(client, `DELETE FROM interactions WHERE org_id = ? AND touch_batch_id = ? RETURNING donor_id`, [orgId, bt.id]);
       await runTx(client, `UPDATE tasks SET voided_at = NOW(), voided_reason = 'The touch it followed was undone', updated_at = NOW()
