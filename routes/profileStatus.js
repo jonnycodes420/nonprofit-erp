@@ -182,10 +182,11 @@ async function highlights(orgId, d, today, w) {
 // The next action, in one line, from the same facts WHY-1's journey suggestion
 // reads, and the suggested ask from ENGAGE-1 (engagement.suggestedAsk).
 async function nextAction(orgId, d, today, status, glanceLast, viewerMaySee = false) {
-  const [[thread], [sub], [score], [unthanked]] = await Promise.all([
-    // FIX-27 Part 5: the CURRENT open step, the newest one, as the rail reads it.
-    query(`SELECT next_step_label, due_date FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL
-            ORDER BY COALESCE(edited_at, created_at) DESC NULLS LAST, id DESC LIMIT 1`, [orgId, d.id]),
+  const [steps, [sub], [score], [unthanked]] = await Promise.all([
+    // EDIT-2: the next step is the one rule (server/tasks/nextStep.js), the
+    // soonest open step due today or later, else the most overdue, the same
+    // step Major gifts, the Top 100 and Home show.
+    require("../server/tasks/nextStep").nextStepsFor(query, orgId, [d.id], today),
     query(`SELECT 1 AS y FROM recurring_subscriptions WHERE org_id = ? AND donor_id = ? AND status IN ('active','past_due','recovering','recovered') LIMIT 1`, [orgId, d.id]),
     query(`SELECT generosity FROM donor_scores WHERE org_id = ? AND donor_id = ?`, [orgId, d.id]),
     query(`SELECT 1 AS y FROM thank_you_drafts WHERE org_id = ? AND donor_id = ? AND sent_at IS NULL AND skipped_at IS NULL LIMIT 1`, [orgId, d.id]).catch(() => []),
@@ -195,8 +196,12 @@ async function nextAction(orgId, d, today, status, glanceLast, viewerMaySee = fa
   const lc = status.row ? status.row.lifecycle : null;
   const [{ n: giftCount }] = await query(`SELECT COUNT(*)::int AS n FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND ${require("../shared/numbers/giftCount").KEPT("g")}`, [orgId, d.id]);
   let step, why;
+  const thread = steps.get(d.id) || null;
   if (thread) {
-    step = thread.next_step_label; why = `This is the open next step, due ${(await import("../shared/displayDate.js")).displayDate(thread.due_date) || thread.due_date}.`;
+    const dueWords = thread.due ? ((await import("../shared/displayDate.js")).displayDate(thread.due) || thread.due) : null;
+    step = thread.label;
+    why = !dueWords ? "This is the open next step." : thread.overdue
+      ? `This is the open next step, overdue since ${dueWords}.` : `This is the open next step, due ${dueWords}.`;
     // FIX-24 2c: with no proposal open, the step cannot be "send the proposal".
     const NA = await import("../shared/nextStepAgree.js");
     const PS = await import("../shared/proposalShape.js");

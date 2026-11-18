@@ -18,6 +18,7 @@ const routers = {
 };
 
 const LOG_CLOSE = require("./logClose");   // SENDS-1: what logging a conversation closes
+const NextStep = require("./nextStep");   // EDIT-2: a person's next step, one rule
 function mount(ctx) {
 const {
   ACK_READY, CAL_READY, NOT_YOURS, OU, UNDO_SECONDS, actor, advanceCultivationPlan, checkWriteAccess,
@@ -1046,7 +1047,7 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
     shownList = [];
     for (const rs of byDonor.values()) {
       rs.sort(soon);
-      const [head, ...rest] = rs;
+      const [head, ...rest] = await NextStep.leadWithNext(rs, today);   // EDIT-2: the one rule picks the row
       head.moreSteps = rest.map(r => ({ id: r.id, kind: r.kind, label: r.nextStep.label, due: r.nextStep.due, time: r.nextStep.time || null, stepRef: r.stepRef || null,
         overdue: r.overdue, calendarEventId: r.calendarEventId || null }));
       shownList.push(head);
@@ -1055,12 +1056,14 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
   // Rank + band + cap in the ONE place that decides it.
   const forRank = await require("../majorGifts/top100Lead").annotate(query, orgId, shownList.map(t => ({ ...t, ...t.signals })), today);   // TOP100-1: Top 100 touches lead
   const q = rank.buildQueue(forRank, today, { cap: donorId ? 0 : (cap == null ? rank.QUEUE_CAP : cap) });
-  const ranked = q.list.map(r => {
+  let ranked = q.list.map(r => {
     const { signals, ...rest } = r;
     return { ...rest, rank: r.rank, band: r.band };
   });
+  if (donorId) ranked = await NextStep.leadWithNext(ranked, today, { bySoon: true });   // EDIT-2: the rail leads with the next step
 
-  const overdue = shownList.filter(t => t.overdue).length;
+  // EDIT-2: someone whose next step is ahead but who carries an overdue one counts.
+  const overdue = shownList.filter(t => t.overdue || (t.moreSteps || []).some(m => m.overdue)).length;
   // FIX-1 §9 — "oldest" is the oldest ROW, by the one figure its badge and the
   // Home sentence also read (shared/threadFigures.js), over the whole list, not
   // the capped one. It used to be max(daysOpen) while the badges said overdue.

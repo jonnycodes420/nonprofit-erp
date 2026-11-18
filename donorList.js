@@ -56,6 +56,9 @@ const OP = {
   // WEALTH-1: the Wealth Score's own words ("equals 5", "is not set").
   wEq:       { op: "eq", label: "equals", input: "number" },
   unset:     { op: "blank", label: "is not set", input: "none" },
+  // EDIT-2: who has had a touch with this title, and who hasn't.
+  had:       { label: "has had", input: "text" },
+  hadNot:    { op: "had_not", label: "hasn't had", input: "text" },
 };
 const ops = (...names) => names.map(n => ({ op: OP[n].op || n.replace(/[A-Z]/g, c => "_" + c.toLowerCase()), label: OP[n].label, input: OP[n].input }));
 const TEXT_OPS = ops("is", "contains", "starts", "in", "blank", "notBlank");
@@ -166,6 +169,8 @@ const FIELDS = [
   F("volunteer", "Volunteers", "Volunteering", { col: false, filter: BOOL_OPS }),
   F("volunteer_hours", "Hours volunteered", "Volunteering", { format: "number", filter: NUM_OPS, cell: "volunteer_hours" }),
   // Communication
+  F("touch_titled", "Touch titled", "Communication", { col: false, filter: ops("had", "hadNot"),
+    sentence: "A touch logged with this title (a batch's title, or the words of one logged by hand), any day. A deleted touch doesn't count." }),
   F("last_contact", "Last contact", "Communication", { format: "date", filter: ops("before"), cell: "last_contact",
     sentence: "The last call, meeting, email or note logged with this person." }),
   F("do_not_contact", "Do not contact", "Communication", { format: "bool", filter: BOOL_OPS, cell: "do_not_contact" }),
@@ -431,6 +436,12 @@ async function compileOne(orgId, c, fields) {
     case "event_invited":
       return sel() ? { sql: has(`SELECT 1 FROM event_attendees ei WHERE ei.org_id = donors.org_id AND ei.donor_id = donors.id
                                   AND ei.event_id = ? AND lower(COALESCE(ei.status,'')) <> 'cancelled'`), args: [sel()] } : needSel();
+    case "touch_titled": {
+      // EDIT-2: the same title test the bulk Log a touch warns with (server/donors/touchBatch.js).
+      if (!sel()) return bad("Type the touch's title.");
+      const had = require("./server/donors/touchBatch").HAD_TOUCH_SQL("donors");
+      return { sql: c.op === "had_not" ? `NOT ${had}` : had, args: [sel()] };
+    }
     case "event_registered": return sel() ? { rules: { registeredEvent: sel() } } : needSel();
     case "event_attended": return sel() ? { rules: { attendedEvent: sel() } } : needSel();
     case "event_no_gift": return sel() ? { rules: { attendedNoGift: sel() } } : needSel();

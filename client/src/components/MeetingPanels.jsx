@@ -42,6 +42,7 @@ import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box,
 import { TouchIcon } from "./touchIcons";   // TOUCH-1
 import { touchLine } from "../../../shared/touchKinds.js";
 import { taskRowOf } from "../lib/taskRow";   // FLOWS-6
+import { compareTasks } from "../../../shared/nextStep.js";   // EDIT-2: the one task order
 import { thankState } from "../../../shared/thankState.js";   // FLOWS-14
 export { relDay, meetingNoun, AddToRecord, MorningBrief } from "./MorningBrief";
 
@@ -280,6 +281,12 @@ export function buildTimelineItems({ rel, gifts = [], pledges = [], interactions
     if (/^\d{4}-\d{2}-\d{2}$/.test(String(day || ""))) it.date = day; else { it.date = ""; it.undated = true; }
   }
   items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  // EDIT-2 · open tasks lead, soonest first, undated last (shared/nextStep.js,
+  // the order Coming up uses); the rest stay newest first, done tasks with them.
+  // Newest first put a May 2027 task above a December 2026 one.
+  const openTask = i => i.kind === "task" && !(Number(i.task.done) === 1 || i.task.done === true);
+  const ahead = items.filter(openTask).sort((a, b) => compareTasks(a.task, b.task));
+  if (ahead.length) items.splice(0, items.length, ...ahead, ...items.filter(i => !openTask(i)));
   // FIX-22 · and the attachments an email arrived with, which stay in the
   // mailbox they came to: listed here too, each opening that message there.
   const mailFiles = (rel.emailThreads || []).flatMap(t => t.mailFiles || []);

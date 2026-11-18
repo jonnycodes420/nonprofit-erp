@@ -8,11 +8,12 @@ import Papa from "papaparse";
 import { HoursImportModal } from "./VolunteerPanel";
 import * as HOURS_PRESETS_MOD from "../../../shared/volunteerHours.js";
 import { apiFetch, adaptDonor } from "../api";
-import { allPeople, forgetAllPeople, peopleById, peopleCounts, usePeoplePicker, useLeaveSignal } from "../lib/people";
+import { allPeople, forgetAllPeople, peopleById, peopleCounts, useLeaveSignal } from "../lib/people";
 import { errorMessage } from "../lib/domainError";
 import { emailHint } from "../../../shared/contactCheck.js";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
+import { LogTouchPicker } from "./donors/LogTouchPicker";   // EDIT-2: one person, or many
 import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, contactGap, Card, AIBtn, AIPanel, PageTitle, Modal, Spin } from "./shared";
 import { offerUndo } from "./EditHistory";
 import { useStewardTold } from "../lib/stewardTold";
@@ -135,9 +136,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // BUILD-81 — the "Log a conversation" picker (directory toolbar) + target.
   const[convoPickerOpen,setConvoPickerOpen]=useState(false);
   const[convoTarget,setConvoTarget]=useState(null);
-  const[convoSearch,setConvoSearch]=useState("");
   // SCALE-2: the picker's people, name or email, from the server as she types.
-  const[convoPeople]=usePeoplePicker(convoSearch,{match:"either",limit:30,emptyToo:true,enabled:convoPickerOpen});
   const[editTarget,setEditTarget]=useState(null);
   // THREAD-3: a delete refused because the person has a live monthly plan.
   const[planBlock,setPlanBlock]=useState(null);   // { id, sentence }
@@ -816,28 +815,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)}
         onRecordGift={opts=>{const d=logTarget;setLogTarget(null);selectDonor(d);setGiftHandoff({donorId:d.id,date:opts&&opts.date});}}
         onClose={()=>setLogTarget(null)}/>}
-      {convoPickerOpen&&(
-        <Modal onClose={()=>setConvoPickerOpen(false)} width={420} zIndex={300} align="top" padding={0}
-          ariaLabel="Log a touch" dialogStyle={{borderRadius:16,border:"1px solid "+T.bg3,maxHeight:"70vh"}}>
-          <div style={{display:"flex",flexDirection:"column",overflow:"hidden",maxHeight:"100%"}}>
-            <div style={{padding:"16px 18px 10px"}}>
-              <div style={{fontSize:15,fontWeight:800,color:T.ink,marginBottom:8}}>Who did you talk to?</div>
-              <input autoFocus value={convoSearch} onChange={e=>setConvoSearch(e.target.value)} placeholder="Search donors…"
-                style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
-            </div>
-            <div style={{overflowY:"auto",padding:"0 8px 10px"}}>
-              {convoPeople.map(d=>(
-                <button key={d.id} onClick={()=>{setConvoPickerOpen(false);setConvoSearch("");setConvoTarget(d);}}
-                  style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderRadius:8,padding:"9px 10px",cursor:"pointer"}} className="click-card">
-                  <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{d.name}</span>
-                  {d.email&&<span style={{fontSize:11.5,color:T.ink3,marginLeft:8}}>{d.email}</span>}
-                </button>
-              ))}
-              {peopleCount&&peopleCount.total===0&&<div style={{fontSize:12.5,color:T.ink3,padding:"6px 10px 12px"}}>No donors yet. Import your donors first, then log the first call.</div>}
-            </div>
-          </div>
-        </Modal>
-      )}
+      {convoPickerOpen&&<LogTouchPicker noPeople={!!(peopleCount&&peopleCount.total===0)} onClose={()=>setConvoPickerOpen(false)}
+        onPickOne={d=>{setConvoPickerOpen(false);setConvoTarget(d);}} onBatchDone={()=>{reloadDonors&&reloadDonors();}}/>}
       {convoTarget&&<LogConversationModal donor={{id:convoTarget.id,name:convoTarget.name}} org={data.org} onNavigate={onNavigate}
         onSaved={()=>{reloadDonors&&reloadDonors();}} onClose={()=>setConvoTarget(null)}/>}
       {followUpTarget&&<FollowUpTaskModal donor={followUpTarget} onClose={()=>setFollowUpTarget(null)} onSave={task=>{setData(prev=>({...prev,tasks:[task,...prev.tasks]}));setFollowUpTarget(null);}}/>}
