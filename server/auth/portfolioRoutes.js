@@ -68,6 +68,9 @@ const DECLARATIONS = [
   // Creating a person makes them the creator's own (server/donors/routes.js).
   D("POST", /^\/donors$|^\/gifts\/new-person$/, "scoped"),
   D("POST", "/tasks", "scoped"),
+  // EDIT-2: one touch to many people. The handler narrows the ids to visibleSql; an Undo by a
+  // portfolio user is of a batch they logged (server/donors/touchBatch.js), else 404.
+  D("POST", /^\/touch-batches(\/preview|\/:id\/undo)?$/, "scoped", { params: { id: null } }),
   D(ANY, /^\/donors\/bulk-(tag|stage)$/, "param", { ids: "donor" }),
   D("POST", "/tasks/bulk", "param", { ids: "task" }),
   // Atlas reads only their people (server/atlas portfolio filter).

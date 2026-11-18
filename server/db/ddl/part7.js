@@ -1144,6 +1144,7 @@ async function run7(pool) {
   await require("./asks2").run(pool);   // ASKS-2: a group of review rows decided at once, one Undo
   await require("./numbers6").run(pool);   // NUMBERS-6: an org marked as a test; the nightly check by rule
   await require("./flows11").run(pool);   // FLOWS-11: a journey knows the gift that started it
+  await require("./edit2").run(pool);   // EDIT-2: one touch logged to many people, one Undo
 
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id

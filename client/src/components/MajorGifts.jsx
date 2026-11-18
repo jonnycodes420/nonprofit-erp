@@ -600,7 +600,9 @@ export function PortfolioView({ isReadOnly, onNavigate }) {
                 {p.lastConversation && <div style={{ fontSize: 11, color: T.ink3, overflowWrap: "anywhere" }}>{p.lastConversation.note}</div>}
               </div>
               <div style={{ fontSize: 12, color: T.ink2, minWidth: 0, overflowWrap: "anywhere" }}>
-                {p.nextStep ? `${p.nextStep.label} · due ${niceDate(p.nextStep.due)}` : <span style={{ color: T.ink3 }}>No open step</span>}
+                {p.nextStep ? <>{p.nextStep.label}{p.nextStep.due ? (p.nextStep.overdue
+                  ? <span data-testid="mg-next-overdue" style={{ color: T.gold700, fontWeight: 700 }}> · overdue, due {niceDate(p.nextStep.due)}</span>
+                  : ` · due ${niceDate(p.nextStep.due)}`) : ""}</> : <span style={{ color: T.ink3 }}>No open step</span>}
               </div>
             </div>
           ))}

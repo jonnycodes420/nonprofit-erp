@@ -548,12 +548,12 @@ app.get("/portfolio/:officerId", requireAuth, wrap(async (req, res) => {
           AND type = ANY(ARRAY['call','meeting','email','ask','note','stewardship','gift','event'])
         ORDER BY donor_id, date DESC NULLS LAST, created_at DESC`, [orgId, ids]))
       lastConv.set(r.donor_id, { type: r.type, date: r.date, note: (r.note || "").slice(0, 220), by: r.logged_by_name || "" });
-    // The NEXT STEP comes from the Thread (BUILD-81) — the one open one per
-    // donor, which the partial unique index makes true by construction.
-    for (const r of await query(
-      `SELECT donor_id, next_step_label, next_step_type, due_date, due_time
-         FROM threads WHERE org_id=? AND donor_id = ANY(?) AND closed_at IS NULL`, [orgId, ids]))
-      nextStep.set(r.donor_id, { label: r.next_step_label, type: r.next_step_type, due: r.due_date, time: r.due_time });
+    // EDIT-2 · THE NEXT STEP is the one rule (server/tasks/nextStep.js): every
+    // open step on the person, the Thread's and their tasks, and the soonest due
+    // today or later, else the most overdue. It was the Thread's step alone, so
+    // a May step stood over a December task.
+    for (const [id, n] of await require("../tasks/nextStep").nextStepsFor(query, orgId, ids, today))
+      nextStep.set(id, { label: n.label, type: n.type, due: n.due || null, time: n.time, overdue: !!n.overdue, kind: n.kind });
   }
 
   const rows = people.map(p => {

@@ -20,6 +20,7 @@ import { displayOrgDateShort } from "../../lib/orgDay";
 import { shownTags, shownNote } from "../../lib/internalLabels";
 import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { relationshipTypeLabel } from "../../lib/relationshipOptions";   // FLOWS-10 item 7
+import { sortTasks } from "../../../../shared/nextStep.js";   // EDIT-2: open soonest first, undated last, then done newest first
 
 // IMPORT-4 · A GIFT WITH NO DATE. An import that gave no day keeps the gift
 // undated: it counts in Lifetime and its event, never in This year. "Set date"
@@ -346,7 +347,7 @@ function RailGroups({donorId,isReadOnly}){
 function ComingUpMain({tasks=[],meetings=[],onTaskOutcome=null,isReadOnly,onAddTask}){
   const taskSheet=useProfileTaskSheet({isReadOnly,onTaskOutcome});
   const onTaskToggle=async t=>{try{const r=await completeTask(t);if(r.needsOutcome&&onTaskOutcome)onTaskOutcome(t);}catch(e){console.warn("[task done]",(e&&e.sentence)||(e&&e.message));}};
-  const open=(tasks||[]).filter(t=>!(Number(t.done)===1||t.done===true)).sort((a,b)=>String(a.due||"9999").localeCompare(String(b.due||"9999")));
+  const open=sortTasks((tasks||[]).filter(t=>!(Number(t.done)===1||t.done===true)));   // EDIT-2: the one task order
   const ahead=(meetings||[]).slice(0,3);
   if(!open.length&&!ahead.length)return taskSheet.ui;
   const today=orgTodayCivil();

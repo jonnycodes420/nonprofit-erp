@@ -76,7 +76,7 @@ async function listRows(orgId, listId, today, visible) {
       WHERE m.org_id = ? AND m.list_id = ? AND d.deleted_at IS NULL${v.sql}
       ORDER BY m.rank`, [orgId, listId, ...v.args]);
   const ids = people.map(p => p.id);
-  const touches = new Map(), lastConv = new Map(), thread = new Map();
+  const touches = new Map(), lastConv = new Map(), next = new Map();
   if (ids.length) {
     for (const t of await query(
       `SELECT t.id, t.donor_id, t.touch_type, t.title, t.due, t.done, t.assigned_to, t.assigned_to_name
@@ -90,13 +90,12 @@ async function listRows(orgId, listId, today, visible) {
     // Last contact: the one Last contact (meetings.js, COUNTS-1), the
     // profile header's own rule, for every row in three reads.
     for (const [id, lc] of await require("../../meetings").lastContactsFor(orgId, ids)) lastConv.set(id, lc);
-    for (const r of await query(
-      `SELECT donor_id, next_step_label, due_date FROM threads WHERE org_id = ? AND donor_id = ANY(?::text[]) AND closed_at IS NULL`, [orgId, ids]))
-      thread.set(r.donor_id, { label: r.next_step_label, due: String(r.due_date || "").slice(0, 10) });
+    // EDIT-2: the next step is the one rule (server/tasks/nextStep.js): the
+    // soonest open step due today or later, else the most overdue.
+    for (const [id, n] of await require("../tasks/nextStep").nextStepsFor(query, orgId, ids, today)) next.set(id, n);
   }
   return people.map(p => {
     const ts = touches.get(p.id) || [];
-    const nextTouch = ts.find(t => !t.done) || null;
     const lc = lastConv.get(p.id) || null;
     const days = lc && S.isDay(lc.date) ? Math.max(0, S.daysBetween(lc.date, today)) : null;
     const health = S.planHealth(ts, today);
@@ -110,13 +109,23 @@ async function listRows(orgId, listId, today, visible) {
       stage: p.stage || null,
       planId: p.plan_id || null, goal: p.goal || null,
       askCents: p.ask_cents == null ? null : Number(p.ask_cents), askBy: p.ask_by || null,
-      next: nextTouch ? { kind: "touch", taskId: nextTouch.id, type: nextTouch.type, label: nextTouch.label, due: nextTouch.due }
-        : (thread.get(p.id) ? { kind: "step", label: thread.get(p.id).label, due: thread.get(p.id).due } : null),
+      next: nextOf(next.get(p.id), S),
       lastContact: lc ? { ...lc, days } : null,
       health: { key: health.key, label: health.label, sentence: health.sentence },
       touchCount: ts.length, openTouches: ts.filter(t => !t.done).length,
     };
   });
+}
+
+// EDIT-2 · the row's next step from the one rule. A plan touch keeps its
+// own label and inline edit ("touch"); a Thread step is "step"; any other
+// open task is "task".
+function nextOf(n, S) {
+  if (!n) return null;
+  const base = { due: n.due || "", overdue: !!n.overdue };
+  if (n.kind === "touch") return { kind: "touch", taskId: n.taskId, type: n.type, label: S.touchLabel(n.type), ...base };
+  if (n.kind === "thread") return { kind: "step", label: n.label, ...base };
+  return { kind: "task", taskId: n.taskId, label: n.label, ...base };
 }
 
 // Filter and sort, the same for the screen and the file. Blanks sort last.

@@ -31,6 +31,7 @@ import { countLabel, plural } from "../../../shared/countWords.js";
 import { MergeWithModal } from "./profile/MergeWith";
 import { TrashLink } from "./settings/TrashLink";   // FLOWS-4
 import { BulkTrash } from "./donors/BulkTrash";   // MOPUP-2: More → Move to trash
+import { BulkLogTouchButton } from "./donors/BulkLogTouch";   // EDIT-2: one touch to everyone picked
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { LAPSE_WORDS } from "../../../shared/lapseWords.js";   // TRUTH-5: one word, one population
 import { AddToTop100 } from "./majorGifts/AddToTop100";   // TOP100-1
@@ -790,6 +791,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
           {matchingIds&&<>
             {!isReadOnly&&<AddToGroup donorIds={matchingIds}/>}
             {!isReadOnly&&<BulkAddToJourney ids={matchingIds} disabled={busy} onDone={()=>{if(onBulkDone)onBulkDone();}}/>}
+            {!isReadOnly&&<BulkLogTouchButton ids={matchingIds} disabled={busy} onDone={()=>{if(onBulkDone)onBulkDone();}}/>}
             {!isReadOnly&&<BulkTag ids={matchingIds} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
             {!isReadOnly&&<BulkAutoEmail ids={matchingIds} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
             <button type="button" data-testid="bulk-export" onClick={exportCsv} disabled={exporting}
@@ -800,6 +802,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
           </>}
           {!matchingIds&&<>
           {!isReadOnly&&<BulkAddToJourney ids={selFiltered.map(d=>d.id)} disabled={busy} onDone={()=>{if(onBulkDone)onBulkDone();}}/>}
+          {!isReadOnly&&<BulkLogTouchButton ids={selFiltered.map(d=>d.id)} disabled={busy} onDone={()=>{if(onBulkDone)onBulkDone();}}/>}
           {!isReadOnly&&<BulkTag ids={selFiltered.map(d=>d.id)} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
           {!isReadOnly&&<BulkAutoEmail ids={selFiltered.map(d=>d.id)} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
           {!isReadOnly&&canWealth&&<BulkWealthScore ids={selFiltered.map(d=>d.id)} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}

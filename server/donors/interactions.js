@@ -33,6 +33,8 @@ const {
 let app = routers.r1;
 // TOUCH-1: the kinds of touch, an org's own, and the plan of care a touch completes.
 const TOUCH = require("./touchTypes").register(app, { ...ctx, actor });
+// EDIT-2: one touch logged to many people at once, with one Undo.
+require("./touchBatch").register(app, { ...ctx, actor, resolveTouch: TOUCH.resolveTouch });
 
 // ── Interactions ───────────────────────────────────────────────────────────
 app.post("/donors/:id/interactions", requireAuth, wrap(async (req, res) => {
