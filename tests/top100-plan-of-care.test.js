@@ -132,7 +132,9 @@ const isOneToN = list => list.length > 0 && list.every((r, i) => Number(r.rank) 
   ok("§3 a touch three days ago and not done: Behind", r.status === 201 && r.body.health.key === "behind" && r.body.touches.find(x => x.taskId === lateTask).status === "overdue", JSON.stringify(r.body.health));
   let list = await api("GET", "/top100", mgo);
   let ruthRow = list.body.rows.find(x => x.donorId === RUTH);
-  ok("§3 the row shows Behind, the ask and the next step (the overdue touch)", ruthRow.health.label === "Behind" && ruthRow.askCents === 5000000 && ruthRow.next.taskId === lateTask, JSON.stringify(ruthRow));
+  // EDIT-2: the next step is the soonest due today or later (shared/nextStep.js), the note in 5 days;
+  // the overdue touch still makes the plan Behind.
+  ok("§3 the row shows Behind, the ask and the next step (the note ahead, not the overdue touch)", ruthRow.health.label === "Behind" && ruthRow.askCents === 5000000 && ruthRow.next.taskId === noteTask && !ruthRow.next.overdue, JSON.stringify(ruthRow));
   r = await api("POST", `/tasks/${lateTask}/complete`, mgo, {});
   ok("§3 the overdue touch completes from Tasks (its own Done)", r.status === 200 && r.body.done === 1, JSON.stringify({ s: r.status, b: r.body.error }));
   r = await api("GET", `/donors/${RUTH}/care-plan`, mgo);
