@@ -3,7 +3,8 @@
 import StartPage from "./StartPage";
 import ImportVerify from "./ImportVerify";
 import TotalsCheck from "./TotalsCheck";   // ONBOARD-3
+import PrintNotes from "./PrintNotes";   // ONBOARD-3 Part B
 
 export default function OnboardPages({ page }) {
-  return page === "verify" ? <ImportVerify /> : page === "totals" ? <TotalsCheck /> : <StartPage />;
+  return page === "verify" ? <ImportVerify /> : page === "totals" ? <TotalsCheck /> : page === "notes" ? <PrintNotes /> : <StartPage />;
 }

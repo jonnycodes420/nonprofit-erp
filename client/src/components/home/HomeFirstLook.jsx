@@ -61,11 +61,13 @@ export function homeHead({ scoped, onMovesSettled, agentDaily, cancelEdit, data,
                 <button onClick={cancelEdit} style={{background:"transparent",border:"none",padding:0,color:T.ink3,fontSize:12,fontWeight:700,cursor:"pointer"}}>Cancel</button>
                 <button onClick={saveEdit} style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:800,cursor:"pointer"}}>Done</button>
               </>
-            ):(
+            ):(<>
+              {/* ONBOARD-3: this week's thank-yous and notes, one printable page. */}
+              <a href="/print/notes?print=1" target="_blank" rel="noopener" data-testid="home-print-notes" style={{color:T.greenDk,fontSize:12,fontWeight:700,textDecoration:"none"}}>Print this week's notes</a>
               <button onClick={enterEdit} aria-label="Edit Home layout, reorder or hide sections"
                 disabled={layout===undefined}
                 style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"}}>Edit</button>
-            )}
+            </>)}
           </div>
         )}
         </div>

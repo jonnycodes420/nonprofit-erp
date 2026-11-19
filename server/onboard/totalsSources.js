@@ -31,5 +31,18 @@ module.exports = function totalsSources() {
       sentence: () => "Every gift with no date on it: it is in Lifetime, and in no year.",
       sql: (orgId) => T.SQL.undated(orgId),
     },
+    // Part B: the day-30 readout (dayOne.js).
+    "onb-gave-again": {
+      label: "Gave again since you started", measure: () => "sum",
+      params: { from: "date:required", to: "date:required" },
+      sentence: (p, dd) => `Every gift dated ${dd(p.from)} to ${dd(p.to)} from someone on the day-one list (lapsed or lapsing when the totals were said to look right), refunds and credits left out.`,
+      sql: (orgId, p) => require("./dayOne").SQL.gaveAgain(orgId, p),
+    },
+    "onb-touches": {
+      label: "Calls and notes since you started", measure: () => "count",
+      params: { kind: "word" },
+      sentence: p => `Every ${p.kind === "call" ? "call" : p.kind === "note" ? "note or touch other than a call" : "call, note or touch"} a person at the organization logged since the totals were said to look right.`,
+      sql: (orgId, p) => require("./dayOne").SQL.touches(orgId, p),
+    },
   };
 };

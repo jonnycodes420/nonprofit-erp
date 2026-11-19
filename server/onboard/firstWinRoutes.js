@@ -14,7 +14,8 @@
 // THE PLANTED DEFECTS (ONBOARD3_PLANT on the SERVER; tests/onboard3.test.js
 // goes red on each): `no-data-in` (Looks right leaves data_in_at alone),
 // `own-year` (a year's total counted its own way, soft credits in), `ranking` (the
-// first-session list sorted by name, not Home's order).
+// first-session list sorted by name, not Home's order); and in dayOne.js and
+// weekNotes.js: `before-data-in`, `not-on-list`, `recovered`, `print-all`, `print-dnc`.
 "use strict";
 const T = require("./totals");
 const FS = require("./firstSession");
@@ -72,6 +73,9 @@ function mount(app, ctx) {
       [id, orgId, JSON.stringify(rows), w.id, w.name]);
     // The data-in gate (ONBOARD-2 reads orgs.data_in_at). Set once.
     if (PLANT() !== "no-data-in") await run(`UPDATE orgs SET data_in_at = COALESCE(data_in_at, NOW()) WHERE id = ?`, [orgId]);
+    // Part B: the day-one list, taken at data-in.
+    try { await require("./dayOne").snapshot({ query, run }, await orgRow(orgId), await today(orgId)); }
+    catch (e) { console.error("[onboard3] day-one snapshot:", e.message); }
     await BOARD.recompute({ query, run }, [orgId]).catch(e => console.error("[onboard3] recompute:", e.message));
     const typedN = rows.filter(r => r.typedCents != null).length;
     if (req.audit) req.audit.summary = `${w.name} said the imported totals look right${typedN ? ` (${typedN} year${typedN === 1 ? "" : "s"} checked against the old system)` : ""}`;
@@ -110,6 +114,27 @@ function mount(app, ctx) {
     res.json({ ok: true });
   }));
 
+  // ── Part B · DAY 30 AND THE MONDAY NOTES ────────────────────────────────
+  //   GET  /onboard/readout            the day-30 readout (Home)
+  //   POST /onboard/readout/dismiss    gone from Home; /ops keeps it
+  //   (the same readout per org on /ops: opsBoardRoutes.js GET /ops/onboarding/readouts)
+  //   GET  /notes/this-week            the printable list (stores and sends nothing)
+  const DAY1 = require("./dayOne");
+  const insightsFor = (...a) => require("../../insightsData").insightsFor(...a);
+  app.get("/onboard/readout", requireAuth, wrap(async (req, res) => {
+    const org = await orgRow(req.user.orgId);
+    const [has] = await query(`SELECT 1 AS y FROM onboard_snapshots WHERE org_id = ? LIMIT 1`, [org.id]);
+    if (!org.data_in_at || !has) return res.json({ ready: false });
+    res.json({ ready: true, ...(await DAY1.readout({ query }, org, await today(org.id), { insightsFor })) });
+  }));
+  app.post("/onboard/readout/dismiss", requireAuth, wrap(async (req, res) => {
+    await run(`INSERT INTO onboard_first_session (org_id, created_by, created_by_name) VALUES (?,?,?) ON CONFLICT (org_id) DO NOTHING`, [req.user.orgId, who(req).id, who(req).name]);
+    await run(`UPDATE onboard_first_session SET readout_dismissed_at = NOW() WHERE org_id = ?`, [req.user.orgId]);
+    res.json({ ok: true });
+  }));
+  app.get("/notes/this-week", requireAuth, wrap(async (req, res) => {
+    res.json(await require("./weekNotes").list(query, req.user.orgId, await today(req.user.orgId)));
+  }));
 }
 
 // Home's first screen, for /org/setup-status: "totals" (the check is due and
