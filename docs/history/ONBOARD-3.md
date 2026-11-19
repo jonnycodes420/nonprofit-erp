@@ -10,8 +10,10 @@ makes the first call. Trust comes first, from totals that match the old system.
   unpaid pledges in that year, undated gifts and rows the import set aside, each a figure that opens rows
   footing to it (`totalsSources.js`). Looks right stamps `orgs.data_in_at` (moved off Accept on a staged
   import), stored with the figures typed. Ask Jonathan appends to the /ops board's Waiting on.
-- **Due only for a new org's first donor file** (`markDue`). Every org that already had a donor file never
-  sees it. The walk found the spreadsheet importer (the one reader since HARDEN-1) never called
+- **Due only for a new org's first donor file, and only in onboarding** (`markDue`: paper, a start link or a
+  verbal yes). The first CI run sent every fresh test org that imported and opened Home to the check
+  (flows1, flows2, polish5-sentences); a self-serve trial's Home is now untouched, and so is every org
+  that already had a donor file. The walk found the spreadsheet importer (the one reader since HARDEN-1) never called
   `afterImport`, so a real file never made the check due though the hook was tested; the job now calls
   `markDue` itself and §1 imports through `/sheet-import/commit` (red before, green after). The same gap
   means MAIL-1's onboarded stamp is skipped on that path: left for the next brief, since it gates mail.

@@ -31,7 +31,7 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
   writes the day-one list (`onboard_snapshots`, lapsed or lapsing by `lapse.stateSql`, once). Home then
   opens on "Your first 30 minutes" (list = `firstSession.movesInHomeOrder`, the one picker kickoff uses).
   The day-30 readout counts only day-one people with a gift dated on or after the data-in day, and says
-  "gave again since you started", never "recovered". An org that already had a donor file never sees any of it.
+  "gave again since you started", never "recovered". It is due only for an org in onboarding by ONBOARD-2's rule (paper, a start link or a verbal yes): a self-serve trial and an org that already had a donor file never see it (CI caught a fresh trial's Home being sent there first).
 - **ACCESS-1 (2026-11-06). Roles are per org, and a viewer changes nothing.** The roles are staff,
   viewer, volunteer coordinator and admin (`shared/viewOnly.js` `ROLES`). A viewer is refused in
   `requireAuth` by method: every non-GET answers 403 `view_only` unless `shared/viewOnly.js` names it
