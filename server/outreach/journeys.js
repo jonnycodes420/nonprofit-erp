@@ -483,6 +483,8 @@ app.patch("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
      enabledNow, JSON.stringify(v.triggerFilters || {}), enabledNow, exclusiveNow,
      req.params.id, req.user.orgId]);
   if (enabledNow) await baselineJourneyGroup(req.user.orgId, v);
+  // FLOWS-19 item 3: turned back on, the people who waited while it was paused are picked up.
+  const resumed = enabledNow && !cur.journey_enabled ? await require("../shared/journeyPaused").resume({ query, advanceCultivationPlan }, req.user.orgId, req.params.id, actor(req)) : 0;
 
   // CHANGING A JOURNEY DOES NOT REWRITE THE PEOPLE ALREADY IN IT. Their steps
   // were copied when they entered, exactly as a plan's are — somebody who has
@@ -515,7 +517,7 @@ app.patch("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
 
   res.json({ id: req.params.id, name: v.name, description: v.description, trigger: v.trigger, priority: v.priority,
     steps: v.steps, audience: v.audience, exclusive: exclusiveNow, touches: J.touchesSentence(v.steps),
-    movedPeople, movedSteps: moved,
+    movedPeople, movedSteps: moved, resumedPeople: resumed,
     note: b.retimeExisting === true
       ? `${movedPeople} ${movedPeople === 1 ? "person's" : "people's"} steps still to come were moved to the new timing. Steps already done were left alone.`
       : "People already in this journey keep the steps they entered with." });
@@ -828,7 +830,7 @@ app.get("/journeys/:id/rows", requireAuth, wrap(async (req, res) => {
   if (!sql) return res.status(400).json({ error: "unknown_rows",
     message: `There is no set of rows called "${key}". Ask for one of: ${Object.keys(JOURNEY_ROW_SQL).join(", ")}.` });
   const rows = await query(sql, [orgId, t.id]);
-  const shown = key === "skipped" ? require("./skipRows").shape(rows, { thisYear: orgToday(await orgTz(orgId)).slice(0, 4) }) : rows;   // FLOWS-16 item 5   // ORG_TZ_SEAM_OK
+  const shown = key === "skipped" ? require("./skipRows").shape(rows, { thisYear: orgToday(await orgTz(orgId)).slice(0, 4), steps: t.steps }) : rows;   // FLOWS-16 item 5   // ORG_TZ_SEAM_OK
   res.json({ journeyId: t.id, rows: key, count: rows.length, donors: shown.slice(0, 1000) });
 }));
 

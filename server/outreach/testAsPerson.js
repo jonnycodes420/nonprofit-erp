@@ -5,22 +5,16 @@
 // a sample "$250" gift. Any person on file can be the one previewed, donor or
 // not. With nobody named it keeps the sample fields it always used.
 "use strict";
-const NUMBERS = require("../../shared/numbers");
 
 async function personFields(query, orgId, donorId) {
   if (!donorId || donorId === "me") return null;
   const [d] = await query(`SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [String(donorId), orgId]);
   if (!d) return null;
-  const GR = await import("../../shared/greeting.js");
-  const first = String(d.name || "").trim().split(/\s+/)[0] || "";
-  const lg = (await NUMBERS.lastGift.lastGifts(query, orgId, [d.id]).catch(() => new Map())).get(d.id);
-  const out = { first_name: GR.firstNames(d) || first, greeting: GR.greetingName(d) || first, full_name: d.name || "",
-    last_gift_amount: "", last_gift_date: "" };
-  if (lg) {
-    out.last_gift_amount = "$" + (lg.cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\.00$/, "");
-    const day = require("../../orgTime").civilOf(lg.date) || "";
-    if (day) out.last_gift_date = new Date(day + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
-  }
+  // FLOWS-19 item 1: the gift, its date and the names come from emailCompose.personFields,
+  // the fill the send, the editor's preview and the starter cards use (lastGift.js's rule).
+  const f = await require("../../emailCompose").personFields({ orgId, orgName: "", base: "", orgSlug: "" }, d);
+  const out = { first_name: f.first_name, greeting: f.greeting, full_name: d.name || "",
+    last_gift_amount: f.last_gift_amount || "", last_gift_date: f.last_gift_date || "" };
   return { person: { id: d.id, name: d.name }, fields: out };
 }
 

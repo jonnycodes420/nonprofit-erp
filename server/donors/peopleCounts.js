@@ -64,6 +64,23 @@ function countsSql(orgId, today, visible) {
   return { sql, args: [...U.args, orgId, today, b.lapsedOnOrBefore, ...lapsed.args, b.lapsingOnOrBefore, ...lapsing.args, b.lapsedOnOrBefore, ...re.args, orgId, ...v.args] };
 }
 
+// FLOWS-19 item 5: WHO Re-engage holds, by the very condition its count reads above (lapse.js
+// reengageSql, its badge's `own` bound), with each person's unit last gift (lapse.js unitLast), so
+// a change in the count can name who moved and why (server/donors/reengageChange.js).
+function reengageRowsSql(orgId, today, visible) {
+  const v = visible && visible.sql ? visible : { sql: "", args: [] };
+  const U = L.unitSetsSql(orgId, today);
+  const re = L.reengageSql("donors", today, { linkedLast: "ud.linked_last", held: "ud.held" });
+  const b = require("../../lapseRule").bounds(today);
+  const own = L.LAST_ON_RECORD("donors");
+  const sql = `
+    WITH ${U.with}
+    SELECT donors.id, donors.name, LEFT((CASE WHEN (${own}) IS NULL THEN NULL ELSE GREATEST((${own})::date, ud.linked_last::date) END)::text, 10) AS last
+      FROM donors LEFT JOIN unit ud ON ud.donor_id = donors.id
+     WHERE ${SET}${v.sql} AND (CASE WHEN (${own})::date <= ?::date THEN ${re.sql} ELSE false END)`;
+  return { sql, args: [...U.args, orgId, ...v.args, b.lapsedOnOrBefore, ...re.args] };
+}
+
 async function peopleCounts(orgId, visible) {
   const today = await DS.todayFor(orgId);
   const { sql, args } = countsSql(orgId, today, visible);
@@ -71,4 +88,4 @@ async function peopleCounts(orgId, visible) {
   return r;
 }
 
-module.exports = { peopleCounts, countsSql };
+module.exports = { peopleCounts, countsSql, reengageRowsSql };
