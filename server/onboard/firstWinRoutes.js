@@ -134,7 +134,7 @@ function mount(app, ctx) {
     res.json({ ok: true });
   }));
   app.get("/notes/this-week", requireAuth, wrap(async (req, res) => {
-    res.json(await require("./weekNotes").list(query, req.user.orgId, await today(req.user.orgId)));
+    res.json(await require("./weekNotes").list(query, req.user.orgId, await today(req.user.orgId), require("../auth/portfolio").visibleSql(req, "d")));   // ACCESS-2: scoped
   }));
 }
 

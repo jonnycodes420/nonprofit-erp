@@ -49,7 +49,9 @@ function firstLine({ hi, step, last, about }) {
   return `${hi} I wanted to write to you myself.`;
 }
 
-async function list(query, orgId, today) {
+// `visible` (server/auth/portfolio.js visibleSql over "d") narrows it to a portfolio user's people.
+async function list(query, orgId, today, visible = null) {
+  const v = visible && visible.sql ? visible : { sql: "", args: [] };
   const wk = weekOf(today);
   const live = PLANT() === "print-dnc" ? `d.org_id = ? AND ${EVERYONE("d")}` : `d.org_id = ? AND ${EVERYONE("d")} AND COALESCE(d.do_not_contact, false) = false AND COALESCE(d.deceased, false) = false`;
   const due = PLANT() === "print-all" ? "" : "AND LEFT(x.due, 10) >= ? AND LEFT(x.due, 10) <= ?";
@@ -63,10 +65,10 @@ async function list(query, orgId, today) {
              WHERE k.org_id = ? AND k.donor_id IS NOT NULL AND COALESCE(k.done, 0) = 0 AND k.voided_at IS NULL AND ${TASK_IS_NOTE}
                AND COALESCE(k.due, '') ~ '^\\d{4}-\\d{2}-\\d{2}') x
       JOIN donors d ON d.id = x.donor_id
-     WHERE ${live} ${due}
+     WHERE ${live} ${due}${v.sql}
      GROUP BY x.donor_id, d.name, d.salutation, d.person_types, d.contact_name, d.address, d.address2, d.city, d.state, d.zip, d.do_not_mail, d.about_them
      ORDER BY MIN(LEFT(x.due, 10)), d.name`,
-    [orgId, orgId, orgId, ...(due ? [wk.from, wk.to] : [])]);
+    [orgId, orgId, orgId, ...(due ? [wk.from, wk.to] : []), ...v.args]);
   const last = await lastGifts(query, orgId, rows.map(r => r.donor_id));
   const G = await import("../../shared/greeting.js");
   const people = rows.map(r => {
