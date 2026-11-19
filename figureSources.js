@@ -3018,6 +3018,7 @@ Object.assign(SOURCES, require("./server/reports/yoySources")({ FigureParamError
 Object.assign(SOURCES, require("./server/reports/ledgerSources")({ FigureParamError }));   // TRUTH-3: the ledger's three figures
 Object.assign(SOURCES, require("./server/donors/broughtInSources")());
 Object.assign(SOURCES, require("./server/donors/recordsGapSources")());   // FLOWS-10 item 14: who is on the Donors tab and not a record   // CONNECT-1: who someone brought in, and what they gave since
+Object.assign(SOURCES, require("./server/onboard/totalsSources")());   // ONBOARD-3: what explains a year that differs from the old system
 function sourceDef(key) { return Object.prototype.hasOwnProperty.call(SOURCES, key) ? SOURCES[key] : null; }
 
 const num = v => (v === null || v === undefined ? null : Number(v));

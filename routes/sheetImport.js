@@ -1187,6 +1187,9 @@ async function runJob(req, body, importId, who) {
     // check that fails never fails the import: it is a read.
     await require("./dataHealth").runDataHealth(orgId, { trigger: "import", importId })
       .catch(e => console.error("[sheet-import] data health:", e.message));
+    // ONBOARD-3: a new org's first donor file makes "Does this match your old system?" due, before Home.
+    await require("../server/onboard/totals").markDue(query, orgId, importId)
+      .catch(e => console.error("[sheet-import] totals due:", e.message));
     // LIST-2: the tables the next screen reads, before she sees "done" (guarded, never blocks)
     await require("../middleware/analyzeAfterImport").analyzeAfterImportGuarded("sheet-import");
     await finishJob(importId, "done", { status: out.status, body: out.body });

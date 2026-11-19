@@ -17,8 +17,8 @@
 // customer's org, which is the case Data in is about. Otherwise the import
 // stays as an ordinary live import and the answer says why.
 //
-// Accept clears both columns for the batch, runs the one after-change step
-// (LIVE-1) for its people, and stamps `orgs.data_in_at`. Undo before Accept is
+// Accept clears both columns for the batch and runs the one after-change step
+// (LIVE-1) for its people; the totals check that follows stamps `orgs.data_in_at` (ONBOARD-3). Undo before Accept is
 // today's undo by run id: it removes the batch's people whether or not they
 // are hidden (undo.js already takes soft-deleted people the file created).
 "use strict";
@@ -110,7 +110,7 @@ async function acceptImport({ query, run }, orgId, importId, { by, byName, reaso
       WHERE org_id=? AND staged_import_id=? RETURNING id`, [orgId, importId]);
   await run(`UPDATE imports SET accepted_at = NOW(), accepted_by = ?, accepted_by_name = ?, accept_reason = ?, accepted_on_behalf = ?
       WHERE id=? AND org_id=? AND accepted_at IS NULL`, [by, byName, reason || null, !!onBehalf, importId, orgId]);
-  await run(`UPDATE orgs SET data_in_at = COALESCE(data_in_at, NOW()) WHERE id=?`, [orgId]);
+  // ONBOARD-3: data in is "Looks right" on the totals check (firstWinRoutes.js), not Accept.
   return shown.map(r => r.id);
 }
 

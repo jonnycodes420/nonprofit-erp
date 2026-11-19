@@ -451,6 +451,9 @@ function afterImport(orgId, importId) {
   // MAIL-1: any import path, present or future, can be the first donor file.
   require("../onboarded").stampOnboardedFromImport(query, orgId, importId)
     .catch(e => console.error("[mail-1] onboarded stamp:", e.message));
+  // ONBOARD-3: a new org's first donor file makes "Does this match your old system?" due.
+  require("../server/onboard/totals").markDue(query, orgId, importId)
+    .catch(e => console.error("[onboard3] totals due:", e.message));
   setImmediate(() => runDataHealth(orgId, { trigger: "import", importId }).catch(e => console.error("[data-health] after import:", e.message)));
 }
 // FIX-59 · DATA HEALTH IS CURRENT. After an import, its undo, a merge, a

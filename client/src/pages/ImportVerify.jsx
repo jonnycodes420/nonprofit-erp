@@ -40,7 +40,7 @@ export default function ImportVerify() {
 
   async function accept() {
     setBusy(true); setErr(null);
-    try { const r = await apiFetch(`/imports/${encodeURIComponent(importId)}/accept`, { method: "POST", body: JSON.stringify({ reason }) }); setDone(r.sentence); await load(); }
+    try { const r = await apiFetch(`/imports/${encodeURIComponent(importId)}/accept`, { method: "POST", body: JSON.stringify({ reason }) }); setDone(r.sentence); if (r.totalsDue) { window.location.href = "/onboard/totals"; return; } await load(); }
     catch (e) { setErr(e.message); }
     setBusy(false);
   }
