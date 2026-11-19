@@ -8,7 +8,7 @@
 // Now there is one row per skipped step, and each says
 //   · why and when: "Stopped by Dana, Nov 13", "Skipped: no address on file, Nov 13",
 //     or, for a skip written before reasons were kept, "Reason not recorded (before Nov 16)";
-//   · which entry it belongs to: "Entered Oct 2 · step 2, Birthday card".
+//   · which entry it belongs to: "Entered Oct 2 · step 1, Birthday card" (FLOWS-19: the editor's numbering).
 // The figure counts these same rows (JOURNEY_ROW_SQL.skipped), so the number opens to itself.
 "use strict";
 
@@ -38,17 +38,34 @@ function skipSentence(r, thisYear) {
   return `${reason} (${firstName(r.closed_by_name)}${day ? `, ${day}` : ""})`;
 }
 
+// FLOWS-19 item 4 (W-1115-Fundraising-32, a repeat): "step 2, Mail a birthday card" on a journey
+// with one step. A plan step's seq already counts from 1 (journeyStart.js copies the journey's
+// steps as seq 1, 2, …), and FLOWS-16 added 1 again. The number is now the step's place in the
+// journey as the editor shows it today, 1-based: the editor's step with this one's label, the one
+// at the same place first. A step since deleted from the journey has no number to give, and says so.
+function editorPosition(r, editorSteps) {
+  const labels = (Array.isArray(editorSteps) ? editorSteps : []).map(st => tidy(st && st.label));
+  const want = tidy(r.step_label);
+  if (!want || !labels.length) return null;
+  const same = Number(r.seq) - 1;
+  if (labels[same] === want) return same + 1;
+  const at = labels.indexOf(want);
+  return at >= 0 ? at + 1 : null;
+}
+
 // Which entry the row belongs to: the day they went in, and the step.
-function entryLine(r, thisYear) {
+function entryLine(r, thisYear, editorSteps = null) {
   const went = shortDay(r.entered, thisYear);
-  const step = r.step_label ? `step ${Number(r.seq) + 1}, ${tidy(r.step_label)}` : "";
+  const n = editorPosition(r, editorSteps);
+  const step = !r.step_label ? "" : n ? `step ${n}, ${tidy(r.step_label)}` : `${tidy(r.step_label)} (a step no longer in this journey)`;
   return [went ? `Entered ${went}` : "", step].filter(Boolean).join(" · ");
 }
 
-// GET /journeys/:id/rows?rows=skipped: the rows as the screen shows them.
-function shape(rows, { thisYear } = {}) {
+// GET /journeys/:id/rows?rows=skipped: the rows as the screen shows them. `steps` is the journey's
+// own steps (cultivation_templates.steps), in the editor's order.
+function shape(rows, { thisYear, steps = null } = {}) {
   return rows.map(r => ({ id: r.id, name: r.name, planId: r.plan_id, stepId: r.step_id,
-    reason: skipSentence(r, thisYear), entry: entryLine(r, thisYear), recorded: !!tidy(r.raw_reason) }));
+    reason: skipSentence(r, thisYear), entry: entryLine(r, thisYear, steps), recorded: !!tidy(r.raw_reason) }));
 }
 
-module.exports = { STOPPED, NOT_RECORDED, skipSentence, entryLine, shape, shortDay };
+module.exports = { STOPPED, NOT_RECORDED, skipSentence, entryLine, editorPosition, shape, shortDay };

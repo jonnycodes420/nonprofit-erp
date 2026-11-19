@@ -192,7 +192,7 @@ export const isGiftTrigger = k => GIFT_TRIGGER_KEYS.includes(k);
 //   draft     it has never been switched on and nobody has ever been in it
 export const STATES = [
   { key: "running", label: "Running", sentence: "Switched on: it starts by itself when its trigger happens." },
-  { key: "paused", label: "Paused", sentence: "Switched off after running. Nobody new goes in; people already in it carry on." },
+  { key: "paused", label: "Paused", sentence: "Switched off after running. Nobody new goes in, and people already in it wait at the step they are on until it is turned back on." },
   { key: "draft", label: "Draft", sentence: "Never switched on and nobody has been in it yet." },
   { key: "archived", label: "Archived", sentence: "Put away. It starts nothing and is kept so the people who went through it still have a record." },
 ];
