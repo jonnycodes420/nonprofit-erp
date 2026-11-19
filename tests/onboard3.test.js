@@ -64,6 +64,7 @@ const PEOPLE = [
   await q(`DELETE FROM users WHERE email LIKE 'onb3-%@example.org'`);
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,org_kind) VALUES ($1,$2,$3,1,'trialing','trial','customer')`,
     [ORG, "Ternwick Food Pantry", "onb3-ternwick"]);
+  await q(`UPDATE orgs SET paper_done_at = NOW() - INTERVAL '3 days' WHERE id=$1`, [ORG]);   // in onboarding (ONBOARD-1's paper)
   await mkUser("u_onb3_dir", ORG, DIRECTOR, "admin");
   const IMP = "imp_onb3_first";
   await q(`INSERT INTO imports (id,org_id,name,shape,committed_at,actor_user_id,rows_set_aside,summary_json)
@@ -93,7 +94,10 @@ const PEOPLE = [
   // ── §1 · DUE AFTER THE FIRST DONOR FILE, ONLY FOR A NEW ORG ────────────
   const before = await api("GET", "/org/setup-status", dir);
   ok("§1 before the import is recorded, Home has no first screen", before.status === 200 && !before.body.firstWin, before.body.firstWin);
-  ok("§1 the first donor file into an org with no data in makes the check due", await T.markDue(qq, ORG, IMP));
+  await q(`UPDATE orgs SET paper_done_at = NULL WHERE id=$1`, [ORG]);
+  ok("§1 a self-serve trial (not in onboarding) is never made due, so its Home is untouched", !(await T.markDue(qq, ORG, IMP)));
+  await q(`UPDATE orgs SET paper_done_at = NOW() - INTERVAL '3 days' WHERE id=$1`, [ORG]);
+  ok("§1 the first donor file into an org in onboarding with no data in makes the check due", await T.markDue(qq, ORG, IMP));
   const st = await api("GET", "/org/setup-status", dir);
   ok("§1 Home's first screen is now the totals check", st.body.firstWin === "totals", st.body.firstWin);
   // An org that already had a donor file (every customer before this build) never sees it.
@@ -110,6 +114,7 @@ const PEOPLE = [
   // walk found the spreadsheet import never reached afterImport, so a real file
   // never made the check due.
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,org_kind) VALUES ($1,'Saltmarsh Kitchen','onb3-sheet',1,'trialing','trial','customer')`, [SHEET]);
+  await q(`UPDATE orgs SET paper_done_at = NOW() WHERE id=$1`, [SHEET]);
   await mkUser("u_onb3_sheet", SHEET, "onb3-sheet@example.org", "admin");
   const sTok = await login("onb3-sheet@example.org");
   const sBody = { fileName: "Saltmarsh gifts.csv", sheets: [{ name: "Sheet1", grid: [["Date", "First Name", "Last Name", "Email", "Amount"],

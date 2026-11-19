@@ -97,16 +97,21 @@ async function isDue(query, orgId) {
   return !!(o && o.totals_due_at && !o.data_in_at);
 }
 
-// Called after every import is recorded (routes/dataHealth.afterImport) and
-// after a staged import is made live. The org's FIRST donor file, live, with no
-// data-in yet, makes the check due; an org that already had a donor file (every
-// customer before this build) never sees it.
+// Called after every import is recorded (routes/dataHealth.afterImport, the
+// spreadsheet importer's job) and after a staged import is made live. The org's
+// FIRST donor file, live, with no data-in yet, makes the check due, for an org in
+// onboarding by ONBOARD-2's rule (setupRoutes.inOnboarding: paper signed, a start
+// link, or a verbal yes). An org that already had a donor file (every customer
+// before this build) and a self-serve trial never see it.
 async function markDue(query, orgId, importId) {
   if (!orgId || !importId) return false;
   const DONOR_FILE = `i.committed_at IS NOT NULL AND i.reversed_at IS NULL AND COALESCE(i.shape,'') NOT IN ('deposit','source','volunteers')
     AND EXISTS (SELECT 1 FROM donors d WHERE d.org_id = i.org_id AND d.created_import_id = i.id AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE)`;
   const rows = await query(`UPDATE orgs o SET totals_due_at = NOW()
       WHERE o.id = ? AND o.data_in_at IS NULL AND o.totals_due_at IS NULL
+        AND (o.paper_done_at IS NOT NULL
+             OR EXISTS (SELECT 1 FROM start_links sl WHERE sl.org_id = o.id)
+             OR EXISTS (SELECT 1 FROM org_onboarding ob WHERE ob.org_id = o.id AND ob.verbal_yes_on IS NOT NULL))
         AND EXISTS (SELECT 1 FROM imports i WHERE i.id = ? AND i.org_id = o.id AND ${DONOR_FILE})
         AND NOT EXISTS (SELECT 1 FROM imports i WHERE i.org_id = o.id AND i.id <> ? AND i.committed_at < (SELECT committed_at FROM imports WHERE id = ?)
                          AND COALESCE(i.shape,'') NOT IN ('deposit','source','volunteers') AND i.reversed_at IS NULL)

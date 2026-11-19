@@ -104,7 +104,7 @@ export default function TotalsCheck() {
   return shell(<>
     <h1 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: 32, margin: "0 0 6px" }}>Does this match your old system?</h1>
     <p style={{ margin: "0 0 4px", fontSize: 15 }}>Here is what Steward read from your file, year by year. If you have your old system's totals to hand, type one in to check it. You can skip this.</p>
-    <p style={{ margin: 0, fontSize: 12.5, color: C.muted }}>{d.sentence} Click any figure to see the gifts behind it.</p>
+    <p style={{ margin: 0, fontSize: 12.5, color: C.muted }}>{`${d.sentence} Click any figure to see the gifts behind it.`}</p>
     <div data-testid="totals-check" style={{ background: C.white, borderRadius: 12, padding: "4px 20px", marginTop: 16 }}>
       {d.years.map(y => <Year key={y.key} y={y} always={d.always} typed={typed[y.key]} result={results[y.key]} asked={asked[y.key]}
         onType={v => setTyped(t => ({ ...t, [y.key]: v }))} onBlur={compare} onAsk={() => ask(y.key)} />)}
