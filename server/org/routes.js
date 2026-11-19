@@ -492,6 +492,8 @@ app.get("/org/setup-status", requireAuth, OS.cached("setup-status"), wrap(async 
     tier,
     // ONBOARD-2: an org in onboarding gets "Getting set up" (lazy) in place of this checklist.
     onboarding: await require("../onboard/setupRoutes").inOnboarding(query, orgId),
+    // ONBOARD-3: Home's first screen: "totals" (Does this match?), "first" (Your first 30 minutes), "readout" (day 30).
+    firstWin: await require("../onboard/firstWinRoutes").firstWinFor(query, orgId, req.user),
   });
 }));
 
@@ -1076,6 +1078,7 @@ app.put("/org/membership-settings", requireAuth, requireAdmin, checkWriteAccess,
 }));
 // ONBOARD-2: Home → "Getting set up", the home-opened signal and "Who to call tomorrow".
 require("../onboard/setupRoutes").mount(routers.r1, ctx);
+require("../onboard/firstWinRoutes").mount(routers.r1, ctx);   // ONBOARD-3: the totals check, the first session, day 30, the Monday notes
 }
 
 module.exports = { routers, mount };

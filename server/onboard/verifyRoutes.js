@@ -96,8 +96,10 @@ function mount(ctx) {
     // MAIL-1's "first real donor file" and Data health run now, on live rows.
     await require("../../onboarded").stampOnboardedFromImport(query, req.user.orgId, r.id).catch(() => {});
     try { require("../../routes/dataHealth").afterImport(req.user.orgId, r.id); } catch (e) { console.error("[onboard] data health:", e.message); }
+    // ONBOARD-3: made live, the first file makes the totals check due before Home (awaited, so the next screen sees it).
+    await require("./totals").markDue(query, req.user.orgId, r.id).catch(e => console.error("[onboard3] totals due:", e.message));
     if (req.audit) req.audit.summary = `${byName} made import "${r.name}" live (${ids.length} people)` + (onBehalf ? ` on the customer's behalf: ${reason}` : "");
-    res.json({ ok: true, people: ids.length,
+    res.json({ ok: true, people: ids.length, totalsDue: await require("./totals").isDue(query, req.user.orgId),   // ONBOARD-3: next, the totals check
       sentence: `Live. ${ids.length.toLocaleString("en-US")} ${ids.length === 1 ? "person is" : "people are"} now in every count and list. Made live by ${byName}${onBehalf ? `, for the customer, because: ${reason}` : ""}.` });
   }));
 

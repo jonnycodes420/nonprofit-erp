@@ -87,12 +87,7 @@ function mount(app, ctx) {
     const got = await require("../../insightsData").insightsFor(orgId, asOf);
     if (got.preparing || !got.result || !got.result.deck) return res.json({ preparing: true, people: [] });
     const deck = got.result.deck;
-    const tabs = [...deck.tabs.filter(t => t.key === deck.open), ...deck.tabs.filter(t => t.key !== deck.open)];
-    const seen = new Set(), picks = [];
-    for (const t of tabs) for (const m of t.moves) {
-      if (!m.lead || seen.has(m.lead) || picks.length >= 5) continue;
-      seen.add(m.lead); picks.push(m);
-    }
+    const picks = require("./firstSession").movesInHomeOrder(deck, 5);   // ONBOARD-3: one picker, Home's order
     const last = await lastGifts(query, orgId, picks.map(m => m.lead));
     res.json({ preparing: false, asOf,
       sentence: "The first five people on your moves, in the order Home shows them: who they are, their last gift, and why now.",

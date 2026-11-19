@@ -23,6 +23,15 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
   hand-typed facts are `verbal_yes_on` and `waiting_on`, and neither is a gate. A deal past its window is
   brass. Customer-facing "Getting set up" (`/onboarding/mine`) never carries the windows, the next action,
   Waiting on or MRR.
+- **ONBOARD-3 (2026-11-19). Data in is "Looks right", and onboarding ends on Home, not in setup.** A new
+  org's first donor file (`server/onboard/totals.js` `markDue`, from every import path, including the
+  spreadsheet importer's job) makes "Does this match your old system?" (`/onboard/totals`) Home's first
+  screen. Its years are `byYear.orgByYear`'s, never summed again. Looks right stamps `orgs.data_in_at`
+  (Accept on a staged import no longer does), stores the figures typed (`onboard_totals_checks`), and
+  writes the day-one list (`onboard_snapshots`, lapsed or lapsing by `lapse.stateSql`, once). Home then
+  opens on "Your first 30 minutes" (list = `firstSession.movesInHomeOrder`, the one picker kickoff uses).
+  The day-30 readout counts only day-one people with a gift dated on or after the data-in day, and says
+  "gave again since you started", never "recovered". An org that already had a donor file never sees any of it.
 - **ACCESS-1 (2026-11-06). Roles are per org, and a viewer changes nothing.** The roles are staff,
   viewer, volunteer coordinator and admin (`shared/viewOnly.js` `ROLES`). A viewer is refused in
   `requireAuth` by method: every non-GET answers 403 `view_only` unless `shared/viewOnly.js` names it

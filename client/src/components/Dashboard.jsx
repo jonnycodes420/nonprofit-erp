@@ -29,6 +29,7 @@ import { PORTFOLIO_BREAKDOWNS, ImpactLine } from "./home/homeParts";
 import { openTellSteward } from "./TellStewardOpen";   // AGENT-5: one input, Atlas over the page
 import { SetupFirstCard, SetupRailCard, setupStage } from "./HomeSetup";   // HOME-4
 const GettingSetUp = lazy(() => import("./onboarding/HomeOnboarding"));   // ONBOARD-2: lazy, so Home's first look stays in budget
+const FirstWin = lazy(() => import("./onboarding/FirstWin"));   // ONBOARD-3: the totals check, the first 30 minutes, day 30
 import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads, HomeRailColumn, OwnersCard } from "./HomeRail";   // HOME-4, PROFILE-2
 import { plural } from "../../../shared/countWords";
 import { HOME_GRID_CSS } from "./home/homeGrid";   // HOME-6
@@ -1305,6 +1306,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // it is the rail's first card; done or dismissed, it is gone (Settings keeps
   // it). The completion moment shows once, here.
   const setupFirst=(()=>{
+    if(surface==="home"&&setupStatus?.firstWin)return <Suspense fallback={null}><FirstWin kind={setupStatus.firstWin} onb={onb} onNavigate={onNavigate}/></Suspense>;
     if(onb)return <Suspense fallback={null}><GettingSetUp onNavigate={onNavigate}/></Suspense>;
     if(surface!=="home"||!setupStatus)return null;
     // SHIFT-2: the completion moment, too, only when it can be in the first frame.

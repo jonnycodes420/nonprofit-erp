@@ -95,6 +95,7 @@ async function runSchemaInit(pool) {
   await require("./ddl/onboard1").run(pool);   // ONBOARD-1: start links, signatures, staged imports
   await require("./ddl/part7").run(pool);
   await require("./ddl/onboard2").run(pool);   // ONBOARD-2: the onboarding board
+  await require("./ddl/onboard3").run(pool);   // ONBOARD-3: the totals check, the first session, the day-one list
   await require("./ddl/sales1").run(pool);   // SALES-1: the sales CRM in /ops (no org_id, super-admin only)
   await require("./ddl/sales1b").run(pool);   // SALES-1 Part B: the sales mailbox, partners and payouts
   await require("./ddl/sales2").run(pool);   // SALES-2: prospect lists, fit, call mode, Do not contact, meetings
