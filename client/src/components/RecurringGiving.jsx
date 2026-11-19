@@ -825,7 +825,7 @@ export function RecurringView({ onNavigate, isReadOnly }) {
                   <td style={{ padding: "10px 10px", fontSize: 12.5, color: s.fundName ? T.ink2 : T.ink3 }}>{fundLabel(s.fundName)}</td>
                   <td data-testid="rec-source" style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink2, whiteSpace: "nowrap" }}>{s.source === "offline" ? "Offline · recorded by staff" : "Card · Stripe"}</td>
                   <td style={{ padding: "10px 10px" }} title={s.stateSentence || undefined}><StatusPill status={s.displayStatus} /></td>
-                  <td style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>{s.displayStatus === "canceled" ? "Stopped" : s.displayStatus === "paused" ? "Paused" : fmtDate(s.nextChargeAt)}</td>
+                  <td data-testid="rec-next" style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>{s.displayStatus === "canceled" ? (s.canceledOn ? `Canceled ${fmtDate(s.canceledOn)}` : "Stopped") : s.displayStatus === "paused" ? "Paused" : fmtDate(s.nextChargeAt)}</td>
                   <td style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>{fmtDate(s.startedAt)}</td>
                   <td style={{ padding: "10px 10px", textAlign: "right", fontSize: 12.5, color: T.ink2, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
                     {s.linkedGiftCount > 0 ? `${fmtFull(s.totalGiven)} · ${s.linkedGiftCount}` : "No gifts yet"}

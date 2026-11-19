@@ -50,7 +50,8 @@ async function plannedEmails(ctx, orgId, days) {
     for (const r of await query(
       `SELECT j.donor_id, d.name, j.send_on, j.subject FROM journey_sends j JOIN donors d ON d.id = j.donor_id AND d.org_id = j.org_id
         WHERE j.org_id = ? AND j.status IN ('scheduled','failed') AND j.attempts < 3 AND j.send_on <= ?
-          AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE`, [orgId, lastDay]).catch(() => [])) {
+          AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE
+          AND NOT EXISTS (SELECT 1 FROM cultivation_templates t WHERE t.id = j.template_id AND t.org_id = j.org_id AND ${require("./server/shared/journeyPaused").PAUSED("t")})`, [orgId, lastDay]).catch(() => [])) {
       const day = r.send_on < today ? today : r.send_on;
       if (journeySkip) {
         const [donor] = await query(`SELECT * FROM donors WHERE id = ? AND org_id = ?`, [r.donor_id, orgId]);

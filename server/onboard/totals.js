@@ -74,7 +74,7 @@ async function read(query, org, today, { heavy } = {}) {
     const [refunds, soft, pledges] = await Promise.all([sumOf(query, SQL.refunds(org.id, p)), sumOf(query, SQL.soft(org.id, p)), sumOf(query, SQL.pledges(org.id, p))]);
     const explain = [];
     if (refunds.n) explain.push({ key: "refunds", cents: refunds.cents, sentence: `${plural(refunds.n, "refund", "refunds")} came off this year in Steward (${fmt(refunds.cents)}). A system that shows gifts before refunds reads higher.`, source: { key: "onb-refunds", params: p } });
-    if (soft.n) explain.push({ key: "soft", cents: soft.cents, sentence: `${plural(soft.n, "soft or matching credit", "soft or matching credits")} (${fmt(soft.cents)}) are left out: they recognise someone, they are not money in. A system that counts them reads higher.`, source: { key: "onb-soft", params: p } });
+    if (soft.n) explain.push({ key: "soft", cents: soft.cents, sentence: `${plural(soft.n, "soft or matching credit", "soft or matching credits")} (${fmt(soft.cents)}) are left out: they recognize someone, they are not money in. A system that counts them reads higher.`, source: { key: "onb-soft", params: p } });
     if (pledges.n) explain.push({ key: "pledges", cents: pledges.cents, sentence: `${plural(pledges.n, "pledge", "pledges")} made this year ${pledges.n === 1 ? "is" : "are"} not yet paid (${fmt(pledges.cents)}). Steward counts a pledge when it is paid; a system that counts pledges reads higher.`, source: { key: "onb-pledges", params: p } });
     out.push({ key: y.key, label: y.label, from: y.from, to: y.to, current: !!y.current,
       cents: y.cents, giftCount: y.giftCount, sources: { total: y.sources.total, giftCount: y.sources.giftCount },
