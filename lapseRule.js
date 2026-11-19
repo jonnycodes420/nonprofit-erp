@@ -109,9 +109,20 @@ function lapseState(lastGiftDate, today, rhythm = null, pledges = null) {
   if (last <= b.lapsingOnOrBefore) return usualTimeAhead(rhythm, today) ? "giving" : "lapsing";
   return "giving";
 }
+// POLISH-4 · THE GIVING UNIT'S LAST GIFT. A person and the people linked to
+// them as Owner, Works at, Spouse or Partner are held as one: the unit's last
+// gift is their own, or a linked person's when later. Only for someone with a
+// last gift of their own (a person who never gave has not "given before").
+// lapse.js unitLast is the same in SQL; lapse.js stateOf passes this to lapseState.
+function unitLast(ownLast, linkedLast) {
+  const own = ownLast ? String(ownLast).slice(0, 10) : "";
+  if (!orgTime.parseCivil(own)) return null;
+  const linked = linkedLast ? String(linkedLast).slice(0, 10) : "";
+  return orgTime.parseCivil(linked) && linked > own ? linked : own;
+}
 const isLapsed = (last, today) => lapseState(last, today) === "lapsed";
 const isLapsing = (last, today) => lapseState(last, today) === "lapsing";
 
 
 module.exports = { LAPSED_DAYS, LAPSING_MONTHS, LOST_MONTHS, WORDS, shiftMonths, bounds, lapseState, usualTimeAhead,
-  pledgeHold, isLapsed, isLapsing };
+  pledgeHold, unitLast, isLapsed, isLapsing };
