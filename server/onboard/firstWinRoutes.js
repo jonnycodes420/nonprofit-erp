@@ -9,7 +9,7 @@
 //                                         orgs.data_in_at (ONBOARD-2's data-in gate)
 //   POST /onboard/totals/ask-jonathan     { key, typed } → "Waiting on" on the /ops board
 //   GET  /onboard/first-session           Home's "Your first 30 minutes"
-//   POST /onboard/first-session/:what     seen | dismiss | reopen | told
+//   POST /onboard/first-session/seen|dismiss|reopen|told
 //
 // THE PLANTED DEFECTS (ONBOARD3_PLANT on the SERVER; tests/onboard3.test.js
 // goes red on each): `no-data-in` (Looks right leaves data_in_at alone),
@@ -103,12 +103,13 @@ function mount(app, ctx) {
     res.json(out);
   }));
 
-  app.post("/onboard/first-session/:what", requireAuth, wrap(async (req, res) => {
-    const what = String(req.params.what);
-    if (!["seen", "dismiss", "reopen", "told"].includes(what)) return res.status(404).json({ error: "unknown" });
-    await FS.mark({ run }, req.user.orgId, what, who(req));
-    res.json({ ok: true });
-  }));
+  // Four plain routes, no path parameter: each names the one thing it records.
+  for (const what of ["seen", "dismiss", "reopen", "told"]) {
+    app.post(`/onboard/first-session/${what}`, requireAuth, wrap(async (req, res) => {
+      await FS.mark({ run }, req.user.orgId, what, who(req));
+      res.json({ ok: true });
+    }));
+  }
 
 }
 
