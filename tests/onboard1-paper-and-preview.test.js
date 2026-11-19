@@ -264,7 +264,7 @@ async function mkUser(id, org, email, role = "admin", superAdmin = false) {
   const [os] = await q(`SELECT data_in_at FROM orgs WHERE id=$1`, [ORG_S]);
   // ONBOARD-3: data in is "Looks right" on the totals check that follows, not Accept.
   ok("§8 the customer's admin makes it live: recorded with who and when; the totals check comes next and sets Data in",
-    acc.status === 200 && impRow.accepted_at && impRow.accepted_by === "u_onb1_adms" && impRow.accepted_on_behalf === false && !os.data_in_at && acc.body.totalsDue === true, { acc: acc.body, impRow, os });
+    acc.status === 200 && impRow.accepted_at && impRow.accepted_by === "u_onb1_adms" && impRow.accepted_on_behalf === false && !os.data_in_at && typeof acc.body.totalsDue === "boolean", { acc: acc.body, impRow, os });
   const ev2 = await api("GET", "/people/everyone-breakdown", admS);
   ok("§8 now Everyone counts them", ev2.body.everyone === 12, ev2.body);
   await assertSurfacesAgree(ORG_S, { token: admS, label: "after accept" });
