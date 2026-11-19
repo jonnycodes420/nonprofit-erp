@@ -208,6 +208,71 @@ const PEOPLE = [
   const after = await api("GET", "/org/setup-status", dir);
   ok("§4 then Home returns to normal", after.body.firstWin !== "first" && after.body.firstWin !== "totals", after.body.firstWin);
 
+  // ── §5 · DAY 30: WHO GAVE AGAIN, FROM THE DAY-ONE LIST ONLY ────────────
+  const snap = await q(`SELECT donor_id, state FROM onboard_snapshots WHERE org_id=$1 ORDER BY donor_id`, [ORG]);
+  const onList = new Set(snap.map(r => r.donor_id));
+  ok("§5 Looks right wrote down the day-one list: the lapsed people, not the current giver", onList.has("d_onb3_xan") && onList.has("d_onb3_wolf") && !onList.has("d_onb3_tamsin")
+    && snap.every(r => r.state === "lapsed" || r.state === "lapsing"), snap);
+  const notYet = await api("GET", "/org/setup-status", dir);
+  ok("§5 before day 30 Home shows no readout", notYet.body.firstWin !== "readout", notYet.body.firstWin);
+  // Thirty-one days on: move data in back, and give the fixture its month.
+  await q(`UPDATE orgs SET data_in_at = NOW() - INTERVAL '31 days' WHERE id=$1`, [ORG]);
+  await gift("d_onb3_xan", 250, civilPlusDays(-5), { importId: null });     // on the list, after data in: counts
+  await gift("d_onb3_wolf", 400, civilPlusDays(-40), { importId: null });   // on the list, BEFORE data in: never counts
+  await gift("d_onb3_tamsin", 60, civilPlusDays(-3), { importId: null });   // after data in, NOT on the list: never counts
+  await q(`INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by) VALUES ('i_onb3_giftrow',$1,'d_onb3_xan','gift',$2,'Gift of $250','u_onb3_dir')`, [ORG, civilPlusDays(-5)]);
+  const due30 = await api("GET", "/org/setup-status", dir);
+  ok("§5 on day 30 Home shows the readout", due30.body.firstWin === "readout", due30.body.firstWin);
+  const ro = await api("GET", "/onboard/readout", dir);
+  const ids = (ro.body.people || []).map(p => p.id);
+  ok("§5 the readout names who gave again, with the amount", ro.status === 200 && ids.length === 1 && ids[0] === "d_onb3_xan" && ro.body.people[0].cents === 25000, ro.body.people);
+  ok("§5 a gift dated before data in is never counted", !ids.includes("d_onb3_wolf"), ids);
+  ok("§5 a person not on the day-one list is never counted", !ids.includes("d_onb3_tamsin"), ids);
+  ok("§5 a gift's own timeline row is not a note logged (the walk saw 278 from the import)", ro.body.notes === 0, ro.body.notes);
+  ok("§5 it says what was done: the call logged since data in", ro.body.calls === 1 && /1 call\b/.test(ro.body.did), { calls: ro.body.calls, did: ro.body.did });
+  ok("§5 the voice: \"given again since you started\", never \"recovered\"", /given again since you started/.test(ro.body.headline) && !/recover/i.test(JSON.stringify(ro.body)), ro.body.headline);
+  const gr = await api("GET", `/figures/onb-gave-again/rows?${new URLSearchParams({ ...ro.body.sources.gave.params, page: 1, pageSize: 200 })}`, dir);
+  const grSum = (gr.body.rows || []).reduce((a, r) => a + Math.round(Number(r.amount) * 100), 0);
+  ok("§5 \"gave again\" opens rows that foot to it", gr.status === 200 && grSum === ro.body.totalCents, { grSum, total: ro.body.totalCents });
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,org_kind) VALUES ('org_onb3_home','Onb3 Steward Staff','onb3-home',1,'trialing','trial','customer') ON CONFLICT DO NOTHING`);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role,is_super_admin) VALUES ('u_onb3_super','org_onb3_home','onb3-super@example.org',$1,'Onb3 Super','admin',true)`, [bcrypt.hashSync(PASS, 10)]);
+  const ops = await api("GET", "/ops/onboarding/readouts", await login("onb3-super@example.org"));
+  const opsRow = (ops.body.readouts || []).find(r => r.orgId === ORG);
+  ok("§5 /ops shows the same readout for the org", ops.status === 200 && opsRow && opsRow.headline === ro.body.headline && opsRow.totalCents === ro.body.totalCents, ops.body);
+  const opsNo = await api("GET", "/ops/onboarding/readouts", dir);
+  ok("§5 a customer cannot read /ops readouts", opsNo.status === 404 || opsNo.status === 403, opsNo.status);
+  await q(`DELETE FROM gifts WHERE org_id=$1 AND donor_id='d_onb3_xan' AND date=$2`, [ORG, civilPlusDays(-5)]);
+  const none = await api("GET", "/onboard/readout", dir);
+  ok("§5 when nobody has, it says what was done and names the next three to call", none.body.people.length === 0 && /Nobody from your day-one list/.test(none.body.headline)
+    && none.body.next.length > 0 && none.body.next.length <= 3 && !/recover/i.test(JSON.stringify(none.body)), { h: none.body.headline, next: none.body.next });
+
+  // ── §6 · PRINT THIS WEEK'S NOTES ───────────────────────────────────────
+  const WN = require("../server/onboard/weekNotes");
+  const wk = WN.weekOf(today);
+  const mid = civilPlusDays(0) <= wk.to ? civilPlusDays(0) : wk.to;
+  await q(`UPDATE donors SET about_them='Volunteers at the Saturday pantry with her grandson Milo.' WHERE id='d_onb3_zell'`);
+  await q(`UPDATE donors SET do_not_contact=true WHERE id='d_onb3_vale'`);
+  await q(`INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,created_by,created_by_name) VALUES
+           ('th_onb3_1',$1,'d_onb3_zell','thank_you_note','Send thank-you note',$2,$3,'system:test','fixture'),
+           ('th_onb3_2',$1,'d_onb3_vale','thank_you_note','Send thank-you note',$2,$3,'system:test','fixture'),
+           ('th_onb3_3',$1,'d_onb3_soft','follow_up','Call to check in',$2,$3,'system:test','fixture')`, [ORG, mid, today]);
+  await q(`INSERT INTO tasks (id,org_id,title,due,donor_id,done,type,created_by,created_by_name) VALUES
+           ('t_onb3_1',$1,'Write a note to Yusuf',$2,'d_onb3_yates',0,'donor','system:test','fixture')`, [ORG, WN.weekOf(civilPlusDays(7)).from]);
+  const wn = await api("GET", "/notes/this-week", dir);
+  const wIds = (wn.body.people || []).map(p => p.id);
+  ok("§6 the list holds the person with a thank-you due this week", wn.status === 200 && wIds.includes("d_onb3_zell"), wn.body);
+  ok("§6 never a person whose note is due next week", !wIds.includes("d_onb3_yates"), wIds);
+  ok("§6 never a do-not-contact person", !wIds.includes("d_onb3_vale"), wIds);
+  ok("§6 never a step that is not a thank-you or a note", !wIds.includes("d_onb3_soft"), wIds);
+  const zrow = (wn.body.people || []).find(p => p.id === "d_onb3_zell") || {};
+  ok("§6 each row: address, last gift, the About note's detail and a first line from those facts", (zrow.address || []).join(" ").includes("12 Gull Lane")
+    && zrow.lastGift && /Milo/.test(zrow.about) && /^Dear .*thank you for your gift of \$/.test(zrow.firstLine), zrow);
+  const before6 = await q(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id=$1 AND closed_at IS NULL`, [ORG]);
+  await api("GET", "/notes/this-week", dir);
+  const after6 = await q(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id=$1 AND closed_at IS NULL`, [ORG]);
+  ok("§6 reading the list changes nothing (a GET never changes state)", before6[0].n === after6[0].n);
+  const empty = await api("GET", "/notes/this-week", await login(OLDDIR));
+  ok("§6 nobody due: the page says so instead of printing blank", empty.status === 200 && empty.body.people.length === 0 && /Nothing to print/.test(empty.body.empty), empty.body);
   for (const o of [ORG, OLD, SHEET, "org_onb3_home"]) await wipe(o);
   await q(`DELETE FROM users WHERE email LIKE 'onb3-%@example.org'`);
   await closeDb();

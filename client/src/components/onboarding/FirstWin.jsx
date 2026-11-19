@@ -10,6 +10,7 @@ import { T } from "../shared";
 
 const LogConversationModal = lazy(() => import("../LogConversation").then(m => ({ default: m.LogConversationModal })));
 const HomeOnboarding = lazy(() => import("./HomeOnboarding"));
+const DayThirty = lazy(() => import("./DayThirty"));
 const SERIF = "'DM Serif Display',Georgia,serif";
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const dayWords = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || "")); return m ? `${MON[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}` : ""; };
@@ -113,7 +114,7 @@ export default function FirstWin({ kind, onb, onNavigate }) {
   useEffect(() => { if (kind === "totals") window.location.replace("/onboard/totals"); }, [kind]);
   if (kind === "totals") return null;
   const below = onb ? <Suspense fallback={null}><HomeOnboarding onNavigate={onNavigate} /></Suspense> : null;
-  if (kind === "readout") return below;   // Part B draws the day-30 readout here
+  if (kind === "readout") return <div style={{ display: "flex", flexDirection: "column", gap: 14 }}><Suspense fallback={null}><DayThirty onNavigate={onNavigate} /></Suspense>{below}</div>;
   return <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
     {!closed && <FirstSession onNavigate={onNavigate} onClosed={() => setClosed(true)} />}
     {below}

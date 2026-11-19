@@ -210,6 +210,8 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
           </div>}
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {/* ONBOARD-3: one printable page of this week's thank-yous and notes (stores and sends nothing). */}
+          <a href="/print/notes?print=1" target="_blank" rel="noopener" data-testid="tasks-print-notes" style={{ color: T.greenDk, fontSize: 12.5, fontWeight: 700, textDecoration: "none", padding: "4px 6px" }}>Print this week's notes</a>
           <div role="group" aria-label="Whose tasks" style={{ display: "flex", background: T.bg2, borderRadius: 8, padding: 3 }}>
             {[["mine", "Mine"], ["all", "Everyone"]].map(([v, l]) => (
               <button key={v} aria-pressed={!staff && scope === v} onClick={() => { setStaff(""); setScope(v); }}

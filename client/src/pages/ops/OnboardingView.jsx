@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../../api";
 import { countLabel } from "../../../../shared/countWords.js";
 import DateInput from "../../components/inputs/LazyDateInput";   // POLISH-6: the one date box
+import OnboardReadouts from "./OnboardReadouts";   // ONBOARD-3: day 30, per org
 
 const INK = "#0F1A12", WHITE = "#FFFFFF", CREAM = "#F0EDE6", EMERALD = "#0D5C3A", BRASS = "#C9A84C";
 const FIVE = ["paper", "data", "connections", "kickoff", "first_month"];
@@ -121,5 +122,6 @@ export default function OnboardingView({ data, error, onReload }) {
           </tbody>
         </table>}
     </section>
+    <OnboardReadouts />
   </div>;
 }

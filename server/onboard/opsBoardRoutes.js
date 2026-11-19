@@ -3,6 +3,7 @@
 //   GET  /ops/onboarding          one row per customer org: the stage on a
 //                                 5-dot track, days in it, the next action, the
 //                                 first charge date and MRR; the line at the top
+//   GET  /ops/onboarding/readouts each org's day-30 readout (ONBOARD-3)
 //   GET  /ops/onboarding/:orgId   that org's checklist: every gate and its evidence
 //   POST /ops/onboarding/:orgId   the two hand-entered facts ONLY: { waitingOn,
 //                                 verbalYesOn }. A stage in the body is ignored,
@@ -22,6 +23,18 @@ function mount(app, { query, run, wrap, opsOnly, opsLimiter }) {
     catch (e) { console.warn(`[ops] onboarding could not be read: ${e.message}`); res.json({ ok: false, error: "The onboarding board could not be read. Try again in a minute." }); }
   }));
 
+  // ONBOARD-3: each org's day-30 readout, the one its Home shows (dayOne.js). Above /:orgId.
+  app.get("/ops/onboarding/readouts", opsLimiter, opsOnly, wrap(async (req, res) => {
+    const DAY1 = require("./dayOne");
+    const orgs = await query(`SELECT o.* FROM orgs o WHERE o.data_in_at IS NOT NULL AND EXISTS (SELECT 1 FROM onboard_snapshots s WHERE s.org_id = o.id) ORDER BY o.data_in_at DESC LIMIT 100`, []);
+    const out = [];
+    for (const o of orgs) {
+      const today = require("../../orgTime").orgToday(o);
+      const r = await DAY1.readout({ query }, o, today, { insightsFor: require("../../insightsData").insightsFor });
+      out.push({ orgId: o.id, name: o.name, due: r.days >= DAY1.READOUT_DAYS, ...r });
+    }
+    res.json({ readouts: out, sentence: "Each org's day-30 readout, the one its Home shows from day 30. Steward never emails it; ask for the testimonial yourself." });
+  }));
   app.get("/ops/onboarding/:orgId", opsLimiter, opsOnly, wrap(async (req, res) => {
     const row = await BOARD.one(query, String(req.params.orgId));
     if (!row) return res.status(404).json({ error: "not_found" });
