@@ -89,9 +89,10 @@ async function cutsFor(orgId) {
   // caller of statusSql gets "Retained" on the org's own year.
   return { midCents: mid, majorCents: major, fyStartMonth: orgTime.orgFiscalStartMonth(o || {}) };
 }
-async function todayFor(orgId) {
+// NUMBERS-7: `at` pins the instant (a test sets its own clock).
+async function todayFor(orgId, at = new Date()) {
   const [o] = await query("SELECT timezone FROM orgs WHERE id=?", [orgId]);
-  return orgTime.orgToday({ timezone: o && o.timezone });
+  return orgTime.orgToday({ timezone: o && o.timezone }, at);
 }
 
 // The windows, as civil dates. W0 is the last 12 months up to today, W1 the

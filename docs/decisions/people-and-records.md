@@ -89,6 +89,12 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   person is On track, not Cooling), the ladder, Home's lapsing card, the sweep and journeys. An automatic Lapsed a
   pledge outlived goes back to Stewardship, logged; a Lapsed placed by hand stays. Drift already left out open
   pledges. `tests/real-shaped.test.js` §D: nobody who pledged at the dinner reads Lapsed or Lapsing. (FIX-60)
+- **One lapse answer, in SQL and in JS.** The tags, Communications' segment and the nightly check give one
+  answer per person: the SQL is `shared/numbers/lapse.js`, and JS reads the same inputs through
+  `lapse.inputsFor` and `lapse.stateOf` (the giving unit's last gift and pledges, the stored on-time date).
+  A last gift is a gift (money.js `isGift`: never refunded in full), on or before today, for a linked person
+  as for the person. `tests/numbers7-lapse.test.js` holds all three to `lapseRule.lapseState` over 5,000
+  generated histories. (NUMBERS-7)
 - **A machine flag in `donors.tags` is never shown as a tag.** `donorTags.js` lists the internal flags
   (`has-refused-rows:N`); every read the API returns (list, summaries, profile, CSV export) passes through
   `visibleTags`, and `PUT /donors/:id` keeps the flags the client never saw (`keepInternal`). The unread
