@@ -26,7 +26,7 @@ const os = require("os");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
-const { testNow, civilDay } = require("./clock");
+const { testNow, civilDay, dayOffset, nyNoon } = require("./clock");
 
 const ROOT = path.join(__dirname, "..");
 const HQ = "org_db3_hq";
@@ -104,7 +104,11 @@ function render(rel, build) {
      JSON.stringify({ before: { receipt_signature_name: null }, after: { receipt_signature_name: "x" } }), at(25)]);
   await q(`INSERT INTO giving_pages (id,org_id,slug,title,status,created_at) VALUES ('gp_db3_c',$1,'thistle','Sing with us','active',$2)`, [C, at(24)]);
   await q(`INSERT INTO digest_sends (id,org_id,digest_type,period_key,recipient_user_id,created_at) VALUES ('dg_db3_c',$1,'thread_nudge','day:x','u_db3_c',$2)`, [C, at(23)]);
-  for (const d of [20, 19, 18, 17, 16]) await q(`INSERT INTO user_sessions (id,user_id,org_id,created_at,last_active_at) VALUES ($1,'u_db3_c',$2,$3,$3)`, [`ses_db3_${d}`, C, at(d)]);
+  // Five sessions on five different days in the org's zone: New York noon on each. `at(d)` is
+  // now less d×24 h, and across the clocks going back (Nov 1) two of those land on one New York
+  // day when the run is between 04:00 and 05:00 UTC: four days, no "First week active" (PR #477's CI).
+  for (const d of [20, 19, 18, 17, 16]) await q(`INSERT INTO user_sessions (id,user_id,org_id,created_at,last_active_at) VALUES ($1,'u_db3_c',$2,$3,$3)`,
+    [`ses_db3_${d}`, C, new Date(nyNoon(dayOffset(-d, T))).toISOString()]);
 
   console.log("\n§1 · /admin leads to Ops, Map and Journey; /ops leads back; 404 for anyone else");
   const nav = render("client/src/pages/ops/AdminOpsNav.jsx", (React, m, RR) => React.createElement(RR.MemoryRouter, null, React.createElement(m.default)));
