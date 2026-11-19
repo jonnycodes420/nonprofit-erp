@@ -37,6 +37,9 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   journey's preview counts from the day the sweep would start it (`shared/birthday.js` `birthdayJourneyStart`). Batch Undo
   removes everything the batch made, its steps' Threads and tasks and its scheduled journey emails. A plain task on the
   Calendar has Delete, with Undo.
+- **A paused journey never acts (FLOWS-19).** Paused holds everyone already in it at the step they are on: no next step
+  opens (no Thread, task, draft or timeline line), an automatic email waits, touches are not re-spaced, and applying it as
+  a plan is refused. Turning it back on picks them up (`server/shared/journeyPaused.js`). A step already open stays open.
 - **Only an Active journey starts people (FLOWS-3).** Draft and Paused are listed, greyed out, with the reason, and every
   by-hand door refuses them (`shared/journeyStartRule.js`; `server/outreach/journeyActive.js` for the routes, and the
   start path itself in `server/shared/journeyStart.js`). Several people at once get a breakdown ("2 can start, 1 is
