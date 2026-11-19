@@ -57,6 +57,8 @@ const UNWATCHED = new Set([
   "stored_insights",
   // NUMBERS-6: the nightly check's counts, a log no screen's figure reads.
   "number_checks",
+  // FLOWS-19: the daily Re-engage list, derived from watched rows, read only by its own line.
+  "reengage_snapshots",
 ]);
 
 function schemaSql() {
