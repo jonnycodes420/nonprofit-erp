@@ -13,7 +13,7 @@
 //
 // THE PLANTED DEFECTS (ONBOARD3_PLANT on the SERVER; tests/onboard3.test.js
 // goes red on each): `no-data-in` (Looks right leaves data_in_at alone),
-// `own-year` (a year's total summed here, soft credits in), `ranking` (the
+// `own-year` (a year's total counted its own way, soft credits in), `ranking` (the
 // first-session list sorted by name, not Home's order).
 "use strict";
 const T = require("./totals");
@@ -31,12 +31,8 @@ function mount(app, ctx) {
   async function readTotals(orgId) {
     const org = await orgRow(orgId);
     const out = await T.read(query, org, await today(orgId), { heavy });
-    if (PLANT() === "own-year") {
-      for (const y of out.years) {
-        const [r] = await query(`SELECT COALESCE(SUM(ROUND(amount * 100)), 0)::bigint AS c FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?`, [orgId, y.from, y.to]);
-        y.cents = Number(r.c);
-      }
-    }
+    // The plant: a year counted by its own rule (soft credits in), not byYear's.
+    if (PLANT() === "own-year") for (const y of out.years) y.cents += (y.explain.find(x => x.key === "soft") || {}).cents || 0;
     return out;
   }
   function typedOf(body, years) {
