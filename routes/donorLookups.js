@@ -127,6 +127,14 @@ app.get("/donors/counts", requireAuth, require("../orgSummary").cached("people-c
   res.json(await require("../server/donors/peopleCounts").peopleCounts(req.user.orgId, require("../server/auth/portfolio").visibleSql(req)));
 }));
 
+// FLOWS-19 item 5 (W-1118-Donors-T6): why Re-engage's count moved since the last day Steward kept
+// its list (server/donors/reengageChange.js). A GET: it reads the kept lists, never writes one.
+app.get("/donors/reengage-change", requireAuth, require("../orgSummary").cached("reengage-change", { perUser: false }), wrap(async (req, res) => {
+  res.json(await require("../server/donors/reengageChange").change(req.user.orgId, { visible: require("../server/auth/portfolio").visibleSql(req) }));
+}));
+// The day's list, kept once per org-day by the hourly job.
+require("../jobQueue").define("reengageSnapshot", { everyMs: 60 * 60 * 1000, firstMs: 7 * 60 * 1000, run: () => require("../server/donors/reengageChange").snapshotAll() });
+
 // Birthdays from yesterday to seven days out, on the org's calendar. A wider
 // window than Home shows, on purpose: the browser decides which of these fall
 // this week (shared/birthday.js, Feb 29 on Feb 28 in a common year), from the

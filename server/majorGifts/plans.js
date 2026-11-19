@@ -519,6 +519,9 @@ app.post("/donors/:id/plan", requireAuth, requireCrm, checkWriteAccess, wrap(asy
   if (!donor) return res.status(404).json({ error: "Donor not found" });
   const [tpl] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=?", [req.body.templateId, orgId]);
   if (!tpl) return res.status(404).json({ error: "Template not found" });
+  // FLOWS-19 item 3: a paused journey starts nobody, by this door either (journeyPaused.js).
+  if ((await require("../shared/journeyPaused").pausedJourneyIds(query, orgId, [tpl.id])).size)
+    return res.status(409).json({ error: "journey_not_active", code: "journey_not_active", message: `${tpl.name} is paused. Turn it back on in Journeys before anyone can start it.` });
   const v = PL.validateTemplate({ name: tpl.name, steps: tpl.steps });
   if (!v.ok) return res.status(400).json({ error: "That template is no longer valid: " + v.errors[0].message, code: "invalid_template" });
 

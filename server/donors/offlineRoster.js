@@ -1,4 +1,5 @@
-// server/donors/offlineRoster.js · MONEY-4 (W-1107-Finance-24). EVERY ACTIVE PLAN ON RECURRING GIVING.
+// server/donors/offlineRoster.js · MONEY-4 (W-1107-Finance-24). EVERY PLAN ON RECURRING GIVING.
+// FLOWS-19 item 2 (W-1118-Finance-24): a cancelled offline plan is listed too, under Canceled.
 //
 // A staff-recorded offline monthly plan (PLEDGES-2, offline_recurring_plans)
 // never appeared in Recurring giving, which listed card subscriptions only.
@@ -13,15 +14,17 @@ const { planState, LABEL } = require("./offlinePlans");
 
 const { OFFLINE_MRR_SQL, OFFLINE_ACTIVE, MONTHLY_OF } = require("../../shared/numbers/offlineMrr");
 const INTERVAL = { weekly: "week", monthly: "month", quarterly: "quarter", annually: "year" };
+// The roster's status for an offline plan: the same three words a card plan's row can carry.
+const OFFLINE_STATUS = st => st.status === "cancelled" ? "canceled" : st.status === "behind" ? "behind" : "active";
 
 async function offlineRosterRows(query, orgId, today) {
   const plans = await query(
     `SELECT pl.id, pl.donor_id, pl.amount::float AS amount, pl.frequency, pl.start_date, pl.end_date, pl.status, pl.fund_id, pl.method,
-            pl.created_at, d.name AS donor_name, d.email AS donor_email, f.name AS fund_name
+            pl.created_at, pl.canceled_at, d.name AS donor_name, d.email AS donor_email, f.name AS fund_name
        FROM offline_recurring_plans pl
        JOIN donors d ON d.id = pl.donor_id AND d.org_id = pl.org_id AND d.deleted_at IS NULL
        LEFT JOIN fin_funds f ON f.id = pl.fund_id AND f.org_id = pl.org_id
-      WHERE pl.org_id = ? AND ${OFFLINE_ACTIVE("pl")}
+      WHERE pl.org_id = ? AND (${OFFLINE_ACTIVE("pl")} OR pl.status = 'cancelled')
       ORDER BY pl.created_at DESC`, [orgId, today]);
   if (!plans.length) return [];
   const { MONEY_SUM, GIFT } = require("../../shared/numbers/money");
@@ -36,7 +39,10 @@ async function offlineRosterRows(query, orgId, today) {
     return {
       id: p.id, source: "offline", sourceLabel: LABEL, donorId: p.donor_id, donorName: p.donor_name, donorEmail: p.donor_email,
       amount: p.amount, interval: INTERVAL[p.frequency] || p.frequency, frequency: p.frequency,
-      status: st.status === "behind" ? "behind" : "active", displayStatus: st.status === "behind" ? "behind" : "active",
+      // FLOWS-19 item 2: a cancelled plan stays listed, with the status a cancelled card plan has
+      // ("canceled", Stripe's word) and the day it was cancelled. MRR and the sustainer count read
+      // OFFLINE_ACTIVE only (offlineMrr.js), so they still leave it out.
+      status: OFFLINE_STATUS(st), displayStatus: OFFLINE_STATUS(st), canceledAt: p.canceled_at || null,
       fundId: p.fund_id || null, fundName: p.fund_name || null, method: p.method || null,
       nextChargeAt: st.nextExpected, startedAt: p.start_date, totalGiven: Number(pay.total) || 0, linkedGiftCount: Number(pay.cnt) || 0,
       stateSentence: st.sentence, pendingProposal: null,
