@@ -53,7 +53,12 @@ async function offlineRosterRows(query, orgId, today) {
 // The roster: the card plans marked as such, then every active offline plan.
 async function withOffline(query, orgId, today, cardRows) {
   for (const r of cardRows) { r.source = "card"; r.sourceLabel = "Card on file · Stripe"; }
-  return [...cardRows, ...(await offlineRosterRows(query, orgId, today))];
+  const rows = [...cardRows, ...(await offlineRosterRows(query, orgId, today))];
+  // FLOWS-19 item 2: the day a plan was cancelled, in the org's own calendar (an 11pm Eastern
+  // cancel is that day, not the next day in UTC). The screen reads `canceledOn`.
+  const [o] = rows.some(r => r.canceledAt) ? await query("SELECT timezone FROM orgs WHERE id=?", [orgId]) : [];
+  for (const r of rows) r.canceledOn = r.canceledAt ? require("../../orgTime").orgToday({ timezone: o && o.timezone }, new Date(r.canceledAt)) : null;   // ORG_TZ_SEAM_OK
+  return rows;
 }
 // MRR: the card plans' monthly sum (computed by the route) plus the offline plans', and the sentence that says so.
 async function mrrWithOffline(query, orgId, today, cardMrr) {

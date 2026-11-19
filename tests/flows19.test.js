@@ -88,8 +88,11 @@ const addDays = require("../orgTime").addDays;
   const cx = await api("POST", `/offline-plans/${plan}/cancel`, tok, { confirmed: true });
   const roster = ((await api("GET", "/recurring/roster", tok)).body || {}).subs || [];
   const off = roster.find(s => s.id === plan), cardRow = roster.find(s => s.id === `rs_f19_${run}`);
+  // The cancel day in the org's own calendar (New York), from the stored instant: at 11pm Eastern it is that day, not UTC's next.
+  const [cr] = await q(`SELECT canceled_at FROM offline_recurring_plans WHERE id=$1`, [plan]);
+  const cancelDay = cr && cr.canceled_at ? new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(cr.canceled_at)) : null;
   ok("§2 cancelled, the offline plan is listed under Canceled, with the day it was cancelled (staging: gone)",
-    pl.status === 201 && cx.status === 200 && off && off.displayStatus === "canceled" && off.status === "canceled" && !!off.canceledAt && off.source === "offline",
+    pl.status === 201 && cx.status === 200 && off && off.displayStatus === "canceled" && off.status === "canceled" && !!cancelDay && off.canceledOn === cancelDay && off.source === "offline",
     { created: pl.status, cancel: cx.status, row: off });
   ok("§2 the cancelled card plan and the cancelled offline plan carry the same status, so the Canceled filter shows both",
     cardRow && cardRow.displayStatus === "canceled" && roster.filter(s => s.displayStatus === "canceled").length === 2, roster.map(s => [s.donorName, s.displayStatus]));
