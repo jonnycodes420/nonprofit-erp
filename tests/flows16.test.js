@@ -164,7 +164,7 @@ const runq = async (sql, params) => { const r = await qq(sql, params); return { 
   // ── §5 EVERY SKIPPED ROW SAYS WHY ─────────────────────────────────────────
   console.log("\n§5 skipped journey rows");
   const tpl = `ct_f16_${run}`;
-  await q(`INSERT INTO cultivation_templates (id,org_id,name,steps,created_by,created_by_name) VALUES ($1,$2,'Birthday card','[]',$3,'Hester Quayle')`, [tpl, ORG, ME]).catch(e => console.log("tpl", e.message));
+  await q(`INSERT INTO cultivation_templates (id,org_id,name,steps,created_by,created_by_name) VALUES ($1,$2,'Birthday card','[{"type":"task","label":"Birthday card","offsetDays":0}]',$3,'Hester Quayle')`, [tpl, ORG, ME]).catch(e => console.log("tpl", e.message));
   const plan = async (key, entered) => { const id = `cp_f16_${key}_${run}`;
     await q(`INSERT INTO cultivation_plans (id,org_id,donor_id,template_id,template_name,applied_on,status,created_by,created_by_name) VALUES ($1,$2,$3,$4,'Birthday card',$5,'abandoned',$6,'Hester Quayle')`,
       [id, ORG, ids[key.replace(/\d$/, "")], tpl, entered, ME]); return id; };
@@ -184,7 +184,8 @@ const runq = async (sql, params) => { const r = await qq(sql, params); return { 
   ok("§5 \"Skipped: no address on file, Nov 12\"", ds.some(d => d.reason === "Skipped: no address on file, Nov 12"), ds.map(d => d.reason));
   ok("§5 a skip with no reason kept says so", ds.some(d => d.reason === "Reason not recorded (before Nov 16)"), ds.map(d => d.reason));
   const ans = ds.filter(d => d.id === ids.ansel);
-  ok("§5 the same person twice: each row names its entry", ans.length === 2 && new Set(ans.map(d => d.entry)).size === 2 && ans.every(d => /^Entered (Oct 2|Nov 1) · step 2, Birthday card$/.test(d.entry)), ans);
+  // FLOWS-19 item 4: the journey has one step, so it is "step 1" (this read "step 2", the defect).
+  ok("§5 the same person twice: each row names its entry", ans.length === 2 && new Set(ans.map(d => d.entry)).size === 2 && ans.every(d => /^Entered (Oct 2|Nov 1) · step 1, Birthday card$/.test(d.entry)), ans);
 
   // ── §6 NO RAW CODE ON A BANNER, AND SAMPLES SAY SO ────────────────────────
   console.log("\n§6 sentences, never codes");

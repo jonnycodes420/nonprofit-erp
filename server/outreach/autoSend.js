@@ -13,6 +13,7 @@ const { newId } = require("../shared/newId");   // IDS-1: every new row id is pr
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../../emailCompose");
 const SENDS_OFF = require("./sendsOff");   // SENDS-1: Off means nothing goes out
+const JP = require("../shared/journeyPaused");   // FLOWS-19 item 3: a paused journey never acts
 
 const routers = {
   r1: express.Router(),
@@ -96,7 +97,8 @@ async function processJourneyAutoSends({ orgId = null, now = new Date(), limit =
     // SENDS-1: with the org's email Off, a due step goes back to a draft she sends herself. Nothing sends.
     if (!(await SENDS_OFF.master(oid)).on) {
       const today = (await orgSendClock(oid, now)).date;
-      for (const send of list.filter(s => String(s.send_on) <= today)) {
+      const held = await JP.pausedJourneyIds(query, oid, list.map(s => s.template_id));
+      for (const send of list.filter(s => String(s.send_on) <= today && !held.has(s.template_id))) {
         const [step] = await query(`SELECT * FROM cultivation_plan_steps WHERE id=? AND org_id=?`, [send.step_id, oid]);
         if (await skipAutoSend(oid, send, "email_off")) { out.drafted = (out.drafted || 0) + 1; if (step) await journeyTemplateDraft(oid, send.donor_id, step).catch(() => {}); }
       }
@@ -116,6 +118,8 @@ async function processJourneyAutoSends({ orgId = null, now = new Date(), limit =
       try {
         const [step] = await query(`SELECT s.*, p.status AS plan_status, p.template_name FROM cultivation_plan_steps s JOIN cultivation_plans p ON p.id = s.plan_id WHERE s.id=? AND s.org_id=?`, [send.step_id, oid]);
         if (!step || step.status !== "open" || step.plan_status !== "active") { await skipAutoSend(oid, send, "step_closed"); out.skipped++; continue; }
+        // FLOWS-19 item 3: a paused journey sends nothing; the step waits and goes once it is resumed.
+        if ((await JP.pausedJourneyIds(query, oid, [send.template_id])).size) { out.waited++; continue; }
         const on = await autoStepOn(oid, send.template_id, send.seq);
         const t = await emailCompose.templateFor(oid, send.email_template_id);
         if (!on || on.id !== send.auto_step_id || !t) {

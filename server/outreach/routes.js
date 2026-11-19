@@ -53,17 +53,13 @@ app.get("/campaigns/templates", requireAuth, wrap(async (req, res) => {
   // PARITY-1 E — which starters a person here has already made their own.
   const reviewedRows = await query("SELECT starter_key FROM email_starter_reviews WHERE org_id=?", [orgId]).catch(() => []);
   const reviewed = new Set(reviewedRows.map(r => r.starter_key));
-  // SWEEP-3: a subject on a template card is filled with one of her donors
-  // (the newest giver, as the editor's preview is), never the sample "Margaret".
-  const [giver] = await query(`SELECT d.name, d.total_giving, g.amount FROM donors d JOIN gifts g ON g.donor_id=d.id AND g.org_id=d.org_id
-                                WHERE d.org_id=? AND d.deleted_at IS NULL AND COALESCE(d.name,'') <> ''
-                                ORDER BY g.date DESC NULLS LAST, g.id LIMIT 1`, [orgId]).catch(() => []);
-  const GR = await import("../../shared/greeting.js");
-  const money = n => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 });
+  // SWEEP-3: a template card is filled with one of her donors (the newest giver), never the sample "Margaret".
+  // FLOWS-19 item 1: picked and filled by previewPerson.js, the one fill the editor and the send use.
+  const PP = require("./previewPerson");
+  const sample = await PP.previewPerson(query, orgId, await PP.newestGiver(query, orgId)).catch(() => null);
   res.json({
     orgName: dfName,
-    sampleDonor: giver ? { name: giver.name, firstName: GR.firstNames(giver) || String(giver.name).split(/\s+/)[0],
-      giftAmount: money(giver.amount), totalGiving: money(giver.total_giving) } : null,
+    sampleDonor: sample,
     // The org's own colours and logo, so the gallery is THEIR email and not a
     // stock one with their name pasted in.
     brand: theme ? { band: theme.band, bandFg: theme.bandFg, logo: theme.logoDataUri || theme.logoAbsUrl || null, displayName: theme.displayName } : null,
@@ -123,7 +119,8 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
     : t("giver", 2);
   const names = donors.slice(0, 2).map(d => displayNameCase(d.name || ""));
   // FLOWS-14 (W-1116-Fundraising-15X): the preview's gift is the last GIFT (shared/numbers/lastGift.js), never a refund row.
-  const firstGift = donors[0] ? await require("../donors/lastGiftWords").lastGiftRow(query, req.user.orgId, donors[0].id) : null;
+  // FLOWS-19 item 1: filled by previewPerson.js, as the starter cards are.
+  const first = donors[0] ? await require("./previewPerson").previewPerson(query, orgId, { ...donors[0], name: displayNameCase(donors[0].name || "") }) : null;
   res.json({
     count: donors.length,
     names: donors.slice(0, 8).map(d => ({ id: d.id, name: displayNameCase(d.name || ""), email: d.email })),
@@ -140,9 +137,7 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
     // FLOWS-15 item 1: never-givers this letter leaves out, and how many a tick would bring in.
     neverGivenLeftOut: (aud.leftOut.find(g => g.reason === "no_first_gift_version") || { count: 0 }).count,
     neverGiverOutcome: aud.neverGiverOutcome || "no_claim",
-    first: donors[0] ? { id: donors[0].id, name: displayNameCase(donors[0].name || ""), firstName: String(donors[0].name || "").trim().split(/\s+/)[0] || "Margaret",
-      ...(firstGift ? { giftAmount: `$${Number(firstGift.amount).toLocaleString()}` } : {}),
-      ...(Number(donors[0].total_giving) > 0 ? { totalGiving: `$${Number(donors[0].total_giving).toLocaleString()}` } : {}) } : null,
+    first: first ? { ...first, firstName: first.firstName || "Margaret" } : null,
     // Who the segment holds and this send will not reach, by reason, with the
     // first names of each so "3 left out" opens onto people, not a number.
     leftOutCount: aud.leftOutCount,
@@ -333,7 +328,9 @@ app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, 
   const html = blocksHtml || await brandEmailHeaderHtml(orgId)
     + T.renderMergeFields(campaign.body || "", {
         first_name: first, donor_name: me?.name || first, greeting: first,
-        org_name: displayNameCase(org?.name || ""), gift_amount: "$250", total_giving: "$4,150",
+        org_name: displayNameCase(org?.name || ""),
+        // FLOWS-19 item 1: a test read as a person carries their last real gift (or none), never the sample.
+        gift_amount: asPerson ? asPerson.fields.last_gift_amount : "$250", total_giving: "$4,150",
         year: String(new Date().getUTCFullYear()),
       })
     + testNote;

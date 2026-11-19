@@ -14,6 +14,8 @@ const emailCompose = require("../../emailCompose");
 // RACE-1 — one journey writer per person at a time, and a TEST_MODE hold.
 const { withPersonLock } = require("./personLock");
 const raceHold = require("./raceHold");
+// FLOWS-19 item 3 — a paused journey never acts.
+const JP = require("./journeyPaused");
 
 function mount(ctx) {
 const {
@@ -339,8 +341,9 @@ async function journeyTouchGap(orgId) {
 async function spaceDonorTouches(orgId, donorId) {
   const J = await journeyMod();
   const plans = await query(
-    `SELECT id, template_name AS name, priority, applied_on FROM cultivation_plans
-      WHERE org_id=? AND donor_id=? AND status='active'`, [orgId, donorId]);
+    `SELECT p.id, p.template_name AS name, p.priority, p.applied_on FROM cultivation_plans p
+      LEFT JOIN cultivation_templates t ON t.id = p.template_id AND t.org_id = p.org_id
+      WHERE p.org_id=? AND p.donor_id=? AND p.status='active' AND NOT COALESCE(${JP.PAUSED("t")}, false)`, [orgId, donorId]);   // FLOWS-19: a paused journey's steps don't move
   if (plans.length < 2) return [];
   const steps = await query(
     `SELECT id, plan_id, seq, due_date, status FROM cultivation_plan_steps
@@ -457,9 +460,12 @@ async function advanceCultivationPlanNow(orgId, donorId, { actorId, actorName, t
   if (!live.length) return plans[0].id;
 
   // The candidates: each plan's next pending step. The soonest wins.
+  // FLOWS-19 item 3: a paused journey's people wait at the step they are on (journeyPaused.js).
+  const paused = await JP.pausedJourneyIds(query, orgId, live.map(l => l.plan.template_id));
   const cands = [];
   for (const { plan, steps } of live) {
     if (steps.some(s => s.status === "open")) continue;
+    if (paused.has(plan.template_id)) continue;
     const nextSeq = PL.nextPendingSeq(steps);
     const step = steps.find(s => Number(s.seq) === Number(nextSeq));
     if (step) cands.push({ plan, step });
