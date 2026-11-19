@@ -25,6 +25,7 @@ const { query } = require("../../db");
 const FS = require("../../figureSources");
 const NUM = require("../../numbers");
 const money = require("../../money");
+const { isGift: isGiftRow } = require("../../shared/numbers/money");
 const orgTime = require("../../orgTime");
 const { statementLines } = require("../../statementTotals");
 const DS = require("../../donorStatus");
@@ -91,9 +92,10 @@ const RULES = {
     screens: "the profile's household panel, household totals" },
 };
 
-async function orgToday(orgId) {
+// NUMBERS-7: `at` pins the instant (a test sets its own clock); the org's own day of it.
+async function orgToday(orgId, at = new Date()) {
   const [o] = await query(`SELECT timezone FROM orgs WHERE id = ?`, [orgId]);
-  return orgTime.orgToday(o || {});
+  return orgTime.orgToday(o || {}, at);
 }
 
 // NUMBERS-6 · the after-battery check judges only people the APP wrote. The app stamps an actor
@@ -114,7 +116,7 @@ async function checkOrg(orgId, opts = {}) {
   const add = (rule, example) => { (problems[rule] = problems[rule] || []).push(example); };
   const [org] = await query(`SELECT id, name FROM orgs WHERE id = ?`, [orgId]);
   if (!org) throw new Error(`no org ${orgId}`);
-  const today = await orgToday(orgId);
+  const today = await orgToday(orgId, opts.at || new Date());
   const yearStart = `${today.slice(0, 4)}-01-01`;
   // NUMBERS-2: "This year" on the profile is the org's own fiscal year.
   const [vo] = await query(`SELECT timezone, vocabulary_json FROM orgs WHERE id = ?`, [orgId]);
@@ -276,18 +278,21 @@ async function checkOrg(orgId, opts = {}) {
     const tagged = new Map((await query(st.sql, st.args)).map(r => [r.donor_id, r]));
     // FIX-51: the Communications segment's people are the tags' Lapsing and Lapsed.
     const quiet = await DS.quietIds(orgId, today);
-    // INSIGHTS-1: lapsing respects the person's rhythm (lapseRule.js), so the check reads it too
-    // STATUS-1: the stored answer the tags read (shared/numbers/lapse.js ON_TIME_THROUGH), the same fragment
-    const rhythms = new Map((await query(`SELECT d.id AS donor_id, ${require("../../shared/numbers/lapse").ON_TIME_THROUGH("d.id")} AS expected_next FROM donors d WHERE d.org_id = ?`, [orgId])).map(r => [r.donor_id, r]));
-    // FIX-60: a pledge is giving activity (lapseRule.js pledgeHold), so the check reads pledges too
-    const pledgesOf = await require("../../shared/numbers/lapse").pledgesFor(query, orgId, null, today);
+    // NUMBERS-7: the rule's inputs read the tags' way (shared/numbers/lapse.js inputsFor):
+    // the giving unit's last gift and pledges (POLISH-4), the stored on-time date
+    // (INSIGHTS-1, STATUS-1) and the pledge hold (FIX-60). Only the person's own last
+    // gift is worked out here, from the gift rows.
+    const L = require("../../shared/numbers/lapse");
+    const inputs = await L.inputsFor(query, orgId, today);
     for (const [donorId, gs] of byDonor) {
       // TRUTH-1: a credit row is not a gift: it neither keeps anyone current nor counts toward a level
       const hardGs = gs.filter(g => !CREDIT.has(String(g.type || "").trim().toLowerCase()));
-      const pos = hardGs.filter(g => c(g.amount) > 0 && day(g.date) <= today);
+      // NUMBERS-7: their last gift is a gift (money.js isGift: above zero, not a credit row,
+      // not refunded in full; FLOWS-11), dated on or before today. A refund in full kept them current here.
+      const pos = gs.filter(g => isGiftRow(g) && day(g.date) && day(g.date) <= today);
       if (!pos.length) continue;
       const last = pos.map(g => day(g.date)).sort().pop();
-      const want = lapseRule.lapseState(last, today, rhythms.get(donorId) || null, pledgesOf.get(donorId) || null);
+      const want = L.stateOf(donorId, last, inputs);
       const t = tagged.get(donorId);
       const d = donors.find(x => x.id === donorId);
       const imported = d && d.imported_total != null;

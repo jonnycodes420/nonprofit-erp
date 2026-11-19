@@ -27,7 +27,8 @@
 // (YYYY-MM-DD text or a DATE), their id expression, and the org's today, and
 // returns { sql, args } with `?` placeholders in the order the text reads them.
 "use strict";
-const { bounds } = require("../../lapseRule");
+const lapseRule = require("../../lapseRule");
+const { bounds } = lapseRule;
 
 // A pledge is "made" on the earliest of the day it was recorded, its due date
 // and its first installment's due date, so an old system's pledge imported
@@ -61,16 +62,39 @@ const UNIT_LINK_TYPES = Object.freeze(["owner", "works_at", "spouse", "partner"]
 const LINKED = idExpr => `(SELECT CASE WHEN lr.donor_id_a = ${idExpr} THEN lr.donor_id_b ELSE lr.donor_id_a END
     FROM donor_relationships lr WHERE (lr.donor_id_a = ${idExpr} OR lr.donor_id_b = ${idExpr})
      AND lr.relationship_type IN ('owner','works_at','spouse','partner'))`;
-// The latest last gift among the people linked to `idExpr` (NULL when none).
-const linkedLastSql = idExpr => `(SELECT MAX(GREATEST(NULLIF(LEFT(lk.last_gift_date, 10), ''), NULLIF(LEFT(lk.imported_last_gift_date, 10), '')))
+// NUMBERS-7 · A LINKED PERSON'S LAST GIFT, ON OR BEFORE TODAY. Their stored last
+// gift is their latest gift by date, and a gift dated after today (not scheduled:
+// a post-dated cheque, a typo) is in it. A person's own last gift is on or before
+// today (statusSql), so a partner's gift dated next month kept them off Lapsed
+// (tests/numbers7-lapse.test.js found seven in five thousand). The stored date
+// when it is today or before; when it is after, their latest gift on or before
+// today, read from their gifts (money.js GIFT). `lk` is the linked donors row;
+// `today` is a civil date, written into the text (no placeholder, so no caller's
+// argument order moves) after it is checked to be one.
+const civilLiteral = today => {
+  const t = day(today);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) throw new Error(`lapse: today must be YYYY-MM-DD, got ${today}`);
+  return `'${t}'`;
+};
+const LINK_LAST = (lk, today) => {
+  if (today == null) return `GREATEST(NULLIF(LEFT(${lk}.last_gift_date, 10), ''), NULLIF(LEFT(${lk}.imported_last_gift_date, 10), ''))`;
+  const T = civilLiteral(today), stored = `NULLIF(LEFT(${lk}.last_gift_date, 10), '')`, imp = `NULLIF(LEFT(${lk}.imported_last_gift_date, 10), '')`;
+  return `GREATEST(CASE WHEN ${stored} <= ${T} THEN ${stored}
+                        WHEN ${stored} > ${T} THEN (SELECT MAX(LEFT(lg.date, 10)) FROM gifts lg WHERE lg.org_id = ${lk}.org_id AND lg.donor_id = ${lk}.id
+                                                    AND ${require("./money").GIFT("lg")} AND LEFT(lg.date, 10) <= ${T}) END,
+                   CASE WHEN ${imp} <= ${T} THEN ${imp} END)`;
+};
+// The latest last gift among the people linked to `idExpr` (NULL when none), on
+// or before `today` when it is given.
+const linkedLastSql = (idExpr, today = null) => `(SELECT MAX(${LINK_LAST("lk", today)})
     FROM donors lk WHERE lk.id IN ${LINKED(idExpr)} AND lk.deleted_at IS NULL)`;
 // The unit's last gift: the person's own, or a linked person's when later.
 // Only for someone with a last gift of their own: a person who never gave (or
 // whose gifts carry no date) has not "given before", whoever they are linked to.
 // COUNTS-1: `unit` (from unitSetsSql below) hands in the linked people's last
 // gift as a column already read for the whole org, instead of a read per person.
-const unitLast = (lastExpr, idExpr, unit = null) => idExpr
-  ? `(CASE WHEN (${lastExpr}) IS NULL THEN NULL ELSE GREATEST((${lastExpr})::date, (${unit ? unit.linkedLast : linkedLastSql(idExpr)})::date) END)` : `(${lastExpr})::date`;
+const unitLast = (lastExpr, idExpr, unit = null, today = null) => idExpr
+  ? `(CASE WHEN (${lastExpr}) IS NULL THEN NULL ELSE GREATEST((${lastExpr})::date, (${unit ? unit.linkedLast : linkedLastSql(idExpr, today)})::date) END)` : `(${lastExpr})::date`;
 
 // COUNTS-1 · LOST, AND LAPSED 12 TO 24 MONTHS. Re-engage's people split in
 // two by the unit's last gift (lapseRule.LOST_MONTHS): Lost is a last gift
@@ -79,7 +103,7 @@ const unitLast = (lastExpr, idExpr, unit = null) => idExpr
 // TRUTH-1's counts pass read lostSql; nothing else draws the line.
 function lostSql(d, today) {
   const re = reengageSql(d, today);
-  return { sql: `(${re.sql} AND ${unitLast(LAST_ON_RECORD(d), `${d}.id`)} < ?::date)`, args: [...re.args, bounds(today).lostBefore] };
+  return { sql: `(${re.sql} AND ${unitLast(LAST_ON_RECORD(d), `${d}.id`, null, today)} < ?::date)`, args: [...re.args, bounds(today).lostBefore] };
 }
 
 // The person has an open pledge past due.
@@ -131,13 +155,13 @@ function rhythmAheadSql(idExpr, today) {
 // with the same rule; without it, each person's are read where they stand.
 const holdOf = (idExpr, today, unit) => (unit ? { sql: `COALESCE(${unit.held}, false)`, args: [] } : holdSql(idExpr, today));
 function lapsedSql(lastExpr, today, idExpr = null, unit = null) {
-  const d = unitLast(lastExpr, idExpr, unit), b = bounds(today);
+  const d = unitLast(lastExpr, idExpr, unit, today), b = bounds(today);
   if (!idExpr) return { sql: `${d} <= ?::date`, args: [b.lapsedOnOrBefore] };
   const p = holdOf(idExpr, today, unit);
   return { sql: `(${d} <= ?::date AND NOT ${p.sql})`, args: [b.lapsedOnOrBefore, ...p.args] };
 }
 function lapsingSql(lastExpr, today, idExpr = null, unit = null) {
-  const d = unitLast(lastExpr, idExpr, unit), b = bounds(today);
+  const d = unitLast(lastExpr, idExpr, unit, today), b = bounds(today);
   if (!idExpr) return { sql: `${d} BETWEEN ?::date AND ?::date`, args: [b.lapsingFrom, b.lapsingOnOrBefore] };
   const r = rhythmAheadSql(idExpr, today), p = holdOf(idExpr, today, unit);
   return { sql: `(${d} BETWEEN ?::date AND ?::date AND NOT ${r.sql} AND NOT ${p.sql})`, args: [b.lapsingFrom, b.lapsingOnOrBefore, ...r.args, ...p.args] };
@@ -145,7 +169,7 @@ function lapsingSql(lastExpr, today, idExpr = null, unit = null) {
 // No gift in the last 12 months, and a pledge holds them (they read Current,
 // and are told why).
 function pledgeHeldSql(lastExpr, today, idExpr) {
-  const d = unitLast(lastExpr, idExpr), p = holdSql(idExpr, today);
+  const d = unitLast(lastExpr, idExpr, null, today), p = holdSql(idExpr, today);
   return { sql: `(${d} <= ?::date AND ${p.sql})`, args: [bounds(today).lapsedOnOrBefore, ...p.args] };
 }
 
@@ -153,7 +177,7 @@ function pledgeHeldSql(lastExpr, today, idExpr) {
 // for someone who has never given; lapseRule.lapseState in SQL, case for case.
 function stateSql(lastExpr, today, idExpr) {
   const o = overdueSql(idExpr, today), h = holdSql(idExpr, today), b = bounds(today), r = rhythmAheadSql(idExpr, today);
-  const d = unitLast(lastExpr, idExpr);
+  const d = unitLast(lastExpr, idExpr, null, today);
   return {
     sql: `(CASE WHEN ${o.sql} THEN 'pledge_overdue' WHEN ${h.sql} THEN 'giving' WHEN (${lastExpr}) IS NULL THEN NULL
                 WHEN ${d} <= ?::date THEN 'lapsed' WHEN ${d} <= ?::date AND NOT ${r.sql} THEN 'lapsing' ELSE 'giving' END)`,
@@ -187,7 +211,7 @@ function sql(state, lastExpr, today, idExpr = null) {
 function unitSetsSql(orgId, today) {
   const sql = `
     SELECT u.me AS donor_id, MAX(u.linked_last) AS linked_last, BOOL_OR(u.held) AS held FROM (
-      SELECT lr.me, GREATEST(NULLIF(LEFT(lk.last_gift_date, 10), ''), NULLIF(LEFT(lk.imported_last_gift_date, 10), ''))::date AS linked_last,
+      SELECT lr.me, (${LINK_LAST("lk", today)})::date AS linked_last,
              (lr.other IN (SELECT hp.donor_id FROM hp)) AS held
         FROM (SELECT r.donor_id_a AS me, r.donor_id_b AS other FROM donor_relationships r
                WHERE r.org_id = ? AND r.relationship_type IN ('owner','works_at','spouse','partner')
@@ -217,9 +241,42 @@ async function pledgesFor(query, orgId, donorId, today) {
     [t, t, orgId, ...(donorId ? [ids] : [])]);
   if (donorId) for (const r of rows) if (r.donor_id !== donorId) r.overdue = false;
   if (donorId) return rows;
-  const by = new Map();
-  for (const r of rows) (by.get(r.donor_id) || by.set(r.donor_id, []).get(r.donor_id)).push(r);
+  const own = new Map();
+  for (const r of rows) (own.get(r.donor_id) || own.set(r.donor_id, []).get(r.donor_id)).push(r);
+  // NUMBERS-7: the whole org's are each person's giving unit's too, as the one
+  // person's are above (holdSql reads LINKED). This map held only their own, so
+  // the nightly check called a person Lapsed whom a partner's pledge held.
+  const by = new Map([...own].map(([id, rs]) => [id, [...rs]]));
+  const links = await query(`SELECT lr.donor_id_a AS a, lr.donor_id_b AS b FROM donor_relationships lr
+                              WHERE lr.org_id = ? AND lr.relationship_type IN (${UNIT_LINK_TYPES.map(t => `'${t}'`).join(",")})`, [orgId]);
+  for (const { a, b } of links) for (const [me, other] of [[a, b], [b, a]]) {
+    if (me === other) continue;
+    for (const r of own.get(other) || []) (by.get(me) || by.set(me, []).get(me)).push({ ...r, overdue: false });
+  }
   return by;
 }
 
-module.exports = { ON_TIME_THROUGH, LAST_ON_RECORD, reengageSql, lostSql, UNIT_LINK_TYPES, LINKED, linkedLastSql, PLEDGE_MADE, overdueSql, holdSql, rhythmAheadSql, lapsedSql, lapsingSql, pledgeHeldSql, stateSql, sql, pledgesFor, unitSetsSql };
+// NUMBERS-7 · ONE ANSWER IN JAVASCRIPT, READ THE TAGS' WAY. What lapseRule.lapseState
+// needs beside a person's own last gift, for every person of an org at once, from
+// the same SQL the tags read: the giving unit's last gift (unitSetsSql's
+// linked_last, POLISH-4), their pledges and their unit's (pledgesFor), and their
+// stored on-time date (ON_TIME_THROUGH). The nightly check read only the person's
+// own gifts and pledges, and counted a gift refunded in full, so it called two of
+// Justin's Place's people lapsed whom the tags held (three nights running).
+async function inputsFor(query, orgId, today) {
+  const u = unitSetsSql(orgId, today);
+  // A civil date as text (to_char): a DATE read into a JS Date is a moment, and its day moves with the zone.
+  const linkedLast = new Map((await query(`WITH ${u.with} SELECT donor_id, to_char(linked_last, 'YYYY-MM-DD') AS linked_last FROM unit WHERE linked_last IS NOT NULL`, u.args))
+    .map(r => [r.donor_id, r.linked_last]));
+  const rhythms = new Map((await query(`SELECT d.id AS donor_id, ${ON_TIME_THROUGH("d.id")} AS expected_next FROM donors d WHERE d.org_id = ?`, [orgId]))
+    .filter(r => r.expected_next).map(r => [r.donor_id, { expected_next: r.expected_next }]));
+  return { today: day(today), linkedLast, rhythms, pledges: await pledgesFor(query, orgId, null, today) };
+}
+// One person's state: their own last gift (a gift by money.js isGift, dated on or
+// before today) and inputsFor's answer for the org. The tags' stateSql, in JS.
+function stateOf(donorId, ownLast, inputs) {
+  const last = lapseRule.unitLast(ownLast, inputs.linkedLast.get(donorId));
+  return lapseRule.lapseState(last, inputs.today, inputs.rhythms.get(donorId) || null, inputs.pledges.get(donorId) || null);
+}
+
+module.exports = { ON_TIME_THROUGH, LAST_ON_RECORD, reengageSql, lostSql, UNIT_LINK_TYPES, LINKED, linkedLastSql, PLEDGE_MADE, overdueSql, holdSql, rhythmAheadSql, lapsedSql, lapsingSql, pledgeHeldSql, stateSql, sql, pledgesFor, unitSetsSql, inputsFor, stateOf };
