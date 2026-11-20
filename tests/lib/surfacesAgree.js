@@ -58,7 +58,9 @@
 //             flows11 (FLOWS-11, tests/lib/flows11Checks.js: giftDialog, refundedProfile,
 //             householdStatement, splitTransactions, beforeSteward, deletedThanks),
 //             flows14 (FLOWS-14, tests/lib/flows14Checks.js: orphanRefunds, averageFoots,
-//             askOwnGifts, lastGiftIsGift, thanksRule, portfolioFoots)
+//             askOwnGifts, lastGiftIsGift, thanksRule, portfolioFoots),
+//             flows20 (FLOWS-20, tests/lib/flows20Checks.js: journeyCounts, the list header vs
+//             How it is going vs the rows, against entries of people on file)
 //   only      [names]: run just these checks (FLOWS-11)
 //   plantEvent (eventId, { rep, kiosk }) => { rep, kiosk }: change an event's
 //             bodies before its checks, to prove they can go red (FIX-59)
@@ -1242,6 +1244,8 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
 
   // ── FLOWS-18 · everyone who has given is a donor (tests/lib/flows18Checks.js) ──
   if (!skipSet.has("flows18")) await require("./flows18Checks").flows18Checks({ orgId, get, q, agree, skip });
+  // ── FLOWS-20 · a journey's four counts: list header = How it is going = its rows (tests/lib/flows20Checks.js) ──
+  if (!skipSet.has("flows20")) await require("./flows20Checks").flows20Checks({ orgId, get, q, agree, skip });
 
   // TRUTH-1: a disagreement logged in docs/defects.md (tests/lib/knownDefects.js),
   // at exactly the value its defect predicts, is still found and still printed,

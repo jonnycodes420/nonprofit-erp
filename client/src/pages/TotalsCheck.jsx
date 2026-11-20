@@ -84,6 +84,18 @@ export default function TotalsCheck() {
     try { const r = await apiFetch("/onboard/totals/ask-jonathan", { method: "POST", body: JSON.stringify({ key, typed: typed[key] || "" }) }); setAsked(a => ({ ...a, [key]: r.sentence })); }
     catch (e) { setErr((e && e.message) || "That did not reach Jonathan. Try again."); }
   };
+  // FLOWS-20 (ONBOARD-3 Area 5): Ask Jonathan beside Looks right, always there. It asks about each
+  // year with a figure typed in (or every year shown, when none is) and puts each on the /ops board.
+  const [askedAll, setAskedAll] = useState("");
+  const askAll = async () => {
+    setErr("");
+    const keys = d.years.filter(y => String(typed[y.key] || "").trim()).map(y => y.key);
+    const list = keys.length ? keys : d.years.map(y => y.key);
+    try {
+      for (const k of list) { const r = await apiFetch("/onboard/totals/ask-jonathan", { method: "POST", body: JSON.stringify({ key: k, typed: typed[k] || "" }) }); setAsked(a => ({ ...a, [k]: r.sentence })); }
+      setAskedAll("Jonathan has it: it is on his list, and he will go through it with you. You can still press Looks right.");
+    } catch (e) { setErr((e && e.message) || "That did not reach Jonathan. Try again."); }
+  };
   const looksRight = async () => {
     setBusy(true); setErr("");
     try {
@@ -113,7 +125,9 @@ export default function TotalsCheck() {
     {err ? <div role="alert" style={{ marginTop: 12, fontSize: 13.5, fontWeight: 600 }}>{err}</div> : null}
     <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 18 }}>
       <button type="button" data-testid="totals-looks-right" disabled={busy} onClick={looksRight} style={{ ...btn(true), opacity: busy ? 0.6 : 1 }}>{busy ? "Saving…" : "Looks right"}</button>
-      <span style={{ fontSize: 12.5, color: C.muted }}>A difference never holds you up. Press Looks right and Jonathan can look at it with you later.</span>
+      {askedAll ? <span data-testid="totals-asked-all" style={{ fontSize: 13 }}>{askedAll}</span>
+        : <button type="button" data-testid="totals-ask-all" disabled={!d.years.length} onClick={askAll} style={btn(false)}>Ask Jonathan</button>}
+      <span style={{ fontSize: 12.5, color: C.muted }}>A difference never holds you up. Ask Jonathan and it goes on his list; Looks right still works.</span>
     </div>
     {d.lastCheck ? <p style={{ fontSize: 12.5, color: C.muted, marginTop: 14 }}>{d.lastCheck.by} said these look right on {day(String(d.lastCheck.at).slice(0, 10))}.</p> : null}
     {!d.due ? <button type="button" onClick={() => nav("/dashboard")} style={{ ...btn(false), border: 0, color: C.emerald, padding: 0, marginTop: 14, display: "block" }}>Back to Home</button> : null}

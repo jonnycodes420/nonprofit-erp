@@ -41,7 +41,7 @@ import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
 import { MicGlyph, openTellSteward } from "./TellStewardOpen";   // VOICE-1
 import BeforeYourMeeting, { useBeforeMeeting } from "./BeforeYourMeeting";   // VOICE-3
 import { told } from "../lib/stewardTold"; import { useProfileRefresh } from "../lib/profileRefresh";   // COUNTS-1
-import { ComingUpMain, OPEN_PROPOSAL_KEYS, PROFILE_TABS, PROPOSAL_STAGE_LABEL, SUGGEST_KINDS, TAB_KIND, lateWords } from "./profile/profileShared";
+import { useProfileFinish } from "./profile/ProfileFinish"; import { ComingUpMain, OPEN_PROPOSAL_KEYS, PROFILE_TABS, PROPOSAL_STAGE_LABEL, SUGGEST_KINDS, TAB_KIND, lateWords } from "./profile/profileShared";
 import { EditDonorModal, FollowUpTaskModal, GiftLinkModal, LogTouchpointModal } from "./profile/modals";
 import { DonorPhotoControl } from "./profile/ProfilePhoto";
 import { RailFacts } from "./profile/RailFacts";
@@ -70,10 +70,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const { pickJourney, confirmAddToJourney, saveGiftEdit, deleteGift, addGift, addPledge, setPledgeStatus, deletePledge, pledgeEdit, setPledgeEdit, savePledgeEdit, resendPledgeReminder, addPlannedGift, deletePlannedGift, uploadMaterial } = useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, journey, setJourneyList, setJourneySuggest, setAddPick, setAddPreview, setAddErr, onInteractionAdded, setJourney, journeyBusy, setJourneyBusy, addPick, setGiftLoading, loadGiftsFull, loadPlannedGifts, loadPledges, dpTab, fundAffinity, loadMaterials, loadFundAffinity, setCampaigns, giftCfDefs, giftsFull, setGiftEditId, giftEditForm, setGiftSaving, receiptForGift, addGiftForm, setAddGiftForm, setGiftErr, addGiftIdemRef, setAddGiftOpen, refreshSoftCredit, addPledgeIdemRef, pledgeForm, setPledgeForm, setAddPledgeOpen, setPledgeSaving, setPledgeResendBusyId, setPledgeResentIds, pgForm, setPgForm, setAddPgOpen, setPgSaving, matNote, setMatNote, setMatUploading });
   const { viewMaterial, deleteMaterial, impactPdfLoading, videoThanksOpen, setVideoThanksOpen, volOpen, setVolOpen, makeVolOpen, setMakeVolOpen, setMadeVol, isVolunteer, yourPageMsg, sendYourPageLink, downloadImpactSummary, exportGiftsCSV, saveStep, deleteStep, openForNextMove, yearDrill, setYearDrill, snoozing, snoozeErr, snoozeThread, contactPerson, headName, callName, noGifts, headTags, aboutStatusTags } = useProfileFiles({ loadMaterials, donor, onInteractionAdded, setToldNonce, loadRel, reloadProps, loadDpThread, loadGiftsFull, giftCfDefs, giftsFull, stepEdit, setStepEdit, setStepBusy, localInts, rel, dpTab, setDpTab, pledges, actMode, recurringSub, dpItems, openProposals, aiMap, getAI, dpItemsLoaded, gifts, giftLoading, giftReadErr, figs, status, railData });
   const { railNextNode, railPledgeNode, nothingLogged, nextMoveNode } = useProfileRail({ donor, isReadOnly, rel, setLogMeeting, stepEdit, setStepEdit, stepBusy, dpThread, dpItems, setConvoOpen, setPlanOpen, openProposals, proposalsKnown, loadDpThread, saveStep, deleteStep, snoozing, snoozeErr, snoozeThread, callName, setDpTab, pledges, setAddGiftForm, setAddGiftOpen, tasks, gifts, giftLoading, giftReadErr, giftsFull, tlCounts, getAI, org, setSuggestOpen, isTeam, openForNextMove });
-  const onTaskOutcome=()=>setConvoOpen(true);   // FLOWS-17: a call or meeting ticked on the profile says how it went
+  const { onTaskOutcome, finishUi } = useProfileFinish({ donor });   // FLOWS-20: a call or meeting ticked on the profile opens the Tasks page's finish dialog
 
   return(
-    <div className="fade-in page-takeover dp3-frame" data-testid="donor-profile" ref={frameRef} style={{position:"relative",background:T.bg,display:"flex",flexDirection:"column"}}>
+    <div className="fade-in page-takeover dp3-frame" data-testid="donor-profile" ref={frameRef} style={{position:"relative",background:T.bg,display:"flex",flexDirection:"column"}}>{finishUi}
       {/* PROFILE-2 Part 1: the profile is the page, not a fixed panel over it.
           HOTFIX-1 made it position:fixed with overflow:hidden, and once
           INSIGHTS-1 and IMPORT-5 grew the header to 540px nothing over it

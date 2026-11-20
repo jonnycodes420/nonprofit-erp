@@ -63,7 +63,8 @@ export function BulkLogTouch({ ids, onClose, onDone }) {
         skipHad: skipHad && already > 0, ...(follow ? { followUp: { due } } : {}) }) });
       onDone && onDone(r);
       onClose && onClose();
-      offerUndo({ undoSeconds: 60, message: `Logged to ${people(r.people)}`, undoAction: async () => {
+      // FLOWS-20: the batch is a line in Recent changes from the server (listed), with this same undo.
+      offerUndo({ undoSeconds: 60, listed: true, message: `Logged to ${people(r.people)}`, undoAction: async () => {
         await apiFetch(r.undo, { method: "POST", body: "{}" });
         onDone && onDone(null);
         return { restored: r.people };

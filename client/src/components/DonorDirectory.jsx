@@ -366,7 +366,7 @@ function BulkAutoEmail({ids,disabled,onDone}){
     </select>
   );
 }
-function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",onPickView,onSaveView,onDeleteView,onPageSize,includeScreening=false,peopleView="donors",setPeopleView,roleCounts=null,fromImport="",clearFromImport,anyFilter=false}){
+function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",viewEdited=false,onPickView,onSaveView,onDeleteView,onPageSize,includeScreening=false,peopleView="donors",setPeopleView,roleCounts=null,fromImport="",clearFromImport,anyFilter=false}){
   // WIRE-1: the server-side filters on screen, as a Group rule, offered once
   // a filter beyond "donors" is set. The sort is not a filter.
   const canExport=useCanExport(isAdmin?"admin":"staff");   // ACCESS-3
@@ -693,7 +693,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink,fontSize:12,fontWeight:600,cursor:"pointer"}}>
           Edit columns
         </button>}
-        {listSetup&&onPickView&&<ViewsMenu views={views} activeId={activeViewId} onPick={onPickView} onSave={onSaveView} onDelete={onDeleteView}/>}
+        {listSetup&&onPickView&&<ViewsMenu views={views} activeId={activeViewId} edited={viewEdited} onPick={onPickView} onSave={onSaveView} onDelete={onDeleteView}/>}
         {onPageSize&&<select data-testid="dir-page-size" aria-label="Rows per page" value={pageSize} onChange={e=>onPageSize(Number(e.target.value))} style={filterSel}>
           {PAGE_SIZES.map(n=><option key={n} value={n}>{n} per page</option>)}
         </select>}

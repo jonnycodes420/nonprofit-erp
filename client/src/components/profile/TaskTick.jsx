@@ -5,7 +5,7 @@
 // the shape of a checkbox, and a click on it only opened the card. This is that square as a real
 // checkbox: one click completes the task through the one complete call (lib/completeTask.js),
 // with Undo, and every screen that lists tasks re-reads. A call or a meeting that has to say how
-// it went first opens Log a touch (onNeedsOutcome), the way the Tasks page asks; what the server
+// it went first opens the finish dialog (onNeedsOutcome, FLOWS-20), the way the Tasks page asks; what the server
 // said comes back through onSay, for the card to show. Read-only (no
 // write access) draws the plain icon, with no box: a box that does nothing is the bug.
 import { useEffect, useState } from "react";
@@ -31,7 +31,7 @@ export function TaskTick({ task, done, canWrite, icon, onNeedsOutcome = null, on
       if (isDone) { await completeCall(task.id, false); setShown(false); }
       else {
         const r = await completeTask(task);
-        if (r.needsOutcome) { onSay(r.sentence || ""); if (onNeedsOutcome) onNeedsOutcome(task); }
+        if (r.needsOutcome) { if (onNeedsOutcome) onNeedsOutcome(task); else onSay(r.sentence || ""); }
         else setShown(true);
       }
     } catch (x) { onSay((x && x.sentence) || errorMessage(x, "That did not save.")); }

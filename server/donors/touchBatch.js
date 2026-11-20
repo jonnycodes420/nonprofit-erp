@@ -60,6 +60,25 @@ function register(app, ctx) {
     return rows.map(r => r.donor_id);
   }
 
+  // FLOWS-20 (W-1119-Donors-T8): the org's recent touch titles, offered under the Donors filter
+  // "Touch titled" (newest first, at most 8). A portfolio user (ACCESS-2) is offered only titles
+  // they logged themselves: another's touch can be on people they can't see. A GET: writes nothing.
+  app.get("/touch-batches/titles", requireAuth, requireCrm, wrap(async (req, res) => {
+    const orgId = req.user.orgId;
+    const mineOnly = require("../auth/portfolio").visibleSql(req, "d").scoped;
+    const rows = await query(
+      `SELECT t.title, MAX(t.at) AS at FROM (
+         SELECT title, created_at AS at FROM touch_batches
+          WHERE org_id = ? AND undone_at IS NULL ${mineOnly ? "AND created_by = ?" : ""}
+         UNION ALL
+         SELECT btrim(metadata->>'touch_title') AS title, created_at AS at FROM interactions
+          WHERE org_id = ? AND touch_batch_id IS NULL AND COALESCE(btrim(metadata->>'touch_title'), '') <> ''
+            AND created_at > NOW() - INTERVAL '365 days' ${mineOnly ? "AND created_by = ?" : ""}
+       ) t GROUP BY t.title ORDER BY MAX(t.at) DESC LIMIT 8`,
+      mineOnly ? [orgId, req.user.userId, orgId, req.user.userId] : [orgId, orgId]);
+    res.json({ titles: rows.map(r => r.title) });
+  }));
+
   app.post("/touch-batches/preview", requireAuth, requireCrm, wrap(async (req, res) => {
     const p = await pickable(req, req.body && req.body.ids);
     if (p.error) return res.status(p.error.status).json(p.error.body);
