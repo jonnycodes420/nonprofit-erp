@@ -4,6 +4,20 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 
 ## Rules
 
+- **SCALE-6 (2026-11-20): JIT is off on every application connection, and a whole-org read
+  never asks a person's giving unit per row.** The main pool starts each connection with
+  `-c jit=off` (`server/db/pool.js`; the set-wise pool already did, FLOWS-16). Where Postgres has
+  LLVM (CI's `postgres:16`, staging, prod), a statement estimated over 100,000 was compiled on
+  every run: 2.1 s of the 2.7 s `/donors/counts` took on the nightly's Postgres, 0.5 s of the Donors
+  page's 1 s, 4 s of a report's 4.4 s. The local Homebrew Postgres has no JIT, which is why the
+  laptop never saw it (`SELECT pg_jit_available()`). And a read over every person of an org
+  (`donorStatus.statusSql`, `peopleCounts.countsSql`, any status filter) joins the giving unit
+  (`lapse.unitSetsSql`), the stored on-time date (`lapse.ON_TIME_JOINED`) and an overdue pledge
+  (`lapse.overdueSetSql`) set-wise; `lapsedSql`/`lapsingSql`/`pledgeHeldSql` take them as `unit`.
+  The one-person form (`statusFor`, the profile) still reads them where they stand, and
+  `tests/scale6.test.js` §1 holds the two byte-identical and fails on a per-row SubPlan over
+  those tables. A measured exception: the Lifetime sort stays per row, because 25,000 index
+  probes (186 ms) beat one grouped read of the org's gifts (259 ms).
 - **REDTEAM-2 (2026-11-07): SQL text comes only from the code.** A statement that takes anything
   from a request is written with the `sql` tag (`server/db/sql.js`): every `${value}` is a bound
   parameter, a `${Sql}` splices in with its own values, a table or column name goes through

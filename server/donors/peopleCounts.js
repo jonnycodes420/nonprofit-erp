@@ -34,7 +34,8 @@ function countsSql(orgId, today, visible) {
   // The giving unit (linked people, pledges) read once for the org, set-wise.
   const U = L.unitSetsSql(orgId, today);
   const lapsed = L.lapsedSql(LAST, today, "a.donor_id", { linkedLast: "ua.linked_last", held: "ua.held" });
-  const lapsing = L.lapsingSql(LAST, today, "a.donor_id", { linkedLast: "ua.linked_last", held: "ua.held" });
+  // SCALE-6: and the stored on-time date joined beside each giver (lapse.js ON_TIME_JOINED), not read per giver.
+  const lapsing = L.lapsingSql(LAST, today, "a.donor_id", { linkedLast: "ua.linked_last", held: "ua.held", through: L.ON_TIME_JOINED("crr", "cds") });
   const re = L.reengageSql("donors", today, { linkedLast: "ud.linked_last", held: "ud.held" });
   // Only a person whose OWN last gift is on or before the bound can be lapsed
   // or lapsing: the unit's last gift is never earlier than their own (lapse.js
@@ -55,7 +56,9 @@ function countsSql(orgId, today, visible) {
       SELECT a.donor_id,
              ${own(LAST)} COALESCE(${lapsed.sql}, false) ELSE false END AS lapsed,
              ${own(LAST)} COALESCE(${lapsing.sql}, false) ELSE false END AS lapsing
-        FROM a LEFT JOIN unit ua ON ua.donor_id = a.donor_id)
+        FROM a LEFT JOIN unit ua ON ua.donor_id = a.donor_id
+        LEFT JOIN donor_rhythm crr ON crr.org_id = a.org_id AND crr.donor_id = a.donor_id
+        LEFT JOIN donor_scores cds ON cds.org_id = a.org_id AND cds.donor_id = a.donor_id)
     SELECT COUNT(*)::int AS total,
       COUNT(*) FILTER (WHERE s.lapsed)::int AS lapsed,
       COUNT(*) FILTER (WHERE s.lapsing)::int AS lapsing,
