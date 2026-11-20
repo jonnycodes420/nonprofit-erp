@@ -4,6 +4,7 @@
 // value, joined by AND or OR. The server runs them (GET /donors?where=), so
 // the count, every page, the export and a group saved from them are the same
 // people. Each condition shows as a chip she can take off.
+import { FilterSuggest } from "./donors/FilterSuggest";   // FLOWS-20
 import { useState, useMemo } from "react";
 import { T, fmtFull } from "./shared";
 import { displayDate } from "../../../shared/displayDate.js";
@@ -54,7 +55,7 @@ export function chipText(cond, byKey) {
   return [label, opLabel, val].filter(Boolean).join(" ");
 }
 
-function ValueInput({ input, value, onChange, options }) {
+function ValueInput({ input, value, onChange, options, onEnter = null }) {
   if (input === "none") return null;
   if (input === "daterange") return (
     <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
@@ -86,6 +87,7 @@ function ValueInput({ input, value, onChange, options }) {
   const type = input === "number" || input === "money" ? "number" : input === "date" ? "date" : "text";
   return (
     <input data-testid="filter-value" aria-label="Value" type={type} value={value} onChange={e => onChange(e.target.value)}
+      onKeyDown={e => { if (e.key === "Enter" && onEnter) { e.preventDefault(); onEnter(); } }}
       placeholder={input === "list" ? "Separate with commas" : input === "money" ? "Dollars" : ""}
       style={{ ...ctl, minWidth: input === "list" ? 200 : 120 }} />
   );
@@ -179,8 +181,9 @@ export function FilterBuilder({ setup, where, setWhere, error, total }) {
                 <select data-testid="filter-op" aria-label="How it matches" value={op} onChange={e => pickOp(e.target.value)} style={ctl}>
                   {ops.map(o => <option key={o.op} value={o.op}>{o.label}</option>)}
                 </select>
-                {opDef && <ValueInput input={opDef.input} value={value} onChange={setValue} options={field.filter.options} />}
+                {opDef && <ValueInput input={opDef.input} value={value} onChange={setValue} options={field.filter.options} onEnter={add} />}
               </div>
+              {opDef && opDef.input === "text" && <FilterSuggest filter={field.filter} value={value} onPick={setValue} />}
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                 <button type="button" onClick={() => { setField(null); setOp(""); setValue(""); }} style={btn}>Back</button>
                 <div style={{ flex: 1 }} />
@@ -198,7 +201,7 @@ export function FilterBuilder({ setup, where, setWhere, error, total }) {
 
 // ── SAVED VIEWS ─────────────────────────────────────────────────────────────
 // A view is a name for a set of columns and filters ("Major donors, Lexington").
-export function ViewsMenu({ views, activeId, onPick, onSave, onDelete }) {
+export function ViewsMenu({ views, activeId, edited = false, onPick, onSave, onDelete }) {
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
   const [msg, setMsg] = useState("");
@@ -212,14 +215,17 @@ export function ViewsMenu({ views, activeId, onPick, onSave, onDelete }) {
   };
   return (
     <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-      <select data-testid="dir-views" aria-label="Saved views" value={activeId || ""} style={{ ...ctl, cursor: "pointer" }}
+      <select data-testid="dir-views" aria-label="Saved views" value={active && edited ? "__edited" : (activeId || "")} style={{ ...ctl, cursor: "pointer" }}
         onChange={e => {
           const v = e.target.value;
           if (v === "__save") { setNaming(true); return; }
+          if (v === "__edited") return;
           const view = (views || []).find(x => x.id === v);
           onPick(view || null);
         }}>
         <option value="">{(views || []).length ? "Saved views" : "No saved views yet"}</option>
+        {/* FLOWS-20: the list changed since the view was picked; picking the view applies it again. */}
+        {active && edited && <option value="__edited" disabled data-testid="dir-view-edited">{active.name} (edited)</option>}
         {(views || []).map(v => <option key={v.id} value={v.id}>{v.name}{v.mine ? "" : " (shared)"}</option>)}
         <option value="__save">Save this view…</option>
       </select>

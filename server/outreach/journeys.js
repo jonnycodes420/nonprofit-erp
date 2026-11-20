@@ -109,6 +109,9 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
        FROM cultivation_plans p WHERE p.org_id=? AND p.template_id IS NOT NULL
       GROUP BY p.template_id`, [req.user.orgId]);
   const byTpl = new Map(counts.map(c => [c.template_id, c]));
+  // FLOWS-20: the header's four counts are the editor panel's own (shared/numbers/journeyCounts.js).
+  const shown = await require("../../shared/numbers/journeyCounts").journeyCounts(query, req.user.orgId);
+  const shownFor = id => shown.get(id) || { entered: 0, inIt: 0, exited: 0, completed: 0 };
   // AUTO-1: what each journey sent on its own, and what waits to.
   const autoCounts = new Map((await query(
     `SELECT template_id, COUNT(*) FILTER (WHERE status='sent')::int AS sent, COUNT(*) FILTER (WHERE status='scheduled')::int AS waiting,
@@ -178,6 +181,7 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
     // FIX-5 — the team, so a step can name a person as its owner instead of
     // always falling to the relationship owner.
     team: teamRows.map(u => ({ id: u.id, name: u.name })),
+    countsDefinition: require("../../shared/numbers/journeyCounts").DEFINITION,   // FLOWS-20
     journeys: rows.map(t => ({
       id: t.id, name: t.name, description: withoutInternalNotes(t.description || ""), steps: t.steps, trigger: t.trigger_key,
       amountCents: t.trigger_amount_cents, priority: t.priority,
@@ -191,11 +195,13 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
       // knows which: the most recently edited. `updated_at` is set on every
       // PATCH already, so nothing new has to be recorded for it.
       updatedAt: t.updated_at,
-      inIt: Number((byTpl.get(t.id) || {}).active) || 0,
+      // PARITY-1 Part D — entered, in it, exited and completed, and the state. FLOWS-20: the four
+      // counts are entries of people still on file, the panel's; everIn (every run) only decides the state.
+      entered: shownFor(t.id).entered,
+      inIt: shownFor(t.id).inIt,
       everIn: Number((byTpl.get(t.id) || {}).ever) || 0,
-      // PARITY-1 Part D — entered, in it, exited and completed, and the state.
-      completed: Number((byTpl.get(t.id) || {}).completed) || 0,
-      exited: Number((byTpl.get(t.id) || {}).exited) || 0,
+      completed: shownFor(t.id).completed,
+      exited: shownFor(t.id).exited,
       sentAutomatically: Number((autoCounts.get(t.id) || {}).sent) || 0,
       autoWaiting: Number((autoCounts.get(t.id) || {}).waiting) || 0,
       autoSkipped: Number((autoCounts.get(t.id) || {}).skipped) || 0,
@@ -901,11 +907,13 @@ const JOURNEY_ROW_SQL = {
 // has a sentence" rule) and the `rows` key that opens it.
 async function journeyStats(orgId, t) {
   const one = async key => (await query(JOURNEY_ROW_SQL[key], [orgId, t.id])).length;
-  const [inIt, onTime, late, skipped, secondGift] = await Promise.all(
-    ["inIt", "onTime", "late", "skipped", "secondGift"].map(one));
+  const [onTime, late, skipped, secondGift] = await Promise.all(
+    ["onTime", "late", "skipped", "secondGift"].map(one));
   const [everRow] = await query(
     `SELECT COUNT(*)::int AS c FROM cultivation_plans WHERE org_id=? AND template_id=?`, [orgId, t.id]);
-  const [entered, exited, completed] = await Promise.all(["entered", "exited", "completed"].map(one));
+  // FLOWS-20: the four counts the Journeys list header shows too, from one function.
+  const JC = require("../../shared/numbers/journeyCounts");
+  const { entered, exited, completed, inIt } = await JC.oneJourneyCounts(query, orgId, t.id);
   return {
     journeyId: t.id, name: t.name,
     figures: [
@@ -928,6 +936,7 @@ async function journeyStats(orgId, t) {
         sentence: "People who gave another gift within twelve months of entering this journey." },
     ].concat(t.trigger_key === "yearly_date" ? [(await yearlySkipFigure(orgId, t)).skippedOnDate] : []),
     everIn: Number(everRow && everRow.c) || 0,
+    countsDefinition: JC.DEFINITION,
     // SAID BY THE ROUTE, not by a caption a redesign could drop.
     caveat: "These are counts of what happened, not a measure of what the journey caused. "
           + "Steward is not running an experiment: there is no comparison group, so none of "

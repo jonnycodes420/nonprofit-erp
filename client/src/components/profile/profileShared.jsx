@@ -342,7 +342,7 @@ function RailGroups({donorId,isReadOnly}){
 // PROFILE-2 · COMING UP, in the main column: the open tasks (each with Mark
 // done) and the meetings ahead. Hidden when there is nothing.
 // FLOWS-17: Mark done is the Tasks page's own call (lib/completeTask.js), with Undo; a call or
-// meeting that must say how it went opens Log a touch (onTaskOutcome).
+// meeting that must say how it went opens the finish dialog (onTaskOutcome, FLOWS-20).
 // EDIT-1: a task's title is a button that opens the Tasks page's own sheet (ProfileTaskSheet.jsx).
 function ComingUpMain({tasks=[],meetings=[],onTaskOutcome=null,isReadOnly,onAddTask}){
   const taskSheet=useProfileTaskSheet({isReadOnly,onTaskOutcome});

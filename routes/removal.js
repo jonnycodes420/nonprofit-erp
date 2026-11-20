@@ -245,6 +245,8 @@ function mount(ctx) {
         until: plus(c.decided_at, LIST_DAYS), undoLabel: "Bring back",
         undo: { method: "POST", path: `/capture/${encodeURIComponent(c.id)}/unskip` } });
     }
+    // FLOWS-20: a touch logged to many people, one line, undone with the toast's own call.
+    rows.push(...await require("../server/donors/touchBatchChanges").recentBatchRows(query, orgId, userId));
     for (const d of added) {
       rows.push({ id: "add:" + d.id, kind: "person_added", sentence: `Added ${d.name || "a person"}.`, at: d.created_at,
         until: plus(d.created_at, 1), undoLabel: "Take back out",

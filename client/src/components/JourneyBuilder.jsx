@@ -641,6 +641,7 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState(null);
   const [stats, setStats] = useState(null);
+  const openingRef = useRef(null);   // FLOWS-20: the journey whose preview and stats may land
   const [rowsPanel, setRowsPanel] = useState(null);
   const [applyPanel, setApplyPanel] = useState(null);
   const [audience, setAudience] = useState({});
@@ -689,8 +690,12 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
               audience: j.audience || {}, triggerFilters: j.triggerFilters || {}, enabled: !!j.enabled,
               exclusive: !!j.exclusive });
     setPreview(null); setStats(null); setErr("");
-    try { setPreview(await apiFetch(`/journeys/${j.id}/preview`)); } catch { setPreview({ unavailable: true }); }
-    try { setStats(await apiFetch(`/journeys/${j.id}/stats`)); } catch { setStats(null); }
+    // FLOWS-20: only the journey still open takes an answer. Landing opens one; a click on another
+    // while the first was loading had its How it is going overwritten by the first's late reply.
+    openingRef.current = j.id;
+    const mine = () => openingRef.current === j.id;
+    try { const p = await apiFetch(`/journeys/${j.id}/preview`); if (mine()) setPreview(p); } catch { if (mine()) setPreview({ unavailable: true }); }
+    try { const st = await apiFetch(`/journeys/${j.id}/stats`); if (mine()) setStats(st); } catch { if (mine()) setStats(null); }
   }
 
   // ── FIX-5 item 2 · LANDING ON JOURNEYS OPENS ONE ────────────────────────
@@ -968,6 +973,8 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
 
       {/* ── the journeys this org has ─────────────────────────────────── */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+        {/* FLOWS-20: one definition for the counts here and in How it is going (shared/numbers/journeyCounts.js). */}
+        {(data.journeys || []).length > 0 && data.countsDefinition && <div data-testid="jb-counts-def" style={{ fontSize: 12, color: T.ink3 }}>{data.countsDefinition}</div>}
         {(data.journeys || []).length === 0 && (
           <div style={{ fontSize: 13, color: T.ink3 }}>
             No journeys yet. A journey makes sure a new donor never slips away unnoticed. Start from one of the shapes below, or create your own.
@@ -996,8 +1003,8 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
                                background: j.enabled ? T.green100 : T.bg2, color: j.enabled ? T.greenDk : T.ink3 }}>
                   {((data.states || []).find(x => x.key === j.state) || {}).label || (j.enabled ? "Running" : "Paused")}
                 </span>
-                <span style={{ fontSize: 12, color: T.ink3 }} title="Entered: everyone who has gone in. In it: still running. Exited: left early. Completed: reached the end.">
-                  {j.everIn} entered · {j.inIt} in it · {j.exited || 0} exited · {j.completed || 0} completed
+                <span data-testid="jb-counts" style={{ fontSize: 12, color: T.ink3 }} title={data.countsDefinition || ""}>
+                  {j.entered || 0} entered · {j.inIt} in it · {j.exited || 0} exited · {j.completed || 0} completed
                 </span>
               </span>
             </RecordLink>
@@ -1126,7 +1133,7 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
                 <SendingTomorrow journeyId={current.id} isReadOnly={!editable} refresh={autoTick} counts={current} />
 
                 {/* ── HOW IT IS GOING ────────────────────────────────── */}
-                {stats && (
+                {stats && stats.journeyId === current.id && (
                   <div style={{ borderTop: "1px solid " + T.bg3, padding: "14px 16px" }}>
                     <div style={{ ...CAP, marginBottom: 10 }}>How it is going</div>
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -1150,7 +1157,7 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
                       </div>) : null; })()}
                     <JourneyBatches journeyId={current.id} />
                     <p data-testid="jb-caveat" style={{ fontSize: 12, color: T.ink3, lineHeight: 1.55, margin: "11px 0 0", maxWidth: 640 }}>
-                      {stats.caveat}
+                      {stats.countsDefinition ? `${stats.countsDefinition} ` : ""}{stats.caveat}
                     </p>
                   </div>
                 )}

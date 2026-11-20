@@ -32,6 +32,13 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
 - **A task's box ticks it (FLOWS-17).** Wherever a task is drawn with a box, one click completes it through
   `client/src/lib/completeTask.js` (`POST /tasks/:id/complete`, with Undo); a call or meeting asks how it went first.
   A spot that can't act draws no box.
+- **A call or meeting is finished in one dialog (FLOWS-20).** The Tasks page's FinishSheet
+  (`components/tasks/FinishSheet.jsx`) is the only way: the Tasks page, the Calendar and every profile door open it, never
+  the generic Log a touch (which names no task). When the person has another open next step, it starts on "No next step"
+  and says that step stays. A bulk touch is one line in Recent changes with the toast's Undo (`touchBatchChanges.js`).
+- **A journey's four counts are one function (FLOWS-20).** The Journeys list and How it is going read
+  `shared/numbers/journeyCounts.js`: entries of people still on file, as the rows each figure opens. A stats reply lands
+  only for the journey still open.
 - **Journeys (SENDS-1).** "Add to a journey" lists every journey that is not archived; one that can't be started for this
   person is greyed out with why (`client/src/lib/journeyPick.js`; the bulk dialog does the same per row). A birthday
   journey's preview counts from the day the sweep would start it (`shared/birthday.js` `birthdayJourneyStart`). Batch Undo
