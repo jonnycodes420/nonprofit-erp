@@ -625,7 +625,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
           {/* Funds tab */}
           {dpTab==="giving"&&<div className="dp3-gutter" style={{padding:"0 var(--dp-gutter,40px) 24px",display:"flex",flexDirection:"column",gap:16}}>
             {fundLoading&&<div style={{textAlign:"center",color:T.ink3,fontSize:12,padding:24}}><Spin/></div>}
-            {!fundLoading&&fundAffinity&&fundAffinity.donorId===donor.id&&(()=>{
+            {!fundLoading&&fundAffinity&&!fundAffinity.error&&fundAffinity.donorId===donor.id&&(()=>{
               const {affinity,unrestrictedTotal,restrictedTotal,totalGiving,activeFunds,restrictedPct,unrestrictedPct,definition}=fundAffinity;
               const maxFund=affinity.length>0?affinity[0].total:1;
               return(<>
@@ -694,7 +694,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                 )}
               </>);
             })()}
-            {!fundLoading&&!fundAffinity&&<div style={{fontSize:13,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:24}}>Could not load fund data.</div>}
+            {!fundLoading&&(!fundAffinity||fundAffinity.error)&&<div data-testid="dp-fund-error" style={{fontSize:13,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:24}}>{(fundAffinity&&fundAffinity.error)||"Could not load fund data."}</div>}
           </div>}
 
           {/* ── ASKS & PIPELINE (PROFILE-1 header) — everything the old "The
