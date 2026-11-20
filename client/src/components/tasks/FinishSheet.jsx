@@ -5,7 +5,7 @@
 // done opened the generic Log a touch instead, which never names the task: the task stayed open,
 // and the touch's default "Follow up" replaced the person's next step. Here the conversation is
 // logged and THIS task is completed with it (POST /tasks/:id/complete with its interactionId).
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../api";
 import { T, Modal } from "../shared";
 import { errorMessage } from "../../lib/domainError";
@@ -36,6 +36,7 @@ export function FinishSheet({ t, today, onClose, onDone }) {
   // Saving a next step replaces it (one open step per person), so the sheet says so, and starts
   // on "No next step" when one is open: finishing a call never closes another step unasked.
   const [otherStep, setOtherStep] = useState(null);
+  const touched = useRef(false);   // she has answered "What's next?" herself: the default never overrides her
   useEffect(() => {
     if (!t.donor_id) return undefined;
     let dead = false;
@@ -43,7 +44,7 @@ export function FinishSheet({ t, today, onClose, onDone }) {
       if (dead) return;
       const open = otherOpenStep(r && r.list, t);
       setOtherStep(open);
-      if (open) setNone(true);
+      if (open && !touched.current) setNone(true);
     }).catch(() => {});
     return () => { dead = true; };
   }, [t.donor_id, t.id, t.thread_id]);
@@ -99,11 +100,11 @@ export function FinishSheet({ t, today, onClose, onDone }) {
         </div>}
         <div style={lbl}>What's next?
           {!none && <div style={{ display: "flex", gap: 8 }}>
-            <input value={next.label} onChange={e => setNext({ ...next, label: e.target.value })} data-testid="finish-next" placeholder="Send the table details" style={{ ...inp, flex: 2 }} />
+            <input value={next.label} onChange={e => { touched.current = true; setNext({ ...next, label: e.target.value }); }} data-testid="finish-next" placeholder="Send the table details" style={{ ...inp, flex: 2 }} />
             <DateInput value={next.due} onChange={e => setNext({ ...next, due: e.target.value })} data-testid="finish-next-due" style={{ ...inp, flex: 1 }} />
           </div>}
           <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: T.ink, textTransform: "none", letterSpacing: 0, fontWeight: 500 }}>
-            <input type="checkbox" checked={none} onChange={e => setNone(e.target.checked)} data-testid="finish-none" /> No next step
+            <input type="checkbox" checked={none} onChange={e => { touched.current = true; setNone(e.target.checked); }} data-testid="finish-none" /> No next step
           </label>
           {otherStep && <div data-testid="finish-other-step" style={{ fontSize: 12.5, color: T.ink2, textTransform: "none", letterSpacing: 0, fontWeight: 400 }}>
             {none ? `Their next step stays: ${otherStep.label}${otherStep.due ? ` (${fmtDayShort(otherStep.due)})` : ""}.`
