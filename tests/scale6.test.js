@@ -104,11 +104,11 @@ async function section2() {
   const holder = await tiny.connect();
   const fakeReq = { method: "GET", path: "/donors", __stewardInProcess: false };
   const fakeRes = { on() {}, json: x => x, statusCode: 200, status() { return this; } };
-  const t0 = Date.now();
+  const t0 = performance.now();
   const err = await new Promise(resolve => LIMITS.middleware(async () => {})(fakeReq, fakeRes, () => {
     LIMITS.checkout(tiny).then(c => { LIMITS.release(c); resolve(null); }, resolve);
   }));
-  const waited = Date.now() - t0;
+  const waited = Math.round(performance.now() - t0);
   holder.release(); await tiny.end();
   ok("§2a the wait ends as busy, a 503 with the plain sentence", !!err && err.code === "busy" && err.status === 503 && err.message === "Steward is busy, try again.", err && { code: err.code, msg: err.message });
   ok("§2a it ends at about 3 s, well before the 10 s limit", waited >= LIMITS.WAIT_MS - 100 && waited < LIMITS.WAIT_MS + 1500, waited);
@@ -181,7 +181,7 @@ async function section3() {
     fundraising: ["Fundraising totals (Fundraising.jsx)", "components/Fundraising.jsx", "refresh);", null],
     header: ["Profile header: Lifetime, last gift (profileRefresh.js)", "lib/profileRefresh.js", "PROFILE_KINDS, c =>", { person: P }],
     byYear: ["Profile → Giving: By year (ByYear.jsx)", "components/profile/ByYear.jsx", "useChangeRev", { person: P }],
-    portfolioDonors: ["Donors → portfolio totals (Donors.jsx)", "components/Donors.jsx", "loadOfficers();", null],
+    portfolioDonors: ["Donors → portfolio totals (Donors.jsx)", "components/Donors.jsx", "useChanged([\"gift\",\"person\",\"totals\"],c=>", null],
     portfolioHome: ["Home → portfolio card (PortfolioCard.jsx)", "components/home/PortfolioCard.jsx", "useChangeRev", null],
     volHeader: ["Volunteers header and counts (VolunteersHub.jsx)", "components/VolunteersHub.jsx", "const volRev", null],
     volPanel: ["Profile → Volunteer hours (VolunteerPanel.jsx)", "components/VolunteerPanel.jsx", "loadProf();", { person: P }],
