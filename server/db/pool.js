@@ -39,7 +39,15 @@ const pool = new Pool({
   // finishing the handshake on that client, which pg rightly warns about and
   // which would leave the odd connection unmarked. A startup option is applied
   // by the server before the connection is handed over, every time.
-  options: `-c steward.app_connection=on -c application_name=${APP_NAME}`,
+  options: `-c steward.app_connection=on -c jit=off -c application_name=${APP_NAME}`,
+  // SCALE-6 · JIT OFF FOR EVERY APPLICATION CONNECTION. Where Postgres is built with
+  // LLVM (CI's postgres:16, staging, prod), a statement whose estimated cost passes
+  // 100,000 is JIT-compiled on every run, and past 500,000 optimised and inlined too.
+  // Steward's reads are a page, a count or one org's aggregate: compiling never paid.
+  // Measured on the nightly load's Postgres (run 44756461721): /donors/counts 2.7 s
+  // with JIT, 0.46 s without; the Donors page 0.97 s and 0.39 s; a report 4.4 s and
+  // 0.48 s. Under twenty users that compile time queued into the 10 s limit. REPORTS-SPEED-2
+  // (onceNoJit) and FLOWS-16 (the set-wise pool) each turned it off for one corner first.
   // SCALE-1: pg's default of 10 connections was busy 10 of 10 for the whole
   // 20-user load run. Raise it per process with DB_POOL_MAX only as far as the
   // database's own connection limit allows across every replica and the worker.
