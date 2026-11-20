@@ -97,7 +97,7 @@ const PASSWORD = "loadtest1234";
     '[{"label":"Call to say welcome","days":3,"type":"call"}]'::jsonb, 'system:test', 'flows20')`, [tpl, ORG]);
   const jp = [await person("Ignatius Fairweather"), await person("Rosalind Ashcombe"), await person("Theodora Pengelly"), await person("Cuthbert Moorcroft")];
   const plan = (i, donor, status) => q(`INSERT INTO cultivation_plans (id, org_id, donor_id, template_id, template_name, applied_on, status, created_by, created_by_name, closed_at)
-    VALUES ($1,$2,$3,$4,'Spring welcome',$5,$6,'system:test','flows20',$7)`, [`cp_f20_${run}_${i}`, ORG, donor, tpl, civilPlusDays(-20 + i), status, status === "active" ? null : new Date()]);
+    VALUES ($1,$2,$3,$4,'Spring welcome',$5,$6,'system:test','flows20',CASE WHEN $6 = 'active' THEN NULL ELSE NOW() END)`, [`cp_f20_${run}_${i}`, ORG, donor, tpl, civilPlusDays(-20 + i), status]);
   await plan(1, jp[0], "active"); await plan(2, jp[1], "abandoned"); await plan(3, jp[2], "done");
   await plan(4, jp[1], "active");   // Rosalind went in again
   await plan(5, jp[3], "active");
