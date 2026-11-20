@@ -9,7 +9,7 @@ import { offerUndo } from "./EditHistory";
 import { orgTodayPlus } from "../lib/orgToday";
 import { fmtDayShort } from "../lib/taskDue";
 import { completeTask, completeCall } from "../lib/completeTask";
-import { TASK_VIEWS, TASK_KINDS, NEEDS_OUTCOME, TASK_OUTCOMES, recurPhrase, addDays, weekdayOf } from "../../../shared/taskShape.js";
+import { TASK_VIEWS, TASK_KINDS, NEEDS_OUTCOME, recurPhrase, addDays, weekdayOf } from "../../../shared/taskShape.js";
 import { greetingName, greetingLine } from "../../../shared/greeting.js";
 import { useChanged } from "../lib/changes";   // STALE-1: the one channel (told() is in it)
 import { dueNowWords } from "../lib/taskBadge";
@@ -17,6 +17,8 @@ import { countLabel } from "../../../shared/countWords.js";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { PlannedTouchOffer } from "./majorGifts/PlannedTouchOffer";   // TOUCH-1
 import { TaskSheet } from "./tasks/TaskSheet";   // EDIT-1: the one sheet, which the profile opens too
+import { FinishSheet } from "./tasks/FinishSheet";   // FLOWS-20: the one finish dialog, which the profile opens too
+export { FinishSheet };
 import { useMorningEmail } from "../lib/morningEmail";   // FLOWS-18: what the morning email really does
 import { morningEmailSentence } from "../../../shared/morningEmailState.js";
 
@@ -426,77 +428,6 @@ function QuickAdd({ onSaved, today }) {
 }
 
 // ── The task, opened: components/tasks/TaskSheet.jsx (EDIT-1), shared with the profile ──
-
-// ── Done properly: how did it go, and what's next ────────────────────────
-export function FinishSheet({ t, today, onClose, onDone }) {
-  const [line, setLine] = useState("");
-  const [reached, setReached] = useState(true);
-  const [next, setNext] = useState({ label: "", due: addDays(today, 7) });
-  const [none, setNone] = useState(false);
-  const [outcome, setOutcome] = useState("");   // JOURNEYS-4: how it ended, optional
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const isCall = t.kind === "call";
-  const emailed = !!t.emailInteractionId;   // FIX-34: the email is sent and logged; only the next step is asked
-  const ready = (emailed || line.trim()) && (none || (next.label.trim() && next.due));
-  const save = async () => {
-    if (!ready || busy) return;
-    setBusy(true); setErr("");
-    try {
-      if (emailed) {
-        const row = await apiFetch(`/tasks/${t.id}/complete`, { method: "POST", body: JSON.stringify({ done: true, interactionId: t.emailInteractionId,
-          nextStep: none ? { skipped: true } : { type: "follow_up", label: next.label.trim(), due: next.due } }) });
-        await onDone(row); setBusy(false); return;
-      }
-      const touch = isCall ? (reached ? "call_reached" : "call_no_answer") : "meeting";
-      const c = await apiFetch(`/donors/${t.donor_id}/conversations`, { method: "POST", body: JSON.stringify({
-        touch, line: line.trim(), ...(outcome ? { outcome } : {}),
-        nextStep: none ? { skipped: true } : { type: "follow_up", label: next.label.trim(), due: next.due } }) });
-      const row = await apiFetch(`/tasks/${t.id}/complete`, { method: "POST", body: JSON.stringify({ done: true, interactionId: c.interactionId }) });
-      await onDone(row);
-    } catch (e) { setErr((e && e.sentence) || errorMessage(e, "That did not save.")); }
-    setBusy(false);
-  };
-  return (
-    <Modal onClose={onClose} title={emailed ? `The email to ${t.donor_name || "them"} is sent` : `${isCall ? "The call" : "The meeting"} with ${t.donor_name || "them"}`} width={480}
-      footer={<div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <button onClick={onClose} style={textBtn}>Cancel</button>
-        <button onClick={save} disabled={!ready || busy} data-testid="finish-save"
-          style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "9px 16px", color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: !ready || busy ? 0.5 : 1 }}>Save and mark done</button>
-      </div>}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {emailed && <div style={{ fontSize: 13, color: T.ink2 }}>It is on their timeline. Say what comes next, or "No next step", to finish the task.</div>}
-        {isCall && !emailed && <div style={{ display: "flex", gap: 14, fontSize: 13 }}>
-          <label><input type="radio" checked={reached} onChange={() => setReached(true)} /> Reached them</label>
-          <label><input type="radio" checked={!reached} onChange={() => setReached(false)} /> No answer</label>
-        </div>}
-        {!emailed && <label style={lbl}>How did it go?
-          <textarea autoFocus value={line} onChange={e => setLine(e.target.value)} rows={2} data-testid="finish-line" placeholder="She will bring two tables to the gala." style={{ ...inp, resize: "vertical" }} />
-        </label>}
-        {!emailed && <div style={lbl}>How did it end? <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 400 }}>(optional)</span>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {TASK_OUTCOMES.map(o => (
-              <button key={o.key} type="button" aria-pressed={outcome === o.key} data-testid={"finish-outcome-" + o.key}
-                onClick={() => setOutcome(outcome === o.key ? "" : o.key)}
-                style={{ ...outlineBtn, fontSize: 12, padding: "5px 10px", textTransform: "none", letterSpacing: 0,
-                         background: outcome === o.key ? T.bg2 : T.white, borderColor: outcome === o.key ? T.greenDk : T.bg3 }}>{o.label}</button>
-            ))}
-          </div>
-        </div>}
-        <div style={lbl}>What's next?
-          {!none && <div style={{ display: "flex", gap: 8 }}>
-            <input value={next.label} onChange={e => setNext({ ...next, label: e.target.value })} data-testid="finish-next" placeholder="Send the table details" style={{ ...inp, flex: 2 }} />
-            <DateInput value={next.due} onChange={e => setNext({ ...next, due: e.target.value })} data-testid="finish-next-due" style={{ ...inp, flex: 1 }} />
-          </div>}
-          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: T.ink, textTransform: "none", letterSpacing: 0, fontWeight: 500 }}>
-            <input type="checkbox" checked={none} onChange={e => setNone(e.target.checked)} data-testid="finish-none" /> No next step
-          </label>
-        </div>
-        {err && <div role="alert" style={{ fontSize: 12.5, color: T.ink }}>{err}</div>}
-      </div>
-    </Modal>
-  );
-}
 
 function SnoozeSheet({ t, today, onClose, onSnooze }) {
   const [day, setDay] = useState(addDays(today, 1));

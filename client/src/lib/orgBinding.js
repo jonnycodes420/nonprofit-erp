@@ -8,9 +8,9 @@
 // Three rules, one file:
 //   1. The page's org is fixed per tab: what this tab's AuthProvider holds,
 //      set at render and at a sign-in IN THIS TAB. Another tab never moves it.
-//   2. Every authenticated write to the API carries it (`X-Steward-Org`). The
-//      server refuses a write whose page org is not the session's (409
-//      org_changed, middleware/orgBound.js). The header is added in one place,
+//   2. Every authenticated call to the API carries it (`X-Steward-Org`). The
+//      server refuses a write, or a read (FLOWS-20), whose page org is not the
+//      session's (409 org_changed, middleware/orgBound.js). The header is added in one place,
 //      a wrapper on fetch, so apiFetch and every hand-rolled fetch that sends
 //      the bearer token are covered alike.
 //   3. Tabs tell each other. A sign-in announces its org on a BroadcastChannel
@@ -21,6 +21,7 @@ const CHANNEL = "steward-org";
 const SEEN_KEY = "steward_orgs_seen";
 const ORG_HEADER = "X-Steward-Org";
 const PASS_PATHS = ["/auth/logout", "/auth/login"];
+const READ_PASS = /^\/(me|me\/orgs|health|auth\/.*|support-session\/.*)$/;   // FLOWS-20: how a tab learns its org
 
 let pageOrg = null;      // { id, name } — the org this tab's page is for
 let changed = null;      // { message } once the tab knows it is out of date
@@ -94,13 +95,16 @@ export function installOrgBinding(apiBase) {
     // token (Bearer) still decides who is asking until Release B; the cookie
     // only starts to count once the API is first-party (api.stewardapp.dev).
     if (isApiCall(url, apiBase) && !(init && init.credentials)) init = { ...(init || {}), credentials: "include" };
-    if (!pageOrg || !isApiWrite(url, method, apiBase)) return realFetch(input, init);
+    // FLOWS-20: a read names the page's org too (the server answers a stale tab 409 org_changed,
+    // never another org's "not found"); only a write is refused here before it leaves.
+    const write = isApiWrite(url, method, apiBase);
+    if (!pageOrg || !(write || isApiCall(url, apiBase))) return realFetch(input, init);
     const headers = new Headers((init && init.headers) || {});
     if (!hasBearer(headers)) return realFetch(input, init);
     const path = url.slice(apiBase.length).split("?")[0];
-    if (PASS_PATHS.includes(path)) return realFetch(input, init);
+    if (PASS_PATHS.includes(path) || (!write && READ_PASS.test(path))) return realFetch(input, init);
     // This tab already knows the org moved: the write never leaves the browser.
-    if (changed) {
+    if (changed && write) {
       return new Response(JSON.stringify({ error: "org_changed", code: "org_changed", message: changed.message }),
         { status: 409, headers: { "Content-Type": "application/json" } });
     }

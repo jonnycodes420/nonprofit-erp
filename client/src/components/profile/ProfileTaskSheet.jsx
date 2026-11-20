@@ -12,6 +12,7 @@ import { T } from "../shared";
 import { errorMessage } from "../../lib/domainError";
 import { completeTask, completeCall } from "../../lib/completeTask";
 import { TaskSheet } from "../tasks/TaskSheet";
+import { NEEDS_OUTCOME, kindOf } from "../../../../shared/taskShape.js";
 
 // The title of a task on a profile, as the button that opens it.
 const TITLE_BTN = { background: "none", border: "none", padding: 0, margin: 0, textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit", minHeight: 24 };
@@ -36,7 +37,9 @@ export function useProfileTaskSheet({ isReadOnly = false, onTaskOutcome = null }
   }, [team]);
   const onFinish = async t => {
     setRow(null);
-    try { const r = await completeTask(t); if (r.needsOutcome) { if (r.sentence) setSaid(r.sentence); if (onTaskOutcome) onTaskOutcome(t); } }
+    // FLOWS-20: a call or meeting goes straight to the finish dialog, as on the Tasks page.
+    if (onTaskOutcome && t.donor_id && NEEDS_OUTCOME.has(t.kind || kindOf(t))) { onTaskOutcome(t); return; }
+    try { const r = await completeTask(t); if (r.needsOutcome) { if (onTaskOutcome) onTaskOutcome(t); else if (r.sentence) setSaid(r.sentence); } }
     catch (e) { say(e); }
   };
   const onReopen = async t => { setRow(null); try { await completeCall(t.id, false); } catch (e) { say(e); } };
