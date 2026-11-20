@@ -110,6 +110,12 @@ function lostSql(d, today) {
 function overdueSql(idExpr, today) {
   return { sql: `EXISTS (SELECT 1 FROM pledges pp WHERE pp.donor_id = ${idExpr} AND pp.status = 'open' AND ${PLEDGE_OVERDUE})`, args: [day(today), day(today)] };
 }
+// SCALE-6 · overdueSql for a whole org at once: the people of `orgId` with an
+// open pledge past due, as a CTE body (one row each). A person is in it exactly
+// when overdueSql holds for them.
+function overdueSetSql(orgId, today) {
+  return { sql: `SELECT DISTINCT pp.donor_id FROM pledges pp WHERE pp.org_id = ? AND pp.status = 'open' AND ${PLEDGE_OVERDUE}`, args: [orgId, day(today), day(today)] };
+}
 // A pledge holds the person off lapsing and lapsed: any open pledge (on
 // schedule or overdue; overdue is its own state), or one fulfilled pledge made
 // in the last 12 months.
@@ -142,10 +148,16 @@ const ON_TIME_THROUGH = (idExpr, orgExpr = orgOf(idExpr)) => `(SELECT x.d FROM (
       SELECT LEFT(rr.expected_next::text, 10) AS d, 0 AS k FROM donor_rhythm rr WHERE rr.org_id = ${orgExpr} AND rr.donor_id = ${idExpr}
       UNION ALL SELECT ds.on_time_through, 1 FROM donor_scores ds WHERE ds.org_id = ${orgExpr} AND ds.donor_id = ${idExpr}) x
     ORDER BY x.k LIMIT 1)`;
+// SCALE-6 · ON_TIME_THROUGH, JOINED. The same one row, for a query that has
+// already LEFT JOINed donor_rhythm `rr` and donor_scores `ds` on the person
+// (each keyed (org_id, donor_id), so a join adds no rows): the rhythm row when
+// there is one, even with no date in it; the scores row only when there is none.
+const ON_TIME_JOINED = (rr, ds) => `(CASE WHEN ${rr}.donor_id IS NOT NULL THEN LEFT(${rr}.expected_next::text, 10) ELSE ${ds}.on_time_through END)`;
 // Their usual time to give is still ahead: that day is today or later.
 // STATUS-1: any rhythm, not only yearly and year-end (lapseRule.usualTimeAhead).
-function rhythmAheadSql(idExpr, today) {
-  return { sql: `COALESCE(${ON_TIME_THROUGH(idExpr)} >= ?, false)`, args: [day(today)] };
+// SCALE-6: `unit.through` hands in ON_TIME_JOINED's column instead of a read per person.
+function rhythmAheadSql(idExpr, today, unit = null) {
+  return { sql: `COALESCE(${unit && unit.through ? unit.through : ON_TIME_THROUGH(idExpr)} >= ?, false)`, args: [day(today)] };
 }
 
 // The three states as conditions. Without `idExpr` there is no person to hold
@@ -163,13 +175,13 @@ function lapsedSql(lastExpr, today, idExpr = null, unit = null) {
 function lapsingSql(lastExpr, today, idExpr = null, unit = null) {
   const d = unitLast(lastExpr, idExpr, unit, today), b = bounds(today);
   if (!idExpr) return { sql: `${d} BETWEEN ?::date AND ?::date`, args: [b.lapsingFrom, b.lapsingOnOrBefore] };
-  const r = rhythmAheadSql(idExpr, today), p = holdOf(idExpr, today, unit);
+  const r = rhythmAheadSql(idExpr, today, unit), p = holdOf(idExpr, today, unit);
   return { sql: `(${d} BETWEEN ?::date AND ?::date AND NOT ${r.sql} AND NOT ${p.sql})`, args: [b.lapsingFrom, b.lapsingOnOrBefore, ...r.args, ...p.args] };
 }
 // No gift in the last 12 months, and a pledge holds them (they read Current,
 // and are told why).
-function pledgeHeldSql(lastExpr, today, idExpr) {
-  const d = unitLast(lastExpr, idExpr, null, today), p = holdSql(idExpr, today);
+function pledgeHeldSql(lastExpr, today, idExpr, unit = null) {
+  const d = unitLast(lastExpr, idExpr, unit, today), p = holdOf(idExpr, today, unit);
   return { sql: `(${d} <= ?::date AND ${p.sql})`, args: [bounds(today).lapsedOnOrBefore, ...p.args] };
 }
 
@@ -279,4 +291,4 @@ function stateOf(donorId, ownLast, inputs) {
   return lapseRule.lapseState(last, inputs.today, inputs.rhythms.get(donorId) || null, inputs.pledges.get(donorId) || null);
 }
 
-module.exports = { ON_TIME_THROUGH, LAST_ON_RECORD, reengageSql, lostSql, UNIT_LINK_TYPES, LINKED, linkedLastSql, PLEDGE_MADE, overdueSql, holdSql, rhythmAheadSql, lapsedSql, lapsingSql, pledgeHeldSql, stateSql, sql, pledgesFor, unitSetsSql, inputsFor, stateOf };
+module.exports = { ON_TIME_THROUGH, ON_TIME_JOINED, overdueSetSql, LAST_ON_RECORD, reengageSql, lostSql, UNIT_LINK_TYPES, LINKED, linkedLastSql, PLEDGE_MADE, overdueSql, holdSql, rhythmAheadSql, lapsedSql, lapsingSql, pledgeHeldSql, stateSql, sql, pledgesFor, unitSetsSql, inputsFor, stateOf };

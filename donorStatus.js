@@ -125,15 +125,27 @@ function statusSql(orgId, today, cuts, { donorId = null } = {}) {
   // FIX-49: the old system's last gift is a gift they gave, so it counts for
   // lapsing and lapsed exactly as a gift on file does.
   const LAST = "GREATEST(a.last_date, a.imp_last)";
-  const lapsing = L.lapsingSql(LAST, w.today, "a.donor_id");
-  const lapsed = L.lapsedSql(LAST, w.today, "a.donor_id");
-  const held = L.pledgeHeldSql(LAST, w.today, "a.donor_id");
-  const overdue = L.overdueSql("a.donor_id", w.today);
-  const args = [...lapsing.args, ...TAGS.levelArgs(cuts), ...lapsed.args, ...overdue.args, ...held.args,
+  // SCALE-6: for a whole org, the giving unit (linked people's last gift, a pledge that
+  // holds) is read once, set-wise (lapse.js unitSetsSql, COUNTS-1's), and joined beside
+  // each giver. Read per giver, it was three correlated subqueries for every giver of the
+  // org on every Donors status filter: 0.5 s of work, a cost estimate of 1.7 million that
+  // turned JIT on in production's Postgres, and the nightly load's 10 s /donors reads.
+  // One person (the profile) still reads theirs where they stand. Same rule, same answer.
+  // The stored on-time date (lapse.js ON_TIME_JOINED) and an overdue pledge (overdueSetSql)
+  // are joined the same way, so no column of a whole-org read is a read per giver.
+  const U = donorId ? null : L.unitSetsSql(orgId, w.today);
+  const OD = donorId ? null : L.overdueSetSql(orgId, w.today);
+  const unit = U ? { linkedLast: "su.linked_last", held: "su.held", through: L.ON_TIME_JOINED("srr", "sds") } : null;
+  const lapsing = L.lapsingSql(LAST, w.today, "a.donor_id", unit);
+  const lapsed = L.lapsedSql(LAST, w.today, "a.donor_id", unit);
+  const held = L.pledgeHeldSql(LAST, w.today, "a.donor_id", unit);
+  const overdue = OD ? { sql: "(sod.donor_id IS NOT NULL)", args: [] } : L.overdueSql("a.donor_id", w.today);
+  const args = [...(U ? [...U.args, ...OD.args] : []), ...lapsing.args, ...TAGS.levelArgs(cuts), ...lapsed.args, ...overdue.args, ...held.args,
     w.w0From, w.today, w.w0From, w.today, w.w0From, w.today, w.w0From, w.w0From, w.w0From, w.cyFrom, w.today, w.lyFrom, w.lyTo,
     orgId, w.today];
   if (donorId) args.push(donorId);
-  const sql = `
+  const sql = `${U ? `
+    WITH ${U.with}, od AS MATERIALIZED (${OD.sql})` : ""}
     SELECT a.donor_id, a.last12, ${FG.EARLIER("a.first_date", "a.imp_first")} AS first_date, ${LAST} AS last_date,
            ${lapsing.sql} AS lapsing,
            ${TAGS.LEVEL_SQL("a.last12")} AS level,
@@ -172,7 +184,11 @@ function statusSql(orgId, today, cuts, { donorId = null } = {}) {
          WHERE g.org_id = ? AND LEFT(g.date,10) <= ? AND ${NOT_CREDIT("g")}${donorId ? " AND g.donor_id = ?" : ""}
          GROUP BY g.donor_id, g.org_id
         HAVING BOOL_OR(${require("./shared/numbers/giftCount").KEPT("g")})
-      ) a`;
+      ) a${U ? `
+      LEFT JOIN unit su ON su.donor_id = a.donor_id
+      LEFT JOIN od sod ON sod.donor_id = a.donor_id
+      LEFT JOIN donor_rhythm srr ON srr.org_id = a.org_id AND srr.donor_id = a.donor_id
+      LEFT JOIN donor_scores sds ON sds.org_id = a.org_id AND sds.donor_id = a.donor_id` : ""}`;
   return { sql, args };
 }
 
@@ -198,7 +214,10 @@ function tagCondition(key, orgId, today, cuts, alias = "") {
   const { sql, args } = statusSql(orgId, today, cuts);
   const col = tagColumn(key);
   return {
-    sql: `${a}id IN (WITH s AS MATERIALIZED (${sql}) SELECT s.donor_id FROM s WHERE ${col})`,
+    // PARITY-3: the set is worked out once (MATERIALIZED), never per row, even with no statistics.
+    // SCALE-6: what is kept is the matching ids alone, so Postgres computes only the
+    // columns the condition reads (a level reads last12, never the lifecycle's aggregates).
+    sql: `${a}id IN (WITH st AS MATERIALIZED (SELECT s.donor_id FROM (${sql}) s WHERE ${col}) SELECT st.donor_id FROM st)`,
     args: col.endsWith("?") ? [...args, key] : args,
   };
 }
