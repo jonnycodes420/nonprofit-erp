@@ -1,6 +1,5 @@
 import { errorMessage, isProgrammerError } from "./lib/domainError";
 import { setOrgTimezone } from "./lib/orgToday";
-import { isBusyAnswer, retriesOnBusy, waitBeforeRetry } from "./lib/busyRetry.js";   // SCALE-6 item 2
 import { saveDrafts } from "./lib/idleDraft";
 import { inSupport, leaveSupport } from "./lib/supportSession";   // FIX-57
 import { bundlePath } from "./lib/homeReads";   // PERF-2
@@ -354,9 +353,10 @@ async function apiFetchNow(path, options = {}, busyTries = 0) {
       throw Object.assign(new Error(said), { status: 401, authHandled: true, ...err, message: said });
     }
     // SCALE-6 item 2: "Steward is busy, try again." A read asks once more, a second later (lib/busyRetry.js).
-    if (busyTries === 0 && isBusyAnswer(res.status, err) && retriesOnBusy(options.method)) {
-      await waitBeforeRetry();
-      return apiFetchNow(path, options, 1);
+    // Loaded only when a busy answer comes, so Home's first download doesn't carry it (perf-app's budget).
+    if (busyTries === 0 && res.status === 503 && err && err.code === "busy") {
+      const B = await import("./lib/busyRetry.js");
+      if (B.isBusyAnswer(res.status, err) && B.retriesOnBusy(options.method)) { await B.waitBeforeRetry(); return apiFetchNow(path, options, 1); }
     }
     // FLOWS-16 item 6: the route's sentence, never a bare code ("nothing_to_publish"). The code stays on e.error.
     const said = bodySentence(err);
