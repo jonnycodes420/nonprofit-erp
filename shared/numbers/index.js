@@ -28,6 +28,7 @@ module.exports = {
   goalPledges: require("./goalPledges"),   // GIFTS-2
   donorLabel: require("./donorLabel"),   // WALKB-2
   bunt: require("./bunt"),   // TRUTH-2
+  journeyCounts: require("./journeyCounts"),   // FLOWS-20
   draftFigures: require("./draftFigures"),   // TRUTH-2
   draftRender: require("./draftRender"),   // TRUTH-3
   giftCount: require("./giftCount"),   // TRUTH-3

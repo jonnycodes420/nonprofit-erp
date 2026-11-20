@@ -579,3 +579,8 @@ Diagnostic tooling added after manually deleting test-user rows in Supabase's Ta
   Heartbeats are one write per process for every run it holds, at most every 30 s. The database wake
   (`NOTIFY steward_jobs`, `server/jobs/wake.js`) is built but **off unless `JOB_WAKE=on`**: on the load profile
   it slowed a gift's POST (p95 671 vs 495 ms). Turn it on only with a load run showing the gift path unchanged.
+
+- **A read is bound to the tab's org too (FLOWS-20, after HARDEN-1).** `client/src/lib/orgBinding.js` sends
+  `X-Steward-Org` on every API call with a token; `middleware/orgBound.js` answers a read whose page org is not the
+  session's 409 `org_changed` (the banner), never another org's "not found". `/me`, `/me/orgs`, `/health`, `/auth/*` and
+  `/support-session/*` pass, so a tab can always learn where it is.

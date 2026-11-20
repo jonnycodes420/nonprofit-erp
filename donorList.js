@@ -169,7 +169,8 @@ const FIELDS = [
   F("volunteer", "Volunteers", "Volunteering", { col: false, filter: BOOL_OPS }),
   F("volunteer_hours", "Hours volunteered", "Volunteering", { format: "number", filter: NUM_OPS, cell: "volunteer_hours" }),
   // Communication
-  F("touch_titled", "Touch titled", "Communication", { col: false, filter: ops("had", "hadNot"),
+  // FLOWS-20: an empty title says what to type, and the org's recent titles are offered (GET /touch-batches/titles).
+  F("touch_titled", "Touch titled", "Communication", { col: false, filter: ops("had", "hadNot"), emptyHint: "Type the touch's title.", suggest: "/touch-batches/titles",
     sentence: "A touch logged with this title (a batch's title, or the words of one logged by hand), any day. A deleted touch doesn't count." }),
   F("last_contact", "Last contact", "Communication", { format: "date", filter: ops("before"), cell: "last_contact",
     sentence: "The last call, meeting, email or note logged with this person." }),
@@ -254,7 +255,7 @@ async function fieldsFor(orgId) {
 }
 function publicField(f) {
   return { key: f.key, label: f.label, group: f.group, column: !!f.col, sortable: !!f.sort, format: f.format,
-    sentence: f.sentence || undefined, sortNote: f.sortNote || undefined, filter: f.filter ? { ops: f.filter, options: f.options } : null };
+    sentence: f.sentence || undefined, sortNote: f.sortNote || undefined, filter: f.filter ? { ops: f.filter, options: f.options, emptyHint: f.emptyHint, suggest: f.suggest } : null };
 }
 
 // ── THE FILTER ─────────────────────────────────────────────────────────────
