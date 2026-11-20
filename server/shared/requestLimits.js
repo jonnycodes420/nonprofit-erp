@@ -37,6 +37,15 @@ const LONGER = [
 const limitFor = (path) => { for (const [re, name] of LONGER) if (re.test(path)) return name; return "default"; };
 
 const TOO_LONG = "This took too long; try again or narrow it.";
+// SCALE-6 item 2 · NO REQUEST WAITS LONG FOR A CONNECTION. A request whose statement
+// has been waiting on the pool itself for WAIT_MS (3 s) answers 503 "Steward is busy,
+// try again." at once, instead of holding the person's screen to the 10 s limit; the
+// browser reads it again once (client/src/lib/busyRetry.js). The clock starts when the
+// request asks the pool, not while it waits on its own PER_REQUEST places: those are
+// its own statements finishing, never a busy pool.
+const WAIT_MS = Math.max(250, Number(process.env.CONNECTION_WAIT_MS) || 3000);
+const BUSY = "Steward is busy, try again.";
+const busyError = () => Object.assign(new Error(BUSY), { code: "busy", status: 503 });
 // REPORTS-SPEED-2: a scope may say what took too long (reportLane.js: "This report took too long …").
 const tooLong = (sc) => Object.assign(new Error((sc && sc.tooLongMessage) || TOO_LONG), { code: "request_timeout", status: 503 });
 const abandoned = () => Object.assign(new Error("The request was closed before it finished."), { code: "request_abandoned", status: 499 });
@@ -44,7 +53,39 @@ const abandoned = () => Object.assign(new Error("The request was closed before i
 const isCancel = (e) => !!e && e.code === "57014";
 
 const scopes = new AsyncLocalStorage();
-const counters = { checkoutTimeouts: 0, statementTimeouts: 0, cancelled: 0, capWaits: 0, overCap: 0, perRequestPeak: 0, poolPeak: 0, heldMs: 0 };   // heldMs: PROFILE-SPEED-1, web requests' connection time
+const counters = { busyAnswers: 0, backgroundWaits: 0, checkoutTimeouts: 0, statementTimeouts: 0, cancelled: 0, capWaits: 0, overCap: 0, perRequestPeak: 0, poolPeak: 0, heldMs: 0 };   // heldMs: PROFILE-SPEED-1, web requests' connection time
+
+// SCALE-6 item 2 · THE LAST TWO CONNECTIONS ARE THE WEB'S. In the web process, work
+// outside any request (a background tick, an after-change pass once the answer has
+// gone, boot) takes a connection from the main pool only while RESERVE stay free for
+// web reads and no request is waiting for one; otherwise it waits its turn, with no
+// limit, and is woken by the next release. A background statement asked inside a
+// background callback that already holds a connection (a transaction's second
+// statement) goes ahead, or a transaction could wait on itself. The worker serves no
+// web reads and keeps its whole pool.
+const RESERVE = Math.max(0, Number(process.env.WEB_RESERVED_CONNECTIONS ?? 2));
+const BG = { held: 0, queue: [], timer: null };
+const backgroundHolding = new AsyncLocalStorage();
+const gated = (pool) => process.env.STEWARD_PROCESS !== "worker" && RESERVE > 0
+  && pool.options && pool.options.max === require("./pools").POOL_MAX;
+const roomForBackground = (pool) => {
+  const inUse = pool.totalCount - pool.idleCount;
+  return (pool.waitingCount || 0) === 0 && inUse < pool.options.max - RESERVE;
+};
+function wakeBackground() {
+  while (BG.queue.length && roomForBackground(BG.queue[0].pool)) BG.queue.shift().go();
+  if (BG.queue.length && !BG.timer) BG.timer = setTimeout(() => { BG.timer = null; wakeBackground(); }, 50);
+}
+async function backgroundConnect(pool) {
+  if (!gated(pool)) return pool.connect();
+  if (!backgroundHolding.getStore() && (BG.queue.length || !roomForBackground(pool))) {
+    counters.backgroundWaits++;
+    await new Promise(go => { BG.queue.push({ pool, go }); wakeBackground(); });
+  }
+  const c = await pool.connect();
+  c.__stewardBackground = true; BG.held++;
+  return c;
+}
 
 // PROFILE-SPEED-1 · NO ONE REQUEST TAKES THE POOL. A request's statements
 // share PER_REQUEST connections (pools.js, default 3). Two Donors list reads
@@ -66,7 +107,7 @@ const placesOf = sc => sc.places || (sc.places = { used: 0, holders: 0, queue: [
 // Run fn as `client`'s holder: what fn asks for is nested (see above).
 async function holding(fn, client) {
   const sc = scopes.getStore();
-  if (!sc) return fn();
+  if (!sc) return client && client.__stewardBackground ? backgroundHolding.run(true, fn) : fn();
   const owns = !!(client && client.__stewardPlace && client.__stewardScope === sc);
   if (!owns) return holdingStore.run(sc, fn);
   const pl = placesOf(sc);
@@ -153,18 +194,22 @@ function middleware(cancelBackend) {
 async function checkout(pool) {
   refuseIfAbandoned();
   const sc = live();
-  if (!sc) { const c = await align(await pool.connect(), 0, null); HOLD.took(c, null); return c; }
+  if (!sc) { const c = await align(await backgroundConnect(pool), 0, null); HOLD.took(c, null); return c; }
   const nested = holdingStore.getStore() === sc;   // see "NO ONE REQUEST TAKES THE POOL"
   let place = false, over = false;
   const t0 = Date.now();   // SCALE-3: the wait, for the capacity gauge (server/perf/capacity.js)
   const client = await new Promise((resolve, reject) => {
     // One wait: it ends once, by a connection, the limit, or an abandon (close()).
     const wait = { settled: false, timer: null, fail: null, place: false, over: false };
-    const end = () => { wait.settled = true; clearTimeout(wait.timer); sc.waiting.delete(wait.fail); };
+    const end = () => { wait.settled = true; clearTimeout(wait.timer); clearTimeout(wait.poolTimer); sc.waiting.delete(wait.fail); };
     wait.fail = (e) => { if (!wait.settled) { end(); if (wait.place) givePlace(sc); reject(e); } };
     wait.timer = setTimeout(() => { counters.checkoutTimeouts++; sc.timedOut = true; wait.fail(tooLong(sc)); }, sc.limitMs);
     sc.waiting.add(wait.fail);
-    const go = () => pool.connect().then(c => {
+    // SCALE-6: from here the wait is on the pool. Past WAIT_MS it is "busy" (counted as a
+    // wait that gave up, like the limit's), unless the scope's own limit is sooner.
+    const go = () => (wait.poolTimer = setTimeout(() => {
+      counters.checkoutTimeouts++; counters.busyAnswers++; sc.timedOut = true; wait.fail(busyError());
+    }, Math.min(WAIT_MS, sc.limitMs)), pool.connect()).then(c => {
       if (wait.settled) return c.release();
       end(); place = wait.place; over = wait.over; resolve(c);
     }, wait.fail);
@@ -203,6 +248,8 @@ function release(client, err) {
   HOLD.gave(client);
   const sc = client.__stewardScope;
   client.__stewardScope = null;
+  if (client.__stewardBackground) { client.__stewardBackground = false; BG.held--; }
+  setImmediate(wakeBackground);
   if (!sc) return client.release(err);
   sc.held.delete(client);
   if (client.__stewardHeldAt) { counters.heldMs += Date.now() - client.__stewardHeldAt; client.__stewardHeldAt = 0; }
@@ -241,6 +288,11 @@ function useLimit(name) {
 // The app's error handler asks here first: a statement or a wait past its
 // limit is a 503 with the plain sentence; an abandoned read has nobody to answer.
 function answerError(err, req, res, route) {
+  if (err && err.code === "busy") {
+    console.warn(`[503] ${req.method} ${route} rid=${req.id || "-"} busy: no connection in ${WAIT_MS} ms`);
+    if (!res.headersSent) res.status(503).set("Retry-After", "1").json({ error: err.message, code: err.code, sentence: err.message });
+    return true;
+  }
   if (err && err.code === "request_timeout") {
     console.warn(`[503] ${req.method} ${route} rid=${req.id || "-"} too long`);
     res.status(503).json({ error: err.message, code: err.code });
@@ -268,5 +320,5 @@ function memoFor() { const sc = live(); return sc && sc.memo ? sc.memo : null; }
 
 // TEST_MODE harnesses read the peaks for a window of their own.
 function resetPeaks() { counters.heldMs = 0; counters.perRequestPeak = 0; counters.poolPeak = 0; counters.capWaits = 0; counters.overCap = 0; }
-module.exports = { memoize, memoFor, holding, resetPeaks, answerError, cancelWith, DEFAULT_MS, NAMED, LONGER, limitFor, TOO_LONG, middleware, checkout, release, translate, guard, useLimit, shared,
+module.exports = { memoize, memoFor, holding, resetPeaks, answerError, cancelWith, DEFAULT_MS, NAMED, LONGER, limitFor, TOO_LONG, WAIT_MS, BUSY, RESERVE, middleware, checkout, release, translate, guard, useLimit, shared,
   cancelPool, live, stats: () => ({ ...counters }), isCancel };

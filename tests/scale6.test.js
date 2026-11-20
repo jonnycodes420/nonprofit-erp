@@ -83,6 +83,148 @@ async function perRowReads(sql, args) {
     .map(n => `${[...relations(n)].filter(r => UNIT_TABLES.has(r)).join("+")} x${n["Actual Loops"]}`);
 }
 
+// ── §2 NO REQUEST WAITS FOREVER FOR A CONNECTION (item 2) ──────────────────
+// In-process, on this process's own pools (server/shared/requestLimits.js).
+//   a. A web request whose statement waits on a full pool answers "busy" (503,
+//      "Steward is busy, try again.") at WAIT_MS (3 s), not at the 10 s limit.
+//   b. Background work (no request) leaves the last RESERVE (2) connections of the
+//      main pool to web reads: with every other connection held by background work,
+//      a further background checkout waits while a web read still gets one, and it
+//      goes ahead as soon as one comes back. A background callback's own second
+//      statement is never held back (a transaction cannot wait on itself).
+//   c. The client asks a read again once on "busy", and never a write.
+// Planted, each red: the wait clock at the scope's limit (§2a); the background gate
+// off (§2b).
+async function section2() {
+  const LIMITS = require("../server/shared/requestLimits");
+  const { Pool } = require("pg");
+  const opts = { connectionString: process.env.DATABASE_URL, ssl: /disable/.test(process.env.DB_SSL || "") ? false : undefined };
+  console.log("\n§2a a request that cannot get a connection answers busy at 3 s");
+  const tiny = new Pool({ ...opts, max: 1 });
+  const holder = await tiny.connect();
+  const fakeReq = { method: "GET", path: "/donors", __stewardInProcess: false };
+  const fakeRes = { on() {}, json: x => x, statusCode: 200, status() { return this; } };
+  const t0 = Date.now();
+  const err = await new Promise(resolve => LIMITS.middleware(async () => {})(fakeReq, fakeRes, () => {
+    LIMITS.checkout(tiny).then(c => { LIMITS.release(c); resolve(null); }, resolve);
+  }));
+  const waited = Date.now() - t0;
+  holder.release(); await tiny.end();
+  ok("§2a the wait ends as busy, a 503 with the plain sentence", !!err && err.code === "busy" && err.status === 503 && err.message === "Steward is busy, try again.", err && { code: err.code, msg: err.message });
+  ok("§2a it ends at about 3 s, well before the 10 s limit", waited >= LIMITS.WAIT_MS - 100 && waited < LIMITS.WAIT_MS + 1500, waited);
+  const sent = {};
+  const res = { headersSent: false, status(c) { sent.status = c; return this; }, set(k, v) { sent[k] = v; return this; }, json(b) { sent.body = b; return this; } };
+  LIMITS.answerError(err || {}, { method: "GET", id: "t" }, res, "/donors");
+  ok("§2a the answer is 503, Retry-After 1, code busy", sent.status === 503 && sent["Retry-After"] === "1" && sent.body && sent.body.code === "busy", sent);
+
+  console.log("\n§2b background work leaves the last two connections to web reads");
+  const { pool } = require("../server/db/pool");
+  // Drain what this process holds, so the count below is ours alone.
+  await new Promise(r => setTimeout(r, 200));
+  const max = pool.options.max, held = [];
+  const fill = max - LIMITS.RESERVE - (pool.totalCount - pool.idleCount);
+  for (let i = 0; i < fill; i++) held.push(await LIMITS.checkout(pool));
+  let bgGot = false;
+  const bg = LIMITS.checkout(pool).then(c => { bgGot = true; return c; });
+  await new Promise(r => setTimeout(r, 400));
+  ok(`§2b with ${max - LIMITS.RESERVE} of ${max} held by background work, one more background checkout waits`, !bgGot, { total: pool.totalCount, idle: pool.idleCount });
+  const web = await new Promise((resolve, reject) => LIMITS.middleware(async () => {})({ method: "GET", path: "/donors" }, fakeRes, () => {
+    LIMITS.checkout(pool).then(resolve, reject);
+  }));
+  ok("§2b a web read still gets a connection at once", !!web);
+  LIMITS.release(web);
+  LIMITS.release(held.pop());
+  const bgc = await Promise.race([bg, new Promise(r => setTimeout(() => r(null), 1500))]);
+  ok("§2b the waiting background checkout goes ahead when one comes back", !!bgc);
+  if (bgc) LIMITS.release(bgc);
+  // A background callback holding a connection asks for a second one: never held back.
+  const outer = await LIMITS.checkout(pool);
+  for (let i = held.length; i < max - LIMITS.RESERVE - 1; i++) held.push(await LIMITS.checkout(pool));
+  const inner = await LIMITS.holding(() => Promise.race([LIMITS.checkout(pool), new Promise(r => setTimeout(() => r(null), 1500))]), outer);
+  ok("§2b a background transaction's own next statement is not held back", !!inner);
+  if (inner) LIMITS.release(inner);
+  LIMITS.release(outer);
+  while (held.length) LIMITS.release(held.pop());
+
+  console.log("\n§2c the browser asks a busy read again once, never a write");
+  const BR = await import(require("url").pathToFileURL(require("path").join(__dirname, "../client/src/lib/busyRetry.js")).href);
+  ok("§2c busy is a 503 whose code is busy, and only that", BR.isBusyAnswer(503, { code: "busy" }) && !BR.isBusyAnswer(503, { code: "request_timeout" }) && !BR.isBusyAnswer(500, { code: "busy" }));
+  ok("§2c a GET is asked again, a POST, PUT, PATCH or DELETE never", BR.retriesOnBusy("GET") && BR.retriesOnBusy(undefined) && !["POST", "PUT", "PATCH", "DELETE"].some(m => BR.retriesOnBusy(m)));
+  const api = require("fs").readFileSync(require("path").join(__dirname, "../client/src/api.js"), "utf8");
+  ok("§2c api.js asks again once (busyTries 0 only), with the retry's wait", /busyTries === 0 && isBusyAnswer\(res\.status, err\) && retriesOnBusy\(options\.method\)/.test(api) && /return apiFetchNow\(path, options, 1\)/.test(api));
+}
+
+// ── §3 THE FIRST SCREEN AFTER A SAVE SHOWS THE NEW ANSWER (item 3) ─────────
+// W-1112-Volunteers-01X, nine nights. Each write the fleet named, as the screen sends
+// it, against the kinds each screen showing that data actually subscribes to, read
+// from its source line (so a screen that stops listening is red here, not on the
+// fleet's tenth night). And the write-announce ratchet: no new write in client/src
+// may announce nothing.
+// Planted, each red: the sidebar badge no longer hears tasks (§3); a new write with
+// no rule (§3 ratchet).
+async function section3() {
+  const fs = require("fs"), path = require("path");
+  const CH = await import(require("url").pathToFileURL(path.join(__dirname, "../client/src/lib/changes.js")).href);
+  const src = f => fs.readFileSync(path.join(__dirname, "../client/src", f), "utf8");
+  // The kinds on the subscription line that carries `anchor` in file `f`.
+  const kindsAt = (f, anchor) => {
+    const line = src(f).split("\n").find(l => l.includes(anchor) && /use(Changed|ChangeRev|WriteRev)\(/.test(l));
+    if (!line) return null;
+    if (/useWriteRev\(VOLUNTEER_WRITES\)/.test(line)) return ["volunteer"];
+    if (/useChanged\(PROFILE_KINDS/.test(line)) return [...(src("lib/profileRefresh.js").match(/PROFILE_KINDS = \[([^\]]*)\]/) || ["", ""])[1].matchAll(/"([a-z]+)"/g)].map(m => m[1]);
+    const arr = /use(?:Changed|ChangeRev)\(\s*\[([^\]]*)\]/.exec(line);
+    return arr ? [...arr[1].matchAll(/"([a-z]+)"/g)].map(m => m[1]) : null;
+  };
+  const P = "d_person", E = "e_event";
+  const READ = {
+    pledgeCard: ["Profile → Giving: pledges (useProfileGiving.jsx)", "components/profile/useProfileGiving.jsx", "loadPledges();if(fundAffinity", null],
+    fundraising: ["Fundraising totals (Fundraising.jsx)", "components/Fundraising.jsx", "refresh);", null],
+    header: ["Profile header: Lifetime, last gift (profileRefresh.js)", "lib/profileRefresh.js", "PROFILE_KINDS, c =>", { person: P }],
+    byYear: ["Profile → Giving: By year (ByYear.jsx)", "components/profile/ByYear.jsx", "useChangeRev", { person: P }],
+    portfolioDonors: ["Donors → portfolio totals (Donors.jsx)", "components/Donors.jsx", "loadOfficers();", null],
+    portfolioHome: ["Home → portfolio card (PortfolioCard.jsx)", "components/home/PortfolioCard.jsx", "useChangeRev", null],
+    volHeader: ["Volunteers header and counts (VolunteersHub.jsx)", "components/VolunteersHub.jsx", "const volRev", null],
+    volPanel: ["Profile → Volunteer hours (VolunteerPanel.jsx)", "components/VolunteerPanel.jsx", "loadProf();", { person: P }],
+    attendees: ["Event → attendee list (EventsDesk.jsx)", "components/EventsDesk.jsx", "{ event: event.id }", { event: E }],
+    eventCards: ["Events → each event's summary (EventsDesk.jsx)", "components/EventsDesk.jsx", "each card's counts", null],
+    eventsList: ["Events list (Events.jsx)", "components/Events.jsx", "const listRev", null],
+    badge: ["Sidebar Tasks badge (taskBadge.js)", "lib/taskBadge.js", "() => load(), null, 150", null],
+  };
+  const PAIRS = [
+    ["Pledge saved on a profile", "POST", `/donors/${P}/pledges`, null, ["pledgeCard", "fundraising", "byYear"]],
+    ["Pledge payment", "PUT", "/pledges/pl_1/installments", { donorId: P }, ["pledgeCard", "fundraising"]],
+    ["Gift deleted on a profile", "DELETE", "/gifts/g_1", null, ["header", "byYear", "pledgeCard", "portfolioDonors", "portfolioHome", "fundraising"]],
+    ["Volunteer hours logged (Volunteers)", "POST", `/donors/${P}/volunteer-hours`, null, ["volHeader", "volPanel", "header"]],
+    ["Event guest added", "POST", `/events/${E}/attendees`, null, ["attendees", "eventCards", "eventsList"]],
+    ["Task completed (Tasks)", "POST", "/tasks/t_1/complete", null, ["badge"]],
+    ["Next step done (Home's drift row)", "POST", `/drift/${P}/done`, null, ["badge", "header"]],
+    ["Plan step done (profile rail)", "POST", "/plan-steps/ps_1/done", null, ["badge"]],
+    ["Owners assigned from Home", "POST", "/home/owners/assign", null, ["portfolioDonors", "portfolioHome"]],
+  ];
+  console.log("\n§3 each write the fleet named reaches every screen that shows what it changed");
+  for (const [what, method, p, body, reads] of PAIRS) {
+    const w = CH.kindsOfWrite(p, method, body ? JSON.stringify(body) : undefined);
+    const misses = [];
+    for (const r of reads) {
+      const [name, file, anchor, ids] = READ[r];
+      const kinds = kindsAt(file, anchor);
+      if (!kinds) { misses.push(`${name}: no subscription found`); continue; }
+      if (!CH.reaches(w, kinds, ids)) misses.push(`${name} hears ${kinds.join(",")}, the write says ${[...w.kinds].join(",")}`);
+    }
+    ok(`§3 ${what} (${method} ${p}) → ${reads.map(r => READ[r][0].split(" (")[0]).join("; ")}`, !misses.length, misses);
+  }
+  const W2R = await import(require("url").pathToFileURL(path.join(__dirname, "../client/src/lib/writeToRead.js")).href);
+  const listed = new Set(W2R.WRITE_TO_READ.map(e => `${e.method} ${e.path}`));
+  ok("§3 the fleet's writes are in the write-to-read list (writeToRead.js), which flows13 checks too",
+    PAIRS.every(([, m, p]) => listed.has(`${m} ${p}`)), PAIRS.filter(([, m, p]) => !listed.has(`${m} ${p}`)).map(x => x[0]));
+
+  console.log("\n§3 no new write in client/src announces nothing (scripts/ci/write-announce-scan.mjs)");
+  const scan = await import(require("url").pathToFileURL(path.join(__dirname, "../scripts/ci/write-announce-scan.mjs")).href);
+  const r = scan.check();
+  ok(`§3 every write in client/src announces what it changed, or is in the shrinking baseline (${r.all.length} writes, ${r.missing.length - r.fresh.length} in the baseline)`,
+    r.all.length > 500 && !r.fresh.length, r.fresh.map(w => `${w.method} ${w.path} ${w.file}:${w.line}`));
+}
+
 (async () => {
   await clean();
   await seed();
@@ -128,6 +270,9 @@ async function perRowReads(sql, args) {
   const c = PC.countsSql(ORG, today, null);
   const counts = await perRowReads(c.sql, c.args);
   ok("§1c /donors/counts reads the unit tables a page's worth at most", !counts.length, counts);
+
+  await section2();
+  await section3();
 
   await clean();
   summary();
