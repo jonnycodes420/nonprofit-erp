@@ -154,7 +154,7 @@ export function useProfilePipeline({ givingOpen, donor, setDesignations, refresh
   const loadFundAffinity=()=>{
     const id=donor.id;fundFor.current=id;
     setFundLoading(true);
-    apiFetch(`/donors/${id}/fund-affinity`).then(r=>{if(fundFor.current===id)setFundAffinity(r?{...r,donorId:id}:null);}).catch(()=>{}).finally(()=>{if(fundFor.current===id)setFundLoading(false);});
+    apiFetch(`/donors/${id}/fund-affinity`).then(r=>{if(fundFor.current===id)setFundAffinity(r?{...r,donorId:id}:null);}).catch(e=>{if(fundFor.current===id)setFundAffinity({donorId:id,error:(e&&e.message)||null});}).finally(()=>{if(fundFor.current===id)setFundLoading(false);});   // FLOWS-20: a refusal says why (e.g. the org changed in another tab)
   };
 
   // Optimistic delete: drop the entry locally right away; on failure, refetch

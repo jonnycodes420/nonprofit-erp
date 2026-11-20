@@ -205,13 +205,17 @@ const PASSWORD = "loadtest1234";
         (body.match(/By year could not be read[^\n]*|Could not load fund data/g) || []));
       // Another tab of this browser signs in to the other org: the token under this page changes.
       const lb = await api("POST", "/auth/login", null, { email: `other-${run}@flows20.local`, password: PASSWORD });
+      // FLOWS-20 re-check on staging: the swap must come BEFORE the Giving tab's first read, or the
+      // fund panel's earlier answer hides what a fresh read says. A fresh profile, swap, then Giving.
+      await profile(ver);
       await page.evaluate(t => localStorage.setItem("npe_token", t), lb.body.token);
-      await page.locator('[role="tab"][data-tab="activity"]').click();
       await page.locator('[role="tab"][data-tab="giving"]').click();
       await page.waitForTimeout(2500);
       const after = await page.innerText("body");
       ok("§4 that tab never shows another org's \"Donor not found\" (main: By year could not be read: Donor not found)",
         !/Donor not found|Could not load fund data/.test(after), (after.match(/[^\n]*(Donor not found|Could not load fund data)[^\n]*/g) || []));
+      ok("§4 ...each panel that could not read says the org changed (main, after FLOWS-20: \"Could not load fund data.\")",
+        /you're now in/.test(await page.locator('[data-testid="dp-fund-error"]').innerText().catch(() => "")), await page.locator('[data-testid="dp-fund-error"]').innerText().catch(() => "(no panel)"));
       await page.evaluate(t => localStorage.setItem("npe_token", t), lg.body.token);
     });
 
