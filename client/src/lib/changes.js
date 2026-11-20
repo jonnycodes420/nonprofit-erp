@@ -35,6 +35,18 @@ const GIFT = ["gift", "person", "totals", "fund"];
 const RULES = [
   // COMMS-1: a draft dismissed, restored, sent, approved or skipped moves every count of drafts waiting.
   [/^\/(drafts|milestone-drafts|thank-yous)\b|^\/agent\/(waiting|drafts?)\b/, ["draft", "task"]],
+  // SCALE-6 item 3 (W-1112-Volunteers-01X): writes that announced nothing ("other"), so the
+  // screens showing what they changed waited for a reload. A drift row or a plan step marked
+  // done ticks a task (the sidebar badge); restoring a deleted record brings back a person
+  // with their gifts, pledges and tasks; owners assigned from Home move the portfolio totals;
+  // a relationship is a household's and a giving unit's; an attribution moves a gift's credit;
+  // a journey applied lays out tasks; a campaign on Fundraising moves its totals.
+  [/^\/drift\/[^/]+\/done\b|^\/plan-steps\/[^/]+\/done\b|^\/journeys\/[^/]+\/apply\b|^\/journeys\/[^/]+\/batch\b|^\/journeys\/batches\//, ["task", "person"]],
+  [/^\/deleted-records\b/, ["person", "gift", "pledge", "group", "totals", "task", "note", "event", "volunteer"]],
+  [/^\/home\/owners\b/, ["person", "totals", "task"]],
+  [/^\/donor-relationships?\b/, ["person", "totals", "pledge"]],
+  [/^\/gift-attribution\b/, ["gift", "person", "totals"]],
+  [/^\/fundraising\/(campaigns?|appeals?|goals?)\b/, ["totals", "gift", "pledge"]],
   [/^\/(atlas|tell|voice|memos?|requests)\b/, ALL],
   [/^\/(imports?|spreadsheet-import|csv|history-import|old-reports)\b|\/undo\b.*import|import.*\/undo\b/, ALL],
   [/^\/donors\/[^/]+\/gifts\b|^\/gifts\b|^\/donations\b|^\/checks?\b|^\/deposits?\b|^\/batches?\b|^\/recurring\b|^\/refunds?\b|^\/soft-credits?\b|^\/ledger\b|^\/finance\b|^\/offline-plans?\b/, GIFT],   // FLOWS-13: a staff-recorded plan's payment or cancel

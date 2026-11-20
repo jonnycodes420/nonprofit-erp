@@ -38,6 +38,38 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
   own window event or a write-path regex. A new write route gets a rule in `kindsOfWrite` if no rule
   names it (a write no rule names is "other" and re-reads nothing). Server-side changes reach the
   screen through the bell's change marks, so no view polls on its own.
+- **SCALE-6 (2026-11-20): no request waits long for a connection, and the web keeps two.**
+  A web request whose statement has waited `CONNECTION_WAIT_MS` (3 s) on the pool itself answers
+  503 `{ code: "busy" }`, "Steward is busy, try again.", with `Retry-After: 1`; the browser asks a
+  read again once and never resends a write (`client/src/lib/busyRetry.js`), since a busy answer
+  can come after some of a write's statements ran. A wait on the request's own places (its
+  `PER_REQUEST` cap) is not a busy pool and keeps the scope's limit. In the web process,
+  work outside a request (a tick, an after-change pass after the answer, boot) takes a main-pool
+  connection only while `WEB_RESERVED_CONNECTIONS` (2) stay free and no request waits; a
+  background callback's own next statement goes ahead. The worker keeps its whole pool.
+  `/health` counts both (`busyAnswers`, `backgroundWaits`). (`server/shared/requestLimits.js`)
+- **SCALE-6 (2026-11-20): every write in `client/src` announces what it changed.**
+  `scripts/ci/write-announce-scan.mjs` reads every `apiFetch(path, { method: POST|PUT|PATCH|DELETE })`
+  and asks `kindsOfWrite` what it announces. A write that announces nothing ("other") re-reads no
+  screen. The 306 that did when the check was added are a baseline that only shrinks
+  (`write-announce-baseline.json`). `tests/scale6.test.js` §3 fails on a new one, and on a screen
+  in the table below that stops hearing its write (each screen's kinds are read from its own
+  `useChanged` line). A new write gets a rule in `kindsOfWrite`, or goes in `writeToRead.js
+  NO_SCREEN_READS` with the reason no screen shows what it changed. The table, as the fleet
+  named it (W-1112-Volunteers-01X) and as `WRITE_TO_READ` lists it:
+
+  | Write (as the screen sends it) | Announces | Screens that must re-read |
+  |---|---|---|
+  | `POST /donors/:id/pledges` (pledge saved) | pledge, gift, person, totals | profile pledges and By year; Fundraising; Finance |
+  | `PUT /pledges/:id/installments` (pledge payment) | pledge, gift, person, totals | profile pledges; Fundraising; Finance |
+  | `DELETE /gifts/:id` (gift deleted) | gift, person, totals, fund | profile header, Giving tab, By year; Home portfolio card; Donors portfolio totals and Team; Fundraising; Finance |
+  | `POST /donors/:id/gifts` (gift recorded) | gift, person, totals, fund | the same, and Team's totals: the people it names are re-read into the whole-org list (`Donors.jsx`) |
+  | `POST /donors/:id/volunteer-hours` | volunteer, person | Volunteers header, counts and Recent shifts; profile volunteer hours |
+  | `POST /events/:id/attendees` (guest added) | event, person | the event's attendee list; every event card's summary; the Events list |
+  | `POST /tasks/:id/complete` | task, person | sidebar Tasks badge; Tasks |
+  | `POST /drift/:id/done`, `POST /plan-steps/:id/done` | task, person | sidebar Tasks badge (a drift row's next step is a task) |
+  | `POST /home/owners/assign` | person, totals, task | Home portfolio card; Donors portfolio totals |
+  | `POST /deleted-records/...` (restore) | every person kind | every list of people, gifts, pledges and tasks |
 - **IDS-1 (2026-11-03): a new row id is `newId(prefix)`** from `server/shared/newId.js`: the prefix,
   `_`, and 20 hex (80 bits). Never `uuid().slice(0, N)`: 8 hex is even odds of a duplicate key at
   ~77,000 rows (the arch-check's `short-ids` rule is a hard 0). Old short ids stay as they are, so a

@@ -623,6 +623,16 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   useStewardTold(()=>{reloadDonors();});
   // STALE-1: and a write anywhere that adds, removes or merges people (not every
   // write to one person's record: their profile re-reads itself).
+  // SCALE-6 item 3 (W-1112-Volunteers-01X): the portfolio totals (each owner's people and
+  // dollars) re-read after a gift, a delete, an owner change or the worker's after-change.
+  useChanged(["gift","person","totals"],c=>{
+    loadOfficers();
+    // And the people a write named (a gift recorded from here, a profile or Home), re-read
+    // by id into the whole-org list Team sums and Kanban groups, without reading the org again.
+    const named=c&&c.ids&&c.ids.person?[...c.ids.person]:[];
+    if(!orgPeople||!named.length||named.length>200)return;
+    peopleById(named).then(fresh=>{if(Object.keys(fresh).length)setOrgPeople(list=>Array.isArray(list)?list.map(d=>fresh[d.id]?{...d,...fresh[d.id]}:d):list);}).catch(()=>{});
+  });
   useChanged(["person","import"],c=>{if(c.source==="told")return;if(c.kinds.has("import")||c.source==="worker"||c.method==="DELETE"||ADDS_PEOPLE.test(c.path||"")||/^\/donors\/bulk|^\/removals|merge|^\/trash|^\/households?\b/.test(c.path||""))reloadDonors();});
 
   // SCALE-2: open someone only if they are still on file (the old list's

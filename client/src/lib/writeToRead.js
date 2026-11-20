@@ -26,6 +26,19 @@ const BRAND = [
   { read: "Brand kit letterhead (BrandKit.jsx)", kinds: ["org"] },
 ];
 const TEAM = [{ read: "Team, Invited (InvitedList.jsx)", kinds: ["org"] }];
+// SCALE-6 item 3
+const E = "e_event";
+const FUNDRAISING = [{ read: "Fundraising totals (Fundraising.jsx)", kinds: ["gift", "pledge", "totals", "event"] }];
+const DONORS_PORTFOLIO = [{ read: "Donors portfolio totals (Donors.jsx loadOfficers)", kinds: ["gift", "person", "totals"] }];
+const VOLUNTEER = [
+  { read: "Volunteers header, counts and Recent shifts (VolunteersHub.jsx useWriteRev)", kinds: ["volunteer"] },
+  { read: "Profile volunteer hours (VolunteerPanel.jsx)", kinds: ["volunteer"], ids: { person: P } },
+];
+const EVENT = [
+  { read: "Event attendee list (EventsDesk.jsx)", kinds: ["event"], ids: { event: E } },
+  { read: "Each event's summary card (EventsDesk.jsx, Events.jsx)", kinds: ["event"] },
+];
+const BADGE = [{ read: "Sidebar Tasks badge (taskBadge.js)", kinds: ["task"] }];
 
 export const WRITE_TO_READ = [
   // FLOWS-8 / FLOWS-10, kept here so the list is whole
@@ -47,4 +60,21 @@ export const WRITE_TO_READ = [
   { write: "Brand kit saved", method: "PUT", path: "/brand-kit", reads: BRAND },
   { write: "Invite sent", method: "POST", path: "/auth/invite", reads: TEAM },
   { write: "Invite revoked", method: "DELETE", path: "/org/invites/inv_1", reads: TEAM },
+  // SCALE-6 item 3 (W-1112-Volunteers-01X, nine nights): the brief's pairs, each as the
+  // screen sends it. tests/scale6.test.js §3 checks them against each screen's own
+  // subscription line, and docs/decisions/architecture.md has the table in words.
+  { write: "Pledge saved on a profile", method: "POST", path: `/donors/${P}/pledges`, reads: [...PROFILE, ...FUNDRAISING, ...FINANCE] },
+  { write: "Pledge payment (schedule)", method: "PUT", path: "/pledges/pl_1/installments", body: { donorId: P }, reads: [...PROFILE, ...FUNDRAISING, ...FINANCE] },
+  { write: "Gift deleted on a profile", method: "DELETE", path: "/gifts/g_1", reads: [...PROFILE, ...PORTFOLIO, ...DONORS_PORTFOLIO, ...FUNDRAISING, ...FINANCE] },
+  { write: "Volunteer hours logged", method: "POST", path: `/donors/${P}/volunteer-hours`, reads: VOLUNTEER },
+  { write: "Event guest added", method: "POST", path: `/events/${E}/attendees`, reads: EVENT },
+  { write: "Task completed", method: "POST", path: "/tasks/t_1/complete", reads: BADGE },
+  { write: "Next step done (Home's drift row)", method: "POST", path: `/drift/${P}/done`, reads: BADGE },
+  { write: "Plan step done (profile rail)", method: "POST", path: "/plan-steps/ps_1/done", reads: BADGE },
+  { write: "Owners assigned from Home", method: "POST", path: "/home/owners/assign", reads: [...PORTFOLIO, ...DONORS_PORTFOLIO] },
 ];
+
+// SCALE-6 item 3 · THE WRITES THAT CHANGE NO SCREEN. scripts/ci/write-announce-scan.mjs
+// fails CI on a write in client/src that announces nothing (lib/changes.js kindsOfWrite
+// answers "other") unless it is named here, with why no figure on any screen shows it.
+export const NO_SCREEN_READS = [];

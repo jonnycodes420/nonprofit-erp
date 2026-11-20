@@ -324,7 +324,7 @@ export function landed(path) {
   return p ? p.then(() => {}, () => {}) : Promise.resolve();
 }
 
-async function apiFetchNow(path, options = {}) {
+async function apiFetchNow(path, options = {}, busyTries = 0) {
   const token = getToken();
   // ACCESS-2B: someone who sees only their own people asks only their open
   // routes; a closed one is answered here and never sent (lib/portfolioRoutes.js).
@@ -351,6 +351,12 @@ async function apiFetchNow(path, options = {}) {
       // sent to /login, so it must not render this as an outage.
       const said = bodySentence(err);
       throw Object.assign(new Error(said), { status: 401, authHandled: true, ...err, message: said });
+    }
+    // SCALE-6 item 2: "Steward is busy, try again." A read asks once more, a second later (lib/busyRetry.js).
+    // Loaded only when a busy answer comes, so Home's first download doesn't carry it (perf-app's budget).
+    if (busyTries === 0 && res.status === 503 && err && err.code === "busy") {
+      const B = await import("./lib/busyRetry.js");
+      if (B.isBusyAnswer(res.status, err) && B.retriesOnBusy(options.method)) { await B.waitBeforeRetry(); return apiFetchNow(path, options, 1); }
     }
     // FLOWS-16 item 6: the route's sentence, never a bare code ("nothing_to_publish"). The code stays on e.error.
     const said = bodySentence(err);
