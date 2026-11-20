@@ -27,6 +27,11 @@ Six items from lead-2026-11-20 (the ninth staging night), plus ONBOARD-3's Ask J
 - **Touch titled (W-1119-Donors-T8, repeat).** EDIT-2 wrote "Type the touch's title." on the server, but the client never
   sends an empty filter, so the words never showed. The hint now sits under the empty box with the org's recent titles.
 
+- **Follow-up (#2 PR), found on the staging re-check.** With a second tab signed in to another org, the banner showed and
+  "Donor not found" was gone, but the fund panel still read "Could not load fund data.": its loader swallowed the error.
+  It now says the refusal's own sentence. The suite's first check swapped the token after the panel had already loaded,
+  so it could not see this; it now swaps before the Giving tab's first read.
+
 ## What was learned
 - A guard on writes only is half a guard: reads answered from another org look like missing data, and the fleet
   reported them as a new defect in the numbers.
