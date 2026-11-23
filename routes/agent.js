@@ -1623,8 +1623,7 @@ async function agentPreparedGiftPlan(orgId, text, donor) {
   const A = await agentShapeMod();
   const V = await import("../shared/vocabulary.js");
   const today = orgToday(await orgTz(orgId));
-  const [fund] = await query(
-    "SELECT name FROM fin_funds WHERE org_id = ? AND restricted = false ORDER BY created_at ASC LIMIT 1", [orgId]);
+  const fund = await require("../shared/numbers/defaultFund").defaultFund(query, orgId);   // LEDGER-3: the one default fund
   const method = A.methodFromInstruction(text);
   const day = agentCivil(today), due = agentCivil(today, 2);
   // FIX-2 — the one display format: "Sep 25" this year, "Sep 25, 2025" before.

@@ -621,9 +621,9 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
   // The general fund is the org's oldest unrestricted fund, the same probe
   // ensureOrgLedger reads, but READ ONLY: drafting a letter never heals a
   // ledger or creates a fund (connect2-sources caught the healing version).
-  const [gen] = fund && !fundPublic
-    ? await query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false ORDER BY created_at ASC LIMIT 1", [orgId]) : [];
-  const generalFund = !!gen && gen.id === fundId;
+  // LEDGER-3: the org's one default fund (shared/numbers/defaultFund.js).
+  const genId = fund && !fundPublic ? await require("../../shared/numbers/defaultFund").defaultFundId(query, orgId) : null;
+  const generalFund = !!genId && genId === fundId;
   const draftMod = await import("../../shared/draftNote.js");
   const voice = draftMod.voiceFrom(samples);
   // ── FIX-6 follow-up 8 · THE FACTS THE DRAFT MAY REST ON ─────────────────

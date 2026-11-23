@@ -9,6 +9,8 @@ const { query } = require("../../db");
 const FY = require("../../shared/numbers/fiscalYear");
 const LS = require("../../shared/numbers/ledgerStatus");
 const { MONEY, LIVE, GIFT } = require("../../shared/numbers/money");
+const { GIFT_FUND_ROWS } = require("../../shared/numbers/fundLines");
+const DF = require("../../shared/numbers/defaultFund");
 
 const STATUSES = ["posted", "waiting", "history"];
 
@@ -17,13 +19,28 @@ module.exports = function ledgerSources({ FigureParamError }) {
     "ledger-status": {
       label: "Gifts and the books",
       measure: p => (p.measure === "count" ? "count" : "sum"),
-      params: { status: "word:required", measure: "measure" },
-      sentence: p => LS.SENTENCES[p.status] || "Gifts and where they stand with the books.",
+      // LEDGER-3: `fund` narrows it to one fund's gifts (a split gift is its line;
+      // a gift with no fund waits on the default fund, where it will post).
+      params: { status: "word:required", measure: "measure", fund: "id" },
+      sentence: p => (LS.SENTENCES[p.status] || "Gifts and where they stand with the books.") + (p.fund ? " Only the gifts to this fund." : ""),
       sql: async (orgId, p) => {
         if (!STATUSES.includes(p.status)) throw new FigureParamError("status is posted, waiting or history.");
         if (p.measure && !["sum", "count"].includes(p.measure)) throw new FigureParamError("measure is sum or count.");
         const [org] = await query("SELECT * FROM orgs WHERE id = ?", [orgId]);
         const fyFrom = FY.fiscalYearToDate(org || {}).from;
+        if (p.fund) {
+          const defaultId = await DF.defaultFundId(query, orgId);
+          return {
+            sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(gf.amount::numeric, 2) AS amount,
+                         COALESCE(f.name, 'No fund (posts to the default fund)') AS detail
+                    FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+                    JOIN ${GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id
+                    LEFT JOIN fin_funds f ON f.id = gf.fund_id AND f.org_id = g.org_id
+                   WHERE ${LS.STATUS("g")} = ? AND g.org_id = ? AND ${LIVE("d")} AND ${MONEY("g")}${p.measure === "count" ? ` AND ${GIFT("g")}` : ""}
+                     AND COALESCE(gf.fund_id, ?::text) = ?`,
+            args: [fyFrom, p.status, orgId, defaultId, p.fund],
+          };
+        }
         return {
           sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount,
                        COALESCE(f.name, 'No fund') AS detail
