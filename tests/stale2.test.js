@@ -249,7 +249,8 @@ const attId = async (eventId, donorId) => ((await q(`SELECT id FROM event_attend
   await open(`/donors/${P("hal")}`);
   await noReload("§4", async () => {
     const tot = '[data-testid="volunteer-total"]';
-    await page.locator('[data-tab="giving"]').first().click({ timeout: 20000 });   // the panel sits on Giving
+    await page.locator('[data-tab="volunteer"], [data-tab="giving"]').first().waitFor({ timeout: 20000 });
+    await page.locator((await page.locator('[data-tab="volunteer"]').count()) ? '[data-tab="volunteer"]' : '[data-tab="giving"]').first().click({ timeout: 20000 });   // VOL-3: a volunteer's panel sits on their Volunteer tab
     await page.locator(tot).first().waitFor({ timeout: 20000 });
     const before = await text(tot);
     const logged = await api("POST", `/donors/${P("hal")}/volunteer-hours`, tok, { date: today, hours: 3, role: "Sorting" });

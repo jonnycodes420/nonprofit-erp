@@ -120,7 +120,8 @@ module.exports = async function flows3Volunteers() {
   // ── §1 · THE PROFILE LISTS THE SHIFTS THE SCHEDULE HAS ─────────────────────
   await leg("§1", async () => {
     await open(`/donors/${P("wren")}`);
-    await page.locator('[data-tab="giving"]').first().click({ timeout: 20000 });
+    await page.locator('[data-tab="volunteer"], [data-tab="giving"]').first().waitFor({ timeout: 20000 });
+    await page.locator((await page.locator('[data-tab="volunteer"]').count()) ? '[data-tab="volunteer"]' : '[data-tab="giving"]').first().click({ timeout: 20000 });   // VOL-3: a volunteer's panel sits on their Volunteer tab
     await page.locator('[data-testid="volunteer-upcoming"]').first().waitFor({ timeout: 20000 });
     await page.waitForTimeout(500);
     const t = await body();
