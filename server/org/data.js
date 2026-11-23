@@ -387,7 +387,7 @@ app.get("/org/export", requireAuth, requireAdmin, wrap(async (req, res) => {
     query("SELECT g.*, d.name as donor_name FROM gifts g LEFT JOIN donors d ON d.id=g.donor_id WHERE g.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC", [orgId]),
     query("SELECT pg.*, d.name as donor_name FROM planned_gifts pg LEFT JOIN donors d ON d.id=pg.donor_id WHERE pg.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY pg.created_at DESC", [orgId]),
     query("SELECT * FROM grants WHERE org_id=? ORDER BY deadline", [orgId]),
-    query("SELECT * FROM fin_transactions WHERE org_id=? ORDER BY date DESC NULLS LAST", [orgId]),
+    query(`SELECT * FROM fin_transactions WHERE org_id=? AND ${require("../../shared/numbers/money").LEDGER_LIVE("fin_transactions")} ORDER BY date DESC NULLS LAST`, [orgId]),   // TRASH-1
     query("SELECT * FROM events WHERE org_id=? ORDER BY date DESC NULLS LAST", [orgId]),
     query("SELECT ea.*, d.name as donor_name, e.name as event_name FROM event_attendees ea LEFT JOIN donors d ON d.id=ea.donor_id LEFT JOIN events e ON e.id=ea.event_id WHERE ea.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY ea.created_at DESC", [orgId]),
     query("SELECT * FROM campaigns WHERE org_id=? ORDER BY created_at DESC", [orgId]),

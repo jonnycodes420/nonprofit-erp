@@ -201,6 +201,9 @@ const GUARDED_WRITERS = [
   // dry run by default, --apply to act, and the guard is the only way it can
   // reach a remote database.
   "build88a-dedupe-gifts",
+  // TRASH-1 — staging's walkers' trash, purged through purgePeople. Dry run by default, --apply to act;
+  // --staging, STEWARD_ENV=staging, writerBase and /health's database must all agree it is staging.
+  "staging-trash-tidy",
 ];
 
 // Writes data but HARD-REFUSES any non-loopback target outright (stricter
@@ -364,6 +367,7 @@ const LOOPBACK_CAPTURES = [
 
 // Out of scope for BASE/DB guarding, each for a stated reason.
 const EXEMPT = {
+  "delete-scan": "TRASH-1 — a pure SOURCE scan (server, routes, the DDL) for an app.delete( that hard-deletes a money or person table without removal.js. Its text names DELETE FROM only as the pattern it looks for and in its self-test fixture; it opens no database, no server and no network",
   "sales-staging-seed": "SALES-1 — a module, not a command: exports seedSales(q) and is called only by staging-seed.js, which resolves its target with writerBase --staging (refuses anything but staging). It has no require.main entry and reads no BASE, DATABASE_URL or network",
   "sales-staging-prospects": "SALES-2 — a module, not a command: exports seedProspects(q, owner) and is called only by sales-staging-seed.js (itself called only by staging-seed.js, which refuses anything but staging). No require.main entry; reads no BASE, DATABASE_URL or network",
   "stored-totals-guard": "NUMBERS-6 — a pure SOURCE scan for SQL that writes a person's stored totals outside shared/numbers/donorTotals.js. No BASE, no DB, no network, no writes",

@@ -164,6 +164,8 @@ async function importJob(tok, body) {
 }
 
 async function main() {
+  // TRASH-1: REAL_SHAPED_ONLY=T runs §T alone (a quick local loop); CI runs everything.
+  if (process.env.REAL_SHAPED_ONLY === "T") { await trashMoney(); await closeDb(); summary(); return; }
   const ORG = "org_hs1real";
   const tok = await freshOrg(ORG, "Real-shaped (test)");
   const gSheets = await sheetsOf("jp-gift-history-287.xlsx");
@@ -572,6 +574,9 @@ async function main() {
   // §FJ FIX-60: the combined Finding Joy workbook against Jonathan's key.
   await findingJoy();
 
+  // §T TRASH-1: one meaning of delete, for people and everything with money on it.
+  await trashMoney();
+
   await closeDb();
   summary();
 }
@@ -845,4 +850,104 @@ async function findingJoy() {
   ok("§FJ Undo leaves the org exactly as it was", un.status === 200 && d.length === 0, un.status + " " + d.join("\n"));
   await surfaces(ORG, { step: "after the Finding Joy undo", token: tok });
 }
+// §T TRASH-1 (Jarvis, 22 Nov: "Finance keeps the deleted gifts forever ($735 of
+// test gifts still showing). Single gift deletes work; the trash path misses.")
+//   · trash a person: every fund's Balance drops by their gifts, as Received
+//     already did, and so does the Finance dashboard's revenue; restore them
+//     and both come back to the cent; the truth check agrees after each;
+//   · a person with a receipt is asked "1 receipt was issued to Tobin. Void
+//     it?"; her yes voids it with the move, and Restore does not un-void it;
+//   · a grant with a gift and a pledge on the funder names them, offers to keep
+//     them, goes to the trash with its deadlines, and Undo brings it all back.
+// HOW IT GOES RED ON MAIN: the Balance keeps the $735 after the trash (the
+// ledger never asked whether the person was live); the delete goes through
+// with the receipt still live; GET /removals/grant/:id is unknown_kind (404)
+// and DELETE /grants/:id hard-deletes the grant and its deadlines.
+async function trashMoney() {
+  const ORG = "org_trash1real";
+  const tok = await freshOrg(ORG, "Trash one (test)");
+  const today = require("./clock").civilDay();
+  const fund = (await api("POST", "/finance/funds", tok, { name: "Pantry Fund", restricted: false })).body || {};
+  const person = (await api("POST", "/donors", tok, { name: "Tobin Quarrel", email: "tobin.quarrel@trash1.test" })).body || {};
+  const other = (await api("POST", "/donors", tok, { name: "Wren Ashdown", email: "wren.ashdown@trash1.test" })).body || {};
+  const g1 = await api("POST", `/donors/${person.id}/gifts`, tok, { amount: "735.00", date: today, type: "cash", fundId: fund.id });
+  const g2 = await api("POST", `/donors/${other.id}/gifts`, tok, { amount: "120.50", date: today, type: "cash", fundId: fund.id });
+  ok("§T two gifts to the Pantry Fund are recorded", g1.status === 201 && g2.status === 201, JSON.stringify([g1.status, g2.status, g1.body]).slice(0, 300));
+  // Post anything still waiting (the books carry both gifts), through Finance's Post to the books.
+  const waiting = (await api("GET", "/finance/ledger-post", tok)).body || {};
+  if (waiting.waiting && waiting.waiting.n) await api("POST", "/finance/ledger-post", tok, { all: { rows: waiting.groups.reduce((a, g) => a + g.rows, 0), cents: waiting.waiting.cents } });
+  const posted = await one("SELECT COUNT(*)::int AS n FROM fin_transactions WHERE org_id=$1 AND gift_id IS NOT NULL", [ORG]);
+  ok("§T both gifts are on the books", posted.n === 2, posted.n);
+  const pantry = async () => {
+    const r = (await api("GET", "/finance/funds-detail", tok)).body || {};
+    const f = (r.funds || []).find(x => x.id === fund.id) || {};
+    const rows = (await api("GET", `/finance/funds-detail/rows?fund=${fund.id}`, tok)).body || {};
+    return { balance: Number(f.balanceCents), received: Number(f.received && f.received.cents), rowsNet: Number(rows.netCents) };
+  };
+  const B0 = await pantry();
+  ok("§T the Pantry Fund carries both gifts: Balance $855.50, Received $855.50, its rows foot", B0.balance === 85550 && B0.received === 85550 && B0.rowsNet === 85550, JSON.stringify(B0));
+  await surfaces(ORG, { step: "§T before the trash", token: tok });
+
+  // Trash Tobin. No receipt, so no question.
+  const del = await api("DELETE", `/donors/${person.id}`, tok);
+  ok("§T Tobin moves to the trash", del.status === 200 && !!del.body.undoId, del.status + " " + JSON.stringify(del.body).slice(0, 200));
+  const B1 = await pantry();
+  ok("§T the Balance drops by Tobin's $735, as Received does, and the rows behind it foot", B1.balance === 12050 && B1.received === 12050 && B1.rowsNet === 12050, JSON.stringify(B1));
+  const fin = (await api("GET", "/finance/transactions", tok)).body;
+  const txns = Array.isArray(fin) ? fin : (fin && (fin.transactions || fin.rows)) || [];
+  ok("§T Tobin's ledger line is off the Transactions list", !txns.some(t => t.donor_id === person.id), JSON.stringify(txns.map(t => t.donor_id)));
+  await surfaces(ORG, { step: "§T after the trash", token: tok });
+
+  // Restore: the money comes back to the cent, and nothing was deleted to make that so.
+  const back = await api("POST", "/trash/people/restore", tok, { ids: [person.id] });
+  const B2 = await pantry();
+  ok("§T Restore brings the $735 back to the cent", back.status === 200 && B2.balance === B0.balance && B2.received === B0.received && B2.rowsNet === B0.rowsNet, JSON.stringify([back.status, B2]));
+  await surfaces(ORG, { step: "§T after the restore", token: tok });
+
+  // A receipt issued to Tobin: the delete asks, and voids on her yes.
+  await q(`UPDATE orgs SET receipts_enabled=true, legal_name='Trash One Test Inc', ein='12-3456789', receipt_address='1 Test Way' WHERE id=$1`, [ORG]);
+  const rc = await api("POST", `/gifts/${(g1.body.gift || g1.body).id}/receipt`, tok, { send: false });
+  ok("§T a receipt is issued to Tobin (not sent)", rc.status === 201, rc.status + " " + JSON.stringify(rc.body).slice(0, 200));
+  const check = (await api("POST", "/donors/trash-check", tok, { ids: [person.id] })).body || {};
+  const ask = await api("DELETE", `/donors/${person.id}`, tok);
+  ok("§T the delete asks \"1 receipt was issued to Tobin. Void it?\" and moves nobody until she answers",
+    ask.status === 409 && ask.body.error === "receipts_live" && ask.body.question === "1 receipt was issued to Tobin. Void it?"
+    && check.receiptQuestion && check.receiptQuestion.question === ask.body.question && /does not un-void/.test(ask.body.note || "")
+    && !!(await one("SELECT 1 AS x FROM donors WHERE id=$1 AND deleted_at IS NULL", [person.id])), JSON.stringify([ask.status, ask.body, check.receiptQuestion]).slice(0, 400));
+  const yes = await api("DELETE", `/donors/${person.id}?voidReceipts=1`, tok);
+  const rcRow = (await one("SELECT voided_at, void_reason FROM receipts WHERE id=$1", [rc.body.id])) || {};
+  ok("§T on her yes the receipt is voided with the move, with a note that says why", yes.status === 200 && yes.body.voidedReceipts === 1 && !!rcRow.voided_at && /moved this person to the trash/.test(rcRow.void_reason || ""),
+    JSON.stringify([yes.status, yes.body.voidedReceipts, rcRow]));
+  await api("POST", "/trash/people/restore", tok, { ids: [person.id] });
+  const rcAfter = (await one("SELECT voided_at FROM receipts WHERE id=$1", [rc.body.id])) || {};
+  ok("§T Restore brings Tobin back and leaves the receipt void", !!rcAfter.voided_at && (await pantry()).balance === B0.balance, JSON.stringify(rcAfter));
+  await surfaces(ORG, { step: "§T after the receipt void and restore", token: tok });
+
+  // A grant with a gift and a pledge on the funder.
+  const funder = (await api("POST", "/donors", tok, { name: "Harrowgate Trust", email: "grants@harrowgate.trash1.test" })).body || {};
+  await q(`UPDATE donors SET kind='organisation' WHERE id=$1 AND org_id=$2`, [funder.id, ORG]);
+  const gr = await api("POST", `/funders/${funder.id}/grants`, tok, { program: "After-school reading", amountRequested: "7500", status: "submitted" });
+  const grantId = gr.body && (gr.body.id || (gr.body.grant && gr.body.grant.id));
+  const aw = await api("PUT", `/grants/${grantId}/award`, tok, { amountAwarded: "7500" });
+  const pledgeId = aw.body && (aw.body.award_pledge_id || (aw.body.grant && aw.body.grant.award_pledge_id))
+    || ((await one("SELECT award_pledge_id FROM grants WHERE id=$1", [grantId])) || {}).award_pledge_id;
+  const pay = await api("POST", `/donors/${funder.id}/gifts`, tok, { amount: "5000", date: today, type: "cash", pledgeId });
+  await api("POST", `/grants/${grantId}/interactions`, tok, { note: "Site visit booked" });
+  ok("§T a $7,500 grant is awarded and $5,000 of it is paid", gr.status === 201 && aw.status === 200 && pay.status === 201 && !!pledgeId,
+    JSON.stringify([gr.status, aw.status, pay.status, pledgeId]));
+  const plan = await api("GET", `/removals/grant/${grantId}`, tok);
+  ok("§T the grant's confirm names its money: \"This grant has a $5,000 gift and a $7,500 pledge on the funder's record. Keep them on the funder, or remove them too?\"",
+    plan.status === 200 && (plan.body.body || "").startsWith("This grant has a $5,000 gift and a $7,500 pledge on the funder's record. Keep them on the funder, or remove them too?")
+    && plan.body.choice && plan.body.choice.keep === "Keep them on the funder" && plan.body.choice.remove === "Remove them too" && /1 note/.test(plan.body.body), JSON.stringify(plan.body).slice(0, 500));
+  const gdel = await api("DELETE", `/grants/${grantId}`, tok);
+  const gone = await one("SELECT COUNT(*)::int AS n FROM grants WHERE id=$1", [grantId]);
+  const kept = await one(`SELECT (SELECT COUNT(*) FROM pledges WHERE id=$1)::int AS p, (SELECT COUNT(*) FROM gifts WHERE pledge_id=$1)::int AS g`, [pledgeId]);
+  ok("§T Keep: the grant moves to the trash; its gift and pledge stay on the funder", gdel.status === 200 && gdel.body.success === true && (gdel.body.undoIds || []).length === 1
+    && gone.n === 0 && kept.p === 1 && kept.g === 1, JSON.stringify([gdel.status, gdel.body, gone, kept]).slice(0, 300));
+  const und = await api("POST", "/removals/undo", tok, { undoIds: gdel.body.undoIds || [] });
+  const again = await one(`SELECT (SELECT COUNT(*) FROM grants WHERE id=$1)::int AS g, (SELECT COUNT(*) FROM grant_interactions WHERE grant_id=$1)::int AS notes`, [grantId]);
+  ok("§T Undo brings the grant back with its note", und.status === 200 && again.g === 1 && again.notes === 1, JSON.stringify([und.status, again]));
+  await surfaces(ORG, { step: "§T after the grant's delete and undo", token: tok });
+}
+
 main().catch(async e => { console.error(e); await closeDb().catch(() => {}); process.exit(1); });

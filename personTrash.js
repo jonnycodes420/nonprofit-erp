@@ -92,8 +92,14 @@ async function bringPeopleBack(orgId, ids, { client = null, exceptMerged = false
 // who, when and why (row_data.__why, read by the Trash list), and their
 // links (personLinks.takeLinks) kept on that row so Restore brings them back.
 //   why: { kind: "delete" | "bulk_delete" | "import_undo" | "undo_moved_too", importId?, fileName? }
-// Returns [{ id, undoId }] for the people who were live and are now in the trash.
-async function trashPeople(orgId, ids, who, { client = null, why = { kind: "delete" }, extra = {} } = {}) {
+//   voidReceipts: TRASH-1 item 2. Her yes to "3 receipts were issued to Ana.
+//                 Void them?": their live receipts are voided in the same
+//                 transaction, with a note that says why. Restore never
+//                 un-voids one (a receipt number is never issued twice); the
+//                 trash row keeps the ids (__voidedReceipts) so the Trash says so.
+// Returns [{ id, undoId }] for the people who were live and are now in the trash;
+// the array's `voidedReceipts` is how many receipts were voided.
+async function trashPeople(orgId, ids, who, { client = null, why = { kind: "delete" }, extra = {}, voidReceipts = false } = {}) {
   const db = require("./db");
   const { newId } = require("./server/shared/newId");
   const list = [...new Set((ids || []).map(String))];
@@ -102,14 +108,24 @@ async function trashPeople(orgId, ids, who, { client = null, why = { kind: "dele
     const gone = await db.queryTx(c, "UPDATE donors SET deleted_at = NOW() WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NULL RETURNING id", [orgId, list]);
     if (!gone.length) return [];
     const links = await require("./server/donors/personLinks").takeLinks(db, c, orgId, gone.map(g => g.id));
+    const voided = new Map();
+    if (voidReceipts) {
+      const note = `Voided when ${(who && who.name) || "Steward"} moved this person to the trash.`;
+      const rows = await db.queryTx(c, `UPDATE receipts SET voided_at = NOW(), void_reason = ?
+                                          WHERE org_id = ? AND donor_id = ANY(?) AND voided_at IS NULL RETURNING id, donor_id`,
+        [note, orgId, gone.map(g => g.id)]);
+      for (const r of rows) voided.set(r.donor_id, [...(voided.get(r.donor_id) || []), r.id]);
+    }
     const out = gone.map(g => ({ id: g.id, undoId: newId("del") }));
+    out.voidedReceipts = [...voided.values()].reduce((a, l) => a + l.length, 0);
     for (let k = 0; k < out.length; k += 500) {
       const b = out.slice(k, k + 500);
       await db.runTx(c, `INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
                          VALUES ${b.map(() => "(?, ?, 'donors', ?, ?::jsonb, ?, ?)").join(",")}`,
         b.flatMap(g => {
           const l = links.get(g.id);
-          const data = { __soft: true, __why: why, ...extra, ...(require("./server/donors/personLinks").hasLinks(l) ? { __links: l } : {}) };
+          const data = { __soft: true, __why: why, ...extra, ...(require("./server/donors/personLinks").hasLinks(l) ? { __links: l } : {}),
+            ...(voided.has(g.id) ? { __voidedReceipts: voided.get(g.id) } : {}) };
           return [g.undoId, orgId, g.id, JSON.stringify(data), (who && who.id) || "system:trash", (who && who.name) || "Steward"];
         }));
     }

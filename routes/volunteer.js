@@ -82,11 +82,10 @@ app.patch("/volunteer-shifts/:id", requireAuth, checkWriteAccess, wrap(async (re
   res.json({ ok: true, hours: v.shift.hundredths / 100 });
 }));
 
-app.delete("/volunteer-shifts/:id", requireAuth, wrap(async (req, res) => {
-  const { changes } = await run("DELETE FROM volunteer_shifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
-  if (!changes) return res.status(404).json({ error: "Not found" });
-  res.json({ ok: true });
-}));
+// TRASH-1 item 3: a volunteer's hours go to the trash through the one remove
+// (removal.js, kind "volunteer_hours"), and Undo brings them back.
+app.delete("/volunteer-shifts/:id", requireAuth, wrap(async (req, res) =>
+  require("./removal").removeThrough(req, res, "volunteer_hours", req.params.id)));
 
 // The volunteer's page. A GET renders and CHANGES NOTHING (mail clients and
 // link scanners fetch links); the form POSTs.

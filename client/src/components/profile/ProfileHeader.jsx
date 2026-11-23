@@ -66,11 +66,13 @@ function MoreMenu({groups,onPick,onClose}){
   const group=([key,title,items])=>(
     <div key={key} role="group" aria-labelledby={`dp-more-h-${key}`} data-testid={`dp-more-group-${key}`} style={{marginBottom:6}}>
       <div id={`dp-more-h-${key}`} data-testid="dp-more-heading" style={{fontSize:11,fontWeight:700,color:T.ink3,padding:"8px 10px 4px",letterSpacing:"0.02em"}}>{title}</div>
-      {items.map(([label,fn,disabled,tid,sep])=>(
+      {items.map(([label,fn,disabled,tid,sep,hint])=>(
         <div key={label}>
           {sep&&<div role="separator" style={{borderTop:"1px solid "+T.bg3,margin:"6px 4px"}}/>}
           <button role="menuitem" type="button" disabled={disabled} data-testid={tid} onClick={()=>onPick(fn)}
-            style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderRadius:6,padding:"8px 10px",color:T.ink,fontSize:13.5,fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.6:1,fontFamily:"inherit"}}>{label}</button>
+            style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderRadius:6,padding:"8px 10px",color:T.ink,fontSize:13.5,fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.6:1,fontFamily:"inherit"}}>{label}
+            {/* TRASH-1 item 4: a line that says what it does, for the two that sound alike */}
+            {hint&&<span data-testid={tid?tid+"-hint":undefined} style={{display:"block",fontSize:12,fontWeight:400,color:T.ink3,marginTop:2,lineHeight:1.4,whiteSpace:"normal"}}>{hint}</span>}</button>
         </div>
       ))}
     </div>
@@ -212,8 +214,9 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
                   // TRUST-2 — a person's own data, in one file, when they ask.
                   ...(isAdmin?[["Export this person's data",exportData,false,"dp-export-data"]]:[]),
                   // FIX-14 Part 3 — Erase and Delete, at the bottom of More, under a rule, never on the page.
-                  ...(isAdmin&&!isReadOnly?[["Erase this person",()=>{setEraseOpen(true);setEraseMsg("");setEraseWord("");},false,"dp-erase",true]]:[]),
-                  ...(isAdmin?[["Delete donor",()=>onDelete(donor.id),false,"dp-delete",isReadOnly]]:[]),
+                  // TRASH-1 item 4: apart, each under its own rule, each with one line that says what it does.
+                  ...(isAdmin?[["Delete donor",()=>onDelete(donor.id),false,"dp-delete",true,"Moves to Trash, can be undone for 30 days."]]:[]),
+                  ...(isAdmin&&!isReadOnly?[["Erase this person",()=>{setEraseOpen(true);setEraseMsg("");setEraseWord("");},false,"dp-erase",true,"Removes their personal details for good, for a privacy request. Gifts stay as anonymous totals."]]:[]),
                 ]],
               ].filter(g=>g[2].length);
               return <MoreMenu groups={groups} onPick={fn=>{setDpMoreOpen(false);fn();}} onClose={()=>setDpMoreOpen(false)}/>;

@@ -16,7 +16,7 @@
 // Every part is computed; Z is what the ledger holds for gifts dated outside
 // the year (or posted at another amount), so the line always foots.
 "use strict";
-const { MONEY, LIVE } = require("./money");
+const { MONEY, LIVE, LEDGER_LIVE } = require("./money");
 const { POSTED } = require("./ledgerStatus");
 const { SCHEDULED } = require("./scheduled");
 
@@ -38,10 +38,10 @@ async function financeBasis(query, orgId, { from, to, today, revenueCents }) {
              FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
             WHERE g.org_id = ? AND ${LIVE("d")} AND ${MONEY("g")} AND LEFT(g.date, 10) >= ? AND LEFT(g.date, 10) <= ?`, [orgId, from, giftTo]),
     query(`SELECT COALESCE(SUM(ROUND(t.amount * 100)), 0)::bigint AS c FROM fin_transactions t
-            WHERE t.org_id = ? AND t.type = 'income' AND t.gift_id IS NULL AND t.date >= ? AND t.date <= ?`, [orgId, from, to]),
+            WHERE t.org_id = ? AND t.type = 'income' AND t.gift_id IS NULL AND t.date >= ? AND t.date <= ? AND ${LEDGER_LIVE("t")}`, [orgId, from, to]),
     // A scheduled gift (dated after today) that a ledger row already carries.
     query(`SELECT COALESCE(SUM(ROUND(t.amount * 100)), 0)::bigint AS c FROM fin_transactions t JOIN gifts g ON g.id = t.gift_id AND g.org_id = t.org_id
-            WHERE t.org_id = ? AND t.type = 'income' AND t.date >= ? AND t.date <= ? AND ${SCHEDULED("g")}`, [orgId, from, to]),
+            WHERE t.org_id = ? AND t.type = 'income' AND t.date >= ? AND t.date <= ? AND ${SCHEDULED("g")} AND ${LEDGER_LIVE("t")}`, [orgId, from, to]),
   ]);
   const A = Number(a.all_c) || 0, W = Number(a.waiting_c) || 0, O = Number(o.c) || 0, R = Number(revenueCents) || 0;
   const S = Number(sc.c) || 0;
