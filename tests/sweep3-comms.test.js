@@ -57,6 +57,8 @@ const text = html => String(html || "").replace(/<style[\s\S]*?<\/style>/g, " ")
       await q(`INSERT INTO donors (id,org_id,name,email,stage,person_types,created_by,created_by_name) VALUES ($1,$2,$3,$4,'steward','["donor"]','system:test','test')`, [P(k), ORG, name, email]);
       await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name) VALUES ($1,$2,$3,120,$4,'system:test','test')`, [`g_sweep3_${k}`, ORG, P(k), day]);
     }
+    // DEFINE-1: a Donor is who has given, by the stored totals recordGift keeps; these raw rows get them the same way.
+    await require("../afterChange").recalcDonorSummaryBatch(require("../db").query, people.map(p => P(p[0])), ORG);
 
     // ── §1 Lapsed is the lapse rule
     const aud = await api("GET", "/communications/audience", tok);

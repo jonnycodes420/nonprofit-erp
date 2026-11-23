@@ -189,6 +189,7 @@ const ODESSA_ROW = ["Odessa Marchbanks", "odessa.marchbanks@example.test", "2025
     const ORG = "org_integrity1_everyone";
     const tok = await freshOrg(ORG, "Integrity One Everyone", 3);   // three live donors
     const add = (id, name, extra = "") => q(`INSERT INTO donors (id, org_id, name, created_by, created_by_name${extra ? ", " + extra.split("=")[0] : ""}) VALUES ($1,$2,$3,'system:test','Test'${extra ? ", " + extra.split("=")[1] : ""})`, [id, ORG, name]);
+    await require("./helpers").hasGiven([0, 1, 2].map(i => `d_${ORG.slice(4)}_${i}`));   // DEFINE-1: a Donor has given
     await add("d_i1e_contact", "Corin Vale", `person_types='["volunteer"]'::jsonb`);
     await add("d_i1e_archived", "Arden Moss", "archived_at=NOW()");
     await add("d_i1e_erased", "Erased person", "erased_at=NOW()");

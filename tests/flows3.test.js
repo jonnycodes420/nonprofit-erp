@@ -83,6 +83,8 @@ const runVolunteers = () => require("./lib/flows3Volunteers")().catch(e => ok("v
   const tok = await freshOrg();
   const today = civilToday();
   for (const [id, name] of [["ada", "Ada Quill"], ["bram", "Bram Oduya"], ["cleo", "Cleo Varga"], ["rhea", "Rhea Tamsin"], ["rob", "Rob Ellery"], ["gwen", "Gwen Halloway"], ["tom", "Tom Brackett"]]) await person(id, name);
+  // DEFINE-1: the Donors list is who has given; Ada, Bram and Cleo (picked from it in §1) have imported history.
+  await require("./helpers").hasGiven(["ada", "bram", "cleo"].map(P));
   await person("juno", "Juno Fairweather", "contact");
 
   // ── §1 · ONLY AN ACTIVE JOURNEY STARTS PEOPLE ──────────────────────────────

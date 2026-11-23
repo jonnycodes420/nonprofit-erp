@@ -110,6 +110,10 @@ async function seed() {
   await q(`INSERT INTO interaction_attachments (id,org_id,interaction_id,donor_id,asset_id,filename,mime,bytes,created_by,created_by_name)
            VALUES ('iatt_fl2_1',$1,'ix_fl2_note',$2,'asset_fl2_none','annual-report.pdf','application/pdf',1024,'system:test','FLOWS-2 fixture')`, [ORG, P.file]);
   await totals();
+  // DEFINE-1: the Donors list is who has given. The monthly plan not yet charged and
+  // Thaddeus have no gift row here, so their giving is imported history (stored totals recomputed). The
+  // merge's other record keeps $0: it never gave, so it is a Contact and off the Donors filters below.
+  await require("./helpers").hasGiven([P.plan, P.sv2]);
 }
 
 (async () => {
@@ -166,8 +170,8 @@ async function seed() {
     ["Lifetime at least 700", [{ field: "lifetime", op: "gte", value: "700" }], [P.lost, P.mk]],
     ["Last gift before two years ago", [{ field: "last_gift_date", op: "before", value: day(-730) }], [P.lost]],
     ["Lapsed", [{ field: "lapse", op: "is", value: "lapsed" }], [P.lost]],
-    ["Name contains Twofold", [{ field: "name", op: "contains", value: "Twofold" }], [P.mk, P.mo]],
-    ["Employer contains Loom", [{ field: "employer", op: "contains", value: "Loom" }], [P.mo]],
+    ["Name contains Twofold", [{ field: "name", op: "contains", value: "Twofold" }], [P.mk]],   // DEFINE-1: P.mo never gave, a Contact
+    ["Employer contains Quayside", [{ field: "employer", op: "contains", value: "Quayside" }], [P.mk]],
   ];
   for (const [what, conds, want] of expect) {
     const r = await list(conds);

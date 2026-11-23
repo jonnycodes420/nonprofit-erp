@@ -838,6 +838,7 @@ async function caseEnter() {
   await person(o.orgId, "d_brk_e1", "Ezra Kettle", "brk-e1@test.local");
   await person(o.orgId, "d_brk_e2", "Ezra Kettle", "brk-e1@test.local");   // a duplicate, for the merge screen
   await person(o.orgId, "d_brk_e3", "Wren Halloway", "brk-e3@test.local");
+  await require("./helpers").hasGiven("d_brk_e3");   // DEFINE-1: she is picked from the Donors list, so she has given
   await person(o.orgId, "d_brk_e4", "Juno Pemberton", "brk-e4@test.local");
   await q("UPDATE donors SET deleted_at=NOW() WHERE id='d_brk_e4'");
   await q(`INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name) VALUES ('del_brk_e4',$1,'donors','d_brk_e4','{"__soft":true}'::jsonb,'system:test','test')`, [o.orgId]);

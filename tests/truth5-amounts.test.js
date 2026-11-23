@@ -175,9 +175,10 @@ const cents = v => Math.round(Number(v || 0) * 100);
     await page.locator('[data-testid="fr-period-last"]').click({ timeout: 20000 }).catch(() => {});
     await page.waitForTimeout(1500);
     const raisedLast = await page.getByText(/^Raised · /).first().textContent({ timeout: 15000 }).catch(() => "");
-    const lyb = await page.locator('[data-testid="fr-lybunt"]').first().getAttribute("title").catch(() => "");
+    // DEFINE-1: the definition is written under the tile, never hover-only.
+    const lyb = await page.locator('[data-testid="fr-lybunt-sentence"]').first().textContent({ timeout: 15000 }).catch(() => "");
     ok("§9 Fundraising's Last FY shows last fiscal year", /Raised · FY 20\d\d–\d\d/.test(raisedLast || "") && /period=|frPeriod=last_fy/.test(page.url()), { raisedLast, url: page.url() });
-    ok("§9 …and its tile says LYBUNT, defined on hover", /Last Year But Unfortunately Not This year/.test(lyb || ""), lyb);
+    ok("§9 …and its tile says LYBUNT, its definition written under it", /Last Year But Unfortunately Not This year/.test(lyb || ""), lyb);
     await shot("fundraising");
 
     await page.goto(`${APP}/donors?view=reengage`, { waitUntil: "networkidle", timeout: 60000 });

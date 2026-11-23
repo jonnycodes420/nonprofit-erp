@@ -33,6 +33,8 @@ module.exports = async function part6(h) {
     for (const [k, d] of dates.entries())
       await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,payment_method,fund_id,created_by,created_by_name)
                VALUES ($1,$2,'d_p567_crosser',250,$3,'Card',NULL,'system:test','test')`, [`g_p567_cross_${k}`, ORG, d]);
+    // DEFINE-1: a Donor is who has given, by the stored totals recordGift keeps; these raw rows get them the same way.
+    await require(path.join(__dirname, "..", "..", "afterChange.js")).recalcDonorSummaryBatch(require(path.join(__dirname, "..", "..", "db.js")).query, ["d_p567_crosser"], ORG);
     const g = dates.map(date => ({ date, amount: 250 }));
     const nowA = driftEngine.assessDrift(g, f.today), thenA = driftEngine.assessDrift(g, orgTime.addDays(f.today, -1));
     ok("§drift the fixture crosses today by drift.js's own rule", nowA.state === "drifting" && nowA.confidence === "high" && thenA.state === "ok",

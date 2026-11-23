@@ -29,6 +29,8 @@ const { ok, summary, api: helperApi, q, closeDb, BASE, SINK_PORT, login, waitFor
 const api = async (...a) => {
   const r = await helperApi(...a);
   if (a[0] === "POST" && a[1] === "/donors" && r.body && r.body.id) await q("UPDATE donors SET auto_email = true WHERE id = $1", [r.body.id]); await require("./helpers").mailTypesOnForDonor(r.body.id);
+  // DEFINE-1: All donors is who has given; each person here stands for a donor, so each has imported history.
+  if (a[0] === "POST" && a[1] === "/donors" && r.body && r.body.id) await require("./helpers").hasGiven(r.body.id);
   return r;
 };
 

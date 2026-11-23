@@ -75,6 +75,7 @@ async function fixture() {
   await person(D.ben, "Ben Quietley", "ben@fix40.test", "cultivate", ["donor"], 800);
   await person(D.vol, "Vera Helpwell", "vera@fix40.test", null, ["volunteer"], 0);
   await person(D.noe, "Noel Nomail", null, "cultivate", ["donor"], 50);
+  await q(`UPDATE donors SET imported_total = 50 WHERE id = $1`, [D.noe]);   // DEFINE-1: his $50 is imported history (no gift row), so he has given
   // Ben is lapsing: his last gift was ten months ago (FIX-51: the one lapse rule).
   await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,payment_method,acknowledgement_sent,created_by,created_by_name)
            VALUES ('g_fix40_ben',$1,$2,50,$3,'donation','check',true,$4,$5)`, [ORG, D.ben, daysAgo(300).toISOString().slice(0, 10), ...who]);
