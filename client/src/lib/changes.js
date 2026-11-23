@@ -24,7 +24,6 @@
 //
 // A view that is not mounted hears nothing and asks for nothing.
 import { useEffect, useRef, useState } from "react";
-import changeTopics from "../../../shared/changeTopics.cjs";   // LIVE-2: table → topic, named once
 
 export const KINDS = ["person", "gift", "pledge", "event", "grant", "task", "group", "volunteer", "fund", "totals", "note", "import", "draft", "insights", "org"];
 const ALL = KINDS;
@@ -219,14 +218,19 @@ if (typeof window !== "undefined") {
 // moves a table too, and is announced again, once, on the next poll: the
 // worker's after-change step lands on those same rows a moment after it.
 // LIVE-2: by the same table → topic map the server's header uses (shared/changeTopics.cjs).
-const kindsOfTable = t => { const k = changeTopics.topicsOfTable(t); return k.includes("import") ? ALL : k; };
+// Loaded on the bell's first answer (the baseline), so Home's first download does not
+// carry it (perf-app's budget); by the next answer it is in.
+let topics = null;
+const loadTopics = () => import("../../../shared/changeTopics.cjs").then(m => (topics = m.default || m));
+const kindsOfTable = t => { const k = topics.topicsOfTable(t); return k.includes("import") ? ALL : k; };
 let seen = null;
 // LAG-1: `covered` is the kinds a write just announced itself (lib/catchUp.js):
 // its own rows moved those tables, so they are not announced a second time.
 export function noteServerChanges(changes, covered = null) {
   const tables = changes && changes.tables;
   if (!tables || typeof tables !== "object") return;
-  if (!seen) { seen = { ...tables }; return; }
+  if (!seen) { seen = { ...tables }; loadTopics().catch(() => {}); return; }
+  if (!topics) { loadTopics().then(() => noteServerChanges(changes, covered), () => {}); return; }
   const kinds = new Set();
   for (const [t, id] of Object.entries(tables)) {
     if (seen[t] != null && Number(id) <= Number(seen[t])) continue;
