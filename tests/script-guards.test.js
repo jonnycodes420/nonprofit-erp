@@ -169,6 +169,9 @@ const GUARDED_WRITERS = [
   // TRUTH-3: stores unsent drafts with figure keys. Dry run by default; --apply
   // writes through writerDbUrl, one audit row per org; --undo puts words back.
   "truth3-rerender-drafts",
+  // ATLAS-8: puts the question back on Atlas lines written before atlas_actions.question.
+  // Dry run by default; --apply writes through writerDbUrl.
+  "atlas8-backfill-question",
   "backfill-campaign-attribution",                    "dedupe-finance-gift-stamps",
    "fix-build54-demo-photos",
   "fix-demo-finance-ledger",  "load-irs-ein-registry",
