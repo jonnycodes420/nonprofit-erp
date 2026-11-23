@@ -29,6 +29,10 @@ export const KINDS = ["person", "gift", "pledge", "event", "grant", "task", "gro
 const ALL = KINDS;
 
 // ── WHAT A WRITE TOUCHED ─────────────────────────────────────────────────────
+// LIVE-2: the server says. Every write's answer carries X-Steward-Changed, the
+// topics of the tables its statements and their triggers wrote
+// (server/shared/changedTables.js), and those are its kinds. The rules below
+// are only the fallback for an answer without the header (an older server).
 // First matching rule wins; a write no rule names is "other", which only the
 // kept lists hear (api.js onWrite), so an unnamed write never re-reads a page.
 const GIFT = ["gift", "person", "totals", "fund"];
@@ -91,11 +95,19 @@ function parseBody(body) {
   try { return JSON.parse(body); } catch { return null; }
 }
 
+// LIVE-2: the header's topics as kinds ("none" is none; an import is every kind).
+export function kindsOfHeader(value) {
+  const topics = String(value).split(",").map(t => t.trim()).filter(t => t && t !== "none");
+  return new Set(topics.includes("import") ? ALL : topics);
+}
+
 // { kinds: Set, ids: { person: Set, event: Set, ... } } for one write.
-export function kindsOfWrite(path, method, body) {
+// `changed` is the answer's X-Steward-Changed (null when it had none).
+export function kindsOfWrite(path, method, body, changed = null) {
   const p = String(path || "").split("?")[0];
-  const rule = RULES.find(([re]) => re.test(p));
-  const kinds = new Set(rule ? rule[1] : ["other"]);
+  const fromServer = changed != null;
+  const rule = fromServer ? null : RULES.find(([re]) => re.test(p));
+  const kinds = fromServer ? kindsOfHeader(changed) : new Set(rule ? rule[1] : ["other"]);
   const ids = {};
   const add = (k, v) => { if (v == null || v === "") return; (ids[k] || (ids[k] = new Set())).add(String(v)); };
   for (const [re, k] of PATH_IDS) { const m = p.match(re); if (m && !NOT_IDS.has(m[1])) add(k, m[1]); }
@@ -103,8 +115,8 @@ export function kindsOfWrite(path, method, body) {
   if (b) for (const [k, keys] of Object.entries(ID_KEYS)) for (const key of keys) if (b[key] != null) { add(k, b[key]); }
   // A gift that names an event or a pledge moves that event's or pledge's figures.
   if (kinds.has("gift")) { if (ids.event) kinds.add("event"); if (ids.pledge) kinds.add("pledge"); }
-  if (ids.person) kinds.add("person");
-  return { kinds, ids, method: String(method || "").toUpperCase(), path: p };
+  if (ids.person && (!fromServer || kinds.size)) kinds.add("person");
+  return { kinds, ids, method: String(method || "").toUpperCase(), path: p, server: fromServer };
 }
 
 // ── THE CHANNEL ──────────────────────────────────────────────────────────────
@@ -205,36 +217,27 @@ if (typeof window !== "undefined") {
 // table whose id moved after it is announced. What the browser wrote itself
 // moves a table too, and is announced again, once, on the next poll: the
 // worker's after-change step lands on those same rows a moment after it.
-const TABLE_KINDS = [
-  [/^(gifts|gift_|donations|recurring|soft_credits|ledger|deposits|checks|batches)/, GIFT],
-  [/^(pledge|installment)/, ["pledge", "gift", "totals"]],
-  [/^(grant|funder)/, ["grant", "pledge", "totals"]],
-  [/^(event|attendee|guest|ticket|table_)/, ["event"]],
-  [/^(task)/, ["task"]],
-  [/^(milestone_drafts|agent_drafts|thank_you_drafts)/, ["draft"]],   // COMMS-1
-  [/^(group|segment)/, ["group"]],
-  [/^(volunteer|shift|hours)/, ["volunteer"]],
-  [/^(fund|financial|budget)/, ["fund", "totals"]],
-  [/^(donors|donor_rhythm|households|relationships|person)/, ["person", "totals"]],
-  [/^(interactions|notes|threads|attachments|conversations)/, ["note"]],
-  [/^(imports?|import_)/, ALL],
-  [/^stored_insights$/, ["insights"]],   // LAG-1: the worker's build of the deck landed (routes/catchUp.js)
-];
+// LIVE-2: by the same table → topic map the server's header uses (shared/changeTopics.cjs).
+// Loaded on the bell's first answer (the baseline), so Home's first download does not
+// carry it (perf-app's budget); by the next answer it is in.
+let topics = null;
+const loadTopics = () => import("../../../shared/changeTopics.cjs").then(m => (topics = m.default || m));
+const kindsOfTable = t => { const k = topics.topicsOfTable(t); return k.includes("import") ? ALL : k; };
 let seen = null;
 // LAG-1: `covered` is the kinds a write just announced itself (lib/catchUp.js):
 // its own rows moved those tables, so they are not announced a second time.
 export function noteServerChanges(changes, covered = null) {
   const tables = changes && changes.tables;
   if (!tables || typeof tables !== "object") return;
-  if (!seen) { seen = { ...tables }; return; }
+  if (!seen) { seen = { ...tables }; loadTopics().catch(() => {}); return; }
+  if (!topics) { loadTopics().then(() => noteServerChanges(changes, covered), () => {}); return; }
   const kinds = new Set();
   for (const [t, id] of Object.entries(tables)) {
     if (seen[t] != null && Number(id) <= Number(seen[t])) continue;
     // LAG-1: a table seen for the first time is new since the baseline (the bell's
     // ten-minute window had no row for it), so it moved too.
     seen[t] = id;
-    const rule = TABLE_KINDS.find(([re]) => re.test(t));
-    if (rule) for (const k of rule[1]) if (!(covered && covered.has(k))) kinds.add(k);
+    for (const k of kindsOfTable(t)) if (k !== "other" && !(covered && covered.has(k))) kinds.add(k);
   }
   if (kinds.size) announce({ kinds, ids: {}, source: "worker" });
 }

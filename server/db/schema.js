@@ -56,6 +56,10 @@ async function ddlSession() {
 
 // Returns true when the DDL ran, false when the unchanged hash skipped it.
 async function initSchemaNow() {
+  try { return await initSchemaSteps(); }
+  finally { await require("../shared/changedTables").loadTriggers(pool); }   // LIVE-2: what each table's triggers write
+}
+async function initSchemaSteps() {
   if (await schemaUnchanged()) {
     // SCALE-2: the change triggers follow orgSummary.js, not this file's
     // hash, so a boot on an unchanged schema still brings them up to date

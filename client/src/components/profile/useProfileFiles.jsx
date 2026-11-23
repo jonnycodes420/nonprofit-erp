@@ -55,7 +55,7 @@ export function useProfileFiles({ loadMaterials, donor, onInteractionAdded, setT
   // VOICE-4: and everything on it re-reads: the figures and gifts, Average
   // and Largest, the rail's step, the meeting card, the asks.
   useProfileRefresh(donor.id,e=>{   // COUNTS-1: and after any write to this person, its tasks, notes or files
-    setToldNonce(n=>n+1); loadGiftsFull(); loadRel(); loadDpThread(); loadMaterials(true);   // STALE-2: the Files tally too
+    setToldNonce(n=>n+1); loadGiftsFull({money:e.money,person:true}); loadRel(); loadDpThread(); loadMaterials(true);   // STALE-2: the Files tally too; LIVE-2: person, the household card too
     if(reloadProps&&!e.fromWrite)reloadProps();   // proposals reload through their own forms
     if(onInteractionAdded&&(!e.fromWrite||e.money))onInteractionAdded();   // STALE-1: a gift or pledge of theirs, made anywhere, moves the header too
   });
