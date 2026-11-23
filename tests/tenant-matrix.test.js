@@ -296,6 +296,8 @@ async function seedOrg(o, tag) {
     [`im_${o}`, o, `${mark} Metric`]);
   await q(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status) VALUES ($1,$2,$3,'threshold_500',$4,$5,'pending_review')`,
     [`md_${o}`, o, `d_${o}`, `${mark} subject`, `${mark} body`]);
+  // SENDS-2: a send plan (the list one person was shown), which another org may never commit.
+  await q(`INSERT INTO send_plans (id,org_id,kind,items,created_by,created_by_name) VALUES ($1,$2,'volunteer','[]','system:test','test') ON CONFLICT (id) DO NOTHING`, [`sp_${o}`, o]);
   await q(`INSERT INTO note_reminders (id,org_id,donor_id,milestone_key,talking_points,status) VALUES ($1,$2,$3,'anniversary_year_1',$4,'pending')`,
     [`nr_${o}`, o, `d_${o}`, JSON.stringify([`${mark} talking point`])]);
   await q(`INSERT INTO receipts (id,org_id,donor_id,gift_id,type,receipt_number,amount,deductible_amount,snapshot,pdf_data)
@@ -519,7 +521,8 @@ function bResolver(routePath, param) {
     events: `ev_${B}`, sequences: `sq_${B}`, programs: `prg_${B}`, households: `h_${B}`,
     "giving-pages": `gp_${B}`, pledges: `pl_${B}`, opportunities: `op_${B}`, "planned-gifts": `pgift_${B}`,
     "offline-plans": `orp_${B}`,   // PLEDGES-2: a recorded recurring plan
-    receipts: `rc_${B}`, "milestone-drafts": `md_${B}`, "note-reminders": `nr_${B}`,
+    receipts: `rc_${B}`, "milestone-drafts": `md_${B}`, "send-plans": `sp_${B}`,   // SENDS-2: org B's send list
+    "note-reminders": `nr_${B}`,
     "custom-fields": `cf_${B}`, "impact-metrics": `im_${B}`, "impact-updates": `iu_${B}`,
     workflows: `wf_${B}`, volunteers: `v_${B}`, interactions: `i_${B}`, materials: `mat_${B}`,
     recurring: `rs_${B}`, orgs: B, board: `bd_${B}`, "peer-fundraisers": `pf_${B}`,

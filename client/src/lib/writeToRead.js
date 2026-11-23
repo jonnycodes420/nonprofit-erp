@@ -77,4 +77,7 @@ export const WRITE_TO_READ = [
 // SCALE-6 item 3 · THE WRITES THAT CHANGE NO SCREEN. scripts/ci/write-announce-scan.mjs
 // fails CI on a write in client/src that announces nothing (lib/changes.js kindsOfWrite
 // answers "other") unless it is named here, with why no figure on any screen shows it.
-export const NO_SCREEN_READS = [];
+export const NO_SCREEN_READS = [
+  // SENDS-2: building a send plan writes only the list she is shown (send_plans); nothing is sent.
+  { method: "POST", re: /^\/send-plans$/, why: "a send plan is the list shown before a bulk send; no screen counts plans" },
+];
