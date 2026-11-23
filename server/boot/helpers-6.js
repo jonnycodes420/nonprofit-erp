@@ -429,7 +429,7 @@ async function processTrackedSequences({ orgId = null, limit = SEQ_TICK_BUDGET, 
         // ONE email conversation on the person's timeline, per send, saying
         // who turned this on and when. "Why did this donor get this" has an
         // answer that is a person and a date.
-        const civilOn = enr.turned_on_at ? new Date(enr.turned_on_at).toISOString().slice(0, 10) : null;
+        const civilOn = enr.turned_on_at ? orgToday(await orgTz(oid), new Date(enr.turned_on_at)) : null;   // ORG_TZ_SEAM_OK · DEFINE-1: the org's civil day, never UTC's
         await run(
           `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by)
            VALUES (?,?,?,'email',?,?,?)`,
@@ -1087,7 +1087,7 @@ async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey })
         : isOwner
           ? `Stewardship alert: ${donor?.name || "a major donor"} gave ${amtStr || "a major gift"}${donorCtxStr ? ` (${donorCtxStr})` : ""}`
           : "Follow up";
-      const due = action.dueDays != null ? new Date(Date.now() + action.dueDays * 86400000).toISOString().slice(0, 10) : "";
+      const due = action.dueDays != null ? orgTime.addDays(orgToday(await orgTz(org.id)), Number(action.dueDays) || 0) : "";   // ORG_TZ_SEAM_OK · DEFINE-1: the org's civil day
       const taskId = newId("t");
       // FIX-10 Part C — stamped with the gift whose arrival made this task, so
       // deleting that gift can void it and leave every hand-typed task alone.
@@ -1129,7 +1129,7 @@ async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey })
       // officer if there is one, else the first admin (the ED).
       const taskOwner = owner || recipients[0] || null;
       const title = `Thank ${donor?.name || "a donor"} · ${amtStr || "a gift"} just came in`;
-      const due = new Date(Date.now() + 1 * 86400000).toISOString().slice(0, 10);
+      const due = orgTime.addDays(orgToday(await orgTz(org.id)), 1);   // ORG_TZ_SEAM_OK · DEFINE-1: tomorrow in the org's own days
       // FLOWS-17 — the "just came in" task is the gift's thank-you, so it goes through the one
       // writer (keyed by the gift, stamped with it for the delete): when the gift's own Thread
       // step is the thank-you, no second task is written beside it.

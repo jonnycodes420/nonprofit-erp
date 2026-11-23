@@ -12,7 +12,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../api";
 import { T } from "../shared";
-import { LAPSE_WORDS } from "../../../../shared/lapseWords.js";
+import { population, unitWords } from "../../../../shared/populationWords.js";   // DEFINE-1
 import DateInput from "../inputs/LazyDateInput";   // the one shared date box (POLISH-6)
 
 const isDay = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ""));
@@ -66,14 +66,19 @@ export function OverviewPeriodBar({ overview, onPicked, onNavigate, periodState 
       {((overview && overview.periodNotes) || []).map(n => (
         <span key={n.key} data-testid={`fr-period-note-${n.key}`} style={{ flexBasis: "100%", fontSize: 12.5, color: T.ink3 }}>{n.sentence}</span>
       ))}
+      {/* DEFINE-1 item 2: LYBUNT is people (the registry's lybunt, the report's rows), and when the
+          report folds households the folded count is named as households, never "donors and households". */}
       {lybunt && (
-        <button type="button" data-testid="fr-lybunt" title={LAPSE_WORDS.lybunt.definition} onClick={() => onNavigate && onNavigate("reports", { report: "lybunt" })}
-          style={{ ...chip(false), marginLeft: "auto", display: "flex", gap: 6, alignItems: "baseline" }}>
-          <abbr title={LAPSE_WORDS.lybunt.definition} style={{ textDecoration: "underline dotted", fontWeight: 700 }}>{LAPSE_WORDS.lybunt.word}</abbr>
-          <span data-testid="fr-lybunt-count" style={{ fontWeight: 800 }}>{lybunt.n.toLocaleString("en-US")}</span>
-          <span style={{ color: T.ink3 }}>{`${lybunt.n === lybunt.people ? (lybunt.n === 1 ? "donor" : "donors") : "donors and households"}, gave the year before, not yet in ${overview.periodLabel}`}</span>
+        <button type="button" data-testid="fr-lybunt" onClick={() => onNavigate && onNavigate("reports", { report: "lybunt" })}
+          style={{ ...chip(false), marginLeft: "auto", display: "flex", gap: 6, alignItems: "baseline", flexWrap: "wrap" }}>
+          <span data-population="lybunt" style={{ fontWeight: 700 }}>{population("lybunt").name}:</span>
+          <span data-testid="fr-lybunt-count" style={{ fontWeight: 800 }}>{lybunt.people.toLocaleString("en-US")}</span>
+          <span>{unitWords("lybunt", lybunt.people)}</span>
+          {lybunt.n !== lybunt.people && <span data-testid="fr-lybunt-households" data-population="lybunt_households" style={{ color: T.ink3 }}>{`(${lybunt.n.toLocaleString("en-US")} ${unitWords("lybunt_households", lybunt.n)}: each household counted once)`}</span>}
+          <span style={{ color: T.ink3 }}>{`not yet in ${overview.periodLabel}`}</span>
         </button>
       )}
+      {lybunt && <span data-testid="fr-lybunt-sentence" style={{ flexBasis: "100%", fontSize: 12, color: T.ink3, textAlign: "right" }}>{population("lybunt").sentence}</span>}
     </div>
   );
 }

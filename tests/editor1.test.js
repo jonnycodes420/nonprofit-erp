@@ -83,6 +83,8 @@ async function fixture(org, slug, name, mission) {
   }
   await mailTypesOn(ORG, "everyone", ["campaign"]);
   await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name) VALUES ('g_e1_maria',$1,'d_e1_maria',125,'2026-09-14','system:test','test')`, [ORG]).catch(e => ok("seed gift", false, e.message));
+  // DEFINE-1: All donors is who has given. The six stand for donors: imported history, and the stored totals recomputed.
+  await require("./lib/hasGiven").hasGiven(people.map(p => p[0]));
 
   // ── §1 · the receipt's tax block is locked ───────────────────────────────
   const rc = await api("POST", "/email-templates", TOK, { starterKey: "person_receipt" });

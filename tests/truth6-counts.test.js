@@ -114,7 +114,8 @@ const { DIST } = require("./lib/dist");
   ok("§6 a group campaign counts the group's members, and every one who can't get it is in a named reason", grpAud.audience && grpAud.audience.total === grpN && grpAud.audience.sendable + leftOut === grpN && (grpAud.audience.groups || []).some(g => g.reason === "no_email"), { line: grpAud.audience && grpAud.audience.line, members: grpN });
   const hub = (await api("GET", "/audiences", tok)).body || {};
   const all = (hub.audiences || []).find(a => a.id === "builtin:donors") || {};
-  const counts = (await api("GET", "/donors/counts", tok)).body || {};
+  // DEFINE-1: the Donors count is the Directory's Donors tab (who has given); /donors/counts' total is every person.
+  const counts = { total: Number((((await api("GET", "/donors?roleCounts=1&role=donor&limit=1", tok)).body || {}).roleCounts || {}).donors) };
   ok("§6 All donors is the Donors count, and says who can't get it and why", all.members === counts.total && /^\d+ people · \d+ can get this email(: .*has no email address.*)?\./.test(all.sentence || ""), { members: all.members, donors: counts.total, sentence: all.sentence });
 
   // ── §7 the period switch and Finance's bases ─────────────────────────────

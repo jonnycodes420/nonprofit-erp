@@ -30,7 +30,7 @@ export function GoalRow({ r, first }) {
       <div style={{ height: 6, background: T.bg2, borderRadius: 99, marginTop: 8, overflow: "hidden" }}>
         <div style={{ height: "100%", width: bar + "%", background: T.greenDk, borderRadius: 99 }} />
       </div>
-      {r.pace && <div style={{ fontSize: 12, color: T.ink3, marginTop: 5 }}>{r.pace === "met" ? "Goal met" : r.pace === "behind" ? (r.paceGap > 0 ? `${fmtGap(r.paceGap)} to go to be on an even pace through the period` : "Not yet on an even pace through the period") : "On an even pace through the period"}</div>}
+      {r.pace && <div style={{ fontSize: 12, color: T.ink3, marginTop: 5 }}>{r.pace === "met" ? "Goal met" : r.pace === "ended" ? (r.paceLabel || "Ended short of the goal") : r.pace === "behind" ? (r.paceGap > 0 ? `${fmtGap(r.paceGap)} to go to be on an even pace through the period` : "Not yet on an even pace through the period") : "On an even pace through the period"}</div>}
     </div>
   );
 }

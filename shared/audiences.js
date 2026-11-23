@@ -18,6 +18,11 @@
 // "Barn Buddies volunteers" becomes something she can point at.
 //
 // Pure. No database, no express.
+//
+// DEFINE-1 item 3: a built-in audience IS a registry population (shared/populationWords.js)
+// by id, and its description is that population's one sentence. "All donors" claimed 66
+// members who never gave: it is Donors now (gave at least once, shared/numbers/isDonor.js).
+import { population } from "./populationWords.js";
 
 // `mode` values here MUST exist in resolveCampaignRecipients (server.js). The
 // suite walks every one of these back to that function, so a built-in cannot
@@ -26,9 +31,8 @@ export const BUILT_IN_AUDIENCES = [
   {
     id: "builtin:donors",
     name: "All donors",
-    // SWEEP-3: every count here is people with an email address, and a donor
-    // who has pledged and not paid yet is a donor (it said "everyone who has given").
-    description: "Every donor with an email address, whether they have given or pledged. People who only volunteer or work here are not in it.",
+    population: "donors",
+    description: population("donors").sentence,
     mode: "donors",
     kind: "builtin",
     tone: "green",
@@ -36,7 +40,8 @@ export const BUILT_IN_AUDIENCES = [
   {
     id: "builtin:volunteers",
     name: "Volunteers",
-    description: "People who give time, with an email address. Invisible to every number that means money.",
+    population: "volunteers",
+    description: population("volunteers").sentence,
     mode: "volunteers",
     kind: "builtin",
     tone: "gold",
@@ -54,12 +59,19 @@ export const BUILT_IN_AUDIENCES = [
     // Mailchimp audience, and it is the reason she is still paying them.
     id: "builtin:everyone",
     name: "Everyone with an email",
-    description: "Every person on file who can be reached. Crosses every type.",
+    population: "everyone",
+    description: population("everyone").sentence,
     mode: "everyone",
     kind: "builtin",
     tone: "ink",
   },
 ];
+
+// DEFINE-1: the group the Volunteers screen keeps for itself ("Volunteers", by the rule "has
+// volunteered") is a second audience named Volunteers beside the roster's. It stays a Group;
+// it is not offered again as an audience, so there is one Volunteers audience.
+export const isVolunteersKeptGroup = (row) => !!row && row.kind === "dynamic" && String(row.name || "").trim().toLowerCase() === "volunteers"
+  && (() => { const r = typeof row.rules === "string" ? (() => { try { return JSON.parse(row.rules); } catch { return {}; } })() : (row.rules || {}); return Object.keys(r).length === 1 && String(r.volunteer) === "1"; })();
 
 export const BUILT_IN_IDS = BUILT_IN_AUDIENCES.map(a => a.id);
 export const isBuiltInId = (id) => BUILT_IN_IDS.includes(String(id || ""));

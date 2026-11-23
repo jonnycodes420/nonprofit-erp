@@ -76,8 +76,7 @@ async function preview(query, orgId, giftIds, decision, valueCents = 0) {
     const [c] = await query(`SELECT COUNT(*)::int AS n FROM donors d
         WHERE d.org_id = ? AND ${EVERYONE("d")}
           AND d.id IN (SELECT donor_id FROM gifts WHERE org_id = ? AND id = ANY(?::text[]))
-          AND (d.person_types IS NULL OR d.person_types @> '["donor"]'::jsonb)
-          AND COALESCE(d.imported_total, 0) <= 0
+          AND COALESCE(d.imported_total, 0) <= 0   -- DEFINE-1: a Donor is who has given (isDonor.js), whatever the stored role
           AND NOT EXISTS (SELECT 1 FROM gifts o WHERE o.org_id = d.org_id AND o.donor_id = d.id AND ${GIFT("o")} AND o.id <> ALL(?::text[]))`,
       [orgId, orgId, ids, ids]);
     contacts = c.n;

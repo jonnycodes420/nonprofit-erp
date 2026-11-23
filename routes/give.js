@@ -3003,7 +3003,7 @@ app.get("/giving-pages/:id/p2p", requireAuth, wrap(async (req, res) => {
   // the org's own days are left, for the coaching drafts' "last days" words.
   const endDate = pg.campaign_end_date || pg.ends_on || null;
   const today = orgToday(await orgTz(orgId));                       // ORG_TZ_SEAM_OK
-  const daysLeft = endDate ? Math.round((Date.parse(endDate + "T00:00:00Z") - Date.parse(today + "T00:00:00Z")) / 86400000) : null;
+  const daysLeft = endDate ? require("../shared/numbers/endsOn").endsOn(endDate, { today }).daysLeft : null;   // DEFINE-1: the one days-left count
 
   const [tot] = await query(
     `SELECT COALESCE(SUM(amount),0)::float AS all_gifts,

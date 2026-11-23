@@ -1,6 +1,6 @@
 // components/profile/GivingTab.jsx (PROFILE-3): part of the donor profile, cut from DonorProfile.jsx.
 import { useState } from "react";
-import { STAGES, STAGE_ACTION, Spin, T, activeMark, daysDiff, firstNameOf, fmtFull } from "../shared";
+import { STAGES, STAGE_ACTION, Spin, T, activeMark, firstNameOf, fmtFull } from "../shared";
 import { Figure } from "../Figure";
 import { PROPOSAL_STAGE_LABEL, UndatedGiftDate, cap } from "./profileShared";
 import { displayDate, displayDateShort } from "../../../../shared/displayDate";
@@ -258,7 +258,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                   Total: <strong style={{color:T.greenDk}}>{fmtFull(giftsFull.filter(g=>!g.scheduled).reduce((s,g)=>s+g.amount,0))}</strong> · {giftCountReal} {giftCountReal===1?"gift":"gifts"}
                   {/* TRUTH-6: a scheduled gift (dated after today) is listed, and in no total until its date. */}
                   {giftsFull.some(g=>g.scheduled)&&<span data-testid="dp-gifts-scheduled-note"> · {giftsFull.filter(g=>g.scheduled).length} scheduled, not counted until {giftsFull.filter(g=>g.scheduled).length===1?"its":"their"} date</span>}
-                  {refundRows.length>0&&<span> · {refundRows.length===1?"a refund":`${refundRows.length} refunds`} of {fmtFull(-refundRows.reduce((s,g)=>s+g.amount,0))} taken off</span>}
+                  {refundRows.length>0&&<span data-testid="dp-gifts-refunds"> · {(figs&&figs.average&&figs.average.refundWords)||`${fmtFull(-refundRows.reduce((s,g)=>s+g.amount,0))} returned`}, taken off</span>}{/* DEFINE-1: refunds.js words (money returned on gifts refunded), never a count of refund rows */}
                   {/* NUMBERS-2: the imported total is its own figure, with its source and the last day it covers. */}
                   {figs&&figs.imported&&(
                     <span className="dp-unitemized-note"> · lifetime {fmtFull(figs.lifetime&&figs.lifetime.value!=null?figs.lifetime.value:donor.total)} {figs.imported.words.replace(/^Includes/,"includes")}, from {figs.imported.source}; gifts below dated on or before then are inside it</span>
@@ -537,8 +537,9 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                   {pledges.map(pl=>{
                     const PL_META={open:{label:"Open",color:T.green500},fulfilled:{label:"Fulfilled",color:T.greenMid},written_off:{label:"Written off",color:T.ink3}};
                     const meta=PL_META[pl.status]||PL_META.open;
-                    const isOverdue=pl.status==="open"&&pl.first_overdue_at;
-                    const daysOver=isOverdue?daysDiff(pl.due_date):null;
+                    // DEFINE-1: overdue is the schedule's (shared/numbers/pledgeSchedule.js overdueOf, from the server), never the reminder mark.
+                    const isOverdue=pl.status==="open"&&!!(pl.overdueNow&&pl.overdueNow.overdue);
+                    const daysOver=isOverdue?pl.overdueNow.days:null;
                     return(
                       <div key={pl.id} id={`pledge-${pl.id}`} style={{background:T.white,border:`1px solid ${isOverdue?T.terracotta+"40":T.bg3}`,borderLeft:`3px solid ${isOverdue?T.terracotta:meta.color}`,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
                         <div>

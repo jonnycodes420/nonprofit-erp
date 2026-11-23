@@ -73,7 +73,8 @@ app.get("/groups", requireAuth, wrap(async (req, res) => {
   const counts = await GR.memberCounts(orgId, groups);
   serverTiming(res, t0);
   res.json({
-    groups: groups.map((g, i) => ({ ...g, count: counts[i],
+    // DEFINE-1: a group by rule whose rule IS a registry population names it, so its card shows that name and sentence.
+    groups: groups.map((g, i) => ({ ...g, count: counts[i], population: g.kind === "dynamic" ? require("../shared/numbers/populations").byRules(g.rules) : null,
       countSource: { key: "group-members", params: { group: g.id } } })),
     ruleKeys: GR.RULE_KEYS,
     countSentence: "Everyone in the group right now. For a group by rule, that is everyone the rule finds today.",

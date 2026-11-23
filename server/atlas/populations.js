@@ -15,13 +15,17 @@
 //           donorStatus), the people Ask's "lapsed donors" counts.
 // Every answer ends with the population's one-line definition, and draws the
 // people (the first ten, with Open list holding every one of them).
-// When DEFINE-1 lands, these read from its registry instead of this table.
+// DEFINE-1: the names, the definitions and the lapsed rule are the population
+// registry's (shared/numbers/populations.js), so Atlas says what every other
+// screen says. This table only says how Atlas reads each one.
 "use strict";
 
+const REG = require("../../shared/numbers/populations");
+const said = id => { const p = REG.population(id); return { id, word: p.name, definition: p.sentence }; };
 const POPULATIONS = {
-  lybunt: { word: "LYBUNT", definition: "LYBUNT: gave last fiscal year, nothing yet this one.", report: "lybunt" },
-  sybunt: { word: "SYBUNT", definition: "SYBUNT: gave in some fiscal year before this one, nothing yet this one.", report: "sybunt" },
-  lapsed: { word: "lapsed", definition: "Lapsed: gave before, nothing in the last twelve months, and no pledge holding them (the Donors list's Lapsed).", rules: { lifecycle: "lapsed", notDeceased: "1" } },
+  lybunt: { ...said("lybunt"), report: "lybunt" },
+  sybunt: { ...said("sybunt"), report: "sybunt" },
+  lapsed: { ...said("lapsed"), rules: REG.population("lapsed").rules },
 };
 
 // The population her words name, or null. LYBUNT and SYBUNT wherever they are

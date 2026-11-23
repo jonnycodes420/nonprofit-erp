@@ -201,7 +201,8 @@ async function reset(org) {
   // ── §1 tag + stage + owner ──
   await page.goto(`${APP}/donors`, { waitUntil: "networkidle", timeout: 60000 });
   await page.locator(".dir-donor-row").first().waitFor({ timeout: 30000 });
-  ok("§1 the list opens on everyone", (await countLine()) === people.length, await countLine());
+  // DEFINE-1: the list opens on Donors, who have given; the people with no gift row are Contacts.
+  ok("§1 the list opens on everyone who has given", (await countLine()) === people.filter(p => p.lifetime || p.gifts).length, await countLine());
   await addChip("Tags", "tags", "Board prospect");
   await page.locator("select", { has: page.locator("option", { hasText: "All stages" }) }).first().selectOption("cultivate");
   await settle();
@@ -249,12 +250,12 @@ async function reset(org) {
   await header("last_gift_date").click(); await settle();
   const d2 = await pageDates();
   ok("§3 again: oldest first", d2.filter(Boolean).every((d, i, a) => i === 0 || a[i - 1] <= d) && d2[0] !== "", d2.slice(0, 8).join(","));
-  // The last page holds the people with no gift, last either way.
+  // The last page holds the people with no gift, last either way. DEFINE-1: on Everyone, since they are Contacts.
   const noGift = people.filter(p => !lastGift.has(p.id)).length;
-  const r3 = await api("GET", `/donors?role=donor&limit=100&offset=${people.length - 100}&sort=last_gift_date&dir=asc`, tok);
+  const r3 = await api("GET", `/donors?role=&limit=100&offset=${people.length - 100}&sort=last_gift_date&dir=asc`, tok);
   const tail = (r3.body.donors || []).map(d => lastGift.get(d.id) || "");
   ok("§3 people with no gift sort last, oldest-first too", noGift > 50 && tail.slice(-Math.min(noGift, 100)).every(x => x === ""), tail.slice(-5).join(","));
-  const r3b = await api("GET", `/donors?role=donor&limit=100&offset=${people.length - 100}&sort=lifetime&dir=asc`, tok);
+  const r3b = await api("GET", `/donors?role=&limit=100&offset=${people.length - 100}&sort=lifetime&dir=asc`, tok);
   ok("§3 and lowest-lifetime-first too", (r3b.body.donors || []).slice(-Math.min(noGift, 100)).every(d => !lastGift.has(d.id)), (r3b.body.donors || []).slice(-3).map(d => d.name));
   await header("name").click(); await settle();
   const names = await rowNames();

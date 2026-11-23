@@ -31,7 +31,13 @@ export const PACE_META = {
   ahead:    { label: "Ahead",         color: T.greenDk,    bg: T.bg2 },
   on_track: { label: "On pace",       color: T.ink,        bg: T.bg2 },
   behind:   { label: "Behind pace",   color: T.gold700,    bg: T.gold100 },   // FIX-2 C: behind is brass, never red
+  // DEFINE-1: an ended goal short of its target shows its result, never a pace (shared/numbers/pace.js).
+  ended:    { label: "Ended",         color: T.ink2,       bg: T.bg2 },
 };
+// The badge's words: an ended goal says what it raised, in shared/numbers/pace.js's words ("Raised 87% of
+// goal", sent as paceLabel); the card draws the 87 as a <Figure>.
+export const paceBadgeLabel = (state, serverLabel) => state === "ended" ? (serverLabel || PACE_META.ended.label) : PACE_META[state]?.label;
+export const paceBadgeIcon = state => state === "met" ? "✦" : state === "behind" ? "↘" : state === "ended" ? "" : "↗";
 
 // FLOWS-18: the words are the server's one rule (shared/numbers/endsOn.js),
 // sent as `endsWords`. 0 days on an active goal is its last day, never "ended":
@@ -100,7 +106,9 @@ function CampaignThermometer({ g, big }) {
       </div>
       {paceState && PACE_META[paceState] && (
         <div data-testid="pace-badge" style={{ marginTop: big ? 10 : 8, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: PACE_META[paceState].color, background: PACE_META[paceState].bg, borderRadius: 99, padding: "3px 11px", flexWrap: "wrap" }}>
-          {paceState === "met" ? "✦" : paceState === "behind" ? "↘" : "↗"} {PACE_META[paceState].label}
+          {paceState === "ended"
+            ? <>Raised <Figure variant="inline" kind="percent" value={shown ?? 0} label={`Raised of goal · ${g.name}`} definition={SENT.percent} source={s.percent} figureKey="campaign-ended-percent" /> of goal</>
+            : <>{paceBadgeIcon(paceState)} {paceBadgeLabel(paceState, g.paceLabel)}</>}
           {paceState === "met" && overBy > 0 && <span style={{ fontWeight: 400 }}>· past the goal</span>}
           {paceSentence && paceState !== "met" && <span style={{ fontWeight: 400, color: T.ink3 }}>· {paceSentence}</span>}
         </div>

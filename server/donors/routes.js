@@ -475,7 +475,6 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
 // come from. A card with nothing to say is null or an empty list, never an
 // empty object, so the client leaves it out. Every number carries the source
 // its rows open from. A read only: nothing here writes or heals.
-const RAIL_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const railMeetings = require("../../meetings");
 const railMoney = n => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2, maximumFractionDigits: 2 });
 const RAIL_PROVIDER_WORD = { paypal: "PayPal", zeffy: "Zeffy", givebutter: "Givebutter", square: "Square", stripe: "Stripe", quickbooks: "QuickBooks" };
@@ -561,12 +560,9 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
   const name = aR && aR.basis ? DR.rhythmOf(aR) : (r ? r.rhythm : "none");
   const exp = aR && aR.expectedNext ? String(aR.expectedNext).slice(0, 10) : null;
   if (name !== "none" || exp) {
-    const sentence = (name === "yearly" || name === "year_end") && exp
-      ? `Gives every ${RAIL_MONTHS[+exp.slice(5, 7) - 1]}` : (DR.RHYTHM_WORDS[name] || DR.RHYTHM_WORDS.none);
-    // PROFILE-2 Part 4: a steady gap between the named bands (every two
-    // months, say) is "none" beside an expected next gift; Drift's own reading
-    // names it here, the way routes/profileStatus.js does.
-    const said = name === "none" && exp && aR.cadenceDays ? `Gives ${DR.humanCadence(aR.cadenceDays)}` : sentence;
+    // DEFINE-1: the one phrase (drift.rhythmPhrase), the words the closeness line under About says too.
+    const phrase = aR && aR.basis ? DR.rhythmPhrase(aR) : "";
+    const said = phrase ? `Gives ${phrase}` : (DR.RHYTHM_WORDS[name] || DR.RHYTHM_WORDS.none);
     // FLOWS-3 (W-1108-Donors-24X): "Next gift expected" is the last gift plus
     // the usual gap (rhythm.js nextGift), "Due now" once that day has passed.
     const nextGift = aR && aR.nextGift ? String(aR.nextGift).slice(0, 10) : exp;
