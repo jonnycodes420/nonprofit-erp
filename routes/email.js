@@ -98,6 +98,7 @@ async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename, extra
       // switch are asked at the client like every other donor send.
       _stewardOrgId: org.id, _stewardKind: snapshot.type === "year_end" ? "year_end" : "receipt", _stewardDonorId: donor.id || null,
       _stewardWhat: snapshot.type === "year_end" ? `Year-end statement${snapshot.year ? " for " + snapshot.year : ""}`
+        : snapshot.nonCash ? `Receipt for donated property${snapshot.giftDate ? " received " + snapshot.giftDate : ""}`   // RECEIPTS-1: no value stated
         : `Receipt for $${Number(snapshot.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}${snapshot.giftDate ? " on " + snapshot.giftDate : ""}`,
       ...extra,
     });

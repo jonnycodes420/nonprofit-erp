@@ -10,6 +10,7 @@
 const express = require("express");
 const routers = { r1: express.Router() };
 const DR = require("./drift");   // PLEDGES-3: a receipt whose gift changed says so
+const RP = require("./receiptParts");   // RECEIPTS-1: a receipt that printed the org's address where the donor's goes
 
 function mount(ctx) {
   const { query, requireAuth, wrap } = ctx;
@@ -30,13 +31,15 @@ function mount(ctx) {
     const [{ n }] = await query(`SELECT COUNT(*)::int AS n FROM receipts r LEFT JOIN donors d ON d.id = r.donor_id AND d.org_id = r.org_id WHERE ${where}`, args);
     const rows = await query(
       `SELECT r.id, r.donor_id, d.name AS donor_name, r.gift_id, r.type, r.tax_year, r.receipt_number, r.amount, r.deductible_amount,
-              r.sent_to, r.sent_at, r.voided_at, r.void_reason, r.created_at, (r.pdf_data IS NOT NULL) AS has_pdf, ${DR.DRIFT_COLUMNS}
+              r.sent_to, r.sent_at, r.voided_at, r.void_reason, r.created_at, (r.pdf_data IS NOT NULL) AS has_pdf, ${DR.DRIFT_COLUMNS},
+              ${RP.ORG_ADDRESS_IN_DONOR_BLOCK_SQL("r")} AS org_address_in_donor_block, ((r.snapshot::jsonb -> 'nonCash') IS NOT NULL) AS non_cash
          FROM receipts r LEFT JOIN donors d ON d.id = r.donor_id AND d.org_id = r.org_id ${DR.DRIFT_JOIN("r")}
         WHERE ${where} ORDER BY r.created_at DESC, r.id DESC LIMIT ?`, [...args, limit]);
     const [org] = await query("SELECT receipts_enabled FROM orgs WHERE id = ?", [orgId]);
     res.json({ receipts: DR.withDrift(rows).map(r => ({ ...r, amount: Number(r.amount), deductible_amount: r.deductible_amount == null ? null : Number(r.deductible_amount) })),
       total: n, shown: rows.length, receiptsEnabled: !!(org && org.receipts_enabled),
       sentence: `${n.toLocaleString("en-US")} ${n === 1 ? "receipt" : "receipts"}${q ? ` match "${q}"` : " issued"}${rows.length < n ? `, the newest ${rows.length} shown` : ""}. A voided receipt keeps its number and its note; a number is never issued twice.`,
+      reissueSentence: "Reissue voids this receipt, keeps its note, and makes it again under the same number with -R1 on the end. Nothing is emailed.",
       whenOff: "With receipts on, every online gift gets its tax receipt by email the moment it arrives, an offline gift gets one when you press Send receipt, and each one is listed here with its PDF. Turning them on needs your legal name, EIN and receipt address." });
   }));
   return {};

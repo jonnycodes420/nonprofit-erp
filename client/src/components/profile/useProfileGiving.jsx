@@ -163,6 +163,7 @@ export function useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, jou
         ...extras,overBalance,
         amount:Number(addGiftForm.amount),date:addGiftForm.date,type:addGiftForm.type,
         campaignId:addGiftForm.campaign_id||undefined,notes:addGiftForm.notes,
+        property_description:addGiftForm.property_description||undefined,stock_shares:addGiftForm.stock_shares||undefined,stock_ticker:addGiftForm.stock_ticker||undefined,   // RECEIPTS-1
         ...(addGiftForm.fund?fundBody(addGiftForm.fund):{fund_id:addGiftForm.fund_id}),payment_method:addGiftForm.payment_method,
         acknowledgement_sent:addGiftForm.acknowledgement_sent,
         pledgeId:addGiftForm.pledgeId||undefined,eventId:addGiftForm.eventId||undefined,
