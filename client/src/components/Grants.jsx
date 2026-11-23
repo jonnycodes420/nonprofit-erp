@@ -8,6 +8,7 @@ import { DeadlinesView, GrantDeadlinesPanel } from "./GrantDeadlines";
 import { GrantDocuments } from "./GrantDocuments";
 import { T, activeMark, fmt, fmtFull, daysUntil, SC, askClaude, Spin, Pill, Card, SectionLabel, AIBtn, AIPanel, PageTitle, EmptyState, TouchpointTimeline, interactive, Modal } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
+import { removalPlan, confirmOpts, offerRemovalUndo } from "../lib/removeThrough";   // TRASH-1
 import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, rowClick } from "../lib/appUrls";
 import { GRANT_STATUSES, statusLabel, normalizeStatus, AWARDED_STATUS_KEYS } from "../../../shared/grantShape";
@@ -503,15 +504,28 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
     setData(prev=>({...prev,grants:prev.grants.map(g=>g.id===updated.id?updated:g)}));
     setSelected(updated);
   };
-  // FIX-12 (HELP-1 list): delete removed a grant at once. The row is really
-  // deleted (not a soft delete), so it asks first and says so.
+  // TRASH-1 item 3: the confirm is removal.js's, built from what is attached:
+  // "This grant has a $5,000 gift and a $2,500 pledge on the funder's record.
+  // Keep them on the funder, or remove them too?" The grant moves to the trash
+  // with its deadlines, documents and notes; Undo brings it back. Removing the
+  // money too goes through the one gift delete (its receipt check included).
   const onDelete=async(id)=>{
-    const g=(data.grants||[]).find(x=>x.id===id);
-    if(!(await askConfirm({title:`Delete the ${g&&g.funder?g.funder+" ":""}grant?`,body:"It is removed for good, with its deadlines and notes. This can't be undone.",yes:"Delete grant",danger:true})))return;
-    try{ await apiFetch(`/grants/${id}`,{method:"DELETE"}); }
+    let p;
+    try{ p=await removalPlan("grant",id); }catch(e){ alert(errorMessage(e,"Steward could not read what this grant carries. Nothing was deleted.")); return; }
+    const ans=await askConfirm(confirmOpts(p));
+    if(!ans)return;
+    let r;
+    try{
+      if(ans==="alt"){
+        for(const gid of (p.attached&&p.attached.giftIds)||[]) await apiFetch(`/gifts/${encodeURIComponent(gid)}`,{method:"DELETE"});
+        if(p.attached&&p.attached.pledgeId) await apiFetch(`/pledges/${encodeURIComponent(p.attached.pledgeId)}`,{method:"DELETE"});
+      }
+      r=await apiFetch(`/grants/${id}`,{method:"DELETE"});
+    }
     catch(e){ alert(errorMessage(e,"That grant could not be deleted.")); return; }
     setData(prev=>({...prev,grants:prev.grants.filter(g=>g.id!==id)}));
     setSelected(null);
+    offerRemovalUndo(r,"grant",()=>{setBoardKey(k=>k+1);});
   };
 
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>

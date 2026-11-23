@@ -472,14 +472,10 @@ app.post("/auction-items/:id/winner", requireAuth, checkWriteAccess, wrap(async 
   res.json({ ok: true, sentence: `${d.name} won ${item.title} at ${AC.fmtMoney(amount)}.` });
 }));
 
-app.delete("/auction-items/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const orgId = req.user.orgId;
-  const item = await loadItem(orgId, req.params.id);
-  if (!item) return res.status(404).json({ error: "Not found" });
-  if (item.bids > 0) return res.status(409).json({ error: "People have bid on this item, so it stays. Its bids are a record of what they offered." });
-  await run(`DELETE FROM auction_items WHERE id=? AND org_id=?`, [item.id, orgId]);
-  res.json({ ok: true });
-}));
+// TRASH-1 item 3: through the one remove (removal.js, kind "auction_item"):
+// an item with bids, a payment or an in-kind gift is retired, never deleted.
+app.delete("/auction-items/:id", requireAuth, checkWriteAccess, wrap(async (req, res) =>
+  require("./removal").removeThrough(req, res, "auction_item", req.params.id)));
 
 // THE DONATED ITEM IS AN IN-KIND GIFT for the person who gave it, at the
 // org's fair market value, written once through recordGift. A person presses

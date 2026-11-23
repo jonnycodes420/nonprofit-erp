@@ -148,6 +148,12 @@ jobs:
       - name: Send plan guard
         run: node scripts/ci/send-plan-scan.js
 
+      # TRASH-1 · a new app.delete( that hard-deletes a table with money or
+      # person ids goes through removal.js (or is allowlisted with its reason).
+      # The self-test plants one and watches it fail. Two seconds.
+      - name: Delete through removal guard
+        run: node scripts/ci/delete-scan.js --self-test && node scripts/ci/delete-scan.js
+
       # DEFINE-1 · a screen never shows a population count the registry
       # (shared/populationWords.js) does not name. Two seconds.
       - name: Population ids guard

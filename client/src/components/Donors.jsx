@@ -703,12 +703,12 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // INTEGRITY-2 (W-1108-Finance-50X): Delete asks first, naming what goes with them.
   const [deleteAsk,setDeleteAsk]=useState(null);
   const deleteDonor=id=>setDeleteAsk({id,name:(selected&&selected.id===id&&selected.name)||"this person"});
-  const deleteDonorNow=async(id)=>{
+  const deleteDonorNow=async(id,opts={})=>{
     // FIX-12 (HELP-1 list): delete is a soft delete, so "cannot be undone" was untrue.
     // FIX-22: Undo brings it back for a minute; Restore in Settings, Trash for 30 days.
     setDeleteAsk(null);
     try{
-      const r=await apiFetch(`/donors/${id}`,{method:"DELETE"});
+      const r=await apiFetch(`/donors/${id}${opts.voidReceipts?"?voidReceipts=1":""}`,{method:"DELETE"});   // TRASH-1: her yes to "Void them?"
       offerUndo(r,"donor",back=>{setDirReloadKey(k=>k+1);const rec=back&&back.record;if(rec)patchPeople(list=>list.some(d=>d.id===rec.id)?list:[...list,adaptDonor(rec)]);loadPeopleCount();});
       patchPeople(list=>list.filter(d=>d.id!==id));loadPeopleCount();
       setDirRows(prev=>prev?prev.filter(d=>d.id!==id):prev);
@@ -840,7 +840,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           profile opens with. It opens again when the full record lands, and Save
           waits for it, so an early Edit can't save blanks over what is on file. */}
       {editTarget&&(d=>d&&<EditDonorModal key={d.id+(d.fullRecord?":full":":part")} donor={d} onSave={handleEditSaved} onClose={()=>setEditTarget(null)}/>)(selected?.id===editTarget.id?selected:editTarget)}
-      {deleteAsk&&<DeletePersonConfirm person={deleteAsk} onClose={()=>setDeleteAsk(null)} onConfirm={()=>deleteDonorNow(deleteAsk.id)}/>}
+      {deleteAsk&&<DeletePersonConfirm person={deleteAsk} onClose={()=>setDeleteAsk(null)} onConfirm={opts=>deleteDonorNow(deleteAsk.id,opts)}/>}
       {planBlock&&<Modal onClose={()=>setPlanBlock(null)} width={420} ariaLabel="This person has a monthly plan">
         <div data-testid="delete-plan-block" style={{display:"flex",flexDirection:"column",gap:12}}>
           <div style={{fontSize:16,fontWeight:800,color:T.ink}}>Not deleted</div>

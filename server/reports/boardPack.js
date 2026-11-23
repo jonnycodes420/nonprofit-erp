@@ -458,12 +458,12 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   // Finance
   console.log("[board-report] step 4: fetching finance data...");
   const [ytdFinRows, allFinRows, topExpRows, budgetRows] = await Promise.all([
-    query("SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? AND date >= ? AND date <= ? GROUP BY type", [orgId, ytdS, ytdE]),
-    query("SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? GROUP BY type", [orgId]),
+    query(`SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? AND date >= ? AND date <= ? AND ${NUMBERS.money.LEDGER_LIVE("fin_transactions")} GROUP BY type`, [orgId, ytdS, ytdE]),
+    query(`SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? AND ${NUMBERS.money.LEDGER_LIVE("fin_transactions")} GROUP BY type`, [orgId]),
     query(
       `SELECT a.name, SUM(ft.amount) as total FROM fin_transactions ft
        LEFT JOIN accounts a ON a.id = ft.account_id
-       WHERE ft.org_id = ? AND ft.type = 'expense' AND ft.date >= ? AND ft.date <= ?
+       WHERE ft.org_id = ? AND ft.type = 'expense' AND ft.date >= ? AND ft.date <= ? AND ${NUMBERS.money.LEDGER_LIVE("ft")}
        GROUP BY a.name ORDER BY total DESC LIMIT 5`,
       [orgId, ytdS, ytdE]
     ),
@@ -471,7 +471,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
       `SELECT a.name, COALESCE(b.amount, 0) as budget, COALESCE(SUM(ft.amount), 0) as actual
        FROM accounts a
        LEFT JOIN budgets b ON b.account_id = a.id AND b.year = ? AND COALESCE(b.basis, 'calendar') = 'calendar'
-       LEFT JOIN fin_transactions ft ON ft.account_id = a.id AND ft.type = 'expense' AND ft.date >= ? AND ft.date <= ?
+       LEFT JOIN fin_transactions ft ON ft.account_id = a.id AND ft.type = 'expense' AND ft.date >= ? AND ft.date <= ? AND ${NUMBERS.money.LEDGER_LIVE("ft")}
        WHERE a.org_id = ? AND a.type = 'expense' AND a.active = TRUE
        GROUP BY a.name, b.amount ORDER BY actual DESC LIMIT 8`,
       // NUMBERS-4: this block is a CALENDAR-basis budget (b.basis), so its

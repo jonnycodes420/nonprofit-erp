@@ -7,6 +7,9 @@ import { T, Modal } from "../shared";
 // go at once. Now it names what goes to the trash with them (their gifts,
 // household and relationship links, open tasks) before anything moves, and
 // says how they come back (Restore in Settings, Trash, for 30 days).
+// TRASH-1 item 2: and when receipts were issued to them, it asks, in the
+// server's words: "3 receipts were issued to Ana. Void them?" Her yes voids
+// them with the move (onConfirm({ voidReceipts: true })); Restore never un-voids.
 const n = (k, one, many) => `${k.toLocaleString("en-US")} ${k === 1 ? one : many}`;
 
 export function DeletePersonConfirm({ person, onConfirm, onClose }) {
@@ -21,7 +24,8 @@ export function DeletePersonConfirm({ person, onConfirm, onClose }) {
   }, [person.id]);
   const parts = w ? [w.gifts && n(w.gifts, "gift", "gifts"), (w.links + w.households) && n(w.links + w.households, "household or relationship link", "household and relationship links"),
     w.openTasks && n(w.openTasks, "open task", "open tasks")].filter(Boolean) : [];
-  const go = async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); } };
+  const rq = w && w.receiptQuestion;
+  const go = async () => { setBusy(true); try { await onConfirm(rq ? { voidReceipts: true } : {}); } finally { setBusy(false); } };
   return (
     <Modal onClose={onClose} width={440} ariaLabel={`Delete ${person.name}`}>
       <div data-testid="delete-person-confirm" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -30,11 +34,17 @@ export function DeletePersonConfirm({ person, onConfirm, onClose }) {
           {!w ? (err || "Counting what goes with them…")
             : parts.length ? `Their ${parts.join(", ").replace(/, ([^,]*)$/, " and $1")} go with them.` : "Nothing else goes with them: no gifts, links or open tasks."}
         </div>
+        {rq && (
+          <div data-testid="delete-person-receipts" style={{ fontSize: 14, color: T.ink, lineHeight: 1.5, background: T.bg2, borderRadius: 8, padding: "10px 12px" }}>
+            <div style={{ fontWeight: 700 }}>{rq.question}</div>
+            <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 4 }}>{rq.note}</div>
+          </div>
+        )}
         <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.45 }}>Restore in Settings, Imports, Trash brings them back with all of it for 30 days. After that they are deleted for good.</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button type="button" data-commit data-testid="delete-person-yes" disabled={!w || busy} onClick={go}
             style={{ background: T.terra700, color: T.white, border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", opacity: !w || busy ? 0.6 : 1 }}>
-            {busy ? "Moving…" : "Move to trash"}
+            {busy ? "Moving…" : rq ? rq.yes : "Move to trash"}
           </button>
           <button type="button" data-testid="delete-person-keep" onClick={onClose} style={{ background: T.bg2, color: T.ink, border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Keep them</button>
         </div>

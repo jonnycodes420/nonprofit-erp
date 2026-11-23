@@ -181,8 +181,8 @@ app.delete("/groups/:id", requireAuth, checkWriteAccess, wrap(async (req, res) =
   if (!g) return res.status(404).json({ error: "Not found" });
   // The people are not touched. A draft campaign that named this group now
   // resolves to nobody (resolveSegmentSpec), never to everybody.
-  await run("DELETE FROM audiences WHERE id=? AND org_id=?", [g.id, req.user.orgId]);
-  res.json({ deleted: true });
+  // TRASH-1 item 3: through the one remove (removal.js, kind "group"), into the trash.
+  return require("./removal").removeThrough(req, res, "group", g.id, { deleted: true });
 }));
 
 // TIDY-1 · POST /groups/:id/pin { pinned }: keep a group (one Atlas made

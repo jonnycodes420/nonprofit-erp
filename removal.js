@@ -222,6 +222,10 @@ const KINDS = {
   },
 };
 
+// TRASH-1 item 3: grants, ledger rows, asks, programs, journeys and a
+// volunteer's hours, whose delete routes used to skip this file.
+Object.assign(KINDS, require("./server/removal/moneyKinds").KINDS);
+
 function pageKind(noun, kind) {
   return {
     noun, table: "giving_pages", where: `COALESCE(page_kind,'give') = '${kind}'`, archives: "status",
@@ -257,7 +261,8 @@ function sentence(kind, K, row, att, mode) {
   const name = nameOf(K, row);
   if (mode === "refuse") return { title: `${name} stays as it is`, body: K.refuse(row, att), yes: null };
   const verb = mode === "unassign" ? "Remove the winner of" : (K.people ? "Remove" : mode === "retire" || mode === "archive" ? "Remove" : "Delete");
-  const title = mode === "unassign" ? `${verb} ${name}?`
+  const title = K.title && mode === "delete" ? K.title(row)
+    : mode === "unassign" ? `${verb} ${name}?`
     : K.people ? `${verb} ${name}?` : `${verb} the ${name} ${K.noun}?`;
   return { title, body: K.words(row, att, mode), yes: mode === "delete" && !K.people ? YES.delete : mode === "unassign" ? YES.unassign : mode === "retire" ? YES.retire : mode === "archive" ? YES.archive : YES.remove };
 }
@@ -270,7 +275,10 @@ async function plan(q, kind, orgId, id, extra = {}) {
   Object.assign(row, extra);
   const att = await K.attached(q, orgId, row);
   const mode = K.decide(att, row);
-  return { kind, id, mode, attached: att, name: nameOf(K, row), row, ...sentence(kind, K, row, att, mode) };
+  // TRASH-1: a kind with two ways forward (a grant's money: keep it on the
+  // funder, or remove it too) names both, and the screen shows them as given.
+  const choice = K.choice && mode !== "refuse" ? K.choice(att, row) : null;
+  return { kind, id, mode, attached: att, name: nameOf(K, row), row, choice, ...sentence(kind, K, row, att, mode) };
 }
 
 // Several at once: one confirm, built from the sum. "Remove 4 guests? 2 paid:
