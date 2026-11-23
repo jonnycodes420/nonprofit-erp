@@ -1,0 +1,1 @@
+- Run `DATABASE_URL=<prod db> node scripts/ops/ledger3-repair.js` (a dry run that lists each org's gifts with no fund and ledger rows on another fund than their gift), then the same with `--apply --i-know-this-is-prod` if the list reads right.

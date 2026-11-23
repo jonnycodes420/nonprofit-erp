@@ -7,6 +7,23 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 - **Restricted + Unrestricted = Lifetime (LEDGER-2).** A person's split is `shared/numbers/fundSplit.js`: Lifetime
   cut by fund, each gift in exactly one bucket by its fund's restriction. A gift on an unrestricted fund, a gift
   with no fund and the imported total are Unrestricted. A portfolio total is its donors' Lifetime, read live.
+- **One default fund (LEDGER-3).** `shared/numbers/defaultFund.js` is the only way code picks the org's
+  unrestricted fund: `orgs.default_fund_id` when it names a fund of the org, else the oldest unrestricted
+  fund (created_at, then id; retired funds left out). Reads never write; a write path (`ensureOrgLedger`
+  with `heal`, Post to the books) stamps it once with `default_fund_by = 'system:defaultFund'`. A default no
+  person chose is not a choice: the deposit sheet's and the gift import's blank memo read `CHOSEN_SQL`, which
+  ignores a `system:` stamp (BUILD-88b's rule stands). Never pick "the first unrestricted fund" by name or
+  with no order; the demo seed reads the same fragment (`DEFAULT_FUND_SQL`).
+- **A waiting gift posts through one write (LEDGER-3).** `server/finance/ledgerPost.js` `postGiftRow(s)` is
+  the only insert of a gift's ledger row: recordGift's Rule 3 and Finance's Post to the books both call it.
+  Post to the books lists `ledgerStatus.js` `waiting` gifts by deposit (`deposit_ref`, else the deposited
+  day, else no deposit), posts the deposits she ticks (refused whole if one changed since she looked), and
+  stamps every row with its batch (`fin_transactions.post_batch_id`, `ledger_post_batches`), so Undo removes
+  exactly that batch. History never posts; imports never post on their own; an org posting through its
+  accounting system (`ledger_posting_enabled = false`) posts nothing here. A no-fund gift posts to the default.
+- **A fund says both of its numbers (LEDGER-3).** Finance's fund card shows "Received this fiscal year
+  (gifts)" (`shared/numbers/fundBooks.js`, Reports' Gifts by fund row to the cent) above "Balance (books)",
+  and the gifts waiting to post as a figure that opens them (`ledger-status` source with `fund`).
 - **A gift split across funds is one gift (GIFTS-2).** Its lines are `gift_fund_lines`, written only by
   `server/donors/giftFundLines.js`, and they add up to the gift to the cent (`shared/numbers/fundLines.js`
   `linesRefusal`). One gift, one receipt, one ledger row; `gifts.fund_id` is the largest line. Anything that
