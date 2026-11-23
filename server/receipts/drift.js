@@ -60,7 +60,7 @@ function mount(ctx) {
     const d = driftOf(row);
     // RECEIPTS-1: a receipt whose gift has not changed is reissued as it stands, under the same
     // number with a suffix (server/receipts/reissue.js), one Reissue for both.
-    if (!d) return next();
+    if (!d) return require("./reissue").reissueSameNumber(req, res, next);
     const who = actor(req);
     const day = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
     const why = `Gift changed after this receipt (receipt ${usd(row.amount)}, gift now ${d.giftAmount == null ? "removed" : usd(d.giftAmount)}). Voided by ${who.name} on ${day}.`;

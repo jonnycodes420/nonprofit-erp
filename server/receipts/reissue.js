@@ -7,15 +7,16 @@
 // gift (or statement year) is receipted again under the same number with a suffix, 2026-00027 →
 // 2026-00027-R1. The new PDF is made, not emailed: "Email it" is its own click (FLOWS-1).
 //
-//   POST /receipts/:id/reissue   admin, write access. 201 { receipt, voidedId, sentence }
+//   POST /receipts/:id/reissue   (registered once, in drift.js: admin) → 201 { receipt, voidedId, sentence }
 "use strict";
 const RP = require("./receiptParts");
 
 function register(app, ctx) {
-  const { query, run, requireAuth, requireAdmin, checkWriteAccess, wrap, actor,
+  const { query, run, actor,
           issueGiftReceipt, issueYearEndStatement, issueHouseholdStatement, householdChoice, householdLines } = ctx;
 
-  app.post("/receipts/:id/reissue", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  // One route (drift.js registers POST /receipts/:id/reissue); with no drift it calls this.
+  sameNumber = async (req, res) => {
     const orgId = req.user.orgId;
     const [old] = await query("SELECT * FROM receipts WHERE id = ? AND org_id = ? AND voided_at IS NULL", [req.params.id, orgId]);
     if (!old) return res.status(404).json({ error: "not_found", sentence: "That receipt is not on file, or it was already voided." });
@@ -64,7 +65,14 @@ function register(app, ctx) {
     const { pdf_data: _pdf, ...receipt } = made;   // the PDF is fetched on its own (GET /receipts/:id/pdf)
     res.status(201).json({ receipt, voidedId: old.id,
       sentence: `Receipt #${old.receipt_number} was voided and reissued as #${number}. Nothing was emailed: download it here, or email it from the person's Giving tab.` });
-  }));
+  };
 }
 
-module.exports = { register };
+let sameNumber = null;
+// drift.js's route, for a receipt whose gift has not changed. Write access as the drift path asks.
+function reissueSameNumber(req, res, next) {
+  if (!sameNumber) return res.status(503).json({ error: "not_ready", sentence: "Steward is still starting. Try again in a moment." });
+  return sameNumber(req, res, next);
+}
+
+module.exports = { register, reissueSameNumber };

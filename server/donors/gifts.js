@@ -1182,7 +1182,7 @@ app.post("/gifts/:id/receipt", requireAuth, checkWriteAccess, wrap(async (req, r
 // response (board_reports pattern), fetched separately via
 // GET /receipts/:id/pdf only when actually downloading one.
 RCE.register(app, { query, requireAuth, checkWriteAccess, wrap, actor, resendReceiptEmail });   // FLOWS-1 item 4: "Email it", one click
-require("../receipts/reissue").register(app, { query, run, requireAuth, requireAdmin, checkWriteAccess, wrap, actor, issueGiftReceipt,   // RECEIPTS-1
+require("../receipts/reissue").register(app, { query, run, actor, issueGiftReceipt,   // RECEIPTS-1: drift.js's Reissue route calls it
   issueYearEndStatement, issueHouseholdStatement, householdChoice: HHS.householdChoice, householdLines: HHS.householdLines });
 app.get("/donors/:id/receipts", requireAuth, wrap(async (req, res) => {
   if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B: the parent must be YOURS before children are answered — even an empty list confirms nothing about another tenant
