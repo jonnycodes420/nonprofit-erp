@@ -135,7 +135,7 @@ async function many(req, ds) { for (const d of ds) await viaHelper(req, d); }`);
     const CS = require("../server/mail/confirmScope");
     const inRequest = fn => new Promise((resolve, reject) => CS.middleware()({}, {}, () => Promise.resolve().then(fn).then(resolve, reject)));
     const second = await inRequest(async () => { CS.noteConfirm(); try { CS.noteConfirm(); return "minted"; } catch (e) { return e.code; } });
-    ok("§1 run time: a second confirm in one request without a plan is refused", second === "plan_required", second);
+    ok("§1 run time: a second confirm in one request without a plan is refused", second === "send_list_required", second);
     const planned2 = await inRequest(() => CS.under("sp_x", async () => [CS.noteConfirm(), CS.noteConfirm()]));
     ok("§1 run time: under a plan each confirm carries the plan id", planned2.join() === "sp_x,sp_x", planned2);
 
@@ -144,9 +144,9 @@ async function many(req, ds) { for (const d of ds) await viaHelper(req, d); }`);
     const rv = await api("POST", "/milestone-drafts/send-reviewed", tokA, {});
     const rc = await api("POST", "/recurring/unlinked/send-reconnect", tokA, { donorIds: [people.Ana.id, people.Ben.id] });
     await settle();
-    ok("§1 volunteer drafts: two ids at once are refused, plan_required", two.status === 409 && two.body.error === "plan_required", two);
-    ok("§1 Send all reviewed without a plan is refused", rv.status === 409 && rv.body.error === "plan_required", rv);
-    ok("§1 reconnect to two people without a plan is refused", rc.status === 409 && rc.body.error === "plan_required", rc);
+    ok("§1 volunteer drafts: two ids at once are refused, send_list_required", two.status === 409 && two.body.error === "send_list_required", two);
+    ok("§1 Send all reviewed without a plan is refused", rv.status === 409 && rv.body.error === "send_list_required", rv);
+    ok("§1 reconnect to two people without a plan is refused", rc.status === 409 && rc.body.error === "send_list_required", rc);
     ok("§1 …and nothing reached the sink", state.captured.length === 0, state.captured.length);
   }
 

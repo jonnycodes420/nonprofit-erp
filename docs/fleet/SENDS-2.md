@@ -25,7 +25,7 @@ reconnect links (opens the dialog). Campaign editor → Send me a test (her own 
 **What could have broken nearby:** every single-draft Send (Communications' per-draft Send, a task's email and thank-you,
 Auctions' per-winner Send, Going out's held Send, a profile's held Send, receipts, pledge and dunning resends, the gift
 started-not-finished note): each still mints exactly one confirm per press, and a second in one request is now refused,
-so a "plan_required" answer on any of them is a defect. The volunteer reminder sweep (it now expires as well as drafts).
+so a "send_list_required" answer on any of them is a defect. The volunteer reminder sweep (it now expires as well as drafts).
 Org deletion (send_plans goes with the org).
 
 **Needs a write:** 1, 3, 4 and 5 in org_stagewalk. 2 is read only.

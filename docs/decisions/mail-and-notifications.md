@@ -38,7 +38,7 @@ the morning email unless the person turned on its own reminder, so no step goes 
   hand sends ("Send 33 emails", one click, no dialog). Now `POST /send-plans` (`server/mail/sendPlan.js`) builds the
   list (each name, address and subject, and what is refused and why) and `POST /send-plans/:id/commit` sends exactly
   it: once, by the person who built it, within 10 minutes, skipping and naming anything changed since. It is the only
-  place a request may mint a second confirm (`server/mail/confirmScope.js` throws `plan_required` otherwise), each
+  place a request may mint a second confirm (`server/mail/confirmScope.js` throws `send_list_required` otherwise), each
   confirm records its `plan_id`, and a confirm is for one address. Each bulk door registers a kind (`volunteer`,
   `milestone_reviewed`, `milestone`, `reconnect`); its old route sends one person and refuses more. The browser shows
   every plan in one dialog (`askSendPlan`, `client/src/components/SendPlanDialog.jsx`) and preselects nothing. CI runs

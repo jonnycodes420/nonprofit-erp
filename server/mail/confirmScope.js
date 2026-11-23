@@ -22,8 +22,8 @@ function middleware() {
 
 class PlanRequired extends Error {
   constructor() {
-    super("plan_required: a send to more than one person needs the list she was shown (POST /send-plans, then commit it).");
-    this.code = "plan_required";
+    super("send_list_required: a send to more than one person needs the list she was shown (POST /send-plans, then commit it).");
+    this.code = "send_list_required";
     this.status = 409;
   }
 }

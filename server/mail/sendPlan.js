@@ -143,7 +143,7 @@ function mount(ctx) {
 }
 
 // What the old bulk doors answer when asked for more than one person.
-const PLAN_REQUIRED = { error: "plan_required",
+const PLAN_REQUIRED = { error: "send_list_required",
   sentence: "To send to more than one person, look at the list first: it opens with every name before anything goes. Nothing was sent." };
 
 module.exports = { routers, mount, register, fingerprint, sentenceOf, PLAN_MINUTES, PLAN_REQUIRED, KINDS };
