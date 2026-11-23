@@ -231,6 +231,8 @@ async function seed() {
     await tile.click();
     const panel = page.getByRole("dialog");
     await panel.first().waitFor({ timeout: 15000 }).catch(() => {});
+    // main-fix: the dialog opens before its rows arrive ("Reading the rows…"); read it once they have.
+    await page.waitForFunction(() => { const d = document.querySelector('[role="dialog"]'); return d && /Corwin Steadman|Alder Quince/.test(d.innerText); }, null, { timeout: 20000 }).catch(() => {});
     const text = await panel.first().innerText().catch(() => "");
     const cents = Math.round((ov.period.raised || 0) * 100);
     const shown = "$" + (cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2 });
