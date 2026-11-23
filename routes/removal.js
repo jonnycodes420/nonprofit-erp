@@ -21,9 +21,15 @@ const R = require("../removal");
 const { sql } = require("../server/db/sql");
 const KIND_TABLES = new Set(Object.values(R.KINDS).map(k => k.table));
 const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
+const { GRANT_CHILDREN } = require("../server/removal/moneyKinds");
+// TRASH-1 item 3: the old DELETE routes (grants, ledger rows, asks, programs,
+// journeys, groups, auction items, volunteer hours) answer through the one
+// remove: removeThrough(req, res, kind, id). Set when mount() runs.
+let REMOVE_ONE = null;
+const removeThrough = (...a) => REMOVE_ONE(...a);
 
 const routers = { r0: express.Router() };
-const VOLUNTEER_KINDS = new Set(["volunteer_role", "shift", "volunteer_signup"]);
+const VOLUNTEER_KINDS = new Set(["volunteer_role", "shift", "volunteer_signup", "volunteer_hours"]);
 // FIX-45: the toast offers Undo for a minute (the walk lost three Undos to ten
 // seconds); Recent changes keeps it for as long as the row sits in the trash.
 const UNDO_SECONDS = 60;
@@ -42,6 +48,10 @@ const SOFT = {
       : { cols: ["retired_at", "retired_by", "retired_by_name"], set: who => ["NOW()", who.id, who.name] },
   archive: K => K.table === "volunteer_opportunities"
     ? { cols: ["archived_at"], set: () => ["NOW()"] }
+    // TRASH-1: a journey is archived AND turned off; Undo restores only the
+    // archive, so bringing it back can never quietly re-arm it (FIX-5).
+    : K.table === "cultivation_templates"
+      ? { cols: ["archived_at"], set: () => ["NOW()"], also: "journey_enabled = false, updated_at = NOW()" }
     : { cols: ["status"], set: () => ["archived"] },
   unassign: () => ({ cols: ["unassigned_at", "updated_at"], set: () => ["clock_timestamp()", "NOW()"] }),
 };
@@ -83,6 +93,29 @@ const WITH = {
     }),
     give: async (tx, ctx, w) => {
       if (w?.roles?.length) await ctx.runTx(tx, `INSERT INTO volunteer_slot_roles SELECT * FROM jsonb_populate_recordset(NULL::volunteer_slot_roles, ?::jsonb) ON CONFLICT DO NOTHING`, [JSON.stringify(w.roles)]);
+    },
+  },
+  // TRASH-1: a grant's deadlines, documents, notes, reports, spending and
+  // program links (ON DELETE CASCADE) go into its trash row and come back with it.
+  grants: {
+    take: async (tx, ctx, row, orgId) => {
+      const out = {};
+      for (const t of GRANT_CHILDREN) out[t] = await ctx.queryTx(tx, `SELECT * FROM ${t} WHERE grant_id=? AND org_id=?`, [row.id, orgId]);
+      return out;
+    },
+    give: async (tx, ctx, w) => {
+      for (const t of GRANT_CHILDREN) {
+        if (w && Array.isArray(w[t]) && w[t].length)
+          await ctx.runTx(tx, `INSERT INTO ${t} SELECT * FROM jsonb_populate_recordset(NULL::${t}, ?::jsonb) ON CONFLICT DO NOTHING`, [JSON.stringify(w[t])]);
+      }
+    },
+  },
+  programs: {
+    take: async (tx, ctx, row, orgId) => ({
+      links: await ctx.queryTx(tx, `SELECT * FROM program_grants WHERE program_id=? AND org_id=?`, [row.id, orgId]),
+    }),
+    give: async (tx, ctx, w) => {
+      if (w?.links?.length) await ctx.runTx(tx, `INSERT INTO program_grants SELECT * FROM jsonb_populate_recordset(NULL::program_grants, ?::jsonb) ON CONFLICT DO NOTHING`, [JSON.stringify(w.links)]);
     },
   },
   campaigns: {
@@ -138,11 +171,16 @@ function mount(ctx) {
     const extra = await extraFor(kind, req.user.orgId, id);
     const p = await R.plan(query, kind, req.user.orgId, String(id), extra);
     if (p.error === "not_found") return { status: 404, body: { error: "not_found" } };
+    // SECURE-1 (gifts, pledges, grants): whoever entered it, or an admin.
+    if (K.ownerOrAdmin && p.row.created_by !== req.user.userId) {
+      const [u] = await query("SELECT role FROM users WHERE id=?", [req.user.userId]);
+      if (!u || u.role !== "admin") return { status: 403, body: { error: "not_yours", message: `Only whoever entered this ${K.noun}, or an admin, can remove it.` } };
+    }
     if (kind === "auction_winner" && !extra.hasWinner && p.mode !== "refuse")
       return { status: 409, body: { error: "no_winner", message: "This item has no winner to remove." } };
     return { status: 200, plan: p, K };
   }
-  const shape = p => ({ kind: p.kind, id: p.id, mode: p.mode, name: p.name, attached: p.attached, title: p.title, body: p.body, yes: p.yes });
+  const shape = p => ({ kind: p.kind, id: p.id, mode: p.mode, name: p.name, attached: p.attached, title: p.title, body: p.body, yes: p.yes, choice: p.choice || null });
 
   // ONE ROW OUT. Inside the caller's transaction. Returns the trash id.
   async function applyOne(tx, req, p, K) {
@@ -164,6 +202,7 @@ function mount(ctx) {
     const vals = soft.set(who);
     const sets = soft.cols.map((c, i) => `${c} = ${vals[i] === "NOW()" || vals[i] === "clock_timestamp()" ? vals[i] : "?"}`);
     const args = vals.filter(v => v !== "NOW()" && v !== "clock_timestamp()");
+    if (soft.also) sets.push(soft.also);
     await runTx(tx, `UPDATE ${K.table} SET ${sets.join(", ")} WHERE id=? AND org_id=?`, [...args, p.id, orgId]);
     await runTx(tx, `INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
                      VALUES (?,?,?,?,?::jsonb,?,?)`,
@@ -255,6 +294,35 @@ function mount(ctx) {
     rows.sort((a, b) => new Date(b.at) - new Date(a.at));
     res.json({ rows: rows.slice(0, 50), now: new Date().toISOString() });
   }));
+  // ONE REMOVE, for the route above and every old DELETE route (removeThrough).
+  // `legacy` adds the fields an old route's screen still reads.
+  async function removeOne(req, res, kind, id, legacy = {}) {
+      const r = await planFor(req, kind, id);
+      if (!r.plan) return res.status(r.status).json(r.body);
+      const p = r.plan, K = r.K;
+      if (p.mode === "refuse") return res.status(409).json({ error: "refused", message: p.body });
+      let undoId;
+      try {
+        undoId = await withTransaction(tx => applyOne(tx, req, p, K));
+      } catch (e) {
+        // A row something else still points at (a fund named by a page, say)
+        // is retired instead of failing: the rule is "never lose a record".
+        if (e.code === "23503" && K.retires) {
+          const again = { ...p, mode: "retire" };
+          undoId = await withTransaction(tx => applyOne(tx, req, again, K));
+          p.mode = "retire";
+        } else throw e;
+      }
+      if (!undoId) return res.status(404).json({ error: "not_found" });
+      if (req.audit) {
+        req.audit.entity(K.table, p.id, `${K.noun[0].toUpperCase() + K.noun.slice(1)}: ${p.name}`);
+        req.audit.action(p.mode === "delete" ? "deleted" : p.mode === "unassign" ? "updated" : p.mode + "d");
+        req.audit.summary(doneSentence(p, K), { count: 1, entityType: K.table });
+      }
+      res.json({ ...legacy, ok: true, mode: p.mode, undoIds: [undoId], undoSeconds: UNDO_SECONDS, sentence: doneSentence(p, K) });
+  }
+  REMOVE_ONE = removeOne;
+
   const PREFIXES = ["/removals", "/volunteer-hub/removals"];
   const kindOk = (req, kind) => !req.path.startsWith("/volunteer-hub/") || VOLUNTEER_KINDS.has(kind);
 
@@ -336,29 +404,7 @@ function mount(ctx) {
     app.post(`${base}/:kind/:id`, requireAuth, checkWriteAccess, wrap(async (req, res) => {
       const kind = req.params.kind;
       if (!kindOk(req, kind)) return res.status(404).json({ error: "unknown_kind" });
-      const r = await planFor(req, kind, req.params.id);
-      if (!r.plan) return res.status(r.status).json(r.body);
-      const p = r.plan, K = r.K;
-      if (p.mode === "refuse") return res.status(409).json({ error: "refused", message: p.body });
-      let undoId;
-      try {
-        undoId = await withTransaction(tx => applyOne(tx, req, p, K));
-      } catch (e) {
-        // A row something else still points at (a fund named by a page, say)
-        // is retired instead of failing: the rule is "never lose a record".
-        if (e.code === "23503" && K.retires) {
-          const again = { ...p, mode: "retire" };
-          undoId = await withTransaction(tx => applyOne(tx, req, again, K));
-          p.mode = "retire";
-        } else throw e;
-      }
-      if (!undoId) return res.status(404).json({ error: "not_found" });
-      if (req.audit) {
-        req.audit.entity(K.table, p.id, `${K.noun[0].toUpperCase() + K.noun.slice(1)}: ${p.name}`);
-        req.audit.action(p.mode === "delete" ? "deleted" : p.mode === "unassign" ? "updated" : p.mode + "d");
-        req.audit.summary(doneSentence(p, K), { count: 1, entityType: K.table });
-      }
-      res.json({ ok: true, mode: p.mode, undoIds: [undoId], undoSeconds: UNDO_SECONDS, sentence: doneSentence(p, K) });
+      return removeOne(req, res, kind, req.params.id);
     }));
 
     // SEVERAL AT ONCE. One transaction, one audit line, one Undo.
@@ -389,4 +435,4 @@ function mount(ctx) {
   }
 }
 
-module.exports = { mount, routers, VOLUNTEER_KINDS };
+module.exports = { mount, routers, VOLUNTEER_KINDS, removeThrough };

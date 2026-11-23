@@ -152,7 +152,7 @@ async function finFigure(orgId, key, { from, to }, rows = false) {
     // Review (a purchase, tickets, a reimbursement): revenue, not giving.
     const NOT_GIFT = `SELECT t.id, t.date, t.amount, 'not a gift' AS type, COALESCE(d.name, t.vendor_donor) AS who, f.name AS fund
                         FROM fin_transactions t LEFT JOIN donors d ON d.id=t.donor_id AND d.org_id=t.org_id LEFT JOIN fin_funds f ON f.id=t.fund_id
-                       WHERE t.org_id=? AND t.source='not_a_gift' AND (d.id IS NULL OR d.deleted_at IS NULL)
+                       WHERE t.org_id=? AND t.source='not_a_gift' AND ${NUM.money.LEDGER_LIVE("t")}
                          AND t.date IS NOT NULL AND t.date <> '' AND t.date >= ? AND t.date <= ?`;
     // NUMBERS-3 (D-4): a soft or matching credit row is recognition, not money in.
     const GIFTS = `SELECT g.id, g.date, g.amount, g.type, d.name AS who, f.name AS fund FROM gifts g
@@ -227,7 +227,7 @@ app.get("/finance/overview", requireAuth, wrap(async (req, res) => {
      -- INSIGHTS-1: the rows marked Not a gift are money in too
      SELECT substring(t.date from 1 for 7) AS month, COALESCE(SUM(ROUND(t.amount*100)),0)::bigint AS cents, 0 AS n   -- money in, never a gift
        FROM fin_transactions t LEFT JOIN donors d ON d.id=t.donor_id AND d.org_id=t.org_id
-      WHERE t.org_id=? AND t.source='not_a_gift' AND (d.id IS NULL OR d.deleted_at IS NULL)
+      WHERE t.org_id=? AND t.source='not_a_gift' AND ${NUM.money.LEDGER_LIVE("t")}
         AND t.date IS NOT NULL AND t.date <> '' AND t.date >= ? AND t.date <= ?
       GROUP BY 1`,
     [orgId, `${Number(today.slice(0, 4)) - 1}-${today.slice(5, 7)}-01`, month.to, orgId, `${Number(today.slice(0, 4)) - 1}-${today.slice(5, 7)}-01`, month.to]);
@@ -483,7 +483,7 @@ app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
     `SELECT ft.fund_id, 'grant' AS kind, COALESCE(NULLIF(gr.funder,''), gr.program) AS who,
             COALESCE(SUM(ROUND(ft.amount*100)),0)::bigint AS cents
        FROM fin_transactions ft JOIN grants gr ON gr.id = ft.grant_id AND gr.org_id = ft.org_id
-      WHERE ft.org_id=? AND ft.fund_id IS NOT NULL AND ft.type='income'
+      WHERE ft.org_id=? AND ft.fund_id IS NOT NULL AND ft.type='income' AND ${NUM.money.LEDGER_LIVE("ft")}
       GROUP BY 1,2,3
       UNION ALL
      SELECT gf.fund_id, 'donor', d.name, ${NUM.fundLines.LINES_CENTS("gf")}
@@ -4149,7 +4149,7 @@ app.get("/finance/month-close", requireAuth, wrap(async (req, res) => {
       n => n ? `${n} ${n === 1 ? "gift has" : "gifts have"} no receipt on the record.`
              : "Every gift this month carries a receipt."),
     await one("ledger", "The ledger has the month in it",
-      `SELECT COUNT(*)::int n FROM fin_transactions WHERE org_id=? AND date >= ? AND date <= ?`,
+      `SELECT COUNT(*)::int n FROM fin_transactions WHERE org_id=? AND date >= ? AND date <= ? AND ${NUM.money.LEDGER_LIVE("fin_transactions")}`,
       [orgId, from, to],
       n => n > 0,
       n => n ? `${n} ${n === 1 ? "transaction is" : "transactions are"} posted for this month.`
@@ -4380,21 +4380,13 @@ app.post("/finance/transactions", requireAuth, checkWriteAccess, wrap(async (req
   res.status(201).json(rows[0]);
 }));
 
-app.delete("/finance/transactions/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const [txnToDelete] = await query(`
-    SELECT ft.*, a.name as account_name, f.name as fund_name
-    FROM fin_transactions ft
-    LEFT JOIN accounts a ON a.id = ft.account_id
-    LEFT JOIN fin_funds f ON f.id = ft.fund_id
-    WHERE ft.id = ? AND ft.org_id = ?`, [req.params.id, req.user.orgId]);
-  if (!txnToDelete) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
-  await run("DELETE FROM fin_transactions WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
-  writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "deleted", "transaction", req.params.id, {
-    description: txnToDelete ? `Deleted ${txnToDelete.type === "income" ? "+" : "-"}$${parseFloat(txnToDelete.amount).toFixed(2)} · ${txnToDelete.description}` : "Deleted transaction",
-    old: txnToDelete ? { amount: parseFloat(txnToDelete.amount), type: txnToDelete.type, description: txnToDelete.description, account: txnToDelete.account_name, fund: txnToDelete.fund_name, date: txnToDelete.date } : {}
-  }).catch(() => {});
-  res.json({ success: true });
-}));
+// TRASH-1 item 3: through the one remove (removal.js, kind "transaction"). The
+// row moves to the trash and Undo brings it back to the cent; a gift's own
+// ledger line is refused (it follows its gift). The audit row is the one
+// audit write's (middleware/auditTrail.js), improved by removal.js.
+app.delete("/finance/transactions/:id", requireAuth, requireAdmin, wrap(async (req, res) =>
+  require("./removal").removeThrough(req, res, "transaction", req.params.id, { success: true })));
+
 
 // ── Finance: Budgets ───────────────────────────────────────────────────────
 // ── BUILD-88a A.3 — THE BUDGET WINDOW, IN ONE PLACE ───────────────────────
@@ -4456,7 +4448,7 @@ app.get("/finance/budgets", requireAuth, wrap(async (req, res) => {
   const actuals = await query(
     `SELECT account_id, fund_id, SUM(amount) as total
      FROM fin_transactions
-     WHERE org_id = ? AND date >= ? AND date <= ?
+     WHERE org_id = ? AND date >= ? AND date <= ? AND ${NUM.money.LEDGER_LIVE("fin_transactions")}
      GROUP BY account_id, fund_id`,
     [req.user.orgId, bounds.start, bounds.end]
   );
@@ -4589,14 +4581,14 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
 
   const [samePointRows, ytdRows, priorRows, allRows, monthRows, fundRows, activeFundRows, giftHistRows, ledgerGiftRows] = await Promise.all([
     query(`SELECT COALESCE(SUM(amount),0) AS total FROM fin_transactions
-           WHERE org_id = ? AND type = 'income' AND date >= ? AND date <= ?`, [orgId, sp.from, sp.to]),
+           WHERE org_id = ? AND type = 'income' AND date >= ? AND date <= ? AND ${NUM.money.LEDGER_LIVE("fin_transactions")}`, [orgId, sp.from, sp.to]),
     query(`SELECT type, SUM(amount) as total FROM fin_transactions
-           WHERE org_id = ? AND date >= ? AND date <= ? GROUP BY type`, [orgId, cur.start, cur.end]),
+           WHERE org_id = ? AND date >= ? AND date <= ? AND ${NUM.money.LEDGER_LIVE("fin_transactions")} GROUP BY type`, [orgId, cur.start, cur.end]),
     query(`SELECT type, SUM(amount) as total FROM fin_transactions
-           WHERE org_id = ? AND date >= ? AND date <= ? GROUP BY type`, [orgId, prior.start, prior.end]),
-    query("SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? GROUP BY type", [orgId]),
+           WHERE org_id = ? AND date >= ? AND date <= ? AND ${NUM.money.LEDGER_LIVE("fin_transactions")} GROUP BY type`, [orgId, prior.start, prior.end]),
+    query(`SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? AND ${NUM.money.LEDGER_LIVE("fin_transactions")} GROUP BY type`, [orgId]),
     query(`SELECT date, type, amount FROM fin_transactions
-           WHERE org_id = ? AND date >= ? AND date <= ?`, [orgId, cur.start, cur.end]),
+           WHERE org_id = ? AND date >= ? AND date <= ? AND ${NUM.money.LEDGER_LIVE("fin_transactions")}`, [orgId, cur.start, cur.end]),
     query(`SELECT f.id, f.name, f.restricted,
                   COALESCE(SUM(CASE WHEN ft.type='income' THEN ft.amount
                                     WHEN ft.type='expense' THEN -ft.amount ELSE 0 END), 0) AS balance
@@ -4606,7 +4598,7 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
            GROUP BY f.id, f.name, f.restricted
            ORDER BY f.restricted ASC, f.name ASC`, [orgId, orgId, orgId]),
     query(`SELECT COUNT(DISTINCT fund_id) AS cnt FROM fin_transactions
-           WHERE org_id = ? AND date >= ? AND date <= ? AND fund_id IS NOT NULL`, [orgId, cur.start, cur.end]),
+           WHERE org_id = ? AND date >= ? AND date <= ? AND fund_id IS NOT NULL AND ${NUM.money.LEDGER_LIVE("fin_transactions")}`, [orgId, cur.start, cur.end]),
     // B1 — the org's whole giving history (all gifts) vs what actually reached the
     // ledger as gift income. Imported HISTORICAL giving deliberately never stamps
     // fin_transactions (it's records being loaded, not money moving through
@@ -4618,7 +4610,7 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
     // what Reports actually shows (trashed donors' gifts excluded).
     // NUMBERS-5: and Reports leaves credit rows out (money.js), so this does too.
     query(`SELECT ${NUM.money.MONEY_SUM("g")} AS total, COUNT(*) FILTER (WHERE ${NUM.money.MONEY("g")})::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL`, [orgId]),
-    query("SELECT COALESCE(SUM(amount),0) AS total FROM fin_transactions WHERE org_id = ? AND type='income' AND source IN ('gift','import','online','event')", [orgId]),
+    query(`SELECT COALESCE(SUM(amount),0) AS total FROM fin_transactions WHERE org_id = ? AND type='income' AND source IN ('gift','import','online','event') AND ${NUM.money.LEDGER_LIVE("fin_transactions")}`, [orgId]),
   ]);
 
   const ytd   = Object.fromEntries(ytdRows.map(r => [r.type, parseFloat(r.total)]));

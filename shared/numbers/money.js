@@ -8,7 +8,8 @@
 //     went back out), but it is never a gift: GIFT() is money above zero;
 //   · a row she marked Not a gift (Review, INSIGHTS-1) leaves `gifts` for
 //     Finance (insight_reviews keeps it), so it is in no total by construction.
-// A deleted person's gifts count toward nothing (LIVE).
+// A deleted person's gifts count toward nothing (LIVE), and nor do their ledger
+// rows (LEDGER_LIVE, TRASH-1).
 "use strict";
 const { NOT_CREDIT, isCredit } = require("../../creditTypes");
 const M = require("../../money");
@@ -24,6 +25,13 @@ const MONEY = (g = "g") => `(${NOT_CREDIT(g)} AND ${DUE(g)})`;
 const GIFT = (g = "g") => `(${NOT_CREDIT(g)} AND ${g}.amount > 0 AND ${g}.refunded_in_full IS NOT TRUE AND ${DUE(g)})`;
 // SQL: person `d` counts (not deleted).
 const LIVE = (d = "d") => `${d}.deleted_at IS NULL`;
+// TRASH-1 · SQL: ledger row `t` (fin_transactions) is not the money of a person
+// in the trash. The person is the row's gift's donor (a gift moves on merge),
+// else the row's own donor_id; a row naming nobody always counts. Trashing is a
+// flag, so nothing is deleted: bring the person back and the row counts again,
+// to the cent. Every ledger read goes through this (LEDGER_FUND_ROWS has it inside).
+const LEDGER_LIVE = (t = "ft") => `NOT EXISTS (SELECT 1 FROM donors lv WHERE lv.org_id = ${t}.org_id AND lv.deleted_at IS NOT NULL
+    AND lv.id = COALESCE((SELECT lg.donor_id FROM gifts lg WHERE lg.org_id = ${t}.org_id AND lg.id = ${t}.gift_id), ${t}.donor_id))`;
 // SQL: the money total of gift rows `g`, in dollars (0 when none), with an
 // optional further condition on the row (NUMBERS-5: a report column, a per-person
 // total, a window). The credit rule is inside the sum, so no caller can forget it.
@@ -47,4 +55,4 @@ const sumCents = rows => (rows || []).filter(isMoney).reduce((n, r) => n + cents
 // FLOWS-9: a person whose only gift was refunded in full gave nothing (GIFT's own refund rule).
 const GIVERS = (g = "g", d = "d") => `COUNT(DISTINCT ${g}.donor_id) FILTER (WHERE ${g}.amount > 0 AND ${g}.refunded_in_full IS NOT TRUE AND ${d}.erased_at IS NULL)`;
 
-module.exports = { GIVERS, MONEY, GIFT, LIVE, MONEY_SUM, MONEY_CENTS, isMoney, isGift, sumCents, centsOf };
+module.exports = { GIVERS, MONEY, GIFT, LIVE, LEDGER_LIVE, MONEY_SUM, MONEY_CENTS, isMoney, isGift, sumCents, centsOf };

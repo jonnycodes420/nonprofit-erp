@@ -438,11 +438,9 @@ app.put("/opportunities/:id", requireAuth, requireCrm, checkWriteAccess, wrap(as
   res.json({ ...rows[0], target_amount: parseFloat(rows[0].target_amount) || 0, gift_amount: rows[0].gift_amount == null ? null : parseFloat(rows[0].gift_amount) });
 }));
 
-app.delete("/opportunities/:id", requireAuth, wrap(async (req, res) => {
-  const { changes } = await run("DELETE FROM opportunities WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
-  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
-  res.json({ success: true });
-}));
+// TRASH-1 item 3: an ask goes to the trash through the one remove (removal.js, kind "opportunity").
+app.delete("/opportunities/:id", requireAuth, wrap(async (req, res) =>
+  require("../../routes/removal").removeThrough(req, res, "opportunity", req.params.id, { success: true })));
 
 // ── BUILD-99 (major gifts) Part 2 — PORTFOLIOS ─────────────────────────────
 // `portfolioMembership` above is STILL the one definition of who is in a

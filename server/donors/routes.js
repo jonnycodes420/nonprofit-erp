@@ -879,13 +879,27 @@ app.delete("/donors/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
     req.audit && req.audit.skip && req.audit.skip("a refused delete changes nothing");
     return res.status(409).json({ error: "active_plan", sentence: livePlanSentence(plan), planId: plan.id, canArchive: true });
   }
+  // TRASH-1 item 2: a person with live receipts is asked about them first, as
+  // a gift delete is ("3 receipts were issued to Ana. Void them?"). Her yes is
+  // ?voidReceipts=1, and they are voided in the trash's own transaction.
+  const voidReceipts = String(req.query.voidReceipts || "") === "1";
+  if (!voidReceipts) {
+    const PL = require("./personLinks");
+    const [p] = await query("SELECT name, kind FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
+    const { receipts } = p ? await PL.whatGoesWith(query, req.user.orgId, [req.params.id]) : { receipts: 0 };
+    if (receipts > 0) {
+      req.audit && req.audit.skip && req.audit.skip("a refused delete changes nothing");
+      return res.status(409).json({ error: "receipts_live", receipts, ...PL.receiptQuestion(receipts, PL.shortName(p)) });
+    }
+  }
   // FIX-22: a donor delete is soft (deleted_at). INTEGRITY-2: through the one
   // door out (personTrash.trashPeople), so their household and relationship
   // links go with them and come back with Restore.
-  const [t] = await require("../../personTrash").trashPeople(req.user.orgId, [req.params.id], actor(req), { why: { kind: "delete" } });
+  const gone = await require("../../personTrash").trashPeople(req.user.orgId, [req.params.id], actor(req), { why: { kind: "delete" }, voidReceipts });
+  const [t] = gone;
   if (!t) return res.status(404).json({ error: "Donor not found" });
   const undoId = t.undoId;
-  res.json({ success: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
+  res.json({ success: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS, voidedReceipts: gone.voidedReceipts || 0 });
 }));
 
 app.patch("/donors/:id/assign", requireAuth, requireAdmin, requireCrm, checkWriteAccess, wrap(async (req, res) => {
