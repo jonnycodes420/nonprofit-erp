@@ -155,7 +155,7 @@ const read = p => fs.readFileSync(path.join(ROOT, p), "utf8");
   // DEFINE-1: and it is who has given (isDonor.js), so Caspar (marked Donor, no gift) is off it; the
   // plus is giving imported as a history total with no gift row.
   await q(`UPDATE donors SET imported_total=250 WHERE org_id=$1 AND id=$2`, [ORG, ids.caspar]);
-  await require("../afterChange").recalcDonorSummaryBatch(require("../db").query, [ids.caspar], ORG);   // the stored totals, as an import keeps them
+  await require("../shared/numbers/donorTotals").recomputeStoredTotals(q, ORG, [ids.caspar]);   // the stored totals, as an import keeps them
   const bill = (await api("GET", "/billing/status", tok)).body || {};
   const gap = (await api("GET", "/billing/records-gap", tok)).body || {};
   // FLOWS-15 item 5: the Donors tab is Everyone's people (archived left out too), not "not erased".

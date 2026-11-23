@@ -284,22 +284,7 @@ async function atlasSaved(token, body, path = "/atlas", edits = null) {
   return s.body && s.body.request ? { ...r, body: { ...r.body, request: s.body.request }, saveStatus: s.status } : r;
 }
 
-// DEFINE-1: a Donor is someone who has given (shared/numbers/isDonor.js: the stored totals). A
-// fixture person made with POST /donors (or a bare INSERT) and no gift is a Contact, and is not in
-// All donors. A suite that needs them as donors without a gift row (and without the thank-you a
-// recorded gift starts) gives them imported history, and the stored totals are recomputed by the
-// one writer, as an import does.
-async function hasGiven(ids, amount = 25) {
-  const list = (Array.isArray(ids) ? ids : [ids]).filter(Boolean);
-  if (!list.length) return;
-  const rows = await q(`UPDATE donors SET imported_total = GREATEST(COALESCE(imported_total, 0), $2) WHERE id = ANY($1::text[]) RETURNING id, org_id`, [list, amount]);
-  const byOrg = {};
-  for (const r of rows) (byOrg[r.org_id] = byOrg[r.org_id] || []).push(r.id);
-  const recalc = require("../afterChange").recalcDonorSummaryBatch;
-  for (const [org, orgIds] of Object.entries(byOrg)) await recalc(require("../db").query, orgIds, org);
-}
-
-module.exports = { hasGiven, atlasSaved, drainQueue, queueAutoDrain, untilReady, mailTypesOn, mailTypesOnForDonor, BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, civilPlusDays, textMatch, leaks, waitFor, importWorkSettled, importAutoSettle, settleNegative, NEGATIVE_MAIL_WAIT_MS };
+module.exports = { atlasSaved, drainQueue, queueAutoDrain, untilReady, mailTypesOn, mailTypesOnForDonor, BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, civilPlusDays, textMatch, leaks, waitFor, importWorkSettled, importAutoSettle, settleNegative, NEGATIVE_MAIL_WAIT_MS };
 
 // ── GTM-1a A · A BROWSER LEG MAY NOT SKIP WHERE IT IS REQUIRED ─────────────
 // Both browser suites SKIP cleanly when Playwright or a localhost-API dist is

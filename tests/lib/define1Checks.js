@@ -27,7 +27,7 @@ async function define1Checks({ orgId, get, q, agree, diffs, skip }) {
   ]);
   const audiences = (aud && aud.audiences) || [];
   const byId = id => audiences.find(a => a.id === id);
-  const { POPULATION_IDS } = require("../../shared/numbers/populations");
+  const { POPULATION_IDS } = require("../../shared/populationWords.js");   // the ids alone: no builders in every suite's require graph
 
   // Every population an audience or a starter names is a registry id.
   for (const a of audiences) if (a.population && !POPULATION_IDS.includes(a.population)) diffs.push(`audience "${a.name}" names population "${a.population}", which the registry does not have`);

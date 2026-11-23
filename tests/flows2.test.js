@@ -113,7 +113,7 @@ async function seed() {
   // DEFINE-1: the Donors list is who has given. The monthly plan not yet charged and
   // Thaddeus have no gift row here, so their giving is imported history (stored totals recomputed). The
   // merge's other record keeps $0: it never gave, so it is a Contact and off the Donors filters below.
-  await require("./helpers").hasGiven([P.plan, P.sv2]);
+  await require("./lib/hasGiven").hasGiven([P.plan, P.sv2]);
 }
 
 (async () => {

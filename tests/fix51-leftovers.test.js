@@ -96,7 +96,7 @@ async function oneQuietRule(tok, today) {
     await gift(`g_f51_${k}_${SEED}`, id, 50, last, "donation");
   }
   // DEFINE-1: a Donor is someone who has given, read from the stored totals recordGift keeps; these raw rows get them the same way.
-  await require("../afterChange").recalcDonorSummaryBatch(require("../db").query, Object.values(ppl).map(p => p[0]), ORG);
+  await require("../shared/numbers/donorTotals").recomputeStoredTotals(q, ORG, Object.values(ppl).map(p => p[0]));
   const aud = (await api("GET", "/communications/audience", tok)).body;
   const seg = (aud.segments || []).find(s => s.id === "lapsed") || {};
   const ids = (seg.rows || []).map(r => r.id).sort();

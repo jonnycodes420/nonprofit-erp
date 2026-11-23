@@ -265,7 +265,7 @@ const mock = http.createServer((req, res) => {
   await P(d("refunded"), "Rhoda Refund"); const rg = await G(d("refunded"), 60, civilPlusDays(-25));
   await G(d("refunded"), -60, civilPlusDays(-24)); await q(`UPDATE gifts SET refund_of=$1 WHERE org_id=$2 AND donor_id=$3 AND amount<0`, [rg, ORG, d("refunded")]).catch(() => {});
   // The gift rows above are raw; the stored totals the Donors tab reads are kept as recordGift keeps them.
-  await require("../afterChange").recalcDonorSummaryBatch(require("../db").query, ["nogift", "erased", "archived", "volunteer", "refunded", "imported"].map(d), ORG);
+  await require("../shared/numbers/donorTotals").recomputeStoredTotals(q, ORG, ["nogift", "erased", "archived", "volunteer", "refunded", "imported"].map(d));
   const bill = (await api("GET", "/billing/status", tok)).body || {};
   const gap = (await api("GET", "/billing/records-gap", tok)).body || {};
   const tab = ((await api("GET", "/people/everyone-breakdown", tok)).body || {});

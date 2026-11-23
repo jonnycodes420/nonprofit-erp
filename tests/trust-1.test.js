@@ -145,7 +145,7 @@ async function snapshot(org, tables) {
   // DEFINE-1: a Donor is someone who has given. Nell has no gift ROW: her giving is an imported history
   // total, so she is in All donors and her thank-you still names no gift amount (§3).
   await q(`UPDATE donors SET imported_total = 75 WHERE org_id=$1 AND id='d_t1_f0'`, [C]);
-  await require("../afterChange").recalcDonorSummaryBatch(require("../db").query, ["d_t1_f0"], C);   // the stored totals, as an import keeps them
+  await require("../shared/numbers/donorTotals").recomputeStoredTotals(q, C, ["d_t1_f0"]);   // the stored totals, as an import keeps them
   const seg = await api("POST", "/campaigns/segment-preview", tokC, { segment: { mode: "all" } });
   const au = (seg.body && seg.body.audience) || {};
   const sum = (au.groups || []).reduce((n, g) => n + g.count, 0);
