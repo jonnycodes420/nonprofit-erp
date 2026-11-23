@@ -44,12 +44,17 @@ function fingerprint(...parts) {
 
 function plural(n, [one, many]) { return `${n} ${n === 1 ? one : many}`; }
 
-// "Send 4 reminders? To Ana Ruiz, Ben Cho, … Each goes now."
-function sentenceOf(items, noun) {
+// "To Ana Ruiz, Ben Cho, Corin Ashdown and 1 more. Each goes now." The dialog's
+// title asks "Send 4 reminders?"; `sentence` is the two together.
+function toLineOf(items, noun) {
   if (!items.length) return `Nothing to send. ${noun[1][0].toUpperCase()}${noun[1].slice(1)} that can't go are listed with why.`;
   const names = items.map(i => i.name || i.email);
-  const shown = names.slice(0, 3).join(", ") + (names.length > 3 ? ", …" : "");
-  return `Send ${plural(items.length, noun)}? To ${shown}. ${items.length === 1 ? "It goes" : "Each goes"} now.`;
+  const shown = names.length <= 3 ? names.join(", ").replace(/, ([^,]*)$/, " and $1")
+    : `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`;
+  return `To ${shown}. ${items.length === 1 ? "It goes" : "Each goes"} now.`;
+}
+function sentenceOf(items, noun) {
+  return items.length ? `Send ${plural(items.length, noun)}? ${toLineOf(items, noun)}` : toLineOf(items, noun);
 }
 
 function mount(ctx) {
@@ -79,7 +84,7 @@ function mount(ctx) {
       recipients: items.map(i => ({ ref: i.ref, name: i.name, email: i.email, subject: i.subject })),
       refused: refused.map(r => ({ ref: r.ref, name: r.name, email: r.email || null, why: r.why })),
       minutes: PLAN_MINUTES,
-      sentence: sentenceOf(items, noun),
+      sentence: sentenceOf(items, noun), toLine: toLineOf(items, noun),
     });
   }));
 

@@ -61,7 +61,7 @@ function SendPlanHost() {
           style={{ ...btn, background: T.green, color: T.white, border: "none", opacity: busy ? 0.7 : 1 }}>{busy ? "Sending…" : `Send ${n} ${noun}`}</button>}
       </>}>
       <div data-testid="send-plan" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {plan && <div style={{ fontSize: 14, lineHeight: 1.6, color: T.ink }}>{plan.sentence}</div>}
+        {plan && <div data-testid="send-plan-to" style={{ fontSize: 14, lineHeight: 1.6, color: T.ink }}>{plan.toLine}</div>}
         {plan && n > 0 && (
           <div data-testid="send-plan-list" style={{ maxHeight: 280, overflowY: "auto", borderBottom: "1px solid " + T.bg2 }}>
             {plan.recipients.map(r => (

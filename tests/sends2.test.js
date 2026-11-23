@@ -158,8 +158,9 @@ async function many(req, ds) { for (const d of ds) await viaHelper(req, d); }`);
     const b = p.body || {};
     ok("§2 the plan lists three people by name and address, with each subject", p.status === 201 && b.count === 3
       && ["Ana Ruiz", "Ben Cho", "Corin Ashdown"].every(n => b.recipients.some(r => r.name === n && r.email && r.subject)), b);
-    ok("§2 it reads \"Send 3 reminders? To Ana Ruiz, Ben Cho, Corin Ashdown. Each goes now.\"",
-      /^Send 3 reminders\? To .+\. Each goes now\.$/.test(b.sentence || "") && b.noun[1] === "reminders", b.sentence);
+    ok("§2 it reads \"Send 3 reminders? To Ana Ruiz, Ben Cho and Corin Ashdown. Each goes now.\"",
+      /^Send 3 reminders\? To [A-Z][a-z]+ [A-Z][a-z]+, [A-Z][a-z]+ [A-Z][a-z]+ and [A-Z][a-z]+ [A-Z][a-z]+\. Each goes now\.$/.test(b.sentence || "")
+      && b.toLine === b.sentence.replace(/^Send 3 reminders\? /, "") && b.noun[1] === "reminders", b.sentence);
     ok("§2 building a plan sends nothing", (await settle(), state.captured.length === 0), state.captured.length);
 
     const byB = await api("POST", `/send-plans/${b.planId}/commit`, tokB, {});

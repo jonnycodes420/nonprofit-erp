@@ -126,6 +126,12 @@ function loopAround(node, stack) {
   }
   return null;
 }
+// The loop around a send, unless the whole of it runs inside a plan's commit (confirmScope.under).
+function unplannedLoop(node, stack) {
+  const loop = loopAround(node, stack);
+  if (!loop) return null;
+  return stack.some(a => a.type === "CallExpression" && calleeName(a.callee) === "under") ? null : loop;
+}
 
 // The repo's server files: where every minter is defined, whatever is being reported on.
 function repoServerFiles() {
@@ -165,7 +171,7 @@ function scanServer(files) {
       if (node.type !== "CallExpression") return;
       const name = calleeName(node.callee);
       if (!minters.has(name)) return;
-      const loop = loopAround(node, stack);
+      const loop = unplannedLoop(node, stack);
       if (loop) findings.push(`${rel(f)}:${node.loc.start.line}  ${name}() inside a loop (line ${loop.loc.start.line}) with no send plan: a send to more than one person goes through server/mail/sendPlan.js`);
       if (name === SEED) {
         const arg = node.arguments[0];
