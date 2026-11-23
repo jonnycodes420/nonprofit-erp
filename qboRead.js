@@ -562,7 +562,7 @@ async function saveRun({ orgId, runId, picks = {}, who, today, deps }) {
       w = await recordGift({
         orgId, donorId, amount: Number(l.cents) / 100, date: l.txn_date, type: "cash",
         notes: l.memo || "", fundId: l.fund_id || null,
-        paymentMethod: l.method || "Needs you", checkNumber: l.check_number || null,
+        paymentMethod: l.method || null,   // GIFTS-3: a blank method is stored as nothing checkNumber: l.check_number || null,
         externalId: `qbo:${l.line_key}`, conflict: "external",
         importId, liveRead, readFromVendor: VENDOR, source: VENDOR,
         actorId: who.id, actorName: who.name,

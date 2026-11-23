@@ -710,8 +710,8 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   // ── BUILD-88a A.1 — THE OPTIONAL AMOUNT ──────────────────────────────────
   // A gift mentioned in a conversation IS a gift: it is written as a gift row,
   // through the one function, with its fund and method inline. It defaults to
-  // the org's unrestricted fund and to "Needs you" as the method — a blank
-  // reads the same as "nobody has looked", and this one is worth asking about.
+  // the org's unrestricted fund; a method nobody gave is stored as nothing and
+  // reads "Not set" (GIFTS-3, shared/giftMethods.js).
   // The gift is written BEFORE the conversation, because the money must land
   // even if the follow-up write fails; the idempotency key is this exact
   // conversation, so a retried save cannot mint a second gift.

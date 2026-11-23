@@ -222,10 +222,12 @@ export function planFor(key, { today, orgName = "this organization" } = {}) {
 // function at all, so a page cannot leak one by rendering a field it was handed.
 export const ANONYMOUS = "Anonymous";
 
-export function publicGiftLine({ donorName, amountCents, showName, date }, { showAmounts = false } = {}) {
+// GIFTS-3: `anonymous` is the gift marked Anonymous on its record, which wins
+// over any choice to show a name.
+export function publicGiftLine({ donorName, amountCents, showName, date, anonymous = false }, { showAmounts = false } = {}) {
   const first = String(donorName || "").trim().split(/\s+/)[0] || "";
   return {
-    who: showName && first ? first : ANONYMOUS,
+    who: showName && !anonymous && first ? first : ANONYMOUS,
     date: String(date == null ? "" : date).slice(0, 10),
     ...(showAmounts ? { amount: money(amountCents), amountCents: Math.round(Number(amountCents) || 0) } : {}),
   };

@@ -174,7 +174,8 @@ app.get("/giving-pages/:id/page/preview", requireAuth, requireAdmin, wrap(async 
       const GPE = require("../../givingPageEdit");
       const F = await formConfigMod();
       const fundIds = (await query("SELECT id FROM fin_funds WHERE org_id = ?", [req.user.orgId])).map(f => String(f.id));
-      if (!GPE.sameJson(GPE.settingsOf(row, F, fundIds).form, d.form)) page.form_config = d.form;
+      // GIFTS-3 item 4: a form she set (formSet) is drawn even when it equals the defaults.
+      if (d.formSet === true || !GPE.sameJson(GPE.settingsOf(row, F, fundIds).form, d.form)) page.form_config = d.form;
     }
   }
   res.json(await givingPagePublicPayload(orgs[0], page, req.query, { editing: true }));

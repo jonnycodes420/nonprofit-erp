@@ -232,10 +232,11 @@ __share({ webhookSubStatus });
 // twice.
 //
 // THREE RULES, and they are the whole of it.
-//  1. A gift row always carries a fund and a payment method. With no fund
-//     chosen it takes the org's unrestricted fund; with no method it says
-//     "Needs you" rather than nothing, because a blank is indistinguishable
-//     from "nobody has looked".
+//  1. A gift row always carries a fund. With no fund chosen it takes the
+//     org's unrestricted fund. GIFTS-3: a method nobody gave is stored as
+//     nothing and every screen reads it "Not set" (shared/giftMethods.js); it
+//     used to be stored as the word "Needs you", which a gift edit then saved
+//     back as if somebody had typed it.
 //  2. The timeline entry LINKS to the gift (interactions.gift_id) and holds no
 //     copy of the amount. Every reader — the header total, Giving this year,
 //     Drift, the bookkeeper's export, receipts, the Finance ledger — reads the
@@ -246,7 +247,7 @@ __share({ webhookSubStatus });
 // The caller owns everything that is not writing the gift: attribution,
 // pledges, receipts, workflows, threads, tasks. Those are decisions ABOUT a
 // gift; this is the gift.
-const GIFT_METHOD_UNKNOWN = "Needs you";
+const GIFT_METHOD_UNKNOWN = null;   // GIFTS-3: stored as nothing, read "Not set"
 // SPLIT-2 end
 __share({ GIFT_METHOD_UNKNOWN });
 // SPLIT-2 server.js piece 181

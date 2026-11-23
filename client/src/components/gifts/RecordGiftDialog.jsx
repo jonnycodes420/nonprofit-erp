@@ -36,7 +36,7 @@ import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box
 const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", color: T.ink, fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box", width: "100%" };
 const lbl = { fontSize: 11.5, fontWeight: 700, color: T.ink3, marginBottom: 4, display: "block" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" });
-const METHODS = ["Check", "Cash", "Card", "ACH / bank transfer", "Wire", "Other"];
+import { methodChoices, methodValue, NOT_SET } from "../../../../shared/giftMethods.js";   // GIFTS-3: one list of methods
 
 // The form's starting values: today, Check, the org's default fund, nothing
 // attributed; or, when `carry`, what the last gift said (and which fields those were).
@@ -66,7 +66,7 @@ export default function RecordGiftDialog({ person = null, eventId = "", pledgeId
   const newPersonOk = !fixedPerson;
 
   const giftBody = () => ({
-    amount: f.amount, date: f.date, type: "cash", payment_method: f.method || null, ...fundBody(f.fund),
+    amount: f.amount, date: f.date, type: "cash", payment_method: methodValue(f.method), ...fundBody(f.fund), anonymous: !!f.anonymous,
     campaignId: (!pledgeId && f.campaign && f.campaign.id) || undefined,
     appealId: (f.appeal && f.appeal.id) || undefined,
     givingPageId: (f.page && f.page.givingPageId) || undefined, peerFundraiserId: (f.page && f.page.peerFundraiserId) || undefined,
@@ -86,6 +86,9 @@ export default function RecordGiftDialog({ person = null, eventId = "", pledgeId
   const save = async (another = false, answer = null) => {
     setErr(""); setSaved("");
     if (!(Number(f.amount) > 0)) { setErr("Type the amount."); return; }
+    // GIFTS-3 item 2: text typed into a picker and never picked is not saved, and not dropped either.
+    const unpicked = Object.entries(f.typed || {}).find(([k, t]) => t && !f[k]);
+    if (unpicked) { setErr(`You typed '${unpicked[1]}' for the ${unpicked[0] === "page" ? "fundraiser or giving page" : unpicked[0]} but did not pick one. Pick it from the list, or clear the box.`); return; }
     const fundProblem = fundLinesProblem(f.amount, f.fund);
     if (fundProblem) { setErr(fundProblem); return; }
     if (np && !personName(np)) { setErr("Type the new person's first or last name."); return; }
@@ -143,17 +146,22 @@ export default function RecordGiftDialog({ person = null, eventId = "", pledgeId
             <DateInput value={f.date} onChange={e => setF({ date: e.target.value })} data-testid={testid + "-date"} style={inp} /></label>
           <label><span style={lbl}>Method</span>
             <select value={f.method} onChange={e => setF({ method: e.target.value })} data-testid={testid + "-method"} style={inp}>
-              {(METHODS.includes(f.method) ? METHODS : [f.method, ...METHODS]).map(m => <option key={m} value={m}>{m}</option>)}
+              <option value="">{NOT_SET}</option>
+              {methodChoices(f.method).map(m => <option key={m} value={m}>{m}</option>)}
             </select></label>
         </div>
         <SameAsLast carried={{ date: same.date && f.date, method: same.method && f.method, fund: same.fund && f.fund }} testid={testid}
           onClear={k => setF({ [k]: k === "date" ? orgTodayCivil() : k === "method" ? "Check" : emptyFund() })} />
         <FundField value={f.fund} amount={f.amount} onChange={v => setF({ fund: v })} testid={testid + "-fund"} />
-        {!pledgeId && <AttributionField kind="campaign" value={f.campaign} sticky={!!same.campaign} date={f.date} testid={testid + "-campaign"} onChange={v => setF({ campaign: v })} />}
-        <AttributionField kind="appeal" value={f.appeal} sticky={!!same.appeal} campaignId={f.campaign && f.campaign.id} testid={testid + "-appeal"} onChange={v => setF({ appeal: v })} />
-        <AttributionField kind="page" value={f.page} sticky={!!same.page} testid={testid + "-page"} onChange={v => setF({ page: v })} />
+        {!pledgeId && <AttributionField kind="campaign" value={f.campaign} sticky={!!same.campaign} date={f.date} testid={testid + "-campaign"} onChange={v => setF({ campaign: v })} onTyped={t => setForm(s => ({ ...s, f: { ...s.f, typed: { ...(s.f.typed || {}), campaign: t } } }))} />}
+        <AttributionField kind="appeal" value={f.appeal} sticky={!!same.appeal} campaignId={f.campaign && f.campaign.id} testid={testid + "-appeal"} onChange={v => setF({ appeal: v })} onTyped={t => setForm(s => ({ ...s, f: { ...s.f, typed: { ...(s.f.typed || {}), appeal: t } } }))} />
+        <AttributionField kind="page" value={f.page} sticky={!!same.page} testid={testid + "-page"} onChange={v => setF({ page: v })} onTyped={t => setForm(s => ({ ...s, f: { ...s.f, typed: { ...(s.f.typed || {}), page: t } } }))} />
         {!pledgeId && <label><span style={lbl}>Event</span>
           <EventField value={f.eventId} onChange={id => setF({ eventId: id })} testid={testid + "-event"} /></label>}
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: T.ink }}>
+          <input type="checkbox" checked={!!f.anonymous} onChange={e => setF({ anonymous: e.target.checked })} data-testid={testid + "-anonymous"} style={{ accentColor: T.greenDk }} />
+          Anonymous (the gift stays theirs; public lists say Anonymous)
+        </label>
         {err && <div role="alert" style={{ fontSize: 12.5, color: T.ink }}>{err}</div>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
           <button type="button" style={btn(false)} onClick={onClose}>{saved ? "Done" : "Cancel"}</button>

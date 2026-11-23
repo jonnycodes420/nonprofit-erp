@@ -174,6 +174,55 @@ async function person(name) {
     asFirst.status === 200 && asMe.status === 200 && asFirst.body.subject === "Hello Ada" && asMe.body.subject === "Hello Wren" && asFirst.body.html !== asMe.body.html,
     { first: asFirst.body && asFirst.body.as, me: asMe.body && asMe.body.as, s1: asFirst.status, s2: asMe.status, e: asFirst.body && asFirst.body.sentence });
 
+  // ── §5 GIFTS-3: one gift form, pickers that pick, money in cents, the preview's form, Anonymous ──
+  // RED ON MAIN: the edit route ignores an appeal; a typed campaign is stored as loose text
+  // (no campaign_id) instead of refused; a blank method is stored as "Needs you"; a form set to
+  // Steward's defaults previews as the page's old form; there is no Anonymous.
+  // PLANTED (seen red, then reverted): resolveTypedCampaign answering { campaignId: null } for a
+  // name with no match (the typed campaign dropped silently) turns "is refused, not dropped" red.
+  const gp3 = await person("Odile Brannagh");
+  const giftOf = async id => ((await api("GET", `/donors/${gp3}`, tok)).body.gifts || []).find(g => g.id === id);
+  const g1 = await api("POST", `/donors/${gp3}/gifts`, tok, { amount: "123.45", date: TODAY, type: "cash", payment_method: "", notes: "" });
+  const g1id = g1.body && g1.body.gift && g1.body.gift.id;
+  const r1 = await giftOf(g1id);
+  ok("§5 $123.45 is stored and read back as 123.45, to the cent", g1.status === 201 && r1 && C(r1.amount) === 12345 && String(r1.amount) === "123.45", { s: g1.status, a: r1 && r1.amount });
+  ok("§5 a method left blank stores nothing (it reads Not set), never \"Needs you\"", r1 && r1.payment_method == null, r1 && r1.payment_method);
+  const camp3 = await api("POST", "/gift-attribution/campaign", tok, { name: "Lantern Walk 2026" });
+  const appeal = await api("POST", "/gift-attribution/appeal", tok, { name: "Lantern letter", campaignId: camp3.body.id });
+  const e1 = await api("PUT", `/gifts/${g1id}`, tok, { amount: "123.45", campaignId: camp3.body.id, appealId: appeal.body.id, payment_method: "ach", anonymous: true });
+  const r2 = await giftOf(g1id);
+  ok("§5 an edit sets the gift's campaign and appeal, and they read back", e1.status === 200 && r2.campaign_id === camp3.body.id && r2.appeal_id === appeal.body.id && r2.campaign_name === "Lantern Walk 2026" && r2.appeal_name === "Lantern letter",
+    { s: e1.status, e: e1.body && e1.body.error, c: r2 && r2.campaign_id, a: r2 && r2.appeal_id });
+  ok("§5 the edit keeps $123.45 to the cent and the ledger row agrees", C(r2.amount) === 12345 &&
+    C(((await q(`SELECT amount FROM fin_transactions WHERE gift_id=$1`, [g1id]))[0] || {}).amount) === 12345, r2.amount);
+  ok("§5 ACH typed any way is the one method \"Bank transfer (ACH)\"", r2.payment_method === "Bank transfer (ACH)", r2.payment_method);
+  ok("§5 the gift is Anonymous and still theirs", r2.anonymous === true && r2.donor_id === gp3, { an: r2.anonymous });
+  const CPm = await import("../shared/campaignPage.js");
+  ok("§5 an Anonymous gift is never named on a public list, whatever the donor ticked",
+    CPm.publicGiftLine({ donorName: "Odile Brannagh", amountCents: 12345, showName: true, anonymous: true, date: TODAY }).who === "Anonymous"
+    && CPm.publicGiftLine({ donorName: "Odile Brannagh", amountCents: 12345, showName: true, date: TODAY }).who === "Odile");
+  const beforeG3 = (await q(`SELECT COUNT(*)::int n FROM gifts WHERE donor_id=$1`, [gp3]))[0].n;
+  const typed = await api("POST", `/donors/${gp3}/gifts`, tok, { amount: "40", date: TODAY, type: "cash", campaign: "Spring" });
+  const afterG3 = (await q(`SELECT COUNT(*)::int n FROM gifts WHERE donor_id=$1`, [gp3]))[0].n;
+  ok("§5 a typed-not-picked campaign is refused, not dropped: \"No campaign called 'Spring'. Create it?\"",
+    typed.status === 400 && typed.body.code === "campaign_not_found" && typed.body.error === "No campaign called 'Spring'. Create it?" && afterG3 === beforeG3,
+    { s: typed.status, b: typed.body, beforeG3, afterG3 });
+  const typedEdit = await api("PUT", `/gifts/${g1id}`, tok, { campaign: "Spring" });
+  ok("§5 the edit refuses a typed campaign too, and the gift keeps its own", typedEdit.status === 400 && (await giftOf(g1id)).campaign_id === camp3.body.id, typedEdit.status);
+  const named = await api("POST", `/donors/${gp3}/gifts`, tok, { amount: "40.50", date: TODAY, type: "cash", campaign: "lantern walk 2026" });
+  ok("§5 a typed name that IS a campaign is that campaign, by id", named.status === 201 && named.body.gift.campaign_id === camp3.body.id, named.body && named.body.gift);
+  // The preview draws the form she set, even when it equals the defaults.
+  const page3 = await api("POST", "/giving-pages", tok, { title: "Lantern Walk page" });
+  const pid = page3.body && (page3.body.id || (page3.body.page && page3.body.page.id));
+  const setForm = await api("PUT", `/giving-pages/${pid}/page/settings`, tok, { settings: { formSet: true,
+    form: { defaultFrequency: "once", offerMonthly: true, offerAnnual: false, amountsCents: [2500, 5000, 10000, 25000] } } });
+  const pv = await api("GET", `/giving-pages/${pid}/page/preview`, tok);
+  const pf = pv.body && pv.body.givingPage && pv.body.givingPage.form;
+  ok("§5 the preview draws the drafted form: one-time first, no yearly, $25/$50/$100/$250",
+    setForm.status === 200 && pf && pf.configured === true && pf.amount.defaultFrequency === "once" && !pf.amount.frequencies.includes("annual")
+    && JSON.stringify(pf.amount.amountsCents) === JSON.stringify([2500, 5000, 10000, 25000]),
+    { s: setForm.status, e: setForm.body && setForm.body.error, f: pf && { c: pf.configured, a: pf.amount } });
+
   await closeDb();
   summary();
 })().catch(async e => { console.error(e); await closeDb().catch(() => {}); process.exit(1); });

@@ -2459,6 +2459,11 @@ app.put("/giving-pages/:id/page/settings", requireAuth, requireAdmin, checkWrite
   const base = GPE.currentSettings(pg, F, ids.orgFundIds);
   const v = GPE.validateSettings(base, patch, F, ids);
   if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "bad_page_settings", errors: v.errors });
+  // GIFTS-3 item 4: she set the form (a frequency, the amounts, a choice), so the
+  // form she set is the page's form, even when its values happen to be Steward's
+  // defaults. Without this the preview and Publish kept a never-set-up page's old
+  // form (monthly first, an Annual button, the org's $10 to $500 ladder).
+  if (sent.formSet === true || base.formSet === true) v.settings.formSet = true;
   // EDITOR-1: "stock" is believed only of a photo that IS one of Steward's.
   if (v.settings.imageMeta && v.settings.imageMeta.stock && !(await require("./stockPhotos").isStockUrl(req.user.orgId, v.settings.imageUrl))) delete v.settings.imageMeta.stock;
   await run(`UPDATE giving_pages SET draft_settings = ?, draft_updated_at = NOW(), updated_at = NOW() WHERE id = ? AND org_id = ?`,
@@ -2607,7 +2612,7 @@ app.post("/giving-pages/:id/page/publish", requireAuth, requireAdmin, checkWrite
     const next = GPE.currentSettings(pg, F, ids.orgFundIds);
     // The form is written only when it changed, so a page that never had its
     // form set up keeps the form it always had after a headline edit.
-    const formChanged = !GPE.sameJson(live.form, next.form);
+    const formChanged = !GPE.sameJson(live.form, next.form) || ds.formSet === true;   // GIFTS-3: a form she set is written
     await run(`UPDATE giving_pages SET title = ?, story = ?, image_url = ?, image_meta = ?::jsonb, show_goal = ?, goal_amount = ?, fund_id = ?, campaign_id = ?,
                  form_config = CASE WHEN ? THEN ?::jsonb ELSE form_config END, design = ?::jsonb,
                  draft_settings = NULL, published_at = NOW(), updated_at = NOW()
@@ -3134,13 +3139,14 @@ app.get("/peer-fundraisers/:id/gifts", requireAuth, wrap(async (req, res) => {
   if (!f) return res.status(404).json({ error: "Not found" });
   const rows = await query(
     `SELECT g.id, g.donor_id, d.name AS donor_name, to_char(g.date::date,'YYYY-MM-DD') AS date,
-            ROUND(g.amount::numeric, 2)::float AS amount, g.show_name_to_fundraiser, g.show_name_publicly
+            ROUND(g.amount::numeric, 2)::float AS amount, g.show_name_to_fundraiser, g.show_name_publicly, g.anonymous
        FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id=? AND g.peer_fundraiser_id=? AND g.amount > 0
       ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC`, [req.user.orgId, f.id]);
+  // GIFTS-3: a gift marked Anonymous is shown to nobody by name, the fundraiser included.
   const gifts = rows.map(r => ({ id: r.id, donorId: r.donor_id, donorName: r.donor_name || "A supporter", date: r.date,
-    amountCents: Math.round(Number(r.amount) * 100),
-    shownToFundraiser: r.show_name_to_fundraiser === true, shownPublicly: r.show_name_publicly === true }));
+    amountCents: Math.round(Number(r.amount) * 100), anonymous: r.anonymous === true,
+    shownToFundraiser: r.show_name_to_fundraiser === true && r.anonymous !== true, shownPublicly: r.show_name_publicly === true && r.anonymous !== true }));
   const totalCents = gifts.reduce((a, g) => a + g.amountCents, 0);
   res.json({
     fundraiser: { id: f.id, name: f.name, email: f.email, slug: f.slug, status: f.status, pageTitle: f.page_title },
