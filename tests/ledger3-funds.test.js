@@ -122,6 +122,8 @@ const cents = v => Math.round(Number(v || 0) * 100);
            VALUES ($1,$2,$3,75.25,$4,'cash','Check',$5,$6,$7,$8,$9,$10), ($11,$2,$3,40.10,$4,'cash','Check',NULL,$6,$7,$8,$9,$10),
                   ($12,$2,$3,900,$13,'cash','Check',$5,$6,NULL,NULL,$9,$10)`,
     ["g_l3w1_" + run, ORG, wren, addDays(today, -3), boat.id, imp, dep, addDays(today, -3), ...by, "g_l3w2_" + run, "g_l3h_" + run, addDays(fyFrom, -30)]);
+  // The totals kept on a person, by the one writer (NUMBERS-6), as the app leaves them.
+  await require("../shared/numbers/donorTotals").recomputeOrgStoredTotals(require("../db").query, ORG);
   const ftCount = async () => Number((await q(`SELECT COUNT(*)::int AS n FROM fin_transactions WHERE org_id=$1`, [ORG]))[0].n);
   const before = await ftCount();
   const sum0 = (await api("GET", "/finance/summary", tok)).body || {};
