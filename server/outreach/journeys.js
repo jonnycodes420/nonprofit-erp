@@ -392,27 +392,20 @@ app.post("/journeys/:id/duplicate", requireAuth, requireAdmin, checkWriteAccess,
 // Archived, never deleted: applied plans point at this id and a plan whose
 // origin vanished is a record with a hole in it. Archiving also makes the undo
 // trivial and exact — it is the same row, put back.
-app.delete("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-  const [cur] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL",
-    [req.params.id, req.user.orgId]);
-  if (!cur) return res.status(404).json({ error: "Not found" });
-  const [inIt] = await query(
-    `SELECT COUNT(*)::int n FROM cultivation_plans WHERE org_id=? AND template_id=? AND status='active'`,
-    [req.user.orgId, req.params.id]);
-  // Turned OFF as well as archived, so restoring cannot quietly re-arm it.
-  await run(`UPDATE cultivation_templates SET archived_at=NOW(), journey_enabled=false, updated_at=NOW()
-              WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
-  res.json({ id: req.params.id, name: cur.name, deleted: true, undoable: true, inIt: Number(inIt?.n) || 0,
-    sentence: Number(inIt?.n) > 0
-      ? `"${cur.name}" is gone from the list. The ${inIt.n} ${Number(inIt.n) === 1 ? "person" : "people"} already in it keep the steps they entered with.`
-      : `"${cur.name}" is gone from the list.` });
-}));
+// TRASH-1 item 3: through the one remove (removal.js, kind "journey"): archived
+// and turned off, recorded in the trash, so Recent changes can undo it too.
+app.delete("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) =>
+  require("../../routes/removal").removeThrough(req, res, "journey", req.params.id, { id: req.params.id, deleted: true, undoable: true })));
+
 
 app.post("/journeys/:id/restore", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const { changes } = await run(
     `UPDATE cultivation_templates SET archived_at=NULL, updated_at=NOW()
       WHERE id=? AND org_id=? AND archived_at IS NOT NULL`, [req.params.id, req.user.orgId]);
   if (!changes) return res.status(404).json({ error: "Not found" });
+  // TRASH-1: the removal's trash row closes with it, so it is not offered twice.
+  await run(`UPDATE deleted_records SET restored_at=NOW() WHERE org_id=? AND record_id=? AND table_name='removal:archive' AND restored_at IS NULL`,
+    [req.user.orgId, req.params.id]);
   const [row] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   res.json({ id: row.id, name: row.name, restored: true, enabled: false,
     sentence: `"${row.name}" is back, and it is off.` });

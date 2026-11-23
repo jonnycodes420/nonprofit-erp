@@ -69,15 +69,34 @@ async function giveLinks(db, c, orgId, linksList) {
 // What goes with them, for the delete's confirm. Read only.
 async function whatGoesWith(query, orgId, ids) {
   const list = [...new Set((ids || []).map(String))];
-  if (!list.length) return { gifts: 0, links: 0, households: 0, openTasks: 0 };
+  if (!list.length) return { gifts: 0, links: 0, households: 0, openTasks: 0, receipts: 0 };
   const [r] = await query(
     `SELECT (SELECT COUNT(*) FROM gifts g WHERE g.org_id = ? AND g.donor_id = ANY(?))::int AS gifts,
             (SELECT COUNT(*) FROM donor_relationships dr WHERE dr.org_id = ? AND (dr.donor_id_a = ANY(?) OR dr.donor_id_b = ANY(?)))::int AS links,
             (SELECT COUNT(*) FROM donors d WHERE d.org_id = ? AND d.id = ANY(?) AND d.household_id IS NOT NULL)::int AS households,
-            (SELECT COUNT(*) FROM tasks t WHERE t.org_id = ? AND t.donor_id = ANY(?) AND COALESCE(t.done, 0)::int = 0 AND t.voided_at IS NULL)::int AS open_tasks`,
-    [orgId, list, orgId, list, list, orgId, list, orgId, list]);
+            (SELECT COUNT(*) FROM tasks t WHERE t.org_id = ? AND t.donor_id = ANY(?) AND COALESCE(t.done, 0)::int = 0 AND t.voided_at IS NULL)::int AS open_tasks,
+            (SELECT COUNT(*) FROM receipts rc WHERE rc.org_id = ? AND rc.donor_id = ANY(?) AND rc.voided_at IS NULL)::int AS receipts`,
+    [orgId, list, orgId, list, list, orgId, list, orgId, list, orgId, list]);
   // the gifts stay rows and stay in every total that counts the trash; the person's lifetime is on the screen already
-  return { gifts: r.gifts, links: r.links, households: r.households, openTasks: r.open_tasks };
+  return { gifts: r.gifts, links: r.links, households: r.households, openTasks: r.open_tasks, receipts: r.receipts };
 }
 
-module.exports = { takeLinks, giveLinks, hasLinks, whatGoesWith };
+// TRASH-1 item 2 · THE RECEIPTS QUESTION, in the words the confirm shows.
+// "3 receipts were issued to Ana. Void them?" Built here, shown as given.
+function receiptQuestion(count, name) {
+  if (!(count > 0)) return null;
+  const who = name || "them";
+  return {
+    question: `${count} ${count === 1 ? "receipt was" : "receipts were"} issued to ${who}. Void ${count === 1 ? "it" : "them"}?`,
+    note: `Bringing ${who} back from the trash does not un-void ${count === 1 ? "it" : "them"}: a voided receipt stays void, and you can issue a new one from their record.`,
+    yes: `Void ${count === 1 ? "the receipt" : `${count} receipts`} and move to trash`,
+  };
+}
+// The name the question uses: an individual's first name, else the whole name.
+function shortName(row) {
+  const name = String((row && row.name) || "").trim();
+  if (!name) return null;
+  return row.kind && row.kind !== "individual" ? name : name.split(/\s+/)[0];
+}
+
+module.exports = { takeLinks, giveLinks, hasLinks, whatGoesWith, receiptQuestion, shortName };

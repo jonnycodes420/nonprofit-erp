@@ -391,11 +391,9 @@ app.put("/programs/:id", requireAuth, wrap(async (req, res) => {
   res.json(rows[0]);
 }));
 
-app.delete("/programs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const { changes } = await run("DELETE FROM programs WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
-  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
-  res.json({ success: true });
-}));
+// TRASH-1 item 3: a program and its grant links go to the trash through the one remove (removal.js, kind "program").
+app.delete("/programs/:id", requireAuth, requireAdmin, wrap(async (req, res) =>
+  require("../../routes/removal").removeThrough(req, res, "program", req.params.id, { success: true })));
 
 app.post("/programs/:id/grants", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { grantId, allocated } = req.body;

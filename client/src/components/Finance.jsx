@@ -8,6 +8,7 @@ import { groupTxns, SplitGiftRow, FundFootRow } from "./finance/TxnSplit";   // 
 import { DepositSheetModal } from "./DepositSheet";
 import { T, activeMark, fmt, fmtFull, fmtWhole, Card, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive, Modal } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
+import { askAndRemove, offerRemovalUndo } from "../lib/removeThrough";   // TRASH-1: a transaction's Delete asks in removal.js's words; Undo brings it back
 import { apiFetch, API, getToken } from "../api";
 import { usePeopleById } from "../lib/people";
 import { OPEN_GRANT_STATUSES, findOpenGrantMatch, findDonorMatch } from "../lib/financeMatch";
@@ -986,11 +987,12 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   };
 
   const handleDeleteTxn = async (id) => {
-    if (!(await askConfirm({ title: "Delete this transaction?", body: "It comes off the ledger, the fund balances and the budget now. This cannot be undone.", yes: "Delete transaction", danger: true }))) return;
     try {
-      await apiFetch(`/finance/transactions/${id}`, { method:"DELETE" });
+      const r = await askAndRemove("transaction", id, `/finance/transactions/${id}`, askConfirm);
+      if (!r) return;
       setTransactions(prev => prev.filter(t => t.id !== id));
       await Promise.all([reloadSummary(), reloadBudgets(budgetYear)]);
+      offerRemovalUndo(r, "transaction", () => { loadAll(); });
     } catch(e) { console.error(e); }
   };
 
