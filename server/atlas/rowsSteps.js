@@ -34,7 +34,8 @@ async function run(st, { log, save, get, query, orgId, parse }) {
   } else if (st.kind === "population") {
     out = await POP.populationAnswer(st.key, { get, query, orgId });
   } else if (st.kind === "home_figure") {
-    out = await WR.homeAnswer(st.which, get);
+    const [o] = await query("SELECT timezone FROM orgs WHERE id=?", [orgId]).catch(() => []);
+    out = await WR.homeAnswer(st.which, get, o || null);
   }
   if (!out) out = { line: "I couldn't read that just now." };
   const id = await log({ kind: "answer", state: "done", line: out.line, ...(out.link ? { link: out.link } : {}) });

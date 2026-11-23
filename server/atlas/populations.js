@@ -70,7 +70,7 @@ async function populationAnswer(key, { get, query, orgId }) {
   const are = count === 1 ? "person is" : "people are";
   return {
     line: `${count.toLocaleString("en-US")} ${are} ${P.word}${P.report ? ", the same list as Reports > " + P.word : ""}. ${P.definition}`,
-    answer: { type: "list", question: P.word, count, unit: "people", ids: people.map(p => p.donorId), reason: P.definition.replace(/\.$/, ""),
+    answer: { type: "list", question: P.word, count, unit: "people", ids: people.map(p => p.donorId), reason: P.definition.replace(/^[^:]+:\s*/, "").replace(/\.$/, ""),
       more: Math.max(0, count - shown.length), people: shown, countSentence: `${count.toLocaleString("en-US")} ${count === 1 ? "person matches" : "people match"}.`, population: key },
   };
 }

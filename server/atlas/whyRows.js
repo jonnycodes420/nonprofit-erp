@@ -132,7 +132,7 @@ function misattributed(text, people) {
 
 // ── 1 and 4. "LIST THEM", "TELL ME MORE" ───────────────────────────────────
 // Her words, when they ask for the last answer's rows again: "list" or "more".
-const LIST_RE = /^(?:(?:ok(?:ay)?|and|so|please|now)[,\s]+)*(?:list|show|name|give me|who are|who were|which are|what are)\s+(?:me\s+)?(?:them|those|these|all|the (?:others?|rest|other \w+|\w+ (?:people|names|donors))|all (?:of )?(?:them|five|\w+)|everyone)\b[^?]*\??\s*(?:please)?\.?$|^(?:who|which ones?)(?: are| were)? (?:they|the others?|the rest|the other \w+)\??$|^(?:and )?the others\??$/i;
+const LIST_RE = /^(?:(?:ok(?:ay)?|and|so|please|now|can you)[,\s]+)*(?:list|show|name|give me|tell me|who are|who were|which are)\s+(?:me\s+)?(?:them|those|these|everyone|everybody|all(?: of)? (?:them|those|the \w+|five|four|three|two)|all|the (?:others?|rest|other (?:ones?|names?|people|four|three|two))|the (?:five|four|three|two|names|people))(?:\s+(?:again|please|for me|out|all|too|then))*\s*[?.!]*$|^(?:and )?(?:who|which ones?)(?: are| were)? (?:they|the others?|the rest|the other (?:ones?|names?|people|four|three|two))\s*[?.!]*$|^(?:and )?the (?:others|rest)\s*[?.!]*$/i;
 const MORE_RE = /^(?:(?:ok(?:ay)?|and|so|please)[,\s]+)*(?:tell me more|more|go on|keep going|anything else|what else|say more|more detail|more details|expand(?: on)? (?:that|it)?)\b[^a-z]*$/i;
 function followUp(text) {
   const t = String(text || "").replace(/\s+/g, " ").trim();
@@ -171,7 +171,7 @@ function homeAsked(text) {
 }
 const dayWords = d => require("./grounded").dayWords(String(d || "").slice(0, 10));
 // { line, answer?, link? } from the same reads Home's cards make. `get`: GET as her.
-async function homeAnswer(which, get) {
+async function homeAnswer(which, get, tz = null) {
   if (which === "goal_left") {
     const r = await get("/home/annual-goal");
     const g = r.status < 300 && r.body ? r.body.goal : null;
@@ -191,7 +191,7 @@ async function homeAnswer(which, get) {
       const yearly = each * (s.interval === "year" ? 1 : s.interval === "week" ? 52 : 12);
       const when = s.lastFailedAt || s.firstFailedAt;
       return { donorId: s.donorId, name: s.donorName, cents: yearly,
-        reason: `Their ${usd(each)} ${s.interval === "year" ? "yearly" : s.interval === "week" ? "weekly" : "monthly"} card failed${when ? ` on ${dayWords(typeof when === "string" ? when : new Date(when).toISOString())}` : ""}; ${usd(yearly)} a year rides on it.` };
+        reason: `Their ${usd(each)} ${s.interval === "year" ? "yearly" : s.interval === "week" ? "weekly" : "monthly"} card failed${when ? ` on ${dayWords(require("../../orgTime").orgToday(tz || {}, new Date(when)))}` : ""}; ${usd(yearly)} a year rides on it.` };   // the org's day, never UTC's
     });
     const file = (r.body.stoppedFromFileList || []).map(s => ({ donorId: s.donorId, name: s.donorName, cents: 0, reason: `Stopped giving monthly in your file (${s.detail}).` }));
     const n = (r.body.counts && r.body.counts.failedCards) || cards.length;
