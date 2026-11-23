@@ -102,6 +102,9 @@ const GUARDED_WRITERS = [
   // SENDS-2: sets one org's waiting volunteer reminders whose shift is not tomorrow to expired. Dry run
   // by default; --apply writes through writerDbUrl, one audit row. Never org_creo or the demo. Nothing sends.
   "sends2-stale-reminders",
+  // UNDO-1: reopens journey steps marked done whose own next step is open again. Dry run by default;
+  // --apply writes one org through writerDbUrl, one audit row. Never the demo. Nothing sends.
+  "undo1-reopen-journeys",
   // FLOWS-10: sets the demo's made-up EIN while it is the placeholder, org_b72demo only. Same guard.
   "flows10-demo-ein",
   // FLOWS-15: puts the demo's first-gift version on its Year-end appeal, org_b72demo's ecamp_b72_yearend only. Same guard.
