@@ -676,7 +676,9 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.date || "")) ? req.body.date : today;
 
   const ns = req.body?.nextStep;
-  const nsSkipped = !!(ns && ns.skipped === true);
+  // UNDO-1 item 4: "Keep it open" logs the touch and leaves the open step (and makes no new one).
+  const keepOpen = req.body?.keepOpen === true;
+  const nsSkipped = keepOpen || !!(ns && ns.skipped === true);
   let step = null;
   if (!nsSkipped) {
     const typeLabel = shape.nextStepLabelFor(ns?.type);
@@ -740,7 +742,7 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
     await runTx(client,
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata) VALUES (?,?,?,?,?,?,?,?,?,?)",
       [intId, orgId, req.params.id, touch.interactionType, line, date, userId, userName, giftIdForTimeline,
-       JSON.stringify({ via: "thread_log", touch: touch.key, next_step: nsSkipped ? "skipped" : "set", ...(place ? { location: place } : {}),
+       JSON.stringify({ via: "thread_log", touch: touch.key, next_step: nsSkipped ? "skipped" : "set", ...(keepOpen ? { kept_open: true } : {}), ...(place ? { location: place } : {}),
                         // COUNTS-1: a note she marks as a conversation is a contact (meetings.js).
                         ...(touch.interactionType === "note" && req.body?.conversation === true ? { conversation: true } : {}),
                         ...(step ? { next_step_label: step.label } : {}), ...(nsSource ? { next_step_source: nsSource } : {}),
@@ -775,7 +777,7 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
         actorId: userId, actorName: userName, openingInteractionId: intId, followon,
       });
     }
-    return { interactionId: intId, closedThreadId: closedRows[0]?.id || null, thread };
+    return { interactionId: intId, closedThreadId: closedRows[0]?.id || null, closedIds: closedRows.map(r => r.id), openedId: step && !carried && thread ? thread.id : null, thread };
   });
 
   calcWealthScore(req.params.id, orgId).catch(e => console.error("score recalc:", e.message));
@@ -799,9 +801,9 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   // the officer's own next step already took the donor's one open thread slot,
   // the plan's next step stays PENDING and the next close advances it — which is
   // what makes this work with no background tick (production has none).
-  await advanceCultivationPlan(orgId, req.params.id, {
-    actorId: actor(req).id, actorName: actor(req).name, today: date,
-  }).catch(e => console.error("[plan] advance:", e.message));
+  // UNDO-1 item 4: what the log closed and opened is recorded, and the plan's move with it (touchUndo.js).
+  await require("./touchUndo").afterTouch({ query, run, actor, advanceCultivationPlan, today: date }, req,
+    { donorId: req.params.id, interactionId: out.interactionId, closedIds: out.closedIds, openedId: out.openedId, kindLabel: ({ letter: "handwritten note", other: "touch", gift_sent: "gift" })[touch.interactionType] || touch.interactionType || "touch" });
   // A.1 — the gift the conversation carried, named in the response so the
   // screen can say what it recorded instead of the user going to look.
   const giftOut = giftWritten && giftWritten.gift

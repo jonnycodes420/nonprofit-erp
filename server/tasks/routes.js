@@ -118,6 +118,7 @@ async function linkedTaskChange(req, taskId, { done, due }) {
     });
   }
   if (done === 0 && th.closed_at) {
+    await require("../effects/planEffects").reverseForThread({ query, run }, orgId, th.id, who);   // UNDO-1: its journey move goes back first
     const [busy] = await query("SELECT id FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL AND id<>?", [orgId, th.donor_id, th.id]);
     if (busy) return { refused: { error: "step_replaced", sentence: "A newer next step is already open for this person, so this one stays done." } };
     await withTransaction(async client => {
@@ -653,6 +654,7 @@ app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, 
   const linked = fresh && fresh.done === 1 ? { ok: true } : await linkedTaskChange(req, t.id, { done });
   if (linked && linked.refused) return res.status(409).json(linked.refused);
   if (!linked) await run("UPDATE tasks SET done=?, updated_at=NOW() WHERE id=? AND org_id=?", [done, t.id, orgId]);
+  if (done !== (t.done ? 1 : 0)) await require("./taskTickEffects").afterTick({ query, run, actor, advanceCultivationPlan }, req, t, done);   // UNDO-1 item 3
   await run(`UPDATE tasks SET completed_at=${done ? "COALESCE(completed_at, NOW())" : "NULL"}, completed_by_name=? WHERE id=? AND org_id=?`,
     [done ? actor(req).name : null, t.id, orgId]);
   // TASKS-2 · A REPEAT. Finishing a repeating task makes the next one, once;

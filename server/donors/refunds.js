@@ -15,6 +15,7 @@
 //     charge.refunded echo finds the refund on file and changes nothing.
 //   GET  /gifts/:id/refunds   what has been refunded, and what is left to refund
 //   POST /gifts/:id/refund    { amount, date, reason, confirmStripe? }
+//   POST /refunds/:id/undo    { reason }   UNDO-1, server/donors/refundUndo.js
 "use strict";
 const express = require("express");
 const routers = { r1: express.Router() };
@@ -116,6 +117,10 @@ function mount(ctx) {
         }
       }
       const netC = left - cents;
+      // UNDO-1 item 2: the refund is a write with an Undo, and what it did to the receipt is recorded.
+      await require("./refundUndo").recordRefund(ctx, { orgId, g, refundId, cents, reason, who, voided, reissued, usd });
+      if (req.audit) { req.audit.entity("gift", g.id, g.donor_name || null); req.audit.action("refunded");
+        req.audit.summary(`Refunded ${usd(cents)} of ${g.donor_name || "a donor"}'s ${usd(toC(g.amount))} gift on ${day}. Reason: ${reason}`); }
       return { status: 201, body: {
         refundId, giftId: g.id, cents, full, netCents: netC, stripe: !!g.stripe_payment_id, voided, reissued,
         sentence: [`Recorded a ${usd(cents)} refund of the ${usd(toC(g.amount))} gift${full ? ", refunded in full" : `; ${usd(netC)} remains`}.`,

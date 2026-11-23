@@ -9,6 +9,7 @@
 var __dirname = require("path").join(__dirname, "..", "..");   // server.js's folder, as the moved code expects
 const __boot = require("./share");
 const __share = __boot.share;
+const REG_FX = require("../events/registrationEffects");   // UNDO-1 item 5: a registration converts an invite
 let CAMPAIGN_GIFT_MATCH, DONOR_MAIL_ADDR, EV, EV_READY, GIVE_MONTHLY_DEFAULT, GIVE_ONETIME_DEFAULT, GMAIL_BASE, GRAPH_BASE, IMAGE_MAGIC, MAIL_KIND_HEADERS, MAX_UPLOAD_STR, MB, MB_READY, MEANINGFUL_CONTACT_TYPES, PORTAL_CARD_STYLES, PORTAL_DEFAULT_THEME, PORTAL_IMG_MIMES, PORTAL_TYPE_PAIRINGS, PUBLIC_BAR_GRANTS, PW, STORY_BLOCK_TYPES, SYS_AUTO, TL, UPLOAD_LONG_EDGE, addrOf, brandEmailHeaderHtml, campaignPageMod, consumerEmailHtml, crypto, displayNameCase, donorFacingOrgName, escHtmlWf, escapeHtml, fromWithDisplayName, imageSize, maybeStartJourneyFromServer, mbCents, newId, normalizeAccent, normalizeTint, openAdminTask, openCareThread, openThreadTx, orgTime, orgToday, orgTz, orgTzName, publicAppUrl, query, rbCentsEv, recordGift, run, safeFetch, sendDonorLifecycleEmail, stripe, syncMailbox, withAdvisoryLock, withTransaction;
 __boot.register(c => {
   if ("CAMPAIGN_GIFT_MATCH" in c) CAMPAIGN_GIFT_MATCH = c.CAMPAIGN_GIFT_MATCH;
@@ -389,18 +390,26 @@ async function registerForEvent({ orgId, event, level, donorId, qty, paid = true
   if (giftId) await run("UPDATE gifts SET event_id=? WHERE id=? AND org_id=? AND event_id IS NULL", [event.id, giftId, orgId]);
   const recognition = level.kind === "sponsor" ? EV.recognitionLine({ donorName: donor.name, levelName: level.name, recognition: level.recognition }) : null;
   const id = newId("att");
+  // UNDO-1 item 5: a person on the list only as invited (or who had declined or
+  // cancelled) is CONVERTED: registered, with the places bought. Only a second
+  // real purchase adds to the places they already hold. The row as it was is
+  // recorded against the gift, so deleting the gift puts it back (REG_FX).
+  const [wasRow] = await query("SELECT * FROM event_attendees WHERE event_id=? AND donor_id=? AND org_id=?", [event.id, donorId, orgId]);
   const rows = await query(
     `INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email,status,level_id,quantity,registration_gift_id,sponsor_pledge_id,recognition,gift_amount)
      VALUES (?,?,?,?,?,?,'registered',?,?,?,?,?,?)
      ON CONFLICT (event_id, donor_id) DO UPDATE SET
-       level_id=EXCLUDED.level_id, quantity=event_attendees.quantity + EXCLUDED.quantity,
+       level_id=EXCLUDED.level_id,
+       quantity=CASE WHEN ${REG_FX.CONVERTS_SQL} THEN EXCLUDED.quantity ELSE COALESCE(event_attendees.quantity, 0) + EXCLUDED.quantity END,
        registration_gift_id=COALESCE(EXCLUDED.registration_gift_id, event_attendees.registration_gift_id),
        sponsor_pledge_id=COALESCE(EXCLUDED.sponsor_pledge_id, event_attendees.sponsor_pledge_id),
        recognition=COALESCE(EXCLUDED.recognition, event_attendees.recognition),
-       status=CASE WHEN event_attendees.status='cancelled' THEN 'registered' ELSE event_attendees.status END
+       status=CASE WHEN ${REG_FX.CONVERTS_SQL} THEN 'registered' ELSE event_attendees.status END
      RETURNING *`,
     [id, event.id, orgId, donorId, donor.name, donor.email || "", level.id, split.qty, giftId, pledgeId, recognition, split.totalCents / 100]);
   const attendee = rows[0];
+  if (giftId) await REG_FX.recordRegistration({ query, run }, { orgId, giftId, donorId, attendee, wasRow, who })
+    .catch(e => console.error("[event] registration effect:", e.message));
   // WIRE-1: a registration with no money (an unpaid sponsorship) wrote no
   // line; a paid one already shows as its gift.
   if (!giftId) await TL.timelineLine({ orgId, donorId, type: "event", note: `Registered for ${event.name}.`,

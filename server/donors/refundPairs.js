@@ -21,6 +21,12 @@ const REFUNDS_OF_SQL = "SELECT id, amount FROM gifts WHERE org_id = $1 AND refun
 async function removeRefundsOf(exec, orgId, giftIds) {
   if (!giftIds || !giftIds.length) return { count: 0, cents: 0 };
   const rows = await exec(REFUNDS_OF_SQL, [orgId, giftIds]);
+  return removeRefundRows(exec, orgId, rows);
+}
+
+// UNDO-1: the refund rows `rows` ({ id, amount }) removed with their ledger
+// line, timeline line and draft. The one remover, for a pair and for an Undo.
+async function removeRefundRows(exec, orgId, rows) {
   const ids = rows.map(r => r.id);
   if (!ids.length) return { count: 0, cents: 0 };
   await exec("DELETE FROM thank_you_drafts WHERE org_id = $1 AND gift_id = ANY($2::text[])", [orgId, ids]);
@@ -48,4 +54,4 @@ const ORPHANS_SQL = `SELECT r.org_id, r.id, r.donor_id, r.date, r.amount, r.refu
   WHERE r.refund_of IS NOT NULL
     AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.id = r.refund_of AND g.org_id = r.org_id)`;
 
-module.exports = { removeRefundsOf, onClient, PAIR_WORDS, ORPHANS_SQL, REFUNDS_OF_SQL };
+module.exports = { removeRefundsOf, removeRefundRows, onClient, PAIR_WORDS, ORPHANS_SQL, REFUNDS_OF_SQL };

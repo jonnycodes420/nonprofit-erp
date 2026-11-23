@@ -36,6 +36,7 @@ import { pledgeCoverWords } from "../../../../shared/pledgeCover.js";   // PLEDG
 import { EditedMarker } from "../EditHistory";
 import { stepAgainstProposals } from "../../../../shared/nextStepAgree.js";
 import RefundDialog from "../gifts/RefundDialog";   // MONEY-4: Record a refund
+import UndoRefundDialog from "../gifts/UndoRefundDialog";   // UNDO-1: Undo refund
 import { displayOrgDateShort } from "../../lib/orgDay";
 import EventField from "../gifts/EventField";   // GIFTS-1: a gift can belong to an event
 import FundField, { fundFromGift, fundLinesProblem } from "../gifts/FundField";   // GIFTS-2: one fund, or a split across funds
@@ -53,8 +54,11 @@ const FREQ_IN={annual:"yearly"};
 const pledgeSched=pl=>{const ins=pl.installments||[],first=String((ins[0]&&ins[0].dueDate)||pl.due_date||"").slice(0,10);
   return ins.length>1?{plan:"many",count:ins.length,frequency:FREQ_IN[pl.frequency]||pl.frequency||"monthly",firstDue:first}:emptySchedule(first);};
 
+// UNDO-1: a refund is undone for 30 days, never one made to a card through Stripe (refundUndo.js says the same).
+const undoRefundOpen=(r,all)=>{const o=(all||[]).find(x=>x.id===r.refund_of);const at=new Date(r.created_at||r.date||0).getTime();return !(o&&o.stripe_payment_id)&&Date.now()-at<30*864e5;};
 function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addPgOpen,addPlannedGift,addPledge,addPledgeOpen,addToPipeline,askAmt,askName,askOpen,campaigns,closeAsk,deleteGift,deletePlannedGift,deletePledge,dismissSuggestion,dismissedSug,donor,downloadReceiptPdf,dpItems,dpTab,exportGiftsCSV,figs,fundAffinity,fundLoading,giftCfDefs,giftCfEditStr,giftCountReal,giftEditForm,giftEditId,giftErr,giftLoading,giftMoreOpen,giftPeopleQ,giftReadErr,giftSaving,gifts,giftsFull,hasDesignation,household,isAdmin,isReadOnly,isTeam,loadGiftsFull,lockMajor,moveSuggestions,moves,onNavigate,onStageChange,openProposals,opps,pgForm,pgOpen,pgSaving,pipelineAdded,plannedGifts,pledgeEdit,pledgeForm,pledgeResendBusyId,pledgeResentIds,pledgeSaving,pledges,propData,proposalsKnown,receiptBusyId,receiptForGift,receiptsEnabled,recurResendBusy,recurResendSent,recurringSub,refundRows,reloadProps,resendPledgeReminder,resendRecurringLink,saveGiftEdit,savePledgeEdit,sc,scores,sendReceipt,sendYearEndStatement,seqId,seqLoading,seqOpen,seqToast,sequences,setAddGiftForm,setAddGiftOpen,setAddPgOpen,setAddPledgeOpen,setAskAmt,setAskName,setAskOpen,setDpTab,setGiftEditForm,setGiftEditId,setGiftLoading,setGiftMoreOpen,setHhModalOpen,setPgForm,setPgOpen,setPledgeEdit,setPledgeForm,setPledgeStatus,setRelatedOpen,setSeqId,setSeqLoading,setSeqOpen,setSeqToast,setShowYearEnd,setYearDrill,setYearEndYear,showYearEnd,softCredit,status,toggleDesignation,yearDrill,yearEndBusy,yearEndErr,yearEndYear}){
   const [refunding,setRefunding]=useState(null);   // MONEY-4: { gift, leftCents } while Record a refund is open
+  const [unrefunding,setUnrefunding]=useState(null);   // UNDO-1: the refund row while Undo refund is open
   return <>
           {/* ── PROFILE-2 · GIVING: the ask, then gifts and pledges, Funds, and
               Asks & pipeline, one tab. */}
@@ -485,6 +489,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                               {/* MONEY-4: a refund row is kept as written (append-only, like the ledger); a mistaken one is refunded back by its gift's own edit. */}
                               {!g.refund_of&&<button onClick={()=>{setGiftEditId(g.id);setGiftEditForm({amount:g.amount,date:g.date,type:g.type,payment_method:g.payment_method||"",notes:g.notes||"",property_description:g.property_description||"",stock_shares:g.stock_shares??"",stock_ticker:g.stock_ticker||"",fund_id:g.fund_id||"",fund:fundFromGift(g),eventId:g.event_id||"",acknowledgement_sent:g.acknowledgement_sent,customFields:Object.fromEntries(giftCfDefs.map(d=>[d.key,giftCfEditStr(d,(g.custom_fields||{})[d.key])]))});}} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Edit</button>}
                               {!g.refund_of&&<button onClick={()=>deleteGift(g.id)} style={{background:"none",border:"none",color:T.terracotta,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Delete</button>}
+                              {!isReadOnly&&g.refund_of&&undoRefundOpen(g,giftsFull)&&<button data-testid="dp-gift-undo-refund" onClick={()=>setUnrefunding(g)} style={{background:"none",border:"none",color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer",padding:"2px 6px"}}>Undo refund</button>}
                               {!isReadOnly&&g.amount>0&&!g.refund_of&&!g.refunded_in_full&&<button data-testid="dp-gift-refund" onClick={()=>setRefunding({gift:g,leftCents:Math.round(g.amount*100)+giftsFull.filter(x=>x.refund_of===g.id).reduce((n,x)=>n+Math.round(x.amount*100),0)})} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Refund</button>}
                             </td>
                           </>
@@ -494,6 +499,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                   </tbody>
                 </table>
               )}
+              {unrefunding&&(<UndoRefundDialog refund={unrefunding} onClose={()=>setUnrefunding(null)} onSaved={()=>loadGiftsFull({money:true})}/>)}
               {refunding&&(<RefundDialog gift={refunding.gift} leftCents={refunding.leftCents} onClose={()=>setRefunding(null)} onSaved={()=>loadGiftsFull({money:true})}/>
               )}
             </div>

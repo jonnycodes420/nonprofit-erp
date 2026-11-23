@@ -1150,6 +1150,7 @@ async function run7(pool) {
   await require("./sends2").run(pool);   // SENDS-2: a send to more than one person has a plan
   await require("./ledger3").run(pool);   // LEDGER-3: who set the default fund; posting batches with Undo
   await require("./receipts1").run(pool);   // RECEIPTS-1: a gift of property is described, not valued
+  await require("./undo1").run(pool);   // UNDO-1: every side effect records how to take it back
 
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id
