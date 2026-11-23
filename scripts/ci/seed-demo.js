@@ -42,6 +42,9 @@ const { Client } = require("pg");
 const bcrypt = require("bcryptjs");
 const orgTime = require("../../orgTime");
 const { findRealPeople } = require("../lib/demoRealPeople");
+// LEDGER-3: the org's one unrestricted fund. The seed used to take the first
+// unrestricted fund by NAME (Gala Reserve) for every unassigned gift.
+const { DEFAULT_FUND_SQL } = require("../../shared/numbers/defaultFund");
 
 // Resolved INSIDE main(), not at module load. BUILD-73 Part 3 requires this
 // file for its DRIFTED/SHAPE exports (tests/demo-shape.test.js), and
@@ -344,6 +347,11 @@ async function main() {
   // INT-BUILD-1 — the two funds Margaret Chen's story names.
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('fund_b72demo_yaa',$1,'Youth Arts Access',true)`, [ORG]);
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('fund_b72demo_gala',$1,'Gala Reserve',false)`, [ORG]);
+  // LEDGER-3: General Operating is the default, said outright: the funds above
+  // can share one created_at, and then "the oldest" would fall to the id.
+  // Stamped as the system's pick, not a person's choice, so the deposit sheet's
+  // blank memo still asks (defaultFund.js CHOSEN_SQL).
+  await q(`UPDATE orgs SET default_fund_id = 'fund_b72demo_gen', default_fund_by = 'system:seed-demo' WHERE id = $1`, [ORG]);
   // FIN-1 — a THIRD fund, and it is restricted and actually holds money. The
   // demo had two funds and a restricted balance of zero, so the one screen
   // that exists to answer "how much of this is not ours to spend" answered
@@ -1124,7 +1132,7 @@ async function main() {
     WHERE org_id = $1 AND id <> ALL($3)`, [ORG, TODAY, pinnedStage]);
   await q(`INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id)
            SELECT 'ft_' || g.id, g.org_id, g.date, 'Gift from ' || d.name, d.name, g.amount, 'income',
-                  'acct_b72demo','fund_b72demo_gen', g.donor_id, 'seed', g.id
+                  'acct_b72demo', COALESCE(g.fund_id, ${DEFAULT_FUND_SQL("$1")}), g.donor_id, 'seed', g.id   -- LEDGER-3: each gift's own fund
              FROM gifts g JOIN donors d ON d.id = g.donor_id
             WHERE g.org_id = $1 AND g.date >= $2
             ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING`,
@@ -3218,7 +3226,7 @@ async function main() {
   // Stock and in-kind are excluded on purpose: they are revenue and they never
   // reached a bank account, so a deposit reference on one would be a lie.
   await q(`UPDATE gifts
-              SET fund_id = COALESCE(fund_id, (SELECT id FROM fin_funds WHERE org_id=$1 AND NOT restricted ORDER BY name LIMIT 1)),
+              SET fund_id = COALESCE(fund_id, ${DEFAULT_FUND_SQL("$1")}),   -- LEDGER-3: the one default fund, never the first by name
                   deposited_on = COALESCE(deposited_on, CASE WHEN payment_method = 'Card' THEN (date::date + 2)::text ELSE date END),
                   deposit_ref  = COALESCE(deposit_ref, CASE WHEN payment_method = 'Card'
                                    THEN 'po_demo_' || replace((date::date + 2)::text, '-', '')
@@ -3999,7 +4007,8 @@ async function writeAll(client, donors, gifts) {
   // recordGift would have decided.
   const fundRows = await client.query(
     `SELECT id, name, restricted FROM fin_funds WHERE org_id = $1 ORDER BY restricted, name`, [ORG]);
-  const unrestricted = (fundRows.rows.find(f => !f.restricted) || fundRows.rows[0] || {}).id || null;
+  // LEDGER-3: the org's one default fund, never the first unrestricted by name.
+  const unrestricted = (await client.query(`SELECT ${DEFAULT_FUND_SQL("$1")} AS id`, [ORG])).rows[0].id || null;
   const fundByWord = w => {
     const hit = fundRows.rows.find(f => w && String(f.name).toLowerCase().includes(w));
     return hit ? hit.id : null;

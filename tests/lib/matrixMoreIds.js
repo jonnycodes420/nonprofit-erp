@@ -54,6 +54,10 @@ async function seed(q, o, tag) {
   await ins(q, "data_health_runs", { id: `dhr_${o}`, org_id: o, trigger: "import", counts: {}, new_duplicates: 9 });
   await ins(q, "donor_merges", { id: `dmg_${o}`, org_id: o, kept_id: d, merged_id: `ds_${o}`, kept_name: `${mark} Donor`,
     merged_name: "Shared Person", kept_before: {}, merged_before: {}, moved: {}, undone_at: new Date(testNow()).toISOString() });
+  // LEDGER-3 — a Post to the books batch (already undone, so org A's own twin
+  // under §8 is refused rather than taking ledger rows off the books).
+  await ins(q, "ledger_post_batches", { id: `lpb_${o}`, org_id: o, groups: [], gift_count: 0, cents: 0, created_by: admin,
+    created_by_name: `${mark} Admin`, undone_at: new Date(testNow()).toISOString() });
   // GRANTS — a funder contact, a checklist task, a library piece and its
   // version, a send and a report, all on this org's grant.
   await ins(q, "donor_relationships", { id: `drc_${o}`, org_id: o, donor_id_a: d, donor_id_b: `ds_${o}`, relationship_type: "program_officer" });
@@ -121,6 +125,7 @@ function resolve(p, n, B) {
     [/^\/ask\/pins\//, { id: `apin_${B}` }],
     [/^\/data-health\/notice\//, { id: `dhr_${B}` }],
     [/^\/data-health\/merges\//, { id: `dmg_${B}` }],
+    [/^\/finance\/ledger-post\//, { id: `lpb_${B}` }],   // LEDGER-3: undo a posting batch
     [/^\/grant-funders\/contacts\//, { relId: `drc_${B}` }],
     [/^\/grant-funders\//, { id: `d_${B}` }],
     [/^\/grants\/checklist\//, { taskId: `tgc_${B}` }],

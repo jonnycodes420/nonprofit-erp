@@ -504,6 +504,12 @@ app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
     const list = byFund.get(s.fund_id);
     if (list.length < 4) list.push({ kind: s.kind, who: s.who, amount: toDollars(Number(s.cents)) });
   }
+  // LEDGER-3 item 4: each fund says what it received (gifts) beside its balance
+  // (books), and the gifts waiting to post are a figure that opens them.
+  const fyFrom = NUM.fiscalYear.fiscalYearToDate(await orgTz(orgId)).from;
+  const defaultId = await NUM.defaultFund.defaultFundId(query, orgId);
+  const books = await NUM.fundBooks.fundBooks(query, orgId, { from: fyFrom, to: today, fyFrom, defaultId });
+  const BOOK0 = { receivedCents: 0, receivedCount: 0, waitingCents: 0, waitingCount: 0 };
 
   res.json({
     period: month,
@@ -512,8 +518,11 @@ app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
       const balance = Number(f.in_all) - Number(f.out_all);
       const restricted = !!f.restricted;
       const who = byFund.get(f.id) || [];
+      const b = books.get(f.id) || BOOK0;
       return {
-        id: f.id, name: f.name, restricted, description: f.description || null,
+        id: f.id, name: f.name, restricted, description: f.description || null, isDefault: f.id === defaultId,
+        received: { cents: b.receivedCents, amount: toDollars(b.receivedCents), count: b.receivedCount, source: { key: "gifts", params: { from: fyFrom, to: today, fund: f.id } } },
+        waiting: { cents: b.waitingCents, amount: toDollars(b.waitingCents), count: b.waitingCount, source: { key: "ledger-status", params: { status: "waiting", fund: f.id } } },
         balanceCents: balance, balance: toDollars(balance),
         inPeriod: toDollars(Number(f.in_period)), outPeriod: toDollars(Number(f.out_period)),
         inPeriodCents: Number(f.in_period), outPeriodCents: Number(f.out_period),
@@ -526,7 +535,12 @@ app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
         rows: "fund:" + f.id,
       };
     }),
+    fiscalYearFrom: fyFrom, defaultFundId: defaultId,
+    noFund: books.noFund.n || books.noFund.cents ? { count: books.noFund.n, cents: books.noFund.cents, amount: toDollars(books.noFund.cents), source: { key: "gifts", params: { from: fyFrom, to: today, fund: "none" } },
+      sentence: `${books.noFund.n} ${books.noFund.n === 1 ? "gift" : "gifts"} this fiscal year (${money.formatCentsPlain(books.noFund.cents)}) ${books.noFund.n === 1 ? "names" : "name"} no fund. Reports shows them as Unrestricted (no fund); when they post, they post to the default fund.` } : null,
     definitions: {
+      received: NUM.fundBooks.SENTENCES.received,
+      waiting: NUM.fundBooks.SENTENCES.waiting,
       balance: "Everything that has ever come into this fund, less everything that has gone out of it. Not a period figure.",
       inPeriod: "Income posted to this fund inside the current month, in your organization's time zone.",
       restrictedBy: "The grants and donors whose money went into this fund, largest first. Read from the transactions and the gifts, never from the fund's name.",
@@ -4272,8 +4286,10 @@ app.get("/finance/funds", requireAuth, wrap(async (req, res) => {
   // "General Operating". The screen was stating something it could not back,
   // which is the whole class this build exists to close. The flag comes from
   // the same function the write uses, so the two cannot part company.
+  // LEDGER-3: read only (a GET never heals a ledger); the same rule the write
+  // stamps (shared/numbers/defaultFund.js), so the two still cannot part company.
   let defaultFundId = null;
-  try { defaultFundId = await orgUnrestrictedFundId(req.user.orgId); }
+  try { defaultFundId = await NUM.defaultFund.defaultFundId(query, req.user.orgId); }
   catch (e) { console.error("[funds] default fund probe:", e.message); }
   res.json(rows.map(r => ({ ...r, isOrgDefault: !!defaultFundId && r.id === defaultFundId })));
 }));

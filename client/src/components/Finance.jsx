@@ -25,6 +25,8 @@ const BEHIND = T.gold700;
 import { orgTodayCivil } from "../lib/orgToday";
 import { RecurringView } from "./RecurringGiving";   // GIFTS-2: recurring giving is findable from Finance
 import MergeFunds from "./finance/MergeFunds";   // TRUTH-3: funds are a managed list
+import PostToBooks from "./finance/PostToBooks";   // LEDGER-3: a waiting gift can post, with Undo
+import { FundDefaultChip, FundBooksLines, NoFundLine, FUND_DEF_WORDS } from "./finance/FundBooks";   // LEDGER-3: a fund's gifts beside its books
 import { Figure } from "./Figure";   // TRUTH-3: the ledger's three figures open their gifts
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
@@ -795,9 +797,6 @@ function BookkeeperFlavours({ value, onChange }) {
   );
 }
 
-// SWEEP-5: the fund cards' definitions arrive keyed by field; a person reads
-// the words, never "inPeriod.".
-const FUND_DEF_WORDS = { balance: "Balance", inPeriod: "In this period", restrictedBy: "Restricted by" };
 // ── FIN-1 · FIVE SECTIONS, EACH ONE A QUESTION ────────────────────────────
 const FIN_SECTIONS = [
   { id: "overview", label: "Overview", question: "What happened this month, and what needs you?",
@@ -1239,6 +1238,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             })}
           </div>
         )}
+        {summary?.ledgerStatus && summary.ledgerStatus.all.count > 0 && <PostToBooks isReadOnly={isReadOnly} onChanged={() => reloadSummary().catch(() => {})}/>}
         <MoneyInStrip onNavigate={onNavigate} cashOnHand={summary ? summary.cashOnHand : null} onOpenPayout={id => { setOpenPayout(id); setSubtab("payouts"); }}/>
         {!summary?.ledgerEmpty && <>
         <Card>
@@ -1931,6 +1931,7 @@ function FinFundCards() {
   return (
     <div data-testid="fin-fund-cards" style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:6 }}>
       <div style={{ fontSize:13, color:T.ink3 }}>{d.sentence} Figures in and out are for {d.periodLabel}.</div>
+      <NoFundLine noFund={d.noFund}/>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))", gap:12 }}>
         {d.funds.map(f => (
           <RecordLink key={f.id} to={fundHref(f.id)} data-testid="fin-fund-card" data-record-link="fund" onOpen={() => openFund(f)}
@@ -1939,15 +1940,15 @@ function FinFundCards() {
                      borderLeft:"3px solid "+(f.restricted ? T.gold500 : T.greenDk) }}>
             <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"baseline", flexWrap:"wrap" }}>
               <span style={{ fontSize:14.5, fontWeight:700, color:T.ink }}>{f.name}</span>
-              <span style={{ fontSize:11, fontWeight:700, borderRadius:99, padding:"2px 9px",
-                             background: f.restricted ? T.gold100 : T.green100,
-                             color: f.restricted ? T.gold700 : T.greenDk }}>
-                {f.restricted ? "Restricted" : "Unrestricted"}
+              <span style={{ display:"flex", gap:6 }}><FundDefaultChip f={f}/>
+                <span style={{ fontSize:11, fontWeight:700, borderRadius:99, padding:"2px 9px",
+                               background: f.restricted ? T.gold100 : T.green100,
+                               color: f.restricted ? T.gold700 : T.greenDk }}>
+                  {f.restricted ? "Restricted" : "Unrestricted"}
+                </span>
               </span>
             </div>
-            <div style={{ fontSize:26, fontWeight:800, color:T.ink, fontFamily:"'DM Serif Display',serif", lineHeight:1.15, marginTop:6 }}>
-              {fmtFull(f.balance)}
-            </div>
+            <FundBooksLines f={f} defs={d.definitions || {}}/>
             <div style={{ fontSize:12, color:T.ink3, marginTop:4 }}>
               In {fmtFull(f.inPeriod)} · out {fmtFull(f.outPeriod)} this period
             </div>

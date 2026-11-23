@@ -104,8 +104,9 @@ async function seedClean1Mess(q, ORG, { TODAY } = {}) {
     const amounts = { a: ["250.00", "125.50"], b: ["75.25"] }[id.slice(-1)];
     for (const amt of amounts) {
       n++;
-      await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,payment_method,campaign,created_by,created_by_name)
-               VALUES ($1,$2,$3,$4,$5,'cash','Check',$6,$7,$8)`,
+      // LEDGER-3: an unassigned gift takes the org's one default fund (shared/numbers/defaultFund.js).
+      await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,payment_method,campaign,created_by,created_by_name,fund_id)
+               VALUES ($1,$2,$3,$4,$5,'cash','Check',$6,$7,$8,${require("../../shared/numbers/defaultFund").DEFAULT_FUND_SQL("$2")})`,
         [`g_c1_${n}`, ORG, P + id, amt, `${year - 1}-${String(3 + (n % 9)).padStart(2, "0")}-1${n % 9}`, `Annual Fund ${year - 1}`, ...by]);
     }
   }
