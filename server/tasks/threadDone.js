@@ -36,7 +36,8 @@ function register(app, { query, run, wrap, requireAuth, checkWriteAccess, actor,
       await WE.finish(db, orgId, "thread_done", t.id, who, "reopened");
       const kept = WE.keptSentence(back);
       return res.json({ ok: true, reopened: true, journeyBack: back.filter(r => r.ok && r.kind === "journey_completed").length,
-        sentence: `${t.next_step_label} is open again.${back.some(r => r.ok) ? " Its journey is back where it was." : ""}${kept ? " " + kept : ""}` });
+        sentence: `${t.next_step_label} is open again.${back.some(r => r.ok && r.kind !== "step_opened") ? " Its journey is back where it was."
+          : back.some(r => r.ok) ? " The journey step that opened after it is waiting again." : ""}${kept ? " " + kept : ""}` });
     }
     if (t.closed_at) return res.status(409).json({ error: "already_closed", sentence: "That step is already closed." });
     await run("UPDATE threads SET closed_at=NOW(), close_kind='dismissed', close_reason='done' WHERE id=? AND org_id=? AND closed_at IS NULL", [t.id, orgId]);

@@ -47,7 +47,7 @@ function mount(ctx) {
     withAdvisoryLock, withTransaction, queryTx, runTx } = ctx;
   const app = routers.r1;
 
-  // What Undo refund will do, for the gift's menu: may it, and why not.
+  // The refund with its gift, and whether its Undo has been used.
   async function refundOf(orgId, id) {
     const [r] = await query(
       `SELECT r.*, g.amount AS gift_amount, g.donor_id AS gift_donor_id, g.stripe_payment_id AS gift_stripe, g.pledge_id AS gift_pledge_id,
@@ -65,14 +65,6 @@ function mount(ctx) {
     if (at && Date.now() - new Date(at).getTime() > WE.UNDO_DAYS * 864e5) return { status: 409, body: { error: "too_old", sentence: `A refund can be undone for ${WE.UNDO_DAYS} days. This one is older, so it stays.` } };
     return null;
   }
-
-  app.get("/gifts/:id/refund-undo", requireAuth, wrap(async (req, res) => {
-    const orgId = req.user.orgId;
-    const rows = await query("SELECT id FROM gifts WHERE org_id=? AND refund_of=? ORDER BY created_at DESC", [orgId, req.params.id]);
-    const out = [];
-    for (const x of rows) { const r = await refundOf(orgId, x.id); const no = refusal(r); out.push({ refundId: x.id, cents: -toC(r && r.amount), may: !no, sentence: no ? no.body.sentence : null }); }
-    res.json({ giftId: req.params.id, refunds: out });
-  }));
 
   app.post("/refunds/:id/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     const orgId = req.user.orgId, who = actor(req);

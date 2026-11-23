@@ -28,3 +28,9 @@ Seeded by ARCH-1 (1 Nov 2026).
 - **Tests set their own clock.** A test that depends on the date fixes its own date through
   `tests/clock.js`, with boundary tests for midnight UTC, month end at 11 PM ET, fiscal year end
   and the DST change. No test reads the real clock, and there is no weekend pin. (FIX-42, ARCH-1, CLOCK-1.)
+- **A side effect records how to take it back.** When a write moves something else (a refund voids a
+  receipt, a closed step finishes a journey, a touch closes the open step, a registration changes a
+  guest row), it records the effect in `write_effects` with the row's value before, through
+  `server/effects/writeEffects.js` (`record`), and its Undo reverses it through `reverse`, newest
+  first. A write with an Undo writes a header line (`begin`), which Recent changes lists. No side
+  effect only goes forward (UNDO-1).
