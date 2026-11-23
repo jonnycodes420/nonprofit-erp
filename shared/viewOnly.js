@@ -111,4 +111,4 @@ export function viewerRefusal(method, path, { exportsOff = false } = {}) {
 }
 
 // Atlas: the kinds of step that only read. Everything else is refused for a viewer.
-export const ATLAS_READ_KINDS = new Set(["question", "find", "about"]);
+export const ATLAS_READ_KINDS = new Set(["question", "find", "about", "prior_rows", "population", "home_figure"]);   // ATLAS-8: rows already on a screen are reads

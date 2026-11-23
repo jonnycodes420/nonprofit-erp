@@ -345,6 +345,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
           </div>}
           <GroupPlanCard request={request} busy={busy} onGo={go} onDo={() => act(`/atlas/${request.id}/group`)} onDiscard={id => act(`/atlas/actions/${id}/dismiss`)} />
           <ProposalCard key={(request.proposal && request.proposal.id) || "none"} request={request} busy={busy} onSave={save} onDiscard={() => act(`/atlas/${request.id}/discard`)} />
+          {request.readingOff && <div data-testid="atlas-reading-off" style={{ fontSize: 13, color: T.ink2, lineHeight: 1.45 }}>{request.readingOff}</div>}
           <ul data-testid="atlas-lines" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column" }}>
             {lines.map(l => <li key={l.id} data-testid="atlas-line" data-kind={l.kind} data-state={l.state}
               style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "8px 0", borderBottom: "1px solid " + T.bg2, fontSize: 14, lineHeight: 1.45, color: T.ink }}>

@@ -62,6 +62,8 @@ const ATLAS_ANSWER_MS = () => Number(process.env.ATLAS_ANSWER_MS) || 20000;
 // what is left of it, never a fresh 20 s after a slow read.
 const ATLAS_TOTAL_MS = () => Number(process.env.ATLAS_TOTAL_MS) || 20000;
 const NS = require("../server/atlas/noSource");   // FLOWS-13 item 6: a question nothing in Steward answers
+const WR = require("../server/atlas/whyRows");   // ATLAS-8: a why answer's rows, drawn and footed; a figure is its person's
+const RS = require("../server/atlas/rowsSteps");   // ATLAS-8: "list them", LYBUNT, Home's figures; the question kept
 
 const PROP = require("../server/atlas/proposal");   // SENDS-1: Atlas proposes, she saves
 const RQ = require("../server/atlas/resume");   // FLOWS-16: a question resumes whole; a follow-up finds the person talked about
@@ -205,11 +207,11 @@ async function resolveTarget(orgId, kind, heard, today, ahead = false) {
 async function logAction(req, a) {
   const id = newId("aa");
   const who = actor(req);
-  await run(`INSERT INTO atlas_actions (id,org_id,request_id,card_id,run_id,kind,state,line,donor_id,place,place_id,link,waits,undoable,actor_id,actor_name,created_by,created_by_name)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  await run(`INSERT INTO atlas_actions (id,org_id,request_id,card_id,run_id,kind,state,line,donor_id,place,place_id,link,waits,undoable,actor_id,actor_name,created_by,created_by_name,question)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, req.user.orgId, a.requestId || null, a.cardId || null, a.runId || null, a.kind, a.state, String(a.line).slice(0, 400),
      a.donorId || null, a.place || null, a.placeId || null, JSON.stringify(a.link || null), !!a.waits, !!a.undoable,
-     "system:atlas", atlasName(), who.id, who.name]);
+     "system:atlas", atlasName(), who.id, who.name, RS.auditQuestion(req.atlasQuestion)]);   // ATLAS-8 item 6: what she asked
   return id;
 }
 function actionOut(r) {
@@ -227,10 +229,11 @@ async function requestOut(orgId, id) {
   const waiting = lines.filter(l => l.waits).length;
   const AT_ = await AT();
   return { id: m.id, text: m.text, status: m.status, ai: m.ai, questions: m.status === "needs_answers" ? (read.atlas && read.atlas.questions) || [] : [],
-    lines, waiting, spoke: m.status === "needs_answers" ? (read.atlas && read.atlas.spoke) || "" : (read.atlas && read.atlas.spoke) || AT_.spokeFor(lines, waiting),   // MONEY-3: "Here's what I found." over an answer
+    lines, waiting, spoke: m.status === "needs_answers" ? (read.atlas && read.atlas.spoke) || "" : (read.atlas && read.atlas.spoke) || RS.spokeOver(AT_.spokeFor(lines, waiting), lines),   // ATLAS-8: never "found" over a can't   // MONEY-3: "Here's what I found." over an answer
     timings: read.atlas && read.atlas.timings, undoneAt: m.undone_at, follows: (read.atlas && read.atlas.follows) || null,   // ATLAS-3: the request this one followed
     proposal: read.atlas && read.atlas.proposal ? read.atlas.proposal : null,   // SENDS-1: what Save will write, or what it wrote
-    groupPlan: GA.publicPlan(read.atlas && read.atlas.groupPlan) };   // ATLAS-7: the one confirm, and what Do it did
+    groupPlan: GA.publicPlan(read.atlas && read.atlas.groupPlan),   // ATLAS-7: the one confirm, and what Do it did
+    readingOff: m.status === "needs_answers" ? null : RS.readingOffLine(m.ai, lines) };   // ATLAS-8 item 6: said first, over an answer given half-blind
 }
 
 // ── READ, RESOLVE, ASK ──────────────────────────────────────────────────────
@@ -504,7 +507,7 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
   // about the whole org (Ask) and the org's Top 100 read everyone, so they are
   // said once and left out.
   if (require("../server/auth/portfolio").isScoped(req.user)) {
-    const kept = steps.filter(x => x.kind !== "question" && x.kind !== "top100");
+    const kept = steps.filter(x => x.kind !== "question" && x.kind !== "top100" && x.kind !== "population" && x.kind !== "home_figure");   // ATLAS-8: the org's lists too
     if (kept.length < steps.length) await logAction(req, { ...base, kind: "refused", state: "refused",
       line: "You see the people assigned to you, so I can only answer about them. Questions about the whole organization are for colleagues who see everyone." });
     steps = kept;
@@ -749,6 +752,9 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
             : `I couldn't link ${first(nm(id))} and ${first(nm(st.otherId))}: ${(r.body && r.body.error) || "it did not go through"}.` });
         break;
       }
+      case "prior_rows": case "population": case "home_figure":   // ATLAS-8: rows already on a screen
+        await RS.run(st, { log, save: (aid, ans) => saveAnswer(orgId, m.id, aid, ans), get: p => asHer(req, "GET", p), query, orgId, parse: j });
+        break;
       case "question": {
         // ATLAS-5: something Steward does not keep is said plainly, at once, with no lookup.
         const ck = AT_.cantKnow(st.target || st.words);
@@ -769,12 +775,20 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         const said1 = AT_.plainCant(st.target || st.words, said0) || said0;   // ATLAS-5: plain words when Ask can't answer
         // ATLAS-6: every amount and date in the sentence is one Ask read, or the template goes instead.
         const read6 = r.body && typeof r.body === "object" ? (({ sentence, headline, answer, ...rest }) => rest)(r.body) : {};
-        const said = said1 && r.status < 300 && said1 !== said0 ? said1 : said1 ? GR.groundedReply(String(said1), GR.factsOf(read6, answerFacts(r.body)), r.body.template || "Here's what I found. Open it in Ask for the details.").sentence : said1;
+        let said = said1 && r.status < 300 && said1 !== said0 ? said1 : said1 ? GR.groundedReply(String(said1), GR.factsOf(read6, answerFacts(r.body)), r.body.template || "Here's what I found. Open it in Ask for the details.").sentence : said1;
+        // ATLAS-8: a why answer draws its people, and its total foots to them; a figure beside a name is that person's own.
+        const why8 = r.status < 300 ? WR.whyAnswer(r.body, { question: st.target || st.words }) : null;
+        if (why8 && said) said = WR.whyLine(String(said), why8).sentence;
+        if (said && WR.misattributed(String(said), WR.personFacts(r.body && r.body.who, r.body && r.body.people, r.body && r.body.rows)).length)
+          said = why8 ? WR.rowsSentence(why8) : (r.body.template || "Here's what I found. Open it in Ask for the details.");
+        const def8 = r.status < 300 && said ? require("../server/atlas/populations").countDefinition(r.body) : null;   // ATLAS-8: a count ends with its definition
+        if (def8 && !String(said).includes(def8)) said = `${String(said).replace(/\s+$/, "")} ${def8}`;
         if (said) PG.words(req, String(said));   // SPEED-3: the answer's sentence shows while the list is read
         // ATLAS-3: a set of people comes back as the people, with the count and why each matched.
-        const list = r.status < 300 ? await AN.listAnswer({ ask: r.body, query, orgId, asHer, req, today }).catch(e => { console.error("[atlas] list:", e.message); return null; }) : null;
+        const list = r.status < 300 && !why8 ? await AN.listAnswer({ ask: r.body, query, orgId, asHer, req, today }).catch(e => { console.error("[atlas] list:", e.message); return null; }) : null;
         const aid = await log({ kind: "answer", state: "done", line: said ? String(said) : "I couldn't answer that just now.", link: { tab: "ask", text: st.target || st.words } });
-        if (list) await saveAnswer(orgId, m.id, aid, { type: "list", question: st.target || st.words, ...list });
+        if (why8) await saveAnswer(orgId, m.id, aid, why8);
+        else if (list) await saveAnswer(orgId, m.id, aid, { type: "list", question: st.target || st.words, ...list });
         break;
       }
       case "undo": {
@@ -865,6 +879,7 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   if (text.length < TEXT_MIN) return res.status(400).json({ error: "empty", sentence: "Tell me what happened, what to do, or what you want to know." });
   if (text.length > TEXT_MAX) return res.status(400).json({ error: "too_long", sentence: "That's too long for me. Say it in a few sentences." });
   PG.set(req, "Reading what you asked");
+  req.atlasQuestion = text;   // ATLAS-8 item 6: kept on every line this request writes
   // SPEED-3: the four reads before the model are independent, so they go at once.
   const [[org], tz, onPage0, prior] = await Promise.all([
     query("SELECT agent_paused_at FROM orgs WHERE id=?", [orgId]),
@@ -890,7 +905,8 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   // FLOWS-13 item 6 (W-1114-Atlas-23): what code answers for certain is known before any model is
   // asked. ATLAS-6's shapes (a setting, a thing not kept, a forecast, an amount) and a question that
   // names nothing Steward keeps (server/atlas/noSource.js) skip the model's read and the lookup loop.
-  const early = group ? null : await answeredInCode(orgId, text, { today, all });
+  // ATLAS-8: "list them" after an answer, LYBUNT, Home's figures: rows a screen already holds.
+  const early = group ? null : (RS.read(text, prior) || await answeredInCode(orgId, text, { today, all }));
   const read = group ? { ai: (await req.atlasCtx.gate).ok ? "on" : "off", steps: [group], code: true }
     : early ? { ai: (await req.atlasCtx.gate).ok ? "on" : "off", steps: early, code: true }
     : await readSteps(orgId, text, { today, onPage: onPage ? onPage.name : null, gateP: req.atlasCtx.gate });
@@ -941,6 +957,7 @@ app.post("/atlas/:id/answer", requireAuth, checkWriteAccess, wrap(async (req, re
   if (!m) return res.status(404).json({ error: "Not found" });
   if (m.status !== "needs_answers") return res.status(409).json({ error: "already_done", sentence: "I've already done this one." });
   const read = j(m.read) || {};
+  req.atlasQuestion = m.text;   // ATLAS-8 item 6
   const answers = req.body && typeof req.body.answers === "object" && req.body.answers ? req.body.answers : {};
   const today = await atlasToday(orgId);
   const onPage = read.atlas && read.atlas.onPage ? (await query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [read.atlas.onPage, orgId]))[0] : null;
@@ -1010,7 +1027,7 @@ app.post("/atlas/actions/:id/list", requireAuth, checkWriteAccess, wrap(async (r
   const [m] = await query("SELECT read FROM voice_memos WHERE id=? AND org_id=?", [a.request_id, orgId]);
   const read = j(m && m.read) || {};
   const ans = (read.answers || {})[a.id];
-  if (!ans || ans.type !== "list" || !Array.isArray(ans.ids) || !ans.ids.length) return res.status(409).json({ error: "no_list", sentence: "That answer has no list of people to open." });
+  if (!ans || !["list", "why"].includes(ans.type) || !Array.isArray(ans.ids) || !ans.ids.length) return res.status(409).json({ error: "no_list", sentence: "That answer has no list of people to open." });
   if (ans.groupId) {
     const [g] = await query("SELECT id, name FROM audiences WHERE id=? AND org_id=?", [ans.groupId, orgId]);
     if (g) return res.json({ groupId: g.id, name: g.name, count: ans.ids.length, made: false });
