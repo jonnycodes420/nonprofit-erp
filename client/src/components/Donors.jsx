@@ -1,6 +1,8 @@
 import { NoRecentMeetingPanel, WarmNotAskedPanel } from "./MovesPanels";
 import PopulationCount from "./PopulationCount";   // DEFINE-1: the Re-engage count says which population it is
 import { viewMatches } from "../lib/viewEdited";   // FLOWS-20
+import { useListFilters, anyFilterOn } from "../lib/listFilters";
+import { givingStrengthOf } from "../../../shared/givingStrength.js";   // LIST-6 item 1   // LIST-6: one filter object, read from the address
 import { useProfileReads, openProfileReads } from "../lib/profileReads";   // LOAD-1
 import { useState, useEffect, useMemo, useRef, Component, lazy, Suspense } from "react";
 import { GrantImport } from "./GrantImport";
@@ -16,7 +18,7 @@ import { emailHint } from "../../../shared/contactCheck.js";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
 import { LogTouchPicker } from "./donors/LogTouchPicker";   // EDIT-2: one person, or many
-import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, contactGap, Card, AIBtn, AIPanel, PageTitle, Modal, Spin } from "./shared";
+import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, contactGap, Card, AIBtn, AIPanel, PageTitle, Modal, Spin } from "./shared";
 import { offerUndo } from "./EditHistory";
 import { useStewardTold } from "../lib/stewardTold";
 import { useChanged, ADDS_PEOPLE } from "../lib/changes";   // STALE-1; QUICKADD-1: the writes that add people
@@ -31,7 +33,7 @@ import { composeNextMove } from "../../../shared/nextMove.js";
 import { DonorMap } from "./DonorMap";
 import { DataHealth } from "./DataHealth";
 import { DriftList } from "./DriftList";   // HOME-4: Drift opens here from Home's chip
-import { AssignModal, DirectoryView, FilterBar, ReEngageView, TeamView } from "./DonorDirectory";
+import { AssignModal, DirectoryView, ReEngageView, TeamView } from "./DonorDirectory";
 import { directoryFilterCount, useDirectoryIds, FilteredChip } from "./donors/ReEngageFilter";   // FLOWS-4
 import { ReengageChange } from "./donors/ReengageChange";   // FLOWS-19 item 5
 import { tabCountWords } from "../lib/tabCount";   // FLOWS-6
@@ -44,7 +46,6 @@ import { EMPTY_WHERE, whereParam } from "./DonorFilters";
 import { MergeDuplicatesModal } from "./import/MergeDuplicatesModal";
 import { DeletePersonConfirm } from "./profile/DeletePersonConfirm";
 import { DonorProfile, EditDonorModal, FollowUpTaskModal, LogTouchpointModal } from "./DonorProfile";
-import { PATTERN_META, TIER_META } from "./donorShared";
 import { PLAN_UNKNOWN } from "../lib/entitlement";
 import { useNavigate } from "react-router-dom";
 import { donorHref, donorsListHref, donorsListState } from "../lib/appUrls";
@@ -97,6 +98,19 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // written back below, so a filtered list opens the same in a new tab.
   const[urlList]=useState(()=>window.location.pathname.replace(/\/+$/,"")==="/donors"?donorsListState(window.location.search):{});
   const routerNavigate=useNavigate();
+  // LIST-6 item 2: THE FILTERS ARE ONE OBJECT, AND THE ADDRESS HOLDS IT (lib/listFilters.js). Each
+  // name below is read from it on every render; each setter replaces the address; Clear filters
+  // empties all of it. The names are kept so the views below read as before.
+  const listFilters=useListFilters();
+  const LF=listFilters.f;
+  const setLF=listFilters.set;
+  const dirStage=LF.stage, dirAssignee=LF.owner, dirDesignation=LF.designation, dirHousehold=LF.household;
+  const dirPeople=LF.people, dirImport=LF.fromImport, dirStatus=LF.status, activeViewId=LF.savedView;
+  const dirWhere=useMemo(()=>{try{const w=LF.where?JSON.parse(LF.where):null;return w&&Array.isArray(w.conditions)?{join:w.join==="or"?"or":"and",conditions:w.conditions}:EMPTY_WHERE;}catch{return EMPTY_WHERE;}},[LF.where]);
+  const setDirStage=v=>setLF({stage:v}), setDirAssignee=v=>setLF({owner:v}), setDirDesignation=v=>setLF({designation:v});
+  const setDirHousehold=v=>setLF({household:v}), setDirPeople=v=>setLF({people:v}), setDirStatus=v=>setLF({status:v});
+  const setDirWhere=w=>setLF({where:whereParam(w)});
+  const clearFilters=()=>listFilters.clear();   // the one clear: Owner, stage, tag, chips, search, everything
   // SCALE-2: THE SHELL NO LONGER HOLDS EVERY DONOR. The whole-org list is
   // loaded here only when a view that draws the whole org opens (Team,
   // Re-engage, the map) or the call list is asked for; everything else asks
@@ -116,7 +130,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // could only ever be empty, so it is hidden, and a link to it opens Directory.
   const mapOn=!!data?.org?.capabilities?.geocoding;
   useEffect(()=>{if(view==="map"&&data?.org&&!mapOn)setView("directory");},[view,mapOn,data?.org]);
-  const[search,setSearch]=useState(urlList.search||"");
+  const[search,setSearch]=useState(LF.search);   // the box as she types; the filter is LF.search (below)
   const[selected,setSelected]=useState(()=>initialSelectDonorId?{id:initialSelectDonorId}:null);
   // LIST-2: the profile now mounts once its record has arrived, after the
   // intent that opened it (a draft, a conversation, the brief) is consumed, so
@@ -155,27 +169,21 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[upgradeModal,setUpgradeModal]=useState(null);
   const[addMore,setAddMore]=useState(false);   // FLOWS-11: the before-Steward total sits behind More
   const[newDonor,setNewDonor]=useState({name:"",email:"",phone:"",address:"",address2:"",city:"",state:"",zip:"",lastAmount:"",stage:"prospect"});
-  const[filtersOpen,setFiltersOpen]=useState(false);
-  const[filters,setFilters]=useState({tiers:[],stages:[],pattern:"",geo:"",giftFrom:"",giftTo:"",totalMin:"",totalMax:""});
   const[orgTeam,setOrgTeam]=useState([]);
-  const[customFields,setCustomFields]=useState([]);
-  const[cfValues,setCfValues]=useState({});
-  const[cfFilters,setCfFilters]=useState({});
-  const[dirStage,setDirStage]=useState(initialStageFilter||urlList.stage||"");
-  const[dirAssignee,setDirAssignee]=useState(urlList.owner||"");
-  const[dirDesignation,setDirDesignation]=useState(urlList.designation||"");
+  // LIST-6: a link that opens the list on a stage (Home, the Pipeline) sets it in the address.
+  useEffect(()=>{if(initialStageFilter&&initialStageFilter!==LF.stage)setLF({stage:initialStageFilter});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
   // FIX-14 Part 5: the order (?sort=name|last_gift_date|total_giving, the
   // server's DONOR_SORTS; the list is paged server-side, so the server sorts)
   // and a household (?household=<id>, the list narrowed to its members).
   const[dirSort,setDirSort]=useState(urlList.sort||"");
-  const[dirHousehold,setDirHousehold]=useState(urlList.household||"");   // BUILD-14 planned-giving/estate segment
   // IMPORT-6 · EVERYONE · DONORS · CONTACTS. "" lets the server choose (Donors
   // once the org has a donor, Everyone before); dirPeopleShown is what it chose.
-  const[dirPeople,setDirPeople]=useState(urlList.people||"");
   const[dirPeopleShown,setDirPeopleShown]=useState("");
   const[roleCounts,setRoleCounts]=useState(null);
-  const[dirImport,setDirImport]=useState(urlList.fromImport||"");   // the people one import brought in
-  useEffect(()=>{const go=e=>{const d=(e&&e.detail)||{};setView("directory");if(d.people)setDirPeople(d.people);setDirImport(d.fromImport||"");};window.addEventListener("steward:directory",go);return()=>window.removeEventListener("steward:directory",go);},[]);
+  // the people one import brought in (dirImport, from the address above)
+  useEffect(()=>{const go=e=>{const d=(e&&e.detail)||{};setView("directory");setLF({...(d.people?{people:d.people}:{}),fromImport:d.fromImport||""});};window.addEventListener("steward:directory",go);return()=>window.removeEventListener("steward:directory",go);},[]);
   const[noMeetingOpen,setNoMeetingOpen]=useState(!!urlList.noMeeting);
   const[warmOpen,setWarmOpen]=useState(!!urlList.warmUnasked);
   const[nmFilter,setNmFilter]=useState({owner:urlList.nmOwner||"",min:urlList.nmMin||""});   // INT-BUILD-1 Part 6
@@ -193,14 +201,13 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // is building, from GET /donors/list-setup. The rows wait for the layout so
   // the first page asks for the right columns at the right size.
   const[listSetup,setListSetup]=useState(null);
+  const svApplied=useRef("");   // LIST-6: the saved view already applied from the address
   const[layout,setLayout]=useState(null);
   const layoutRef=useRef(null);
   layoutRef.current=layout;
   // LIST-2: the chips and the sort's direction come back from the address.
-  const[dirWhere,setDirWhere]=useState(()=>{try{const w=urlList.where?JSON.parse(urlList.where):null;return w&&Array.isArray(w.conditions)?{join:w.join==="or"?"or":"and",conditions:w.conditions}:EMPTY_WHERE;}catch{return EMPTY_WHERE;}});
   const[dirDir,setDirDir]=useState(urlList.dir==="asc"||urlList.dir==="desc"?urlList.dir:"");
   const[filterError,setFilterError]=useState("");
-  const[activeViewId,setActiveViewId]=useState("");
   const DIR_PAGE_SIZE=layout&&PAGE_SIZES.includes(Number(layout.pageSize))?Number(layout.pageSize):50;
   const dirCols=layout?layout.columns.join(","):"";
   const layoutReady=!!layout;
@@ -208,7 +215,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[dirPage,setDirPage]=useState(0);
   const[dirRows,setDirRows]=useState(null); // null = loading
   const[dirTotal,setDirTotal]=useState(0);
-  const[dirSearch,setDirSearch]=useState(search);
+  // LIST-6: the search the list runs is the address's (LF.search); the box writes it after a pause.
+  const dirSearch=LF.search;
+  const pushedSearch=useRef(null);
   // FIX-45: the search the rows on screen answer. Until the server answers the
   // words in the box, the rows already loaded narrow as she types (below).
   const[dirRowsFor,setDirRowsFor]=useState(null);
@@ -218,11 +227,16 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // answer to a new filter.
   const[dirWant,setDirWant]=useState("");
   const[dirGot,setDirGot]=useState("");
-  useEffect(()=>{const t=setTimeout(()=>setDirSearch(search),300);return()=>clearTimeout(t);},[search]);
+  useEffect(()=>{const t=setTimeout(()=>{const w=search.trim();if(w!==LF.search){pushedSearch.current=w;setLF({search:w});}},300);return()=>clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[search]);
+  // The address changed the search (Clear filters, a view, Back): the box follows. Not an echo of her own typing.
+  useEffect(()=>{if(LF.search===pushedSearch.current)return;pushedSearch.current=null;if(LF.search!==search.trim())setSearch(LF.search);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[LF.search]);
   // IMPORT-2: "Bring in your notes" from a profile or the donor import's last screen.
   useEffect(()=>{const open=()=>setShowHistory(true);window.addEventListener("steward:history-import",open);return()=>window.removeEventListener("steward:history-import",open);},[]);
   // PARITY-1 — one tag or closeness filter, "level:major", "closeness:warm".
-  const[dirStatus,setDirStatus]=useState(urlList.status||"");
   useEffect(()=>{setDirPage(0);},[dirSearch,dirStage,dirAssignee,dirDesignation,dirSort,dirHousehold,dirStatus,dirWhereStr,dirDir,DIR_PAGE_SIZE,dirPeople,dirImport]);
   useEffect(()=>{
     if(view!=="directory"||listSetup)return;
@@ -303,34 +317,52 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     const cur=layoutRef.current||FALLBACK_SETUP.layout;
     return apiFetch("/donors/list-layout/org",{method:"PUT",body:JSON.stringify({columns,widths:cur.widths||{},pageSize:cur.pageSize})});
   };
-  const saveView=async name=>{
+  // FLOWS-2: a view holds the list's own filters (Tag, Stage, Owner…), not only the condition filter.
+  const viewBody=name=>{
     const cur=layoutRef.current||FALLBACK_SETUP.layout;
-    // FLOWS-2: and the list's own filters (Tag, Stage, Owner…), not only the condition filter.
-    const chips={search:search.trim(),stage:dirStage,owner:dirAssignee,designation:dirDesignation,status:dirStatus,household:dirHousehold,people:dirPeople};
-    const r=await apiFetch("/donors/list-views",{method:"POST",body:JSON.stringify({name,columns:cur.columns,widths:cur.widths||{},filters:dirWhere,pageSize:cur.pageSize,sort:dirSort,sortDir:dirDir,chips})});
-    const v=r&&r.view;
-    if(v){setListSetup(s=>({...s,views:[...((s&&s.views)||[]).filter(x=>x.id!==v.id),{mine:true,...v}]}));setActiveViewId(v.id);}
-    return v;
+    const chips={search:LF.search,stage:dirStage,owner:dirAssignee,designation:dirDesignation,status:dirStatus,household:dirHousehold,people:dirPeople};
+    return JSON.stringify({name,columns:cur.columns,widths:cur.widths||{},filters:dirWhere,pageSize:cur.pageSize,sort:dirSort,sortDir:dirDir,chips});
+  };
+  const keepView=v=>{if(v){setListSetup(s=>({...s,views:[...((s&&s.views)||[]).filter(x=>x.id!==v.id),{mine:true,...v}]}));setLF({savedView:v.id});}return v;};
+  const saveView=async name=>{
+    const r=await apiFetch("/donors/list-views",{method:"POST",body:viewBody(name)});
+    return keepView(r&&r.view);
+  };
+  // LIST-6 item 4: Update keeps the view's id and name and takes the list as it stands.
+  const updateView=async v=>{
+    const r=await apiFetch(`/donors/list-views/${encodeURIComponent(v.id)}`,{method:"PUT",body:viewBody(v.name)});
+    return keepView(r&&r.view);
   };
   const pickView=v=>{
-    if(!v){setActiveViewId("");return;}
-    setActiveViewId(v.id);
+    if(!v){setLF({savedView:""});return;}
+    svApplied.current=v.id;
     const cur=layoutRef.current||FALLBACK_SETUP.layout;
     persistLayout({columns:cleanColumns(v.columns||cur.columns,(listSetup||FALLBACK_SETUP).fields),widths:v.widths||cur.widths||{},pageSize:v.pageSize||cur.pageSize}).catch(e=>console.warn("[list-layout]",e&&e.message));
-    setDirWhere(v.filters&&Array.isArray(v.filters.conditions)?{join:v.filters.join==="or"?"or":"and",conditions:v.filters.conditions}:EMPTY_WHERE);
     // LIST-3: and the sort it was saved with (none saved: the list's own order).
     setDirSort(v.sort||"");setDirDir(v.sort?(v.sortDir||""):"");
-    // FLOWS-2: every filter it was saved with; one it was saved without is cleared.
+    // FLOWS-2: every filter it was saved with; one it was saved without is cleared. LIST-6: in one write.
     const c=v.chips||{};
-    setSearch(c.search||"");setDirSearch(c.search||"");setDirStage(c.stage||"");setDirAssignee(c.owner||"");setDirDesignation(c.designation||"");
-    setDirStatus(c.status||"");setDirHousehold(c.household||"");setDirPeople(c.people||"");
+    const w=v.filters&&Array.isArray(v.filters.conditions)?{join:v.filters.join==="or"?"or":"and",conditions:v.filters.conditions}:EMPTY_WHERE;
+    setLF({savedView:v.id,where:whereParam(w),search:c.search||"",stage:c.stage||"",owner:c.owner||"",designation:c.designation||"",
+      status:c.status||"",household:c.household||"",people:c.people||"",fromImport:""});
   };
+  // LIST-6 item 4: back on the list with a view in the address (?sv=) and no filter beside it, the
+  // view is applied, once its list of views has arrived. With filters beside it, those are the list
+  // (the view reads "(edited)"), so nothing she changed is thrown away.
+  useEffect(()=>{
+    if(!listSetup||!activeViewId||svApplied.current===activeViewId)return;
+    svApplied.current=activeViewId;
+    const v=(listSetup.views||[]).find(x=>x.id===activeViewId);
+    if(!v){setLF({savedView:""});return;}
+    if(!anyFilterOn(LF)&&!dirSort)pickView(v);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[listSetup,activeViewId]);
   // FLOWS-20: the list moved off the view it was opened with (a filter, a chip or the sort changed).
   const activeView=((listSetup&&listSetup.views)||[]).find(v=>v.id===activeViewId)||null;
-  const viewEdited=!!activeView&&!viewMatches(activeView,{where:dirWhere,sort:dirSort,sortDir:dirDir,chips:{search:search.trim(),stage:dirStage,owner:dirAssignee,designation:dirDesignation,status:dirStatus,household:dirHousehold,people:dirPeople}});
+  const viewEdited=!!activeView&&!viewMatches(activeView,{where:dirWhere,sort:dirSort,sortDir:dirDir,chips:{search:LF.search,stage:dirStage,owner:dirAssignee,designation:dirDesignation,status:dirStatus,household:dirHousehold,people:dirPeople}});
   const deleteView=async v=>{
     try{await apiFetch(`/donors/list-views/${encodeURIComponent(v.id)}`,{method:"DELETE"});
-      setListSetup(s=>({...s,views:((s&&s.views)||[]).filter(x=>x.id!==v.id)}));setActiveViewId("");}
+      setListSetup(s=>({...s,views:((s&&s.views)||[]).filter(x=>x.id!==v.id)}));setLF({savedView:""});}
     catch(e){console.warn("[list-views]",e&&e.message);}
   };
   // Officer color map — assigned_to → hex; used for portfolio color-coding.
@@ -351,57 +383,6 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     }
   },[]);
 
-  // Advanced + custom-field filters as shared predicates: applied to the
-  // whole summaries list for pipeline/team/re-engage/map, and within the
-  // loaded page for the server-paginated Directory (the documented
-  // BUILD-06 compromise — full server-side custom-field querying is out of
-  // scope; DirectoryView shows a "filtering current page" note instead).
-  const matchesAdvanced=d=>{
-    if(filters.tiers.length&&!filters.tiers.includes((d.capacityTier||"").toLowerCase()))return false;
-    if(filters.stages.length&&!filters.stages.includes(d.stage||"cultivate"))return false;
-    if(filters.pattern==="one-time"&&d.gifts!==1)return false;
-    if(filters.pattern==="recurring"&&d.gifts<2)return false;
-    if(filters.pattern==="major"&&d.lastAmount<10000)return false;
-    if(filters.pattern==="lapsed"&&!d.reengage)return false;   // POLISH-4: lapse.js, never the stored stage
-    if(filters.geo.trim()&&!`${d.notes||""} ${(d.tags||[]).join(" ")}`.toLowerCase().includes(filters.geo.toLowerCase()))return false;
-    if(filters.giftFrom&&d.lastGift&&d.lastGift<filters.giftFrom)return false;
-    if(filters.giftTo&&d.lastGift&&d.lastGift>filters.giftTo)return false;
-    if(filters.totalMin!==""&&!isNaN(parseFloat(filters.totalMin))&&d.total<parseFloat(filters.totalMin))return false;
-    if(filters.totalMax!==""&&!isNaN(parseFloat(filters.totalMax))&&d.total>parseFloat(filters.totalMax))return false;
-    return true;
-  };
-  const matchesCf=d=>{
-    for(const [fieldId,fval] of Object.entries(cfFilters)){
-      if(!fval||fval==="")continue;
-      if(Array.isArray(fval)&&fval.length===0)continue;
-      if(typeof fval==="object"&&!Array.isArray(fval)&&!fval.from&&!fval.to)continue;
-      const f=customFields.find(x=>x.id===fieldId);
-      if(!f)continue;
-      // BUILD-78: values are typed and keyed by the immutable field KEY.
-      const raw=cfValues[d.id]?.[f.key];
-      if(f.type==="select"){
-        if(fval.length===0)continue;
-        if(!fval.some(opt=>String(raw??"").toLowerCase()===opt.toLowerCase()))return false;
-      }else if(f.type==="multi_select"){
-        if(fval.length===0)continue;
-        const have=Array.isArray(raw)?raw.map(v=>String(v).toLowerCase()):[String(raw??"").toLowerCase()];
-        if(!fval.some(opt=>have.includes(opt.toLowerCase())))return false;
-      }else if(f.type==="checkbox"){
-        if(fval==="Yes"&&raw!==true)return false;
-        if(fval==="No"&&raw!==false)return false;
-      }else if(f.type==="date"){
-        const dv=String(raw??"");
-        if(fval.from&&(!dv||dv<fval.from))return false;
-        if(fval.to&&(!dv||dv>fval.to))return false;
-      }else{
-        const dv=(f.type==="money"&&Number.isInteger(raw)?(raw/100).toFixed(2):String(raw??"")).toLowerCase();
-        if(!dv.includes(String(fval).toLowerCase()))return false;
-      }
-    }
-    return true;
-  };
-  const advFilterCount=filters.tiers.length+filters.stages.length+(filters.pattern?1:0)+(filters.geo.trim()?1:0)+((filters.giftFrom||filters.giftTo)?1:0)+((filters.totalMin||filters.totalMax)?1:0);
-  const cfFilterCount=Object.entries(cfFilters).filter(([,v])=>{if(!v||v==="")return false;if(Array.isArray(v))return v.length>0;if(typeof v==="object")return v.from||v.to;return true;}).length;
 
   const wholeOrgView=view==="team"||view==="reengage"||view==="map";
   useEffect(()=>{
@@ -416,18 +397,19 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     allPeople({force:true,signal:ctl.signal}).then(rows=>{if(live)setOrgPeople(rows);}).catch(e=>{if(!isAbort(e))console.error(e);});
     return()=>{live=false;ctl.abort();};
   },[wholeOrgView,orgPeople]);
-  // FLOWS-4 (W-1109-Donors-18X): Re-engage carries the Directory's filters (donors/ReEngageFilter.jsx).
-  const reFilterN=directoryFilterCount({stage:dirStage,owner:dirAssignee,designation:dirDesignation,household:dirHousehold,status:dirStatus,fromImport:dirImport,where:dirWhere});
-  const reIds=useDirectoryIds({role:"",stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,household:dirHousehold,fromImport:dirImport,where:dirWhereStr,...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})},view==="reengage"&&reFilterN>0);
-  const clearDirFilters=()=>{setDirStage("");setDirAssignee("");setDirDesignation("");setDirHousehold("");setDirStatus("");setDirImport("");setDirWhere(EMPTY_WHERE);};
-  const filtered=(orgPeople||[])
-    .filter(d=>!search||(d.name+d.email).toLowerCase().includes(search.toLowerCase()))
-    .filter(matchesAdvanced)
-    .filter(matchesCf);
+  // LIST-6 item 5: TEAM, RE-ENGAGE AND THE MAP READ THE LIST'S OWN FILTER. FLOWS-4 sent Re-engage's
+  // to the server; the other two filtered the whole-org list in the browser with a second filter
+  // bar (notes over rows that carry no notes, custom fields over a second whole-org read). Now all
+  // three ask GET /donors/ids with the same filter object the Directory sends, search included, and
+  // draw only those people. One engine: the counts, the rows and the export agree.
+  const reFilterN=directoryFilterCount({search:LF.search,stage:dirStage,owner:dirAssignee,designation:dirDesignation,household:dirHousehold,status:dirStatus,fromImport:dirImport,where:dirWhere});
+  const reIds=useDirectoryIds({role:"",search:LF.search,stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,household:dirHousehold,fromImport:dirImport,where:dirWhereStr,...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})},wholeOrgView&&reFilterN>0);
+  const clearDirFilters=clearFilters;
+  const reWaiting=reFilterN>0&&!reIds;
+  const filtered=reFilterN>0?(reIds?(orgPeople||[]).filter(d=>reIds.has(d.id)):[]):(orgPeople||[]);
   // FLOWS-6 (W-1109-Donors-18X): the tab's count follows the list's filters (lib/tabCount.js).
-  const listFilterOn=!!search||reFilterN>0||!!(filters.tiers.length||filters.stages.length||filters.pattern||filters.geo.trim()||filters.giftFrom||filters.giftTo||filters.totalMin!==""||filters.totalMax!=="")
-    ||Object.values(cfFilters).some(v=>v&&!(Array.isArray(v)&&!v.length)&&!(typeof v==="object"&&!Array.isArray(v)&&!v.from&&!v.to));
-  const reShown=listFilterOn&&orgPeople&&view==="reengage"&&!(reFilterN>0&&!reIds)?(reFilterN>0?filtered.filter(d=>reIds.has(d.id)):filtered).filter(d=>d.reengage).length:null;
+  const listFilterOn=reFilterN>0;
+  const reShown=listFilterOn&&orgPeople&&wholeOrgView&&!reWaiting?filtered.filter(d=>d.reengage).length:null;
   const reCountWords=tabCountWords(lapsedCount,reShown,listFilterOn);
   // FIX-45: search filters as you type. The server's answer comes after a
   // 300ms pause and a round trip, and on a slow day nothing on screen moved
@@ -446,13 +428,6 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});
     apiFetch("/org/team").then(setOrgTeam).catch(()=>{});
     loadOfficers();
-    apiFetch("/custom-fields?entity=donor").then(rows=>setCustomFields(Array.isArray(rows)?rows:[])).catch(()=>{});
-    apiFetch("/donors/custom-field-values/all").then(rows=>{
-      if(!Array.isArray(rows))return;
-      const map={};
-      rows.forEach(r=>{map[r.donorId]=r.values||{};});
-      setCfValues(map);
-    }).catch(()=>{});
   },[]);
 
   const loadSampleData=async()=>{
@@ -592,15 +567,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     finally{setLoadingKey(null);}
   };
 
-  const reloadCfValues=async()=>{
-    try{
-      const rows=await apiFetch("/donors/custom-field-values/all");
-      if(!Array.isArray(rows))return;
-      const map={};
-      rows.forEach(r=>{map[r.donorId]=r.values||{};});
-      setCfValues(map);
-    }catch(e){console.error(e);}
-  };
+  // LIST-6: custom fields are filtered on the server now, so a saved value only re-reads the list's page.
+  const reloadCfValues=()=>setDirReloadKey(k=>k+1);
 
   const reloadDonors=async()=>{
     // Reuse the shared single-donor adapter (see api.js's adaptDonor comment)
@@ -675,13 +643,15 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // Opening or closing a profile is a step Back undoes; a filter or a
   // keystroke in search replaces the entry rather than piling up history.
   useEffect(()=>{
-    const href=selected?.id?donorHref(selected.id):donorsListHref({view,search,stage:dirStage,owner:dirAssignee,designation:dirDesignation,noMeeting:noMeetingOpen,warmUnasked:warmOpen,nmOwner:noMeetingOpen?nmFilter.owner:"",nmMin:noMeetingOpen?nmFilter.min:"",sort:dirSort,household:dirHousehold,people:dirPeople,fromImport:dirImport,status:dirStatus,dir:dirDir,where:dirWhereStr});
+    // LIST-6: the filters are LF, the address's own (or, under a profile, the list's last), so this
+    // writes back only what the address does not already hold: the tab, the panels and the sort.
+    const href=selected?.id?donorHref(selected.id):donorsListHref({...LF,view,noMeeting:noMeetingOpen,warmUnasked:warmOpen,nmOwner:noMeetingOpen?nmFilter.owner:"",nmMin:noMeetingOpen?nmFilter.min:"",sort:dirSort,dir:dirDir});
     const here=window.location.pathname+window.location.search;
     if(href===here)return;
     const step=selected?.id?!here.startsWith(donorHref(selected.id)):here.startsWith("/donors/");
     routerNavigate(href,{replace:!step,state:{internal:true}});
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[selected?.id,view,search,dirStage,dirAssignee,dirDesignation,noMeetingOpen,warmOpen,nmFilter.owner,nmFilter.min,dirSort,dirHousehold,dirStatus,dirDir,dirWhereStr]);
+  },[selected?.id,view,LF,noMeetingOpen,warmOpen,nmFilter.owner,nmFilter.min,dirSort,dirDir]);
 
   const handleEditSaved=(raw)=>{
     // Reuse the same single-donor adapter adaptData() uses for the initial
@@ -737,7 +707,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     const everyone=orgPeople||await allPeople({signal:leaveSignal()}).catch(e=>isAbort(e)?null:[]);   // SCALE-2: loaded for this, not on sign-in
     if(!everyone){setCallLoading(false);return;}   // COMMS-SPEED-1: Donors was left before the list came
     await askClaude(`You are a chief development officer. Be tactical. Max 200 words.`,
-      `Prioritized call list for this week:\n${everyone.map(d=>`${d.name} [${d.stage||"cultivate"}]: ${daysDiff(d.lastTouchpoint||d.lastGift)}d since contact, ${fmtFull(d.lastAmount)} last gift, score ${donorScore(d)??"none (no gifts on file)"}, notes: ${d.notes}`).join("\n")}`,
+      `Prioritized call list for this week:\n${everyone.map(d=>`${d.name} [${d.stage||"cultivate"}]: ${daysDiff(d.lastTouchpoint||d.lastGift)}d since contact, ${fmtFull(d.lastAmount)} last gift, giving strength ${givingStrengthOf(d)??"none (no gifts on file)"}, notes: ${d.notes}`).join("\n")}`,
       chunk=>setCallList(chunk));
     setCallLoading(false);
   };
@@ -891,7 +861,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       ) : (<>
 
       <div className="donors-toolbar" style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-        <input className="donors-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
+        <input className="donors-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name, email, phone or household" aria-label="Search people by name, email, phone, household or linked organization" title="Finds a name, email, phone, household or linked organization. For words in notes or tags, use + Add filter, then Notes or tags." style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
         <div className="donors-view-toggle" style={{display:"flex",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden"}}>
           {[["directory","Directory"],...(isAdmin?[["team","Team"]]:[]),["reengage","Re-engage"],...(mapOn?[["map","Map"]]:[]),["health","Data health"]].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:T.ink3,fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",flexShrink:0}}>
@@ -951,45 +921,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         </div>
       </div>
 
-      {view!=="directory"&&(()=>{
-        const count=advFilterCount+cfFilterCount;
-        const pills=[];
-        filters.tiers.forEach(t=>{const m=TIER_META.find(x=>x.id===t);pills.push({id:"t"+t,label:`Tier: ${m?.label||t}`,rm:()=>setFilters(f=>({...f,tiers:f.tiers.filter(v=>v!==t)}))});});
-        filters.stages.forEach(s=>{const m=STAGES.find(x=>x.id===s);pills.push({id:"s"+s,label:`Stage: ${m?.label||s}`,rm:()=>setFilters(f=>({...f,stages:f.stages.filter(v=>v!==s)}))});});
-        if(filters.pattern){const m=PATTERN_META.find(p=>p.id===filters.pattern);pills.push({id:"pat",label:`Pattern: ${m?.label||filters.pattern}`,rm:()=>setFilters(f=>({...f,pattern:""}))});}
-        if(filters.geo.trim())pills.push({id:"geo",label:`Geo: "${filters.geo}"`,rm:()=>setFilters(f=>({...f,geo:""}))});
-        if(filters.giftFrom||filters.giftTo)pills.push({id:"gift",label:`Last gift: ${filters.giftFrom||"any"} → ${filters.giftTo||"any"}`,rm:()=>setFilters(f=>({...f,giftFrom:"",giftTo:""}))});
-        if(filters.totalMin||filters.totalMax)pills.push({id:"total",label:`Giving: ${filters.totalMin?"$"+filters.totalMin:"$0"} → ${filters.totalMax?"$"+filters.totalMax:"any"}`,rm:()=>setFilters(f=>({...f,totalMin:"",totalMax:""}))});
-        Object.entries(cfFilters).forEach(([fieldId,fval])=>{
-          if(!fval||fval==="")return;
-          if(Array.isArray(fval)&&fval.length===0)return;
-          if(typeof fval==="object"&&!Array.isArray(fval)&&!fval.from&&!fval.to)return;
-          const f=customFields.find(x=>x.id===fieldId);
-          if(!f)return;
-          let label=`${f.label}: `;
-          if(Array.isArray(fval))label+=fval.join(", ");
-          else if(typeof fval==="object")label+=`${fval.from||"any"} → ${fval.to||"any"}`;
-          else label+=fval;
-          pills.push({id:"cf_"+fieldId,label,rm:()=>setCfFilters(p=>({...p,[fieldId]:(f.type==="select"||f.type==="multi_select")?[]:f.type==="date"?{from:"",to:""}:""}))});
-        });
-        const clearAll=()=>{setFilters({tiers:[],stages:[],pattern:"",geo:"",giftFrom:"",giftTo:"",totalMin:"",totalMax:""});setCfFilters({});};
-        return<>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <button onClick={()=>setFiltersOpen(v=>!v)} style={{background:filtersOpen||count>0?T.bg2:T.bg,border:"1px solid "+(count>0?T.greenDk:T.bg3),borderRadius:9,padding:"7px 12px",color:count>0?T.greenDk:T.ink3,fontSize:12,fontWeight:count>0?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
-              ⊞ Filters
-              {count>0&&<span style={{background:T.greenDk,color:T.white,borderRadius:99,padding:"0 6px",fontSize:10,fontWeight:800,lineHeight:"16px"}}>{count}</span>}
-            </button>
-            {pills.map(p=>(
-              <span key={p.id} style={{background:T.bg2,border:"1px solid "+T.bg3,borderRadius:99,padding:"4px 10px",fontSize:12,color:T.ink2,display:"inline-flex",alignItems:"center",gap:5}}>
-                {p.label}
-                <button onClick={p.rm} style={{background:"none",border:"none",cursor:"pointer",color:T.ink3,fontSize:13,lineHeight:1,padding:0,marginLeft:2}}>×</button>
-              </span>
-            ))}
-            {count>0&&<button onClick={clearAll} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",textDecoration:"underline",padding:0}}>Clear all</button>}
-          </div>
-          {filtersOpen&&<FilterBar filters={filters} onChange={setFilters} customFields={customFields} cfFilters={cfFilters} onCfChange={setCfFilters}/>}
-        </>;
-      })()}
+      {/* LIST-6 item 5: the whole-org views have no filter bar of their own; they read the list's (above). */}
+      {wholeOrgView&&view!=="reengage"&&<FilteredChip count={reFilterN} onClear={clearFilters}/>}
 
       {(callLoading||callList)&&<AIPanel text={callList} onClose={()=>setCallList("")}/>}
 
@@ -1028,15 +961,16 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       </Card>}
 
       {addWarn&&<div data-testid="add-email-warning" role="status" style={{background:T.bg2,border:"1px solid "+T.gold600,borderRadius:8,padding:"8px 12px",fontSize:12.5,color:T.ink,margin:"0 0 10px",display:"flex",gap:10,alignItems:"center"}}><span style={{flex:1}}>{addWarn}</span><button type="button" onClick={()=>setAddWarn("")} style={{background:"none",border:"none",color:T.greenDk,fontWeight:700,cursor:"pointer"}}>OK</button></div>}
-      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null||(searchPending&&dirPageRows.length===0)} serverTotal={dirTotal} updating={!!dirWant&&dirWant!==dirGot&&dirRows!==null} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={0} peopleView={dirPeopleShown||dirPeople||"donors"} setPeopleView={setDirPeople} roleCounts={roleCounts} fromImport={dirImport} clearFromImport={()=>setDirImport("")}
+      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null||(searchPending&&dirPageRows.length===0)} serverTotal={dirTotal} updating={!!dirWant&&dirWant!==dirGot&&dirRows!==null} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={0} peopleView={dirPeopleShown||dirPeople||"donors"} setPeopleView={setDirPeople} roleCounts={roleCounts} fromImport={dirImport} clearFromImport={()=>setLF({fromImport:""})}
         anyFilter={!!(dirSearch.trim()||dirStage||dirAssignee||dirDesignation||dirHousehold||dirStatus||dirWhereStr||dirImport)}
-        exportParams={{role:(dirPeopleShown||dirPeople)==="contacts"?"contact":(dirPeopleShown||dirPeople)==="everyone"?"":"donor",...(dirImport?{fromImport:dirImport}:{}),search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,sort:dirSort,household:dirHousehold,...(dirWhereStr?{where:dirWhereStr}:{}),...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})}} statusFilter={dirStatus} setStatusFilter={setDirStatus} sortBy={dirSort} setSortBy={v=>{setDirSort(v);setDirDir("");}} sortDir={dirDir} setSort={(k,d)=>{setDirSort(k);setDirDir(d);}} household={dirHousehold} clearHousehold={()=>setDirHousehold("")} totalDonors={peopleCount?peopleCount.total:undefined} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly} listSetup={listSetup} layout={layout} setLayoutLocal={setLayout} persistLayout={persistLayout} resetLayout={resetLayout} saveOrgLayout={saveOrgLayout} where={dirWhere} setWhere={w=>{setDirWhere(w);}} filterError={filterError} views={(listSetup&&listSetup.views)||[]} activeViewId={activeViewId} viewEdited={viewEdited} onPickView={pickView} onSaveView={saveView} onDeleteView={deleteView} onPageSize={n=>persistLayout({pageSize:n}).catch(e=>console.warn("[list-layout]",e&&e.message))} includeScreening={includeScreening}/>}
+        exportParams={{role:(dirPeopleShown||dirPeople)==="contacts"?"contact":(dirPeopleShown||dirPeople)==="everyone"?"":"donor",...(dirImport?{fromImport:dirImport}:{}),search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,sort:dirSort,household:dirHousehold,...(dirWhereStr?{where:dirWhereStr}:{}),...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})}} statusFilter={dirStatus} setStatusFilter={setDirStatus} sortBy={dirSort} setSortBy={v=>{setDirSort(v);setDirDir("");}} sortDir={dirDir} setSort={(k,d)=>{setDirSort(k);setDirDir(d);}} household={dirHousehold} clearHousehold={()=>setDirHousehold("")} totalDonors={peopleCount?peopleCount.total:undefined} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly} listSetup={listSetup} layout={layout} setLayoutLocal={setLayout} persistLayout={persistLayout} resetLayout={resetLayout} saveOrgLayout={saveOrgLayout} where={dirWhere} setWhere={w=>{setDirWhere(w);}} filterError={filterError} views={(listSetup&&listSetup.views)||[]} activeViewId={activeViewId} viewEdited={viewEdited} onPickView={pickView} onSaveView={saveView} onUpdateView={updateView} onClearFilters={clearFilters} onDeleteView={deleteView} onPageSize={n=>persistLayout({pageSize:n}).catch(e=>console.warn("[list-layout]",e&&e.message))} includeScreening={includeScreening}/>}
 
       {wholeOrgView&&!orgPeople&&<div style={{display:"flex",justifyContent:"center",padding:"40px 0"}}><Spin/></div>}
-      {view==="team"&&isAdmin&&orgPeople&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={selectDonor} onOpenDirectory={()=>setView("directory")}/>}
+      {wholeOrgView&&view!=="reengage"&&orgPeople&&reWaiting&&<div style={{fontSize:13,color:T.ink3,padding:"8px 0"}}>Applying the list's filters…</div>}
+      {view==="team"&&isAdmin&&orgPeople&&!reWaiting&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={selectDonor} onOpenDirectory={()=>setView("directory")}/>}
 
-      {view==="reengage"&&orgPeople&&<>{peopleCount&&<PopulationCount id="reengage" count={lapsedCount} testId="reengage-population" style={{margin:"4px 0 10px"}}/>}<FilteredChip count={reFilterN} onClear={clearDirFilters}/><ReengageChange hidden={reFilterN>0} onSelectDonor={selectDonor}/>{reFilterN>0&&!reIds?<div style={{fontSize:13,color:T.ink3,padding:"8px 0"}}>Applying the Directory's filters…</div>:<ReEngageView donors={reFilterN>0?filtered.filter(d=>reIds.has(d.id)):filtered} unfiltered={reFilterN>0?filtered:null} onClearFilters={clearDirFilters} org={data.org} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={selectDonor}/>}</>}
-      {view==="map"&&mapOn&&orgPeople&&<DonorMap donors={filtered} userId={userId} onSelectDonor={selectDonor} apiFetch={apiFetch}/>}
+      {view==="reengage"&&orgPeople&&<>{peopleCount&&<PopulationCount id="reengage" count={lapsedCount} testId="reengage-population" style={{margin:"4px 0 10px"}}/>}<FilteredChip count={reFilterN} onClear={clearDirFilters}/><ReengageChange hidden={reFilterN>0} onSelectDonor={selectDonor}/>{reWaiting?<div style={{fontSize:13,color:T.ink3,padding:"8px 0"}}>Applying the list's filters…</div>:<ReEngageView donors={filtered} unfiltered={reFilterN>0?orgPeople:null} onClearFilters={clearDirFilters} org={data.org} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={selectDonor}/>}</>}
+      {view==="map"&&mapOn&&orgPeople&&!reWaiting&&<DonorMap donors={filtered} userId={userId} onSelectDonor={selectDonor} apiFetch={apiFetch}/>}
       {view==="drift"&&<DriftList onSelectDonor={selectDonor} onBack={()=>setView("directory")}/>}
       {view==="health"&&<DataHealth isReadOnly={isReadOnly} onOpenDonor={id=>openIfOnFile(id,()=>reloadDonors&&reloadDonors())}/>}
       </>)}

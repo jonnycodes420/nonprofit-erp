@@ -49,7 +49,8 @@ const DONOR_SORTS = {
 const DONOR_SCORE_COLS = `,
   (SELECT s.engagement FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS engagement_score,
   (SELECT s.generosity FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS generosity_score,
-  (SELECT s.band FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS engagement_band`;
+  (SELECT s.band FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS engagement_band,
+  (SELECT s.parts -> 'generosity' FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS generosity_parts`;   // LIST-6: the hover's reasons (shared/givingStrength.js)
 
 // FIX-22 · `opts.roomRanks` is [[donorId, rank], ...] from prospect.roomToGive,
 // handed in by a route that has already checked the major gifts permission.
@@ -124,6 +125,11 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
       if (!c) return { badStatus: true };
       where.push(c.sql); params.push(...c.args);
     }
+  }
+  // LIST-6: notes, About or tags contain the words (server/donors/textMatch.js).
+  if (q.text !== undefined && String(q.text).trim()) {
+    const t = require("./server/donors/textMatch").textCond(q.text);
+    where.push(t.sql); params.push(...t.args);
   }
   if (q.closeness) {
     const c = DS.closenessCondition(String(q.closeness), today);

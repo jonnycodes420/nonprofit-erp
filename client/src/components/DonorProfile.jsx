@@ -22,7 +22,7 @@ import { buildTimelineItems, timelineCounts } from "./MeetingPanels";
 import { ProfileNumbers } from "./profile/ProfileNumbers";
 import { ProfileNextMove } from "./Insights";   // INSIGHTS-1, PROFILE-2
 import { RAIL, RAIL_LABEL, RailSection } from "./ProfileRail";
-import { T, fmtFull, STAGES, donorScore, moveUrgency, Spin, AIPanel, Modal, firstNameOf } from "./shared";
+import { T, fmtFull, STAGES, moveUrgency, Spin, AIPanel, Modal, firstNameOf } from "./shared";
 import { BriefPanel, useDonorProposals } from "./MajorGifts";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
 import { ItemMenu, EditedMarker, offerUndo } from "./EditHistory";

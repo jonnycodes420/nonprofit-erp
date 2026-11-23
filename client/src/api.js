@@ -434,6 +434,7 @@ export function adaptDonor(d) {
     // PARITY-1 — the closeness word (Close, Warm, On track, Cooling, New), the band in words.
     closeness: d.closeness || null,
     generosity:     d.generosity_score == null ? null : Number(d.generosity_score),
+    generosityParts: Array.isArray(d.generosity_parts) ? d.generosity_parts : null,   // LIST-6: the stored parts, for the hover
     name:           d.name,
     email:          d.email || "",
     phone:          d.phone || "",
@@ -531,7 +532,8 @@ export function adaptDonor(d) {
     // person can be more than one. A row with nothing stored is a legacy row,
     // and every legacy row is a donor — the same rule the server's predicate
     // and the segment count both hold, so the three cannot disagree.
-    personTypes:   (Array.isArray(d.person_types) && d.person_types.length) ? d.person_types : ["donor"],
+    // LIST-6: an empty list is a never-giver with no other role (isDonor.js typesOnRead), a Contact; only a missing one is a legacy donor row.
+    personTypes:   Array.isArray(d.person_types) ? d.person_types : ["donor"],
     // SECURE-2: "Check this email" / "Check this phone", from GET /donors/:id.
     contact_flags: Array.isArray(d.contact_flags) ? d.contact_flags : [],
   };

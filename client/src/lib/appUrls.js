@@ -62,6 +62,8 @@ export const DONOR_LIST_KEYS = [
   // it: the tag or closeness choice, the sort's direction, and the chips (the
   // `where` JSON the server runs).
   ["status", "tag"], ["dir", "dir"], ["where", "where"],
+  // LIST-6: the saved view the list was opened on; coming back with it in the address applies it.
+  ["savedView", "sv"],
 ];
 
 export function donorsListHref(state) {

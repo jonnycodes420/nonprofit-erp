@@ -1335,7 +1335,8 @@ async function donorScreensSayNothingWrong(browser) {
         }).filter(Boolean));
         ok(`§sweep2 ${where}: the Stage, Engagement and Giving strength definitions are inside their headers`, reach.length === 0, reach);
         const why = await page.locator('[data-testid="dir-giving-strength"]').first().getAttribute("title").catch(() => null);
-        ok(`§sweep2 ${where}: a Giving strength number says what it is made of`, /^Giving strength \d+: .*given in all/.test(why || ""), why);
+        // LIST-6: the stored score's own parts (shared/givingStrength.js), the profile's See why labels.
+        ok(`§sweep2 ${where}: a Giving strength number says what it is made of`, /^Giving strength \d+ of 100: Lifetime giving \d+ of 30/.test(why || ""), why);
       }
       if (name === "Re-engage") {
         ok(`§sweep2 ${where}: no Re-engage plan while drafting is off`, !/Re-engage plan/i.test(r.text), r.text.slice(0, 200));

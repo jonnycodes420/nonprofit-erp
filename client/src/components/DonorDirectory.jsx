@@ -6,10 +6,11 @@ import { RANK_RULES, rankBy, rankWords } from "../lib/reengageRank";   // TRUTH-
 import { useState, useEffect, useMemo, Fragment } from "react";
 import { Figure } from "./Figure";
 import { EXPLANATION as ENGAGEMENT_EXPLANATION, bandFor } from "../../../shared/engagementWeights.js";
+import { givingStrengthOf, givingStrengthSentence } from "../../../shared/givingStrength.js";   // LIST-6: the one stored score
 import { apiFetch, API, getToken } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { censusById } from "../../../shared/numberCensus.js";
-import { T, interactive, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, donorScoreParts, AIBtn, AIPanel, EmptyState, DriftBadge, Modal, PersonMark } from "./shared";
+import { T, interactive, activeMark, fmtFull, daysDiff, askClaude, STAGES, AIBtn, AIPanel, EmptyState, DriftBadge, Modal, PersonMark } from "./shared";
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { EveryoneBreakdown } from "./EveryoneBreakdown";   // INTEGRITY-2
 import { ColumnEditor, FALLBACK_SETUP, NAME_KEY, PAGE_SIZES, CELL_PAD, CHECK_W, alignFor, cleanColumns, columnSpec, columnTrack, formatCell, gridMinWidth, moveKey } from "./DonorColumns";
@@ -216,7 +217,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor,initialWin=null,
         </div>
         {lapsed.map((d,idx)=>{
           const days=(d.lastGift||d.lastTouchpoint)?daysDiff(d.lastGift||d.lastTouchpoint):null;
-          const sc=donorScore(d);
+          const sc=givingStrengthOf(d);
           const scColor=sc>70?T.greenDk:sc>45?T.gold600:T.gold700;
           const rowBg=days>730?T.gold+"14":T.gold600+"09";
           const rowBorderColor=days>730?T.gold+"40":T.gold600+"25";
@@ -247,7 +248,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor,initialWin=null,
               </div>
               <div className="re-col-score" style={{textAlign:"right"}}>
                 {sc!=null
-                  ?<span title={donorScoreParts(d).sentence} aria-label={donorScoreParts(d).sentence} style={{fontSize:13,fontWeight:800,color:scColor,background:scColor+"18",borderRadius:7,padding:"3px 9px",display:"inline-block",cursor:"help"}}>{sc}</span>
+                  ?<span title={givingStrengthSentence(sc,d.generosityParts)} aria-label={givingStrengthSentence(sc,d.generosityParts)} style={{fontSize:13,fontWeight:800,color:scColor,background:scColor+"18",borderRadius:7,padding:"3px 9px",display:"inline-block",cursor:"help"}}>{sc}</span>
                   :<span title="Giving strength comes from gifts, and there are none on file" style={{color:T.ink3,fontSize:11}}>No gifts yet</span>}
               </div>
               <div className="re-col-actions" style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
@@ -366,7 +367,7 @@ function BulkAutoEmail({ids,disabled,onDone}){
     </select>
   );
 }
-function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",viewEdited=false,onPickView,onSaveView,onDeleteView,onPageSize,includeScreening=false,peopleView="donors",setPeopleView,roleCounts=null,fromImport="",clearFromImport,anyFilter=false}){
+function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",viewEdited=false,onPickView,onSaveView,onDeleteView,onPageSize,includeScreening=false,peopleView="donors",setPeopleView,roleCounts=null,fromImport="",clearFromImport,anyFilter=false,onUpdateView=null,onClearFilters=null}){
   // WIRE-1: the server-side filters on screen, as a Group rule, offered once
   // a filter beyond "donors" is set. The sort is not a filter.
   const canExport=useCanExport(isAdmin?"admin":"staff");   // ACCESS-3
@@ -616,7 +617,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
   // Donors view with no donors yet points at the contacts instead.
   const contactsN=roleCounts?roleCounts.contacts:0;
   const emptyList=anyFilter
-    ?<EmptyState title={peopleView==="contacts"?"No contacts found":peopleView==="everyone"?"No one found":"No donors found"} message="Try adjusting your filters or search term."/>
+    ?<EmptyState title={peopleView==="contacts"?"No contacts found":peopleView==="everyone"?"No one found":"No donors found"} message="Try adjusting your filters or search term." action={onClearFilters?"Clear filters":undefined} onAction={onClearFilters||undefined}/>
     :peopleView==="donors"&&contactsN>0
     ?<div data-testid="dir-empty-contacts" style={{textAlign:"center",padding:"40px 16px"}}>
       <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:20,color:T.ink,marginBottom:8}}>No donors yet.</div>
@@ -693,7 +694,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink,fontSize:12,fontWeight:600,cursor:"pointer"}}>
           Edit columns
         </button>}
-        {listSetup&&onPickView&&<ViewsMenu views={views} activeId={activeViewId} edited={viewEdited} onPick={onPickView} onSave={onSaveView} onDelete={onDeleteView}/>}
+        {listSetup&&onPickView&&<ViewsMenu views={views} activeId={activeViewId} edited={viewEdited} onPick={onPickView} onSave={onSaveView} onDelete={onDeleteView} onUpdate={onUpdateView}/>}
         {onPageSize&&<select data-testid="dir-page-size" aria-label="Rows per page" value={pageSize} onChange={e=>onPageSize(Number(e.target.value))} style={filterSel}>
           {PAGE_SIZES.map(n=><option key={n} value={n}>{n} per page</option>)}
         </select>}
@@ -741,7 +742,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
       </div>
 
       {/* LIST-1: filter by anything, as chips; the server runs it. */}
-      {listSetup&&setWhere&&<FilterBuilder setup={setup} where={where} setWhere={setWhere} error={filterError} total={serverTotal}/>}
+      {listSetup&&setWhere&&<FilterBuilder setup={setup} where={where} setWhere={setWhere} error={filterError} total={serverTotal} onClearAll={onClearFilters} anyFilter={anyFilter}/>}
       {editingCols&&<ColumnEditor setup={setup} layout={lay} onClose={()=>setEditingCols(false)}
         onSave={cols=>persistLayout({columns:cols})} onReset={resetLayout} onSaveOrg={saveOrgLayout}/>}
 
@@ -970,7 +971,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
           {/* Rows */}
           {shownRows.map((d,idx)=>{
             const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
-            const sc=donorScore(d);const scColor=sc>70?T.greenDk:sc>45?T.gold600:T.gold700;
+            const sc=givingStrengthOf(d);const scColor=sc>70?T.greenDk:sc>45?T.gold600:T.gold700;
             const isLast=idx===filtered.length-1;
             const checked=selIds.has(d.id);
             const rowBg=checked?T.green100:idx%2===0?T.white:T.ground;
@@ -1055,7 +1056,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
                     </span>);
                   },
                   generosity:()=>(sc!=null
-                    ?<span data-testid="dir-giving-strength" title={donorScoreParts(d).sentence} aria-label={donorScoreParts(d).sentence} style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800,cursor:"help"}}>{sc}</span>
+                    ?<span data-testid="dir-giving-strength" title={givingStrengthSentence(sc,d.generosityParts)} aria-label={givingStrengthSentence(sc,d.generosityParts)} style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800,cursor:"help"}}>{sc}</span>
                     :<span title="Giving strength comes from gifts, and there are none on file" aria-label="No gifts yet" style={{color:T.ink3,fontSize:12}}>—</span>),
                   room_to_give:()=>(
                 /* FIX-33: the word rides on the row (GET /donors), from the same
@@ -1100,7 +1101,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
                   </div>
                 </div>
                 {sc!=null
-                  ?<span title={donorScoreParts(d).sentence} aria-label={donorScoreParts(d).sentence} style={{background:scColor+"18",color:scColor,borderRadius:8,padding:"5px 10px",fontSize:13,fontWeight:800,flexShrink:0}}>{sc}</span>
+                  ?<span title={givingStrengthSentence(sc,d.generosityParts)} aria-label={givingStrengthSentence(sc,d.generosityParts)} style={{background:scColor+"18",color:scColor,borderRadius:8,padding:"5px 10px",fontSize:13,fontWeight:800,flexShrink:0}}>{sc}</span>
                   :<span title="Giving strength comes from gifts, and there are none on file" style={{color:T.ink3,fontSize:11,flexShrink:0}}>No gifts yet</span>}
               </div>
             ];
@@ -1172,112 +1173,4 @@ function TeamView({donors,orgTeam,onSelectDonor,onOpenDirectory}){
   );
 }
 
-function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
-  const set=(key,val)=>onChange({...filters,[key]:val});
-  const tog=(key,val)=>{const arr=filters[key];set(key,arr.includes(val)?arr.filter(v=>v!==val):[...arr,val]);};
-  const inp={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",boxSizing:"border-box"};
-  const row={display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"};
-  const lbl={fontSize:11,fontWeight:700,color:T.ink3,whiteSpace:"nowrap",minWidth:90};
-  function setCf(fieldId,val){onCfChange({...cfFilters,[fieldId]:val});}
-  function togCfOption(fieldId,opt){const cur=cfFilters[fieldId]||[];onCfChange({...cfFilters,[fieldId]:cur.includes(opt)?cur.filter(v=>v!==opt):[...cur,opt]});}
-  return(
-    <div className="filter-bar" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
-      <div className="filter-bar-row" style={row}>
-        <span style={lbl} title={"Grouped by the largest and most consistent giving this donor has actually done, from your own records only. No external wealth screening."}>Proven capacity</span>
-        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-          {TIER_META.map(t=>{const a=filters.tiers.includes(t.id);return(
-            <button key={t.id} onClick={()=>tog("tiers",t.id)} style={{background:a?t.color+"22":T.bg,border:`1px solid ${a?t.color:T.bg3}`,borderRadius:7,padding:"4px 12px",color:a?t.color:T.ink3,fontSize:12,fontWeight:a?700:400,cursor:"pointer"}}>{t.label}</button>
-          );})}
-        </div>
-      </div>
-      <div className="filter-bar-row" style={row}>
-        <span style={lbl}>Stage</span>
-        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-          {STAGES.map(s=>{const a=filters.stages.includes(s.id);return(
-            <button key={s.id} aria-pressed={a} onClick={()=>tog("stages",s.id)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 12px",color:T.ink3,fontSize:12,fontWeight:400,cursor:"pointer",...activeMark(a,"bottom")}}>{s.label}</button>
-          );})}
-        </div>
-      </div>
-      <div className="filter-bar-row" style={row}>
-        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-          <span style={lbl}>Giving Pattern</span>
-          <select value={filters.pattern} onChange={e=>set("pattern",e.target.value)} style={{...inp,cursor:"pointer",minWidth:190}}>
-            <option value="">Any</option>
-            {PATTERN_META.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
-          </select>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:6}}>
-          <span style={lbl}>Geography</span>
-          <input value={filters.geo} onChange={e=>set("geo",e.target.value)} placeholder="Search notes & tags…" style={{...inp,minWidth:160}}/>
-        </div>
-      </div>
-      <div className="filter-bar-row" style={row}>
-        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-          <span style={lbl}>Last Gift</span>
-          <DateInput value={filters.giftFrom} onChange={e=>set("giftFrom",e.target.value)} style={inp}/>
-          <span style={{fontSize:11,color:T.ink3}}>→</span>
-          <DateInput value={filters.giftTo} onChange={e=>set("giftTo",e.target.value)} style={inp}/>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-          <span style={lbl}>Lifetime Giving</span>
-          <input type="number" value={filters.totalMin} onChange={e=>set("totalMin",e.target.value)} placeholder="$min" style={{...inp,width:80}}/>
-          <span style={{fontSize:11,color:T.ink3}}>→</span>
-          <input type="number" value={filters.totalMax} onChange={e=>set("totalMax",e.target.value)} placeholder="any" style={{...inp,width:80}}/>
-        </div>
-      </div>
-      {customFields&&customFields.length>0&&(
-        <div style={{borderTop:"1px solid "+T.bg3,paddingTop:12,display:"flex",flexDirection:"column",gap:10}}>
-          <span style={{fontSize:11,fontWeight:700,color:T.ink3}}>Custom Fields</span>
-          {customFields.map(f=>{
-            if(f.type==="select"||f.type==="multi_select"){
-              const sel=cfFilters[f.id]||[];
-              return(
-                <div key={f.id} className="filter-bar-row" style={row}>
-                  <span style={lbl}>{f.label}</span>
-                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                    {(f.options||[]).map(opt=>{const a=sel.includes(opt);return(
-                      <button key={opt} aria-pressed={a} onClick={()=>togCfOption(f.id,opt)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 12px",color:T.ink3,fontSize:12,fontWeight:400,cursor:"pointer",...activeMark(a,"bottom")}}>{opt}</button>
-                    );})}
-                  </div>
-                </div>
-              );
-            }
-            if(f.type==="checkbox"){
-              const val=cfFilters[f.id]||"";
-              return(
-                <div key={f.id} className="filter-bar-row" style={row}>
-                  <span style={lbl}>{f.label}</span>
-                  <div style={{display:"flex",gap:5}}>
-                    {["","Yes","No"].map((opt,i)=>{const a=val===opt;return(
-                      <button key={i} aria-pressed={a} onClick={()=>setCf(f.id,opt)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 12px",color:T.ink3,fontSize:12,fontWeight:400,cursor:"pointer",...activeMark(a,"bottom")}}>{opt||"Any"}</button>
-                    );})}
-                  </div>
-                </div>
-              );
-            }
-            if(f.type==="date"){
-              const val=cfFilters[f.id]||{from:"",to:""};
-              return(
-                <div key={f.id} className="filter-bar-row" style={row}>
-                  <span style={lbl}>{f.label}</span>
-                  <DateInput value={val.from||""} onChange={e=>setCf(f.id,{...val,from:e.target.value})} style={inp}/>
-                  <span style={{fontSize:11,color:T.ink3}}>→</span>
-                  <DateInput value={val.to||""} onChange={e=>setCf(f.id,{...val,to:e.target.value})} style={inp}/>
-                </div>
-              );
-            }
-            const val=cfFilters[f.id]||"";
-            return(
-              <div key={f.id} className="filter-bar-row" style={row}>
-                <span style={lbl}>{f.label}</span>
-                <input value={val} onChange={e=>setCf(f.id,e.target.value)} type={f.type==="number"||f.type==="money"?"number":"text"} placeholder={f.type==="number"||f.type==="money"?"Any value":"Search…"} style={{...inp,minWidth:160}}/>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export { AssignModal, DirectoryView, FilterBar, ReEngageView, TeamView };
+export { AssignModal, DirectoryView, ReEngageView, TeamView };

@@ -98,6 +98,9 @@ const FIELDS = [
   F("stage", "Stage", "Contact", { format: "stage", sort: "stage", filter: SEL_OPS, cell: "stage" }),
   F("owner", "Owner", "Contact", { format: "owner", sort: `lower(COALESCE(${require("./server/donors/ownerName").OWNER_NAME_SQL("donors")}, pending_assignee_name, ''))`, filter: SEL_OPS, cell: "owner" }),
   F("tags", "Tags", "Contact", { format: "list", filter: SEL_OPS, cell: "tags" }),
+  // LIST-6 item 3: the words in her notes, the About and the tags, on the server (server/donors/textMatch.js).
+  F("text", "Notes or tags", "Contact", { col: false, filter: ops("contains"),
+    sentence: "The person's notes, their About, or one of their tags contains these words. Conversation notes are found by the search at the top of the page." }),
   F("group", "Group", "Contact", { col: false, filter: SEL_OPS }),
   // CONNECT-1: how they came in (server/donors/connections.js), and who brought people in.
   F("introduced_by", "Introduced by", "Contact", { col: false, filter: SEL_OPS,
@@ -382,6 +385,7 @@ async function compileOne(orgId, c, fields) {
       return sel() === "none" ? { sql: "assigned_to IS NULL AND pending_assignee_invite_id IS NULL", args: [] } : { rules: { assignedTo: sel() } };
     case "tags": return sel() ? { sql: "strpos(COALESCE(tags,''), ?) > 0", args: [JSON.stringify(sel())] } : needSel();
     case "group": return sel() ? { rules: { groupId: sel() } } : needSel();
+    case "text": return sel() ? { rules: { text: sel() } } : bad("Type the words to look for.");
     case "added": return dateCond("created_at", c.op, v);
     // LIST-2: the profile's own figure (shared/numbers/lifetime.js), not the
     // stored copy: a stale stored total let a $19,500 donor pass "at least $20,000".

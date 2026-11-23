@@ -74,7 +74,7 @@ export function ScoreCard({ donorId, scores, children, onLog }) {
         </button>
         <span data-testid="dp-score-band" style={{ fontSize: 13, fontWeight: 700, color: BAND_COLOUR[s.band] || T.ink }}>{s.bandLabel}</span>
         <span style={{ marginLeft: "auto", fontSize: 12.5, color: T.ink2 }}>
-          Generosity{" "}
+          Giving strength{" "}
           <button type="button" data-testid="dp-score-generosity" onClick={() => setWhy(true)}
             style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontWeight: 800, fontSize: 14, color: T.ink, fontFamily: "inherit" }}>
             {s.generosity}
@@ -138,7 +138,7 @@ export function ScoreWhyModal({ s, onClose }) {
           <PartsTable score="engagement" parts={s.parts.engagement} total={s.engagement} onOpen={p => setOpen({ p, score: "engagement" })} />
         </div>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 4 }}>Generosity {s.generosity}</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 4 }}>Giving strength {s.generosity}</div>
           <p style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.6, margin: "0 0 8px" }}>{s.explanation.generosity}</p>
           <PartsTable score="generosity" parts={s.parts.generosity} total={s.generosity} onOpen={p => setOpen({ p, score: "generosity" })} />
         </div>
