@@ -35,6 +35,9 @@ const GIFT = ["gift", "person", "totals", "fund"];
 const RULES = [
   // COMMS-1: a draft dismissed, restored, sent, approved or skipped moves every count of drafts waiting.
   [/^\/(drafts|milestone-drafts|thank-yous)\b|^\/agent\/(waiting|drafts?)\b/, ["draft", "task"]],
+  // SENDS-2: a committed send plan sends drafts (Communications, volunteers, auction winners) or
+  // reconnect links (Recurring giving), so every list of them re-reads.
+  [/^\/send-plans\/[^/]+\/commit\b/, ["draft", "task", "volunteer", "person", "gift"]],
   // SCALE-6 item 3 (W-1112-Volunteers-01X): writes that announced nothing ("other"), so the
   // screens showing what they changed waited for a reload. A drift row or a plan step marked
   // done ticks a task (the sidebar badge); restoring a deleted record brings back a person

@@ -99,6 +99,9 @@ const GUARDED_WRITERS = [
   // FLOWS-17: voids open thank-you tasks beside the gift's own thank-you (Justin's Place), one org.
   // Dry run by default; --apply voids (never deletes) through writerDbUrl, one audit row. Never org_creo or the demo.
   "flows17-dup-thanks",
+  // SENDS-2: sets one org's waiting volunteer reminders whose shift is not tomorrow to expired. Dry run
+  // by default; --apply writes through writerDbUrl, one audit row. Never org_creo or the demo. Nothing sends.
+  "sends2-stale-reminders",
   // FLOWS-10: sets the demo's made-up EIN while it is the placeholder, org_b72demo only. Same guard.
   "flows10-demo-ein",
   // FLOWS-15: puts the demo's first-gift version on its Year-end appeal, org_b72demo's ecamp_b72_yearend only. Same guard.
@@ -333,6 +336,9 @@ const PROD_READONLY = [
   // self-reference (always a bug); the noisier read-above-declaration shape is
   // behind --all because it needs human triage.
   "tdz-scan",
+  // SENDS-2 — the send plan scan. A pure SOURCE scan (server, routes, shared, client/src) for a loop
+  // that mints staff confirms outside a send plan. No server, no database, no network. Exits 1 on a finding.
+  "send-plan-scan",
   // FIX-3 C — is there a real person in the demo? READ ONLY transaction,
   // SELECTs only, ROLLBACK; a remote DATABASE_URL needs --i-know-this-is-prod
   // and the /health identity match. Prints the offending rows, exits 1.

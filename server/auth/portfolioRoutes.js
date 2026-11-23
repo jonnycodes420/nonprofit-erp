@@ -111,7 +111,7 @@ const CLOSED_SEGMENTS = new Set(`
   peer-fundraisers people perf photos pictures pipeline plan-steps planned-gifts plans pledges portal-audit
   portal-engagement portal-page portal-settings portfolio pos privacy programs proposals prospects qbo readout-kinds
   readouts receipts recent-changes records recurring removals report-builder reports saved-dashboards saved-reports
-  scores screening search sequences settings setup sheet-import sheets statement-mappings step-reminders stock-photos
+  scores screening search send-plans sequences settings setup sheet-import sheets statement-mappings step-reminders stock-photos
   stripe support support-access support-session surveys surveys-volunteer-followup tasks templates threads thank-yous
   top100 trash tribute-notices users voice voice-memos volunteer-hours volunteer-qualifications volunteer-shifts
   volunteers volunteer-hub webhooks why workflows xero agent api plan-steps

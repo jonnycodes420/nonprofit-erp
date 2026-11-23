@@ -3,6 +3,7 @@ import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switc
 import { apiFetch } from "../api";
 import { T, fmtFull, interactive, EmptyState, Modal } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
+import { askSendPlan } from "./SendPlanDialog";   // SENDS-2: more than one person, the list first
 import { censusById } from "../../../shared/numberCensus.js";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
@@ -448,9 +449,9 @@ export function UnlinkedSustainers({ isReadOnly, onNavigate }) {
     if (!sendTargets.length || busy) return;
     setBusy(true);
     try {
-      const r = await apiFetch("/recurring/unlinked/send-reconnect", { method: "POST", body: JSON.stringify({ donorIds: sendTargets }) });
-      setToast(`${countLabel(r.sent, "reconnect link")} sent.`);
-      setSel(new Set()); await load();
+      // SENDS-2: the send plan shows every name before anything goes.
+      const r = await askSendPlan({ kind: "reconnect", ids: sendTargets });
+      if (r) { setToast(r.message); setSel(new Set()); await load(); }
     } catch (e) { setToast(errorMessage(e, "Send failed.")); }
     setBusy(false);
   };

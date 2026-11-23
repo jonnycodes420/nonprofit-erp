@@ -298,7 +298,8 @@ app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, 
   const [me] = await query("SELECT email, name FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
   const to = String(req.body?.to || me?.email || "").trim();
   if (!to) return res.status(400).json({ error: "No address to send the test to." });
-  if (to !== me?.email) return res.status(403).json({ error: "test_to_self",
+  // SENDS-2 item 5: her own address however it is typed (Ana@x.org is ana@x.org), as the template test reads it.
+  if (to.toLowerCase() !== String(me?.email || "").toLowerCase()) return res.status(403).json({ error: "test_to_self",
     message: "A test goes to you. Sending a draft to somebody else is a send, and it belongs on the campaign." });
 
   const T = await templatesMod();

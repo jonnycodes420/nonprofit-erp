@@ -19,6 +19,7 @@ import { Figure, FigureContext } from "./Figure";
 import { PhotoList } from "./PhotoField";
 import Picture from "./Picture";
 import { errorMessage } from "../lib/domainError";
+import { askSendPlan } from "./SendPlanDialog";   // SENDS-2: more than one person, the list first
 import { DonorLink } from "./RecordLink";
 import RemoveMenu, { removeOne, removeMany } from "./RemoveMenu";
 import { UNDONE } from "../lib/recentUndo";
@@ -140,14 +141,13 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
   const winners = d.items.filter(i => i.winner);
   const pendingDrafts = d.drafts.filter(x => x.status === "pending_review");
   const sendDraft = x => apiFetch(`/milestone-drafts/${x.id}/send`, { method: "POST" });
+  // SENDS-2: one send plan for the lot: every winner's name before anything goes.
   const sendAll = async () => {
     setMsg("");
-    let sent = 0; const failed = [];
-    for (const x of pendingDrafts) {
-      try { await sendDraft(x); sent++; } catch (e) { failed.push(`${x.donor_name}: ${errorMessage(e, "not sent")}`); }
-    }
-    setMsg(`Sent ${sent}.${failed.length ? ` Not sent: ${failed.join("; ")}` : ""}`);
-    load();
+    try {
+      const r = await askSendPlan({ kind: "milestone", ids: pendingDrafts.map(x => x.id) });
+      if (r) { setMsg(r.message); load(); }
+    } catch (e) { setMsg(errorMessage(e, "Nothing was sent.")); }
   };
   const copy = t => navigator.clipboard && navigator.clipboard.writeText(t).then(() => setMsg("Copied."));
   // JOURNEYS-4 · a live auction or a paper bid sheet: the name and the number.
