@@ -1192,7 +1192,7 @@ async function resolveWidgetsPublic(org, widgets, ctx = {}) {
       // The SELECT has no email column and there is not going to be one.
       const rows = ctx.campaignId
         ? await query(
-            `SELECT g.date, g.amount, g.cover_fee_amount, g.show_name_publicly, d.name AS donor_name
+            `SELECT g.date, g.amount, g.cover_fee_amount, g.show_name_publicly, g.anonymous, d.name AS donor_name
                FROM gifts g
                JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
                JOIN campaigns c ON c.id=? AND c.org_id=g.org_id
@@ -1200,7 +1200,7 @@ async function resolveWidgetsPublic(org, widgets, ctx = {}) {
               ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT ?`, [ctx.campaignId, org.id, n])
         : ctx.pageId
         ? await query(
-            `SELECT g.date, g.amount, g.cover_fee_amount, g.show_name_publicly, d.name AS donor_name
+            `SELECT g.date, g.amount, g.cover_fee_amount, g.show_name_publicly, g.anonymous, d.name AS donor_name
                FROM gifts g
                JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
               WHERE g.org_id=? AND g.giving_page_id=? AND g.amount > 0
@@ -1211,6 +1211,7 @@ async function resolveWidgetsPublic(org, widgets, ctx = {}) {
         donorName: row.donor_name,
         amountCents: Math.round((Number(row.amount) || 0) * 100),   // FIX-49: the full gift, a covered fee included
         showName: row.show_name_publicly === true,
+        anonymous: row.anonymous === true,   // GIFTS-3
         date: row.date,
       }, { showAmounts }));
       r.definition = CP.RECENT_GIFTS_DEFINITION;

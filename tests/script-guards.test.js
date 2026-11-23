@@ -106,6 +106,9 @@ const GUARDED_WRITERS = [
   // deletes approved applications whose person is gone, one org. Dry run by default; --apply writes
   // through writerDbUrl, one audit row. Never org_creo or the demo. Nothing sends.
   "vol3-staff-records",
+  // GIFTS-3: stores one org's gift methods that read "Needs you" as nothing. Dry run by default; --apply
+  // writes through writerDbUrl, one audit row. Never org_creo or the demo. Amounts and the ledger untouched.
+  "gifts3-needs-you-method",
   // UNDO-1: reopens journey steps marked done whose own next step is open again. Dry run by default;
   // --apply writes one org through writerDbUrl, one audit row. Never the demo. Nothing sends.
   "undo1-reopen-journeys",

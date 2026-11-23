@@ -292,7 +292,7 @@ async function issueGiftReceiptNow(gift, org, donor, { send = true, by = SYS_AUT
     giftDateRaw: gift.date || null, // ISO, alongside the display-formatted giftDate above — lets the /dashboard/today mismatch-detection query compare against gifts.date directly without reparsing a formatted string
     amount: parseFloat(gift.amount),
     deductibleAmount,
-    paymentMethod: gift.payment_method || "",
+    paymentMethod: (await import("../../shared/giftMethods.js")).methodValue(gift.payment_method) || "",   // GIFTS-3: one name per method, blank = Not set
     quidProQuoDesc: gift.quid_pro_quo_desc || null,
     quidProQuoValue: gift.quid_pro_quo_value != null ? parseFloat(gift.quid_pro_quo_value) : null,
     // RECEIPTS-1: property's value is the donor's to determine; the org's value stays on the gift.

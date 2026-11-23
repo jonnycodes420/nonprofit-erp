@@ -11,6 +11,7 @@
 //
 // The profile's Note button (initialTouch "note_only") opens it as a plain note,
 // which is not a touch and never moves Last contact (COUNTS-1).
+import { GIFT_METHODS, NOT_SET } from "../../../shared/giftMethods.js";   // GIFTS-3: one list of methods
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { T, activeMark, Modal } from "./shared";
@@ -267,8 +268,8 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
             <div style={{ flex: "1 1 150px" }}>
               <span style={lbl}>How it arrived</span>
               <select value={method} onChange={e => setMethod(e.target.value)} aria-label="Payment method" style={inp}>
-                <option value="">Needs you</option>
-                {["Check", "Cash", "Card", "ACH", "Wire", "Stock", "DAF", "Online"].map(m => <option key={m} value={m}>{m}</option>)}
+                <option value="">{NOT_SET}</option>
+                {GIFT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
           </div>

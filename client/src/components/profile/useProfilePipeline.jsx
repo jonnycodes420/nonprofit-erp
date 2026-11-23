@@ -110,6 +110,12 @@ export function useProfilePipeline({ givingOpen, donor, setDesignations, refresh
         fund_lines:Array.isArray(g.fund_lines)?g.fund_lines:[],event_id:g.event_id||"",   // GIFTS-2: a split gift's lines; the edit keeps its event
         refund_of:g.refund_of||null,refund_reason:g.refund_reason||"",refunded_in_full:g.refunded_in_full===true,   // MONEY-4: a refund row names its gift
         scheduled:g.scheduled===true,scheduled_label:g.scheduled_label||null,   // TRUTH-6: dated after today, counted on its date
+        // GIFTS-3: what the one gift form's Edit opens with, so an edit changes only what she changed
+        cents:Math.round((Number(g.amount)||0)*100),campaign_id:g.campaign_id||"",campaign_name:g.campaign_name||"",
+        appeal_id:g.appeal_id||"",appeal_name:g.appeal_name||"",giving_page_id:g.giving_page_id||"",giving_page_title:g.giving_page_title||"",
+        peer_fundraiser_id:g.peer_fundraiser_id||"",peer_fundraiser_name:g.peer_fundraiser_name||"",anonymous:g.anonymous===true,
+        property_description:g.property_description||"",stock_shares:g.stock_shares??"",stock_ticker:g.stock_ticker||"",custom_fields:g.custom_fields||{},
+        pledge_id:g.pledge_id||"",
       }));
       setGiftsFull(g);
       setGifts(g.map(x=>({amount:x.amount,date:x.date})));

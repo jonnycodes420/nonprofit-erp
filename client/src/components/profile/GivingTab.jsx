@@ -18,16 +18,10 @@ import { VolunteerPanel } from "../VolunteerPanel";
 import { FunderPanel } from "../FunderPanel";
 import { ReceiptCell, YearEndPanel } from "./ReceiptsAndStatements";
 import { ProfileMoreNumbers } from "../ProfileHeaderFigures";
-import AttributionField from "../gifts/AttributionField";   // QUICKADD-1: campaign, appeal, fundraiser
-import PropertyFields from "../gifts/PropertyFields";   // RECEIPTS-1: an in-kind gift says what it was
-import SameAsLast from "../gifts/SameAsLast";   // QUICKADD-1: "Same as last"
-import { emptyFund } from "../gifts/FundField";
-import { orgTodayCivil } from "../../lib/orgToday";
 import MetricBreakdownPanel from "../MetricBreakdownPanel";
 import { censusById } from "../../../../shared/numberCensus.js";
 import { openCheckSnap } from "../CheckSnap";
 import { countLabel } from "../../../../shared/countWords.js";
-import { PeopleDatalist } from "../PeopleDatalist";
 import { renderCustomValue } from "../../../../shared/customFieldShape";
 import { thankState, REFUNDED_WORDS } from "../../../../shared/thankState.js";   // FLOWS-14
 import { MailTypeSwitches } from "../MailTypes";
@@ -38,8 +32,9 @@ import { stepAgainstProposals } from "../../../../shared/nextStepAgree.js";
 import RefundDialog from "../gifts/RefundDialog";   // MONEY-4: Record a refund
 import UndoRefundDialog from "../gifts/UndoRefundDialog";   // UNDO-1: Undo refund
 import { displayOrgDateShort } from "../../lib/orgDay";
-import EventField from "../gifts/EventField";   // GIFTS-1: a gift can belong to an event
-import FundField, { fundFromGift, fundLinesProblem } from "../gifts/FundField";   // GIFTS-2: one fund, or a split across funds
+import { methodLabel } from "../../../../shared/giftMethods.js";   // GIFTS-3: one name per method, blank = Not set
+import GiftForm from "../gifts/GiftForm";   // GIFTS-3: one gift form for New gift and Edit
+import { emptyGiftForm, formFromGift } from "../../lib/giftForm";
 import { lifetimeShareWords, sharePercent } from "../../../../shared/lifetimeShare.js";   // MOPUP-1: "under 1% of lifetime"
 import PledgeSchedule, { emptySchedule, scheduleBody } from "../gifts/PledgeSchedule";   // GIFTS-1: one payment or installments
 import { giftTypeLabel, ZERO_GIFT_LABEL } from "../../../../shared/giftWords.js";   // TRUTH-4: the $0 label
@@ -56,9 +51,25 @@ const pledgeSched=pl=>{const ins=pl.installments||[],first=String((ins[0]&&ins[0
 
 // UNDO-1: a refund is undone for 30 days, never one made to a card through Stripe (refundUndo.js says the same).
 const undoRefundOpen=(r,all)=>{const o=(all||[]).find(x=>x.id===r.refund_of);const at=new Date(r.created_at||r.date||0).getTime();return !(o&&o.stripe_payment_id)&&Date.now()-at<30*864e5;};
-function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addPgOpen,addPlannedGift,addPledge,addPledgeOpen,addToPipeline,askAmt,askName,askOpen,campaigns,closeAsk,deleteGift,deletePlannedGift,deletePledge,dismissSuggestion,dismissedSug,donor,downloadReceiptPdf,dpItems,dpTab,exportGiftsCSV,figs,fundAffinity,fundLoading,giftCfDefs,giftCfEditStr,giftCountReal,giftEditForm,giftEditId,giftErr,giftLoading,giftMoreOpen,giftPeopleQ,giftReadErr,giftSaving,gifts,giftsFull,hasDesignation,household,isAdmin,isReadOnly,isTeam,loadGiftsFull,lockMajor,moveSuggestions,moves,onNavigate,onStageChange,openProposals,opps,pgForm,pgOpen,pgSaving,pipelineAdded,plannedGifts,pledgeEdit,pledgeForm,pledgeResendBusyId,pledgeResentIds,pledgeSaving,pledges,propData,proposalsKnown,receiptBusyId,receiptForGift,receiptsEnabled,recurResendBusy,recurResendSent,recurringSub,refundRows,reloadProps,resendPledgeReminder,resendRecurringLink,saveGiftEdit,savePledgeEdit,sc,scores,sendReceipt,sendYearEndStatement,seqId,seqLoading,seqOpen,seqToast,sequences,setAddGiftForm,setAddGiftOpen,setAddPgOpen,setAddPledgeOpen,setAskAmt,setAskName,setAskOpen,setDpTab,setGiftEditForm,setGiftEditId,setGiftLoading,setGiftMoreOpen,setHhModalOpen,setPgForm,setPgOpen,setPledgeEdit,setPledgeForm,setPledgeStatus,setRelatedOpen,setSeqId,setSeqLoading,setSeqOpen,setSeqToast,setShowYearEnd,setYearDrill,setYearEndYear,showYearEnd,softCredit,status,toggleDesignation,yearDrill,yearEndBusy,yearEndErr,yearEndYear}){
+function GivingTab({setGiftErr,rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addPgOpen,addPlannedGift,addPledge,addPledgeOpen,addToPipeline,askAmt,askName,askOpen,campaigns,closeAsk,deleteGift,deletePlannedGift,deletePledge,dismissSuggestion,dismissedSug,donor,downloadReceiptPdf,dpItems,dpTab,exportGiftsCSV,figs,fundAffinity,fundLoading,giftCfDefs,giftCfEditStr,giftCountReal,giftEditForm,giftEditId,giftErr,giftLoading,giftMoreOpen,giftPeopleQ,giftReadErr,giftSaving,gifts,giftsFull,hasDesignation,household,isAdmin,isReadOnly,isTeam,loadGiftsFull,lockMajor,moveSuggestions,moves,onNavigate,onStageChange,openProposals,opps,pgForm,pgOpen,pgSaving,pipelineAdded,plannedGifts,pledgeEdit,pledgeForm,pledgeResendBusyId,pledgeResentIds,pledgeSaving,pledges,propData,proposalsKnown,receiptBusyId,receiptForGift,receiptsEnabled,recurResendBusy,recurResendSent,recurringSub,refundRows,reloadProps,resendPledgeReminder,resendRecurringLink,saveGiftEdit,savePledgeEdit,sc,scores,sendReceipt,sendYearEndStatement,seqId,seqLoading,seqOpen,seqToast,sequences,setAddGiftForm,setAddGiftOpen,setAddPgOpen,setAddPledgeOpen,setAskAmt,setAskName,setAskOpen,setDpTab,setGiftEditForm,setGiftEditId,setGiftLoading,setGiftMoreOpen,setHhModalOpen,setPgForm,setPgOpen,setPledgeEdit,setPledgeForm,setPledgeStatus,setRelatedOpen,setSeqId,setSeqLoading,setSeqOpen,setSeqToast,setShowYearEnd,setYearDrill,setYearEndYear,showYearEnd,softCredit,status,toggleDesignation,yearDrill,yearEndBusy,yearEndErr,yearEndYear}){
   const [refunding,setRefunding]=useState(null);   // MONEY-4: { gift, leftCents } while Record a refund is open
   const [unrefunding,setUnrefunding]=useState(null);   // UNDO-1: the refund row while Undo refund is open
+  // GIFTS-3: the Edit is the one gift form; it opens with the gift's attribution
+  // and its soft credit, tribute and match, so a save changes only what she changed.
+  const [giftEditErr,setGiftEditErr]=useState("");
+  const [giftEditMore,setGiftEditMore]=useState(false);
+  const openGiftEdit=g=>{
+    setGiftEditErr("");setGiftEditMore(false);setGiftEditId(g.id);
+    setGiftEditForm(formFromGift(g,{customFields:Object.fromEntries(giftCfDefs.map(d=>[d.key,giftCfEditStr(d,(g.custom_fields||{})[d.key])]))}));
+    apiFetch(`/gifts/${g.id}/extras`).then(x=>{
+      const sc=(x&&x.softCredits||[])[0],t=x&&x.tribute,m=x&&x.match;
+      const had={sc:sc?{id:sc.donorId,name:sc.name}:null,scAmount:sc&&sc.amount?String(sc.amount):"",tribType:t?t.type:"",trib:t?{id:t.donorId||null,name:t.name,nameOnly:!t.donorId}:null,
+        match:m&&m.employerId?{id:m.employerId,name:m.employerName||"The employer"}:null,matchAmount:m&&m.expected?String(m.expected):""};
+      setGiftEditForm(p=>({...p,...had,extrasWas:had}));
+    }).catch(()=>{});
+  };
+  // GIFTS-3 item 5: Cancel means gone. Closing the form any other way (another tab, another person) keeps the draft.
+  const cancelAddGift=()=>{setAddGiftOpen(false);setAddGiftForm(emptyGiftForm());setGiftErr&&setGiftErr("");setGiftMoreOpen(false);};
   return <>
           {/* ── PROFILE-2 · GIVING: the ask, then gifts and pledges, Funds, and
               Asks & pipeline, one tab. */}
@@ -327,78 +338,10 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
               );
             })()}
 
-            {/* QUICKADD-1: the form comes into view when it opens ("Save and record a gift" lands here). */}
-            {addGiftOpen&&<div data-testid="dp-add-gift-form" ref={el=>{if(el&&!el.dataset.shown){el.dataset.shown="1";el.scrollIntoView({block:"center"});}}} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px"}}>
-              <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:12}}>New Gift</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-                <input value={addGiftForm.amount} onChange={e=>setAddGiftForm(p=>({...p,amount:e.target.value}))} placeholder="Amount ($)" type="number" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
-                <DateInput value={addGiftForm.date} onChange={e=>setAddGiftForm(p=>({...p,date:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
-                <select value={addGiftForm.type} onChange={e=>setAddGiftForm(p=>({...p,type:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}>
-                  {["cash","check","credit_card","stock","in_kind","matching","other"].map(t=><option key={t} value={t}>{giftTypeLabel(t)}</option>)}
-                </select>
-                <input value={addGiftForm.payment_method} onChange={e=>setAddGiftForm(p=>({...p,payment_method:e.target.value}))} placeholder="Payment method" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
-              </div>
-              <input value={addGiftForm.notes} onChange={e=>setAddGiftForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}/>
-              <PropertyFields form={addGiftForm} setForm={setAddGiftForm} testid="dp-gift-property"/>
-              {/* QUICKADD-1: Campaign, Appeal and Fundraiser / giving page, each searched
-                  from what the org has, Campaign and Appeal made inline. A campaign the
-                  gift's date falls outside is shown and cannot be chosen (NUMBERS-1). A
-                  value carried from the last gift reads "Same as last" (lib/stickyGift.js). */}
-              {(()=>{const c=addGiftForm.carried||{},same=(k,v)=>!!(c[k]&&v&&(c[k].id?c[k].id===v.id:c[k]===v));
-                const pickAttr=k=>v=>setAddGiftForm(p=>({...p,[k]:v,...(k==="campaign"?{campaign_id:v?v.id:""}:{})}));
-                return <>
-                <SameAsLast testid="dp-gift" carried={{date:same("date",addGiftForm.date)&&addGiftForm.date,method:same("method",addGiftForm.payment_method)&&addGiftForm.payment_method,fund:c.fund&&addGiftForm.fund&&!addGiftForm.fund.split&&c.fund.fund_id===addGiftForm.fund.fund_id&&addGiftForm.fund}}
-                  onClear={k=>setAddGiftForm(p=>({...p,...(k==="date"?{date:orgTodayCivil()}:k==="method"?{payment_method:""}:{fund:emptyFund()}),carried:{...(p.carried||{}),[k]:null}}))}/>
-                <AttributionField kind="campaign" value={addGiftForm.campaign||null} sticky={same("campaign",addGiftForm.campaign)} date={addGiftForm.date} testid="dp-gift-campaign" onChange={pickAttr("campaign")} style={{marginTop:8,marginBottom:2}}/>
-                <div style={{fontSize:11,color:T.ink3,marginBottom:8,lineHeight:1.4}}>Which goal this counts toward. It updates that campaign's thermometer live.</div>
-                <AttributionField kind="appeal" value={addGiftForm.appeal||null} sticky={same("appeal",addGiftForm.appeal)} campaignId={addGiftForm.campaign_id||null} testid="dp-gift-appeal" onChange={pickAttr("appeal")} style={{marginBottom:8}}/>
-                <AttributionField kind="page" value={addGiftForm.page||null} sticky={same("page",addGiftForm.page)} testid="dp-gift-page" onChange={pickAttr("page")} style={{marginBottom:8}}/>
-              </>;})()}
-              <FundField value={addGiftForm.fund} amount={addGiftForm.amount} onChange={v=>setAddGiftForm(p=>({...p,fund:v}))} style={{marginBottom:8}}/>
-              <EventField value={addGiftForm.eventId||""} onChange={id=>setAddGiftForm(p=>({...p,eventId:id}))} style={{marginBottom:8}}/>
-              {pledges.filter(p=>p.status==="open").length>0&&(
-                <select value={addGiftForm.pledgeId} onChange={e=>setAddGiftForm(p=>({...p,pledgeId:e.target.value}))} style={{width:"100%",background:T.bg,border:"1px solid "+T.terracotta+"50",borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}>
-                  <option value="">Not fulfilling a pledge</option>
-                  {pledges.filter(p=>p.status==="open").map(p=>(
-                    <option key={p.id} value={p.id}>Fulfills the {fmtFull(p.amount)} pledge{p.summary&&p.summary.nextDue?` · next ${fmtFull(p.summary.nextAmount)} due ${displayDate(p.summary.nextDue)}`:""}</option>
-                  ))}
-                </select>
-              )}
-              {(()=>{const pl=addGiftForm.pledgeId?pledges.find(x=>x.id===addGiftForm.pledgeId):null;const w=pl?pledgeCoverWords(pl,addGiftForm.amount):"";
-                return w?<div data-testid="dp-pledge-cover" role="status" style={{fontSize:12,color:T.ink2,marginTop:-2,marginBottom:8,lineHeight:1.4}}>{w}</div>:null;})()}
-              {/* BUILD-98 Part 1 — soft credit, tribute, matching gift. Closed by
-                  default: most gifts are none of these, and three blank rows on
-                  every gift is how a form starts to feel like paperwork. */}
-              <PeopleDatalist id="gift-people" text={giftPeopleQ}/>
-              <button type="button" onClick={()=>setGiftMoreOpen(o=>!o)} data-testid="gift-more-toggle"
-                style={{background:"transparent",border:"none",padding:"2px 0",color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
-                {giftMoreOpen?"Hide soft credit, tribute and match":"Soft credit, tribute or matching gift"}
-              </button>
-              {giftMoreOpen&&(()=>{const inp={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",width:"100%"};return(
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-                  <input list="gift-people" value={addGiftForm.scName||""} onChange={e=>setAddGiftForm(p=>({...p,scName:e.target.value}))} placeholder="Soft credit to (a person on file)" style={inp} data-testid="gift-sc-name"/>
-                  <input value={addGiftForm.scAmount||""} onChange={e=>setAddGiftForm(p=>({...p,scAmount:e.target.value}))} placeholder="Soft credit amount (blank = whole gift)" type="number" style={inp}/>
-                  <select value={addGiftForm.tribType||""} onChange={e=>setAddGiftForm(p=>({...p,tribType:e.target.value}))} style={inp} data-testid="gift-trib-type">
-                    <option value="">Not a tribute gift</option><option value="honor">In honor of</option><option value="memory">In memory of</option>
-                  </select>
-                  <input list="gift-people" value={addGiftForm.tribName||""} onChange={e=>setAddGiftForm(p=>({...p,tribName:e.target.value}))} placeholder="Who it honors" style={inp} data-testid="gift-trib-name"/>
-                  <input value={addGiftForm.tribNotify||""} onChange={e=>setAddGiftForm(p=>({...p,tribNotify:e.target.value}))} placeholder="Tell (e.g. the Lee family)" style={inp}/>
-                  <input value={addGiftForm.tribNotifyEmail||""} onChange={e=>setAddGiftForm(p=>({...p,tribNotifyEmail:e.target.value}))} placeholder="Their email or leave blank" style={inp}/>
-                  <input list="gift-people" value={addGiftForm.matchEmployer||""} onChange={e=>setAddGiftForm(p=>({...p,matchEmployer:e.target.value}))} placeholder="Employer that will match it" style={inp}/>
-                  <input value={addGiftForm.matchAmount||""} onChange={e=>setAddGiftForm(p=>({...p,matchAmount:e.target.value}))} placeholder="Expected match (blank = same amount)" type="number" style={inp}/>
-                </div>);})()}
-              {giftErr&&<div role="alert" style={{fontSize:12,color:T.terracotta,marginBottom:8}}>{giftErr}</div>}
-              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
-                <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.ink,cursor:"pointer"}}>
-                  <input type="checkbox" checked={addGiftForm.acknowledgement_sent} onChange={e=>setAddGiftForm(p=>({...p,acknowledgement_sent:e.target.checked}))} style={{accentColor:T.greenDk}}/>
-                  Acknowledgement sent
-                </label>
-              </div>
-              <div style={{display:"flex",gap:8}}>
-                <button onClick={addGift} disabled={giftSaving||!!fundLinesProblem(addGiftForm.amount,addGiftForm.fund)} data-testid="dp-add-gift-save" style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",opacity:(giftSaving||fundLinesProblem(addGiftForm.amount,addGiftForm.fund))?0.5:1}}>Save</button>
-                <button onClick={()=>setAddGiftOpen(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"8px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
-              </div>
-            </div>}
+            {/* GIFTS-3 item 1: the one gift form (gifts/GiftForm.jsx), the same component as a gift's Edit.
+                QUICKADD-1: it comes into view when it opens ("Save and record a gift" lands here). */}
+            {addGiftOpen&&<GiftForm mode="create" form={addGiftForm} setForm={setAddGiftForm} pledges={pledges} pledgeCoverWords={pledgeCoverWords}
+              saving={giftSaving} error={giftErr} onSave={addGift} onCancel={cancelAddGift} moreOpen={giftMoreOpen} setMoreOpen={setGiftMoreOpen}/>}
 
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,overflow:"hidden"}}>
               {giftLoading?<div style={{padding:24,textAlign:"center",color:T.ink3,fontSize:12}}><Spin/></div>:giftReadErr?(
@@ -432,36 +375,8 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                       <tr key={g.id} id={`gift-${g.id}`} style={{borderBottom:"1px solid "+T.bg3}}>
                         {giftEditId===g.id?(
                           <td colSpan={8} style={{padding:"10px 12px"}}>
-                            <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-                              <input value={giftEditForm.amount} onChange={e=>setGiftEditForm(p=>({...p,amount:e.target.value}))} placeholder="Amount" type="number" style={{width:80,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
-                              <DateInput value={giftEditForm.date} onChange={e=>setGiftEditForm(p=>({...p,date:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
-                              <select value={giftEditForm.type} onChange={e=>setGiftEditForm(p=>({...p,type:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}>
-                                {["cash","check","credit_card","stock","in_kind","matching","other"].map(t=><option key={t} value={t}>{giftTypeLabel(t)}</option>)}
-                              </select>
-                              <input value={giftEditForm.payment_method} onChange={e=>setGiftEditForm(p=>({...p,payment_method:e.target.value}))} placeholder="Method" style={{width:100,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
-                              <input value={giftEditForm.notes} onChange={e=>setGiftEditForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{flex:1,minWidth:80,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
-                              <PropertyFields form={giftEditForm} setForm={setGiftEditForm} compact testid="gift-edit-property"/>
-                              <EventField value={giftEditForm.eventId||""} onChange={id=>setGiftEditForm(p=>({...p,eventId:id}))} testid="gift-edit-event" style={{flex:"1 1 260px"}}/>
-                              <FundField value={giftEditForm.fund} amount={giftEditForm.amount} onChange={v=>setGiftEditForm(p=>({...p,fund:v}))} testid="gift-edit-fund" compact style={{flex:"1 1 100%"}}/>
-                              {giftCfDefs.map(d=>(
-                                d.type==="select"?(
-                                  <select key={d.key} value={giftEditForm.customFields?.[d.key]||""} onChange={e=>setGiftEditForm(p=>({...p,customFields:{...p.customFields,[d.key]:e.target.value}}))}
-                                    title={d.label} style={{width:110,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}>
-                                    <option value="">{d.label}…</option>
-                                    {(d.options||[]).map(o=><option key={o} value={o}>{o}</option>)}
-                                  </select>
-                                ):(
-                                  <input key={d.key} value={giftEditForm.customFields?.[d.key]||""} onChange={e=>setGiftEditForm(p=>({...p,customFields:{...p.customFields,[d.key]:e.target.value}}))}
-                                    placeholder={d.label} title={d.label} style={{width:110,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
-                                )
-                              ))}
-                              <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:T.ink,cursor:"pointer",flexShrink:0}}>
-                                <input type="checkbox" checked={!!giftEditForm.acknowledgement_sent} onChange={e=>setGiftEditForm(p=>({...p,acknowledgement_sent:e.target.checked}))} style={{accentColor:T.greenDk}}/>
-                                Ack
-                              </label>
-                              <button onClick={()=>saveGiftEdit(g.id)} disabled={giftSaving} style={{background:T.greenDk,border:"none",borderRadius:6,padding:"5px 10px",color:T.white,fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
-                              <button onClick={()=>setGiftEditId(null)} style={{background:T.bg,border:"none",borderRadius:6,padding:"5px 10px",color:T.ink3,fontSize:11,cursor:"pointer"}}>Cancel</button>
-                            </div>
+                            <GiftForm mode="edit" form={giftEditForm} setForm={setGiftEditForm} giftCfDefs={giftCfDefs} saving={giftSaving} error={giftEditErr}
+                              onSave={()=>saveGiftEdit(g.id,setGiftEditErr)} onCancel={()=>setGiftEditId(null)} moreOpen={giftEditMore} setMoreOpen={setGiftEditMore}/>
                           </td>
                         ):(
                           <>
@@ -478,7 +393,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                               {g.refund_of&&<div data-testid="dp-gift-refund-of" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Refund{(()=>{const o=giftsFull.find(x=>x.id===g.refund_of);return o?` of the ${fmtFull(o.amount)} gift of ${o.date?displayDate(o.date):"no date"}`:"";})()}{g.refund_reason?`: ${g.refund_reason}`:""}</div>}
                               {g.fee>0&&g.amount>0&&<div data-testid="dp-gift-fee-net" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Fee {fmtFull(g.fee)}, net {fmtFull(Math.round((g.amount-g.fee)*100)/100)}</div>}</td>
                             <td style={{padding:"9px 12px",color:T.ink3}}>{giftTypeLabel(g.type)}</td>
-                            <td style={{padding:"9px 12px",color:T.ink3}}>{g.payment_method||"Not recorded"}</td>
+                            <td data-testid="dp-gift-method" style={{padding:"9px 12px",color:T.ink3}}>{methodLabel(g.payment_method)}</td>
                             <td style={{padding:"9px 12px",textAlign:"center"}}>{/* FLOWS-14: shared/thankState.js, the lists' rule */}{g.amount<0?<span style={{color:T.ink3,fontSize:12}}>Not a gift</span>:thankState(g)?.key==="refunded"?<span data-testid="dp-gift-refunded-thanks" style={{color:T.ink3,fontSize:12}}>{REFUNDED_WORDS}</span>:g.acknowledgement_sent?<span style={{color:T.greenDk,fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:12}}>Not yet</span>}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
                               <ReceiptCell g={g} rc={rc} isReadOnly={isReadOnly}/>
@@ -488,7 +403,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                               {[g.notes,...giftCfDefs.map(d=>{const v=(g.custom_fields||{})[d.key];return (v!==null&&v!==undefined&&v!=="")?`${d.label}: ${renderCustomValue(d,v)}`:null;}).filter(Boolean)].filter(Boolean).join(" · ")}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
                               {/* MONEY-4: a refund row is kept as written (append-only, like the ledger); a mistaken one is refunded back by its gift's own edit. */}
-                              {!g.refund_of&&<button onClick={()=>{setGiftEditId(g.id);setGiftEditForm({amount:g.amount,date:g.date,type:g.type,payment_method:g.payment_method||"",notes:g.notes||"",property_description:g.property_description||"",stock_shares:g.stock_shares??"",stock_ticker:g.stock_ticker||"",fund_id:g.fund_id||"",fund:fundFromGift(g),eventId:g.event_id||"",acknowledgement_sent:g.acknowledgement_sent,customFields:Object.fromEntries(giftCfDefs.map(d=>[d.key,giftCfEditStr(d,(g.custom_fields||{})[d.key])]))});}} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Edit</button>}
+                              {!g.refund_of&&<button onClick={()=>openGiftEdit(g)} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Edit</button>}
                               {!g.refund_of&&<button onClick={()=>deleteGift(g.id)} style={{background:"none",border:"none",color:T.terracotta,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Delete</button>}
                               {!isReadOnly&&g.refund_of&&undoRefundOpen(g,giftsFull)&&<button data-testid="dp-gift-undo-refund" onClick={()=>setUnrefunding(g)} style={{background:"none",border:"none",color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer",padding:"2px 6px"}}>Undo refund</button>}
                               {!isReadOnly&&g.amount>0&&!g.refund_of&&!g.refunded_in_full&&<button data-testid="dp-gift-refund" onClick={()=>setRefunding({gift:g,leftCents:Math.round(g.amount*100)+giftsFull.filter(x=>x.refund_of===g.id).reduce((n,x)=>n+Math.round(x.amount*100),0)})} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Refund</button>}

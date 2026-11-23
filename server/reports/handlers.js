@@ -11,6 +11,9 @@
 // the net and the assertion that the deposits foot (depositsFile.js), and the
 // column sets each tool wants (bookkeeper.js), declared once so the screen,
 // this router and routes/finance.js cannot disagree about any of them.
+// GIFTS-3: a method in its one name (shared/giftMethods.js), loaded once; until it loads, the stored words.
+let GIFT_METHOD_NAME = v => v;
+import("../../shared/giftMethods.js").then(m => { GIFT_METHOD_NAME = m.methodValue; }).catch(() => {});
 const SCHED_DUE = require("../../shared/numbers/scheduled").DUE;   // TRUTH-6: a scheduled gift counts on its date
 const DEP = require("../../depositsFile");
 const BK = require("../../bookkeeper");
@@ -788,7 +791,7 @@ async function reportBookkeeper(orgId, p) {
       notes: r.notes,
       cashOrNot: nonCash ? "Non-cash" : "Cash",
       fund: r.fund,
-      paymentMethod: r.payment_method,
+      paymentMethod: GIFT_METHOD_NAME(r.payment_method) || "",   // GIFTS-3: one name per method ("Bank transfer (ACH)")
       checkNumber: r.check_number,
       reference: r.reference,
       pledgePayment: r.pledge_payment ? "Yes" : "No",
@@ -907,8 +910,9 @@ async function reportDeposits(orgId, p) {
     const m = c && (typeof c.mapping === "string" ? JSON.parse(c.mapping || "{}") : c.mapping);
     depositAccounts = (m && m.depositAccounts) || {};
   } catch { depositAccounts = {}; }
-  const accountFor = r => depositAccounts[String(r.paymentMethod || "").toLowerCase()]
-    || depositAccounts.default || "";
+  // GIFTS-3: a mapping saved for "ach" or "bank transfer" still holds for the one name "Bank transfer (ACH)".
+  const accountFor = r => { const k = String(r.paymentMethod || "").toLowerCase();
+    return depositAccounts[k] || (k === "bank transfer (ach)" ? depositAccounts.ach || depositAccounts["bank transfer"] : "") || depositAccounts.default || ""; };
 
   const built = DEP.depositGroups(detail.rows.map(r => ({
     cents: r.cents, feeCents: r.feeCents, type: r.type, fund: r.fund,

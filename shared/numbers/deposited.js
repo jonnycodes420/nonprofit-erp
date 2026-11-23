@@ -18,7 +18,8 @@
 // it now reads this, the list Finance and the truth key use.
 "use strict";
 
-const BANKED_METHODS = ["check", "cheque", "cash", "bank transfer", "ach"];
+// GIFTS-3: "Bank transfer (ACH)" is the one name the gift form now offers (shared/giftMethods.js).
+const BANKED_METHODS = ["check", "cheque", "cash", "bank transfer", "ach", "bank transfer (ach)"];
 const UNDEPOSITED_DAYS = 90;
 
 const ON_RUN = (g = "g") => `EXISTS (SELECT 1 FROM imports im WHERE im.id = ${g}.import_id AND im.org_id = ${g}.org_id

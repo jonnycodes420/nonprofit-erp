@@ -2,6 +2,7 @@
 // state and handlers for this part, as a hook the profile calls in the same place,
 // so every hook runs in the same order. Nothing it does changed.
 // Tests read it through readSource("client/src/components/DonorProfile.jsx").
+import { emptyGiftForm } from "../../lib/giftForm";   // GIFTS-3
 import { profileFileTally } from "../../lib/profileFiles";
 import { apiFetch } from "../../api";
 import { orgTodayCivil } from "../../lib/orgToday";
@@ -101,7 +102,7 @@ export function useProfileActions({ donor, orgTeam, onReassign, setShowReassign,
   const addrKey=[donor.address,donor.address2,donor.city,donor.state,donor.zip].map(x=>x||"").join("|"),addrSeen=useRef(addrKey);useEffect(()=>{if(addrSeen.current!==addrKey){addrSeen.current=addrKey;loadRail();}},[addrKey]);// eslint-disable-line react-hooks/exhaustive-deps -- ADDRESS-1: an address edit re-reads the rail (Contact), no refresh
   const [giftEditId,setGiftEditId]=useState(null);
   const [giftEditForm,setGiftEditForm]=useState({});
-  const [addGiftForm,setAddGiftForm]=useState({amount:"",date:(initialAddGift&&initialAddGift.date)||orgTodayCivil(),type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
+  const [addGiftForm,setAddGiftForm]=useState(()=>emptyGiftForm((initialAddGift&&initialAddGift.date)||orgTodayCivil()));   // GIFTS-3: the one gift form's state
   const [giftErr,setGiftErr]=useState("");
   const [giftMoreOpen,setGiftMoreOpen]=useState(false);
   // BUILD-45 §1.1 F-3 — idempotency key minted lazily per submit attempt and

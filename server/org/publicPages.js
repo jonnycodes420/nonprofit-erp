@@ -485,7 +485,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
   const CPm = await campaignPageMod();
   const [team] = f.team_id ? await query(`SELECT name, slug FROM p2p_teams WHERE id=? AND org_id=? AND status='active'`, [f.team_id, org.id]) : [];
   const recentRows = await query(
-    `SELECT g.date, g.amount, g.cover_fee_amount, g.show_name_publicly, d.name AS donor_name
+    `SELECT g.date, g.amount, g.cover_fee_amount, g.show_name_publicly, g.anonymous, d.name AS donor_name
        FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id = ? AND g.peer_fundraiser_id = ? AND g.amount > 0
       ORDER BY g.date DESC NULLS LAST, g.created_at DESC LIMIT 10`, [org.id, f.id]);
@@ -512,7 +512,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
       recentDonors: recentRows.map(r => CPm.publicGiftLine({
         donorName: r.donor_name,
         amountCents: Math.round(Number(r.amount) * 100),   // FIX-49: the full gift, a covered fee included
-        showName: r.show_name_publicly === true, date: r.date }, { showAmounts: true })),
+        showName: r.show_name_publicly === true, anonymous: r.anonymous === true, date: r.date }, { showAmounts: true })),
       recentDonorsSentence: P2Pm.RECENT_DONORS_SENTENCE,
       share: P2Pm.shareLinks({ link: shareUrl, fundraiserSlug: f.slug,
         text: `I'm raising money for ${page.title || org.donor_facing_name}.` }),
