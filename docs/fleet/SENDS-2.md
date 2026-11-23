@@ -19,7 +19,7 @@ reconnect links (opens the dialog). Campaign editor → Send me a test (her own 
    after you looked. Press Send again on the same list (reload and retry): nothing sends twice.
 4. **(Needs a write.)** Communications → Drafts to review: mark two reviewed, leave one not. Send all reviewed opens the
    dialog with the two reviewed only, and a draft whose video link is broken is listed under "won't go" with why.
-5. **(Read only.)** Read it → Send this one on a single volunteer draft still sends at once, with no list (one person,
+5. **(Needs a write.)** Read it → Send this one on a single volunteer draft still sends at once, with no list (one person,
    one press).
 
 **What could have broken nearby:** every single-draft Send (Communications' per-draft Send, a task's email and thank-you,
@@ -28,4 +28,4 @@ started-not-finished note): each still mints exactly one confirm per press, and 
 so a "plan_required" answer on any of them is a defect. The volunteer reminder sweep (it now expires as well as drafts).
 Org deletion (send_plans goes with the org).
 
-**Needs a write:** 1, 3 and 4 in org_stagewalk. 2 and 5 read only.
+**Needs a write:** 1, 3, 4 and 5 in org_stagewalk. 2 is read only.
