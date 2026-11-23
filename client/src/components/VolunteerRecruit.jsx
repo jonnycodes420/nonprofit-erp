@@ -147,6 +147,12 @@ export function ApplicationsView({ isReadOnly, onOpenPerson, onCount }) {
   const load = useCallback(() => apiFetch(`/volunteer-hub/applications?status=${status}`).then(d => { setData(d); countRef.current && countRef.current(d.pending); })
     .catch(e => setMsg(errorMessage(e, "The applications did not load."))), [status]);
   useEffect(() => { load(); }, [load]);
+  const remove = async a => {
+    setBusy(a.id); setMsg("");
+    try { const r = await apiFetch(`/volunteer-hub/applications/${a.id}`, { method: "DELETE" }); setMsg(r.sentence); load(); }
+    catch (e) { setMsg(errorMessage(e, "That application did not come off.")); }
+    finally { setBusy(null); }
+  };
   const approve = async (a, personId) => {
     setBusy(a.id); setMsg("");
     try { const r = await apiFetch(`/volunteer-hub/applications/${a.id}/approve`, { method: "POST", body: JSON.stringify(personId ? { personId } : {}) }); setMsg(r.message); setChoose(null); load(); }
@@ -190,7 +196,9 @@ export function ApplicationsView({ isReadOnly, onOpenPerson, onCount }) {
               <button style={btnPrimary} disabled={busy === a.id} data-testid="app-approve" onClick={() => approve(a)}>Approve</button>
               <button style={btnQuiet} disabled={busy === a.id} onClick={() => decline(a)}>Decline</button>
             </div>}
-            {a.status !== "pending" && <div style={{ fontSize: 12.5, color: T.ink3 }}>{a.status === "approved" ? "Approved" : "Declined"}{a.decidedBy ? ` by ${a.decidedBy}` : ""}{a.personId && <> · <button style={btnLink} onClick={() => onOpenPerson && onOpenPerson({ id: a.personId, name: a.name })}>Open their record</button></>}</div>}
+            {a.status !== "pending" && <div style={{ fontSize: 12.5, color: T.ink3 }}>{a.status === "approved" ? "Approved" : "Declined"}{a.decidedBy ? ` by ${a.decidedBy}` : ""}{a.personId && !a.personGone && <> · <button style={btnLink} onClick={() => onOpenPerson && onOpenPerson({ id: a.personId, name: a.name })}>Open their record</button></>}
+              {/* VOL-3 item 3: the person it made is gone, so the application can go too. */}
+              {a.personGone && <> · <span data-testid="app-person-gone">Their record is no longer on file.</span>{!isReadOnly && <> <button style={btnLink} data-testid="app-delete" disabled={busy === a.id} onClick={() => remove(a)}>Delete</button></>}</>}</div>}
           </div>
           {a.status === "pending" && a.onFile.length > 0 && (
             <div style={{ fontSize: 12.5, color: T.ink, background: T.green100, borderRadius: 8, padding: "6px 10px" }}>

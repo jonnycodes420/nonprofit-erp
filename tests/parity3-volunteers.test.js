@@ -179,7 +179,7 @@ const T = civilToday();
   const onRoll = async () => Number((await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [ORG]))[0].n);
   const before = await onRoll();
   const bad = await api("POST", `/donors/${ADA}/make-volunteer`, tok, { hoursPerWeek: 500 });
-  ok("§3 hours a week past 80 is refused and nothing changes", bad.status === 400 && !(await q(`SELECT 1 FROM volunteer_applications WHERE person_id=$1`, [ADA])).length, bad.body);
+  ok("§3 hours a week past 80 is refused and nothing changes", bad.status === 400 && !(await q(`SELECT 1 FROM volunteer_records WHERE person_id=$1`, [ADA])).length, bad.body);   // VOL-3: the record's own table
   const mv = await api("POST", `/donors/${ADA}/make-volunteer`, tok, { hoursPerWeek: 15, availability: ["Saturdays", "Not a day"], roles: "Food drive, Driver" });
   ok("§3 Make a volunteer makes the volunteer record on the same person", mv.status === 201 && mv.body.personId === ADA && mv.body.created === true, mv.body);
   ok("§3 …with 15 hours a week, Saturdays and both roles (an unknown day dropped)",
@@ -191,7 +191,7 @@ const T = civilToday();
   const grp = await api("GET", `/figures/group-members/rows?group=${vg.body.id}&pageSize=200`, tok);
   ok("§3 she is in the Volunteers group (the rule's own rows)", vg.body.id && (grp.body.rows || []).some(r => r.donor_id === ADA || r.id === ADA), (grp.body.rows || []).map(r => r.name));
   const again3 = await api("POST", `/donors/${ADA}/make-volunteer`, tok, { hoursPerWeek: 10 });
-  const recs = await q(`SELECT hours_per_week, roles FROM volunteer_applications WHERE org_id=$1 AND person_id=$2 AND status='approved'`, [ORG, ADA]);
+  const recs = await q(`SELECT hours_per_week, roles FROM volunteer_records WHERE org_id=$1 AND person_id=$2`, [ORG, ADA]);   // VOL-3
   ok("§3 a second press updates the one record and keeps the roles it was not given", again3.status === 200 && recs.length === 1 && Number(recs[0].hours_per_week) === 10 && JSON.stringify(recs[0].roles).includes("Driver"), recs);
   const BOB = "d_par3v_bob";
   await q(`INSERT INTO donors (id,org_id,name,email,stage,created_by,created_by_name) VALUES ($1,$2,'Bob Banerjee','bob@par3v.local','cultivate','system:test','test')`, [BOB, ORG]);
@@ -288,6 +288,77 @@ const T = civilToday();
   ok("§5 a draft shift nobody signed up for deletes", dd.status === 200 && !(await q(`SELECT 1 FROM volunteer_slots WHERE id=$1`, [draft])).length, dd.body);
   const pubDel = await api("DELETE", `/volunteer-hub/slots/${morning}`, tok);
   ok("§5 …a published one is refused and stays", pubDel.status === 409 && (await q(`SELECT 1 FROM volunteer_slots WHERE id=$1`, [morning])).length === 1, pubDel.body);
+
+  // ── §VOL-3 · A STATUS, A RECORD THAT IS NOT AN APPLICATION, SERVED HOURS, ERASE, EVENTS ──
+  // Red on main: no volunteer_records, the role toggle took the role v3off, the tomorrow shift counted,
+  // erase left the application, no event team. Each line below was seen red there first.
+  const vol3Counts = async () => (await api("GET", "/volunteer-hub/counts", tok)).body;
+  const vol3Roster = async () => (await api("GET", "/volunteer-hub/roster", tok)).body;
+  const v3c0 = await vol3Counts(), v3r0 = await vol3Roster();
+  ok("§VOL-3 Add made no application for Quinn (only the volunteer page makes those)",
+    !(await q(`SELECT 1 FROM volunteer_applications WHERE org_id=$1 AND person_id=$2`, [ORG, NEW])).length);
+  const v3off = await api("PUT", `/people/${NEW}/roles`, tok, { role: "volunteer", on: false });
+  const v3c1 = await vol3Counts(), v3r1 = await vol3Roster();
+  ok("§VOL-3 taking the Volunteer role off marks them former, with who and when",
+    v3off.status === 200 && v3off.body.volunteer && v3off.body.volunteer.status === "former" && v3off.body.volunteer.statusOn === T && v3off.body.volunteer.statusBy === "Parity Admin" && v3off.body.undo === true, v3off.body);
+  ok("§VOL-3 …the active count goes down by one, and the roster sentence says active",
+    v3c1.roster.value === v3c0.roster.value - 1 && /active volunteers? on the roster/.test(v3r1.sentence), [v3c0.roster.value, v3c1.roster.value, v3r1.sentence]);
+  const [v3pt] = await q(`SELECT person_types FROM donors WHERE id=$1`, [NEW]);
+  ok("§VOL-3 …the role and the record stay (their history stays)", JSON.stringify(v3pt.person_types).includes("volunteer") && v3r1.people.some(p => p.id === NEW && p.status === "former"), v3pt.person_types);
+  const actOff = await api("GET", "/figures/volunteers-active/rows?pageSize=200", tok);
+  ok("§VOL-3 …and the Active volunteers card's rows leave them out, footing to the card", actOff.status === 200 && actOff.body.totalRows === v3c1.roster.value && !(actOff.body.rows || []).some(r => r.donorId === NEW), [actOff.body.totalRows, v3c1.roster.value]);
+  const und = await api("POST", `/donors/${NEW}/volunteer-status/undo`, tok, {});
+  const v3c2 = await vol3Counts(), v3r2 = await vol3Roster();
+  ok("§VOL-3 Undo puts them back to active and the count returns", und.status === 200 && und.body.record.status === "active" && v3c2.roster.value === v3c0.roster.value && v3r2.sentence === v3r0.sentence, [und.body, v3c2.roster.value]);
+  const v3ed = await api("PATCH", `/donors/${NEW}/volunteer-record`, tok, { hoursPerWeek: 6, availability: ["Saturdays"], roles: "Driver" });
+  const vp3 = await api("GET", `/donors/${NEW}/volunteer-profile`, tok);
+  ok("§VOL-3 roles, days and hours a week are editable on the record", v3ed.status === 200 && vp3.body.record.hoursPerWeek === 6 && JSON.stringify(vp3.body.record.roles) === '["Driver"]' && vp3.body.record.status === "active", vp3.body.record);
+
+  // A shift dated tomorrow is not hours given yet.
+  const h0 = (await api("GET", `/donors/${NEW}/volunteer-hours`, tok)).body;
+  const lr0 = (await api("GET", `/volunteer-hub/list?search=Quinn`, tok)).body.rows.find(r => r.id === NEW);
+  const tmr = await api("POST", `/donors/${NEW}/volunteer-hours`, tok, { date: civilPlusDays(1), hours: "2", minutes: "0", note: "VOL-3 tomorrow" });
+  const h1 = (await api("GET", `/donors/${NEW}/volunteer-hours`, tok)).body, v3r3 = await vol3Roster();
+  const lr1 = (await api("GET", `/volunteer-hub/list?search=Quinn`, tok)).body.rows.find(r => r.id === NEW);
+  ok("§VOL-3 a shift dated tomorrow adds no hours this year, in all, or to the roster's total",
+    tmr.status === 201 && h1.thisYear.hours === h0.thisYear.hours && h1.lifetime.hours === h0.lifetime.hours && v3r3.hundredthsThisYear === v3r2.hundredthsThisYear, [h0.lifetime.hours, h1.lifetime.hours, v3r2.hundredthsThisYear, v3r3.hundredthsThisYear]);
+  ok("§VOL-3 …and is not their Last served", lr1 && lr1.lastServed === lr0.lastServed && lr1.lifetimeHours === lr0.lifetimeHours, [lr0, lr1]);
+  const lifeSrc = await api("GET", `/figures/volunteer-hours/rows?from=1900-01-01&to=2999-12-31&donor=${NEW}&pageSize=50`, tok);
+  ok("§VOL-3 …and the lifetime figure's rows foot without it", lifeSrc.status === 200 && !(lifeSrc.body.rows || []).some(r => r.date > T), (lifeSrc.body.rows || []).map(r => r.date));
+
+  // The header cards open their rows, footing to the card.
+  const act = await api("GET", "/figures/volunteers-active/rows?pageSize=200", tok);
+  ok("§VOL-3 the Active volunteers card opens its rows, the same count", act.status === 200 && act.body.totalRows === v3c2.roster.value && (act.body.rows || []).some(r => r.donorId === NEW), [act.body.totalRows, v3c2.roster.value]);
+
+  // Erase takes the application with it; one whose person is gone can be deleted, a live one cannot.
+  const ERA = await mkPerson("Rowan Erase", "rowan.erase@par3v.local");
+  await q(`INSERT INTO volunteer_applications (id,org_id,name,email,answers,status,person_id,created_by,created_by_name)
+           VALUES ('vap_par3v_rowan',$1,'Rowan Erase','rowan.erase@par3v.local','[{"question":"Why?","answer":"To help"}]'::jsonb,'approved',$2,'system:test','test')`, [ORG, ERA]);
+  await q(`INSERT INTO volunteer_applications (id,org_id,name,email,answers,status,created_by,created_by_name)
+           VALUES ('vap_par3v_rowan2',$1,'Rowan E','ROWAN.ERASE@par3v.local','[]'::jsonb,'pending','system:test','test')`, [ORG]);
+  const er = await api("POST", `/donors/${ERA}/erase`, tok, { confirm: "ERASE" });
+  ok("§VOL-3 erasing a person erases their applications and answers, by person and by address",
+    er.status === 200 && !(await q(`SELECT 1 FROM volunteer_applications WHERE org_id=$1 AND id IN ('vap_par3v_rowan','vap_par3v_rowan2')`, [ORG])).length
+      && !(await q(`SELECT 1 FROM volunteer_records WHERE org_id=$1 AND person_id=$2`, [ORG, ERA])).length, er.body);
+  await q(`INSERT INTO volunteer_applications (id,org_id,name,email,status,person_id,created_by,created_by_name)
+           VALUES ('vap_par3v_orphan',$1,'Left Behind','left@par3v.local','approved',$2,'system:test','test'),
+                  ('vap_par3v_live',$1,'Quinn Adebayo','quinn.adebayo@par3v.local','approved',$3,'system:test','test')`, [ORG, ERA, NEW]);
+  const apps = (await api("GET", "/volunteer-hub/applications?status=approved", tok)).body.applications || [];
+  ok("§VOL-3 an application whose person is gone says so; a live one does not",
+    apps.some(a => a.id === "vap_par3v_orphan" && a.personGone) && apps.some(a => a.id === "vap_par3v_live" && !a.personGone), apps.map(a => [a.id, a.personGone]));
+  const delLive = await api("DELETE", "/volunteer-hub/applications/vap_par3v_live", tok);
+  const delGone = await api("DELETE", "/volunteer-hub/applications/vap_par3v_orphan", tok);
+  ok("§VOL-3 …Delete takes the orphan and refuses the live one",
+    delLive.status === 409 && delGone.status === 200 && !(await q(`SELECT 1 FROM volunteer_applications WHERE id='vap_par3v_orphan'`)).length
+      && (await q(`SELECT 1 FROM volunteer_applications WHERE id='vap_par3v_live'`)).length === 1, [delLive.status, delGone.status]);
+
+  // An event has a volunteer team, and a shift is made from it.
+  await q(`INSERT INTO events (id,org_id,name,event_type,date,status) VALUES ('evt_par3v_gala',$1,'Harvest supper','gala',$2,'upcoming')`, [ORG, civilPlusDays(10)]);
+  const evSlot = await api("POST", "/volunteer-hub/slots", tok, { opportunityId: opp.body.id, eventId: "evt_par3v_gala", date: civilPlusDays(10), startTime: "17:00", endTime: "21:00", capacity: 4, name: "Harvest supper" });
+  await api("POST", "/volunteer-hub/signups", tok, { slotId: evSlot.body.id, personId: NEW });
+  const team = await api("GET", "/events/evt_par3v_gala/volunteer-team", tok);
+  ok("§VOL-3 the event page shows its shift and who is on it",
+    evSlot.status === 201 && team.status === 200 && team.body.shifts.length === 1 && team.body.shifts[0].people.some(p => p.id === NEW) && team.body.shifts[0].needed === 4, team.body);
 
   await closeDb();
   summary();

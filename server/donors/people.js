@@ -380,6 +380,16 @@ app.put("/people/:id/roles", requireAuth, checkWriteAccess, wrap(async (req, res
   if (!row) return res.status(404).json({ error: "Person not found" });
 
   const was = PT.typesOf(row);
+  // VOL-3 item 1: taking the Volunteer role off is "Mark as former". The role stays on the record,
+  // so their hours and history stay with it; the status says they no longer volunteer, and Undo
+  // (POST /donors/:id/volunteer-status/undo) puts back the status before it.
+  if (role === "volunteer" && !on && was.includes("volunteer")) {
+    const VR = require("../volunteers/volunteerRecord");
+    const out = await VR.setStatus(req.user.orgId, row.id, "former", actor(req));
+    if (req.audit) { req.audit.action("marked a volunteer former"); req.audit.entity("donor", row.id, row.name); }
+    return res.json({ ...personOut(row, await donorLock(req.user.orgId, row)), volunteer: out.record, undo: !out.unchanged,
+      sentence: VR.statusSentence(row.name, out.record) });
+  }
   const next = PT.normalizeTypes(on ? [...was.filter(t => t !== "other"), role] : was.filter(t => t !== role));
   if (role === "donor" && !on && was.includes("donor")) {
     const lock = await donorLock(req.user.orgId, row);

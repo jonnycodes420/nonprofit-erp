@@ -732,7 +732,7 @@ async function profileLayout(pw, auth) {
     ok(`§layout ${w} the rail starts at the top of the profile`, r.railTop !== null && Math.abs(r.railTop) <= 2, r.railTop);
     ok(`§layout ${w} the rail is the profile's green`, r.railBg === "rgb(18, 41, 28)", r.railBg);
     ok(`§layout ${w} the header has at most two tags and no ladder chips`, r.headTags <= 2 && r.rung === 0, r);
-    ok(`§layout ${w} the seven tabs sit on one line`, r.tabRows === 1 && r.tabs.join() === "activity,giving,conversations,emails,tasks,notes,files", r);
+    ok(`§layout ${w} the seven tabs sit on one line`, r.tabRows === 1 && r.tabs.filter(t => t !== "volunteer").join() === "activity,giving,conversations,emails,tasks,notes,files", r);   // VOL-3: a volunteer also has a Volunteer tab
     await page.evaluate(() => { const m = document.querySelector("[data-testid=dp-main-column]"); if (m) m.scrollTop = 1200; });
     await page.waitForTimeout(300);
     const stuck = await page.evaluate(() => { const b = document.querySelector("[data-testid=dp-right-rail]").getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom), vh: innerHeight }; });

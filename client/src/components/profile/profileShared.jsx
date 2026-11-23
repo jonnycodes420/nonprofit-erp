@@ -327,6 +327,8 @@ const PROFILE_TABS = [
   ["activity", "Activity"], ["giving", "Giving"], ["conversations", "Conversations"], ["emails", "Emails"],
   ["tasks", "Tasks"], ["notes", "Notes"], ["files", "Files"],
 ];
+// VOL-3: a volunteer's record has its own tab, after Giving: status, what they can give, hours.
+const profileTabsFor = isVolunteer => (isVolunteer ? [...PROFILE_TABS.slice(0, 2), ["volunteer", "Volunteer"], ...PROFILE_TABS.slice(2)] : PROFILE_TABS);
 // Which timeline kind each list tab shows, and the other kinds it offers.
 const TAB_KIND = { conversations: "conversation", emails: "email", tasks: "task", notes: "note", files: "file" };
 const TAB_SUBCHIPS = { conversations: ["conversation", "stage", "activity", "service"] };
@@ -374,4 +376,4 @@ function ComingUpMain({tasks=[],meetings=[],onTaskOutcome=null,isReadOnly,onAddT
 }
 const cap=s=>s?String(s).charAt(0).toUpperCase()+String(s).slice(1):"Not set";
 
-export { UndatedGiftDate, ContactFlag, stageTone, lateWords, WEALTH_SCORE_DEFINITION, WEALTH_SCORE_SOURCE, DONOR_RELATIONSHIP_LABELS, relationshipLabelsFor, relationshipLine, CONNECT_PICKS, connectPick, throughWords, stripGiftAmountPrefix, giftFundName, giftTimelineLine, HEADER_CHIP_LIMIT, HeaderChips, ROLE_CHIPS, RoleLine, PROFILE_FIGURES, SUGGEST_KINDS, PROPOSAL_STAGE_LABEL, OPEN_PROPOSAL_KEYS, PROFILE_TABS, TAB_KIND, TAB_SUBCHIPS, STAGE_BAR, RailGroups, ComingUpMain, cap };
+export { UndatedGiftDate, ContactFlag, stageTone, lateWords, WEALTH_SCORE_DEFINITION, WEALTH_SCORE_SOURCE, DONOR_RELATIONSHIP_LABELS, relationshipLabelsFor, relationshipLine, CONNECT_PICKS, connectPick, throughWords, stripGiftAmountPrefix, giftFundName, giftTimelineLine, HEADER_CHIP_LIMIT, HeaderChips, ROLE_CHIPS, RoleLine, PROFILE_FIGURES, SUGGEST_KINDS, PROPOSAL_STAGE_LABEL, OPEN_PROPOSAL_KEYS, PROFILE_TABS, profileTabsFor, TAB_KIND, TAB_SUBCHIPS, STAGE_BAR, RailGroups, ComingUpMain, cap };

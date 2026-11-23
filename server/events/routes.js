@@ -1109,7 +1109,9 @@ app.get("/events/:id", requireAuth, async (req, res) => {
     const [pay] = await query("SELECT stripe_connected, stripe_account_id FROM orgs WHERE id=$1", [orgId]);
     // STALE-2: seats left, from the count the add-guest door checks (server/events/capacity.js).
     const CAP = require("./capacity"), seats = CAP.seats(evts[0].capacity, await CAP.placesTaken(query, orgId, req.params.id));
-    res.json({ ...evts[0], attendees, public_page_url, money: money || null, seats,
+    // VOL-3 item 5: the event's volunteer team rides on this read (the page has a request budget).
+    const volunteerTeam = await require("../volunteers/eventTeam").eventTeam(orgId, req.params.id).catch(() => null);
+    res.json({ ...evts[0], attendees, public_page_url, money: money || null, seats, volunteerTeam,
       payments_connected: !!(pay && pay.stripe_connected && pay.stripe_account_id),
       givenSource: { key: "event-gave", params: { event: req.params.id } },
       givenSentence: "What each person gave for this event or pledged at it, from the gifts and pledges themselves." });

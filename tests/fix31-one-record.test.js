@@ -178,7 +178,7 @@ const linked = (where, args) => q(`SELECT * FROM tasks WHERE ${where} ORDER BY l
   const counts = await api("GET", "/volunteer-hub/counts", T);
   ok("§6 one volunteer, no shift: On the roster reads 1", vol.status === 201 && counts.body.roster && counts.body.roster.value === 1 && counts.body.roster.served.value === 0, [vol.status, counts.body]);
   const ask = await api("POST", "/ask", T, { text: "how many volunteers" });
-  ok("§6 Ask says the same 1", ask.status === 200 && /1 volunteer on the roster/.test(JSON.stringify(ask.body)), ask.body);
+  ok("§6 Ask says the same 1", ask.status === 200 && /1 active volunteer on the roster/.test(JSON.stringify(ask.body)), ask.body);
 
   // ── §7 TENANT WALL ───────────────────────────────────────────────────────
   const foreign = await api("POST", `/tasks/${st.id}/complete`, T2, { done: true });

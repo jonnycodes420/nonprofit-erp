@@ -130,7 +130,7 @@ export const AGENT_TOOLS = [
   { name: "set_next_step", needsHuman: "never", writes: true, undoable: true, entity: "threads",
     what: "Set somebody's next step (label) with a due date (due, YYYY-MM-DD). It replaces the open one if there is one.",
     why: "A commitment this office makes to itself." },
-  { name: "make_volunteer", needsHuman: "never", writes: true, undoable: true, entity: "volunteer_applications",
+  { name: "make_volunteer", needsHuman: "never", writes: true, undoable: true, entity: "volunteer_records",
     what: "Make somebody a volunteer on their own record, with hoursPerWeek, availability (from DAYS) and roles. Use it for anyone who becomes or is a volunteer.",
     why: "The volunteer record on one person; it puts them in the Volunteers group." },
   { name: "sign_up_shift", needsHuman: "never", writes: true, undoable: true, entity: "volunteer_signups",

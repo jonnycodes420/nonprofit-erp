@@ -120,7 +120,8 @@ module.exports = async function flows3Volunteers() {
   // ── §1 · THE PROFILE LISTS THE SHIFTS THE SCHEDULE HAS ─────────────────────
   await leg("§1", async () => {
     await open(`/donors/${P("wren")}`);
-    await page.locator('[data-tab="giving"]').first().click({ timeout: 20000 });
+    await page.locator('[data-tab="volunteer"], [data-tab="giving"]').first().waitFor({ timeout: 20000 });
+    await page.locator((await page.locator('[data-tab="volunteer"]').count()) ? '[data-tab="volunteer"]' : '[data-tab="giving"]').first().click({ timeout: 20000 });   // VOL-3: a volunteer's panel sits on their Volunteer tab
     await page.locator('[data-testid="volunteer-upcoming"]').first().waitFor({ timeout: 20000 });
     await page.waitForTimeout(500);
     const t = await body();
@@ -224,7 +225,7 @@ module.exports = async function flows3Volunteers() {
     const t = await body();
     const defs = await page.evaluate(() => [...document.querySelectorAll("[title]")].map(e => e.title).filter(x => /^Hours from shifts dated/.test(x)));
     await shot("s5-list");
-    ok("§5 On a shift today to today finds Ulla, who served today (W-1108-Volunteers-26X)", /1 volunteer matches/.test(t) && /Ulla Brennick 3 8/.test(t), (t.match(/\d+ volunteers? match.{0,200}/) || [""])[0]);
+    ok("§5 On a shift today to today finds Ulla, who served today (W-1108-Volunteers-26X)", /1 volunteer matches/.test(t) && /Ulla Brennick (Active )?3 8/.test(t), (t.match(/\d+ volunteers? match.{0,200}/) || [""])[0]);
     ok("§5 and the Hours in range column says exactly the dates set", defs.length > 0 && defs.every(d => d === `Hours from shifts dated ${today} to ${today}.`), defs);
   });
 

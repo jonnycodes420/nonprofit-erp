@@ -50,4 +50,6 @@ module.exports = {
   lapseWords: require("./lapseWords"),   // TRUTH-5
   nextSteps: require("./nextSteps"),   // ACCESS-3
   broughtIn: require("./broughtIn"),   // CONNECT-1
+  served: require("./served"),   // VOL-3: hours count on or before today
+  volunteerStatus: require("./volunteerStatus"),   // VOL-3: Active, Paused, Former
 };

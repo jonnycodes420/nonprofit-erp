@@ -810,14 +810,15 @@ const AGENT_EXECUTORS = {
     const donor = ctx.donorById(step.donorId);
     if (!donor) return { skipped: "unknown_donor" };
     const [p] = await query("SELECT person_types FROM donors WHERE id=? AND org_id=?", [donor.id, ctx.orgId]);
-    const [had] = await query(`SELECT id, hours_per_week, availability, roles FROM volunteer_applications WHERE org_id=? AND person_id=? AND status='approved' ORDER BY decided_at DESC NULLS LAST LIMIT 1`, [ctx.orgId, donor.id]);
+    // VOL-3: the record is volunteer_records (server/volunteers/volunteerRecord.js), never an application.
+    const [had] = await query(`SELECT id, hours_per_week, availability, roles FROM volunteer_records WHERE org_id=? AND person_id=?`, [ctx.orgId, donor.id]);
     const body = {};
     if (Number(step.hoursPerWeek) > 0) body.hoursPerWeek = Number(step.hoursPerWeek);
     if (Array.isArray(step.availability) && step.availability.length) body.availability = step.availability;
     if (Array.isArray(step.roles) && step.roles.length) body.roles = step.roles;
     const r = await AC.call(ctx, "POST", `/donors/${donor.id}/make-volunteer`, body);
     if (r.status >= 300) return { failed: refusal(r) };
-    const [rec] = await query(`SELECT id, hours_per_week FROM volunteer_applications WHERE org_id=? AND person_id=? AND status='approved' ORDER BY decided_at DESC NULLS LAST LIMIT 1`, [ctx.orgId, donor.id]);
+    const [rec] = await query(`SELECT id, hours_per_week FROM volunteer_records WHERE org_id=? AND person_id=?`, [ctx.orgId, donor.id]);
     const [types] = await query("SELECT person_types FROM donors WHERE id=? AND org_id=?", [donor.id, ctx.orgId]);
     const isVol = types && JSON.stringify(types.person_types || []).includes("volunteer");
     if (!rec || !isVol || (body.hoursPerWeek != null && Number(rec.hours_per_week) !== Number(body.hoursPerWeek)))
@@ -825,7 +826,7 @@ const AGENT_EXECUTORS = {
     const was = p && p.person_types;
     await agentWrite(ctx, { tool: "make_volunteer", table: "donors", entityId: donor.id,
       before: { person_types: typeof was === "string" ? was : JSON.stringify(was || ["other"]) }, after: { person_types: "+volunteer" }, cites: step.citesRows });
-    await agentWrite(ctx, { tool: "make_volunteer", table: "volunteer_applications", entityId: rec.id,
+    await agentWrite(ctx, { tool: "make_volunteer", table: "volunteer_records", entityId: rec.id,
       before: had ? { hours_per_week: had.hours_per_week, availability: JSON.stringify(had.availability || []), roles: JSON.stringify(had.roles || []) } : null,
       after: { hours_per_week: rec.hours_per_week }, cites: step.citesRows });
     return { donorId: donor.id, id: rec.id };
@@ -970,7 +971,7 @@ const AGENT_RUNNABLE = Object.keys(AGENT_EXECUTORS);
 // the same record.
 const AGENT_UNDO_DELETE_OK = new Set(["agent_drafts", "tasks", "interactions", "threads", "volunteer_notes",
   // AGENT-2: rows the Agent made through a screen's route, undone by removing them.
-  "volunteer_applications", "volunteer_shifts", "volunteer_signups", "event_attendees", "merge_proposals"]);
+  "volunteer_applications", "volunteer_records", "volunteer_shifts", "volunteer_signups", "event_attendees", "merge_proposals"]);
 
 async function agentUndoWrite(w, orgId) {
   const table = w.entity_table;
