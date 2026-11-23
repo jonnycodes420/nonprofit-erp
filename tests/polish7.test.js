@@ -58,7 +58,9 @@ const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJA
   const cur = (st.tags || []).find(t => t.key === "current");
   ok("§2 Louisa's Current tag says the household gift by Marlowe and its day",
     !!cur && /^Current: household gift by Marlowe Quennell, [A-Z][a-z]{2} \d{1,2}\./.test(cur.sentence), cur && cur.sentence);
-  ok("§2 the score's hover never says she has no reason to be Current (\"of their own\")", /no gift of their own in the last year/.test(src("client/src/components/shared.jsx")));
+  // LIST-6: the hover is the stored score's parts (shared/givingStrength.js), which name no lapse at all.
+  ok("§2 the score's hover never says she has no reason to be Current (\"of their own\")",
+    /givingStrengthSentence/.test(src("client/src/components/DonorDirectory.jsx")) && !/no gift in the last year|no gift of their own/.test(src("shared/givingStrength.js")));
 
   // ── §3 · THE AUDIT LOG IS SENTENCES ───────────────────────────────────────
   console.log("\n— §3 · audit log —");

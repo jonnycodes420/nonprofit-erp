@@ -94,7 +94,7 @@ const JPEG = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
   ok("§4 \"None of the 277 lapsed donors match these filters.\"", !!FE && FE.filteredEmptySentence(277, "lapsed donor") === "None of the 277 lapsed donors match these filters.");
   const dd = read("client/src/components/DonorDirectory.jsx"), dn = read("client/src/components/Donors.jsx"), fin = read("client/src/components/Finance.jsx");
   ok("§4 Re-engage with the Directory's filters on gets the unfiltered list, and its empty state names the filters with Clear filters",
-    /unfiltered=\{reFilterN>0\?filtered:null\}/.test(dn) && /filteredEmptySentence\(all,"lapsed donor"\)/.test(dd) && /Clear filters/.test(dd));
+    /unfiltered=\{reFilterN>0\?orgPeople:null\}/.test(dn) && /filteredEmptySentence\(all,"lapsed donor"\)/.test(dd) && /Clear filters/.test(dd));
   ok("§4 the sweep: Finance's transactions emptied by a filter say so, never \"Log one … to begin\"", /filteredEmptySentence\(transactions\.length, "transaction"\)/.test(fin));
 
   // ── §5 each amount its own impact line ───────────────────────────────────
