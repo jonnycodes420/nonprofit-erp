@@ -1369,15 +1369,12 @@ app.get("/grants/:id/manual-match", requireAuth, wrap(async (req, res) => {
   res.json({ grantId: g.id, funder: g.funder, program: g.program || "", amount: amt, matches: matches.map(m => ({ ...m, amount: parseFloat(m.amount) })) });
 }));
 
-app.delete("/grants/:id", requireAuth, wrap(async (req, res) => {
-  // SECURE-1: whoever entered the grant, or an admin (as gifts and pledges).
-  const [gr] = await query("SELECT created_by FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
-  if (!gr) return res.status(404).json({ error: "Not found" });
-  if (!(await mayEditLogged(req, gr))) return res.status(403).json(NOT_YOURS);
-  const { changes } = await run("DELETE FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
-  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
-  res.json({ success: true });
-}));
+// TRASH-1 item 3: through the one remove (removal.js, kind "grant"). The grant
+// and its deadlines, documents and notes move to the trash; the confirm names
+// its gift and pledge on the funder (GET /removals/grant/:id). SECURE-1's
+// "whoever entered it, or an admin" is the kind's ownerOrAdmin.
+app.delete("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) =>
+  require("../../routes/removal").removeThrough(req, res, "grant", req.params.id, { success: true })));
 
 app.get("/grants/:id", requireAuth, wrap(async (req, res) => {
   const rows = await withGrantReceived(req.user.orgId, await query("SELECT * FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]));

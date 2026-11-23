@@ -16,6 +16,8 @@
 // now says $400 cuts $240/$160), and the last line takes the remainder so the
 // pieces always foot to the row, to the cent.
 "use strict";
+// TRASH-1: a trashed person's ledger rows are in no fund (LEDGER_LIVE, money.js).
+const { LEDGER_LIVE } = require("./money");
 
 const MAX_LINES = 12;
 
@@ -74,7 +76,7 @@ const LEDGER_FUND_ROWS = (orgParam = "?") => `(
     SELECT ft.id, ft.org_id, ft.date, ft.type, ft.description, ft.vendor_donor, ft.account_id,
            ft.grant_id, ft.gift_id, ft.donor_id, ft.source, ft.fund_id, ft.amount
       FROM fin_transactions ft
-     WHERE ft.org_id = ${orgParam}
+     WHERE ft.org_id = ${orgParam} AND ${LEDGER_LIVE("ft")}
        AND NOT (ft.gift_id IS NOT NULL AND EXISTS (SELECT 1 FROM gift_fund_lines l WHERE l.gift_id = ft.gift_id AND l.org_id = ft.org_id))
     UNION ALL
     SELECT ft.id, ft.org_id, ft.date, ft.type, ft.description, ft.vendor_donor, ft.account_id,
@@ -90,7 +92,7 @@ const LEDGER_FUND_ROWS = (orgParam = "?") => `(
                        COUNT(*) OVER () AS n
                   FROM gift_fund_lines l WHERE l.gift_id = ft.gift_id AND l.org_id = ft.org_id) x
       ) c ON TRUE
-     WHERE ft.org_id = ${orgParam} AND ft.gift_id IS NOT NULL
+     WHERE ft.org_id = ${orgParam} AND ft.gift_id IS NOT NULL AND ${LEDGER_LIVE("ft")}
   )`;
 
 // The cents of the fund rows above, summed (alias of GIFT_FUND_ROWS's table).

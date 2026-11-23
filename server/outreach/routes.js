@@ -903,15 +903,13 @@ app.patch("/audiences/:id", requireAuth, checkWriteAccess, wrap(async (req, res)
   res.json(row);
 }));
 
-app.delete("/audiences/:id", requireAuth, wrap(async (req, res) => {
-  const r = await run("DELETE FROM audiences WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
-  if (!r.changes) return res.status(404).json({ error: "Not found" });
-  // A campaign already sent keeps its recipient rows, so history is intact.
-  // A DRAFT pointing at this audience now resolves to nobody rather than to
-  // everybody — resolveSegmentSpec returns an empty manual list for a missing
-  // audience, which is the BUILD-88c rule held at the one place it matters.
-  res.json({ deleted: true });
-}));
+// A campaign already sent keeps its recipient rows, so history is intact.
+// A DRAFT pointing at this audience now resolves to nobody rather than to
+// everybody — resolveSegmentSpec returns an empty manual list for a missing
+// audience, which is the BUILD-88c rule held at the one place it matters.
+// TRASH-1 item 3: through the one remove (removal.js, kind "group"), into the trash.
+app.delete("/audiences/:id", requireAuth, wrap(async (req, res) =>
+  require("../../routes/removal").removeThrough(req, res, "group", req.params.id, { deleted: true })));
 async function hubMailState(orgId) {
   const [org] = await query("SELECT id, name, emails_enabled, onboarded_at, org_kind FROM orgs WHERE id=?", [orgId]).catch(() => []);
   const d = mailPolicy.orgMailDecision(org || null, mailPolicy.CATEGORY.DONOR);

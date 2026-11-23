@@ -623,3 +623,11 @@ Backend, Whisper transcription, and extraction logic are fully built and functio
   person picker asks), joins no household, and is in no portfolio count or total: `shared/numbers/pickable.js`,
   read by `/donors/pick`, `crmCommon.portfolioMembershipSql` and `/portfolio/officers`. A lookup by id still finds
   the record and labels it "Former donor (erased)". A new picker asks `/donors/pick`, or reads `PICKABLE`.
+
+## TRASH-1 · one meaning of delete (2026-11-23)
+
+- A person in the trash is in no money figure: gifts by `LIVE("d")`, and every ledger read by `LEDGER_LIVE` (shared/numbers/money.js), which `LEDGER_FUND_ROWS` carries inside. A ledger row's person is its gift's donor, else its own `donor_id`. Nothing is deleted, so Restore brings the money back to the cent. A new `FROM fin_transactions` total uses one of the two.
+- Trashing a person with live receipts asks first ("3 receipts were issued to Ana. Void them?", `personLinks.receiptQuestion`); `DELETE /donors/:id` answers 409 `receipts_live` until `?voidReceipts=1` (the bulk delete: `voidReceipts: true`). They are voided in the trash's own transaction (`trashPeople({ voidReceipts })`); Restore never un-voids one.
+- A delete that carries money or people goes through removal.js: the old routes answer through `routes/removal.js` `removeThrough(req, res, kind, id)`, with kinds in `server/removal/moneyKinds.js` (grant, transaction, opportunity, program, journey, volunteer_hours). `scripts/ci/delete-scan.js` (CI guard) fails a new `app.delete(` that hard-deletes a table with money or person ids without it; its ALLOW list says why each exception stands.
+- A grant's money on the funder (its award pledge and the gifts that paid it) is named in its confirm with two ways forward; "Remove them too" runs the one gift delete and the one pledge delete first, so receipts are checked as for any gift.
+- Staging's walkers' trash is tidied by `scripts/ops/staging-trash-tidy.js --staging` (dry run; `--apply` purges through `purgePeople`).

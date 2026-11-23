@@ -34,7 +34,11 @@ export function TrashList({ isAdmin, isReadOnly, onChanged }) {
   }, [q, isAdmin, tick]);
 
   if (!isAdmin) return null;
-  const people = data ? [...data.people, ...more] : [];
+  // TRASH-1 item 5: the rows on screen narrow on each key at once; the server's
+  // answer for the whole trash (250 ms later) then replaces them.
+  const needle = q.trim().toLowerCase();
+  const people = (data ? [...data.people, ...more] : [])
+    .filter(p => !needle || String(p.name || "").toLowerCase().includes(needle) || String(p.email || "").toLowerCase().includes(needle));
   const showMore = async () => {
     try { const r = await apiFetch(`/trash/people?limit=${PAGE}&offset=${people.length}&q=${encodeURIComponent(q)}`, { cache: "no-store" }); setMore(m => [...m, ...r.people]); }
     catch (e) { setErr(errorMessage(e, "Could not read the trash.")); }
@@ -49,6 +53,7 @@ export function TrashList({ isAdmin, isReadOnly, onChanged }) {
         sentence: d.sentence.replace(/^[\d,]+ (people are|person is)/, () => { const k = Math.max(0, d.inTrash - back.size); return `${k.toLocaleString("en-US")} ${k === 1 ? "person is" : "people are"}`; }) });
       setMore(m => m.filter(p => !back.has(p.id))); setPicked(new Set());
       setSaid(r.sentence || "Restored."); setTick(k => k + 1); told({ donors: true }); if (onChanged) onChanged();
+      try { window.dispatchEvent(new Event("steward:trash-changed")); } catch { /* no window */ }   // TRASH-1: Settings' "Trash (n)" re-reads
     } catch (e) { setErr(e?.body?.sentence || errorMessage(e, "Nobody was restored.")); }
     setBusy(false);
   };

@@ -316,16 +316,28 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
         : `${people.length} of these people have a monthly plan (${livePlanSentence(plans[0]).replace(/\. Cancel.*$/, "")}, and others). Cancel their plans first, or archive them instead.` });
   }
 
+  // TRASH-1 item 2: live receipts are voided only on her yes (voidReceipts:
+  // true, sent by the confirm that named them). Undo import's "remove them
+  // too" names its own people and is unchanged.
+  const voidReceipts = req.body.voidReceipts === true;
+  if (!voidReceipts && !req.body.importId) {
+    const { receipts } = await require("./personLinks").whatGoesWith(query, req.user.orgId, trashIds);
+    if (receipts > 0) {
+      req.audit && req.audit.skip && req.audit.skip("a refused delete changes nothing");
+      return res.status(409).json({ error: "receipts_live", receipts,
+        sentence: `${receipts.toLocaleString("en-US")} ${receipts === 1 ? "receipt was" : "receipts were"} issued to these people. Say whether to void them, then move them to trash. Nobody was moved.` });
+    }
+  }
   // WIRE-1: one trash row per person, exactly as DELETE /donors/:id writes,
   // so the shared Undo toast can bring the whole batch back.
   const who = actor(req);
   // INTEGRITY-2: through the one door out, so their links go with them (personTrash.trashPeople).
   const why = req.body.importId ? { kind: "undo_moved_too", importId: String(req.body.importId) } : { kind: "bulk_delete" };
-  const gone = await require("../../personTrash").trashPeople(req.user.orgId, trashIds, who, { why });
+  const gone = await require("../../personTrash").trashPeople(req.user.orgId, trashIds, who, { why, voidReceipts });
   const changes = gone.length, undoIds = gone.map(g => g.undoId);
   require("../../routes/dataHealth").recheckSoon(req.user.orgId, "delete");   // FIX-59: Data health is current
   if (req.audit && skippedWithGifts) req.audit.label(`Moved ${changes} ${changes === 1 ? "person" : "people"} to trash; left ${skippedWithGifts} with gifts.`);
-  res.json({ deleted: changes, skippedWithGifts, undoIds, undoSeconds: UNDO_SECONDS });
+  res.json({ deleted: changes, skippedWithGifts, undoIds, undoSeconds: UNDO_SECONDS, voidedReceipts: gone.voidedReceipts || 0 });
 }));
 
 // MOPUP-2 · what the trash confirm says before it asks: of these people, how
@@ -342,8 +354,12 @@ app.post("/donors/trash-check", requireAuth, requireAdmin, wrap(async (req, res)
   const ids = [...new Set(req.body.ids.map(String))];
   const giving = await peopleWithGifts(req.user.orgId, ids);
   // INTEGRITY-2: the delete's confirm names what goes with them
-  const withThem = await require("./personLinks").whatGoesWith(query, req.user.orgId, ids);
-  res.json({ count: ids.length, withGifts: giving.size, ...withThem });
+  const PL = require("./personLinks");
+  const withThem = await PL.whatGoesWith(query, req.user.orgId, ids);
+  // TRASH-1 item 2: the receipts question, in the words the confirm shows.
+  const [one] = ids.length === 1 ? await query("SELECT name, kind FROM donors WHERE id=? AND org_id=?", [ids[0], req.user.orgId]) : [];
+  res.json({ count: ids.length, withGifts: giving.size, ...withThem,
+    receiptQuestion: PL.receiptQuestion(withThem.receipts, ids.length === 1 ? PL.shortName(one) : "these people") });
 }));
 
 // The "permanent-purge" the comment above bulk-delete anticipated: hard-

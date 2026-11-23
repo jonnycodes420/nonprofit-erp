@@ -34,13 +34,15 @@ export function BulkTrash({ ids, disabled, onDone, flash }) {
 
   const withGifts = check && !check.error ? Number(check.withGifts) || 0 : 0;
   const moving = include ? ids.length : ids.length - withGifts;
+  const receipts = check && !check.error ? Number(check.receipts) || 0 : 0;   // TRASH-1 item 2
 
   async function go() {
     if (busy || !check || check.error || moving < 1) return;
     setBusy(true);
     try {
       const r = await apiFetch("/donors/bulk-delete", { method: "POST", body: JSON.stringify({
-        ids, count: ids.length, withGifts: include ? "include" : "skip", withGiftsCount: withGifts }) });
+        ids, count: ids.length, withGifts: include ? "include" : "skip", withGiftsCount: withGifts,
+        ...(include && receipts ? { voidReceipts: true } : {}) }) });   // TRASH-1: the box named the receipts
       setConfirm(false);
       if (onDone) onDone();
       const n = Number(r.deleted) || 0, left = Number(r.skippedWithGifts) || 0;
@@ -91,7 +93,7 @@ export function BulkTrash({ ids, disabled, onDone, flash }) {
                 {withGifts === ids.length ? (ids.length === 1 ? "This person has gifts" : `All ${people(ids.length)} have gifts`) : `${withGifts.toLocaleString("en-US")} of them ${withGifts === 1 ? "has" : "have"} gifts`}, so {withGifts === 1 ? "that one stays" : "they stay"} unless you say otherwise.
                 <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 10, cursor: "pointer" }}>
                   <input type="checkbox" data-testid="bulk-trash-include" checked={include} onChange={e => setInclude(e.target.checked)} style={{ marginTop: 3 }} />
-                  <span>Move the {people(withGifts)} with gifts too, and their gift history with them.</span>
+                  <span>Move the {people(withGifts)} with gifts too, and their gift history with them.{receipts > 0 && <span data-testid="bulk-trash-receipts"> {receipts.toLocaleString("en-US")} {receipts === 1 ? "receipt was" : "receipts were"} issued to them; {receipts === 1 ? "it is" : "they are"} voided, and Restore does not un-void {receipts === 1 ? "it" : "them"}.</span>}</span>
                 </label>
               </div>
             )}

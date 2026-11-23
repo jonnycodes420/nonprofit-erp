@@ -14,17 +14,20 @@ import { apiFetch } from "../../api";
 import { T } from "../shared";
 import { RecordLink } from "../RecordLink";
 import { tabHref } from "../../lib/appUrls";
-import { useChangeRev } from "../../lib/changes";   // LIVE-2
+import { useChanged } from "../../lib/changes";
 
+// TRASH-1 item 5: the count re-reads on every write that moves a person (a
+// delete, a Restore, an Undo, Empty trash: lib/changes.js announces each), so
+// "Trash (n)" matches the list after a restore with no reload. It listened
+// only for "steward:trash-changed", which nothing ever sent.
 export function useTrashCount(on = true) {
   const [n, setN] = useState(null);
-  // LIVE-2: nothing ever sent "steward:trash-changed", so a person moved to the
-  // trash (or restored) left "Trash (0)" until a reload. Any change to people re-reads it.
-  const rev = useChangeRev(["person"]);
+  const [rev, setRev] = useState(0);
+  useChanged(["person"], () => setRev(k => k + 1));
   useEffect(() => {
     if (!on) { setN(null); return undefined; }
     let live = true;
-    const read = () => apiFetch("/trash/people?limit=1").then(r => { if (live) setN(Number(r && r.inTrash) || 0); }).catch(() => { if (live) setN(null); });
+    const read = () => apiFetch("/trash/people?limit=1", { cache: "no-store" }).then(r => { if (live) setN(Number(r && r.inTrash) || 0); }).catch(() => { if (live) setN(null); });
     read();
     window.addEventListener("steward:trash-changed", read);
     return () => { live = false; window.removeEventListener("steward:trash-changed", read); };
