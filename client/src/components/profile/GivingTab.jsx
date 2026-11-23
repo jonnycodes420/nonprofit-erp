@@ -19,6 +19,7 @@ import { FunderPanel } from "../FunderPanel";
 import { ReceiptCell, YearEndPanel } from "./ReceiptsAndStatements";
 import { ProfileMoreNumbers } from "../ProfileHeaderFigures";
 import AttributionField from "../gifts/AttributionField";   // QUICKADD-1: campaign, appeal, fundraiser
+import PropertyFields from "../gifts/PropertyFields";   // RECEIPTS-1: an in-kind gift says what it was
 import SameAsLast from "../gifts/SameAsLast";   // QUICKADD-1: "Same as last"
 import { emptyFund } from "../gifts/FundField";
 import { orgTodayCivil } from "../../lib/orgToday";
@@ -333,6 +334,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                 <input value={addGiftForm.payment_method} onChange={e=>setAddGiftForm(p=>({...p,payment_method:e.target.value}))} placeholder="Payment method" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
               </div>
               <input value={addGiftForm.notes} onChange={e=>setAddGiftForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}/>
+              <PropertyFields form={addGiftForm} setForm={setAddGiftForm} testid="dp-gift-property"/>
               {/* QUICKADD-1: Campaign, Appeal and Fundraiser / giving page, each searched
                   from what the org has, Campaign and Appeal made inline. A campaign the
                   gift's date falls outside is shown and cannot be chosen (NUMBERS-1). A
@@ -433,6 +435,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                               </select>
                               <input value={giftEditForm.payment_method} onChange={e=>setGiftEditForm(p=>({...p,payment_method:e.target.value}))} placeholder="Method" style={{width:100,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
                               <input value={giftEditForm.notes} onChange={e=>setGiftEditForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{flex:1,minWidth:80,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
+                              <PropertyFields form={giftEditForm} setForm={setGiftEditForm} compact testid="gift-edit-property"/>
                               <EventField value={giftEditForm.eventId||""} onChange={id=>setGiftEditForm(p=>({...p,eventId:id}))} testid="gift-edit-event" style={{flex:"1 1 260px"}}/>
                               <FundField value={giftEditForm.fund} amount={giftEditForm.amount} onChange={v=>setGiftEditForm(p=>({...p,fund:v}))} testid="gift-edit-fund" compact style={{flex:"1 1 100%"}}/>
                               {giftCfDefs.map(d=>(
@@ -480,7 +483,7 @@ function GivingTab({rc,acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,a
                               {[g.notes,...giftCfDefs.map(d=>{const v=(g.custom_fields||{})[d.key];return (v!==null&&v!==undefined&&v!=="")?`${d.label}: ${renderCustomValue(d,v)}`:null;}).filter(Boolean)].filter(Boolean).join(" · ")}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
                               {/* MONEY-4: a refund row is kept as written (append-only, like the ledger); a mistaken one is refunded back by its gift's own edit. */}
-                              {!g.refund_of&&<button onClick={()=>{setGiftEditId(g.id);setGiftEditForm({amount:g.amount,date:g.date,type:g.type,payment_method:g.payment_method||"",notes:g.notes||"",fund_id:g.fund_id||"",fund:fundFromGift(g),eventId:g.event_id||"",acknowledgement_sent:g.acknowledgement_sent,customFields:Object.fromEntries(giftCfDefs.map(d=>[d.key,giftCfEditStr(d,(g.custom_fields||{})[d.key])]))});}} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Edit</button>}
+                              {!g.refund_of&&<button onClick={()=>{setGiftEditId(g.id);setGiftEditForm({amount:g.amount,date:g.date,type:g.type,payment_method:g.payment_method||"",notes:g.notes||"",property_description:g.property_description||"",stock_shares:g.stock_shares??"",stock_ticker:g.stock_ticker||"",fund_id:g.fund_id||"",fund:fundFromGift(g),eventId:g.event_id||"",acknowledgement_sent:g.acknowledgement_sent,customFields:Object.fromEntries(giftCfDefs.map(d=>[d.key,giftCfEditStr(d,(g.custom_fields||{})[d.key])]))});}} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Edit</button>}
                               {!g.refund_of&&<button onClick={()=>deleteGift(g.id)} style={{background:"none",border:"none",color:T.terracotta,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Delete</button>}
                               {!isReadOnly&&g.amount>0&&!g.refund_of&&!g.refunded_in_full&&<button data-testid="dp-gift-refund" onClick={()=>setRefunding({gift:g,leftCents:Math.round(g.amount*100)+giftsFull.filter(x=>x.refund_of===g.id).reduce((n,x)=>n+Math.round(x.amount*100),0)})} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Refund</button>}
                             </td>

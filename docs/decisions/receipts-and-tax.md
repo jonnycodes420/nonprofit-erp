@@ -58,7 +58,22 @@ Read this when you touch receipts, acknowledgments, letters, year-end statements
 
 - **The EIN lives in one place: Settings → Tax Receipts, `orgs.ein` (MONEY-4).** The giving page and portal footer, the editor, receipts and statements all read it (`server/org/einLine.js` for the footer line). `portal_settings.ein_line` is no longer read or written.
 
+- **The donor block is the donor's; the org lives in the header (RECEIPTS-1).** Under the donor's name a receipt
+  prints `snapshot.donorAddress` (the donor's mailing address frozen at issue, a household statement's primary member's)
+  or nothing. The org's legal name, address and EIN are in the header band and the footer only. A snapshot without
+  `donorAddress` was drawn the old way (the org's address under the name): `receiptParts.orgAddressInDonorBlock`.
+- **A gift of property is described, never valued (RECEIPTS-1, IRS Pub 1771).** An in-kind or stock receipt shows the
+  Description of property (`gifts.property_description`, else notes; stock: shares and ticker), the date received, the
+  goods-or-services sentence and "Steward does not state a value for donated property. The donor determines its fair
+  market value." No AMOUNT, no amount in the snapshot; the org's value stays on the gift and `receipts.amount`. No
+  receipt for an undescribed in-kind gift.
+- **Reissue keeps the number (RECEIPTS-1).** `POST /receipts/:id/reissue`: a drifted gift receipt is voided and issued
+  under a new number (PLEDGES-3); any other is voided and made again as the same number with `-R1`, `-R2`. Made, not
+  emailed. Nothing reissues automatically.
+
 ## Gotchas
+- **The db layer turns every `?` into a placeholder,** so the jsonb `?` operator can't be used in a query; write
+  `(col -> 'key') IS NOT NULL`. (RECEIPTS-1)
 - **`POST /donors/:id/year-end-statement` takes `{year, send}`, not `taxYear`.** (Tax receipting)
 - **The thank-you queue must write the user's name as logged-by, not the actor email.** Same trap as
   the letter signature. (BUILD-88b)
@@ -69,6 +84,7 @@ Read this when you touch receipts, acknowledgments, letters, year-end statements
 - `POST /acknowledgments/letters/preview`, `/letters/pdf`, `/acknowledgments/mark` — print and mark
 - `shared/draftNote.js` — drafted thank-yous
 - `shared/legalEntity.js` — Steward Software LLC, the only place it is written
+- `server/receipts/receiptParts.js` / `receiptDraw.js` / `reissue.js` — the donor block, property gifts, Reissue (RECEIPTS-1)
 - `tests/legal-entity.test.js` — donee-not-vendor receipt check and the EIN allowlist
 
 ---

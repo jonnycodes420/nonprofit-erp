@@ -13,7 +13,7 @@
 // shows the line the moment it is listed.
 //   DRIFT_SELECT(r, g)  the columns a receipt list adds (gift_amount, gift_missing)
 //   driftOf(row)        null, or { receiptAmount, giftAmount, zero, sentence }
-//   POST /receipts/:id/reissue
+//   POST /receipts/:id/reissue   (no drift: RECEIPTS-1's same-number reissue, server/receipts/reissue.js)
 "use strict";
 const express = require("express");
 const routers = { r1: express.Router() };
@@ -52,13 +52,15 @@ function mount(ctx) {
   // One click: void the drifted receipt (its note says why and what replaced
   // it) and, for a gift above $0, issue the gift's receipt as it is now. Made,
   // not emailed: the new receipt is sent only from its own Email link.
-  routers.r1.post("/receipts/:id/reissue", requireAuth, requireAdmin, wrap(async (req, res) => {
+  routers.r1.post("/receipts/:id/reissue", requireAuth, requireAdmin, wrap(async (req, res, next) => {
     const orgId = req.user.orgId;
     const [row] = await query(`SELECT r.*, ${DRIFT_COLUMNS} FROM receipts r ${DRIFT_JOIN("r")} WHERE r.id = ? AND r.org_id = ?`, [req.params.id, orgId]);
     if (!row) return res.status(404).json({ error: "not_found", sentence: "That receipt is not on file." });
     if (row.voided_at) return res.status(409).json({ error: "already_void", sentence: "That receipt is already void." });
     const d = driftOf(row);
-    if (!d) return res.status(409).json({ error: "no_drift", sentence: "The gift still says what this receipt says, so there is nothing to reissue." });
+    // RECEIPTS-1: a receipt whose gift has not changed is reissued as it stands, under the same
+    // number with a suffix (server/receipts/reissue.js), one Reissue for both.
+    if (!d) return next();
     const who = actor(req);
     const day = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
     const why = `Gift changed after this receipt (receipt ${usd(row.amount)}, gift now ${d.giftAmount == null ? "removed" : usd(d.giftAmount)}). Voided by ${who.name} on ${day}.`;

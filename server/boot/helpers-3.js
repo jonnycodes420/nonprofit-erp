@@ -64,6 +64,7 @@ __boot.register(c => {
 // PDFs both, independently, before this).
 async function renderReceiptPdf(snapshot) {
   const PDFDocument = require("pdfkit");
+  const RD1 = require("../receipts/receiptDraw");
   const doc = new PDFDocument({ margin: 50, size: "LETTER", bufferPages: true });
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -92,41 +93,21 @@ async function renderReceiptPdf(snapshot) {
     if (logoBuf) { try { doc.image(logoBuf, PW - 50 - 54, 18, { fit: [54, 54], align: "right" }); } catch {} }
     doc.font("Helvetica").fontSize(9).fillColor(HEADER_SUB).text(isYearEnd ? "Y E A R - E N D   G I V I N G   S T A T E M E N T" : "D O N A T I O N   R E C E I P T", 50, 24);
     doc.font("Helvetica-Bold").fontSize(19).fillColor(HEADER_FG).text(snapshot.orgLegalName, 50, 40, { width: PW - 120 });
-    doc.font("Helvetica").fontSize(9).fillColor(HEADER_SUB).text(`EIN: ${snapshot.orgEin || "Not set"}`, 50, 68);
+    // RECEIPTS-1: the org's EIN and address live in the band (and the footer), never in the donor block.
+    doc.font("Helvetica").fontSize(9).fillColor(HEADER_SUB).text(RD1.orgLine(snapshot), 50, 68, { width: PW - 170, height: 11, ellipsis: true });
 
     let y = 112;
     doc.font("Helvetica").fontSize(9).fillColor(INK3).text(`Receipt #${snapshot.receiptNumber}`, 50, y);
     doc.text(`Issued ${snapshot.issueDate}`, PW - 220, y, { width: 170, align: "right" });
     y += 22;
 
-    doc.font("Helvetica-Bold").fontSize(13).fillColor(INK).text(snapshot.donorName || "Valued Donor", 50, y); y = doc.y + 4;
-    if (snapshot.orgAddress) {
-      doc.font("Helvetica").fontSize(8).fillColor(INK3).text(snapshot.orgAddress, 50, y, { width: PW - 100 }); y = doc.y;
-    }
-    y += 14;
+    // RECEIPTS-1: the donor's name and the donor's own address (blank when none). The template
+    // used to print snapshot.orgAddress here, so every receipt read as if the donor lived at the org.
+    const C = { PW, INK, INK3, BG, GREEN };
+    y = RD1.donorBlock(doc, snapshot, y, C);
 
     if (!isYearEnd) {
-      doc.rect(50, y, PW - 100, 66).fill(BG);
-      doc.font("Helvetica").fontSize(7).fillColor(INK3).text("GIFT DATE", 62, y + 10);
-      doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text(snapshot.giftDate, 62, y + 22);
-      doc.font("Helvetica").fontSize(7).fillColor(INK3).text("AMOUNT", 230, y + 10);
-      doc.font("Helvetica-Bold").fontSize(11).fillColor(GREEN).text(fmtD(snapshot.amount), 230, y + 22);
-      doc.font("Helvetica").fontSize(7).fillColor(INK3).text("PAYMENT METHOD", 390, y + 10);
-      doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text(snapshot.paymentMethod || "Not set", 390, y + 22);
-      y += 84;
-
-      if (snapshot.paidInAll != null && snapshot.goodsServicesSentence) {
-        // HOME-3: Partly a gift. AMOUNT above is the gift part; this says what was paid in all.
-        doc.font("Helvetica").fontSize(9).fillColor(INK).text(snapshot.goodsServicesSentence, 50, y, { width: PW - 100, lineGap: 2 });
-      } else if (snapshot.quidProQuoDesc) {
-        doc.font("Helvetica").fontSize(9).fillColor(INK).text(
-          `In exchange for this contribution, ${snapshot.orgLegalName} provided: ${snapshot.quidProQuoDesc} (estimated fair market value ${fmtD(snapshot.quidProQuoValue)}). Only the amount of your contribution in excess of that value, ${fmtD(snapshot.deductibleAmount)}, is tax-deductible.`,
-          50, y, { width: PW - 100, lineGap: 2 }
-        );
-      } else {
-        doc.font("Helvetica").fontSize(9).fillColor(INK).text("No goods or services were provided in exchange for this contribution.", 50, y, { width: PW - 100 });
-      }
-      y = doc.y + 16;
+      y = RD1.giftBox(doc, snapshot, y, C, fmtD);   // RECEIPTS-1: property is described, never valued
     } else {
       doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text(`Tax Year ${snapshot.taxYear} Giving Summary`, 50, y); y += 18;
       doc.font("Helvetica").fontSize(7).fillColor(INK3).text("DATE", 58, y);
@@ -250,7 +231,7 @@ function issueGiftReceipt(gift, org, donor, opts = {}) {
   return require("../shared/personLock").withPersonLock("receipt", org.id, gift.id,
     () => issueGiftReceiptNow(gift, org, donor, opts));
 }
-async function issueGiftReceiptNow(gift, org, donor, { send = true, by = SYS_AUTO, manual = false } = {}) {
+async function issueGiftReceiptNow(gift, org, donor, { send = true, by = SYS_AUTO, manual = false, receiptNumber: reissueAs = null } = {}) {
   if (!org.receipts_enabled) return { skipped: "receipts_disabled" };
   if (gift.is_sample) return { skipped: "sample_gift" };
   if (!(Number(gift.amount) > 0)) return { skipped: "zero_gift" };   // PLEDGES-3: a $0 gift can't carry a receipt
@@ -272,12 +253,16 @@ async function issueGiftReceiptNow(gift, org, donor, { send = true, by = SYS_AUT
   // INSERT below.
   const existing = await query("SELECT * FROM receipts WHERE gift_id=? AND voided_at IS NULL AND type='gift'", [gift.id]);
   if (existing.length) return { skipped: "already_issued", receipt: existing[0] };
+  // RECEIPTS-1: a gift of property is described, never valued, and cannot be receipted undescribed.
+  const RP1 = require("../receipts/receiptParts");
+  const nonCash = RP1.nonCash(gift);
+  if (nonCash && !nonCash.description) return { skipped: "no_property_description" };
 
   // COMMS-2 — the one rule (statementTotals.js): never more deductible than was
   // given, so a partial refund cannot leave a receipt claiming the old figure.
   const _line = require("../../statementTotals").statementLines([{ ...gift, is_sample: false, dispute_status: null }]).lines[0];
   const deductibleAmount = toDollars(_line.deductibleCents);
-  const receiptNumber = await allocateReceiptNumber(org.id);
+  const receiptNumber = reissueAs || await allocateReceiptNumber(org.id);   // RECEIPTS-1: a reissue keeps its number, with a suffix
   // BUILD-64: the receipt's brand surface (band color + logo) comes from the
   // SAME resolver as the portal/give page — frozen into the snapshot at issue
   // time, so a later theme change never alters an already-issued receipt.
@@ -302,6 +287,7 @@ async function issueGiftReceiptNow(gift, org, donor, { send = true, by = SYS_AUT
     // in any process timezone west of UTC).
     issueDate: orgTime.formatCivil(orgToday(await orgTz(org.id))),
     donorName: donor.name,
+    ...(await RP1.donorBlock(donor)),   // RECEIPTS-1: the donor's own address at issue time, "" when none
     giftDate: gift.date ? orgTime.formatCivil(gift.date) : "",
     giftDateRaw: gift.date || null, // ISO, alongside the display-formatted giftDate above — lets the /dashboard/today mismatch-detection query compare against gifts.date directly without reparsing a formatted string
     amount: parseFloat(gift.amount),
@@ -309,6 +295,8 @@ async function issueGiftReceiptNow(gift, org, donor, { send = true, by = SYS_AUT
     paymentMethod: gift.payment_method || "",
     quidProQuoDesc: gift.quid_pro_quo_desc || null,
     quidProQuoValue: gift.quid_pro_quo_value != null ? parseFloat(gift.quid_pro_quo_value) : null,
+    // RECEIPTS-1: property's value is the donor's to determine; the org's value stays on the gift.
+    ...(nonCash ? { nonCash, amount: null, deductibleAmount: null, paymentMethod: "" } : {}),
   };
   // HOME-3: the quid-pro-quo disclosure, in one sentence the receipt prints.
   // A row she marked Partly a gift in Review is stored at the gift part (the
@@ -344,7 +332,7 @@ async function issueGiftReceiptNow(gift, org, donor, { send = true, by = SYS_AUT
   await run(
     `INSERT INTO receipts (id, org_id, donor_id, gift_id, type, receipt_number, amount, deductible_amount, snapshot, pdf_data, created_by, created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, org.id, donor.id, gift.id, "gift", receiptNumber, snapshot.amount, deductibleAmount, JSON.stringify(snapshot), pdfBuffer.toString("base64"), by.id, by.name]
+    [id, org.id, donor.id, gift.id, "gift", receiptNumber, parseFloat(gift.amount), deductibleAmount, JSON.stringify(snapshot), pdfBuffer.toString("base64"), by.id, by.name]
   );
 
   let emailSent = false;

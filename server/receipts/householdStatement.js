@@ -87,8 +87,14 @@ function mountHousehold(app, ctx) {
     if (!c) return res.status(404).json({ error: "Household not found" });
     const L = await householdLines(query, orgId, c.members, year);
     if (!L.giftCount) return res.status(400).json({ error: `No gifts found for ${year} from anyone in ${c.household.name}.` });
-    const by = actor(req);
-    const out = await require("../shared/personLock").withPersonLock("year-end", orgId, `${c.household.id}:${year}`, async () => {
+    const out = await issue(org, c, L, year, { by: actor(req), send: req.body.send === true });
+    res.status(201).json(out);
+  }));
+
+  // The statement itself, made (or made again: RECEIPTS-1's Reissue passes `receiptNumber`).
+  function issue(org, c, L, year, { by, send = false, receiptNumber: reissueAs = null }) {
+    const orgId = org.id;
+    return require("../shared/personLock").withPersonLock("year-end", orgId, `${c.household.id}:${year}`, async () => {
       await run(`UPDATE receipts SET voided_at = NOW(), void_reason = 'Superseded by a newly generated statement'
                   WHERE org_id = ? AND household_id = ? AND tax_year = ? AND type = ? AND voided_at IS NULL`, [orgId, c.household.id, year, TYPE]);
       const lineItems = [];
@@ -97,7 +103,7 @@ function mountHousehold(app, ctx) {
                          paymentMethod: l.paymentMethod, giver: p.name });
       }
       const [primary] = await query("SELECT * FROM donors WHERE id = ? AND org_id = ?", [c.household.primaryId, orgId]);
-      const receiptNumber = await allocateReceiptNumber(orgId);
+      const receiptNumber = reissueAs || await allocateReceiptNumber(orgId);
       const brand = await resolveOrgBrandTheme(orgId).catch(() => null);
       const snapshot = {
         type: "year_end", household: true,
@@ -112,6 +118,8 @@ function mountHousehold(app, ctx) {
         receiptNumber,
         issueDate: orgTime.formatCivil(orgToday(await orgTz(orgId))),   // ORG_TZ_SEAM_OK
         donorName: c.household.name,
+        // RECEIPTS-1: the household's mailing address: the one its members share, else the primary member's.
+        ...(await require("./receiptParts").donorBlock(primary)),
         taxYear: year,
         lineItems,
         members: L.per.map(p => ({ name: p.name, totalAmount: toDollars(p.totalCents), gifts: p.lines.length })),
@@ -124,7 +132,7 @@ function mountHousehold(app, ctx) {
                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [id, orgId, c.household.primaryId, c.household.id, null, TYPE, year, receiptNumber, snapshot.totalAmount, snapshot.totalDeductible,
          JSON.stringify(snapshot), pdf.toString("base64"), by.id, by.name]);
-      if (req.body.send === true && primary && primary.email) {
+      if (send && primary && primary.email) {
         const decision = await donorMailDecision("year_end", primary.email, orgId, { donorId: primary.id });
         if (decision.send && await sendReceiptEmail(org, primary, snapshot, pdf, `${year}-household-giving-statement.pdf`)) {
           await run("UPDATE receipts SET sent_to = ?, sent_at = NOW() WHERE id = ?", [primary.email, id]);
@@ -133,8 +141,8 @@ function mountHousehold(app, ctx) {
       const [row] = await query("SELECT * FROM receipts WHERE id = ?", [id]);
       return row;
     });
-    res.status(201).json(out);
-  }));
+  }
+  return { issueHouseholdStatement: issue };
 }
 
 module.exports = { mountHousehold, householdChoice, householdLines, TYPE };

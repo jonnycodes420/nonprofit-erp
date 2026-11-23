@@ -40,7 +40,9 @@ const {
 } = ctx;
 let app = routers.r0;
 const RD = require("../receipts/drift");
-require("../receipts/householdStatement").mountHousehold(app, ctx);   // FLOWS-11: one statement for a household
+const RP1 = require("../receipts/receiptParts");   // RECEIPTS-1: in-kind receipts describe the property
+const HHS = require("../receipts/householdStatement");
+const { issueHouseholdStatement } = HHS.mountHousehold(app, ctx);   // FLOWS-11: one statement for a household
 
 // POST /pledges/run-reminders — drive the sweep for the caller's org now
 // (ops/test hook, the /nudges/run bar). {today} pins the date.
@@ -88,6 +90,8 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(giftForm.body 
   if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
     return res.status(400).json({ error: "A positive amount is required" });
   }
+  const propIn = RP1.propertyFields(req.body);   // RECEIPTS-1: an in-kind gift says what it was
+  if (RP1.inKindMissingDescription(type, propIn, notes)) return res.status(400).json({ error: RP1.IN_KIND_NEEDS_DESCRIPTION, code: "property_description" });
 
   const donorExists = await query(
     "SELECT id, stage FROM donors WHERE id = ? AND org_id = ?",
@@ -227,7 +231,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(giftForm.body 
     pledgeId: pledgeRow ? pledgeRow.id : null, idempotencyKey: idemKey, conflict: "idempotency",
     eventId: giftEvent ? giftEvent.id : null,
     appealId: attr.appealId, givingPageId: attr.givingPageId, peerFundraiserId: attr.peerFundraiserId,
-    actorId: actor(req).id, actorName: actor(req).name, source: "gift_form",
+    actorId: actor(req).id, actorName: actor(req).name, source: "gift_form", ...propIn,
     extras: giftExtras, thread: { id: req.user.userId, name: actor(req).name },
   });
   if (written.duplicate) {
@@ -378,7 +382,8 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
     await run(
       `UPDATE gifts SET amount=?,date=?,type=?,campaign=?,campaign_id=?,event_id=?,notes=?,fund_id=?,payment_method=?,acknowledgement_sent=?,
               acknowledgement_sent_at = CASE WHEN ? IS TRUE THEN COALESCE(acknowledgement_sent_at, NOW()) ELSE NULL END,
-              scheduled_on=?   -- TRUTH-6: a date moved after today makes it scheduled; one moved to today or before, a gift
+              scheduled_on=?,   -- TRUTH-6: a date moved after today makes it scheduled; one moved to today or before, a gift
+              property_description=?, stock_shares=?, stock_ticker=?   -- RECEIPTS-1
         WHERE id=? AND org_id=?`,
       [newAmt, newDate, type||g.type, newCampaign, newCampaignId, newEventId,
        notes!==undefined?notes:g.notes, fund_id!==undefined?fund_id:g.fund_id,
@@ -386,6 +391,7 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
        acknowledgement_sent!==undefined?acknowledgement_sent:g.acknowledgement_sent,
        acknowledgement_sent!==undefined?acknowledgement_sent:g.acknowledgement_sent,   // A.5 — the same value drives the stamp
        require("../../shared/numbers/scheduled").scheduledOn(newDate, orgToday(await orgTz(req.user.orgId))),   // ORG_TZ_SEAM_OK
+       ...RP1.propertyValues(RP1.propertyFields(req.body), g),
        req.params.id, req.user.orgId]
     );
     // NUMBERS-1: a soft credit follows the gift's new amount.
@@ -924,7 +930,7 @@ function issueYearEndStatement(org, donor, year, opts = {}) {
   return require("../shared/personLock").withPersonLock("year-end", org.id, `${donor.id}:${year}`,
     () => issueYearEndStatementNow(org, donor, year, opts));
 }
-async function issueYearEndStatementNow(org, donor, year, { send = true, by = SYS_AUTO } = {}) {
+async function issueYearEndStatementNow(org, donor, year, { send = true, by = SYS_AUTO, receiptNumber: reissueAs = null } = {}) {
   const gifts = await query(
     `SELECT * FROM gifts WHERE org_id=? AND donor_id=? AND (is_sample IS NOT TRUE)
        AND date >= ? AND date <= ? ORDER BY date ASC`,
@@ -963,7 +969,7 @@ async function issueYearEndStatementNow(org, donor, year, { send = true, by = SY
     if (hours > 0 || evs.length) yourYear = { volunteerHours: hours, shifts: h ? h.n : 0, events: evs.map(e => e.name) };
   }
 
-  const receiptNumber = await allocateReceiptNumber(org.id);
+  const receiptNumber = reissueAs || await allocateReceiptNumber(org.id);   // RECEIPTS-1: a reissue keeps its number, with a suffix
   const brand = await resolveOrgBrandTheme(org.id).catch(() => null); // BUILD-64: shared resolver, frozen at issue
   const snapshot = {
     type: "year_end",
@@ -980,6 +986,7 @@ async function issueYearEndStatementNow(org, donor, year, { send = true, by = SY
     receiptNumber,
     issueDate: orgTime.formatCivil(orgToday(await orgTz(org.id))), // ORG_TZ_SEAM_OK
     donorName: donor.name,
+    ...(await require("../receipts/receiptParts").donorBlock(donor)),   // RECEIPTS-1: the donor's own address, "" when none
     taxYear: year,
     lineItems, totalAmount, totalDeductible,
     yourYear,
@@ -1046,6 +1053,7 @@ app.get("/receipts/preview", requireAuth, requireAdmin, wrap(async (req, res) =>
     receiptNumber: `${orgToday(await orgTz(org.id)).slice(0, 4)}-PREVIEW`, // ORG_TZ_SEAM_OK — the preview shows the number an issue would mint
     issueDate: orgTime.formatCivil(orgToday(await orgTz(org.id))),
     donorName: fakeDonor.name,
+    donorAddress: "45 Example Avenue\nAnytown, ST 00000",   // RECEIPTS-1: where the donor's own address prints
     giftDate: orgTime.formatCivil(fakeGiftDate),
     amount: 250,
     deductibleAmount: 250,
@@ -1163,6 +1171,7 @@ app.post("/gifts/:id/receipt", requireAuth, checkWriteAccess, wrap(async (req, r
   const result = await issueGiftReceipt(gift, org, donor, { send: !(req.body && req.body.send === false), by: actor(req), manual: true });
   // RACE-1: a second click at the same moment gets the answer a later click gets.
   if (result.skipped === "already_issued") return res.status(409).json({ error: "This gift already has an active receipt.", receipt: result.receipt });
+  if (result.skipped === "no_property_description") return res.status(409).json({ error: "no_property_description", message: RP1.NO_DESCRIPTION_MESSAGE });
   if (result.skipped === "undated_gift") return res.status(409).json({ error: "undated_gift",
     message: "This gift has no date, and a tax receipt names the day a gift was given. Set the date on the gift, then send the receipt." });
   if (result.skipped) return res.status(400).json({ error: `Could not issue receipt: ${result.skipped}` });
@@ -1173,6 +1182,8 @@ app.post("/gifts/:id/receipt", requireAuth, checkWriteAccess, wrap(async (req, r
 // response (board_reports pattern), fetched separately via
 // GET /receipts/:id/pdf only when actually downloading one.
 RCE.register(app, { query, requireAuth, checkWriteAccess, wrap, actor, resendReceiptEmail });   // FLOWS-1 item 4: "Email it", one click
+require("../receipts/reissue").register(app, { query, run, requireAuth, requireAdmin, checkWriteAccess, wrap, actor, issueGiftReceipt,   // RECEIPTS-1
+  issueYearEndStatement, issueHouseholdStatement, householdChoice: HHS.householdChoice, householdLines: HHS.householdLines });
 app.get("/donors/:id/receipts", requireAuth, wrap(async (req, res) => {
   if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B: the parent must be YOURS before children are answered — even an empty list confirms nothing about another tenant
   const rows = await query(

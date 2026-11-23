@@ -438,7 +438,9 @@ async function recordGift(o) {
                 // QUICKADD-1: the appeal that brought the gift in (campaign is the goal).
                 "appeal_id",
                 // TRUTH-6: a gift dated after today is scheduled (shared/numbers/scheduled.js), by every door.
-                "scheduled_on"];
+                "scheduled_on",
+                // RECEIPTS-1: what a gift of property was (the receipt describes it, never values it).
+                "property_description", "stock_shares", "stock_ticker"];
   const vals = [giftId, orgId, o.donorId, amount, date, o.type || "cash", o.campaign || "",
                 o.campaignId || null, o.notes || "", fundId, paymentMethod, o.pledgeId || null,
                 o.externalId || null, o.idempotencyKey || null, o.stripePaymentId || null,
@@ -460,7 +462,10 @@ async function recordGift(o) {
                 o.receivedAt || null, o.memo ? String(o.memo).slice(0, 300) : null, o.eventId || null,
                 o.refundOf || null, o.refundOf ? String(o.refundReason || "").slice(0, 300) : null,
                 o.appealId || null,
-                date ? require("../../shared/numbers/scheduled").scheduledOn(date, o.today || orgToday(await orgTz(orgId))) : null];   // ORG_TZ_SEAM_OK
+                date ? require("../../shared/numbers/scheduled").scheduledOn(date, o.today || orgToday(await orgTz(orgId))) : null,   // ORG_TZ_SEAM_OK
+                o.propertyDescription ? String(o.propertyDescription).trim().slice(0, 500) || null : null,
+                Number(o.stockShares) > 0 ? Number(o.stockShares) : null,
+                o.stockTicker ? String(o.stockTicker).trim().toUpperCase().slice(0, 12) || null : null];
   // The conflict key is the caller's, because what makes a gift the SAME gift
   // differs by door: Stripe's payment intent, the form's idempotency key, the
   // source system's gift id. One of them, never a guess at (donor, amount, date)
