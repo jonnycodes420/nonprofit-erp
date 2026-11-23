@@ -1246,6 +1246,8 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   if (!skipSet.has("flows18")) await require("./flows18Checks").flows18Checks({ orgId, get, q, agree, skip });
   // ── FLOWS-20 · a journey's four counts: list header = How it is going = its rows (tests/lib/flows20Checks.js) ──
   if (!skipSet.has("flows20")) await require("./flows20Checks").flows20Checks({ orgId, get, q, agree, skip });
+  // ── LEDGER-3 · funds: Finance's two lines = Reports' Gifts by fund = their rows (tests/lib/ledger3Checks.js) ──
+  if (!skipSet.has("funds")) await require("./ledger3Checks").ledger3Checks({ get, agree, skip });
 
   // TRUTH-1: a disagreement logged in docs/defects.md (tests/lib/knownDefects.js),
   // at exactly the value its defect predicts, is still found and still printed,

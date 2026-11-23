@@ -174,7 +174,8 @@ async function backfill(c, ctx, r) {
 async function demoData(c, J, ctx) {
   const out = [];
   const have = async (t, id) => (await c.query(`SELECT 1 FROM ${t} WHERE id = $1`, [id])).rows.length > 0;
-  const [gen] = (await c.query(`SELECT id FROM fin_funds WHERE org_id = $1 AND retired_at IS NULL AND restricted IS NOT TRUE ORDER BY (name ILIKE 'general%') DESC, created_at LIMIT 1`, [ctx.orgId])).rows;
+  // LEDGER-3: the org's one default fund (shared/numbers/defaultFund.js).
+  const [gen] = (await c.query(`SELECT ${require("../../../shared/numbers/defaultFund").DEFAULT_FUND_SQL("$1")} AS id`, [ctx.orgId])).rows.filter(r => r.id);
   for (const r of RECURRING) {
     if (await have("donors", r.id)) { out.push(...await backfill(c, ctx, r)); continue; }
     const start = addMonths(ctx.today, -r.months);

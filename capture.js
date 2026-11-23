@@ -279,13 +279,8 @@ async function pledgeFor(orgId, donorId, memo) {
 
 async function defaultFund(orgId) {
   // READ ONLY: a proposal never heals a ledger or creates a fund (POLISH-2).
-  const [o] = await D.query("SELECT default_fund_id FROM orgs WHERE id=?", [orgId]);
-  if (o && o.default_fund_id) {
-    const [f] = await D.query("SELECT id, name FROM fin_funds WHERE id=? AND org_id=?", [o.default_fund_id, orgId]);
-    if (f) return f;
-  }
-  const [g] = await D.query("SELECT id, name FROM fin_funds WHERE org_id=? AND restricted=false ORDER BY created_at ASC LIMIT 1", [orgId]);
-  return g || null;
+  // LEDGER-3: the org's one default fund (shared/numbers/defaultFund.js).
+  return require("./shared/numbers/defaultFund").defaultFund(D.query, orgId);
 }
 
 // The memo line or the letter's designation, against the org's funds, in four

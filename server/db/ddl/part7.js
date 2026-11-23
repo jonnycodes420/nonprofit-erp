@@ -1146,6 +1146,7 @@ async function run7(pool) {
   await require("./flows11").run(pool);   // FLOWS-11: a journey knows the gift that started it
   await require("./edit2").run(pool);   // EDIT-2: one touch logged to many people, one Undo
   await require("./flows19").run(pool);   // FLOWS-19: who was on Re-engage each day
+  await require("./ledger3").run(pool);   // LEDGER-3: who set the default fund; posting batches with Undo
 
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id
