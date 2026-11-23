@@ -9,9 +9,9 @@ import { askConfirm } from "../ConfirmDialog";
 import { fmtFull } from "../shared";
 import { told } from "../../lib/stewardTold";
 import { useChanged } from "../../lib/changes";
-import { peopleNamed } from "../../lib/people";
+import { giftBody, extrasBody, unpickedProblem, emptyGiftForm } from "../../lib/giftForm";   // GIFTS-3: one body for create and edit
 import { orgTodayCivil } from "../../lib/orgToday";
-import { fundBody, fundLinesProblem } from "../gifts/FundField";   // GIFTS-2: a gift split across funds
+import { fundLinesProblem } from "../gifts/FundField";   // GIFTS-2: a gift split across funds
 import { rememberGift } from "../../lib/stickyGift";   // QUICKADD-1: "Same as last" for the next gift
 import { offerUndo } from "../EditHistory";
 import { savePledgeSchedule } from "../gifts/PledgeSchedule";
@@ -79,7 +79,14 @@ export function useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, jou
     }).catch(()=>apiFetch("/campaigns").then(r2=>setCampaigns(Array.isArray(r2)?r2:[])).catch(()=>{}));
   },[]);
 
-  const saveGiftEdit=async(giftId)=>{
+  // GIFTS-3 item 1: the edit sends the one gift body (lib/giftForm.js), the
+  // same one New gift sends, and its soft credit, tribute and match when changed.
+  const saveGiftEdit=async(giftId,setErr=()=>{})=>{
+    setErr("");
+    const unpicked=unpickedProblem(giftEditForm);
+    if(unpicked){setErr(unpicked);return;}
+    const fundProblem=fundLinesProblem(giftEditForm.amount,giftEditForm.fund);
+    if(fundProblem){setErr(fundProblem);return;}
     // FIX-14 Part 2 — a receipt is a document the donor already holds. Editing
     // the amount does not change it, so the person editing is told first.
     const rcpt=receiptForGift(giftId);
@@ -88,20 +95,23 @@ export function useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, jou
       &&!(await askConfirm({title:"A receipt already went out",body:`A receipt already went out for this gift${rcpt.receipt_number?` (${rcpt.receipt_number})`:""}, for ${fmtFull(Number(rcpt.amount||was.amount))}. Changing the amount here does not change that receipt; void it and issue a new one from Tax receipts if it needs correcting. Save the new amount?`,yes:"Change the amount"})))return;
     setGiftSaving(true);
     try{
-      const {customFields,fund,fund_id:_oldFund,...core}=giftEditForm;
-      const fundProblem=fundLinesProblem(core.amount,fund);
-      if(fundProblem){setGiftSaving(false);alert(fundProblem);return;}
-      const saved=await apiFetch(`/gifts/${giftId}`,{method:"PUT",body:JSON.stringify({...core,...(fund?fundBody(fund,{editing:true}):{})})});
+      const saved=await apiFetch(`/gifts/${giftId}`,{method:"PUT",body:JSON.stringify(giftBody(giftEditForm,{editing:true}))});
       // POLISH-9: the screen she edited answers from the save itself, at once
       if(saved&&saved.figures&&setFigs)setFigs(saved.figures);
       if(saved&&saved.id&&setGiftsFull)setGiftsFull(gs=>gs.map(x=>x.id===saved.id?{...x,amount:parseFloat(saved.amount)||0,date:saved.date||x.date}:x));
-      if(customFields&&giftCfDefs.length){
-        // through the ONE seam — a refused value names its reason
-        await apiFetch(`/gifts/${giftId}/custom-fields`,{method:"PUT",body:JSON.stringify({values:customFields})});
+      const ex=extrasBody(giftEditForm),was2=giftEditForm.extrasWas?extrasBody(giftEditForm.extrasWas):{};
+      if(JSON.stringify(ex)!==JSON.stringify(was2)){
+        // A soft credit taken off is sent as an empty set; a tribute or match stays until changed.
+        await apiFetch(`/gifts/${giftId}/extras`,{method:"PUT",body:JSON.stringify({softCredits:ex.softCredits||[],...(ex.tribute?{tribute:ex.tribute}:{}),...(ex.match&&!was2.match?{match:ex.match}:{})})});
       }
-      told({donorId:donor.id,gift:true});loadPledges();   // LEDGER-1: header, rail, thank-you and pledges all re-read
+      if(giftEditForm.customFields&&giftCfDefs.length){
+        // through the ONE seam — a refused value names its reason
+        await apiFetch(`/gifts/${giftId}/custom-fields`,{method:"PUT",body:JSON.stringify({values:giftEditForm.customFields})});
+      }
+      told({donorId:donor.id,gift:true});loadPledges();refreshSoftCredit();   // LEDGER-1: header, rail, thank-you and pledges all re-read
+      loadGiftsFull();
       setGiftEditId(null);
-    }catch(e){alert(e?.errors?.[0]?.error||errorMessage(e, "That value was refused"));}
+    }catch(e){setErr(e?.errors?.[0]?.error||errorMessage(e, "That value was refused"));}
     setGiftSaving(false);
   };
 
@@ -133,63 +143,47 @@ export function useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, jou
     }
   };
 
-  // BUILD-98 Part 1 — a person named on the form is one of THIS org's
-  // records, found by exact name. A name that is not on file is said out
-  // loud rather than guessed at (an honouree is the exception: a memorial is
-  // often for somebody who never gave, so their name alone is enough).
-  // SCALE-2: asked of the server (exact name, both sides trimmed), not a whole-org list.
-  const findByName=async nm=>{const n=String(nm||"").trim().toLowerCase();if(!n)return null;const hits=await peopleNamed(n,2,{trimStored:true});return hits.length===1?hits[0]:null;};
-  const giftExtrasBody=async()=>{
-    const f=addGiftForm,out={};
-    if(f.scName){const p=await findByName(f.scName);if(!p)throw new Error(`${f.scName} is not in your records. Add them first, then credit them.`);
-      out.softCredits=[{donorId:p.id,role:"recommender",...(f.scAmount?{amount:Number(f.scAmount)}:{})}];}
-    if(f.tribType&&f.tribName){const h=await findByName(f.tribName);
-      out.tribute={type:f.tribType,donorId:h?h.id:null,name:f.tribName,notifyName:f.tribNotify||null,notifyEmail:f.tribNotifyEmail||null};}
-    if(f.matchEmployer){const e=await findByName(f.matchEmployer);if(!e)throw new Error(`${f.matchEmployer} is not in your records. Add the employer first.`);
-      out.match={employerId:e.id,...(f.matchAmount?{amount:Number(f.matchAmount)}:{})};}
-    return out;
-  };
+  // GIFTS-3 item 2: a person on the form (soft credit, tribute, matching
+  // employer) is a record she picked from the matches, never a name guessed at
+  // Save; text typed and not picked stops the save with a sentence.
   const addGift=async()=>{
-    if(!addGiftForm.amount||isNaN(Number(addGiftForm.amount)))return;
-    const fundProblem=fundLinesProblem(addGiftForm.amount,addGiftForm.fund);
+    const f=addGiftForm;
+    if(!String(f.amount||"").trim()||isNaN(Number(String(f.amount).replace(/[$,]/g,"")))){setGiftErr("Type the amount.");return;}
+    const unpicked=unpickedProblem(f);
+    if(unpicked){setGiftErr(unpicked);return;}
+    const fundProblem=fundLinesProblem(f.amount,f.fund);
     if(fundProblem){setGiftErr(fundProblem);return;}
-    let extras;
-    try{extras=await giftExtrasBody();}catch(e){setGiftErr(e.message);return;}
     setGiftErr("");
     setGiftSaving(true);
     if(!addGiftIdemRef.current)addGiftIdemRef.current=crypto.randomUUID();
     // PLEDGES-2: a payment above what is left on the pledge asks first (the server's question, in its words).
     const post=overBalance=>apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({
-        ...extras,overBalance,
-        amount:Number(addGiftForm.amount),date:addGiftForm.date,type:addGiftForm.type,
-        campaignId:addGiftForm.campaign_id||undefined,notes:addGiftForm.notes,
-        property_description:addGiftForm.property_description||undefined,stock_shares:addGiftForm.stock_shares||undefined,stock_ticker:addGiftForm.stock_ticker||undefined,   // RECEIPTS-1
-        ...(addGiftForm.fund?fundBody(addGiftForm.fund):{fund_id:addGiftForm.fund_id}),payment_method:addGiftForm.payment_method,
-        acknowledgement_sent:addGiftForm.acknowledgement_sent,
-        pledgeId:addGiftForm.pledgeId||undefined,eventId:addGiftForm.eventId||undefined,
-        appealId:(addGiftForm.appeal&&addGiftForm.appeal.id)||undefined,   // QUICKADD-1
-        givingPageId:(addGiftForm.page&&addGiftForm.page.givingPageId)||undefined,peerFundraiserId:(addGiftForm.page&&addGiftForm.page.peerFundraiserId)||undefined,
-        idempotencyKey:addGiftIdemRef.current,
+        ...giftBody(f),...extrasBody(f),overBalance,
+        pledgeId:f.pledgeId||undefined,idempotencyKey:addGiftIdemRef.current,
       })});
     try{
-      try{await post(undefined);}
+      let r;
+      try{r=await post(undefined);}
       catch(e){
         if(!(e&&(e.code==="over_balance"||(e.body&&e.body.code==="over_balance"))))throw e;
         const q=e.body||e,fm=v=>fmtFull(Number(v)||0);
         const pick=await askConfirm({title:"This is more than is left on the pledge",body:q.sentence,
           yes:`Record ${fm(q.extra)} as an extra gift`,...((q.choices||[]).includes("reduce")?{alt:`Reduce to ${fm(q.balance)}`}:{}),no:"Go back"});
         if(!pick){setGiftSaving(false);return;}
-        await post(pick==="alt"?"reduce":"extra_gift");
+        r=await post(pick==="alt"?"reduce":"extra_gift");
       }
       addGiftIdemRef.current=null;
-      rememberGift({date:addGiftForm.date,method:addGiftForm.payment_method,fund:addGiftForm.fund,campaign:addGiftForm.campaign,appeal:addGiftForm.appeal,page:addGiftForm.page});
+      const gid=r&&r.gift&&r.gift.id;
+      if(gid&&f.customFields&&giftCfDefs.length&&Object.values(f.customFields).some(v=>v!==""&&v!=null))
+        await apiFetch(`/gifts/${gid}/custom-fields`,{method:"PUT",body:JSON.stringify({values:f.customFields})}).catch(()=>{});
+      rememberGift({date:f.date,method:f.payment_method,fund:f.fund,campaign:f.campaign,appeal:f.appeal,page:f.page});
       setAddGiftOpen(false);
       // VOICE-4: every tile re-reads, not only the ones the gift read carries
       // (Average and Largest come from the status read, which waited on figs).
       told({donorId:donor.id,gift:true});
-      setAddGiftForm({amount:"",date:orgTodayCivil(),type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
+      setAddGiftForm(emptyGiftForm());
       loadGiftsFull();refreshSoftCredit();
-      if(addGiftForm.pledgeId)loadPledges();
+      if(f.pledgeId)loadPledges();
     }catch(e){setGiftErr(errorMessage(e,"The gift could not be saved."));}
     setGiftSaving(false);
   };

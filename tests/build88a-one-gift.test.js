@@ -136,7 +136,10 @@ const timelineOf = id => q(`SELECT id, type, note, gift_id FROM interactions WHE
     // nothing online has designated nothing, and that stays true.
     if (key === "stripe") ok("stripe: an undesignated online gift stays undesignated", gs[0].fund_id === null, gs[0]);
     else ok(`${key}: the gift carries a fund`, !!gs[0].fund_id, gs[0]);
-    ok(`${key}: the gift carries a payment method`, String(gs[0].payment_method || "").trim() !== "", gs[0]);
+    // GIFTS-3: a door that knows the method stores it; one that cannot stores nothing (read "Not set"),
+    // never a placeholder word an edit would save back as typed.
+    ok(`${key}: the gift's method is a real method or nothing, never "Needs you"`,
+      gs[0].payment_method === null || (String(gs[0].payment_method).trim() !== "" && !/^needs you$/i.test(gs[0].payment_method)), gs[0]);
   }
   console.log("\n— §2 · the defaults are NAMED, not blank —");
   const convGift = (await giftsOf(donors.conv))[0];
@@ -144,13 +147,14 @@ const timelineOf = id => q(`SELECT id, type, note, gift_id FROM interactions WHE
     convGift && convGift.fund_id === "ff_b88a1", convGift);
   const formGift = (await giftsOf(donors.form))[0];
   ok("a fund the officer DID choose is honoured", formGift && formGift.fund_id === "ff_b88a1r", formGift);
-  // The method a door cannot know says so rather than leaving a blank nobody can tell from "not looked at yet".
+  // GIFTS-3: the method a door cannot know is stored as nothing (every screen reads it "Not set"),
+  // never a word a later edit would save back as if somebody had typed it.
   const noMethod = await api("POST", `/donors/${donors.form}/conversations`, tok, {
     touch: "gift", line: "Cash in an envelope, no idea how.", date: TODAY,
     gift: { amount: 5 }, nextStep: { skipped: true },
   });
-  ok("a gift whose method nobody stated reads \"Needs you\", never blank",
-    noMethod.status === 201 && noMethod.body.gift.paymentMethod === "Needs you", noMethod.body?.gift);
+  ok("a gift whose method nobody stated stores no method (it reads \"Not set\")",
+    noMethod.status === 201 && noMethod.body.gift.paymentMethod == null, noMethod.body?.gift);
   // A fund id that is not this org's is REFUSED, and never quietly becomes a
   // different fund: that would turn a rejected designation into one that looks
   // deliberate.

@@ -1173,6 +1173,7 @@ async function run7(pool) {
   )`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS volunteer_records_person ON volunteer_records (org_id, person_id)`);
   await require("./vol3").run(pool);   // VOL-3: a volunteer's status and record; a shift's event
+  await require("./gifts3").run(pool);   // GIFTS-3: a gift can be anonymous
 
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id

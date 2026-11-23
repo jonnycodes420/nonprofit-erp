@@ -1,5 +1,6 @@
 // components/profile/profileShared.jsx (PROFILE-3): the small pieces several parts of
 // the profile share (tabs, labels, the roles line, Coming up), moved verbatim from DonorProfile.jsx.
+import { methodValue } from "../../../../shared/giftMethods.js";
 import { useEffect, useState } from "react";
 import { completeTask } from "../../lib/completeTask";   // FLOWS-17
 import { TaskTitleButton, useProfileTaskSheet } from "./ProfileTaskSheet";   // EDIT-1
@@ -160,7 +161,7 @@ const giftTimelineLine = (g, fundName) => {
   // arrived (server.js GIFT_METHOD_UNKNOWN). It is a prompt, not a payment
   // method, and reading "$100,000 · General Operating · Needs you" mid-sentence
   // says the money came in by something called Needs you.
-  if (g.payment_method && !/^(unknown|needs you)$/i.test(g.payment_method)) parts.push(g.payment_method);
+  if (methodValue(g.payment_method)) parts.push(methodValue(g.payment_method));   // GIFTS-3: one name per method
   // A gift that HAS been thanked says nothing: the absence is the news.
   if (!g.acknowledgement_sent) parts.push("not yet thanked");
   return parts.join(" · ");

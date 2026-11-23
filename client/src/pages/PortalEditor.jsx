@@ -43,6 +43,7 @@ import PageThemeRail from "../components/PageThemeRail";
 import HistoryPanel from "../components/PageHistoryPanel";
 import WidgetOptions, { E, btnQuiet, inp, lbl } from "./PortalEditorBlockOptions";   // PAGES-1: split out (file size)   // PAGES-1: moved to its own module (file size)        // PAGES-1: the page's own theme
 import { pageVarsFor, PAGE_BUTTON_CSS } from "./VolunteerPage";   // PAGES-1: the same theme CSS as the public page
+import { draftForm } from "../lib/previewForm";   // GIFTS-3 item 4: the preview draws the draft's form
 import { impactPlaceholder, repeatedImpact } from "../../../shared/impactLines.js";   // FLOWS-13 item 5: each amount its own line
 
 // Part 3: Steward's photos, opened from the cover and from a photo block.
@@ -133,7 +134,7 @@ function ScaledDesktop({ children, width = 1280 }) {
 // GIVE-3 — the draft's fields as she types them, laid over the server's
 // payload for the draft. Once a save lands the server's payload already holds
 // them, so the two agree and the preview is the page.
-function overlayPreview(pv, ds, ps, widgets, orgForm = false) {
+function overlayPreview(pv, ds, ps, widgets, orgForm = false, funds = []) {
   if (!pv || (!pv.givingPage && !orgForm)) return null;
   const gp = pv.givingPage ? { ...pv.givingPage } : null;
   if (gp && ds) {
@@ -145,6 +146,7 @@ function overlayPreview(pv, ds, ps, widgets, orgForm = false) {
     gp.showGoal = ds.showGoal !== false;
     if (!gp.campaignId && ds.goalAmount !== undefined) gp.goalAmount = ds.goalAmount;
     gp.design = normalizeDesign(ds.design);
+    gp.form = draftForm(pv.givingPage, ds, funds, (pv.org && pv.org.name) || "");   // GIFTS-3: the draft's form, as she sets it
   }
   // EDITOR-1: the blocks in the editor's order, as she arranges them: the
   // server's resolved block where it has one, her own (just added, not yet
@@ -414,7 +416,7 @@ export default function PortalEditor() {
   };
   const setFormSetting = (patch) => {
     const cur = dsRef.current || {};
-    const next = { ...cur, form: { ...(cur.form || {}), ...patch } };
+    const next = { ...cur, form: { ...(cur.form || {}), ...patch }, formSet: true };   // GIFTS-3: she set the form
     dsRef.current = next; setDs(next); scheduleSettingsSave(next);
   };
   const reloadMeta = async () => {
@@ -519,7 +521,7 @@ export default function PortalEditor() {
 
   // What the preview draws this instant: the server's payload with the fields
   // being typed laid over it, so a keystroke shows before its save lands.
-  const livePayload = useMemo(() => overlayPreview(pv, ds, ps, widgets, isOrgForm), [pv, ds, ps, widgets, isOrgForm]);
+  const livePayload = useMemo(() => overlayPreview(pv, ds, ps, widgets, isOrgForm, funds), [pv, ds, ps, widgets, isOrgForm, funds]);
   // A click on a part of the preview opens the rail section that sets it.
   // The headline and the story are typed where they show, so they ask nothing.
   const pickField = useCallback((field) => {

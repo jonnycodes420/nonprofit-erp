@@ -444,7 +444,9 @@ async function recordGift(o) {
                 // TRUTH-6: a gift dated after today is scheduled (shared/numbers/scheduled.js), by every door.
                 "scheduled_on",
                 // RECEIPTS-1: what a gift of property was (the receipt describes it, never values it).
-                "property_description", "stock_shares", "stock_ticker"];
+                "property_description", "stock_shares", "stock_ticker",
+                // GIFTS-3: the donor asked not to be named for this gift (still theirs).
+                "anonymous"];
   const vals = [giftId, orgId, o.donorId, amount, date, o.type || "cash", o.campaign || "",
                 o.campaignId || null, o.notes || "", fundId, paymentMethod, o.pledgeId || null,
                 o.externalId || null, o.idempotencyKey || null, o.stripePaymentId || null,
@@ -469,7 +471,8 @@ async function recordGift(o) {
                 date ? require("../../shared/numbers/scheduled").scheduledOn(date, o.today || orgToday(await orgTz(orgId))) : null,   // ORG_TZ_SEAM_OK
                 o.propertyDescription ? String(o.propertyDescription).trim().slice(0, 500) || null : null,
                 Number(o.stockShares) > 0 ? Number(o.stockShares) : null,
-                o.stockTicker ? String(o.stockTicker).trim().toUpperCase().slice(0, 12) || null : null];
+                o.stockTicker ? String(o.stockTicker).trim().toUpperCase().slice(0, 12) || null : null,
+                o.anonymous === true];
   // The conflict key is the caller's, because what makes a gift the SAME gift
   // differs by door: Stripe's payment intent, the form's idempotency key, the
   // source system's gift id. One of them, never a guess at (donor, amount, date)
@@ -822,6 +825,12 @@ async function checkGiftExtras(orgId, hardDonorId, giftCents, raw = {}) {
 // Writes the extras for a gift that now exists. Idempotent per gift: soft
 // credits are REPLACED as a set, a tribute notice is one per gift, a match
 // pledge is one per gift (uq_pledges_matches_gift).
+// GIFTS-3: whether the donor asked not to be named for this gift (the row in hand, else read).
+async function giftIsAnonymous(orgId, gift) {
+  if (gift && typeof gift.anonymous === "boolean") return gift.anonymous;
+  const [r] = await query("SELECT anonymous FROM gifts WHERE id=? AND org_id=?", [gift && gift.id, orgId]);
+  return !!(r && r.anonymous === true);
+}
 async function writeGiftExtras(orgId, gift, extras, { actorId = null, actorName = null } = {}) {
   await GC_READY;
   const result = { softCredits: 0, tributeNotice: null, matchPledgeId: null };
@@ -851,7 +860,8 @@ async function writeGiftExtras(orgId, gift, extras, { actorId = null, actorName 
       const [org] = await query("SELECT name, receipt_signature_name FROM orgs WHERE id=?", [orgId]);
       const orgName = await donorFacingOrgName(orgId, org?.name || "").catch(() => org?.name || "");
       const body = GC.tributeNoticeBody({
-        notifyName: t.notifyName, donorName: donor?.kind === "anonymous" ? null : donor?.name,
+        // GIFTS-3: a gift given anonymously is announced without the giver's name.
+        notifyName: t.notifyName, donorName: donor?.kind === "anonymous" || (await giftIsAnonymous(orgId, gift)) ? null : donor?.name,
         honoureeName: honouree, type: t.type, orgName, signer: org?.receipt_signature_name || null,
       });
       const id = newId("tn");

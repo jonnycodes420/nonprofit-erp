@@ -136,7 +136,7 @@ const JPEG = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP/////////
       await page.locator("[data-tab=giving]").click(); await page.waitForTimeout(1200);
       const row = page.locator("tr", { hasText: "$100" }).filter({ hasText: "Edit" }).first();
       await row.getByRole("button", { name: "Edit" }).click();
-      await page.locator('input[type="number"]').first().fill("150");
+      await page.locator('[data-testid="gift-edit-form"] input[placeholder="Amount"]').first().fill("150");   // GIFTS-3: the amount is a text box
       await page.getByRole("button", { name: /^Save/ }).first().click();
       await page.waitForTimeout(2000);
       const t = await page.locator("body").innerText();

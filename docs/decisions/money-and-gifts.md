@@ -4,6 +4,18 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 
 ## Rules
 
+- **One gift form, one gift body (GIFTS-3).** New gift and a gift's Edit are `gifts/GiftForm.jsx` in two modes
+  with the same fields; both send `lib/giftForm.js` `giftBody()`, and POST /donors/:id/gifts and PUT /gifts/:id
+  read it through `server/donors/giftShape.js`. A field one route knows, both know. A picker (campaign, appeal,
+  page, soft credit, tribute, match) holds a record only once one is clicked; typed text never picked is refused
+  with a sentence, never dropped and never stored as loose text (a campaign sent as words is resolved to the one
+  campaign it names, or refused `campaign_not_found`).
+- **One list of payment methods (GIFTS-3).** `shared/giftMethods.js`: the choices ("Bank transfer (ACH)" is the
+  one name for ACH/EFT/bank transfer), `methodValue` for storing and `methodLabel` for showing. A method nobody
+  gave is stored as NULL and reads "Not set"; an old "Needs you" row reads "Not set" too.
+- **Anonymous is per gift (GIFTS-3).** `gifts.anonymous`, written by recordGift: public recognition lines
+  (`publicGiftLine`), a fundraiser's donor list and a tribute notice say Anonymous; the gift stays the donor's
+  in every total, receipt and timeline.
 - **Restricted + Unrestricted = Lifetime (LEDGER-2).** A person's split is `shared/numbers/fundSplit.js`: Lifetime
   cut by fund, each gift in exactly one bucket by its fund's restriction. A gift on an unrestricted fund, a gift
   with no fund and the imported total are Unrestricted. A portfolio total is its donors' Lifetime, read live.

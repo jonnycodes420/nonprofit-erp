@@ -413,6 +413,11 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   // the fund list a second time to translate it.
   d.gifts = await query(
     `SELECT g.*, f.name AS fund_name, ev.name AS event_name,
+            -- GIFTS-3: the edit opens with the gift's appeal and page by name
+            (SELECT a.name FROM appeals a WHERE a.id = g.appeal_id AND a.org_id = g.org_id) AS appeal_name,
+            (SELECT c.name FROM campaigns c WHERE c.id = g.campaign_id AND c.org_id = g.org_id) AS campaign_name,
+            (SELECT gp.title FROM giving_pages gp WHERE gp.id = g.giving_page_id AND gp.org_id = g.org_id) AS giving_page_title,
+            (SELECT pf.name FROM peer_fundraisers pf WHERE pf.id = g.peer_fundraiser_id AND pf.org_id = g.org_id) AS peer_fundraiser_name,
             ${require("../../shared/numbers/scheduled").SCHEDULED("g")} AS scheduled,   -- TRUTH-6: dated after today, not counted yet
             -- LEDGER-1: who this gift is soft-credited to, so the row says "Soft credit to …"
             (SELECT COALESCE(json_agg(json_build_object('donorId', sd.id, 'name', sd.name, 'amount', sc.amount) ORDER BY sd.name), '[]'::json)

@@ -6,6 +6,10 @@
 // made in Forms, so the page list only searches. A value carried from the last
 // gift reads "Same as last: …" and clears with ×.
 //
+// GIFTS-3 item 2: text typed and never picked is reported up (onTyped), so the
+// form refuses to save it rather than dropping it, and a name with no match says
+// "No campaign called 'Spring'. Create it?" as its one choice.
+//
 // value: { id, name, ... } or null. For a page it also carries givingPageId
 // and peerFundraiserId (one person's peer-to-peer page under a giving page).
 import { useEffect, useRef, useState } from "react";
@@ -28,7 +32,7 @@ export function outsideWindow(c, date) {
   return "";
 }
 
-export default function AttributionField({ kind, value, onChange, testid, date = "", campaignId = null, sticky = false, compact = false, style }) {
+export default function AttributionField({ kind, value, onChange, onTyped, testid, date = "", campaignId = null, sticky = false, compact = false, style }) {
   const [text, setText] = useState("");
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
@@ -36,6 +40,7 @@ export default function AttributionField({ kind, value, onChange, testid, date =
   const [err, setErr] = useState("");
   const seq = useRef(0);
   const createable = kind === "campaign" || kind === "appeal";
+  useEffect(() => { if (onTyped) onTyped(value ? "" : text.trim()); }, [text, value]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (value || !open) return;
@@ -86,7 +91,7 @@ export default function AttributionField({ kind, value, onChange, testid, date =
         onBlur={() => setTimeout(() => setOpen(false), 200)}
         placeholder={`${LABEL[kind]}${createable ? ": search or add" : ": search"}`} aria-label={LABEL[kind]}
         data-testid={testid} style={box} autoComplete="off" />
-      {open && (rows.length > 0 || (createable && typed && !exact)) && (
+      {open && (rows.length > 0 || (typed && !exact)) && (
         <div role="listbox" style={{ position: "absolute", zIndex: 30, left: 0, right: 0, top: "100%", marginTop: 2, background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, boxShadow: "0 6px 18px rgba(15,26,18,.12)", maxHeight: 220, overflowY: "auto" }}>
           {rows.map(r => {
             const out = kind === "campaign" ? outsideWindow(r, date) : "";
@@ -100,8 +105,10 @@ export default function AttributionField({ kind, value, onChange, testid, date =
           {createable && typed && !exact && (
             <button type="button" data-testid={`${testid}-create`} disabled={busy} onMouseDown={e => e.preventDefault()} onClick={create}
               style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", borderTop: rows.length ? "1px solid " + T.bg3 : "none", padding: "8px 10px", fontSize: fs, color: T.greenDk, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-              {busy ? "Adding…" : `+ New ${NEW_WORD[kind]}: '${typed}'`}
+              {busy ? "Adding…" : rows.length ? `+ New ${NEW_WORD[kind]}: '${typed}'` : `No ${NEW_WORD[kind]} called '${typed}'. Create it?`}
             </button>)}
+          {!createable && typed && !rows.length && (
+            <div data-testid={`${testid}-none`} style={{ padding: "8px 10px", fontSize: fs, color: T.ink2 }}>No giving page or fundraiser called '{typed}'.</div>)}
         </div>)}
       {err && <div role="alert" style={{ fontSize: 12, color: T.ink, marginTop: 4 }}>{err}</div>}
     </div>

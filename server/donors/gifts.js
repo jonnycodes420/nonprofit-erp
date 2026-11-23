@@ -75,18 +75,18 @@ app = routers.r1;
 // QUICKADD-1: the body is kept as giftForm.body so "+ New person" (server/donors/quickAdd.js)
 // records its gift through exactly this door, after the person is added.
 app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(giftForm.body = async (req, res) => {
-  const { amount, date, type, campaign, notes, pledgeId } = req.body;
-  // Accept both spellings for back-compat: the touchpoint modal sends `fundId`,
-  // the Add-Gift form sends `fund_id`. Same for the campaign reference.
-  const fundId = req.body.fundId || req.body.fund_id || null;
-  const campaignId = req.body.campaignId || req.body.campaign_id || null;
-  // FIX-11 Part 1 — and the payment method, in BOTH spellings, for the same
-  // reason as the two above. This route read only `paymentMethod`, while the
-  // gift form, the gift EDIT route and the bookkeeper export all speak
-  // `payment_method` — so a gift typed with a method chosen was stored with
-  // none, and came out of the export as one of the blank-method rows Part 3
-  // is about. Found by walking the browser, not by any test of the route.
-  const paymentMethodIn = req.body.paymentMethod || req.body.payment_method || null;
+  const { amount, date, type, notes, pledgeId } = req.body;
+  // GIFTS-3 item 1: the body is read by the one reader the edit uses too
+  // (giftShape.js): both spellings of every field, a method in its one name
+  // (a blank one is stored as nothing), and a campaign named in words resolved
+  // to the campaign it names or refused, never stored as loose text.
+  const GS = require("./giftShape");
+  const G = await GS.readGiftBody(req.body);
+  const fundId = G.fundId || null;
+  const cc = await GS.chosenCampaign(query, req.user.orgId, G);
+  if (cc.error) return res.status(cc.status).json({ error: cc.error, code: cc.code });
+  const campaignId = cc.campaignId || null;
+  const paymentMethodIn = G.paymentMethod || null;
   if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
     return res.status(400).json({ error: "A positive amount is required" });
   }
@@ -115,7 +115,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(giftForm.body 
   // a foreign campaign id can't be pinned on. Optional (a gift may be
   // unattributed). We also copy the campaign NAME into the legacy `campaign`
   // text column so name-based reports/exports stay consistent.
-  let campaignName = campaign || "";
+  let campaignName = "";
   let effectiveCampaignId = campaignId;
 
   // Optional: this gift is a payment against a specific pledge — the "gift
@@ -232,6 +232,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(giftForm.body 
     eventId: giftEvent ? giftEvent.id : null,
     appealId: attr.appealId, givingPageId: attr.givingPageId, peerFundraiserId: attr.peerFundraiserId,
     actorId: actor(req).id, actorName: actor(req).name, source: "gift_form", ...propIn,
+    anonymous: G.anonymous === true,   // GIFTS-3 item 6
     extras: giftExtras, thread: { id: req.user.userId, name: actor(req).name },
   });
   if (written.duplicate) {
@@ -295,11 +296,22 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(giftForm.body 
 }));
 
 app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
-  const { amount, date, type, campaign, notes, fund_id, payment_method, acknowledgement_sent } = req.body;
-  const campaignId = req.body.campaignId !== undefined ? req.body.campaignId
-                   : req.body.campaign_id !== undefined ? req.body.campaign_id : undefined;
+  // GIFTS-3 item 1: the same reader as the gift form's POST (giftShape.js), so
+  // the edit takes every field the form does. Absent = keep; null or "" = clear.
+  const GS = require("./giftShape");
+  const G = await GS.readGiftBody(req.body);
+  const { amount, date, type, notes } = G;
+  const fund_id = G.fundId, payment_method = G.paymentMethod, acknowledgement_sent = G.acknowledgementSent;
+  const campaign = undefined;   // a campaign is chosen by id; one named in words is resolved (giftShape)
   const existing = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Gift not found" });
+  const cc = await GS.chosenCampaign(query, req.user.orgId, G);
+  if (cc.error) return res.status(cc.status).json({ error: cc.error, code: cc.code });
+  const campaignId = cc.campaignId;
+  // QUICKADD-1's appeal and fundraiser / giving page, editable now as on the form.
+  const attrSent = G.appealId !== undefined || G.givingPageId !== undefined || G.peerFundraiserId !== undefined;
+  const attr = attrSent ? await require("./giftAttribution").checkAttribution(query, req.user.orgId, G) : null;
+  if (attr && attr.error) return res.status(attr.status).json({ error: attr.error });
   // §1 tenant isolation: a foreign fund id must not be pinned onto this gift
   // (it would surface another org's fund name in fund-affinity/reports JOINs).
   if (!(await orgOwns("fin_funds", fund_id, req.user.orgId))) return res.status(404).json({ error: "Fund not found" });
@@ -383,7 +395,8 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
       `UPDATE gifts SET amount=?,date=?,type=?,campaign=?,campaign_id=?,event_id=?,notes=?,fund_id=?,payment_method=?,acknowledgement_sent=?,
               acknowledgement_sent_at = CASE WHEN ? IS TRUE THEN COALESCE(acknowledgement_sent_at, NOW()) ELSE NULL END,
               scheduled_on=?,   -- TRUTH-6: a date moved after today makes it scheduled; one moved to today or before, a gift
-              property_description=?, stock_shares=?, stock_ticker=?   -- RECEIPTS-1
+              property_description=?, stock_shares=?, stock_ticker=?,   -- RECEIPTS-1
+              appeal_id=?, giving_page_id=?, peer_fundraiser_id=?, anonymous=?   -- GIFTS-3
         WHERE id=? AND org_id=?`,
       [newAmt, newDate, type||g.type, newCampaign, newCampaignId, newEventId,
        notes!==undefined?notes:g.notes, fund_id!==undefined?fund_id:g.fund_id,
@@ -392,6 +405,10 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
        acknowledgement_sent!==undefined?acknowledgement_sent:g.acknowledgement_sent,   // A.5 — the same value drives the stamp
        require("../../shared/numbers/scheduled").scheduledOn(newDate, orgToday(await orgTz(req.user.orgId))),   // ORG_TZ_SEAM_OK
        ...RP1.propertyValues(RP1.propertyFields(req.body), g),
+       G.appealId !== undefined ? attr.appealId : (g.appeal_id || null),
+       attrSent && (G.givingPageId !== undefined || G.peerFundraiserId !== undefined) ? attr.givingPageId : (g.giving_page_id || null),
+       G.peerFundraiserId !== undefined || G.givingPageId !== undefined ? attr.peerFundraiserId : (g.peer_fundraiser_id || null),
+       G.anonymous !== undefined ? G.anonymous : g.anonymous === true,
        req.params.id, req.user.orgId]
     );
     // NUMBERS-1: a soft credit follows the gift's new amount.

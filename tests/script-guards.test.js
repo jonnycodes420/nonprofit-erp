@@ -106,6 +106,9 @@ const GUARDED_WRITERS = [
   // deletes approved applications whose person is gone, one org. Dry run by default; --apply writes
   // through writerDbUrl, one audit row. Never org_creo or the demo. Nothing sends.
   "vol3-staff-records",
+  // GIFTS-3: stores one org's gift methods that read "Needs you" as nothing. Dry run by default; --apply
+  // writes through writerDbUrl, one audit row. Never org_creo or the demo. Amounts and the ledger untouched.
+  "gifts3-needs-you-method",
   // FLOWS-10: sets the demo's made-up EIN while it is the placeholder, org_b72demo only. Same guard.
   "flows10-demo-ein",
   // FLOWS-15: puts the demo's first-gift version on its Year-end appeal, org_b72demo's ecamp_b72_yearend only. Same guard.
