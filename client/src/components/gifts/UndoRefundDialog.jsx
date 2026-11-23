@@ -44,7 +44,7 @@ export default function UndoRefundDialog({ refund, onClose, onSaved }) {
             The refund row goes, and the gift counts again. Its receipt comes back as it was, unless a receipt for this gift already went to the donor since the refund.
           </div>
           <label><span style={{ fontSize: 11.5, fontWeight: 700, color: T.ink3, marginBottom: 4, display: "block" }}>Why</span>
-            <input value={reason} onChange={e => setReason(e.target.value)} maxLength={300} autoFocus placeholder="Recorded on the wrong gift; the cheque cleared after all…"
+            <input value={reason} onChange={e => setReason(e.target.value)} maxLength={300} autoFocus placeholder="Recorded on the wrong gift; the check cleared after all…"
               data-testid="undo-refund-reason" style={inp} onKeyDown={e => { if (e.key === "Enter") send(); }} /></label>
           {err && <div role="alert" style={{ fontSize: 12.5, color: T.ink }}>{err}</div>}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>

@@ -523,6 +523,7 @@ function bResolver(routePath, param) {
     "offline-plans": `orp_${B}`,   // PLEDGES-2: a recorded recurring plan
     receipts: `rc_${B}`, "milestone-drafts": `md_${B}`, "send-plans": `sp_${B}`,   // SENDS-2: org B's send list
     "note-reminders": `nr_${B}`,
+    refunds: `g_${B}`, touches: `i_${B}`,   // UNDO-1: Undo a refund (a gift row) and Undo a touch (an interaction), org B's own
     "custom-fields": `cf_${B}`, "impact-metrics": `im_${B}`, "impact-updates": `iu_${B}`,
     workflows: `wf_${B}`, volunteers: `v_${B}`, interactions: `i_${B}`, materials: `mat_${B}`,
     recurring: `rs_${B}`, orgs: B, board: `bd_${B}`, "peer-fundraisers": `pf_${B}`,
