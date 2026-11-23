@@ -170,7 +170,7 @@ async function processJourneyAutoSends({ orgId = null, now = new Date(), limit =
           out.failed++; continue;
         }
         room--;
-        const turnedOn = on.turned_on_at ? new Date(on.turned_on_at).toISOString().slice(0, 10) : "";
+        const turnedOn = on.turned_on_at ? orgToday(await orgTz(oid), new Date(on.turned_on_at)) : "";   // ORG_TZ_SEAM_OK · DEFINE-1: the org's civil day, never UTC's
         const iid = newId("i");
         await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,'email',?,?,?,?,?)`,
           [iid, oid, donor.id, `Journey: ${step.template_name}, step ${Number(send.seq) + 1}, sent automatically, turned on by ${on.turned_on_by_name || "someone here"}${turnedOn ? ` on ${turnedOn}` : ""} · ${r.subject}`,

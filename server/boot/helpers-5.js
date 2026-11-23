@@ -881,21 +881,13 @@ async function computeMilestoneCandidates(orgId) {
   // both as Y/M/D. The old form compared process-clock parts to a
   // new Date(str) parse (UTC midnight re-read in the process zone), which near
   // month boundaries in the UTC evening put "today" a day/month ahead.
-  const today = orgTime.parseCivil(orgToday(await orgTz(orgId)));
+  // DEFINE-1: the anniversary is a civil date (shared/numbers/anniversary.js): due on its day or
+  // up to three days after, never before, and never a day of the month that only looks near.
+  const todayCivil = orgToday(await orgTz(orgId));
+  const ANNIV = require("../../shared/numbers/anniversary");
   for (const d of anniversaryDonors) {
-    const first = orgTime.parseCivil(d.first_gift_date);
-    if (!first) continue;
-    const dayDiff = Math.abs(today.d - first.d);
-    const inWindow = dayDiff <= 3 || dayDiff >= 27; // loose +/-3 day window, tolerates month-length wraparound
-    const monthsSince = (today.y - first.y) * 12 + (today.m - first.m);
-    if (monthsSince === 6 && inWindow) {
-      candidates.push({ donorId: d.id, milestoneKey: "anniversary_6mo", milestoneType: "anniversary", label: "6-month" });
-      continue;
-    }
-    const yearsSince = today.y - first.y;
-    if (yearsSince >= 1 && today.m === first.m && inWindow) {
-      candidates.push({ donorId: d.id, milestoneKey: `anniversary_year_${yearsSince}`, milestoneType: "anniversary", label: `${yearsSince}-year` });
-    }
+    const a = ANNIV.anniversaryDue(String(d.first_gift_date || "").slice(0, 10), todayCivil);
+    if (a) candidates.push({ donorId: d.id, milestoneKey: a.key, milestoneType: "anniversary", label: a.label });
   }
   return candidates;
 }

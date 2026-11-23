@@ -47,4 +47,5 @@ module.exports = {
   lapseWords: require("./lapseWords"),   // TRUTH-5
   nextSteps: require("./nextSteps"),   // ACCESS-3
   broughtIn: require("./broughtIn"),   // CONNECT-1
+  populations: require("./populations"),   // DEFINE-1: every named group of people, one registry
 };

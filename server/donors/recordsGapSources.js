@@ -7,7 +7,7 @@ const RG = require("../../shared/numbers/recordsGap");
 module.exports = function recordsGapSources() {
   return {
     "marked-donor-no-gift": {
-      label: "Marked Donor, no gift on file",
+      label: "Imported giving, no gift row",
       measure: () => "count",
       params: {},
       sentence: () => RG.MARKED_NO_GIFT_SENTENCE,

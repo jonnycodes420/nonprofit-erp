@@ -43,8 +43,8 @@ async function donorGlance(query, orgId, donorId) {
         cents: count ? f.cents : null, date: f.rows[0] ? f.rows[0].date : null, count }];
     })),
     query(
-      `SELECT (COUNT(*) FILTER (WHERE g.amount < 0))::int AS refunds,
-              COALESCE(SUM(g.amount) FILTER (WHERE g.amount < 0), 0)::text AS refunded,
+      `SELECT ${require("./shared/numbers/refunds").GIFTS_AFFECTED("g")} AS refunds,
+              ${require("./shared/numbers/refunds").RETURNED_CENTS("g")}::text AS refunded_cents,   -- DEFINE-1: refunds.js, gifts affected and money returned
               COALESCE(SUM(g.amount), 0)::text AS itemized
          FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
         WHERE g.org_id = ? AND g.donor_id = ? AND d.deleted_at IS NULL AND ${require("./shared/numbers/money").MONEY("g")}`, [orgId, donorId]),   // NUMBERS-4: money only
@@ -57,8 +57,9 @@ async function donorGlance(query, orgId, donorId) {
   const out = Object.fromEntries(figs);
   const lifetimeCents = lifetime.totalRows ? lifetime.cents : null;
   Object.assign(out.average, {
-    refunds: r.refunds,
-    refundCents: -(money.toCents(String(r.refunded)) ?? 0),
+    refunds: r.refunds,   // DEFINE-1: gifts affected (refunds.js GIFTS_AFFECTED), not refund rows
+    refundCents: Number(r.refunded_cents) || 0,
+    refundWords: r.refunds > 0 ? require("./shared/numbers/refunds").refundWords({ cents: Number(r.refunded_cents) || 0, gifts: r.refunds }) : null,
     importedCents: imp ? (money.toCents(imp.t) ?? 0) : 0,
   });
   // IMPORT-4: gifts with no date count in Lifetime and the average and in no

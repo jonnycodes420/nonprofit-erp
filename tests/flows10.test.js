@@ -152,13 +152,17 @@ const read = p => fs.readFileSync(path.join(ROOT, p), "utf8");
   ok("§12 Data health says \"1 can't be read and is listed\", and many \"are\"", /=== 1 \? "1 can't be read and is"/.test(read("client/src/components/DataHealth.jsx")) && !/addressesUnreadable\} can't be read and are/.test(read("client/src/components/DataHealth.jsx")));
 
   // ── §14 Billing's records gap ────────────────────────────────────────────
+  // DEFINE-1: and it is who has given (isDonor.js), so Caspar (marked Donor, no gift) is off it; the
+  // plus is giving imported as a history total with no gift row.
+  await q(`UPDATE donors SET imported_total=250 WHERE org_id=$1 AND id=$2`, [ORG, ids.caspar]);
+  await require("../afterChange").recalcDonorSummaryBatch(require("../db").query, [ids.caspar], ORG);   // the stored totals, as an import keeps them
   const bill = (await api("GET", "/billing/status", tok)).body || {};
   const gap = (await api("GET", "/billing/records-gap", tok)).body || {};
-  // FLOWS-15 item 5: the Donors tab is Everyone's people marked Donor (archived left out too), not "not erased".
-  const [dir] = await q(`SELECT COUNT(*)::int AS n FROM donors d WHERE d.org_id=$1 AND d.deleted_at IS NULL AND d.erased_at IS NULL AND d.archived_at IS NULL AND ${require(path.join(ROOT, "shared/personType.js")).donorOnlySql("d")}`, [ORG]);
+  // FLOWS-15 item 5: the Donors tab is Everyone's people (archived left out too), not "not erased".
+  const [dir] = await q(`SELECT COUNT(*)::int AS n FROM donors d WHERE d.org_id=$1 AND d.deleted_at IS NULL AND d.erased_at IS NULL AND d.archived_at IS NULL AND ${require(path.join(ROOT, "shared/numbers/isDonor.js")).IS_DONOR("d")}`, [ORG]);
   const records = (bill.pricing1 || bill).records;
-  ok("§14 Billing says how many are marked Donor with no gift, the line foots to the Donors tab (an erased giver too), and the people open",
-    gap.markedNoGift >= 1 && /plus [\d,]+ (person|people) marked Donor with no gift on file/.test(gap.sentence || "") && gap.source && gap.source.key === "marked-donor-no-gift"
+  ok("§14 Billing says how many have imported giving and no gift row, the line foots to the Donors tab (an erased giver too), and the people open",
+    gap.markedNoGift >= 1 && /plus [\d,]+ (person|people) whose giving was imported with no gift row/.test(gap.sentence || "") && gap.source && gap.source.key === "marked-donor-no-gift"
       && records + gap.markedNoGift - gap.giftNotMarked === dir.n, { gap, records, directory: dir.n });
   const rows = await api("GET", "/figures/marked-donor-no-gift/rows", tok);
   ok("§14 the figure opens the people behind it", rows.status === 200 && JSON.stringify(rows.body).includes("Caspar Fenwright"), { status: rows.status });

@@ -84,6 +84,8 @@ async function makeOrg(id, slug, name, users) {
   await gift("g_l1_4", "d_l1_dev", 75, plus(-3));
   await gift("g_l1_5", "d_l1_dev", 20, "");                    // a gift with no date
   await gift("g_l1_6", "d_l1_eve", 40, `${Number(today.slice(0, 4)) - 1}-06-01`);   // last year: not in This year
+  // DEFINE-1: a Donor is someone who has given. Fay has no gift row; her giving came in as imported history.
+  await q(`UPDATE donors SET imported_total = 30 WHERE org_id=$1 AND id='d_l1_fay'`, [ORG]);
   const { query: dbq } = require("../db");
   await require("../afterChange").recalcDonorSummaryBatch(dbq, people.map(p => p[0]), ORG);
 

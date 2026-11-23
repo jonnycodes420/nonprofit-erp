@@ -148,6 +148,11 @@ jobs:
       - name: Send plan guard
         run: node scripts/ci/send-plan-scan.js
 
+      # DEFINE-1 · a screen never shows a population count the registry
+      # (shared/populationWords.js) does not name. Two seconds.
+      - name: Population ids guard
+        run: node scripts/ci/population-ids.js
+
       # ARCH-1 · the ratchet (docs/architecture/ARCHITECTURE.md): big files,
       # gift SQL in routes, fiscal-year copies, new scripts in the root, and
       # committed images over 500 KB. A count may go down, never up.

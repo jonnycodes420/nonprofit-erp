@@ -50,7 +50,10 @@ async function makeOrg(name, email) {
 // Sends a one-recipient campaign through the real route and returns the
 // captured Resend payload for that recipient.
 async function sendCampaign(reg, donorEmail) {
-  await api("POST", "/donors", reg.token, { name: "Footer Donor", email: donorEmail });
+  const d = await api("POST", "/donors", reg.token, { name: "Footer Donor", email: donorEmail });
+  // DEFINE-1: All donors is who has given; this donor's giving came in as imported history.
+  await q("UPDATE donors SET imported_total = 50 WHERE id = $1", [d.body && d.body.id]);
+  await require("../afterChange").recalcDonorSummaryBatch(require("../db").query, [d.body && d.body.id], reg.org.id);   // the stored totals, as an import keeps them
   const c = await api("POST", "/campaigns", reg.token, {
     name: "Footer " + donorEmail, subject: "Footer test", body: "Hello {{first_name}}.", segment: { mode: "all" },
   });

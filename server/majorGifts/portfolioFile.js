@@ -23,7 +23,7 @@ const UNASSIGNED_WORDS = "Unassigned";
 const PIPELINE = ["prospect", "qualify", "cultivate", "solicit", "steward", "lapsed"];
 
 async function fileSql(d = "d") {
-  return `(${PICKABLE(d)} AND ${require("../../shared/numbers/isDonor").IS_DONOR(d)})`;   // FLOWS-18: a giver is a donor
+  return `(${PICKABLE(d)} AND ${require("../../shared/numbers/isDonor").IS_DONOR(d)})`;   // FLOWS-18; DEFINE-1: the Donors tab is who has given
 }
 // SQL: person `d` is in an officer's row (BUILD-30, /portfolio/officers).
 const IN_OFFICER_ROW = (d = "d") => `(EXISTS (SELECT 1 FROM users u WHERE u.id = ${d}.assigned_to AND u.org_id = ${d}.org_id) AND COALESCE(${d}.stage, ${d}.suggested_stage) = ANY(ARRAY[${PIPELINE.map(s => `'${s}'`).join(",")}]))`;

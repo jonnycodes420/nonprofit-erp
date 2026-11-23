@@ -26,8 +26,12 @@ const STORED = (d) => `(${d}.person_types IS NULL OR ${d}.person_types @> '["don
 // every contact on a 10,000-person list cost 6,400 probes). tests/lib/flows18Checks.js recounts
 // the same people from the gift rows, so a stored total that drifted would show there.
 const GAVE_STORED = (d) => `(COALESCE(${d}.gift_count, 0) > 0 OR COALESCE(${d}.total_giving, 0) > 0 OR COALESCE(${d}.imported_total, 0) > 0)`;
+// DEFINE-1 item 4 (Jarvis, 22 Nov: "a never-given +Add person counts as a Donor"). A DONOR IS
+// SOMEONE WHO HAS GIVEN. The stored role no longer makes a donor on its own: every surface that
+// counts or lists Donors (the Donors tab and its count, All donors, the breakdowns) reads the gifts,
+// through the stored totals. A person added as a Donor who has not given is a contact until they do.
 // SQL: person `d` is a donor. `d` is the donors row's alias; with none, the table name.
-const IS_DONOR = (d = "d") => { const a = d || "donors"; return `(${STORED(a)} OR ${GAVE_STORED(a)})`; };
+const IS_DONOR = (d = "d") => { const a = d || "donors"; return GAVE_STORED(a); };
 
 // The same rule on a row already read: { person_types, total_giving, gift_count, has_given? }.
 // `has_given` (from HAS_GIVEN in the SELECT) wins when present; otherwise the stored totals.
@@ -40,11 +44,11 @@ function storedTypes(row) {
 function hasGivenRow(row) {
   if (!row) return false;
   if (row.has_given != null) return row.has_given === true || row.has_given === "t" || row.has_given === 1;
-  return Number(row.total_giving) > 0 || Number(row.gift_count) > 0;
+  return Number(row.total_giving) > 0 || Number(row.gift_count) > 0 || Number(row.imported_total) > 0;   // GAVE_STORED's three
 }
+// DEFINE-1: the same rule as IS_DONOR, on a row: has given.
 function isDonorRow(row) {
-  const t = storedTypes(row);
-  return !t || t.includes("donor") || hasGivenRow(row);
+  return hasGivenRow(row);
 }
 // The roles a screen shows for a row: Donor added on read for a giver.
 function typesOnRead(row) {

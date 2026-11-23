@@ -10,7 +10,7 @@
 //   §3 W-1116-Atlas-01X       an answer's figure carries its unit: money, count, list and date
 //   §4 W-1116-Finance-28      one fund, one name, the restriction a badge, never in the name
 //   §5 W-1116-Atlas-24X       Records + every named part = the Donors tab (erased, archived and
-//      unmarked givers, a refund-only giver, and someone marked Donor with no gift)
+//      unmarked givers, a refund-only giver, and someone marked Donor with no gift; DEFINE-1: the plus is imported giving with no gift row)
 //   §6 W-1116-Atlas-30        "Take gifts on your giving pages" is the public page's check, and
 //      the Stripe card gives one weekly rate with its period
 //
@@ -259,19 +259,24 @@ const mock = http.createServer((req, res) => {
   await P(d("archived"), "Thea Archwood"); await G(d("archived"), 80, civilPlusDays(-500));
   await q(`UPDATE donors SET archived_at=NOW() WHERE id=$1`, [d("archived")]);
   await P(d("volunteer"), "Ossian Helper", { types: ["volunteer"] }); await G(d("volunteer"), 40, civilPlusDays(-15));
+  // DEFINE-1: the Donors tab is who has given. A person whose giving is an imported history total
+  // (no gift row) is the plus; Caspar, Ines and Dov (never given) are on neither side.
+  await P(d("imported"), "Imelda Ledgerwood"); await q(`UPDATE donors SET imported_total=500 WHERE org_id=$1 AND id=$2`, [ORG, d("imported")]);
   await P(d("refunded"), "Rhoda Refund"); const rg = await G(d("refunded"), 60, civilPlusDays(-25));
   await G(d("refunded"), -60, civilPlusDays(-24)); await q(`UPDATE gifts SET refund_of=$1 WHERE org_id=$2 AND donor_id=$3 AND amount<0`, [rg, ORG, d("refunded")]).catch(() => {});
+  // The gift rows above are raw; the stored totals the Donors tab reads are kept as recordGift keeps them.
+  await require("../afterChange").recalcDonorSummaryBatch(require("../db").query, ["nogift", "erased", "archived", "volunteer", "refunded", "imported"].map(d), ORG);
   const bill = (await api("GET", "/billing/status", tok)).body || {};
   const gap = (await api("GET", "/billing/records-gap", tok)).body || {};
   const tab = ((await api("GET", "/people/everyone-breakdown", tok)).body || {});
   const donorsTab = ((tab.parts || []).find(p => p.key === "donors") || {}).n;
   const records = (bill.pricing1 || bill).records;
-  ok("§5 Records + marked Donor with no gift − every giver not on the tab = the Donors tab, from the tab's own count",
+  ok("§5 Records + imported giving with no gift row − every giver not on the tab = the Donors tab, from the tab's own count",
     records + gap.markedNoGift - gap.giftNotMarked === donorsTab && gap.records === records && gap.donorsTab === donorsTab, { records, gap, donorsTab });
-  ok("§5 each part is named: 3 marked Donor with no gift (Caspar, Ines, Dov), 1 erased, 1 archived, 1 not marked Donor (the refund-only giver is on both sides)",
-    gap.markedNoGift === 3 && gap.erasedGivers === 1 && gap.archivedGivers === 1 && gap.unmarkedGivers === 1, gap);
-  ok("§5 and the line is the sum: \"Records N, plus 3 people marked Donor with no gift on file, minus 1 erased giver whose gifts remain, minus 1 archived giver, minus 1 giver not marked Donor, is the Donors tab's M.\"",
-    gap.sentence === `Records ${records.toLocaleString("en-US")}, plus 3 people marked Donor with no gift on file, minus 1 erased giver whose gifts remain, minus 1 archived giver, minus 1 giver not marked Donor, is the Donors tab's ${donorsTab.toLocaleString("en-US")}.`, gap.sentence);
+  ok("§5 each part is named: 1 with imported giving and no gift row (Imelda), 1 erased, 1 archived; the volunteer who gave is on the tab, the never-givers on neither side (DEFINE-1)",
+    gap.markedNoGift === 1 && gap.erasedGivers === 1 && gap.archivedGivers === 1 && gap.unmarkedGivers === 0, gap);
+  ok("§5 and the line is the sum: \"Records N, plus 1 person whose giving was imported with no gift row, minus 1 erased giver whose gifts remain, minus 1 archived giver, is the Donors tab's M.\"",
+    gap.sentence === `Records ${records.toLocaleString("en-US")}, plus 1 person whose giving was imported with no gift row, minus 1 erased giver whose gifts remain, minus 1 archived giver, is the Donors tab's ${donorsTab.toLocaleString("en-US")}.`, gap.sentence);
 
   // ── §6 the Stripe card ──────────────────────────────────────────────────────
   console.log("\n§6 the Stripe card");

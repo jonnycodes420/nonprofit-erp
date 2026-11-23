@@ -170,6 +170,7 @@ const AUDIENCE_WORDS = {
   complained: n => `marked a past email as spam`, blocked_address: () => "on the list Steward never mails",
   sample_donor: () => "sample records, not real people",
   no_first_gift_version: n => `${n === 1 ? "has" : "have"} never given and wait for a first-gift version`,   // FLOWS-15 item 1
+  same_address: n => `${n === 1 ? "shares an address" : "share an address"} with someone already in it, so the email goes once`,   // DEFINE-1
 };
 async function audienceLine(orgId, aud, noun, req = null) {
   const [o] = await query("SELECT name FROM orgs WHERE id=?", [orgId]);
@@ -741,7 +742,8 @@ app.get("/campaigns/:id/progress", requireAuth, wrap(async (req, res) => {
   const grantAwarded = parseFloat(grantSum[0]?.total || 0);
   const raised = parseFloat(giftSum[0]?.total || 0) + grantAwarded;
   const donorCount = parseInt(giftSum[0]?.donor_count || 0);
-  const daysRemaining = c.end_date ? Math.ceil((new Date(c.end_date) - new Date()) / 86400000) : null;
+  // DEFINE-1: the one days-left count (shared/numbers/endsOn.js, the org's civil day), never the server's clock.
+  const daysRemaining = c.end_date ? require("../../shared/numbers/endsOn").endsOn(c.end_date, { today: orgToday(await orgTz(req.user.orgId)) }).daysLeft : null;   // ORG_TZ_SEAM_OK
   res.json({
     goal: parseFloat(c.goal_amount || 0),
     raised,
@@ -778,9 +780,9 @@ async function audienceRoster(orgId) {
   const donors = await query(
     `SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != '' AND ${require("../../shared/numbers/everyone").EVERYONE("donors")}`,   // TRUTH-4: Everyone's rule
     [orgId]);
-  const saved = await query(
+  const saved = (await query(
     "SELECT id, name, description, segment, created_at, kind, rules FROM audiences WHERE org_id=? ORDER BY LOWER(name)",
-    [orgId]).catch(() => []);
+    [orgId]).catch(() => [])).filter(r => !A.isVolunteersKeptGroup(r));   // DEFINE-1: one Volunteers audience
   // PARITY-1 Part D — a Group is offered wherever an audience is, counted by
   // its own members (the live rule or the hand-kept list).
   const groupCounts = new Map();
@@ -795,7 +797,7 @@ async function audienceRoster(orgId) {
   const segOf = sg => (sg && sg.mode === "major" ? { ...sg, majorIds } : sg && sg.mode === "lapsed" ? { ...sg, lapsedIds } : sg);
   const builtins = A.BUILT_IN_AUDIENCES.map(a => ({
     id: a.id, name: a.name, description: a.description, kind: "builtin", tone: a.tone,
-    mode: a.mode,
+    mode: a.mode, population: a.population || null,   // DEFINE-1: the registry population it is
     count: filterBySegment(donors, segOf({ mode: a.mode })).length,
     // WHERE THESE PEOPLE LIVE. Allie should never have to wonder where her
     // volunteers are kept — an audience names the screen its people are on.
@@ -813,6 +815,9 @@ async function audienceRoster(orgId) {
     const seg = typeof r.segment === "string" ? JSON.parse(r.segment || "{}") : (r.segment || {});
     return {
       id: r.id, name: r.name, description: r.description || "", kind: r.kind ? "group" : "saved", tone: "greenMid",
+      // DEFINE-1: the registry population it is: a group by a registry rule, or a saved "Lapsed" (Lapsing or lapsed, donorStatus.quietIds).
+      population: r.kind === "dynamic" ? require("../../shared/numbers/populations").byRules(typeof r.rules === "string" ? JSON.parse(r.rules || "{}") : r.rules)
+        : !r.kind && seg.mode === "lapsed" ? "lapsing_or_lapsed" : null,
       groupKind: r.kind || null,
       mode: r.kind ? "audience" : seg.mode, segment: r.kind ? { mode: "audience", audienceId: r.id } : seg, created_at: r.created_at,
       count: r.kind ? groupCounts.get(r.id) : filterBySegment(donors, segOf(seg)).length,

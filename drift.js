@@ -327,4 +327,23 @@ function rhythmOf(a) {
   return "none";
 }
 
-module.exports = { ANSWER_V, DRIFT, RHYTHM_WORDS, rhythmOf, assessDrift, aboveOwnPattern, detectSeasonalCluster, humanSpan, humanCadence, median, intervalCv };
+// DEFINE-1 item 5 · ONE PHRASE FOR A PERSON'S RHYTHM. Jarvis (22 Nov): "giving
+// rhythm contradicts itself on one record". The rail's Giving rhythm card named
+// the rhythm by its band (a 75-day gap is "quarterly", "about every three
+// months"; a yearly giver "every <the month their next gift falls in>") while
+// the closeness line under About read the raw gap ("about every two months",
+// "every <their cluster month>"). Both now say this one phrase, from one
+// assessDrift reading: the cluster month when there is one, the band's words
+// when the gap is in a band, the gap in words otherwise. "" when there is none.
+const PHRASE_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+function rhythmPhrase(a) {
+  if (!a) return "";
+  if (a.seasonal && a.seasonal.kind === "month" && a.seasonal.month) return `every ${PHRASE_MONTHS[a.seasonal.month - 1]}`;
+  const name = rhythmOf(a);
+  const exp = a.expectedNext ? String(a.expectedNext).slice(0, 10) : null;
+  if ((name === "yearly" || name === "year_end") && exp) return `every ${PHRASE_MONTHS[+exp.slice(5, 7) - 1]}`;
+  if (name === "monthly" || name === "quarterly") return RHYTHM_WORDS[name].replace(/^Gives /, "");
+  return humanCadence(a.cadenceDays);
+}
+
+module.exports = { ANSWER_V, DRIFT, RHYTHM_WORDS, rhythmOf, rhythmPhrase, assessDrift, aboveOwnPattern, detectSeasonalCluster, humanSpan, humanCadence, median, intervalCv };

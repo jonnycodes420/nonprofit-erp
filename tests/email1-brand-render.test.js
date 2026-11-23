@@ -91,7 +91,11 @@ async function sendAndWait(tok, id) {
   const put = await api("PUT", `/email-templates/${tpl.body.id}`, tok, { blocks: withPhoto });
   ok("§2 the template saved with its photos", put.status === 200, put.body);
   const donorEmail = `email1-donor-${stamp}@example.com`;
-  await api("POST", "/donors", tok, { name: "Rosa Delgado", email: donorEmail });
+  const rosaNew = await api("POST", "/donors", tok, { name: "Rosa Delgado", email: donorEmail });
+  // DEFINE-1: All donors is who has given; Rosa's giving came in as imported history (no gift row yet).
+  await q("UPDATE donors SET imported_total = 50 WHERE id = $1", [rosaNew.body && rosaNew.body.id]);
+  const [rosaOrg] = await q("SELECT org_id FROM donors WHERE id = $1", [rosaNew.body && rosaNew.body.id]);
+  await require("../afterChange").recalcDonorSummaryBatch(require("../db").query, [rosaNew.body && rosaNew.body.id], rosaOrg && rosaOrg.org_id);   // the stored totals, as an import keeps them
   const camp = await api("POST", "/campaigns/from-template", tok, { templateId: tpl.body.id, name: "Brand send" });
   ok("§2 a campaign started from the template", (camp.status === 201 || camp.status === 200) && camp.body.id, camp.body);
   await api("PUT", `/campaigns/${camp.body.id}`, tok, { name: "Brand send", subject: camp.body.subject || "Thank you", segment: { mode: "all" } });

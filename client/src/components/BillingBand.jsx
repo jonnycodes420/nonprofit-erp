@@ -55,14 +55,14 @@ export function BillingBand({ billing, isAdmin, onChanged }) {
           b.setupFee.paid ? `Charged once, on ${day(b.setupFee.paidAt)}.` : null, "billing-setup")}
       </div>
       {/* FLOWS-10 item 14 (Area 5 Explore 5): Records and the Donors tab are two numbers; one line says
-          why, and the people marked Donor with no gift open (shared/numbers/recordsGap.js). */}
+          why, and the people with imported giving and no gift row open (DEFINE-1) (shared/numbers/recordsGap.js). */}
       {gap && gap.sentence && (
         <div data-testid="billing-records-gap" style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.5, maxWidth: 640 }}>
           {/* FLOWS-15 item 5: one sum, every part named ("Records 1,122, plus 66 …, minus 4 erased givers whose gifts remain, is the Donors tab's 1,184."). */}
           {gap.sentence}
-          {gap.markedNoGift > 0 && gap.source && <>{" "}See who: <Figure value={gap.markedNoGift} kind="count" label="Marked Donor, no gift on file"
-            definition="People marked Donor who have no gift on file. The Donors tab counts them; Records does not." source={gap.source} variant="inline" />{" "}
-            marked Donor with no gift.</>}
+          {gap.markedNoGift > 0 && gap.source && <>{" "}See who: <Figure value={gap.markedNoGift} kind="count" label="Imported giving, no gift row"
+            definition="People whose giving came in as an imported history total, with no gift row. The Donors tab counts them, because they have given; Records does not." source={gap.source} variant="inline" />{" "}
+            with imported giving and no gift row.</>}
         </div>
       )}
       {b.notice && (

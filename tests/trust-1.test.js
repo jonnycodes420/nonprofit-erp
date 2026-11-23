@@ -127,7 +127,7 @@ async function snapshot(org, tables) {
   const tokC = await makeOrg(C, "Trust One Riders", { mail: true });
   await mailTypesOn(C, "everyone", ["campaign"]);
   // 68 with an address and automatic email off (Follows), 4 with no address,
-  // 3 unsubscribed, 1 set to Never. One of the 68 has never given.
+  // 3 unsubscribed, 1 set to Never. One of the 68 has no gift row (imported history only).
   const people = [];
   for (let i = 0; i < 68; i++) people.push({ id: `d_t1_f${i}`, name: `Fran Follows${i}`, email: `fran${i}@trust1.example`, gift: i !== 0 });
   people[0].name = "Nell Nogift";
@@ -142,6 +142,10 @@ async function snapshot(org, tables) {
   }
   await q(`UPDATE donors d SET total_giving = COALESCE((SELECT SUM(amount) FROM gifts g WHERE g.donor_id=d.id),0),
              gift_count = (SELECT COUNT(*) FROM gifts g WHERE g.donor_id=d.id) WHERE org_id=$1`, [C]);
+  // DEFINE-1: a Donor is someone who has given. Nell has no gift ROW: her giving is an imported history
+  // total, so she is in All donors and her thank-you still names no gift amount (§3).
+  await q(`UPDATE donors SET imported_total = 75 WHERE org_id=$1 AND id='d_t1_f0'`, [C]);
+  await require("../afterChange").recalcDonorSummaryBatch(require("../db").query, ["d_t1_f0"], C);   // the stored totals, as an import keeps them
   const seg = await api("POST", "/campaigns/segment-preview", tokC, { segment: { mode: "all" } });
   const au = (seg.body && seg.body.audience) || {};
   const sum = (au.groups || []).reduce((n, g) => n + g.count, 0);

@@ -360,7 +360,8 @@ app.get("/goals/active", requireAuth, wrap(async (req, res) => {
     recentAmount, recentDonorCount, lastYear,
     commitment: commit,   // GIFTS-2
     // FLOWS-7: Home's pace is the server's, by the one rule (shared/numbers/pace.js).
-    ...(({ paceState, paceSentence, paceMath, paceGap, paceBasis }) => ({ paceState, paceSentence, paceMath, paceGap, paceBasis }))(
+    // DEFINE-1: and its day count (pace.windowDays): Home prints these, never a count of its own.
+    ...(({ paceState, paceLabel, paceSentence, paceMath, paceGap, paceBasis, paceDay, paceDays, daysLeft }) => ({ paceState, paceLabel, paceSentence, paceMath, paceGap, paceBasis, paceDay, paceDays, daysLeft }))(
       paceWithCommitment(currentAmount, commit, goalAmount, goal.period_start, goal.period_end, orgToday(await orgTz(req.user.orgId)))),   // ORG_TZ_SEAM_OK (FLOWS-18)
   });
 }));

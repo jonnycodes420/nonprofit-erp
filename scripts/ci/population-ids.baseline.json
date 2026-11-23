@@ -1,0 +1,13 @@
+{
+  "note": "DEFINE-1: lines that show a population word beside a count without naming the population. This list may only shrink.",
+  "lines": [
+    "client/src/components/DataHealth.jsx :: : `${c.businesses === 1 ? \"1 person looks\" : `${c.businesses.toLocaleString(\"en-US\")} people look`} linked to an organization on file. Linked, a gift from either keeps both off Lapsed.`,",
+    "client/src/components/DonorDirectory.jsx :: [\"lost\",\"Lost & Found: over 24 months\",lostList.length,`${LAPSE_WORDS.lost.definition} The same people as the report Lost: over 24 months.`]];",
+    "client/src/components/DonorDirectory.jsx :: [win===\"lost\"?\"Lost donors\":\"Lapsed donors\",lapsed.length,T.ink,(win===\"lost\"?LAPSE_WORDS.lost:LAPSE_WORDS.lapsed).definition],",
+    "client/src/components/FunnelChart.jsx :: <span style={{ fontWeight: 800, color: lapsedStage.color, opacity: drift && drift.count > 0 ? 0.75 : 1 }}>↘ Lapsed, Window Closed</span>",
+    "client/src/components/Reports.jsx :: narrative = <>{active === \"lybunt\" && <><abbr data-testid=\"bunt-word\" title={LAPSE_WORDS.lybunt.definition} style={{ textDecoration: \"underline dotted\", cursor: \"help\" }}>LYBUNT</abbr>: </>}<strong da",
+    "client/src/components/home/goalSections.jsx :: {label:\"Lapsed\",icon:\"lapsed\",value:myStats.lapsedCount,unit:\"in portfolio\",warn:myStats.lapsedCount>0,onClick:()=>openPortfolioBreakdown(\"lapsed\")},",
+    "client/src/marketing/pages/tools.jsx :: [\"Where do I get the count of donors who stopped?\", \"From your LYBUNT list: donors who gave last year and not yet this year. The LYBUNT and SYBUNT finder on this site makes that list from a CSV of gif",
+    "client/src/pages/ops/sales/ProspectSettings.jsx :: <p style={says}>What each outcome in call mode does next. \"Call again\" makes a task that many business days on (Saturday and Sunday don't count); call mode skips the person until that day. Meeting boo"
+  ]
+}

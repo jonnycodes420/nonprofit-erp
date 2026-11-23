@@ -28,29 +28,49 @@
 "use strict";
 
 const PACE_BAND_PTS = 10;
-const PACE_STATES = ["ahead", "on_pace", "behind", "met"];
-const LABELS = { met: "Goal reached", ahead: "Ahead", on_pace: "On pace", behind: "Behind pace" };
+const PACE_STATES = ["ahead", "on_pace", "behind", "met", "ended"];
+const LABELS = { met: "Goal reached", ahead: "Ahead", on_pace: "On pace", behind: "Behind pace", ended: "Ended" };
 
 const pts = x => Math.round(x * 100);
 const civil = d => {
   if (!d) return null;
-  if (d instanceof Date) return isNaN(d) ? null : d.toISOString().slice(0, 10);
+  // DEFINE-1: a DATE column's Date is local midnight; its own calendar day, never the UTC one.
+  if (d instanceof Date) return isNaN(d) ? null : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const s = String(d).slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 };
 const days = (a, b) => (Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000;
 const dollars = n => "$" + Math.round(n).toLocaleString("en-US");
+const longDay = ymd => new Date(ymd + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
-// THE PROJECTION IS ITS OWN ARITHMETIC (LEDGER-2). Raised × (days in the
-// window) ÷ (days gone, today counted). The hover states every input, so a
-// reader can redo it: "$225,151 raised by day 128 of 365, on pace for $642,032".
-function paceMath({ raised, start, end, today, word = "raised" }) {
+// DEFINE-1 item 5 · ONE DAY COUNT. Jarvis (22 Nov): "campaign pace uses two day
+// counts". The badge's share of time read days gone (today not counted) over
+// the window's span (its last day not counted), while the projection beside it
+// read "day N of M" with both counted, and the org goal's `expected` read the
+// server's millisecond clock. Every pace figure now reads this one count:
+//   days     the days in the window, first and last both counted
+//   day      which of them today is (0 before it starts, `days` once it ends)
+//   daysLeft whole civil days from today to the last day (endsOn.js's count:
+//            the last day itself reads 0, "Last day")
+//   share    day ÷ days, the share of the time gone
+//   state    upcoming | open | ended
+function windowDays({ start, end, today }) {
   const s = civil(start), e = civil(end), t = civil(today);
   if (!s || !e || !t) return null;
   const total = days(s, e) + 1;
   if (!(total > 0)) return null;
   const day = Math.max(0, Math.min(total, days(s, t) + 1));
-  if (!(day > 0)) return null;
+  const state = t < s ? "upcoming" : t > e ? "ended" : "open";
+  return { days: total, day, daysLeft: Math.max(0, days(t, e)), share: day / total, state, end: e };
+}
+
+// THE PROJECTION IS ITS OWN ARITHMETIC (LEDGER-2). Raised × (days in the
+// window) ÷ (days gone, today counted). The hover states every input, so a
+// reader can redo it: "$225,151 raised by day 128 of 365, on pace for $642,032".
+function paceMath({ raised, start, end, today, word = "raised" }) {
+  const w = windowDays({ start, end, today });
+  if (!w || !(w.day > 0)) return null;
+  const { day, days: total } = w;
   const r = Number(raised) || 0;
   const projected = Math.round(r * total / day);
   return { day, days: total, raised: r, projected,
@@ -71,15 +91,19 @@ function paceMath({ raised, start, end, today, word = "raised" }) {
 function paceOf({ raised, goal, start, end, today, basis = "raised" }) {
   const g = Number(goal) || 0;
   const r = Number(raised) || 0;
-  const s = civil(start), e = civil(end), t = civil(today);
-  if (g <= 0 || !s || !e || !t) return null;
-  const total = days(s, e);
-  if (!(total > 0)) return null;
+  const w = windowDays({ start, end, today });
+  if (g <= 0 || !w || !(w.days > 1)) return null;
   const word = basis === "committed" ? "committed" : "raised";
-
-  const timeShare = Math.max(0, Math.min(1, days(s, t) / total));
   const raisedShare = r / g;
-  const math = paceMath({ raised: r, start: s, end: e, today: t, word });
+  // DEFINE-1: an ENDED window has no pace. It has a result, said as one:
+  // "Raised 87% of goal" (Jarvis: "ended campaigns say Behind pace").
+  if (w.state === "ended" && r < g) {
+    const pct = pts(raisedShare);
+    return { state: "ended", label: `Raised ${pct}% of goal`, met: false, raisedPct: pct, elapsedPct: 100, deltaPts: pct - 100, gap: 0, basis: "raised",
+             sentence: `${dollars(r)} of ${dollars(g)}, ended ${longDay(w.end)}`, math: null, window: w };
+  }
+  const timeShare = w.share;
+  const math = paceMath({ raised: r, start, end, today, word });
   const projectionShare = math ? math.day / math.days : timeShare;   // what the projection needs raised to be
 
   const met = r >= g;
@@ -94,7 +118,7 @@ function paceOf({ raised, goal, start, end, today, basis = "raised" }) {
     state, label: LABELS[state], met, raisedPct, elapsedPct, deltaPts, gap, basis: word,
     // The reason, in the badge, every time: the two shares it compared, and the gap.
     sentence: `${raisedPct}% ${word}, ${elapsedPct}% of the time gone` + (gap ? `, ${dollars(gap)} short of pace` : ""),
-    math,
+    math, window: w,
   };
 }
 
@@ -113,4 +137,4 @@ function weeklyPace({ left, daysLeft }) {
   return { perWeek: Math.round(weeks < 1 ? l : l / weeks), weeks, daysLeft: dl };
 }
 
-module.exports = { paceOf, paceMath, weeklyPace, PACE_BAND_PTS, PACE_STATES, PACE_LABELS: LABELS };
+module.exports = { paceOf, paceMath, windowDays, weeklyPace, PACE_BAND_PTS, PACE_STATES, PACE_LABELS: LABELS };

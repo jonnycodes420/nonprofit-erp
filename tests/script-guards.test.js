@@ -339,6 +339,11 @@ const PROD_READONLY = [
   // SENDS-2 — the send plan scan. A pure SOURCE scan (server, routes, shared, client/src) for a loop
   // that mints staff confirms outside a send plan. No server, no database, no network. Exits 1 on a finding.
   "send-plan-scan",
+  // DEFINE-1 — the population ids guard. A pure SOURCE scan (client/src, server, routes, groups.js,
+  // shared/audiences.js) for a population id the registry does not have, a surface that stopped reading
+  // it, or a new population word beside a count. No server, no database, no network. --write-baseline
+  // rewrites its own baseline JSON beside it, nothing else. Exits 1 on a finding.
+  "population-ids",
   // FIX-3 C — is there a real person in the demo? READ ONLY transaction,
   // SELECTs only, ROLLBACK; a remote DATABASE_URL needs --i-know-this-is-prod
   // and the /health identity match. Prints the offending rows, exits 1.

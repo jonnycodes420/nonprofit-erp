@@ -28,7 +28,7 @@ import { displayDate } from "../../../shared/displayDate";
 import { ZERO_GIFT_LABEL as ZERO_LABEL } from "../../../shared/giftWords";   // TRUTH-4
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
 import { useLocation } from "react-router-dom";
-import { CampaignsView, CategoryBadge, CATEGORY_META, PACE_META, daysLeftText, campaignHref } from "./CampaignsList";
+import { CampaignsView, CategoryBadge, CATEGORY_META, PACE_META, paceBadgeLabel, paceBadgeIcon, daysLeftText, campaignHref } from "./CampaignsList";
 import { tabHref, urlParam, giftHref, editPageHref } from "../lib/appUrls";
 import RemoveMenu from "./RemoveMenu";
 import { publishItems, isDraftPage } from "../lib/pagePublish";
@@ -61,12 +61,12 @@ const fundHref = id => tabHref("finance", { subtab: "funds", fundId: id });
 
 // Horizontal thermometer. Gold fill; the fill goes celebratory (deeper gold)
 // at 100%. No goal → caller renders totals instead of this.
-function Thermometer({ raised, goal, percent, rawPercent, over, paceState, paceSentence, paceMath, big, raisedSource, raisedLabel }) {
+function Thermometer({ raised, goal, percent, rawPercent, over, paceState, paceLabel: serverPaceLabel, paceSentence, paceMath, big, raisedSource, raisedLabel }) {
   const pct = percent == null ? 0 : percent;         // bar width — capped at 100
   const shown = rawPercent == null ? pct : rawPercent; // number — true, uncapped
   const met = pct >= 100;
   // An exceeded goal celebrates the overage rather than repeating "Goal reached".
-  const paceLabel = paceState === "met" && over > 0 ? `Goal reached · ${fmtTotal(over)} over` : PACE_META[paceState]?.label;
+  const paceLabel = paceState === "met" && over > 0 ? `Goal reached · ${fmtTotal(over)} over` : paceBadgeLabel(paceState, serverPaceLabel);
   return (
     <div style={{ width: "100%" }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: big ? 8 : 6, gap: 12, flexWrap: "wrap" }}>
@@ -85,7 +85,7 @@ function Thermometer({ raised, goal, percent, rawPercent, over, paceState, paceS
       </div>
       {paceState && PACE_META[paceState] && (
         <div data-testid="pace-badge" style={{ marginTop: big ? 10 : 8, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: PACE_META[paceState].color, background: PACE_META[paceState].bg, borderRadius: 99, padding: "3px 11px" }}>
-          {paceState === "met" ? "✦" : paceState === "behind" ? "↘" : "↗"} {paceLabel}
+          {paceBadgeIcon(paceState)} {paceLabel}
           {paceSentence && paceState !== "met" && <span title={paceMath || undefined} data-pace-math={paceMath || undefined} style={{ fontWeight: 400, color: T.ink3 }}>· {paceSentence}</span>}
         </div>
       )}
@@ -447,7 +447,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           <MoneyPeriod name={orgGoal.label || "Your goal"} start={orgGoal.periodStart} end={orgGoal.periodEnd} style={{ display: "block", marginBottom: 12 }} />
           <Thermometer raised={orgGoal.currentAmount} goal={orgGoal.goalAmount} percent={orgGoal.percent}
             rawPercent={orgGoal.rawPercent} over={orgGoal.over}
-            paceState={orgGoal.paceState} paceSentence={orgGoal.paceSentence} paceMath={orgGoal.paceMath} big />
+            paceState={orgGoal.paceState} paceLabel={orgGoal.paceLabel} paceSentence={orgGoal.paceSentence} paceMath={orgGoal.paceMath} big />
           {/* GIFTS-2: raised, pledged and committed, and whether this goal counts pledges. */}
           <GoalCommitment c={orgGoal.commitment} isAdmin={isAdmin} onChanged={onRefresh} style={{ marginTop: 10 }} />
           {orgGoal.sourceNote && (
@@ -629,7 +629,7 @@ function LeadCampaign({ top, onOpen, onNavigate, card, label }) {
       </div>
       <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 4 }}>{top.name}</div>
       <MoneyPeriod name={top.name} start={top.startDate} end={top.endDate} style={{ display: "block", marginBottom: 12 }} />
-      <Thermometer raised={top.raised} goal={top.goalAmount} percent={top.percent} rawPercent={top.rawPercent} over={top.over} paceState={top.paceState} paceSentence={top.paceSentence} paceMath={top.paceMath} />
+      <Thermometer raised={top.raised} goal={top.goalAmount} percent={top.percent} rawPercent={top.rawPercent} over={top.over} paceState={top.paceState} paceLabel={top.paceLabel} paceSentence={top.paceSentence} paceMath={top.paceMath} />
       <div style={{ marginTop: 12, fontSize: 13, color: T.ink2, lineHeight: 1.6 }}>
         {l.left > 0
           ? <>{fmtTotal(l.left)} to go{daysLeftText(top.daysLeft, top.endsWords) ? `, ${daysLeftText(top.daysLeft, top.endsWords)}` : ""}{l.perWeek ? `: about ${fmtTotal(l.perWeek)} a week to finish on time.` : "."}</>
@@ -693,6 +693,7 @@ function GoalCard({ g, allGoals, onClick }) {
   const over = g.isOverarching ? g.rolledOver : g.over;
   const paceState = g.isOverarching ? g.rolledPaceState : g.paceState;
   const paceSentence = g.isOverarching ? g.rolledPaceSentence : g.paceSentence;
+  const paceLabel = g.isOverarching ? g.rolledPaceLabel : g.paceLabel;
   const children = g.isOverarching ? allGoals.filter(x => g.childIds.includes(x.id)) : [];
   return (
     <div {...interactive(onClick, { label: `View ${g.name}` })}
@@ -715,7 +716,7 @@ function GoalCard({ g, allGoals, onClick }) {
             : "Nothing pledged or given to it yet."}</div>
         </div>
       ) : (
-        <Thermometer raised={raised} goal={g.goalAmount} percent={percent} rawPercent={rawPercent} over={over} paceState={paceState} paceSentence={paceSentence} />
+        <Thermometer raised={raised} goal={g.goalAmount} percent={percent} rawPercent={rawPercent} over={over} paceState={paceState} paceLabel={paceLabel} paceSentence={paceSentence} />
       )}
       {g.lifecycle === "upcoming" ? null : g.isOverarching ? (
         <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>

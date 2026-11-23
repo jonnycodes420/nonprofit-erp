@@ -819,13 +819,13 @@ async function memberCounts(orgId, groups) {
 // from her own data before she makes it. Asking starters leave out anyone
 // marked do not solicit, do not contact or deceased, and say how many.
 const STARTERS = [
-  { key: "lybunt", name: "Gave last year, not yet this year", term: "LYBUNT", rules: { bunt: "lybunt", solicitable: "1" }, asking: true },
-  { key: "sybunt", name: "Gave some year before, not last year or this year", term: "SYBUNT", rules: { bunt: "sybunt", solicitable: "1" }, asking: true },
+  { key: "lybunt", population: "lybunt_askable", name: "Gave last year, not yet this year", term: "LYBUNT", rules: { bunt: "lybunt", solicitable: "1" }, asking: true },
+  { key: "sybunt", population: "sybunt_askable", name: "Gave some year before, not last year or this year", term: "SYBUNT", rules: { bunt: "sybunt", solicitable: "1" }, asking: true },
   // FIX-49 decision 6: the one lapse rule (lapseRule.js), as the tags read it.
-  { key: "lapsing", name: "Lapsing: last gift 9 to 12 months ago", rules: { lifecycle: "lapsing", solicitable: "1" }, asking: true },
-  { key: "lapsed", name: "Lapsed: no gift in the last 12 months", rules: { lifecycle: "lapsed", solicitable: "1" }, asking: true },
+  { key: "lapsing", population: "lapsing_askable", name: "Lapsing: last gift 9 to 12 months ago", rules: { lifecycle: "lapsing", solicitable: "1" }, asking: true },
+  { key: "lapsed", population: "lapsed_askable", name: "Lapsed: no gift in the last 12 months", rules: { lifecycle: "lapsed", solicitable: "1" }, asking: true },
   { key: "first_gift", name: "First gift this year", rules: { firstGiftThisYear: "1" } },
-  { key: "monthly", name: "Monthly givers", rules: { monthly: "1" } },
+  { key: "monthly", population: "monthly_givers", name: "Monthly givers", rules: { monthly: "1" } },
   { key: "gave_more", name: "Gave more this year than last", rules: { gaveMore: "1" } },
   { key: "top_tenth", name: "Top tenth by lifetime giving", rules: { topTenth: "1", solicitable: "1" }, asking: true },
   { key: "awaiting_thanks", name: "Gifts waiting for a thank-you", rules: { awaitingThanks: "1" } },
@@ -852,7 +852,8 @@ async function starterList(orgId, groups = []) {
     const count = counts[st.key].count;
     const leftOut = st.asking ? Math.max(0, counts[st.key].all - count) : 0;
     const added = groups.find(g => g.kind === "dynamic" && sameRules(g.rules || {}, st.rules));
-    return { key: st.key, name: st.name, term: st.term || null, asking: !!st.asking, count, leftOut,
+    // DEFINE-1: a starter that is a registry population carries its id; the card shows its name and sentence.
+    return { key: st.key, name: st.name, term: st.term || null, asking: !!st.asking, count, leftOut, population: st.population || null,
       sentence: rulesSentence(starterGroup(st).rules), addedGroupId: added ? added.id : null };
   });
   const shown = all.filter(s => s.count > 0);

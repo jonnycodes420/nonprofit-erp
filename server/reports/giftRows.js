@@ -13,18 +13,31 @@
 "use strict";
 
 const REST_MAX = 200;
-const NOT_COUNTED_SENTENCE = n => (n > 0
-  ? `Also listed: ${n.toLocaleString("en-US")} ${n === 1 ? "row" : "rows"} not counted as gifts: a gift refunded in full, and refunds. They are in the total, which nets each refund off.`
-  : "");
+// DEFINE-1 item 6: the rows are said by kind (refunds.js words): the gifts refunded in full, and
+// the money their refunds returned; never one "rows" number that mixes gifts with refunds.
+const RF = require("../../shared/numbers/refunds");
+const NOT_COUNTED_SENTENCE = (n, k = null) => {
+  if (!(n > 0)) return "";
+  if (!k) return `Also listed: ${n.toLocaleString("en-US")} ${n === 1 ? "row" : "rows"} not counted as gifts: a gift refunded in full, and refunds. They are in the total, which nets each refund off.`;
+  const bits = [];
+  if (k.inFull > 0) bits.push(`${RF.affectedWords(k.inFull)} in full`);
+  if (k.refundRows > 0) bits.push(`refunds: ${RF.returnedWords(k.returnedCents)}`);
+  return `Also listed, not counted as gifts: ${bits.join("; ") || `${n.toLocaleString("en-US")} ${n === 1 ? "row" : "rows"}`}. They are in the total, which nets each refund off.`;
+};
 
 // `sql`/`args` from a source with countsGifts. Answers { n, rows, rest }:
 // n the counted gifts (the pager's total), rows this page of them, each with
 // `refunds` (raw rows), rest the not-counted rows (raw), at most REST_MAX.
 async function giftRowsPage(query, { sql, args }, { page, pageSize, order, wantRows, restMax = REST_MAX }) {
+  const REST = `NOT x.counted AND NOT EXISTS (SELECT 1 FROM x k WHERE k.counted AND k.id = x.refund_of)`;
   const [c] = await query(`WITH x AS (${sql}) SELECT COUNT(*) FILTER (WHERE x.counted)::int AS n,
-                                   COUNT(*) FILTER (WHERE NOT x.counted AND NOT EXISTS (SELECT 1 FROM x k WHERE k.counted AND k.id = x.refund_of))::int AS r
+                                   COUNT(*) FILTER (WHERE ${REST})::int AS r,
+                                   COUNT(*) FILTER (WHERE ${REST} AND x.amount > 0)::int AS r_in_full,
+                                   COUNT(*) FILTER (WHERE ${REST} AND x.amount < 0)::int AS r_refunds,
+                                   ${RF.RETURNED_CENTS("x", REST)} AS r_returned
                               FROM x`, args);
-  if (!wantRows) return { n: Number(c.n) || 0, restCount: Number(c.r) || 0, rows: [], rest: [] };
+  const restKinds = { inFull: Number(c.r_in_full) || 0, refundRows: Number(c.r_refunds) || 0, returnedCents: Number(c.r_returned) || 0 };
+  if (!wantRows) return { n: Number(c.n) || 0, restCount: Number(c.r) || 0, restKinds, rows: [], rest: [] };
   const [rows, rest] = await Promise.all([
     query(`WITH x AS (${sql})
            SELECT x.*, (SELECT COALESCE(json_agg(json_build_object('id', r.id, 'type', r.type, 'donor_id', r.donor_id, 'name', r.name,
@@ -35,14 +48,14 @@ async function giftRowsPage(query, { sql, args }, { page, pageSize, order, wantR
            SELECT x.* FROM x WHERE NOT x.counted AND NOT EXISTS (SELECT 1 FROM x k WHERE k.counted AND k.id = x.refund_of)
             ORDER BY COALESCE(x.refund_of, x.id), x.amount DESC, x.date LIMIT ?`, [...args, restMax]),
   ]);
-  return { n: Number(c.n) || 0, restCount: Number(c.r) || 0, rows, rest };
+  return { n: Number(c.n) || 0, restCount: Number(c.r) || 0, restKinds, rows, rest };
 }
 
 // figureSources.plainFigure: read the page into `agg` (pagedRows, rest); answers the page's raw rows.
 async function pageInto(query, agg, built, opts) {
   const gp = await giftRowsPage(query, built, opts);
   agg.pagedRows = gp.n;
-  if (gp.restCount) agg.rest = { count: gp.restCount, rows: gp.rest, sentence: NOT_COUNTED_SENTENCE(gp.restCount) };
+  if (gp.restCount) agg.rest = { count: gp.restCount, rows: gp.rest, sentence: NOT_COUNTED_SENTENCE(gp.restCount, gp.restKinds) };
   return gp.rows;
 }
 // The answer's extra fields: every row it lists (listedRows) and the rows not counted, shaped.

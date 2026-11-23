@@ -82,7 +82,7 @@ async function goalFigureRow(g, fig) {
   ]);
   // FIX-7 Part 5 — the badge carries the reason it is a badge.
   return { id: g.id, label: g.name, kind: "money", value: raised.value, source: raised.source, pace: g.paceState || null,
-    paceSentence: g.paceSentence || null, paceGap: g.paceGap || 0,   // FLOWS-7: Home says the gap, never "behind" (HOME-5)
+    paceSentence: g.paceSentence || null, paceLabel: g.paceLabel || null, paceGap: g.paceGap || 0,   // FLOWS-7: Home says the gap, never "behind" (HOME-5)
     also: [
       { key: "goal", label: "The goal", kind: "money", value: target.value, source: target.source,
         definition: "The target set on this goal's record." },
@@ -763,29 +763,32 @@ function computeFundraisingPace(raised, goal, startDate, endDate, basis = "raise
   // living in Dashboard.jsx, which is how two screens said different things
   // about the same money. No start or no deadline: no pace at all — the caller
   // shows raised against goal, which is the honest thing to show.
+  let paceLabel = null;   // DEFINE-1: pace.js's words for the state ("Raised 87% of goal" when ended)
   let paceState = null, expected = null, paceSentence = null, paceRaisedPct = null, paceElapsedPct = null, paceMath = null, paceGap = 0, paceProjected = null;
   const p = PACE.paceOf({ raised: r, goal: g, start: startDate, end: endDate, today: day, basis });
   if (p) {
     paceState = p.state === "on_pace" ? "on_track" : p.state;   // the wire word the screens already read
     paceSentence = p.sentence;
+    paceLabel = p.label || null;
     paceRaisedPct = p.raisedPct;
     paceElapsedPct = p.elapsedPct;
     paceMath = p.math ? p.math.sentence : null;   // LEDGER-2: the projection, with its inputs
     paceGap = p.gap;   // FLOWS-7: behind says by how much, in dollars
     paceProjected = p.math ? p.math.projected : null;
-    const total = new Date(endDate) - new Date(startDate);
-    const elapsed = Math.max(0, Math.min(total, now - new Date(startDate)));
-    expected = total > 0 ? g * (elapsed / total) : null;
+    // DEFINE-1: the share of time gone is the one day count (pace.windowDays), never the server's clock.
+    expected = p.window && p.state !== "ended" ? g * p.window.share : null;
   } else if (g > 0 && r >= g) {
     paceState = "met";
   }
   // FIX-34: "On pace" beside "$0 of $25,000, 0%" said two things. Nothing
   // counted yet is never on pace; the bar says $0 and no badge rides it.
-  if (r <= 0 && (paceState === "on_track" || paceState === "ahead")) { paceState = null; paceSentence = null; }   // unreachable since FLOWS-7 (behind at $0), kept as the FIX-34 floor
+  if (r <= 0 && (paceState === "on_track" || paceState === "ahead")) { paceState = null; paceLabel = null; paceSentence = null; }   // unreachable since FLOWS-7 (behind at $0), kept as the FIX-34 floor
   // FUNDRAISING-2: a goal that has not started has no pace. It says when it
   // starts, and the card shows what was pledged or given early.
-  if (lifecycle === "upcoming") { paceState = null; paceSentence = null; expected = null; paceRaisedPct = null; paceElapsedPct = null; paceMath = null; paceGap = 0; paceProjected = null; }
-  return { percent, rawPercent, over, daysLeft, endsWords: ends.words, lifecycle, paceState, expected,
+  if (lifecycle === "upcoming") { paceState = null; paceLabel = null; paceSentence = null; expected = null; paceRaisedPct = null; paceElapsedPct = null; paceMath = null; paceGap = 0; paceProjected = null; }
+  // DEFINE-1: the day count every screen prints ("day 128 of 365", "N days left") is this one.
+  const win = PACE.windowDays({ start: startDate, end: endDate, today: day });
+  return { percent, rawPercent, over, daysLeft, endsWords: ends.words, lifecycle, paceState, paceLabel, expected, paceDay: win ? win.day : null, paceDays: win ? win.days : null,
            paceSentence, paceMath, paceRaisedPct, paceElapsedPct, paceGap, paceProjected, paceBasis: basis, startsOn: lifecycle === "upcoming" ? civilDay(startDate) : null };
 }
 
@@ -793,10 +796,11 @@ function computeFundraisingPace(raised, goal, startDate, endDate, basis = "raise
 // the pace badge compares committed (raised + still owed) with the time gone;
 // the bar, the percent and "over" stay money raised, which is what every other
 // figure of this goal (goal-progress, Reports) reads.
-const PACE_KEYS = ["paceState", "expected", "paceSentence", "paceMath", "paceRaisedPct", "paceElapsedPct", "paceGap", "paceProjected", "paceBasis"];
+const PACE_KEYS = ["paceState", "paceLabel", "expected", "paceSentence", "paceMath", "paceRaisedPct", "paceElapsedPct", "paceGap", "paceProjected", "paceBasis"];
 function paceWithCommitment(raised, commitment, goal, startDate, endDate, today = null) {
   const base = computeFundraisingPace(raised, goal, startDate, endDate, "raised", today);
   if (!commitment || !commitment.countPledges || commitment.paceBasis === raised) return base;
+  if (base.paceState === "ended") return base;   // DEFINE-1: an ended goal's result is money raised, never a pace on committed
   // FLOWS-7: the rule names its own basis ("85% committed"), no string swap.
   const on = computeFundraisingPace(commitment.paceBasis, goal, startDate, endDate, "committed", today);
   for (const k of PACE_KEYS) base[k] = on[k];
@@ -959,6 +963,7 @@ function fundraisingGoalsPortfolio(rows) {
       rolledOver: isOverarching ? rolled.over : r.over,
       rolledPaceState: isOverarching ? rolled.paceState : r.paceState,
       rolledPaceSentence: isOverarching ? rolled.paceSentence : r.paceSentence,
+      rolledPaceLabel: isOverarching ? rolled.paceLabel : r.paceLabel,   // DEFINE-1
       // FIX-27 Part 1: every figure on a campaign card and page opens its rows
       // (figureSources.js), so the list and the page foot to the same rows.
       sources: {
