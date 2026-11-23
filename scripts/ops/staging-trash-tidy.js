@@ -54,8 +54,9 @@ async function main() {
   const DB = env.DATABASE_URL;
   if (!DB) refuse("DATABASE_URL is not set.");
   if (/localhost|127\.0\.0\.1/.test(DB) && apply) refuse("a local database is not staging; --apply is for staging only.");
-  const BASE = env.BASE || (env.RAILWAY_PUBLIC_DOMAIN ? `https://${env.RAILWAY_PUBLIC_DOMAIN}` : "");
-  if (!BASE) refuse("BASE (or RAILWAY_PUBLIC_DOMAIN) is not set, so the database cannot be checked against the staging API.");
+  // The target through the one guard (writerBase: a remote host only with --staging), as staging-seed.js does.
+  if (!env.BASE && env.RAILWAY_PUBLIC_DOMAIN) env.BASE = `https://${env.RAILWAY_PUBLIC_DOMAIN}`;
+  const BASE = guard.writerBase("http://localhost:5601");
   const health = guard.assertServerIdentity(BASE);
   if (health.env !== "staging") refuse(`${BASE}/health says env "${health.env}". Only staging.`);
 
