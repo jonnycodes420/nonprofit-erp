@@ -62,7 +62,7 @@ export default function PostToBooks({ isReadOnly, onChanged }) {
               <input type="checkbox" data-testid="post-all" disabled={isReadOnly} checked={d.groups.length > 0 && chosen.length === d.groups.length} onChange={e => toggleAll(e.target.checked)} />
               Every deposit ({d.groups.length})
             </label>
-            <div style={{ maxHeight: 320, overflowY: "auto" }}>
+            <div>{/* no inner scrollbar (smoke-walk §scroll): 12 deposits, then Show all */}
               {shown.map(g => (
                 <label key={g.key} data-testid="post-group" style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between", fontSize: 13, padding: "7px 0", borderBottom: "1px solid " + T.bg2 }}>
                   <span style={{ display: "flex", gap: 8, alignItems: "center", minWidth: 0 }}>

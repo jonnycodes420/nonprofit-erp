@@ -53,6 +53,8 @@ const HOME_READS = new Set([
   // PROFILE-SPEED-1: Events, Communications and Finance's first reads (pageReads.js), asked for on the way to the page. All plain GETs.
   "/events", "/sequences/builder", "/communications/hub", "/campaigns/templates", "/campaigns/sent",
   "/finance/accounts", "/finance/summary", "/finance/overview",
+  // LEDGER-3: Finance's Post to the books card (a plain GET; it writes nothing).
+  "/finance/ledger-post",
 ]);
 const MAX_READS = 40;
 // At most this many run at once for one bundle, so one person's Home cannot
