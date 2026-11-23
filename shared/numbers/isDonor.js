@@ -50,10 +50,15 @@ function hasGivenRow(row) {
 function isDonorRow(row) {
   return hasGivenRow(row);
 }
-// The roles a screen shows for a row: Donor added on read for a giver.
+// The roles a screen shows for a row: Donor when, and only when, they have given (IS_DONOR's rule).
+// LIST-6 item 6: DEFINE-1 made Donors mean "gave at least once" everywhere but here, so a person
+// marked Donor who never gave still read Donor on their profile while the list called them a
+// contact. Now a giver gains Donor and a never-giver loses it, on read; nothing stored changes, and
+// the role toggles still read and write the stored roles. With no role left, a screen says Contact.
 function typesOnRead(row) {
   const t = storedTypes(row) || ["donor"];
-  return !t.includes("donor") && hasGivenRow(row) ? ["donor", ...t] : t;
+  const rest = t.filter(k => k !== "donor");
+  return hasGivenRow(row) ? ["donor", ...rest] : rest;
 }
 
 module.exports = { IS_DONOR, HAS_GIVEN, isDonorRow, typesOnRead, hasGivenRow };

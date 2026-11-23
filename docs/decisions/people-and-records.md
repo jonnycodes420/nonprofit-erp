@@ -3,6 +3,14 @@
 Read this when you touch the person record: donors, organisations, non-donors, households, photos, merge and duplicates, deletion, the timeline, the profile, volunteers or events.
 
 ## Rules
+- **The People list is one engine (LIST-6, 23 Nov 2026).** Its filters are one object, read only from the address
+  (`client/src/lib/listFilters.js`; the names are `appUrls.js DONOR_LIST_KEYS`), and Clear filters empties all of it
+  (Owner, stage, tag, chips, search, Everyone/Donors/Contacts, the view). Every filter runs on the server
+  (`groups.js buildDonorFilter`): words in notes, About or tags are the `text` rule (`server/donors/textMatch.js`, the
+  registry field "Notes or tags"); Team, Re-engage and Map ask `GET /donors/ids` with the same object, never filter the
+  whole-org rows in the browser. Giving strength is the stored `donor_scores.generosity` everywhere (list, Re-engage,
+  profile, sort), its hover written from the stored parts (`shared/givingStrength.js`); no screen computes its own.
+  A saved view updates in place (`PUT /donors/list-views/:id`) and `?sv=<id>` with no other filter applies it.
 - **One touch, logged to many people (EDIT-2, 18 Nov 2026).** `server/donors/touchBatch.js`: Donors' selection bar, or
   Log a touch's picker with several ticked. One transaction, at most 2,000 people, only people in the org and visible to
   the user; each gets one interaction (`touch_batch_id`), closes no follow-up and sends nothing; a task only when "Also
@@ -13,6 +21,8 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   NULL roles column) OR has given by the profile's rule (`HAS_GIVEN`). The Donors tab, its counts, Groups, portfolios,
   appeal audiences and Everyone's breakdown read it; a giver typed contact or organisation gains Donor on read
   (`typesOnRead`) and nothing stored changes. `assertSurfacesAgree` checks it (`tests/lib/flows18Checks.js`).
+  DEFINE-1 narrowed it to "has given"; LIST-6 made `typesOnRead` follow both ways, so a never-giver marked Donor
+  loses Donor on read (the profile's line says Contact) while the stored role, which the + menu toggles, stays.
 - **FLOWS-4 (9 Nov 2026): a person search answers in one order.** The exact full name first, then the name
   starting with the whole query as words, then starting with it, then containing it, then any other match; ties by
   the most recent gift, then the record's last change (`personMatch.RANK_ORDER_SQL`). Enter opens the top one, and

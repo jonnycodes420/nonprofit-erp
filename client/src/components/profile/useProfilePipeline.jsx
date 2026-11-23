@@ -9,7 +9,8 @@ import { offerUndo, EditedMarker, ItemMenu } from "../EditHistory";
 import { useReceipts } from "./ReceiptsAndStatements";
 import { orgTodayCivil } from "../../lib/orgToday";
 import { lastGift } from "../../lib/stickyGift";   // QUICKADD-1
-import { STAGES, donorScore, T, moveUrgency } from "../shared";
+import { STAGES, T, moveUrgency } from "../shared";
+import { givingStrengthOf } from "../../../../shared/givingStrength.js";   // LIST-6
 
 export function useProfilePipeline({ givingOpen, donor, setDesignations, refreshSoftCredit, refreshPipeline, designations, setHousehold, setHhModalOpen, hhPick, setHhPick, setHhSearch, household, gifts, initialAddGift, setDpTab, setAddGiftForm, setAddGiftOpen, setGifts, setGiftLoading, setGiftReadErr, giftReadSeq, setLocalInts, setFigs, setGiftsFull, loadRel, setPlannedGifts, setPledges, setMaterials, setMatLoading, setFundAffinity, setFundLoading, localInts, isReadOnly, setEditingInt, onInteractionAdded, setStwOpen, stwForm, setStwForm, setStwSaving }) {
   useEffect(()=>{
@@ -207,7 +208,7 @@ export function useProfilePipeline({ givingOpen, donor, setDesignations, refresh
   };
 
   const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
-  const sc=donorScore(donor);const scoreColor=sc>70?T.greenDk:sc>45?T.gold600:T.terracotta;
+  const sc=givingStrengthOf(donor);   // LIST-6: the stored score, as the list
   const urg=moveUrgency(donor);
 
   // ── THREAD-2b 5 · WHERE THEY ARE IN THEIR JOURNEY ──────────────────────

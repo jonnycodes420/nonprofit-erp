@@ -21,6 +21,10 @@
 //   §5 Data health: People and their businesses is people + organizations,
 //      each once; Review pairs finishes in under 5 s
 //   §6 the filtered list's first rows come in under a second at 20 ms latency
+//   §9 LIST-6: Clear filters clears Owner; the list's Giving strength is the profile's; Notes or
+//      tags is a server rule; a view updates in place and ?sv= applies it; a never-giver is no Donor
+//   §9 LIST-6: Clear filters clears Owner; the list's Giving strength is the profile's; Notes or
+//      tags is a server rule; a view updates in place and ?sv= applies it; a never-giver is no Donor
 //
 // Against a booted server at $BASE and the client dist at $APP_URL.
 "use strict";
@@ -418,6 +422,59 @@ async function reset(org) {
     && (await page.locator('[data-testid="sheet-import"], [data-testid="sheet-result"]').count()) === 0;
   ok("§8 Done on the import receipt goes to the Donors list", onList, `${before8} → ${u8.pathname}${u8.search}`);
   fs.unlinkSync(csvPath);
+
+  // ── §9 LIST-6: one list engine ──
+  // Jarvis, 22 Nov (staging and prod). Each check is red on main: (a) Clear filters left Owner on
+  // (?owner= stayed); (b) the list's Giving strength was a browser formula, not the profile's stored
+  // score; (c) notes were searched in the browser, over rows that carry none; (d) editing a view saved a
+  // second one, and a view in the address was ignored; (e) a never-giver marked Donor read Donor on
+  // their profile while the list called them a contact.
+  await q(`UPDATE donors SET notes='Met at the spring gala' WHERE org_id=$1 AND id='d_l2_1'`, [ORG]);
+  await q(`UPDATE donors SET about_them='Loves the gala' WHERE org_id=$1 AND id='d_l2_2'`, [ORG]);
+  await q(`UPDATE donors SET tags='["Gala host"]' WHERE org_id=$1 AND id='d_l2_3'`, [ORG]);
+  await api("POST", "/scores/recompute", tok);
+  await api("PUT", "/donors/list-layout", tok, { columns: ["name", "stage", "owner", "lifetime", "generosity"], pageSize: 100 });
+  await page.goto(`${APP}/donors`, { waitUntil: "networkidle" });
+  await page.locator(".dir-donor-row").first().waitFor({ timeout: 30000 });
+  await settle();
+  const full9 = await countLine();
+  await page.locator("select", { has: page.locator("option", { hasText: "All owners" }) }).first().selectOption(B.id);
+  await settle();
+  await addChip("Tags", "tags", "Board prospect");
+  const narrowed9 = await countLine();
+  await page.getByRole("button", { name: "Clear filters" }).first().click();
+  await settle();
+  const u9 = new URL(page.url());
+  ok("§9a Clear filters with Owner set leaves no owner param (nor the chip)", !u9.searchParams.has("owner") && !u9.searchParams.has("where"), u9.search);
+  ok("§9a ...and the full count", full9 > narrowed9 && (await countLine()) === full9, `${await countLine()} vs ${full9} (narrowed ${narrowed9})`);
+  // (b) the list's number, read off the screen, against the profile's (GET /donors/:id/scores, the card's own read)
+  const cells9 = await page.locator('[data-testid="dir-giving-strength"]').evaluateAll(els => els.slice(0, 8).map(el => {
+    let r = el; while (r && !(r.classList && r.classList.contains("dir-donor-row"))) r = r.parentElement;
+    const a = r && r.querySelector("a[href*='/donors/d_']");
+    return { n: Number(el.textContent), id: a ? a.getAttribute("href").split("/").pop() : null };
+  }));
+  const off9 = [];
+  for (const c of cells9) { const s = await api("GET", `/donors/${c.id}/scores`, tok); if (Number(s.body && s.body.generosity) !== c.n) off9.push(`${c.id}: list ${c.n}, profile ${s.body && s.body.generosity}`); }
+  ok("§9b the list's Giving strength equals the profile's", cells9.length >= 5 && off9.length === 0, off9.length ? off9.slice(0, 4) : `${cells9.length} rows`);
+  // (c) "Notes or tags" is a server rule: the people with "gala" in their notes, About or a tag, and no one else
+  const w9 = encodeURIComponent(JSON.stringify({ join: "and", conditions: [{ field: "text", op: "contains", value: "gala" }] }));
+  const r9 = await api("GET", `/donors?role=&limit=100&where=${w9}`, tok);
+  const got9 = ((r9.body && r9.body.donors) || []).map(d => d.id).sort();
+  ok("§9c Notes or tags 'gala' finds the notes, the About and the tag, and only them", JSON.stringify(got9) === JSON.stringify(["d_l2_1", "d_l2_2", "d_l2_3"]), `${r9.status} ${JSON.stringify(got9).slice(0, 120)}`);
+  // (d) a view edited and updated is still one view, and ?sv= applies it
+  const v9 = await api("POST", "/donors/list-views", tok, { name: "Bo's cultivate", columns: ["name", "stage"], filters: { join: "and", conditions: [] }, chips: { owner: B.id } });
+  const id9 = v9.body && v9.body.view && v9.body.view.id;
+  const up9 = await api("PUT", `/donors/list-views/${id9}`, tok, { name: "Bo's cultivate", columns: ["name", "stage"], filters: { join: "and", conditions: [] }, chips: { owner: B.id, stage: "cultivate" } });
+  const [{ n: views9 }] = await q(`SELECT COUNT(*)::int AS n FROM donor_list_views WHERE org_id=$1 AND name=$2`, [ORG, "Bo's cultivate"]);
+  ok("§9d Update changes the view: still one view, now with the stage", up9.status === 200 && views9 === 1 && !!(up9.body.view && up9.body.view.chips && up9.body.view.chips.stage === "cultivate"), `${up9.status} ${views9}`);
+  await page.goto(`${APP}/donors?sv=${id9}`, { waitUntil: "networkidle" });
+  await settle();
+  const owner9 = await page.locator("select", { has: page.locator("option", { hasText: "All owners" }) }).first().inputValue();
+  ok("§9d coming back with the view in the address applies it", owner9 === B.id && new URL(page.url()).searchParams.get("stage") === "cultivate", `${owner9} ${page.url()}`);
+  // (e) a never-giver marked Donor: not a Donor on their own record
+  const nev9 = people.find(p => !p.gifts && !p.lifetime && !p.org);
+  const p9 = await api("GET", `/donors/${nev9.id}`, tok);
+  ok("§9e a never-giver marked Donor is not a Donor on their profile (as on the list)", Array.isArray(p9.body.person_types) && !p9.body.person_types.includes("donor"), JSON.stringify(p9.body.person_types));
 
   await browser.close();
   if (process.env.LIST2_KEEP !== "1") await reset(ORG);

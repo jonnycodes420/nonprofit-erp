@@ -5,6 +5,7 @@
 //   DELETE /donors/list-layout        back to the org's default (or Steward's)
 //   PUT    /donors/list-layout/org    an admin sets the org's default
 //   POST   /donors/list-views         name the current columns, filter and sort
+//   PUT    /donors/list-views/:id     LIST-6: Update one of your own views to the list as it stands
 //   DELETE /donors/list-views/:id     one of your own views
 //   GET    /donors/ids                every id the list's filter matches (select all)
 //   POST   /donors/bulk-tag           add one tag to the people picked
@@ -99,30 +100,55 @@ app.put("/donors/list-layout/org", requireAuth, requireCrm, wrap(async (req, res
   res.json({ layout: { ...layout, source: "org" } });
 }));
 
-app.post("/donors/list-views", requireAuth, requireCrm, wrap(async (req, res) => {
-  const { orgId, userId } = req.user;
+// LIST-6: what a view holds, read from a request once for both a new view and an Update.
+async function viewBody(req) {
+  const { orgId } = req.user;
   const name = String((req.body && req.body.name) || "").trim().slice(0, 80);
-  if (!name) return res.status(400).json({ error: "name_required", sentence: "Give the view a name." });
+  if (!name) return { status: 400, body: { error: "name_required", sentence: "Give the view a name." } };
   const layout = DL.cleanLayout(req.body, await knownCols(orgId));
   let filters = null;
   if (req.body && req.body.filters) {
     const p = DL.parseWhere(req.body.filters);
-    if (p.error) return res.status(400).json({ error: "bad_filter", sentence: p.error });
+    if (p.error) return { status: 400, body: { error: "bad_filter", sentence: p.error } };
     filters = p.where;
   }
-  const id = newId("lv");
-  const who = actor(req);
   const sort = cleanSort(req.body);
   // LIST-4: a custom field sort names one of this org's own fields, never another org's.
   if (sort.sort && sort.sort.startsWith("cf:")) {
     const cf = await require("../server/donors/cfSort").lookup(orgId, sort.sort);
-    if (cf.error) return res.status(400).json({ error: "bad_sort", sentence: cf.error });
+    if (cf.error) return { status: 400, body: { error: "bad_sort", sentence: cf.error } };
   }
+  return { name, layout, filters, sort, chips: cleanChips(req.body) };
+}
+
+app.post("/donors/list-views", requireAuth, requireCrm, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  const b = await viewBody(req);
+  if (b.status) return res.status(b.status).json(b.body);
+  const { name, layout, filters, sort } = b;
+  const id = newId("lv");
+  const who = actor(req);
   await run(`INSERT INTO donor_list_views (id, org_id, user_id, name, columns, widths, filters, page_size, sort_by, sort_dir, chips, created_by, created_by_name)
              VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?::jsonb, ?, ?)`,
     [id, orgId, userId, name, JSON.stringify(layout.columns), JSON.stringify(layout.widths), filters ? JSON.stringify(filters) : null,
-     layout.pageSize, sort.sort, sort.dir, JSON.stringify(cleanChips(req.body)), who.id, who.name]);
+     layout.pageSize, sort.sort, sort.dir, JSON.stringify(b.chips), who.id, who.name]);
   const [v] = await query(`SELECT * FROM donor_list_views WHERE id = ? AND org_id = ?`, [id, orgId]);
+  res.json({ view: viewOut(v, userId) });
+}));
+
+// LIST-6 item 4: Update. One of her own views takes the list as it stands now
+// (name, columns, filters, sort, chips); the id stays, so a link to it still opens it.
+app.put("/donors/list-views/:id", requireAuth, requireCrm, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  const b = await viewBody(req);
+  if (b.status) return res.status(b.status).json(b.body);
+  const { name, layout, filters, sort } = b;
+  const r = await run(`UPDATE donor_list_views SET name = ?, columns = ?::jsonb, widths = ?::jsonb, filters = ?::jsonb, page_size = ?, sort_by = ?, sort_dir = ?, chips = ?::jsonb
+                        WHERE id = ? AND org_id = ? AND user_id = ?`,
+    [name, JSON.stringify(layout.columns), JSON.stringify(layout.widths), filters ? JSON.stringify(filters) : null,
+     layout.pageSize, sort.sort, sort.dir, JSON.stringify(b.chips), req.params.id, orgId, userId]);
+  if (!r.changes) return res.status(404).json({ error: "not_found", sentence: "That view isn't one of yours." });
+  const [v] = await query(`SELECT * FROM donor_list_views WHERE id = ? AND org_id = ?`, [req.params.id, orgId]);
   res.json({ view: viewOut(v, userId) });
 }));
 
