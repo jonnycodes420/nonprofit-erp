@@ -216,6 +216,9 @@ function RoleLine({donor,isReadOnly,birthday="",noGifts=false}){
   // BUILD-89 hit): reading donor.firstGiftDate here returned undefined and the
   // line silently read "Donor" with no year.
   const [firstGiftYear,setFirstGiftYear]=useState(null);
+  // LIST-6 item 6: what the line SAYS is the one donor rule (GET /people/:id shown_types); `types` stays the
+  // stored roles the + menu changes. Until it arrives, the profile record's roles (also read by the rule).
+  const [shown,setShown]=useState(null);
   const [busy,setBusy]=useState(null);
   const [note,setNote]=useState("");
   useEffect(()=>{setTypes(donor.personTypes||["donor"]);},[donor.id,JSON.stringify(donor.personTypes||[])]);
@@ -224,6 +227,7 @@ function RoleLine({donor,isReadOnly,birthday="",noGifts=false}){
     apiFetch(`/people/${donor.id}`).then(r=>{
       if(gone||!r)return;
       if(Array.isArray(r.person_types))setTypes(r.person_types);
+      if(Array.isArray(r.shown_types))setShown(r.shown_types);
       setLock({locked:!!r.donorLocked,reason:r.donorLockedReason||null});
       const y=String(r.first_gift_date||"").slice(0,4);
       if(/^\d{4}$/.test(y))setFirstGiftYear(y);
@@ -240,6 +244,8 @@ function RoleLine({donor,isReadOnly,birthday="",noGifts=false}){
       const r=await apiFetch(`/people/${donor.id}/roles`,{method:"PUT",body:JSON.stringify({role:k,on})});
       if(r&&Array.isArray(r.person_types)){
         setTypes(r.person_types);
+        // A role other than Donor shows as set; Donor itself still follows the gifts.
+        setShown(s=>{const base=(s||donor.personTypes||[]).filter(x=>x!=="donor"&&x!==k);const gave=(s||donor.personTypes||[]).includes("donor");return [...(gave?["donor"]:[]),...base,...(on&&k!=="donor"?[k]:[])];});
         setLock({locked:!!r.donorLocked,reason:r.donorLockedReason||null});
       }
     }catch(e){setNote(errorMessage(e,"Could not change this person's role"));}
@@ -257,11 +263,12 @@ function RoleLine({donor,isReadOnly,birthday="",noGifts=false}){
   const missing=ROLE_CHIPS.filter(c=>!types.includes(c.key));
   const sinceYear=firstGiftYear;
   // PROFILE-3: somebody with no gift is not called a Donor on their own record.
-  const roleWords=have.filter(c=>!(noGifts&&c.key==="donor")).map(c=>
-    c.key==="donor"&&sinceYear?(sinceYear==="unknown"?"Donor since: unknown":`Donor since ${sinceYear}`):c.label).join(" · ");
+  const says=shown||donor.personTypes||[];
+  const roleWords=(ROLE_CHIPS.filter(c=>says.includes(c.key)&&!(noGifts&&c.key==="donor")).map(c=>
+    c.key==="donor"&&sinceYear?(sinceYear==="unknown"?"Donor since: unknown":`Donor since ${sinceYear}`):c.label).join(" · "))||"Contact";
   return (
     <div data-testid="role-line" style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",marginTop:5,position:"relative"}}>
-      {roleWords&&<span style={{fontSize:12.5,color:T.ink3,lineHeight:1.4}}>{roleWords}</span>}
+      {roleWords&&<span data-testid="role-words" style={{fontSize:12.5,color:T.ink3,lineHeight:1.4}}>{roleWords}</span>}
       {/* PROFILE-1 (header): the birthday is on the same line as "Donor since". */}
       {birthday&&<span data-testid="dp-header-birthday" style={{fontSize:12.5,color:T.ink3,lineHeight:1.4}}>{roleWords?"· ":""}Birthday {birthday}</span>}
       {!isReadOnly&&missing.length>0&&(

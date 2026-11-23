@@ -39,7 +39,9 @@ function valueReady(input, v) {
 export function chipText(cond, byKey) {
   const f = byKey[cond.field];
   const label = f ? f.label : cond.field;
-  const op = f && f.filter ? (f.filter.ops || []).find(o => o.op === cond.op) : null;
+  // LIST-6: the notes filter reads as what it is, "Notes or tags: 'gala'".
+  if (cond.field === "text") return `${f ? f.label : "Notes or tags"}: '${String(cond.value ?? "")}'`;
+  const op =f && f.filter ? (f.filter.ops || []).find(o => o.op === cond.op) : null;
   const opLabel = op ? op.label : cond.op;
   const input = op ? op.input : "text";
   const v = cond.value;
@@ -94,7 +96,9 @@ function ValueInput({ input, value, onChange, options, onEnter = null }) {
 }
 
 // ── THE BUILDER ─────────────────────────────────────────────────────────────
-export function FilterBuilder({ setup, where, setWhere, error, total }) {
+// LIST-6: `onClearAll` is the list's one clear (every filter: Owner, Stage, the tag, the chips, the
+// search); `anyFilter` says whether any is on, so the link shows for an Owner alone too.
+export function FilterBuilder({ setup, where, setWhere, error, total, onClearAll = null, anyFilter = false }) {
   const byKey = useMemo(() => Object.fromEntries((setup.fields || []).map(f => [f.key, f])), [setup]);
   const filterable = useMemo(() => (setup.fields || []).filter(f => f.filter && Array.isArray(f.filter.ops) && f.filter.ops.length), [setup]);
   const [open, setOpen] = useState(false);
@@ -147,9 +151,9 @@ export function FilterBuilder({ setup, where, setWhere, error, total }) {
         <button type="button" data-testid="dir-add-filter" onClick={() => (open ? reset() : setOpen(true))} style={btn} aria-expanded={open}>
           + Add filter
         </button>
-        {conds.length > 0 && <>
-          <span data-testid="filter-count" style={{ fontSize: 12, color: T.ink3 }}>{Number(total || 0).toLocaleString("en-US")} {total === 1 ? "person matches" : "people match"}</span>
-          <button type="button" onClick={() => setWhere({ join: "and", conditions: [] })}
+        {conds.length > 0 && <span data-testid="filter-count" style={{ fontSize: 12, color: T.ink3 }}>{Number(total || 0).toLocaleString("en-US")} {total === 1 ? "person matches" : "people match"}</span>}
+        {(conds.length > 0 || anyFilter) && <>
+          <button type="button" data-testid="dir-clear-filters" onClick={() => (onClearAll ? onClearAll() : setWhere({ join: "and", conditions: [] }))}
             style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontSize: 12, fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>Clear filters</button>
         </>}
         {open && (
@@ -201,7 +205,9 @@ export function FilterBuilder({ setup, where, setWhere, error, total }) {
 
 // ── SAVED VIEWS ─────────────────────────────────────────────────────────────
 // A view is a name for a set of columns and filters ("Major donors, Lexington").
-export function ViewsMenu({ views, activeId, edited = false, onPick, onSave, onDelete }) {
+// LIST-6 item 4: an edited view of her own offers Update (the same view, changed) beside
+// Save as new; before, the only way to keep a change was a second view with a new name.
+export function ViewsMenu({ views, activeId, edited = false, onPick, onSave, onDelete, onUpdate = null }) {
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
   const [msg, setMsg] = useState("");
@@ -227,7 +233,7 @@ export function ViewsMenu({ views, activeId, edited = false, onPick, onSave, onD
         {/* FLOWS-20: the list changed since the view was picked; picking the view applies it again. */}
         {active && edited && <option value="__edited" disabled data-testid="dir-view-edited">{active.name} (edited)</option>}
         {(views || []).map(v => <option key={v.id} value={v.id}>{v.name}{v.mine ? "" : " (shared)"}</option>)}
-        <option value="__save">Save this view…</option>
+        <option value="__save">{active && edited ? "Save as a new view…" : "Save this view…"}</option>
       </select>
       {naming && <>
         <input autoFocus data-testid="dir-view-name" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setNaming(false); }}
@@ -235,6 +241,10 @@ export function ViewsMenu({ views, activeId, edited = false, onPick, onSave, onD
         <button type="button" data-testid="dir-view-save" onClick={save} disabled={!name.trim()} style={{ ...primary, opacity: name.trim() ? 1 : 0.55 }}>Save view</button>
         <button type="button" onClick={() => { setNaming(false); setName(""); }} style={btn}>Cancel</button>
       </>}
+      {active && active.mine && edited && onUpdate && !naming && <button type="button" data-testid="dir-view-update"
+        onClick={async () => { setMsg(""); try { await onUpdate(active); } catch (e) { setMsg((e && e.sentence) || (e && e.message) || "That view did not update."); } }}
+        style={{ ...primary, padding: "6px 10px" }}>Update “{active.name}”</button>}
+      {active && active.mine && edited && !naming && <button type="button" data-testid="dir-view-save-new" onClick={() => setNaming(true)} style={btn}>Save as new</button>}
       {active && active.mine && !naming && <button type="button" data-testid="dir-view-delete" onClick={() => onDelete(active)}
         style={{ background: "none", border: "none", padding: 0, color: T.ink3, fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>Delete this view</button>}
       {msg && <span role="alert" style={{ fontSize: 12, color: T.ink }}>{msg}</span>}

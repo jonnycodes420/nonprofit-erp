@@ -352,7 +352,7 @@ app.get("/people/:id", requireAuth, wrap(async (req, res) => {
     // LEDGER-2: "Donor since" is the first gift on record, read live through the
     // one rule (shared/numbers/firstGift.js), never the stored column, which a
     // write that skipped the summary left on a later year.
-    `SELECT d.id, d.name, d.email, d.kind, d.person_types, d.gift_count, ${NUMBERS.firstGift.FIRST_DATE("d")} AS first_gift_date
+    `SELECT d.id, d.name, d.email, d.kind, d.person_types, d.gift_count, d.total_giving, d.imported_total, ${NUMBERS.firstGift.FIRST_DATE("d")} AS first_gift_date
        FROM donors d WHERE d.id=? AND d.org_id=? AND d.deleted_at IS NULL`,
     [req.params.id, req.user.orgId]);
   if (!row) return res.status(404).json({ error: "Person not found" });
@@ -362,7 +362,10 @@ app.get("/people/:id", requireAuth, wrap(async (req, res) => {
   res.json({ ...personOut(row, await donorLock(req.user.orgId, row)),
              first_gift_date: row.first_gift_date || null,
              // IMPORT-4: gifts on file but none dated reads "Donor since: unknown".
-             gift_count: Number(row.gift_count) || 0 });
+             gift_count: Number(row.gift_count) || 0,
+             // LIST-6 item 6: the roles the line SHOWS, by the one donor rule (shared/numbers/isDonor.js);
+             // person_types above stays the stored roles the toggles change.
+             shown_types: require("../../shared/numbers/isDonor").typesOnRead({ person_types: PT.typesOf(row), total_giving: row.total_giving, gift_count: row.gift_count, imported_total: row.imported_total }) });
 }));
 
 // One chip, one write: the person's own row, person_types, nothing else. Adding

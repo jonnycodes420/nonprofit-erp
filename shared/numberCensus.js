@@ -193,8 +193,9 @@ export const NUMBER_CENSUS = [
     id: "list.givingStrength",
     surface: "Donor directory · Re-engage",
     label: "Giving strength",
-    computation: "donorScore(): amount, recency and frequency of this donor's own giving, clamped 5..99",
-    sentence: "How strong this donor's giving has been with you, how much, how recently, and how often. Ranked 5 to 99 against a fixed scale, not against your other donors. It is NOT an estimate of what they could afford to give: nothing here looks outside your own records.",
+    // LIST-6: the stored score the profile and the sort read (donor_scores.generosity), not a second formula.
+    computation: "donor_scores.generosity (engagement.js): lifetime, last 24 months, years given, a monthly gift, giving more; each a percentile among your donors",
+    sentence: "How strong this donor's giving has been with you, from 1 to 100, against your own donors: lifetime giving, the last 24 months, how many of the last five years they gave, a monthly gift running now, and giving more than the year before. The same number as on their profile. It is NOT an estimate of what they could afford to give: nothing here looks outside your own records.",
     where: HOVER,
     testid: "dir-def-giving-strength",
   },

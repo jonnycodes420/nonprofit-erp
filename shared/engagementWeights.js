@@ -106,7 +106,7 @@ export const EXPLANATION = Object.freeze({
     + "The score is where their total stands among the people you have been in touch with in those 24 months: 80 means closer than about 80 in 100 of them (people tied with them count as half). "
     + "67 and above is Close, 34 to 66 is Warm, 33 and below is Distant.",
   generosity:
-    "Generosity is how much this person gives, from 0 to 100, against your own donors only. Five parts, each a percentile among everyone who has given: "
+    "Giving strength is how much this person gives, from 0 to 100, against your own donors only. Five parts, each a percentile among everyone who has given: "
     + "lifetime giving (30%), the last 24 months (30%), how many of the last five years they gave (20%), a monthly gift running now (10%) "
     + "and giving more this year than last (10%). It never uses wealth or capacity data.",
   parts:

@@ -184,7 +184,10 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
                   deceased, do_not_contact, do_not_solicit, do_not_mail, do_not_email,
                   imported_sustainer, imported_sustainer_amount, imported_sustainer_last_gift,
                   birth_month, birth_day, birth_year, ${_sumHold.sql} AS pledge_hold, ${_sumRe.sql} AS reengage, ${_sumLost.sql} AS lost,
-                  ${require("../../shared/numbers/atRisk").LAST_YEAR_OF_GIVING("donors")} AS last_year_giving
+                  ${require("../../shared/numbers/atRisk").LAST_YEAR_OF_GIVING("donors")} AS last_year_giving,
+                  -- LIST-6 item 1: Re-engage's Giving strength is the stored score and its parts, as the list and profile.
+                  (SELECT s.generosity FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS generosity_score,
+                  (SELECT s.parts -> 'generosity' FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS generosity_parts
            FROM donors WHERE org_id = ? AND deleted_at IS NULL${_vis.sql} ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`, [..._sumHold.args, ..._sumRe.args, ..._sumLost.args, req.user.orgId, ..._vis.args, limit, offset]);
   // COMMS-SPEED-1: the touchpoints and the drift badge for THIS page's people
   // only, and nothing stored (a GET writes nothing, LIST-2). Every page used to
@@ -459,7 +462,7 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   // record whose face went missing because a list was capped.
   d.photo_url = donorPhotoUrl(req.user.orgId, d.photo_asset_id);
   // BUILD-94 Part 2; FLOWS-18: a giver reads as a donor on read, whatever was stored (shared/numbers/isDonor.js).
-  d.person_types = require("../../shared/numbers/isDonor").typesOnRead({ person_types: PT.typesOf(d), total_giving: d.total_giving, gift_count: d.gift_count_live ?? d.gift_count });
+  d.person_types = require("../../shared/numbers/isDonor").typesOnRead({ person_types: PT.typesOf(d), total_giving: d.total_giving, gift_count: d.gift_count_live ?? d.gift_count, imported_total: d.imported_total });
   // PROFILE-1 — the four figures, each carrying the source its drawer opens.
   d.figures = await donorProfileFigures(
     req.user.orgId, d.id, orgToday(await orgTz(req.user.orgId)));   // ORG_TZ_SEAM_OK
