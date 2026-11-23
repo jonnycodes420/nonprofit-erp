@@ -118,7 +118,7 @@ module.exports = async function part2(h) {
              VALUES ('g_pol1vol_1',$1,$2,25,$3,'cash','system:test','POLISH-1 fixture')`, [ORG, rosa.id, h.civilToday()]);
     const roster = (await api("GET", "/volunteer-hub/roster", tok)).body;
     ok("§2e one volunteer who gives reads \"who also gives\"",
-      roster.people.length === 1 && /One volunteer on the roster, who also gives\./.test(roster.sentence || ""), roster.sentence);
+      roster.people.length === 1 && /One active volunteer on the roster, who also gives\./.test(roster.sentence || ""), roster.sentence);   // VOL-3: the roster counts Active
 
     // ── §2f the browser leg ─────────────────────────────────────────────────
     await browserLeg(h, link.url);
