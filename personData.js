@@ -120,8 +120,13 @@ async function erasePerson(orgId, donorId) {
     // Everything that is only about them: gone.
     for (const t of DELETE_BY_DONOR) await step(`DELETE FROM ${t} WHERE org_id=$1 AND donor_id=$2`, [orgId, donorId]);
     await step(`DELETE FROM donor_relationships WHERE org_id=$1 AND (donor_id_a=$2 OR donor_id_b=$2)`, [orgId, donorId]);
-    for (const t of ["volunteer_notes", "volunteer_signups", "volunteer_group_members", "volunteer_credentials", "volunteer_magic_links", "supporter_links", "supporter_sessions"])
+    // VOL-3 item 3: their volunteer record, what they sent from the volunteer page, and every
+    // application that is theirs (linked to them, or sent from one of their addresses) with its
+    // answers. An erased person's name must not survive on the Applications list.
+    for (const t of ["volunteer_notes", "volunteer_signups", "volunteer_group_members", "volunteer_credentials", "volunteer_magic_links", "supporter_links", "supporter_sessions",
+                     "volunteer_records", "volunteer_page_signups"])
       await step(`DELETE FROM ${t} WHERE org_id=$1 AND person_id=$2`, [orgId, donorId]);
+    await step(`DELETE FROM volunteer_applications WHERE org_id=$1 AND (person_id=$2 OR lower(email) = ANY($3::text[]))`, [orgId, donorId, emails]);
     await step(`DELETE FROM agent_writes WHERE org_id=$1 AND entity_id=$2`, [orgId, donorId]);
     // Meetings: they leave every meeting; a meeting with nobody else in it goes.
     await step(`UPDATE calendar_events SET person_ids=array_remove(person_ids,$2), title='Meeting', note=NULL, next_step=NULL, location=NULL

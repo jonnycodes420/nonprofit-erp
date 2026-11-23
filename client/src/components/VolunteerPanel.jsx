@@ -16,6 +16,7 @@ import { displayDate } from "../../../shared/displayDate";
 import { displayOrgDate } from "../lib/orgDay";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import TimeInput from "./inputs/TimeInput";   // FLOWS-5: a time as she types it
+import { VolunteerStatusRecord } from "./volunteers/VolunteerStatusRecord";   // VOL-3: status, and the record editable
 
 const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 
@@ -98,7 +99,9 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
     try { const r = await apiFetch(`/donors/${donor.id}/volunteer-link`, { method: "POST" }); await navigator.clipboard.writeText(r.url); setMsg(`Link copied. ${r.sentence}`); }
     catch (e) { setMsg(errorMessage(e, "Could not make the link.")); }
   };
-  const shownTotal = data.shifts.reduce((a, s) => a + Math.round(s.hours * 100), 0) / 100;
+  // VOL-3 item 4: a shift dated after today is listed but not counted yet.
+  const shownTotal = data.shifts.filter(s => !s.notYet).reduce((a, s) => a + Math.round(s.hours * 100), 0) / 100;
+  const notYet = data.shifts.filter(s => s.notYet).length;
   // A plain function, not a component: a component defined in here would be
   // a new type every render and the inputs would lose focus on each key.
   const entryFields = (f, set) => (
@@ -132,15 +135,9 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
           </div>))}
         <div data-testid="volunteer-shift-count" style={{ fontSize: 12.5, color: T.ink3, alignSelf: "flex-end" }}>{data.shiftCount ? `across ${data.shiftCount} ${data.shiftCount === 1 ? "shift" : "shifts"}` : "0 hours, 0 shifts logged"}</div>
       </div>
-      {/* FIX-25: what they said they can give (Make a volunteer saves it), up
-          here beside the hours they have given, not only at the foot. */}
-      {prof && prof.record && (prof.record.hoursPerWeek != null || prof.record.availability.length > 0 || (prof.record.roles || []).length > 0) && (
-        <div data-testid="volunteer-record-line" style={{ fontSize: 13, color: T.ink, lineHeight: 1.5 }}>
-          <span style={{ fontWeight: 700 }}>Can give: </span>
-          {[prof.record.hoursPerWeek != null ? `${prof.record.hoursPerWeek} ${prof.record.hoursPerWeek === 1 ? "hour" : "hours"} a week` : null,
-            prof.record.availability.length ? prof.record.availability.join(", ") : null,
-            (prof.record.roles || []).length ? `as ${prof.record.roles.join(", ")}` : null].filter(Boolean).join(" · ")}
-        </div>)}
+      {/* FIX-25, VOL-3: their status (Active, Paused, Former, with Undo) and what they said
+          they can give, editable here, beside the hours they have given. */}
+      {prof && <VolunteerStatusRecord donor={donor} record={prof.record} isReadOnly={isReadOnly} onChanged={() => { load(); loadProf(); changed(); }} />}
       <div data-testid="volunteer-crossover" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>
         {Number(donor.total || donor.total_giving || donor.totalGiving || 0) > 0
           ? "Gives and volunteers. Their hours and their giving are on this one record."
@@ -169,7 +166,7 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
           {data.filtered && <button style={btnLink} onClick={() => setFilt({ from: "", to: "", opportunityId: "" })}>Clear</button>}
           <button style={{ ...btnLink, marginLeft: "auto" }} onClick={download} data-testid="volunteer-csv">Download CSV</button>
         </div>
-        <div style={{ fontSize: 12, color: T.ink3 }}>{data.shifts.length} {data.shifts.length === 1 ? "shift" : "shifts"}, {shownTotal} hours{data.filtered ? " in this filter" : ""}.</div>
+        <div style={{ fontSize: 12, color: T.ink3 }}>{data.shifts.length} {data.shifts.length === 1 ? "shift" : "shifts"}, {shownTotal} hours{data.filtered ? " in this filter" : ""}{notYet ? ` (${notYet} dated after today, not counted yet)` : ""}.</div>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 560 }}>
             <thead><tr style={{ textAlign: "left", color: T.ink3, fontSize: 11 }}>
@@ -185,7 +182,7 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
                 </td></tr>
               ) : (
                 <tr key={s.id} data-shift-row={s.id} style={{ borderTop: "1px solid " + T.bg2 }}>
-                  <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>{displayDate(s.date)}</td>
+                  <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>{displayDate(s.date)}{s.notYet && <span data-testid="volunteer-not-yet" title={data.notYetSentence} style={{ color: T.gold700, fontSize: 11.5, marginLeft: 6 }}>not counted yet</span>}</td>
                   <td>{s.opportunityName || s.role || ""}</td>
                   <td style={{ textAlign: "right", paddingRight: 10, fontWeight: 700 }}>{s.hours}{s.startTime ? <span style={{ fontWeight: 400, color: T.ink3 }}> ({s.startTime} to {s.endTime})</span> : null}</td>
                   <td style={{ whiteSpace: "nowrap", color: T.ink3 }}>{s.enteredAt ? displayOrgDate(s.enteredAt) : ""}</td>
@@ -242,7 +239,7 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
       {/* WHAT THEY TOLD YOU WHEN THEY APPLIED */}
       {prof && prof.applications.length > 0 && (
         <div data-testid="volunteer-answers" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={eyebrow}>{prof.applications[0].via === "page" ? "Their application" : "Volunteer record"}</span>
+          <span style={eyebrow}>Their application</span>
           {prof.applications.slice(0, 1).map(a => (
             <div key={a.id} style={{ fontSize: 12.5, color: T.ink, display: "flex", flexDirection: "column", gap: 3 }}>
               <div style={{ color: T.ink3 }}>{a.via !== "page"

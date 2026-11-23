@@ -20,6 +20,7 @@ import { tabHref } from "../lib/appUrls";
 import { orgTodayCivil, orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 import { signUpForShift } from "../lib/shiftSignup";   // STALE-2
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { Figure, FigureContext } from "./Figure";   // VOL-3: the header cards open their rows
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 12.5, color: T.ink, fontFamily: "inherit", boxSizing: "border-box", maxWidth: "100%" };
 // On a phone the filters fold behind one button, so the people come first.
@@ -31,34 +32,44 @@ const card = { background: T.white, border: "1px solid " + T.bg2, borderRadius: 
 const eyebrow = { fontSize: 10, fontWeight: 800, color: T.ink3 };
 const COLS_KEY = "steward.volunteerList.cols.v1";
 const ALL_COLS = [
+  ["status", "Status"],   // VOL-3
   ["email", "Email"], ["phone", "Phone"], ["rangeHours", "Hours in range"], ["lifetimeHours", "Lifetime hours"],
   ["lastServed", "Last served"], ["nextShift", "Next shift"], ["qualifications", "Tags and qualifications"],
   ["lifetimeGiving", "Lifetime giving", true], ["gifts", "Gifts", true], ["lastGiftDate", "Last gift", true],
 ];
-const DEFAULT_COLS = ["rangeHours", "lifetimeHours", "lastServed", "nextShift", "lifetimeGiving"];
+const DEFAULT_COLS = ["status", "rangeHours", "lifetimeHours", "lastServed", "nextShift", "lifetimeGiving"];
 const money = n => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const loadCols = () => { try { const c = JSON.parse(window.localStorage.getItem(COLS_KEY) || "null"); return Array.isArray(c) && c.length ? c : DEFAULT_COLS; } catch { return DEFAULT_COLS; } };
 
-export function VolunteerCounts({ onOpen, refreshKey }) {
+export function VolunteerCounts({ onOpen, refreshKey, onOpenPerson }) {
   const [c, setC] = useState(null);
   useEffect(() => { apiFetch("/volunteer-hub/counts").then(setC).catch(() => setC(null)); }, [refreshKey]);
   if (!c) return null;
-  const items = [["roster", "On the roster"], ["pending", "Pending applications"], ["conflicts", "Schedule conflicts this week"], ["short", "Shifts short this week"]];
+  // VOL-3 item 6: every number opens its rows (a <Figure> with its source). The link under each
+  // still goes to the screen that works on those rows.
+  const items = [["roster", "Active volunteers", "See the list"], ["pending", "Pending applications", "Go to Applications"],
+    ["conflicts", "Schedule conflicts this week", "Go to the schedule"], ["short", "Shifts short this week", "Go to the schedule"]];
   return (
-    <div data-testid="vol-counts" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 14 }}>
-      {items.map(([k, label]) => (
-        <button key={k} data-count={k} onClick={() => onOpen(k)} title={c[k].sentence} aria-label={`${label}: ${c[k].value}. ${c[k].sentence}`}
-          style={{ ...card, textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}>
-          <div style={eyebrow}>{label}</div>
-          <div style={{ fontSize: 24, fontWeight: 800, color: (k === "conflicts" || k === "short") && c[k].value > 0 ? T.gold700 : T.ink }}>{c[k].value}</div>
-          {k === "roster" && c[k].served && <div data-testid="vol-served-90" title={c[k].served.sentence} style={{ fontSize: 12, color: T.ink3 }}>{c[k].served.value} served in the last 90 days</div>}
-        </button>))}
-    </div>
+    <FigureContext.Provider value={{ openPerson: onOpenPerson || null }}>
+      <div data-testid="vol-counts" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, marginBottom: 14 }}>
+        {items.map(([k, label, go]) => (
+          <div key={k} data-count={k} style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+            <Figure value={c[k].value} kind="count" label={label} definition={c[k].sentence} source={c[k].source} figureKey={`vol-${k}`}
+              sub={k === "roster" ? <>
+                {c[k].served && <span data-testid="vol-served-90" style={{ display: "block" }}>
+                  <Figure value={c[k].served.value} kind="count" variant="inline" label="Served in the last 90 days" definition={c[k].served.sentence} source={c[k].served.source} figureKey="vol-served-90" why={false} /> served in the last 90 days</span>}
+                {c[k].resting > 0 && <span data-testid="vol-resting" style={{ display: "block" }}>{c[k].resting} paused or former, not counted</span>}
+              </> : null} />
+            <button type="button" onClick={() => onOpen(k)} data-testid={`vol-count-go-${k}`}
+              style={{ background: "transparent", border: "none", padding: "0 4px", color: T.greenDk, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>{go}</button>
+          </div>))}
+      </div>
+    </FigureContext.Provider>
   );
 }
 
 // FIX-27 Part 8: one blank filter, so Clear filters always returns to it.
-const BLANK_FILTER = { search: "", volActive: "", volOpp: "", volShiftFrom: "", volShiftTo: "", hoursOp: "min", hoursN: "", volHoursFrom: "", volHoursTo: "",
+const BLANK_FILTER = { search: "", volStatus: "", volActive: "", volOpp: "", volShiftFrom: "", volShiftTo: "", hoursOp: "min", hoursN: "", volHoursFrom: "", volHoursTo: "",
   giving: "", gaveFrom: "", gaveTo: "", volQual: "", volAnswer: "", volAvail: "" };
 export function VolunteerListView({ isReadOnly, coordinator, onOpenPerson, initialFilter }) {
   const [f, setF] = useState(() => ({ ...BLANK_FILTER, ...(initialFilter || {}) }));
@@ -78,7 +89,7 @@ export function VolunteerListView({ isReadOnly, coordinator, onOpenPerson, initi
   // The filter as the rules the server reads; the same object becomes a Group.
   const rules = useMemo(() => {
     const r = {};
-    for (const k of ["search", "volActive", "volOpp", "volShiftFrom", "volShiftTo", "volHoursFrom", "volHoursTo", "volQual", "volAnswer", "volAvail"]) if (f[k]) r[k] = f[k];
+    for (const k of ["search", "volStatus", "volActive", "volOpp", "volShiftFrom", "volShiftTo", "volHoursFrom", "volHoursTo", "volQual", "volAnswer", "volAvail"]) if (f[k]) r[k] = f[k];
     if (f.hoursN !== "") r[f.hoursOp === "min" ? "volHoursMin" : "volHoursMax"] = f.hoursN;
     if (!coordinator) {
       if (f.giving === "ever" || f.giving === "never") r.given = f.giving;
@@ -142,7 +153,9 @@ export function VolunteerListView({ isReadOnly, coordinator, onOpenPerson, initi
         {showFilters && <>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <input aria-label="Search volunteers" placeholder="Search by name or email" value={f.search} onChange={set("search")} style={{ ...inp, flex: "1 1 200px" }} />
-          <select aria-label="Active" value={f.volActive} onChange={set("volActive")} style={inp}><option value="">Everyone</option><option value="1">Active only</option></select>
+          {/* VOL-3: the status a person set (Active, Paused, Former); "served lately" is the old Active rule, said as what it is. */}
+          <select aria-label="Status" data-testid="vol-filter-status" value={f.volStatus} onChange={set("volStatus")} style={inp}><option value="">Any status</option><option value="active">Active</option><option value="paused">Paused</option><option value="former">Former</option></select>
+          <select aria-label="Served lately" value={f.volActive} onChange={set("volActive")} style={inp}><option value="">Served any time</option><option value="1">Served in the last year, or on a shift to come</option></select>
           <select aria-label="Opportunity" value={f.volOpp} onChange={set("volOpp")} style={inp}><option value="">Any opportunity</option>{opps.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}</select>
           <select aria-label="Availability" value={f.volAvail} onChange={set("volAvail")} style={inp}><option value="">Any availability</option>{(apply && apply.availability || []).map(a => <option key={a}>{a}</option>)}</select>
           <input aria-label="Tag or qualification" placeholder="Tag or qualification" value={f.volQual} onChange={set("volQual")} list="vol-quals" style={inp} />

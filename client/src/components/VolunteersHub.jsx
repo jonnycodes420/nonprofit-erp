@@ -202,7 +202,7 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
     <div data-testid="volunteers-hub" className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <PageTitle main="Your" accent="volunteers." sub={roster && roster.people.length ? roster.sentence : " "} />
       {/* PARITY-3 Part 3 — the four numbers, each opening its rows. */}
-      <VolunteerCounts refreshKey={countsKey} onOpen={k => {
+      <VolunteerCounts refreshKey={countsKey} onOpenPerson={id => id && setOpen({ id, name: ((roster && roster.people) || []).find(x => x.id === id)?.name || "Volunteer" })} onOpen={k => {
         if (k === "roster") { setListFilter({}); setListKey(n => n + 1); setSection("people"); setPartOf(m => ({ ...m, people: "list" })); }
         if (k === "pending") { setSection("reach"); setPartOf(m => ({ ...m, reach: "applications" })); }
         if (k === "conflicts" || k === "short") { setSection("schedule"); setPartOf(m => ({ ...m, schedule: "calendar" })); }

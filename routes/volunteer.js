@@ -38,6 +38,8 @@ VH_READY.then(m => { VH = m; });
 // every line that reads it (the TDZ rule), because two of them are now in
 // different halves of this file and a security constant may not exist twice.
 const COORD = "volunteer_coordinator";
+const SERVED_RULE = require("../shared/numbers/served");   // VOL-3 item 4: hours count on or before today
+const VSTATUS = require("../shared/numbers/volunteerStatus");   // VOL-3 item 1: Active, Paused, Former
 let app = routers.r0;
 function verifyVolunteerToken(token) {
   const [b, sig] = String(token || "").split(".");
@@ -226,6 +228,51 @@ async function makeVolunteerAnswer(req, res, personId) {
 }
 app.post("/donors/:id/make-volunteer", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   return makeVolunteerAnswer(req, res, String(req.params.id));
+}));
+
+// VOL-3 items 1 and 2: a volunteer's status (Active, Paused, Former) and what Add asked for,
+// through server/volunteers/volunteerRecord.js, the one writer. Marking somebody former keeps
+// the Volunteer role, their hours and their history; Undo puts back the status before it.
+async function volunteerPerson(req) {
+  const [p] = await query("SELECT id, name, person_types FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL AND erased_at IS NULL",
+    [String(req.params.id), req.user.orgId]);
+  return p || null;
+}
+// VOL-3 item 5: an event's volunteer team (server/volunteers/eventTeam.js).
+app.get("/events/:id/volunteer-team", requireAuth, wrap(async (req, res) => {
+  const out = await require("../server/volunteers/eventTeam").eventTeam(req.user.orgId, String(req.params.id));
+  if (!out) return res.status(404).json({ error: "not_found", message: "That event is not on file." });
+  res.json(out);
+}));
+app.post("/donors/:id/volunteer-status", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const p = await volunteerPerson(req);
+  if (!p) return res.status(404).json({ error: "not_found", message: "That person is not on file." });
+  const VR = require("../server/volunteers/volunteerRecord");
+  const out = await VR.setStatus(req.user.orgId, p.id, String(req.body?.status || ""), actor(req));
+  if (out.error) return res.status(400).json({ error: out.error, message: out.message });
+  if (req.audit) { req.audit.action(`marked a volunteer ${out.record.statusWord.toLowerCase()}`); req.audit.entity("donor", p.id, p.name); }
+  res.json({ record: out.record, unchanged: !!out.unchanged, undo: !out.unchanged, sentence: VR.statusSentence(p.name, out.record) });
+}));
+app.post("/donors/:id/volunteer-status/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const p = await volunteerPerson(req);
+  if (!p) return res.status(404).json({ error: "not_found", message: "That person is not on file." });
+  const VR = require("../server/volunteers/volunteerRecord");
+  const out = await VR.undoStatus(req.user.orgId, p.id);
+  if (out.error) return res.status(409).json({ error: out.error, message: out.message });
+  if (req.audit) { req.audit.action("undid a volunteer status change"); req.audit.entity("donor", p.id, p.name); }
+  res.json({ record: out.record, sentence: `Undone. ${p.name} is ${out.record.statusWord.toLowerCase()} again${out.record.statusOn ? `, as set on ${out.record.statusOn}` : ""}.` });
+}));
+app.patch("/donors/:id/volunteer-record", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const p = await volunteerPerson(req);
+  if (!p) return res.status(404).json({ error: "not_found", message: "That person is not on file." });
+  const VR = require("../server/volunteers/volunteerRecord");
+  const b = req.body || {};
+  const opts = {};
+  for (const k of ["hoursPerWeek", "availability", "roles"]) if (b[k] !== undefined) opts[k] = b[k];
+  const out = await VR.writeFields(req.user.orgId, p.id, opts, actor(req));
+  if (out.error) return res.status(400).json({ error: out.error, message: out.message });
+  if (req.audit) { req.audit.action("updated the volunteer record"); req.audit.entity("donor", p.id, p.name); }
+  res.json({ record: out.record, sentence: volunteerRecordSentence({ ...out.record, name: p.name, created: false }) });
 }));
 
 app.post("/volunteer-hub/people", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -535,7 +582,7 @@ app.get("/volunteer-hub/person/:id", requireAuth, wrap(async (req, res) => {
   // doing it. Null when they have never been on one, and the header then just
   // says "Volunteer".
   const [firstShift] = await query(
-    `SELECT MIN(date)::text AS since FROM volunteer_shifts WHERE org_id=? AND person_id=?`, [orgId, p.id]);
+    `SELECT MIN(date)::text AS since FROM volunteer_shifts WHERE org_id=? AND person_id=? AND ${SERVED_RULE.SERVED(null, today)}`, [orgId, p.id]);
   res.json({
     id: p.id, name: p.name, email: p.email, phone: p.phone,
     since: (firstShift && firstShift.since) || null,
@@ -661,21 +708,23 @@ const HOURS_DEFINITION = "Every shift logged for this person, by staff, by the v
 async function rosterRows(orgId, { onlyGivers = false } = {}) {
   const today = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK — "this year" is the org's civil year
   const yearStart = String(today).slice(0, 4) + "-01-01";
+  // VOL-3: hours count once their day has come; each person carries their status.
   const rows = await query(
     `SELECT d.id, d.name, d.email, d.total_giving, d.last_gift_date,
             COALESCE(s.h, 0)::bigint AS h, COALESCE(s.hy, 0)::bigint AS hy, COALESCE(s.n, 0)::int AS n, s.last,
+            ${VSTATUS.STATUS_SQL("d")} AS vstatus,
             EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id) AS gives
        FROM donors d
        LEFT JOIN (SELECT person_id, SUM(round(hours*100)) AS h,
                          SUM(CASE WHEN date >= ? THEN round(hours*100) ELSE 0 END) AS hy,
                          COUNT(*) AS n, MAX(date) AS last
-                    FROM volunteer_shifts WHERE org_id = ? GROUP BY person_id) s ON s.person_id = d.id
+                    FROM volunteer_shifts WHERE org_id = ? AND ${SERVED_RULE.SERVED(null, today)} GROUP BY person_id) s ON s.person_id = d.id
       WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.erased_at IS NULL AND ${VOLUNTEER_ROLE}   -- TRUTH-2: an erased person is on no roster
       ORDER BY COALESCE(s.hy, 0) DESC, lower(d.name), d.id`, [yearStart, orgId, orgId]);
   const people = rows.map(r => ({
     id: r.id, name: r.name, email: r.email || null,
     hundredths: Number(r.h), hundredthsThisYear: Number(r.hy), shiftCount: r.n,
-    lastShift: r.last || null, alsoGives: !!r.gives,
+    lastShift: r.last || null, alsoGives: !!r.gives, status: r.vstatus || "active",
     lifetimeGiving: Number(r.total_giving || 0), lastGiftDate: r.last_gift_date || null,
   }));
   return { people: onlyGivers ? people.filter(p => p.alsoGives) : people, year: yearStart.slice(0, 4) };
@@ -699,7 +748,10 @@ app.get("/volunteer-hub/roster", requireAuth, wrap(async (req, res) => {
   const { people, year } = await rosterRows(req.user.orgId);
   const total = people.reduce((a, p) => a + p.hundredthsThisYear, 0);
   const givers = people.filter(p => p.alsoGives).length;
-  const parts = [`${cap(spell(people.length))} ${people.length === 1 ? "volunteer" : "volunteers"} on the roster`];
+  // VOL-3 item 1: the roster counts Active volunteers, and says so.
+  const active = people.filter(p => p.status === "active").length;
+  const resting = people.length - active;
+  const parts = [`${cap(spell(active))} active ${active === 1 ? "volunteer" : "volunteers"} on the roster${resting ? ` (${spell(resting)} paused or former not counted)` : ""}`];
   if (total) parts.push(`${hoursWords(total)} given so far in ${year}`);
   // "…and three of them also give" is a COUNT OF DONORS. It belongs on this
   // sentence for an admin and not on a coordinator's screen, where the whole
@@ -711,8 +763,9 @@ app.get("/volunteer-hub/roster", requireAuth, wrap(async (req, res) => {
     sentence: people.length ? parts.join(", ") + "."
       : "Nobody is marked as a volunteer yet. Tag someone Volunteer on their record, log a shift, import hours, or share the sign-up link, and they join the roster.",
     definitions: {
-      roster: "Everyone whose record carries the Volunteer role, and nobody else.",
-      hoursThisYear: `Hours from shifts dated ${year}-01-01 or later, in your organization's time zone.`,
+      roster: "Everyone whose record carries the Volunteer role, and nobody else. The count is the Active ones; paused and former volunteers stay listed with their hours.",
+      status: "Active, Paused or Former, with the day it was set and who set it. Nobody set means Active.",
+      hoursThisYear: `Hours from shifts dated ${year}-01-01 to today, in your organization's time zone. ${SERVED_RULE.SERVED_SENTENCE}`,
       hours: HOURS_DEFINITION,
       lastShift: "The date of the most recent shift logged for this person.",
       ...(req.user.role === COORD ? {} : { alsoGives: "Yes when at least one gift is on this person's record." }),
@@ -727,7 +780,7 @@ app.get("/volunteer-hub/roster", requireAuth, wrap(async (req, res) => {
 // because the role is the boundary and the screen is only a courtesy.
 const GR = require("../groups");
 const GIVING_RULES = ["given", "gaveFrom", "gaveTo", "level", "lifecycle", "retained"];
-const LIST_RULES = ["search", "volActive", "volOpp", "volShiftFrom", "volShiftTo", "volHoursMin", "volHoursMax", "volHoursFrom", "volHoursTo",
+const LIST_RULES = ["search", "volStatus", "volActive", "volOpp", "volShiftFrom", "volShiftTo", "volHoursMin", "volHoursMax", "volHoursFrom", "volHoursTo",
   "volQual", "volAnswer", "volAvail", ...GIVING_RULES];
 
 async function volunteerList(req) {
@@ -742,7 +795,7 @@ async function volunteerList(req) {
   // the Hours dates or else the On-a-shift dates; this year only when none is.
   const set = k => (D.test(String(q[k] || "")) ? String(q[k]) : null);
   const hFrom = set("hoursFrom") || set("volHoursFrom") || set("volShiftFrom") || today.slice(0, 4) + "-01-01";
-  const hTo = set("hoursTo") || set("volHoursTo") || set("volShiftTo") || today;
+  const hTo = SERVED_RULE.servedTo(set("hoursTo") || set("volHoursTo") || set("volShiftTo") || today, today);   // VOL-3: never past today
   // FIX-27 Part 8: the Hours filter counts the SAME dates as the "Hours in
   // range" column beside it (this year when blank). It counted every year,
   // so "at least 10 hours" kept people the column showed with 2 and the
@@ -754,9 +807,10 @@ async function volunteerList(req) {
   if (f.badRole || f.badStatus) return { bad: true };
   const rows = await query(
     `SELECT donors.id, donors.name, donors.email, donors.phone, donors.total_giving, donors.last_gift_date,
-            (SELECT COALESCE(SUM(ROUND(vx.hours*100)),0) FROM volunteer_shifts vx WHERE vx.org_id=donors.org_id AND vx.person_id=donors.id)::bigint AS life_h,
+            (SELECT COALESCE(SUM(ROUND(vx.hours*100)),0) FROM volunteer_shifts vx WHERE vx.org_id=donors.org_id AND vx.person_id=donors.id AND ${SERVED_RULE.SERVED("vx", today)})::bigint AS life_h,
             (SELECT COALESCE(SUM(ROUND(vx.hours*100)),0) FROM volunteer_shifts vx WHERE vx.org_id=donors.org_id AND vx.person_id=donors.id AND vx.date >= ? AND vx.date <= ?)::bigint AS range_h,
-            (SELECT MAX(vx.date) FROM volunteer_shifts vx WHERE vx.org_id=donors.org_id AND vx.person_id=donors.id) AS last_served,
+            (SELECT MAX(vx.date) FROM volunteer_shifts vx WHERE vx.org_id=donors.org_id AND vx.person_id=donors.id AND ${SERVED_RULE.SERVED("vx", today)}) AS last_served,
+            ${VSTATUS.STATUS_SQL("donors")} AS vstatus,
             ${require("../shared/numbers/nextShift").NEXT_SHIFT_SQL("donors")} AS next_shift,   -- FLOWS-10 item 6: the waiting list counts
             (SELECT string_agg(qx.name, ', ' ORDER BY qx.kind, lower(qx.name)) FROM volunteer_qualifications qx WHERE qx.org_id=donors.org_id AND qx.person_id=donors.id) AS quals,
             (SELECT COUNT(*) FROM gifts gx WHERE gx.org_id=donors.org_id AND gx.donor_id=donors.id AND gx.amount > 0)::int AS gift_count
@@ -765,7 +819,7 @@ async function volunteerList(req) {
   return { hFrom, hTo, today, coord, rules,
     rows: rows.map(r => ({ id: r.id, name: r.name, email: r.email || "", phone: r.phone || "",
       lifetimeHours: Number(r.life_h) / 100, rangeHours: Number(r.range_h) / 100,
-      lastServed: r.last_served || null, nextShift: require("../shared/numbers/nextShift").nextShiftWords(r.next_shift), qualifications: r.quals || "",
+      lastServed: r.last_served || null, status: VSTATUS.STATUS_WORDS[r.vstatus] || "Active", nextShift: require("../shared/numbers/nextShift").nextShiftWords(r.next_shift), qualifications: r.quals || "",
       ...(coord ? {} : { lifetimeGiving: Number(r.total_giving || 0), lastGiftDate: r.last_gift_date || null, gifts: r.gift_count }) })) };
 }
 
@@ -777,7 +831,8 @@ app.get("/volunteer-hub/list", requireAuth, wrap(async (req, res) => {
     definitions: {
       lifetimeHours: "Every volunteer shift logged for this person, added up.",
       rangeHours: `Hours from shifts dated ${out.hFrom} to ${out.hTo}.`,
-      lastServed: "The most recent shift logged for them.", nextShift: "The next shift they have a place on; with none, the next one they are on the waiting list for, and their number.",
+      lastServed: "The most recent shift logged for them, on or before today.",
+      status: "Active, Paused or Former. Nobody set means Active.", nextShift: "The next shift they have a place on; with none, the next one they are on the waiting list for, and their number.",
       ...(out.coord ? {} : { lifetimeGiving: "Every gift on their record, net of refunds.", gifts: "How many gifts they have given." }),
     } });
 }));

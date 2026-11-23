@@ -42,9 +42,11 @@ async function countsItem3Diffs(token, { only = null, maxPeople = Infinity } = {
     const n = roster && Array.isArray(roster.people) ? roster.people.length : null;
     const card = counts && counts.roster ? counts.roster.value : null;
     const list = Array.isArray(people) ? people.length : people && Array.isArray(people.people) ? people.people.length : null;
-    if (n !== card) diffs.push(`volunteers: the roster has ${n} but the On the roster card says ${card}`);
+    // VOL-3: the card counts the Active ones; paused and former stay on the roster with their hours.
+    const active = roster && Array.isArray(roster.people) ? roster.people.filter(p => (p.status || "active") === "active").length : null;
+    if (active !== card) diffs.push(`volunteers: the roster has ${active} active but the active volunteers card says ${card}`);
     if (list !== null && n !== list) diffs.push(`volunteers: the roster has ${n} but the volunteers list holds ${list}`);
-    const m = roster && /^(\w+) volunteers? on the roster/.exec(roster.sentence || "");
+    const m = roster && /^(\w+) (?:active )?volunteers? on the roster/.exec(roster.sentence || "");   // VOL-3: the roster counts Active
     if (n && !m) diffs.push(`volunteers: the roster sentence does not say how many ("${roster && roster.sentence}")`);
   }
 

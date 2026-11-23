@@ -59,8 +59,8 @@ export const METRICS = {
   // who came to Finding Joy"). The same rows the list shows for that filter.
   donor_list:      { label: "Donors on your list", kind: "count", base: "donors", noPeriod: "today", unit: ["donor", "donors"],
     sentence: "Each person on your Donors list who matches, the same people the list's filter shows." },
-  volunteer_count: { label: "Volunteers on the roster", kind: "count", base: "donors", noPeriod: "today", unit: ["volunteer on the roster", "volunteers on the roster"],
-    sentence: "Everyone whose record carries the Volunteer role, including anyone added today." },
+  volunteer_count: { label: "Active volunteers on the roster", kind: "count", base: "donors", noPeriod: "today", unit: ["active volunteer on the roster", "active volunteers on the roster"],
+    sentence: "Everyone with the Volunteer role whose status is Active, including anyone added today. Paused and former volunteers are not counted; their hours stay on their record." },
   volunteer_hours: { label: "Volunteer hours", kind: "hours", base: "source", source: "volunteer-hours",
     sentence: "Every volunteer shift logged in the period, added up." },
   event_revenue:   { label: "Event revenue", kind: "money", base: "gifts", needs: "event", word: "raised",
@@ -691,7 +691,7 @@ export function answerSentence(a, plan, ctx = {}) {
     case "pledged_outstanding": f("value"); t(" is pledged and not yet paid"); break;
     case "volunteer_hours": t("Volunteers gave "); f("value"); t(per); break;
     case "donor_list": f("value"); t(` ${v.value === 1 ? "person on your Donors list matches" : "people on your Donors list match"}`); break;
-    case "volunteer_count": t("You have "); f("value"); t(` ${v.value === 1 ? "volunteer" : "volunteers"} on the roster`); break;
+    case "volunteer_count": t("You have "); f("value"); t(` active ${v.value === 1 ? "volunteer" : "volunteers"} on the roster`); break;
     case "campaign_progress": t(`${(a.campaign || {}).name || "The campaign"} has raised `); f("part0"); t(" of its "); f("part1"); t(" goal, "); f("value"); break;
     default: f("value");
   }

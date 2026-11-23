@@ -102,6 +102,10 @@ const GUARDED_WRITERS = [
   // SENDS-2: sets one org's waiting volunteer reminders whose shift is not tomorrow to expired. Dry run
   // by default; --apply writes through writerDbUrl, one audit row. Never org_creo or the demo. Nothing sends.
   "sends2-stale-reminders",
+  // VOL-3: moves volunteer records kept on made-up Approved applications into volunteer_records, and
+  // deletes approved applications whose person is gone, one org. Dry run by default; --apply writes
+  // through writerDbUrl, one audit row. Never org_creo or the demo. Nothing sends.
+  "vol3-staff-records",
   // FLOWS-10: sets the demo's made-up EIN while it is the placeholder, org_b72demo only. Same guard.
   "flows10-demo-ein",
   // FLOWS-15: puts the demo's first-gift version on its Year-end appeal, org_b72demo's ecamp_b72_yearend only. Same guard.
