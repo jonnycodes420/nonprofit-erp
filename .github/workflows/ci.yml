@@ -142,6 +142,12 @@ jobs:
       - name: TDZ self-reference guard
         run: node scripts/ci/tdz-scan.js
 
+      # SENDS-2 · no loop mints staff confirms without a send plan. A route (or a
+      # browser loop) that sends to N people one confirm at a time passes the
+      # gate as N hand sends; Jarvis's "Send 33 emails" on 22 Nov. Two seconds.
+      - name: Send plan guard
+        run: node scripts/ci/send-plan-scan.js
+
       # ARCH-1 · the ratchet (docs/architecture/ARCHITECTURE.md): big files,
       # gift SQL in routes, fiscal-year copies, new scripts in the root, and
       # committed images over 500 KB. A count may go down, never up.

@@ -29,6 +29,7 @@
 const crypto = require("crypto");
 const { query, run, uuid } = require("./db");
 const TYPES = require("./mailTypes");   // SEND-GATE-2: which emails, and who turned each on
+const CONFIRM_SCOPE = require("./server/mail/confirmScope");   // SENDS-2: a second confirm in one request needs a plan
 
 const EXEMPT_KINDS = new Set(["express_link"]);
 const REFUSAL = "auto_email_off";
@@ -76,11 +77,15 @@ function storablePayload(opts) {
 }
 
 // A staff click, recorded for one recipient. Returns the id the send carries.
+// SENDS-2: one per request, unless the request commits a send plan the same
+// person was shown (server/mail/confirmScope.js); one address, never a list.
 async function recordStaffConfirm({ orgId, to, what = null, by }) {
+  if (Array.isArray(to) || addressesOf(to).length > 1) throw new CONFIRM_SCOPE.PlanRequired();
+  const planId = CONFIRM_SCOPE.noteConfirm();
   const id = "sc_" + uuid().replace(/-/g, "").slice(0, 16);
-  await run(`INSERT INTO send_confirms (id, org_id, recipient, what, created_by, created_by_name) VALUES (?,?,?,?,?,?)`,
+  await run(`INSERT INTO send_confirms (id, org_id, recipient, what, created_by, created_by_name, plan_id) VALUES (?,?,?,?,?,?,?)`,
     [id, orgId, String(to || "").trim().toLowerCase(), what ? String(what).slice(0, 300) : null,
-     (by && by.id) || "unknown", (by && by.name) || null]);
+     (by && by.id) || "unknown", (by && by.name) || null, planId]);
   return id;
 }
 

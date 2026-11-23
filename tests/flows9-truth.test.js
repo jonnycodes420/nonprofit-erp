@@ -114,10 +114,13 @@ const gift = async (tok, donor, amount, extra = {}) => {
     ok("§2 the real, playable video's draft carries no warning", by("md_f9_real").linkCheck && by("md_f9_real").linkCheck.ok === true, JSON.stringify(by("md_f9_real").linkCheck));
     // Only the broken ones are marked reviewed: "Send all reviewed" must hold both and send nothing.
     await q(`UPDATE milestone_drafts SET reviewed_at = NULL WHERE id = 'md_f9_real'`);
-    const sr = (await api("POST", "/milestone-drafts/send-reviewed", tok, {})).body || {};
+    // SENDS-2: "Send all reviewed" is a send plan; the two broken drafts are on it as refused, with why.
+    const sp = (await api("POST", "/send-plans", tok, { kind: "milestone_reviewed", ids: [] })).body || {};
+    const sr = (await api("POST", `/send-plans/${sp.planId}/commit`, tok, {})).body || {};
     const status = (await q(`SELECT id, status FROM milestone_drafts WHERE org_id = $1 ORDER BY id`, [ORG])).map(r => r.status);
     ok("§2 a draft whose video isn't there is never sent as ready: Send all reviewed holds both, nothing sends",
-      sr.sent === 0 && (sr.failed || []).length === 2 && status.every(s => s === "pending_review"), JSON.stringify({ sr, status }));
+      sp.count === 0 && (sp.refused || []).filter(r => /link in it does not open/.test(r.why)).length === 2 && sr.sent === 0
+      && status.every(s => s === "pending_review"), JSON.stringify({ sp, sr, status }));
     await q(`DELETE FROM milestone_drafts WHERE org_id = $1`, [ORG]);
   }
 
