@@ -242,6 +242,8 @@ const LOOPBACK_HARDCODED = [
 // Read-only against whatever BASE points at (may default to prod): their only
 // write-shaped call is POST /auth/login. Verified below, not just trusted.
 const PROD_READONLY = [
+  // LIST-6: lists, per org and person, saved view names held twice or more; one READ ONLY transaction, no write mode.
+  "list6-duplicate-views",
   // RECEIPTS-1: counts receipts that printed the org's address in the donor block, and in-kind receipts with an AMOUNT; SELECTs only, no --apply.
   "receipts1-org-address-receipts",
   // NUMBERS-7: lists, per org, the people the one lapse answer moves (ids and counts by shape); one READ ONLY session, no --apply.

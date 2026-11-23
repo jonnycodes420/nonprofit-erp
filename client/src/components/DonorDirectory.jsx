@@ -6,7 +6,7 @@ import { RANK_RULES, rankBy, rankWords } from "../lib/reengageRank";   // TRUTH-
 import { useState, useEffect, useMemo, Fragment } from "react";
 import { Figure } from "./Figure";
 import { EXPLANATION as ENGAGEMENT_EXPLANATION, bandFor } from "../../../shared/engagementWeights.js";
-import { givingStrengthOf, givingStrengthSentence } from "../../../shared/givingStrength.js";   // LIST-6: the one stored score
+import { givingStrengthOf, givingStrengthSentence, givingStrengthPending, givingStrengthNone } from "../../../shared/givingStrength.js";   // LIST-6: the one stored score
 import { apiFetch, API, getToken } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { censusById } from "../../../shared/numberCensus.js";
@@ -249,7 +249,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor,initialWin=null,
               <div className="re-col-score" style={{textAlign:"right"}}>
                 {sc!=null
                   ?<span title={givingStrengthSentence(sc,d.generosityParts)} aria-label={givingStrengthSentence(sc,d.generosityParts)} style={{fontSize:13,fontWeight:800,color:scColor,background:scColor+"18",borderRadius:7,padding:"3px 9px",display:"inline-block",cursor:"help"}}>{sc}</span>
-                  :<span title="Giving strength comes from gifts, and there are none on file" style={{color:T.ink3,fontSize:11}}>No gifts yet</span>}
+                  :<span data-testid="giving-strength-none" title={givingStrengthNone(d)} style={{color:T.ink3,fontSize:11}}>{givingStrengthPending(d)?"Not yet":"No gifts yet"}</span>}
               </div>
               <div className="re-col-actions" style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
                 <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
@@ -1057,7 +1057,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
                   },
                   generosity:()=>(sc!=null
                     ?<span data-testid="dir-giving-strength" title={givingStrengthSentence(sc,d.generosityParts)} aria-label={givingStrengthSentence(sc,d.generosityParts)} style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800,cursor:"help"}}>{sc}</span>
-                    :<span title="Giving strength comes from gifts, and there are none on file" aria-label="No gifts yet" style={{color:T.ink3,fontSize:12}}>—</span>),
+                    :<span data-testid="giving-strength-none" title={givingStrengthNone(d)} aria-label={givingStrengthNone(d)} style={{color:T.ink3,fontSize:12}}>—</span>),
                   room_to_give:()=>(
                 /* FIX-33: the word rides on the row (GET /donors), from the same
                    prospect.roomToGive the profile reads; never a map loaded once. */
@@ -1102,7 +1102,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
                 </div>
                 {sc!=null
                   ?<span title={givingStrengthSentence(sc,d.generosityParts)} aria-label={givingStrengthSentence(sc,d.generosityParts)} style={{background:scColor+"18",color:scColor,borderRadius:8,padding:"5px 10px",fontSize:13,fontWeight:800,flexShrink:0}}>{sc}</span>
-                  :<span title="Giving strength comes from gifts, and there are none on file" style={{color:T.ink3,fontSize:11,flexShrink:0}}>No gifts yet</span>}
+                  :<span data-testid="giving-strength-none" title={givingStrengthNone(d)} style={{color:T.ink3,fontSize:11,flexShrink:0}}>{givingStrengthPending(d)?"Not yet":"No gifts yet"}</span>}
               </div>
             ];
           })}

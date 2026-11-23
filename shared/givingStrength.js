@@ -32,3 +32,15 @@ export function givingStrengthSentence(score, parts) {
     ? `${GIVING_STRENGTH} ${score} of 100: ${said.join(", ")}. The parts add up to the score; the profile's See why opens the gifts behind each.`
     : `${GIVING_STRENGTH} ${score} of 100. The profile's See why shows the parts.`;
 }
+
+// Somebody who has given but has no stored score yet (a gift written in bulk before the nightly pass).
+// Never "no gifts": that would be false. The profile's card works it out on open; the list waits for it.
+export function givingStrengthPending(d) {
+  return !!d && d.generosity == null && (Number(d.gifts) > 0 || Number(d.total) > 0);
+}
+// The words for a row with no number.
+export function givingStrengthNone(d) {
+  return givingStrengthPending(d)
+    ? "Giving strength isn't worked out for this person yet. Steward works it out each night and after each gift; open the profile to see it now."
+    : "Giving strength comes from gifts, and there are none on file";
+}
