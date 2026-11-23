@@ -85,7 +85,10 @@ export function useProfilePipeline({ givingOpen, donor, setDesignations, refresh
   const loadGiftsFull=(o)=>{
     // FLOWS-9 (W-1113-Fundraising-01): after a refund, the soft credit box ("Their own
     // giving") and What they support are read again, so none says the gift before it.
-    if(o&&o.money){refreshSoftCredit();loadFundAffinity();}
+    // LIVE-2: and after any change that reaches this person (a household made from Data health,
+    // a meeting's chips, Atlas or another tab), the household card reads again too.
+    if(o&&(o.money||o.person))refreshSoftCredit();
+    if(o&&o.money)loadFundAffinity();
     const seq=++giftReadSeq.current;
     const id=donor.id;
     const attempt=n=>apiFetch(`/donors/${id}`).catch(e=>{

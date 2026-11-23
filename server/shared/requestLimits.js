@@ -228,6 +228,7 @@ async function checkout(pool) {
   return aligned;
 }
 async function align(client, ms, sc) {
+  if (sc) require("./changedTables").watch(client);   // LIVE-2: each write statement notes its tables on the scope
   try {
     const needPid = sc && !client.__stewardPid;
     if ((client.__stewardLimit || 0) !== ms || needPid) {

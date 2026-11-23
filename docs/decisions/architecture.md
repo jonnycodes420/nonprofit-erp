@@ -38,6 +38,14 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
   own window event or a write-path regex. A new write route gets a rule in `kindsOfWrite` if no rule
   names it (a write no rule names is "other" and re-reads nothing). Server-side changes reach the
   screen through the bell's change marks, so no view polls on its own.
+- **LIVE-2 (2026-11-23): the server says what a write changed.** Every non-GET answer carries
+  `X-Steward-Changed` (topics, or `none`), built from the tables the request's statements and their
+  triggers wrote (`server/shared/changedTables.js`), and `apiFetch` announces those topics; the
+  `kindsOfWrite` URL rules are only the fallback for an answer without it. A table's topics are named
+  once, in `shared/changeTopics.cjs`, which the bell's worker marks use too. A new table with
+  `org_id` gets a rule there or a SILENT entry, or the tenant matrix fails
+  (`tests/lib/changedHeaderGuard.js`). Don't reach past `requestLimits.checkout` for a request's
+  connection: a statement on a connection it didn't check out is not in the header.
 - **SCALE-6 (2026-11-20): no request waits long for a connection, and the web keeps two.**
   A web request whose statement has waited `CONNECTION_WAIT_MS` (3 s) on the pool itself answers
   503 `{ code: "busy" }`, "Steward is busy, try again.", with `Retry-After: 1`; the browser asks a

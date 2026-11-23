@@ -1387,7 +1387,8 @@ async function donorScreensSayNothingWrong(browser) {
 (async () => {
   console.log("smoke-walk");
   // SWEEP-6: SMOKE_LEG=<a leg below> runs that one leg alone (how a leg's red on main is watched).
-  const LEGS = { donorScreensSayNothingWrong, givingSideAndPhoneSayNothingWrong, commsScreensSayNothingWrong, moneyScreensSayNothingWrong, eventsAndPledgesSayNothingWrong, homeSaysNothingWrong };
+  const live2WriteLeg = b => require("./lib/live2WriteLeg")(b, { ok, q: require("./helpers").q, api, APP, BASE });   // LIVE-2: screens move from what a write changed
+  const LEGS = { donorScreensSayNothingWrong, givingSideAndPhoneSayNothingWrong, commsScreensSayNothingWrong, moneyScreensSayNothingWrong, eventsAndPledgesSayNothingWrong, homeSaysNothingWrong, live2WriteLeg };
   if (process.env.SMOKE_LEG) { const b = await chromium.launch(); await LEGS[process.env.SMOKE_LEG](b); await b.close(); await closeDb(); return summary("smoke-walk"); }
   const login = await api("POST", "/auth/login", null, DEMO);
   if (login.status !== 200) {
@@ -1880,6 +1881,7 @@ async function donorScreensSayNothingWrong(browser) {
   await commsScreensSayNothingWrong(browser);
   await donorScreensSayNothingWrong(browser);
   await homeSaysNothingWrong(browser);   // SWEEP-1
+  await LEGS.live2WriteLeg(browser);
 
   // SECURE-2 item 5: the policy is really served (so a clean walk means
   // something), it runs no inline script and no eval, and nothing any leg

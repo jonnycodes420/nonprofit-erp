@@ -792,6 +792,7 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
       await new Promise(res => setTimeout(res, 200));
       throw new Error(`${method} ${p} (body ${body == null ? "none" : raw ? "raw bytes" : JSON.stringify(body)}, ${token ? "signed in" : "anonymous"}) got no answer: ${e.cause?.code || e.message}. Server saw unanswered: ${unanswered.slice(-3).join("; ") || "nothing"}. Idle before it: ${t0 - lastAnswerBefore}ms. Server connection events: ${serverEvents.slice(-4).join("; ") || "none"}`);
     }
+    require("./lib/changedHeaderGuard").record(method, p, r.status, r.headers.get("x-steward-changed"));   // LIVE-2 item 4
     return { status: r.status, text };
   };
   const loginM = async email => (JSON.parse((await mfetch("POST", "/auth/login", null, { email, password: "loadtest1234" })).text)).token;
@@ -1316,6 +1317,7 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   await require("./lib/bodyCrossProbe").runBodyCrossProbe({ inv, mfetch, q, ok, A, B, tok: aAdmin, bResolver, fillPath, scanLeak, keyOf });
   ok(`§8 …and no body probe leaked a B marker (${failures.leak.length})`, failures.leak.length === 0, failures.leak.slice(0, 12));
 
+  await require("./lib/changedHeaderGuard").check({ ok, q });   // LIVE-2 item 4: every 2xx write says what it changed
   console.log("\n— §5 · B-integrity: the battery wrote nothing across the wall —");
   const bAfter = await hashOrgB();
   ok("org B's rows hash byte-identical before and after ~1,000 hostile probes", bBefore === bAfter, { bBefore: bBefore.slice(0, 12), bAfter: bAfter.slice(0, 12) });

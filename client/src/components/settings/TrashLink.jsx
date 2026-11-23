@@ -14,9 +14,13 @@ import { apiFetch } from "../../api";
 import { T } from "../shared";
 import { RecordLink } from "../RecordLink";
 import { tabHref } from "../../lib/appUrls";
+import { useChangeRev } from "../../lib/changes";   // LIVE-2
 
 export function useTrashCount(on = true) {
   const [n, setN] = useState(null);
+  // LIVE-2: nothing ever sent "steward:trash-changed", so a person moved to the
+  // trash (or restored) left "Trash (0)" until a reload. Any change to people re-reads it.
+  const rev = useChangeRev(["person"]);
   useEffect(() => {
     if (!on) { setN(null); return undefined; }
     let live = true;
@@ -24,7 +28,7 @@ export function useTrashCount(on = true) {
     read();
     window.addEventListener("steward:trash-changed", read);
     return () => { live = false; window.removeEventListener("steward:trash-changed", read); };
-  }, [on]);
+  }, [on, rev]);
   return n;
 }
 export const trashLabel = n => (n == null ? "Trash" : `Trash (${n.toLocaleString("en-US")})`);

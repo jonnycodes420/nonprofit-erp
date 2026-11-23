@@ -545,6 +545,7 @@ app.use((req, res, next) => {
 // SPLIT-2 server.js piece 81
 app.use(require("../../db").requestLimits());   // LOAD-1: limits and cancel, above every route (server/shared/requestLimits.js)
 app.use(require("../perf/capacity").middleware);   // SCALE-3: request time for the capacity gauge (timing only)
+app.use(require("../shared/changedTables").middleware(require("../shared/requestLimits").live));   // LIVE-2: X-Steward-Changed on every write
 // SPLIT-2 end
 // SPLIT-2 server.js piece 82
 
@@ -614,7 +615,7 @@ __share({ corsOrigins });
 // SECURE-1: maxAge lets a browser keep a preflight's answer for two hours
 // (Chrome's ceiling), instead of asking again before every call: HARDEN-2
 // counted about sixty preflights behind one donor profile.
-app.use(cors({ origin: corsOrigins, credentials: true, maxAge: 7200, exposedHeaders: ["X-Steward-CSRF", "X-Steward-Portfolio"] }));
+app.use(cors({ origin: corsOrigins, credentials: true, maxAge: 7200, exposedHeaders: ["X-Steward-CSRF", "X-Steward-Portfolio", "X-Steward-Changed"] }));
 // SPLIT-2 end
 // SPLIT-2 server.js piece 88
 // SECURE-3 item 1: the staff session cookie stands in for the Bearer header,
