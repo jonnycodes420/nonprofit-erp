@@ -168,7 +168,8 @@ function GivingTab({setGiftErr,rc,acceptSuggestion,addAsk,addGift,addGiftForm,ad
                 </div>
               </section>;
             })()}
-            <VolunteerPanel donor={donor} isReadOnly={isReadOnly}/>
+            {/* VOL-3: a volunteer's record is on their Volunteer tab; hours without the role still show here. */}
+            {!(donor.personTypes||[]).includes("volunteer")&&<VolunteerPanel donor={donor} isReadOnly={isReadOnly}/>}
             {/* Matching-gift flag — from a curated static list (matchingGifts.js
                 on the backend), not a live vendor feed; source/last-verified
                 is surfaced on hover so this reads as informed, not magic. */}

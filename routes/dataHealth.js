@@ -94,6 +94,8 @@ const MERGE_REFS = [
   ["volunteers", "donor_id"], ["workflow_runs", "donor_id"],
   // VOL-PAGE-1: what they told a volunteer page moves with the person.
   ["volunteer_page_signups", "person_id"],
+  // VOL-3: the volunteer record (status, hours a week, days, roles); the kept twin wins.
+  ["volunteer_records", "person_id"],
   // WIRE-1: a meeting's people, the Agent's undo ledger and custom field
   // history. Their shapes are in REF_SHAPE below.
   ["calendar_events", "person_ids"], ["agent_writes", "entity_id"], ["custom_field_events", "entity_id"],

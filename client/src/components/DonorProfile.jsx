@@ -41,7 +41,7 @@ import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
 import { MicGlyph, openTellSteward } from "./TellStewardOpen";   // VOICE-1
 import BeforeYourMeeting, { useBeforeMeeting } from "./BeforeYourMeeting";   // VOICE-3
 import { told } from "../lib/stewardTold"; import { useProfileRefresh } from "../lib/profileRefresh";   // COUNTS-1
-import { useProfileFinish } from "./profile/ProfileFinish"; import { ComingUpMain, OPEN_PROPOSAL_KEYS, PROFILE_TABS, PROPOSAL_STAGE_LABEL, SUGGEST_KINDS, TAB_KIND, lateWords } from "./profile/profileShared";
+import { useProfileFinish } from "./profile/ProfileFinish"; import { ComingUpMain, OPEN_PROPOSAL_KEYS, profileTabsFor, PROPOSAL_STAGE_LABEL, SUGGEST_KINDS, TAB_KIND, lateWords } from "./profile/profileShared";
 import { EditDonorModal, FollowUpTaskModal, GiftLinkModal, LogTouchpointModal } from "./profile/modals";
 import { DonorPhotoControl } from "./profile/ProfilePhoto";
 import { RailFacts } from "./profile/RailFacts";
@@ -121,7 +121,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           </div>}
           <div className="dp-tabs-row" style={{display:"flex",alignItems:"stretch",background:T.white,padding:"0 var(--dp-gutter,40px)"}}>
           <div className="dp-tabs" role="tablist" aria-label="Profile" data-testid="dp-tabs" style={{display:"flex",flexWrap:"nowrap",overflowX:"auto",flex:1,minWidth:0,scrollbarWidth:"none",gap:24}}>
-            {PROFILE_TABS.map(([id,label])=>{
+            {profileTabsFor(isVolunteer).map(([id,label])=>{
               // PROFILE-2: Giving counts gifts AND pledges (a $50,000 pledge read "Gifts & pledges 0").
               const n=id==="giving"?(giftLoading||giftReadErr?null:giftCountReal+pledges.length)
                 :id==="conversations"?(tlCounts.conversation||0):id==="emails"?(tlCounts.email||0):id==="tasks"?(tlCounts.task||0)

@@ -11,6 +11,7 @@ import { shownTags } from "../../lib/internalLabels";
 import { NotesBanner } from "./NotesBanner";   // FLOWS-4
 import { attachedLine } from "../../lib/profileFiles";
 import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { VolunteerPanel } from "../VolunteerPanel";   // VOL-3: the Volunteer tab
 
 function ListTabs(props){
   // FLOWS-2: the files attached to conversations and notes (the timeline's own read) count as files too.
@@ -20,6 +21,8 @@ function ListTabs(props){
 }
 function ListTabsBody({fileTally,attachedFiles,deleteMaterial,donor,dpTab,giftsFull,inboxConnected,intActions,isReadOnly,loadDpThread,loadGiftsFull,loadRel,localInts,matLoading,matUploading,materials,onInteractionAdded,onLogTouchpoint,onNavigate,rel,saveStewardship,setLogMeeting,setStwForm,setStwOpen,stwForm,stwOpen,stwSaving,tlExtras,tlSearch,uploadMaterial,viewMaterial,onTaskOutcome}){
   return <>
+          {/* VOL-3: the Volunteer tab, a volunteer's record: status, what they can give, hours. */}
+          {dpTab==="volunteer"&&<div data-testid="dp-tab-volunteer" className="dp3-gutter" style={{padding:"24px var(--dp-gutter,40px)"}}><VolunteerPanel donor={donor} isReadOnly={isReadOnly} always/></div>}
           {/* ── THE LIST TABS (PROFILE-1 header) ──────────────────────────
               Conversations, Emails, Tasks, Notes and Files are the old
               "Everything with" chips, each its own tab with the Timeline / List

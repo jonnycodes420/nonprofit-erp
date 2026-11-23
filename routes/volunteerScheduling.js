@@ -46,6 +46,8 @@ const {
   volunteerSummary, withTransaction, queryTx, runTx, wrap, maybeStartJourneyFromServer, orgMaySendEmail, donorMailDecision, resend,
   displayNameCase, donorFacingOrgName, supporterSession, sendDraft, openCareThread,
 } = ctx;
+const SERVED_RULE = require("../shared/numbers/served");   // VOL-3 item 4: hours count on or before today
+const VSTATUS = require("../shared/numbers/volunteerStatus");   // VOL-3 item 1: Active, Paused, Former
 
 let app = routers.r0;
 
@@ -206,6 +208,13 @@ app.post("/volunteer-hub/slots", requireAuth, checkWriteAccess, wrap(async (req,
   if (!opp) return res.status(404).json({ error: "Not found", message: "That opportunity does not exist." });
   const v = VS.validateSlot(req.body || {});
   if (!v.ok) return res.status(400).json({ error: "invalid", errors: v.errors, message: v.errors[0].message });
+  // VOL-3 item 5: a shift made from an event page belongs to that event, and shows on it.
+  let eventId = null;
+  if (req.body && req.body.eventId) {
+    const [ev] = await query("SELECT id FROM events WHERE id=? AND org_id=?", [String(req.body.eventId), req.user.orgId]);
+    if (!ev) return res.status(404).json({ error: "Not found", message: "That event is not one of yours." });
+    eventId = ev.id;
+  }
   const who = actor(req), id = newId("vsl");
   // CAL-1: "repeat weekly until" makes one shift per week on the same day,
   // each its own record (signing up for one is not signing up for all).
@@ -218,10 +227,10 @@ app.post("/volunteer-hub/slots", requireAuth, checkWriteAccess, wrap(async (req,
   await withTransaction(async tx => {
     for (let i = 0; i < dates.length; i++) {
       await runTx(tx,
-        `INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time,capacity,notes,name,color,venue,location_detail,published,created_by,created_by_name)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time,capacity,notes,name,color,venue,location_detail,published,created_by,created_by_name,event_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [ids[i], req.user.orgId, opp.id, dates[i], v.slot.startTime, v.slot.endTime, v.slot.capacity, v.slot.notes,
-         v.slot.name, v.slot.color, v.slot.venue, v.slot.locationDetail, v.slot.published, who.id, who.name]);
+         v.slot.name, v.slot.color, v.slot.venue, v.slot.locationDetail, v.slot.published, who.id, who.name, eventId]);
       if (v.slot.roles && v.slot.roles.length) await saveRolesTx(tx, req.user.orgId, ids[i], v.slot.roles.map(r => ({ ...r, id: null })), who);
     }
   });
@@ -390,6 +399,7 @@ app.get("/volunteer-hub/groups", requireAuth, wrap(async (req, res) => {
 app.get("/volunteer-hub/groups/:id", requireAuth, wrap(async (req, res) => {
   await READY;
   const orgId = req.user.orgId;
+  const grpToday = orgToday(await orgTz(orgId));                  // ORG_TZ_SEAM_OK — VOL-3: served hours only
   const [g] = await query("SELECT * FROM volunteer_groups WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!g) return res.status(404).json({ error: "Not found" });
 
@@ -398,9 +408,9 @@ app.get("/volunteer-hub/groups/:id", requireAuth, wrap(async (req, res) => {
     `SELECT d.id, d.name, d.email, d.total_giving,
             COALESCE((SELECT SUM(vs.hours) FROM volunteer_shifts vs
                        WHERE vs.org_id=d.org_id AND vs.person_id=d.id
-                         AND vs.date >= date_trunc('year', ${orgTime.orgTodaySql(orgTime.orgTzSql("vs.org_id"))})::date::text),0)::float AS hours_this_year,
+                         AND vs.date >= date_trunc('year', ${orgTime.orgTodaySql(orgTime.orgTzSql("vs.org_id"))})::date::text AND ${SERVED_RULE.SERVED("vs", grpToday)}),0)::float AS hours_this_year,
             (SELECT MAX(vs.date)::text FROM volunteer_shifts vs
-               WHERE vs.org_id=d.org_id AND vs.person_id=d.id) AS last_shift
+               WHERE vs.org_id=d.org_id AND vs.person_id=d.id AND ${SERVED_RULE.SERVED("vs", grpToday)}) AS last_shift
        FROM donors d
       WHERE d.org_id=? AND d.deleted_at IS NULL AND d.id IN (
         SELECT m.person_id FROM volunteer_group_members m WHERE m.org_id=? AND m.group_id=?
@@ -448,15 +458,16 @@ app.get("/volunteer-hub/groups/:id", requireAuth, wrap(async (req, res) => {
 app.get("/volunteer-hub/groups/:id/csv", requireAuth, wrap(async (req, res) => {
   await READY;
   const orgId = req.user.orgId;
+  const grpToday = orgToday(await orgTz(orgId));                  // ORG_TZ_SEAM_OK — VOL-3: served hours only
   const [g] = await query("SELECT id, name FROM volunteer_groups WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!g) return res.status(404).json({ error: "Not found" });
   const rows = await query(
     `SELECT d.name, d.email,
             COALESCE((SELECT SUM(vs.hours) FROM volunteer_shifts vs
                        WHERE vs.org_id=d.org_id AND vs.person_id=d.id
-                         AND vs.date >= date_trunc('year', ${orgTime.orgTodaySql(orgTime.orgTzSql("vs.org_id"))})::date::text),0)::float AS hours,
+                         AND vs.date >= date_trunc('year', ${orgTime.orgTodaySql(orgTime.orgTzSql("vs.org_id"))})::date::text AND ${SERVED_RULE.SERVED("vs", grpToday)}),0)::float AS hours,
             (SELECT MAX(vs.date)::text FROM volunteer_shifts vs
-               WHERE vs.org_id=d.org_id AND vs.person_id=d.id) AS last_shift
+               WHERE vs.org_id=d.org_id AND vs.person_id=d.id AND ${SERVED_RULE.SERVED("vs", grpToday)}) AS last_shift
        FROM donors d
       WHERE d.org_id=? AND d.deleted_at IS NULL AND d.id IN (
         SELECT m.person_id FROM volunteer_group_members m WHERE m.org_id=? AND m.group_id=?
@@ -1441,17 +1452,18 @@ app.get("/volunteer-hub/crossover/rows", requireAuth, wrap(async (req, res) => {
   if (req.user.role === "volunteer_coordinator") return res.status(403).json({ error: "coordinator_scope" });
   const orgId = req.user.orgId;
   const which = String(req.query.which || "");
+  const xToday = orgToday(await orgTz(orgId));                    // ORG_TZ_SEAM_OK — VOL-3: served hours only
   const V = `d.person_types @> '["volunteer"]'::jsonb`;
   let sql;
   if (which === "gives_and_volunteers") {
     sql = `SELECT d.id, d.name, d.total_giving,
-                  (SELECT COALESCE(SUM(round(vs.hours*100)),0) FROM volunteer_shifts vs WHERE vs.person_id=d.id AND vs.org_id=d.org_id)::bigint AS h
+                  (SELECT COALESCE(SUM(round(vs.hours*100)),0) FROM volunteer_shifts vs WHERE vs.person_id=d.id AND vs.org_id=d.org_id AND ${SERVED_RULE.SERVED("vs", xToday)})::bigint AS h
              FROM donors d WHERE d.org_id=? AND d.deleted_at IS NULL AND ${V}
                AND EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id AND g.org_id=d.org_id)
              ORDER BY d.total_giving DESC NULLS LAST, d.name`;
   } else if (which === "volunteer_never_asked") {
     sql = `SELECT d.id, d.name, d.total_giving,
-                  (SELECT COALESCE(SUM(round(vs.hours*100)),0) FROM volunteer_shifts vs WHERE vs.person_id=d.id AND vs.org_id=d.org_id)::bigint AS h
+                  (SELECT COALESCE(SUM(round(vs.hours*100)),0) FROM volunteer_shifts vs WHERE vs.person_id=d.id AND vs.org_id=d.org_id AND ${SERVED_RULE.SERVED("vs", xToday)})::bigint AS h
              FROM donors d WHERE d.org_id=? AND d.deleted_at IS NULL AND ${V}
                AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id AND g.org_id=d.org_id)
                AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.donor_id=d.id AND i.org_id=d.org_id
@@ -1610,6 +1622,7 @@ async function weekProblems(orgId) {
   return { week: wk, today, short, conflicts: conflictRows };
 }
 
+require("../server/volunteers/weekProblemsHook").set(weekProblems);   // VOL-3: the header cards' sources read the same rows
 app.get("/volunteer-hub/schedule", requireAuth, wrap(async (req, res) => {
   await READY;
   const orgId = req.user.orgId;
@@ -1641,19 +1654,24 @@ app.get("/volunteer-hub/counts", requireAuth, wrap(async (req, res) => {
   // FIX-31: the first number is everyone on the roster, the newest included.
   // "Active" (an hour in twelve months) read 0 the day someone joined, above a
   // list that showed them. Served lately is the line under it, not the tile.
+  // VOL-3 item 1: the tile counts ACTIVE volunteers and says so; paused and former are named beside it.
   const f = await GRP.buildDonorFilter(orgId, { role: "volunteer" });
-  const since = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
-  const [a] = await query(`SELECT COUNT(*)::int AS n,
-      COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM volunteer_shifts vx WHERE vx.org_id = donors.org_id AND vx.person_id = donors.id AND vx.date >= ?))::int AS served
+  const today = orgToday(await orgTz(orgId));                     // ORG_TZ_SEAM_OK
+  const since = orgTime.addDays(today, -90);
+  const [a] = await query(`SELECT COUNT(*) FILTER (WHERE ${VSTATUS.ACTIVE_SQL("donors")})::int AS n,
+      COUNT(*) FILTER (WHERE NOT ${VSTATUS.ACTIVE_SQL("donors")})::int AS resting,
+      COUNT(*) FILTER (WHERE ${VSTATUS.ACTIVE_SQL("donors")} AND EXISTS (SELECT 1 FROM volunteer_shifts vx WHERE vx.org_id = donors.org_id AND vx.person_id = donors.id AND vx.date >= ? AND ${SERVED_RULE.SERVED("vx", today)}))::int AS served
     FROM donors WHERE ${f.whereSql}`, [since, ...f.params]);
   const [p] = await query(`SELECT COUNT(*)::int AS n FROM volunteer_applications WHERE org_id=? AND status='pending'`, [orgId]);
   const wp = await weekProblems(orgId);
   res.json({
-    roster: { value: a.n, sentence: "Everyone whose record carries the Volunteer role, including anyone added today.",
-              served: { value: a.served, since, sentence: "Of them, the people with a shift logged in the last 90 days." } },
-    pending: { value: p.n, sentence: "Applications from your volunteer page waiting for Approve or Decline." },
-    conflicts: { value: wp.conflicts.length, sentence: "This week, the same person with a place on two shifts that overlap in time." },
-    short: { value: wp.short.length, sentence: "Published shifts this week, Monday to Sunday, where at least one role still needs people." },
+    roster: { value: a.n, resting: a.resting, sentence: VSTATUS.ACTIVE_SENTENCE,
+              source: { key: "volunteers-active", params: {} },
+              served: { value: a.served, since, sentence: "Of them, the people with a shift in the last 90 days, up to today.",
+                        source: { key: "volunteers-active", params: { servedSince: since } } } },
+    pending: { value: p.n, sentence: "Applications from your volunteer page waiting for Approve or Decline.", source: { key: "volunteer-applications-pending", params: {} } },
+    conflicts: { value: wp.conflicts.length, sentence: "This week, the same person with a place on two shifts that overlap in time.", source: { key: "volunteer-week-conflicts", params: {} } },
+    short: { value: wp.short.length, sentence: "Published shifts this week, Monday to Sunday, where at least one role still needs people.", source: { key: "volunteer-week-short", params: {} } },
   });
 }));
 
@@ -2008,7 +2026,7 @@ async function draftThanksFor(orgId, signupId) {
   const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
   const orgName = await donorFacingOrgName(orgId, org.name || "").catch(() => org.name || "");
   const today = orgToday(await orgTz(orgId));                     // ORG_TZ_SEAM_OK
-  const [yr] = await query(`SELECT COALESCE(SUM(round(hours*100)),0)::bigint AS h FROM volunteer_shifts WHERE org_id=? AND person_id=? AND LEFT(date,4)=?`,
+  const [yr] = await query(`SELECT COALESCE(SUM(round(hours*100)),0)::bigint AS h FROM volunteer_shifts WHERE org_id=? AND person_id=? AND LEFT(date,4)=? AND ${SERVED_RULE.SERVED(null, today)}`,
     [orgId, r.person_id, today.slice(0, 4)]);
   const signature = [org.receipt_signature_name, org.receipt_signature_title, org.brand_signature_extra].filter(Boolean).join("\n") || orgName;
   const GR = await import("../shared/greeting.js");
@@ -2251,6 +2269,8 @@ function shapeApp(a, matches) {
     answers: parse(a.answers).map(x => ({ ...x, answer: x.type === "file" && x.answer ? { fileName: x.answer.fileName } : x.answer })),
     availability: parse(a.availability), submittedAt: a.submitted_at, decidedAt: a.decided_at, decidedBy: a.decided_by_name || "",
     personId: a.person_id || null, matchedExisting: a.matched_existing,
+    // VOL-3 item 3: approved, and the person it made or matched is gone (erased, deleted or purged).
+    personGone: !!a.person_gone,
     onFile: (matches || []).map(m => ({ id: m.id, name: m.name, gives: Number(m.total_giving || 0) > 0 })) };
 }
 async function onFileByEmail(orgId, email) {
@@ -2259,10 +2279,26 @@ async function onFileByEmail(orgId, email) {
                        CASE WHEN EXISTS (SELECT 1 FROM gifts g WHERE g.org_id=d.org_id AND g.donor_id=d.id AND g.amount > 0) THEN 1 ELSE 0 END AS total_giving
                   FROM donors d WHERE d.org_id=? AND d.deleted_at IS NULL AND LOWER(d.email)=? ORDER BY d.created_at LIMIT 5`, [orgId, String(email || "").toLowerCase()]);
 }
+// VOL-3 item 3: an approved application whose person is no longer on file. Only such a row
+// may be deleted; a live person's application stays with them (erasing the person takes it).
+const APP_PERSON_GONE = a => `(${a}.status = 'approved' AND NOT EXISTS (SELECT 1 FROM donors gd WHERE gd.id = ${a}.person_id AND gd.org_id = ${a}.org_id
+                                 AND gd.deleted_at IS NULL AND gd.erased_at IS NULL))`;
+app.delete("/volunteer-hub/applications/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [a] = await query(`SELECT a.id, a.name, ${APP_PERSON_GONE("a")} AS gone FROM volunteer_applications a WHERE a.id=? AND a.org_id=?`, [String(req.params.id), orgId]);
+  if (!a) return res.status(404).json({ error: "not_found", message: "That application is not on file." });
+  if (!a.gone) return res.status(409).json({ error: "person_on_file", message: "This application belongs to somebody still on file. It goes when their record is erased." });
+  await run("DELETE FROM volunteer_applications WHERE id=? AND org_id=?", [a.id, orgId]);
+  if (req.audit) { req.audit.action("deleted an application whose person is gone"); req.audit.entity("volunteer_application", a.id, "An application"); }
+  res.json({ ok: true, sentence: "Deleted. The application and its answers are gone; nobody on file was touched." });
+}));
 app.get("/volunteer-hub/applications", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const status = ["pending", "approved", "declined"].includes(String(req.query.status)) ? String(req.query.status) : "pending";
-  const rows = await query(`SELECT * FROM volunteer_applications WHERE org_id=? AND status=? ORDER BY submitted_at DESC LIMIT 300`, [orgId, status]);
+  // VOL-3: only what came through the volunteer page is an application. A record Add kept on an
+  // approved row before VOL-3 (via staff or agent) is a volunteer record, not shown here.
+  const rows = await query(`SELECT a.*, ${APP_PERSON_GONE("a")} AS person_gone FROM volunteer_applications a
+                             WHERE a.org_id=? AND a.status=? AND COALESCE(a.via,'page')='page' ORDER BY a.submitted_at DESC LIMIT 300`, [orgId, status]);
   const out = [];
   for (const a of rows) out.push(shapeApp(a, a.status === "pending" ? await onFileByEmail(orgId, a.email) : []));
   const [c] = await query(`SELECT COUNT(*) FILTER (WHERE status='pending')::int AS pending FROM volunteer_applications WHERE org_id=?`, [orgId]);
@@ -2472,7 +2508,8 @@ async function draftMissYouFor(orgId, today) {
   const people = await query(
     `SELECT d.id, d.name FROM donors d
       WHERE d.org_id=? AND d.deleted_at IS NULL AND d.email IS NOT NULL AND d.email <> ''
-        AND (SELECT MAX(v.date) FROM volunteer_shifts v WHERE v.org_id=d.org_id AND v.person_id=d.id) BETWEEN ? AND ?
+        AND (SELECT MAX(v.date) FROM volunteer_shifts v WHERE v.org_id=d.org_id AND v.person_id=d.id AND ${SERVED_RULE.SERVED("v", today)}) BETWEEN ? AND ?
+        AND ${VSTATUS.ACTIVE_SQL("d")}   -- VOL-3: a paused or former volunteer is not missed
         AND NOT EXISTS (SELECT 1 FROM volunteer_signups su JOIN volunteer_slots s ON s.id=su.slot_id
                          WHERE su.org_id=d.org_id AND su.person_id=d.id AND su.status IN ('confirmed','waitlisted') AND s.date >= ?)`,
     [orgId, from, to, today]);
