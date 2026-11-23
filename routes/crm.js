@@ -94,6 +94,8 @@ const MODULES = [
   "../server/outreach/journeys",
   "../server/outreach/routes",
   "../server/outreach/thanks",
+  "../server/mail/sendPlan",   // SENDS-2: a send to more than one person has a plan
+  "../server/outreach/draftPlans",   // SENDS-2: milestone drafts' plan kinds
   "../server/reports/boardPack",
   "../server/reports/dashboard",
   "../server/reports/fundraising",
@@ -115,6 +117,7 @@ routers.r1.use(require("../server/org/morningEmail").routers.r1);   // TIDY-1: p
 routers.r1.use(require("../server/org/routes").routers.r1);
 routers.r1.use(require("../server/org/invites").routers.r1);   // WALKB-2: pending invites
 routers.r1.use(require("../server/drafts/dismiss").routers.r1);   // COMMS-1: every draft can be dismissed
+routers.r1.use(require("../server/mail/sendPlan").routers.r1);   // SENDS-2: POST /send-plans and its commit
 routers.r1.use(require("../server/finance/fundMerge").routers.r1);   // TRUTH-3: merge near-duplicate funds, with Undo
 routers.r1.use(require("../server/finance/ledgerPost").routers.r1);   // LEDGER-3: Post to the books, with Undo
 routers.r1.use(require("../server/receipts/list").routers.r1);   // TRUTH-3: Tax Receipts lists every receipt

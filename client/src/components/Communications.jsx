@@ -12,6 +12,7 @@ import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, activeMark, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark, Modal, stageName } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
+import { askSendPlan } from "./SendPlanDialog";   // SENDS-2: more than one person, the list first
 import { offerUndo } from "./EditHistory";
 import { TemplateStart } from "./TemplateStart";
 import { errorMessage } from "../lib/domainError";
@@ -1033,13 +1034,13 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
     setBusyId(null);
   };
   const reviewedCount = drafts.filter(d => d.reviewed_at && !(d.linkCheck && !d.linkCheck.ok)).length;   // FLOWS-9: a draft with a broken link is never ready
+  // SENDS-2: the send plan shows every name before anything goes, and sends exactly that list.
   const sendAllReviewed = async () => {
-    if (!(await askConfirm({ title: `Send ${countLabel(reviewedCount, "reviewed draft")} now?`, body: "Each one goes to its donor as soon as you say so.", yes: "Send" }))) return;
     setBusyId("all");
     try {
-      const r = await apiFetch("/milestone-drafts/send-reviewed", { method: "POST" });
-      if (r.failed && r.failed.length) alert(`${r.sent} sent. ${r.failed.length} could not be sent: ${r.failed.map(f => f.error).join("; ")}`);
-      await load();
+      const r = await askSendPlan({ kind: "milestone_reviewed", ids: drafts.filter(d => d.reviewed_at).map(d => d.id) });
+      if (r && ((r.failed && r.failed.length) || (r.skipped && r.skipped.length))) alert(r.message);
+      if (r) await load();
     } catch (e) { alert(errorMessage(e)); }
     setBusyId(null);
   };

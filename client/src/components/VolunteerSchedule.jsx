@@ -15,6 +15,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { apiFetch, API } from "../api";
 import { T, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { askSendPlan } from "./SendPlanDialog";   // SENDS-2: more than one person, the list first
 import { offerUndo } from "./EditHistory";
 import PhotoField from "./PhotoField";
 import Picture from "./Picture";
@@ -715,22 +716,34 @@ export function RosterModeView({ isReadOnly, narrow }) {
 
 // ── TO SEND ───────────────────────────────────────────────────────────────
 // Reminders for tomorrow and thank-yous after a shift, drafted by Steward.
-// One tap sends the ones selected; each is checked against the mail rules at
-// that moment, and one that cannot go says why.
+// SENDS-2: nothing is ticked until she ticks it ("Select all" is her choice),
+// and sending more than one opens the send plan: every name, before anything
+// goes. One draft, read and sent from its own dialog, goes on that one press.
+// A draft older than 14 days waits under Older drafts.
 export function ToSendView({ isReadOnly }) {
   const [data, setData] = useState(null);
   const [sel, setSel] = useState(() => new Set());
   const [open, setOpen] = useState(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showOlder, setShowOlder] = useState(false);
   const load = useCallback(() => {
-    apiFetch("/volunteer-hub/drafts").then(d => { setData(d); setSel(new Set(d.drafts.map(x => x.id))); }).catch(e => setMsg(errorMessage(e, "The drafts did not load.")));
+    apiFetch("/volunteer-hub/drafts").then(d => { setData(d); setSel(p => new Set([...p].filter(id => d.drafts.some(x => x.id === id)))); })
+      .catch(e => setMsg(errorMessage(e, "The drafts did not load.")));
   }, []);
   useEffect(() => { load(); }, [load]);
-  const send = async ids => {
+  const sendOne = async id => {
     setBusy(true); setMsg("");
-    try { const r = await apiFetch("/volunteer-hub/drafts/send", { method: "POST", body: JSON.stringify({ ids }) }); setMsg(r.message); load(); }
-    catch (e) { setMsg(errorMessage(e, "Nothing was sent.")); }
+    try { const r = await apiFetch("/volunteer-hub/drafts/send", { method: "POST", body: JSON.stringify({ ids: [id] }) }); setMsg(r.message); load(); }
+    catch (e) { setMsg(errorMessage(e, "Nothing was sent.")); load(); }
+    setBusy(false);
+  };
+  const sendPicked = async () => {
+    setBusy(true); setMsg("");
+    try {
+      const r = await askSendPlan({ kind: "volunteer", ids: [...sel] });
+      if (r) { setMsg(r.message); setSel(new Set()); load(); }
+    } catch (e) { setMsg(errorMessage(e, "Nothing was sent.")); }
     setBusy(false);
   };
   const draftNow = async () => {
@@ -740,12 +753,27 @@ export function ToSendView({ isReadOnly }) {
     setBusy(false);
   };
   if (!data) return <div style={{ fontSize: 13, color: T.ink3, padding: 20 }}>{msg || "Loading…"}</div>;
-  const kinds = [...new Set(data.drafts.map(d => d.kindLabel))];
+  const current = data.drafts.filter(d => !d.older), older = data.drafts.filter(d => d.older);
+  const kinds = [...new Set(current.map(d => d.kindLabel))];
+  const allPicked = current.length > 0 && current.every(d => sel.has(d.id));
+  const draftRow = d => (
+    <div key={d.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 14px", borderTop: "1px solid " + T.bg2, flexWrap: "wrap" }}>
+      {!isReadOnly && <input type="checkbox" aria-label={`Send to ${d.name}`} checked={sel.has(d.id)} onChange={e => setSel(p => { const n = new Set(p); e.target.checked ? n.add(d.id) : n.delete(d.id); return n; })} />}
+      <div style={{ flex: 1, minWidth: 180 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{d.name}</div>
+        <div style={{ fontSize: 12, color: T.ink3 }}>{d.subject}</div>
+      </div>
+      <button style={btnLink} onClick={() => setOpen(d)}>Read it</button>
+      {!isReadOnly && <button style={btnQuiet} disabled={busy} onClick={() => apiFetch(`/volunteer-hub/drafts/${d.id}/discard`, { method: "POST" }).then(load)}>Discard</button>}
+    </div>
+  );
   return (
     <div data-testid="vol-to-send" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ fontSize: 13, color: T.ink3, maxWidth: 680, lineHeight: 1.6 }}>{data.sentence}</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        {!isReadOnly && data.drafts.length > 0 && <button style={btnPrimary} data-testid="to-send-all" disabled={busy || !sel.size} onClick={() => send([...sel])}>Send {sel.size} {sel.size === 1 ? "email" : "emails"}</button>}
+        {!isReadOnly && data.drafts.length > 0 && <button style={btnPrimary} data-testid="to-send-all" disabled={busy || !sel.size} onClick={sendPicked}>{sel.size ? `Send ${sel.size} ${sel.size === 1 ? "email" : "emails"}…` : "Tick the ones to send"}</button>}
+        {!isReadOnly && current.length > 1 && <button style={btnQuiet} data-testid="to-send-select-all" disabled={busy}
+          onClick={() => setSel(p => { const n = new Set(p); current.forEach(d => allPicked ? n.delete(d.id) : n.add(d.id)); return n; })}>{allPicked ? "Clear" : "Select all"}</button>}
         {!isReadOnly && <button style={btnQuiet} disabled={busy} onClick={draftNow}>Draft tomorrow's reminders now</button>}
       </div>
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink2 }}>{msg}</div>}
@@ -753,25 +781,24 @@ export function ToSendView({ isReadOnly }) {
       {kinds.map(k => (
         <div key={k} style={{ ...card, padding: 0 }}>
           <div style={{ ...eyebrow, padding: "12px 14px 6px" }}>{k}</div>
-          {data.drafts.filter(d => d.kindLabel === k).map(d => (
-            <div key={d.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 14px", borderTop: "1px solid " + T.bg2, flexWrap: "wrap" }}>
-              {!isReadOnly && <input type="checkbox" aria-label={`Send to ${d.name}`} checked={sel.has(d.id)} onChange={e => setSel(p => { const n = new Set(p); e.target.checked ? n.add(d.id) : n.delete(d.id); return n; })} />}
-              <div style={{ flex: 1, minWidth: 180 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{d.name}</div>
-                <div style={{ fontSize: 12, color: T.ink3 }}>{d.subject}</div>
-              </div>
-              <button style={btnLink} onClick={() => setOpen(d)}>Read it</button>
-              {!isReadOnly && <button style={btnQuiet} disabled={busy} onClick={() => apiFetch(`/volunteer-hub/drafts/${d.id}/discard`, { method: "POST" }).then(load)}>Discard</button>}
-            </div>
-          ))}
+          {current.filter(d => d.kindLabel === k).map(draftRow)}
         </div>
       ))}
+      {older.length > 0 && (
+        <div data-testid="to-send-older" style={{ ...card, padding: 0 }}>
+          <button style={{ ...btnLink, padding: "12px 14px", width: "100%", textAlign: "left" }} aria-expanded={showOlder} onClick={() => setShowOlder(v => !v)}>
+            {showOlder ? "▾" : "▸"} Older drafts ({older.length})
+          </button>
+          {showOlder && older.map(draftRow)}
+        </div>
+      )}
+      {data.ageRule && <div data-testid="to-send-rule" style={{ fontSize: 12, color: T.ink3, maxWidth: 680, lineHeight: 1.6 }}>{data.ageRule}</div>}
       {open && (
         <Modal onClose={() => setOpen(null)} width={520} ariaLabel={`Draft to ${open.name}`}>
           <div style={{ fontSize: 12, color: T.ink3 }}>To {open.name}{open.email ? ` · ${open.email}` : ""}</div>
           <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, margin: "4px 0 10px" }}>{open.subject}</div>
           <div style={{ whiteSpace: "pre-wrap", fontSize: 13.5, color: T.ink, lineHeight: 1.6 }}>{open.body}</div>
-          {!isReadOnly && <div style={{ marginTop: 14 }}><button style={btnPrimary} disabled={busy} onClick={() => { send([open.id]); setOpen(null); }}>Send this one</button></div>}
+          {!isReadOnly && <div style={{ marginTop: 14 }}><button style={btnPrimary} disabled={busy} onClick={() => { sendOne(open.id); setOpen(null); }}>Send this one</button></div>}
         </Modal>
       )}
     </div>

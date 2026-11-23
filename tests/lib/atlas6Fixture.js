@@ -15,7 +15,7 @@ const PEOPLE = {
 };
 
 async function seed(q) {
-  for (const t of ["interactions", "tasks", "threads", "gifts", "voice_memos", "atlas_actions", "org_summary"])
+  for (const t of ["interactions", "tasks", "threads", "gifts", "voice_memos", "atlas_actions", "org_summary", "recurring_subscriptions", "opportunities"])
     await q(`DELETE FROM ${t} WHERE ${t === "org_summary" ? "org_key" : "org_id"}=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM donors WHERE org_id=$1`, [ORG]);
   await q(`INSERT INTO orgs (id,name,legal_name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,ein,receipt_address,
@@ -37,6 +37,10 @@ async function seed(q) {
     for (const [date, amount] of p.gifts)
       await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,payment_method) VALUES ($1,$2,$3,$4,$5,'cash','Check')`, [`g_atl6_${++n}`, ORG, p.id, amount, date]);
   }
+  // ATLAS-8: two people "Who should I call tomorrow?" names, each with their own reason and figure:
+  // Warren's $10,000 ask past its date, Tobias's failed $25 monthly card ($300 a year at stake).
+  await q(`INSERT INTO opportunities (id,org_id,donor_id,name,target_amount,status,expected_close) VALUES ('o_atl6_warren',$1,$2,'Sculpture commission',10000,'open',(CURRENT_DATE - 30))`, [ORG, PEOPLE.warren.id]);
+  await q(`INSERT INTO recurring_subscriptions (id,org_id,donor_id,stripe_subscription_id,status,amount,interval,last_failed_at) VALUES ('rs_atl6_tobias',$1,$2,'sub_atl6_tobias','past_due',25,'month',NOW() - interval '5 days')`, [ORG, PEOPLE.tobias.id]);
 }
 
 module.exports = { ORG, ADMIN, DIRECTOR, PASSWORD, PEOPLE, seed };

@@ -28,6 +28,8 @@ export function linkTarget(link) {
     // TOP100-1: the list, and a person's plan of care with Atlas's proposal waiting on it.
     case "top100": return ["fundraising", { frSection: "top100" }];
     case "careplan": return ["donors", { selectDonorId: link.donorId }];
+    // ATLAS-8: a Home figure Atlas answered from (the goal bar, the stopped monthly cards).
+    case "fundraising": return ["fundraising", link.section ? { frSection: link.section } : {}];
     default: return null;
   }
 }

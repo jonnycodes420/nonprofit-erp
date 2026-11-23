@@ -25,6 +25,7 @@ const MP = require("../membershipPage");  // PAGES-1: so is a membership page, o
 const GPE = require("../givingPageEdit");  // GIVE-EDIT-1: a page's own fields, drafted and published in the one editor
 const { CAMPAIGN_GIFT_MATCH, PUBLIC_BAR_GRANTS, NOT_DELETED } = require("../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
 const { newId, randomHex } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
+const SEND_PLAN = require("../server/mail/sendPlan");   // SENDS-2: more than one person needs the list she saw
 
 const routers = {
   r0: express.Router(),
@@ -4565,10 +4566,17 @@ async function dunningOwner(orgId) {
   return { engine: "steward", provider: null, providerLabel: null, sentence: null };
 }
 
+// SENDS-2 · one reconnect note and its send plan kind: server/give/reconnectNote.js.
+const RECON = require("../server/give/reconnectNote").mount({ query, run, actor, newId, escapeHtml, publicAppUrl, signReconnectToken,
+  brandEmailHeaderHtml, donorFromAddress, sendDonorLifecycleEmail, donorFacingOrgName, dunningOwner });
+
 app.post("/recurring/unlinked/send-reconnect", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
-  const ids = Array.isArray(req.body.donorIds) ? req.body.donorIds.slice(0, 500) : [];
+  const ids = Array.isArray(req.body.donorIds) ? [...new Set(req.body.donorIds.map(String))] : [];
   if (!ids.length) return res.status(400).json({ error: "donorIds required" });
+  // SENDS-2: one person, one press. More than one goes through a send plan
+  // (POST /send-plans, kind "reconnect"), which shows every name first.
+  if (ids.length > 1) return res.status(409).json(SEND_PLAN.PLAN_REQUIRED);
 
   // THE ENGINE IS OFF, NOT JUST HIDDEN. A button removed from a screen is a
   // button somebody reaches with a saved link, an old tab or a script. For an
@@ -4583,42 +4591,10 @@ app.post("/recurring/unlinked/send-reconnect", requireAuth, requireAdmin, checkW
       message: own.sentence,
     });
   }
-  const [org] = await query("SELECT id, name, org_slug FROM orgs WHERE id=?", [orgId]);
-  const donors = await query(
-    `SELECT id, name, email, imported_sustainer_amount::float AS amount, imported_sustainer_last_gift AS last_gift
-       FROM donors WHERE org_id=? AND deleted_at IS NULL AND imported_sustainer IS TRUE
-        AND id = ANY(?) AND email IS NOT NULL AND email <> ''`,
-    [orgId, ids]);
-  const dfName = await donorFacingOrgName(orgId, org.name).catch(() => org.name);
-  let sent = 0;
-  for (const d of donors) {
-    const freq = "monthly";
-    const token = signReconnectToken(d.id, orgId);
-    const params = new URLSearchParams({ reconnect: token, frequency: freq });
-    if (d.amount != null) params.set("amount", Number(d.amount).toFixed(2));
-    const link = `${publicAppUrl()}/give/${org.org_slug}?${params.toString()}`;
-    const amtStr = d.amount != null ? "$" + Number(d.amount).toLocaleString("en-US", { maximumFractionDigits: 0 }) + "/month" : "your monthly gift";
-    const html = await brandEmailHeaderHtml(orgId)
-      + `<p>${escapeHtml((await import("../shared/greeting.js")).greetingLine(d, { word: "Hi" }))}</p>
-         <p>Thank you for being a faithful monthly supporter of <strong>${escapeHtml(dfName)}</strong>. We've moved to a new giving system, and because card details can't transfer between systems, we need you to reconnect your ${escapeHtml(amtStr)} gift.</p>
-         <p>It takes about a minute, your amount is already filled in:</p>
-         <p><a href="${link}" style="display:inline-block;background:#c9a84c;color:#0f1a12;text-decoration:none;font-weight:700;padding:11px 22px;border-radius:8px">Reconnect my monthly gift</a></p>
-         <p style="color:#8fa896;font-size:13px">If you'd rather not continue your monthly gift, no action is needed, and thank you for everything you've already given.</p>`;
-    const from = await donorFromAddress(orgId).catch(() => undefined);
-    // SEND-GATE-2: she picked these people and pressed Send; that press is the confirm for each one.
-    const confirm = await require("../sendGate").recordStaffConfirm({ orgId, to: d.email, what: "Reconnect-your-gift note", by: actor(req) });
-    const ok = await sendDonorLifecycleEmail("reconnect", d.email, `Reconnect your monthly gift to ${dfName}`, html, from, orgId, confirm);
-    if (ok) {
-      await run(
-        `INSERT INTO reconnect_sends (id, org_id, donor_id, historical_amount, historical_interval, sent_by)
-         VALUES (?,?,?,?,?,?)
-         ON CONFLICT (org_id, donor_id) DO UPDATE SET sent_at=NOW(), historical_amount=EXCLUDED.historical_amount, sent_by=EXCLUDED.sent_by`,
-        [newId("rcs"), orgId, d.id, d.amount, "month", actor(req).id]
-      );
-      sent++;
-    }
-  }
-  res.json({ sent, requested: donors.length });
+  const [d] = (await query(RECON.WHO, [orgId, ids])).filter(x => x.email);
+  const { org, dfName } = await RECON.orgOf(orgId);
+  const sent = d && await RECON.sendOne(req, org, dfName, d) ? 1 : 0;
+  res.json({ sent, requested: d ? 1 : 0 });
 }));
 
 // ── Staff-direct actions: pause · resume · cancel · fund designation ───────

@@ -32,6 +32,8 @@ const express = require("express");
 const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person
 const { newId, randomHex } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 const HR = require("../server/volunteers/hoursReport");   // FLOWS-4: the Hours report, one row per entry
+const TO_SEND = require("../server/volunteers/toSend");   // SENDS-2: To send's age rules and its send plan
+const SEND_PLAN = require("../server/mail/sendPlan");   // SENDS-2: more than one person needs the list she saw
 const routers = { r0: express.Router() };
 
 // FEEL-1: the one count of a shift's people (scheduleRows' footer), for the
@@ -1486,6 +1488,12 @@ async function runVolunteerReminders(onlyOrgId = null) {
   const orgs = onlyOrgId ? [{ id: onlyOrgId }] : await query(
     `SELECT DISTINCT s.org_id AS id FROM volunteer_slots s
       WHERE s.cancelled_at IS NULL AND s.date BETWEEN to_char(NOW() - INTERVAL '1 day','YYYY-MM-DD') AND to_char(NOW() + INTERVAL '3 days','YYYY-MM-DD')`, []);
+  // SENDS-2 item 3: every org with a reminder waiting sets aside the ones whose shift is not tomorrow.
+  const withReminders = onlyOrgId ? [onlyOrgId] : await TO_SEND.orgsWithReminders({ query });
+  for (const id of withReminders) {
+    try { out.expired = (out.expired || 0) + await TO_SEND.expireReminders({ query, run, orgToday, orgTz }, id); }
+    catch (e) { console.error(`[volunteer] reminder expiry ${id}:`, e.message); }
+  }
   for (const org of orgs) {
     out.orgsConsidered++;
     try {
@@ -1884,46 +1892,66 @@ app.post("/volunteer-hub/signups/:id/move", requireAuth, checkWriteAccess, wrap(
 // Reminders for tomorrow and thank-yous after a shift land in the one review
 // queue (milestone_drafts), keyed vol:<kind>:<signup>, so a sweep that runs
 // twice writes one draft. This is the list, and the one-tap send.
-const VOL_SOURCES = ["volunteer_reminder", "volunteer_thanks", "volunteer_message",
-  "volunteer_confirm", "volunteer_miss_you", "volunteer_group_leader"];   // VOL-PAGE-1
+// SENDS-2: the sources, the age rules and the plan kind live in server/volunteers/toSend.js.
+const { VOL_SOURCES } = TO_SEND;
 app.get("/volunteer-hub/drafts", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const kind = VOL_SOURCES.includes(String(req.query.kind || "")) ? String(req.query.kind) : null;
+  // SENDS-2 item 3: a reminder is listed only while its shift is tomorrow (org
+  // time), whether or not the sweep has set it aside yet. Item 4: any other
+  // draft older than 14 days is marked `older`, for the Older drafts fold.
+  const { tomorrow } = await TO_SEND.tomorrowFor({ orgToday, orgTz }, orgId);
   const rows = await query(
-    `SELECT md.id, md.donor_id, md.subject, md.body, md.source, md.slot_id, md.created_at, d.name, d.email
+    `SELECT md.id, md.donor_id, md.subject, md.body, md.source, md.slot_id, md.created_at, d.name, d.email,
+            (md.created_at < NOW() - make_interval(days => ?)) AS older
        FROM milestone_drafts md JOIN donors d ON d.id=md.donor_id AND d.org_id=md.org_id
       WHERE md.org_id=? AND md.status='pending_review' AND md.source = ANY(?)
+        AND (md.source <> 'volunteer_reminder' OR ${TO_SEND.SHIFT_DATE_SQL} = ?)
         ${kind ? "AND md.source = ?" : ""} ${req.query.slotId ? "AND md.slot_id = ?" : ""}
       ORDER BY md.source, md.created_at, md.id LIMIT 500`,
-    [orgId, VOL_SOURCES, ...(kind ? [kind] : []), ...(req.query.slotId ? [String(req.query.slotId)] : [])]);
+    [TO_SEND.OLDER_DAYS, orgId, VOL_SOURCES, tomorrow, ...(kind ? [kind] : []), ...(req.query.slotId ? [String(req.query.slotId)] : [])]);
   const label = { volunteer_reminder: "Reminder for tomorrow", volunteer_thanks: "Thank-you after a shift", volunteer_message: "Message about a shift",
     volunteer_confirm: "Shift confirmation", volunteer_miss_you: "We miss you", volunteer_group_leader: "Group leader confirmation" };
   res.json({ drafts: rows.map(r => ({ id: r.id, personId: r.donor_id, name: r.name, email: r.email || null, subject: r.subject, body: r.body,
-      kind: r.source, kindLabel: label[r.source], slotId: r.slot_id, createdAt: r.created_at })),
-    sentence: "Steward wrote these. Nothing goes to a volunteer until you press Send, and each one is checked against the mail rules when you do." });
+      kind: r.source, kindLabel: label[r.source], slotId: r.slot_id, createdAt: r.created_at, older: r.older === true })),
+    sentence: "Steward wrote these. Nothing goes to a volunteer until you press Send, and each one is checked against the mail rules when you do.",
+    ageRule: TO_SEND.AGE_RULE });
 }));
 
+// One volunteer draft, sent by the person who pressed Send. The single press
+// below and a committed send plan (kind "volunteer") both send through it.
+async function sendVolunteerDraft(req, d) {
+  const r = await sendDraft(req, d);
+  if (r.status !== 200) {
+    // NOT SENT IS NOT SENT (WHY-1 Part 8): the draft keeps its reason, and a
+    // second press does not retry it on its own; somebody opens it.
+    await run("UPDATE milestone_drafts SET status='failed', send_error=? WHERE id=? AND status='pending_review'",
+      [String(r.error || "refused").slice(0, 300), d.id]).catch(() => {});
+  }
+  return r;
+}
+TO_SEND.registerPlanKind({ query, run, orgToday, orgTz }, sendVolunteerDraft);
+
+// SENDS-2: ONE draft, one press. More than one goes through a send plan
+// (POST /send-plans, kind "volunteer"), which shows every name first.
 app.post("/volunteer-hub/drafts/send", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
-  const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(String))].slice(0, 500);
+  const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(String))];
   if (!ids.length) return res.status(400).json({ error: "Pick the drafts to send." });
-  const drafts = await query(
-    `SELECT * FROM milestone_drafts WHERE org_id=? AND id = ANY(?) AND status='pending_review' AND source = ANY(?) ORDER BY created_at`,
-    [orgId, ids, VOL_SOURCES]);
-  let sent = 0; const failed = [];
-  for (const d of drafts) {
-    const r = await sendDraft(req, d);
-    if (r.status === 200) sent++;
-    else {
-      failed.push({ id: d.id, error: r.error });
-      // NOT SENT IS NOT SENT (WHY-1 Part 8): the draft keeps its reason, and a
-      // second press does not retry it on its own; somebody opens it.
-      await run("UPDATE milestone_drafts SET status='failed', send_error=? WHERE id=? AND status='pending_review'",
-        [String(r.error || "refused").slice(0, 300), d.id]).catch(() => {});
-    }
+  if (ids.length > 1) return res.status(409).json(SEND_PLAN.PLAN_REQUIRED);
+  const [d] = await query(`SELECT * FROM milestone_drafts WHERE org_id=? AND id=? AND status='pending_review' AND source = ANY(?)`,
+    [orgId, ids[0], VOL_SOURCES]);
+  if (!d) return res.status(404).json({ error: "Not found", message: "That draft was already sent or set aside." });
+  // SENDS-2 item 3: a reminder for a shift that is not tomorrow never goes, even asked by id.
+  const why = (await TO_SEND.refusals({ orgToday, orgTz }, orgId, await TO_SEND.readDrafts({ query }, orgId, [d.id]))).get(d.id);
+  if (why) {
+    await run("UPDATE milestone_drafts SET status='expired' WHERE id=? AND org_id=? AND status='pending_review'", [d.id, orgId]);
+    return res.status(409).json({ error: "out_of_date", sentence: why, sent: 0, failed: [{ id: d.id, error: why }], message: `Not sent: ${why}` });
   }
+  const r = await sendVolunteerDraft(req, d);
+  const sent = r.status === 200 ? 1 : 0, failed = sent ? [] : [{ id: d.id, error: r.error }];
   if (req.audit) req.audit.action(`sent ${sent} volunteer draft${sent === 1 ? "" : "s"}`);
-  res.json({ sent, failed, message: `${sent} sent.${failed.length ? ` ${failed.length} not sent: ${failed.map(f => f.error).filter(Boolean).slice(0, 3).join("; ")}.` : ""}` });
+  res.json({ sent, failed, message: `${sent} sent.${failed.length ? ` 1 not sent: ${failed[0].error || "refused"}.` : ""}` });
 }));
 
 app.post("/volunteer-hub/drafts/:id/discard", requireAuth, checkWriteAccess, wrap(async (req, res) => {

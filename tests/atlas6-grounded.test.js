@@ -19,6 +19,12 @@
 //       the template's May, never March, and the fallback is recorded as "dates".
 //   §4  "Who is the executive director?" names the director from the settings.
 //   §5  a compound can't-know question: two plain answers, the question never echoed.
+//   §6  ATLAS-8: "Who should I call tomorrow?" draws its people and its total foots to
+//       them; "List them" lists that answer's rows; Atlas's LYBUNT is Reports > LYBUNT;
+//       a dollar figure beside the wrong name is refused; the question is kept.
+//       Planted (ATLAS-8 report): answer `why` not saved → §6 rows red; LYBUNT to lapsed
+//       (populations.js reading lifecycle=lapsed) → §6 LYBUNT red; misattributed()
+//       returning [] → §6 wrong-name red.
 //
 // HOW IT GOES RED (planted, seen red before green, ATLAS-6 report):
 //   * remove the post-check (why.js accepts a sentence whatever its dates):
@@ -138,6 +144,37 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   ok("§5 two plain answers: what isn't kept, and what is known instead of a forecast",
     c.lines.length === 2 && c.lines[0] === "I don't have Rosalind Kemp's favorite color." && /^I can't predict next year's giving, but Rosalind /.test(c.lines[1] || ""), c.lines);
   ok("§5 the question is never echoed back", !c.lines.some(l => /how much will she give/i.test(l)), c.lines);
+
+  // ── §6 ATLAS-8: no total without its rows; one population per word; a figure is its person's ──
+  const ask8 = async (text, followsId) => {
+    const r = await fetch(BASE + "/atlas", { method: "POST", headers: { authorization: `Bearer ${tok}`, "content-type": "application/json" }, body: JSON.stringify({ text, followsId }) });
+    return { status: r.status, req: ((await r.json().catch(() => ({}))).request) || {} };
+  };
+  const call = await ask8("Who should I call tomorrow?");
+  const cl = (call.req.lines || []).find(l => l.answer && l.answer.type === "why") || null;
+  ok("§6 a why answer draws its rows: each person, their reason and what is at stake", cl && cl.answer.people.length === 2 && cl.answer.people.every(p => p.name && p.reason && p.cents > 0), call.req.lines);
+  const stated = cl ? cents((cl.line.match(/\$[\d,]+(?:\.\d{2})?(?= is at stake)/) || [])[0]) : null;
+  const drawn = cl ? cl.answer.people.reduce((x, p) => x + p.cents, 0) : -1;
+  ok("§6 the total it states foots to the rows drawn, to the cent ($10,000 ask + $300 a year of the card)", cl && stated === drawn && drawn === 1030000 && cl.answer.totalCents === drawn, { stated, drawn, line: cl && cl.line });
+  const again = await ask8("List them", call.req.id);
+  const al = (again.req.lines || [])[0] || {};
+  ok("§6 \"List them\" right after lists that answer's own rows", al.answer && al.answer.type === "why" && cl && al.answer.people.map(p => p.donorId).join() === cl.answer.people.map(p => p.donorId).join(), again.req.lines);
+  const more = await ask8("Tell me more", (await ask8("What is our EIN?")).req.id);
+  ok("§6 \"Tell me more\" after an answer with no rows says plainly there is nothing more", /^There's nothing more behind my last answer/.test(((more.req.lines || [])[0] || {}).line || ""), more.req.lines);
+  const ly = await ask8("How many LYBUNT donors do we have?");
+  const rep = await api("GET", "/reports/lybunt", tok);
+  const lyl = (ly.req.lines || [])[0] || {};
+  const lyN = Number((/^([\d,]+) /.exec(lyl.line || "") || [])[1]?.replace(/,/g, ""));
+  ok("§6 Atlas's LYBUNT is Reports > LYBUNT (bunt.js), never the people tagged Lapsed", rep.status === 200 && lyN === rep.body.rows.length && lyl.answer && lyl.answer.count === rep.body.rows.length, { atlas: lyl.line, report: rep.body && rep.body.rows && rep.body.rows.length });
+  ok("§6 and the count ends with its one-line definition", /LYBUNT: gave last fiscal year, nothing yet this one\.$/.test(lyl.line || ""), lyl.line);
+  const WRm = require("../server/atlas/whyRows");
+  const pf = WRm.personFacts([{ donorId: "a", name: "Vespasia Ashenhurst", amount: "139037.00" }, { donorId: "b", name: "Verity Underhill", amount: "512.00" }]);
+  ok("§6 a dollar figure beside the wrong name is refused (Vespasia's $139,037 said as Verity's)", WRm.misattributed("Verity Underhill has given $139,037 in all.", pf).length === 1);
+  ok("§6 and beside its own person it stands", WRm.misattributed("Vespasia Ashenhurst has given $139,037; Verity Underhill $512.", pf).length === 0);
+  const fx = WRm.whyAnswer({ who: [{ donorId: "a", name: "Vespasia Ashenhurst", cents: 1000000, reason: "x." }, { donorId: "b", name: "Verity Underhill", cents: 30000, reason: "y." }] });
+  ok("§6 a stated total the drawn rows don't foot to is replaced by the rows' own sentence", !WRm.whyLine("Start with Vespasia. $53,837 is at stake across all five.", fx).footed && /\$10,300 is at stake across both\./.test(WRm.whyLine("Start with Vespasia. $53,837 is at stake across all five.", fx).sentence));
+  const aq = rows(await q(`SELECT question FROM atlas_actions WHERE org_id=$1 AND request_id=$2`, [F.ORG, ly.req.id]));
+  ok("§6 each Atlas line keeps the question it answered", aq.length > 0 && aq.every(r => r.question === "How many LYBUNT donors do we have?"), aq);
 
   await closeDb();
   summary();

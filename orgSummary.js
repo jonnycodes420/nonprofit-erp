@@ -59,6 +59,8 @@ const UNWATCHED = new Set([
   "number_checks",
   // FLOWS-19: the daily Re-engage list, derived from watched rows, read only by its own line.
   "reengage_snapshots",
+  // SENDS-2: the lists people were shown before a bulk send; no figure reads them.
+  "send_plans",
 ]);
 
 function schemaSql() {

@@ -33,6 +33,21 @@ stops it like everything else. Tested in `tests/mail-suppression.test.js` §12a 
 the morning email unless the person turned on its own reminder, so no step goes unmentioned.
 
 ## Rules
+- **A staff send to more than one person needs a send plan she was shown (SENDS-2, 22 Nov 2026).** A staff confirm
+  (`sendGate.recordStaffConfirm`) is minted by the server, so a route that looped over drafts passed the gate as N
+  hand sends ("Send 33 emails", one click, no dialog). Now `POST /send-plans` (`server/mail/sendPlan.js`) builds the
+  list (each name, address and subject, and what is refused and why) and `POST /send-plans/:id/commit` sends exactly
+  it: once, by the person who built it, within 10 minutes, skipping and naming anything changed since. It is the only
+  place a request may mint a second confirm (`server/mail/confirmScope.js` throws `send_list_required` otherwise), each
+  confirm records its `plan_id`, and a confirm is for one address. Each bulk door registers a kind (`volunteer`,
+  `milestone_reviewed`, `milestone`, `reconnect`); its old route sends one person and refuses more. The browser shows
+  every plan in one dialog (`askSendPlan`, `client/src/components/SendPlanDialog.jsx`) and preselects nothing. CI runs
+  `scripts/ci/send-plan-scan.js`, which fails on any loop (server, or a browser loop of single sends) that mints
+  confirms outside a plan. One click on one draft is unchanged. `tests/sends2.test.js`.
+- **A volunteer reminder is only a reminder while its shift is tomorrow (SENDS-2).** The list hides one whose shift
+  (its slot, or its sign-up's) is not tomorrow in org time, a send refuses it by id ("Ana's shift was Nov 14, so this
+  reminder is out of date."), and the hourly volunteer sweep sets it `expired`. Any other volunteer draft older than
+  14 days is listed under Older drafts (`server/volunteers/toSend.js`).
 - **A starter names only fields its engine fills (FLOWS-18, 17 Nov 2026).** The campaign starters open in the block
   editor, so they use its fields (`shared/emailBlocks.js` EMAIL_MERGE_FIELDS: `{{last_gift_amount}}`, never the older
   `{{gift_amount}}`, which it now reads as the same gift for drafts already saved); letters use the brand kit's.

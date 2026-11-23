@@ -309,7 +309,9 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     const sendAll = async () => {
       const d = await api("GET", "/volunteer-hub/drafts?kind=volunteer_reminder", tok);
       const ids = ((d.body && d.body.drafts) || []).map(x => x.id);
-      return api("POST", "/volunteer-hub/drafts/send", tok, { ids });
+      // SENDS-2: more than one person goes through a send plan she is shown first.
+      const plan = await api("POST", "/send-plans", tok, { kind: "volunteer", ids });
+      return api("POST", `/send-plans/${plan.body && plan.body.planId}/commit`, tok, {});
     };
     const pressed = await sendAll();
     ok("staff press Send on the reminder drafts", pressed.status === 200, pressed.body);

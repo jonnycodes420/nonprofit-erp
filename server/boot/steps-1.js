@@ -903,6 +903,7 @@ app.use((req, res, next) => {
 // Everything about WHAT a row says lives in auditTrail.js and
 // middleware/auditTrail.js. Nothing about it lives in a route.
 app.use(require("../../middleware/auditTrail").auditTrail());
+app.use(require("../mail/confirmScope").middleware());   // SENDS-2: one staff confirm per request without a send plan
 app.use(require("../../middleware/noStore").noStore());   // LAG-1: no org read is kept on the way
 // SPLIT-2 end
 // SPLIT-2 server.js piece 119
