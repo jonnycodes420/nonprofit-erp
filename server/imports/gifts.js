@@ -284,7 +284,8 @@ async function depositContext(orgId) {
              JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
             WHERE i.org_id=? AND i.paid_gift_id IS NULL AND p.status='open'
             ORDER BY i.due_date ASC`, [orgId]),
-    query("SELECT default_fund_id FROM orgs WHERE id=?", [orgId]),
+    // LEDGER-3: only a default a PERSON chose; the one Steward stamped is not a choice (defaultFund.js).
+    query(`SELECT ${require("../../shared/numbers/defaultFund").CHOSEN_SQL("o")} AS default_fund_id FROM orgs o WHERE o.id=?`, [orgId]),
   ]);
   return {
     donors: donors.map(d => ({ id: d.id, name: d.name, email: d.email })),

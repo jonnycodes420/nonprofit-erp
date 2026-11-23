@@ -82,6 +82,7 @@ const MODULES = [
   "../server/org/invites",   // WALKB-2
   "../server/drafts/dismiss",   // COMMS-1
   "../server/finance/fundMerge",   // TRUTH-3: funds are a managed list
+  "../server/finance/ledgerPost",   // LEDGER-3: post waiting gifts to the books, with Undo
   "../server/receipts/list",   // TRUTH-3: every issued receipt
   "../server/receipts/drift",   // PLEDGES-3: void and reissue a receipt whose gift changed
   "../server/org/switchOrg",   // ACCESS-1
@@ -118,6 +119,7 @@ routers.r1.use(require("../server/org/invites").routers.r1);   // WALKB-2: pendi
 routers.r1.use(require("../server/drafts/dismiss").routers.r1);   // COMMS-1: every draft can be dismissed
 routers.r1.use(require("../server/mail/sendPlan").routers.r1);   // SENDS-2: POST /send-plans and its commit
 routers.r1.use(require("../server/finance/fundMerge").routers.r1);   // TRUTH-3: merge near-duplicate funds, with Undo
+routers.r1.use(require("../server/finance/ledgerPost").routers.r1);   // LEDGER-3: Post to the books, with Undo
 routers.r1.use(require("../server/receipts/list").routers.r1);   // TRUTH-3: Tax Receipts lists every receipt
 routers.r1.use(require("../server/receipts/drift").routers.r1);   // PLEDGES-3: POST /receipts/:id/reissue
 routers.r1.use(require("../server/org/switchOrg").routers.r1);   // ACCESS-1: the org switcher

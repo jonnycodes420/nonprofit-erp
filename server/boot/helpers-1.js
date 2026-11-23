@@ -235,11 +235,15 @@ async function ensureOrgLedger(orgId, { heal = false } = {}) {
   const probe = async () => {
     const [contrib] = await query("SELECT id FROM accounts WHERE org_id = ? AND code = '4010' LIMIT 1", [orgId]);
     const [grant] = await query("SELECT id FROM accounts WHERE org_id = ? AND type = 'revenue' AND subtype = 'grants' ORDER BY code ASC LIMIT 1", [orgId]);
-    const [fund] = await query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false ORDER BY created_at ASC LIMIT 1", [orgId]);
-    return { contribAcctId: contrib?.id || null, grantAcctId: grant?.id || contrib?.id || null, genFundId: fund?.id || null };
+    // LEDGER-3: the org's one unrestricted fund (shared/numbers/defaultFund.js), never a second pick.
+    const genFundId = await require("../../shared/numbers/defaultFund").defaultFundId(query, orgId);
+    return { contribAcctId: contrib?.id || null, grantAcctId: grant?.id || contrib?.id || null, genFundId };
   };
   let ids = await probe();
-  if (ids.contribAcctId && ids.genFundId) return ids;
+  if (ids.contribAcctId && ids.genFundId) {
+    if (heal) await require("../../shared/numbers/defaultFund").ensureDefaultFund(query, run, orgId, ids.genFundId);   // a write path: stamp it once
+    return ids;
+  }
 
   // Missing pieces — provision under an advisory lock so two concurrent
   // stamps (e.g. parallel webhook deliveries) can't double-build the chart.
@@ -254,8 +258,7 @@ async function ensureOrgLedger(orgId, { heal = false } = {}) {
         await run("INSERT INTO accounts (id, org_id, code, name, type, subtype) VALUES (?,?,?,?,?,?)",
           [newId("acc"), orgId, "4010", "Individual Contributions", "revenue", "contributions"]);
       }
-      const funds = await query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false LIMIT 1", [orgId]);
-      if (!funds.length) {
+      if (!partial.genFundId) {
         // FIX-43: five values for five columns. `VALUES (?,?,?,?,false)` with a
         // fifth bound value threw on every org with accounts and no
         // unrestricted fund, which is where "Undo all of setup" leaves one.
@@ -265,6 +268,7 @@ async function ensureOrgLedger(orgId, { heal = false } = {}) {
     }
   });
   ids = await probe();
+  if (heal && ids.genFundId) await require("../../shared/numbers/defaultFund").ensureDefaultFund(query, run, orgId, ids.genFundId);
   if (heal) {
     // Reaching here from a STAMP means an org existed without a usable ledger
     // — the provisioning gap W-3 found. The stamp still lands (self-healed),
@@ -532,12 +536,11 @@ async function recordGift(o) {
       if (!orgRow || orgRow.ledger_posting_enabled !== false) {
         const ledgerIds = await ensureOrgLedger(orgId, { heal: true });
         const [dn] = await query("SELECT name FROM donors WHERE id=?", [o.donorId]);
-        await run(
-          `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id,created_by,created_by_name)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING`,
-          [newId("ft"), orgId, date, o.ledgerDescription || `Gift from ${dn?.name || "Donor"}`,
-           dn?.name || "", amount, "income", ledgerIds.contribAcctId, fundId || ledgerIds.genFundId,
-           o.donorId, o.ledgerSource || "gift", giftId, actorId, actorName]);
+        // LEDGER-3: the one ledger write, shared with Finance's Post to the books.
+        await require("../finance/ledgerPost").postGiftRow(query, {
+          orgId, giftId, date, amount, fundId: fundId || ledgerIds.genFundId, donorId: o.donorId, donorName: dn?.name || "",
+          accountId: ledgerIds.contribAcctId, description: o.ledgerDescription || `Gift from ${dn?.name || "Donor"}`,
+          source: o.ledgerSource || "gift", actorId, actorName });
         posted = true;
       }
     } catch (e) { console.error("[gift] ledger stamp:", e.message); }

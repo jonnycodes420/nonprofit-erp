@@ -33,7 +33,7 @@ export const PAGE_READS = [
   [/^\/app\/events\/?$/, search => (new URLSearchParams(search).get("event") ? null : ["/atlas/notes?place=event", "/events"])],
   [/^\/app\/communications\/?$/, () => ["/atlas/notes?place=communications", "/sequences/builder", "/me", "/communications/hub",
     "/org/sending-domain", "/campaigns/templates", "/campaigns", "/campaigns/sent"]],
-  [/^\/app\/finance\/?$/, () => ["/finance/accounts", "/finance/funds", "/finance/summary?yearMode=fiscal", "/finance/overview"]],   // not /finance/stripe-summary: it asks Stripe
+  [/^\/app\/finance\/?$/, () => ["/finance/accounts", "/finance/funds", "/finance/summary?yearMode=fiscal", "/finance/overview", "/finance/ledger-post"]],   // not /finance/stripe-summary: it asks Stripe
   [/^\/app\/journeys\/?$/, () => ["/atlas/notes?place=journey", "/journeys", "/auto-send/settings"]],
   [/^\/app\/settings\/?$/, search => (new URLSearchParams(search).get("sub") ? null
     : ["/people?role=staff_board", "/custom-fields/kept-raw", "/org/sending-domain", "/org/voice-samples", "/org/team",
