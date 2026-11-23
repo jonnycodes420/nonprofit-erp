@@ -114,7 +114,7 @@ export function templateSentence(key, f) {
     case "call": {
       if (!f.count) return "Nobody stands out for a call tomorrow morning; the Thread has what is already planned.";
       const first = f.first;
-      const rest = f.count > 1 ? ` ${cap(plural(f.count - 1, "more name follows", "more names follow"))}; ${dollars(f.atStakeCents)} is at stake across all ${spell(f.count)}.` : "";
+      const rest = f.count > 1 ? ` ${cap(plural(f.count - 1, "more name follows", "more names follow"))}; ${dollars(f.atStakeCents)} is at stake across ${f.count === 2 ? "both" : `all ${spell(f.count)}`}.` : "";   // ATLAS-8: never "all two"
       return `Start with ${first.name}. ${first.reason}${rest}`;
     }
     case "retention": {

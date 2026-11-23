@@ -338,6 +338,8 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
         </section>}
 
         {request && !asking && <section data-testid="atlas-reply" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {/* ATLAS-8 item 6: an answer given with reading off says so first */}
+          {request.readingOff && <div data-testid="atlas-reading-off" style={{ fontSize: 13, color: T.ink2, lineHeight: 1.45 }}>{request.readingOff}</div>}
           <div data-testid="atlas-spoke" style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{request.undoneAt ? "Undone." : request.spoke}</div>
           {taps.length > 1 && <div data-testid="atlas-do-all" style={{ border: "1px solid " + T.greenDk, borderRadius: 10, padding: "10px 12px", display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
             <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.45, flex: "1 1 220px" }}>One tap does the {taps.length} things below that wait for you.</div>

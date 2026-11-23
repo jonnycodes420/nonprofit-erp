@@ -117,8 +117,9 @@ async function personAnswer({ query, orgId, donorId, today }) {
                              FROM donors d WHERE d.id=? AND d.org_id=? AND d.deleted_at IS NULL`, [donorId, orgId]);
   if (!d) return null;
   const first = String(d.name).split(/\s+/)[0];
-  const convs = await query(`SELECT id, type, date, note FROM interactions WHERE org_id=? AND donor_id=? AND COALESCE(note,'') <> '' AND type = ANY(ARRAY['call','meeting','email','visit','ask','note','stewardship'])
-                              ORDER BY date DESC NULLS LAST, created_at DESC LIMIT 3`, [orgId, donorId]);
+  // ATLAS-8 item 5: the last conversation of any kind (the profile's rule, and a volunteer shift), and the About facts.
+  const BR = require("./briefReads");
+  const [convs, aboutLines] = await Promise.all([BR.lastConversations(query, orgId, donorId, 3, today), BR.aboutFacts(query, orgId, donorId)]);
   const [task] = await query(`SELECT id, title, due FROM tasks WHERE org_id=? AND donor_id=? AND COALESCE(done,0)=0 AND voided_at IS NULL
                                ORDER BY due NULLS LAST, created_at LIMIT 1`, [orgId, donorId]).catch(() => []);
   const [plan] = task ? [] : await query(`SELECT s.label, s.due_date FROM cultivation_plans p JOIN cultivation_plan_steps s ON s.plan_id = p.id
@@ -128,18 +129,19 @@ async function personAnswer({ query, orgId, donorId, today }) {
     ? `${first} has given ${usd(toCents(d.total_giving))} across ${n} ${n === 1 ? "gift" : "gifts"}, most recently ${usd(toCents(d.last_gift_amount))} on ${day(d.last_gift_date)}.`
     : `${first} has no gifts on record yet.`;
   const about = String(d.about_them || "").trim();
-  const TYPE = { call: "Call", meeting: "Meeting", email: "Email", note: "Note", visit: "Visit", ask: "Ask", stewardship: "Thank-you" };
+  const TYPE = BR.TYPE;
   const facts = [
     { kind: "giving", line: giving, link: { tab: "donor", donorId, section: "giving" } },
     about ? { kind: "about", line: `About ${first}: ${about}`, link: { tab: "donor", donorId } }
       : { kind: "about", line: `Nobody has written an About note for ${first} yet.`, link: { tab: "donor", donorId } },
     // ATLAS-5 (W-1108-Atlas-02X): each note once, by its id.
-    ...convs.filter((c, i) => convs.findIndex(x => x.id === c.id) === i).map(c => ({ kind: "conversation", id: c.id, line: `${TYPE[c.type] || "Conversation"}, ${day(c.date)}: "${String(c.note).replace(/\s+/g, " ").slice(0, 160)}"`, link: { tab: "donor", donorId, section: "timeline" } })),
+    ...aboutLines.map(l => ({ kind: "about", line: `${l}.`, link: { tab: "donor", donorId } })),
+    ...convs.filter((c, i) => convs.findIndex(x => x.id === c.id) === i).map(c => ({ kind: "conversation", id: c.id, line: `${TYPE[c.type] || "Conversation"}, ${day(c.date)}${String(c.note || "").trim() ? `: "${String(c.note).replace(/\s+/g, " ").slice(0, 160)}"` : ""}`, link: { tab: "donor", donorId, section: c.section || "timeline" } })),
     task ? { kind: "next", line: `Next step: ${task.title}${task.due ? `, due ${day(task.due)}` : ""}.`, link: { tab: "donor", donorId, section: "thread" } }
       : plan ? { kind: "next", line: `Next step: ${plan.label}${plan.due_date ? `, due ${day(plan.due_date)}` : ""}.`, link: { tab: "donor", donorId, section: "thread" } }
       : { kind: "next", line: `There is no next step planned for ${first}.`, link: { tab: "donor", donorId, section: "thread" } },
   ];
-  if (!convs.length) facts.splice(2, 0, { kind: "conversation", line: `No conversation with ${first} is logged yet.`, link: { tab: "donor", donorId, section: "timeline" } });
+  if (!convs.length) facts.splice(2 + aboutLines.length, 0, { kind: "conversation", line: `No conversation with ${first} is logged yet.`, link: { tab: "donor", donorId, section: "timeline" } });
   if (d.deceased) facts.unshift({ kind: "care", line: `${d.name} is marked as deceased.`, link: { tab: "donor", donorId } });
   else if (d.do_not_contact) facts.unshift({ kind: "care", line: `${d.name} is marked do not contact.`, link: { tab: "donor", donorId } });
   return { donorId, name: d.name, about, spoke: `Here's what Steward knows about ${d.name}.`, facts, today };
@@ -184,6 +186,10 @@ function publicAnswer(a) {
   if (!a || typeof a !== "object") return null;
   if (a.type === "list") return { type: "list", question: a.question, count: a.count, unit: a.unit || null, reason: a.reason, more: a.more, people: a.people, countSentence: a.countSentence, groupId: a.groupId || null };
   if (a.type === "person") return { type: "person", donorId: a.donorId, name: a.name, about: a.about, facts: a.facts };
+  // ATLAS-8: a why answer's people, each with their reason and what is at stake, and the total of what is drawn.
+  if (a.type === "why") return { type: "why", count: a.count, more: a.more, total: a.total, totalCents: a.totalCents, definition: a.definition,
+    people: (a.people || []).map(p => ({ donorId: p.donorId, name: p.name, reason: p.reason, atStake: p.atStake, cents: p.cents })) };
+  if (a.type === "figure") return { type: "figure", parts: a.parts };   // ATLAS-8: a Home figure, each part named
   return null;
 }
 
@@ -197,7 +203,7 @@ async function priorContext({ query, orgId, userId, followsId, parse }) {
   const read = parse(m.read) || {};
   const answers = Object.values(read.answers || {});
   const person = answers.reverse().find(a => a && a.type === "person");
-  const list = answers.find(a => a && a.type === "list");
+  const list = answers.find(a => a && (a.type === "list" || a.type === "why"));   // ATLAS-8: a why answer's people are its list
   const ids = parse(m.donor_ids) || [];
   let last = person ? { id: person.donorId, name: person.name } : null;
   if (!last && ids.length) { const [d] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [ids[ids.length - 1], orgId]); if (d) last = { id: d.id, name: d.name }; }
