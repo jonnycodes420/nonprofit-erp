@@ -166,7 +166,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const lyl = (ly.req.lines || [])[0] || {};
   const lyN = Number((/^([\d,]+) /.exec(lyl.line || "") || [])[1]?.replace(/,/g, ""));
   ok("§6 Atlas's LYBUNT is Reports > LYBUNT (bunt.js), never the people tagged Lapsed", rep.status === 200 && lyN === rep.body.rows.length && lyl.answer && lyl.answer.count === rep.body.rows.length, { atlas: lyl.line, report: rep.body && rep.body.rows && rep.body.rows.length });
-  ok("§6 and the count ends with its one-line definition", /LYBUNT: gave last fiscal year, nothing yet this one\.$/.test(lyl.line || ""), lyl.line);
+  ok("§6 and the count ends with its one-line definition", (lyl.line || "").endsWith(require("../shared/populationWords.js").population("lybunt").sentence), lyl.line);
   const WRm = require("../server/atlas/whyRows");
   const pf = WRm.personFacts([{ donorId: "a", name: "Vespasia Ashenhurst", amount: "139037.00" }, { donorId: "b", name: "Verity Underhill", amount: "512.00" }]);
   ok("§6 a dollar figure beside the wrong name is refused (Vespasia's $139,037 said as Verity's)", WRm.misattributed("Verity Underhill has given $139,037 in all.", pf).length === 1);

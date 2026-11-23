@@ -57,6 +57,24 @@ function scheduleOf(pl, payments = []) {
     words: `${n} ${n === 1 ? "installment" : "installments"}, ${usd(c(pl.amount))}, paid ${usd(paidCents)}` };
 }
 
+// DEFINE-1 item 5 · OVERDUE COMES FROM THE SCHEDULE, AND ONLY FROM IT. Jarvis
+// (22 Nov): "a pledge shows \"56d overdue\" when nothing is due". The profile
+// read the reminder job's stored mark (pledges.first_overdue_at, set once and
+// never cleared when a payment or a new schedule caught it up) and counted the
+// days from the pledge's own due date, whatever its installments said. Now:
+// overdue = an installment of the schedule above, due before today (the org's
+// civil day), with something left on it. The days are counted from the
+// EARLIEST such installment's due date. Nothing past due: not overdue, 0 days.
+// -> { overdue, since, days, left } (left in dollars, over every past-due installment)
+function overdueOf(schedule, today) {
+  const t = String(today || "").slice(0, 10);
+  const late = ((schedule && schedule.installments) || []).filter(i => i.dueDate && i.dueDate < t && i.left > 0);
+  if (!t || !late.length) return { overdue: false, since: null, days: 0, left: 0 };
+  const since = late.map(i => i.dueDate).sort()[0];
+  const days = Math.round((Date.parse(t + "T00:00:00Z") - Date.parse(since + "T00:00:00Z")) / 86400000);
+  return { overdue: true, since, days, left: Math.round(late.reduce((n, i) => n + c(i.left), 0)) / 100 };
+}
+
 // SQL: each pledge's payments, oldest first. Placeholders: org, pledge ids.
 const PAYMENTS_SQL = () => {
   const { MONEY } = require("./money");
@@ -66,4 +84,4 @@ const PAYMENTS_SQL = () => {
 
 const SENTENCE = "A pledge's schedule: its installments in due order (one, of the whole amount, for a pledge made before installments), each payment applied oldest first to the earliest installment with something left.";
 
-module.exports = { scheduleOf, PAYMENTS_SQL, SENTENCE };
+module.exports = { scheduleOf, overdueOf, PAYMENTS_SQL, SENTENCE };

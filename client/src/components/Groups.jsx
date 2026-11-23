@@ -11,6 +11,7 @@
 //
 // Everything reads routes/groups.js. A group by rule is the donor list's own
 // filter, worked out fresh every time, so nothing here stores who is in one.
+import { population } from "../../../shared/populationWords.js";   // DEFINE-1
 import RemoveMenu from "./RemoveMenu";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Zap } from "lucide-react";
@@ -274,6 +275,7 @@ function Starters({ onAdded, onOpenGroup, isReadOnly }) {
           {st.asking && st.leftOut > 0 && (
             <div data-testid="starter-left-out" style={{ fontSize: 12, color: T.ink3 }}>Leaves out {st.leftOut.toLocaleString("en-US")} marked do not solicit, do not contact or deceased.</div>
           )}
+          {st.population && population(st.population) && <div data-testid="starter-population" data-population={st.population} style={{ fontSize: 12, color: T.ink3 }}>{population(st.population).sentence}</div>}
           {st.report && st.report.count !== st.count && <div data-testid="starter-report" data-count={st.report.count} style={{ fontSize: 12, color: T.ink3 }}>{st.report.sentence}</div>}
           {preview && preview.key === st.key && (
             <div data-testid="starter-preview" style={{ background: T.bg, borderRadius: 8, padding: "10px 12px", marginTop: 6 }}>
@@ -433,7 +435,7 @@ export default function GroupsPage({ isReadOnly, onNavigate, initialGroupId }) {
       </div>
       <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>{g.description || g.sentence}</div>
       <div style={{ fontSize: 13, color: T.ink2, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-        <span><Figure variant="inline" kind="count" label={`People in ${g.name}`} value={g.count} definition={list.countSentence} source={g.countSource} unit={plural(g.count, "person", "people")} /></span>
+        <span>{g.population && population(g.population) && <span data-population={g.population} style={{ fontWeight: 600 }}>{population(g.population).name}: </span>}<Figure variant="inline" kind="count" label={`People in ${g.name}`} value={g.count} definition={list.countSentence} source={g.countSource} unit={plural(g.count, "person", "people")} /></span>
         <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
           {atlas && !isReadOnly && (
             <button type="button" data-testid="atlas-group-pin" style={{ ...quiet, padding: "3px 9px", fontSize: 12 }}
@@ -442,6 +444,8 @@ export default function GroupsPage({ isReadOnly, onNavigate, initialGroupId }) {
           <RemoveMenu kind="group" id={g.id} disabled={isReadOnly} onDone={load} />
         </span>
       </div>
+      {/* DEFINE-1: a group whose rule is a registry population says which one, written out under its count. */}
+      {g.population && population(g.population) && <div data-testid="group-population" style={{ fontSize: 12, color: T.ink3, lineHeight: 1.45 }}>{population(g.population).sentence}</div>}
     </div>
   );
   if (open) return <GroupPage groupId={open} isReadOnly={isReadOnly} onNavigate={onNavigate} onBack={() => { setOpen(null); load(); }} onOpenPerson={openPerson} />;

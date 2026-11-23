@@ -14,6 +14,12 @@
 // exactly one of "on the tab", erased, archived, not marked; each person on the tab has a gift row
 // or is the plus.
 //
+// DEFINE-1 item 4: the Donors tab is who has GIVEN (shared/numbers/isDonor.js IS_DONOR, the stored
+// totals), not who is marked Donor. So the plus is now people whose giving is an imported history
+// total with no gift row in Steward, and the last minus is people whose gift rows add to nothing
+// ($0 or refunded only). A person marked Donor who never gave is on neither side: not a record, not
+// on the tab. The keys (markedNoGift, unmarkedGivers) are kept so Billing's band and the figure read on.
+//
 // Why FLOWS-10's line missed: it read the Donors tab as "not deleted, not erased, marked Donor",
 // which counts ARCHIVED people the tab leaves out, and its own test pinned that same wrong rule.
 // Its plus counted archived people with no gift and its minus never counted archived givers, so it
@@ -57,24 +63,24 @@ function gapOf(row) {
 const fmt = x => Number(x).toLocaleString("en-US");
 const plural = (k, one, many) => `${fmt(k)} ${k === 1 ? one : many}`;
 // The line under Billing's Records: the sum, every part named. Empty when the two numbers agree.
-// "Records 1,122, plus 66 people marked Donor with no gift on file, minus 4 erased givers whose
-//  gifts remain, is the Donors tab's 1,184."
+// "Records 1,122, plus 6 people whose giving was imported with no gift row, minus 4 erased givers
+//  whose gifts remain, is the Donors tab's 1,124."
 function gapSentence(g = {}) {
   if (PLANT === "nogap") return "";
   const parts = [];
-  if (g.markedNoGift) parts.push(`plus ${plural(g.markedNoGift, "person", "people")} marked Donor with no gift on file`);
+  if (g.markedNoGift) parts.push(`plus ${plural(g.markedNoGift, "person", "people")} whose giving was imported with no gift row`);
   if (g.erasedGivers) parts.push(`minus ${plural(g.erasedGivers, "erased giver", "erased givers")} whose gifts remain`);
   if (g.archivedGivers) parts.push(`minus ${plural(g.archivedGivers, "archived giver", "archived givers")}`);
-  if (g.unmarkedGivers) parts.push(`minus ${plural(g.unmarkedGivers, "giver", "givers")} not marked Donor`);
+  if (g.unmarkedGivers) parts.push(`minus ${plural(g.unmarkedGivers, "person", "people")} whose gift rows add to nothing given`);
   if (!parts.length) return "";
   return `Records ${fmt(g.records)}, ${parts.join(", ")}, is the Donors tab's ${fmt(g.donorsTab)}.`;
 }
 
-// Rows for the figure drawer: the people marked Donor with no gift on file.
+// Rows for the figure drawer: the people on the Donors tab with no gift row (imported history only).
 function markedNoGiftRowsSql(orgId) {
   return {
     sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, LEFT(d.created_at::text, 10) AS date, NULL::numeric AS amount,
-                 'Marked Donor, no gift on file' AS detail
+                 'Imported giving, no gift row' AS detail
             FROM donors d WHERE d.org_id = ? AND ${MARKED_NO_GIFT("d")}`,
     args: [orgId],
     order: "name, id",
@@ -83,4 +89,4 @@ function markedNoGiftRowsSql(orgId) {
 
 module.exports = { MARKED_NO_GIFT, GIFT_NOT_MARKED, ERASED_GIVER, ARCHIVED_GIVER, UNMARKED_GIVER, ON_DONORS_TAB, HAS_GIFT_ROW,
   countsSql, gapOf, gapSentence, markedNoGiftRowsSql,
-  MARKED_NO_GIFT_SENTENCE: "People marked Donor who have no gift on file. The Donors tab counts them; Billing's Records does not, because a record is a person or organization with at least one gift." };
+  MARKED_NO_GIFT_SENTENCE: "People whose giving came in as an imported history total, with no gift row in Steward. The Donors tab counts them, because they have given; Billing's Records does not, because a record is a person or organization with at least one gift row." };

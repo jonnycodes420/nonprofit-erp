@@ -21,13 +21,18 @@
 //   · Two spellings of one reason are one bucket ("unsubscribe" from the
 //     suppression list is "unsubscribed").
 //   · reach + every reason's count = the audience. Always.
+//   · DEFINE-1: one address is reached once. Two records with one email (a
+//     duplicate not yet merged) are both in the audience, and the second is
+//     counted under "same_address" instead of being mailed twice. Which one is
+//     reached is fixed: the earliest record (created, then id). A merged record
+//     is in the trash, so it is in no audience at all (Everyone's rule).
 // Pure: the caller reads the people and the decisions; this only sorts them.
 "use strict";
 const { isEveryone, hasEmail } = require("./everyone");
 
 // The order the reasons are listed in (the editor's order since EDITOR-1).
 const REASON_ORDER = ["no_email", "deceased", "do_not_contact", "unsubscribed", "bounced", "complained", "blocked_address",
-  "sample_donor", "donor_never", "skipped", "not_chosen", "type_off", "auto_email_off", "not_sendable"];
+  "sample_donor", "donor_never", "skipped", "not_chosen", "type_off", "auto_email_off", "not_sendable", "same_address"];
 const SAME = { unsubscribe: "unsubscribed" };
 const canonical = r => SAME[r] || r || "not_sendable";
 
@@ -36,8 +41,18 @@ function audienceReasons(people, decisionOf) {
   const audience = (people || []).filter(isEveryone);
   const reach = [];
   const by = new Map();
+  const addr = d => String(d.email).trim().toLowerCase();
+  const keeper = new Map();   // address -> the record that is reached for it (earliest)
+  const at = d => { const t = d.created_at ? new Date(d.created_at).getTime() : NaN; return Number.isFinite(t) ? t : Infinity; };
+  const first = (a, b) => at(a) < at(b) || (at(a) === at(b) && String(a.id) < String(b.id));
+  const sendable = new Map();
   for (const d of audience) {
     const dec = hasEmail(d) ? (decisionOf(d.id) || { send: false, reason: "not_sendable" }) : { send: false, reason: "no_email" };
+    sendable.set(d, dec);
+    if (dec.send) { const k = addr(d); const cur = keeper.get(k); if (!cur || first(d, cur)) keeper.set(k, d); }
+  }
+  for (const d of audience) {
+    const dec = sendable.get(d).send && keeper.get(addr(d)) !== d ? { send: false, reason: "same_address" } : sendable.get(d);
     if (dec.send) { reach.push(d); continue; }
     const r = canonical(dec.reason);
     if (!by.has(r)) by.set(r, []);

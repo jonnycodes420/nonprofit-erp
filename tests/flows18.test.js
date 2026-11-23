@@ -96,7 +96,32 @@ const addDays = require("../orgTime").addDays;
   ok("§1 the campaign list: a goal ending today is Active, \"Last day\" (main: Ended from 7pm the night before)",
     g(cLast).lifecycle === "active" && g(cLast).endsWords === "Last day", { lifecycle: g(cLast).lifecycle, words: g(cLast).endsWords });
   ok("§1 the campaign list: a goal that ended yesterday is Ended", g(cGone).lifecycle === "ended", g(cGone).lifecycle);
-  const src = ["server/reports/helpers.js", "server/shared/givingPagePayload.js", "server/boot/helpers-8.js", "shared/campaignPage.js"];
+  // DEFINE-1 item 5: an ended campaign shows its result, never a pace (Jarvis: "ended campaigns say Behind pace").
+  ok("§1 DEFINE-1 a goal that ended yesterday short of its goal reads its result, never Behind pace",
+    g(cGone).paceState === "ended" && /^\$0 of \$60,000, ended /.test(String(g(cGone).paceSentence || "")), { pace: g(cGone).paceState, sentence: g(cGone).paceSentence });
+  {
+    const P = require("../shared/numbers/pace");
+    const w = P.windowDays({ start: "2026-01-01", end: "2026-04-11", today: "2026-02-20" });
+    const p = P.paceOf({ raised: 5000, goal: 10000, start: "2026-01-01", end: "2026-04-11", today: "2026-02-20" });
+    ok("§1 DEFINE-1 one day count: the badge's share of time is the projection's \"day 51 of 101\", and days left is endsOn's",
+      w.day === 51 && w.days === 101 && w.daysLeft === E.endsOn("2026-04-11", { today: "2026-02-20" }).daysLeft && p.window.share === p.math.day / p.math.days, { w, share: p.window && p.window.share });
+    const done = P.paceOf({ raised: 8700, goal: 10000, start: "2026-01-01", end: "2026-04-11", today: "2026-05-01" });
+    ok("§1 DEFINE-1 ended at 87%: \"Raised 87% of goal\"", done.state === "ended" && done.label === "Raised 87% of goal", done);
+    const PS = require("../shared/numbers/pledgeSchedule");
+    const sch = PS.scheduleOf({ amount: 1200, dueDate: "2026-09-28", installments: [{ seq: 1, dueDate: "2026-09-01", amount: 300 }, { seq: 2, dueDate: "2027-03-01", amount: 900 }] }, [{ id: "g1", date: "2026-09-02", amount: 300 }]);
+    ok("§1 DEFINE-1 a pledge whose installments are paid to date is not overdue (it read \"56d overdue\" off its own due date)",
+      PS.overdueOf && PS.overdueOf(sch, "2026-11-23").overdue === false && PS.overdueOf(sch, "2027-03-05").days === 4, PS.overdueOf && PS.overdueOf(sch, "2026-11-23"));
+    const A = require("../shared/numbers/anniversary");
+    ok("§1 DEFINE-1 a Mar 1 first gift's anniversary is Mar 1 to Mar 4, never Feb 27 or Mar 29",
+      A.anniversaryDue("2023-03-01", "2026-03-01").key === "anniversary_year_3" && A.anniversaryDue("2023-03-01", "2026-02-27") === null && A.anniversaryDue("2023-03-01", "2026-03-29") === null, null);
+    const DR = require("../drift");
+    ok("§1 DEFINE-1 one rhythm phrase: a 75-day gap is the same words on the rail and under About",
+      DR.rhythmPhrase && DR.rhythmPhrase({ cadenceDays: 75 }) === "about every three months" && /drift\.rhythmPhrase\(a\)/.test(read("routes/profileStatus.js")) && /DR\.rhythmPhrase\(aR\)/.test(read("server/donors/routes.js")), null);
+    const RF = require("../shared/numbers/refunds");
+    ok("§1 DEFINE-1 refunds are said as money returned or gifts refunded, from refunds.js",
+      RF.refundWords && RF.refundWords({ cents: 12000, gifts: 1 }) === "$120 returned on 1 gift refunded" && /GIFTS_AFFECTED/.test(read("numbers.js")) && /RF\.returnedWords/.test(read("server/reports/giftRows.js")), null);
+  }
+  const src = ["server/reports/helpers.js", "server/shared/givingPagePayload.js", "server/boot/helpers-8.js", "shared/campaignPage.js", "server/outreach/routes.js", "routes/give.js"];
   const own = src.filter(f => /Math\.(ceil|round)\(\(\s*(new Date|Date\.parse)\([^)]*(end|campaign_end_date)/i.test(read(f)) || !/endsOn/.test(read(f)));
   ok("§1 every days-left surface reads endsOn and keeps no count of its own", own.length === 0, own);
   ok("§1 the client's words come from the server's rule (0 days on an active goal is \"last day\")",
@@ -159,7 +184,7 @@ const addDays = require("../orgTime").addDays;
   const { assertSurfacesAgree } = require("./lib/surfacesAgree");
   const sa = await assertSurfacesAgree(ORG, { token: tok, only: ["giversAreDonors"], soft: true, label: "§3" });
   ok("§3 assertSurfacesAgree: the Donors and Contacts counts are the rule's, and no giver's money is off the Donors tab",
-    sa.ok && sa.facts && Object.keys(sa.facts).some(k => /marked Donor or has given/.test(k)), sa.diffs);
+    sa.ok && sa.facts && Object.keys(sa.facts).some(k => /the Donors tab: has given/.test(k)), sa.diffs);
 
   // ── §4 peer-to-peer teams ────────────────────────────────────────────────
   const p1 = await api("POST", "/giving-pages", tok, { title: "Spring Oar Relay", goalAmount: 15000, p2pEnabled: true });

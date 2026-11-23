@@ -1,4 +1,5 @@
 import { NoRecentMeetingPanel, WarmNotAskedPanel } from "./MovesPanels";
+import PopulationCount from "./PopulationCount";   // DEFINE-1: the Re-engage count says which population it is
 import { viewMatches } from "../lib/viewEdited";   // FLOWS-20
 import { useProfileReads, openProfileReads } from "../lib/profileReads";   // LOAD-1
 import { useState, useEffect, useMemo, useRef, Component, lazy, Suspense } from "react";
@@ -895,7 +896,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           {[["directory","Directory"],...(isAdmin?[["team","Team"]]:[]),["reengage","Re-engage"],...(mapOn?[["map","Map"]]:[]),["health","Data health"]].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:T.ink3,fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",flexShrink:0}}>
               {l}
-              {v==="reengage"&&reCountWords&&<span data-testid="reengage-count" title={listFilterOn?"Lapsed people in the list below, of everyone lapsed":undefined} style={{background:T.greenDk,color:T.white,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{reCountWords}</span>}
+              {v==="reengage"&&reCountWords&&<span data-testid="reengage-count" data-population="reengage" title={listFilterOn?"Lapsed people in the list below, of everyone lapsed":undefined} style={{background:T.greenDk,color:T.white,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{reCountWords}</span>}
             </button>
           ))}
         </div>
@@ -1034,7 +1035,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {wholeOrgView&&!orgPeople&&<div style={{display:"flex",justifyContent:"center",padding:"40px 0"}}><Spin/></div>}
       {view==="team"&&isAdmin&&orgPeople&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={selectDonor} onOpenDirectory={()=>setView("directory")}/>}
 
-      {view==="reengage"&&orgPeople&&<><FilteredChip count={reFilterN} onClear={clearDirFilters}/><ReengageChange hidden={reFilterN>0} onSelectDonor={selectDonor}/>{reFilterN>0&&!reIds?<div style={{fontSize:13,color:T.ink3,padding:"8px 0"}}>Applying the Directory's filters…</div>:<ReEngageView donors={reFilterN>0?filtered.filter(d=>reIds.has(d.id)):filtered} unfiltered={reFilterN>0?filtered:null} onClearFilters={clearDirFilters} org={data.org} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={selectDonor}/>}</>}
+      {view==="reengage"&&orgPeople&&<>{peopleCount&&<PopulationCount id="reengage" count={lapsedCount} testId="reengage-population" style={{margin:"4px 0 10px"}}/>}<FilteredChip count={reFilterN} onClear={clearDirFilters}/><ReengageChange hidden={reFilterN>0} onSelectDonor={selectDonor}/>{reFilterN>0&&!reIds?<div style={{fontSize:13,color:T.ink3,padding:"8px 0"}}>Applying the Directory's filters…</div>:<ReEngageView donors={reFilterN>0?filtered.filter(d=>reIds.has(d.id)):filtered} unfiltered={reFilterN>0?filtered:null} onClearFilters={clearDirFilters} org={data.org} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={selectDonor}/>}</>}
       {view==="map"&&mapOn&&orgPeople&&<DonorMap donors={filtered} userId={userId} onSelectDonor={selectDonor} apiFetch={apiFetch}/>}
       {view==="drift"&&<DriftList onSelectDonor={selectDonor} onBack={()=>setView("directory")}/>}
       {view==="health"&&<DataHealth isReadOnly={isReadOnly} onOpenDonor={id=>openIfOnFile(id,()=>reloadDonors&&reloadDonors())}/>}

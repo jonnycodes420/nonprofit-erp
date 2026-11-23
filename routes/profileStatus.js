@@ -64,7 +64,7 @@ async function closeness(orgId, d, today, w) {
     const gs = await query(`SELECT LEFT(g.date,10) AS date, g.amount::text AS amount FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND ${require("../shared/numbers/giftCount").KEPT("g")}
       AND LEFT(g.date,10) <= ? AND ${require("../shared/numbers/money").MONEY("g")}`, [orgId, d.id, today]);   // money only, as closenessNow
     const a = drift.assessDrift(gs.map(g => ({ date: g.date, amount: Number(g.amount) })), today);
-    const rhythm = a.seasonal && a.seasonal.kind === "month" ? `every ${MONTHS[a.seasonal.month - 1]}` : drift.humanCadence(a.cadenceDays);
+    const rhythm = drift.rhythmPhrase(a);   // DEFINE-1: the rail's Giving rhythm says the same phrase
     const src = a.firstGiftDate ? { key: "donor-gifts-between", params: { donor: d.id, from: a.firstGiftDate, to: today } } : null;
     if (key === "on_track" && a.onTime && rhythm && src) return { text: `gives ${rhythm}`, source: src };
     if (key === "cooling" && a.late && a.state === "ok" && rhythm && src) return { text: `gives ${rhythm}, now ${RHY.spanBetween(a.expectedNext, today)} past their usual time`, source: src };

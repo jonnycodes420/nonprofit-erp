@@ -20,15 +20,16 @@ const EVERY = d => `(${d}.deleted_at IS NULL AND ${d}.erased_at IS NULL AND ${d}
 
 async function flows18Checks({ orgId, get, q, agree, skip }) {
   if (skip.has("giversAreDonors")) return;
-  const [k] = await q(`SELECT COUNT(*) FILTER (WHERE ${MARKED("d")} OR ${GAVE("d")})::int AS donors,
-                              COUNT(*) FILTER (WHERE NOT ${MARKED("d")} AND NOT ${GAVE("d")})::int AS contacts,
+  // DEFINE-1 item 4: a Donor is someone who has given; the stored role alone makes nobody a donor.
+  const [k] = await q(`SELECT COUNT(*) FILTER (WHERE ${GAVE("d")})::int AS donors,
+                              COUNT(*) FILTER (WHERE NOT ${GAVE("d")})::int AS contacts,
                               COUNT(*) FILTER (WHERE NOT ${MARKED("d")} AND ${GAVE("d")})::int AS unmarked_givers
                          FROM donors d WHERE d.org_id = $1 AND ${EVERY("d")}`, [orgId]);
   const tab = await get("/donors?role=donor&roleCounts=1&limit=1").catch(() => null);
   if (tab && tab.roleCounts) {
-    agree(`the Donors tab: marked Donor or has given (${k.unmarked_givers} gave and are typed otherwise)`,
+    agree(`the Donors tab: has given (${k.unmarked_givers} gave and are typed otherwise)`,
       [["the rule (SQL)", Number(k.donors)], ["the Donors tab", Number(tab.roleCounts.donors)]]);
-    agree("Contacts: never gave and not marked Donor", [["the rule (SQL)", Number(k.contacts)], ["the Contacts count", Number(tab.roleCounts.contacts)]]);
+    agree("Contacts: never gave", [["the rule (SQL)", Number(k.contacts)], ["the Contacts count", Number(tab.roleCounts.contacts)]]);
   }
   const r = await get("/portfolio/officers").catch(() => null);
   if (r && r.file && r.file.allGiving != null && r.file.file) {

@@ -60,7 +60,8 @@
 //             flows14 (FLOWS-14, tests/lib/flows14Checks.js: orphanRefunds, averageFoots,
 //             askOwnGifts, lastGiftIsGift, thanksRule, portfolioFoots),
 //             flows20 (FLOWS-20, tests/lib/flows20Checks.js: journeyCounts, the list header vs
-//             How it is going vs the rows, against entries of people on file)
+//             How it is going vs the rows, against entries of people on file),
+//             define1 (DEFINE-1, tests/lib/define1Checks.js: populations, endedPace)
 //   only      [names]: run just these checks (FLOWS-11)
 //   plantEvent (eventId, { rep, kiosk }) => { rep, kiosk }: change an event's
 //             bodies before its checks, to prove they can go red (FIX-59)
@@ -1248,6 +1249,8 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   if (!skipSet.has("flows20")) await require("./flows20Checks").flows20Checks({ orgId, get, q, agree, skip });
   // ── LEDGER-3 · funds: Finance's two lines = Reports' Gifts by fund = their rows (tests/lib/ledger3Checks.js) ──
   if (!skipSet.has("funds")) await require("./ledger3Checks").ledger3Checks({ get, agree, skip });
+  // ── DEFINE-1 · each registry population two surfaces count agrees; an ended campaign never reads a pace (tests/lib/define1Checks.js) ──
+  if (!skipSet.has("define1")) await require("./define1Checks").define1Checks({ orgId, get, q, agree, diffs, skip });
 
   // TRUTH-1: a disagreement logged in docs/defects.md (tests/lib/knownDefects.js),
   // at exactly the value its defect predicts, is still found and still printed,

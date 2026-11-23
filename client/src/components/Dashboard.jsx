@@ -35,7 +35,7 @@ import { plural } from "../../../shared/countWords";
 import { HOME_GRID_CSS } from "./home/homeGrid";   // HOME-6
 import { useMovesGate, deckKnownEmpty } from "../lib/movesGate";   // FEEL-1; MOPUP-3
 // FLOWS-7: the words for the server's pace states (shared/numbers/pace.js PACE_LABELS).
-const paceText=s=>s==="met"?"Goal met":s==="ahead"?"Ahead":s==="on_track"?"On pace":s==="behind"?"Short of pace":"In progress";   // HOME-5: Home never says "behind"
+const paceText=s=>s==="met"?"Goal met":s==="ahead"?"Ahead":s==="on_track"?"On pace":s==="behind"?"Short of pace":s==="ended"?"Ended":"In progress";   // DEFINE-1: ended is a result, not a pace   // HOME-5: Home never says "behind"
 const PortfolioCard = lazy(() => retryImport(() => import("./home/PortfolioCard")).then(m => ({ default: m.PortfolioCard })));   // ACCESS-3: loaded only for someone who sees only their own people
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
@@ -743,11 +743,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const scopedHome=surface==="home"&&isPortfolioUser();   // ACCESS-3: their own Home (Your portfolio, no closed panels)
   let paceLabel=null,paceColor="rgba(240,237,230,0.7)",paceSub=null,daysLeftInPeriod=null;
   if(goal){
-    const periodStartDate=new Date(goal.periodStart+"T00:00:00");
-    const periodEndDate=new Date(goal.periodEnd+"T00:00:00");
-    const totalDays=Math.max(1,Math.round((periodEndDate-periodStartDate)/86400000));
-    const elapsedDays=Math.min(totalDays,Math.max(0,Math.round((new Date()-periodStartDate)/86400000)));
-    daysLeftInPeriod=Math.max(0,daysUntil(goal.periodEnd));
+    // DEFINE-1: the server's one day count (shared/numbers/pace.js windowDays), never the browser's clock.
+    const elapsedDays=goal.paceDay!=null?Math.max(0,goal.paceDay-1):0;
+    daysLeftInPeriod=goal.daysLeft!=null?goal.daysLeft:Math.max(0,daysUntil(goal.periodEnd));
     if(elapsedDays<2){
       paceLabel="Just getting started";
       paceSub="too early in the period to gauge pace";
@@ -760,7 +758,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       // out here. Behind is said plainly, in the card's own colour: no alarm on Home.
       if(!goal.paceState){paceLabel=null;paceSub=null;}
       else{
-        paceLabel=paceText(goal.paceState);
+        paceLabel=goal.paceState==="ended"&&goal.paceLabel?goal.paceLabel:paceText(goal.paceState);   // DEFINE-1: "Raised 87% of goal"
         paceSub=goal.paceSentence;
         paceColor=goal.paceState==="ahead"?T.gold:"rgba(240,237,230,0.7)";
       }

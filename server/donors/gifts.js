@@ -601,6 +601,7 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
   const listBy = new Map();
   for (const i of instRows) (listBy.get(i.pledge_id) || listBy.set(i.pledge_id, []).get(i.pledge_id))
     .push({ seq: i.seq, dueDate: i.due_date ? String(i.due_date).slice(0, 10) : null, amount: round2(parseFloat(i.amount) || 0), paid: !!i.paid_gift_id });
+  const pledgeToday = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK · DEFINE-1: overdue against the org's own day
   res.json(rows.map(r => {
     const paid = round2(parseFloat(r.paid_amount) || 0);
     const amount = round2(parseFloat(r.amount) || 0);
@@ -622,6 +623,8 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
       summary: PL.summaryOf(pl),   // PLEDGES-3: the five values every surface says
       installments: left.map(i => ({ ...i, paid: i.left <= 0 })),
       schedule: PS.scheduleOf(pl, payBy.get(r.id) || []),   // TRUTH-5: every installment, each payment on the one it paid
+      // DEFINE-1: overdue is the schedule's (an installment past due with something left), never the reminder mark.
+      overdueNow: r.status === "open" ? PS.overdueOf(PS.scheduleOf(pl, payBy.get(r.id) || []), pledgeToday) : { overdue: false, since: null, days: 0, left: 0 },
       // the open-pledge figure opens Fundraising's own rows for this person
       openSource: { key: "pledges-open", params: { donor: r.donor_id } },
     };
