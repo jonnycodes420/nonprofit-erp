@@ -78,8 +78,16 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   (`shared/contactCheck.js`, with a "did you mean") and store a phone in one format (`phoneNormal.js`).
   An import never refuses a row for this: it keeps the value, and the profile and the preview say
   "Check this email".
-- **The first Volunteers number is "On the roster": everyone with the Volunteer role, new ones included (FIX-31).**
-  Served in the last 90 days is the line under it. Ask's volunteer count and its figure definition are the same rule.
+- **The first Volunteers number is "Active volunteers": everyone with the Volunteer role whose status is Active, new ones
+  included (FIX-31, VOL-3).** Paused and former are named beside it, not counted. Served in the last 90 days is the line
+  under it. Ask's volunteer count and its figure definition are the same rule (`shared/numbers/volunteerStatus.js`).
+  Each of the four header numbers is a Figure that opens its rows (`server/volunteers/volunteerSources.js`).
+- **A volunteer has a status: Active, Paused or Former, with the day and who set it (VOL-3).** `volunteer_records`, one
+  row per volunteer, written only by `server/volunteers/volunteerRecord.js`; no row is Active. Taking the Volunteer
+  role off is Mark as former: the role, hours and history stay, and Undo restores the previous status with its own
+  day and setter. A former or paused volunteer gets no "we miss you" draft.
+- **Volunteer hours count on or before the org's today (VOL-3).** Every hours read splices
+  `shared/numbers/served.js` `SERVED`; a shift dated tomorrow is listed on the profile as "not counted yet".
 - **The tags under a donor's name are computed, never stored, from one definition.** `donorStatus.js`
   `statusSql` gives the giving level (General, Mid, Major on the last 12 months against
   `orgs.giving_level_mid_cents` / `giving_level_major_cents`, Settings, Giving levels; defaults $1,000 and
@@ -342,6 +350,12 @@ Read this when you touch the person record: donors, organisations, non-donors, h
 - **Check-in writes the hours, from the shift's own times, dated the day they are here** (the org's today, never the planned date, so an early check-in cannot write hours in the future). Linked to the opportunity and
   shift (`volunteer_shifts.opportunity_id/slot_id`), editable after on the person's record. Check-out
   only marks the sign-up done. (PARITY-3)
+- **An event has a volunteer team.** A shift made from the event page carries `volunteer_slots.event_id`
+  (through the one shift write, POST /volunteer-hub/slots with eventId); the page lists its shifts and who
+  is on them (`server/volunteers/eventTeam.js`). (VOL-3)
+- **Erasing a person takes their volunteer applications** (by person and by any of their addresses), their
+  volunteer record and page sign-ups. An approved application whose person is gone shows a Delete; a live
+  one's is refused. (VOL-3)
 - **A group signs up on a screen now.** Volunteers → Schedule → Groups. A group is a LABEL on a
   set of sign-ups, never a person: every member is their own record with their own hours, and
   capacity is still decided by the database, so a group of twelve at an eight-place shift gets
@@ -359,10 +373,12 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   timeline as Volunteer service. The glance line opens the same source. (PARITY-3)
 - **Make a volunteer through `makeVolunteer`, and only through it.** The profile's More > Make a
   volunteer, Volunteers > Add a volunteer (which searches people on file and links the one picked)
-  and the Agent all call it. It never makes a person: it marks the Volunteer role and keeps ONE
-  approved `volunteer_applications` row on them (`via` staff, agent or page) with hours a week,
-  days and roles; a second call updates that row. That row is what puts them in the Volunteers
-  group. (FIX-24)
+  and the Agent all call it. It never makes a person: it marks the Volunteer role and keeps their ONE
+  `volunteer_records` row with hours a week, days and roles (and makes a paused or former volunteer
+  active again); a second call updates that row. It never writes an application: Applications are only
+  what came through the volunteer page. That row is what puts them in the Volunteers group. The fields
+  are edited on the profile's Volunteer tab. (FIX-24, VOL-3; a pre-VOL-3 staff application is read as
+  the record until `scripts/ops/vol3-staff-records.js` moves it)
 - **A volunteer applies; a coordinator approves.** `volunteer_applications` holds what the public page
   sent and is not a person. Approve matches by email under `withAdvisoryLock('donor:org:email')`: one match
   is that person (a donor stays one record, now also a Volunteer); two or more and staff choose; none and

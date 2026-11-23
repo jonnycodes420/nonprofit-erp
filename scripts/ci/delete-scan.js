@@ -46,6 +46,7 @@ const ALLOW = {
   "/grants/documents/:docId": "a file on a grant; the grant and its money stay",
   "/grants/spend/:spendId": "a spending line typed against restricted money, on its own confirm (RestrictedView)",
   "/top100/members/:donorId": "a list membership; the person is untouched",
+  "/volunteer-hub/applications/:id": "VOL-3: an approved application whose person is gone (erased, deleted or purged); refused (409) while its person is on file",
 };
 
 function tablesWithMoneyOrPeople() {

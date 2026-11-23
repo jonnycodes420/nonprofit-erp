@@ -627,40 +627,22 @@ function volunteerRecordFields(opts = {}) {
 async function makeVolunteer(orgId, personId, opts = {}, who, client = null) {
   await VOL_DAYS_READY;
   const q = (sql, p) => client ? queryTx(client, sql, p) : query(sql, p);
-  const w = (sql, p) => client ? runTx(client, sql, p) : run(sql, p);
-  const f = volunteerRecordFields(opts);
+  const VR = require("../volunteers/volunteerRecord");
+  const f = await VR.checkFields(opts);
   if (f.errors.length) return { error: "bad_fields", message: f.errors[0] };
   const [p] = await q("SELECT id, name, email, phone FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [personId, orgId]);
   if (!p) return { error: "not_found", message: "That person is not on file." };
+  // VOL-3: the record is a volunteer_records row (server/volunteers/volunteerRecord.js), never an
+  // application: Applications are only what came through the volunteer page.
+  const had = await VR.readRecord(orgId, p.id, q);
   await markVolunteer(orgId, p.id, client);
-  const [had] = await q(`SELECT id, hours_per_week, availability, roles FROM volunteer_applications
-                          WHERE org_id=? AND person_id=? AND status='approved' ORDER BY decided_at DESC NULLS LAST LIMIT 1`, [orgId, p.id]);
-  let recordId, created = false;
-  if (had) {
-    recordId = had.id;
-    // Only what was given changes; a field left out keeps what it had.
-    await w(`UPDATE volunteer_applications SET
-               hours_per_week = CASE WHEN ? THEN ?::numeric ELSE hours_per_week END,
-               availability = CASE WHEN ? THEN ?::jsonb ELSE availability END,
-               roles = CASE WHEN ? THEN ?::jsonb ELSE roles END
-             WHERE id=? AND org_id=?`,
-      [opts.hoursPerWeek !== undefined, f.hoursPerWeek, opts.availability !== undefined, JSON.stringify(f.availability),
-       opts.roles !== undefined, JSON.stringify(f.roles), had.id, orgId]);
-  } else {
-    recordId = newId("vap");
-    created = true;
-    const via = opts.via === "agent" || String(who.id || "").startsWith("system:agent") ? "agent" : "staff";
-    await w(`INSERT INTO volunteer_applications (id,org_id,name,email,phone,answers,availability,status,person_id,matched_existing,
-                                                 decided_at,decided_by,decided_by_name,created_by,created_by_name,hours_per_week,roles,via)
-             VALUES (?,?,?,?,?,'[]'::jsonb,?::jsonb,'approved',?,TRUE,NOW(),?,?,?,?,?,?::jsonb,?)`,
-      [recordId, orgId, p.name, String(p.email || "").toLowerCase(), p.phone || null, JSON.stringify(f.availability), p.id,
-       who.id, who.name, who.id, who.name, f.hoursPerWeek, JSON.stringify(f.roles), via]);
-  }
-  const [now] = await q("SELECT hours_per_week, availability, roles FROM volunteer_applications WHERE id=? AND org_id=?", [recordId, orgId]);
-  const parse = v => { try { return typeof v === "string" ? JSON.parse(v) : (v || []); } catch { return []; } };
-  return { personId: p.id, recordId, created, name: p.name,
-    hoursPerWeek: now && now.hours_per_week != null ? Number(now.hours_per_week) : null,
-    availability: parse(now && now.availability), roles: parse(now && now.roles) };
+  const w = await VR.writeFields(orgId, p.id, opts, who, client);
+  if (w.error) return { error: w.error, message: w.message };
+  // Making somebody a volunteer who was paused or former makes them active again.
+  let rec = w.record;
+  if (rec.status !== "active") rec = (await VR.setStatus(orgId, p.id, "active", who, client)).record || rec;
+  return { personId: p.id, recordId: rec.id, created: !had, name: p.name,
+    hoursPerWeek: rec.hoursPerWeek, availability: rec.availability, roles: rec.roles, status: rec.status };
 }
 // SPLIT-2 end
 // SPLIT-2 server.js piece 341
@@ -698,8 +680,10 @@ async function insertShift(orgId, personId, shift, { via, importKey = null, who 
 // SPLIT-2 server.js piece 344
 
 async function volunteerSummary(orgId, personId) {
+  // VOL-3 item 4: hours count once their day has come (shared/numbers/served.js).
+  const SERVED = require("../../shared/numbers/served").SERVED(null, orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
   const [t] = await query(`SELECT COALESCE(SUM(round(hours*100)),0)::bigint AS h, COUNT(*)::int AS n, MIN(date) AS first, MAX(date) AS last
-                             FROM volunteer_shifts WHERE org_id=? AND person_id=?`, [orgId, personId]);
+                             FROM volunteer_shifts WHERE org_id=? AND person_id=? AND ${SERVED}`, [orgId, personId]);
   return { hundredths: Number(t?.h || 0), totalHours: Number(t?.h || 0) / 100, shiftCount: t?.n || 0, firstShift: t?.first || null, lastShift: t?.last || null };
 }
 // SPLIT-2 end

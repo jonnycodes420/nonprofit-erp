@@ -148,13 +148,21 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   const dateOr = (v, dflt) => (v && D.test(String(v)) ? String(v) : dflt);
   if (q.volunteer === "1") {
     where.push(`(EXISTS (SELECT 1 FROM volunteer_shifts vx WHERE vx.org_id = donors.org_id AND vx.person_id = donors.id)
-             OR EXISTS (SELECT 1 FROM volunteer_applications ax WHERE ax.org_id = donors.org_id AND ax.person_id = donors.id AND ax.status = 'approved'))`);
+             OR EXISTS (SELECT 1 FROM volunteer_applications ax WHERE ax.org_id = donors.org_id AND ax.person_id = donors.id AND ax.status = 'approved')
+             OR EXISTS (SELECT 1 FROM volunteer_records rx WHERE rx.org_id = donors.org_id AND rx.person_id = donors.id))`);   // VOL-3: the record Add keeps
+  }
+  // VOL-3 item 1: Active, Paused or Former (no record is Active).
+  if (q.volStatus) {
+    const VST = require("./shared/numbers/volunteerStatus");
+    if (!VST.STATUSES.includes(String(q.volStatus))) return { badStatus: true };
+    where.push(`${VST.STATUS_SQL("donors")} = ?`);
+    params.push(String(q.volStatus));
   }
   if (q.volActive === "1") {
     // ACTIVE: a logged hour in the last twelve months, or a place on a shift
     // still to come. The Volunteers screen's first count is this rule.
     const yearAgo = new Date(Date.UTC(+today.slice(0, 4) - 1, +today.slice(5, 7) - 1, +today.slice(8, 10))).toISOString().slice(0, 10);
-    where.push(`(EXISTS (SELECT 1 FROM volunteer_shifts vx WHERE vx.org_id = donors.org_id AND vx.person_id = donors.id AND vx.date > ?)
+    where.push(`(EXISTS (SELECT 1 FROM volunteer_shifts vx WHERE vx.org_id = donors.org_id AND vx.person_id = donors.id AND vx.date > ? AND ${require("./shared/numbers/served").SERVED("vx", today)})
              OR EXISTS (SELECT 1 FROM volunteer_signups sx JOIN volunteer_slots lx ON lx.id = sx.slot_id AND lx.cancelled_at IS NULL
                          WHERE sx.org_id = donors.org_id AND sx.person_id = donors.id AND sx.status = 'confirmed' AND lx.date >= ?))`);
     params.push(yearAgo, today);
@@ -319,8 +327,9 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     // FIX-27 Part 8: jsonb_exists, not the `?` operator. The query layer
     // turns every `?` into a parameter, so `availability ? ?` was a syntax
     // error and the screen printed "Internal server error".
-    where.push(`EXISTS (SELECT 1 FROM volunteer_applications ax WHERE ax.org_id = donors.org_id AND ax.person_id = donors.id AND jsonb_exists(ax.availability, ?))`);
-    params.push(String(q.volAvail));
+    where.push(`(EXISTS (SELECT 1 FROM volunteer_applications ax WHERE ax.org_id = donors.org_id AND ax.person_id = donors.id AND jsonb_exists(ax.availability, ?))
+             OR EXISTS (SELECT 1 FROM volunteer_records rx WHERE rx.org_id = donors.org_id AND rx.person_id = donors.id AND jsonb_exists(rx.availability, ?)))`);   // VOL-3
+    params.push(String(q.volAvail), String(q.volAvail));
   }
   // ── FIX-27 Part 2 · A CAMPAIGN AND AN ASK ────────────────────────────────
   // "Gave to the spring appeal" and "no ask this year" are rules here, so the
@@ -588,7 +597,7 @@ function eventGuestSql(kind, alias, eventParam = null) {
 const RULE_KEYS = ["role", "stage", "status", "assignedTo", "designation", "household", "search",
   "level", "lifecycle", "retained", "closeness", "given",
   // PARITY-3 — the Volunteers screen's filters.
-  "volunteer", "volActive", "volOpp", "volShiftFrom", "volShiftTo", "volHoursMin", "volHoursMax", "volHoursFrom", "volHoursTo",
+  "volunteer", "volStatus", "volActive", "volOpp", "volShiftFrom", "volShiftTo", "volHoursMin", "volHoursMax", "volHoursFrom", "volHoursTo",
   "gaveFrom", "gaveTo", "volQual", "volAnswer", "volAvail",
   // PARITY-4: Show me.
   "notGaveFrom", "notGaveTo", "notDeceased", "monthly", "city", "gaveEvent", "gaveOver",
@@ -646,6 +655,7 @@ function normalizeRules(raw) {
   if (rules.given && !["never", "ever"].includes(rules.given)) errors.push("Given is never or ever.");
   // PARITY-3 — the volunteer rules, checked the same way: wrong is refused.
   if (rules.volActive !== undefined && rules.volActive !== "1") delete rules.volActive;
+  if (rules.volStatus !== undefined && !["active", "paused", "former"].includes(rules.volStatus)) errors.push("A volunteer's status is active, paused or former.");
   if (rules.volunteer !== undefined) { if (rules.volunteer === "true") rules.volunteer = "1"; if (rules.volunteer !== "1") delete rules.volunteer; }
   if (rules.bunt && !["lybunt", "sybunt"].includes(rules.bunt)) errors.push("Gave before is lybunt or sybunt.");
   for (const k of ["notDeceased", "monthly", "noAsk", "hasPledge", "recurring", "funder", "openTask",
@@ -698,7 +708,8 @@ function rulesSentence(rules = {}) {
   if (rules.assignedTo) parts.push("assigned to one person");
   if (rules.household) parts.push(rules.household === "none" ? "not in a household" : "in a household");
   if (rules.search) parts.push(`matching "${rules.search}"`);
-  if (rules.volunteer) parts.push("who have volunteered (a logged hour or an approved application)");
+  if (rules.volunteer) parts.push("who have volunteered (a logged hour, an approved application or a volunteer record)");
+  if (rules.volStatus) parts.push(`whose volunteer status is ${rules.volStatus}`);
   if (rules.volActive) parts.push("active (an hour in the last twelve months, or a shift to come)");
   if (rules.volOpp) parts.push("on one opportunity");
   if (rules.volShiftFrom || rules.volShiftTo) parts.push(`on a shift ${rules.volShiftFrom || "any time"} to ${rules.volShiftTo || "any time"}`);

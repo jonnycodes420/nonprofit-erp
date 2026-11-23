@@ -576,7 +576,9 @@ app.get("/donors/:id/volunteer-hours", requireAuth, wrap(async (req, res) => {
     shifts: shifts.map(s => ({ id: s.id, date: s.date, hours: Number(s.hours), role: s.role, note: s.note,
       opportunityId: s.opportunity_id || null, opportunityName: s.opportunity_name || null, slotId: s.slot_id || null,
       startTime: s.start_time || null, endTime: s.end_time || null,
-      enteredAt: s.created_at, enteredBy: s.created_by_name || VIA_WORD[s.via] || "", via: s.via, editedAt: s.updated_at || null })) });
+      enteredAt: s.created_at, enteredBy: s.created_by_name || VIA_WORD[s.via] || "", via: s.via, editedAt: s.updated_at || null,
+      notYet: String(s.date || "").slice(0, 10) > today })),   // VOL-3 item 4: dated after today, so not counted yet
+    notYetSentence: require("../../shared/numbers/served").SERVED_SENTENCE });
 }));
 
 // The same filtered log, as a file.
@@ -631,8 +633,11 @@ app.get("/donors/:id/volunteer-profile", requireAuth, wrap(async (req, res) => {
                               WHERE org_id=? AND person_id=? ORDER BY kind, lower(name)`, [orgId, d.id]);
   const creds = await query(`SELECT DISTINCT ON (kind) kind, signed_on, expires_on, reference FROM volunteer_credentials
                               WHERE org_id=? AND person_id=? AND superseded_at IS NULL ORDER BY kind, signed_on DESC`, [orgId, d.id]);
+  // VOL-3: an application is only what came through the volunteer page; the record Add or
+  // Make a volunteer keeps is volunteer_records (server/volunteers/volunteerRecord.js).
   const apps = await query(`SELECT id, status, answers, availability, submitted_at, decided_at, decided_by_name, hours_per_week, roles, via FROM volunteer_applications
-                             WHERE org_id=? AND person_id=? ORDER BY submitted_at DESC LIMIT 5`, [orgId, d.id]).catch(() => []);
+                             WHERE org_id=? AND person_id=? AND COALESCE(via,'page')='page' ORDER BY submitted_at DESC LIMIT 5`, [orgId, d.id]).catch(() => []);
+  const record = await require("../volunteers/volunteerRecord").readRecord(orgId, d.id);
   const notes = await query(`SELECT id, kind, body, note_date, visibility, created_by_name, created_at FROM volunteer_notes
                               WHERE org_id=? AND person_id=? ORDER BY created_at DESC LIMIT 100`, [orgId, d.id]);
   const parse = v => { try { return typeof v === "string" ? JSON.parse(v) : (v || null); } catch { return null; } };
@@ -644,11 +649,9 @@ app.get("/donors/:id/volunteer-profile", requireAuth, wrap(async (req, res) => {
     applications: apps.map(a => ({ id: a.id, status: a.status, answers: parse(a.answers) || [], availability: parse(a.availability) || [],
       submittedAt: a.submitted_at, decidedAt: a.decided_at, decidedBy: a.decided_by_name || "",
       hoursPerWeek: a.hours_per_week != null ? Number(a.hours_per_week) : null, roles: parse(a.roles) || [], via: a.via || "page" })),
-    // FIX-24 Part 1: their volunteer record (makeVolunteer): the approved
-    // application, or null when they have none and are not on Volunteers yet.
-    record: (() => { const a = apps.find(x => x.status === "approved"); return a ? { id: a.id,
-      hoursPerWeek: a.hours_per_week != null ? Number(a.hours_per_week) : null, availability: parse(a.availability) || [],
-      roles: parse(a.roles) || [], via: a.via || "page", since: a.decided_at } : null; })(),
+    // FIX-24 Part 1, VOL-3: their volunteer record (hours a week, days, roles, status), or null
+    // when nobody has said anything yet.
+    record,
     notes: notes.map(n => ({ id: n.id, kind: n.kind, body: n.body, date: n.note_date, visibility: n.visibility || "internal",
       by: n.created_by_name || "", at: n.created_at })),
     sentences: {

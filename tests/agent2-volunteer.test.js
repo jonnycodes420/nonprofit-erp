@@ -53,14 +53,16 @@ async function reset() {
   ok("the plan makes her a volunteer at 15 hours a week (not a tag and a note)",
     mv && mv.donorId === ADA && Number(mv.hoursPerWeek) === 15 && !steps.some(s => ["mark_volunteer", "note_volunteer", "add_tag", "log_note", "create_task"].includes(s.tool)), steps.map(s => s.tool));
   ok("the headline is one short sentence", p.body.plan && p.body.plan.summary.length <= 100 && (p.body.plan.summary.match(/\./g) || []).length === 1, p.body.plan && p.body.plan.summary);
-  ok("nothing changed before she said yes", !(await q(`SELECT 1 FROM volunteer_applications WHERE org_id=$1`, [ORG])).length);
+  ok("nothing changed before she said yes", !(await q(`SELECT 1 FROM volunteer_records WHERE org_id=$1`, [ORG])).length);
   const run = await api("POST", `/agent/instructions/${p.body.id}/confirm`, tok, {});
   const out = (run.body && run.body.steps) || [];
   ok("no step is Failed or Not done; the volunteer step is Done", run.status === 200 && out.length === steps.length
     && out.every(s => s.outcome === "done" || (s.tool === "draft_note" && s.outcome === "waiting"))
     && out.find(s => s.tool === "make_volunteer").outcome === "done", out);
-  const [rec] = await q(`SELECT hours_per_week, status, via FROM volunteer_applications WHERE org_id=$1 AND person_id=$2`, [ORG, ADA]);
-  ok("a volunteer record with 15 hours a week, on her own record, made by the Agent", rec && rec.status === "approved" && Number(rec.hours_per_week) === 15 && rec.via === "agent", rec);
+  // VOL-3: the volunteer record is volunteer_records, never an application.
+  const [rec] = await q(`SELECT hours_per_week, status, created_by FROM volunteer_records WHERE org_id=$1 AND person_id=$2`, [ORG, ADA]);
+  ok("a volunteer record with 15 hours a week, on her own record, stamped with who approved it (the audit row below names the Agent)", rec && rec.status === "active" && Number(rec.hours_per_week) === 15 && rec.created_by === "u_agent2v", rec);
+  ok("…and no application is made up for her (VOL-3)", !(await q(`SELECT 1 FROM volunteer_applications WHERE org_id=$1`, [ORG])).length);
   const [pt] = await q(`SELECT person_types FROM donors WHERE id=$1`, [ADA]);
   ok("she is a donor and a volunteer, one record", JSON.stringify(pt.person_types).includes("volunteer") && JSON.stringify(pt.person_types).includes("donor"), pt.person_types);
   ok("still exactly one Ada", (await q(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1`, [ORG]))[0].n === 1);
@@ -74,7 +76,7 @@ async function reset() {
   const writes = await q(`SELECT id FROM agent_writes WHERE org_id=$1 AND tool='make_volunteer' ORDER BY created_at DESC`, [ORG]);
   for (const w of writes) { const u = await api("POST", `/agent/writes/${w.id}/undo`, tok, {}); ok(`undo ${w.id} is accepted`, u.status === 200, u.body); }
   const [pt2] = await q(`SELECT person_types FROM donors WHERE id=$1`, [ADA]);
-  ok("undo takes the volunteer record and the role back off", !(await q(`SELECT 1 FROM volunteer_applications WHERE org_id=$1`, [ORG])).length && !JSON.stringify(pt2.person_types).includes("volunteer"), pt2.person_types);
+  ok("undo takes the volunteer record and the role back off", !(await q(`SELECT 1 FROM volunteer_records WHERE org_id=$1`, [ORG])).length && !JSON.stringify(pt2.person_types).includes("volunteer"), pt2.person_types);
 
   // ── TWO ADAS: it asks, and changes nothing ────────────────────────────
   await q(`INSERT INTO donors (id,org_id,name,email,stage,created_by,created_by_name) VALUES ($1,$2,'Ada Brennan','ada.b@agent2v.local','prospect','system:test','test')`, [ADA2, ORG]);
@@ -84,7 +86,7 @@ async function reset() {
   ok("two Adas: it asks which, with both as choices", w.status === 200 && people.length === 2 && people.some(x => x.id === ADA) && people.some(x => x.id === ADA2), w.body);
   ok("…each with their email and last gift to tell them apart", people.every(x => /@/.test(x.detail) && /(last gift|no gift on file)/.test(x.detail)), people);
   ok("…and changes nothing: no plan kept, no volunteer record",
-    (await q(`SELECT COUNT(*)::int n FROM agent_instructions WHERE org_id=$1`, [ORG]))[0].n === before && !(await q(`SELECT 1 FROM volunteer_applications WHERE org_id=$1`, [ORG])).length);
+    (await q(`SELECT COUNT(*)::int n FROM agent_instructions WHERE org_id=$1`, [ORG]))[0].n === before && !(await q(`SELECT 1 FROM volunteer_records WHERE org_id=$1`, [ORG])).length);
 
   await closeDb();
   summary("agent2-volunteer");

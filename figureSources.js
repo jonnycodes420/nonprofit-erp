@@ -2813,16 +2813,21 @@ const SOURCES = {
     // the hours went to. The profile's totals, its glance line and the
     // Volunteers screen's hour columns all open this one source.
     params: { from: "date:required", to: "date:required", donor: "id", opportunity: "id" },
-    sentence: (p, dd) => `Every volunteer shift dated ${dd(p.from)} to ${dd(p.to)}${p.donor ? " by this person" : ""}${p.opportunity ? " for this opportunity" : ""}, with the hours recorded on it.`,
-    sql: (orgId, p) => ({
-      sql: `SELECT v.id, 'shift' AS type, v.person_id AS donor_id, d.name, v.date,
-                   ROUND(v.hours::numeric, 2) AS amount, COALESCE(o.name, NULLIF(v.role, '')) AS detail
-              FROM volunteer_shifts v JOIN donors d ON d.id = v.person_id AND d.org_id = v.org_id
-              LEFT JOIN volunteer_opportunities o ON o.id = v.opportunity_id AND o.org_id = v.org_id
-             WHERE v.org_id = ? AND d.deleted_at IS NULL AND v.date >= ? AND v.date <= ?${p.donor ? " AND v.person_id = ?" : ""}${p.opportunity ? " AND v.opportunity_id = ?" : ""}`,
-      args: [orgId, p.from, p.to, ...(p.donor ? [p.donor] : []), ...(p.opportunity ? [p.opportunity] : [])],
-      order: "date DESC NULLS LAST, id DESC",
-    }),
+    // VOL-3 item 4: hours count once their day has come; a range past today stops at today.
+    sentence: (p, dd) => `Every volunteer shift dated ${dd(p.from)} to ${dd(p.to)}${p.donor ? " by this person" : ""}${p.opportunity ? " for this opportunity" : ""}, with the hours recorded on it. ${require("./shared/numbers/served").SERVED_SENTENCE}`,
+    sql: async (orgId, p) => {
+      const [o] = await query("SELECT timezone FROM orgs WHERE id=?", [orgId]);
+      const today = orgTime.orgToday({ timezone: o && o.timezone });
+      return {
+        sql: `SELECT v.id, 'shift' AS type, v.person_id AS donor_id, d.name, v.date,
+                     ROUND(v.hours::numeric, 2) AS amount, COALESCE(o.name, NULLIF(v.role, '')) AS detail
+                FROM volunteer_shifts v JOIN donors d ON d.id = v.person_id AND d.org_id = v.org_id
+                LEFT JOIN volunteer_opportunities o ON o.id = v.opportunity_id AND o.org_id = v.org_id
+               WHERE v.org_id = ? AND d.deleted_at IS NULL AND v.date >= ? AND ${require("./shared/numbers/served").SERVED("v", today)} AND v.date <= ?${p.donor ? " AND v.person_id = ?" : ""}${p.opportunity ? " AND v.opportunity_id = ?" : ""}`,
+        args: [orgId, p.from, p.to, ...(p.donor ? [p.donor] : []), ...(p.opportunity ? [p.opportunity] : [])],
+        order: "date DESC NULLS LAST, id DESC",
+      };
+    },
   },
   // WIRE-1 · WHAT ONE PERSON HAS DONE WITH US. "What has Rafael done with us
   // this year?" answers with one line per kind of involvement, and each line
@@ -3019,6 +3024,7 @@ Object.assign(SOURCES, require("./server/reports/ledgerSources")({ FigureParamEr
 Object.assign(SOURCES, require("./server/donors/broughtInSources")());
 Object.assign(SOURCES, require("./server/donors/recordsGapSources")());   // FLOWS-10 item 14: who is on the Donors tab and not a record   // CONNECT-1: who someone brought in, and what they gave since
 Object.assign(SOURCES, require("./server/onboard/totalsSources")());   // ONBOARD-3: what explains a year that differs from the old system
+Object.assign(SOURCES, require("./server/volunteers/volunteerSources")());   // VOL-3: the Volunteers header cards open their rows
 function sourceDef(key) { return Object.prototype.hasOwnProperty.call(SOURCES, key) ? SOURCES[key] : null; }
 
 const num = v => (v === null || v === undefined ? null : Number(v));

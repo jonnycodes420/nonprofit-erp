@@ -17,6 +17,7 @@ import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit
 import { countLabel } from "../../../shared/countWords.js";
 import { eventRowsChanged, useEventRowsRev, withinWrite, useLatestRead, useLatestLoad } from "../lib/eventRows";
 import GuestPickerStatus from "./events/GuestPickerStatus";   // FLOWS-10 items 2, 3
+import { EventVolunteerTeam } from "./events/EventVolunteerTeam";   // VOL-3: an event has a volunteer team
 import { useChangeRev } from "../lib/changes";   // STALE-1   // COUNTS-1: every panel re-reads the guest rows
 import RecordGiftDialog from "./gifts/RecordGiftDialog";   // GIFTS-1: a gift for this event, from its page
 import { eventStatus } from "../../../shared/eventStatus.js";
@@ -1564,6 +1565,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
               } catch { setDetailRows({ label, sentence, eventName: event.name, donors: [], count: 0 }); }
             }} />
             <EventSeating eventId={eventId} />
+            <EventVolunteerTeam eventId={eventId} initial={event.volunteerTeam || null} />
             <EventKiosk eventId={eventId} />
             <EventPageEditor eventId={eventId} />
             <EventAuction eventId={eventId} />
