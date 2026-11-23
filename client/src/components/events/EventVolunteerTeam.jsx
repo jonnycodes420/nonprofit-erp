@@ -23,14 +23,16 @@ const btnLink = { background: "transparent", border: "none", padding: 0, color: 
 
 const blank = d => ({ opportunityId: "", date: d || "", startTime: "", endTime: "", capacity: "" });
 
-export function EventVolunteerTeam({ eventId }) {
-  const [data, setData] = useState(null);
+// `initial` is the team the event's own read carried (GET /events/:id volunteerTeam), so opening the
+// page costs no extra request; the component re-reads only after its own write.
+export function EventVolunteerTeam({ eventId, initial }) {
+  const [data, setData] = useState(initial || null);
   const [opps, setOpps] = useState([]);
   const [form, setForm] = useState(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const load = useCallback(() => apiFetch(`/events/${eventId}/volunteer-team`).then(setData).catch(() => setData(null)), [eventId]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (initial) setData(initial); }, [initial]);
   const open = () => {
     setMsg(""); setForm(blank(data && data.event.date));
     apiFetch("/volunteer-hub/opportunities").then(d => setOpps(d.opportunities || [])).catch(() => setOpps([]));

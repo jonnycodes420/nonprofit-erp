@@ -225,7 +225,7 @@ module.exports = async function flows3Volunteers() {
     const t = await body();
     const defs = await page.evaluate(() => [...document.querySelectorAll("[title]")].map(e => e.title).filter(x => /^Hours from shifts dated/.test(x)));
     await shot("s5-list");
-    ok("§5 On a shift today to today finds Ulla, who served today (W-1108-Volunteers-26X)", /1 volunteer matches/.test(t) && /Ulla Brennick 3 8/.test(t), (t.match(/\d+ volunteers? match.{0,200}/) || [""])[0]);
+    ok("§5 On a shift today to today finds Ulla, who served today (W-1108-Volunteers-26X)", /1 volunteer matches/.test(t) && /Ulla Brennick (Active )?3 8/.test(t), (t.match(/\d+ volunteers? match.{0,200}/) || [""])[0]);
     ok("§5 and the Hours in range column says exactly the dates set", defs.length > 0 && defs.every(d => d === `Hours from shifts dated ${today} to ${today}.`), defs);
   });
 

@@ -1150,6 +1150,28 @@ async function run7(pool) {
   await require("./sends2").run(pool);   // SENDS-2: a send to more than one person has a plan
   await require("./ledger3").run(pool);   // LEDGER-3: who set the default fund; posting batches with Undo
   await require("./receipts1").run(pool);   // RECEIPTS-1: a gift of property is described, not valued
+  // VOL-3: a volunteer's record and status (server/volunteers/volunteerRecord.js is its one writer).
+  await pool.query(`CREATE TABLE IF NOT EXISTS volunteer_records (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    person_id TEXT NOT NULL,
+    hours_per_week NUMERIC(5,2),
+    availability JSONB NOT NULL DEFAULT '[]'::jsonb,
+    roles JSONB NOT NULL DEFAULT '[]'::jsonb,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','former')),
+    status_on TEXT,
+    status_by TEXT,
+    status_by_name TEXT,
+    prev_status TEXT CHECK (prev_status IS NULL OR prev_status IN ('active','paused','former')),
+    prev_status_on TEXT,
+    prev_status_by TEXT,
+    prev_status_by_name TEXT,
+    created_by TEXT NOT NULL,
+    created_by_name TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS volunteer_records_person ON volunteer_records (org_id, person_id)`);
   await require("./vol3").run(pool);   // VOL-3: a volunteer's status and record; a shift's event
 
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is

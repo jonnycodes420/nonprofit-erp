@@ -1565,7 +1565,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
               } catch { setDetailRows({ label, sentence, eventName: event.name, donors: [], count: 0 }); }
             }} />
             <EventSeating eventId={eventId} />
-            <EventVolunteerTeam eventId={eventId} />
+            <EventVolunteerTeam eventId={eventId} initial={event.volunteerTeam || null} />
             <EventKiosk eventId={eventId} />
             <EventPageEditor eventId={eventId} />
             <EventAuction eventId={eventId} />
