@@ -102,6 +102,7 @@ function shapeSlot(r) {
   const st = VS.slotState({ capacity: r.capacity, confirmed: r.confirmed, waitlisted: r.waitlisted });
   return {
     id: r.id, opportunityId: r.opportunity_id, date: r.date,
+    name: r.name || null,   // EVENTS-4 item 3: the shift's own label, so check-in names the shift, not its opportunity
     startTime: r.start_time, endTime: r.end_time,
     when: `${dayWords(r.date)}, ${VS.timeRangeWords(r.start_time, r.end_time)}`,
     hours: VS.slotHundredths({ startTime: r.start_time, endTime: r.end_time }) / 100,

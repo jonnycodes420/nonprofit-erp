@@ -147,6 +147,10 @@ export function parseAppUrl(pathname, search, hash) {
     const st = donorsListState(search);
     return { tab: "donors", opts: { view: st.view, stageFilter: st.stage } };
   }
+  // EVENTS-4 item 5: /app/events/<id>, the address people type and paste, is
+  // the event (it fell through to Home). It canonicalises to /app/events?event=<id>.
+  const eventPath = path.match(/^\/app\/events\/([^/]+)$/);
+  if (eventPath) return { tab: "events", opts: { eventId: decodeURIComponent(eventPath[1]) }, legacy: true };
   const tabMatch = path.match(/^\/app\/([^/]+)$/);
   if (tabMatch) {
     const opts = {};

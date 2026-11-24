@@ -351,7 +351,10 @@ async function registerForEvent({ orgId, event, level, donorId, qty, paid = true
   }
   const day = date || orgToday(await orgTz(orgId));           // ORG_TZ_SEAM_OK
   let pledgeId = null;
-  if (!giftId && (paid || level.kind === "ticket")) {
+  // EVENTS-4: a free ticket ($0) is a place on the list and nothing else: no
+  // gift, no pledge, no receipt. The registration line below says it happened.
+  const free = split.totalCents === 0;
+  if (!giftId && !free && (paid || level.kind === "ticket")) {
     // A ticket is always money (it cannot be pledged); a sponsorship may be.
     const written = await recordGift({
       orgId, donorId, amount: split.totalCents / 100, date: day, type: "cash", door: "event_checkin",
@@ -367,7 +370,7 @@ async function registerForEvent({ orgId, event, level, donorId, qty, paid = true
       const [g] = await query("SELECT id FROM gifts WHERE org_id=? AND idempotency_key=?", [orgId, idemKey]);
       giftId = g?.id || null;
     } else giftId = written.gift.id;
-  } else if (!giftId) {
+  } else if (!giftId && !free) {
     // An unpaid sponsorship is a promise: a pledge due on the event day,
     // attributed to nothing but itself. It is NOT money until it arrives.
     // HARDEN-1: events.date is a DATE, so pg hands a Date; String(Date) is

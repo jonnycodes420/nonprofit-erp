@@ -24,6 +24,12 @@
 // and apply()/undo() take the transaction client the route opens.
 
 const n = (x, one, many) => `${x} ${x === 1 ? one : (many || one + "s")}`;
+// "Ana Ruiz", "Ana Ruiz and Ben Ode", "Ana Ruiz, Ben Ode and 3 others" (EVENTS-4)
+const listNames = (names, max = 5) => {
+  const shown = names.slice(0, max), rest = names.length - shown.length;
+  if (rest > 0) return `${shown.join(", ")} and ${n(rest, "other")}`;
+  return shown.length < 2 ? shown.join("") : `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}`;
+};
 const q1 = async (q, sql, args) => (await q(sql, args))[0] || null;
 const count = async (q, sql, args) => Number((await q1(q, sql, args))?.n || 0);
 
@@ -161,15 +167,27 @@ const KINDS = {
       ? `${n(a.signups, "sign-up is", "sign-ups are")} on it; they keep their hours. It is retired, not deleted: nobody new can sign up for it, and every past shift keeps it.`
       : "Nobody has signed up for it, so it is deleted.",
   },
+  // EVENTS-4 item 4: a shift, published or draft. Nobody on it: deleted, in one
+  // step (Undo). People on it: the confirm names them, their sign-ups are
+  // cancelled with it (routes/removal.js SOFT_WITH), and Undo puts them back.
+  // Past sign-ups (worked, or missed) and logged hours stay on their records.
   shift: {
     noun: "shift", table: "volunteer_slots", retires: true,
-    label: r => `${r.date} ${r.start_time}`,
-    attached: async (q, orgId, r) => ({
-      signups: await count(q, `SELECT COUNT(*)::int n FROM volunteer_signups WHERE org_id=? AND slot_id=?`, [orgId, r.id]),
-    }),
-    decide: a => a.signups > 0 ? "retire" : "delete",
+    label: r => r.name ? `${r.name}, ${r.date} ${r.start_time}` : `${r.date} ${r.start_time}`,
+    attached: async (q, orgId, r) => {
+      const on = await q(`SELECT d.name FROM volunteer_signups su JOIN donors d ON d.id=su.person_id AND d.org_id=su.org_id
+                           WHERE su.org_id=? AND su.slot_id=? AND su.status IN ('confirmed','waitlisted') ORDER BY lower(d.name)`, [orgId, r.id]);
+      return {
+        signups: on.length, names: on.map(x => x.name),
+        history: await count(q, `SELECT COUNT(*)::int n FROM volunteer_signups WHERE org_id=? AND slot_id=? AND status IN ('completed','no_show')`, [orgId, r.id])
+          + await count(q, `SELECT COUNT(*)::int n FROM volunteer_shifts WHERE org_id=? AND slot_id=?`, [orgId, r.id]),
+      };
+    },
+    decide: a => a.signups > 0 || a.history > 0 ? "retire" : "delete",
     words: (r, a, mode) => mode === "retire"
-      ? `${n(a.signups, "person is", "people are")} signed up; they keep it on their record and nobody is emailed. It is retired, not deleted: nobody new can sign up.`
+      ? [a.signups ? `${listNames(a.names)} ${a.signups === 1 ? "is" : "are"} signed up. Their sign-ups are cancelled with it, and nobody is emailed; Undo puts them back.` : "",
+         a.history ? "Its past sign-ups and hours stay on each person's record." : "",
+         "It is retired, not deleted: it comes off every list and public page."].filter(Boolean).join(" ")
       : "Nobody is signed up, so it is deleted.",
   },
   volunteer_signup: {
@@ -291,6 +309,10 @@ function bulkSentence(kind, plans) {
   const by = m => ok.filter(p => p.mode === m).length;
   if (by("retire")) lines.push(`${n(by("retire"), "has", "have")} people or money attached, so ${by("retire") === 1 ? "it is" : "they are"} retired, not deleted, and kept on every past record.`);
   if (by("archive")) lines.push(`${n(by("archive"), "has", "have")} gifts or sign-ups, so ${by("archive") === 1 ? "it is" : "they are"} archived, not deleted.`);
+  if (kind === "shift") {
+    const on = ok.reduce((t, p) => t + (p.attached.signups || 0), 0);
+    if (on) lines.push(`${n(on, "sign-up is", "sign-ups are")} cancelled with them, and nobody is emailed; Undo puts them back.`);
+  }
   if (kind === "guest") {
     const paid = ok.filter(p => p.attached.paid).length;
     if (paid) lines.push(`${n(paid, "of them paid", "of them paid")}. No refund is made; refund in Stripe if you need to.`);

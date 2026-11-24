@@ -36,13 +36,21 @@ export const MAX_QTY = 50;
 
 const toCents = v => Math.round(Number(v) * 100);
 
+// EVENTS-4: a free ticket is a ticket at $0. It needs no payments connected:
+// registering for it writes the guest and no gift (server/events/freeTickets.js).
+export const isFreeLevel = l => !!l && (l.kind || "ticket") === "ticket" && toCents(l.price) === 0;
+
 export function validateLevel(raw) {
   const errors = [];
   const kind = LEVEL_KINDS.includes(raw?.kind) ? raw.kind : "ticket";
   const name = String(raw?.name || "").trim().slice(0, 120);
   if (!name) errors.push("a level needs a name");
-  const price = toCents(raw?.price);
-  if (!Number.isFinite(price) || price <= 0) errors.push("a price greater than zero");
+  // EVENTS-4: a ticket may be free ($0, typed as 0: registering for it writes
+  // no gift). A sponsorship is money, so it is still more than $0. An empty
+  // price is not a free ticket; it is a price nobody typed.
+  const price = raw?.price === undefined || raw?.price === null || String(raw.price).trim() === "" ? NaN : toCents(raw.price);
+  if (!Number.isFinite(price) || price < 0 || (price === 0 && kind === "sponsor"))
+    errors.push(kind === "sponsor" ? "a price greater than zero" : "a price: 0 for a free ticket, or more");
   const fmv = raw?.fmv === undefined || raw?.fmv === null || raw?.fmv === "" ? 0 : toCents(raw.fmv);
   if (!Number.isFinite(fmv) || fmv < 0) errors.push("a fair-market value of zero or more");
   if (Number.isFinite(price) && Number.isFinite(fmv) && fmv > price)

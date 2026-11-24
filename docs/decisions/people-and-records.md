@@ -148,6 +148,13 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   figure on the event page counts a deleted person; a past event's seating chart is who came; follow-up
   tasks say how many before they are made, never duplicate an open one, and have Undo; the public event
   page reads Not open yet until payments are connected.
+- **A free ticket needs no payments; only what takes money waits for them (EVENTS-4).** A ticket may be $0 (a
+  sponsorship may not). Registering for it, on the public page or by staff, goes through `registerForEvent` and writes
+  the guest and no gift, pledge or receipt. The public page opens when payments are connected or the event has a
+  current free ticket; a paid ticket or sponsorship on it with no payments says so on its own card and offers no form
+  (`server/events/freeTickets.js`). Nothing is emailed for a free registration. Check-in search reads the invited and
+  the waiting list by name and email before it offers Add (`server/events/doorSearch.js`). A shift is removed through
+  removal.js, published or not: its active sign-ups are cancelled with it and Undo restores them.
 - **An event has a GOAL, and what it RAISED is never typed.** `events.goal_amount` is what the
   night is measured against; raised is summed from gifts stamped `gifts.event_id`, which
   registration sets. Before this the only link was the campaign NAME, so a renamed event lost its
