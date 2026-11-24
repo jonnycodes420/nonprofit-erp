@@ -154,6 +154,17 @@ jobs:
       - name: Delete through removal guard
         run: node scripts/ci/delete-scan.js --self-test && node scripts/ci/delete-scan.js
 
+      # RULES-1 · every SUM over volunteer_shifts.hours counts through SERVED
+      # (shared/numbers/served.js) or is allowlisted with its reason. The
+      # self-test plants a bare sum and watches it caught. Two seconds.
+      - name: Served hours guard
+        run: node scripts/ci/served-scan.js --self-test && node scripts/ci/served-scan.js
+
+      # RULES-1 · a Donor label in the client reads the giving rule (roles the
+      # server sent through isDonor.typesOnRead), never the stored roles. Two seconds.
+      - name: Donor label guard
+        run: node scripts/ci/donor-label-scan.js --self-test && node scripts/ci/donor-label-scan.js
+
       # THANKS-1 · no screen reads gifts.acknowledgement_sent (the receipt's IRS
       # mark) as "thanked"; the one rule is shared/numbers/thanks.js. The
       # self-test plants two reads and watches them caught. One second.

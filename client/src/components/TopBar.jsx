@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import { apiFetch } from "../api";
 import { T, DriftBadge, firstNameOf, PersonMark } from "./shared";
-import { typeLabels, isDonor as personIsDonor } from "../../../shared/personType.js";
+import { PERSON_TYPES, typeLabels } from "../../../shared/personType.js";
 import { RecordLink } from "./RecordLink";
 import { donorHref, tabHref, isPlainLeftClick } from "../lib/appUrls";
 import { openRecentChanges } from "./RecentChanges";
@@ -28,6 +28,9 @@ const LAST_SEEN_KEY = "npe_whats_new_seen";
 // HARDEN-2: the Help panel (Support chat and every help article) loads when
 // it is opened, not with the top bar on every first look.
 const HelpPanel = lazy(() => import("./HelpPanel").then(m => ({ default: m.HelpPanel })));
+// RULES-1: a search row's roles are the ones the server SHOWS (isDonor.js typesOnRead: Donor only for someone
+// who has given). An empty list means a contact; typeLabels would read it back as ["donor"], so it is read as sent.
+const shownLabels = r => Array.isArray(r.person_types) ? PERSON_TYPES.filter(x => r.person_types.includes(x.key)).map(x => x.label) : typeLabels(r);
 const QUICK_NAV = [
   { id:"nav_reports", label:"Reports", hint:"Open the Reports tab",
     keywords:"reports report giving summary lybunt sybunt retention top donors",
@@ -73,8 +76,8 @@ const SEARCH_KINDS = [
       tab:"donors", opts:{selectDonorId:d.id, anchor:"gifts"} }) },
   { kind:"person", group:"People", row:d=>({
       // WALKB-1: a match that is not the name says what matched ("household: The Marlowe Hart household").
-      sub:[d.why&&d.why!=="name"?"Matched "+d.why:null, d.organization?"Organization":typeLabels(d).join(" · "), d.contactName&&!/^contact person/.test(d.why||"")?"Contact "+d.contactName:null,
-           (/^(email|phone)/.test(d.why||"")?null:d.email||d.phone)||(personIsDonor(d)?fmtMoney(d.totalGiving)+" lifetime":null)].filter(Boolean).join(" · "),
+      sub:[d.why&&d.why!=="name"?"Matched "+d.why:null, d.organization?"Organization":(shownLabels(d).join(" · ")||"Contact"), d.contactName&&!/^contact person/.test(d.why||"")?"Contact "+d.contactName:null,
+           (/^(email|phone)/.test(d.why||"")?null:d.email||d.phone)||(shownLabels(d).includes("Donor")?fmtMoney(d.totalGiving)+" lifetime":null)].filter(Boolean).join(" · "),
       personId:d.id, personName:d.title, personKind:d.personKind||null,
       tab:"donors", opts:{selectDonorId:d.id} }) },
   { kind:"household", group:"Households", row:h=>({
@@ -135,7 +138,7 @@ function sameNameTwins(results) {
   (results||[]).filter(r=>r.kind==="person").forEach(r=>n.set(nameKey(r.title),(n.get(nameKey(r.title))||0)+1));
   return new Set([...n].filter(([,c])=>c>1).map(([k])=>k));
 }
-const typeChip = r => { if (r.organization) return "Organization"; const t = typeLabels(r); return t.includes("Donor") ? "Donor" : t.includes("Volunteer") ? "Volunteer" : "Contact"; };
+const typeChip = r => { if (r.organization) return "Organization"; const t = shownLabels(r); return t.includes("Donor") ? "Donor" : t.includes("Volunteer") ? "Volunteer" : "Contact"; };
 
 // FIX-26: THE ONE SEARCH, for the desktop bar and the phone header alike. It
 // was written inside TopBar, which a phone never shows, so on a phone nothing

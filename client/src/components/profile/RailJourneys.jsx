@@ -217,7 +217,7 @@ function RailJourneys({addErr,addPick,addPreview,allJourneys,confirmAddToJourney
           {!isReadOnly&&Array.isArray(journeyList)&&(
             <div data-testid="dp-rail-add-journey">
               {!(journey&&journey.status==="active")&&<div data-testid="dp-journey-pitch" style={{fontSize:12.5,color:RAIL.dim,lineHeight:1.55,marginBottom:10}}>
-                Plan the next few touches so this donor never drifts. Steward puts each step on your Thread the day it's due. Nothing is sent.
+                Plan the next few touches so this person never drifts. Steward puts each step on your Thread the day it's due. Nothing is sent.
               </div>}
               {journeySuggest&&!(journey&&journey.status==="active")&&(
                 <div data-testid="dp-journey-suggest" style={{background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:10,padding:"11px 12px",marginBottom:10}}>

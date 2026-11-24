@@ -15,6 +15,7 @@ import { LogTouchpointModal } from "./modals";
 import { BriefPanel } from "../MajorGifts";
 import { PlanFollowUpModal } from "../PlanFollowUp";
 import { MarkDeceasedModal, UndoDeceasedModal, DeceasedBanner } from "./DeceasedDialog";   // PEOPLE-1
+import { useVolunteerStatus, markFormer, undoFormer } from "../../lib/volunteerStatus";   // RULES-1 item 7
 import { CallScriptModal, ImpactSummaryModal, ExportDoneModal, openJourneyPicker, downloadPersonData } from "./MoreActions";   // ATLAS-3, ATLAS-4
 
 // MENU-1 — More's menu. Its max height is the room between the button and the
@@ -88,6 +89,7 @@ function MoreMenu({groups,onPick,onClose}){
 }
 
 function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg,setAddPledgeOpen}){
+  const volSt=useVolunteerStatus(donor.id);   // RULES-1 item 7: shared with the role line's Mark as former
   const [deceasedOpen,setDeceasedOpen]=useState(null);   // PEOPLE-1: "mark" or "undo"
   const [moreOpen,setMoreOpen]=useState(null);   // ATLAS-3: "call" or "impact"
   const [exported,setExported]=useState(null);   // ATLAS-4: what the export downloaded, said on screen
@@ -207,6 +209,9 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
                   // PARITY-3 Part 1, FIX-24 Part 1: the volunteer record, or the form that makes them one.
                   isVolunteer?["Volunteer record",()=>setVolOpen(true),false,"dp-volunteering"]
                     :["Make a volunteer",()=>setMakeVolOpen(true),isReadOnly,"dp-make-volunteer"],
+                  // RULES-1 item 7: ending the role, findable from More too; the role, hours and history stay.
+                  ...(isVolunteer&&volSt.status!=="former"?[["Mark as former volunteer",()=>markFormer(donor.id,"menu"),isReadOnly||!!volSt.busy,"dp-mark-former"]]:[]),
+                  ...(isVolunteer&&volSt.status==="former"&&volSt.undo?[["Undo: still volunteering",()=>undoFormer(donor.id),isReadOnly||!!volSt.busy,"dp-undo-former"]]:[]),
                   // POLISH-4 — two records she knows are one person, merged by hand.
                   ...(setMergeOpen?[["Merge with…",()=>setMergeOpen(true),isReadOnly,"dp-merge-with"]]:[]),
                   // PEOPLE-1 — marked with care, and undone from the same place.
@@ -227,6 +232,10 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
             {prospectBriefOpen&&<ProspectBriefModal donorId={donor.id} name={donor.name} onClose={()=>setProspectBriefOpen(false)} onSaved={()=>{if(onInteractionAdded)onInteractionAdded();}}/>}
             {filingLookupOpen&&<PublicFilingLookupModal donorId={donor.id} onClose={()=>setFilingLookupOpen(false)} onLoaded={r=>setPublicFiling(r)}/>}
             {whyStopOpen&&<WhyPanel payload={{key:"stopped",donor:donor.id}} isReadOnly={isReadOnly} onClose={()=>setWhyStopOpen(false)}/>}
+            {volSt.from==="menu"&&(volSt.sentence||volSt.error)&&<div role="status" data-testid="dp-former-msg" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:61,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 12px",fontSize:12.5,color:T.ink,maxWidth:340,boxShadow:"0 12px 32px rgba(15,26,18,0.18)"}}>
+              {volSt.error||volSt.sentence}
+              {volSt.undo&&!isReadOnly&&<> <button type="button" data-testid="dp-former-undo" disabled={!!volSt.busy} onClick={()=>undoFormer(donor.id)} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Undo</button></>}
+            </div>}
             {yourPageMsg&&<div role="status" data-testid="dp-your-page-msg" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:61,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 12px",fontSize:12.5,color:T.ink,maxWidth:320,boxShadow:"0 12px 32px rgba(15,26,18,0.18)"}}>{yourPageMsg}</div>}
             {editingInt&&(()=>{let m={};try{m=typeof editingInt.metadata==="string"?JSON.parse(editingInt.metadata||"{}"):(editingInt.metadata||{});}catch{m={};}
               return m.via==="thread_log"

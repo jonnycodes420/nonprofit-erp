@@ -70,7 +70,7 @@ const { DIST } = require("./lib/dist");   // CI-2: this shard's built client
     const head = (await page.locator('[data-testid="bunt-header-count"]').first().textContent({ timeout: 20000 }).catch(() => "")) || "";
     const rows = await page.locator("table tbody tr").count().catch(() => 0);
     const ly = (await api("GET", "/reports/lybunt", tok)).body;
-    ok("§2 LYBUNT's header counts its rows, the Fenwick household once", new RegExp(`^${ly.units.length} donors and households`).test(head.trim()) && ly.units.length === 3,
+    ok("§2 LYBUNT's header counts its rows, the Fenwick household once, in one unit (RULES-1: households, said once)", new RegExp(`^${ly.units.length} households$`).test(head.trim()) && ly.units.length === 3,
       { head, units: ly.units.length, rows });
     ok("§2 …and the household's row says household, with Louisa in it and not on a row of her own",
       ly.units.some(u => u.unit === "household" && (u.members || []).some(m => m.id === f.ids.louisa)) && !ly.units.some(u => u.id === f.ids.louisa && !u.members), ly.units.map(u => u.name));

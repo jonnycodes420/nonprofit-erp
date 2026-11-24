@@ -681,9 +681,9 @@ async function insertShift(orgId, personId, shift, { via, importKey = null, who 
 
 async function volunteerSummary(orgId, personId) {
   // VOL-3 item 4: hours count once their day has come (shared/numbers/served.js).
-  const SERVED = require("../../shared/numbers/served").SERVED(null, orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
+  const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
   const [t] = await query(`SELECT COALESCE(SUM(round(hours*100)),0)::bigint AS h, COUNT(*)::int AS n, MIN(date) AS first, MAX(date) AS last
-                             FROM volunteer_shifts WHERE org_id=? AND person_id=? AND ${SERVED}`, [orgId, personId]);
+                             FROM volunteer_shifts WHERE org_id=? AND person_id=? AND ${require("../../shared/numbers/served").SERVED(null, today)}`, [orgId, personId]);
   return { hundredths: Number(t?.h || 0), totalHours: Number(t?.h || 0) / 100, shiftCount: t?.n || 0, firstShift: t?.first || null, lastShift: t?.last || null };
 }
 // SPLIT-2 end

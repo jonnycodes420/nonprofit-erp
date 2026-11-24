@@ -178,7 +178,7 @@ async function lifecycleRows(orgId, key, today, windowDays = 14) {
               COALESCE(SUM(v.hours) FILTER (WHERE v.date::date < ?::date - ?::int), 0)::float AS before,
               COALESCE(SUM(v.hours), 0)::float AS after
          FROM volunteer_shifts v JOIN donors d ON d.id=v.person_id AND d.org_id=v.org_id AND ${LIVE_PERSON}
-        WHERE v.org_id=? AND COALESCE(v.date,'') <> '' GROUP BY v.person_id HAVING SUM(v.hours) >= ?`,
+        WHERE v.org_id=? AND COALESCE(v.date,'') <> '' AND ${require("../../shared/numbers/served").SERVED("v", today)} GROUP BY v.person_id HAVING SUM(v.hours) >= ?`,
       [today, w, orgId, J.HOUR_MILESTONES[0]]);
     return rows.map(r => {
       const crossed = J.HOUR_MILESTONES.filter(m => r.before < m && r.after >= m);

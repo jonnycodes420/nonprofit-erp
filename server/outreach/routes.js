@@ -12,7 +12,6 @@ const { CAMPAIGN_GIFT_MATCH, NOT_DELETED } = require("../../campaignMatch");   /
 const { newId } = require("../shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../../emailCompose");
-const lapseRule = require("../../lapseRule");   // FIX-49: the one lapse rule
 
 const routers = {
   r0: express.Router(),
@@ -927,6 +926,13 @@ async function hubMailState(orgId) {
 // (lapseRule.js), read from the tags themselves (donorStatus.quietIds), so it
 // is exactly the Lapsing people plus the Lapsed people. A volunteer coordinator gets no giving column
 // (VOL-2's rule).
+const POPS = require("../../shared/numbers/populations");   // DEFINE-1's registry, read by the server
+// "Lapsing or lapsed, with an email address: 327 of the 340 people …" and the sentence, then Re-engage's.
+function lapsedChipWords(withEmail, all) {
+  const p = POPS.population("lapsing_or_lapsed"), re = POPS.population("reengage");
+  return `${p.name}, with an email address: ${withEmail.toLocaleString("en-US")} of the ${all.toLocaleString("en-US")} ${POPS.unitWords(p.id, all)} on it. ${p.sentence} `
+    + `Not the same group as ${re.name} on Donors, which leaves out the Lapsing and counts people with no email. ${re.sentence}`;
+}
 app.get("/communications/audience", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const coordinator = req.user.role === "volunteer_coordinator";
@@ -940,8 +946,10 @@ app.get("/communications/audience", requireAuth, wrap(async (req, res) => {
       definition: "Every donor with an email address. People who only volunteer or work here are not in it." },
     { id: "major", label: "Major", rows: filterBySegment(all, await resolveSegmentSpec({ mode: "major" }, orgId)),
       definition: "Donors with an email address at the Major giving level: what they gave in the last 12 months against your cut points in Settings, Giving levels." },
-    { id: "lapsed", label: "Lapsing or lapsed", rows: all.filter(d => quiet.has(d.id)),
-      definition: `Donors with an email address who are lapsing or lapsed. ${lapseRule.WORDS.lapsing} ${lapseRule.WORDS.lapsed}` },
+    // RULES-1 (Jarvis, Nov 23: "Communications says 327" beside LYBUNT's 465 and Re-engage's 280): the
+    // registry's population, its name and sentence, the part of it with an email, and which group it is not.
+    { id: "lapsed", population: "lapsing_or_lapsed", label: POPS.population("lapsing_or_lapsed").name, rows: all.filter(d => quiet.has(d.id)),
+      definition: lapsedChipWords(all.filter(d => quiet.has(d.id)).length, quiet.size) },
     { id: "prospect", label: "Prospects", rows: byStage("prospect"), definition: "Donors with an email address at the Prospect stage." },
     { id: "steward", label: "In ongoing care", rows: byStage("steward"), definition: "Donors with an email address at the Ongoing care stage." },
     { id: "solicit", label: "Ready to solicit", rows: byStage("solicit"), definition: "Donors with an email address at the Solicit stage." },
@@ -951,7 +959,7 @@ app.get("/communications/audience", requireAuth, wrap(async (req, res) => {
   res.json({
     donorTotal,
     segments: SEGS.map(s => ({
-      id: s.id, label: s.label, count: s.rows.length, definition: s.definition,
+      id: s.id, label: s.label, count: s.rows.length, definition: s.definition, ...(s.population ? { population: s.population } : {}),
       rows: s.rows.slice().sort((a, b) => (Number(b.total_giving) || 0) - (Number(a.total_giving) || 0))
         .map(d => ({ id: d.id, name: d.name, email: d.email, stage: d.stage,
                      ...(coordinator ? {} : { totalGiving: Number(d.total_giving) || 0 }) })),
