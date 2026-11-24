@@ -333,6 +333,8 @@ function Root() {
           <Route path="/integrations/*" element={<OldIntegrations />} />
           <Route path="/app/integrations" element={<OldIntegrations />} />
           <Route path="/app/:tab" element={<RequireOnboarded><App /></RequireOnboarded>} />
+          {/* EVENTS-4 item 5: /app/events/<id> is the event (App's URL reader canonicalises it to ?event=). */}
+          <Route path="/app/events/:eventId" element={<RequireOnboarded><App /></RequireOnboarded>} />
           <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/start/:token" element={<OnboardPages />} />
           <Route path="/imports/:importId/verify" element={<RequireOnboarded><OnboardPages page="verify" /></RequireOnboarded>} />

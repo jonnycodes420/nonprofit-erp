@@ -215,6 +215,11 @@ const call = async (tok, method, p, body) => {
     ok("§7 the event page has its Auction panel", await page.locator('[data-testid="ev-auction"]').count() === 1);
     await page.locator('[data-testid="ev-auction"] [data-auction-row="auc_nav1"]').waitFor({ timeout: 15000 }).catch(() => {});
     ok("§7 …showing this event's auction", await page.locator('[data-testid="ev-auction"] [data-auction-row="auc_nav1"]').count() === 1);
+    // EVENTS-4 item 5: /app/events/<id>, the address people paste, opens that event (it went to Home; the router's
+    // catch-all sent it to / before App could read it) and settles on the canonical /app/events?event=<id>.
+    await page.goto(`${APP}/app/events/${EVENT}`, { waitUntil: "networkidle", timeout: 60000 });
+    await page.locator('[data-testid="ev-auction"]').waitFor({ timeout: 20000 }).catch(() => {});
+    ok("§7 /app/events/<id> opens the event page", await page.locator('[data-testid="ev-auction"]').count() === 1 && /\/app\/events\?event=/.test(page.url()), page.url());
     await page.goto(`${APP}/app/majorgifts?subtab=pipeline`, { waitUntil: "networkidle", timeout: 60000 });
     await page.locator('[data-testid="major-gifts-page"]').waitFor({ timeout: 20000 }).catch(() => {});
     await shot("4-majorgifts-top100-only");
