@@ -37,7 +37,10 @@ async function readGiftBody(body) {
   if (has(b, "appealId", "appeal_id")) out.appealId = ref(pick(b, "appealId", "appeal_id"));
   if (has(b, "givingPageId", "giving_page_id")) out.givingPageId = ref(pick(b, "givingPageId", "giving_page_id"));
   if (has(b, "peerFundraiserId", "peer_fundraiser_id")) out.peerFundraiserId = ref(pick(b, "peerFundraiserId", "peer_fundraiser_id"));
-  if (has(b, "acknowledgementSent", "acknowledgement_sent")) out.acknowledgementSent = pick(b, "acknowledgementSent", "acknowledgement_sent") === true;
+  // THANKS-1: the form's box is "Thanked" (gifts.thanked_at). The old spelling still arrives from
+  // older tabs and API callers, and always meant the same box.
+  if (has(b, "thanked", "thanked")) out.thanked = b.thanked === true;
+  else if (has(b, "acknowledgementSent", "acknowledgement_sent")) out.thanked = pick(b, "acknowledgementSent", "acknowledgement_sent") === true;
   if (b.anonymous !== undefined) out.anonymous = b.anonymous === true;
   if (b.pledgeId !== undefined) out.pledgeId = ref(b.pledgeId);
   return out;

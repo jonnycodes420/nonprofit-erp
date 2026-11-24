@@ -3,6 +3,12 @@
 Read this when you touch gifts, `recordGift`, funds and methods, attribution, campaigns, the finance ledger, soft credits, tributes, matching gifts, deposits, cheques, pledges, giving sources, fees or refunds.
 
 ## Rules
+- **A removed gift is a change to the record, not something that happened with the donor.**
+  DELETE /gifts/:id writes nothing on the timeline: one Recent changes line (write_effects, kind
+  `gift_delete`, with the gift's snapshot) and the same sentence on the audit row. Its Undo,
+  POST /gifts/:id/restore for 30 days, puts the gift, its ledger line, its cascaded rows and the tasks,
+  next step and journey the delete stopped back (`server/donors/giftDeleteUndo.js`). A delete that took
+  the gift's refunds too has no Undo. (THANKS-1, Jonathan's call)
 
 - **One gift form, one gift body (GIFTS-3).** New gift and a gift's Edit are `gifts/GiftForm.jsx` in two modes
   with the same fields; both send `lib/giftForm.js` `giftBody()`, and POST /donors/:id/gifts and PUT /gifts/:id

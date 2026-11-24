@@ -788,8 +788,14 @@ export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn,
   if (!m || !m.item) {
     // PROFILE-3: a person with nothing logged gets the start card instead of this line.
     if (quietNone) return null;
-    return <div data-testid="dp-next-move-none" style={{ fontSize: 14, color: T.ink3, padding: "2px 0" }}>
-      {firstName ? `Nothing due for ${firstName} right now.` : "Nothing due right now."}</div>;
+    // THANKS-1 item 4: the step the rules still give (thank the newest gift), or why nothing is due.
+    const after = d && d.after;   // the words come from the server (server/insights/afterMove.js)
+    if (after && after.thank) return <div data-testid="dp-next-move-thank" style={{ padding: "2px 0" }}>
+      <div style={{ fontSize: 15, color: T.ink, fontWeight: 700 }}>{`Next: thank ${firstName || "them"} for the ${after.amount} gift on ${after.day}.`}</div>
+      <div data-testid="dp-next-move-none-why" style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5 }}>{after.why}</div></div>;
+    return <div style={{ padding: "2px 0" }}><div data-testid="dp-next-move-none" style={{ fontSize: 14, color: T.ink3 }}>
+      {firstName ? `Nothing due for ${firstName} right now.` : "Nothing due right now."}</div>
+      {after && <div data-testid="dp-next-move-none-why" style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5 }}>{after.why}</div>}</div>;
   }
   const how = m.item.how || {};
   const sentence = moveSentence(how, firstName, m.title);

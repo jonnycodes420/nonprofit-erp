@@ -22,6 +22,8 @@
 // "Pledged" line stays (§3); write-off on one PUT (§4); no plan routes (§5);
 // "4 installments" beside "3 left", and the last person's funds on the next (§6).
 // PLANTED: pledgePayments.relay skipped (the overage dropped) → §1 red.
+// §2b THANKS-1 item 4: after a second gift retires "First gift, no second yet", the profile
+// is told the next step (thank the second gift) or why nothing is due. Red on main: no `after`.
 // Tests set their own clock (tests/clock.js). Sends nothing.
 "use strict";
 const fs = require("fs");
@@ -122,6 +124,28 @@ const instRows = id => q(`SELECT seq, LEFT(due_date::text,10) AS due, ROUND(amou
   ok("Next move is the pledge to collect", mv.move && mv.move.kind === "pledges", mv.move && mv.move.kind);
   ok("it says this year's part is $150 after $150 was paid", /This year's part is \$150\b/.test(say), say);
   ok("it never says $100 is this year's part", !/This year's part is \$100\b/.test(say), say);
+
+  // ── §2b · THANKS-1 item 4: A SECOND GIFT GETS A NEXT MOVE ─────────────────
+  // The fleet (23 Nov, prod): a $25 second gift retired "First gift, no second yet" and the
+  // profile said only "Nothing due". The step the rules still give is the thank-you for the
+  // second gift; once it is thanked, the profile says why nothing is due.
+  console.log("\n— §2b · after a second gift —");
+  const QUIL = await person("d_pl2_quil", "Quill Fennimore");
+  await api("POST", `/donors/${QUIL}/gifts`, tok, { amount: 60, date: plusDays(-40), idempotencyKey: crypto.randomUUID() });
+  await drainQueue(q).catch(() => {});
+  const mv1 = (await api("GET", `/insights/donor/${QUIL}`, tok)).body || {};
+  ok("fixture: after one gift the move is First gift, no second yet", mv1.move && mv1.move.kind === "second_gift", mv1.move && mv1.move.kind);
+  const g2 = (await api("POST", `/donors/${QUIL}/gifts`, tok, { amount: 25, date: TODAY, idempotencyKey: crypto.randomUUID() })).body;
+  const g2id = g2 && g2.gift && g2.gift.id;
+  await drainQueue(q).catch(() => {});
+  const mv2 = (await api("GET", `/insights/donor/${QUIL}`, tok)).body || {};
+  ok("the first-gift move is retired", !(mv2.move && mv2.move.kind === "second_gift"), mv2.move && mv2.move.kind);
+  ok("with no card, the profile is told the next step: thank the $25 second gift",
+     !mv2.move && mv2.after && mv2.after.awaiting === true && mv2.after.nth === 2 && mv2.after.cents === 2500 && mv2.after.giftId === g2id, mv2.after);
+  await api("POST", "/acknowledgments/mark", tok, { giftIds: [g2id], via: "email" });
+  const mv3 = (await api("GET", `/insights/donor/${QUIL}`, tok)).body || {};
+  ok("once it is thanked, the profile is told why nothing is due (the second gift, thanked)",
+     !mv3.move && mv3.after && mv3.after.awaiting === false && mv3.after.nth === 2, mv3.after);
 
   // ── §3 · DELETE LEAVES NOTHING BEHIND ─────────────────────────────────────
   console.log("\n— §3 · deleting a pledge —");

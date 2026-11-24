@@ -31,6 +31,7 @@ import FundField, { emptyFund, fundBody, fundLinesProblem } from "./FundField";
 import AttributionField from "./AttributionField";
 import NewPersonFields, { splitName, personName } from "./NewPersonFields";
 import SameAsLast from "./SameAsLast";
+import TributeFields, { tributeBody } from "./TributeFields";   // THANKS-1 item 5: the full form's tribute, here too
 import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
 const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", color: T.ink, fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box", width: "100%" };
@@ -64,13 +65,16 @@ export default function RecordGiftDialog({ person = null, eventId = "", pledgeId
   const [err, setErr] = useState("");
   const idem = useRef(null);
   const newPersonOk = !fixedPerson;
+  const [tribOpen, setTribOpen] = useState(false);
+  const typedAs = k => t => setForm(s => ({ ...s, f: { ...s.f, typed: { ...(s.f.typed || {}), [k]: t } } }));
+  const pickAs = k => v => setForm(s => ({ ...s, f: { ...s.f, [k]: v, typed: { ...(s.f.typed || {}), [k]: "" } } }));
 
   const giftBody = () => ({
     amount: f.amount, date: f.date, type: "cash", payment_method: methodValue(f.method), ...fundBody(f.fund), anonymous: !!f.anonymous,
     campaignId: (!pledgeId && f.campaign && f.campaign.id) || undefined,
     appealId: (f.appeal && f.appeal.id) || undefined,
     givingPageId: (f.page && f.page.givingPageId) || undefined, peerFundraiserId: (f.page && f.page.peerFundraiserId) || undefined,
-    eventId: f.eventId || undefined, pledgeId: pledgeId || undefined, idempotencyKey: idem.current,
+    eventId: f.eventId || undefined, pledgeId: pledgeId || undefined, idempotencyKey: idem.current, ...tributeBody(f),
   });
 
   const done = (r, p, another) => {
@@ -79,7 +83,7 @@ export default function RecordGiftDialog({ person = null, eventId = "", pledgeId
     onSaved && onSaved(r, p);
     if (!another) { onClose(); return; }
     setSaved(`Saved ${fmtFull(Number(f.amount) || 0)} from ${p.name}.`);
-    setWho(""); setPicked(null); setNp(null); setDup(null);
+    setWho(""); setPicked(null); setNp(null); setDup(null); setTribOpen(false);
     setForm(startForm(eventId, true));
   };
 
@@ -88,9 +92,10 @@ export default function RecordGiftDialog({ person = null, eventId = "", pledgeId
     if (!(Number(f.amount) > 0)) { setErr("Type the amount."); return; }
     // GIFTS-3 item 2: text typed into a picker and never picked is not saved, and not dropped either.
     const unpicked = Object.entries(f.typed || {}).find(([k, t]) => t && !f[k]);
-    if (unpicked) { setErr(`You typed '${unpicked[1]}' for the ${unpicked[0] === "page" ? "fundraiser or giving page" : unpicked[0]} but did not pick one. Pick it from the list, or clear the box.`); return; }
+    if (unpicked) { setErr(`You typed '${unpicked[1]}' for the ${{ page: "fundraiser or giving page", trib: "person the tribute honors" }[unpicked[0]] || unpicked[0]} but did not pick one. Pick it from the list, or clear the box.`); return; }
     const fundProblem = fundLinesProblem(f.amount, f.fund);
     if (fundProblem) { setErr(fundProblem); return; }
+    if (f.tribType && !f.trib) { setErr("Pick who the tribute honors, or choose Not a tribute gift."); return; }
     if (np && !personName(np)) { setErr("Type the new person's first or last name."); return; }
     let p = null;
     if (!np) {
@@ -158,10 +163,17 @@ export default function RecordGiftDialog({ person = null, eventId = "", pledgeId
         <AttributionField kind="page" value={f.page} sticky={!!same.page} testid={testid + "-page"} onChange={v => setF({ page: v })} onTyped={t => setForm(s => ({ ...s, f: { ...s.f, typed: { ...(s.f.typed || {}), page: t } } }))} />
         {!pledgeId && <label><span style={lbl}>Event</span>
           <EventField value={f.eventId} onChange={id => setF({ eventId: id })} testid={testid + "-event"} /></label>}
+        {tribOpen || f.tribType
+          ? <div data-testid={testid + "-tribute"} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <TributeFields form={f} set={setF} pickPerson={pickAs} typed={typedAs} inp={inp} testid={testid + "-trib"} /></div>
+          : <button type="button" onClick={() => setTribOpen(true)} data-testid={testid + "-tribute-toggle"}
+              style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 12.5, textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}>In honor or in memory of someone</button>}
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: T.ink }}>
           <input type="checkbox" checked={!!f.anonymous} onChange={e => setF({ anonymous: e.target.checked })} data-testid={testid + "-anonymous"} style={{ accentColor: T.greenDk }} />
           Anonymous (the gift stays theirs; public lists say Anonymous)
         </label>
+        {/* THANKS-1 item 5 (LEDGER-3): a gift recorded by hand posts at once; imports wait to post */}
+        <div data-testid={testid + "-posts"} style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>Saved here, the gift goes on the books at once, to its fund. Imported gifts wait on Finance under Waiting to post.</div>
         {err && <div role="alert" style={{ fontSize: 12.5, color: T.ink }}>{err}</div>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
           <button type="button" style={btn(false)} onClick={onClose}>{saved ? "Done" : "Cancel"}</button>

@@ -103,7 +103,7 @@ export function useProfilePipeline({ givingOpen, donor, setDesignations, refresh
         id:g.id,amount:parseFloat(g.amount)||0,date:g.date||null,   // IMPORT-4: no date is "No date", never the day it was entered
         type:g.type||"cash",campaign:g.campaign||"",notes:g.notes||"",
         fund_id:g.fund_id||"",fund_name:g.fund_name||"",event_name:g.event_name||"",payment_method:g.payment_method||"",
-        acknowledgement_sent:!!g.acknowledgement_sent,
+        thanked:g.thanked===true,receipt:g.receipt||null,   // THANKS-1: the thank-you and the receipt, two facts
         // FIX-49: the gift is the full amount paid; the processor's fee and the
         // net (what Finance reconciles to the bank) show beside it.
         fee:parseFloat(g.processor_fee_amount)||0,softCreditTo:Array.isArray(g.soft_credit_to)?g.soft_credit_to:[],   // LEDGER-1: "Soft credit to …"

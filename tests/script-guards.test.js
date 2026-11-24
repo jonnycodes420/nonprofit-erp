@@ -112,6 +112,10 @@ const GUARDED_WRITERS = [
   // UNDO-1: reopens journey steps marked done whose own next step is open again. Dry run by default;
   // --apply writes one org through writerDbUrl, one audit row. Never the demo. Nothing sends.
   "undo1-reopen-journeys",
+  // THANKS-1: "Gift removed" timeline notes left from before; --apply moves one org's off the timeline
+  // (one audit row keeps them) through writerDbUrl. Never the demo. Nothing sends. And the read-only
+  // count of gifts whose only acknowledgment is a receipt (no --apply).
+  "thanks1-gift-removed-notes", "thanks1-receipt-not-thanked",
   // FLOWS-10: sets the demo's made-up EIN while it is the placeholder, org_b72demo only. Same guard.
   "flows10-demo-ein",
   // FLOWS-15: puts the demo's first-gift version on its Year-end appeal, org_b72demo's ecamp_b72_yearend only. Same guard.
@@ -382,6 +386,7 @@ const LOOPBACK_CAPTURES = [
 // Out of scope for BASE/DB guarding, each for a stated reason.
 const EXEMPT = {
   "served-scan": "RULES-1 — a pure SOURCE scan (app code) for a SUM over volunteer_shifts.hours without SERVED. Its text names INSERT INTO only as a self-test fixture that must NOT be caught; no BASE, no DB, no network, no writes",
+  "ack-read-scan": "THANKS-1 — a pure SOURCE scan for a read of gifts.acknowledgement_sent (the receipt's IRS mark) as \"thanked\"; it names UPDATE … SET only in its self-test fixture and opens no database, no server and no network",
   "delete-scan": "TRASH-1 — a pure SOURCE scan (server, routes, the DDL) for an app.delete( that hard-deletes a money or person table without removal.js. Its text names DELETE FROM only as the pattern it looks for and in its self-test fixture; it opens no database, no server and no network",
   "sales-staging-seed": "SALES-1 — a module, not a command: exports seedSales(q) and is called only by staging-seed.js, which resolves its target with writerBase --staging (refuses anything but staging). It has no require.main entry and reads no BASE, DATABASE_URL or network",
   "sales-staging-prospects": "SALES-2 — a module, not a command: exports seedProspects(q, owner) and is called only by sales-staging-seed.js (itself called only by staging-seed.js, which refuses anything but staging). No require.main entry; reads no BASE, DATABASE_URL or network",

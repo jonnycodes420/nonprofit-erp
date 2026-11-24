@@ -30,6 +30,7 @@
 import numbersMoney from "./numbers/money.js";
 import numbersPledges from "./numbers/pledges.js";
 import numbersServed from "./numbers/served.js";   // RULES-1: hours count once served
+import numbersThanks from "./numbers/thanks.js";   // THANKS-1: the one thank-you rule
 import { MAILING_ADDRESS_SQL } from "./mailingAddress.js";   // ASKS-1: the street and the whole mailing address
 
 export const ENTITIES = {
@@ -89,7 +90,7 @@ export const ENTITIES = {
       campaign:        { label: "Appeal", sql: "NULLIF(g.campaign,'')", type: "text" },
       type:            { label: "Gift type", sql: "g.type", type: "text" },
       payment_method:  { label: "Payment method", sql: "g.payment_method", type: "text" },
-      acknowledged:    { label: "Thanked", sql: "(g.acknowledgement_sent_at IS NOT NULL OR COALESCE(g.acknowledgement_sent,false))", type: "bool" },
+      acknowledged:    { label: "Thanked", sql: numbersThanks.THANKED("g"), type: "bool" },   // THANKS-1: the one thank-you rule
       acknowledged_via:{ label: "Thanked how", sql: "g.acknowledged_via", type: "text" },
       tribute:         { label: "Tribute", sql: "g.tribute_name", type: "text" },
       donor_stage:     { label: "Donor stage", sql: "d.stage", type: "text" },

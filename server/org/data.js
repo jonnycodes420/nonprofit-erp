@@ -484,7 +484,8 @@ app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
     query("SELECT * FROM donors WHERE org_id=? AND deleted_at IS NULL ORDER BY name", [orgId]),
     query(`SELECT g.*, d.name AS donor_name, d.email AS donor_email,
              f.name AS fund_name, COALESCE(c.name, g.campaign) AS campaign_name,
-             gp.title AS giving_page_title, pf.name AS peer_fundraiser_name
+             gp.title AS giving_page_title, pf.name AS peer_fundraiser_name,
+             ${require("../../shared/numbers/thanks").THANKED("g")} AS thanked   -- THANKS-1
            FROM gifts g
            LEFT JOIN donors d ON d.id=g.donor_id
            LEFT JOIN fin_funds f ON f.id=g.fund_id
@@ -539,7 +540,7 @@ app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
       ["Donor name", "donor_name"], ["Donor email", "donor_email"],
       ["Date", "date"], ["Amount", "amount"], ["Type", "type"], ["Payment method", "payment_method"],
       ["Fund", "fund_name"], ["Campaign", "campaign_name"], ["Giving page", "giving_page_title"],
-      ["Peer fundraiser", "peer_fundraiser_name"], ["Acknowledged", "acknowledgement_sent"],
+      ["Peer fundraiser", "peer_fundraiser_name"], ["Thanked", "thanked"], ["Acknowledged (receipt or thank-you)", "acknowledgement_sent"],   // ACK-READ-OK: the IRS fact, exported as itself
       ["Notes", "notes"], ["Sample data", "is_sample"],
       ...cfGiftDefs.map(f => [f.label, r => renderCustomValue(f, (r.custom_fields || {})[f.key])]),
     ], gifts),

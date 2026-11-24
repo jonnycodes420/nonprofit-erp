@@ -23,7 +23,7 @@ import { censusById } from "../../../../shared/numberCensus.js";
 import { openCheckSnap } from "../CheckSnap";
 import { countLabel } from "../../../../shared/countWords.js";
 import { renderCustomValue } from "../../../../shared/customFieldShape";
-import { thankState, REFUNDED_WORDS } from "../../../../shared/thankState.js";   // FLOWS-14
+import { thankState, REFUNDED_WORDS } from "../../../../shared/thankState.js";   // FLOWS-14, THANKS-1
 import { MailTypeSwitches } from "../MailTypes";
 import { pledgeMoneyWords } from "../../../../shared/pledgeWords.js";
 import { pledgeCoverWords } from "../../../../shared/pledgeCover.js";   // PLEDGES-3: what a payment covers, before Save
@@ -367,7 +367,7 @@ function GivingTab({setGiftErr,rc,acceptSuggestion,addAsk,addGift,addGiftForm,ad
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead>
                     <tr style={{background:T.bg2}}>
-                      {["Date","Amount","Type","Method","Ack","Receipt","Note",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontWeight:700,color:T.ink3,fontSize:10,borderBottom:"1px solid "+T.bg3}}>{h}</th>)}
+                      {["Date","Amount","Type","Method","Thanked","Receipt","Note",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontWeight:700,color:T.ink3,fontSize:10,borderBottom:"1px solid "+T.bg3}}>{h}</th>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -394,7 +394,7 @@ function GivingTab({setGiftErr,rc,acceptSuggestion,addAsk,addGift,addGiftForm,ad
                               {g.fee>0&&g.amount>0&&<div data-testid="dp-gift-fee-net" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Fee {fmtFull(g.fee)}, net {fmtFull(Math.round((g.amount-g.fee)*100)/100)}</div>}</td>
                             <td style={{padding:"9px 12px",color:T.ink3}}>{giftTypeLabel(g.type)}</td>
                             <td data-testid="dp-gift-method" style={{padding:"9px 12px",color:T.ink3}}>{methodLabel(g.payment_method)}</td>
-                            <td style={{padding:"9px 12px",textAlign:"center"}}>{/* FLOWS-14: shared/thankState.js, the lists' rule */}{g.amount<0?<span style={{color:T.ink3,fontSize:12}}>Not a gift</span>:thankState(g)?.key==="refunded"?<span data-testid="dp-gift-refunded-thanks" style={{color:T.ink3,fontSize:12}}>{REFUNDED_WORDS}</span>:g.acknowledgement_sent?<span style={{color:T.greenDk,fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:12}}>Not yet</span>}</td>
+                            <td style={{padding:"9px 12px",textAlign:"center"}}>{/* FLOWS-14: shared/thankState.js, the lists' rule */}{g.amount<0?<span style={{color:T.ink3,fontSize:12}}>Not a gift</span>:thankState(g)?.key==="refunded"?<span data-testid="dp-gift-refunded-thanks" style={{color:T.ink3,fontSize:12}}>{REFUNDED_WORDS}</span>:thankState(g)?.key==="thanked"?<span data-testid="dp-gift-thanked" style={{color:T.greenDk,fontSize:13}}>✓</span>:<span data-testid="dp-gift-not-thanked" style={{color:T.ink3,fontSize:12}}>Not yet</span>}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
                               <ReceiptCell g={g} rc={rc} isReadOnly={isReadOnly}/>
                             </td>

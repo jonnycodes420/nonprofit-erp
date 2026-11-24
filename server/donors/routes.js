@@ -419,6 +419,8 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
             (SELECT gp.title FROM giving_pages gp WHERE gp.id = g.giving_page_id AND gp.org_id = g.org_id) AS giving_page_title,
             (SELECT pf.name FROM peer_fundraisers pf WHERE pf.id = g.peer_fundraiser_id AND pf.org_id = g.org_id) AS peer_fundraiser_name,
             ${require("../../shared/numbers/scheduled").SCHEDULED("g")} AS scheduled,   -- TRUTH-6: dated after today, not counted yet
+            ${require("../../shared/numbers/thanks").THANKED("g")} AS thanked,   -- THANKS-1: the thank-you, never the receipt
+            ${require("../../shared/numbers/thanks").RECEIPT_JSON("g")} AS receipt,   -- THANKS-1: the receipt, its own fact
             -- LEDGER-1: who this gift is soft-credited to, so the row says "Soft credit to …"
             (SELECT COALESCE(json_agg(json_build_object('donorId', sd.id, 'name', sd.name, 'amount', sc.amount) ORDER BY sd.name), '[]'::json)
                FROM gift_soft_credits sc JOIN donors sd ON sd.id = sc.donor_id AND sd.org_id = sc.org_id AND sd.deleted_at IS NULL
