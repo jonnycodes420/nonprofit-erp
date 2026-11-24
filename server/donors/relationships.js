@@ -23,6 +23,9 @@ routers.r1.use(require("./deceased").routers.r1);
 routers.r1.use(require("./offlinePlans").routers.r1);
 // MONEY-4: Record a refund (server/donors/refunds.js).
 routers.r1.use(require("./refunds").routers.r1);
+// UNDO-1: Undo a refund, and Undo a logged touch with what it closed.
+routers.r1.use(require("./refundUndo").routers.r1);
+routers.r1.use(require("./touchUndo").routers.r1);
 // QUICKADD-1: a new person inside gift entry, and what a gift came from.
 routers.r1.use(require("./quickAdd").routers.r1);
 routers.r1.use(require("./giftAttribution").routers.r1);
@@ -31,6 +34,8 @@ function mount(ctx) {
 require("./deceased").mount(ctx);
 require("./offlinePlans").mount(ctx);
 require("./refunds").mount(ctx);
+require("./refundUndo").mount(ctx);
+require("./touchUndo").mount(ctx);
 require("./quickAdd").mount(ctx);
 require("./giftAttribution").mount(ctx);
 const {

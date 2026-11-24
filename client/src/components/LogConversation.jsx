@@ -81,6 +81,9 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [file, setFile] = useState(null);   // PARITY-1 Part B
+  // UNDO-1 item 4: the person's open next step, which a touch with a next step closes. She sees it and may keep it.
+  const [openStep, setOpenStep] = useState(null);
+  const [keepOpen, setKeepOpen] = useState(false);
   const lineRef = useRef(null);
   useEffect(() => { lineRef.current?.focus(); }, []);
   useEffect(() => {
@@ -88,6 +91,11 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
     apiFetch("/touch-types").then(r => { if (alive) setCustom(Array.isArray(r && r.custom) ? r.custom : []); }).catch(() => {});
     apiFetch("/org/team").then(r => { if (alive) setTeam(Array.isArray(r) ? r.filter(u => u && u.id && !u.deactivated_at) : []); }).catch(() => {});
     if (!editing && !noteMode) apiFetch(`/donors/${donor.id}/planned-touches`).then(r => { if (alive) setPlanned(Array.isArray(r && r.planned) ? r.planned : []); }).catch(() => {});
+    if (!editing && !noteMode) apiFetch(`/threads?donorId=${encodeURIComponent(donor.id)}`).then(r => {
+      const t = alive && ((r && r.list) || []).find(x => x && x.kind !== "task");
+      const label = t && ((t.nextStep && t.nextStep.label) || t.next_step_label || t.label);
+      if (alive) setOpenStep(label ? { id: t.id, label } : null);
+    }).catch(() => {});
     if (!editing) apiFetch("/finance/funds").then(r => { if (alive) setFunds(Array.isArray(r) ? r : []); }).catch(() => {});
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -117,6 +125,9 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
   const needsWords = noteMode || wordsRequired(kind);
   const isMeet = kind === "meeting" || kind === "visit";
   const planPick = plannedHere.find(p => p.taskId === completes) || null;
+  // A next step typed here closes the open one (logClose.js), unless it is the same step carried to a new day.
+  const closesStep = !!(!editing && !noteMode && openStep && sanitizeStepLabel(nsLabel)
+    && String(openStep.label).trim().toLowerCase() !== String(sanitizeStepLabel(nsLabel)).trim().toLowerCase());
   const shownPlan = planPick || plannedHere[0] || null;
 
   const save = async () => {
@@ -137,7 +148,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
         onSaved && onSaved(row); onClose && onClose();
         return;
       }
-      const step = sanitizeStepLabel(nsLabel);
+      const step = closesStep && keepOpen ? "" : sanitizeStepLabel(nsLabel);
       const body = noteMode
         ? { touch: "note_only", line: line.trim(), date, ...(wasTalk ? { conversation: true } : {}) }
         : { touchKind: kind, line: line.trim(), date, ...(kind === "call" && callResult ? { callResult } : {}),
@@ -150,6 +161,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
         ...(amountTyped ? { gift: { amount: String(amount).trim(), fundId: fundId || (defaultFund ? defaultFund.id : null), paymentMethod: method || undefined } } : {}),
         ...(thread && thread.id ? { threadId: thread.id } : {}),
         ...(fromMove ? { fromMove: true } : {}),   // ONBOARD-2: logged from one of Steward's moves
+        ...(closesStep && keepOpen ? { keepOpen: true } : {}),   // UNDO-1: she kept her open step
         nextStep: !step ? { skipped: true }
           : { type: nextStepTypeForLabel(step), label: step, due: nsDue, time: sanitizeStepTime(nsTime) || undefined,
               source: nsSource === "rule" ? "touch" : null },
@@ -290,6 +302,20 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
               {!tzKnown && onNavigate && <button type="button" style={linkBtn} onClick={() => { onClose && onClose(); onNavigate("settings", { section: "giving", focus: "timezone" }); }}>Set your time zone to add a time</button>}
             </div>
           ) : <div style={{ fontSize: 11, color: T.ink3, marginTop: 6 }}>Leave it empty and no task is made.</div>}
+          {closesStep && (
+            <div data-testid="touch-closes-step" style={{ marginTop: 10, background: T.bg, borderRadius: 8, padding: "9px 11px", fontSize: 13, color: T.ink, lineHeight: 1.5 }}>
+              <div>This closes the next step: {openStep.label}.</div>
+              <div role="radiogroup" aria-label="The open next step" style={{ display: "flex", gap: 14, marginTop: 6, flexWrap: "wrap" }}>
+                <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="radio" name="keep-open" checked={!keepOpen} onChange={() => setKeepOpen(false)} data-testid="touch-close-step" />Close it
+                </label>
+                <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="radio" name="keep-open" checked={keepOpen} onChange={() => setKeepOpen(true)} data-testid="touch-keep-open" />Keep it open
+                </label>
+              </div>
+              {keepOpen && <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 4 }}>A person has one next step, so the one typed above is not made.</div>}
+            </div>
+          )}
         </div>}
 
         {!editing && <AttachFileField file={file} setFile={setFile} labelStyle={lbl}/>}

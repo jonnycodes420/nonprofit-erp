@@ -109,6 +109,9 @@ const GUARDED_WRITERS = [
   // GIFTS-3: stores one org's gift methods that read "Needs you" as nothing. Dry run by default; --apply
   // writes through writerDbUrl, one audit row. Never org_creo or the demo. Amounts and the ledger untouched.
   "gifts3-needs-you-method",
+  // UNDO-1: reopens journey steps marked done whose own next step is open again. Dry run by default;
+  // --apply writes one org through writerDbUrl, one audit row. Never the demo. Nothing sends.
+  "undo1-reopen-journeys",
   // FLOWS-10: sets the demo's made-up EIN while it is the placeholder, org_b72demo only. Same guard.
   "flows10-demo-ein",
   // FLOWS-15: puts the demo's first-gift version on its Year-end appeal, org_b72demo's ecamp_b72_yearend only. Same guard.

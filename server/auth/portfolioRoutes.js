@@ -88,6 +88,9 @@ const DECLARATIONS = [
   D(ANY, /^\/people\/:id(\/|$)/, "param"),
   D(ANY, /^\/(gifts|interactions|pledges|tasks|households|donor-relationships|threads)\/:id(\/|$)/, "param"),
   D("POST", "/households", "param"),
+  // UNDO-1: Undo a refund (the refund is a gift row) and Undo a logged touch (an interaction): one person's record.
+  D("POST", "/refunds/:id/undo", "param", { params: { id: "gift" } }),
+  D("POST", "/touches/:id/undo", "param", { params: { id: "interaction" } }),
 ];
 
 // Every other surface is closed to a portfolio user in this build, named by

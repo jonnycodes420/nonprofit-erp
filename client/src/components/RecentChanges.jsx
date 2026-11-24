@@ -39,6 +39,8 @@ export function RecentChangesPanel({ onClose }) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(null);
   const [done, setDone] = useState({});
+  const [asking, setAsking] = useState(null);   // UNDO-1: an Undo that needs her reason (Undo refund)
+  const [why, setWhy] = useState("");
 
   const [showChanged, setShowChanged] = useState(false);
   // AGENT-5: what Atlas did is in this list too, from its activity log, and
@@ -57,12 +59,20 @@ export function RecentChangesPanel({ onClose }) {
 
   const undo = async row => {
     if (busy) return;
+    if (row.ask === "reason" && asking !== row.id) { setAsking(row.id); setWhy(""); return; }
+    if (row.ask === "reason" && !why.trim()) { setErr("Say why it is being undone."); return; }
     setBusy(row.id); setErr("");
     try {
+      let said = null;
       if (row.from === "tab") await row.entry.action();
-      else await apiFetch(row.undo.path, { method: row.undo.method, ...(row.undo.body ? { body: JSON.stringify(row.undo.body) } : {}) });
+      else {
+        const body = { ...(row.undo.body || {}), ...(row.ask === "reason" ? { reason: why.trim() } : {}) };
+        const r = await apiFetch(row.undo.path, { method: row.undo.method, body: JSON.stringify(body) });
+        said = r && typeof r.sentence === "string" ? r.sentence : null;
+      }
       if (row.entry) markUndone(row.entry);
-      setDone(d => ({ ...d, [row.id]: true }));
+      setAsking(null);
+      setDone(d => ({ ...d, [row.id]: said || true }));
       announceUndone({ id: row.id });
     } catch (e) { setErr(errorMessage(e, "That could not be put back. It may have changed since.")); }
     setBusy(null);
@@ -85,7 +95,16 @@ export function RecentChangesPanel({ onClose }) {
               <div style={{ fontSize: 11.5, color: T.ink3 }}>{ago(r.at)}{r.until && !done[r.id] ? ` · ${until(r.until)}` : ""}</div>
             </div>
             {done[r.id]
-              ? <span data-testid="recent-change-done" style={{ fontSize: 12.5, color: T.ink3 }}>Put back.</span>
+              ? <span data-testid="recent-change-done" style={{ fontSize: 12.5, color: T.ink3, flex: typeof done[r.id] === "string" ? "1 1 100%" : undefined }}>{typeof done[r.id] === "string" ? done[r.id] : "Put back."}</span>
+              : asking === r.id
+              ? <div style={{ display: "flex", gap: 8, flex: "1 1 100%", alignItems: "center" }}>
+                  <input autoFocus value={why} onChange={e => setWhy(e.target.value)} maxLength={300} aria-label="Why are you undoing it?" data-testid="recent-change-reason"
+                    onKeyDown={e => { if (e.key === "Enter") undo(r); }} placeholder="Why? For example: entered on the wrong gift"
+                    style={{ flex: 1, minWidth: 0, background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: T.ink, fontFamily: "inherit" }} />
+                  <button type="button" data-testid="recent-change-confirm" disabled={!!busy} onClick={() => undo(r)}
+                    style={{ ...linkBtn, color: T.greenDk, fontWeight: 800, fontSize: 13 }}>{busy === r.id ? "Putting back…" : (r.undoLabel || "Undo")}</button>
+                  <button type="button" onClick={() => setAsking(null)} style={{ ...linkBtn, color: T.ink3, fontSize: 12.5 }}>Cancel</button>
+                </div>
               : <button type="button" data-testid="recent-change-undo" disabled={!!busy} onClick={() => undo(r)}
                   style={{ ...linkBtn, color: T.greenDk, fontWeight: 800, fontSize: 13 }}>{busy === r.id ? "Putting back…" : (r.undoLabel || "Undo")}</button>}
           </div>

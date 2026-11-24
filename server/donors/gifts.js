@@ -548,6 +548,8 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
     const stopped = await require("./giftThanks").stopJourneysOfGift(client, req.user.orgId, g.donor_id, req.params.id, actor(req));
     voidedTaskCount += stopped.tasks; stoppedJourneys = stopped.journeys;
     if (withRefunds) refundsRemoved = (await PAIRS.removeRefundsOf(PAIRS.onClient(client), req.user.orgId, [req.params.id])).count;
+    const _db = require("../../db"), _fx = require("../effects/writeEffects").onClient(client, _db.queryTx, _db.runTx);   // UNDO-1 item 5: the guest list as it was
+    await require("../events/registrationEffects").reverseForGift(_fx, req.user.orgId, req.params.id, actor(req));
     await runTx(client, "DELETE FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
     // FLOWS-9: a refund row taken back un-marks its gift when the gift is no longer netted to $0,
     // so the counts (giftCount.js, which read the mark) count it again.
