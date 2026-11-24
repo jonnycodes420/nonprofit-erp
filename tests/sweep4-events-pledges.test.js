@@ -236,7 +236,8 @@ async function fix60(tok) {
     const reg = await fetch(`${BASE}/e/${SLUG}/register`, { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ name: "Fay Walkup", email: "fay@sweep4.test", levelId: "evl_sweep4_t", quantity: "1" }).toString() });
     const fay = (await one(`SELECT COUNT(*)::int n FROM event_attendees WHERE org_id=$1 AND LOWER(email)='fay@sweep4.test'`, [ORG])).n;
-    ok("§4 its Register form writes nothing", fay === 0 && reg.status === 404, { status: reg.status, fay });
+    // EVENTS-4: a paid ticket with no payments is refused on its own ("not on sale"), still writing nothing.
+    ok("§4 its Register form writes nothing", fay === 0 && reg.status === 400, { status: reg.status, fay });
     await q(`UPDATE events SET status='completed', date=$2 WHERE id=$1`, [EVENT, DAY]);
 
     // ── §5 a past event's chart is who came

@@ -30,6 +30,9 @@ import { GuestChip } from "./events/GuestChip";   // CONNECT-1: moved out whole,
 import { addGuests, newGuestOrOnFile } from "../lib/eventCapacity";   // STALE-2: past capacity asks first
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { EventAuction, EventsAuctions } from "./events/EventAuction";   // NAV-1 (menu): auctions on the event, and an Auctions list
+import EventTicketTypes from "./events/EventTicketTypes";   // EVENTS-4: tickets made where the event is
+import { civil } from "../../../shared/eventPage";   // EVENTS-4: a one-day event is one date
+import KioskWalkIn from "./events/KioskWalkIn";   // EVENTS-4: the door's walk-in part, moved out whole
 
 // PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
 const CHAIR = 44;
@@ -1079,6 +1082,7 @@ export function EventKiosk({ eventId }) {
   const [camErr, setCamErr] = useState("");
   const [walkins, setWalkins] = useState([]);
   const [walkGuestOf, setWalkGuestOf] = useState("");   // CONNECT-1
+  const [walkEmail, setWalkEmail] = useState("");   // EVENTS-4: a new walk-in is matched on file by email first
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const detectorRef = useRef(null);
@@ -1211,16 +1215,16 @@ export function EventKiosk({ eventId }) {
     return () => { live = false; clearTimeout(t); };
   }, [q]);
 
-  const addWalkIn = async ({ donorId, name }) => {
+  const addWalkIn = async ({ donorId, name, email }) => {
     setMsg("");
     try {
-      const r = await addGuests(eventId, { ...(donorId ? { donorIds: [donorId] } : { name }), ...(walkGuestOf ? { guestOfDonorId: walkGuestOf } : {}) });
+      const r = await addGuests(eventId, { ...(donorId ? { donorIds: [donorId] } : { name, ...(email ? { email } : {}) }), ...(walkGuestOf ? { guestOfDonorId: walkGuestOf } : {}) });
       if (!r) return;
       const id = r && r.ids && r.ids[0];
       if (!id) { setMsg("They are already on the list. Find them by name above."); return; }
       const c = await apiFetch(`/events/${eventId}/check-in`, { method: "POST", body: JSON.stringify({ attendeeId: id }) });
       show(c, "In.");
-      setTerm(""); setWalkGuestOf("");
+      setTerm(""); setWalkGuestOf(""); setWalkEmail("");
       eventRowsChanged(eventId);
     } catch (e) { setMsg(errorMessage(e, "That did not go through.")); }
   };
@@ -1232,8 +1236,13 @@ export function EventKiosk({ eventId }) {
   const inCount = data.checkedIn ?? guests.filter(isIn).length;
   const expected = data.expected ?? guests.length;
   const base = view === "in" ? guests.filter(isIn) : guests;
-  const shown = q ? base.filter(g => (g.name || "").toLowerCase().includes(q)) : base;
-  const onList = new Set(guests.map(g => g.donor_id).filter(Boolean));
+  // EVENTS-4 item 3: the search reads the invited too, by name or email, before
+  // it offers Add (server/events/doorSearch.js); the count and list stay Registered.
+  const others = data.others || { invited: [], waiting: [] };
+  const hit = g => (g.name || "").toLowerCase().includes(q) || (!!g.email && g.email.toLowerCase().includes(q));
+  const shown = q ? [...base, ...(view === "in" ? [] : others.invited)].filter(hit) : base;
+  const waitingHits = q.length >= 2 ? others.waiting.filter(hit) : [];
+  const onList = new Set([...guests, ...others.invited].map(g => g.donor_id).filter(Boolean));
   // FIX-27 Part 6: a guest the name search has picked out (one match, not yet
   // in) is SELECTED, and Check checks them in. Check is ready the moment a
   // guest is selected or a code is typed, never only after something else.
@@ -1343,6 +1352,7 @@ export function EventKiosk({ eventId }) {
                   : g.name}{g.vip ? <span style={{ color: T.gold700, fontWeight: 800 }}> · VIP</span> : null}
               </span>
               <span style={{ fontSize: 12, color: isIn(g) ? T.greenDk : T.ink3 }}>
+                {g.onList && !isIn(g) ? <span data-testid="ev-kiosk-invited">{g.onList === "declined" ? "Said no" : "Invited, not registered"} · </span> : null}
                 {isIn(g) ? "In" : g.table_label || "No seat"}{isIn(g) && g.table_label ? ` · ${g.table_label}` : ""}{g.dietary ? ` · ${g.dietary}` : ""}
               </span>
             </div>
@@ -1355,23 +1365,8 @@ export function EventKiosk({ eventId }) {
         {!shown.length && <div style={{ fontSize: 13, color: T.ink3, marginBottom: 6 }}>{view === "in" && !q ? "Nobody is checked in yet." : "Nobody by that name on the list."}</div>}
       </div>
       )}
-      {q.length >= 2 && (
-        <div data-testid="ev-kiosk-walkin" style={{ borderTop: "1px solid " + T.bg3, marginTop: 8, paddingTop: 10 }}>
-          <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink3, marginBottom: 6 }}>Walk-in, not on the list</div>
-          <div style={{ marginBottom: 8 }}><GuestOfPicker guests={guests} value={walkGuestOf} onChange={setWalkGuestOf} testid="ev-kiosk-guest-of" /></div>
-          {offList.map(d => (
-            <button key={d.id} type="button" data-testid="ev-kiosk-walkin-person" onClick={() => addWalkIn({ donorId: d.id })}
-              style={{ width: "100%", textAlign: "left", background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "11px 13px", marginBottom: 6, minHeight: 48, cursor: "pointer", fontFamily: "inherit", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 14.5, color: T.ink, fontWeight: 600 }}>{d.name}</span>
-              <span style={{ fontSize: 12, color: T.greenDk, fontWeight: 700 }}>Add and check in</span>
-            </button>
-          ))}
-          <button type="button" data-testid="ev-kiosk-walkin-new" onClick={() => addWalkIn({ name: term.trim() })}
-            style={{ width: "100%", textAlign: "left", background: T.white, border: "1.5px dashed " + T.bg3, borderRadius: 10, padding: "11px 13px", minHeight: 48, cursor: "pointer", fontFamily: "inherit", fontSize: 14, color: T.ink }}>
-            Add "{term.trim()}" as a new guest and check them in
-          </button>
-        </div>
-      )}
+      {q.length >= 2 && <KioskWalkIn term={term} guests={guests} waitingHits={waitingHits} offList={offList} addWalkIn={addWalkIn}
+        walkGuestOf={walkGuestOf} setWalkGuestOf={setWalkGuestOf} walkEmail={walkEmail} setWalkEmail={setWalkEmail} />}
     </div>
   );
 }
@@ -1526,7 +1521,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
             <StatusBadge event={event} small onDark />
           </div>
           <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", marginTop: 3 }}>
-            {event.date_unknown ? "Date not known: the import's file did not give it" : fmtDate(event.date)}{event.end_date ? ` – ${fmtDate(event.end_date)}` : ""}{event.location ? ` · ${event.location}` : ""}
+            {event.date_unknown ? "Date not known: the import's file did not give it" : fmtDate(event.date)}{civil(event.end_date) && civil(event.end_date) !== civil(event.date) ? ` – ${fmtDate(event.end_date)}` : ""}{event.location ? ` · ${event.location}` : ""}
             {event.seats && <span data-testid="ev-seats-left" data-reading={reading || addingDonors || addingGuest || savingAtt ? "1" : "0"} title="Places on the guest list that haven't declined, against the event's capacity."> · {reading || addingDonors || addingGuest || savingAtt ? "Updating…" : event.seats.sentence}</span>}
           </div>
         </div>
@@ -1570,6 +1565,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
             <EventVolunteerTeam eventId={eventId} initial={event.volunteerTeam || null} />
             <EventKiosk eventId={eventId} />
             <EventPageEditor eventId={eventId} />
+            <div style={{ marginTop: 14 }}><EventTicketTypes eventId={eventId} initial={event.levels} paymentsConnected={event.payments_connected} onChanged={() => eventRowsChanged(eventId)} /></div>
             <EventAuction eventId={eventId} />
           </div>
 

@@ -157,7 +157,8 @@ const day = s => Math.round(Date.parse(String(s).slice(0, 10) + "T00:00:00Z") / 
   const win = await api("POST", "/auction-items/aui_j4_a/winner", tok, { donorId: P("winner"), amount: "450" });
   ok("§1 recording the winner at the desk works and says so", win.status === 200 && /J4 Winner won Weekend at the lake at \$450/.test(win.body.sentence || ""), JSON.stringify(win.body));
   const lowWin = await api("POST", "/auction-items/aui_j4_a/winner", tok, { donorId: P("loser"), amount: "200" });
-  ok("§1 a lower 'winning' bid than the high bid is refused", lowWin.status === 400, JSON.stringify(lowWin.body));
+  // EVENTS-4 item 6: once a winner is recorded the item is locked, so a second (lower) winner is refused as already won.
+  ok("§1 a second, lower 'winning' bid is refused", lowWin.status === 409 && /already won/.test(lowWin.body.message || ""), JSON.stringify(lowWin.body));
   await q(`UPDATE auctions SET closes_at=NOW() - interval '1 minute' WHERE id='au_j4'`);   // the night ends
   // The call, finished with "Interested in a bigger gift".
   await q(`INSERT INTO tasks (id,org_id,title,due,kind,donor_id,created_by,created_by_name) VALUES ('t_j4_call',$1,'Call J4 Caller',$2,'call',$3,'system:test','test')`,

@@ -90,9 +90,12 @@ const WITH = {
   volunteer_slots: {
     take: async (tx, ctx, row, orgId) => ({
       roles: await ctx.queryTx(tx, `SELECT * FROM volunteer_slot_roles WHERE slot_id=? AND org_id=?`, [row.id, orgId]),
+      // EVENTS-4: a cancelled sign-up cascades with the slot; it is kept here and comes back with it.
+      signups: await ctx.queryTx(tx, `SELECT * FROM volunteer_signups WHERE slot_id=? AND org_id=?`, [row.id, orgId]),
     }),
     give: async (tx, ctx, w) => {
       if (w?.roles?.length) await ctx.runTx(tx, `INSERT INTO volunteer_slot_roles SELECT * FROM jsonb_populate_recordset(NULL::volunteer_slot_roles, ?::jsonb) ON CONFLICT DO NOTHING`, [JSON.stringify(w.roles)]);
+      if (w?.signups?.length) await ctx.runTx(tx, `INSERT INTO volunteer_signups SELECT * FROM jsonb_populate_recordset(NULL::volunteer_signups, ?::jsonb) ON CONFLICT DO NOTHING`, [JSON.stringify(w.signups)]);
     },
   },
   // TRASH-1: a grant's deadlines, documents, notes, reports, spending and
@@ -124,6 +127,26 @@ const WITH = {
     }),
     give: async (tx, ctx, w) => {
       if (w?.recipients?.length) await ctx.runTx(tx, `INSERT INTO campaign_recipients SELECT * FROM jsonb_populate_recordset(NULL::campaign_recipients, ?::jsonb) ON CONFLICT DO NOTHING`, [JSON.stringify(w.recipients)]);
+    },
+  },
+};
+
+// EVENTS-4 item 4: what a soft removal does to the rows under it, and how Undo
+// puts them back. A shift retired with people on it cancels their sign-ups
+// (the confirm named them); each one's status and cancelled_at before is kept
+// on the trash row, and Undo sets them back exactly, only where still cancelled.
+const SOFT_WITH = {
+  volunteer_slots: {
+    take: async (tx, ctx, row, orgId) => ({
+      signups: await ctx.queryTx(tx, `WITH was AS (SELECT id, status, cancelled_at FROM volunteer_signups
+                                                     WHERE slot_id=? AND org_id=? AND status IN ('confirmed','waitlisted') FOR UPDATE)
+                                       UPDATE volunteer_signups su SET status='cancelled', cancelled_at=NOW()
+                                         FROM was WHERE su.id = was.id RETURNING was.id, was.status, was.cancelled_at`, [row.id, orgId]),
+    }),
+    give: async (tx, ctx, w, orgId) => {
+      for (const su of (w && w.signups) || [])
+        await ctx.runTx(tx, `UPDATE volunteer_signups SET status=?, cancelled_at=? WHERE id=? AND org_id=? AND status='cancelled'`,
+          [su.status, su.cancelled_at || null, su.id, orgId]);
     },
   },
 };
@@ -204,9 +227,10 @@ function mount(ctx) {
     const args = vals.filter(v => v !== "NOW()" && v !== "clock_timestamp()");
     if (soft.also) sets.push(soft.also);
     await runTx(tx, `UPDATE ${K.table} SET ${sets.join(", ")} WHERE id=? AND org_id=?`, [...args, p.id, orgId]);
+    const under = p.mode === "retire" && SOFT_WITH[K.table] ? await SOFT_WITH[K.table].take(tx, ctx, row, orgId) : null;
     await runTx(tx, `INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
                      VALUES (?,?,?,?,?::jsonb,?,?)`,
-      [trashId, orgId, "removal:" + p.mode, p.id, JSON.stringify({ table: K.table, kind: p.kind, prev, name: p.name }), who.id, who.name]);
+      [trashId, orgId, "removal:" + p.mode, p.id, JSON.stringify({ table: K.table, kind: p.kind, prev, name: p.name, ...(under ? { under } : {}) }), who.id, who.name]);
     return trashId;
   }
 
@@ -353,6 +377,7 @@ function mount(ctx) {
               // REDTEAM-2: the table from the kinds, each column a quoted name, each value bound.
               await runTx(tx, sql`UPDATE ${sql.id(K.table, KIND_TABLES)} SET ${sql.join(cols.map(c => sql`${sql.ident(c)} = ${data.prev[c]}`))}
                 WHERE id=${t.record_id} AND org_id=${orgId}`);
+              if (data.under && SOFT_WITH[K.table]) await SOFT_WITH[K.table].give(tx, ctx, data.under, orgId);
               back.push({ kind: data.kind, id: t.record_id });
             } else {
               const K = R.kindOf(data && data.__removal);

@@ -23,7 +23,9 @@ async function eventHolds(query, orgId, id) {
     `SELECT (SELECT COUNT(*)::int FROM gifts g WHERE g.org_id = e.org_id AND g.event_id = e.id) AS gifts,
             (SELECT COUNT(*)::int FROM pledges p WHERE p.org_id = e.org_id AND p.event_id = e.id) AS pledges,
             (SELECT COUNT(*)::int FROM event_attendees a WHERE a.org_id = e.org_id AND a.event_id = e.id AND ${GUEST_LISTED("a")}) AS guests,
-            (SELECT COUNT(*)::int FROM event_attendees a WHERE a.org_id = e.org_id AND a.event_id = e.id AND NOT ${GUEST_LISTED("a")}) AS cancelled
+            (SELECT COUNT(*)::int FROM event_attendees a WHERE a.org_id = e.org_id AND a.event_id = e.id AND NOT ${GUEST_LISTED("a")}) AS cancelled,
+            -- EVENTS-4: a volunteer shift on the event is activity too (VOL-3, volunteer_slots.event_id)
+            (SELECT COUNT(*)::int FROM volunteer_slots s WHERE s.org_id = e.org_id AND s.event_id = e.id AND s.cancelled_at IS NULL) AS shifts
        FROM events e WHERE e.id = ? AND e.org_id = ?`, [id, orgId]);
   return h || null;
 }
@@ -35,9 +37,12 @@ const { countLabel } = require("../../shared/countWords.js");
 const plural = (n, w) => countLabel(n, w);
 function holdsWords(h) {
   return [h.gifts && plural(h.gifts, "gift"), h.pledges && plural(h.pledges, "pledge"), h.guests && plural(h.guests, "guest"),
-    h.cancelled && countLabel(h.cancelled, "cancelled or removed registration")].filter(Boolean).join(", ");
+    h.shifts && plural(h.shifts, "volunteer shift"),
+    h.cancelled && countLabel(h.cancelled, "cancelled or removed registration")].filter(Boolean).join(", ").replace(/, ([^,]*)$/, " and $1");
 }
-const held = h => h.gifts + h.pledges + h.guests + (h.cancelled || 0) > 0;
+const held = h => h.gifts + h.pledges + h.guests + (h.cancelled || 0) + (h.shifts || 0) > 0;
+// EVENTS-4 item 2: the one line under the button, so the menu says what it will do before it is pressed.
+const holdsLine = h => held(h) ? `Has ${holdsWords(h)}, so it's archived, not deleted.` : "Nothing on it yet, so it can be deleted.";
 
 function mount(ctx) {
   const { query, run, requireAuth, checkWriteAccess, wrap } = ctx;
@@ -48,13 +53,14 @@ function mount(ctx) {
     const h = await eventHolds(query, req.user.orgId, req.params.id);
     if (!h) return res.status(404).json({ error: "Not found" });
     const isHeld = held(h);
-    res.json({ canDelete: !isHeld, holds: h,
+    res.json({ canDelete: !isHeld, holds: h, line: holdsLine(h),
       sentence: isHeld ? `This event has ${holdsWords(h)}, so it can be archived but not deleted. Archiving keeps every gift counted.`
                      : "This event has no gifts and no guests, so it can be deleted." });
   }));
 
   // BUILD-75 B: a foreign or unknown id answers 404, never a false success.
-  app.delete("/events/:id", requireAuth, wrap(async (req, res) => {
+  // EVENTS-4 item 2: write access, like Archive beside it (it had none).
+  app.delete("/events/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     const h = await eventHolds(query, req.user.orgId, req.params.id);
     if (!h) return res.status(404).json({ error: "Not found" });
     if (held(h)) {
@@ -83,4 +89,4 @@ function mount(ctx) {
   return {};
 }
 
-module.exports = { routers, mount, eventHolds };
+module.exports = { routers, mount, eventHolds, holdsWords, holdsLine };
