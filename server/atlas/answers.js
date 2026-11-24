@@ -83,6 +83,10 @@ async function listAnswer({ ask, query, orgId, asHer, req, today = null }) {
   const day0 = today || new Date().toISOString().slice(0, 10);
   const w = matchWindow(ask.qplan || ask.plan, day0);
   const matched = w ? await PA.periodCents(query, orgId, shown.map(p => p.donorId), w, day0).catch(e => { console.error("[atlas] matched:", e.message); return null; }) : null;
+  // ATLAS-9 item 4 (Jarvis, 23 Nov: "a $19,049 donor reads as an $80 donor"): a ranking by what each
+  // gave in a period ("top donors this year") carries each person's own period total, the figure its
+  // sentence adds up and Reports > Top donors shows. Never their last gift in its place.
+  const pw = !w ? periodTotalWords(ask) : null;
   return {
     count, unit: "people", ids, reason: why, more: Math.max(0, count - shown.length),
     people: shown.map(p => {
@@ -90,12 +94,26 @@ async function listAnswer({ ask, query, orgId, asHer, req, today = null }) {
       const last = toCents(r.last_gift_amount) > 0 && r.last_gift_date ? `last gift ${usd(toCents(r.last_gift_amount))} on ${day(r.last_gift_date)}` : "no gift on record";
       const lifetime = `Lifetime ${usd(life.get(p.donorId) || 0)}`;
       const m = matched && matched.get(p.donorId);
+      if (pw && Number.isFinite(Number(p.cents))) { const a4 = `${usd(Math.round(Number(p.cents)))} ${pw}`; return { donorId: p.donorId, name: p.name, amount: a4, lifetime, reason: `${a4}; ${lifetime}` }; }
       // The matched amount first; with no window to read, what they last gave.
       if (m > 0) return { donorId: p.donorId, name: p.name, amount: `${usd(m)} ${w.words}`, lifetime, reason: `${usd(m)} ${w.words}; ${lifetime}` };
       return { donorId: p.donorId, name: p.name, amount: last, lifetime, reason: `${last}; ${lifetime}` };
     }),
     countSentence: `${count.toLocaleString("en-US")} ${count === 1 ? "person matches" : "people match"}${why ? ` (${why})` : ""}.`,
   };
+}
+
+// The words for a period-total ranking's figure ("this year"), or null when the answer is not one:
+// Ask's plan ranks people by money raised over a period and each person carries their own cents.
+function periodTotalWords(ask) {
+  const plan = ask && (ask.plan || ask.qplan);
+  const people = answerPeople(ask);
+  if (!plan || plan.metric !== "raised" || plan.kind !== "who" || !plan.period || !people.length || !people.every(p => Number.isFinite(Number(p.cents)))) return null;
+  const label = String((ask.figures && ask.figures.value && ask.figures.value.label) || "");
+  const said = label.includes(" · ") ? label.split(" · ").slice(1).join(" · ").replace(/\s*\([^)]*\)\s*$/, "").trim() : "";
+  if (said) return said;
+  const K = { this_year: "this year", last_year: "last year", all_time: "in all", this_month: "this month", last_month: "last month" };
+  return K[plan.period.kind] || "in the period asked";
 }
 
 // The group "Open list" opens: named for her question, kept by hand, so it is
@@ -107,8 +125,8 @@ function groupName(text, today) {
 }
 
 // ── 2. ONE PERSON ──────────────────────────────────────────────────────────
-// "Tell me about Marlowe": giving, the About note, the last conversations and
-// the next step, each a line with where it lives.
+// "Tell me about Marlowe": what is open (ATLAS-9: asks, gifts not yet thanked, the
+// next meeting, the next step), then giving, conversations and About, each a line with where it lives.
 async function personAnswer({ query, orgId, donorId, today }) {
   // TRUTH-3: lifetime, the gift count and the last gift by the profile's rules (shared/numbers), never the stored rollup.
   const [d] = await query(`SELECT d.id, d.name, d.about_them, ROUND(${require("../../shared/numbers/lifetime").LIFETIME("d")}, 2) AS total_giving, ${require("../../shared/numbers/giftCount").GIFT_COUNT("d")} AS gift_count,
@@ -130,18 +148,22 @@ async function personAnswer({ query, orgId, donorId, today }) {
     : `${first} has no gifts on record yet.`;
   const about = String(d.about_them || "").trim();
   const TYPE = BR.TYPE;
+  // ATLAS-9 item 1: what is open leads (asks, gifts not yet thanked, the next meeting, the next step), then what happened.
+  const open = await require("./briefOpen").openItems(query, orgId, donorId, { today, first });
+  const next = task ? { kind: "next", line: `Next step: ${task.title}${task.due ? `, due ${day(task.due)}` : ""}.`, link: { tab: "donor", donorId, section: "thread" } }
+    : plan ? { kind: "next", line: `Next step: ${plan.label}${plan.due_date ? `, due ${day(plan.due_date)}` : ""}.`, link: { tab: "donor", donorId, section: "thread" } }
+    : { kind: "next", line: `There is no next step planned for ${first}.`, link: { tab: "donor", donorId, section: "thread" } };
+  const convLines = convs.filter((c, i) => convs.findIndex(x => x.id === c.id) === i).map(c => ({ kind: "conversation", id: c.id, line: `${TYPE[c.type] || "Conversation"}, ${day(c.date)}${String(c.note || "").trim() ? `: "${String(c.note).replace(/\s+/g, " ").slice(0, 160)}"` : ""}`, link: { tab: "donor", donorId, section: c.section || "timeline" } }));
   const facts = [
+    ...open,
+    next,
     { kind: "giving", line: giving, link: { tab: "donor", donorId, section: "giving" } },
+    ...(convLines.length ? convLines : [{ kind: "conversation", line: `No conversation with ${first} is logged yet.`, link: { tab: "donor", donorId, section: "timeline" } }]),
     about ? { kind: "about", line: `About ${first}: ${about}`, link: { tab: "donor", donorId } }
       : { kind: "about", line: `Nobody has written an About note for ${first} yet.`, link: { tab: "donor", donorId } },
     // ATLAS-5 (W-1108-Atlas-02X): each note once, by its id.
     ...aboutLines.map(l => ({ kind: "about", line: `${l}.`, link: { tab: "donor", donorId } })),
-    ...convs.filter((c, i) => convs.findIndex(x => x.id === c.id) === i).map(c => ({ kind: "conversation", id: c.id, line: `${TYPE[c.type] || "Conversation"}, ${day(c.date)}${String(c.note || "").trim() ? `: "${String(c.note).replace(/\s+/g, " ").slice(0, 160)}"` : ""}`, link: { tab: "donor", donorId, section: c.section || "timeline" } })),
-    task ? { kind: "next", line: `Next step: ${task.title}${task.due ? `, due ${day(task.due)}` : ""}.`, link: { tab: "donor", donorId, section: "thread" } }
-      : plan ? { kind: "next", line: `Next step: ${plan.label}${plan.due_date ? `, due ${day(plan.due_date)}` : ""}.`, link: { tab: "donor", donorId, section: "thread" } }
-      : { kind: "next", line: `There is no next step planned for ${first}.`, link: { tab: "donor", donorId, section: "thread" } },
   ];
-  if (!convs.length) facts.splice(2 + aboutLines.length, 0, { kind: "conversation", line: `No conversation with ${first} is logged yet.`, link: { tab: "donor", donorId, section: "timeline" } });
   if (d.deceased) facts.unshift({ kind: "care", line: `${d.name} is marked as deceased.`, link: { tab: "donor", donorId } });
   else if (d.do_not_contact) facts.unshift({ kind: "care", line: `${d.name} is marked do not contact.`, link: { tab: "donor", donorId } });
   return { donorId, name: d.name, about, spoke: `Here's what Steward knows about ${d.name}.`, facts, today };
@@ -187,7 +209,7 @@ function publicAnswer(a) {
   if (a.type === "list") return { type: "list", question: a.question, count: a.count, unit: a.unit || null, reason: a.reason, more: a.more, people: a.people, countSentence: a.countSentence, groupId: a.groupId || null };
   if (a.type === "person") return { type: "person", donorId: a.donorId, name: a.name, about: a.about, facts: a.facts };
   // ATLAS-8: a why answer's people, each with their reason and what is at stake, and the total of what is drawn.
-  if (a.type === "why") return { type: "why", count: a.count, more: a.more, total: a.total, totalCents: a.totalCents, definition: a.definition,
+  if (a.type === "why") return { type: "why", count: a.count, more: a.more, total: a.total, totalCents: a.totalCents, definition: a.definition, stakeWord: a.stakeWord || null,   // ATLAS-9: "lifetime" on a population's call list
     people: (a.people || []).map(p => ({ donorId: p.donorId, name: p.name, reason: p.reason, atStake: p.atStake, cents: p.cents })) };
   if (a.type === "figure") return { type: "figure", parts: a.parts };   // ATLAS-8: a Home figure, each part named
   return null;
@@ -211,4 +233,4 @@ async function priorContext({ query, orgId, userId, followsId, parse }) {
   return { id: m.id, onPage: last, context: { ...(last ? { lastPerson: last } : {}), people, ...(list ? { list: list.people.map(p => ({ donorId: p.donorId, name: p.name })) } : {}) } };
 }
 
-module.exports = { matchWindow, LINK_CHOICES, recordFirstLine, publicAnswer, priorContext, listAnswer, answerPeople, groupName, personAnswer, unrecordedAmount, linkKind, LINK_WORD, MAX_IDS, SHOWN };
+module.exports = { periodTotalWords, matchWindow, LINK_CHOICES, recordFirstLine, publicAnswer, priorContext, listAnswer, answerPeople, groupName, personAnswer, unrecordedAmount, linkKind, LINK_WORD, MAX_IDS, SHOWN };

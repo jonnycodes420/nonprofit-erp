@@ -121,14 +121,8 @@ async function orgStewardStart(orgId) {
   // timestamptz formats in the session's zone, so on a UTC database a donor
   // created at 9pm in New York started "tomorrow", and that evening's gifts
   // were dropped from the thank-yous owed (found by RECONCILE-1's CI run).
-  const tz = await orgTzName(orgId);
-  const [row] = await query(
-    `SELECT TO_CHAR(COALESCE(
-        (SELECT MIN(created_at) FROM donors WHERE org_id = ?),
-        (SELECT created_at FROM orgs WHERE id = ?),
-        NOW()
-      ) AT TIME ZONE ?, 'YYYY-MM-DD') AS d`, [orgId, orgId, tz]);
-  return row && row.d ? String(row.d) : null;
+  // ATLAS-9: the SQL is shared/numbers/stewardStart.js, so the Atlas brief reads the same day.
+  return require("../../shared/numbers/stewardStart").stewardStart(query, orgId, await orgTzName(orgId));
 }
 
 // FIX-2 A — EVERY NUMBER OPENS. Each figure below is computed THROUGH its

@@ -25,6 +25,13 @@
 //       Planted (ATLAS-8 report): answer `why` not saved → §6 rows red; LYBUNT to lapsed
 //       (populations.js reading lifecycle=lapsed) → §6 LYBUNT red; misattributed()
 //       returning [] → §6 wrong-name red.
+//   §7  ATLAS-9: a brief on a person with an open ask, an unthanked gift and tomorrow's
+//       meeting names all three before history; a phrase table of 23 phrasings (Jarvis's
+//       own first) each reads as a registry population and answers with its count = the
+//       registry's, its name and its sentence (both, each named, when ambiguous); a
+//       lapsed call list holds only lapsed people, top by lifetime, and foots; top donors'
+//       per-row figure = Reports > Top donors'; the reading-off line is the shared one.
+//       Red on main (ATLAS-9 report).
 //
 // HOW IT GOES RED (planted, seen red before green, ATLAS-6 report):
 //   * remove the post-check (why.js accepts a sentence whatever its dates):
@@ -175,6 +182,92 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   ok("§6 a stated total the drawn rows don't foot to is replaced by the rows' own sentence", !WRm.whyLine("Start with Vespasia. $53,837 is at stake across all five.", fx).footed && /\$10,300 is at stake across both\./.test(WRm.whyLine("Start with Vespasia. $53,837 is at stake across all five.", fx).sentence));
   const aq = rows(await q(`SELECT question FROM atlas_actions WHERE org_id=$1 AND request_id=$2`, [F.ORG, ly.req.id]));
   ok("§6 each Atlas line keeps the question it answered", aq.length > 0 && aq.every(r => r.question === "How many LYBUNT donors do we have?"), aq);
+
+  // ── §7 ATLAS-9: the brief names what's open; any lapsed question gets the registry's count;
+  //    a population's call list is that population; top donors carry the period's total ──
+  const F9 = require("./lib/atlas9Fixture");
+  await F9.seed(q, today);
+  const tok9 = (await api("POST", "/auth/login", null, { email: F9.ADMIN, password: F9.PASSWORD })).body?.token;
+  ok("§7 the ATLAS-9 fixture's director signs in", !!tok9);
+  const ask9 = async text => {
+    const r = await fetch(BASE + "/atlas", { method: "POST", headers: { authorization: `Bearer ${tok9}`, "content-type": "application/json" }, body: JSON.stringify({ text }) });
+    return ((await r.json().catch(() => ({}))).request) || {};
+  };
+  const REG = require("../shared/numbers/populations");
+  const W9 = require("../shared/populationWords.js");
+  const PA9 = require("../server/atlas/populationAsk");
+  const DB = require("../db");
+  const regCount = async id => {
+    if (id === "lybunt" || id === "sybunt") { const r = await api("GET", `/reports/${id}`, tok9); return r.body.rows.length; }   // the registry's builder for these is the report itself
+    return REG.population(id).count({ query: DB.query, orgId: F9.ORG });
+  };
+  // The phrase table: Jarvis's words from both sweeps first (22 Nov: LYBUNT, lapsed; 23 Nov: the call list), then real phrasings.
+  const TABLE = [
+    ["How many LYBUNT donors do we have?", ["lybunt"]], ["How many lapsed donors do we have?", ["lapsed"]],
+    ["how many lapsed donors", ["lapsed"]], ["Who's lapsed?", ["lapsed"]], ["Who's lapsed this year?", ["lapsed", "lybunt"]],
+    ["How many people have lapsed?", ["lapsed"]], ["How many people stopped giving?", ["lapsed"]], ["How many donors stopped giving?", ["lapsed"]],
+    ["Lapsed this year", ["lapsed", "lybunt"]], ["LYBUNT", ["lybunt"]], ["Who are my LYBUNT donors?", ["lybunt"]],
+    ["Who gave last year but not this year?", ["lybunt"]], ["How many donors gave last year but haven't given yet this year?", ["lybunt"]],
+    ["Show me our lapsed donors", ["lapsed"]], ["Lapsed donors", ["lapsed"]], ["Count of lapsed supporters right now", ["lapsed"]],
+    ["How many people no longer give?", ["lapsed"]], ["Who has not given in over a year?", ["lapsed"]], ["Which donors are lapsing?", ["lapsing"]],
+    ["How many SYBUNT donors?", ["sybunt"]], ["How many donors have stopped giving this year?", ["lapsed", "lybunt"]],
+    ["Who are the lapsed donors?", ["lapsed"]], ["What's our lapsed count?", ["lapsed"]],
+  ];
+  const STAYS = ["lapsed donors in Lexington", "How much did lapsed donors give?", "How many lapsed donors came back?", "Who should I call tomorrow?", "Who stopped their monthly gift?"];
+  const readBad = TABLE.filter(([t, ids]) => { const r = PA9.readPopulation(t); return !r || r.call || r.ids.join() !== ids.join(); }).map(([t]) => t)
+    .concat(STAYS.filter(t => PA9.readPopulation(t) && !PA9.readPopulation(t).call));
+  ok(`§7 each of ${TABLE.length} phrasings reads as its registry population (and narrower questions stay with Ask)`, TABLE.length >= 20 && !readBad.length, readBad);
+  const counts = {};
+  for (const id of ["lapsed", "lapsing", "lybunt", "sybunt"]) counts[id] = await regCount(id);
+  ok("§7 the fixture has lapsed and LYBUNT people to count", counts.lapsed === 4 && counts.lybunt > 0, counts);
+  const e2eBad = [];
+  for (const [text, ids] of TABLE) {
+    const lines = ((await ask9(text)).lines || []).filter(l => l.kind === "answer");
+    if (lines.length !== ids.length) { e2eBad.push(`${text}: ${lines.length} answers for ${ids.join("+")}`); continue; }
+    ids.forEach((id, i) => {
+      const l = lines[i], n = counts[id], P = W9.population(id);
+      const said = n === 0 ? new RegExp(`Nobody is ${P.name}`).test(l.line) : (l.answer && l.answer.count === n && new RegExp(`(^|[:.] )${n.toLocaleString("en-US")} (people are|person is) ${P.name.replace(/[+]/g, "\\+")}`).test(l.line));
+      if (!said || !String(l.line).includes(P.sentence)) e2eBad.push(`${text} [${id}=${n}]: ${l.line}`);
+      if (ids.length > 1 && i === 0 && !/^That can mean two different lists/.test(l.line)) e2eBad.push(`${text}: both not said`);
+    });
+  }
+  ok("§7 each phrasing answers with the registry's count, the population's name and its sentence; an ambiguous one answers both, each named", !e2eBad.length, e2eBad);
+
+  // The call list (item 3): only that population's askable people, top by lifetime; the total foots to the rows.
+  const GRP = require("../groups");
+  const lapsedIds = async () => { const df = await GRP.buildDonorFilter(F9.ORG, REG.population("lapsed").rules); return new Set((await DB.query(`SELECT id FROM donors WHERE ${df.whereSql}`, df.params)).map(r => r.id)); };
+  const lap = await lapsedIds();
+  for (const text of ["Who should I call to win back lapsed donors?", "Which lapsed donors should I call?"]) {
+    const cl9 = ((await ask9(text)).lines || []).find(l => l.answer && l.answer.type === "why") || {};
+    const ppl = (cl9.answer && cl9.answer.people) || [];
+    const drawn9 = ppl.reduce((x, p) => x + p.cents, 0);
+    ok(`§7 "${text}" lists only lapsed people, askable, top by lifetime (never the morning list's Odile)`,
+      ppl.map(p => p.donorId).join() === F9.LAPSED_ASKABLE.join() && ppl.every(p => lap.has(p.donorId)) && cl9.answer.stakeWord === "lifetime", { line: cl9.line, ppl });
+    ok(`§7 "${text}": the total foots to the rows ($52,250) and the sentence says it`, drawn9 === 5225000 && cl9.answer.totalCents === drawn9 && String(cl9.line).includes("$52,250"), cl9.line);
+  }
+  const plain9 = ((await ask9("Who should I call tomorrow?")).lines || []).find(l => l.answer && l.answer.type === "why");
+  ok("§7 without a population, who to call is still the morning list (tomorrow's coffee with Odile, who is not lapsed)", !!plain9 && !plain9.answer.stakeWord && plain9.answer.people.some(p => p.donorId === "d_atl9_odile") && !plain9.answer.people.some(p => lap.has(p.donorId)), plain9 && plain9.line);
+
+  // The brief (item 1): what's open leads, each line opening its row.
+  const br9 = ((await ask9("Brief me on Odile Marchetti")).lines || []).find(l => l.answer && l.answer.type === "person");
+  const facts9 = (br9 && br9.answer.facts) || [];
+  const at = k => facts9.findIndex(f => f.kind === k);
+  ok("§7 the brief names the open $25,000 ask for Youth Arts Access with its stage", facts9.some(f => f.kind === "open_ask" && /^Open ask: \$25,000 for Youth Arts Access, stage Asked/.test(f.line)), facts9);
+  ok("§7 the brief names the gift not yet thanked ($1,500), by the profile's rule", facts9.some(f => f.kind === "unthanked" && f.id === "g_atl9_2" && /\$1,500/.test(f.line)), facts9);
+  ok("§7 the brief names tomorrow's coffee with its date", facts9.some(f => f.kind === "coming_up" && /^Meeting tomorrow, [A-Z][a-z]{2} \d{1,2}, \d{4}: Coffee with Odile/.test(f.line)), facts9);
+  ok("§7 what's open comes before history, and every line opens her record", at("open_ask") === 0 && at("coming_up") < at("giving") && at("unthanked") < at("conversation") && facts9.every(f => f.link && f.link.donorId === "d_atl9_odile"), facts9.map(f => f.kind));
+
+  // Top donors (item 4): each row's figure is Reports > Top donors' for the period, labelled.
+  const top9 = ((await ask9("Who are our top donors this year?")).lines || []).find(l => l.answer && l.answer.type === "list");
+  const rep9 = await api("GET", "/reports/top-donors", tok9);
+  const usd9 = n => "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2, maximumFractionDigits: 2 });
+  const want9 = new Map((rep9.body.rows || []).map(r => [r.id, `${usd9(r.total)} this year`]));
+  const topBad = ((top9 && top9.answer.people) || []).filter(p => want9.get(p.donorId) !== p.amount).map(p => `${p.name}: ${p.amount} vs ${want9.get(p.donorId)}`);
+  ok("§7 each top donor's figure is Reports > Top donors' for the year, labelled (Hugo: $30,080 this year, never his $80 last gift)",
+    !!top9 && top9.answer.people.length === want9.size && !topBad.length && top9.answer.people[0].amount === "$30,080 this year", topBad.length ? topBad : top9 && top9.answer.people);
+  // Item 5: the line the dialog says is the one shared line Settings and the Home Thread draw.
+  const off9 = await ask9("How many lapsed donors do we have?");
+  ok("§7 reading off: the dialog's line is shared/atlasReading.js's, the one Settings > Atlas and the Home Thread draw", off9.readingOff === (await import("../shared/atlasReading.js")).READING_OFF);
 
   await closeDb();
   summary();

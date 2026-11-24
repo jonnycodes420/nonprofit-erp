@@ -12,16 +12,18 @@ const WR = require("./whyRows");
 const POP = require("./populations");
 const A = require("../../auditTrail");
 
-const KINDS = new Set(["prior_rows", "population", "home_figure"]);
+const KINDS = new Set(["prior_rows", "population", "population_call", "home_figure"]);
 
 // The steps her words make, or null. `prior`: AN.priorContext's (the request before).
 function read(text, prior) {
   const fu = prior && prior.id ? WR.followUp(text) : null;
   if (fu) return [{ kind: "prior_rows", mode: fu, follows: prior.id, words: text }];
-  const pop = POP.populationAsked(text);
-  if (pop) return [{ kind: "population", key: pop, words: text }];
   const home = WR.homeAsked(text);
   if (home) return [{ kind: "home_figure", which: home, words: text }];
+  // ATLAS-9 items 2 and 3: any phrasing the registry's words name; a call question lists that population.
+  const pop = require("./populationAsk").readPopulation(text);
+  if (pop && pop.call) return pop.ids.map(key => ({ kind: "population_call", key, words: text }));
+  if (pop) return pop.ids.map((key, i) => ({ kind: "population", key, words: text, ...(pop.ambiguous ? { both: pop.ids, first: i === 0 } : {}) }));
   return null;
 }
 
@@ -33,6 +35,10 @@ async function run(st, { log, save, get, query, orgId, parse }) {
     out = WR.followUpLine(st.mode, prior);
   } else if (st.kind === "population") {
     out = await POP.populationAnswer(st.key, { get, query, orgId });
+    // "Lapsed this year" could be either list: both answer, each named, and the first says so.
+    if (out && st.both && st.first) out.line = `That can mean two different lists, so here are both: ${st.both.map(k => (POP.populationOf(k) || {}).word).join(" and ")}. ${out.line}`;
+  } else if (st.kind === "population_call") {
+    out = await POP.populationCallAnswer(st.key, { query, orgId });
   } else if (st.kind === "home_figure") {
     const [o] = await query("SELECT timezone FROM orgs WHERE id=?", [orgId]).catch(() => []);
     out = await WR.homeAnswer(st.which, get, o || null);
@@ -56,7 +62,7 @@ function auditQuestion(text) {
 
 // The one line said before an answer given with reading off (ai off, or the
 // read failed), or null. `ai`: the request's ai; `lines`: its lines.
-const READING_OFF = "My reading is off for this organization, so I answered from Steward's own counts only. A question they don't cover, I'll say I can't answer.";
+const { READING_OFF } = require("../../shared/atlasReading.js");   // ATLAS-9 item 5: one line, read by every surface
 function readingOffLine(ai, lines) {
   if (ai === "on") return null;
   return (lines || []).some(l => l.kind === "answer" && l.state === "done") ? READING_OFF : null;
