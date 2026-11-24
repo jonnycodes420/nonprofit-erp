@@ -127,7 +127,7 @@ async function factsFor(org, donorId, signer = null, kind = null) {
   const [ev] = await query(
     `SELECT e.name FROM event_attendees a JOIN events e ON e.id = a.event_id WHERE a.org_id=? AND a.donor_id=?
         AND (a.status='attended' OR a.checked_in_at IS NOT NULL) ORDER BY e.date DESC NULLS LAST LIMIT 1`, [org.id, d.id]);
-  const [vh] = await query(`SELECT COALESCE(SUM(ROUND(hours*100)),0)::int AS hh FROM volunteer_shifts WHERE org_id=? AND person_id=? AND LEFT(date,4)=?`, [org.id, d.id, year]);
+  const [vh] = await query(`SELECT COALESCE(SUM(ROUND(hours*100)),0)::int AS hh FROM volunteer_shifts WHERE org_id=? AND person_id=? AND LEFT(date,4)=? AND ${require("../shared/numbers/served").SERVED(null, orgTime.orgToday(org))}`, [org.id, d.id, year]);
   const c = v => money.toCents(String(v ?? "0")) ?? 0;
   const k = kitOf(org);
   return {

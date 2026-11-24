@@ -360,7 +360,12 @@ app.get("/people/:id", requireAuth, wrap(async (req, res) => {
   // FIX-8 Part B.2 — the roles line reads "Donor since 2021", and the year is
   // a fact about the person, so it travels with the person rather than being
   // dug out of a gift list the header does not have.
+  // RULES-1 item 7: the role line offers "Mark as former" only to an active or paused volunteer.
+  const volRec = PT.typesOf(row).includes("volunteer")
+    ? await require("../volunteers/volunteerRecord").readRecord(req.user.orgId, row.id) : null;
   res.json({ ...personOut(row, await donorLock(req.user.orgId, row)),
+             volunteer_status: PT.typesOf(row).includes("volunteer")
+               ? { status: volRec ? volRec.status : "active", statusWord: volRec ? volRec.statusWord : "Active" } : null,
              first_gift_date: row.first_gift_date || null,
              // IMPORT-4: gifts on file but none dated reads "Donor since: unknown".
              gift_count: Number(row.gift_count) || 0,

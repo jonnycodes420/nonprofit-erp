@@ -93,7 +93,7 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
   const T = {}, A = {};
   // LIST-2: the one person rule (server/donors/personMatch.js): name, email,
   // phone, contact person, household and linked organization, accents folded.
-  T.people = `SELECT id, name, email, phone, kind, person_types, total_giving, contact_name,
+  T.people = `SELECT id, name, email, phone, kind, person_types, total_giving, gift_count, imported_total, contact_name,
               ${PM.PERSON_MATCH_REASON_SQL} AS match_reason
          FROM donors
         WHERE org_id = ? AND deleted_at IS NULL
@@ -317,7 +317,9 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
   for (const d of r.people) {
     results.push({ kind: "person", id: d.id, title: d.name, email: d.email || "", phone: d.phone || "",
       contactName: d.contact_name || "", organization: isOrg(d.kind), personKind: d.kind || null,
-      person_types: d.person_types || null, totalGiving: Number(d.total_giving) || 0,
+      // RULES-1 (Jarvis, Nov 23: a $0 person "labelled Donor"): the roles a person is SHOWN with are the
+      // giving rule's (isDonor.js typesOnRead), never the stored roles; the chip reads these.
+      person_types: require("../shared/numbers/isDonor").typesOnRead(d), totalGiving: Number(d.total_giving) || 0,
       // WALKB-1: why this person matched, in words ("household: The Marlowe Hart household").
       why: PM.matchReasonWords(d.match_reason) });
   }

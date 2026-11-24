@@ -542,7 +542,7 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
               AND st.due_date >= ? AND st.due_date <= ?
             ORDER BY st.due_date ASC LIMIT 6`, [orgId, id, today, horizon]),
     query(`SELECT COALESCE(SUM(hours), 0)::float AS h, TO_CHAR(MAX(date::date), 'YYYY-MM-DD') AS last
-             FROM volunteer_shifts WHERE org_id = ? AND person_id = ?`, [orgId, id]),
+             FROM volunteer_shifts WHERE org_id = ? AND person_id = ? AND ${require("../../shared/numbers/served").SERVED(null, today)}`, [orgId, id]),
     query(`SELECT CASE WHEN g.giving_page_id IS NOT NULL THEN 'page'
                        WHEN g.giving_source_id IS NOT NULL THEN 'source'
                        WHEN g.stripe_payment_id IS NOT NULL THEN 'stripe'

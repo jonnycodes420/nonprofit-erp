@@ -253,7 +253,7 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
   // can never hold two different averages.
   const pGlance = require("../numbers").donorGlance(query, orgId, d.id);
   const pVh = query(`SELECT COALESCE(SUM(ROUND(hours*100)),0)::bigint AS h, MIN(date) AS first, MAX(date) AS last
-                       FROM volunteer_shifts WHERE org_id=? AND person_id=?`, [orgId, d.id]);
+                       FROM volunteer_shifts WHERE org_id=? AND person_id=? AND ${require("../shared/numbers/served").SERVED(null, today)}`, [orgId, d.id]);
   const pMe = query(`SELECT role FROM users WHERE id = ? AND org_id = ?`, [req.user.userId, orgId]);
   const pTags = query(`SELECT tags FROM donors WHERE id = ? AND org_id = ?`, [d.id, orgId]);
   const pMeeting = require("../meetingEffects").meetingSetFor(orgId, [d.id]);
