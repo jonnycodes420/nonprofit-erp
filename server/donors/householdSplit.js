@@ -29,8 +29,16 @@ const app = routers.r1;
 const DH = () => require("../../routes/dataHealth");
 const fmtDay = d => new Date(d).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
+// The person, if they are in this org and theirs to see (ACCESS-2); else the same 404 as nobody.
+async function personOf(req) {
+  const vis = require("../auth/portfolio").visibleSql(req, "d");
+  const [d] = await query(`SELECT d.id FROM donors d WHERE d.org_id = ? AND d.id = ? AND d.deleted_at IS NULL${vis.sql}`, [req.user.orgId, String(req.params.id), ...vis.args]);
+  return d || null;
+}
+
 app.get("/donors/:id/merged-from", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
+  if (!(await personOf(req))) return res.status(404).json({ error: "Not found" });
   const [m] = await query(
     `SELECT id, merged_name, kept_name, created_at FROM donor_merges
       WHERE org_id = ? AND kept_id = ? AND undone_at IS NULL ORDER BY created_at DESC LIMIT 1`, [orgId, String(req.params.id)]);
@@ -47,6 +55,7 @@ app.post("/donors/:id/split-to-household", requireAuth, checkWriteAccess, wrap(a
   const orgId = req.user.orgId;
   const mergeId = String((req.body && req.body.mergeId) || "");
   const keptId = String(req.params.id);
+  if (!(await personOf(req))) return res.status(404).json({ error: "Not found" });
   const a = actor(req);
   const me = { id: a.id, name: a.name };
   let out;

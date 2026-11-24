@@ -1,4 +1,4 @@
-// server/db/ddl/household1.js · HOUSEHOLD-1. A HOUSEHOLD CAN BE A ROW ON THE TOP 100.
+// server/db/ddl/builds/2026-11-24-household1.js · HOUSEHOLD-1. A HOUSEHOLD CAN BE A ROW ON THE TOP 100.
 //
 // Additive only. `pool` is part7's DDL session (schema.js ddlSession): a short
 // lock_timeout and a retry, so an ALTER never queues in front of reads.

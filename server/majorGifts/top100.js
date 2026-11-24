@@ -230,11 +230,12 @@ app.get("/top100/export.csv", requireAuth, mg, wrap(async (req, res) => {
   const today = await todayOf(orgId);
   const rows = shape(list ? await listRows(orgId, list.id, today, require("../auth/portfolio").visibleSql(req, "d")) : [], req.query || {});
   const money = c => c == null ? "" : (c / 100).toFixed(2);
-  const head = ["Rank", "Name", "People", "Wealth Score", "Lifetime", "This year", "Last gift date", "Last gift amount", "Owner", "Stage", "Goal", "Ask amount", "Ask by", "Next step", "Next step date", "Last contact", "Plan health"];
+  // HOUSEHOLD-1: People and This year go at the end, so every column a sheet already reads keeps its place.
+  const head = ["Rank", "Name", "Wealth Score", "Lifetime", "Last gift date", "Last gift amount", "Owner", "Stage", "Goal", "Ask amount", "Ask by", "Next step", "Next step date", "Last contact", "Plan health", "This year", "People"];
   const lines = [head.map(csvCell).join(",")];
-  for (const r of rows) lines.push([r.rank, r.name, r.kind === "household" ? r.people.map(x => x.name).join("; ") : r.name, r.wealthScore ?? "", money(r.lifetimeCents), money(r.thisYearCents), r.lastGift ? r.lastGift.date : "", r.lastGift ? money(r.lastGift.cents) : "",
+  for (const r of rows) lines.push([r.rank, r.name, r.wealthScore ?? "", money(r.lifetimeCents), r.lastGift ? r.lastGift.date : "", r.lastGift ? money(r.lastGift.cents) : "",
     r.owner ? r.owner.name : "", r.stage || "", r.goal || "", money(r.askCents), r.askBy || "", r.next ? r.next.label : "", r.next ? r.next.due : "",
-    r.lastContact ? r.lastContact.date : "", r.health.label].map(csvCell).join(","));
+    r.lastContact ? r.lastContact.date : "", r.health.label, money(r.thisYearCents), r.people.map(x => x.name).join("; ")].map(csvCell).join(","));
   const name = String((list && list.name) || "Top 100").replace(/[^A-Za-z0-9 _-]/g, "").trim().replace(/\s+/g, "-") || "Top-100";
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="${name}-${today}.csv"`);
