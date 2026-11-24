@@ -30,7 +30,7 @@ export default [
       ecmaVersion: "latest",
       sourceType: "module",
       parserOptions: { ecmaFeatures: { jsx: true } },
-      globals: { ...globals.browser, ...globals.es2021 },
+      globals: { ...globals.browser, ...globals.es2021, __WN_LATEST__: "readonly" },   // PERF-5: vite.config.js define
     },
     rules: {
       // The guard. An undefined reference fails the build.

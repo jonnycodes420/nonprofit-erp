@@ -178,7 +178,7 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: machine.cpu });
   let js = 0, bytes = 0, requests = 0;
   const done = [];   // PERF-2: [type, bytes, ms after navigation] for each response
-  const types = new Map(), apiUrls = [], fail5xx = [], sent = [];
+  const types = new Map(), apiUrls = [], fail5xx = [], sent = [], scripts = [];   // PERF-5: every script URL the visit loaded
   // HOME-4: when each request to the API left, against the page's own clock.
   let navAt = null;
   cdp.on("Network.requestWillBeSent", e => {
@@ -187,6 +187,7 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
   });
   cdp.on("Network.responseReceived", e => {
     types.set(e.requestId, e.type);
+    if (e.type === "Script") scripts.push(e.response.url);
     // The AI stream answers 5xx on a server with no model key (the scratch
     // stack); that is the AI switch's business, not this file's.
     if (e.response.status >= 500 && !/\/ai\/stream/.test(e.response.url)) fail5xx.push(e.response.url);
@@ -221,7 +222,7 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
   });
   const out = {
     ready: !!r.readyAt, readyAt: Math.round(r.readyAt), lcp: Math.round(r.lcp), longEnd: Math.round(r.longEnd), net: Math.round(r.netQuiet || 0),
-    jsKB: Math.round(js / 1024), totalKB: Math.round(bytes / 1024), requests, errors, fail5xx, apiUrls,
+    jsKB: Math.round(js / 1024), totalKB: Math.round(bytes / 1024), requests, errors, fail5xx, apiUrls, scripts,
     fcp: Math.round(r.fcp || 0), sent, cls: Math.round((r.cls || 0) * 1000) / 1000, shifts: r.shifts || [],
     // PERF-2: the JavaScript in by the time the screen was there, and any bundle asked for twice
     jsFirstKB: Math.round(done.filter(([t, , at]) => t === "Script" && r.readyAt && at <= r.readyAt + 50).reduce((n, [, b]) => n + b, 0) / 1024),
@@ -353,7 +354,7 @@ async function measureN(browser, machine, auth, url, ready, rows, opts) {
   const runs = [];
   for (let i = 0; i < RUNS; i++) runs.push(await measure(browser, machine, auth, url, ready, rows, opts));
   const m = { ...runs[0], ready: runs.every(r => r.ready), errors: runs.flatMap(r => r.errors), fail5xx: runs.flatMap(r => r.fail5xx),
-    lateRail: runs.flatMap(r => lateRailReads(r)), twice: runs.flatMap(r => r.twice) };
+    lateRail: runs.flatMap(r => lateRailReads(r)), twice: runs.flatMap(r => r.twice), scripts: runs.flatMap(r => r.scripts) };
   for (const k of ["usable", "readyAt", "lcp", "longEnd", "net", "jsKB", "jsFirstKB", "firstKB", "totalKB", "requests"]) m[k] = median(runs.map(r => r[k]));
   m.cls = Math.max(...runs.map(r => r.cls));   // PERF-3: the worst run, not the median
   m.shifts = runs.reduce((w, r) => (r.cls > w.cls ? r : w), runs[0]).shifts;   // what moved in that run
@@ -497,6 +498,12 @@ function preloaderAllowed() {
   timed(`Home, its rail included, usable under 1 s on a desktop (${homeD.usable} ms)`, { ms: homeD.usable, budget: BUDGET.homeDesktop });
   timed(`Home, its rail included, usable under ${BUDGET.homePhone / 1000} s on a phone (${homeP.usable} ms)`, { ms: homeP.usable, budget: BUDGET.homePhone });
   ok(`Home's first look downloads at most ${JS_FIRST_KB} KB of JavaScript on a phone (${homeP.jsFirstKB} KB)`, homeP.jsFirstKB > 0 && homeP.jsFirstKB <= JS_FIRST_KB, homeP.jsFirstKB);
+  // PERF-5: none of What's new rides on Home: no script Home loaded is the
+  // changelog chunk or carries the newest entry (tests/lib/changelogOffHome.js).
+  {
+    const cl = require("./lib/changelogOffHome").changelogOnHome([...homeP.scripts, ...homeD.scripts], DIST);
+    ok(`What's new is not in Home's download: no script Home loaded is the changelog or carries the newest entry (${cl.newest})`, cl.probe && !cl.found.length, cl.found);
+  }
   // PERF-3: the second visit, every byte of the first look, and nothing moving.
   timed(`Home, a second time, usable under ${WARM_MS / 1000} s on a phone (${homeW.usable} ms)`, { ms: homeW.usable, budget: WARM_MS });
   ok(`Home's first look downloads at most ${FIRST_KB} KB in all on a phone (${homeP.firstKB} KB)`, homeP.firstKB > 0 && homeP.firstKB <= FIRST_KB, homeP.firstKB);
