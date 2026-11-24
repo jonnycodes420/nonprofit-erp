@@ -247,7 +247,7 @@ async function eventPageHtml(e, q = {}, { editable = false } = {}) {
     ${!isOver && tickets.length ? `<h2 class="sec">Come along</h2>${tickets.map(levelCard).join("")}` : ""}
     ${!isOver && sponsors.length ? `<h2 class="sec">Sponsor it</h2><div class="sponsors" data-testid="event-sponsors">${sponsors.map(levelCard).join("")}</div>` : ""}
     ${isOver && (tickets.length || sponsors.length) ? `<div class="card"><p class="muted">This event has happened. Thank you to everybody who came.</p></div>` : ""}
-    ${giveCard}
+    ${canTakeACard ? giveCard : "" /* EVENTS-4: with no payments its link led to a giving page that is not open */}
     ${share}
     <p class="small" style="text-align:center">${isOver && !canTakeACard ? "" : canTakeACard
       ? `Your card is taken by ${esc(brand.displayName || "the organization")}'s own payment account. Steward never holds the money and never sees the card.`
