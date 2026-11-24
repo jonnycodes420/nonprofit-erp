@@ -15,6 +15,7 @@ import { fundLinesProblem } from "../gifts/FundField";   // GIFTS-2: a gift spli
 import { rememberGift } from "../../lib/stickyGift";   // QUICKADD-1: "Same as last" for the next gift
 import { offerUndo } from "../EditHistory";
 import { savePledgeSchedule } from "../gifts/PledgeSchedule";
+import { giftDeleteDialog } from "../../lib/giftDeleteWords";   // THANKS-1 item 5: one delete dialog
 
 export function useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, journey, setJourneyList, setJourneySuggest, setAddPick, setAddPreview, setAddErr, onInteractionAdded, setJourney, journeyBusy, setJourneyBusy, addPick, setGiftLoading, loadGiftsFull, loadPlannedGifts, loadPledges, dpTab, fundAffinity, loadMaterials, loadFundAffinity, setCampaigns, giftCfDefs, giftsFull, setGiftEditId, giftEditForm, setGiftSaving, receiptForGift, addGiftForm, setAddGiftForm, setGiftErr, addGiftIdemRef, setAddGiftOpen, refreshSoftCredit, addPledgeIdemRef, pledgeForm, setPledgeForm, setAddPledgeOpen, setPledgeSaving, setPledgeResendBusyId, setPledgeResentIds, pgForm, setPgForm, setAddPgOpen, setPgSaving, matNote, setMatNote, setMatUploading }) {
   // The list: a person can be in several journeys, so it is always offered.
@@ -115,31 +116,30 @@ export function useProfileGiving({ givingOpen, setFigs, setGiftsFull, donor, jou
     setGiftSaving(false);
   };
 
+  // THANKS-1 item 5: ONE dialog. What is in the way (an active receipt, sent or not; a refund) is
+  // read first, and the one question says what will happen to each (lib/giftDeleteWords.js).
   const deleteGift=async(giftId)=>{
-    if(!(await askConfirm({title:"Delete this gift?",body:"It comes off this person's giving and your totals now. A receipt already sent is not taken back.",yes:"Delete gift",danger:true})))return;
-    // LAG-1 (W-1107-Finance-04X): a refusal is said on the page, never in a browser
-    // alert (an automated browser dismisses one, and the fleet saw Delete do nothing
-    // three times). A gift with an issued receipt asks to void it first.
+    // LAG-1 (W-1107-Finance-04X): a refusal is said on the page, never in a browser alert.
     const say=(e,why)=>askConfirm({title:"The gift was not deleted",body:errorMessage(e,why),yes:"OK",no:"Close"});
     const del=(pair=false)=>apiFetch(`/gifts/${giftId}${pair?"?withRefunds=1":""}`,{method:"DELETE"}).then(()=>{told({donorId:donor.id,gift:true});loadPledges();});   // LEDGER-1: the rail and its thank-you too
-    try{await del();}
-    catch(e){
-      // FLOWS-14 (W-1115-Finance-07X): a refunded gift goes only with its refund, as a pair.
-      if(e?.error==="has_refunds"){
-        const pair=await askConfirm({title:"This gift has a refund",body:`${e.message||""}\n\nThe gift and its refund come off this person's giving and your totals together, so nothing is left standing alone.`,yes:e.pairButton||"Delete the gift and its refund",no:"Keep both",danger:true});
-        if(!pair)return;
-        try{await del(true);}catch(e2){say(e2,"The gift and its refund are still here.");}
+    const receipts=await apiFetch(`/donors/${encodeURIComponent(donor.id)}/receipts`).then(rs=>(Array.isArray(rs)?rs:[]).filter(r=>r.gift_id===giftId&&r.type==="gift"&&!r.voided_at)).catch(()=>[]);
+    const refunds=(giftsFull||[]).filter(x=>(x.refund_of||x.refundOf)===giftId).length;   // FLOWS-14: a refunded gift goes only with its refund
+    if(!(await askConfirm({...giftDeleteDialog({receipts,refunds}),danger:true})))return;
+    const voidAll=async ids=>{for(const id of ids)await apiFetch(`/receipts/${encodeURIComponent(id)}/void`,{method:"POST",body:JSON.stringify({reason:"Voided to delete the gift."})});};
+    try{
+      if(receipts.length)await voidAll(receipts.map(r=>r.id));
+      await del(refunds>0);
+    }catch(e){
+      // The server is the guard: a receipt or refund that appeared since the dialog is asked about once more, in the same words.
+      if(e?.error==="has_refunds"||(e?.error==="receipt_active"&&Array.isArray(e.receiptIds))){
+        const again=e.error==="has_refunds"?giftDeleteDialog({refunds:e.refunds||1,pairButton:e.pairButton})
+          :giftDeleteDialog({receipts:e.receiptIds.map(()=>({receipt_number:e.receiptNumber,sent:e.receiptSent===true})).slice(0,1),refunds});
+        if(!(await askConfirm({...again,title:"Something changed since you asked",danger:true})))return;
+        try{if(e.error==="receipt_active")await voidAll(e.receiptIds);await del(e.error==="has_refunds"||refunds>0);}
+        catch(e2){say(e2,"The gift is still here.");}
         return;
       }
-      if(e?.error!=="receipt_active"||!Array.isArray(e.receiptIds)){say(e,"The gift could not be deleted.");return;}
-      const yes=await askConfirm({title:"Void the receipt first?",
-        body:`This gift has a receipt. Void the receipt first?\n\nReceipt ${e.receiptNumber?`#${e.receiptNumber} `:""}is marked void (the donor's copy is not taken back), then the gift comes off this person's giving and your totals.`,
-        yes:"Void and delete",danger:true});
-      if(!yes)return;
-      try{
-        for(const id of e.receiptIds)await apiFetch(`/receipts/${encodeURIComponent(id)}/void`,{method:"POST",body:JSON.stringify({reason:"Voided to delete the gift."})});
-        await del();
-      }catch(e2){say(e2,"The receipt was not voided, so the gift is still here.");}
+      say(e,receipts.length?"The receipt was not voided, so the gift is still here.":"The gift could not be deleted.");
     }
   };
 

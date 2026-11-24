@@ -8,7 +8,7 @@
 // after-write surface must be right within ONE second, with no reload.
 //
 //   L1 W-1108-Finance-06    a $100 gift edited to $150: the header's Lifetime
-//   L2 W-1107-Finance-04X   Delete on a gift with an issued receipt asks
+//   L2 W-1107-Finance-04X   Delete on a gift with an issued receipt asks (once, THANKS-1)
 //                           "Void the receipt first?", and Void and delete
 //                           takes it off the header
 //   L3 W-1107-Volunteers-33 a removed group's card is gone
@@ -210,9 +210,9 @@ const person = (id, name, f = {}) => q(
       const row = page.locator("tr").filter({ hasText: /\$80(\.00)?(?!\d)/ }).filter({ has: page.getByRole("button", { name: "Delete", exact: true }) }).first();
       const d0 = dialogs.length;
       await row.getByRole("button", { name: "Delete", exact: true }).click({ timeout: 10000 });
-      await page.getByRole("button", { name: "Delete gift" }).click({ timeout: 8000 });
-      const asked = await page.getByText(/This gift has a receipt\. Void the receipt first\?/).first().waitFor({ timeout: WITHIN + 2000 }).then(() => true).catch(() => false);
-      await check("L2 W-1107-Finance-04X: Delete on a receipted gift asks \"Void the receipt first?\" on the page", asked && dialogs.length === d0, { asked, alerts: dialogs.slice(d0) });
+      // THANKS-1 item 5: ONE dialog, saying what exists ("generated but never sent" or "sent to the donor").
+      const asked = await page.getByText(/Receipt #\S+ was (generated but never sent; it will be voided|sent to the donor; it will be voided)/).first().waitFor({ timeout: WITHIN + 2000 }).then(() => true).catch(() => false);
+      await check("L2 W-1107-Finance-04X: Delete on a receipted gift asks once, on the page, naming the receipt to void", asked && dialogs.length === d0, { asked, alerts: dialogs.slice(d0) });
       if (asked) {
         const del = answered(/\/gifts\/[^/]+$/, "DELETE");
         await page.getByRole("button", { name: "Void and delete" }).click({ timeout: 8000 });

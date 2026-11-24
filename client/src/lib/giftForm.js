@@ -23,7 +23,7 @@ export function amountInput(v) {
 
 export function emptyGiftForm(date) {
   return { amount: "", date: date || orgTodayCivil(), type: "cash", payment_method: "", notes: "", fund: emptyFund(), fund_id: "",
-    acknowledgement_sent: false, pledgeId: "", eventId: "", campaign: null, campaign_id: "", appeal: null, page: null,
+    thanked: false, pledgeId: "", eventId: "", campaign: null, campaign_id: "", appeal: null, page: null,
     anonymous: false, sc: null, scAmount: "", tribType: "", trib: null, tribNotify: "", tribNotifyEmail: "", match: null, matchAmount: "", typed: {} };
 }
 
@@ -39,7 +39,7 @@ export function formFromGift(g, extra = {}) {
     campaign: g.campaign_id ? { id: g.campaign_id, name: g.campaign_name || g.campaign || "A campaign" } : g.campaign ? { id: null, name: g.campaign, sub: "by name" } : null,
     campaign_id: g.campaign_id || "",
     appeal: g.appeal_id ? { id: g.appeal_id, name: g.appeal_name || "An appeal" } : null, page,
-    acknowledgement_sent: !!g.acknowledgement_sent, anonymous: g.anonymous === true, ...extra };
+    thanked: g.thanked === true, anonymous: g.anonymous === true, ...extra };
 }
 
 // The one body. `editing` sends the clears (null) the edit needs; a new gift
@@ -57,7 +57,7 @@ export function giftBody(f, { editing = false } = {}) {
     givingPageId: (f.page && f.page.givingPageId) || clear,
     peerFundraiserId: (f.page && f.page.peerFundraiserId) || clear,
     eventId: f.eventId || clear,
-    acknowledgement_sent: !!f.acknowledgement_sent,
+    thanked: !!f.thanked,   // THANKS-1: the thank-you, never the receipt's mark
     anonymous: !!f.anonymous,
   };
 }

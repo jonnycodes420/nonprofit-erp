@@ -20,6 +20,7 @@ import FundField, { emptyFund, fundLinesProblem } from "./FundField";
 import EventField from "./EventField";
 import PropertyFields from "./PropertyFields";
 import PersonField from "./PersonField";
+import TributeFields from "./TributeFields";   // THANKS-1 item 5
 import SameAsLast from "./SameAsLast";
 import { unpickedProblem } from "../../lib/giftForm";
 
@@ -101,20 +102,15 @@ export default function GiftForm({ mode = "create", form: f, setForm, pledges = 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
           <PersonField label="Soft credit to" value={f.sc || null} onChange={pickPerson("sc")} onTyped={typed("sc")} compact={edit} testid={edit ? "gift-edit-sc" : "gift-sc-name"} />
           <input value={f.scAmount || ""} onChange={e => set({ scAmount: e.target.value })} placeholder="Soft credit amount (blank = whole gift)" inputMode="decimal" style={inp} />
-          <select value={f.tribType || ""} onChange={e => set({ tribType: e.target.value })} style={inp} data-testid={edit ? "gift-edit-trib-type" : "gift-trib-type"}>
-            <option value="">Not a tribute gift</option><option value="honor">In honor of</option><option value="memory">In memory of</option>
-          </select>
-          <PersonField label="Who it honors" value={f.trib || null} onChange={pickPerson("trib")} onTyped={typed("trib")} nameOnlyOk compact={edit} testid={edit ? "gift-edit-trib-name" : "gift-trib-name"} />
-          <input value={f.tribNotify || ""} onChange={e => set({ tribNotify: e.target.value })} placeholder="Tell (e.g. the Lee family)" style={inp} />
-          <input value={f.tribNotifyEmail || ""} onChange={e => set({ tribNotifyEmail: e.target.value })} placeholder="Their email or leave blank" style={inp} />
+          <TributeFields form={f} set={set} pickPerson={pickPerson} typed={typed} inp={inp} compact={edit} testid={edit ? "gift-edit-trib" : "gift-trib"} />   {/* THANKS-1: one piece with Record a gift */}
           <PersonField label="Employer that will match it" value={f.match || null} onChange={pickPerson("match")} onTyped={typed("match")} compact={edit} testid={edit ? "gift-edit-match" : "gift-match-employer"} />
           <input value={f.matchAmount || ""} onChange={e => set({ matchAmount: e.target.value })} placeholder="Expected match (blank = same amount)" inputMode="decimal" style={inp} />
         </div>)}
       {(error || unpicked || problem) && <div role="alert" data-testid={tid + "-error"} style={{ fontSize: 12, color: T.ink, background: T.gold50, border: "1px solid " + T.gold300, borderRadius: 8, padding: "6px 10px", marginBottom: 8 }}>{error || unpicked || problem}</div>}
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.ink, cursor: "pointer" }}>
-          <input type="checkbox" checked={!!f.acknowledgement_sent} onChange={e => set({ acknowledgement_sent: e.target.checked })} style={{ accentColor: T.greenDk }} />
-          Acknowledgement sent
+          <input type="checkbox" checked={!!f.thanked} onChange={e => set({ thanked: e.target.checked })} data-testid={tid + "-thanked"} style={{ accentColor: T.greenDk }} />
+          Thanked
         </label>
         {/* GIFTS-3 item 6: the gift stays theirs; public lists say Anonymous */}
         <label title="The gift stays on their record. Public recognition and acknowledgment lists say Anonymous." style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.ink, cursor: "pointer" }}>

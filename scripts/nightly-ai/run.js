@@ -105,7 +105,7 @@ const QUESTIONS = [
   { id: "Q03", route: "ask", kind: "people", text: "Who are my top 20 donors this year?",
     truth: c => c.ids(`SELECT g.donor_id AS id ${GIVERS} AND g.date >= $2 GROUP BY g.donor_id ORDER BY SUM(g.amount) DESC LIMIT 25`, [c.yearStart]), superset: true },
   { id: "Q04", route: "ask", kind: "people", text: "Who gave over $500 but hasn't been thanked?", exact: true,
-    truth: c => c.ids(`SELECT DISTINCT d.id ${GIVERS} AND g.amount > 500 AND g.acknowledgement_sent IS NOT TRUE AND g.disputed_at IS NULL`) },
+    truth: c => c.ids(`SELECT DISTINCT d.id ${GIVERS} AND g.amount > 500 AND NOT ${require("../../shared/numbers/thanks").THANKED("g")} AND g.disputed_at IS NULL`) },   // THANKS-1
   { id: "Q05", route: "ask", kind: "people", text: "Who gave for the first time this month?", exact: true,
     truth: c => c.ids(`SELECT donor_id AS id FROM (SELECT g.donor_id, MIN(g.date) f ${GIVERS} GROUP BY g.donor_id) x WHERE f >= $2`, [c.monthStart]) },
   { id: "Q06", route: "ask", kind: "people", text: "Who are our monthly donors in Salem?", exact: true,

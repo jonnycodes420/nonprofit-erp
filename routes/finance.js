@@ -1499,7 +1499,7 @@ async function meetingBrief(orgId, donorId, beforeIso) {
   const lastEmail = em && quoteOf(em.note) ? { date: em.date, quote: quoteOf(em.note) } : null;
 
   const [g] = await query(
-    `SELECT id, amount, date FROM gifts WHERE org_id=? AND donor_id=? AND COALESCE(acknowledgement_sent,false)=false
+    `SELECT id, amount, date FROM gifts WHERE org_id=? AND donor_id=? AND NOT ${require("../shared/numbers/thanks").THANKED("gifts")}
         AND amount > 0 AND date >= (${TODAY("gifts.org_id")} - 365)::text ORDER BY date DESC NULLS LAST LIMIT 1`, [orgId, donorId]);
   const unthanked = g ? { giftId: g.id, date: g.date, amount: Number(g.amount), text: `The ${shortDay(g.date)} gift hasn't been thanked yet.` } : null;
 

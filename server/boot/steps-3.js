@@ -166,7 +166,7 @@ __share({ rbCents });
 const ACTIVITY_DEFINITIONS = {
   conversationsLogged: "Calls, meetings, emails, asks and notes somebody logged in this window. A timeline entry Steward wrote itself is not one.",
   giftsReceived: "Gifts dated inside this window, counted and summed. Imported history counts on the date the file gave it.",
-  thankYousMarkedSent: "Gifts marked acknowledged inside this window. A gift acknowledged before Steward began stamping the moment carries no date and is counted in no week.",
+  thankYousMarkedSent: "Gifts thanked inside this window (a thank-you sent, marked or called; a receipt is not a thank-you). A gift thanked before Steward began stamping the moment carries no date and is counted in no week.",
   threadsClosedByOutcome: "Follow-ups closed because the conversation happened.",
   threadsDismissed: "Follow-ups closed without one, with the reason recorded.",
 };

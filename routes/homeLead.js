@@ -88,7 +88,7 @@ async function readFacts(req, nowMs) {
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
        LEFT JOIN thank_you_drafts t ON t.org_id=g.org_id AND t.gift_id=g.id AND t.sent_at IS NULL AND t.skipped_at IS NULL
       WHERE g.org_id=? AND g.import_id IS NULL AND g.is_sample IS NOT TRUE AND g.amount > 0
-        AND COALESCE(g.acknowledgement_sent,false)=false AND g.thanked_at IS NULL
+        AND NOT ${require("../shared/numbers/thanks").THANKED("g")}   -- THANKS-1: a receipt is not a thank-you
         AND COALESCE(g.received_at, g.created_at) > ? AND COALESCE(g.received_at, g.created_at) <= ?
         AND g.date >= ? AND g.date <= ?
         AND COALESCE(g.created_by,'') <> ?

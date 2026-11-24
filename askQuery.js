@@ -73,7 +73,7 @@ const ENTITIES = {
       event: f("COALESCE(ev.name,'')", T.text, "event", { values: "event" }),
       payment_method: f("COALESCE(g.payment_method,'')", T.text, "payment method", { values: "payment_method" }),
       type: f("COALESCE(g.type,'')", T.text, "gift type", { values: "gift_type" }),
-      thanked: f("COALESCE(g.acknowledgement_sent,false)", T.bool, "thanked"),
+      thanked: f(require("./shared/numbers/thanks").THANKED("g"), T.bool, "thanked"),   // THANKS-1
       recurring: f("(g.recurring_subscription_id IS NOT NULL)", T.bool, "part of a recurring gift"),
       tribute: f("(COALESCE(g.tribute_type,'') <> '')", T.bool, "given in tribute"),
       donor: f("d.name", T.text, "giver"), donor_city: f("d.city", T.text, "giver's city"), donor_state: f("d.state", T.text, "giver's state"),

@@ -241,6 +241,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(giftForm.body 
     return res.status(200).json({ gift: dupGift[0] || null, donor: dupDonor[0] || null, duplicate: true });
   }
   if (fundLines) await GFL.writeLines(run, req.user.orgId, giftId, fundLines, actor(req));
+  if (G.thanked === true) await require("./giftThankedBox").markThankedOnCreate(run, req.user.orgId, giftId, actor(req));   // THANKS-1: the box she ticked
   // PLEDGES-2: what was over the balance, as its own gift through the one gift path.
   let extraGift = null;
   if (extraCents > 0) {
@@ -301,7 +302,7 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
   const GS = require("./giftShape");
   const G = await GS.readGiftBody(req.body);
   const { amount, date, type, notes } = G;
-  const fund_id = G.fundId, payment_method = G.paymentMethod, acknowledgement_sent = G.acknowledgementSent;
+  const fund_id = G.fundId, payment_method = G.paymentMethod, thanked = G.thanked === undefined ? null : G.thanked;   // THANKS-1
   const campaign = undefined;   // a campaign is chosen by id; one named in words is resolved (giftShape)
   const existing = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Gift not found" });
@@ -392,8 +393,8 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
   // editors — a P1 coherence race, not P0 single-user corruption.
   const rows = await withAdvisoryLock(`gift:${req.params.id}`, async () => {
     await run(
-      `UPDATE gifts SET amount=?,date=?,type=?,campaign=?,campaign_id=?,event_id=?,notes=?,fund_id=?,payment_method=?,acknowledgement_sent=?,
-              acknowledgement_sent_at = CASE WHEN ? IS TRUE THEN COALESCE(acknowledgement_sent_at, NOW()) ELSE NULL END,
+      `UPDATE gifts SET amount=?,date=?,type=?,campaign=?,campaign_id=?,event_id=?,notes=?,fund_id=?,payment_method=?,
+              ${require("./giftThankedBox").THANKED_BOX_SET},   -- THANKS-1: the "Thanked" box is the thank-you clock
               scheduled_on=?,   -- TRUTH-6: a date moved after today makes it scheduled; one moved to today or before, a gift
               property_description=?, stock_shares=?, stock_ticker=?,   -- RECEIPTS-1
               appeal_id=?, giving_page_id=?, peer_fundraiser_id=?, anonymous=?   -- GIFTS-3
@@ -401,8 +402,7 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
       [newAmt, newDate, type||g.type, newCampaign, newCampaignId, newEventId,
        notes!==undefined?notes:g.notes, fund_id!==undefined?fund_id:g.fund_id,
        payment_method!==undefined?payment_method:g.payment_method,
-       acknowledgement_sent!==undefined?acknowledgement_sent:g.acknowledgement_sent,
-       acknowledgement_sent!==undefined?acknowledgement_sent:g.acknowledgement_sent,   // A.5 — the same value drives the stamp
+       ...require("./giftThankedBox").thankedBoxArgs(thanked, actor(req)),
        require("../../shared/numbers/scheduled").scheduledOn(newDate, orgToday(await orgTz(req.user.orgId))),   // ORG_TZ_SEAM_OK
        ...RP1.propertyValues(RP1.propertyFields(req.body), g),
        G.appealId !== undefined ? attr.appealId : (g.appeal_id || null),
@@ -480,7 +480,7 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
   // silently deleted out from under it (was an unhandled FK violation).
   // Void the receipt first (POST /receipts/:id/void), then delete.
   const activeReceipts = await query(
-    "SELECT id, receipt_number FROM receipts WHERE gift_id=? AND org_id=? AND type='gift' AND voided_at IS NULL",
+    "SELECT id, receipt_number, sent_at FROM receipts WHERE gift_id=? AND org_id=? AND type='gift' AND voided_at IS NULL",
     [req.params.id, req.user.orgId]
   );
   if (activeReceipts.length) {
@@ -489,6 +489,7 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
       message: `This gift has an issued tax receipt (#${activeReceipts[0].receipt_number}). Void the receipt first, then delete the gift.`,
       // LAG-1: the profile asks "Void the receipt first?" and, on her yes, voids these and deletes.
       receiptIds: activeReceipts.map(r => r.id), receiptNumber: activeReceipts[0].receipt_number,
+      receiptSent: activeReceipts.some(r => !!r.sent_at),   // THANKS-1: the dialog says "sent" only when it was
     });
   }
 
@@ -496,11 +497,15 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
   // timeline note can say it. Declared above the block that assigns it.
   let voidedTaskCount = 0;
   let stoppedJourneys = [];   // FLOWS-11: the journeys this gift started, stopped with it
+  const GDU = require("./giftDeleteUndo");   // THANKS-1 item 3: a Recent changes line with Undo, never a timeline note
+  let removedLine = null;
   // BUILD-27 concurrency: serialize the whole delete → donor-recalc under the
   // SAME per-gift advisory lock PUT /gifts/:id takes, so a concurrent edit and
   // delete of the SAME gift can't tear the donor total apart from the ledger.
   await withAdvisoryLock(`gift:${req.params.id}`, async () => {
   await withTransaction(async (client) => {
+    const _db = require("../../db"), _fx = require("../effects/writeEffects").onClient(client, _db.queryTx, _db.runTx);
+    const snap = await GDU.snapshot(_fx, req.user.orgId, req.params.id);   // THANKS-1: before anything is detached
     // Voided receipts keep their frozen `snapshot`/`pdf_data` record — just
     // detach the gift reference so the FK doesn't block deletion (same
     // tolerated-dangling pattern as gifts.giving_page_id, except here the FK
@@ -548,9 +553,12 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
     const stopped = await require("./giftThanks").stopJourneysOfGift(client, req.user.orgId, g.donor_id, req.params.id, actor(req));
     voidedTaskCount += stopped.tasks; stoppedJourneys = stopped.journeys;
     if (withRefunds) refundsRemoved = (await PAIRS.removeRefundsOf(PAIRS.onClient(client), req.user.orgId, [req.params.id])).count;
-    const _db = require("../../db"), _fx = require("../effects/writeEffects").onClient(client, _db.queryTx, _db.runTx);   // UNDO-1 item 5: the guest list as it was
-    await require("../events/registrationEffects").reverseForGift(_fx, req.user.orgId, req.params.id, actor(req));
+    const guest = await require("../events/registrationEffects").reverseForGift(_fx, req.user.orgId, req.params.id, actor(req));   // UNDO-1 item 5
     await runTx(client, "DELETE FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+    const [_dn] = g.donor_id ? await _fx.query("SELECT name FROM donors WHERE id=? AND org_id=?", [g.donor_id, req.user.orgId]) : [];
+    removedLine = await GDU.recordDelete(_fx, { orgId: req.user.orgId, g, donorName: _dn && _dn.name, snap, who: actor(req),
+      cancelled: require("./giftThanks").cancelledWords(voidedTaskCount, stoppedJourneys), withRefunds: refundsRemoved > 0,
+      guestListChanged: Array.isArray(guest) && guest.length > 0 });
     // FLOWS-9: a refund row taken back un-marks its gift when the gift is no longer netted to $0,
     // so the counts (giftCount.js, which read the mark) count it again.
     if (g.refund_of) await runTx(client, require("../../shared/numbers/refunds").REMARK_IN_FULL_SQL, [g.refund_of, req.user.orgId]);
@@ -565,21 +573,11 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
   // totals were just written above, so recalc is off).
   if (g.donor_id) await require("../../afterChange").afterChange(req.user.orgId, [g.donor_id], { door: "gift_form", recalc: false })
     .catch(e => console.error("[gift-delete] after-change:", e.message));
-  // FIX-10 Part C — the timeline says what happened, in one line, on the
-  // donor's own record. A task that vanishes without a trace is how a director
-  // comes to believe she already thanked someone she never thanked. Written
-  // after the transaction commits, so the note can never describe a void that
-  // rolled back.
-  const _note = require("./giftThanks").deleteNote(voidedTaskCount, stoppedJourneys);
-  if (_note && g.donor_id) {
-    const _a = actor(req);
-    await run(
-      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,'note',?,?,?,?)",
-      [newId("i"), req.user.orgId, g.donor_id, _note,
-       orgToday(await orgTz(req.user.orgId)), _a.id, _a.name]
-    ).catch(e => console.error("[gift-delete] timeline note:", e.message));
-  }
-  res.json({ ok: true, voidedTasks: voidedTaskCount, stoppedJourneys, refundsRemoved,
+  // THANKS-1 item 3 (Jonathan's call): a removed gift is a change to the record, not something
+  // that happened with the donor, so nothing goes on the timeline. FIX-10's sentence (which
+  // tasks were voided, which journey stopped) is the Recent changes line and the audit row.
+  if (req.audit && removedLine) { req.audit.entity("gift", g.id); req.audit.summary(removedLine); }
+  res.json({ ok: true, voidedTasks: voidedTaskCount, stoppedJourneys, refundsRemoved, sentence: removedLine,
     ...(refundsRemoved ? { sentence: PAIRS.PAIR_WORDS.done(refundsRemoved) } : {}) });
 }));
 
@@ -1203,7 +1201,9 @@ app.post("/gifts/:id/receipt", requireAuth, checkWriteAccess, wrap(async (req, r
 // List for DonorProfile's Gifts & Pledges tab — no pdf_data in the list
 // response (board_reports pattern), fetched separately via
 // GET /receipts/:id/pdf only when actually downloading one.
-RCE.register(app, { query, requireAuth, checkWriteAccess, wrap, actor, resendReceiptEmail });   // FLOWS-1 item 4: "Email it", one click
+RCE.register(app, { query, requireAuth, checkWriteAccess, wrap, actor, resendReceiptEmail });
+require("./giftDeleteUndo").mount(app, { query, requireAuth, checkWriteAccess, wrap, actor, withAdvisoryLock, withTransaction,   // THANKS-1: Undo a removed gift
+  queryTx: require("../../db").queryTx, runTx, recalcDonorSummary, recalcPledgePayment });   // FLOWS-1 item 4: "Email it", one click
 require("../receipts/reissue").register(app, { query, run, actor, issueGiftReceipt,   // RECEIPTS-1: drift.js's Reissue route calls it
   issueYearEndStatement, issueHouseholdStatement, householdChoice: HHS.householdChoice, householdLines: HHS.householdLines });
 app.get("/donors/:id/receipts", requireAuth, wrap(async (req, res) => {

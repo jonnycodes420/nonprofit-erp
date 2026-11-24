@@ -183,7 +183,9 @@ app.get("/insights/donor/:id", requireAuth, wrap(async (req, res) => {
                                         row_data->>'date' AS date FROM insight_reviews
                                   WHERE org_id=? AND decision IN ('not_gift','partly') AND donor_id = ANY(?) ORDER BY row_data->>'date' DESC NULLS LAST`, [req.user.orgId, ids]))
     .map(x => ({ giftId: x.gift_id, as: x.as_type, label: TYPE_LABEL[x.as_type] || x.as_type, partly: x.decision === "partly", cents: Math.round(Number(x.amount) * 100), date: x.date }));
-  res.json({ asOf, stale: got.stale, coverage: r.coverage, majorLine: r.majorLine, unit, notGifts, move: move ? { ...move, item: cardOut({ ...move, items: [move.item], words: move.words, facts: [], does: [] }).items[0] } : null, combined,
+  // THANKS-1 item 4: no card has a move, so say the step the rules still give, or why there is none.
+  const after = !move && d.deceased !== true ? await require("../server/insights/afterMove").afterMove(query, req.user.orgId, ids) : null;
+  res.json({ asOf, stale: got.stale, coverage: r.coverage, majorLine: r.majorLine, unit, notGifts, after, move: move ? { ...move, item: cardOut({ ...move, items: [move.item], words: move.words, facts: [], does: [] }).items[0] } : null, combined,
     rungSentence: unit ? I.RUNG_SENTENCE[unit.rung] : null });
 }));
 
