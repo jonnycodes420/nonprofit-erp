@@ -27,26 +27,27 @@ const POPULATIONS = {
   sybunt: { ...said("sybunt"), report: "sybunt" },
   lapsed: { ...said("lapsed"), rules: REG.population("lapsed").rules },
 };
+// ATLAS-9: any other registry population with a group rule (Lapsing, the askable twins) reads the same way.
+const populationOf = key => POPULATIONS[key] || (REG.population(key) && REG.population(key).rules ? { ...said(key), rules: REG.population(key).rules } : null);
 
-// The population her words name, or null. LYBUNT and SYBUNT wherever they are
-// said; "lapsed" only as the whole question ("how many lapsed donors", "who
-// are my lapsed donors"), so "lapsed donors in Lexington" stays a group ask.
-const LAPSED_ONLY = /^(?:how many|who are|who's|whos|which|show me|list|count)(?: (?:are|of))?(?: (?:my|our|the|all))?(?: (?:currently|now))? lapsed(?: (?:donors?|people|givers?|supporters?))?(?: (?:do we have|are there|have we got|right now|now|today))?\s*\??$/i;
+// The population her words name, or null. ATLAS-9 item 2: read by the tolerant
+// matcher (populationAsk.js, keyed to the registry's words), not one regex per
+// sentence shape; "lapsed donors in Lexington" still stays a group ask.
+// The first id, for a caller that wants one; populationAsk.readPopulation has them all.
 function populationAsked(text) {
-  const t = String(text || "").replace(/\s+/g, " ").trim();
-  if (/\blybunts?\b/i.test(t)) return "lybunt";
-  if (/\bsybunts?\b/i.test(t)) return "sybunt";
-  if (LAPSED_ONLY.test(t)) return "lapsed";
-  return null;
+  const r = require("./populationAsk").readPopulation(text);
+  return r && !r.call ? r.ids[0] : null;
 }
 
 const SHOWN = 10;
 const usd = cents => require("../../money").formatCentsPlain(Math.round(Number(cents) || 0));
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const day = d => (/^\d{4}-\d{2}-\d{2}$/.test(String(d || "")) ? `${MON[Number(d.slice(5, 7)) - 1]} ${Number(d.slice(8, 10))}, ${d.slice(0, 4)}` : "");
 
 // { line, answer } with the list answer's shape (AtlasAnswer draws it, Open list opens all of it).
 // `get`: GET as her (the very route the screen reads). `query`: for the lapsed rows.
 async function populationAnswer(key, { get, query, orgId }) {
-  const P = POPULATIONS[key];
+  const P = populationOf(key);
   if (!P) return null;
   let people = [];
   if (P.report) {
@@ -57,9 +58,11 @@ async function populationAnswer(key, { get, query, orgId }) {
   } else {
     const GR = require("../../groups");
     const df = await GR.buildDonorFilter(orgId, P.rules);
+    // ATLAS-9: lifetime by the profile's rule (lifetime.js) and the last gift by lastGift.js, never the stored rollups.
     const rows = df.badRole || df.badStatus ? [] : await query(
-      `SELECT id, name, last_gift_date, ROUND(COALESCE(total_giving,0)::numeric,2)::text AS total FROM donors WHERE ${df.whereSql} ORDER BY total_giving DESC NULLS LAST, id`, df.params);
-    people = rows.map(x => ({ donorId: x.id, name: x.name, cents: 0, lifetimeCents: Math.round((Number(x.total) || 0) * 100), last: x.last_gift_date }));
+      `SELECT id, name, LEFT(${require("../../shared/numbers/lastGift").LAST_DATE("donors")}, 10) AS last_gift_date, ROUND((${require("../../shared/numbers/lifetime").LIFETIME("donors")}) * 100)::bigint AS cents
+         FROM donors WHERE ${df.whereSql} ORDER BY cents DESC NULLS LAST, id`, df.params);
+    people = rows.map(x => ({ donorId: x.id, name: x.name, cents: 0, lifetimeCents: Number(x.cents) || 0, last: x.last_gift_date }));
   }
   const count = people.length;
   // Lifetime by the profile's rule (shared/numbers, periodAmounts.lifetimeCents), never the stored rollup.
@@ -68,7 +71,7 @@ async function populationAnswer(key, { get, query, orgId }) {
   if (!count) return { line: `Nobody is ${P.word} right now. ${P.definition}` };
   const shown = people.slice(0, SHOWN).map(p => {
     const lifetime = `Lifetime ${usd(p.lifetimeCents)}`;
-    const amount = P.report ? `${usd(p.cents)} ${key === "lybunt" ? "last fiscal year" : "in the last year they gave"}` : `last gift ${String(p.last || "").slice(0, 10) || "not dated"}`;
+    const amount = P.report ? `${usd(p.cents)} ${key === "lybunt" ? "last fiscal year" : "in the last year they gave"}` : (day(p.last) ? `last gift ${day(p.last)}` : "last gift not dated");
     return { donorId: p.donorId, name: p.name, amount, lifetime, reason: `${amount}; ${lifetime}` };
   });
   const are = count === 1 ? "person is" : "people are";
@@ -96,4 +99,34 @@ function countDefinition(ask) {
   return label ? `${label}: ${d.charAt(0).toLowerCase()}${d.slice(1)}${/[.!?]$/.test(d) ? "" : "."}` : d;
 }
 
-module.exports = { POPULATIONS, populationAsked, populationAnswer, definitionFor, countDefinition };
+// ── ATLAS-9 item 3: WHO TO CALL IN A POPULATION ───────────────────────────
+// "Who should I call to win back lapsed donors?": only that population's
+// people (its askable twin: nobody marked deceased, do not contact or do not
+// solicit), ranked by lifetime giving (the profile's Lifetime, lifetime.js),
+// top first. Each row is a person; the total is the sum of the rows drawn.
+async function populationCallAnswer(key, { query, orgId }) {
+  const P = populationOf(key);
+  if (!P || !P.rules) return null;
+  const GR = require("../../groups");
+  const df = await GR.buildDonorFilter(orgId, P.rules);
+  if (df.badRole || df.badStatus || df.badFilter) return { line: `I couldn't read ${P.word} just now. ${P.definition}` };
+  const LIFE = require("../../shared/numbers/lifetime").LIFETIME("donors");
+  const rows = await query(`SELECT id, name, ROUND((${LIFE}) * 100)::bigint AS cents, LEFT(${require("../../shared/numbers/lastGift").LAST_DATE("donors")}, 10) AS last
+                              FROM donors WHERE ${df.whereSql} ORDER BY cents DESC NULLS LAST, id`, df.params);
+  const all = rows.map(r => ({ donorId: r.id, name: r.name, cents: Math.max(0, Number(r.cents) || 0), last: r.last || null }));
+  if (!all.length) return { line: `Nobody is on ${P.word} right now, so there is nobody to call from it. ${P.definition}` };
+  const people = all.slice(0, SHOWN).map(p => ({ donorId: p.donorId, name: p.name, cents: p.cents, atStake: usd(p.cents),
+    reason: p.last ? `Last gift ${day(p.last)}.` : "No gift date on file." }));
+  const totalCents = people.reduce((x, p) => x + p.cents, 0);
+  const n = all.length, shown = people.length;
+  const lead = `${n.toLocaleString("en-US")} ${n === 1 ? "person is" : "people are"} ${P.word}. Ranked by lifetime giving, start with ${people[0].name} (${people[0].atStake} lifetime).`;
+  const foot = n > shown ? ` The top ${shown} shown have given ${usd(totalCents)} in their lifetimes; Open list has all ${n.toLocaleString("en-US")}.` : ` Together they have given ${usd(totalCents)} in their lifetimes.`;
+  return {
+    line: `${lead}${foot} ${P.definition}`,
+    answer: { type: "why", key: `population_call:${key}`, question: P.word, population: key, count: n, more: Math.max(0, n - shown), people, totalCents, total: usd(totalCents),
+      ids: all.map(p => p.donorId), stakeWord: "lifetime",
+      definition: `${P.definition} Ranked by lifetime giving (the profile's Lifetime: every gift ever, with any total an import stated). The total is the sum of the rows shown.` },
+  };
+}
+
+module.exports = { POPULATIONS, populationAsked, populationAnswer, populationCallAnswer, populationOf, definitionFor, countDefinition };

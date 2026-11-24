@@ -46,7 +46,7 @@ export default function AtlasAnswer({ line, onGo, busy }) {
       {a.type === "why" ? <ol data-testid="atlas-why" style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 6 }}>
         {a.people.map(p => <li key={p.donorId} data-testid="atlas-why-person" style={{ fontSize: 13.5, lineHeight: 1.4, color: T.ink }}>
           <button type="button" style={{ ...link, fontWeight: 700 }} onClick={() => onGo({ tab: "donor", donorId: p.donorId })}>{p.name}</button>
-          {p.cents > 0 && <span data-testid="atlas-why-stake" style={{ fontVariantNumeric: "tabular-nums" }}> · {p.atStake} at stake</span>}
+          {p.cents > 0 && <span data-testid="atlas-why-stake" style={{ fontVariantNumeric: "tabular-nums" }}> · {p.atStake} {a.stakeWord || "at stake"}</span>}
           <div style={quiet}>{p.reason}</div></li>)}
       </ol> : <ol style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 4 }}>
         {a.people.map(p => <li key={p.donorId} data-testid="atlas-list-person" style={{ fontSize: 13.5, lineHeight: 1.4, color: T.ink }}>
@@ -56,7 +56,7 @@ export default function AtlasAnswer({ line, onGo, busy }) {
             <span style={{ ...quiet, fontSize: 12 }}> · {p.lifetime}</span></> : <span style={quiet}> · {p.reason}</span>}</li>)}
       </ol>}
       {a.type === "why" && a.totalCents > 0 && <div data-testid="atlas-why-total" title={a.definition} style={{ fontSize: 13, color: T.ink, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-        {a.more > 0 ? `These ${a.people.length}: ${a.total} at stake` : `Together: ${a.total} at stake`}</div>}
+        {a.more > 0 ? `These ${a.people.length}: ${a.total} ${a.stakeWord || "at stake"}` : `Together: ${a.total} ${a.stakeWord || "at stake"}`}</div>}
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <span data-testid="atlas-list-count" style={{ fontSize: 13, color: T.ink2 }}>{a.count === 1 ? "1 person" : `${a.count.toLocaleString("en-US")} people`}{a.more > 0 ? `, ${a.more.toLocaleString("en-US")} more in the list` : ""}.</span>
         <button type="button" data-testid="atlas-open-list" disabled={busy || opening} onClick={open}

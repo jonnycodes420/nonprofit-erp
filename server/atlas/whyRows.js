@@ -151,6 +151,8 @@ async function lastAnswer(query, orgId, requestId, parse) {
 function followUpLine(mode, prior) {
   if (prior && prior.type === "why") {
     const n = prior.count;
+    // ATLAS-9: a population's call list ranks by lifetime and holds more than it draws.
+    if (prior.stakeWord) return { line: prior.more > 0 ? `Here are the first ${prior.people.length} of the ${n.toLocaleString("en-US")}, each with their lifetime giving. Open list has every one of them.` : `Here ${n === 1 ? "is the one" : n === 2 ? "are both" : `are all ${spell(n)}`} from that answer, each with their lifetime giving.`, answer: prior };
     return { line: mode === "list" ? `Here ${n === 1 ? "is the one" : n === 2 ? "are both" : `are all ${spell(n)}`} from that answer, each with their reason and what is at stake.` : `${n === 2 ? "Both of them" : `Each of the ${spell(n)}`}, with their reason and what is at stake. That is everything behind that answer.`, answer: prior };
   }
   if (prior && prior.type === "list") {
