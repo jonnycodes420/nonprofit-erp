@@ -79,6 +79,17 @@ Read this when you touch receipts, acknowledgments, letters, year-end statements
   under a new number (PLEDGES-3); any other is voided and made again as the same number with `-R1`, `-R2`. Made, not
   emailed. Nothing reissues automatically.
 
+- **A letter from Word is a layout, never HTML (LETTERS-1).** `server/receipts/letterDoc.js` reads a .docx into
+  blocks (paragraphs with their look, PNG/JPEG pictures, simple tables); `ack_letter_templates.body` is the layout's
+  own words, so the save check and the missing-field check read the tokens the print fills. What did not carry over
+  is said in sentences (`not_carried`), never dropped silently. A bracketed name is offered as a field, never guessed.
+- **The signature picture follows the signer rule (LETTERS-1).** The org's receipt signer signs with
+  `orgs.receipt_signature_image`; else the person printing, with `users.signature_image`. It prints above the typed
+  name in its own colours, in the PDF and the Word file.
+- **Letters for an event or a campaign leave out do not contact by name (LETTERS-1);** the acknowledgment queue keeps
+  BUILD-98's rule. The people are `IN_SPAN` and `GIFT` gifts; the deductible is `ackLetter.deductibleCents`, the
+  receipt's rule. Downloading marks nothing; Mark these as sent sets `thanked_at` only when she says it was the thank-you.
+
 ## Gotchas
 - **The db layer turns every `?` into a placeholder,** so the jsonb `?` operator can't be used in a query; write
   `(col -> 'key') IS NOT NULL`. (RECEIPTS-1)
@@ -89,6 +100,7 @@ Read this when you touch receipts, acknowledgments, letters, year-end statements
 ## Where the code is
 - `server.js` `issueGiftReceipt` / `issueYearEndStatement` / `renderReceiptPdf` — the one receipt path
 - `shared/ackLetter.js` — merge-field validation, letter composition, `ACK.WINDOW` (#10 window position)
+- `server/receipts/letterSet.js` / `letterPdf.js` / `letterWord.js` / `letterDoc.js` / `letters.js` — the batch, the PDF, the Word file, the .docx reader and the event letters (LETTERS-1)
 - `POST /acknowledgments/letters/preview`, `/letters/pdf`, `/acknowledgments/mark` — print and mark
 - `shared/draftNote.js` — drafted thank-yous
 - `shared/legalEntity.js` — Steward Software LLC, the only place it is written

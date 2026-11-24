@@ -26,7 +26,7 @@ const RULES = [
   [/^(group_|groups$|audiences|segments)/, ["group", "person"]],
   [/^volunteer_notes$/, ["note", "volunteer", "person"]],   // LIVE-2 item 3: a note from the Volunteers hub is a note
   [/^(volunteer|shift|hours)/, ["volunteer", "person"]],
-  [/^(funds|fin_funds|fund_merges|financials|budgets|annual_fund_goals|fundraising_goals|campaigns|appeals|campaign_recipients|impact_metrics|impact_updates)$/, ["fund", "totals"]],
+  [/^(funds|fin_funds|fund_merges|campaign_merges|financials|budgets|annual_fund_goals|fundraising_goals|campaigns|appeals|campaign_recipients|impact_metrics|impact_updates)$/, ["fund", "totals"]],
   [/^(interactions|interaction_attachments|threads|notes|voice_memos|inbound_email_drops|inbound_email_unmatched|conversations|meeting_effects|calendar_events|email_log|attachments|donor_materials|survey_responses)$/, ["note", "person"]],
   [/^(donors|donor_|households|relationships|person|deceased_marks|name_fixes|merge_proposals|deleted_records|privacy_holds|custom_field_values|custom_field_events|opportunities|memberships|ncoa_moves|portfolio_|peer_fundraisers|p2p_teams|matching_employers|supporter_links|board_members|screening_results)/, ["person", "totals"]],
   [/^(orgs|users|invites|org_memberships|org_onboarding|org_mail_types|org_touch_types|brand_kits?|portal_settings|portal_pages|giving_pages|giving_page_versions|giving_sources|membership_levels|custom_field_defs|custom_fields|email_templates|message_templates|ack_letter_templates|api_keys|webhook_endpoints|workflows|accounts|surveys)$/, ["org"]],

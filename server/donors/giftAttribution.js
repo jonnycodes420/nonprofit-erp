@@ -81,11 +81,15 @@ async function lineAttribution(query, orgId, lines, depositDate) {
 async function search(query, orgId, kind, q) {
   const pat = like(q);
   if (kind === "campaign") {
+    // LETTERS-1 item 4: each campaign once, by name. Not a retired one (merged or
+    // removed), not an email that was only ever sent, and a campaign with no
+    // goal yet says "Draft", as it does on the Campaigns page.
+    const CM = require("../outreach/campaignMerge");
     const rows = await query(
-      `SELECT id, name, start_date::text AS start_date, end_date::text AS end_date FROM campaigns
-        WHERE org_id=? AND LOWER(name) LIKE ? AND COALESCE(status,'') <> 'archived'
-        ORDER BY created_at DESC NULLS LAST LIMIT 20`, [orgId, pat]);
-    return rows.map(r => ({ id: r.id, name: r.name, startDate: day(r.start_date), endDate: day(r.end_date) }));
+      `SELECT c.id, c.name, c.start_date::text AS start_date, c.end_date::text AS end_date, ${CM.DRAFT("c")} AS draft FROM campaigns c
+        WHERE c.org_id=? AND LOWER(c.name) LIKE ? AND COALESCE(c.status,'') <> 'archived' AND c.retired_at IS NULL AND NOT ${CM.EMAIL_ONLY("c")}
+        ORDER BY c.created_at DESC NULLS LAST LIMIT 20`, [orgId, pat]);
+    return rows.map(r => ({ id: r.id, name: r.name, startDate: day(r.start_date), endDate: day(r.end_date), ...(r.draft ? { draft: true, sub: "Draft" } : {}) }));
   }
   if (kind === "appeal") {
     const rows = await query(
@@ -127,7 +131,10 @@ function mount(ctx) {
   app.post("/gift-attribution/campaign", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     const orgId = req.user.orgId, name = cleanName(req.body && req.body.name);
     if (!name) return res.status(400).json({ error: "Name the campaign." });
-    const [had] = await query("SELECT id, name, start_date::text AS start_date, end_date::text AS end_date FROM campaigns WHERE org_id=? AND LOWER(name)=LOWER(?) ORDER BY created_at DESC LIMIT 1", [orgId, name]);
+    // LETTERS-1: "one name" ignores case and spacing, and a retired campaign is not handed back.
+    const { KEY_SQL } = require("../outreach/campaignMerge");
+    const [had] = await query(`SELECT id, name, start_date::text AS start_date, end_date::text AS end_date FROM campaigns
+                                WHERE org_id=? AND ${KEY_SQL("name")} = ${KEY_SQL("?")} AND retired_at IS NULL ORDER BY created_at ASC LIMIT 1`, [orgId, name]);
     if (had) return res.json({ id: had.id, name: had.name, startDate: day(had.start_date), endDate: day(had.end_date), existed: true });
     const id = newId("cmp");
     // No goal and no dates: a campaign made from a gift is a name to attribute

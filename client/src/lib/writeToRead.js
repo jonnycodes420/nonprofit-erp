@@ -80,4 +80,11 @@ export const WRITE_TO_READ = [
 export const NO_SCREEN_READS = [
   // SENDS-2: building a send plan writes only the list she is shown (send_plans); nothing is sent.
   { method: "POST", re: /^\/send-plans$/, why: "a send plan is the list shown before a bulk send; no screen counts plans" },
+  // LETTERS-1: reading a Word file and previewing letters write nothing; a letter template and a
+  // signature picture are shown only on the screen that saves them, which re-reads itself.
+  { method: "POST", re: /^\/letters\/giving\/preview$/, why: "a preview of who gets a letter writes nothing" },
+  { method: "POST", re: /^\/acknowledgments\/templates\/docx$/, why: "reading a Word file into a layout writes nothing" },
+  { method: "POST", re: /^\/acknowledgments\/templates$/, why: "a letter template is listed only on Printed letters, which re-reads it" },
+  { method: "DELETE", re: /^\/acknowledgments\/templates\/[^/]+$/, why: "a letter template is listed only on Printed letters, which re-reads it" },
+  { method: "PUT", re: /^\/letters\/signatures\/[^/]+$/, why: "a signature picture is shown only where it is uploaded" },
 ];

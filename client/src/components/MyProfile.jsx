@@ -10,6 +10,7 @@ import { T, Spin } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import MediaPicker from "./MediaPicker";
 import { resolveAssetUrl } from "../lib/assetUrl";
+import SignatureField from "./letters/SignatureField";   // LETTERS-1: the picture that prints above your name
 
 const LABEL = { fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 6, display: "block" };
 const field = { width: "100%", boxSizing: "border-box", border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 10px", fontSize: 13.5, fontFamily: "inherit", background: T.white, color: T.ink };
@@ -76,6 +77,10 @@ export default function MyProfile({ isReadOnly }) {
         <div data-testid="profile-preview-source" style={{ fontSize: 12, color: T.ink2, marginTop: 6 }}>{p.from !== "person" && preview
           ? `Your name, from your account. Save to sign your drafts with it; until then they are signed with ${p.from === "brand" ? "your organization's signature, from Settings" : "your organization's name"}.`
           : preview ? FROM.person : FROM[p.from] || FROM.org}</div>
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <span style={LABEL}>Signature on printed letters</span>
+        <SignatureField scope="mine" isReadOnly={isReadOnly} />
       </div>
       {!isReadOnly && <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
         <button type="button" data-testid="profile-save" style={{ ...btn, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={save}>{busy ? "Saving…" : "Save"}</button>

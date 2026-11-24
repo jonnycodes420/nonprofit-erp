@@ -9,6 +9,7 @@ import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam, donorHref } from "../lib/appUrls";
+import LettersButton from "./letters/LettersButton";   // LETTERS-1
 import { EventPageEditor } from "./EventPageEditor";
 import { SaveAsGroup } from "./Groups";
 import { Figure } from "./Figure";
@@ -1534,6 +1535,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
           </button>
           <button data-testid="ev-record-gift" onClick={() => setGiftFor({ person: null })}
             style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 8, padding: "7px 14px", color: T.inkInverse, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Record a gift</button>
+          <LettersButton eventId={event.id} testid="ev-letters" style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 8, padding: "7px 14px", color: T.inkInverse, fontSize: 12, fontWeight: 600, cursor: "pointer" }} />
           <button data-testid="ev-edit" onClick={() => { setEditing(true); setEditForm(eventEditForm(event)); }}
             style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 8, padding: "7px 14px", color: T.inkInverse, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
             Edit event

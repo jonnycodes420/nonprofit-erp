@@ -9,6 +9,7 @@ import { plural } from "../../../../shared/countWords.js";
 import { isPlaceholderEin, PLACEHOLDER_EIN_WARNING } from "../../../../shared/placeholderCopy.js";
 import { receiptBadge } from "../../lib/receiptBadge";
 import { useMailTypes } from "../../lib/mailTypes";
+import SignatureField from "../letters/SignatureField";   // LETTERS-1: the receipt signer's signature on letters
 
 export function fmtDollars(n){
   return "$"+Math.round(n||0).toLocaleString();
@@ -143,6 +144,10 @@ export function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
             <div style={lbl}>Signature title (optional)</div>
             <input value={form.receiptSignatureTitle} onChange={e=>setForm(f=>({...f,receiptSignatureTitle:e.target.value}))} placeholder="e.g. Executive Director" style={inp} disabled={!isAdmin||isReadOnly}/>
           </div>
+        </div>
+        <div style={{margin:"12px 0 16px"}}>
+          <div style={lbl}>Signature picture (optional)</div>
+          <SignatureField scope="org" signerName={form.receiptSignatureName} isReadOnly={!isAdmin||isReadOnly}/>
         </div>
 
         <div style={lbl}>Custom message (optional)</div>

@@ -102,6 +102,10 @@ const GUARDED_WRITERS = [
   // SENDS-2: sets one org's waiting volunteer reminders whose shift is not tomorrow to expired. Dry run
   // by default; --apply writes through writerDbUrl, one audit row. Never org_creo or the demo. Nothing sends.
   "sends2-stale-reminders",
+  // LETTERS-1: merges one org's campaigns that share a name into the oldest with a goal, through the
+  // app's own merge (Undo kept). Dry run by default; --apply writes through writerDbUrl, one audit row
+  // per merge. Never org_creo or the demo. Nothing sends.
+  "letters1-campaign-duplicates",
   // VOL-3: moves volunteer records kept on made-up Approved applications into volunteer_records, and
   // deletes approved applications whose person is gone, one org. Dry run by default; --apply writes
   // through writerDbUrl, one audit row. Never org_creo or the demo. Nothing sends.

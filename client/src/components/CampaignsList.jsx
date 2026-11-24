@@ -17,6 +17,7 @@ import { HowDidItDo } from "./HowDidItDo";
 import { AskBox } from "./AskPanel";
 import { RecordLink } from "./RecordLink";
 import { tabHref } from "../lib/appUrls";
+import LettersButton from "./letters/LettersButton";   // LETTERS-1
 import { SaveAsGroup } from "./Groups";
 import { displayDate } from "../../../shared/displayDate";
 import { countLabel } from "../../../shared/countWords.js";
@@ -140,6 +141,7 @@ export function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit, openId,
   const editBtn = c => !isReadOnly ? (
     <span style={{ display: "inline-flex", gap: 6, flexShrink: 0 }}>
       <button onClick={() => onEdit(c)} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 10px", fontSize: 12, color: T.ink3, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>Edit</button>
+      {openId && <LettersButton campaignId={c.id} testid="campaign-letters" style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 10px", fontSize: 12, color: T.ink3, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }} />}
       {/* FIX-41: a campaign with gifts is retired, never deleted. */}
       {c.retired ? <span style={{ fontSize: 11.5, color: T.ink3, alignSelf: "center" }}>Retired</span> : <RemoveMenu kind="campaign" id={c.id} onDone={onRemoved} />}
     </span>
