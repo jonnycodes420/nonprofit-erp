@@ -226,7 +226,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     if (lines.length !== ids.length) { e2eBad.push(`${text}: ${lines.length} answers for ${ids.join("+")}`); continue; }
     ids.forEach((id, i) => {
       const l = lines[i], n = counts[id], P = W9.population(id);
-      const said = n === 0 ? new RegExp(`Nobody is ${P.name}`).test(l.line) : (l.answer && l.answer.count === n && new RegExp(`(^|[:.] )${n.toLocaleString("en-US")} (people are|person is) ${P.name.replace(/[+]/g, "\\+")}`).test(l.line));
+      const said = n === 0 ? String(l.line).includes(`Nobody is ${P.name}`) : (l.answer && l.answer.count === n && new RegExp(`(^|[:.] )${n.toLocaleString("en-US")} (people are|person is) ${P.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(l.line));
       if (!said || !String(l.line).includes(P.sentence)) e2eBad.push(`${text} [${id}=${n}]: ${l.line}`);
       if (ids.length > 1 && i === 0 && !/^That can mean two different lists/.test(l.line)) e2eBad.push(`${text}: both not said`);
     });
