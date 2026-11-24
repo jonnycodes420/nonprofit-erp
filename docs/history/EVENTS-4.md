@@ -26,3 +26,8 @@ was not a route and landed on Home 20 of 20; it now opens the event and canonica
 
 Lesson: a gate put in front of a whole page ("no payments, not open") also shuts the parts that never needed it. Gate
 the thing that needs the precondition (the paid ticket), and say so on that thing.
+
+Follow-up (same day): the post-merge re-check on staging found `/app/events/<id>` still landing on Home 0/20. The
+parse fix was right but unreachable: main.jsx's router has only `/app/:tab`, so its `*` catch-all sent the path to `/`
+before App could read it. The route is added, and nav1-menu §7 drives it in a browser (red on main, green after).
+Lesson: a URL fix is proven by loading the URL, not by calling the parser.
