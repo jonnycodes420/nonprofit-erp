@@ -53,6 +53,8 @@ const RULES = [
   [/^\/home\/owners\b/, ["person", "totals", "task"]],
   [/^\/donor-relationships?\b/, ["person", "totals", "pledge"]],
   [/^\/gift-attribution\b/, ["gift", "person", "totals"]],
+  // LETTERS-1: "Mark these as sent" stamps each printed gift's acknowledgment (and its thank-you when she says so).
+  [/^\/letters\/giving\/mark\b/, ["gift", "person", "task", "draft"]],
   [/^\/fundraising\/(campaigns?|appeals?|goals?)\b/, ["totals", "gift", "pledge"]],
   [/^\/(atlas|tell|voice|memos?|requests)\b/, ALL],
   [/^\/(imports?|spreadsheet-import|csv|history-import|old-reports)\b|\/undo\b.*import|import.*\/undo\b/, ALL],

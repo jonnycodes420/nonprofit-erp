@@ -58,6 +58,10 @@ async function seed(q, o, tag) {
   // under §8 is refused rather than taking ledger rows off the books).
   await ins(q, "ledger_post_batches", { id: `lpb_${o}`, org_id: o, groups: [], gift_count: 0, cents: 0, created_by: admin,
     created_by_name: `${mark} Admin`, undone_at: new Date(testNow()).toISOString() });
+  // LETTERS-1 — a campaign merge (already undone, so org A's own twin under §8 is refused
+  // rather than moving gifts between campaigns).
+  await ins(q, "campaign_merges", { id: `cmg_${o}`, org_id: o, keep_id: `c_${o}`, merged_ids: [], detail: {}, moved: {},
+    created_by: admin, created_by_name: `${mark} Admin`, undone_at: new Date(testNow()).toISOString() });
   // GRANTS — a funder contact, a checklist task, a library piece and its
   // version, a send and a report, all on this org's grant.
   await ins(q, "donor_relationships", { id: `drc_${o}`, org_id: o, donor_id_a: d, donor_id_b: `ds_${o}`, relationship_type: "program_officer" });
@@ -126,6 +130,7 @@ function resolve(p, n, B) {
     [/^\/data-health\/notice\//, { id: `dhr_${B}` }],
     [/^\/data-health\/merges\//, { id: `dmg_${B}` }],
     [/^\/finance\/ledger-post\//, { id: `lpb_${B}` }],   // LEDGER-3: undo a posting batch
+    [/^\/campaign-tidy\/merge\//, { id: `cmg_${B}` }],   // LETTERS-1: undo a campaign merge
     [/^\/grant-funders\/contacts\//, { relId: `drc_${B}` }],
     [/^\/grant-funders\//, { id: `d_${B}` }],
     [/^\/grants\/checklist\//, { taskId: `tgc_${B}` }],

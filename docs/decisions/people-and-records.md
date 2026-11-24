@@ -63,8 +63,12 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   contact line share a second edge; the actions sit on the name's row. Nothing else invents its own indent.
 - **PROFILE-3: empty is calm.** A number with no value is an em dash in ink at 40%, with nothing under it. A tab
   shows a count only above zero. A person with nothing logged gets one start card in the main column, and no rail
-  section that would be empty is drawn, except Next step, Journeys and About (which carries "Add email or phone",
-  "Link someone" and the group picker until those sections have something). Every rail section is one white card
+  section that would be empty is drawn, except Next step, Journeys, About (which carries "Link someone" and the
+  group picker until those sections have something) and Contact, which with nothing in it says "No contact
+  details yet · Add" (Add opens Edit record). (CONTACT-1)
+- **Contact is read from the person's own columns first (CONTACT-1).** `shared/contactDetails.js` builds the
+  address line and answers "is there anything", for the rail read and the profile alike, so the section never
+  waits on `GET /donors/:id/rail` and never misses `mobile` or `email2` (the workbook import fills them). Every rail section is one white card
   under a brass small-caps label (`RailSection`, `RAIL` in `ProfileRail.jsx`). A person with no gift carries no
   giving tag and is not called a Donor on their own record.
 - **PROFILE-3: the profile is parts.** `DonorProfile.jsx` holds the state and the frame; the header, numbers, tabs,
@@ -144,6 +148,13 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   figure on the event page counts a deleted person; a past event's seating chart is who came; follow-up
   tasks say how many before they are made, never duplicate an open one, and have Undo; the public event
   page reads Not open yet until payments are connected.
+- **A free ticket needs no payments; only what takes money waits for them (EVENTS-4).** A ticket may be $0 (a
+  sponsorship may not). Registering for it, on the public page or by staff, goes through `registerForEvent` and writes
+  the guest and no gift, pledge or receipt. The public page opens when payments are connected or the event has a
+  current free ticket; a paid ticket or sponsorship on it with no payments says so on its own card and offers no form
+  (`server/events/freeTickets.js`). Nothing is emailed for a free registration. Check-in search reads the invited and
+  the waiting list by name and email before it offers Add (`server/events/doorSearch.js`). A shift is removed through
+  removal.js, published or not: its active sign-ups are cancelled with it and Undo restores them.
 - **An event has a GOAL, and what it RAISED is never typed.** `events.goal_amount` is what the
   night is measured against; raised is summed from gifts stamped `gifts.event_id`, which
   registration sets. Before this the only link was the campaign NAME, so a renamed event lost its

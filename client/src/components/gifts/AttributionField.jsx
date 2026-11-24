@@ -84,7 +84,11 @@ export default function AttributionField({ kind, value, onChange, onTyped, testi
     );
   }
   const typed = text.trim();
-  const exact = rows.some(r => String(r.name || "").toLowerCase() === typed.toLowerCase());
+  // LETTERS-1 item 4: one name ignores case and spacing, and a name she is
+  // still typing ("ANNU" for "Annual Fund") is the campaign above, not a new one.
+  const keyOf = s => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const exact = rows.some(r => keyOf(r.name) === keyOf(typed));
+  const close = kind === "campaign" && typed && !exact ? rows.find(r => keyOf(r.name).startsWith(keyOf(typed))) : null;
   return (
     <div style={{ position: "relative", ...style }}>
       <input value={text} onChange={e => { setText(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
@@ -102,7 +106,11 @@ export default function AttributionField({ kind, value, onChange, onTyped, testi
                 {r.name}{r.sub ? <span style={{ color: T.ink3 }}> · {r.sub}</span> : null}{out ? <span style={{ color: T.ink3 }}> ({out})</span> : null}
               </button>);
           })}
-          {createable && typed && !exact && (
+          {close && (
+            <div data-testid={`${testid}-close`} style={{ padding: "8px 10px", fontSize: fs, color: T.ink2, borderTop: rows.length ? "1px solid " + T.bg3 : "none" }}>
+              Pick {close.name} above, or type the whole name of a new campaign.
+            </div>)}
+          {createable && typed && !exact && !close && (
             <button type="button" data-testid={`${testid}-create`} disabled={busy} onMouseDown={e => e.preventDefault()} onClick={create}
               style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", borderTop: rows.length ? "1px solid " + T.bg3 : "none", padding: "8px 10px", fontSize: fs, color: T.greenDk, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
               {busy ? "Adding…" : rows.length ? `+ New ${NEW_WORD[kind]}: '${typed}'` : `No ${NEW_WORD[kind]} called '${typed}'. Create it?`}

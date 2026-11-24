@@ -1,5 +1,6 @@
 import { Figure } from "./Figure";
 import { useState, useEffect, useRef } from "react";
+import CampaignTidy from "./campaigns/CampaignTidy";   // LETTERS-1: drafts and same-name campaigns, merge with Undo
 import { apiFetch, API } from "../api";
 import { useChanged } from "../lib/changes";   // STALE-1
 import { T, activeMark, fmt, fmtFull, fmtTotal, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal } from "./shared";
@@ -332,6 +333,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
         <AcknowledgmentsView isReadOnly={isReadOnly} roTip={roTip} onNavigate={onNavigate} />
       )}
 
+      {!loading && subtab === "campaigns" && !openCampaignId && <CampaignTidy isReadOnly={isReadOnly} isAdmin={isAdmin} onFinish={c => setModal({ mode: "edit", campaign: c })} onChanged={load} />}
       {!loading && subtab === "campaigns" && (
         <CampaignsView goals={overview?.goals || []} isReadOnly={isReadOnly} roTip={roTip} openId={openCampaignId}
           onOpenCampaign={openCampaign} onBack={closeCampaign} onNavigate={onNavigate}

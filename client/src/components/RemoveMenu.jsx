@@ -43,10 +43,12 @@ function offer(kind, r, onDone, onError) {
   return r;
 }
 
-export async function removeOne({ kind, id, onDone, onError }) {
+// `oneStep`: when the plan is a plain delete (nothing attached), it goes at
+// once and the Undo toast is the way back (EVENTS-4: an empty shift).
+export async function removeOne({ kind, id, onDone, onError, oneStep = false }) {
   try {
     const plan = await apiFetch(`${base(kind)}/${kind}/${encodeURIComponent(id)}`);
-    if (!(await confirmPlan(plan))) return null;
+    if (!(oneStep && plan.mode === "delete") && !(await confirmPlan(plan))) return null;
     const r = await post(`${base(kind)}/${kind}/${encodeURIComponent(id)}`);
     return offer(kind, r, onDone, onError);
   } catch (e) {

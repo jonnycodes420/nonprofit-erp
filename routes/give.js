@@ -3324,6 +3324,8 @@ const donateHandler = async (req, res) => {
     [eventLevel] = await query("SELECT * FROM event_levels WHERE id=? AND org_id=? AND retired_at IS NULL", [eventLevelId, org.id]);
     if (eventLevel) [eventRow] = await query("SELECT * FROM events WHERE id=? AND org_id=? AND status <> 'cancelled'", [eventLevel.event_id, org.id]);
     if (!eventLevel || !eventRow) return res.status(400).json({ error: "This ticket is no longer available." });
+    // EVENTS-4: a free ticket is registered on the event page, never charged.
+    if (require("../server/events/freeTickets").isFree(eventLevel)) return res.status(400).json({ error: "This ticket is free. Register for it on the event page." });
     // EVENTS-2 — A SEAT IS HELD WHILE SOMEBODY PAYS, and a hold counts against
     // capacity exactly as a registration does. Without it the last two seats
     // are sold three times in the ninety seconds it takes to find a card. The
@@ -3979,9 +3981,11 @@ app.post("/e/:slug/checkout", donateLimiter, express.urlencoded({ extended: fals
   // the page somebody is standing on names ONE event, and a level id from
   // another of the org's events would have been sold through it. Scoped here,
   // the same way POST /e/:slug/register and /e/:slug/waitlist already do it.
-  const [lvl] = await query("SELECT id FROM event_levels WHERE id=? AND event_id=? AND org_id=? AND retired_at IS NULL",
+  const [lvl] = await query("SELECT id, kind, price FROM event_levels WHERE id=? AND event_id=? AND org_id=? AND retired_at IS NULL",
     [String(req.body?.levelId || ""), ev.id, ev.org_id]);
   if (!lvl) return back("That option is no longer available.");
+  // EVENTS-4: a free ticket has nothing to pay; it registers (307 keeps the form).
+  if (require("../server/events/freeTickets").isFree(lvl)) return res.redirect(307, `/e/${encodeURIComponent(ev.public_slug)}/register`);
 
   const inner = {
     params: { orgSlug: ev.org_slug },

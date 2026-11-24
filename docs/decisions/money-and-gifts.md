@@ -247,6 +247,11 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 - **The bookkeeper export must foot in cents before a byte is written.** Mismatch is a 409, nothing
   repaired; the database sum is asked for exactly, not pre-rounded (`bookkeeper.js`). (BUILD-87)
 
+- **A campaign is offered once, by name (LETTERS-1).** "One name" ignores case and spacing (`campaignMerge.KEY_SQL`);
+  the gift picker never offers "+ New" for the start of an existing name, hides retired and sent-email rows, and marks
+  a campaign with no goal "Draft". Same-name campaigns merge through `server/outreach/campaignMerge.js` (every
+  `campaign_id` moves, the merged one is retired, Undo by `campaign_merges`).
+
 ### GIVE-2 — the four figures on an online gift
 - **Gross, covered, fee and net are four different questions and `shared/giftFooting.js` names all
   four.** A thermometer counts INTENDED (gross minus covered); a receipt, Reports and the ledger

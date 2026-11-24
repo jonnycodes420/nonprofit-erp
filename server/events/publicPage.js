@@ -20,6 +20,7 @@ const {
   EV_PUBLIC_READY, EV_READY, donateLimiter, evDayWords, evMoney, evPage, eventPageHtml, logEventRegistered,
   orgTime, orgTzName, publicAppUrl, query, resolveOrgBrandTheme, run, uuid, wrap,
 } = ctx;
+const FT = require("./freeTickets");   // EVENTS-4: a free ticket needs no Stripe
 let EV = null;
 EV_READY.then(m => { EV = m; });
 
@@ -93,8 +94,9 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
   // money through it, the same rule as its giving pages (FUNDRAISING-2). It
   // offered "Register" and promised somebody would be in touch about paying.
   // The staff editor's preview (eventPageHtml editable) still draws the page.
-  const [payOrg] = await query("SELECT name, stripe_connected, stripe_account_id FROM orgs WHERE id=?", [e.org_id]);
-  if (!(payOrg && payOrg.stripe_connected && payOrg.stripe_account_id)) {
+  // EVENTS-4: ...or until it has a free ticket, which needs no payments.
+  const [payOrg] = await query("SELECT name FROM orgs WHERE id=?", [e.org_id]);
+  if (!(await FT.pageState(query, e.org_id, e.id)).open) {
     const brand = await resolveOrgBrandTheme(e.org_id).catch(() => null) || { band: "#0d5c3a", bandFg: "#fff", displayName: "" };
     const who = String(brand.displayName || "").trim() || payOrg?.name || "This organization";
     return res.status(404).send(evPage({ title: "Not open yet", brand, body:
@@ -300,11 +302,30 @@ app.post("/e/:slug/register", donateLimiter, express.urlencoded({ extended: fals
     [String(req.body?.levelId || ""), e.id, e.org_id]);
   if (!level) return res.status(400).send(evPage({ title: "Almost", brand, body:
     `<div class="card"><div class="err">That option is no longer available.</div>${back}</div>` }));
-  // SWEEP-4: the page is not open until payments are connected, so neither is its form
-  { const [o] = await query("SELECT name, stripe_connected, stripe_account_id FROM orgs WHERE id=?", [e.org_id]);
-    if (!(o && o.stripe_connected && o.stripe_account_id)) return res.status(404).send(evPage({ title: "Not open yet", brand, body:
-      `<div class="card" data-testid="event-not-open"><h1>Not open yet</h1><p class="muted">${esc(String(brand.displayName || "").trim() || o?.name || "This organization")}'s event page isn't open yet. Please check back soon.</p></div>` })); }
   const qty = Math.min(EV.MAX_QTY, Math.max(1, parseInt(req.body?.quantity, 10) || 1));
+  // EVENTS-4: a free ticket registers now, with no payments and no gift, through
+  // the one registration writer (capacity checked there).
+  if (FT.isFree(level)) {
+    const guestNames = String(req.body?.guests || "").split(/\r?\n/).map(x => x.trim()).filter(Boolean).slice(0, EV.MAX_QTY);
+    try {
+      await FT.registerFree(ctx, { e, level, name, email, qty, guests: guestNames,
+        dietary: String(req.body?.dietary || "").trim().slice(0, 200) || null });
+    } catch (err) {
+      if (!err.status) throw err;
+      return res.status(err.status).send(evPage({ title: "Almost", brand, body: `<div class="card"><div class="err">${esc(err.message)}</div>${back}</div>` }));
+    }
+    return res.send(evPage({ title: `Thank you · ${e.name}`, brand, body: `
+    <div class="card" data-testid="event-free-registered">
+      <h1>Thank you, ${esc(name.split(" ")[0])}.</h1>
+      <div class="ok">You are registered for ${esc(e.name)}.</div>
+      <p class="muted">${esc(evDayWords(e.date))}${e.location ? ` · ${esc(e.location)}` : ""}</p>
+      <p>${esc(level.name)}${qty > 1 ? ` · ${qty} places` : ""}${guestNames.length ? ` · ${guestNames.length} ${guestNames.length === 1 ? "guest" : "guests"} named` : ""}.</p>
+      <p class="small">It is free: nothing was charged and nothing is owed. Give your name at the door.</p>
+    </div>` }));
+  }
+  // SWEEP-4: a paid ticket is not open until payments are connected (EVENTS-4: that ticket, not the page)
+  if (!(await FT.pageState(query, e.org_id, e.id)).canTakeACard) return res.status(400).send(evPage({ title: "Not on sale yet", brand, body:
+      `<div class="card" data-testid="event-not-on-sale"><div class="err">${esc(FT.NOT_ON_SALE[level.kind] || FT.NOT_ON_SALE.ticket)}</div>${back}</div>` }));
 
   // ONE PERSON, ONE RECORD. Matched by email first, exactly as every other
   // way into this file works; a registrant who already gives is the person

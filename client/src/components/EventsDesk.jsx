@@ -10,42 +10,18 @@ import { apiFetch } from "../api";
 import { useChanged } from "../lib/changes";   // STALE-2
 import { personNamed } from "../lib/people";
 import { PeopleDatalist } from "./PeopleDatalist";
-import { T, fmtFull, Card } from "./shared";
+import { T, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam, donorHref } from "../lib/appUrls";
 import { EventKiosk } from "./Events";
 import { EventPageEditor } from "./EventPageEditor";
+import EventTicketTypes from "./events/EventTicketTypes";   // EVENTS-4
 import { SaveAsGroup } from "./Groups";
 import RemoveMenu, { removeMany } from "./RemoveMenu";
-import PhotoField from "./PhotoField";
-import Picture from "./Picture";
 import { displayOrgDate } from "../lib/orgDay";
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
-
-// FIX-41: a ticket type's or sponsorship level's optional small picture. The
-// thumbnail (or "Add a picture") opens the one picture control; it saves at once.
-function LevelPicture({ level, disabled, onSaved }) {
-  const [open, setOpen] = useState(false);
-  const [err, setErr] = useState("");
-  const save = async p => {
-    setErr("");
-    try { await apiFetch(`/pictures/event_level/${level.id}`, { method: "PUT", body: JSON.stringify({ picture: p }) }); onSaved && onSaved(); }
-    catch (e) { setErr(errorMessage(e, "That photo did not save.")); }
-  };
-  return (
-    <span style={{ display: "inline-flex", flexDirection: "column", gap: 4 }}>
-      <button type="button" disabled={disabled} onClick={() => setOpen(o => !o)} data-testid="event-level-picture"
-        aria-label={level.picture ? `Change the picture for ${level.name}` : `Add a picture for ${level.name}`}
-        style={{ width: 36, height: 36, padding: 0, borderRadius: 7, overflow: "hidden", border: "1px dashed " + T.bg3, background: T.bg, cursor: disabled ? "default" : "pointer", fontSize: 9, fontWeight: 700, color: T.ink3, fontFamily: "inherit", lineHeight: 1.1 }}>
-        {level.picture ? <Picture value={level.picture} alt={level.name} ratio="1 / 1" radius={0} width={120} /> : "Add a photo"}
-      </button>
-      {open && !disabled && <span style={{ width: 160 }}><PhotoField variant="small" name={level.name} value={level.picture} onChange={save} testid="event-level-photo" /></span>}
-      {err && <span role="alert" style={{ fontSize: 11.5, color: T.ink }}>{err}</span>}
-    </span>
-  );
-}
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 // SWEEP-4: emerald is the one action colour; the primary here was brass
@@ -57,11 +33,8 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
   const [levels, setLevels] = useState([]);
   const [guests, setGuests] = useState(null);
   const [msg, setMsg] = useState("");
-  const [lv, setLv] = useState({ kind: "ticket", name: "", price: "", fmv: "", memberPrice: "", capacity: "", recognition: "", benefits: "" });
   // PARITY-2 Part 3: check-in at the door, from the guest list, on a phone.
   const [door, setDoor] = useState(false);
-  // A sponsor level's benefits, edited in place (one per line).
-  const [editBenefits, setEditBenefits] = useState(null);   // { id, text }
   const [reg, setReg] = useState({ who: "", email: "", levelId: "", quantity: 1, paid: true });
   const [marks, setMarks] = useState({});
   // EVENTS-2 — who asked to be told if a place comes free.
@@ -83,10 +56,6 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
   // door) re-reads this desk's guest list.
   useChanged(["event"], load, { event: event.id });
   const act = async (fn, okMsg) => { setMsg(""); try { await fn(); if (okMsg) setMsg(okMsg); load(); } catch (e) { setMsg(errorMessage(e, "That did not save.")); } };
-  const addLevel = () => act(() => apiFetch(`/events/${event.id}/levels`, { method: "POST", body: JSON.stringify(lv) })
-    .then(() => setLv({ kind: "ticket", name: "", price: "", fmv: "", memberPrice: "", capacity: "", recognition: "", benefits: "" })));
-  const saveBenefits = () => act(() => apiFetch(`/event-levels/${editBenefits.id}`, { method: "PUT", body: JSON.stringify({ benefits: editBenefits.text }) })
-    .then(() => setEditBenefits(null)), "Saved. The sponsor card on the page shows it now.");
   const register = async () => {
     // SCALE-2: the person with exactly this name, highest giving first, from the server.
     const d = await personNamed(reg.who).catch(() => null);
@@ -125,43 +94,8 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
 
       <EventPageEditor eventId={event.id} isReadOnly={isReadOnly} />
 
-      <Card style={{ padding: "16px 18px" }}>
-        <div style={h}>Tickets and sponsorships</div>
-        {levels.map(l => (
-          <div key={l.id} style={{ display: "flex", gap: 10, fontSize: 13, color: T.ink, padding: "6px 0", borderBottom: "1px solid " + T.bg3, flexWrap: "wrap" }}>
-            <LevelPicture level={l} disabled={isReadOnly} onSaved={load} />
-            <strong style={{ minWidth: 160 }}>{l.name}</strong>
-            <span>{fmtFull(l.price)}</span>
-            <span style={{ color: T.ink3 }}>{l.kind === "sponsor" ? "sponsorship" : `worth ${fmtFull(l.fmv)}, so ${fmtFull(l.deductible)} deductible`}</span>
-            {l.memberPrice != null && <span style={{ color: T.ink3 }} title="A current member of this organization pays this instead. Steward checks the membership against the email at checkout; the page never decides it.">members {fmtFull(l.memberPrice)}</span>}
-            <span style={{ marginLeft: "auto", color: T.ink3 }}>{l.capacity == null ? `${l.taken} taken` : `${l.taken} of ${l.capacity} taken`}</span>
-            {l.retired && <span data-testid="event-level-retired" style={{ fontSize: 11, fontWeight: 800, color: T.ink3, border: "1px solid " + T.bg3, borderRadius: 6, padding: "1px 7px" }}>Retired</span>}
-            <RemoveMenu kind={l.kind === "sponsor" ? "sponsor_level" : "ticket_type"} id={l.id} disabled={isReadOnly || l.retired} onDone={load} />
-            {l.kind === "sponsor" && (editBenefits && editBenefits.id === l.id
-              ? <div style={{ flexBasis: "100%", display: "flex", flexDirection: "column", gap: 6 }}>
-                  <textarea value={editBenefits.text} onChange={e => setEditBenefits({ ...editBenefits, text: e.target.value })} rows={4}
-                    placeholder={"What it comes with, one per line\nA table for ten\nYour name on the stage screen"} style={{ ...inp, fontFamily: "inherit" }} data-testid="event-level-benefits" />
-                  <span style={{ display: "flex", gap: 6 }}><button onClick={saveBenefits} style={btn(true)} data-testid="event-level-benefits-save">Save</button>
-                    <button onClick={() => setEditBenefits(null)} style={btn(false)}>Cancel</button></span>
-                </div>
-              : <div style={{ flexBasis: "100%", fontSize: 12, color: T.ink3, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
-                  <span>{(l.benefits || []).length ? (l.benefits || []).join(" · ") : "No benefits listed yet."}</span>
-                  {!isReadOnly && <button onClick={() => setEditBenefits({ id: l.id, text: (l.benefits || []).join("\n") })} style={{ ...btn(false), padding: "3px 9px", fontSize: 12 }}>
-                    {(l.benefits || []).length ? "Edit benefits" : "Add benefits"}</button>}
-                </div>)}
-          </div>))}
-        {!isReadOnly && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
-          <select value={lv.kind} onChange={e => setLv({ ...lv, kind: e.target.value })} style={inp}><option value="ticket">Ticket</option><option value="sponsor">Sponsorship</option></select>
-          <input placeholder="Name (e.g. Dinner ticket)" value={lv.name} onChange={e => setLv({ ...lv, name: e.target.value })} style={{ ...inp, width: 170 }} />
-          <input placeholder="Price" type="number" value={lv.price} onChange={e => setLv({ ...lv, price: e.target.value })} style={{ ...inp, width: 80 }} />
-          <input placeholder="Value received" type="number" value={lv.fmv} onChange={e => setLv({ ...lv, fmv: e.target.value })} style={{ ...inp, width: 110 }} title="What the guest receives, such as the dinner. The receipt says only the rest is deductible." />
-          {lv.kind === "ticket" && <input placeholder="Member price" type="number" value={lv.memberPrice} onChange={e => setLv({ ...lv, memberPrice: e.target.value })} style={{ ...inp, width: 120 }} title="What a current member pays. Leave it empty and everybody pays the same. Steward checks the membership against the email at checkout, so the page never decides it." />}
-          <input placeholder="Places" type="number" value={lv.capacity} onChange={e => setLv({ ...lv, capacity: e.target.value })} style={{ ...inp, width: 70 }} />
-          {lv.kind === "sponsor" && <input placeholder="Recognition, e.g. {{name}}, Gold sponsor" value={lv.recognition} onChange={e => setLv({ ...lv, recognition: e.target.value })} style={{ ...inp, width: 240 }} />}
-          {lv.kind === "sponsor" && <textarea placeholder={"What it comes with, one per line\nA table for ten\nYour name on the stage screen"} value={lv.benefits} onChange={e => setLv({ ...lv, benefits: e.target.value })} rows={3} style={{ ...inp, flexBasis: "100%", fontFamily: "inherit" }} />}
-          <button onClick={addLevel} style={btn(false)} data-testid="event-add-level">Add</button>
-        </div>}
-      </Card>
+      {/* EVENTS-4: the one ticket-types card, also on the Events page. */}
+      <EventTicketTypes eventId={event.id} isReadOnly={isReadOnly} levels={levels} onChanged={load} />
 
       {/* EVENTS-2 — THE WAITING LIST. A place is offered by a PERSON pressing
           this button, never by a sweep: nothing is held and nothing is

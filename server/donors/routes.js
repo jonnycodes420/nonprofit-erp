@@ -644,12 +644,9 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
   connected.sort((a, b) => b.total - a.total);
 
   // CONTACT: how to reach them, and every flag that says not to, plainly.
-  // The country is said only when it is not the default and there is an
-  // address to go with it ("US" alone is not an address).
-  const street = [d.address, d.address2, [d.city, [d.state, d.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ")]
-    .map(x => String(x || "").trim()).filter(Boolean);
-  const country = String(d.country || "").trim();
-  const address = street.length ? [...street, ...(country && !/^(us|usa|united states)$/i.test(country) ? [country] : [])].join(", ") : null;
+  // CONTACT-1: the address line is shared/contactDetails.js addressLine, the
+  // one the profile's rail draws before this read lands.
+  const address = (await import("../../shared/contactDetails.js")).addressLine(d);
   const flags = [];
   if (d.deceased) flags.push({ key: "deceased", label: "Deceased" });
   if (d.do_not_contact) flags.push({ key: "do_not_contact", label: "Do not contact" });

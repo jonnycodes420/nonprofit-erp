@@ -23,7 +23,7 @@
 const http = require("http");
 const Stripe = require("stripe");
 const bcrypt = require("bcryptjs");
-const { BASE, ok, summary, api, q, closeDb, STRIPE_MOCK_PORT } = require("./helpers");
+const { BASE, ok, summary, api, q, closeDb, STRIPE_MOCK_PORT, civilPlusDays } = require("./helpers");
 
 const ORG = "org_ev2", ACCT = "acct_ev2", EVENT = "ev_ev2", SLUG = "ev2-shore-run-test";
 const LEVEL = "evl_ev2_adult";
@@ -103,6 +103,116 @@ const holds = () => q(
 const attendees = () => q(
   `SELECT id, name, email, quantity, registration_gift_id, dietary FROM event_attendees WHERE org_id=$1 AND quantity > 0`, [ORG]);
 const gifts = () => q(`SELECT id, amount::float AS amount, quid_pro_quo_value::float AS qpq, event_id FROM gifts WHERE org_id=$1`, [ORG]);
+
+// ── EVENTS-4 · AN ORG WITH NO PAYMENTS ────────────────────────────────────
+// "$0 tickets cannot be created", "Delete event opens an Archive dialog",
+// "check-in search cannot find invited-only guests" (fleet, 22-23 Nov).
+// Its own org, with NO Stripe: a free ticket is made, registered on the public
+// page and checked in, and writes no gift; a paid ticket is made and saved but
+// is not on sale; the event with a guest is archived, not deleted, and says
+// so; the door finds an invited-only guest; a published shift with a sign-up
+// is removed through removal.js, its sign-up cancelled, and Undo restores it.
+// HOW IT GOES RED on main: the $0 level is refused (400), the page is "Not open
+// yet" (404), the kiosk has no `others`, the removal plan has no `line`, and a
+// shift's sign-up is not cancelled. Each is its own assertion below.
+const O4 = "org_ev4", E4 = "ev_ev4", SLUG4 = "ev4-free-supper-test";
+async function reset4() {
+  for (const t of ["volunteer_signups", "volunteer_slot_roles", "volunteer_slots", "volunteer_opportunities", "deleted_records",
+    "event_seat_holds", "event_waitlist", "event_attendees", "event_levels", "events", "gifts", "pledges", "receipts", "fin_transactions",
+    "fin_audit_log", "interactions", "notification_sends", "tasks", "threads", "write_effects"])
+    await q(`DELETE FROM ${t} WHERE org_id=$1`, [O4]).catch(() => {});
+  for (const t of ["donors", "campaigns", "fin_funds", "accounts", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [O4]).catch(() => {});
+  await q(`DELETE FROM orgs WHERE id=$1`, [O4]).catch(() => {});
+}
+async function events4FreeNoStripe() {
+  await reset4();
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,stripe_connected)
+           VALUES ($1,'Free Supper Club','ev4-free',1,'active','growth',false)`, [O4]);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_ev4',$1,'ev4@test.local',$2,'Ev4 Admin','admin')`,
+    [O4, bcrypt.hashSync("loadtest1234", 10)]);
+  await q(`INSERT INTO events (id,org_id,name,event_type,date,status,public_slug,created_by,created_by_name)
+           VALUES ($1,$2,'Free Supper','other', $4::date, 'upcoming', $3, 'u_ev4','Ev4 Admin')`, [E4, O4, SLUG4, civilPlusDays(20)]);
+  const r = await fetch(BASE + "/auth/login", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "ev4@test.local", password: "loadtest1234" }) });
+  const tok = (await r.json()).token;
+  ok("§EVENTS-4 signed in to the org with no payments", !!tok);
+
+  // 1. Ticket types with no Stripe.
+  const free = await api("POST", `/events/${E4}/levels`, tok, { kind: "ticket", name: "Supper place", price: 0, capacity: 5 });
+  ok("§EVENTS-4 a $0 ticket is created with no payments connected", free.status === 201 && !!free.body?.id, free);
+  const paid = await api("POST", `/events/${E4}/levels`, tok, { kind: "ticket", name: "Patron place", price: 60, fmv: 20 });
+  ok("§EVENTS-4 a paid ticket is created and saved with no payments connected", paid.status === 201, paid);
+  const blank = await api("POST", `/events/${E4}/levels`, tok, { kind: "ticket", name: "No price", price: "" });
+  ok("§EVENTS-4 an empty price is not a free ticket", blank.status === 400, blank);
+  const freeSponsor = await api("POST", `/events/${E4}/levels`, tok, { kind: "sponsor", name: "Free sponsor", price: 0 });
+  ok("§EVENTS-4 a sponsorship is still more than $0", freeSponsor.status === 400, freeSponsor);
+  const edit = await api("PUT", `/event-levels/${free.body?.id}`, tok, { name: "Supper seat", price: 0 });
+  ok("§EVENTS-4 a $0 ticket can be edited", edit.status === 200, edit);
+
+  // 2. The public page opens for the free ticket; the paid one says it is not on sale.
+  const pageRes = await fetch(`${BASE}/e/${SLUG4}`);
+  const html = await pageRes.text();
+  ok("§EVENTS-4 the public page opens with a free ticket and no payments", pageRes.status === 200 && !/Not open yet/.test(html), pageRes.status);
+  ok("§EVENTS-4 the paid ticket alone says it goes on sale once payments are connected",
+    (html.match(/Tickets go on sale once payments are connected\./g) || []).length === 1 && /Supper seat/.test(html), html.length);
+  const reg = await fetch(`${BASE}/e/${SLUG4}/register`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ levelId: free.body?.id, name: "Ida Free", email: "ida.free@example.test", quantity: "2" }).toString() });
+  const regHtml = await reg.text();
+  ok("§EVENTS-4 a $0 registration from the public page goes through", reg.status === 200 && /You are registered for Free Supper/.test(regHtml), reg.status);
+  const [att] = await q(`SELECT id, status, quantity, registration_gift_id FROM event_attendees WHERE org_id=$1 AND event_id=$2 AND email='ida.free@example.test'`, [O4, E4]);
+  ok("§EVENTS-4 …as a registered guest holding two places", att && att.status === "registered" && Number(att.quantity) === 2 && !att.registration_gift_id, att);
+  const [g] = await q(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`, [O4]);
+  ok("§EVENTS-4 …and a $0 registration makes no gift row", g.n === 0, g);
+  const paidReg = await fetch(`${BASE}/e/${SLUG4}/register`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ levelId: paid.body?.id, name: "Pat Paid", email: "pat.paid@example.test" }).toString() });
+  ok("§EVENTS-4 a paid ticket is not sold with no payments", paidReg.status === 400 && /Tickets go on sale once payments are connected/.test(await paidReg.text()), paidReg.status);
+  const staffFree = await api("POST", `/events/${E4}/register`, tok, { name: "Sam Staff", email: "sam.staff@example.test", levelId: free.body?.id, quantity: 1 });
+  const [g2] = await q(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`, [O4]);
+  ok("§EVENTS-4 the staff Register on a free ticket makes no gift either", staffFree.status === 201 && g2.n === 0, staffFree);
+
+  // 3. Check-in and counts; the door finds an invited-only guest.
+  const kiosk = await api("GET", `/events/${E4}/kiosk`, tok);
+  const ida = (kiosk.body?.guests || []).find(x => x.email === "ida.free@example.test");
+  ok("§EVENTS-4 the free guest is expected at the door", !!ida && kiosk.body.expected === 2, kiosk.body?.expected);
+  const inRes = await api("POST", `/events/${E4}/check-in`, tok, { attendeeId: ida && ida.id });
+  ok("§EVENTS-4 …and checks in", inRes.body?.ok === true, inRes.body);
+  await api("POST", `/events/${E4}/attendees`, tok, { name: "Ina Invited", email: "ina.invited@example.test" });
+  const kiosk2 = await api("GET", `/events/${E4}/kiosk`, tok);
+  ok("§EVENTS-4 check-in search finds an invited-only guest (not in the expected count)",
+    (kiosk2.body?.others?.invited || []).some(x => x.email === "ina.invited@example.test") && kiosk2.body.expected === 2 && kiosk2.body.checkedIn === 1,
+    JSON.stringify(kiosk2.body?.others || null).slice(0, 300));
+  const before = await q(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND LOWER(email)='ina.invited@example.test'`, [O4]);
+  const walk = await api("POST", `/events/${E4}/attendees`, tok, { name: "Ina I.", email: "INA.INVITED@example.test" });
+  const after = await q(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND LOWER(email)='ina.invited@example.test'`, [O4]);
+  ok("§EVENTS-4 Add at the door matches the person by email first, no duplicate", walk.status === 200 && before[0].n === 1 && after[0].n === 1 && (walk.body?.ids || []).length === 1, walk.body);
+
+  // 4. The event with a guest says Archive, with one line, and Delete refuses.
+  const rm = await api("GET", `/events/${E4}/removal`, tok);
+  ok("§EVENTS-4 the event with guests offers Archive, and says what it holds", rm.body?.canDelete === false && /^Has .*guest.*, so it's archived, not deleted\.$/.test(rm.body?.line || ""), rm.body);
+  const del = await api("DELETE", `/events/${E4}`, tok);
+  ok("§EVENTS-4 …and DELETE refuses it", del.status === 409, del.status);
+
+  // 5. A published shift with a sign-up: the plan names them; removing cancels it; Undo restores it.
+  const opp = await api("POST", "/volunteer-hub/opportunities", tok, { name: "Supper crew" });
+  const oppId = opp.body?.id || opp.body?.opportunity?.id;
+  const day = civilPlusDays(20);
+  const sl = await api("POST", "/volunteer-hub/slots", tok, { opportunityId: oppId, eventId: E4, date: day, startTime: "17:00", endTime: "19:00", name: "Washing up" });
+  const sl2 = await api("POST", "/volunteer-hub/slots", tok, { opportunityId: oppId, date: day, startTime: "19:00", endTime: "20:00", name: "Empty shift" });
+  const [vol] = await q(`SELECT id FROM donors WHERE org_id=$1 AND LOWER(email)='ida.free@example.test'`, [O4]);
+  await api("POST", "/volunteer-hub/signups", tok, { slotId: sl.body?.id, personId: vol && vol.id });
+  const emptyGo = await api("POST", `/volunteer-hub/removals/shift/${sl2.body?.id}`, tok, {});
+  ok("§EVENTS-4 a published shift with no sign-ups deletes in one step", emptyGo.status === 200 && emptyGo.body?.mode === "delete", emptyGo.body);
+  const plan = await api("GET", `/volunteer-hub/removals/shift/${sl.body?.id}`, tok);
+  ok("§EVENTS-4 a shift with sign-ups asks first, naming them", plan.body?.mode === "retire" && /Ida Free is signed up/.test(plan.body?.body || ""), plan.body);
+  const go = await api("POST", `/volunteer-hub/removals/shift/${sl.body?.id}`, tok, {});
+  const [su] = await q(`SELECT status FROM volunteer_signups WHERE org_id=$1 AND slot_id=$2`, [O4, sl.body?.id]);
+  ok("§EVENTS-4 …removing it cancels their sign-up", go.status === 200 && su && su.status === "cancelled", su);
+  const undo = await api("POST", "/volunteer-hub/removals/undo", tok, { undoIds: go.body?.undoIds });
+  const [su2] = await q(`SELECT status FROM volunteer_signups WHERE org_id=$1 AND slot_id=$2`, [O4, sl.body?.id]);
+  const [slot] = await q(`SELECT cancelled_at FROM volunteer_slots WHERE id=$1`, [sl.body?.id]);
+  ok("§EVENTS-4 …and Undo puts the shift and the sign-up back", undo.status === 200 && su2 && su2.status === "confirmed" && slot && !slot.cancelled_at, { su2, slot });
+  await reset4();
+}
 
 (async () => {
   console.log("EVENTS-2 — a seat is confirmed by the payment, and the server sets the price\n");
@@ -230,6 +340,8 @@ const gifts = () => q(`SELECT id, amount::float AS amount, quid_pro_quo_value::f
   const other = PASS.makePassCode({ kind: "ticket", orgId: "org_somebody_else", id: att[0].id, expiresOn: null, secret });
   const scan3 = await api("POST", `/events/${EVENT}/scan`, tok, { code: other });
   ok("a code signed for another org is refused here", scan3.body?.ok === false, scan3.body);
+
+  await events4FreeNoStripe();
 
   // Tidy up.
   await reset();

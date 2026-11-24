@@ -10,7 +10,7 @@
 // person onto a role. To send is the queue of reminders and thank-yous
 // Steward drafted: nothing reaches a volunteer until somebody here presses
 // Send.
-import RemoveMenu, { removeMany } from "./RemoveMenu";
+import RemoveMenu, { removeMany, removeOne } from "./RemoveMenu";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { apiFetch, API } from "../api";
 import { T, Modal } from "./shared";
@@ -568,12 +568,13 @@ function ShiftDrawer({ shift, defs, isReadOnly, onClose, onChanged, onOpenPerson
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {!isReadOnly && <button style={btnQuiet} onClick={() => setEditing(true)}>Change shift</button>}
           {!isReadOnly && <button style={btnQuiet} disabled={busy} onClick={() => act(`/volunteer-hub/slots/bulk`, { ids: [shift.id], action: "settings", published: !shift.published }, "That did not change.")}>{shift.published ? "Make draft" : "Publish"}</button>}
-          {/* STALE-2: a draft nobody is on can go outright; anything else is cancelled, as before. */}
-          {!isReadOnly && !shift.published && !onShift.size && <button data-testid="shift-delete-draft" style={btnQuiet} disabled={busy} onClick={async () => {
-            setBusy(true); setMsg("");
-            try { const r = await apiFetch(`/volunteer-hub/slots/${shift.id}`, { method: "DELETE" }); onChanged(r.message); onClose(); }
-            catch (e) { setMsg(errorMessage(e, "That draft was not deleted.")); setBusy(false); }
-          }}>Delete draft</button>}
+          {/* EVENTS-4 item 4: the one Remove, published or draft (removal.js). Nobody on it:
+              deleted at once, with Undo. People on it: the confirm names them and cancels their sign-ups, with Undo. */}
+          {!isReadOnly && <button data-testid="shift-remove" style={btnQuiet} disabled={busy} onClick={async () => {
+            setMsg("");
+            const r = await removeOne({ kind: "shift", id: shift.id, oneStep: true, onError: setMsg });
+            if (r) { onChanged(r.sentence); onClose(); }
+          }}>{onShift.size ? "Remove shift…" : "Delete shift"}</button>}
           <button style={btnQuiet} onClick={() => { window.dispatchEvent(new CustomEvent("steward:vol-checkin", { detail: shift.id })); onClose(); }}>Check in on this phone</button>
         </div>
         {msg && <div role="status" style={{ fontSize: 13, color: T.ink2 }}>{msg}</div>}

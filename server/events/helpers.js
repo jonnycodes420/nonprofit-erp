@@ -106,7 +106,11 @@ async function eventPageHtml(e, q = {}, { editable = false } = {}) {
     const priceLine = l.member_price != null
       ? `<p class="small">Members pay ${esc(evMoney(l.member_price))}. Enter the email your membership is under and the price changes when you check out; it is checked against the membership, never taken on trust.</p>`
       : "";
-    const form = soldOut ? `
+    // EVENTS-4: a free ticket registers with no payments; a paid one, with
+    // no payments connected, says so on its own card and offers no form.
+    const free = l.kind === "ticket" && Math.round(Number(l.price) * 100) === 0;
+    const notOnSale = !free && !canTakeACard;
+    const form = notOnSale ? `<p class="small" data-testid="event-level-not-on-sale"><strong>${esc(require("./freeTickets").NOT_ON_SALE[l.kind] || "")}</strong></p>` : soldOut ? `
       <form method="post" action="${slugPath}/waitlist">
         <input type="hidden" name="levelId" value="${esc(l.id)}">
         <input class="hp" name="website" tabindex="-1" autocomplete="off">
@@ -115,7 +119,7 @@ async function eventPageHtml(e, q = {}, { editable = false } = {}) {
         <label>Email<input name="email" type="email" required autocomplete="email"></label>
         <button class="btn quiet" type="submit">Put me on the waiting list</button>
       </form>` : `
-      <form method="post" action="${slugPath}/${canTakeACard ? "checkout" : "register"}">
+      <form method="post" action="${slugPath}/${canTakeACard && !free ? "checkout" : "register"}">
         <input type="hidden" name="levelId" value="${esc(l.id)}">
         <input class="hp" name="website" tabindex="-1" autocomplete="off">
         <label>Your name<input name="name" required autocomplete="name"></label>
@@ -125,7 +129,7 @@ async function eventPageHtml(e, q = {}, { editable = false } = {}) {
              <label>Who is coming, one name per line<textarea name="guests" placeholder="So we can put a name at every seat"></textarea></label>
              <label>Anything we should know about food<input name="dietary" placeholder="Vegetarian, an allergy, anything"></label>`
           : ""}
-        <button class="btn" type="submit">${canTakeACard
+        <button class="btn" type="submit">${free ? "Register" : canTakeACard
           ? (l.kind === "sponsor" ? "Sponsor and pay" : "Buy and pay")
           : (l.kind === "sponsor" ? "Sponsor" : "Register")}</button>
       </form>`;
@@ -135,16 +139,16 @@ async function eventPageHtml(e, q = {}, { editable = false } = {}) {
       ${lpic ? `<div style="float:right;width:72px;margin:0 0 8px 12px">${require("../../pictures").pictureHtml({ ...lpic, alt: lpic.alt || l.name }, { ratio: "1 / 1", radius: 10, sizes: "72px" })}</div>` : ""}
       <div class="row"><h2>${esc(l.name)}</h2>${soldOut
         ? `<span class="pill shut">Sold out</span>`
-        : `<span class="pill open">${esc(evMoney(l.price))}</span>`}</div>
+        : `<span class="pill open">${free ? "Free" : esc(evMoney(l.price))}</span>`}</div>
       ${benefits.length ? `<ul class="benefits">${benefits.map(b => `<li>${esc(b)}</li>`).join("")}</ul>` : ""}
-      ${Number(l.fmv) > 0
+      ${free ? `<p class="small">Free: nothing is charged, and you only need to register.</p>` : Number(l.fmv) > 0
         ? `<p class="small">${esc(evMoney(l.fmv))} of this is what you receive${l.kind === "sponsor" ? "" : " on the night"}, so ${esc(evMoney(deductible))} is tax deductible${memberDeductible != null ? `, or ${esc(evMoney(memberDeductible))} at the member price` : ""}.</p>`
         : `<p class="small">The whole amount is tax deductible: nothing is given in return.</p>`}
       ${priceLine}
       ${l.recognition ? `<p class="small">Listed as ${esc(String(l.recognition).replace(/\{\{\s*name\s*\}\}/g, "your name"))}.</p>` : ""}
       ${left != null && !soldOut && left <= 10 ? `<p class="small">${left} place${left === 1 ? "" : "s"} left.</p>` : ""}
-      ${l.kind === "sponsor" || tickets.length > 1
-        ? `<details${soldOut ? " open" : ""}><summary class="btn${l.kind === "sponsor" ? " quiet" : ""}">${soldOut ? "Join the waiting list" : l.kind === "sponsor" ? "Sponsor at this level" : canTakeACard ? "Buy tickets" : "Register"}</summary>${form}</details>`
+      ${notOnSale ? form : l.kind === "sponsor" || tickets.length > 1
+        ? `<details${soldOut ? " open" : ""}><summary class="btn${l.kind === "sponsor" ? " quiet" : ""}">${soldOut ? "Join the waiting list" : l.kind === "sponsor" ? "Sponsor at this level" : canTakeACard && !free ? "Buy tickets" : "Register"}</summary>${form}</details>`
         : form}
     </div>`;
   };
@@ -243,11 +247,11 @@ async function eventPageHtml(e, q = {}, { editable = false } = {}) {
     ${!isOver && tickets.length ? `<h2 class="sec">Come along</h2>${tickets.map(levelCard).join("")}` : ""}
     ${!isOver && sponsors.length ? `<h2 class="sec">Sponsor it</h2><div class="sponsors" data-testid="event-sponsors">${sponsors.map(levelCard).join("")}</div>` : ""}
     ${isOver && (tickets.length || sponsors.length) ? `<div class="card"><p class="muted">This event has happened. Thank you to everybody who came.</p></div>` : ""}
-    ${giveCard}
+    ${canTakeACard ? giveCard : "" /* EVENTS-4: with no payments its link led to a giving page that is not open */}
     ${share}
     <p class="small" style="text-align:center">${isOver && !canTakeACard ? "" : canTakeACard
       ? `Your card is taken by ${esc(brand.displayName || "the organization")}'s own payment account. Steward never holds the money and never sees the card.`
-      : `Registering here tells ${esc(brand.displayName || "the organization")} you are coming. They will be in touch about paying, and nothing is charged on this page.`}</p>
+      : `Registering here tells ${esc(brand.displayName || "the organization")} you are coming. Nothing is charged on this page.`}</p>
   ` });
   // EDITOR-1: the editor's preview runs no script, so the share box's two
   // inline handlers are never written into it (above).

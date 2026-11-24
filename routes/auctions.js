@@ -447,6 +447,10 @@ app.post("/auction-items/:id/winner", requireAuth, checkWriteAccess, wrap(async 
   const amount = AC.cents(req.body?.amount);
   if (!(amount > 0) || amount > AC.BID_MAX_CENTS) return res.status(400).json({ error: "Write the winning bid as an amount, like 450." });
   const [st] = (await AC.itemStates(query, orgId, item.auction_id)).filter(x => x.id === item.id);
+  // EVENTS-4 item 6: one winner. A closed item with a winning bid is locked until
+  // the winner is removed (the one Remove winner, removal.js), which is the Undo.
+  if (st && st.closed && st.bid_id)
+    return res.status(409).json({ error: "already_won", message: `${st.bidder_name || "Somebody"} already won ${item.title}. Remove the winner first to record another.` });
   const start = AC.cents(item.starting_bid);
   if (amount < start) return res.status(400).json({ error: `The winning bid is at least the starting bid, ${AC.fmtMoney(start)}.` });
   if (st && st.high_amount != null && amount <= AC.cents(st.high_amount) && st.bidder_donor_id !== d.id)
