@@ -9,6 +9,7 @@ import { AtlasBell } from "./AtlasNote";   // AGENT-5
 import { orgsSeenCount } from "../lib/orgBinding"; // HARDEN-1
 import { useMyOrgs } from "../lib/myOrgs";   // ACCESS-1
 const OrgSwitcher = lazy(() => import("./OrgSwitcher"));   // ACCESS-1: only when opened
+const WhatsNewPanel = lazy(() => import("./WhatsNewPanel"));   // PERF-5: the panel and every entry, only when opened
 
 
 const LAST_SEEN_KEY = "npe_whats_new_seen";
@@ -411,16 +412,16 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
   const [wnHidden,setWnHidden] = useState(null);
   const [wnSeen,setWnSeen] = useState(()=>{ try { return localStorage.getItem(LAST_SEEN_KEY)||""; } catch { return ""; } });
   useEffect(()=>{ apiFetch("/changelog/hidden").then(d=>setWnHidden(new Set(d.hidden||[]))).catch(()=>setWnHidden(new Set())); },[]);
-  // SWEEP-6 (PERF-1): the entries are every docs/changelog file, so they load
-  // once the page has drawn, not before Home's first look.
-  const [changelog,setChangelog] = useState([]);
-  const [PRODUCT_WORDS,setProductWords] = useState({});   // PERF-2: with the entries, not with Home
-  const loadChangelog = () => { import("../lib/changelog").then(m=>{setProductWords(m.PRODUCT_WORDS);setChangelog(m.CHANGELOG);}).catch(()=>{}); };
-  useEffect(()=>{ const t=setTimeout(()=>{ if(window.requestIdleCallback) window.requestIdleCallback(loadChangelog,{timeout:4000}); else loadChangelog(); },4000); return ()=>clearTimeout(t); },[]);
-  useEffect(()=>{ if(meOpen&&!changelog.length) loadChangelog(); },[meOpen]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const wnEntries = changelog.filter(e=>!wnHidden||!wnHidden.has(e.id));
-  const wnUnseen = !!wnEntries[0] && wnEntries[0].id !== wnSeen && wnHidden!==null;
-  const openWn = () => { setWnOpen(true); const id=wnEntries[0]?.id||""; setWnSeen(id); try { localStorage.setItem(LAST_SEEN_KEY,id); } catch { /* private window */ } };
+  // PERF-5: the entries are every docs/changelog file (one more each build), so
+  // they and the panel load only when What's new is opened (WhatsNewPanel.jsx).
+  // The dot reads the newest entry's id, fixed at build time
+  // (client/scripts/changelogLatest.mjs); if a super-admin hid it, the panel
+  // names the newest one it shows.
+  const wnLatest = typeof __WN_LATEST__!=="undefined"?__WN_LATEST__:"";
+  const wnNewest = wnLatest&&!(wnHidden&&wnHidden.has(wnLatest))?wnLatest:"";
+  const wnUnseen = !!wnNewest && wnNewest !== wnSeen && wnHidden!==null;
+  const markSeen = id => { if(!id) return; setWnSeen(id); try { localStorage.setItem(LAST_SEEN_KEY,id); } catch { /* private window */ } };
+  const openWn = () => { setWnOpen(true); markSeen(wnNewest); };
   const meRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -533,20 +534,6 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
       <button onClick={logout} style={{background:"transparent",border:"1px solid "+T.green650,borderRadius:8,padding:"5px 11px",color:"rgba(240,237,230,0.7)",fontSize:12,cursor:"pointer"}}>Sign out</button>
     </div>
     {switchOpen && <Suspense fallback={null}><OrgSwitcher orgs={myOrgs} currentId={auth?.org?.id} onClose={()=>setSwitchOpen(false)}/></Suspense>}
-    {wnOpen && <div role="dialog" aria-label="What's new" data-testid="whats-new-panel" onClick={()=>setWnOpen(false)}
-      style={{position:"fixed",inset:0,background:"rgba(15,26,18,0.5)",zIndex:400,display:"flex",justifyContent:"flex-end"}}>
-      <div onClick={e=>e.stopPropagation()} style={{width:"min(440px,100%)",height:"100%",overflowY:"auto",background:T.bg,padding:"24px 22px",boxSizing:"border-box"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-          <span style={{fontFamily:"'DM Serif Display',serif",fontSize:26,color:T.ink}}>What's new</span>
-          <button onClick={()=>setWnOpen(false)} aria-label="Close" style={{background:"none",border:"none",fontSize:20,color:T.ink3,cursor:"pointer"}}>×</button>
-        </div>
-        {wnEntries.map(e=><div key={e.id} style={{background:T.white,borderRadius:14,padding:"14px 16px",marginBottom:10}}>
-          <div style={{fontSize:11,color:T.ink3}}>{PRODUCT_WORDS[e.product]||"New"} · {new Date(e.date+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"})}</div>
-          <div style={{fontSize:15,fontWeight:700,color:T.ink,margin:"4px 0"}}>{e.title}</div>
-          <div style={{fontSize:13.5,color:T.ink2,lineHeight:1.55}}>{e.body}</div>
-        </div>)}
-        <a href="/whats-new" target="_blank" rel="noreferrer" style={{fontSize:13,color:T.greenDk}}>The full list</a>
-      </div>
-    </div>}
+    {wnOpen && <Suspense fallback={null}><WhatsNewPanel hidden={wnHidden} onClose={()=>setWnOpen(false)} onSeen={markSeen}/></Suspense>}
   </div>;
 }
