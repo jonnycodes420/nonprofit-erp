@@ -49,6 +49,7 @@ const auctionCore = require("./auctionCore");   // PARITY-2 Part 4: the one winn
 const EVF = require("./shared/numbers/events");
 const NMONEY = require("./shared/numbers/money");   // NUMBERS-5: money in a total, and its sums
 const FUND_LINES = require("./shared/numbers/fundLines");   // GIFTS-2: a gift split across funds
+const THANKED_AT_G = require("./shared/numbers/thanks").THANKED_AT("g");   // THANKS-1: when a gift was thanked (never its receipt)
 const { EVENT_GIFT_MATCH, EVENT_GUEST_GAVE, EVENT_REGISTERED, EVENT_REGISTERED_STATUSES, EVENT_GUEST_LIVE, EVENT_INVITED,
         EVENT_DECLINED, EVENT_CAME, EVENT_NO_REPLY, EVENT_GUEST_WORDS } = EVF;
 // One event's lists, or every event dated in a window, read once per figure.
@@ -825,16 +826,16 @@ const SOURCES = {
     label: "Thank-yous marked sent",
     measure: () => "count",
     params: { from: "date:required", to: "date:required", assigned: "id" },
-    sentence: (p, dd) => `Every gift marked acknowledged between ${dd(p.from)} and ${dd(p.to)}.`,
+    sentence: (p, dd) => `Every gift thanked between ${dd(p.from)} and ${dd(p.to)}. A receipt is not a thank-you.`,   // THANKS-1
     sql: (orgId, p) => {
       const args = [orgId, p.from, p.to];
       const where = p.assigned ? (args.push(p.assigned), " AND d.assigned_to = ?") : "";
       return {
-        sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, ${orgDayOf('g.acknowledgement_sent_at', 'g')} AS date,
+        sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, ${orgDayOf(THANKED_AT_G, 'g')} AS date,
                      ROUND(g.amount::numeric, 2) AS amount, NULL::text AS detail
                 FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-               WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.acknowledgement_sent_at IS NOT NULL
-                 AND ${inOrgDays('g.acknowledgement_sent_at', 'g', '?', '?')}${where}`,
+               WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${THANKED_AT_G} IS NOT NULL
+                 AND ${inOrgDays(THANKED_AT_G, 'g', '?', '?')}${where}`,
         args,
       };
     },

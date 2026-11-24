@@ -364,7 +364,7 @@ app.get("/acknowledgments/backlog", requireAuth, wrap(async (req, res) => {
     `SELECT g.id, g.amount, g.date, g.donor_id, d.name, d.address, d.city, d.state, d.zip, d.deceased, f.name AS fund
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
        LEFT JOIN fin_funds f ON f.id = g.fund_id
-      WHERE g.org_id=? AND ${require("../../shared/numbers/thanks").AWAITING("g")} AND g.acknowledgement_sent_at IS NULL   -- FLOWS-14: the one rule
+      WHERE g.org_id=? AND ${require("../../shared/numbers/thanks").AWAITING("g")}   -- FLOWS-14, THANKS-1: the one rule (a receipt is not a thank-you)
         AND g.is_sample IS NOT TRUE AND d.is_sample IS NOT TRUE AND d.deleted_at IS NULL
         AND g.date <= ? AND g.date >= ?
       ORDER BY g.date ASC, d.name LIMIT 500`, [orgId, cutoff, orgTime.addDays(today, -730)]);

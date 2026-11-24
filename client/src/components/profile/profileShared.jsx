@@ -163,7 +163,7 @@ const giftTimelineLine = (g, fundName) => {
   // says the money came in by something called Needs you.
   if (methodValue(g.payment_method)) parts.push(methodValue(g.payment_method));   // GIFTS-3: one name per method
   // A gift that HAS been thanked says nothing: the absence is the news.
-  if (!g.acknowledgement_sent) parts.push("not yet thanked");
+  if (!g.thanked) parts.push("not yet thanked");   // THANKS-1: the thank-you rule, never the receipt
   return parts.join(" · ");
 };
 

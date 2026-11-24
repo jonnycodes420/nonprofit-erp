@@ -44,7 +44,7 @@ import { TouchIcon } from "./touchIcons";   // TOUCH-1
 import { touchLine } from "../../../shared/touchKinds.js";
 import { taskRowOf } from "../lib/taskRow";   // FLOWS-6
 import { compareTasks } from "../../../shared/nextStep.js";   // EDIT-2: the one task order
-import { thankState } from "../../../shared/thankState.js";   // FLOWS-14
+import { thankState, receiptWords } from "../../../shared/thankState.js";   // FLOWS-14, THANKS-1
 export { relDay, meetingNoun, AddToRecord, MorningBrief } from "./MorningBrief";
 
 const CHIP_EDGE = T.bg3;           // the artboards draw a hairline one shade off bg3; bg3 is the token
@@ -436,7 +436,8 @@ export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], int
       const ts = thankState(g);
       body = !ts ? (g.refund_reason ? `A refund: ${g.refund_reason}.` : "A refund, not a gift.")
         : ts.key === "refunded" ? `${ts.words}.`
-        : g.acknowledgement_sent ? `Thanked${g.acknowledged_via ? ` by ${g.acknowledged_via}` : ""}${g.acknowledged_by_name ? `, ${g.acknowledged_by_name}` : ""}.` : "Not thanked yet.";
+        : (ts.key === "thanked" ? `Thanked${g.acknowledged_via ? ` by ${g.acknowledged_via}` : ""}${g.acknowledged_by_name ? `, ${g.acknowledged_by_name}` : ""}.` : `${ts.words}.`)
+          + (receiptWords(g) ? ` ${receiptWords(g)}.` : "");   // THANKS-1: the receipt is its own fact
       by = g.created_by_name || "";
     }
     return { title, body, meta, by, type };

@@ -154,6 +154,12 @@ jobs:
       - name: Delete through removal guard
         run: node scripts/ci/delete-scan.js --self-test && node scripts/ci/delete-scan.js
 
+      # THANKS-1 · no screen reads gifts.acknowledgement_sent (the receipt's IRS
+      # mark) as "thanked"; the one rule is shared/numbers/thanks.js. The
+      # self-test plants two reads and watches them caught. One second.
+      - name: Receipt is not a thank-you guard
+        run: node scripts/ci/ack-read-scan.js --self-test && node scripts/ci/ack-read-scan.js
+
       # DEFINE-1 · a screen never shows a population count the registry
       # (shared/populationWords.js) does not name. Two seconds.
       - name: Population ids guard

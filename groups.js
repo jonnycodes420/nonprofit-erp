@@ -353,13 +353,13 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     if (q[yearKey]) params.push(String(q[yearKey]));
   }
   // ASK-2: "gave over $500 but hasn't been thanked": a gift over this many
-  // dollars (0 is any gift) not yet marked thanked, from the one place a
-  // thank-you is recorded on a gift (acknowledgement_sent).
+  // dollars (0 is any gift) not yet thanked, by the one thank-you rule
+  // (shared/numbers/thanks.js THANKED; THANKS-1: a receipt is not a thank-you).
   if (q.unthankedOver !== undefined && q.unthankedOver !== "") {
     const n = Number(q.unthankedOver);
     if (!Number.isFinite(n) || n < 0) return { badStatus: true };
     where.push(`EXISTS (SELECT 1 FROM gifts gu WHERE gu.org_id = donors.org_id AND gu.donor_id = donors.id AND gu.amount > ? AND gu.refunded_in_full IS NOT TRUE
-                         AND gu.acknowledgement_sent IS NOT TRUE AND gu.disputed_at IS NULL)`);
+                         AND NOT ${require("./shared/numbers/thanks").THANKED("gu")} AND gu.disputed_at IS NULL)`);
     params.push(n);
   }
   if (q.noAsk === "1") {
@@ -419,7 +419,7 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   if (q.awaitingThanks === "1") {
     const since = await require("./routes/crm").reportHooks.thanksSince(orgId);
     where.push(`EXISTS (SELECT 1 FROM gifts gt WHERE gt.org_id = donors.org_id AND gt.donor_id = donors.id AND gt.date >= ?
-                         AND COALESCE(gt.is_sample,false) = false AND COALESCE(gt.acknowledgement_sent,false) = false AND ${require("./shared/numbers/giftCount").KEPT("gt")})`);
+                         AND COALESCE(gt.is_sample,false) = false AND ${require("./shared/numbers/thanks").AWAITING("gt")})`);
     params.push(since);
   }
   // No history yet: nothing on the timeline at all, logged, synced or imported.

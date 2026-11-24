@@ -761,7 +761,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
       JOIN donors d ON d.id = g.donor_id AND g.org_id = d.org_id   -- SCALE-2: the tenant rule, as above
       WHERE d.org_id = ? AND d.deleted_at IS NULL
         AND g.amount >= 250
-        AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)
+        AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)   -- ACK-READ-OK: the tax-receipt bucket reads the IRS mark itself
         AND (g.is_sample IS NOT TRUE)
         AND d.deceased IS NOT TRUE
         AND g.date >= ? ${scopeClause}
