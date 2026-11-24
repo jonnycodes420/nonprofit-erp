@@ -107,8 +107,10 @@ async function profileColumnsScroll(pw, auth, { ok, APP }) {
         ok(`§empty ${w}: no tab says 0`, e.pills.every(p => p !== "0"), e.pills);
         ok(`§empty ${w}: the numbers are em dashes, never a sentence`, e.tiles.length === 4 && e.tiles.every(t => /—$/.test(t) && t.split(" ").length <= 4), e.tiles);
         ok(`§empty ${w}: the start card shows`, e.start, e);
-        ok(`§empty ${w}: no empty rail section is drawn`, !e.rail.some(t => ["dp-rail-related", "dp-rail-contact", "dp-rail-groups"].includes(t))
+        // CONTACT-1: Contact is the one empty section that is drawn, and it says "No contact details yet".
+        ok(`§empty ${w}: no empty rail section is drawn`, !e.rail.some(t => ["dp-rail-related", "dp-rail-groups"].includes(t))
           && !/No one linked yet|Unassigned|Nothing logged yet|Nothing yet/.test(e.railText), { rail: e.rail, text: e.railText.slice(0, 300) });
+        ok(`§empty ${w}: Contact says "No contact details yet"`, e.rail.includes("dp-rail-contact") && /No contact details yet/.test(e.railText), e.rail);
         ok(`§empty ${w}: Next step, Journeys and About are there`, ["dp-rail-journeys", "dp-rail-about"].every(t => e.rail.includes(t)) && /Next step/i.test(e.railText), e.rail);
       } else {
         ok(`§full ${w}: Lifetime and Last gift are filled`, e.tiles.length === 4 && !/—$/.test(e.tiles[0]) && !/—$/.test(e.tiles[2]), e.tiles);
