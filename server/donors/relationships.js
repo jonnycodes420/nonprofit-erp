@@ -29,6 +29,7 @@ routers.r1.use(require("./touchUndo").routers.r1);
 // QUICKADD-1: a new person inside gift entry, and what a gift came from.
 routers.r1.use(require("./quickAdd").routers.r1);
 routers.r1.use(require("./giftAttribution").routers.r1);
+routers.r1.use(require("./householdSplit").routers.r1);   // HOUSEHOLD-1 item 5: split a merged couple into a household
 
 function mount(ctx) {
 require("./deceased").mount(ctx);
@@ -38,6 +39,7 @@ require("./refundUndo").mount(ctx);
 require("./touchUndo").mount(ctx);
 require("./quickAdd").mount(ctx);
 require("./giftAttribution").mount(ctx);
+require("./householdSplit").mount(ctx);
 const {
   NOT_YOURS, PERSON_ONLY_SENTENCE, UNDO_SECONDS, VH_READY, actor, auditShape, checkWriteAccess, crypto,
   donorPhotoUrl, editStamp, figureSources, insertShift, lastName, mayEditLogged, orgOwns, orgToday, orgTz,
@@ -202,6 +204,10 @@ app.get("/households/:id", requireAuth, wrap(async (req, res) => {
      WHERE d.household_id=? AND g.org_id=? AND d.deleted_at IS NULL
      ORDER BY g.date DESC NULLS LAST, g.created_at DESC NULLS LAST, g.id DESC LIMIT 200`, [req.params.id, req.user.orgId]);
   view.giving_history = gifts.map(g => ({ ...g, amount: parseFloat(g.amount) || 0 }));
+  // HOUSEHOLD-1 item 3: by year, the shared address, open asks, the next step, and each person's own details.
+  const hhOrg = await orgTz(req.user.orgId);   // ORG_TZ_SEAM_OK
+  Object.assign(view, await require("./householdDetail").detail(query, req.user.orgId, view,
+    { org: hhOrg, today: orgToday(hhOrg), photoUrl: require("./householdDetail").photoUrlFor(req.user.orgId) }));
   res.json(view);
 }));
 

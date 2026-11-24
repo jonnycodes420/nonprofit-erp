@@ -19,11 +19,13 @@ import { InlineCell } from "./InlineCell";   // TOUCH-1: click a cell to edit it
 import { TOUCH_TYPES as CARE_TYPES, addDays } from "../../../../shared/careShape.js";
 import { LogConversationModal } from "../LogConversation";
 import { StartFromTopDonors } from "./StartFromTopDonors";   // FLOWS-8
+import { BulkLogTouch } from "../donors/BulkLogTouch";   // HOUSEHOLD-1: a household's touch is logged on each person
+import { HouseholdName } from "./HouseholdName";
 
 // Sized to fit the page at 1440 wide; narrower, the table scrolls inside its own box.
 const COLS = [
-  { key: "rank", label: "Rank", w: "58px" }, { key: "name", label: "Name", w: "minmax(104px,1.3fr)" }, { key: "wealth", label: "Wealth Score", w: "58px" },
-  { key: "lifetime", label: "Lifetime", w: "84px" }, { key: "lastGift", label: "Last gift", w: "88px" }, { key: "owner", label: "Owner", w: "86px" },
+  { key: "rank", label: "Rank", w: "58px" }, { key: "name", label: "Name", w: "minmax(150px,1.3fr)" }, { key: "wealth", label: "Wealth Score", w: "58px" },
+  { key: "lifetime", label: "Lifetime", w: "84px" }, { key: "thisYear", label: "This year", w: "78px" }, { key: "lastGift", label: "Last gift", w: "88px" }, { key: "owner", label: "Owner", w: "86px" },
   { key: "stage", label: "Stage", w: "76px" }, { key: "ask", label: "Ask", w: "80px" }, { key: "askBy", label: "Ask by", w: "88px" },
   { key: "next", label: "Next step", w: "minmax(90px,1fr)" }, { key: "lastContact", label: "Last contact", w: "84px" }, { key: "health", label: "Plan", w: "84px" },
 ];
@@ -56,6 +58,7 @@ export function Top100View({ isReadOnly, onNavigate }) {
   const [found, setFound] = useState([]);
   const [sheet, setSheet] = useState(null);   // { text, preview }
   const [logFor, setLogFor] = useState(null);   // TOUCH-1: "Log a touch" from a row
+  const [offer, setOffer] = useState(null);   // HOUSEHOLD-1: { householdId, name, sentence }
 
   const qs = useMemo(() => {
     const p = new URLSearchParams({ sort: sort.key, dir: sort.dir });
@@ -81,13 +84,18 @@ export function Top100View({ isReadOnly, onNavigate }) {
     await load();
   }, "That move did not save.");
   const remove = r => act(async () => {
-    await apiFetch(`/top100/members/${encodeURIComponent(r.donorId)}`, { method: "DELETE" });
+    await apiFetch(`/top100/members/${encodeURIComponent(r.key)}`, { method: "DELETE" });
     setMsg(`Took ${r.name} off. Everyone below moved up one.`); await load();
   }, "That person could not be taken off.");
   const add = p => act(async () => {
     const r = await apiFetch("/top100/members", { method: "POST", body: JSON.stringify({ donorIds: [p.id] }) });
-    setFind(""); setFound([]); setMsg(r.sentence); await load();
+    setFind(""); setFound([]); setMsg(r.sentence); setOffer(r.householdOffer || null); await load();
   }, "That person could not be added.");
+  // HOUSEHOLD-1: "Add the household instead" takes the person's place at its rank.
+  const addHousehold = o => act(async () => {
+    const r = await apiFetch("/top100/members", { method: "POST", body: JSON.stringify({ householdIds: [o.householdId] }) });
+    setOffer(null); setMsg(r.sentence); await load();
+  }, "That household could not be added.");
   const rename = () => act(async () => {
     await apiFetch("/top100", { method: "PATCH", body: JSON.stringify({ name: renaming }) });
     setRenaming(null); await load();
@@ -105,11 +113,11 @@ export function Top100View({ isReadOnly, onNavigate }) {
   const print = () => {
     const w = window.open("", "_blank");
     if (!w) { setErr("Your browser blocked the print window. Allow pop-ups for Steward and try again."); return; }
-    const head = ["Rank", "Name", "Wealth Score", "Lifetime", "Last gift", "Owner", "Stage", "Ask", "Ask by", "Next step", "Last contact", "Plan"];
-    const rows = d.rows.map(r => [r.rank, r.name, r.wealthScore ?? "", fmtFull(r.lifetimeCents / 100), r.lastGift ? `${fmtFull(r.lastGift.cents / 100)} · ${dayLabel(r.lastGift.date)}` : "",
+    const head = ["Rank", "Name", "Wealth Score", "Lifetime", "This year", "Last gift", "Owner", "Stage", "Ask", "Ask by", "Next step", "Last contact", "Plan"];
+    const rows = d.rows.map(r => [r.rank, r.kind === "household" ? `${r.name} (${r.people.map(p => p.name).join(" and ")})` : r.name, r.wealthScore ?? "", fmtFull(r.lifetimeCents / 100), fmtFull(r.thisYearCents / 100), r.lastGift ? `${fmtFull(r.lastGift.cents / 100)} · ${dayLabel(r.lastGift.date)}` : "",
       r.owner ? r.owner.name : "", r.stage ? stageName(r.stage) : "", r.askCents != null ? fmtFull(r.askCents / 100) : "", r.askBy ? dayLabel(r.askBy) : "",
       r.next ? `${r.next.label} · ${dayLabel(r.next.due)}` : "", contactWords(r.lastContact), r.health.label]);
-    w.document.write(`<!doctype html><html><head><title>${esc(d.list.name)}</title><style>body{font-family:Helvetica,Arial,sans-serif;color:${T.ink};margin:24px}h1{font-size:20px;margin:0 0 4px}p{font-size:11px;color:${T.ink3};margin:0 0 14px}table{border-collapse:collapse;width:100%;font-size:10.5px}th,td{text-align:left;padding:5px 6px;border-bottom:1px solid ${T.bg3};vertical-align:top}th{background:${T.bg2}}</style></head><body><h1>${esc(d.list.name)}</h1><p>${esc(d.rows.length)} people · as of ${esc(dayLabel(d.today))}</p><table><thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`);
+    w.document.write(`<!doctype html><html><head><title>${esc(d.list.name)}</title><style>body{font-family:Helvetica,Arial,sans-serif;color:${T.ink};margin:24px}h1{font-size:20px;margin:0 0 4px}p{font-size:11px;color:${T.ink3};margin:0 0 14px}table{border-collapse:collapse;width:100%;font-size:10.5px}th,td{text-align:left;padding:5px 6px;border-bottom:1px solid ${T.bg3};vertical-align:top}th{background:${T.bg2}}</style></head><body><h1>${esc(d.list.name)}</h1><p>${esc(d.rows.length)} places · as of ${esc(dayLabel(d.today))}</p><table><thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`);
     w.document.close(); w.focus(); w.print();
   };
   const sheetGo = apply => act(async () => {
@@ -138,7 +146,7 @@ export function Top100View({ isReadOnly, onNavigate }) {
           : <><input aria-label="List name" value={renaming} onChange={e => setRenaming(e.target.value)} style={{ ...sel, fontSize: 15, width: 220 }} />
               <button onClick={rename} style={btn}>Save</button><button onClick={() => setRenaming(null)} style={quiet}>Cancel</button></>}
         {renaming == null && !isReadOnly && <button onClick={() => setRenaming(d.list.name)} style={{ ...quiet, padding: "4px 10px", fontSize: 11 }}>Rename</button>}
-        <span style={{ fontSize: 12.5, color: T.ink3 }}>{d.count} {d.count === 1 ? "person" : "people"}, ranked by you.</span>
+        <span style={{ fontSize: 12.5, color: T.ink3 }}>{d.count} {d.count === 1 ? "place" : "places"}{d.households ? ` (${d.households} ${d.households === 1 ? "household" : "households"}, ${d.count - d.households} ${d.count - d.households === 1 ? "person" : "people"})` : ""}, ranked by you.</span>
         <span style={{ flex: 1 }} />
         {!isReadOnly && <button data-testid="top100-bring-ranks" onClick={() => setSheet({ text: "", preview: null })} style={quiet}>Bring in ranks</button>}
         <button data-testid="top100-export" onClick={download} style={quiet}>Export CSV</button>
@@ -173,13 +181,20 @@ export function Top100View({ isReadOnly, onNavigate }) {
         {!canDrag && !isReadOnly && <span style={{ fontSize: 11.5, color: T.ink3 }}>Drag works when the list is in rank order with no filter; typing a rank always works.</span>}
       </div>
       {msg && <div style={{ fontSize: 12.5, color: T.greenDk, marginBottom: 8 }}>{msg}</div>}
+      {offer && !isReadOnly && (
+        <div data-testid="top100-household-offer" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 10, padding: "8px 12px", marginBottom: 8, fontSize: 12.5, color: T.ink }}>
+          <span>{offer.sentence}</span>
+          <button data-testid="top100-add-household" onClick={() => addHousehold(offer)} style={btn}>Add the household instead</button>
+          <button onClick={() => setOffer(null)} style={quiet}>Keep just them</button>
+        </div>
+      )}
       {err && <div role="alert" style={{ fontSize: 12.5, color: T.gold700, marginBottom: 8 }}>{err}</div>}
 
       {d.count === 0 ? (
         <StartFromTopDonors listName={d.list.name} isReadOnly={isReadOnly} onAdded={async s => { setMsg(s); await load(); }} />
       ) : (
         <div style={{ overflowX: "auto", background: T.white, border: "1px solid " + T.bg3, borderRadius: 14 }}>
-          <div data-testid="top100-table" style={{ minWidth: 1140 }}>
+          <div data-testid="top100-table" style={{ minWidth: 1270 }}>
             <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 8, padding: "10px 12px", background: T.bg2, fontSize: 10.5, fontWeight: 800, color: T.ink3 }}>
               {COLS.map(c => (
                 <button key={c.key} onClick={() => head(c.key)} title={d.sentences[c.key] || `Sort by ${c.label}`} aria-sort={sort.key === c.key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
@@ -190,33 +205,36 @@ export function Top100View({ isReadOnly, onNavigate }) {
             </div>
             {d.rows.length === 0 && <div style={{ padding: 18, fontSize: 12.5, color: T.ink3 }}>Nobody matches these filters.</div>}
             {d.rows.map(r => (
-              <div key={r.donorId} data-testid="top100-row" data-rank={r.rank}
-                draggable={canDrag} onDragStart={() => setDrag(r.donorId)} onDragEnd={() => { setDrag(null); setOver(null); }}
-                onDragOver={e => { if (canDrag && drag) { e.preventDefault(); setOver(r.donorId); } }}
-                onDrop={e => { e.preventDefault(); if (drag && drag !== r.donorId) moveTo(drag, r.rank); setDrag(null); setOver(null); }}
+              <div key={r.key} data-testid="top100-row" data-rank={r.rank} data-kind={r.kind}
+                draggable={canDrag} onDragStart={() => setDrag(r.key)} onDragEnd={() => { setDrag(null); setOver(null); }}
+                onDragOver={e => { if (canDrag && drag) { e.preventDefault(); setOver(r.key); } }}
+                onDrop={e => { e.preventDefault(); if (drag && drag !== r.key) moveTo(drag, r.rank); setDrag(null); setOver(null); }}
                 style={{ display: "grid", gridTemplateColumns: GRID, gap: 8, alignItems: "center", padding: "10px 12px", borderTop: "1px solid " + T.bg3,
-                         background: over === r.donorId ? T.gold100 : drag === r.donorId ? T.bg2 : T.white, fontSize: 12.5, color: T.ink }}>
+                         background: over === r.key ? T.gold100 : drag === r.key ? T.bg2 : T.white, fontSize: 12.5, color: T.ink }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   {canDrag && <span aria-hidden="true" title="Drag to reorder" style={{ cursor: "grab", color: T.ink3, fontSize: 14 }}>⋮⋮</span>}
                   {isReadOnly ? <strong>{r.rank}</strong> : (
                     <input aria-label={`Rank of ${r.name}`} data-testid="top100-rank-input" inputMode="numeric"
-                      value={rankEdit[r.donorId] ?? String(r.rank)}
-                      onChange={e => setRankEdit(x => ({ ...x, [r.donorId]: e.target.value.replace(/[^\d]/g, "") }))}
+                      value={rankEdit[r.key] ?? String(r.rank)}
+                      onChange={e => setRankEdit(x => ({ ...x, [r.key]: e.target.value.replace(/[^\d]/g, "") }))}
                       onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }}
-                      onBlur={() => { const v = Number(rankEdit[r.donorId]); if (rankEdit[r.donorId] != null && v >= 1 && v !== r.rank) moveTo(r.donorId, v); else setRankEdit(x => { const y = { ...x }; delete y[r.donorId]; return y; }); }}
+                      onBlur={() => { const v = Number(rankEdit[r.key]); if (rankEdit[r.key] != null && v >= 1 && v !== r.rank) moveTo(r.key, v); else setRankEdit(x => { const y = { ...x }; delete y[r.key]; return y; }); }}
                       style={{ width: 38, padding: "4px 5px", border: "1px solid " + T.bg3, borderRadius: 7, fontSize: 13, fontWeight: 800, textAlign: "center" }} />
                   )}
                 </div>
                 <div style={{ minWidth: 0 }}>
+                  {r.kind === "household" ? <HouseholdName row={r} onNavigate={onNavigate} sentence={d.sentences.household} /> :
                   <DonorLink id={r.donorId} onOpen={onNavigate ? () => onNavigate("donors", { selectDonorId: r.donorId }) : undefined}
-                    style={{ fontWeight: 700, color: T.ink, textDecoration: "none", overflowWrap: "anywhere" }}>{r.name}</DonorLink>
+                    style={{ fontWeight: 700, color: T.ink, textDecoration: "none", overflowWrap: "anywhere" }}>{r.name}</DonorLink>}
                   {r.goal && <div title={r.goal} style={{ fontSize: 11, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.goal}</div>}
                 </div>
-                <div style={{ fontWeight: 700 }}>{r.wealthScore ?? <span style={{ color: T.ink3, fontWeight: 400 }}>Not set</span>}</div>
-                <div><Figure variant="cell" kind="money" value={r.lifetimeCents / 100} label={`${r.name}'s lifetime giving`} source={{ key: "donor-lifetime", params: { donor: r.donorId } }} /></div>
+                <div style={{ fontWeight: 700 }} title={r.wealthWord ? d.sentences.wealthHousehold : undefined}>{r.wealthScore ?? <span style={{ color: T.ink3, fontWeight: 400 }}>Not set</span>}
+                  {r.wealthWord && r.wealthScore != null && <div data-testid="top100-wealth-household" style={{ fontSize: 10.5, color: T.ink3, fontWeight: 400 }}>{r.wealthWord}</div>}</div>
+                <div><Figure variant="cell" kind="money" value={r.lifetimeCents / 100} label={`${r.name}'s lifetime giving`} source={r.lifetimeSource} /></div>
+                <div><Figure variant="cell" kind="money" value={r.thisYearCents / 100} label={`${r.name}'s giving this fiscal year`} source={r.thisYearSource} /></div>
                 <div>{r.lastGift
-                  ? <><Figure variant="cell" kind="money" value={r.lastGift.cents / 100} label={`${r.name}'s last gift`} source={{ key: "donor-last-gift", params: { donor: r.donorId } }} />
-                      <div style={{ fontSize: 11, color: T.ink3 }}>{dayLabel(r.lastGift.date)}</div></>
+                  ? <><Figure variant="cell" kind="money" value={r.lastGift.cents / 100} label={`${r.name}'s last gift`} source={r.lastGiftSource} />
+                      <div style={{ fontSize: 11, color: T.ink3 }}>{dayLabel(r.lastGift.date)}{r.lastGift.who ? ` · ${r.lastGift.who.split(" ")[0]}` : ""}</div></>
                   : <span style={{ color: T.ink3 }}>None</span>}</div>
                 <InlineCell kind="select" label={`${r.name}'s owner`} testid="top100-owner" disabled={isReadOnly} value={r.owner ? r.owner.id : ""}
                   options={[{ value: "", label: "Nobody" }, ...d.owners.map(o => ({ value: o.id, label: o.name }))]} onSave={saveOwner(r)}
@@ -274,10 +292,12 @@ export function Top100View({ isReadOnly, onNavigate }) {
         </Modal>
       )}
 
-      {logFor && <LogConversationModal donor={{ id: logFor.donorId, name: logFor.name }} onNavigate={onNavigate}
+      {logFor && logFor.kind === "household" && <BulkLogTouch ids={logFor.people.map(p => p.id)} onClose={() => setLogFor(null)}
+        onDone={x => { if (x) setMsg(`Logged a touch with ${logFor.name}: one on each person's timeline.`); load(); }} />}
+      {logFor && logFor.kind !== "household" && <LogConversationModal donor={{ id: logFor.donorId, name: logFor.name }} onNavigate={onNavigate}
         onClose={() => setLogFor(null)} onSaved={() => { setMsg(`Logged a touch with ${logFor.name}.`); load(); }} />}
       {open && (
-        <Modal onClose={() => { setOpen(null); load(); }} title={`#${open.rank} ${open.name}`} subtitle="Plan of care" width={620} align="top">
+        <Modal onClose={() => { setOpen(null); load(); }} title={`#${open.rank} ${open.name}`} subtitle={open.kind === "household" ? `Plan of care, kept on ${open.leadName}` : "Plan of care"} width={620} align="top">
           <CarePlanPanel donorId={open.donorId} isReadOnly={isReadOnly} onChanged={load} onNavigate={onNavigate} />
         </Modal>
       )}

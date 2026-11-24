@@ -17,6 +17,7 @@ import { PlanFollowUpModal } from "../PlanFollowUp";
 import { MarkDeceasedModal, UndoDeceasedModal, DeceasedBanner } from "./DeceasedDialog";   // PEOPLE-1
 import { useVolunteerStatus, markFormer, undoFormer } from "../../lib/volunteerStatus";   // RULES-1 item 7
 import { CallScriptModal, ImpactSummaryModal, ExportDoneModal, openJourneyPicker, downloadPersonData } from "./MoreActions";   // ATLAS-3, ATLAS-4
+import { MergedFromBanner } from "./MergedFromBanner";   // HOUSEHOLD-1 item 5
 
 // MENU-1 — More's menu. Its max height is the room between the button and the
 // screen's edge (or the phone's tab bar), less 12 px, and it scrolls inside; with more room above than
@@ -95,6 +96,7 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
   const [exported,setExported]=useState(null);   // ATLAS-4: what the export downloaded, said on screen
   const exportData=async()=>{ try{ setExported(await downloadPersonData(donor)); }catch(e){ setExported({error:e?.message||"The export did not download. Try again."}); } };
   return <>
+        <MergedFromBanner donor={donor} isReadOnly={isReadOnly} onDone={onRecordChanged}/>{/* HOUSEHOLD-1 item 5 */}
         <div className="donor-profile-header dp2-head dp3-head" data-testid="dp-head" style={{padding:"16px 0 0",display:"grid",gridTemplateColumns:"72px minmax(0,1fr) auto",columnGap:20,rowGap:0,alignItems:"start"}}>
           <div className="dph-backrow" style={{gridColumn:"1 / -1",gridRow:1,marginBottom:16}}>
             <button onClick={onClose} className="dph-back" aria-label="Back to donors" style={{background:"none",border:"none",padding:"6px 0",color:T.ink3,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>← Donors</button>

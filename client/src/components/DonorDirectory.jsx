@@ -38,6 +38,7 @@ import { LAPSE_WORDS } from "../../../shared/lapseWords.js";   // TRUTH-5: one w
 import { AddToTop100 } from "./majorGifts/AddToTop100";   // TOP100-1
 import { filteredEmptySentence } from "../../../shared/filteredEmpty.js";   // FLOWS-13 item 4: an empty filtered list names its filters
 import { useCanExport } from "../lib/exportAccess";   // ACCESS-3: no Export CSV for the Campaign cabinet
+import { HouseholdListRow, unitCountWords } from "./donors/HouseholdListRow";   // HOUSEHOLD-1 item 2
 // WALKB-1 · A SEARCH RESULT SAYS WHY IT IS THERE. A name match needs no words;
 // anything else does ("Matched household: The Marlowe Hart household"), and an
 // archived person a search found says so.
@@ -367,7 +368,7 @@ function BulkAutoEmail({ids,disabled,onDone}){
     </select>
   );
 }
-function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",viewEdited=false,onPickView,onSaveView,onDeleteView,onPageSize,includeScreening=false,peopleView="donors",setPeopleView,roleCounts=null,fromImport="",clearFromImport,anyFilter=false,onUpdateView=null,onClearFilters=null}){
+function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",viewEdited=false,onPickView,onSaveView,onDeleteView,onPageSize,includeScreening=false,peopleView="donors",setPeopleView,roleCounts=null,fromImport="",clearFromImport,anyFilter=false,onUpdateView=null,onClearFilters=null,units=null,householdsTogether=false,setHouseholdsTogether=null}){
   // WIRE-1: the server-side filters on screen, as a Group rule, offered once
   // a filter beyond "donors" is set. The sort is not a filter.
   const canExport=useCanExport(isAdmin?"admin":"staff");   // ACCESS-3
@@ -480,6 +481,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
   // Exports EVERY row matching the server query (search/stage/owner), not
   // just this page — client-only advanced/custom-field filters are NOT
   // reflected (they only narrow the loaded page; see note pill below).
+  const [exportFor,setExportFor]=useState("");   // HOUSEHOLD-1 item 4: "", email, call, mail
   async function exportCsv(){
     setExporting(true);
     try{
@@ -487,6 +489,10 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
       Object.entries(exportParams||{}).forEach(([k,v])=>{if(v)qs.set(k,v);});
       // PROSPECT-1 — never in the default file; an admin adds it on purpose.
       if(isAdmin&&includeScreening)qs.set("includeScreening","1");
+      // HOUSEHOLD-1 item 4: both people of a household, and what the file is for (each person's own preferences hold).
+      if(householdsTogether)qs.set("households","1");
+      if(exportFor==="mail")qs.set("collapse","household");
+      if(exportFor)qs.set("purpose",exportFor);
       const res=await fetch(`${API}/donors/export/csv?${qs.toString()}`,{headers:{Authorization:`Bearer ${getToken()}`}});
       if(!res.ok){
         // BUILD-79 Part 7.4 — "Export failed: Export failed" was an error whose
@@ -509,7 +515,11 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
   const selFiltered=filtered.filter(d=>selIds.has(d.id));
   const[mergePair,setMergePair]=useState(null);   // POLISH-4
   const[filtersOpen,setFiltersOpen]=useState(false);   // POLISH-4: the phone's Filters button
-  const shownRows=filtered;
+  // HOUSEHOLD-1 item 2: households together, a household's row first, its people under it when opened.
+  const [openUnits,setOpenUnits]=useState(()=>new Set());
+  const shownRows=units?(()=>{const byId=new Map(filtered.map(d=>[d.id,d]));return units.units.flatMap(u=>u.kind==="household"
+    ?[{__unit:u},...(openUnits.has(u.householdId)?u.memberIds.map(id=>byId.get(id)).filter(Boolean):[])]
+    :byId.get(u.donorId)?[byId.get(u.donorId)]:[]);})():filtered;
   const allChecked=filtered.length>0&&filtered.every(d=>selIds.has(d.id));
   const someChecked=!allChecked&&filtered.some(d=>selIds.has(d.id));
 
@@ -710,10 +720,15 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
             moment there is a volunteer on the page the word is "people",
             because a count of 40 that says "donors" is a lie about 28 of them. */}
         <span style={{fontSize:12,color:T.ink3}} data-testid="dir-count">
-          {updating?"Updating…":donorsOnlyPage
+          {updating?"Updating…":units?unitCountWords(units.unitCounts):donorsOnlyPage
             ? `${Number(serverTotal).toLocaleString("en-US")} ${plural(serverTotal, "donor")}`
             : `${Number(serverTotal).toLocaleString("en-US")} ${serverTotal!==1?"people":"person"}`}
         </span>
+        {setHouseholdsTogether&&<label data-testid="dir-households-together" title={units?units.unitSentence:"A household becomes one row, its people's giving added; open it to see each person."}
+          style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,color:T.ink,cursor:"pointer"}}>
+          <input type="checkbox" checked={!!householdsTogether} onChange={e=>setHouseholdsTogether(e.target.checked)} style={{accentColor:T.greenDk}}/>
+          Show households together
+        </label>}
         {clientFilterCount>0&&<span title="Advanced and custom-field filters apply within the loaded page only, server-side filtering for these is not available yet."
           style={{fontSize:11,color:T.terracotta,fontWeight:700,background:T.terracotta+"14",border:"1px solid "+T.terracotta+"40",borderRadius:99,padding:"3px 10px"}}>
           filtering current page
@@ -727,6 +742,11 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",minHeight:40,alignItems:"center",...activeMark(selectMode,"bottom")}}>
           {selectMode?"Done":"Select"}
         </button>
+        {canExport&&<select aria-label="What the file is for" data-testid="dir-export-for" value={exportFor} onChange={e=>setExportFor(e.target.value)}
+          title="For email, calls or a mailing, anyone whose own preference says no is left out. A mailing is one row per household address."
+          style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 8px",color:T.ink,fontSize:12}}>
+          <option value="">Everyone</option><option value="email">For email</option><option value="call">For calls</option><option value="mail">For a mailing (one per household)</option>
+        </select>}
         {canExport&&<button onClick={exportCsv} disabled={exporting||serverTotal===0} title="Download every donor matching the search/stage/owner filters as a CSV"
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:serverTotal===0?T.ink3:T.ink,fontSize:12,fontWeight:600,cursor:exporting||serverTotal===0?"not-allowed":"pointer"}}>
           {exporting?"Exporting…":"Export CSV"}
@@ -970,6 +990,9 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
           </div>
           {/* Rows */}
           {shownRows.map((d,idx)=>{
+            if(d.__unit)return <HouseholdListRow key={"hh:"+d.__unit.householdId} unit={d.__unit} colGrid={colGrid} gridMin={gridMin}
+              open={openUnits.has(d.__unit.householdId)} onOpenPerson={p=>onSelectDonor(p)}
+              onToggle={()=>setOpenUnits(x=>{const y=new Set(x);if(y.has(d.__unit.householdId))y.delete(d.__unit.householdId);else y.add(d.__unit.householdId);return y;})}/>;
             const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
             const sc=givingStrengthOf(d);const scColor=sc>70?T.greenDk:sc>45?T.gold600:T.gold700;
             const isLast=idx===filtered.length-1;

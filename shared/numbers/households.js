@@ -54,10 +54,18 @@ function countsOf(rows) {
   };
 }
 
+// HOUSEHOLD-1: the same three counts over a list's own WHERE on `donors` (the
+// Donors list's filter, LIST-6's one engine), for "N households, M people".
+async function countsWhere(query, whereSql, params) {
+  const [r] = await query(`SELECT COUNT(*)::int AS people, COUNT(DISTINCT donors.household_id)::int AS households,
+         COUNT(DISTINCT ${UNIT("donors")})::int AS units FROM donors WHERE ${whereSql} AND ${PERSON("donors")}`, params);
+  return { people: r ? Number(r.people) : 0, households: r ? Number(r.households) : 0, units: r ? Number(r.units) : 0 };
+}
+
 // The words a screen prints beside the counts.
 const WORDS = Object.freeze({
   people: "People are everyone in your records who is not deleted, not erased and not sample data: donors, organizations and other people.",
   households: "Households are counted once, however many of their people are here; a household whose people are all deleted is not counted.",
 });
 
-module.exports = { PERSON, UNIT, COUNTS_SQL, counts, countsOf, WORDS, UNIT_LINK_TYPES, CONNECTED_LINK_TYPES, CONNECTED_WORD };
+module.exports = { PERSON, UNIT, COUNTS_SQL, counts, countsWhere, countsOf, WORDS, UNIT_LINK_TYPES, CONNECTED_LINK_TYPES, CONNECTED_WORD };

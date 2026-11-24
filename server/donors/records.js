@@ -129,8 +129,11 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
   if (req.query.assignedTo !== "none" && !(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");   // FLOWS-14: "none" is Unassigned
   const { whereSql, params, orderBy, selectCols, selectArgs } = filter;
   // TRUTH-5: the export's Gift count is the Directory's (giftCount.js), never the stored rollup.
-  const donors = (await query(`SELECT donors.*${selectCols}, ${require("../../shared/numbers/giftCount").DONOR_GIFT_COUNT("donors")} AS gift_count_live FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, [...selectArgs, ...params]))
+  const listed = (await query(`SELECT donors.*${selectCols}, ${require("../../shared/numbers/giftCount").DONOR_GIFT_COUNT("donors")} AS gift_count_live FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, [...selectArgs, ...params]))
     .map(({ gift_count_live, ...d }) => ({ ...d, gift_count: Number(gift_count_live) || 0 }));
+  // HOUSEHOLD-1 item 4: both people of a household, the Household and Addressee columns, each person's own preferences.
+  const HX = await require("./householdExport").shape(query, req.user.orgId, listed, req.query || {});
+  const donors = HX.rows;
   if (await require("../../exportGuard").largeExportRefused(req, res, donors.length)) return;   // SECURE-2 item 8
   
   // BUILD-78 6.1 — every non-archived donor custom field is its own column,
@@ -151,6 +154,7 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
     ["Street address", d => d.address || ""], ["Address line 2", d => d.address2 || ""],
     ["City", d => d.city || ""], ["State", d => d.state || ""], ["ZIP", d => d.zip || ""],
     ["Full mailing address", d => require("../../shared/mailingAddress").mailingAddress(d)],
+    ...HX.columns,
     ["Tags", d => DTAGS.visibleTags(d.tags).join("|")],
     ...cfDonorDefs.map(f => [f.label, d => renderCustomValue(f, (d.custom_fields || {})[f.key])]),
   ];

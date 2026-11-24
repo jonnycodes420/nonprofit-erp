@@ -19,7 +19,7 @@ export const MAX_BATCH = 2000;
 const people = n => `${Number(n).toLocaleString("en-US")} ${n === 1 ? "person" : "people"}`;
 const OFFERED = ["email", "letter", "call", "meeting", "event_invite", "other"];
 
-export function BulkLogTouch({ ids, onClose, onDone }) {
+export function BulkLogTouch({ ids, onClose, onDone, zIndex = 320 }) {
   const today = orgTodayCivil();
   const [kind, setKind] = useState("email");
   const [title, setTitle] = useState("");
@@ -80,7 +80,7 @@ export function BulkLogTouch({ ids, onClose, onDone }) {
   const chip = on => ({ background: on ? T.ink : T.white, color: on ? T.white : T.ink, border: "1px solid " + (on ? T.ink : T.bg3), borderRadius: 7, padding: "5px 11px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" });
 
   return (
-    <Modal onClose={onClose} width={480} zIndex={320} padding={24} ariaLabel="Log a touch to many people">
+    <Modal onClose={onClose} width={480} zIndex={zIndex} padding={24} ariaLabel="Log a touch to many people">
       <div data-testid="bulk-log-touch" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>Log a touch</div>

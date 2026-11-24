@@ -187,6 +187,19 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   rank. (BUILD-98)
 - **Keep households loose.** A person belongs to at most one. Deleting a household unlinks its members
   (SET NULL) and never cascades. Only one proposal per fund may be open per household. (BUILD-14, BUILD-99)
+- **A household can be a row; its people keep their own.** A place on the Top 100 is a person
+  (`portfolio_members.donor_id`) or a household (`household_id`), never both (a CHECK). A household's row is its
+  people's money added at read time (`shared/numbers/householdGiving.js`: Lifetime is the `household-giving`
+  source, This year is `household-span`, the capacity is the higher Wealth Score), never a stored total. Its owner,
+  stage, ask and plan of care are its lead person's (the primary while live), one of each, never a second copy.
+  Adding one person of a household offers the household instead; adding a household whose person is listed takes
+  that place at its rank. The Donors list's "Show households together" (per person, off by default) pages by giving
+  unit through the same filter (`server/donors/householdList.js`). Each person keeps their own email, phone, photo
+  and contact preferences: an export with households together brings in the household's other people as rows of
+  their own, with a Household column and an Addressee line, and an email, call or mail list still leaves out
+  anyone whose own preference says no. Never merge a couple to see them together; a merge within 30 days splits
+  back into a household from the profile (`server/donors/householdSplit.js`, Data health's own Undo, one
+  transaction). (HOUSEHOLD-1)
 - **A merge is Data health's `mergePeople` (routes/dataHealth.js), and every person pointer is in `MERGE_REFS`.**
   `POST /donors/merge` delegates to it. A new column that points at a person (REFERENCES donors, or named
   donor_id / person_id / *_donor_id / *_person_id) goes into `MERGE_REFS` in the same commit, or into
