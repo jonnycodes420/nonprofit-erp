@@ -174,118 +174,10 @@ app.post("/tribute-notices/:id/skip", requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
-async function ackOrg(orgId) {
-  const [o] = await query(
-    `SELECT id, name, legal_name, receipt_address, receipt_signature_name, receipt_signature_title,
-            logo_data, brand_accent, brand_accent_fg, ack_backlog_days FROM orgs WHERE id=?`, [orgId]);
-  if (!o) return null;
-  const display = await donorFacingOrgName(orgId, o.name || "").catch(() => o.name || "");
-  return { ...o, display };
-}
-
-async function ackTemplate(orgId, templateId) {
-  await ACK_READY;
-  if (templateId) {
-    const [t] = await query("SELECT * FROM ack_letter_templates WHERE id=? AND org_id=?", [templateId, orgId]);
-    return t || null;
-  }
-  // Only a template somebody MARKED default stands in for "no choice". Taking
-  // whichever saved template came first would print the wrong letter.
-  const [t] = await query("SELECT * FROM ack_letter_templates WHERE org_id=? AND is_default=true ORDER BY created_at ASC LIMIT 1", [orgId]);
-  return t || { id: null, name: "Standard thank-you", body: ACK.DEFAULT_ACK_TEMPLATE, is_default: true, builtIn: true };
-}
-
-// The gifts, grouped into one letter per donor. Every id is checked against
-// this org; a foreign id is simply not found.
-async function ackLetterSet(orgId, giftIds, templateId, { addressesOnly = false, signerFallback = null } = {}) {
-  await ACK_READY;
-  const ids = [...new Set((Array.isArray(giftIds) ? giftIds : []).map(String).filter(Boolean))].slice(0, 1000);
-  if (!ids.length) return { error: "Choose the gifts to write letters for." };
-  const tpl = await ackTemplate(orgId, templateId);
-  if (!tpl) return { notFound: true };
-  const org = await ackOrg(orgId);
-  const rows = await query(
-    `SELECT g.id, g.donor_id, g.amount, g.date, g.tribute_type, g.tribute_name, f.name AS fund, g.quid_pro_quo_value, g.deductible_amount,
-            d.name, d.kind, d.salutation, d.address, d.address2, d.city, d.state, d.zip, d.country, d.deceased
-       FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-       LEFT JOIN fin_funds f ON f.id = g.fund_id
-      WHERE g.org_id=? AND g.id = ANY(?) AND d.deleted_at IS NULL
-      ORDER BY d.name, g.date`, [orgId, ids]);
-  const byDonor = new Map();
-  for (const r of rows) {
-    const e = byDonor.get(r.donor_id) || { donor: r, gifts: [] };
-    e.gifts.push({ id: r.id, amount: r.amount, date: r.date, fund: r.fund, tributeType: r.tribute_type, tributeName: r.tribute_name,
-                   qpqValue: r.quid_pro_quo_value, deductible: r.deductible_amount });
-    byDonor.set(r.donor_id, e);
-  }
-  // The letter is signed by the org's receipt signer when one is set, and
-  // otherwise by the person printing it — a letter she prints goes out over
-  // her name, which is true. Never blank: an unsigned letter is not posted.
-  const signer = org.receipt_signature_name || signerFallback || "";
-  const orgFields = { name: org.display, signer, signerTitle: org.receipt_signature_name ? (org.receipt_signature_title || "") : "" };
-  const letters = [], skipped = [];
-  for (const { donor, gifts } of byDonor.values()) {
-    const giftIdsHere = gifts.map(g => g.id);
-    // A letter to somebody who has died is not a thank-you; it goes to the
-    // family by hand, and the batch says so rather than printing it.
-    if (donor.deceased) { skipped.push({ donorId: donor.donor_id, name: donor.name, giftIds: giftIdsHere, why: "marked deceased" }); continue; }
-    const address = ACK.addressLines(donor);
-    if (!address) { skipped.push({ donorId: donor.donor_id, name: donor.name, giftIds: giftIdsHere, why: "no postal address on file" }); continue; }
-    // Labels need an address and nothing else; a template the gift cannot fill
-    // must not cost somebody their envelope.
-    if (addressesOnly) { letters.push({ donorId: donor.donor_id, name: donor.name, address, text: "", giftIds: giftIdsHere, totalCents: 0 }); continue; }
-    const fields = ACK.letterFields({ donor, gifts, org: orgFields });
-    const r = ACK.renderLetter(tpl.body, fields);
-    if (r.missing.length) {
-      const why = r.missing.includes("gift_date") && fields._undated
-        ? `${fields._undated === 1 ? "a gift here has" : `${fields._undated} gifts here have`} no date; set the date on the gift first`
-        : `nothing to put in ${r.missing.map(k => `{{${k}}}`).join(", ")}`;
-      skipped.push({ donorId: donor.donor_id, name: donor.name, giftIds: giftIdsHere, why }); continue;
-    }
-    // HOME-3: what was received in exchange, and what is deductible, under every letter that needs it
-    const text = fields._goodsServices ? `${r.text}\n\n${fields._goodsServices}` : r.text;
-    letters.push({ donorId: donor.donor_id, name: donor.name, address, text, giftIds: giftIdsHere, totalCents: fields._totalCents });
-  }
-  const found = new Set(rows.map(r => r.id));
-  return { template: { id: tpl.id, name: tpl.name, builtIn: !!tpl.builtIn }, org, letters, skipped,
-           notFound: ids.filter(id => !found.has(id)).length };
-}
-
-function renderLettersPdf(org, letters, { dateLine }) {
-  const PDFDocument = require("pdfkit");
-  const doc = new PDFDocument({ size: "LETTER", margins: { top: 50, bottom: 40, left: 72, right: 72 }, autoFirstPage: false });
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    doc.on("data", c => chunks.push(c));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-    const INK = "#0f1a12", SUB = "#5a554f";
-    const accent = org.brand_accent || "#0d5c3a";
-    let logo = null;
-    if (org.logo_data && /^data:image\/(png|jpe?g);base64,/.test(org.logo_data)) {
-      try { logo = Buffer.from(org.logo_data.split(",")[1], "base64"); } catch { logo = null; }
-    }
-    for (const L of letters) {
-      doc.addPage();
-      const PW = doc.page.width;
-      // Letterhead: the org's name and return address, top left; the logo right.
-      doc.rect(0, 0, PW, 6).fill(accent);
-      if (logo) { try { doc.image(logo, PW - 72 - 60, 22, { fit: [60, 44] }); } catch { /* a logo that will not draw costs the logo, not the letter */ } }
-      doc.font("Helvetica-Bold").fontSize(13).fillColor(INK).text(org.display, 72, 26, { width: PW - 220, lineBreak: false });
-      if (org.receipt_address) doc.font("Helvetica").fontSize(8.5).fillColor(SUB).text(org.receipt_address, 72, 44, { width: PW - 220 });
-      doc.font("Helvetica").fontSize(10).fillColor(INK).text(dateLine, 72, 100, { width: PW - 144, align: "right" });
-      // The address, exactly where the window of a #10 envelope is.
-      doc.font("Helvetica").fontSize(11).fillColor(INK)
-        .text(L.address.join("\n"), ACK.WINDOW.x, ACK.WINDOW.y, { width: ACK.WINDOW.w, height: ACK.WINDOW.h, lineGap: 1 });
-      // The body starts below the window and is held to the page: a long
-      // letter is cut at the page, never allowed to spill onto a second.
-      const top = ACK.WINDOW.y + ACK.WINDOW.h + 40;
-      doc.font("Times-Roman").fontSize(11.5).fillColor(INK)
-        .text(L.text, 72, top, { width: PW - 144, height: doc.page.height - top - 50, lineGap: 3, ellipsis: true });
-    }
-    doc.end();
-  });
-}
+// LETTERS-1: the letter batch and its PDF live in server/receipts/ (letterSet.js,
+// letterPdf.js), shared with the letters for an event or a campaign.
+const { ackOrg, ackLetterSet } = require("../receipts/letterSet").makeLetterSet({ query, ACK_READY, donorFacingOrgName });
+const { renderLettersPdf } = require("../receipts/letterPdf");
 
 function renderLabelsPdf(addresses) {
   const PDFDocument = require("pdfkit");
@@ -309,7 +201,8 @@ function renderLabelsPdf(addresses) {
 // ── ACKNOWLEDGMENT ROUTES ──────────────────────────────────────────────────
 app.get("/acknowledgments/templates", requireAuth, wrap(async (req, res) => {
   await ACK_READY;
-  const rows = await query("SELECT id, name, body, is_default, created_by_name, updated_at FROM ack_letter_templates WHERE org_id=? ORDER BY is_default DESC, name", [req.user.orgId]);
+  const rows = await query(`SELECT id, name, body, is_default, created_by_name, updated_at, (layout IS NOT NULL) AS from_word, source_name, not_carried
+                                FROM ack_letter_templates WHERE org_id=? ORDER BY is_default DESC, name`, [req.user.orgId]);
   res.json({
     templates: rows.length ? rows : [{ id: null, name: "Standard thank-you", body: ACK.DEFAULT_ACK_TEMPLATE, is_default: true, builtIn: true }],
     mergeFields: ACK.ACK_MERGE_FIELDS,
@@ -319,24 +212,31 @@ app.get("/acknowledgments/templates", requireAuth, wrap(async (req, res) => {
 app.post("/acknowledgments/templates", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   await ACK_READY;
   const name = String(req.body?.name || "").trim().slice(0, 120);
-  const body = String(req.body?.body || "");
+  // LETTERS-1: a letter uploaded from Word keeps its layout; its words (the
+  // fields the check reads) are the layout's own, never what the browser says.
+  const word = require("../receipts/letterDoc").fromRequest(req.body);
+  if (word.error) return res.status(400).json({ error: word.error });
+  const body = word.layout ? word.body : String(req.body?.body || "");
   if (!name) return res.status(400).json({ error: "Give the letter a name." });
   const v = ACK.validateTemplate(body);
   if (!v.ok) return res.status(400).json({ error: v.errors.join(" ") });
   const id = newId("alt");
   const makeDefault = req.body?.isDefault === true;
   if (makeDefault) await run("UPDATE ack_letter_templates SET is_default=false WHERE org_id=?", [req.user.orgId]);
-  await run(`INSERT INTO ack_letter_templates (id,org_id,name,body,is_default,created_by,created_by_name) VALUES (?,?,?,?,?,?,?)`,
-    [id, req.user.orgId, name, body, makeDefault, actor(req).id, actor(req).name]);
+  await run(`INSERT INTO ack_letter_templates (id,org_id,name,body,is_default,created_by,created_by_name,layout,source_name,not_carried) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, name, body, makeDefault, actor(req).id, actor(req).name,
+     word.layout ? JSON.stringify(word.layout) : null, word.sourceName, word.notCarried ? JSON.stringify(word.notCarried) : null]);
   res.status(201).json({ id });
 }));
 
 app.put("/acknowledgments/templates/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   await ACK_READY;
-  const [t] = await query("SELECT id FROM ack_letter_templates WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const [t] = await query("SELECT id, body, (layout IS NOT NULL) AS from_word FROM ack_letter_templates WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!t) return res.status(404).json({ error: "Not found" });
   const name = String(req.body?.name || "").trim().slice(0, 120);
-  const body = String(req.body?.body || "");
+  // LETTERS-1: a Word letter's words are its layout's; renaming it or making
+  // it the default keeps them. To change the words she uploads it again.
+  const body = t.from_word ? t.body : String(req.body?.body || "");
   const v = ACK.validateTemplate(body);
   if (!name) return res.status(400).json({ error: "Give the letter a name." });
   if (!v.ok) return res.status(400).json({ error: v.errors.join(" ") });
@@ -386,8 +286,7 @@ app.put("/acknowledgments/settings", requireAuth, requireAdmin, checkWriteAccess
 
 // What the batch WOULD print, and who it would leave out and why. Read-only.
 app.post("/acknowledgments/letters/preview", requireAuth, wrap(async (req, res) => {
-  const [me] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
-  const set = await ackLetterSet(req.user.orgId, req.body?.giftIds, req.body?.templateId || null, { signerFallback: me?.name || null });
+  const set = await ackLetterSet(req.user.orgId, req.body?.giftIds, req.body?.templateId || null, { userId: req.user.userId });
   if (set.error) return res.status(400).json({ error: set.error });
   if (set.notFound === true) return res.status(404).json({ error: "Template not found" });
   res.json({ template: set.template, letters: set.letters.map(l => ({ donorId: l.donorId, name: l.name, address: l.address, text: l.text, giftIds: l.giftIds, total: l.totalCents / 100 })),
@@ -397,15 +296,14 @@ app.post("/acknowledgments/letters/preview", requireAuth, wrap(async (req, res) 
 // The PDF. One page per donor. A POST, because it carries a selection — and a
 // print changes nothing: marking the letters sent is its own request.
 app.post("/acknowledgments/letters/pdf", requireAuth, wrap(async (req, res) => {
-  const [me] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
-  const set = await ackLetterSet(req.user.orgId, req.body?.giftIds, req.body?.templateId || null, { signerFallback: me?.name || null });
+  const today = orgToday(await orgTz(req.user.orgId));           // ORG_TZ_SEAM_OK
+  const set = await ackLetterSet(req.user.orgId, req.body?.giftIds, req.body?.templateId || null, { userId: req.user.userId, today });
   if (set.error) return res.status(400).json({ error: set.error });
   if (set.notFound === true) return res.status(404).json({ error: "Template not found" });
   if (!set.letters.length) return res.status(409).json({ error: "no_letters", skipped: set.skipped,
     message: "None of these gifts can be printed yet. The reason is beside each name." });
-  const today = orgToday(await orgTz(req.user.orgId));           // ORG_TZ_SEAM_OK
   if (await require("../../exportGuard").largeExportRefused(req, res, set.letters.length)) return;   // SECURE-2 item 8
-  const pdf = await renderLettersPdf(set.org, set.letters, { dateLine: ACK.formatLetterDate(today) });
+  const pdf = await renderLettersPdf(set.org, set.letters, { dateLine: ACK.formatLetterDate(today), signature: set.signer.image });
   res.setHeader("Content-Type", "application/pdf");
   if (req.audit) req.audit.rows(set.letters.length);   // SECURE-2 item 8: one letter per person
   res.setHeader("Content-Disposition", `attachment; filename="thank-you-letters-${today}.pdf"`);

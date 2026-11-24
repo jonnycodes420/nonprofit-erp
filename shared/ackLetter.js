@@ -22,6 +22,8 @@
 
 import { greetingName } from "./greeting.js";
 
+const toCents = v => Math.round(Number(v) * 100);
+
 export const ACK_MERGE_FIELDS = [
   { key: "salutation", label: "Salutation", hint: "Dear Margaret: their salutation if set, otherwise their first name" },
   { key: "first", label: "First name" },
@@ -36,12 +38,30 @@ export const ACK_MERGE_FIELDS = [
   { key: "signer", label: "Signer" },
   { key: "signer_title", label: "Signer's title" },
   { key: "year", label: "Year of the gift" },
+  // LETTERS-1: the names a Word letter uses, and what an event's tax letter needs.
+  { key: "first_name", label: "First name", hint: "the same as {{first}}" },
+  { key: "last_name", label: "Last name" },
+  { key: "event_name", label: "Event", hint: "the event every gift in the letter was given to" },
+  { key: "campaign_name", label: "Campaign", hint: "the campaign every gift in the letter was given to" },
+  { key: "deductible_amount", label: "Deductible amount", hint: "what was paid less the fair market value of what was received" },
+  { key: "address_block", label: "Address block", hint: "the name and postal address, several lines" },
+  { key: "today", label: "Today's date", hint: "the day the letter is printed" },
 ];
 export const ACK_MERGE_KEYS = ACK_MERGE_FIELDS.map(f => f.key);
 
 // Fields a template may use that are allowed to be empty without making the
 // letter unfinished — a gift with no tribute simply has none.
 const MAY_BE_EMPTY = new Set(["tribute", "signer_title"]);
+
+// LETTERS-1: what one gift may be deducted for. The stored deductible part
+// (never more than the gift), else the amount less what was received; never
+// below zero. The receipt's rule (statementTotals.js), in integer cents.
+export function deductibleCents(g) {
+  const amt = toCents(g.amount), val = toCents(g.qpqValue || 0);
+  if (g.deductible != null && g.deductible !== "") return Math.max(0, Math.min(toCents(g.deductible), amt));
+  return Math.max(0, amt - val);
+}
+const oneOf = vals => { const u = [...new Set(vals.filter(Boolean))]; return u.length === 1 ? u[0] : ""; };
 
 export const DEFAULT_ACK_TEMPLATE = [
   "Dear {{salutation}},",
@@ -79,7 +99,6 @@ export function validateTemplate(body) {
   return { ok: errors.length === 0, errors };
 }
 
-const toCents = v => Math.round(Number(v) * 100);
 export function formatCents(c) {
   const n = Math.abs(c);
   return (c < 0 ? "-" : "") + "$" + Math.floor(n / 100).toLocaleString("en-US") + "." + String(n % 100).padStart(2, "0");
@@ -91,6 +110,11 @@ export function formatLetterDate(iso) {
   return `${months[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}`;
 }
 
+export function lastNameOf(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  return parts.length > 1 ? parts[parts.length - 1] : "";
+}
+
 export function firstNameOf(name) {
   const n = String(name || "").trim();
   if (!n) return "";
@@ -99,7 +123,7 @@ export function firstNameOf(name) {
 
 // The fields for ONE donor's letter. `gifts` are this donor's gifts in the
 // batch, oldest first.
-export function letterFields({ donor, gifts, org }) {
+export function letterFields({ donor, gifts, org, today = "" }) {
   const list = (gifts || []).slice().sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   const totalCents = list.reduce((t, g) => t + toCents(g.amount), 0);
   const one = list.length === 1 ? list[0] : null;
@@ -132,6 +156,13 @@ export function letterFields({ donor, gifts, org }) {
     signer: org.signer || "",
     signer_title: org.signerTitle || "",
     year: dated.length ? String(dated[dated.length - 1].date).slice(0, 4) : "",
+    first_name: isOrg ? "" : firstNameOf(donor.name),
+    last_name: isOrg ? "" : lastNameOf(donor.name),
+    event_name: oneOf(list.map(g => g.event)),
+    campaign_name: oneOf(list.map(g => g.campaign)),
+    deductible_amount: list.length ? formatCents(list.reduce((t, g) => t + deductibleCents(g), 0)) : "",
+    address_block: (addressLines(donor) || []).join("\n"),
+    today: today ? formatLetterDate(today) : "",
     _totalCents: totalCents,
     _undated: undated,
     _goodsServices: goodsServicesLines(list),
@@ -146,8 +177,8 @@ export function letterFields({ donor, gifts, org }) {
 export function goodsServicesLines(gifts) {
   const qs = (gifts || []).filter(g => toCents(g.qpqValue || 0) > 0);
   return qs.map(g => {
-    const amt = toCents(g.amount), val = toCents(g.qpqValue);
-    const ded = g.deductible != null && g.deductible !== "" ? Math.max(0, Math.min(toCents(g.deductible), amt)) : Math.max(0, amt - val);
+    const val = toCents(g.qpqValue);
+    const ded = deductibleCents(g);
     const s = `You received goods or services valued at ${formatCents(val)}; the deductible amount is ${formatCents(ded)}.`;
     return qs.length > 1 ? `For your gift of ${formatLetterDate(g.date) || "an undated day"}: ${s}` : s;
   }).join("\n");

@@ -37,6 +37,7 @@ import { DonorLink } from "./RecordLink";
 import { EmailAsSentPanel } from "./EmailAsSent";
 import { ThankYouDrafts } from "./ThankYouDrafts";
 import { countLabel } from "../../../shared/countWords.js";
+import PrintedLetters from "./letters/PrintedLetters";   // LETTERS-1
 import { ManualAudience } from "./communications/ManualAudience";   // COMMS-SPEED-1: searched on the server
 import { displayOrgDate } from "../lib/orgDay";
 import { triggerLabel } from "../../../shared/giftWords.js";   // FEEL-1
@@ -1852,6 +1853,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     { id: "milestones", label: "Drafts to review" },
     // SURVEY-1 — ask donors and volunteers; "Send this survey" fills Drafts to review.
     { id: "surveys",    label: "Surveys" },
+    // LETTERS-1 — her own letter from Word, to everyone who gave to an event or a campaign.
+    { id: "letters",    label: "Printed letters" },
   ];
 
   // ── Analytics ───────────────────────────────────────────────────────────────
@@ -2464,6 +2467,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
         {/* ── MILESTONE DRAFTS ──────────────────────────────────────────────── */}
         {nav === "milestones" && <MilestoneDraftsPanel highlightDraftId={highlightDraftId || heldDraftId} onEditTemplate={id => openTemplateEditor(id, () => setNav("milestones"))}/>}
+        {nav === "letters" && <PrintedLetters isReadOnly={isReadOnly} />}
         {nav === "surveys" && <SurveysPanel isReadOnly={isReadOnly} orgName={data?.org?.name || ""} onOpenDrafts={() => setNav("milestones")} />}
       </div>
     </div>

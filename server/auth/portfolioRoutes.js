@@ -117,7 +117,7 @@ const CLOSED_SEGMENTS = new Set(`
   scores screening search send-plans sequences settings setup sheet-import sheets statement-mappings step-reminders stock-photos
   stripe support support-access support-session surveys surveys-volunteer-followup tasks templates threads thank-yous
   top100 trash tribute-notices users voice voice-memos volunteer-hours volunteer-qualifications volunteer-shifts
-  volunteers volunteer-hub webhooks why workflows xero agent api plan-steps
+  volunteers volunteer-hub webhooks why workflows xero agent api plan-steps letters campaign-tidy
 `.split(/\s+/).filter(Boolean));
 
 function matches(d, method, path) {

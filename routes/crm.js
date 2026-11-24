@@ -85,12 +85,14 @@ const MODULES = [
   "../server/finance/ledgerPost",   // LEDGER-3: post waiting gifts to the books, with Undo
   "../server/receipts/list",   // TRUTH-3: every issued receipt
   "../server/receipts/drift",   // PLEDGES-3: void and reissue a receipt whose gift changed
+  "../server/receipts/letters",   // LETTERS-1
   "../server/org/switchOrg",   // ACCESS-1
   "../server/events/eventRemoval",   // WALKB-2
   "../server/donors/recordsGapRoute",   // FLOWS-10: Billing's records gap
   "../server/volunteers/shiftRules",   // STALE-2: a bare draft shift deletes
   "../server/outreach/autoSend",
   "../server/outreach/rename",   // POLISH-8: rename a campaign or template in place
+  "../server/outreach/campaignMerge",   // LETTERS-1: draft and duplicate campaigns, merge with Undo
   "../server/outreach/journeys",
   "../server/outreach/routes",
   "../server/outreach/thanks",
@@ -122,6 +124,8 @@ routers.r1.use(require("../server/finance/fundMerge").routers.r1);   // TRUTH-3:
 routers.r1.use(require("../server/finance/ledgerPost").routers.r1);   // LEDGER-3: Post to the books, with Undo
 routers.r1.use(require("../server/receipts/list").routers.r1);   // TRUTH-3: Tax Receipts lists every receipt
 routers.r1.use(require("../server/receipts/drift").routers.r1);   // PLEDGES-3: POST /receipts/:id/reissue
+routers.r1.use(require("../server/receipts/letters").routers.r1);   // LETTERS-1: Word letters, signatures, letters for an event or campaign
+routers.r1.use(require("../server/outreach/campaignMerge").routers.r1);   // LETTERS-1: GET /campaign-tidy/drafts, POST /campaign-tidy/merge
 routers.r1.use(require("../server/org/switchOrg").routers.r1);   // ACCESS-1: the org switcher
 routers.r1.use(require("../server/reports/dashboard").routers.r1);
 routers.r1.use(require("../server/reports/boardPack").routers.r1);
