@@ -342,8 +342,9 @@ const OPEN_PROPOSAL_KEYS = PROPOSAL_STAGES.filter(s => s.kind === "open").map(s 
 // kind tabs), and its History moved to Files.
 // PROFILE-2: seven tabs that never wrap. Giving holds gifts and pledges, the
 // ask, Funds and Asks & pipeline; Related is the rail's Household and related.
+// CONTACT-1: Contact, after Conversations: every way to reach them, without Edit.
 const PROFILE_TABS = [
-  ["activity", "Activity"], ["giving", "Giving"], ["conversations", "Conversations"], ["emails", "Emails"],
+  ["activity", "Activity"], ["giving", "Giving"], ["conversations", "Conversations"], ["contact", "Contact"], ["emails", "Emails"],
   ["tasks", "Tasks"], ["notes", "Notes"], ["files", "Files"],
 ];
 // VOL-3: a volunteer's record has its own tab, after Giving: status, what they can give, hours.

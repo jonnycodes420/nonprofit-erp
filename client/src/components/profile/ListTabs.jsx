@@ -12,6 +12,7 @@ import { NotesBanner } from "./NotesBanner";   // FLOWS-4
 import { attachedLine } from "../../lib/profileFiles";
 import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { VolunteerPanel } from "../VolunteerPanel";   // VOL-3: the Volunteer tab
+import { ContactTab } from "./ContactTab";   // CONTACT-1: the Contact tab
 
 function ListTabs(props){
   // FLOWS-2: the files attached to conversations and notes (the timeline's own read) count as files too.
@@ -19,8 +20,10 @@ function ListTabs(props){
   const attachedFiles=props.fileTally?props.fileTally.attached+props.fileTally.mail:0;
   return <ListTabsBody {...props} attachedFiles={attachedFiles}/>;
 }
-function ListTabsBody({fileTally,attachedFiles,deleteMaterial,donor,dpTab,giftsFull,inboxConnected,intActions,isReadOnly,loadDpThread,loadGiftsFull,loadRel,localInts,matLoading,matUploading,materials,onInteractionAdded,onLogTouchpoint,onNavigate,rel,saveStewardship,setLogMeeting,setStwForm,setStwOpen,stwForm,stwOpen,stwSaving,tlExtras,tlSearch,uploadMaterial,viewMaterial,onTaskOutcome}){
+function ListTabsBody({household,contactPerson,onEdit,onSelectRelatedDonor,contact,fileTally,attachedFiles,deleteMaterial,donor,dpTab,giftsFull,inboxConnected,intActions,isReadOnly,loadDpThread,loadGiftsFull,loadRel,localInts,matLoading,matUploading,materials,onInteractionAdded,onLogTouchpoint,onNavigate,rel,saveStewardship,setLogMeeting,setStwForm,setStwOpen,stwForm,stwOpen,stwSaving,tlExtras,tlSearch,uploadMaterial,viewMaterial,onTaskOutcome}){
   return <>
+          {/* CONTACT-1 · CONTACT: the address ready to copy, every email and phone, the do-not flags, the household's own details. */}
+          {dpTab==="contact"&&<ContactTab {...{donor,contact,household,contactPerson,isReadOnly,onEdit,onSelectRelatedDonor}}/>}
           {/* VOL-3: the Volunteer tab, a volunteer's record: status, what they can give, hours. */}
           {dpTab==="volunteer"&&<div data-testid="dp-tab-volunteer" className="dp3-gutter" style={{padding:"24px var(--dp-gutter,40px)"}}><VolunteerPanel donor={donor} isReadOnly={isReadOnly} always/></div>}
           {/* ── THE LIST TABS (PROFILE-1 header) ──────────────────────────

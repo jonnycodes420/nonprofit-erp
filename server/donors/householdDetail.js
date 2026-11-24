@@ -11,7 +11,9 @@
 //                one rule, server/tasks/nextStep.js)
 //   people       each person with their own email, phone, photo and Contact
 //                preferences (do not contact, email, mail, call, solicit),
-//                never merged into one
+//                never merged into one; `sameAddressAs` names the others at
+//                the same street, city and ZIP (CONTACT-1: the Contact tab
+//                says it from where the person stands, not from the lead)
 "use strict";
 const HG = require("../../shared/numbers/householdGiving");
 
@@ -41,6 +43,7 @@ async function detail(query, orgId, view, { org, today, photoUrl }) {
     require("../tasks/nextStep").nextStepsFor(query, orgId, ids, today),
   ]);
   const byId = new Map(people.map(p => [p.id, p]));
+  const sharers = p => String(p.address || "").trim() ? people.filter(q => q.id !== p.id && sameAddress(p, q)) : [];
   const lead = byId.get(view.primary_donor_id) || byId.get(ids[0]);
   const stageLabel = k => (P.PROPOSAL_STAGES.find(s => s.key === k) || {}).label || k;
   const nameOf = id => (byId.get(id) || {}).name || "";
@@ -59,6 +62,9 @@ async function detail(query, orgId, view, { org, today, photoUrl }) {
     people: ids.map(id => byId.get(id)).filter(Boolean).map(p => ({
       id: p.id, name: p.name, email: p.email || null, phone: p.phone || null, photoUrl: photoUrl(p.photo_asset_id),
       preferences: PREFS.filter(([k]) => p[k] === true || p[k] === 1).map(([, w]) => w),
+      sameAddressAs: sharers(p).map(q => q.id),
+      // CONTACT-1: the envelope to this address names only the people who live there, this person first.
+      addresseeHere: sharers(p).length ? HG.addresseeOf([p.name, ...sharers(p).map(q => q.name)]) : null,
     })),
     // the primary person first, as the export's Addressee
     addressee: HG.addresseeOf([...ids].sort((x, y) => (y === view.primary_donor_id) - (x === view.primary_donor_id)).map(nameOf)),

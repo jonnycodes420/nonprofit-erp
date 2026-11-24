@@ -31,7 +31,7 @@ const XLSX = require(path.join(ROOT, "client", "node_modules", "xlsx"));
 const FX = path.join(__dirname, "fixtures", "import", "real-shaped");
 const PASSWORD = "loadtest1234";
 const ORG = "org_polish5_glue";
-const PROFILE_TABS = ["activity", "giving", "conversations", "emails", "tasks", "notes", "files"];
+const PROFILE_TABS = ["activity", "giving", "conversations", "contact", "emails", "tasks", "notes", "files"];
 
 // ── the glue rules ────────────────────────────────────────────────────────
 // Words that really are written with an inner capital. Matched on the whole
