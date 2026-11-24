@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import { execSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { changelogLatest } from "./scripts/changelogLatest.mjs";
 
 // Deploy verification (deploy rewire, 2026-08-11): stamp the built page with
 // the exact commit it was built from, so `curl | grep build-sha` against the
@@ -17,6 +18,8 @@ const buildSha = (() => {
 })();
 
 export default defineConfig({
+  // PERF-5: the What's new dot reads the newest entry ids, not every entry.
+  define: { __WN_LATEST__: JSON.stringify(changelogLatest()) },
   build: {
     // AUDIT-2 · Lost & Found's worker bundles Drift (drift.js + orgTime.js,
     // CommonJS at the repo root) so the free audit judges donors the way

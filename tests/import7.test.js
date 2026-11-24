@@ -49,6 +49,11 @@ const BASE = process.env.BASE || "http://localhost:5601";
 const PASSWORD = "loadtest1234";
 const N = 25000;
 const SUITE_DEADLINE_MS = 360000;   // the whole suite; §4's own wait is shorter
+// PERF-5: the big Undo's budget. On CI it finishes inside the suite's usual
+// 40 s; ATLAS-9's run (24 Nov) took 706 s and the suite died at its deadline
+// saying only that, twice. Past the budget the suite stops and its last line
+// names the slow Undo, so the shard's FAIL line says what it is.
+const UNDO_BUDGET_S = 120;
 
 let R = null;
 const reader = async () => (R = R || await import("../shared/sheetRead.js"));
@@ -116,7 +121,14 @@ async function importJob(tok, body) {
     { status: rec.status, line: recRows && recRows.sheets[0] && recRows.sheets[0].sentence });
 
   // ── §4 the big Undo, followed with this suite's own deadline
-  const back = await undoAndWait(BASE, tok, job.importId, { timeoutMs: 120000, pollMs: 100 });
+  const back = await undoAndWait(BASE, tok, job.importId, { timeoutMs: UNDO_BUDGET_S * 1000, pollMs: 100 });
+  {
+    const inTime = back.status === 200 && back.ms <= UNDO_BUDGET_S * 1000;
+    const took = back.status === "timeout" ? `over ${UNDO_BUDGET_S} s` : `${Math.round(back.ms / 1000)} s`;
+    const line = `import Undo took ${took} (budget ${UNDO_BUDGET_S} s)`;
+    ok(`§4 ${line}`, inTime, { status: back.status, ms: back.ms, last: back.last || null, error: back.error });
+    if (back.status === "timeout") { console.log(`\nimport7: ${line}, last seen: ${(back.last && back.last.sentence) || "nothing"}`); process.exit(1); }
+  }
   // INTEGRITY-3: an undo puts the people its file created in the trash, never deletes them outright
   const { n: leftPeople } = await one(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [ORG1]);
   ok("§4 Undo of the 25,000-person import answers at once (202) and runs on the queue, not in the request (main: one request held to the end)",
