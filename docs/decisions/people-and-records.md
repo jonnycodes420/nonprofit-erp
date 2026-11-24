@@ -63,8 +63,12 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   contact line share a second edge; the actions sit on the name's row. Nothing else invents its own indent.
 - **PROFILE-3: empty is calm.** A number with no value is an em dash in ink at 40%, with nothing under it. A tab
   shows a count only above zero. A person with nothing logged gets one start card in the main column, and no rail
-  section that would be empty is drawn, except Next step, Journeys and About (which carries "Add email or phone",
-  "Link someone" and the group picker until those sections have something). Every rail section is one white card
+  section that would be empty is drawn, except Next step, Journeys, About (which carries "Link someone" and the
+  group picker until those sections have something) and Contact, which with nothing in it says "No contact
+  details yet · Add" (Add opens Edit record). (CONTACT-1)
+- **Contact is read from the person's own columns first (CONTACT-1).** `shared/contactDetails.js` builds the
+  address line and answers "is there anything", for the rail read and the profile alike, so the section never
+  waits on `GET /donors/:id/rail` and never misses `mobile` or `email2` (the workbook import fills them). Every rail section is one white card
   under a brass small-caps label (`RailSection`, `RAIL` in `ProfileRail.jsx`). A person with no gift carries no
   giving tag and is not called a Donor on their own record.
 - **PROFILE-3: the profile is parts.** `DonorProfile.jsx` holds the state and the frame; the header, numbers, tabs,

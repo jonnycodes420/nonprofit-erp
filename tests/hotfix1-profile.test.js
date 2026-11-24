@@ -476,6 +476,55 @@ async function seed() {
     const row1 = await odalys();
     ok("§9 back on Re-engage, the row carries the gift the profile shows ($1,700), not the $200 it held", !!row1 && /\$1,700/.test(row1) && !/\$200\b/.test(row1), row1);
     await ctx9.close();
+    // §10 CONTACT-1 item 1 — THE CONTACT SECTION IS THERE FOR EVERYONE WITH A
+    // WAY TO REACH THEM. A pilot customer: "about halfway down, it has contact...
+    // I'm not even seeing it on some of these." It was drawn only from email,
+    // phone, a contact person or the rail read's address, so (a) a person with
+    // just an address lost it whenever the rail read had not answered or had
+    // failed, (b) a person whose import filled only mobile / the second email
+    // never had it, and (c) a person with nothing showed nothing.
+    // HOW IT GOES RED ON MAIN: (a) and (b) find no dp-rail-contact; (c) finds
+    // no "No contact details yet". Planted: main's RailAbout.jsx in a rebuilt
+    // dist, all three red.
+    await q(`INSERT INTO donors (id,org_id,name,address,city,state,zip,created_by,created_by_name) VALUES
+               ('d_hf1_addr',$1,'Brannoch Tidewell','14 Tern Lane','Bath','ME','04530','system:test','Test'),
+               ('d_hf1_mob',$1,'Ysolde Carraway',NULL,NULL,NULL,NULL,'system:test','Test'),
+               ('d_hf1_none',$1,'Orrin Pellbrook',NULL,NULL,NULL,NULL,'system:test','Test')
+             ON CONFLICT (id) DO NOTHING`, [ORG]);
+    await q(`UPDATE donors SET mobile='(207) 555-0142', email2='ysolde@hf1.test' WHERE id='d_hf1_mob' AND org_id=$1`, [ORG]);
+    const ctx10 = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
+    await ctx10.addInitScript(([t, u, o]) => {
+      localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
+    }, [login.body.token, JSON.stringify(login.body.user), JSON.stringify(login.body.org)]);
+    const p10 = await ctx10.newPage();
+    // (a) the rail read fails: it is taken out of the first-screen bundle and
+    // its own request is refused, so only the person's own record is there.
+    let railRefused = 0;
+    await p10.route(u => u.href.startsWith(apiBase) && /\/donors\/d_hf1_addr\/(bundle|profile)$/.test(u.pathname), route => {
+      const u = new URL(route.request().url());
+      const keep = u.searchParams.getAll("p").filter(p => !/\/rail$/.test(p));
+      u.searchParams.delete("p"); keep.forEach(p => u.searchParams.append("p", p));
+      return route.continue({ url: u.href });
+    });
+    await p10.route(u => u.href.startsWith(apiBase) && /\/donors\/d_hf1_addr\/rail$/.test(u.pathname), route => { railRefused++; return route.abort("connectionreset"); });
+    const contactOf = async id => {
+      await p10.goto(`${APP}/donors/${id}`, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await p10.waitForSelector('[data-testid="dp-rail-about"]', { timeout: 30000 }).catch(() => {});
+      await p10.waitForSelector('[data-testid="dp-rail-contact"]', { timeout: 8000 }).catch(() => {});
+      return p10.evaluate(() => { const c = document.querySelector('[data-testid="dp-rail-contact"]'); return c ? c.innerText.replace(/\s+/g, " ") : null; });
+    };
+    const addr = await contactOf("d_hf1_addr");
+    ok("§10a an address and nothing else, with the rail read failed: Contact shows the address", !!addr && /14 Tern Lane, Bath, ME 04530/.test(addr) && railRefused > 0, { addr, railRefused });
+    const mob = await contactOf("d_hf1_mob");
+    ok("§10b only a mobile and a second email from an import: Contact shows both", !!mob && /\(207\) 555-0142/.test(mob) && /ysolde@hf1\.test/.test(mob), mob);
+    const none = await contactOf("d_hf1_none");
+    ok("§10c nothing to reach them by: Contact says \"No contact details yet\" with Add", !!none && /No contact details yet/.test(none) && await p10.locator('[data-testid="dp-contact-add"]:visible').count() >= 1, none);
+    const dlg = p10.getByRole("dialog", { name: "Edit donor profile" });
+    const shutBefore = await dlg.count() === 0;
+    await p10.locator('[data-testid="dp-contact-add"]:visible').first().click().catch(() => {});
+    const edit = await dlg.waitFor({ state: "visible", timeout: 8000 }).then(() => true).catch(() => false);
+    ok("§10c …and Add opens the Edit record dialog", shutBefore && edit, { shutBefore, edit });
+    await ctx10.close();
     await browser.close();
     if (srv) srv.close();
   }
