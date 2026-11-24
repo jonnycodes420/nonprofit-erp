@@ -71,8 +71,8 @@ export default function SignatureField({ scope = "mine", isReadOnly = false, sig
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }} data-testid={`signature-${scope}`}>
       <p style={{ fontSize: 13, color: T.ink3, margin: 0, lineHeight: 1.5 }}>
         {mine ? "Your signature prints above your name on the letters you print when no receipt signer is set." : "The receipt signer's signature prints above their name on every printed letter."}
-        {data && data.rule ? ` ${data.rule}` : ""}
       </p>
+      {data && data.rule && <p style={{ fontSize: 13, color: T.ink3, margin: 0, lineHeight: 1.5 }} data-testid={`signature-${scope}-rule`}>{data.rule}</p>}
       {/* A corner of a letter, the way it prints. */}
       <div style={{ background: T.white, border: `1px solid ${T.bg2}`, borderRadius: 6, padding: "14px 18px", maxWidth: 360, fontFamily: "Georgia, serif", fontSize: 13, color: T.ink }}>
         <div>With gratitude,</div>

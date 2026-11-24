@@ -16,6 +16,7 @@ import { T } from "../shared";
 import { errorMessage } from "../../lib/domainError";
 import UploadWordLetter from "./UploadWordLetter";
 import SignatureField from "./SignatureField";
+import DateInput from "../inputs/LazyDateInput";   // POLISH-6: the one date box
 
 const card = { background: T.white, border: `1px solid ${T.bg2}`, borderRadius: 12, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 12 };
 const h2 = { fontFamily: "'Playfair Display', Georgia, serif", fontSize: 20, fontWeight: 700, color: T.ink, margin: 0 };
@@ -94,8 +95,8 @@ function GivingLetters({ isReadOnly, templates }) {
           <option value="">{!sources ? "Loading…" : list.length ? `Choose ${kind === "event" ? "an event" : "a campaign"}` : `No ${kind === "event" ? "event" : "campaign"} has gifts yet`}</option>
           {list.map(s => <option key={s.id} value={s.id}>{s.name}{s.dateWords ? ` · ${s.dateWords}` : ""}</option>)}
         </select>
-        <label style={{ fontSize: 13, color: T.ink3 }}>From <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={input} data-testid="letters-from" /></label>
-        <label style={{ fontSize: 13, color: T.ink3 }}>To <input type="date" value={to} onChange={e => setTo(e.target.value)} style={input} data-testid="letters-to" /></label>
+        <label style={{ fontSize: 13, color: T.ink3 }}>From <DateInput value={from} onChange={e => setFrom(e.target.value)} style={input} data-testid="letters-from" /></label>
+        <label style={{ fontSize: 13, color: T.ink3 }}>To <DateInput value={to} onChange={e => setTo(e.target.value)} style={input} data-testid="letters-to" /></label>
         <select value={tplId} onChange={e => setTplId(e.target.value)} style={input} aria-label="Letter template" data-testid="letters-template">
           {templates.map(t => <option key={t.id || "builtin"} value={t.id || ""}>{t.name}{t.from_word ? " (from Word)" : ""}</option>)}
         </select>
