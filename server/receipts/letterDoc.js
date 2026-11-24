@@ -397,7 +397,7 @@ async function parseDocx(buf) {
   while (layout.body.length && isEmptyPara(layout.body[layout.body.length - 1])) layout.body.pop();
 
   const faces = [...fonts].filter(f => faceOf(f) && !/^(times new roman|helvetica|arial|courier new|courier)$/i.test(f));
-  if (faces.length) notes.add(`Your ${faces.length === 1 ? "font" : "fonts"} ${faces.join(", ")} ${faces.length === 1 ? "prints" : "print"} as the nearest standard font (${[...new Set(faces.map(faceOf))].join(", ")}). Sizes, colours, bold and italic are kept.`);
+  if (faces.length) notes.add(`Your ${faces.length === 1 ? "font" : "fonts"} ${faces.join(", ")} ${faces.length === 1 ? "prints" : "print"} as the nearest standard font (${[...new Set(faces.map(faceOf))].join(", ")}). Sizes, colors, bold and italic are kept.`);
 
   // What mammoth reads that this reader did not place is named, not lost.
   const text = layoutText(layout);

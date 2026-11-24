@@ -54,7 +54,7 @@ export default function SignatureField({ scope = "mine", isReadOnly = false, sig
     try {
       await apiFetch(`/letters/signatures/${mine ? "mine" : "org"}`, { method: "PUT", body: JSON.stringify({ image }) });
       setData(d => ({ ...d, [mine ? "mine" : "org"]: { ...(d ? d[mine ? "mine" : "org"] : {}), image } }));
-      setMsg(image ? "Saved. Letters print it above the name, in its own colour." : "Removed.");
+      setMsg(image ? "Saved. Letters print it above the name, in its own color." : "Removed.");
     } catch (e) { setMsg(errorMessage(e, "The signature could not be saved.")); }
     setBusy(false);
   };

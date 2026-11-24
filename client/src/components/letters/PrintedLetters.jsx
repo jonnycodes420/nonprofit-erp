@@ -157,7 +157,7 @@ function Templates({ isReadOnly, templates, reload }) {
         <h2 style={h2}>Letter templates</h2>
         {!isReadOnly && !uploading && <button type="button" style={primary} onClick={() => setUploading(true)} data-testid="letters-upload-open">Upload a Word letter (.docx)</button>}
       </div>
-      <p style={sub}>Your own letter, from Word: Steward keeps the letterhead, logo, sizes, colours and spacing, and fills in each person's name and gift.</p>
+      <p style={sub}>Your own letter, from Word: Steward keeps the letterhead, logo, sizes, colors and spacing, and fills in each person's name and gift.</p>
       {uploading && <UploadWordLetter onClose={() => setUploading(false)} onSaved={() => { setUploading(false); reload(); setMsg("Saved. Pick it above to print with it."); }} />}
       <div style={{ display: "flex", flexDirection: "column" }}>
         {templates.map(t => (
