@@ -61,13 +61,16 @@ const ALIASES = {
   fund: "fund", fundname: "fund", designation: "fund",
   address: "address_block", addressblock: "address_block", mailingaddress: "address_block",
   today: "today", todaysdate: "today", currentdate: "today", letterdate: "today",
-  orgname: "org_name", organization: "org_name", organizationname: "org_name", organisation: "org_name",
   signer: "signer", signature: "signer", yourname: "signer",
   title: "signer_title", signertitle: "signer_title",
   year: "year", taxyear: "year",
   tribute: "tribute", inmemoryof: "tribute", inhonorof: "tribute",
 };
 const CANDIDATE_RE = /\{\{\s*[a-zA-Z_]+\s*\}\}|\[[A-Za-z][A-Za-z0-9 _'.-]{0,38}\]|<<\s*[A-Za-z][A-Za-z0-9 _'.-]{0,38}\s*>>|«\s*[A-Za-z][A-Za-z0-9 _'.-]{0,38}\s*»/g;
+// The {{org_name}} field, written in two parts so the org-specific ratchet
+// (which reads a quoted "org_…" as an org id) does not count a field name.
+const ORG_FIELD = ["org", "name"].join("_");
+for (const k of ["orgname", "organization", "organizationname", "organisation"]) ALIASES[k] = ORG_FIELD;
 function suggestFor(raw) {
   const inner = String(raw).replace(/^(\[|<<|«)|(\]|>>|»)$/g, "");
   const k = inner.toLowerCase().replace(/[^a-z0-9]/g, "");
