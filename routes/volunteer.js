@@ -808,7 +808,7 @@ async function volunteerList(req) {
   const rows = await query(
     `SELECT donors.id, donors.name, donors.email, donors.phone, donors.total_giving, donors.last_gift_date,
             (SELECT COALESCE(SUM(ROUND(vx.hours*100)),0) FROM volunteer_shifts vx WHERE vx.org_id=donors.org_id AND vx.person_id=donors.id AND ${SERVED_RULE.SERVED("vx", today)})::bigint AS life_h,
-            (SELECT COALESCE(SUM(ROUND(vx.hours*100)),0) FROM volunteer_shifts vx WHERE vx.org_id=donors.org_id AND vx.person_id=donors.id AND vx.date >= ? AND vx.date <= ?)::bigint AS range_h,
+            (SELECT COALESCE(SUM(ROUND(vx.hours*100)),0) FROM volunteer_shifts vx WHERE vx.org_id=donors.org_id AND vx.person_id=donors.id AND vx.date >= ? AND vx.date <= ? AND ${SERVED_RULE.SERVED("vx", today)})::bigint AS range_h,
             (SELECT MAX(vx.date) FROM volunteer_shifts vx WHERE vx.org_id=donors.org_id AND vx.person_id=donors.id AND ${SERVED_RULE.SERVED("vx", today)}) AS last_served,
             ${VSTATUS.STATUS_SQL("donors")} AS vstatus,
             ${require("../shared/numbers/nextShift").NEXT_SHIFT_SQL("donors")} AS next_shift,   -- FLOWS-10 item 6: the waiting list counts

@@ -474,7 +474,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
   // nothing stored is one (the same rule the server predicate holds).
   const donorsOnlyPage=donors.every(d=>{
     const t=d.personTypes||d.person_types;
-    return !Array.isArray(t)||!t.length||t.includes("donor");
+    return Array.isArray(t)&&t.includes("donor");   // RULES-1: the server sends the shown roles (typesOnRead); [] is a contact
   });
 
   // Exports EVERY row matching the server query (search/stage/owner), not

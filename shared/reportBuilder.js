@@ -29,6 +29,7 @@
 // a grant's received are those modules' fragments.
 import numbersMoney from "./numbers/money.js";
 import numbersPledges from "./numbers/pledges.js";
+import numbersServed from "./numbers/served.js";   // RULES-1: hours count once served
 import numbersThanks from "./numbers/thanks.js";   // THANKS-1: the one thank-you rule
 import { MAILING_ADDRESS_SQL } from "./mailingAddress.js";   // ASKS-1: the street and the whole mailing address
 
@@ -67,7 +68,7 @@ export const ENTITIES = {
       deceased:        { label: "Deceased", sql: "COALESCE(d.deceased,false)", type: "bool" },
       do_not_contact:  { label: "Do not contact", sql: "COALESCE(d.do_not_contact,false)", type: "bool" },
       // BUILD-98 (switch) Part 5 — hours, summed from the shifts.
-      volunteer_hours: { label: "Volunteer hours", sql: "(SELECT COALESCE(SUM(vs.hours),0) FROM volunteer_shifts vs WHERE vs.person_id = d.id AND vs.org_id = d.org_id)", type: "number" },
+      volunteer_hours: { label: "Volunteer hours", sql: `(SELECT COALESCE(SUM(vs.hours),0) FROM volunteer_shifts vs WHERE vs.person_id = d.id AND vs.org_id = d.org_id AND ${numbersServed.SERVED_LIVE("vs", "d.org_id")})`, type: "number" },   // RULES-1: served hours only
     },
     custom: { entity: "donor", sql: key => `d.custom_fields->>'${key}'` },
   },

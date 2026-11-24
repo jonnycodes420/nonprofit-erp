@@ -475,6 +475,16 @@ async function reset(org) {
   const nev9 = people.find(p => !p.gifts && !p.lifetime && !p.org);
   const p9 = await api("GET", `/donors/${nev9.id}`, tok);
   ok("§9e a never-giver marked Donor is not a Donor on their profile (as on the list)", Array.isArray(p9.body.person_types) && !p9.body.person_types.includes("donor"), JSON.stringify(p9.body.person_types));
+  // (f) RULES-1 (Jarvis, Nov 23): the same person in the top bar's search. Red on main (5c922c6): the
+  // search sent the stored roles and the row read "Donor · $0 lifetime".
+  const s9 = await api("GET", `/search?q=${encodeURIComponent(nev9.name)}`, tok);
+  const hit9 = ((s9.body && s9.body.results) || []).find(r => r.kind === "person" && r.id === nev9.id);
+  ok("§9f search sends a never-giver's shown roles, no Donor", !!hit9 && Array.isArray(hit9.person_types) && !hit9.person_types.includes("donor"), JSON.stringify(hit9 && hit9.person_types));
+  const bar9 = page.getByPlaceholder(/Search people/).first();
+  await bar9.click(); await bar9.fill(nev9.name); await page.waitForTimeout(1500);
+  const rowText9 = await page.getByText(nev9.name, { exact: true }).first().locator("xpath=../..").innerText().catch(() => "");
+  ok("§9f …and the search row on screen does not call them a Donor", rowText9.includes(nev9.name) && !/\bDonor\b/.test(rowText9) && !/\$0 lifetime/.test(rowText9), rowText9);
+  await page.keyboard.press("Escape");
 
   await browser.close();
   if (process.env.LIST2_KEEP !== "1") await reset(ORG);
