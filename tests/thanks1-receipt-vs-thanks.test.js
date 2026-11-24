@@ -105,7 +105,7 @@ const timeline = async donor => (await one(`SELECT COUNT(*)::int AS n FROM inter
   ok("§3 the delete adds nothing to the timeline", del.status === 200 && tl1 <= tl0
     && !(await one(`SELECT 1 AS x FROM interactions WHERE org_id=$1 AND donor_id=$2 AND note LIKE 'Gift removed%'`, [ORG, SOL])).x, { del: del.body, tl0, tl1 });
   const lines = (await recent(tok)).filter(r => r.kind === "effect_gift_delete");
-  ok("§3 one Recent changes line, with Undo", lines.length === 1 && /^Removed Soledad Arkwright's \$25 gift of \d{4}-\d{2}-\d{2}\./.test(lines[0].sentence)
+  ok("§3 one Recent changes line, with Undo", lines.length === 1 && /^Removed Soledad Arkwright's \$25 gift of [A-Z][a-z]{2} \d{1,2}, \d{4}\./.test(lines[0].sentence)
     && lines[0].undo && lines[0].undo.path === `/gifts/${g3}/restore`, lines);
   const aud = await one(`SELECT summary FROM fin_audit_log WHERE org_id=$1 AND request_method='DELETE' AND request_path LIKE $2 ORDER BY created_at DESC LIMIT 1`, [ORG, `/gifts/${g3}%`]);
   ok("§3 the audit row says the same sentence", lines[0] && aud.summary === lines[0].sentence, { aud, line: lines[0] && lines[0].sentence });

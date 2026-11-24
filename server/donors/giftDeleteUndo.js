@@ -24,6 +24,8 @@ const { STARTED_BY, SKIPPED } = require("./giftThanks");
 
 const usd = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
 const toC = v => Math.round((Number(v) || 0) * 100);
+// "Nov 23, 2026": a civil day read as a person reads it (shared/displayDate.js's words).
+const dayWords = d => /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : "";
 const KIND = "gift_delete";
 
 // Foreign keys onto gifts(id), read from the schema once: { table, col, del: 'c' | 'n' | 'a' | 'r' }.
@@ -82,7 +84,7 @@ async function snapshot(db, orgId, giftId) {
 // The Recent changes sentence.
 function sentence(g, donorName, cancelled) {
   const day = String(g.date || "").slice(0, 10);
-  return `Removed ${donorName || "a donor"}'s ${usd(toC(g.amount))} gift${day ? ` of ${day}` : ""}.${cancelled ? " " + cancelled : ""}`;
+  return `Removed ${donorName || "a donor"}'s ${usd(toC(g.amount))} gift${dayWords(day) ? ` of ${dayWords(day)}` : ""}.${cancelled ? " " + cancelled : ""}`;
 }
 
 // Inside the delete's transaction, AFTER the gift row is gone: the header line, with the snapshot.

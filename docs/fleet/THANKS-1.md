@@ -19,7 +19,7 @@ the gifts CSV export (a **Thanked** column beside "Acknowledged (receipt or than
    receipt line is still there (the receipt was not taken back).
 3. **(Needs a write.)** Record a $25 gift, then **Delete** it. Right: one dialog ("Delete this gift?" … "Recent changes
    keeps an Undo for 30 days. Nothing is added to their timeline."); after it, the timeline has no "Gift removed" line
-   and the totals drop by $25. Open Recent changes: "Removed <name>'s $25 gift of <date>." Press **Undo**: the gift, the
+   and the totals drop by $25. Open Recent changes: "Removed <name>'s $25 gift of Nov 23, 2026." Press **Undo**: the gift, the
    total and its thank-you task are back. Press Undo again from a stale tab: "That gift was already put back."
 4. **(Needs a write.)** A gift with a receipt made and never sent → Delete: "Receipt #… was generated but never sent;
    it will be voided." → **Void and delete**. Same with a receipt emailed to the donor: "…was sent to the donor; it will
