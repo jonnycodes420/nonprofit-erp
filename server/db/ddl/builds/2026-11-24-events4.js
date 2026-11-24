@@ -16,10 +16,12 @@ async function run(pool) {
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_event_levels_price') THEN
       ALTER TABLE event_levels ADD CONSTRAINT ck_event_levels_price CHECK (price >= 0 AND (kind <> 'sponsor' OR price > 0));
     END IF; END $$`);
-  const old = await pool.query(`SELECT conname FROM pg_constraint
-     WHERE conrelid = 'event_levels'::regclass AND contype = 'c' AND conname <> 'ck_event_levels_price'
-       AND pg_get_constraintdef(oid) ~ '^CHECK \\(\\(price > \\(?0'`);
-  for (const r of old.rows || []) await pool.query(`ALTER TABLE event_levels DROP CONSTRAINT IF EXISTS "${String(r.conname).replace(/"/g, "")}"`);
+  await pool.query(`DO $$ DECLARE c record; BEGIN
+    FOR c IN SELECT conname FROM pg_constraint
+              WHERE conrelid = 'event_levels'::regclass AND contype = 'c' AND conname <> 'ck_event_levels_price'
+                AND pg_get_constraintdef(oid) ~ '^CHECK \\(\\(price > \\(?0' LOOP
+      EXECUTE format('ALTER TABLE event_levels DROP CONSTRAINT IF EXISTS %I', c.conname);
+    END LOOP; END $$`);
 }
 
 module.exports = { run };

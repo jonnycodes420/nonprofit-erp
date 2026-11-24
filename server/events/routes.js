@@ -1110,12 +1110,16 @@ app.get("/events/:id", requireAuth, async (req, res) => {
     // SWEEP-4: the public page is "Not open yet" until payments are connected,
     // EVENTS-4: or until it has a free ticket (server/events/freeTickets.js).
     const page = await require("./freeTickets").pageState(query, orgId, req.params.id);
+    // EVENTS-4: the ticket card's levels ride on this read (the page's request budget).
+    const levelRows = await query("SELECT * FROM event_levels WHERE event_id=? AND org_id=? ORDER BY kind DESC, position, price", [req.params.id, orgId]);
+    const levels = [];
+    for (const l of levelRows) levels.push(eventLevelPayload(l, await levelTaken(l.id)));
     // STALE-2: seats left, from the count the add-guest door checks (server/events/capacity.js).
     const CAP = require("./capacity"), seats = CAP.seats(evts[0].capacity, await CAP.placesTaken(query, orgId, req.params.id));
     // VOL-3 item 5: the event's volunteer team rides on this read (the page has a request budget).
     const volunteerTeam = await require("../volunteers/eventTeam").eventTeam(orgId, req.params.id).catch(() => null);
     res.json({ ...evts[0], attendees, public_page_url, money: money || null, seats, volunteerTeam,
-      payments_connected: page.canTakeACard, public_page_open: page.open, has_free_ticket: page.hasFree,
+      payments_connected: page.canTakeACard, public_page_open: page.open, has_free_ticket: page.hasFree, levels,
       givenSource: { key: "event-gave", params: { event: req.params.id } },
       givenSentence: "What each person gave for this event or pledged at it, from the gifts and pledges themselves." });
   } catch(e) { res.status(500).json({ error: e.message }); }

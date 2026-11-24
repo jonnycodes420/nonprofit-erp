@@ -1563,7 +1563,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
             <EventVolunteerTeam eventId={eventId} initial={event.volunteerTeam || null} />
             <EventKiosk eventId={eventId} />
             <EventPageEditor eventId={eventId} />
-            <div style={{ marginTop: 14 }}><EventTicketTypes eventId={eventId} paymentsConnected={event.payments_connected} onChanged={() => eventRowsChanged(eventId)} /></div>
+            <div style={{ marginTop: 14 }}><EventTicketTypes eventId={eventId} initial={event.levels} paymentsConnected={event.payments_connected} onChanged={() => eventRowsChanged(eventId)} /></div>
             <EventAuction eventId={eventId} />
           </div>
 

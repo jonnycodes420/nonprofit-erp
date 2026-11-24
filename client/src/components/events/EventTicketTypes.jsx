@@ -47,14 +47,15 @@ function LevelPicture({ level, disabled, onSaved }) {
 
 // `levels` and `onChanged` come from a screen that already reads the levels
 // (Fundraising's desk); without them the card reads its own.
-export default function EventTicketTypes({ eventId, isReadOnly, levels: given, onChanged, paymentsConnected }) {
-  const [own, setOwn] = useState([]);
+// `initial`: levels that rode on the event's own read, so opening the page asks for none.
+export default function EventTicketTypes({ eventId, isReadOnly, levels: given, initial, onChanged, paymentsConnected }) {
+  const [own, setOwn] = useState(initial || []);
   const [lv, setLv] = useState(BLANK);
   const [editBenefits, setEditBenefits] = useState(null);   // { id, text }
   const [msg, setMsg] = useState("");
   const levels = given || own;
   const readOwn = useCallback(() => apiFetch(`/events/${eventId}/levels`).then(r => setOwn(r.levels || [])).catch(() => {}), [eventId]);
-  useEffect(() => { if (!given) readOwn(); }, [given, readOwn]);
+  useEffect(() => { if (!given && !initial) readOwn(); }, [given, readOwn]);   // eslint-disable-line react-hooks/exhaustive-deps
   const reload = () => { if (onChanged) onChanged(); if (!given) readOwn(); };
   const act = async (fn, okMsg) => { setMsg(""); try { await fn(); if (okMsg) setMsg(okMsg); reload(); } catch (e) { setMsg(errorMessage(e, "That did not save.")); } };
   const addLevel = () => act(() => apiFetch(`/events/${eventId}/levels`, { method: "POST", body: JSON.stringify(lv) }).then(() => setLv(BLANK)),
@@ -90,7 +91,12 @@ export default function EventTicketTypes({ eventId, isReadOnly, levels: given, o
               </div>)}
         </div>))}
       {!isReadOnly && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
-        <select value={lv.kind} onChange={e => setLv({ ...lv, kind: e.target.value })} style={inp}><option value="ticket">Ticket</option><option value="sponsor">Sponsorship</option></select>
+        {/* two buttons, not a select: the event page's attendee status is its first select */}
+        <span role="group" aria-label="Kind" style={{ display: "inline-flex", gap: 4 }}>
+          {[["ticket", "Ticket"], ["sponsor", "Sponsorship"]].map(([k, label]) => (
+            <button key={k} type="button" aria-pressed={lv.kind === k} data-testid={"event-level-kind-" + k} onClick={() => setLv({ ...lv, kind: k })}
+              style={{ ...btn(false), padding: "6px 10px", background: lv.kind === k ? T.bg2 : T.white }}>{label}</button>))}
+        </span>
         <input placeholder="Name (e.g. Dinner ticket)" value={lv.name} onChange={e => setLv({ ...lv, name: e.target.value })} style={{ ...inp, width: 170 }} />
         <input placeholder={lv.kind === "ticket" ? "Price (0 = free)" : "Price"} aria-label="Price" type="number" min={0} value={lv.price} onChange={e => setLv({ ...lv, price: e.target.value })} style={{ ...inp, width: 80 }} />
         <input placeholder="Value received" type="number" value={lv.fmv} onChange={e => setLv({ ...lv, fmv: e.target.value })} style={{ ...inp, width: 110 }} title="What the guest receives, such as the dinner. The receipt says only the rest is deductible." />
