@@ -1215,14 +1215,15 @@ function KioskView({ isReadOnly, initialSlot = "" }) {
         <label style={lbl}>Which shift</label>
         <select data-testid="kiosk-slot" value={slotId} onChange={e => setSlotId(e.target.value)} style={inp}>
           <option value="">Pick a shift…</option>
-          {allSlots.map(s => <option key={s.id} value={s.id}>{s.oppName} · {s.when}</option>)}
+          {/* EVENTS-4 item 3: a shift by its own label and time; the opportunity only when it has none */}
+          {allSlots.map(s => <option key={s.id} value={s.id}>{s.name ? `${s.name} (${s.oppName})` : s.oppName} · {s.when}</option>)}
         </select>
       </div>
       {note && <div role="status" data-testid="kiosk-note" style={{ fontSize: 13, color: T.ink2 }}>{note}</div>}
       {board && (
         <div style={card} data-testid="kiosk-board">
-          <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 2 }}>{board.slot.opportunityName}</div>
-          <div style={{ fontSize: 13, color: T.ink3, marginBottom: 12 }}>{board.slot.when}</div>
+          <div data-testid="kiosk-shift-name" style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 2 }}>{board.slot.name || board.slot.opportunityName}</div>
+          <div style={{ fontSize: 13, color: T.ink3, marginBottom: 12 }}>{board.slot.when}{board.slot.name ? ` · ${board.slot.opportunityName}` : ""}</div>
           {!board.people.length && <div style={{ fontSize: 13, color: T.ink3 }}>Nobody is signed up for this one.</div>}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 10 }}>
             {board.people.map(p => {

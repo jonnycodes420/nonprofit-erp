@@ -23,6 +23,7 @@ import { askSendPlan } from "./SendPlanDialog";   // SENDS-2: more than one pers
 import { DonorLink } from "./RecordLink";
 import RemoveMenu, { removeOne, removeMany } from "./RemoveMenu";
 import { UNDONE } from "../lib/recentUndo";
+import { offerUndo } from "./EditHistory";   // EVENTS-4: a recorded winner has an Undo
 import { countLabel } from "../../../shared/countWords.js";
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3, marginBottom: 8 };
@@ -155,8 +156,12 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
     const name = wf.name.trim().toLowerCase();
     const p = name ? await personNamed(name).catch(() => null) : null;   // SCALE-2
     if (!p) { setMsg("Pick the winner's name from the list, or add the person first."); return; }
-    await act(() => apiFetch(`/auction-items/${it.id}/winner`, { method: "POST", body: JSON.stringify({ donorId: p.id, amount: wf.amount }) }), r => r.sentence);
+    let saved = null;
+    await act(async () => (saved = await apiFetch(`/auction-items/${it.id}/winner`, { method: "POST", body: JSON.stringify({ donorId: p.id, amount: wf.amount }) })), r => r.sentence);
     setWinnerFor(null); setWf({ name: "", amount: "" });
+    // EVENTS-4 item 6: the winner is locked once recorded; Undo takes them off (the one Remove winner), which unlocks it.
+    if (saved && saved.ok) offerUndo({ message: saved.sentence, undoSeconds: 60,
+      undoAction: async () => { const x = await apiFetch(`/removals/auction_winner/${encodeURIComponent(it.id)}`, { method: "POST", body: "{}" }); await load(); return x; } }, "auction_winner");
   };
 
   return (
@@ -240,7 +245,10 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
                   Remove winner returns it to unassigned, never touching a payment. */}
               <RemoveMenu kind="auction_item" id={it.id} disabled={isReadOnly || it.retired} onDone={load}
                 items={[it.winner && !it.paidGiftId && { label: "Remove winner", onClick: () => removeOne({ kind: "auction_winner", id: it.id, onDone: load }) }]} />
-              {!it.paidGiftId && winnerFor !== it.id && <button style={btn(false)} disabled={isReadOnly} data-testid={"auction-record-winner-" + it.id}
+              {/* EVENTS-4 item 6: one winner. Once recorded it is locked here (More > Remove winner, or the toast's Undo, unlocks it); once paid it stays. */}
+              {it.winner && <span data-testid={"auction-winner-locked-" + it.id} style={{ fontSize: 12, color: T.ink3, alignSelf: "center" }}>
+                {it.paidGiftId ? "Paid: the winner stays as recorded." : "Winner recorded. To change it, More > Remove winner."}</span>}
+              {!it.paidGiftId && !it.winner && winnerFor !== it.id && <button style={btn(false)} disabled={isReadOnly} data-testid={"auction-record-winner-" + it.id}
                 title="For a live auction or a paper bid sheet: who won it, and for how much. It closes the item."
                 onClick={() => { setWinnerFor(it.id); setWf({ name: "", amount: "" }); }}>Record the winner</button>}
             </div>

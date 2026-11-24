@@ -701,7 +701,9 @@ app.get("/events/:id/kiosk", requireAuth, wrap(async (req, res) => {
   const inCount = F ? F.counts.came.parties : 0, expected = F ? F.counts.registered.parties : 0;
   const inPeople = F ? F.counts.came.people : 0, expectedPeople = F ? F.counts.registered.people : 0;
   const noDoor = guests.filter(g => g.in && !g.checked_in_at).length;
-  res.json({ event, guests, levels, checkedIn: inCount, expected, people: { checkedIn: inPeople, expected: expectedPeople },
+  // EVENTS-4 item 3: the search also finds the invited and the waiting (server/events/doorSearch.js).
+  const others = await require("./doorSearch").doorOthers(query, orgId, event.id);
+  res.json({ event, guests, levels, others, checkedIn: inCount, expected, people: { checkedIn: inPeople, expected: expectedPeople },
     sentence: `${inCount} of ${expected} checked in${expectedPeople !== expected ? ` (${inPeople} of ${expectedPeople} people)` : ""}.`
       + (noDoor ? ` ${noDoor === inCount ? (noDoor === 1 ? "They were" : "All of them were") : `${noDoor} of them ${noDoor === 1 ? "was" : "were"}`} marked as attending without a time at the door, from an import or by hand.` : "") });
 }));
@@ -1105,14 +1107,15 @@ app.get("/events/:id", requireAuth, async (req, res) => {
     // PARITY-2 Part 3: the page's address, built on the one public origin.
     const public_page_url = evts[0].public_slug ? `${publicAppUrl()}/e/${encodeURIComponent(evts[0].public_slug)}` : null;
     const [money] = await require("../../numbers").eventsRaised(orgId, { ids: [req.params.id] });
-    // SWEEP-4: the public page is "Not open yet" until payments are connected
-    const [pay] = await query("SELECT stripe_connected, stripe_account_id FROM orgs WHERE id=$1", [orgId]);
+    // SWEEP-4: the public page is "Not open yet" until payments are connected,
+    // EVENTS-4: or until it has a free ticket (server/events/freeTickets.js).
+    const page = await require("./freeTickets").pageState(query, orgId, req.params.id);
     // STALE-2: seats left, from the count the add-guest door checks (server/events/capacity.js).
     const CAP = require("./capacity"), seats = CAP.seats(evts[0].capacity, await CAP.placesTaken(query, orgId, req.params.id));
     // VOL-3 item 5: the event's volunteer team rides on this read (the page has a request budget).
     const volunteerTeam = await require("../volunteers/eventTeam").eventTeam(orgId, req.params.id).catch(() => null);
     res.json({ ...evts[0], attendees, public_page_url, money: money || null, seats, volunteerTeam,
-      payments_connected: !!(pay && pay.stripe_connected && pay.stripe_account_id),
+      payments_connected: page.canTakeACard, public_page_open: page.open, has_free_ticket: page.hasFree,
       givenSource: { key: "event-gave", params: { event: req.params.id } },
       givenSentence: "What each person gave for this event or pledged at it, from the gifts and pledges themselves." });
   } catch(e) { res.status(500).json({ error: e.message }); }
