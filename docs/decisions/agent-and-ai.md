@@ -309,3 +309,19 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
   sentences (`server/donors/briefTemplate.js`), finished by the same `completeBrief` (the About note first, whole),
   with a line saying AI is off. It is on the More menu whatever the AI switch says. A test of an AI feature runs
   with AI off too, because staging has no key and that is what the fleet walks.
+
+## ATLAS-9 · Atlas reads a population however it's asked; the brief leads with what's open (2026-11-23)
+
+- A population question is read by `server/atlas/populationAsk.js readPopulation`, keyed to the registry
+  (`shared/populationWords.js`): each id has the words people use for it, plus its own name. It is a population
+  question only when nothing is left once those words and the plain words of asking are taken out; anything left
+  ("in Lexington", "how much") stays with Ask. Add a phrasing to `CUES` and to the §7 table in
+  `tests/atlas6-grounded.test.js`; never a new whole-sentence regex.
+- "Lapsed" said with a fiscal year is Lapsed and LYBUNT: both answer, each named.
+- A call question about a population lists that population's askable twin (`lapsed_askable`, `lybunt_askable` …),
+  ranked by lifetime and labelled "lifetime"; without a population, who to call stays why.js `call`.
+- The brief leads with what is open (`server/atlas/briefOpen.js`: open asks by `proposalShape.OPEN_STAGE_KEYS`,
+  gifts `thanks.js awaitingFor` (AWAITING) since `shared/numbers/stewardStart.js`, the next meeting), then the next step, giving,
+  conversations, About.
+- A ranking by money over a period (top donors) shows each person's period total from Ask's own rows, never the last gift.
+- The reading-off line is `shared/atlasReading.js READING_OFF`; the dialog, the Home Thread and Settings > Atlas read it.

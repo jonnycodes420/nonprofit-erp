@@ -8,6 +8,7 @@ import { apiFetch } from "../api";
 import { T } from "./shared";
 import { useAtlasName } from "../lib/atlas";
 import { errorMessage } from "../lib/domainError";
+import { READING_OFF } from "../../../shared/atlasReading.js";   // ATLAS-9 item 5: the dialog's own line, from one place
 
 export function AtlasSettings({ isReadOnly, isAdmin, onNavigate }) {
   const name = useAtlasName();
@@ -37,7 +38,7 @@ export function AtlasSettings({ isReadOnly, isAdmin, onNavigate }) {
             {paused ? `${name} does nothing for anyone here until you turn it back on.`
               : `${name} logs, adds to journeys and groups, sets reminders and drafts emails when you ask, each with Undo. Money and sending wait for your tap.`}
           </div>
-          {status && status.ai === "off" && <div data-testid="settings-atlas-ai-off" style={{ fontSize: 13, color: T.ink, marginTop: 8, lineHeight: 1.5 }}>{status.aiOffLine}{" "}
+          {status && status.ai === "off" && <div data-testid="settings-atlas-ai-off" style={{ fontSize: 13, color: T.ink, marginTop: 8, lineHeight: 1.5 }}><span data-testid="settings-atlas-reading-off">{READING_OFF}</span>{" "}
             {onNavigate && <button type="button" onClick={() => onNavigate("settings", { section: "data" })} style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, cursor: "pointer", fontSize: 13 }}>The AI switch is in Your Data.</button>}</div>}
         </div>
         {isAdmin && paused !== null && <button type="button" data-testid="settings-atlas-pause" disabled={isReadOnly || busy} onClick={toggle}
