@@ -73,7 +73,9 @@ async function pdfPages(buf) {
 async function docxText(buf) {
   const z = await JSZip.loadAsync(buf);
   const x = await z.file("word/document.xml").async("string");
-  return { text: x.replace(/<w:tab\/>/g, " ").replace(/<[^>]+>/g, "").replace(/\s+/g, " "), pages: (x.match(/<w:sectPr\b/g) || []).length };
+  // The words are Word's text runs (<w:t>), read one by one; nothing is stripped.
+  const words = [...x.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map(m => m[1]).join(" ");
+  return { text: words.replace(/\s+/g, " "), pages: (x.match(/<w:sectPr\b/g) || []).length };
 }
 
 (async () => {
