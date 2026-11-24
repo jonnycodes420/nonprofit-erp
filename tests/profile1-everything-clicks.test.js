@@ -35,12 +35,14 @@ const ORG = "org_p1clicks";
 const A = "d_p1c_fern", P = "d_p1c_photo", N = "d_p1c_new", B = "d_p1c_other";
 // MENU-1: a business, a lapsed donor and a staff (non-admin) user.
 const O = "d_p1c_biz", L = "d_p1c_lapsed";
+// RULES-1 item 7: a volunteer, for "Mark as former" on the role line and in More.
+const V = "d_p1c_vol";
 const STAFF = `staff@${ORG}.test`;
 const ADMIN = `admin@${ORG}.test`;
 const ROOT = path.join(__dirname, "..");
 
 async function fixture() {
-  for (const t of ["person_photos", "gift_soft_credits", "pledges", "interactions", "threads", "donor_scores", "donor_rhythm",
+  for (const t of ["person_photos", "gift_soft_credits", "pledges", "interactions", "threads", "donor_scores", "donor_rhythm", "volunteer_records",
     "fin_transactions", "gifts", "tasks", "opportunities", "donor_relationships", "fin_audit_log"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM donors WHERE org_id=$1`, [ORG]);
@@ -65,6 +67,8 @@ async function fixture() {
   await q(`INSERT INTO donors (id,org_id,name,kind,status,stage,person_types,created_by,created_by_name)
            VALUES ($1,$2,'Bramble Hollow Supply','organisation','active','cultivate','["donor","organization"]'::jsonb,$3,$4),
                   ($5,$2,'Lark Lapsed','individual','lapsed','lapsed','["donor"]'::jsonb,$3,$4)`, [O, ORG, ...who, L]);
+  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,person_types,created_by,created_by_name)
+           VALUES ($1,$2,'Vera Volunteer',$3,'active','cultivate','["volunteer"]'::jsonb,$4,$5)`, [V, ORG, `${V}@example.org`, ...who]);
   await q(`UPDATE donors SET birth_month=$2, birth_day=$3 WHERE id=$1`, [A, soon.getUTCMonth() + 1, soon.getUTCDate()]);
   // Rising by calendar year, net of the refund: 1,000 / 2,000 / 3,000 - 500; one gift this year, not yet thanked.
   const gifts = [[`g_${ORG}_1`, A, 1000, `${Y - 3}-03-02`], [`g_${ORG}_2`, A, 2000, `${Y - 2}-04-03`], [`g_${ORG}_3`, A, 3000, `${Y - 1}-05-04`],
@@ -488,10 +492,42 @@ function inventory() {
       ok("§8 the picker on an organization says \"Owned by (a person)\"", (await s.page.locator("[data-testid=dp-rel-type-owner]").innerText().catch(() => "")).trim() === "Owned by (a person)");
       await s.ctx.close();
     }
+    {
+      // RULES-1 item 7: ending the role is findable where Jarvis looked: "Mark as former" next to "+"
+      // on the role line, and in More; each says what it did and offers Undo. Red on main: neither exists.
+      const s = await menuCtx(ADMIN, { width: 1440, height: 900 });
+      const pg = s.page;
+      const status = async () => ((await q(`SELECT status FROM volunteer_records WHERE org_id=$1 AND person_id=$2`, [ORG, V]))[0] || {}).status || "active";
+      const words = () => pg.locator("[data-testid=role-words]").first().innerText().catch(() => "");
+      await pg.goto(`${APP}/donors/${V}`, { waitUntil: "domcontentloaded" });
+      await pg.waitForSelector("[data-testid=role-mark-former]", { timeout: 20000 }).catch(() => {});
+      const w0 = await words();
+      ok("§RULES-1 the role line offers Mark as former beside Volunteer", await pg.locator("[data-testid=role-line] [data-testid=role-mark-former]").count() === 1 && /^Volunteer/.test(w0), w0);
+      await pg.locator("[data-testid=role-mark-former]").click().catch(() => {});
+      await pg.waitForSelector("[data-testid=role-former-msg]", { timeout: 5000 }).catch(() => {});
+      const m1 = await pg.locator("[data-testid=role-former-msg]").innerText().catch(() => ""), w1 = await words();
+      ok("§RULES-1 …a click marks them former, says so with Undo, and the line reads Former volunteer",
+        await status() === "former" && /marked as a former volunteer/.test(m1) && await pg.locator("[data-testid=role-former-undo]").count() === 1
+          && /^Former volunteer/.test(w1) && await pg.locator("[data-testid=role-mark-former]").count() === 0, { m1, w1, st: await status() });
+      await pg.locator("[data-testid=role-former-undo]").click().catch(() => {});
+      await pg.waitForSelector("[data-testid=role-mark-former]", { timeout: 5000 }).catch(() => {});
+      ok("§RULES-1 …Undo on the line puts them back to active", await status() === "active" && /^Volunteer/.test(await words()) && await pg.locator("[data-testid=role-mark-former]").count() === 1, await status());
+      const g = await openMenu(pg, V);
+      ok("§RULES-1 More has Mark as former volunteer", !!g && g.labels.includes("Mark as former volunteer"), g && g.labels);
+      await pg.locator("[data-testid=dp-mark-former]").click().catch(() => {});
+      await pg.waitForSelector("[data-testid=dp-former-msg]", { timeout: 5000 }).catch(() => {});
+      const m2 = await pg.locator("[data-testid=dp-former-msg]").innerText().catch(() => "");
+      ok("§RULES-1 …picking it marks them former and says so beside More, with Undo",
+        await status() === "former" && /marked as a former volunteer/.test(m2) && await pg.locator("[data-testid=dp-former-undo]").count() === 1 && /^Former volunteer/.test(await words()), { m2, st: await status() });
+      await pg.locator("[data-testid=dp-former-undo]").click().catch(() => {});
+      await pg.waitForSelector("[data-testid=role-mark-former]", { timeout: 5000 }).catch(() => {});
+      ok("§RULES-1 …and Undo there puts them back to active", await status() === "active" && /^Undone\./.test(await pg.locator("[data-testid=dp-former-msg]").innerText().catch(() => "")), await status());
+      await s.ctx.close();
+    }
     ok("the profile threw no page errors", errors.length === 0, errors.slice(0, 3));
     await browser.close();
   }
-  for (const t of ["person_photos", "gift_soft_credits", "pledges", "interactions", "threads", "donor_scores", "donor_rhythm", "fin_transactions", "gifts", "tasks", "opportunities", "donor_relationships"])
+  for (const t of ["person_photos", "gift_soft_credits", "pledges", "interactions", "threads", "donor_scores", "donor_rhythm", "volunteer_records", "fin_transactions", "gifts", "tasks", "opportunities", "donor_relationships"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await h.closeDb();
   h.summary();

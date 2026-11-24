@@ -981,7 +981,7 @@ async function issueYearEndStatementNow(org, donor, year, { send = true, by = SY
   let yourYear = null;
   if (org.statement_your_year !== false) {
     const [h] = await query(`SELECT COALESCE(SUM(ROUND(hours * 100)), 0)::int AS hh, COUNT(*)::int AS n FROM volunteer_shifts
-                               WHERE org_id=? AND person_id=? AND LEFT(date, 4) = ?`, [org.id, donor.id, String(year)]);
+                               WHERE org_id=? AND person_id=? AND LEFT(date, 4) = ? AND ${require("../../shared/numbers/served").SERVED_LIVE(null, "org_id")}`, [org.id, donor.id, String(year)]);
     const evs = await query(`SELECT e.name, e.date::text AS date FROM event_attendees a JOIN events e ON e.id = a.event_id
                                WHERE a.org_id=? AND a.donor_id=? AND (a.status='attended' OR a.checked_in_at IS NOT NULL)
                                  AND EXTRACT(YEAR FROM e.date) = ? ORDER BY e.date`, [org.id, donor.id, year]);

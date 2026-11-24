@@ -80,7 +80,7 @@ async function loadFacts(orgId, donorIds = null, q = query) {
     q(`SELECT donor_id, amount::text AS amount, interval FROM recurring_subscriptions
              WHERE org_id = ? AND status IN ('active','past_due','recovering','recovered')${only}`, a),
     q(`SELECT donor_id, COUNT(DISTINCT event_id)::int AS n FROM event_attendees WHERE org_id = ? AND donor_id IS NOT NULL${only} GROUP BY donor_id`, a),
-    q(`SELECT person_id AS donor_id, COALESCE(SUM(hours), 0)::text AS h FROM volunteer_shifts WHERE org_id = ?${donorIds ? " AND person_id = ANY(?)" : ""} GROUP BY person_id`, a),
+    q(`SELECT person_id AS donor_id, COALESCE(SUM(hours), 0)::text AS h FROM volunteer_shifts WHERE org_id = ?${donorIds ? " AND person_id = ANY(?)" : ""} AND ${require("./shared/numbers/served").SERVED(null, t)} GROUP BY person_id`, a),
     latestScreening(orgId, donorIds, q),
   ]);
   const facts = new Map();

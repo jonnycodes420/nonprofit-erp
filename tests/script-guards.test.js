@@ -368,6 +368,10 @@ const PROD_READONLY = [
   // it, or a new population word beside a count. No server, no database, no network. --write-baseline
   // rewrites its own baseline JSON beside it, nothing else. Exits 1 on a finding.
   "population-ids",
+  // RULES-1 — the served hours scan and the Donor label scan. Pure SOURCE scans (app code; client/src)
+  // for an hours sum without SERVED and a Donor label drawn from stored roles. No server, no database,
+  // no network, no writes. Exit 1 on a finding.
+  "donor-label-scan",
   // FIX-3 C — is there a real person in the demo? READ ONLY transaction,
   // SELECTs only, ROLLBACK; a remote DATABASE_URL needs --i-know-this-is-prod
   // and the /health identity match. Prints the offending rows, exits 1.
@@ -381,6 +385,7 @@ const LOOPBACK_CAPTURES = [
 
 // Out of scope for BASE/DB guarding, each for a stated reason.
 const EXEMPT = {
+  "served-scan": "RULES-1 — a pure SOURCE scan (app code) for a SUM over volunteer_shifts.hours without SERVED. Its text names INSERT INTO only as a self-test fixture that must NOT be caught; no BASE, no DB, no network, no writes",
   "ack-read-scan": "THANKS-1 — a pure SOURCE scan for a read of gifts.acknowledgement_sent (the receipt's IRS mark) as \"thanked\"; it names UPDATE … SET only in its self-test fixture and opens no database, no server and no network",
   "delete-scan": "TRASH-1 — a pure SOURCE scan (server, routes, the DDL) for an app.delete( that hard-deletes a money or person table without removal.js. Its text names DELETE FROM only as the pattern it looks for and in its self-test fixture; it opens no database, no server and no network",
   "sales-staging-seed": "SALES-1 — a module, not a command: exports seedSales(q) and is called only by staging-seed.js, which resolves its target with writerBase --staging (refuses anything but staging). It has no require.main entry and reads no BASE, DATABASE_URL or network",

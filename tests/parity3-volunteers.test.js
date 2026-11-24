@@ -317,7 +317,21 @@ const T = civilToday();
   // A shift dated tomorrow is not hours given yet.
   const h0 = (await api("GET", `/donors/${NEW}/volunteer-hours`, tok)).body;
   const lr0 = (await api("GET", `/volunteer-hub/list?search=Quinn`, tok)).body.rows.find(r => r.id === NEW);
+  // RULES-1: the profile rail, the status line and the Donors list's hours column read the same rule.
+  const servedReads = async () => {
+    const rail = (await api("GET", `/donors/${NEW}/rail`, tok)).body || {};
+    const st = (await api("GET", `/donors/${NEW}/status`, tok)).body || {};
+    const li = (await api("GET", `/donors?search=Quinn&limit=50&cols=volunteer_hours`, tok)).body || {};
+    const row = (li.donors || []).find(d => d.id === NEW);
+    return { rail: rail.volunteering ? rail.volunteering.hours : 0, last: rail.volunteering ? rail.volunteering.lastShift : null,
+      line: st.volunteer ? st.volunteer.line : null, list: row ? row.cells.volunteer_hours : "missing" };
+  };
+  const sr0 = await servedReads();
   const tmr = await api("POST", `/donors/${NEW}/volunteer-hours`, tok, { date: civilPlusDays(1), hours: "2", minutes: "0", note: "VOL-3 tomorrow" });
+  const sr1 = await servedReads();
+  // Red on main (5c922c6): the rail went up by 2 and its last shift became tomorrow; the list column too.
+  ok("§RULES-1 a shift dated tomorrow adds nothing to the profile rail's hours or last shift, the status line or the Donors list column",
+    JSON.stringify(sr1) === JSON.stringify(sr0) && sr0.list !== "missing", [sr0, sr1]);
   const h1 = (await api("GET", `/donors/${NEW}/volunteer-hours`, tok)).body, v3r3 = await vol3Roster();
   const lr1 = (await api("GET", `/volunteer-hub/list?search=Quinn`, tok)).body.rows.find(r => r.id === NEW);
   ok("§VOL-3 a shift dated tomorrow adds no hours this year, in all, or to the roster's total",

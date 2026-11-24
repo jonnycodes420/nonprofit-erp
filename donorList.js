@@ -560,7 +560,7 @@ async function cellsFor(orgId, rows, columns) {
       WHERE org_id = ? AND donor_id = ANY(?) AND (lower(COALESCE(status,'')) = 'attended' OR checked_in_at IS NOT NULL) GROUP BY donor_id`, [orgId, ids])
     .then(r => { for (const id of ids) out.get(id).events_attended = 0; put(r, "events_attended"); }));
   if (want.has("volunteer_hours")) reads.push(query(
-    `SELECT person_id AS id, COALESCE(SUM(hours),0)::text AS v FROM volunteer_shifts WHERE org_id = ? AND person_id = ANY(?) GROUP BY person_id`, [orgId, ids])
+    `SELECT person_id AS id, COALESCE(SUM(hours),0)::text AS v FROM volunteer_shifts WHERE org_id = ? AND person_id = ANY(?) AND ${require("./shared/numbers/served").SERVED_LIVE(null, "org_id")} GROUP BY person_id`, [orgId, ids])
     .then(r => { for (const id of ids) out.get(id).volunteer_hours = 0; put(r, "volunteer_hours", x => Number(x.v)); }));
   if (want.has("membership")) reads.push(query(
     `SELECT DISTINCT ON (m.donor_id) m.donor_id AS id, m.status, l.name AS level FROM memberships m

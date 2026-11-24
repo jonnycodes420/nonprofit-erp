@@ -560,7 +560,7 @@ app.get("/donors/:id/volunteer-hours", requireAuth, wrap(async (req, res) => {
   // own rows, ahead and behind, the same read as the Volunteers drawer.
   const { upcoming, past: pastScheduled } = await require("../volunteers/personShifts").personShifts(query, orgId, d.id, today, { upcomingLimit: 6, pastLimit: 10 });
   const sum = await volunteerSummary(orgId, d.id);
-  const [yr] = await query(`SELECT COALESCE(SUM(ROUND(hours*100)),0)::bigint AS h FROM volunteer_shifts WHERE org_id=? AND person_id=? AND date >= ? AND date <= ?`,
+  const [yr] = await query(`SELECT COALESCE(SUM(ROUND(hours*100)),0)::bigint AS h FROM volunteer_shifts WHERE org_id=? AND person_id=? AND date >= ? AND date <= ? AND ${require("../../shared/numbers/served").SERVED(null, today)}`,
     [orgId, d.id, today.slice(0, 4) + "-01-01", today]);
   const opps = await query(`SELECT id, name FROM volunteer_opportunities WHERE org_id=? AND archived_at IS NULL ORDER BY name`, [orgId]);
   const lifeFrom = "1900-01-01", lifeTo = "2999-12-31";

@@ -122,7 +122,9 @@ const SCORE_DELETE = /DELETE\s+FROM\s+donor_scores\b(?![^\n]*\bdonor_id\b)/i;
 
 // SPLIT-2: the files cut down to a shell. Each is capped at the size the split
 // left it; new code goes in its parts (server/db/, components/profile/).
-const SHELLS = new Set(["server.js", "db.js", "client/src/components/DonorProfile.jsx"]);
+// RULES-1: server/db/ddl/part7.js too. Every build appended to it, and four builds in one week
+// conflicted there; a build's DDL is its own file in server/db/ddl/builds/ now.
+const SHELLS = new Set(["server.js", "db.js", "client/src/components/DonorProfile.jsx", "server/db/ddl/part7.js"]);
 
 // SPLIT-2 · A WRITE NOBODY ELSE SEES. server.js's statements live in
 // server/boot/, and each module reads another's names through its own copy,
@@ -234,7 +236,7 @@ const CHECKS = {
     worse: (key, now) => `${key}: ${now} write(s) not followed by __share({ name }); every other module keeps the old value (see server/boot/share.js)`,
   },
   "split-shells": {
-    what: "the files SPLIT-2 cut down to a shell (each capped at the size the split left it)",
+    what: "the files SPLIT-2 cut down to a shell (each capped at the size the split left it), and part7.js (RULES-1)",
     measure: files => Object.fromEntries(files.filter(f => SHELLS.has(f)).map(f => [f, lineCount(f)])),
     worse: (key, now, base) => base == null ? `${key} has no cap in the baseline`
       : now > base ? `${key} grew to ${now} lines (cap ${base}); put the new code in its parts` : null,
