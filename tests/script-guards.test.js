@@ -364,6 +364,11 @@ const PROD_READONLY = [
   // it, or a new population word beside a count. No server, no database, no network. --write-baseline
   // rewrites its own baseline JSON beside it, nothing else. Exits 1 on a finding.
   "population-ids",
+  // RULES-1 — the served hours scan and the Donor label scan. Pure SOURCE scans (app code; client/src)
+  // for an hours sum without SERVED and a Donor label drawn from stored roles. No server, no database,
+  // no network, no writes. Exit 1 on a finding.
+  "served-scan",
+  "donor-label-scan",
   // FIX-3 C — is there a real person in the demo? READ ONLY transaction,
   // SELECTs only, ROLLBACK; a remote DATABASE_URL needs --i-know-this-is-prod
   // and the /health identity match. Prints the offending rows, exits 1.

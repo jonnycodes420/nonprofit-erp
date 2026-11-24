@@ -246,7 +246,7 @@ function RoleLine({donor,isReadOnly,birthday="",noGifts=false}){
       if(r&&Array.isArray(r.person_types)){
         setTypes(r.person_types);
         // A role other than Donor shows as set; Donor itself still follows the gifts.
-        setShown(s=>{const base=(s||donor.personTypes||[]).filter(x=>x!=="donor"&&x!==k);const gave=(s||donor.personTypes||[]).includes("donor");return [...(gave?["donor"]:[]),...base,...(on&&k!=="donor"?[k]:[])];});
+        setShown(s=>{const base=(s||donor.personTypes||[]).filter(x=>x!=="donor"&&x!==k);const gave=s?s.includes("donor"):!noGifts&&(donor.personTypes||[]).includes("donor");   /* RULES-1: the giving rule, never the stored role */return [...(gave?["donor"]:[]),...base,...(on&&k!=="donor"?[k]:[])];});
         setLock({locked:!!r.donorLocked,reason:r.donorLockedReason||null});
       }
     }catch(e){setNote(errorMessage(e,"Could not change this person's role"));}

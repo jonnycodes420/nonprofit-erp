@@ -186,7 +186,7 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   }
   if (q.volHoursMin !== undefined || q.volHoursMax !== undefined) {
     const sum = `(SELECT COALESCE(SUM(vx.hours), 0) FROM volunteer_shifts vx WHERE vx.org_id = donors.org_id AND vx.person_id = donors.id
-                   AND vx.date >= ? AND vx.date <= ?)`;
+                   AND vx.date >= ? AND vx.date <= ? AND ${require("./shared/numbers/served").SERVED_LIVE("vx", "donors.org_id")})`;
     const range = [dateOr(q.volHoursFrom, "1900-01-01"), dateOr(q.volHoursTo, "2999-12-31")];
     if (q.volHoursMin !== undefined) { const n = Number(q.volHoursMin); if (!Number.isFinite(n)) return { badStatus: true }; where.push(`${sum} >= ?`); params.push(...range, n); }
     if (q.volHoursMax !== undefined) { const n = Number(q.volHoursMax); if (!Number.isFinite(n)) return { badStatus: true }; where.push(`${sum} < ?`); params.push(...range, n); }

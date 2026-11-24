@@ -1175,6 +1175,9 @@ async function run7(pool) {
   await require("./vol3").run(pool);   // VOL-3: a volunteer's status and record; a shift's event
   await require("./gifts3").run(pool);   // GIFTS-3: a gift can be anonymous
   await require("./undo1").run(pool);   // UNDO-1: every side effect records how to take it back
+  // RULES-1: from here on, each build's DDL is its own file in ./builds/ (builds.js runs them in name
+  // order). This file no longer grows (the split-shells ratchet).
+  await require("./builds").run(pool);
 
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id

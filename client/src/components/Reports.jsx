@@ -9,6 +9,7 @@ import StoredReports from "./StoredReports";
 import OldReportsImport from "./OldReportsImport";
 import { displayDate } from "../../../shared/displayDate";
 import { LAPSE_WORDS } from "../../../shared/lapseWords.js";   // TRUTH-5
+import { population, unitWords } from "../../../shared/populationWords.js";   // RULES-1: the headline's one unit
 import { periodChipLabel, fyLabelFromEnd, reportYearsFrom } from "../../../shared/fiscalPeriod";
 import { bookkeeperCell } from "../lib/bookkeeperCell";
 import { Figure, FigureContext } from "./Figure";
@@ -554,8 +555,16 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       const shownRows = d.units || d.rows;
       const folded = shownRows.length !== d.rows.length;
       const havent = shownRows.length === 1 ? "hasn't" : "haven't";
-      narrative = <>{active === "lybunt" && <><abbr data-testid="bunt-word" title={LAPSE_WORDS.lybunt.definition} style={{ textDecoration: "underline dotted", cursor: "help" }}>LYBUNT</abbr>: </>}<strong data-testid="bunt-header-count">{folded ? `${shownRows.length} ${shownRows.some(r => r.unit === "household") ? plural(shownRows.length, "donor or household", "donors and households") : plural(shownRows.length, "donor")}` : d.figures?.people ? <RF f={d.figures.people} label={active === "lybunt" ? "Gave last year, not this year" : "Gave before, not this year"} unit={plural(d.rows.length, "donor")} /> : `${d.rows.length} ${plural(d.rows.length, "donor")}`}</strong>{folded && <> ({d.figures?.people ? <RF f={d.figures.people} label="People on these rows" unit={plural(d.rows.length, "person", "people")} /> : `${d.rows.length} people`}, each counted once)</>} {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${shownRows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
-        {active === "lybunt" && atStake > 0 && <>: <strong><RF f={d.figures?.atStake} kind="money" label="Last year's giving at stake" /></strong> of last year's giving is at stake</>}. This is a call list, not a chart.
+      // RULES-1 (Jarvis, Nov 23: "464 donors and 465 people in the same headline"): one unit, the
+      // registry's, said once. Households folded, it is LYBUNT households (a household's givers are one
+      // line, so one fewer than the people); otherwise LYBUNT, in people. The sentence is written under it.
+      const buntPop = active === "lybunt" ? population(folded ? "lybunt_households" : "lybunt") : null;
+      narrative = <>{buntPop && <><abbr data-testid="bunt-word" data-population={buntPop.id} title={LAPSE_WORDS.lybunt.definition} style={{ textDecoration: "underline dotted", cursor: "help" }}>{buntPop.name}</abbr>: </>}<strong data-testid="bunt-header-count">{buntPop
+        ? (folded ? `${shownRows.length.toLocaleString("en-US")} ${unitWords(buntPop.id, shownRows.length)}`
+          : d.figures?.people ? <RF f={d.figures.people} label="Gave last year, not this year" unit={unitWords(buntPop.id, d.rows.length)} /> : `${d.rows.length.toLocaleString("en-US")} ${unitWords(buntPop.id, d.rows.length)}`)
+        : folded ? `${shownRows.length} ${shownRows.some(r => r.unit === "household") ? plural(shownRows.length, "donor or household", "donors and households") : plural(shownRows.length, "donor")}` : d.figures?.people ? <RF f={d.figures.people} label="Gave before, not this year" unit={plural(d.rows.length, "donor")} /> : `${d.rows.length} ${plural(d.rows.length, "donor")}`}</strong>{folded && !buntPop && <> ({d.figures?.people ? <RF f={d.figures.people} label="People on these rows" unit={plural(d.rows.length, "person", "people")} /> : `${d.rows.length} people`}, each counted once)</>} {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${shownRows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
+{active === "lybunt" && atStake > 0 && <>: <strong><RF f={d.figures?.atStake} kind="money" label="Last year's giving at stake" /></strong> of last year's giving is at stake</>}. This is a call list, not a chart.
+        {buntPop && <div data-testid="bunt-population-sentence" style={{ fontSize: 12.5, color: T.ink3, marginTop: 4, lineHeight: 1.45 }}>{buntPop.sentence}</div>}
         {/* FLOWS-5 (W-1110-Fundraising-14): offered every time, from the list report's definition. */}
         {listReportOf(active) && d.rows.length > 0 && <span style={{ marginLeft: 8 }}><SaveAsGroup name={listGroupName(active)} donorIds={d.rows.map(r => r.id || r._pid).filter(Boolean)} testid="report-save-group"
           fromReport={year == null && yearMode === "fiscal" ? active : null} reportRules={year == null && yearMode === "fiscal" ? listReportRules(active) : null} /></span>}</>;

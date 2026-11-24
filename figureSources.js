@@ -1737,8 +1737,8 @@ const SOURCES = {
       const m = await GR.memberSql(orgId, await GR.groupById(orgId, p.group));
       return {
         sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name,
-                     (SELECT MAX(v.date) FROM volunteer_shifts v WHERE v.org_id = d.org_id AND v.person_id = d.id) AS date,
-                     ROUND((SELECT COALESCE(SUM(v.hours), 0) FROM volunteer_shifts v WHERE v.org_id = d.org_id AND v.person_id = d.id)::numeric, 2) AS amount,
+                     (SELECT MAX(v.date) FROM volunteer_shifts v WHERE v.org_id = d.org_id AND v.person_id = d.id AND ${require("./shared/numbers/served").SERVED_LIVE("v", "d.org_id")}) AS date,
+                     ROUND((SELECT COALESCE(SUM(v.hours), 0) FROM volunteer_shifts v WHERE v.org_id = d.org_id AND v.person_id = d.id AND ${require("./shared/numbers/served").SERVED_LIVE("v", "d.org_id")})::numeric, 2) AS amount,
                      'Volunteer hours' AS detail
                 FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.id IN (${m.sql})
                  AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0)`,
@@ -2855,7 +2855,7 @@ const SOURCES = {
                    ROUND(SUM(v.hours)::numeric, 2) AS amount,
                    COUNT(*) || CASE WHEN COUNT(*) = 1 THEN ' shift' ELSE ' shifts' END AS detail
               FROM volunteer_shifts v JOIN donors d ON d.id = v.person_id AND d.org_id = v.org_id
-             WHERE v.org_id = ? AND d.deleted_at IS NULL AND v.date >= ? AND v.date <= ?
+             WHERE v.org_id = ? AND d.deleted_at IS NULL AND v.date >= ? AND v.date <= ? AND ${require("./shared/numbers/served").SERVED_LIVE("v", "v.org_id")}
              GROUP BY d.id, d.name`,
       args: [orgId, p.from, p.to],
       order: "amount DESC NULLS LAST, id",

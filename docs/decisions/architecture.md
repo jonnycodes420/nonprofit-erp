@@ -4,6 +4,7 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 
 ## Rules
 
+- **RULES-1 (2026-11-23): one schema file per build.** New DDL goes in its own file in `server/db/ddl/builds/`, named `YYYY-MM-DD-<brief>.js`; boot runs that folder in name order after `part7.js`, which no longer grows (split-shells ratchet).
 - **SCALE-6 (2026-11-20): JIT is off on every application connection, and a whole-org read
   never asks a person's giving unit per row.** The main pool starts each connection with
   `-c jit=off` (`server/db/pool.js`; the set-wise pool already did, FLOWS-16). Where Postgres has
@@ -299,8 +300,7 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 - `db.js` — the one export list and `getDb`; the rest is under `server/db/` (SPLIT-2): `pool.js` (pg pool, SSL
   hardcoded, request limits), `query.js` (`query`, `run`, transactions, `withAdvisoryLock`), `schema.js` (`initSchema`,
   which runs `ddl/part1.js` … `part7.js` in order: order matters), `seed.js` (`seedData`, the backfills). A new
-  migration goes at the end of the last part; when that part nears 1,500 lines, add the next part and its line in
-  `schema.js`. The schema hash covers db.js and every file under `server/db/` (`schemaSources.js`).
+  migration is its own file in `ddl/builds/` (RULES-1; `ddl/builds.js` runs them in name order at the end of part7). The schema hash covers db.js and every file under `server/db/` (`schemaSources.js`).
 - `auth.js` — `requireAuth`, `requireAdmin` (and the MFA setup-only session)
 - `shared/` — pure ESM modules for client, server and suites (`shared/package.json` marks ESM)
 - `assetStore.js` — asset put/prune/purge and the one `destroyAsset` seam; `scripts/ops/restore-asset.js`

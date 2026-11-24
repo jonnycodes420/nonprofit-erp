@@ -53,7 +53,9 @@ const ME = "u_c1m";
 
 // ── §1 source: every person pointer in db.js ────────────────────────────────
 function personColumnsInDbJs() {
-  const src = require("../scripts/lib/readSource").readSource("db.js");   // SPLIT-2: db.js is split under server/db/
+  // RULES-1: and every build's own DDL file (server/db/ddl/builds/), the folder boot runs after part7.
+  const src = require("../scripts/lib/readSource").readSource("db.js")   // SPLIT-2: db.js is split under server/db/
+    + "\n" + require("../server/db/ddl/builds").files().map(f => fs.readFileSync(f, "utf8")).join("\n");
   const out = new Set();
   let cur = null;
   // WIRE-1: an array of people (person_ids TEXT[]) and a generic entity_id
