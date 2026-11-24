@@ -23,7 +23,20 @@ async function afterMove(query, orgId, ids) {
       ORDER BY g.date DESC, g.created_at DESC, g.id DESC`, [orgId, ids]);
   if (!rows.length) return null;
   const last = rows[0];
-  return { giftId: last.id, date: last.date, cents: Number(last.cents), nth: rows.length, awaiting: last.awaiting === true };
+  return words({ giftId: last.id, date: last.date, cents: Number(last.cents), nth: rows.length, awaiting: last.awaiting === true });
+}
+
+// The words, server-side so Home's first look carries no extra JavaScript (perf-app's budget).
+// The client puts the person's first name into `Next: thank <name> for the <amount> gift on <day>.`
+const money = c => { const v = Math.abs(Number(c) || 0) / 100; return "$" + v.toLocaleString("en-US", v % 1 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : {}); };
+const dayWords = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || "")) ? new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : "";
+function words(a) {
+  const amount = money(a.cents), day = dayWords(a.date), on = `${amount} on ${day}`, second = a.nth === 2;
+  const why = a.awaiting
+    ? (second ? "It is their second gift, so the first-gift move is finished, and it isn't thanked yet. A thank-you comes before any new ask."
+              : "It isn't thanked yet. A thank-you comes before any new ask.")
+    : `${second ? `Their second gift (${on}) finished the first-gift move, and it is thanked.` : `Their last gift (${on}) is thanked.`} Steward suggests the next step when their usual time to give passes or their giving grows.`;
+  return { ...a, thank: a.awaiting, amount, day, why };
 }
 
 module.exports = { afterMove };
