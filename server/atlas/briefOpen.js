@@ -44,10 +44,7 @@ async function openItems(query, orgId, donorId, { today = null, first = "They" }
             WHERE o.org_id = ? AND o.donor_id = ? AND o.proposal_stage = ANY(?::text[])
             ORDER BY o.target_amount DESC NULLS LAST, o.expected_close NULLS LAST, o.id`, [orgId, donorId, P.OPEN_STAGE_KEYS])
       .catch(e => { console.error("[atlas] brief asks:", e.message); return []; }),
-    query(`SELECT g.id, g.amount, LEFT(g.date, 10) AS date FROM gifts g
-            WHERE g.org_id = ? AND g.donor_id = ? AND COALESCE(g.is_sample, false) = false AND g.date IS NOT NULL
-              ${since ? "AND g.date >= ?" : ""} AND ${require("../../shared/numbers/thanks").AWAITING("g")}
-            ORDER BY g.date DESC, g.id DESC`, since ? [orgId, donorId, since] : [orgId, donorId])
+    require("../../shared/numbers/thanks").awaitingFor(query, orgId, donorId, since)
       .catch(e => { console.error("[atlas] brief thanks:", e.message); return []; }),
     require("../../meetings").meetingsWith(orgId, donorId, { held: false, limit: 50 })
       .catch(e => { console.error("[atlas] brief meetings:", e.message); return []; }),

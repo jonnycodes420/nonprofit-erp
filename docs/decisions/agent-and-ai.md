@@ -321,7 +321,7 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 - A call question about a population lists that population's askable twin (`lapsed_askable`, `lybunt_askable` …),
   ranked by lifetime and labelled "lifetime"; without a population, who to call stays why.js `call`.
 - The brief leads with what is open (`server/atlas/briefOpen.js`: open asks by `proposalShape.OPEN_STAGE_KEYS`,
-  gifts `thanks.js AWAITING` since `shared/numbers/stewardStart.js`, the next meeting), then the next step, giving,
+  gifts `thanks.js awaitingFor` (AWAITING) since `shared/numbers/stewardStart.js`, the next meeting), then the next step, giving,
   conversations, About.
 - A ranking by money over a period (top donors) shows each person's period total from Ask's own rows, never the last gift.
 - The reading-off line is `shared/atlasReading.js READING_OFF`; the dialog, the Home Thread and Settings > Atlas read it.
