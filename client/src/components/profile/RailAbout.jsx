@@ -16,6 +16,7 @@ import { errorMessage } from "../../lib/domainError";
 import { Figure } from "../Figure";   // CONNECT-1
 import { shownTags, shownNote } from "../../lib/internalLabels";
 import { WealthScoreRow } from "../WealthScore";   // WEALTH-1
+import { contactLines, hasContactDetails } from "../../../../shared/contactDetails.js";   // CONTACT-1
 
 const ABOUT_MAX=500;
 const QUIET={background:"none",border:"none",padding:0,font:"inherit",color:RAIL.dim,textDecoration:"underline",textUnderlineOffset:3,cursor:"pointer"};
@@ -62,7 +63,12 @@ function AboutThemNote({donorId,initial,isReadOnly}){
 function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatusTags,canMajorGifts,contactPerson,donor,handleReassign,household,isAdmin,isReadOnly,isTeam,onSelectRelatedDonor,orgTeam,publicFiling,railData,reassignId,reassignLoading,relationships,broughtIn,scores,setConvoOpen,setReassignId,setRelatedOpen,setShowReassign,showReassign,status,onEdit}){
   const cx=(railData&&railData.contact)||{};
   const wealth=railData&&railData.wealth;   // WEALTH-1: the rail carries it only for someone who may see it
-  const hasContact=!!(donor.email||donor.phone||contactPerson||cx.address||cx.preferred||cx.privacyOn||cx.isClient||(cx.flags||[]).length);
+  // CONTACT-1: the person's own columns answer first (address, second email,
+  // mobile included), so the section is there before the rail read lands and
+  // when it fails; the read adds its preferences and flags.
+  const lines=contactLines(donor);
+  const hasContact=hasContactDetails(donor,cx,contactPerson);
+  const cxShown={...cx,address:cx.address||lines.address,addressBad:cx.address?cx.addressBad:donor.addressUnmailable===true};
   return <>
               {/* PROFILE-2 · 4 HOUSEHOLD AND RELATED: the household and the people and
                   organisations linked to them, each opening its profile. Manage
@@ -83,8 +89,6 @@ function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatus
               <RailSection title="About" testid="dp-rail-about">
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                   <AboutThemNote donorId={donor.id} initial={donor.aboutThem||""} isReadOnly={isReadOnly}/>
-                  {/* WEALTH-1: with no Contact card (an empty record draws none), the Wealth Score sits here. */}
-                  {wealth&&!hasContact&&<dl style={{display:"grid",gridTemplateColumns:"104px 1fr",gap:"7px 10px",fontSize:12.5,margin:0}}><WealthScoreRow donorId={donor.id} initial={wealth} isReadOnly={isReadOnly} dtStyle={{color:RAIL.dim}}/></dl>}
                   <RoleLine donor={donor} isReadOnly={isReadOnly} noGifts={noGifts} birthday={donor.birthday?birthdayLabel(donor.birthday.month,donor.birthday.day,donor.birthday.year):""}/>
                   {donor.sourceRecurring&&(
                 <div data-testid="donor-source-recurring"
@@ -105,7 +109,6 @@ function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatus
                   {/* MENU-1: the link button is always drawn (not only on a record with
                       no links), so a second link, a business they give through, is findable. */}
                   {!isReadOnly&&<div data-testid="dp-about-add" style={{display:"flex",gap:16,flexWrap:"wrap",marginTop:4,fontSize:12.5}}>
-                    {!hasContact&&onEdit&&<button type="button" data-testid="dp-about-add-contact" onClick={onEdit} style={QUIET}>Add email or phone</button>}
                     <button type="button" data-testid="dp-about-link" onClick={()=>{setRelatedOpen(true);setRelPickerOpen&&setRelPickerOpen(true);}} style={QUIET}>{household||relationships.length?"+ Link another":"Link someone"}</button>
                   </div>}
                   {!isReadOnly&&<ProfileGroups donorId={donor.id} isReadOnly={isReadOnly}>{(chips,addCtl)=>!chips.length&&addCtl?<div data-testid="dp-about-group" style={{fontSize:12.5}}>{addCtl}</div>:null}</ProfileGroups>}
@@ -140,17 +143,24 @@ function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatus
               sat below the stage picker and the quick actions. Nothing here
               is new: the section is the one that already existed, moved to
               where somebody looks when they are about to pick up the phone. */}
-          {hasContact&&<RailSection title="Contact" testid="dp-rail-contact">
+          {/* CONTACT-1: always drawn. With nothing to reach them by, it says so
+              and offers Add (the Edit record dialog) instead of vanishing. */}
+          <RailSection title="Contact" testid="dp-rail-contact">
+            {!hasContact&&<div data-testid="dp-contact-empty" style={{fontSize:12.5,color:RAIL.dim,marginBottom:wealth?8:0}}>
+              {"No contact details yet"}{!isReadOnly&&onEdit&&<>{" · "}<button type="button" data-testid="dp-contact-add" onClick={onEdit} style={QUIET}>Add</button></>}
+            </div>}
             <dl style={{display:"grid",gridTemplateColumns:"104px 1fr",gap:"7px 10px",fontSize:12.5,margin:0}}>
               {contactPerson&&<><dt style={{color:RAIL.dim}}>Contact</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{contactPerson}</dd></>}
               {donor.email&&<><dt style={{color:RAIL.dim}}>Email</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{donor.email}<ContactFlag flags={donor.contact_flags} field="email"/></dd></>}
+              {lines.email2&&<><dt style={{color:RAIL.dim}}>{donor.email?"Other email":"Email"}</dt><dd data-testid="dp-rail-email2" style={{margin:0,overflowWrap:"anywhere"}}>{lines.email2}</dd></>}
               {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}><Phone value={donor.phone} bad={donor.phone_unreachable===true} badWhy={donor.phone_unreachable_reason||undefined}/><ContactFlag flags={donor.contact_flags} field="phone"/>{donor.phone_unreachable===true&&<span style={{display:"block",fontSize:11.5,color:RAIL.dim}}>Marked wrong. Never dialed or texted from Steward.</span>}</dd></>}
+              {lines.mobile&&<><dt style={{color:RAIL.dim}}>Mobile</dt><dd data-testid="dp-rail-mobile" style={{margin:0}}><Phone value={lines.mobile}/></dd></>}
               {/* PROFILE-1 (header): the birthday is under the name and in Coming
                   up; a monthly plan is the Recurring card. */}
-              <ContactExtras contact={railData&&railData.contact} donorId={donor&&donor.id} isReadOnly={isReadOnly}
+              <ContactExtras contact={cxShown} donorId={donor&&donor.id} isReadOnly={isReadOnly}
                 afterAddress={wealth&&donor&&donor.id?<WealthScoreRow donorId={donor.id} initial={wealth} isReadOnly={isReadOnly} dtStyle={{color:RAIL.dim}}/>:null}/>
             </dl>
-          </RailSection>}
+          </RailSection>
               {/* PROFILE-2 · 6 ENGAGEMENT: one word and the facts behind it. */}
               {/* PROFILE-2 · 6 ENGAGEMENT: ENGAGE-1's card says the word (Warm,
                   Nothing logged yet) and the facts; Room to give sits in it. */}

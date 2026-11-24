@@ -494,6 +494,11 @@ export function adaptDonor(d) {
     deceasedDate:  d.deceased_date ?? null,
     address:       d.address ?? null,
     address2:      d.address2 ?? null,   // ADDRESS-1: the Edit form's apartment line
+    // CONTACT-1: the second email and the mobile a workbook import fills; the
+    // rail's Contact section shows them (the adaptDonor trap: dropped here, never drawn).
+    email2:        d.email2 ?? null,
+    mobile:        d.mobile ?? null,
+    addressUnmailable: d.address_unmailable === true,
     importedSustainer: d.imported_sustainer === true,   // BUILD-77 Part 5 — the third recurring state
     importedSustainerAmount: d.imported_sustainer_amount != null ? parseFloat(d.imported_sustainer_amount) : null,
     importedSustainerLastGift: d.imported_sustainer_last_gift ?? null,
