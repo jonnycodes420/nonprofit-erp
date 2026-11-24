@@ -80,7 +80,7 @@ function mount(ctx) {
         : n
           ? `${n.toLocaleString("en-US")} ${n === 1 ? "gift is" : "gifts are"} waiting to post (${usd(cents)}), in ${groups.length} ${groups.length === 1 ? "deposit" : "deposits"}. Each gift posts as revenue to its own fund, dated the day it was given.`
           : "Nothing is waiting to post.",
-      definition: "A waiting gift is recorded in Steward and not on the books yet. Gifts imported from before this fiscal year are history and never post.",
+      definition: "A waiting gift is recorded in Steward and not on the books yet. A gift recorded by hand on a gift form posts at once; imported gifts wait here until you post them. Gifts imported from before this fiscal year are history and never post.",   // THANKS-1 item 5
       ...(undated.n ? { undatedSentence: `${undated.n} waiting ${undated.n === 1 ? "gift has" : "gifts have"} no date, so ${undated.n === 1 ? "it" : "they"} cannot post until a date is added.` } : {}),
     });
   }));

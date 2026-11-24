@@ -254,7 +254,7 @@ async function call(orgId, { user } = {}, deps = {}) {
   const orgFloor = await orgCallFloorCents(orgId);
   const floor = Math.max(orgFloor, toC(p75 && p75.v));
   for (const g of await query(`SELECT id, donor_id, amount, LEFT(date,10) AS date FROM gifts
-     WHERE org_id = ? AND import_id IS NULL AND COALESCE(acknowledgement_sent,false) = false AND amount * 100 >= ?
+     WHERE org_id = ? AND import_id IS NULL AND NOT ${require("./shared/numbers/thanks").THANKED("gifts")} AND amount * 100 >= ?
        AND LEFT(date,10) >= ? AND LEFT(date,10) <= ?`, [orgId, floor, orgTime.addDays(t, -BIG_GIFT_DAYS), t]))
     push("thank", g.donor_id, toC(g.amount), g.date, `Gave ${fmt(toC(g.amount))} ${ago(g.date)} and hasn't been thanked yet.`);
   // An open ask past its expected date.
@@ -427,7 +427,7 @@ async function stopped(orgId, { donor } = {}) {
   if (!d) return null;
   const t = await today(orgId);
   const H = await homeNote();
-  const gifts = await query(`SELECT id, LEFT(date,10) AS date, amount, acknowledgement_sent FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND ${require("./shared/numbers/giftCount").KEPT("g")} ORDER BY g.date DESC NULLS LAST, g.id`, [orgId, d.id]);
+  const gifts = await query(`SELECT id, LEFT(date,10) AS date, amount, ${require("./shared/numbers/thanks").THANKED("g")} AS thanked FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND ${require("./shared/numbers/giftCount").KEPT("g")} ORDER BY g.date DESC NULLS LAST, g.id`, [orgId, d.id]);
   const subject = { donor: { id: d.id, name: d.name } };
   if (!gifts.length) return { ...subject, facts: { name: d.name, lastGift: null }, reasons: [], who: [], step: null, cantSee: null };
   const last = gifts[0];
@@ -447,7 +447,7 @@ async function stopped(orgId, { donor } = {}) {
       measure: "count", phrase: "their email address stopped accepting mail", definition: "Their email address on Steward's suppression list: a bounce, a complaint or an unsubscribe." }));
   }
   // No thank-you on the last gift.
-  if (!last.acknowledgement_sent) reasons.push(reason("thanks", "No thank-you on the last gift", [row(last.id, "gift", d.id, d.name, last.date, toC(last.amount), "Not marked thanked")], {
+  if (!last.thanked) reasons.push(reason("thanks", "No thank-you on the last gift", [row(last.id, "gift", d.id, d.name, last.date, toC(last.amount), "Not marked thanked")], {
     measure: "count", phrase: `their last gift of ${fmt(toC(last.amount))} was never marked thanked`, definition: "Their most recent gift, which has no thank-you marked." }));
   // An ask bigger than any gift they had made.
   const asks = await query(`SELECT id, name, target_amount, created_at::date::text AS date FROM opportunities WHERE org_id = ? AND donor_id = ? AND target_amount * 100 > ?`, [orgId, d.id, maxC]);
@@ -462,7 +462,7 @@ async function stopped(orgId, { donor } = {}) {
     measure: "count", phrase: lastContact ? `nobody has been in touch for ${months} months` : "no conversation with them was ever logged",
     definition: "Their logged calls, meetings and emails, most recent first." }));
   const step = failed.length ? { kind: "plan", label: "Plan a call about the card", items: [{ donorId: d.id, name: d.name, label: "Call about the card" }], dueIn: 1 }
-    : !last.acknowledgement_sent ? { kind: "log", label: "Log the thank-you you make", donorId: d.id, name: d.name }
+    : !last.thanked ? { kind: "log", label: "Log the thank-you you make", donorId: d.id, name: d.name }
     : { kind: "plan", label: "Plan a call to reconnect", items: [{ donorId: d.id, name: d.name, label: "Call to reconnect" }], dueIn: 1 };
   return {
     ...subject,
@@ -564,7 +564,7 @@ async function second(orgId) {
   const t = await today(orgId);
   const since = orgTime.addDays(t, -90);
   const rows = await query(`SELECT d.id, d.name, MIN(LEFT(g.date,10)) AS first, SUM(g.amount)::text AS s, COUNT(*)::int AS n,
-       BOOL_OR(COALESCE(g.acknowledgement_sent,false)) AS thanked
+       BOOL_OR(${require("./shared/numbers/thanks").THANKED("g")}) AS thanked
      FROM donors d JOIN gifts g ON g.donor_id = d.id AND g.org_id = d.org_id AND ${NUMBERS.money.GIFT("g")}
      WHERE d.org_id = ? AND d.deleted_at IS NULL AND COALESCE(d.deceased,false) = false AND COALESCE(d.do_not_contact,false) = false
        AND COALESCE(d.kind,'') NOT IN ('organisation','anonymous')
@@ -688,7 +688,7 @@ async function person(orgId, { donor, intent = "ask", campaign, user } = {}, dep
   const H = await homeNote();
   const subject = { donor: { id: d.id, name: d.name } };
   const [gifts, contact, steps, events, hours, subs] = await Promise.all([
-    query(`SELECT g.id, LEFT(g.date,10) AS date, g.amount, g.acknowledgement_sent, g.campaign_id, COALESCE(c.name, g.campaign, '') AS campaign
+    query(`SELECT g.id, LEFT(g.date,10) AS date, g.amount, ${require("./shared/numbers/thanks").THANKED("g")} AS thanked, g.campaign_id, COALESCE(c.name, g.campaign, '') AS campaign
              FROM gifts g LEFT JOIN campaigns c ON c.id = g.campaign_id AND c.org_id = g.org_id
             WHERE g.org_id = ? AND g.donor_id = ? AND ${NUMBERS.money.GIFT("g")} ORDER BY ${NUMBERS.lastGift.LAST_GIFT_ORDER}`, [orgId, d.id]),
     query(`SELECT id, type, LEFT(date,10) AS date, logged_by_name FROM interactions WHERE org_id = ? AND donor_id = ?
@@ -750,7 +750,7 @@ async function person(orgId, { donor, intent = "ask", campaign, user } = {}, dep
       phrase: `gave ${fmt(thisC)} so far this year against ${fmt(lastToDateC)} by this date last year`, definition: `Their gifts this year so far.` }));
   }
   // The last gift never marked thanked.
-  if (!last.acknowledgement_sent) reasons.push(reason("thanks", "No thank-you on the last gift", [gRow(last, "Not marked thanked")], {
+  if (!last.thanked) reasons.push(reason("thanks", "No thank-you on the last gift", [gRow(last, "Not marked thanked")], {
     measure: "count", phrase: `their last gift of ${fmt(toC(last.amount))} was never marked thanked`, definition: "Their most recent gift, which has no thank-you marked." }));
   if (subs.length) reasons.push(reason("card", "A card payment failed", subs.map(x => row(x.id, "subscription", d.id, name, x.failed, toC(x.amount), `Recurring ${fmt(toC(x.amount))}, ${x.status.replace("_", " ")}`)), {
     measure: "count", phrase: "their recurring card failed", definition: "Each recurring gift of theirs whose card payment failed." }));

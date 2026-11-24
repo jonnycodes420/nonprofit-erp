@@ -27,7 +27,7 @@
 //     assertion fails (it gets voided with the others).
 //   · dropping `AND voided_at IS NULL` from the donor's task read → the
 //     "only the hand-written one is left" assertion fails.
-//   · skipping the timeline note → the note assertion fails.
+//   · skipping the timeline note → the note assertion fails. (THANKS-1: the note is now the Recent changes line.)
 const { ok, summary, api, q, civilToday, waitFor } = require("./helpers");
 
 const STAMP = "fix10gdt";
@@ -124,11 +124,13 @@ const STAMP = "fix10gdt";
   ok("no voided task reaches the day view",
     own.every(t => !dayJson.includes(t.title)), own.map(t => t.title));
 
-  // 3. the timeline says what happened, on the donor's own record
+  // 3. THANKS-1 item 3: a removed gift is a change to the record, not something that happened
+  // with the donor. Nothing on the timeline; Recent changes says what was cancelled, with Undo.
   const prof = await api("GET", `/donors/${donorId}`, tok);
   const notes = (prof.body?.interactions || []).map(i => String(i.note || ""));
-  ok('the timeline reads "Gift removed, thank-you cancelled."',
-    notes.some(n => n.startsWith("Gift removed, thank-you cancelled.")), notes.slice(0, 5));
+  const rc = ((await api("GET", "/recent-changes", tok)).body?.rows || []).filter(r => r.kind === "effect_gift_delete");
+  ok('nothing on the timeline; Recent changes reads "Its thank-you was cancelled." with Undo',
+    !notes.some(n => n.startsWith("Gift removed")) && rc.some(r => /Its thank-you was cancelled\./.test(r.sentence) && r.undo), { notes: notes.slice(0, 5), rc });
 
   summary();
 })().catch(e => { console.error(e); process.exit(1); });

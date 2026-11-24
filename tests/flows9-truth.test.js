@@ -281,8 +281,11 @@ const gift = async (tok, donor, amount, extra = {}) => {
     const openBefore = (await q(`SELECT COUNT(*)::int AS n FROM tasks WHERE org_id = $1 AND donor_id = 'd_f11_p' AND voided_at IS NULL AND COALESCE(done,0) = 0`, [ORG]))[0].n;
     ok("FLOWS-11 §6 the past first gift opened its thank-you (the fixture)", openBefore >= 1, openBefore);
     const del = await api("DELETE", `/gifts/${pg}`, tok);
+    // THANKS-1 item 3: the cancellation is the Recent changes line (write_effects), never a timeline note.
     const note = (await q(`SELECT note FROM interactions WHERE org_id = $1 AND donor_id = 'd_f11_p' AND note LIKE 'Gift removed%' ORDER BY created_at DESC LIMIT 1`, [ORG]))[0];
-    ok("FLOWS-11 §6 the delete writes the scheduled-gift path's note", del.status === 200 && !!note && /^Gift removed, thank-you cancelled\./.test(note.note), { del: del.body, note });
+    const line = (await q(`SELECT sentence FROM write_effects WHERE org_id = $1 AND parent_kind = 'gift_delete' AND parent_id = $2 AND kind = 'write'`, [ORG, pg]))[0];
+    ok("FLOWS-11 §6 the delete says its thank-you was cancelled in Recent changes, not on the timeline", del.status === 200 && !note
+      && !!line && /Its thank-you was cancelled\./.test(line.sentence), { del: del.body, note, line });
     const thank = (await q(`SELECT voided_at IS NOT NULL AS voided, voided_reason FROM tasks WHERE org_id = $1 AND donor_id = 'd_f11_p' AND title = 'Call to say thank you'`, [ORG]))[0] || {};
     ok("FLOWS-11 §6 the thank-you call is voided (gift_deleted), never marked done", thank.voided === true && thank.voided_reason === "gift_deleted" && del.body && del.body.voidedTasks >= 1, { thank, del: del.body });
 

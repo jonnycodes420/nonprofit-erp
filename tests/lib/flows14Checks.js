@@ -80,7 +80,10 @@ async function flows14Checks({ orgId, get, q, agree, diffs, skip, today, named =
     const since = (org && org.since) || "2000-01-01";
     const [k] = await q(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                           WHERE g.org_id = $1 AND d.deleted_at IS NULL AND COALESCE(g.is_sample, false) = false AND g.date >= $2
-                            AND COALESCE(g.acknowledgement_sent, false) = false AND g.amount > 0 AND g.refunded_in_full IS NOT TRUE`, [orgId, since]);
+                            AND g.thanked_at IS NULL AND g.amount > 0 AND g.refunded_in_full IS NOT TRUE
+                            -- THANKS-1: a receipt is not a thank-you. A mark with no receipt ever made for the gift is a thank-you from before the clock.
+                            AND NOT (COALESCE(g.acknowledgement_sent, false)
+                                     AND NOT EXISTS (SELECT 1 FROM receipts r WHERE r.org_id = g.org_id AND r.gift_id = g.id AND r.type = 'gift'))`, [orgId, since]);
     const f = await get(`/figures/unthanked/rows?since=${since}&page=1&pageSize=1`).catch(() => null);
     if (f) agree("Home's gifts not yet thanked", [["gifts above $0, not refunded in full, not thanked", Number(k.n)], ["the figure", Number(f.value)]]);
   }

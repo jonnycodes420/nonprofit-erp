@@ -19,6 +19,7 @@ const { newId } = require("../server/shared/newId");   // IDS-1: every new row i
 // FIX-12 Part 3: the one door to a model (asks the org's AI switch on every call).
 const { anthropicFor, AI_OFF_MESSAGE, recordAiFallback } = require("../aiClient");
 const DRAFT_KEYS = require("../shared/numbers/draftRender");   // TRUTH-3: drafts store figure keys
+const TH_RULE = require("../shared/numbers/thanks");   // THANKS-1: thanked is the thank-you, never the receipt
 
 const routers = {
   r0: express.Router(),
@@ -936,16 +937,16 @@ const AGENT_EXECUTORS = {
 
   async mark_gift_thanked(ctx, step) {
     const gid = String(step.giftId || "");
-    const [g] = await query("SELECT id, donor_id, acknowledgement_sent, acknowledgement_sent_at, acknowledged_by, acknowledged_by_name, acknowledged_via FROM gifts WHERE id=? AND org_id=?", [gid, ctx.orgId]);
+    const [g] = await query(`SELECT id, donor_id, thanked_at, acknowledged_by, acknowledged_by_name, acknowledged_via, ${TH_RULE.THANKED("gifts")} AS thanked FROM gifts WHERE id=? AND org_id=?`, [gid, ctx.orgId]);   // THANKS-1
     if (!g) return { failed: "that gift is not on file" };
-    if (g.acknowledgement_sent === true) return { skipped: "already_thanked" };
+    if (g.thanked === true) return { skipped: "already_thanked" };
     const via = ["letter", "email", "phone", "in_person", "receipt"].includes(step.method) ? step.method : "email";
     const r = await AC.call(ctx, "POST", "/acknowledgments/mark", { giftIds: [gid], via });
     if (r.status >= 300) return { failed: refusal(r) };
-    const [now] = await query("SELECT acknowledgement_sent FROM gifts WHERE id=? AND org_id=?", [gid, ctx.orgId]);
-    if (!now || now.acknowledgement_sent !== true) return { failed: "the gift does not show as thanked when Steward looks" };
-    const { id: _i, donor_id: _d, ...before } = g;
-    await agentWrite(ctx, { tool: "mark_gift_thanked", table: "gifts", entityId: gid, before, after: { acknowledgement_sent: true, acknowledged_via: via }, cites: step.citesRows });
+    const [now] = await query(`SELECT ${TH_RULE.THANKED("gifts")} AS thanked FROM gifts WHERE id=? AND org_id=?`, [gid, ctx.orgId]);
+    if (!now || now.thanked !== true) return { failed: "the gift does not show as thanked when Steward looks" };
+    const { id: _i, donor_id: _d, thanked: _t, ...before } = g;
+    await agentWrite(ctx, { tool: "mark_gift_thanked", table: "gifts", entityId: gid, before, after: { thanked: true, acknowledged_via: via }, cites: step.citesRows });
     return { donorId: g.donor_id, id: gid };
   },
 
@@ -1045,8 +1046,8 @@ async function agentContext(orgId, { today, scope, allowed }) {
   if (want("register_event")) ctx.events = (await safe(query("SELECT * FROM events WHERE org_id=? ORDER BY date DESC NULLS LAST LIMIT 30", [orgId])))
     .map(e => ({ id: e.id, name: e.name, date: String(e.date || "").slice(0, 10), paid: Number(e.cost || e.ticket_price || 0) > 0 }));
   if (want("mark_gift_thanked")) ctx.gifts = scope && scope.length
-    ? await safe(query(`SELECT id, donor_id, amount, LEFT(date,10) AS date, acknowledgement_sent FROM gifts WHERE org_id=? AND donor_id = ANY(?::text[]) AND amount > 0 ORDER BY date DESC NULLS LAST LIMIT 40`, [orgId, scope]))
-    : await safe(query(`SELECT id, donor_id, amount, LEFT(date,10) AS date, acknowledgement_sent FROM gifts WHERE org_id=? AND amount > 0 AND acknowledgement_sent IS NOT TRUE AND LEFT(date,10) >= ? ORDER BY date DESC NULLS LAST LIMIT 40`, [orgId, orgTime.addDays(today, -90)]));
+    ? await safe(query(`SELECT id, donor_id, amount, LEFT(date,10) AS date, ${TH_RULE.THANKED("gifts")} AS thanked FROM gifts WHERE org_id=? AND donor_id = ANY(?::text[]) AND amount > 0 ORDER BY date DESC NULLS LAST LIMIT 40`, [orgId, scope]))
+    : await safe(query(`SELECT id, donor_id, amount, LEFT(date,10) AS date, false AS thanked FROM gifts WHERE org_id=? AND amount > 0 AND NOT ${TH_RULE.THANKED("gifts")} AND LEFT(date,10) >= ? ORDER BY date DESC NULLS LAST LIMIT 40`, [orgId, orgTime.addDays(today, -90)]));
   return ctx;
 }
 // ── AGENT-3 · WHAT THE AGENT CAN READ ABOUT EACH PERSON ─────────────────────
@@ -1175,7 +1176,7 @@ function agentContextLines(c) {
   sec("SHIFTS (slotId; roleId when it has roles):", c.shifts, x => `  ${x.id} | ${x.date} ${x.start_time || ""}-${x.end_time || ""} | ${x.name || x.opportunity || "Shift"} | opportunity ${x.opportunity_id || "none"} ${x.opportunity || ""}${x.roles.length ? " | roles " + x.roles.map(r => `${r.id} ${r.name}`).join(", ") : ""}`);
   sec("VOLUNTEER OPPORTUNITIES (opportunityId):", c.opportunities, o => `  ${o.id} | ${o.name}`);
   sec("EVENTS (eventId):", c.events, e => `  ${e.id} | ${e.name} | ${e.date} | ${e.paid ? "paid" : "free"}`);
-  sec("GIFTS (giftId):", c.gifts, g => `  ${g.id} | giver ${g.donor_id} | amount ${Number(g.amount)} | ${g.date} | ${g.acknowledgement_sent ? "thanked" : "not thanked"}`);
+  sec("GIFTS (giftId):", c.gifts, g => `  ${g.id} | giver ${g.donor_id} | amount ${Number(g.amount)} | ${g.date} | ${g.thanked ? "thanked" : "not thanked"}`);
   sec("GRANTS (grantId, for a task about a grant):", c.grants, g => `  ${g.id} | funder ${g.donorId} | ${g.name} | ${g.next}`);
   if (c.days) out.push("", `DAYS (availability, exactly these words): ${c.days.join(", ")}`);
   return out;
@@ -2655,7 +2656,7 @@ async function approveWaitingItem(req, kind, id) {
     // Only the gifts THIS approval marks are remembered, so Undo puts back
     // exactly those and never un-thanks a gift somebody thanked another way.
     const marked = giftIds.length ? (await query(
-      "SELECT id FROM gifts WHERE org_id=? AND donor_id=? AND id = ANY(?) AND acknowledgement_sent IS NOT TRUE", [orgId, d.donor_id, giftIds])).map(g => g.id) : [];
+      `SELECT id FROM gifts WHERE org_id=? AND donor_id=? AND id = ANY(?) AND NOT ${TH_RULE.THANKED("gifts")}`, [orgId, d.donor_id, giftIds])).map(g => g.id) : [];
     if (giftIds.length) {
       await run(
         `UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()), thanked_at=COALESCE(thanked_at, NOW()),
@@ -2727,8 +2728,7 @@ app.post("/agent/waiting/agent_draft/:id/reopen", requireAuth, checkWriteAccess,
   if (!d) return res.status(404).json({ error: "Not found" });
   const marked = Array.isArray(d.marked_gift_ids) ? d.marked_gift_ids.map(String) : [];
   if (d.status === "approved" && marked.length) await run(
-    `UPDATE gifts SET acknowledgement_sent=false, acknowledgement_sent_at=NULL, acknowledged_by=NULL, acknowledged_by_name=NULL, acknowledged_via=NULL
-      WHERE org_id=? AND donor_id=? AND id = ANY(?)`, [orgId, d.donor_id, marked]);
+    `UPDATE gifts SET ${TH_RULE.UNTHANK_SET} WHERE org_id=? AND donor_id=? AND id = ANY(?)`, [orgId, d.donor_id, marked]);   // THANKS-1: a receipt's mark stays
   if (d.approved_line_id) await run("DELETE FROM interactions WHERE id=? AND org_id=?", [d.approved_line_id, orgId]);
   const PL = (await agentShapeMod()).PURPOSE_LABEL;
   const label = d.purpose === "thank_you" ? "Thank-you draft ready, review and send" : PL[d.purpose] ? `${PL[d.purpose]} draft ready, review and send` : "Draft ready, review and send";

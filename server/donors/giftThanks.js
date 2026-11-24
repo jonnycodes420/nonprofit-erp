@@ -68,4 +68,10 @@ function deleteNote(tasks, journeys = []) {
   return s;
 }
 
-module.exports = { stopJourneysOfGift, deleteNote, STARTED_BY, SKIPPED };
+// THANKS-1: what the delete cancelled, for the Recent changes line ("" when nothing was).
+function cancelledWords(tasks, journeys = []) {
+  const n = deleteNote(tasks, journeys);
+  return n ? n.replace(/^Gift removed, thank-you cancelled\.\s*/, "Its thank-you was cancelled. ").trim() : "";
+}
+
+module.exports = { stopJourneysOfGift, deleteNote, cancelledWords, STARTED_BY, SKIPPED };

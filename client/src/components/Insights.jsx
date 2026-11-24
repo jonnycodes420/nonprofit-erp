@@ -18,6 +18,7 @@ import EventRaised from "./EventRaised";   // HOME-3: the first look's events
 import { countLabel } from "../../../shared/countWords.js";
 import { displayDate } from "../../../shared/displayDate.js";   // SWEEP-1: a written date, never "2025-12-19"
 import { moveSentence } from "../lib/moveSentence";
+import { afterMoveWords } from "../lib/afterMoveWords";   // THANKS-1 item 4
 import { alsoKey } from "../lib/alsoKey";   // TIDY-1: two pledges, two keys
 import { orgTodayCivil, orgTodayPlus } from "../lib/orgToday";   // MOPUP-1: pre-filled dates are the org's day
 // ASKS-2: one decision for a group of rows. Loaded only when a review card or a
@@ -788,8 +789,14 @@ export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn,
   if (!m || !m.item) {
     // PROFILE-3: a person with nothing logged gets the start card instead of this line.
     if (quietNone) return null;
-    return <div data-testid="dp-next-move-none" style={{ fontSize: 14, color: T.ink3, padding: "2px 0" }}>
-      {firstName ? `Nothing due for ${firstName} right now.` : "Nothing due right now."}</div>;
+    // THANKS-1 item 4: the step the rules still give (thank the newest gift), or why nothing is due.
+    const after = afterMoveWords(d && d.after, firstName);
+    if (after && after.thank) return <div data-testid="dp-next-move-thank" style={{ padding: "2px 0" }}>
+      <div style={{ fontSize: 15, color: T.ink, fontWeight: 700 }}>{after.line}</div>
+      <div data-testid="dp-next-move-none-why" style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5 }}>{after.why}</div></div>;
+    return <div style={{ padding: "2px 0" }}><div data-testid="dp-next-move-none" style={{ fontSize: 14, color: T.ink3 }}>
+      {firstName ? `Nothing due for ${firstName} right now.` : "Nothing due right now."}</div>
+      {after && <div data-testid="dp-next-move-none-why" style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5 }}>{after.why}</div>}</div>;
   }
   const how = m.item.how || {};
   const sentence = moveSentence(how, firstName, m.title);

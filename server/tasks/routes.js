@@ -674,10 +674,11 @@ app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, 
 // did not send anything on its own. Undo (POST /tasks/:id/thank/undo) puts
 // all three back.
 async function taskGiftToThank(orgId, t, giftId) {
-  if (giftId) { const [g] = await query("SELECT * FROM gifts WHERE id=? AND org_id=? AND donor_id=?", [String(giftId), orgId, t.donor_id]); if (g) return g; }
-  if (t.source_gift_id) { const [g] = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [t.source_gift_id, orgId]); if (g) return g; }
+  const TH = require("../../shared/numbers/thanks").THANKED("gifts");   // THANKS-1: the one thank-you rule
+  if (giftId) { const [g] = await query(`SELECT *, ${TH} AS thanked FROM gifts WHERE id=? AND org_id=? AND donor_id=?`, [String(giftId), orgId, t.donor_id]); if (g) return g; }
+  if (t.source_gift_id) { const [g] = await query(`SELECT *, ${TH} AS thanked FROM gifts WHERE id=? AND org_id=?`, [t.source_gift_id, orgId]); if (g) return g; }
   const [g] = await query(
-    `SELECT * FROM gifts g WHERE g.org_id=? AND g.donor_id=? AND ${require("../../shared/numbers/thanks").AWAITING("g")}   -- FLOWS-14: the one rule
+    `SELECT g.*, ${require("../../shared/numbers/thanks").THANKED("g")} AS thanked FROM gifts g WHERE g.org_id=? AND g.donor_id=? AND ${require("../../shared/numbers/thanks").AWAITING("g")}   -- FLOWS-14: the one rule
       ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT 1`, [orgId, t.donor_id]);
   return g || null;
 }
@@ -687,7 +688,7 @@ app.get("/tasks/:id/thank", requireAuth, wrap(async (req, res) => {
   const g = await taskGiftToThank(req.user.orgId, t, req.query.giftId);
   const [d] = await query("SELECT id, name, email FROM donors WHERE id=? AND org_id=?", [t.donor_id, req.user.orgId]);
   const [gc] = await query("SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND donor_id=? AND amount > 0", [req.user.orgId, t.donor_id]);
-  res.json({ giftCount: gc ? gc.n : 0, gift: g ? { id: g.id, amount: Number(g.amount), date: String(g.date || "").slice(0, 10), thanked: g.acknowledgement_sent === true } : null,
+  res.json({ giftCount: gc ? gc.n : 0, gift: g ? { id: g.id, amount: Number(g.amount), date: String(g.date || "").slice(0, 10), thanked: g.thanked === true } : null,
              donor: d ? { id: d.id, name: d.name, email: d.email || null } : null });
 }));
 app.post("/tasks/:id/thank", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -710,7 +711,7 @@ app.post("/tasks/:id/thank", requireAuth, checkWriteAccess, wrap(async (req, res
     const r = await sendMilestoneDraft(req, draft);
     if (r.status !== 200) { await run("DELETE FROM milestone_drafts WHERE id=? AND org_id=?", [mdId, orgId]); return res.status(r.status).json({ error: r.error, sentence: r.error }); }
   }
-  const before = { acknowledgement_sent: g.acknowledgement_sent === true, acknowledgement_sent_at: g.acknowledgement_sent_at || null,
+  const before = { thanked: g.thanked === true, thanked_at: g.thanked_at || null,
     acknowledged_by: g.acknowledged_by || null, acknowledged_by_name: g.acknowledged_by_name || null, acknowledged_via: g.acknowledged_via || null };
   const [u] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
   const whoName = u?.name || actor(req).name;
@@ -725,7 +726,7 @@ app.post("/tasks/:id/thank", requireAuth, checkWriteAccess, wrap(async (req, res
   if (!linked) await run("UPDATE tasks SET done=1, updated_at=NOW() WHERE id=? AND org_id=?", [t.id, orgId]);
   await run("UPDATE tasks SET completed_at=COALESCE(completed_at, NOW()), completed_by_name=? WHERE id=? AND org_id=?", [actor(req).name, t.id, orgId]);
   await REPEAT.afterDone({ query, run }, orgId, t, (await taskDays(orgId)).today);   // FLOWS-1
-  if (req.audit) { req.audit.entity("gift", g.id); req.audit.before(before); req.audit.after({ acknowledgement_sent: true, task_done: true, mode }); }
+  if (req.audit) { req.audit.entity("gift", g.id); req.audit.before(before); req.audit.after({ thanked: true, task_done: true, mode }); }
   res.json({ ok: true, mode, giftId: g.id, before, draftIds: drafts.map(d => d.id), task: await readTask(orgId, t.id) });
 }));
 app.post("/tasks/:id/thank/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -734,9 +735,8 @@ app.post("/tasks/:id/thank/undo", requireAuth, checkWriteAccess, wrap(async (req
   if (!t) return res.status(404).json({ error: "Task not found" });
   const b = (req.body && req.body.before) || {};
   const giftId = String((req.body && req.body.giftId) || "");
-  if (giftId && !b.acknowledgement_sent) {
-    await run(`UPDATE gifts SET acknowledgement_sent=false, acknowledgement_sent_at=NULL, acknowledged_by=NULL, acknowledged_by_name=NULL, acknowledged_via=NULL
-                WHERE org_id=? AND id=?`, [orgId, giftId]);
+  if (giftId && !(b.thanked === true || (b.thanked === undefined && b.acknowledgement_sent === true))) {   // THANKS-1, ACK-READ-OK: an older tab's Undo body; a receipt's mark stays
+    await run(`UPDATE gifts SET ${require("../../shared/numbers/thanks").UNTHANK_SET} WHERE org_id=? AND id=?`, [orgId, giftId]);
   }
   const ids = Array.isArray(req.body && req.body.draftIds) ? req.body.draftIds.map(String) : [];
   if (ids.length) await run("UPDATE thank_you_drafts SET sent_at=NULL WHERE org_id=? AND id = ANY(?)", [orgId, ids]);

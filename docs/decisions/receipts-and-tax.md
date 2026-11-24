@@ -3,6 +3,14 @@
 Read this when you touch receipts, acknowledgments, letters, year-end statements, or the legal entity and EIN.
 
 ## Rules
+- **A receipt is not a thank-you.** `gifts.acknowledgement_sent` is the IRS fact (a written
+  acknowledgment exists), set by the receipt writer when the PDF is made. "Thanked" is
+  `shared/numbers/thanks.js` (THANKED / AWAITING: `thanked_at`, written only by the thank-you paths, or
+  a legacy mark with no receipt ever made for the gift); a screen reads `g.thanked` and shows the
+  receipt as its own fact ("Receipt #… issued"). `scripts/ci/ack-read-scan.js` fails CI on a new read of
+  the mark outside the receipt code; a line that truly needs the IRS mark says `ACK-READ-OK`. (THANKS-1)
+- **Taking a thank-you back never takes the receipt's mark with it.** Undo and the un-ticked Thanked
+  box use `UNTHANK_SET`, which puts the mark back to what the receipts say. (THANKS-1)
 - **A gift receipt names the donee, never the vendor.** `renderReceiptPdf` prints the org's legal name,
   EIN and address; `tests/legal-entity.test.js` asserts it contains no part of Steward Software LLC. (FIX legal entity)
 - **Write Steward's own legal name only in `shared/legalEntity.js`.** No other importable file may carry
