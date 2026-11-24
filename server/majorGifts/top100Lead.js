@@ -26,8 +26,9 @@ async function facts(query, orgId, donorIds, taskIds) {
   const ranks = new Map(), touches = new Map();
   if (!donorIds.length) return { ranks, touches };
   for (const r of await query(
-    `SELECT m.donor_id, m.rank FROM portfolio_members m JOIN portfolio_lists l ON l.id = m.list_id AND l.org_id = m.org_id
-      WHERE m.org_id = ? AND m.donor_id = ANY(?::text[])`, [orgId, donorIds]).catch(() => []))
+    `SELECT d.id AS donor_id, m.rank FROM portfolio_members m JOIN portfolio_lists l ON l.id = m.list_id AND l.org_id = m.org_id
+       JOIN donors d ON d.org_id = m.org_id AND (d.id = m.donor_id OR d.household_id = m.household_id)   -- HOUSEHOLD-1: a household's place is its people's
+      WHERE m.org_id = ? AND d.id = ANY(?::text[])`, [orgId, donorIds]).catch(() => []))
     ranks.set(r.donor_id, r.rank);
   if (ranks.size && taskIds.length)
     for (const t of await query(

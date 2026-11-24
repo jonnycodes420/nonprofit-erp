@@ -33,12 +33,15 @@ const express = require("express");
 const P = require("../../prospect");
 const { newId } = require("../shared/newId");
 const { csvCell } = require("../shared/csvCell");
+const HH = require("./top100Households");   // HOUSEHOLD-1: a household holds a place
+const HG = require("../../shared/numbers/householdGiving");
+const FY = require("../../shared/numbers/fiscalYear");
 
 const routers = { r1: express.Router() };
 let _shape = null;
 const shapeMod = async () => _shape || (_shape = await import("../../shared/careShape.js"));
 
-const SORTS = new Set(["rank", "name", "wealth", "lifetime", "lastGift", "owner", "stage", "ask", "askBy", "next", "lastContact", "health"]);
+const SORTS = new Set(["rank", "name", "wealth", "lifetime", "thisYear", "lastGift", "owner", "stage", "ask", "askBy", "next", "lastContact", "health"]);
 
 function mount(ctx) {
 const { query, run, wrap, requireAuth, checkWriteAccess, withTransaction, queryTx, runTx, actor, orgToday, orgTz, toCents, OU } = ctx;
@@ -63,19 +66,27 @@ async function donorOf(orgId, id) {
   return d || null;
 }
 
-// ── The rows: one per person, the columns of her sheet ──────────────────────
+// ── The rows: one per place (a person, or HOUSEHOLD-1 a household), the columns of her sheet
 async function listRows(orgId, listId, today, visible) {
   const S = await shapeMod();
   const v = visible && visible.sql ? visible : { sql: "", args: [] };   // ACCESS-2: only their assigned rows
-  const people = await query(
-    `SELECT m.rank, m.added_at, d.id, d.name, d.email, d.wealth_rating, d.total_giving, d.last_gift_date, d.last_gift_amount,
+  const org = await orgTz(orgId);
+  const span = FY.fiscalYearToDate(org);
+  const places = await HH.placesOf(query, orgId, listId);
+  const households = await HH.householdsOf(query, orgId, places, span);
+  // Each place's person: the person, or the household's lead person.
+  const personOf = pl => pl.household_id ? (households.get(pl.household_id) || {}).lead || null : pl.donor_id;
+  const leadIds = [...new Set(places.map(personOf).filter(Boolean))];
+  const found = leadIds.length ? await query(
+    `SELECT d.id, d.name, d.email, d.photo_asset_id, d.wealth_rating, d.total_giving, d.last_gift_date, d.last_gift_amount,
             d.assigned_to, d.assigned_to_name, d.stage, cp.id AS plan_id, cp.goal, cp.ask_cents, cp.ask_by
-       FROM portfolio_members m
-       JOIN donors d ON d.id = m.donor_id AND d.org_id = m.org_id
-       LEFT JOIN care_plans cp ON cp.org_id = m.org_id AND cp.donor_id = m.donor_id
-      WHERE m.org_id = ? AND m.list_id = ? AND d.deleted_at IS NULL${v.sql}
-      ORDER BY m.rank`, [orgId, listId, ...v.args]);
-  const ids = people.map(p => p.id);
+       FROM donors d LEFT JOIN care_plans cp ON cp.org_id = d.org_id AND cp.donor_id = d.id
+      WHERE d.org_id = ? AND d.id = ANY(?::text[]) AND d.deleted_at IS NULL${v.sql}`, [orgId, leadIds, ...v.args]) : [];
+  const byId = new Map(found.map(p => [p.id, p]));
+  const people = places.map(pl => ({ pl, p: byId.get(personOf(pl)) })).filter(x => x.p);
+  const ids = people.map(x => x.p.id);
+  const spans = await HG.spanCentsByPerson(query, orgId, people.filter(x => !x.pl.household_id).map(x => x.p.id), span);
+  const photoUrl = HH.photoUrlFor(orgId);
   const touches = new Map(), lastConv = new Map(), next = new Map();
   if (ids.length) {
     for (const t of await query(
@@ -88,23 +99,30 @@ async function listRows(orgId, listId, today, visible) {
         owner: t.assigned_to ? { id: t.assigned_to, name: t.assigned_to_name } : null });
     }
     // Last contact: the one Last contact (meetings.js, COUNTS-1), the
-    // profile header's own rule, for every row in three reads.
-    for (const [id, lc] of await require("../../meetings").lastContactsFor(orgId, ids)) lastConv.set(id, lc);
+    // profile header's own rule, for every row in three reads. A household's
+    // row reads every person in it, and shows the latest.
+    const hhPeople = [...households.values()].flatMap(h => h.money ? h.money.people.map(x => x.id) : []);
+    for (const [id, lc] of await require("../../meetings").lastContactsFor(orgId, [...new Set([...ids, ...hhPeople])])) lastConv.set(id, lc);
     // EDIT-2: the next step is the one rule (server/tasks/nextStep.js): the
     // soonest open step due today or later, else the most overdue.
     for (const [id, n] of await require("../tasks/nextStep").nextStepsFor(query, orgId, ids, today)) next.set(id, n);
   }
-  return people.map(p => {
+  return people.map(({ pl, p }) => {
     const ts = touches.get(p.id) || [];
-    const lc = lastConv.get(p.id) || null;
+    const hh = pl.household_id ? households.get(pl.household_id) : null;
+    const lcs = (hh && hh.money ? hh.money.people.map(x => lastConv.get(x.id)) : [lastConv.get(p.id)]).filter(Boolean);
+    const lc = lcs.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))[0] || null;
     const days = lc && S.isDay(lc.date) ? Math.max(0, S.daysBetween(lc.date, today)) : null;
     const health = S.planHealth(ts, today);
-    return {
-      rank: p.rank, donorId: p.id, name: p.name,
+    const row = {
+      key: p.id, kind: "person", rank: pl.rank, donorId: p.id, name: p.name,
+      people: [{ id: p.id, name: p.name, photoUrl: photoUrl(p.photo_asset_id) }],
       // WEALTH-1: the Wealth Score she sets (1 to 5), never the old automatic wealth_score.
-      wealthScore: p.wealth_rating == null ? null : Number(p.wealth_rating),
-      lifetimeCents: toCents(p.total_giving) || 0,
-      lastGift: p.last_gift_date ? { date: String(p.last_gift_date).slice(0, 10), cents: toCents(p.last_gift_amount) || 0 } : null,
+      wealthScore: p.wealth_rating == null ? null : Number(p.wealth_rating), wealthWord: null,
+      lifetimeCents: toCents(p.total_giving) || 0, lifetimeSource: { key: "donor-lifetime", params: { donor: p.id } },
+      thisYearCents: spans.get(p.id) || 0, thisYearSource: { key: "donor-gifts-between", params: { donor: p.id, from: span.from, to: span.to } },
+      lastGift: p.last_gift_date ? { date: String(p.last_gift_date).slice(0, 10), cents: toCents(p.last_gift_amount) || 0, donorId: p.id } : null,
+      lastGiftSource: p.last_gift_date ? { key: "donor-last-gift", params: { donor: p.id } } : null,
       owner: p.assigned_to ? { id: p.assigned_to, name: p.assigned_to_name || "" } : null,
       stage: p.stage || null,
       planId: p.plan_id || null, goal: p.goal || null,
@@ -114,6 +132,7 @@ async function listRows(orgId, listId, today, visible) {
       health: { key: health.key, label: health.label, sentence: health.sentence },
       touchCount: ts.length, openTouches: ts.filter(t => !t.done).length,
     };
+    return hh && hh.money ? { ...row, ...HH.householdFields(pl, hh, span, photoUrl), leadName: p.name } : row;
   });
 }
 
@@ -138,7 +157,7 @@ function shape(rows, q) {
   const sort = SORTS.has(q.sort) ? q.sort : "rank";
   const dir = q.dir === "desc" ? -1 : 1;
   const key = {
-    rank: r => r.rank, name: r => String(r.name || "").toLowerCase(), wealth: r => r.wealthScore, lifetime: r => r.lifetimeCents,
+    rank: r => r.rank, name: r => String(r.name || "").toLowerCase(), wealth: r => r.wealthScore, lifetime: r => r.lifetimeCents, thisYear: r => r.thisYearCents,
     lastGift: r => r.lastGift && r.lastGift.date, owner: r => r.owner && r.owner.name.toLowerCase(), stage: r => r.stage,
     ask: r => r.askCents, askBy: r => r.askBy, next: r => r.next && r.next.due, lastContact: r => r.lastContact && r.lastContact.date,
     health: r => r.health.key,
@@ -165,12 +184,13 @@ app.get("/top100", requireAuth, mg, wrap(async (req, res) => {
   const list = await listOf(orgId, null);
   const today = await todayOf(orgId);
   const rows = list ? await listRows(orgId, list.id, today, require("../auth/portfolio").visibleSql(req, "d")) : [];
-  res.json({ list: list || { id: null, name: "Top 100" }, today, count: rows.length,
+  res.json({ list: list || { id: null, name: "Top 100" }, today, count: rows.length, households: rows.filter(r => r.kind === "household").length,
     rows: shape(rows, req.query || {}), owners: await owners(orgId), templates: await templatesOf(orgId),
     sentences: {
       rank: "Her order of who matters most, 1 at the top. Drag a row or type a number; the others shift.",
       lifetime: "Everything this person has given, refunds taken off (the profile's Lifetime).",
       lastGift: "The latest gift above zero.",
+      thisYear: HH.SENTENCES.thisYear, household: HH.SENTENCES.household, wealthHousehold: HH.SENTENCES.wealthHousehold,
       lastContact: "The last call, meeting, email, note or visit logged on the person.",
       health: "On track when the next touch is ahead, Behind when one is overdue, No plan when none are planned.",
     } });
@@ -210,9 +230,9 @@ app.get("/top100/export.csv", requireAuth, mg, wrap(async (req, res) => {
   const today = await todayOf(orgId);
   const rows = shape(list ? await listRows(orgId, list.id, today, require("../auth/portfolio").visibleSql(req, "d")) : [], req.query || {});
   const money = c => c == null ? "" : (c / 100).toFixed(2);
-  const head = ["Rank", "Name", "Wealth Score", "Lifetime", "Last gift date", "Last gift amount", "Owner", "Stage", "Goal", "Ask amount", "Ask by", "Next step", "Next step date", "Last contact", "Plan health"];
+  const head = ["Rank", "Name", "People", "Wealth Score", "Lifetime", "This year", "Last gift date", "Last gift amount", "Owner", "Stage", "Goal", "Ask amount", "Ask by", "Next step", "Next step date", "Last contact", "Plan health"];
   const lines = [head.map(csvCell).join(",")];
-  for (const r of rows) lines.push([r.rank, r.name, r.wealthScore ?? "", money(r.lifetimeCents), r.lastGift ? r.lastGift.date : "", r.lastGift ? money(r.lastGift.cents) : "",
+  for (const r of rows) lines.push([r.rank, r.name, r.kind === "household" ? r.people.map(x => x.name).join("; ") : r.name, r.wealthScore ?? "", money(r.lifetimeCents), money(r.thisYearCents), r.lastGift ? r.lastGift.date : "", r.lastGift ? money(r.lastGift.cents) : "",
     r.owner ? r.owner.name : "", r.stage || "", r.goal || "", money(r.askCents), r.askBy || "", r.next ? r.next.label : "", r.next ? r.next.due : "",
     r.lastContact ? r.lastContact.date : "", r.health.label].map(csvCell).join(","));
   const name = String((list && list.name) || "Top 100").replace(/[^A-Za-z0-9 _-]/g, "").trim().replace(/\s+/g, "-") || "Top-100";
@@ -228,37 +248,88 @@ async function writeOrder(client, orgId, listId, order) {
   await runTx(client,
     `UPDATE portfolio_members m SET rank = v.r
        FROM unnest(?::text[], ?::int[]) AS v(donor_id, r)
-      WHERE m.org_id = ? AND m.list_id = ? AND m.donor_id = v.donor_id AND m.rank <> v.r`,
+      WHERE m.org_id = ? AND m.list_id = ? AND COALESCE(m.household_id, m.donor_id) = v.donor_id AND m.rank <> v.r`,
     [order, order.map((_, i) => i + 1), orgId, listId]);
 }
 async function lockedOrder(client, orgId, listId) {
   await queryTx(client, "SELECT id FROM portfolio_lists WHERE id=? AND org_id=? FOR UPDATE", [listId, orgId]);
-  return (await queryTx(client, "SELECT donor_id FROM portfolio_members WHERE org_id=? AND list_id=? ORDER BY rank, added_at", [orgId, listId])).map(r => r.donor_id);
+  // HOUSEHOLD-1: a place's key is its household's id, or its person's.
+  return (await queryTx(client, "SELECT COALESCE(household_id, donor_id) AS k FROM portfolio_members WHERE org_id=? AND list_id=? ORDER BY rank, added_at", [orgId, listId])).map(r => r.k);
 }
 
 app.post("/top100/members", requireAuth, mg, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const want = [...new Set((Array.isArray(req.body && req.body.donorIds) ? req.body.donorIds : []).map(String))].slice(0, 500);
-  if (!want.length) return res.status(400).json({ error: "no_people", sentence: "Pick at least one person to add." });
+  const wantHh = [...new Set((Array.isArray(req.body && req.body.householdIds) ? req.body.householdIds : []).map(String))].slice(0, 100);
+  if (!want.length && !wantHh.length) return res.status(400).json({ error: "no_people", sentence: "Pick at least one person to add." });
+  if (wantHh.length) return addHouseholds(req, res, wantHh);
   const found = (await query("SELECT id FROM donors WHERE org_id=? AND id = ANY(?::text[]) AND deleted_at IS NULL", [orgId, want])).map(r => r.id);
   const foundSet = new Set(found);
   const ordered = want.filter(id => foundSet.has(id));
   if (!ordered.length) return res.status(404).json({ error: "not_found", sentence: "Those people are not in this organization." });
   const list = await listOf(orgId, req);
+  // HOUSEHOLD-1: someone whose household already holds a place is on the list through it.
+  const hhOf = await HH.householdPlacesFor(query, orgId, list.id, ordered);
+  const viaHousehold = ordered.filter(id => hhOf.get(id) && hhOf.get(id).placed);
   const a = actor(req);
   const out = await withTransaction(async client => {
     const order = await lockedOrder(client, orgId, list.id);
     const on = new Set(order);
-    const added = ordered.filter(id => !on.has(id));
+    const added = ordered.filter(id => !on.has(id) && !viaHousehold.includes(id));
     let rank = order.length;
     for (const id of added)
       await runTx(client, `INSERT INTO portfolio_members (id, org_id, list_id, donor_id, rank, created_by, created_by_name) VALUES (?,?,?,?,?,?,?)`,
         [newId("pfm"), orgId, list.id, id, ++rank, a.id, a.name]);
-    return { added: added.length, already: ordered.length - added.length, count: rank };
+    return { added: added.length, already: ordered.length - added.length, count: rank, addedIds: added };
   });
-  res.status(201).json({ ...out, skipped: want.length - ordered.length,
-    sentence: `Added ${out.added} to ${list.name}${out.already ? `; ${out.already} already on it` : ""}.` });
+  // One person added who lives in a household not yet on the list: offer the household instead.
+  const offer = out.addedIds.length === 1 && hhOf.get(out.addedIds[0]) && !hhOf.get(out.addedIds[0]).placed
+    ? { householdId: hhOf.get(out.addedIds[0]).householdId, name: hhOf.get(out.addedIds[0]).name, donorId: out.addedIds[0],
+        sentence: `They are in ${hhOf.get(out.addedIds[0]).name}. Add the household instead: one place, both people's giving together.` } : null;
+  const via = viaHousehold.length ? `; ${viaHousehold.length} already on it through ${viaHousehold.length === 1 ? "their household" : "their households"}` : "";
+  res.status(201).json({ added: out.added, already: out.already, count: out.count, skipped: want.length - ordered.length, householdOffer: offer,
+    sentence: `Added ${out.added} to ${list.name}${out.already - viaHousehold.length ? `; ${out.already - viaHousehold.length} already on it` : ""}${via}.` });
 }));
+
+// HOUSEHOLD-1 · ADD A HOUSEHOLD. It takes one place. When one of its people
+// already holds a place, the household takes that place (the highest of
+// theirs, at the same rank) and their other places close up; otherwise it
+// goes on at the bottom.
+async function addHouseholds(req, res, wantHh) {
+  const orgId = req.user.orgId;
+  const hhs = await query(
+    `SELECT h.id, h.name FROM households h
+      WHERE h.org_id = ? AND h.id = ANY(?::text[])
+        AND EXISTS (SELECT 1 FROM donors d WHERE d.org_id = h.org_id AND d.household_id = h.id AND d.deleted_at IS NULL)`, [orgId, wantHh]);
+  if (!hhs.length) return res.status(404).json({ error: "not_found", sentence: "That household is not in this organization." });
+  const members = await query("SELECT id, household_id FROM donors WHERE org_id=? AND household_id = ANY(?::text[]) AND deleted_at IS NULL", [orgId, hhs.map(h => h.id)]);
+  const list = await listOf(orgId, req);
+  const a = actor(req);
+  const out = await withTransaction(async client => {
+    let order = await lockedOrder(client, orgId, list.id);
+    let added = 0, replaced = 0, already = 0;
+    for (const h of hhs) {
+      if (order.includes(h.id)) { already++; continue; }
+      const mine = members.filter(m => m.household_id === h.id).map(m => m.id);
+      const at = order.findIndex(k => mine.includes(k));
+      const theirs = order.filter(k => mine.includes(k));
+      if (theirs.length) await runTx(client, "DELETE FROM portfolio_members WHERE org_id=? AND list_id=? AND donor_id = ANY(?::text[])", [orgId, list.id, theirs]);
+      const rest = order.filter(k => !mine.includes(k));
+      const pos = at >= 0 ? order.slice(0, at).filter(k => !mine.includes(k)).length : rest.length;
+      rest.splice(pos, 0, h.id);
+      // A new place goes in past the end, then the whole order is written once.
+      await runTx(client, `INSERT INTO portfolio_members (id, org_id, list_id, household_id, rank, created_by, created_by_name) VALUES (?,?,?,?,?,?,?)`,
+        [newId("pfm"), orgId, list.id, h.id, order.length + rest.length + 1, a.id, a.name]);
+      await writeOrder(client, orgId, list.id, rest);
+      order = rest;
+      if (theirs.length) replaced++; else added++;
+    }
+    return { added, replaced, already, count: order.length };
+  });
+  const one = hhs.length === 1 ? hhs[0].name : `${hhs.length} households`;
+  res.status(201).json({ ...out, sentence: out.replaced ? `${one} now holds ${hhs.length === 1 ? "that place" : "those places"} on ${list.name}, both people's giving together.`
+    : out.added ? `Added ${one} to ${list.name}.` : `${one} is already on ${list.name}.` });
+}
 
 app.post("/top100/members/:donorId/rank", requireAuth, mg, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
@@ -287,7 +358,7 @@ app.delete("/top100/members/:donorId", requireAuth, mg, checkWriteAccess, wrap(a
     const order = await lockedOrder(client, orgId, list.id);
     const id = String(req.params.donorId);
     if (!order.includes(id)) return null;
-    await runTx(client, "DELETE FROM portfolio_members WHERE org_id=? AND list_id=? AND donor_id=?", [orgId, list.id, id]);
+    await runTx(client, "DELETE FROM portfolio_members WHERE org_id=? AND list_id=? AND COALESCE(household_id, donor_id)=?", [orgId, list.id, id]);
     const rest = order.filter(x => x !== id);
     await writeOrder(client, orgId, list.id, rest);
     return { removed: 1, count: rest.length };

@@ -1236,6 +1236,33 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   // ── TRUTH-4 · GIFTS, PEOPLE AND AT-RISK MONEY (tests/lib/truth4Pairs.js) ──
   if (!skip.has("truth4")) await require("./truth4Pairs").truth4Pairs({ orgId, get, q, agree, diffs, today: orgTime.orgToday(org || {}, new Date(testNow())) });
 
+  // ── HOUSEHOLD-1 · a household's row on the Top 100 ──
+  // A household holding a place on the Top 100: its Lifetime is each of its
+  // people's hard credit added (the key), the household panel's Combined
+  // giving, and its This year is its people's gifts in that span, the same as
+  // Reports' top donors by household for the same days.
+  if (!skip.has("households")) {
+    const top = await get("/top100").catch(() => null);
+    const hhRows = ((top && top.rows) || []).filter(r => r.kind === "household");
+    if (hhRows.length) {
+      const { isCreditType: credit } = require("../keys/truthKey");
+      const live = new Map(kr.rows.people.filter(p => !p.deleted && !p.sample).map(p => [p.id, p]));
+      const hard = kr.rows.gifts.filter(g => !credit(g.type) && !g.sample && live.has(g.person));
+      const day = g => (g.date ? String(g.date).slice(0, 10) : "");
+      const sum = (ids, from, to) => hard.filter(g => ids.includes(g.person) && (!from || (day(g) && day(g) >= from && day(g) <= to))).reduce((a, g) => a + g.cents, 0);
+      for (const r of hhRows) {
+        const ids = [...live.values()].filter(p => p.household === r.householdId).map(p => p.id);
+        const { from, to } = r.thisYearSource.params;
+        const [panel, rep] = await Promise.all([get(`/households/${r.householdId}`), get(`/reports/top-donors?scope=period&view=household&from=${from}&to=${to}&limit=500`)]);
+        const repRow = ((rep && rep.rows) || []).find(x => x.id === r.householdId);
+        if (!ids.some(id => live.get(id).imported)) agree(`${r.name} on the Top 100, Lifetime${label ? ` (${label})` : ""}`, [["the key (its people's gifts)", sum(ids)],
+          ["the Top 100's household row", r.lifetimeCents], ["the household panel (combined)", panel && panel.combined_giving !== undefined ? cents(panel.combined_giving) : undefined]], money);
+        agree(`${r.name} on the Top 100, ${from} to ${to}${label ? ` (${label})` : ""}`, [["the key (its people's gifts)", sum(ids, from, to)],
+          ["the Top 100's household row", r.thisYearCents], ["Reports' top donors by household", repRow ? cents(repRow.total) : (sum(ids, from, to) ? undefined : 0)]], money);
+      }
+    }
+  }
+
   // ── FLOWS-11 · refunds, households, splits, before Steward, deleted gifts (tests/lib/flows11Checks.js) ──
   if (!skipSet.has("flows11"))
     await require("./flows11Checks").flows11Checks({ orgId, get, q, agree, diffs, skip, today: orgTime.orgToday(org || {}, new Date(testNow())) });

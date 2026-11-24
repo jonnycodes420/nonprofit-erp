@@ -56,9 +56,10 @@ async function portfolioCard(query, req, atInstant = new Date()) {
   };
 }
 
-// Their people on the org's Top 100 (portfolio_members), live only.
-const TOP100_PEOPLE = vsql => `SELECT d.id FROM portfolio_members m
-    JOIN donors d ON d.id = m.donor_id AND d.org_id = m.org_id
+// Their people on the org's Top 100 (portfolio_members), live only. HOUSEHOLD-1:
+// a household's place puts each of its people on it.
+const TOP100_PEOPLE = vsql => `SELECT DISTINCT d.id FROM portfolio_members m
+    JOIN donors d ON d.org_id = m.org_id AND (d.id = m.donor_id OR d.household_id = m.household_id)
    WHERE m.org_id = ? AND ${N.everyone.EVERYONE("d")}${vsql}`;
 
 async function onTop100(query, orgId, visible) {

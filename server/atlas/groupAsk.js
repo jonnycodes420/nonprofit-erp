@@ -187,8 +187,8 @@ async function propose({ req, query, run, asHer, memoId, step: st, today }) {
   if (g.unsupported) return { kind: "refused", state: "refused", line: `I can't pick out "${String(g.unsupported).slice(0, 80)}" from Steward's filters yet, so I did nothing. Try Donors' filters, then "Add to a journey".` };
   let ids;
   const rules = rulesOf(g, st.window, today);
-  if (g.membersOnly) ids = (await query(`SELECT m.donor_id FROM portfolio_members m JOIN donors d ON d.id = m.donor_id AND d.org_id = m.org_id
-                                          WHERE m.org_id=? AND d.deleted_at IS NULL ORDER BY m.rank`, [orgId])).map(r => r.donor_id);
+  if (g.membersOnly) ids = [...new Set((await query(`SELECT d.id FROM portfolio_members m JOIN donors d ON d.org_id = m.org_id AND (d.id = m.donor_id OR d.household_id = m.household_id)
+                                          WHERE m.org_id=? AND d.deleted_at IS NULL ORDER BY m.rank, d.id`, [orgId])).map(r => r.id))];   // HOUSEHOLD-1: a household's place is its people
   else ids = await idsFor(asHer, rules);
   // "gave over $1,000 in the last 12 months (Nov 12, 2025 to Nov 11, 2026)": from the rules, not her words echoed.
   const whoWords = g.membersOnly ? "everyone on your Top 100"

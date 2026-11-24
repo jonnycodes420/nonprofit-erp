@@ -8,6 +8,7 @@ import { errorMessage } from "../../lib/domainError";
 import { Figure } from "../Figure";
 import { relationshipLabelsFor, throughWords, CONNECT_PICKS } from "./profileShared";
 import { linkedPeople } from "../../lib/linkedPeople";
+import { HouseholdShared } from "./HouseholdShared";   // HOUSEHOLD-1 item 3
 
 import { relationshipOptions, relationshipTypeLabel } from "../../lib/relationshipOptions";   // FLOWS-10 item 7
 function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor,refreshSoftCredit,relErr,relLoading,relPickerOpen,relPickerResults,relPickerPending,relSaving,relSearch,relType,relatedOpen,relationships,removeFromHousehold,retypeRelationship,setHhModalOpen,setRelErr,setRelPickerOpen,setRelSearch,setRelType,setRelatedOpen,softCredit,unlinkDonor}){
@@ -60,6 +61,7 @@ function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor
                     ))}
                   </div>
                   <div style={{fontSize:11,color:T.ink3}}>Combined view only: each gift's hard credit stays with the donor who gave it.</div>
+                  <HouseholdShared household={household} isReadOnly={isReadOnly} onLogged={()=>refreshSoftCredit&&refreshSoftCredit()}/>
                 </>
               )}
             </div>

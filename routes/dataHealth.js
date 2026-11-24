@@ -850,12 +850,11 @@ app.get("/data-health/merges", requireAuth, wrap(async (req, res) => {
       ORDER BY created_at DESC LIMIT 100`, [req.user.orgId]);
   res.json({ merges: rows, undoDays: UNDO_DAYS });
 }));
-app.post("/data-health/merges/:id/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const orgId = req.user.orgId;
-  const me = await who(req);
-  try {
-    const out = await withAdvisoryLock(`merge:${orgId}`, () => withTransaction(async (client) => {
-      const [m] = await queryTx(client, "SELECT * FROM donor_merges WHERE id=? AND org_id=? FOR UPDATE", [req.params.id, orgId]);
+// HOUSEHOLD-1 item 5: the Undo's body, inside a caller's transaction, so
+// "Split them back into a household" undoes the merge and makes the household
+// in one step (server/donors/householdSplit.js). The route below is unchanged.
+async function undoMergeIn(client, orgId, mergeId, me) {
+      const [m] = await queryTx(client, "SELECT * FROM donor_merges WHERE id=? AND org_id=? FOR UPDATE", [mergeId, orgId]);
       if (!m) { const e = new MergeRefused("That merge isn't on file."); e.status = 404; throw e; }
       if (m.undone_at) throw new MergeRefused("That merge was already undone.");
       if (Date.now() - new Date(m.created_at).getTime() > UNDO_DAYS * 86400000) throw new MergeRefused(`A merge can be undone for ${UNDO_DAYS} days. This one is older.`);
@@ -933,7 +932,12 @@ app.post("/data-health/merges/:id/undo", requireAuth, checkWriteAccess, wrap(asy
       }
       await runTx(client, "UPDATE donor_merges SET undone_at=NOW(), undone_by=?, undone_by_name=? WHERE id=? AND org_id=?", [me.id, me.name, m.id, orgId]);
       return { undone: true, keptId: m.kept_id, mergedId: m.merged_id };
-    }));
+}
+app.post("/data-health/merges/:id/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const me = await who(req);
+  try {
+    const out = await withAdvisoryLock(`merge:${orgId}`, () => withTransaction(client => undoMergeIn(client, orgId, req.params.id, me)));
     // No geocode re-mark: both records came back with the coordinates and
     // geocode state they had, which belong to the addresses they came back with.
     req.audit = { ...(req.audit || {}), record: { donor_id: out.keptId, merged_id: out.mergedId, merge_id: req.params.id } };
@@ -1410,6 +1414,8 @@ module.exports.afterImport = afterImport;
 module.exports.recheckSoon = recheckSoon;
 module.exports.runDataHealth = runDataHealth;
 module.exports.mergePeople = mergePeople;
+module.exports.undoMergeIn = undoMergeIn;   // HOUSEHOLD-1: split a merged couple back into a household
+module.exports.MergeRefused = MergeRefused;
 }
 
 module.exports = { routers, mount, MERGE_REFS, NOT_MOVED, KEY_COLS, REF_SHAPE, refMatch, UNDO_DAYS };

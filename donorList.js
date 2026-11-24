@@ -631,21 +631,25 @@ function cleanLayout(body, known) {
     if (known.has(k) && n >= 60 && n <= 800) widths[k] = n;
   }
   const pageSize = PAGE_SIZES.includes(Number(b.pageSize)) ? Number(b.pageSize) : 50;
-  return { columns, widths, pageSize };
+  // HOUSEHOLD-1: "Show households together", off unless she turned it on.
+  return { columns, widths, pageSize, householdsTogether: b.householdsTogether === true };
 }
 const asJson = v => (typeof v === "string" ? JSON.parse(v) : v);
 async function layoutFor(orgId, userId) {
-  const rows = await query(`SELECT user_id, columns, widths, page_size FROM donor_list_layouts WHERE org_id = ? AND user_id IN (?, '')`, [orgId, userId]);
+  const rows = await query(`SELECT user_id, columns, widths, page_size, households_together FROM donor_list_layouts WHERE org_id = ? AND user_id IN (?, '')`, [orgId, userId]);
   const pick = rows.find(r => r.user_id === userId) || rows.find(r => r.user_id === "");
-  if (!pick) return { columns: DEFAULT_COLUMNS, widths: {}, pageSize: 50, source: "default" };
-  return { columns: asJson(pick.columns), widths: asJson(pick.widths) || {}, pageSize: pick.page_size, source: pick.user_id === "" ? "org" : "mine" };
+  // HOUSEHOLD-1: households together is her own, never the org's default layout.
+  const mine = rows.find(r => r.user_id === userId);
+  const householdsTogether = !!(mine && mine.households_together === true);
+  if (!pick) return { columns: DEFAULT_COLUMNS, widths: {}, pageSize: 50, householdsTogether, source: "default" };
+  return { columns: asJson(pick.columns), widths: asJson(pick.widths) || {}, pageSize: pick.page_size, householdsTogether, source: pick.user_id === "" ? "org" : "mine" };
 }
 async function saveLayout(orgId, userId, layout, who) {
-  await query(`INSERT INTO donor_list_layouts (org_id, user_id, columns, widths, page_size, created_by, created_by_name, updated_at)
-               VALUES (?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, NOW())
+  await query(`INSERT INTO donor_list_layouts (org_id, user_id, columns, widths, page_size, households_together, created_by, created_by_name, updated_at)
+               VALUES (?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, NOW())
                ON CONFLICT (org_id, user_id) DO UPDATE SET columns = EXCLUDED.columns, widths = EXCLUDED.widths,
-                 page_size = EXCLUDED.page_size, updated_at = NOW()`,
-    [orgId, userId, JSON.stringify(layout.columns), JSON.stringify(layout.widths), layout.pageSize, who.id, who.name]);
+                 page_size = EXCLUDED.page_size, households_together = EXCLUDED.households_together, updated_at = NOW()`,
+    [orgId, userId, JSON.stringify(layout.columns), JSON.stringify(layout.widths), layout.pageSize, layout.householdsTogether === true, who.id, who.name]);
 }
 
 module.exports = {

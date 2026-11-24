@@ -1151,6 +1151,7 @@ async function run7(pool) {
   await require("./ledger3").run(pool);   // LEDGER-3: who set the default fund; posting batches with Undo
   await require("./receipts1").run(pool);   // RECEIPTS-1: a gift of property is described, not valued
   await require("./thanks1").run(pool);   // THANKS-1: was a receipt ever made for this gift
+  await require("./household1").run(pool);   // HOUSEHOLD-1: a household holds a place on the Top 100
   // VOL-3: a volunteer's record and status (server/volunteers/volunteerRecord.js is its one writer).
   await pool.query(`CREATE TABLE IF NOT EXISTS volunteer_records (
     id TEXT PRIMARY KEY,

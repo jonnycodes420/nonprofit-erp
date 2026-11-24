@@ -108,8 +108,12 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   // LIST-5: the total is the role count already taken under these filters
   // (groups.totalFromRoleCounts); only a role the counts don't cover counts again.
   const counted = GR.totalFromRoleCounts(roleCounts, role);
+  // HOUSEHOLD-1 item 2: "Show households together" pages by giving unit (server/donors/householdList.js).
+  const HL = req.query.households === "1" ? require("./householdList") : null;
+  const units = HL ? await HL.unitPage(query, { selectCols, selectArgs, whereSql, params, orderBy, orderArgs }, { sort: req.query.sort, dir: req.query.dir, limit, offset }) : null;
+  const unitRows = HL ? HL.memberWhere({ whereSql, params }, units) : null;
   const [donors, cnt] = await Promise.all([
-    query(...require("./listPage").pageSql({ selectCols, selectArgs, whereSql, params, orderBy, orderArgs, limit, offset })),
+    query(...require("./listPage").pageSql(HL ? { selectCols, selectArgs, ...unitRows, orderBy, orderArgs, limit: 500, offset: 0 } : { selectCols, selectArgs, whereSql, params, orderBy, orderArgs, limit, offset })),
     counted != null ? [{ c: counted }] :
     query(`SELECT COUNT(*) AS c FROM donors WHERE ${whereSql}`, params),
   ]);
@@ -153,7 +157,9 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
     const ps = require("../../db").poolStats();
     console.warn(`[donors-list] slow read ${Date.now() - t0}ms org=${req.user.orgId} ${steps.map(([n, ms]) => `${n}=${ms}`).join(" ")} pool=${ps.total}/${ps.max} waiting=${ps.waiting} waitingAtDrift=${waitingAtDrift}`);
   }
-  res.json({ donors: out, total: parseInt(cnt[0].c, 10), ...(roleCounts ? { roleCounts, role: role === "donor" ? "donors" : role === "contact" ? "contacts" : "everyone" } : {}) });
+  const hh = HL ? { units: await HL.unitsOut(query, req.user.orgId, units, out, id => donorPhotoUrl(req.user.orgId, id), await orgTz(req.user.orgId)),   // ORG_TZ_SEAM_OK
+    unitCounts: await HL.counts(query, { whereSql, params }), unitSentence: HL.SENTENCE } : {};
+  res.json({ donors: out, total: parseInt(cnt[0].c, 10), ...hh, ...(roleCounts ? { roleCounts, role: role === "donor" ? "donors" : role === "contact" ? "contacts" : "everyone" } : {}) });
 }));
 
 // Lightweight whole-org list for consumers that need every donor but not the
