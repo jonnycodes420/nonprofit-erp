@@ -6,6 +6,7 @@ import { completeTask } from "../../lib/completeTask";   // FLOWS-17
 import { TaskTitleButton, useProfileTaskSheet } from "./ProfileTaskSheet";   // EDIT-1
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
+import { useVolunteerStatus, seedVolunteerStatus, markFormer, undoFormer } from "../../lib/volunteerStatus";   // RULES-1 item 7
 import { Pill, T, fmtFull } from "../shared";
 import { civilDays } from "../../../../shared/firstThing.js";
 import { orgTodayCivil } from "../../lib/orgToday";
@@ -222,6 +223,8 @@ function RoleLine({donor,isReadOnly,birthday="",noGifts=false}){
   const [shown,setShown]=useState(null);
   const [busy,setBusy]=useState(null);
   const [note,setNote]=useState("");
+  // RULES-1 item 7: the volunteer's status, shared with More's "Mark as former volunteer".
+  const vs=useVolunteerStatus(donor.id);
   useEffect(()=>{setTypes(donor.personTypes||["donor"]);},[donor.id,JSON.stringify(donor.personTypes||[])]);
   useEffect(()=>{
     let gone=false;
@@ -229,6 +232,7 @@ function RoleLine({donor,isReadOnly,birthday="",noGifts=false}){
       if(gone||!r)return;
       if(Array.isArray(r.person_types))setTypes(r.person_types);
       if(Array.isArray(r.shown_types))setShown(r.shown_types);
+      seedVolunteerStatus(donor.id,r.volunteer_status);
       setLock({locked:!!r.donorLocked,reason:r.donorLockedReason||null});
       const y=String(r.first_gift_date||"").slice(0,4);
       if(/^\d{4}$/.test(y))setFirstGiftYear(y);
@@ -266,7 +270,11 @@ function RoleLine({donor,isReadOnly,birthday="",noGifts=false}){
   // PROFILE-3: somebody with no gift is not called a Donor on their own record.
   const says=shown||donor.personTypes||[];
   const roleWords=(ROLE_CHIPS.filter(c=>says.includes(c.key)&&!(noGifts&&c.key==="donor")).map(c=>
-    c.key==="donor"&&sinceYear?(sinceYear==="unknown"?"Donor since: unknown":`Donor since ${sinceYear}`):c.label).join(" · "))||"Contact";
+    c.key==="donor"&&sinceYear?(sinceYear==="unknown"?"Donor since: unknown":`Donor since ${sinceYear}`)
+      :c.key==="volunteer"&&vs.status==="former"?"Former volunteer":c.label).join(" · "))||"Contact";
+  // RULES-1 item 7: ending the role is next to "+", where Jarvis looked for it. It keeps the role,
+  // their hours and their history (VOL-3's writer); Undo puts back the status before it.
+  const canEnd=!isReadOnly&&types.includes("volunteer")&&!!vs.status&&vs.status!=="former";
   return (
     <div data-testid="role-line" style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",marginTop:5,position:"relative"}}>
       {roleWords&&<span data-testid="role-words" style={{fontSize:12.5,color:T.ink3,lineHeight:1.4}}>{roleWords}</span>}
@@ -278,6 +286,16 @@ function RoleLine({donor,isReadOnly,birthday="",noGifts=false}){
           style={{width:20,height:20,borderRadius:99,border:"1px solid "+T.bg3,background:T.white,
             color:T.ink3,fontSize:13,lineHeight:1,cursor:"pointer",display:"grid",placeItems:"center",
             fontFamily:"inherit",padding:0}}>+</button>)}
+      {canEnd&&(
+        <button type="button" data-testid="role-mark-former" disabled={!!vs.busy} onClick={()=>markFormer(donor.id,"line")}
+          title="They stop counting as an active volunteer. Their hours and history stay on their record."
+          style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Mark as former</button>)}
+      {vs.from==="line"&&(vs.sentence||vs.error)&&(
+        <span role="status" data-testid="role-former-msg" style={{flexBasis:"100%",fontSize:12,color:vs.error?T.gold700:T.ink2,lineHeight:1.45}}>
+          {vs.error||vs.sentence}
+          {vs.undo&&!isReadOnly&&<> <button type="button" data-testid="role-former-undo" disabled={!!vs.busy} onClick={()=>undoFormer(donor.id)}
+            style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Undo</button></>}
+        </span>)}
       {openAdd&&(
         <div role="menu" data-testid="role-add-menu" style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:60,
           background:T.white,border:"1px solid "+T.bg3,borderRadius:10,boxShadow:"0 12px 32px rgba(15,26,18,0.18)",

@@ -18,5 +18,11 @@ nobody had touched. This build adds a guard per rule that fails CI on a reader t
   `scripts/ci/donor-label-scan.js` fails on a new client line that draws Donor from stored roles.
 - **One schema file per build.** `server/db/ddl/builds/`, loaded in name order after part7, which the
   split-shells ratchet now caps.
+- **Ending a volunteer role where she looks.** Jarvis looked for it on the role line and in More; it was
+  only inside the Volunteer record. "Mark as former" now sits next to "+" on the role line and in More →
+  Their record, both through VOL-3's one writer, each with its sentence and Undo; the line then reads
+  "Former volunteer". The two controls share one per-person store (`client/src/lib/volunteerStatus.js`).
+  The other two small items were already done on main: purge deletes `volunteer_records` (MERGE_REFS)
+  and `purgePeople` is at module scope.
 - Item 4 (counts after trash/restore/delete) and item 5 (the phantom donor) were not reproduced on
   staging at 5c922c6 and are OPEN; the report says what was tried.
