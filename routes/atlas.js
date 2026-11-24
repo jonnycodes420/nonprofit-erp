@@ -507,7 +507,7 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
   // about the whole org (Ask) and the org's Top 100 read everyone, so they are
   // said once and left out.
   if (require("../server/auth/portfolio").isScoped(req.user)) {
-    const kept = steps.filter(x => x.kind !== "question" && x.kind !== "top100" && x.kind !== "population" && x.kind !== "home_figure");   // ATLAS-8: the org's lists too
+    const kept = steps.filter(x => x.kind !== "question" && x.kind !== "top100" && x.kind !== "population" && x.kind !== "population_call" && x.kind !== "home_figure");   // ATLAS-8, ATLAS-9: the org's lists too
     if (kept.length < steps.length) await logAction(req, { ...base, kind: "refused", state: "refused",
       line: "You see the people assigned to you, so I can only answer about them. Questions about the whole organization are for colleagues who see everyone." });
     steps = kept;
@@ -752,7 +752,7 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
             : `I couldn't link ${first(nm(id))} and ${first(nm(st.otherId))}: ${(r.body && r.body.error) || "it did not go through"}.` });
         break;
       }
-      case "prior_rows": case "population": case "home_figure":   // ATLAS-8: rows already on a screen
+      case "prior_rows": case "population": case "population_call": case "home_figure":   // ATLAS-8, ATLAS-9: rows already on a screen
         await RS.run(st, { log, save: (aid, ans) => saveAnswer(orgId, m.id, aid, ans), get: p => asHer(req, "GET", p), query, orgId, parse: j });
         break;
       case "question": {

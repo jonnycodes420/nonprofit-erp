@@ -335,6 +335,8 @@ export function AskRail({ mode: startMode, replay, scope, isReadOnly, onStepTake
                   <div data-testid="ask-rail-question" style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{t.text}</div>
                   {/* POLISH-4: a refusal is labelled as one, never "Answer ready" */}
                   {isLast && (a || t.err) && !busy && <div role="status" data-testid="ask-ready" style={{ ...LABEL, color: a && a.refused || t.err ? T.ink3 : T.greenDk }}>{a && a.refused || t.err ? "No answer" : "Answer ready"}</div>}
+                  {/* ATLAS-9 item 5: with reading off, the Thread's answer says so first, as the Atlas dialog does (GET /ask/guided carries shared/atlasReading.js's line, kept off Home's first-look bundle) */}
+                  {lists && lists.readingOff && a && !t.err && <div data-testid="ask-reading-off" style={{ fontSize: 13, color: T.ink2, lineHeight: 1.45 }}>{lists.readingOff}</div>}
                   {said && <div data-testid="ask-rail-read-as" style={{ fontSize: 12.5, color: T.ink3 }}>{said}</div>}
                   {t.err && <div style={{ fontSize: 14, color: T.ink2 }}>{t.err}</div>}
                   {!a && !t.err && <div style={{ fontSize: 14, color: T.ink3 }}>Working it out from your own records…</div>}

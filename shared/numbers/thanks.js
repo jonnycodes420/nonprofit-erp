@@ -53,4 +53,13 @@ const RECEIPT_JSON = (g = "g") =>
       FROM receipts rl WHERE rl.org_id = ${g}.org_id AND rl.gift_id = ${g}.id AND rl.type = 'gift' AND rl.voided_at IS NULL
      ORDER BY rl.created_at DESC LIMIT 1)`;
 
-module.exports = { AWAITING, THANKED, THANKED_AT, LEGACY, HAS_RECEIPT, UNTHANK_SET, RECEIPT_JSON };
+// ATLAS-9: one person's gifts waiting for a thank-you, newest first, as the profile's
+// Thank-yous rail reads them (since the org's Steward start; an imported gift is history).
+async function awaitingFor(query, orgId, donorId, since) {
+  return query(`SELECT g.id, g.amount, LEFT(g.date, 10) AS date FROM gifts g
+                 WHERE g.org_id = ? AND g.donor_id = ? AND COALESCE(g.is_sample, false) = false AND g.date IS NOT NULL
+                   ${since ? "AND g.date >= ?" : ""} AND ${AWAITING("g")}
+                 ORDER BY g.date DESC, g.id DESC`, since ? [orgId, donorId, since] : [orgId, donorId]);
+}
+
+module.exports = { awaitingFor, AWAITING, THANKED, THANKED_AT, LEGACY, HAS_RECEIPT, UNTHANK_SET, RECEIPT_JSON };

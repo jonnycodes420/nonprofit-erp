@@ -1180,7 +1180,8 @@ app.get("/ask/guided", requireAuth, wrap(async (req, res) => {
   }
   const [campaigns, canSeeMore, gate] = await Promise.all([
     donor ? [] : WHY.comparableCampaigns(orgId), P.canSee(req.user.userId, req.user.orgId), aiGate(orgId)]);
-  res.json({ ...G.guidedLists({ campaigns, canSeeMore, donor }), ai: !!gate.ok });
+  res.json({ ...G.guidedLists({ campaigns, canSeeMore, donor }), ai: !!gate.ok,
+    readingOff: gate.ok ? null : require("../shared/atlasReading.js").READING_OFF });   // ATLAS-9 item 5: the Atlas dialog's line, from one place
 }));
 
 // The questions under the box: the org's own most-asked, answered ones.
