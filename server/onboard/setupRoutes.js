@@ -51,11 +51,15 @@ async function inOnboarding(query, orgId) {
   const [l] = await query(`SELECT 1 AS y FROM start_links WHERE org_id = ? LIMIT 1`, [orgId]).catch(() => []);
   if (l) return true;
   const [ob] = await query(`SELECT 1 AS y FROM org_onboarding WHERE org_id = ? AND verbal_yes_on IS NOT NULL`, [orgId]).catch(() => []);
-  return !!ob;
+  if (ob) return true;
+  // ONBOARD-4: every org that signs comes through a close link after the call, so a completed one counts.
+  const [cl] = await query(`SELECT 1 AS y FROM close_links WHERE status = 'completed' AND (org_id = ? OR target_org_id = ?) LIMIT 1`, [orgId, orgId]).catch(() => []);
+  return !!cl;
 }
 
 function mount(app, ctx) {
   const { query, run, wrap, requireAuth, orgToday, orgTz } = ctx;
+  require("./guidedRoutes").mount(app, ctx);   // ONBOARD-4: the guided setup and "Send it to us"
   const isHer = req => req.user && !req.user.support && !req.user.isSuperAdmin;
 
   app.get("/onboarding/mine", requireAuth, wrap(async (req, res) => {

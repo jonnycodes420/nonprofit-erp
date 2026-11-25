@@ -1007,6 +1007,8 @@ app.use(["/history-import/preview", "/history-import/commit"], bigJson("64mb"));
 // SPLIT-2 server.js piece 131
 // ONBOARD-1: setup carries every donor file at once, as text.
 app.use(["/setup/runs", "/admin/orgs/:id/setup"], bigJson("64mb"));
+// ONBOARD-4: "Send it to us" carries one donor file (10 MB, as base64), and /ops sends its cells back.
+app.use(["/onboarding/concierge", "/ops/onboarding/concierge"], bigJson("40mb"));
 // SPLIT-2 end
 // SPLIT-2 server.js piece 132
 // NUMBERS-5: "Import a spreadsheet" sends a workbook's cells as JSON; the

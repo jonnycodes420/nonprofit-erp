@@ -469,7 +469,7 @@ function NoDonorsCard({ onNavigate, sample, importAbove = false }) {
   };
   return (
     <div data-testid="moves-no-donors" style={{ background: T.bg, borderRadius: 18, padding: "26px 28px", display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ fontSize: 17, lineHeight: 1.5, color: T.ink }}>{importAbove ? "Once your donors are in (the first step above), Steward shows you who to call first." : "Bring in your donors and Steward will show you who to call first."}</div>
+      <div style={{ fontSize: 17, lineHeight: 1.5, color: T.ink }}>{importAbove ? "Once your donors are in (the step above), Steward shows you who to call first." : "Bring in your donors and Steward will show you who to call first."}</div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         {!importAbove && <button type="button" className="moves-btn" data-testid="moves-import" style={BTN_PRIMARY} onClick={() => onNavigate && onNavigate("donors", { openImport: true })}>Import a spreadsheet</button>}
         {sample && <button type="button" className="moves-btn" data-testid="moves-sample" style={BTN_QUIET} disabled={busy} onClick={load}>{busy ? "Loading sample data…" : "Explore with sample data"}</button>}

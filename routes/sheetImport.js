@@ -20,6 +20,7 @@ const express = require("express");
 const { newId } = require("../server/shared/newId");   // IDS-1: every new row id is prefix + 20 hex
 
 const routers = { r0: express.Router() };
+const INTERNAL = {};   // ONBOARD-4: the concierge Load's door into the same job (filled by mount)
 const RUN_ID_RE = /^imp_[A-Za-z0-9_-]{4,40}$/;
 // IMPORT-7: a sheet is read whole. MAX_ROWS kept the first 20,000 rows of each
 // sheet and said nothing, so a 25,000-person CSV lost 5,000 people. A file past
@@ -1358,8 +1359,18 @@ app.post("/imports/:id/date-undated", requireAuth, checkWriteAccess, wrap(async 
   res.json({ dated: rows.length, date, eventDated,
     sentence: rows.length ? `${rows.length.toLocaleString("en-US")} ${rows.length === 1 ? "gift is" : "gifts are"} now dated ${date}, and count in This year.` : "Every gift from this import already has a date." });
 }));
+// ONBOARD-4 · "Send it to us": a person on /ops presses Load and the reviewed cells
+// run through this same job (server/onboard/concierge.js), so it is the normal import, with its Undo.
+INTERNAL.commit = async (orgId, user, sent, who) => {
+  const b = readBody(sent);
+  const id = "imp_" + uuid().replace(/-/g, "").slice(0, 16);
+  await DB.runOutside(`INSERT INTO sheet_import_jobs (id, org_id, request_key, status, phase, file_name, created_by, created_by_name)
+                       VALUES (?,?,?,'running','Starting',?,?,?)`, [id, orgId, requestKeyOf(orgId, b), (b.fileName || "Spreadsheet").slice(0, 200), who.id, who.name]);
+  await runJob({ user: { ...user, orgId }, body: {} }, b, id, who);
+  return jobView(await readJob(orgId, id));
+};
 }
 
 function money(c) { return "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 }); }
 
-module.exports = { routers, mount };
+module.exports = { routers, mount, INTERNAL };

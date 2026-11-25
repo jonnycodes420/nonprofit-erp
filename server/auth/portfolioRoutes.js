@@ -40,7 +40,7 @@ const DECLARATIONS = [
   D("GET", /^\/org(\/(welcome|vocabulary|ai-status|team|sample-data-status|membership-settings))?$/, "free"),   // ACCESS-2B: not setup-status, the admin's checklist
   D("POST", "/org/welcome/seen", "free"),
   D("GET", "/billing/status", "free"),
-  D(ANY, /^\/onboarding\/(mine|home-opened)$/, "free"),
+  D(ANY, /^\/onboarding\/(mine|home-opened|guided|guided\/skip)$/, "free"),   // ONBOARD-4: the guided setup carries no person
   D(ANY, /^\/(help|support)\//, "free"),
   D("GET", /^\/(custom-fields|settings\/giving-levels|mail-types|why\/questions|atlas\/status|changes\/marks)$/, "free"),
   D("GET", "/people/photos", "free"),

@@ -23,7 +23,7 @@ const PERSON = `COALESCE(u.is_super_admin, false) = false`;
 async function readFacts(query, orgIds) {
   if (!orgIds.length) return {};
   const ids = [orgIds];
-  const [orgs, links, sigs, staged, accepted, pages, logos, sources, books, setup, signins, stored, logs, gifts, paid] = await Promise.all([
+  const [orgs, links, sigs, staged, accepted, pages, logos, sources, books, setup, signins, stored, logs, gifts, paid, closed] = await Promise.all([
     query(`SELECT id, name, timezone, created_at, paper_done_at, data_in_at, stripe_account_id,
                   (COALESCE(logo_data, '') <> '') AS has_logo, subscription_status, trial_ends_at, billing_mrr_cents,
                   custom_price_cents, stripe_subscription_id, other_giving_sources, billing_card_last4,
@@ -50,9 +50,12 @@ async function readFacts(query, orgIds) {
     query(`SELECT org_id, MIN(created_at) AS t FROM gifts
             WHERE org_id = ANY(?) AND import_id IS NULL AND COALESCE(is_sample, false) = false AND amount > 0 GROUP BY org_id`, ids),
     query(`SELECT org_id, MIN(paid_at) AS t FROM platform_payments WHERE org_id = ANY(?) AND amount_paid_cents > 0 GROUP BY org_id`, ids),
+    // ONBOARD-4: a completed close link is the paper (the agreement accepted and a card at Checkout).
+    safe(query(`SELECT DISTINCT ON (COALESCE(target_org_id, org_id)) COALESCE(target_org_id, org_id) AS org_id, contact_name, completed_at AS t
+                  FROM close_links WHERE status = 'completed' AND COALESCE(target_org_id, org_id) = ANY(?) ORDER BY COALESCE(target_org_id, org_id), completed_at`, ids)),
   ]);
   const m = { links: by(links), sigs: by(sigs), staged: by(staged), accepted: by(accepted), pages: by(pages), books: by(books),
-    setup: by(setup), stored: by(stored), logs: by(logs), gifts: by(gifts), paid: by(paid) };
+    setup: by(setup), stored: by(stored), logs: by(logs), gifts: by(gifts), paid: by(paid), closed: by(closed) };
   const logo = new Set(logos.map(r => r.org_id));
   const conn = new Map();
   for (const r of sources) { if (!conn.has(r.org_id)) conn.set(r.org_id, {}); conn.get(r.org_id)[r.provider] = r.t; }
@@ -61,7 +64,9 @@ async function readFacts(query, orgIds) {
 
   const out = {};
   for (const o of orgs) {
-    const link = m.links.get(o.id) || null, sig = m.sigs.get(o.id) || null, st = m.stored.get(o.id) || {};
+    const link = m.links.get(o.id) || null, st = m.stored.get(o.id) || {};
+    const cl = m.closed.get(o.id) || null;
+    const sig = m.sigs.get(o.id) || (cl && !o.paper_done_at ? { signer_name: cl.contact_name || "the close link", signer_title: null, signed_at: cl.t } : null);
     const connected = { ...(conn.get(o.id) || {}) };
     if (m.books.get(o.id)) connected.quickbooks = m.books.get(o.id).t;
     // The champion: the person the start link was raised for, else whoever signed, else the first to sign in.
@@ -73,7 +78,7 @@ async function readFacts(query, orgIds) {
     const firstChargeAt = o.subscription_status === "trialing" && o.trial_ends_at ? o.trial_ends_at : (link && link.first_charge_at) || null;
     out[o.id] = {
       id: o.id, name: o.name, tz: o.timezone || "America/New_York", createdAt: o.created_at,
-      paperDoneAt: o.paper_done_at, dataInAt: o.data_in_at,
+      paperDoneAt: o.paper_done_at || (cl && cl.t) || null, dataInAt: o.data_in_at,
       signature: sig ? { name: sig.signer_name, title: sig.signer_title, at: sig.signed_at } : null,
       cardOnFile: !!o.card_on_file, cardLast4: o.billing_card_last4 || null,
       startLink: link ? { status: link.status, contact: link.contact_name, createdAt: link.created_at, expiresAt: link.expires_at, signedAt: link.signed_at } : null,
@@ -110,12 +115,14 @@ async function readFacts(query, orgIds) {
 // onboarding (a start link, a stamped paper, or a verbal yes Jonathan entered).
 async function boardOrgIds(query) {
   const custs = await require("../admin/opsSources").customerOrgs(query);
-  const [linked, stamped, yes] = await Promise.all([
+  const [linked, stamped, yes, closed] = await Promise.all([
     safe(query(`SELECT DISTINCT org_id FROM start_links`, [])),
     query(`SELECT id AS org_id FROM orgs WHERE paper_done_at IS NOT NULL AND archived_at IS NULL`, []),
     safe(query(`SELECT org_id FROM org_onboarding WHERE verbal_yes_on IS NOT NULL`, [])),
+    // ONBOARD-4: an org made by a close link after the call is in onboarding from its signing.
+    safe(query(`SELECT DISTINCT COALESCE(target_org_id, org_id) AS org_id FROM close_links WHERE status = 'completed' AND COALESCE(target_org_id, org_id) IS NOT NULL`, [])),
   ]);
-  const extra = [...linked, ...stamped, ...yes].map(r => r.org_id);
+  const extra = [...linked, ...stamped, ...yes, ...closed].map(r => r.org_id);
   const live = await query(`SELECT id FROM orgs WHERE id = ANY(?) AND archived_at IS NULL AND COALESCE(is_demo_org, false) = false`, [[...new Set(extra)]]);
   return [...new Set([...custs.map(o => o.id), ...live.map(r => r.id)])];
 }

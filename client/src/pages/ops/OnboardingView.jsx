@@ -10,6 +10,7 @@ import { apiFetch } from "../../api";
 import { countLabel } from "../../../../shared/countWords.js";
 import DateInput from "../../components/inputs/LazyDateInput";   // POLISH-6: the one date box
 import OnboardReadouts from "./OnboardReadouts";   // ONBOARD-3: day 30, per org
+import { StuckColumn, ConciergeJobs } from "./OnboardStuck";   // ONBOARD-4: the Stuck column and "Send it to us"
 
 const INK = "#0F1A12", WHITE = "#FFFFFF", CREAM = "#F0EDE6", EMERALD = "#0D5C3A", BRASS = "#C9A84C";
 const FIVE = ["paper", "data", "connections", "kickoff", "first_month"];
@@ -95,13 +96,14 @@ export default function OnboardingView({ data, error, onReload }) {
   const s = data.summary;
   return <div data-testid="ops-onboarding">
     <section style={{ ...card, background: INK, color: WHITE }}>
-      <div data-onb-summary="1" style={{ fontSize: 20, fontWeight: 700 }}>Billing: {s.billing} · Onboarding: {s.onboarding} · Stuck: {s.stuck}</div>
+      <div data-onb-summary="1" style={{ fontSize: 20, fontWeight: 700 }}>Billing: {s.billing} · Onboarding: {s.onboarding} · Late: {s.stuck}</div>
       <p style={{ fontSize: 13, opacity: 0.85, margin: "6px 0 0" }}>
         MRR billing now <b data-onb-mrr-now="1">{usd(s.mrrNowCents)}</b> · at the first charge dates <b data-onb-mrr-at="1">{usd(s.mrrAtFirstChargeCents)}</b>.
         {" "}{s.sentences.mrrNow} {s.sentences.mrrAt}</p>
-      <p style={{ fontSize: 12.5, opacity: 0.7, margin: "6px 0 0" }}>Stuck: {s.sentences.stuck}</p>
+      <p style={{ fontSize: 12.5, opacity: 0.7, margin: "6px 0 0" }}>Late: {s.sentences.stuck} The Stuck column beside the board has its own five rules.</p>
     </section>
-    <section style={card}>
+    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+    <section style={{ ...card, flex: "3 1 560px", minWidth: 0, overflowX: "auto" }}>
       <p style={says}>One row per customer org. The stage is the first gate not met, read from signals; nobody sets it. Days count on the stage's own clock: paper from the verbal yes, data from paper, kickoff and the first month from data in. Click a row for its checklist.</p>
       {data.rows.length === 0 ? <p style={says}>No customer org yet.</p> :
         <table style={{ borderCollapse: "collapse", width: "100%" }}>
@@ -122,6 +124,9 @@ export default function OnboardingView({ data, error, onReload }) {
           </tbody>
         </table>}
     </section>
+    <StuckColumn />
+    </div>
+    <ConciergeJobs />
     <OnboardReadouts />
   </div>;
 }
