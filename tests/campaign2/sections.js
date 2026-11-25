@@ -20,12 +20,10 @@
 "use strict";
 const { census, dead } = require("../lib/deadClickCensus");
 
-const DAY = 86400000;
-const iso = ms => new Date(ms).toISOString().slice(0, 10);
+const { dayOffset } = require("../clock");   // the run's own clock (CLOCK-1)
 
 module.exports = async function campaign2({ h, B, ORG, ADMIN, tok }) {
   const { ok, api, q } = h;
-  const now = Date.now();
   // ── the fixture: made-up people, each with an address ───────────────────
   // name, stage, [ [daysAgo, amount], … ]
   const PEOPLE = [
@@ -43,7 +41,7 @@ module.exports = async function campaign2({ h, B, ORG, ADMIN, tok }) {
       [id, ORG, name, `c2.${i}@example.org`, stage, total, gifts.length]);
     for (const [k, [days, amt]] of gifts.entries())
       await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,'cash','system:test','CAMPAIGN-2 fixture')`,
-        [`g_c2_${i}_${k}`, ORG, id, amt, iso(now - days * DAY)]);
+        [`g_c2_${i}_${k}`, ORG, id, amt, dayOffset(-days)]);
   }
   // A contact who never gave is not a donor, and not in any level.
   await q(`INSERT INTO donors (id,org_id,name,email,created_by,created_by_name) VALUES ('d_c2_contact',$1,'Jo Contact','c2.contact@example.org','system:test','CAMPAIGN-2 fixture')`, [ORG]);
