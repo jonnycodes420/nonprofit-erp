@@ -30,7 +30,8 @@ export const REOPENING_WORDS = "Steward was just updated. Reopening…";
 // shows the error with its Reload button instead.
 export function reopenAfterUpdate(err) {
   if (reopening) return true;
-  if (typeof window === "undefined" || !isChunkError(err)) return false;
+  // Offline, a chunk that will not load is the network, not a deploy: the page says so as it always did.
+  if (typeof window === "undefined" || !isChunkError(err) || navigator.onLine === false) return false;
   try {
     if (Date.now() - (Number(sessionStorage.getItem(KEY)) || 0) < 60000) return false;
     sessionStorage.setItem(KEY, String(Date.now()));
