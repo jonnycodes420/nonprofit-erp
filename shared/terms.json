@@ -1,0 +1,5 @@
+{
+  "_note": "ORDER-1 · the Terms of Service version, in one place. The Terms page prints lastUpdated; every signed order stores version (order_signatures.terms_version). Change both with any change to client/src/pages/TermsPage.jsx's words. 2026-11-25 is ONBOARD-4's §4 (the price and setup fee are in the quote or order you sign).",
+  "version": "2026-11-25",
+  "lastUpdated": "November 25, 2026"
+}

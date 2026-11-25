@@ -82,6 +82,7 @@ const KIND_CATEGORY = {
   mail_test: "account",   // super-admin's test of an org's identity, to their own address only
   // billing
   billing_receipt: "billing", trial_ending: "billing", billing: "billing", tier_notice: "billing",
+  order_signed_copy: "billing", order_request_sign: "billing",   // ORDER-1: the signer's signed order; "Review and sign" on Jonathan's Send
   // to Jonathan
   founder_signup: "jonathan", demo_request: "jonathan", ops_alert: "jonathan",
   // never

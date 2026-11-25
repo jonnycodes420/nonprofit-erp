@@ -8,6 +8,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { apiFetch } from "../api";
+import OrderView from "./order/OrderView";   // ORDER-1: a link that carries an order
 
 const C = { ink: "#0F1A12", white: "#FFFFFF", cream: "#F0EDE6", emerald: "#0D5C3A", brass: "#C9A84C", muted: "#5a554f" };
 const SERIF = "'DM Serif Display',Georgia,serif";
@@ -84,6 +85,7 @@ export default function StartPage() {
 
   if (err) return page(<div style={card} data-testid="start-error"><h1 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: 26, margin: "0 0 8px" }}>This link can't be used</h1><p style={{ margin: 0 }}>{err}</p></div>);
   if (!data) return page(<div style={card}>Opening…</div>);
+  if (data.order) return <OrderView token={token} data={data} setData={setData} done={done} />;
 
   const head = (
     <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>

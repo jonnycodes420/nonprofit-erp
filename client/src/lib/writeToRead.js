@@ -78,6 +78,10 @@ export const WRITE_TO_READ = [
 // fails CI on a write in client/src that announces nothing (lib/changes.js kindsOfWrite
 // answers "other") unless it is named here, with why no figure on any screen shows it.
 export const NO_SCREEN_READS = [
+  // ORDER-1: an order is edited and sent from the order panel on /admin, for ANOTHER org; the panel
+  // shows its own answer, and no screen of the signed-in org shows the order.
+  { method: "PATCH", re: /^\/admin\/start-links\/[^/]+\/order$/, why: "an order edit shows only in the /admin order panel, which shows its own answer" },
+  { method: "POST", re: /^\/admin\/start-links\/[^/]+\/send$/, why: "Send shows only its own sentence in the /admin order panel; it writes the order's sent time" },
   // ONBOARD-4: a skip is shown only on the guided setup card, which re-reads itself; the
   // concierge map and Load run on /ops for ANOTHER org, whose people no /ops screen shows.
   { method: "POST", re: /^\/onboarding\/guided\/skip$/, why: "a skipped setup step shows only on the guided setup card, which re-reads itself" },
