@@ -27,7 +27,7 @@ import { orgTodayCivil } from "../lib/orgToday";
 import { RecurringView } from "./RecurringGiving";   // GIFTS-2: recurring giving is findable from Finance
 import MergeFunds from "./finance/MergeFunds";   // TRUTH-3: funds are a managed list
 import PostToBooks from "./finance/PostToBooks";   // LEDGER-3: a waiting gift can post, with Undo
-import { FundDefaultChip, FundBooksLines, NoFundLine, FUND_DEF_WORDS } from "./finance/FundBooks";   // LEDGER-3: a fund's gifts beside its books
+import { FinFundCards, Definitions4 } from "./finance/FundCards";   // NUMBERS-8: the fund cards and their dialog, one module
 import { Figure } from "./Figure";   // TRUTH-3: the ledger's three figures open their gifts
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 
@@ -842,7 +842,9 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   const [budgetMeta, setBudgetMeta] = useState(null);
   const [budgetErr, setBudgetErr] = useState("");
   const [summary, setSummary] = useState(null);
-  const [txnYear, setTxnYear] = useState(new Date().getFullYear());
+  // NUMBERS-8 item 1 (W-1122-Finance-F7): a fund's lines are every year, so they foot to its
+  // balance (all-time); opened on a fund, the list starts on All years ($25 dated 2025 was missing).
+  const [txnYear, setTxnYear] = useState(() => (urlParam("finance", "subtab") === "transactions" && urlParam("finance", "fund")) ? "all" : new Date().getFullYear());
   // FIX-60: null until the server names this year (a fiscal year is named by
   // the year it ends in, so the calendar's year would be the wrong default).
   const [budgetYear, setBudgetYear] = useState(null);
@@ -1066,7 +1068,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   // so monthly rows land on the full ledger — noted gap).
   const gotoTxns = (patch = {}) => {
     if (patch.type !== undefined) setTxnType(patch.type);
-    if (patch.fund !== undefined) setTxnFund(patch.fund);
+    if (patch.fund !== undefined) { setTxnFund(patch.fund); if (patch.fund && txnYear !== "all") { setTxnYear("all"); reloadTxns("all"); } }
     setSubtab("transactions");
   };
 
@@ -1329,7 +1331,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             <option value="manual">Manual</option>
             <option value="import">Import</option>
           </select>
-          <select value={txnFund} onChange={e => setTxnFund(e.target.value)} style={{ ...inp, width:140, cursor:"pointer" }}>
+          <select value={txnFund} onChange={e => { setTxnFund(e.target.value); if (e.target.value && txnYear !== "all") { setTxnYear("all"); reloadTxns("all"); } }} style={{ ...inp, width:140, cursor:"pointer" }}>
             <option value="">All funds</option>
             {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
@@ -1893,105 +1895,6 @@ function FinOverview({ onNavigate, ledgerEmpty }) {
   );
 }
 
-// FIN-1 — one card per fund. Balance, in and out this period, the
-// restriction, and WHO restricted it.
-function FinFundCards() {
-  const [d, setD] = useState(null);
-  const [err, setErr] = useState("");
-  const [open, setOpen] = useState(null);
-  const goUrl = useUrlWriter();
-  const fundHref = id => tabHref("finance", { subtab: "funds", fundId: id || null });
-  // FEEL-1: the cards read again on STALE-1's announcement of a gift, pledge or
-  // fund change, so a total never sits on the figure from before the change.
-  useChanged(["gift", "pledge", "fund", "totals"], () => {
-    apiFetch("/finance/funds-detail").then(r => setD(r)).catch(() => {});
-  });
-  useEffect(() => {
-    let alive = true;
-    const want = urlParam("finance", "fund");
-    apiFetch("/finance/funds-detail").then(r => {
-      if (!alive) return;
-      setD(r);
-      const f = want && (r.funds || []).find(x => x.id === want);
-      if (f) openFund(f, true);
-    })
-      .catch(e => { if (alive) setErr(errorMessage(e, "The funds did not load.")); });
-    return () => { alive = false; };
-  }, []);
-  async function openFund(f, fromUrl) {
-    if (!fromUrl) goUrl(fundHref(f.id));
-    setOpen({ loading: true, label: f.name });
-    try { setOpen({ ...(await apiFetch(`/finance/funds-detail/rows?fund=${encodeURIComponent(f.id)}`)), label: f.name }); }
-    catch (e) { setOpen({ label: f.name, error: errorMessage(e, "Those rows did not open.") }); }
-  }
-  if (err) return <Card><div role="alert" style={{ fontSize:13, color:T.terra700 }}>{err}</div></Card>;
-  if (!d) return <Card><div style={{ fontSize:12, color:T.ink3 }}>Adding up the funds…</div></Card>;
-  if (!d.funds.length) return (
-    <Card><EmptyState title="No funds yet"
-      message="A fund is a pot of money with a purpose. Make one, name it on your gifts, and this screen tells you what is in it and what it is promised to."/></Card>
-  );
-  return (
-    <div data-testid="fin-fund-cards" style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:6 }}>
-      <div style={{ fontSize:13, color:T.ink3 }}>{d.sentence} Figures in and out are for {d.periodLabel}.</div>
-      <NoFundLine noFund={d.noFund}/>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))", gap:12 }}>
-        {d.funds.map(f => (
-          <RecordLink key={f.id} to={fundHref(f.id)} data-testid="fin-fund-card" data-record-link="fund" onOpen={() => openFund(f)}
-            style={{ display:"block", color:"inherit", background:T.white, border:"1px solid "+T.bg2, borderRadius:12, padding:"16px 17px",
-                     textAlign:"left", cursor:"pointer", fontFamily:"inherit",
-                     borderLeft:"3px solid "+(f.restricted ? T.gold500 : T.greenDk) }}>
-            <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"baseline", flexWrap:"wrap" }}>
-              <span style={{ fontSize:14.5, fontWeight:700, color:T.ink }}>{f.name}</span>
-              <span style={{ display:"flex", gap:6 }}><FundDefaultChip f={f}/>
-                <span style={{ fontSize:11, fontWeight:700, borderRadius:99, padding:"2px 9px",
-                               background: f.restricted ? T.gold100 : T.green100,
-                               color: f.restricted ? T.gold700 : T.greenDk }}>
-                  {f.restricted ? "Restricted" : "Unrestricted"}
-                </span>
-              </span>
-            </div>
-            <FundBooksLines f={f} defs={d.definitions || {}}/>
-            <div style={{ fontSize:12, color:T.ink3, marginTop:4 }}>
-              In {fmtFull(f.inPeriod)} · out {fmtFull(f.outPeriod)} this period
-            </div>
-            <div style={{ fontSize:12.5, color:T.ink2, marginTop:8, lineHeight:1.55 }}>{f.sentence}</div>
-          </RecordLink>
-        ))}
-      </div>
-      <Definitions4 items={Object.entries(d.definitions || {}).map(([k, v]) => [FUND_DEF_WORDS[k] || k, v])}/>
-      {open && (
-        <Modal onClose={() => { setOpen(null); goUrl(fundHref(null)); }} title={open.label + (open.net != null ? ` · ${fmtFull(open.net)} net` : "")}>
-          {open.error && <div role="alert" style={{ fontSize:13, color:T.terra700 }}>{open.error}</div>}
-          {open.loading && <div style={{ fontSize:13, color:T.ink3 }}>Opening the rows…</div>}
-          {open.sentence && <div style={{ fontSize:13, color:T.ink2, lineHeight:1.6, marginBottom:12 }}>{open.sentence}</div>}
-          {open.rows && (
-            <div style={{ maxHeight:380, overflowY:"auto" }}>
-              {!open.rows.length && !(open.gifts && open.gifts.length) && <div style={{ fontSize:13, color:T.ink3 }}>Nothing has moved through this fund yet.</div>}
-              {open.rows.map(r => (
-                <div key={r.id} style={{ display:"flex", justifyContent:"space-between", gap:12, padding:"8px 0",
-                                         borderBottom:"1px solid "+T.bg2, fontSize:13 }}>
-                  <span style={{ color:T.ink, minWidth:0 }}>{r.date} · {r.description || r.vendor_donor || ""}</span>
-                  <span style={{ fontWeight:700, color: r.type === "income" ? IN : OUT, whiteSpace:"nowrap" }}>
-                    {r.type === "income" ? "+" : "−"}{fmtFull(r.amount)}
-                  </span>
-                </div>
-              ))}
-              {/* TRUTH-3: the gifts behind the fund, and where each stands with the books. */}
-              {open.gifts && open.gifts.length > 0 && <div style={{ fontSize:12, fontWeight:700, color:T.ink3, marginTop:12 }}>Gifts to this fund</div>}
-              {(open.gifts || []).map(g => (
-                <div key={g.id} data-testid="fund-gift-row" style={{ display:"flex", justifyContent:"space-between", gap:12, padding:"8px 0", borderBottom:"1px solid "+T.bg2, fontSize:13 }}>
-                  <span style={{ color:T.ink, minWidth:0 }}>{g.date || "No date"} · <DonorLink id={g.donor_id}>{g.donor_name}</DonorLink> · {g.ledgerWord}</span>
-                  <span style={{ fontWeight:700, color:T.ink, whiteSpace:"nowrap" }}>{fmtFull(g.amount)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </Modal>
-      )}
-    </div>
-  );
-}
-
 // FIN-1 — the deposit sheet, where a treasurer looks for it. The sheet
 // itself lives in Donors (it writes gifts, and a gift is written in one
 // place); this is the door, beside the payouts it reconciles against.
@@ -2051,12 +1954,3 @@ function YearEndCard({ onNavigate }) {
 // defines. Named with a 4 because Finance already had a `Definitions`-shaped
 // block inline and two components of one name in one file is how a later
 // edit picks the wrong one.
-function Definitions4({ items }) {
-  const rows = (items || []).filter(([, s]) => s);
-  if (!rows.length) return null;
-  return (
-    <div data-testid="fin-definitions" style={{ fontSize:12, color:T.ink3, lineHeight:1.6, display:"flex", flexDirection:"column", gap:3 }}>
-      {rows.map(([k, s]) => <div key={k}><strong style={{ color:T.ink2, fontWeight:700 }}>{`${k}.`}</strong>{` ${s}`}</div>)}
-    </div>
-  );
-}

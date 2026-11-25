@@ -62,4 +62,10 @@ async function awaitingFor(query, orgId, donorId, since) {
                  ORDER BY g.date DESC, g.id DESC`, since ? [orgId, donorId, since] : [orgId, donorId]);
 }
 
-module.exports = { awaitingFor, AWAITING, THANKED, THANKED_AT, LEGACY, HAS_RECEIPT, UNTHANK_SET, RECEIPT_JSON };
+// NUMBERS-8 item 5 (W-1125-Finance-T7): a column that answers "Thanked?" for gift row `g`, on the
+// one rule: true when thanked, false when it waits for a thank-you (AWAITING, Home's count), and
+// null when a thank-you is not owed at all (a refund row, a gift refunded in full). So a report's
+// "Thanked = No" is exactly Home's "not yet thanked", window for window.
+const THANKED_OR_AWAITING = (g = "g") => `(CASE WHEN ${THANKED(g)} THEN true WHEN ${AWAITING(g)} THEN false END)`;
+
+module.exports = { THANKED_OR_AWAITING, awaitingFor, AWAITING, THANKED, THANKED_AT, LEGACY, HAS_RECEIPT, UNTHANK_SET, RECEIPT_JSON };

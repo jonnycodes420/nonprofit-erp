@@ -428,7 +428,10 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
         name={title || name} badge={emailBadge(template)}
         device={device} onDevice={setDevice}
         toggles={[{ id: "dark", label: "Dark mode", on: dark, onClick: () => setDark(v => !v) }]}
-        tools={<><PreviewAs bar as={preview.as && preview.as.id ? preview.as : as} onPick={p => setAs(p)} />{ws.tools}</>}
+        tools={<><PreviewAs bar as={preview.as && preview.as.id ? preview.as : as} onPick={p => setAs(p)} />
+          {/* NUMBERS-8 item 6: a gift template previewed as someone who has never given offers the newest giver */}
+          {preview.noGift && <span data-testid="preview-no-gift" style={{ fontSize: 12.5, color: T.ink }}>{preview.noGift.sentence}{preview.noGift.lastGiver && <> <button type="button" data-testid="preview-no-gift-giver" onClick={() => setAs({ id: preview.noGift.lastGiver.id, name: preview.noGift.lastGiver.name })} style={{ background: "none", border: "none", padding: 0, font: "inherit", color: T.greenDk, fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}>{`Preview as ${preview.noGift.lastGiver.name}`}</button></>}</span>}
+          {ws.tools}</>}
         status={saving ? "Saving…" : dirty ? "Unsaved changes" : hasDraft ? "Draft saved, not published" : "Saved"}
         actions={[
           { id: "test", label: "Send me a test", onClick: test, disabled: isReadOnly, testid: "email-test" },

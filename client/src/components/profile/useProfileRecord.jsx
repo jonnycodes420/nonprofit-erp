@@ -152,11 +152,12 @@ export function useProfileRecord({ donor, onSelectRelatedDonor, onClose, onInter
   const [relSaving,setRelSaving]=useState(false);
   const [relErr,setRelErr]=useState("");
   const [broughtIn,setBroughtIn]=useState(null);   // CONNECT-1: "Brought in 4 people · $12,400 given since"
+  const [givesThrough,setGivesThrough]=useState(null);   // NUMBERS-8 item 2: the organisations whose gifts credit them
   const loadRelationships=()=>{
     setRelLoading(true);
     apiFetch(`/donors/${donor.id}/relationships`)
-      .then(r=>{setRelationships(r.relationships||[]);setBroughtIn(r.broughtIn||null);})
-      .catch(()=>{setRelationships([]);setBroughtIn(null);})
+      .then(r=>{setRelationships(r.relationships||[]);setBroughtIn(r.broughtIn||null);setGivesThrough(r.givesThrough&&r.givesThrough.length?{title:"Gives through",rows:r.givesThrough,definition:r.givesThroughDefinition}:r.throughPeople&&r.throughPeople.length?{title:"Given through it",org:true,rows:r.throughPeople,definition:r.givenThroughDefinition||r.givesThroughDefinition}:null);})
+      .catch(()=>{setRelationships([]);setBroughtIn(null);setGivesThrough(null);})
       .finally(()=>setRelLoading(false));
   };
   useEffect(()=>{loadRelationships();},[donor.id]);
@@ -239,5 +240,5 @@ export function useProfileRecord({ donor, onSelectRelatedDonor, onClose, onInter
   useEffect(()=>{
     // A.4 — the Gmail probe went with the send panel it was for.
   },[]);
-  return { gifts, setGifts, giftLoading, setGiftLoading, giftReadErr, setGiftReadErr, giftReadSeq, localInts, setLocalInts, figs, setFigs, rel, setToldNonce, before, scores, canMajorGifts, publicFiling, setPublicFiling, filingLookupOpen, setFilingLookupOpen, prospectBriefOpen, setProspectBriefOpen, status, logMeeting, setLogMeeting, eraseOpen, setEraseOpen, stepEdit, setStepEdit, stepBusy, setStepBusy, pgOpen, setPgOpen, suggestOpen, setSuggestOpen, briefOpen, setBriefOpen, inboxConnected, eraseWord, setEraseWord, eraseBusy, eraseMsg, setEraseMsg, exportPersonData, erasePerson, loadRel, loadRailRef, sequences, dpThread, dpItems, convoOpen, setConvoOpen, editingInt, setEditingInt, planOpen, setPlanOpen, dpItemsLoaded, openProposals, proposalsKnown, propData, reloadProps, loadDpThread, relationships, broughtIn, relLoading, relPickerOpen, setRelPickerOpen, relSearch, setRelSearch, relType, setRelType, relSaving, relErr, setRelErr, linkDonor, unlinkDonor, retypeRelationship, relPickerResults, relPickerPending, cfData, setCfData, cfEditing, setCfEditing, cfEditVal, setCfEditVal, cfSaved, setCfSaved, cfShowAll, setCfShowAll, cfError, setCfError, giftCfDefs, giftCfEditStr, donorEvents, localScore, localTier, localConf, localRationale, scoreLoading, recalcScore, showReassign, setShowReassign, reassignId, setReassignId, reassignLoading, setReassignLoading, draftCopied, copyDraftEmail };
+  return { gifts, setGifts, giftLoading, setGiftLoading, giftReadErr, setGiftReadErr, giftReadSeq, localInts, setLocalInts, figs, setFigs, rel, setToldNonce, before, scores, canMajorGifts, publicFiling, setPublicFiling, filingLookupOpen, setFilingLookupOpen, prospectBriefOpen, setProspectBriefOpen, status, logMeeting, setLogMeeting, eraseOpen, setEraseOpen, stepEdit, setStepEdit, stepBusy, setStepBusy, pgOpen, setPgOpen, suggestOpen, setSuggestOpen, briefOpen, setBriefOpen, inboxConnected, eraseWord, setEraseWord, eraseBusy, eraseMsg, setEraseMsg, exportPersonData, erasePerson, loadRel, loadRailRef, sequences, dpThread, dpItems, convoOpen, setConvoOpen, editingInt, setEditingInt, planOpen, setPlanOpen, dpItemsLoaded, openProposals, proposalsKnown, propData, reloadProps, loadDpThread, relationships, broughtIn, givesThrough, relLoading, relPickerOpen, setRelPickerOpen, relSearch, setRelSearch, relType, setRelType, relSaving, relErr, setRelErr, linkDonor, unlinkDonor, retypeRelationship, relPickerResults, relPickerPending, cfData, setCfData, cfEditing, setCfEditing, cfEditVal, setCfEditVal, cfSaved, setCfSaved, cfShowAll, setCfShowAll, cfError, setCfError, giftCfDefs, giftCfEditStr, donorEvents, localScore, localTier, localConf, localRationale, scoreLoading, recalcScore, showReassign, setShowReassign, reassignId, setReassignId, reassignLoading, setReassignLoading, draftCopied, copyDraftEmail };
 }

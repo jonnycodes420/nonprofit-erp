@@ -282,7 +282,9 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   const [preset, setPreset] = useState(() => (initialParams?.from && initialParams?.to) ? "custom" : (initialParams?.preset || null)); // null → default per yearMode
   const [customFrom, setCustomFrom] = useState(initialParams?.from || "");
   const [customTo, setCustomTo] = useState(initialParams?.to || "");
-  const [year, setYear] = useState(null); // LYBUNT/SYBUNT; null → current per yearMode
+  const [year, setYear] = useState(() => (initialParams?.year ? Number(initialParams.year) || null : null)); // LYBUNT/SYBUNT; null → current per yearMode (NUMBERS-8: the chip's year comes with it)
+  // NUMBERS-8 item 4 (W-1124-Donors-T2): LYBUNT lists the unit its link named, people or households.
+  const [buntUnit, setBuntUnit] = useState(() => (initialParams?.unit === "people" ? "people" : "households"));
   const [groupBy, setGroupBy] = useState(start.params?.groupBy || "funds");
   const [scope, setScope] = useState(start.params?.scope || "period");
   const [fundId, setFundId] = useState("");
@@ -552,7 +554,9 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       // TRUTH-4 (W-1108-Fundraising-07): the header counts the rows on screen. A
       // household is one row, so its people are counted once, and the people
       // behind the rows are said beside it (and open, through the bunt source).
-      const shownRows = d.units || d.rows;
+      const byPerson = active === "lybunt" && buntUnit === "people";
+      const shownRows = (!byPerson && d.units) || d.rows;
+      const canFold = active === "lybunt" && d.units && d.units.length !== d.rows.length;
       const folded = shownRows.length !== d.rows.length;
       const havent = shownRows.length === 1 ? "hasn't" : "haven't";
       // RULES-1 (Jarvis, Nov 23: "464 donors and 465 people in the same headline"): one unit, the
@@ -564,13 +568,18 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
           : d.figures?.people ? <RF f={d.figures.people} label="Gave last year, not this year" unit={unitWords(buntPop.id, d.rows.length)} /> : `${d.rows.length.toLocaleString("en-US")} ${unitWords(buntPop.id, d.rows.length)}`)
         : folded ? `${shownRows.length} ${shownRows.some(r => r.unit === "household") ? plural(shownRows.length, "donor or household", "donors and households") : plural(shownRows.length, "donor")}` : d.figures?.people ? <RF f={d.figures.people} label="Gave before, not this year" unit={plural(d.rows.length, "donor")} /> : `${d.rows.length} ${plural(d.rows.length, "donor")}`}</strong>{folded && !buntPop && <> ({d.figures?.people ? <RF f={d.figures.people} label="People on these rows" unit={plural(d.rows.length, "person", "people")} /> : `${d.rows.length} people`}, each counted once)</>} {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${shownRows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
 {active === "lybunt" && atStake > 0 && <>: <strong><RF f={d.figures?.atStake} kind="money" label="Last year's giving at stake" /></strong> of last year's giving is at stake</>}. This is a call list, not a chart.
+        {canFold && <div data-testid="bunt-unit-pick" style={{ display: "flex", gap: 8, marginTop: 6, fontSize: 12.5 }}>
+          {[["people", `One row per person (${d.rows.length.toLocaleString("en-US")})`], ["households", `One row per household (${d.units.length.toLocaleString("en-US")})`]].map(([u, w]) => (
+            <button key={u} type="button" data-testid={`bunt-unit-${u}`} aria-pressed={buntUnit === u} onClick={() => setBuntUnit(u)}
+              style={{ background: buntUnit === u ? T.ink : T.white, color: buntUnit === u ? T.white : T.ink, border: "1px solid " + T.bg3, borderRadius: 8, padding: "3px 10px", font: "inherit", cursor: "pointer" }}>{w}</button>))}
+        </div>}
         {buntPop && <div data-testid="bunt-population-sentence" style={{ fontSize: 12.5, color: T.ink3, marginTop: 4, lineHeight: 1.45 }}>{buntPop.sentence}</div>}
         {/* FLOWS-5 (W-1110-Fundraising-14): offered every time, from the list report's definition. */}
         {listReportOf(active) && d.rows.length > 0 && <span style={{ marginLeft: 8 }}><SaveAsGroup name={listGroupName(active)} donorIds={d.rows.map(r => r.id || r._pid).filter(Boolean)} testid="report-save-group"
           fromReport={year == null && yearMode === "fiscal" ? active : null} reportRules={year == null && yearMode === "fiscal" ? listReportRules(active) : null} /></span>}</>;
       table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
         // INTEGRITY-1: a household or a gives-through link is one line, named for the household
-        { key: "name", label: "Donor", type: "text", person: true, ...(d.units ? { render: r => <span data-testid={r.members ? "bunt-unit" : undefined}>{r.name}{r.members && <span style={{ color: T.ink3, fontWeight: 400 }}>{` (${r.unit}: ${r.members.map(m => m.name).join(", ")})`}</span>}
+        { key: "name", label: "Donor", type: "text", person: true, ...(d.units && shownRows === d.units ? { render: r => <span data-testid={r.members ? "bunt-unit" : undefined}>{r.name}{r.members && <span style={{ color: T.ink3, fontWeight: 400 }}>{` (${r.unit}: ${r.members.map(m => m.name).join(", ")})`}</span>}
           {/* TRUTH-5: gives through / works at is an affiliation, never money in this row */}
           {r.connected && <span data-testid="bunt-connected" style={{ display: "block", color: T.ink3, fontWeight: 400, fontSize: 12 }}>{`Also connected: ${r.connected.map(c => `${c.name} (${c.how}; their own ${fmtFull(c.priorYearTotal)}, on their own row)`).join(", ")}`}</span>}</span> } : {}) },
         // LEDGER-1: SYBUNT's amount is the last year each person gave, named on the row
@@ -580,7 +589,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         { key: "lifetimeGiving", label: "Lifetime", type: "money" },
         { key: "assignedTo", label: "Assigned to", type: "text", render: r => r.assignedTo || <span style={{ color: T.ink3 }}>Nobody</span>, hideWhenEmpty: true },
         { key: "email", label: "Email", type: "text", render: r => r.email || <span style={{ color: T.ink3 }}>No email</span> },
-      ]} rows={d.units || d.rows} />;
+      ]} rows={shownRows} />;
     } else if (active === "retention") {
       empty = d.rows.every(r => r.priorDonors === 0);
       const latest = [...d.rows].reverse().find(r => r.retentionRate !== null);
