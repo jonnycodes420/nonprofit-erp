@@ -170,7 +170,7 @@ export function DeviceFrame({ device, narrow, children, label, testid = "editor-
 
 function Sheet({ title, onClose, side = "left", children, testid }) {
   return (
-    <div role="dialog" aria-label={title} data-testid={testid} style={{ position: "fixed", inset: 0, zIndex: 420, display: "flex", justifyContent: side === "left" ? "flex-start" : "flex-end", background: ED.sheetScrim }}
+    <div role="dialog" aria-label={title} data-testid={testid} style={{ position: "fixed", inset: "var(--steward-strip-h, 0px) 0 0 0", zIndex: 420, display: "flex", justifyContent: side === "left" ? "flex-start" : "flex-end", background: ED.sheetScrim }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ width: "min(100vw, 420px)", height: "100%", background: ED.rail, display: "flex", flexDirection: "column", boxShadow: "0 0 30px rgba(0,0,0,0.3)" }}>
         <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid " + ED.railLine }}>

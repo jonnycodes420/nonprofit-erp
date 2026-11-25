@@ -48,7 +48,7 @@ export function AudienceLine({ audience, testid = "audience-line" }) {
       {audience.canReceive && <div data-testid="can-receive" data-count={audience.canReceive.count} data-of={audience.canReceive.of}
         style={{ ...NOTE_BOX, marginBottom: 8 }}>
         <b>{audience.canReceive.sentence}</b>
-        <CampaignTurnOn note={audience.turnOn} style={{ marginTop: 4 }} />
+        <CampaignTurnOn note={audience.turnOn} style={{ marginTop: 4 }} linkOnly />
         {audience.canReceive.others.length > 0 && <div style={{ marginTop: 4 }}>{audience.canReceive.othersSentence} {audience.groups.filter(x => audience.canReceive.others.includes(x.reason)).map((x, k, arr) => (
           <span key={x.reason}><button type="button" data-testid={"can-receive-other-" + x.reason} data-count={x.count} onClick={() => setOpen(o => (o === x.reason ? null : x.reason))}
             style={{ background: "none", border: "none", padding: 0, color: T.green, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: 13, textDecoration: "underline", textUnderlineOffset: 2 }}>{x.sentence}</button>{k < arr.length - 1 ? " · " : "."}</span>))}</div>}
