@@ -17,62 +17,36 @@
 // the eager entry chunk, before any lazy code is asked for.
 
 const KEY = "steward_chunk_reopen";
-const AGAIN_MS = 60000;   // a second failure inside this is "in a row"
-const SETTLED_MS = 15000; // a page that ran this long without one has recovered
 let reopening = false;
 
-// A failed dynamic import, by every browser's words for it.
-const WORDS = /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed|Unable to preload CSS|ChunkLoadError|Loading (CSS )?chunk [\w-]+ failed|'text\/html' is not a valid JavaScript MIME type/i;
-export function isChunkError(err) {
-  if (!err) return false;
-  if (err.name === "ChunkLoadError") return true;
-  return WORDS.test(String(err.message || err));
-}
+// A failed dynamic import, in each browser's words for it.
+const WORDS = /dynamically imported module|Importing a module script|Unable to preload|ChunkLoadError|Loading (CSS )?chunk|not a valid JavaScript MIME/i;
+export const isChunkError = err => !!err && WORDS.test(err.name + " " + (err.message || err));
 
-function lastReopen() {
-  try { return Number(window.sessionStorage.getItem(KEY)) || 0; } catch { return -1; }
-}
-
-// The cream notice, drawn straight onto the page: React may be mid-crash.
 export const REOPENING_WORDS = "Steward was just updated. Reopening…";
-function drawReopening() {
-  try {
-    if (document.getElementById("steward-reopening")) return;
-    const d = document.createElement("div");
-    d.id = "steward-reopening";
-    d.setAttribute("role", "status");
-    d.setAttribute("data-testid", "steward-reopening");
-    d.style.cssText = "position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:#F0EDE6;color:#0F1A12;font:600 16px 'DM Sans',system-ui,sans-serif;";
-    d.textContent = REOPENING_WORDS;
-    document.body.appendChild(d);
-  } catch { /* no document */ }
-}
 
 // True when the page is reopening (now or already); false when it reopened for
-// this a moment ago, or cannot remember that it did, so the caller shows the
-// error with its Reload button instead.
+// this inside the last minute, or cannot remember that it did, so the caller
+// shows the error with its Reload button instead.
 export function reopenAfterUpdate(err) {
   if (reopening) return true;
   if (typeof window === "undefined" || !isChunkError(err)) return false;
-  const last = lastReopen();
-  if (last < 0 || Date.now() - last < AGAIN_MS) return false;
-  try { window.sessionStorage.setItem(KEY, String(Date.now())); } catch { return false; }
+  try {
+    if (Date.now() - (Number(sessionStorage.getItem(KEY)) || 0) < 60000) return false;
+    sessionStorage.setItem(KEY, String(Date.now()));
+  } catch { return false; }
   reopening = true;
-  try { console.warn("[chunk] a chunk did not load after an update; reopening", err && err.message); } catch { /* no console */ }
-  drawReopening();
-  setTimeout(() => { try { window.location.reload(); } catch { /* nothing to do */ } }, 60);
+  // The cream notice, drawn straight onto the page: React may be mid-crash.
+  try { const d = document.createElement("div"); d.setAttribute("role", "status"); d.dataset.testid = "steward-reopening"; d.textContent = REOPENING_WORDS; d.style.cssText = "position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:#F0EDE6;color:#0F1A12;font:600 16px system-ui"; document.body.appendChild(d); } catch { /* no document */ }
+  setTimeout(() => location.reload(), 60);
   return true;
 }
 export const isReopening = () => reopening;
 
-let installed = false;
 export function installChunkReload() {
-  if (installed || typeof window === "undefined") return;
-  installed = true;
-  // Vite's own signal for a failed preload or import of a lazy chunk.
-  window.addEventListener("vite:preloadError", e => { if (reopenAfterUpdate(e && e.payload)) e.preventDefault(); });
-  // An import() on a click that nobody caught.
-  window.addEventListener("unhandledrejection", e => { if (e && isChunkError(e.reason) && reopenAfterUpdate(e.reason)) e.preventDefault(); });
-  // The page that reopened has loaded and run: the next failure is a new deploy, not this one again.
-  setTimeout(() => { try { if (!reopening) window.sessionStorage.removeItem(KEY); } catch { /* storage blocked */ } }, SETTLED_MS);
+  // Vite's own signal for a failed preload or import, and an import() on a click nobody caught.
+  addEventListener("vite:preloadError", e => { if (reopenAfterUpdate(e.payload)) e.preventDefault(); });
+  addEventListener("unhandledrejection", e => { if (isChunkError(e.reason) && reopenAfterUpdate(e.reason)) e.preventDefault(); });
+  // A page that has run 15 s without one has recovered: the next failure is a new deploy.
+  setTimeout(() => { try { if (!reopening) sessionStorage.removeItem(KEY); } catch { /* storage blocked */ } }, 15000);
 }
