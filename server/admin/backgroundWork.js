@@ -9,9 +9,15 @@
 // names it.
 "use strict";
 const LIVE = require("../orgs/liveOrgs");
+const { rateLimit } = require("../../rateLimitStore");   // shared by every replica
+// A super admin flips this a few times a day; the cap is /ops's own.
+const limiter = rateLimit("bgworkLimiter", {
+  windowMs: 15 * 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false,
+  skip: () => process.env.TEST_MODE === "1" || process.env.DISABLE_RATE_LIMIT === "1",
+});
 
 // `door` is /ops's (server/admin/opsRoutes.js opsOnly): a super admin's session, 404 to anyone else.
-function mount(app, { query, run, wrap, door, limiter }) {
+function mount(app, { query, run, wrap, door }) {
   app.post("/admin/orgs/:id/background-work", limiter, door, wrap(async (req, res) => {
     const on = req.body && req.body.on;
     if (typeof on !== "boolean") return res.status(400).json({ error: "on_required", message: "Say on or off." });
