@@ -188,7 +188,7 @@ function inventory() {
     ok("§3 the header numbers are in the header's white band", await page.locator('[data-testid=dp-band] [data-testid=dp-header-figures]').count() === 1);
     ok("§3 the old number boxes are gone", await page.locator('[data-testid=dp-figures], [data-testid=dp-glance], .donor-stat-grid').count() === 0);
     ok("§3 the \"Everything with\" chip row is gone", await page.locator('[data-filter=all]').count() === 0 && !(await page.locator("text=/^Everything with/i").count()));
-    ok("§3 one row of seven tabs, directly under the header (PROFILE-2)", await page.locator('[data-testid=dp-tabs] [role=tab]').count() === 7);
+    ok("§3 one row of eight tabs, directly under the header (PROFILE-2, CONTACT-1)", await page.locator('[data-testid=dp-tabs] [role=tab]').count() === 8);
 
     // §1 — every inventory item, where its Now cell says.
     for (const r of rows) {

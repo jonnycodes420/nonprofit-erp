@@ -66,6 +66,11 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   section that would be empty is drawn, except Next step, Journeys, About (which carries "Link someone" and the
   group picker until those sections have something) and Contact, which with nothing in it says "No contact
   details yet · Add" (Add opens Edit record). (CONTACT-1)
+- **The Contact tab reads; Edit writes (CONTACT-1).** The profile's Contact tab, after Conversations, shows every
+  way to reach the person and writes nothing. Its mailing block is `shared/ackLetter.js addressLines` (the window
+  envelope's), never a second formatter, and a partial address gets no Copy. A joint addressee names only the
+  people at that address (`addresseeHere` on `GET /households/:id`), never a household member who lives elsewhere.
+  It uses no emerald, so Log a touch stays the one green button.
 - **Contact is read from the person's own columns first (CONTACT-1).** `shared/contactDetails.js` builds the
   address line and answers "is there anything", for the rail read and the profile alike, so the section never
   waits on `GET /donors/:id/rail` and never misses `mobile` or `email2` (the workbook import fills them). Every rail section is one white card
