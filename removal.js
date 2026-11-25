@@ -205,6 +205,14 @@ const KINDS = {
     decide: () => "delete",
     words: () => "The people in it are not touched. A draft that named it reaches nobody until you choose another group.",
   },
+  // BUILDER-2A: a block an org saved to use again in its emails. Every email
+  // that used it holds its own copy, so nothing that was sent or drafted changes.
+  saved_block: {
+    noun: "saved block", table: "email_saved_blocks",
+    attached: async () => ({}),
+    decide: () => "delete",
+    words: () => "Emails that already use it keep their own copy. It moves to the trash, and Undo brings it back.",
+  },
   fund: {
     noun: "fund", table: "fin_funds", retires: true, admin: true,
     attached: async (q, orgId, r) => ({
