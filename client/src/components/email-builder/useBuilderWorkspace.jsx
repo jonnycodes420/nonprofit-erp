@@ -17,7 +17,14 @@ import StockPhotoPicker from "../StockPhotoPicker";
 import { DeviceFrame, builderQuiet } from "../StewardEditor";
 import { EmailFrame, insertChip } from "./EmailFrame";
 import { useEmailBuilder, stripKeys } from "./useEmailBuilder";
-import { LeftPane, RightPane, blockName, fieldName } from "./Panes";
+import { LeftPane, RightPane, blockName, fieldName, tilesFor } from "./Panes";
+import { PlusMenu } from "./PlusMenu";   // BUILDER-2B
+
+// BUILDER-2B: who is signed in (a Code block is admins' only) and their org
+// (a copied block pastes only into an email of the same org).
+const stored = k => { try { return JSON.parse(localStorage.getItem(k) || "null") || {}; } catch { return {}; } };
+const CLIP = "STEWARD-EMAIL-BLOCKS:";   // what a copied block carries on the clipboard
+const noIds = list => JSON.parse(JSON.stringify(list || [], (k, v) => (k === "id" || k === "_k" ? undefined : v)));
 
 const isTextTarget = el => !!el && (el.tagName === "TEXTAREA" || el.isContentEditable || (el.tagName === "INPUT" && !/^(range|checkbox|radio|button|submit|color)$/i.test(el.type || "")));
 const PART = { header: "Header", footer: "Footer" };
@@ -50,9 +57,14 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
   const [events, setEvents] = useState([]);
   const [pages, setPages] = useState([]);
   const [sheet, setSheet] = useState(null);
+  const [plusAt, setPlusAt] = useState(null);   // BUILDER-2B: { at, rect } while the "+" list is open
+  const [blocksRefresh, setBlocksRefresh] = useState(0);
+  const me = useMemo(() => ({ role: stored("npe_user").role || null, org: stored("npe_org").id || null }), []);
   const frameRef = useRef(null);
   const caret = useRef(null);
   const lastInput = useRef(null);   // "subject" | "preheader" | "frame"
+  const copyRef = useRef(() => {});
+  const pasteRef = useRef(() => {});
   const fetcher = useRef(fetchPreview);
   fetcher.current = fetchPreview;
 
@@ -86,17 +98,11 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
     b.setSelKey(k);
     if (i != null) lastInput.current = "frame";
   };
-  const on = {
-    commit: (path, value) => { lastInput.current = "frame"; b.commit(path, value); },
-    focusChange: f => { typing.current = f; if (!f) setTimeout(() => { if (!typing.current && stale.current) { stale.current = false; setRev(r => r + 1); } }, 120); },
-    caret: c => { caret.current = c; lastInput.current = "frame"; },
-    select,
-    action: (what, i) => { const k = keyAt(i); if (k) { b.act(what, k); force(); } },
-    undo: () => b.undo(),
-    redo: () => b.redo(),
-  };
+
   // The cream around the email, or Escape anywhere: no selection, the email's own settings.
   const clear = useCallback(() => b.setSelKey(null), [b]);
+
+
   useEffect(() => {
     const onKey = e => {
       if (e.defaultPrevented) return;
@@ -107,10 +113,18 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
         return;
       }
       if (e.key === "Escape" && !isTextTarget(e.target) && !document.querySelector('[role="dialog"]')) clear();
+      // BUILDER-2B: Alt+Up / Alt+Down moves the selected block.
+      if (e.altKey && !mod && (e.key === "ArrowUp" || e.key === "ArrowDown") && b.selKey != null && !readOnly && !isTextTarget(e.target)) {
+        e.preventDefault(); b.act(e.key === "ArrowUp" ? "up" : "down", b.selKey); force();
+      }
     };
+    const onCopy = e => { if (!isTextTarget(e.target) && !(window.getSelection && String(window.getSelection()))) copyRef.current(e); };
+    const onPaste = e => { if (!isTextTarget(e.target)) pasteRef.current(e); };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [b, clear]);
+    window.addEventListener("copy", onCopy);
+    window.addEventListener("paste", onPaste);
+    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("copy", onCopy); window.removeEventListener("paste", onPaste); };
+  }, [b, clear]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // ITEM 1 · A FIELD ALWAYS LANDS SOMEWHERE. Where she is typing in the
   // selected text (or any text, with nothing selected), at the caret; else at
@@ -147,12 +161,20 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
   const fieldLabel = useMemo(() => { const m = Object.fromEntries((mergeFields || []).map(f => [f.token.replace(/[{}\s]/g, ""), fieldName(f.label)])); return k => m[k] || k; }, [mergeFields]);
   const setOne = (patch, tag) => { const err = b.setBlock(sel._k, patch, tag && `set:${sel._k}:${tag}`); if (err) say(err); else redraw(); return err; };
   const setStyleOne = (patch, tag) => { const err = b.setStyle(sel._k, patch, tag && `style:${sel._k}:${tag}`); if (err) say(err); else redraw(); return err; };
+  // BUILDER-2B: Save as a block: the selected block and the parts below it (never the footer).
+  const saveBlock = sel ? {
+    run: n => { const i = b.latest.current.findIndex(x => x._k === sel._k); return noIds(b.latest.current.slice(i, i + 1 + n).filter(x => x.type !== "footer")); },
+    max: (() => { const bs = b.latest.current; const i = bs.findIndex(x => x._k === sel._k); return bs.slice(i + 1).filter(x => x.type !== "footer" && !x.locked).length; })(),
+    onSaved: () => setBlocksRefresh(n => n + 1), say,
+  } : null;
   const settingsProps = sel ? {
     set: setOne, setStyle: setStyleOne, events, pages, brand: preview.brand || {}, fieldLabel, onOpenBrand,
     pick: (kind, onPick) => setPicker({ kind, onPick }), onFieldsTab: () => { setLeftTab("fields"); if (narrow) setSheet({ side: "left", n: Date.now() }); },
+    saveBlock, role: me.role,
   } : null;
 
   const add = async (def, opts) => {
+    setPlusAt(null);
     const r = await b.insert(def, opts);
     if (r && r.error) { say(r.error); return; }
     force();
@@ -165,12 +187,81 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
       const box = doc && doc.querySelector("[data-testid=email-block-selected]");
       if (box && box.style.display !== "none" && box.scrollIntoView) box.scrollIntoView({ block: "center", behavior: "smooth" });
     }, 900);
-    say(`${blockName(def.key)} added ${opts && opts.list ? "(a list) " : ""}under the ${b.selKey ? "selected part" : "last part"}. Click it to change it.`);
+    say(`${blockName(def.key)} added ${opts && opts.list ? "(a list) " : ""}${opts && opts.at != null ? "where you chose" : `under the ${b.selKey ? "selected part" : "last part"}`}. Click it to change it.`);
+  };
+  // BUILDER-2B · A SAVED OR READY-MADE BLOCK: the server hands back a copy
+  // with fresh ids, and it goes in as one undo step at `at` (or under the selection).
+  const addFromBlocks = async (payload, at = null) => {
+    if (readOnly) return;
+    try {
+      const path = payload.saved ? `/email-blocks/${encodeURIComponent(payload.saved)}/use` : `/email-blocks/ready/${encodeURIComponent(payload.ready)}/use`;
+      const r = await apiFetch(path, { method: "POST", body: "{}" });
+      const done = b.insertBlocks(r.blocks || [], { at });
+      if (done.error) { say(done.error); return; }
+      force(); setRightTab("edit");
+      say(`${r.name || "The block"} added${done.count > 1 ? ` (${done.count} parts)` : ""}. ${payload.saved ? "It is a copy: change it here and the saved one stays as it was." : "Change anything in [brackets] before it is sent."}`);
+    } catch (e) { say((e && (e.sentence || e.message)) || "That block could not be added."); }
+  };
+  // A drop: a tile (a new block), a saved or ready-made block, or a block moved by its handle.
+  const dropAt = (payload, at) => {
+    if (readOnly || !payload) return;
+    if (payload.move != null) {
+      const k = keyAt(Number(payload.move));
+      if (k && b.moveTo(k, at)) { b.setSelKey(k); force(); say("Moved. Undo puts it back."); }
+      return;
+    }
+    if (payload.saved || payload.ready) { addFromBlocks(payload, at); return; }
+    const def = blockTypes.find(t => t.key === payload.type);
+    if (def) add(def, { list: !!payload.list, at });
+  };
+  // Cmd/Ctrl-C on a selected block, Cmd/Ctrl-V in any email of the same org.
+  const copySelected = e => {
+    const s = b.selKey != null ? b.latest.current.find(x => x._k === b.selKey) : null;
+    if (!s || s.locked || s.type === "footer" || s.type === "header") return;
+    try { e.clipboardData.setData("text/plain", CLIP + JSON.stringify({ v: 1, org: me.org, blocks: noIds([s]) })); e.preventDefault(); } catch { return; }
+    say(`${blockName(s.type, labels)} copied. Paste it into any email in your organization with Cmd or Ctrl + V.`);
+  };
+  const pasteBlocks = e => {
+    let t = "";
+    try { t = e.clipboardData.getData("text/plain") || ""; } catch { t = ""; }
+    if (!t.startsWith(CLIP)) return;
+    e.preventDefault();
+    if (readOnly) return;
+    let data = null;
+    try { data = JSON.parse(t.slice(CLIP.length)); } catch { data = null; }
+    if (!data || !Array.isArray(data.blocks)) { say("That copy could not be read. Copy the block again."); return; }
+    if (data.org && me.org && data.org !== me.org) { say("That block was copied from another organization, so it can't be pasted here."); return; }
+    const done = b.insertBlocks(noIds(data.blocks));
+    if (done.error) { say(done.error); return; }
+    force();
+    say(`Pasted under the ${b.selKey ? "selected part" : "last part"}.`);
+  };
+  copyRef.current = copySelected;
+  pasteRef.current = pasteBlocks;
+  const on = {
+    commit: (path, value) => { lastInput.current = "frame"; b.commit(path, value); },
+    focusChange: f => { typing.current = f; if (!f) setTimeout(() => { if (!typing.current && stale.current) { stale.current = false; setRev(r => r + 1); } }, 120); },
+    caret: c => { caret.current = c; lastInput.current = "frame"; },
+    select: i => { setPlusAt(null); select(i); },
+    action: (what, i) => { const k = keyAt(i); if (k) { b.act(what, k); force(); } },
+    undo: () => b.undo(),
+    redo: () => b.redo(),
+    // BUILDER-2B: a drop on the line, the "+", copy and paste.
+    drop: (payload, at) => { dropAt(payload, at); },
+    plus: (at, r) => {
+      let box = null;
+      try { box = frameRef.current && frameRef.current.getBoundingClientRect(); } catch { box = null; }
+      const ox = box ? box.left : 0, oy = box ? box.top : 0;
+      setPlusAt({ at, rect: { top: r.top + oy, bottom: r.bottom + oy, left: r.left + ox, right: r.right + ox } });
+    },
+    copy: e => copySelected(e),
+    paste: e => pasteBlocks(e),
   };
 
   const left = (
     <LeftPane tab={leftTab} onTab={setLeftTab} blockTypes={blockTypes} onAdd={add} fields={(mergeFields || []).map(f => ({ token: f.token, label: f.label }))}
       fieldInfo={preview.fieldInfo} asName={preview.as && preview.as.name} readOnly={readOnly}
+      role={me.role} onUseBlock={p => { addFromBlocks(p); if (narrow) setSheet({ side: null, n: Date.now() }); }} blocksRefresh={blocksRefresh} say={say}
       onField={f => { const r = insertField(f, metaAppend); if (narrow && r) setSheet({ side: null, n: Date.now() }); }} />
   );
   const right = emailSettings => (
@@ -210,6 +301,10 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
       {picker && (picker.kind === "photo"
         ? <StockPhotoPicker onClose={() => setPicker(null)} onPick={p => { picker.onPick({ url: p.url, alt: p.alt }); setPicker(null); }} />
         : <MediaPicker kind={picker.kind} onClose={() => setPicker(null)} onPick={item => { picker.onPick(item); setPicker(null); }} />)}
+      {plusAt && <PlusMenu rect={plusAt.rect} onClose={() => setPlusAt(null)}
+        tiles={tilesFor(blockTypes, me.role).map(t => ({ key: t.k, name: t.name, def: t.def, list: t.list }))}
+        onPickElement={t => add(t.def, { at: plusAt.at, list: t.list })}
+        onPickBlock={p => { const at = plusAt.at; setPlusAt(null); addFromBlocks(p, at); }} />}
       {toast && <div role="status" data-testid="builder-toast" key={toast.n} style={{ position: "fixed", bottom: 22, left: "50%", transform: "translateX(-50%)", zIndex: 600, background: T.ink, color: T.white,
         padding: "10px 16px", borderRadius: 10, fontSize: 13.5, maxWidth: "min(90vw, 520px)", boxShadow: "0 8px 30px rgba(15,26,18,0.25)" }}>{toast.msg}</div>}
     </>

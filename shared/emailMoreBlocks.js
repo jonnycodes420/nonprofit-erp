@@ -26,20 +26,12 @@
 //            model (pageWidgets.js `roles`); the screen enforces it.
 
 import { sanitizeEmailCode } from "./emailCodeSanitize.js";
+import { SOCIAL_NETWORKS } from "./socialNetworks.js";
 
 export const COLUMN_ITEM_TYPES = ["text", "image", "button"];
 export const MAX_COLUMN_ITEMS = 4;
 export const COLUMN_VALIGN = ["top", "middle", "bottom"];
-// The order icons are drawn in, and the name each one is read out as.
-export const SOCIAL_NETWORKS = [
-  { key: "facebook", label: "Facebook" },
-  { key: "instagram", label: "Instagram" },
-  { key: "x", label: "X" },
-  { key: "linkedin", label: "LinkedIn" },
-  { key: "youtube", label: "YouTube" },
-  { key: "tiktok", label: "TikTok" },
-  { key: "website", label: "our website" },
-];
+export { SOCIAL_NETWORKS };   // its one home is shared/socialNetworks.js
 export const SOCIAL_SIZES = [24, 32, 40];
 // The icon files are Steward's own, served with the app (client/public/email-icons/).
 export const socialIconPath = (key, light) => `/email-icons/${key}-${light ? "light" : "dark"}.png`;

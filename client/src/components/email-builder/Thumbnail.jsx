@@ -40,7 +40,7 @@ export function Thumbnail({ html, selected, frameRef }) {
       <div onClick={go} title="Click a spot to go there" role="button" aria-label="The whole email. Click a spot to go there."
         style={{ position: "relative", width: W * scale, height: h * scale, margin: "0 auto", cursor: "pointer", borderRadius: 6, overflow: "hidden", boxShadow: "0 0 0 1px " + T.bg2, background: T.bg }}>
         <iframe ref={ref} title="The whole email, small" srcDoc={html} sandbox="allow-same-origin" tabIndex={-1} aria-hidden="true" onLoad={measure}
-          style={{ width: W, height: h, border: 0, transform: `scale(${scale})`, transformOrigin: "0 0", pointerEvents: "none", display: "block" }} />
+          style={{ colorScheme: "light", width: W, height: h, border: 0, transform: `scale(${scale})`, transformOrigin: "0 0", pointerEvents: "none", display: "block" }} />
         {mark && <span data-testid="email-thumbnail-mark" aria-hidden="true" style={{ position: "absolute", top: mark.top * scale, left: mark.left * scale, width: (mark.right - mark.left) * scale,
           height: Math.max(3, (mark.bottom - mark.top) * scale), border: "1.5px solid " + T.green, borderRadius: 2, pointerEvents: "none", boxSizing: "border-box" }} />}
       </div>
