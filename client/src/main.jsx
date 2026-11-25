@@ -218,11 +218,9 @@ function PublicOnly({ children }) {
 // Connections (FIX-13, INT builds), and an old bookmark used to fall through to
 // the home page. Signed in, it opens the Connections page in the app; signed
 // out, the public Connections page.
-// ONBOARD-4: /signup and /demo are the booking page now; a partner code comes along.
+// ONBOARD-4: /signup, /demo and /invitation are the booking page now; the query (a partner code) comes along.
 function ToBook() {
-  const { search } = useLocation();
-  const partner = new URLSearchParams(search).get("partner");
-  return <Navigate to={"/book" + (partner ? "?partner=" + encodeURIComponent(partner) : "")} replace />;
+  return <Navigate to={"/book" + useLocation().search} replace />;
 }
 
 function OldIntegrations() {
