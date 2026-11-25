@@ -62,7 +62,7 @@ module.exports = function volunteerSources() {
       sql: orgId => ({
         sql: `SELECT a.id, 'application' AS type, a.person_id AS donor_id, a.name, LEFT(a.submitted_at::text, 10) AS date,
                      NULL::numeric AS amount, 'Applied from the volunteer page' AS detail
-                FROM volunteer_applications a WHERE a.org_id = ? AND a.status = 'pending'`,
+                FROM volunteer_applications a WHERE a.org_id = ? AND COALESCE(a.via,'page')='page' AND ${require("./alreadyVolunteer").WAITING("a")}`,   // ATLAS-10: the list's own count
         args: [orgId],
         order: "date DESC, id",
       }),

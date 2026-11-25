@@ -31,7 +31,7 @@ function when(d, today) {
 const SHOW = 3;   // of each kind; the line says how many more
 
 // [{ kind, id, line, link }] for one person, what is open first.
-async function openItems(query, orgId, donorId, { today = null, first = "They" } = {}) {
+async function openItems(query, orgId, donorId, { today = null, first = "They", show = SHOW } = {}) {   // ATLAS-10: "Tell me more" shows every one
   const P = require("../../shared/proposalShape.js");
   const stageWord = Object.fromEntries(P.PROPOSAL_STAGES.map(s => [s.key, s.label]));
   const [o] = await query("SELECT timezone FROM orgs WHERE id=?", [orgId]).catch(() => []);
@@ -50,6 +50,7 @@ async function openItems(query, orgId, donorId, { today = null, first = "They" }
       .catch(e => { console.error("[atlas] brief meetings:", e.message); return []; }),
   ]);
   const out = [];
+  const SHOW = show;
   for (const o of asks.slice(0, SHOW)) {
     const purpose = String(o.purpose || "").trim();
     const stage = stageWord[o.proposal_stage] || String(o.proposal_stage || "").replace(/_/g, " ");

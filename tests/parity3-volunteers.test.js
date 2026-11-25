@@ -374,6 +374,35 @@ const T = civilToday();
   ok("§VOL-3 the event page shows its shift and who is on it",
     evSlot.status === 201 && team.status === 200 && team.body.shifts.length === 1 && team.body.shifts[0].people.some(p => p.id === NEW) && team.body.shifts[0].needed === 4, team.body);
 
+  // ── ATLAS-10 item 4: an application from someone who already volunteers closes itself; a role can be
+  //    removed (with Undo), Volunteer's hours staying put; Guest is a role; the last role stays.
+  //    Red on main: the second application waits in Pending; Guest is refused (400); remove is "Mark as former".
+  {
+    const ROLES = async id => (await q(`SELECT person_types FROM donors WHERE id=$1`, [id]))[0].person_types;
+    const qid2 = (await api("GET", "/volunteer-hub/recruitment", tok)).body.questions[0].id;
+    const again2 = new URLSearchParams({ name: "Gale Giver", email: "gale.giver@par3v.local", [`q_${qid2}`]: "yes", availability: "Saturdays" });
+    await fetch(`${require("./helpers").BASE}/volunteer-with/parity-vol-t/apply`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: again2.toString() });
+    const [second] = await q(`SELECT status, decided_by, person_id FROM volunteer_applications WHERE org_id=$1 AND LOWER(email)='gale.giver@par3v.local' ORDER BY submitted_at DESC LIMIT 1`, [ORG]);
+    ok("§ATLAS-10 Gale, already a volunteer, applies again: it closes itself onto her record, by system:already-volunteer", second && second.status === "approved" && second.decided_by === "system:already-volunteer" && second.person_id === GIVER, second);
+    await q(`INSERT INTO volunteer_applications (id,org_id,name,email,status,via) VALUES ('vap_a10_old',$1,'Gale Giver','gale.giver@par3v.local','pending','page')`, [ORG]);
+    const list = (await api("GET", "/volunteer-hub/applications", tok)).body || {};
+    ok("§ATLAS-10 one already waiting is listed apart as Already a volunteer, never in Pending or its count",
+      !(list.applications || []).some(a => a.id === "vap_a10_old") && (list.alreadyVolunteer || []).some(a => a.id === "vap_a10_old" && a.personId === GIVER)
+      && list.pending === (list.applications || []).length, { pending: list.pending, already: list.alreadyVolunteer });
+    const g1 = await api("PUT", `/people/${GIVER}/roles`, tok, { role: "guest", on: true });
+    ok("§ATLAS-10 Guest is a role the + menu can add", g1.status === 200 && (await ROLES(GIVER)).includes("guest"), g1.body);
+    const hoursBefore = (await q(`SELECT COUNT(*)::int AS n FROM volunteer_shifts WHERE org_id=$1 AND person_id=$2`, [ORG, GIVER]))[0].n;
+    const rm = await api("PUT", `/people/${GIVER}/roles`, tok, { role: "volunteer", on: false, remove: true });
+    ok("§ATLAS-10 Remove Volunteer takes the role off, and every shift stays on her record",
+      rm.status === 200 && !(await ROLES(GIVER)).includes("volunteer") && (await q(`SELECT COUNT(*)::int AS n FROM volunteer_shifts WHERE org_id=$1 AND person_id=$2`, [ORG, GIVER]))[0].n === hoursBefore, { status: rm.status, roles: await ROLES(GIVER) });
+    const un = await api("PUT", `/people/${GIVER}/roles`, tok, { role: "volunteer", on: true, undo: true });
+    ok("§ATLAS-10 Undo puts Volunteer back", un.status === 200 && (await ROLES(GIVER)).includes("volunteer"));
+    const solo = await mkPerson("Imelda Strand", "imelda.strand@par3v.local");
+    await q(`UPDATE donors SET person_types='["staff_board"]'::jsonb WHERE id=$1`, [solo]);
+    const last = await api("PUT", `/people/${solo}/roles`, tok, { role: "staff_board", on: false, remove: true });
+    ok("§ATLAS-10 a person's last role cannot be removed", last.status === 409 && last.body.error === "last_role" && JSON.stringify(await ROLES(solo)) === '["staff_board"]', last.body);
+  }
+
   await closeDb();
   summary();
 })().catch(async e => { console.error(e); ok("the suite ran to the end", false, e.message); await closeDb().catch(() => {}); summary(); });

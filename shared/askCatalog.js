@@ -1,5 +1,6 @@
 // shared/askCatalog.js · ASK-2. WHAT CAN BE ASKED, DEFINED ONCE.
 import { clipAtWord } from "./askGuide.js";
+import { population } from "./populationWords.js";   // ATLAS-10 item 7: a lapsed count says DEFINE-1's population
 //
 // The free box ("Or ask your own question") turns a question into a TYPED
 // PLAN: a metric, a period, what to compare it with, what to break it down
@@ -48,7 +49,7 @@ export const METRICS = {
   first_year_retention: { label: "First-year retention", kind: "percent", base: "gifts", noPeriod: "this_year",
     sentence: "Of the people whose first gift ever was last calendar year, the share who have given again this one." },
   lapsed_count:    { label: "Lapsed donors", kind: "count", base: "donors", noPeriod: "today", unit: ["lapsed donor", "lapsed donors"],
-    sentence: "Each person tagged Lapsed today: they gave before and nothing in the last twelve months." },
+    sentence: population("lapsed").sentence },   // ATLAS-10 item 7: DEFINE-1's population, its own words
   recurring_monthly_value: { label: "Monthly giving", kind: "money", base: "source", source: "recurring-monthly", noPeriod: "today",
     sentence: "Every monthly gift charging successfully today, at what it brings in each month. A yearly gift counts as a twelfth of its amount." },
   recurring_donors: { label: "Monthly donors", kind: "count", base: "donors", noPeriod: "today", unit: ["monthly donor", "monthly donors"],
@@ -659,7 +660,7 @@ export function answerSentence(a, plan, ctx = {}) {
     if (plan.top) { t(`Your top ${Math.min(plan.top, n)} donors${per} gave `); f("value"); t(" between them; "); }
     else {
       const who = n === 1 ? "One person" : `${n.toLocaleString("en-US")} people`;
-      const verb = { new_donor_count: "gave for the first time", recaptured_count: "came back", lapsed_count: n === 1 ? "is tagged Lapsed" : "are tagged Lapsed",
+      const verb = { new_donor_count: "gave for the first time", recaptured_count: "came back", lapsed_count: n === 1 ? "is Lapsed 12+ months" : "are Lapsed 12+ months",
         recurring_donors: n === 1 ? "gives monthly" : "give monthly", volunteer_count: n === 1 ? "is on the volunteer roster" : "are on the volunteer roster",
         donor_list: n === 1 ? "on your Donors list matches" : "on your Donors list match" }[plan.metric] || "gave";
       t(`${who} ${verb}${sc}${METRICS[plan.metric].noPeriod ? "" : per2}; `);
@@ -685,7 +686,7 @@ export function answerSentence(a, plan, ctx = {}) {
     case "largest_gift": t(`The largest gift${per} was `); f("value"); if (a.largestFrom) t(`, from ${a.largestFrom}`); break;
     case "retention_rate": t("Retention is "); f("value"); t(": of everyone who gave last fiscal year, that share has given again this fiscal year"); break;
     case "first_year_retention": t("Of the "); f("part1"); t(" people whose first gift was last calendar year, "); f("part0"); t(" have given again this year, "); f("value"); break;
-    case "lapsed_count": f("value"); t(` ${v.value === 1 ? "person is" : "people are"} tagged Lapsed today`); break;
+    case "lapsed_count": f("value"); t(` ${v.value === 1 ? "person is" : "people are"} Lapsed 12+ months`); break;   // ATLAS-10: the registry's name
     case "recurring_donors": f("value"); t(` ${v.value === 1 ? "person gives" : "people give"} monthly`); if (a.also) { t(", bringing in "); f("also"); t(" a month"); } break;
     case "recurring_monthly_value": t("Monthly gifts bring in "); f("value"); t(" a month"); break;
     case "pledged_outstanding": f("value"); t(" is pledged and not yet paid"); break;

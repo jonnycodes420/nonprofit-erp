@@ -3,6 +3,10 @@
 Read this when you touch anything a model or an automation does: drafts, the Anthropic gate, `askClaude`, workflows, or system actors.
 
 ## Rules
+- **A person brief always comes (ATLAS-10, 25 Nov 2026).** "Brief me on", "Can you brief me on", "Tell me about",
+  "Prep me for", "What's the next step for" and a name are one brief, read in code, so it answers with reading off
+  in template sentences: open asks, gifts not yet thanked, the next meeting, the next move, giving with donor
+  since. The next move is the profile's (`server/insights/nextMoveOf.js`). Tell me more re-reads it in full.
 - **Draft an email opens with the About note (FLOWS-18, 17 Nov 2026).** Atlas's draft, AI and template alike, puts the
   note's detail in the lines after the greeting (`shared/draftAbout.js`); a model draft whose opening lines name none of it
   is not used, and the template is. Brief me, Call script and the draft read the same facts.

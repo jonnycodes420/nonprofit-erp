@@ -199,6 +199,7 @@ const GUARDED_WRITERS = [
   // ATLAS-8: puts the question back on Atlas lines written before atlas_actions.question.
   // Dry run by default; --apply writes through writerDbUrl.
   "atlas8-backfill-question",
+  "atlas10-close-already-volunteer",
   "backfill-campaign-attribution",                    "dedupe-finance-gift-stamps",
    "fix-build54-demo-photos",
   "fix-demo-finance-ledger",  "load-irs-ein-registry",
@@ -313,6 +314,10 @@ const PROD_READONLY = [
   "flows10-stopped-steps",
   // TRUTH-6: lists receipts on $0 gifts and future-dated gifts not marked scheduled; SELECTs only, no --apply (it prints an UPDATE for Jonathan, never runs one).
   "truth6-zero-receipts",
+  // ATLAS-10: lists drafts waiting for review that claim a video, a call or a visit the record can't show; SELECTs only, never edits a draft.
+  "atlas10-draft-claims",
+  // ATLAS-10: lists gifts and ledger rows of exactly one cent, with who wrote them; SELECTs only.
+  "atlas10-penny-rows",
   // MAIL-1: what each org's mail would do, in a READ ONLY transaction, counts and org names only.
   "mail-preflight",
   // NUMBERS-1: checks an org's numbers against its gifts; SELECTs only, counts-only with --counts.

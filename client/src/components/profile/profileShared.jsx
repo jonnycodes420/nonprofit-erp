@@ -240,13 +240,16 @@ function RoleLine({donor,isReadOnly,birthday="",noGifts=false}){
     }).catch(()=>{});
     return()=>{gone=true;};
   },[donor.id]);
-  const toggle=async(k)=>{
+  const [undoRole,setUndoRole]=useState(null);   // ATLAS-10 item 4: the role just removed, for Undo
+  const toggle=async(k,{remove=false,undo=false}={})=>{
     if(isReadOnly||busy)return;
     const on=!types.includes(k);
     if(k==="donor"&&!on&&lock.locked){setNote(lock.reason);return;}
     setBusy(k);setNote("");
     try{
-      const r=await apiFetch(`/people/${donor.id}/roles`,{method:"PUT",body:JSON.stringify({role:k,on})});
+      const r=await apiFetch(`/people/${donor.id}/roles`,{method:"PUT",body:JSON.stringify({role:k,on,...(remove&&!on?{remove:true}:{}),...(undo?{undo:true}:{})})});
+      setUndoRole(remove&&!on?k:null);
+      if(remove&&!on)setNote(`${(ROLE_CHIPS.find(c=>c.key===k)||{}).label||k} removed.${k==="volunteer"?" Their hours and history stay on their record.":""}`);
       if(r&&Array.isArray(r.person_types)){
         setTypes(r.person_types);
         // A role other than Donor shows as set; Donor itself still follows the gifts.
@@ -280,7 +283,7 @@ function RoleLine({donor,isReadOnly,birthday="",noGifts=false}){
       {roleWords&&<span data-testid="role-words" style={{fontSize:12.5,color:T.ink3,lineHeight:1.4}}>{roleWords}</span>}
       {/* PROFILE-1 (header): the birthday is on the same line as "Donor since". */}
       {birthday&&<span data-testid="dp-header-birthday" style={{fontSize:12.5,color:T.ink3,lineHeight:1.4}}>{roleWords?"· ":""}Birthday {birthday}</span>}
-      {!isReadOnly&&missing.length>0&&(
+      {!isReadOnly&&(missing.length>0||have.length>1)&&(
         <button type="button" data-testid="role-add" aria-haspopup="menu" aria-expanded={openAdd}
           aria-label="Add a role" title="Add a role" onClick={()=>setOpenAdd(o=>!o)}
           style={{width:20,height:20,borderRadius:99,border:"1px solid "+T.bg3,background:T.white,
@@ -300,6 +303,7 @@ function RoleLine({donor,isReadOnly,birthday="",noGifts=false}){
         <div role="menu" data-testid="role-add-menu" style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:60,
           background:T.white,border:"1px solid "+T.bg3,borderRadius:10,boxShadow:"0 12px 32px rgba(15,26,18,0.18)",
           minWidth:190,padding:6}}>
+          {missing.length>0&&<div style={{fontSize:11,fontWeight:700,color:T.ink3,padding:"4px 10px"}}>Add a role</div>}
           {missing.map(c=>(
             <button key={c.key} type="button" role="menuitem" data-testid={"role-add-"+c.key}
               disabled={busy===c.key} onClick={()=>{setOpenAdd(false);toggle(c.key);}}
@@ -307,8 +311,20 @@ function RoleLine({donor,isReadOnly,birthday="",noGifts=false}){
                 padding:"8px 10px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
               {c.label}
             </button>))}
+          {/* ATLAS-10 item 4: each role they have can be removed (with Undo); the last one cannot. */}
+          {have.length>1&&<div style={{fontSize:11,fontWeight:700,color:T.ink3,padding:"6px 10px 4px",borderTop:missing.length?"1px solid "+T.bg2:"none"}}>Remove a role</div>}
+          {have.length>1&&have.map(c=>(
+            <button key={"rm-"+c.key} type="button" role="menuitem" data-testid={"role-remove-"+c.key}
+              disabled={busy===c.key||(c.key==="donor"&&lock.locked)} title={c.key==="donor"&&lock.locked?lock.reason||"":c.key==="volunteer"?"Their hours and history stay on their record.":""}
+              onClick={()=>{setOpenAdd(false);toggle(c.key,{remove:true});}}
+              style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderRadius:6,
+                padding:"8px 10px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+              {`Remove ${c.label}`}
+            </button>))}
         </div>)}
-      {note&&<span style={{fontSize:11.5,color:T.gold700,lineHeight:1.4}}>{note}</span>}
+      {note&&<span data-testid="role-note" style={{fontSize:11.5,color:T.ink2,lineHeight:1.4}}>{note}{undoRole&&!isReadOnly&&<> <button type="button" data-testid="role-remove-undo" disabled={!!busy}
+        onClick={()=>{const k=undoRole;setUndoRole(null);setNote("");toggle(k,{undo:true});}}
+        style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Undo</button></>}</span>}
     </div>
   );
 }

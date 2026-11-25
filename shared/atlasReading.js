@@ -6,4 +6,6 @@
 // drawn by TellSteward.jsx), the Home Thread's answers (AskRail.jsx, from GET /ask/guided) and
 // Settings > Atlas (AtlasSettings.jsx, a lazy chunk, imports it) all read this.
 // ES module: the browser imports it and the server requires it.
-export const READING_OFF = "My reading is off for this organization, so I answered from Steward's own counts only. A question they don't cover, I'll say I can't answer.";
+// ATLAS-10 item 7 (W-1125-Atlas-T6): said in the present, so it reads true on Settings > Atlas
+// (where nothing was asked) as well as over an answer; the dialog's refusal opens with it too.
+export const READING_OFF = "My reading is off for this organization, so I answer from Steward's own counts only. A question they don't cover, I'll say I can't answer.";
