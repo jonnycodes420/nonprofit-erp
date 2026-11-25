@@ -10,7 +10,7 @@ module.exports = () => ({
     label: "Given through",
     measure: () => "sum",
     params: { donor: "id:required", through: "id:required" },
-    sentence: () => "The organisation's own gifts that credit this person, at the amount credited to them. A refund and a credit row are not money given.",
+    sentence: () => "The organization's own gifts that credit this person, at the amount credited to them. A refund and a credit row are not money given.",
     sql: (orgId, p) => ({
       sql: `SELECT sc.id, 'soft_credit' AS type, g.donor_id, o.name, g.date, ROUND(sc.amount::numeric, 2) AS amount, 'Soft credit on their gift' AS detail
               FROM gift_soft_credits sc

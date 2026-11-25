@@ -468,6 +468,7 @@ async function previewHtml(req, row, { as = null, editable = false, audienceNoGi
   // SWEEP-3: with nobody chosen the preview is one of her donors (the newest
   // giver), never the signed-in staff member ("Dear Allie"). "me" is the
   // explicit Preview as yourself; an org with no donor yet previews as her.
+  const picked = !!as && as !== "me";   // NUMBERS-8 item 6: she chose this person (Preview as), not the default
   if (!as) as = await defaultPreviewDonorId(orgId);
   if (as === "me") as = null;
   if (as) {
@@ -475,14 +476,16 @@ async function previewHtml(req, row, { as = null, editable = false, audienceNoGi
     if (d) {
       shownAs = { id: d.id, name: d.name, email: d.email || "" };
       // NUMBERS-8 item 6: a real person's gift fields are theirs or empty, never the sample's $250.
-      fields = { ...GP.withoutSampleGift(fields), ...(await donorFields(orgId, d, ectx)) };
+      fields = { ...(picked ? GP.withoutSampleGift(fields) : fields), ...(await donorFields(orgId, d, ectx)) };
       if (personKind) {
         const f = await require("./templates").personFacts(orgId, d.id, req.user.userId);
         if (f) for (const [k, v] of Object.entries(f.values)) if (v != null && String(v) !== "") fields[k] = v;
       }
-      const giverId = await defaultPreviewDonorId(orgId);
-      const [giver] = giverId ? await query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [giverId, orgId]) : [];
-      noGift = GP.noGiftNotice(row, d, fields, giver ? { id: giver.id, name: giver.name } : null);
+      if (picked) {
+        const giverId = await defaultPreviewDonorId(orgId);
+        const [giver] = giverId ? await query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [giverId, orgId]) : [];
+        noGift = GP.noGiftNotice(row, d, fields, giver ? { id: giver.id, name: giver.name } : null);
+      }
     }
   }
   if (audienceNoGift) fields = { ...fields, audience_no_gift: true };   // POLISH-9

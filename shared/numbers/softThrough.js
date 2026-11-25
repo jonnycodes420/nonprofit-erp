@@ -55,8 +55,8 @@ async function givesThroughOf(query, orgId, personId) {
   return rows.map(r => ({ id: r.through_id, name: r.name, cents: Number(r.cents) || 0, gifts: Number(r.gifts) || 0,
     source: { key: "gives-through", params: { donor: personId, through: r.through_id } } }));
 }
-const GIVEN_THROUGH_SENTENCE = "Given through it: the part of this organisation's own gifts soft-credited to each person. Each is the same figure that person's Gives through shows, and none is added to this organisation's lifetime.";
-const GIVES_THROUGH_SENTENCE = "Gives through: the part of each organisation's own gifts soft-credited to this person. It is the same figure the organisation shows beside their name, and it is never added to their own lifetime.";
+const GIVEN_THROUGH_SENTENCE = "Given through it: the part of this organization's own gifts soft-credited to each person. Each is the same figure that person's Gives through shows, and none is added to this organization's lifetime.";
+const GIVES_THROUGH_SENTENCE = "Gives through: the part of each organization's own gifts soft-credited to this person. It is the same figure the organization shows beside their name, and it is never added to their own lifetime.";
 
 const usd = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
 const summaryWords = (s, name = "this record") => (s.people
