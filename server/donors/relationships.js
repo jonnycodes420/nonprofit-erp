@@ -357,7 +357,27 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
   if (hiddenRel.size) rows.splice(0, rows.length, ...rows.filter(r => !hiddenRel.has(r.related_donor_id)));
   // CONNECT-1: the connector's line, "Brought in 4 people · $12,400 given since".
   const broughtIn = await CN.broughtInFor(orgId, donorId);
-  if (!rows.length) return res.json({ relationships: [], householdTotal: null, broughtIn });
+  // NUMBERS-8 item 2 (W-1125-Finance-37): Gives through comes from the soft credit on an
+  // organisation's gifts, whatever links them (a program officer, an owner, or no link at all).
+  const ST = require("../../shared/numbers/softThrough");
+  const gtAll = await ST.givesThroughOf(query, orgId, donorId).catch(e => { console.error("[relationships] gives through:", e.message); return []; });
+  const gtHidden = new Set(gtAll.length ? await require("../auth/portfolio").hiddenOf(req.user, orgId, gtAll.map(g => g.id)) : []);
+  const givesThrough = gtAll.filter(g => !gtHidden.has(g.id));   // ACCESS-2: an organisation outside her portfolio isn't there
+  const givesThroughDefinition = ST.GIVES_THROUGH_SENTENCE;
+  // And the organisation's side: every person its gifts credit, linked or not, each at the same figure
+  // their own Gives through line shows, so the two sides foot person by person.
+  const throughPeople = await (async () => {
+    const [self] = await query("SELECT kind, person_types FROM donors WHERE id = ? AND org_id = ?", [donorId, orgId]);
+    if (!isOrgRow(self)) return [];   // a person's gift that credits a spouse is the household's story, not this one
+    const per = await ST.throughByPerson(query, orgId, donorId).catch(() => new Map());
+    if (!per.size) return [];
+    const ids = [...per.keys()];
+    const hid = new Set(await require("../auth/portfolio").hiddenOf(req.user, orgId, ids));
+    const names = new Map((await query("SELECT id, name FROM donors WHERE org_id = ? AND id = ANY(?)", [orgId, ids])).map(d => [d.id, d.name]));
+    return ids.filter(id => !hid.has(id) && id !== donorId).map(id => ({ id, name: names.get(id) || "", cents: per.get(id),
+      source: { key: "gives-through", params: { donor: id, through: donorId } } })).sort((a, b) => b.cents - a.cents || a.name.localeCompare(b.name));
+  })();
+  if (!rows.length) return res.json({ relationships: [], householdTotal: null, broughtIn, givesThrough, givesThroughDefinition, throughPeople, givenThroughDefinition: ST.GIVEN_THROUGH_SENTENCE });
 
   const relatedIds = rows.map(r => r.related_donor_id);
   const relatedDonors = await query(
@@ -388,7 +408,6 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
   const orgSide = relationships.filter(r => r.side === "organization");
   let through = null;
   if (relationships.some(r => r.side)) {
-    const ST = require("../../shared/numbers/softThrough");
     if (orgSide.length) {
       const [per, sum] = await Promise.all([ST.throughByPerson(query, orgId, donorId, orgSide.map(r => r.relatedDonorId)), ST.throughSummary(query, orgId, donorId)]);
       through = { cents: sum.cents, people: sum.people, sentence: ST.summaryWords(sum, "this organization"), definition: ST.SENTENCE };
@@ -408,7 +427,7 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
     householdTotal = (await figureSources.figureValue(orgId, householdTotalSource)).value;
   }
 
-  res.json({ relationships, householdTotal, householdTotalSource, through, broughtIn });
+  res.json({ relationships, householdTotal, householdTotalSource, through, broughtIn, givesThrough, givesThroughDefinition, throughPeople, givenThroughDefinition: ST.GIVEN_THROUGH_SENTENCE });
 }));
 
 app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async (req, res) => {

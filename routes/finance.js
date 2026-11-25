@@ -458,18 +458,10 @@ app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const today = orgToday(await orgTz(orgId));                          // ORG_TZ_SEAM_OK
   const month = monthRange(today);
+  // NUMBERS-8 item 1: the card's every figure comes from fundCard.js, the function the dialog reads.
   const funds = await query(
-    `SELECT f.id, f.name, f.restricted, f.description,
-            COALESCE(SUM(CASE WHEN ft.type='income'  THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS in_all,
-            COALESCE(SUM(CASE WHEN ft.type='expense' THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS out_all,
-            COALESCE(SUM(CASE WHEN ft.type='income'  AND ft.date >= ? AND ft.date <= ? THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS in_period,
-            COALESCE(SUM(CASE WHEN ft.type='expense' AND ft.date >= ? AND ft.date <= ? THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS out_period
-       FROM fin_funds f
-       LEFT JOIN ${NUM.fundLines.LEDGER_FUND_ROWS()} ft ON ft.fund_id=f.id AND ft.org_id=f.org_id   -- GIFTS-2: a split gift by its lines
-      WHERE f.org_id=?
-      GROUP BY f.id, f.name, f.restricted, f.description
-      ORDER BY COALESCE(f.restricted,false) DESC, f.name`,
-    [month.from, month.to, month.from, month.to, orgId, orgId, orgId]);
+    `SELECT f.id, f.name, f.restricted, f.description FROM fin_funds f WHERE f.org_id=?
+      ORDER BY COALESCE(f.restricted,false) DESC, f.name`, [orgId]);
 
   // WHO RESTRICTED IT. A grant whose money went to this fund, or a donor
   // whose gift did. Read per fund rather than guessed from the name.
@@ -508,24 +500,23 @@ app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
   // (books), and the gifts waiting to post are a figure that opens them.
   const fyFrom = NUM.fiscalYear.fiscalYearToDate(await orgTz(orgId)).from;
   const defaultId = await NUM.defaultFund.defaultFundId(query, orgId);
-  const books = await NUM.fundBooks.fundBooks(query, orgId, { from: fyFrom, to: today, fyFrom, defaultId });
-  const BOOK0 = { receivedCents: 0, receivedCount: 0, waitingCents: 0, waitingCount: 0 };
+  const books = await NUM.fundCard.fundCard(query, orgId, { fyFrom, today, month, defaultId });
 
   res.json({
     period: month,
     periodLabel: new Date(month.from + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }),
     funds: funds.map(f => {
-      const balance = Number(f.in_all) - Number(f.out_all);
+      const b = books.get(f.id);
+      const balance = b.balanceCents;
       const restricted = !!f.restricted;
       const who = byFund.get(f.id) || [];
-      const b = books.get(f.id) || BOOK0;
       return {
         id: f.id, name: f.name, restricted, description: f.description || null, isDefault: f.id === defaultId,
         received: { cents: b.receivedCents, amount: toDollars(b.receivedCents), count: b.receivedCount, source: { key: "gifts", params: { from: fyFrom, to: today, fund: f.id } } },
-        waiting: { cents: b.waitingCents, amount: toDollars(b.waitingCents), count: b.waitingCount, source: { key: "ledger-status", params: { status: "waiting", fund: f.id } } },
-        balanceCents: balance, balance: toDollars(balance),
-        inPeriod: toDollars(Number(f.in_period)), outPeriod: toDollars(Number(f.out_period)),
-        inPeriodCents: Number(f.in_period), outPeriodCents: Number(f.out_period),
+        waiting: { cents: b.gifts.waiting.cents, amount: toDollars(b.gifts.waiting.cents), count: b.gifts.waiting.n, source: { key: "ledger-status", params: { status: "waiting", fund: f.id } } },
+        balanceCents: balance, balance: toDollars(balance), balanceWords: NUM.fundCard.balanceWords(b), transactions: b.rows,
+        inPeriod: toDollars(b.inPeriodCents), outPeriod: toDollars(b.outPeriodCents),
+        inPeriodCents: b.inPeriodCents, outPeriodCents: b.outPeriodCents,
         restrictedBy: restricted ? who : [],
         sentence: restricted
           ? (who.length
@@ -541,7 +532,7 @@ app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
     definitions: {
       received: NUM.fundBooks.SENTENCES.received,
       waiting: NUM.fundBooks.SENTENCES.waiting,
-      balance: "Everything that has ever come into this fund, less everything that has gone out of it. Not a period figure.",
+      balance: NUM.fundCard.SENTENCES.balance,
       inPeriod: "Income posted to this fund inside the current month, in your organization's time zone.",
       restrictedBy: "The grants and donors whose money went into this fund, largest first. Read from the transactions and the gifts, never from the fund's name.",
     },
@@ -555,27 +546,31 @@ app.get("/finance/funds-detail/rows", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const fundId = String(req.query.fund || "");
   if (!(await orgOwns("fin_funds", fundId, orgId))) return res.status(404).json({ error: "Not found" });
+  // NUMBERS-8 item 1 (W-1122-Finance-F7): every figure here is fundCard.js's, the card's own
+  // function, so the card and its dialog cannot differ. The lists show the latest rows; when a
+  // list is cut, its sentence says how many of how many, and the figures are the whole fund.
+  const today = orgToday(await orgTz(orgId));                          // ORG_TZ_SEAM_OK
+  const fyFrom = NUM.fiscalYear.fiscalYearToDate(await orgTz(orgId)).from;
+  const defaultId = await NUM.defaultFund.defaultFundId(query, orgId);
+  const f = (await NUM.fundCard.fundCard(query, orgId, { fyFrom, today, month: monthRange(today), defaultId, fundId })).get(fundId);
+  const SHOW = 500;
   const rows = await query(
     `SELECT ft.id, ft.date, ft.type, ft.amount, ft.description, ft.vendor_donor
-       FROM ${NUM.fundLines.LEDGER_FUND_ROWS()} ft WHERE ft.org_id=? AND ft.fund_id=?
-      ORDER BY ft.date DESC NULLS LAST, ft.id LIMIT 2000`, [orgId, orgId, orgId, fundId]);
-  const net = rows.reduce((a, r) => a + (r.type === "income" ? 1 : -1) * Math.round(Number(r.amount) * 100), 0);
-  // TRUTH-3: the gifts behind the fund, each with where it stands with the books,
-  // so a fund backed by a gift that has not posted never reads "No transactions".
-  const fyFrom = NUM.fiscalYear.fiscalYearToDate(await orgTz(orgId)).from;
+       FROM ${NUM.fundLines.LEDGER_FUND_ROWS()} ft WHERE ft.org_id=? AND ft.fund_id=? AND ft.type IN ('income','expense')
+      ORDER BY ft.date DESC NULLS LAST, ft.id LIMIT ${SHOW}`, [orgId, orgId, orgId, fundId]);
   const gifts = await query(
     `SELECT g.id, g.donor_id, d.name AS donor_name, LEFT(g.date, 10) AS date, gf.amount, ${NUM.ledgerStatus.STATUS("g")} AS ledger
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
        JOIN ${NUM.fundLines.GIFT_FUND_ROWS("g")} gf ON gf.gift_id = g.id
-      WHERE g.org_id = ? AND gf.fund_id = ? AND ${NUM.money.LIVE("d")} AND ${NUM.money.MONEY("g")}
-      ORDER BY g.date DESC NULLS LAST, g.id LIMIT 2000`, [fyFrom, orgId, fundId]).catch(e => { console.error("[funds-detail] gifts:", e.message); return []; });
-  const giftCents = gifts.reduce((a, g) => a + Math.round(Number(g.amount) * 100), 0);
+      WHERE g.org_id = ? AND COALESCE(gf.fund_id, ?::text) = ? AND ${NUM.money.LIVE("d")} AND ${NUM.money.MONEY("g")}
+      ORDER BY g.date DESC NULLS LAST, g.id LIMIT ${SHOW}`, [fyFrom, orgId, defaultId, fundId]).catch(e => { console.error("[funds-detail] gifts:", e.message); return []; });
   const WORD = { posted: "posted", waiting: "waiting to post", history: "history only" };
-  res.json({ rows: rows.map(r => ({ ...r, amount: Number(r.amount) })), count: rows.length,
-    netCents: net, net: toDollars(net),
-    gifts: gifts.map(g => ({ ...g, amount: Number(g.amount), ledgerWord: WORD[g.ledger] })), giftCount: gifts.length, giftCents,
-    sentence: `${rows.length} ${rows.length === 1 ? "transaction" : "transactions"}, ${money.formatCentsPlain(net)} net. This is every row behind that balance.`
-      + (gifts.length ? ` ${gifts.length} ${gifts.length === 1 ? "gift names" : "gifts name"} this fund (${money.formatCentsPlain(giftCents)}): ${["posted", "waiting", "history"].map(k => [k, gifts.filter(g => g.ledger === k).length]).filter(([, n]) => n).map(([k, n]) => `${n} ${WORD[k]}`).join(", ")}.` : "") });
+  const cut = (shown, all, what) => (shown < all ? ` The latest ${shown.toLocaleString("en-US")} of ${all.toLocaleString("en-US")} ${what} are listed.` : "");
+  res.json({ rows: rows.map(r => ({ ...r, amount: Number(r.amount) })), count: f.rows, shown: rows.length,
+    netCents: f.balanceCents, net: toDollars(f.balanceCents), balanceCents: f.balanceCents,
+    gifts: gifts.map(g => ({ ...g, amount: Number(g.amount), ledgerWord: WORD[g.ledger] })), giftCount: f.gifts.total.n, giftCents: f.gifts.total.cents,
+    waitingCents: f.gifts.waiting.cents, waitingCount: f.gifts.waiting.n,
+    sentence: `Balance ${NUM.fundCard.balanceWords(f)}${cut(rows.length, f.rows, "transactions")} ${NUM.fundCard.giftWords(f)}${cut(gifts.length, f.gifts.total.n, "gifts")}` });
 }));
 
 // ── FIN-1 · THE BOOKKEEPER'S EXPORT, IN THE SHAPE THEIR TOOL WANTS ───────

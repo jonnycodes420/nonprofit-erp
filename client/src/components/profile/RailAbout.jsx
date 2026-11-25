@@ -60,7 +60,7 @@ function AboutThemNote({donorId,initial,isReadOnly}){
       style={{background:"none",border:"none",padding:0,margin:0,textAlign:"left",font:"inherit",fontSize:13,color:RAIL.text,lineHeight:1.45,whiteSpace:"pre-wrap",overflowWrap:"anywhere",cursor:"text"}}>{text}</button>;
 }
 
-function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatusTags,canMajorGifts,contactPerson,donor,handleReassign,household,isAdmin,isReadOnly,isTeam,onSelectRelatedDonor,orgTeam,publicFiling,railData,reassignId,reassignLoading,relationships,broughtIn,scores,setConvoOpen,setReassignId,setRelatedOpen,setShowReassign,showReassign,status,onEdit}){
+function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatusTags,canMajorGifts,contactPerson,donor,handleReassign,household,isAdmin,isReadOnly,isTeam,onSelectRelatedDonor,orgTeam,publicFiling,railData,reassignId,reassignLoading,relationships,broughtIn,givesThrough,scores,setConvoOpen,setReassignId,setRelatedOpen,setShowReassign,showReassign,status,onEdit}){
   const cx=(railData&&railData.contact)||{};
   const wealth=railData&&railData.wealth;   // WEALTH-1: the rail carries it only for someone who may see it
   // CONTACT-1: the person's own columns answer first (address, second email,
@@ -83,6 +83,17 @@ function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatus
                 {linkedPeople({household,relationships,donorId:donor.id}).map(x=>x.via==="household"?(m=>(<button key={"hh:"+m.id} type="button" onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"block",background:"none",border:"none",padding:"4px 0",color:RAIL.text,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>{m.name}{m.deceased?(m.died_words?` (died ${m.died_words})`:" (died)"):""} <span style={{color:RAIL.dim}}>· household</span></button>))(x.member):(r=>(<button key={r.id} type="button" data-testid="dp-rail-related-row" onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(r.relatedDonorId)} style={{display:"block",background:"none",border:"none",padding:"4px 0",color:RAIL.text,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>{relationshipLine(r)}{r.side&&<span data-testid="dp-rail-through" style={{color:RAIL.dim}}>{` · ${throughWords(r)}`}</span>}</button>))(x.rel))}
                 {/* CONNECT-1: the connector's credit, one line under their links; each number opens its rows (shared/numbers/broughtIn.js) */}
                 {broughtIn&&<div data-testid="dp-rail-brought-in" style={{fontSize:12.5,color:RAIL.dim,marginTop:6}}>{"Brought in "}<Figure variant="inline" kind="count" value={broughtIn.people} label="People brought in" definition={broughtIn.peopleDefinition} source={broughtIn.peopleSource}/>{` ${broughtIn.people===1?"person":"people"} · `}<Figure variant="inline" kind="money" whole value={broughtIn.value} label="Given since they came in" definition={broughtIn.giftsDefinition} source={broughtIn.giftsSource}/>{" given since"}</div>}
+              </RailSection>}
+              {/* NUMBERS-8 item 2 (W-1125-Finance-37): what this person gives through an organisation, from the soft
+                  credit on its gifts (shared/numbers/softThrough.js givesThroughOf), the same figure the organisation
+                  shows beside their name. Each amount opens its gifts; each name opens the organisation. */}
+              {givesThrough&&<RailSection title={givesThrough.title} testid={givesThrough.org?"dp-rail-given-through":"dp-rail-gives-through"}>
+                {givesThrough.rows.map(g=>(
+                  <div key={g.id} data-testid="dp-rail-gives-through-row" style={{display:"flex",justifyContent:"space-between",gap:8,padding:"4px 0",fontSize:13,color:RAIL.text}}>
+                    <button type="button" onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(g.id)} style={{background:"none",border:"none",padding:0,color:RAIL.text,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit",textDecoration:"underline dotted"}}>{g.name}</button>
+                    <span style={{whiteSpace:"nowrap"}}><Figure variant="inline" kind="money" value={g.cents/100} label={givesThrough.org?`${g.name}, given through ${donor.name}`:`Given through ${g.name}`} definition={givesThrough.definition} source={g.source}/></span>
+                  </div>))}
+                <div style={{fontSize:12,color:RAIL.dim,marginTop:4,lineHeight:1.45}}>{givesThrough.definition}</div>
               </RailSection>}
               {/* PROFILE-2 · 5 ABOUT: donor since and roles, the owner, the giving
                   pattern, how to reach them, and the tags the header did not show. */}
