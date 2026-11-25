@@ -37,6 +37,10 @@ const ALL = KINDS;
 // kept lists hear (api.js onWrite), so an unnamed write never re-reads a page.
 const GIFT = ["gift", "person", "totals", "fund"];
 const RULES = [
+  // ONBOARD-5: How you talk moves the Major cut (every level, count and tag) and the org's words;
+  // owners move who owns each person (Home's portfolio, the Donors list's owner).
+  [/^\/onboarding\/setup\/voice$/, ["org", "person", "totals", "insights"]],
+  [/^\/onboarding\/setup\/owners$/, ["person", "totals"]],
   // COMMS-1: a draft dismissed, restored, sent, approved or skipped moves every count of drafts waiting.
   [/^\/(drafts|milestone-drafts|thank-yous)\b|^\/agent\/(waiting|drafts?)\b/, ["draft", "task"]],
   // SENDS-2: a committed send plan sends drafts (Communications, volunteers, auction winners) or

@@ -333,6 +333,7 @@ function Root() {
           <Route path="/start/:token" element={<OnboardPages />} />
           <Route path="/imports/:importId/verify" element={<RequireOnboarded><OnboardPages page="verify" /></RequireOnboarded>} />
           <Route path="/onboard/totals" element={<RequireOnboarded><OnboardPages page="totals" /></RequireOnboarded>} />
+          <Route path="/onboard/setup" element={<RequireOnboarded><OnboardPages page="setup" /></RequireOnboarded>} />
           <Route path="/print/notes" element={<RequireOnboarded><OnboardPages page="notes" /></RequireOnboarded>} />
           {/* LANDING-3 part 1 — /pricing is a marketing route now and lives in
               MARKETING_ROUTES above, in the marketing shell with the prices on
