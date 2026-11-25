@@ -75,3 +75,11 @@ Note on the Faith image: portrait source, cropped to the landscape card via
 - **Swapping the hero image is one line**: change `HERO_SRC` in `Landing.jsx`
   and the matching preload `href`/`imagesrcset` in `client/index.html`. If a new
   image is used under **CC BY** (not Unsplash), add a footer attribution line.
+
+## public/email-icons/ — the email Social block's icons (BUILDER-2A, 2026-11-24)
+
+Steward's own drawings: a plain glyph (a camera, an "f", "in", an X, a play
+button, a note, a globe) on a circle, ink on white and white on ink, 96 px for
+sharp phone screens and shown at 24 to 40 px. Drawn as SVG and written to PNG
+with sharp (many inboxes do not show SVG). No third-party artwork or logo files.
+`shared/emailMoreBlocks.js` names them (`socialIconPath`).

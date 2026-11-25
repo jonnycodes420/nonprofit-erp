@@ -102,6 +102,10 @@ async function seed(q, o, tag) {
   // probes org B's own id here rather than org A's twin.
   await ins(q, "email_templates", { id: `et_${tag}0000000000${tag}`, org_id: o, name: `${mark} Template`, purpose: "thank_you", subject: `${mark} subject`,
     blocks: [{ type: "text", text: `${mark} block` }] });
+  // BUILDER-2A — one saved email block. The route refuses any id not shaped
+  // `esb_<20 hex>` before it looks, so, like the template, the id is hex.
+  await ins(q, "email_saved_blocks", { id: `esb_${tag}${"0".repeat(18)}${tag}`, org_id: o, name: `${mark} Saved block`,
+    blocks: [{ type: "richtext", blocks: [{ type: "p", text: `${mark} saved words` }] }], preview_html: `<p>${mark} preview</p>` });
   // INSIGHTS — a review of this org's gift ("it is a gift", nothing to restore).
   await ins(q, "insight_reviews", { org_id: o, gift_id: `g_${o}`, decision: "gift", donor_id: d });
   // READOUTS — one readout.
@@ -149,6 +153,7 @@ function resolve(p, n, B) {
     [/^\/privacy\/marks\//, { id: `cmk_${B}` }],
     [/^\/privacy\/removals\//, { id: `cer_${B}` }],
     [/^\/email-templates\//, { id: `et_${B.slice(-1)}0000000000${B.slice(-1)}` }],
+    [/^\/email-blocks\/(?!ready\/)/, { id: `esb_${B.slice(-1)}${"0".repeat(18)}${B.slice(-1)}` }],   // BUILDER-2A
     [/^\/insights\/donor\//, { id: `d_${B}` }],
     [/^\/insights\/review\//, { giftId: `g_${B}` }],
     [/^\/readouts\//, { id: `rdo_${B}`, kind: "new_donors" }],
