@@ -803,7 +803,8 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   // what makes this work with no background tick (production has none).
   // UNDO-1 item 4: what the log closed and opened is recorded, and the plan's move with it (touchUndo.js).
   await require("./touchUndo").afterTouch({ query, run, actor, advanceCultivationPlan, today: date }, req,
-    { donorId: req.params.id, interactionId: out.interactionId, closedIds: out.closedIds, openedId: out.openedId, kindLabel: ({ letter: "handwritten note", other: "touch", gift_sent: "gift" })[touch.interactionType] || touch.interactionType || "touch" });
+    { donorId: req.params.id, interactionId: out.interactionId, closedIds: out.closedIds, openedId: out.openedId,
+      closeTaskId: !nsSkipped && typeof req.body?.closeTaskId === "string" ? req.body.closeTaskId : null, kindLabel: ({ letter: "handwritten note", other: "touch", gift_sent: "gift" })[touch.interactionType] || touch.interactionType || "touch" });
   // A.1 — the gift the conversation carried, named in the response so the
   // screen can say what it recorded instead of the user going to look.
   const giftOut = giftWritten && giftWritten.gift

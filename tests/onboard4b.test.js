@@ -6,6 +6,11 @@
 // §2 The guided setup: five steps in order, a skipped step comes back, the
 //    current step resumes from what is stored, a booking's file waits for her.
 // §3 Each Stuck rule picks its own fixture and no other fixture.
+// §4 ONBOARD-5, the ten-step setup page: progress saves and resumes on the same
+//    step; Skip leaves a connection unconnected and Home says so; ten steps and
+//    no Mailchimp anywhere; a campaign merged on the Funds page shows its gifts on
+//    the one kept; the major-gift amount moves the Major count on the Donors
+//    list; nothing sends until Send invites is pressed.
 //
 // THE PLANTED DEFECTS (ONBOARD4B_PLANT on the SERVER, one at a time; each red):
 //   autoload   the job loads the moment it arrives               → §1
@@ -25,7 +30,7 @@ const NOW = testNow();
 const SUPER = "onb4b-super@example.org";
 const O = { sup: "org_onb4b_sup", send: "org_onb4b_send", plain: "org_onb4b_plain", np: "org_onb4b_np", npEarly: "org_onb4b_np2",
   nc: "org_onb4b_nc", ncEarly: "org_onb4b_nc2", call: "org_onb4b_call", callDone: "org_onb4b_call2", callEarly: "org_onb4b_call3",
-  conc: "org_onb4b_conc", concEarly: "org_onb4b_conc2", cl: "org_onb4b_cl" };
+  conc: "org_onb4b_conc", concEarly: "org_onb4b_conc2", cl: "org_onb4b_cl", five: "org_onb5_setup" };
 const ADMIN = "onb4b-send@example.org";
 const CSV = "First Name,Last Name,Email,Gift Amount,Gift Date\nAlder,Quince,alder@onb4b.example.org,40,2025-03-02\nBirch,Marrow,birch@onb4b.example.org,65.5,2025-06-11\n";
 
@@ -53,6 +58,93 @@ const booking = (id, email, created, file) => q(`INSERT INTO sales_bookings (id,
   VALUES ($1,'Rowan Fixture','Fixture Booking Org',$2,$3,$4,$5,$6,$7,'system:test','ONBOARD-4 fixture')`,
   [id, email, file ? file.name : null, file ? "text/csv" : null, file ? file.bytes.length : null, file ? file.bytes : null, at(created)]);
 const count = async (sql, p) => Number((await q(sql, p))[0].n);
+
+// ── §4 · ONBOARD-5: the ten-step setup page ──
+async function section4() {
+  const fs = require("fs");
+  const path = require("path");
+  const ORG = O.five;
+  await mkOrg(ORG, "Thornbury Riding Fellowship", { paper: at(NOW - 2 * DAY) });
+  await mkUser("u_onb5_admin", ORG, "onb4b-five@example.org", "admin", false, NOW - 3 * DAY);
+  const me = await login("onb4b-five@example.org");
+  const guided = async (page = true) => (await api("GET", `/onboarding/guided${page ? "?page=1" : ""}`, me)).body;
+
+  // progress saves and resumes on the same step
+  const at1 = await api("POST", "/onboarding/guided/at", me, { step: "funds" });
+  ok("§4 the page she is on is saved", at1.status === 200);
+  ok("§4 and she resumes on that same step (a fresh read, as another device would)", (await guided()).current === "funds", (await guided()).current);
+  ok("§4 a step that does not exist is refused", (await api("POST", "/onboarding/guided/at", me, { step: "mailchimp" })).status === 400);
+
+  // Skip leaves the connection unconnected and shows it on Home
+  const sk = await api("POST", "/onboarding/guided/skip", me, { step: "quickbooks", skip: true });
+  const home = await guided(false);
+  const qbStep = (home.steps || []).find(x => x.id === "quickbooks") || {};
+  const qbRows = await count(`SELECT COUNT(*)::int AS n FROM bookkeeping_connections WHERE org_id = $1`, [ORG]);
+  ok("§4 Skip on QuickBooks leaves it unconnected (no books link, not done)", sk.status === 200 && qbStep.done === false && qbStep.skipped === true && qbRows === 0, qbStep);
+  ok("§4 and Home's card names it as not connected yet", home.show === true && (home.notConnected || []).some(c => c.id === "quickbooks"), home.notConnected);
+
+  // the step count is 10 and Mailchimp appears nowhere
+  const g = await guided();
+  ok("§4 the setup is ten steps", (g.steps || []).length === 10 && g.total === 10, (g.steps || []).length);
+  const clientDir = path.join(__dirname, "..", "client", "src", "pages", "setup");
+  const src = fs.readdirSync(clientDir).map(f => fs.readFileSync(path.join(clientDir, f), "utf8")).join("\n")
+    + fs.readFileSync(path.join(__dirname, "..", "client", "src", "components", "onboarding", "GuidedSetup.jsx"), "utf8");
+  ok("§4 Mailchimp appears nowhere: not in the steps, not on the page, not on Home's card", !/mailchimp/i.test(JSON.stringify(g)) && !/mailchimp/i.test(src));
+
+  // a campaign merged on the Funds page shows its gifts on the one kept
+  for (const [id, name] of [["d_onb5_a", "Ivy Bellwether"], ["d_onb5_b", "Oren Bellwether"], ["d_onb5_c", "Pell Ainsworth"]])
+    await q(`INSERT INTO donors (id,org_id,name,created_at,created_by,created_by_name) VALUES ($1,$2,$3,$4,'system:test','ONBOARD-5 fixture')`, [id, ORG, name, at(NOW - 2 * DAY)]);
+  await q(`INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,goal_amount,created_at) VALUES ('cmp_onb5_keep',$1,'Annual Fund 2026','appeal','','','active','{}',5000,$2)`, [ORG, at(NOW - 2 * DAY)]);
+  await q(`INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,created_at) VALUES ('cmp_onb5_dup',$1,'Annual Fund 2026','appeal','','','draft','{}',$2)`, [ORG, at(NOW - DAY)]);
+  const gift = (id, donorId, dollars, daysAgo, campaign) => q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign_id,created_by,created_by_name)
+    VALUES ($1,$2,$3,$4,$5,'donation',$6,'system:test','ONBOARD-5 fixture')`, [id, ORG, donorId, dollars, at(NOW - daysAgo * DAY).slice(0, 10), campaign]);
+  await gift("g_onb5_1", "d_onb5_a", 12000, 30, "cmp_onb5_keep");
+  await gift("g_onb5_2", "d_onb5_b", 3000, 40, "cmp_onb5_keep");
+  await gift("g_onb5_3", "d_onb5_c", 50, 50, "cmp_onb5_dup");
+  const f1 = (await api("GET", "/onboarding/setup/funds", me)).body;
+  const dup = (f1.campaigns || []).find(c => c.id === "cmp_onb5_dup") || {};
+  ok("§4 the Funds page offers the second Annual Fund 2026 to merge into the first, each with its gift count",
+    dup.duplicateOf === "cmp_onb5_keep" && dup.gifts === 1 && ((f1.campaigns || []).find(c => c.id === "cmp_onb5_keep") || {}).gifts === 2, f1.campaigns);
+  const mg = await api("POST", "/campaign-tidy/merge", me, { keepId: dup.duplicateOf, mergeIds: [dup.id] });
+  const f2 = (await api("GET", "/onboarding/setup/funds", me)).body;
+  const kept = (f2.campaigns || []).find(c => c.id === "cmp_onb5_keep") || {};
+  ok("§4 merged there, the kept campaign shows all three gifts and the second is gone", mg.status === 200 && kept.gifts === 3 && !(f2.campaigns || []).some(c => c.id === "cmp_onb5_dup"), f2.campaigns);
+
+  // the major-gift amount chosen changes the Major count on the Donors list
+  const majors = async () => { const b = (await api("GET", "/donors?level=major&limit=500", me)).body || {}; return (Array.isArray(b) ? b : b.donors || b.rows || []).map(d => d.id).sort().join(","); };
+  const before = await majors();
+  const v = await api("POST", "/onboarding/setup/voice", me, { majorCents: 250000, giverSingular: "partner", giverPlural: "partners", addresseePattern: "The {last}s" });
+  const after = await majors();
+  ok("§4 at the default $10,000 one person is Major; choosing $2,500 on How you talk makes it two on the Donors list",
+    before === "d_onb5_a" && v.status === 200 && after === "d_onb5_a,d_onb5_b", { before, after, status: v.status, body: v.body && v.body.message });
+  const [orgRow] = await q(`SELECT giving_level_mid_cents, giving_level_major_cents, vocabulary_json, addressee_pattern FROM orgs WHERE id = $1`, [ORG]);
+  const vj = typeof orgRow.vocabulary_json === "string" ? JSON.parse(orgRow.vocabulary_json) : orgRow.vocabulary_json;
+  ok("§4 the same press keeps Mid under Major and saves her word and her addressee", Number(orgRow.giving_level_mid_cents) < 250000 && (vj || {}).giver_plural === "partners" && orgRow.addressee_pattern === "The {last}s", orgRow);
+  const badWord = await api("POST", "/onboarding/setup/voice", me, { majorCents: 250000, giverSingular: "x", giverPlural: "partners" });
+  const badAddr = await api("POST", "/onboarding/setup/voice", me, { majorCents: 250000, giverSingular: "partner", giverPlural: "partners", addresseePattern: "Dear {nickname}" });
+  ok("§4 a custom word or addressee is validated before it is saved", badWord.status === 400 && badAddr.status === 400 && /nickname/.test(badAddr.body.message || ""), [badWord.body, badAddr.body]);
+
+  // nothing sends until Send invites is pressed
+  const invites = () => count(`SELECT COUNT(*)::int AS n FROM invites WHERE org_id = $1`, [ORG]);
+  await api("GET", "/onboarding/setup/team", me);
+  const own = await api("POST", "/onboarding/setup/owners", me, { to: "u_onb5_admin", which: "unowned" });
+  ok("§4 reading the team page and giving her the unowned donors sends no invitation", own.status === 200 && own.body.updated === 3 && (await invites()) === 0, own.body);
+  const teamSrc = fs.readFileSync(path.join(clientDir, "StepsTeam.jsx"), "utf8");
+  const inviteCalls = (teamSrc.match(/"\/auth\/invite"/g) || []).length;
+  const sendFn = teamSrc.slice(teamSrc.indexOf("const send = async"), teamSrc.indexOf("const row = {"));
+  ok("§4 the page calls /auth/invite in one place, inside Send invites, and from no other step", inviteCalls === 1 && /"\/auth\/invite"/.test(sendFn)
+    && !fs.readdirSync(clientDir).filter(f => f !== "StepsTeam.jsx").some(f => /\/auth\/invite/.test(fs.readFileSync(path.join(clientDir, f), "utf8"))));
+  const sent = await api("POST", "/auth/invite", me, { email: "onb4b-treasurer@example.org", role: "viewer" });
+  ok("§4 Send invites is the press that makes the invitation", sent.status === 200 && (await invites()) === 1, sent.body);
+
+  // "Go to Home" finishes setup: Home stops showing the card
+  await api("POST", "/onboarding/guided/finish", me, {});
+  const fin = await guided(false);
+  ok("§4 Go to Home finishes setup and Home's card goes", fin.show === false && fin.finished === true, fin.show);
+  const board = (await api("GET", "/ops/onboarding", await login(SUPER))).body;
+  const row = (board.rows || []).find(r => r.orgId === ORG) || {};
+  ok("§4 the /ops board shows which step each org is on and what it skipped", row.setup && !!row.setup.finishedAt && row.setup.skipped.includes("QuickBooks"), row.setup);
+}
 
 (async () => {
   console.log("ONBOARD-4 Part B: the guided setup, Send it to us, and Stuck\n");
@@ -120,7 +212,7 @@ const count = async (sql, p) => Number((await q(sql, p))[0].n);
   ok("§1b and her Home opens on the totals check", clHome.body && clHome.body.firstWin === "totals", clHome.body && clHome.body.firstWin);
 
   // ── §2 · the guided setup ──
-  ok("§2 five steps in order", (g1.body.steps || []).map(s => s.id).join(",") === "yours,people,call,connect,team", (g1.body.steps || []).map(s => s.id));
+  ok("§2 ten steps in order (ONBOARD-5)", (g1.body.steps || []).map(s => s.id).join(",") === "yours,people,letters,funds,voice,gifts,quickbooks,email,team,call" && g1.body.total === 10, (g1.body.steps || []).map(s => s.id));
   ok("§2 the first step not done is current: Make it yours", g1.body.current === "yours", g1.body.current);
   const sk = await api("POST", "/onboarding/guided/skip", her, { step: "yours", skip: true });
   const reread = await api("GET", "/onboarding/guided", her);
@@ -180,6 +272,7 @@ const count = async (sql, p) => Number((await q(sql, p))[0].n);
   ok("§3 each row carries a drafted note to the org's own admin, for Jonathan to send himself", np.draft.to === "onb4b-np@example.org" && /Jonathan$/.test(np.draft.body) && !!np.draft.subject, np.draft);
   ok("§3 a non-super-admin gets 404 for the Stuck column", (await api("GET", "/ops/onboarding/stuck", her)).status === 404);
 
+  await section4();
   for (const o of Object.values(O)) await wipe(o);
   await q(`DELETE FROM users WHERE email LIKE 'onb4b-%@example.org'`);
   await q(`DELETE FROM sales_bookings WHERE id LIKE 'sbk_onb4b_%'`);

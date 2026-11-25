@@ -591,7 +591,7 @@ app.get("/donors/:id/volunteer-hours", requireAuth, wrap(async (req, res) => {
       sentence: `Every volunteer shift dated January 1 to today, ${today.slice(0, 4)}, added up.`,
       source: { key: "volunteer-hours", params: { from: today.slice(0, 4) + "-01-01", to: today, donor: d.id } } },
     lifetime: { hours: sum.totalHours, label: "Hours in all",
-      sentence: "Every volunteer shift ever logged for this person, added up.",
+      sentence: "Every volunteer shift logged for this person up to today, added up. A shift dated after today is not counted until its day.",   // ATLAS-10 item 4
       source: { key: "volunteer-hours", params: { from: lifeFrom, to: lifeTo, donor: d.id } } },
     glanceLine: sum.shiftCount ? `${sum.totalHours} ${sum.totalHours === 1 ? "hour" : "hours"} since ${first.slice(0, 4)}, last served ${dd(last)}` : null,
     opportunities: opps,

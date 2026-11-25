@@ -32,7 +32,18 @@ async function run(st, { log, save, get, query, orgId, parse }) {
   let out;
   if (st.kind === "prior_rows") {
     const prior = await WR.lastAnswer(query, orgId, st.follows, parse);
-    out = WR.followUpLine(st.mode, prior);
+    // ATLAS-10 item 1: "Tell me more" after a person's brief shows more (every open item, more
+    // conversations), never "that's everything" while the brief was holding lines back.
+    if (st.mode === "more" && prior && prior.type === "person" && prior.donorId && !prior.more) {
+      const [o] = await query("SELECT timezone FROM orgs WHERE id=?", [orgId]).catch(() => []);
+      const OT = require("../../orgTime");
+      const pa = await require("./answers").personAnswer({ query, orgId, donorId: prior.donorId, today: OT.orgToday(o || {}), more: true });   // ORG_TZ_SEAM_OK
+      const shownBefore = new Set(((prior.facts || [])).map(f => f.line));
+      const added = pa ? pa.facts.filter(f => !shownBefore.has(f.line)).length : 0;
+      if (pa && added) out = { line: pa.spoke, answer: { type: "person", ...pa }, link: { tab: "donor", donorId: prior.donorId } };
+      else if (pa) out = { line: `That brief was everything Steward holds on ${pa.name}: nothing in it was held back. Their record has the full timeline.`, link: { tab: "donor", donorId: prior.donorId, section: "timeline" } };
+    }
+    if (!out) out = WR.followUpLine(st.mode, prior);
   } else if (st.kind === "population") {
     out = await POP.populationAnswer(st.key, { get, query, orgId });
     // "Lapsed this year" could be either list: both answer, each named, and the first says so.

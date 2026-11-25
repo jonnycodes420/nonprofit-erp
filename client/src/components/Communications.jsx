@@ -1322,6 +1322,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // ── BUILD-88c C.2 — never a blank box ──────────────────────────────────────
   const [gallery, setGallery]       = useState(null);  // server: the six + brand
   const [segPreview, setSegPreview] = useState(null);  // the segment, as people
+  const [openedSay, setOpenedSay] = useState(null);   // CAMPAIGN-2: the reopened draft's sentence, said by the editor it opens in
   const [testState, setTestState]   = useState(null);  // send-me-a-test result
   // EMAIL-1 — the org's own email templates, offered first in New Campaign.
   // null while loading; [] when there are none or the route is not there.
@@ -1429,8 +1430,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   }, [view, emailMeta]);
 
   // ── Builder actions ─────────────────────────────────────────────────────────
-  const openBuilder = (campaign = null) => {
-    setTestState(null); setSegPreview(null);
+  const openBuilder = (campaign = null, said = null) => {
+    setTestState(null); setSegPreview(null); setOpenedSay(said);
     // NEVER A BLANK BOX. A new campaign starts at the six, not at a cursor —
     // writing an appeal from nothing is the hardest thing on the screen and it
     // is not what Steward should ask for first.
@@ -1703,7 +1704,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     if (!emailMeta) return <div data-testid="campaign-builder" style={{ padding: 40 }}><Spin /></div>;
     const segSentence = segPreview?.sentence || "";
     return (
-      <CampaignEditor key={editorKey} isAdmin={isAdmin} isReadOnly={isReadOnly} readOnlySent={readOnlySent} campaignId={editingId}
+      <CampaignEditor key={editorKey} openedSay={openedSay} isAdmin={isAdmin} isReadOnly={isReadOnly} readOnlySent={readOnlySent} campaignId={editingId}
         title={readOnlySent ? form.name : form.name || (editingId ? "Edit campaign" : "New campaign")}
         statusBadge={readOnlySent ? statusWord(form.source || { status: form.status }) || "Sent" : "Campaign"}
         form={form} setForm={setForm} initialBlocks={cInit} blockTypes={emailMeta.blockTypes} mergeFields={emailMeta.mergeFields}
@@ -2271,7 +2272,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             openTemplateId={tplOpen ? tplOpen.id : null} openTitle={tplOpen ? tplOpen.title : null} openBackLabel={tplOpen ? tplOpen.backLabel : null} onBackFromOpen={tplOpen ? () => { const b = tplOpen.back; setTplOpen(null); b(); } : null}
             campaignStarters={templates} previewSubject={s => renderPreview(s)}
             onOpenCampaigns={() => setNav("campaigns")} onOpenDrafts={() => setNav("milestones")}
-            onOpenCampaign={c => { setTplOpen(null); setNav("campaigns"); loadCampaigns(); openBuilder(c); }} />
+            onOpenCampaign={(c, sentence) => { setTplOpen(null); setNav("campaigns"); loadCampaigns(); openBuilder(c, c.reused ? sentence : null); }} />
         )}
 
         {/* ── AUDIENCE ──────────────────────────────────────────────────────── */}

@@ -240,6 +240,17 @@ async function makeOrg(id, slug, name, users) {
   const fms = performance.now() - tf;
   console.log(`  filtered (three chips): ${Math.round(fms)}ms, ${filtered.body && filtered.body.total} people`);
   ok("§6 a three-chip filter on 10,000 donors also loads in under a second", filtered.status === 200 && fms < 1000, `${fms}ms`);
+  // POLISH-11 item 4 (W-1124-Donors-T6): a saved view is made, saved as new and deleted in a second org,
+  // through the signed-in client, and org A cannot delete org B's view.
+  const bv = await api("POST", "/donors/list-views", tbig, { name: "Second org view", columns: ["name", "city"], pageSize: 25 });
+  const bv2 = await api("POST", "/donors/list-views", tbig, { name: "Second org view, edited", columns: ["name", "city"], pageSize: 25, sort: "name" });
+  const crossDel = await api("DELETE", `/donors/list-views/${bv.body && bv.body.view && bv.body.view.id}`, ta);
+  const delB = await api("DELETE", `/donors/list-views/${bv.body && bv.body.view && bv.body.view.id}`, tbig);
+  const leftB = ((await api("GET", "/donors/list-setup", tbig)).body.views || []).map(v => v.name);
+  ok("§6 in a second org a view saves, saves as new and deletes; another org's delete does not touch it", bv.status === 200 && bv2.status === 200
+    && crossDel.status !== 200 && delB.status === 200 && leftB.join() === "Second org view, edited", { bv: bv.status, bv2: bv2.status, crossDel: crossDel.status, delB: delB.status, leftB });
+  const views = require("fs").readFileSync(require("path").join(__dirname, "..", "client", "src", "components", "DonorFilters.jsx"), "utf8");
+  ok("§6 a delete the server refuses says why beside the menu", /data-testid="dir-view-delete"\s+onClick=\{async \(\) => \{ setMsg\(""\); try \{ await onDelete\(active\); \} catch/.test(views));
   await reset(BIG);
   await reset(ORG);
 

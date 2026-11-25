@@ -50,6 +50,15 @@ async function checkFields(opts = {}) {
   return { errors, hoursPerWeek, availability, roles };
 }
 
+// POLISH-11 item 2 (W-1125-Volunteers-T2): a status change can be undone for a day, and the record
+// says until when, so Undo is there again when she comes back to the person (and in Recent changes).
+const STATUS_UNDO_HOURS = 24;
+const undoUntilOf = r => {
+  if (!r || !r.prev_status || !r.status_changed_at) return null;
+  const until = new Date(new Date(r.status_changed_at).getTime() + STATUS_UNDO_HOURS * 3600e3);
+  return until > new Date() ? until.toISOString() : null;
+};
+
 function shape(r) {
   if (!r) return null;
   return {
@@ -59,6 +68,7 @@ function shape(r) {
     statusOn: r.status_on || null, statusBy: r.status_by_name || null,
     previous: r.prev_status ? { status: r.prev_status, statusWord: VST.STATUS_WORDS[r.prev_status], statusOn: r.prev_status_on || null, statusBy: r.prev_status_by_name || null } : null,
     legacy: !!r.legacy,
+    undoUntil: undoUntilOf(r),
   };
 }
 
@@ -108,7 +118,7 @@ async function setStatus(orgId, personId, status, who, client = null) {
   if (row.status === status) return { unchanged: true, record: shape(row) };
   const today = await orgDay(orgId, q);
   await w(`UPDATE volunteer_records SET prev_status=status, prev_status_on=status_on, prev_status_by=status_by, prev_status_by_name=status_by_name,
-             status=?, status_on=?, status_by=?, status_by_name=?, updated_at=NOW()
+             status=?, status_on=?, status_by=?, status_by_name=?, status_changed_at=NOW(), updated_at=NOW()
            WHERE id=? AND org_id=?`, [status, today, who.id, who.name || null, row.id, orgId]);
   const [now] = await q("SELECT * FROM volunteer_records WHERE id=? AND org_id=?", [row.id, orgId]);
   return { record: shape(now) };
@@ -121,7 +131,7 @@ async function undoStatus(orgId, personId, client = null) {
   const [row] = await q("SELECT * FROM volunteer_records WHERE org_id=? AND person_id=?", [orgId, personId]);
   if (!row || !row.prev_status) return { error: "nothing_to_undo", message: "There is no status change to undo." };
   await w(`UPDATE volunteer_records SET status=prev_status, status_on=prev_status_on, status_by=prev_status_by, status_by_name=prev_status_by_name,
-             prev_status=NULL, prev_status_on=NULL, prev_status_by=NULL, prev_status_by_name=NULL, updated_at=NOW()
+             prev_status=NULL, prev_status_on=NULL, prev_status_by=NULL, prev_status_by_name=NULL, status_changed_at=NULL, updated_at=NOW()
            WHERE id=? AND org_id=?`, [row.id, orgId]);
   const [now] = await q("SELECT * FROM volunteer_records WHERE id=? AND org_id=?", [row.id, orgId]);
   return { record: shape(now), undid: row.status };
@@ -145,4 +155,4 @@ function statusSentence(name, rec) {
   return `${who} is an active volunteer again.`;
 }
 
-module.exports = { checkFields, writeFields, setStatus, undoStatus, readRecord, statusSentence, ensureRow };
+module.exports = { checkFields, writeFields, setStatus, undoStatus, readRecord, statusSentence, ensureRow, STATUS_UNDO_HOURS };

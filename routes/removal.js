@@ -312,6 +312,8 @@ function mount(ctx) {
     rows.push(...await require("../server/donors/touchBatchChanges").recentBatchRows(query, orgId, userId));
     // UNDO-1: a refund, a tick, a Done, a touch that closed a step: each write with side effects, and its Undo.
     rows.push(...await require("../server/effects/writeEffects").recentRows(query, orgId, userId));
+    // POLISH-11: a volunteer marked former (or paused, or active again), undone for a day.
+    rows.push(...await require("../server/volunteers/statusChanges").recentRows(query, orgId, userId));
     for (const d of added) {
       rows.push({ id: "add:" + d.id, kind: "person_added", sentence: `Added ${d.name || "a person"}.`, at: d.created_at,
         until: plus(d.created_at, 1), undoLabel: "Take back out",

@@ -1663,7 +1663,7 @@ app.get("/volunteer-hub/counts", requireAuth, wrap(async (req, res) => {
       COUNT(*) FILTER (WHERE NOT ${VSTATUS.ACTIVE_SQL("donors")})::int AS resting,
       COUNT(*) FILTER (WHERE ${VSTATUS.ACTIVE_SQL("donors")} AND EXISTS (SELECT 1 FROM volunteer_shifts vx WHERE vx.org_id = donors.org_id AND vx.person_id = donors.id AND vx.date >= ? AND ${SERVED_RULE.SERVED("vx", today)}))::int AS served
     FROM donors WHERE ${f.whereSql}`, [since, ...f.params]);
-  const [p] = await query(`SELECT COUNT(*)::int AS n FROM volunteer_applications WHERE org_id=? AND status='pending'`, [orgId]);
+  const [p] = await query(`SELECT COUNT(*)::int AS n FROM volunteer_applications a WHERE a.org_id=? AND COALESCE(a.via,'page')='page' AND ${require("../server/volunteers/alreadyVolunteer").WAITING("a")}`, [orgId]);   // ATLAS-10: the list's own count
   const wp = await weekProblems(orgId);
   res.json({
     roster: { value: a.n, resting: a.resting, sentence: VSTATUS.ACTIVE_SENTENCE,
@@ -2260,6 +2260,12 @@ app.post("/volunteer-with/:orgSlug/apply", donateLimiter, express.urlencoded({ e
   await run(`INSERT INTO volunteer_applications (id,org_id,name,email,phone,answers,availability,created_by,created_by_name)
              VALUES (?,?,?,?,?,?::jsonb,?::jsonb,?,?)`,
     [id, o.id, name, email, phone, JSON.stringify(v.answers), JSON.stringify(v.availability), SYS_APPLY.id, SYS_APPLY.name]);
+  // ATLAS-10 item 4: from someone who already volunteers, it closes as it arrives, onto their record.
+  const AV = require("../server/volunteers/alreadyVolunteer");
+  await run(`UPDATE volunteer_applications a SET status='approved', person_id=${AV.VOLUNTEER_OF("a")}, matched_existing=true,
+                    decided_at=NOW(), decided_by=?, decided_by_name=?
+              WHERE a.id=? AND a.org_id=? AND a.status='pending' AND ${AV.VOLUNTEER_OF("a")} IS NOT NULL`, [AV.ACTOR.id, AV.ACTOR.name, id, o.id])
+    .catch(e => console.error("[volunteer-apply] already a volunteer:", e.message));
   res.send(thanks);
 }));
 
@@ -2298,12 +2304,20 @@ app.get("/volunteer-hub/applications", requireAuth, wrap(async (req, res) => {
   const status = ["pending", "approved", "declined"].includes(String(req.query.status)) ? String(req.query.status) : "pending";
   // VOL-3: only what came through the volunteer page is an application. A record Add kept on an
   // approved row before VOL-3 (via staff or agent) is a volunteer record, not shown here.
+  // ATLAS-10 item 4: a pending application from someone who already volunteers is not waiting;
+  // it is listed apart, as Already a volunteer, and counted in no pending figure.
+  const AV = require("../server/volunteers/alreadyVolunteer");
   const rows = await query(`SELECT a.*, ${APP_PERSON_GONE("a")} AS person_gone FROM volunteer_applications a
-                             WHERE a.org_id=? AND a.status=? AND COALESCE(a.via,'page')='page' ORDER BY a.submitted_at DESC LIMIT 300`, [orgId, status]);
+                             WHERE a.org_id=? AND ${status === "pending" ? AV.WAITING("a") : "a.status=?"} AND COALESCE(a.via,'page')='page' ORDER BY a.submitted_at DESC LIMIT 300`, status === "pending" ? [orgId] : [orgId, status]);
   const out = [];
   for (const a of rows) out.push(shapeApp(a, a.status === "pending" ? await onFileByEmail(orgId, a.email) : []));
-  const [c] = await query(`SELECT COUNT(*) FILTER (WHERE status='pending')::int AS pending FROM volunteer_applications WHERE org_id=?`, [orgId]);
+  const already = status === "pending" ? await query(`SELECT a.id, a.name, a.submitted_at, v.id AS person_id, v.name AS person_name
+      FROM volunteer_applications a JOIN donors v ON v.id = ${AV.VOLUNTEER_OF("a")} AND v.org_id = a.org_id
+     WHERE a.org_id=? AND a.status='pending' AND COALESCE(a.via,'page')='page' ORDER BY a.submitted_at DESC LIMIT 100`, [orgId]) : [];
+  const [c] = await query(`SELECT COUNT(*) FILTER (WHERE ${AV.WAITING("a")})::int AS pending FROM volunteer_applications a WHERE a.org_id=? AND COALESCE(a.via,'page')='page'`, [orgId]);
   res.json({ status, applications: out, pending: c.pending,
+    alreadyVolunteer: already.map(x => ({ id: x.id, name: x.name, submittedAt: x.submitted_at, personId: x.person_id, personName: x.person_name })),
+    alreadySentence: AV.SENTENCE,
     sentence: "People who applied from your volunteer page. Approving one adds them as a volunteer, onto the record they already have when their email is on file." });
 }));
 

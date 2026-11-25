@@ -153,19 +153,14 @@ app.get("/insights/donor/:id", requireAuth, wrap(async (req, res) => {
   const [d] = await query("SELECT id, deceased FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
   if (!d) return res.status(404).json({ error: "Not found" });
   const asOf = await asOfFor(req);   // PEOPLE-1: no next move is suggested for someone marked deceased (below)
-  const got = await D.insightsFor(req.user.orgId, asOf, { explicitDay: explicitDay(req) });
-  // INSIGHTS-2: the first build for this org is queued; this panel says so and
-  // the rest of the profile is unaffected.
-  if (got.preparing) return res.json({ asOf, preparing: true, stale: false, sentence: got.sentence, unit: null, notGifts: [], move: null, combined: null, rungSentence: null });
-  const r = got.result;
+  // ATLAS-10 item 2: the one next move (server/insights/nextMoveOf.js), the one Atlas's brief says.
+  // PLEDGES-2: never a pledge collection for a pledge no longer open; INSIGHTS-2: the first build may be queued.
+  const nm = await require("../server/insights/nextMoveOf").nextMoveOf(query, req.user.orgId, d.id, asOf, { explicitDay: explicitDay(req) });
+  const got = nm.got;
+  if (nm.preparing) return res.json({ asOf, preparing: true, stale: false, sentence: got.sentence, unit: null, notGifts: [], move: null, combined: null, rungSentence: null });
+  const r = nm.result;
   const unit = r.units.find(u => u.ids.includes(d.id)) || null;
-  let move = d.deceased === true ? null : I.nextMoveFor(r, d.id);
-  // PLEDGES-2 (W-1107-Finance-18X): a stored answer the worker has not rebuilt yet never
-  // asks to collect a pledge that was deleted, written off or paid since.
-  if (move && move.item && move.item.pledgeId) {
-    const [live] = await query("SELECT status FROM pledges WHERE id=? AND org_id=?", [move.item.pledgeId, req.user.orgId]);
-    if (!live || live.status !== "open") move = null;
-  }
+  const move = nm.move;
   // linked records (a family or network she linked) show what they give together
   const rel = await query(`SELECT donor_id_a, donor_id_b FROM donor_relationships WHERE org_id=? AND (donor_id_a=? OR donor_id_b=?) AND relationship_type IN ('family','network')`,
     [req.user.orgId, d.id, d.id]);
@@ -184,7 +179,7 @@ app.get("/insights/donor/:id", requireAuth, wrap(async (req, res) => {
                                   WHERE org_id=? AND decision IN ('not_gift','partly') AND donor_id = ANY(?) ORDER BY row_data->>'date' DESC NULLS LAST`, [req.user.orgId, ids]))
     .map(x => ({ giftId: x.gift_id, as: x.as_type, label: TYPE_LABEL[x.as_type] || x.as_type, partly: x.decision === "partly", cents: Math.round(Number(x.amount) * 100), date: x.date }));
   // THANKS-1 item 4: no card has a move, so say the step the rules still give, or why there is none.
-  const after = !move && d.deceased !== true ? await require("../server/insights/afterMove").afterMove(query, req.user.orgId, ids) : null;
+  const after = nm.after;   // ATLAS-10: nextMoveOf's, the step Atlas's brief says too
   res.json({ asOf, stale: got.stale, coverage: r.coverage, majorLine: r.majorLine, unit, notGifts, after, move: move ? { ...move, item: cardOut({ ...move, items: [move.item], words: move.words, facts: [], does: [] }).items[0] } : null, combined,
     rungSentence: unit ? I.RUNG_SENTENCE[unit.rung] : null });
 }));

@@ -798,6 +798,8 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
         ...given(r, summary),
         reconciled: findings.length === 0, findings, notices: importNotices(r),
         beforeChecks: before, archived: !!r.archived_at,
+        // POLISH-11 item 5 (W-1119-Atlas-13): the row says what Undo can still do, from the receipt's own rule.
+        ...importUndoWindow(r), reversedAt: r.reversed_at || null,
         footing: r.reversed_at ? null : importFootingOf(r, summary),   // MONEY-4: the flag's own footing
         // TRANS-1 — a named import says where the file came from, and whether
         // it has a Move Report to open. `hasMoveReport` is the presence of the

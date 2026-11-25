@@ -6,7 +6,8 @@
 // organization's name (shared/brandKit.js senderSignature).
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
-import { T, Spin } from "./shared";
+import { T } from "./shared";
+import { SkeletonSection } from "./Skeleton";   // POLISH-11: the section draws at once
 import { errorMessage } from "../lib/domainError";
 import MediaPicker from "./MediaPicker";
 import { resolveAssetUrl } from "../lib/assetUrl";
@@ -39,7 +40,7 @@ export default function MyProfile({ isReadOnly }) {
     } catch (e) { setMsg(errorMessage(e, "That did not save.")); }
     setBusy(false);
   };
-  if (!p) return <div style={{ padding: 24 }}>{msg || <Spin />}</div>;
+  if (!p) return msg ? <div style={{ padding: 24 }}>{msg}</div> : <SkeletonSection title="My profile" fields={5} label="Loading your profile" />;
   // What a draft will close with if she saves now: the block, else the lines.
   const preview = String(f.block || "").trim() || linesOf(f);
   return (

@@ -370,7 +370,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const deleteView=async v=>{
     try{await apiFetch(`/donors/list-views/${encodeURIComponent(v.id)}`,{method:"DELETE"});
       setListSetup(s=>({...s,views:((s&&s.views)||[]).filter(x=>x.id!==v.id)}));setLF({savedView:""});}
-    catch(e){console.warn("[list-views]",e&&e.message);}
+    // POLISH-11 item 4: a delete the server refuses says why beside the menu, never nothing.
+    catch(e){console.warn("[list-views]",e&&e.message);throw e;}
   };
   // Officer color map — assigned_to → hex; used for portfolio color-coding.
   const officerColorMap=useMemo(()=>Object.fromEntries(officers.filter(o=>o.portfolio_color).map(o=>[o.id,o.portfolio_color])),[officers]);

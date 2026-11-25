@@ -63,9 +63,13 @@ app.get("/home/annual-goal", requireAuth, wrap(async (req, res) => {
   const g = ((out && out.goals) || []).find(x => x.isTopLevel && x.lifecycle === "active" && x.goalCategory === "annual");
   // LEDGER-1: running today, as Fundraising's roll-up counts goals (a goal not
   // started yet has raised nothing in its own dates and read $0 here).
-  if (!g) return res.json({ goal: null });
+  // ATLAS-10 item 7: every goal running today, so "how much is left on the goal" can ask which one
+  // when there are several (Fundraising's Active goals, top level, by the same roll-up).
+  const running = ((out && out.goals) || []).filter(x => x.isTopLevel && x.lifecycle === "active")
+    .map(x => ({ id: x.id, name: x.name, raisedCents: Math.round(Number(x.rolledRaised) * 100) || 0, goalCents: Math.round(Number(x.goalAmount) * 100) || 0 }));
+  if (!g) return res.json({ goal: null, running });
   const fig = async source => ({ ...(await figureSources.figureValue(orgId, source, {})), source });
-  res.json({ goal: await goalFigureRow(g, fig) });
+  res.json({ goal: await goalFigureRow(g, fig), running });
 }));
 
 // ── THE BOARD PACKET ───────────────────────────────────────────────────────

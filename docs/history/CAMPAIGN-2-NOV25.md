@@ -30,7 +30,9 @@ power-use sweep (24 Nov) and SENDS-3's held item 3. Each item was reproduced fir
 - **"Start a campaign from this" goes somewhere.** It made the draft and wrote its answer into a note at the top of
   a rail scrolled down to More. It now opens the new draft in the campaign editor with its toast, and the server
   reuses an untouched draft the same person started from the same template in the last 30 minutes (`reuse`), so
-  a second press opens the same draft. The twins already made are listed by `campaign2-old-rows.js`.
+  a second press opens the same draft. The staging re-check (a625869) found the second press opened it in silence: its
+  answer went to the template editor's toast, which leaves with the template editor. The campaign editor now
+  says it as it opens (`openedSay`, follow-up PR). The twins already made are listed by `campaign2-old-rows.js`.
 - **Every AI button drafts or says why.** `server/ai/whyNot.js` turns the AI gate's reason into one sentence and
   what to do (AI off: Settings, Your Data, the switch; no key: not available on this server; the day's budget).
   "Draft with AI" answers beside its button and as a toast; with unsaved changes it says "Save your changes first"
