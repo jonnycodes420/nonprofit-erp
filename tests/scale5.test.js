@@ -12,6 +12,8 @@
 //      finds what only the date moved.
 //   §3 every per-org background sweep reads the live-org list (a source check
 //      over each sweep's function).
+//   §5 BGWORK-1: the [mailbox-stale] alarm checks live orgs only (silent for a test org, loud for
+//      a live one), and the admin switch "Run background work for this test org" makes it live.
 //   §4 the queue: a claim is ONE statement, an empty queue is asked less and
 //      less often (not every second per lane), and a new row wakes the worker
 //      at once.
@@ -175,6 +177,38 @@ async function shape(org) {
   const missing = SWEEPS.filter(([f, n]) => { const b = body(src(f), n); return !b || !/liveOrgIds\(/.test(b); });
   ok(`§3 each of the ${SWEEPS.length} per-org background sweeps reads liveOrgIds`, missing.length === 0, JSON.stringify(missing));
   ok("§3 processSmartMoves goes through the change-driven tick", /SMART\.tick\(/.test(body(src("routes/jobs.js"), "processSmartMoves") || ""));
+
+  // ── §5 the [mailbox-stale] alarm reads the same live orgs (BGWORK-1) ──
+  // TEST STEWARD (internal_test) was not read after SCALE-5, and the alarm still checked it and
+  // logged [mailbox-stale] every five minutes. A connection in a test org is silent; one in a live
+  // org is loud; "Run background work for this test org" makes the test org live again.
+  const T = `${P}test`;
+  await seedOrg(T, "internal_test");
+  const longAgo = new Date(testNow() - 3 * 86400e3).toISOString();
+  for (const o of [A, T]) await q(`INSERT INTO mailbox_connections (id,org_id,user_id,provider,address,status,credentials_sealed,token_expires_at,created_at,created_by,created_by_name)
+           VALUES ($1,$2,$3,'google',$4,'active','v1.not-a-real-seal',NOW() + INTERVAL '1 day',$5,'system:test/scale5','SCALE-5 test')`,
+    [`mbx_${o}`, o, `u_${o}`, `mail@${o.replace(/_/g, "-")}.example`, longAgo]);
+  const STALE = require("../server/mail/staleMailboxes");
+  const staleIds = async () => (await STALE.staleMailboxes(query, { staleMs: 2 * 3600e3, now: testNow() })).stale.map(r => r.id).filter(i => i.startsWith(`mbx_${P}`));
+  LIVE.forget();
+  const s0 = await staleIds();
+  ok("§5 a live org's mailbox not read for three days is stale: the alarm is loud", s0.includes(`mbx_${A}`), s0);
+  ok("§5 a test org's mailbox, which SCALE-5 never reads, is not: the alarm is silent", !s0.includes(`mbx_${T}`), s0);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role,is_super_admin) VALUES ($1,$2,$3,$4,'Super','admin',true)`,
+    [`u_${P}super`, T, `super@${P.replace(/_/g, "-")}.example`, bcrypt.hashSync("loadtest1234", 4)]);
+  const sup = await login(`super@${P.replace(/_/g, "-")}.example`);
+  const notSuper = await api("POST", `/admin/orgs/${T}/background-work`, tok[A], { on: true });
+  ok("§5 only a super admin may turn it on", notSuper.status === 403 || notSuper.status === 404, notSuper.status);
+  const onR = await api("POST", `/admin/orgs/${T}/background-work`, sup, { on: true });
+  ok("§5 \"Run background work for this test org\" turns on and keeps it in liveOrgIds", onR.status === 200 && onR.body.on === true && onR.body.live === true
+    && (await LIVE.liveOrgIds(query, { fresh: true })).includes(T), onR.body);
+  LIVE.forget();
+  const s1 = await staleIds();
+  ok("§5 …and then its unread mailbox is stale too: the alarm is loud for it", s1.includes(`mbx_${T}`) && s1.includes(`mbx_${A}`), s1);
+  const offR = await api("POST", `/admin/orgs/${T}/background-work`, sup, { on: false });
+  LIVE.forget();
+  const s2 = await staleIds();
+  ok("§5 off again: out of liveOrgIds, and silent", offR.status === 200 && !(await LIVE.liveOrgIds(query, { fresh: true })).includes(T) && !s2.includes(`mbx_${T}`), { body: offR.body, s2 });
 
   // ── §4 the queue's own bookkeeping ─────────────────────────────────────
   const JQ = require("../jobQueue");
