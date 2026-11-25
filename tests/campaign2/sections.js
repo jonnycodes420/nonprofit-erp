@@ -156,6 +156,10 @@ module.exports = async function campaign2({ h, B, ORG, ADMIN, tok }) {
     await openTemplate();
     await press(page.locator('[data-testid="email-start-campaign"]'));
     await page.locator('[data-testid="campaign-builder"]').waitFor({ timeout: 10000 }).catch(() => {});
+    // Staging walk (a625869): the second press opened the same draft but said nothing, because the
+    // template editor's toast went with the template editor. The campaign editor says it now.
+    const again = await page.locator('[data-testid="campaign-builder"] [data-testid="builder-toast"]').innerText({ timeout: 3000 }).catch(() => "");
+    ok("§c2-start …pressed again, the campaign editor says it opened the same draft", /already a draft/.test(again), again);
     const nAfter = (await q(`SELECT COUNT(*)::int AS n FROM campaigns WHERE org_id=$1`, [ORG]))[0].n;
     ok("§c2-start …and pressed again, no second draft", nAfter === nBefore + 1, [nBefore, nAfter]);
 
