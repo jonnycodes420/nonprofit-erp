@@ -162,6 +162,7 @@ import { errorMessage } from "../lib/domainError";
 import { rowOpenProps } from "../lib/rowOpen";
 import { civilDaysAgo } from "../lib/orgToday";
 import { usePeoplePicker, peopleCounts, pickPeople } from "../lib/people";
+import { reopenAfterUpdate, isReopening, REOPENING_WORDS } from "../lib/chunkReload";   // FRESH-1 item 2
 export { fmt, fmtFull, fmtTotal, fmtWhole, quietPhrase };
 // FIX-14 Part 1 — a civil date ("2026-10-01") is counted on the ORG's calendar.
 // `new Date("2026-10-02")` is UTC midnight, which is 8pm the day before in New
@@ -208,8 +209,10 @@ function ErrorFallback({ label, onReload, onHome, onRetry }) {
 
 export class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
-  static getDerivedStateFromError(error) { return { error }; }
+  // FRESH-1 item 2: a chunk gone with a deploy reopens the page once instead of crashing it.
+  static getDerivedStateFromError(error) { return { error, reopening: reopenAfterUpdate(error) }; }
   componentDidCatch(error, info) {
+    if (this.state.reopening || isReopening()) return;
     console.error(`[ErrorBoundary${this.props.label ? " · " + this.props.label : ""}]`, error, info);
     try { Sentry.captureException(error, { tags: { boundary: this.props.label || "app" }, extra: { componentStack: info?.componentStack } }); } catch (_) {}
   }
@@ -217,6 +220,7 @@ export class ErrorBoundary extends Component {
     if (this.state.error && prev.resetKey !== this.props.resetKey) this.setState({ error: null });
   }
   render() {
+    if (this.state.error && this.state.reopening) return <div role="status" data-testid="steward-reopening-view" style={{ minHeight: 240, display: "flex", alignItems: "center", justifyContent: "center", color: T.ink, fontSize: 15, fontWeight: 600 }}>{REOPENING_WORDS}</div>;
     if (this.state.error) {
       const retry = () => this.setState({ error: null });
       if (this.props.fallback) return this.props.fallback(this.state.error, retry);

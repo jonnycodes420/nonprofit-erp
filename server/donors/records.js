@@ -173,8 +173,13 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
       ["Real estate range", d => RT.rangeText(s(d).realEstateLowCents ?? null, s(d).realEstateHighCents ?? null) || ""]);
     if (req.audit) req.audit.summary(`Exported donors with screening results (${donors.length})`, { count: donors.length });
   }
+  const filename = `donors-${orgToday(await orgTz(req.user.orgId))}.csv`; // ORG_TZ_SEAM_OK — an evening export is named for today, not UTC-tomorrow
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="donors-${orgToday(await orgTz(req.user.orgId))}.csv"`); // ORG_TZ_SEAM_OK — an evening export is named for today, not UTC-tomorrow
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  // FRESH-1 item 5: the page says what it exported ("Exported 1,119 people in donors-2026-11-24.csv").
+  res.setHeader("X-Steward-Export-Count", String(donors.length));
+  res.setHeader("X-Steward-Export-Filename", filename);
+  res.setHeader("Access-Control-Expose-Headers", "X-Steward-Export-Count, X-Steward-Export-Filename, X-Steward-Changed");
   res.send(toCsv(columns, donors));
 }));
 
