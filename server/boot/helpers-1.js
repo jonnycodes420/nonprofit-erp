@@ -1285,13 +1285,16 @@ async function ingestPosSale(orgId, sale, { sourceId = null, actorId = null, act
 // (`threads.donor_id` is NOT NULL, by design — a thread is a relationship with
 // a person), and "PayPal has stopped sending" is work for the office, which is
 // exactly what a task is.
-async function sweepQuietConnections({ orgId = null, today = null, notify = true } = {}) {
+async function sweepQuietConnections({ orgId = null, today = null, notify = true, live = false } = {}) {
   const C = await import("../../shared/connections.js");
+  const { quietSentence } = require("../connections/status");   // HONEST-1: Home, the card and the task say it one way
   const { providerLabel } = await givingSourcesMod();
   const out = { checked: 0, quiet: 0, recovered: 0, tasksOpened: 0, emailed: 0 };
+  // HONEST-1 item 2: the scheduled sweep reads live orgs only (SCALE-5's liveOrgs).
+  const liveIds = live ? await require("../orgs/liveOrgs").liveOrgIds(query) : null;
   const sources = await query(
-    `SELECT * FROM giving_sources WHERE status <> 'disconnected'${orgId ? " AND org_id=?" : ""}`,
-    orgId ? [orgId] : []);
+    `SELECT * FROM giving_sources WHERE status <> 'disconnected'${orgId ? " AND org_id=?" : ""}${liveIds ? " AND org_id = ANY(?::text[])" : ""}`,
+    [...(orgId ? [orgId] : []), ...(liveIds ? [liveIds] : [])]);
   for (const s of sources) {
     out.checked++;
     const org = await orgTz(s.org_id);
@@ -1303,7 +1306,7 @@ async function sweepQuietConnections({ orgId = null, today = null, notify = true
     const dates = rows.map(r => r.d);
     const last = dates.length ? dates.slice().sort().pop() : null;
     const a = C.assessConnection({ connected: true, lastError: s.last_error, lastGiftDate: last,
-                                   giftDates: dates, today: day });
+                                   giftDates: dates, today: day, fallbackDays: C.QUIET_FALLBACK_DAYS });
 
     // MONEY CAME BACK. The incident is over; clear it so the next silence is
     // its own incident with its own email rather than a permanently-set flag.
@@ -1326,7 +1329,7 @@ async function sweepQuietConnections({ orgId = null, today = null, notify = true
     const label = providerLabel(s.provider) || s.display_name;
     const line = a.status === "broken"
       ? `${label} stopped working. ${a.sentence}`
-      : `${label} has not sent a gift in ${a.silentDays} days. ${a.rhythm?.sentence || ""} Check the connection.`.trim();
+      : quietSentence({ label, silentDays: a.silentDays, rhythm: a.rhythm });
 
     // The next step, as a task for whoever runs this office.
     const [admin] = await query(

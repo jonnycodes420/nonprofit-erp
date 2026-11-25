@@ -63,6 +63,9 @@ export const QUIET_MIN_DAYS = 7;          // never shout before a week, whatever
 export const QUIET_MAX_DAYS = 120;        // and never stay silent past a quarter
 export const RHYTHM_MIN_GIFTS = 4;        // below this there is no rhythm to speak of
 export const RHYTHM_WINDOW_DAYS = 120;
+// HONEST-1 item 2: a door money comes in through, with too few gifts for a rhythm, is quiet after
+// two weeks of nothing, not a quarter. An email tool keeps QUIET_MAX_DAYS (newsletters are monthly).
+export const QUIET_FALLBACK_DAYS = 14;
 
 const DAY = 86400000;
 const civil = d => {
@@ -97,8 +100,8 @@ export function rhythmOf(giftDates, today) {
 }
 
 // How long this connection may be silent before silence is worth saying.
-export function quietAfterDays(rhythm) {
-  if (!rhythm || rhythm.meanGapDays == null) return QUIET_MAX_DAYS;
+export function quietAfterDays(rhythm, fallbackDays = QUIET_MAX_DAYS) {
+  if (!rhythm || rhythm.meanGapDays == null) return fallbackDays;
   const d = Math.round(rhythm.meanGapDays * QUIET_MULTIPLE);
   return Math.max(QUIET_MIN_DAYS, Math.min(QUIET_MAX_DAYS, d));
 }
@@ -110,7 +113,7 @@ export function quietAfterDays(rhythm) {
  * also, necessarily, quiet; saying "quiet" about it would send somebody
  * looking at their donors when the answer is that the key expired.
  */
-export function assessConnection({ connected, lastError, lastGiftDate, giftDates = [], today }) {
+export function assessConnection({ connected, lastError, lastGiftDate, giftDates = [], today, fallbackDays = QUIET_MAX_DAYS }) {
   const t = civil(today) || new Date().toISOString().slice(0, 10);
   if (!connected) return { status: "not_connected", ...STATUSES.not_connected, sentence: STATUSES.not_connected.definition };
   if (lastError) return { status: "broken", ...STATUSES.broken, sentence: String(lastError) };
@@ -118,7 +121,7 @@ export function assessConnection({ connected, lastError, lastGiftDate, giftDates
   const rhythm = rhythmOf(giftDates, t);
   const last = civil(lastGiftDate);
   const silentDays = last ? Math.max(0, daysBetween(last, t)) : null;
-  const threshold = quietAfterDays(rhythm);
+  const threshold = quietAfterDays(rhythm, fallbackDays);
 
   if (last && silentDays > threshold) {
     return { status: "quiet", ...STATUSES.quiet, rhythm, silentDays, quietAfterDays: threshold,

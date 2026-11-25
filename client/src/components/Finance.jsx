@@ -30,6 +30,7 @@ import PostToBooks from "./finance/PostToBooks";   // LEDGER-3: a waiting gift c
 import { FinFundCards, Definitions4 } from "./finance/FundCards";   // NUMBERS-8: the fund cards and their dialog, one module
 import { Figure } from "./Figure";   // TRUTH-3: the ledger's three figures open their gifts
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
+import { ConnectionLines } from "./connections/flowParts";   // HONEST-1
 
 // ── Constants ──────────────────────────────────────────────────────────────
 // POLISH-5: the empty ledger's second sentence, one text node with its first.
@@ -1218,6 +1219,8 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             {summary.basis && summary.basis.line && (
               <div data-testid="finance-reconcile" title={summary.basis.sentence} style={{ fontSize:12.5, color:T.ink3, lineHeight:1.5 }}>{`${summary.basis.line} ${summary.basis.sentence}`}</div>
             )}
+            {/* HONEST-1 item 3: QuickBooks' one status line, the same as Settings, Connections reads. */}
+            <ConnectionLines onNavigate={onNavigate} providers={["quickbooks"]} states={["working", "waiting", "needs_you"]} testid="finance-qbo-line" />
           </>
         )}
         {/* B1 — never let Finance read as "$0 raised" next to a Reports page

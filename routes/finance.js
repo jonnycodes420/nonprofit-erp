@@ -2471,6 +2471,16 @@ app.get("/email-marketing/:provider/audiences", requireAuth, requireAdmin, wrap(
   const row = await emailProviderRow(req.user.orgId, provider);
   if (!row) return res.status(409).json({ error: "not_connected",
     sentence: `Connect ${EM.providerLabel(provider)} first.` });
+  // HONEST-1 item 1: a connection on file with no sign-in held (the demonstration file holds none,
+  // by design) said "Mailchimp is not connected" under a card that says Connected. Say what is true.
+  if (!row.credentials_sealed) {
+    const [o] = await query("SELECT org_kind FROM orgs WHERE id=?", [req.user.orgId]);
+    const demo = require("../orgKind").isDemoOrg(o || {});
+    return res.status(409).json({ error: "no_sign_in", couldNotAsk: true,
+      sentence: demo
+        ? `This is the demonstration file's example ${EM.providerLabel(provider)} connection. It holds no sign-in, so Steward can't list its ${EM.audienceNoun(provider)}s; the one shown is the example's.`
+        : `Steward holds no sign-in for ${EM.providerLabel(provider)} here, so it can't list your ${EM.audienceNoun(provider)}s. Disconnect and connect it again.` });
+  }
   try {
     const audiences = await providerAudiences(req.user.orgId, provider, row);
     res.json({ audiences, noun: EM.audienceNoun(provider) });

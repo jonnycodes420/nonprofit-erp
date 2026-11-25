@@ -184,6 +184,20 @@ function Customers({ customers, now }) {
   </section>;
 }
 
+// HONEST-1 item 4: what organizations asked for on Connections' "Tell us you need it".
+function ConnectionAsks({ asks, now }) {
+  if (!asks || !asks.length) return null;
+  return <section style={card} data-testid="ops-connection-asks">
+    <h2 style={h2}>Connections asked for</h2>
+    <p style={says}>Connections Steward cannot make yet, and the organizations that pressed "Tell us you need it". One ask per organization.</p>
+    <table style={{ borderCollapse: "collapse", width: "100%" }}><tbody>
+      {asks.map(a => <tr key={a.provider}><td style={{ ...cell, fontWeight: 600 }}>{a.provider}</td>
+        <td style={cell}>{countLabel(a.orgs, "organization")}, last {ago(a.last_at, now)} ago</td>
+        <td style={cell}>{a.org_names}</td></tr>)}
+    </tbody></table>
+  </section>;
+}
+
 export default function OpsView({ data, error, now = Date.now(), tabs = null, onShot = null, ship = null, importer = null, numbers = null }) {
   if (error) return <div style={page}><div style={sheet}><h1 style={{ fontSize: 24 }}>Ops</h1>{tabs}<Down error={error} /></div></div>;
   if (!data) return <div style={page}><div style={sheet}><h1 style={{ fontSize: 24 }}>Ops</h1>{tabs}<p style={says}>Loading…</p></div></div>;
@@ -203,5 +217,6 @@ export default function OpsView({ data, error, now = Date.now(), tabs = null, on
     <Trend walks={data.board.ok ? data.board.walks : []} />
     <PageTiming t={data.pageTiming} />
     <Customers customers={data.customers} now={now} />
+    <ConnectionAsks asks={data.connectionAsks} now={now} />
   </div></div>;
 }

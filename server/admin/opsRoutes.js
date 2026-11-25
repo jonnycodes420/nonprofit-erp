@@ -119,6 +119,8 @@ function mount(ctx) {
       // SCALE-3: the capacity gauge (server/perf/capacity.js), with the nightly load result beside it
       // SCALE-4: with the connection budget (the worker's pool from its heartbeat) and who held the database
       capacity: await require("../perf/capacity").read(query, gh.load || null, now, { worker: h.worker && h.worker.pool }),
+      // HONEST-1 item 4: connections organizations asked for that Steward cannot connect yet
+      connectionAsks: await require("../connections/asks").readAsks(query).catch(() => []),
     });
   }));
 

@@ -1,5 +1,6 @@
 import { GoldMoment, T, PersonMark, fmtFull } from "../shared";
 import { SetupChecklist } from "../HomeSetup";
+import { ConnectionLines } from "../connections/flowParts";   // HONEST-1
 import { capitalize } from "../../../../shared/vocabulary";
 import { countLabel } from "../../../../shared/countWords";
 import { DonorLink } from "../RecordLink";
@@ -63,7 +64,8 @@ export function sectionStack({ agentSection, cPad, cardWrap, dragSectionId, edit
           </div>
         ):null;
 
-        const sections={hero:heroSection,setup:surface==="home"?null:setupSection,thread:threadSection,monthly:monthlySection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,agent:surface==="home"?null:agentSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
+        // HONEST-1 item 2: a connection that needs a person (a quiet feed, a broken one) raises its hand here, in brass.
+        const sections={hero:<>{heroSection}<div data-testid="home-connections"><ConnectionLines onNavigate={onNavigate}/></div></>,setup:surface==="home"?null:setupSection,thread:threadSection,monthly:monthlySection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,agent:surface==="home"?null:agentSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
         // BUILD-86 — ONE layout, TWO surfaces. The saved order and visibility
         // stay a single per-user list (so BUILD-34's merge rule, its
         // stale-config guarantee and move-to-top all keep working untouched);
