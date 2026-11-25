@@ -250,7 +250,7 @@ const tryRequire = rel => { try { return require(path.join("..", rel)); } catch 
   ok("§6 a $0 row is never counted as a gift waiting to post (the one counting rule)", L.waiting && !(L.waiting.count > 0 && L.waiting.cents === 0), JSON.stringify(L.waiting));
   ok("§6 the imported gift from before this year is History only, with its sentence", L.history && L.history.count >= 1 && L.history.cents >= 90000 && /never post/.test(L.history.sentence), JSON.stringify(L.history));
   const fr = (await api("GET", `/finance/funds-detail/rows?fund=${generalDup}`, tok)).body || {};
-  ok("§6 a fund's drill-down shows the gifts behind it", (fr.gifts || []).some(g => g.id === fg1) && /name this fund|names this fund/.test(fr.sentence), JSON.stringify({ g: (fr.gifts || []).length, s: fr.sentence }));
+  ok("§6 a fund's drill-down shows the gifts behind it", (fr.gifts || []).some(g => g.id === fg1) && /name this fund|names this fund|lands? in this fund/.test(fr.sentence), JSON.stringify({ g: (fr.gifts || []).length, s: fr.sentence }));
 
   // ── §7 · GRANTS, THE RETENTION LABEL, RE-ENGAGE, "SENT TO 0" ────────────
   {

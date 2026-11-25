@@ -427,6 +427,9 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
     donorCount: `People who gave in ${YN.cur}`, byDesignation: `Giving by designation, ${YN.cur}`,
     givingByMonth: `Giving by month, ${YN.cur} against ${YN.prev}`,
   } : {};
+  // NUMBERS-8 item 5 (W-1125-Finance-T7): Home's unthanked count says its window in words, the
+  // window a report must use to show the same rows ("since Oct 26, 2026").
+  if (extra.giftsNotYetThanked && extra.giftsNotYetThanked.source) periodName.giftsNotYetThanked = `Gifts not yet thanked since ${DD.displayDate(extra.giftsNotYetThanked.source.params.since)}`;
   if (YN && extra.retentionRate && extra.retentionRate.also) for (const a of extra.retentionRate.also)
     a.label = a.key === "retained" ? `Gave again in ${YN.cur}` : a.key === "prior" ? `Gave in ${YN.prev}` : a.label;
   const metrics = def.metrics

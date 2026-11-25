@@ -1,10 +1,16 @@
 import { useEffect, useState } from "react";
 import { T, Spin, Modal, fmtFull } from "./shared";
-import { apiFetch, API, getToken } from "../api";
+import { apiFetch, API, getToken, authHeaders, SIGNED_OUT_SENTENCE } from "../api";
 import { offerUndo } from "./EditHistory";
 import { ratioFootLine } from "../lib/figureFoot";
 import { DonorLink } from "./RecordLink";
 import { donorHref, rowClick } from "../lib/appUrls";
+
+// NUMBERS-8 item 3: a rows read that failed says why in her words; signed out, it offers the way back.
+function rowsError(e) {
+  if (e && e.signedOut) return <span data-testid="figure-signed-out">{SIGNED_OUT_SENTENCE} <a href="/login" style={{ color: T.greenDk, fontWeight: 700 }}>Sign in</a></span>;
+  return (e && e.message) || "The rows could not be read.";
+}
 
 // THE ONE DRILL-THROUGH PANEL. Every number that opens, opens here.
 //
@@ -65,7 +71,7 @@ export function SourceRows({ source, initial, onSelectDonor, heading }) {
     setLoading(true);
     apiFetch(`/figures/${encodeURIComponent(source.key)}/rows?${qs({ ...source.params, page, pageSize: PAGE_SIZE })}`)
       .then(r => { if (live) { setData(r); setError(null); } })
-      .catch(e => { if (live) setError(e?.message || "The rows could not be read."); })
+      .catch(e => { if (live) setError(rowsError(e)); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -230,8 +236,9 @@ export function KeepRows({ source, title }) {
   const download = async () => {
     setBusy(true); setMsg("");
     try {
-      const r = await fetch(`${API}/figures/${encodeURIComponent(source.key)}/export.csv?${params}`, { headers: { Authorization: `Bearer ${getToken()}` } });
-      if (!r.ok) throw new Error("The file could not be made.");
+      if (!getToken()) throw new Error(SIGNED_OUT_SENTENCE);   // NUMBERS-8 item 3: never "Bearer null"
+      const r = await fetch(`${API}/figures/${encodeURIComponent(source.key)}/export.csv?${params}`, { headers: authHeaders() });
+      if (!r.ok) throw new Error(r.status === 401 ? SIGNED_OUT_SENTENCE : "The file could not be made.");
       const url = URL.createObjectURL(await r.blob());
       const a = document.createElement("a");
       a.href = url; a.download = fileName;
@@ -280,7 +287,7 @@ export function SourcePanel({ source, figure, onSelectDonor, title }) {
     let live = true;
     apiFetch(`/figures/${encodeURIComponent(source.key)}/rows?${qs({ ...source.params, page: 1, pageSize: PAGE_SIZE })}`)
       .then(r => { if (live) setData(r); })
-      .catch(e => { if (live) setError(e?.message || "The rows could not be read."); });
+      .catch(e => { if (live) setError(rowsError(e)); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source.key, JSON.stringify(source.params)]);
