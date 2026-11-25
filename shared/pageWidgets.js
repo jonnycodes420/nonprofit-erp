@@ -92,7 +92,7 @@ export const WIDGETS = [
       { items: [{ type: "text", heading: "", text: "Write something in your own words." }] },
       { items: [{ type: "text", heading: "", text: "Write something in your own words." }] }] } },
   { key: "box",        label: "Box",              hint: "A colored section that holds other blocks", surfaces: ["email"], full: true, menu: false,
-    defaults: { children: [{ type: "richtext", blocks: [{ type: "p", text: "Write something in your own words." }] }] } },
+    defaults: { style: { bg: "cream", pad: [24, 32, 24, 32] }, children: [{ type: "richtext", blocks: [{ type: "p", text: "Write something in your own words." }] }] } },
   { key: "social",     label: "Social",           hint: "Your social links, from your brand", surfaces: ["email"], full: true, menu: false,
     defaults: { size: 32, color: "dark" } },
   { key: "code",       label: "Code",             hint: "A small piece of your own HTML", surfaces: ["email"], full: true, menu: false, roles: ["admin"],

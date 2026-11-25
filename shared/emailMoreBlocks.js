@@ -14,8 +14,8 @@
 //            PHONE_MEDIA's .st-col, unless "stack on phones" is off. The
 //            plain-text version reads column by column.
 //   box      a container for other blocks: background, border, rounded
-//            corners and padding come from its style (shared/emailBlockStyle.js),
-//            with a cream section as the default. Nested tables. One level: a
+//            corners and padding come from its style (shared/emailBlockStyle.js,
+//            BUILDER-1's one style model), a cream section when it is added. Nested tables. One level: a
 //            Box inside a Box is refused. Its children count toward MAX_BLOCKS.
 //   social   the org's social links, read from Brand at render time, as icons
 //            with alt text ("Harborlight on Instagram"). A network with no
@@ -30,8 +30,6 @@ import { sanitizeEmailCode } from "./emailCodeSanitize.js";
 export const COLUMN_ITEM_TYPES = ["text", "image", "button"];
 export const MAX_COLUMN_ITEMS = 4;
 export const COLUMN_VALIGN = ["top", "middle", "bottom"];
-// Box: a cream section, its words lined up with the blocks around it.
-export const BOX_DEFAULT_STYLE = Object.freeze({ background: "cream", padding: { top: 24, right: 32, bottom: 24, left: 32 } });
 // The order icons are drawn in, and the name each one is read out as.
 export const SOCIAL_NETWORKS = [
   { key: "facebook", label: "Facebook" },
@@ -62,7 +60,7 @@ export function cleanSocialLinks(raw) {
 
 // ── Render ─────────────────────────────────────────────────────────────────
 // ctx: { T, plain, img, button, P, H, row, esc, C, fonts, text, problems,
-//        images, ED, mode, B, L, frame(), withFrame(patch, fn), draw }
+//        images, ED, mode, B, L, frame(), style(), withFrame(patch, fn), draw }
 export function drawMore(w, i, where, rows, ctx) {
   switch (w.type) {
     case "columns": return drawColumns(w, i, where, rows, ctx);
@@ -119,8 +117,16 @@ function drawColumns(w, i, where, rows, ctx) {
 function drawBox(w, i, where, rows, ctx) {
   const kids = [];
   const list = Array.isArray(w.children) ? w.children : [];
-  // The children line up inside the box's own padding: no side inset of their own.
-  ctx.withFrame({ HP: 0, BARE: true, PADX: null, AL: null }, () => {
+  // Its look is its style (BUILDER-1's shape: bg, pad [t,r,b,l], border, radius,
+  // width). The children line up inside the box's own padding: no side inset of
+  // their own, and no card of their own, so the box's ground shows through.
+  const { IN: outerIn, FW, HP } = ctx.frame();
+  const S = ctx.style() || {};
+  const padL = S.pad ? S.pad[3] : HP, padR = S.pad ? S.pad[1] : HP;
+  let inner = S.border ? FW - 2 * HP - (S.pad ? padL + padR : 40) - 2 : FW - padL - padR;
+  if (S.width) inner = Math.min(inner, S.width - (S.pad ? padL + padR : 0));
+  inner = Math.max(80, Math.min(inner, outerIn + 2 * HP));
+  ctx.withFrame({ HP: 0, BARE: true, IN: inner, FW: inner }, () => {
     list.forEach((c, k) => {
       if (!c || typeof c !== "object") return;
       if (NOT_IN_BOX.has(c.type)) { ctx.problems.push(`${where}, part ${k + 1}: a ${c.type === "box" ? "box cannot hold another box" : `${c.type} cannot go inside a box`}.`); return; }
@@ -131,7 +137,7 @@ function drawBox(w, i, where, rows, ctx) {
     if (ctx.mode !== "preview") return true;
     kids.push(`<tr><td style="padding:8px 0;font-family:${ctx.fonts.sans};font-size:13px;color:${ctx.C.muted};">An empty box. Add blocks inside it.</td></tr>`);
   }
-  rows.push(ctx.row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">\n${kids.join("\n")}\n</table>`, "0"));
+  rows.push(ctx.row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">\n${kids.join("\n")}\n</table>`, `16px ${HP}px`));
   return true;
 }
 

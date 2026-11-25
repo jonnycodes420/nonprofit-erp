@@ -30,6 +30,18 @@
 //   §9  stock photos: every photo has its license row and every row its
 //       photo; mission words pick the group; a new giving page and a new event
 //       start with a stock photo from the org's group (tests/lib/stockPhotosCheck.js).
+//   §10 BUILDER-1, the three-pane builder (browser): a field picked with no
+//       caret lands at the end of the selected text block (a Text element just
+//       added) and saves as {{first_name}}; a field picked at a caret survives
+//       the redraw (§3); an image's words for screen readers set in the right
+//       pane reach the saved blocks, and with them cleared a send still
+//       refuses the image (EMAIL_NOT_READY); a block's style saves and draws.
+//
+// BUILDER-1 RED ON MAIN (5666d11): §10's no-caret field changed nothing (the
+// only answer was a note in the far right column), and there is no Fields tab,
+// Elements tab or right pane. Planted and watched go red: appendField returning
+// null without writing (§10 "no caret" fails: the saved words have no field),
+// and the alt input not wired to the block (§10 "alt reaches the saved blocks").
 //
 // RED ON MAIN (1e383a1): §1's editable preview, §2, §4 (no `audience`), §5
 // (a past time is accepted), §6 (emailBlocks ignored), §7 ("Unknown widget
@@ -208,11 +220,14 @@ async function fixture(org, slug, name, mission) {
     await f.locator("[data-st-rich]").first().click();
     await page.keyboard.press("ControlOrMeta+End");
     await page.keyboard.type(" We saved you a seat, ");
-    await page.click('[data-testid="field-menu"]');
+    await page.click('[data-testid="builder-left-tabs-fields"]');
     await page.click('[data-testid="field-first_name"]');
     await page.waitForTimeout(300);
+    const chipsNow = await page.evaluate(s => document.querySelector(s).contentDocument.querySelectorAll('[data-st-token="first_name"]').length, FRAME);
     await page.click('[data-testid="editor-name"]');
-    await page.waitForTimeout(700);
+    await page.waitForTimeout(1500);   // the redraw
+    const chipsAfter = await page.evaluate(s => document.querySelector(s).contentDocument.querySelectorAll('[data-st-token="first_name"]').length, FRAME);
+    ok("§10 a field picked at the caret is still there after the redraw", chipsAfter >= 1 && chipsAfter === chipsNow, { chipsNow, chipsAfter });
     await page.click('[data-testid="email-save"]');
     await page.waitForFunction(() => /^Saved/.test((document.querySelector('[data-testid="editor-status"]') || {}).innerText || ""), null, { timeout: 10000 }).catch(() => {});
     const after = (await api("GET", "/email-templates", TOK)).body.templates.find(t => t.id === tid);
@@ -225,16 +240,65 @@ async function fixture(org, slug, name, mission) {
     const shown = await page.evaluate(s => document.querySelector(s).contentDocument.body.innerText, FRAME);
     // SWEEP-3: the preview is one of her donors (the newest giver, Maria), never the signed-in Robin.
     ok("§3 reopened, the preview shows them, the field filled", /We saved you a seat, Maria/.test(shown) && !/Robin/.test(shown), shown.slice(0, 200));
-    // The receipt: the tax block has no Remove handle.
+    // The receipt: the tax block, selected, says it is required and has no Remove handle.
     await open(rid);
+    await page.evaluate(s => { const d = document.querySelector(s).contentDocument; d.querySelector('tr[data-st-locked="1"] td').click(); }, FRAME);
+    await page.waitForTimeout(300);
     const handles = await page.evaluate(s => {
       const d = document.querySelector(s).contentDocument;
-      const row = d.querySelector('tr[data-st-locked="1"]');
-      row.dispatchEvent(new d.defaultView.MouseEvent("mouseover", { bubbles: true }));
       const rm = d.querySelector('.st-bar [data-act="remove"]');
-      return { tag: d.querySelector(".st-bar span") && d.querySelector(".st-bar span").textContent, removeShown: rm ? rm.style.display !== "none" : null };
+      return { tag: (d.querySelector(".st-name") || {}).textContent, removeShown: rm ? rm.style.display !== "none" : null,
+        pane: (document.querySelector('[data-testid="email-locked-block"]') || {}).innerText || "" };
     }, FRAME);
-    ok("§3 in the receipt the tax block says it is required and has no Remove", /required/.test(handles.tag || "") && handles.removeShown === false, handles);
+    ok("§3 in the receipt the tax block says it is required and has no Remove", /required/.test(handles.tag || "") && handles.removeShown === false && /can't be removed/.test(handles.pane), handles);
+
+    // ── §10 · BUILDER-1: the field with no caret, the image's words, a style ──
+    const dz = await api("POST", "/email-templates", TOK, { starterKey: "thank_you" });
+    const did = dz.body && dz.body.template && dz.body.template.id;
+    await open(did);
+    await page.click('[data-testid="builder-left-tabs-elements"]');
+    await page.click('[data-testid="element-richtext"]');   // a new Text block, selected, no caret anywhere
+    await page.waitForTimeout(1200);
+    await page.click('[data-testid="builder-left-tabs-fields"]');
+    await page.click('[data-testid="field-first_name"]');
+    await page.waitForFunction(() => /First name added/.test((document.querySelector('[data-testid="builder-toast"]') || {}).innerText || ""), null, { timeout: 4000 }).catch(() => {});
+    const toast = await page.locator('[data-testid="builder-toast"]').innerText({ timeout: 3000 }).catch(() => "");
+    ok("§10 a field with no caret says where it went", /First name added at the end of the selected text/.test(toast), toast);
+    await page.click('[data-testid="builder-left-tabs-elements"]');
+    await page.click('[data-testid="element-image"]');
+    await page.waitForTimeout(1500);
+    await page.fill('[data-testid="block-alt"]', "Kids at the barn");
+    await page.click('[data-testid="builder-right-tabs-style"]');
+    await page.fill('[data-testid="style-width-n"]', "300");
+    await page.click('[data-testid="style-align-center"]');
+    await page.waitForTimeout(1200);
+    const drawn = await page.evaluate(s => { const im = document.querySelector(s).contentDocument.querySelector('img[alt="Kids at the barn"]'); return im ? im.getAttribute("width") : null; }, FRAME);
+    ok("§10 the width set in Style shows in the email at once", drawn === "300", drawn);
+    await page.click('[data-testid="email-save"]');
+    await page.waitForFunction(() => /^Saved/.test((document.querySelector('[data-testid="editor-status"]') || {}).innerText || ""), null, { timeout: 10000 }).catch(() => {});
+    const savedD = (await api("GET", "/email-templates", TOK)).body.templates.find(t => t.id === did);
+    const texts = (savedD.blocks || []).filter(b => b.type === "richtext");
+    const fresh = texts.find(b => /Write something in your own words/.test(JSON.stringify(b.blocks)));
+    ok("§10 a field with no caret lands at the end of the selected text and saves as {{first_name}}",
+      !!fresh && /\{\{first_name\}\}$/.test(fresh.blocks[fresh.blocks.length - 1].text || ""), fresh && fresh.blocks);
+    const imgB = (savedD.blocks || []).find(b => b.type === "image");
+    ok("§10 the words for screen readers set in the right pane reach the saved blocks", !!imgB && imgB.alt === "Kids at the barn", imgB);
+    ok("§10 and its style saves as set", !!imgB && imgB.style && imgB.style.width === 300 && imgB.style.align === "center", imgB && imgB.style);
+    // Cleared in the pane and saved, the image has no words, and a send refuses it.
+    const imgRow = await page.evaluate(s => { const d = document.querySelector(s).contentDocument; const im = d.querySelector('img[alt="Kids at the barn"]'); const tr = im && im.closest("tr[data-st-block]"); if (tr) tr.querySelector("td").click(); return !!tr; }, FRAME);
+    await page.waitForTimeout(300);
+    await page.click('[data-testid="builder-right-tabs-edit"]').catch(() => {});
+    await page.fill('[data-testid="block-alt"]', "");
+    await page.waitForTimeout(500);
+    await page.click('[data-testid="email-save"]');
+    await page.waitForFunction(() => /^Saved/.test((document.querySelector('[data-testid="editor-status"]') || {}).innerText || ""), null, { timeout: 10000 }).catch(() => {});
+    const savedE = (await api("GET", "/email-templates", TOK)).body.templates.find(t => t.id === did);
+    const EB = await import(path.join(ROOT, "shared", "emailBlocks.js"));
+    let refused = null;
+    try { EB.renderEmail({ blocks: savedE.blocks, fields: { first_name: "Maria", give_link: "https://example.org/give" }, links: { assetBase: "https://example.org" }, mode: "send" }); }
+    catch (e) { refused = e; }
+    ok("§10 with the words cleared in the pane, a send refuses the image (EMAIL_NOT_READY)", imgRow && !!refused && refused.code === "EMAIL_NOT_READY" && refused.problems.some(p => /alt text/.test(p)),
+      refused ? refused.problems : "sent");
     // The campaign: Send is disabled while Donor mail is off, with the reason.
     await page.goto(`${APP}/app/communications?subtab=campaigns&campaign=${cid}`, { waitUntil: "domcontentloaded", timeout: 45000 });
     await page.waitForTimeout(1500);

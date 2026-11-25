@@ -9,13 +9,15 @@ model and the server. BUILDER-2 wires it in.
   phones by `.st-col`), Box (a container, one level, its children counted toward `MAX_BLOCKS`), Social (Brand's
   links, new column `portal_settings.social_links`, Steward's own icons) and Code (pasted HTML, cleaned by
   `shared/emailCodeSanitize.js`; anything taken out refuses a send; admins' only in the model).
-- **Style fields** (`shared/emailBlockStyle.js`, `EMAIL_BLOCK_STYLE`): alignment, width (px or %), image height with
-  its shape kept, padding, space above and below, border, corners, background (brand words only) and hide on phone
-  or desktop. A styled block draws in a bare frame and is wrapped once; an unstyled one takes the old path. The
-  proof that nothing written before moved: every starter renders to the same SHA-256 as on main (5666d11).
+- **Style fields.** BUILDER-1 landed (#514) while this was in CI, with its own style model already wired to the
+  editor's Style tab. Two models would have been two homes for one thing, so this build dropped its own and adopted
+  BUILDER-1's: it added the new blocks' `STYLE_CAPS`, an image `height` that keeps the shape, and `EMAIL_BLOCK_STYLE`,
+  the published schema, read from BUILDER-1's constants. Proof nothing moved: every starter renders to the same
+  SHA-256 as on main (f4be415), and styled renders and the validator's output match main's byte for byte.
 - **The renderer** became a recursive `draw(block, place, where, rows)` so a Box can draw its children; the
-  frame (`IN`, `FW`, `HP`) replaced the fixed 600/536/32 inside the block switch. The validator became
-  `validateOne` (id and style kept, never added); its output for every old input is the same as main's.
+  frame (`IN`, `FW`, `HP`, `BARE`) replaced the fixed 600/536/32 inside the block switch. The validator became
+  `validateOne` (an id kept, never added; a Box's children one level down); its output for every old input is the
+  same as main's.
 - **Saved blocks** (`email_saved_blocks`, `server/mail/savedBlocks.js`) and **ready-made sections**
   (`shared/emailReadyBlocks.js`): using either returns a copy with fresh `blk_` ids. Delete is the one Remove
   (`saved_block` kind) with Undo. Ready-made photos are Steward's stock photos, stored for the org only on use (a

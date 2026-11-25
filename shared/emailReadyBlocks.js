@@ -57,7 +57,7 @@ export const READY_BLOCKS = [
   {
     key: "tax_note", name: "Year-end tax note", hint: "The lines a donor keeps for their taxes",
     blocks: [
-      { type: "box", style: { background: "cream", padding: { top: 20, right: 24, bottom: 20, left: 24 }, radius: 8, marginTop: 8, marginBottom: 8 },
+      { type: "box", style: { bg: "cream", pad: [20, 24, 20, 24], mt: 8, mb: 8 },
         children: [words(p("For your records: {{org_name}} is a tax-exempt organization under section 501(c)(3), EIN [your EIN]. No goods or services were provided in exchange for your gifts. Please keep this email with your tax papers."))] },
     ],
   },

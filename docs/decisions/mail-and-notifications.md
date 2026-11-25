@@ -131,8 +131,14 @@ the morning email unless the person turned on its own reminder, so no step goes 
   StewardEditor. The preview is the server's render with `editable: true` (`renderEmail`, preview mode only):
   typed fields carry `data-st-edit="<block>.<field>"` (a text block is one region, Enter makes a paragraph) and
   every field is a chip (`data-st-token`) filled for the person previewed, so typing around it keeps the field;
-  the editor reads chips back as `{{field}}`. "Preview as" names any person of the org (`as`, org-scoped); "+ Field"
-  puts a chip at the caret. A locked block (the tax lines) is never marked and has no Remove. A send never
+  the editor reads chips back as `{{field}}`. "Preview as" names any person of the org (`as`, org-scoped). A field
+  always lands somewhere (BUILDER-1): from the Fields tab it goes at the caret when she is typing in the selected
+  text, else at the end of the selected text block, else of the first text block, as `{{field}}` in the words
+  themselves, and a toast says where ("First name added at the end of the letter"). The Fields tab shows each
+  field's value for the person previewed (`fieldInfo` on the preview answer), or that it is empty for them. Undo
+  and Redo cover typing, settings, adding, moving and removing back to the last save; History is the saved
+  versions. A block waiting for its event, giving page or video is a box saying so in a preview (none in a send,
+  which refuses it). A locked block (the tax lines) is never marked and has no Remove. A send never
   carries any of it. A campaign keeps its own blocks (`campaigns.email_blocks`, written by PUT/POST
   `emailBlocks`), and an older HTML campaign is converted to blocks when it is opened (`htmlToBlocks`), never in
   the database. Unsaved blocks preview through `POST /email-preview`.
@@ -143,9 +149,11 @@ the morning email unless the person turned on its own reminder, so no step goes 
   `portal_settings.social_links` (Brand, https only) at render time and leaves out a network with no link; its icons
   are Steward's own PNGs in `client/public/email-icons/`. Code is pasted HTML cleaned to the email allowlist
   (`shared/emailCodeSanitize.js`); whatever was taken out is a problem, so a send with it is refused; it is
-  admins' only (`roles` in pageWidgets.js, the screen enforces it). Every block may carry `style`
-  (`EMAIL_BLOCK_STYLE` in `shared/emailBlockStyle.js` is the one list of fields, units and limits the right pane
-  reads; colours are brand words, never hex) and an `id`; a block without either renders byte for byte as before
+  admins' only (`roles` in pageWidgets.js, the screen enforces it). There is ONE style model, BUILDER-1's
+  (`shared/emailBlockStyle.js`: `style { align, width, height, pad, mt, mb, border, radius, bg, hide }`, what each
+  type takes in `STYLE_CAPS`); `EMAIL_BLOCK_STYLE` publishes it, read from those constants, never a second copy.
+  The new blocks have their caps there; an image's `height` (BUILDER-2A) keeps its shape. A block may carry an
+  `id`, kept and never added; a block without style or id renders byte for byte as before
   (`tests/builder2a-email-parts.test.js` §3 holds every starter to main's hash). Saved blocks are
   `email_saved_blocks` rows (org-scoped, actor-stamped, removed through the one Remove with Undo); using one, or one
   of Steward's ready-made sections (`shared/emailReadyBlocks.js`), hands back a copy with fresh ids, never a link.

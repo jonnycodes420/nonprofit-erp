@@ -14,6 +14,25 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
   preview that mirrors it. The cover photo is a rail section (`RailPhoto`), never a full-width panel. Editing
   affordances inside a giving page's preview are marked `data-editor-only` / `data-editor-wrap` /
   `data-inline`, so give3-pages can strip them and still require the preview to be the live page byte for byte.
+- **Every email editor is the builder layout** (BUILDER-1, Jonathan 24 Nov, mockup D). This changes EDITOR-1's
+  "left rail of folding sections, right rail only when needed" for email: templates, one-person emails, starters,
+  journey templates and campaigns open in `StewardEditor` with `layout="builder"` (one shell, a second layout; never
+  a forked shell). A white top bar (Back, name and badge, Desktop / Phone / Dark mode, Preview as, Undo / Redo,
+  Send me a test, History, ONE emerald primary), a path line ("Email › Body › Image") with the save state, a LEFT
+  pane with tabs Elements / Blocks / Fields, the email on cream in the middle, and a RIGHT pane: a live thumbnail
+  of the whole email, then the selected block's Edit and Style tabs, or with nothing selected the email's own
+  settings. A click on a block selects it (emerald outline, name tag, up / down / duplicate / remove; no remove or
+  duplicate on a locked block); Escape or a click on the cream clears it. Below 900 px both panes are sheets. The
+  parts are `client/src/components/email-builder/`. Pages (giving, volunteer, membership, portal, event) keep the
+  rails layout until a later build passes `layout="builder"` for them.
+- **A block's look is the block's, and only what an inbox can draw** (BUILDER-1). `shared/emailBlockStyle.js`
+  holds a block's `style` (alignment, width, padding one value or each side, margin above and below, a thin border
+  in a brand colour with rounded corners, a white / cream / brand-band ground, hidden on phones or on desktop) and
+  each type's own settings (text size and line spacing, an image's link, a button's brand colour and full width on
+  phones, a divider's thickness and spacing, the signature picture, the email's background on its footer).
+  `STYLE_CAPS` says which style each type's render draws, and the Style tab offers only those. Every change goes
+  through `validateEmailBlocks` before it shows; the renderer draws it with table cells and inline styles only, and
+  a block with no style renders byte for byte as before.
 - **There is always a photo** (EDITOR-1). A new giving page, event and photo block starts with one of Steward's
   ~40 licensed stock photos (`assets/stock/`, `shared/stockPhotos.js`, `routes/stockPhotos.js`), from the group
   the org's mission words pick (`missionGroup`, community when nothing matches). A photo is stored for the org

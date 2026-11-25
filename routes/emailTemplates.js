@@ -489,7 +489,19 @@ async function previewHtml(req, row, { as = null, editable = false, audienceNoGi
   const noAddress = personKind && !String(fields.org_address || "").trim() && /\{\{\s*org_address\s*\}\}/.test(JSON.stringify(row.blocks || []))
     ? ["Your mailing address is not on file yet, so it is left out here. Add it in Settings, Tax Receipts, and it prints under the signature."] : [];
   return { html, problems: [...r.problems, ...lint.filter(p => !r.problems.includes(p)), ...noAddress], person, fields, ectx, shownAs,
-    subject: EB.renderSubject(row.subject || "", fields, personKind ? personFieldDefs() : null) };
+    subject: EB.renderSubject(row.subject || "", fields, personKind ? personFieldDefs() : null),
+    fieldInfo: fieldInfoOf(fields, personKind ? personFieldDefs() : EB.EMAIL_MERGE_FIELDS), brand: brandSwatches(ectx.brand) };
+}
+// BUILDER-1: each field this email can use, with what it holds for the person
+// previewed ("" when it is empty for them) and what the email says instead.
+// The Fields tab shows them ("First name · Natalie"). Reading only.
+function fieldInfoOf(fields, defs) {
+  return defs.map(f => ({ key: f.key, value: fields[f.key] == null ? "" : String(fields[f.key]).slice(0, 200), fallback: String(f.fallback || "") }));
+}
+// The brand's own colours, for the Style tab's swatches (button, band, accent).
+function brandSwatches(b) {
+  const hex = v => (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null);
+  return { band: hex(b && b.band), bandFg: hex(b && b.bandFg), accent: hex(b && b.accent), button: hex(b && b.buttonColor) };
 }
 // The donor a preview shows when nobody is chosen: the newest giver, else any donor.
 async function defaultPreviewDonorId(orgId) {
@@ -535,7 +547,7 @@ app.post("/email-templates/:id/preview", requireAuth, wrap(async (req, res) => {
   let html = p.html;
   if (b.dark === true) html = html.split(EB.DARK_MEDIA).join("@media all");
   res.json({ html, problems: p.problems, device: b.device === "phone" ? "phone" : "desktop", width: b.device === "phone" ? 375 : 600,
-    as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject, pastGiving: await pastGivingOf(draft.blocks, p) });
+    as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject, pastGiving: await pastGivingOf(draft.blocks, p), fieldInfo: p.fieldInfo, brand: p.brand });
 }));
 
 // EDITOR-1 · A CAMPAIGN'S EMAIL, PREVIEWED AS IT IS TYPED. The same render as
@@ -556,9 +568,9 @@ app.post("/email-preview", requireAuth, wrap(async (req, res) => {
   if (pastGiving.shownNeverGave && b.campaign === true) {
     const PG = await import("../shared/pastGiving.js");
     if (PG.neverGiverOutcome({ blocks: row.blocks, includeNeverGiven: b.includeNeverGiven === true }) === "left_out")
-      return res.json({ html: "", problems: p.problems, as: p.shownAs, subject: p.subject, pastGiving, notSent: PG.notSentSentence(String(p.shownAs.name || "").split(/\s+/)[0]) });
+      return res.json({ html: "", problems: p.problems, as: p.shownAs, subject: p.subject, pastGiving, notSent: PG.notSentSentence(String(p.shownAs.name || "").split(/\s+/)[0]), fieldInfo: fieldInfoOf(p.fields, EB.EMAIL_MERGE_FIELDS), brand: p.brand });
   }
-  res.json({ html, problems: p.problems, as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject, pastGiving });
+  res.json({ html, problems: p.problems, as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject, pastGiving, fieldInfo: fieldInfoOf(p.fields, EB.EMAIL_MERGE_FIELDS), brand: p.brand });
 }));
 
 // BUILDER-2A item 5 · EXPORT. The email as one HTML file, for a chosen person

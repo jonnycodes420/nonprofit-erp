@@ -12,10 +12,11 @@
 //   §2  a Code block with a <script>, an <iframe> or an on* handler is cleaned in
 //       a preview (and says what went) and refused at send (EMAIL_NOT_READY).
 //   §3  every starter in emailTemplateLibrary.js renders byte-identical to main
-//       (5666d11), and a block whose style is all defaults renders as one with none.
-//   §4  the style model: EMAIL_BLOCK_STYLE is published, a bad value is refused,
-//       hide-on-phone adds its CSS only when used, a Box in a Box is refused,
-//       and a Box's children count toward MAX_BLOCKS.
+//       (f4be415, BUILDER-1's renderer), and a style the type cannot take is dropped.
+//   §4  the style model (BUILDER-1's, the one model): EMAIL_BLOCK_STYLE is published
+//       from its constants, the new blocks take their style, an image's height
+//       keeps its shape, a Box in a Box is refused, a Box's children count
+//       toward MAX_BLOCKS, and a block's id is kept but never added.
 //   §5  saved blocks over HTTP: saved, listed, used as a COPY with fresh ids;
 //       invisible, unusable and unremovable to another org; removed through the
 //       one Remove and back with Undo. Ready-made blocks: a GET writes nothing,
@@ -25,7 +26,7 @@
 //       window; the columns sit side by side at 800 and stack under 620 (the
 //       phone breakpoint), and nothing runs off the side.
 //
-// RED ON MAIN (5666d11): §1 to §5 ("columns" is not an email block; no
+// RED ON MAIN (5666d11 and f4be415): §1 to §5 ("columns" is not an email block; no
 // /email-blocks or /email-export route; no social_links column). Planted and
 // watched go red: the sanitizer letting on* attributes through both of its
 // checks (§2, four reds), the frame's side padding one pixel wider (§3's
@@ -44,9 +45,10 @@ const { ok, summary, api, q, closeDb, browserLegOrSkip } = require("./helpers");
 
 const ORG = "org_builder2a", ORG2 = "org_builder2a_other";
 const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright");
-// The hash of every starter rendered on main before this build (5666d11). A
-// build that changes the starter render on purpose updates this, and says why.
-const STARTERS_ON_MAIN = "e55360cec35f10461d3c6f2d8f02e8b6d8568c6d3b2198d161eea50f894f8957";
+// The hash of every starter rendered on main before this build (f4be415, with
+// BUILDER-1's renderer). A build that changes the starter render on purpose
+// updates this, and says why.
+const STARTERS_ON_MAIN = "87de91c719bc227f5e4f8bf067cafb4fe832c9c831ddcf0e105529e97ea385f0";
 
 async function wipe(org) {
   const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
@@ -75,7 +77,7 @@ const NEW_BLOCKS = {
     { items: [{ type: "text", heading: "48 kids", text: "in the studio this fall" }] },
     { items: [{ type: "image", image: PIC, alt: "Kids painting" }] },
     { items: [{ type: "text", heading: "1,200 brushes", text: "washed by volunteers" }, { type: "button", label: "See the studio", url: "https://lantern.example/studio" }] }] },
-  box: { type: "box", style: { radius: 8, borderWidth: 1 }, children: [
+  box: { type: "box", style: { bg: "cream", pad: [24, 32, 24, 32], border: "thin", borderColor: "band", radius: 8 }, children: [
     { type: "image", image: PIC, alt: "The studio at night" },
     { type: "richtext", blocks: [{ type: "p", text: "Hi {{first_name}}, the lights are on." }] }] },
   social: { type: "social", size: 32 },
@@ -110,7 +112,7 @@ const NEW_BLOCKS = {
     const noAlt = render([{ type: "columns", count: 2, columns: [{ items: [{ type: "image", image: PIC, alt: "" }] }, { items: [{ type: "button", label: "Go", url: "" }] }] }]);
     ok("§1 an image in a column still needs alt text, and a button somewhere to go", noAlt.problems.some(p => /column 1: add alt text/.test(p)) && noAlt.problems.some(p => /column 2: the button needs a link/.test(p)), noAlt.problems);
     const box = render([NEW_BLOCKS.box]);
-    ok("§1 a Box is nested tables holding its blocks", /<table role="presentation" width="600"[^>]*bgcolor="#f0ede6"[^>]*border:1px solid #0d5c3a;border-radius:8px;[\s\S]*<img src="https:\/\/cdn\.example\/photo\.jpg" width="534"/.test(box.html));   // 600 less a 1 px border each side, less 32 px padding each side
+    ok("§1 a Box is nested tables holding its blocks, its ground inside its border", /<td class="st-card" bgcolor="#ffffff" style="background:#ffffff;padding:0 32px;"><table role="presentation" width="100%"[^>]*bgcolor="#f0ede6" style="background:#f0ede6;border:1px solid #0d5c3a;border-radius:8px;[\s\S]*<img src="https:\/\/cdn\.example\/photo\.jpg" width="470"/.test(box.html));   // 600 less 32 each side outside the border, a 1 px border, and its 32 px padding
     const social = render([NEW_BLOCKS.social]);
     ok("§1 Social draws each link as an icon with alt text, and leaves out a network with no link",
       /alt="Lantern Arts on Instagram"/.test(social.html) && /alt="Lantern Arts on Facebook"/.test(social.html) && !/ on X"/.test(social.html)
@@ -147,33 +149,35 @@ const NEW_BLOCKS = {
       const r = EB.renderEmail({ blocks: s.blocks, brand, fields, links, subject: s.subject, preheader: s.preheader, mode: "preview", editable });
       h.update(r.html + "\n--\n" + r.text + "\n--\n" + JSON.stringify(r.problems));
       // A style of all defaults normalizes away, so the block is the old block.
-      const v = EB.validateEmailBlocks(s.blocks.map(b => ({ ...b, style: { background: "none", hideOn: "none", borderWidth: 0, width: { value: 100, unit: "%" } } })), TYPES);
+      // A style a type cannot take (BUILDER-1's STYLE_CAPS) or a value off its list is dropped.
+      const v = EB.validateEmailBlocks(s.blocks.map(b => ({ ...b, style: { bg: "white", hide: "never", border: "thick", nonsense: 1, ...(b.type === "footer" ? { pad: [9, 9, 9, 9] } : {}) } })), TYPES);
       const r2 = EB.renderEmail({ blocks: v.blocks, brand, fields, links, subject: s.subject, preheader: s.preheader, mode: "preview", editable });
       if (r2.html !== r.html) sameWithDefaults = false;
     }
     ok("§3 every starter renders byte-identical to main", h.digest("hex") === STARTERS_ON_MAIN);
-    ok("§3 a style of all defaults renders exactly as no style", sameWithDefaults);
+    ok("§3 a style the block cannot take renders exactly as no style", sameWithDefaults);
   }
 
   // ── §4 · the style model ─────────────────────────────────────────────────
   {
-    const F = ST.EMAIL_BLOCK_STYLE.fields;
-    ok("§4 EMAIL_BLOCK_STYLE publishes every field the right pane edits",
-      ["align", "width", "height", "padding", "marginTop", "marginBottom", "borderWidth", "borderColor", "radius", "background", "hideOn"].every(k => F[k]));
-    const bad = EB.validateEmailBlocks([{ type: "divider", style: { background: "#ff0000" } }], TYPES);
-    ok("§4 a colour that is not a brand word is refused", !bad.ok && /Background must be one of/.test(bad.error), bad.error);
-    const plain = render([{ type: "richtext", blocks: [{ type: "p", text: "Hi" }] }]);
-    const hidden = render([{ type: "richtext", blocks: [{ type: "p", text: "Hi" }], style: { hideOn: "phone" } }]);
-    ok("§4 hide on phone adds its CSS only when a block uses it", !/st-hide-phone/.test(plain.html) && /<tr[^>]* class="st-hide-phone"/.test(hidden.html) && /\.st-hide-phone\{display:none !important/.test(hidden.html));
-    const styled = render([{ type: "image", image: PIC, alt: "x", style: { width: { value: 50, unit: "%" }, align: "right", marginTop: 12 } }]);
-    ok("§4 an image's width, alignment and space above are honoured", /<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="right"[^>]*><tr><td><img src="https:\/\/cdn\.example\/photo\.jpg" width="268"/.test(styled.html) && /padding:12px 0 0px;/.test(styled.html));
+    const E = ST.EMAIL_BLOCK_STYLE;
+    ok("§4 EMAIL_BLOCK_STYLE publishes every field the right pane edits, from BUILDER-1's constants",
+      ["align", "width", "height", "pad", "mt", "mb", "border", "bg", "hide"].every(k => E.fields[k]) && E.fields.width.max === ST.LIMITS.width[1] && E.fields.bg.values === ST.BACKGROUNDS);
+    ok("§4 and which types take each one, the new blocks included", ["columns", "box", "social", "code"].every(t => Array.isArray(E.types[t]) && E.types[t].includes("mt")) && E.types.image.includes("height"));
+    const banded = render([{ ...NEW_BLOCKS.columns, style: { bg: "band", mt: 12, hide: "phone" } }]);
+    ok("§4 a new block takes its style: the band, space above, hidden on phones",
+      /<tr[^>]* class="st-hide-phone"><td class="st-bandrow" bgcolor="#0d5c3a"/.test(banded.html) && /height="12"/.test(banded.html), (banded.html.match(/<tr[^>]*st-hide-phone[^>]*>.{0,120}/) || [])[0]);
     const tall = render([{ type: "image", image: PIC, alt: "x", style: { height: 200 } }]);
-    ok("§4 an image's height keeps its shape (width follows)", /height="200"[^>]*style="display:block;height:200px;width:auto;/.test(tall.html));
+    ok("§4 an image's height keeps its shape (the width follows)", /height="200"[^>]*style="display:block;height:200px;width:auto;/.test(tall.html));
+    const both = EB.validateEmailBlocks([{ type: "image", image: PIC, alt: "x", style: { width: 300, height: 200 } }], TYPES).blocks[0];
+    ok("§4 a width wins over a height (one sets the size, never both)", both.style.width === 300 && both.style.height === undefined, both.style);
     const boxIn = EB.validateEmailBlocks([{ type: "box", children: [{ type: "box", children: [] }] }], TYPES);
     ok("§4 a Box inside a Box is refused", !boxIn.ok && /cannot hold another box/.test(boxIn.error), boxIn.error);
     const many = EB.validateEmailBlocks([{ type: "box", children: Array.from({ length: 39 }, () => ({ type: "divider" })) }, { type: "divider" }], TYPES);
     ok("§4 a Box's children count toward MAX_BLOCKS", !many.ok && /at most 40 blocks/.test(many.error), many.error);
-    ok("§4 an id and a style are kept; neither is added", JSON.stringify(EB.validateEmailBlocks([{ type: "divider", id: "blk_1", style: { radius: 4 } }, { type: "divider" }], TYPES).blocks) === '[{"id":"blk_1","type":"divider","style":{"radius":4}},{"type":"divider"}]');
+    ok("§4 an id is kept, never added", JSON.stringify(EB.validateEmailBlocks([{ type: "divider", id: "blk_1" }, { type: "divider" }], TYPES).blocks) === '[{"id":"blk_1","type":"divider"},{"type":"divider"}]');
+    const plainBox = render([{ type: "box", children: [{ type: "richtext", blocks: [{ type: "p", text: "Inside" }] }] }]);
+    ok("§4 a Box with no style lines its words up with the blocks around it", /<td class="st-card" bgcolor="#ffffff" style="background:#ffffff;padding:16px 32px;"><table[^>]*>\n<tr[^>]*><td style="padding:12px 0px 4px;">/.test(plainBox.html));
   }
 
   // ── §5 · saved blocks, ready-made blocks, social links, export ───────────
