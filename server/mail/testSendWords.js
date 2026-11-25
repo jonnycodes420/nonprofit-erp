@@ -20,8 +20,9 @@ function refusalBefore(org) {
 // list) is 409 with its words; anything else is the provider, 502 with words.
 function afterError(error, what = "campaign") {
   const name = error && error.name, msg = String((error && error.message) || "");
-  if (name === "org_mail_off") {
-    const reason = msg.replace(/^org_mail_off:\s*/, "");
+  // The wrapped client's gate refusal (steps-1.js names it org_mail_off; matched by its tail).
+  if (String(name || "").endsWith("_mail_off")) {
+    const reason = msg.replace(/^[a-z_]*mail_off:\s*/, "");
     return { status: 409, body: { error: "test_not_sent", reason, sentence: mailPolicy.REASON_SENTENCE[reason] || "Email is not going out from this organization right now, so the test was not sent." } };
   }
   if (name === "blocked_address") return { status: 409, body: { error: "test_not_sent", reason: "blocked_address", sentence: "Steward never sends to that address, so the test was not sent." } };
