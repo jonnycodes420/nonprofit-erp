@@ -364,6 +364,7 @@ function mount(app, { query, run, wrap, opsOnly, billing }) {
   require("./routesF").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
   // ONBOARD-4: the booking page (public) and partner codes.
   require("./routesG").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
+  require("./routesH").mount(app, { query, wrap, door, salesLimiter });   // ORDER-1: the deal's orders
 }
 
 module.exports = { mount, settings };

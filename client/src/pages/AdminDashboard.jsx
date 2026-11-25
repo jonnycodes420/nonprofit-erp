@@ -10,6 +10,7 @@ import { enterSupport } from "../lib/supportSession";   // FIX-57
 import { countLabel } from "../../../shared/countWords.js";
 import AdminOpsNav from "./ops/AdminOpsNav";
 import StartLinkPanel from "../components/admin/StartLinkPanel";   // ONBOARD-1
+import OrdersToSign from "../components/admin/OrdersToSign";   // ORDER-1 item 5
 import OrgMenuPanel from "../components/admin/OrgMenuPanel";
 import BackgroundWorkSwitch from "../components/admin/BackgroundWorkSwitch";   // BGWORK-1   // NAV-1 (menu): an org's sidebar and Major Gifts tabs
 import DateInput from "../components/inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
@@ -1116,6 +1117,7 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
         </button>
       </div>
 
+      <OrdersToSign orgs={orgs} onMake={setStartLinkOrg} />
       {/* Table */}
       <div style={{ background: A.card, border: `1px solid ${A.border}`, borderRadius: 10, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -1207,7 +1209,7 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
                         {reconcileBusy === o.id ? "…" : "Find subscription"}
                       </button>
                     )}
-                    {!o.demo && <button data-testid={`org-start-link-${o.id}`} onClick={() => setStartLinkOrg(o)} style={{ ...ABTN, fontSize: 11 }}>Create start link</button>}
+                    {!o.demo && <button data-testid={`org-start-link-${o.id}`} onClick={() => setStartLinkOrg(o)} style={{ ...ABTN, fontSize: 11 }}>Make order</button>}
                     {canDollarTest(o) && (
                       <button data-testid={`org-dollar-${o.id}`} onClick={() => moveToDollarPrice(o)}
                         disabled={dollarBusy === o.id}

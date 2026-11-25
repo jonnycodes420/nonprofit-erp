@@ -35,7 +35,7 @@ const RULES = [
 const SILENT = [
   /^(audit_log|audit_trail|fin_audit_log|portal_audit_log|api_call_log|ai_log|ai_usage|ai_fallbacks|question_log|rate_limit_hits)$/,
   /^(job_queue|events_outbox|org_changes|org_changes_floor|org_summary|donor_drift|number_checks|reengage_snapshots|send_plans|write_effects|smart_move_state|smart_move_sweeps)$/,
-  /_sessions$|^(oauth_states|mfa_recovery_codes|portal_magic_links|volunteer_magic_links|start_links|start_signatures|close_links|terms_acceptances|support_tickets)$/,
+  /_sessions$|^(oauth_states|mfa_recovery_codes|portal_magic_links|volunteer_magic_links|start_links|start_signatures|order_signatures|close_links|terms_acceptances|support_tickets)$/,
   /^(client_marks|client_email_removals|donor_list_layouts|donor_list_views|saved_dashboards|saved_reports|saved_report_sends|board_reports|ask_pins|home_lead_dismissals|data_health_|onboard_|metric_snapshots|org_record_months|readouts?|readout_events|form_events|group_sweep_seen|insight_shown)/,
   /^(notification_|digest_sends|board_pack_|mail_|mailbox_|email_suppressions|email_marketing_|gmail_|bookkeeping_connections|bookkeeping_customers|gift_bookkeeping_syncs|calendar_pushes|send_confirms|invite_sends|grant_sends|webhook_deliveries|billing_webhook_events|platform_payments|sample_data_audit|asset_|media_items|portal_assets|pos_item_mappings|public_filings|ncoa_batches|network_applications|donor_org_follows|donor_account_links|agent_instructions|agent_runs|agent_writes|atlas_actions|workflow_runs|workflow_conversions|touch_batches|support_)/,
   /^(audiences_seen|journey_start_skips|journey_sends|sequence_sends|privacy_requests|setup_invites|grant_library|grant_library_versions|portfolio_lists)$/,
