@@ -33,6 +33,8 @@ const RULES = [
 ];
 // Writes no screen's figure reads. Prefix matches end in "_".
 const SILENT = [
+  // ONBOARD-5: her yearly events are listed only on the setup page's Funds step, which re-reads them; no figure reads them.
+  /^org_yearly_events$/,
   /^(audit_log|audit_trail|fin_audit_log|portal_audit_log|api_call_log|ai_log|ai_usage|ai_fallbacks|question_log|rate_limit_hits)$/,
   /^(job_queue|events_outbox|org_changes|org_changes_floor|org_summary|donor_drift|number_checks|reengage_snapshots|send_plans|write_effects|smart_move_state|smart_move_sweeps)$/,
   /_sessions$|^(oauth_states|mfa_recovery_codes|portal_magic_links|volunteer_magic_links|start_links|start_signatures|close_links|terms_acceptances|support_tickets)$/,

@@ -4,12 +4,13 @@
 // The four colours only: ink, white (cream its shade), emerald, brass.
 import { useState } from "react";
 import { T } from "../../components/shared";
+import { countLabel } from "../../../../shared/countWords.js";
 
 export const C = { ink: T.ink, white: T.white, cream: T.bg, emerald: T.green, brass: T.gold, dim: T.ink3, line: T.bg2, line2: T.bg3 };
 export const SERIF = "'Fraunces','DM Serif Display',Georgia,serif";
 export const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 export const usd = cents => "$" + Math.round(Number(cents || 0) / 100).toLocaleString("en-US");
-export const count = (n, one, many) => `${Number(n || 0).toLocaleString("en-US")} ${Number(n) === 1 ? one : many || one + "s"}`;
+export const count = countLabel;
 
 // Fraunces, Steward's own file (client/public/fonts, OFL), loaded only on this page.
 export const FONT_CSS = `@font-face{font-family:'Fraunces';font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/fraunces-600-latin.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2212;}`;
@@ -101,7 +102,7 @@ export function Connection({ name, logo, minutes, connectedAs, onConnect, onMana
       <div style={{ flex: "1 1 220px", minWidth: 0 }}>
         <h3 style={{ margin: 0, fontSize: 17, color: C.ink }}>{name}</h3>
         <p style={{ margin: "2px 0 0", color: C.dim, fontSize: 14 }}>{connectedAs ? <Status>Connected as {connectedAs}</Status>
-          : `Takes about ${minutes} minute${minutes === 1 ? "" : "s"}. You sign in on ${name}'s own page.`}</p>
+          : `Takes about ${countLabel(minutes, "minute")}. You sign in on ${name}'s own page.`}</p>
       </div>
       <div className="setup-act">{connectedAs
         ? <button type="button" style={btn("quiet")} onClick={onManage}>Manage</button>

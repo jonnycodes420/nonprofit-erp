@@ -6,7 +6,7 @@
 // /org/sending-domain. No email-marketing step (Jonathan, 24 Nov).
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../api";
-import { C, Card, Connection, Logo, Message, Status, TrustLine, label, side, input, why, btn, link } from "./ui";
+import { C, Card, Connection, Logo, Message, Status, TrustLine, label, side, input, why, btn, link, count } from "./ui";
 
 const errText = (e, fallback) => (e && e.body && (e.body.message || e.body.sentence || (typeof e.body.error === "string" && e.body.error.includes(" ") ? e.body.error : null))) || fallback;
 const LOGO = { stripe: "/logos/stripe.svg", paypal: "/logos/paypal.svg", zeffy: "/logos/zeffy.png", givebutter: "/logos/givebutter.png" };
@@ -171,7 +171,7 @@ export function Email({ status }) {
     scopes={scopes(linked ? linked.provider : "microsoft")} note={<Message {...(msg || {})} />}>
     {!linked && <p style={{ ...side, marginTop: 14 }}>Using Gmail? <button type="button" data-testid="setup-google" style={link} onClick={() => startOAuth("google", "email", setBusy, setMsg, refusals)}>Connect Google instead</button></p>}
     <SendingDomain />
-    <div data-testid="setup-automatic" style={why}><b>{mail && mail.state === "on" ? `${mail.count} automatic email${mail.count === 1 ? " is" : "s are"} on.` : "Automatic emails are off."}</b>{" "}
+    <div data-testid="setup-automatic" style={why}><b>{mail && mail.state === "on" ? `${count(mail.count, "automatic email")} ${mail.count === 1 ? "is" : "are"} on.` : "Automatic emails are off."}</b>{" "}
       {mail && mail.state === "on" ? "Change them any time in Settings." : "Receipts and reminders stay off until you turn them on in Settings, so nothing reaches a donor until you choose."}{" "}
       <button type="button" style={link} onClick={() => manage("automatic")}>Automatic emails</button></div>
   </Connection>;

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../../api";
 import { C, Card, Choices, Message, side, input, why, btn, link, count } from "./ui";
 import { Figure } from "../../components/Figure";
+import { plural } from "../../../../shared/countWords.js";
 
 const errText = (e, fallback) => (e && e.body && (e.body.message || e.body.error)) || (e && e.message) || fallback;
 const ROLE_WORDS = { admin: "Admin · can connect apps", staff: "Staff", viewer: "Reports only", volunteer_coordinator: "Volunteers only" };
@@ -99,7 +100,7 @@ export function YoureSet() {
       {tile(t.people, "count", "people in", d.sentences.people, d.sources && d.sources.people, "setup-total-people")}
       {tile(t.lifetimeCents / 100, "money", "lifetime giving", d.sentences.lifetime, d.sources && d.sources.lifetime, "setup-total-lifetime")}
       {tile(t.lapsed, "count", "lapsed 12+ months", d.sentences.lapsed, d.sources && d.sources.lapsed, "setup-total-lapsed")}
-      {tile(t.apps, "count", t.apps === 1 ? "app connected" : "apps connected", d.sentences.apps, null, "setup-total-apps")}
+      {tile(t.apps, "count", plural(t.apps, "app connected", "apps connected"), d.sentences.apps, null, "setup-total-apps")}
     </div>
     <div style={{ marginTop: 16 }}>
       {d.people.length ? d.people.map(p => <a key={p.id} data-testid="setup-call-person" href={`/donors/${encodeURIComponent(p.id)}`}

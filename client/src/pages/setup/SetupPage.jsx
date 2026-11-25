@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../../api";
 import { BOOKING_URL } from "../../marketing/booking/config";
-import { C, SERIF, FONT_CSS, btn } from "./ui";
+import { C, SERIF, FONT_CSS, btn, count } from "./ui";
 import { MakeItYours, ReceiptsAndLetters } from "./StepsBrand";
 import { BringDonors, FundsCampaigns, HowYouTalk } from "./StepsPeople";
 import { WhereGiftsComeIn, QuickBooks, Email } from "./StepsConnect";
@@ -124,7 +124,7 @@ export default function SetupPage() {
     </div>
     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12.5, color: C.dim, marginBottom: 24, flexWrap: "wrap" }}>
       <span data-testid="setup-count">Step {i + 1} of {steps.length} · {s.title}</span>
-      <span data-testid="setup-eta">{left ? `About ${left} minute${left === 1 ? "" : "s"} left` : "Done"}</span>
+      <span data-testid="setup-eta">{left ? `About ${count(left, "minute")} left` : "Done"}</span>
     </div>
     <section data-testid="setup-step" data-step={s.id} aria-labelledby="setup-h1">
       <div style={{ fontSize: 12, letterSpacing: ".08em", textTransform: "uppercase", fontWeight: 700, color: C.emerald }}>{head.k || s.title}</div>
