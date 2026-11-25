@@ -1289,7 +1289,7 @@ async function sweepQuietConnections({ orgId = null, today = null, notify = true
   const C = await import("../../shared/connections.js");
   const { quietSentence } = require("../connections/status");   // HONEST-1: Home, the card and the task say it one way
   const { providerLabel } = await givingSourcesMod();
-  const out = { checked: 0, quiet: 0, recovered: 0, tasksOpened: 0, emailed: 0 };
+  const out = { checked: 0, quiet: 0, recovered: 0, tasksOpened: 0, emailed: 0, orgs: [] };   // orgs: jobAudit (a writing job returns its orgs)
   // HONEST-1 item 2: the scheduled sweep reads live orgs only (SCALE-5's liveOrgs).
   const liveIds = live ? await require("../orgs/liveOrgs").liveOrgIds(query) : null;
   const sources = await query(
@@ -1314,7 +1314,7 @@ async function sweepQuietConnections({ orgId = null, today = null, notify = true
       if (s.quiet_notified_at) {
         await run(`UPDATE giving_sources SET quiet_notified_at=NULL, quiet_incident=NULL, updated_at=NOW()
                     WHERE id=?`, [s.id]);
-        out.recovered++;
+        out.recovered++; out.orgs.push(s.org_id);
       }
       continue;
     }
@@ -1354,7 +1354,9 @@ async function sweepQuietConnections({ orgId = null, today = null, notify = true
     }
     await run(`UPDATE giving_sources SET quiet_notified_at=NOW(), quiet_incident=?, updated_at=NOW() WHERE id=?`,
       [incident, s.id]);
+    out.orgs.push(s.org_id);
   }
+  out.orgs = [...new Set(out.orgs)];
   return out;
 }
 // SPLIT-2 end
