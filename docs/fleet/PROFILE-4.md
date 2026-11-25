@@ -8,10 +8,11 @@ the header has scrolled away. The right rail did not change.
 **Clicks to try for the next three nights:**
 1. **(Read only, Harborlight, 1440×900.)** Donors → Margaret Chen. The white header from its top to the tabs is under
    about 185px; the name, two tags and the buttons (Log a touch, the icon buttons, More) share one row; under the name
-   one line reads "Donor since 2023 · <email> · <phone>"; under that one strip of four numbers with thin dividers, Last
+   one line reads "Donor since 2016 · <email> · <city>"; under that one strip of four numbers with thin dividers, Last
    gift with its date beside it.
 2. **(Read only.)** Same person: put the mouse over the timeline and scroll down. The header goes up with the page; the
-   tab row stops at the top with "MC Margaret Chen" at its left and a light shadow; the rail does not move. Scroll back
+   tab row stops at the top with "MC Margaret Chen" at its left and a light shadow, and all eight tabs (Activity to
+   Files) are still in the row, only the open tab with its count; the rail does not move. Scroll back
    to the top: the small name disappears and the header is back.
 3. **(Read only.)** Scroll down until the tab row is stuck, then click Giving, then Notes. Each time the tab row stays
    at the top and the new tab's first card starts just under it (no jump back to the header). Click Activity: same.
