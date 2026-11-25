@@ -17,11 +17,17 @@ function mount(app, ctx) {
   const { query, run, wrap, requireAuth, checkWriteAccess, actor } = ctx;
   const who = req => (actor ? actor(req) : { id: req.user.userId, name: String(req.user.name || req.user.email || "user").slice(0, 120) });
   const may = checkWriteAccess || ((req, res, next) => next());
+  require("./setupPageRoutes").mount(app, ctx);   // ONBOARD-5: the ten-step setup page
 
+  // ONBOARD-5: ?page=1 is the setup page itself, which any org can open from Settings;
+  // Home's card (no ?page) shows only for an org in onboarding.
   app.get("/onboarding/guided", requireAuth, wrap(async (req, res) => {
-    if (!(await inOnboarding(query, req.user.orgId))) return res.json({ show: false });
+    const onboarding = await inOnboarding(query, req.user.orgId);
+    if (!onboarding && !req.query.page) return res.json({ show: false });
     const out = await GUIDED.read(query, req.user.orgId);
-    res.json(out || { show: false });
+    if (!out) return res.json({ show: false });
+    if (!onboarding) out.show = false;
+    res.json(out);
   }));
 
   app.post("/onboarding/guided/skip", requireAuth, may, wrap(async (req, res) => {
