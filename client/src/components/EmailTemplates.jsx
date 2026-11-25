@@ -98,7 +98,7 @@ const reviewedStyle = on => ({ fontSize: 12, fontWeight: 700, color: on ? T.gree
 // FIX-39: `openTemplateId` opens that one template straight away (an "Edit in
 // editor" from a journey, a campaign or a draft), and `onBackFromOpen` is where
 // its Back goes: to the screen that opened it, not to this library.
-export default function EmailTemplates({ isReadOnly, donors = [], campaignStarters = [], previewSubject, onOpenCampaigns, onOpenDrafts, openTemplateId = null, onBackFromOpen = null, openTitle = null, openBackLabel = null }) {
+export default function EmailTemplates({ isReadOnly, donors = [], campaignStarters = [], previewSubject, onOpenCampaigns, onOpenCampaign, onOpenDrafts, openTemplateId = null, onBackFromOpen = null, openTitle = null, openBackLabel = null }) {
   const [tab, setTab] = useState("templates");
   const [data, setData] = useState(null);
   const [letters, setLetters] = useState(null);
@@ -154,7 +154,7 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
   if (open) {
     const letter = open.personKind && EMAILED_LETTERS.has(open.personKind) ? (letters?.templates || []).find(t => t.kind === open.personKind) : null;
     return <EmailEditor key={open.id} template={open} isReadOnly={isReadOnly} blockTypes={data.blockTypes || []}
-      mergeFields={open.mergeFields || data.mergeFields || []} onOpenDrafts={onOpenDrafts} onOpenCampaigns={onOpenCampaigns}
+      mergeFields={open.mergeFields || data.mergeFields || []} onOpenDrafts={onOpenDrafts} onOpenCampaigns={onOpenCampaigns} onOpenCampaign={onOpenCampaign}
       onOpenBrand={openedFrom === open.id ? null : () => { setOpenId(null); setTab("brand"); }}
       onQuickPrint={letter ? () => { setOpenId(null); setOpenLetter(letter); } : null}
       backLabel={openedFrom === open.id ? (openBackLabel || "Back") : "Back to templates"}

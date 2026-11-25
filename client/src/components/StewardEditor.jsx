@@ -59,6 +59,51 @@ export const railInput = { width: "100%", boxSizing: "border-box", padding: "8px
 export const railQuietBtn = { background: T.white, color: T.ink, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
 export const railNote = { fontSize: 12, color: T.ink3, lineHeight: 1.5 };
 
+// CAMPAIGN-2 (Jonathan, staging edd466f: "can not see the top of the screen" after clicking an image
+// block). THE EDITOR IS A FIXED-HEIGHT SHELL. It starts under Steward's header and anything above it
+// (the staging strip, --steward-strip-h), measured, and is exactly as tall as what is left. Only
+// the left pane, the email and the right pane scroll, inside themselves; the shell and its frames
+// are pinned at 0, so a scrollIntoView or a focus deep inside can never push the top bar away.
+export const SHELL_TOP = "calc(52px + var(--steward-strip-h, 0px))";
+export function useShellTop() {
+  const [top, setTop] = useState(null);
+  useEffect(() => {
+    const measure = () => {
+      const bar = document.querySelector(".app-topbar");
+      const r = bar && bar.getBoundingClientRect();
+      // The desktop bar, measured; on a phone it is hidden and the takeover sits under the strip alone.
+      setTop(r && r.height > 0 ? Math.max(0, Math.round(r.bottom)) + "px" : bar ? "var(--steward-strip-h, 0px)" : null);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    const bar = document.querySelector(".app-topbar");
+    if (ro && bar) ro.observe(bar);
+    return () => { window.removeEventListener("resize", measure); if (ro) ro.disconnect(); };
+  }, []);
+  return top == null ? SHELL_TOP : top;
+}
+// The style of an editor's outer box: fixed under the header, its own height, never scrolled.
+export const shellStyle = top => ({ position: "fixed", top, left: 0, right: 0, height: `calc(100dvh - ${top})`, bottom: "auto", zIndex: 200, overflow: "hidden" });
+// Pins `el` (and every element under it marked data-shell-pin) at scroll 0. Scroll events do not
+// bubble, but they do pass through a capturing listener on an ancestor.
+export function pinShell(el) {
+  if (!el) return () => {};
+  const back = e => { const t = e.target; if (t === el || (t && t.nodeType === 1 && t.hasAttribute("data-shell-pin"))) { if (t.scrollTop) t.scrollTop = 0; if (t.scrollLeft) t.scrollLeft = 0; } };
+  el.addEventListener("scroll", back, true);
+  return () => el.removeEventListener("scroll", back, true);
+}
+// Scrolls `el` into the middle of its nearest scrolling box, and nothing else (scrollIntoView
+// scrolls every box around it, the shell and the page included).
+export function scrollWithinPane(el, where = "start") {
+  if (!el) return;
+  let box = el.parentElement;
+  while (box && box !== document.body) { const s = getComputedStyle(box); if (/(auto|scroll)/.test(s.overflowY) && box.scrollHeight > box.clientHeight) break; box = box.parentElement; }
+  if (!box || box === document.body) return;
+  const off = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+  box.scrollTo({ top: Math.max(0, where === "center" ? off - box.clientHeight / 3 : off - 8), behavior: "smooth" });
+}
+
 export function useNarrow(at = NARROW_AT) {
   const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < at);
   useEffect(() => {
@@ -78,7 +123,7 @@ export function RailSection({ id, title, hint, defaultOpen = true, focus = 0, ch
   useEffect(() => {
     if (!focus) return;
     setOpen(true);
-    setTimeout(() => { if (ref.current) ref.current.scrollIntoView({ block: "start", behavior: "smooth" }); }, 40);
+    setTimeout(() => scrollWithinPane(ref.current), 40);   // CAMPAIGN-2: its own pane only
   }, [focus]);
   return (
     <section ref={ref} data-rail-section={id} data-testid={testid} style={{ borderBottom: "1px solid " + ED.railLine }}>
@@ -125,7 +170,7 @@ export function DeviceFrame({ device, narrow, children, label, testid = "editor-
 
 function Sheet({ title, onClose, side = "left", children, testid }) {
   return (
-    <div role="dialog" aria-label={title} data-testid={testid} style={{ position: "fixed", inset: 0, zIndex: 420, display: "flex", justifyContent: side === "left" ? "flex-start" : "flex-end", background: ED.sheetScrim }}
+    <div role="dialog" aria-label={title} data-testid={testid} style={{ position: "fixed", inset: "var(--steward-strip-h, 0px) 0 0 0", zIndex: 420, display: "flex", justifyContent: side === "left" ? "flex-start" : "flex-end", background: ED.sheetScrim }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ width: "min(100vw, 420px)", height: "100%", background: ED.rail, display: "flex", flexDirection: "column", boxShadow: "0 0 30px rgba(0,0,0,0.3)" }}>
         <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid " + ED.railLine }}>
@@ -245,6 +290,13 @@ function BuilderLayout({
 }) {
   const narrow = useNarrow();
   const [sheet, setSheet] = useState(null);
+  // CAMPAIGN-2: the shell, and the fixed box around it, never scroll (only the panes and the email do).
+  const shellRef = useRef(null);
+  useEffect(() => {
+    const el = shellRef.current;
+    const offs = [pinShell(el), el && el.parentElement ? pinShell(el.parentElement) : () => {}];
+    return () => offs.forEach(f => f());
+  }, []);
   // An editor may ask for a sheet to open ({ side }) or to close ({ side: null }),
   // e.g. Settings from the path line, or the Elements sheet once a tile is added.
   useEffect(() => { if (narrow && sheetAsk) setSheet(sheetAsk.side || null); }, [sheetAsk, narrow]);
@@ -275,15 +327,15 @@ function BuilderLayout({
       title={primary.disabled && primary.reason ? primary.reason : undefined} style={bPrimary(!!primary.disabled)}>{primary.label}</button>
   );
   const pane = (side, body) => (
-    <aside data-testid={side === "left" ? "editor-left-rail" : "editor-right-rail"} data-pane={side}
+    <aside data-testid={side === "left" ? "editor-left-rail" : "editor-right-rail"} data-pane={side} data-shell-pin=""
       style={{ width: side === "left" ? PANE_L : PANE_R, flexShrink: 0, background: BL.pane, [side === "left" ? "borderRight" : "borderLeft"]: "1px solid " + BL.line,
         overflow: "hidden", minHeight: 0, maxHeight: "100%", display: "flex", flexDirection: "column" }}>
       {body}
     </aside>
   );
   return (
-    <div data-testid={testid} data-editor-kind={kind} data-layout="builder"
-      style={{ height: "100%", flex: 1, background: BL.canvas, fontFamily: "'DM Sans',system-ui,sans-serif", display: "flex", flexDirection: "column", color: T.ink, minHeight: 0 }}>
+    <div ref={shellRef} data-testid={testid} data-editor-kind={kind} data-layout="builder" data-shell-pin=""
+      style={{ height: "100%", overflow: "hidden", flex: 1, background: BL.canvas, fontFamily: "'DM Sans',system-ui,sans-serif", display: "flex", flexDirection: "column", color: T.ink, minHeight: 0 }}>
       <div data-testid="editor-topbar" style={{ display: "flex", alignItems: "center", gap: 10, padding: narrow ? "8px 12px" : "9px 16px", background: T.white, borderBottom: "1px solid " + BL.line, flexWrap: "wrap", flexShrink: 0 }}>
         {backEl}
         <span data-testid="editor-name" style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 19, minWidth: 0, maxWidth: narrow ? "48vw" : 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
@@ -312,10 +364,10 @@ function BuilderLayout({
         <div data-testid="editor-crumb" style={{ display: "flex", gap: 8, alignItems: "center", flex: 1, minWidth: 0 }}>{crumb}</div>
         <span data-testid="editor-status" style={{ fontSize: 12, color: BL.dim, whiteSpace: "nowrap" }}>{status}</span>
       </div>}
-      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+      <div data-shell-pin="" style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden" }}>
         {left && !narrow && pane("left", left)}
-        <main data-testid="editor-canvas" onClick={e => { if (onCanvasClick && e.target === e.currentTarget) onCanvasClick(); }}
-          style={{ flex: 1, minWidth: 0, display: "flex", minHeight: 0, background: BL.canvas }}>{children}</main>
+        <main data-testid="editor-canvas" data-shell-pin="" onClick={e => { if (onCanvasClick && e.target === e.currentTarget) onCanvasClick(); }}
+          style={{ flex: 1, minWidth: 0, display: "flex", minHeight: 0, overflow: "hidden", background: BL.canvas }}>{children}</main>
         {right && !narrow && pane("right", right)}
       </div>
       {narrow && sheet === "left" && left && <Sheet title={leftTitle} onClose={() => setSheet(null)} testid="editor-left-sheet">{left}</Sheet>}

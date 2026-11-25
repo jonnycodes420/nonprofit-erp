@@ -705,12 +705,13 @@ app.post("/email-templates/:id/draft-ai", requireAuth, checkWriteAccess, wrap(as
   const starterSlots = starter ? new Map(textSlots(LIB.signStarterBlocks(starter.blocks, {})).map(s => [s.id, s.text])) : new Map();
   // The template answer: the starter's own words where this template began
   // from one, otherwise the words as they stand.
-  const templateAnswer = why => res.json({ source: "template",
+  const templateAnswer = (why, whyNot = null) => res.json({ source: "template", ...(whyNot ? { whyNot } : {}),
     proposals: slots.map(s => ({ id: s.id, current: s.text, proposed: starterSlots.get(s.id) || s.text })),
     sentence: `${why} These are the starting words${starter ? ` from "${starter.name}"` : ""}; change any of them yourself. Nothing is saved until you press Save.` });
   if (!slots.length) return res.json({ source: "template", proposals: [], sentence: "There are no words in this template to redraft yet." });
   const gate = await aiGate(orgId);
-  if (!gate.ok) return templateAnswer(gate.reason === "ai_disabled" ? "Drafting is turned off for your organization." : "Drafting is not available on this server.");
+  // CAMPAIGN-2 item 5: why nothing was drafted, and what to do (server/ai/whyNot.js).
+  if (!gate.ok) { const W = require("../server/ai/whyNot"); const wn = W.whyNot(gate.reason, { isAdmin: W.isAdminReq(req) }); return templateAnswer(wn.sentence, wn); }
   const [org] = await query(`SELECT name, mission FROM orgs WHERE id=?`, [orgId]);
   const ectx = await buildEmailContext(orgId);
   const source = [org && org.mission, row.subject, row.preheader, ...slots.map(s => s.text), instructions].join("\n");
@@ -749,6 +750,7 @@ app.post("/email-templates/:id/draft-ai", requireAuth, checkWriteAccess, wrap(as
       sentence: "Steward proposed these words from your organization's own details and the template as it stands. Read each one; nothing changes until you apply it and press Save." });
   } catch (e) {
     console.warn("[email-template draft-ai] fell back to the template:", e.message);
+    if (e && e.code === "ai_off") { const W = require("../server/ai/whyNot"); const wn = W.whyNot(e.reason, { isAdmin: W.isAdminReq(req) }); return templateAnswer(wn.sentence, wn); }
     { recordAiFallback(req.user.orgId, "email_template.draft_ai", "Drafting could not be reached just now."); return templateAnswer("Drafting could not be reached just now."); };
   }
 }));
