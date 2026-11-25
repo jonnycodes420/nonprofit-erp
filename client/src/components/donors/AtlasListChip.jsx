@@ -40,7 +40,7 @@ export default function AtlasListChip({ actionId, onClear }) {
   return (
     <div data-testid="dir-from-atlas" style={{ fontSize: 13, color: T.ink, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
       <span>{info
-        ? `Showing the ${n === 1 ? "1 person" : `${Number(n).toLocaleString("en-US")} people`} ${atlas} found for "${info.question}". Nothing was made from them.`
+        ? `Showing the ${n === 1 ? "1 person" : `${Number(n).toLocaleString("en-US")} people`} ${atlas} found for "${info.question}"${/[.?!]$/.test(info.question) ? "" : "."} Nothing was made from them.`
         : `Showing the people ${atlas} found.`}</span>
       {info && info.group
         ? <span data-testid="dir-from-atlas-saved">Saved as the group <button type="button" style={linkBtn} onClick={() => navigate(tabHref("groups", { groupId: info.group.id }))}>{info.group.name}</button>.</span>
