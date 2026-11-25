@@ -92,7 +92,8 @@ async function docxText(buf) {
   const c1 = await api("POST", "/gift-attribution/campaign", tok, { name: "Annual Fund" });
   const keep = c1.body && (c1.body.id || (c1.body.row || {}).id);
   await q(`INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,created_at) VALUES ('cmp_letters1_dup',$1,'annual  fund','appeal','','','draft','{}',NOW() + interval '1 minute')`, [ORG]);
-  const HAL = await person("d_l1_hal", "Hal Penrose"), IRIS = await person("d_l1_iris", "Iris Vale");
+  // main-fix: its own id prefix; "d_l1_hal" was live1-alive's too, and donors.id is global, so whichever ran second in a shard failed.
+  const HAL = await person("d_lt1_hal", "Hal Penrose"), IRIS = await person("d_lt1_iris", "Iris Vale");
   const gK = await gift(tok, HAL, { amount: 20, campaignId: keep });
   const gD = await gift(tok, IRIS, { amount: 30, campaignId: "cmp_letters1_dup" });
   const pick1 = ((await api("GET", "/gift-attribution/campaign?q=annual", tok)).body || {});
@@ -119,13 +120,13 @@ async function docxText(buf) {
   await q(`INSERT INTO events (id,org_id,name,event_type,date) VALUES ('ev_letters1_other',$1,'Autumn Book Fair','other',$2)`, [ORG, IN1]);
   const EV = ev.id || "ev_letters1_gala";
   const P = {
-    ada: await person("d_l1_ada", "Ada Quillfeather"),            // a ticket: $150 paid, $40 dinner → $110.00 deductible
-    bram: await person("d_l1_bram", "Bram Ellery", { dnc: true }),  // do not contact
-    cleo: await person("d_l1_cleo", "Cleo Marchbanks"),           // gave outside the range
-    dov: await person("d_l1_dov", "Dov Ashgrove"),                 // gave to the other event
-    esme: await person("d_l1_esme", "Esme Tolliver"),              // refunded in full
-    fitz: await person("d_l1_fitz", "Fitz Harrowgate", { noAddress: true }),
-    gwen: await person("d_l1_gwen", "Gwen Larkhill"),              // two gifts: $33.33 + $66.67, nothing received
+    ada: await person("d_lt1_ada", "Ada Quillfeather"),            // a ticket: $150 paid, $40 dinner → $110.00 deductible
+    bram: await person("d_lt1_bram", "Bram Ellery", { dnc: true }),  // do not contact
+    cleo: await person("d_lt1_cleo", "Cleo Marchbanks"),           // gave outside the range
+    dov: await person("d_lt1_dov", "Dov Ashgrove"),                 // gave to the other event
+    esme: await person("d_lt1_esme", "Esme Tolliver"),              // refunded in full
+    fitz: await person("d_lt1_fitz", "Fitz Harrowgate", { noAddress: true }),
+    gwen: await person("d_lt1_gwen", "Gwen Larkhill"),              // two gifts: $33.33 + $66.67, nothing received
   };
   const G = {};
   G.ada = await gift(tok, P.ada, { amount: 150, date: IN1, eventId: EV });
