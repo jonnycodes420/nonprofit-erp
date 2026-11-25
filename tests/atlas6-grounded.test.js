@@ -257,6 +257,40 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   ok("§7 the brief names tomorrow's coffee with its date", facts9.some(f => f.kind === "coming_up" && /^Meeting tomorrow, [A-Z][a-z]{2} \d{1,2}, \d{4}: Coffee with Odile/.test(f.line)), facts9);
   ok("§7 what's open comes before history, and every line opens her record", at("open_ask") === 0 && at("coming_up") < at("giving") && at("unthanked") < at("conversation") && facts9.every(f => f.link && f.link.donorId === "d_atl9_odile"), facts9.map(f => f.kind));
 
+  // ── ATLAS-10 items 1 and 2: the brief always comes, in template sentences with reading off, however it
+  //    is asked; it says when they became a donor; Atlas's next step is the profile's; Tell me more shows more.
+  //    Red on main: "Can you brief me on…" read as "other" (the reading-off refusal), and no next_move line.
+  const ask10 = async (text, followsId) => {
+    const r = await fetch(BASE + "/atlas", { method: "POST", headers: { authorization: `Bearer ${tok9}`, "content-type": "application/json" }, body: JSON.stringify({ text, ...(followsId ? { followsId } : {}) }) });
+    return ((await r.json().catch(() => ({}))).request) || {};
+  };
+  const r10 = await ask10("Can you brief me on Odile Marchetti?");
+  const br10 = (r10.lines || []).find(l => l.answer && l.answer.type === "person");
+  const f10 = (br10 && br10.answer.facts) || [];
+  const [fd10] = await q(`SELECT MIN(LEFT(date, 10)) AS d FROM gifts WHERE org_id = $1 AND donor_id = 'd_atl9_odile' AND amount > 0`, [F9.ORG || (await q(`SELECT org_id FROM donors WHERE id='d_atl9_odile'`))[0].org_id]);
+  const since10 = new Date(fd10.d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+  ok("§7 ATLAS-10 \"Can you brief me on Odile Marchetti?\" is a brief, with reading off: never the refusal", !!br10 && r10.ai !== "on" && !(r10.lines || []).some(l => /I can log a conversation|can still log a conversation/.test(l.line || "")), (r10.lines || []).map(l => l.line));
+  ok("§7 ATLAS-10 its facts: the open $25,000 ask, the $1,500 gift not yet thanked on Sep 28, 2026, tomorrow's coffee, and donor since her first gift",
+    f10.some(f => f.kind === "open_ask" && /\$25,000 for Youth Arts Access/.test(f.line)) && f10.some(f => f.kind === "unthanked" && /\$1,500 on Sep 28, 2026/.test(f.line))
+    && f10.some(f => f.kind === "coming_up" && /Coffee with Odile/.test(f.line)) && f10.some(f => f.kind === "giving" && f.line.includes(`Donor since ${since10}.`)), f10.map(f => f.line));
+  const ins10 = (await api("GET", "/insights/donor/d_atl9_odile", tok9)).body || {};
+  const want10 = ins10.move ? `Next move:` : ins10.after && ins10.after.thank ? `Next: thank Odile for the ${ins10.after.amount} gift on ${ins10.after.day}.` : null;
+  const nm10 = f10.find(f => f.kind === "next_move");
+  ok("§7 ATLAS-10 Atlas's next step is the profile's Next move (the same function), never \"no next step planned\" beside it",
+    !!want10 && !!nm10 && (ins10.move ? nm10.line.startsWith(want10) && nm10.line.includes(ins10.move.title) : nm10.line === want10) && !f10.some(f => /no next step planned/.test(f.line)), { profile: ins10.move ? ins10.move.title : ins10.after, atlas: nm10 });
+  const more10 = await ask10("Tell me more", r10.id);
+  // Odile's brief held nothing back (one conversation, one unthanked gift), so Tell me more says so, about her.
+  const ml10 = (more10.lines || []).map(l => l.line).join(" ");
+  ok("§7 ATLAS-10 Tell me more after a brief answers about her (never \"my last answer had no rows\")", /everything Steward holds on Odile Marchetti/.test(ml10) && !/had no rows/.test(ml10), more10.lines && more10.lines.map(l => l.line));
+  // A brief that held lines back (four unthanked gifts, three shown) shows them all on Tell me more.
+  for (const [i, amt] of [[3, 210], [4, 320], [5, 430]].entries()) await q(`INSERT INTO gifts (id, org_id, donor_id, amount, date, created_by, created_by_name) VALUES ($1, 'org_atl9', 'd_atl9_odile', $2, $3, 'system:test', 'atlas10 fixture') ON CONFLICT DO NOTHING`, [`g_atl10_${amt[0]}`, amt[1], `2026-10-0${i + 1}`]);
+  const r10b = await ask10("Brief me on Odile Marchetti");
+  const more10b = await ask10("Tell me more", r10b.id);
+  const pm10 = (more10b.lines || []).find(l => l.answer && l.answer.type === "person");
+  const un10 = (pm10 && pm10.answer.facts || []).filter(f => f.kind === "unthanked");
+  ok("§7 ATLAS-10 Tell me more shows what the brief held back: every gift not yet thanked, no \"And N more\"", !!pm10 && /everything Steward holds on Odile/.test(pm10.line) && un10.length === 4 && !un10.some(f => /^And \d/.test(f.line)), un10.map(f => f.line));
+  ok("§7 ATLAS-10 the refusal opens with the one reading-off line Settings > Atlas shows", (await import("../shared/atlas.js")).AI_OFF_LINE.startsWith((await import("../shared/atlasReading.js")).READING_OFF));
+
   // Top donors (item 4): each row's figure is Reports > Top donors' for the period, labelled.
   const top9 = ((await ask9("Who are our top donors this year?")).lines || []).find(l => l.answer && l.answer.type === "list");
   const rep9 = await api("GET", "/reports/top-donors", tok9);

@@ -11,6 +11,7 @@ import { apiFetch } from "../api";
 import { T, Modal, fmtFull } from "./shared";
 import { retryImport } from "../lib/lazyRetry";
 import { useWriteStamp } from "../lib/profileRefresh";
+import { displayDate } from "../../../shared/displayDate";   // ATLAS-10 item 3
 // PERF-2: the panel opens from the modal, so Home (SuggestedAskLine) does not load it.
 const MetricBreakdownPanel = lazy(() => retryImport(() => import("./MetricBreakdownPanel")));
 
@@ -44,12 +45,12 @@ export function ScoreCard({ donorId, scores, children, onLog }) {
     <div data-testid="dp-scores" data-no-history="true" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "14px 16px", color: T.ink }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: T.ink3 }}>Engagement</span>
-        <span data-testid="dp-score-band" style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{s.noHistory ? "Nothing logged yet" : "Nothing in 24 months"}</span>
+        <span data-testid="dp-score-band" style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{s.noHistory ? "Nothing logged yet" : "No touches in 24 months"}{!s.noHistory && s.lastGiftDate ? <span data-testid="dp-score-last-gift" style={{ fontWeight: 400, color: T.ink2 }}>{` · last gift ${displayDate(String(s.lastGiftDate).slice(0, 10))}`}</span> : null}</span>
       </div>
       <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55, marginTop: 4 }}>
         {s.noHistory
           ? "No conversations, notes, or meetings are on file yet, so we can't say how close they are."
-          : "Nothing is logged in the last 24 months, so we can't say how close they are."}
+          : `Engagement counts calls, meetings, events, replies and volunteer shifts, not gifts, and none is logged in the last 24 months, so we can't say how close they are.${s.lastGiftDate ? " Their gifts count in Generosity." : ""}`}
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
         <button type="button" data-testid="dp-bring-notes" onClick={() => window.dispatchEvent(new Event("steward:history-import"))}
@@ -95,7 +96,7 @@ export function ScoreCard({ donorId, scores, children, onLog }) {
 }
 
 function rawWords(score, p) {
-  if (score === "engagement") return p.count ? `${p.count} ${p.count === 1 ? p.one : p.many}` : "None in 24 months";
+  if (score === "engagement") return p.count ? `${p.count} ${p.count === 1 ? p.one : p.many}` : "No touches in 24 months";
   if (p.key === "consistency") return `${p.raw} of the last 5 years`;
   if (p.key === "monthly") return p.raw ? "A recurring gift is running" : "No recurring gift";
   if (p.key === "upgrade" && !p.raw) return "Not giving more than the year before";

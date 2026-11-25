@@ -77,6 +77,13 @@ async function dupLeg() {
   const real = DH.judgePair({ id: "a", name: "Mary Okafor", email: "mokafor@example.net" }, { id: "b", name: "Mary Okafor", email: " MOkafor@Example.net" });
   ok("§dup one real email in two cases still matches", real && real.confidence === "high", real);
   ok("§dup households are offered as families, not duplicates", Array.isArray(families));
+  // ATLAS-10 item 6 (W-1124: "Osric Ravensmere appears twice in the Lapsing list with different emails"):
+  // the same full name, two emails, both giving in the same years, is offered; one who never gave is not.
+  const osA = { id: "a", name: "Osric Ravensmere", email: "osric.ravensmere@example.demo", gift_count: 3, first_gift_date: "2023-06-03", last_gift_date: "2025-06-03" };
+  const osB = { id: "b", name: "Osric Ravensmere", email: "o.ravensmere@example.demo", gift_count: 2, first_gift_date: "2025-02-14", last_gift_date: "2026-02-14" };
+  const os = DH.judgePair(osA, osB);
+  ok("§dup ATLAS-10 same name, different emails, overlapping giving is a pair, and says why", os && os.confidence === "medium" && os.reasons.some(r => /same name, different emails/.test(r)), os);
+  ok("§dup ATLAS-10 the same name with no giving on one side is not offered for it", !DH.judgePair(osA, { ...osB, gift_count: 0, first_gift_date: null, last_gift_date: null }));
 }
 
 let chromium;

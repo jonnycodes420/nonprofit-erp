@@ -512,7 +512,7 @@ function GiversView({ narrow, onOpenRecord, onOpen }) {
           <DonorLink id={p.id} onOpen={() => onOpenRecord && onOpenRecord(p.id)} style={btnLink}>Open record</DonorLink>
         </div>
       ))}
-      <Definitions items={[["Hours in all", "Every shift ever logged for this person, to the hundredth of an hour."], ["Last gift", "The date of the most recent gift on their record. Their giving is on the record itself."]]} />
+      <Definitions items={[["Hours in all", "Every shift logged for this person up to today, to the hundredth of an hour. A shift dated after today is not counted until its day."], ["Last gift", "The date of the most recent gift on their record. Their giving is on the record itself."]]} />
     </div>
   );
 }

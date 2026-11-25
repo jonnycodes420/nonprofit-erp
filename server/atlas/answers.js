@@ -127,36 +127,45 @@ function groupName(text, today) {
 // ── 2. ONE PERSON ──────────────────────────────────────────────────────────
 // "Tell me about Marlowe": what is open (ATLAS-9: asks, gifts not yet thanked, the
 // next meeting, the next step), then giving, conversations and About, each a line with where it lives.
-async function personAnswer({ query, orgId, donorId, today }) {
+async function personAnswer({ query, orgId, donorId, today, more = false }) {   // ATLAS-10: `more` is "Tell me more": every open item, more conversations
   // TRUTH-3: lifetime, the gift count and the last gift by the profile's rules (shared/numbers), never the stored rollup.
   const [d] = await query(`SELECT d.id, d.name, d.about_them, ROUND(${require("../../shared/numbers/lifetime").LIFETIME("d")}, 2) AS total_giving, ${require("../../shared/numbers/giftCount").GIFT_COUNT("d")} AS gift_count,
                                     (SELECT lg.amount FROM gifts lg WHERE lg.org_id = d.org_id AND lg.donor_id = d.id AND ${require("../../shared/numbers/money").GIFT("lg")} AND lg.date IS NOT NULL ORDER BY ${require("../../shared/numbers/lastGift").LAST_GIFT_ORDER.replace(/\bg\./g, "lg.")} LIMIT 1) AS last_gift_amount,
-                                    (SELECT LEFT(lg.date, 10) FROM gifts lg WHERE lg.org_id = d.org_id AND lg.donor_id = d.id AND ${require("../../shared/numbers/money").GIFT("lg")} AND lg.date IS NOT NULL ORDER BY ${require("../../shared/numbers/lastGift").LAST_GIFT_ORDER.replace(/\bg\./g, "lg.")} LIMIT 1) AS last_gift_date, d.first_gift_date, d.stage, d.deceased, d.do_not_contact
+                                    (SELECT LEFT(lg.date, 10) FROM gifts lg WHERE lg.org_id = d.org_id AND lg.donor_id = d.id AND ${require("../../shared/numbers/money").GIFT("lg")} AND lg.date IS NOT NULL ORDER BY ${require("../../shared/numbers/lastGift").LAST_GIFT_ORDER.replace(/\bg\./g, "lg.")} LIMIT 1) AS last_gift_date, ${require("../../shared/numbers/firstGift").FIRST_DATE("d")} AS donor_since, d.stage, d.deceased, d.do_not_contact
                              FROM donors d WHERE d.id=? AND d.org_id=? AND d.deleted_at IS NULL`, [donorId, orgId]);
   if (!d) return null;
   const first = String(d.name).split(/\s+/)[0];
   // ATLAS-8 item 5: the last conversation of any kind (the profile's rule, and a volunteer shift), and the About facts.
   const BR = require("./briefReads");
-  const [convs, aboutLines] = await Promise.all([BR.lastConversations(query, orgId, donorId, 3, today), BR.aboutFacts(query, orgId, donorId)]);
+  const [convs, aboutLines] = await Promise.all([BR.lastConversations(query, orgId, donorId, more ? 10 : 3, today), BR.aboutFacts(query, orgId, donorId)]);
   const [task] = await query(`SELECT id, title, due FROM tasks WHERE org_id=? AND donor_id=? AND COALESCE(done,0)=0 AND voided_at IS NULL
                                ORDER BY due NULLS LAST, created_at LIMIT 1`, [orgId, donorId]).catch(() => []);
   const [plan] = task ? [] : await query(`SELECT s.label, s.due_date FROM cultivation_plans p JOIN cultivation_plan_steps s ON s.plan_id = p.id
                                WHERE p.org_id=? AND p.donor_id=? AND p.status='active' AND s.status IN ('open','pending') ORDER BY s.seq LIMIT 1`, [orgId, donorId]).catch(() => []);
   const n = Number(d.gift_count) || 0;
   const giving = n
-    ? `${first} has given ${usd(toCents(d.total_giving))} across ${n} ${n === 1 ? "gift" : "gifts"}, most recently ${usd(toCents(d.last_gift_amount))} on ${day(d.last_gift_date)}.`
+    ? `${first} has given ${usd(toCents(d.total_giving))} across ${n} ${n === 1 ? "gift" : "gifts"}, most recently ${usd(toCents(d.last_gift_amount))} on ${day(d.last_gift_date)}.${d.donor_since ? ` Donor since ${day(String(d.donor_since).slice(0, 10))}.` : ""}`
     : `${first} has no gifts on record yet.`;
   const about = String(d.about_them || "").trim();
   const TYPE = BR.TYPE;
   // ATLAS-9 item 1: what is open leads (asks, gifts not yet thanked, the next meeting, the next step), then what happened.
-  const open = await require("./briefOpen").openItems(query, orgId, donorId, { today, first });
-  const next = task ? { kind: "next", line: `Next step: ${task.title}${task.due ? `, due ${day(task.due)}` : ""}.`, link: { tab: "donor", donorId, section: "thread" } }
+  const open = await require("./briefOpen").openItems(query, orgId, donorId, { today, first, ...(more ? { show: 1000 } : {}) });
+  // ATLAS-10 item 2: the profile's Next move, from the one function its panel reads (server/insights/nextMoveOf.js).
+  const nm = await require("../insights/nextMoveOf").nextMoveOf(query, orgId, donorId, today || require("../../orgTime").civilOf(new Date()).slice(0, 10))
+    .catch(e => { console.error("[atlas] next move:", e.message); return {}; });
+  const MS = nm.move ? await import("../../shared/moveSentence.js") : null;
+  const moveLine = nm.move ? { kind: "next_move", line: `Next move: ${MS.moveSentence(nm.move.item && nm.move.item.how, first, nm.move.title).replace(/\.$/, "")} (${nm.move.title}).`, link: { tab: "donor", donorId } }
+    : nm.after && nm.after.thank ? { kind: "next_move", line: `Next: thank ${first} for the ${nm.after.amount} gift on ${nm.after.day}.`, link: { tab: "donor", donorId, section: "giving" } }   // the profile's own words
+    : null;
+  const step = task ? { kind: "next", line: `Next step: ${task.title}${task.due ? `, due ${day(task.due)}` : ""}.`, link: { tab: "donor", donorId, section: "thread" } }
     : plan ? { kind: "next", line: `Next step: ${plan.label}${plan.due_date ? `, due ${day(plan.due_date)}` : ""}.`, link: { tab: "donor", donorId, section: "thread" } }
-    : { kind: "next", line: `There is no next step planned for ${first}.`, link: { tab: "donor", donorId, section: "thread" } };
+    : null;
+  const nexts = [moveLine, step].filter(Boolean);
+  if (!nexts.length) nexts.push({ kind: "next", line: nm.preparing ? `There is no next step planned for ${first} yet, and Steward is still working out the next moves.` : `There is no next step planned for ${first}.`, link: { tab: "donor", donorId, section: "thread" } });
   const convLines = convs.filter((c, i) => convs.findIndex(x => x.id === c.id) === i).map(c => ({ kind: "conversation", id: c.id, line: `${TYPE[c.type] || "Conversation"}, ${day(c.date)}${String(c.note || "").trim() ? `: "${String(c.note).replace(/\s+/g, " ").slice(0, 160)}"` : ""}`, link: { tab: "donor", donorId, section: c.section || "timeline" } }));
   const facts = [
     ...open,
-    next,
+    ...nexts,
     { kind: "giving", line: giving, link: { tab: "donor", donorId, section: "giving" } },
     ...(convLines.length ? convLines : [{ kind: "conversation", line: `No conversation with ${first} is logged yet.`, link: { tab: "donor", donorId, section: "timeline" } }]),
     about ? { kind: "about", line: `About ${first}: ${about}`, link: { tab: "donor", donorId } }
@@ -166,7 +175,7 @@ async function personAnswer({ query, orgId, donorId, today }) {
   ];
   if (d.deceased) facts.unshift({ kind: "care", line: `${d.name} is marked as deceased.`, link: { tab: "donor", donorId } });
   else if (d.do_not_contact) facts.unshift({ kind: "care", line: `${d.name} is marked do not contact.`, link: { tab: "donor", donorId } });
-  return { donorId, name: d.name, about, spoke: `Here's what Steward knows about ${d.name}.`, facts, today };
+  return { donorId, name: d.name, about, spoke: more ? `Here's everything Steward holds on ${d.name}.` : `Here's what Steward knows about ${d.name}.`, facts, today, more };
 }
 
 // ── 3. A GIFT SHE NAMED THAT IS NOT ON RECORD ──────────────────────────────

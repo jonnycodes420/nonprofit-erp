@@ -174,6 +174,8 @@ export function placeholdersIn(...texts) {
     const s = String(t || "").replace(/<!--[\s\S]*?-->/g, " ").replace(/<[^>]+>/g, " ");
     for (const m of s.matchAll(/\[([a-z][a-z ]{1,30})\]/gi)) if (PLACEHOLDER_WORDS.has(m[1].toLowerCase())) found.add(m[0]);
     for (const m of s.matchAll(/\{\{\s*[a-z_]+\s*\}\}/gi)) found.add(m[0]);
+    // ATLAS-10 item 5: a blank she fills ("[add your video link]", "[add the date of your visit]") is never sent unfilled.
+    for (const m of s.matchAll(/\[(add [a-z0-9 ,'’-]{2,60})\]/gi)) found.add(m[0]);
     for (const m of s.matchAll(/\b(?:Dear|Hi|Hello)(?:\s|&nbsp;)*,/g)) found.add(m[0].replace(/(?:\s|&nbsp;)+/g, " "));
   }
   return [...found];

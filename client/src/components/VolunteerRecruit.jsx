@@ -185,6 +185,12 @@ export function ApplicationsView({ isReadOnly, onOpenPerson, onCount }) {
       </div>
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink2 }}>{msg}</div>}
       {!data.applications.length && <div style={{ ...card, fontSize: 13, color: T.ink3 }}>{status === "pending" ? "Nobody is waiting. Share your volunteer page from Recruitment page." : "None yet."}</div>}
+      {/* ATLAS-10 item 4: from someone who already volunteers, closed by itself, nothing to approve. */}
+      {status === "pending" && (data.alreadyVolunteer || []).length > 0 && <div data-testid="vol-apps-already" style={{ ...card, fontSize: 13, color: T.ink2, lineHeight: 1.5 }}>
+        <div style={{ fontWeight: 700, color: T.ink, marginBottom: 4 }}>{`Already a volunteer (${data.alreadyVolunteer.length})`}</div>
+        {data.alreadyVolunteer.map(x => <div key={x.id} data-testid="vol-app-already">{`${x.name}: already volunteers as ${x.personName}. Nothing to approve.`}</div>)}
+        <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>{data.alreadySentence}</div>
+      </div>}
       {data.applications.map(a => (
         <div key={a.id} data-app={a.id} style={{ ...card, display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
