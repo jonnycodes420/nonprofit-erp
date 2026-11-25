@@ -103,7 +103,9 @@ app.post("/ai/draft-email", requireAuth, checkWriteAccess, wrap(async (req, res)
   const purpose = b.purpose === "sequence" ? "sequence" : "campaign";
   const tpl = { ...DRAFT_TEMPLATES[purpose], ...(b.subjectHint ? { subject: String(b.subjectHint).slice(0, 200) } : {}) };
   const g = await aiGate(req.user.orgId);
-  if (!g.ok) return res.json({ ...tpl, source: "template", aiOff: true, reasons: [g.reason === "ai_disabled" ? "AI is turned off for your organization." : "Drafting is not available right now."] });
+  // CAMPAIGN-2 item 5: the button says why nothing was drafted, and what to do (server/ai/whyNot.js).
+  const W = require("../server/ai/whyNot");
+  if (!g.ok) return res.json({ ...tpl, source: "template", aiOff: true, whyNot: W.whyNot(g.reason, { isAdmin: W.isAdminReq(req) }), reasons: [g.reason === "ai_disabled" ? "AI is turned off for your organization." : "Drafting is not available right now."] });
   const [org] = await query("SELECT name, mission FROM orgs WHERE id=?", [req.user.orgId]);
   const DC = require("../draftCheck");
   const prompt = purpose === "campaign"
@@ -121,7 +123,7 @@ app.post("/ai/draft-email", requireAuth, checkWriteAccess, wrap(async (req, res)
     text = msg.stop_reason && msg.stop_reason !== "end_turn" ? "" : ((msg.content || []).find(x => x.type === "text") || {}).text || "";
   } catch (e) {
     recordAiFallback(req.user.orgId, "draft_email", e);
-    if (e && e.code === "ai_off") return res.json({ ...tpl, source: "template", aiOff: true, reasons: ["AI is turned off for your organization."] });
+    if (e && e.code === "ai_off") return res.json({ ...tpl, source: "template", aiOff: true, whyNot: W.whyNot(e.reason, { isAdmin: W.isAdminReq(req) }), reasons: ["AI is turned off for your organization."] });
     return res.json({ ...tpl, source: "template", reasons: ["The draft could not be written just now."] });
   }
   const lines = text.split("\n");
