@@ -198,7 +198,6 @@
   "POST /privacy/clients/upload",
   "POST /privacy/marks/x1/undo",
   "POST /privacy/removals/x1/undo",
-  "POST /public/signup",
   "POST /public/start/x1/sign",
   "POST /qbo/lists",
   "POST /qbo/preview",

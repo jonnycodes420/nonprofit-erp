@@ -9,6 +9,7 @@ import MailboxSettings from "./MailboxSettings";
 import ProspectSettings from "./ProspectSettings";
 import PlanSettings from "./PlanSettings";
 import HealthSettings from "./HealthSettings";
+import PartnerCodes from "./PartnerCodes";   // ONBOARD-4
 
 const TYPE_WORDS = { text: "Text", long_text: "Long text", number: "Number", currency: "Currency", date: "Date", picklist: "Pick-list", multiselect: "Multi-select", checkbox: "Checkbox", url: "URL" };
 const KIND_WORDS = { open: "Open", won: "Won", later: "Later (closed, needs a revisit date)", lost: "Lost (closed, needs a reason)" };
@@ -108,6 +109,7 @@ export default function SettingsPanel({ meta, onChanged, onClose }) {
     <Goal goal={meta.settings.goal} onChanged={onChanged} />
     <PlanSettings />
     <HealthSettings />
+    <PartnerCodes />
     <ProspectSettings meta={meta} onChanged={onChanged} />
     <MailboxSettings />
     <section style={card}>

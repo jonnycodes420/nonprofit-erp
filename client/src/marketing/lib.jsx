@@ -11,8 +11,6 @@ import { FEAT } from "./data/features";
 import { SRC, STATS, QUOTES, srcShort } from "./data/research";
 import { LEADERSHIP_SHOWN } from "./data/team";
 import { CREW, CREW_NEVER } from "./data/crew";
-import PRICING from "../../../pricing.json";
-import { API } from "../api";
 
 // ── Rich strings ───────────────────────────────────────────────────────────
 // Copy in the data modules keeps the reference's inline <b>, <em> and <br>.
@@ -108,7 +106,9 @@ export function Crumbs({ list }) {
   );
 }
 
-// LANDING-3 · EVERY hero shows Book a call and Start free, and the reference's
+// ONBOARD-4 · EVERY hero shows one button, Book a call: public signup is closed
+// (Jonathan, 23 Nov 2026), so there is no Start free anywhere on the site.
+// LANDING-3 · EVERY hero showed Book a call and Start free, and the reference's
 // updated hero() is what settled it: it stopped reading cta2 at all and
 // hardcodes the pair whenever noCta is not set. A page no longer gets to
 // choose its second button, so the twelve noCta pages (articles, guides, the
@@ -129,8 +129,7 @@ export function Hero({ eyebrow, crumbs, h, lede, photo, noCta, proof, float, pil
             <p className="lede">{rich(lede)}</p>
             {!noCta && (
               <div className="ctas">
-                <Pill href="/demo">Book a call</Pill>
-                <Pill kind="soft" href="/signup">Start free</Pill>
+                <Pill href="/book">Book a call</Pill>
               </div>
             )}
             {proof && <div className="proof">{proof.map(p => <span key={p}>{p}</span>)}</div>}
@@ -212,32 +211,20 @@ export function PillarBand({ p, tint = "cream", flip, link, children }) {
   );
 }
 
-// LANDING-5 · the one price block, on Home and /pricing. No band table on the
-// site and no record counts in its copy (PRICING-1): one line, "Everything
-// included, from $199/mo.", where the number is the lowest monthly price.
-// The prerendered page paints it from pricing.json; on load it is read again
-// from GET /public/pricing, so a price changed on the server shows without a
-// frontend build.
-const lowestMonthly = tiers => {
-  const n = (tiers || []).map(t => Number(t && t.monthlyUsd)).filter(Number.isFinite);
-  return n.length ? Math.min(...n) : null;
-};
-export const priceLine = from => PRICING.marketing.line.replace("{from}", String(from));
+// ONBOARD-4 item 2 · NO PRICES ON THE WEBSITE (Jonathan, 23 Nov 2026). Where the
+// price block was, one short line and the Book a call button. No figure, no
+// band, no setup-fee amount and no record count: prices reach a customer on the
+// call, in Jonathan's quote and close link. Nothing here reads /public/pricing,
+// and client/scripts/no-public-prices.mjs fails the build if a figure from
+// pricing.json reaches the site's output.
+export const PRICING_LINE = "Pricing depends on the size of your donor file and comes with hands-on setup. We'll walk you through it on a call.";
 export function PriceBlock({ h1 }) {
-  const [from, setFrom] = useState(() => lowestMonthly(PRICING.tiers));
-  useEffect(() => {
-    let live = true;
-    fetch(API + "/public/pricing").then(r => (r.ok ? r.json() : null))
-      .then(j => { const n = j && lowestMonthly(j.tiers); if (live && n != null) setFrom(n); })
-      .catch(() => {});
-    return () => { live = false; };
-  }, []);
   const H = h1 ? "h1" : "h2";
   return (
     <section className="price-block" data-testid="price-block"><div className="wrap">
       <div className="eyebrow">Pricing</div>
-      <H className="mix h-l">{priceLine(from)} <b>{PRICING.marketing.included}</b></H>
-      <div className="ctas"><Pill href="/demo">Book a call</Pill></div>
+      <H className="mix h-l">{PRICING_LINE}</H>
+      <div className="ctas"><Pill href="/book">Book a call</Pill></div>
     </div></section>
   );
 }
@@ -316,8 +303,8 @@ export function FinalCta() {
       <section style={{ paddingTop: 0 }}><div className="final"><div className="wrap" style={{ paddingBlock: 110 }}>
         <div className="eyebrow">Ready to get started?</div>
         <h2 className="mix h-l" style={{ marginTop: 22 }}>Every donor is a person. <b style={{ color: "var(--emerald-lt)" }}>Keep them.</b></h2>
-        <p>Book a 20-minute call with your own file, or start free for 30 days.</p>
-        <div className="ctas" style={{ marginTop: 36 }}><Pill kind="white" href="/demo">Book a call</Pill><Pill kind="soft" href="/signup">Start free</Pill></div>
+        <p>Book a 20-minute call with Jonathan. Bring your donor file and one question about it.</p>
+        <div className="ctas" style={{ marginTop: 36 }}><Pill kind="white" href="/book">Book a call</Pill></div>
       </div></div></section>
     </>
   );

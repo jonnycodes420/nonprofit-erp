@@ -519,17 +519,23 @@ async function agentLeg(H) {
   await wipe();
 
   // ── J11 sign up through Checkout, land signed in on onboarding ──────────
-  console.log("\nJ11 sign up through Checkout and land signed in on onboarding");
+  // ONBOARD-4: public signup is closed, so the journey starts where every new
+  // org now starts: the close link Jonathan sends after the call.
+  console.log("\nJ11 sign up through Jonathan's close link and land signed in on onboarding");
   await wipeSignup();
   const mock = await billingMock();
   try {
-    const agr = (await api("GET", "/public/agreement", null)).body;
-    const su = await api("POST", "/public/signup", null, { orgName: "Golden Signup Trust", contactName: "Rae Golden",
-      contactEmail: SIGNUP_EMAIL, estimatedDonors: 400, interval: "monthly", acceptTerms: true, termsVersion: agr.version });
-    // SECURE-2: the Checkout link goes by email (the answer never says whether
-    // the address has an account); the session it opens is the mock's.
+    // Jonathan's own seat: a super-admin in an org of its own, gone again once the link is made.
+    await q(`DELETE FROM users WHERE id='u_golden_super'`);
+    await q(`DELETE FROM orgs WHERE id='org_golden_super'`).catch(() => {});
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ('org_golden_super','Golden Super','golden-super',1,'active','team')`);
+    await q(`INSERT INTO users (id,org_id,email,password_hash,name,role,is_super_admin) VALUES ('u_golden_super','org_golden_super','super@golden.harborlight.test',$1,'Golden Super','admin',true)`, [bcrypt.hashSync(PW, 4)]);
+    const supr = await login("super@golden.harborlight.test");
+    const su = await api("POST", "/admin/close-links", supr, { orgName: "Golden Signup Trust", contactEmail: SIGNUP_EMAIL, plan: "r500_monthly" });
+    await q(`DELETE FROM users WHERE id='u_golden_super'`);
+    await q(`DELETE FROM orgs WHERE id='org_golden_super'`).catch(() => {});
     const [cl] = await q(`SELECT checkout_url FROM close_links WHERE lower(contact_email)=lower($1) ORDER BY created_at DESC LIMIT 1`, [SIGNUP_EMAIL]);
-    ok("J11 signup starts a Checkout, and its link goes by email", su.status === 202 && su.body.sent === true && /checkout\.stripe\.test/.test((cl && cl.checkout_url) || ""), { body: su.body, cl });
+    ok("J11 the close link starts a Checkout", su.status === 201 && /checkout\.stripe\.test/.test((cl && cl.checkout_url) || ""), { body: su.body, cl });
     const sess = Object.values(mock.sessions).pop() || {};
     const succ = String(sess.success_url || "");
     ok("J11 Checkout returns her to the signed-up page, never the login form",

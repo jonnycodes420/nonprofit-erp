@@ -60,7 +60,7 @@ function MegaWhy() {
         <h5>Why Steward</h5>
         <Mi href="/why" icon="reports" b="The case for retention" span="What the research says about donors who drift." />
         <Mi href="/move" icon="move" b="Moving to Steward" span="About a day of your time, matched to the cent." />
-        <Mi href="/pricing" icon="tag" b="Honest pricing" span="Published prices, month to month, no platform fee." />
+        <Mi href="/pricing" icon="tag" b="How pricing works" span="Hands-on setup, month to month, no platform fee." />
         <Mi href="/security" icon="shield" b="Security and trust" span="What we protect, and how. Only what's true." />
       </div>
       <div className="col">
@@ -169,7 +169,7 @@ function Header() {
         </ul>
         <div className="right">
           <A className="login" href="/login">Log in</A>
-          <A className="pill pill-ink" href="/demo"><i></i>Book a call</A>
+          <A className="pill pill-ink" href="/book"><i></i>Book a call</A>
           <button className="burger" type="button" aria-label="Open menu" aria-expanded={drawer ? "true" : "false"} aria-controls="drawer" onClick={() => setDrawer(!drawer)}>
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
           </button>
