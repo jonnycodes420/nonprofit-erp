@@ -358,8 +358,9 @@ async function seed() {
     const tabs = await page.$$eval('.dp-tabs button', bs => bs.map(b => (b.childNodes[0] || {}).textContent.trim()));
     // PROFILE-1 (header): one row of ten tabs replaced the six and the chips.
     // PROFILE-2: seven tabs; Giving holds gifts, pledges, asks and funds, and Related is the rail's.
-    ok("§1 the tabs are Activity · Giving · Conversations · Emails · Tasks · Notes · Files",
-       JSON.stringify(tabs) === JSON.stringify(["Activity", "Giving", "Conversations", "Emails", "Tasks", "Notes", "Files"]), tabs);
+    // CONTACT-1: Contact after Conversations.
+    ok("§1 the tabs are Activity · Giving · Conversations · Contact · Emails · Tasks · Notes · Files",
+       JSON.stringify(tabs) === JSON.stringify(["Activity", "Giving", "Conversations", "Contact", "Emails", "Tasks", "Notes", "Files"]), tabs);
     // PROFILE-3: Note, Task and Atlas show their icon (and say their name to a screen reader) when the header is narrow.
     const acts = await page.$$eval('.dph-actions button', bs => bs.map(b => b.innerText.trim() || b.getAttribute("aria-label") || "").filter(Boolean));
     ok("§1 the header still carries its own buttons", acts.length >= 3, acts);
@@ -524,6 +525,31 @@ async function seed() {
     await p10.locator('[data-testid="dp-contact-add"]:visible').first().click().catch(() => {});
     const edit = await dlg.waitFor({ state: "visible", timeout: 8000 }).then(() => true).catch(() => false);
     ok("§10c …and Add opens the Edit record dialog", shutBefore && edit, { shutBefore, edit });
+    // §11 CONTACT-1 item 3 — THE CONTACT TAB. The address an invoice needs,
+    // without Edit: the envelope's block, and Copy address puts exactly that on
+    // the clipboard. With nothing on file it says so, and Edit opens the dialog.
+    // HOW IT GOES RED ON MAIN: there is no Contact tab to press.
+    await ctx10.grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(APP).origin }).catch(() => {});
+    const contactTab = async id => {
+      await p10.goto(`${APP}/donors/${id}`, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await p10.waitForSelector('[data-testid="dp-tabs"] [data-tab="contact"]', { timeout: 30000 }).catch(() => {});
+      await p10.locator('[data-testid="dp-tabs"] [data-tab="contact"]').first().click().catch(() => {});
+      await p10.waitForSelector('[data-testid="dp-tab-contact"]', { timeout: 8000 }).catch(() => {});
+      return p10.evaluate(() => { const c = document.querySelector('[data-testid="dp-tab-contact"]'); return c ? c.innerText : null; });
+    };
+    const want = "Brannoch Tidewell\n14 Tern Lane\nBath, ME 04530";
+    await contactTab("d_hf1_addr");
+    const block11 = await p10.locator('[data-testid="dp-contact-tab-block"]').innerText({ timeout: 3000 }).catch(() => null);
+    await p10.locator('[data-testid="dp-contact-copy-address"]').click({ timeout: 3000 }).catch(() => {});
+    await p10.waitForTimeout(300);
+    const clip = await p10.evaluate(() => navigator.clipboard.readText()).catch(e => "unreadable: " + e.message);
+    ok("§11a the Contact tab shows the mailing block, and Copy address copies exactly it", block11 === want && clip === want, { block11, clip });
+    const nothing = await contactTab("d_hf1_none");
+    ok("§11b nothing on file: the tab says No address on file and None on file", !!nothing && /No address on file/.test(nothing) && /None on file/.test(nothing), nothing);
+    const shut11 = await dlg.count() === 0;
+    await p10.locator('[data-testid="dp-contact-tab-edit"]').click({ timeout: 3000 }).catch(() => {});
+    const edit11 = await dlg.waitFor({ state: "visible", timeout: 8000 }).then(() => true).catch(() => false);
+    ok("§11b …and Edit opens the Edit record dialog", shut11 && edit11, { shut11, edit11 });
     await ctx10.close();
     await browser.close();
     if (srv) srv.close();
