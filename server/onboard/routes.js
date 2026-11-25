@@ -6,11 +6,13 @@ const express = require("express");
 
 const routers = { r1: express.Router() };
 routers.r1.use(require("./startRoutes").routers.r1);
+routers.r1.use(require("./orderRoutes").routers.r1);   // ORDER-1: the order on the close link
 routers.r1.use(require("./verifyRoutes").routers.r1);
 
 function mount(ctx) {
   require("./startComplete").configure(ctx);
   require("./startRoutes").mount(ctx);
+  require("./orderRoutes").mount(ctx);
   require("./verifyRoutes").mount(ctx);
 }
 

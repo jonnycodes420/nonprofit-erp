@@ -393,3 +393,11 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 - A partner code is a row in `partners` (code, name, market; no commission field, by decision; payout terms stay in SALES-1's `sales_partners`). `/book?partner=<code>` says "Recommended by <name>" and tags `sales_deals.partner_code`; an unknown code is ignored. Jonathan adds codes in /ops → Sales → Settings → Partner codes.
 - The file travels as a data: URL: the field caps (SECURE-2) pass a data: URL, and an anonymous body is read by the 5 MB parser (SECURE-1), so the limit is 3 MB.
 
+
+## ORDER-1 · the order on the close link (2026-11-25)
+
+- An order is a start link carrying `order_json` (what Jonathan typed, per deal; nothing public reads it). The page, the signature, the PDF, the signed-copy email and Checkout read one snapshot (`server/onboard/order.js`, figures from `shared/numbers/orderFigures.js`). Never compute an order figure anywhere else.
+- A signature is an `order_signatures` row (append-only) with the snapshot, its SHA-256, the Terms version from `shared/terms.json`, name, title, email, time, IP and browser, plus ONBOARD-1's `start_signatures` row. Bump `shared/terms.json` with any change to the Terms page's words.
+- A signed order is never edited; a change is a new order ("replace"), with a new number. An open order may be edited: the version goes up and a page opened before the edit can't be signed.
+- Nothing is charged before the first charge: `trial_end` is the date she signed for; the setup fee is an invoice item tied to the subscription after the card goes in, never `add_invoice_items`. `tests/order1.test.js`.
+- Order mail is billing mail (`order_signed_copy`, `order_request_sign`): the signed copy to the signer, and "Review and sign" only on Jonathan's Send.
