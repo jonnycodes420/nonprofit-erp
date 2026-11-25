@@ -1,0 +1,27 @@
+{
+  "_note": "ONBOARD-4 · what every plan includes, in words. Moved out of pricing.json so the public site can say it without carrying a price: the site's build must hold no figure from pricing.json (client/scripts/no-public-prices.mjs). pricing.js reads it back for GET /public/pricing.",
+  "includedGroups": [
+    {
+      "name": "Donors",
+      "copy": "Gifts, households, pledges and the Thread naming every next step."
+    },
+    {
+      "name": "Fundraising",
+      "copy": "Donation forms, campaigns, major gifts, grants, memberships and events."
+    },
+    {
+      "name": "Volunteers",
+      "copy": "People, shifts and hours, on the same record as their giving."
+    },
+    {
+      "name": "The Agent",
+      "copy": "Drafts thank-yous and briefs in your voice. You approve every one."
+    }
+  ],
+  "extras": [
+    "Your whole team, no seat fees",
+    "No platform fee on gifts",
+    "Month to month",
+    "Export everything, any time"
+  ]
+}

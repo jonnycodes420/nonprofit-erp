@@ -1,6 +1,7 @@
 // server/admin/sales/inbound.js · SALES-2 items 7, 8 and 10. INBOUND LANDS IN THE SALES CRM.
 //
-// note(ctx, { source, name, email, phone, orgName, orgDomain, note, partner?, referredByOrgId? })
+// note(ctx, { source, name, email, phone, orgName, orgDomain, note, task?, partner?, referredByOrgId? })
+// (`task` replaces the task's words: ONBOARD-4's booking says to read the answers before the call.)
 // matches or creates the contact (by email) and the organization (by the email's domain unless
 // it is a free mailbox, else by name), opens a deal in Lead with the source, and adds a task due
 // today: "New inbound: call within the hour." A partner's referral attaches the partner and their
@@ -19,7 +20,7 @@ const { civil } = require("./today");
 const TZ = "America/New_York";
 // THE PLANTED DEFECT (SALES2_PLANT=demoresp on the server, tests only): the demo request's answer changes.
 const PLANT = process.env.TEST_MODE === "1" ? process.env.SALES2_PLANT || "" : "";
-const SOURCES = { demo: "Website demo request", signup: "Signup", lostfound: "Lost & Found", partner: "Partner referral", customer: "Customer referral" };
+const SOURCES = { booking: "Website booking", demo: "Website demo request", signup: "Signup", lostfound: "Lost & Found", partner: "Partner referral", customer: "Customer referral" };
 const SYSTEM = { id: "system:sales-inbound", name: "Steward (inbound form)" };
 const FREE = new Set(["gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "aol.com", "icloud.com", "me.com", "msn.com", "live.com", "comcast.net", "att.net", "protonmail.com", "proton.me", "ymail.com", "mail.com", "gmx.com"]);
 const split = full => { const p = String(full || "").trim().replace(/\s+/g, " ").split(" ").filter(Boolean); return p.length > 1 ? { first_name: p.slice(0, -1).join(" "), last_name: p.at(-1) } : { first_name: p[0] || null }; };
@@ -66,7 +67,7 @@ async function note(ctx, b, who = SYSTEM, now = Date.now()) {
   const recs = [{ type: "deal", id: d.id }, { type: "contact", id: contact.id }, ...(org ? [{ type: "org", id: org.id }] : [])];
   const said = String(b.note || "").trim().slice(0, 4000);
   if (said) await ACT.create(ctx, { kind: "note", body: `${source}: ${said}`, records: recs }, who);
-  const t = await ACT.create(ctx, { kind: "task", body: `New inbound: call within the hour. ${name || email}${org ? `, ${org.name}` : ""} (${source})`, due_on: civil(now, TZ), records: recs }, who);
+  const t = await ACT.create(ctx, { kind: "task", body: M.clean(b.task) || `New inbound: call within the hour. ${name || email}${org ? `, ${org.name}` : ""} (${source})`, due_on: civil(now, TZ), records: recs }, who);
   return { ok: true, dealId: d.id, contactId: contact.id, orgId: org ? org.id : null, taskId: t.id };
 }
 

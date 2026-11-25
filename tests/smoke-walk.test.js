@@ -561,7 +561,7 @@ async function demoDoor(browser) {
 async function publicPagesUnderTheCsp(browser) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: "block" });
   const page = await ctx.newPage();
-  for (const p of ["/", "/pricing", "/security", "/login", "/signup", "/give/harborlight", "/give/harborlight/harbor-run", "/portal/harborlight"]) {
+  for (const p of ["/", "/pricing", "/security", "/login", "/book", "/give/harborlight", "/give/harborlight/harbor-run", "/portal/harborlight"]) {
     const errors = [];
     const onErr = e => errors.push(e.message.slice(0, 160));
     page.on("pageerror", onErr);

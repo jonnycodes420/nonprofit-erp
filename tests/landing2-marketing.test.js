@@ -23,12 +23,13 @@
 //   8. a sitemap.xml that disagrees with the route table
 //   9. a photo slot without a file, a photo without a credit, or a real
 //      person's portrait swapped for anything but the repo's own files
-//  10. a demo form that sends anything but the three fields the lead route
-//      accepts, or sends anywhere but that route
+//  10. a booking form (/book, ONBOARD-4; it was the /demo form) that sends
+//      anything but its own fields, or sends anywhere but POST /public/book
 //
 // LANDING-3 added four, each one a thing that was on the site before it:
 //  11. the word "tour" on any button. There is no tour: every hero offers
-//      Book a call and Start free, and the Why tabs say Learn more.
+//      Book a call (ONBOARD-4: and only that; Start free is gone), and the
+//      Why tabs say Learn more.
 //  12. a people carousel. TeamReel, .reel, .track-of-people and .tm are
 //      deleted, not hidden, and no route may render one. The research
 //      marquee (.marq) is not a people carousel and is deliberately allowed.
@@ -152,10 +153,9 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
       for (const m of t.matchAll(/["'`](\/[a-z][a-z0-9\-/]*(?:[#?][^"'`]*)?)["'`]/g)) {
         const v = m[1];
         if (/^\/(marketing|landing)\//.test(v)) continue;           // asset paths
-        if (/^\/lost-and-found\/(lead|benchmark)$/.test(v)) continue; // the API route the demo form posts to
+        if (/^\/lost-and-found\/(lead|benchmark)$/.test(v)) continue; // the API routes the audit posts to
+        if (v === "/public/book" || v === "/public/book/partner/") continue; // ONBOARD-4: the booking form's own API routes
         if (v === "/help/feedback") continue;                        // HELP-1: "Did this help?" posts a slug and a yes or no
-        if (v === "/public/agreement" || v === "/public/signup") continue; // the signup page's own API routes
-        if (v === "/public/pricing") continue;                       // PRICING-1: the price block reads the server's price list
         if (v === "/support/site/" || v === "/handoff") continue; // SUPPORT-1: the help center chat's API route
         linkish.push([f, v]);
       }
@@ -171,7 +171,7 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     ok("every route's page has a component", ROUTES.every(r => new RegExp("\\b" + r.page + ":").test(pageKeys)), ROUTES.filter(r => !new RegExp("\\b" + r.page + ":").test(pageKeys)).map(r => r.page));
     ok("route paths are unique, and every route has a title and a description",
       new Set(ROUTES.map(r => r.path)).size === ROUTES.length && ROUTES.every(r => r.title && r.description && r.description.length > 30));
-    const brief = ["/", "/platform", "/crm", "/volunteer", "/agent", "/connections", "/onboarding", "/features", "/why", "/leadership", "/move", "/move/spreadsheet", "/move/crm", "/for", "/security", "/about", "/partners", "/contact", "/demo", "/resources", "/guides", "/templates", "/articles", "/articles/state-of-retention", "/glossary", "/faq", "/help", "/whats-new", "/tools", "/tools/retention", "/tools/lapsed-cost", "/tools/thermometer", "/tools/lost-and-found", "/legal/privacy", "/legal/terms", "/legal/accessibility"];
+    const brief = ["/", "/platform", "/crm", "/volunteer", "/agent", "/connections", "/onboarding", "/features", "/why", "/leadership", "/move", "/move/spreadsheet", "/move/crm", "/for", "/security", "/about", "/partners", "/contact", "/book", "/resources", "/guides", "/templates", "/articles", "/articles/state-of-retention", "/glossary", "/faq", "/help", "/whats-new", "/tools", "/tools/retention", "/tools/lapsed-cost", "/tools/thermometer", "/tools/lost-and-found", "/legal/privacy", "/legal/terms", "/legal/accessibility"];
     ok("every page the brief names is routed", brief.every(p => known.has(p)), brief.filter(p => !known.has(p)));
     const count = pre => ROUTES.filter(r => r.path.startsWith(pre)).length;
     // ASK-2 added the Ask feature page and the demo-questions guide.
@@ -247,24 +247,22 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
 
   console.log("\n— 10 · the demo form —");
   {
-    const why = SRC_TEXT["client/src/marketing/pages/why.jsx"];
-    const body = why.match(/const body = (\{[^}]*\});/);
-    // FIX-13: every field on the form is sent, by name (the size band and
-    // where the donors are today were typed and then dropped before).
-    ok("the demo form builds its body from exactly name, email, organization, orgSize, currentSystem and ref",
-      !!body && JSON.stringify([...body[1].matchAll(/(\w+):/g)].map(m => m[1])) === JSON.stringify(["name", "email", "organization", "orgSize", "currentSystem", "ref"]), body && body[1]);
-    // FIX-13: every field has a label tied to it, a name and an id, so a
-    // screen reader announces it and a browser can autofill it.
-    const demoForm = (why.match(/<form className="form" onSubmit=\{submit\}[^]*?<\/form>/) || [""])[0];
-    const fields = [...demoForm.matchAll(/<(input|select|textarea)\b[^>]*>/g)].map(m => m[0]);
+    // ONBOARD-4 · the /book form (it replaced the /demo form): every field it
+    // shows is sent by name to POST /public/book, and nowhere else.
+    const bookSrc = SRC_TEXT["client/src/marketing/pages/book.jsx"];
+    const bookForm = (bookSrc.match(/<form className="form" onSubmit=\{submit\}[^]*?<\/form>/) || [""])[0];
+    const fields = [...bookForm.matchAll(/<(input|select|textarea)\b[^>]*>/g)].map(m => m[0]);
     const labelled = fields.filter(f => {
       const id = (f.match(/\bid="([^"]+)"/) || [])[1];
-      return id && /\bname="[^"]+"/.test(f) && new RegExp('<label htmlFor="' + id + '"').test(demoForm);
+      return id && /\bname="[^"]+"/.test(f) && new RegExp('<label htmlFor="' + id + '"').test(bookForm);
     });
-    ok("every demo form field has a label (htmlFor), a name and an id (" + fields.length + " fields)", fields.length === 5 && labelled.length === fields.length, fields.filter(f => !labelled.includes(f)));
+    ok("every booking form field has a label (htmlFor), a name and an id (" + fields.length + " fields)", fields.length === 9 && labelled.length === fields.length, fields.filter(f => !labelled.includes(f)));
+    const state = (bookSrc.match(/useState\(\{ (name: ""[^}]*)\}\)/) || [])[1] || "";
+    ok("the booking form sends its fields by name: name, organization, email, phone, system, donors, what would make it worth it, the honeypot",
+      JSON.stringify([...state.matchAll(/(\w+):/g)].map(m => m[1])) === JSON.stringify(["name", "orgName", "email", "phone", "currentSystem", "donorCount", "worthIt", "website"]), state);
     ok("…and a failed submit shows a plain error naming jonathan@stewardapp.dev, never nothing",
-      /DEMO_FALLBACK = "[^"]*jonathan@stewardapp\.dev/.test(why) && /setErr\(/.test(why) && /role="alert"/.test(demoForm));
-    ok("…and posts it to the Lost & Found lead route, the table super-admin lists", /fetch\(API \+ "\/lost-and-found\/lead"/.test(why) && /DEMO_REF = "book-a-demo"/.test(why));
+      /BOOK_FALLBACK = "[^"]*jonathan@stewardapp\.dev/.test(bookSrc) && /setErr\(/.test(bookSrc) && /role="alert"/.test(bookForm));
+    ok("…and posts it to POST /public/book, which lands it in the sales CRM", /fetch\(API \+ "\/public\/book", \{ method: "POST"/.test(bookSrc));
     // TRUST-2 — the trust pages READ four public endpoints and send nothing:
     // the status summary, which What's new entries are hidden, and the DPA
     // (JSON and PDF). Named here one by one; any other request is still red.
@@ -274,13 +272,12 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
       // SUPPORT-1 — the help center's chat: the visitor's question, and the
       // email they give when they ask for Jonathan. No org, no sign-in.
       "/support/site/",
-      // PRICING-1 — the price block reads the server's price list, so a
-      // price changed on the server shows without a frontend build.
-      "/public/pricing"];
+      // ONBOARD-4 — the booking page: the partner's name, and the form.
+      "/public/book"];
     const fetches = [...ALL.matchAll(/fetch\(([^,)]*)/g)].map(m => m[1]);
     const others = fetches.filter(f => !READS.some(r => f.includes(r)));
-    ok("the marketing source makes no other request (calculators compute in the browser)", others.length === 1, others);
-    ok("the thank-you state is the reference's sentence", why.includes("Thank you. Jonathan will email you within one business day to pick a time."));
+    ok("the marketing source makes no other request (calculators compute in the browser)", others.length === 0, others);
+    ok("after the form, the page says to pick a time and shows the slots", bookSrc.includes("Thank you. Now pick a time below; the calendar sends you the invitation.") && /<SlotPicker /.test(bookSrc));
   }
 
   console.log("\n— HELP-1 · every screen has a help article —");
@@ -312,7 +309,8 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
       for (const m of t.matchAll(/className="[^"]*\b(pill|go)\b[^"]*"[^>]*>([^<]*)</gi)) if (/tour/i.test(m[2])) btn.push(f + " " + m[2].trim());
     }
     ok("no button anywhere says tour", btn.length === 0, btn);
-    ok("every hero's second call to action is Start free", /href="\/signup">Start free/.test(SRC_TEXT["client/src/marketing/lib.jsx"]));
+    ok("ONBOARD-4 · every hero's one call to action is Book a call, and nothing offers Start free", /<div className="ctas">\s*<Pill href="\/book">Book a call<\/Pill>\s*<\/div>/.test(SRC_TEXT["client/src/marketing/lib.jsx"])
+      && !Object.values(SRC_TEXT).some(t => /href="\/signup"|Start free<\/|>Start now</.test(t)));
 
     // 12 · no people carousel, and the component is gone rather than unused.
     const css = SRC_TEXT["client/src/marketing/site.css"];
@@ -407,48 +405,33 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     ok("every menu entry or card that names Lost & Found links to it", named.length >= 2 && named.every(([, h]) => /^(\/tools)?\/lost-and-found$/.test(h)), named);
 
     // CONTENT-1b turned this around. FIX-13 banned "Book a call"; the call is
-    // what /demo books, so it is now the ONLY name for it. "Book a call" on
+    // what /book books (ONBOARD-4; it was /demo), so it is now the ONLY name for it. "Book a call" on
     // every button and link that books the 20-minute call, and "Book a demo"
     // nowhere a visitor can reach: the marketing source, the audit page, the
     // signup page and the price list they both read. The /demo route and the
     // lead's book-a-demo source tag are unchanged.
     const reach = { ...SRC_TEXT,
       "client/src/pages/LostAndFound.jsx": lfSrc,
-      "client/src/pages/SignupPage.jsx": fs.readFileSync(path.join(ROOT, "client", "src", "pages", "SignupPage.jsx"), "utf8"),
       "pricing.json": fs.readFileSync(path.join(ROOT, "pricing.json"), "utf8") };
     const demos = Object.entries(reach).filter(([, t]) => /Book a (20-minute )?demo/i.test(t)).map(([f]) => f);
     ok("no \"Book a demo\" anywhere on the site", demos.length === 0, demos);
-    // Every link to /demo, in any file a visitor reaches, is labelled Book a call.
-    const toDemo = [];
-    for (const [f, t] of Object.entries(reach)) for (const m of t.matchAll(/(?:href|to)="\/demo"[^>]*>\s*(?:<i><\/i>)?\s*([^<]*?)\s*</g)) toDemo.push([f, m[1]]);
-    const wrong = toDemo.filter(([, label]) => label !== "Book a call" && label !== "{TALK.cta}" && label !== "{TALK_TO_US.cta}");
-    ok("every button and link to /demo says Book a call (" + toDemo.length + ")", toDemo.length >= 15 && wrong.length === 0, wrong);
+    // Every link to /book, in any file a visitor reaches, says Book a call.
+    const toBook = [];
+    for (const [f, t] of Object.entries(reach)) for (const m of t.matchAll(/(?:href|to)="\/book"[^>]*>\s*(?:<i><\/i>)?\s*([^<]*?)\s*</g)) toBook.push([f, m[1]]);
+    const wrong = toBook.filter(([, label]) => !/^Book a call( about this file( →)?)?$/.test(label));
+    ok("every button and link to /book says Book a call (" + toBook.length + ")", toBook.length >= 15 && wrong.length === 0, wrong);
     ok("…including the header, every hero and the closing call to action",
-      /href="\/demo"><i><\/i>Book a call<\/A>/.test(SRC_TEXT["client/src/marketing/Site.jsx"])
-        && /<Pill href="\/demo">Book a call<\/Pill>/.test(SRC_TEXT["client/src/marketing/lib.jsx"].slice(SRC_TEXT["client/src/marketing/lib.jsx"].indexOf("export function Hero")))
-        && /<Pill kind="white" href="\/demo">Book a call<\/Pill>/.test(SRC_TEXT["client/src/marketing/lib.jsx"]));
-    ok("the signup page's link to a call says Book a 20-minute call", /data-testid="signup-book"[^>]*>Book a 20-minute call</.test(reach["client/src/pages/SignupPage.jsx"]));
-    const PRICING = JSON.parse(reach["pricing.json"]);
+      /href="\/book"><i><\/i>Book a call<\/A>/.test(SRC_TEXT["client/src/marketing/Site.jsx"])
+        && /<Pill href="\/book">Book a call<\/Pill>/.test(SRC_TEXT["client/src/marketing/lib.jsx"].slice(SRC_TEXT["client/src/marketing/lib.jsx"].indexOf("export function Hero")))
+        && /<Pill kind="white" href="\/book">Book a call<\/Pill>/.test(SRC_TEXT["client/src/marketing/lib.jsx"]));
     const pricing = SRC_TEXT["client/src/marketing/pages/pricing.jsx"];
-    // LANDING-5 · no tiers on the marketing site: one price block, whose one
-    // button says Book a call and opens /demo.
+    // ONBOARD-4 · no price on the site: the block is one line and Book a call.
     const lib = SRC_TEXT["client/src/marketing/lib.jsx"];
     const block = lib.slice(lib.indexOf("export function PriceBlock"), lib.indexOf("export function Steps"));
-    ok("LANDING-5 · the price block's one button says Book a call and opens /demo",
-      (block.match(/<Pill\b/g) || []).length === 1 && /<Pill href="\/demo">Book a call<\/Pill>/.test(block));
-    ok("LANDING-5 · /pricing renders the price block and no tier card or compare table",
-      /<PriceBlock h1 \/>/.test(pricing) && !/PRICING\.tiers|PRICING\.talkToUs|<table/.test(pricing));
-    const sp = reach["client/src/pages/SignupPage.jsx"];
-    const bandFor = n => PRICING.tiers.find(t => n <= t.maxRecords) || null;
-    ok("/signup preselects the tier from plan= and the interval from interval=",
-      /TIERS\.find\(x => x\.id === params\.get\("plan"\)\)/.test(sp) && /params\.get\("interval"\) === "yearly"/.test(sp)
-        && PRICING.tiers.every(t => bandFor(t.maxRecords) === t));
-    // PRICING-1 · the site's one price line is pricing.json's `marketing.line`
-    // with the lowest monthly price in it, and the block renders that line.
-    const fromUsd = Math.min(...PRICING.tiers.map(t => t.monthlyUsd));
-    ok("PRICING-1 · the public line reads \"Everything included, from $" + fromUsd + "/mo.\"",
-      PRICING.marketing.line.replace("{from}", String(fromUsd)) === "Everything included, from $" + fromUsd + "/mo."
-        && /\{priceLine\(from\)\}/.test(block) && !/\b199\b/.test(block), PRICING.marketing.line);
+    ok("ONBOARD-4 · the pricing block's one button says Book a call and opens /book, and it carries no figure",
+      (block.match(/<Pill\b/g) || []).length === 1 && /<Pill href="\/book">Book a call<\/Pill>/.test(block) && !/\$\d|pricing\.json|fetch\(/.test(block));
+    ok("ONBOARD-4 · /pricing renders that block, and no tier card, compare table or price list",
+      /<PriceBlock h1 \/>/.test(pricing) && !/^import [^\n]*pricing\.json|PRICING\.tiers|<table/m.test(pricing));
   }
 
 
@@ -587,7 +570,7 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
       // donor counts, no bands, no "active donors". Details live on signup and Billing.
       // (Example counts in articles, "300 donors gave last year", are arithmetic, not price.)
       const SIZE_WORDS = /\bactive donors?\b|\b\d[\d,]*\+?\s+records\b|\b(?:up to|over|more than|under) [\d,]{3,} (?:records|donors|active)\b|\b(?:price|pricing) band\b|\bper record\b|\bsetup fee (?:is|of) \$/i;
-      const FROM_LINE = "Everything included, from $" + Math.min(...PRICING_TIERS.map(t => t.monthlyUsd)) + "/mo.";
+      const FROM_LINE = "Pricing depends on the size of your donor file and comes with hands-on setup. We'll walk you through it on a call.";   // ONBOARD-4
       const TIER_NAMES = /\b(Seed|Sapling|Orchard|Forest)\b/;
       for (const r of ROUTES) {
         const page = seo.assemblePage(base, r, render(r.path), extraFor(r));
@@ -598,7 +581,7 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
         // LANDING-5 · the starting price may appear only inside the one price
         // block (Home and /pricing); everywhere else, no plan price at all.
         const html = page.slice(page.indexOf('<div id="root">'));
-        const outside = text(html.replace(/<section class="price-block"[\s\S]*?<\/section>/g, " ")) + " " + r.title + " " + r.description;
+        const outside = text(html) + " " + r.title + " " + r.description;   // ONBOARD-4: no price anywhere, the block included
         { const m = outside.match(priceRe); if (m) hit.price.push(r.path + " " + m[0]); }
         if (/class="price-block"/.test(html)) {
           hit.blocks.push(r.path);
@@ -610,7 +593,7 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
       ok("LANDING-4 · no em dash on any rendered marketing page or help article", hit.dash.length === 0, hit.dash);
       ok("LANDING-4 · no word MESSAGING.md says to avoid, on any marketing page or help article", hit.avoid.length === 0, hit.avoid);
       ok("LANDING-4 · \"users\" only on the technical pages (security, legal, data)", hit.users.length === 0, hit.users);
-      ok("LANDING-5 · no plan price outside the one price block (" + prices.join(" ") + ")", prices.length >= 6 && hit.price.length === 0, hit.price);
+      ok("ONBOARD-4 · no plan price on any marketing page (" + prices.join(" ") + ")", prices.length >= 6 && hit.price.length === 0, hit.price);
       ok("LANDING-5 · the price block is on Home and /pricing, and nowhere else", hit.blocks.join(" ") === "/ /pricing", hit.blocks);
       ok("PRICING-1 · the price block says \"" + FROM_LINE + "\" on every page it is on", hit.blocks.length === 2 && hit.line.length === 0, hit.line);
       ok("PRICING-1 · no record count, donor count, band or \"active donors\" on any marketing page", hit.size.length === 0, hit.size);
@@ -663,7 +646,7 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
       && ROUTES.every(r => !dis.some(d => r.path === d || r.path.startsWith(d.endsWith("/") ? d : d + "/"))), dis);
     const vj = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8"));
     ok("paths without a prerendered file get the app shell, never the homepage's HTML", (vj.rewrites || []).some(r => r.source === "/(.*)" && r.destination === "/app.html")
-      && /"build": "[^"]*vite build -c vite\.prerender\.config\.js[^"]*node scripts\/prerender\.mjs"/.test(fs.readFileSync(path.join(CLIENT, "package.json"), "utf8")));
+      && /"build": "[^"]*vite build -c vite\.prerender\.config\.js[^"]*node scripts\/prerender\.mjs[^"]*"/.test(fs.readFileSync(path.join(CLIENT, "package.json"), "utf8")));
 
     // 17 · the glossary: one page per term, each one complete.
     const REQUIRED = ["lybunt", "sybunt", "donor-retention-rate", "first-year-retention", "repeat-donor-retention", "donor-lapse", "lapsed-donor", "reactivation", "donor-lifetime-value", "average-gift", "gift-range-chart", "moves-management", "portfolio", "major-gift", "planned-gift", "soft-credit", "hard-credit", "donor-advised-fund", "matching-gift", "recurring-gift", "sustainer", "pledge", "in-kind-gift", "restricted-gift", "unrestricted-gift", "stewardship", "cultivation", "solicitation", "case-for-support", "annual-fund", "capital-campaign", "peer-to-peer-fundraising", "giving-day", "year-end-appeal", "acknowledgment-letter", "tax-receipt", "quid-pro-quo", "ncoa", "deduplication", "wealth-screening", "capacity", "affinity", "engagement-score", "donor-journey", "board-giving"];
@@ -693,7 +676,7 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     const words = a => (a.lede + " " + a.body.replace(/^```[\s\S]*?^```/gm, "")).split(/\s+/).filter(Boolean).length;
     ok("the four new articles are there, 900 to 1,400 words each", NEW_ARTICLES.every(s => ARTICLE[s] && words(ARTICLE[s]) >= 900 && words(ARTICLE[s]) <= 1500),
       NEW_ARTICLES.map(s => s + " " + (ARTICLE[s] ? words(ARTICLE[s]) : "missing")));
-    const endsRight = ROUTES.filter(r => r.page === "article" || r.page === "glossaryTerm").filter(r => { const h = render(r.path); return !h.includes('href="/tools/lost-and-found"') || !h.includes('href="/demo"'); }).map(r => r.path);
+    const endsRight = ROUTES.filter(r => r.page === "article" || r.page === "glossaryTerm").filter(r => { const h = render(r.path); return !h.includes('href="/tools/lost-and-found"') || !h.includes('href="/book"'); }).map(r => r.path);
     ok("every article and glossary page ends with Lost & Found and Book a call", endsRight.length === 0, endsRight);
 
     // 19 · new copy names no plan, no active donor, no records, and there are no "vs" pages.

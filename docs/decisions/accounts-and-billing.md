@@ -97,7 +97,8 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
   resolves to it and no public route can name it), and `validateCloseLink` refuses it by name. The
   one door is `POST /admin/orgs/:id/internal-test-price`, super-admin only, on an org that already
   exists. `tests/gtm1a-internal-price.test.js`. (GTM-1a)
-- **Public signup IS a close link.** `POST /public/signup` writes a `close_links` row with
+- **Public signup is closed (ONBOARD-4, 24 Nov 2026).** `POST /public/signup` answers 410 `signup_closed` to every body, the same words, and writes and sends nothing; `/signup`, `/demo` and `/invitation` go to `/book`. Every org signs after a call, through the close link. The website shows no price: `client/scripts/no-public-prices.mjs` fails the build on a figure from `pricing.json`, a setup fee figure, the price list, or a free offer in the public output. What every plan includes is `shared/included.json`, apart from the prices. `GET /public/pricing` stays for close links and Billing; nothing public reads it. `tests/onboard4.test.js`.
+- **(History, until ONBOARD-4) Public signup was a close link.** `POST /public/signup` writes a `close_links` row with
   `signup_source='public'` and hands back the same Stripe Checkout; the org, the first admin and
   the subscription are created by the same webhook, with the same thirty days from signing, the
   same seven-day reminder and the same two-click cancel. There is no second org-creation path, and
@@ -384,3 +385,11 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 - Accepting writes a `start_signatures` row for the linked org (`start_link_id` = the quote's id, actor `system:sales/quote-link`) and asks `startComplete.stampPaperDone`. Paper stays signature AND card.
 - The subscription is created with `trial_end` = noon on the quote's start day in the org's zone, an inline price on the band's own product. The setup fee is an invoice item made after the subscription and tied to it (its first real invoice), never `add_invoice_items` (that charges today). No charge before the start day; `tests/sales3-close.test.js` §3 reads every request the billing mock saw.
 - A quote's terms say they govern where they and the agreement's §2 differ (the first-charge day and when the setup fee is charged).
+
+## ONBOARD-4 · the booking page (2026-11-24)
+
+- `/book` is the website's one action: a short form (name, organization, work email, phone, what she uses today, roughly how many donors, an optional file up to 3 MB, what would make it worth it), then Jonathan's slots. `POST /public/book` (`server/admin/sales/booking.js`, `routesG.js`) keeps the answers and file in `sales_bookings` and runs SALES-2's inbound path: a deal sourced "Website booking", the note with her answers, and a task "Booked a call from the website… Read their answers before the call."
+- The slots are behind one adapter, `client/src/marketing/booking/slots.jsx` (Calendly today, a plain iframe allowed by vercel.json's frame-src; no provider script). The booking tool sends her its confirmation; Steward sends a prospect nothing. SALES-4's calendar read moves the deal to Meeting booked when the event appears.
+- A partner code is a row in `partners` (code, name, market; no commission field, by decision; payout terms stay in SALES-1's `sales_partners`). `/book?partner=<code>` says "Recommended by <name>" and tags `sales_deals.partner_code`; an unknown code is ignored. Jonathan adds codes in /ops → Sales → Settings → Partner codes.
+- The file travels as a data: URL: the field caps (SECURE-2) pass a data: URL, and an anonymous body is read by the 5 MB parser (SECURE-1), so the limit is 3 MB.
+

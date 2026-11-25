@@ -14,7 +14,7 @@ if (import.meta.env.VITE_SENTRY_DSN) {
   });
 }
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { apiFetch, API } from "./api";
 import { installOrgBinding, setPageOrg, subscribeOrgChanged, orgChanged } from "./lib/orgBinding";
 import { installCommitGuard } from "./lib/commitGuard";
@@ -60,10 +60,6 @@ function GivingOrgWrap() { return <GivingOrgShell><Portal /></GivingOrgShell>; }
 const LostAndFound       = React.lazy(() => import("./pages/LostAndFound"));
 const ReferralPage       = React.lazy(() => import("./pages/ReferralPage"));   // SALES-2: a partner's referral link
 const QuotePage          = React.lazy(() => import("./pages/QuotePage"));      // SALES-3: a private quote
-const SignupPage         = React.lazy(() => import("./pages/SignupPage"));
-// NB: Invitation.jsx is also imported eagerly by Landing (the on-page form
-// section), so this lazy route resolves from the already-loaded entry chunk.
-const InvitationPage     = React.lazy(() => import("./pages/Invitation"));
 const AdminDashboard     = React.lazy(() => import("./pages/AdminDashboard"));
 const OpsPage            = React.lazy(() => import("./pages/OpsPage"));   // DEVBOARD-1
 // INT-OAUTH — where a provider puts the person down after consent. It is the
@@ -222,6 +218,13 @@ function PublicOnly({ children }) {
 // Connections (FIX-13, INT builds), and an old bookmark used to fall through to
 // the home page. Signed in, it opens the Connections page in the app; signed
 // out, the public Connections page.
+// ONBOARD-4: /signup and /demo are the booking page now; a partner code comes along.
+function ToBook() {
+  const { search } = useLocation();
+  const partner = new URLSearchParams(search).get("partner");
+  return <Navigate to={"/book" + (partner ? "?partner=" + encodeURIComponent(partner) : "")} replace />;
+}
+
 function OldIntegrations() {
   const { auth } = useAuth();
   const hash = typeof window !== "undefined" ? window.location.hash : "";
@@ -293,21 +296,13 @@ function Root() {
               element={r.path === "/" ? <PublicOnly><MarketingRoute path={r.path} /></PublicOnly> : <MarketingRoute path={r.path} />} />
           ))}
           <Route path="/login"     element={<PublicOnly><LoginPage /></PublicOnly>} />
-          {/* GTM-1a 2 — SIGNUP REOPENS, AS THE PATH IT ALWAYS SHOULD HAVE BEEN.
-              BUILD-87 F.2 made this a redirect and deleted the page, because
-              the form sold a price that had not existed since August and a
-              self-serve door BUILD-39 had shut: a signup form contradicting
-              the product it signs you up for is worse than no form.
-              Every one of those reasons is now answered rather than avoided.
-              The page quotes shared/pricing.js, which is the same list the
-              route prices against and the same list Stripe is checked
-              against; and it is not a second door — it mints a BUILD-90 close
-              link for the visitor and hands them the same Checkout, the same
-              thirty days from signing, the same seven-day reminder and the
-              same two-click cancel. Nothing exists until the card goes in.
-              /invitation is still a real page for someone who wants to talk
-              first, and /invite/:token is still the token-gated half. */}
-          <Route path="/signup"    element={<PublicOnly><SignupPage /></PublicOnly>} />
+          {/* ONBOARD-4 item 1 — PUBLIC SIGNUP IS CLOSED (Jonathan, 23 Nov 2026).
+              Nobody signs up cold: every org signs after a call, through the
+              close link Jonathan sends. /signup (and the old /demo form) go to
+              /book, keeping ?partner=, and POST /public/signup refuses. The
+              page that sold a band from the website is gone. */}
+          <Route path="/signup"    element={<ToBook />} />
+          <Route path="/demo"      element={<ToBook />} />
           <Route path="/welcome"   element={<RequireAuth><WelcomePage /></RequireAuth>} />
           {/* ONBOARD-1 — "Set up Steward for me". A new org lands here after
               Checkout; the step-by-step /welcome is one link away. */}
@@ -348,7 +343,7 @@ function Root() {
           <Route path="/lost-and-found" element={<LostAndFound />} />
           <Route path="/refer/:token" element={<ReferralPage />} />
           <Route path="/quote/:token" element={<QuotePage />} />
-          <Route path="/invitation" element={<InvitationPage />} />
+          <Route path="/invitation" element={<ToBook />} />   {/* ONBOARD-4: the old request-an-invitation page quoted a price */}
           {/* BUILD-45 — donor portal (magic-link auth; org-themed; /verify
               consumes the fragment token). */}
           {/* BUILD-54 §4 — edit mode rides the EXISTING staff session (the

@@ -87,4 +87,7 @@ export const NO_SCREEN_READS = [
   { method: "POST", re: /^\/acknowledgments\/templates$/, why: "a letter template is listed only on Printed letters, which re-reads it" },
   { method: "DELETE", re: /^\/acknowledgments\/templates\/[^/]+$/, why: "a letter template is listed only on Printed letters, which re-reads it" },
   { method: "PUT", re: /^\/letters\/signatures\/[^/]+$/, why: "a signature picture is shown only where it is uploaded" },
+  // ONBOARD-4: a partner code is listed only in Sales settings → Partner codes, which re-reads itself.
+  { method: "POST", re: /^\/ops\/sales\/partner-codes$/, why: "a partner code is listed only on the card that adds it, which re-reads it" },
+  { method: "DELETE", re: /^\/ops\/sales\/partner-codes\/[^/]+$/, why: "a partner code is listed only on the card that removes it, which re-reads it" },
 ];

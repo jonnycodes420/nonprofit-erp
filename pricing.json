@@ -1,5 +1,5 @@
 {
-  "_note": "PRICING-1 · THE PRICE LIST. Every price, band edge, setup fee and band-move rule is in this one file. The server reads it at boot (pricing.js) and serves it at GET /public/pricing, which is what signup, Billing and the plan picker read, so a change here takes a server redeploy and no code change and no client build. The marketing site prerenders its one line ('Everything included, from $199/mo.') from this file at build and corrects it from /public/pricing on load. Price is set by RECORDS: people and organizations with at least one gift. Prospects, volunteers and contacts with no gift never count. Every band has three Stripe prices (monthly, yearly, one-time setup), each named by the env var that carries its id. `legacyTiers` are the GTM-1a bands that real organisations may be on: recognised for ever, never offered.",
+  "_note": "PRICING-1 · THE PRICE LIST. Every price, band edge, setup fee and band-move rule is in this one file. The server reads it at boot (pricing.js) and serves it at GET /public/pricing, which is what signup, Billing and the plan picker read, so a change here takes a server redeploy and no code change and no client build. The public website shows no price at all (ONBOARD-4): prices reach a customer on Jonathan's call, his quote and his close link, never the site, and the site's build fails if a figure from this file is in it. Price is set by RECORDS: people and organizations with at least one gift. Prospects, volunteers and contacts with no gift never count. Every band has three Stripe prices (monthly, yearly, one-time setup), each named by the env var that carries its id. `legacyTiers` are the GTM-1a bands that real organisations may be on: recognised for ever, never offered.",
   "recordSentence": "A record is a person or organization with at least one gift in Steward. Prospects, volunteers and contacts with no gift never count.",
   "yearlyNote": "Two months free.",
   "headline": "One plan. Everything included.",
@@ -120,30 +120,6 @@
     "Import from a spreadsheet, and export everything whenever you want it"
   ],
   "includedHeading": "Everything is included, on every plan",
-  "includedGroups": [
-    {
-      "name": "Donors",
-      "copy": "Gifts, households, pledges and the Thread naming every next step."
-    },
-    {
-      "name": "Fundraising",
-      "copy": "Donation forms, campaigns, major gifts, grants, memberships and events."
-    },
-    {
-      "name": "Volunteers",
-      "copy": "People, shifts and hours, on the same record as their giving."
-    },
-    {
-      "name": "The Agent",
-      "copy": "Drafts thank-yous and briefs in your voice. You approve every one."
-    }
-  ],
-  "extras": [
-    "Your whole team, no seat fees",
-    "No platform fee on gifts",
-    "Month to month",
-    "Export everything, any time"
-  ],
   "termsStrip": [
     "Everything included",
     "Your whole team, no seat fees",
@@ -153,10 +129,5 @@
   "billingIntervals": [
     "monthly",
     "yearly"
-  ],
-  "marketing": {
-    "_note": "The site shows one line and no bands, and never mentions records. The number is the lowest monthlyUsd above.",
-    "line": "Everything included, from ${from}/mo.",
-    "included": "Everything is included. Nothing is sold separately."
-  }
+  ]
 }
