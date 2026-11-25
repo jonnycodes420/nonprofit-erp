@@ -78,6 +78,10 @@ export const WRITE_TO_READ = [
 // fails CI on a write in client/src that announces nothing (lib/changes.js kindsOfWrite
 // answers "other") unless it is named here, with why no figure on any screen shows it.
 export const NO_SCREEN_READS = [
+  // ONBOARD-4: a skip is shown only on the guided setup card, which re-reads itself; the
+  // concierge map and Load run on /ops for ANOTHER org, whose people no /ops screen shows.
+  { method: "POST", re: /^\/onboarding\/guided\/skip$/, why: "a skipped setup step shows only on the guided setup card, which re-reads itself" },
+  { method: "POST", re: /^\/ops\/onboarding\/concierge\/[^/]+\/(map|load)$/, why: "a concierge map or Load on /ops writes another org's file and people; the /ops list re-reads itself" },
   // BUILDER-2B: a saved email block is shown only in the editor's Blocks tab, which re-reads
   // itself after a save, a rename or a delete; no other screen lists or counts them.
   { method: "POST", re: /^\/email-blocks$/, why: "a saved email block is shown only in the editor's Blocks tab, which re-reads itself" },
