@@ -43,6 +43,16 @@ export function AudienceLine({ audience, testid = "audience-line" }) {
   const g = open ? audience.groups.find(x => x.reason === open) : null;
   return (
     <div data-testid={testid} data-total={audience.total} data-sendable={audience.sendable}>
+      {/* CAMPAIGN-2 item 3: what the org is waiting on leads, with where the switch is; the
+          line below keeps every reason as a figure that opens its people. */}
+      {audience.canReceive && <div data-testid="can-receive" data-count={audience.canReceive.count} data-of={audience.canReceive.of}
+        style={{ ...NOTE_BOX, marginBottom: 8 }}>
+        <b>{audience.canReceive.sentence}</b>
+        <CampaignTurnOn note={audience.turnOn} style={{ marginTop: 4 }} />
+        {audience.canReceive.others.length > 0 && <div style={{ marginTop: 4 }}>{audience.canReceive.othersSentence} {audience.groups.filter(x => audience.canReceive.others.includes(x.reason)).map((x, k, arr) => (
+          <span key={x.reason}><button type="button" data-testid={"can-receive-other-" + x.reason} data-count={x.count} onClick={() => setOpen(o => (o === x.reason ? null : x.reason))}
+            style={{ background: "none", border: "none", padding: 0, color: T.green, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: 13, textDecoration: "underline", textUnderlineOffset: 2 }}>{x.sentence}</button>{k < arr.length - 1 ? " · " : "."}</span>))}</div>}
+      </div>}
       <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.55 }}>
         <b>{audience.total.toLocaleString()}</b> {audience.noun} {"·"} <b data-testid="audience-sendable">{audience.sendable.toLocaleString()}</b> can get this email{audience.groups.length ? ": " : "."}
         {audience.groups.map((x, k) => (
@@ -55,7 +65,7 @@ export function AudienceLine({ audience, testid = "audience-line" }) {
           </span>
         ))}
       </div>
-      <CampaignTurnOn note={audience.turnOn} />
+      {!audience.canReceive && <CampaignTurnOn note={audience.turnOn} />}
       {g && (
         <div data-testid="audience-group-list" style={{ marginTop: 8, background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 10px", fontSize: 12.5, lineHeight: 1.6 }}>
           {g.people.map(p => <div key={p.id}><a href={`/app/donors/${encodeURIComponent(p.id)}`} style={{ color: T.ink }}>{p.name}</a></div>)}
@@ -131,13 +141,7 @@ export default function CampaignEditor({
       <Sec title="Campaign name" testid="rail-details">
         <input aria-label="Campaign name" style={paneInput} value={form.name} placeholder="Spring Appeal 2026" onChange={e => setMeta("name", e.target.value)} />
       </Sec>
-      <Sec title="Subject" right={<span data-testid="subject-count" style={{ fontSize: 11.5, color: form.subject.length > 60 ? T.gold700 : T.ink3 }}>{form.subject.length}/60</span>}>
-        <input aria-label="Subject" data-testid="email-subject" style={paneInput} value={form.subject} placeholder="A message from {{org_name}}" onFocus={() => { ws.lastInput.current = "subject"; }}
-          onChange={e => setMeta("subject", e.target.value)} onBlur={redraw} />
-        <label style={{ ...paneNote, display: "block", marginTop: 10 }} htmlFor="cb-pre">Preview line</label>
-        <input id="cb-pre" style={{ ...paneInput, marginTop: 4 }} value={form.preheader || ""} placeholder="Shown after the subject in the inbox" onFocus={() => { ws.lastInput.current = "preheader"; }}
-          onChange={e => setMeta("preheader", e.target.value)} onBlur={redraw} />
-      </Sec>
+      {/* CAMPAIGN-2 item 3: who can receive it comes before the words, so she knows before she plans. */}
       <Sec>
         <div data-testid="builder-who" style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Who it goes to</div>
         <AudienceLine audience={aud} />
@@ -152,6 +156,13 @@ export default function CampaignEditor({
           </div>)}
         {aud && aud.blocked && <div data-testid="audience-blocked" style={{ ...NOTE_BOX, marginTop: 8 }}>{aud.blocked}</div>}
         <div data-testid="rail-audience" style={{ marginTop: 10 }}>{audiencePicker}</div>
+      </Sec>
+      <Sec title="Subject" right={<span data-testid="subject-count" style={{ fontSize: 11.5, color: form.subject.length > 60 ? T.gold700 : T.ink3 }}>{form.subject.length}/60</span>}>
+        <input aria-label="Subject" data-testid="email-subject" style={paneInput} value={form.subject} placeholder="A message from {{org_name}}" onFocus={() => { ws.lastInput.current = "subject"; }}
+          onChange={e => setMeta("subject", e.target.value)} onBlur={redraw} />
+        <label style={{ ...paneNote, display: "block", marginTop: 10 }} htmlFor="cb-pre">Preview line</label>
+        <input id="cb-pre" style={{ ...paneInput, marginTop: 4 }} value={form.preheader || ""} placeholder="Shown after the subject in the inbox" onFocus={() => { ws.lastInput.current = "preheader"; }}
+          onChange={e => setMeta("preheader", e.target.value)} onBlur={redraw} />
       </Sec>
       <Sec title="Send it later" testid="rail-schedule">
         {/* EDITOR-1: empty until she picks a time; a time that has gone is refused. */}

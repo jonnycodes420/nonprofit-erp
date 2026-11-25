@@ -109,6 +109,9 @@ async function main() {
     const after = (await q(`SELECT subject FROM email_templates WHERE id=$1`, [tplId]))[0];
     ok("§draft Publish makes it live", pub.status === 200 && after.subject === "A new subject from FIX-39", [pub.status, after.subject]);
 
+    // ── CAMPAIGN-2: who a campaign reaches, and every editor button (tests/campaign2/sections.js) ──
+    await require("./campaign2/sections")({ h, B, ORG, ADMIN, tok });
+
     // ── the browser leg, reading the demo ────────────────────────────────
     const b = await B.open(h, "§browser");
     if (!b) return;

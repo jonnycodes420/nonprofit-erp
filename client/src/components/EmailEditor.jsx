@@ -61,8 +61,18 @@ export function PreviewAs({ as, onPick, bar = false }) {
     { narrow: personStillMatches });
   const loading = loading1 || loading2;
   const people = [...givers, ...never.filter(n => !givers.some(g => g.id === n.id)).map(n => ({ ...n, neverGave: true }))];
+  // CAMPAIGN-2 item 6: the editors' menu closes on Escape and on a click outside it (BUILDER-1's
+  // Fields tab replaced the "+ Field" menu Jarvis found open; this is the menu left in the top bar).
+  const boxRef = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const esc = e => { if (e.key === "Escape") setOpen(false); };
+    const away = e => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    window.addEventListener("keydown", esc); window.addEventListener("mousedown", away);
+    return () => { window.removeEventListener("keydown", esc); window.removeEventListener("mousedown", away); };
+  }, [open]);
   return (
-    <div style={{ position: "relative" }}>
+    <div ref={boxRef} style={{ position: "relative" }}>
       <button type="button" data-testid="preview-as" onClick={() => setOpen(o => !o)} aria-expanded={open}
         style={bar ? builderQuiet(open) : { ...railQuietBtn, padding: "5px 10px" }}>Preview as {as && as.name ? as.name.split(/\s+/)[0] : "you"} {"▾"}</button>
       {open && (
@@ -132,7 +142,7 @@ export function setPageBackground(b, page) {
 // journey reads the template (the server decides, and says what it would
 // change), and Publish is what makes them the template.
 const withDraft = t => (t && t.draft ? { ...t, ...t.draft } : t);
-export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onOpenDrafts, onOpenCampaigns, onOpenBrand, onQuickPrint, onBack, onSaved, backLabel = "Back to templates", title = null }) {
+export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onOpenDrafts, onOpenCampaigns, onOpenCampaign, onOpenBrand, onQuickPrint, onBack, onSaved, backLabel = "Back to templates", title = null }) {
   const start0 = withDraft(template);
   const narrow = useNarrow();
   const [name, setName] = useState(start0.name);
@@ -197,8 +207,11 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
       } }, "template");
       onSaved && onSaved();
       ws.force();
+      setSaving(false);
+      return true;
     } catch (e) { tell(say(e, "It could not be saved.")); }
     setSaving(false);
+    return false;
   };
   const publish = async () => {
     if (dirty) { tell("Save first, so what you publish is what you see."); return; }
@@ -244,14 +257,30 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
       setPersonMsg({ sentence: say(e, "The draft could not be made."), held });
     }
   };
-  const startCampaign = async () => {
-    setNote("");
-    if (dirty) { tell("Save first, so the campaign starts from what you see."); return; }
+  // CAMPAIGN-2 item 4: the new draft opens in the campaign editor, with its toast. Jarvis's click
+  // "produced no visible change, no toast, no navigation, but silently created a third campaign
+  // draft": the answer was a note at the top of a rail scrolled to More. A second press (or a
+  // press after Back) reopens the same untouched draft (the server's `reuse`), never a second.
+  const [moreMsg, setMoreMsgState] = useState(null);   // the answer beside the More buttons
+  // Said beside the button AND as a toast, so a second press of the same button answers again
+  // where she is looking (the same sentence redrawn in place reads as nothing happening).
+  const setMoreMsg = m => { setMoreMsgState(m); if (m && m.sentence && !m.busy) ws.say(m.sentence + (m.what ? " " + m.what : "")); };
+  const starting = useRef(false);
+  const startCampaign = async (afterSave = false) => {
+    setNote(""); setMoreMsg(null);
+    if (dirty && !afterSave) { setMoreMsg({ sentence: "Save your changes first, so the campaign starts from what you see.", save: "campaign" }); return; }
+    if (starting.current) return;
+    starting.current = true;
+    setMoreMsg({ sentence: "Starting the campaign…", busy: true });
     try {
-      const c = await apiFetch("/campaigns/from-template", { method: "POST", body: JSON.stringify({ templateId: template.id, name: saved.name }) });
-      offerUndo({ message: c.sentence || `Started ${c.name} from this template.`, undoAction: () => apiFetch(`/campaigns/${c.id}`, { method: "DELETE" }) }, "campaign");
-      setNote(c.sentence || `${c.name} is a draft campaign. Nothing has been sent.`);
-    } catch (e) { tell(say(e, "The campaign could not be started.")); }
+      const c = await apiFetch("/campaigns/from-template", { method: "POST", body: JSON.stringify({ templateId: template.id, name: afterSave ? name : saved.name, reuse: true }) });
+      const sentence = c.sentence || `${c.name} is a draft campaign. Nothing has been sent.`;
+      // One toast: the Undo one for a new draft, the builder's for the draft reopened.
+      if (!c.reused) { offerUndo({ message: sentence, undoAction: () => apiFetch(`/campaigns/${c.id}`, { method: "DELETE" }) }, "campaign"); setMoreMsgState({ sentence }); }
+      else setMoreMsg({ sentence });
+      if (onOpenCampaign) onOpenCampaign(c, sentence);
+    } catch (e) { setMoreMsg({ sentence: say(e, "The campaign could not be started.") }); }
+    finally { starting.current = false; }
   };
   const test = async () => {
     setNote("");
@@ -261,15 +290,23 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
       tell(r.sentence || (r.sent ? "The test is on its way to you." : "Nothing was sent."));
     } catch (e) { tell(say(e, "The test could not be sent.")); }
   };
-  const draftAi = async () => {
-    if (dirty) { tell("Save first, so the proposal starts from what you see."); return; }
+  // CAMPAIGN-2 item 5: on the first click it drafts, or says beside the button why not and what
+  // to do: "Save your changes first" (with Save and draft), or the server's whyNot (AI off for the
+  // organization, with where the switch is; not available on this server).
+  const draftAi = async (afterSave = false) => {
+    setMoreMsg(null);
+    if (dirty && !afterSave) { setMoreMsg({ sentence: "Save your changes first, so the proposal starts from what you see.", save: "ai" }); return; }
     setAi({ loading: true, proposals: [], sentence: "", chosen: new Set() });
     try {
       const r = await apiFetch(`/email-templates/${template.id}/draft-ai`, { method: "POST", body: JSON.stringify({ instructions: aiAsk }) });
       const changed = (r.proposals || []).filter(p => p.proposed !== p.current);
+      if (r.whyNot) setMoreMsg({ sentence: r.whyNot.sentence, what: r.whyNot.what, link: r.whyNot.link, why: r.whyNot.reason });
+      // Nothing drafted and nothing to offer: the reason beside the button is the whole answer.
+      if (r.whyNot && !changed.length) { setAi(null); return; }
       setAi({ loading: false, proposals: changed, sentence: r.sentence, source: r.source, chosen: new Set(changed.map(p => p.id)) });
-    } catch (e) { setAi({ loading: false, proposals: [], sentence: say(e, "Drafting could not be reached."), chosen: new Set() }); }
+    } catch (e) { setAi(null); setMoreMsg({ sentence: say(e, "Drafting could not be reached just now."), what: "Try again in a minute, or write the words yourself." }); }
   };
+  const saveThen = async what => { if (!(await save())) return; if (what === "ai") draftAi(true); else startCampaign(true); };
   const applyAi = () => {
     const chosen = ai.proposals.filter(p => ai.chosen.has(p.id));
     b.change(bs => {
@@ -337,10 +374,16 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
       )}
       <Sec title="More">
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {!template.personKind && <button type="button" style={paneBtn} onClick={startCampaign} data-testid="email-start-campaign">Start a campaign from this</button>}
-          <button type="button" style={paneBtn} onClick={draftAi} data-testid="email-draft-ai">Draft with AI</button>
+          {!template.personKind && <button type="button" style={paneBtn} onClick={() => startCampaign()} disabled={!!(moreMsg && moreMsg.busy)} data-testid="email-start-campaign">Start a campaign from this</button>}
+          <button type="button" style={paneBtn} onClick={() => draftAi()} data-testid="email-draft-ai">Draft with AI</button>
           {onQuickPrint && template.personKind && EMAILED_LETTERS.has(template.personKind) && <button type="button" style={paneBtn} onClick={onQuickPrint} data-testid="quick-edit">Quick edit and print</button>}
         </div>
+        {moreMsg && <div role="status" data-testid="email-more-result" data-why={moreMsg.why || ""} style={{ ...paneNote, marginTop: 8, color: T.ink }}>
+          {moreMsg.sentence}{moreMsg.what ? " " + moreMsg.what : ""}
+          {moreMsg.link && <> <a data-testid="email-more-link" href={moreMsg.link.href} style={{ color: T.greenDk, fontWeight: 700 }}>{moreMsg.link.label}</a></>}
+          {moreMsg.save && <div style={{ marginTop: 6 }}><button type="button" style={paneBtn} disabled={saving} data-testid="email-more-save-then" onClick={() => saveThen(moreMsg.save)}>
+            {moreMsg.save === "ai" ? "Save and draft" : "Save and start the campaign"}</button></div>}
+        </div>}
         {ai && (
           <div style={{ marginTop: 8 }} data-testid="ai-proposals">
             <input style={paneInput} value={aiAsk} onChange={e => setAiAsk(e.target.value)} placeholder="Warmer, shorter, mention the spring garden..." aria-label="Anything to ask for" />
