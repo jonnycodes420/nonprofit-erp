@@ -90,7 +90,7 @@ export const ENTITIES = {
       campaign:        { label: "Appeal", sql: "NULLIF(g.campaign,'')", type: "text" },
       type:            { label: "Gift type", sql: "g.type", type: "text" },
       payment_method:  { label: "Payment method", sql: "g.payment_method", type: "text" },
-      acknowledged:    { label: "Thanked", sql: numbersThanks.THANKED("g"), type: "bool" },   // THANKS-1: the one thank-you rule
+      acknowledged:    { label: "Thanked", sql: numbersThanks.THANKED_OR_AWAITING("g"), type: "bool" },   // THANKS-1: the one thank-you rule; NUMBERS-8: No = Home's not yet thanked, a refund is neither
       acknowledged_via:{ label: "Thanked how", sql: "g.acknowledged_via", type: "text" },
       tribute:         { label: "Tribute", sql: "g.tribute_name", type: "text" },
       donor_stage:     { label: "Donor stage", sql: "d.stage", type: "text" },

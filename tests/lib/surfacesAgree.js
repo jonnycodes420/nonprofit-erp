@@ -1278,6 +1278,8 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   if (!skipSet.has("funds")) await require("./ledger3Checks").ledger3Checks({ get, agree, skip });
   // ── DEFINE-1 · each registry population two surfaces count agrees; an ended campaign never reads a pace (tests/lib/define1Checks.js) ──
   if (!skipSet.has("define1")) await require("./define1Checks").define1Checks({ orgId, get, q, agree, diffs, skip });
+  // ── NUMBERS-8 · a fund's card = its dialog; Gives through = the organisation's row (tests/lib/numbers8Checks.js) ──
+  if (!skipSet.has("numbers8")) await require("./numbers8Checks").numbers8Checks({ orgId, get, q, agree, skip });
 
   // TRUTH-1: a disagreement logged in docs/defects.md (tests/lib/knownDefects.js),
   // at exactly the value its defect predicts, is still found and still printed,

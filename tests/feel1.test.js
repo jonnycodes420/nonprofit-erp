@@ -101,9 +101,11 @@ async function reset() {
   // ── §2d · FUND TOTALS READ THROUGH STALE-1'S ANNOUNCEMENT ───────────────
   {
     const fin = read("client/src/components/Finance.jsx");
-    const cards = fin.slice(fin.indexOf("function FinFundCards"));
+    // NUMBERS-8: the fund cards moved to their own module, finance/FundCards.jsx
+    const cardsFile = read("client/src/components/finance/FundCards.jsx");
+    const cards = cardsFile.slice(cardsFile.indexOf("function FinFundCards"));
     ok("§2d the fund cards and Finance's totals re-read on a gift, pledge or fund change, never left on \"Updating\"",
-       /useChanged\(\["gift", "pledge", "fund", "totals"\]/.test(cards.slice(0, 1500)) && (fin.match(/useChanged\(\["gift", "pledge", "fund", "totals"\]/g) || []).length === 2);
+       /useChanged\(\["gift", "pledge", "fund", "totals"\]/.test(cards.slice(0, 1500)) && (fin.match(/useChanged\(\["gift", "pledge", "fund", "totals"\]/g) || []).length === 1);
   }
 
   // ── §2e · ONE SHIFT, ONE COUNT ──────────────────────────────────────────

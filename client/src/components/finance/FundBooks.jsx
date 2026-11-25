@@ -37,6 +37,7 @@ export function FundBooksLines({ f, defs = {} }) {
       )}
       <div style={{ fontSize:12.5, color:T.ink2, marginTop:6 }}>Balance (books)</div>
       <div data-testid="fund-balance" style={{ fontSize:26, fontWeight:800, color:T.ink, fontFamily:"'DM Serif Display',serif", lineHeight:1.15 }}>{fmtFull(f.balance)}</div>
+      {f.balanceWords && <div data-testid="fund-balance-words" style={{ fontSize:12, color:T.ink3, marginTop:2 }}>{f.balanceWords}</div>}
       {f.waiting && f.waiting.cents !== 0 && (
         <div data-testid="fund-waiting" style={{ fontSize:12.5, color:T.ink2, marginTop:4 }}>
           <Hold><Figure variant="inline" kind="money" value={f.waiting.amount} label={`${f.name}, waiting to post`} definition={defs.waiting} source={f.waiting.source}/></Hold>
