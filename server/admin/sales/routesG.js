@@ -2,8 +2,11 @@
 //
 // PUBLIC (the website's one action):
 //   GET    /public/book/partner/:code     { name } for "Recommended by <name>"; 404 for an unknown code
-//   POST   /public/book                   the form (rate-limited, honeypot "website"); the slots are the
-//                                         booking tool's own, on the page
+//   GET    /public/book/times             BOOK-1: the next five weekdays and the intro call's open times
+//                                         (calendlyTimes.js), or { source: "embed" } with no token
+//   POST   /public/book                   the form (rate-limited, honeypot "website") with her chosen time
+//                                         (`slot`): the deal lands first, then Calendly books it or its
+//                                         own page opens that time, prefilled, for her last click
 // Behind the /ops door (super-admins only):
 //   GET    /ops/sales/partner-codes       every code, its name, market and bookings so far
 //   POST   /ops/sales/partner-codes       { code, name, market }
@@ -13,12 +16,15 @@
 "use strict";
 const { rateLimit } = require("../../../rateLimitStore");
 const BOOK = require("./booking");
+const TIMES = require("./calendlyTimes");
 
 const bookLimiter = rateLimit("salesBookLimiter", {
   windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false,
   skip: () => process.env.TEST_MODE === "1" || process.env.DISABLE_RATE_LIMIT === "1",
 });
 const SENT = "Thank you. Now pick a time below; the calendar sends you the invitation.";
+const BOOKED = "You're booked. You'll get a calendar invite and a reminder. Nothing else.";
+const OPEN = "One last click: confirm the time on the calendar. You'll get a calendar invite and a reminder. Nothing else.";
 
 function mount(app, { query, run, wrap, door, salesLimiter, whoOf, send }) {
   const ctx = { query, run };
@@ -29,10 +35,24 @@ function mount(app, { query, run, wrap, door, salesLimiter, whoOf, send }) {
     if (!p) return res.status(404).json({ error: "not_found" });
     res.json({ ok: true, name: p.name });
   }));
+  // A read of Calendly's open times; no limiter beyond the cache (each answer is kept for a minute).
+  app.get("/public/book/times", wrap(async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.json(await TIMES.times());
+  }));
   app.post("/public/book", bookLimiter, wrap(async (req, res) => {
     const r = await withAmbientTransaction(() => BOOK.submit(ctx, req.body || {}, { ip: req.ip }));
     if (r.error) return res.status(r.error === "too_large" ? 413 : 400).json({ error: r.error, field: r.field, message: r.message });
     if (req.audit && r.id) req.audit.label(`booking from the website${r.partner ? ` (recommended by ${r.partner})` : ""}`);
+    // BOOK-1: her chosen time. The deal is already in; Calendly books the time (and sends the invite),
+    // or its own page opens that time, prefilled, for her last click.
+    const b = req.body || {};
+    if (!r.honeypot && b.slot) {
+      const t = await TIMES.book({ start: String(b.slot), name: String(b.name || "").trim(), email: String(b.email || "").trim().toLowerCase() });
+      if (t.booked) return res.status(201).json({ ok: true, booked: true, message: BOOKED });
+      if (t.open) return res.status(201).json({ ok: true, open: t.open, message: OPEN });
+      if (t.error === "taken") return res.status(409).json({ error: "taken", message: t.message });
+    }
     res.status(201).json({ ok: true, message: SENT });
   }));
 

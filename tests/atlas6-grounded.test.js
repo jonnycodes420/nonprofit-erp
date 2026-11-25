@@ -283,7 +283,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ml10 = (more10.lines || []).map(l => l.line).join(" ");
   ok("§7 ATLAS-10 Tell me more after a brief answers about her (never \"my last answer had no rows\")", /everything Steward holds on Odile Marchetti/.test(ml10) && !/had no rows/.test(ml10), more10.lines && more10.lines.map(l => l.line));
   // A brief that held lines back (four unthanked gifts, three shown) shows them all on Tell me more.
-  for (const [i, amt] of [[3, 210], [4, 320], [5, 430]].entries()) await q(`INSERT INTO gifts (id, org_id, donor_id, amount, date, created_by, created_by_name) VALUES ($1, 'org_atl9', 'd_atl9_odile', $2, $3, 'system:test', 'atlas10 fixture') ON CONFLICT DO NOTHING`, [`g_atl10_${amt[0]}`, amt[1], `2026-10-0${i + 1}`]);
+  // Every line the same words (Rufus Tallgrass on staging: $25 gifts on the same days): four $210 gifts on one day,
+  // her $1,500 thanked, so the brief shows three identical lines and holds one back. Red on 99ccbfd (a set of lines).
+  await q(`UPDATE gifts SET thanked_at = NOW() WHERE id = 'g_atl9_2'`);
+  for (const k of [3, 4, 5, 6]) await q(`INSERT INTO gifts (id, org_id, donor_id, amount, date, created_by, created_by_name) VALUES ($1, 'org_atl9', 'd_atl9_odile', 210, '2026-10-01', 'system:test', 'atlas10 fixture') ON CONFLICT DO NOTHING`, [`g_atl10_${k}`]);
   const r10b = await ask10("Brief me on Odile Marchetti");
   const more10b = await ask10("Tell me more", r10b.id);
   const pm10 = (more10b.lines || []).find(l => l.answer && l.answer.type === "person");

@@ -191,7 +191,11 @@ function judgePair(a, b, { near = null, shared = null } = {}) {
   // ATLAS-10 item 6 (W-1124, "Osric Ravensmere appears twice in the Lapsing list with different emails"):
   // the same full name, two different emails, and both giving in the same stretch of years is one
   // person entered twice far more often than two people, so it is offered, and says why.
-  if (rel === "same" && !sameEmail && givingOverlaps(a, b)) meet("medium", "same name, different emails, both giving in the same years");
+  // Low, and only in one state: a common name in one region is often two people (a 1,000-donor real-shaped
+  // file has three William Hills), so it is said for a person to check and ranks after every stronger pair.
+  const stateOf = p => String(p.state || "").trim().toUpperCase();
+  const sameState = !stateOf(a) || !stateOf(b) || stateOf(a) === stateOf(b);
+  if (rel === "same" && !sameEmail && sameState && givingOverlaps(a, b)) meet("low", "same name, different emails, both giving in the same years: check before merging");
   // HOTFIX-RHYTHM: a name alone is a pair only when nothing says two people:
   // "Mary Wilson" and "Mark Wilson" at two addresses, with two emails, are two.
   if (!confidence && nd && rel && !RV.contradicts(a, b, { shared, addressKey })) meet("low", `name only: ${nd.sentence}; no address, phone or email in common`);

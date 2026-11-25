@@ -32,18 +32,40 @@ export function slotsUrl({ name, email }, host) {
   return u.toString();
 }
 
-export function SlotPicker({ name, email, onBooked }) {
-  // The provider says when a time was picked; the page only thanks her. Nothing is written from it.
+// The provider says when a time was booked; the page only thanks her. Nothing is written from it.
+function useBooked(onBooked) {
   useEffect(() => {
     const on = e => { if (e.origin === BOOKING.origin && e.data && e.data.event === "calendly.event_scheduled" && onBooked) onBooked(); };
     window.addEventListener("message", on);
     return () => window.removeEventListener("message", on);
   }, [onBooked]);
-  const src = slotsUrl({ name, email }, typeof window !== "undefined" ? window.location.host : "");
+}
+
+function Frame({ src, title }) {
   return (
     <div className="slots" data-slot-picker={BOOKING.provider}>
-      <iframe title="Pick a time for the call" src={src} style={{ width: "100%", minHeight: 700, border: 0, borderRadius: 10, background: "var(--white)" }} />
-      <p className="srcnote" style={{ marginTop: 10 }}>Times not loading? <a href={src} target="_blank" rel="noreferrer">Open the calendar in a new tab</a>, or email jonathan@stewardapp.dev.</p>
+      <iframe title={title} src={src} style={{ width: "100%", minHeight: 640, border: 0, borderRadius: 10, background: "var(--white)" }} />
+      <p className="srcnote" style={{ marginTop: 10 }}>Calendar not loading? <a href={src} target="_blank" rel="noreferrer">Open it in a new tab</a>, or email jonathan@stewardapp.dev.</p>
     </div>
   );
+}
+
+// The provider's whole calendar, for when the card has no times of its own to show.
+export function SlotPicker({ name, email, onBooked }) {
+  useBooked(onBooked);
+  return <Frame title="Pick a time for the call" src={slotsUrl({ name, email }, typeof window !== "undefined" ? window.location.host : "")} />;
+}
+
+// BOOK-1: one time she picked on the card, on the provider's own page with her name and email
+// filled in (the server builds the address from the provider's own link for that time), for the
+// last click. Only the provider's own origin is ever framed.
+export function SlotFrame({ src, onBooked }) {
+  useBooked(onBooked);
+  let u = null;
+  try { u = new URL(src); } catch { u = null; }
+  if (!u || u.origin !== BOOKING.origin) return <p className="srcnote">Email jonathan@stewardapp.dev and he will confirm your time.</p>;
+  u.searchParams.set("embed_type", "Inline");
+  if (typeof window !== "undefined") u.searchParams.set("embed_domain", window.location.host);
+  u.searchParams.set("hide_gdpr_banner", "1");
+  return <Frame title="Confirm your time" src={u.toString()} />;
 }
