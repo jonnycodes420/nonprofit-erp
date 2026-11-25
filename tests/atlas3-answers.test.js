@@ -133,7 +133,7 @@ const mock = http.createServer((req, res) => {
   console.log("\n§2 Open list opens the same set, three times out of three");
   const id1 = lineOf(r1).id;
   const opens = [];
-  for (let i = 0; i < 3; i++) opens.push(await api("POST", `/atlas/actions/${id1}/list`, tok, {}));
+  for (let i = 0; i < 3; i++) opens.push(await api("POST", `/atlas/actions/${id1}/group`, tok, {}));   // SENDS-3: Save as group (Open list makes nothing)
   const gids = opens.map(o => o.body && o.body.groupId);
   ok("§2 three clicks, one group", opens.every(o => o.status < 300) && !!gids[0] && gids.every(g => g === gids[0]), opens.map(o => [o.status, o.body]));
   const members = gids[0] ? (await q(`SELECT donor_id FROM group_members WHERE org_id=$1 AND group_id=$2 ORDER BY donor_id`, [F.ORG, gids[0]])).map(r => r.donor_id) : [];

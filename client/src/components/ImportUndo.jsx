@@ -33,6 +33,8 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
   const [removing, setRemoving] = useState("");
   // INTEGRITY-2: her choice for the people with activity since, made in the confirm
   const [alsoMove, setAlsoMove] = useState(false);
+  // SENDS-3 item 5: the receipts question for "Remove them too", asked once for the batch
+  const [receiptAsk, setReceiptAsk] = useState(null);
   const live = useRef(true);
 
   const finish = r => {
@@ -41,14 +43,21 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
     setStep("done"); if (onUndone) onUndone(r);
     told({ import: importId });   // STALE-1: an undo that finished on the queue is a change every screen hears
   };
-  const removeStayed = async () => {
+  const removeStayed = async (voidReceipts = false) => {
     // INTEGRITY-2: only the people this import created or restored; a record that was here first never moves
     const ids = (stayed.people || []).filter(p => p.movable !== false).map(p => p.id);
     setRemoving("working"); setErr("");
     try {
-      await apiFetch("/donors/bulk-delete", { method: "POST", body: JSON.stringify({ ids, count: ids.length, importId }) });
-      setRemoving(`${ids.length.toLocaleString("en-US")} ${ids.length === 1 ? "person" : "people"} removed too, with what was added to them since. They are in the trash for 30 days.`);
-    } catch (e) { setRemoving(""); setErr(e?.body?.sentence || errorMessage(e, "They were not removed. Nothing was changed.")); }
+      const r = await apiFetch("/donors/bulk-delete", { method: "POST", body: JSON.stringify({ ids, count: ids.length, importId, ...(voidReceipts ? { voidReceipts: true } : {}) }) });
+      setReceiptAsk(null);
+      const v = Number(r && r.voidedReceipts) || 0;
+      setRemoving(`${ids.length.toLocaleString("en-US")} ${ids.length === 1 ? "person" : "people"} removed too, with what was added to them since. They are in the trash for 30 days.${v ? ` ${v.toLocaleString("en-US")} ${v === 1 ? "receipt was" : "receipts were"} voided.` : ""}`);
+    } catch (e) {
+      setRemoving("");
+      // SENDS-3 item 5: people with live receipts: the same question a person delete asks, once for them all
+      if (e?.body?.error === "receipts_live" && e.body.receiptQuestion) { setReceiptAsk(e.body.receiptQuestion); return; }
+      setErr(e?.body?.sentence || errorMessage(e, "They were not removed. Nothing was changed."));
+    }
   };
   const follow = async () => {
     setStep("following");
@@ -89,7 +98,8 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
   const undo = async () => {
     setStep("undoing"); setErr("");
     try {
-      const r = await apiFetch(`/imports/${encodeURIComponent(importId)}/reverse`, { method: "POST", body: JSON.stringify({ alsoMove }) });
+      const voidReceipts = !!(alsoMove && preview && preview.moveReceipts && preview.moveReceipts.receipts > 0);   // SENDS-3: her yes, in the confirm
+      const r = await apiFetch(`/imports/${encodeURIComponent(importId)}/reverse`, { method: "POST", body: JSON.stringify({ alsoMove, ...(voidReceipts ? { voidReceipts: true } : {}) }) });
       if (r && r.status === "running") { setProgress(r); return follow(); }
       finish(r);
     } catch (e) {
@@ -113,7 +123,17 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
   if (step === "done") return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div data-testid="import-undo-done" style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{done}</div>
-      {stayed && stayed.people.some(p => p.movable !== false) && !/removed too/.test(removing) && (
+      {receiptAsk && (
+        <div data-testid="import-undo-receipts-ask" style={{ fontSize: 13, color: T.ink, background: T.bg, border: "1px solid " + T.bg3, borderRadius: 9, padding: "10px 12px", lineHeight: 1.5 }}>
+          <div style={{ fontWeight: 700 }}>{receiptAsk.question}</div>
+          <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>{receiptAsk.note}</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+            <button type="button" data-testid="import-undo-receipts-yes" style={btn("danger")} disabled={removing === "working"} onClick={() => removeStayed(true)}>{receiptAsk.yes}</button>
+            <button type="button" style={btn(null)} onClick={() => setReceiptAsk(null)}>Keep them</button>
+          </div>
+        </div>
+      )}
+      {stayed && !receiptAsk && stayed.people.some(p => p.movable !== false) && !/removed too/.test(removing) && (
         <div data-testid="import-undo-stayed" style={{ fontSize: 13, color: T.ink }}>
           <button type="button" data-testid="import-undo-remove-stayed" style={btn(null)} disabled={removing === "working"} onClick={removeStayed}>
             {removing === "working" ? "Removing…" : (k => `Remove ${k === 1 ? "them" : `these ${k.toLocaleString("en-US")}`} too`)(stayed.people.filter(p => p.movable !== false).length)}
@@ -157,6 +177,12 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
                   <label><input type="radio" name={`undo-also-${importId}`} data-testid="import-undo-move-active" checked={alsoMove} onChange={() => setAlsoMove(true)} /> Move them to the trash too (Restore brings them back for 30 days)</label>
                 </div>
               )}
+              {alsoMove && preview.moveReceipts && preview.moveReceipts.receiptQuestion && (
+                <div data-testid="import-undo-move-receipts" style={{ marginTop: 8 }}>
+                  <div style={{ fontWeight: 700 }}>{preview.moveReceipts.receiptQuestion.question}</div>
+                  <div style={{ fontSize: 12, color: T.ink3 }}>{preview.moveReceipts.receiptQuestion.note} Choose Keep them to leave these people and their receipts as they are.</div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -170,7 +196,8 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
         )}
         {(step === "confirm" || step === "undoing") && preview && preview.canUndo && (
           <button type="button" data-commit data-testid="import-undo-yes" style={btn("danger")} disabled={step === "undoing"} onClick={undo}>
-            {step === "undoing" ? "Undoing…" : "Yes, undo it"}
+            {step === "undoing" ? "Undoing…" : alsoMove && preview.moveReceipts && preview.moveReceipts.receipts > 0
+              ? `Void ${preview.moveReceipts.receipts === 1 ? "the receipt" : `${preview.moveReceipts.receipts.toLocaleString("en-US")} receipts`} and undo it` : "Yes, undo it"}
           </button>
         )}
         {step === "confirm" && <button type="button" style={btn(null)} onClick={() => setStep("idle")}>Keep it</button>}

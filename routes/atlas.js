@@ -1017,17 +1017,34 @@ app.get("/atlas/progress/:key", requireAuth, wrap(async (req, res) => {
   res.json({ progress: await PG.getShared(req.user.orgId, req.user.userId, req.params.key) });   // SCALE-3: any replica's line
 }));
 
-// ATLAS-3 · OPEN LIST: the same people, every time. The first click keeps
-// this answer's people as a group (POST /groups and its members route, so the
-// actor stamp and the audit row are theirs); every click after opens it.
-app.post("/atlas/actions/:id/list", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const orgId = req.user.orgId;
-  const a = await actionRow(orgId, req.params.id);
-  if (!a || !a.request_id) return res.status(404).json({ error: "Not found" });
+// SENDS-3 item 4 · OPEN LIST SHOWS THE PEOPLE AND MAKES NOTHING. "Atlas
+// \"Open list\" created a 424-person group as a side effect." Open list is now
+// the People list filtered to this answer's saved ids (groups.js `fromAtlas`);
+// this read gives that list's heading. A group is made only by SAVE AS GROUP,
+// the POST below, which she presses on its own.
+async function listAnswerOf(orgId, actionId) {
+  const a = await actionRow(orgId, actionId);
+  if (!a || !a.request_id) return { a: null, ans: null };
   const [m] = await query("SELECT read FROM voice_memos WHERE id=? AND org_id=?", [a.request_id, orgId]);
-  const read = j(m && m.read) || {};
-  const ans = (read.answers || {})[a.id];
-  if (!ans || !["list", "why"].includes(ans.type) || !Array.isArray(ans.ids) || !ans.ids.length) return res.status(409).json({ error: "no_list", sentence: "That answer has no list of people to open." });
+  const ans = ((j(m && m.read) || {}).answers || {})[a.id];
+  return { a, ans: ans && ["list", "why"].includes(ans.type) && Array.isArray(ans.ids) && ans.ids.length ? ans : null };
+}
+app.get("/atlas/actions/:id/list", requireAuth, wrap(async (req, res) => {
+  const { a, ans } = await listAnswerOf(req.user.orgId, req.params.id);
+  if (!a) return res.status(404).json({ error: "Not found" });
+  if (!ans) return res.status(409).json({ error: "no_list", sentence: "That answer has no list of people to open." });
+  const [g] = ans.groupId ? await query("SELECT id, name FROM audiences WHERE id=? AND org_id=?", [ans.groupId, req.user.orgId]) : [];
+  res.json({ question: String(ans.question || ""), count: ans.ids.length, group: g ? { id: g.id, name: g.name } : null });
+}));
+
+// ATLAS-3 · SAVE AS GROUP: the same people, every time. The first press keeps
+// this answer's people as a group (POST /groups and its members route, so the
+// actor stamp and the audit row are theirs); every press after opens it.
+app.post("/atlas/actions/:id/group", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const { a, ans } = await listAnswerOf(orgId, req.params.id);
+  if (!a) return res.status(404).json({ error: "Not found" });
+  if (!ans) return res.status(409).json({ error: "no_list", sentence: "That answer has no list of people to save." });
   if (ans.groupId) {
     const [g] = await query("SELECT id, name FROM audiences WHERE id=? AND org_id=?", [ans.groupId, orgId]);
     if (g) return res.json({ groupId: g.id, name: g.name, count: ans.ids.length, made: false });
