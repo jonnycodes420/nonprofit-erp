@@ -42,7 +42,7 @@ const SILENT = [
   /^(notification_|digest_sends|board_pack_|mail_|mailbox_|email_suppressions|email_marketing_|gmail_|bookkeeping_connections|bookkeeping_customers|gift_bookkeeping_syncs|calendar_pushes|send_confirms|invite_sends|grant_sends|webhook_deliveries|billing_webhook_events|platform_payments|sample_data_audit|asset_|media_items|portal_assets|pos_item_mappings|public_filings|ncoa_batches|network_applications|donor_org_follows|donor_account_links|agent_instructions|agent_runs|agent_writes|atlas_actions|workflow_runs|workflow_conversions|touch_batches|support_)/,
   /^(audiences_seen|journey_start_skips|journey_sends|sequence_sends|privacy_requests|setup_invites|grant_library|grant_library_versions|portfolio_lists)$/,
   // BUILDER-3: who has an email open (a heartbeat), its comments, mentions and review links; the editor re-reads them itself.
-  /^(email_editor_presence|email_comments|email_comment_mentions|email_review_links)$/,
+  /^email_(editor_presence|comments|comment_mentions|review_links)$/,
 ];
 
 // The topics a write to `table` reaches: [] for a silent table, ["other"] for

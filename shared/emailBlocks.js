@@ -563,8 +563,7 @@ ${has(w.title) ? `<div class="st-muted" style="font-family:${fonts.sans};font-si
 body{margin:0;padding:0;}
 table{border-collapse:collapse;}
 img{-ms-interpolation-mode:bicubic;}
-.st-card a:not([style*="color"]){color:${linkColor};}
-${PHONE_MEDIA}{
+${B.emailStyle ? `.st-card a:not([style*="color"]){color:${linkColor};}\n` : ""}${PHONE_MEDIA}{
 .st-wrap{width:100% !important;}
 .st-col{display:block !important;width:100% !important;padding:0 0 12px 0 !important;}
 .st-img{width:100% !important;height:auto !important;}

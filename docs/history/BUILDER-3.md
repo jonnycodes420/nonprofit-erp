@@ -53,7 +53,7 @@ most blocks had no id.
   - It is stored on `portal_settings.email_style` (an admin's) and read at render time (`shared/emailStyle.js`
     `styleForRender`), so every email shows it on its next open or send. No saved block is rewritten, and a block
     with its own size keeps it.
-  - With no house style set, an email renders exactly as before, apart from one link-colour rule in its head.
+  - With no house style set, an email renders byte for byte as before (builder2a §3 holds every starter to main).
   - Dark preview was already in the bar (BUILDER-2B); it is labelled "Dark" now, beside Desktop and Phone.
 - **The bar.** To keep to one line at 1440, History and the Comments list moved into a More menu (Escape or a click
   outside closes it), and Undo and Redo moved to the right of the path line.
