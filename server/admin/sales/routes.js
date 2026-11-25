@@ -362,6 +362,8 @@ function mount(app, { query, run, wrap, opsOnly, billing }) {
   require("./routesE").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
   // SALES-4 Part B: Add prospects from ProPublica (or a CSV of its results).
   require("./routesF").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
+  // ONBOARD-4: the booking page (public) and partner codes.
+  require("./routesG").mount(app, { query, run, wrap, door, salesLimiter, whoOf, send });
 }
 
 module.exports = { mount, settings };

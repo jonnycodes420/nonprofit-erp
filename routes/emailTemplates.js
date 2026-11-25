@@ -11,6 +11,7 @@
 //   POST /email-templates/:id/preview      {device, dark} -> {html, problems}, the org's live brand, sample fields
 //   POST /email-templates/:id/test         send me a test: to the caller only, through the campaign test's gates
 //   POST /email-templates/:id/draft-ai     {instructions?} -> proposed words, never saved by itself
+//   POST /email-export                     {blocks, subject, as?} -> the email as HTML, a sample unsubscribe line (BUILDER-2A)
 //   GET  /watch/:orgSlug/:provider/:videoId  the public "Steward video page" an email's video links to
 //
 // THE RULES IT KEEPS. Steward prepares and a person sends: nothing here mails a
@@ -68,7 +69,7 @@ function videoPageUrl(orgSlug, provider, videoId) {
 async function buildEmailContext(orgId) {
   await READY;
   const { query, resolveOrgBrandTheme, portalCardTheme } = C;
-  const [org] = await query(`SELECT o.id, o.name, o.org_slug, o.website, ps.primary_color, ps.accent_color, ps.button_color, ps.type_pairing
+  const [org] = await query(`SELECT o.id, o.name, o.org_slug, o.website, ps.primary_color, ps.accent_color, ps.button_color, ps.type_pairing, ps.social_links
                                 FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.id=?`, [orgId]);
   const theme = await resolveOrgBrandTheme(orgId).catch(() => null) || {};
   const card = portalCardTheme(org || {});
@@ -82,6 +83,7 @@ async function buildEmailContext(orgId) {
     // only an asset URL rides as the header's src. Without one the header is the name.
     logoUrl: theme.logoAbsUrl || null,
     displayName: theme.displayName || (org && org.name) || "",
+    socialLinks: (org && org.social_links) || {},   // BUILDER-2A: the Social block reads Brand's links
   };
   const events = await query(
     `SELECT id, name, date, public_slug FROM events WHERE org_id=? ORDER BY date DESC NULLS LAST LIMIT 500`, [orgId]);
@@ -236,7 +238,7 @@ app.get("/email-templates", requireAuth, wrap(async (req, res) => {
     templates: rows.map(shape),
     starters: LIB.EMAIL_STARTERS.filter(s => !saved.has(s.key)).map(starterShape),
     mergeFields: EB.EMAIL_MERGE_FIELDS.map(f => ({ token: f.token, label: f.label })),
-    blockTypes: PW.widgetsForSurface("email").map(w => ({ key: w.key, label: w.label, hint: w.hint, defaults: w.defaults })),
+    blockTypes: PW.widgetsForSurface("email").filter(w => w.menu !== false).map(w => ({ key: w.key, label: w.label, hint: w.hint, defaults: w.defaults, ...(w.roles ? { roles: w.roles } : {}) })),   // BUILDER-2A: menu, roles
   });
 }));
 
@@ -487,7 +489,19 @@ async function previewHtml(req, row, { as = null, editable = false, audienceNoGi
   const noAddress = personKind && !String(fields.org_address || "").trim() && /\{\{\s*org_address\s*\}\}/.test(JSON.stringify(row.blocks || []))
     ? ["Your mailing address is not on file yet, so it is left out here. Add it in Settings, Tax Receipts, and it prints under the signature."] : [];
   return { html, problems: [...r.problems, ...lint.filter(p => !r.problems.includes(p)), ...noAddress], person, fields, ectx, shownAs,
-    subject: EB.renderSubject(row.subject || "", fields, personKind ? personFieldDefs() : null) };
+    subject: EB.renderSubject(row.subject || "", fields, personKind ? personFieldDefs() : null),
+    fieldInfo: fieldInfoOf(fields, personKind ? personFieldDefs() : EB.EMAIL_MERGE_FIELDS), brand: brandSwatches(ectx.brand) };
+}
+// BUILDER-1: each field this email can use, with what it holds for the person
+// previewed ("" when it is empty for them) and what the email says instead.
+// The Fields tab shows them ("First name · Natalie"). Reading only.
+function fieldInfoOf(fields, defs) {
+  return defs.map(f => ({ key: f.key, value: fields[f.key] == null ? "" : String(fields[f.key]).slice(0, 200), fallback: String(f.fallback || "") }));
+}
+// The brand's own colours, for the Style tab's swatches (button, band, accent).
+function brandSwatches(b) {
+  const hex = v => (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null);
+  return { band: hex(b && b.band), bandFg: hex(b && b.bandFg), accent: hex(b && b.accent), button: hex(b && b.buttonColor) };
 }
 // The donor a preview shows when nobody is chosen: the newest giver, else any donor.
 async function defaultPreviewDonorId(orgId) {
@@ -530,10 +544,9 @@ app.post("/email-templates/:id/preview", requireAuth, wrap(async (req, res) => {
   if (b.subject != null) draft.subject = clip(b.subject, 200);
   if (b.preheader != null) draft.preheader = clip(b.preheader, 200);
   const p = await previewHtml(req, draft, { as: b.as || null, editable: b.editable === true });
-  let html = p.html;
-  if (b.dark === true) html = html.split(EB.DARK_MEDIA).join("@media all");
+  const html = EB.previewScheme(p.html, b.dark === true);   // BUILDER-2B: light unless Dark mode is pressed
   res.json({ html, problems: p.problems, device: b.device === "phone" ? "phone" : "desktop", width: b.device === "phone" ? 375 : 600,
-    as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject, pastGiving: await pastGivingOf(draft.blocks, p) });
+    as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject, pastGiving: await pastGivingOf(draft.blocks, p), fieldInfo: p.fieldInfo, brand: p.brand });
 }));
 
 // EDITOR-1 · A CAMPAIGN'S EMAIL, PREVIEWED AS IT IS TYPED. The same render as
@@ -547,16 +560,44 @@ app.post("/email-preview", requireAuth, wrap(async (req, res) => {
   const row = { blocks: v.blocks, subject: clip(b.subject || "", 200), preheader: clip(b.preheader || "", 200), starter_key: null };
   const p = await previewHtml(req, row, { as: b.as || null, editable: b.editable === true, audienceNoGift: b.audienceNoGift === true });
   if (b.campaignName) p.fields.campaign = clip(b.campaignName, 120);
-  let html = p.html;
-  if (b.dark === true) html = html.split(EB.DARK_MEDIA).join("@media all");
+  const html = EB.previewScheme(p.html, b.dark === true);   // BUILDER-2B: light unless Dark mode is pressed
   const pastGiving = await pastGivingOf(row.blocks, p);
   // FLOWS-15 item 1: previewed as a never-giver this letter leaves out, the answer is that, not the letter.
   if (pastGiving.shownNeverGave && b.campaign === true) {
     const PG = await import("../shared/pastGiving.js");
     if (PG.neverGiverOutcome({ blocks: row.blocks, includeNeverGiven: b.includeNeverGiven === true }) === "left_out")
-      return res.json({ html: "", problems: p.problems, as: p.shownAs, subject: p.subject, pastGiving, notSent: PG.notSentSentence(String(p.shownAs.name || "").split(/\s+/)[0]) });
+      return res.json({ html: "", problems: p.problems, as: p.shownAs, subject: p.subject, pastGiving, notSent: PG.notSentSentence(String(p.shownAs.name || "").split(/\s+/)[0]), fieldInfo: fieldInfoOf(p.fields, EB.EMAIL_MERGE_FIELDS), brand: p.brand });
   }
-  res.json({ html, problems: p.problems, as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject, pastGiving });
+  res.json({ html, problems: p.problems, as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject, pastGiving, fieldInfo: fieldInfoOf(p.fields, EB.EMAIL_MERGE_FIELDS), brand: p.brand });
+}));
+
+// BUILDER-2A item 5 · EXPORT. The email as one HTML file, for a chosen person
+// (`as`, a person of this org) or with sample values, the footer slot filled
+// with a sample unsubscribe line (a real send fills it with the person's own).
+// Reading only: nothing is saved or sent, and problems come back beside it.
+app.post("/email-export", requireAuth, wrap(async (req, res) => {
+  await READY;
+  const orgId = req.user.orgId;
+  const b = req.body || {};
+  const v = EB.validateEmailBlocks(b.blocks || [], PW.typesForSurface("email"));
+  if (!v.ok) return res.status(400).json({ error: "invalid_blocks", sentence: v.error });
+  const ectx = await buildEmailContext(orgId);
+  let fields = Object.fromEntries(EB.EMAIL_MERGE_FIELDS.map(f => [f.key, f.sample]));
+  fields = { ...fields, greeting: fields.first_name, org_name: ectx.orgName || fields.org_name, give_link: ectx.giveLink || fields.give_link };
+  let shownAs = null;
+  if (b.as) {
+    const [d] = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [String(b.as), orgId]);
+    if (!d) return res.status(404).json({ error: "not_found", sentence: "That person is not in your records." });
+    shownAs = { id: d.id, name: d.name };
+    fields = { ...fields, ...(await donorFields(orgId, d, ectx)) };
+  }
+  const subject = clip(b.subject || "", 200), preheader = clip(b.preheader || "", 200);
+  const r = EB.renderEmail({ blocks: v.blocks, brand: ectx.brand, fields, links: ectx.links, subject, preheader, mode: "preview" });
+  const org = String(ectx.orgName || "us").replace(/[<>&"]/g, "");
+  const footer = `You are receiving this email from ${org}. <a href="#unsubscribe" target="_blank" style="color:#6b6b64;text-decoration:underline;">Unsubscribe</a>`;
+  const html = r.html.replace(EB.FOOTER_SLOT, footer);
+  res.json({ html, text: r.text, problems: r.problems, subject: EB.renderSubject(subject, fields), as: shownAs,
+    fileName: `${(clip(b.name || subject || "email", 60).replace(/[^A-Za-z0-9 _-]+/g, "").trim() || "email").replace(/\s+/g, "-").toLowerCase()}.html` });
 }));
 // FLOWS-12 item 1 (W-1114-Fundraising-17): which blocks thank the reader for
 // giving, whether each has a first-gift version, and whether the person shown
@@ -614,11 +655,13 @@ app.post("/email-templates/:id/test", requireAuth, checkWriteAccess, wrap(async 
         _stewardOrgId: orgId, _stewardKind: "campaign_test",
         html: p.html,
       });
-      if (error) throw new Error(error.message);
+      if (error) throw Object.assign(new Error(error.message), { name: error.name });
       delivered = true;
     } catch (e) {
       console.error("[email-template] test send failed:", e.message);
-      return res.status(502).json({ error: "send_failed", message: "The test could not be sent just now. Nothing about the template changed." });
+      // SENDS-3 item 2: a refusal is 409 with its words; only the provider is a 502 (with words too).
+      const w = require("../server/mail/testSendWords").afterError(e, "template");
+      return res.status(w.status).json({ ...w.body, message: w.body.message || w.body.sentence });
     }
   }
   res.json({ sent: delivered, to, from: identity.from, problems: p.problems, counted: false,

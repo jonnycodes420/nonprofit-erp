@@ -58,6 +58,8 @@ export const DONOR_LIST_KEYS = [
   ["warmUnasked", "warm"],
   // IMPORT-6: Everyone, Donors or Contacts, and the people one import brought in.
   ["people", "people"], ["fromImport", "import"],
+  // SENDS-3 item 4: the people one Atlas answer found (its Open list).
+  ["fromAtlas", "atlas"],
   // LIST-2: every filter she set is in the address, so a reload and Back keep
   // it: the tag or closeness choice, the sort's direction, and the chips (the
   // `where` JSON the server runs).
@@ -118,7 +120,7 @@ export function tabHref(tab, opts) {
     if (o.selectDonorId) return donorHref(o.selectDonorId)
       + (o.openConversation ? "?conversation=1" : o.openCompose ? "?compose=1" : o.openBrief ? "?brief=1" : "")
       + (o.anchor ? "#" + encodeURIComponent(o.anchor) : "");
-    return donorsListHref({ view: o.view, stage: o.stageFilter });
+    return donorsListHref({ view: o.view, stage: o.stageFilter, people: o.people, fromAtlas: o.fromAtlas });
   }
   const qs = new URLSearchParams();
   for (const [k, q] of QUERY_KEYS) if (o[k] != null && o[k] !== "") qs.set(q, String(o[k]));

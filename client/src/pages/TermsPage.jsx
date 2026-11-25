@@ -1,8 +1,6 @@
 import { Link } from "react-router-dom";
 import { LEGAL_ENTITY_NAME, LEGAL_ENTITY_STATE, LEGAL_ENTITY_ADDRESS_LINE } from "../../../shared/legalEntity";
-import PRICING from "../../../pricing.json";   // PRICING-1: the band table is the price list, not a copy of it
 
-const usd = n => "$" + Number(n).toLocaleString("en-US");
 
 // FIX-2 C — this surface's colours, named once (it keeps its own palette;
 // see tests/fix2-c-hex.test.js for why a public surface does).
@@ -103,18 +101,9 @@ export default function TermsPage() {
 
         <h2 style={S.h2}>4. Payment and Billing</h2>
         <p style={S.p}><strong>One Plan.</strong> There is one plan, and everything is included: the CRM, Fundraising, Volunteers and the Agent. There is no per-user charge, no platform fee on gifts, and no contract; it is month to month.</p>
-        <p style={S.p}><strong>Price by Records.</strong> Your price is set by your records. A record is a person or organization with at least one gift in Steward. Prospects, volunteers and contacts with no gift never count. Prices are in USD. Paying yearly is ten times the monthly price, so two months are free.</p>
-        <div style={S.tableWrap}><table style={S.table} data-testid="terms-bands">
-          <thead><tr><th style={S.th}>Records</th><th style={S.th}>Monthly</th><th style={S.th}>Yearly</th><th style={S.th}>One-time setup</th></tr></thead>
-          <tbody>
-            {PRICING.tiers.map(t => (
-              <tr key={t.id}><td style={S.td}>{t.band.replace(/ records$/, "")}</td><td style={S.td}>{usd(t.monthlyUsd)}</td><td style={S.td}>{usd(t.yearlyUsd)}</td><td style={S.td}>{usd(t.setupUsd)}</td></tr>
-            ))}
-            <tr><td style={S.td}>{PRICING.talkToUs.band.replace(/ records$/, "")}</td><td style={S.td}>Talk to us</td><td style={S.td}>Talk to us</td><td style={S.td}>{PRICING.talkToUs.setup}</td></tr>
-          </tbody>
-        </table></div>
-        <p style={S.p}><strong>Setup Fee.</strong> The one-time setup fee for your band is charged when you sign up. It covers moving your data in and setting Steward up with you. It is charged once, and it is not refunded once setup has started.</p>
-        <p style={S.p}><strong>First Charge.</strong> Your monthly or yearly price starts on the first charge date, thirty days after you sign up, shown to you at checkout and in Settings &rarr; Billing. You may cancel at any time before that date and no subscription charge is made. Nothing that happens inside those thirty days, importing your data, importing it again, or rescheduling onboarding, changes the date.</p>
+        <p style={S.p}><strong>Your Price.</strong> Your price depends on the size of your donor file. Your monthly or yearly price and the one-time setup fee are set out in the quote or order you sign with Steward, and are shown again at checkout and in Settings &rarr; Billing. Prices are in USD.</p>
+        <p style={S.p}><strong>Setup Fee.</strong> The one-time setup fee is charged when you sign. It covers moving your data in and setting Steward up with you. It is charged once, and it is not refunded once setup has started.</p>
+        <p style={S.p}><strong>First Charge.</strong> Your monthly or yearly price starts on the first charge date, thirty days after you sign, shown to you at checkout and in Settings &rarr; Billing. You may cancel at any time before that date and no subscription charge is made. Nothing that happens inside those thirty days, importing your data, importing it again, or rescheduling onboarding, changes the date.</p>
         <p style={S.p}><strong>Reminder before the first charge.</strong> Seven days before the first charge we email your account administrator the date, the amount, the last four digits of the card on file, and a link that cancels the subscription in one click.</p>
         <p style={S.p}><strong>Moving Bands.</strong> Steward counts your records each month. If you are over your band two months running, the owner of the account gets a note in the product and by email. Any change waits at least thirty days after that note and happens only if the owner agrees. Moving down to a smaller band happens at your next renewal, at the owner's request.</p>
         <p style={S.p}><strong>Earlier and Custom Prices.</strong> An organization on an earlier plan or a custom price agreed with Steward keeps that price until the end date stated for it, and is never moved to a band price automatically.</p>

@@ -365,6 +365,41 @@ async function seed() {
     const acts = await page.$$eval('.dph-actions button', bs => bs.map(b => b.innerText.trim() || b.getAttribute("aria-label") || "").filter(Boolean));
     ok("§1 the header still carries its own buttons", acts.length >= 3, acts);
 
+    // PROFILE-4 · A SHORT HEADER THAT SCROLLS AWAY, AND TABS THAT STAY WITH YOU.
+    // Jonathan, 24 Nov: "the center white box with the name needs to be smaller
+    // ... cut that white window in half ... make it so it scrolls with the rest".
+    // At 1440 the header (top of the white to the tabs) is under 200px, the rail
+    // is still there on its own RAIL.bg ground, and after the middle column
+    // scrolls 600px the tab bar is at its top with the person's name.
+    // HOW IT GOES RED ON MAIN: the header is 277px (two-row header, four tall
+    // tiles), and PROFILE-3 pinned the band, the numbers and the tabs together,
+    // so after 600px the tabs are still 277px down and no name sits beside them.
+    const railHex = ((readSource("client/src/components/shared.jsx").match(/railGreen:\s*"(#[0-9a-fA-F]{6})"/) || [])[1] || "").toLowerCase();
+    const hexRgb = h => h ? `rgb(${parseInt(h.slice(1, 3), 16)}, ${parseInt(h.slice(3, 5), 16)}, ${parseInt(h.slice(5, 7), 16)})` : null;
+    ok("§P4 the rail is still RAIL.bg (T.railGreen)", /bg:\s*T\.railGreen/.test(readSource("client/src/components/ProfileRail.jsx")) && !!railHex
+       && geom.rail && geom.railBg === hexRgb(railHex), { railBg: geom.railBg, want: hexRgb(railHex) });
+    await page.waitForSelector('[data-testid="dp-header-figures"]', { timeout: 20000 }).catch(() => {});
+    const head = await page.evaluate(() => {
+      const band = document.querySelector('[data-testid="dp-band"]'), tabs = document.querySelector('[data-testid="dp-tabs"]');
+      return band && tabs ? Math.round(tabs.getBoundingClientRect().top - band.getBoundingClientRect().top) : null;
+    });
+    ok("§P4 at 1440 the header, top of the white to the tabs, is under 200px", head !== null && head < 200, { headerPx: head });
+    const mb = await page.locator('[data-testid="dp-main-column"]').boundingBox();
+    await page.mouse.move(mb.x + mb.width / 2, mb.y + mb.height * 0.7);
+    await page.mouse.wheel(0, 600);
+    await page.waitForFunction(() => { const m = document.querySelector('[data-testid="dp-main-column"]'); return m && m.scrollTop > 0; }, null, { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const stuck = await page.evaluate(() => {
+      const m = document.querySelector('[data-testid="dp-main-column"]'), t = document.querySelector('[data-testid="dp-tabs"]');
+      const nm = document.querySelector('[data-testid="dp-stuck-name"]');
+      return { scrollTop: Math.round(m.scrollTop), tabsTop: Math.round(t.getBoundingClientRect().top - m.getBoundingClientRect().top),
+        name: nm ? nm.innerText.replace(/\s+/g, " ").trim() : null, winY: window.scrollY };
+    });
+    ok("§P4 after scrolling the middle column, the tab bar is at its top", stuck.scrollTop > 0 && Math.abs(stuck.tabsTop) <= 1 && stuck.winY === 0, stuck);
+    ok("§P4 …with the person's name beside the tabs", !!stuck.name && /Verity Yarrowdale/.test(stuck.name), stuck);
+    await page.evaluate(() => { document.querySelector('[data-testid="dp-main-column"]').scrollTop = 0; });
+    await page.waitForTimeout(300);
+
     // FIX-45 1.5 · THE RECORD'S READ FAILS ONCE, SLOWLY. Margaret Chen's
     // profile opened on "Gifts & pledges 0" with no header figures, and only a
     // reload fixed it: a failed GET /donors/:id ended "loading" with nothing in
@@ -493,6 +528,11 @@ async function seed() {
                ('d_hf1_none',$1,'Orrin Pellbrook',NULL,NULL,NULL,NULL,'system:test','Test')
              ON CONFLICT (id) DO NOTHING`, [ORG]);
     await q(`UPDATE donors SET mobile='(207) 555-0142', email2='ysolde@hf1.test' WHERE id='d_hf1_mob' AND org_id=$1`, [ORG]);
+    // §10d SENDS-3 item 8: a phone marked wrong. adaptDonor dropped phone_unreachable, so the rail's
+    // "Marked wrong. Never dialed or texted from Steward." line under the number never drew.
+    // HOW IT GOES RED ON MAIN: main's api.js adaptDonor (no phone_unreachable) in a rebuilt dist.
+    await q(`INSERT INTO donors (id,org_id,name,phone,phone_unreachable,phone_unreachable_reason,created_by,created_by_name)
+             VALUES ('d_hf1_badph',$1,'Wendeline Strake','(207) 555-0177',true,'Marked wrong in the donor file','system:test','Test') ON CONFLICT (id) DO NOTHING`, [ORG]);
     const ctx10 = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
     await ctx10.addInitScript(([t, u, o]) => {
       localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
@@ -518,6 +558,8 @@ async function seed() {
     ok("§10a an address and nothing else, with the rail read failed: Contact shows the address", !!addr && /14 Tern Lane, Bath, ME 04530/.test(addr) && railRefused > 0, { addr, railRefused });
     const mob = await contactOf("d_hf1_mob");
     ok("§10b only a mobile and a second email from an import: Contact shows both", !!mob && /\(207\) 555-0142/.test(mob) && /ysolde@hf1\.test/.test(mob), mob);
+    const badPh = await contactOf("d_hf1_badph");
+    ok("§10d a phone marked wrong says so under the number on the rail", !!badPh && /\(207\) 555-0177/.test(badPh) && /Marked wrong\. Never dialed or texted from Steward\./.test(badPh), badPh);
     const none = await contactOf("d_hf1_none");
     ok("§10c nothing to reach them by: Contact says \"No contact details yet\" with Add", !!none && /No contact details yet/.test(none) && await p10.locator('[data-testid="dp-contact-add"]:visible').count() >= 1, none);
     const dlg = p10.getByRole("dialog", { name: "Edit donor profile" });

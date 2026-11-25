@@ -131,11 +131,49 @@ the morning email unless the person turned on its own reminder, so no step goes 
   StewardEditor. The preview is the server's render with `editable: true` (`renderEmail`, preview mode only):
   typed fields carry `data-st-edit="<block>.<field>"` (a text block is one region, Enter makes a paragraph) and
   every field is a chip (`data-st-token`) filled for the person previewed, so typing around it keeps the field;
-  the editor reads chips back as `{{field}}`. "Preview as" names any person of the org (`as`, org-scoped); "+ Field"
-  puts a chip at the caret. A locked block (the tax lines) is never marked and has no Remove. A send never
+  the editor reads chips back as `{{field}}`. "Preview as" names any person of the org (`as`, org-scoped). A field
+  always lands somewhere (BUILDER-1): from the Fields tab it goes at the caret when she is typing in the selected
+  text, else at the end of the selected text block, else of the first text block, as `{{field}}` in the words
+  themselves, and a toast says where ("First name added at the end of the letter"). The Fields tab shows each
+  field's value for the person previewed (`fieldInfo` on the preview answer), or that it is empty for them. Undo
+  and Redo cover typing, settings, adding, moving and removing back to the last save; History is the saved
+  versions. A block waiting for its event, giving page or video is a box saying so in a preview (none in a send,
+  which refuses it). A locked block (the tax lines) is never marked and has no Remove. A send never
   carries any of it. A campaign keeps its own blocks (`campaigns.email_blocks`, written by PUT/POST
   `emailBlocks`), and an older HTML campaign is converted to blocks when it is opened (`htmlToBlocks`), never in
   the database. Unsaved blocks preview through `POST /email-preview`.
+- **The full builder's parts live under the editor, not in it (BUILDER-2A).** Columns, Box, Social and Code are
+  email blocks (`shared/emailMoreBlocks.js`, drawn inside `renderEmail` with its own helpers): real table cells and
+  nested tables, the phone stack through `PHONE_MEDIA`, a plain-text part, every problem refusing a send. A Box holds
+  blocks one level deep (a Box in a Box is refused) and its children count toward `MAX_BLOCKS`. Social reads
+  `portal_settings.social_links` (Brand, https only) at render time and leaves out a network with no link; its icons
+  are Steward's own PNGs in `client/public/email-icons/`. Code is pasted HTML cleaned to the email allowlist
+  (`shared/emailCodeSanitize.js`); whatever was taken out is a problem, so a send with it is refused; it is
+  admins' only (`roles` in pageWidgets.js, the screen enforces it). There is ONE style model, BUILDER-1's
+  (`shared/emailBlockStyle.js`: `style { align, width, height, pad, mt, mb, border, radius, bg, hide }`, what each
+  type takes in `STYLE_CAPS`); `EMAIL_BLOCK_STYLE` publishes it, read from those constants, never a second copy.
+  The new blocks have their caps there; an image's `height` (BUILDER-2A) keeps its shape. A block may carry an
+  `id`, kept and never added; a block without style or id renders byte for byte as before
+  (`tests/builder2a-email-parts.test.js` §3 holds every starter to main's hash). Saved blocks are
+  `email_saved_blocks` rows (org-scoped, actor-stamped, removed through the one Remove with Undo); using one, or one
+  of Steward's ready-made sections (`shared/emailReadyBlocks.js`), hands back a copy with fresh ids, never a link.
+  `POST /email-export` is the email as HTML with a sample unsubscribe line; it reads, never sends.
+- **The builder moves blocks three ways, each one undo step (BUILDER-2B).** A tile or a saved block dragged from the
+  left pane (the browser's own drag, `DRAG_TYPE`), the ⠿ grip on a selected block (pointer events: press, move,
+  release; the browser's drag is unreliable when it starts inside the frame), and Alt+Up/Down (not inside paragraphs
+  of text, where Option+arrow moves the caret). All land through `client/src/components/email-builder/frameDnD.js`'s
+  drop line and `useEmailBuilder` (`insert`/`insertBlocks`/`moveTo`); the footer stays last, a leading header first.
+  The floating "+" between blocks opens the same tiles and blocks. Saved and ready-made blocks come back from the
+  server as copies with fresh ids. Copy and paste carries `STEWARD-EMAIL-BLOCKS:` + the blocks and the org on the
+  clipboard; a paste from another org is refused, and every paste is validated with the email it joins.
+  **A click selects the block it lands on (BUILDER-2B):** nothing the editor draws sits over another block. The
+  selected block's handles stand in the margin beside the email (inside its own corner when there is no margin);
+  the "+" shows only once the pointer rests on a line. `tests/builder2b-drag-blocks.test.js` §5 clicks every block
+  type's middle, edge and padding, and the corner where the handles used to sit.
+- **A preview is light unless Dark mode is pressed (BUILDER-2B).** Both preview routes pass the render through
+  `previewScheme(html, dark)` (shared/emailBlocks.js): pressed, the dark block applies; not pressed, it is disabled
+  and the page says `color-scheme: light`, so a viewer's dark computer does not darken it. A send never goes through
+  it: real inboxes still get light and dark.
 - **A campaign follows its type, not the automatic-email switch (TRUST-1, Jonathan 27 Oct).** A campaign is a send
   someone clicks. `donorMailDecision("campaign")` asks `mailTypes.holdReason` like `sendGate.decide`: Campaign emails
   on; Everyone and not Never, or Only donors I choose and Always include; plus the marketing refusals. `auto_email`

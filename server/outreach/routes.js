@@ -336,8 +336,13 @@ app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, 
       })
     + testNote;
   const identity = await orgSendingIdentity(orgId);
+  // SENDS-3 item 2: a refusal says why in words (409), never a bare 502.
+  const TW = require("../mail/testSendWords");
+  const before = TW.refusalBefore(org);
+  if (before) return res.status(409).json({ ...before, message: before.sentence });
   let delivered = false;
   if (process.env.RESEND_API_KEY) {
+    let failed = null;
     try {
       const { error } = await resend.emails.send({
         from: identity.from, ...(identity.replyTo ? { replyTo: identity.replyTo } : {}),
@@ -345,11 +350,13 @@ app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, 
         _stewardOrgId: orgId, _stewardKind: "campaign_test",   // MAIL-1: waits for onboarding like the campaign
         html: blocksHtml ? html : T.renderMergeFields(html, { first_name: first }),
       });
-      if (error) throw new Error(error.message);
-      delivered = true;
-    } catch (e) {
-      console.error("[campaign] test send failed:", e.message);
-      return res.status(502).json({ error: "send_failed", message: "The test could not be sent just now. Nothing about the campaign changed." });
+      if (error) failed = error;
+      else delivered = true;
+    } catch (e) { failed = e; }
+    if (failed) {
+      console.error("[campaign] test send failed:", failed.message);
+      const w = TW.afterError(failed, "campaign");
+      return res.status(w.status).json({ ...w.body, message: w.body.message || w.body.sentence });
     }
   }
   res.json({ sent: delivered, to, from: identity.from, verified: identity.verified, counted: false, as: asPerson ? asPerson.person : null, subject: `[Test] ${testSubject}` });

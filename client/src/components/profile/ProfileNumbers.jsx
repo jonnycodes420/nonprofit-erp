@@ -1,11 +1,13 @@
-// components/profile/ProfileNumbers.jsx (PROFILE-3) · THE NUMBERS BAND.
+// components/profile/ProfileNumbers.jsx (PROFILE-3, PROFILE-4) · THE NUMBERS STRIP.
 //
-// Four calm tiles in one row: Lifetime, This fiscal year, Last gift, Last
-// contact. Each is a small label, the value in the display serif and at most
-// one quiet line under it. The definition opens on hover, focus or tap of the
-// label (no "?" on a tile). An empty value is an em dash in ink at 40% with
-// nothing under it, never a sentence: "No giving yet." under a dash said the
-// same nothing twice, four times across the band.
+// PROFILE-4: one strip under the name, four cells with thin dividers:
+// Lifetime, This fiscal year, Last gift (its date beside it, smaller), Last
+// contact. Each cell is a small label over the value at 18px; the quiet line
+// that used to sit under a value sits beside it now, on one line, and the
+// strip never wraps on a desktop (a long note ends in "…", whole on hover)
+// (Jonathan, 24 Nov: "cut that white window in half"). On a phone it wraps two
+// by two (shared.jsx). The definition opens on hover, focus or tap of the
+// label. An empty value is an em dash in ink at 40%, never a sentence.
 //
 // The figures are the same <Figure>s over the same sources as
 // ProfileHeaderFigures (PROFILE-1, POLISH-3), so each value still opens the
@@ -29,7 +31,7 @@ function LabelDef({ label, def }) {
       <button type="button" data-testid={"dp-tile-label-" + label} aria-expanded={on} aria-label={`${label}: how it is counted`}
         onMouseEnter={() => setOn(true)} onMouseLeave={() => setOn(false)} onFocus={() => setOn(true)} onBlur={() => setOn(false)}
         onClick={e => { e.stopPropagation(); setOn(v => !v); }}
-        style={{ background: "none", border: "none", padding: 0, margin: 0, font: "inherit", color: INK60, fontSize: 12, fontWeight: 600,
+        style={{ background: "none", border: "none", padding: 0, margin: 0, font: "inherit", color: INK60, fontSize: 11.5, fontWeight: 600,
           letterSpacing: "0.01em", cursor: "help", whiteSpace: "nowrap", textAlign: "left" }}>{label}</button>
       {on && def && <span role="tooltip" data-testid="dp-tile-def"
         style={{ position: "absolute", zIndex: 60, top: 22, left: 0, width: 260, maxWidth: "70vw", background: T.ink, color: T.white, fontSize: 12,
@@ -38,18 +40,27 @@ function LabelDef({ label, def }) {
   );
 }
 
+// The quiet note beside a value (a date, the old system's share, the fiscal
+// year's dates) is one line; when the strip is short of room it ends in "…"
+// and the whole note is its hover title. Only a cell with a note gives way.
+const fullTitle = el => { if (el && el.innerText && el.scrollWidth > el.clientWidth) el.title = el.innerText.replace(/\s+/g, " "); else if (el) el.removeAttribute("title"); };
+
 function Tile({ label, def, testid, f, kind, figureKey, suffix = "", under = null }) {
   const filled = has(f);
+  const noted = filled && !!under;
   return (
-    <div className="dp3-tile" data-testid={testid} style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+    <div className="dp3-tile dp4-cell" data-testid={testid} style={{ minWidth: 0, flex: noted ? "0 1 auto" : "none", display: "flex", flexDirection: "column", gap: 1, padding: "6px 22px 8px 0", marginRight: 22, borderRight: "1px solid " + T.bg3 }}>
       <LabelDef label={label} def={def} />
-      <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 26, fontWeight: 400, lineHeight: 1.15, color: T.ink }}>
-        {filled
-          ? <Figure value={f.value} kind={kind} suffix={suffix && Number(f.value) === 1 ? suffix.replace("days", "day") : suffix} label={label} definition={def || f.sentence}
-              source={f.source} blank={f.blank} blankShort={f.blankShort} figureKey={figureKey} variant="inline" why={false} />
-          : <span data-figure={figureKey} data-figure-key={figureKey} data-blank="" aria-label={`${label}: none yet`} style={{ color: INK40 }}>—</span>}
+      <div style={{ display: "flex", alignItems: "baseline", flexWrap: "nowrap", columnGap: 6, minWidth: 0 }}>
+        <span style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.3, color: T.ink, whiteSpace: "nowrap", flex: "none" }}>
+          {filled
+            ? <Figure value={f.value} kind={kind} suffix={suffix && Number(f.value) === 1 ? suffix.replace("days", "day") : suffix} label={label} definition={def || f.sentence}
+                source={f.source} blank={f.blank} blankShort={f.blankShort} figureKey={figureKey} variant="inline" why={false} />
+            : <span data-figure={figureKey} data-figure-key={figureKey} data-blank="" aria-label={`${label}: none yet`} style={{ color: INK40 }}>—</span>}
+        </span>
+        {noted ? <span className="dp3-tile-under" ref={fullTitle} onMouseEnter={e => fullTitle(e.currentTarget)}
+          style={{ fontSize: 11.5, color: INK60, lineHeight: 1.4, minWidth: 0, flex: "0 1 auto", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{under}</span> : null}
       </div>
-      {filled && under ? <div className="dp3-tile-under" style={{ fontSize: 12, color: INK60, lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{under}</div> : null}
     </div>
   );
 }
@@ -71,8 +82,8 @@ export function ProfileNumbers({ figures }) {
     {F.undated && F.undated.count ? <>{fy ? " · " : ""}<UndatedNote u={F.undated} /></> : null}
   </> : null;
   return (
-    <div className="dph-figures dp3-numbers" data-testid="dp-header-figures"
-      style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", columnGap: 24, rowGap: 16, padding: "24px 0 16px" }}>
+    <div className="dp4-strip" data-testid="dp-header-figures"
+      style={{ display: "flex", flexWrap: "nowrap", alignItems: "stretch", margin: "10px 0 0 var(--dp-indent,58px)", borderTop: "1px solid " + T.bg3 }}>
       <Tile label="Lifetime" def={censusById("profile.lifetime").sentence} testid="dp-fig-lifetime" f={F.lifetime} kind="money" figureKey="profile.lifetime" under={lifeUnder} />
       <Tile label="This fiscal year" def={censusById("profile.thisYear").sentence} testid="dp-fig-thisYear" f={F.thisYear} kind="money" figureKey="profile.thisYear" under={fyUnder} />
       <Tile label="Last gift" def={censusById("profile.lastGift").sentence} testid="dp-fig-lastGift" f={F.lastGift} kind="money" figureKey="profile.lastGift"

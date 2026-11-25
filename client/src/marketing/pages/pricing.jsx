@@ -1,3 +1,7 @@
+// ONBOARD-4 item 2 · /pricing SHOWS NO PRICE (Jonathan, 23 Nov 2026). It says what
+// the price depends on, what is included, and the one button, Book a call. The
+// history below is why the page exists at all (signed-in orgs still land here).
+//
 // LANDING-3 part 1 · /pricing, in the marketing shell, with the prices on the
 // first screen.
 //
@@ -37,7 +41,7 @@
 // still gets its way through: one button to Settings, Billing.
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../main";
-import PRICING from "../../../../pricing.json";
+import INCLUDED from "../../../../shared/included.json";
 import { Crumbs, FaqS, FinalCta, PriceBlock, Tick, A, rich } from "../lib";
 import { SRC_ALL } from "../data/research";
 import { RETENTION_GAP } from "../../../../shared/sources.js";
@@ -69,17 +73,17 @@ export function Pricing() {
       <div className="eyebrow">What's included</div>
       <h2 className="mix h-m" style={{ marginTop: 22 }}>{rich("Everything, <b>for your whole team.</b>")}</h2>
       <div className="cards">
-        {PRICING.includedGroups.map(g => <div className="card" key={g.name}><h4>{g.name}</h4><p>{g.copy}</p></div>)}
+        {INCLUDED.includedGroups.map(g => <div className="card" key={g.name}><h4>{g.name}</h4><p>{g.copy}</p></div>)}
       </div>
-      <div className="incl" style={{ marginTop: 34 }}>{PRICING.extras.map(x => <span key={x}><Tick />{x}</span>)}</div>
+      <div className="incl" style={{ marginTop: 34 }}>{INCLUDED.extras.map(x => <span key={x}><Tick />{x}</span>)}</div>
     </div></section>
 
     <FaqS h="Pricing <b>questions.</b>" items={[
-      ["Is there a contract?", "No. Month to month, or yearly with two months free. Cancel any time."],
-      ["What does the price depend on?", "The size of your organization. Signup shows your price before you pay, and it never changes without your agreement."],
-      ["Is there a setup fee?", "Yes, once, when you sign up. It covers moving your data in and setting Steward up with you, and signup shows it before you pay."],
+      ["Is there a contract?", "No. Month to month, or yearly if you prefer. Cancel any time, in two clicks."],
+      ["What does the price depend on?", "The size of your donor file. We look at it with you on the call, and you see the price in writing before you sign. It never changes without your agreement."],
+      ["Is there a setup fee?", "Yes, once, because setup is hands-on: we move your data in and set Steward up with you. We go through it on the call."],
       ["Does Steward take a percentage of donations?", "No. Your processor's card fee is the only fee on a gift."],
-      ["When is the first charge?", "The one-time setup fee is charged when you sign up. Your plan's first charge is thirty days later, and you can cancel before then."]]} />
+      ["When is the first charge?", "The one-time setup fee is charged when you sign. Your plan's first charge is thirty days later, and you can cancel before then."]]} />
     <FinalCta />
   </>;
 }

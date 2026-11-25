@@ -2,9 +2,11 @@
 //
 // Under an Atlas line that answered something: the people (each name opens
 // their record, with why they matched, and the count), and "Open list", which
-// opens the same people in Groups every time (POST /atlas/actions/:id/list
-// keeps them as one group on the first click). For one person: the About note,
-// the last conversations and the next step, each opening where it lives.
+// opens the same people in People (filtered to the answer's saved ids, nothing
+// made: SENDS-3 item 4), and "Save as group", the one press that keeps them as
+// a group (POST /atlas/actions/:id/group; the same group every time after).
+// For one person: the About note, the last conversations and the next step,
+// each opening where it lives.
 import { useState } from "react";
 import { T } from "../shared";
 import { apiFetch } from "../../api";
@@ -34,10 +36,11 @@ export default function AtlasAnswer({ line, onGo, busy }) {
     </dl>
   );
   if (a.type !== "list" && a.type !== "why") return null;
-  const open = async () => {
+  const open = () => onGo({ tab: "people", actionId: line.id });
+  const save = async () => {
     setOpening(true); setErr("");
-    try { const r = await apiFetch(`/atlas/actions/${line.id}/list`, { method: "POST", body: "{}" }); onGo({ tab: "groups", groupId: r.groupId }); }
-    catch (e) { setErr(errorMessage(e, "The list didn't open. Try again.")); }
+    try { const r = await apiFetch(`/atlas/actions/${line.id}/group`, { method: "POST", body: "{}" }); onGo({ tab: "groups", groupId: r.groupId }); }
+    catch (e) { setErr(errorMessage(e, "The group wasn't saved. Try again.")); }
     setOpening(false);
   };
   return (
@@ -59,9 +62,11 @@ export default function AtlasAnswer({ line, onGo, busy }) {
         {a.more > 0 ? `These ${a.people.length}: ${a.total} ${a.stakeWord || "at stake"}` : `Together: ${a.total} ${a.stakeWord || "at stake"}`}</div>}
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <span data-testid="atlas-list-count" style={{ fontSize: 13, color: T.ink2 }}>{a.count === 1 ? "1 person" : `${a.count.toLocaleString("en-US")} people`}{a.more > 0 ? `, ${a.more.toLocaleString("en-US")} more in the list` : ""}.</span>
-        <button type="button" data-testid="atlas-open-list" disabled={busy || opening} onClick={open}
+        <button type="button" data-testid="atlas-open-list" disabled={busy} onClick={open}
           style={{ background: T.white, color: T.ink, border: "1px solid " + T.greenDk, borderRadius: 8, padding: "4px 12px", minHeight: 32, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
-          {opening ? "Opening…" : "Open list"}</button>
+          Open list</button>
+        <button type="button" data-testid="atlas-save-group" disabled={busy || opening} onClick={save} style={{ ...link, fontSize: 12.5, minHeight: 32 }}>
+          {opening ? "Saving…" : "Save as group"}</button>
       </div>
       {err && <div role="alert" style={quiet}>{err}</div>}
     </div>

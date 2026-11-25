@@ -1101,6 +1101,7 @@ app.use(require("../../routes/emailTemplates").routers.r0); // EMAIL-1 email tem
 // SPLIT-2 end
 // SPLIT-2 server.js piece 373
 app.use(require("../../routes/stockPhotos").routers.r0);   // EDITOR-1 the bundled stock photos
+app.use(require("../mail/savedBlocks").routers.r0);        // BUILDER-2A saved and ready-made email blocks
 // SPLIT-2 end
 // SPLIT-2 server.js piece 374
 app.use(require("../../routes/homeLead").routers.r0);      // HOME-2 the lead slot at the top of Home

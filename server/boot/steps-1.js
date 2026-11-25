@@ -221,6 +221,10 @@ const resend = new Proxy(_rawResend, {
               return { data: null, error: { name: "org_mail_off", message: why } };
             }
           }
+          // SENDS-3 item 7: an image the email points at goes as one every inbox can show (a WebP as its JPEG).
+          if (opts && typeof opts.html === "string" && opts.html.includes("/portal-assets/")) {
+            opts = { ...opts, html: await require("../mail/emailImages").emailSafeHtml(opts.html, orgId || null) };
+          }
           const deliver = async () => {
             // Steward's own tags never reach the provider.
             const wire = {};

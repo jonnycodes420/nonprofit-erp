@@ -422,6 +422,8 @@ async function emailEditorEverywhere(browser) {
   };
   const backToLibrary = async () => {
     await page.getByTestId("editor-back").click().catch(() => {});
+    // BUILDER-1: an editor with unsaved changes asks first.
+    await page.getByRole("button", { name: "Leave", exact: true }).click({ timeout: 1500 }).catch(() => {});
     await page.waitForSelector("[data-template-card]", { timeout: 15000 }).catch(() => {});
   };
   const card = id => page.locator(`[data-template-id="${id}"]`).first();
@@ -435,6 +437,37 @@ async function emailEditorEverywhere(browser) {
   }));
   await backToLibrary();
   await opensEditor("a campaign starter", () => page.locator('[data-template-card="campaign"]').first().click());
+  // BUILDER-1: every element the email allows adds from the Elements tab and is
+  // selected, then every block in the email is clicked and its settings open,
+  // with no console error (checked below with the rest of Communications).
+  // HOW IT GOES RED: on main (5666d11) there is no Elements tab and no
+  // [data-testid=rail-block] for a click; a renderer or settings crash on any
+  // one type is a page error.
+  {
+    const consoleErrs = [];
+    const onConsole = m => { if (m.type() === "error" && !/\/_vercel\//.test((m.location() || {}).url || "")) consoleErrs.push(m.text().slice(0, 160)); };
+    page.on("console", onConsole);
+    const tiles = await page.$$eval('[data-testid^="element-"]', bs => bs.map(b => ({ id: b.getAttribute("data-testid"), type: b.getAttribute("data-block-type") }))).catch(() => []);
+    const missed = [];
+    for (const t of tiles) {
+      await page.click(`[data-testid="${t.id}"]`).catch(() => {});
+      const ok1 = await page.waitForFunction(ty => (document.querySelector('[data-testid="rail-block"]') || {}).dataset?.blockType === ty, t.type, { timeout: 8000 }).then(() => true).catch(() => false);
+      if (!ok1) missed.push(t.id);
+    }
+    await page.waitForTimeout(1200);
+    const idx = await page.evaluate(() => { const d = document.querySelector('[data-testid="email-preview-frame"]').contentDocument; return [...new Set([...d.querySelectorAll("tr[data-st-block]")].map(r => r.getAttribute("data-st-block")))]; }).catch(() => []);
+    const n = idx.length;
+    const unselected = [];
+    for (const i of idx) {
+      const type = await page.evaluate(k => { const d = document.querySelector('[data-testid="email-preview-frame"]').contentDocument; const r = d.querySelector(`tr[data-st-block="${k}"]`); if (!r) return null; r.querySelector("td").click(); const top = String(k).split(".")[0]; return top === String(k) ? r.getAttribute("data-st-type") : d.querySelector(`tr[data-st-block="${top}"]`).getAttribute("data-st-type"); }, i).catch(() => null);   // BUILDER-2B: a row inside a Box ("10.children.0") selects its Box
+      const shown = await page.waitForFunction(ty => (document.querySelector('[data-testid="rail-block"]') || {}).dataset?.blockType === ty, type, { timeout: 4000 }).then(() => true).catch(() => false);
+      if (!shown) unselected.push(`${i}:${type}`);
+    }
+    ok("§builder-1 every element adds from the Elements tab and is selected", tiles.length >= 12 && missed.length === 0, { tiles: tiles.length, missed });
+    ok("§builder-1 every block in the email selects on a click and opens its settings", n > tiles.length && unselected.length === 0, { blocks: n, unselected });
+    page.off("console", onConsole);
+    ok("§builder-1 adding and selecting every block type logs no console error", consoleErrs.length === 0, consoleErrs.slice(0, 3));
+  }
   await backToLibrary();
   if (stepTpl) await opensEditor("a journey step's email", () => page.goto(`${APP}/app/communications?subtab=templates&template=${encodeURIComponent(stepTpl)}&back=${encodeURIComponent("/app/journeys")}`, { waitUntil: "domcontentloaded" }));
   // EDITOR-1: a campaign, a giving page and an event page open in the same shell.
@@ -561,7 +594,7 @@ async function demoDoor(browser) {
 async function publicPagesUnderTheCsp(browser) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: "block" });
   const page = await ctx.newPage();
-  for (const p of ["/", "/pricing", "/security", "/login", "/signup", "/give/harborlight", "/give/harborlight/harbor-run", "/portal/harborlight"]) {
+  for (const p of ["/", "/pricing", "/security", "/login", "/book", "/give/harborlight", "/give/harborlight/harbor-run", "/portal/harborlight"]) {
     const errors = [];
     const onErr = e => errors.push(e.message.slice(0, 160));
     page.on("pageerror", onErr);

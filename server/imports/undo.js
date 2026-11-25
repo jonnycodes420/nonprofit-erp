@@ -80,8 +80,8 @@ async function undoSize(orgId, id) {
                                 + (SELECT COUNT(*) FROM donors WHERE org_id=? AND created_import_id=?)::int AS n`, [orgId, id, orgId, id, orgId, id]);
   return Number(r && r.n) || 0;
 }
-async function handOff(orgId, id, who, size, alsoMove = false) {
-  const jobId = await JQ.enqueue({ name: "importUndo", orgId, key: `importUndo:${id}`, payload: { orgId, importId: id, who: { id: who.id, name: who.name }, alsoMove: !!alsoMove }, priority: 2 });
+async function handOff(orgId, id, who, size, alsoMove = false, voidReceipts = false) {
+  const jobId = await JQ.enqueue({ name: "importUndo", orgId, key: `importUndo:${id}`, payload: { orgId, importId: id, who: { id: who.id, name: who.name }, alsoMove: !!alsoMove, voidReceipts: !!voidReceipts }, priority: 2 });
   const [w] = jobId ? [{ id: jobId }] : await query(`SELECT id FROM job_queue WHERE key=? AND status IN ('waiting','running') ORDER BY created_at DESC LIMIT 1`, [`importUndo:${id}`]);
   await saveState(orgId, id, { status: "running", jobId: (w && w.id) || null, phase: "waiting for its turn", done: 0, total: size, error: null, queuedAt: new Date().toISOString() });
   const [imp] = await query("SELECT id, reversed_at, undo_state FROM imports WHERE id=? AND org_id=?", [id, orgId]);
@@ -104,10 +104,18 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
     }
     const size = await undoSize(orgId, id);
     const alsoMove = !!(req.body && req.body.alsoMove === true);   // INTEGRITY-2: her choice in the confirm
-    if (size > UNDO_INLINE_MAX) return handOff(orgId, id, actor(req), size, alsoMove);
-    try { return await undoImport(orgId, imp, actor(req), { deadline: Date.now() + UNDO_INLINE_MS(), alsoMove, onMoved }); }
+    // SENDS-3 item 5: moving people with live receipts asks first, once for the batch; yes voids them.
+    const voidReceipts = alsoMove && req.body.voidReceipts === true;
+    if (alsoMove && !voidReceipts) {
+      const mr = await require("./undoReceipts").moveReceipts(query, orgId, imp);
+      if (mr.receipts > 0 && req.audit && req.audit.skip) req.audit.skip("a refused undo changes nothing");
+      if (mr.receipts > 0) return { status: 409, body: { error: "receipts_live", receipts: mr.receipts, people: mr.people, receiptQuestion: mr.receiptQuestion,
+        message: `${mr.receiptQuestion.question} Nothing was undone yet.`, sentence: `${mr.receiptQuestion.question} Nothing was undone yet.` } };
+    }
+    if (size > UNDO_INLINE_MAX) return handOff(orgId, id, actor(req), size, alsoMove, voidReceipts);
+    try { return await undoImport(orgId, imp, actor(req), { deadline: Date.now() + UNDO_INLINE_MS(), alsoMove, voidReceipts, onMoved }); }
     catch (e) {
-      if (e instanceof UndoHandOff) return handOff(orgId, id, actor(req), size, alsoMove);
+      if (e instanceof UndoHandOff) return handOff(orgId, id, actor(req), size, alsoMove, voidReceipts);
       await saveState(orgId, id, { status: "failed", error: String(e.message || e).slice(0, 300) }).catch(() => {});
       throw e;
     }
@@ -117,7 +125,7 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
   res.status(out.status).json(out.body);
 }));
 JQ.handle("importUndo", async (payload) => {
-  const { orgId, importId: id, who, alsoMove } = payload || {};
+  const { orgId, importId: id, who, alsoMove, voidReceipts } = payload || {};
   if (!orgId || !id) return { skipped: true };
   return withAdvisoryLock(`import-undo:${orgId}:${id}`, async () => {
     const [imp] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [id, orgId]);
@@ -132,7 +140,7 @@ JQ.handle("importUndo", async (payload) => {
       const actorOf = who || { id: "system:import-undo", name: "Steward (undo)" };
       // INTEGRITY-3: on the queue the job writes each person's row as they move
       const onMoved = m => require("./undoMoves").writeRows(orgId, actorOf, id, m);
-      const out = await undoImport(orgId, imp, actorOf, { onProgress, alsoMove: !!alsoMove, onMoved });
+      const out = await undoImport(orgId, imp, actorOf, { onProgress, alsoMove: !!alsoMove, voidReceipts: !!voidReceipts, onMoved });
       if (out.status !== 200) await saveState(orgId, id, { status: "failed", error: out.body.message || out.body.error });
       else require("../../routes/dataHealth").recheckSoon(orgId, "undo");
       return { status: out.status };
@@ -163,7 +171,7 @@ async function undoRefusal(req, imp) {
   return null;
 }
 
-async function undoImport(orgId, imp, who, { deadline = null, onProgress = null, alsoMove = false, onMoved = async () => {} } = {}) {
+async function undoImport(orgId, imp, who, { deadline = null, onProgress = null, alsoMove = false, voidReceipts = false, onMoved = async () => {} } = {}) {
   const id = imp.id;
   const st = stateOf(imp);
   const removed = { gifts: 0, pledges: 0, interactions: 0, tasks: 0, journeys: 0, people: 0, alreadyDeleted: 0, backToTrash: 0, movedToo: 0, discarded: 0, ...(st.removed || {}) };
@@ -349,7 +357,7 @@ async function undoImport(orgId, imp, who, { deadline = null, onProgress = null,
   if (alsoMove && stayed.some(p => p.movable)) {
     await step("moving the people with activity since to the trash");
     const moved = await require("../../personTrash").trashPeople(orgId, stayed.filter(p => p.movable).map(p => p.id), who,
-      { why: { kind: "undo_moved_too", importId: id } });
+      { why: { kind: "undo_moved_too", importId: id }, voidReceipts });   // SENDS-3: void only on her yes; else the route asked first
     await onMoved(moved.map(m => ({ id: m.id, from: "active", to: "trash", how: "moved_too" })));
     const movedIds = new Set(moved.map(m => m.id));
     removed.movedToo = (Number((st.removed || {}).movedToo) || 0) + moved.length;

@@ -6584,7 +6584,12 @@ app.get("/portal-assets/:id", wrap(assetDoor), wrap(async (req, res) => {
   if (!asset || asset.orgId !== req.assetMeta.orgId) return res.status(404).json({ error: "not_found" });
   let buffer = asset.buffer, contentType = asset.contentType, variantTag = "";
   const w = parseInt(req.query.w, 10);
-  if (PORTAL_ASSET_WIDTHS.includes(w) && contentType !== "image/svg+xml" && contentType !== "image/gif") {
+  const EI = require("../server/mail/emailImages");
+  if (req.query.fmt === "jpeg" && EI.needsJpeg(contentType)) {
+    // SENDS-3 item 7: the JPEG an email points at (server/mail/emailImages.js); a WebP never reaches an inbox.
+    try { buffer = await EI.jpegRendition(asset, PORTAL_ASSET_WIDTHS.includes(w) ? w : null); contentType = "image/jpeg"; variantTag = `-jpeg${PORTAL_ASSET_WIDTHS.includes(w) ? w : ""}`; }
+    catch (e) { console.error("[portal-assets] jpeg rendition failed, serving master:", e.message); }
+  } else if (PORTAL_ASSET_WIDTHS.includes(w) && contentType !== "image/svg+xml" && contentType !== "image/gif") {
     try {
       const sharp = require("sharp");
       const meta = await sharp(asset.buffer).metadata();
@@ -7050,6 +7055,15 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   if (b.directoryState !== undefined) setStr("directory_state", b.directoryState, 40);
   if (b.footerText !== undefined) setStr("footer_text", b.footerText, 500);
   if (b.contactEmail !== undefined) setStr("contact_email", b.contactEmail, 200);
+  // BUILDER-2A: the org's social links, which an email's Social block reads. https only; "" clears one.
+  if (b.socialLinks !== undefined) {
+    const { cleanSocialLinks, SOCIAL_NETWORKS } = await import("../shared/emailMoreBlocks.js");
+    const given = b.socialLinks && typeof b.socialLinks === "object" ? b.socialLinks : {};
+    const clean = cleanSocialLinks(given);
+    const bad = SOCIAL_NETWORKS.filter(n => String(given[n.key] || "").trim() && !clean[n.key]);
+    if (bad.length) return res.status(400).json({ error: "bad_social_link", message: `Use a full link starting with https:// for ${bad.map(n => n.key === "website" ? "your website" : n.label).join(", ")}.` });
+    updates.push("social_links = ?"); params.push(Object.keys(clean).length ? JSON.stringify(clean) : null);
+  }
   // MONEY-4: the EIN is set in Settings, Tax Receipts (orgs.ein) only; einLine is no longer saved here.
   // BUILD-60 Part 2 — per-frequency, org-configurable amount ladders. A valid
   // ladder is 3–6 positive whole-dollar tiers; null/"" clears back to the
