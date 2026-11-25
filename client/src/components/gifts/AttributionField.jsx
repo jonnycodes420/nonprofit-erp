@@ -2,7 +2,7 @@
 //
 // One field, three kinds. She types and it searches what the org already has
 // (GET /gift-attribution/:kind). Campaign and Appeal end the list with
-// "+ New campaign: 'Good Giving Challenge'", made right there; a giving page is
+// "Create 'Good Giving Challenge'", made right there; a giving page is
 // made in Forms, so the page list only searches. A value carried from the last
 // gift reads "Same as last: …" and clears with ×.
 //
@@ -17,6 +17,7 @@ import { apiFetch } from "../../api";
 import { T } from "../shared";
 import { errorMessage } from "../../lib/domainError";
 import { displayDate } from "../../../../shared/displayDate";
+import { attributionChoices } from "../../lib/attributionMatch";
 
 const LABEL = { campaign: "Campaign", appeal: "Appeal", page: "Fundraiser / giving page" };
 const NEW_WORD = { campaign: "campaign", appeal: "appeal" };
@@ -84,11 +85,10 @@ export default function AttributionField({ kind, value, onChange, onTyped, testi
     );
   }
   const typed = text.trim();
-  // LETTERS-1 item 4: one name ignores case and spacing, and a name she is
-  // still typing ("ANNU" for "Annual Fund") is the campaign above, not a new one.
-  const keyOf = s => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
-  const exact = rows.some(r => keyOf(r.name) === keyOf(typed));
-  const close = kind === "campaign" && typed && !exact ? rows.find(r => keyOf(r.name).startsWith(keyOf(typed))) : null;
+  // LETTERS-1 item 4, POLISH-11 item 3: the one rule (lib/attributionMatch.js).
+  const choice = attributionChoices(rows.map(r => r.name), typed);
+  const exact = choice.exact;
+  const close = kind === "campaign" && choice.close ? rows.find(r => r.name === choice.close) : null;
   return (
     <div style={{ position: "relative", ...style }}>
       <input value={text} onChange={e => { setText(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
@@ -108,12 +108,12 @@ export default function AttributionField({ kind, value, onChange, onTyped, testi
           })}
           {close && (
             <div data-testid={`${testid}-close`} style={{ padding: "8px 10px", fontSize: fs, color: T.ink2, borderTop: rows.length ? "1px solid " + T.bg3 : "none" }}>
-              Pick {close.name} above, or type the whole name of a new campaign.
+              Did you mean {close.name}? Pick it above, or create '{typed}' below.
             </div>)}
-          {createable && typed && !exact && !close && (
+          {createable && choice.offerCreate && (
             <button type="button" data-testid={`${testid}-create`} disabled={busy} onMouseDown={e => e.preventDefault()} onClick={create}
               style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", borderTop: rows.length ? "1px solid " + T.bg3 : "none", padding: "8px 10px", fontSize: fs, color: T.greenDk, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-              {busy ? "Adding…" : rows.length ? `+ New ${NEW_WORD[kind]}: '${typed}'` : `No ${NEW_WORD[kind]} called '${typed}'. Create it?`}
+              {busy ? "Adding…" : rows.length ? `Create '${typed}'` : `No ${NEW_WORD[kind]} called '${typed}'. Create it?`}
             </button>)}
           {!createable && typed && !rows.length && (
             <div data-testid={`${testid}-none`} style={{ padding: "8px 10px", fontSize: fs, color: T.ink2 }}>No giving page or fundraiser called '{typed}'.</div>)}

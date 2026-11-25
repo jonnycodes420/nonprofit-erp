@@ -296,6 +296,12 @@ function RoleLine({donor,isReadOnly,birthday="",noGifts=false}){
           {vs.undo&&!isReadOnly&&<> <button type="button" data-testid="role-former-undo" disabled={!!vs.busy} onClick={()=>undoFormer(donor.id)}
             style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Undo</button></>}
         </span>)}
+      {/* POLISH-11 item 2: back on the person within the Undo window, Undo is still here. */}
+      {!(vs.from==="line"&&(vs.sentence||vs.error))&&vs.status==="former"&&vs.undo&&!isReadOnly&&(
+        <span role="status" data-testid="role-former-undo-later" style={{flexBasis:"100%",fontSize:12,color:T.ink2,lineHeight:1.45}}>
+          Marked as a former volunteer. <button type="button" data-testid="role-former-undo" disabled={!!vs.busy} onClick={()=>undoFormer(donor.id)}
+            style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Undo</button>
+        </span>)}
       {openAdd&&(
         <div role="menu" data-testid="role-add-menu" style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:60,
           background:T.white,border:"1px solid "+T.bg3,borderRadius:10,boxShadow:"0 12px 32px rgba(15,26,18,0.18)",
