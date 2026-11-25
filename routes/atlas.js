@@ -38,6 +38,7 @@ const ADm = () => import("../shared/atlasDates.js");   // ATLAS-5: dates in code
 const routers = { r0: express.Router() };
 // ATLAS-3: the profile's Call script rides on Atlas's router (server.js is at its size ceiling).
 routers.r0.use(require("./atlasMore").routers.r0);
+routers.r0.use(require("../server/atlas/conversation").routers.r0);   // ATLAS-11 item 4: the conversation, kept server-side
 // Set by mount(); the after-change step settles waiting lines through it.
 let settleForDonors = async () => 0;
 const TEXT_MIN = 3, TEXT_MAX = 4000;
@@ -63,7 +64,8 @@ const ATLAS_ANSWER_MS = () => Number(process.env.ATLAS_ANSWER_MS) || 20000;
 const ATLAS_TOTAL_MS = () => Number(process.env.ATLAS_TOTAL_MS) || 20000;
 const NS = require("../server/atlas/noSource");   // FLOWS-13 item 6: a question nothing in Steward answers
 const WR = require("../server/atlas/whyRows");   // ATLAS-8: a why answer's rows, drawn and footed; a figure is its person's
-const RS = require("../server/atlas/rowsSteps");   // ATLAS-8: "list them", LYBUNT, Home's figures; the question kept
+const RS = require("../server/atlas/rowsSteps");
+const CA = require("../server/atlas/campaignAsk");   // ATLAS-11 item 1: a campaign, appeal or fund by any part of its name   // ATLAS-8: "list them", LYBUNT, Home's figures; the question kept
 
 const PROP = require("../server/atlas/proposal");   // SENDS-1: Atlas proposes, she saves
 const RQ = require("../server/atlas/resume");   // FLOWS-16: a question resumes whole; a follow-up finds the person talked about
@@ -507,7 +509,7 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
   // about the whole org (Ask) and the org's Top 100 read everyone, so they are
   // said once and left out.
   if (require("../server/auth/portfolio").isScoped(req.user)) {
-    const kept = steps.filter(x => x.kind !== "question" && x.kind !== "top100" && x.kind !== "population" && x.kind !== "population_call" && x.kind !== "home_figure");   // ATLAS-8, ATLAS-9: the org's lists too
+    const kept = steps.filter(x => x.kind !== "question" && x.kind !== "top100" && x.kind !== "population" && x.kind !== "population_call" && x.kind !== "home_figure" && x.kind !== "campaign_ask");   // ATLAS-8, ATLAS-9: the org's lists too
     if (kept.length < steps.length) await logAction(req, { ...base, kind: "refused", state: "refused",
       line: "You see the people assigned to you, so I can only answer about them. Questions about the whole organization are for colleagues who see everyone." });
     steps = kept;
@@ -724,8 +726,9 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         const ppl = await GT.figuresFor(query, orgId, st.donorIds || []);
         const miss = (st.missing || []).length ? ` I couldn't find ${st.missing.join(" or ")} in Steward, so ${st.missing.length === 1 ? "that name is" : "those names are"} not in it.` : "";
         const ans = ppl.length ? GT.answerFor(ppl, { together: /\btogether|combined|between them\b/i.test(st.words || "") }) : null;
-        await log({ kind: "answer", state: "done", line: ans ? ans.sentence + miss : `I couldn't find ${(st.whos || []).join(" or ") || "them"} in Steward.`,
+        const aidT = await log({ kind: "answer", state: "done", line: ans ? ans.sentence + miss : `I couldn't find ${(st.whos || []).join(" or ") || "them"} in Steward.`,
           ...(ppl.length === 1 ? person(ppl[0].id, { section: "giving" }) : {}) });
+        if (ppl.length) await saveAnswer(orgId, m.id, aidT, { type: "giving_total", donorIds: ppl.map(p => p.id), totalCents: ans.totalCents });   // ATLAS-11 item 3: Tell me more goes on from it
         break;
       }
       case "setting_fact": {   // ATLAS-6: from the org's settings and the team's titles, never a lookup that can't find them
@@ -750,6 +753,12 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         await log({ kind: "linked", state: ok2 ? "done" : "failed", donorId: id, place: "person", placeId: id, link: { tab: "donor", donorId: id },
           line: r.status === 201 ? `Linked ${nm(id)} and ${nm(st.otherId)} (${AN.LINK_WORD[st.relation]}).` : r.status === 409 ? `${nm(id)} and ${nm(st.otherId)} are already linked.`
             : `I couldn't link ${first(nm(id))} and ${first(nm(st.otherId))}: ${(r.body && r.body.error) || "it did not go through"}.` });
+        break;
+      }
+      case "campaign_ask": {   // ATLAS-11 item 1: Home's own card for the goal she named
+        const o11 = await CA.run(st, { query, orgId, get: p => asHer(req, "GET", p) });
+        const aid11 = await log({ kind: "answer", state: "done", line: o11.line, ...(o11.link ? { link: o11.link } : {}) });
+        if (o11.answer) await saveAnswer(orgId, m.id, aid11, o11.answer);
         break;
       }
       case "prior_rows": case "population": case "population_call": case "home_figure":   // ATLAS-8, ATLAS-9: rows already on a screen
@@ -800,7 +809,7 @@ async function execute(req, m, steps, { today, ai, prior = null }) {
         break;
       }
       default:
-        await log({ kind: "cant", state: "refused", line: ai === "on" ? AT_.CANT_LINE(st.words) : AT_.AI_OFF_LINE });
+        await log({ kind: "cant", state: "refused", line: ai === "on" ? AT_.CANT_LINE(st.words) : AT_.AI_OFF_REFUSAL });   // ATLAS-11 item 5: the header says AI is off
     }
   }
   // SENDS-1: everything she would have had written is one proposal, saved only by her Save.
@@ -865,6 +874,7 @@ async function saveProposal(req, m, items) {
 }
 
 // ── THE DOOR ────────────────────────────────────────────────────────────────
+require("../server/atlas/conversation").mount({ query, run, wrap, requireAuth, checkWriteAccess, requestOut, parse: j });   // ATLAS-11 item 4
 app.get("/atlas/status", requireAuth, wrap(async (req, res) => {
   const AT_ = await AT();
   const gate = await agentGate(req.user.orgId);
@@ -906,7 +916,7 @@ app.post("/atlas", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   // asked. ATLAS-6's shapes (a setting, a thing not kept, a forecast, an amount) and a question that
   // names nothing Steward keeps (server/atlas/noSource.js) skip the model's read and the lookup loop.
   // ATLAS-8: "list them" after an answer, LYBUNT, Home's figures: rows a screen already holds.
-  const early = group ? null : (RS.read(text, prior) || await answeredInCode(orgId, text, { today, all }));
+  const early = group ? null : (RS.read(text, prior) || await CA.read(text, { query, orgId }) || await answeredInCode(orgId, text, { today, all }));
   const read = group ? { ai: (await req.atlasCtx.gate).ok ? "on" : "off", steps: [group], code: true }
     : early ? { ai: (await req.atlasCtx.gate).ok ? "on" : "off", steps: early, code: true }
     : await readSteps(orgId, text, { today, onPage: onPage ? onPage.name : null, gateP: req.atlasCtx.gate });
@@ -1070,7 +1080,7 @@ app.post("/atlas/actions/:id/group", requireAuth, checkWriteAccess, wrap(async (
 }));
 
 app.get("/atlas/:id", requireAuth, wrap(async (req, res, next) => {
-  if (["activity", "notes", "status", "progress"].includes(req.params.id)) return next();
+  if (["activity", "notes", "status", "progress", "conversation"].includes(req.params.id)) return next();
   const out = await requestOut(req.user.orgId, req.params.id);
   if (!out) return res.status(404).json({ error: "Not found" });
   res.json({ request: out });

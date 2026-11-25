@@ -40,6 +40,7 @@ import AtlasAnswer from "./atlas/AtlasAnswer";
 import GroupPlanCard from "./atlas/GroupPlanCard";   // ATLAS-7: one confirm for a group, then Do it
 import ProposalCard from "./atlas/ProposalCard";   // SENDS-1: nothing is written until Save   // ATLAS-3: a list is a list, a person is what we know
 import { continueThread, askBody, newProgressKey } from "../lib/atlasThread";   // ATLAS-3: Tell me more keeps the thread
+import { LIMITED_HEADER } from "../../../shared/atlasReading.js";   // ATLAS-11 item 5: one steady line in the header
 
 const SR = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition || null) : null;
 // VOICE-4: ONE recognizer for the page. A new one per press (and per opening
@@ -97,6 +98,8 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
   const [source, setSource] = useState("typed");
   const [name, setName] = useState(atlasName());
   const [thread, setThread] = useState([]);       // ATLAS-3: the answers so far, oldest first
+  const [aiOff, setAiOff] = useState(false);      // ATLAS-11 item 5: /atlas/status says AI is off or unavailable
+  const [followText, setFollowText] = useState(""); // ATLAS-11 item 3: the follow-up box under every answer
   const [progress, setProgress] = useState("");   // ATLAS-3: what Atlas is doing right now
   const [words, setWords] = useState("");         // SPEED-3: the words written so far (a draft as it streams)
   const poll = useRef(null);
@@ -110,8 +113,15 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
   const sentAt = useRef(0);
 
   useEffect(() => {
-    atlasStatus().then(s => setName(s.name)).catch(() => {});
+    atlasStatus().then(s => { setName(s.name); setAiOff(s.ai === "off"); }).catch(() => {});
     if (autoSend && initialText) send(initialText);
+    // ATLAS-11 item 4: reopening Atlas shows the conversation as it was (kept server-side, 7 days).
+    else if (!requestId && !initialText) apiFetch("/atlas/conversation").then(r => {
+      const rs = (r && r.requests) || [];
+      if (!rs.length) return;
+      setThread(cur => (cur.length ? cur : rs.slice(0, -1)));
+      setRequest(cur => cur || rs[rs.length - 1]);
+    }).catch(() => {});
     // ATLAS-5: the bell's Answer opens the request that is still asking.
     if (requestId) apiFetch(`/atlas/${encodeURIComponent(requestId)}`).then(r => { if (r && r.request) setRequest(r.request); }).catch(e => setErr(said(e)));
     return () => {
@@ -249,22 +259,35 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
   // ATLAS-3: Tell me more keeps what was said; the next ask follows on from it.
   // ATLAS-10 item 1 (W-1124): Tell me more asks for more, as if she had said it; it never just closes the answer.
   const tellMore = () => { const th = continueThread(thread, request); setThread(th); setRequest(null); setText(""); setSource("typed"); send("Tell me more", th); };
+  // ATLAS-11 item 3: a follow-up typed under any answer (or a "Did you mean" pressed) goes on from it.
+  const followUp = words => { const w = String(words || "").trim(); if (w.length < 3 || busy) return; const th = continueThread(thread, request); setThread(th); setFollowText(""); setSource("typed"); send(w, th); };
+  // ATLAS-11 item 4: Start over ends the conversation; the next ask begins a new one.
+  const startOver = async () => {
+    try { await apiFetch("/atlas/conversation/start-over", { method: "POST", body: "{}" }); } catch (e) { setErr(said(e)); return; }
+    setThread([]); setRequest(null); setAnswers({}); setText(""); setFollowText(""); setErr("");
+  };
 
   const asking = request && request.status === "needs_answers";
   const lines = (request && request.lines) || [];
   const taps = lines.filter(l => l.waits && ALL_KINDS.has(l.kind));
   const sub = request || pending ? null : donor && donor.name ? `Tell me what happened with ${donor.name}, what to do, or what you want to know.` : "Tell me what happened, what to do, or what you want to know.";
+  // ATLAS-11 item 5: AI off or unavailable (the switch, or this answer read without the model) is said once, in the header.
+  const limited = aiOff || !!(request && request.ai === "off") || thread.some(r => r && r.ai === "off");
 
   return (
-    <Modal onClose={onClose} title={name} subtitle={sub} width={560} align={phone ? "top" : "center"} ariaLabel={name}>
+    <Modal onClose={onClose} title={name} subtitle={limited ? <span data-testid="atlas-limited">{LIMITED_HEADER}</span> : sub} width={560} align={phone ? "top" : "center"} ariaLabel={name}>
       <div data-testid="tell-steward-sheet" data-atlas="panel" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {err && <div role="alert" style={{ background: T.cream || "#F0EDE6", color: T.ink, borderRadius: 10, padding: "10px 12px", fontSize: 13.5, lineHeight: 1.45 }}>{err}</div>}
         {micTip && !request && <div data-testid="tell-mic-tip" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.45 }}>{SAFARI_MIC_TIP}</div>}
 
+        {(thread.length > 0 || request) && !pending && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: -6 }}>
+          <button type="button" data-testid="atlas-start-over" disabled={busy} onClick={startOver}
+            style={{ background: "none", border: "none", padding: "2px 0", font: "inherit", fontSize: 12.5, color: T.ink2, textDecoration: "underline", textDecorationColor: T.bg3, textUnderlineOffset: 3, cursor: "pointer" }}>Start over</button>
+        </div>}
         {thread.length > 0 && <section data-testid="atlas-thread" aria-label="Earlier in this conversation" style={{ display: "flex", flexDirection: "column", gap: 10, borderBottom: "1px solid " + T.bg3, paddingBottom: 10 }}>
           {thread.map(r => <div key={r.id} data-testid="atlas-thread-item" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <div style={{ fontSize: 13, color: T.ink2 }}>"{r.text}"</div>
-            {(r.lines || []).map(l => <div key={l.id} style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.45 }}>{l.line}<AtlasAnswer line={l} onGo={go} busy={busy} /></div>)}
+            {(r.lines || []).map(l => <div key={l.id} style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.45 }}>{l.line}<AtlasAnswer line={l} onGo={go} onAsk={followUp} busy={busy} /></div>)}
           </div>)}
         </section>}
 
@@ -339,8 +362,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
         </section>}
 
         {request && !asking && <section data-testid="atlas-reply" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {/* ATLAS-8 item 6: an answer given with reading off says so first */}
-          {request.readingOff && <div data-testid="atlas-reading-off" style={{ fontSize: 13, color: T.ink2, lineHeight: 1.45 }}>{request.readingOff}</div>}
+          {/* ATLAS-11 item 5: AI off is said once, in the header (LIMITED_HEADER), never over an answer. */}
           <div data-testid="atlas-spoke" style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{request.undoneAt ? "Undone." : request.spoke}</div>
           {taps.length > 1 && <div data-testid="atlas-do-all" style={{ border: "1px solid " + T.greenDk, borderRadius: 10, padding: "10px 12px", display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
             <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.45, flex: "1 1 220px" }}>One tap does the {taps.length} things below that wait for you.</div>
@@ -356,7 +378,7 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
                 {linkTarget(l.link) ? <button type="button" data-testid="atlas-line-link" onClick={() => go(l.link)}
                   style={{ background: "none", border: "none", padding: 0, textAlign: "left", font: "inherit", color: l.state === "undone" ? T.ink3 : T.ink, textDecoration: l.state === "undone" ? "line-through" : "underline", textDecorationColor: T.bg3, textUnderlineOffset: 3, cursor: "pointer" }}>{l.line}</button>
                   : <span style={{ color: l.state === "refused" ? T.ink2 : T.ink }}>{l.line}</span>}
-                <AtlasAnswer line={l} onGo={go} busy={busy} />
+                <AtlasAnswer line={l} onGo={go} onAsk={followUp} busy={busy} />
               </span>
               <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                 {l.undoable && <button type="button" data-testid="atlas-undo" disabled={busy} onClick={() => act(`/atlas/actions/${l.id}/undo`)} style={{ ...btn(false), minHeight: 32, padding: "4px 10px", fontSize: 12.5 }}>Undo</button>}
@@ -368,6 +390,12 @@ export default function TellSteward({ donor, onClose, onNavigate, initialText = 
               </span>
             </li>)}
           </ul>
+          {/* ATLAS-11 item 3: the follow-up box, under every answer, not only after Tell me more. */}
+          <form data-testid="atlas-follow-up" onSubmit={e => { e.preventDefault(); followUp(followText); }} style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+            <input data-testid="atlas-follow-up-text" aria-label="Ask a follow-up" value={followText} onChange={e => setFollowText(e.target.value)} placeholder="Ask a follow-up"
+              style={{ flex: 1, minWidth: 0, border: "1px solid " + T.bg3, borderRadius: 10, padding: "8px 12px", fontSize: 15, fontFamily: "inherit", color: T.ink }} />
+            <button type="submit" data-testid="atlas-follow-up-send" disabled={busy || followText.trim().length < 3} style={{ ...btn(true), minHeight: 40, padding: "8px 14px" }}>Ask</button>
+          </form>
           <div style={{ display: "flex", gap: 10, justifyContent: "space-between", flexWrap: "wrap", borderTop: "1px solid " + T.bg3, paddingTop: 12 }}>
             {!request.undoneAt && lines.some(l => l.undoable) ? <button data-testid="tell-undo" disabled={busy} onClick={() => act(`/atlas/${request.id}/undo`)} style={btn(false)}>Undo all of it</button> : <span />}
             <div style={{ display: "flex", gap: 10 }}>
