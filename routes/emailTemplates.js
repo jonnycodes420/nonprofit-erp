@@ -544,8 +544,7 @@ app.post("/email-templates/:id/preview", requireAuth, wrap(async (req, res) => {
   if (b.subject != null) draft.subject = clip(b.subject, 200);
   if (b.preheader != null) draft.preheader = clip(b.preheader, 200);
   const p = await previewHtml(req, draft, { as: b.as || null, editable: b.editable === true });
-  let html = p.html;
-  if (b.dark === true) html = html.split(EB.DARK_MEDIA).join("@media all");
+  const html = EB.previewScheme(p.html, b.dark === true);   // BUILDER-2B: light unless Dark mode is pressed
   res.json({ html, problems: p.problems, device: b.device === "phone" ? "phone" : "desktop", width: b.device === "phone" ? 375 : 600,
     as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject, pastGiving: await pastGivingOf(draft.blocks, p), fieldInfo: p.fieldInfo, brand: p.brand });
 }));
@@ -561,8 +560,7 @@ app.post("/email-preview", requireAuth, wrap(async (req, res) => {
   const row = { blocks: v.blocks, subject: clip(b.subject || "", 200), preheader: clip(b.preheader || "", 200), starter_key: null };
   const p = await previewHtml(req, row, { as: b.as || null, editable: b.editable === true, audienceNoGift: b.audienceNoGift === true });
   if (b.campaignName) p.fields.campaign = clip(b.campaignName, 120);
-  let html = p.html;
-  if (b.dark === true) html = html.split(EB.DARK_MEDIA).join("@media all");
+  const html = EB.previewScheme(p.html, b.dark === true);   // BUILDER-2B: light unless Dark mode is pressed
   const pastGiving = await pastGivingOf(row.blocks, p);
   // FLOWS-15 item 1: previewed as a never-giver this letter leaves out, the answer is that, not the letter.
   if (pastGiving.shownNeverGave && b.campaign === true) {

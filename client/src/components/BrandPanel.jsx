@@ -7,7 +7,9 @@
 // checked for readability (normalizeAccent on the server). Every save offers
 // Undo, which sends the previous values back through the same route; the
 // previous logo goes back by its stored path.
-// Props: { onChanged(settings) }
+// Props: { onChanged(settings), socialNetworks } (BUILDER-2B: the list from
+// shared/socialNetworks.js, handed in by EmailTemplates so this lazy panel
+// pulls no shared module of its own into the Communications bundle)
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
@@ -36,10 +38,11 @@ function bodyFor(vals) {
   for (const [col, key] of COLOR_FIELDS) if (col in vals) b[key] = vals[col] || "";
   if ("type_pairing" in vals) b.typePairing = vals.type_pairing || "";
   if ("logo" in vals) b.logoData = vals.logo || "";
+  if ("social_links" in vals) b.socialLinks = vals.social_links || {};
   return b;
 }
 
-export default function BrandPanel({ onChanged }) {
+export default function BrandPanel({ onChanged, socialNetworks: SOCIAL_NETWORKS = [] }) {
   const [ps, setPs] = useState(null);
   const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState(false);
@@ -54,7 +57,11 @@ export default function BrandPanel({ onChanged }) {
 
   const val = col => (col in draft ? draft[col] : (ps[col] || ""));
   const set = (col, v) => setDraft(d => ({ ...d, [col]: v }));
-  const changed = Object.keys(draft).filter(k => (k === "logo" ? draft.logo !== (ps.logo_url || "") : (draft[k] || "") !== (ps[k] || "")));
+  const same = (a, b) => JSON.stringify(a || {}) === JSON.stringify(b || {});
+  const changed = Object.keys(draft).filter(k => (k === "logo" ? draft.logo !== (ps.logo_url || "") : k === "social_links" ? !same(draft[k], ps[k]) : (draft[k] || "") !== (ps[k] || "")));
+  const links = "social_links" in draft ? draft.social_links || {} : ps.social_links || {};
+  const setLink = (key, v) => { const n = { ...links, [key]: v.trim() }; if (!n[key]) delete n[key]; set("social_links", n); };
+  const badLink = SOCIAL_NETWORKS.some(n => links[n.key] && !/^https:\/\/\S+$/i.test(links[n.key]));
   const badColor = COLOR_FIELDS.some(([col]) => col in draft && draft[col] && !HEX_RE.test(draft[col]));
 
   const apply = async (vals, previous, message) => {
@@ -74,12 +81,12 @@ export default function BrandPanel({ onChanged }) {
   };
 
   const save = async () => {
-    if (!changed.length || badColor) return;
+    if (!changed.length || badColor || badLink) return;
     setBusy(true); setErr("");
     const vals = {}, previous = {};
     for (const k of changed) {
       vals[k] = draft[k];
-      previous[k] = k === "logo" ? (ps.logo_url || "") : (ps[k] || "");
+      previous[k] = k === "logo" ? (ps.logo_url || "") : k === "social_links" ? (ps.social_links || {}) : (ps[k] || "");
     }
     try { await apply(vals, previous, "Saved your brand. Your giving pages and emails use it now."); }
     catch (e) { setErr(errorMessage(e, "Your brand could not be saved.")); }
@@ -124,12 +131,25 @@ export default function BrandPanel({ onChanged }) {
         {Object.entries(TYPE_PAIRINGS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
       </select>
 
+      <div style={lbl}>Social links</div>
+      <div style={{ fontSize: 11.5, color: T.ink3, marginBottom: 4, lineHeight: 1.4 }}>An email's Social block shows these as icons. Leave one empty and it is left out.</div>
+      <div data-testid="brand-social" style={{ display: "grid", gridTemplateColumns: "96px 1fr", gap: "6px 8px", alignItems: "center", maxWidth: 460 }}>
+        {SOCIAL_NETWORKS.map(n => (
+          <label key={n.key} style={{ display: "contents" }}>
+            <span style={{ fontSize: 12.5, color: T.ink }}>{n.key === "website" ? "Website" : n.label}</span>
+            <input style={{ ...inp, width: "100%" }} value={links[n.key] || ""} placeholder="https://" aria-label={`${n.key === "website" ? "Website" : n.label} link`}
+              data-testid={"brand-social-" + n.key} onChange={e => setLink(n.key, e.target.value)} />
+          </label>
+        ))}
+      </div>
+      {badLink && <div role="alert" style={{ fontSize: 12.5, color: T.ink, marginTop: 10 }}>A social link starts with https://.</div>}
+
       {badColor && <div role="alert" style={{ fontSize: 12.5, color: T.ink, marginTop: 10 }}>A color is written as # followed by six letters or numbers.</div>}
       {note && <div style={{ fontSize: 12.5, color: T.ink, marginTop: 10, lineHeight: 1.5 }}>{note}</div>}
       {err && <div role="alert" style={{ fontSize: 12.5, color: T.ink, marginTop: 10, lineHeight: 1.5 }}>{err}</div>}
       <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-        <button type="button" disabled={busy || !changed.length || badColor} onClick={save}
-          style={{ background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", minHeight: 38, fontFamily: "inherit", opacity: busy || !changed.length || badColor ? 0.55 : 1 }}>
+        <button type="button" disabled={busy || !changed.length || badColor || badLink} onClick={save}
+          style={{ background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", minHeight: 38, fontFamily: "inherit", opacity: busy || !changed.length || badColor || badLink ? 0.55 : 1 }}>
           {busy ? "Saving…" : "Save brand"}
         </button>
         {changed.length > 0 && !busy && (

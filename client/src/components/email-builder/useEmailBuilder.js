@@ -141,9 +141,20 @@ export function useEmailBuilder(initial, { meta = null, allowed = [], onChanged 
     }
   };
 
+  // BUILDER-2B: where a new block or a run of blocks goes. `at` is the place
+  // in the list it lands before (a drop line, a "+"), else under the selected
+  // block, else at the end; never below the footer.
+  const placeOf = (bs, at, after) => {
+    const foot = bs.findIndex(b => b.type === "footer");
+    const end = foot >= 0 ? foot : bs.length;
+    if (at != null) return Math.max(0, Math.min(at, end));
+    const j = after != null ? bs.findIndex(b => b._k === after) : -1;
+    return j >= 0 ? Math.min(j + 1, end) : end;
+  };
+
   // Elements: a new block under the selected one (or at the end, above the
-  // footer), selected. Returns its key.
-  const insert = async (def, { list = false } = {}) => {
+  // footer), or at `at`, selected. Returns its key.
+  const insert = async (def, { list = false, at = null } = {}) => {
     const fresh = { type: def.key, ...clone(list ? LIST_DEFAULTS : def.defaults || {}), _k: newKey() };
     if (["hero", "image"].includes(def.key)) { const p = await stockPhotoForBlock(); if (p) { fresh.image = p.src; fresh.alt = p.alt; } }
     if (def.key === "photos2") { const p = await stockPhotoForBlock(); if (p) fresh.images = [{ src: p.src, alt: p.alt }, { src: p.src, alt: p.alt }]; }
@@ -151,15 +162,38 @@ export function useEmailBuilder(initial, { meta = null, allowed = [], onChanged 
     const v = validateEmailBlocks([probe], allowed);
     if (!v.ok) return { error: v.error.replace(/^Block 1: /, "") };
     const after = selKey;
-    change(bs => {
-      const foot = bs.findIndex(b => b.type === "footer");
-      const end = foot >= 0 ? foot : bs.length;
-      const j = after != null ? bs.findIndex(b => b._k === after) : -1;
-      const at = j >= 0 ? Math.min(j + 1, end) : end;
-      const n = [...bs]; n.splice(at, 0, fresh); return n;
-    });
+    change(bs => { const n = [...bs]; n.splice(placeOf(bs, at, after), 0, fresh); return n; });
     setSelKey(fresh._k);
     return fresh._k;
+  };
+
+  // BUILDER-2B · A RUN OF BLOCKS (a saved block, a ready-made one, a paste):
+  // copies with fresh keys, checked by the validator with the email they join
+  // (MAX_BLOCKS counts them), one undo step, the first one selected.
+  const insertBlocks = (list, { at = null } = {}) => {
+    const fresh = (Array.isArray(list) ? list : []).filter(b => b && b.type !== "header" && b.type !== "footer").map(b => ({ ...clone(b), _k: newKey() }));
+    if (!fresh.length) return { error: "There is nothing to add." };
+    const v = validateEmailBlocks([...stripKeys(latest.current), ...stripKeys(fresh)], allowed);
+    if (!v.ok) return { error: v.error.replace(/^Block \d+: /, "") };
+    const after = selKey;
+    change(bs => { const n = [...bs]; n.splice(placeOf(bs, at, after), 0, ...fresh); return n; });
+    setSelKey(fresh[0]._k);
+    return { key: fresh[0]._k, count: fresh.length };
+  };
+
+  // BUILDER-2B · A DROP. The block moves to land before the block now at `at`
+  // (at = the list's length: the end). One undo step; the footer stays last.
+  const moveTo = (key, at) => {
+    const i = indexOf(key);
+    if (i < 0) return false;
+    const bs = latest.current;
+    if (bs[i].type === "footer") return false;
+    const foot = bs.findIndex(b => b.type === "footer");
+    let to = Math.max(0, Math.min(at, foot >= 0 ? foot : bs.length));
+    if (to > i) to -= 1;
+    if (to === i) return false;
+    change(list => { const n = [...list]; const [x] = n.splice(i, 1); n.splice(to, 0, x); return n; });
+    return true;
   };
 
   // ITEM 1 · A FIELD ALWAYS LANDS SOMEWHERE. With no live caret in the chosen
@@ -185,6 +219,6 @@ export function useEmailBuilder(initial, { meta = null, allowed = [], onChanged 
   return {
     blocks, latest, selected, selKey, setSelKey, selectIndex, change, changeMeta, reset, markSaved, undo, redo,
     canUndo: hist.current.past.length > 0, canRedo: hist.current.future.length > 0, ver,
-    commit, setBlock, setStyle, act, insert, appendField,
+    commit, setBlock, setStyle, act, insert, appendField, insertBlocks, moveTo,
   };
 }
