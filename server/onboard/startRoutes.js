@@ -95,7 +95,7 @@ function mount(ctx) {
     const links = await query(`SELECT id, contact_name, contact_email, price_cents, price_basis, charge_mode, first_charge_on,
         status, expires_at, signed_at, completed_at, created_at, created_by_name,
         order_number, order_json, order_version, order_updated_at, deal_id, sent_at FROM start_links WHERE org_id=? ORDER BY created_at DESC`, [org.id]);
-    const [admin] = await query(`SELECT name, email FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL ORDER BY created_at LIMIT 1`, [org.id]);
+    const [admin] = await query(`SELECT name, email FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL AND is_super_admin IS NOT TRUE ORDER BY created_at LIMIT 1`, [org.id]);
     const deal = await require("../admin/sales/orderDeal").dealForOrg(query, org.id);   // ORDER-1: the deal that moves
     res.json({
       orgName: org.name, paperDoneAt: org.paper_done_at, dataInAt: org.data_in_at,
