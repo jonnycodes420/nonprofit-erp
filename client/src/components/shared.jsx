@@ -420,10 +420,6 @@ export function GlobalStyles() {
       .dp3-main{scrollbar-width:thin;}
       .dp3-main:focus-visible,.dp3-rail:focus-visible{outline:2px solid ${T.gold500};outline-offset:-2px;}
     }
-    /* PROFILE-4: only the tab row is pinned now (the header scrolls away), so it
-       sticks on short screens too. The panes are at least the column less the
-       tab row tall, so a tab switched to while the row is stuck starts just
-       under it. The strip's last cell has no divider. */
     @media (min-width:769px){.dp4-panes{min-height:calc(var(--dp-h,calc(100vh - 52px)) - 40px);}}
     .dp4-cell:last-child{border-right:0!important;margin-right:0!important;padding-right:0!important;}
     /* PROFILE-3: inside a rail card the rail's text is ink (profile/ProfileRail RAIL). */

@@ -101,7 +101,8 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
         <MergedFromBanner donor={donor} isReadOnly={isReadOnly} onDone={onRecordChanged}/>{/* HOUSEHOLD-1 item 5 */}
         {/* PROFILE-4 · A SHORT HEADER. Back on its own small line; then one row:
             the face (44px), the name in the display face at 26px with its tags
-            beside it, and the actions on the right. One quiet line under the
+            beside it, and the actions on the right, all top-aligned (a photo or
+            wrapped tags never move the name). One quiet line under the
             name (Donor since, the contact bits), then the numbers strip. Less
             than half the old height (Jonathan, 24 Nov: "cut that white window
             in half"), and it scrolls away with the page; only the tabs stick. */}
@@ -113,12 +114,12 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
               wrapping row: the name stays on one line and the actions drop under
               it only when they cannot fit beside it. At 390 the row is
               display:contents, so the phone's grid order is unchanged. */}
-          <div className="dph-row" data-testid="dp-head-row" style={{gridColumn:"1 / -1",gridRow:2,display:"flex",flexWrap:"wrap",alignItems:"center",columnGap:14,rowGap:8,minWidth:0}}>
-          <div className="dph-avatar" data-testid="dp-avatar" style={{gridColumn:1,gridRow:2,alignSelf:"center",width:44,flex:"none"}}>
+          <div className="dph-row" data-testid="dp-head-row" style={{gridColumn:"1 / -1",gridRow:2,display:"flex",flexWrap:"wrap",alignItems:"flex-start",columnGap:14,rowGap:8,minWidth:0}}>
+          <div className="dph-avatar" data-testid="dp-avatar" style={{gridColumn:1,gridRow:2,alignSelf:"start",width:44,flex:"none"}}>
             <DonorPhotoControl donor={donor} isReadOnly={isReadOnly} photoUrl={photoUrl} onChanged={setPhotoUrl} size={44}/>
           </div>
-          <div className="dph-identity" data-testid="dp-identity" style={{gridColumn:2,gridRow:2,minWidth:0,flex:"1 1 160px",alignSelf:"center",minHeight:44,display:"flex",alignItems:"center",flexWrap:"wrap",columnGap:12,rowGap:2}}>   {/* PROFILE-4: the name and its tags share the actions' row */}
-            <h1 className="dph-name" data-testid="dp-name" data-plain-on-purpose="the page is this person" style={{margin:0,fontSize:26,fontWeight:400,color:T.ink,letterSpacing:"-0.01em",
+          <div className="dph-identity" data-testid="dp-identity" style={{gridColumn:2,gridRow:2,minWidth:0,flex:"1 1 160px",alignSelf:"start",display:"flex",alignItems:"center",flexWrap:"wrap",columnGap:12,rowGap:0}}>   {/* PROFILE-4: the name and its tags share the actions' row */}
+            <h1 className="dph-name" data-testid="dp-name" data-plain-on-purpose="the page is this person" style={{margin:0,padding:"5px 0 1px",fontSize:26,fontWeight:400,color:T.ink,letterSpacing:"-0.01em",
               fontFamily:"'DM Serif Display',Georgia,serif",lineHeight:1.15,overflowWrap:"break-word",minWidth:0}}>{headName||"\u00a0"}</h1>
             {headTags.length>0&&<div className="dph-tags" data-testid="dp-head-tags" style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
               {headTags[0]&&<div className="dph-tag1" data-testid="dp-head-tag-1" style={{whiteSpace:"nowrap"}}>{headTags[0]}</div>}
@@ -134,7 +135,7 @@ function ProfileHeader({onRecordChanged,setMergeOpen,setRelatedOpen,setRelPicker
               BUTTON with a menu, never a link, because it does something on
               this page rather than going somewhere. Everything that was in the
               row is in the menu, so nothing was dropped. */}
-          <div className="dph-actions" data-testid="dp-actions" style={{gridColumn:3,gridRow:2,alignSelf:"center",marginLeft:"auto",display:"flex",gap:8,flexShrink:0,alignItems:"center",position:"relative",flexWrap:"nowrap",justifyContent:"flex-end"}}>
+          <div className="dph-actions" data-testid="dp-actions" style={{gridColumn:3,gridRow:2,alignSelf:"start",marginLeft:"auto",display:"flex",gap:8,flexShrink:0,alignItems:"center",position:"relative",flexWrap:"nowrap",justifyContent:"flex-end"}}>
             {/* BUILD-88a A.4 — ONE EMERALD PRIMARY. The header carried two filled
                 buttons in two different colours (a brass "Log a conversation" and
                 an emerald "Request Gift"), so nothing on it was the obvious thing

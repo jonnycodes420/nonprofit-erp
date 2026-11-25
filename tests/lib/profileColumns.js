@@ -10,7 +10,7 @@
 //   §grid at 1440 and 1280: the back link, the avatar, the first tab and the
 //     timeline start on one left edge (±1px), 40px from the sidebar; the name,
 //     the quiet line and the numbers strip share a second edge (PROFILE-4); the
-//     actions are centred on the name's row (±2px).
+//     actions are centred on the name's first line (±2px).
 //   §columns at 1440 and 1280: a wheel over the main column moves only it, a
 //     wheel over the rail moves only the rail, the window never moves, and the
 //     last thing in each column can be scrolled into view; the tab row stays
@@ -54,7 +54,9 @@ async function profileColumnsScroll(pw, auth, { ok, APP }) {
         const av = avatar && (avatar.querySelector("img,[data-testid],div,button") || avatar).getBoundingClientRect();
         return { side, back: L(".dph-back"), avatar: av && Math.round(av.left * 10) / 10, avatarBox: L("[data-testid=dp-avatar]"), fig: L("[data-testid=dp-fig-lifetime]"),
           tab: L("[data-testid=dp-tabs] [role=tab]"), timeline: tl && Math.round(tl.getBoundingClientRect().left * 10) / 10,
-          name: L("[data-testid=dp-name]"), tags: L("[data-testid=dp-head-tags]"), contact: L("[data-testid=dp-contact-line]"), actions: L("[data-testid=dp-actions]") };
+          name: L("[data-testid=dp-name]"), tags: L("[data-testid=dp-head-tags]"), contact: L("[data-testid=dp-contact-line]"), actions: L("[data-testid=dp-actions]"),
+          // PROFILE-4: the actions sit on the name's FIRST line (a long name wraps under it)
+          line1: (() => { const h = document.querySelector("[data-testid=dp-name]"); if (!h) return null; const r = document.createRange(); r.selectNodeContents(h); const q = r.getClientRects()[0]; return q ? { top: q.top, bottom: q.bottom } : null; })() };
       });
       // PROFILE-4: the numbers strip starts under the name (the mockup), so it is on the second edge.
       const edges = { back: g.back && g.back.x, avatar: g.avatarBox && g.avatarBox.x, tab: g.tab && g.tab.x, timeline: g.timeline };
@@ -64,8 +66,8 @@ async function profileColumnsScroll(pw, auth, { ok, APP }) {
       // PROFILE-4: the tags sit beside the name now; the quiet line and the numbers start on the name's edge.
       const second = [g.name && g.name.x, g.contact && g.contact.x, g.fig && g.fig.x].filter(v => v != null);
       ok(`§grid ${w} ${who}: the name, the quiet line and the numbers share one edge`, second.length >= 2 && Math.max(...second) - Math.min(...second) <= 1, { name: g.name, contact: g.contact, numbers: g.fig });
-      const nameMid = g.name && (g.name.top + g.name.bottom) / 2, actMid = g.actions && (g.actions.top + g.actions.bottom) / 2;
-      ok(`§grid ${w} ${who}: the actions are centred on the name`, nameMid != null && actMid != null && Math.abs(nameMid - actMid) <= 2, { nameMid, actMid });
+      const nameMid = g.line1 && (g.line1.top + g.line1.bottom) / 2, actMid = g.actions && (g.actions.top + g.actions.bottom) / 2;
+      ok(`§grid ${w} ${who}: the actions are centred on the name's first line`, nameMid != null && actMid != null && Math.abs(nameMid - actMid) <= 2, { nameMid, actMid });
 
       // §columns
       const col = async sel => page.evaluate(s => { const e = document.querySelector(s); return { top: e.scrollTop, can: e.scrollHeight - e.clientHeight }; }, sel);
