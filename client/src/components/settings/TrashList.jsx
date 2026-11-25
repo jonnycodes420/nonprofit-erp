@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { told } from "../../lib/stewardTold";
-import { useChanged } from "../../lib/changes";
+import { useLive } from "../../lib/liveRead";   // FRESH-2: one place
 import { T } from "../shared";
 
 // INTEGRITY-2 · THE TRASH (W-1107-Finance-35). A searchable list of the
@@ -25,7 +25,7 @@ export function TrashList({ isAdmin, isReadOnly, onChanged }) {
   // FRESH-1 item 1: Empty trash, a delete anywhere, an Undo: every write that moves a person
   // re-reads the list and its sentence (lib/changes.js). Only a Restore from here re-read it,
   // so after Empty trash the row and "1 person is in the trash" stayed until a reload.
-  useChanged(["person"], () => setTick(k => k + 1));
+  useLive("trash.list", ["person"], () => setTick(k => k + 1));
 
   useEffect(() => {
     if (!isAdmin) return undefined;

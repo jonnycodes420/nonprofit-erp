@@ -3,6 +3,7 @@ import { population } from "../../../shared/populationWords.js";   // DEFINE-1
 import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import CampaignTurnOn from "./CampaignTurnOn";   // COMMS-1
 import { useChangeRev } from "../lib/changes";   // STALE-1: the "draft" kind (COMMS-1)
+import { useLiveRead } from "../lib/liveRead";   // FRESH-2: Overview, Campaigns and Sent re-read from one place
 import { dismissDrafts, DismissX, SelectBar, SelectBox, useSelection, DismissedDrafts } from "./DraftDismiss";   // COMMS-1 item 4
 import { AgentDraftsWaiting } from "./AgentDraftsWaiting";   // COMMS-1: Atlas's drafts as rows
 import { SurveysPanel } from "./Surveys";
@@ -1250,18 +1251,19 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const [heldDraftId] = useState(highlightDraftId || null);
   // BUILD-97 — the hub's single read. One request, so the landing screen does
   // not assemble itself in a different order on every visit.
-  const [hub, setHub] = useState(null);
-  const [hubErr, setHubErr] = useState("");
-  const loadHub = useCallback(() => {
-    apiFetch("/communications/hub").then(h => { setHub(h); setHubErr(""); })
-      .catch(e => setHubErr(e?.message || "Could not load"));
-  }, []);
-  useEffect(() => { loadHub(); }, [loadHub]);
+  // FRESH-2: Overview's Recent sends and the counts beside it re-read when a campaign is
+  // made, sent or deleted, or who can be reached changes (it was read once, on mount).
+  const hubRead = useLiveRead("comms.overview", ["fund", "totals", "person", "draft"], () => apiFetch("/communications/hub"));
+  const hub = hubRead.data === undefined ? null : hubRead.data;
+  const hubErr = hubRead.error ? (hubRead.error.message || "Could not load") : "";
   useEffect(() => { if (initialNav && onInitialNavConsumed) onInitialNavConsumed(); }, []);
 
   // Campaigns
-  const [campaigns, setCampaigns]     = useState([]);
-  const [loading, setLoading]         = useState(true);
+  // FRESH-2: the campaigns list re-reads on every change to campaigns (lib/liveRead.js), and only
+  // the newest read is kept, so a delete's re-read never lands under its Undo's ("one step behind").
+  const campaignsRead = useLiveRead("comms.campaigns", ["fund", "totals", "draft"], () => apiFetch("/campaigns"));
+  const campaigns = Array.isArray(campaignsRead.data) ? campaignsRead.data : [];
+  const loading = campaignsRead.loading && campaignsRead.data === undefined;
   // FIX-15 Part 5: /app/communications?subtab=campaigns&campaign=<id> opens
   // with that campaign expanded, so a campaign's name is a real link.
   const [expandedId, setExpandedId]   = useState(() => urlParam("communications", "campaign"));
@@ -1362,19 +1364,16 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
       .catch(() => setMyTemplates([]));
   }, [view]);
 
-  const loadCampaigns = async () => {
-    try { setCampaigns(await apiFetch("/campaigns")); } catch (e) { console.error(e); }
-    setLoading(false);
-  };
+  const loadCampaigns = () => campaignsRead.reload();
 
   // BUILD-94 Part 4 — the sent list's counts, server-computed so the screen
   // and the numbers cannot disagree.
-  const [sentRows, setSentRows] = useState([]);
-  const loadSent = () => apiFetch("/campaigns/sent").then(r => setSentRows((r && r.campaigns) || [])).catch(() => setSentRows([]));
+  const sentRead = useLiveRead("comms.sent", ["fund", "totals"], () => apiFetch("/campaigns/sent").then(r => (r && r.campaigns) || []).catch(() => []));
+  const sentRows = sentRead.data || [];
+  const loadSent = () => sentRead.reload();
   // COMMS-SPEED-1: nothing here reads every person. The hand-picked audience
   // searches on the server as you type (communications/ManualAudience.jsx);
   // the counts and reasons are the server's (segment-preview, the hub).
-  useEffect(() => { loadCampaigns(); loadSent(); }, []);
 
   // Poll while any campaign is sending
   const anySending = campaigns.some(c => c.status === "sending");
@@ -1483,7 +1482,6 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
       const copy = c.template_id
         ? await apiFetch("/campaigns/from-template", { method: "POST", body: JSON.stringify({ templateId: c.template_id, name: "Copy of " + c.name }) })
         : await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) });
-      await loadCampaigns();
       return copy;
     } catch (e) { alert(errorMessage(e)); return null; }
   };
@@ -1500,8 +1498,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     try {
       const c = await apiFetch("/campaigns/from-template", { method: "POST", body: JSON.stringify({ templateId: tpl.id, name: tpl.name }) });
       offerUndo({ message: c.sentence || `Started ${c.name} from a template.`,
-        undoAction: async () => { const x = await apiFetch(`/campaigns/${c.id}`, { method: "DELETE" }); setView("list"); await loadCampaigns(); return x; } }, "campaign");
-      await loadCampaigns();
+        undoAction: async () => { const x = await apiFetch(`/campaigns/${c.id}`, { method: "DELETE" }); setView("list"); return x; } }, "campaign");
       openBuilder(c);
       if (presetSeg) setForm(f => ({ ...f, seg: { ...presetSeg } }));
     } catch (e) { alert(errorMessage(e)); }
@@ -1517,15 +1514,14 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
       if (id) await apiFetch(`/campaigns/${id}`, { method: "PUT", body: JSON.stringify(payload) });
       else { const sv = await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) }); id = sv.id; setEditingId(id); }
       const r = await apiFetch(`/campaigns/${id}/request-approval`, { method: "POST", body: "{}" });
-      offerUndo({ message: r.sentence, undoAction: async () => { const x = await apiFetch(`/campaigns/${id}/withdraw-approval`, { method: "POST", body: "{}" }); await loadCampaigns(); return x; } }, "approval request");
-      await loadCampaigns(); setView("list");
+      offerUndo({ message: r.sentence, undoAction: async () => { const x = await apiFetch(`/campaigns/${id}/withdraw-approval`, { method: "POST", body: "{}" }); return x; } }, "approval request");
+      setView("list");
     } catch (e) { setApprovalNote(errorMessage(e)); }
   };
   const approveCampaign = async (c) => {
     try {
       const r = await apiFetch(`/campaigns/${c.id}/approve`, { method: "POST", body: "{}" });
-      offerUndo({ message: r.sentence, undoAction: async () => { const x = await apiFetch(`/campaigns/${c.id}/unapprove`, { method: "POST", body: "{}" }); await loadCampaigns(); return x; } }, "approval");
-      await loadCampaigns(); loadSent();
+      offerUndo({ message: r.sentence, undoAction: async () => { const x = await apiFetch(`/campaigns/${c.id}/unapprove`, { method: "POST", body: "{}" }); return x; } }, "approval");
     } catch (e) { alert(errorMessage(e)); }
   };
 
@@ -1535,7 +1531,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     try {
       if (editingId) await apiFetch(`/campaigns/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
       else await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) });
-      await loadCampaigns(); setView("list");
+      setView("list");
     } catch (e) { alert(errorMessage(e)); }
   };
 
@@ -1547,7 +1543,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     try {
       if (editingId) await apiFetch(`/campaigns/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
       else await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) });
-      await loadCampaigns(); setView("list");
+      setView("list");
     } catch (e) { alert(errorMessage(e)); }
   };
 
@@ -1565,7 +1561,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     setSending(true); setSendResult(null);
     try {
       const r = await apiFetch(`/campaigns/${id}/send`, { method: "POST" });
-      setSendResult(r); await loadCampaigns(); setView("list");
+      setSendResult(r); setView("list");
     } catch (e) { alert(errorMessage(e)); }
     setSending(false);
   };
@@ -1592,14 +1588,13 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
       // FIX-15 Part 3: a 200 with sent:false (no mail key configured) is not a send.
       if (r && r.sent === false) setTestState({ state: "error", message: r.message || r.error || "The test was not sent: email is not set up on this server." });
       else setTestState({ state: "sent", to: r.to, from: r.from, verified: r.verified });
-      await loadCampaigns();
     } catch (e) { setTestState({ state: "error", message: errorMessage(e) }); }
   };
 
   const deleteCampaign = async (c) => {
     const id = c.id;
     if (!(await askConfirm({ title: `Delete "${c.name}"?`, body: c.sent_at ? "The campaign and its counts leave this list. Nothing already sent is recalled." : "The draft and its words are deleted. You can undo it straight after.", yes: "Delete campaign", danger: true }))) return;
-    try { const r = await apiFetch(`/campaigns/${id}`, { method: "DELETE" }); await loadCampaigns(); offerUndo(r, "campaign", loadCampaigns); }
+    try { const r = await apiFetch(`/campaigns/${id}`, { method: "DELETE" }); offerUndo(r, "campaign"); }
     catch (e) { alert(errorMessage(e)); }
   };
 
@@ -1866,7 +1861,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               )}
 
               {/* what she actually sent */}
-              <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, overflow: "hidden" }}>
+              <div data-testid="comms-recent-sends" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, overflow: "hidden" }}>
                 <div style={{ padding: "14px 18px", borderBottom: "1px solid " + T.bg3, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                   <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',Georgia,serif" }}>Recent sends</span>
                   <button onClick={() => { setNav("campaigns"); openBuilder(); }} disabled={isReadOnly}
@@ -2272,7 +2267,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             openTemplateId={tplOpen ? tplOpen.id : null} openTitle={tplOpen ? tplOpen.title : null} openBackLabel={tplOpen ? tplOpen.backLabel : null} onBackFromOpen={tplOpen ? () => { const b = tplOpen.back; setTplOpen(null); b(); } : null}
             campaignStarters={templates} previewSubject={s => renderPreview(s)}
             onOpenCampaigns={() => setNav("campaigns")} onOpenDrafts={() => setNav("milestones")}
-            onOpenCampaign={(c, sentence) => { setTplOpen(null); setNav("campaigns"); loadCampaigns(); openBuilder(c, c.reused ? sentence : null); }} />
+            onOpenCampaign={(c, sentence) => { setTplOpen(null); setNav("campaigns"); openBuilder(c, c.reused ? sentence : null); }} />
         )}
 
         {/* ── AUDIENCE ──────────────────────────────────────────────────────── */}
