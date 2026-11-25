@@ -671,8 +671,8 @@ export function GlobalStyles() {
       .app-main{margin-left:0!important;margin-top:0!important;}
       .app-header{display:flex!important;}
       /* Full-screen takeovers cover the whole screen on mobile (no fixed bar
-         to sit under), reset the desktop top:52 offset. */
-      .fullscreen-takeover{top:var(--steward-strip-h, 0px)!important;left:0!important;}   /* CAMPAIGN-2: under the staging strip */
+         to sit under but the staging strip), reset the desktop top:52 offset. */
+      .fullscreen-takeover{top:var(--steward-strip-h,0px)!important;left:0!important;}
       /* FIX-26: the campaign builder's three columns (settings, editor, the
          email) were squeezed side by side at 390. They stack, full width, and
          the body scrolls as one page; the header wraps its buttons. */

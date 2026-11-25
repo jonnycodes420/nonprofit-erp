@@ -53,7 +53,7 @@ export function AudienceLine({ audience, testid = "audience-line" }) {
           <span key={x.reason}><button type="button" data-testid={"can-receive-other-" + x.reason} data-count={x.count} onClick={() => setOpen(o => (o === x.reason ? null : x.reason))}
             style={{ background: "none", border: "none", padding: 0, color: T.green, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: 13, textDecoration: "underline", textUnderlineOffset: 2 }}>{x.sentence}</button>{k < arr.length - 1 ? " · " : "."}</span>))}</div>}
       </div>}
-      <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.55 }}>
+      <div data-testid="audience-count" style={{ fontSize: 13, color: T.ink, lineHeight: 1.55 }}>
         <b>{audience.total.toLocaleString()}</b> {audience.noun} {"·"} <b data-testid="audience-sendable">{audience.sendable.toLocaleString()}</b> can get this email{audience.groups.length ? ": " : "."}
         {audience.groups.map((x, k) => (
           <span key={x.reason}>
