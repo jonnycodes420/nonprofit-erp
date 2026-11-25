@@ -6584,7 +6584,12 @@ app.get("/portal-assets/:id", wrap(assetDoor), wrap(async (req, res) => {
   if (!asset || asset.orgId !== req.assetMeta.orgId) return res.status(404).json({ error: "not_found" });
   let buffer = asset.buffer, contentType = asset.contentType, variantTag = "";
   const w = parseInt(req.query.w, 10);
-  if (PORTAL_ASSET_WIDTHS.includes(w) && contentType !== "image/svg+xml" && contentType !== "image/gif") {
+  const EI = require("../server/mail/emailImages");
+  if (req.query.fmt === "jpeg" && EI.needsJpeg(contentType)) {
+    // SENDS-3 item 7: the JPEG an email points at (server/mail/emailImages.js); a WebP never reaches an inbox.
+    try { buffer = await EI.jpegRendition(asset, PORTAL_ASSET_WIDTHS.includes(w) ? w : null); contentType = "image/jpeg"; variantTag = `-jpeg${PORTAL_ASSET_WIDTHS.includes(w) ? w : ""}`; }
+    catch (e) { console.error("[portal-assets] jpeg rendition failed, serving master:", e.message); }
+  } else if (PORTAL_ASSET_WIDTHS.includes(w) && contentType !== "image/svg+xml" && contentType !== "image/gif") {
     try {
       const sharp = require("sharp");
       const meta = await sharp(asset.buffer).metadata();

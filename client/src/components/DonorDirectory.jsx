@@ -13,6 +13,7 @@ import { censusById } from "../../../shared/numberCensus.js";
 import { T, interactive, activeMark, fmtFull, daysDiff, askClaude, STAGES, AIBtn, AIPanel, EmptyState, DriftBadge, Modal, PersonMark } from "./shared";
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { EveryoneBreakdown } from "./EveryoneBreakdown";   // INTEGRITY-2
+import AtlasListChip from "./donors/AtlasListChip";   // SENDS-3 item 4
 import { ColumnEditor, FALLBACK_SETUP, NAME_KEY, PAGE_SIZES, CELL_PAD, CHECK_W, alignFor, cleanColumns, columnSpec, columnTrack, formatCell, gridMinWidth, moveKey } from "./DonorColumns";
 import { FilterBuilder, ViewsMenu } from "./DonorFilters";
 import { AddToGroup, SaveAsGroup } from "./Groups";
@@ -368,7 +369,7 @@ function BulkAutoEmail({ids,disabled,onDone}){
     </select>
   );
 }
-function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",viewEdited=false,onPickView,onSaveView,onDeleteView,onPageSize,includeScreening=false,peopleView="donors",setPeopleView,roleCounts=null,fromImport="",clearFromImport,anyFilter=false,onUpdateView=null,onClearFilters=null,units=null,householdsTogether=false,setHouseholdsTogether=null}){
+function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",viewEdited=false,onPickView,onSaveView,onDeleteView,onPageSize,includeScreening=false,peopleView="donors",setPeopleView,roleCounts=null,fromImport="",clearFromImport,fromAtlas="",clearFromAtlas,anyFilter=false,onUpdateView=null,onClearFilters=null,units=null,householdsTogether=false,setHouseholdsTogether=null}){
   // WIRE-1: the server-side filters on screen, as a Group rule, offered once
   // a filter beyond "donors" is set. The sort is not a filter.
   const canExport=useCanExport(isAdmin?"admin":"staff");   // ACCESS-3
@@ -648,6 +649,7 @@ function DirectoryView({updating=false,statusFilter="",setStatusFilter,donors,lo
           </button>);})}
       </div>}
       {setPeopleView&&roleCounts&&!anyFilter&&<EveryoneBreakdown count={roleCounts.everyone}/>}
+      {fromAtlas&&<AtlasListChip actionId={fromAtlas} onClear={clearFromAtlas}/>}
       {fromImport&&<div data-testid="dir-from-import" style={{fontSize:13,color:T.ink,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         Showing the people one import brought in.
         {clearFromImport&&<button type="button" onClick={clearFromImport} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:13,fontWeight:700,cursor:"pointer",textDecoration:"underline"}}>Show everyone</button>}

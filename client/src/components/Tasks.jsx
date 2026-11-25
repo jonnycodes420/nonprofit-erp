@@ -281,11 +281,11 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
         onChanged={async () => { await load(); }} onError={say} onFinish={t => { setSheet(null); if (NEEDS_OUTCOME.has(t.kind) && t.donor_id) setFinish(t); else tick(t); }}
         onReopen={t => { setSheet(null); tick(t); }} />}
       {touchOffer && <PlannedTouchOffer task={touchOffer} onClose={() => setTouchOffer(null)} onLogged={async () => { setTouchOffer(null); await load(); }}
-        onJustDone={async () => { const t = touchOffer; setTouchOffer(null); try { await complete(t, true); await load(); offerUndo({ message: `Done: ${t.title}.`, undoAction: async () => { await complete(t, false); await load(); } }, t.title); } catch (e) { say(e); } }} />}
+        onJustDone={async () => { const t = touchOffer; setTouchOffer(null); try { await complete(t, true); await load(); offerUndo({ listed: true, message: `Done: ${t.title}.`, undoAction: async () => { await complete(t, false); await load(); } }, t.title); } catch (e) { say(e); } }} />}
       {finish && <FinishSheet t={finish} today={today} onClose={() => setFinish(null)} onDone={async (row) => {
         setFinish(null); await load();
         const t = finish;
-        offerUndo({ message: `Done: ${t.title}. Logged how it went${row && row.next ? `; the next one is on ${fmtDayShort(row.next.due)}` : ""}.`,
+        offerUndo({ listed: true, message: `Done: ${t.title}. Logged how it went${row && row.next ? `; the next one is on ${fmtDayShort(row.next.due)}` : ""}.`,
           undoAction: async () => { await apiFetch(`/tasks/${t.id}/complete`, { method: "POST", body: JSON.stringify({ done: false }) }); await load(); } }, t.title);
       }} />}
       {draft && <DraftSheet t={draft.t} mode={draft.mode} onClose={() => setDraft(null)}

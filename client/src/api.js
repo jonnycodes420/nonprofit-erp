@@ -499,6 +499,10 @@ export function adaptDonor(d) {
     email2:        d.email2 ?? null,
     mobile:        d.mobile ?? null,
     addressUnmailable: d.address_unmailable === true,
+    // SENDS-3 item 8 (CONTACT-1 found it): a number marked wrong. The rail reads these two by
+    // their column names ("Marked wrong. Never dialed or texted from Steward." under the phone).
+    phone_unreachable: d.phone_unreachable === true,
+    phone_unreachable_reason: d.phone_unreachable_reason ?? null,
     importedSustainer: d.imported_sustainer === true,   // BUILD-77 Part 5 — the third recurring state
     importedSustainerAmount: d.imported_sustainer_amount != null ? parseFloat(d.imported_sustainer_amount) : null,
     importedSustainerLastGift: d.imported_sustainer_last_gift ?? null,

@@ -525,6 +525,13 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     else return { badStatus: true };
   }
   if (q.fromImport) { where.push("created_import_id = ?"); params.push(String(q.fromImport)); }
+  // SENDS-3 item 4: the people one Atlas answer found (Open list), read from the
+  // ids the answer saved on the server. Nothing is made: no group, no row.
+  if (q.fromAtlas) {
+    where.push(`donors.id IN (SELECT jsonb_array_elements_text(vm.read->'answers'->aa.id->'ids') FROM atlas_actions aa
+                  JOIN voice_memos vm ON vm.id = aa.request_id AND vm.org_id = aa.org_id WHERE aa.org_id = ? AND aa.id = ?)`);
+    params.push(orgId, String(q.fromAtlas));
+  }
   if (q.groupId) {
     // In another group: that group's own members, worked out the same way.
     // A group inside a group inside a group is as deep as it goes, so a loop

@@ -48,7 +48,7 @@ const RULES = [
   // with their gifts, pledges and tasks; owners assigned from Home move the portfolio totals;
   // a relationship is a household's and a giving unit's; an attribution moves a gift's credit;
   // a journey applied lays out tasks; a campaign on Fundraising moves its totals.
-  [/^\/drift\/[^/]+\/done\b|^\/plan-steps\/[^/]+\/done\b|^\/journeys\/[^/]+\/apply\b|^\/journeys\/[^/]+\/batch\b|^\/journeys\/batches\//, ["task", "person"]],
+  [/^\/drift\/[^/]+\/done\b|^\/plan-steps\/[^/]+\/(done|reopen)\b|^\/journeys\/[^/]+\/apply\b|^\/journeys\/[^/]+\/batch\b|^\/journeys\/batches\//, ["task", "person"]],
   [/^\/deleted-records\b/, ["person", "gift", "pledge", "group", "totals", "task", "note", "event", "volunteer"]],
   [/^\/home\/owners\b/, ["person", "totals", "task"]],
   [/^\/donor-relationships?\b/, ["person", "totals", "pledge"]],

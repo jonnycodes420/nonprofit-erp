@@ -107,7 +107,11 @@ const billingBeforeOnboarding = () => process.env.MAIL_BILLING_BEFORE_ONBOARDING
 // `billing_mail_enabled`. Account (sign-in) mail has no switch. `kind` lets a
 // staff send a person asked for just now (STAFF_ON_REQUEST, "Send me a test")
 // go with automatic staff mail off: the switch is about what Steward sends on
-// its own.
+// its own. SENDS-3 item 2: and with the donor switch off too. Both switches are
+// about what Steward sends by itself; a test she pressed for, to her own
+// address (both test routes refuse any other), is neither. org_stagewalk has
+// both off, so every "Send me a test" there was refused and showed as a 502.
+// A demo org still never sends, and onboarding still comes first.
 const STAFF_ON_REQUEST = new Set(["campaign_test"]);
 function orgMailDecision(org, category, kind = null) {
   if (category === CATEGORY.ONBOARDING) return { send: false, reason: "onboarding_sequence_off" };
@@ -123,7 +127,7 @@ function orgMailDecision(org, category, kind = null) {
   }
   if (category === CATEGORY.STAFF) {
     if (org.staff_mail_enabled === false && !STAFF_ON_REQUEST.has(kind)) return { send: false, reason: "staff_mail_off" };
-    if (org.staff_mail_enabled !== true && org.emails_enabled === false) return { send: false, reason: "org_emails_disabled" };
+    if (org.staff_mail_enabled !== true && org.emails_enabled === false && !STAFF_ON_REQUEST.has(kind)) return { send: false, reason: "org_emails_disabled" };
   } else if (org.emails_enabled === false) return { send: false, reason: "org_emails_disabled" };
   if (waitsForOnboarding() && !org.onboarded_at) return { send: false, reason: "not_onboarded" };
   return { send: true, reason: null };

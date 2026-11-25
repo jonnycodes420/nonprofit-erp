@@ -54,10 +54,43 @@ async function advanceWithEffects(advance, parent, causeThreadId, opts = {}) {
   return out;
 }
 
-// Reopening step `threadId`: every journey change its close caused goes back.
-function reverseForThread(db, orgId, threadId, who) {
-  return WE.reverse(db || { query: dbQuery, run: dbRun }, orgId, { causeThreadId: threadId }, who,
-    { kinds: ["plan_advanced", "journey_completed", "step_opened"], reason: "the step was reopened" });
+// SENDS-3 item 6 · A STEP THAT GOES BACK TAKES ITS TRACES WITH IT. When a
+// journey step the advance had opened is pending again, its "Journey step: …"
+// line leaves the timeline and its draft (journeyStart.journeyTemplateDraft,
+// key journey-step:<step id>) is archived by system:undo, so the review queue
+// holds nothing for a step that is not open. When the step opens again, the
+// line is written again and the draft comes back (journeyStart).
+async function retireReopened(db, orgId, results) {
+  const ids = [...new Set((results || []).filter(r => r.ok && r.kind === "plan_advanced" && r.table === "cultivation_plan_steps").map(r => r.rowId))];
+  if (!ids.length) return { lines: 0, drafts: 0 };
+  const back = await db.query("SELECT id FROM cultivation_plan_steps WHERE org_id=? AND id = ANY(?::text[]) AND status='pending'", [orgId, ids]);
+  let lines = 0, drafts = 0;
+  for (const { id } of back) {
+    const key = `journey-step:${id}`;
+    const l = await db.run(`DELETE FROM interactions WHERE org_id=? AND metadata->>'line_key' = ? AND metadata->>'via' = 'journey_step'`, [orgId, key]);
+    lines += (l && l.changes) || 0;
+    const d = await db.run(`UPDATE milestone_drafts SET status='archived', archived_at=NOW(), archived_by='system:undo', archived_by_name='Steward (the step was undone)'
+                             WHERE org_id=? AND milestone_key=? AND status='pending_review'`, [orgId, key]);
+    drafts += (d && d.changes) || 0;
+  }
+  return { lines, drafts };
 }
 
-module.exports = { advanceWithEffects, reverseForThread, snapshot };
+// Reopening step `threadId`: every journey change its close caused goes back.
+async function reverseForThread(db, orgId, threadId, who) {
+  const D = db || { query: dbQuery, run: dbRun };
+  const out = await WE.reverse(D, orgId, { causeThreadId: threadId }, who,
+    { kinds: ["plan_advanced", "journey_completed", "step_opened"], reason: "the step was reopened" });
+  await retireReopened(D, orgId, out);
+  return out;
+}
+
+// SENDS-3 item 6: every effect one write recorded (the rail's Mark done), newest first.
+async function reverseForParent(db, orgId, parentKind, parentId, who) {
+  const D = db || { query: dbQuery, run: dbRun };
+  const out = await WE.reverse(D, orgId, { parentKind, parentId }, who, { reason: "the step was reopened" });
+  await retireReopened(D, orgId, out);
+  return out;
+}
+
+module.exports = { advanceWithEffects, reverseForThread, reverseForParent, retireReopened, snapshot };

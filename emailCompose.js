@@ -160,11 +160,15 @@ async function render(ctx, { blocks, subject, preheader, fields, mode = "send" }
     }
     throw e;
   }
-  const html = String((out && out.html) || "");
+  // SENDS-3 item 7: every image it references is one an inbox can show (a WebP goes as its JPEG).
+  const EI = require("./server/mail/emailImages");
+  const html = await EI.emailSafeHtml(String((out && out.html) || ""), ctx.orgId, query);
+  const images = [];
+  for (const im of (out && out.images) || []) images.push({ ...im, src: await EI.emailSafeHtml(String(im.src || ""), ctx.orgId, query, { asHtml: false }) });
   const slots = html.split(B.FOOTER_SLOT).length - 1;
   const problems = blockingProblems(out && out.problems);
   if (mode === "send" && slots !== 1) problems.push("The email has no place for the unsubscribe footer, so it cannot be sent.");
-  return { html, text: String((out && out.text) || ""), images: (out && out.images) || [], problems, slot: B.FOOTER_SLOT };
+  return { html, text: String((out && out.text) || ""), images, problems, slot: B.FOOTER_SLOT };
 }
 
 // The subject line, filled the way the renderer fills the body: a known field
