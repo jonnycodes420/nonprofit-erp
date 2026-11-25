@@ -71,14 +71,21 @@ function readFile(f) {
   return { file: { name, type: clean(f.type, 100) || "application/octet-stream", size: buf.length, data: buf } };
 }
 
+// "Tue, Dec 1 at 10:30 AM", Eastern: the time she picked, as the deal's note says it.
+const slotWords = iso => new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+  .format(new Date(iso)).replace(/, (\d{1,2}:\d{2})/, " at $1");
+
 function answersNote(v, partner) {
   return [
     partner ? `Recommended by ${partner.name} (${partner.market} market).` : null,
-    `Phone: ${v.phone || "not given"}.`,
+    v.slot ? `Picked ${slotWords(v.slot)} Eastern.` : null,
+    // BOOK-1: the card asks name, email, organization, what she uses today and a time; the older
+    // form's questions are said only when they were asked and answered.
+    v.phone ? `Phone: ${v.phone}.` : null,
     `Uses for donors today: ${v.currentSystem || "not given"}.`,
-    `Donors: ${v.donorCount}.`,
-    `What would make this worth it: ${v.worthIt || "not given"}.`,
-    v.file ? `Sent a file: ${v.file.name} (${Math.max(1, Math.round(v.file.size / 1024))} KB). It waits for onboarding.` : "No file sent.",
+    v.donorCountGiven ? `Donors: ${v.donorCount}.` : null,
+    v.worthIt ? `What would make this worth it: ${v.worthIt}.` : null,
+    v.file ? `Sent a file: ${v.file.name} (${Math.max(1, Math.round(v.file.size / 1024))} KB). It waits for onboarding.` : null,
   ].filter(Boolean).join(" ");
 }
 
@@ -89,7 +96,9 @@ async function submit(ctx, b, meta = {}) {
   const v = {
     name: clean(b.name, 120), orgName: clean(b.orgName, 200), email: clean(b.email, 200).toLowerCase(), phone: clean(b.phone, 40),
     currentSystem: clean(b.currentSystem, 300), donorCount: DONOR_COUNTS.includes(b.donorCount) ? b.donorCount : "Not sure",
+    donorCountGiven: DONOR_COUNTS.includes(b.donorCount),
     worthIt: String(b.worthIt == null ? "" : b.worthIt).trim().slice(0, 2000),
+    slot: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(b.slot || "")) && !Number.isNaN(Date.parse(b.slot)) ? new Date(b.slot).toISOString() : null,
   };
   if (!v.name) return { error: "invalid", field: "name", message: "Your name, please." };
   if (!v.orgName) return { error: "invalid", field: "orgName", message: "Your organization's name, please." };
@@ -100,10 +109,10 @@ async function submit(ctx, b, meta = {}) {
   const partner = await partnerByCode(ctx.query, b.partner);
 
   const id = newId("sbk");
-  await ctx.run(`INSERT INTO sales_bookings (id, name, org_name, email, phone, current_system, donor_count, worth_it, partner_code,
+  await ctx.run(`INSERT INTO sales_bookings (id, name, org_name, email, phone, current_system, donor_count, worth_it, partner_code, slot_at,
                    file_name, file_type, file_size, file_data, ip, created_by, created_by_name)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, v.name, v.orgName, v.email, v.phone || null, v.currentSystem || null, v.donorCount, v.worthIt || null, partner ? partner.code : null,
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, v.name, v.orgName, v.email, v.phone || null, v.currentSystem || null, v.donorCount, v.worthIt || null, partner ? partner.code : null, v.slot,
      v.file ? v.file.name : null, v.file ? v.file.type : null, v.file ? v.file.size : null, v.file ? v.file.data : null,
      String(meta.ip || "").slice(0, 60) || null, SYSTEM.id, SYSTEM.name]);
 

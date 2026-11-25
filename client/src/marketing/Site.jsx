@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import "./site.css";
 import "./content.css";
+import "./booking/book.css";   // BOOK-1: /book on one screen
 import { A, Arrow, Icon, Photo, useHead } from "./lib";
 import { PAGES } from "./pages";
 import { OPEN_API_HREF } from "./data/features";
@@ -163,7 +164,7 @@ function Header() {
           {MEGAS.slice(0, 2).map(([id, label]) => (
             <li key={id}><button type="button" aria-expanded={open === id ? "true" : "false"} aria-controls={"m-" + id} onClick={() => setOpen(open === id ? null : id)}>{label} <Chevron /></button></li>
           ))}
-          <li><A href="/pricing">Pricing</A></li>
+          <li><A href="/pricing">How it works</A></li>
           <li><A href="/leadership">Leadership</A></li>
           <li><button type="button" aria-expanded={open === "res" ? "true" : "false"} aria-controls="m-res" onClick={() => setOpen(open === "res" ? null : "res")}>Learn <Chevron /></button></li>
         </ul>
@@ -182,7 +183,7 @@ function Header() {
         {DRAWER.map(([label, items]) => (
           <details key={label}><summary>{label}</summary>{items.map(([h, b]) => <A className="mi" href={h} key={h}><span></span><div><b>{b}</b></div></A>)}</details>
         ))}
-        <details><summary><A href="/pricing" style={{ textDecoration: "none" }}>Pricing</A></summary></details>
+        <details><summary><A href="/pricing" style={{ textDecoration: "none" }}>How it works</A></summary></details>
         <details><summary><A href="/leadership" style={{ textDecoration: "none" }}>Leadership</A></summary></details>
         <p style={{ marginTop: 26 }}><A href="/login" style={{ fontWeight: 600 }}>Log in</A></p>
       </div>
@@ -191,7 +192,7 @@ function Header() {
 }
 
 const FOOTER = [
-  ["Solutions", [["/platform", "Platform overview"], ["/crm", "Steward CRM"], ["/volunteer", "Steward Volunteer"], ["/agent", "Steward Agent"], ["/connections", "Connections"], ["/features", "All features"], ["/pricing", "Pricing"]]],
+  ["Solutions", [["/platform", "Platform overview"], ["/crm", "Steward CRM"], ["/volunteer", "Steward Volunteer"], ["/agent", "Steward Agent"], ["/connections", "Connections"], ["/features", "All features"], ["/pricing", "How it works"]]],
   ["Learn", [["/why", "The case for retention"], ["/articles", "Articles"], ["/guides", "Guides"], ["/templates", "Templates"], ["/research", "Research"], ["/tools", "Free tools"], ["/partners", "Partners"], ["/faq", "FAQ"]]],
   ["Customer resources", [["/login", "Log in"], ["/help", "Help center"], ["/help#ask", "? Ask a question"], [OPEN_API_HREF, "API documentation"], ["/whats-new", "What's new"], ["/move", "Moving to Steward"]]],
   ["Company", [["/about", "About us"], ["/leadership", "Leadership"], ["/security", "Security and trust"], ["/for", "Who it's for"], ["/partners", "Partner with us"], ["/contact", "Contact"]]],
