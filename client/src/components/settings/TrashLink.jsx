@@ -14,7 +14,7 @@ import { apiFetch } from "../../api";
 import { T } from "../shared";
 import { RecordLink } from "../RecordLink";
 import { tabHref } from "../../lib/appUrls";
-import { useChanged } from "../../lib/changes";
+import { useLive } from "../../lib/liveRead";   // FRESH-2: one place
 
 // TRASH-1 item 5: the count re-reads on every write that moves a person (a
 // delete, a Restore, an Undo, Empty trash: lib/changes.js announces each), so
@@ -23,7 +23,7 @@ import { useChanged } from "../../lib/changes";
 export function useTrashCount(on = true) {
   const [n, setN] = useState(null);
   const [rev, setRev] = useState(0);
-  useChanged(["person"], () => setRev(k => k + 1));
+  useLive("trash.count", ["person"], () => setRev(k => k + 1));
   useEffect(() => {
     if (!on) { setN(null); return undefined; }
     let live = true;

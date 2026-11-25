@@ -52,6 +52,11 @@ async function run(st, { log, save, get, query, orgId, parse }) {
     }
     if (!out && st.mode === "more") out = await require("./moreRows").moreRows(prior, { query, orgId });   // ATLAS-11 item 3: the rows behind a number, the next of a list
     if (!out) out = WR.followUpLine(st.mode, prior);
+    // FRESH-2 item 4: rows drawn again from an answer older than a gift or a change to a person say so.
+    if (out && out.answer && prior && (prior.type === "why" || prior.type === "list")) {
+      const since = await require("./sinceAnswer").sinceLine(query, orgId, st.follows);
+      if (since) out = { ...out, line: `${out.line} ${since}` };
+    }
   } else if (st.kind === "population") {
     out = await POP.populationAnswer(st.key, { get, query, orgId });
     // "Lapsed this year" could be either list: both answer, each named, and the first says so.

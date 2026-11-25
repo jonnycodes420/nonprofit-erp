@@ -150,6 +150,9 @@ const SHARED_READS = [
 const SHARED_TTL_MS = 60000;
 const inFlight = new Map();
 const kept = new Map();
+// FRESH-2: a read that left before a write and lands after it is never kept: it answers as things
+// stood before the write (the officer counts kept that for 60 seconds after + Add).
+let writeGen = 0;
 const copy = v => (v && typeof v === "object" ? structuredClone(v) : v);
 // HARDEN-2: answers asked for before the screen that reads them has mounted
 // (prefetch with keep, from lib/bootReads.js). Each is handed over ONCE, if
@@ -227,12 +230,14 @@ export function prefetch(paths, { keep = false, bundle: bundleUrl = bundlePath, 
     }).catch(() => {});
     for (const p of scoped) { const key = token + " " + p; inFlight.set(key, landed.finally(() => inFlight.delete(key))); }
   }
+  const gen = writeGen;   // FRESH-2: an answer that lands after a write is handed over, never kept
   for (const p of want) {
     if (scoped.includes(p)) continue;
     const key = token + " " + p;
     inFlight.set(key, bundle
       .then(b => (b && b[p] && b[p].status === 200 && "body" in b[p]) ? b[p].body : apiFetchNow(p))
       .then(v => {
+        if (gen !== writeGen) return v;
         if (SHARED_READS.some(r => r.test(p))) kept.set(key, { at: Date.now(), value: v });
         else if (keep) parked.set(key, { at: Date.now(), value: v });
         return v;
@@ -258,7 +263,7 @@ const forgetLists = (w) => { for (const fn of writeHooks) { try { fn(w || {}); }
 // the worker's marks on the bell's read) forgets what is held exactly as a
 // write does, so the views that re-read for it are not handed the old answer
 // (the Tasks badge's kept count did that for 60 seconds after Atlas added one).
-onAnyChange(c => { if (c.source !== "write") { kept.clear(); parked.clear(); handed.clear(); forgetLists({ path: null, method: "TOLD", phase: "after" }); } });   // STALE-2: and the answer just handed over (a re-read inside 1.5 s was given it back)
+onAnyChange(c => { if (c.source !== "write") { writeGen++; kept.clear(); parked.clear(); handed.clear(); forgetLists({ path: null, method: "TOLD", phase: "after" }); } });   // STALE-2: and the answer just handed over (a re-read inside 1.5 s was given it back)
 
 export async function apiFetch(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
@@ -277,13 +282,13 @@ export async function apiFetch(path, options = {}) {
   // STALE-1: and once it has landed, it says what it touched (lib/changes.js),
   // so every view on screen that shows one of those kinds re-reads it.
   if (method !== "GET") {
-    kept.clear(); parked.clear(); handed.clear(); inFlight.clear(); forgetLists({ path, method, phase: "before" });
+    writeGen++; kept.clear(); parked.clear(); handed.clear(); inFlight.clear(); forgetLists({ path, method, phase: "before" });
     // STALE-2 (W-1107-Finance-04X): and again when it lands. A read that left
     // while the write was on its way (the profile re-reading on a told(), the
     // bell's poll) was answered as things stood before it, and a reader that
     // asked after the write was handed that answer: the profile's Lifetime
     // kept the old figure until a reload.
-    const after = () => { kept.clear(); parked.clear(); handed.clear(); inFlight.clear(); forgetLists({ path, method, phase: "after" }); };
+    const after = () => { writeGen++; kept.clear(); parked.clear(); handed.clear(); inFlight.clear(); forgetLists({ path, method, phase: "after" }); };
     const meta = {};   // LIVE-2: the server's X-Steward-Changed, read by apiFetchNow
     return apiFetchNow(path, options, 0, meta).then(v => {
       after();
@@ -304,8 +309,9 @@ export async function apiFetch(path, options = {}) {
   const just = handed.get(key);
   if (just) { if (Date.now() - just.at < HANDED_SHARE_MS) return copy(just.value); handed.delete(key); }
   if (!inFlight.has(key)) {
+    const gen = writeGen;
     inFlight.set(key, apiFetchNow(path, options)
-      .then(v => { if (SHARED_READS.some(r => r.test(path))) kept.set(key, { at: Date.now(), value: v }); return v; })
+      .then(v => { if (gen === writeGen && SHARED_READS.some(r => r.test(path))) kept.set(key, { at: Date.now(), value: v }); return v; })
       .finally(() => inFlight.delete(key)));
   }
   return copy(await inFlight.get(key));
