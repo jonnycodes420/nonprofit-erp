@@ -5,7 +5,7 @@ export { BOOKING_URL } from "../../../../shared/bookingLink.js";
 // BOOK-1 item 3: the quote is a customer's words (a paraphrase Jonathan approved). It stays hidden
 // until she says yes; Jonathan flips this one value then.
 export const showTestimonial = false;
-export const TESTIMONIAL = {
+export const CUSTOMER_QUOTE = {
   words: "When a $5,000 gift came in, Steward showed me the same donor gave $1,000 the year before and $500 before that. I took it straight to my executive director.",
   who: "Development Director, Kentucky",
 };

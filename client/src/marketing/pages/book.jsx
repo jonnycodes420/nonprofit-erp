@@ -18,7 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { API } from "../../api";
 import { SlotPicker, SlotFrame } from "../booking/slots";
-import { showTestimonial, TESTIMONIAL, FOUNDER_PHOTO } from "../booking/config";
+import { showTestimonial, CUSTOMER_QUOTE, FOUNDER_PHOTO } from "../booking/config";
 
 export const BOOK_FALLBACK = "That did not go through. Please email jonathan@stewardapp.dev and he will set up a time with you.";
 const USING = ["Spreadsheets", "Salesforce", "Bloomerang", "Nothing yet", "Something else"];
@@ -92,12 +92,12 @@ function Card({ code }) {
     <h2 className="bk-h2">Pick a time</h2>
     <div className="bk-sub">All times Eastern · Google Meet</div>
     <div className="bk-two">
-      <label className="bk-f" htmlFor="book-name">Your name<input id="book-name" required name="name" autoComplete="name" placeholder="Your name" value={f.name} onChange={set("name")} /></label>
-      <label className="bk-f" htmlFor="book-email">Work email<input id="book-email" type="email" required name="email" autoComplete="email" placeholder="you@yourorg.org" value={f.email} onChange={set("email")} /></label>
+      <label htmlFor="book-name" className="bk-f">Your name<input id="book-name" required name="name" autoComplete="name" placeholder="Your name" value={f.name} onChange={set("name")} /></label>
+      <label htmlFor="book-email" className="bk-f">Work email<input id="book-email" type="email" required name="email" autoComplete="email" placeholder="you@yourorg.org" value={f.email} onChange={set("email")} /></label>
     </div>
     <div className="bk-two">
-      <label className="bk-f" htmlFor="book-org">Organization<input id="book-org" required name="organization" autoComplete="organization" placeholder="Your organization" value={f.orgName} onChange={set("orgName")} /></label>
-      <label className="bk-f" htmlFor="book-system">Using today<select id="book-system" name="currentSystem" value={f.currentSystem} onChange={set("currentSystem")}>{USING.map(u => <option key={u}>{u}</option>)}</select></label>
+      <label htmlFor="book-org" className="bk-f">Organization<input id="book-org" required name="organization" autoComplete="organization" placeholder="Your organization" value={f.orgName} onChange={set("orgName")} /></label>
+      <label htmlFor="book-system" className="bk-f">Using today<select id="book-system" name="currentSystem" value={f.currentSystem} onChange={set("currentSystem")}>{USING.map(u => <option key={u}>{u}</option>)}</select></label>
     </div>
     <label htmlFor="book-website" aria-hidden="true" style={{ position: "absolute", left: -10000, width: 1, height: 1, overflow: "hidden" }}>Website<input id="book-website" tabIndex={-1} autoComplete="off" name="website" value={f.website} onChange={set("website")} /></label>
     {live && <>
@@ -139,7 +139,7 @@ export function Book() {
     <div className="bk-rest">
       <Founder />
       <ul className="bk-points">{POINTS.map(p => <li key={p}>{p}</li>)}</ul>
-      {showTestimonial && <blockquote className="bk-quote" data-book-quote>"{TESTIMONIAL.words}" <b>{TESTIMONIAL.who}</b></blockquote>}
+      {showTestimonial && <blockquote className="bk-quote" data-quote="customer" data-book-quote>"{CUSTOMER_QUOTE.words}" <b>{CUSTOMER_QUOTE.who}</b></blockquote>}
     </div>
   </section>;
 }
