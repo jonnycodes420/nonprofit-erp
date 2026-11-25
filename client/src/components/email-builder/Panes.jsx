@@ -10,6 +10,9 @@ import { PaneTabs, Sec, paneNote, paneLabel } from "./controls";
 import { Thumbnail } from "./Thumbnail";
 import { BlockSettings } from "./BlockSettings";
 import { StyleSettings } from "./StyleSettings";
+import { DRAG_TYPE } from "./frameDnD";
+import { BlocksTab } from "./BlocksTab";   // BUILDER-2B
+import { SaveAsBlock } from "./SaveAsBlock";   // BUILDER-2B
 
 // The tiles, in the order the mockup reads, each named as a person would.
 // `list` is the List tile: a text block that starts as a list.
@@ -18,18 +21,28 @@ const TILE = {
   signature: { name: "Signature", ic: "✎" }, giftsummary: { name: "Gift summary", ic: "$" }, event: { name: "Event", ic: "◷" }, givingpage: { name: "Giving page", ic: "♡" },
   video: { name: "Video", ic: "▶" }, stats: { name: "Stats", ic: "#" }, quote: { name: "Quote", ic: "❝" }, list: { name: "List", ic: "☰" },
   hero: { name: "Hero", ic: "▤" }, photos2: { name: "Two photos", ic: "▥" }, header: { name: "Logo", ic: "◎" },
+  // BUILDER-2B: the full builder's blocks (shared/emailMoreBlocks.js).
+  columns: { name: "Columns", ic: "▥" }, box: { name: "Box", ic: "▢" }, social: { name: "Social", ic: "◍" }, code: { name: "Code", ic: "</>" },
 };
-const ORDER = ["richtext", "image", "button", "divider", "signature", "giftsummary", "event", "givingpage", "video", "stats", "quote", "list", "hero", "photos2", "header"];
+const ORDER = ["richtext", "image", "button", "divider", "columns", "signature", "giftsummary", "social", "box", "event", "givingpage", "video", "stats", "quote", "list", "hero", "photos2", "header", "code"];
+// BUILDER-2B: the tiles a person may add, in that order, for both the
+// Elements tab and the floating "+": [{ k, def, name, list }].
+export function tilesFor(blockTypes, role) {
+  const defs = Object.fromEntries(blockTypes.filter(t => !t.roles || t.roles.includes(role)).map(t => [t.key, t]));
+  return ORDER.filter(k => k === "list" ? !!defs.richtext : !!defs[k]).map(k => ({ k, def: k === "list" ? defs.richtext : defs[k], name: TILE[k].name, ic: TILE[k].ic, list: k === "list" }));
+}
 // "Their last gift" reads "Last gift" in a list of fields.
 export const fieldName = label => { const s = String(label || "").replace(/^Their /, ""); return s.charAt(0).toUpperCase() + s.slice(1); };
 export const blockName = (type, labels = {}) => (TILE[type] ? TILE[type].name : labels[type] || type);
 // Each pane keeps its top (tabs, the thumbnail) in place and scrolls the rest.
 const SCROLL = { flex: 1, minHeight: 0, overflowY: "auto", overscrollBehavior: "contain", paddingBottom: 40 };
-export const DRAG_TYPE = "application/x-steward-email-block";   // BUILDER-2 drops what this carries
+export { DRAG_TYPE };   // BUILDER-2B: the frame (frameDnD.js) drops what this carries
 
-export function LeftPane({ tab, onTab, blockTypes, onAdd, fields, fieldInfo, asName, onField, readOnly }) {
-  const defs = Object.fromEntries(blockTypes.map(t => [t.key, t]));
-  const tiles = ORDER.filter(k => k === "list" ? !!defs.richtext : !!defs[k]);
+// BUILDER-2B: role is the signed-in person's; a block the registry keeps for
+// some roles (Code: admins) is offered only to them. onUseBlock(payload) adds
+// a saved or ready-made block; blocksRefresh reloads the Blocks tab.
+export function LeftPane({ tab, onTab, blockTypes, onAdd, fields, fieldInfo, asName, onField, readOnly, role = null, onUseBlock, blocksRefresh = 0, say }) {
+  const tiles = tilesFor(blockTypes, role);
   const info = Object.fromEntries((fieldInfo || []).map(f => [f.key, f]));
   const who = asName ? String(asName).split(/\s+/)[0] : "this person";
   return (
@@ -40,8 +53,7 @@ export function LeftPane({ tab, onTab, blockTypes, onAdd, fields, fieldInfo, asN
         <div data-testid="builder-elements" style={{ padding: 14 }}>
           <div style={{ ...paneNote, marginBottom: 10 }}>Click one to add it under the selected part of the email.</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9 }}>
-            {tiles.map(k => {
-              const def = k === "list" ? defs.richtext : defs[k];
+            {tiles.map(({ k, def }) => {
               return (
                 <button key={k} type="button" draggable={!readOnly} disabled={readOnly} data-testid={"element-" + k} data-block-type={def.key} title={def.hint}
                   onDragStart={e => { try { e.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ type: def.key, list: k === "list" })); e.dataTransfer.effectAllowed = "copy"; } catch { /* older browser */ } }}
@@ -57,12 +69,7 @@ export function LeftPane({ tab, onTab, blockTypes, onAdd, fields, fieldInfo, asN
           </div>
         </div>
       )}
-      {tab === "blocks" && (
-        <div data-testid="builder-blocks" data-saved-blocks="0" style={{ padding: "22px 18px", textAlign: "center" }}>
-          <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 17, color: T.ink, marginBottom: 6 }}>No saved blocks yet</div>
-          <div style={paneNote}>Save any part of an email as a block to reuse it. That arrives next: a story with a photo, your impact numbers, an event invite, ready in your brand.</div>
-        </div>
-      )}
+      {tab === "blocks" && <BlocksTab onUse={onUseBlock} readOnly={readOnly} refresh={blocksRefresh} say={say} />}
       {tab === "fields" && (
         <div data-testid="builder-fields" style={{ padding: 14 }}>
           <div style={{ ...paneNote, marginBottom: 8 }}>Click one to add it where you were typing, or at the end of the selected text. Each shows what it holds for {who}.</div>
@@ -104,6 +111,8 @@ export function RightPane({ html, selectedIndex, frameRef, sel, tab, onTab, labe
           <fieldset disabled={readOnly} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
             {tab === "edit" ? <BlockSettings b={sel} {...settingsProps} /> : <StyleSettings b={sel} setStyle={settingsProps.setStyle} brand={settingsProps.brand} />}
           </fieldset>
+          {!readOnly && settingsProps.saveBlock && !sel.locked && sel.type !== "header" && sel.type !== "footer" && (
+            <SaveAsBlock key={sel._k} {...settingsProps.saveBlock} defaultName={blockName(sel.type, labels)} />)}
         </div>
       ) : (
         <div data-testid="builder-email-settings">

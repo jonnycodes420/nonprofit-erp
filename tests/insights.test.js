@@ -358,8 +358,20 @@ async function main() {
   const [ash] = await q(`SELECT id FROM donors WHERE org_id=$1 AND name='Alin Ashham' AND deleted_at IS NULL`, [ORG]);
   const ashSt = ash && (await api("GET", `/donors/${ash.id}/status`, tok)).body;
   const ashU = ash && (await api("GET", `/insights/donor/${ash.id}?asOf=${AS_OF}`, tok)).body.unit;
-  ok("§4 Ashham (a yearly giver, next gift expected Nov 2026) is not tagged Lapsing; the ladder says Moving up",
-     !!ashSt && !JSON.stringify(ashSt).includes('"lapsing"') && !!ashU && ashU.status === "up", [JSON.stringify(ashSt).match(/"key":"[a-z_]+"/g), ashU && ashU.status]);
+  // main-fix: /donors/:id/status has no asOf and reads the real clock, and Ashham's usual
+  // time (next gift expected Nov 2026) has come, so from 25 Nov 2026 Ashham IS Lapsing by the
+  // rule (shared/numbers/lapse.js: last gift 9-12 months ago and the rhythm's on-time date
+  // passed). The check holds the rule on whatever day it runs: Lapsing exactly when the
+  // on-time date is before today; before it, not Lapsing (what this checked until then).
+  const { ON_TIME_THROUGH } = require("../shared/numbers/lapse");
+  const [ot] = ash ? await q(`SELECT ${ON_TIME_THROUGH("$1", "$2")} AS through`, [ash.id, ORG]) : [];
+  const through = ot && ot.through ? String(ot.through).slice(0, 10) : null;
+  const ahead = !!through && through >= require("./helpers").civilToday();
+  const tagged = k => !!ashSt && JSON.stringify(ashSt).includes(`"key":"${k}"`);
+  // once 12 months pass (Dec 2026) the rule says Lapsed instead, which is also "the time has passed"
+  const late = tagged("lapsing") || tagged("lapsed");
+  ok(`§4 Ashham (a yearly giver, usual time through ${through}) is tagged Lapsing only once that time has passed; the ladder says Moving up`,
+     !!ashSt && !!through && (ahead ? !late : late) && !!ashU && ashU.status === "up", [through, ahead, JSON.stringify(ashSt).match(/"key":"[a-z_]+"/g), ashU && ashU.status]);
 
   // ── §5 the dinner file ──────────────────────────────────────────────────
   const d = await importFile(tok, "jp-dinner-gifts-106.xlsx");

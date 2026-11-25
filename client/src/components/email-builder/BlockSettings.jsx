@@ -12,6 +12,7 @@ import { claimsOf, blockHint } from "../../../../shared/pastGiving.js";   // FLO
 import { BUTTON_ACTION_LABEL } from "../../../../shared/emailBlocks.js";
 import { LIMITS } from "../../../../shared/emailBlockStyle.js";
 import { Sec, Row, Slider, Segmented, Switch, Swatches, paneInput, paneBtn, paneNote } from "./controls";
+import { MoreSettings } from "./MoreSettings";   // BUILDER-2B: Columns, Box, Social, Code
 
 const BUTTON_ACTIONS = Object.entries(BUTTON_ACTION_LABEL).map(([id, label]) => ({ id, label }));
 export const ALIGN_OPTIONS = [{ id: "left", label: "Left" }, { id: "center", label: "Center" }, { id: "right", label: "Right" }];
@@ -121,7 +122,7 @@ function SignaturePicture({ b, set }) {
 
 // b: the block. set(patch, tag) → null or a sentence. setStyle(patch, tag).
 // pick(kind, onPick): the photo or media picker. brand: the swatches.
-export function BlockSettings({ b, set, setStyle, pick, events = [], pages = [], brand = {}, fieldLabel = k => k, onOpenBrand, onFieldsTab }) {
+export function BlockSettings({ b, set, setStyle, pick, events = [], pages = [], brand = {}, fieldLabel = k => k, onOpenBrand, onFieldsTab, role = null }) {
   const st = b.style || {};
   const typed = <Sec><div style={paneNote}>Type its words in the email.</div></Sec>;
   switch (b.type) {
@@ -228,6 +229,6 @@ export function BlockSettings({ b, set, setStyle, pick, events = [], pages = [],
       <SignaturePicture b={b} set={set} />
       <Sec title="Photo (optional)"><PhotoChoice value={b.photo} alt={b.name} pick={pick} onChange={({ src }) => set({ photo: src }, "photo")} /></Sec>
     </>;
-    default: return null;
+    default: return <MoreSettings b={b} set={set} pick={pick} onOpenBrand={onOpenBrand} role={role} />;
   }
 }
