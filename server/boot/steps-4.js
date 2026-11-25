@@ -892,7 +892,7 @@ require("../../routes/dataHealth").mount({
 // SPLIT-2 end
 // SPLIT-2 server.js piece 781
 require("../../routes/profileStatus").mount({
-  actor, checkWriteAccess, computeDriftForDonors, orgTime, query, requireAdmin, requireAuth, run, wrap,
+  actor, checkWriteAccess, computeDriftForDonors, orgTime, query, requireAdmin, requireAuth, run, wrap, testMode,
 });
 // SPLIT-2 end
 // SPLIT-2 server.js piece 782

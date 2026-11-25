@@ -356,7 +356,7 @@ async function main() {
 
   // The Lapsing tag respects rhythm: a yearly giver whose usual time is ahead is not Lapsing.
   const [ash] = await q(`SELECT id FROM donors WHERE org_id=$1 AND name='Alin Ashham' AND deleted_at IS NULL`, [ORG]);
-  const ashSt = ash && (await api("GET", `/donors/${ash.id}/status`, tok)).body;
+  const ashSt = ash && (await api("GET", `/donors/${ash.id}/status?asOf=${AS_OF}`, tok)).body;   // main-fix: as of the suite's own day, not the real one
   const ashU = ash && (await api("GET", `/insights/donor/${ash.id}?asOf=${AS_OF}`, tok)).body.unit;
   ok("§4 Ashham (a yearly giver, next gift expected Nov 2026) is not tagged Lapsing; the ladder says Moving up",
      !!ashSt && !JSON.stringify(ashSt).includes('"lapsing"') && !!ashU && ashU.status === "up", [JSON.stringify(ashSt).match(/"key":"[a-z_]+"/g), ashU && ashU.status]);
