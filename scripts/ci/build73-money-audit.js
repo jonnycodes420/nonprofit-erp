@@ -49,6 +49,10 @@ const ALLOW = [
   //    average gift of "$247" is the intended reading; "$247.13" is noise. ──
   { re: /avgGift|avgGiftAmt|avgDays|forecastOpen|runRate/, why: "display-only aggregate, never stored" },
   { re: /contribution\s*\*\s*10\s*\)\s*\/\s*10/,  why: "a contribution share to 1dp, not money" },
+  // FRESH-1 item 6: the Active goals headline in whole dollars is the sum of its goal cards' whole
+  // dollars as each card shows them, so the cards add up to it. Display only, never stored; the
+  // rollup's totalRaised beside it is the exact sum, added in cents.
+  { re: /totalRaisedWhole/,                      why: "display-only headline, the sum of the cards' shown whole dollars" },
 ];
 
 const findings = [];
