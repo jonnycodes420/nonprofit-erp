@@ -40,7 +40,7 @@ function sampleFields(ectx) {
 // The blocks as an email in the org's brand: a small standalone page the Blocks tab shows scaled down.
 function previewOf(blocks, ectx) {
   const r = EB.renderEmail({ blocks, brand: ectx.brand, fields: sampleFields(ectx), links: ectx.links, mode: "preview" });
-  return r.html.replace(EB.FOOTER_SLOT, "");
+  return EB.previewScheme(r.html.replace(EB.FOOTER_SLOT, ""), false);   // BUILDER-2B: a picture is light, whatever the viewer's computer
 }
 const shape = r => ({
   id: r.id, name: r.name, blocks: Array.isArray(r.blocks) ? r.blocks : [], parts: RB.partsOf(r.blocks),

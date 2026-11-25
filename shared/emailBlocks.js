@@ -58,6 +58,18 @@ const MERGE_ALIASES = { first: "first_name", org: "org_name", gift_amount: "last
 // The dark block is named so the preview can force it on (it rewrites this
 // one media line to `@media all`).
 export const DARK_MEDIA = "@media (prefers-color-scheme: dark)";
+// BUILDER-2B: a PREVIEW shows the scheme the editor asks for, never the
+// viewer's own computer's. With Dark mode pressed the dark block always
+// applies; otherwise it never does and the page says it is light, so the
+// preview is white on a computer in dark mode too. A SEND never goes through
+// this: real inboxes still get both, and choose.
+export function previewScheme(html, dark) {
+  const s = String(html || "");
+  if (dark === true) return s.split(DARK_MEDIA).join("@media all");
+  return s.split(DARK_MEDIA).join("@media not all")
+    .replace('<meta name="color-scheme" content="light dark">', '<meta name="color-scheme" content="light">')
+    .replace('<meta name="supported-color-schemes" content="light dark">', '<meta name="supported-color-schemes" content="light">');
+}
 export const PHONE_MEDIA = "@media only screen and (max-width:620px)";
 
 // Font stacks per brand type pairing. The first family is a nicety; each stack
