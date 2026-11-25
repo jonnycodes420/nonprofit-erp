@@ -12,7 +12,7 @@ export function RollupThermometer({ rollup }) {
     <div>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 30, color: T.ink, lineHeight: 1 }}>{fmtTotal(rollup.totalRaised)}</span>
+          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 30, color: T.ink, lineHeight: 1 }}>{fmtTotal(rollup.totalRaised >= 1000 && rollup.totalRaisedWhole != null ? rollup.totalRaisedWhole : rollup.totalRaised)}</span>
           <span style={{ fontSize: 14, color: T.ink3 }}>of {fmtTotal(rollup.totalGoal)}{rollup.over > 0 ? ` · ${fmtTotal(rollup.over)} over` : ""}</span>
         </div>
         {shown != null && <span style={{ fontSize: 16, fontWeight: 800, color: T.gold700 }}>{shown}%</span>}

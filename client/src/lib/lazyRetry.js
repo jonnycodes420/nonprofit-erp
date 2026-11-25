@@ -7,6 +7,7 @@
 // fails too, the screen says "Steward was updated" with a Reload button,
 // instead of drawing nothing. JSX-free, so it can sit under any lazy().
 import { createElement } from "react";
+import { reopenAfterUpdate } from "./chunkReload";
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
@@ -23,7 +24,10 @@ export function UpdatedNotice() {
 // load: () => import("./X"). Resolves to the module, or to a module whose
 // default (and every named export asked for) is the notice above.
 export function retryImport(load, { delayMs = 600 } = {}) {
+  // FRESH-1 item 2: a chunk gone with a deploy reopens the page once (lib/chunkReload.js); until
+  // it does, nothing draws. Twice in a row, the notice and its Reload button, as before.
   return load().catch(() => wait(delayMs).then(load)).catch(err => {
+    if (reopenAfterUpdate(err)) return new Promise(() => {});
     if (typeof console !== "undefined") console.warn("[lazy] a chunk did not load twice; showing the reload notice", err && err.message);
     return new Proxy({}, { get: (_, k) => (k === "then" ? undefined : UpdatedNotice) });
   });

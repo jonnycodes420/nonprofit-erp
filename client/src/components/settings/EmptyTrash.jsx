@@ -3,6 +3,7 @@ import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { T, SectionLabel } from "../shared";
 import { TrashList } from "./TrashList";
+import { useChanged } from "../../lib/changes";
 
 // FIX-55 · EMPTY TRASH. People deleted from this org stay matchable (an import
 // asks about them) until the trash is emptied. The count comes first, then a
@@ -17,6 +18,7 @@ export function EmptyTrash({isAdmin,isReadOnly}){
   const [done,setDone]=useState("");
   const [err,setErr]=useState("");
   const [seen,setSeen]=useState(0);   // INTEGRITY-2: a Restore above recounts what Empty trash would delete
+  useChanged(["person"],()=>setSeen(k=>k+1));   // FRESH-1 item 1: a delete or restore anywhere recounts what Empty trash would delete
   const qs=d=>d==="all"?"":`?olderThanDays=${encodeURIComponent(d)}`;
   useEffect(()=>{
     if(!isAdmin) return undefined;
