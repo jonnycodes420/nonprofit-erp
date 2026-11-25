@@ -34,6 +34,8 @@
 import { greetMerge } from "./greeting.js";
 import { withoutMissingGift, hasValue } from "./giftSentence.js";
 import { hasFirstGiftVersion, firstGiftParagraphs, claimIn } from "./pastGiving.js";   // FLOWS-12 item 1
+import { hasStyle, normalizeBlockStyle, sidesOf, sidesCss, widthPx, styleColor, inkOn, HIDE_CSS } from "./emailBlockStyle.js";   // BUILDER-2A
+import { drawMore, validateMore, countBlocks, BOX_DEFAULT_STYLE } from "./emailMoreBlocks.js";   // BUILDER-2A
 
 export const FOOTER_SLOT = "<!--steward:footer-->";
 
@@ -206,6 +208,12 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
   const fonts = EMAIL_FONT_STACKS[B.typePairing] || EMAIL_FONT_STACKS.dm;
   const orgName = String(B.displayName || F.org_name || "").trim();
   const list = Array.isArray(blocks) ? blocks : [];
+  const accentFg = color(B.accentFg, C.ink);
+  // BUILDER-2A: the frame a block draws in. At the top it is the 600 px sheet
+  // with 32 px sides, so every block renders exactly as before; a styled block
+  // or a Box's children draw in a narrower, bare frame (no card of their own).
+  let IN = INNER, FW = W, HP = PAD, BARE = false, AL = null, PADX = null;
+  const used = { hide: new Set() };
 
   const T = (raw, where, path) => {
     blankCheck(raw, problems, where);
@@ -223,7 +231,7 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
 
   // One image, email-safe. A missing src renders a neutral placeholder in a
   // preview and is a problem; a missing alt is a problem in every mode.
-  function img(src, alt, width, where, extraStyle = "") {
+  function img(src, alt, width, where, extraStyle = "", height = 0) {
     const url = resolveSrc(src, L);
     const altTxt = String(alt || "").trim();
     if (!url) {
@@ -235,32 +243,63 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
     }
     if (!altTxt) problems.push(`${where}: add alt text (a few words saying what the photo shows).`);
     images.push({ src: url, alt: altTxt });
+    if (height) return `<img src="${esc(url)}" height="${height}" alt="${esc(altTxt)}" style="display:block;height:${height}px;width:auto;max-width:100%;border:0;outline:none;text-decoration:none;${extraStyle}">`;
     return `<img src="${esc(url)}" width="${width}" alt="${esc(altTxt)}" class="st-img" style="display:block;width:${width}px;max-width:100%;height:auto;border:0;outline:none;text-decoration:none;${extraStyle}">`;
   }
 
   // A bulletproof button: the colour is on the table cell, so it shows even
   // where images are off and padding on links is ignored.
-  function button(label, href, where, path) {
+  function button(label, href, where, path, opts) {
     const url = mergeUrl(href, F);
     if (!url) problems.push(`${where}: the button needs a link.`);
     const lbl = T(label || "Read more", where, path);
     text.push(`${plain(label || "Read more")}: ${url || "(link to add)"}`);
-    return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;"><tr>
+    const ba = (opts && opts.align) || "center", bw = opts && opts.width;
+    return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="${ba}"${bw ? ` width="${bw}"` : ""} style="margin:${ba === "left" ? "0" : ba === "right" ? "0 0 0 auto" : "0 auto"};${bw ? `width:${bw}px;max-width:100%;` : ""}"><tr>
 <td align="center" bgcolor="${btnBg}" style="background:${btnBg};border-radius:8px;mso-padding-alt:14px 28px;">
-<a href="${esc(url || "#")}" target="_blank" style="display:inline-block;padding:14px 28px;font-family:${fonts.sans};font-size:16px;font-weight:bold;line-height:20px;color:${btnFg};text-decoration:none;border-radius:8px;">${lbl}</a>
+<a href="${esc(url || "#")}" target="_blank" style="display:${bw ? "block" : "inline-block"};padding:14px 28px;font-family:${fonts.sans};font-size:16px;font-weight:bold;line-height:20px;color:${btnFg};text-decoration:none;border-radius:8px;">${lbl}</a>
 </td></tr></table>`;
   }
 
-  const row = (inner, pad = `16px ${PAD}px`, cls = "st-card") =>
-    `<tr><td class="${cls}" bgcolor="${C.card}" style="background:${C.card};padding:${pad};">${inner}</td></tr>`;
+  const row = (inner, pad = `16px ${HP}px`, cls = "st-card") => BARE
+    ? `<tr><td${AL ? ` align="${AL}"` : ""} style="padding:${PADX || pad};${AL ? `text-align:${AL};` : ""}">${inner}</td></tr>`
+    : `<tr><td class="${cls}" bgcolor="${C.card}" style="background:${C.card};padding:${pad};">${inner}</td></tr>`;
+  // A full-bleed cell (a hero photo, a video): the card at the top, bare inside a frame.
+  const td0 = () => BARE ? `<td style="padding:0;">` : `<td class="st-card" bgcolor="${C.card}" style="background:${C.card};padding:0;">`;
   const P = (html, extra = "") => `<p class="st-text" style="margin:0 0 14px;font-family:${fonts.sans};font-size:16px;line-height:1.6;color:${C.body};${extra}">${html}</p>`;
   const H = (html, size = 24, extra = "") => `<h2 class="st-ink" style="margin:0 0 10px;font-family:${fonts.serif};font-size:${size}px;line-height:1.25;font-weight:normal;color:${C.ink};${extra}">${html}</h2>`;
 
   const rows = [];
-  list.forEach((w, i) => {
+  const B2 = { band, bandFg, accent, accentFg };
+  // What the new blocks (shared/emailMoreBlocks.js) draw with.
+  const ctx = {
+    T, plain, img, button, P, H, row, esc, C, fonts, text, problems, images, ED, mode, B, L,
+    frame: () => ({ IN, FW, HP, AL }),
+    withFrame(patch, fn) {
+      const save = { IN, FW, HP, BARE, AL, PADX };
+      if ("HP" in patch) HP = patch.HP;
+      if ("BARE" in patch) BARE = patch.BARE;
+      if ("AL" in patch) AL = patch.AL;
+      if ("PADX" in patch) PADX = patch.PADX;
+      try { fn(); } finally { ({ IN, FW, HP, BARE, AL, PADX } = save); }
+    },
+    draw,
+  };
+  // One block into `rows`. `i` is its place ("3", or "3.children.0" inside a
+  // Box), which the editor's paths and the preview's data-st-block carry.
+  function draw(w, i, where, rows) {
     if (!w || typeof w !== "object") return;
-    const where = `Block ${i + 1} (${w.type})`;
     const firstRow = rows.length;
+    if (hasStyle(w) || w.type === "box") { drawStyled(w, i, where, rows); tagRows(w, i, rows, firstRow); return; }
+    drawPlain(w, i, where, rows);
+    tagRows(w, i, rows, firstRow);
+  }
+  // POLISH-3: in a preview each block's rows carry its index, so the editor
+  // can join a block in the preview to its fields. A send never carries it.
+  function tagRows(w, i, rows, firstRow) {
+    if (mode === "preview") for (let k = firstRow; k < rows.length; k++) rows[k] = rows[k].replace(/^<tr\b/, `<tr data-st-block="${i}" data-st-type="${esc(w.type)}"${w.locked ? ` data-st-locked="1"` : ""}`);
+  }
+  function drawPlain(w, i, where, rows) {
     switch (w.type) {
       case "header": {
         const logo = resolveSrc(B.logoUrl, L);
@@ -271,14 +310,14 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
         } else {
           inner = `<span style="font-family:${fonts.serif};font-size:22px;color:${bandFg};">${esc(orgName)}</span>`;
         }
-        rows.push(`<tr><td align="center" bgcolor="${band}" style="background:${band};padding:20px ${PAD}px;">${inner}</td></tr>`);
+        rows.push(`<tr><td align="center" bgcolor="${band}" style="background:${band};padding:20px ${HP}px;">${inner}</td></tr>`);
         text.push(orgName);
         break;
       }
       case "hero": {
         const parts = [];
         if (w.image !== undefined) {
-          rows.push(`<tr><td class="st-card" bgcolor="${C.card}" style="background:${C.card};padding:0;">${img(w.image, w.alt, W, where)}</td></tr>`);
+          rows.push(`<tr>${td0()}${img(w.image, w.alt, FW, where)}</td></tr>`);
         }
         // FLOWS-15 item 1: a never-giver reads the hero's first-gift heading she wrote, never "you were part of it".
         if (!w.locked && !giftFacts(F).hasGift && hasFirstGiftVersion(w)) {
@@ -286,12 +325,12 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
           const inner = H(T(fg.heading, where), w.size === "tall" ? 34 : 28) + (fg.sub ? P(T(fg.sub, where), "font-size:17px;") : "");
           parts.push(ED ? `<div data-st-first-gift="${i}" title="Their first-gift version. Change it in this block's settings." style="outline:1px dashed #c9a84c;outline-offset:4px;">${inner}</div>` : inner);
           text.push(plain(fg.heading).toUpperCase()); if (fg.sub) text.push(plain(fg.sub));
-          if (parts.length) rows.push(row(parts.join(""), `28px ${PAD}px 8px`));
+          if (parts.length) rows.push(row(parts.join(""), `28px ${HP}px 8px`));
           break;
         }
         if (has(w.heading)) { parts.push(H(T(w.heading || "", where, `${i}.heading`), w.size === "tall" ? 34 : 28)); if (w.heading) text.push(plain(w.heading).toUpperCase()); }
         if (has(w.sub)) { parts.push(P(T(w.sub || "", where, `${i}.sub`), "font-size:17px;")); if (w.sub) text.push(plain(w.sub)); }
-        if (parts.length) rows.push(row(parts.join(""), `28px ${PAD}px 8px`));
+        if (parts.length) rows.push(row(parts.join(""), `28px ${HP}px 8px`));
         break;
       }
       case "richtext": {
@@ -319,25 +358,25 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
         // EDITOR-1: the whole block is one place to type, paragraph by paragraph
         // (Enter starts the next one). A locked block (a receipt's tax lines) is not.
         if (ED && firstGift) {
-          rows.push(row(`<div data-st-first-gift="${i}" title="Their first-gift version. Change it in this block's settings." style="outline:1px dashed #c9a84c;outline-offset:4px;">${out.join("")}</div>`, `12px ${PAD}px 4px`));
+          rows.push(row(`<div data-st-first-gift="${i}" title="Their first-gift version. Change it in this block's settings." style="outline:1px dashed #c9a84c;outline-offset:4px;">${out.join("")}</div>`, `12px ${HP}px 4px`));
         } else if (ED && !w.locked) {
           if (!out.length) out.push(P(""));
-          rows.push(row(`<div data-st-edit="${i}.blocks" data-st-rich="1">${out.join("")}</div>`, `12px ${PAD}px 4px`));
-        } else if (out.length) rows.push(row(out.join(""), `12px ${PAD}px 4px`));
+          rows.push(row(`<div data-st-edit="${i}.blocks" data-st-rich="1">${out.join("")}</div>`, `12px ${HP}px 4px`));
+        } else if (out.length) rows.push(row(out.join(""), `12px ${HP}px 4px`));
         break;
       }
       case "image": {
         const cap = has(w.caption) ? `<p class="st-muted" style="margin:8px 0 0;font-family:${fonts.sans};font-size:13px;line-height:1.5;color:${C.muted};">${T(w.caption || "", where, `${i}.caption`)}</p>` : "";
-        rows.push(row(img(w.image, w.alt, INNER, where) + cap, `12px ${PAD}px`));
+        rows.push(row(img(w.image, w.alt, IN, where) + cap, `12px ${HP}px`));
         if (w.caption) text.push(plain(w.caption));
         break;
       }
       case "photos2": {
         const ims = Array.isArray(w.images) ? w.images.slice(0, 2) : [];
         while (ims.length < 2) ims.push({ src: null, alt: "" });
-        const half = (INNER - 12) / 2;
+        const half = (IN - 12) / 2;
         const cell = (im, k) => `<td class="st-col" width="50%" valign="top" style="width:50%;padding:${k ? "0 0 0 6px" : "0 6px 0 0"};">${img(im && im.src, im && im.alt, half, `${where}, photo ${k + 1}`)}</td>`;
-        rows.push(row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${ims.map(cell).join("")}</tr></table>`, `12px ${PAD}px`));
+        rows.push(row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${ims.map(cell).join("")}</tr></table>`, `12px ${HP}px`));
         break;
       }
       case "stats": {
@@ -352,14 +391,14 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
 <div class="st-ink" style="font-family:${fonts.serif};font-size:30px;line-height:1.2;color:${C.ink};">${ED ? T(val, where, `${i}.items.${k}.value`) : val ? T(val, where) : "[number]"}</div>
 <div class="st-muted" style="font-family:${fonts.sans};font-size:12px;line-height:1.4;font-weight:bold;letter-spacing:0.06em;text-transform:uppercase;color:${C.muted};">${T((s && s.label) || "", where, `${i}.items.${k}.label`)}</div></td>`;
         }).join("");
-        rows.push(row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${cells}</tr></table>`, `16px ${PAD}px`));
+        rows.push(row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${cells}</tr></table>`, `16px ${HP}px`));
         break;
       }
       case "quote": {
         if (!w.text) { problems.push(`${where}: the quote is empty.`); if (!ED) break; }
         const attr = has(w.attribution) ? `<p class="st-muted" style="margin:8px 0 0;font-family:${fonts.sans};font-size:14px;color:${C.muted};">${T(w.attribution || "", where, `${i}.attribution`)}</p>` : "";
         rows.push(row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-left:4px solid ${accent};padding:4px 0 4px 18px;">
-<p class="st-ink" style="margin:0;font-family:${fonts.serif};font-size:20px;line-height:1.5;color:${C.ink};">&ldquo;${T(w.text || "", where, `${i}.text`)}&rdquo;</p>${attr}</td></tr></table>`, `16px ${PAD}px`));
+<p class="st-ink" style="margin:0;font-family:${fonts.serif};font-size:20px;line-height:1.5;color:${C.ink};">&ldquo;${T(w.text || "", where, `${i}.text`)}&rdquo;</p>${attr}</td></tr></table>`, `16px ${HP}px`));
         text.push(`"${plain(w.text)}"${w.attribution ? ` ${plain(w.attribution)}` : ""}`);
         break;
       }
@@ -372,27 +411,27 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
         const thumb = provider === "youtube" ? youtubeThumb(vid)
           : resolveSrc(w.thumbUrl || (typeof L.videoThumb === "function" ? L.videoThumb(provider, vid) : ""), L);
         const alt = String(w.caption || "").trim() || "Play the video";
-        const h = Math.round(W * 9 / 16);
+        const h = Math.round(FW * 9 / 16);
         if (thumb) images.push({ src: thumb, alt });
         else problems.push(`${where}: the Vimeo thumbnail is missing; pick the video from the media library again.`);
         // The thumbnail is the cell's background; a centred circle sits on it.
         // Where background images are off, the dark cell and the circle remain.
         const bg = thumb ? ` background="${esc(thumb)}"` : "";
         const bgStyle = thumb ? `background-image:url('${esc(thumb)}');background-size:cover;background-position:center;` : "";
-        rows.push(`<tr><td class="st-card" bgcolor="${C.card}" style="background:${C.card};padding:0;">
+        rows.push(`<tr>${td0()}
 <a href="${esc(href || "#")}" target="_blank" style="text-decoration:none;display:block;" title="${esc(alt)}">
-<table role="presentation" width="${W}" cellpadding="0" cellspacing="0" border="0" class="st-img" style="width:${W}px;max-width:100%;"><tr>
-<td${bg} bgcolor="${C.ink}" width="${W}" height="${h}" align="center" valign="middle" class="st-video" style="${bgStyle}background-color:${C.ink};height:${h}px;text-align:center;">
+<table role="presentation" width="${FW}" cellpadding="0" cellspacing="0" border="0" class="st-img" style="width:${FW}px;max-width:100%;"><tr>
+<td${bg} bgcolor="${C.ink}" width="${FW}" height="${h}" align="center" valign="middle" class="st-video" style="${bgStyle}background-color:${C.ink};height:${h}px;text-align:center;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr><td width="72" height="72" align="center" valign="middle" bgcolor="${band}" style="width:72px;height:72px;border-radius:36px;background:${band};color:${bandFg};font-family:Arial,sans-serif;font-size:30px;line-height:72px;text-align:center;">&#9654;</td></tr></table>
 </td></tr></table></a>
-${has(w.caption) ? `<p class="st-muted" style="margin:0;padding:8px ${PAD}px 0;font-family:${fonts.sans};font-size:13px;color:${C.muted};">${T(w.caption || "", where, `${i}.caption`)}</p>` : ""}</td></tr>`);
+${has(w.caption) ? `<p class="st-muted" style="margin:0;padding:8px ${HP}px 0;font-family:${fonts.sans};font-size:13px;color:${C.muted};">${T(w.caption || "", where, `${i}.caption`)}</p>` : ""}</td></tr>`);
         text.push(`Watch the video: ${href || "(link to add)"}`);
         break;
       }
       case "button": {
         const action = BUTTON_ACTIONS.includes(w.action) ? w.action : "readmore";
         const raw = String(w.url || "").trim() || (action === "give" ? "{{give_link}}" : "");
-        rows.push(row(button(w.label || BUTTON_ACTION_LABEL[action], raw, where, `${i}.label`), `12px ${PAD}px 20px`));
+        rows.push(row(button(w.label || BUTTON_ACTION_LABEL[action], raw, where, `${i}.label`), `12px ${HP}px 20px`));
         break;
       }
       case "event": {
@@ -402,23 +441,23 @@ ${has(w.caption) ? `<p class="st-muted" style="margin:0;padding:8px ${PAD}px 0;f
 <div class="st-muted" style="font-family:${fonts.sans};font-size:12px;font-weight:bold;letter-spacing:0.06em;text-transform:uppercase;color:${C.muted};">${esc(ev.date || "")}</div>
 ${H(esc(ev.name || "Our event"), 22, "margin:4px 0 14px;")}
 ${button("RSVP", ev.url || "", where)}</td></tr></table>`;
-        rows.push(row(inner, `12px ${PAD}px`));
+        rows.push(row(inner, `12px ${HP}px`));
         text.push(`${plain(ev.name)} ${plain(ev.date)}`);
         break;
       }
       case "givingpage": {
         const gp = typeof L.givingPage === "function" && w.givingPageId ? L.givingPage(w.givingPageId) : null;
         if (!gp) { problems.push(`${where}: choose one of your giving pages.`); break; }
-        const pic = gp.image ? img(gp.image, gp.title || "Giving page", INNER - 2, where) : "";
+        const pic = gp.image ? img(gp.image, gp.title || "Giving page", IN - 2, where) : "";
         const inner = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid ${C.hair};border-radius:10px;"><tr><td style="padding:0;">${pic}</td></tr><tr><td style="padding:18px 20px;">
 ${H(esc(gp.title || "Give"), 22, "margin:0 0 14px;")}
 ${button("Give", gp.url || "", where)}</td></tr></table>`;
-        rows.push(row(inner, `12px ${PAD}px`));
+        rows.push(row(inner, `12px ${HP}px`));
         text.push(plain(gp.title));
         break;
       }
       case "divider":
-        rows.push(row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:1px solid ${C.hair};font-size:0;line-height:0;height:1px;">&nbsp;</td></tr></table>`, `8px ${PAD}px`));
+        rows.push(row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:1px solid ${C.hair};font-size:0;line-height:0;height:1px;">&nbsp;</td></tr></table>`, `8px ${HP}px`));
         break;
       case "giftsummary": {
         // The person's own gift, as the fields hold it. Nothing is invented: a
@@ -427,14 +466,14 @@ ${button("Give", gp.url || "", where)}</td></tr></table>`;
         const day = F.gift_date || F.last_gift_date || "";
         const fund = F.fund || "";
         if (!String(amount).trim()) {
-          if (mode === "preview") rows.push(row(`<p class="st-muted" style="margin:0;font-family:${fonts.sans};font-size:13px;color:${C.muted};">Their gift shows here: amount, date and fund. Somebody with no gift sees nothing here.</p>`, `8px ${PAD}px`));
+          if (mode === "preview") rows.push(row(`<p class="st-muted" style="margin:0;font-family:${fonts.sans};font-size:13px;color:${C.muted};">Their gift shows here: amount, date and fund. Somebody with no gift sees nothing here.</p>`, `8px ${HP}px`));
           break;
         }
         const meta = [day, fund].filter(Boolean).map(esc).join(" &middot; ");
         rows.push(row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid ${C.hair};border-radius:10px;"><tr><td style="padding:16px 20px;">
 <div class="st-muted" style="font-family:${fonts.sans};font-size:12px;font-weight:bold;letter-spacing:0.06em;text-transform:uppercase;color:${C.muted};">${T(w.heading || "Your gift", where, `${i}.heading`)}</div>
 <div class="st-ink" style="font-family:${fonts.serif};font-size:28px;line-height:1.3;color:${C.ink};">${esc(amount)}</div>
-${meta ? `<div class="st-muted" style="font-family:${fonts.sans};font-size:14px;color:${C.muted};">${meta}</div>` : ""}</td></tr></table>`, `12px ${PAD}px`));
+${meta ? `<div class="st-muted" style="font-family:${fonts.sans};font-size:14px;color:${C.muted};">${meta}</div>` : ""}</td></tr></table>`, `12px ${HP}px`));
         text.push(`${plain(w.heading || "Your gift")}: ${amount}${day ? `, ${day}` : ""}${fund ? `, ${fund}` : ""}`);
         break;
       }
@@ -444,7 +483,7 @@ ${meta ? `<div class="st-muted" style="font-family:${fonts.sans};font-size:14px;
         const photo = w.photo ? `<td width="64" valign="middle" style="width:64px;padding:0 14px 0 0;">${img(w.photo, name || "Photo", 56, where, "border-radius:28px;")}</td>` : "";
         rows.push(row(`<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>${photo}<td valign="middle">
 <div class="st-ink" style="font-family:${fonts.serif};font-size:18px;color:${C.ink};">${ED ? T(name, where, `${i}.name`) : T(name || "[your name]", where)}</div>
-${has(w.title) ? `<div class="st-muted" style="font-family:${fonts.sans};font-size:14px;color:${C.muted};">${T(w.title || "", where, `${i}.title`)}</div>` : ""}</td></tr></table>`, `8px ${PAD}px 24px`));
+${has(w.title) ? `<div class="st-muted" style="font-family:${fonts.sans};font-size:14px;color:${C.muted};">${T(w.title || "", where, `${i}.title`)}</div>` : ""}</td></tr></table>`, `8px ${HP}px 24px`));
         text.push(`${plain(name)}${w.title ? `\n${plain(w.title)}` : ""}`);
         break;
       }
@@ -452,12 +491,66 @@ ${has(w.title) ? `<div class="st-muted" style="font-family:${fonts.sans};font-si
         // The footer is filled by the send path at FOOTER_SLOT, once, below.
         break;
       default:
-        problems.push(`${where}: this block cannot go in an email.`);
+        if (!drawMore(w, i, where, rows, ctx)) problems.push(`${where}: this block cannot go in an email.`);
     }
-    // POLISH-3: in a preview each block's rows carry its index, so the editor
-    // can join a block in the preview to its fields. A send never carries it.
-    if (mode === "preview") for (let k = firstRow; k < rows.length; k++) rows[k] = rows[k].replace(/^<tr\b/, `<tr data-st-block="${i}" data-st-type="${esc(w.type)}"${w.locked ? ` data-st-locked="1"` : ""}`);
-  });
+  }
+  // BUILDER-2A item 4: a block with style fields draws in a bare frame (its
+  // own padding, alignment and width), wrapped in one table that carries its
+  // background, border and corners, with its space above and below.
+  function drawStyled(w, i, where, rows) {
+    const st = w.type === "box" ? { ...BOX_DEFAULT_STYLE, ...(w.style || {}) } : w.style;
+    const save = { IN, FW, HP, BARE, AL, PADX };
+    const sizedInside = w.type === "image" || w.type === "button";
+    const outerW = sizedInside ? FW : widthPx(st.width, FW);
+    const bw = st.borderWidth || 0;
+    const ps = sidesOf(st.padding);
+    BARE = true; AL = st.align || null; PADX = ps ? sidesCss(ps) : null;
+    FW = outerW - 2 * bw; IN = FW - (ps ? ps.left + ps.right : HP * 2);
+    const sub = [];
+    try {
+      if (w.type === "image") drawImage(w, i, where, sub, st);
+      else if (w.type === "button") drawButton(w, i, where, sub, st);
+      else drawPlain(w, i, where, sub);
+    } finally { ({ IN, FW, HP, BARE, AL, PADX } = save); }
+    if (!sub.length) return;
+    const bg = styleColor(st.background, B2, C);
+    const fg = inkOn(st.background, B2);
+    let inner = sub.join("\n");
+    // On a coloured ground the words keep their own colour in dark mode, and
+    // take the brand's foreground on the band or the accent.
+    if (bg) inner = inner.replace(/ class="st-(?:text|ink|muted)"/g, "");
+    if (fg) inner = inner.replace(new RegExp(`color:(?:${C.body}|${C.ink}|${C.muted});`, "g"), `color:${fg};`);
+    const border = bw ? `border:${bw}px solid ${styleColor(st.borderColor || "band", B2, C)};` : "";
+    const radius = st.radius ? `border-radius:${st.radius}px;border-collapse:separate;` : "";
+    const tAlign = outerW < save.FW ? (st.align || "center") : "center";
+    const table = `<table role="presentation" width="${outerW}" align="${tAlign}" cellpadding="0" cellspacing="0" border="0" class="st-img"${bg ? ` bgcolor="${bg}"` : ""} style="width:${outerW}px;max-width:100%;margin:${tAlign === "left" ? "0" : tAlign === "right" ? "0 0 0 auto" : "0 auto"};${bg ? `background:${bg};` : ""}${border}${radius}">\n${inner}\n</table>`;
+    const hide = st.hideOn === "phone" ? HIDE_CSS.phone : st.hideOn === "desktop" ? HIDE_CSS.desktop : null;
+    if (hide) used.hide.add(st.hideOn);
+    const trOpen = `<tr${hide ? ` class="${hide.cls}"${hide.inline ? ` style="${hide.inline}"` : ""}` : ""}>`;
+    const pad = `${st.marginTop || 0}px 0 ${st.marginBottom || 0}px`;
+    rows.push(save.BARE ? `${trOpen}<td style="padding:${pad};">${table}</td></tr>`
+      : `${trOpen}<td class="st-card" bgcolor="${C.card}" style="background:${C.card};padding:${pad};">${table}</td></tr>`);
+  }
+  // An image with a width, a height (its shape kept) or an alignment.
+  function drawImage(w, i, where, rows, st) {
+    const iw = st.width ? widthPx(st.width, IN) : IN;
+    const h = !st.width && st.height ? st.height : 0;
+    let pic = img(w.image, w.alt, iw, where, "", h);
+    if (AL || iw < IN || h) {
+      const a = AL || "center";
+      pic = `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="${a}" style="margin:${a === "left" ? "0" : a === "right" ? "0 0 0 auto" : "0 auto"};"><tr><td>${pic}</td></tr></table>`;
+    }
+    const cap = has(w.caption) ? `<p class="st-muted" style="margin:8px 0 0;font-family:${fonts.sans};font-size:13px;line-height:1.5;color:${C.muted};">${T(w.caption || "", where, `${i}.caption`)}</p>` : "";
+    rows.push(row(pic + cap, `12px ${HP}px`));
+    if (w.caption) text.push(plain(w.caption));
+  }
+  function drawButton(w, i, where, rows, st) {
+    const action = BUTTON_ACTIONS.includes(w.action) ? w.action : "readmore";
+    const raw = String(w.url || "").trim() || (action === "give" ? "{{give_link}}" : "");
+    const bwid = st.width ? widthPx(st.width, IN) : 0;
+    rows.push(row(button(w.label || BUTTON_ACTION_LABEL[action], raw, where, `${i}.label`, { align: AL, width: bwid }), `12px ${HP}px 20px`));
+  }
+  list.forEach((w, i) => { if (w && typeof w === "object") draw(w, i, `Block ${i + 1} (${w.type})`, rows); });
 
   const subj = subject ? mergeText(subject, F, problems, "Subject") : "";
   if (subject) blankCheck(subject, problems, "Subject");
@@ -472,7 +565,7 @@ ${PHONE_MEDIA}{
 .st-wrap{width:100% !important;}
 .st-col{display:block !important;width:100% !important;padding:0 0 12px 0 !important;}
 .st-img{width:100% !important;height:auto !important;}
-.st-video{height:200px !important;}
+.st-video{height:200px !important;}${[...used.hide].map(k => "\n" + HIDE_CSS[k].phone).join("")}
 }
 ${DARK_MEDIA}{
 .st-body,.st-page{background:${C.darkPage} !important;}
@@ -542,7 +635,7 @@ export function lintEmailHtml(html) {
 // The server saves only what passes this. Images must be our own asset paths
 // (/portal-assets/...) or media URLs (http(s)); never a data URI. A video must
 // already be a parsed {provider, videoId}. Returns { ok, blocks, error }.
-const MAX_BLOCKS = 40;
+export const MAX_BLOCKS = 40;   // BUILDER-2A: a Box's children count toward it
 const str = (v, max) => (v == null ? "" : String(v)).slice(0, max);
 function imageRef(v) {
   if (v == null || v === "") return { ok: true, v: null };
@@ -553,17 +646,34 @@ function imageRef(v) {
   if (/^https:\/\/[^\s"'<>]+$/i.test(s) && s.length <= 1000) return { ok: true, v: s };
   return { ok: false };
 }
+// BUILDER-2A: a block may carry an `id` (the editor's handle on it; a saved
+// block used again gets fresh ones) and `style` (shared/emailBlockStyle.js).
+// Neither is added to a block that came without it.
+const BLOCK_ID = /^[A-Za-z0-9_-]{1,40}$/;
 export function validateEmailBlocks(blocks, allowedTypes) {
   if (!Array.isArray(blocks)) return { ok: false, error: "blocks must be a list." };
-  if (blocks.length > MAX_BLOCKS) return { ok: false, error: `An email holds at most ${MAX_BLOCKS} blocks.` };
+  if (countBlocks(blocks) > MAX_BLOCKS) return { ok: false, error: `An email holds at most ${MAX_BLOCKS} blocks${blocks.length < MAX_BLOCKS ? ", counting the blocks inside a box" : ""}.` };
   const allowed = new Set(allowedTypes || []);
   const out = [];
   for (let i = 0; i < blocks.length; i++) {
-    const w = blocks[i];
-    const at = `Block ${i + 1}`;
-    if (!w || typeof w !== "object" || !allowed.has(w.type)) return { ok: false, error: `${at}: ${w && w.type ? `"${w.type}"` : "this"} is not an email block.` };
+    try { out.push(validateOne(blocks[i], `Block ${i + 1}`, allowed)); }
+    catch (e) { return { ok: false, error: e.message }; }
+  }
+  return { ok: true, blocks: out };
+}
+function validateOne(w, at, allowed) {
+  if (!w || typeof w !== "object" || !allowed.has(w.type)) throw new Error(`${at}: ${w && w.type ? `"${w.type}"` : "this"} is not an email block.`);
+  const body = validateBody(w, at, allowed);
+  let style = null;
+  try { style = normalizeBlockStyle(w.style, w.type); } catch (e) { throw new Error(`${at}: ${e.message}`); }
+  const id = typeof w.id === "string" && BLOCK_ID.test(w.id) ? w.id : null;
+  return { ...(id ? { id } : {}), ...body, ...(style ? { style } : {}) };
+}
+function validateBody(w, at, allowed) {
+    // Each case below hands its one cleaned block to out.push (the shape the
+    // loop had before BUILDER-2A, kept so the cases read as they always did).
+    const out = { push(v) { this.v = v; } };
     const img1 = (v, label) => { const r = imageRef(v); if (!r.ok) throw new Error(`${at}: ${label} must be a photo from your media library, not a pasted image or another kind of link.`); return r.v; };
-    try {
       switch (w.type) {
         case "header": case "footer": out.push({ type: w.type }); break;
         case "hero": out.push({ type: "hero", heading: str(w.heading, 200), sub: str(w.sub, 600), image: img1(w.image, "the hero photo"), alt: str(w.alt, 200), size: w.size === "tall" ? "tall" : "standard",
@@ -599,9 +709,12 @@ export function validateEmailBlocks(blocks, allowedTypes) {
         case "signature": out.push({ type: "signature", name: str(w.name, 120), title: str(w.title, 120), photo: img1(w.photo, "the signature photo") }); break;
         case "divider": out.push({ type: "divider" }); break;
         case "giftsummary": out.push({ type: "giftsummary", heading: str(w.heading, 80) }); break;
-        default: return { ok: false, error: `${at}: "${w.type}" is not an email block.` };
+        default: {
+          const url1 = (v, label) => { const u = str(v, 1000).trim(); if (u && !/^https?:\/\/[^\s"'<>]+$/i.test(u)) throw new Error(`${at}: ${label} must start with https://.`); return u || null; };
+          const more = validateMore(w, { str, img1, url1, at, child: (c, cat) => validateOne(c, cat, allowed) });
+          if (!more) throw new Error(`${at}: "${w.type}" is not an email block.`);
+          out.push(more);
+        }
       }
-    } catch (e) { return { ok: false, error: e.message }; }
-  }
-  return { ok: true, blocks: out };
+    return out.v;
 }

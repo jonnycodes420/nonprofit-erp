@@ -105,6 +105,7 @@ const BODY_EXEMPT = [
   [/^\/mail-types\/:key$/, "a key from the fixed registry in mailTypes.js; turns a type on or off for the caller's own org, reads only `on` and `audience`"],
   [/^\/groups\/starters\/:key$/, "a key from a fixed starter registry; makes a group in the caller's own org from it, no ids read from the body"],
   [/^\/stock-photos\/:id\/use$/, "a bundled stock-photo catalog id, not an org row (exempt in the matrix's PARAM_EXEMPT for the same reason)"],
+  [/^\/email-blocks\/ready\/:key\/use$/, "BUILDER-2A: a key from the fixed ready-made registry (shared/emailReadyBlocks.js), not an org row; it reads nothing from the body and stores only a stock photo for the caller's own org"],
 ];
 
 async function runBodyCrossProbe({ inv, mfetch, q, ok, A, B, tok, bResolver, fillPath, scanLeak, keyOf }) {

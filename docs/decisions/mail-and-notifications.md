@@ -136,6 +136,20 @@ the morning email unless the person turned on its own reminder, so no step goes 
   carries any of it. A campaign keeps its own blocks (`campaigns.email_blocks`, written by PUT/POST
   `emailBlocks`), and an older HTML campaign is converted to blocks when it is opened (`htmlToBlocks`), never in
   the database. Unsaved blocks preview through `POST /email-preview`.
+- **The full builder's parts live under the editor, not in it (BUILDER-2A).** Columns, Box, Social and Code are
+  email blocks (`shared/emailMoreBlocks.js`, drawn inside `renderEmail` with its own helpers): real table cells and
+  nested tables, the phone stack through `PHONE_MEDIA`, a plain-text part, every problem refusing a send. A Box holds
+  blocks one level deep (a Box in a Box is refused) and its children count toward `MAX_BLOCKS`. Social reads
+  `portal_settings.social_links` (Brand, https only) at render time and leaves out a network with no link; its icons
+  are Steward's own PNGs in `client/public/email-icons/`. Code is pasted HTML cleaned to the email allowlist
+  (`shared/emailCodeSanitize.js`); whatever was taken out is a problem, so a send with it is refused; it is
+  admins' only (`roles` in pageWidgets.js, the screen enforces it). Every block may carry `style`
+  (`EMAIL_BLOCK_STYLE` in `shared/emailBlockStyle.js` is the one list of fields, units and limits the right pane
+  reads; colours are brand words, never hex) and an `id`; a block without either renders byte for byte as before
+  (`tests/builder2a-email-parts.test.js` §3 holds every starter to main's hash). Saved blocks are
+  `email_saved_blocks` rows (org-scoped, actor-stamped, removed through the one Remove with Undo); using one, or one
+  of Steward's ready-made sections (`shared/emailReadyBlocks.js`), hands back a copy with fresh ids, never a link.
+  `POST /email-export` is the email as HTML with a sample unsubscribe line; it reads, never sends.
 - **A campaign follows its type, not the automatic-email switch (TRUST-1, Jonathan 27 Oct).** A campaign is a send
   someone clicks. `donorMailDecision("campaign")` asks `mailTypes.holdReason` like `sendGate.decide`: Campaign emails
   on; Everyone and not Never, or Only donors I choose and Always include; plus the marketing refusals. `auto_email`

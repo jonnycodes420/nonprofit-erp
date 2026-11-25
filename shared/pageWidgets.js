@@ -82,6 +82,21 @@ export const WIDGETS = [
     defaults: { name: "", title: "", photo: null } },
   { key: "footer",     label: "Footer",           hint: "Your address and unsubscribe (always included)", surfaces: ["email"], full: true,
     defaults: {} },
+  // BUILDER-2A: the full builder's layout blocks (shared/emailMoreBlocks.js).
+  // The renderer, the validator and the server take them now. `menu: false`
+  // keeps them out of the editor's add menu until BUILDER-2 wires their
+  // controls into the screen, and BUILDER-2 removes it. `roles` is who may add
+  // one: a Code block is admins' only (the screen enforces it).
+  { key: "columns",    label: "Columns",          hint: "Two or three side by side; they stack on phones", surfaces: ["email"], full: true, menu: false,
+    defaults: { count: 2, stack: true, gap: 16, valign: "top", columns: [
+      { items: [{ type: "text", heading: "", text: "Write something in your own words." }] },
+      { items: [{ type: "text", heading: "", text: "Write something in your own words." }] }] } },
+  { key: "box",        label: "Box",              hint: "A colored section that holds other blocks", surfaces: ["email"], full: true, menu: false,
+    defaults: { children: [{ type: "richtext", blocks: [{ type: "p", text: "Write something in your own words." }] }] } },
+  { key: "social",     label: "Social",           hint: "Your social links, from your brand", surfaces: ["email"], full: true, menu: false,
+    defaults: { size: 32, color: "dark" } },
+  { key: "code",       label: "Code",             hint: "A small piece of your own HTML", surfaces: ["email"], full: true, menu: false, roles: ["admin"],
+    defaults: { html: "" } },
 
   // ── CAMPAIGN-2 · THE THREE A CAMPAIGN PAGE NEEDS ─────────────────────────
   // GIVE-ONLY, each for a reason the portal cannot satisfy: a countdown and a
