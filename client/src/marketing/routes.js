@@ -11,7 +11,9 @@
 //                   point at /connections#api instead
 //   /lost-and-found the free audit itself; /tools/lost-and-found links in
 //   /login          the app's own page (/signup redirects to /book since ONBOARD-4)
-//   /privacy, /terms the live legal pages; /legal/* are the attorney drafts
+//   /privacy, /terms the live legal pages; /legal/* are the attorney drafts.
+//                   HONEST-1: /legal/privacy redirects to /privacy (vercel.json):
+//                   the draft lacked the Google Limited Use disclosure
 import { FEAT, FEATURE_SLUGS } from "./data/features.js";
 import { AUD, AUDIENCE_SLUGS } from "./data/audiences.js";
 import { GUIDES, GUIDE_SLUGS } from "./data/guides.js";
@@ -95,14 +97,13 @@ export const ROUTES = [
   { path: "/tools/lybunt-sybunt", page: "toolLybunt", title: T("Find your LYBUNT and SYBUNT donors."), description: "Drop in a gifts CSV and see who gave last year but not this year, and who gave in an earlier year. Totals foot to your file. Nothing leaves your browser." },
   { path: "/tools/thank-you-letter", page: "toolThankYou", title: "Steward · Donor thank-you letter builder", description: "Pick the gift: a first gift, monthly, major, in memory or year-end. Fill in a few details and copy a warm, specific thank-you letter. Free, no signup." },
 
-  { path: "/legal/privacy", page: "legalPrivacy", title: "Steward · Privacy policy", description: "How Steward handles the information organizations put into it and the information about the people who sign in. Draft for attorney review." },
   { path: "/legal/terms", page: "legalTerms", title: "Steward · Terms of service", description: "The terms for using Steward, the donor management service. Draft for attorney review." },
   { path: "/legal/accessibility", page: "legalAccessibility", title: "Steward · Accessibility", description: "We design Steward to WCAG 2.1 AA, test with keyboards and screen readers, and fix what we find." },
 ];
 
 // App routes the marketing pages link to. They are real pages, just not
 // marketing ones; the link guard accepts them alongside ROUTES.
-export const APP_LINK_TARGETS = ["/login", "/lost-and-found", "/app/settings"];   // ONBOARD-4: no /signup
+export const APP_LINK_TARGETS = ["/login", "/lost-and-found", "/app/settings", "/privacy"];   // ONBOARD-4: no /signup. HONEST-1: /privacy is the policy in effect
 // CONTENT-1 · files the pages link to: the articles feed (written by the
 // prerender) and the move page's starter template (client/public).
 export const FILE_LINK_TARGETS = ["/rss.xml", "/marketing/steward-starter-template.csv"];

@@ -209,7 +209,10 @@ const OUTCOME = [/\brecovered\b/i, /\bre-?engaged\b/i, /\brecaptured\b/i, /\bwon
   await page.goto(BASE + "/demo", { waitUntil: "networkidle" });
   ok("the demo form asks for name, work email and organization, all required",
      await page.evaluate(() => ["name", "email", "organization"].every(n => document.querySelector(`[data-demo-form] input[name="${n}"]`)?.required)));
-  for (const p of ["/legal/privacy", "/legal/terms", "/legal/accessibility"]) {
+  // HONEST-1: /legal/privacy redirects to /privacy, the policy in effect.
+  await page.goto(BASE + "/legal/privacy", { waitUntil: "networkidle" });
+  ok("/legal/privacy lands on /privacy", new URL(page.url()).pathname === "/privacy");
+  for (const p of ["/legal/terms", "/legal/accessibility"]) {
     await page.goto(BASE + p, { waitUntil: "networkidle" });
     ok(`${p} carries the "Draft for attorney review" badge`, (await page.textContent(".draft")).startsWith("Draft for attorney review"));
   }

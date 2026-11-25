@@ -140,7 +140,7 @@ Disconnect is on the same card.
 **Host domain.** `www.stewardapp.dev` (app) and
 `nonprofit-erp-production.up.railway.app` (API).
 
-**Privacy policy URL.** `https://www.stewardapp.dev/legal/privacy`
+**Privacy policy URL.** `https://www.stewardapp.dev/privacy`
 (also served at `/privacy`).
 
 **End-user licence agreement / terms URL.** `https://www.stewardapp.dev/legal/terms`
