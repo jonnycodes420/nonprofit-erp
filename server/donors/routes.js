@@ -510,7 +510,7 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
   const [d] = await query(
     `SELECT id, name, email, phone, address, address2, city, state, zip, country, birth_month, birth_day,
             deceased, do_not_contact, do_not_solicit, do_not_mail, do_not_email, email_unreachable, address_unmailable,
-            phone_unreachable, is_client, (SELECT client_privacy FROM orgs WHERE id = donors.org_id) AS client_privacy
+            phone_unreachable, do_not_call, is_client, (SELECT client_privacy FROM orgs WHERE id = donors.org_id) AS client_privacy
        FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [id, orgId]);
   if (!d) return res.status(404).json({ error: "Donor not found" });
   const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
@@ -656,6 +656,7 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
   if (d.email_unreachable) flags.push({ key: "email_unreachable", label: "Email bounced" });
   if (d.address_unmailable) flags.push({ key: "address_unmailable", label: "Address returned mail" });
   if (d.phone_unreachable) flags.push({ key: "phone_unreachable", label: "Phone marked wrong" });
+  if (d.do_not_call) flags.push({ key: "do_not_call", label: "No calls" });   // CONTACT-1: the import writes it; the rail never said it
   // CLIENT-SAFE-1: the client flag has its own row (ContactExtras), shown when
   // the org's privacy mode is on or the flag is already set.
   const contact = { email: d.email || null, phone: d.phone || null, address, addressBad: d.address_unmailable === true, preferred: null, flags,
