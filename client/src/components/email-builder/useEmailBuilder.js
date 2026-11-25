@@ -95,6 +95,8 @@ export function useEmailBuilder(initial, { meta = null, allowed = [], onChanged 
   const commit = (path, value) => {
     const i = Number(String(path).split(".")[0]);
     const k = latest.current[i] && latest.current[i]._k;
+    // A blur commits the same words again: no change, no undo step.
+    if (k && JSON.stringify(setAtPath(latest.current, path, value)[i]) === JSON.stringify(latest.current[i])) return;
     change(bs => setAtPath(bs, path, value), "type:" + k + ":" + path.split(".").slice(1).join("."));
   };
 
