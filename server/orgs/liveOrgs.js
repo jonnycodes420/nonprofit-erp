@@ -20,7 +20,7 @@ let cache = null;   // { at, ids }
 
 async function readLive(query) {
   const [orgs, users, pays] = await Promise.all([
-    query(`SELECT id, name, org_kind, subscription_status, stripe_subscription_id, archived_at FROM orgs WHERE archived_at IS NULL`, []),
+    query(`SELECT id, name, org_kind, subscription_status, stripe_subscription_id, archived_at, run_background_work FROM orgs WHERE archived_at IS NULL`, []),
     query(`SELECT org_id, email FROM users WHERE deactivated_at IS NULL`, []),
     query(`SELECT org_id, COUNT(*)::int AS c FROM platform_payments GROUP BY org_id`, []).catch(() => []),
   ]);
