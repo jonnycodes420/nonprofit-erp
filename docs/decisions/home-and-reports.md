@@ -3,6 +3,14 @@
 Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follow-ups, goals, report definitions, custom reports or board reports.
 
 ## Rules
+- **Every list and count re-reads from one place (FRESH-2, 25 Nov 2026).** A screen that shows a list or a count
+  reads it through `client/src/lib/liveRead.js`: `useLiveRead(name, topics, read)` (it reads, re-reads on any change
+  that reaches those topics, and keeps only the newest answer), or `useLive` / `useLiveRev` where the read is part of a
+  bigger page. The topics are LIVE-2's (`shared/changeTopics.cjs`); no screen keeps its own refetch-on-save code. Each
+  surface is named in `client/src/lib/surfaces.js` with the tables it shows, and `tests/lib/surfaceCensus.js` (stale2 §E)
+  fails when a surface stops listening or no longer hears a topic a write to one of its tables announces. A new list:
+  add the call, add the line, pick the tables honestly. api.js never keeps (60 s) an answer from a read that left before
+  a write. An Atlas follow-up ("list them") says when gifts or people changed after the answer it draws again.
 - **A person's next step is one rule (EDIT-2, 18 Nov 2026).** `shared/nextStep.js pickNextStep`: of every open step on the
   person (their Thread step and their open tasks, `server/tasks/nextStep.js` reads them), the soonest due today or later;
   when every one is past, the most overdue, said as overdue; an undated one only when nothing is dated. Home's Thread row,
