@@ -23,7 +23,8 @@ async function main() {
   for (const d of rows) {
     const rec = await draftRecord(d.org_id, d.donor_id);
     const r = await checkDraft(`${d.subject || ""}\n${d.body || ""}`, rec);
-    const claims = (r.reasons || []).filter(x => /video|meeting or a conversation|link Steward did not give|points at a link/.test(x));
+    // A claim she made (a video, a call, a visit), never a link question: a survey or page link is Steward's own.
+    const claims = (r.reasons || []).filter(x => /video|meeting or a conversation/.test(x));
     if (!claims.length) continue;
     n++;
     console.log(`  ${d.org_id}  ${d.id}  (${d.source || "draft"}, ${String(d.created_at).slice(0, 10)}): ${claims.join("; ")}`);

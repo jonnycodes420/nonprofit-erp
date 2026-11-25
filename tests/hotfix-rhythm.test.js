@@ -82,7 +82,8 @@ async function dupLeg() {
   const osA = { id: "a", name: "Osric Ravensmere", email: "osric.ravensmere@example.demo", gift_count: 3, first_gift_date: "2023-06-03", last_gift_date: "2025-06-03" };
   const osB = { id: "b", name: "Osric Ravensmere", email: "o.ravensmere@example.demo", gift_count: 2, first_gift_date: "2025-02-14", last_gift_date: "2026-02-14" };
   const os = DH.judgePair(osA, osB);
-  ok("§dup ATLAS-10 same name, different emails, overlapping giving is a pair, and says why", os && os.confidence === "medium" && os.reasons.some(r => /same name, different emails/.test(r)), os);
+  ok("§dup ATLAS-10 same name, different emails, overlapping giving is a pair, and says why", os && os.confidence === "low" && os.reasons.some(r => /same name, different emails/.test(r)), os);
+  ok("§dup ATLAS-10 two people of one name in two states are not offered for it", !DH.judgePair({ ...osA, state: "MA" }, { ...osB, state: "KY" }));
   ok("§dup ATLAS-10 the same name with no giving on one side is not offered for it", !DH.judgePair(osA, { ...osB, gift_count: 0, first_gift_date: null, last_gift_date: null }));
 }
 
