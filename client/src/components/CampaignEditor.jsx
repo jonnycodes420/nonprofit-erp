@@ -1,30 +1,33 @@
-// CampaignEditor.jsx · EDITOR-1. A CAMPAIGN, IN THE ONE EDITOR.
+// CampaignEditor.jsx · EDITOR-1, BUILDER-1. A CAMPAIGN, IN THE ONE EDITOR.
 //
-// New campaign used to be three columns: settings, a body textarea, and
-// "What Margaret will see" showing the same words again. It is the giving
-// page editor's shell now, like every email:
+// The email builder (StewardEditor's builder layout, ./email-builder/), as
+// every email is from BUILDER-1:
 //
-//   Left rail   Details (name, subject with its counter, preview line),
-//               Audience, Schedule, Design (from Brand), Blocks.
-//   Preview     the email as the send draws it, for the first person on the
-//               list (or whoever "Preview as" names), typed in where it shows.
-//   Right rail  who it goes to, in ONE line whose counts add up to the
-//               segment and open their lists, what is held and why, and the
-//               checks a send makes.
-//   Top bar     Desktop / Phone / Dark mode, Send me a test, Save draft, and
-//               "Send to 212", which is never live while Donor mail is off.
+//   Left pane   Elements, Blocks, Fields.
+//   The email   as the send draws it, for the first person on the list (or
+//               whoever "Preview as" names), typed in and clicked to select.
+//   Right pane  the selected block's Edit and Style; with nothing selected,
+//               this campaign's own settings: name, subject, preview line,
+//               who it goes to in ONE line whose counts add up to the segment
+//               and open their lists, the schedule, who it's from, the
+//               background, and the checks a send makes.
+//   Top bar     Desktop / Phone / Dark mode, Preview as, Undo / Redo, Send me
+//               a test, Save draft, and "Send to 212", which is never live
+//               while Donor mail is off.
 //
 // The campaign keeps its own copy of its blocks (campaigns.email_blocks), as a
 // campaign started from a template always has; the send renders them for
 // each person (emailCompose.render). Nothing here sends without the confirm.
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { apiFetch } from "../api";
 import { T, Spin } from "./shared";
-import MediaPicker from "./MediaPicker";
-import StockPhotoPicker from "./StockPhotoPicker";
 import { askConfirm } from "./ConfirmDialog";
-import StewardEditor, { RailSection, DeviceFrame, useNarrow, railLabel, railInput, railQuietBtn, railNote } from "./StewardEditor";
-import { EmailFrame, EmailBlockSettings, BlockMenu, BrandSummary, PreviewAs, FieldMenu, EmailHistory, insertChip, setAtPath, stripKeys, useBlockList } from "./EmailEditor";
+import StewardEditor, { useNarrow, railNote } from "./StewardEditor";
+import { BrandSummary, PreviewAs, EmailHistory, FromLine, Checks, setPageBackground } from "./EmailEditor";
+import { useBuilderWorkspace } from "./email-builder/useBuilderWorkspace";
+import { stripKeys } from "./email-builder/useEmailBuilder";
+import { PageBackground } from "./email-builder/Panes";
+import { Sec, paneInput, paneBtn, paneNote } from "./email-builder/controls";
 import { previewAsParam } from "../lib/previewAs";   // GIFTS-2: Preview as yourself re-draws the preview
 import CampaignTurnOn from "./CampaignTurnOn";   // COMMS-1: where Campaign emails are turned on
 import { pastGivingFlag, audienceNeverGivenSentence, openClaims, leftOutSentence, includedSentence, INCLUDE_LABEL } from "../../../shared/pastGiving.js";   // FLOWS-12 item 1, FLOWS-15 item 1
@@ -68,51 +71,35 @@ export default function CampaignEditor({
   orgTimezone, sending, testState, sendingIdentity, approvalNote, notReviewed, onBack, onSaveDraft, onSend, onSchedule, onRequestApproval, onTest, onDuplicate,
 }) {
   const narrow = useNarrow();
-  const [blocks, setBlocks, act] = useBlockList(initialBlocks);
   const [device, setDevice] = useState(narrow ? "phone" : "desktop");
   const [dark, setDark] = useState(false);
   const [as, setAs] = useState(undefined);   // GIFTS-2: undefined = first recipient, null = yourself (lib/previewAs.js)
-  const [preview, setPreview] = useState({ html: "", problems: [], loading: true, as: null, subject: "" });
-  const [selected, setSelected] = useState(null);
-  const [menuAt, setMenuAt] = useState(undefined);
-  const [picker, setPicker] = useState(null);
-  const [focusAsk, setFocusAsk] = useState({ id: "", n: 0 });
-  const [rev, setRev] = useState(0);
-  const [note, setNote] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
-  const frameRef = useRef(null);
-  const caret = useRef(null);
-  const lastInput = useRef(null);
-  const typing = useRef(false);
-  const latest = useRef(null);
-  latest.current = { blocks, subject: form.subject, preheader: form.preheader || "", name: form.name };
-  const labels = useMemo(() => Object.fromEntries(blockTypes.map(t => [t.key, t.label])), [blockTypes]);
-  const ask = id => setFocusAsk(f => ({ id, n: f.n + 1 }));
-  const at = id => (focusAsk.id === id ? focusAsk.n : 0);
-  const email = () => ({ blocks: stripKeys(latest.current.blocks), preheader: latest.current.preheader });
-
-  const redraw = useCallback(() => { if (!typing.current) setRev(r => r + 1); }, []);
+  const formNow = useRef(form);
+  formNow.current = form;
+  const meta = useMemo(() => ({ get: () => ({ name: formNow.current.name, subject: formNow.current.subject, preheader: formNow.current.preheader || "" }),
+    set: m => setForm(f => ({ ...f, name: m.name, subject: m.subject, preheader: m.preheader })) }), [setForm]);
   const firstId = segPreview && segPreview.first ? segPreview.first.id : null;
   // FLOWS-15 item 1: her tick ("Send it to them anyway") lives on the segment, so the send reads it.
   const includeNeverGiven = !!(form.seg && form.seg.includeNeverGiven);
-  useEffect(() => { redraw(); }, [blocks.length, device, dark, as, firstId, segPreview && segPreview.audienceNoGift, includeNeverGiven, redraw]);
+  const locked = readOnlySent || isReadOnly;
+  const wsRef = useRef(null);
+  const ws = useBuilderWorkspace({
+    initialBlocks, blockTypes, mergeFields, readOnly: !!readOnlySent, meta, narrow, frameTestid: "campaign-preview",
+    metaAppend: (which, tok) => wsRef.current.b.changeMeta(() => setForm(x => ({ ...x, [which]: (x[which] ? x[which].replace(/\s*$/, " ") : "") + tok }))),
+    previewDeps: [device, dark, as, firstId, segPreview && segPreview.audienceNoGift, includeNeverGiven],
+    fetchPreview: blocks => apiFetch("/email-preview", { method: "POST", body: JSON.stringify({ blocks, subject: formNow.current.subject, preheader: formNow.current.preheader || "", dark,
+      editable: !locked, as: previewAsParam(as, firstId), campaignName: formNow.current.name,
+      audienceNoGift: !!(segPreview && segPreview.audienceNoGift), campaign: true, includeNeverGiven }) }),   // POLISH-9; FLOWS-15 item 1
+  });
+  wsRef.current = ws;
+  const { b, preview, redraw } = ws;
+  const blocks = b.blocks;
+  const email = () => ({ blocks: stripKeys(b.latest.current), preheader: formNow.current.preheader || "" });
   // FLOWS-15 item 1: whether these blocks thank the reader for giving with no first-gift version
   // (donor-only copy); the audience count leaves the never-givers out while it is so.
   const donorOnly = useMemo(() => openClaims(stripKeys(blocks)).length > 0, [blocks]);
   useEffect(() => { if (onDonorOnlyCopy) onDonorOnlyCopy(donorOnly); }, [donorOnly, onDonorOnlyCopy]);
-  const seq = useRef(0);
-  useEffect(() => {
-    const n = ++seq.current;
-    const t = setTimeout(() => {
-      const cur = latest.current;
-      apiFetch("/email-preview", { method: "POST", body: JSON.stringify({ blocks: stripKeys(cur.blocks), subject: cur.subject, preheader: cur.preheader, dark,
-        editable: !readOnlySent && !isReadOnly, as: previewAsParam(as, firstId), campaignName: cur.name,
-        audienceNoGift: !!(segPreview && segPreview.audienceNoGift), campaign: true, includeNeverGiven }) })   // POLISH-9; FLOWS-15 item 1
-        .then(r => { if (n === seq.current) setPreview({ html: r.html, problems: r.problems || [], loading: false, as: r.as, subject: r.subject || "", pastGiving: r.pastGiving || null, notSent: r.notSent || null }); })
-        .catch(e => { if (n === seq.current) setPreview(p => ({ ...p, loading: false, problems: [(e && (e.sentence || e.message)) || "The preview could not be drawn."] })); });
-    }, 300);
-    return () => clearTimeout(t);
-  }, [rev]);   // eslint-disable-line react-hooks/exhaustive-deps
   // FLOWS-12 item 1 (W-1114-Fundraising-17): a letter that thanks them for
   // giving, to people who never have. Flagged until each such block has her
   // first-gift version; never rewritten, never blocked: the send is still hers.
@@ -122,31 +109,6 @@ export default function CampaignEditor({
   const pg = preview.pastGiving || null;
   const pgFlag = pg ? pastGivingFlag({ claims: pg.claims, neverGiven: neverGiven || 0, shownName: pg.shownName }) : null;
   const pgBlocks = pg ? pg.claims.filter(c => !c.hasVersion).map(c => c.index + 1) : [];
-
-  const setBlock = (i, patch) => { setBlocks(bs => bs.map((b, j) => (j === i ? { ...b, ...patch } : b))); redraw(); };
-  const on = {
-    commit: (path, value) => { lastInput.current = "frame"; setBlocks(bs => setAtPath(bs, path, value)); },
-    focusChange: f => { typing.current = f; if (!f) setTimeout(() => { if (!typing.current) setRev(r => r + 1); }, 120); },
-    caret: c => { caret.current = c; lastInput.current = "frame"; },
-    select: i => { setSelected(i); ask("block"); },
-    action: (what, i) => { if (what === "add") { setMenuAt(i); return; } act(what, i).then(redraw); if (what === "remove" && selected === i) setSelected(null); },
-    image: (i, k) => {
-      setSelected(i);
-      const b = latest.current.blocks[i];
-      if (!b) return;
-      setPicker({ kind: "photo", onPick: item => {
-        if (b.type === "photos2") { const ims = [...(b.images || [{ src: null, alt: "" }, { src: null, alt: "" }])]; ims[k] = { src: item.url, alt: (ims[k] && ims[k].alt) || item.alt || "" }; setBlock(i, { images: ims }); }
-        else if (b.type === "signature") setBlock(i, { photo: item.url });
-        else setBlock(i, { image: item.url, alt: b.alt || item.alt || "" });
-      } });
-    },
-  };
-  const insertField = f => {
-    if (lastInput.current === "subject") { setForm(x => ({ ...x, subject: (x.subject ? x.subject.replace(/\s*$/, " ") : "") + f.token })); redraw(); return; }
-    if (lastInput.current === "preheader") { setForm(x => ({ ...x, preheader: (x.preheader ? x.preheader.replace(/\s*$/, " ") : "") + f.token })); redraw(); return; }
-    if (insertChip(caret.current, f.token.replace(/[{}]/g, ""), f.label.replace(/^Their /, ""))) { typing.current = false; setTimeout(() => setRev(r => r + 1), 50); }
-    else setNote("Click into the words in the preview first, then pick the field to put there.");
-  };
 
   const aud = segPreview && segPreview.audience;
   const scheduleOn = !!form.scheduledAt;
@@ -160,53 +122,23 @@ export default function CampaignEditor({
     : scheduleOn
       ? { label: "Schedule", onClick: () => onSchedule(email()), disabled: !!sendReason || pastTime, reason: pastTime ? "That time has already gone. Pick a time from now on." : sendReason, testid: "campaign-schedule" }
       : { label: sending ? "Sending…" : aud == null ? "Counting…" : `Send to ${aud.wouldReach.toLocaleString()}`, onClick: () => onSend(email()), disabled: sending || !!sendReason || !aud || aud.sendable === 0, reason: sendReason, testid: "campaign-send" };
-  const sel = selected != null ? blocks[selected] : null;
-  const fields = (mergeFields || []).map(f => ({ token: f.token, label: f.label }));
+  const foot = blocks.find(x => x.type === "footer");
+  const setMeta = (key, v) => b.changeMeta(() => setForm(f => ({ ...f, [key]: v })), key);
 
-  const left = (
+  const emailSettings = (
     <fieldset disabled={readOnlySent} style={{ border: "none", margin: 0, padding: 0, minWidth: 0 }}>
-      {notReviewed && <div data-testid="builder-not-reviewed" style={{ ...NOTE_BOX, margin: "12px 16px 0" }}>These are Steward&rsquo;s starter words. Read them and make them yours before anyone receives them.</div>}
-      {sel && (
-        <RailSection key={"block-" + sel._k} id="block" testid="rail-block" title={"This block: " + (labels[sel.type] || sel.type)} focus={at("block")}>
-          <EmailBlockSettings b={sel} set={patch => setBlock(selected, patch)} events={[]} pages={[]} pick={(kind, onPick) => setPicker({ kind, onPick })} />
-        </RailSection>
-      )}
-      <RailSection id="details" title="Details" testid="rail-details">
-        <label style={{ ...railLabel, marginTop: 0 }}>Campaign name</label>
-        <input style={railInput} value={form.name} placeholder="Spring Appeal 2026" onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-        <label style={railLabel}>Subject <span data-testid="subject-count" style={{ float: "right", color: form.subject.length > 60 ? T.gold700 : T.ink3, textTransform: "none", letterSpacing: 0 }}>{form.subject.length}/60</span></label>
-        <input data-testid="email-subject" style={railInput} value={form.subject} placeholder="A message from {{org_name}}" onFocus={() => { lastInput.current = "subject"; }}
-          onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} onBlur={redraw} />
-        <label style={railLabel}>Preview line</label>
-        <input style={railInput} value={form.preheader || ""} placeholder="Shown after the subject in the inbox" onFocus={() => { lastInput.current = "preheader"; }}
-          onChange={e => setForm(f => ({ ...f, preheader: e.target.value }))} onBlur={redraw} />
-      </RailSection>
-      <RailSection id="audience" title="Audience" testid="rail-audience" focus={at("audience")}>
-        {audiencePicker}
-      </RailSection>
-      <RailSection id="schedule" title="Schedule" testid="rail-schedule">
-        <label style={{ ...railLabel, marginTop: 0 }} htmlFor="cb-when">Send it later</label>
-        {/* EDITOR-1: empty until she picks a time; a time that has gone is refused. */}
-        <input id="cb-when" type="datetime-local" data-testid="campaign-schedule-at" value={form.scheduledAt || ""} min={nowLocal()} data-empty={form.scheduledAt ? "false" : "true"}
-          onChange={e => setForm(f => ({ ...f, scheduledAt: e.target.value }))}
-          style={{ ...railInput, color: form.scheduledAt ? T.ink : T.ink3 }} />
-        <div style={{ ...railNote, marginTop: 6 }} data-testid="campaign-schedule-note">
-          {!form.scheduledAt ? "Not scheduled. Leave it empty and send it yourself."
-            : pastTime ? "That time has already gone. Pick a time from now on."
-            : <>Goes out at that time in {orgTimezone || "your organization's timezone"}.</>}
-        </div>
-        {form.scheduledAt && <button type="button" style={{ ...railQuietBtn, marginTop: 6 }} onClick={() => setForm(f => ({ ...f, scheduledAt: "" }))}>Clear the time</button>}
-      </RailSection>
-      <RailSection id="blocks" title="Blocks" defaultOpen={false} hint="Point at a block in the preview for its handles. The + under a block adds one there.">
-        <button type="button" style={railQuietBtn} onClick={() => setMenuAt(null)}>Add a block at the end</button>
-      </RailSection>
-      <RailSection id="design" title="Design" defaultOpen={false}><BrandSummary /></RailSection>
-    </fieldset>
-  );
-
-  const right = (
-    <div style={{ padding: "14px 16px 30px", display: "flex", flexDirection: "column", gap: 14 }}>
-      <div>
+      {notReviewed && <div data-testid="builder-not-reviewed" style={{ ...NOTE_BOX, margin: "8px 16px" }}>These are Steward&rsquo;s starter words. Read them and make them yours before anyone receives them.</div>}
+      <Sec title="Campaign name" testid="rail-details">
+        <input aria-label="Campaign name" style={paneInput} value={form.name} placeholder="Spring Appeal 2026" onChange={e => setMeta("name", e.target.value)} />
+      </Sec>
+      <Sec title="Subject" right={<span data-testid="subject-count" style={{ fontSize: 11.5, color: form.subject.length > 60 ? T.gold700 : T.ink3 }}>{form.subject.length}/60</span>}>
+        <input aria-label="Subject" data-testid="email-subject" style={paneInput} value={form.subject} placeholder="A message from {{org_name}}" onFocus={() => { ws.lastInput.current = "subject"; }}
+          onChange={e => setMeta("subject", e.target.value)} onBlur={redraw} />
+        <label style={{ ...paneNote, display: "block", marginTop: 10 }} htmlFor="cb-pre">Preview line</label>
+        <input id="cb-pre" style={{ ...paneInput, marginTop: 4 }} value={form.preheader || ""} placeholder="Shown after the subject in the inbox" onFocus={() => { ws.lastInput.current = "preheader"; }}
+          onChange={e => setMeta("preheader", e.target.value)} onBlur={redraw} />
+      </Sec>
+      <Sec>
         <div data-testid="builder-who" style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Who it goes to</div>
         <AudienceLine audience={aud} />
         {neverGiven != null && <div data-testid="audience-never-given" data-count={neverGiven} style={{ ...railNote, marginTop: 6 }}>{audienceNeverGivenSentence(neverGiven)}</div>}
@@ -219,64 +151,71 @@ export default function CampaignEditor({
               <span>{INCLUDE_LABEL}</span></label>}
           </div>)}
         {aud && aud.blocked && <div data-testid="audience-blocked" style={{ ...NOTE_BOX, marginTop: 8 }}>{aud.blocked}</div>}
-      </div>
-      <div>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Checked against</div>
-        {blockers.length
-          ? <div style={NOTE_BOX} data-testid="campaign-preview-problems"><div style={{ fontWeight: 700, marginBottom: 4 }}>To fix before this is sent</div><ul style={{ margin: 0, paddingLeft: 18 }}>{blockers.map((p, k) => <li key={k}>{p}</li>)}</ul></div>
-          : <div style={railNote}>{preview.loading ? "Checking…" : "Every photo has its words, every field is one Steward fills, and nothing is left in brackets."}</div>}
-      </div>
-      {note && <div style={NOTE_BOX} role="status">{note}</div>}
-      {approvalNote && <div style={NOTE_BOX}>{approvalNote}</div>}
-      {testState && testState.state === "sent" && <div data-testid="test-result" style={railNote}>Sent to {testState.to}. It went out from {testState.from} and is not counted against this campaign.</div>}
-      {testState && testState.state === "error" && <div style={NOTE_BOX}>{testState.message}</div>}
-      {sendingIdentity && sendingIdentity.sentence && <div style={railNote}>{sendingIdentity.sentence}</div>}
-      {historyOpen && campaignId && <EmailHistory url={`/campaigns/${campaignId}/history`} what="campaign" onClose={() => setHistoryOpen(false)} />}
-    </div>
+        <div data-testid="rail-audience" style={{ marginTop: 10 }}>{audiencePicker}</div>
+      </Sec>
+      <Sec title="Send it later" testid="rail-schedule">
+        {/* EDITOR-1: empty until she picks a time; a time that has gone is refused. */}
+        <input id="cb-when" type="datetime-local" aria-label="Send it later" data-testid="campaign-schedule-at" value={form.scheduledAt || ""} min={nowLocal()} data-empty={form.scheduledAt ? "false" : "true"}
+          onChange={e => setForm(f => ({ ...f, scheduledAt: e.target.value }))}
+          style={{ ...paneInput, color: form.scheduledAt ? T.ink : T.ink3 }} />
+        <div style={{ ...paneNote, marginTop: 6 }} data-testid="campaign-schedule-note">
+          {!form.scheduledAt ? "Not scheduled. Leave it empty and send it yourself."
+            : pastTime ? "That time has already gone. Pick a time from now on."
+            : <>Goes out at that time in {orgTimezone || "your organization's timezone"}.</>}
+        </div>
+        {form.scheduledAt && <button type="button" style={{ ...paneBtn, marginTop: 6 }} onClick={() => setForm(f => ({ ...f, scheduledAt: "" }))}>Clear the time</button>}
+      </Sec>
+      {sendingIdentity && sendingIdentity.sentence ? <Sec title="Who it's from" testid="email-from"><div style={paneNote}>{sendingIdentity.sentence}</div></Sec> : <FromLine />}
+      <PageBackground value={foot && foot.page} brand={preview.brand} disabled={!!readOnlySent} onChange={v => { const err = setPageBackground(b, v); if (err) ws.say(err); else ws.force(); }} />
+      <Checks problems={blockers} loading={preview.loading} testid="campaign-preview-problems" />
+      {(approvalNote || testState) && <Sec>
+        {approvalNote && <div style={NOTE_BOX}>{approvalNote}</div>}
+        {testState && testState.state === "sent" && <div data-testid="test-result" style={paneNote}>Sent to {testState.to}. It went out from {testState.from} and is not counted against this campaign.</div>}
+        {testState && testState.state === "error" && <div style={NOTE_BOX}>{testState.message}</div>}
+      </Sec>}
+      <Sec title="Design"><BrandSummary /></Sec>
+    </fieldset>
+  );
+  const right = (
+    <>
+      {historyOpen && campaignId && <div style={{ padding: "12px 16px", borderBottom: "1px solid " + T.bg2 }}><EmailHistory url={`/campaigns/${campaignId}/history`} what="campaign" onClose={() => setHistoryOpen(false)} /></div>}
+      {ws.right(emailSettings)}
+    </>
   );
 
   // Asked only when something here differs from what was opened.
   // (The group's name, filled in after opening, is a label and not an edit.)
-  const snap = () => JSON.stringify([stripKeys(latest.current.blocks), form.name, form.subject, form.preheader || "", { ...(form.seg || {}), audienceName: undefined }, form.scheduledAt || ""]);
+  const snap = () => JSON.stringify([stripKeys(b.latest.current), form.name, form.subject, form.preheader || "", { ...(form.seg || {}), audienceName: undefined }, form.scheduledAt || ""]);
   const opened = useRef(null);
   if (opened.current === null) opened.current = snap();
   const goBack = async () => {
     if (readOnlySent || snap() === opened.current || await askConfirm({ title: "Leave this campaign?", body: "Your changes are not saved as a draft yet.", yes: "Leave" })) onBack();
   };
+  const above = (
+    <div style={{ padding: "10px 18px 0", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div data-testid="email-subject-line" style={{ fontSize: 13, color: T.ink2, textAlign: "center" }}><b style={{ color: T.ink }}>Subject:</b> {preview.subject || form.subject || "No subject yet"}</div>
+      {pgFlag && <div data-testid="past-giving-flag" style={NOTE_BOX}>{pgFlag} Click {pgBlocks.length === 1 ? `block ${pgBlocks[0]}` : `blocks ${pgBlocks.join(" and ")}`} and write a first-gift version in its settings; people who have never given read that instead.</div>}
+    </div>
+  );
   return (
     <div data-testid="campaign-builder" className="fullscreen-takeover no-caps" style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 200 }}>
-      <StewardEditor kind="campaign" testid="steward-editor" back={{ onClick: goBack, label: "Back" }}
+      <StewardEditor kind="campaign" testid="steward-editor" layout="builder" back={{ onClick: goBack, label: "Back" }}
         name={title} badge={statusBadge || "Campaign"} device={device} onDevice={setDevice}
         toggles={[{ id: "dark", label: "Dark mode", on: dark, onClick: () => setDark(v => !v) }]}
+        tools={<><PreviewAs bar as={preview.as && preview.as.id ? preview.as : as} onPick={p => setAs(p)} />{ws.tools}</>}
         status={readOnlySent ? "Sent, so it can't change" : form.status === "awaiting_approval" ? "Waiting for approval" : "Draft"}
         actions={[
           !readOnlySent && { id: "test", label: testState && testState.state === "sending" ? "Sending…" : "Send me a test", onClick: () => onTest(email(), previewAsParam(as, firstId)), testid: "send-me-a-test", disabled: isReadOnly },
           campaignId && { id: "history", label: "History", active: historyOpen, onClick: () => setHistoryOpen(o => !o), testid: "campaign-history" },
-          !readOnlySent && 
-{ id: "save", label: "Save draft", onClick: () => onSaveDraft(email()), testid: "campaign-save-draft", disabled: isReadOnly },
+          !readOnlySent && { id: "save", label: "Save draft", onClick: () => { onSaveDraft(email()); b.markSaved(); }, testid: "campaign-save-draft", disabled: isReadOnly },
         ]}
-        primary={primary} left={left} right={right} rightTitle="Who it goes to"
+        primary={primary} crumb={ws.crumb} left={ws.left} leftTitle="Elements" right={right} rightTitle="Settings" sheet={ws.sheet} onCanvasClick={ws.clear}
         notice={readOnlySent ? <div data-testid="campaign-read-only" style={{ background: T.gold50, color: T.ink, fontSize: 13, padding: "8px 16px", borderBottom: "1px solid " + T.gold300 }}>This campaign has gone out, so it can&rsquo;t change. Duplicate it to send something like it.</div> : null}>
-        <DeviceFrame device={device} narrow={narrow} testid="email-frame-wrap">
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "10px 14px", borderBottom: "1px solid " + T.bg2, background: T.white, position: "relative" }}>
-            <PreviewAs as={preview.as && preview.as.id ? preview.as : as} onPick={p => setAs(p)} />
-            {!readOnlySent && <FieldMenu fields={fields} onInsert={insertField} />}
-            {preview.loading && <Spin />}
-            <div data-testid="email-subject-line" style={{ flexBasis: "100%", fontSize: 13, color: T.ink2 }}><b style={{ color: T.ink }}>Subject:</b> {preview.subject || form.subject || "No subject yet"}</div>
-            {pgFlag && <div data-testid="past-giving-flag" style={{ ...NOTE_BOX, flexBasis: "100%" }}>{pgFlag} Click {pgBlocks.length === 1 ? `block ${pgBlocks[0]}` : `blocks ${pgBlocks.join(" and ")}`} and write a first-gift version in its settings; people who have never given read that instead.</div>}
-            {menuAt !== undefined && <BlockMenu blockTypes={blockTypes} onClose={() => setMenuAt(undefined)}
-              onPick={type => { act("insert", menuAt, blockTypes, { type }).then(redraw); setMenuAt(undefined); }} />}
-          </div>
-          <div style={{ flex: 1, display: "flex", minHeight: 0, background: T.bg2, padding: device === "phone" ? 0 : "12px 0" }}>
-            {preview.notSent
-              ? <div data-testid="preview-not-sent" style={{ ...NOTE_BOX, margin: "24px auto", maxWidth: 460, alignSelf: "flex-start" }}>{preview.notSent} Write a first-gift version in the block's settings, or tick them in under Who it goes to.</div>
-              : <EmailFrame html={preview.html} device={device} selected={selected} on={on} frameRef={frameRef} labels={labels} testid="campaign-preview" />}
-          </div>
-        </DeviceFrame>
+        {ws.canvas(device, above, preview.notSent
+          ? <div data-testid="preview-not-sent" style={{ ...NOTE_BOX, margin: "24px auto", maxWidth: 460, alignSelf: "flex-start" }}>{preview.notSent} Write a first-gift version in the block's settings, or tick them in under Who it goes to.</div>
+          : null)}
       </StewardEditor>
-      {picker && (picker.kind === "photo"
-        ? <StockPhotoPicker onClose={() => setPicker(null)} onPick={p => { picker.onPick({ url: p.url, alt: p.alt }); setPicker(null); }} />
-        : <MediaPicker kind={picker.kind} onClose={() => setPicker(null)} onPick={item => { picker.onPick(item); setPicker(null); }} />)}
+      {ws.overlays}
     </div>
   );
 }
