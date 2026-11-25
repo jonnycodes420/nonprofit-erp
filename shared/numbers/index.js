@@ -36,6 +36,7 @@ module.exports = {
   ledgerStatus: require("./ledgerStatus"),   // TRUTH-3
   defaultFund: require("./defaultFund"),   // LEDGER-3: the org's one unrestricted fund
   fundBooks: require("./fundBooks"),   // LEDGER-3: a fund's gifts beside its books
+  fundCard: require("./fundCard"),   // NUMBERS-8: a fund's card and its dialog, one function
   waitingToPost: require("./waitingToPost"),   // LEDGER-3: the waiting gifts, by deposit
   topDonors: require("./topDonors"),   // TRUTH-4
   atRisk: require("./atRisk"),   // TRUTH-4

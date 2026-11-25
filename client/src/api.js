@@ -44,6 +44,13 @@ export const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-produc
 
 export const getToken = () => localStorage.getItem("npe_token");
 
+// NUMBERS-8 item 3 (W-1125-Fundraising-02): a request sent with no token (this tab was signed out
+// by another tab, or its stored session was cleared) is answered 401 "No token provided". That
+// line is the server's, not hers: she reads this one, with the way back. A read never goes out
+// without the header when there is a token (tests census every figure-source request).
+export const SIGNED_OUT_SENTENCE = "You're signed out in this tab, so Steward can't read this. Sign in again to see it.";
+export const authHeaders = () => { const t = getToken(); return t ? { Authorization: `Bearer ${t}` } : {}; };
+
 // ── A 401 ON A REQUEST THAT CARRIED A TOKEN IS AN UNUSABLE TOKEN ──────────
 //
 // This used to be an ALLOWLIST of three codes, and requireAuth returns SIX:
@@ -354,6 +361,7 @@ async function apiFetchNow(path, options = {}, busyTries = 0, meta = null) {
       const said = bodySentence(err);
       throw Object.assign(new Error(said), { status: 401, authHandled: true, ...err, message: said });
     }
+    if (res.status === 401 && !token) throw Object.assign(new Error(SIGNED_OUT_SENTENCE), { status: 401, signedOut: true, error: err.error, message: SIGNED_OUT_SENTENCE });
     // SCALE-6 item 2: "Steward is busy, try again." A read asks once more, a second later (lib/busyRetry.js).
     // Loaded only when a busy answer comes, so Home's first download doesn't carry it (perf-app's budget).
     if (busyTries === 0 && res.status === 503 && err && err.code === "busy") {

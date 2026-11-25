@@ -41,7 +41,8 @@ export function SplitGiftRow({ v, onDelete }) {
 
 export function FundFootRow({ fund, txns, year }) {
   if (!fund) return null;
-  const net = txns.reduce((s, t) => s + (t.type === "income" ? 1 : -1) * parseFloat(t.amount), 0);
+  // NUMBERS-8: the balance's own rule, income less expense (a row of another type is in no balance).
+  const net = txns.reduce((s, t) => s + (t.type === "income" ? 1 : t.type === "expense" ? -1 : 0) * Math.round(parseFloat(t.amount) * 100), 0) / 100;
   return (
     <tr data-testid="txn-fund-foot">
       <td colSpan={6} style={{ padding: "8px 14px", fontSize: 12, color: T.ink3 }}>

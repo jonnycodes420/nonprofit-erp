@@ -23,7 +23,8 @@
 // is recorded by middleware/auditTrail.js: nothing here writes an audit row.
 // A GET writes nothing, the watch page included.
 "use strict";
-const NUMBERS = require("../shared/numbers");   // NUMBERS-3: a merge field's last gift is the profile's
+const NUMBERS = require("../shared/numbers");
+const GP = require("../server/mail/giftPreview");   // NUMBERS-8 item 6: no gift, no thank-you for one   // NUMBERS-3: a merge field's last gift is the profile's
 const express = require("express");
 const { publicAppUrl } = require("../publicUrl");
 const { aiGate, anthropicFor, recordAiFallback } = require("../aiClient");
@@ -463,7 +464,7 @@ async function previewHtml(req, row, { as = null, editable = false, audienceNoGi
   const ectx = await buildEmailContext(orgId);
   const personKind = LIB.personKindOf(row.starter_key);
   let fields = personKind ? { ...(await sampleFields(orgId, person, ectx)), ...(await personSample(orgId, person)) } : await sampleFields(orgId, person, ectx);
-  let shownAs = null;
+  let shownAs = null, noGift = null;
   // SWEEP-3: with nobody chosen the preview is one of her donors (the newest
   // giver), never the signed-in staff member ("Dear Allie"). "me" is the
   // explicit Preview as yourself; an org with no donor yet previews as her.
@@ -473,22 +474,26 @@ async function previewHtml(req, row, { as = null, editable = false, audienceNoGi
     const [d] = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [String(as), orgId]);
     if (d) {
       shownAs = { id: d.id, name: d.name, email: d.email || "" };
-      fields = { ...fields, ...(await donorFields(orgId, d, ectx)) };
+      // NUMBERS-8 item 6: a real person's gift fields are theirs or empty, never the sample's $250.
+      fields = { ...GP.withoutSampleGift(fields), ...(await donorFields(orgId, d, ectx)) };
       if (personKind) {
         const f = await require("./templates").personFacts(orgId, d.id, req.user.userId);
         if (f) for (const [k, v] of Object.entries(f.values)) if (v != null && String(v) !== "") fields[k] = v;
       }
+      const giverId = await defaultPreviewDonorId(orgId);
+      const [giver] = giverId ? await query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [giverId, orgId]) : [];
+      noGift = GP.noGiftNotice(row, d, fields, giver ? { id: giver.id, name: giver.name } : null);
     }
   }
   if (audienceNoGift) fields = { ...fields, audience_no_gift: true };   // POLISH-9
   const r = EB.renderEmail({ blocks: row.blocks || [], brand: ectx.brand, fields, links: ectx.links, subject: row.subject || "", preheader: row.preheader || "",
     mode: "preview", extraFields: personKind ? personFieldDefs() : null, editable });
   const footer = await unsubscribeEmailFooterHtml((shownAs && shownAs.email) || person.email || "you@example.org", orgId, "campaign");
-  const html = r.html.replace(EB.FOOTER_SLOT, footer);
+  const html = noGift ? GP.noticeHtml(noGift) : r.html.replace(EB.FOOTER_SLOT, footer);   // NUMBERS-8 item 6
   const lint = EB.lintEmailHtml(r.html);
   const noAddress = personKind && !String(fields.org_address || "").trim() && /\{\{\s*org_address\s*\}\}/.test(JSON.stringify(row.blocks || []))
     ? ["Your mailing address is not on file yet, so it is left out here. Add it in Settings, Tax Receipts, and it prints under the signature."] : [];
-  return { html, problems: [...r.problems, ...lint.filter(p => !r.problems.includes(p)), ...noAddress], person, fields, ectx, shownAs,
+  return { html, noGift, problems: [...r.problems, ...lint.filter(p => !r.problems.includes(p)), ...noAddress], person, fields, ectx, shownAs,
     subject: EB.renderSubject(row.subject || "", fields, personKind ? personFieldDefs() : null),
     fieldInfo: fieldInfoOf(fields, personKind ? personFieldDefs() : EB.EMAIL_MERGE_FIELDS), brand: brandSwatches(ectx.brand) };
 }
@@ -546,7 +551,7 @@ app.post("/email-templates/:id/preview", requireAuth, wrap(async (req, res) => {
   const p = await previewHtml(req, draft, { as: b.as || null, editable: b.editable === true });
   const html = EB.previewScheme(p.html, b.dark === true);   // BUILDER-2B: light unless Dark mode is pressed
   res.json({ html, problems: p.problems, device: b.device === "phone" ? "phone" : "desktop", width: b.device === "phone" ? 375 : 600,
-    as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject, pastGiving: await pastGivingOf(draft.blocks, p), fieldInfo: p.fieldInfo, brand: p.brand });
+    as: p.shownAs || { id: null, name: p.person.name || "" }, noGift: p.noGift || null, subject: p.subject, pastGiving: await pastGivingOf(draft.blocks, p), fieldInfo: p.fieldInfo, brand: p.brand });
 }));
 
 // EDITOR-1 · A CAMPAIGN'S EMAIL, PREVIEWED AS IT IS TYPED. The same render as

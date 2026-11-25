@@ -36,6 +36,28 @@ async function throughSummary(query, orgId, orgDonorId) {
         AND EXISTS (SELECT 1 FROM gift_soft_credits sc WHERE sc.gift_id = g.id AND sc.org_id = g.org_id)`, [orgId, orgDonorId, orgId, orgDonorId]);
   return { cents: Number(r && r.cents) || 0, people: Number(r && r.people) || 0 };
 }
+// NUMBERS-8 item 2 (W-1125-Finance-37): the person's side, read from the soft credit itself.
+// Every organisation whose own gifts credit `personId`, with what they hold through each: the
+// same rows and rules as throughByPerson, so the person's line and the organisation's row for
+// them are one number. A link (owner, works at, program officer) is not needed and not enough:
+// what was given through a record is what its gifts credit to the person.
+const ORG_SQL = o => `(LOWER(COALESCE(${o}.kind, '')) IN ('organisation', 'organization') OR jsonb_exists(COALESCE(${o}.person_types, '[]'::jsonb), 'organization'))`;   // jsonb_exists: a bare ? is a bind placeholder here
+async function givesThroughOf(query, orgId, personId) {
+  const rows = await query(
+    `SELECT g.donor_id AS through_id, o.name, COALESCE(SUM(ROUND(sc.amount * 100)), 0)::bigint AS cents, COUNT(DISTINCT g.id)::int AS gifts
+       FROM gift_soft_credits sc
+       JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
+       JOIN donors o ON o.id = g.donor_id AND o.org_id = g.org_id AND o.deleted_at IS NULL
+       JOIN donors p ON p.id = sc.donor_id AND p.org_id = sc.org_id AND p.deleted_at IS NULL
+      WHERE sc.org_id = ? AND sc.donor_id = ? AND g.donor_id <> sc.donor_id AND ${MONEY("g")} AND g.amount > 0 AND ${ORG_SQL("o")}
+      GROUP BY g.donor_id, o.name
+      ORDER BY cents DESC, o.name`, [orgId, personId]);
+  return rows.map(r => ({ id: r.through_id, name: r.name, cents: Number(r.cents) || 0, gifts: Number(r.gifts) || 0,
+    source: { key: "gives-through", params: { donor: personId, through: r.through_id } } }));
+}
+const GIVEN_THROUGH_SENTENCE = "Given through it: the part of this organisation's own gifts soft-credited to each person. Each is the same figure that person's Gives through shows, and none is added to this organisation's lifetime.";
+const GIVES_THROUGH_SENTENCE = "Gives through: the part of each organisation's own gifts soft-credited to this person. It is the same figure the organisation shows beside their name, and it is never added to their own lifetime.";
+
 const usd = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
 const summaryWords = (s, name = "this record") => (s.people
   ? `${usd(s.cents)} given through ${name}, by ${s.people} ${s.people === 1 ? "person" : "people"}`
@@ -43,4 +65,4 @@ const summaryWords = (s, name = "this record") => (s.people
 
 const SENTENCE = "Given through: the part of this record's own gifts soft-credited to each person. A person's lifetime giving is theirs, never added in here.";
 
-module.exports = { throughByPerson, throughSummary, summaryWords, SENTENCE };
+module.exports = { throughByPerson, throughSummary, summaryWords, SENTENCE, givesThroughOf, GIVES_THROUGH_SENTENCE, GIVEN_THROUGH_SENTENCE };
