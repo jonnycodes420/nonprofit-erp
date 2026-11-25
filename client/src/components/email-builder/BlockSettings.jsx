@@ -14,7 +14,7 @@ import { LIMITS } from "../../../../shared/emailBlockStyle.js";
 import { Sec, Row, Slider, Segmented, Switch, Swatches, paneInput, paneBtn, paneNote } from "./controls";
 
 const BUTTON_ACTIONS = Object.entries(BUTTON_ACTION_LABEL).map(([id, label]) => ({ id, label }));
-export const ALIGN_OPTIONS = [{ id: "left", label: "Left" }, { id: "center", label: "Centre" }, { id: "right", label: "Right" }];
+export const ALIGN_OPTIONS = [{ id: "left", label: "Left" }, { id: "center", label: "Center" }, { id: "right", label: "Right" }];
 const tokensIn = s => [...new Set([...String(s || "").matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)].map(m => m[1]))];
 const wordsOf = b => (b.blocks || []).map(p => (p.type === "ul" ? (p.items || []).join(" ") : p.text || "")).join(" ");
 
@@ -173,7 +173,7 @@ export function BlockSettings({ b, set, setStyle, pick, events = [], pages = [],
         {(b.items || []).length < 3 && <button type="button" style={paneBtn} onClick={() => set({ items: [...(b.items || []), { value: "", label: "" }] })}>Add a stat</button>}
         {(b.items || []).length > 1 && <button type="button" style={paneBtn} onClick={() => set({ items: (b.items || []).slice(0, -1) })}>Remove the last</button>}
       </div></Sec>;
-    case "quote": return <Sec title="Quote"><div style={paneNote}>Type the quote and who said it in the email. The line beside it is your accent colour.</div></Sec>;
+    case "quote": return <Sec title="Quote"><div style={paneNote}>Type the quote and who said it in the email. The line beside it is your accent color.</div></Sec>;
     case "video": return <Sec title="Video">
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <span style={{ ...paneNote, flex: 1, color: b.videoId ? T.ink : T.ink3 }}>{b.videoId ? `${b.provider === "vimeo" ? "Vimeo" : "YouTube"} video ${b.videoId}` : "No video chosen yet"}</span>
@@ -182,7 +182,7 @@ export function BlockSettings({ b, set, setStyle, pick, events = [], pages = [],
       <VideoLink onParsed={ref => set(ref)} />
       <div style={{ ...paneNote, marginTop: 8 }}>Inboxes can't play video, so the email shows its picture with a play button that opens it on your own video page. Type the caption in the email.</div></Sec>;
     case "button": {
-      const sw = [brand.button && { id: "button", hex: brand.button, label: "Your button colour" }, brand.band && { id: "band", hex: brand.band, label: "Your main colour" }, brand.accent && { id: "accent", hex: brand.accent, label: "Your accent colour" }].filter(Boolean);
+      const sw = [brand.button && { id: "button", hex: brand.button, label: "Your button color" }, brand.band && { id: "band", hex: brand.band, label: "Your main color" }, brand.accent && { id: "accent", hex: brand.accent, label: "Your accent color" }].filter(Boolean);
       return <>
         <Sec title="Button" testid="block-button">
           <label style={{ ...paneNote, display: "block" }} htmlFor="blk-btn-words">Words</label>
@@ -195,8 +195,8 @@ export function BlockSettings({ b, set, setStyle, pick, events = [], pages = [],
         </Sec>
         <Sec>
           <Row label="Full width on phones"><Switch on={!!b.fullPhone} label="Full width on phones" testid="block-button-fullphone" onChange={on => set({ fullPhone: on || undefined }, "fullPhone")} /></Row>
-          {sw.length > 0 && <Row label="Colour"><Swatches options={sw} value={b.color || "button"} label="Button colour" testid="block-button-color" onChange={v => set({ color: v === "button" ? undefined : v }, "color")} /></Row>}
-          <div style={{ ...paneNote, marginTop: 4 }}>Colours come from Brand, so every button looks like yours.</div>
+          {sw.length > 0 && <Row label="Color"><Swatches options={sw} value={b.color || "button"} label="Button color" testid="block-button-color" onChange={v => set({ color: v === "button" ? undefined : v }, "color")} /></Row>}
+          <div style={{ ...paneNote, marginTop: 4 }}>Colors come from Brand, so every button looks like yours.</div>
         </Sec>
       </>;
     }

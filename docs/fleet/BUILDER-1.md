@@ -15,7 +15,7 @@ Undo and Redo. The path line under it reads "Email › Body › Text" for what i
    name. The name appears there, and stays after a second. Save: the status line reads Saved. Reopen: still there.
 3. **(Needs a write.)** A designed template (Start from a starter, e.g. Thank you) → Elements → Image. The new image
    is selected (emerald outline, "Image" tag) and the right pane shows Edit. Type words for screen readers, then
-   Style → Width 300, Centre. The photo narrows at once. Clear the words for screen readers: Checked against (click
+   Style → Width 300, Center. The photo narrows at once. Clear the words for screen readers: Checked against (click
    the cream first) lists "add alt text". Save, then Send me a test still goes to you; a campaign from it refuses to
    send until the words are back.
 4. **(Read only, Harborlight.)** Open the receipt template, click the tax lines: the tag reads "Tax lines ·

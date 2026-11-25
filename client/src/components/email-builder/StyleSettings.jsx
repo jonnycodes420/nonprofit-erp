@@ -40,7 +40,7 @@ export function StyleSettings({ b, setStyle, brand = {} }) {
   const pad = st.pad || PAD_DEFAULT[b.type] || [16, 32, 16, 32];
   const width = st.width || EMAIL_INNER;
   const bgOpts = [{ id: "white", hex: T.white, label: "White" }, { id: "cream", hex: T.bg, label: "Cream" }, brand.band && { id: "band", hex: brand.band, label: "Your brand band" }].filter(Boolean);
-  const borderOpts = [{ id: "hair", hex: T.bg2, label: "Light grey" }, brand.band && { id: "band", hex: brand.band, label: "Your main colour" }, brand.accent && { id: "accent", hex: brand.accent, label: "Your accent colour" }].filter(Boolean);
+  const borderOpts = [{ id: "hair", hex: T.bg2, label: "Light gray" }, brand.band && { id: "band", hex: brand.band, label: "Your main color" }, brand.accent && { id: "accent", hex: brand.accent, label: "Your accent color" }].filter(Boolean);
   return (
     <div data-testid="block-style">
       {caps.has("align") && (
@@ -76,12 +76,12 @@ export function StyleSettings({ b, setStyle, brand = {} }) {
         <Sec title="Border">
           <Row label="Line"><Segmented options={[{ id: "none", label: "None" }, { id: "thin", label: "Thin" }]} value={st.border || "none"} label="Border" testid="style-border"
             onChange={v => setStyle(v === "thin" ? { border: "thin", borderColor: st.borderColor || "hair" } : { border: undefined, borderColor: undefined })} /></Row>
-          {st.border && <Row label="Colour"><Swatches options={borderOpts} value={st.borderColor || "hair"} label="Border colour" testid="style-border-color" onChange={v => setStyle({ borderColor: v })} /></Row>}
+          {st.border && <Row label="Color"><Swatches options={borderOpts} value={st.borderColor || "hair"} label="Border color" testid="style-border-color" onChange={v => setStyle({ borderColor: v })} /></Row>}
           <Row label="Rounded corners"><Slider value={st.radius || 0} min={LIMITS.radius[0]} max={LIMITS.radius[1]} label="Rounded corners" testid="style-radius" onChange={v => setStyle({ radius: v || undefined })} /></Row>
         </Sec>)}
       {caps.has("bg") && (
         <Sec title="Background"><Swatches options={bgOpts} value={st.bg || "white"} label="Background" testid="style-bg" onChange={v => setStyle({ bg: v === "white" ? undefined : v })} />
-          {st.bg === "band" && <div style={{ ...paneNote, marginTop: 6 }}>Words on the band take its own text colour.</div>}</Sec>)}
+          {st.bg === "band" && <div style={{ ...paneNote, marginTop: 6 }}>Words on the band take its own text color.</div>}</Sec>)}
       {caps.has("hide") && (
         <Sec title="Show on">
           <Segmented options={[{ id: "all", label: "Everywhere" }, { id: "desktop", label: "Phones only", title: "Hidden on desktop" }, { id: "phone", label: "Desktop only", title: "Hidden on phones" }]}
