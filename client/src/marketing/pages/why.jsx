@@ -1,14 +1,12 @@
 // LANDING-2 · the Why Steward menu and the Company pages: the case for
 // retention, moving, who it's for, security, about, leadership, partners,
 // contact, and Book a call.
-import { useState } from "react";
-import { rich, Hero, Crumbs, Block, Ui, Cards, FaqS, Incl, Steps, FinalCta, Related, StatBand, QuoteBand, People, Portrait, Pill, Photo, Tick, Icon, A, Prose } from "../lib";
+import { rich, Hero, Crumbs, Block, Ui, Cards, FaqS, Incl, Steps, FinalCta, Related, StatBand, QuoteBand, People, Portrait, Pill, Tick, Icon, A, Prose } from "../lib";
 import { AUD, AUDIENCE_SLUGS } from "../data/audiences";
 import { SRC, SRC_ALL } from "../data/research";
 // Contact keeps the founder's real portrait: never a stock photograph of a person.
 import { TEAM } from "../data/team";
 import { PILLAR, FEELING, VISION, VISION_ABOUT } from "../data/messaging";
-import { API } from "../../api";
 import { LEGAL_ENTITY_NAME, LEGAL_ENTITY_ADDRESS, LEGAL_ENTITY_STATE } from "../../../../shared/legalEntity.js";
 
 const PLACE = LEGAL_ENTITY_ADDRESS.city + ", " + LEGAL_ENTITY_STATE;
@@ -24,7 +22,7 @@ export function Why() {
       <Block tint="brass-tint" h="What the numbers mean for a small shop." p="If you had 1,000 donors last year, the national pattern says fewer than half come back without a plan. The second gift is the turning point, and a thank-you call within two days moves the next one. That is exactly the work Steward puts on your Home screen each morning." photo="call-notepad" />
     </div></section>
     <PeopleLeave />
-    <Cards eb="Keep going" h="Why teams <b>choose Steward.</b>" list={[["/move", "Moving to Steward", "About a day of your time, matched to the cent.", "import"], ["/pricing", "Honest pricing", "Published prices, month to month, no platform fee.", "finance"], ["/security", "Security and trust", "What we protect, and how.", "audit"], ["/for", "Who it's for", "Built for the organizations doing the work.", "people"]]} />
+    <Cards eb="Keep going" h="Why teams <b>choose Steward.</b>" list={[["/move", "Moving to Steward", "About a day of your time, matched to the cent.", "import"], ["/pricing", "How pricing works", "Hands-on setup, month to month, no platform fee.", "finance"], ["/security", "Security and trust", "What we protect, and how.", "audit"], ["/for", "Who it's for", "Built for the organizations doing the work.", "people"]]} />
     <FinalCta />
   </>;
 }
@@ -99,7 +97,7 @@ export function MoveSpreadsheet() {
       <div className="callout">
         <b>Bring your sheet to a call.</b>
         <p>In 20 minutes we will show you your own donors in Steward. Or run the free Lost & Found audit on your giving export first. It runs in your browser and nothing is uploaded.</p>
-        <div className="ctas" style={{ marginTop: 6 }}><Pill href="/demo">Book a call</Pill><Pill kind="soft" href="/tools/lost-and-found">Run Lost & Found</Pill></div>
+        <div className="ctas" style={{ marginTop: 6 }}><Pill href="/book">Book a call</Pill><Pill kind="soft" href="/tools/lost-and-found">Run Lost & Found</Pill></div>
       </div>
     </div></section>
     <FinalCta />
@@ -136,7 +134,7 @@ export function MoveCrm() {
       <div className="callout">
         <b>Bring your export to a call.</b>
         <p>In 20 minutes we will show you your own donors in Steward and what your move looks like. Or run the free Lost & Found audit on a giving export first. It runs in your browser and nothing is uploaded.</p>
-        <div className="ctas" style={{ marginTop: 6 }}><Pill href="/demo">Book a call</Pill><Pill kind="soft" href="/tools/lost-and-found">Run Lost & Found</Pill></div>
+        <div className="ctas" style={{ marginTop: 6 }}><Pill href="/book">Book a call</Pill><Pill kind="soft" href="/tools/lost-and-found">Run Lost & Found</Pill></div>
       </div>
     </div></section>
     <FinalCta />
@@ -174,7 +172,7 @@ export function MoveGivingPlatform() {
       <div className="callout">
         <b>See your own donors in Steward.</b>
         <p>Bring a giving export to a 20-minute call. Or run the free Lost & Found audit on it first. It runs in your browser and nothing is uploaded.</p>
-        <div className="ctas" style={{ marginTop: 6 }}><Pill href="/demo">Book a call</Pill><Pill kind="soft" href="/tools/lost-and-found">Run Lost & Found</Pill></div>
+        <div className="ctas" style={{ marginTop: 6 }}><Pill href="/book">Book a call</Pill><Pill kind="soft" href="/tools/lost-and-found">Run Lost & Found</Pill></div>
       </div>
     </div></section>
     <FinalCta />
@@ -235,7 +233,7 @@ export function About() {
         <div className="eyebrow">About Steward</div>
         <h1 className="mix h-xl">{rich(PILLAR[6].h)}</h1>
         <p className="lede">{VISION_ABOUT}</p>
-        <div className="ctas"><Pill href="/demo">Book a call</Pill><Pill kind="soft" href="/signup">Start free</Pill></div>
+        <div className="ctas"><Pill href="/book">Book a call</Pill></div>
       </div>
     </div></section>
 
@@ -351,7 +349,7 @@ export function Contact() {
         <div className="eyebrow" data-pillar-line="6">{PILLAR[6].t}</div>
         <h1 className="mix h-xl">Talk to <b>a person.</b></h1>
         <p className="lede">Questions about Steward, a move, pricing or a partnership. Email goes straight to the founder.</p>
-        <div className="ctas"><Pill href="mailto:jonathan@stewardapp.dev">Email jonathan@stewardapp.dev</Pill><Pill kind="soft" href="/demo">Book a call</Pill></div>
+        <div className="ctas"><Pill href="mailto:jonathan@stewardapp.dev">Email jonathan@stewardapp.dev</Pill><Pill kind="soft" href="/book">Book a call</Pill></div>
         <p style={{ marginTop: 30, color: "var(--grey)" }}>{LEGAL_ENTITY_NAME} · {PLACE}</p>
       </div>
       <Portrait src={TEAM[0][2]} name={TEAM[0][0]} />
@@ -360,67 +358,5 @@ export function Contact() {
   </>;
 }
 
-// BOOK A CALL. The request is stored as a lead in the same table the Lost &
-// Found leads live in (POST /lost-and-found/lead, which super-admin lists),
-// tagged ref "book-a-demo" so it reads as its own source there. Every field
-// on the form is sent, by name: the three the audit's lead also has, plus the
-// size band and where the donors are today (FIX-13). Steward never emails the
-// prospect: the route notifies Jonathan only, and he follows up himself.
-export const DEMO_REF = "book-a-demo";
-export const DEMO_FALLBACK = "That did not go through. Please email jonathan@stewardapp.dev and he will set up a time with you.";
-
-export function Demo() {
-  const [f, setF] = useState({ name: "", email: "", organization: "", band: "Under 1,000", today: "" });
-  const [state, setState] = useState("idle");
-  const [err, setErr] = useState("");
-  const set = k => e => setF({ ...f, [k]: e.target.value });
-
-  async function submit(e) {
-    e.preventDefault();
-    setState("sending"); setErr("");
-    try {
-      const body = { name: f.name.trim(), email: f.email.trim(), organization: f.organization.trim(), orgSize: f.band, currentSystem: f.today.trim(), ref: DEMO_REF };
-      const r = await fetch(API + "/lost-and-found/lead", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.message ? d.message + " If it keeps failing, email jonathan@stewardapp.dev." : DEMO_FALLBACK);
-      setState("sent");
-    } catch (x) {
-      // Never a silent nothing: a network failure (no message worth showing)
-      // gets the plain sentence with the address to write to.
-      const m = x && x.message;
-      setState("idle"); setErr(m && /jonathan@stewardapp\.dev/.test(m) ? m : DEMO_FALLBACK);
-    }
-  }
-
-  return <>
-    <Crumbs list={[["Book a call"]]} />
-    <section className="hero phero"><div className="wrap hero-g">
-      <div>
-        <div className="eyebrow">Book a call</div>
-        <h1 className="mix h-xl">Bring one question you can't answer about your donors. <b>We'll answer it with your own file.</b></h1>
-        <p className="lede">Twenty minutes with the person who built Steward. Bring a giving export and the question, and we'll answer it in Steward with your own donors. We'll keep it to twenty minutes.</p>
-        {state === "sent" ? (
-          <div className="form" data-demo-sent><p className="lede">Thank you. Jonathan will email you within one business day to pick a time.</p></div>
-        ) : (
-          <form className="form" onSubmit={submit} data-demo-form>
-            <label htmlFor="demo-name">Your name<input id="demo-name" required name="name" autoComplete="name" value={f.name} onChange={set("name")} /></label>
-            <label htmlFor="demo-email">Work email<input id="demo-email" type="email" required name="email" autoComplete="email" value={f.email} onChange={set("email")} /></label>
-            <label htmlFor="demo-organization">Organization<input id="demo-organization" required name="organization" autoComplete="organization" value={f.organization} onChange={set("organization")} /></label>
-            <label htmlFor="demo-org-size">Donors<select id="demo-org-size" name="orgSize" autoComplete="off" value={f.band} onChange={set("band")}><option>Under 1,000</option><option>1,000 to 5,000</option><option>5,000 to 10,000</option><option>Over 10,000</option></select></label>
-            <label htmlFor="demo-current-system">Where are your donors today?<input id="demo-current-system" name="currentSystem" autoComplete="off" placeholder="A spreadsheet, another donor system, not sure" value={f.today} onChange={set("today")} /></label>
-            {err && <p className="form-err" role="alert">{err}</p>}
-            <button className="pill pill-ink" type="submit" disabled={state === "sending"}><i></i>{state === "sending" ? "Sending…" : "Request a time"}</button>
-          </form>
-        )}
-      </div>
-      <div>
-        <Photo k="video-call" cls="tall" eager />
-        <div className="incl" style={{ gridTemplateColumns: "1fr", marginTop: 26 }}>
-          <span><Tick />See your own drifting donors</span><span><Tick />A clear plan for the move</span><span><Tick />Your exact price</span>
-        </div>
-      </div>
-    </div></section>
-    <StatBand n={3} />
-  </>;
-}
+// ONBOARD-4: the old /demo form (a Lost & Found lead) became /book (pages/book.jsx).
 

@@ -306,35 +306,21 @@ async function fixtures() {
 
   console.log("\n§12 · sign-up and reset never say whether an address has an account");
   {
-    // The platform-billing Stripe mock: each test price answers its own amount.
-    const PRICING = require("../pricing");
-    const priceFor = id => { const m = String(id).match(/^price_test_r(\d+)([mys])$/); if (!m) return null;
-      const t = PRICING.tierById("r" + m[1]); if (!t) return null;
-      const usd = m[2] === "m" ? t.monthlyUsd : m[2] === "y" ? t.yearlyUsd : t.setupUsd;
-      return { id, object: "price", unit_amount: usd * 100, currency: "usd", recurring: m[2] === "s" ? null : { interval: m[2] === "y" ? "year" : "month", interval_count: 1 } }; };
-    const mock = http.createServer((req, res) => { let b = ""; req.on("data", c => b += c); req.on("end", () => {
-      res.setHeader("Content-Type", "application/json");
-      if (req.method === "POST" && req.url.startsWith("/v1/checkout/sessions")) return res.end(JSON.stringify({ id: "cs_test_sec2", object: "checkout.session", url: "https://checkout.stripe.test/cs_test_sec2" }));
-      const pr = req.url.match(/^\/v1\/prices\/([^/?]+)/);
-      if (pr && priceFor(pr[1])) return res.end(JSON.stringify(priceFor(pr[1])));
-      if (req.method === "POST" && /^\/v1\/customers/.test(req.url)) return res.end(JSON.stringify({ id: "cus_sec2", object: "customer" }));
-      res.statusCode = 404; res.end(JSON.stringify({ error: { message: "mock: " + req.method + " " + req.url } }));
-    }); });
-    await new Promise(r => mock.listen(BILLING_MOCK_PORT, r));
-    const agr = (await api("GET", "/public/agreement")).body;
+    // ONBOARD-4: public signup is closed. The door answers every body the same
+    // way (410, the same words), so it cannot say whether an address has an
+    // account; what is checked is that it is the same answer and starts nothing.
     const NEW = `new-${crypto.randomBytes(6).toString("hex")}@secure2.example.org`;
     await q(`DELETE FROM close_links WHERE contact_email LIKE '%@secure2.example.org' OR contact_email=$1`, [STAFF_EMAIL]).catch(() => {});
-    const signup = async email => { const t0 = performance.now(); const r = await api("POST", "/public/signup", null, { orgName: "Secure Two Pantry", contactName: "Avery Lund",
-      contactEmail: email, estimatedRecords: 300, interval: "monthly", acceptTerms: true, termsVersion: agr.version }); return { ...r, ms: performance.now() - t0 }; };
-    // FLAKE-1: the bar is unchanged (400 ms); what it is measured against
-    // is not the runner. CI saw 941 against 1,610 ms and 1,633 against 907
-    // on changes that touched neither path: the first sign-up of a run pays
-    // for warming the route (the agreement, the price lookups, the mail
-    // client), and a shared runner stalls for half a second at random. So
-    // one untimed sign-up warms the route first, and a pair outside the bar
-    // is measured once more, with the reason logged. A real difference
-    // between the two paths is there on both tries and still fails.
-    await signup(`warm-${crypto.randomBytes(6).toString("hex")}@secure2.example.org`);
+    const signup = email => api("POST", "/public/signup", null, { orgName: "Secure Two Pantry", contactName: "Avery Lund",
+      contactEmail: email, estimatedRecords: 300, interval: "monthly", acceptTerms: true });
+    const [taken, fresh] = [await signup(STAFF_EMAIL), await signup(NEW)];
+    ok("sign-up: an address with an account and a new one get the same answer (the door is closed to both)",
+      JSON.stringify([taken.status, taken.body]) === JSON.stringify([fresh.status, fresh.body]) && fresh.status === 410, { taken: taken.body, fresh: fresh.body });
+    const links = await q(`SELECT contact_email FROM close_links WHERE contact_email IN ($1,$2)`, [STAFF_EMAIL, NEW]);
+    ok("…and no checkout was started for either", links.length === 0, links);
+
+    // FLAKE-1: a pair outside the bar is measured once more, with the reason
+    // logged; a real difference between the two paths is there on both tries.
     const timedPair = async (name, bar, a, b) => {
       let x = await a(), y = await b();
       if (Math.abs(x.ms - y.ms) >= bar) {
@@ -343,18 +329,6 @@ async function fixtures() {
       }
       return [x, y];
     };
-    const [taken, fresh] = await timedPair("sign-up", 400, () => signup(STAFF_EMAIL),
-      (() => { let n = 0; return () => signup(n++ ? `again-${crypto.randomBytes(6).toString("hex")}@secure2.example.org` : NEW); })());   // a retry is a new address, so NEW keeps its one checkout
-    mock.close();
-    const shape = r => JSON.stringify({ status: r.status, keys: Object.keys(r.body || {}).sort(), message: r.body && r.body.message, sent: r.body && r.body.sent });
-    ok("sign-up: an address with an account and a new one get the same status, sentence and shape",
-      shape(taken) === shape(fresh) && fresh.status === 202 && /If that email can sign up, we've sent a link/.test(fresh.body.message || ""),
-      { taken: shape(taken), fresh: shape(fresh) });
-    ok("…in a similar time (within 400 ms)", Math.abs(taken.ms - fresh.ms) < 400, { taken: taken.ms, fresh: fresh.ms });
-    ok("…and no checkout link in the answer: it goes by email", !/checkout\.stripe/.test(JSON.stringify(fresh.body)), fresh.body);
-    const links = await q(`SELECT contact_email FROM close_links WHERE contact_email IN ($1,$2)`, [STAFF_EMAIL, NEW]);
-    ok("…a checkout was started only for the new address", links.length === 1 && links[0].contact_email === NEW, links);
-
     const forgot = async email => { const t0 = performance.now(); const r = await api("POST", "/auth/forgot-password", null, { email }); return { ...r, ms: performance.now() - t0 }; };
     const [fa, fb] = await timedPair("reset", 250, () => forgot(STAFF_EMAIL), () => forgot("nobody-" + crypto.randomBytes(6).toString("hex") + "@secure2.example.org"));
     ok("reset: the same answer either way", JSON.stringify([fa.status, fa.body]) === JSON.stringify([fb.status, fb.body]), { fa: fa.body, fb: fb.body });

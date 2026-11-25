@@ -92,8 +92,9 @@ const COPY = {
   monthToMonth: DATA.monthToMonth, featuredBadge: DATA.featuredBadge,
   startCta: DATA.startCta, includedHeading: DATA.includedHeading,
 };
-const INCLUDED_GROUPS = DATA.includedGroups;
-const EXTRAS = DATA.extras;
+const WORDS = require("./shared/included.json");   // ONBOARD-4: what is included, in words, apart from the prices
+const INCLUDED_GROUPS = WORDS.includedGroups;
+const EXTRAS = WORDS.extras;
 
 // ── LOOKUPS ────────────────────────────────────────────────────────────────
 

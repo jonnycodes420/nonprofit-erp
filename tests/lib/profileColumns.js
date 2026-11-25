@@ -7,14 +7,14 @@
 // Jonathan, 1 Nov, on a new person: "The name and the tabs are not lined up.
 // The right rail needs to scroll on its own and the big left window on its
 // own. It's fine if it's empty ... it just needs to look better." Held here:
-//   §grid at 1440 and 1280: the back link, the avatar, the numbers' first
-//     column, the first tab and the timeline start on one left edge (±1px),
-//     40px from the sidebar; the name and the tags share a second edge; the
-//     actions are centred on the name's row (±2px).
+//   §grid at 1440 and 1280: the back link, the avatar, the first tab and the
+//     timeline start on one left edge (±1px), 40px from the sidebar; the name,
+//     the quiet line and the numbers strip share a second edge (PROFILE-4); the
+//     actions are centred on the name's first line (±2px).
 //   §columns at 1440 and 1280: a wheel over the main column moves only it, a
 //     wheel over the rail moves only the rail, the window never moves, and the
-//     last thing in each column can be scrolled into view; the header band and
-//     tabs stay pinned. At 390 the page scrolls as one (everyPageScrolls).
+//     last thing in each column can be scrolled into view; the tab row stays
+//     pinned (PROFILE-4: the header band scrolls away above it). At 390 the page scrolls as one (everyPageScrolls).
 //   §empty: a person with nothing logged shows no "0" tab pill, no sentence in
 //     the numbers (an em dash), the start card, and no empty rail section
 //     (no Household and related, Contact, Engagement or "Unassigned"); a person
@@ -54,16 +54,20 @@ async function profileColumnsScroll(pw, auth, { ok, APP }) {
         const av = avatar && (avatar.querySelector("img,[data-testid],div,button") || avatar).getBoundingClientRect();
         return { side, back: L(".dph-back"), avatar: av && Math.round(av.left * 10) / 10, avatarBox: L("[data-testid=dp-avatar]"), fig: L("[data-testid=dp-fig-lifetime]"),
           tab: L("[data-testid=dp-tabs] [role=tab]"), timeline: tl && Math.round(tl.getBoundingClientRect().left * 10) / 10,
-          name: L("[data-testid=dp-name]"), tags: L("[data-testid=dp-head-tags]"), contact: L("[data-testid=dp-contact-line]"), actions: L("[data-testid=dp-actions]") };
+          name: L("[data-testid=dp-name]"), tags: L("[data-testid=dp-head-tags]"), contact: L("[data-testid=dp-contact-line]"), actions: L("[data-testid=dp-actions]"),
+          // PROFILE-4: the actions sit on the name's FIRST line (a long name wraps under it)
+          line1: (() => { const h = document.querySelector("[data-testid=dp-name]"); if (!h) return null; const r = document.createRange(); r.selectNodeContents(h); const q = r.getClientRects()[0]; return q ? { top: q.top, bottom: q.bottom } : null; })() };
       });
-      const edges = { back: g.back && g.back.x, avatar: g.avatarBox && g.avatarBox.x, numbers: g.fig && g.fig.x, tab: g.tab && g.tab.x, timeline: g.timeline };
+      // PROFILE-4: the numbers strip starts under the name (the mockup), so it is on the second edge.
+      const edges = { back: g.back && g.back.x, avatar: g.avatarBox && g.avatarBox.x, tab: g.tab && g.tab.x, timeline: g.timeline };
       const vals = Object.values(edges);
-      ok(`§grid ${w} ${who}: back link, avatar, numbers, first tab and timeline share one left edge`, vals.every(v => v != null) && Math.max(...vals) - Math.min(...vals) <= 1, edges);
+      ok(`§grid ${w} ${who}: back link, avatar, first tab and timeline share one left edge`, vals.every(v => v != null) && Math.max(...vals) - Math.min(...vals) <= 1, edges);
       ok(`§grid ${w} ${who}: that edge is 40px from the sidebar`, edges.back != null && Math.abs(edges.back - g.side - 40) <= 1, { side: g.side, back: edges.back });
-      const second = [g.name && g.name.x, g.tags && g.tags.x, g.contact && g.contact.x].filter(v => v != null);
-      ok(`§grid ${w} ${who}: the name, the tags and the contact line share one edge`, second.length >= 2 && Math.max(...second) - Math.min(...second) <= 1, { name: g.name, tags: g.tags, contact: g.contact });
-      const nameMid = g.name && (g.name.top + g.name.bottom) / 2, actMid = g.actions && (g.actions.top + g.actions.bottom) / 2;
-      ok(`§grid ${w} ${who}: the actions are centred on the name`, nameMid != null && actMid != null && Math.abs(nameMid - actMid) <= 2, { nameMid, actMid });
+      // PROFILE-4: the tags sit beside the name now; the quiet line and the numbers start on the name's edge.
+      const second = [g.name && g.name.x, g.contact && g.contact.x, g.fig && g.fig.x].filter(v => v != null);
+      ok(`§grid ${w} ${who}: the name, the quiet line and the numbers share one edge`, second.length >= 2 && Math.max(...second) - Math.min(...second) <= 1, { name: g.name, contact: g.contact, numbers: g.fig });
+      const nameMid = g.line1 && (g.line1.top + g.line1.bottom) / 2, actMid = g.actions && (g.actions.top + g.actions.bottom) / 2;
+      ok(`§grid ${w} ${who}: the actions are centred on the name's first line`, nameMid != null && actMid != null && Math.abs(nameMid - actMid) <= 2, { nameMid, actMid });
 
       // §columns
       const col = async sel => page.evaluate(s => { const e = document.querySelector(s); return { top: e.scrollTop, can: e.scrollHeight - e.clientHeight }; }, sel);
