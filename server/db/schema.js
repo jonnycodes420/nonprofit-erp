@@ -110,6 +110,7 @@ async function runSchemaInit(pool) {
   await require("./ddl/onboard4").run(pool);   // ONBOARD-4: the booking page and partner codes (no org_id)
   await require("./ddl/onboard4b").run(pool);   // ONBOARD-4 Part B: the guided setup and "Send it to us"
   await require("./ddl/onboard5").run(pool);   // ONBOARD-5: the ten-step setup page
+  await require("./ddl/order1").run(pool);   // ORDER-1: the order on the close link, and its signature
 // SPLIT-2 db.js piece 49
 }
 // SPLIT-2 end

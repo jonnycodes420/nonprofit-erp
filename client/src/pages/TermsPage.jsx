@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { LEGAL_ENTITY_NAME, LEGAL_ENTITY_STATE, LEGAL_ENTITY_ADDRESS_LINE } from "../../../shared/legalEntity";
+import TERMS from "../../../shared/terms.json";
 
 
 // FIX-2 C — this surface's colours, named once (it keeps its own palette;
@@ -12,7 +13,9 @@ const PAL = {
 // Moved from "June 2, 2025" on 2026-09-12: the party/controller definition
 // above is a change to the document, and a stale last-updated date beside a
 // changed document is itself a false statement.
-const LAST_UPDATED = "September 12, 2026";
+// ORDER-1: the version lives in shared/terms.json, which every signed order stores. ONBOARD-4
+// changed §4 on 25 Nov and left the old date beside it; it now reads the one value.
+const LAST_UPDATED = TERMS.lastUpdated;
 
 // BUILD-96 Part 5 — THE PALETTE CENSUS RATCHETS, so this page names its four
 // colours once instead of thirteen times.

@@ -83,6 +83,10 @@ export const NO_SCREEN_READS = [
   { method: "POST", re: /^\/onboarding\/guided\/(at|confirm|finish)$/, why: "setup progress shows only on the setup page, which re-reads it, and on Home's card when Home opens" },
   { method: "POST", re: /^\/onboarding\/setup\/site-colors$/, why: "reading her website's colors writes nothing" },
   { method: "POST", re: /^\/onboarding\/setup\/events(\/remove)?$/, why: "her yearly events are listed only on the setup page's Funds step, which re-reads them" },
+  // ORDER-1: an order is edited and sent from the order panel on /admin, for ANOTHER org; the panel
+  // shows its own answer, and no screen of the signed-in org shows the order.
+  { method: "PATCH", re: /^\/admin\/start-links\/[^/]+\/order$/, why: "an order edit shows only in the /admin order panel, which shows its own answer" },
+  { method: "POST", re: /^\/admin\/start-links\/[^/]+\/send$/, why: "Send shows only its own sentence in the /admin order panel; it writes the order's sent time" },
   // ONBOARD-4: a skip is shown only on the guided setup card, which re-reads itself; the
   // concierge map and Load run on /ops for ANOTHER org, whose people no /ops screen shows.
   { method: "POST", re: /^\/onboarding\/guided\/skip$/, why: "a skipped setup step shows only on the guided setup card, which re-reads itself" },
