@@ -161,6 +161,48 @@ module.exports = async function campaign2({ h, B, ORG, ADMIN, tok }) {
     const nAfter = (await q(`SELECT COUNT(*)::int AS n FROM campaigns WHERE org_id=$1`, [ORG]))[0].n;
     ok("§c2-start …and pressed again, no second draft", nAfter === nBefore + 1, [nBefore, nAfter]);
 
+    // §c2-shell · Jonathan (staging edd466f): "can not see the top of the screen" after clicking an
+    // image block. A long email whose last block is a photo; the last block clicked at 1440x900 and at
+    // 390, under a staging strip; Save stays fully on screen, under the header, and is what is there.
+    const long = [{ type: "header" }, ...Array.from({ length: 24 }, (_, k) => ({ type: "richtext", blocks: [{ type: "h2", text: `Part ${k + 1}` }, { type: "p", text: "A paragraph of made-up words, long enough to take a line or two." }] })),
+      { type: "image", image: "https://cdn.example/photo.jpg", alt: "A made-up photo" }, { type: "footer" }];
+    const longTpl = (await api("POST", "/email-templates", tok, { starterKey: "thank_you" })).body.template.id;
+    const put = await api("PUT", `/email-templates/${longTpl}`, tok, { blocks: long });
+    ok("§c2-shell a long email to click through", put.status === 200, put.status);
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+      const s2 = await b.signedIn(ADMIN, viewport);
+      // The staging strip, as stagingStrip.js draws it on staging (24px, pinned above everything).
+      await s2.ctx.addInitScript(() => document.addEventListener("DOMContentLoaded", () => {
+        document.documentElement.style.setProperty("--steward-strip-h", "24px");
+        const st = document.createElement("div"); st.id = "steward-staging-strip";
+        Object.assign(st.style, { position: "sticky", top: "0", zIndex: "2147483647", height: "24px", background: "#0F1A12" });
+        document.body.insertBefore(st, document.body.firstChild);
+      }));
+      const p2 = s2.page;
+      await p2.goto(b.APP + `/app/communications?subtab=templates&template=${longTpl}`, { waitUntil: "domcontentloaded" });
+      await p2.locator('[data-testid="email-editor"]').waitFor({ timeout: 15000 }).catch(() => {});
+      await p2.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+      const frame = p2.frameLocator('[data-testid="email-preview-frame"]');
+      const last = frame.locator("[data-st-block]").filter({ has: frame.locator("img") }).last();
+      await last.scrollIntoViewIfNeeded({ timeout: 10000 }).catch(() => {});   // a person scrolls the email to it
+      await last.click({ timeout: 10000 }).catch(() => {});
+      await p2.waitForTimeout(1500);
+      const where = await p2.evaluate(() => {
+        const save = document.querySelector('[data-testid="email-save"]');
+        if (!save) return { missing: true };
+        const r = save.getBoundingClientRect();
+        const strip = document.getElementById("steward-staging-strip").getBoundingClientRect().bottom;
+        const bar = document.querySelector(".app-topbar"); const barR = bar && bar.getBoundingClientRect();
+        const above = Math.max(strip, barR && barR.height ? barR.bottom : 0);
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, above, h: innerHeight, w: innerWidth, isSave: !!(hit && save.contains(hit)),
+          shell: document.querySelector('[data-testid="steward-editor"]').scrollTop, pageY: scrollY };
+      });
+      ok(`§c2-shell ${viewport.width}: after the last block is clicked, Save is fully visible under the header`,
+        !where.missing && where.top >= where.above - 0.5 && where.bottom <= where.h && where.left >= 0 && where.right <= where.w && where.isSave && where.shell === 0, where);
+      await s2.ctx.close();
+    }
+
     // §c2-ai and §c2-census · the sequence editor (Earlier sequences, Edit)
     const openSequence = async () => {
       await page.goto(b.APP + "/app/communications?subtab=sequences", { waitUntil: "domcontentloaded" }); await settle();

@@ -22,7 +22,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { apiFetch } from "../api";
 import { T, Spin } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
-import StewardEditor, { useNarrow, railNote } from "./StewardEditor";
+import StewardEditor, { useNarrow, railNote, useShellTop, shellStyle } from "./StewardEditor";
 import { BrandSummary, PreviewAs, EmailHistory, FromLine, Checks, setPageBackground } from "./EmailEditor";
 import { useBuilderWorkspace } from "./email-builder/useBuilderWorkspace";
 import { stripKeys } from "./email-builder/useEmailBuilder";
@@ -81,6 +81,7 @@ export default function CampaignEditor({
   orgTimezone, sending, testState, sendingIdentity, approvalNote, notReviewed, onBack, onSaveDraft, onSend, onSchedule, onRequestApproval, onTest, onDuplicate,
 }) {
   const narrow = useNarrow();
+  const shellTop = useShellTop();   // CAMPAIGN-2: under the header and the staging strip, measured
   const [device, setDevice] = useState(narrow ? "phone" : "desktop");
   const [dark, setDark] = useState(false);
   const [as, setAs] = useState(undefined);   // GIFTS-2: undefined = first recipient, null = yourself (lib/previewAs.js)
@@ -209,7 +210,7 @@ export default function CampaignEditor({
     </div>
   );
   return (
-    <div data-testid="campaign-builder" className="fullscreen-takeover no-caps" style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 200 }}>
+    <div data-testid="campaign-builder" className="fullscreen-takeover no-caps" style={shellStyle(shellTop)}>
       <StewardEditor kind="campaign" testid="steward-editor" layout="builder" back={{ onClick: goBack, label: "Back" }}
         name={title} badge={statusBadge || "Campaign"} device={device} onDevice={setDevice}
         toggles={[{ id: "dark", label: "Dark mode", on: dark, onClick: () => setDark(v => !v) }]}

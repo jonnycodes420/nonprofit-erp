@@ -27,7 +27,7 @@ import { T, Spin } from "./shared";
 import { offerUndo } from "./EditHistory";
 import { askConfirm } from "./ConfirmDialog";
 import { errorMessage } from "../lib/domainError";
-import StewardEditor, { useNarrow, railInput, railQuietBtn, railNote, builderQuiet } from "./StewardEditor";
+import StewardEditor, { useNarrow, railInput, railQuietBtn, railNote, builderQuiet, useShellTop, shellStyle } from "./StewardEditor";
 import { previewAsParam } from "../lib/previewAs";   // GIFTS-2: one rule for who a preview is drawn for
 import { pastGivingFlag } from "../../../shared/pastGiving.js";   // FLOWS-12 item 1
 import { useBuilderWorkspace } from "./email-builder/useBuilderWorkspace";
@@ -145,6 +145,7 @@ const withDraft = t => (t && t.draft ? { ...t, ...t.draft } : t);
 export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onOpenDrafts, onOpenCampaigns, onOpenCampaign, onOpenBrand, onQuickPrint, onBack, onSaved, backLabel = "Back to templates", title = null }) {
   const start0 = withDraft(template);
   const narrow = useNarrow();
+  const shellTop = useShellTop();   // CAMPAIGN-2: under the header and the staging strip, measured
   const [name, setName] = useState(start0.name);
   const [subject, setSubject] = useState(start0.subject || "");
   const [preheader, setPreheader] = useState(start0.preheader || "");
@@ -421,7 +422,7 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
   );
 
   return (
-    <div data-testid="email-editor" style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 200 }} className="fullscreen-takeover no-caps">
+    <div data-testid="email-editor" style={shellStyle(shellTop)} className="fullscreen-takeover no-caps">
       <StewardEditor kind="email" testid="steward-editor" layout="builder"
         back={{ onClick: goBack, label: backLabel, short: /templates/i.test(backLabel) ? "Templates" : "Back" }}
         name={title || name} badge={emailBadge(template)}
