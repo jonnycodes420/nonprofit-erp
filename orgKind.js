@@ -119,6 +119,8 @@ const KEPT_FIXTURE_IDS = ["org_creo", "org_stagewalk"];
 function isLiveOrg(org, facts = {}, env = process.env) {
   if (!org || org.archived_at) return false;
   if (KEPT_FIXTURE_IDS.includes(org.id)) return true;
+  // BGWORK-1: the super admin's "Run background work for this test org" (orgs.run_background_work).
+  if (org.run_background_work === true) return true;
   return LIVE_KINDS.has(inferKind(org, facts, env).kind);
 }
 

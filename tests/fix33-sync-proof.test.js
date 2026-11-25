@@ -156,8 +156,9 @@ const TABLES = ["job_queue", "mailbox_sync_runs", "meeting_effects", "calendar_p
 async function reset() {
   for (const t of TABLES) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone)
-           VALUES ($1,'FIX-33 Sync Proof','fix33-sync-proof',1,'active','team',$2)`, [ORG, TZ]);
+  // BGWORK-1: a customer, so its mailboxes are read and watched (server/orgs/liveOrgs.js); a test org's are not.
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,org_kind)
+           VALUES ($1,'FIX-33 Sync Proof','fix33-sync-proof',1,'active','team',$2,'customer')`, [ORG, TZ]);
   for (const [id, email, name] of [["u_fix33_dana", DANA, "Dana Reyes"], ["u_fix33_sam", SAM, "Sam Ito"], ["u_fix33_lee", LEE, "Lee Park"]])
     await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,$5,'admin')`, [id, ORG, email, PW, name]);
   await q(`INSERT INTO donors (id,org_id,name,email,stage,total_giving,created_by,created_by_name) VALUES
