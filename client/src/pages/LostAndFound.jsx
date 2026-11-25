@@ -64,8 +64,8 @@ export default function LostAndFound() {
         </Link>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexShrink: 0 }}>
           <Link to="/pricing" className="lf-hide-sm" style={{ fontSize: 13, color: GREY, textDecoration: "none" }}>Pricing</Link>
-          <Link to="/signup" style={{ fontSize: 13, color: CREAM, background: INK, borderRadius: 8,
-            padding: "7px 16px", textDecoration: "none", fontWeight: 700, whiteSpace: "nowrap" }}>Start now</Link>
+          <Link to="/book" style={{ fontSize: 13, color: CREAM, background: INK, borderRadius: 8,
+            padding: "7px 16px", textDecoration: "none", fontWeight: 700, whiteSpace: "nowrap" }}>Book a call</Link>
         </div>
       </nav>
 
@@ -106,12 +106,7 @@ export default function LostAndFound() {
             steps attached? That&apos;s Steward.
           </p>
           <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-            <Link to="/signup" style={{ background: EMERALD, color: WHITE, borderRadius: 12, padding: "15px 30px",
-              fontSize: 16, fontWeight: 700, textDecoration: "none", display: "inline-block", minWidth: 44, minHeight: 44 }}>
-              Start free
-            </Link>
-            <Link to="/demo" style={{ background: "transparent", color: INK,
-              border: `1.5px solid ${INK}`, borderRadius: 12, padding: "15px 30px",
+            <Link to="/book" style={{ background: EMERALD, color: WHITE, borderRadius: 12, padding: "15px 30px",
               fontSize: 16, fontWeight: 700, textDecoration: "none", display: "inline-block", minWidth: 44, minHeight: 44 }}>
               Book a call
             </Link>
@@ -350,10 +345,10 @@ export function LostAndFoundAudit({ compact = false, onDone }) {
                                padding: "12px 20px", fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                       Download it again
                     </button>
-                    <Link to="/signup" data-testid="lf-start-with-file" onClick={rememberAudit}
+                    <Link to="/book" data-testid="lf-start-with-file" onClick={rememberAudit}
                       style={{ background: EMERALD, color: WHITE, borderRadius: 10, padding: "12px 20px",
                                fontSize: 15, fontWeight: 700, textDecoration: "none" }}>
-                      Start Steward with this file →
+                      Book a call about this file →
                     </Link>
                   </div>
                 </div>
@@ -405,15 +400,10 @@ export function LostAndFoundAudit({ compact = false, onDone }) {
                 {REPORT_CLOSE}
               </div>
               <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-                <Link to="/signup" data-testid="lf-end-start" onClick={rememberAudit}
+                <Link to="/book" data-testid="lf-end-start" onClick={rememberAudit}
                   style={{ background: EMERALD, color: WHITE, borderRadius: 12, padding: "15px 26px",
                     fontSize: 16, fontWeight: 700, textDecoration: "none", display: "inline-block", minHeight: 44 }}>
-                  Start Steward with this file
-                </Link>
-                <Link to="/demo" data-testid="lf-end-call"
-                  style={{ background: "transparent", color: INK, border: `1.5px solid ${INK}`, borderRadius: 12,
-                    padding: "15px 26px", fontSize: 16, fontWeight: 700, textDecoration: "none", display: "inline-block", minHeight: 44 }}>
-                  Book a call
+                  Book a call about this file
                 </Link>
               </div>
             </div>

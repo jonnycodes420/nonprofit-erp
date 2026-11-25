@@ -77,8 +77,9 @@ async function seed() {
   // page imports, so the page's own source is checked for the string too.
   ok("§1 the pricing page does not render it",
      !/internal_test/.test(readSource("client/src/marketing/pages/pricing.jsx")));
-  ok("§1 …and neither does the signup page",
-     !/internal_test/.test(readSource("client/src/pages/SignupPage.jsx")));
+  // ONBOARD-4: the public signup page is gone; the booking page took its place.
+  ok("§1 …and neither does the booking page that replaced signup",
+     !/internal_test/.test(readSource("client/src/marketing/pages/book.jsx")));
 
   console.log("\n— §2 · every public door that takes a plan name refuses it —");
   const signup = await api("POST", "/public/signup", null, {
@@ -86,8 +87,8 @@ async function seed() {
     estimatedDonors: 100, interval: "monthly", acceptTerms: true, termsVersion: "any",
     plan: ID, tier: ID,              // both spellings, in case a future body reads either
   });
-  ok("a signup body naming the $1 price does not get it",
-     !String(JSON.stringify(signup.body)).includes(ID),
+  ok("a signup body naming the $1 price does not get it (ONBOARD-4: the door is closed to every body)",
+     signup.status === 410 && !String(JSON.stringify(signup.body)).includes(ID),
      signup.status + " " + JSON.stringify(signup.body).slice(0, 200));
 
   const co = await api("POST", "/billing/create-checkout", admin, { plan: ID });

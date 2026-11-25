@@ -5,10 +5,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import Papa from "papaparse";
-import { Hero, Cards, Steps, FaqS, FinalCta, StatBand, Pill, A, priceLine } from "../lib";
+import { Hero, Cards, Steps, FaqS, FinalCta, StatBand, Pill, A, PRICING_LINE } from "../lib";
 import { SRC, SRC_ALL } from "../data/research";
 import { PILLAR, GIFT_TERMS } from "../data/messaging";
-import PRICING from "../../../../pricing.json";
 import { RETENTION_GAP } from "../../../../shared/sources.js";
 import { SkeletonCards } from "../../components/Skeleton";
 
@@ -17,7 +16,7 @@ import { SkeletonCards } from "../../components/Skeleton";
 // only at /lost-and-found. Now this page renders that same component, so the
 // drop zone and the Run the free audit button sit in the hero, and every
 // Lost & Found link on the site (menu, tools, feature finder) lands on a page
-// that can run it. Book a call and Start free stay below the result.
+// that can run it. Book a call stays below the result (ONBOARD-4: no Start free).
 // Lazy, so the audit's code loads only for the people who come here.
 const LostAndFoundAudit = React.lazy(() => import("../../pages/LostAndFound").then(m => ({ default: m.LostAndFoundAudit })));
 
@@ -58,8 +57,7 @@ export function ToolLostAndFound() {
         <div data-lf-audit><LostAndFoundAudit compact /></div>
       </React.Suspense>
       <div className="ctas" style={{ marginTop: 34 }} data-lf-ctas>
-        <Pill href="/demo">Book a call</Pill>
-        <Pill kind="soft" href="/signup">Start free</Pill>
+        <Pill href="/book">Book a call</Pill>
       </div>
     </Hero>
     <Steps eb="How it works" h="A minute, <b>start to finish.</b>" list={[["Export your gifts", "Any spreadsheet with donor, date and amount."], ["Drop it in", "The audit reads it in your browser. Nothing is uploaded."], ["See who is slipping", "Lapsing donors ranked by what they used to give."]]} />
@@ -95,8 +93,8 @@ export function thermometerMath(g, r) {
 }
 
 // PROOF-2 · the retention gap on her own numbers: donors kept at each rate,
-// and what the difference gives in a year. PRICING-1: the site never prices
-// by size, so the panel closes on the one price line, not on a band.
+// and what the difference gives in a year. ONBOARD-4: the site shows no
+// price, so the panel closes on the pricing line and Book a call.
 export function gapMath(donors, gift, hi, lo) {
   const keptHi = Math.round(donors * hi / 100), keptLo = Math.round(donors * lo / 100);
   const more = keptHi - keptLo, worth = more * gift;
@@ -118,7 +116,7 @@ function GapPanel({ hi, lo }) {
       <div className="out" aria-live="polite">
         <div className="big">{m.more.toLocaleString()}</div><p>more donors giving again: {m.keptHi.toLocaleString()} at {hi}% against {m.keptLo.toLocaleString()} at {lo}%</p>
         <div className="big sm">{m.worth}</div><p>a year from those donors at your average gift</p>
-        <p style={{ marginTop: 22 }}>{priceLine(Math.min(...PRICING.tiers.map(t => t.monthlyUsd)))}</p>
+        <p style={{ marginTop: 22 }}>{PRICING_LINE} <A href="/book">Book a call</A>.</p>
       </div>
     </div>
     <p className="srcnote">The two rates: <A href={src[1]}>{src[0]}</A>. Organizations with a donor retention strategy reported {hi}% retention; those without one reported {lo}%. A survey shows what respondents reported, not what any one organization will see.</p>

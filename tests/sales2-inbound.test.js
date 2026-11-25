@@ -99,14 +99,10 @@ function priceMock() {
   const lfBody = JSON.parse(lf.text || "{}");
   ok("§7 the Lost & Found answer is byte-for-byte what it was", lf.status === 201 && lf.text === JSON.stringify({ ok: true, id: lfBody.id, message: "Thank you. Your report is downloading, and nothing about your donors left your computer." }), lf.text);
   ok("§7 …and it lands, source 'Lost & Found'", !!(await until(async () => (await dealBySource("Lost & Found"))[0])));
-  const mock = await priceMock();
-  const agr = (await api("GET", "/public/agreement", null)).body;
-  const su = await raw("POST", "/public/signup", { orgName: "Wexcombe Choir", contactName: "Inbound Super", contactEmail: SUPER, estimatedRecords: 300, interval: "monthly", acceptTerms: true, termsVersion: agr.version });
-  const suBody = JSON.parse(su.text || "{}");
-  ok("§7 the signup answer keeps its exact shape (the address already has an account: the same answer as a new one)", su.status === 202
-    && Object.keys(suBody).join() === "sent,message,tier,band,interval,amountUsd,setupUsd,firstChargeAt,agreementVersion" && suBody.sent === true, su.text);
-  ok("§7 …and it lands, source 'Signup'", !!(await until(async () => (await dealBySource("Signup"))[0])));
-  await new Promise(r => mock.close(r));
+  // ONBOARD-4: public signup is closed (every org signs through a close link after a call), so a
+  // signup body lands nowhere: the website's way in is /book, tested in tests/onboard4.test.js.
+  const su = await raw("POST", "/public/signup", { orgName: "Wexcombe Choir", contactName: "Inbound Super", contactEmail: SUPER, estimatedRecords: 300, interval: "monthly", acceptTerms: true });
+  ok("§7 the signup door is closed, and a signup body opens no deal", su.status === 410 && (await new Promise(r => setTimeout(r, 300)).then(() => dealBySource("Signup"))).length === 0, su.text);
 
   // ── §8 · PARTNER REFERRAL LINKS ────────────────────────────────────────────────────
   const pA = (await S(sup, "POST", "/partners", { name: "Brian Greenfeld (made-up)", terms: [{ kind: "finder", percent: 10, recurring: true, months: 12 }] })).body.id;

@@ -144,7 +144,6 @@ const OUT_OF_SCOPE = {
   "pages/ForgotPasswordPage.jsx": "password-reset request form; carries no figures",
   "pages/ResetPasswordPage.jsx": "password-reset form; carries no figures",
   "pages/InvitePage.jsx": "accept-an-invitation form; carries no figures",
-  "pages/Invitation.jsx": "public request-an-invitation form; its own guards (landing verifier)",
   "pages/JoinNetwork.jsx": "public network sign-up, flagged off in production (BUILD-46)",
   "pages/ManageFundraiser.jsx": "a peer fundraiser's own public edit page on publicTheme.js",
   "pages/PortalEditor.jsx": "the donor-portal page builder; its figures are the portal's, previewed",
