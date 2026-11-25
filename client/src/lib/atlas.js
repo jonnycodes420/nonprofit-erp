@@ -32,6 +32,8 @@ export function linkTarget(link) {
     case "careplan": return ["donors", { selectDonorId: link.donorId }];
     // ATLAS-8: a Home figure Atlas answered from (the goal bar, the stopped monthly cards).
     case "fundraising": return ["fundraising", link.section ? { frSection: link.section } : {}];
+    // BUILDER-3: a comment that mentions her opens the email it is on (followLink goes by its address).
+    case "template": return ["communications", { subtab: "templates" }];
     default: return null;
   }
 }
@@ -39,6 +41,11 @@ export function linkTarget(link) {
 // Following a line (a press, never a render): a plan-of-care proposal waits on
 // the person's plan of care for her to confirm (TOP100-1).
 export function followLink(link) {
+  // BUILDER-3: the email a comment is on opens by its address (Communications reads ?template=).
+  if (link && link.tab === "template" && /^et_[a-f0-9]+$/.test(String(link.templateId || ""))) {
+    window.location.assign(`/app/communications?subtab=templates&template=${encodeURIComponent(link.templateId)}`);
+    return null;
+  }
   if (link && link.tab === "careplan") {
     try { sessionStorage.setItem("steward.careProposal", JSON.stringify({ donorId: link.donorId, templateId: link.templateId })); } catch { /* the panel still opens */ }
   }

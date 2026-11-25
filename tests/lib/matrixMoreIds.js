@@ -106,6 +106,10 @@ async function seed(q, o, tag) {
   // `esb_<20 hex>` before it looks, so, like the template, the id is hex.
   await ins(q, "email_saved_blocks", { id: `esb_${tag}${"0".repeat(18)}${tag}`, org_id: o, name: `${mark} Saved block`,
     blocks: [{ type: "richtext", blocks: [{ type: "p", text: `${mark} saved words` }] }], preview_html: `<p>${mark} preview</p>` });
+  // BUILDER-3 — a comment on the template, a mention of the admin in it, and an in-org review link.
+  await ins(q, "email_comments", { id: `ecm_${o}`, org_id: o, template_id: `et_${tag}0000000000${tag}`, block_id: "p0", body: `${mark} comment`, author_name: `${mark} Author` });
+  await ins(q, "email_comment_mentions", { id: `ecmn_${o}`, org_id: o, comment_id: `ecm_${o}`, user_id: admin });
+  await ins(q, "email_review_links", { id: `erl_${o}`, org_id: o, template_id: `et_${tag}0000000000${tag}`, audience: "org", expires_at: new Date(Number(new Date(testNow())) + 7 * 864e5) });
   // INSIGHTS — a review of this org's gift ("it is a gift", nothing to restore).
   await ins(q, "insight_reviews", { org_id: o, gift_id: `g_${o}`, decision: "gift", donor_id: d });
   // READOUTS — one readout.
@@ -160,6 +164,10 @@ function resolve(p, n, B) {
     [/^\/privacy\/removals\//, { id: `cer_${B}` }],
     [/^\/email-templates\//, { id: `et_${B.slice(-1)}0000000000${B.slice(-1)}` }],
     [/^\/email-blocks\/(?!ready\/)/, { id: `esb_${B.slice(-1)}${"0".repeat(18)}${B.slice(-1)}` }],   // BUILDER-2A
+    [/^\/email-comments\//, { id: `ecm_${B}` }],            // BUILDER-3
+    [/^\/email-comment-mentions\//, { id: `ecmn_${B}` }],   // BUILDER-3
+    [/^\/email-review-links\//, { id: `erl_${B}` }],        // BUILDER-3
+    [/^\/email-reviews\//, { id: `erl_${B}` }],             // BUILDER-3
     [/^\/insights\/donor\//, { id: `d_${B}` }],
     [/^\/insights\/review\//, { giftId: `g_${B}` }],
     [/^\/readouts\//, { id: `rdo_${B}`, kind: "new_donors" }],

@@ -617,6 +617,10 @@ app.post("/campaigns", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   if (req.body.emailBlocks !== undefined && req.body.emailBlocks !== null) {
     const v = await campaignBlocksFrom(req.body.emailBlocks);
     if (!v.ok) return res.status(400).json({ error: "invalid_blocks", sentence: v.sentence });
+    // BUILDER-3 item 5: a Code block is admins' only (a copy of a template's code is not new code).
+    const tplBlocks = req.body.templateId ? ((await query("SELECT blocks FROM email_templates WHERE id=? AND org_id=?", [String(req.body.templateId), req.user.orgId]))[0] || {}).blocks : null;
+    const refused = await require("../mail/emailTogether").codeGuard(req, tplBlocks || [], v.blocks);
+    if (refused) return res.status(refused.status).json({ error: refused.error, sentence: refused.sentence });
     blocks = v.blocks;
   }
 
@@ -652,6 +656,8 @@ app.put("/campaigns/:id", requireAuth, checkWriteAccess, wrap(async (req, res) =
   if (Array.isArray(req.body.emailBlocks)) {
     const v = await campaignBlocksFrom(req.body.emailBlocks);
     if (!v.ok) return res.status(400).json({ error: "invalid_blocks", sentence: v.sentence });
+    const refused = await require("../mail/emailTogether").codeGuard(req, emailCompose.toArray(existing[0].email_blocks), v.blocks);   // BUILDER-3 item 5
+    if (refused) return res.status(refused.status).json({ error: refused.error, sentence: refused.sentence });
     newBlocks = v.blocks;
   }
 

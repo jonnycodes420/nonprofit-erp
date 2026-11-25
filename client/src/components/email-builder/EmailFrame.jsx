@@ -45,6 +45,9 @@ tr[data-st-hide]>td{opacity:.5}
 .st-bar.in{top:4px;right:4px}
 .st-bar button{background:${T.green};color:${T.white};border:none;border-radius:5px;height:20px;min-width:22px;font-size:11px;font-weight:700;cursor:pointer;padding:0 6px;line-height:20px}
 .st-bar button:hover{background:${T.ink}}
+.st-box.other{display:block;border:2px solid var(--c);z-index:18}
+.st-box.other .st-who{position:absolute;top:-11px;right:10px;background:var(--c);color:${T.white};border-radius:5px;font:700 11px/18px 'DM Sans',Helvetica,Arial,sans-serif;padding:0 7px;white-space:nowrap}
+[data-st-held]{cursor:not-allowed}
 `;
 
 // ── Reading the words back out of the preview ─────────────────────────────
@@ -101,19 +104,38 @@ const HIDDEN_NAME = { phone: "hidden on phones", desktop: "hidden on desktop" };
 // null. on (read live): commit(path, value), select(i | null), action(act, i),
 // focusChange(bool), caret(c), undo(), redo(); BUILDER-2B: drop(payload, at),
 // plus(at, rect), copy(event), paste(event).
-export function EmailFrame({ html, device, selected, on, frameRef, labels = {}, testid = "email-preview-frame", readOnly = false }) {
+// BUILDER-3: others = [{ index, color, name, holds }] the people with this email open: an outline
+// in each one's colour on the block they have selected; a block one of them holds (is typing in)
+// can't be typed in here until they move on (server/mail/emailTogether.js).
+export function EmailFrame({ html, device, selected, on, frameRef, labels = {}, testid = "email-preview-frame", readOnly = false, others = null }) {
   const scrollY = useRef(0);
   const live = useRef(on);
   live.current = on;
   const sel = useRef(selected);
   sel.current = selected;
   const draw = useRef(() => {});   // re-places the outline, the tag and the handles
+  const oth = useRef(others || []);
+  oth.current = others || [];
+  const docRef = useRef(null);
+  // A block someone else holds: its words can't be typed in here (the save keeps theirs anyway).
+  const markHeld = () => {
+    const doc = docRef.current;
+    if (!doc || readOnly) return;
+    const held = new Map(oth.current.filter(o => o.holds && o.index != null).map(o => [o.index, o]));
+    doc.querySelectorAll("[data-st-edit]").forEach(el => {
+      const i = Number(String(el.getAttribute("data-st-edit")).split(".")[0]);
+      const o = held.get(i);
+      if (o) { el.setAttribute("contenteditable", "false"); el.setAttribute("data-st-held", "1"); el.title = `${o.name} is editing this`; if (doc.activeElement === el) el.blur(); }
+      else if (el.hasAttribute("data-st-held")) { el.setAttribute("contenteditable", "true"); el.removeAttribute("data-st-held"); el.removeAttribute("title"); }
+    });
+  };
 
   const load = () => {
     const f = frameRef.current;
     let doc = null;
     try { doc = f && f.contentDocument; } catch { doc = null; }
     if (!doc || !doc.body) return;
+    docRef.current = doc;
     const st = doc.createElement("style");
     st.textContent = FRAME_CSS;
     doc.head && doc.head.appendChild(st);
@@ -195,7 +217,17 @@ export function EmailFrame({ html, device, selected, on, frameRef, labels = {}, 
       Object.assign(b.style, { display: "block", top: r.top + "px", left: r.left + "px", width: (r.right - r.left) + "px", height: (r.bottom - r.top) + "px" });
     };
     let hovered = null;
+    let otherBoxes = [];
     draw.current = () => {
+      otherBoxes.forEach(x => x.remove());
+      otherBoxes = oth.current.filter(o => o.index != null).map(o => {
+        const r = rectOf(o.index);
+        if (!r) return null;
+        const ob = doc.createElement("div"); ob.className = "st-box other"; ob.style.setProperty("--c", o.color);
+        ob.setAttribute("data-testid", "email-block-other"); ob.setAttribute("data-st-for", String(o.index)); ob.setAttribute("data-color", o.color);
+        const who = doc.createElement("span"); who.className = "st-who"; who.textContent = o.holds ? `${o.name} is editing` : o.name; ob.appendChild(who);
+        doc.body.appendChild(ob); put(ob, r); return ob;
+      }).filter(Boolean);
       const i = sel.current;
       const r = i == null ? null : rectOf(i);
       put(selBox, r);
@@ -249,6 +281,7 @@ export function EmailFrame({ html, device, selected, on, frameRef, labels = {}, 
     // Pictures load after the frame does; the outline follows them.
     doc.querySelectorAll("img").forEach(im => { if (!im.complete) im.addEventListener("load", () => draw.current()); });
     draw.current();
+    markHeld();
   };
   // Keep the reader's place across a redraw.
   useEffect(() => {
@@ -259,6 +292,7 @@ export function EmailFrame({ html, device, selected, on, frameRef, labels = {}, 
   }, [html, frameRef]);
   // The selection, marked without a redraw.
   useEffect(() => { draw.current(); }, [selected]);
+  useEffect(() => { draw.current(); markHeld(); }, [others]);   // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <iframe ref={frameRef} title="The email" data-testid={testid} sandbox="allow-same-origin" srcDoc={html} onLoad={load}
       style={{ colorScheme: "light", display: "block", margin: "0 auto", width: device === "phone" ? "100%" : 700, maxWidth: "100%", height: "100%", minHeight: 520, border: 0, background: "transparent", flex: 1 }} />

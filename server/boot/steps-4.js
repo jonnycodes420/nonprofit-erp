@@ -854,6 +854,7 @@ require("../../routes/emailTemplates").mount(EMAIL1_CTX);
 // SPLIT-2 server.js piece 772
 require("../../routes/stockPhotos").mount(EMAIL1_CTX);
 require("../mail/savedBlocks").mount(EMAIL1_CTX);   // BUILDER-2A
+require("../mail/emailTogether").mount(EMAIL1_CTX);   // BUILDER-3
 // SPLIT-2 end
 // SPLIT-2 server.js piece 773
 require("../../routes/donorLookups").mount({ query, requireAuth, wrap });

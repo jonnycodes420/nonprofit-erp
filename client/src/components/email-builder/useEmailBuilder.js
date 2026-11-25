@@ -12,6 +12,7 @@ import { useState, useRef, useCallback } from "react";
 import { validateEmailBlocks } from "../../../../shared/emailBlocks.js";
 import { stockPhotoForBlock } from "../StewardEditor";
 import { setAtPath } from "./EmailFrame";
+import { newBlockId, mergeBlocks, mergeMeta } from "../../../../shared/emailMerge.js";   // BUILDER-3
 
 let keySeq = 0;
 const newKey = () => `k${++keySeq}`;
@@ -43,6 +44,11 @@ export function useEmailBuilder(initial, { meta = null, allowed = [], onChanged 
   const hist = useRef({ past: [], future: [], tag: null, at: 0 });
   const changed = useRef(onChanged);
   changed.current = onChanged;
+  // BUILDER-3 item 2: the blocks someone else is typing in, id -> their first name. Nothing here
+  // changes one of them until they move on; the save keeps their version anyway.
+  const held = useRef(new Map());
+  const heldBy = k => { const b = latest.current.find(x => x._k === k); return b && b.id && held.current.get(b.id) ? held.current.get(b.id) : null; };
+  const heldSentence = who => `${who} is editing this. You can change it when ${who} moves on.`;
 
   const snap = () => ({ blocks: latest.current, meta: metaRef.current ? metaRef.current.get() : null });
   const push = tag => {
@@ -95,6 +101,7 @@ export function useEmailBuilder(initial, { meta = null, allowed = [], onChanged 
   const commit = (path, value) => {
     const i = Number(String(path).split(".")[0]);
     const k = latest.current[i] && latest.current[i]._k;
+    if (k && heldBy(k)) return;
     // A blur commits the same words again: no change, no undo step.
     if (k && JSON.stringify(setAtPath(latest.current, path, value)[i]) === JSON.stringify(latest.current[i])) return;
     change(bs => setAtPath(bs, path, value), "type:" + k + ":" + path.split(".").slice(1).join("."));
@@ -105,6 +112,7 @@ export function useEmailBuilder(initial, { meta = null, allowed = [], onChanged 
   const setBlock = (key, patch, tag = null) => {
     const i = indexOf(key);
     if (i < 0) return "That block is gone.";
+    if (heldBy(key)) return heldSentence(heldBy(key));
     const cur = latest.current[i];
     const next = { ...cur, ...(typeof patch === "function" ? patch(cur) : patch) };
     for (const k of Object.keys(next)) if (next[k] === undefined) delete next[k];
@@ -123,6 +131,7 @@ export function useEmailBuilder(initial, { meta = null, allowed = [], onChanged 
     const i = indexOf(key);
     if (i < 0) return;
     const b = latest.current[i];
+    if (what === "remove" && heldBy(key)) return;
     if (what === "up" || what === "down") {
       const j = i + (what === "up" ? -1 : 1);
       if (j < 0 || j >= latest.current.length) return;
@@ -135,7 +144,7 @@ export function useEmailBuilder(initial, { meta = null, allowed = [], onChanged 
     }
     if (what === "duplicate") {
       if (b.locked || b.type === "footer") return;
-      const copy = { ...clone(b), _k: newKey() };
+      const copy = { ...clone(b), id: newBlockId(), _k: newKey() };
       change(bs => { const n = [...bs]; n.splice(i + 1, 0, copy); return n; });
       setSelKey(copy._k);
     }
@@ -155,7 +164,7 @@ export function useEmailBuilder(initial, { meta = null, allowed = [], onChanged 
   // Elements: a new block under the selected one (or at the end, above the
   // footer), or at `at`, selected. Returns its key.
   const insert = async (def, { list = false, at = null } = {}) => {
-    const fresh = { type: def.key, ...clone(list ? LIST_DEFAULTS : def.defaults || {}), _k: newKey() };
+    const fresh = { type: def.key, ...clone(list ? LIST_DEFAULTS : def.defaults || {}), id: newBlockId(), _k: newKey() };
     if (["hero", "image"].includes(def.key)) { const p = await stockPhotoForBlock(); if (p) { fresh.image = p.src; fresh.alt = p.alt; } }
     if (def.key === "photos2") { const p = await stockPhotoForBlock(); if (p) fresh.images = [{ src: p.src, alt: p.alt }, { src: p.src, alt: p.alt }]; }
     const probe = { ...fresh }; delete probe._k;
@@ -171,7 +180,7 @@ export function useEmailBuilder(initial, { meta = null, allowed = [], onChanged 
   // copies with fresh keys, checked by the validator with the email they join
   // (MAX_BLOCKS counts them), one undo step, the first one selected.
   const insertBlocks = (list, { at = null } = {}) => {
-    const fresh = (Array.isArray(list) ? list : []).filter(b => b && b.type !== "header" && b.type !== "footer").map(b => ({ ...clone(b), _k: newKey() }));
+    const fresh = (Array.isArray(list) ? list : []).filter(b => b && b.type !== "header" && b.type !== "footer").map(b => ({ ...clone(b), id: newBlockId(), _k: newKey() }));
     if (!fresh.length) return { error: "There is nothing to add." };
     const v = validateEmailBlocks([...stripKeys(latest.current), ...stripKeys(fresh)], allowed);
     if (!v.ok) return { error: v.error.replace(/^Block \d+: /, "") };
@@ -216,7 +225,29 @@ export function useEmailBuilder(initial, { meta = null, allowed = [], onChanged 
     return { key: target._k, where: target === sel ? "selected" : "first" };
   };
 
+  // BUILDER-3 item 2 · SOMEONE ELSE SAVED. Their version (theirs) is merged into what is on screen
+  // and into every step of this person's undo, against the version both started from (base). So
+  // their change appears here, nothing typed here is lost, and Undo takes back only this person's
+  // own changes. The selection follows its block. baseMeta / theirsMeta: name, subject, preview line.
+  const rebase = useCallback((base, theirs, baseMeta = null, theirsMeta = null) => {
+    const keyOf = new Map(latest.current.filter(b => b.id).map(b => [b.id, b._k]));
+    const rekey = list => list.map(b => ({ ...b, _k: keyOf.get(b.id) || newKey() }));
+    const onto = list => rekey(mergeBlocks({ base, theirs, mine: stripKeys(list) }).blocks);
+    const h = hist.current;
+    const fixMeta = m => (m && baseMeta && theirsMeta ? mergeMeta({ base: baseMeta, theirs: theirsMeta, mine: m }) : m);
+    h.past = h.past.map(x => ({ blocks: onto(x.blocks), meta: fixMeta(x.meta) }));
+    h.future = h.future.map(x => ({ blocks: onto(x.blocks), meta: fixMeta(x.meta) }));
+    h.tag = null;
+    const n = onto(latest.current);
+    latest.current = n;
+    setBlocksRaw(n);
+    if (metaRef.current && baseMeta && theirsMeta) metaRef.current.set(fixMeta(metaRef.current.get()));
+    setVer(v => v + 1);
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  const setHeld = useCallback(map => { held.current = map instanceof Map ? map : new Map(); }, []);
+
   return {
+    rebase, setHeld, heldBy,
     blocks, latest, selected, selKey, setSelKey, selectIndex, change, changeMeta, reset, markSaved, undo, redo,
     canUndo: hist.current.past.length > 0, canRedo: hist.current.future.length > 0, ver,
     commit, setBlock, setStyle, act, insert, appendField, insertBlocks, moveTo,

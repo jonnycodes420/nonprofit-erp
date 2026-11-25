@@ -41,13 +41,13 @@ export { DRAG_TYPE };   // BUILDER-2B: the frame (frameDnD.js) drops what this c
 // BUILDER-2B: role is the signed-in person's; a block the registry keeps for
 // some roles (Code: admins) is offered only to them. onUseBlock(payload) adds
 // a saved or ready-made block; blocksRefresh reloads the Blocks tab.
-export function LeftPane({ tab, onTab, blockTypes, onAdd, fields, fieldInfo, asName, onField, readOnly, role = null, onUseBlock, blocksRefresh = 0, say }) {
+export function LeftPane({ tab, onTab, blockTypes, onAdd, fields, fieldInfo, asName, onField, readOnly, role = null, onUseBlock, blocksRefresh = 0, say, stylesTab = null }) {
   const tiles = tilesFor(blockTypes, role);
   const info = Object.fromEntries((fieldInfo || []).map(f => [f.key, f]));
   const who = asName ? String(asName).split(/\s+/)[0] : "this person";
   return (
     <>
-      <PaneTabs testid="builder-left-tabs" on={tab} onPick={onTab} tabs={[{ id: "elements", label: "Elements" }, { id: "blocks", label: "Blocks" }, { id: "fields", label: "Fields" }]} />
+      <PaneTabs testid="builder-left-tabs" on={tab} onPick={onTab} tabs={[{ id: "elements", label: "Elements" }, { id: "blocks", label: "Blocks" }, { id: "fields", label: "Fields" }, ...(stylesTab ? [{ id: "styles", label: "Styles" }] : [])]} />
       <div style={SCROLL}>
       {tab === "elements" && (
         <div data-testid="builder-elements" style={{ padding: 14 }}>
@@ -69,6 +69,7 @@ export function LeftPane({ tab, onTab, blockTypes, onAdd, fields, fieldInfo, asN
           </div>
         </div>
       )}
+      {tab === "styles" && stylesTab}
       {tab === "blocks" && <BlocksTab onUse={onUseBlock} readOnly={readOnly} refresh={blocksRefresh} say={say} />}
       {tab === "fields" && (
         <div data-testid="builder-fields" style={{ padding: 14 }}>
