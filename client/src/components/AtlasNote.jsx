@@ -24,7 +24,7 @@ const small = primary => ({ background: primary ? T.greenDk : T.white, color: pr
 
 // "Marked Undine..." reads "Atlas marked Undine..."; anything else ("Harbor
 // Run is on Dec 30...", "$10,000 gift...") keeps its words after a colon.
-const VERB = /^(Marked|Added|Drafted|Logged|Noted|Took|Recorded|Sent|Kept|Undid)\b/;
+const VERB = /^(Marked|Added|Drafted|Logged|Noted|Took|Recorded|Sent|Kept|Undid|mentioned)\b/;   // BUILDER-3: "Ada mentioned you on …"
 const lower = s => { const t = String(s || ""); return VERB.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t; };
 
 // COMMS-1: a line asking for a draft's review ("Drafted an email to Marlowe")
@@ -33,8 +33,9 @@ const draftOf = n => (n && n.kind === "draft" && n.waits && n.link && n.link.dra
 // ATLAS-5 (W-1108-Atlas-08X): every other waiting line can be let go. A
 // proposal is discarded (nothing written), a tap is its card's No, an
 // unanswered question is closed.
-const letGoPath = n => (!n || !n.waits || draftOf(n) ? null : n.kind === "question" ? `/atlas/${encodeURIComponent(n.requestId)}/dismiss-question` : `/atlas/actions/${encodeURIComponent(n.id)}/dismiss`);
-const DISMISS_SAYS = { proposal: "Discard this proposal (nothing is saved)", question: "Dismiss this question", held_back: "Discard this detail" };
+const letGoPath = n => (!n || !n.waits || draftOf(n) ? null : n.kind === "question" ? `/atlas/${encodeURIComponent(n.requestId)}/dismiss-question`
+  : n.kind === "mention" ? `/email-comment-mentions/${encodeURIComponent(n.mentionId)}/dismiss` : `/atlas/actions/${encodeURIComponent(n.id)}/dismiss`);   // BUILDER-3: a mention is let go too
+const DISMISS_SAYS = { proposal: "Discard this proposal (nothing is saved)", question: "Dismiss this question", held_back: "Discard this detail", mention: "Dismiss this mention" };
 
 function NoteLine({ n, onAct, onOpen, busy, onDismiss, onAnswer }) {
   return (

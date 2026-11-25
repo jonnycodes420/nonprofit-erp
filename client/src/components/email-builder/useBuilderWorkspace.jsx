@@ -58,7 +58,10 @@ export function scrollEmailTo(frame, box) {
   }
 }
 
-export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, readOnly, meta, metaAppend, fetchPreview, previewDeps = [], onOpenBrand, frameTestid = "email-preview-frame", narrow }) {
+// BUILDER-3: people = the others with this email open ([{ firstName, color, blockId, holds }]),
+// drawn on the email in their colours; a block one of them holds can't be changed here.
+// stylesTab: the left pane's Styles tab (the org's house style), when the owner offers one.
+export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, readOnly, meta, metaAppend, fetchPreview, previewDeps = [], onOpenBrand, frameTestid = "email-preview-frame", narrow, people = null, stylesTab = null }) {
   const allowed = useMemo(() => blockTypes.map(t => t.key), [blockTypes]);
   const labels = useMemo(() => Object.fromEntries(blockTypes.map(t => [t.key, blockName(t.key, { [t.key]: t.label })])), [blockTypes]);
   const typing = useRef(false);
@@ -84,6 +87,13 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
   const pasteRef = useRef(() => {});
   const fetcher = useRef(fetchPreview);
   fetcher.current = fetchPreview;
+  // BUILDER-3: where each other person is, as places in the list the frame draws.
+  const idsNow = b.blocks.map(x => x.id || "").join(",");
+  const others = useMemo(() => (people || []).map(p => {
+    const at = p.blockId ? b.latest.current.findIndex(x => x.id === p.blockId) : -1;
+    return { index: at >= 0 ? at : null, color: p.color, name: p.firstName, holds: !!p.holds && p.holds === p.blockId };
+  }), [people, idsNow]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { b.setHeld(new Map((people || []).filter(p => p.holds).map(p => [p.holds, p.firstName]))); }, [people]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const say = useCallback(msg => { setToast({ msg, n: Date.now() }); }, []);
   useEffect(() => { if (!toast) return undefined; const t = setTimeout(() => setToast(null), 3200); return () => clearTimeout(t); }, [toast]);
@@ -256,7 +266,13 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
   copyRef.current = copySelected;
   pasteRef.current = pasteBlocks;
   const on = {
-    commit: (path, value) => { lastInput.current = "frame"; b.commit(path, value); },
+    commit: (path, value) => {
+      lastInput.current = "frame";
+      const i = Number(String(path).split(".")[0]);
+      const who = b.latest.current[i] && b.heldBy(b.latest.current[i]._k);
+      if (who) { say(`${who} is editing this. You can type in it when ${who} moves on.`); return; }
+      b.commit(path, value);
+    },
     focusChange: f => { typing.current = f; if (!f) setTimeout(() => { if (!typing.current && stale.current) { stale.current = false; setRev(r => r + 1); } }, 120); },
     caret: c => { caret.current = c; lastInput.current = "frame"; },
     select: i => { setPlusAt(null); select(i); },
@@ -278,7 +294,7 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
   const left = (
     <LeftPane tab={leftTab} onTab={setLeftTab} blockTypes={blockTypes} onAdd={add} fields={(mergeFields || []).map(f => ({ token: f.token, label: f.label }))}
       fieldInfo={preview.fieldInfo} asName={preview.as && preview.as.name} readOnly={readOnly}
-      role={me.role} onUseBlock={p => { addFromBlocks(p); if (narrow) setSheet({ side: null, n: Date.now() }); }} blocksRefresh={blocksRefresh} say={say}
+      role={me.role} onUseBlock={p => { addFromBlocks(p); if (narrow) setSheet({ side: null, n: Date.now() }); }} blocksRefresh={blocksRefresh} say={say} stylesTab={stylesTab}
       onField={f => { const r = insertField(f, metaAppend); if (narrow && r) setSheet({ side: null, n: Date.now() }); }} />
   );
   const right = emailSettings => (
@@ -308,7 +324,7 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
       {above}
       <div onClick={e => { if (e.target === e.currentTarget) clear(); }} style={{ flex: 1, display: "flex", minHeight: 0, padding: device === "phone" || narrow ? 0 : "18px 18px 0" }}>
         <DeviceFrame device={device} narrow={narrow} testid="email-frame-wrap">
-          {override || <EmailFrame html={preview.html} device={device} selected={b.selected} on={on} frameRef={frameRef} labels={labels} testid={frameTestid} readOnly={readOnly} />}
+          {override || <EmailFrame html={preview.html} device={device} selected={b.selected} on={on} frameRef={frameRef} labels={labels} testid={frameTestid} readOnly={readOnly} others={others} />}
         </DeviceFrame>
       </div>
     </div>
@@ -329,6 +345,7 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
   const workspace = {
     b, preview, setPreview, redraw, force, frameRef, typing, lastInput, labels, sel, say, left, right, crumb, tools, canvas, overlays, clear, insertField,
     sheet, setLeftTab,
+    openSheet: side => setSheet({ side, n: Date.now() }),   // BUILDER-3: a panel opened from the bar shows on a phone too
   };
   return workspace;
 }

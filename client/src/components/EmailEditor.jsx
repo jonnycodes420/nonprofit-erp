@@ -34,6 +34,7 @@ import { useBuilderWorkspace } from "./email-builder/useBuilderWorkspace";
 import { stripKeys } from "./email-builder/useEmailBuilder";
 import { PageBackground } from "./email-builder/Panes";
 import { Sec, paneInput, paneBtn, paneNote } from "./email-builder/controls";
+import { useTogether, Faces, CommentsPanel, SharePanel, ExportPanel, StylesTab } from "./email-builder/together";   // BUILDER-3
 // The builder's parts, under the names other screens already import.
 export { EmailFrame, insertChip, setAtPath } from "./email-builder/EmailFrame";
 export { withKeys, stripKeys } from "./email-builder/useEmailBuilder";
@@ -164,6 +165,11 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
   const [ai, setAi] = useState(null);
   const [aiAsk, setAiAsk] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  // BUILDER-3: who else is here (mirrored from useTogether for the frame), and the open panel.
+  const [herePeople, setHerePeople] = useState([]);
+  const [panel, setPanel] = useState(null);   // "comments" | "share" | "export"
+  const savedRef = useRef(start0);
+  const savingRef = useRef(false);
   const metaNow = useRef(null);
   metaNow.current = { name, subject, preheader };
   const meta = useMemo(() => ({ get: () => metaNow.current, set: m => { setName(m.name); setSubject(m.subject); setPreheader(m.preheader); } }), []);
@@ -171,7 +177,8 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
   const ws = useBuilderWorkspace({
     initialBlocks: start0.blocks, blockTypes, mergeFields, readOnly: isReadOnly, meta, narrow, onOpenBrand,
     metaAppend: (which, tok) => { const set = which === "subject" ? setSubject : setPreheader; wsRef.current.b.changeMeta(() => set(v => (v ? v.replace(/\s*$/, " ") : "") + tok)); },
-    previewDeps: [device, dark, as],
+    previewDeps: [device, dark, as], people: herePeople,
+    stylesTab: <StylesTab onChanged={() => wsRef.current && wsRef.current.force()} say={m => wsRef.current && wsRef.current.say(m)} />,
     fetchPreview: blocks => apiFetch(`/email-templates/${template.id}/preview`, { method: "POST",
       body: JSON.stringify({ blocks, subject: metaNow.current.subject, preheader: metaNow.current.preheader, device, dark, editable: !isReadOnly, as: previewAsParam(as) }) }),
   });
@@ -180,6 +187,31 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
   const blocks = b.blocks;
   // A note is said once as a toast and stays under This email until the next.
   const tell = msg => { setNote(msg); if (msg) ws.say(msg); };
+  savedRef.current = saved;
+
+  // BUILDER-3 items 1 and 2: the others here, and a version someone else saved merged in (their
+  // change shows; nothing typed here is lost; Undo still takes back only this person's own).
+  const pulling = useRef(false);
+  const pullRemote = async () => {
+    if (pulling.current) return;
+    pulling.current = true;
+    try {
+      const live = await apiFetch(`/email-templates/${template.id}/live`);
+      const base = savedRef.current;
+      if (Number(live.rev) > Number(base.rev || 0) && !savingRef.current) {
+        b.rebase(base.blocks || [], live.blocks, { name: base.name, subject: base.subject || "", preheader: base.preheader || "" }, { name: live.name, subject: live.subject, preheader: live.preheader });
+        const next = { ...base, name: live.name, subject: live.subject, preheader: live.preheader, blocks: live.blocks, rev: live.rev };
+        savedRef.current = next; setSaved(next); setHasDraft(!!live.hasDraft);
+        ws.force();
+        ws.say(`${live.savedByName ? live.savedByName.split(/\s+/)[0] + " saved" : "Someone saved"} this email. Their changes are in, and yours are still here.`);
+      }
+    } catch { /* the next beat tries again */ }
+    pulling.current = false;
+  };
+  // A panel from the bar (Share, Export, Comments) opens the right pane; on a phone, its sheet.
+  const togglePanel = name => setPanel(p => { const next = p === name ? null : name; if (next && narrow) ws.openSheet("right"); return next; });
+  const together = useTogether({ templateId: template.id, b, getSaved: () => savedRef.current, onRemote: pullRemote, busy: () => savingRef.current, say: ws.say, enabled: !isReadOnly });
+  useEffect(() => { setHerePeople(together.people); }, [together.people]);
 
   useEffect(() => { apiFetch(`/email-templates/${template.id}/usage`).then(setUsage).catch(() => setUsage(null)); }, [template.id]);
 
@@ -187,13 +219,19 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
     || JSON.stringify(stripKeys(blocks)) !== JSON.stringify(saved.blocks || []);
 
   const save = async () => {
-    setSaving(true); setNote("");
+    setSaving(true); setNote(""); savingRef.current = true;
     const before = { name: saved.name, subject: saved.subject, preheader: saved.preheader, blocks: saved.blocks };
     try {
       const hadDraft = hasDraft;
-      const r = await apiFetch(`/email-templates/${template.id}`, { method: "PUT", body: JSON.stringify({ name, subject, preheader, blocks: stripKeys(blocks) }) });
+      // BUILDER-3 item 2: the version this started from goes with it, so a save made while someone
+      // else saved is merged block by block on the server, never laid over theirs.
+      const r = await apiFetch(`/email-templates/${template.id}`, { method: "PUT", body: JSON.stringify({ name, subject, preheader, blocks: stripKeys(blocks),
+        baseRev: saved.rev || 0, base: saved.blocks || [], baseMeta: { name: saved.name, subject: saved.subject || "", preheader: saved.preheader || "" } }) });
       const now = withDraft(r.template);
+      savedRef.current = now; savingRef.current = false;
       setSaved(now); b.reset(now.blocks, { keepSelection: true });
+      if (r.merged && r.merged.held && r.merged.held.length) tell("Saved. A part someone else is editing kept their words; yours for that part were not saved.");
+      else if (r.merged) tell("Saved, with the changes someone else saved while you were working.");
       setHasDraft(!!r.template.hasDraft); setDraftBy(r.template.draftByName || "");
       if (r.usage) setUsage(r.usage);
       offerUndo({ message: r.draft ? "Saved as a draft. Nothing that uses this template has changed." : "Saved the template.", undoAction: async () => {
@@ -211,6 +249,7 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
       setSaving(false);
       return true;
     } catch (e) { tell(say(e, "It could not be saved.")); }
+    savingRef.current = false;
     setSaving(false);
     return false;
   };
@@ -407,8 +446,19 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
       <Sec title="Design"><BrandSummary onOpenBrand={onOpenBrand} /></Sec>
     </fieldset>
   );
+  const selBlock = b.selected != null ? blocks[b.selected] : null;
+  const heldBy = selBlock ? b.heldBy(selBlock._k) : null;
+  const shownAs = preview.as && preview.as.id ? preview.as : null;
   const right = (
     <>
+      {heldBy && <div data-testid="block-held" role="status" style={{ ...PROBLEM_BOX, margin: "8px 16px" }}>{heldBy} is editing this. You can change it when {heldBy} moves on.</div>}
+      {selBlock && panel !== "comments" && <div style={{ padding: "8px 16px 0" }}>
+        <button type="button" data-testid="email-comment" onClick={() => togglePanel("comments")} style={paneBtn}>Comment on this part</button></div>}
+      {panel === "comments" && <CommentsPanel templateId={template.id} blocks={blocks} selectedId={selBlock ? selBlock.id : null} labelOf={x => ws.labels[x.type] || x.type}
+        onSelect={id => { const i = blocks.findIndex(x => x.id === id); if (i >= 0) b.selectIndex(i); }} onClose={() => setPanel(null)} say={ws.say} readOnly={isReadOnly} />}
+      {panel === "share" && <SharePanel templateId={template.id} as={shownAs} onClose={() => setPanel(null)} say={ws.say} readOnly={isReadOnly} />}
+      {panel === "export" && <ExportPanel as={shownAs} onClose={() => setPanel(null)} say={ws.say}
+        email={() => ({ blocks: stripKeys(b.latest.current), subject, preheader, name })} />}
       {historyOpen && <div style={{ padding: "12px 16px", borderBottom: "1px solid " + T.bg2 }}><EmailHistory templateId={template.id} onClose={() => setHistoryOpen(false)} /></div>}
       {ws.right(emailSettings)}
     </>
@@ -427,20 +477,24 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
         back={{ onClick: goBack, label: backLabel, short: /templates/i.test(backLabel) ? "Templates" : "Back" }}
         name={title || name} badge={emailBadge(template)}
         device={device} onDevice={setDevice}
-        toggles={[{ id: "dark", label: "Dark mode", on: dark, onClick: () => setDark(v => !v) }]}
-        tools={<><PreviewAs bar as={preview.as && preview.as.id ? preview.as : as} onPick={p => setAs(p)} />
+        toggles={[{ id: "dark", label: "Dark", on: dark, onClick: () => setDark(v => !v) }]}
+        tools={<><Faces people={together.people} me={together.me} /><PreviewAs bar as={preview.as && preview.as.id ? preview.as : as} onPick={p => setAs(p)} />
           {/* NUMBERS-8 item 6: a gift template previewed as someone who has never given offers the newest giver */}
           {preview.noGift && <span data-testid="preview-no-gift" style={{ fontSize: 12.5, color: T.ink }}>{preview.noGift.sentence}{preview.noGift.lastGiver && <> <button type="button" data-testid="preview-no-gift-giver" onClick={() => setAs({ id: preview.noGift.lastGiver.id, name: preview.noGift.lastGiver.name })} style={{ background: "none", border: "none", padding: 0, font: "inherit", color: T.greenDk, fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}>{`Preview as ${preview.noGift.lastGiver.name}`}</button></>}</span>}
-          {ws.tools}</>}
+          </>}
         status={saving ? "Saving…" : dirty ? "Unsaved changes" : hasDraft ? "Draft saved, not published" : "Saved"}
         actions={[
           { id: "test", label: "Send me a test", onClick: test, disabled: isReadOnly, testid: "email-test" },
-          { id: "history", label: "History", active: historyOpen, onClick: () => setHistoryOpen(o => !o), testid: "email-history" },
+          // BUILDER-3: Share for review and Export the HTML in the bar; Comments and History in More.
+          { id: "share", label: "Share", active: panel === "share", onClick: () => togglePanel("share"), testid: "email-share" },
+          { id: "export", label: "Export", active: panel === "export", onClick: () => togglePanel("export"), testid: "email-export" },
+          { id: "comments", label: "Comments", more: true, active: panel === "comments", onClick: () => togglePanel("comments"), testid: "email-comments" },
+          { id: "history", label: "History", more: true, active: historyOpen, onClick: () => setHistoryOpen(o => !o), testid: "email-history" },
         ]}
         primary={hasDraft && !dirty
           ? { label: publishing ? "Publishing…" : "Publish", onClick: publish, disabled: isReadOnly || publishing, testid: "template-publish" }
           : { label: saving ? "Saving…" : usage && usage.live ? "Save as draft" : "Save", onClick: save, disabled: isReadOnly || saving || !dirty, testid: "email-save" }}
-        crumb={ws.crumb} left={ws.left} leftTitle="Elements" right={right} rightTitle="Settings" sheet={ws.sheet} onCanvasClick={ws.clear}>
+        crumb={<>{ws.crumb}{ws.tools}</>} left={ws.left} leftTitle="Elements" right={right} rightTitle="Settings" sheet={ws.sheet} onCanvasClick={ws.clear}>
         {ws.canvas(device, above)}
       </StewardEditor>
       {ws.overlays}

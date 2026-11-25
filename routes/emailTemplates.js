@@ -33,9 +33,12 @@ const { newId } = require("../server/shared/newId");   // IDS-1: every new row i
 
 const routers = { r0: express.Router() };
 
-let EB = null, LIB = null, PW = null, PP = null, BK = null, CS = null, VOC = null;
+let EB = null, LIB = null, PW = null, PP = null, BK = null, CS = null, VOC = null, MG = null;
+let donorFieldsRef = null;   // BUILDER-3: set by mount, read by the review link (server/mail/emailTogether.js)
+const donorFieldsFor = (...a) => donorFieldsRef(...a);
 const READY = Promise.all([
   import("../shared/emailBlocks.js").then(m => { EB = m; }),
+  import("../shared/emailMerge.js").then(m => { MG = m; }),   // BUILDER-3: block ids, and a save from an older rev merged
   // FIX-30: the two older stores the bridge reads from.
   import("../shared/brandKit.js").then(m => { BK = m; }),
   import("../shared/emailTemplates.js").then(m => { CS = m; }),
@@ -70,7 +73,7 @@ function videoPageUrl(orgSlug, provider, videoId) {
 async function buildEmailContext(orgId) {
   await READY;
   const { query, resolveOrgBrandTheme, portalCardTheme } = C;
-  const [org] = await query(`SELECT o.id, o.name, o.org_slug, o.website, ps.primary_color, ps.accent_color, ps.button_color, ps.type_pairing, ps.social_links
+  const [org] = await query(`SELECT o.id, o.name, o.org_slug, o.website, ps.primary_color, ps.accent_color, ps.button_color, ps.type_pairing, ps.social_links, ps.email_style
                                 FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.id=?`, [orgId]);
   const theme = await resolveOrgBrandTheme(orgId).catch(() => null) || {};
   const card = portalCardTheme(org || {});
@@ -85,6 +88,7 @@ async function buildEmailContext(orgId) {
     logoUrl: theme.logoAbsUrl || null,
     displayName: theme.displayName || (org && org.name) || "",
     socialLinks: (org && org.social_links) || {},   // BUILDER-2A: the Social block reads Brand's links
+    emailStyle: (org && org.email_style) || null,   // BUILDER-3: the house style (Styles tab), under each block's own
   };
   const events = await query(
     `SELECT id, name, date, public_slug FROM events WHERE org_id=? ORDER BY date DESC NULLS LAST LIMIT 500`, [orgId]);
@@ -137,11 +141,12 @@ const shape = r => {
   const personKind = LIB.personKindOf(r.starter_key);
   return {
     id: r.id, starterKey: r.starter_key || null, name: r.name, purpose: r.purpose,
-    subject: r.subject, preheader: r.preheader, blocks: Array.isArray(r.blocks) ? r.blocks : [],
+    subject: r.subject, preheader: r.preheader, blocks: MG ? MG.withIds(Array.isArray(r.blocks) ? r.blocks : []) : (Array.isArray(r.blocks) ? r.blocks : []),
+    rev: Number(r.rev || 0),   // BUILDER-3: a save names the rev it started from
     archived: !!r.archived_at, archivedAt: r.archived_at || null,
     createdByName: r.created_by_name || null, createdAt: r.created_at, updatedAt: r.updated_at,
     // FIX-39: words saved while the template was in use, waiting for Publish.
-    hasDraft: !!r.draft, draft: r.draft || null, draftSavedAt: r.draft_saved_at || null, draftByName: r.draft_by_name || null,
+    hasDraft: !!r.draft, draft: r.draft && MG && Array.isArray(r.draft.blocks) ? { ...r.draft, blocks: MG.withIds(r.draft.blocks) } : (r.draft || null), draftSavedAt: r.draft_saved_at || null, draftByName: r.draft_by_name || null,
     // FIX-30: a one-person email names its kind, and types its own fields.
     ...(personKind ? { personKind, mergeFields: personFieldDefs().map(f => ({ token: `{{${f.key}}}`, label: f.label })) } : {}),
   };
@@ -357,10 +362,10 @@ app.get("/email-templates/:id/usage", requireAuth, wrap(async (req, res) => {
 async function saveTemplate(req, res, row, b) {
   await READY;
   const orgId = req.user.orgId;
-  const name = b.name != null ? clip(b.name, 120).trim() : row.name;
+  let name = b.name != null ? clip(b.name, 120).trim() : row.name;
   if (!name) return res.status(400).json({ error: "name_required", sentence: "Give the template a name." });
-  const subject = b.subject != null ? clip(b.subject, 200) : row.subject;
-  const preheader = b.preheader != null ? clip(b.preheader, 200) : row.preheader;
+  let subject = b.subject != null ? clip(b.subject, 200) : row.subject;
+  let preheader = b.preheader != null ? clip(b.preheader, 200) : row.preheader;
   let blocks = row.blocks || [];
   if (b.blocks != null) {
     const v = EB.validateEmailBlocks(b.blocks, PW.typesForSurface("email"));
@@ -370,6 +375,16 @@ async function saveTemplate(req, res, row, b) {
   for (const s of [name, subject, preheader]) {
     if (/\u2014/.test(s)) return res.status(400).json({ error: "em_dash", sentence: "Use a comma or a full stop instead of a long dash." });
   }
+  // BUILDER-3 item 2: every block keeps an id; a save that started from an older rev is merged
+  // with what is saved now, block by block; a block someone else is typing in stays theirs; and
+  // only an admin adds or changes a code block (server/mail/emailTogether.js).
+  let merged = null;
+  if (b.blocks != null && b.publish !== true) {
+    const P = await require("../server/mail/emailTogether").prepareSave(req, row, b, blocks, { name, subject, preheader });
+    if (P.error) return res.status(P.status).json({ error: P.error, sentence: P.sentence });
+    blocks = P.blocks; merged = P.merged;
+    ({ name, subject, preheader } = P.meta);
+  } else if (b.blocks != null) blocks = MG.withIds(blocks);
   // FIX-30 · A ONE-PERSON EMAIL keeps its required tax lines, uses only the
   // fields a draft can fill, and its words go back to the store every draft,
   // journey and sweep reads (message_templates). Saving there is reviewing it,
@@ -389,12 +404,12 @@ async function saveTemplate(req, res, row, b) {
   const usage = await templateUsage(orgId, row);
   if (usage.live && b.publish !== true) {
     const who = actor(req);
-    await run(`UPDATE email_templates SET draft=?::jsonb, draft_saved_at=NOW(), draft_by_name=?, updated_at=NOW() WHERE id=? AND org_id=?`,
+    await run(`UPDATE email_templates SET draft=?::jsonb, draft_saved_at=NOW(), draft_by_name=?, updated_at=NOW(), rev=COALESCE(rev,0)+1 WHERE id=? AND org_id=?`,
       [JSON.stringify({ name, subject, preheader, blocks }), who.name, row.id, orgId]);
     if (req.audit) req.audit.entity("email_template", row.id, name);
-    return res.json({ template: shape(await templateRow(orgId, row.id)), draft: true, usage });
+    return res.json({ template: shape(await templateRow(orgId, row.id)), draft: true, usage, merged });
   }
-  await run(`UPDATE email_templates SET name=?, subject=?, preheader=?, blocks=?::jsonb, draft=NULL, draft_saved_at=NULL, draft_by_name=NULL, updated_at=NOW() WHERE id=? AND org_id=?`,
+  await run(`UPDATE email_templates SET name=?, subject=?, preheader=?, blocks=?::jsonb, draft=NULL, draft_saved_at=NULL, draft_by_name=NULL, updated_at=NOW(), rev=COALESCE(rev,0)+1 WHERE id=? AND org_id=?`,
     [name, subject, preheader, JSON.stringify(blocks), row.id, orgId]);
   // AUTO-1: these words were saved by a person on this org's staff. A
   // super-admin's save does not count, and nothing else ever sets this.
@@ -412,7 +427,7 @@ async function saveTemplate(req, res, row, b) {
       [newId("mt"), orgId, personKind, words.subject, words.body, who.name, who.id, who.name]);
   }
   if (req.audit) req.audit.entity("email_template", row.id, name);
-  res.json({ template: shape(await templateRow(orgId, row.id)), draft: false, usage });
+  res.json({ template: shape(await templateRow(orgId, row.id)), draft: false, usage, merged });
 }
 app.put("/email-templates/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const row = await templateRow(req.user.orgId, req.params.id);
@@ -521,6 +536,7 @@ async function defaultPreviewDonorId(orgId) {
   return any ? any.id : null;
 }
 // One donor's own fields for an email: first name, the greeting, their last gift.
+donorFieldsRef = (...a) => donorFields(...a);   // BUILDER-3: the review link fills one person's fields the same way
 async function donorFields(orgId, d, ectx) {
   const GR = await import("../shared/greeting.js");
   // NUMBERS-3: the one last gift (shared/numbers/lastGift.js): a refund or a
@@ -787,4 +803,4 @@ app.get("/watch/:orgSlug/:provider/:videoId", videoLimiter, wrap(async (req, res
 }));
 }
 
-module.exports = { routers, mount, buildEmailContext, videoPageUrl, ensureStarterTemplate };
+module.exports = { routers, mount, buildEmailContext, videoPageUrl, ensureStarterTemplate, donorFieldsFor };

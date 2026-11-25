@@ -103,7 +103,7 @@ const CLOSED_SEGMENTS = new Set(`
   auction-refund-flags auctions auth auto-send billing board board-pack bookkeeping brand-kit briefs calendar
   campaign-templates campaigns capture care-templates changes communications connections cultivation-templates
   custom-fields dashboard dashboard-tiles dashboards data-health deleted-records deposits digests donor-relationships
-  donors drafts drift email email-blocks email-export email-marketing email-preview email-templates emails event-choices event-levels events
+  donors drafts drift email email-blocks email-comment-mentions email-comments email-export email-marketing email-preview email-review-links email-reviews email-style email-templates emails event-choices event-levels events
   figures financials finance fundraising funders geocode gift-attribution gift-starts gifts giving-page-templates
   giving-pages giving-recurring giving-sources give-settings gmail goals going-out grant-funders grant-library
   grant-outlines grant-overview grant-reports grant-sends grants groups help history-import home households

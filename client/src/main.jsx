@@ -61,6 +61,7 @@ function GivingOrgWrap() { return <GivingOrgShell><Portal /></GivingOrgShell>; }
 const LostAndFound       = React.lazy(() => import("./pages/LostAndFound"));
 const ReferralPage       = React.lazy(() => import("./pages/ReferralPage"));   // SALES-2: a partner's referral link
 const QuotePage          = React.lazy(() => import("./pages/QuotePage"));      // SALES-3: a private quote
+const ReviewPage         = React.lazy(() => import("./pages/ReviewPage"));     // BUILDER-3: an email shared for review
 const AdminDashboard     = React.lazy(() => import("./pages/AdminDashboard"));
 const OpsPage            = React.lazy(() => import("./pages/OpsPage"));   // DEVBOARD-1
 // INT-OAUTH — where a provider puts the person down after consent. It is the
@@ -329,6 +330,7 @@ function Root() {
           <Route path="/app/:tab" element={<RequireOnboarded><App /></RequireOnboarded>} />
           {/* EVENTS-4 item 5: /app/events/<id> is the event (App's URL reader canonicalises it to ?event=). */}
           <Route path="/app/events/:eventId" element={<RequireOnboarded><App /></RequireOnboarded>} />
+          <Route path="/app/review/:id" element={<RequireOnboarded><ReviewPage inside /></RequireOnboarded>} />
           <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/start/:token" element={<OnboardPages />} />
           <Route path="/imports/:importId/verify" element={<RequireOnboarded><OnboardPages page="verify" /></RequireOnboarded>} />
@@ -343,6 +345,7 @@ function Root() {
           <Route path="/lost-and-found" element={<LostAndFound />} />
           <Route path="/refer/:token" element={<ReferralPage />} />
           <Route path="/quote/:token" element={<QuotePage />} />
+          <Route path="/review/:token" element={<ReviewPage />} />
           {/* BUILD-45 — donor portal (magic-link auth; org-themed; /verify
               consumes the fragment token). */}
           {/* BUILD-54 §4 — edit mode rides the EXISTING staff session (the

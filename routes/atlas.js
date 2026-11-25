@@ -1301,9 +1301,10 @@ app.get("/atlas/activity", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const rows = await query(`SELECT * FROM atlas_actions WHERE org_id=? ORDER BY created_at DESC, id DESC LIMIT 60`, [orgId]);
   const waitingRows = await query(`SELECT * FROM atlas_actions WHERE org_id=? AND waits=true AND state='waiting'`, [orgId]);
-  const [settled, asking] = await Promise.all([settledElsewhere(orgId, waitingRows), WT.openQuestions(query, orgId, actor(req).id)]);   // ATLAS-5: her open questions wait too
-  const items = [...asking.map(x => ({ ...x, by: atlasName() })), ...rows.map(r => actionOut(asSettled(r, settled.get(r.id))))];
-  res.json({ name: atlasName(), waiting: waitingRows.length - settled.size + asking.length, items,
+  const [settled, asking, mentioned] = await Promise.all([settledElsewhere(orgId, waitingRows), WT.openQuestions(query, orgId, actor(req).id),
+    require("../server/mail/emailTogether").openMentions(query, orgId, actor(req).id)]);   // ATLAS-5: her open questions wait too; BUILDER-3: and comments that @mention her
+  const items = [...mentioned, ...asking.map(x => ({ ...x, by: atlasName() })), ...rows.map(r => actionOut(asSettled(r, settled.get(r.id))))];
+  res.json({ name: atlasName(), waiting: waitingRows.length - settled.size + asking.length + mentioned.length, items,
     changes: await require("../server/shared/changeMarks").changeMarks(query, orgId) });
 }));
 // The notes on one page: what Atlas did there that nobody has seen yet, and

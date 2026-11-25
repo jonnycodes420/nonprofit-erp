@@ -36,6 +36,7 @@ import { withoutMissingGift, hasValue } from "./giftSentence.js";
 import { hasFirstGiftVersion, firstGiftParagraphs, claimIn } from "./pastGiving.js";   // FLOWS-12 item 1
 import { cleanStyle, cleanOptions, styledRow, spacerRow, hideRow, HIDE_CSS_PHONE } from "./emailBlockStyle.js";   // BUILDER-1
 import { drawMore, validateMore, countBlocks } from "./emailMoreBlocks.js";   // BUILDER-2A: Columns, Box, Social, Code
+import { styleForRender } from "./emailStyle.js";   // BUILDER-3: the house style, read at render time
 
 export const FOOTER_SLOT = "<!--steward:footer-->";
 
@@ -222,7 +223,10 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
   const band = color(B.band, "#1a6b4a"), bandFg = color(B.bandFg, "#ffffff");
   const accent = color(B.accent, "#c9a84c");
   const btnBg = color(B.buttonColor, band), btnFg = color(B.buttonFg, bandFg);
-  const fonts = EMAIL_FONT_STACKS[B.typePairing] || EMAIL_FONT_STACKS.dm;
+  // BUILDER-3 item 6: the house style (brand.emailStyle) under every block's own settings.
+  const HS = styleForRender(B.emailStyle, EMAIL_FONT_STACKS[B.typePairing] || EMAIL_FONT_STACKS.dm, EMAIL_FONT_STACKS);
+  const fonts = { serif: HS.serif, sans: HS.sans };
+  const linkColor = HS.linkColor === "accent" ? accent : HS.linkColor === "button" ? btnBg : HS.linkColor === "ink" ? "#0f1a12" : band;
   const orgName = String(B.displayName || F.org_name || "").trim();
   const list = Array.isArray(blocks) ? blocks : [];
   // BUILDER-2A: the frame a block draws in. At the top it is the 600 px sheet
@@ -280,8 +284,8 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
     const w = o.width ? ` width="${o.width}"` : "";
     const ws = o.width ? `width:${o.width}px;max-width:100%;` : "";
     return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="${al}"${w}${o.fullPhone ? ` class="st-btn-full"` : ""} style="${m}${ws}"><tr>
-<td align="center" bgcolor="${bg}" style="background:${bg};border-radius:8px;mso-padding-alt:14px 28px;">
-<a href="${esc(url || "#")}" target="_blank" style="display:${o.width ? "block" : "inline-block"};padding:14px 28px;font-family:${fonts.sans};font-size:16px;font-weight:bold;line-height:20px;color:${fg};text-decoration:none;border-radius:8px;">${lbl}</a>
+<td align="center" bgcolor="${bg}" style="background:${bg};border-radius:${HS.radius}px;mso-padding-alt:14px 28px;">
+<a href="${esc(url || "#")}" target="_blank" style="display:${o.width ? "block" : "inline-block"};padding:14px 28px;font-family:${fonts.sans};font-size:16px;font-weight:bold;line-height:20px;color:${fg};text-decoration:none;border-radius:${HS.radius}px;">${lbl}</a>
 </td></tr></table>`;
   }
 
@@ -296,8 +300,8 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
     : `<tr><td class="${cls}" bgcolor="${C.card}" style="background:${C.card};padding:${pad};">${inner}</td></tr>`);
   // A full-bleed cell (a hero photo, a video): the card at the top, bare inside a Box.
   const td0 = () => BARE ? `<td style="padding:0;">` : `<td class="st-card" bgcolor="${C.card}" style="background:${C.card};padding:0;">`;
-  const P = (html, extra = "") => `<p class="st-text" style="margin:0 0 14px;font-family:${fonts.sans};font-size:16px;line-height:1.6;color:${C.body};${extra}">${html}</p>`;
-  const H = (html, size = 24, extra = "") => `<h2 class="st-ink" style="margin:0 0 10px;font-family:${fonts.serif};font-size:${size}px;line-height:1.25;font-weight:normal;color:${C.ink};${extra}">${html}</h2>`;
+  const P = (html, extra = "") => `<p class="st-text" style="margin:0 0 14px;font-family:${fonts.sans};font-size:${HS.bodySize}px;line-height:1.6;color:${C.body};${extra}">${html}</p>`;
+  const H = (html, size = HS.headingSize, extra = "") => `<h2 class="st-ink" style="margin:0 0 10px;font-family:${fonts.serif};font-size:${size}px;line-height:1.25;font-weight:normal;color:${C.ink};${extra}">${html}</h2>`;
 
   // BUILDER-1: in a preview, a block still waiting for its event, giving page
   // or video is a box saying so, so it can be seen and clicked. A send has none.
@@ -377,7 +381,7 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
           if (!b) continue;
           if (b.type === "h2") { out.push(H(T(b.text, where), 20, "margin-top:8px;")); text.push(plain(b.text)); }
           else if (b.type === "ul") {
-            const items = (Array.isArray(b.items) ? b.items : []).map(it => `<li class="st-text" style="margin:0 0 6px;font-family:${fonts.sans};font-size:16px;line-height:1.6;color:${C.body};${ts}">${T(it, where)}</li>`).join("");
+            const items = (Array.isArray(b.items) ? b.items : []).map(it => `<li class="st-text" style="margin:0 0 6px;font-family:${fonts.sans};font-size:${HS.bodySize}px;line-height:1.6;color:${C.body};${ts}">${T(it, where)}</li>`).join("");
             out.push(`<ul style="margin:0 0 14px;padding:0 0 0 22px;">${items}</ul>`);
             for (const it of (b.items || [])) text.push(`- ${plain(it)}`);
           } else { out.push(P(T(b.text, where).replace(/\n/g, "<br>"), ts)); text.push(plain(b.text)); }
@@ -559,6 +563,7 @@ ${has(w.title) ? `<div class="st-muted" style="font-family:${fonts.sans};font-si
 body{margin:0;padding:0;}
 table{border-collapse:collapse;}
 img{-ms-interpolation-mode:bicubic;}
+.st-card a:not([style*="color"]){color:${linkColor};}
 ${PHONE_MEDIA}{
 .st-wrap{width:100% !important;}
 .st-col{display:block !important;width:100% !important;padding:0 0 12px 0 !important;}

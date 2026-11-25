@@ -283,6 +283,33 @@ export const builderQuiet = bQuiet;
 // leftTabs / rightTabs are not the shell's: each pane is whatever the editor
 // passes. `tools` sit after Desktop / Phone (Preview as, Undo, Redo); `crumb`
 // is the path line; `onCanvasClick` hears a click on the cream around the thing.
+// BUILDER-3 · MORE. The quiet actions that don't fit the bar. Closes on Escape and on a click outside.
+function MoreMenu({ items }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const key = e => { if (e.key === "Escape") setOpen(false); };
+    const down = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("keydown", key); document.addEventListener("mousedown", down);
+    return () => { document.removeEventListener("keydown", key); document.removeEventListener("mousedown", down); };
+  }, [open]);
+  const active = items.some(a => a.active);
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button type="button" data-testid="editor-more" aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen(o => !o)} style={bQuiet(open || active)}>More {"\u25BE"}</button>
+      {open && <div role="menu" data-testid="editor-more-menu" style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 30, background: T.white, border: "1px solid " + T.bg3, borderRadius: 10,
+        boxShadow: "0 12px 32px rgba(15,26,18,0.16)", padding: 6, minWidth: 170 }}>
+        {items.map(a => (
+          <button key={a.id} type="button" role="menuitem" data-testid={a.testid || "editor-" + a.id} disabled={a.disabled} onClick={() => { setOpen(false); a.onClick(); }}
+            style={{ display: "block", width: "100%", textAlign: "left", background: a.active ? T.bg : "none", border: "none", borderRadius: 7, padding: "8px 10px", fontSize: 13, fontWeight: 600,
+              color: T.ink, cursor: a.disabled ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: a.disabled ? 0.5 : 1 }}>{a.label}{a.active ? " \u2713" : ""}</button>
+        ))}
+      </div>}
+    </div>
+  );
+}
+
 function BuilderLayout({
   testid = "steward-editor", kind, back, name, badge, devices = ["desktop", "phone"], device, onDevice,
   toggles = [], tools = null, status, actions = [], primary, notice, crumb, left, leftTitle = "Elements", right, rightTitle = "Settings",
@@ -318,10 +345,13 @@ function BuilderLayout({
       ))}
     </div>
   );
-  const quietActions = actions.filter(Boolean).map(a => (
+  // BUILDER-3: an action marked `more` goes in the More menu, so the bar keeps to one line.
+  const quietActions = actions.filter(a => a && !a.more).map(a => (
     <button key={a.id} type="button" data-testid={a.testid || "editor-" + a.id} disabled={a.disabled} onClick={a.onClick}
       style={{ ...bQuiet(!!a.active), opacity: a.disabled ? 0.5 : 1, cursor: a.disabled ? "not-allowed" : "pointer" }}>{a.label}</button>
   ));
+  const moreActions = actions.filter(a => a && a.more);
+  const moreEl = moreActions.length > 0 && <MoreMenu items={moreActions} />;
   const primaryEl = primary && (
     <button type="button" data-testid={primary.testid || "editor-primary"} data-commit onClick={primary.onClick} disabled={!!primary.disabled}
       title={primary.disabled && primary.reason ? primary.reason : undefined} style={bPrimary(!!primary.disabled)}>{primary.label}</button>
@@ -345,6 +375,7 @@ function BuilderLayout({
         {!narrow && seg}
         {!narrow && tools}
         {!narrow && quietActions}
+        {!narrow && moreEl}
         {primaryEl}
         {narrow && (
           <div style={{ display: "flex", gap: 6, width: "100%", flexWrap: "wrap", alignItems: "center" }}>
@@ -353,6 +384,7 @@ function BuilderLayout({
             {toggles.length > 0 && seg}
             {tools}
             {quietActions}
+            {moreEl}
           </div>
         )}
       </div>
