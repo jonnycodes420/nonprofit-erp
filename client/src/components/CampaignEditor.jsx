@@ -78,7 +78,7 @@ export function AudienceLine({ audience, testid = "audience-line" }) {
 
 export default function CampaignEditor({
   isAdmin, isReadOnly, readOnlySent, campaignId, statusBadge, title, form, setForm, initialBlocks, blockTypes, mergeFields, segPreview, onDonorOnlyCopy, audiencePicker,
-  orgTimezone, sending, testState, sendingIdentity, approvalNote, notReviewed, onBack, onSaveDraft, onSend, onSchedule, onRequestApproval, onTest, onDuplicate,
+  openedSay, orgTimezone, sending, testState, sendingIdentity, approvalNote, notReviewed, onBack, onSaveDraft, onSend, onSchedule, onRequestApproval, onTest, onDuplicate,
 }) {
   const narrow = useNarrow();
   const shellTop = useShellTop();   // CAMPAIGN-2: under the header and the staging strip, measured
@@ -104,6 +104,9 @@ export default function CampaignEditor({
       audienceNoGift: !!(segPreview && segPreview.audienceNoGift), campaign: true, includeNeverGiven }) }),   // POLISH-9; FLOWS-15 item 1
   });
   wsRef.current = ws;
+  // CAMPAIGN-2 item 4: "Start a campaign from this" pressed again opens the same draft; the
+  // template editor that said so is gone by now, so this editor says it as it opens.
+  useEffect(() => { if (openedSay) ws.say(openedSay); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const { b, preview, redraw } = ws;
   const blocks = b.blocks;
   const email = () => ({ blocks: stripKeys(b.latest.current), preheader: formNow.current.preheader || "" });
