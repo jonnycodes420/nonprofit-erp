@@ -170,8 +170,11 @@ function drawCode(w, i, where, rows, ctx) {
     if (!im.alt) problems.push(`${where}: an image has no alt text (a few words saying what it shows).`);
     images.push(im);
   }
-  const words = clean.html.replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|tr|h[1-6]|li)>/gi, "\n").replace(/<[^>]*>/g, "")
-    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;/g, "'")
+  // The plain-text part: tags out (until none are left), then each entity decoded once, in one pass.
+  let flat = clean.html.replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|tr|h[1-6]|li)>/gi, "\n");
+  for (let prev = null; prev !== flat;) { prev = flat; flat = flat.replace(/<[^<>]*>/g, ""); }
+  const ENT = { "&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&#39;": "'" };
+  const words = flat.replace(/[<>]/g, "").replace(/&(?:nbsp|amp|lt|gt|quot|#39);/g, m => ENT[m])
     .split("\n").map(s => s.trim()).filter(Boolean).join("\n");
   if (words) text.push(words);
   rows.push(ctx.row(clean.html || "&nbsp;", `12px ${ctx.frame().HP}px`));
