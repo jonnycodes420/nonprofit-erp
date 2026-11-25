@@ -18,6 +18,8 @@ const PLANT = process.env.TEST_MODE === "1" ? process.env.ONBOARD2_PLANT || "" :
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function mount(app, { query, run, wrap, opsOnly, opsLimiter }) {
+  // ONBOARD-4: the Stuck column and "Send it to us", above /ops/onboarding/:orgId so their paths are theirs.
+  require("./opsConciergeRoutes").mount(app, { query, run, wrap, opsOnly, opsLimiter });
   app.get("/ops/onboarding", opsLimiter, opsOnly, wrap(async (req, res) => {
     try { res.json({ ok: true, ...(await BOARD.board(query)) }); }
     catch (e) { console.warn(`[ops] onboarding could not be read: ${e.message}`); res.json({ ok: false, error: "The onboarding board could not be read. Try again in a minute." }); }

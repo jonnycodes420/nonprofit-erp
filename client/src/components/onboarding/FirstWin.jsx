@@ -115,6 +115,8 @@ export default function FirstWin({ kind, onb, onNavigate }) {
   if (kind === "totals") return null;
   const below = onb ? <Suspense fallback={null}><HomeOnboarding onNavigate={onNavigate} /></Suspense> : null;
   if (kind === "readout") return <div style={{ display: "flex", flexDirection: "column", gap: 14 }}><Suspense fallback={null}><DayThirty onNavigate={onNavigate} /></Suspense>{below}</div>;
+  // ONBOARD-4: in onboarding, the first 30 minutes is step 3 of the guided setup, opened on it; not a second card.
+  if (onb) return <Suspense fallback={null}><HomeOnboarding onNavigate={onNavigate} prefer="call" /></Suspense>;
   return <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
     {!closed && <FirstSession onNavigate={onNavigate} onClosed={() => setClosed(true)} />}
     {below}
