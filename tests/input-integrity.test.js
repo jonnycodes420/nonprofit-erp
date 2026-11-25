@@ -101,6 +101,7 @@ const NEG = "A gift can't be negative. To give money back, refund the gift.";
     const y = civilPlusDays(-1);
     await q(`UPDATE gifts SET date=$1, scheduled_on=$1 WHERE id=$2`, [y, gid]);
     await q(`UPDATE gift_day_holds SET due_on=$1 WHERE gift_id=$2`, [y, gid]);
+    await require("../server/numbers/cameDue").recomputeCameDue(require("../db").query, { orgId: ORG });   // its totals' own hourly tick
     const r1 = await GD.releaseDueHolds(deps, { orgId: ORG });
     await drainQueue({ orgId: ORG });
     ok("§2 on its day the tick releases it", r1.released === 1, r1);
