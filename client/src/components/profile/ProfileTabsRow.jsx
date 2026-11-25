@@ -5,7 +5,7 @@
 // only this row is sticky in the middle column; a zero-height sentinel above it
 // tells useStuckTabs when the header has scrolled away, and then the row shows
 // the small face and the name at its left and a light shadow.
-// PROFILE-4b: stuck, the counts step aside and the gaps close so every tab stays
+// PROFILE-4b: stuck, the other tabs' counts step aside and the gaps close so every tab stays
 // in view; when room is still short the name ends in "…" (whole name on hover)
 // before any tab is pushed out of sight.
 import { T, PersonMark } from "../shared";
@@ -32,8 +32,9 @@ export function ProfileTabsRow({ stuckTabs, donor, photoUrl, headName, isVolunte
         return <button key={id} role="tab" data-tab={id} aria-selected={dpTab===id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",borderBottom:"2px solid "+(dpTab===id?T.greenDk:"transparent"),padding:"12px 0 10px",color:dpTab===id?T.ink:T.ink3,fontSize:13.5,fontWeight:dpTab===id?700:500,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,fontFamily:"inherit",minHeight:44,display:"inline-flex",alignItems:"center"}}>
           {label}
           {/* PROFILE-3: a count only when there is something to count; never "0".
-              PROFILE-4b: not while the row is stuck, so the name and all eight tabs fit at 1440. */}
-          {n>0&&!stuckTabs.stuck&&<span data-tab-count={id} style={{marginLeft:6,background:T.bg2,borderRadius:99,padding:"1px 7px",fontSize:10.5,fontWeight:700,color:T.ink3}}>{n}</span>}
+              PROFILE-4b: stuck, only the open tab keeps its count, so the name and all
+              eight tabs fit at 1440. */}
+          {n>0&&(!stuckTabs.stuck||dpTab===id)&&<span data-tab-count={id} style={{marginLeft:6,background:T.bg2,borderRadius:99,padding:"1px 7px",fontSize:10.5,fontWeight:700,color:T.ink3}}>{n}</span>}
         </button>;
       })}
     </div>

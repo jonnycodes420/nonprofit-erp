@@ -12,7 +12,7 @@ the header has scrolled away. The right rail did not change.
    gift with its date beside it.
 2. **(Read only.)** Same person: put the mouse over the timeline and scroll down. The header goes up with the page; the
    tab row stops at the top with "MC Margaret Chen" at its left and a light shadow, and all eight tabs (Activity to
-   Files) are still in the row, without their counts; the rail does not move. Scroll back
+   Files) are still in the row, only the open tab with its count; the rail does not move. Scroll back
    to the top: the small name disappears and the header is back.
 3. **(Read only.)** Scroll down until the tab row is stuck, then click Giving, then Notes. Each time the tab row stays
    at the top and the new tab's first card starts just under it (no jump back to the header). Click Activity: same.
