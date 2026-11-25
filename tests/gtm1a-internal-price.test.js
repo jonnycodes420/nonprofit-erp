@@ -77,7 +77,9 @@ async function seed() {
   // page imports, so the page's own source is checked for the string too.
   ok("§1 the pricing page does not render it",
      !/internal_test/.test(readSource("client/src/marketing/pages/pricing.jsx")));
-  // ONBOARD-4: the public signup page is gone (public signup closed); nothing to read there.
+  // ONBOARD-4: the public signup page is gone; the booking page took its place.
+  ok("§1 …and neither does the booking page that replaced signup",
+     !/internal_test/.test(readSource("client/src/marketing/pages/book.jsx")));
 
   console.log("\n— §2 · every public door that takes a plan name refuses it —");
   const signup = await api("POST", "/public/signup", null, {
