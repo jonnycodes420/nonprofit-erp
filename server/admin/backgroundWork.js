@@ -11,8 +11,8 @@
 const LIVE = require("../orgs/liveOrgs");
 
 // `door` is /ops's (server/admin/opsRoutes.js opsOnly): a super admin's session, 404 to anyone else.
-function mount(app, { query, run, wrap, door }) {
-  app.post("/admin/orgs/:id/background-work", door, wrap(async (req, res) => {
+function mount(app, { query, run, wrap, door, limiter }) {
+  app.post("/admin/orgs/:id/background-work", limiter, door, wrap(async (req, res) => {
     const on = req.body && req.body.on;
     if (typeof on !== "boolean") return res.status(400).json({ error: "on_required", message: "Say on or off." });
     const [org] = await query("SELECT id, name, run_background_work FROM orgs WHERE id=?", [req.params.id]);
