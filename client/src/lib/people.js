@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch, adaptDonor, onWrite } from "../api";
 import { allPages } from "./pages";
 import { useLatestSearch, personStillMatches } from "./latestSearch";
+import { useLiveRev } from "./liveRead";   // FRESH-2
 
 const qs = o => new URLSearchParams(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== "")).toString();
 
@@ -115,14 +116,17 @@ export function usePeoplePicker(text, { match = "concat", limit = 20, enabled = 
 export function usePeopleById(ids) {
   const key = [...new Set((ids || []).filter(Boolean))].sort().join(",");
   const [state, setState] = useState({ key: "", map: {} });
+  // FRESH-2: and again when a gift, a touch or an edit reaches one of them (Home's rail, the
+  // "mini-profile", kept the Lifetime and Last gift it read when it opened).
+  const rev = useLiveRev("people.by-id", ["person", "gift", "note"]);
   useEffect(() => {
     if (!key) return undefined;
     let live = true;
     peopleById(key.split(","))
       .then(m => { if (live) setState({ key, map: m }); })
-      .catch(() => { if (live) setState({ key, map: null }); });   // null: unknown, never "nobody"
+      .catch(() => { if (live) setState(s => (s.key === key ? s : { key, map: null })); });   // null: unknown, never "nobody"
     return () => { live = false; };
-  }, [key]);
+  }, [key, rev]);
   if (!key) return [{}, true];
   return [state.map, state.key === key];
 }

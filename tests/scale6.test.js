@@ -168,11 +168,11 @@ async function section3() {
   const src = f => fs.readFileSync(path.join(__dirname, "../client/src", f), "utf8");
   // The kinds on the subscription line that carries `anchor` in file `f`.
   const kindsAt = (f, anchor) => {
-    const line = src(f).split("\n").find(l => l.includes(anchor) && /use(Changed|ChangeRev|WriteRev)\(/.test(l));
+    const line = src(f).split("\n").find(l => l.includes(anchor) && /use(Changed|ChangeRev|WriteRev|Live|LiveRead|LiveRev)\(/.test(l));
     if (!line) return null;
     if (/useWriteRev\(VOLUNTEER_WRITES\)/.test(line)) return ["volunteer"];
     if (/useChanged\(PROFILE_KINDS/.test(line)) return [...(src("lib/profileRefresh.js").match(/PROFILE_KINDS = \[([^\]]*)\]/) || ["", ""])[1].matchAll(/"([a-z]+)"/g)].map(m => m[1]);
-    const arr = /use(?:Changed|ChangeRev)\(\s*\[([^\]]*)\]/.exec(line);
+    const arr = /use(?:Changed|ChangeRev|Live(?:Read|Rev)?)\(\s*(?:"[^"]*"\s*,\s*)?\[([^\]]*)\]/.exec(line);   // FRESH-2: useLive("name", [...])
     return arr ? [...arr[1].matchAll(/"([a-z]+)"/g)].map(m => m[1]) : null;
   };
   const P = "d_person", E = "e_event";
@@ -181,13 +181,13 @@ async function section3() {
     fundraising: ["Fundraising totals (Fundraising.jsx)", "components/Fundraising.jsx", "refresh);", null],
     header: ["Profile header: Lifetime, last gift (profileRefresh.js)", "lib/profileRefresh.js", "PROFILE_KINDS, c =>", { person: P }],
     byYear: ["Profile → Giving: By year (ByYear.jsx)", "components/profile/ByYear.jsx", "useChangeRev", { person: P }],
-    portfolioDonors: ["Donors → portfolio totals (Donors.jsx)", "components/Donors.jsx", "useChanged([\"gift\",\"person\",\"totals\"],c=>", null],
+    portfolioDonors: ["Donors → portfolio totals (Donors.jsx)", "components/Donors.jsx", "useLive(\"donors.officers\"", null],
     portfolioHome: ["Home → portfolio card (PortfolioCard.jsx)", "components/home/PortfolioCard.jsx", "useChangeRev", null],
-    volHeader: ["Volunteers header and counts (VolunteersHub.jsx)", "components/VolunteersHub.jsx", "const volRev", null],
+    volHeader: ["Volunteers header and counts (VolunteersHub.jsx)", "components/VolunteersHub.jsx", "useLive(\"volunteers.roster\"", null],
     volPanel: ["Profile → Volunteer hours (VolunteerPanel.jsx)", "components/VolunteerPanel.jsx", "loadProf();", { person: P }],
     attendees: ["Event → attendee list (EventsDesk.jsx)", "components/EventsDesk.jsx", "{ event: event.id }", { event: E }],
     eventCards: ["Events → each event's summary (EventsDesk.jsx)", "components/EventsDesk.jsx", "each card's counts", null],
-    eventsList: ["Events list (Events.jsx)", "components/Events.jsx", "const listRev", null],
+    eventsList: ["Events list (Events.jsx)", "components/Events.jsx", "useLive(\"events.list\"", null],
     badge: ["Sidebar Tasks badge (taskBadge.js)", "lib/taskBadge.js", "() => load(), null, 150", null],
   };
   const PAIRS = [

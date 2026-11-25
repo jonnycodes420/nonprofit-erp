@@ -32,7 +32,7 @@ import { ScheduleView, RosterModeView, ToSendView, ShiftDrawerFor } from "./Volu
 import { RecruitmentView, ApplicationsView } from "./VolunteerRecruit";          // PARITY-3 Part 2
 import { VolunteerCounts, VolunteerListView, VolunteersGroupView } from "./VolunteerList";   // PARITY-3 Parts 3 and 5
 import { countLabel } from "../../../shared/countWords.js";
-import { useWriteRev, VOLUNTEER_WRITES } from "../lib/writeRev";
+import { useLive } from "../lib/liveRead";   // FRESH-2: every list and count re-reads from one place
 import ShiftRowActions from "./volunteers/ShiftRowActions";   // STALE-2: Edit a logged shift
 import DateInput from "./inputs/LazyDateInput";   // POLISH-6: the one date box, loaded when first shown
 import { PersonShiftLists } from "./volunteers/PersonShiftLists"; import { entryKey } from "../lib/entryKey";   // FLOWS-3: Coming up and Past, from the Schedule's rows
@@ -184,9 +184,10 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
       .catch(e => setErr(errorMessage(e, "The roster did not load.")));
   }, []);
   // WALKB-1: any write that touches volunteers (a shift logged here, on a
-  // record, at the kiosk, by Atlas) re-reads the header and the counts.
-  const volRev = useWriteRev(VOLUNTEER_WRITES);
-  useEffect(() => { loadRoster(); }, [loadRoster, volRev]);
+  // record, at the kiosk, by Atlas) re-reads the header and the counts. FRESH-2: and a person
+  // deleted, restored or given another role (DELETE /donors/:id says "person", not "volunteer").
+  useEffect(() => { loadRoster(); }, [loadRoster]);
+  useLive("volunteers.roster", ["volunteer", "person"], loadRoster);
   // A link from another tab names the volunteer; the panel needs their name,
   // which the roster has. Someone off the roster still opens, by id.
   useEffect(() => {
@@ -357,8 +358,8 @@ function ShiftsView({ roster, narrow, isReadOnly, onChanged, onOpen }) {
   const [msg, setMsg] = useState("");
   const [importing, setImporting] = useState(false);
   const load = useCallback(() => { apiFetch("/volunteer-hub/shifts?limit=50").then(setData).catch(() => setData({ shifts: [] })); }, []);
-  const shiftRev = useWriteRev(VOLUNTEER_WRITES);   // WALKB-1: Recent shifts re-reads after any hours write
-  useEffect(() => { load(); }, [load, shiftRev]);
+  useEffect(() => { load(); }, [load]);
+  useLive("volunteers.shifts", ["volunteer", "person"], load);   // WALKB-1, FRESH-2: Recent shifts re-reads after any hours write
   // FIX-27 Part 8: the picker is the roster, read fresh when this part opens
   // (the hub kept the copy it read first, so a picker could show names the
   // roster no longer had), and in name order like the roster's own list.

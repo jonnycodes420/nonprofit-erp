@@ -10,7 +10,8 @@
 // recorded for this event anywhere (the profile, Fundraising, Atlas) moves the
 // panels and the Raised figure too, not only a write from this page.
 import { useEffect, useRef, useState } from "react";
-import { announce, useChangeRev } from "./changes";
+import { announce } from "./changes";
+import { useLiveRev } from "./liveRead";
 
 export function eventRowsChanged(eventId) {
   announce({ kinds: ["event"], ids: eventId ? { event: new Set([String(eventId)]) } : {}, source: "event-page" });
@@ -18,7 +19,7 @@ export function eventRowsChanged(eventId) {
 // A number that moves each time this event's guest rows or gifts change; put
 // it in a read's dependencies.
 export function useEventRowsRev(eventId) {
-  return useChangeRev(["event"], eventId ? { event: eventId } : null);
+  return useLiveRev("event.rows", ["event"], eventId ? { event: eventId } : null);   // FRESH-2: the check-in header, guests, Came
 }
 
 // FLOWS-8 (W-1112-Volunteers-01X) · THE SCREEN AFTER AN ACTION NEVER PAINTS THE OLD COUNT.
