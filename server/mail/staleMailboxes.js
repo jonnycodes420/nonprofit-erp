@@ -11,7 +11,9 @@
 
 // { rows: every connection checked, stale: those not read within staleMs or refused }
 async function staleMailboxes(query, { staleMs, now = Date.now() }) {
-  const live = await require("../orgs/liveOrgs").liveOrgIds(query);
+  // Read fresh: the check runs every five minutes and after a read, and an org that just became
+  // live (or stopped) is judged as it is now, not as the sweeps' one-minute list last saw it.
+  const live = await require("../orgs/liveOrgs").liveOrgIds(query, { fresh: true });
   const rows = await query(
     `SELECT m.id, m.org_id, m.provider, m.status, m.created_at,
             (SELECT MAX(r.finished_at) FROM mailbox_sync_runs r
