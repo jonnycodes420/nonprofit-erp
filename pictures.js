@@ -134,7 +134,8 @@ function mount(ctx) {
 
   // Store one image and hand back its path. Nothing points at it until a
   // slot saves it; an unreferenced upload ages out with the 90-day window.
-  async function storePicture(orgId, v) {
+  // BUILDER-1: `kind` "logo" keeps a PNG (a signature's clear ground); every other picture is "campaign".
+  async function storePicture(orgId, v, kind = "campaign") {
     let s = String(v || "");
     if (isHeicDataUri(s)) {
       try { s = await heicToJpegDataUri(s); }
@@ -153,7 +154,7 @@ function mount(ctx) {
     try { buffer = Buffer.from(m[2], "base64"); } catch { return { error: "That photo could not be read." }; }
     const dims = checkThemeImageDimensions("campaign", m[1], buffer);
     if (!dims.ok) return { error: dims.message };
-    const norm = await normalizeUploadImage("campaign", m[1], buffer);
+    const norm = await normalizeUploadImage(kind === "logo" ? "logo" : "campaign", m[1], buffer);
     if (norm.error) return { error: norm.message || "That photo could not be read." };
     const asset = await putThemeAsset({ orgId, kind: "picture", isPublic: true, buffer: norm.buffer, contentType: norm.contentType,
       width: norm.width ?? dims.width, height: norm.height ?? dims.height });
@@ -173,7 +174,8 @@ function mount(ctx) {
   }
 
   app.post("/pictures/upload", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-    const r = await storePicture(req.user.orgId, req.body && req.body.image);
+    // BUILDER-1: an email's signature picture stays a PNG, so its ink keeps a clear ground.
+    const r = await storePicture(req.user.orgId, req.body && req.body.image, req.body && req.body.as === "signature" ? "logo" : "campaign");
     if (r.error) return res.status(400).json({ error: "bad_image", message: r.error });
     res.json({ url: r.url, width: r.width || null, height: r.height || null });
   }));
