@@ -109,7 +109,7 @@ const billingBeforeOnboarding = () => process.env.MAIL_BILLING_BEFORE_ONBOARDING
 // go with automatic staff mail off: the switch is about what Steward sends on
 // its own. SENDS-3 item 2: and with the donor switch off too. Both switches are
 // about what Steward sends by itself; a test she pressed for, to her own
-// address (both test routes refuse any other), is neither. org_stagewalk has
+// address (both test routes refuse any other), is neither. Staging's walk org has
 // both off, so every "Send me a test" there was refused and showed as a 502.
 // A demo org still never sends, and onboarding still comes first.
 const STAFF_ON_REQUEST = new Set(["campaign_test"]);

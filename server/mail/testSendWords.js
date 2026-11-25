@@ -1,6 +1,6 @@
 // server/mail/testSendWords.js · SENDS-3 item 2. A TEST THAT DID NOT GO SAYS WHY, IN WORDS.
 //
-// "Send me a test" in org_stagewalk answered 502 send_failed for every
+// "Send me a test" in staging's walk org answered 502 send_failed for every
 // address: the mail gate refused it (that org's donor and staff switches are
 // off) and the route turned every refusal into the same 502. Now a refusal is
 // a 409 with the reason's own sentence, decided before anything is rendered
