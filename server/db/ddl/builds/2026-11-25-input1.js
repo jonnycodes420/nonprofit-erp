@@ -1,4 +1,4 @@
-// server/db/ddl/input1.js · INPUT-1. A FUTURE GIFT WAITS FOR ITS DAY; AN OVERNIGHT SHIFT SAYS SO.
+// server/db/ddl/builds/2026-11-25-input1.js · INPUT-1. A FUTURE GIFT WAITS FOR ITS DAY; AN OVERNIGHT SHIFT SAYS SO.
 //
 // Additive only. `pool` is part7's DDL session (schema.js ddlSession): a short
 // lock_timeout and a retry, so a CREATE never queues in front of reads.

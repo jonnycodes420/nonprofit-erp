@@ -1184,10 +1184,7 @@ app.post("/volunteer-hub/checkin", requireAuth, checkWriteAccess, wrap(async (re
   // noon for that to be true. The hours are a normal logged row, editable
   // after on the person's record (a late arrival, an early finish). A
   // thank-you DRAFT is written at the same moment; staff send it.
-  // INPUT-1 item 6: before the shift's day, check-in asks (Check in then, or
-  // record hours for that date). The hours always carry the SHIFT's date: the
-  // early case now asks instead of writing today, so the shift's date is the
-  // day the work was given.
+  // INPUT-1 item 6: before the shift's day, check-in asks; the hours always carry the shift's date.
   const shiftToday = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
   if (!su.checked_in_at) { const early = require("../server/volunteers/shiftDay").tooEarly("shift", su.date, shiftToday, req.body); if (early) return res.status(409).json(early); }
   if (!su.checked_in_at) {
@@ -1224,9 +1221,7 @@ app.post("/volunteer-hub/checkin", requireAuth, checkWriteAccess, wrap(async (re
   const quarters = Math.max(1, Math.round(mins / 15));             // never zero: they were here
   const hundredths = Math.min(24 * 100, quarters * 25);
   const before = await volunteerSummary(orgId, su.person_id);
-  // INPUT-1: THE DATE IS THE SHIFT'S. It used to be the day of check-out, for
-  // a shift moved or next week's slot checked out by mistake; check-in before
-  // the day now asks first, so the shift's date is the day the work was given.
+  // INPUT-1: the shift's date (check-in before the day asks first, server/volunteers/shiftDay.js).
   const workedOn = String(su.date).slice(0, 10) || shiftToday;   // INPUT-1: the shift's date
   const shiftId = await insertShift(orgId, su.person_id,
     { date: workedOn, hundredths, role: su.opp_name, note: null },

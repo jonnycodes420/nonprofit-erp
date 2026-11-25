@@ -17,3 +17,9 @@ export async function checkInOnTheDay(url, body) {
     return send({ ...body, forShiftDate: true });
   }
 }
+
+// An event dated before today asks first (a past event is real; a typo is likelier). true = create it.
+export async function confirmPastEvent(date, today, words) {
+  if (!date || date >= today) return true;
+  return !!(await askConfirm({ title: "This date has passed. Record a past event?", body: `${words} is before today. Record it as an event that already happened, or change the date.`, yes: "Record a past event", no: "Change the date" }));
+}

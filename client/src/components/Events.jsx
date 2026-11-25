@@ -33,8 +33,7 @@ import { EventAuction, EventsAuctions } from "./events/EventAuction";   // NAV-1
 import EventTicketTypes from "./events/EventTicketTypes";   // EVENTS-4: tickets made where the event is
 import { civil } from "../../../shared/eventPage";   // EVENTS-4: a one-day event is one date
 import KioskWalkIn from "./events/KioskWalkIn";   // EVENTS-4: the door's walk-in part, moved out whole
-import { checkInOnTheDay } from "../lib/checkInDay";   // INPUT-1: check-in happens on the day
-import { askConfirm } from "./ConfirmDialog";
+import { checkInOnTheDay, confirmPastEvent } from "../lib/checkInDay";   // INPUT-1: check-in happens on the day
 
 // PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
 const CHAIR = 44;
@@ -121,8 +120,7 @@ function NewEventPanel({ onSave, onClose }) {
 
   const save = async () => {
     if (!form.name.trim() || !form.date) return;
-    // INPUT-1 item 6: an event dated before today asks first (a past event is real; a typo is likelier).
-    if (form.date < orgTodayCivil() && !(await askConfirm({ title: "This date has passed. Record a past event?", body: `${displayDate(form.date)} is before today. Record it as an event that already happened, or change the date.`, yes: "Record a past event", no: "Change the date" }))) return;
+    if (!(await confirmPastEvent(form.date, orgTodayCivil(), displayDate(form.date)))) return;   // INPUT-1: a past date asks first
     setSaving(true);
     try {
       const evt = await apiFetch("/events", {
