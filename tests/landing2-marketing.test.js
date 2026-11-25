@@ -121,7 +121,12 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     // marked data-quote="research" and filled from QUOTES.
     const quoteEls = [];
     for (const [f, t] of Object.entries(SRC_TEXT)) for (const m of t.matchAll(/<(blockquote|q|figure)\b[^>]*>/g)) quoteEls.push([f, m[0]]);
-    ok("every <blockquote>, <q> and <figure> carries data-quote=\"research\"", quoteEls.length > 0 && quoteEls.every(([, tag]) => /data-quote="research"/.test(tag)), quoteEls);
+    // BOOK-1: one customer quote (a paraphrase Jonathan approved) waits on /book for her yes. It is
+    // marked data-quote="customer" and drawn only behind showTestimonial (booking/config.js, false
+    // until she approves); any other quotation element is still a research quote.
+    const bookQuoteGated = /\{showTestimonial && <blockquote [^>]*data-quote="customer"/.test(SRC_TEXT["client/src/marketing/pages/book.jsx"] || "");
+    ok("every <blockquote>, <q> and <figure> carries data-quote=\"research\" (the one customer quote on /book only behind showTestimonial)",
+      quoteEls.length > 0 && bookQuoteGated && quoteEls.every(([f, tag]) => /data-quote="research"/.test(tag) || (f === "client/src/marketing/pages/book.jsx" && /data-quote="customer"/.test(tag))), quoteEls);
     ok("no testimonial language in the copy", !/\btestimonial|\btrusted by\b|\bour customers\b|\bloved by\b|\bjoin (hundreds|thousands)\b/i.test(ALL.replace(/APPROVED_TESTIMONIALS|testimonial or customer quote|Testimonials and customer quotes/g, "")));
   }
 
@@ -154,7 +159,7 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
         const v = m[1];
         if (/^\/(marketing|landing)\//.test(v)) continue;           // asset paths
         if (/^\/lost-and-found\/(lead|benchmark)$/.test(v)) continue; // the API routes the audit posts to
-        if (v === "/public/book" || v === "/public/book/partner/") continue; // ONBOARD-4: the booking form's own API routes
+        if (v === "/public/book" || v === "/public/book/partner/" || v === "/public/book/times") continue; // ONBOARD-4, BOOK-1: the booking card's own API routes
         if (v === "/help/feedback") continue;                        // HELP-1: "Did this help?" posts a slug and a yes or no
         if (v === "/support/site/" || v === "/handoff") continue; // SUPPORT-1: the help center chat's API route
         linkish.push([f, v]);
@@ -250,16 +255,16 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     // ONBOARD-4 · the /book form (it replaced the /demo form): every field it
     // shows is sent by name to POST /public/book, and nowhere else.
     const bookSrc = SRC_TEXT["client/src/marketing/pages/book.jsx"];
-    const bookForm = (bookSrc.match(/<form className="form" onSubmit=\{submit\}[^]*?<\/form>/) || [""])[0];
+    const bookForm = (bookSrc.match(/<form className="bk-card" onSubmit=\{submit\}[^]*?<\/form>/) || [""])[0];   // BOOK-1: the card
     const fields = [...bookForm.matchAll(/<(input|select|textarea)\b[^>]*>/g)].map(m => m[0]);
     const labelled = fields.filter(f => {
       const id = (f.match(/\bid="([^"]+)"/) || [])[1];
       return id && /\bname="[^"]+"/.test(f) && new RegExp('<label htmlFor="' + id + '"').test(bookForm);
     });
-    ok("every booking form field has a label (htmlFor), a name and an id (" + fields.length + " fields)", fields.length === 9 && labelled.length === fields.length, fields.filter(f => !labelled.includes(f)));
+    ok("every booking form field has a label (htmlFor), a name and an id (" + fields.length + " fields)", fields.length === 5 && labelled.length === fields.length, fields.filter(f => !labelled.includes(f)));
     const state = (bookSrc.match(/useState\(\{ (name: ""[^}]*)\}\)/) || [])[1] || "";
-    ok("the booking form sends its fields by name: name, organization, email, phone, system, donors, what would make it worth it, the honeypot",
-      JSON.stringify([...state.matchAll(/(\w+):/g)].map(m => m[1])) === JSON.stringify(["name", "orgName", "email", "phone", "currentSystem", "donorCount", "worthIt", "website"]), state);
+    ok("the booking card sends its fields by name: name, email, organization, what she uses today, the honeypot (BOOK-1)",
+      JSON.stringify([...state.matchAll(/(\w+):/g)].map(m => m[1])) === JSON.stringify(["name", "email", "orgName", "currentSystem", "website"]), state);
     ok("…and a failed submit shows a plain error naming jonathan@stewardapp.dev, never nothing",
       /BOOK_FALLBACK = "[^"]*jonathan@stewardapp\.dev/.test(bookSrc) && /setErr\(/.test(bookSrc) && /role="alert"/.test(bookForm));
     ok("…and posts it to POST /public/book, which lands it in the sales CRM", /fetch\(API \+ "\/public\/book", \{ method: "POST"/.test(bookSrc));
@@ -277,7 +282,8 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     const fetches = [...ALL.matchAll(/fetch\(([^,)]*)/g)].map(m => m[1]);
     const others = fetches.filter(f => !READS.some(r => f.includes(r)));
     ok("the marketing source makes no other request (calculators compute in the browser)", others.length === 0, others);
-    ok("after the form, the page says to pick a time and shows the slots", bookSrc.includes("Thank you. Now pick a time below; the calendar sends you the invitation.") && /<SlotPicker /.test(bookSrc));
+    ok("the card books a picked time (Book <day> at <time>), then Calendly's page for it or, with no times, its calendar (BOOK-1)",
+      /const bookWords = \(day, slot\) => `Book \$\{day\.dow\}/.test(bookSrc) && /<SlotFrame /.test(bookSrc) && /<SlotPicker /.test(bookSrc) && bookSrc.includes("You'll get a calendar invite and a reminder. Nothing else."));
   }
 
   console.log("\n— HELP-1 · every screen has a help article —");

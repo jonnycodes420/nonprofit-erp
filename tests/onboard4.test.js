@@ -8,6 +8,10 @@
 //   §3  a booking with a partner code lands as a deal tagged to that partner and market, with its
 //       answers, the file and a task for Jonathan; an unknown code is ignored; nothing is emailed
 //       to the prospect; the partner page shows the name and nothing else
+//   §4  BOOK-1: /book on one screen. At 1440x900 the Book button's bottom edge is in the viewport
+//       (the built page in a browser, with five weekdays of times); the quote is absent while
+//       showTestimonial is false; a picked time is checked against the open times, and Calendly's
+//       own page for that time opens prefilled (or the scheduling API books it when switched on)
 //
 // THE PLANTED DEFECTS (ONBOARD4_PLANT on the SERVER, with TEST_MODE=1; each turns its section red):
 //   signupopen   the public signup door answers as if it were open        → §1
@@ -20,7 +24,7 @@ const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
-const { ok, summary, login, api, q, closeDb, BASE, SINK_PORT } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, BASE, SINK_PORT, browserLegOrSkip } = require("./helpers");
 
 const ROOT = path.join(__dirname, "..");
 const CLIENT = path.join(ROOT, "client");
@@ -110,7 +114,7 @@ const toWhom = m => [].concat(m && m.to || []).map(String).join(",");
     ok("§2 no page links to /signup, /demo or /invitation", links.length === 0, links.slice(0, 6));
     ok("§2 /book is a prerendered page with the form and no price", /data-book-form/.test(book) && findPrices(book, rules).length === 0);
     // The slots come from one value (booking/config.js): the intro-call event, named nowhere else.
-    const cfg = fs.readFileSync(path.join(CLIENT, "src", "marketing", "booking", "config.js"), "utf8");
+    const cfg = fs.readFileSync(path.join(ROOT, "shared", "bookingLink.js"), "utf8");   // BOOK-1: the server reads it too
     const mk = ["src/marketing/pages/book.jsx", "src/marketing/booking/slots.jsx", "src/main.jsx"].map(f => fs.readFileSync(path.join(CLIENT, f), "utf8")).join("\n");
     ok("§2 the booking link is one config value: the intro-call event, and no page names a calendar link",
       /BOOKING_URL = "https:\/\/calendly\.com\/jonathan-stewardapp\/steward-intro-call"/.test(cfg) && !/calendly\.com\//.test(mk) && /<iframe[^>]*src=\{src\}/.test(mk));
@@ -162,6 +166,80 @@ const toWhom = m => [].concat(m && m.to || []).map(String).join(",");
     ok("§3 a file over 3 MB is refused with the words to bring it to the call", big.status === 413 && /bring it with you/.test(json(big.text).message || ""), big.status);
     await new Promise(r => setTimeout(r, 400));
     ok("§3 Steward emailed no prospect (the booking tool sends its own confirmation)", !mail.got.slice(sent).some(m => /onb4\.example\.org/.test(toWhom(m))), mail.got.slice(sent).map(toWhom));
+  }
+
+  // ── §4 · BOOK-1: THE BOOKING PAGE BOOKS, ON ONE SCREEN ─────────────────────────────
+  // HOW IT GOES RED: the headline back at the old size (or the card below the copy) pushes the
+  // Book button under the fold; showTestimonial true puts the quote on the page; a time that was
+  // not offered is booked anyway.
+  {
+    const cfgSrc = fs.readFileSync(path.join(CLIENT, "src", "marketing", "booking", "config.js"), "utf8");
+    process.env.NODE_ENV = "production";
+    const { render } = await import(path.join(CLIENT, "dist-prerender", "prerender.mjs"));
+    const bookHtml = render("/book");
+    ok("§4 the quote is absent while showTestimonial is false", /export const showTestimonial = false;/.test(cfgSrc)
+      && !/executive director/.test(bookHtml) && !/data-book-quote/.test(bookHtml), null);
+    ok("§4 the nav says How it works, not Pricing", />How it works</.test(bookHtml) && !/>Pricing</.test(bookHtml));
+
+    // The times and the last click, against a stand-in for Calendly (in this process, made-up slots).
+    const TIMES = require("../server/admin/sales/calendlyTimes");
+    const stub = http.createServer((req, res) => {
+      const u = new URL(req.url, "http://x"), send = (c, j) => { res.writeHead(c, { "Content-Type": "application/json" }); res.end(JSON.stringify(j)); };
+      if (u.pathname === "/users/me") return send(200, { resource: { uri: "https://api.calendly.com/users/u1" } });
+      if (u.pathname === "/event_types") return send(200, { collection: [{ uri: "et1", scheduling_url: "https://calendly.com/jonathan-stewardapp/steward-intro-call" }] });
+      if (u.pathname === "/event_type_available_times") return send(200, { collection: [
+        { status: "available", start_time: "2026-12-01T15:30:00Z", scheduling_url: "https://calendly.com/jonathan-stewardapp/steward-intro-call/2026-12-01T15:30:00Z" }] });
+      if (u.pathname === "/invitees") { stub.posted = (stub.posted || 0) + 1; return send(201, { resource: {} }); }
+      send(404, {});
+    });
+    await new Promise(r => stub.listen(0, r));
+    const keep = { t: process.env.CALENDLY_API_TOKEN, b: process.env.CALENDLY_API_BASE, d: process.env.CALENDLY_DIRECT_BOOK };
+    process.env.CALENDLY_API_TOKEN = "stub"; process.env.CALENDLY_API_BASE = `http://localhost:${stub.address().port}`; delete process.env.CALENDLY_DIRECT_BOOK;
+    TIMES._reset();
+    const at = new Date("2026-11-27T15:00:00Z");   // a Friday: the next weekdays are Mon Nov 30 to Fri Dec 4
+    const t = await TIMES.times(at);
+    ok("§4 the next five weekdays, Eastern, with the open time read as 10:30 AM on Tue, Dec 1", t.source === "calendly" && t.days.map(d => d.date).join(",") === "2026-11-30,2026-12-01,2026-12-02,2026-12-03,2026-12-04"
+      && t.days[1].slots.length === 1 && t.days[1].slots[0].time === "10:30" && t.days[1].slots[0].ampm === "AM", t.days && t.days.map(d => d.slots.length));
+    const open = await TIMES.book({ start: "2026-12-01T15:30:00Z", name: "Rowan Pike", email: "rowan@cedar-hollow.onb4.example.org" }, at);
+    ok("§4 booking that time opens Calendly's own page for it, her name and email filled in, and books nothing itself", !!open.open && !stub.posted
+      && open.open.startsWith("https://calendly.com/jonathan-stewardapp/steward-intro-call/2026-12-01T15:30:00Z?") && /name=Rowan\+Pike/.test(open.open) && /email=rowan%40/.test(open.open), open);
+    const taken = await TIMES.book({ start: "2026-12-01T16:00:00Z", name: "Rowan Pike", email: "rowan@x.onb4.example.org" }, at);
+    ok("§4 a time that was not offered is refused, not booked", taken.error === "taken" && !stub.posted, taken);
+    process.env.CALENDLY_DIRECT_BOOK = "1";
+    const direct = await TIMES.book({ start: "2026-12-01T15:30:00Z", name: "Rowan Pike", email: "rowan@cedar-hollow.onb4.example.org" }, at);
+    ok("§4 with the scheduling API switched on, Calendly books it (one request) and the page says she's booked", direct.booked === true && stub.posted === 1, direct);
+    for (const [k, v] of [["CALENDLY_API_TOKEN", keep.t], ["CALENDLY_API_BASE", keep.b], ["CALENDLY_DIRECT_BOOK", keep.d]]) { if (v == null) delete process.env[k]; else process.env[k] = v; }
+    TIMES._reset();
+    await new Promise(r => stub.close(r));
+
+    // The built page in a browser at 1440x900, with five weekdays of six times each (the tallest card).
+    const { DIST } = require("./lib/dist");
+    const APP = process.env.APP_URL || "http://localhost:4173";
+    let chromium = null;
+    try { ({ chromium } = require(path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright"))); } catch { chromium = null; }
+    const up = await fetch(APP + "/book").then(r => r.ok).catch(() => false);
+    const why = !chromium ? "Playwright not found (set PLAYWRIGHT_DIR)" : !fs.existsSync(path.join(DIST, "index.html")) ? "client/dist not built" : !up ? `no preview answering at ${APP}` : null;
+    if (!browserLegOrSkip(why, "§4 the Book button in view:")) {
+      const days = ["2026-11-30", "2026-12-01", "2026-12-02", "2026-12-03", "2026-12-04"].map(d => {
+        const x = new Date(d + "T12:00:00Z");
+        return { date: d, dow: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][x.getUTCDay()], day: x.getUTCDate(), mon: d.slice(5, 7) === "11" ? "Nov" : "Dec",
+          slots: ["9:00", "10:30", "11:00", "1:30", "2:00", "3:30"].map((tm, i) => ({ start: `${d}T${14 + i}:00:00Z`, time: tm, ampm: i < 3 ? "AM" : "PM", url: "https://calendly.com/x" })) };
+      });
+      const b = await chromium.launch();
+      const out = {};
+      for (const [w, h] of [[1440, 900], [1280, 800]]) {
+        const pg = await b.newPage({ viewport: { width: w, height: h } });
+        await pg.route("**/public/book/times", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ source: "calendly", days }) }));
+        await pg.goto(APP + "/book", { waitUntil: "load" });
+        await pg.waitForSelector("[data-book-slot]", { timeout: 15000 }).catch(() => {});
+        const box = await pg.locator("[data-book-button]").boundingBox().catch(() => null);
+        out[`${w}x${h}`] = box ? Math.round(box.y + box.height) : null;
+        await pg.close();
+      }
+      await b.close();
+      ok("§4 at 1440x900 the Book button's bottom edge is inside the viewport", out["1440x900"] != null && out["1440x900"] <= 900, out);
+      ok("§4 …and at 1280x800", out["1280x800"] != null && out["1280x800"] <= 800, out);
+    }
   }
 
   await mail.close();

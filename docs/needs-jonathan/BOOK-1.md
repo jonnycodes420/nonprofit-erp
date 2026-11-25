@@ -1,0 +1,4 @@
+- Live times on the card need a Calendly personal access token as `CALENDLY_API_TOKEN` on Railway (staging and prod, web service). Until then the card shows the form and then Calendly's own calendar.
+- If your Calendly plan includes the scheduling API, set `CALENDLY_DIRECT_BOOK=1` and Book books the time itself; otherwise she confirms on Calendly's page inside the card (one more click).
+- Your photo: put it under client/public and set `FOUNDER_PHOTO` in client/src/marketing/booking/config.js.
+- The quote: once she approves, set `showTestimonial = true` in the same file.

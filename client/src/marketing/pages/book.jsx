@@ -1,111 +1,145 @@
-// ONBOARD-4 item 3 · /book, THE WEBSITE'S ONE ACTION (Jonathan, 23 Nov 2026).
+// ONBOARD-4 item 3, BOOK-1 · /book, THE WEBSITE'S ONE ACTION.
 //
-// Nobody signs up cold: every org that signs does it after a call with Jonathan, through the
-// close link he sends. This page is the way to that call. A short form first, then his open
-// slots (booking/slots.jsx, the one adapter to the booking tool). The form lands in the sales CRM
-// as a deal with its answers, the file and the partner, and a task for Jonathan (POST /public/book,
-// server/admin/sales/booking.js). Steward sends the prospect nothing; the booking tool sends its
-// own confirmation.
+// Nobody signs up cold: every org that signs does it after a call with Jonathan. BOOK-1 (Jonathan,
+// 25 Nov: "cmonn now that looks shit") puts everything on one screen, as the approved mockup:
+// the headline, Jonathan and three ticks on the left, the booking card on the right; on a phone the
+// card comes first, under the headline. At 1440x900 and 1280x800 the Book button is in view.
 //
-// /book?partner=<code> shows "Recommended by <partner>" at the top when the code is known; an
-// unknown code shows nothing and she books the same way.
+// The card books. Name, work email, organization and what she uses today, then the next five
+// weekdays and the intro call's open times (GET /public/book/times, read from the booking tool by
+// the server). Book sends the form (POST /public/book: the deal in the sales CRM with her answers
+// and partner code, server/admin/sales/booking.js) with her time; the booking tool then books it,
+// or opens that time on its own page, prefilled, for her last click. The tool sends the invite and
+// the reminder; Steward sends her nothing. With no times to read, the card opens the tool's own
+// calendar after the form (booking/slots.jsx), as before.
+//
+// /book?partner=<code> shows "Recommended by <partner>" as the eyebrow when the code is known.
 import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { Crumbs, Photo, Tick } from "../lib";
 import { API } from "../../api";
-import { SlotPicker } from "../booking/slots";
+import { SlotPicker, SlotFrame } from "../booking/slots";
+import { showTestimonial, CUSTOMER_QUOTE, FOUNDER_PHOTO } from "../booking/config";
 
 export const BOOK_FALLBACK = "That did not go through. Please email jonathan@stewardapp.dev and he will set up a time with you.";
-const DONOR_COUNTS = ["Under 500", "500 to 2,500", "2,500 to 10,000", "Over 10,000", "Not sure"];
-const MAX_FILE = 3 * 1024 * 1024;   // the server's limit (an anonymous request is read by the 5 MB parser)
+const USING = ["Spreadsheets", "Salesforce", "Bloomerang", "Nothing yet", "Something else"];
+const POINTS = ["See who's gone quiet and what they used to give", "No pitch deck, no pressure, no prices thrown at you", "Leave with a list of people worth a call this week"];
+const FINE = "You'll get a calendar invite and a reminder. Nothing else.";
 
-const readAsDataUrl = file => new Promise((resolve, reject) => {
-  const r = new FileReader();
-  // Sent whole, as a data: URL: the server's field caps let a data: URL through (it has its own
-  // byte limit, 3 MB here), where a bare base64 string over a million characters is refused.
-  r.onload = () => resolve(String(r.result).replace(/^data:(;base64,)/, "data:application/octet-stream$1"));
-  r.onerror = () => reject(new Error("read"));
-  r.readAsDataURL(file);
-});
+// "Book Tue, Dec 1 at 10:30 AM"
+const bookWords = (day, slot) => `Book ${day.dow}, ${day.mon} ${day.day} at ${slot.time} ${slot.ampm}`;
+
+function Founder() {
+  return <div className="bk-you">
+    {FOUNDER_PHOTO ? <img className="bk-ph" src={FOUNDER_PHOTO} alt="Jonathan Atkinson" width="58" height="58" />
+      : <span className="bk-ph bk-initial" aria-hidden="true">J</span>}
+    <div><b>Jonathan Atkinson</b><span>Founder, Steward · Wilmore, Kentucky</span></div>
+  </div>;
+}
+
+function Card({ code }) {
+  const [f, setF] = useState({ name: "", email: "", orgName: "", currentSystem: USING[0], website: "" });
+  const [t, setT] = useState(null);
+  const [dayI, setDayI] = useState(0);
+  const [slot, setSlot] = useState(null);
+  const [state, setState] = useState("idle");   // idle · sending · open (last click on the tool) · embed (the tool's calendar) · booked
+  const [open, setOpen] = useState("");
+  const [err, setErr] = useState("");
+  const set = k => e => setF({ ...f, [k]: e.target.value });
+  const booked = useCallback(() => setState("booked"), []);
+
+  useEffect(() => {
+    let alive = true;
+    fetch(API + "/public/book/times").then(r => (r.ok ? r.json() : { source: "embed" })).catch(() => ({ source: "embed" }))
+      .then(j => { if (!alive) return; setT(j); const first = (j.days || []).findIndex(d => d.slots.length); setDayI(first < 0 ? 0 : first); });
+    return () => { alive = false; };
+  }, []);
+
+  const live = !!t && t.source === "calendly";
+  const day = live ? t.days[dayI] : null;
+
+  async function submit(e) {
+    e.preventDefault();
+    if (live && !slot) { setErr("Pick a time first."); return; }
+    setState("sending"); setErr("");
+    try {
+      const body = { name: f.name.trim(), orgName: f.orgName.trim(), email: f.email.trim(), currentSystem: f.currentSystem, website: f.website,
+        partner: code || undefined, slot: live ? slot.start : undefined };
+      const r = await fetch(API + "/public/book", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const d = await r.json().catch(() => ({}));
+      if (r.status === 409) { setState("idle"); setSlot(null); setErr(d.message || "That time was just taken. Pick another one."); return; }
+      if (!r.ok) throw new Error(d.message || BOOK_FALLBACK);
+      if (d.booked) setState("booked");
+      else if (d.open) { setOpen(d.open); setState("open"); }
+      else setState("embed");
+    } catch (x) {
+      setState("idle"); setErr((x && x.message) || BOOK_FALLBACK);
+    }
+  }
+
+  if (state === "booked") return <div className="bk-card" data-book-card data-book-state="booked">
+    <h2 className="bk-h2">You're booked.</h2>
+    <p className="bk-sub">The calendar has sent you the invitation, and Jonathan will have read your answers before the call.</p>
+    <p className="bk-fine">{FINE}</p>
+  </div>;
+  if (state === "open" || state === "embed") return <div className="bk-card" data-book-card data-book-state={state}>
+    <h2 className="bk-h2">{state === "open" ? "One last click" : "Pick a time"}</h2>
+    <div className="bk-sub">{state === "open" ? "Confirm the time on the calendar below." : "All times Eastern · Google Meet"}</div>
+    {state === "open" ? <SlotFrame src={open} onBooked={booked} /> : <SlotPicker name={f.name.trim()} email={f.email.trim()} onBooked={booked} />}
+    <p className="bk-fine">{FINE}</p>
+  </div>;
+
+  return <form className="bk-card" onSubmit={submit} data-book-card data-book-form data-book-source={t ? t.source : "loading"}>
+    <h2 className="bk-h2">Pick a time</h2>
+    <div className="bk-sub">All times Eastern · Google Meet</div>
+    <div className="bk-two">
+      <label htmlFor="book-name" className="bk-f">Your name<input id="book-name" required name="name" autoComplete="name" placeholder="Your name" value={f.name} onChange={set("name")} /></label>
+      <label htmlFor="book-email" className="bk-f">Work email<input id="book-email" type="email" required name="email" autoComplete="email" placeholder="you@yourorg.org" value={f.email} onChange={set("email")} /></label>
+    </div>
+    <div className="bk-two">
+      <label htmlFor="book-org" className="bk-f">Organization<input id="book-org" required name="organization" autoComplete="organization" placeholder="Your organization" value={f.orgName} onChange={set("orgName")} /></label>
+      <label htmlFor="book-system" className="bk-f">Using today<select id="book-system" name="currentSystem" value={f.currentSystem} onChange={set("currentSystem")}>{USING.map(u => <option key={u}>{u}</option>)}</select></label>
+    </div>
+    <label htmlFor="book-website" aria-hidden="true" style={{ position: "absolute", left: -10000, width: 1, height: 1, overflow: "hidden" }}>Website<input id="book-website" tabIndex={-1} autoComplete="off" name="website" value={f.website} onChange={set("website")} /></label>
+    {live && <>
+      <div className="bk-days" role="radiogroup" aria-label="Day">
+        {t.days.map((d, i) => <button type="button" key={d.date} role="radio" aria-checked={i === dayI} disabled={!d.slots.length} data-book-day={d.date}
+          className={i === dayI ? "on" : ""} onClick={() => { setDayI(i); setSlot(null); }}>{d.dow}<b>{d.day}</b>{d.mon}</button>)}
+      </div>
+      {day && day.slots.length ? <div className="bk-slots" role="radiogroup" aria-label="Time">
+        {day.slots.map(s => <button type="button" key={s.start} role="radio" aria-checked={!!slot && slot.start === s.start} data-book-slot={s.start}
+          aria-label={`${s.time} ${s.ampm}`} className={slot && slot.start === s.start ? "on" : ""} onClick={() => setSlot(s)}>{s.time}</button>)}
+      </div> : <p className="bk-none">No open times this week. Email jonathan@stewardapp.dev and he will find one.</p>}
+    </>}
+    {err && <p className="form-err" role="alert">{err}</p>}
+    <button className="bk-btn" type="submit" data-book-button disabled={state === "sending" || !t || (live && !slot)}>
+      {state === "sending" ? "Booking…" : !t ? "Loading times…" : live ? (slot ? bookWords(day, slot) : "Pick a time above") : "Next: pick a time"}</button>
+    <p className="bk-fine">{FINE}</p>
+  </form>;
+}
 
 export function Book() {
   const { search } = useLocation();
   const code = new URLSearchParams(search).get("partner") || "";
   const [partner, setPartner] = useState(null);
-  const [f, setF] = useState({ name: "", orgName: "", email: "", phone: "", currentSystem: "", donorCount: "Not sure", worthIt: "", website: "" });
-  const [file, setFile] = useState(null);
-  const [state, setState] = useState("idle");
-  const [err, setErr] = useState("");
-  const set = k => e => setF({ ...f, [k]: e.target.value });
-
   useEffect(() => {
     if (!code) return undefined;
-    let live = true;
+    let alive = true;
     fetch(API + "/public/book/partner/" + encodeURIComponent(code)).then(r => (r.ok ? r.json() : null))
-      .then(j => { if (live && j && j.name) setPartner(j.name); }).catch(() => {});
-    return () => { live = false; };
+      .then(j => { if (alive && j && j.name) setPartner(j.name); }).catch(() => {});
+    return () => { alive = false; };
   }, [code]);
 
-  function pick(e) {
-    const x = e.target.files && e.target.files[0];
-    setErr("");
-    if (x && x.size > MAX_FILE) { setFile(null); e.target.value = ""; setErr("That file is over 3 MB. Book the call without it and bring it with you; we'll load it together."); return; }
-    setFile(x || null);
-  }
-
-  async function submit(e) {
-    e.preventDefault();
-    setState("sending"); setErr("");
-    try {
-      const body = { ...f, name: f.name.trim(), orgName: f.orgName.trim(), email: f.email.trim(), partner: code || undefined };
-      if (file) body.file = { name: file.name, type: file.type, data: await readAsDataUrl(file) };
-      const r = await fetch(API + "/public/book", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.message || BOOK_FALLBACK);
-      setState("slots");
-      setTimeout(() => { const el = document.querySelector("[data-book-slots]"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 60);
-    } catch (x) {
-      setState("idle"); setErr((x && x.message) || BOOK_FALLBACK);
-    }
-  }
-  const booked = useCallback(() => setState("booked"), []);
-
-  return <>
-    <Crumbs list={[["Book a call"]]} />
-    <section className="hero phero"><div className="wrap hero-g">
-      <div>
-        {/* The walk: two eyebrows ran together on one line; a partner's name takes the eyebrow's place. */}
-        {partner ? <div className="eyebrow" data-book-partner>Recommended by {partner}</div> : <div className="eyebrow">Book a call</div>}
-        <h1 className="mix h-xl">Bring one question you can't answer about your donors. <b>We'll answer it with your own file.</b></h1>
-        <p className="lede">Twenty minutes with Jonathan, who built Steward. Tell us a little first, then pick a time. Pricing depends on the size of your donor file and comes with hands-on setup; we'll walk you through it on the call.</p>
-        {state === "slots" || state === "booked" ? (
-          <div data-book-sent>
-            <p className="lede" style={{ marginTop: 22 }}>{state === "booked" ? "You're booked. The calendar has sent you the invitation, and Jonathan will have read your answers before the call." : "Thank you. Now pick a time below; the calendar sends you the invitation."}</p>
-          </div>
-        ) : (
-          <form className="form" onSubmit={submit} data-book-form>
-            <label htmlFor="book-name">Your name<input id="book-name" required name="name" autoComplete="name" value={f.name} onChange={set("name")} /></label>
-            <label htmlFor="book-org">Organization<input id="book-org" required name="organization" autoComplete="organization" value={f.orgName} onChange={set("orgName")} /></label>
-            <label htmlFor="book-email">Work email<input id="book-email" type="email" required name="email" autoComplete="email" value={f.email} onChange={set("email")} /></label>
-            <label htmlFor="book-phone">Phone<input id="book-phone" type="tel" name="phone" autoComplete="tel" value={f.phone} onChange={set("phone")} /></label>
-            <label htmlFor="book-system">What do you use for donors today?<input id="book-system" name="currentSystem" autoComplete="off" placeholder="A spreadsheet, another donor system, not sure" value={f.currentSystem} onChange={set("currentSystem")} /></label>
-            <label htmlFor="book-count">Roughly how many donors?<select id="book-count" name="donorCount" value={f.donorCount} onChange={set("donorCount")}>{DONOR_COUNTS.map(c => <option key={c}>{c}</option>)}</select></label>
-            <label htmlFor="book-file">Your donor file, if you'd like us to look before the call (optional, up to 3 MB)<input id="book-file" type="file" name="file" accept=".csv,.tsv,.txt,.xlsx,.xls,.zip" onChange={pick} /></label>
-            <label htmlFor="book-worth">What would make this worth it?<textarea id="book-worth" name="worthIt" rows={3} value={f.worthIt} onChange={set("worthIt")} style={{ font: "17px var(--sans)", padding: "14px 16px", border: "1px solid var(--line)", borderRadius: 10, background: "var(--white)", color: "var(--ink)" }} /></label>
-            <label htmlFor="book-website" aria-hidden="true" style={{ position: "absolute", left: -10000, width: 1, height: 1, overflow: "hidden" }}>Website<input id="book-website" tabIndex={-1} autoComplete="off" name="website" value={f.website} onChange={set("website")} /></label>
-            {err && <p className="form-err" role="alert">{err}</p>}
-            <button className="pill pill-ink" type="submit" disabled={state === "sending"}><i></i>{state === "sending" ? "Sending…" : "Next: pick a time"}</button>
-          </form>
-        )}
-      </div>
-      <div>
-        <Photo k="video-call" cls="tall" eager />
-        <div className="incl" style={{ gridTemplateColumns: "1fr", marginTop: 26 }}>
-          <span><Tick />See your own drifting donors</span><span><Tick />A clear plan for the move</span><span><Tick />Hands-on setup, done with you</span>
-        </div>
-      </div>
-    </div></section>
-    {/* The walk: inside the hero's left column the calendar was too narrow to use; it gets the page's width. */}
-    {state === "slots" && <section style={{ paddingTop: 0, scrollMarginTop: 110 }} data-book-slots><div className="wrap"><SlotPicker name={f.name.trim()} email={f.email.trim()} onBooked={booked} /></div></section>}
-  </>;
+  return <section className="bk" data-book-page>
+    <div className="bk-head">
+      {partner ? <div className="bk-eyebrow" data-book-partner>Recommended by {partner}</div> : <div className="bk-eyebrow">Book a call</div>}
+      <h1 className="bk-h1">Bring one question you can't answer about your donors. <em>We'll answer it with you.</em></h1>
+      <p className="bk-lead">20 minutes with Jonathan. Bring your question and your export, and we'll look at it in Steward together.</p>
+    </div>
+    <div className="bk-side"><Card code={code} /></div>
+    <div className="bk-rest">
+      <Founder />
+      <ul className="bk-points">{POINTS.map(p => <li key={p}>{p}</li>)}</ul>
+      {showTestimonial && <blockquote className="bk-quote" data-quote="customer" data-book-quote>"{CUSTOMER_QUOTE.words}" <b>{CUSTOMER_QUOTE.who}</b></blockquote>}
+    </div>
+  </section>;
 }
