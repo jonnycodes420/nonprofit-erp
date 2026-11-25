@@ -17,8 +17,20 @@
 //       there; Save as a block puts it in the Blocks tab, and a click adds a
 //       copy; copy and paste puts the block in another email of the org;
 //       Columns, Box and Social are tiles; Code is not (the person is not an admin).
+//   §5  a click selects the block it lands on, every time (Jonathan, prod ebd9f87:
+//       "can't click into each box on its own by hitting it"): an email of every
+//       type, each clicked in its middle, at its edge and in its padding, and at
+//       its bottom right while the block below it is selected (where that block's
+//       handles used to sit: on main the click pressed Duplicate). Each click
+//       selects that block: the outline, its name tag, the path line and the
+//       right pane, and nothing in the email changes. A click in text puts the
+//       caret there; a click on a photo or a stat selects it, never the "+".
+//   §6  the preview is light unless Dark mode is pressed, on a computer in dark
+//       mode too (both preview routes); a send still carries the dark block.
 //
-// RED ON MAIN (ebd9f87): §4 throughout (no drop line, no handle drag, no
+// RED ON MAIN (ebd9f87): §5's "bottom right while the block below is selected"
+// (14 of 14 pressed Duplicate on staging), §6 (the dark block followed the
+// computer), and §4 throughout (no drop line, no handle drag, no
 // Alt+Down, no "+", the Blocks tab is a placeholder, no Save as a block, no
 // paste, and no Columns tile). Planted and watched go red: moveTo left out of
 // the drop (§4 order unchanged), and the saved-block copy keeping the saved
@@ -180,6 +192,7 @@ const lintOf = async html => { const EB = await import("../shared/emailBlocks.js
       const r = doc.querySelector('tr[data-st-block="3"]').getBoundingClientRect();
       doc.body.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + 1 }));
     }, FRAME);
+    await page.waitForTimeout(500);   // the "+" shows once the pointer rests on the line
     const plusShown = await page.evaluate(s => { const p = document.querySelector(s).contentDocument.querySelector('[data-testid="email-plus"]'); return !!p && p.style.display === "block"; }, FRAME);
     ok("§4 a \"+\" shows on the line between two blocks", plusShown);
     await page.frameLocator(FRAME).locator('[data-testid="email-plus"]').click();
@@ -245,8 +258,103 @@ const lintOf = async html => { const EB = await import("../shared/emailBlocks.js
     await settle();
     ok("§4 a block copied in another organization is not pasted", (await order()).length === after6.length && /another organization/.test(await page.locator('[data-testid="builder-toast"]').innerText().catch(() => "")));
     ok("§4 no page error on the way", errors.length === 0, errors);
+
+    // ── §5 · every click selects the block it lands on ─────────────────────
+    const pic = (await api("POST", "/stock-photos/kids-rope-swing/use", TOK, {})).body.url;
+    const PHOTO = pic || PIC;
+    const EVERY = [{ type: "header" }, { type: "hero", heading: "A year together", sub: "Thank you", image: PHOTO, alt: "A child on a swing" },
+      { type: "richtext", blocks: [{ type: "p", text: "Hi {{first_name}}, a paragraph of words to click into." }, { type: "p", text: "A second paragraph." }] },
+      { type: "richtext", blocks: [{ type: "ul", items: ["First thing", "Second thing"] }] },
+      { type: "image", image: PHOTO, alt: "A swing", caption: "A caption" }, { type: "photos2", images: [{ src: PHOTO, alt: "One" }, { src: PHOTO, alt: "Two" }] },
+      { type: "stats", items: [{ value: "48", label: "kids" }, { value: "1,200", label: "meals" }] }, { type: "quote", text: "It changed my summer.", attribution: "A parent" },
+      { type: "button", action: "readmore", label: "Read more", url: "https://example.org" }, { type: "divider" }, { type: "signature", name: "Sam Ortega", title: "Director" },
+      { type: "giftsummary", heading: "Your gift" }, { type: "event", eventId: "" }, { type: "givingpage", givingPageId: "" }, { type: "video" }, { type: "footer" }];
+    const t3 = (await api("POST", "/email-templates", TOK, { starterKey: "year_end_appeal" })).body.template;
+    const put3 = await api("PUT", `/email-templates/${t3.id}`, TOK, { name: "Every block", blocks: EVERY });
+    ok("§5 an email with every block type", put3.status === 200, put3.body);
+    await open(t3.id);
+    await page.waitForTimeout(1200);
+    const fr5 = await page.locator(FRAME).boundingBox();
+    const state = () => page.evaluate(s => {
+      const doc = document.querySelector(s).contentDocument;
+      const box = doc.querySelector('[data-testid="email-block-selected"]');
+      const rail = document.querySelector('[data-testid="rail-block"]');
+      const a = doc.activeElement;
+      return { sel: box && box.style.display !== "none" ? box.getAttribute("data-st-for") : null, tag: box ? (box.querySelector(".st-name") || {}).textContent || "" : "",
+        crumb: (document.querySelector('[data-testid="editor-crumb-current"]') || {}).innerText || "", rail: rail ? rail.getAttribute("data-block-type") : null,
+        caret: a && a.getAttribute ? a.getAttribute("data-st-edit") : null,
+        order: [...new Set([...doc.querySelectorAll("tr[data-st-block]")].filter(r => /^\d+$/.test(r.getAttribute("data-st-block"))).map(r => r.getAttribute("data-st-block") + ":" + r.getAttribute("data-st-type")))].join(","),
+        crumbAll: [...document.querySelectorAll('[data-testid="editor-crumb-current"]')].length };
+    }, FRAME);
+    const pointIn = (i, where) => page.evaluate(([s, i, where]) => {
+      const doc = document.querySelector(s).contentDocument;
+      const rows = [...doc.querySelectorAll(`tr[data-st-block="${i}"]`)];
+      rows[0].scrollIntoView({ block: "center" });
+      const rs = rows.map(r => r.getBoundingClientRect());
+      const top = Math.min(...rs.map(r => r.top)), bottom = Math.max(...rs.map(r => r.bottom)), left = Math.min(...rs.map(r => r.left)), right = Math.max(...rs.map(r => r.right));
+      if (where === "middle") return { x: (left + right) / 2, y: (top + bottom) / 2 };
+      if (where === "edge") return { x: left + 6, y: (top + bottom) / 2 };
+      if (where === "padding") return { x: (left + right) / 2 + 120, y: top + 4 };
+      return { x: right - 40, y: bottom - 5 };   // "under": bottom right
+    }, [FRAME, i, where]);
+    const clear = async () => { await page.keyboard.press("Escape"); await page.keyboard.press("Escape"); await page.waitForTimeout(80); };
+    const start = await state();
+    const types = await page.evaluate(s => Object.fromEntries([...document.querySelector(s).contentDocument.querySelectorAll("tr[data-st-block]")].filter(r => /^\d+$/.test(r.getAttribute("data-st-block"))).map(r => [r.getAttribute("data-st-block"), r.getAttribute("data-st-type")])), FRAME);
+    const wrong = [];
+    for (const i of Object.keys(types).map(Number)) {
+      if (wrong.length) break;   // the first wrong click is the one to read; the rest follow from it
+      for (const where of ["middle", "edge", "padding", "under"]) {
+        await clear();
+        if (where === "under") {
+          if (types[i + 1] == null) continue;
+          const nb = await pointIn(i + 1, "edge");
+          await page.mouse.click(fr5.x + nb.x, fr5.y + nb.y);
+          await page.waitForTimeout(150);
+        }
+        const pt = await pointIn(i, where);
+        await page.mouse.click(fr5.x + pt.x, fr5.y + pt.y);
+        await page.waitForTimeout(150);
+        const st = await state();
+        const good = st.sel === String(i) && st.rail === types[i] && st.crumb && st.tag && st.order === start.order;
+        if (!good) { wrong.push({ i, type: types[i], where, got: st }); break; }
+      }
+    }
+    ok(`§5 every click selects the block it lands on (${Object.keys(types).length} blocks × middle, edge, padding, under the next block's handles), and changes nothing`, wrong.length === 0, wrong.slice(0, 2));
+    // A click in text: the block, and the caret there.
+    await clear();
+    const ti = Object.keys(types).find(k => types[k] === "richtext");
+    const tp = await page.evaluate(([s, i]) => { const el = document.querySelector(s).contentDocument.querySelector(`[data-st-edit="${i}.blocks"] p`); el.scrollIntoView({ block: "center" }); const r = el.getBoundingClientRect(); return { x: r.left + 40, y: r.top + r.height / 2 }; }, [FRAME, ti]);
+    await page.mouse.click(fr5.x + tp.x, fr5.y + tp.y);
+    await page.waitForTimeout(150);
+    const ts = await state();
+    ok("§5 a click in text selects its block and puts the caret there", ts.sel === ti && ts.caret === `${ti}.blocks`, ts);
+    // A photo's top edge and a stat's number: the photo and the stats, never the "+".
+    for (const [type, q] of [["image", "img"], ["hero", "img"], ["stats", '[data-st-edit$=".value"]']]) {
+      await clear();
+      const bi = Object.keys(types).find(k => types[k] === type);
+      const r = await page.evaluate(([s, i, q]) => { const el = document.querySelector(s).contentDocument.querySelector(`tr[data-st-block="${i}"] ${q}`); el.scrollIntoView({ block: "center" }); const b = el.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + 3 }; }, [FRAME, bi, q]);
+      await page.mouse.move(fr5.x + r.x, fr5.y + r.y - 20);
+      await page.mouse.move(fr5.x + r.x, fr5.y + r.y, { steps: 4 });
+      await page.mouse.click(fr5.x + r.x, fr5.y + r.y);
+      await page.waitForTimeout(200);
+      const st = await state();
+      const menu = await page.locator('[data-testid="plus-menu"]').count();
+      ok(`§5 a click at the top of the ${type === "stats" ? "stat's number" : type + "'s photo"} selects the ${type}, not the block above or the "+"`, st.sel === bi && menu === 0, { st, menu });
+      if (menu) await page.keyboard.press("Escape");
+    }
     await browser.close();
   }
+
+  // ── §6 · the preview is light unless Dark mode is pressed ───────────────
+  for (const [route, call] of [["a template's preview", async dark => api("POST", `/email-templates/${(await api("POST", "/email-templates", TOK, { starterKey: "spring_appeal" })).body.template.id}/preview`, TOK, dark == null ? {} : { dark })],
+    ["the campaign preview", dark => api("POST", "/email-preview", TOK, { blocks: [{ type: "header" }, { type: "richtext", blocks: [{ type: "p", text: "Hi" }] }, { type: "footer" }], ...(dark == null ? {} : { dark }) })]]) {
+    const off = await call(null), offFalse = await call(false), on = await call(true);
+    const light = r => !(r.body.html || "").includes(EB.DARK_MEDIA) && /@media not all\{\n\.st-body/.test(r.body.html || "") && /<meta name="color-scheme" content="light">/.test(r.body.html || "");
+    ok(`§6 ${route}: light with Dark mode off (not following the computer's dark mode)`, light(off) && light(offFalse), (off.body.html || "").slice(0, 0));
+    ok(`§6 ${route}: dark with Dark mode pressed`, /@media all\{\n\.st-body/.test(on.body.html || "") && !(on.body.html || "").includes(EB.DARK_MEDIA));
+  }
+  const sent = EB.renderEmail({ blocks: [{ type: "header" }, { type: "footer" }], brand: {}, fields: {}, links: {}, mode: "send" });
+  ok("§6 a send still carries the dark block and both schemes, for real inboxes", sent.html.includes(EB.DARK_MEDIA) && /<meta name="color-scheme" content="light dark">/.test(sent.html));
 
   await wipe(ORG); await wipe(ORG2);
   await closeDb();

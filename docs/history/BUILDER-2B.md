@@ -19,3 +19,11 @@ schema, saved and ready-made blocks and export under it. This build wired them i
 - **Brand** gained Social links (the same PUT and Undo). The list of networks moved to `shared/socialNetworks.js` and
   is handed to BrandPanel by EmailTemplates: a lazy BrandPanel importing a module the Communications bundle also uses
   turned that bundle into a shared chunk and broke the prerender step (`PAGE_CHUNKS names Communications.jsx`).
+- **Added mid-build (Jonathan): a click selects the block it lands on.** Reproduced on staging (ebd9f87): every
+  middle, edge and padding click selected correctly, but with a block selected, a click on the bottom right of the
+  block above it landed on the selected block's handles (drawn 12 px above its top) and pressed Duplicate, 14 of 14
+  times. The handles moved into the margin beside the email (the frame widened to 700 px for it), or inside the
+  selected block's own corner when there is no margin; a click on the bar's empty space goes to what is under it;
+  the "+" shows only after the pointer rests on a line (it had sprung up over a divider's edge and taken the click).
+- **Added mid-build: the preview no longer follows the viewer's dark mode.** `previewScheme` in both preview routes
+  and the saved-block pictures; the editor's frames say `color-scheme: light`.

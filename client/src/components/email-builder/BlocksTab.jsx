@@ -23,7 +23,7 @@ function Picture({ html, name }) {
   return (
     <div aria-hidden="true" style={{ height: 96, overflow: "hidden", borderRadius: 6, background: T.bg, position: "relative", pointerEvents: "none" }}>
       {html ? <iframe title={name} srcDoc={html} sandbox="allow-same-origin" tabIndex={-1}
-        style={{ width: 640, height: 420, border: 0, transform: "scale(0.36)", transformOrigin: "0 0", position: "absolute", top: -8, left: -4 }} /> : null}
+        style={{ colorScheme: "light", width: 640, height: 420, border: 0, transform: "scale(0.36)", transformOrigin: "0 0", position: "absolute", top: -8, left: -4 }} /> : null}
     </div>
   );
 }

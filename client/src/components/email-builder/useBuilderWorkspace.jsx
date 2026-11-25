@@ -242,7 +242,7 @@ export function useBuilderWorkspace({ initialBlocks, blockTypes, mergeFields, re
     commit: (path, value) => { lastInput.current = "frame"; b.commit(path, value); },
     focusChange: f => { typing.current = f; if (!f) setTimeout(() => { if (!typing.current && stale.current) { stale.current = false; setRev(r => r + 1); } }, 120); },
     caret: c => { caret.current = c; lastInput.current = "frame"; },
-    select,
+    select: i => { setPlusAt(null); select(i); },
     action: (what, i) => { const k = keyAt(i); if (k) { b.act(what, k); force(); } },
     undo: () => b.undo(),
     redo: () => b.redo(),

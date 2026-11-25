@@ -81,7 +81,9 @@ export function attachDnD(doc, live, { readOnly = false } = {}) {
   const show = (el, p) => {
     if (!p) { el.style.display = "none"; return; }
     if (el === line) Object.assign(el.style, { display: "block", top: p.y + "px", left: (p.left + 8) + "px", width: Math.max(20, p.right - p.left - 16) + "px" });
-    else Object.assign(el.style, { display: "block", top: p.y + "px", left: ((p.left + p.right) / 2) + "px" });
+    // The "+" sits in the margin left of the email, on the line, over no block (BUILDER-2B
+    // item 1: a click on an image or a stat reaches it, never the "+"). With no margin, at the edge.
+    else Object.assign(el.style, { display: "block", top: p.y + "px", left: (p.left >= 34 ? p.left - 18 : p.left + 13) + "px" });
   };
   let dragging = false, plusAt = null;
 
@@ -104,16 +106,23 @@ export function attachDnD(doc, live, { readOnly = false } = {}) {
   });
   doc.addEventListener("dragend", () => { show(line, null); dragging = false; });
 
-  // The "+" sits on the line between two blocks while the pointer is near it.
+  // The "+" shows on the line between two blocks once the pointer RESTS near
+  // it (BUILDER-2B item 1: a click passing over a block's edge reaches the
+  // block, never a "+" that sprang up under it). Moving away hides it at once.
+  let restTimer = null;
+  const hidePlus = () => { clearTimeout(restTimer); restTimer = null; plusAt = null; show(plus, null); };
   doc.addEventListener("mousemove", e => {
     if (dragging || e.target === plus) return;
-    const boxes = blockBoxes(doc);
-    const p = placeAt(boxes, pageY(e));
-    const near = p && Math.abs(pageY(e) - p.y) < 12 && e.clientX + (doc.defaultView ? doc.defaultView.scrollX : 0) > p.left && e.clientX < p.right;
-    plusAt = near ? p : null;
-    show(plus, plusAt);
+    const p = placeAt(blockBoxes(doc), pageY(e));
+    const x = e.clientX + (doc.defaultView ? doc.defaultView.scrollX : 0);
+    const near = p && Math.abs(pageY(e) - p.y) <= 6 && x > p.left - 34 && x < p.right;
+    if (!near) { hidePlus(); return; }
+    if (plusAt && plusAt.at === p.at) return;
+    clearTimeout(restTimer); plusAt = null; show(plus, null);
+    restTimer = setTimeout(() => { plusAt = p; show(plus, p); }, 350);
   });
-  doc.addEventListener("mouseleave", () => { plusAt = null; show(plus, null); });
+  doc.addEventListener("mousedown", e => { if (e.target !== plus) hidePlus(); }, true);
+  doc.addEventListener("mouseleave", hidePlus);
   plus.addEventListener("mousedown", e => e.preventDefault());
   plus.addEventListener("click", e => {
     e.preventDefault(); e.stopPropagation();

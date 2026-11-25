@@ -40,7 +40,9 @@ tr[data-st-hide]>td{opacity:.5}
 .st-box.hover{border:1.5px solid ${T.green200}}
 .st-box.sel{border:1.5px solid ${T.green};z-index:20}
 .st-name{position:absolute;top:-12px;left:10px;background:${T.green};color:${T.white};border-radius:5px;font:700 11px/18px 'DM Sans',Helvetica,Arial,sans-serif;padding:0 7px;white-space:nowrap}
-.st-bar{position:absolute;top:-12px;right:10px;display:flex;gap:4px;pointer-events:auto;font-family:'DM Sans',Helvetica,Arial,sans-serif}
+.st-bar{position:absolute;display:flex;gap:4px;pointer-events:auto;font-family:'DM Sans',Helvetica,Arial,sans-serif}
+.st-bar.out{flex-direction:column;top:0;left:calc(100% + 8px)}
+.st-bar.in{top:4px;right:4px}
 .st-bar button{background:${T.green};color:${T.white};border:none;border-radius:5px;height:20px;min-width:22px;font-size:11px;font-weight:700;cursor:pointer;padding:0 6px;line-height:20px}
 .st-bar button:hover{background:${T.ink}}
 `;
@@ -202,6 +204,12 @@ export function EmailFrame({ html, device, selected, on, frameRef, labels = {}, 
         const locked = first.getAttribute("data-st-locked") === "1";
         const type = first.getAttribute("data-st-type") || "";
         const hid = first.getAttribute("data-st-hide");
+        // BUILDER-2B: the handles sit in the margin beside the email, over no
+        // block, so a click on any other block always reaches it (they used to
+        // sit above the block, over the one before it, and a click there pressed
+        // Duplicate). With no room beside it (a phone), inside its own corner.
+        const room = (doc.documentElement.clientWidth || 0) + (doc.defaultView ? doc.defaultView.scrollX : 0) - r.right;
+        bar.className = "st-bar " + (room >= 34 ? "out" : "in");
         tag.textContent = (locked ? "Tax lines · required" : (labels[type] || type)) + (hid ? ` · ${HIDDEN_NAME[hid] || ""}` : "");
         selBox.setAttribute("data-st-for", String(i));
         acts.forEach(b => { const a = b.getAttribute("data-act"); b.style.display = (locked && (a === "remove" || a === "duplicate")) || (type === "footer" && a === "drag") ? "none" : ""; });
@@ -223,8 +231,15 @@ export function EmailFrame({ html, device, selected, on, frameRef, labels = {}, 
     doc.addEventListener("click", e => {
       const a = e.target.closest && e.target.closest("a");
       if (a) e.preventDefault();
-      if (e.target.closest && e.target.closest(".st-bar")) return;
-      const tr = e.target.closest && e.target.closest("tr[data-st-block]");
+      // A click on the handles' own space (not a handle) is a click on what is under it.
+      let target = e.target;
+      if (target.closest && target.closest(".st-bar")) {
+        if (target.closest("button, [data-act]")) return;
+        const under = doc.elementsFromPoint ? doc.elementsFromPoint(e.clientX, e.clientY).find(el => !el.closest(".st-box, .st-bar, .st-plus, .st-drop")) : null;
+        if (!under) return;
+        target = under;
+      }
+      const tr = target.closest && target.closest("tr[data-st-block]");
       live.current.select(tr ? topIndex(tr) : null);
     });
     if (doc.defaultView) {
@@ -246,7 +261,7 @@ export function EmailFrame({ html, device, selected, on, frameRef, labels = {}, 
   useEffect(() => { draw.current(); }, [selected]);
   return (
     <iframe ref={frameRef} title="The email" data-testid={testid} sandbox="allow-same-origin" srcDoc={html} onLoad={load}
-      style={{ display: "block", margin: "0 auto", width: device === "phone" ? "100%" : 640, maxWidth: "100%", height: "100%", minHeight: 520, border: 0, background: "transparent", flex: 1 }} />
+      style={{ colorScheme: "light", display: "block", margin: "0 auto", width: device === "phone" ? "100%" : 700, maxWidth: "100%", height: "100%", minHeight: 520, border: 0, background: "transparent", flex: 1 }} />
   );
 }
 

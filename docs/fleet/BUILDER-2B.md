@@ -7,6 +7,13 @@ blocks and its list, the Edit tab for Columns, Box, Social and Code, and "Save a
 settings. Communications → Templates → Brand: new "Social links".
 
 **Clicks to try for the next three nights:**
+0. **(Read only, Harborlight.)** Open a designed template. Click the middle, the left edge and the empty space of
+   each part (text, photo, stats, divider, button, signature, gift summary, an empty event or giving page or video):
+   each time that part is outlined with its name, the path line names it and the right pane shows it; clicking in
+   text puts the cursor there. Then click a part, and click the bottom right corner of the part ABOVE it: the part
+   above is selected and nothing is duplicated or moved (the handles now sit beside the email, or inside the
+   selected part's own corner when the window is narrow). With your computer in dark mode and the editor's Dark mode
+   off, the email is white; press Dark mode and it turns dark.
 1. **(Needs a write: org_stagewalk.)** Templates → Year-end appeal (start it from the starter). Drag the Divider tile
    onto the email and hold it between the hero and the text: an emerald line shows there. Let go: the divider is
    there, selected, and the toast says "Divider added where you chose." Press Undo in the top bar: it is gone.
@@ -27,7 +34,8 @@ settings. Communications → Templates → Brand: new "Social links".
 8. **(Read only, Harborlight.)** Open a template, click a Columns block if any (else just Elements): the Code tile is
    absent for a non-admin and present for the director (an admin).
 
-**What could have broken nearby:** BUILDER-1's editor (selection, typing in the email, the field rule, undo/redo,
+**What could have broken nearby:** the template and campaign previews' Dark mode button (the preview now ignores
+the computer's own dark mode); a send's dark-mode block is unchanged. BUILDER-1's editor (selection, typing in the email, the field rule, undo/redo,
 the thumbnail), the campaign editor's preview, Settings → Brand's colours and logo save, the Remove/Undo toast.
 
 **Needs a write:** 1 to 7 in org_stagewalk, not Harborlight. 8 is read only.

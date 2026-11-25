@@ -166,6 +166,14 @@ the morning email unless the person turned on its own reminder, so no step goes 
   The floating "+" between blocks opens the same tiles and blocks. Saved and ready-made blocks come back from the
   server as copies with fresh ids. Copy and paste carries `STEWARD-EMAIL-BLOCKS:` + the blocks and the org on the
   clipboard; a paste from another org is refused, and every paste is validated with the email it joins.
+  **A click selects the block it lands on (BUILDER-2B):** nothing the editor draws sits over another block. The
+  selected block's handles stand in the margin beside the email (inside its own corner when there is no margin);
+  the "+" shows only once the pointer rests on a line. `tests/builder2b-drag-blocks.test.js` §5 clicks every block
+  type's middle, edge and padding, and the corner where the handles used to sit.
+- **A preview is light unless Dark mode is pressed (BUILDER-2B).** Both preview routes pass the render through
+  `previewScheme(html, dark)` (shared/emailBlocks.js): pressed, the dark block applies; not pressed, it is disabled
+  and the page says `color-scheme: light`, so a viewer's dark computer does not darken it. A send never goes through
+  it: real inboxes still get light and dark.
 - **A campaign follows its type, not the automatic-email switch (TRUST-1, Jonathan 27 Oct).** A campaign is a send
   someone clicks. `donorMailDecision("campaign")` asks `mailTypes.holdReason` like `sendGate.decide`: Campaign emails
   on; Everyone and not Never, or Only donors I choose and Always include; plus the marketing refusals. `auto_email`
