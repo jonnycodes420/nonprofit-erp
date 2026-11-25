@@ -18,6 +18,7 @@
 
 const KEY = "steward_chunk_reopen";
 let reopening = false;
+let offlineAt = 0;   // the last moment the browser said it was offline
 
 // A failed dynamic import, in each browser's words for it.
 const WORDS = /dynamically imported module|Importing a module script|Unable to preload|ChunkLoadError|Loading (CSS )?chunk|not a valid JavaScript MIME/i;
@@ -30,8 +31,10 @@ export const REOPENING_WORDS = "Steward was just updated. Reopening…";
 // shows the error with its Reload button instead.
 export function reopenAfterUpdate(err) {
   if (reopening) return true;
-  // Offline, a chunk that will not load is the network, not a deploy: the page says so as it always did.
-  if (typeof window === "undefined" || !isChunkError(err) || navigator.onLine === false) return false;
+  // Offline, or just back from it, a chunk that will not load is the network, not a deploy: the page says so as it always did.
+  if (typeof window === "undefined" || !isChunkError(err)) return false;
+  if (navigator.onLine === false) offlineAt = Date.now();
+  if (Date.now() - offlineAt < 60000) return false;
   try {
     if (Date.now() - (Number(sessionStorage.getItem(KEY)) || 0) < 60000) return false;
     sessionStorage.setItem(KEY, String(Date.now()));
@@ -45,6 +48,8 @@ export function reopenAfterUpdate(err) {
 export const isReopening = () => reopening;
 
 export function installChunkReload() {
+  addEventListener("offline", () => { offlineAt = Date.now(); });
+  addEventListener("online", () => { offlineAt = Date.now(); });
   // Vite's own signal for a failed preload or import, and an import() on a click nobody caught.
   addEventListener("vite:preloadError", e => { if (reopenAfterUpdate(e.payload)) e.preventDefault(); });
   addEventListener("unhandledrejection", e => { if (isChunkError(e.reason) && reopenAfterUpdate(e.reason)) e.preventDefault(); });
