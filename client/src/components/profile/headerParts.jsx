@@ -1,5 +1,6 @@
 // components/profile/headerParts.jsx (PROFILE-3): the header's small pieces —
-// the quiet action button's look, its icons, and the contact line under the name.
+// the quiet action button's look, its icons, and the quiet line under the name
+// (PROFILE-4: Donor since, then the contact bits).
 import { useState } from "react";
 import { T } from "../shared";
 
@@ -8,7 +9,7 @@ const INK60 = "rgba(15,26,18,0.6)";
 // Note, Email and Task: an outline button with an icon; the word shows when
 // the header has room for it (a container query in shared.jsx hides it below).
 const ACT = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 9, padding: "0 12px", color: T.ink, fontSize: 13, fontWeight: 700,
-  cursor: "pointer", minHeight: 40, minWidth: 40, whiteSpace: "nowrap", fontFamily: "inherit", textDecoration: "none",
+  cursor: "pointer", minHeight: 40, minWidth: 36, whiteSpace: "nowrap", fontFamily: "inherit", textDecoration: "none",
   display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, boxSizing: "border-box" };
 
 function ActIcon({ kind }) {
@@ -30,17 +31,23 @@ function Copyable({ text, label, testid }) {
     {done ? "Copied" : text}</button>;
 }
 
-function ContactLine({ donor, isReadOnly, onAdd }) {
+// PROFILE-4 · THE QUIET LINE UNDER THE NAME: "Donor since 2017", then email ·
+// phone · city, each copied with a click. "Add email or phone" shows only when
+// the record has neither an email nor a phone.
+function ContactLine({ donor, isReadOnly, onAdd, since = null }) {
   const place = [donor.city, donor.state].filter(Boolean).join(", ");
   const bits = [donor.email && ["email", donor.email], donor.phone && ["phone", donor.phone], place && ["city", place]].filter(Boolean);
+  const canAdd = !donor.email && !donor.phone && !isReadOnly && !!onAdd;
+  const items = [
+    ...(since ? [<span key="since" data-testid="dp-donor-since">{since}</span>] : []),
+    ...bits.map(([k, v]) => <Copyable key={k} text={v} label={k} testid={"dp-contact-" + k} />),
+    ...(canAdd ? [<button key="add" type="button" data-testid="dp-contact-add" onClick={onAdd} style={{ background: "none", border: "none", padding: 0, font: "inherit", color: T.greenDk, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer" }}>Add email or phone</button>] : []),
+  ];
+  if (!items.length) return null;
   return (
-    <div className="dph-contact" data-testid="dp-contact-line" style={{ gridColumn: "2 / -1", gridRow: 4, marginTop: 8, fontSize: 13, color: INK60, lineHeight: 1.5,
+    <div className="dph-contact" data-testid="dp-contact-line" style={{ gridColumn: "2 / -1", gridRow: 3, marginTop: 4, fontSize: 13, color: INK60, lineHeight: 1.5,
       display: "flex", flexWrap: "wrap", alignItems: "center", columnGap: 8, rowGap: 2, minWidth: 0 }}>
-      {bits.length ? bits.map(([k, v], i) => <span key={k} style={{ display: "inline-flex", gap: 8, minWidth: 0 }}>
-        {i > 0 && <span aria-hidden="true">·</span>}<Copyable text={v} label={k} testid={"dp-contact-" + k} /></span>)
-        : (!isReadOnly && onAdd
-          ? <button type="button" data-testid="dp-contact-add" onClick={onAdd} style={{ background: "none", border: "none", padding: 0, font: "inherit", color: INK60, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer" }}>Add email or phone</button>
-          : null)}
+      {items.map((el, i) => <span key={i} style={{ display: "inline-flex", gap: 8, minWidth: 0 }}>{i > 0 && <span aria-hidden="true">·</span>}{el}</span>)}
     </div>
   );
 }

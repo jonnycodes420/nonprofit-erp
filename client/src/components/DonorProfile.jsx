@@ -22,7 +22,7 @@ import { buildTimelineItems, timelineCounts } from "./MeetingPanels";
 import { ProfileNumbers } from "./profile/ProfileNumbers";
 import { ProfileNextMove } from "./Insights";   // INSIGHTS-1, PROFILE-2
 import { RAIL, RAIL_LABEL, RailSection } from "./ProfileRail";
-import { T, fmtFull, STAGES, moveUrgency, Spin, AIPanel, Modal, firstNameOf } from "./shared";
+import { T, fmtFull, STAGES, moveUrgency, Spin, AIPanel, Modal, firstNameOf, PersonMark } from "./shared";
 import { BriefPanel, useDonorProposals } from "./MajorGifts";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
 import { ItemMenu, EditedMarker, offerUndo } from "./EditHistory";
@@ -62,6 +62,7 @@ import { useProfilePipeline } from "./profile/useProfilePipeline";
 import { useProfileGiving } from "./profile/useProfileGiving";
 import { useProfileFiles } from "./profile/useProfileFiles";
 import { useProfileRail } from "./profile/useProfileRail";
+import { useStuckTabs } from "./profile/useStuckTabs";   // PROFILE-4
 
 function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,onRecordChanged,isReadOnly=false,onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialOpenCompose=false,initialOpenBrief=false,initialAddGift=null,org=null}){
   const { gifts, setGifts, giftLoading, setGiftLoading, giftReadErr, setGiftReadErr, giftReadSeq, localInts, setLocalInts, figs, setFigs, rel, setToldNonce, before, scores, canMajorGifts, publicFiling, setPublicFiling, filingLookupOpen, setFilingLookupOpen, prospectBriefOpen, setProspectBriefOpen, status, logMeeting, setLogMeeting, eraseOpen, setEraseOpen, stepEdit, setStepEdit, stepBusy, setStepBusy, pgOpen, setPgOpen, suggestOpen, setSuggestOpen, briefOpen, setBriefOpen, inboxConnected, eraseWord, setEraseWord, eraseBusy, eraseMsg, setEraseMsg, exportPersonData, erasePerson, loadRel, loadRailRef, sequences, dpThread, dpItems, convoOpen, setConvoOpen, editingInt, setEditingInt, planOpen, setPlanOpen, dpItemsLoaded, openProposals, proposalsKnown, propData, reloadProps, loadDpThread, relationships, broughtIn, relLoading, relPickerOpen, setRelPickerOpen, relSearch, setRelSearch, relType, setRelType, relSaving, relErr, setRelErr, linkDonor, unlinkDonor, retypeRelationship, relPickerResults, relPickerPending, cfData, setCfData, cfEditing, setCfEditing, cfEditVal, setCfEditVal, cfSaved, setCfSaved, cfShowAll, setCfShowAll, cfError, setCfError, giftCfDefs, giftCfEditStr, donorEvents, localScore, localTier, localConf, localRationale, scoreLoading, recalcScore, showReassign, setShowReassign, reassignId, setReassignId, reassignLoading, setReassignLoading, draftCopied, copyDraftEmail } = useProfileRecord({ donor, onSelectRelatedDonor, onClose, onInteractionAdded, initialOpenConversation, initialOpenCompose, initialOpenBrief, getAI });
@@ -71,6 +72,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const { viewMaterial, deleteMaterial, impactPdfLoading, videoThanksOpen, setVideoThanksOpen, volOpen, setVolOpen, makeVolOpen, setMakeVolOpen, setMadeVol, isVolunteer, yourPageMsg, sendYourPageLink, downloadImpactSummary, exportGiftsCSV, saveStep, deleteStep, openForNextMove, yearDrill, setYearDrill, snoozing, snoozeErr, snoozeThread, contactPerson, headName, callName, noGifts, headTags, aboutStatusTags } = useProfileFiles({ loadMaterials, donor, onInteractionAdded, setToldNonce, loadRel, reloadProps, loadDpThread, loadGiftsFull, giftCfDefs, giftsFull, stepEdit, setStepEdit, setStepBusy, localInts, rel, dpTab, setDpTab, pledges, actMode, recurringSub, dpItems, openProposals, aiMap, getAI, dpItemsLoaded, gifts, giftLoading, giftReadErr, figs, status, railData });
   const { railNextNode, railPledgeNode, nothingLogged, nextMoveNode } = useProfileRail({ donor, isReadOnly, rel, setLogMeeting, stepEdit, setStepEdit, stepBusy, dpThread, dpItems, setConvoOpen, setPlanOpen, openProposals, proposalsKnown, loadDpThread, saveStep, deleteStep, snoozing, snoozeErr, snoozeThread, callName, setDpTab, pledges, setAddGiftForm, setAddGiftOpen, tasks, gifts, giftLoading, giftReadErr, giftsFull, tlCounts, getAI, org, setSuggestOpen, isTeam, openForNextMove });
   const { onTaskOutcome, finishUi } = useProfileFinish({ donor });   // FLOWS-20: a call or meeting ticked on the profile opens the Tasks page's finish dialog
+  const stuckTabs = useStuckTabs({ isPhone, dpTab });   // PROFILE-4: the tab row sticks with the name
 
   return(
     <div className="fade-in page-takeover dp3-frame" data-testid="donor-profile" ref={frameRef} style={{position:"relative",background:T.bg,display:"flex",flexDirection:"column"}}>{finishUi}
@@ -92,22 +94,24 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           {/* PROFILE-2 · THE WHITE BAND: the header, the four numbers, then the tabs
               as its bottom edge. It sits in the main column, so the rail beside it
               runs from the top of the profile. */}
-          {/* PROFILE-3 · THE PIN: the header band, the numbers and the tabs stay at the
-              top of the main column while the timeline scrolls under them. */}
-          <div className="dp3-pin" data-testid="dp-pin" style={{position:"sticky",top:0,zIndex:6,background:T.white,borderBottom:"1px solid "+T.bg3}}>
+          {/* PROFILE-4 · THE HEADER SCROLLS AWAY. PROFILE-3 pinned the band, the
+              numbers and the tabs together, so on a full record the timeline had
+              a window of about 460px under them. Now the band scrolls with the
+              page and only the tab row below sticks. */}
           <div data-testid="dp-band" className="dp3-band" style={{background:T.white,padding:"0 var(--dp-gutter,40px)"}}>
       {/* POLISH-1 — ONE HEADER, PHOTO OR NOT. Back is its own small line;
             below it the mark (photo or initials, one size) sits top-aligned with
             the name, and everything about the person is one column beside it.
             Centred rows let the mark and Back float to the middle of a column
             whose height changed with the person, so a photo moved the name. */}
-        {/* PROFILE-2 · THE HEADER, TWO ROWS. Row one: the face (72px), the name in
+        {/* PROFILE-4 made it one row (profile/ProfileHeader.jsx says how). Before that,
+            PROFILE-2 · THE HEADER, TWO ROWS. Row one: the face (72px), the name in
             the display serif, and the actions on the right (Log a call is the one
             emerald). Row two: the top tag under the face and the second under the
             name: at most two tags here, the rest are in About on the rail. The
             roles line, closeness, drift and recurring sentences moved to the rail
             (About and Engagement), so the header is the person and what to do. */}
-        <ProfileHeader {...{onRecordChanged,setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg,setAddPledgeOpen}}/>
+        <ProfileHeader {...{onRecordChanged,setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg,setAddPledgeOpen,noGifts}}/>
         {(figs||donor.figures)&&<ProfileNumbers figures={figs||donor.figures}/>}
           </div>
           {/* ── PROFILE-1 (header) · ONE ROW OF TABS ──────────────────────
@@ -119,7 +123,16 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {nextMoveNode}
             <div style={{background:RAIL.bg,color:RAIL.text,borderRadius:14,padding:"16px 16px 4px"}}>{railNextNode}{railPledgeNode}</div>
           </div>}
-          <div className="dp-tabs-row" style={{display:"flex",alignItems:"stretch",background:T.white,padding:"0 var(--dp-gutter,40px)"}}>
+          <div ref={stuckTabs.sentinelRef} aria-hidden="true" data-testid="dp-tabs-sentinel" style={{height:0}}/>
+          {/* PROFILE-4 · THE TABS STICK, WITH THE NAME: once the header has scrolled
+              away, the tab row sits at the top of the middle column with the
+              small face and the name at its left and a light shadow. */}
+          <div className={"dp3-pin dp4-pin"+(stuckTabs.stuck?" dp4-stuck":"")} data-testid="dp-pin" data-stuck={stuckTabs.stuck?"1":"0"} style={{position:"sticky",top:0,zIndex:6,background:T.white,borderBottom:"1px solid "+T.bg3,boxShadow:stuckTabs.stuck?"0 6px 16px rgba(15,26,18,0.08)":"none",transition:"box-shadow .2s"}}>
+          <div className="dp-tabs-row" style={{display:"flex",alignItems:"stretch",columnGap:0,background:T.white,padding:"0 var(--dp-gutter,40px)"}}>
+          {stuckTabs.stuck&&<div data-testid="dp-stuck-name" style={{display:"flex",alignItems:"center",gap:8,marginRight:22,flexShrink:1,minWidth:0,maxWidth:220,fontWeight:700,fontSize:14,color:T.ink}}>
+            <PersonMark id={donor.id} name={donor.name} kind={donor.kind} url={photoUrl} size={26}/>
+            <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{headName}</span>
+          </div>}
           <div className="dp-tabs" role="tablist" aria-label="Profile" data-testid="dp-tabs" style={{display:"flex",flexWrap:"nowrap",overflowX:"auto",flex:1,minWidth:0,scrollbarWidth:"none",gap:24}}>
             {profileTabsFor(isVolunteer).map(([id,label])=>{
               // PROFILE-2: Giving counts gifts AND pledges (a $50,000 pledge read "Gifts & pledges 0").
@@ -141,8 +154,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               style={{background:"none",border:"none",cursor:"pointer",padding:8,minWidth:40,minHeight:40,color:T.ink3,fontSize:17,lineHeight:1}}>{tlSearchOpen?"×":<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>}</button>
           </div>
           </div>
-          </div>{/* /dp3-pin */}
+          </div>{/* /dp4-pin */}
 
+          {/* PROFILE-4: the tab panes are at least a column tall, so switching tabs
+              while the row is stuck can put the new tab's top just under it. */}
+          <div className="dp4-panes" data-testid="dp-panes">
           {/* ── OVERVIEW (PROFILE-1 header) ──────────────────────────────
               Top to bottom: the next meeting, How did it go?, Lately, the ask,
               Highlights, then About. Everything else that lived here has a
@@ -203,6 +219,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
 
           <ListTabs {...{household,contactPerson,onEdit,onSelectRelatedDonor,contact:railData&&railData.contact,fileTally,deleteMaterial,donor,dpTab,giftsFull,inboxConnected,intActions,isReadOnly,loadDpThread,loadGiftsFull,loadRel,localInts,matLoading,matUploading,materials,onInteractionAdded,onLogTouchpoint,onNavigate,rel,saveStewardship,setLogMeeting,setStwForm,setStwOpen,stwForm,stwOpen,stwSaving,tlExtras,tlSearch,uploadMaterial,viewMaterial,onTaskOutcome}}/>
           <ProfileDialogs {...{relationships,createHousehold,donor,eraseBusy,eraseMsg,eraseOpen,erasePerson,eraseWord,hhModalOpen,hhPeople,hhPick,hhSearch,isAdmin,setEraseOpen,setEraseWord,setHhModalOpen,setHhPick,setHhSearch}}/>
+          </div>{/* /dp4-panes */}
         </div>
 
         {/* ── THE RAIL (PROFILE-1) ────────────────────────────────────────
